@@ -9,7 +9,6 @@ import com.shusheng.cobblemarket.network.*
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
-import net.minecraft.client.gui.widget.ButtonWidget
 import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.item.ItemStack
 import net.minecraft.registry.Registries
@@ -94,8 +93,10 @@ class SellSelectScreen : Screen(Text.translatable("cobblemarket.sell.title")) {
         val btnY = 72
         addDrawableChild(NineSliceButton(
             lx + 2, btnY, 62, 20,
-            if (shinyOnly) Text.literal("★").append(Text.translatable("cobblemarket.sell.shiny")) else Text.literal("☆").append(Text.translatable("cobblemarket.sell.shiny")),
-            { shinyOnly = !shinyOnly; rebuild() }
+            Text.translatable(if (shinyOnly) "cobblemarket.gui.shiny_on" else "cobblemarket.gui.shiny_off"),
+            { shinyOnly = !shinyOnly; rebuild() },
+            // 开 = 金色 ★，关 = 白色 ☆（与其他界面闪光按钮一致）
+            if (shinyOnly) GOLD_COLOR else 0xFFFFFF
         ))
 
         addDrawableChild(NineSliceButton(
@@ -261,9 +262,8 @@ class SellSelectScreen : Screen(Text.translatable("cobblemarket.sell.title")) {
             val iconY = y + 2
             renderPokemonIcon(context, origIdx, iconX, iconY, iconSize)
 
-            // Species（[队]/[PC] 固定色，精灵名属性色）
+            // Species（[队]/[PC] 固定色，精灵名属性色 + 金色闪光星标拆段绘制）
             val src = Text.translatable(if (e.source == "party") "cobblemarket.sell.party" else "cobblemarket.sell.pc").string
-            val sm = if (e.shiny) " ☆" else ""
             val tc = typeColor(if (e.primaryType.isNotEmpty()) e.primaryType else "cobblemon.type.normal")
             val srcColor = if (e.source == "party") 0x55FF55 else 0x55AAFF
             var sx = lx + 28
@@ -281,9 +281,13 @@ class SellSelectScreen : Screen(Text.translatable("cobblemarket.sell.title")) {
                 sx += 12
             }
 
-            val speciesName = "${speciesDisplay(e)}$sm"
-            context.drawText(textRenderer, speciesName, sx, y + 7, tc, false)
-            sx += textRenderer.getWidth(speciesName) + 2
+            context.drawText(textRenderer, speciesDisplay(e), sx, y + 7, tc, false)
+            sx += textRenderer.getWidth(speciesDisplay(e))
+            if (e.shiny) {
+                context.drawText(textRenderer, "★", sx + 2, y + 7, GOLD_COLOR, false)
+                sx += 2 + textRenderer.getWidth("★")
+            }
+            sx += 2
 
             // Gender icon（紧跟名字）
             if (e.gender == "MALE" || e.gender == "FEMALE") {
@@ -364,19 +368,20 @@ class SellSelectScreen : Screen(Text.translatable("cobblemarket.sell.title")) {
         val hasHeldItem = p.heldItemId.isNotEmpty() &&
             Identifier.tryParse(p.heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
 
-        val lines = mutableListOf<Pair<String, Int>>()
-        lines.add("${speciesDisplay(p)}${if (p.shiny) " ☆" else ""}  Lv.${p.level}" to 0xFFFFFF)
-        lines.add("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText" to 0xFFFFFF)
-        lines.add("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(p.nature).string}  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(p.ability).string}" to 0xFFFFFF)
+        val lines = mutableListOf<Pair<Text, Int>>()
+        lines.add(EntryBadgeRenderer.nameWithShinyStar(speciesDisplay(p), p.shiny)
+            .copy().append(Text.literal("  Lv.${p.level}")) to 0xFFFFFF)
+        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText") to 0xFFFFFF)
+        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(p.nature).string}  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(p.ability).string}") to 0xFFFFFF)
         var heldItemLine = -1
         if (hasHeldItem) {
             heldItemLine = lines.size
-            lines.add(Text.translatable("cobblemarket.gui.tooltip_held").string to 0xFFFFFF)
+            lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to 0xFFFFFF)
         }
-        lines.add("${Text.translatable("cobblemarket.gui.tooltip_ivs").string}" to 0xFFFFFF)
-        lines.add("  $hp:${p.ivsHp}" to 0x66FF66); lines.add("  $atk:${p.ivsAtk}" to 0xFF6666)
-        lines.add("  $def:${p.ivsDef}" to 0xFFCC66); lines.add("  $spa:${p.ivsSpAtk}" to 0x6699FF)
-        lines.add("  $spd:${p.ivsSpDef}" to 0x66FF99); lines.add("  $spe:${p.ivsSpd}" to 0xFF99FF)
+        lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to 0xFFFFFF)
+        lines.add(Text.literal("  $hp:${p.ivsHp}") to 0x66FF66); lines.add(Text.literal("  $atk:${p.ivsAtk}") to 0xFF6666)
+        lines.add(Text.literal("  $def:${p.ivsDef}") to 0xFFCC66); lines.add(Text.literal("  $spa:${p.ivsSpAtk}") to 0x6699FF)
+        lines.add(Text.literal("  $spd:${p.ivsSpDef}") to 0x66FF99); lines.add(Text.literal("  $spe:${p.ivsSpd}") to 0xFF99FF)
 
         var mw = 0; lines.forEach { mw = maxOf(mw, textRenderer.getWidth(it.first)) }
         if (heldItemLine >= 0) {

@@ -37,7 +37,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private var sortMode = "NEWEST"
     private val minIvs = IntArray(6) { -1 }
 
-    private lateinit var shinyButton: ButtonWidget
+    private lateinit var shinyButton: NineSliceButton
     private lateinit var sortButton: ButtonWidget
     private lateinit var resetButton: ButtonWidget
     private lateinit var mineButton: ButtonWidget
@@ -124,7 +124,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             shinyButton = NineSliceButton(
                 leftX + 4, 136, 90, 20,
                 Text.translatable(if (shinyOnly) "cobblemarket.gui.shiny_on" else "cobblemarket.gui.shiny_off"),
-                { toggleShiny() }
+                { toggleShiny() },
+                // resize 重建时保持当前状态的颜色
+                if (shinyOnly) GOLD_COLOR else 0xFFFFFF
             )
             addDrawableChild(shinyButton)
 
@@ -210,6 +212,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         shinyOnly = !shinyOnly
         currentPage = 1
         shinyButton.message = Text.translatable(if (shinyOnly) "cobblemarket.gui.shiny_on" else "cobblemarket.gui.shiny_off")
+        // 开 = 金色 ★，关 = 白色 ☆（与其他界面闪光按钮一致）
+        shinyButton.textColor = if (shinyOnly) GOLD_COLOR else 0xFFFFFF
         refreshData()
     }
 
@@ -252,6 +256,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         hpField?.text = ""; atkField?.text = ""; defField?.text = ""
         spaField?.text = ""; spdField?.text = ""; speField?.text = ""
         shinyButton.message = Text.translatable("cobblemarket.gui.shiny_off")
+        shinyButton.textColor = 0xFFFFFF
         sortButton.message = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
         refreshData()
     }
@@ -452,10 +457,14 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 )
             }
 
-            val shinyMark = if (entry.shiny) " ☆" else ""
+            // Species name (translated) + 金色闪光星标（★，拆段绘制）
             val displayName = iconData[origIndex]?.displayName ?: entry.species
-            val speciesText = "$displayName$shinyMark"
-            context.drawText(textRenderer, speciesText, leftX + 40, y + 7, typeColor(entry.primaryType), false)
+            context.drawText(textRenderer, displayName, leftX + 40, y + 7, typeColor(entry.primaryType), false)
+            var nameWidth = textRenderer.getWidth(displayName)
+            if (entry.shiny) {
+                context.drawText(textRenderer, "★", leftX + 40 + nameWidth + 2, y + 7, GOLD_COLOR, false)
+                nameWidth += 2 + textRenderer.getWidth("★")
+            }
 
             var iconOffset = 0
             if (entry.gender == "MALE" || entry.gender == "FEMALE") {
@@ -463,7 +472,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                     Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
                 else
                     Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
-                val genderX = leftX + 40 + textRenderer.getWidth(speciesText) + 2
+                val genderX = leftX + 40 + nameWidth + 2
                 com.cobblemon.mod.common.api.gui.blitk(
                     matrixStack = context.matrices,
                     texture = genderIcon,
@@ -481,7 +490,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                     if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
                         com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                             itemStack = ItemStack(heldItem),
-                            x = leftX + 40 + textRenderer.getWidth(speciesText) + 2 + iconOffset + 0.0,
+                            x = leftX + 40 + nameWidth + 2 + iconOffset + 0.0,
                             y = y + 6.0,
                             scale = 0.6,
                             matrixStack = context.matrices
@@ -566,24 +575,25 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         val hasHeldItem = entry.heldItemId.isNotEmpty() &&
             Identifier.tryParse(entry.heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
 
-        val lines = mutableListOf<Pair<String, Int>>()
-        lines.add("${iconData[listings.indexOf(entry)]?.displayName ?: entry.species}${if (entry.shiny) " ☆" else ""}  ${Text.translatable("cobblemarket.gui.lv").string}${entry.level}" to w)
-        lines.add("${Text.translatable("cobblemarket.gui.tooltip_type").string}${Text.translatable(entry.primaryType).string}${if (entry.secondaryType.isNotEmpty()) " + ${Text.translatable(entry.secondaryType).string}" else ""}" to w)
-        lines.add("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(entry.nature).string}  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(entry.ability).string}" to w)
+        val lines = mutableListOf<Pair<Text, Int>>()
+        lines.add(EntryBadgeRenderer.nameWithShinyStar(iconData[listings.indexOf(entry)]?.displayName ?: entry.species, entry.shiny)
+            .copy().append(Text.literal("  ${Text.translatable("cobblemarket.gui.lv").string}${entry.level}")) to w)
+        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}${Text.translatable(entry.primaryType).string}${if (entry.secondaryType.isNotEmpty()) " + ${Text.translatable(entry.secondaryType).string}" else ""}") to w)
+        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(entry.nature).string}  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(entry.ability).string}") to w)
         var heldItemLine = -1
         if (hasHeldItem) {
             heldItemLine = lines.size
-            lines.add(Text.translatable("cobblemarket.gui.tooltip_held").string to w)
+            lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to w)
         }
-        lines.add("${Text.translatable("cobblemarket.gui.tooltip_ivs").string}" to w)
-        lines.add("  $hp:${entry.ivsHp}" to ivColors[0])
-        lines.add("  $atk:${entry.ivsAtk}" to ivColors[1])
-        lines.add("  $def:${entry.ivsDef}" to ivColors[2])
-        lines.add("  $spa:${entry.ivsSpAtk}" to ivColors[3])
-        lines.add("  $spd:${entry.ivsSpDef}" to ivColors[4])
-        lines.add("  $spe:${entry.ivsSpd}" to ivColors[5])
-        lines.add("${Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).string} ${entry.sellerName}" to w)
-        lines.add("${Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).string} ${entry.price} ${entry.currencyName}" to w)
+        lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to w)
+        lines.add(Text.literal("  $hp:${entry.ivsHp}") to ivColors[0])
+        lines.add(Text.literal("  $atk:${entry.ivsAtk}") to ivColors[1])
+        lines.add(Text.literal("  $def:${entry.ivsDef}") to ivColors[2])
+        lines.add(Text.literal("  $spa:${entry.ivsSpAtk}") to ivColors[3])
+        lines.add(Text.literal("  $spd:${entry.ivsSpDef}") to ivColors[4])
+        lines.add(Text.literal("  $spe:${entry.ivsSpd}") to ivColors[5])
+        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).string} ${entry.sellerName}") to w)
+        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).string} ${entry.price} ${entry.currencyName}") to w)
 
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
@@ -662,9 +672,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             im.pop()
         }
 
-        // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字☆Lv / 类型 / 性格特性 / 携带物 / IV / 卖家 / 价格
+        // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 卖家 / 价格
         EntryBadgeRenderer.drawInfoLines(
-            context, entry, confirmDisplayName + (if (entry.shiny) " ☆" else ""),
+            context, entry, EntryBadgeRenderer.nameWithShinyStar(confirmDisplayName, entry.shiny),
             centerX, dialogY + 60
         )
 

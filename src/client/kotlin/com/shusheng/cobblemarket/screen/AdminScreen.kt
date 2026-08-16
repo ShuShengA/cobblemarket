@@ -59,9 +59,14 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             Text.translatable("cobblemarket.op.blacklist_item"),
             { client?.setScreen(ItemBlacklistScreen()) }
         ))
-        // 行 4：返回居中
+        // 行 4
         addDrawableChild(TextureButton(
-            centerX - btnW / 2, startY + (btnH + gap) * 3, btnW, btnH,
+            leftX, startY + (btnH + gap) * 3, btnW, btnH,
+            Text.translatable("cobblemarket.op.price_limit"),
+            { client?.setScreen(PriceLimitScreen()) }
+        ))
+        addDrawableChild(TextureButton(
+            rightX, startY + (btnH + gap) * 3, btnW, btnH,
             Text.translatable("cobblemarket.gui.back"),
             { client?.setScreen(MarketEntryScreen()) }
         ))

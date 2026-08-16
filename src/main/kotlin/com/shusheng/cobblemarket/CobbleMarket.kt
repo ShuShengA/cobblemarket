@@ -8,6 +8,7 @@ import com.shusheng.cobblemarket.network.BanNetwork
 import com.shusheng.cobblemarket.network.BlacklistNetwork
 import com.shusheng.cobblemarket.network.ItemBlacklistNetwork
 import com.shusheng.cobblemarket.network.MarketNetwork
+import com.shusheng.cobblemarket.network.PriceLimitNetwork
 import net.fabricmc.api.ModInitializer
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents
@@ -28,6 +29,7 @@ object CobbleMarket : ModInitializer {
 		BanNetwork.register()
 		BlacklistNetwork.register()
 		ItemBlacklistNetwork.register()
+		PriceLimitNetwork.register()
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()
 		TransactionHistory.register()

@@ -1370,6 +1370,30 @@ object MarketNetwork {
                     return@execute
                 }
 
+                // 价格限制检查：所有匹配规则（物种可空=全部精灵、V 档可空=不限）的最严交集
+                val priceBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
+                    .getPriceBounds(
+                        pokemon.species.resourceIdentifier.toString(),
+                        com.shusheng.cobblemarket.market.PokemonPriceLimitState.vCountOf(pokemon.ivs),
+                        pokemon.shiny
+                    )
+                if (priceBounds != null) {
+                    if (priceBounds.min != null && payload.price < priceBounds.min) {
+                        ServerPlayNetworking.send(
+                            player,
+                            MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.below_min", priceBounds.min))
+                        )
+                        return@execute
+                    }
+                    if (priceBounds.max != null && payload.price > priceBounds.max) {
+                        ServerPlayNetworking.send(
+                            player,
+                            MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.above_max", priceBounds.max))
+                        )
+                        return@execute
+                    }
+                }
+
                 // 上架数量上限检查
                 val maxPokemonListings = com.shusheng.cobblemarket.config.CobbleMarketConfig.maxPokemonListingsPerPlayer
                 if (maxPokemonListings > 0 && MarketState.get(server)
@@ -1544,6 +1568,26 @@ object MarketNetwork {
                         MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.item_blocked"))
                     )
                     return@execute
+                }
+
+                // 价格限制检查
+                val itemPriceBounds = com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
+                    .getPriceBounds(authoritativeItemId)
+                if (itemPriceBounds != null) {
+                    if (itemPriceBounds.min != null && payload.price < itemPriceBounds.min) {
+                        ServerPlayNetworking.send(
+                            player,
+                            MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.below_min", itemPriceBounds.min))
+                        )
+                        return@execute
+                    }
+                    if (itemPriceBounds.max != null && payload.price > itemPriceBounds.max) {
+                        ServerPlayNetworking.send(
+                            player,
+                            MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.above_max", itemPriceBounds.max))
+                        )
+                        return@execute
+                    }
                 }
 
                 val main = player.inventory.main

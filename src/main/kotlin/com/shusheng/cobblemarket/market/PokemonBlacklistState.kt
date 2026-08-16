@@ -23,14 +23,20 @@ data class PokemonBlacklistEntry(
     //   ["*"]       = 全部形态（显式全封；旧数据读入时缺省为此值，保持旧语义）
     //   []          = 默认形态（精灵不含该物种任何已声明的 form aspect）
     //   [x, y, ...] = 仅匹配包含所有这些 aspect 的精灵
-    val aspects: List<String> = emptyList()
+    val aspects: List<String> = emptyList(),
+    // 闪光限定：-1 = 不限（旧数据缺省值），0 = 仅非闪光，1 = 仅闪光
+    val shinyFilter: Int = SHINY_ANY
 ) {
     companion object {
         const val ALL_FORMS = "*"
+        const val SHINY_ANY = -1
+        const val SHINY_NO = 0
+        const val SHINY_YES = 1
     }
 
-    fun matches(targetSpeciesId: String, ivs: IVs, targetAspects: Set<String>, formAspectUnion: Set<String>): Boolean {
+    fun matches(targetSpeciesId: String, ivs: IVs, targetAspects: Set<String>, formAspectUnion: Set<String>, targetShiny: Boolean): Boolean {
         if (speciesId != targetSpeciesId) return false
+        if (shinyFilter != SHINY_ANY && targetShiny != (shinyFilter == SHINY_YES)) return false
         if (ivHp >= 0 && ivs[Stats.HP] != ivHp) return false
         if (ivAtk >= 0 && ivs[Stats.ATTACK] != ivAtk) return false
         if (ivDef >= 0 && ivs[Stats.DEFENCE] != ivDef) return false
@@ -72,7 +78,7 @@ class PokemonBlacklistState private constructor() : PersistentState() {
             addAll(species.standardForm.aspects)
             species.forms.forEach { addAll(it.aspects) }
         }
-        return entries.values.any { it.matches(speciesId, pokemon.ivs, pokemon.aspects, formAspectUnion) }
+        return entries.values.any { it.matches(speciesId, pokemon.ivs, pokemon.aspects, formAspectUnion, pokemon.shiny) }
     }
 
     override fun writeNbt(nbt: NbtCompound, registryLookup: RegistryWrapper.WrapperLookup): NbtCompound {
@@ -91,6 +97,7 @@ class PokemonBlacklistState private constructor() : PersistentState() {
             val aspectList = NbtList()
             e.aspects.forEach { aspectList.add(net.minecraft.nbt.NbtString.of(it)) }
             c.put("aspects", aspectList)
+            c.putInt("shinyFilter", e.shinyFilter)
             list.add(c)
         }
         nbt.put("entries", list)
@@ -119,7 +126,9 @@ class PokemonBlacklistState private constructor() : PersistentState() {
                                 aspects = if (c.contains("aspects"))
                                     c.getList("aspects", NbtList.STRING_TYPE.toInt()).map { it.asString() }
                                 else
-                                    listOf(PokemonBlacklistEntry.ALL_FORMS)
+                                    listOf(PokemonBlacklistEntry.ALL_FORMS),
+                                // 旧格式无 shinyFilter 字段 → 不限闪光，保持旧语义
+                                shinyFilter = if (c.contains("shinyFilter")) c.getInt("shinyFilter") else PokemonBlacklistEntry.SHINY_ANY
                             )
                             entries[entry.id] = entry
                         } catch (e: Exception) {

@@ -7,6 +7,9 @@ const val NINE_SLICE_BORDER = 6
 const val NINE_SLICE_TEX_W = 40
 const val NINE_SLICE_STATE_H = 40
 
+// Minecraft 标准金色（Formatting.GOLD 色值），用于闪光按钮等特殊高亮
+const val GOLD_COLOR = 0xFFAA00
+
 val ROW_BACKGROUND_TEXTURE = Identifier.of("cobblemarket", "textures/gui/row_background.png")
 const val ROW_BACKGROUND_TEX_H = 120
 

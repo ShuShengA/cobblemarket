@@ -43,7 +43,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     private lateinit var genderButton: ButtonWidget
     private lateinit var typeButton: ButtonWidget
-    private lateinit var shinyButton: ButtonWidget
+    private lateinit var shinyButton: NineSliceButton
     private lateinit var sortButton: ButtonWidget
     private lateinit var resetButton: ButtonWidget
     private lateinit var mineButton: ButtonWidget
@@ -190,7 +190,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         shinyButton = NineSliceButton(
             leftX + 4, 138, 90, 20,
             Text.translatable(if (shinyOnly) "cobblemarket.gui.shiny_on" else "cobblemarket.gui.shiny_off"),
-            { toggleShiny() }
+            { toggleShiny() },
+            // resize 重建时保持当前状态的颜色
+            if (shinyOnly) GOLD_COLOR else 0xFFFFFF
         )
         addDrawableChild(shinyButton)
 
@@ -365,6 +367,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         shinyOnly = !shinyOnly
         currentPage = 1
         shinyButton.message = Text.translatable(if (shinyOnly) "cobblemarket.gui.shiny_on" else "cobblemarket.gui.shiny_off")
+        // 开 = 金色 ★，关 = 白色 ☆（与价格限制/黑名单的闪光按钮一致）
+        shinyButton.textColor = if (shinyOnly) GOLD_COLOR else 0xFFFFFF
         mineButton.message = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         refreshData()
     }
@@ -433,6 +437,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         spdField?.text = ""
         speField?.text = ""
         shinyButton.message = Text.translatable("cobblemarket.gui.shiny_off")
+        shinyButton.textColor = 0xFFFFFF
         genderButton.message = genderButtonText()
         typeButton.message = typeButtonText()
         sortButton.message = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
@@ -683,11 +688,14 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 )
             }
 
-            // Species name (translated)
-            val shinyMark = if (entry.shiny) " ☆" else ""
+            // Species name (translated) + 金色闪光星标（★，拆段绘制）
             val displayName = iconData[origIndex]?.displayName ?: entry.species
-            val speciesText = "$displayName$shinyMark"
-            context.drawText(textRenderer, speciesText, leftX + 40, y + 7, typeColor(entry.primaryType), false)
+            context.drawText(textRenderer, displayName, leftX + 40, y + 7, typeColor(entry.primaryType), false)
+            var nameWidth = textRenderer.getWidth(displayName)
+            if (entry.shiny) {
+                context.drawText(textRenderer, "★", leftX + 40 + nameWidth + 2, y + 7, GOLD_COLOR, false)
+                nameWidth += 2 + textRenderer.getWidth("★")
+            }
 
             // Gender icon (Cobblemon blue/red arrows)
             var iconOffset = 0
@@ -696,7 +704,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                     Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
                 else
                     Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
-                val genderX = leftX + 40 + textRenderer.getWidth(speciesText) + 2
+                val genderX = leftX + 40 + nameWidth + 2
                 com.cobblemon.mod.common.api.gui.blitk(
                     matrixStack = context.matrices,
                     texture = genderIcon,
@@ -715,7 +723,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                     if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
                         com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                             itemStack = ItemStack(heldItem),
-                            x = leftX + 40 + textRenderer.getWidth(speciesText) + 2 + iconOffset + 0.0,
+                            x = leftX + 40 + nameWidth + 2 + iconOffset + 0.0,
                             y = y + 6.0,
                             scale = 0.6,
                             matrixStack = context.matrices
@@ -799,8 +807,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             matrices.pop()
         }
 
-        // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字☆Lv / 类型 / 性格特性 / 携带物 / IV / 卖家 / 价格
-        val name = (if (confirmDisplayName.isNotEmpty()) confirmDisplayName else entry.species) + (if (entry.shiny) " ☆" else "")
+        // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 卖家 / 价格
+        val name = EntryBadgeRenderer.nameWithShinyStar(
+            if (confirmDisplayName.isNotEmpty()) confirmDisplayName else entry.species, entry.shiny)
         EntryBadgeRenderer.drawInfoLines(context, entry, name, centerX, dialogY + 62)
 
         // 按钮
@@ -857,7 +866,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             val initial = (iconData[index]?.displayName ?: entry.species).take(2)
             val tw = textRenderer.getWidth(initial)
             context.drawTextWithShadow(textRenderer, initial, x + (size - tw) / 2, y + (size - 8) / 2, 0xFFFFFF)
-            if (entry.shiny) context.drawTextWithShadow(textRenderer, "☆", x + size - 6, y - 5, 0xFFFF55)
+            if (entry.shiny) context.drawTextWithShadow(textRenderer, "★", x + size - 6, y - 5, GOLD_COLOR)
             return
         }
         val matrices = context.matrices
@@ -913,24 +922,25 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val hasHeldItem = entry.heldItemId.isNotEmpty() &&
             Identifier.tryParse(entry.heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
 
-        val lines = mutableListOf<Pair<String, Int>>()
-        lines.add("${iconData[listings.indexOf(entry)]?.displayName ?: entry.species}${if (entry.shiny) " ☆" else ""}  ${Text.translatable("cobblemarket.gui.lv").string}${entry.level}" to w)
-        lines.add("${Text.translatable("cobblemarket.gui.tooltip_type").string}${Text.translatable(entry.primaryType).string}${if (entry.secondaryType.isNotEmpty()) " + ${Text.translatable(entry.secondaryType).string}" else ""}" to w)
-        lines.add("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(entry.nature).string}  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(entry.ability).string}" to w)
+        val lines = mutableListOf<Pair<Text, Int>>()
+        lines.add(EntryBadgeRenderer.nameWithShinyStar(iconData[listings.indexOf(entry)]?.displayName ?: entry.species, entry.shiny)
+            .copy().append(Text.literal("  ${Text.translatable("cobblemarket.gui.lv").string}${entry.level}")) to w)
+        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}${Text.translatable(entry.primaryType).string}${if (entry.secondaryType.isNotEmpty()) " + ${Text.translatable(entry.secondaryType).string}" else ""}") to w)
+        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(entry.nature).string}  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(entry.ability).string}") to w)
         var heldItemLine = -1
         if (hasHeldItem) {
             heldItemLine = lines.size
-            lines.add(Text.translatable("cobblemarket.gui.tooltip_held").string to w)
+            lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to w)
         }
-        lines.add("${Text.translatable("cobblemarket.gui.tooltip_ivs").string}" to w)
-        lines.add("  $hp:${entry.ivsHp}" to ivColors[0])
-        lines.add("  $atk:${entry.ivsAtk}" to ivColors[1])
-        lines.add("  $def:${entry.ivsDef}" to ivColors[2])
-        lines.add("  $spa:${entry.ivsSpAtk}" to ivColors[3])
-        lines.add("  $spd:${entry.ivsSpDef}" to ivColors[4])
-        lines.add("  $spe:${entry.ivsSpd}" to ivColors[5])
-        lines.add("${Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).string} ${entry.sellerName}" to w)
-        lines.add("${Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).string} ${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${entry.currencyName}" to w)
+        lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to w)
+        lines.add(Text.literal("  $hp:${entry.ivsHp}") to ivColors[0])
+        lines.add(Text.literal("  $atk:${entry.ivsAtk}") to ivColors[1])
+        lines.add(Text.literal("  $def:${entry.ivsDef}") to ivColors[2])
+        lines.add(Text.literal("  $spa:${entry.ivsSpAtk}") to ivColors[3])
+        lines.add(Text.literal("  $spd:${entry.ivsSpDef}") to ivColors[4])
+        lines.add(Text.literal("  $spe:${entry.ivsSpd}") to ivColors[5])
+        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).string} ${entry.sellerName}") to w)
+        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).string} ${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${entry.currencyName}") to w)
 
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }

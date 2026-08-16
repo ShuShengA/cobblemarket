@@ -5,12 +5,14 @@ import com.shusheng.cobblemarket.network.BanListDataPayload
 import com.shusheng.cobblemarket.network.HistoryDataPayload
 import com.shusheng.cobblemarket.network.ItemBlacklistDataPayload
 import com.shusheng.cobblemarket.network.ItemMarketDataPayload
+import com.shusheng.cobblemarket.network.ItemPriceLimitDataPayload
 import com.shusheng.cobblemarket.network.MarketDataPayload
 import com.shusheng.cobblemarket.network.ItemReturnDataPayload
 import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.MyPokemonListPayload
 import com.shusheng.cobblemarket.network.OpenMarketPayload
 import com.shusheng.cobblemarket.network.PokemonBlacklistDataPayload
+import com.shusheng.cobblemarket.network.PokemonPriceLimitDataPayload
 import com.shusheng.cobblemarket.network.PokemonReturnDataPayload
 import com.shusheng.cobblemarket.screen.AdminBanScreen
 import com.shusheng.cobblemarket.screen.AdminItemScreen
@@ -26,6 +28,7 @@ import com.shusheng.cobblemarket.screen.ItemReturnScreen
 import com.shusheng.cobblemarket.screen.ItemSellScreen
 import com.shusheng.cobblemarket.screen.PokemonBlacklistScreen
 import com.shusheng.cobblemarket.screen.PokemonReturnScreen
+import com.shusheng.cobblemarket.screen.PriceLimitScreen
 import com.shusheng.cobblemarket.screen.SellSelectScreen
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
@@ -68,7 +71,7 @@ object CobbleMarketClient : ClientModInitializer {
                 val inputFocused = screen?.focused is TextFieldWidget
                 if (!inputFocused && (screen is MarketScreen || screen is SellSelectScreen || screen is HistoryScreen || screen is MarketEntryScreen ||
                     screen is ItemMarketScreen || screen is ItemSellScreen || screen is ItemReturnScreen || screen is PokemonReturnScreen ||
-                    screen is BuyConfirmScreen || screen is AdminScreen || screen is AdminPokemonScreen || screen is AdminItemScreen || screen is AdminBanScreen || screen is PokemonBlacklistScreen || screen is ItemBlacklistScreen)
+                    screen is BuyConfirmScreen || screen is AdminScreen || screen is AdminPokemonScreen || screen is AdminItemScreen || screen is AdminBanScreen || screen is PokemonBlacklistScreen || screen is ItemBlacklistScreen || screen is PriceLimitScreen)
                 ) {
                     client.setScreen(null)
                 }
@@ -191,6 +194,26 @@ object CobbleMarketClient : ClientModInitializer {
                 val screen = client.currentScreen
                 if (screen is ItemBlacklistScreen) {
                     screen.onItemBlacklistData(payload)
+                }
+            }
+        }
+
+        ClientPlayNetworking.registerGlobalReceiver(PokemonPriceLimitDataPayload.ID) { payload, _ ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                if (screen is PriceLimitScreen) {
+                    screen.onPokemonPriceLimitData(payload)
+                }
+            }
+        }
+
+        ClientPlayNetworking.registerGlobalReceiver(ItemPriceLimitDataPayload.ID) { payload, _ ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                if (screen is PriceLimitScreen) {
+                    screen.onItemPriceLimitData(payload)
                 }
             }
         }

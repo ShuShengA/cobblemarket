@@ -202,9 +202,11 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             // iconData 按当前页重建，索引即行号
             renderPokemonIcon(context, startOffset + i, iconX, iconY, iconSize)
 
-            val sm = if (p.shiny) " ☆" else ""
             val tc = typeColor(if (p.primaryType.isNotEmpty()) p.primaryType else "cobblemon.type.normal")
-            context.drawText(textRenderer, p.species + sm, leftX + 28, y + 7, tc, false)
+            context.drawText(textRenderer, p.species, leftX + 28, y + 7, tc, false)
+            if (p.shiny) {
+                context.drawText(textRenderer, "★", leftX + 28 + textRenderer.getWidth(p.species) + 2, y + 7, GOLD_COLOR, false)
+            }
             context.drawText(textRenderer, "Lv.${p.level}", leftX + 135, y + 7, 0xAAAAAA, false)
         }
 
@@ -251,13 +253,13 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             if (p.secondaryType.isNotEmpty()) " + ${Text.translatable(p.secondaryType).string}" else ""
 
         val lines = listOf(
-            "${p.species}${if (p.shiny) " ☆" else ""}  Lv.${p.level}" to 0xFFFFFF,
-            "${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText" to 0xFFFFFF,
-            "${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(p.nature).string}  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(p.ability).string}" to 0xFFFFFF,
-            "${Text.translatable("cobblemarket.gui.tooltip_ivs").string}" to 0xFFFFFF,
-            "  $hp:${p.ivsHp}" to 0x66FF66, "  $atk:${p.ivsAtk}" to 0xFF6666,
-            "  $def:${p.ivsDef}" to 0xFFCC66, "  $spa:${p.ivsSpAtk}" to 0x6699FF,
-            "  $spd:${p.ivsSpDef}" to 0x66FF99, "  $spe:${p.ivsSpd}" to 0xFF99FF
+            EntryBadgeRenderer.nameWithShinyStar(p.species, p.shiny).copy().append(Text.literal("  Lv.${p.level}")) to 0xFFFFFF,
+            Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText") to 0xFFFFFF,
+            Text.literal("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(p.nature).string}  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(p.ability).string}") to 0xFFFFFF,
+            Text.translatable("cobblemarket.gui.tooltip_ivs") to 0xFFFFFF,
+            Text.literal("  $hp:${p.ivsHp}") to 0x66FF66, Text.literal("  $atk:${p.ivsAtk}") to 0xFF6666,
+            Text.literal("  $def:${p.ivsDef}") to 0xFFCC66, Text.literal("  $spa:${p.ivsSpAtk}") to 0x6699FF,
+            Text.literal("  $spd:${p.ivsSpDef}") to 0x66FF99, Text.literal("  $spe:${p.ivsSpd}") to 0xFF99FF
         )
         var mw = 0; lines.forEach { mw = maxOf(mw, textRenderer.getWidth(it.first)) }
         val pad = 4

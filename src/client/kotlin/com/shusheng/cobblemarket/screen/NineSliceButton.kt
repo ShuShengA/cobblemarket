@@ -12,14 +12,15 @@ import net.minecraft.util.Identifier
 class NineSliceButton(
     x: Int, y: Int, width: Int, height: Int,
     message: Text,
-    onPress: PressAction
+    onPress: PressAction,
+    var textColor: Int = 0xFFFFFF
 ) : ButtonWidget(x, y, width, height, message, onPress, ButtonWidget.DEFAULT_NARRATION_SUPPLIER) {
 
     override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         drawNineSlice(context, TEXTURE, x, y, width, height, if (isHovered) 1 else 0, TEX_H)
 
         val font = MinecraftClient.getInstance().textRenderer
-        val color = if (active) 0xFFFFFF else 0xA0A0A0
+        val color = if (active) textColor else 0xA0A0A0
         val textX = x + (width - font.getWidth(message)) / 2
         val textY = y + (height - 8) / 2
         context.drawTextWithShadow(font, message, textX, textY, color)

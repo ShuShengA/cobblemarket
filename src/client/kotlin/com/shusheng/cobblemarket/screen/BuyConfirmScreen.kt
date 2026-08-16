@@ -89,8 +89,9 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
 
         val infoY = iconY + iconSize + 8
 
-        // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字☆Lv / 类型 / 性格特性 / 携带物 / IV / 卖家 / 价格
-        val name = (if (displayName.isNotEmpty()) displayName else entry.species) + (if (entry.shiny) " ☆" else "")
+        // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 卖家 / 价格
+        val name = EntryBadgeRenderer.nameWithShinyStar(
+            if (displayName.isNotEmpty()) displayName else entry.species, entry.shiny)
         EntryBadgeRenderer.drawInfoLines(context, entry, name, centerX, infoY)
     }
 
