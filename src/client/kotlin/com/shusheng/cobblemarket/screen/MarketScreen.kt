@@ -520,7 +520,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         return q
     }
 
-    // 防抖计时器：与搜索框 changedListener 配合，见 init 里的注释
+    // 防抖计时器：搜索框 changedListener 与 IV 输入变化都置 dirty，250ms 静默后统一发请求
     override fun tick() {
         if (searchDirty && System.currentTimeMillis() - lastSearchEdit >= 250) {
             searchDirty = false
@@ -604,9 +604,13 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         super.render(context, mouseX, mouseY, delta)
 
+        // IV 变化与搜索框共用 250ms 防抖（searchDirty/lastSearchEdit，见 init 注释）：
+        // 立即发包时，快速输入 "31" 会先发 atk=3 再发 atk=31，后一个请求落在
+        // 服务端 250ms 节流窗口内被静默丢弃，列表停留在旧结果上。
+        // minIvs 每帧同步，防抖期间其他按钮触发的 refreshData 仍带最新 IV 值。
         if (syncIvFromFields()) {
-            currentPage = 1
-            refreshData()
+            searchDirty = true
+            lastSearchEdit = System.currentTimeMillis()
         }
 
         val centerX = width / 2
