@@ -39,3 +39,7 @@ replay_*.log
 *.hprof
 *.jfr
 libs/
+
+# extracted third-party reference assets (Cobblemon resources)
+
+assets/
