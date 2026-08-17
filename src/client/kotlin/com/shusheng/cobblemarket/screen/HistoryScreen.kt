@@ -135,7 +135,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
             val middle = if (showAll) "$seller$buyer $speciesText" else "$speciesText"
             context.drawTextWithShadow(textRenderer, middle, x, y + 4, 0xFFFFFF)
             x += textRenderer.getWidth(middle) + 6
-            val pricePart = "| ${e.price}"
+            val pricePart = "| ${com.shusheng.cobblemarket.client.formatPrice(e.price)} ◆"
             context.drawTextWithShadow(textRenderer, pricePart, x, y + 4, 0x55FFFF)
             if (!showAll && buyer.isNotEmpty()) {
                 x += textRenderer.getWidth(pricePart) + 6

@@ -39,6 +39,11 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
     // 协议分页：服务端按请求的 pageSize 切片，本地只做防溢出截断
     private fun pageItems(): List<ItemEntry> = items.take(maxOf(0, pageSize()))
 
+    /** 拍卖结算完成事件：刷新列表（货已进待取回，不用重开界面） */
+    fun onAuctionSettled() {
+        requestData()
+    }
+
     private fun requestData() {
         // 页大小上限 42 并向下对齐到列数倍数，保证每页都是整行、不出现半行空格
         val cols = columns().coerceAtLeast(1)

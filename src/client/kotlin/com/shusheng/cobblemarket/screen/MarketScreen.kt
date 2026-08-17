@@ -110,6 +110,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     override fun init() {
         super.init()
+        ClientPlayNetworking.send(RequestBalancePayload())
 
         val centerX = width / 2
         val leftX = centerX - panelWidth / 2
@@ -628,16 +629,20 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             centerX, 14, 0xFFFFFF
         )
 
-        // Pending balance (right of collect button)
+        // 余额（货币蓝）+ 待收款（绿），按钮行下方，左对齐；余额来自全局缓存，交易操作后自动刷新
+        val balPrefix = com.shusheng.cobblemarket.client.BalanceCache.balance.takeIf { it.isNotEmpty() }
+            ?.let { Text.translatable("cobblemarket.gui.balance", it).string + "  " } ?: ""
+        context.drawTextWithShadow(textRenderer, balPrefix, leftX, 31, 0x55FFFF)
         context.drawTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.gui.pending_balance", com.shusheng.cobblemarket.client.formatPriceLong(pendingBalance)).string,
-            leftX, 31, 0x55FF55)
+            Text.translatable("cobblemarket.gui.pending_balance", com.shusheng.cobblemarket.client.formatPriceLong(pendingBalance) + " ◆").string,
+            leftX + textRenderer.getWidth(balPrefix), 31, 0x55FF55)
 
-        // Page indicator
-        context.drawCenteredTextWithShadow(
+        // Page indicator（右对齐：左侧放余额行，长数字互不干扰）
+        val pageText = Text.translatable("cobblemarket.gui.page", currentPage, totalPages).formatted(Formatting.GRAY)
+        context.drawTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.gui.page", currentPage, totalPages).formatted(Formatting.GRAY),
-            centerX, 32, 0xFFFFFF
+            pageText,
+            leftX + panelWidth - 4 - textRenderer.getWidth(pageText), 32, 0xFFFFFF
         )
 
         val dividerY = getListStartY() - 4

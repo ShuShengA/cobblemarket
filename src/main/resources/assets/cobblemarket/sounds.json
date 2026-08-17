@@ -30,5 +30,29 @@
         "stream": false
       }
     ]
+  },
+  "auction_bid": {
+    "sounds": [
+      {
+        "name": "cobblemarket:auction_bid",
+        "stream": false
+      }
+    ]
+  },
+  "auction_gavel": {
+    "sounds": [
+      {
+        "name": "cobblemarket:auction_gavel",
+        "stream": false
+      }
+    ]
+  },
+  "auction_bell": {
+    "sounds": [
+      {
+        "name": "cobblemarket:auction_bell",
+        "stream": false
+      }
+    ]
   }
 }

@@ -1,6 +1,11 @@
 package com.shusheng.cobblemarket.client
 
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.network.AuctionEventPayload
+import com.shusheng.cobblemarket.network.AuctionListDataPayload
+import com.shusheng.cobblemarket.network.AuctionSettleSoundPayload
+import com.shusheng.cobblemarket.network.AuctionWarnSoundPayload
+import com.shusheng.cobblemarket.network.BalanceDataPayload
 import com.shusheng.cobblemarket.network.BanListDataPayload
 import com.shusheng.cobblemarket.network.HistoryDataPayload
 import com.shusheng.cobblemarket.network.ItemBlacklistDataPayload
@@ -14,7 +19,10 @@ import com.shusheng.cobblemarket.network.OpenMarketPayload
 import com.shusheng.cobblemarket.network.PokemonBlacklistDataPayload
 import com.shusheng.cobblemarket.network.PokemonPriceLimitDataPayload
 import com.shusheng.cobblemarket.network.PokemonReturnDataPayload
+import com.shusheng.cobblemarket.network.RequestBalancePayload
 import com.shusheng.cobblemarket.screen.AdminBanScreen
+import com.shusheng.cobblemarket.screen.AuctionCreateScreen
+import com.shusheng.cobblemarket.screen.AuctionScreen
 import com.shusheng.cobblemarket.screen.AdminItemScreen
 import com.shusheng.cobblemarket.screen.AdminPokemonScreen
 import com.shusheng.cobblemarket.screen.AdminScreen
@@ -51,6 +59,11 @@ object CobbleMarketClient : ClientModInitializer {
     private lateinit var openMarketKey: KeyBinding
     private var wasEPressed = false
 
+    // 成交音效序列（tick 定时触发）：落槌立即播（与条目消失同帧，第三声警告在 3 秒前已敲完），
+    // 再 0.4 秒播铃声；序列进行中忽略同批后续事件（批结算只播一套）
+    private var settleSoundAt = 0L
+    private var bellSoundAt = 0L
+
     override fun onInitializeClient() {
         openMarketKey = KeyBindingHelper.registerKeyBinding(
             KeyBinding(
@@ -61,6 +74,26 @@ object CobbleMarketClient : ClientModInitializer {
             )
         )
         ClientTickEvents.END_CLIENT_TICK.register { client ->
+            // 成交音效序列：先落槌（立即），再铃声（+0.4s）
+            val tickNow = System.currentTimeMillis()
+            if (settleSoundAt > 0 && tickNow >= settleSoundAt) {
+                settleSoundAt = 0
+                client.soundManager.play(
+                    PositionedSoundInstance.master(
+                        SoundEvent.of(Identifier.of("cobblemarket", "auction_gavel")),
+                        1.0f
+                    )
+                )
+            }
+            if (bellSoundAt > 0 && tickNow >= bellSoundAt) {
+                bellSoundAt = 0
+                client.soundManager.play(
+                    PositionedSoundInstance.master(
+                        SoundEvent.of(Identifier.of("cobblemarket", "auction_bell")),
+                        1.0f
+                    )
+                )
+            }
             while (openMarketKey.wasPressed()) {
                 playEntrySound()
                 client.setScreen(MarketEntryScreen())
@@ -71,7 +104,7 @@ object CobbleMarketClient : ClientModInitializer {
                 val inputFocused = screen?.focused is TextFieldWidget
                 if (!inputFocused && (screen is MarketScreen || screen is SellSelectScreen || screen is HistoryScreen || screen is MarketEntryScreen ||
                     screen is ItemMarketScreen || screen is ItemSellScreen || screen is ItemReturnScreen || screen is PokemonReturnScreen ||
-                    screen is BuyConfirmScreen || screen is AdminScreen || screen is AdminPokemonScreen || screen is AdminItemScreen || screen is AdminBanScreen || screen is PokemonBlacklistScreen || screen is ItemBlacklistScreen || screen is PriceLimitScreen)
+                    screen is BuyConfirmScreen || screen is AdminScreen || screen is AdminPokemonScreen || screen is AdminItemScreen || screen is AdminBanScreen || screen is PokemonBlacklistScreen || screen is ItemBlacklistScreen || screen is PriceLimitScreen || screen is AuctionScreen || screen is AuctionCreateScreen)
                 ) {
                     client.setScreen(null)
                 }
@@ -115,6 +148,8 @@ object CobbleMarketClient : ClientModInitializer {
                 val screen = client.currentScreen
                 if (screen is SellSelectScreen) {
                     screen.onPokemonList(payload)
+                } else if (screen is AuctionCreateScreen) {
+                    screen.onPokemonList(payload)
                 }
             }
         }
@@ -152,8 +187,13 @@ object CobbleMarketClient : ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(MarketResultPayload.ID) { payload, _ ->
             val client = MinecraftClient.getInstance()
             client.execute {
-                playResultSound(payload.success)
                 val screen = client.currentScreen
+                // 出价成功时不播全局成功音：点击「确认出价」时的金币声即为反馈，避免叠音
+                if (!(payload.success && screen is AuctionScreen && screen.isBidDialogOpen())) {
+                    playResultSound(payload.success)
+                }
+                // 交易操作后余额可能变化，主动拉取一次最新余额
+                ClientPlayNetworking.send(RequestBalancePayload())
                 when (screen) {
                     is MarketScreen -> screen.onMarketResult(payload)
                     is SellSelectScreen -> screen.onMarketResult(payload)
@@ -164,6 +204,49 @@ object CobbleMarketClient : ClientModInitializer {
                     is AdminPokemonScreen -> screen.onMarketResult(payload)
                     is AdminItemScreen -> screen.onMarketResult(payload)
                     is AdminBanScreen -> screen.onResult(payload)
+                    is AuctionScreen -> screen.onMarketResult(payload)
+                    is AuctionCreateScreen -> screen.onMarketResult(payload)
+                }
+            }
+        }
+
+        ClientPlayNetworking.registerGlobalReceiver(BalanceDataPayload.ID) { payload, _ ->
+            MinecraftClient.getInstance().execute {
+                BalanceCache.balance = payload.balance
+                BalanceCache.pendingBalance = payload.pendingBalance
+            }
+        }
+
+        ClientPlayNetworking.registerGlobalReceiver(AuctionSettleSoundPayload.ID) { payload, _ ->
+            MinecraftClient.getInstance().execute {
+                // 落槌立即（下一 tick ≤50ms 内）+ 铃声 0.4 秒后；序列进行中忽略同批后续事件
+                if (settleSoundAt <= 0) {
+                    val now = System.currentTimeMillis()
+                    settleSoundAt = now
+                    bellSoundAt = now + 400
+                }
+                // 拍卖场界面内同步落槌动画
+                val screen = MinecraftClient.getInstance().currentScreen
+                if (screen is AuctionScreen) {
+                    screen.onSettleSound(payload.auctionId)
+                }
+            }
+        }
+
+        ClientPlayNetworking.registerGlobalReceiver(AuctionWarnSoundPayload.ID) { payload, _ ->
+            MinecraftClient.getInstance().execute {
+                // 渐强警告声：1→0.4、2→0.6、3→0.8（与成交落槌 1.0 递进）
+                val volume = when (payload.knock) { 1 -> 0.4f; 2 -> 0.6f; else -> 0.8f }
+                MinecraftClient.getInstance().soundManager.play(
+                    PositionedSoundInstance.master(
+                        SoundEvent.of(Identifier.of("cobblemarket", "auction_gavel")),
+                        volume
+                    )
+                )
+                // 拍卖场界面内同步锤子图标敲击动画
+                val screen = MinecraftClient.getInstance().currentScreen
+                if (screen is AuctionScreen) {
+                    screen.onWarnSound(payload.auctionId, payload.knock)
                 }
             }
         }
@@ -214,6 +297,33 @@ object CobbleMarketClient : ClientModInitializer {
                 val screen = client.currentScreen
                 if (screen is PriceLimitScreen) {
                     screen.onItemPriceLimitData(payload)
+                }
+            }
+        }
+
+        ClientPlayNetworking.registerGlobalReceiver(AuctionListDataPayload.ID) { payload, _ ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                if (screen is AuctionScreen) {
+                    screen.onAuctionList(payload)
+                }
+            }
+        }
+
+        ClientPlayNetworking.registerGlobalReceiver(AuctionEventPayload.ID) { payload, _ ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                if (screen is AuctionScreen) {
+                    screen.onAuctionEvent(payload)
+                }
+                // 拍卖结算完成：若正停在返还界面，自动刷新（不用重开界面）
+                if (payload.event == "SETTLED") {
+                    when (screen) {
+                        is PokemonReturnScreen -> screen.onAuctionSettled()
+                        is ItemReturnScreen -> screen.onAuctionSettled()
+                    }
                 }
             }
         }

@@ -726,7 +726,7 @@ private fun parseSortMode(name: String): com.shusheng.cobblemarket.market.SortMo
 
 // 退还物品到背包：insertStack 会扣减传入栈的 count（放入部分），
 // 未完全放入的剩余部分掉落到地面（拾取延迟 0），确保玩家不损失物品
-private fun giveBackItem(stack: ItemStack, player: ServerPlayerEntity) {
+fun giveBackItem(stack: ItemStack, player: ServerPlayerEntity) {
     if (stack.isEmpty) return
     player.inventory.insertStack(stack)
     if (!stack.isEmpty) {
@@ -2116,6 +2116,7 @@ object MarketNetwork {
             if (!RequestThrottle.allow(player.uuid, "request_pokemon_return", RequestThrottle.READ_INTERVAL_MS)) return@registerGlobalReceiver
             val server = player.server
             server.execute {
+                AuctionNetwork.settleAndBroadcast(server) // 打开返还界面即触发到期拍卖结算
                 val state = MarketState.get(server)
                 val returns = state.getPendingReturns(player.uuid)
                 // 协议分页：只打包当前页，避免退回列表过大时打出超大包
@@ -2161,6 +2162,7 @@ object MarketNetwork {
             if (!RequestThrottle.allow(player.uuid, "request_item_return", RequestThrottle.READ_INTERVAL_MS)) return@registerGlobalReceiver
             val server = player.server
             server.execute {
+                AuctionNetwork.settleAndBroadcast(server) // 打开返还界面即触发到期拍卖结算
                 val state = ItemMarketState.get(server)
                 val returns = state.getPendingReturns(player.uuid)
                 // 协议分页：只打包当前页，避免退回列表过大时打出超大包

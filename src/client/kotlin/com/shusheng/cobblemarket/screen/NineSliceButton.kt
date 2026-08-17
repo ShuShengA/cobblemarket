@@ -13,7 +13,8 @@ class NineSliceButton(
     x: Int, y: Int, width: Int, height: Int,
     message: Text,
     onPress: PressAction,
-    var textColor: Int = 0xFFFFFF
+    var textColor: Int = 0xFFFFFF,
+    private val clickSound: Identifier = Identifier.of("cobblemarket", "button_click")
 ) : ButtonWidget(x, y, width, height, message, onPress, ButtonWidget.DEFAULT_NARRATION_SUPPLIER) {
 
     override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -28,7 +29,7 @@ class NineSliceButton(
 
     override fun playDownSound(soundManager: SoundManager) {
         soundManager.play(PositionedSoundInstance.master(
-            SoundEvent.of(Identifier.of("cobblemarket", "button_click")),
+            SoundEvent.of(clickSound),
             1.0f
         ))
     }

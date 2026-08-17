@@ -342,7 +342,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 2, 0xFFFFFF, false)
 
             // 价格过长时用缩写（与物品市场界面一致），完整价格见 tooltip
-            val priceText = com.shusheng.cobblemarket.client.formatPriceShort(entry.price)
+            val priceText = "${com.shusheng.cobblemarket.client.formatPriceShort(entry.price)} ◆"
             context.drawText(textRenderer, priceText, x + 3, y + slotSize - 10, 0x55FFFF, false)
         }
 

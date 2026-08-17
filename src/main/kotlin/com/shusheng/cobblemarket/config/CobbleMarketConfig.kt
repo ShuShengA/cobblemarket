@@ -29,6 +29,16 @@ object CobbleMarketConfig {
         private set
     var pendingReturnRetentionDays: Int = 30
         private set
+    var auctionFeePercent: Double = 5.0
+        private set
+    var auctionDurationOptions: List<Int> = listOf(3, 10, 30, 720) // 分钟制：3m/10m/30m/12h
+        private set
+    var auctionMinBidIncrement: Int = 100
+        private set
+    var auctionAntiSnipeSeconds: Int = 120
+        private set
+    var maxAuctionsPerPlayer: Int = 3
+        private set
 
     fun load() {
         val hasCD = try { Class.forName("fr.harmex.cobbledollars.common.utils.CobbleDollarsPlayer"); true } catch (_: Exception) { false }
@@ -45,8 +55,9 @@ object CobbleMarketConfig {
                     currencyItem = currency["item"] as? String ?: "minecraft:diamond"
                 }
                 val legacyFee = data["listingFeePercent"] as? Double
-                pokemonListingFeePercent = (data["pokemonListingFeePercent"] as? Double) ?: legacyFee ?: 5.0
-                itemListingFeePercent = (data["itemListingFeePercent"] as? Double) ?: legacyFee ?: 5.0
+                // 手续费钳制 0~100：超过 100% 会让卖家账本变负数（抵消后续所有收入）
+                pokemonListingFeePercent = ((data["pokemonListingFeePercent"] as? Double) ?: legacyFee ?: 5.0).coerceIn(0.0, 100.0)
+                itemListingFeePercent = ((data["itemListingFeePercent"] as? Double) ?: legacyFee ?: 5.0).coerceIn(0.0, 100.0)
                 maxPokemonListingsPerPlayer = (data["maxPokemonListingsPerPlayer"] as? Double)?.toInt() ?: 0
                 maxItemListingsPerPlayer = (data["maxItemListingsPerPlayer"] as? Double)?.toInt() ?: 0
                 val rawDuration = (data["listingDurationDays"] as? Double)?.toInt()
@@ -55,6 +66,13 @@ object CobbleMarketConfig {
                     CobbleMarket.LOGGER.warn("Config listingDurationDays={} is invalid (must be positive); clamped to 1", rawDuration)
                 }
                 pendingReturnRetentionDays = (data["pendingReturnRetentionDays"] as? Double)?.toInt() ?: 30
+                auctionFeePercent = ((data["auctionFeePercent"] as? Double) ?: pokemonListingFeePercent).coerceIn(0.0, 100.0)
+                val rawDurations = (data["auctionDurationOptions"] as? List<*>)
+                    ?.mapNotNull { (it as? Number)?.toInt()?.coerceAtLeast(1) } // 0/负数 → 1 分钟（上架即到期无意义）
+                auctionDurationOptions = rawDurations?.takeIf { it.isNotEmpty() } ?: listOf(3, 10, 30, 720)
+                auctionMinBidIncrement = ((data["auctionMinBidIncrement"] as? Double)?.toInt() ?: 100).coerceAtLeast(1)
+                auctionAntiSnipeSeconds = ((data["auctionAntiSnipeSeconds"] as? Double)?.toInt() ?: 120).coerceAtLeast(0)
+                maxAuctionsPerPlayer = (data["maxAuctionsPerPlayer"] as? Double)?.toInt() ?: 3
             } catch (e: Exception) {
                 CobbleMarket.LOGGER.warn("Failed to load config: ${e.message}")
                 save()
@@ -73,7 +91,12 @@ object CobbleMarketConfig {
                 "maxPokemonListingsPerPlayer" to "每个玩家同时活跃的精灵上架数量上限（0=不限制）/ Max active Pokemon listings per player (0=unlimited)",
                 "maxItemListingsPerPlayer" to "每个玩家同时活跃的物品上架数量上限（0=不限制）/ Max active item listings per player (0=unlimited)",
                 "listingDurationDays" to "上架过期天数 / Listing duration in days",
-                "pendingReturnRetentionDays" to "待领取退回保留天数（自进入退回列表起算）。超期未领取的退回将被永久删除，资产不保留！0 = 永不清理。/ Days to keep unclaimed returns (counted from entering the return list). Overdue unclaimed returns will be permanently DELETED with NO refund! 0 = keep forever."
+                "pendingReturnRetentionDays" to "待领取退回保留天数（自进入退回列表起算）。超期未领取的退回将被永久删除，资产不保留！0 = 永不清理。/ Days to keep unclaimed returns (counted from entering the return list). Overdue unclaimed returns will be permanently DELETED with NO refund! 0 = keep forever.",
+                "auctionFeePercent" to "拍卖成交手续费百分比（0=免手续费）/ Auction fee percentage charged on final price (0=no fee)",
+                "auctionDurationOptions" to "拍卖时长档位（分钟）/ Auction duration options in minutes",
+                "auctionMinBidIncrement" to "默认最低加价幅度（卖家上架时可自定，留空用此值）/ Default minimum bid increment (sellers may override per auction)",
+                "auctionAntiSnipeSeconds" to "反狙击延长秒数：结束前该窗口内的出价会把结束时间延长到该秒数（0=关闭）/ Anti-snipe extension in seconds: bids within this window extend the end time (0=off)",
+                "maxAuctionsPerPlayer" to "每个玩家同时进行的拍卖数量上限（0=不限制）/ Max concurrent auctions per player (0=unlimited)"
             ),
             "currency" to mapOf("cobbledollars" to cobbledollars, "item" to currencyItem),
             "pokemonListingFeePercent" to pokemonListingFeePercent,
@@ -81,7 +104,12 @@ object CobbleMarketConfig {
             "maxPokemonListingsPerPlayer" to maxPokemonListingsPerPlayer,
             "maxItemListingsPerPlayer" to maxItemListingsPerPlayer,
             "listingDurationDays" to listingDurationDays,
-            "pendingReturnRetentionDays" to pendingReturnRetentionDays
+            "pendingReturnRetentionDays" to pendingReturnRetentionDays,
+            "auctionFeePercent" to auctionFeePercent,
+            "auctionDurationOptions" to auctionDurationOptions,
+            "auctionMinBidIncrement" to auctionMinBidIncrement,
+            "auctionAntiSnipeSeconds" to auctionAntiSnipeSeconds,
+            "maxAuctionsPerPlayer" to maxAuctionsPerPlayer
         )
         configFile.writeText(gson.toJson(data))
     }

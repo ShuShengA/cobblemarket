@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.network.BuyItemPayload
 import com.shusheng.cobblemarket.network.CancelItemPayload
 import com.shusheng.cobblemarket.network.CollectBalancePayload
+import com.shusheng.cobblemarket.network.RequestBalancePayload
 import com.shusheng.cobblemarket.network.ItemEntry
 import com.shusheng.cobblemarket.network.ItemMarketDataPayload
 import com.shusheng.cobblemarket.network.MarketResultPayload
@@ -63,6 +64,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     override fun init() {
         super.init()
+        ClientPlayNetworking.send(RequestBalancePayload())
         val leftX = width / 2 - panelWidth / 2
 
         // 收款 / 返回
@@ -220,13 +222,18 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             Text.translatable("cobblemarket.item.title").formatted(Formatting.GOLD),
             centerX, 14, 0xFFFFFF)
 
+        // 余额（货币蓝）+ 待收款（绿），按钮行下方，左对齐；页码右对齐，长数字互不干扰
+        val balPrefix = com.shusheng.cobblemarket.client.BalanceCache.balance.takeIf { it.isNotEmpty() }
+            ?.let { Text.translatable("cobblemarket.gui.balance", it).string + "  " } ?: ""
+        context.drawTextWithShadow(textRenderer, balPrefix, leftX, 31, 0x55FFFF)
         context.drawTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.gui.pending_balance", com.shusheng.cobblemarket.client.formatPriceLong(pendingBalance)).string,
-            leftX, 31, 0x55FF55)
+            Text.translatable("cobblemarket.gui.pending_balance", com.shusheng.cobblemarket.client.formatPriceLong(pendingBalance) + " ◆").string,
+            leftX + textRenderer.getWidth(balPrefix), 31, 0x55FF55)
 
-        context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.gui.page", currentPage, totalPages).formatted(Formatting.GRAY),
-            centerX, 32, 0xFFFFFF)
+        val pageText = Text.translatable("cobblemarket.gui.page", currentPage, totalPages).formatted(Formatting.GRAY)
+        context.drawTextWithShadow(textRenderer,
+            pageText,
+            leftX + panelWidth - 4 - textRenderer.getWidth(pageText), 32, 0xFFFFFF)
 
         if (entries.isEmpty()) {
             context.drawCenteredTextWithShadow(textRenderer,
@@ -268,7 +275,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             val countText = "×${entry.count}"
             context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 2, 0xFFFFFF, false)
 
-            val priceText = com.shusheng.cobblemarket.client.formatPriceShort(entry.price)
+            val priceText = "${com.shusheng.cobblemarket.client.formatPriceShort(entry.price)} ◆"
             context.drawText(textRenderer, priceText, x + 3, y + slotSize - 10, 0x55FFFF, false)
         }
 

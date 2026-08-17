@@ -4,6 +4,8 @@ import com.shusheng.cobblemarket.command.MarketCommands
 import com.shusheng.cobblemarket.event.TransactionHistory
 import com.shusheng.cobblemarket.market.ItemMarketState
 import com.shusheng.cobblemarket.market.MarketState
+import com.shusheng.cobblemarket.network.AuctionNetwork
+import com.shusheng.cobblemarket.network.BalanceNetwork
 import com.shusheng.cobblemarket.network.BanNetwork
 import com.shusheng.cobblemarket.network.BlacklistNetwork
 import com.shusheng.cobblemarket.network.ItemBlacklistNetwork
@@ -30,6 +32,8 @@ object CobbleMarket : ModInitializer {
 		BlacklistNetwork.register()
 		ItemBlacklistNetwork.register()
 		PriceLimitNetwork.register()
+		AuctionNetwork.register()
+		BalanceNetwork.register()
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()
 		TransactionHistory.register()
