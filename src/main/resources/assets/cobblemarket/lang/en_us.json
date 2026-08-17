@@ -216,6 +216,7 @@
   "cobblemarket.cmd.login_earnings": "You earned %d %s from market sales while offline! Claim it in the market.",
 
   "cobblemarket.network.not_found": "Listing not found or no longer active.",
+  "cobblemarket.network.insufficient_stock": "Insufficient stock, only %s left.",
   "cobblemarket.network.invalid_price": "Invalid price!",
   "cobblemarket.network.item_invalid": "This listing's item data is invalid. Please contact a server admin.",
   "cobblemarket.network.collect_failed": "Failed to collect your balance. It has been kept safe, please try again later.",

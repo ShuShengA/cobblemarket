@@ -216,6 +216,7 @@
   "cobblemarket.cmd.login_earnings": "离线期间市场出售，你有 %d %s 待收款，请到市场领取！",
 
   "cobblemarket.network.not_found": "未找到上架或已失效。",
+  "cobblemarket.network.insufficient_stock": "库存不足，剩余 %s 个。",
   "cobblemarket.network.invalid_price": "价格无效！",
   "cobblemarket.network.item_invalid": "该挂单的物品数据无效，请联系管理员。",
   "cobblemarket.network.collect_failed": "领取失败，余额已保留，请稍后再试。",

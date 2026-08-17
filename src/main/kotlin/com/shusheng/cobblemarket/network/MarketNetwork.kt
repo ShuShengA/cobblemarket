@@ -1830,10 +1830,18 @@ object MarketNetwork {
                     return@execute
                 }
                 val count = payload.count
-                if (count <= 0 || count > listing.count) {
+                if (count <= 0) {
                     ServerPlayNetworking.send(
                         player,
                         MarketResultPayload(false, Text.translatable("cobblemarket.network.not_found"))
+                    )
+                    return@execute
+                }
+                // 库存不足（可能被其他玩家抢先购买）：提示剩余数量，引导重新输入
+                if (count > listing.count) {
+                    ServerPlayNetworking.send(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.network.insufficient_stock", listing.count))
                     )
                     return@execute
                 }
