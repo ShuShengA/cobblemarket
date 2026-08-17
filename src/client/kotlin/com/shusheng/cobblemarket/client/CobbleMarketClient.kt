@@ -59,9 +59,7 @@ object CobbleMarketClient : ClientModInitializer {
     private lateinit var openMarketKey: KeyBinding
     private var wasEPressed = false
 
-    // 成交音效序列（tick 定时触发）：落槌立即播（与条目消失同帧，第三声警告在 3 秒前已敲完），
-    // 再 0.4 秒播铃声；序列进行中忽略同批后续事件（批结算只播一套）
-    private var settleSoundAt = 0L
+    // 成交铃声定时（tick 触发）：落槌立即播放，铃声 0.4 秒后（多拍卖同批结算时铃声只响一次）
     private var bellSoundAt = 0L
 
     override fun onInitializeClient() {
@@ -74,17 +72,8 @@ object CobbleMarketClient : ClientModInitializer {
             )
         )
         ClientTickEvents.END_CLIENT_TICK.register { client ->
-            // 成交音效序列：先落槌（立即），再铃声（+0.4s）
+            // 成交铃声定时（落槌后 0.4 秒）
             val tickNow = System.currentTimeMillis()
-            if (settleSoundAt > 0 && tickNow >= settleSoundAt) {
-                settleSoundAt = 0
-                client.soundManager.play(
-                    PositionedSoundInstance.master(
-                        SoundEvent.of(Identifier.of("cobblemarket", "auction_gavel")),
-                        1.0f
-                    )
-                )
-            }
             if (bellSoundAt > 0 && tickNow >= bellSoundAt) {
                 bellSoundAt = 0
                 client.soundManager.play(
@@ -219,12 +208,14 @@ object CobbleMarketClient : ClientModInitializer {
 
         ClientPlayNetworking.registerGlobalReceiver(AuctionSettleSoundPayload.ID) { payload, _ ->
             MinecraftClient.getInstance().execute {
-                // 落槌立即（下一 tick ≤50ms 内）+ 铃声 0.4 秒后；序列进行中忽略同批后续事件
-                if (settleSoundAt <= 0) {
-                    val now = System.currentTimeMillis()
-                    settleSoundAt = now
-                    bellSoundAt = now + 400
-                }
+                // 落槌立即播放（与条目消失同帧；受众已定向为卖家/参与者，多拍卖同批时各自播放）
+                MinecraftClient.getInstance().soundManager.play(
+                    PositionedSoundInstance.master(
+                        SoundEvent.of(Identifier.of("cobblemarket", "auction_gavel")),
+                        1.0f
+                    )
+                )
+                bellSoundAt = System.currentTimeMillis() + 400
                 // 拍卖场界面内同步落槌动画
                 val screen = MinecraftClient.getInstance().currentScreen
                 if (screen is AuctionScreen) {

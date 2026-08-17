@@ -8,7 +8,6 @@ import net.minecraft.server.MinecraftServer
 import net.minecraft.world.PersistentState
 import java.util.UUID
 
-private const val AUCTION_SETTLE_INTERVAL_NANOS = 15_000_000_000L
 
 enum class AuctionType {
     POKEMON, ITEM
@@ -163,8 +162,6 @@ class AuctionState private constructor() : PersistentState() {
         auctions.values.count { it.sellerUuid == sellerUuid && it.isActive() }
 
     // 结算扫描节流：与挂单过期检查同款（nanoTime 单调时钟节流，判定用 wall-clock）
-    private var lastSettleCheckNanos = -1L
-
     // 结束警告声状态（内存即可：重启后重新警告无害）；按结束时刻区分，反狙击延长后重新敲
     private val warnEndsAt = mutableMapOf<UUID, Long>()
     private val warnKnockCount = mutableMapOf<UUID, Int>()
@@ -196,9 +193,8 @@ class AuctionState private constructor() : PersistentState() {
      * 流拍：物品退回卖家待取回。失败出价者的钱在被超价时已即时退还。
      */
     fun settleExpiredAuctions(server: MinecraftServer, currentTime: Long): List<AuctionListing> {
-        val nowNanos = System.nanoTime()
-        if (lastSettleCheckNanos >= 0L && nowNanos - lastSettleCheckNanos < AUCTION_SETTLE_INTERVAL_NANOS) return emptyList()
-        lastSettleCheckNanos = nowNanos
+        // 无节流：到期拍卖应立即结算（15 秒节流会让错开到期的拍卖挂「结算中」十几秒，
+        // 落槌延迟；全表 filter 本身极轻，惰性触发频率也低，无需节流）
         val due = auctions.values.filter { it.isActive() && it.endsAt <= currentTime }
         val settled = mutableListOf<AuctionListing>()
         due.forEach { auction ->

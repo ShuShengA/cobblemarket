@@ -96,7 +96,7 @@ object CobbleMarketConfig {
                 "auctionDurationOptions" to "拍卖时长档位（分钟）/ Auction duration options in minutes",
                 "auctionMinBidIncrement" to "默认最低加价幅度（卖家上架时可自定，留空用此值）/ Default minimum bid increment (sellers may override per auction)",
                 "auctionAntiSnipeSeconds" to "反狙击延长秒数：结束前该窗口内的出价会把结束时间延长到该秒数（0=关闭）/ Anti-snipe extension in seconds: bids within this window extend the end time (0=off)",
-                "maxAuctionsPerPlayer" to "每个玩家同时进行的拍卖数量上限（0=不限制）/ Max concurrent auctions per player (0=unlimited)"
+                "maxAuctionsPerPlayer" to "每个玩家同时进行的拍卖数量上限，精灵与物品合计（0=不限制）。玩家较多的服务器建议保持较小值，避免全服活跃拍卖总量过大导致服务器卡顿 / Max concurrent auctions per player, Pokémon and items combined (0=unlimited). On crowded servers keep this small to avoid server lag from too many active auctions"
             ),
             "currency" to mapOf("cobbledollars" to cobbledollars, "item" to currencyItem),
             "pokemonListingFeePercent" to pokemonListingFeePercent,
