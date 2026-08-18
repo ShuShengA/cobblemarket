@@ -6,6 +6,7 @@ import com.shusheng.cobblemarket.network.AuctionListDataPayload
 import com.shusheng.cobblemarket.network.AuctionSettleSoundPayload
 import com.shusheng.cobblemarket.network.AuctionWarnSoundPayload
 import com.shusheng.cobblemarket.network.BalanceDataPayload
+import com.shusheng.cobblemarket.network.EggTradingStatePayload
 import com.shusheng.cobblemarket.network.BanListDataPayload
 import com.shusheng.cobblemarket.network.HistoryDataPayload
 import com.shusheng.cobblemarket.network.ItemBlacklistDataPayload
@@ -240,6 +241,15 @@ object CobbleMarketClient : ClientModInitializer {
                 val screen = MinecraftClient.getInstance().currentScreen
                 if (screen is AuctionScreen) {
                     screen.onWarnSound(payload.auctionId, payload.knock)
+                }
+            }
+        }
+
+        ClientPlayNetworking.registerGlobalReceiver(EggTradingStatePayload.ID) { payload, _ ->
+            MinecraftClient.getInstance().execute {
+                val screen = MinecraftClient.getInstance().currentScreen
+                if (screen is AdminScreen) {
+                    screen.onEggTradingState(payload.enabled)
                 }
             }
         }

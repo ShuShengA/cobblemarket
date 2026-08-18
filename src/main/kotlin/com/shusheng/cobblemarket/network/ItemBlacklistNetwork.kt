@@ -35,6 +35,32 @@ data class AddItemBlacklistPayload(val itemName: String) : CustomPayload {
     }
 }
 
+// ── C2S: 批量添加物品黑名单（完整物品 ID 列表，如蛋的全部属性变体） ──
+
+data class AddItemsBlacklistPayload(val itemIds: List<String>) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<AddItemsBlacklistPayload>(CobbleMarket.id("add_items_blacklist"))
+        val CODEC: PacketCodec<PacketByteBuf, AddItemsBlacklistPayload> = PacketCodec.of(
+            { p, b -> b.writeVarInt(p.itemIds.size); p.itemIds.forEach { b.writeString(it) } },
+            { b -> AddItemsBlacklistPayload((0 until b.readVarInt()).map { b.readString() }) }
+        )
+    }
+}
+
+// ── C2S: 批量删除物品黑名单（解封当前搜索匹配的条目） ──
+
+data class RemoveItemsBlacklistPayload(val itemIds: List<String>) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RemoveItemsBlacklistPayload>(CobbleMarket.id("remove_items_blacklist"))
+        val CODEC: PacketCodec<PacketByteBuf, RemoveItemsBlacklistPayload> = PacketCodec.of(
+            { p, b -> b.writeVarInt(p.itemIds.size); p.itemIds.forEach { b.writeString(it) } },
+            { b -> RemoveItemsBlacklistPayload((0 until b.readVarInt()).map { b.readString() }) }
+        )
+    }
+}
+
 // ── C2S: 删除物品黑名单 ──
 
 data class RemoveItemBlacklistPayload(val itemId: String) : CustomPayload {
@@ -66,7 +92,9 @@ object ItemBlacklistNetwork {
     fun register() {
         PayloadTypeRegistry.playC2S().register(RequestItemBlacklistPayload.ID, RequestItemBlacklistPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(AddItemBlacklistPayload.ID, AddItemBlacklistPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(AddItemsBlacklistPayload.ID, AddItemsBlacklistPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(RemoveItemBlacklistPayload.ID, RemoveItemBlacklistPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(RemoveItemsBlacklistPayload.ID, RemoveItemsBlacklistPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(ItemBlacklistDataPayload.ID, ItemBlacklistDataPayload.CODEC)
 
         ServerPlayNetworking.registerGlobalReceiver(RequestItemBlacklistPayload.ID) { _, context ->
@@ -98,6 +126,26 @@ object ItemBlacklistNetwork {
             }
         }
 
+        ServerPlayNetworking.registerGlobalReceiver(AddItemsBlacklistPayload.ID) { payload, context ->
+            val player = context.player()
+            if (!player.hasPermissionLevel(2)) return@registerGlobalReceiver
+            val server = player.server
+            server.execute {
+                val state = ItemBlacklistState.get(server)
+                var added = 0
+                payload.itemIds.forEach { id ->
+                    if (net.minecraft.util.Identifier.tryParse(id) != null) {
+                        state.add(id)
+                        added++
+                    }
+                }
+                ServerPlayNetworking.send(player, ItemBlacklistDataPayload(state.getAll()))
+                player.sendMessage(
+                    net.minecraft.text.Text.translatable("cobblemarket.blacklist.added_all", added)
+                        .formatted(net.minecraft.util.Formatting.GREEN), false)
+            }
+        }
+
         ServerPlayNetworking.registerGlobalReceiver(RemoveItemBlacklistPayload.ID) { payload, context ->
             val player = context.player()
             if (!player.hasPermissionLevel(2)) return@registerGlobalReceiver
@@ -106,6 +154,17 @@ object ItemBlacklistNetwork {
                 ItemBlacklistState.get(server).remove(payload.itemId)
                 val entries = ItemBlacklistState.get(server).getAll()
                 ServerPlayNetworking.send(player, ItemBlacklistDataPayload(entries))
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(RemoveItemsBlacklistPayload.ID) { payload, context ->
+            val player = context.player()
+            if (!player.hasPermissionLevel(2)) return@registerGlobalReceiver
+            val server = player.server
+            server.execute {
+                val state = ItemBlacklistState.get(server)
+                payload.itemIds.forEach { state.remove(it) }
+                ServerPlayNetworking.send(player, ItemBlacklistDataPayload(state.getAll()))
             }
         }
     }

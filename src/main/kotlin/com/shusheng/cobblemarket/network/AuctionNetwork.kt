@@ -422,6 +422,14 @@ object AuctionNetwork {
                     return@execute
                 }
                 val authoritativeItemId = Registries.ITEM.getId(targetStack.item).toString()
+                // 蛋交易开关（默认关闭）：蛋走物品链路不经过精灵黑名单，需服主显式开启
+                if (isEggItem(authoritativeItemId) && !com.shusheng.cobblemarket.config.CobbleMarketConfig.eggTradingEnabled) {
+                    ServerPlayNetworking.send(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.network.egg_trading_disabled"))
+                    )
+                    return@execute
+                }
                 if (com.shusheng.cobblemarket.market.ItemBlacklistState.get(server).contains(authoritativeItemId)) {
                     ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.item_blocked")))
                     return@execute
@@ -451,14 +459,14 @@ object AuctionNetwork {
                 var available = 0
                 for (i in 0 until main.size) {
                     val stack = main[i]
-                    if (ItemStack.areItemsAndComponentsEqual(stack, targetStack)) available += stack.count
+                    if (itemsEqualForTrading(stack, targetStack)) available += stack.count
                 }
                 if (available < payload.count) {
                     ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.not_found")))
                     return@execute
                 }
                 val listingNbt = try {
-                    main.firstOrNull { ItemStack.areItemsAndComponentsEqual(it, targetStack) }
+                    main.firstOrNull { itemsEqualForTrading(it, targetStack) }
                         ?.encode(player.serverWorld.registryManager) as? NbtCompound
                 } catch (e: Exception) {
                     CobbleMarket.LOGGER.error("Failed to encode item stack for auction by {}: {}", player.uuid, e.message)
@@ -474,7 +482,7 @@ object AuctionNetwork {
                 var remaining = payload.count
                 for (i in 0 until main.size) {
                     val stack = main[i]
-                    if (ItemStack.areItemsAndComponentsEqual(stack, targetStack)) {
+                    if (itemsEqualForTrading(stack, targetStack)) {
                         val r = minOf(remaining, stack.count)
                         stack.decrement(r)
                         remaining -= r
@@ -540,6 +548,32 @@ object AuctionNetwork {
                 if (auction.sellerUuid == player.uuid) {
                     ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.cannot_bid_own")))
                     return@execute
+                }
+                // 物品拍卖治理即时生效：蛋交易开关关闭/物品黑名单拦截存量拍卖的出价（卖家可自行下架取回）
+                if (auction.type == AuctionType.ITEM) {
+                    if (isEggItem(auction.species) && !CobbleMarketConfig.eggTradingEnabled) {
+                        ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.egg_trading_disabled")))
+                        return@execute
+                    }
+                    if (com.shusheng.cobblemarket.market.ItemBlacklistState.get(server).contains(auction.species)) {
+                        ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.item_blocked")))
+                        return@execute
+                    }
+                }
+                // 精灵拍卖治理即时生效：存量精灵拍卖加入黑名单后拦截出价
+                if (auction.type == AuctionType.POKEMON) {
+                    val pokemon = try {
+                        com.cobblemon.mod.common.pokemon.Pokemon()
+                            .loadFromNBT(player.serverWorld.registryManager, auction.pokemonNbt ?: throw IllegalStateException("missing pokemonNbt"))
+                    } catch (e: Exception) {
+                        CobbleMarket.LOGGER.warn("Failed to load pokemon NBT for auction {}: {}", auction.id, e.message)
+                        ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.ended")))
+                        return@execute
+                    }
+                    if (com.shusheng.cobblemarket.market.PokemonBlacklistState.get(server).isBlacklisted(pokemon)) {
+                        ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.blocked")))
+                        return@execute
+                    }
                 }
                 if (payload.amount < auction.startingPrice || payload.amount <= auction.currentPrice) {
                     ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.bid_too_low")))

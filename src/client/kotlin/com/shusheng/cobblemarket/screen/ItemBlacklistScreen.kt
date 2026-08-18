@@ -29,6 +29,18 @@ class ItemBlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist_
     private var scrollOffset = 0
     private var backButton: NineSliceButton? = null
     private var addButton: NineSliceButton? = null
+    private var unbanAllButton: NineSliceButton? = null
+
+    private fun updateUnbanAllButton() {
+        val hasSearch = !searchField?.text?.trim().isNullOrEmpty()
+        unbanAllButton?.visible = hasSearch && filteredEntries().isNotEmpty()
+    }
+
+    private fun confirmUnbanAll() {
+        val list = filteredEntries()
+        if (list.isEmpty()) return
+        ClientPlayNetworking.send(com.shusheng.cobblemarket.network.RemoveItemsBlacklistPayload(list))
+    }
     private val removeButtons = mutableListOf<NineSliceButton>()
 
     // 添加对话框的匹配物品选择：输入后列出全部匹配物品（如"钻石"→钻石/钻石剑/钻石原矿…），点选确认
@@ -39,6 +51,7 @@ class ItemBlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist_
     private val itemOptionButtons = mutableListOf<NineSliceButton>()
     private var itemSelectButton: NineSliceButton? = null
     private var addConfirmButton: NineSliceButton? = null
+    private var batchAddButton: NineSliceButton? = null
     private var addCancelButton: NineSliceButton? = null
     private val MAX_ITEM_LIST_ROWS = 8
 
@@ -60,6 +73,7 @@ class ItemBlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist_
 
         searchField = TextFieldWidget(textRenderer, leftX + 2, 44, panelWidth - 4 - 52 - 20, 16, Text.translatable("cobblemarket.gui.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.item.search").formatted(Formatting.GRAY))
+        searchField?.setChangedListener { _ -> updateUnbanAllButton() }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
 
@@ -69,6 +83,15 @@ class ItemBlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist_
         )
         addButton = addBtn
         addDrawableChild(addBtn)
+
+        // 全部解封：仅搜索框有内容且匹配非空时显示，解封当前搜索匹配的全部条目
+        unbanAllButton = NineSliceButton(
+            leftX + panelWidth - 52, 44, 50, 16,
+            Text.translatable("cobblemarket.blacklist.remove_all"),
+            { confirmUnbanAll() }
+        )
+        unbanAllButton?.visible = false
+        addDrawableChild(unbanAllButton)
 
         scrollOffset = 0
         ClientPlayNetworking.send(RequestItemBlacklistPayload())
@@ -110,12 +133,27 @@ class ItemBlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist_
             { closeAddDialog() }
         )
         addDrawableChild(addCancelButton)
+
+        // 批量拉黑：匹配多个时显示（如蛋的全部属性变体）
+        batchAddButton = NineSliceButton(
+            centerX - 40, dialogY + 96, 80, 20,
+            Text.translatable("cobblemarket.blacklist.add_all"),
+            { confirmAddAll() }
+        )
+        batchAddButton?.visible = false
+        addDrawableChild(batchAddButton)
+    }
+
+    private fun confirmAddAll() {
+        if (matchedItems.isEmpty()) return
+        ClientPlayNetworking.send(com.shusheng.cobblemarket.network.AddItemsBlacklistPayload(matchedItems))
+        closeAddDialog()
     }
 
     private fun renderAddDialogBackground(context: DrawContext) {
         val centerX = width / 2
         val dialogW = 220
-        val dialogH = 110
+        val dialogH = 130
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
@@ -166,6 +204,7 @@ class ItemBlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist_
         itemListScroll = 0
         rebuildItemList()
         updateItemSelectButton()
+        batchAddButton?.visible = matchedItems.size > 1
         previewItemId = matchedItems.getOrNull(selectedItemIndex) ?: matchedItems.firstOrNull()
     }
 
@@ -211,6 +250,7 @@ class ItemBlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist_
         itemOptionButtons.clear()
         addConfirmButton?.visible = !itemListOpen
         addCancelButton?.visible = !itemListOpen
+        batchAddButton?.visible = !itemListOpen && matchedItems.size > 1
         if (!itemListOpen) return
         val centerX = width / 2
         val dialogY = height / 2 - 55
@@ -245,6 +285,7 @@ class ItemBlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist_
         itemOptionButtons.clear()
         itemSelectButton = null
         addConfirmButton = null
+        batchAddButton = null
         addCancelButton = null
         clearChildren()
         init()

@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.market
 
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.network.itemsEqualForTrading
 import net.minecraft.item.ItemStack
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.nbt.NbtList
@@ -198,7 +199,7 @@ class ItemMarketState private constructor() : PersistentState() {
         for (i in 0 until main.size) {
             if (stack.isEmpty) return
             val slot = main[i]
-            if (!slot.isEmpty && ItemStack.areItemsAndComponentsEqual(slot, stack)) {
+            if (!slot.isEmpty && itemsEqualForTrading(slot, stack)) {
                 val space = slot.maxCount - slot.count
                 if (space > 0) {
                     val r = minOf(space, stack.count)

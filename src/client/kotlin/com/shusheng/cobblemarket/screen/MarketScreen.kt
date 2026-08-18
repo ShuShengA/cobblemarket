@@ -945,7 +945,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         lines.add(Text.literal("  $spd:${entry.ivsSpDef}") to ivColors[4])
         lines.add(Text.literal("  $spe:${entry.ivsSpd}") to ivColors[5])
         lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).string} ${entry.sellerName}") to w)
-        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).string} ${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${entry.currencyName}") to w)
+        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).string} ${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}") to w)
 
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }

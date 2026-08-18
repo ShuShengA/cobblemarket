@@ -245,7 +245,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             Text.translatable("cobblemarket.item.sell_count").formatted(Formatting.GRAY).append(": ").append("×${entry.count}"),
             centerX, dialogY + 80, 0xFFFFFF)
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${entry.price} ${entry.currencyName}"),
+            Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${entry.price} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}"),
             centerX, dialogY + 94, 0xFFFFFF)
 
         val btnW = 80
@@ -364,7 +364,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             lines.add(Text.literal(entry.itemId))
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).append(" ").append(entry.sellerName))
-        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${entry.currencyName}"))
+        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}"))
         lines.add(Text.literal("×${entry.count}"))
 
         var maxWidth = 0

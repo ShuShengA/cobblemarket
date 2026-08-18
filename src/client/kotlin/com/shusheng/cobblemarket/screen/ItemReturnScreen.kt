@@ -202,7 +202,7 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
             lines.add(Text.literal(entry.itemId))
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).append(" ").append(entry.sellerName))
-        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${entry.price} ${entry.currencyName}"))
+        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${entry.price} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}"))
         lines.add(Text.literal("×${entry.count}"))
 
         var maxWidth = 0

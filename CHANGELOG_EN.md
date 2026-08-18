@@ -5,13 +5,20 @@
 ### New Features: Auction House
 
 - **Auction hall**: Pokémon / Items / Mine tabs, real-time countdown (seconds shown in the last 3 minutes), seller avatars, full row info (ball / colored species name / shiny star / gender / held item)
-- **Create auction**: Pokémon (search / IV / shiny / type filters) + Items (inventory scan) dual tabs; starting price validated against price limits (items scaled by unit price × quantity); min increment can be blank (server default); duration options; max 3 concurrent auctions per player (Pokémon + items combined, configurable)
-- **Bidding**: bids charged instantly; outbid amounts auto-returned to pending balance (yellow notice); raising your own bid only costs the difference; cannot bid on your own auction; min increment enforced
+- **Create auction**: Pokémon (search / IV / shiny / type filters, same as regular listing) + Items (inventory scan) dual tabs; starting price validated against price limits (items scaled by unit price × quantity); min increment can be blank (server default); duration options; max 3 concurrent auctions per player (Pokémon + items combined, configurable)
+- **Bidding**: bids charged instantly; outbid amounts auto-returned to pending balance (yellow notice); raising your own bid only tops up the difference; cannot bid on your own auction; min increment enforced
 - **Anti-snipe**: bids within the last 120 seconds (configurable) reset the end time; bids after the end are always rejected
-- **Settlement**: winner's item goes to Pending Claims, seller receives final price minus fee (configurable 0~100%); no bids = returned to the seller; auction records removed immediately after settlement (prevents save bloat); seller and winner get chat notifications
+- **Settlement**: winner's item goes to Pending Claims, seller receives final price minus fee (configurable 0~100%); no bids = returned to the seller; finished auction records are cleaned up automatically; seller and winner get chat notifications
 - **Auction sounds**: coin sound on bid confirm; three crescendo gavel knocks at 10s / 6s / 3s (with hammer icon animation in the row); final gavel + bell on settlement. Sounds are sent only to the seller and bidders — bystanders are not disturbed
 - **Rules button**: hover tooltip in the auction hall with full rules (gold headers / white text / red highlights / dividers, bilingual)
 - **OP force-cancel**: new "Auctions" page in the admin panel (search / full row info / tooltips / two-column confirm dialog matching the auction hall) — click any auction to force-cancel it (item returns to the seller's pending claims, the current bidder is fully refunded, removed across the server)
+### Egg Trading (Cobbreeding Compatibility)
+
+- Pokémon eggs can be listed on the market and auction house: the hatch timer doesn't interfere with trading, and different eggs are strictly distinguished — no mix-ups
+- Eggs in listings never hatch, and buyers receive them with the same hatch progress shown at listing time
+- The listing screen shows the live hatch time (consistent with the inventory screen) and removes hatched entries automatically
+- Egg trading switch: off by default; toggle in the admin panel, enabling requires a second confirmation (3-second cooldown + red risk warnings: eggs bypass the Pokémon blacklist, and with encryption off they can be pre-filtered before hatching); listing, buying and bidding on eggs are all rejected while disabled (takes effect immediately, including existing listings)
+- Blacklist integration: the blacklist takes priority over the switch (fine-grained per-variant bans), with batch ban/unban support; blacklisted eggs in existing listings can no longer be traded
 
 ### Changes
 
@@ -24,12 +31,13 @@
 - Unified "Pokemon" to the official "Pokémon" spelling in English texts (UI and config comments)
 - Added icons to entry panel buttons (Pokémon Market / Item Market / History / OP Only), matching the Auction House button style
 - Admin panel: added the "Auctions" entry
+- Item blacklist supports batch ban (one-click add all search matches, e.g. every egg variant)
 - Config comments improved: max auction limit notes "Pokémon + items combined" and performance advice for crowded servers
 
 ### Fixes
 
 - Pending Claims screen showed raw translation keys instead of localized species names (also affected regular listing returns)
-- Fixed English-mode text overflow: icon buttons now center their label in the space right of the icon, shortened the claims button label and auction dialog placeholders
-- Fixed item currency failing for mod items (mod load order cached the currency as air): the currency item is now resolved dynamically on every use
-- Item purchase/cancel rollback now scans only the main inventory (matching insertStack's range), preventing rare mis-deduction of armor/offhand items
-- Removed the 15-second listing expiry throttle: expired listings are taken down immediately (fixes expired listings still being purchasable within the throttle window)
+- Fixed English-mode text overflow: shortened the claims button label
+- Fixed currency names following the server's language instead of the player's: UI and chat now use each player's own language
+- Fixed a rare case where buying/cancelling could mis-deduct identical items from a player's armor or offhand: only the main inventory is touched now
+- Expired listings are now taken down immediately (they used to linger for over ten seconds and could still be bought)

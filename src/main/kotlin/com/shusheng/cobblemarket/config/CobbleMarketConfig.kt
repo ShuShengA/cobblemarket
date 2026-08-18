@@ -39,6 +39,14 @@ object CobbleMarketConfig {
         private set
     var maxAuctionsPerPlayer: Int = 3
         private set
+    var eggTradingEnabled: Boolean = false
+        private set
+
+    /** 蛋交易开关切换并落盘（仅管理面板调用） */
+    fun setEggTradingEnabled(v: Boolean) {
+        eggTradingEnabled = v
+        save()
+    }
 
     fun load() {
         val hasCD = try { Class.forName("fr.harmex.cobbledollars.common.utils.CobbleDollarsPlayer"); true } catch (_: Exception) { false }
@@ -73,6 +81,7 @@ object CobbleMarketConfig {
                 auctionMinBidIncrement = ((data["auctionMinBidIncrement"] as? Double)?.toInt() ?: 100).coerceAtLeast(1)
                 auctionAntiSnipeSeconds = ((data["auctionAntiSnipeSeconds"] as? Double)?.toInt() ?: 120).coerceAtLeast(0)
                 maxAuctionsPerPlayer = (data["maxAuctionsPerPlayer"] as? Double)?.toInt() ?: 3
+                eggTradingEnabled = data["eggTradingEnabled"] as? Boolean ?: false
             } catch (e: Exception) {
                 CobbleMarket.LOGGER.warn("Failed to load config: ${e.message}")
                 save()
@@ -96,7 +105,8 @@ object CobbleMarketConfig {
                 "auctionDurationOptions" to "拍卖时长档位（分钟）/ Auction duration options in minutes",
                 "auctionMinBidIncrement" to "默认最低加价幅度（卖家上架时可自定，留空用此值）/ Default minimum bid increment (sellers may override per auction)",
                 "auctionAntiSnipeSeconds" to "反狙击延长秒数：结束前该窗口内的出价会把结束时间延长到该秒数（0=关闭）/ Anti-snipe extension in seconds: bids within this window extend the end time (0=off)",
-                "maxAuctionsPerPlayer" to "每个玩家同时进行的拍卖数量上限，精灵与物品合计（0=不限制）。玩家较多的服务器建议保持较小值，避免全服活跃拍卖总量过大导致服务器卡顿 / Max concurrent auctions per player, Pokémon and items combined (0=unlimited). On crowded servers keep this small to avoid server lag from too many active auctions"
+                "maxAuctionsPerPlayer" to "每个玩家同时进行的拍卖数量上限，精灵与物品合计（0=不限制）。玩家较多的服务器建议保持较小值，避免全服活跃拍卖总量过大导致服务器卡顿 / Max concurrent auctions per player, Pokémon and items combined (0=unlimited). On crowded servers keep this small to avoid server lag from too many active auctions",
+                "eggTradingEnabled" to "蛋交易开关（默认关闭）。蛋走物品交易链路，不经过精灵黑名单（个体值/形态/闪光）校验；若蛋加密关闭，部分模组可显示蛋内精灵数据，玩家可提前筛选，精灵黑名单对蛋失效——开启前请评估风险 / Egg trading switch (off by default). Eggs bypass the Pokémon blacklist (IV/form/shiny) checks; with egg encryption off, some mods can reveal egg data, letting players pick eggs before hatching — evaluate the risk before enabling"
             ),
             "currency" to mapOf("cobbledollars" to cobbledollars, "item" to currencyItem),
             "pokemonListingFeePercent" to pokemonListingFeePercent,
@@ -109,7 +119,8 @@ object CobbleMarketConfig {
             "auctionDurationOptions" to auctionDurationOptions,
             "auctionMinBidIncrement" to auctionMinBidIncrement,
             "auctionAntiSnipeSeconds" to auctionAntiSnipeSeconds,
-            "maxAuctionsPerPlayer" to maxAuctionsPerPlayer
+            "maxAuctionsPerPlayer" to maxAuctionsPerPlayer,
+            "eggTradingEnabled" to eggTradingEnabled
         )
         configFile.writeText(gson.toJson(data))
     }

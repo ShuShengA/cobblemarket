@@ -60,7 +60,7 @@ object EntryBadgeRenderer {
         )
         lines.add(
             Text.literal("${Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).string} " +
-                "${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${entry.currencyName}") to 0xFFFFFF
+                "${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}") to 0xFFFFFF
         )
 
         var y = startY

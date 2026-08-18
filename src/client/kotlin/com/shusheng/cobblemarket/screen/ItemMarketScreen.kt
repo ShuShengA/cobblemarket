@@ -294,7 +294,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             lines.add(Text.literal(entry.itemId))
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).append(" ").append(entry.sellerName))
-        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${entry.currencyName}"))
+        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}"))
         lines.add(Text.literal("×${entry.count}"))
 
         var maxWidth = 0
@@ -533,7 +533,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             Text.translatable("cobblemarket.item.buy_count").string + "（" + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}）",
             centerX - 80, dialogY + 62, 0xAAAAAA)
         context.drawTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.item.buy_total").string + ": " + buyTotal().toString() + " " + entry.currencyName,
+            Text.translatable("cobblemarket.item.buy_total").string + ": " + buyTotal().toString() + " " + com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName),
             centerX - 80, dialogY + 92, 0xAAAAAA)
     }
 

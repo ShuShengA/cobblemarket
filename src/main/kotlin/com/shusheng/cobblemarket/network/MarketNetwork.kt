@@ -99,6 +99,41 @@ data class ListingEntry(
     }
 }
 
+// ── 蛋交易开关 ──
+
+class RequestEggTradingPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestEggTradingPayload>(CobbleMarket.id("request_egg_trading"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestEggTradingPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestEggTradingPayload() }
+        )
+    }
+}
+
+data class SetEggTradingPayload(val enabled: Boolean) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<SetEggTradingPayload>(CobbleMarket.id("set_egg_trading"))
+        val CODEC: PacketCodec<PacketByteBuf, SetEggTradingPayload> = PacketCodec.of(
+            { p, b -> b.writeBoolean(p.enabled) },
+            { b -> SetEggTradingPayload(b.readBoolean()) }
+        )
+    }
+}
+
+data class EggTradingStatePayload(val enabled: Boolean) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<EggTradingStatePayload>(CobbleMarket.id("egg_trading_state"))
+        val CODEC: PacketCodec<PacketByteBuf, EggTradingStatePayload> = PacketCodec.of(
+            { p, b -> b.writeBoolean(p.enabled) },
+            { b -> EggTradingStatePayload(b.readBoolean()) }
+        )
+    }
+}
+
 // ── C2S: Request market data ──
 
 data class RequestMarketPayload(
@@ -736,6 +771,33 @@ fun giveBackItem(stack: ItemStack, player: ServerPlayerEntity) {
     player.inventory.markDirty()
 }
 
+/** 是否为蛋类物品（Cobbreeding 蛋的注册 ID 以 pokemon_egg 结尾，含通用蛋与全部属性蛋；不依赖其类名） */
+fun isEggItem(itemId: String): Boolean = itemId.substringAfter(':').endsWith("pokemon_egg")
+
+/**
+ * 交易匹配：物品相同且组件一致；动态组件（cobbreeding 蛋的孵化计时 timer/second 持续变化、
+ * version 组件在服务端重建时会被 verifyComponentsAfterLoad 迁移改写）导致完整比较永远失败——
+ * 剔除动态组件后再比较一次。
+ * 安全边界：只忽略 :timer / :second / :version 结尾的组件，蛋数据（egg_info）等其余组件仍严格比较，不会混淆不同物品。
+ */
+fun itemsEqualForTrading(a: ItemStack, b: ItemStack): Boolean {
+    if (a.isEmpty || b.isEmpty) return false
+    if (!a.isOf(b.item)) return false
+    if (ItemStack.areItemsAndComponentsEqual(a, b)) return true
+    return componentEntriesIgnoringDynamic(a) == componentEntriesIgnoringDynamic(b)
+}
+
+private fun componentEntriesIgnoringDynamic(stack: ItemStack): Set<Pair<String, Any?>> {
+    val out = mutableSetOf<Pair<String, Any?>>()
+    stack.components.stream().forEach { entry ->
+        val id = Registries.DATA_COMPONENT_TYPE.getId(entry.type()).toString()
+        if (!id.endsWith(":timer") && !id.endsWith(":second") && !id.endsWith(":version")) {
+            out.add(id to entry.value())
+        }
+    }
+    return out
+}
+
 // 预检：insertStack（PlayerInventory）只往 main 放（getEmptySlot 只遍历 main），
 // 预检同样只数 main，与实际插入行为一致，不会误拒合法交易
 internal fun canFitInInventory(player: ServerPlayerEntity, stack: ItemStack): Boolean {
@@ -743,7 +805,7 @@ internal fun canFitInInventory(player: ServerPlayerEntity, stack: ItemStack): Bo
     val main = player.inventory.main
     for (i in 0 until main.size) {
         val slot = main[i]
-        if (!slot.isEmpty && ItemStack.areItemsAndComponentsEqual(slot, stack)) {
+        if (!slot.isEmpty && itemsEqualForTrading(slot, stack)) {
             remaining -= (slot.maxCount - slot.count)
             if (remaining <= 0) return true
         }
@@ -779,6 +841,9 @@ object MarketNetwork {
         PayloadTypeRegistry.playC2S().register(AdminCancelPokemonPayload.ID, AdminCancelPokemonPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(AdminRequestItemPayload.ID, AdminRequestItemPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(AdminCancelItemPayload.ID, AdminCancelItemPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(RequestEggTradingPayload.ID, RequestEggTradingPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SetEggTradingPayload.ID, SetEggTradingPayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(EggTradingStatePayload.ID, EggTradingStatePayload.CODEC)
         PayloadTypeRegistry.playS2C().register(MyPokemonListPayload.ID, MyPokemonListPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(HistoryDataPayload.ID, HistoryDataPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(OpenMarketPayload.ID, OpenMarketPayload.CODEC)
@@ -849,7 +914,7 @@ object MarketNetwork {
                             ball = detail["ball"] ?: "?",
                             ballItem = detail["ballItem"] ?: "cobblemon:poke_ball",
                             heldItemId = detail["heldItemId"] ?: "",
-                            currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getName(),
+                            currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
                             aspects = parseAspects(detail)
                         )
                     }
@@ -940,7 +1005,7 @@ object MarketNetwork {
                             Text.translatable(
                                 "cobblemarket.network.need_diamonds",
                                 listing.price,
-                                com.shusheng.cobblemarket.config.CurrencyHandler.getName()
+                                com.shusheng.cobblemarket.config.CurrencyHandler.currencyText()
                             )
                         )
                     )
@@ -992,7 +1057,7 @@ object MarketNetwork {
                             "cobblemarket.network.bought",
                             listing.speciesText(),
                             listing.price,
-                            com.shusheng.cobblemarket.config.CurrencyHandler.getName()
+                            com.shusheng.cobblemarket.config.CurrencyHandler.currencyText()
                         )
                     )
                 )
@@ -1125,7 +1190,7 @@ object MarketNetwork {
                             ball = detail["ball"] ?: "?",
                             ballItem = detail["ballItem"] ?: "cobblemon:poke_ball",
                             heldItemId = detail["heldItemId"] ?: "",
-                            currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getName(),
+                            currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
                             aspects = parseAspects(detail)
                         )
                     }
@@ -1199,7 +1264,7 @@ object MarketNetwork {
                             itemNbt = listing.itemNbt,
                             count = listing.count,
                             price = listing.price,
-                            currencyName = CurrencyHandler.getName()
+                            currencyName = CurrencyHandler.getCurrencyId()
                         )
                     }
                 }
@@ -1456,7 +1521,7 @@ object MarketNetwork {
                     ServerPlayNetworking.send(
                         player, MarketResultPayload(
                             false,
-                            Text.translatable("cobblemarket.cmd.need_fee", fee, CurrencyHandler.getName())
+                            Text.translatable("cobblemarket.cmd.need_fee", fee, CurrencyHandler.currencyText())
                         )
                     )
                     return@execute
@@ -1503,9 +1568,9 @@ object MarketNetwork {
                         pokemon.species.translatedName,
                         pokemon.level,
                         payload.price,
-                        CurrencyHandler.getName(),
+                        CurrencyHandler.currencyText(),
                         fee,
-                        CurrencyHandler.getName()
+                        CurrencyHandler.currencyText()
                     )
                 else
                     Text.translatable(
@@ -1513,7 +1578,7 @@ object MarketNetwork {
                         pokemon.species.translatedName,
                         pokemon.level,
                         payload.price,
-                        CurrencyHandler.getName()
+                        CurrencyHandler.currencyText()
                     )
                 ServerPlayNetworking.send(player, MarketResultPayload(true, listedMsg))
             }
@@ -1551,6 +1616,8 @@ object MarketNetwork {
                 }
 
                 // 重建目标物品，以服务端重建的物品为准（不信任客户端 itemId/itemNbt 的一致性）
+                val diagId = net.minecraft.util.Identifier.tryParse(payload.itemId)
+                val diagItem = diagId?.let { Registries.ITEM.getOrEmpty(it).orElse(null) }
                 val targetStack = ItemStack.fromNbtOrEmpty(player.serverWorld.registryManager, payload.itemNbt)
                 if (targetStack.isEmpty) {
                     ServerPlayNetworking.send(
@@ -1560,6 +1627,15 @@ object MarketNetwork {
                     return@execute
                 }
                 val authoritativeItemId = Registries.ITEM.getId(targetStack.item).toString()
+
+                // 蛋交易开关（默认关闭）：蛋走物品链路不经过精灵黑名单，需服主显式开启
+                if (isEggItem(authoritativeItemId) && !com.shusheng.cobblemarket.config.CobbleMarketConfig.eggTradingEnabled) {
+                    ServerPlayNetworking.send(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.network.egg_trading_disabled"))
+                    )
+                    return@execute
+                }
 
                 // 物品黑名单检查（以权威 itemId 为准）
                 if (com.shusheng.cobblemarket.market.ItemBlacklistState.get(server).contains(authoritativeItemId)) {
@@ -1594,7 +1670,7 @@ object MarketNetwork {
                 var available = 0
                 for (i in 0 until main.size) {
                     val stack = main[i]
-                    if (ItemStack.areItemsAndComponentsEqual(stack, targetStack)) available += stack.count
+                    if (itemsEqualForTrading(stack, targetStack)) available += stack.count
                 }
                 if (available < payload.count) {
                     ServerPlayNetworking.send(
@@ -1618,7 +1694,7 @@ object MarketNetwork {
 
                 // 预编码：先验证真实栈可序列化，再开始扣物品（避免扣到一半失败导致物品+手续费双失）
                 val listingNbt = try {
-                    main.firstOrNull { ItemStack.areItemsAndComponentsEqual(it, targetStack) }
+                    main.firstOrNull { itemsEqualForTrading(it, targetStack) }
                         ?.encode(player.serverWorld.registryManager) as? NbtCompound
                 } catch (e: Exception) {
                     CobbleMarket.LOGGER.error("Failed to encode item stack for listing by {}: {}", player.uuid, e.message)
@@ -1644,7 +1720,7 @@ object MarketNetwork {
                 var remaining = payload.count
                 for (i in 0 until main.size) {
                     val stack = main[i]
-                    if (ItemStack.areItemsAndComponentsEqual(stack, targetStack)) {
+                    if (itemsEqualForTrading(stack, targetStack)) {
                         val r = minOf(remaining, stack.count)
                         stack.decrement(r)
                         remaining -= r
@@ -1671,7 +1747,7 @@ object MarketNetwork {
                     ServerPlayNetworking.send(
                         player, MarketResultPayload(
                             false,
-                            Text.translatable("cobblemarket.cmd.need_fee", fee, CurrencyHandler.getName())
+                            Text.translatable("cobblemarket.cmd.need_fee", fee, CurrencyHandler.currencyText())
                         )
                     )
                     return@execute
@@ -1715,20 +1791,20 @@ object MarketNetwork {
                 val listedMsg: Text = if (fee > 0)
                     Text.translatable(
                         "cobblemarket.item.listed_fee",
-                        targetStack.item.name,
                         payload.count,
+                        targetStack.item.name,
                         payload.price,
-                        CurrencyHandler.getName(),
+                        CurrencyHandler.currencyText(),
                         fee,
-                        CurrencyHandler.getName()
+                        CurrencyHandler.currencyText()
                     )
                 else
                     Text.translatable(
                         "cobblemarket.item.listed",
-                        targetStack.item.name,
                         payload.count,
+                        targetStack.item.name,
                         payload.price,
-                        CurrencyHandler.getName()
+                        CurrencyHandler.currencyText()
                     )
                 ServerPlayNetworking.send(player, MarketResultPayload(true, listedMsg))
             }
@@ -1764,7 +1840,7 @@ object MarketNetwork {
                             itemNbt = listing.itemNbt,
                             count = listing.count,
                             price = listing.price,
-                            currencyName = CurrencyHandler.getName()
+                            currencyName = CurrencyHandler.getCurrencyId()
                         )
                     }
                 }
@@ -1829,6 +1905,14 @@ object MarketNetwork {
                     )
                     return@execute
                 }
+                // 蛋交易开关：关闭后拦截存量蛋挂单的购买（与黑名单一致，治理即时生效）
+                if (isEggItem(listing.itemId) && !com.shusheng.cobblemarket.config.CobbleMarketConfig.eggTradingEnabled) {
+                    ServerPlayNetworking.send(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.network.egg_trading_disabled"))
+                    )
+                    return@execute
+                }
                 val count = payload.count
                 if (count <= 0) {
                     ServerPlayNetworking.send(
@@ -1882,7 +1966,7 @@ object MarketNetwork {
                             Text.translatable(
                                 "cobblemarket.network.need_diamonds",
                                 totalPrice,
-                                CurrencyHandler.getName()
+                                CurrencyHandler.currencyText()
                             )
                         )
                     )
@@ -1899,7 +1983,7 @@ object MarketNetwork {
                         // 避免误扣玩家 armor/offhand 里本来就有的相同物品
                         for (i in 0 until player.inventory.main.size) {
                             val slot = player.inventory.main[i]
-                            if (ItemStack.areItemsAndComponentsEqual(slot, stack)) {
+                            if (itemsEqualForTrading(slot, stack)) {
                                 val r = minOf(toRemove, slot.count)
                                 slot.decrement(r)
                                 toRemove -= r
@@ -1958,7 +2042,7 @@ object MarketNetwork {
                             count,
                             listing.itemId,
                             totalPrice,
-                            CurrencyHandler.getName()
+                            CurrencyHandler.currencyText()
                         )
                     )
                 )
@@ -2022,7 +2106,7 @@ object MarketNetwork {
                         // 避免误扣玩家 armor/offhand 里本来就有的相同物品
                         for (i in 0 until player.inventory.main.size) {
                             val slot = player.inventory.main[i]
-                            if (ItemStack.areItemsAndComponentsEqual(slot, stack)) {
+                            if (itemsEqualForTrading(slot, stack)) {
                                 val r = minOf(toRemove, slot.count)
                                 slot.decrement(r)
                                 toRemove -= r
@@ -2095,11 +2179,24 @@ object MarketNetwork {
                 // 只清掉已实际发放的部分，差额留在账本（单方法内完成，无中间态）
                 state.claimPendingBalance(player.uuid, given)
                 val msg = if (given < amount)
-                    Text.translatable("cobblemarket.cmd.collected_partial", given, CurrencyHandler.getName())
+                    Text.translatable("cobblemarket.cmd.collected_partial", given, CurrencyHandler.currencyText())
                 else
-                    Text.translatable("cobblemarket.cmd.collected", amount, CurrencyHandler.getName())
+                    Text.translatable("cobblemarket.cmd.collected", amount, CurrencyHandler.currencyText())
                 ServerPlayNetworking.send(player, MarketResultPayload(true, msg))
             }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(RequestEggTradingPayload.ID) { _, context ->
+            val player = context.player()
+            if (!player.hasPermissionLevel(2)) return@registerGlobalReceiver
+            ServerPlayNetworking.send(player, EggTradingStatePayload(com.shusheng.cobblemarket.config.CobbleMarketConfig.eggTradingEnabled))
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(SetEggTradingPayload.ID) { payload, context ->
+            val player = context.player()
+            if (!player.hasPermissionLevel(2)) return@registerGlobalReceiver
+            com.shusheng.cobblemarket.config.CobbleMarketConfig.setEggTradingEnabled(payload.enabled)
+            ServerPlayNetworking.send(player, EggTradingStatePayload(payload.enabled))
         }
 
         ServerPlayNetworking.registerGlobalReceiver(RequestHistoryPayload.ID) { payload, context ->
@@ -2191,7 +2288,7 @@ object MarketNetwork {
                         itemNbt = listing.itemNbt,
                         count = listing.count,
                         price = listing.price,
-                        currencyName = CurrencyHandler.getName()
+                        currencyName = CurrencyHandler.getCurrencyId()
                     )
                 }
                 ServerPlayNetworking.send(player, ItemReturnDataPayload(entries, totalPages, clampedPage))

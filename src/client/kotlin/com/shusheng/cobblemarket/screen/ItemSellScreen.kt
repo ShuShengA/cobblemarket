@@ -30,6 +30,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
     private var hoveredRow = -1
 
     private var selectedItem: SellItem? = null
+    private var lastInventoryCheck = 0L
     private var countField: TextFieldWidget? = null
     private var priceField: TextFieldWidget? = null
     private var backButton: NineSliceButton? = null
@@ -229,6 +230,22 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
             return
         }
 
+        // 每秒轻校验：过滤背包里已不存在的条目（如蛋在界面打开期间孵化成精灵），并同步重建行内按钮
+        val checkNow = System.currentTimeMillis()
+        if (checkNow - lastInventoryCheck > 1000) {
+            lastInventoryCheck = checkNow
+            val main = client?.player?.inventory?.main
+            if (main != null) {
+                val filtered = items.filter { it ->
+                    main.any { slot -> com.shusheng.cobblemarket.network.itemsEqualForTrading(slot, it.stack) }
+                }
+                if (filtered.size != items.size) {
+                    items = filtered
+                    rebuildSellButtons()
+                }
+            }
+        }
+
         val centerX = width / 2
         val leftX = centerX - panelWidth / 2
 
@@ -266,7 +283,16 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
     }
 
     private fun renderItemTooltip(context: DrawContext, entry: SellItem, mouseX: Int, mouseY: Int) {
-        val lines = entry.stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC)
+        // 悬停时实时取对应栈：优先屏幕容器槽位（服务端同步数据，计时准确，与背包界面一致）；
+        // 回退本地背包（客户端 tick 本地计时有漂移），再回退快照
+        val liveStack = client?.player?.playerScreenHandler?.slots
+            ?.firstOrNull { it.hasStack() && com.shusheng.cobblemarket.network.itemsEqualForTrading(it.stack, entry.stack) }
+            ?.stack
+            ?: client?.player?.inventory?.main?.firstOrNull {
+                com.shusheng.cobblemarket.network.itemsEqualForTrading(it, entry.stack)
+            }
+            ?: entry.stack
+        val lines = liveStack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC)
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
 

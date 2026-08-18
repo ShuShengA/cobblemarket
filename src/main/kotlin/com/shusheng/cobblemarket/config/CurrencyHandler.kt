@@ -112,4 +112,17 @@ object CurrencyHandler {
     fun getName(): String {
         return if (useCobbleDollars) "PokéDollars" else currencyItem().name.string
     }
+
+    /** payload 字段用的货币标识：物品模式发物品 ID（客户端按玩家语言渲染），CobbleDollars 发固定名。
+     *  服务端语言恒为 en_us 且受资源环境影响，服务端渲染货币名在专用服务器上不可靠 */
+    fun getCurrencyId(): String {
+        if (useCobbleDollars) return "PokéDollars"
+        return Registries.ITEM.getId(currencyItem()).toString()
+    }
+
+    /** 聊天消息用的货币文本：嵌套 Text，客户端按玩家语言翻译（与 payload 字段同理，不做服务端渲染） */
+    fun currencyText(): net.minecraft.text.Text {
+        if (useCobbleDollars) return net.minecraft.text.Text.literal("PokéDollars")
+        return net.minecraft.text.Text.translatable(currencyItem().translationKey)
+    }
 }
