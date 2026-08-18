@@ -94,7 +94,8 @@ object CurrencyHandler {
         var given = 0L
         var remaining = amount
         while (remaining > 0L) {
-            val chunk = minOf(remaining, Int.MAX_VALUE.toLong()).toInt()
+            // 分块不超过物品 maxCount：不依赖 insertStack 对超限栈的拆解行为
+            val chunk = minOf(remaining, currencyItem.maxCount.toLong()).toInt()
             val stack = ItemStack(currencyItem, chunk)
             // insertStack 返回 true 只表示"至少放了一个"（部分放入也返回 true）；
             // 记账必须看 stack.count（剩余量），不能用返回值判断是否全部放入

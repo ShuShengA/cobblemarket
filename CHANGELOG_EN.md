@@ -20,8 +20,11 @@
 - Item market now shows remaining stock when a purchase exceeds available quantity (concurrent buying)
 - Auction sales recorded in transaction history (in-game history + local Chinese/English CSV), species names properly localized
 - Adjusted row / tooltip hover and selected state colors (row_background.png texture)
+- Unified "Pokemon" to the official "Pokémon" spelling in English texts (UI and config comments)
 - Config comments improved: max auction limit notes "Pokémon + items combined" and performance advice for crowded servers
 
 ### Fixes
 
 - Pending Claims screen showed raw translation keys instead of localized species names (also affected regular listing returns)
+- Item purchase/cancel rollback now scans only the main inventory (matching insertStack's range), preventing rare mis-deduction of armor/offhand items
+- Removed the 15-second listing expiry throttle: expired listings are taken down immediately (fixes expired listings still being purchasable within the throttle window)

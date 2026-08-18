@@ -288,7 +288,7 @@ object AuctionNetwork {
 
         ServerPlayNetworking.registerGlobalReceiver(CreatePokemonAuctionPayload.ID) { payload, context ->
             val player = context.player()
-            if (!RequestThrottle.allow(player.uuid, "create_pokemon_auction", RequestThrottle.READ_INTERVAL_MS)) return@registerGlobalReceiver
+            if (!RequestThrottle.allow(player.uuid, "create_pokemon_auction", RequestThrottle.WRITE_INTERVAL_MS)) return@registerGlobalReceiver
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
@@ -390,7 +390,7 @@ object AuctionNetwork {
 
         ServerPlayNetworking.registerGlobalReceiver(CreateItemAuctionPayload.ID) { payload, context ->
             val player = context.player()
-            if (!RequestThrottle.allow(player.uuid, "create_item_auction", RequestThrottle.READ_INTERVAL_MS)) return@registerGlobalReceiver
+            if (!RequestThrottle.allow(player.uuid, "create_item_auction", RequestThrottle.WRITE_INTERVAL_MS)) return@registerGlobalReceiver
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
@@ -508,7 +508,7 @@ object AuctionNetwork {
 
         ServerPlayNetworking.registerGlobalReceiver(PlaceBidPayload.ID) { payload, context ->
             val player = context.player()
-            if (!RequestThrottle.allow(player.uuid, "auction_bid", RequestThrottle.READ_INTERVAL_MS)) return@registerGlobalReceiver
+            if (!RequestThrottle.allow(player.uuid, "auction_bid", RequestThrottle.WRITE_INTERVAL_MS)) return@registerGlobalReceiver
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute

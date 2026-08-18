@@ -1305,7 +1305,7 @@ object MarketNetwork {
 
         ServerPlayNetworking.registerGlobalReceiver(SellFromStoragePayload.ID) { payload, context ->
             val player = context.player()
-            if (!RequestThrottle.allow(player.uuid, "sell_from_storage", RequestThrottle.READ_INTERVAL_MS)) return@registerGlobalReceiver
+            if (!RequestThrottle.allow(player.uuid, "sell_from_storage", RequestThrottle.WRITE_INTERVAL_MS)) return@registerGlobalReceiver
             val server = player.server
             server.execute {
                 val banCheckTime = System.currentTimeMillis()
@@ -1521,7 +1521,7 @@ object MarketNetwork {
 
         ServerPlayNetworking.registerGlobalReceiver(SellItemPayload.ID) { payload, context ->
             val player = context.player()
-            if (!RequestThrottle.allow(player.uuid, "sell_item", RequestThrottle.READ_INTERVAL_MS)) return@registerGlobalReceiver
+            if (!RequestThrottle.allow(player.uuid, "sell_item", RequestThrottle.WRITE_INTERVAL_MS)) return@registerGlobalReceiver
             val server = player.server
             server.execute {
                 val banCheckTime = System.currentTimeMillis()
@@ -1895,9 +1895,10 @@ object MarketNetwork {
                     val inserted = count - stack.count
                     if (inserted > 0) {
                         var toRemove = inserted
-                        // 遍历整个背包（main+armor+offhand），覆盖 insertStack 可能触及的所有槽位
-                        for (i in 0 until player.inventory.size()) {
-                            val slot = player.inventory.getStack(i)
+                        // 只遍历 main：insertStack 只往 main 放，回滚范围与插入范围严格一致，
+                        // 避免误扣玩家 armor/offhand 里本来就有的相同物品
+                        for (i in 0 until player.inventory.main.size) {
+                            val slot = player.inventory.main[i]
                             if (ItemStack.areItemsAndComponentsEqual(slot, stack)) {
                                 val r = minOf(toRemove, slot.count)
                                 slot.decrement(r)
@@ -2017,9 +2018,10 @@ object MarketNetwork {
                     val inserted = listing.count - stack.count
                     if (inserted > 0) {
                         var toRemove = inserted
-                        // 遍历整个背包（main+armor+offhand），覆盖 insertStack 可能触及的所有槽位
-                        for (i in 0 until player.inventory.size()) {
-                            val slot = player.inventory.getStack(i)
+                        // 只遍历 main：insertStack 只往 main 放，回滚范围与插入范围严格一致，
+                        // 避免误扣玩家 armor/offhand 里本来就有的相同物品
+                        for (i in 0 until player.inventory.main.size) {
+                            val slot = player.inventory.main[i]
                             if (ItemStack.areItemsAndComponentsEqual(slot, stack)) {
                                 val r = minOf(toRemove, slot.count)
                                 slot.decrement(r)

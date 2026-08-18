@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.network
 
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CurrencyHandler
+import com.shusheng.cobblemarket.util.RequestThrottle
 import com.shusheng.cobblemarket.market.MarketState
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking
@@ -42,6 +43,8 @@ object BalanceNetwork {
 
         ServerPlayNetworking.registerGlobalReceiver(RequestBalancePayload.ID) { _, context ->
             val player = context.player()
+            // 与其他请求入口一致的节流：防高频轰炸
+            if (!RequestThrottle.allow(player.uuid, "request_balance", RequestThrottle.READ_INTERVAL_MS)) return@registerGlobalReceiver
             val server = player.server
             server.execute {
                 val bal = CurrencyHandler.getBalance(player)

@@ -65,7 +65,7 @@ object CobbleMarketConfig {
                 if (rawDuration != null && rawDuration < 1) {
                     CobbleMarket.LOGGER.warn("Config listingDurationDays={} is invalid (must be positive); clamped to 1", rawDuration)
                 }
-                pendingReturnRetentionDays = (data["pendingReturnRetentionDays"] as? Double)?.toInt() ?: 30
+                pendingReturnRetentionDays = ((data["pendingReturnRetentionDays"] as? Double)?.toInt() ?: 30).coerceAtLeast(0) // 负数钳制为 0（永不清理）
                 auctionFeePercent = ((data["auctionFeePercent"] as? Double) ?: pokemonListingFeePercent).coerceIn(0.0, 100.0)
                 val rawDurations = (data["auctionDurationOptions"] as? List<*>)
                     ?.mapNotNull { (it as? Number)?.toInt()?.coerceAtLeast(1) } // 0/负数 → 1 分钟（上架即到期无意义）
@@ -86,9 +86,9 @@ object CobbleMarketConfig {
             "_comments" to mapOf(
                 "currency.cobbledollars" to "是否使用 CobbleDollars 货币（true/false）/ Whether to use CobbleDollars currency (true/false)",
                 "currency.item" to "货币物品 ID（cobbledollars=false 时生效）/ Currency item ID (used when cobbledollars=false)",
-                "pokemonListingFeePercent" to "精灵市场上架手续费百分比（0=免手续费）/ Pokemon listing fee percentage (0=no fee)",
+                "pokemonListingFeePercent" to "精灵市场上架手续费百分比（0=免手续费）/ Pokémon listing fee percentage (0=no fee)",
                 "itemListingFeePercent" to "物品市场上架手续费百分比（0=免手续费）/ Item listing fee percentage (0=no fee)",
-                "maxPokemonListingsPerPlayer" to "每个玩家同时活跃的精灵上架数量上限（0=不限制）/ Max active Pokemon listings per player (0=unlimited)",
+                "maxPokemonListingsPerPlayer" to "每个玩家同时活跃的精灵上架数量上限（0=不限制）/ Max active Pokémon listings per player (0=unlimited)",
                 "maxItemListingsPerPlayer" to "每个玩家同时活跃的物品上架数量上限（0=不限制）/ Max active item listings per player (0=unlimited)",
                 "listingDurationDays" to "上架过期天数 / Listing duration in days",
                 "pendingReturnRetentionDays" to "待领取退回保留天数（自进入退回列表起算）。超期未领取的退回将被永久删除，资产不保留！0 = 永不清理。/ Days to keep unclaimed returns (counted from entering the return list). Overdue unclaimed returns will be permanently DELETED with NO refund! 0 = keep forever.",

@@ -10,7 +10,6 @@ import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.world.PersistentState
 import java.util.UUID
 
-private const val EXPIRE_CHECK_INTERVAL_NANOS = 15_000_000_000L
 
 class ItemMarketState private constructor() : PersistentState() {
 
@@ -52,14 +51,9 @@ class ItemMarketState private constructor() : PersistentState() {
         }
     }
 
-    // 过期检查节流：避免每个网络包都触发一次全表扫描。
-    // 节流间隔用 nanoTime（单调时钟，时钟回拨不受影响）；挂单过期判定仍用 wall-clock 的 currentTime。
-    private var lastExpireCheckNanos = -1L
-
     fun expireOldListings(currentTime: Long) {
-        val nowNanos = System.nanoTime()
-        if (lastExpireCheckNanos >= 0L && nowNanos - lastExpireCheckNanos < EXPIRE_CHECK_INTERVAL_NANOS) return
-        lastExpireCheckNanos = nowNanos
+        // 无节流：过期挂单应立即下架（15 秒节流窗口内过期挂单仍可被购买，语义不一致；
+        // 全表 filter 极轻，请求触发频率也不高）
         val expired = listings.values.filter { it.isActive() && it.expiresAt <= currentTime }
         expired.forEach { listing ->
             listing.status = ListingStatus.EXPIRED
@@ -79,7 +73,7 @@ class ItemMarketState private constructor() : PersistentState() {
         markDirty()
     }
 
-    /** 按配置清理超期未领取的退回（配置 0 = 永不清理）；与过期检查共用节流窗口。 */
+    /** 按配置清理超期未领取的退回（配置 0 = 永不清理） */
     private fun cleanupOldReturns(currentTime: Long) {
         val retentionDays = com.shusheng.cobblemarket.config.CobbleMarketConfig.pendingReturnRetentionDays
         if (retentionDays <= 0) return

@@ -83,6 +83,16 @@ Config file: `config/cobblemarket.json` (generated on first launch)
 | `listingDurationDays` | 14 | Days before a listing expires |
 | `pendingReturnRetentionDays` | 30 | Days to keep unclaimed returns; overdue returns are **permanently deleted without refund** (0 = keep forever) |
 
+## Security / 安全声明
+
+**Please download only from official channels** (CurseForge / Modrinth / this repository's Releases). Jars from any other source (QQ groups, "friend repacks", third-party download sites) cannot be guaranteed safe. You can verify every official file against the SHA-256 hash shown on its CurseForge/Modrinth page.
+
+This mod is designed with **server-authoritative architecture**: all transactions are validated server-side, the client is display-only, and no client data (prices, stats, balance) is ever trusted as an asset source. Cheating on the client cannot produce money or items. See [docs/security/SECURITY_en.md](docs/security/SECURITY_en.md) for the full defense design.
+
+**请仅从官方渠道下载**（CurseForge / Modrinth / 本仓库 Releases）。来自其他渠道的 jar（QQ 群、他人转发、第三方下载站）无法保证安全。官方文件均可与 CurseForge/Modrinth 页面显示的 SHA-256 哈希核对。
+
+本模组采用**服务端权威架构**：所有交易由服务端校验，客户端仅负责显示，任何客户端数据（价格、数值、余额）都不会被当作资产依据——客户端作弊无法凭空获得货币或物品。完整防御设计见 [docs/security/SECURITY_zh.md](docs/security/SECURITY_zh.md)。
+
 ## License / 许可
 
 MIT — see [LICENSE](LICENSE).
