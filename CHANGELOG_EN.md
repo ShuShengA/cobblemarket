@@ -33,6 +33,7 @@
 - Admin panel: added the "Auctions" entry
 - Item blacklist supports batch ban (one-click add all search matches, e.g. every egg variant)
 - Config comments improved: max auction limit notes "Pokémon + items combined" and performance advice for crowded servers
+- Market price input limit relaxed to 9 digits (consistent with auction and price limit fields)
 
 ### Fixes
 

@@ -109,7 +109,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
 
         priceField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 102, 160, 16, Text.literal(""))
         priceField?.setPlaceholder(Text.translatable("cobblemarket.item.sell_price"))
-        priceField?.setTextPredicate { it.length <= 8 && it.all { c -> c.isDigit() } }
+        priceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(priceField)
 
         addDrawableChild(NineSliceButton(
