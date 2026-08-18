@@ -11,16 +11,15 @@ import java.math.BigInteger
 
 object CurrencyHandler {
     private var useCobbleDollars = false
-    private var currencyItem: Item = Registries.ITEM.get(Identifier.of("minecraft", "diamond"))
 
     fun load(config: CobbleMarketConfig) {
         useCobbleDollars = config.cobbledollars
         CobbleMarket.LOGGER.info("Currency: ${if (useCobbleDollars) "CobbleDollars" else config.currencyItem}")
-        if (!useCobbleDollars) {
-            val id = Identifier.tryParse(config.currencyItem) ?: Identifier.of("minecraft", "diamond")
-            currencyItem = Registries.ITEM.get(id)
-        }
     }
+
+    // 货币物品动态解析：初始化时 Cobblemon 物品可能尚未注册（mod 加载顺序），
+    // 运行时每次取物品都会重新查注册表，避免缓存到 air
+    private fun currencyItem(): Item = CobbleMarketConfig.getCurrencyItem()
 
     fun getBalance(player: ServerPlayerEntity): BigInteger {
         if (useCobbleDollars) {
@@ -28,10 +27,11 @@ object CurrencyHandler {
                 (player as CobbleDollarsPlayer).`cobbleDollars$getCobbleDollars`()
             } catch (e: Exception) { BigInteger.ZERO }
         }
+        val item = currencyItem()
         var total = 0
         val inv = player.inventory
         for (i in 0 until inv.size()) {
-            if (inv.getStack(i).isOf(currencyItem)) total += inv.getStack(i).count
+            if (inv.getStack(i).isOf(item)) total += inv.getStack(i).count
         }
         return BigInteger.valueOf(total.toLong())
     }
@@ -52,16 +52,17 @@ object CurrencyHandler {
                 false
             }
         }
+        val item = currencyItem()
         val inv = player.inventory
         var total = 0
         for (i in 0 until inv.size()) {
-            if (inv.getStack(i).isOf(currencyItem)) total += inv.getStack(i).count
+            if (inv.getStack(i).isOf(item)) total += inv.getStack(i).count
         }
         if (total < amount) return false
         var remaining = amount
         for (i in 0 until inv.size()) {
             val stack = inv.getStack(i)
-            if (stack.isOf(currencyItem)) {
+            if (stack.isOf(item)) {
                 val r = minOf(remaining, stack.count)
                 stack.decrement(r)
                 remaining -= r
@@ -91,11 +92,12 @@ object CurrencyHandler {
                 0L
             }
         }
+        val item = currencyItem()
         var given = 0L
         var remaining = amount
         while (remaining > 0L) {
             val chunk = minOf(remaining, Int.MAX_VALUE.toLong()).toInt()
-            val stack = ItemStack(currencyItem, chunk)
+            val stack = ItemStack(item, chunk)
             // insertStack 返回 true 只表示"至少放了一个"（部分放入也返回 true）；
             // 记账必须看 stack.count（剩余量），不能用返回值判断是否全部放入
             player.inventory.insertStack(stack)
@@ -107,6 +109,6 @@ object CurrencyHandler {
     }
 
     fun getName(): String {
-        return if (useCobbleDollars) "PokéDollars" else currencyItem.name.string
+        return if (useCobbleDollars) "PokéDollars" else currencyItem().name.string
     }
 }
