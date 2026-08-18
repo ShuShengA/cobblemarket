@@ -771,19 +771,24 @@ fun giveBackItem(stack: ItemStack, player: ServerPlayerEntity) {
     player.inventory.markDirty()
 }
 
-/** 是否为蛋类物品（Cobbreeding 蛋的注册 ID 以 pokemon_egg 结尾，含通用蛋与全部属性蛋；不依赖其类名） */
-fun isEggItem(itemId: String): Boolean = itemId.substringAfter(':').endsWith("pokemon_egg")
+/** 是否为蛋类物品（Cobbreeding 蛋：namespace 为 cobbreeding、path 以 pokemon_egg 结尾，含通用蛋与全部属性蛋；不依赖其类名） */
+fun isEggItem(itemId: String): Boolean {
+    val id = net.minecraft.util.Identifier.tryParse(itemId) ?: return false
+    return id.namespace == "cobbreeding" && id.path.endsWith("pokemon_egg")
+}
 
 /**
  * 交易匹配：物品相同且组件一致；动态组件（cobbreeding 蛋的孵化计时 timer/second 持续变化、
  * version 组件在服务端重建时会被 verifyComponentsAfterLoad 迁移改写）导致完整比较永远失败——
  * 剔除动态组件后再比较一次。
- * 安全边界：只忽略 :timer / :second / :version 结尾的组件，蛋数据（egg_info）等其余组件仍严格比较，不会混淆不同物品。
+ * 宽松分支仅对蛋类物品生效：非蛋物品一律严格比较（避免未来其它物品的 :timer 等组件承载区分性数据时被误判相同）。
+ * 蛋的安全边界：只忽略 :timer / :second / :version 结尾的组件，蛋数据（egg_info）等其余组件仍严格比较，不会混淆不同物品。
  */
 fun itemsEqualForTrading(a: ItemStack, b: ItemStack): Boolean {
     if (a.isEmpty || b.isEmpty) return false
     if (!a.isOf(b.item)) return false
     if (ItemStack.areItemsAndComponentsEqual(a, b)) return true
+    if (!isEggItem(Registries.ITEM.getId(a.item).toString())) return false
     return componentEntriesIgnoringDynamic(a) == componentEntriesIgnoringDynamic(b)
 }
 
@@ -2189,14 +2194,22 @@ object MarketNetwork {
         ServerPlayNetworking.registerGlobalReceiver(RequestEggTradingPayload.ID) { _, context ->
             val player = context.player()
             if (!player.hasPermissionLevel(2)) return@registerGlobalReceiver
-            ServerPlayNetworking.send(player, EggTradingStatePayload(com.shusheng.cobblemarket.config.CobbleMarketConfig.eggTradingEnabled))
+            val server = player.server
+            // 与交易路径一致在主线程读，避免 netty 线程跨线程读配置
+            server.execute {
+                ServerPlayNetworking.send(player, EggTradingStatePayload(com.shusheng.cobblemarket.config.CobbleMarketConfig.eggTradingEnabled))
+            }
         }
 
         ServerPlayNetworking.registerGlobalReceiver(SetEggTradingPayload.ID) { payload, context ->
             val player = context.player()
             if (!player.hasPermissionLevel(2)) return@registerGlobalReceiver
-            com.shusheng.cobblemarket.config.CobbleMarketConfig.setEggTradingEnabled(payload.enabled)
-            ServerPlayNetworking.send(player, EggTradingStatePayload(payload.enabled))
+            val server = player.server
+            // 写配置 + 落盘在主线程执行：与交易路径的读同线程（无可见性问题），且文件 IO 不阻塞 netty 线程
+            server.execute {
+                com.shusheng.cobblemarket.config.CobbleMarketConfig.setEggTradingEnabled(payload.enabled)
+                ServerPlayNetworking.send(player, EggTradingStatePayload(payload.enabled))
+            }
         }
 
         ServerPlayNetworking.registerGlobalReceiver(RequestHistoryPayload.ID) { payload, context ->

@@ -14,7 +14,8 @@
 - **OP force-cancel**: new "Auctions" page in the admin panel (search / full row info / tooltips / two-column confirm dialog matching the auction hall) — click any auction to force-cancel it (item returns to the seller's pending claims, the current bidder is fully refunded, removed across the server)
 ### Egg Trading (Cobbreeding Compatibility)
 
-- Pokémon eggs can be listed on the market and auction house: the hatch timer doesn't interfere with trading, and different eggs are strictly distinguished — no mix-ups
+— Pokémon eggs can be listed on the market and auction house: they previously failed to list because the ever-changing hatch timer data (timer/second components) never matched between the listing and the inventory item — now supported; different eggs are strictly distinguished, no mix-ups
+
 - Eggs in listings never hatch, and buyers receive them with the same hatch progress shown at listing time
 - The listing screen shows the live hatch time (consistent with the inventory screen) and removes hatched entries automatically
 - Egg trading switch: off by default; toggle in the admin panel, enabling requires a second confirmation (3-second cooldown + red risk warnings: eggs bypass the Pokémon blacklist, and with encryption off they can be pre-filtered before hatching); listing, buying and bidding on eggs are all rejected while disabled (takes effect immediately, including existing listings)
