@@ -58,12 +58,16 @@ data class AuctionListing(
 ) {
     fun isActive(): Boolean = status == AuctionStatus.ACTIVE
 
-    /** 通知消息用的展示名：精灵 = 翻译 key（客户端语言渲染），物品 = itemId */
+    /** 通知消息用的展示名：精灵 = 翻译 key、物品 = 物品翻译 key（均客户端语言渲染） */
     fun speciesText(): net.minecraft.text.Text =
-        if (type == AuctionType.POKEMON)
+        if (type == AuctionType.POKEMON) {
             net.minecraft.text.Text.translatable(extraData["speciesKey"] ?: "cobblemon.species.${species.lowercase()}.name")
-        else
-            net.minecraft.text.Text.literal(species)
+        } else {
+            val id = net.minecraft.util.Identifier.tryParse(species)
+            val item = id?.let { net.minecraft.registry.Registries.ITEM.getOrEmpty(it).orElse(null) }
+            if (item != null) net.minecraft.text.Text.translatable(item.translationKey)
+            else net.minecraft.text.Text.literal(species)
+        }
 
     fun toNbt(): NbtCompound = NbtCompound().apply {
         putUuid("id", id)
@@ -250,6 +254,28 @@ class AuctionState private constructor() : PersistentState() {
         }
         if (settled.isNotEmpty()) markDirty()
         return settled
+    }
+
+    /** OP 强制下架：强制流拍——物品退卖家待领取，当前出价者全额退款进待收款。返回是否成功。 */
+    fun forceCancel(server: MinecraftServer, auction: AuctionListing): Boolean {
+        if (!auction.isActive()) return false
+        val bidder = auction.currentBidderUuid
+        val bidAmount = auction.currentPrice
+        auction.status = AuctionStatus.UNSOLD
+        val returned = returnToOwner(server, auction, auction.sellerUuid, auction.sellerName)
+        if (!returned) {
+            auction.status = AuctionStatus.ACTIVE
+            return false
+        }
+        if (bidder != null && bidAmount > 0) {
+            MarketState.get(server).addPendingBalance(bidder, bidAmount.toLong())
+        }
+        auction.returnedAt = System.currentTimeMillis()
+        auctions.remove(auction.id)
+        warnEndsAt.remove(auction.id)
+        warnKnockCount.remove(auction.id)
+        markDirty()
+        return true
     }
 
     /** 结算产物包装成挂单进接收者的待取回列表（完全复用现有取回/保留期清理链路）。返回是否成功入队。 */

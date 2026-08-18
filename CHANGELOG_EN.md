@@ -11,6 +11,7 @@
 - **Settlement**: winner's item goes to Pending Claims, seller receives final price minus fee (configurable 0~100%); no bids = returned to the seller; auction records removed immediately after settlement (prevents save bloat); seller and winner get chat notifications
 - **Auction sounds**: coin sound on bid confirm; three crescendo gavel knocks at 10s / 6s / 3s (with hammer icon animation in the row); final gavel + bell on settlement. Sounds are sent only to the seller and bidders — bystanders are not disturbed
 - **Rules button**: hover tooltip in the auction hall with full rules (gold headers / white text / red highlights / dividers, bilingual)
+- **OP force-cancel**: new "Auctions" page in the admin panel (search / full row info / tooltips / two-column confirm dialog matching the auction hall) — click any auction to force-cancel it (item returns to the seller's pending claims, the current bidder is fully refunded, removed across the server)
 
 ### Changes
 
@@ -21,10 +22,14 @@
 - Auction sales recorded in transaction history (in-game history + local Chinese/English CSV), species names properly localized
 - Adjusted row / tooltip hover and selected state colors (row_background.png texture)
 - Unified "Pokemon" to the official "Pokémon" spelling in English texts (UI and config comments)
+- Added icons to entry panel buttons (Pokémon Market / Item Market / History / OP Only), matching the Auction House button style
+- Admin panel: added the "Auctions" entry
 - Config comments improved: max auction limit notes "Pokémon + items combined" and performance advice for crowded servers
 
 ### Fixes
 
 - Pending Claims screen showed raw translation keys instead of localized species names (also affected regular listing returns)
+- Fixed English-mode text overflow: icon buttons now center their label in the space right of the icon, shortened the claims button label and auction dialog placeholders
+- Fixed item currency failing for mod items (mod load order cached the currency as air): the currency item is now resolved dynamically on every use
 - Item purchase/cancel rollback now scans only the main inventory (matching insertStack's range), preventing rare mis-deduction of armor/offhand items
 - Removed the 15-second listing expiry throttle: expired listings are taken down immediately (fixes expired listings still being purchasable within the throttle window)

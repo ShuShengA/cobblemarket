@@ -21,7 +21,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         val totalW = btnW * 2 + colGap
         val leftX = centerX - totalW / 2
         val rightX = leftX + btnW + colGap
-        val rowCount = 4
+        val rowCount = 5
         totalH = btnH * rowCount + gap * (rowCount - 1)
         val startY = height / 2 - totalH / 2
         btnStartY = startY
@@ -67,6 +67,12 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         ))
         addDrawableChild(TextureButton(
             rightX, startY + (btnH + gap) * 3, btnW, btnH,
+            Text.translatable("cobblemarket.op.auction"),
+            { client?.setScreen(AdminAuctionScreen()) }
+        ))
+        // 行 5：返回放最后，居中
+        addDrawableChild(TextureButton(
+            centerX - btnW / 2, startY + (btnH + gap) * 4, btnW, btnH,
             Text.translatable("cobblemarket.gui.back"),
             { client?.setScreen(MarketEntryScreen()) }
         ))

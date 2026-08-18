@@ -108,6 +108,19 @@ fun auctionToEntry(a: AuctionListing): AuctionEntry = AuctionEntry(
     endsAt = a.endsAt
 )
 
+// ── C2S：OP 强制下架拍卖 ──
+
+data class ForceCancelAuctionPayload(val auctionId: UUID) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<ForceCancelAuctionPayload>(CobbleMarket.id("force_cancel_auction"))
+        val CODEC: PacketCodec<PacketByteBuf, ForceCancelAuctionPayload> = PacketCodec.of(
+            { p, b -> b.writeUuid(p.auctionId) },
+            { b -> ForceCancelAuctionPayload(b.readUuid()) }
+        )
+    }
+}
+
 // ── S2C：结束倒计时警告声（定向发给卖家/出价参与者；auctionId 用于界面锤子图标联动，knock = 1/2/3 渐强） ──
 
 data class AuctionWarnSoundPayload(val auctionId: UUID, val knock: Int) : CustomPayload {
@@ -250,6 +263,7 @@ object AuctionNetwork {
         PayloadTypeRegistry.playC2S().register(CreatePokemonAuctionPayload.ID, CreatePokemonAuctionPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(CreateItemAuctionPayload.ID, CreateItemAuctionPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(PlaceBidPayload.ID, PlaceBidPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(ForceCancelAuctionPayload.ID, ForceCancelAuctionPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(AuctionListDataPayload.ID, AuctionListDataPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(AuctionEventPayload.ID, AuctionEventPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(AuctionSettleSoundPayload.ID, AuctionSettleSoundPayload.CODEC)
@@ -567,6 +581,41 @@ object AuctionNetwork {
                 AuctionState.get(server).markModified()
                 ServerPlayNetworking.send(player, MarketResultPayload(true, Text.translatable("cobblemarket.auction.bid_placed")))
                 broadcastEvent(server, "BID", auctionToEntry(auction))
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(ForceCancelAuctionPayload.ID) { payload, context ->
+            val player = context.player()
+            if (!RequestThrottle.allow(player.uuid, "force_cancel_auction", RequestThrottle.WRITE_INTERVAL_MS)) return@registerGlobalReceiver
+            if (!player.hasPermissionLevel(2)) return@registerGlobalReceiver
+            val server = player.server
+            server.execute {
+                val state = AuctionState.get(server)
+                val auction = state.getAuction(payload.auctionId)
+                if (auction == null || !auction.isActive()) {
+                    ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.ended")))
+                    return@execute
+                }
+                val bidder = auction.currentBidderUuid
+                val bidAmount = auction.currentPrice
+                val ok = state.forceCancel(server, auction)
+                if (!ok) {
+                    ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.listing_failed")))
+                    return@execute
+                }
+                // 通知卖家与出价者（在线者），广播 SETTLED 让全服列表同步移除
+                server.playerManager.getPlayer(auction.sellerUuid)?.sendMessage(
+                    Text.translatable("cobblemarket.auction.force_cancelled_seller", auction.speciesText())
+                        .formatted(Formatting.RED), false
+                )
+                if (bidder != null && bidAmount > 0) {
+                    server.playerManager.getPlayer(bidder)?.sendMessage(
+                        Text.translatable("cobblemarket.auction.force_cancelled_bidder", auction.speciesText())
+                            .formatted(Formatting.RED), false
+                    )
+                }
+                broadcastEvent(server, "SETTLED", auctionToEntry(auction))
+                ServerPlayNetworking.send(player, MarketResultPayload(true, Text.translatable("cobblemarket.auction.force_cancelled")))
             }
         }
     }

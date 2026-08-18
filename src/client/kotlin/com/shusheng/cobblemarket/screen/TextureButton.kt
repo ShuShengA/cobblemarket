@@ -43,9 +43,10 @@ class TextureButton(
             drawIcon(context, iconRight, x + width - 5 - iconSize, iconY)
         }
 
-        // Draw centered text
+        // Draw centered text（有图标时在图标右侧的剩余空间内居中，长文案不压图标）
         val font = MinecraftClient.getInstance().textRenderer
-        val textX = x + (width - font.getWidth(message)) / 2
+        val iconSpace = if (iconLeft != null) 5 + 12 + 4 else 0
+        val textX = x + iconSpace + (width - iconSpace - font.getWidth(message)) / 2
         val textY = y + (height - 8) / 2
         context.drawTextWithShadow(font, message, textX, textY, 0xFFFFFF)
     }

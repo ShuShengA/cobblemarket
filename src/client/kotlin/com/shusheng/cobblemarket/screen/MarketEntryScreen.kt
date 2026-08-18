@@ -36,32 +36,35 @@ class MarketEntryScreen : Screen(Text.translatable("cobblemarket.entry.title")) 
         addDrawableChild(TextureButton(
             leftX, startY, btnW, btnH,
             Text.translatable("cobblemarket.entry.pokemon"),
-            { client?.setScreen(MarketScreen()) }
+            { client?.setScreen(MarketScreen()) },
+            Identifier.of("cobblemarket", "textures/gui/pokeball_icon.png")
         ))
         addDrawableChild(TextureButton(
             rightX, startY, btnW, btnH,
             Text.translatable("cobblemarket.entry.item"),
-            { openItemMarket() }
+            { openItemMarket() },
+            Identifier.of("cobblemarket", "textures/gui/item_icon.png")
         ))
         // 行 2
         addDrawableChild(TextureButton(
             leftX, startY + btnH + gap, btnW, btnH,
             Text.translatable("cobblemarket.entry.history"),
-            { client?.setScreen(HistoryScreen()) }
+            { client?.setScreen(HistoryScreen()) },
+            Identifier.of("cobblemarket", "textures/gui/history_icon.png")
         ))
         addDrawableChild(TextureButton(
             rightX, startY + btnH + gap, btnW, btnH,
             Text.translatable("cobblemarket.entry.auction"),
             { client?.setScreen(AuctionScreen()) },
-            Identifier.of("cobblemarket", "textures/gui/auction_gavel_left.png"),
-            Identifier.of("cobblemarket", "textures/gui/auction_gavel_right.png")
+            Identifier.of("cobblemarket", "textures/gui/auction_gavel_left.png")
         ))
-        // 行 3：管理员面板居中（仅 OP）
+        // 行 3：管理员面板居中（仅 OP），左侧放 OP 图标
         if (isAdmin) {
             addDrawableChild(TextureButton(
                 centerX - btnW / 2, startY + (btnH + gap) * 2, btnW, btnH,
                 Text.translatable("cobblemarket.entry.op"),
-                { client?.setScreen(AdminScreen()) }
+                { client?.setScreen(AdminScreen()) },
+                Identifier.of("cobblemarket", "textures/gui/op_icon.png")
             ))
         }
     }

@@ -20,6 +20,7 @@ import com.shusheng.cobblemarket.network.PokemonBlacklistDataPayload
 import com.shusheng.cobblemarket.network.PokemonPriceLimitDataPayload
 import com.shusheng.cobblemarket.network.PokemonReturnDataPayload
 import com.shusheng.cobblemarket.network.RequestBalancePayload
+import com.shusheng.cobblemarket.screen.AdminAuctionScreen
 import com.shusheng.cobblemarket.screen.AdminBanScreen
 import com.shusheng.cobblemarket.screen.AuctionCreateScreen
 import com.shusheng.cobblemarket.screen.AuctionScreen
@@ -195,6 +196,7 @@ object CobbleMarketClient : ClientModInitializer {
                     is AdminBanScreen -> screen.onResult(payload)
                     is AuctionScreen -> screen.onMarketResult(payload)
                     is AuctionCreateScreen -> screen.onMarketResult(payload)
+                    is AdminAuctionScreen -> screen.onMarketResult(payload)
                 }
             }
         }
@@ -299,6 +301,9 @@ object CobbleMarketClient : ClientModInitializer {
                 if (screen is AuctionScreen) {
                     screen.onAuctionList(payload)
                 }
+                if (screen is AdminAuctionScreen) {
+                    screen.onAuctionList(payload)
+                }
             }
         }
 
@@ -307,6 +312,9 @@ object CobbleMarketClient : ClientModInitializer {
             client.execute {
                 val screen = client.currentScreen
                 if (screen is AuctionScreen) {
+                    screen.onAuctionEvent(payload)
+                }
+                if (screen is AdminAuctionScreen) {
                     screen.onAuctionEvent(payload)
                 }
                 // 拍卖结算完成：若正停在返还界面，自动刷新（不用重开界面）
