@@ -331,18 +331,31 @@ object AuctionNetwork {
                     ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.blocked")))
                     return@execute
                 }
-                // 价格限制：起拍价视为上架价格校验
-                val speciesId = pokemon.species.resourceIdentifier.toString()
-                val vCount = com.shusheng.cobblemarket.market.PokemonPriceLimitState.vCountOf(pokemon.ivs)
-                val bounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
-                    .getPriceBounds(speciesId, vCount, pokemon.shiny)
+                // 携带物黑名单检查：拉黑的物品不允许随精灵上架（防绕过物品黑名单，与蛋交易联动同语义）
+                val heldItem = pokemon.heldItem()
+                val heldItemId = if (heldItem.isEmpty) null
+                    else net.minecraft.registry.Registries.ITEM.getId(heldItem.item).toString()
+                if (heldItemId != null && com.shusheng.cobblemarket.market.ItemBlacklistState.get(server).contains(heldItemId)) {
+                    ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.held_item_blocked")))
+                    return@execute
+                }
+                // 价格限制：起拍价视为上架价格校验（形态照黑名单语义）+ 携带物规则合并
+                val pokemonBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
+                    .getPriceBounds(pokemon)
+                val itemBounds = heldItemId?.let {
+                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server).getPriceBounds(it)
+                }
+                val bounds = com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
                 if (bounds != null) {
+                    // 携带物参与限价时用带说明的提示，玩家才知道总价里包含了携带物部分
                     if (bounds.min != null && payload.startingPrice < bounds.min) {
-                        ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.price_limit.below_min", bounds.min)))
+                        val key = if (heldItemId != null) "cobblemarket.auction.price_limit.held_below_min" else "cobblemarket.auction.price_limit.below_min"
+                        ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable(key, bounds.min)))
                         return@execute
                     }
                     if (bounds.max != null && payload.startingPrice > bounds.max) {
-                        ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.price_limit.above_max", bounds.max)))
+                        val key = if (heldItemId != null) "cobblemarket.auction.price_limit.held_above_max" else "cobblemarket.auction.price_limit.above_max"
+                        ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable(key, bounds.max)))
                         return@execute
                     }
                 }
@@ -746,6 +759,7 @@ object AuctionNetwork {
         pokemon: com.cobblemon.mod.common.pokemon.Pokemon,
         heldItemStack: ItemStack
     ): Map<String, String> {
+        val htIvs = pokemon.ivs.hyperTrainedIVs // 极限特训值表（-1 = 未特训）
         val extra = mutableMapOf(
             "speciesId" to pokemon.species.resourceIdentifier.toString(),
             "speciesName" to pokemon.species.translatedName.string,
@@ -757,6 +771,12 @@ object AuctionNetwork {
             "ivsSpAtk" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK].toString(),
             "ivsSpDef" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE].toString(),
             "ivsSpd" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED].toString(),
+            "htHp" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP] ?: -1).toString(),
+            "htAtk" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK] ?: -1).toString(),
+            "htDef" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.DEFENCE] ?: -1).toString(),
+            "htSpAtk" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK] ?: -1).toString(),
+            "htSpDef" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE] ?: -1).toString(),
+            "htSpd" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: -1).toString(),
             "nature" to "cobblemon.nature.${pokemon.effectiveNature.name.path}",
             "ability" to "cobblemon.ability.${pokemon.ability.name}",
             "gender" to pokemon.gender.name,

@@ -21,6 +21,7 @@ fun PokemonBlacklistEntry.write(buf: PacketByteBuf) {
     buf.writeInt(ivSpd)
     buf.writeVarInt(aspects.size); aspects.forEach { buf.writeString(it) }
     buf.writeInt(shinyFilter)
+    buf.writeInt(htFilter)
 }
 
 fun readBlacklistEntry(buf: PacketByteBuf): PokemonBlacklistEntry = PokemonBlacklistEntry(
@@ -33,7 +34,8 @@ fun readBlacklistEntry(buf: PacketByteBuf): PokemonBlacklistEntry = PokemonBlack
     ivSpDef = buf.readInt(),
     ivSpd = buf.readInt(),
     aspects = (0 until buf.readVarInt()).map { buf.readString() },
-    shinyFilter = buf.readInt()
+    shinyFilter = buf.readInt(),
+    htFilter = buf.readInt()
 )
 
 // ── C2S: 请求黑名单 ──
@@ -60,7 +62,11 @@ data class AddPokemonBlacklistPayload(
     val ivSpDef: Int,
     val ivSpd: Int,
     val aspects: List<String>,
-    val shinyFilter: Int
+    val shinyFilter: Int,
+    // 特训限定：0 = 不限，1 = 仅特训，2 = 不含特训
+    val htFilter: Int,
+    // 编辑语义：非空 = 替换原条目（先删旧再插新），null = 新增
+    val originalId: UUID?
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -72,6 +78,8 @@ data class AddPokemonBlacklistPayload(
                 b.writeInt(p.ivSpAtk); b.writeInt(p.ivSpDef); b.writeInt(p.ivSpd)
                 b.writeVarInt(p.aspects.size); p.aspects.forEach { b.writeString(it) }
                 b.writeInt(p.shinyFilter)
+                b.writeInt(p.htFilter)
+                b.writeBoolean(p.originalId != null); p.originalId?.let { b.writeUuid(it) }
             },
             { b ->
                 AddPokemonBlacklistPayload(
@@ -79,7 +87,9 @@ data class AddPokemonBlacklistPayload(
                     b.readInt(), b.readInt(), b.readInt(),
                     b.readInt(), b.readInt(), b.readInt(),
                     (0 until b.readVarInt()).map { b.readString() },
-                    b.readInt()
+                    b.readInt(),
+                    b.readInt(),
+                    if (b.readBoolean()) b.readUuid() else null
                 )
             }
         )
@@ -153,9 +163,13 @@ object BlacklistNetwork {
                     ivSpDef = payload.ivSpDef,
                     ivSpd = payload.ivSpd,
                     aspects = payload.aspects,
-                    shinyFilter = payload.shinyFilter.coerceIn(PokemonBlacklistEntry.SHINY_ANY, PokemonBlacklistEntry.SHINY_YES)
+                    shinyFilter = payload.shinyFilter.coerceIn(PokemonBlacklistEntry.SHINY_ANY, PokemonBlacklistEntry.SHINY_YES),
+                    htFilter = payload.htFilter.coerceIn(PokemonBlacklistEntry.HT_ANY, PokemonBlacklistEntry.HT_NONE)
                 )
-                PokemonBlacklistState.get(server).add(entry)
+                val state = PokemonBlacklistState.get(server)
+                // 编辑语义：替换原条目（改了形态/IV/闪光/特训等字段时，旧条目不再残留）
+                payload.originalId?.let { state.remove(it) }
+                state.add(entry)
                 val entries = PokemonBlacklistState.get(server).getAll()
                 ServerPlayNetworking.send(player, PokemonBlacklistDataPayload(entries))
             }

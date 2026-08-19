@@ -25,24 +25,32 @@ data class PokemonBlacklistEntry(
     //   [x, y, ...] = 仅匹配包含所有这些 aspect 的精灵
     val aspects: List<String> = emptyList(),
     // 闪光限定：-1 = 不限（旧数据缺省值），0 = 仅非闪光，1 = 仅闪光
-    val shinyFilter: Int = SHINY_ANY
+    val shinyFilter: Int = SHINY_ANY,
+    // 特训限定（配合 Cobblemon Utility+ 等模组的 hyper training）：
+    //   0 = 不限（旧数据缺省值），1 = 仅特训，2 = 不含特训
+    val htFilter: Int = HT_ANY
 ) {
     companion object {
         const val ALL_FORMS = "*"
         const val SHINY_ANY = -1
         const val SHINY_NO = 0
         const val SHINY_YES = 1
+        const val HT_ANY = 0
+        const val HT_ONLY = 1
+        const val HT_NONE = 2
     }
 
-    fun matches(targetSpeciesId: String, ivs: IVs, targetAspects: Set<String>, formAspectUnion: Set<String>, targetShiny: Boolean): Boolean {
+    fun matches(targetSpeciesId: String, ivs: IVs, htIvs: Map<com.cobblemon.mod.common.api.pokemon.stats.Stat, Int>, targetAspects: Set<String>, formAspectUnion: Set<String>, targetShiny: Boolean, targetHasHt: Boolean): Boolean {
         if (speciesId != targetSpeciesId) return false
         if (shinyFilter != SHINY_ANY && targetShiny != (shinyFilter == SHINY_YES)) return false
-        if (ivHp >= 0 && ivs[Stats.HP] != ivHp) return false
-        if (ivAtk >= 0 && ivs[Stats.ATTACK] != ivAtk) return false
-        if (ivDef >= 0 && ivs[Stats.DEFENCE] != ivDef) return false
-        if (ivSpAtk >= 0 && ivs[Stats.SPECIAL_ATTACK] != ivSpAtk) return false
-        if (ivSpDef >= 0 && ivs[Stats.SPECIAL_DEFENCE] != ivSpDef) return false
-        if (ivSpd >= 0 && ivs[Stats.SPEED] != ivSpd) return false
+        if (htFilter != HT_ANY && targetHasHt != (htFilter == HT_ONLY)) return false
+        // IV 按有效值匹配：特训项用特训值，未特训用真实值（特训 31 与原生 31 都命中「=31」规则）
+        if (ivHp >= 0 && (htIvs[Stats.HP] ?: ivs[Stats.HP]) != ivHp) return false
+        if (ivAtk >= 0 && (htIvs[Stats.ATTACK] ?: ivs[Stats.ATTACK]) != ivAtk) return false
+        if (ivDef >= 0 && (htIvs[Stats.DEFENCE] ?: ivs[Stats.DEFENCE]) != ivDef) return false
+        if (ivSpAtk >= 0 && (htIvs[Stats.SPECIAL_ATTACK] ?: ivs[Stats.SPECIAL_ATTACK]) != ivSpAtk) return false
+        if (ivSpDef >= 0 && (htIvs[Stats.SPECIAL_DEFENCE] ?: ivs[Stats.SPECIAL_DEFENCE]) != ivSpDef) return false
+        if (ivSpd >= 0 && (htIvs[Stats.SPEED] ?: ivs[Stats.SPEED]) != ivSpd) return false
         if (ALL_FORMS in aspects) return true
         if (aspects.isEmpty()) {
             // 默认形态：精灵不能携带该物种任何 form aspect（shiny 等非 form aspect 不影响）
@@ -78,7 +86,9 @@ class PokemonBlacklistState private constructor() : PersistentState() {
             addAll(species.standardForm.aspects)
             species.forms.forEach { addAll(it.aspects) }
         }
-        return entries.values.any { it.matches(speciesId, pokemon.ivs, pokemon.aspects, formAspectUnion, pokemon.shiny) }
+        // 特训判定：六项特训值（hyper trained，值域 0~31）任一存在即"有特训"
+        val targetHasHt = pokemon.ivs.hyperTrainedIVs.values.any { it >= 0 }
+        return entries.values.any { it.matches(speciesId, pokemon.ivs, pokemon.ivs.hyperTrainedIVs, pokemon.aspects, formAspectUnion, pokemon.shiny, targetHasHt) }
     }
 
     override fun writeNbt(nbt: NbtCompound, registryLookup: RegistryWrapper.WrapperLookup): NbtCompound {
@@ -98,6 +108,7 @@ class PokemonBlacklistState private constructor() : PersistentState() {
             e.aspects.forEach { aspectList.add(net.minecraft.nbt.NbtString.of(it)) }
             c.put("aspects", aspectList)
             c.putInt("shinyFilter", e.shinyFilter)
+            c.putInt("htFilter", e.htFilter)
             list.add(c)
         }
         nbt.put("entries", list)
@@ -128,7 +139,9 @@ class PokemonBlacklistState private constructor() : PersistentState() {
                                 else
                                     listOf(PokemonBlacklistEntry.ALL_FORMS),
                                 // 旧格式无 shinyFilter 字段 → 不限闪光，保持旧语义
-                                shinyFilter = if (c.contains("shinyFilter")) c.getInt("shinyFilter") else PokemonBlacklistEntry.SHINY_ANY
+                                shinyFilter = if (c.contains("shinyFilter")) c.getInt("shinyFilter") else PokemonBlacklistEntry.SHINY_ANY,
+                                // 旧格式无 htFilter 字段 → 不限特训，保持旧的不分特训语义
+                                htFilter = if (c.contains("htFilter")) c.getInt("htFilter") else PokemonBlacklistEntry.HT_ANY
                             )
                             entries[entry.id] = entry
                         } catch (e: Exception) {

@@ -20,16 +20,20 @@ fun PokemonPriceLimitEntry.write(buf: PacketByteBuf) {
     buf.writeString(speciesId)
     buf.writeInt(vCount)
     buf.writeInt(shinyFilter)
+    buf.writeVarInt(aspects.size); aspects.forEach { buf.writeString(it) }
     buf.writeBoolean(minPrice != null); minPrice?.let { buf.writeInt(it) }
     buf.writeBoolean(maxPrice != null); maxPrice?.let { buf.writeInt(it) }
+    buf.writeInt(htFilter)
 }
 
 fun readPokemonPriceLimitEntry(buf: PacketByteBuf) = PokemonPriceLimitEntry(
     speciesId = buf.readString(),
     vCount = buf.readInt(),
     shinyFilter = buf.readInt(),
+    aspects = (0 until buf.readVarInt()).map { buf.readString() },
     minPrice = if (buf.readBoolean()) buf.readInt() else null,
-    maxPrice = if (buf.readBoolean()) buf.readInt() else null
+    maxPrice = if (buf.readBoolean()) buf.readInt() else null,
+    htFilter = buf.readInt()
 )
 
 fun ItemPriceLimitEntry.write(buf: PacketByteBuf) {
@@ -64,7 +68,12 @@ data class AddPokemonPriceLimitPayload(
     val vCount: Int,
     val shinyFilter: Int,
     val minPrice: Int?,
-    val maxPrice: Int?
+    val maxPrice: Int?,
+    val aspects: List<String>,
+    // 编辑语义：非空 = 替换原条目（先删旧再插新），null = 新增
+    val original: PokemonPriceLimitEntry?,
+    // 特训限定：0 = 不限，1 = 仅特训，2 = 不含特训
+    val htFilter: Int
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -74,16 +83,22 @@ data class AddPokemonPriceLimitPayload(
                 b.writeString(p.speciesId)
                 b.writeInt(p.vCount)
                 b.writeInt(p.shinyFilter)
+                b.writeVarInt(p.aspects.size); p.aspects.forEach { b.writeString(it) }
                 b.writeBoolean(p.minPrice != null); p.minPrice?.let { b.writeInt(it) }
                 b.writeBoolean(p.maxPrice != null); p.maxPrice?.let { b.writeInt(it) }
+                b.writeBoolean(p.original != null); p.original?.write(b)
+                b.writeInt(p.htFilter)
             },
             { b ->
                 AddPokemonPriceLimitPayload(
-                    b.readString(),
-                    b.readInt(),
-                    b.readInt(),
-                    if (b.readBoolean()) b.readInt() else null,
-                    if (b.readBoolean()) b.readInt() else null
+                    speciesId = b.readString(),
+                    vCount = b.readInt(),
+                    shinyFilter = b.readInt(),
+                    aspects = (0 until b.readVarInt()).map { b.readString() },
+                    minPrice = if (b.readBoolean()) b.readInt() else null,
+                    maxPrice = if (b.readBoolean()) b.readInt() else null,
+                    original = if (b.readBoolean()) readPokemonPriceLimitEntry(b) else null,
+                    htFilter = b.readInt()
                 )
             }
         )
@@ -92,13 +107,23 @@ data class AddPokemonPriceLimitPayload(
 
 // ── C2S: 删除精灵价格限制 ──
 
-data class RemovePokemonPriceLimitPayload(val speciesId: String, val vCount: Int, val shinyFilter: Int) : CustomPayload {
+data class RemovePokemonPriceLimitPayload(val speciesId: String, val vCount: Int, val shinyFilter: Int, val aspects: List<String>, val htFilter: Int) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<RemovePokemonPriceLimitPayload>(CobbleMarket.id("remove_pokemon_price_limit"))
         val CODEC: PacketCodec<PacketByteBuf, RemovePokemonPriceLimitPayload> = PacketCodec.of(
-            { p, b -> b.writeString(p.speciesId); b.writeInt(p.vCount); b.writeInt(p.shinyFilter) },
-            { b -> RemovePokemonPriceLimitPayload(b.readString(), b.readInt(), b.readInt()) }
+            { p, b ->
+                b.writeString(p.speciesId); b.writeInt(p.vCount); b.writeInt(p.shinyFilter)
+                b.writeVarInt(p.aspects.size); p.aspects.forEach { b.writeString(it) }
+                b.writeInt(p.htFilter)
+            },
+            { b ->
+                RemovePokemonPriceLimitPayload(
+                    b.readString(), b.readInt(), b.readInt(),
+                    (0 until b.readVarInt()).map { b.readString() },
+                    b.readInt()
+                )
+            }
         )
     }
 }
@@ -134,7 +159,9 @@ class RequestItemPriceLimitPayload : CustomPayload {
 data class AddItemPriceLimitPayload(
     val itemName: String,
     val minPrice: Int?,
-    val maxPrice: Int?
+    val maxPrice: Int?,
+    // 编辑语义：非空 = 替换原条目（先删旧再插新），null = 新增
+    val originalItemId: String?
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -144,12 +171,14 @@ data class AddItemPriceLimitPayload(
                 b.writeString(p.itemName)
                 b.writeBoolean(p.minPrice != null); p.minPrice?.let { b.writeInt(it) }
                 b.writeBoolean(p.maxPrice != null); p.maxPrice?.let { b.writeInt(it) }
+                b.writeBoolean(p.originalItemId != null); p.originalItemId?.let { b.writeString(it) }
             },
             { b ->
                 AddItemPriceLimitPayload(
-                    b.readString(),
-                    if (b.readBoolean()) b.readInt() else null,
-                    if (b.readBoolean()) b.readInt() else null
+                    itemName = b.readString(),
+                    minPrice = if (b.readBoolean()) b.readInt() else null,
+                    maxPrice = if (b.readBoolean()) b.readInt() else null,
+                    originalItemId = if (b.readBoolean()) b.readString() else null
                 )
             }
         )
@@ -236,8 +265,14 @@ object PriceLimitNetwork {
                             return@execute
                         }
                 }
-                PokemonPriceLimitState.get(server).add(
-                    PokemonPriceLimitEntry(speciesId, vCount, shinyFilter, minPrice, maxPrice)
+                val state = PokemonPriceLimitState.get(server)
+                // 编辑语义：替换原条目（改了形态/物种/V 数/闪光/特训等 key 字段时，旧条目不再残留）
+                payload.original?.let { state.remove(it.speciesId, it.vCount, it.shinyFilter, it.aspects, it.htFilter) }
+                state.add(
+                    PokemonPriceLimitEntry(
+                        speciesId, vCount, shinyFilter, minPrice, maxPrice, payload.aspects,
+                        payload.htFilter.coerceIn(PokemonPriceLimitEntry.HT_ANY, PokemonPriceLimitEntry.HT_NONE)
+                    )
                 )
                 val entries = PokemonPriceLimitState.get(server).getAll()
                 ServerPlayNetworking.send(player, PokemonPriceLimitDataPayload(entries))
@@ -249,7 +284,7 @@ object PriceLimitNetwork {
             if (!player.hasPermissionLevel(2)) return@registerGlobalReceiver
             val server = player.server
             server.execute {
-                PokemonPriceLimitState.get(server).remove(payload.speciesId, payload.vCount, payload.shinyFilter)
+                PokemonPriceLimitState.get(server).remove(payload.speciesId, payload.vCount, payload.shinyFilter, payload.aspects, payload.htFilter)
                 val entries = PokemonPriceLimitState.get(server).getAll()
                 ServerPlayNetworking.send(player, PokemonPriceLimitDataPayload(entries))
             }
@@ -288,7 +323,10 @@ object PriceLimitNetwork {
                         Text.translatable("cobblemarket.blacklist.item_not_found").formatted(Formatting.RED), false)
                     return@execute
                 }
-                ItemPriceLimitState.get(server).add(ItemPriceLimitEntry(itemId, minPrice, maxPrice))
+                val state = ItemPriceLimitState.get(server)
+                // 编辑语义：替换原条目（改选了物品时，旧条目不再残留）
+                payload.originalItemId?.let { state.remove(it) }
+                state.add(ItemPriceLimitEntry(itemId, minPrice, maxPrice))
                 val entries = ItemPriceLimitState.get(server).getAll()
                 ServerPlayNetworking.send(player, ItemPriceLimitDataPayload(entries))
             }

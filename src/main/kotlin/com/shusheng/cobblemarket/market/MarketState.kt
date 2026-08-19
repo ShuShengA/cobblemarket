@@ -47,7 +47,9 @@ class MarketState private constructor() : PersistentState() {
         typeFilter: String? = null,
         minIvs: Map<String, Int> = emptyMap(),
         sellerUuid: UUID? = null,
-        sellerName: String? = null
+        sellerName: String? = null,
+        // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
+        htFilter: Int = 0
     ): List<MarketListing> {
         var results = getActiveListings()
         species?.let { s -> results = results.filter {
@@ -64,10 +66,27 @@ class MarketState private constructor() : PersistentState() {
             (it.extraData["secondaryType"]?.contains(t, ignoreCase = true) == true)
         } }
         minIvs.forEach { (statName, value) ->
-            results = results.filter { (it.extraData[statName]?.toIntOrNull() ?: 0) == value }
+            // 按有效值匹配：特训项（ht 值 >= 0）用特训值，未特训用真实值——
+            // 原生 31 与训练 31 搜 31 都应命中
+            val htName = statName.replace("ivs", "ht")
+            results = results.filter {
+                val real = it.extraData[statName]?.toIntOrNull() ?: 0
+                val ht = it.extraData[htName]?.toIntOrNull() ?: -1
+                (if (ht >= 0) ht else real) == value
+            }
         }
         sellerUuid?.let { u -> results = results.filter { it.sellerUuid == u } }
         sellerName?.let { s -> results = results.filter { it.sellerName.contains(s, ignoreCase = true) } }
+        // 特训筛选三态：六项特训值（-1 = 未特训）任一 >= 0 即有特训
+        if (htFilter != 0) {
+            results = results.filter { listing ->
+                val d = listing.extraData
+                val hasHt = (d["htHp"]?.toIntOrNull() ?: -1) >= 0 || (d["htAtk"]?.toIntOrNull() ?: -1) >= 0 ||
+                    (d["htDef"]?.toIntOrNull() ?: -1) >= 0 || (d["htSpAtk"]?.toIntOrNull() ?: -1) >= 0 ||
+                    (d["htSpDef"]?.toIntOrNull() ?: -1) >= 0 || (d["htSpd"]?.toIntOrNull() ?: -1) >= 0
+                if (htFilter == 1) hasHt else !hasHt
+            }
+        }
         return when (sortBy) {
             SortMode.PRICE_ASC -> results.sortedBy { it.price }
             SortMode.PRICE_DESC -> results.sortedByDescending { it.price }

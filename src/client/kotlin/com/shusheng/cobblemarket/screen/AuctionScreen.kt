@@ -36,6 +36,9 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
     private val rowHeight = 24
 
     private var currentTab = initialTab.coerceIn(0, 2) // 0 = 精灵, 1 = 物品, 2 = 我的
+    // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练（仅精灵 tab）
+    private var htFilter = 0
+    private var htButton: NineSliceButton? = null
     private var entries = listOf<AuctionEntry>()
     private var searchField: TextFieldWidget? = null
     private var hoveredRow = -1
@@ -147,24 +150,32 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         backButton = backBtn
         addDrawableChild(backBtn)
 
-        // tab 按钮：精灵 / 物品 / 我的
+        // tab 按钮 + 规则按钮：显示顺序 我的 | 精灵 | 物品 | 规则，四个按钮整体水平居中
         val tabW = 62
-        val tabStart = centerX - (tabW * 3 + 4) / 2
-        val tabLabels = listOf(
-            "cobblemarket.auction.tab_pokemon",
-            "cobblemarket.auction.tab_item",
-            "cobblemarket.auction.tab_mine"
-        )
+        val rulesW = 50
+        val totalW = tabW * 3 + rulesW + 2 * 3
+        val tabStart = centerX - totalW / 2
         tabButtons.clear()
-        tabLabels.forEachIndexed { i, _ ->
+        // 显示顺序：我的 | 精灵 | 物品（tabOrder 映射到真实 tab 索引，switchTab 语义不变）
+        val tabOrder = listOf(2, 0, 1)
+        tabOrder.forEachIndexed { i, tabIndex ->
             val btn = NineSliceButton(
                 tabStart + i * (tabW + 2), 32, tabW, 14,
-                Text.literal(""), { switchTab(i) }
+                Text.literal(""), { switchTab(tabIndex) }
             )
             tabButtons.add(btn)
             addDrawableChild(btn)
         }
         updateTabButtons()
+
+        // 规则按钮：tab 组最后一位（悬停显示自绘规则面板，标题金/正文白/重点红/项间分割线）
+        val rulesBtn = NineSliceButton(
+            tabStart + 3 * (tabW + 2), 32, rulesW, 14,
+            Text.translatable("cobblemarket.auction.rules"),
+            { }
+        )
+        rulesButton = rulesBtn
+        addDrawableChild(rulesBtn)
 
         searchField = TextFieldWidget(textRenderer, leftX + 2, 50, panelWidth - 4 - 52 - 20, 16, Text.translatable("cobblemarket.gui.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.gui.search_placeholder").formatted(Formatting.GRAY))
@@ -178,37 +189,66 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         createButton = createBtn
         addDrawableChild(createBtn)
 
-        // 规则按钮（+右侧）：悬停显示自绘规则面板（标题金/正文白/重点红/项间分割线）
-        val rulesBtn = NineSliceButton(
+        // 特训筛选按钮（+右侧，原规则按钮位置），仅精灵 tab 显示（拍卖列表全量下发，本地过滤即可）
+        htButton = NineSliceButton(
             leftX + panelWidth - 52, 50, 50, 16,
-            Text.translatable("cobblemarket.auction.rules"),
-            { }
+            htButtonText(),
+            { toggleHtFilter() },
+            if (htFilter != 0) GOLD_COLOR else 0xFFFFFF
         )
-        rulesButton = rulesBtn
-        addDrawableChild(rulesBtn)
+        htButton?.visible = currentTab == 0
+        addDrawableChild(htButton)
 
         // 不重置 scrollOffset：出价弹窗关闭/resize 重建时保留浏览位置（switchTab 才显式归零）
         ClientPlayNetworking.send(RequestAuctionListPayload())
     }
 
     private fun updateTabButtons() {
-        val keys = listOf("cobblemarket.auction.tab_pokemon", "cobblemarket.auction.tab_item", "cobblemarket.auction.tab_mine")
+        // 与 init 的 tabOrder 一致：显示顺序 我的 | 精灵 | 物品
+        val keys = listOf("cobblemarket.auction.tab_mine", "cobblemarket.auction.tab_pokemon", "cobblemarket.auction.tab_item")
+        val tabOrder = listOf(2, 0, 1)
         tabButtons.forEachIndexed { i, btn ->
             val label = Text.translatable(keys[i]).string
-            btn.setMessage(Text.literal(if (currentTab == i) "● $label" else label))
+            btn.setMessage(if (currentTab == tabOrder[i]) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label))
         }
     }
 
     private fun switchTab(tab: Int) {
         currentTab = tab
         searchField?.text = ""
-        // placeholder 跟随 tab：物品 tab 显示物品搜索提示，其余保持宝可梦名称
+        // placeholder 跟随 tab：精灵 tab 显示宝可梦名称，物品 tab 显示物品提示，我的 tab（精灵+物品混合）显示通用提示
         searchField?.setPlaceholder(Text.translatable(
-            if (tab == 1) "cobblemarket.item.search" else "cobblemarket.gui.search_placeholder"
+            when (tab) {
+                0 -> "cobblemarket.gui.search_placeholder"
+                1 -> "cobblemarket.item.search"
+                else -> "cobblemarket.auction.search_any"
+            }
         ).formatted(Formatting.GRAY))
         scrollOffset = 0
         hoveredRow = -1
         updateTabButtons()
+        htButton?.visible = currentTab == 0
+        rebuildBidButtons()
+    }
+
+    private fun htButtonText(): Text = Text.translatable(when (htFilter) {
+        0 -> "cobblemarket.gui.filter_ht_any"
+        1 -> "cobblemarket.gui.filter_ht_on"
+        else -> "cobblemarket.gui.filter_ht_off"
+    })
+
+    private fun toggleHtFilter() {
+        // 循环顺序：不限(0) → 不含特训(2) → 仅特训(1) → 不限
+        htFilter = when (htFilter) {
+            0 -> 2
+            2 -> 1
+            else -> 0
+        }
+        htButton?.setMessage(htButtonText())
+        // 筛选生效 = 金色，不限 = 白色（与闪光按钮一致）
+        htButton?.textColor = if (htFilter != 0) GOLD_COLOR else 0xFFFFFF
+        scrollOffset = 0
+        hoveredRow = -1
         rebuildBidButtons()
     }
 
@@ -301,6 +341,15 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
                 }
             }
             if (!inTab) return@filter false
+            // 特训筛选三态：六项特训值（-1 = 未特训）任一 >= 0 即有特训
+            if (htFilter != 0 && entry.type == "POKEMON") {
+                val d = entry.extraData
+                val hasHt = (d["htHp"]?.toIntOrNull() ?: -1) >= 0 || (d["htAtk"]?.toIntOrNull() ?: -1) >= 0 ||
+                    (d["htDef"]?.toIntOrNull() ?: -1) >= 0 || (d["htSpAtk"]?.toIntOrNull() ?: -1) >= 0 ||
+                    (d["htSpDef"]?.toIntOrNull() ?: -1) >= 0 || (d["htSpd"]?.toIntOrNull() ?: -1) >= 0
+                if (htFilter == 1 && !hasHt) return@filter false
+                if (htFilter == 2 && hasHt) return@filter false
+            }
             query == null || displayName(entry).contains(query, ignoreCase = true) ||
                 entry.species.contains(query, ignoreCase = true) || entry.sellerName.contains(query, ignoreCase = true)
         }.sortedBy { it.endsAt }
@@ -379,6 +428,8 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         backButton?.visible = false
         createButton?.visible = false
         tabButtons.forEach { it.visible = false }
+        rulesButton?.visible = false
+        htButton?.visible = false
         bidButtons.forEach { it.visible = false }
         val centerX = width / 2
         val dialogY = height / 2 - 95
@@ -520,9 +571,9 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
             val spd = Text.translatable("cobblemon.stat.special_defence.name").string
             val spe = Text.translatable("cobblemon.stat.speed.name").string
             infoLine(Text.translatable("cobblemarket.gui.tooltip_ivs").string)
-            infoLine("  $hp:${extra["ivsHp"]}", 0x66FF66); infoLine("  $atk:${extra["ivsAtk"]}", 0xFF6666)
-            infoLine("  $def:${extra["ivsDef"]}", 0xFFCC66); infoLine("  $spa:${extra["ivsSpAtk"]}", 0x6699FF)
-            infoLine("  $spd:${extra["ivsSpDef"]}", 0x66FF99); infoLine("  $spe:${extra["ivsSpd"]}", 0xFF99FF)
+            infoLine("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsHp"]?.toIntOrNull() ?: 0, htExtra(extra, "htHp"))}", 0x66FF66); infoLine("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htAtk"))}", 0xFF6666)
+            infoLine("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htDef"))}", 0xFFCC66); infoLine("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpAtk"))}", 0x6699FF)
+            infoLine("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpDef"))}", 0x66FF99); infoLine("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpd"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpd"))}", 0xFF99FF)
         } else {
             infoLine(displayName(entry))
             infoLine("×${entry.count}")
@@ -855,9 +906,9 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
             lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to 0xFFFFFF)
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to 0xFFFFFF)
-        lines.add(Text.literal("  $hp:${extra["ivsHp"]}") to 0x66FF66); lines.add(Text.literal("  $atk:${extra["ivsAtk"]}") to 0xFF6666)
-        lines.add(Text.literal("  $def:${extra["ivsDef"]}") to 0xFFCC66); lines.add(Text.literal("  $spa:${extra["ivsSpAtk"]}") to 0x6699FF)
-        lines.add(Text.literal("  $spd:${extra["ivsSpDef"]}") to 0x66FF99); lines.add(Text.literal("  $spe:${extra["ivsSpd"]}") to 0xFF99FF)
+        lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsHp"]?.toIntOrNull() ?: 0, htExtra(extra, "htHp"))}") to 0x66FF66); lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htAtk"))}") to 0xFF6666)
+        lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htDef"))}") to 0xFFCC66); lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpAtk"))}") to 0x6699FF)
+        lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpDef"))}") to 0x66FF99); lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpd"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpd"))}") to 0xFF99FF)
         // 分割线：上方精灵信息，下方拍卖信息
         lines.add(null to 0xFFFFFF)
         lines.add(Text.literal("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}") to 0xFFFFFF)
@@ -983,6 +1034,9 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
             bidField?.text = savedText
         }
     }
+
+    // 挂单 extra 中的特训值（字符串，缺省/负数 = 未特训）
+    private fun htExtra(extra: Map<String, String>, key: String): Int = extra[key]?.toIntOrNull() ?: -1
 
     override fun shouldPause() = false
 }

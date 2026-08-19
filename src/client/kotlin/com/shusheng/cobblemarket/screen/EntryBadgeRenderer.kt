@@ -49,12 +49,12 @@ object EntryBadgeRenderer {
             lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to 0xFFFFFF)
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to 0xFFFFFF)
-        lines.add(Text.literal("  $hp:${entry.ivsHp}") to 0x66FF66)
-        lines.add(Text.literal("  $atk:${entry.ivsAtk}") to 0xFF6666)
-        lines.add(Text.literal("  $def:${entry.ivsDef}") to 0xFFCC66)
-        lines.add(Text.literal("  $spa:${entry.ivsSpAtk}") to 0x6699FF)
-        lines.add(Text.literal("  $spd:${entry.ivsSpDef}") to 0x66FF99)
-        lines.add(Text.literal("  $spe:${entry.ivsSpd}") to 0xFF99FF)
+        lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsHp, entry.htHp)}") to 0x66FF66)
+        lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsAtk, entry.htAtk)}") to 0xFF6666)
+        lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsDef, entry.htDef)}") to 0xFFCC66)
+        lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpAtk, entry.htSpAtk)}") to 0x6699FF)
+        lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}") to 0x66FF99)
+        lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}") to 0xFF99FF)
         lines.add(
             Text.literal("${Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).string} ${entry.sellerName}") to 0xFFFFFF
         )

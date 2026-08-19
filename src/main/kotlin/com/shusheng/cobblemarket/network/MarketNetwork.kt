@@ -41,6 +41,9 @@ data class ListingEntry(
     val secondaryType: String,
     val ivsHp: Int, val ivsAtk: Int, val ivsDef: Int,
     val ivsSpAtk: Int, val ivsSpDef: Int, val ivsSpd: Int,
+    // 极限特训值（hyper training，-1 = 未特训）：显示「真实值（特训值）」用
+    val htHp: Int, val htAtk: Int, val htDef: Int,
+    val htSpAtk: Int, val htSpDef: Int, val htSpd: Int,
     val nature: String,
     val ability: String,
     val gender: String,
@@ -63,6 +66,8 @@ data class ListingEntry(
         buf.writeString(secondaryType)
         buf.writeInt(ivsHp); buf.writeInt(ivsAtk); buf.writeInt(ivsDef)
         buf.writeInt(ivsSpAtk); buf.writeInt(ivsSpDef); buf.writeInt(ivsSpd)
+        buf.writeInt(htHp); buf.writeInt(htAtk); buf.writeInt(htDef)
+        buf.writeInt(htSpAtk); buf.writeInt(htSpDef); buf.writeInt(htSpd)
         buf.writeString(nature)
         buf.writeString(ability)
         buf.writeString(gender)
@@ -87,6 +92,8 @@ data class ListingEntry(
             secondaryType = buf.readString(),
             ivsHp = buf.readInt(), ivsAtk = buf.readInt(), ivsDef = buf.readInt(),
             ivsSpAtk = buf.readInt(), ivsSpDef = buf.readInt(), ivsSpd = buf.readInt(),
+            htHp = buf.readInt(), htAtk = buf.readInt(), htDef = buf.readInt(),
+            htSpAtk = buf.readInt(), htSpDef = buf.readInt(), htSpd = buf.readInt(),
             nature = buf.readString(),
             ability = buf.readString(),
             gender = buf.readString(),
@@ -152,7 +159,9 @@ data class RequestMarketPayload(
     val minIvsSpDef: Int,
     val minIvsSpd: Int,
     val pageSize: Int,
-    val mineOnly: Boolean
+    val mineOnly: Boolean,
+    // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
+    val htFilter: Int
 ) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
@@ -166,7 +175,7 @@ data class RequestMarketPayload(
                 p.minIvsAtk
             ); b.writeInt(p.minIvsDef); b.writeInt(p.minIvsSpAtk); b.writeInt(p.minIvsSpDef); b.writeInt(p.minIvsSpd); b.writeInt(
                 p.pageSize
-            ); b.writeBoolean(p.mineOnly)
+            ); b.writeBoolean(p.mineOnly); b.writeInt(p.htFilter)
             },
             { b ->
                 RequestMarketPayload(
@@ -185,7 +194,8 @@ data class RequestMarketPayload(
                     b.readInt(),
                     b.readInt(),
                     b.readInt(),
-                    b.readBoolean()
+                    b.readBoolean(),
+                    b.readInt()
                 )
             }
         )
@@ -207,7 +217,9 @@ data class AdminRequestPokemonPayload(
     val minIvsSpDef: Int,
     val minIvsSpd: Int,
     val pageSize: Int,
-    val mineOnly: Boolean
+    val mineOnly: Boolean,
+    // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
+    val htFilter: Int
 ) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
@@ -219,7 +231,7 @@ data class AdminRequestPokemonPayload(
                 p.sortMode
             ); b.writeInt(p.page); b.writeInt(p.minIvsHp); b.writeInt(p.minIvsAtk); b.writeInt(p.minIvsDef); b.writeInt(
                 p.minIvsSpAtk
-            ); b.writeInt(p.minIvsSpDef); b.writeInt(p.minIvsSpd); b.writeInt(p.pageSize); b.writeBoolean(p.mineOnly)
+            ); b.writeInt(p.minIvsSpDef); b.writeInt(p.minIvsSpd); b.writeInt(p.pageSize); b.writeBoolean(p.mineOnly); b.writeInt(p.htFilter)
             },
             { b ->
                 AdminRequestPokemonPayload(
@@ -235,7 +247,8 @@ data class AdminRequestPokemonPayload(
                     b.readInt(),
                     b.readInt(),
                     b.readInt(),
-                    b.readBoolean()
+                    b.readBoolean(),
+                    b.readInt()
                 )
             }
         )
@@ -357,6 +370,8 @@ data class PokemonPreview(
     val nature: String,
     val ability: String,
     val ivsHp: Int, val ivsAtk: Int, val ivsDef: Int, val ivsSpAtk: Int, val ivsSpDef: Int, val ivsSpd: Int,
+    // 极限特训值（hyper training，-1 = 未特训）：显示「真实值（特训值）」用
+    val htHp: Int, val htAtk: Int, val htDef: Int, val htSpAtk: Int, val htSpDef: Int, val htSpd: Int,
     val ball: String,
     val primaryType: String,
     val secondaryType: String,
@@ -371,6 +386,8 @@ data class PokemonPreview(
         buf.writeString(nature); buf.writeString(ability)
         buf.writeInt(ivsHp); buf.writeInt(ivsAtk); buf.writeInt(ivsDef)
         buf.writeInt(ivsSpAtk); buf.writeInt(ivsSpDef); buf.writeInt(ivsSpd)
+        buf.writeInt(htHp); buf.writeInt(htAtk); buf.writeInt(htDef)
+        buf.writeInt(htSpAtk); buf.writeInt(htSpDef); buf.writeInt(htSpd)
         buf.writeString(ball); buf.writeString(primaryType); buf.writeString(secondaryType)
         buf.writeString(source); buf.writeInt(slot); buf.writeString(heldItemId)
         buf.writeVarInt(aspects.size); aspects.forEach { buf.writeString(it) }
@@ -381,6 +398,7 @@ data class PokemonPreview(
             buf.readUuid(), buf.readString(), buf.readString(), buf.readString(),
             buf.readInt(), buf.readBoolean(), buf.readString(),
             buf.readString(), buf.readString(),
+            buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
             buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
             buf.readString(), buf.readString(), buf.readString(),
             buf.readString(), buf.readInt(), buf.readString(),
@@ -919,7 +937,8 @@ object MarketNetwork {
                         if (payload.minIvsSpDef >= 0) put("ivsSpDef", payload.minIvsSpDef)
                         if (payload.minIvsSpd >= 0) put("ivsSpd", payload.minIvsSpd)
                     },
-                    sellerUuid = if (payload.mineOnly) player.uuid else null
+                    sellerUuid = if (payload.mineOnly) player.uuid else null,
+                    htFilter = payload.htFilter
                 )
 
                 val pageSize = payload.pageSize.coerceIn(1, 30)
@@ -947,6 +966,12 @@ object MarketNetwork {
                             ivsSpAtk = detail["ivsSpAtk"]?.toIntOrNull() ?: 0,
                             ivsSpDef = detail["ivsSpDef"]?.toIntOrNull() ?: 0,
                             ivsSpd = detail["ivsSpd"]?.toIntOrNull() ?: 0,
+                            htHp = detail["htHp"]?.toIntOrNull() ?: -1,
+                            htAtk = detail["htAtk"]?.toIntOrNull() ?: -1,
+                            htDef = detail["htDef"]?.toIntOrNull() ?: -1,
+                            htSpAtk = detail["htSpAtk"]?.toIntOrNull() ?: -1,
+                            htSpDef = detail["htSpDef"]?.toIntOrNull() ?: -1,
+                            htSpd = detail["htSpd"]?.toIntOrNull() ?: -1,
                             nature = detail["nature"] ?: "?",
                             ability = detail["ability"] ?: "?",
                             gender = detail["gender"] ?: "?",
@@ -1195,7 +1220,8 @@ object MarketNetwork {
                         if (payload.minIvsSpd >= 0) put("ivsSpd", payload.minIvsSpd)
                     },
                     sellerUuid = if (payload.mineOnly) player.uuid else null,
-                    sellerName = payload.sellerFilter.ifBlank { null }
+                    sellerName = payload.sellerFilter.ifBlank { null },
+                    htFilter = payload.htFilter
                 )
 
                 val pageSize = payload.pageSize.coerceIn(1, 30)
@@ -1223,6 +1249,12 @@ object MarketNetwork {
                             ivsSpAtk = detail["ivsSpAtk"]?.toIntOrNull() ?: 0,
                             ivsSpDef = detail["ivsSpDef"]?.toIntOrNull() ?: 0,
                             ivsSpd = detail["ivsSpd"]?.toIntOrNull() ?: 0,
+                            htHp = detail["htHp"]?.toIntOrNull() ?: -1,
+                            htAtk = detail["htAtk"]?.toIntOrNull() ?: -1,
+                            htDef = detail["htDef"]?.toIntOrNull() ?: -1,
+                            htSpAtk = detail["htSpAtk"]?.toIntOrNull() ?: -1,
+                            htSpDef = detail["htSpDef"]?.toIntOrNull() ?: -1,
+                            htSpd = detail["htSpd"]?.toIntOrNull() ?: -1,
                             nature = detail["nature"] ?: "?",
                             ability = detail["ability"] ?: "?",
                             gender = detail["gender"] ?: "?",
@@ -1480,25 +1512,39 @@ object MarketNetwork {
                     return@execute
                 }
 
-                // 价格限制检查：所有匹配规则（物种可空=全部精灵、V 档可空=不限）的最严交集
-                val priceBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
-                    .getPriceBounds(
-                        pokemon.species.resourceIdentifier.toString(),
-                        com.shusheng.cobblemarket.market.PokemonPriceLimitState.vCountOf(pokemon.ivs),
-                        pokemon.shiny
+                // 携带物黑名单检查：拉黑的物品不允许随精灵上架（防绕过物品黑名单，与蛋交易联动同语义）
+                val heldItem = pokemon.heldItem()
+                val heldItemId = if (heldItem.isEmpty) null
+                    else net.minecraft.registry.Registries.ITEM.getId(heldItem.item).toString()
+                if (heldItemId != null && com.shusheng.cobblemarket.market.ItemBlacklistState.get(server).contains(heldItemId)) {
+                    ServerPlayNetworking.send(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.held_item_blocked"))
                     )
+                    return@execute
+                }
+                // 价格限制检查：精灵规则（物种可空=全部精灵、V 档可空=不限、形态照黑名单语义）+ 携带物规则合并
+                val pokemonBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
+                    .getPriceBounds(pokemon)
+                val itemBounds = heldItemId?.let {
+                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server).getPriceBounds(it)
+                }
+                val priceBounds = com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
                 if (priceBounds != null) {
+                    // 携带物参与限价时用带说明的提示，玩家才知道总价里包含了携带物部分
                     if (priceBounds.min != null && payload.price < priceBounds.min) {
+                        val key = if (heldItemId != null) "cobblemarket.price_limit.held_below_min" else "cobblemarket.price_limit.below_min"
                         ServerPlayNetworking.send(
                             player,
-                            MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.below_min", priceBounds.min))
+                            MarketResultPayload(false, Text.translatable(key, priceBounds.min))
                         )
                         return@execute
                     }
                     if (priceBounds.max != null && payload.price > priceBounds.max) {
+                        val key = if (heldItemId != null) "cobblemarket.price_limit.held_above_max" else "cobblemarket.price_limit.above_max"
                         ServerPlayNetworking.send(
                             player,
-                            MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.above_max", priceBounds.max))
+                            MarketResultPayload(false, Text.translatable(key, priceBounds.max))
                         )
                         return@execute
                     }
@@ -2386,6 +2432,7 @@ object MarketNetwork {
         pokemon: com.cobblemon.mod.common.pokemon.Pokemon,
         heldItemStack: ItemStack
     ): Map<String, String> {
+        val htIvs = pokemon.ivs.hyperTrainedIVs // 极限特训值表（-1 = 未特训）
         val extra = mutableMapOf(
             "speciesId" to pokemon.species.resourceIdentifier.toString(),
             "speciesName" to pokemon.species.translatedName.string,
@@ -2397,6 +2444,12 @@ object MarketNetwork {
             "ivsSpAtk" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK].toString(),
             "ivsSpDef" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE].toString(),
             "ivsSpd" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED].toString(),
+            "htHp" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP] ?: -1).toString(),
+            "htAtk" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK] ?: -1).toString(),
+            "htDef" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.DEFENCE] ?: -1).toString(),
+            "htSpAtk" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK] ?: -1).toString(),
+            "htSpDef" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE] ?: -1).toString(),
+            "htSpd" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: -1).toString(),
             "nature" to "cobblemon.nature.${pokemon.effectiveNature.name.path}",
             "ability" to "cobblemon.ability.${pokemon.ability.name}",
             "gender" to pokemon.gender.name,
@@ -2431,6 +2484,12 @@ object MarketNetwork {
             ivsSpAtk = pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK] ?: 0,
             ivsSpDef = pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE] ?: 0,
             ivsSpd = pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: 0,
+            htHp = pokemon.ivs.hyperTrainedIVs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP] ?: -1,
+            htAtk = pokemon.ivs.hyperTrainedIVs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK] ?: -1,
+            htDef = pokemon.ivs.hyperTrainedIVs[com.cobblemon.mod.common.api.pokemon.stats.Stats.DEFENCE] ?: -1,
+            htSpAtk = pokemon.ivs.hyperTrainedIVs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK] ?: -1,
+            htSpDef = pokemon.ivs.hyperTrainedIVs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE] ?: -1,
+            htSpd = pokemon.ivs.hyperTrainedIVs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: -1,
             ball = "item.cobblemon.${pokemon.caughtBall.name.path}",
             primaryType = "cobblemon.type.${pokemon.primaryType.name.lowercase()}",
             secondaryType = pokemon.secondaryType?.let { "cobblemon.type.${it.name.lowercase()}" } ?: "",

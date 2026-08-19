@@ -539,9 +539,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to 0xFFFFFF)
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to 0xFFFFFF)
-        lines.add(Text.literal("  $hp:${extra["ivsHp"]}") to 0x66FF66); lines.add(Text.literal("  $atk:${extra["ivsAtk"]}") to 0xFF6666)
-        lines.add(Text.literal("  $def:${extra["ivsDef"]}") to 0xFFCC66); lines.add(Text.literal("  $spa:${extra["ivsSpAtk"]}") to 0x6699FF)
-        lines.add(Text.literal("  $spd:${extra["ivsSpDef"]}") to 0x66FF99); lines.add(Text.literal("  $spe:${extra["ivsSpd"]}") to 0xFF99FF)
+        lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsHp"]?.toIntOrNull() ?: 0, htExtra(extra, "htHp"))}") to 0x66FF66); lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htAtk"))}") to 0xFF6666)
+        lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htDef"))}") to 0xFFCC66); lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpAtk"))}") to 0x6699FF)
+        lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpDef"))}") to 0x66FF99); lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpd"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpd"))}") to 0xFF99FF)
         // 分割线：上方精灵信息，下方拍卖信息
         lines.add(null to 0xFFFFFF)
         lines.add(Text.literal("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}") to 0xFFFFFF)
@@ -713,9 +713,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             val spd = Text.translatable("cobblemon.stat.special_defence.name").string
             val spe = Text.translatable("cobblemon.stat.speed.name").string
             infoLine(Text.translatable("cobblemarket.gui.tooltip_ivs").string)
-            infoLine("  $hp:${extra["ivsHp"]}", 0x66FF66); infoLine("  $atk:${extra["ivsAtk"]}", 0xFF6666)
-            infoLine("  $def:${extra["ivsDef"]}", 0xFFCC66); infoLine("  $spa:${extra["ivsSpAtk"]}", 0x6699FF)
-            infoLine("  $spd:${extra["ivsSpDef"]}", 0x66FF99); infoLine("  $spe:${extra["ivsSpd"]}", 0xFF99FF)
+            infoLine("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsHp"]?.toIntOrNull() ?: 0, htExtra(extra, "htHp"))}", 0x66FF66); infoLine("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htAtk"))}", 0xFF6666)
+            infoLine("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htDef"))}", 0xFFCC66); infoLine("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpAtk"))}", 0x6699FF)
+            infoLine("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpDef"))}", 0x66FF99); infoLine("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpd"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpd"))}", 0xFF99FF)
         } else {
             infoLine(displayName(entry))
             infoLine("×${entry.count}")
@@ -778,6 +778,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         }
         return result
     }
+
+    // 挂单 extra 中的特训值（字符串，缺省/负数 = 未特训）
+    private fun htExtra(extra: Map<String, String>, key: String): Int = extra[key]?.toIntOrNull() ?: -1
 
     override fun shouldPause() = false
 }

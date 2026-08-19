@@ -35,6 +35,8 @@ class SellSelectScreen : Screen(Text.translatable("cobblemarket.sell.title")) {
     private var typeFilter = ""
     private var typeIdx = 0
     private val minIvs = IntArray(6) { -1 }
+    // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
+    private var htFilter = 0
     private var hpF: TextFieldWidget? = null; private var atkF: TextFieldWidget? = null; private var defF: TextFieldWidget? = null
     private var spaF: TextFieldWidget? = null; private var spdF: TextFieldWidget? = null; private var speF: TextFieldWidget? = null
 
@@ -89,30 +91,43 @@ class SellSelectScreen : Screen(Text.translatable("cobblemarket.sell.title")) {
         hpF = mkIv(lx + 2, "HP"); atkF = mkIv(lx + 51, "ATK"); defF = mkIv(lx + 100, "DEF")
         spaF = mkIv(lx + 149, "SpA"); spdF = mkIv(lx + 198, "SpD"); speF = mkIv(lx + 247, "Spd")
 
-        // Row 3 (y=72): Shiny + Type + Price + Sell + Cancel
+        // 返回按钮：右上角（与精灵市场统一）
+        addDrawableChild(NineSliceButton(
+            lx + panelW - 50, 13, 50, 16,
+            Text.translatable("cobblemarket.gui.back"),
+            { client?.setScreen(MarketScreen()) }
+        ))
+
+        // Row 3 (y=72): 闪光(符号) + 类型 + 价格 + 上架 + 特训
         val btnY = 72
         addDrawableChild(NineSliceButton(
-            lx + 2, btnY, 62, 20,
-            Text.translatable(if (shinyOnly) "cobblemarket.gui.shiny_on" else "cobblemarket.gui.shiny_off"),
+            lx + 2, btnY, 30, 20,
+            Text.literal(if (shinyOnly) "★" else "☆"),
             { shinyOnly = !shinyOnly; rebuild() },
             // 开 = 金色 ★，关 = 白色 ☆（与其他界面闪光按钮一致）
             if (shinyOnly) GOLD_COLOR else 0xFFFFFF
         ))
 
         addDrawableChild(NineSliceButton(
-            lx + 66, btnY, 58, 20,
+            lx + 34, btnY, 58, 20,
             if (typeFilter.isEmpty()) Text.translatable("cobblemarket.sell.type") else Text.translatable(typeFilter),
             { cycleType(); rebuild() }
         ))
 
-        priceField = TextFieldWidget(textRenderer, lx + 126, btnY, 66, 18, Text.literal(""))
+        priceField = TextFieldWidget(textRenderer, lx + 94, btnY, 60, 18, Text.literal(""))
         priceField?.setPlaceholder(Text.translatable("cobblemarket.sell.price_placeholder"))
         priceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addSelectableChild(priceField)
         addDrawableChild(priceField)
 
-        addDrawableChild(NineSliceButton(lx + 194, btnY, 48, 20, Text.translatable("cobblemarket.sell.sell"), { sellSelected() }))
-        addDrawableChild(NineSliceButton(lx + 244, btnY, 48, 20, Text.translatable("cobblemarket.sell.back"), { client?.setScreen(MarketScreen()) }))
+        addDrawableChild(NineSliceButton(lx + 156, btnY, 48, 20, Text.translatable("cobblemarket.sell.sell"), { sellSelected() }))
+        // 特训筛选（三态循环）
+        addDrawableChild(NineSliceButton(
+            lx + 206, btnY, 80, 20,
+            htButtonText(),
+            { toggleHtFilter(); rebuild() },
+            if (htFilter != 0) GOLD_COLOR else 0xFFFFFF
+        ))
 
         if (!loaded) {
             ClientPlayNetworking.send(RequestMyPokemonPayload(0, requestId))
@@ -142,9 +157,34 @@ class SellSelectScreen : Screen(Text.translatable("cobblemarket.sell.title")) {
             (q == null || speciesDisplay(p).contains(q, ignoreCase = true) || p.speciesName.contains(q, ignoreCase = true)) &&
             (!shinyOnly || p.shiny) &&
             (typeFilter.isEmpty() || p.primaryType == typeFilter || p.secondaryType == typeFilter) &&
-            (minIvs[0] < 0 || p.ivsHp == minIvs[0]) && (minIvs[1] < 0 || p.ivsAtk == minIvs[1]) &&
-            (minIvs[2] < 0 || p.ivsDef == minIvs[2]) && (minIvs[3] < 0 || p.ivsSpAtk == minIvs[3]) &&
-            (minIvs[4] < 0 || p.ivsSpDef == minIvs[4]) && (minIvs[5] < 0 || p.ivsSpd == minIvs[5])
+            // IV 按有效值匹配：特训项用特训值，未特训用真实值（原生 31 与训练 31 都命中）
+            (minIvs[0] < 0 || (if (p.htHp >= 0) p.htHp else p.ivsHp) == minIvs[0]) &&
+            (minIvs[1] < 0 || (if (p.htAtk >= 0) p.htAtk else p.ivsAtk) == minIvs[1]) &&
+            (minIvs[2] < 0 || (if (p.htDef >= 0) p.htDef else p.ivsDef) == minIvs[2]) &&
+            (minIvs[3] < 0 || (if (p.htSpAtk >= 0) p.htSpAtk else p.ivsSpAtk) == minIvs[3]) &&
+            (minIvs[4] < 0 || (if (p.htSpDef >= 0) p.htSpDef else p.ivsSpDef) == minIvs[4]) &&
+            (minIvs[5] < 0 || (if (p.htSpd >= 0) p.htSpd else p.ivsSpd) == minIvs[5]) &&
+            // 特训筛选三态
+            when (htFilter) {
+                1 -> p.htHp >= 0 || p.htAtk >= 0 || p.htDef >= 0 || p.htSpAtk >= 0 || p.htSpDef >= 0 || p.htSpd >= 0
+                2 -> !(p.htHp >= 0 || p.htAtk >= 0 || p.htDef >= 0 || p.htSpAtk >= 0 || p.htSpDef >= 0 || p.htSpd >= 0)
+                else -> true
+            }
+        }
+    }
+
+    private fun htButtonText(): Text = Text.translatable(when (htFilter) {
+        0 -> "cobblemarket.gui.filter_ht_any"
+        1 -> "cobblemarket.gui.filter_ht_on"
+        else -> "cobblemarket.gui.filter_ht_off"
+    })
+
+    private fun toggleHtFilter() {
+        // 循环顺序：不限(0) → 不含特训(2) → 仅特训(1) → 不限
+        htFilter = when (htFilter) {
+            0 -> 2
+            2 -> 1
+            else -> 0
         }
     }
 
@@ -379,9 +419,9 @@ class SellSelectScreen : Screen(Text.translatable("cobblemarket.sell.title")) {
             lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to 0xFFFFFF)
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to 0xFFFFFF)
-        lines.add(Text.literal("  $hp:${p.ivsHp}") to 0x66FF66); lines.add(Text.literal("  $atk:${p.ivsAtk}") to 0xFF6666)
-        lines.add(Text.literal("  $def:${p.ivsDef}") to 0xFFCC66); lines.add(Text.literal("  $spa:${p.ivsSpAtk}") to 0x6699FF)
-        lines.add(Text.literal("  $spd:${p.ivsSpDef}") to 0x66FF99); lines.add(Text.literal("  $spe:${p.ivsSpd}") to 0xFF99FF)
+        lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsHp, p.htHp)}") to 0x66FF66); lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsAtk, p.htAtk)}") to 0xFF6666)
+        lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsDef, p.htDef)}") to 0xFFCC66); lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpAtk, p.htSpAtk)}") to 0x6699FF)
+        lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpDef, p.htSpDef)}") to 0x66FF99); lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpd, p.htSpd)}") to 0xFF99FF)
 
         var mw = 0; lines.forEach { mw = maxOf(mw, textRenderer.getWidth(it.first)) }
         if (heldItemLine >= 0) {
