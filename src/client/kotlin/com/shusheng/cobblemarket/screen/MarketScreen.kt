@@ -34,6 +34,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var lastSearchEdit = 0L
     private var shinyOnly = false
     private var showMineOnly = false
+    // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
+    private var htFilter = 0
+    private var htButton: NineSliceButton? = null
     private var filterExpanded = false
     private var sortMode = "NEWEST"
     private var genderFilter = ""
@@ -187,10 +190,10 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         spdField = createIvField(leftX + 100, 114, "SpD")
         speField = createIvField(leftX + 196, 114, "Spd")
 
-        // Row 5 (y=126): Shiny + Sort + Mine + Reset
+        // Row 5 (y=138): Shiny(符号) + Sort + HT + Mine + Reset
         shinyButton = NineSliceButton(
-            leftX + 4, 138, 90, 20,
-            Text.translatable(if (shinyOnly) "cobblemarket.gui.shiny_on" else "cobblemarket.gui.shiny_off"),
+            leftX + 4, 138, 30, 20,
+            Text.literal(if (shinyOnly) "★" else "☆"),
             { toggleShiny() },
             // resize 重建时保持当前状态的颜色
             if (shinyOnly) GOLD_COLOR else 0xFFFFFF
@@ -198,11 +201,19 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         addDrawableChild(shinyButton)
 
         sortButton = NineSliceButton(
-            leftX + 98, 138, 90, 20,
+            leftX + 36, 138, 90, 20,
             Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay())),
             { cycleSort() }
         )
         addDrawableChild(sortButton)
+
+        htButton = NineSliceButton(
+            leftX + 128, 138, 62, 20,
+            htButtonText(),
+            { toggleHtFilter() },
+            if (htFilter != 0) GOLD_COLOR else 0xFFFFFF
+        )
+        addDrawableChild(htButton)
 
         mineButton = NineSliceButton(
             leftX + 192, 138, 50, 20,
@@ -212,7 +223,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         addDrawableChild(mineButton)
 
         resetButton = NineSliceButton(
-            leftX + 246, 138, 50, 20,
+            leftX + 244, 138, 52, 20,
             Text.translatable("cobblemarket.gui.reset"),
             { resetFilters() }
         )
@@ -367,11 +378,36 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private fun toggleShiny() {
         shinyOnly = !shinyOnly
         currentPage = 1
-        shinyButton.message = Text.translatable(if (shinyOnly) "cobblemarket.gui.shiny_on" else "cobblemarket.gui.shiny_off")
+        shinyButton.message = Text.literal(if (shinyOnly) "★" else "☆")
         // 开 = 金色 ★，关 = 白色 ☆（与价格限制/黑名单的闪光按钮一致）
         shinyButton.textColor = if (shinyOnly) GOLD_COLOR else 0xFFFFFF
         mineButton.message = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         refreshData()
+    }
+
+    // ── Hyper trained filter ──
+
+    private fun htButtonText(): Text = Text.translatable(when (htFilter) {
+        0 -> "cobblemarket.gui.filter_ht_any"
+        1 -> "cobblemarket.gui.filter_ht_on"
+        else -> "cobblemarket.gui.filter_ht_off"
+    })
+
+    private fun toggleHtFilter() {
+        // 循环顺序：不限(0) → 不含特训(2) → 仅特训(1) → 不限
+        htFilter = when (htFilter) {
+            0 -> 2
+            2 -> 1
+            else -> 0
+        }
+        currentPage = 1
+        htButton?.setMessage(htButtonText())
+        // 筛选生效 = 金色，不限 = 白色（与闪光按钮一致）
+        htButton?.textColor = if (htFilter != 0) GOLD_COLOR else 0xFFFFFF
+        // 走防抖发送：立即发送会撞上服务端 250ms 节流（搜索刚发过请求时点击，请求被吞，
+        // 按钮状态与列表脱节），防抖保证最终态请求落在节流窗口外
+        searchDirty = true
+        lastSearchEdit = System.currentTimeMillis()
     }
 
     // ── Sort cycling ──
@@ -437,8 +473,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         spaField?.text = ""
         spdField?.text = ""
         speField?.text = ""
-        shinyButton.message = Text.translatable("cobblemarket.gui.shiny_off")
+        shinyButton.message = Text.literal("☆")
         shinyButton.textColor = 0xFFFFFF
+        htFilter = 0
+        htButton?.setMessage(htButtonText())
+        htButton?.textColor = 0xFFFFFF
         genderButton.message = genderButtonText()
         typeButton.message = typeButtonText()
         sortButton.message = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
@@ -542,7 +581,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 minIvsSpDef = ivs[4],
                 minIvsSpd = ivs[5],
                 pageSize = getMaxVisibleRows(),
-                mineOnly = showMineOnly
+                mineOnly = showMineOnly,
+                htFilter = htFilter
             )
         )
     }
@@ -927,12 +967,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to w)
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to w)
-        lines.add(Text.literal("  $hp:${entry.ivsHp}") to ivColors[0])
-        lines.add(Text.literal("  $atk:${entry.ivsAtk}") to ivColors[1])
-        lines.add(Text.literal("  $def:${entry.ivsDef}") to ivColors[2])
-        lines.add(Text.literal("  $spa:${entry.ivsSpAtk}") to ivColors[3])
-        lines.add(Text.literal("  $spd:${entry.ivsSpDef}") to ivColors[4])
-        lines.add(Text.literal("  $spe:${entry.ivsSpd}") to ivColors[5])
+        lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsHp, entry.htHp)}") to ivColors[0])
+        lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsAtk, entry.htAtk)}") to ivColors[1])
+        lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsDef, entry.htDef)}") to ivColors[2])
+        lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpAtk, entry.htSpAtk)}") to ivColors[3])
+        lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}") to ivColors[4])
+        lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}") to ivColors[5])
         lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).string} ${entry.sellerName}") to w)
         lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).string} ${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}") to w)
 

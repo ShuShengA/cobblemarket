@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.0-beta.5 (in development, unreleased)
+
+### New Features: Cobblemon Utility+ Support (Hyper Training)
+
+- Hyper-trained IVs now display correctly: market, auction hall, listing and pending-claim screens show "real value (trained value)", e.g. 12（31） — the same format as the party details screen
+- New hyper-training filter (3-state cycle: Any / No HT / HT Only): available on the Pokémon market, the admin all-listings page, the auction hall Pokémon tab and both listing screens
+- IV checks now match effective values: trained-to-31 and natural 31 are equivalent (search filters, price-limit V counts and blacklist IV matching all use effective values)
+- Pokémon blacklist and price limit rules gain a "hyper training" dimension: a rule can be "No HT" (applies only to untrained Pokémon, preventing trained 6V Pokémon from bypassing rules based on real IVs); existing rules load as "Any" (unchanged behavior); both screens get a 2-state list filter and tooltip display
+
+### Changes
+
+- Merged the Pokémon and item blacklists into a single "Blacklist" screen: Pokémon/Items tabs (same layout as Price Limits); the two entry buttons in the admin panel are now one
+- Pokémon blacklist rules can now be edited: a new "Edit" button per row opens a dialog pre-filled with all fields (species / IVs / form / shiny / hyper training), and saving replaces the rule
+- Pokémon price limits now support forms: a rule can target all forms / the default form / specific forms, and both listing and auction starting-price checks match by form; rows and tooltips show the form
+- Auction hall tabs reordered to Mine / Pokémon / Items, with the Rules button joining the tab row (centered as a group)
+
+### Fixes
+
+- The "Unban All" button stayed clickable while the item blacklist dialog was open, and its visibility did not refresh when blacklist data arrived
+- Long Pokémon blacklist rows (e.g. all six IVs filled in) are now truncated with an ellipsis instead of overlapping the remove button (full details remain in the hover tooltip)
+- Editing a price limit entry that changes the Pokémon (species / V count / shiny / form) or item now replaces the old entry instead of leaving it behind
+- Pokémon holding a blacklisted item can no longer be listed on the market or auction house (previously bypassed the item blacklist); held-item price limits now merge into the total price: lower bounds add up, upper bounds add up only when both sides are set
+
 ## 1.0.0-beta.4 (in development, unreleased)
 
 ### New Features: Auction House

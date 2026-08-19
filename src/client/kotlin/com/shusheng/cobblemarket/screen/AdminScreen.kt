@@ -99,16 +99,11 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             Text.translatable("cobblemarket.entry.all_history"),
             { client?.setScreen(HistoryScreen(true)) }
         )
-        // 行 3
+        // 行 3：黑名单（精灵/物品双 tab 合并界面），单按钮水平居中
         addMenuButton(
-            leftX, startY + (btnH + gap) * 2, btnW, btnH,
-            Text.translatable("cobblemarket.op.blacklist_pokemon"),
-            { client?.setScreen(PokemonBlacklistScreen()) }
-        )
-        addMenuButton(
-            rightX, startY + (btnH + gap) * 2, btnW, btnH,
-            Text.translatable("cobblemarket.op.blacklist_item"),
-            { client?.setScreen(ItemBlacklistScreen()) }
+            centerX - btnW / 2, startY + (btnH + gap) * 2, btnW, btnH,
+            Text.translatable("cobblemarket.op.blacklist"),
+            { client?.setScreen(BlacklistScreen()) }
         )
         // 行 4
         addMenuButton(
@@ -252,13 +247,13 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
 
         // 逐行渲染：语言文件显式分行（每行红/白两个槽位），红=警告、白=普通；空行跳过（中英行数不同）
         // 每行按实际宽度在弹窗内水平居中，避免短行右侧大片留白
-        val lines = (1..8).map { i ->
+        val lines = (1..9).map { i ->
             listOf(
                 "cobblemarket.op.egg_l${i}_warn" to 0xFF5555,
                 "cobblemarket.op.egg_l${i}_text" to 0xFFFFFF,
             )
         }
-        var ty = dialogY + 34
+        var ty = dialogY + 32
         lines.forEach { line ->
             val segs = line.mapNotNull { (key, color) ->
                 val text = Text.translatable(key).string
@@ -271,7 +266,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
                 context.drawTextWithShadow(textRenderer, text, tx, ty, color)
                 tx += textRenderer.getWidth(text)
             }
-            ty += 10
+            ty += 9
         }
     }
 
