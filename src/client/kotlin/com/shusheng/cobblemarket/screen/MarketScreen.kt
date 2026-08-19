@@ -515,17 +515,6 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         return changed
     }
 
-    // 中文物种名 → 资源路径名：服务端只存英文资源名（listing.species），客户端用本地语言翻译名映射。
-    // 纯 ASCII 输入原样发送（服务端按资源名/英文名 ignoreCase 匹配）；映射不到就发原文。
-    private fun localizeSpeciesQuery(raw: String): String {
-        val q = raw.trim()
-        if (q.isEmpty() || q.all { it.code < 128 }) return q
-        PokemonSpecies.implemented
-            .firstOrNull { it.translatedName.string.contains(q) }
-            ?.let { return it.resourceIdentifier.path }
-        return q
-    }
-
     // 防抖计时器：搜索框 changedListener 与 IV 输入变化都置 dirty，250ms 静默后统一发请求
     override fun tick() {
         if (searchDirty && System.currentTimeMillis() - lastSearchEdit >= 250) {

@@ -83,6 +83,11 @@ class PokemonBlacklistScreen : Screen(Text.translatable("cobblemarket.op.blackli
 
         searchField = TextFieldWidget(textRenderer, leftX + 2, 44, panelWidth - 4 - 52 - 20, 16, Text.translatable("cobblemarket.gui.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.gui.search_placeholder").formatted(Formatting.GRAY))
+        // 搜索变化时重建行按钮：否则过滤后残留旧列表的删除按钮（与物品黑名单同款问题）
+        searchField?.setChangedListener { _ ->
+            scrollOffset = 0
+            rebuildRemoveButtons()
+        }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
 

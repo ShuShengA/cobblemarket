@@ -29,6 +29,9 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     private var entries = listOf<ItemEntry>()
     private var currentPage = 1
     private var totalPages = 1
+    // 搜索防抖（照精灵市场）：250ms 静默后统一发请求，避免连续输入被服务端节流丢包
+    private var searchDirty = false
+    private var lastSearchEdit = 0L
 
     private var searchField: TextFieldWidget? = null
     private var sellerField: TextFieldWidget? = null
@@ -52,14 +55,6 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     private fun prevPage() { if (currentPage > 1) { currentPage--; refreshData() } }
     private fun nextPage() { if (currentPage < totalPages) { currentPage++; refreshData() } }
 
-    private fun filteredEntries(): List<ItemEntry> {
-        val query = searchField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: return entries
-        val registry = client?.world?.registryManager ?: return entries
-        return entries.filter { entry ->
-            val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
-            stack.name.string.contains(query, ignoreCase = true)
-        }
-    }
 
     private fun sortDisplay(): String = when (sortMode) {
         "PRICE_ASC" -> "cobblemarket.sort.price_asc"
@@ -98,6 +93,11 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
 
         searchField = TextFieldWidget(textRenderer, leftX + 2, 44, 132, 16, Text.translatable("cobblemarket.item.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.item.search").formatted(Formatting.GRAY))
+        // 服务端搜索：文字变化只标记 dirty，tick 防抖后回到第一页重新拉取（与精灵市场一致）
+        searchField?.setChangedListener { _ ->
+            searchDirty = true
+            lastSearchEdit = System.currentTimeMillis()
+        }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
 
@@ -134,15 +134,27 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     }
 
     private fun refreshData() {
+        val query = searchField?.text?.trim() ?: ""
         ClientPlayNetworking.send(
             AdminRequestItemPayload(
                 sellerFilter = sellerField?.text?.trim() ?: "",
+                itemFilter = query,
+                itemIds = com.shusheng.cobblemarket.network.resolveItemIdsByQuery(query),
                 sortMode = sortMode,
                 page = currentPage,
                 pageSize = columns() * rows(),
                 mineOnly = showMineOnly
             )
         )
+    }
+
+    // 防抖计时器（照精灵市场）：250ms 静默后统一发请求
+    override fun tick() {
+        if (searchDirty && System.currentTimeMillis() - lastSearchEdit >= 250) {
+            searchDirty = false
+            currentPage = 1
+            refreshData()
+        }
     }
 
     fun onItemMarketData(payload: ItemMarketDataPayload) {
@@ -313,7 +325,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         val cols = columns()
         val rows = rows()
         val gridOffsetX = (panelWidth - (cols * slotSize + (cols - 1) * gap)) / 2
-        val displayEntries = filteredEntries()
+        val displayEntries = entries
 
         hoveredSlot = -1
         if (mouseX in leftX..(leftX + panelWidth) && mouseY >= getGridStartY()) {
@@ -396,7 +408,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             handleCancelDialogClick(mouseX.toInt(), mouseY.toInt())
             return true
         }
-        val displayEntries = filteredEntries()
+        val displayEntries = entries
         if (hoveredSlot in displayEntries.indices) {
             openCancelDialog(displayEntries[hoveredSlot])
             return true

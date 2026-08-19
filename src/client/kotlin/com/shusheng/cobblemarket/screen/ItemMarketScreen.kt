@@ -33,6 +33,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private var entries = listOf<ItemEntry>()
     private var currentPage = 1
     private var totalPages = 1
+    // 搜索防抖（照精灵市场）：250ms 静默后统一发请求，避免连续输入被服务端节流丢包
+    private var searchDirty = false
+    private var lastSearchEdit = 0L
     private var pendingBalance = 0L
 
     private var searchField: TextFieldWidget? = null
@@ -86,6 +89,11 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         // 搜索框
         searchField = TextFieldWidget(textRenderer, leftX + 2, 44, 132, 16, Text.translatable("cobblemarket.item.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.item.search").formatted(Formatting.GRAY))
+        // 服务端搜索：文字变化只标记 dirty，tick 防抖后回到第一页重新拉取（与精灵市场一致）
+        searchField?.setChangedListener { _ ->
+            searchDirty = true
+            lastSearchEdit = System.currentTimeMillis()
+        }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
 
@@ -126,7 +134,23 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     }
 
     private fun refreshData() {
-        ClientPlayNetworking.send(RequestItemMarketPayload(sortMode, currentPage, showMineOnly, columns() * rows()))
+        val query = searchField?.text?.trim() ?: ""
+        ClientPlayNetworking.send(
+            RequestItemMarketPayload(
+                sortMode, currentPage, showMineOnly, columns() * rows(),
+                query,
+                com.shusheng.cobblemarket.network.resolveItemIdsByQuery(query)
+            )
+        )
+    }
+
+    // 防抖计时器（照精灵市场）：250ms 静默后统一发请求
+    override fun tick() {
+        if (searchDirty && System.currentTimeMillis() - lastSearchEdit >= 250) {
+            searchDirty = false
+            currentPage = 1
+            refreshData()
+        }
     }
 
     private fun collectBalance() {
@@ -140,14 +164,6 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         pendingBalance = payload.pendingBalance
     }
 
-    private fun filteredEntries(): List<ItemEntry> {
-        val query = searchField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: return entries
-        val registry = client?.world?.registryManager ?: return entries
-        return entries.filter { entry ->
-            val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
-            stack.name.string.contains(query, ignoreCase = true)
-        }
-    }
 
     private fun cycleSort() {
         sortMode = when (sortMode) {
@@ -246,7 +262,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
         val cols = columns()
         val rows = rows()
-        val displayEntries = filteredEntries()
+        val displayEntries = entries
         val gridOffsetX = (panelWidth - (cols * slotSize + (cols - 1) * gap)) / 2
 
         hoveredSlot = -1
@@ -334,7 +350,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             }
             return true
         }
-        val displayEntries = filteredEntries()
+        val displayEntries = entries
         if (hoveredSlot in displayEntries.indices) {
             val entry = displayEntries[hoveredSlot]
             val playerUuid = client?.player?.uuid
