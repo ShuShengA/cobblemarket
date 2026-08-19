@@ -36,7 +36,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private val rowHeight = 24
 
     // 时长档位（分钟制，与服务器默认配置一致；服务器自定义档位时以实际结算时间为准）
-    private val durationOptions = listOf(3, 10, 30, 720)
+    private val durationOptions = listOf(720, 1440, 2880, 4320)
 
     private var currentTab = initialTab.coerceIn(0, 1) // 0 = 精灵, 1 = 物品
     private var backButton: NineSliceButton? = null

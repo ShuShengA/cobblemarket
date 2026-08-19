@@ -541,15 +541,20 @@ data class RequestItemMarketPayload(
     val sortMode: String,
     val page: Int,
     val mineOnly: Boolean,
-    val pageSize: Int
+    val pageSize: Int,
+    val query: String,
+    val itemIds: List<String>
 ) : CustomPayload {
     override fun getId() = ID
 
     companion object {
         val ID = CustomPayload.Id<RequestItemMarketPayload>(CobbleMarket.id("request_item_market"))
         val CODEC: PacketCodec<PacketByteBuf, RequestItemMarketPayload> = PacketCodec.of(
-            { p, b -> b.writeString(p.sortMode); b.writeInt(p.page); b.writeBoolean(p.mineOnly); b.writeInt(p.pageSize) },
-            { b -> RequestItemMarketPayload(b.readString(), b.readInt(), b.readBoolean(), b.readInt()) }
+            { p, b ->
+                b.writeString(p.sortMode); b.writeInt(p.page); b.writeBoolean(p.mineOnly); b.writeInt(p.pageSize); b.writeString(p.query)
+                b.writeVarInt(p.itemIds.size); p.itemIds.forEach { b.writeString(it) }
+            },
+            { b -> RequestItemMarketPayload(b.readString(), b.readInt(), b.readBoolean(), b.readInt(), b.readString(), (0 until b.readVarInt()).map { b.readString() }) }
         )
     }
 }
@@ -587,6 +592,8 @@ data class ItemMarketDataPayload(
 
 data class AdminRequestItemPayload(
     val sellerFilter: String,
+    val itemFilter: String,
+    val itemIds: List<String>,
     val sortMode: String,
     val page: Int,
     val pageSize: Int,
@@ -598,11 +605,13 @@ data class AdminRequestItemPayload(
         val ID = CustomPayload.Id<AdminRequestItemPayload>(CobbleMarket.id("admin_request_item"))
         val CODEC: PacketCodec<PacketByteBuf, AdminRequestItemPayload> = PacketCodec.of(
             { p, b ->
-                b.writeString(p.sellerFilter); b.writeString(p.sortMode); b.writeInt(p.page); b.writeInt(p.pageSize); b.writeBoolean(
+                b.writeString(p.sellerFilter); b.writeString(p.itemFilter)
+                b.writeVarInt(p.itemIds.size); p.itemIds.forEach { b.writeString(it) }
+                b.writeString(p.sortMode); b.writeInt(p.page); b.writeInt(p.pageSize); b.writeBoolean(
                 p.mineOnly
             )
             },
-            { b -> AdminRequestItemPayload(b.readString(), b.readString(), b.readInt(), b.readInt(), b.readBoolean()) }
+            { b -> AdminRequestItemPayload(b.readString(), b.readString(), (0 until b.readVarInt()).map { b.readString() }, b.readString(), b.readInt(), b.readInt(), b.readBoolean()) }
         )
     }
 }
@@ -775,6 +784,31 @@ fun giveBackItem(stack: ItemStack, player: ServerPlayerEntity) {
 fun isEggItem(itemId: String): Boolean {
     val id = net.minecraft.util.Identifier.tryParse(itemId) ?: return false
     return id.namespace == "cobbreeding" && id.path.endsWith("pokemon_egg")
+}
+
+/** 客户端语言物种名 → 资源路径名（照 MarketScreen 原私有实现；服务端只存英文资源名，中文搜索词必须在客户端转 id） */
+fun localizeSpeciesQuery(raw: String): String {
+    val q = raw.trim()
+    if (q.isEmpty() || q.all { it.code < 128 }) return q
+    com.cobblemon.mod.common.api.pokemon.PokemonSpecies.implemented
+        .firstOrNull { it.translatedName.string.contains(q) }
+        ?.let { return it.resourceIdentifier.path }
+    return q
+}
+
+/** 客户端语言物品名搜索 → 匹配的物品 id 集合（服务端语言与客户端不同时靠 id 传递过滤；含 id 路径匹配，英文查询同样覆盖） */
+fun resolveItemIdsByQuery(query: String): List<String> {
+    val q = query.trim()
+    if (q.isEmpty()) return emptyList()
+    val result = mutableListOf<String>()
+    net.minecraft.registry.Registries.ITEM.forEach { item ->
+        val id = net.minecraft.registry.Registries.ITEM.getId(item)
+        if (id.path.contains(q, ignoreCase = true) || item.name.string.contains(q, ignoreCase = true)) {
+            result.add(id.toString())
+            if (result.size >= 200) return result
+        }
+    }
+    return result
 }
 
 /**
@@ -1251,10 +1285,16 @@ object MarketNetwork {
                     sortBy = sortMode,
                     sellerUuid = if (payload.mineOnly) player.uuid else null,
                     sellerName = payload.sellerFilter.ifBlank { null }
-                )
+                ).let { list ->
+                    val query = payload.itemFilter.trim()
+                    if (query.isEmpty()) list
+                    else list.filter { it.itemId in payload.itemIds }
+                }
 
-                // 上限与精灵市场一致（30）：条目含完整 itemNbt，200 条大 NBT 会打出数百 MB 的包
-                val pageSize = payload.pageSize.coerceIn(1, 30)
+                // 上限 84（12 行）：网格页容量随窗口，上限低于容量会导致末行空槽+多余分页；
+                // 84 是服务器压力折中：恶意高频请求（250ms 节流下每秒 4 次）的带宽攻击面减半，正常窗口（≤12 行）无感知
+                // 物品 itemNbt 通常几百字节（蛋较大，最坏全蛋页约 1MB，可接受）
+                val pageSize = payload.pageSize.coerceIn(1, 84)
                 val totalPages = ((results.size - 1) / pageSize) + 1
                 val clampedPage = payload.page.coerceIn(1, maxOf(1, totalPages))
 
@@ -1827,10 +1867,16 @@ object MarketNetwork {
                 val results = state.search(
                     sortBy = sortMode,
                     sellerUuid = if (payload.mineOnly) player.uuid else null
-                )
+                ).let { list ->
+                    val query = payload.query.trim()
+                    if (query.isEmpty()) list
+                    else list.filter { it.itemId in payload.itemIds }
+                }
 
-                // 上限与精灵市场一致（30）：条目含完整 itemNbt，200 条大 NBT 会打出数百 MB 的包
-                val pageSize = payload.pageSize.coerceIn(1, 30)
+                // 上限 84（12 行）：网格页容量随窗口，上限低于容量会导致末行空槽+多余分页；
+                // 84 是服务器压力折中：恶意高频请求（250ms 节流下每秒 4 次）的带宽攻击面减半，正常窗口（≤12 行）无感知
+                // 物品 itemNbt 通常几百字节（蛋较大，最坏全蛋页约 1MB，可接受）
+                val pageSize = payload.pageSize.coerceIn(1, 84)
                 val totalPages = ((results.size - 1) / pageSize) + 1
                 val clampedPage = payload.page.coerceIn(1, maxOf(1, totalPages))
 

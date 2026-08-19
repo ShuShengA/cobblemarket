@@ -73,7 +73,11 @@ class ItemBlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist_
 
         searchField = TextFieldWidget(textRenderer, leftX + 2, 44, panelWidth - 4 - 52 - 20, 16, Text.translatable("cobblemarket.gui.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.item.search").formatted(Formatting.GRAY))
-        searchField?.setChangedListener { _ -> updateUnbanAllButton() }
+        searchField?.setChangedListener { _ ->
+            updateUnbanAllButton()
+            scrollOffset = 0
+            rebuildRemoveButtons()
+        }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
 

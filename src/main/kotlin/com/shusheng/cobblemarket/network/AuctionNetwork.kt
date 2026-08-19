@@ -288,6 +288,9 @@ object AuctionNetwork {
                     }
                 }
             }
+            // 到期结算走同一定时器：拍卖到期后 1 秒内自动结算并通知（落槌/铃声/聊天消息），
+            // 不依赖玩家打开拍卖场或出价触发；请求路径里的 settleAndBroadcast 保留作为即时结算
+            settleAndBroadcast(server)
         }
 
         ServerPlayNetworking.registerGlobalReceiver(RequestAuctionListPayload.ID) { _, context ->

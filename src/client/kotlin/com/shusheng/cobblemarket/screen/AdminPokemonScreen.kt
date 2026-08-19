@@ -28,6 +28,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private var listings = listOf<ListingEntry>()
     private var currentPage = 1
     private var totalPages = 1
+    // 搜索防抖（照精灵市场）：250ms 静默后统一发请求，避免连续输入被服务端节流丢包
+    private var searchDirty = false
+    private var lastSearchEdit = 0L
 
     private var searchField: TextFieldWidget? = null
     private var sellerField: TextFieldWidget? = null
@@ -92,6 +95,11 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         // 物种搜索框 + 折叠
         searchField = TextFieldWidget(textRenderer, leftX + 2, 44, panelWidth - 4 - 52, 16, Text.translatable("cobblemarket.gui.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.gui.search_placeholder").formatted(Formatting.GRAY))
+        // 服务端搜索：文字变化只标记 dirty，tick 防抖后回到第一页重新拉取（与精灵市场一致）
+        searchField?.setChangedListener { _ ->
+            searchDirty = true
+            lastSearchEdit = System.currentTimeMillis()
+        }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
 
@@ -189,15 +197,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         }
     }
 
-    private fun displayedListings(): List<IndexedValue<ListingEntry>> {
-        var result = listings.withIndex().toList()
-        val query = searchField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: return result
-        result = result.filter { (origIndex, entry) ->
-            entry.species.contains(query, ignoreCase = true) ||
-            (iconData[origIndex]?.displayName?.contains(query, ignoreCase = true) == true)
-        }
-        return result
-    }
+    private fun displayedListings(): List<IndexedValue<ListingEntry>> = listings.withIndex().toList()
 
     private fun sortDisplay(): String = when (sortMode) {
         "PRICE_ASC" -> "cobblemarket.sort.price_asc"
@@ -281,7 +281,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private fun refreshData() {
         ClientPlayNetworking.send(
             AdminRequestPokemonPayload(
-                speciesFilter = "",
+                // 中文物种名在客户端转成资源路径 id（照精灵市场），服务端只存英文资源名
+                speciesFilter = com.shusheng.cobblemarket.network.localizeSpeciesQuery(searchField?.text?.trim().orEmpty()),
                 sellerFilter = sellerField?.text?.trim() ?: "",
                 shinyOnly = shinyOnly,
                 sortMode = sortMode,
@@ -296,6 +297,15 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 mineOnly = showMineOnly
             )
         )
+    }
+
+    // 防抖计时器（照精灵市场）：250ms 静默后统一发请求
+    override fun tick() {
+        if (searchDirty && System.currentTimeMillis() - lastSearchEdit >= 250) {
+            searchDirty = false
+            currentPage = 1
+            refreshData()
+        }
     }
 
     fun onMarketData(payload: MarketDataPayload) {

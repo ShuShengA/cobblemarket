@@ -8,7 +8,7 @@
 - **Create auction**: Pokémon (search / IV / shiny / type filters, same as regular listing) + Items (inventory scan) dual tabs; starting price validated against price limits (items scaled by unit price × quantity); min increment can be blank (server default); duration options; max 3 concurrent auctions per player (Pokémon + items combined, configurable)
 - **Bidding**: bids charged instantly; outbid amounts auto-returned to pending balance (yellow notice); raising your own bid only tops up the difference; cannot bid on your own auction; min increment enforced
 - **Anti-snipe**: bids within the last 120 seconds (configurable) reset the end time; bids after the end are always rejected
-- **Settlement**: winner's item goes to Pending Claims, seller receives final price minus fee (configurable 0~100%); no bids = returned to the seller; finished auction records are cleaned up automatically; seller and winner get chat notifications
+- **Settlement**: settles automatically on expiry (no need to open the auction hall — the server checks every second); winner's item goes to Pending Claims, seller receives final price minus fee (configurable 0~100%); no bids = returned to the seller; finished auction records are cleaned up automatically; seller and winner get chat notifications
 - **Auction sounds**: coin sound on bid confirm; three crescendo gavel knocks at 10s / 6s / 3s (with hammer icon animation in the row); final gavel + bell on settlement. Sounds are sent only to the seller and bidders — bystanders are not disturbed
 - **Rules button**: hover tooltip in the auction hall with full rules (gold headers / white text / red highlights / dividers, bilingual)
 - **OP force-cancel**: new "Auctions" page in the admin panel (search / full row info / tooltips / two-column confirm dialog matching the auction hall) — click any auction to force-cancel it (item returns to the seller's pending claims, the current bidder is fully refunded, removed across the server)
@@ -35,6 +35,7 @@
 - Item blacklist supports batch ban (one-click add all search matches, e.g. every egg variant)
 - Config comments improved: max auction limit notes "Pokémon + items combined" and performance advice for crowded servers
 - Market price input limit relaxed to 9 digits (consistent with auction and price limit fields)
+- Item market and admin "all listed items" page capacity raised from 30 to 84 items: bigger windows show more per page with less paging (smaller windows show fewer)
 
 ### Fixes
 
@@ -43,3 +44,5 @@
 - Fixed currency names following the server's language instead of the player's: UI and chat now use each player's own language
 - Fixed a rare case where buying/cancelling could mis-deduct identical items from a player's armor or offhand: only the main inventory is touched now
 - Expired listings are now taken down immediately (they used to linger for over ten seconds and could still be bought)
+- Blacklist and price limit screens kept stale remove/edit buttons after searching (only cleared after clicking or scrolling): row buttons now rebuild immediately as the search text changes
+- Searching by name in the item market and the admin "all Pokémon/items" screens only filtered the current page (targets on other pages couldn't be found without paging manually): search is now server-side global filtering, matching the Pokémon market — results appear on the first page immediately

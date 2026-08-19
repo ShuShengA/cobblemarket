@@ -31,7 +31,7 @@ object CobbleMarketConfig {
         private set
     var auctionFeePercent: Double = 5.0
         private set
-    var auctionDurationOptions: List<Int> = listOf(3, 10, 30, 720) // 分钟制：3m/10m/30m/12h
+    var auctionDurationOptions: List<Int> = listOf(720, 1440, 2880, 4320) // 分钟制：12h/24h/48h/72h
         private set
     var auctionMinBidIncrement: Int = 100
         private set
@@ -77,7 +77,7 @@ object CobbleMarketConfig {
                 auctionFeePercent = ((data["auctionFeePercent"] as? Double) ?: pokemonListingFeePercent).coerceIn(0.0, 100.0)
                 val rawDurations = (data["auctionDurationOptions"] as? List<*>)
                     ?.mapNotNull { (it as? Number)?.toInt()?.coerceAtLeast(1) } // 0/负数 → 1 分钟（上架即到期无意义）
-                auctionDurationOptions = rawDurations?.takeIf { it.isNotEmpty() } ?: listOf(3, 10, 30, 720)
+                auctionDurationOptions = rawDurations?.takeIf { it.isNotEmpty() } ?: listOf(720, 1440, 2880, 4320)
                 auctionMinBidIncrement = ((data["auctionMinBidIncrement"] as? Double)?.toInt() ?: 100).coerceAtLeast(1)
                 auctionAntiSnipeSeconds = ((data["auctionAntiSnipeSeconds"] as? Double)?.toInt() ?: 120).coerceAtLeast(0)
                 maxAuctionsPerPlayer = (data["maxAuctionsPerPlayer"] as? Double)?.toInt() ?: 3
