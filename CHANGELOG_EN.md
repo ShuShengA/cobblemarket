@@ -10,6 +10,7 @@
 
 - Quantity input limit raised from 3 to 4 digits: item sell count, item buy count, and auction item count now accept up to 9999
 - New entries in the ban, blacklist, and price limit screens appear at the top (newest first) for easier management
+- Auction house and buy order lists also show the newest first (live new listings insert at the top)
 
 ## 1.0.0-beta.6 (in development, unreleased)
 
