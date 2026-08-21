@@ -15,6 +15,7 @@ import com.shusheng.cobblemarket.network.CancelBuyOrderPayload
 import com.shusheng.cobblemarket.network.CreateItemBuyOrderPayload
 import com.shusheng.cobblemarket.network.CreatePokemonBuyOrderPayload
 import com.shusheng.cobblemarket.network.DeliverItemBuyOrderPayload
+import com.shusheng.cobblemarket.network.ForceCancelBuyOrderPayload
 import com.shusheng.cobblemarket.network.DeliverPokemonBuyOrderPayload
 import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.PokemonPreview
@@ -40,7 +41,11 @@ import java.util.UUID
  * 卖家交付符合要求的货，按实际单价成交；买家「我的求购」tab 可关闭退冻结金。
  * 数据：全量 OPEN 快照 + 服务端增量事件（NEW/UPDATED/CLOSED）合并刷新。
  */
-class BuyOrderScreen(private val initialTab: Int = 0) : Screen(Text.translatable("cobblemarket.buy_order.title")) {
+class BuyOrderScreen(
+    private val initialTab: Int = 0,
+    /** 管理员模式（管理面板「所有求购」入口）：无 tab/发布按钮，行按钮改为「下架」，点行弹强制下架确认 */
+    private val adminMode: Boolean = false
+) : Screen(Text.translatable("cobblemarket.buy_order.title")) {
 
     // 防串扰：界面关闭后到达的响应丢弃（照 SellSelectScreen）
     private var closed = false
@@ -120,6 +125,10 @@ class BuyOrderScreen(private val initialTab: Int = 0) : Screen(Text.translatable
 
     // ── 买家确认弹窗状态（处理待确认交付） ──
     private var reviewEntry: BuyOrderEntry? = null
+    /** 管理员模式：强制下架确认弹窗的条目与按钮 */
+    private var forceCancelEntry: BuyOrderEntry? = null
+    private var forceCancelConfirmButton: NineSliceButton? = null
+    private var forceCancelCancelButton: NineSliceButton? = null
     private var reviewReasonField: TextFieldWidget? = null
     private var reviewAcceptButton: NineSliceButton? = null
     private var reviewRejectButton: NineSliceButton? = null
@@ -266,41 +275,44 @@ class BuyOrderScreen(private val initialTab: Int = 0) : Screen(Text.translatable
         backButton = NineSliceButton(
             width / 2 + panelWidth / 2 - PANEL_BORDER_X - 50, 10, 50, 16,
             Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(MarketEntryScreen()) },
+            { client?.setScreen(if (adminMode) AdminScreen() else MarketEntryScreen()) },
             texture = BUY_ORDER_BUTTON_TEXTURE,
             texH = BUY_ORDER_BUTTON_TEX_H
         )
         addDrawableChild(backButton)
 
-        // tab 按钮：全部求购 | 我的求购（水平居中，间距 4px）
-        val tabW = 70
-        val tabGap = 4
-        val tabStart = centerX - tabW - tabGap / 2
-        tabButtons.clear()
-        listOf(0, 1).forEachIndexed { i, tab ->
-            val btn = NineSliceButton(
-                tabStart + i * (tabW + tabGap), 32, tabW, 14,
-                Text.literal(""),
-                { switchTab(tab) },
+        // 管理员模式：无 tab、无发布按钮，只有列表 + 下架
+        if (!adminMode) {
+            // tab 按钮：全部求购 | 我的求购（水平居中，间距 4px）
+            val tabW = 70
+            val tabGap = 4
+            val tabStart = centerX - tabW - tabGap / 2
+            tabButtons.clear()
+            listOf(0, 1).forEachIndexed { i, tab ->
+                val btn = NineSliceButton(
+                    tabStart + i * (tabW + tabGap), 32, tabW, 14,
+                    Text.literal(""),
+                    { switchTab(tab) },
+                    texture = BUY_ORDER_BUTTON_TEXTURE,
+                    texH = BUY_ORDER_BUTTON_TEX_H
+                )
+                tabButtons.add(btn)
+                addDrawableChild(btn)
+            }
+            updateTabButtons()
+
+            // 发布求购按钮（tab 行右侧，避开背景右边框）
+            val createBtn = NineSliceButton(
+                leftX + panelWidth - PANEL_BORDER_X - 28, 32, 28, 14,
+                Text.literal("+"),
+                { openCreateDialog() },
                 texture = BUY_ORDER_BUTTON_TEXTURE,
                 texH = BUY_ORDER_BUTTON_TEX_H
             )
-            tabButtons.add(btn)
-            addDrawableChild(btn)
+            createBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.buy_order.create")))
+            createButton = createBtn
+            addDrawableChild(createBtn)
         }
-        updateTabButtons()
-
-        // 发布求购按钮（tab 行右侧，避开背景右边框）
-        val createBtn = NineSliceButton(
-            leftX + panelWidth - PANEL_BORDER_X - 28, 32, 28, 14,
-            Text.literal("+"),
-            { openCreateDialog() },
-            texture = BUY_ORDER_BUTTON_TEXTURE,
-            texH = BUY_ORDER_BUTTON_TEX_H
-        )
-        createBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.buy_order.create")))
-        createButton = createBtn
-        addDrawableChild(createBtn)
 
         // 搜索框（y=48；与行区域同宽，避开背景左右边框；本地过滤——列表全量下发，照拍卖场模式）
         searchField = TextFieldWidget(textRenderer, rowLeftX(), 48, rowW(), 16, Text.translatable("cobblemarket.gui.search"))
@@ -397,7 +409,8 @@ class BuyOrderScreen(private val initialTab: Int = 0) : Screen(Text.translatable
     private fun displayList(): List<BuyOrderEntry> {
         val query = searchField?.text?.trim()?.takeIf { it.isNotEmpty() }
         return entries.filter { entry ->
-            if (currentTab == 0) true else isMine(entry)
+            // 管理员模式显示全部（无「我的」过滤）
+            if (adminMode || currentTab == 0) true else isMine(entry)
         }.filter { entry ->
             // 搜索：物种名/物品名/买家名（本地过滤，照拍卖场模式）
             query == null || entryName(entry).contains(query, ignoreCase = true) ||
@@ -412,10 +425,23 @@ class BuyOrderScreen(private val initialTab: Int = 0) : Screen(Text.translatable
         rowButtons.clear()
         // 弹窗打开时行按钮保持隐藏：事件广播触发的重建会新建默认可见的按钮，
         // 必须在这里拦截（弹窗关闭时 closeDialogs→init 会正常重建）
-        if (deliverEntry != null || createTabButtons.isNotEmpty() || reviewEntry != null) return
+        if (deliverEntry != null || createTabButtons.isNotEmpty() || reviewEntry != null || forceCancelEntry != null) return
         val startY = getListStartY()
         displayList().drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
             val y = startY + i * rowHeight
+            if (adminMode) {
+                // 管理员模式：每行一个「下架」按钮
+                val btn = NineSliceButton(
+                    rowLeftX() + rowW() - 50, y + 4, 44, 16,
+                    Text.translatable("cobblemarket.buy_order.force_cancel"),
+                    { openForceCancelDialog(entry) },
+                    texture = BUY_ORDER_BUTTON_TEXTURE,
+                    texH = BUY_ORDER_BUTTON_TEX_H
+                )
+                rowButtons.add(btn)
+                addDrawableChild(btn)
+                return@forEachIndexed
+            }
             val mine = isMine(entry)
             val hasPending = entry.pending != null
             // 行按钮语义：我的+待确认=处理交付；我的=关闭；他人+待确认=待确认（锁定）；他人=交付
@@ -446,6 +472,100 @@ class BuyOrderScreen(private val initialTab: Int = 0) : Screen(Text.translatable
 
     private fun confirmCloseOrder(entry: BuyOrderEntry) {
         ClientPlayNetworking.send(CancelBuyOrderPayload(entry.id))
+    }
+
+    // ── 管理员强制下架确认弹窗（照 AdminAuctionScreen 下架弹窗模板） ──
+
+    private fun openForceCancelDialog(entry: BuyOrderEntry) {
+        forceCancelEntry = entry
+        // 隐藏下层控件（弹窗打开期间不可交互；closeForceCancelDialog 的 init 重建会恢复）
+        searchField?.visible = false
+        backButton?.visible = false
+        rowButtons.forEach { it.visible = false }
+        val centerX = width / 2
+        val dialogY = height / 2 - 85
+
+        // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染）
+        addDrawable(object : Drawable {
+            override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+                renderForceCancelBackground(context)
+            }
+        })
+
+        forceCancelConfirmButton = NineSliceButton(
+            centerX - 60, dialogY + 148, 56, 20,
+            Text.translatable("cobblemarket.buy_order.force_cancel"),
+            { confirmForceCancel() },
+            texture = BUY_ORDER_BUTTON_TEXTURE,
+            texH = BUY_ORDER_BUTTON_TEX_H
+        )
+        addDrawableChild(forceCancelConfirmButton)
+        forceCancelCancelButton = NineSliceButton(
+            centerX + 4, dialogY + 148, 56, 20,
+            Text.translatable("cobblemarket.buy_confirm.cancel"),
+            { closeForceCancelDialog() },
+            texture = BUY_ORDER_BUTTON_TEXTURE,
+            texH = BUY_ORDER_BUTTON_TEX_H
+        )
+        addDrawableChild(forceCancelCancelButton)
+    }
+
+    private fun closeForceCancelDialog() {
+        forceCancelEntry = null
+        forceCancelConfirmButton = null
+        forceCancelCancelButton = null
+        clearChildren()
+        init()
+    }
+
+    private fun confirmForceCancel() {
+        val entry = forceCancelEntry ?: return
+        ClientPlayNetworking.send(ForceCancelBuyOrderPayload(entry.id))
+        closeForceCancelDialog()
+    }
+
+    private fun handleForceCancelDialogClick(mx: Int, my: Int) {
+        val centerX = width / 2
+        val dialogY = height / 2 - 85
+        val btnW = 56
+        val btnH = 20
+        val btnY = dialogY + 148
+        val confirmX = centerX - 60
+        val cancelX = centerX + 4
+        if (mx in confirmX..(confirmX + btnW) && my in btnY..(btnY + btnH)) {
+            confirmForceCancel()
+        } else if (mx in cancelX..(cancelX + btnW) && my in btnY..(btnY + btnH)) {
+            closeForceCancelDialog()
+        }
+    }
+
+    private fun renderForceCancelBackground(context: DrawContext) {
+        val entry = forceCancelEntry ?: return
+        val centerX = width / 2
+        val dialogW = 220
+        val dialogH = 190
+        val dialogX = centerX - dialogW / 2
+        val dialogY = height / 2 - dialogH / 2
+
+        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
+        context.drawCenteredTextWithShadow(textRenderer,
+            Text.translatable("cobblemarket.buy_order.force_cancel_title").formatted(Formatting.GOLD),
+            centerX, dialogY + 14, 0xFFFFFF)
+        context.drawCenteredTextWithShadow(textRenderer,
+            entryName(entry),
+            centerX, dialogY + 34, 0xFFFFFF)
+        context.drawCenteredTextWithShadow(textRenderer,
+            Text.translatable("cobblemarket.buy_order.force_cancel_hint1").formatted(Formatting.GRAY),
+            centerX, dialogY + 62, 0xFFFFFF)
+        context.drawCenteredTextWithShadow(textRenderer,
+            Text.translatable("cobblemarket.buy_order.force_cancel_hint2").formatted(Formatting.GRAY),
+            centerX, dialogY + 78, 0xFFFFFF)
+        if (entry.pending != null) {
+            context.drawCenteredTextWithShadow(textRenderer,
+                Text.translatable("cobblemarket.buy_order.force_cancel_hint3").formatted(Formatting.RED),
+                centerX, dialogY + 98, 0xFFFFFF)
+        }
     }
 
     // ── 渲染 ──
@@ -498,7 +618,7 @@ class BuyOrderScreen(private val initialTab: Int = 0) : Screen(Text.translatable
         val leftX = centerX - panelWidth / 2
 
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.buy_order.title").formatted(Formatting.GOLD),
+            Text.translatable(if (adminMode) "cobblemarket.op.buy_order" else "cobblemarket.buy_order.title").formatted(Formatting.GOLD),
             centerX, 20, 0xFFFFFF)
 
         // 余额（左上角，避开背景左边框，来自全局缓存）
@@ -530,7 +650,7 @@ class BuyOrderScreen(private val initialTab: Int = 0) : Screen(Text.translatable
         }
 
         // 弹窗打开时行内图标不渲染（物品/精灵模型图标走独立渲染层，z 平移盖不住，会刺穿遮罩）
-        val anyDialogOpen = createTabButtons.isNotEmpty() || deliverEntry != null || reviewEntry != null
+        val anyDialogOpen = createTabButtons.isNotEmpty() || deliverEntry != null || reviewEntry != null || forceCancelEntry != null
         displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
             val y = startY + i * rowHeight
             val origIndex = entries.indexOf(entry)
@@ -2136,6 +2256,8 @@ class BuyOrderScreen(private val initialTab: Int = 0) : Screen(Text.translatable
         val wasReviewing = reviewEntry != null
         val savedReview = reviewEntry
         val savedReason = reviewReasonField?.text ?: ""
+        val wasForceCancelling = forceCancelEntry != null
+        val savedForceCancel = forceCancelEntry
         val savedSearch = searchField?.text ?: ""
         val savedScroll = scrollOffset
         super.resize(client, width, height)
@@ -2153,6 +2275,9 @@ class BuyOrderScreen(private val initialTab: Int = 0) : Screen(Text.translatable
             reviewEntry = null
             openReviewDialog(savedReview)
             reviewReasonField?.text = savedReason
+        } else if (wasForceCancelling && savedForceCancel != null) {
+            forceCancelEntry = null
+            openForceCancelDialog(savedForceCancel)
         }
         // 主界面搜索文本恢复（弹窗分支下 searchField 被隐藏，恢复文本无害）；
         // text setter 会触发监听器把滚动归零，恢复后还原滚动位置

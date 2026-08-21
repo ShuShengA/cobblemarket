@@ -5,6 +5,7 @@
 ### New Feature
 
 - New "Drop overflow" toggle in Settings (off by default): when enabled, claiming item returns drops anything that doesn't fit into your inventory onto the ground (they may despawn or be picked up by others — at your own risk); when off, the remainder stays in pending returns for next time
+- **Admin "All Buy Orders" screen**: new entry in the admin panel to view every buy order and force-cancel them — the buyer's frozen money is refunded, pending deliveries return to their sellers, and both sides get notified (queued for offline players); admin panel buttons rearranged into a two-column layout
 
 ### Changes
 
