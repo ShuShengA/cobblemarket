@@ -33,8 +33,6 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
     private var lastInventoryCheck = 0L
     private var countField: TextFieldWidget? = null
     private var priceField: TextFieldWidget? = null
-    private var sellConfirmBtn: NineSliceButton? = null
-    private var cancelBtn: NineSliceButton? = null
     private var backButton: NineSliceButton? = null
 
     private fun getListStartY() = 48
@@ -100,30 +98,35 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         val centerX = width / 2
         val dialogY = height / 2 - 85
 
-        // 输入框/按钮只存引用不 addDrawableChild：由 renderConfirmDialog 在 z=210 层手动渲染
-        // （照精灵市场购买弹窗机制——z 平移的遮罩才能盖住延迟批处理的行文字，widget 层会破坏它）
+        addDrawable(object : Drawable {
+            override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+                renderDialogBackground(context)
+            }
+        })
+
         countField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 72, 160, 16, Text.literal(""))
         countField?.setPlaceholder(Text.translatable("cobblemarket.item.sell_count"))
         countField?.setTextPredicate { it.length <= 3 && it.all { c -> c.isDigit() } }
+        addDrawableChild(countField)
 
         priceField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 102, 160, 16, Text.literal(""))
         priceField?.setPlaceholder(Text.translatable("cobblemarket.item.sell_price"))
         priceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
+        addDrawableChild(priceField)
 
-        sellConfirmBtn = NineSliceButton(
+        addDrawableChild(NineSliceButton(
             centerX - 85, dialogY + 128, 80, 20,
             Text.translatable("cobblemarket.sell.sell"),
             { confirmSell() }
-        )
-        cancelBtn = NineSliceButton(
+        ))
+        addDrawableChild(NineSliceButton(
             centerX + 5, dialogY + 128, 80, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeConfirmDialog() }
-        )
+        ))
     }
 
-    /** 弹窗遮罩 + 面板 + 输入框按钮：全部在 render 末尾按 z 分层绘制（照精灵市场购买弹窗） */
-    private fun renderConfirmDialog(context: DrawContext, mouseX: Int, mouseY: Int) {
+    private fun renderDialogBackground(context: DrawContext) {
         val entry = selectedItem ?: return
         val centerX = width / 2
         val dialogW = 220
@@ -131,15 +134,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
-        // 遮罩（z=100，盖住下层列表文字）
-        context.matrices.push()
-        context.matrices.translate(0.0, 0.0, 100.0)
         context.fill(0, 0, width, height, 0xC0000000.toInt())
-        context.matrices.pop()
-
-        // 面板与静态内容（z=200）
-        context.matrices.push()
-        context.matrices.translate(0.0, 0.0, 200.0)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.sell_confirm_title").formatted(Formatting.GOLD),
@@ -155,24 +150,12 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         context.drawTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.sell_price").string,
             centerX - 80, dialogY + 92, 0xAAAAAA)
-        context.matrices.pop()
-
-        // 输入框与按钮（z=210，手动渲染）
-        context.matrices.push()
-        context.matrices.translate(0.0, 0.0, 210.0)
-        countField?.render(context, mouseX, mouseY, 0f)
-        priceField?.render(context, mouseX, mouseY, 0f)
-        sellConfirmBtn?.render(context, mouseX, mouseY, 0f)
-        cancelBtn?.render(context, mouseX, mouseY, 0f)
-        context.matrices.pop()
     }
 
     private fun closeConfirmDialog() {
         selectedItem = null
         countField = null
         priceField = null
-        sellConfirmBtn = null
-        cancelBtn = null
         // 聚焦指向已废弃的输入框对象会让 E 键保护（focused is TextFieldWidget）误判，关闭弹窗必须清除
         setFocused(null)
         clearChildren()
@@ -190,28 +173,6 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
             countField?.text = count
             priceField?.text = price
         }
-    }
-
-    // 弹窗打开时：输入框/按钮为手动渲染的非 child widget，键盘需在此转发
-    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
-        if (selectedItem != null) {
-            if (countField?.keyPressed(keyCode, scanCode, modifiers) == true ||
-                priceField?.keyPressed(keyCode, scanCode, modifiers) == true
-            ) return true
-            if (keyCode == 256) { closeConfirmDialog(); return true } // ESC 关闭
-            return true
-        }
-        return super.keyPressed(keyCode, scanCode, modifiers)
-    }
-
-    override fun charTyped(chr: Char, modifiers: Int): Boolean {
-        if (selectedItem != null) {
-            if (countField?.charTyped(chr, modifiers) == true ||
-                priceField?.charTyped(chr, modifiers) == true
-            ) return true
-            return true
-        }
-        return super.charTyped(chr, modifiers)
     }
 
     private fun confirmSell() {
@@ -264,13 +225,15 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
             val rowState = if (i == hoveredRow) 1 else 0
             drawNineSlice(context, ROW_BACKGROUND_TEXTURE, leftX, rowY, panelWidth, rowHeight, rowState, ROW_BACKGROUND_TEX_H)
         }
-
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         super.render(context, mouseX, mouseY, delta)
 
-        // 弹窗打开时行内容照常渲染（在遮罩之下），弹窗遮罩/面板/控件最后按 z 分层绘制
+        if (selectedItem != null) {
+            return
+        }
+
         // 每秒轻校验：过滤背包里已不存在的条目（如蛋在界面打开期间孵化成精灵），并同步重建行内按钮
         val checkNow = System.currentTimeMillis()
         if (checkNow - lastInventoryCheck > 1000) {
@@ -303,33 +266,23 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
                 centerX, getListStartY() + 40, 0xFFFFFF)
         }
 
-        // 行内容（图标/名字/数量）始终渲染；弹窗遮罩画在其后（z=100）将其压暗。
-        // 物品图标（drawItem）走独立渲染层、z 平移盖不住会高亮刺穿遮罩——弹窗打开时隐藏，
-        // 照精灵市场对精灵 3D 图标/球种图标的处理（名字与数量仍保留、被压暗）
         val startY = getListStartY()
         items.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, item ->
             val y = startY + i * rowHeight
-            if (selectedItem == null) {
-                context.drawItem(item.stack, leftX + 2, y + 2)
-            }
+            context.drawItem(item.stack, leftX + 2, y + 2)
             context.drawTextWithShadow(textRenderer, item.stack.name, leftX + 24, y + 6, 0xFFFFFF)
             context.drawTextWithShadow(textRenderer, "×${item.count}", leftX + 200, y + 6, 0xAAAAAA)
         }
 
         val actualIdx = scrollOffset + hoveredRow
-        if (selectedItem == null && hoveredRow >= 0 && actualIdx in items.indices) {
+        if (hoveredRow >= 0 && actualIdx in items.indices) {
             renderItemTooltip(context, items[actualIdx], mouseX, mouseY)
         }
 
-        if (selectedItem == null && items.size > maxVisible()) {
+        if (items.size > maxVisible()) {
             context.drawCenteredTextWithShadow(textRenderer,
                 "${scrollOffset + 1}-${minOf(scrollOffset + maxVisible(), items.size)} / ${items.size}",
                 width / 2, height - 49, 0x888888)
-        }
-
-        // 弹窗最后绘制：z=100 遮罩盖行内容、z=200 面板、z=210 输入框/按钮
-        if (selectedItem != null) {
-            renderConfirmDialog(context, mouseX, mouseY)
         }
     }
 
@@ -375,29 +328,6 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         priceField?.isMouseOver(mouseX, mouseY) == true
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
-        if (selectedItem != null) {
-            // 弹窗打开：输入框/按钮是手动渲染的非 child widget，转发点击。
-            // 手动渲染的输入框不在 children 里，走不到 vanilla「点击命中后 Screen.setFocused(控件)」的聚焦流程；
-            // 必须自己补 setFocused，否则 TextFieldWidget 的 isFocused()==false：
-            // keyPressed/charTyped/光标渲染全部失效（点击无反应、打不进字）。
-            val wasInInput = isInputFieldFocused()
-            if (countField?.mouseClicked(mouseX, mouseY, button) == true) {
-                setFocused(countField)
-                return true
-            }
-            if (priceField?.mouseClicked(mouseX, mouseY, button) == true) {
-                setFocused(priceField)
-                return true
-            }
-            if (sellConfirmBtn?.mouseClicked(mouseX, mouseY, button) == true ||
-                cancelBtn?.mouseClicked(mouseX, mouseY, button) == true
-            ) return true
-            // 点击弹窗内空白：脱离输入状态（照物品市场购买弹窗——点击其他输入框时上面已命中并切换聚焦，不会走到这里）
-            if (wasInInput && !isMouseOverAnyInput(mouseX, mouseY)) {
-                focused = null
-            }
-            return true // 吞掉下层点击
-        }
         val wasInInput = isInputFieldFocused()
         val result = super.mouseClicked(mouseX, mouseY, button)
         if (wasInInput && !isMouseOverAnyInput(mouseX, mouseY)) {
