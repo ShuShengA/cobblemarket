@@ -84,6 +84,8 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
                 Text.translatable("cobblemarket.sell.sell"),
                 { openConfirmDialog(item) }
             )
+            // 弹窗打开期间重建（如滚动）的行按钮同样隐藏，防止文字透过遮罩
+            if (selectedItem != null) btn.visible = false
             sellButtons.add(btn)
             addDrawableChild(btn)
         }
@@ -91,8 +93,9 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
 
     private fun openConfirmDialog(item: SellItem) {
         selectedItem = item
-        sellButtons.forEach { it.active = false }
-        backButton?.active = false
+        // widget 文字画在遮罩（addDrawable）之上，active=false 只变灰仍会透过——必须 visible=false
+        sellButtons.forEach { it.visible = false }
+        backButton?.visible = false
         // 清掉可能残留的聚焦（旧输入框对象），否则 E 键保护会误判为输入中
         setFocused(null)
         val centerX = width / 2
