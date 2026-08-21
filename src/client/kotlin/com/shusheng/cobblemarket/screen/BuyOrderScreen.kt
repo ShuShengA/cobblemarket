@@ -364,7 +364,7 @@ class BuyOrderScreen(private val initialTab: Int = 0) : Screen(Text.translatable
     fun onBuyOrderEvent(payload: BuyOrderEventPayload) {
         val e = payload.entry
         when (payload.event) {
-            "NEW" -> if (entries.none { it.id == e.id }) entries = entries + e
+            "NEW" -> if (entries.none { it.id == e.id }) entries = listOf(e) + entries // 最新的在最上面
             "UPDATED" -> entries = entries.map { if (it.id == e.id) e else it }
             "CLOSED" -> entries = entries.filterNot { it.id == e.id }
         }

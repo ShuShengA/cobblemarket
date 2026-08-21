@@ -160,7 +160,7 @@ class AuctionState private constructor() : PersistentState() {
     fun markModified() = markDirty()
 
     fun getActiveAuctions(): List<AuctionListing> =
-        auctions.values.filter { it.isActive() }.sortedBy { it.endsAt }
+        auctions.values.filter { it.isActive() }.sortedByDescending { it.createdAt }
 
     fun countActiveBySeller(sellerUuid: UUID): Int =
         auctions.values.count { it.sellerUuid == sellerUuid && it.isActive() }

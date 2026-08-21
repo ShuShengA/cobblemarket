@@ -473,7 +473,8 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
     fun onAuctionEvent(payload: AuctionEventPayload) {
         when (payload.event) {
             "NEW" -> payload.entry?.let { e ->
-                if (entries.none { it.id == e.id }) entries = entries + e
+                // 最新的在最上面（与服务端列表倒序一致）
+                if (entries.none { it.id == e.id }) entries = listOf(e) + entries
             }
             "BID" -> payload.entry?.let { e ->
                 entries = entries.map { if (it.id == e.id) e else it }
