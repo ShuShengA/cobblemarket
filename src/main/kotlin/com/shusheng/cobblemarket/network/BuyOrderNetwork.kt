@@ -307,6 +307,19 @@ data class CancelBuyOrderPayload(val orderId: UUID) : CustomPayload {
     }
 }
 
+// ── C2S：OP 强制下架求购单（复用 closeByBuyer：冻结金退买家、待确认交付退卖家） ──
+
+data class ForceCancelBuyOrderPayload(val orderId: UUID) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<ForceCancelBuyOrderPayload>(CobbleMarket.id("force_cancel_buy_order"))
+        val CODEC: PacketCodec<PacketByteBuf, ForceCancelBuyOrderPayload> = PacketCodec.of(
+            { p, b -> b.writeUuid(p.orderId) },
+            { b -> ForceCancelBuyOrderPayload(b.readUuid()) }
+        )
+    }
+}
+
 // ── C2S：卖家交付精灵（1 只即凑满，订单自动关闭） ──
 
 data class DeliverPokemonBuyOrderPayload(
@@ -384,6 +397,7 @@ object BuyOrderNetwork {
         PayloadTypeRegistry.playC2S().register(CreatePokemonBuyOrderPayload.ID, CreatePokemonBuyOrderPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(CreateItemBuyOrderPayload.ID, CreateItemBuyOrderPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(CancelBuyOrderPayload.ID, CancelBuyOrderPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(ForceCancelBuyOrderPayload.ID, ForceCancelBuyOrderPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(DeliverPokemonBuyOrderPayload.ID, DeliverPokemonBuyOrderPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(DeliverItemBuyOrderPayload.ID, DeliverItemBuyOrderPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(AcceptPendingDeliverPayload.ID, AcceptPendingDeliverPayload.CODEC)
@@ -559,6 +573,44 @@ object BuyOrderNetwork {
                 ServerPlayNetworking.send(
                     player,
                     MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.closed", refund, CurrencyHandler.currencyText()))
+                )
+                broadcastEvent(server, "CLOSED", buyOrderToEntry(order))
+            }
+        }
+
+        ServerPlayNetworking.registerGlobalReceiver(ForceCancelBuyOrderPayload.ID) { payload, context ->
+            val player = context.player()
+            if (!RequestThrottle.allow(player.uuid, "force_cancel_buy_order", RequestThrottle.WRITE_INTERVAL_MS)) return@registerGlobalReceiver
+            if (!player.hasPermissionLevel(2)) return@registerGlobalReceiver
+            val server = player.server
+            server.execute {
+                settleExpiredAndBroadcast(server)
+                val state = BuyOrderState.get(server)
+                val order = state.getOrder(payload.orderId)
+                if (order == null || !order.isOpen()) {
+                    ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.ended")))
+                    return@execute
+                }
+                // 下架前记下待确认交付的卖家（closeByBuyer 会退回货物并清空 pending）
+                val pendingSellers = order.pendingDeliveries.map { it.sellerUuid }.toSet()
+                if (!state.closeByBuyer(server, order)) {
+                    ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.not_found")))
+                    return@execute
+                }
+                // 通知买家（冻结金已退还）与待确认交付的卖家（货物已退回）；离线则入队补发
+                com.shusheng.cobblemarket.market.OfflineMessageState.notify(
+                    server, order.buyerUuid,
+                    Text.translatable("cobblemarket.buy_order.force_cancelled_buyer").formatted(Formatting.RED)
+                )
+                pendingSellers.forEach { seller ->
+                    com.shusheng.cobblemarket.market.OfflineMessageState.notify(
+                        server, seller,
+                        Text.translatable("cobblemarket.buy_order.force_cancelled_seller").formatted(Formatting.RED)
+                    )
+                }
+                ServerPlayNetworking.send(
+                    player,
+                    MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.force_cancelled_msg", order.buyerName, order.requirementText()))
                 )
                 broadcastEvent(server, "CLOSED", buyOrderToEntry(order))
             }

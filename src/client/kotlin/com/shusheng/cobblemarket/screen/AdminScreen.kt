@@ -99,22 +99,27 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             Text.translatable("cobblemarket.entry.all_history"),
             { client?.setScreen(HistoryScreen(true)) }
         )
-        // 行 3：黑名单（精灵/物品双 tab 合并界面），单按钮水平居中
+        // 行 3：黑名单（左）+ 价格限制（右）
         addMenuButton(
-            centerX - btnW / 2, startY + (btnH + gap) * 2, btnW, btnH,
+            leftX, startY + (btnH + gap) * 2, btnW, btnH,
             Text.translatable("cobblemarket.op.blacklist"),
             { client?.setScreen(BlacklistScreen()) }
         )
-        // 行 4
         addMenuButton(
-            leftX, startY + (btnH + gap) * 3, btnW, btnH,
+            rightX, startY + (btnH + gap) * 2, btnW, btnH,
             Text.translatable("cobblemarket.op.price_limit"),
             { client?.setScreen(PriceLimitScreen()) }
         )
+        // 行 4：所有拍卖（左）+ 所有求购（右）
         addMenuButton(
-            rightX, startY + (btnH + gap) * 3, btnW, btnH,
+            leftX, startY + (btnH + gap) * 3, btnW, btnH,
             Text.translatable("cobblemarket.op.auction"),
             { client?.setScreen(AdminAuctionScreen()) }
+        )
+        addMenuButton(
+            rightX, startY + (btnH + gap) * 3, btnW, btnH,
+            Text.translatable("cobblemarket.op.buy_order"),
+            { client?.setScreen(BuyOrderScreen(adminMode = true)) }
         )
         // 行 5：蛋交易开关（左，仅装有 Cobbreeding 时显示）+ 返回；无 Cobbreeding 时返回按钮放左
         if (COBBREEDING_AVAILABLE) {
