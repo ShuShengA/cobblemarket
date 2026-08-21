@@ -331,7 +331,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         if (item != null) {
             countField = TextFieldWidget(textRenderer, centerX - 20, dialogY + 112, 100, 16, Text.literal(""))
             countField?.setPlaceholder(Text.translatable("cobblemarket.auction.count_placeholder", item.count).formatted(Formatting.GRAY))
-            countField?.setTextPredicate { it.length <= 3 && it.all { c -> c.isDigit() } }
+            countField?.setTextPredicate { it.length <= 4 && it.all { c -> c.isDigit() } }
             addDrawableChild(countField)
         }
 

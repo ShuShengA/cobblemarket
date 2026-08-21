@@ -408,7 +408,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
         buyCountField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 72, 100, 16, Text.literal(""))
         buyCountField?.setPlaceholder(Text.translatable("cobblemarket.item.buy_count"))
-        buyCountField?.setTextPredicate { it.length <= 3 && it.all { c -> c.isDigit() } }
+        buyCountField?.setTextPredicate { it.length <= 4 && it.all { c -> c.isDigit() } }
         addDrawableChild(buyCountField)
 
         addDrawableChild(NineSliceButton(
