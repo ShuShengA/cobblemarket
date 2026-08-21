@@ -249,7 +249,7 @@ class BuyOrderState private constructor() : PersistentState() {
     fun getOrder(id: UUID): BuyOrder? = orders[id]
 
     fun getOpenOrders(): List<BuyOrder> =
-        orders.values.filter { it.isOpen() }.sortedBy { it.createdAt }
+        orders.values.filter { it.isOpen() }.sortedByDescending { it.createdAt }
 
     fun countOpenByBuyer(buyerUuid: UUID): Int =
         orders.values.count { it.buyerUuid == buyerUuid && it.isOpen() }
