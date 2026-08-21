@@ -821,14 +821,17 @@ data class ItemReturnDataPayload(
 
 // ── C2S: Claim item returns ──
 
-class ClaimItemReturnPayload : CustomPayload {
+data class ClaimItemReturnPayload(
+    /** 玩家个人设置：装不下的部分掉在地上（默认关=留在待领取） */
+    val dropOverflow: Boolean
+) : CustomPayload {
     override fun getId() = ID
 
     companion object {
         val ID = CustomPayload.Id<ClaimItemReturnPayload>(CobbleMarket.id("claim_item_return"))
         val CODEC: PacketCodec<PacketByteBuf, ClaimItemReturnPayload> = PacketCodec.of(
-            { _, b -> b.writeInt(0) },
-            { b -> b.readInt(); ClaimItemReturnPayload() }
+            { p, b -> b.writeBoolean(p.dropOverflow) },
+            { b -> ClaimItemReturnPayload(dropOverflow = b.readBoolean()) }
         )
     }
 }
@@ -2489,13 +2492,13 @@ object MarketNetwork {
             }
         }
 
-        ServerPlayNetworking.registerGlobalReceiver(ClaimItemReturnPayload.ID) { _, context ->
+        ServerPlayNetworking.registerGlobalReceiver(ClaimItemReturnPayload.ID) { payload, context ->
             val player = context.player()
             if (!RequestThrottle.allow(player.uuid, "claim_item_return", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerGlobalReceiver
             val server = player.server
             server.execute {
                 val state = ItemMarketState.get(server)
-                val returned = state.claimReturns(player)
+                val returned = state.claimReturns(player, payload.dropOverflow)
                 val remaining = state.getPendingReturns(player.uuid).size
                 val msg = if (remaining > 0)
                     Text.translatable("cobblemarket.return.item_claimed", returned, remaining)

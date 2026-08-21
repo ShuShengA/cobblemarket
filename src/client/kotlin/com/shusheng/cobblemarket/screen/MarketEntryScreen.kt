@@ -24,6 +24,7 @@ class MarketEntryScreen : Screen(Text.translatable("cobblemarket.entry.title")) 
     private var settingsOpen = false
     private var settingsMarketButton: NineSliceButton? = null
     private var settingsAuctionButton: NineSliceButton? = null
+    private var settingsDropButton: NineSliceButton? = null
     // 入口底部居中的市场总开关（仅 OP 可见）
     private var marketSwitchBtn: NineSliceButton? = null
     // 停市确认弹窗（照 AdminScreen 蛋交易确认弹窗：3 秒冷静期 + 红白双色文字）
@@ -221,8 +222,10 @@ class MarketEntryScreen : Screen(Text.translatable("cobblemarket.entry.title")) 
         settingsMarketButton?.let { b -> b.x = labelRight("cobblemarket.settings.animation_market") + 4; b.y = dialogY + 30; addDrawableChild(b) }
         settingsAuctionButton = makeSwitchButton(ClientConfig.celebrationOnAuctionAndOrder) { toggleAuctionAnimation() }
         settingsAuctionButton?.let { b -> b.x = labelRight("cobblemarket.settings.animation_auction") + 4; b.y = dialogY + 56; addDrawableChild(b) }
+        settingsDropButton = makeSwitchButton(ClientConfig.dropOverflowOnClaim) { toggleDropOverflow() }
+        settingsDropButton?.let { b -> b.x = labelRight("cobblemarket.settings.drop_overflow") + 4; b.y = dialogY + 82; addDrawableChild(b) }
         addDrawableChild(NineSliceButton(
-            centerX - 28, dialogY + 82, 56, 20,
+            centerX - 28, dialogY + 108, 56, 20,
             Text.translatable("cobblemarket.settings.done"),
             { closeSettingsDialog() }
         ))
@@ -232,6 +235,7 @@ class MarketEntryScreen : Screen(Text.translatable("cobblemarket.entry.title")) 
         settingsOpen = false
         settingsMarketButton = null
         settingsAuctionButton = null
+        settingsDropButton = null
         clearChildren()
         init()
     }
@@ -266,6 +270,12 @@ class MarketEntryScreen : Screen(Text.translatable("cobblemarket.entry.title")) 
         ClientConfig.setCelebrationOnAuctionAndOrder(!ClientConfig.celebrationOnAuctionAndOrder)
         settingsAuctionButton?.iconLeft = switchIconFor(ClientConfig.celebrationOnAuctionAndOrder)
         showSettingsToast("cobblemarket.settings.animation_auction", ClientConfig.celebrationOnAuctionAndOrder)
+    }
+
+    private fun toggleDropOverflow() {
+        ClientConfig.setDropOverflowOnClaim(!ClientConfig.dropOverflowOnClaim)
+        settingsDropButton?.iconLeft = switchIconFor(ClientConfig.dropOverflowOnClaim)
+        showSettingsToast("cobblemarket.settings.drop_overflow", ClientConfig.dropOverflowOnClaim)
     }
 
     /** 开关切换 toast：「标签 开/关」，1.5 秒后消失 */
@@ -307,6 +317,11 @@ class MarketEntryScreen : Screen(Text.translatable("cobblemarket.entry.title")) 
             textRenderer,
             toggleText("cobblemarket.settings.animation_auction", ClientConfig.celebrationOnAuctionAndOrder),
             centerX - 80, dialogY + 63, 0xFFFFFF
+        )
+        context.drawTextWithShadow(
+            textRenderer,
+            toggleText("cobblemarket.settings.drop_overflow", ClientConfig.dropOverflowOnClaim),
+            centerX - 80, dialogY + 89, 0xFFFFFF
         )
     }
 
@@ -505,6 +520,6 @@ class MarketEntryScreen : Screen(Text.translatable("cobblemarket.entry.title")) 
 
     companion object {
         private const val DIALOG_W = 200
-        private const val DIALOG_H = 116
+        private const val DIALOG_H = 142
     }
 }

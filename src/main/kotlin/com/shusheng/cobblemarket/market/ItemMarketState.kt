@@ -111,7 +111,7 @@ class ItemMarketState private constructor() : PersistentState() {
         }
     }
 
-    fun claimReturns(player: ServerPlayerEntity): Int {
+    fun claimReturns(player: ServerPlayerEntity, dropOverflow: Boolean = false): Int {
         val playerReturns = pendingReturns[player.uuid] ?: return 0
         val remaining = mutableListOf<ItemListing>()
         var returned = 0
@@ -138,25 +138,16 @@ class ItemMarketState private constructor() : PersistentState() {
                     changed = true
                     // 物品已全部归还，挂单生命周期终结，立即删除避免存档膨胀
                     listings.remove(listing.id)
-                    try {
-                        com.shusheng.cobblemarket.event.TransactionHistory.get(player.server).addRecord(
-                            com.shusheng.cobblemarket.event.TransactionRecord(
-                                timestamp = System.currentTimeMillis(),
-                                type = com.shusheng.cobblemarket.event.TransactionType.RETURN,
-                                category = com.shusheng.cobblemarket.event.TransactionCategory.ITEM,
-                                sellerUuid = player.uuid,
-                                sellerName = player.name.string,
-                                buyerUuid = null,
-                                buyerName = "",
-                                species = listing.itemId,
-                                price = listing.price,
-                                fee = 0
-                            )
-                        )
-                    } catch (e: Exception) {
-                        // 记录失败只影响历史，不影响已归还的物品
-                        CobbleMarket.LOGGER.warn("Failed to record item return for listing {}: {}", listing.id, e.message)
-                    }
+                    recordReturn(player, listing)
+                } else if (dropOverflow) {
+                    // 玩家个人设置开启：装不下的部分掉在地上（可能消失/被他人捡走，风险玩家自担），视为已全部归还
+                    player.serverWorld.spawnEntity(
+                        net.minecraft.entity.ItemEntity(player.serverWorld, player.x, player.y, player.z, rebuilt)
+                    )
+                    returned++
+                    changed = true
+                    listings.remove(listing.id)
+                    recordReturn(player, listing)
                 } else {
                     // 部分领取：保留剩余数量，待下次领取，避免丢失。
                     listing.count = rebuilt.count
@@ -187,6 +178,28 @@ class ItemMarketState private constructor() : PersistentState() {
         }
         if (changed) markDirty()
         return returned
+    }
+
+    /** 归还历史记录（正常归还与掉落丢弃共用）；记录失败只影响历史，不影响已归还的物品 */
+    private fun recordReturn(player: ServerPlayerEntity, listing: ItemListing) {
+        try {
+            com.shusheng.cobblemarket.event.TransactionHistory.get(player.server).addRecord(
+                com.shusheng.cobblemarket.event.TransactionRecord(
+                    timestamp = System.currentTimeMillis(),
+                    type = com.shusheng.cobblemarket.event.TransactionType.RETURN,
+                    category = com.shusheng.cobblemarket.event.TransactionCategory.ITEM,
+                    sellerUuid = player.uuid,
+                    sellerName = player.name.string,
+                    buyerUuid = null,
+                    buyerName = "",
+                    species = listing.itemId,
+                    price = listing.price,
+                    fee = 0
+                )
+            )
+        } catch (e: Exception) {
+            CobbleMarket.LOGGER.warn("Failed to record item return for listing {}: {}", listing.id, e.message)
+        }
     }
 
     /**

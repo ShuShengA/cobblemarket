@@ -2,6 +2,10 @@
 
 ## 1.0.0-beta.7 (in development, unreleased)
 
+### New Feature
+
+- New "Drop overflow" toggle in Settings (off by default): when enabled, claiming item returns drops anything that doesn't fit into your inventory onto the ground (they may despawn or be picked up by others — at your own risk); when off, the remainder stays in pending returns for next time
+
 ### Changes
 
 - Quantity input limit raised from 3 to 4 digits: item sell count, item buy count, and auction item count now accept up to 9999

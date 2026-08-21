@@ -26,6 +26,10 @@ object ClientConfig {
     var celebrationOnAuctionAndOrder: Boolean = true
         private set
 
+    /** 领取待领取物品时装不下的部分掉落在地（默认关=留在待领取，下次再领） */
+    var dropOverflowOnClaim: Boolean = false
+        private set
+
     fun load() {
         if (!configFile.exists()) {
             save()
@@ -37,6 +41,7 @@ object ClientConfig {
             val legacy = data["celebrationAnimationEnabled"] as? Boolean
             celebrationOnMarketBuy = data["celebrationOnMarketBuy"] as? Boolean ?: legacy ?: true
             celebrationOnAuctionAndOrder = data["celebrationOnAuctionAndOrder"] as? Boolean ?: legacy ?: true
+            dropOverflowOnClaim = data["dropOverflowOnClaim"] as? Boolean ?: false
             if (legacy != null) save()
         } catch (e: Exception) {
             CobbleMarketClient.LOGGER.warn("Failed to load client config: ${e.message}")
@@ -54,6 +59,11 @@ object ClientConfig {
         save()
     }
 
+    fun setDropOverflowOnClaim(v: Boolean) {
+        dropOverflowOnClaim = v
+        save()
+    }
+
     private fun save() {
         try {
             configFile.writeText(
@@ -62,10 +72,12 @@ object ClientConfig {
                         "_comments" to mapOf(
                             "celebrationOnMarketBuy" to "市场直接购买精灵时是否播放庆祝动画（个人设置，可在市场入口界面右下角的设置里改）/ Whether to play the celebration animation when buying a Pokémon directly from the market (personal setting, editable via the gear button on the market entry screen)",
                             "celebrationOnAuctionAndOrder" to "拍卖成交、求购单接受交付时是否播放庆祝动画（个人设置，同上）/ Whether to play the celebration animation when winning an auction or accepting a buy order delivery (personal setting, same place)",
+                            "dropOverflowOnClaim" to "领取待领取物品时，装不下的部分掉落在地（可能消失或被他人捡走，风险自负）/ When claiming item returns, drop the parts that don't fit into the inventory onto the ground (they may despawn or be picked up by others — at your own risk)",
                             "_note" to "服主还可在服务端配置 cobblemarket.json 的 celebrationAnimationEnabled 里全局关闭动画，那种情况下本文件的开关不起作用 / The server owner can also disable animations globally via celebrationAnimationEnabled in the server-side cobblemarket.json, in which case these switches have no effect"
                         ),
                         "celebrationOnMarketBuy" to celebrationOnMarketBuy,
-                        "celebrationOnAuctionAndOrder" to celebrationOnAuctionAndOrder
+                        "celebrationOnAuctionAndOrder" to celebrationOnAuctionAndOrder,
+                        "dropOverflowOnClaim" to dropOverflowOnClaim
                     )
                 )
             )
