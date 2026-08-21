@@ -1455,11 +1455,15 @@ object MarketNetwork {
                     server, listing.sellerUuid,
                     Text.translatable("cobblemarket.item.cancelled")
                 )
+                // 物品名传翻译 Text（客户端按玩家语言渲染），与精灵下架的 speciesText() 一致，不能传裸 itemId
+                val itemName = Identifier.tryParse(listing.itemId)
+                    ?.let { Registries.ITEM.get(it).name }
+                    ?: Text.literal(listing.itemId)
                 ServerPlayNetworking.send(
                     player,
                     MarketResultPayload(
                         true,
-                        Text.translatable("cobblemarket.op.cancelled", listing.sellerName, listing.itemId)
+                        Text.translatable("cobblemarket.op.cancelled", listing.sellerName, itemName)
                     )
                 )
             }
@@ -2208,7 +2212,10 @@ object MarketNetwork {
                         Text.translatable(
                             "cobblemarket.item.bought",
                             count,
-                            listing.itemId,
+                            // 物品名传翻译 Text（客户端按玩家语言渲染），不能传裸 itemId
+                            Identifier.tryParse(listing.itemId)
+                                ?.let { Registries.ITEM.get(it).name }
+                                ?: Text.literal(listing.itemId),
                             totalPrice,
                             CurrencyHandler.currencyText()
                         )
