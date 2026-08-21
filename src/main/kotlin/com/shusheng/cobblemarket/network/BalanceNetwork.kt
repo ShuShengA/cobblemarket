@@ -25,18 +25,31 @@ class RequestBalancePayload : CustomPayload {
 
 // ── S2C：余额数据（balance 已做千分位格式化，客户端直接显示） ──
 
-data class BalanceDataPayload(val balance: String, val pendingBalance: Long) : CustomPayload {
+data class BalanceDataPayload(val balance: String, val pendingBalance: Long, val currencyName: String) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<BalanceDataPayload>(CobbleMarket.id("balance_data"))
         val CODEC: PacketCodec<PacketByteBuf, BalanceDataPayload> = PacketCodec.of(
-            { p, b -> b.writeString(p.balance); b.writeLong(p.pendingBalance) },
-            { b -> BalanceDataPayload(b.readString(), b.readLong()) }
+            { p, b -> b.writeString(p.balance); b.writeLong(p.pendingBalance); b.writeString(p.currencyName) },
+            { b -> BalanceDataPayload(b.readString(), b.readLong(), b.readString()) }
         )
     }
 }
 
 object BalanceNetwork {
+
+    /**
+     * 余额显示格式：不足 10 亿原样千分位（99,999,999），达到 10 亿起用 B 单位（1.5B）。
+     * 不用 k/M（与物品市场网格缩写不同：大额余额以 B 为单位即可）。
+     * 截断到 1 位小数（照 PriceFormat.oneDecimal 语义，不用舍入）。
+     */
+    private fun formatBalance(bal: java.math.BigInteger): String {
+        val billion = java.math.BigInteger.valueOf(1_000_000_000L)
+        if (bal < billion) return bal.toString().reversed().chunked(3).joinToString(",").reversed()
+        val tenths = bal.multiply(java.math.BigInteger.TEN).divide(billion).toLong()
+        return "${tenths / 10}.${tenths % 10}B"
+    }
+
     fun register() {
         PayloadTypeRegistry.playC2S().register(RequestBalancePayload.ID, RequestBalancePayload.CODEC)
         PayloadTypeRegistry.playS2C().register(BalanceDataPayload.ID, BalanceDataPayload.CODEC)
@@ -47,10 +60,9 @@ object BalanceNetwork {
             if (!RequestThrottle.allow(player.uuid, "request_balance", RequestThrottle.READ_INTERVAL_MS)) return@registerGlobalReceiver
             val server = player.server
             server.execute {
-                val bal = CurrencyHandler.getBalance(player)
-                    .toString().reversed().chunked(3).joinToString(",").reversed()
+                val bal = formatBalance(CurrencyHandler.getBalance(player))
                 val pending = MarketState.get(server).getPendingBalance(player.uuid)
-                ServerPlayNetworking.send(player, BalanceDataPayload(bal, pending))
+                ServerPlayNetworking.send(player, BalanceDataPayload(bal, pending, CurrencyHandler.getCurrencyId()))
             }
         }
     }

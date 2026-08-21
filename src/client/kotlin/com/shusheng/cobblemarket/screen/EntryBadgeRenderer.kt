@@ -19,6 +19,50 @@ object EntryBadgeRenderer {
         if (shiny) Text.literal(name).append(Text.literal(" ★").formatted(Formatting.GOLD))
         else Text.literal(name)
 
+    /**
+     * 性格显示文本（照 Cobblemon 薄荷约定）：
+     * 未用薄荷 = 生效性格正常显示；用过薄荷 = 斜体原生性格（括号生效性格+薄荷后缀），如 *胆小*（大胆薄荷）。
+     * baseKey/effKey 为性格翻译 key；baseKey 为空或与 effKey 相同视为未用薄荷。
+     */
+    fun natureText(baseKey: String, effKey: String): Text {
+        if (baseKey.isEmpty() || baseKey == effKey) return Text.translatable(effKey)
+        return Text.literal("")
+            .append(Text.translatable(baseKey).formatted(Formatting.ITALIC))
+            .append(Text.literal("（"))
+            .append(Text.translatable(effKey))
+            .append(Text.translatable("cobblemarket.gui.nature_mint"))
+            .append(Text.literal("）"))
+    }
+
+    /**
+     * 左对齐名字行：名字文本 + 右侧公母图标（♂蓝/♀红，与市场行内同款）。
+     * 所有精灵详情面板的第一行统一走此函数（居中场景先算总宽再调本函数）。
+     */
+    fun drawNameLineLeft(context: DrawContext, name: Text, gender: String, x: Int, y: Int, color: Int = 0xFFFFFF) {
+        val font = MinecraftClient.getInstance().textRenderer
+        context.drawTextWithShadow(font, name, x, y, color)
+        if (gender != "MALE" && gender != "FEMALE") return
+        val gi = if (gender == "MALE")
+            Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
+        else
+            Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
+        com.cobblemon.mod.common.api.gui.blitk(
+            matrixStack = context.matrices, texture = gi,
+            x = x + font.getWidth(name) + 2, y = y, width = 6, height = 8
+        )
+    }
+
+    /** 居中名字行：名字 + 公母图标整体居中（无性别信息时与普通居中文本一致） */
+    fun drawNameLine(context: DrawContext, name: Text, gender: String, centerX: Int, y: Int, color: Int = 0xFFFFFF) {
+        val font = MinecraftClient.getInstance().textRenderer
+        if (gender != "MALE" && gender != "FEMALE") {
+            context.drawCenteredTextWithShadow(font, name, centerX, y, color)
+            return
+        }
+        val totalW = font.getWidth(name) + 14
+        drawNameLineLeft(context, name, gender, centerX - totalW / 2, y, color)
+    }
+
     // 居中绘制信息行，返回下一行的 y
     fun drawInfoLines(context: DrawContext, entry: ListingEntry, displayName: Text, centerX: Int, startY: Int): Int {
         val font = MinecraftClient.getInstance().textRenderer
@@ -40,8 +84,10 @@ object EntryBadgeRenderer {
                 (if (entry.secondaryType.isNotEmpty()) " + ${Text.translatable(entry.secondaryType).string}" else "")) to 0xFFFFFF
         )
         lines.add(
-            Text.literal("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(entry.nature).string}  " +
-                "${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(entry.ability).string}") to 0xFFFFFF
+            Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
+                .append(natureText(entry.natureBase, entry.nature))
+                .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
+                .append(Text.translatable(entry.ability)) to 0xFFFFFF
         )
         var heldItemLine = -1
         if (hasHeldItem) {
@@ -60,7 +106,7 @@ object EntryBadgeRenderer {
         )
         lines.add(
             Text.literal("${Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).string} " +
-                "${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}") to 0xFFFFFF
+                "${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}") to 0x55FFFF
         )
 
         var y = startY
@@ -76,6 +122,9 @@ object EntryBadgeRenderer {
                         x = (x + textW + 2).toDouble(), y = y.toDouble(), scale = 0.6, matrixStack = context.matrices
                     )
                 }
+            } else if (i == 0) {
+                // 第一行（名字★Lv）走公共名字行函数（带公母图标）
+                drawNameLine(context, line, entry.gender, centerX, y, color)
             } else {
                 context.drawCenteredTextWithShadow(font, line, centerX, y, color)
             }

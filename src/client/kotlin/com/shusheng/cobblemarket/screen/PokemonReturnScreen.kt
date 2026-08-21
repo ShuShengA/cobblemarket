@@ -230,7 +230,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                 sx += 12
             }
             val name = speciesDisplay(p)
-            context.drawText(textRenderer, name, sx, y + 7, tc, false)
+            context.drawTextWithShadow(textRenderer, name, sx, y + 7, tc)
             sx += textRenderer.getWidth(name)
             if (p.shiny) {
                 context.drawText(textRenderer, "★", sx + 2, y + 7, GOLD_COLOR, false)
@@ -300,7 +300,10 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
         val lines = mutableListOf<Pair<Text, Int>>()
         lines.add(EntryBadgeRenderer.nameWithShinyStar(speciesDisplay(p), p.shiny).copy().append(Text.literal("  Lv.${p.level}")) to 0xFFFFFF)
         lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText") to 0xFFFFFF)
-        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(p.nature).string}  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(p.ability).string}") to 0xFFFFFF)
+        lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
+            .append(EntryBadgeRenderer.natureText(p.natureBase, p.nature))
+            .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
+            .append(Text.translatable(p.ability)) to 0xFFFFFF)
         val hasHeldItem = p.heldItemId.isNotEmpty() &&
             Identifier.tryParse(p.heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
         var heldItemLine = -1
@@ -336,6 +339,9 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                         matrixStack = context.matrices
                     )
                 }
+            } else if (i == 0) {
+                // 第一行（名字★Lv）带公母图标
+                EntryBadgeRenderer.drawNameLineLeft(context, line, p.gender, tx, ty + i * 10, color)
             } else {
                 context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
             }

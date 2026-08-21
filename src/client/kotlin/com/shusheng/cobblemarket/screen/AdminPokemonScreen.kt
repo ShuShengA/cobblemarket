@@ -481,6 +481,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         displayList.take(visibleRows).forEachIndexed { di, (origIndex, entry) ->
             val y = startY + di * rowHeight
 
+            // 槽背景（GUI 层，弹窗遮罩自动压暗，照常渲染）
             val slotX = leftX + 2
             val slotY = y + 2
             val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
@@ -490,24 +491,27 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
             context.matrices.pop()
 
-            renderPokemonIcon(context, origIndex, leftX + 2, y + 2, iconSize)
+            // 3D 精灵（弹窗打开时不渲染——模型层在衬底之上，压暗仍会浮在弹窗上）
+            if (confirmEntry == null) renderPokemonIcon(context, origIndex, leftX + 2, y + 2, iconSize)
 
-            // 球种（名称左侧）+ 物种名 + 性别图标 + 携带物 + 头像 + 等级 + 价格——与精灵市场界面布局一致
-            val ballId = Identifier.tryParse(entry.ballItem)
-            if (ballId != null) {
-                val ballItem = Registries.ITEM.get(ballId)
-                com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                    itemStack = ItemStack(ballItem),
-                    x = leftX + 26.0,
-                    y = y + 6.0,
-                    scale = 0.6,
-                    matrixStack = context.matrices
-                )
+            // 球种（名称左侧；弹窗打开时隐藏——物品图标无色调参数无法变暗）
+            if (confirmEntry == null) {
+                val ballId = Identifier.tryParse(entry.ballItem)
+                if (ballId != null) {
+                    val ballItem = Registries.ITEM.get(ballId)
+                    com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                        itemStack = ItemStack(ballItem),
+                        x = leftX + 26.0,
+                        y = y + 6.0,
+                        scale = 0.6,
+                        matrixStack = context.matrices
+                    )
+                }
             }
 
             // Species name (translated) + 金色闪光星标（★，拆段绘制）
             val displayName = iconData[origIndex]?.displayName ?: entry.species
-            context.drawText(textRenderer, displayName, leftX + 40, y + 7, typeColor(entry.primaryType), false)
+            context.drawTextWithShadow(textRenderer, displayName, leftX + 40, y + 7, typeColor(entry.primaryType))
             var nameWidth = textRenderer.getWidth(displayName)
             if (entry.shiny) {
                 context.drawText(textRenderer, "★", leftX + 40 + nameWidth + 2, y + 7, GOLD_COLOR, false)
@@ -532,7 +536,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 iconOffset = 8
             }
 
-            if (entry.heldItemId.isNotEmpty()) {
+            if (confirmEntry == null && entry.heldItemId.isNotEmpty()) {
                 Identifier.tryParse(entry.heldItemId)?.let { heldId ->
                     val heldItem = Registries.ITEM.get(heldId)
                     if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
@@ -587,7 +591,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         context.matrices.pop()
     }
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int) {
+    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false) {
         val data = iconData[index] ?: return run {
             context.fill(x, y, x + size, y + size, 0x88888888.toInt())
         }
@@ -600,7 +604,11 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             drawProfilePokemon(
                 renderablePokemon = data.renderable, matrixStack = matrices,
                 rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
-                state = data.state, partialTicks = 0f, scale = 4.5f
+                state = data.state, partialTicks = 0f, scale = 4.5f,
+                // 弹窗打开时压暗（模型走独立渲染层，遮罩盖不住；颜色系数模拟遮罩效果）
+                r = if (dark) 0.35f else 1f,
+                g = if (dark) 0.35f else 1f,
+                b = if (dark) 0.35f else 1f
             )
         } catch (_: Exception) {
         } finally {
@@ -627,7 +635,10 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         lines.add(EntryBadgeRenderer.nameWithShinyStar(iconData[listings.indexOf(entry)]?.displayName ?: entry.species, entry.shiny)
             .copy().append(Text.literal("  ${Text.translatable("cobblemarket.gui.lv").string}${entry.level}")) to w)
         lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}${Text.translatable(entry.primaryType).string}${if (entry.secondaryType.isNotEmpty()) " + ${Text.translatable(entry.secondaryType).string}" else ""}") to w)
-        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(entry.nature).string}  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(entry.ability).string}") to w)
+        lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
+            .append(EntryBadgeRenderer.natureText(entry.natureBase, entry.nature))
+            .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
+            .append(Text.translatable(entry.ability)) to w)
         var heldItemLine = -1
         if (hasHeldItem) {
             heldItemLine = lines.size
@@ -641,7 +652,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}") to ivColors[4])
         lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}") to ivColors[5])
         lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).string} ${entry.sellerName}") to w)
-        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).string} ${entry.price} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}") to w)
+        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).string} ${entry.price} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}") to 0x55FFFF)
 
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
@@ -670,6 +681,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                         matrixStack = context.matrices
                     )
                 }
+            } else if (i == 0) {
+                // 第一行（名字★Lv）带公母图标
+                EntryBadgeRenderer.drawNameLineLeft(context, line, entry.gender, tx, ty + i * 10, color)
             } else {
                 context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
             }

@@ -13,6 +13,16 @@ fun formatPriceLong(price: Long): String =
     price.toString().reversed().chunked(3).joinToString(",").reversed()
 
 /**
+ * 待领余额显示：不足 10 亿原样千分位，达到 10 亿用 B 单位（截断 1 位小数）。
+ * 与服务端余额格式同规则；不用 k/M。
+ */
+fun formatBalanceLong(price: Long): String {
+    if (price < 1_000_000_000L) return price.toString().reversed().chunked(3).joinToString(",").reversed()
+    val tenths = price / 100_000_000L // price×10÷10亿，截断到 1 位小数
+    return "${tenths / 10}.${tenths % 10}B"
+}
+
+/**
  * 小格子用的价格缩写：4 位以内原样显示，更大用 k/M/B（截断到 1 位小数）。
  * 完整价格见 tooltip（formatPrice）。
  */

@@ -1,0 +1,11 @@
+{
+  "required": false,
+  "package": "com.shusheng.cobblemarket.mixin.client",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "ScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

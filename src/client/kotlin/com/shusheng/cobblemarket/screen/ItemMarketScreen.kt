@@ -243,7 +243,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             ?.let { Text.translatable("cobblemarket.gui.balance", it).string + "  " } ?: ""
         context.drawTextWithShadow(textRenderer, balPrefix, leftX, 31, 0x55FFFF)
         context.drawTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.gui.pending_balance", com.shusheng.cobblemarket.client.formatPriceLong(pendingBalance) + " ◆").string,
+            Text.translatable("cobblemarket.gui.pending_balance", com.shusheng.cobblemarket.client.formatBalanceLong(pendingBalance) + " ◆").string,
             leftX + textRenderer.getWidth(balPrefix), 31, 0x55FF55)
 
         val pageText = Text.translatable("cobblemarket.gui.page", currentPage, totalPages).formatted(Formatting.GRAY)
@@ -282,6 +282,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             val rowState = if (index == hoveredSlot) 1 else 0
             drawNineSlice(context, ROW_BACKGROUND_TEXTURE, x, y, slotSize, slotSize, rowState, ROW_BACKGROUND_TEX_H)
 
+            // 弹窗打开时本函数已在开头 return，此处无需图标条件（不会在弹窗下渲染）
             val registry = client?.world?.registryManager
             if (registry != null) {
                 val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
@@ -302,19 +303,20 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     private fun renderItemTooltip(context: DrawContext, entry: ItemEntry, mouseX: Int, mouseY: Int) {
         val registry = client?.world?.registryManager
-        val lines = mutableListOf<Text>()
+        val lines = mutableListOf<Pair<Text, Int>>()
         if (registry != null) {
             val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
-            lines.addAll(stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC))
+            lines.addAll(stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC).map { it to 0xFFFFFF })
         } else {
-            lines.add(Text.literal(entry.itemId))
+            lines.add(Text.literal(entry.itemId) to 0xFFFFFF)
         }
-        lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).append(" ").append(entry.sellerName))
-        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}"))
-        lines.add(Text.literal("×${entry.count}"))
+        lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).append(" ").append(entry.sellerName) to 0xFFFFFF)
+        // 价格行整体蓝色：数值与货币单位同色，与行内价格一致
+        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}") to 0x55FFFF)
+        lines.add(Text.literal("×${entry.count}") to 0xFFFFFF)
 
         var maxWidth = 0
-        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
+        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
 
         val padding = 4
         val tx = minOf(mouseX + 12, width - maxWidth - 12)
@@ -325,8 +327,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
-        lines.forEachIndexed { i, line ->
-            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, 0xFFFFFF)
+        lines.forEachIndexed { i, (line, color) ->
+            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
         }
         context.matrices.pop()
     }
@@ -550,7 +552,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             centerX - 80, dialogY + 62, 0xAAAAAA)
         context.drawTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.buy_total").string + ": " + buyTotal().toString() + " " + com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName),
-            centerX - 80, dialogY + 92, 0xAAAAAA)
+            centerX - 80, dialogY + 92, 0x55FFFF)
     }
 
     fun onMarketResult(payload: MarketResultPayload) {

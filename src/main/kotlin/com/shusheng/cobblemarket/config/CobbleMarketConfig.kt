@@ -41,6 +41,22 @@ object CobbleMarketConfig {
         private set
     var eggTradingEnabled: Boolean = false
         private set
+    var buyOrderFeePercent: Double = 5.0
+        private set
+    var buyOrderExpiryDays: Int = 3
+        private set
+    var maxBuyOrdersPerPlayer: Int = 5
+        private set
+    var celebrationAnimationEnabled: Boolean = true
+        private set
+    var marketEnabled: Boolean = true
+        private set
+
+    /** 市场总开关切换并落盘（仅管理端命令/面板调用） */
+    fun setMarketEnabled(v: Boolean) {
+        marketEnabled = v
+        save()
+    }
 
     /** 蛋交易开关切换并落盘（仅管理面板调用） */
     fun setEggTradingEnabled(v: Boolean) {
@@ -57,10 +73,22 @@ object CobbleMarketConfig {
             try {
                 val json = configFile.readText()
                 val data = gson.fromJson(json, Map::class.java) as? Map<*, *> ?: emptyMap<Any?, Any?>()
+                // 升级兼容：旧版配置缺少新字段时，本次读取按默认值生效，
+                // 读取完成后 save() 把缺失字段补写进文件——服主升级后打开配置即可见全部新字段
+                val knownKeys = setOf(
+                    "currency", "pokemonListingFeePercent", "itemListingFeePercent",
+                    "maxPokemonListingsPerPlayer", "maxItemListingsPerPlayer", "listingDurationDays",
+                    "pendingReturnRetentionDays", "auctionFeePercent", "auctionDurationOptions",
+                    "auctionMinBidIncrement", "auctionAntiSnipeSeconds", "maxAuctionsPerPlayer",
+                    "eggTradingEnabled", "buyOrderFeePercent", "buyOrderExpiryDays",
+                    "maxBuyOrdersPerPlayer", "celebrationAnimationEnabled", "marketEnabled"
+                )
+                var missingKeys = knownKeys.any { !data.containsKey(it) }
                 val currency = data["currency"] as? Map<*, *>
                 if (currency != null) {
                     cobbledollars = (currency["cobbledollars"] as? Boolean ?: hasCD) && hasCD
                     currencyItem = currency["item"] as? String ?: "minecraft:diamond"
+                    if (!currency.containsKey("cobbledollars") || !currency.containsKey("item")) missingKeys = true
                 }
                 val legacyFee = data["listingFeePercent"] as? Double
                 // 手续费钳制 0~100：超过 100% 会让卖家账本变负数（抵消后续所有收入）
@@ -82,6 +110,17 @@ object CobbleMarketConfig {
                 auctionAntiSnipeSeconds = ((data["auctionAntiSnipeSeconds"] as? Double)?.toInt() ?: 120).coerceAtLeast(0)
                 maxAuctionsPerPlayer = (data["maxAuctionsPerPlayer"] as? Double)?.toInt() ?: 3
                 eggTradingEnabled = data["eggTradingEnabled"] as? Boolean ?: false
+                buyOrderFeePercent = ((data["buyOrderFeePercent"] as? Double) ?: 5.0).coerceIn(0.0, 100.0)
+                val rawBuyOrderExpiry = (data["buyOrderExpiryDays"] as? Double)?.toInt()
+                buyOrderExpiryDays = (rawBuyOrderExpiry ?: 3).coerceAtLeast(1)
+                maxBuyOrdersPerPlayer = ((data["maxBuyOrdersPerPlayer"] as? Double)?.toInt() ?: 5).coerceAtLeast(0)
+                celebrationAnimationEnabled = data["celebrationAnimationEnabled"] as? Boolean ?: true
+                marketEnabled = data["marketEnabled"] as? Boolean ?: true
+                // 缺失字段补写：旧设置保留，新字段以默认值落盘（服主无需删配置）
+                if (missingKeys) {
+                    CobbleMarket.LOGGER.info("Config missing fields detected; rewriting with defaults for new keys")
+                    save()
+                }
             } catch (e: Exception) {
                 CobbleMarket.LOGGER.warn("Failed to load config: ${e.message}")
                 save()
@@ -106,7 +145,12 @@ object CobbleMarketConfig {
                 "auctionMinBidIncrement" to "默认最低加价幅度（卖家上架时可自定，留空用此值）/ Default minimum bid increment (sellers may override per auction)",
                 "auctionAntiSnipeSeconds" to "反狙击延长秒数：结束前该窗口内的出价会把结束时间延长到该秒数（0=关闭）/ Anti-snipe extension in seconds: bids within this window extend the end time (0=off)",
                 "maxAuctionsPerPlayer" to "每个玩家同时进行的拍卖数量上限，精灵与物品合计（0=不限制）。玩家较多的服务器建议保持较小值，避免全服活跃拍卖总量过大导致服务器卡顿 / Max concurrent auctions per player, Pokémon and items combined (0=unlimited). On crowded servers keep this small to avoid server lag from too many active auctions",
-                "eggTradingEnabled" to "蛋交易开关（默认关闭）。蛋走物品交易链路，不经过精灵黑名单（个体值/形态/闪光）校验；若蛋加密关闭，部分模组可显示蛋内精灵数据，玩家可提前筛选，精灵黑名单对蛋失效——开启前请评估风险 / Egg trading switch (off by default). Eggs bypass the Pokémon blacklist (IV/form/shiny) checks; with egg encryption off, some mods can reveal egg data, letting players pick eggs before hatching — evaluate the risk before enabling"
+                "eggTradingEnabled" to "蛋交易开关（默认关闭）。蛋走物品交易链路，不经过精灵黑名单（个体值/形态/闪光）校验；若蛋加密关闭，部分模组可显示蛋内精灵数据，玩家可提前筛选，精灵黑名单对蛋失效——开启前请评估风险 / Egg trading switch (off by default). Eggs bypass the Pokémon blacklist (IV/form/shiny) checks; with egg encryption off, some mods can reveal egg data, letting players pick eggs before hatching — evaluate the risk before enabling",
+                "buyOrderFeePercent" to "求购单中介费百分比：买家成交时从卖家实收中扣除（0=免中介费）/ Buy order fee percentage charged on seller's actual payment (0=no fee)",
+                "buyOrderExpiryDays" to "求购单过期天数（到期自动关闭，剩余冻结金退买家待领余额）/ Buy order expiry in days (expired orders close automatically and refund frozen money)",
+                "marketEnabled" to "市场总开关（默认开启）：紧急情况可整体关闭市场功能——所有买卖/拍卖/求购操作被拦截并提示，但待领取、余额等取回自己资产的操作仍可用。可在游戏内用 /market on|off 切换 / Master market switch (on by default): emergency kill switch for the entire market — all buy/sell/auction/buy-order operations are blocked with a notice, while claiming returns and collecting balances still work. Toggle in-game via /market on|off",
+                "maxBuyOrdersPerPlayer" to "每个玩家同时进行的求购单数量上限，精灵与物品合计（0=不限制）。求购单列表全量下发给所有客户端，玩家较多的服务器建议保持较小值，避免全服活跃求购单总量过大导致卡顿 / Max concurrent buy orders per player, Pokémon and items combined (0=unlimited). The buy order list is broadcast in full to every client, so on crowded servers keep this small to avoid lag from too many active orders",
+                "celebrationAnimationEnabled" to "获得精灵时的庆祝动画开关（默认开启）。买到精灵、拍到精灵、求购单接受交付时，在获得者屏幕中央播放该精灵的弹跳动画；关闭后服务端不再下发动画包 / Celebration animation switch when obtaining a Pokémon (on by default). Plays a bouncing animation of the Pokémon on the receiver's screen when buying, winning an auction, or accepting a buy order delivery; when off the server stops sending the animation packet"
             ),
             "currency" to mapOf("cobbledollars" to cobbledollars, "item" to currencyItem),
             "pokemonListingFeePercent" to pokemonListingFeePercent,
@@ -120,7 +164,12 @@ object CobbleMarketConfig {
             "auctionMinBidIncrement" to auctionMinBidIncrement,
             "auctionAntiSnipeSeconds" to auctionAntiSnipeSeconds,
             "maxAuctionsPerPlayer" to maxAuctionsPerPlayer,
-            "eggTradingEnabled" to eggTradingEnabled
+            "eggTradingEnabled" to eggTradingEnabled,
+            "buyOrderFeePercent" to buyOrderFeePercent,
+            "buyOrderExpiryDays" to buyOrderExpiryDays,
+            "maxBuyOrdersPerPlayer" to maxBuyOrdersPerPlayer,
+            "celebrationAnimationEnabled" to celebrationAnimationEnabled,
+            "marketEnabled" to marketEnabled
         )
         configFile.writeText(gson.toJson(data))
     }

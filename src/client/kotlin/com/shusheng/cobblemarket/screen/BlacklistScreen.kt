@@ -807,7 +807,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         }
     }
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int) {
+    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false) {
         val data = iconData[index] ?: return
         val matrices = context.matrices
         matrices.push()
@@ -821,7 +821,11 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
                 state = data.state,
                 partialTicks = 0f,
-                scale = 4.5f
+                scale = 4.5f,
+                // 弹窗打开时压暗（模型走独立渲染层，遮罩盖不住；颜色系数模拟遮罩效果）
+                r = if (dark) 0.35f else 1f,
+                g = if (dark) 0.35f else 1f,
+                b = if (dark) 0.35f else 1f
             )
         } catch (_: Exception) {
         } finally {
@@ -1002,6 +1006,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
                 val y = startY + i * rowHeight
                 val origIndex = pokemonEntries.indexOf(entry)
+                // 槽背景（GUI 层，弹窗遮罩自动压暗，照常渲染）；3D 精灵弹窗打开时颜色压暗
                 val slotX = leftX + 2
                 val slotY = y + 2
                 val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
@@ -1010,7 +1015,8 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 context.matrices.scale(iconSize / 66f, iconSize / 66f, 1f)
                 context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
-                renderPokemonIcon(context, origIndex, slotX, slotY, iconSize)
+                // 弹窗打开时不渲染 3D（模型层在衬底之上，压暗仍会浮在弹窗上）
+                if (addField == null) renderPokemonIcon(context, origIndex, slotX, slotY, iconSize)
                 // 截断防止超长条目（六项个体值全填）与编辑/删除按钮重叠；完整信息在悬停 tooltip
                 context.drawTextWithShadow(textRenderer,
                     com.shusheng.cobblemarket.util.TextUtil.truncateString(pokemonEntryDisplay(entry), 170),
@@ -1026,8 +1032,11 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             val displayList = filteredItems()
             displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, itemId ->
                 val y = startY + i * rowHeight
-                Identifier.tryParse(itemId)?.let { id ->
-                    context.drawItem(ItemStack(Registries.ITEM.get(id)), leftX + 4, y + 4)
+                // 弹窗打开时行内物品图标不渲染（drawItem 硬编码 z 抬高，会刺穿弹窗遮罩）
+                if (addField == null) {
+                    Identifier.tryParse(itemId)?.let { id ->
+                        context.drawItem(ItemStack(Registries.ITEM.get(id)), leftX + 4, y + 4)
+                    }
                 }
                 context.drawTextWithShadow(textRenderer, itemEntryDisplay(itemId), leftX + 24, y + 7, 0xFFFFFF)
             }

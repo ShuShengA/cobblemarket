@@ -147,6 +147,32 @@ data class AuctionSettleSoundPayload(val auctionId: UUID) : CustomPayload {
     }
 }
 
+// ── C2S：请求拍卖时长档位（进入上架界面时请求，客户端按钮按真实配置显示） ──
+
+class RequestAuctionDurationsPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestAuctionDurationsPayload>(CobbleMarket.id("request_auction_durations"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestAuctionDurationsPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestAuctionDurationsPayload() }
+        )
+    }
+}
+
+// ── S2C：拍卖时长档位列表（分钟制，与配置文件一致） ──
+
+data class AuctionDurationsPayload(val durations: List<Int>) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<AuctionDurationsPayload>(CobbleMarket.id("auction_durations"))
+        val CODEC: PacketCodec<PacketByteBuf, AuctionDurationsPayload> = PacketCodec.of(
+            { p, b -> b.writeVarInt(p.durations.size); p.durations.forEach { b.writeInt(it) } },
+            { b -> AuctionDurationsPayload((0 until b.readVarInt()).map { b.readInt() }) }
+        )
+    }
+}
+
 // ── C2S：请求拍卖列表 ──
 
 class RequestAuctionListPayload : CustomPayload {
@@ -268,6 +294,14 @@ object AuctionNetwork {
         PayloadTypeRegistry.playS2C().register(AuctionEventPayload.ID, AuctionEventPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(AuctionSettleSoundPayload.ID, AuctionSettleSoundPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(AuctionWarnSoundPayload.ID, AuctionWarnSoundPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(RequestAuctionDurationsPayload.ID, RequestAuctionDurationsPayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(AuctionDurationsPayload.ID, AuctionDurationsPayload.CODEC)
+
+        ServerPlayNetworking.registerGlobalReceiver(RequestAuctionDurationsPayload.ID) { _, context ->
+            val player = context.player()
+            // 只读数据，无权限要求：上架界面按钮显示用
+            ServerPlayNetworking.send(player, AuctionDurationsPayload(CobbleMarketConfig.auctionDurationOptions))
+        }
 
         // 结束倒计时警告：每秒轮询活跃拍卖，向卖家/出价参与者定向发送渐强警告声
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register { server ->
@@ -309,6 +343,7 @@ object AuctionNetwork {
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
+                if (marketBlocked(player)) return@execute
                 if (!checkStartingPrice(player, payload.startingPrice)) return@execute
                 val durationMs = resolveDurationMs(player, payload.durationIndex) ?: return@execute
 
@@ -424,6 +459,7 @@ object AuctionNetwork {
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
+                if (marketBlocked(player)) return@execute
                 if (!checkStartingPrice(player, payload.startingPrice)) return@execute
                 val durationMs = resolveDurationMs(player, payload.durationIndex) ?: return@execute
                 if (payload.count <= 0) {
@@ -550,6 +586,7 @@ object AuctionNetwork {
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
+                if (marketBlocked(player)) return@execute
                 settleAndBroadcast(server)
                 val auction = AuctionState.get(server).getAuction(payload.auctionId)
                 if (auction == null || !auction.isActive()) {
@@ -613,9 +650,11 @@ object AuctionNetwork {
                 }
                 if (prevBidder != null && auction.currentPrice > 0 && !selfRebid) {
                     MarketState.get(server).addPendingBalance(prevBidder, auction.currentPrice.toLong())
-                    server.playerManager.getPlayer(prevBidder)?.sendMessage(
+                    // 出价者离线则入队补发
+                    com.shusheng.cobblemarket.market.OfflineMessageState.notify(
+                        server, prevBidder,
                         Text.translatable("cobblemarket.auction.outbid", payload.amount, auction.speciesText())
-                            .formatted(Formatting.YELLOW), false
+                            .formatted(Formatting.YELLOW)
                     )
                 }
                 val now = System.currentTimeMillis()
@@ -653,15 +692,17 @@ object AuctionNetwork {
                     ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.listing_failed")))
                     return@execute
                 }
-                // 通知卖家与出价者（在线者），广播 SETTLED 让全服列表同步移除
-                server.playerManager.getPlayer(auction.sellerUuid)?.sendMessage(
+                // 通知卖家与出价者（离线则入队补发），广播 SETTLED 让全服列表同步移除
+                com.shusheng.cobblemarket.market.OfflineMessageState.notify(
+                    server, auction.sellerUuid,
                     Text.translatable("cobblemarket.auction.force_cancelled_seller", auction.speciesText())
-                        .formatted(Formatting.RED), false
+                        .formatted(Formatting.RED)
                 )
                 if (bidder != null && bidAmount > 0) {
-                    server.playerManager.getPlayer(bidder)?.sendMessage(
+                    com.shusheng.cobblemarket.market.OfflineMessageState.notify(
+                        server, bidder,
                         Text.translatable("cobblemarket.auction.force_cancelled_bidder", auction.speciesText())
-                            .formatted(Formatting.RED), false
+                            .formatted(Formatting.RED)
                     )
                 }
                 broadcastEvent(server, "SETTLED", auctionToEntry(auction))
@@ -723,23 +764,29 @@ object AuctionNetwork {
                     ServerPlayNetworking.send(p, AuctionSettleSoundPayload(auction.id))
                 }
             }
-            // 聊天通知：卖家（成交/流拍）+ 赢家
-            val sellerPlayer = server.playerManager.getPlayer(auction.sellerUuid)
+            // 聊天通知：卖家（成交/流拍）+ 赢家（离线则入队补发）
             if (auction.status == com.shusheng.cobblemarket.market.AuctionStatus.SOLD) {
-                sellerPlayer?.sendMessage(
+                com.shusheng.cobblemarket.market.OfflineMessageState.notify(
+                    server, auction.sellerUuid,
                     Text.translatable("cobblemarket.auction.settled_seller", auction.speciesText(), fmtLimit(auction.currentPrice.toLong()) + " ◆")
-                        .formatted(Formatting.GOLD), false
+                        .formatted(Formatting.GOLD)
                 )
                 auction.currentBidderUuid?.let { winnerUuid ->
-                    server.playerManager.getPlayer(winnerUuid)?.sendMessage(
+                    com.shusheng.cobblemarket.market.OfflineMessageState.notify(
+                        server, winnerUuid,
                         Text.translatable("cobblemarket.auction.settled_winner", auction.speciesText())
-                            .formatted(Formatting.GREEN), false
+                            .formatted(Formatting.GREEN)
                     )
+                    // 赢家庆祝动画（在线者）：与落槌铃声同批发送，天然同步
+                    if (auction.type == com.shusheng.cobblemarket.market.AuctionType.POKEMON) {
+                        CelebrationNetwork.sendFromEntry(server, winnerUuid, auction.species, auction.shiny, auction.extraData, CelebrationSource.AUCTION)
+                    }
                 }
             } else {
-                sellerPlayer?.sendMessage(
+                com.shusheng.cobblemarket.market.OfflineMessageState.notify(
+                    server, auction.sellerUuid,
                     Text.translatable("cobblemarket.auction.settled_unsold", auction.speciesText())
-                        .formatted(Formatting.YELLOW), false
+                        .formatted(Formatting.YELLOW)
                 )
             }
         }
@@ -778,6 +825,8 @@ object AuctionNetwork {
             "htSpDef" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE] ?: -1).toString(),
             "htSpd" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: -1).toString(),
             "nature" to "cobblemon.nature.${pokemon.effectiveNature.name.path}",
+            // 原生性格（薄荷不改）：与 nature 不同 = 用过薄荷，客户端斜体显示
+            "natureBase" to "cobblemon.nature.${pokemon.nature.name.path}",
             "ability" to "cobblemon.ability.${pokemon.ability.name}",
             "gender" to pokemon.gender.name,
             "ball" to "item.cobblemon.${pokemon.caughtBall.name.path}",
