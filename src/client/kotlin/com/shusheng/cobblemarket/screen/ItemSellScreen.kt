@@ -95,6 +95,8 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         selectedItem = item
         sellButtons.forEach { it.active = false }
         backButton?.active = false
+        // 清掉可能残留的聚焦（旧输入框对象），否则 E 键保护会误判为输入中
+        setFocused(null)
         val centerX = width / 2
         val dialogY = height / 2 - 85
 
@@ -171,6 +173,8 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         priceField = null
         sellConfirmBtn = null
         cancelBtn = null
+        // 聚焦指向已废弃的输入框对象会让 E 键保护（focused is TextFieldWidget）误判，关闭弹窗必须清除
+        setFocused(null)
         clearChildren()
         init()
     }
@@ -372,10 +376,18 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (selectedItem != null) {
-            // 弹窗打开：输入框/按钮是手动渲染的非 child widget，转发点击
-            if (countField?.mouseClicked(mouseX, mouseY, button) == true ||
-                priceField?.mouseClicked(mouseX, mouseY, button) == true
-            ) return true
+            // 弹窗打开：输入框/按钮是手动渲染的非 child widget，转发点击。
+            // 手动渲染的输入框不在 children 里，走不到 vanilla「点击命中后 Screen.setFocused(控件)」的聚焦流程；
+            // 必须自己补 setFocused，否则 TextFieldWidget 的 isFocused()==false：
+            // keyPressed/charTyped/光标渲染全部失效（点击无反应、打不进字）。
+            if (countField?.mouseClicked(mouseX, mouseY, button) == true) {
+                setFocused(countField)
+                return true
+            }
+            if (priceField?.mouseClicked(mouseX, mouseY, button) == true) {
+                setFocused(priceField)
+                return true
+            }
             if (sellConfirmBtn?.mouseClicked(mouseX, mouseY, button) == true ||
                 cancelBtn?.mouseClicked(mouseX, mouseY, button) == true
             ) return true
