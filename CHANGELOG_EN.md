@@ -4,7 +4,7 @@
 
 ### Changes
 
-- Quantity input limit raised from 3 to 4 digits: item sell count, item buy count, auction item count (server never had a 999 cap; UI-only relaxation)
+- Quantity input limit raised from 3 to 4 digits: item sell count, item buy count, and auction item count now accept up to 9999
 
 ## 1.0.0-beta.6 (in development, unreleased)
 
