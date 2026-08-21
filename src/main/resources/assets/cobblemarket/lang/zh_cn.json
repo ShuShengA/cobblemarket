@@ -7,7 +7,7 @@
   "cobblemarket.settings.title": "设置",
   "cobblemarket.settings.animation_market": "市场直购动画：",
   "cobblemarket.settings.animation_auction": "拍卖/求购动画：",
-  "cobblemarket.settings.drop_overflow": "装不下的物品掉落：",
+  "cobblemarket.settings.drop_overflow": "待领取装不下掉落：",
   "cobblemarket.settings.on_state": "开",
   "cobblemarket.settings.off_state": "关",
   "cobblemarket.settings.done": "完成",
