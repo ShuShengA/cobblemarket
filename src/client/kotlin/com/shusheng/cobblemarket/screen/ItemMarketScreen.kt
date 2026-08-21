@@ -41,6 +41,10 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private var searchField: TextFieldWidget? = null
     private var sortMode = "NEWEST"
     private var showMineOnly = false
+    private var collectButton: NineSliceButton? = null
+    private var returnsButton: NineSliceButton? = null
+    private var backButton: NineSliceButton? = null
+    private var sellAddButton: NineSliceButton? = null
     private var sortButton: NineSliceButton? = null
     private var mineButton: NineSliceButton? = null
     private var prevButton: NineSliceButton? = null
@@ -71,20 +75,23 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         val leftX = width / 2 - panelWidth / 2
 
         // 收款 / 返回
-        addDrawableChild(NineSliceButton(
+        collectButton = NineSliceButton(
             leftX, 13, 50, 16,
             Text.translatable("cobblemarket.gui.collect"), { collectBalance() }
-        ))
+        )
+        addDrawableChild(collectButton)
 
         // Expired returns button
-        addDrawableChild(NineSliceButton(
+        returnsButton = NineSliceButton(
             leftX + 52, 13, 50, 16,
             Text.translatable("cobblemarket.gui.returns"), { client?.setScreen(ItemReturnScreen()) }
-        ))
-        addDrawableChild(NineSliceButton(
+        )
+        addDrawableChild(returnsButton)
+        backButton = NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
             Text.translatable("cobblemarket.gui.back"), { client?.setScreen(MarketEntryScreen()) }
-        ))
+        )
+        addDrawableChild(backButton)
 
         // 搜索框
         searchField = TextFieldWidget(textRenderer, leftX + 2, 44, 132, 16, Text.translatable("cobblemarket.item.search"))
@@ -98,10 +105,11 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         addDrawableChild(searchField)
 
         // 上架按钮（+）
-        addDrawableChild(NineSliceButton(
+        sellAddButton = NineSliceButton(
             leftX + 136, 44, 18, 16,
             Text.literal("+"), { openItemSellScreen() }
-        ))
+        )
+        addDrawableChild(sellAddButton)
 
         // 排序按钮
         sortButton = NineSliceButton(
@@ -371,8 +379,22 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         return result
     }
 
+    /** 弹窗打开时隐藏主界面全部控件：widget 文字画在遮罩（addDrawable）之上，visible=false 才能防穿透与误点 */
+    private fun setMainControlsVisible(visible: Boolean) {
+        collectButton?.visible = visible
+        returnsButton?.visible = visible
+        backButton?.visible = visible
+        searchField?.visible = visible
+        sellAddButton?.visible = visible
+        sortButton?.visible = visible
+        mineButton?.visible = visible
+        prevButton?.visible = visible
+        nextButton?.visible = visible
+    }
+
     private fun openBuyDialog(entry: ItemEntry) {
         selectedEntry = entry
+        setMainControlsVisible(false)
         val centerX = width / 2
         val dialogY = height / 2 - 85
 
@@ -408,6 +430,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     private fun openCancelDialog(entry: ItemEntry) {
         cancelEntry = entry
+        setMainControlsVisible(false)
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
                 renderCancelDialogBackground(context, mouseX, mouseY)
