@@ -380,6 +380,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
             // 手动渲染的输入框不在 children 里，走不到 vanilla「点击命中后 Screen.setFocused(控件)」的聚焦流程；
             // 必须自己补 setFocused，否则 TextFieldWidget 的 isFocused()==false：
             // keyPressed/charTyped/光标渲染全部失效（点击无反应、打不进字）。
+            val wasInInput = isInputFieldFocused()
             if (countField?.mouseClicked(mouseX, mouseY, button) == true) {
                 setFocused(countField)
                 return true
@@ -391,6 +392,10 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
             if (sellConfirmBtn?.mouseClicked(mouseX, mouseY, button) == true ||
                 cancelBtn?.mouseClicked(mouseX, mouseY, button) == true
             ) return true
+            // 点击弹窗内空白：脱离输入状态（照物品市场购买弹窗——点击其他输入框时上面已命中并切换聚焦，不会走到这里）
+            if (wasInInput && !isMouseOverAnyInput(mouseX, mouseY)) {
+                focused = null
+            }
             return true // 吞掉下层点击
         }
         val wasInInput = isInputFieldFocused()
