@@ -7,6 +7,7 @@
   "cobblemarket.settings.title": "Settings",
   "cobblemarket.settings.animation_market": "Market purchase: ",
   "cobblemarket.settings.animation_auction": "Auction & orders: ",
+  "cobblemarket.settings.drop_overflow": "Drop overflow: ",
   "cobblemarket.settings.on_state": "ON",
   "cobblemarket.settings.off_state": "OFF",
   "cobblemarket.settings.done": "Done",

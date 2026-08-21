@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.network.ClaimItemReturnPayload
 import com.shusheng.cobblemarket.network.ItemEntry
 import com.shusheng.cobblemarket.network.ItemReturnDataPayload
@@ -81,7 +82,7 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
     }
 
     private fun claimAll() {
-        ClientPlayNetworking.send(ClaimItemReturnPayload())
+        ClientPlayNetworking.send(ClaimItemReturnPayload(ClientConfig.dropOverflowOnClaim))
     }
 
     fun onReturnData(payload: ItemReturnDataPayload) {
