@@ -136,7 +136,7 @@ object BlacklistNetwork {
             val server = player.server
             server.execute {
                 val entries = PokemonBlacklistState.get(server).getAll()
-                ServerPlayNetworking.send(player, PokemonBlacklistDataPayload(entries))
+                ServerPlayNetworking.send(player, PokemonBlacklistDataPayload(entries.reversed()))
             }
         }
 
@@ -171,7 +171,7 @@ object BlacklistNetwork {
                 payload.originalId?.let { state.remove(it) }
                 state.add(entry)
                 val entries = PokemonBlacklistState.get(server).getAll()
-                ServerPlayNetworking.send(player, PokemonBlacklistDataPayload(entries))
+                ServerPlayNetworking.send(player, PokemonBlacklistDataPayload(entries.reversed()))
             }
         }
 
@@ -182,7 +182,7 @@ object BlacklistNetwork {
             server.execute {
                 PokemonBlacklistState.get(server).remove(payload.id)
                 val entries = PokemonBlacklistState.get(server).getAll()
-                ServerPlayNetworking.send(player, PokemonBlacklistDataPayload(entries))
+                ServerPlayNetworking.send(player, PokemonBlacklistDataPayload(entries.reversed()))
             }
         }
     }

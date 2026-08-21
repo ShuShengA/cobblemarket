@@ -245,7 +245,7 @@ object BanNetwork {
                         reason = info.reason
                     )
                 }
-                ServerPlayNetworking.send(player, BanListDataPayload(entries))
+                ServerPlayNetworking.send(player, BanListDataPayload(entries.reversed()))
             }
         }
     }
