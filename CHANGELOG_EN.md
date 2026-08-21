@@ -1,6 +1,55 @@
 # Changelog
 
-## 1.0.0-beta.5 (in development, unreleased)
+## 1.0.0-beta.6 (in development, unreleased)
+
+### New Feature: Buy Orders
+
+- Players can publish buy orders: a Pokémon (always 1) or items (any count) with a unit price range, visible to everyone
+- Pokémon orders support: species (blank = any Pokémon), shiny (3 states), hyper training (3 states), exact IV requirements for all 6 stats, form, ability, and nature
+- Fund model: publishing freezes "max unit price × quantity"; fills settle at the actual price with the difference refunded; closing or expiry auto-refunds the remaining frozen money
+- **Buyer confirmation**: deliveries first enter a "pending" state (goods held in escrow, no funds moved, persisted in NBT across restarts); the buyer reviews the full item details and accepts (settles the trade) or rejects (goods return to the seller, order stays open); rejection supports an optional reason shown to the seller: "Your delivery of X to Y was returned. Note: ..."
+- New deliveries are locked while one is pending (prevents overselling); if the buyer never responds, goods return automatically when the order expires
+- Multiple sellers can partially fill an item order (per-item settlement); the order closes automatically once fully filled
+- Seller delivery: Pokémon via the sell-selection screen in delivery mode with live match/mismatch pre-check; items via direct count and price input; server re-validates (ban/blacklist/egg switch/price limits — Pokémon matched by the delivered Pokémon's form/V-count/shiny/HT dimensions, items by unit price) before submitting
+- Buy orders support an optional buyer note (extra requirements); shown in a divider block in the hover panel and in the delivery dialog
+- Delivered goods go to the buyer's pending returns and fills are recorded in transaction history; separate fee config `buyOrderFeePercent` (default 5%), order expiry `buyOrderExpiryDays` (default 3 days), and a per-player cap on concurrent orders `maxBuyOrdersPerPlayer` (default 5, 0=unlimited; Pokémon and items combined)
+- The "My Orders" tab lets buyers close their orders anytime, refunding frozen money immediately
+- Buy-order list search (species/item/buyer name, instant local filtering)
+
+### New Feature: Offline Notifications
+
+- Trade notifications while offline (listing sold, outbid, auction settled/unsold, buy-order delivered/accepted/rejected/expired, etc.) are queued and delivered on login, rendered in the player's language; up to 10 kept per player
+
+### New Feature: Filter Rework for Market / Auction / Sell-Selection Screens
+
+- Pokémon Market, Auction House, and sell-selection (incl. delivery mode): type filter changed from cycling to an expandable list (type names colored by their type color), new ability and nature expandable filters (abilities appear once a species is resolved from the search box; nature matches the effective nature, mints included)
+- Gender filter is now a male/female icon button (♂♀ both = any, cycling to male-only / female-only); the listing selector (including delivery mode) gains the same button, with language-adaptive button width and a rearranged third row in delivery mode
+
+### New Feature: Trading Experience Enhancements
+
+- Nature mint compatibility: minted Pokémon show "italic base nature (effective nature Mint)", e.g. *Timid* (Bold Mint); unminted show normally; nature filters and buy-order matching use the effective nature
+- Gender icons (♂ blue / ♀ red, baseline-aligned) added to the name line of every screen showing Pokémon details (market/auction/admin/returns/confirm dialogs)
+- Pokémon acquisition celebration: **buying a Pokémon, winning an auction, or accepting a buy order delivery** plays a **bouncing ball animation** of that Pokémon at the center of the receiver's screen (drops from above while scaling up, then bounces 3 times with decreasing height, fading out); the auction case stays synced with the gavel bell; rendered via a client-side Mixin **on top of all screens** — visible with any screen open and outside the relevant screen; multiple Pokémon obtained in one batch play one after another instead of overriding each other; **two layers of switches**: server owners can disable it globally via the `celebrationAnimationEnabled` config (on by default; the server then stops sending the packet), and players get per-scenario toggles under the **Settings** button at the bottom-right of the market entry screen — one for **market purchases** and one for **auctions / buy orders** (the former is by far the most frequent, the latter two are rare and share a switch; personal settings stored in `config/cobblemarket-client.json`). Expired returns, cancelled listings, admin force-removals and claiming from pending returns do not play — those Pokémon were already yours
+- The ban screen's player name input now suggests names from every player who ever logged into this save (including offline, from usercache) — type a prefix and pick, no more mistyped names
+
+### Changes
+
+- Config files self-update: new keys missing from old configs are filled in with defaults on load, so server owners no longer need to delete the config when upgrading
+- Auction duration buttons on the create-auction screen now read the server's actual configuration: server owners can set any number of duration options with any values, and what players see always matches what actually settles
+- Icon buttons at the bottom of the entry screen: **buy orders at the bottom-left** (opens the buy-order screen), **settings at the bottom-right** (opens the settings dialog, currently holding the two celebration animation toggles — market purchases and auctions / buy orders; future client-side personal settings all go here), and the **market master switch** bottom-center (OP only, dual-state icon); a divider line sits above the three small buttons, and rows 1/2 are tightened to give the bottom row breathing room
+- Unified dialog look: the list below stays visible and dimmed under the dialog mask (Pokémon 3D icons dimmed in sync), with an opaque backing behind dialog backgrounds for a clean dialog area
+- Price display polish: buy-order price ranges use k/M/B abbreviations above 10,000 (full value in hover panel); balances and pending balances use B once they reach 1 billion (full value below)
+- Unified currency units: popups and hover panels now always show the currency name with prices (PokéDollars in CobbleDollars mode, the localized item name in item mode) in the same blue as the inline diamond symbol; inline rows keep the ◆ symbol to save space
+- **Market master switch**: server owners can shut down the whole market in an emergency (exploit, maintenance) via the bottom-center switch button on the entry screen (OP only, dual-state icon, same size as the buy-order/settings buttons) or in-game `/market off` (`/market on` to restore), config `marketEnabled` (on by default); **the button asks for confirmation before shutting down** (3-second cooldown with red/white warning lines, while restoring takes effect immediately with no dialog); while closed, all buy/sell/auction/buy-order operations are blocked with a "market closed" notice, and players' entry screens update in real time (state sent on join and broadcast on toggle) with a red banner; **retrieving your own assets still works** (pending claims, balance collection, cancelling listings), so owners can stop the bleeding without locking players' property; **OPs keep management access** (admin panel stays available during closure for force-removal, blacklist and price-limit cleanup)
+- The black dot on selected tabs/lists is drawn without shadow (keeps it a perfect circle)
+- All type-colored Pokémon names across screens now render with a shadow (dark type colors stay readable on gray row backgrounds)
+- Pokémon Market page button spacing optimized to match the admin listing screen, showing one extra list row at some window heights
+
+### Fixes
+
+- Fixed item icons (balls/held items — drawItem render layer) and some Pokémon model icons (emissive layer) piercing through dialog masks — present in existing screens (market/auction/admin) since beta.1; item icons are now hidden while dialogs are open (render-layer limit), and Pokémon 3D icons are dimmed via color parameters
+
+## 1.0.0-beta.5 (development complete, unreleased)
 
 ### New Features: Cobblemon Utility+ Support (Hyper Training)
 
@@ -23,7 +72,7 @@
 - Editing a price limit entry that changes the Pokémon (species / V count / shiny / form) or item now replaces the old entry instead of leaving it behind
 - Pokémon holding a blacklisted item can no longer be listed on the market or auction house (previously bypassed the item blacklist); held-item price limits now merge into the total price: lower bounds add up, upper bounds add up only when both sides are set
 
-## 1.0.0-beta.4 (in development, unreleased)
+## 1.0.0-beta.4 (released)
 
 ### New Features: Auction House
 

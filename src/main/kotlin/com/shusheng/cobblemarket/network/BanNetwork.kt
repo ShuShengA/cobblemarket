@@ -47,6 +47,32 @@ data class BanEntry(
     }
 }
 
+// ── C2S：请求玩家名联想（封禁输入框用；覆盖存档内所有登录过的玩家，含离线） ──
+
+data class RequestPlayerNameSuggestionsPayload(val prefix: String) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestPlayerNameSuggestionsPayload>(CobbleMarket.id("request_player_name_suggestions"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestPlayerNameSuggestionsPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.prefix) },
+            { b -> RequestPlayerNameSuggestionsPayload(b.readString()) }
+        )
+    }
+}
+
+// ── S2C：玩家名联想结果 ──
+
+data class PlayerNameSuggestionsPayload(val names: List<String>) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<PlayerNameSuggestionsPayload>(CobbleMarket.id("player_name_suggestions"))
+        val CODEC: PacketCodec<PacketByteBuf, PlayerNameSuggestionsPayload> = PacketCodec.of(
+            { p, b -> b.writeVarInt(p.names.size); p.names.forEach { b.writeString(it) } },
+            { b -> PlayerNameSuggestionsPayload((0 until b.readVarInt()).map { b.readString() }) }
+        )
+    }
+}
+
 // ── C2S: 封禁 ──
 
 data class AdminBanPayload(val playerName: String, val duration: String, val reason: String) : CustomPayload {
@@ -105,7 +131,49 @@ object BanNetwork {
         PayloadTypeRegistry.playC2S().register(AdminBanPayload.ID, AdminBanPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(AdminUnbanPayload.ID, AdminUnbanPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(RequestBanListPayload.ID, RequestBanListPayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(RequestPlayerNameSuggestionsPayload.ID, RequestPlayerNameSuggestionsPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(BanListDataPayload.ID, BanListDataPayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(PlayerNameSuggestionsPayload.ID, PlayerNameSuggestionsPayload.CODEC)
+
+        ServerPlayNetworking.registerGlobalReceiver(RequestPlayerNameSuggestionsPayload.ID) { payload, context ->
+            val player = context.player()
+            if (!player.hasPermissionLevel(2)) return@registerGlobalReceiver
+            val server = player.server
+            server.execute {
+                val names = LinkedHashSet<String>()
+                // 在线玩家
+                server.playerManager.playerList.forEach { names.add(it.gameProfile.name) }
+                // 当前存档的玩家数据（playerdata 目录的 UUID）+ usercache（UUID→名字）：
+                // usercache.json 是服务器全局的（跨存档），必须只用本存档 playerdata 里存在的 UUID，
+                // 否则新开存档也能联想到其他存档的玩家
+                try {
+                    val nameByUuid = mutableMapOf<String, String>()
+                    val cacheFile = server.runDirectory.resolve("usercache.json").toFile()
+                    if (cacheFile.exists()) {
+                        val arr = com.google.gson.JsonParser.parseString(cacheFile.readText()).asJsonArray
+                        arr.forEach { el ->
+                            val obj = el.asJsonObject
+                            val uuid = obj.get("uuid")?.takeIf { !it.isJsonNull }?.asString
+                            val name = obj.get("name")?.takeIf { !it.isJsonNull }?.asString
+                            if (uuid != null && name != null) nameByUuid[uuid] = name
+                        }
+                    }
+                    val playerDataDir = server.getSavePath(net.minecraft.util.WorldSavePath.PLAYERDATA).toFile()
+                    playerDataDir.listFiles()?.forEach { f ->
+                        val uuid = f.name.removeSuffix(".dat")
+                        nameByUuid[uuid]?.let { names.add(it) }
+                    }
+                } catch (e: Exception) {
+                    CobbleMarket.LOGGER.warn("Failed to collect player names for suggestions: {}", e.message)
+                }
+                val prefix = payload.prefix.trim().lowercase()
+                val matched = names
+                    .filter { prefix.isEmpty() || it.lowercase().contains(prefix) }
+                    .sortedBy { it.lowercase() }
+                    .take(20)
+                ServerPlayNetworking.send(player, PlayerNameSuggestionsPayload(matched))
+            }
+        }
 
         ServerPlayNetworking.registerGlobalReceiver(AdminBanPayload.ID) { payload, context ->
             val player = context.player()

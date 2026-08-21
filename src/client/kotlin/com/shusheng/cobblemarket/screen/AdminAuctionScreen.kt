@@ -426,7 +426,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 val primaryType = entry.extraData["primaryType"] ?: ""
                 val tc = typeColor(if (primaryType.isNotEmpty()) primaryType else "cobblemon.type.normal")
                 val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(displayName(entry), 44)
-                context.drawText(textRenderer, name, sx, y + 7, tc, false)
+                context.drawTextWithShadow(textRenderer, name, sx, y + 7, tc)
                 sx += textRenderer.getWidth(name)
                 if (entry.shiny) {
                     context.drawText(textRenderer, "★", sx + 2, y + 7, GOLD_COLOR, false)
@@ -529,7 +529,10 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         lines.add(EntryBadgeRenderer.nameWithShinyStar(displayName(entry), entry.shiny)
             .copy().append(Text.literal("  Lv.${entry.level}")) to 0xFFFFFF)
         lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText") to 0xFFFFFF)
-        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(extra["nature"] ?: "").string}  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(extra["ability"] ?: "").string}") to 0xFFFFFF)
+        lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
+            .append(EntryBadgeRenderer.natureText(extra["natureBase"] ?: "", extra["nature"] ?: ""))
+            .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
+            .append(Text.translatable(extra["ability"] ?: "")) to 0xFFFFFF)
         val heldItemId = extra["heldItemId"].orEmpty()
         val hasHeldItem = heldItemId.isNotEmpty() &&
             Identifier.tryParse(heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
@@ -579,6 +582,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                         matrixStack = context.matrices
                     )
                 }
+            } else if (i == 0) {
+                // 第一行（名字★Lv）带公母图标
+                EntryBadgeRenderer.drawNameLineLeft(context, line, entry.extraData["gender"] ?: "", tx, ty + i * 10, color)
             } else {
                 context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
             }
@@ -686,7 +692,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             val extra = entry.extraData
             val primaryType = extra["primaryType"] ?: ""
             val tc = typeColor(if (primaryType.isNotEmpty()) primaryType else "cobblemon.type.normal")
-            context.drawText(textRenderer, displayName(entry), infoX, iy, tc, false)
+            context.drawTextWithShadow(textRenderer, displayName(entry), infoX, iy, tc)
             var cx = infoX + textRenderer.getWidth(displayName(entry))
             if (entry.shiny) {
                 context.drawText(textRenderer, "★", cx + 2, iy, GOLD_COLOR, false)
@@ -698,7 +704,12 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             val typeText = (if (primaryType.isNotEmpty()) Text.translatable(primaryType).string else "-") +
                 if (secondaryType.isNotEmpty()) " + ${Text.translatable(secondaryType).string}" else ""
             infoLine("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText")
-            infoLine("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(extra["nature"] ?: "").string}")
+            // 性格（薄荷约定：原生斜体+括号生效）
+            context.drawTextWithShadow(textRenderer,
+                Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
+                    .append(EntryBadgeRenderer.natureText(extra["natureBase"] ?: "", extra["nature"] ?: "")),
+                infoX, iy, 0xFFFFFF)
+            iy += 10
             infoLine("${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(extra["ability"] ?: "").string}")
             val heldItemId = extra["heldItemId"].orEmpty()
             val hasHeldItem = heldItemId.isNotEmpty() &&
@@ -730,8 +741,8 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         }
         auctionLine("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}")
         auctionLine("${Text.translatable("cobblemarket.auction.current_price").string}: ${displayPriceText(entry)}", 0x55FFFF)
-        auctionLine("${Text.translatable("cobblemarket.auction.starting_price").string}: ${com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice)} ◆")
-        auctionLine("${Text.translatable("cobblemarket.auction.min_increment").string}: ${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ◆", 0xAAAAAA)
+        auctionLine("${Text.translatable("cobblemarket.auction.starting_price").string}: ${com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice)} ${com.shusheng.cobblemarket.client.displayActiveCurrency()}", 0x55FFFF)
+        auctionLine("${Text.translatable("cobblemarket.auction.min_increment").string}: ${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ${com.shusheng.cobblemarket.client.displayActiveCurrency()}", 0x55FFFF)
         auctionLine("${Text.translatable("cobblemarket.auction.ends").string}: ${formatRemaining(entry.endsAt)}", 0xAAAAAA)
         auctionLine("${Text.translatable("cobblemarket.auction.bids_count").string}: ${entry.bidCount}", 0xAAAAAA)
         if (entry.currentBidderName.isNotEmpty()) {

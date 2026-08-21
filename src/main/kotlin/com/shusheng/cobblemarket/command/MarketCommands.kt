@@ -3,9 +3,13 @@ package com.shusheng.cobblemarket.command
 import com.mojang.brigadier.Command
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
+import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.network.MarketNetwork
+import com.shusheng.cobblemarket.network.MarketStatePayload
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents
 import net.minecraft.server.command.CommandManager
 import net.minecraft.server.command.ServerCommandSource
 import net.minecraft.text.Text
@@ -42,8 +46,37 @@ object MarketCommands {
                         .requires { it.hasPermissionLevel(2) }
                         .executes(::banList)
                     )
+                    .then(CommandManager.literal("on")
+                        .requires { it.hasPermissionLevel(2) }
+                        .executes(::marketOn)
+                    )
+                    .then(CommandManager.literal("off")
+                        .requires { it.hasPermissionLevel(2) }
+                        .executes(::marketOff)
+                    )
             )
         }
+
+        // 登录补发市场开关状态：客户端据此把入口按钮置灰（开关是全局的，登录时必须同步一次）
+        ServerPlayConnectionEvents.JOIN.register { handler, _, _ ->
+            ServerPlayNetworking.send(handler.player, MarketStatePayload(CobbleMarketConfig.marketEnabled))
+        }
+    }
+
+    private fun marketOn(context: CommandContext<ServerCommandSource>): Int = setMarketEnabled(context, true)
+
+    private fun marketOff(context: CommandContext<ServerCommandSource>): Int = setMarketEnabled(context, false)
+
+    private fun setMarketEnabled(context: CommandContext<ServerCommandSource>, enabled: Boolean): Int {
+        val source = context.source
+        val server = source.server
+        // 落盘 + 全员广播（与入口界面按钮共用同一函数）
+        com.shusheng.cobblemarket.network.toggleMarketEnabled(server, enabled)
+        source.sendFeedback(
+            { Text.translatable(if (enabled) "cobblemarket.market.cmd_on" else "cobblemarket.market.cmd_off").formatted(Formatting.GREEN) },
+            true
+        )
+        return Command.SINGLE_SUCCESS
     }
 
     private fun openGui(context: CommandContext<ServerCommandSource>): Int {

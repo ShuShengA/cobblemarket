@@ -41,6 +41,19 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
     private var htButton: NineSliceButton? = null
     private var entries = listOf<AuctionEntry>()
     private var searchField: TextFieldWidget? = null
+    // 筛选（仅精灵 tab；拍卖列表全量下发，客户端过滤）：性别/属性/特性/性格
+    private var genderFilter = ""
+    private var typeFilter = ""
+    private var abilityFilter = ""
+    private var natureFilter = ""
+    private var filterListOpen = "" // ""/type/ability/nature；互斥展开
+    private var filterListScroll = 0
+    private val filterOptionButtons = mutableListOf<NineSliceButton>()
+    private var abilityOptions = listOf<Pair<String, String>>()
+    private var genderButton: NineSliceButton? = null
+    private var typeButton: NineSliceButton? = null
+    private var abilityButton: NineSliceButton? = null
+    private var natureButton: NineSliceButton? = null
     private var hoveredRow = -1
     private var scrollOffset = 0
     private var backButton: NineSliceButton? = null
@@ -70,7 +83,7 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
     private val iconData = mutableMapOf<Int, IconData>()
     private val iconSize = 20
 
-    private fun getListStartY() = 72
+    private fun getListStartY() = 92
     private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 48) / rowHeight)
 
     // ── 文本工具 ──
@@ -179,6 +192,7 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
 
         searchField = TextFieldWidget(textRenderer, leftX + 2, 50, panelWidth - 4 - 52 - 20, 16, Text.translatable("cobblemarket.gui.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.gui.search_placeholder").formatted(Formatting.GRAY))
+        searchField?.setChangedListener { updateAbilityOptions(it) }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
 
@@ -199,8 +213,198 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         htButton?.visible = currentTab == 0
         addDrawableChild(htButton)
 
+        // 筛选行（y=68）：性别图标 | 属性 | 特性 | 性格（仅精灵 tab；照市场筛选区）
+        genderButton = NineSliceButton(
+            leftX + 4, 68, 24, 20,
+            Text.literal(""),
+            { cycleGender() },
+            iconTexW = 6, iconTexH = 8, iconScale = 1.5f
+        )
+        updateGenderButton()
+        addDrawableChild(genderButton)
+        typeButton = NineSliceButton(
+            leftX + 32, 68, 60, 20,
+            typeButtonText(),
+            { toggleFilterList("type") },
+            if (typeFilter.isNotEmpty()) typeColor("cobblemon.type.$typeFilter") else 0xFFFFFF
+        )
+        addDrawableChild(typeButton)
+        abilityButton = NineSliceButton(
+            leftX + 96, 68, 96, 20,
+            abilityButtonText(),
+            { toggleFilterList("ability") },
+            if (abilityFilter.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
+        )
+        addDrawableChild(abilityButton)
+        natureButton = NineSliceButton(
+            leftX + 196, 68, 96, 20,
+            natureButtonText(),
+            { toggleFilterList("nature") },
+            if (natureFilter.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
+        )
+        addDrawableChild(natureButton)
+        applyFilterVisibility()
+
         // 不重置 scrollOffset：出价弹窗关闭/resize 重建时保留浏览位置（switchTab 才显式归零）
         ClientPlayNetworking.send(RequestAuctionListPayload())
+    }
+
+    // ── 筛选（仅精灵 tab；照市场筛选区：性别图标三态 + 属性/特性/性格展开选择） ──
+
+    private fun applyFilterVisibility() {
+        val visible = currentTab == 0
+        genderButton?.visible = visible
+        typeButton?.visible = visible
+        abilityButton?.visible = visible
+        natureButton?.visible = visible
+    }
+
+    private fun updateGenderButton() {
+        val g = genderButton ?: return
+        g.iconLeft = if (genderFilter == "FEMALE") GENDER_ICON_FEMALE else GENDER_ICON_MALE
+        g.iconLeft2 = if (genderFilter.isEmpty()) GENDER_ICON_FEMALE else null
+    }
+
+    private fun cycleGender() {
+        genderFilter = when (genderFilter) {
+            "" -> "MALE"
+            "MALE" -> "FEMALE"
+            else -> ""
+        }
+        updateGenderButton()
+        scrollOffset = 0
+        hoveredRow = -1
+        rebuildBidButtons()
+    }
+
+    private fun typeButtonText(): Text {
+        val label = if (typeFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
+            else Text.translatable("cobblemon.type.$typeFilter")
+        return Text.translatable("cobblemarket.gui.type").append(": ").append(label)
+    }
+
+    private fun abilityButtonText(): Text {
+        val label = if (abilityFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
+            else Text.translatable(abilityFilter)
+        return Text.translatable("cobblemarket.buy_order.ability_label").append(": ").append(label)
+    }
+
+    private fun natureButtonText(): Text {
+        val label = if (natureFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
+            else Text.translatable(natureFilter)
+        return Text.translatable("cobblemarket.buy_order.nature_label").append(": ").append(label)
+    }
+
+    private val typeOptions = listOf("normal","fire","water","electric","grass","ice","fighting","poison","ground","flying",
+        "psychic","bug","rock","ghost","dragon","dark","steel","fairy")
+
+    private val natureOptions: List<Pair<String, String>> by lazy {
+        com.cobblemon.mod.common.api.pokemon.Natures.all().map { n ->
+            val key = "cobblemon.nature.${n.name.path}"
+            val t = Text.translatable(key).string
+            key to (if (t == key) n.displayName else t)
+        }
+    }
+
+    private fun toggleFilterList(kind: String) {
+        filterListOpen = if (filterListOpen == kind) "" else kind
+        filterListScroll = 0
+        rebuildFilterList()
+    }
+
+    private fun rebuildFilterList() {
+        filterOptionButtons.forEach { remove(it) }
+        filterOptionButtons.clear()
+        val open = filterListOpen.isNotEmpty()
+        // 展开时只隐藏**被列表覆盖**的控件：列表从 y=88 起最多 8 行盖到 200，
+        // 所以只有行按钮需要让位——且必须 visible=false，因为列表按钮背景贴图中间区域半透明，
+        // 下层行按钮文字会透出。搜索框与特训按钮都在 y=50~66、筛选按钮行在 y=68~88，
+        // 全在列表上方不被遮挡，展开期间保持可见（照精灵市场）。
+        // 出价弹窗打开时才真的要隐藏（openBidDialog 会调用本函数收起列表，不能把控件恢复可见）
+        searchField?.visible = bidEntry == null
+        htButton?.visible = currentTab == 0 && bidEntry == null
+        bidButtons.forEach { it.visible = !open }
+        if (!open) return
+        val options: List<Pair<String, String>> = when (filterListOpen) {
+            "type" -> listOf("" to "") + typeOptions.map { it to "cobblemon.type.$it" }
+            "ability" -> listOf("" to "") + abilityOptions
+            "nature" -> listOf("" to "") + natureOptions
+            else -> emptyList()
+        }
+        val leftX = width / 2 - panelWidth / 2
+        options.drop(filterListScroll).take(MAX_FILTER_LIST_ROWS).forEachIndexed { i, (key, label) ->
+            val display = if (key.isEmpty()) Text.translatable("cobblemarket.gui.filter_any").string
+                else Text.translatable(label).string.let { t -> if (t == label) label else t }
+            val btn = NineSliceButton(
+                leftX + 4, 88 + i * 14, 288, 14,
+                if (isFilterSelected(filterListOpen, key))
+                    com.shusheng.cobblemarket.util.TextUtil.selectedText(
+                        com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)
+                    )
+                else Text.literal(com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)),
+                { selectFilterOption(filterListOpen, key) },
+                if (filterListOpen == "type" && key.isNotEmpty()) typeColor("cobblemon.type.$key") else 0xFFFFFF
+            )
+            filterOptionButtons.add(btn)
+            addDrawableChild(btn)
+        }
+    }
+
+    private fun isFilterSelected(kind: String, key: String): Boolean = when (kind) {
+        "type" -> key.isNotEmpty() && key == typeFilter
+        "ability" -> key.isNotEmpty() && key == abilityFilter
+        "nature" -> key.isNotEmpty() && key == natureFilter
+        else -> false
+    }
+
+    private fun selectFilterOption(kind: String, key: String) {
+        when (kind) {
+            "type" -> {
+                typeFilter = key
+                typeButton?.setMessage(typeButtonText())
+                typeButton?.textColor = if (key.isNotEmpty()) typeColor("cobblemon.type.$key") else 0xFFFFFF
+            }
+            "ability" -> {
+                abilityFilter = key
+                abilityButton?.setMessage(abilityButtonText())
+                abilityButton?.textColor = if (key.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
+            }
+            "nature" -> {
+                natureFilter = key
+                natureButton?.setMessage(natureButtonText())
+                natureButton?.textColor = if (key.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
+            }
+        }
+        filterListOpen = ""
+        rebuildFilterList()
+        scrollOffset = 0
+        hoveredRow = -1
+        rebuildBidButtons()
+    }
+
+    /** 搜索框物种解析 → 特性筛选选项；物种变化时重置失效选择 */
+    private fun updateAbilityOptions(text: String) {
+        val trimmed = text.trim()
+        val species = if (trimmed.isEmpty()) null else {
+            if (trimmed.contains(":")) {
+                Identifier.tryParse(trimmed)?.let { PokemonSpecies.getByIdentifier(it) }
+            } else {
+                val byName = try { PokemonSpecies.getByName(trimmed) } catch (_: Exception) { null }
+                byName ?: PokemonSpecies.implemented.firstOrNull {
+                    it.translatedName.string == trimmed || it.translatedName.string.contains(trimmed)
+                }
+            }
+        }
+        abilityOptions = species?.abilities?.map { pa ->
+            val key = "cobblemon.ability.${pa.template.name}"
+            val t = Text.translatable(key).string
+            key to (if (t == key) pa.template.displayName else t)
+        } ?: emptyList()
+        if (abilityFilter.isNotEmpty() && abilityOptions.none { it.first == abilityFilter }) {
+            abilityFilter = ""
+            abilityButton?.setMessage(abilityButtonText())
+            abilityButton?.textColor = 0xFFFFFF
+        }
     }
 
     private fun updateTabButtons() {
@@ -226,8 +430,11 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         ).formatted(Formatting.GRAY))
         scrollOffset = 0
         hoveredRow = -1
+        filterListOpen = ""
+        rebuildFilterList()
         updateTabButtons()
         htButton?.visible = currentTab == 0
+        applyFilterVisibility()
         rebuildBidButtons()
     }
 
@@ -350,6 +557,20 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
                 if (htFilter == 1 && !hasHt) return@filter false
                 if (htFilter == 2 && hasHt) return@filter false
             }
+            // 筛选（仅精灵 tab 生效）：性别/属性/特性/性格（生效性格，不分薄荷）
+            if (entry.type == "POKEMON") {
+                val d = entry.extraData
+                if (genderFilter.isNotEmpty() && d["gender"] != genderFilter) return@filter false
+                if (typeFilter.isNotEmpty()) {
+                    val primary = d["primaryType"] ?: ""
+                    val secondary = d["secondaryType"] ?: ""
+                    if (!primary.contains(typeFilter, ignoreCase = true) && !secondary.contains(typeFilter, ignoreCase = true)) {
+                        return@filter false
+                    }
+                }
+                if (abilityFilter.isNotEmpty() && d["ability"] != abilityFilter) return@filter false
+                if (natureFilter.isNotEmpty() && d["nature"] != natureFilter) return@filter false
+            }
             query == null || displayName(entry).contains(query, ignoreCase = true) ||
                 entry.species.contains(query, ignoreCase = true) || entry.sellerName.contains(query, ignoreCase = true)
         }.sortedBy { it.endsAt }
@@ -401,6 +622,9 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
     private fun rebuildBidButtons() {
         bidButtons.forEach { remove(it) }
         bidButtons.clear()
+        // 筛选展开列表/出价弹窗打开时行按钮保持隐藏：事件触发的重建会把新按钮
+        // 追加到 children 末尾，浮在列表按钮/遮罩之上刺穿
+        if (filterListOpen.isNotEmpty() || bidEntry != null) return
         val leftX = width / 2 - panelWidth / 2
         val startY = getListStartY()
         filtered().drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
@@ -430,6 +654,12 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         tabButtons.forEach { it.visible = false }
         rulesButton?.visible = false
         htButton?.visible = false
+        genderButton?.visible = false
+        typeButton?.visible = false
+        abilityButton?.visible = false
+        natureButton?.visible = false
+        filterListOpen = ""
+        rebuildFilterList()
         bidButtons.forEach { it.visible = false }
         val centerX = width / 2
         val dialogY = height / 2 - 95
@@ -543,20 +773,37 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
             val extra = entry.extraData
             val primaryType = extra["primaryType"] ?: ""
             val tc = typeColor(if (primaryType.isNotEmpty()) primaryType else "cobblemon.type.normal")
-            // 名字（属性色）+ 金色闪光星 + 等级
-            context.drawText(textRenderer, displayName(entry), infoX, iy, tc, false)
+            // 名字（属性色）+ 金色闪光星 + 等级 + 公母图标
+            context.drawTextWithShadow(textRenderer, displayName(entry), infoX, iy, tc)
             var cx = infoX + textRenderer.getWidth(displayName(entry))
             if (entry.shiny) {
                 context.drawText(textRenderer, "★", cx + 2, iy, GOLD_COLOR, false)
                 cx += 2 + textRenderer.getWidth("★")
             }
             context.drawText(textRenderer, "  Lv.${entry.level}", cx + 2, iy, 0xFFFFFF, false)
+            cx += 2 + textRenderer.getWidth("  Lv.${entry.level}")
+            val gender = extra["gender"]
+            if (gender == "MALE" || gender == "FEMALE") {
+                val gi = if (gender == "MALE")
+                    Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
+                else
+                    Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
+                com.cobblemon.mod.common.api.gui.blitk(
+                    matrixStack = context.matrices, texture = gi,
+                    x = cx + 2, y = iy, width = 6, height = 8
+                )
+            }
             iy += 10
             val secondaryType = extra["secondaryType"] ?: ""
             val typeText = (if (primaryType.isNotEmpty()) Text.translatable(primaryType).string else "-") +
                 if (secondaryType.isNotEmpty()) " + ${Text.translatable(secondaryType).string}" else ""
             infoLine("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText")
-            infoLine("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(extra["nature"] ?: "").string}")
+            // 性格（薄荷约定：原生斜体+括号生效）
+            context.drawTextWithShadow(textRenderer,
+                Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
+                    .append(EntryBadgeRenderer.natureText(extra["natureBase"] ?: "", extra["nature"] ?: "")),
+                infoX, iy, 0xFFFFFF)
+            iy += 10
             infoLine("${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(extra["ability"] ?: "").string}")
             val heldItemId = extra["heldItemId"].orEmpty()
             val hasHeldItem = heldItemId.isNotEmpty() &&
@@ -588,8 +835,8 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         }
         auctionLine("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}")
         auctionLine("${Text.translatable("cobblemarket.auction.current_price").string}: ${displayPriceText(entry)}", 0x55FFFF)
-        auctionLine("${Text.translatable("cobblemarket.auction.starting_price").string}: ${com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice)} ◆")
-        auctionLine("${Text.translatable("cobblemarket.auction.min_increment").string}: ${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ◆", 0xAAAAAA)
+        auctionLine("${Text.translatable("cobblemarket.auction.starting_price").string}: ${com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice)} ${com.shusheng.cobblemarket.client.displayActiveCurrency()}", 0x55FFFF)
+        auctionLine("${Text.translatable("cobblemarket.auction.min_increment").string}: ${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ${com.shusheng.cobblemarket.client.displayActiveCurrency()}", 0x55FFFF)
         auctionLine("${Text.translatable("cobblemarket.auction.ends").string}: ${formatRemaining(entry.endsAt)}", 0xAAAAAA)
         auctionLine("${Text.translatable("cobblemarket.auction.bids_count").string}: ${entry.bidCount}", 0xAAAAAA)
         if (entry.currentBidderName.isNotEmpty()) {
@@ -687,6 +934,38 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         }
 
         val startY = getListStartY()
+
+        // 底部计数画在屏幕底部（height-49），在展开列表下方，照常显示
+        if (displayCount() > getMaxVisibleRows()) {
+            context.drawCenteredTextWithShadow(textRenderer,
+                "${scrollOffset + 1}-${minOf(scrollOffset + getMaxVisibleRows(), displayCount())} / ${displayCount()}",
+                centerX, height - 49, 0x888888)
+        }
+
+        // ── 状态更新与轮询：跟筛选列表展不展开无关，必须放在 early return 之前 ──
+        // 结算中的条目过期（1.5 秒）后从列表移除
+        val pollNow = System.currentTimeMillis()
+        val settledExpired = settlingUntil.filterValues { it <= pollNow }.keys
+        if (settledExpired.isNotEmpty()) {
+            entries = entries.filterNot { it.id in settledExpired }
+            settledExpired.forEach { settlingUntil.remove(it) }
+            rebuildBidButtons()
+        }
+
+        // 有到期未结算的拍卖时，每秒重拉一次列表触发服务端结算（停在拍卖场也能自动结算）；
+        // 结算中的条目排除（已结算完毕，重拉会全量替换、截断落槌动画）
+        if (entries.any { it.endsAt <= pollNow && it.id !in settlingUntil } && pollNow - lastSettlePoll > 1000) {
+            lastSettlePoll = pollNow
+            ClientPlayNetworking.send(RequestAuctionListPayload())
+        }
+
+        // 筛选展开列表打开时跳过分隔线与行内容（画在 children 之后，会刺穿列表按钮）；
+        // 规则悬停面板是浮层、必须最后画，所以两条路径各画一次
+        if (filterListOpen.isNotEmpty()) {
+            if (rulesButton?.isHovered == true) renderRulesPanel(context, mouseX, mouseY)
+            return
+        }
+
         context.fill(leftX, startY - 2, leftX + panelWidth, startY - 1, 0xFF555555.toInt())
 
         val displayList = filtered()
@@ -726,7 +1005,7 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
                 val primaryType = entry.extraData["primaryType"] ?: ""
                 val tc = typeColor(if (primaryType.isNotEmpty()) primaryType else "cobblemon.type.normal")
                 val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(displayName(entry), 44)
-                context.drawText(textRenderer, name, sx, y + 7, tc, false)
+                context.drawTextWithShadow(textRenderer, name, sx, y + 7, tc)
                 sx += textRenderer.getWidth(name)
                 if (entry.shiny) {
                     context.drawText(textRenderer, "★", sx + 2, y + 7, GOLD_COLOR, false)
@@ -806,30 +1085,7 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
             }
         }
 
-        if (displayCount() > getMaxVisibleRows()) {
-            context.drawCenteredTextWithShadow(textRenderer,
-                "${scrollOffset + 1}-${minOf(scrollOffset + getMaxVisibleRows(), displayCount())} / ${displayCount()}",
-                centerX, height - 49, 0x888888)
-        }
-
-        // 结算中的条目过期（1.5 秒）后从列表移除
-        val pollNow = System.currentTimeMillis()
-        val settledExpired = settlingUntil.filterValues { it <= pollNow }.keys
-        if (settledExpired.isNotEmpty()) {
-            entries = entries.filterNot { it.id in settledExpired }
-            settledExpired.forEach { settlingUntil.remove(it) }
-            rebuildBidButtons()
-        }
-
-        // 有到期未结算的拍卖时，每秒重拉一次列表触发服务端结算（停在拍卖场也能自动结算）；
-        // 结算中的条目排除（已结算完毕，重拉会全量替换、截断落槌动画）
-        if (entries.any { it.endsAt <= pollNow && it.id !in settlingUntil } && pollNow - lastSettlePoll > 1000) {
-            lastSettlePoll = pollNow
-            ClientPlayNetworking.send(RequestAuctionListPayload())
-        }
-
-
-        // 规则按钮悬停：自绘规则面板
+        // 规则按钮悬停：自绘规则面板（浮层，最后画）
         if (rulesButton?.isHovered == true) {
             renderRulesPanel(context, mouseX, mouseY)
         }
@@ -896,7 +1152,10 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         lines.add(EntryBadgeRenderer.nameWithShinyStar(displayName(entry), entry.shiny)
             .copy().append(Text.literal("  Lv.${entry.level}")) to 0xFFFFFF)
         lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText") to 0xFFFFFF)
-        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(extra["nature"] ?: "").string}  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(extra["ability"] ?: "").string}") to 0xFFFFFF)
+        lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
+            .append(EntryBadgeRenderer.natureText(extra["natureBase"] ?: "", extra["nature"] ?: ""))
+            .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
+            .append(Text.translatable(extra["ability"] ?: "")) to 0xFFFFFF)
         val heldItemId = extra["heldItemId"].orEmpty()
         val hasHeldItem = heldItemId.isNotEmpty() &&
             Identifier.tryParse(heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
@@ -950,6 +1209,9 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
                         matrixStack = context.matrices
                     )
                 }
+            } else if (i == 0) {
+                // 第一行（名字★Lv）带公母图标
+                EntryBadgeRenderer.drawNameLineLeft(context, line, entry.extraData["gender"] ?: "", tx, ty + i * 10, color)
             } else {
                 context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
             }
@@ -1003,6 +1265,20 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
     // ── 交互 ──
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+        // 筛选展开列表滚动
+        if (filterListOpen.isNotEmpty()) {
+            val total = when (filterListOpen) {
+                "type" -> typeOptions.size + 1
+                "ability" -> abilityOptions.size + 1
+                "nature" -> natureOptions.size + 1
+                else -> 0
+            }
+            if (total > MAX_FILTER_LIST_ROWS) {
+                filterListScroll = (filterListScroll - verticalAmount.toInt()).coerceIn(0, total - MAX_FILTER_LIST_ROWS)
+                rebuildFilterList()
+            }
+            return true
+        }
         scrollOffset = (scrollOffset - verticalAmount.toInt()).coerceIn(0, maxOf(0, displayCount() - getMaxVisibleRows()))
         rebuildBidButtons()
         return true
@@ -1039,4 +1315,10 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
     private fun htExtra(extra: Map<String, String>, key: String): Int = extra[key]?.toIntOrNull() ?: -1
 
     override fun shouldPause() = false
+
+    private companion object {
+        val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
+        val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
+        const val MAX_FILTER_LIST_ROWS = 8
+    }
 }

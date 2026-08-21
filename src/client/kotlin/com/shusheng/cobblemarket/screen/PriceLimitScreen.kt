@@ -883,7 +883,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         }
     }
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int) {
+    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false) {
         val data = iconData[index] ?: return
         val matrices = context.matrices
         matrices.push()
@@ -897,7 +897,11 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
                 state = data.state,
                 partialTicks = 0f,
-                scale = 4.5f
+                scale = 4.5f,
+                // 弹窗打开时压暗（模型走独立渲染层，遮罩盖不住；颜色系数模拟遮罩效果）
+                r = if (dark) 0.35f else 1f,
+                g = if (dark) 0.35f else 1f,
+                b = if (dark) 0.35f else 1f
             )
         } catch (_: Exception) {
         } finally {
@@ -1068,6 +1072,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
                 val y = startY + i * rowHeight
                 val origIndex = pokemonEntries.indexOf(entry)
+                // 槽背景（GUI 层，弹窗遮罩自动压暗，照常渲染）；3D 精灵弹窗打开时颜色压暗
                 val slotX = leftX + 2
                 val slotY = y + 2
                 val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
@@ -1077,7 +1082,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
                 if (iconData.containsKey(origIndex)) {
-                    renderPokemonIcon(context, origIndex, slotX, slotY, iconSize)
+                    // 弹窗打开时不渲染 3D（模型层在衬底之上，压暗仍会浮在弹窗上）
+                    if (addField == null) renderPokemonIcon(context, origIndex, slotX, slotY, iconSize)
                 } else {
                     // 物种留空（全部精灵）：槽位画 "?"
                     context.drawCenteredTextWithShadow(textRenderer, "?", slotX + iconSize / 2, slotY + iconSize / 2 - 4, 0xFFFFFF)
@@ -1110,8 +1116,11 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             val displayList = filteredItems()
             displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
                 val y = startY + i * rowHeight
-                Identifier.tryParse(entry.itemId)?.let { id ->
-                    context.drawItem(ItemStack(Registries.ITEM.get(id)), leftX + 4, y + 4)
+                // 弹窗打开时行内物品图标不渲染（drawItem 硬编码 z 抬高，会刺穿弹窗遮罩）
+                if (addField == null) {
+                    Identifier.tryParse(entry.itemId)?.let { id ->
+                        context.drawItem(ItemStack(Registries.ITEM.get(id)), leftX + 4, y + 4)
+                    }
                 }
                 val line = "${itemDisplay(entry.itemId)} · ${priceText(entry.minPrice, entry.maxPrice)}"
                 context.drawTextWithShadow(textRenderer,

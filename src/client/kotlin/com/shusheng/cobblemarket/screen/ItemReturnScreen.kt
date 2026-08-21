@@ -194,19 +194,20 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
 
     private fun renderItemTooltip(context: DrawContext, entry: ItemEntry, mouseX: Int, mouseY: Int) {
         val registry = client?.world?.registryManager
-        val lines = mutableListOf<Text>()
+        val lines = mutableListOf<Pair<Text, Int>>()
         if (registry != null) {
             val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
-            lines.addAll(stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC))
+            lines.addAll(stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC).map { it to 0xFFFFFF })
         } else {
-            lines.add(Text.literal(entry.itemId))
+            lines.add(Text.literal(entry.itemId) to 0xFFFFFF)
         }
-        lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).append(" ").append(entry.sellerName))
-        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${entry.price} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}"))
-        lines.add(Text.literal("×${entry.count}"))
+        lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).append(" ").append(entry.sellerName) to 0xFFFFFF)
+        // 价格行整体蓝色：数值与货币单位同色，与行内价格一致
+        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${entry.price} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}") to 0x55FFFF)
+        lines.add(Text.literal("×${entry.count}") to 0xFFFFFF)
 
         var maxWidth = 0
-        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
+        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
 
         val padding = 4
         val tx = minOf(mouseX + 12, width - maxWidth - 12)
@@ -217,8 +218,8 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
-        lines.forEachIndexed { i, line ->
-            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, 0xFFFFFF)
+        lines.forEachIndexed { i, (line, color) ->
+            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
         }
         context.matrices.pop()
     }

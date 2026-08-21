@@ -8,6 +8,8 @@ import com.shusheng.cobblemarket.network.AuctionNetwork
 import com.shusheng.cobblemarket.network.BalanceNetwork
 import com.shusheng.cobblemarket.network.BanNetwork
 import com.shusheng.cobblemarket.network.BlacklistNetwork
+import com.shusheng.cobblemarket.network.BuyOrderNetwork
+import com.shusheng.cobblemarket.network.CelebrationNetwork
 import com.shusheng.cobblemarket.network.ItemBlacklistNetwork
 import com.shusheng.cobblemarket.network.MarketNetwork
 import com.shusheng.cobblemarket.network.PriceLimitNetwork
@@ -33,6 +35,8 @@ object CobbleMarket : ModInitializer {
 		ItemBlacklistNetwork.register()
 		PriceLimitNetwork.register()
 		AuctionNetwork.register()
+		BuyOrderNetwork.register()
+		CelebrationNetwork.register()
 		BalanceNetwork.register()
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()
@@ -70,6 +74,21 @@ object CobbleMarket : ModInitializer {
 						false
 					)
 				}
+				// 离线通知补发（求购单交付/接受/拒绝等；文本 JSON 反序列化后按玩家语言渲染）
+				com.shusheng.cobblemarket.market.OfflineMessageState.get(player.server)
+					.take(player.uuid)
+					.forEach { json ->
+						try {
+							// Text.Serialization.fromJson 是包私有：走公开的 TextCodecs.CODEC
+							val text = net.minecraft.text.TextCodecs.CODEC.decode(
+								com.mojang.serialization.JsonOps.INSTANCE,
+								com.google.gson.JsonParser.parseString(json)
+							).getOrThrow().first
+							player.sendMessage(text, false)
+						} catch (e: Exception) {
+							LOGGER.warn("Failed to deliver offline message to {}: {}", player.uuid, e.message)
+						}
+					}
 			}
 		}
 

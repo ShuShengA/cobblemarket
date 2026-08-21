@@ -1,9 +1,15 @@
 package com.shusheng.cobblemarket.client
 
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.network.AuctionDurationsPayload
 import com.shusheng.cobblemarket.network.AuctionEventPayload
 import com.shusheng.cobblemarket.network.AuctionListDataPayload
 import com.shusheng.cobblemarket.network.AuctionSettleSoundPayload
+import com.shusheng.cobblemarket.network.PokemonCelebrationPayload
+import com.shusheng.cobblemarket.network.MarketStatePayload
+import com.shusheng.cobblemarket.network.BuyOrderEventPayload
+import com.shusheng.cobblemarket.network.BuyOrderListDataPayload
+import com.shusheng.cobblemarket.network.PlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.network.AuctionWarnSoundPayload
 import com.shusheng.cobblemarket.network.BalanceDataPayload
 import com.shusheng.cobblemarket.network.EggTradingStatePayload
@@ -30,6 +36,7 @@ import com.shusheng.cobblemarket.screen.AdminItemScreen
 import com.shusheng.cobblemarket.screen.AdminPokemonScreen
 import com.shusheng.cobblemarket.screen.AdminScreen
 import com.shusheng.cobblemarket.screen.BuyConfirmScreen
+import com.shusheng.cobblemarket.screen.BuyOrderScreen
 import com.shusheng.cobblemarket.screen.HistoryScreen
 import com.shusheng.cobblemarket.screen.MarketEntryScreen
 import com.shusheng.cobblemarket.screen.MarketScreen
@@ -64,6 +71,8 @@ object CobbleMarketClient : ClientModInitializer {
     private var bellSoundAt = 0L
 
     override fun onInitializeClient() {
+        ClientConfig.load()
+        PokemonCelebrationAnimation.register()
         openMarketKey = KeyBindingHelper.registerKeyBinding(
             KeyBinding(
                 "key.cobblemarket.open_market",
@@ -197,6 +206,7 @@ object CobbleMarketClient : ClientModInitializer {
                     is AuctionScreen -> screen.onMarketResult(payload)
                     is AuctionCreateScreen -> screen.onMarketResult(payload)
                     is AdminAuctionScreen -> screen.onMarketResult(payload)
+                    is BuyOrderScreen -> screen.onMarketResult(payload)
                 }
             }
         }
@@ -205,6 +215,7 @@ object CobbleMarketClient : ClientModInitializer {
             MinecraftClient.getInstance().execute {
                 BalanceCache.balance = payload.balance
                 BalanceCache.pendingBalance = payload.pendingBalance
+                BalanceCache.currencyName = payload.currencyName
             }
         }
 
@@ -223,6 +234,21 @@ object CobbleMarketClient : ClientModInitializer {
                 if (screen is AuctionScreen) {
                     screen.onSettleSound(payload.auctionId)
                 }
+            }
+        }
+
+        ClientPlayNetworking.registerGlobalReceiver(PokemonCelebrationPayload.ID) { payload, _ ->
+            MinecraftClient.getInstance().execute {
+                // 获得精灵庆祝动画：买到/拍到/求购单接受交付均走这里（拍卖场景与落槌铃声同批触发，天然同步）
+                PokemonCelebrationAnimation.trigger(payload.speciesId, payload.aspects, payload.shiny, payload.source)
+            }
+        }
+
+        ClientPlayNetworking.registerGlobalReceiver(MarketStatePayload.ID) { payload, _ ->
+            MinecraftClient.getInstance().execute {
+                MarketStateCache.enabled = payload.enabled
+                // 入口界面打开时同步开关按钮图标（登录补发 / 他人命令切换都能跟上）
+                (MinecraftClient.getInstance().currentScreen as? MarketEntryScreen)?.updateMarketSwitchIcon()
             }
         }
 
@@ -253,12 +279,48 @@ object CobbleMarketClient : ClientModInitializer {
             }
         }
 
+        ClientPlayNetworking.registerGlobalReceiver(AuctionDurationsPayload.ID) { payload, _ ->
+            MinecraftClient.getInstance().execute {
+                val screen = MinecraftClient.getInstance().currentScreen
+                if (screen is AuctionCreateScreen) {
+                    screen.onDurations(payload)
+                }
+            }
+        }
+
+        ClientPlayNetworking.registerGlobalReceiver(BuyOrderListDataPayload.ID) { payload, _ ->
+            MinecraftClient.getInstance().execute {
+                val screen = MinecraftClient.getInstance().currentScreen
+                if (screen is BuyOrderScreen) {
+                    screen.onBuyOrderList(payload)
+                }
+            }
+        }
+
+        ClientPlayNetworking.registerGlobalReceiver(BuyOrderEventPayload.ID) { payload, _ ->
+            MinecraftClient.getInstance().execute {
+                val screen = MinecraftClient.getInstance().currentScreen
+                if (screen is BuyOrderScreen) {
+                    screen.onBuyOrderEvent(payload)
+                }
+            }
+        }
+
         ClientPlayNetworking.registerGlobalReceiver(BanListDataPayload.ID) { payload, _ ->
             val client = MinecraftClient.getInstance()
             client.execute {
                 val screen = client.currentScreen
                 if (screen is AdminBanScreen) {
                     screen.onBanList(payload)
+                }
+            }
+        }
+
+        ClientPlayNetworking.registerGlobalReceiver(PlayerNameSuggestionsPayload.ID) { payload, _ ->
+            MinecraftClient.getInstance().execute {
+                val screen = MinecraftClient.getInstance().currentScreen
+                if (screen is AdminBanScreen) {
+                    screen.onNameSuggestions(payload)
                 }
             }
         }

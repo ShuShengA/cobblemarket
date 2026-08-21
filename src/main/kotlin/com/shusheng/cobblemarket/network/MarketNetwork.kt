@@ -45,6 +45,7 @@ data class ListingEntry(
     val htHp: Int, val htAtk: Int, val htDef: Int,
     val htSpAtk: Int, val htSpDef: Int, val htSpd: Int,
     val nature: String,
+    val natureBase: String,    // 原生性格（与 nature 不同 = 用过薄荷）
     val ability: String,
     val gender: String,
     val ball: String,
@@ -69,6 +70,7 @@ data class ListingEntry(
         buf.writeInt(htHp); buf.writeInt(htAtk); buf.writeInt(htDef)
         buf.writeInt(htSpAtk); buf.writeInt(htSpDef); buf.writeInt(htSpd)
         buf.writeString(nature)
+        buf.writeString(natureBase)
         buf.writeString(ability)
         buf.writeString(gender)
         buf.writeString(ball)
@@ -95,6 +97,7 @@ data class ListingEntry(
             htHp = buf.readInt(), htAtk = buf.readInt(), htDef = buf.readInt(),
             htSpAtk = buf.readInt(), htSpDef = buf.readInt(), htSpd = buf.readInt(),
             nature = buf.readString(),
+            natureBase = buf.readString(),
             ability = buf.readString(),
             gender = buf.readString(),
             ball = buf.readString(),
@@ -141,6 +144,48 @@ data class EggTradingStatePayload(val enabled: Boolean) : CustomPayload {
     }
 }
 
+// ── S2C: 市场总开关状态（登录补发 + /market on|off 切换时全员广播） ──
+
+data class MarketStatePayload(val enabled: Boolean) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<MarketStatePayload>(CobbleMarket.id("market_state"))
+        val CODEC: PacketCodec<PacketByteBuf, MarketStatePayload> = PacketCodec.of(
+            { p, b -> b.writeBoolean(p.enabled) },
+            { b -> MarketStatePayload(b.readBoolean()) }
+        )
+    }
+}
+
+// ── C2S: OP 在入口界面切换市场总开关 ──
+
+data class SetMarketEnabledPayload(val enabled: Boolean) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<SetMarketEnabledPayload>(CobbleMarket.id("set_market_enabled"))
+        val CODEC: PacketCodec<PacketByteBuf, SetMarketEnabledPayload> = PacketCodec.of(
+            { p, b -> b.writeBoolean(p.enabled) },
+            { b -> SetMarketEnabledPayload(b.readBoolean()) }
+        )
+    }
+}
+
+/** 市场总开关切换（命令与入口按钮共用）：落盘 + 全员广播 */
+fun toggleMarketEnabled(server: net.minecraft.server.MinecraftServer, enabled: Boolean) {
+    com.shusheng.cobblemarket.config.CobbleMarketConfig.setMarketEnabled(enabled)
+    server.playerManager.playerList.forEach { ServerPlayNetworking.send(it, MarketStatePayload(enabled)) }
+}
+
+/**
+ * 市场总开关拦截：marketEnabled=false 时拒绝一切交易写操作并提示。
+ * 只拦交易，不拦取回资产（待领取/余额领取等入口不调用本函数，与封禁语义一致）。
+ */
+fun marketBlocked(player: net.minecraft.server.network.ServerPlayerEntity): Boolean {
+    if (com.shusheng.cobblemarket.config.CobbleMarketConfig.marketEnabled) return false
+    ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.market.closed")))
+    return true
+}
+
 // ── C2S: Request market data ──
 
 data class RequestMarketPayload(
@@ -152,6 +197,9 @@ data class RequestMarketPayload(
     val page: Int,
     val genderFilter: String,
     val typeFilter: String,
+    // 特性/性格筛选（翻译 key；空串 = 不限）
+    val abilityFilter: String,
+    val natureFilter: String,
     val minIvsHp: Int,
     val minIvsAtk: Int,
     val minIvsDef: Int,
@@ -171,7 +219,9 @@ data class RequestMarketPayload(
             { p, b ->
                 b.writeString(p.speciesFilter); b.writeBoolean(p.shinyOnly); b.writeInt(p.minLevel); b.writeInt(p.maxLevel); b.writeString(
                 p.sortMode
-            ); b.writeInt(p.page); b.writeString(p.genderFilter); b.writeString(p.typeFilter); b.writeInt(p.minIvsHp); b.writeInt(
+            ); b.writeInt(p.page); b.writeString(p.genderFilter); b.writeString(p.typeFilter); b.writeString(p.abilityFilter); b.writeString(
+                p.natureFilter
+            ); b.writeInt(p.minIvsHp); b.writeInt(
                 p.minIvsAtk
             ); b.writeInt(p.minIvsDef); b.writeInt(p.minIvsSpAtk); b.writeInt(p.minIvsSpDef); b.writeInt(p.minIvsSpd); b.writeInt(
                 p.pageSize
@@ -185,6 +235,8 @@ data class RequestMarketPayload(
                     b.readInt(),
                     b.readString(),
                     b.readInt(),
+                    b.readString(),
+                    b.readString(),
                     b.readString(),
                     b.readString(),
                     b.readInt(),
@@ -367,7 +419,8 @@ data class PokemonPreview(
     val level: Int,
     val shiny: Boolean,
     val gender: String,
-    val nature: String,
+    val nature: String,        // 生效性格（薄荷后为薄荷性格）
+    val natureBase: String,    // 原生性格（遗传用；与 nature 不同 = 用过薄荷）
     val ability: String,
     val ivsHp: Int, val ivsAtk: Int, val ivsDef: Int, val ivsSpAtk: Int, val ivsSpDef: Int, val ivsSpd: Int,
     // 极限特训值（hyper training，-1 = 未特训）：显示「真实值（特训值）」用
@@ -383,7 +436,7 @@ data class PokemonPreview(
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(uuid); buf.writeString(species); buf.writeString(speciesId); buf.writeString(speciesName)
         buf.writeInt(level); buf.writeBoolean(shiny); buf.writeString(gender)
-        buf.writeString(nature); buf.writeString(ability)
+        buf.writeString(nature); buf.writeString(natureBase); buf.writeString(ability)
         buf.writeInt(ivsHp); buf.writeInt(ivsAtk); buf.writeInt(ivsDef)
         buf.writeInt(ivsSpAtk); buf.writeInt(ivsSpDef); buf.writeInt(ivsSpd)
         buf.writeInt(htHp); buf.writeInt(htAtk); buf.writeInt(htDef)
@@ -397,7 +450,7 @@ data class PokemonPreview(
         fun read(buf: PacketByteBuf) = PokemonPreview(
             buf.readUuid(), buf.readString(), buf.readString(), buf.readString(),
             buf.readInt(), buf.readBoolean(), buf.readString(),
-            buf.readString(), buf.readString(),
+            buf.readString(), buf.readString(), buf.readString(),
             buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
             buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
             buf.readString(), buf.readString(), buf.readString(),
@@ -901,6 +954,8 @@ object MarketNetwork {
         PayloadTypeRegistry.playC2S().register(RequestEggTradingPayload.ID, RequestEggTradingPayload.CODEC)
         PayloadTypeRegistry.playC2S().register(SetEggTradingPayload.ID, SetEggTradingPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(EggTradingStatePayload.ID, EggTradingStatePayload.CODEC)
+        PayloadTypeRegistry.playS2C().register(MarketStatePayload.ID, MarketStatePayload.CODEC)
+        PayloadTypeRegistry.playC2S().register(SetMarketEnabledPayload.ID, SetMarketEnabledPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(MyPokemonListPayload.ID, MyPokemonListPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(HistoryDataPayload.ID, HistoryDataPayload.CODEC)
         PayloadTypeRegistry.playS2C().register(OpenMarketPayload.ID, OpenMarketPayload.CODEC)
@@ -929,6 +984,8 @@ object MarketNetwork {
                     sortBy = sortMode,
                     gender = payload.genderFilter.ifBlank { null },
                     typeFilter = payload.typeFilter.ifBlank { null },
+                    ability = payload.abilityFilter.ifBlank { null },
+                    nature = payload.natureFilter.ifBlank { null },
                     minIvs = buildMap {
                         if (payload.minIvsHp >= 0) put("ivsHp", payload.minIvsHp)
                         if (payload.minIvsAtk >= 0) put("ivsAtk", payload.minIvsAtk)
@@ -973,6 +1030,7 @@ object MarketNetwork {
                             htSpDef = detail["htSpDef"]?.toIntOrNull() ?: -1,
                             htSpd = detail["htSpd"]?.toIntOrNull() ?: -1,
                             nature = detail["nature"] ?: "?",
+                            natureBase = detail["natureBase"] ?: detail["nature"] ?: "?",
                             ability = detail["ability"] ?: "?",
                             gender = detail["gender"] ?: "?",
                             ball = detail["ball"] ?: "?",
@@ -1003,6 +1061,7 @@ object MarketNetwork {
             server.execute {
                 val banCheckTime = System.currentTimeMillis()
                 val banInfo = BanState.get(server).getBanInfo(player.uuid, banCheckTime)
+                if (marketBlocked(player)) return@execute
                 if (banInfo != null) {
                     // 保留 Text 对象而非 .string：翻译在客户端语言下渲染（服务端语言 ≠ 客户端语言）
                     val timeDesc: Text = if (banInfo.isPermanent)
@@ -1126,8 +1185,14 @@ object MarketNetwork {
                     )
                 )
 
-                val seller = server.playerManager.getPlayer(listing.sellerUuid)
-                seller?.sendMessage(Text.translatable("cobblemarket.network.sold", listing.speciesText()), false)
+                // 买家庆祝动画：精灵已进队伍，所有权转移完成
+                CelebrationNetwork.sendFromEntry(player, listing.species, listing.shiny, listing.extraData, CelebrationSource.MARKET)
+
+                // 卖家离线则入队补发
+                com.shusheng.cobblemarket.market.OfflineMessageState.notify(
+                    server, listing.sellerUuid,
+                    Text.translatable("cobblemarket.network.sold", listing.speciesText())
+                )
 
                 // 精灵已进买家队伍，挂单生命周期终结，立即删除避免存档膨胀
                 state.removeListing(listing.id)
@@ -1256,6 +1321,7 @@ object MarketNetwork {
                             htSpDef = detail["htSpDef"]?.toIntOrNull() ?: -1,
                             htSpd = detail["htSpd"]?.toIntOrNull() ?: -1,
                             nature = detail["nature"] ?: "?",
+                            natureBase = detail["natureBase"] ?: detail["nature"] ?: "?",
                             ability = detail["ability"] ?: "?",
                             gender = detail["gender"] ?: "?",
                             ball = detail["ball"] ?: "?",
@@ -1291,8 +1357,9 @@ object MarketNetwork {
                 com.shusheng.cobblemarket.event.MarketEvents.CANCEL.trigger(
                     com.shusheng.cobblemarket.event.CancelEvent(listing.sellerUuid, listing)
                 )
-                server.playerManager.getPlayer(listing.sellerUuid)?.sendMessage(
-                    Text.translatable("cobblemarket.cmd.cancelled", listing.speciesText()), false
+                com.shusheng.cobblemarket.market.OfflineMessageState.notify(
+                    server, listing.sellerUuid,
+                    Text.translatable("cobblemarket.cmd.cancelled", listing.speciesText())
                 )
                 ServerPlayNetworking.send(
                     player,
@@ -1384,8 +1451,9 @@ object MarketNetwork {
                         fee = 0
                     )
                 )
-                server.playerManager.getPlayer(listing.sellerUuid)?.sendMessage(
-                    Text.translatable("cobblemarket.item.cancelled"), false
+                com.shusheng.cobblemarket.market.OfflineMessageState.notify(
+                    server, listing.sellerUuid,
+                    Text.translatable("cobblemarket.item.cancelled")
                 )
                 ServerPlayNetworking.send(
                     player,
@@ -1452,6 +1520,7 @@ object MarketNetwork {
             server.execute {
                 val banCheckTime = System.currentTimeMillis()
                 val banInfo = BanState.get(server).getBanInfo(player.uuid, banCheckTime)
+                if (marketBlocked(player)) return@execute
                 if (banInfo != null) {
                     // 保留 Text 对象而非 .string：翻译在客户端语言下渲染（服务端语言 ≠ 客户端语言）
                     val timeDesc: Text = if (banInfo.isPermanent)
@@ -1682,6 +1751,7 @@ object MarketNetwork {
             server.execute {
                 val banCheckTime = System.currentTimeMillis()
                 val banInfo = BanState.get(server).getBanInfo(player.uuid, banCheckTime)
+                if (marketBlocked(player)) return@execute
                 if (banInfo != null) {
                     // 保留 Text 对象而非 .string：翻译在客户端语言下渲染（服务端语言 ≠ 客户端语言）
                     val timeDesc: Text = if (banInfo.isPermanent)
@@ -1961,6 +2031,7 @@ object MarketNetwork {
             server.execute {
                 val banCheckTime = System.currentTimeMillis()
                 val banInfo = BanState.get(server).getBanInfo(player.uuid, banCheckTime)
+                if (marketBlocked(player)) return@execute
                 if (banInfo != null) {
                     // 保留 Text 对象而非 .string：翻译在客户端语言下渲染（服务端语言 ≠ 客户端语言）
                     val timeDesc: Text = if (banInfo.isPermanent)
@@ -2144,10 +2215,13 @@ object MarketNetwork {
                     )
                 )
 
-                val seller = server.playerManager.getPlayer(listing.sellerUuid)
                 val soldItemName = Identifier.tryParse(listing.itemId)?.let { Registries.ITEM.get(it).name }
                     ?: Text.literal(listing.itemId)
-                seller?.sendMessage(Text.translatable("cobblemarket.network.sold", soldItemName), false)
+                // 卖家离线则入队补发
+                com.shusheng.cobblemarket.market.OfflineMessageState.notify(
+                    server, listing.sellerUuid,
+                    Text.translatable("cobblemarket.network.sold", soldItemName)
+                )
             }
         }
 
@@ -2304,6 +2378,14 @@ object MarketNetwork {
             }
         }
 
+        // 入口界面的市场总开关按钮（OP）：写配置 + 全员广播，与命令同逻辑
+        ServerPlayNetworking.registerGlobalReceiver(SetMarketEnabledPayload.ID) { payload, context ->
+            val player = context.player()
+            if (!player.hasPermissionLevel(2)) return@registerGlobalReceiver
+            val server = player.server
+            server.execute { toggleMarketEnabled(server, payload.enabled) }
+        }
+
         ServerPlayNetworking.registerGlobalReceiver(RequestHistoryPayload.ID) { payload, context ->
             val player = context.player()
             if (!RequestThrottle.allow(player.uuid, "request_history", RequestThrottle.READ_INTERVAL_MS)) return@registerGlobalReceiver
@@ -2451,6 +2533,8 @@ object MarketNetwork {
             "htSpDef" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE] ?: -1).toString(),
             "htSpd" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: -1).toString(),
             "nature" to "cobblemon.nature.${pokemon.effectiveNature.name.path}",
+            // 原生性格（薄荷不改）：与 nature 不同 = 用过薄荷，客户端斜体显示
+            "natureBase" to "cobblemon.nature.${pokemon.nature.name.path}",
             "ability" to "cobblemon.ability.${pokemon.ability.name}",
             "gender" to pokemon.gender.name,
             "ball" to "item.cobblemon.${pokemon.caughtBall.name.path}",
@@ -2477,6 +2561,7 @@ object MarketNetwork {
             shiny = pokemon.shiny,
             gender = pokemon.gender.name,
             nature = "cobblemon.nature.${pokemon.effectiveNature.name.path}",
+            natureBase = "cobblemon.nature.${pokemon.nature.name.path}",
             ability = "cobblemon.ability.${pokemon.ability.name}",
             ivsHp = pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP] ?: 0,
             ivsAtk = pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK] ?: 0,

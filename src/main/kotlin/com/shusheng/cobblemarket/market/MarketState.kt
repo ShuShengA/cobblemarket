@@ -45,6 +45,9 @@ class MarketState private constructor() : PersistentState() {
         sortBy: SortMode = SortMode.PRICE_ASC,
         gender: String? = null,
         typeFilter: String? = null,
+        // 特性/性格精确匹配（翻译 key，extraData 原值比较）
+        ability: String? = null,
+        nature: String? = null,
         minIvs: Map<String, Int> = emptyMap(),
         sellerUuid: UUID? = null,
         sellerName: String? = null,
@@ -65,6 +68,9 @@ class MarketState private constructor() : PersistentState() {
             (it.extraData["primaryType"]?.contains(t, ignoreCase = true) == true) ||
             (it.extraData["secondaryType"]?.contains(t, ignoreCase = true) == true)
         } }
+        // 特性精确匹配（翻译 key）；性格按生效性格匹配（薄荷改成该性格也算）
+        ability?.let { a -> results = results.filter { it.extraData["ability"] == a } }
+        nature?.let { n -> results = results.filter { it.extraData["nature"] == n } }
         minIvs.forEach { (statName, value) ->
             // 按有效值匹配：特训项（ht 值 >= 0）用特训值，未特训用真实值——
             // 原生 31 与训练 31 搜 31 都应命中

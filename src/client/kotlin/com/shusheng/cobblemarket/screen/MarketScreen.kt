@@ -42,10 +42,21 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var genderFilter = ""
     private var typeFilter = ""
     private var typeFilterIndex = 0
+    private var abilityFilter = ""   // 特性翻译 key（空 = 不限）
+    private var natureFilter = ""    // 性格翻译 key（空 = 不限；按生效性格匹配，不分薄荷）
     private val minIvs = IntArray(6) { -1 }
 
-    private lateinit var genderButton: ButtonWidget
+    // 筛选展开列表：filterListOpen = ""/type/ability/nature；互斥展开、限高滚动
+    private var filterListOpen = ""
+    private var filterListScroll = 0
+    private val filterOptionButtons = mutableListOf<NineSliceButton>()
+    // 特性选项（搜索框物种解析后重建）
+    private var abilityOptions = listOf<Pair<String, String>>() // (翻译 key, 显示名)
+
+    private lateinit var genderButton: NineSliceButton
     private lateinit var typeButton: ButtonWidget
+    private lateinit var abilityButton: ButtonWidget
+    private lateinit var natureButton: ButtonWidget
     private lateinit var shinyButton: NineSliceButton
     private lateinit var sortButton: ButtonWidget
     private lateinit var resetButton: ButtonWidget
@@ -126,6 +137,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         searchField?.setChangedListener {
             searchDirty = true
             lastSearchEdit = System.currentTimeMillis()
+            // 同步解析物种 → 特性筛选选项；物种变化时重置特性选择
+            updateAbilityOptions(it)
         }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
@@ -165,20 +178,39 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // Filter controls only when expanded
         if (filterExpanded) {
 
-        // Row 2 (y=54): Gender button + Type button
+        // Row 2 (y=66): 性别图标 | 属性 | 特性 | 性格（四按钮，间距 4px；后三者展开选择）
         genderButton = NineSliceButton(
-            leftX + 4, 66, 144, 20,
-            genderButtonText(),
-            { cycleGender() }
+            leftX + 4, 66, 24, 20,
+            Text.literal(""),
+            { cycleGender() },
+            iconTexW = 6, iconTexH = 8, iconScale = 1.5f
         )
+        updateGenderButton()
         addDrawableChild(genderButton)
 
         typeButton = NineSliceButton(
-            leftX + 152, 66, 144, 20,
+            leftX + 32, 66, 60, 20,
             typeButtonText(),
-            { cycleType() }
+            { toggleFilterList("type") },
+            if (typeFilter.isNotEmpty()) typeColor("cobblemon.type.$typeFilter") else 0xFFFFFF
         )
         addDrawableChild(typeButton)
+
+        abilityButton = NineSliceButton(
+            leftX + 96, 66, 96, 20,
+            abilityButtonText(),
+            { toggleFilterList("ability") },
+            if (abilityFilter.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
+        )
+        addDrawableChild(abilityButton)
+
+        natureButton = NineSliceButton(
+            leftX + 196, 66, 96, 20,
+            natureButtonText(),
+            { toggleFilterList("nature") },
+            if (natureFilter.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
+        )
+        addDrawableChild(natureButton)
 
         // Row 3 (y=78): HP, Atk, Def IV inputs
         hpField = createIvField(leftX + 4, 90, "HP")
@@ -231,7 +263,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
         } // end if (filterExpanded)
 
-        // Page buttons at bottom（动态贴在列表最后一行下方）
+        // 重建（resize/折叠切换）时收起筛选展开列表，避免状态与控件不一致
+        filterListOpen = ""
+        filterListScroll = 0
+
+        // Page buttons at bottom（贴列表最后一行下方，与管理端「所有已上架精灵」完全一致）
         val listBottom = getListStartY() + getMaxVisibleRows() * 24
         val btnY = listBottom
 
@@ -264,11 +300,17 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     }
 
     private fun getListStartY() = (if (filterExpanded) 160 else 64) + 4
-    private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 68) / 24)
+    // 预留 48（与「所有已上架精灵」界面完全一致）：比原 68 多 20px 列表空间，
+    // 按钮贴列表最后一行下方、不压边框——窗口任意大小时按钮与列表都无重叠
+    private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 48) / 24)
 
     private fun rebuildBuyButtons() {
         buyButtons.forEach { remove(it) }
         buyButtons.clear()
+
+        // 筛选展开列表/确认弹窗打开时行按钮保持隐藏：事件/刷新触发的重建会把新按钮
+        // 追加到 children 末尾，浮在列表按钮/遮罩之上刺穿
+        if (filterListOpen.isNotEmpty() || confirmEntry != null || cancelEntry != null) return
 
         val centerX = width / 2
         val leftX = centerX - panelWidth / 2
@@ -305,11 +347,16 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private fun openConfirmDialog(entry: ListingEntry) {
         confirmEntry = entry
         buildConfirmRenderable(entry)
+        // 收起可能展开的筛选列表（否则列表按钮残留在遮罩下可点）
+        filterListOpen = ""
+        rebuildFilterList()
     }
 
     private fun openCancelDialog(entry: ListingEntry) {
         cancelEntry = entry
         buildConfirmRenderable(entry)
+        filterListOpen = ""
+        rebuildFilterList()
     }
 
     private fun closeConfirmDialog() {
@@ -333,30 +380,31 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     private fun displayedListings(): List<IndexedValue<ListingEntry>> = listings.withIndex().toList()
 
-    // ── Gender filter ──
+    // ── Gender filter（公母图标三态循环：♂♀ 不限 → ♂ 仅公 → ♀ 仅母） ──
 
-    private fun genderButtonText(): Text {
-        val label = when (genderFilter) {
-            "MALE" -> Text.translatable("cobblemarket.gui.filter_male")
-            "FEMALE" -> Text.translatable("cobblemarket.gui.filter_female")
-            else -> Text.translatable("cobblemarket.gui.filter_any")
+    private fun updateGenderButton() {
+        genderButton.iconLeft = when (genderFilter) {
+            "FEMALE" -> GENDER_ICON_FEMALE
+            else -> GENDER_ICON_MALE
         }
-        return Text.translatable("cobblemarket.gui.gender").append(": ").append(label)
+        genderButton.iconLeft2 = if (genderFilter.isEmpty()) when (genderFilter) {
+            "FEMALE" -> null
+            else -> GENDER_ICON_FEMALE
+        } else null
     }
 
     private fun cycleGender() {
         genderFilter = when (genderFilter) {
             "" -> "MALE"
             "MALE" -> "FEMALE"
-            "FEMALE" -> ""
             else -> ""
         }
         currentPage = 1
-        genderButton.message = genderButtonText()
+        updateGenderButton()
         refreshData()
     }
 
-    // ── Type filter ──
+    // ── 属性/特性/性格展开选择（互斥、限高滚动、展开时隐藏被覆盖控件） ──
 
     private fun typeButtonText(): Text {
         val key = typeOptions.getOrElse(typeFilterIndex) { "" }
@@ -365,12 +413,131 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         return Text.translatable("cobblemarket.gui.type").append(": ").append(label)
     }
 
-    private fun cycleType() {
-        typeFilterIndex = (typeFilterIndex + 1) % typeOptions.size
-        typeFilter = typeOptions[typeFilterIndex]
+    private fun abilityButtonText(): Text {
+        val label = if (abilityFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
+            else Text.translatable(abilityFilter)
+        return Text.translatable("cobblemarket.buy_order.ability_label").append(": ").append(label)
+    }
+
+    private fun natureButtonText(): Text {
+        val label = if (natureFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
+            else Text.translatable(natureFilter)
+        return Text.translatable("cobblemarket.buy_order.nature_label").append(": ").append(label)
+    }
+
+    /** 25 种性格（翻译 key, 显示名），与求购单创建一致 */
+    private val natureOptions: List<Pair<String, String>> by lazy {
+        com.cobblemon.mod.common.api.pokemon.Natures.all().map { n ->
+            val key = "cobblemon.nature.${n.name.path}"
+            val t = Text.translatable(key).string
+            key to (if (t == key) n.displayName else t)
+        }
+    }
+
+    private fun toggleFilterList(kind: String) {
+        filterListOpen = if (filterListOpen == kind) "" else kind
+        filterListScroll = 0
+        rebuildFilterList()
+    }
+
+    private fun rebuildFilterList() {
+        filterOptionButtons.forEach { remove(it) }
+        filterOptionButtons.clear()
+        val open = filterListOpen.isNotEmpty()
+        // 展开时隐藏被覆盖的控件（IV 两行 + 底行按钮 + 行按钮，列表从 y=86 起最多 8 行）；
+        // 行按钮必须 visible=false：列表按钮背景贴图中间区域半透明，下层行按钮文字会透出
+        listOf(hpField, atkField, defField, spaField, spdField, speField).forEach { it?.visible = !open }
+        if (::shinyButton.isInitialized) shinyButton.visible = !open
+        if (::sortButton.isInitialized) sortButton.visible = !open
+        htButton?.visible = !open
+        if (::mineButton.isInitialized) mineButton.visible = !open
+        if (::resetButton.isInitialized) resetButton.visible = !open
+        buyButtons.forEach { it.visible = !open }
+        if (!open) return
+        val options: List<Pair<String, String>> = when (filterListOpen) {
+            "type" -> listOf("" to "") + typeOptions.filter { it.isNotEmpty() }.map { it to "cobblemon.type.$it" }
+            "ability" -> listOf("" to "") + abilityOptions
+            "nature" -> listOf("" to "") + natureOptions
+            else -> emptyList()
+        }
+        val leftX = width / 2 - panelWidth / 2
+        options.drop(filterListScroll).take(MAX_FILTER_LIST_ROWS).forEachIndexed { i, (key, label) ->
+            val idx = filterListScroll + i
+            val display = if (key.isEmpty()) Text.translatable("cobblemarket.gui.filter_any").string
+                else Text.translatable(label).string.let { t -> if (t == label) label else t }
+            val btn = NineSliceButton(
+                leftX + 4, 86 + i * 14, 288, 14,
+                if (isFilterSelected(filterListOpen, key, idx))
+                    com.shusheng.cobblemarket.util.TextUtil.selectedText(
+                        com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)
+                    )
+                else Text.literal(com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)),
+                { selectFilterOption(filterListOpen, key, idx) },
+                // 属性选项文字用对应属性色
+                if (filterListOpen == "type" && key.isNotEmpty()) typeColor("cobblemon.type.$key") else 0xFFFFFF
+            )
+            filterOptionButtons.add(btn)
+            addDrawableChild(btn)
+        }
+    }
+
+    private fun isFilterSelected(kind: String, key: String, idx: Int): Boolean = when (kind) {
+        "type" -> key.isNotEmpty() && key == typeFilter
+        "ability" -> key.isNotEmpty() && key == abilityFilter
+        "nature" -> key.isNotEmpty() && key == natureFilter
+        else -> false
+    }
+
+    private fun selectFilterOption(kind: String, key: String, idx: Int) {
+        when (kind) {
+            "type" -> {
+                typeFilter = key
+                typeFilterIndex = typeOptions.indexOf(key).coerceAtLeast(0)
+                typeButton.message = typeButtonText()
+                (typeButton as? NineSliceButton)?.textColor =
+                    if (key.isNotEmpty()) typeColor("cobblemon.type.$key") else 0xFFFFFF
+            }
+            "ability" -> {
+                abilityFilter = key
+                abilityButton.message = abilityButtonText()
+                (abilityButton as? NineSliceButton)?.textColor = if (key.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
+            }
+            "nature" -> {
+                natureFilter = key
+                natureButton.message = natureButtonText()
+                (natureButton as? NineSliceButton)?.textColor = if (key.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
+            }
+        }
+        filterListOpen = ""
+        rebuildFilterList()
         currentPage = 1
-        typeButton.message = typeButtonText()
         refreshData()
+    }
+
+    /** 搜索框物种解析 → 特性筛选选项（与求购单创建同语义）；解析不出则清空选项并重置选择 */
+    private fun updateAbilityOptions(text: String) {
+        val trimmed = text.trim()
+        val species = if (trimmed.isEmpty()) null else {
+            if (trimmed.contains(":")) {
+                Identifier.tryParse(trimmed)?.let { PokemonSpecies.getByIdentifier(it) }
+            } else {
+                val byName = try { PokemonSpecies.getByName(trimmed) } catch (_: Exception) { null }
+                byName ?: PokemonSpecies.implemented.firstOrNull {
+                    it.translatedName.string == trimmed || it.translatedName.string.contains(trimmed)
+                }
+            }
+        }
+        abilityOptions = species?.abilities?.map { pa ->
+            val key = "cobblemon.ability.${pa.template.name}"
+            val t = Text.translatable(key).string
+            key to (if (t == key) pa.template.displayName else t)
+        } ?: emptyList()
+        // 物种变化后旧特性选择失效，重置
+        if (abilityFilter.isNotEmpty() && abilityOptions.none { it.first == abilityFilter }) {
+            abilityFilter = ""
+            abilityButton.message = abilityButtonText()
+            (abilityButton as? NineSliceButton)?.textColor = 0xFFFFFF
+        }
     }
 
     // ── Shiny toggle ──
@@ -435,6 +602,24 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         else -> "cobblemarket.sort.price_asc"
     }
 
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+        // 筛选展开列表滚动
+        if (filterListOpen.isNotEmpty()) {
+            val total = when (filterListOpen) {
+                "type" -> typeOptions.size
+                "ability" -> abilityOptions.size + 1
+                "nature" -> natureOptions.size + 1
+                else -> 0
+            }
+            if (total > MAX_FILTER_LIST_ROWS) {
+                filterListScroll = (filterListScroll - verticalAmount.toInt()).coerceIn(0, total - MAX_FILTER_LIST_ROWS)
+                rebuildFilterList()
+            }
+            return true
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)
+    }
+
     // ── Reset all filters ──
 
     private fun applyFilterVisibility() {
@@ -478,8 +663,15 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         htFilter = 0
         htButton?.setMessage(htButtonText())
         htButton?.textColor = 0xFFFFFF
-        genderButton.message = genderButtonText()
+        abilityFilter = ""
+        natureFilter = ""
+        updateGenderButton()
         typeButton.message = typeButtonText()
+        abilityButton.message = abilityButtonText()
+        natureButton.message = natureButtonText()
+        (typeButton as? NineSliceButton)?.textColor = 0xFFFFFF
+        (abilityButton as? NineSliceButton)?.textColor = 0xFFFFFF
+        (natureButton as? NineSliceButton)?.textColor = 0xFFFFFF
         sortButton.message = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
         refreshData()
     }
@@ -574,6 +766,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 page = currentPage,
                 genderFilter = genderFilter,
                 typeFilter = typeFilter,
+                abilityFilter = abilityFilter,
+                natureFilter = natureFilter,
                 minIvsHp = ivs[0],
                 minIvsAtk = ivs[1],
                 minIvsDef = ivs[2],
@@ -663,7 +857,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             ?.let { Text.translatable("cobblemarket.gui.balance", it).string + "  " } ?: ""
         context.drawTextWithShadow(textRenderer, balPrefix, leftX, 31, 0x55FFFF)
         context.drawTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.gui.pending_balance", com.shusheng.cobblemarket.client.formatPriceLong(pendingBalance) + " ◆").string,
+            Text.translatable("cobblemarket.gui.pending_balance", com.shusheng.cobblemarket.client.formatBalanceLong(pendingBalance) + " ◆").string,
             leftX + textRenderer.getWidth(balPrefix), 31, 0x55FF55)
 
         // Page indicator（右对齐：左侧放余额行，长数字互不干扰）
@@ -679,11 +873,14 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val rowHeight = 24
         val visibleRows = getMaxVisibleRows()
 
+        // 筛选展开列表打开时跳过分隔线与行内容（画在 children 之后，会刺穿列表按钮）
+        if (filterListOpen.isNotEmpty()) return
+
         context.fill(leftX, dividerY, leftX + panelWidth, dividerY + 1, 0xFF555555.toInt())
 
         val displayList = displayedListings()
 
-        if (displayList.isEmpty()) {
+        if (displayList.isEmpty() && filterListOpen.isEmpty()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.translatable("cobblemarket.gui.no_listings").formatted(Formatting.GRAY),
@@ -691,10 +888,15 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             )
         }
 
+        // 筛选展开列表打开时跳过行内容与悬停（行内容画在 children 之后，会刺穿筛选列表按钮）
+        if (filterListOpen.isNotEmpty()) return
+
+        // 确认弹窗打开时行内图标不渲染（物品/精灵模型图标走独立渲染层，z 平移盖不住，会刺穿遮罩）
+        val dialogOpen = confirmEntry != null || cancelEntry != null
         displayList.take(visibleRows).forEachIndexed { di, (origIndex, entry) ->
             val y = startY + di * rowHeight
 
-            // Pokemon icon slot background
+            // Pokemon icon slot background（GUI 层，弹窗遮罩会自动压暗，照常渲染）
             val slotX = leftX + 2
             val slotY = y + 2
             val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
@@ -704,30 +906,31 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
             context.matrices.pop()
 
-            // 3D Pokemon icon
-            val iconX = leftX + 2
-            val iconY = y + 2
-            renderPokemonIcon(context, origIndex, iconX, iconY, iconSize)
+            // 3D Pokemon icon（弹窗打开时不渲染——模型层在衬底/遮罩之上，压暗仍会浮在弹窗上）
+            if (!dialogOpen) renderPokemonIcon(context, origIndex, leftX + 2, y + 2, iconSize)
 
-            // Ball icon（球种统一在精灵名称左侧）
-            val ballId = Identifier.tryParse(entry.ballItem)
-            if (ballId != null) {
-                val ballItem = Registries.ITEM.get(ballId)
-                com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                    itemStack = ItemStack(ballItem),
-                    x = leftX + 26.0,
-                    y = y + 6.0,
-                    scale = 0.6,
-                    matrixStack = context.matrices
-                )
+            // Ball icon（球种统一在精灵名称左侧；弹窗打开时隐藏——物品图标无色调参数无法变暗）
+            if (!dialogOpen) {
+                val ballId = Identifier.tryParse(entry.ballItem)
+                if (ballId != null) {
+                    val ballItem = Registries.ITEM.get(ballId)
+                    com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                        itemStack = ItemStack(ballItem),
+                        x = leftX + 26.0,
+                        y = y + 6.0,
+                        scale = 0.6,
+                        matrixStack = context.matrices
+                    )
+                }
             }
 
-            // Species name (translated) + 金色闪光星标（★，拆段绘制）
+            // Species name (translated) + 金色闪光星标（★，拆段绘制）；
+            // 名字带阴影：行背景偏灰，暗色属性名（幽灵/恶等）无阴影看不清
             val displayName = iconData[origIndex]?.displayName ?: entry.species
-            context.drawText(textRenderer, displayName, leftX + 40, y + 7, typeColor(entry.primaryType), false)
+            context.drawTextWithShadow(textRenderer, displayName, leftX + 40, y + 7, typeColor(entry.primaryType))
             var nameWidth = textRenderer.getWidth(displayName)
             if (entry.shiny) {
-                context.drawText(textRenderer, "★", leftX + 40 + nameWidth + 2, y + 7, GOLD_COLOR, false)
+                context.drawTextWithShadow(textRenderer, "★", leftX + 40 + nameWidth + 2, y + 7, GOLD_COLOR)
                 nameWidth += 2 + textRenderer.getWidth("★")
             }
 
@@ -750,8 +953,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 iconOffset = 8
             }
 
-            // Held item icon (after gender)
-            if (entry.heldItemId.isNotEmpty()) {
+            // Held item icon (after gender；弹窗打开时不渲染，防刺穿遮罩)
+            if (!dialogOpen && entry.heldItemId.isNotEmpty()) {
                 Identifier.tryParse(entry.heldItemId)?.let { heldId ->
                     val heldItem = Registries.ITEM.get(heldId)
                     if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
@@ -890,7 +1093,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     // ── 3D Pokemon icon rendering ──
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int) {
+    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false) {
         val data = iconData[index] ?: run {
             // Fallback: type-colored placeholder
             val entry = listings.getOrNull(index) ?: return
@@ -920,7 +1123,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 ),
                 state = data.state,
                 partialTicks = 0f,
-                scale = 4.5f
+                scale = 4.5f,
+                // 弹窗打开时压暗（模型走独立渲染层，遮罩盖不住；颜色系数模拟遮罩效果）
+                r = if (dark) 0.35f else 1f,
+                g = if (dark) 0.35f else 1f,
+                b = if (dark) 0.35f else 1f
             )
 
             matrices.pop()
@@ -960,7 +1167,10 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         lines.add(EntryBadgeRenderer.nameWithShinyStar(iconData[listings.indexOf(entry)]?.displayName ?: entry.species, entry.shiny)
             .copy().append(Text.literal("  ${Text.translatable("cobblemarket.gui.lv").string}${entry.level}")) to w)
         lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}${Text.translatable(entry.primaryType).string}${if (entry.secondaryType.isNotEmpty()) " + ${Text.translatable(entry.secondaryType).string}" else ""}") to w)
-        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_nature").string}${Text.translatable(entry.nature).string}  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(entry.ability).string}") to w)
+        lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
+            .append(EntryBadgeRenderer.natureText(entry.natureBase, entry.nature))
+            .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
+            .append(Text.translatable(entry.ability)) to w)
         var heldItemLine = -1
         if (hasHeldItem) {
             heldItemLine = lines.size
@@ -974,7 +1184,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}") to ivColors[4])
         lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}") to ivColors[5])
         lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).string} ${entry.sellerName}") to w)
-        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).string} ${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}") to w)
+        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).string} ${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}") to 0x55FFFF)
 
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
@@ -1003,6 +1213,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                         matrixStack = context.matrices
                     )
                 }
+            } else if (i == 0) {
+                // 第一行（名字★Lv）带公母图标
+                EntryBadgeRenderer.drawNameLineLeft(context, line, entry.gender, tx, ty + i * 10, color)
             } else {
                 context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
             }
@@ -1023,6 +1236,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     }
 
     override fun shouldPause(): Boolean = false
+
+    private companion object {
+        val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
+        val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
+        const val MAX_FILTER_LIST_ROWS = 8
+    }
 
     override fun resize(client: net.minecraft.client.MinecraftClient, width: Int, height: Int) {
         val oldSearch = searchField?.text ?: ""

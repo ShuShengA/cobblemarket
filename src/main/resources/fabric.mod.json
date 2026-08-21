@@ -30,6 +30,9 @@
 			}
 		]
 	},
+	"mixins": [
+		"cobblemarket.client.mixins.json"
+	],
 	"depends": {
 		"fabricloader": ">=0.19.1",
 		"minecraft": "~1.21.1",
