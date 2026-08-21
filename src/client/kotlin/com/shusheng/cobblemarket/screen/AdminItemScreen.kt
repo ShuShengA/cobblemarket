@@ -38,6 +38,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     private var sortMode = "NEWEST"
     private var showMineOnly = false
 
+    private var backButton: NineSliceButton? = null
     private var sortButton: NineSliceButton? = null
     private var mineButton: NineSliceButton? = null
     private var prevButton: NineSliceButton? = null
@@ -85,11 +86,12 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         super.init()
         val leftX = width / 2 - panelWidth / 2
 
-        addDrawableChild(NineSliceButton(
+        backButton = NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
             Text.translatable("cobblemarket.gui.back"),
             { client?.setScreen(AdminScreen()) }
-        ))
+        )
+        addDrawableChild(backButton)
 
         searchField = TextFieldWidget(textRenderer, leftX + 2, 44, 132, 16, Text.translatable("cobblemarket.item.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.item.search").formatted(Formatting.GRAY))
@@ -170,6 +172,14 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
 
     private fun openCancelDialog(entry: ItemEntry) {
         cancelEntry = entry
+        // 弹窗打开时隐藏主界面全部控件：widget 文字画在遮罩（addDrawable）之上，visible=false 才能防穿透
+        backButton?.visible = false
+        searchField?.visible = false
+        sellerField?.visible = false
+        sortButton?.visible = false
+        mineButton?.visible = false
+        prevButton?.visible = false
+        nextButton?.visible = false
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
                 renderCancelDialogBackground(context, mouseX, mouseY)
