@@ -267,7 +267,9 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             Text.translatable("cobblemarket.item.sell_count").formatted(Formatting.GRAY).append(": ").append("×${entry.count}"),
             centerX, dialogY + 80, 0xFFFFFF)
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${entry.price} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}"),
+            Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).append(" ").append(
+                Text.literal("${entry.price} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.AQUA)
+            ),
             centerX, dialogY + 94, 0x55FFFF)
 
         val btnW = 80
@@ -387,7 +389,9 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).append(" ").append(entry.sellerName) to 0xFFFFFF)
         // 价格行整体蓝色：数值与货币单位同色，与行内价格一致
-        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}") to 0x55FFFF)
+        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append(
+            Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.AQUA)
+        ) to 0x55FFFF)
         lines.add(Text.literal("×${entry.count}") to 0xFFFFFF)
 
         var maxWidth = 0

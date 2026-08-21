@@ -320,7 +320,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).append(" ").append(entry.sellerName) to 0xFFFFFF)
         // 价格行整体蓝色：数值与货币单位同色，与行内价格一致
-        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}") to 0x55FFFF)
+        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append(
+            Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.AQUA)
+        ) to 0x55FFFF)
         lines.add(Text.literal("×${entry.count}") to 0xFFFFFF)
 
         var maxWidth = 0
