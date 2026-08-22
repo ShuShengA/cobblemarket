@@ -959,7 +959,8 @@ object BuyOrderNetwork {
                     CelebrationNetwork.sendFromEntry(player, pending.species, pending.shiny, pending.extraData, CelebrationSource.BUY_ORDER)
                 }
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, pending.sellerUuid,
-                    Text.translatable("cobblemarket.buy_order.accepted_seller", order.requirementText()).formatted(Formatting.GREEN))
+                    // 到账金额 + 手续费一并提示：买家付的是 gross，卖家到手 gross-fee，不说清会产生疑问
+                    Text.translatable("cobblemarket.buy_order.accepted_seller", order.requirementText(), gross - fee, fee, CurrencyHandler.currencyText()).formatted(Formatting.GREEN))
                 broadcastEvent(server, if (order.isOpen()) "UPDATED" else "CLOSED", buyOrderToEntry(order))
             }
         }
