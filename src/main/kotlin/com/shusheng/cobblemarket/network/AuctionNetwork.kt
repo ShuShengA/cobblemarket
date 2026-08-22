@@ -771,10 +771,20 @@ object AuctionNetwork {
             }
             // 聊天通知：卖家（成交/流拍）+ 赢家（离线则入队补发）
             if (auction.status == com.shusheng.cobblemarket.market.AuctionStatus.SOLD) {
+                // 手续费同结算公式重算：卖家到手 = 成交价 - 手续费，消息里一并说明避免疑问
+                val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.auctionFeePercent
+                val fee = if (feePercent > 0)
+                    Math.ceil(auction.currentPrice * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                else 0
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, auction.sellerUuid,
-                    Text.translatable("cobblemarket.auction.settled_seller", auction.speciesText(), fmtLimit(auction.currentPrice.toLong()) + " ◆")
-                        .formatted(Formatting.GOLD)
+                    Text.translatable(
+                        "cobblemarket.auction.settled_seller",
+                        auction.speciesText(),
+                        fmtLimit(auction.currentPrice.toLong()) + " ◆",
+                        fmtLimit((auction.currentPrice - fee).toLong()) + " ◆",
+                        fmtLimit(fee.toLong()) + " ◆"
+                    ).formatted(Formatting.GOLD)
                 )
                 auction.currentBidderUuid?.let { winnerUuid ->
                     com.shusheng.cobblemarket.market.OfflineMessageState.notify(
