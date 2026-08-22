@@ -426,22 +426,11 @@ class BuyOrderScreen(
         // 弹窗打开时行按钮保持隐藏：事件广播触发的重建会新建默认可见的按钮，
         // 必须在这里拦截（弹窗关闭时 closeDialogs→init 会正常重建）
         if (anyDialogOpen()) return
+        // 管理员模式无行按钮：点击行直接弹下架确认（照 AdminAuctionScreen）
+        if (adminMode) return
         val startY = getListStartY()
         displayList().drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
             val y = startY + i * rowHeight
-            if (adminMode) {
-                // 管理员模式：每行一个「下架」按钮
-                val btn = NineSliceButton(
-                    rowLeftX() + rowW() - 50, y + 4, 44, 16,
-                    Text.translatable("cobblemarket.buy_order.force_cancel"),
-                    { openForceCancelDialog(entry) },
-                    texture = BUY_ORDER_BUTTON_TEXTURE,
-                    texH = BUY_ORDER_BUTTON_TEX_H
-                )
-                rowButtons.add(btn)
-                addDrawableChild(btn)
-                return@forEachIndexed
-            }
             val mine = isMine(entry)
             val hasPending = entry.pending != null
             // 行按钮语义：我的+待确认=处理交付；我的=关闭；他人+待确认=待确认（锁定）；他人=交付
@@ -711,7 +700,8 @@ class BuyOrderScreen(
             if (entry.pending == null) {
                 val countStr = countText(entry)
                 val rightText = if (countStr.isEmpty()) priceRangeText(entry) else "$countStr  ${priceRangeText(entry)}"
-                val btnLeft = rowL + rowW() - 50
+                // 管理员模式无行按钮，价格区间贴右缘；普通模式给行按钮留位
+                val btnLeft = if (adminMode) rowL + rowW() - 4 else rowL + rowW() - 50
                 context.drawTextWithShadow(textRenderer, rightText, btnLeft - 4 - textRenderer.getWidth(rightText), y + 7, 0x55FFFF)
             }
         }
@@ -2143,6 +2133,21 @@ class BuyOrderScreen(
     // ── 交互 ──
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        // 管理员模式：点击行弹下架确认（照 AdminAuctionScreen；弹窗打开时行点击由 anyDialogOpen 拦截下的空列表跳过）
+        if (adminMode && forceCancelEntry == null) {
+            val startY = getListStartY()
+            val rowL = rowLeftX()
+            // mouseX/mouseY 是 Double，不能用 in IntRange，显式比较
+            if (mouseX >= rowL && mouseX < rowL + rowW() && mouseY >= startY) {
+                val row = ((mouseY - startY) / rowHeight).toInt()
+                val list = displayList()
+                val actualIdx = scrollOffset + row
+                if (actualIdx in list.indices) {
+                    openForceCancelDialog(list[actualIdx])
+                    return true
+                }
+            }
+        }
         val result = super.mouseClicked(mouseX, mouseY, button)
         // 输入框失焦
         if (focused is TextFieldWidget && !isMouseOverAnyInput(mouseX, mouseY)) {
