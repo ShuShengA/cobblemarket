@@ -101,10 +101,7 @@ object CobbleMarketClient : ClientModInitializer {
             if (ePressed && !wasEPressed) {
                 val screen = client.currentScreen
                 val inputFocused = screen?.focused is TextFieldWidget
-                if (!inputFocused && (screen is MarketScreen || screen is SellSelectScreen || screen is HistoryScreen || screen is MarketEntryScreen ||
-                    screen is ItemMarketScreen || screen is ItemSellScreen || screen is ItemReturnScreen || screen is PokemonReturnScreen ||
-                    screen is BuyConfirmScreen || screen is AdminScreen || screen is AdminPokemonScreen || screen is AdminItemScreen || screen is AdminBanScreen || screen is BlacklistScreen || screen is PriceLimitScreen || screen is AuctionScreen || screen is AuctionCreateScreen)
-                ) {
+                if (!inputFocused && isMarketScreen(screen)) {
                     client.setScreen(null)
                 }
             }
@@ -426,3 +423,15 @@ object CobbleMarketClient : ClientModInitializer {
         )
     }
 }
+
+/**
+ * 支持按 E 返回游戏的本模组界面白名单。
+ * 新增界面要支持 E 键关闭 = 在这里补一行（别把白名单散回 tick 里）。
+ * 输入框聚焦时 E 不生效（打字保护在调用侧判断）。
+ */
+private fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean =
+    s is MarketScreen || s is SellSelectScreen || s is HistoryScreen || s is MarketEntryScreen ||
+        s is ItemMarketScreen || s is ItemSellScreen || s is ItemReturnScreen || s is PokemonReturnScreen ||
+        s is BuyConfirmScreen || s is AdminScreen || s is AdminPokemonScreen || s is AdminItemScreen || s is AdminBanScreen ||
+        s is BlacklistScreen || s is PriceLimitScreen || s is AuctionScreen || s is AuctionCreateScreen ||
+        s is BuyOrderScreen || s is AdminAuctionScreen
