@@ -43,7 +43,9 @@ data class AuctionEntry(
     val currentBidderUuid: UUID?,
     val currentBidderName: String,
     val bidCount: Int,
-    val endsAt: Long
+    val endsAt: Long,
+    /** 创建时间：客户端「最新在上」排序用 */
+    val createdAt: Long
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(id)
@@ -64,6 +66,7 @@ data class AuctionEntry(
         buf.writeString(currentBidderName)
         buf.writeInt(bidCount)
         buf.writeLong(endsAt)
+        buf.writeLong(createdAt)
     }
 
     companion object {
@@ -83,7 +86,8 @@ data class AuctionEntry(
             currentBidderUuid = if (buf.readBoolean()) buf.readUuid() else null,
             currentBidderName = buf.readString(),
             bidCount = buf.readInt(),
-            endsAt = buf.readLong()
+            endsAt = buf.readLong(),
+            createdAt = buf.readLong()
         )
     }
 }
@@ -105,7 +109,8 @@ fun auctionToEntry(a: AuctionListing): AuctionEntry = AuctionEntry(
     currentBidderUuid = a.currentBidderUuid,
     currentBidderName = a.currentBidderName,
     bidCount = a.bids.size,
-    endsAt = a.endsAt
+    endsAt = a.endsAt,
+    createdAt = a.createdAt
 )
 
 // ── C2S：OP 强制下架拍卖 ──

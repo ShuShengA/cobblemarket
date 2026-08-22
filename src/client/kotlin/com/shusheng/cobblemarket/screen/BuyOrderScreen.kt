@@ -415,7 +415,7 @@ class BuyOrderScreen(
             // 搜索：物种名/物品名/买家名（本地过滤，照拍卖场模式）
             query == null || entryName(entry).contains(query, ignoreCase = true) ||
                 entry.buyerName.contains(query, ignoreCase = true)
-        }.sortedBy { it.createdAt }
+        }.sortedByDescending { it.createdAt }
     }
 
     private fun displayCount() = displayList().size
