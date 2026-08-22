@@ -612,7 +612,7 @@ class BuyOrderScreen(
         //     渲染顺序早于 children 中的弹窗遮罩） ──
         // 弹窗打开时直接跳过前景绘制——遮罩/衬底在不同渲染层（文字/模型）下不可靠，
         // 行内容不渲染才是彻底无透的保证（黑名单/价格限制弹窗同款）
-        if (createTabButtons.isNotEmpty() || deliverEntry != null || reviewEntry != null) return
+        if (createTabButtons.isNotEmpty() || deliverEntry != null || reviewEntry != null || forceCancelEntry != null) return
 
         val centerX = width / 2
         val leftX = centerX - panelWidth / 2
