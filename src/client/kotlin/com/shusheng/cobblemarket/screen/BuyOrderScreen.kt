@@ -425,7 +425,7 @@ class BuyOrderScreen(
         rowButtons.clear()
         // 弹窗打开时行按钮保持隐藏：事件广播触发的重建会新建默认可见的按钮，
         // 必须在这里拦截（弹窗关闭时 closeDialogs→init 会正常重建）
-        if (deliverEntry != null || createTabButtons.isNotEmpty() || reviewEntry != null || forceCancelEntry != null) return
+        if (anyDialogOpen()) return
         val startY = getListStartY()
         displayList().drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
             val y = startY + i * rowHeight
@@ -473,6 +473,10 @@ class BuyOrderScreen(
     private fun confirmCloseOrder(entry: BuyOrderEntry) {
         ClientPlayNetworking.send(CancelBuyOrderPayload(entry.id))
     }
+
+    /** 任意弹窗打开中（创建/交付/审查/强制下架）——所有「弹窗状态检查点」统一走这里，新弹窗只加一处 */
+    private fun anyDialogOpen(): Boolean =
+        createTabButtons.isNotEmpty() || deliverEntry != null || reviewEntry != null || forceCancelEntry != null
 
     // ── 管理员强制下架确认弹窗（照 AdminAuctionScreen 下架弹窗模板） ──
 
@@ -612,7 +616,7 @@ class BuyOrderScreen(
         //     渲染顺序早于 children 中的弹窗遮罩） ──
         // 弹窗打开时直接跳过前景绘制——遮罩/衬底在不同渲染层（文字/模型）下不可靠，
         // 行内容不渲染才是彻底无透的保证（黑名单/价格限制弹窗同款）
-        if (createTabButtons.isNotEmpty() || deliverEntry != null || reviewEntry != null || forceCancelEntry != null) return
+        if (anyDialogOpen()) return
 
         val centerX = width / 2
         val leftX = centerX - panelWidth / 2
@@ -650,7 +654,7 @@ class BuyOrderScreen(
         }
 
         // 弹窗打开时行内图标不渲染（物品/精灵模型图标走独立渲染层，z 平移盖不住，会刺穿遮罩）
-        val anyDialogOpen = createTabButtons.isNotEmpty() || deliverEntry != null || reviewEntry != null || forceCancelEntry != null
+        val anyDialogOpen = anyDialogOpen()
         displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
             val y = startY + i * rowHeight
             val origIndex = entries.indexOf(entry)
