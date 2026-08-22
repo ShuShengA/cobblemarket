@@ -1160,7 +1160,8 @@ class BuyOrderScreen(
             if (!natureListOpen) {
                 context.drawCenteredTextWithShadow(textRenderer,
                     Text.translatable("cobblemarket.buy_order.frozen_hint",
-                        (createMaxPriceField?.text?.toIntOrNull() ?: 0).toLong()).string,
+                        (createMaxPriceField?.text?.toIntOrNull() ?: 0).toLong(),
+                        com.shusheng.cobblemarket.client.displayActiveCurrency()).string,
                     centerX, dialogY + 214, 0xAAAAAA)
             }
         } else {
@@ -1179,7 +1180,8 @@ class BuyOrderScreen(
                 val maxPrice = createMaxPriceField?.text?.toIntOrNull() ?: 0
                 val count = createCountField?.text?.toIntOrNull() ?: 0
                 context.drawCenteredTextWithShadow(textRenderer,
-                    Text.translatable("cobblemarket.buy_order.frozen_hint", maxPrice.toLong() * count).string,
+                    Text.translatable("cobblemarket.buy_order.frozen_hint", maxPrice.toLong() * count,
+                        com.shusheng.cobblemarket.client.displayActiveCurrency()).string,
                     centerX, dialogY + 146, 0xAAAAAA)
             }
         }

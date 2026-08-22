@@ -778,12 +778,14 @@ object AuctionNetwork {
                 else 0
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, auction.sellerUuid,
+                    // 聊天消息用货币名（◆ 只用于行内显示）
                     Text.translatable(
                         "cobblemarket.auction.settled_seller",
                         auction.speciesText(),
-                        fmtLimit(auction.currentPrice.toLong()) + " ◆",
-                        fmtLimit((auction.currentPrice - fee).toLong()) + " ◆",
-                        fmtLimit(fee.toLong()) + " ◆"
+                        fmtLimit(auction.currentPrice.toLong()),
+                        CurrencyHandler.currencyText(),
+                        fmtLimit((auction.currentPrice - fee).toLong()),
+                        fmtLimit(fee.toLong())
                     ).formatted(Formatting.GOLD)
                 )
                 auction.currentBidderUuid?.let { winnerUuid ->
