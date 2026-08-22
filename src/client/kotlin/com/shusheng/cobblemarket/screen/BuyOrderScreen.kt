@@ -627,7 +627,8 @@ class BuyOrderScreen(
             if (System.currentTimeMillis() > resultUntil) {
                 resultMsg = null
             } else {
-                context.drawCenteredTextWithShadow(textRenderer, resultMsg!!, centerX, height - 40, 0x55FF55)
+                // height-52：面板底部边框带（height-48 起）上方 4px，避免提示文字与边框重合
+                context.drawCenteredTextWithShadow(textRenderer, resultMsg!!, centerX, height - 52, 0x55FF55)
             }
         }
 
