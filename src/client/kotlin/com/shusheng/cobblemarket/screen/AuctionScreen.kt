@@ -574,7 +574,7 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
             }
             query == null || displayName(entry).contains(query, ignoreCase = true) ||
                 entry.species.contains(query, ignoreCase = true) || entry.sellerName.contains(query, ignoreCase = true)
-        }.sortedBy { it.endsAt }
+        }.sortedByDescending { it.createdAt }
     }
 
     private fun displayCount() = filtered().size
