@@ -245,6 +245,7 @@ object BanNetwork {
                         reason = info.reason
                     )
                 }
+                CobbleMarket.LOGGER.info("[BAN ORDER DEBUG] send order: {}", entries.map { it.playerName })
                 ServerPlayNetworking.send(player, BanListDataPayload(entries.reversed()))
             }
         }

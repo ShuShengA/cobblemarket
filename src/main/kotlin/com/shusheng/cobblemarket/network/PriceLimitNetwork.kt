@@ -229,6 +229,7 @@ object PriceLimitNetwork {
             val server = player.server
             server.execute {
                 val entries = PokemonPriceLimitState.get(server).getAll()
+                CobbleMarket.LOGGER.info("[PRICE LIMIT ORDER DEBUG] send order: {}", entries.map { it.speciesId })
                 ServerPlayNetworking.send(player, PokemonPriceLimitDataPayload(entries.reversed()))
             }
         }
@@ -275,6 +276,7 @@ object PriceLimitNetwork {
                     )
                 )
                 val entries = PokemonPriceLimitState.get(server).getAll()
+                CobbleMarket.LOGGER.info("[PRICE LIMIT ORDER DEBUG] send order: {}", entries.map { it.speciesId })
                 ServerPlayNetworking.send(player, PokemonPriceLimitDataPayload(entries.reversed()))
             }
         }
@@ -286,6 +288,7 @@ object PriceLimitNetwork {
             server.execute {
                 PokemonPriceLimitState.get(server).remove(payload.speciesId, payload.vCount, payload.shinyFilter, payload.aspects, payload.htFilter)
                 val entries = PokemonPriceLimitState.get(server).getAll()
+                CobbleMarket.LOGGER.info("[PRICE LIMIT ORDER DEBUG] send order: {}", entries.map { it.speciesId })
                 ServerPlayNetworking.send(player, PokemonPriceLimitDataPayload(entries.reversed()))
             }
         }
@@ -296,6 +299,7 @@ object PriceLimitNetwork {
             val server = player.server
             server.execute {
                 val entries = ItemPriceLimitState.get(server).getAll()
+                CobbleMarket.LOGGER.info("[ITEM PRICE LIMIT ORDER DEBUG] send order: {}", entries.map { it.itemId })
                 ServerPlayNetworking.send(player, ItemPriceLimitDataPayload(entries.reversed()))
             }
         }
@@ -328,6 +332,7 @@ object PriceLimitNetwork {
                 payload.originalItemId?.let { state.remove(it) }
                 state.add(ItemPriceLimitEntry(itemId, minPrice, maxPrice))
                 val entries = ItemPriceLimitState.get(server).getAll()
+                CobbleMarket.LOGGER.info("[ITEM PRICE LIMIT ORDER DEBUG] send order: {}", entries.map { it.itemId })
                 ServerPlayNetworking.send(player, ItemPriceLimitDataPayload(entries.reversed()))
             }
         }
@@ -339,6 +344,7 @@ object PriceLimitNetwork {
             server.execute {
                 ItemPriceLimitState.get(server).remove(payload.itemId)
                 val entries = ItemPriceLimitState.get(server).getAll()
+                CobbleMarket.LOGGER.info("[ITEM PRICE LIMIT ORDER DEBUG] send order: {}", entries.map { it.itemId })
                 ServerPlayNetworking.send(player, ItemPriceLimitDataPayload(entries.reversed()))
             }
         }
