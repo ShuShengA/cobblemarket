@@ -358,9 +358,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             Text.translatable("cobblemarket.price_limit.add_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
 
-        // 本地校验错误提示（服务端校验兜底）
+        // 本地校验错误提示（服务端校验兜底）：画在弹窗下沿外，避免与 +30 起的输入框/控件重叠
         dialogError?.let {
-            context.drawCenteredTextWithShadow(textRenderer, it, centerX, dialogY + 26, 0xFF5555)
+            context.drawCenteredTextWithShadow(textRenderer, it, centerX, dialogY + dialogH + 8, 0xFF5555)
         }
 
         if (!vListOpen && !formListOpen) {
@@ -467,8 +467,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             Text.translatable("cobblemarket.price_limit.add_item_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
 
+        // 本地校验错误提示：画在弹窗下沿外，避免与 +30 起的物品输入框/控件重叠
         dialogError?.let {
-            context.drawCenteredTextWithShadow(textRenderer, it, centerX, dialogY + 26, 0xFF5555)
+            context.drawCenteredTextWithShadow(textRenderer, it, centerX, dialogY + dialogH + 8, 0xFF5555)
         }
 
         if (!itemListOpen) {
