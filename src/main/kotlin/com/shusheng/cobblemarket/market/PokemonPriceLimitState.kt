@@ -80,7 +80,10 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
     private val entries = mutableMapOf<EntryKey, PokemonPriceLimitEntry>()
 
     fun add(entry: PokemonPriceLimitEntry) {
-        entries[EntryKey(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter)] = entry
+        // 先删后插：同物品价格限制一致的语义——已存在 key 的 put 不移动位置，重复添加会留在旧位置
+        val key = EntryKey(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter)
+        entries.remove(key)
+        entries[key] = entry
         markDirty()
     }
 
