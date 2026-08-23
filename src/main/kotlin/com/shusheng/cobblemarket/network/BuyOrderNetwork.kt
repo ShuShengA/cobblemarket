@@ -978,7 +978,7 @@ object BuyOrderNetwork {
                 }
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, pending.sellerUuid,
                     // 到账金额 + 手续费一并提示：买家付的是 gross，卖家到手 gross-fee，不说清会产生疑问
-                    Text.translatable("cobblemarket.buy_order.accepted_seller", order.requirementText(), CurrencyHandler.goldAmount(gross - fee), CurrencyHandler.goldAmount(fee), CurrencyHandler.goldCurrencyText()).formatted(Formatting.GREEN))
+                    Text.translatable("cobblemarket.buy_order.accepted_seller", order.requirementText(), CurrencyHandler.goldAmount(gross - fee), CurrencyHandler.goldCurrencyText(), CurrencyHandler.goldAmount(fee), CurrencyHandler.goldCurrencyText()).formatted(Formatting.GREEN))
                 broadcastEvent(server, if (order.isOpen()) "UPDATED" else "CLOSED", buyOrderToEntry(order))
             }
         }

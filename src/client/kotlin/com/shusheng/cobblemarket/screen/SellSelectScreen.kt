@@ -295,7 +295,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
 
     private fun rebuildFiltered() {
         syncIvFields()
-        filteredCache = pokemonList.filter { p ->
+        // 先 withIndex 再过滤：IndexedValue.index 保持 pokemonList 原始下标，
+        // 供图标缓存 iconData（按原列表索引构建）正确取值（filteredCache.withIndex() 的序号是过滤后位置，搜索后首行图标会错位）
+        indexedFilteredCache = pokemonList.withIndex().filter { (_, p) ->
             val q = searchField?.text?.trim()?.takeIf { it.isNotEmpty() }
             (q == null || speciesDisplay(p).contains(q, ignoreCase = true) || p.speciesName.contains(q, ignoreCase = true)) &&
             (!shinyOnly || p.shiny) &&
@@ -314,8 +316,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
                 2 -> !(p.htHp >= 0 || p.htAtk >= 0 || p.htDef >= 0 || p.htSpAtk >= 0 || p.htSpDef >= 0 || p.htSpd >= 0)
                 else -> true
             }
-        }
-        indexedFilteredCache = filteredCache.withIndex().toList()
+        }.toList()
+        filteredCache = indexedFilteredCache.map { it.value }
     }
 
     private fun updateGenderButton() {
