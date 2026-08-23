@@ -4,14 +4,33 @@
 
 ### New Feature
 
-- New "Drop overflow" toggle in Settings (off by default): when enabled, claiming item returns drops anything that doesn't fit into your inventory onto the ground (they may despawn or be picked up by others — at your own risk); when off, the remainder stays in pending returns for next time
+- New "Claim overflow" toggle in Settings (off by default): when enabled, claiming item returns drops anything that doesn't fit into your inventory onto the ground (they may despawn or be picked up by others — at your own risk); when off, the remainder stays in pending returns for next time
 - **Admin "All Buy Orders" screen**: new entry in the admin panel to view every buy order and force-cancel them — the buyer's frozen money is refunded, pending deliveries return to their sellers, and both sides get notified (queued for offline players); admin panel buttons rearranged into a two-column layout
+- **Market entry animation**: opening the market entry via hotkey K / smartphone app / other entry points plays a drop animation — the animation image falls from above the screen onto the entry position while scaling up, holds briefly, then fades out revealing the entry screen; new "Market Entry Animation" toggle in Settings (on by default, per-player)
 
 ### Changes
 
 - Quantity input limit raised from 3 to 4 digits: item sell count, item buy count, and auction item count now accept up to 9999
 - New entries in the ban, blacklist, and price limit screens appear at the top (newest first) for easier management
 - Auction house and buy order lists also show the newest first (live new listings insert at the top)
+- Entry screen background redrawn at 256×213 and displayed larger (bottom aligned to the original bottom edge, shifted down 20px, expanding upward so the hotbar/health/armor HUD stays visible); button layout unchanged; admin panel background synced and aligned exactly with the entry screen (no jump when switching between them); several textures redrawn
+- Entry screen layout: title bolded and moved up; rows 1–2 spacing restored to 8px (the OP-only row stays put, keeping symmetric 2px gaps to the divider line and the switch buttons); divider line ends clear the background border; market-closed banner moved down to avoid overlapping the title
+- Admin panel: back button centered when Cobbreeding is not installed; title matches the entry screen position and style (gold + bold); buttons moved down
+- Pagination layout revamp (pokemon market, all listed pokemon, item market, all listed items): a divider line symmetric to the top one added below the list; prev/next buttons now sit between the divider and the panel bottom edge, no longer covering the bottom border
+- Panel background stitching fix: in all 15 screens with three-part backgrounds, the last middle slice is drawn clipped to the remaining height and no longer covers the rounded corners of the bottom slice
+- Panel texture consolidation: buy order and auction screens now use the shared middle/bottom textures; three duplicated dedicated textures removed; buy order panel textures upgraded to 640×32
+- Buy order entry button icon upgraded to a 48×48 high-res texture (displayed at 18×18, same sharpness as the market master switch)
+- Divider line added between the button row and the record list in the transaction history screen (both personal and all-history views)
+- Added docs/save-data-locations.md: where each feature's data lives in the world save
+- Transaction history CSVs gain a "Details" column: full Pokémon stats (level/shiny/IVs/hyper training/nature/ability/gender/ball/held item/form) and item NBT as text, so compensation can recreate items faithfully from the ledger
+
+### Fixes
+
+- Fixed item icons (balls/held items — drawItem render layer) and some Pokémon model icons (emissive layer) piercing through dialog masks — present in existing screens (market/auction/admin) since beta.1; item icons are now hidden while dialogs are open (render-layer limit), and Pokémon 3D icons are dimmed via color parameters
+- Fixed new item blacklist entries still appearing at the bottom of the list (the send path was missing the reverse); re-adding the same entry in blacklist/ban/price limit now moves it to the top instead of keeping its old position
+- Fixed buy order creation dialog validation messages being darkened and invisible under the dialog overlay (now rendered above the overlay)
+- Fixed Int overflow in fee calculation (auction settlement, seller notification, and pokemon listing): price × feePercent could wrap around above ~214.7M, producing a negative or zero fee (fee evasion, phantom seller credit, or data corruption in the extreme case) — now computed in Long
+- Fixed sustained FPS drops while market screens are open — they stay smooth no matter how many listings there are
 
 ## 1.0.0-beta.6 (in development, unreleased)
 
@@ -42,7 +61,7 @@
 
 - Nature mint compatibility: minted Pokémon show "italic base nature (effective nature Mint)", e.g. *Timid* (Bold Mint); unminted show normally; nature filters and buy-order matching use the effective nature
 - Gender icons (♂ blue / ♀ red, baseline-aligned) added to the name line of every screen showing Pokémon details (market/auction/admin/returns/confirm dialogs)
-- Pokémon acquisition celebration: **buying a Pokémon, winning an auction, or accepting a buy order delivery** plays a **bouncing ball animation** of that Pokémon at the center of the receiver's screen (drops from above while scaling up, then bounces 3 times with decreasing height, fading out); the auction case stays synced with the gavel bell; rendered via a client-side Mixin **on top of all screens** — visible with any screen open and outside the relevant screen; multiple Pokémon obtained in one batch play one after another instead of overriding each other; **two layers of switches**: server owners can disable it globally via the `celebrationAnimationEnabled` config (on by default; the server then stops sending the packet), and players get per-scenario toggles under the **Settings** button at the bottom-right of the market entry screen — one for **market purchases** and one for **auctions / buy orders** (the former is by far the most frequent, the latter two are rare and share a switch; personal settings stored in `config/cobblemarket-client.json`). Expired returns, cancelled listings, admin force-removals and claiming from pending returns do not play — those Pokémon were already yours
+- Pokémon acquisition celebration: **buying a Pokémon, winning an auction, or accepting a buy order delivery** plays a bouncing-ball animation of that Pokémon on the receiver's screen (synced with the gavel bell for auctions), visible over any screen; multiple Pokémon obtained in one batch play one after another; **two layers of switches**: server owners can disable it globally via the `celebrationAnimationEnabled` config (on by default), and players get per-scenario toggles under the **Settings** button at the bottom-right of the market entry screen — one for **market purchases** and one for **auctions / buy orders**. Expired returns, cancelled listings, admin force-removals and claiming from pending returns do not play — those Pokémon were already yours
 - The ban screen's player name input now suggests names from every player who ever logged into this save (including offline, from usercache) — type a prefix and pick, no more mistyped names
 
 ### Changes
@@ -60,7 +79,7 @@
 
 ### Fixes
 
-- Fixed item icons (balls/held items — drawItem render layer) and some Pokémon model icons (emissive layer) piercing through dialog masks — present in existing screens (market/auction/admin) since beta.1; item icons are now hidden while dialogs are open (render-layer limit), and Pokémon 3D icons are dimmed via color parameters
+- Fixed trade data loss when the server shuts down abnormally (killed process / crash): listed Pokémon or items could vanish — market data is now force-saved within seconds after every trade and immediately when a player disconnects, no longer relying on the autosave cycle; online OPs get a red-text alert if a save ever fails
 
 ## 1.0.0-beta.5 (development complete, unreleased)
 
