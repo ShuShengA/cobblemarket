@@ -74,7 +74,8 @@ class TransactionHistory private constructor() : PersistentState() {
                     buyerName = "",
                     species = e.listing.extraData["speciesKey"] ?: "cobblemon.species.${e.listing.species.lowercase()}.name",
                     price = e.listing.price,
-                    fee = e.fee
+                    fee = e.fee,
+                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny)
                 ))
             }
             MarketEvents.PURCHASE.subscribe { e ->
@@ -88,7 +89,8 @@ class TransactionHistory private constructor() : PersistentState() {
                     buyerName = e.buyerName,
                     species = e.listing.extraData["speciesKey"] ?: "cobblemon.species.${e.listing.species.lowercase()}.name",
                     price = e.price,
-                    fee = 0
+                    fee = 0,
+                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny)
                 ))
             }
             MarketEvents.CANCEL.subscribe { e ->
@@ -102,7 +104,8 @@ class TransactionHistory private constructor() : PersistentState() {
                     buyerName = "",
                     species = e.listing.extraData["speciesKey"] ?: "cobblemon.species.${e.listing.species.lowercase()}.name",
                     price = e.listing.price,
-                    fee = 0
+                    fee = 0,
+                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny)
                 ))
             }
             MarketEvents.RETURN.subscribe { e ->
@@ -116,7 +119,8 @@ class TransactionHistory private constructor() : PersistentState() {
                     buyerName = "",
                     species = e.listing.extraData["speciesKey"] ?: "cobblemon.species.${e.listing.species.lowercase()}.name",
                     price = e.listing.price,
-                    fee = 0
+                    fee = 0,
+                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny)
                 ))
             }
         }

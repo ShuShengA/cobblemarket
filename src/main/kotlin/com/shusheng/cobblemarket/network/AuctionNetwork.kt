@@ -453,6 +453,8 @@ object AuctionNetwork {
                     return@execute
                 }
                 AuctionState.get(server).addAuction(auction)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, Text.translatable("cobblemarket.auction.created")))
                 broadcastEvent(server, "NEW", auctionToEntry(auction))
             }
@@ -580,6 +582,8 @@ object AuctionNetwork {
                     returnedAt = null
                 )
                 AuctionState.get(server).addAuction(auction)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, Text.translatable("cobblemarket.auction.created")))
                 broadcastEvent(server, "NEW", auctionToEntry(auction))
             }
@@ -673,6 +677,8 @@ object AuctionNetwork {
                 auction.currentBidderUuid = player.uuid
                 auction.currentBidderName = player.name.string
                 AuctionState.get(server).markModified()
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, Text.translatable("cobblemarket.auction.bid_placed")))
                 broadcastEvent(server, "BID", auctionToEntry(auction))
             }
@@ -711,6 +717,8 @@ object AuctionNetwork {
                     )
                 }
                 broadcastEvent(server, "SETTLED", auctionToEntry(auction))
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, Text.translatable("cobblemarket.auction.force_cancelled")))
             }
         }
@@ -758,6 +766,10 @@ object AuctionNetwork {
     /** 结算到期拍卖并广播 SETTLED 事件（各数据请求入口调用，实现惰性结算） */
     fun settleAndBroadcast(server: MinecraftServer) {
         val settled = AuctionState.get(server).settleExpiredAuctions(server, System.currentTimeMillis())
+        if (settled.isNotEmpty()) {
+            // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+            com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+        }
         settled.forEach { auction ->
             broadcastEvent(server, "SETTLED", auctionToEntry(auction))
             // 成交落槌：定向发给卖家/赢家/所有出价参与者（在线的），无关玩家不打扰
@@ -774,7 +786,8 @@ object AuctionNetwork {
                 // 手续费同结算公式重算：卖家到手 = 成交价 - 手续费，消息里一并说明避免疑问
                 val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.auctionFeePercent
                 val fee = if (feePercent > 0)
-                    Math.ceil(auction.currentPrice * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                    // toLong 先提升：与结算同公式，防 Int×Int 环绕溢出（消息与扣费保持一致）
+                    Math.ceil(auction.currentPrice.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                 else 0
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, auction.sellerUuid,

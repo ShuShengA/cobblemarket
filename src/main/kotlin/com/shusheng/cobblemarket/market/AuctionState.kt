@@ -218,7 +218,8 @@ class AuctionState private constructor() : PersistentState() {
             if (sold) {
                 val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.auctionFeePercent
                 val fee = if (feePercent > 0)
-                    Math.ceil(auction.currentPrice * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                    // toLong 先提升：Int×Int 在价格×费率超过 21.5 亿时环绕溢出（fee 可算成负/0，逃税或凭空生钱）
+                    Math.ceil(auction.currentPrice.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                 else 0
                 MarketState.get(server).addPendingBalance(auction.sellerUuid, (auction.currentPrice - fee).toLong())
                 try {
@@ -237,7 +238,11 @@ class AuctionState private constructor() : PersistentState() {
                             // 精灵用翻译 key（历史界面客户端翻译显示中文名），物品为 itemId
                             species = auction.extraData["speciesKey"] ?: auction.species,
                             price = auction.currentPrice,
-                            fee = fee
+                            fee = fee,
+                            detail = if (auction.type == AuctionType.POKEMON)
+                                com.shusheng.cobblemarket.util.RecordDetail.pokemon(auction.extraData, auction.level, auction.shiny)
+                            else
+                                com.shusheng.cobblemarket.util.RecordDetail.item(auction.itemNbt, auction.count)
                         )
                     )
                 } catch (e: Exception) {

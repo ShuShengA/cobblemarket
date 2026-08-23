@@ -203,6 +203,8 @@ object BanNetwork {
                     Text.translatable("cobblemarket.ban.banned", target.second)
                 else
                     Text.translatable("cobblemarket.ban.banned_until", target.second, payload.duration)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, msg))
 
                 server.playerManager.getPlayer(target.first)?.sendMessage(
@@ -219,6 +221,8 @@ object BanNetwork {
             server.execute {
                 val removed = BanState.get(server).unban(payload.playerUuid)
                 if (removed != null) {
+                    // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                    com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                     ServerPlayNetworking.send(player, MarketResultPayload(true, Text.translatable("cobblemarket.ban.unbanned", removed.playerName)))
                 } else {
                     ServerPlayNetworking.send(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.not_banned", payload.playerUuid.toString())))
