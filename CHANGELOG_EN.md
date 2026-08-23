@@ -44,10 +44,12 @@
 - The black dot on selected tabs/lists is drawn without shadow (keeps it a perfect circle)
 - All type-colored Pokémon names across screens now render with a shadow (dark type colors stay readable on gray row backgrounds)
 - Pokémon Market page button spacing optimized to match the admin listing screen, showing one extra list row at some window heights
+- Transaction history CSVs gain a "Details" column: full Pokémon stats (level/shiny/IVs/hyper training/nature/ability/gender/ball/held item/form) and item NBT as text, so compensation can recreate items faithfully from the ledger
 
 ### Fixes
 
 - Fixed item icons (balls/held items — drawItem render layer) and some Pokémon model icons (emissive layer) piercing through dialog masks — present in existing screens (market/auction/admin) since beta.1; item icons are now hidden while dialogs are open (render-layer limit), and Pokémon 3D icons are dimmed via color parameters
+- Fixed trade data loss when the server shuts down abnormally (killed process / crash): listed Pokémon or items could vanish — market data is now force-saved within seconds after every trade and immediately when a player disconnects, no longer relying on the autosave cycle; online OPs get a red-text alert if a save ever fails
 
 ## 1.0.0-beta.5 (development complete, unreleased)
 
