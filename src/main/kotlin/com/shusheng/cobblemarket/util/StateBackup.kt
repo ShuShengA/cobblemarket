@@ -63,6 +63,11 @@ object StateBackup {
 
     /** 正常关服后调用：此时 PersistentState 刚写完盘，刷新 .bak 为最新完整数据。 */
     fun backupOnStop(server: MinecraftServer) {
+        backupAll(server)
+    }
+
+    /** 通用备份：交易保存/断开保存前调用，刷新 .bak 为当前 .dat 内容（防保存过程断电写坏） */
+    fun backupAll(server: MinecraftServer) {
         try {
             val stateFiles = listStateFiles(server) ?: return
             stateFiles.forEach { file -> copyToBackup(file) }

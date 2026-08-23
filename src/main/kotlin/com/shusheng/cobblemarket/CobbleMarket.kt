@@ -59,6 +59,13 @@ object CobbleMarket : ModInitializer {
 
 		ServerPlayConnectionEvents.DISCONNECT.register { handler, _ ->
 			com.shusheng.cobblemarket.util.RequestThrottle.onDisconnect(handler.player.uuid)
+			// 玩家退出时 MC 立即保存其玩家数据（货/钱已扣就此落盘），模组状态立即追上，
+			// 否则此后杀进程/崩溃会形成错位导致货蒸发（见 PersistHelper 注释）
+			com.shusheng.cobblemarket.util.PersistHelper.onPlayerDisconnect(handler.player.server)
+		}
+		// 交易后节流全量落盘的定时检查（见 PersistHelper）
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register { server ->
+			com.shusheng.cobblemarket.util.PersistHelper.tick(server)
 		}
 		ServerPlayConnectionEvents.JOIN.register { handler, _, _ ->
 			val player = handler.player

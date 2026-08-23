@@ -274,6 +274,8 @@ object PriceLimitNetwork {
                         payload.htFilter.coerceIn(PokemonPriceLimitEntry.HT_ANY, PokemonPriceLimitEntry.HT_NONE)
                     )
                 )
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val entries = PokemonPriceLimitState.get(server).getAll()
                 ServerPlayNetworking.send(player, PokemonPriceLimitDataPayload(entries))
             }
@@ -285,6 +287,8 @@ object PriceLimitNetwork {
             val server = player.server
             server.execute {
                 PokemonPriceLimitState.get(server).remove(payload.speciesId, payload.vCount, payload.shinyFilter, payload.aspects, payload.htFilter)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val entries = PokemonPriceLimitState.get(server).getAll()
                 ServerPlayNetworking.send(player, PokemonPriceLimitDataPayload(entries))
             }
@@ -327,6 +331,8 @@ object PriceLimitNetwork {
                 // 编辑语义：替换原条目（改选了物品时，旧条目不再残留）
                 payload.originalItemId?.let { state.remove(it) }
                 state.add(ItemPriceLimitEntry(itemId, minPrice, maxPrice))
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val entries = ItemPriceLimitState.get(server).getAll()
                 ServerPlayNetworking.send(player, ItemPriceLimitDataPayload(entries))
             }
@@ -338,6 +344,8 @@ object PriceLimitNetwork {
             val server = player.server
             server.execute {
                 ItemPriceLimitState.get(server).remove(payload.itemId)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val entries = ItemPriceLimitState.get(server).getAll()
                 ServerPlayNetworking.send(player, ItemPriceLimitDataPayload(entries))
             }

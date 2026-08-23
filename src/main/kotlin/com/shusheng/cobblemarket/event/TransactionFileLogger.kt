@@ -26,8 +26,8 @@ object TransactionFileLogger {
             val date = dateFormat.format(instant)
             if (date != currentDate) {
                 currentDate = date
-                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,精灵,价格,手续费")
-                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Species,Price,Fee")
+                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,精灵,价格,手续费,详情")
+                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Species,Price,Fee,Details")
             }
             val zhFile = currentZhFile ?: return
             val enFile = currentEnFile ?: return
@@ -41,11 +41,94 @@ object TransactionFileLogger {
     private fun resolveFile(date: String, lang: String, header: String): File {
         val dir = FabricLoader.getInstance().configDir.resolve("cobblemarket/history").toFile()
         dir.mkdirs()
+        ensureReadme(dir)
         val file = File(dir, "history_${date}_${lang}.csv")
+        if (file.exists()) {
+            // 旧版本头部缺「详情」列：直接 append 会列错位，重命名保留旧文件后按新头新建
+            val firstLine = file.useLines { it.firstOrNull() } ?: ""
+            if (firstLine.isNotEmpty() && firstLine.trim() != header.trim()) {
+                val legacy = File(dir, "history_${date}_${lang}_legacy_${System.currentTimeMillis()}.csv")
+                file.renameTo(legacy)
+                CobbleMarket.LOGGER.info("CobbleMarket history file {} has old header; preserved as {}", file.name, legacy.name)
+            }
+        }
         if (!file.exists()) {
             file.writeText(header + "\n")
         }
         return file
+    }
+
+    /** history 目录内放置说明文件（只写一次，不覆盖服主修改），服主查账时随手可看 */
+    private fun ensureReadme(dir: File) {
+        val zh = File(dir, "README_zh_cn.txt")
+        if (!zh.exists()) {
+            try {
+                zh.writeText(
+                    """
+                    CobbleMarket 交易历史目录说明
+                    ==============================
+
+                    本目录下的 CSV 是交易账本（每笔交易同步写盘，不受服务器崩溃/杀进程影响）。
+
+                    字段：时间, 类型, 分类, 卖家, 买家, 精灵/物品, 价格, 手续费, 详情
+
+                    详情列（"|"分隔，缺失字段整段省略）：
+                    精灵：lv=等级|shiny=Y/N|ivs=六项个体值|ht=特训项|nature=生效性格|base=原生性格|ability=特性|gender=性别|ball=球种|held=携带物|form=形态
+                    物品：count=数量|nbt={完整NBT文本}
+
+                    【玩家报告"上架的精灵/物品消失了"时，按三步对账补偿】
+                    1. 在当天 CSV 中按玩家名筛选，找到该物品的「上架」记录（记下价格）
+                    2. 确认该物品没有后续「卖出/下架/退还」记录
+                    3. 确认当前市场挂单里也没有该物品
+
+                    三条同时满足 = 数据因服务器异常关闭而丢失 → 按记录的价格补偿玩家。
+
+                    补偿局限：CSV 只记录显示名与价格，物品附魔/NBT 细节、精灵 IV/性格/闪光无法恢复，
+                    只能补同物种/同物品的新货。
+
+                    更完整的存档/备份说明见模组文档 docs/save-data-locations.md
+                    """.trimIndent()
+                )
+            } catch (e: Exception) {
+                CobbleMarket.LOGGER.warn("Failed to write history readme: {}", e.message)
+            }
+        }
+        val en = File(dir, "README_en_us.txt")
+        if (!en.exists()) {
+            try {
+                en.writeText(
+                    """
+                    CobbleMarket Transaction History Directory
+                    ==========================================
+
+                    The CSVs in this directory are the transaction ledger (each trade is written
+                    synchronously to disk, unaffected by server crashes or forced kills).
+
+                    Columns: Time, Type, Category, Seller, Buyer, Species/Item, Price, Fee, Details
+
+                    Details column ("|"-separated; segments omitted when not applicable):
+                    Pokémon: lv=level|shiny=Y/N|ivs=six IVs|ht=hyper-trained stats|nature=effective nature|base=base nature|ability=ability|gender=gender|ball=ball|held=held item|form=form
+                    Item: count=amount|nbt={full NBT text}
+
+                    [When a player reports "my listed Pokémon/item vanished", verify in 3 steps]
+                    1. Filter the day's CSV by the player's name and find the "Listed" record (note the price)
+                    2. Confirm there is no later "Sold / Cancelled / Returned" record for it
+                    3. Confirm the item is not currently listed on the market
+
+                    All three hold = data was lost due to an abnormal server shutdown -> compensate
+                    the player at the recorded price.
+
+                    Compensation limits: the CSV only stores the display name and price — item
+                    enchantments/NBT details and Pokémon IV/nature/shiny cannot be recovered;
+                    only a same-species/same-item replacement can be given.
+
+                    See the mod docs docs/save-data-locations.md for full save/backup instructions
+                    """.trimIndent()
+                )
+            } catch (e: Exception) {
+                CobbleMarket.LOGGER.warn("Failed to write history readme: {}", e.message)
+            }
+        }
     }
 
     private fun buildCsvLine(record: TransactionRecord, lang: String): String {
@@ -55,7 +138,7 @@ object TransactionFileLogger {
         val seller = csvEscape(record.sellerName)
         val buyer = csvEscape(record.buyerName)
         val species = csvEscape(speciesDisplay(record.species))
-        return "$time,$type,$category,$seller,$buyer,$species,${record.price},${record.fee}"
+        return "$time,$type,$category,$seller,$buyer,$species,${record.price},${record.fee},${csvEscape(record.detail)}"
     }
 
     private fun typeName(type: TransactionType, lang: String): String = when (type) {
