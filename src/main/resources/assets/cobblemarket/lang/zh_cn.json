@@ -10,6 +10,7 @@
   "cobblemarket.settings.on_state": "开",
   "cobblemarket.settings.off_state": "关",
   "cobblemarket.settings.done": "完成",
+  "cobblemarket.gui.item_id_hint": "搜不到物品可尝试输入真实id（F3+H）",
   "cobblemarket.currency.pokedollars": "PokéDollars",
   "cobblemarket.market.closed": "市场功能已关闭，请联系服主",
   "cobblemarket.market.closed_banner": "⚠ 市场功能已关闭",
@@ -429,5 +430,6 @@
   "cobblemarket.buy_order.ability_label": "特性",
   "cobblemarket.buy_order.nature_label": "性格",
   "cobblemarket.buy_order.item_label": "物品",
-  "cobblemarket.buy_order.item_matches": "%s 个匹配"
+  "cobblemarket.buy_order.item_matches": "%s 个匹配",
+  "cobblemarket.persist.save_failed": "⚠ 市场数据保存失败！挂单/拍卖/求购单可能未写入存档——请检查服务器磁盘空间与权限，并尽快通知玩家"
 }

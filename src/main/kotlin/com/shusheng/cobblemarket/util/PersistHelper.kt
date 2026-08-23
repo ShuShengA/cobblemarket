@@ -1,0 +1,88 @@
+package com.shusheng.cobblemarket.util
+
+import com.shusheng.cobblemarket.CobbleMarket
+import net.minecraft.server.MinecraftServer
+import net.minecraft.util.WorldSavePath
+import net.minecraft.util.Formatting
+import java.io.File
+
+/**
+ * 交易数据强制落盘：
+ *
+ * MC 的默认保存时机是自动保存（默认 5 分钟）+ 正常关服。玩家退出时 MC 会立即保存该玩家数据，
+ * 而模组状态（挂单/订单/拍卖）仍等在自动保存里——此时杀进程/崩溃会形成错位：玩家数据已落盘
+ * （货已扣）、模组状态回滚（挂单没了），货/钱蒸发；反过来保存顺序错位则货复制。
+ *
+ * 策略：
+ * 1. 交易成功后 requestSave：3 秒节流合并，到点执行全量 saveAll——玩家数据与模组状态同步落盘，
+ *    杀进程时两边一起回滚（或一起保留），绝无错位；
+ * 2. 玩家断开时 onPlayerDisconnect：玩家数据刚被 MC 保存，立即保存模组状态追上去（蒸发洞窗口 = 0）；
+ * 3. 每次保存前刷新 .bak 备份（防保存过程中断电写坏文件）；
+ * 4. 保存后按文件 mtime 验证是否真的写盘（MC 会吞掉 PersistentState 写盘异常并清除脏标志，
+ *    不做验证的话「以为存了其实没存」）——失败时日志 error + 给在线 OP 发显眼告警。
+ */
+object PersistHelper {
+
+    private const val SAVE_COOLDOWN_MS = 3000L
+
+    private var pendingSave = false
+    private var lastTradeAt = 0L
+
+    /** 交易成功后调用：节流合并，到点全量落盘 */
+    fun requestSave(server: MinecraftServer) {
+        pendingSave = true
+        lastTradeAt = System.currentTimeMillis()
+    }
+
+    /** 玩家断开后调用（延迟一 tick，确保 MC 已完成该玩家数据的保存）：立即保存模组状态 */
+    fun onPlayerDisconnect(server: MinecraftServer) {
+        server.execute { saveModStates(server) }
+    }
+
+    /** END_SERVER_TICK 调用：节流到点执行全量保存 */
+    fun tick(server: MinecraftServer) {
+        if (pendingSave && System.currentTimeMillis() - lastTradeAt >= SAVE_COOLDOWN_MS) {
+            pendingSave = false
+            StateBackup.backupAll(server)
+            val before = stateFileMtimes(server)
+            val ok = server.saveAll(false, false, false)
+            verifySaved(server, ok, before, stateFileMtimes(server))
+        }
+    }
+
+    /** 立即保存模组状态（玩家数据由 MC 在断开时已保存，这里只追模组，窗口 0 防蒸发） */
+    private fun saveModStates(server: MinecraftServer) {
+        StateBackup.backupAll(server)
+        val before = stateFileMtimes(server)
+        server.overworld.persistentStateManager.save()
+        verifySaved(server, true, before, stateFileMtimes(server))
+    }
+
+    /** 保存结果验证：saveAll 返回 false 或模组状态文件 mtime 全部未变 = 保存失败 */
+    private fun verifySaved(
+        server: MinecraftServer,
+        saveAllOk: Boolean,
+        before: Map<String, Long?>,
+        after: Map<String, Long?>
+    ) {
+        val changed = after.any { (name, mtime) -> mtime != before[name] }
+        if (saveAllOk && changed) return
+        CobbleMarket.LOGGER.error("CobbleMarket state save failed or was skipped (saveAllOk={}, mtimeChanged={})", saveAllOk, changed)
+        val msg = net.minecraft.text.Text.translatable("cobblemarket.persist.save_failed").formatted(Formatting.RED)
+        server.playerManager.playerList
+            .filter { it.hasPermissionLevel(2) }
+            .forEach { it.sendMessage(msg, false) }
+    }
+
+    /** world/data 下全部 cobblemarket*.dat 的修改时间快照（不存在 = null） */
+    private fun stateFileMtimes(server: MinecraftServer): Map<String, Long?> {
+        val dataDir = server.getSavePath(WorldSavePath.ROOT).resolve("data").toFile()
+        if (!dataDir.isDirectory) return emptyMap()
+        val result = mutableMapOf<String, Long?>()
+        dataDir.listFiles { f -> f.isFile && f.name.startsWith(CobbleMarket.MOD_ID) && f.name.endsWith(".dat") }
+            ?.forEach { f -> result[f.name] = f.lastModified() }
+        // 空目录时对比两边都为空 → changed=false 会误报；但交易后必有状态文件存在，兜底放一个哨兵
+        if (result.isEmpty()) result["(none)"] = 0L
+        return result
+    }
+}

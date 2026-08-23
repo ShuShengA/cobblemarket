@@ -21,7 +21,9 @@ data class TransactionRecord(
     val buyerName: String,
     val species: String,
     val price: Int,
-    val fee: Int
+    val fee: Int,
+    // CSV「详情」列：精灵完整数值/物品 NBT 文本化（com.shusheng.cobblemarket.util.RecordDetail 构建；旧记录为空串）
+    val detail: String = ""
 ) {
     fun toNbt(): NbtCompound = NbtCompound().apply {
         putLong("timestamp", timestamp)
@@ -34,6 +36,7 @@ data class TransactionRecord(
         putString("species", species)
         putInt("price", price)
         putInt("fee", fee)
+        putString("detail", detail)
     }
 
     companion object {
@@ -47,7 +50,8 @@ data class TransactionRecord(
             buyerName = nbt.getString("buyerName"),
             species = nbt.getString("species"),
             price = nbt.getInt("price"),
-            fee = nbt.getInt("fee")
+            fee = nbt.getInt("fee"),
+            detail = if (nbt.contains("detail")) nbt.getString("detail") else ""
         )
     }
 }

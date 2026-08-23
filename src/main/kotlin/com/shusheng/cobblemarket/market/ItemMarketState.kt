@@ -150,7 +150,8 @@ class ItemMarketState private constructor() : PersistentState() {
                                 buyerName = "",
                                 species = listing.itemId,
                                 price = listing.price,
-                                fee = 0
+                                fee = 0,
+                                detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
                             )
                         )
                     } catch (e: Exception) {
