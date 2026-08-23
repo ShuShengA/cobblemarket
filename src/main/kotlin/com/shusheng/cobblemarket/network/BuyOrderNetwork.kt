@@ -485,6 +485,8 @@ object BuyOrderNetwork {
                     returnedAt = null
                 )
                 BuyOrderState.get(server).addOrder(order)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.created")))
                 broadcastEvent(server, "NEW", buyOrderToEntry(order))
             }
@@ -543,6 +545,8 @@ object BuyOrderNetwork {
                     returnedAt = null
                 )
                 BuyOrderState.get(server).addOrder(order)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.created")))
                 broadcastEvent(server, "NEW", buyOrderToEntry(order))
             }
@@ -574,6 +578,8 @@ object BuyOrderNetwork {
                     player,
                     MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.closed", refund, CurrencyHandler.currencyText()))
                 )
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 broadcastEvent(server, "CLOSED", buyOrderToEntry(order))
             }
         }
@@ -612,6 +618,8 @@ object BuyOrderNetwork {
                     player,
                     MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.force_cancelled_msg", order.buyerName, order.requirementText()))
                 )
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 broadcastEvent(server, "CLOSED", buyOrderToEntry(order))
             }
         }
@@ -734,6 +742,8 @@ object BuyOrderNetwork {
                     )
                 )
                 state.markModified()
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.delivered_pending")))
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, order.buyerUuid,
                     Text.translatable("cobblemarket.buy_order.pending_buyer", order.requirementText()).formatted(Formatting.GREEN))
@@ -874,6 +884,8 @@ object BuyOrderNetwork {
                     )
                 )
                 state.markModified()
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(
                     player,
                     MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.delivered_items_pending", payload.count))
@@ -947,12 +959,18 @@ object BuyOrderNetwork {
                                 (pending.extraData["speciesKey"] ?: pending.species)
                             else order.itemId,
                             price = gross.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                            fee = fee.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                            fee = fee.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                            detail = if (order.type == BuyOrderType.POKEMON)
+                                com.shusheng.cobblemarket.util.RecordDetail.pokemon(pending.extraData, pending.level, pending.shiny)
+                            else
+                                com.shusheng.cobblemarket.util.RecordDetail.item(pending.itemNbt, pending.count)
                         )
                     )
                 } catch (e: Exception) {
                     CobbleMarket.LOGGER.warn("Failed to record buy order accepted delivery {}: {}", order.id, e.message)
                 }
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.accepted")))
                 // 买家庆祝动画：接受交付即所有权转移（货进买家待领取，精灵单固定 1 只）
                 if (order.type == BuyOrderType.POKEMON) {
@@ -995,6 +1013,8 @@ object BuyOrderNetwork {
                 }
                 order.pendingDeliveries.remove(pending)
                 state.markModified()
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.rejected")))
                 // 卖家反馈：被退回 + 买家留言（有留言时附上；卖家离线则上线补发）
                 val reason = payload.reason.take(100)
@@ -1016,6 +1036,10 @@ object BuyOrderNetwork {
     /** 结算到期求购单并广播 CLOSED 事件（数据请求入口与定时器共用，实现惰性+周期双结算） */
     fun settleExpiredAndBroadcast(server: MinecraftServer) {
         val closed = BuyOrderState.get(server).settleExpiredOrders(server, System.currentTimeMillis())
+        if (closed.isNotEmpty()) {
+            // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+            com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+        }
         closed.forEach { order ->
             broadcastEvent(server, "CLOSED", buyOrderToEntry(order))
             com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, order.buyerUuid,

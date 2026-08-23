@@ -103,7 +103,7 @@ object ItemBlacklistNetwork {
             val server = player.server
             server.execute {
                 val entries = ItemBlacklistState.get(server).getAll()
-                ServerPlayNetworking.send(player, ItemBlacklistDataPayload(entries))
+                ServerPlayNetworking.send(player, ItemBlacklistDataPayload(entries.reversed()))
             }
         }
 
@@ -121,8 +121,10 @@ object ItemBlacklistNetwork {
                     return@execute
                 }
                 ItemBlacklistState.get(server).add(itemId)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val entries = ItemBlacklistState.get(server).getAll()
-                ServerPlayNetworking.send(player, ItemBlacklistDataPayload(entries))
+                ServerPlayNetworking.send(player, ItemBlacklistDataPayload(entries.reversed()))
             }
         }
 
@@ -139,7 +141,9 @@ object ItemBlacklistNetwork {
                         added++
                     }
                 }
-                ServerPlayNetworking.send(player, ItemBlacklistDataPayload(state.getAll()))
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                ServerPlayNetworking.send(player, ItemBlacklistDataPayload(state.getAll().reversed()))
                 player.sendMessage(
                     net.minecraft.text.Text.translatable("cobblemarket.blacklist.added_all", added)
                         .formatted(net.minecraft.util.Formatting.GREEN), false)
@@ -152,8 +156,10 @@ object ItemBlacklistNetwork {
             val server = player.server
             server.execute {
                 ItemBlacklistState.get(server).remove(payload.itemId)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val entries = ItemBlacklistState.get(server).getAll()
-                ServerPlayNetworking.send(player, ItemBlacklistDataPayload(entries))
+                ServerPlayNetworking.send(player, ItemBlacklistDataPayload(entries.reversed()))
             }
         }
 
@@ -164,7 +170,9 @@ object ItemBlacklistNetwork {
             server.execute {
                 val state = ItemBlacklistState.get(server)
                 payload.itemIds.forEach { state.remove(it) }
-                ServerPlayNetworking.send(player, ItemBlacklistDataPayload(state.getAll()))
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                ServerPlayNetworking.send(player, ItemBlacklistDataPayload(state.getAll().reversed()))
             }
         }
     }

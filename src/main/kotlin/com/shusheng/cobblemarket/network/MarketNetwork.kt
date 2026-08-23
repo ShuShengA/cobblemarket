@@ -1175,6 +1175,8 @@ object MarketNetwork {
                     )
                 )
 
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(
                     player,
                     MarketResultPayload(
@@ -1256,6 +1258,8 @@ object MarketNetwork {
                         listing
                     )
                 )
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(
                     player,
                     MarketResultPayload(true, Text.translatable("cobblemarket.cmd.cancelled", listing.speciesText()))
@@ -1364,6 +1368,8 @@ object MarketNetwork {
                     server, listing.sellerUuid,
                     Text.translatable("cobblemarket.cmd.cancelled", listing.speciesText())
                 )
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(
                     player,
                     MarketResultPayload(
@@ -1451,7 +1457,8 @@ object MarketNetwork {
                         buyerName = "",
                         species = listing.itemId,
                         price = listing.price,
-                        fee = 0
+                        fee = 0,
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
                     )
                 )
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
@@ -1462,6 +1469,8 @@ object MarketNetwork {
                 val itemName = Identifier.tryParse(listing.itemId)
                     ?.let { Registries.ITEM.get(it).name }
                     ?: Text.literal(listing.itemId)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(
                     player,
                     MarketResultPayload(
@@ -1683,7 +1692,8 @@ object MarketNetwork {
                 // 副作用阶段：扣手续费 → 移除精灵 → 挂单入库
                 // Listing fee check
                 val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.pokemonListingFeePercent
-                val fee = if (feePercent > 0) Math.ceil(payload.price * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0
+                // toLong 先提升：Int×Int 在价格×费率超过 21.5 亿时环绕溢出（fee 可算成负/0，逃税或凭空生钱）
+                val fee = if (feePercent > 0) Math.ceil(payload.price.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0
                 if (fee > 0 && !CurrencyHandler.remove(player, fee)) {
                     ServerPlayNetworking.send(
                         player, MarketResultPayload(
@@ -1747,6 +1757,8 @@ object MarketNetwork {
                         payload.price,
                         CurrencyHandler.currencyText()
                     )
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, listedMsg))
             }
         }
@@ -1952,7 +1964,8 @@ object MarketNetwork {
                         buyerName = "",
                         species = payload.itemId,
                         price = payload.price,
-                        fee = fee
+                        fee = fee,
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
                     )
                 )
 
@@ -1974,6 +1987,8 @@ object MarketNetwork {
                         payload.price,
                         CurrencyHandler.currencyText()
                     )
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, listedMsg))
             }
         }
@@ -2204,10 +2219,13 @@ object MarketNetwork {
                         buyerName = player.name.string,
                         species = listing.itemId,
                         price = totalPrice,
-                        fee = 0
+                        fee = 0,
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
                     )
                 )
 
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(
                     player,
                     MarketResultPayload(
@@ -2320,10 +2338,13 @@ object MarketNetwork {
                         buyerName = "",
                         species = listing.itemId,
                         price = listing.price,
-                        fee = 0
+                        fee = 0,
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
                     )
                 )
 
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(
                     player,
                     MarketResultPayload(true, Text.translatable("cobblemarket.item.cancelled"))
@@ -2363,6 +2384,8 @@ object MarketNetwork {
                     Text.translatable("cobblemarket.cmd.collected_partial", given, CurrencyHandler.currencyText())
                 else
                     Text.translatable("cobblemarket.cmd.collected", amount, CurrencyHandler.currencyText())
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, msg))
             }
         }
@@ -2457,6 +2480,8 @@ object MarketNetwork {
                     Text.translatable("cobblemarket.return.claimed", returned, remaining)
                 else
                     Text.translatable("cobblemarket.return.claimed_all", returned)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, msg))
             }
         }
@@ -2504,6 +2529,8 @@ object MarketNetwork {
                     Text.translatable("cobblemarket.return.item_claimed", returned, remaining)
                 else
                     Text.translatable("cobblemarket.return.item_claimed_all", returned)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, msg))
             }
         }

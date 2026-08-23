@@ -170,6 +170,8 @@ object BlacklistNetwork {
                 // 编辑语义：替换原条目（改了形态/IV/闪光/特训等字段时，旧条目不再残留）
                 payload.originalId?.let { state.remove(it) }
                 state.add(entry)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val entries = PokemonBlacklistState.get(server).getAll()
                 ServerPlayNetworking.send(player, PokemonBlacklistDataPayload(entries.reversed()))
             }
@@ -181,6 +183,8 @@ object BlacklistNetwork {
             val server = player.server
             server.execute {
                 PokemonBlacklistState.get(server).remove(payload.id)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val entries = PokemonBlacklistState.get(server).getAll()
                 ServerPlayNetworking.send(player, PokemonBlacklistDataPayload(entries.reversed()))
             }

@@ -8,9 +8,13 @@
   "cobblemarket.settings.animation_market": "Market purchase: ",
   "cobblemarket.settings.animation_auction": "Auction & orders: ",
   "cobblemarket.settings.drop_overflow": "Claim overflow: ",
+  "cobblemarket.settings.animation_entry": "Market Entry Animation: ",
+  "cobblemarket.settings.pikachu_loop": "Pikachu Treadmill: ",
+  "cobblemarket.settings.groudon_fly": "It is said Groudon spends its whole life looking for this button: ",
   "cobblemarket.settings.on_state": "ON",
   "cobblemarket.settings.off_state": "OFF",
   "cobblemarket.settings.done": "Done",
+  "cobblemarket.gui.item_id_hint": "If not found, try the item's real ID (F3+H)",
   "cobblemarket.currency.pokedollars": "PokéDollars",
   "cobblemarket.market.closed": "The market is currently closed, contact the server owner",
   "cobblemarket.market.closed_banner": "⚠ Market closed",
@@ -439,5 +443,6 @@
   "cobblemarket.buy_order.ability_label": "Ability",
   "cobblemarket.buy_order.nature_label": "Nature",
   "cobblemarket.buy_order.item_label": "Item",
-  "cobblemarket.buy_order.item_matches": "%s matches"
+  "cobblemarket.buy_order.item_matches": "%s matches",
+  "cobblemarket.persist.save_failed": "⚠ Market data save failed! Listings/auctions/buy orders may not have been written to disk — check server disk space and permissions, and warn players as soon as possible"
 }
