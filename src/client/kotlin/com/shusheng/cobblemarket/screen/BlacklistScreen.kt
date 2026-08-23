@@ -43,6 +43,19 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private var currentTab = 0 // 0 = 精灵, 1 = 物品
     private var pokemonEntries = listOf<PokemonBlacklistEntry>()
     private var itemEntries = listOf<String>()
+    // 过滤结果缓存：数据/搜索/筛选变化时重建，render 每帧只读（避免每帧全量 filter）
+    private var filteredPokemonCache = listOf<PokemonBlacklistEntry>()
+    private var filteredItemsCache = listOf<String>()
+    // 过滤结果带原索引（iconData 以 pokemonEntries 索引为 key）：行渲染每帧 indexOf 是 O(n) 扫描，
+    // 重建时一并构建；行显示字符串（物种解析 + 多段翻译拼接）同样随重建缓存
+    private var filteredPokemonIndexed = listOf<IndexedValue<PokemonBlacklistEntry>>()
+    private var pokemonRowTexts = listOf<String>()
+    private var itemRowTexts = listOf<String>()
+    // 物品图标栈缓存（itemId → 解析栈）：行内每帧 tryParse + ItemStack 是分配热点，数据到达时构建
+    private val itemIconStacks = mutableMapOf<String, ItemStack>()
+    // tooltip 文本行缓存：内容只取决于条目，悬停同一行时每帧重建是悬停掉帧主因
+    private var tooltipCacheKey: Any? = null
+    private var tooltipCacheLines: List<String> = emptyList()
     private var searchField: TextFieldWidget? = null
     private var hoveredRow = -1
     private var scrollOffset = 0
@@ -104,7 +117,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private val iconData = mutableMapOf<Int, IconData>()
     private val iconSize = 20
 
-    private fun getListStartY() = 68
+    private fun getListStartY() = 80
     private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 48) / rowHeight)
 
     override fun init() {
@@ -120,17 +133,18 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         backButton = backBtn
         addDrawableChild(backBtn)
 
-        // tab 切换按钮
-        pokemonTabButton = NineSliceButton(centerX - 62, 32, 60, 14, Text.literal(""), { switchTab(0) })
-        itemTabButton = NineSliceButton(centerX + 2, 32, 60, 14, Text.literal(""), { switchTab(1) })
+        // tab 切换按钮（标题下方留出物品 id 提示行）
+        pokemonTabButton = NineSliceButton(centerX - 62, 44, 60, 14, Text.literal(""), { switchTab(0) })
+        itemTabButton = NineSliceButton(centerX + 2, 44, 60, 14, Text.literal(""), { switchTab(1) })
         addDrawableChild(pokemonTabButton)
         addDrawableChild(itemTabButton)
         updateTabButtons()
 
-        searchField = TextFieldWidget(textRenderer, leftX + 2, 50, panelWidth - 4 - 84 - 20, 16, Text.translatable("cobblemarket.gui.search"))
+        searchField = TextFieldWidget(textRenderer, leftX + 2, 62, panelWidth - 4 - 84 - 20, 16, Text.translatable("cobblemarket.gui.search"))
         updateSearchPlaceholder()
         // 搜索变化时重建行按钮：否则过滤后残留旧列表的删除按钮（与价格限制同款问题）
         searchField?.setChangedListener { _ ->
+            rebuildFiltered()
             updateUnbanAllButton()
             scrollOffset = 0
             rebuildRemoveButtons()
@@ -139,7 +153,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         addDrawableChild(searchField)
 
         val addBtn = NineSliceButton(
-            leftX + panelWidth - 84, 50, 18, 16,
+            leftX + panelWidth - 84, 62, 18, 16,
             Text.literal("+"), { openAddDialog() }
         )
         addButton = addBtn
@@ -147,7 +161,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
         // 全部解封：仅物品 tab、搜索框有内容且匹配非空时显示，解封当前搜索匹配的全部条目
         unbanAllButton = NineSliceButton(
-            leftX + panelWidth - 60, 50, 60, 16,
+            leftX + panelWidth - 60, 62, 60, 16,
             Text.translatable("cobblemarket.blacklist.remove_all"),
             { confirmUnbanAll() }
         )
@@ -156,7 +170,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
         // 特训筛选（仅精灵 tab，与全部解封按钮互斥位置）：列表按规则的特训维度过滤
         htFilterButton = NineSliceButton(
-            leftX + panelWidth - 60, 50, 60, 16,
+            leftX + panelWidth - 60, 62, 60, 16,
             htFilterButtonText(),
             { toggleListHtFilter() },
             if (listHtFilter != 0) GOLD_COLOR else 0xFFFFFF
@@ -165,6 +179,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         addDrawableChild(htFilterButton)
 
         scrollOffset = 0
+        rebuildFiltered()
         updateUnbanAllButton()
         requestCurrentTabData()
     }
@@ -180,6 +195,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         currentTab = tab
         searchField?.text = ""
         updateSearchPlaceholder()
+        rebuildFiltered()
         scrollOffset = 0
         hoveredRow = -1
         updateTabButtons()
@@ -330,11 +346,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         val slotSize = 28
         val slotX = centerX + 66
         val slotY = dialogY + 24
-        val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
         context.matrices.push()
         context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
         context.matrices.scale(slotSize / 66f, slotSize / 66f, 1f)
-        context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
+        context.drawTexture(SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
         context.matrices.pop()
 
         previewRenderable?.let { rp ->
@@ -781,6 +796,8 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
     fun onBlacklistData(payload: PokemonBlacklistDataPayload) {
         pokemonEntries = payload.entries
+        tooltipCacheKey = null
+        rebuildFiltered()
         cacheIcons()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, pokemonEntries.size - getMaxVisibleRows()))
         rebuildRemoveButtons()
@@ -788,10 +805,21 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
     fun onItemBlacklistData(payload: ItemBlacklistDataPayload) {
         itemEntries = payload.entries
+        tooltipCacheKey = null
+        rebuildItemIconStacks()
+        rebuildFiltered()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, itemEntries.size - getMaxVisibleRows()))
         // 数据到达后刷新全部解封按钮可见性（原物品界面漏了这一步：搜索词先于数据到达时按钮不显示）
         updateUnbanAllButton()
         rebuildRemoveButtons()
+    }
+
+    /** 一次性解析全部物品图标栈（render 每帧只读缓存，见 itemIconStacks 注释） */
+    private fun rebuildItemIconStacks() {
+        itemIconStacks.clear()
+        itemEntries.forEach { itemId ->
+            Identifier.tryParse(itemId)?.let { id -> itemIconStacks[itemId] = ItemStack(Registries.ITEM.get(id)) }
+        }
     }
 
     private fun cacheIcons() {
@@ -836,15 +864,27 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
     // ── 搜索过滤 ──
 
-    private fun filteredPokemon(): List<PokemonBlacklistEntry> {
+    private fun filteredPokemon(): List<PokemonBlacklistEntry> = filteredPokemonCache
+
+    /** 数据/搜索/筛选变化时重建过滤缓存（render 每帧只读）；
+     *  索引/行显示字符串随过滤一并重建，行渲染不再每帧 indexOf / 拼文本 */
+    private fun rebuildFiltered() {
         val query = searchField?.text?.trim()?.takeIf { it.isNotEmpty() }
-        return pokemonEntries.filter { entry ->
+        filteredPokemonIndexed = pokemonEntries.mapIndexedNotNull { index, entry ->
             val species = Identifier.tryParse(entry.speciesId)?.let { PokemonSpecies.getByIdentifier(it) }
             val name = species?.translatedName?.string ?: entry.speciesId
-            (query == null || name.contains(query, ignoreCase = true) || entry.speciesId.contains(query, ignoreCase = true)) &&
-            // 特训筛选：0 = 不限，2 = 不含特训
-            (listHtFilter == 0 || entry.htFilter == listHtFilter)
+            if ((query == null || name.contains(query, ignoreCase = true) || entry.speciesId.contains(query, ignoreCase = true)) &&
+                // 特训筛选：0 = 不限，2 = 不含特训
+                (listHtFilter == 0 || entry.htFilter == listHtFilter)
+            ) IndexedValue(index, entry) else null
         }
+        filteredPokemonCache = filteredPokemonIndexed.map { it.value }
+        pokemonRowTexts = filteredPokemonCache.map { pokemonEntryDisplay(it) }
+        filteredItemsCache = if (query == null) itemEntries else itemEntries.filter { itemId ->
+            val name = Identifier.tryParse(itemId)?.let { Registries.ITEM.get(it).name.string } ?: itemId
+            name.contains(query, ignoreCase = true) || itemId.contains(query, ignoreCase = true)
+        }
+        itemRowTexts = filteredItemsCache.map { itemEntryDisplay(it) }
     }
 
     private fun htFilterButtonText(): Text = Text.translatable(
@@ -856,18 +896,13 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         listHtFilter = if (listHtFilter == PokemonBlacklistEntry.HT_ANY) PokemonBlacklistEntry.HT_NONE else PokemonBlacklistEntry.HT_ANY
         htFilterButton?.setMessage(htFilterButtonText())
         htFilterButton?.textColor = if (listHtFilter != 0) GOLD_COLOR else 0xFFFFFF
+        rebuildFiltered()
         scrollOffset = 0
         hoveredRow = -1
         rebuildRemoveButtons()
     }
 
-    private fun filteredItems(): List<String> {
-        val query = searchField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: return itemEntries
-        return itemEntries.filter { itemId ->
-            val name = Identifier.tryParse(itemId)?.let { Registries.ITEM.get(it).name.string } ?: itemId
-            name.contains(query, ignoreCase = true) || itemId.contains(query, ignoreCase = true)
-        }
-    }
+    private fun filteredItems(): List<String> = filteredItemsCache
 
     private fun displayCount(): Int = if (currentTab == 0) filteredPokemon().size else filteredItems().size
 
@@ -952,7 +987,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         drawPanelSlice(context, top, panelLeft, panelTop)
         var y = panelTop + sliceH
         while (y < panelBottom - sliceH) {
-            drawPanelSlice(context, mid, panelLeft, y)
+            drawPanelSlice(context, mid, panelLeft, y, minOf(sliceH, panelBottom - sliceH - y))
             y += sliceH
         }
         drawPanelSlice(context, bot, panelLeft, panelBottom - sliceH)
@@ -991,6 +1026,13 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             Text.translatable("cobblemarket.op.blacklist").formatted(Formatting.GOLD),
             centerX, 20, 0xFFFFFF)
 
+        // 物品 tab 提示：搜不到的物品可输入真实 id（F3+H 显示高级提示框）
+        if (currentTab == 1) {
+            context.drawCenteredTextWithShadow(textRenderer,
+                Text.translatable("cobblemarket.gui.item_id_hint").string,
+                centerX, 33, 0xFFAAAAAA.toInt())
+        }
+
         val startY = getListStartY()
         // 分割线贴搜索行底部（y=66）：tab 行让出 2px 后搜索框在 50~66，线画 66~67 不重叠
         context.fill(leftX, startY - 2, leftX + panelWidth, startY - 1, 0xFF555555.toInt())
@@ -1003,23 +1045,24 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
         if (currentTab == 0) {
             val displayList = filteredPokemon()
+            val indexedList = filteredPokemonIndexed
+            val rowTexts = pokemonRowTexts
             displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
                 val y = startY + i * rowHeight
-                val origIndex = pokemonEntries.indexOf(entry)
+                val origIndex = indexedList[scrollOffset + i].index
                 // 槽背景（GUI 层，弹窗遮罩自动压暗，照常渲染）；3D 精灵弹窗打开时颜色压暗
                 val slotX = leftX + 2
                 val slotY = y + 2
-                val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
                 context.matrices.push()
                 context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
                 context.matrices.scale(iconSize / 66f, iconSize / 66f, 1f)
-                context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
+                context.drawTexture(SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
                 // 弹窗打开时不渲染 3D（模型层在衬底之上，压暗仍会浮在弹窗上）
                 if (addField == null) renderPokemonIcon(context, origIndex, slotX, slotY, iconSize)
                 // 截断防止超长条目（六项个体值全填）与编辑/删除按钮重叠；完整信息在悬停 tooltip
                 context.drawTextWithShadow(textRenderer,
-                    com.shusheng.cobblemarket.util.TextUtil.truncateString(pokemonEntryDisplay(entry), 170),
+                    com.shusheng.cobblemarket.util.TextUtil.truncateString(rowTexts[scrollOffset + i], 170),
                     leftX + 28, y + 7, 0xFFFFFF)
             }
             if (hoveredRow >= 0) {
@@ -1030,15 +1073,14 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             }
         } else {
             val displayList = filteredItems()
+            val rowTexts = itemRowTexts
             displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, itemId ->
                 val y = startY + i * rowHeight
                 // 弹窗打开时行内物品图标不渲染（drawItem 硬编码 z 抬高，会刺穿弹窗遮罩）
                 if (addField == null) {
-                    Identifier.tryParse(itemId)?.let { id ->
-                        context.drawItem(ItemStack(Registries.ITEM.get(id)), leftX + 4, y + 4)
-                    }
+                    itemIconStacks[itemId]?.let { context.drawItem(it, leftX + 4, y + 4) }
                 }
-                context.drawTextWithShadow(textRenderer, itemEntryDisplay(itemId), leftX + 24, y + 7, 0xFFFFFF)
+                context.drawTextWithShadow(textRenderer, rowTexts[scrollOffset + i], leftX + 24, y + 7, 0xFFFFFF)
             }
             if (hoveredRow >= 0) {
                 val actualIdx = scrollOffset + hoveredRow
@@ -1056,6 +1098,15 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     }
 
     private fun renderPokemonTooltip(context: DrawContext, entry: PokemonBlacklistEntry, mouseX: Int, mouseY: Int) {
+        // 文本行缓存：悬停同一行时内容不变，只在悬停目标变化时重建（见 tooltipCacheKey 注释）
+        if (tooltipCacheKey != entry.id) {
+            tooltipCacheKey = entry.id
+            tooltipCacheLines = buildPokemonTooltipLines(entry)
+        }
+        drawTooltip(context, tooltipCacheLines, mouseX, mouseY)
+    }
+
+    private fun buildPokemonTooltipLines(entry: PokemonBlacklistEntry): List<String> {
         val species = Identifier.tryParse(entry.speciesId)?.let { PokemonSpecies.getByIdentifier(it) }
         val name = species?.let { com.shusheng.cobblemarket.util.SpeciesText.displayName(it) } ?: entry.speciesId
         val lines = mutableListOf(name)
@@ -1068,12 +1119,15 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         if (entry.ivSpAtk >= 0) lines.add("${Text.translatable("cobblemon.stat.special_attack.name").string}: ${entry.ivSpAtk}")
         if (entry.ivSpDef >= 0) lines.add("${Text.translatable("cobblemon.stat.special_defence.name").string}: ${entry.ivSpDef}")
         if (entry.ivSpd >= 0) lines.add("${Text.translatable("cobblemon.stat.speed.name").string}: ${entry.ivSpd}")
-        drawTooltip(context, lines, mouseX, mouseY)
+        return lines
     }
 
     private fun renderItemTooltip(context: DrawContext, itemId: String, mouseX: Int, mouseY: Int) {
-        val lines = listOf(itemEntryDisplay(itemId), itemId)
-        drawTooltip(context, lines, mouseX, mouseY)
+        if (tooltipCacheKey != itemId) {
+            tooltipCacheKey = itemId
+            tooltipCacheLines = listOf(itemEntryDisplay(itemId), itemId)
+        }
+        drawTooltip(context, tooltipCacheLines, mouseX, mouseY)
     }
 
     private fun drawTooltip(context: DrawContext, lines: List<String>, mouseX: Int, mouseY: Int) {
@@ -1095,10 +1149,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         context.matrices.pop()
     }
 
-    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int) {
+    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int, sliceH: Int = 16) {
         context.matrices.push()
         context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(0.5f, 0.5f, 1f)
+        context.matrices.scale(0.5f, 0.5f * sliceH / 16f, 1f)
         context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
         context.matrices.pop()
     }
@@ -1203,4 +1257,8 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     }
 
     override fun shouldPause() = false
+
+    private companion object {
+        val SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
+    }
 }

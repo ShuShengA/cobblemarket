@@ -16,6 +16,10 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import org.joml.Quaternionf
+import kotlin.math.PI
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * 选择要上架的精灵界面；求购单交付模式（deliverOrderId 非 null）复用本界面：
@@ -61,7 +65,13 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
     private var htBtn: NineSliceButton? = null
 
     // 3D icon cache
-    private data class IconData(val renderable: RenderablePokemon, val state: FloatingState)
+    private data class IconData(
+        val renderable: RenderablePokemon,
+        val state: FloatingState,
+        // 球种/携带物栈随图标缓存：render 每帧 new ItemStack 是分配热点，构建一次复用
+        val ballStack: ItemStack?,
+        val heldStack: ItemStack?
+    )
     private val iconData = mutableMapOf<Int, IconData>()
 
     // 物种显示名缓存：species 字段是翻译 key，客户端本地翻译（随客户端语言），搜索与渲染共用。
@@ -85,8 +95,27 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             // 否则雌性爱管侍这类性别差异物种会渲染成默认雄性模型
             val aspects = p.aspects.toMutableSet()
             if (p.shiny && "shiny" !in aspects) aspects.add("shiny")
-            iconData[i] = IconData(RenderablePokemon(species, aspects, ItemStack.EMPTY), FloatingState())
+            iconData[i] = IconData(
+                RenderablePokemon(species, aspects, ItemStack.EMPTY),
+                FloatingState(),
+                ballStack = buildBallStack(p.ball),
+                heldStack = buildHeldStack(p.heldItemId)
+            )
         }
+    }
+
+    /** 球种栈（解析失败为 null；渲染逻辑与原来一致：ball 非空就占位 12px，无论解析成败） */
+    private fun buildBallStack(ball: String): ItemStack? {
+        val ballId = Identifier.tryParse(ball.removePrefix("item.").replaceFirst(".", ":")) ?: return null
+        return ItemStack(Registries.ITEM.get(ballId))
+    }
+
+    /** 携带物栈（空气视为无）；缓存供行渲染每帧复用 */
+    private fun buildHeldStack(heldItemId: String): ItemStack? {
+        if (heldItemId.isEmpty()) return null
+        val heldId = Identifier.tryParse(heldItemId) ?: return null
+        val heldItem = Registries.ITEM.get(heldId)
+        return if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) ItemStack(heldItem) else null
     }
 
     override fun init() {
@@ -97,6 +126,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         // Row 1: Search (full width)
         searchField = TextFieldWidget(textRenderer, lx + 2, 30, panelW - 4, 16, Text.translatable("cobblemarket.sell.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.sell.search"))
+        // 搜索/筛选变化时重建过滤缓存（render 每帧只读，见 rebuildFiltered 注释）
+        searchField?.setChangedListener { rebuildFiltered() }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
 
@@ -172,6 +203,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             if (htFilter != 0) GOLD_COLOR else 0xFFFFFF
         )
         addDrawableChild(htBtn)
+
+        rebuildFiltered()
 
         if (!loaded) {
             ClientPlayNetworking.send(RequestMyPokemonPayload(0, requestId))
@@ -253,9 +286,16 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         rebuild()
     }
 
-    private fun filteredList(): List<PokemonPreview> {
+    // 过滤结果缓存（照黑名单界面的 rebuildFiltered 模式）：数据/搜索/IV/筛选变化时重建，
+    // render 每帧只读。indexedFilteredCache 同缓存带原始下标，省去行循环里每帧 indexOf。
+    private var filteredCache = listOf<PokemonPreview>()
+    private var indexedFilteredCache = listOf<IndexedValue<PokemonPreview>>()
+
+    private fun filteredList(): List<PokemonPreview> = filteredCache
+
+    private fun rebuildFiltered() {
         syncIvFields()
-        return pokemonList.filter { p ->
+        filteredCache = pokemonList.filter { p ->
             val q = searchField?.text?.trim()?.takeIf { it.isNotEmpty() }
             (q == null || speciesDisplay(p).contains(q, ignoreCase = true) || p.speciesName.contains(q, ignoreCase = true)) &&
             (!shinyOnly || p.shiny) &&
@@ -275,6 +315,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
                 else -> true
             }
         }
+        indexedFilteredCache = filteredCache.withIndex().toList()
     }
 
     private fun updateGenderButton() {
@@ -307,15 +348,19 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         }
     }
 
-    private fun syncIvFields() {
+    /** IV 输入框 → minIvs 同步；返回是否有变化（变化时调用方重建过滤缓存） */
+    private fun syncIvFields(): Boolean {
         val fields = arrayOf(hpF, atkF, defF, spaF, spdF, speF)
+        var changed = false
         for (i in 0..5) {
             val raw = fields[i]?.text ?: ""
             val digits = raw.filter { it.isDigit() }.take(2)
             val v = digits.toIntOrNull()?.coerceIn(0, 31) ?: -1
             if (digits != raw) fields[i]?.text = if (v < 0) "" else v.toString()
+            if (minIvs[i] != v) changed = true
             minIvs[i] = v
         }
+        return changed
     }
 
     fun onPokemonList(payload: MyPokemonListPayload) {
@@ -330,6 +375,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             pokemonList = pokemonList + payload.pokemon
             buildIconCache(startIdx)
         }
+        rebuildFiltered()
         if (payload.hasMore) {
             // 响应驱动串行拉取，直到服务端说没有更多页
             ClientPlayNetworking.send(RequestMyPokemonPayload(payload.page + 1, requestId))
@@ -364,10 +410,10 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         else -> 0xFFFFFF
     }
 
-    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int) {
+    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int, sliceH: Int = 16) {
         context.matrices.push()
         context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(0.5f, 0.5f, 1f)
+        context.matrices.scale(0.5f, 0.5f * sliceH / 16f, 1f)
         context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
         context.matrices.pop()
     }
@@ -385,13 +431,16 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         drawPanelSlice(context, top, panelLeft, panelTop)
         var y = panelTop + sliceH
         while (y < panelBottom - sliceH) {
-            drawPanelSlice(context, mid, panelLeft, y)
+            drawPanelSlice(context, mid, panelLeft, y, minOf(sliceH, panelBottom - sliceH - y))
             y += sliceH
         }
         drawPanelSlice(context, bot, panelLeft, panelBottom - sliceH)
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // 固拉多第七步（精灵市场背景下层水平右飞）画在 super.render 之前：
+        // super.render 内部先调 renderBackground 画市场面板背景，精灵先画会被面板自然盖住
+        renderGroudonFly(context, true)
         super.render(context, mouseX, mouseY, delta)
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable(if (deliverMode) "cobblemarket.sell.deliver_title" else "cobblemarket.sell.title").formatted(Formatting.GOLD),
@@ -400,6 +449,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         val panelW = 296
         val iconSize = 20
         val startY = 96
+        // IV 输入变化时重建过滤缓存（原 filteredList 每次调用都先 syncIvFields，缓存后在此统一检测）
+        if (syncIvFields()) rebuildFiltered()
         val filtered = filteredList()
         val maxVisible = maxOf(0, (height - startY - 48) / rowHeight)
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, filtered.size - maxVisible))
@@ -420,8 +471,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         }
         // List
         for (i in scrollOffset until minOf(scrollOffset + maxVisible, filtered.size)) {
-            val e = filtered[i]
-            val origIdx = pokemonList.indexOf(e)
+            val indexed = indexedFilteredCache[i]
+            val e = indexed.value
+            val origIdx = indexed.index
             val y = startY + (i - scrollOffset) * rowHeight
             val rowState = when { i == selectedIndex -> 2; i == hovered -> 1; else -> 0 }
             drawNineSlice(context, ROW_BACKGROUND_TEXTURE, lx, y, panelW, rowHeight, rowState, ROW_BACKGROUND_TEX_H)
@@ -429,11 +481,10 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             // 3D icon slot background
             val slotX = lx + 2
             val slotY = y + 2
-            val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
             context.matrices.push()
             context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
             context.matrices.scale(iconSize / 66f, iconSize / 66f, 1f)
-            context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
+            context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
             context.matrices.pop()
             val iconX = lx + 2
             val iconY = y + 2
@@ -447,13 +498,11 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             context.drawText(textRenderer, src, sx, y + 7, srcColor, false)
             sx += textRenderer.getWidth(src) + 4
 
-            // Ball icon（球种统一在精灵名称左侧）
+            // Ball icon（球种统一在精灵名称左侧；ball 非空就占位 12px，无论解析成败，与原来一致）
             if (e.ball.isNotEmpty()) {
-                val ballId = Identifier.tryParse(e.ball.removePrefix("item.").replaceFirst(".", ":"))
-                if (ballId != null) {
-                    val bi = Registries.ITEM.get(ballId)
+                iconData[origIdx]?.ballStack?.let { ballStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                        itemStack = ItemStack(bi), x = sx.toDouble(), y = y + 6.0, scale = 0.6, matrixStack = context.matrices)
+                        itemStack = ballStack, x = sx.toDouble(), y = y + 6.0, scale = 0.6, matrixStack = context.matrices)
                 }
                 sx += 12
             }
@@ -473,16 +522,11 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
                 sx += 8
             }
 
-            // Held item icon（紧跟性别）
-            if (e.heldItemId.isNotEmpty()) {
-                Identifier.tryParse(e.heldItemId)?.let { heldId ->
-                    val heldItem = Registries.ITEM.get(heldId)
-                    if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
-                        com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                            itemStack = ItemStack(heldItem), x = sx.toDouble(), y = y + 6.0, scale = 0.6, matrixStack = context.matrices)
-                        sx += 12
-                    }
-                }
+            // Held item icon（紧跟性别；空气/空 id 已过滤为 null）
+            iconData[origIdx]?.heldStack?.let { heldStack ->
+                com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                    itemStack = heldStack, x = sx.toDouble(), y = y + 6.0, scale = 0.6, matrixStack = context.matrices)
+                sx += 12
             }
 
             // Level
@@ -502,6 +546,193 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         if (!loaded) {
             context.drawCenteredTextWithShadow(textRenderer, Text.translatable("cobblemarket.sell.loading").formatted(Formatting.GRAY), width / 2, startY + 50, 0xFFFFFF)
         }
+
+        // 固拉多飞行：悬浮在界面之上（与精灵市场同公式，切换界面位置延续）。
+        // flush 夹心 + 清深度：行内 3D 精灵图标/球种图标写深度或抬高 z，会盖住普通 GUI 纹理
+        context.draw()
+        com.mojang.blaze3d.systems.RenderSystem.clear(org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT, net.minecraft.client.MinecraftClient.IS_SYSTEM_MAC)
+        renderGroudonFly(context, false)
+        context.draw()
+    }
+
+    /** 固拉多飞行（照精灵市场，重做第四步）：水平飞入停靠点 2s → 逆时针弧 90° 出屏 1.8s（θ 90°→0°，头朝上竖直出屏）→
+     *  屏外切线掉头朝下 → 顺时针绕半圆 180° 到屏幕右半上方 1.2s（屏外提速）→
+     *  屏外快速竖直下移 0.4s → 屏幕内加速下坠出屏底（速度与原 3s 版屏幕内段一致）→
+     *  第四步（不连接上一步）：镜像图（头朝左、上下正常）从屏幕右上角外水平飞入停在右上角 1.2s，
+     *  停留 5s 悬停（等下一步）。
+     *  路径点 (px,py) 是图片左侧中间的轨迹（旋转轴心 = 图片左侧中间，贴图坐标 (0,150)），
+     *  精灵主体拖在轴心后方，转弯时绕尾部牵引转向 */
+    private fun renderGroudonFly(context: DrawContext, under: Boolean) {
+        if (!com.shusheng.cobblemarket.client.ClientConfig.groudonFly) return
+        val g = com.shusheng.cobblemarket.client.GroudonFly
+        // 计时起点在全局 GroudonFly（照 PokemonCelebrationAnimation 的全局状态）：
+        // 切换界面动画不重置，时间线延续
+        if (g.startAt == 0L) g.startAt = System.currentTimeMillis()
+        val t = (System.currentTimeMillis() - g.startAt).toFloat()
+        // 轴心停靠点：左侧中间停在 (35,110) 时主体中心落在 (140,110)，与第一步停靠位置一致；
+        // 半径 150 的圆弧：圆心在轴心正上方 150 处 (35,-40)（屏幕顶边外）
+        val pivotX = 35f
+        val pivotY = 110f
+        val radius = 150f
+        val centerX = pivotX
+        val centerY = pivotY - radius
+        val theta0 = atan2((pivotY - centerY).toDouble(), (pivotX - centerX).toDouble()).toFloat()
+        // 逆时针段 θ: 90°→0°（绕 90°，头朝上出屏）
+        val endTheta = 0f
+        val arcEndMs = g.FLY_IN_MS + g.ARC_MS
+        val arc2EndMs = arcEndMs + g.ARC2_MS
+        // 下坠段：屏外 170px 用 DROP_OUT_MS 快速通过；屏幕内部分复刻原 3s k² 时间表，
+        // 入屏时刻 tIn = 3000·√(170/(height+370))，之后按原曲线到 3000ms 出屏底，屏幕内速度感不变
+        val tIn = 3000f * kotlin.math.sqrt(170f / (height + 370f))
+        val dropEndMs = arc2EndMs + g.DROP_OUT_MS + (3000f - tIn)
+        val flyIn2EndMs = dropEndMs + g.FLY_IN2_MS
+        val hoverEndMs = flyIn2EndMs + g.HOVER_MS
+        val flyLeftEndMs = hoverEndMs + g.FLY_LEFT_MS
+        val flyIn3EndMs = flyLeftEndMs + g.FLY_IN2_MS
+        val flyRightEndMs = flyIn3EndMs + g.FLY_RIGHT_MS
+        // 顺时针半圆 180°：起点 = 出屏点（圆 (35,-40) 半径 150 的右端点 (185,-40)），
+        // 终点 = 屏幕左半上方（1/4 宽处 (-170 高度)，倒放下坠段即「从左下飞到左上」）；圆心取两点中点，弧线拱向上方
+        val arc2FromX = centerX + radius
+        val arc2FromY = centerY
+        val arc2ToX = width * 0.25f
+        val arc2ToY = -170f
+        val arc2CX = (arc2FromX + arc2ToX) / 2f
+        val arc2CY = (arc2FromY + arc2ToY) / 2f
+        val arc2R = kotlin.math.hypot(arc2FromX - arc2CX, arc2FromY - arc2CY)
+        val arc2Theta0 = atan2((arc2FromY - arc2CY).toDouble(), (arc2FromX - arc2CX).toDouble()).toFloat()
+        val arc2Theta1 = atan2((arc2ToY - arc2CY).toDouble(), (arc2ToX - arc2CX).toDouble()).toFloat() + (2f * PI.toFloat())
+        // 整轮动画（上半 + 下半 = 2×flyRightEndMs）在精灵市场/上架选择界面循环播放：t 取模
+        // 下半部分 = 上半部分绕屏幕中心的中心对称（180° 旋转：x、y 都翻转，顺序相同）：
+        // tUp 从 0 顺序重演；视觉旋转方向不变（逆时针弧仍是逆时针，只是向下出屏底），运动方向反向；
+        // 镜像图状态取反（头朝运动方向、正立不倒置）；层次判定按 tUp
+        val tLoop = t % (2f * flyRightEndMs)
+        val tUp: Float
+        val flip: Boolean
+        if (tLoop < flyRightEndMs) {
+            tUp = tLoop
+            flip = false
+        } else {
+            tUp = tLoop - flyRightEndMs
+            flip = true
+        }
+        var px: Float
+        var py: Float
+        var targetRot: Float
+        when {
+            tUp < g.FLY_IN_MS -> {
+                // 飞入：轴心从屏幕左边缘外水平飞向停靠点（朝右时图片整体在轴心右侧，轴心 x<-210 即全出屏），朝右。
+                // 缓动末速度≈131px/s 与逆时针弧初线速度一致，速度连续无停顿（纯 ease-out 会停稳再启动）
+                val k = tUp / g.FLY_IN_MS
+                val s = 0.465f * (2f * k - k * k) + 0.535f * k
+                px = -245f + (pivotX + 245f) * s
+                py = pivotY
+                targetRot = 0f
+            }
+            tUp < arcEndMs -> {
+                // 逆时针弧 90° 出屏（视觉逆时针 = θ 减小，切线角 θ-90°，末段头朝上）
+                val k = (tUp - g.FLY_IN_MS) / g.ARC_MS
+                val theta = theta0 + (endTheta - theta0) * k
+                px = centerX + radius * cos(theta)
+                py = centerY + radius * sin(theta)
+                targetRot = Math.toDegrees(theta.toDouble()).toFloat() - 90f
+            }
+            tUp < arc2EndMs -> {
+                // 顺时针绕半圆 180°（θ 增大，切线角 θ+90°）：屏外掉头，弧线拱向上方到屏幕右半
+                val k = (tUp - arcEndMs) / g.ARC2_MS
+                val theta = arc2Theta0 + (arc2Theta1 - arc2Theta0) * k
+                px = arc2CX + arc2R * cos(theta)
+                py = arc2CY + arc2R * sin(theta)
+                targetRot = Math.toDegrees(theta.toDouble()).toFloat() + 90f
+            }
+            tUp < dropEndMs -> {
+                // 头朝下竖直下坠：屏外快速下移（不可见段提速），入屏后按原 3s 版屏幕内速度曲线加速
+                val dt = tUp - arc2EndMs
+                px = arc2ToX
+                if (dt < g.DROP_OUT_MS) {
+                    py = arc2ToY * (1f - dt / g.DROP_OUT_MS)
+                } else {
+                    val kk = (tIn + (dt - g.DROP_OUT_MS)) / 3000f
+                    py = arc2ToY + (height + 200f - arc2ToY) * (kk * kk)
+                }
+                targetRot = 90f
+            }
+            tUp < flyIn2EndMs -> {
+                // 第四步：镜像图（头朝左）从屏幕右上角外水平 ease-out 飞入，
+                // 停在右上角（轴心 (width,90)：主体 x [width-210,width]、y [0,180] 刚好贴住右上角）
+                val k = (tUp - dropEndMs) / g.FLY_IN2_MS
+                val s = 1f - (1f - k) * (1f - k)
+                px = (width + 245f) - 245f * s
+                py = 90f
+                targetRot = 0f
+            }
+            tUp < hoverEndMs -> {
+                // 右上角悬停 5s，头正朝左
+                px = width.toFloat()
+                py = 90f
+                targetRot = 0f
+            }
+            tUp < flyLeftEndMs -> {
+                // 第五步：水平向左飞出屏幕，smoothstep 缓动（悬停平滑启动、出屏减速停稳）
+                val k = (tUp - hoverEndMs) / g.FLY_LEFT_MS
+                val s = 3f * k * k - 2f * k * k * k
+                px = width.toFloat() - (width + 245f) * s
+                py = 90f
+                targetRot = 0f
+            }
+            tUp < flyIn3EndMs -> {
+                // 第六步：恢复原图（再次镜像，头朝右）从左下角外水平飞入，穿过左下角不停留；
+                // 缓动末速 ≈269px/s 与第七步匀速一致（速度连续，无停→启动停顿）
+                val k = (tUp - flyLeftEndMs) / g.FLY_IN2_MS
+                val s = 0.68f * k + 0.32f * k * k
+                px = -245f + 245f * s
+                py = height - 90f
+                targetRot = 0f
+            }
+            tUp < flyRightEndMs -> {
+                // 第七步：在市场面板背景下层水平向右飞（绘制在面板之前，被背景盖住），
+                // 匀速 ≈269px/s 飞出屏幕右侧
+                val k = (tUp - flyIn3EndMs) / g.FLY_RIGHT_MS
+                px = 0f + (width + 245f) * k
+                py = height - 90f
+                targetRot = 0f
+            }
+            else -> {
+                // 停在屏幕右侧外（等下一步）
+                px = width + 245f
+                py = height - 90f
+                targetRot = 0f
+            }
+        }
+        // 下半部分中心对称修正：x、y 都绕屏幕中心翻转（180° 旋转），朝向角不变（运动方向自然反向）
+        if (flip) {
+            px = width - px
+            py = height - py
+        }
+        // 层次过滤：第六步（左下角飞入）与第七步（背景下层水平右飞）从飞出开始全程画在背景下层，
+        // 避免第六步上层→第七步下层的层级突变；其余段画在上层。每帧只绘制一次，smoothRot 也只更新一次
+        val isUnder = tUp >= flyLeftEndMs && tUp < flyRightEndMs
+        if (isUnder != under) return
+        g.smoothRot += (((targetRot - g.smoothRot + 540f) % 360f) - 180f) * 0.15f
+        val rotDeg = g.smoothRot
+        val flyFrame = ((System.currentTimeMillis() / g.FRAME_MS) % 40).toInt()
+        val flyTex = Identifier.of("cobblemarket", "textures/gui/groudon_sheet.png")
+        val flyCol = flyFrame % 10
+        val flyRow = flyFrame / 10
+        val flyW = 210f
+        // 第四、五步用镜像图（scale x 取负，静态镜像非旋转中翻面）：头朝左、上下正常；
+        // 第六步起恢复原图（再次镜像）。负 scale 翻转三角形朝向，行内 3D 精灵图标渲染
+        // 可能残留背面剔除开启会整图不画——绘制时临时关 cull，画完按原状态恢复
+        // 正向镜像区间为第四、五步；下半部分（中心对称）运动方向相反，镜像状态取反（头朝运动方向、正立不倒置）
+        val mirrored = (tUp >= dropEndMs && tUp < flyLeftEndMs) != flip
+        val wasCull = org.lwjgl.opengl.GL11.glIsEnabled(org.lwjgl.opengl.GL11.GL_CULL_FACE)
+        if (mirrored) org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_CULL_FACE)
+        context.matrices.push()
+        context.matrices.translate(px.toDouble(), py.toDouble(), 0.0)
+        context.matrices.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Z.rotationDegrees(rotDeg))
+        context.matrices.scale(if (mirrored) -flyW / 350f else flyW / 350f, 180f / 300f, 1f)
+        context.drawTexture(flyTex, 0, -150, (flyCol * 350).toFloat(), (flyRow * 300).toFloat(), 350, 300, 3500, 1200)
+        context.matrices.pop()
+        if (mirrored && wasCull) org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_CULL_FACE)
     }
 
     private fun renderPokemonIcon(context: DrawContext, origIdx: Int, x: Int, y: Int, size: Int) {
@@ -527,41 +758,57 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         }
     }
 
+    // tooltip 内容缓存：内容只取决于条目，悬停同一行时每帧重建全部文本行是悬停掉帧主因
+    private var tooltipCacheKey: java.util.UUID? = null
+    private var tooltipCacheLines: List<Pair<Text, Int>> = emptyList()
+    private var tooltipCacheHeldLine = -1
+    private var tooltipCacheMaxWidth = 0
+
     private fun renderTooltip(context: DrawContext, p: PokemonPreview, mx: Int, my: Int, bgState: Int) {
-        val hp = Text.translatable("cobblemon.stat.hp.name").string
-        val atk = Text.translatable("cobblemon.stat.attack.name").string
-        val def = Text.translatable("cobblemon.stat.defence.name").string
-        val spa = Text.translatable("cobblemon.stat.special_attack.name").string
-        val spd = Text.translatable("cobblemon.stat.special_defence.name").string
-        val spe = Text.translatable("cobblemon.stat.speed.name").string
-        val typeText = Text.translatable(p.primaryType).string +
-            if (p.secondaryType.isNotEmpty()) " + ${Text.translatable(p.secondaryType).string}" else ""
+        // 文本行缓存：悬停同一行时内容不变，只在悬停目标变化时重建（见 tooltipCacheKey 注释）
+        if (tooltipCacheKey != p.uuid) {
+            tooltipCacheKey = p.uuid
+            val hp = Text.translatable("cobblemon.stat.hp.name").string
+            val atk = Text.translatable("cobblemon.stat.attack.name").string
+            val def = Text.translatable("cobblemon.stat.defence.name").string
+            val spa = Text.translatable("cobblemon.stat.special_attack.name").string
+            val spd = Text.translatable("cobblemon.stat.special_defence.name").string
+            val spe = Text.translatable("cobblemon.stat.speed.name").string
+            val typeText = Text.translatable(p.primaryType).string +
+                if (p.secondaryType.isNotEmpty()) " + ${Text.translatable(p.secondaryType).string}" else ""
 
-        val hasHeldItem = p.heldItemId.isNotEmpty() &&
-            Identifier.tryParse(p.heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
+            val hasHeldItem = p.heldItemId.isNotEmpty() &&
+                Identifier.tryParse(p.heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
 
-        val lines = mutableListOf<Pair<Text, Int>>()
-        lines.add(EntryBadgeRenderer.nameWithShinyStar(speciesDisplay(p), p.shiny)
-            .copy().append(Text.literal("  Lv.${p.level}")) to 0xFFFFFF)
-        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText") to 0xFFFFFF)
-        lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
-            .append(EntryBadgeRenderer.natureText(p.natureBase, p.nature))
-            .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
-            .append(Text.translatable(p.ability)) to 0xFFFFFF)
-        var heldItemLine = -1
-        if (hasHeldItem) {
-            heldItemLine = lines.size
-            lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to 0xFFFFFF)
+            val lines = mutableListOf<Pair<Text, Int>>()
+            lines.add(EntryBadgeRenderer.nameWithShinyStar(speciesDisplay(p), p.shiny)
+                .copy().append(Text.literal("  Lv.${p.level}")) to 0xFFFFFF)
+            lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText") to 0xFFFFFF)
+            lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
+                .append(EntryBadgeRenderer.natureText(p.natureBase, p.nature))
+                .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
+                .append(Text.translatable(p.ability)) to 0xFFFFFF)
+            var heldItemLine = -1
+            if (hasHeldItem) {
+                heldItemLine = lines.size
+                lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to 0xFFFFFF)
+            }
+            lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to 0xFFFFFF)
+            lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsHp, p.htHp)}") to 0x66FF66); lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsAtk, p.htAtk)}") to 0xFF6666)
+            lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsDef, p.htDef)}") to 0xFFCC66); lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpAtk, p.htSpAtk)}") to 0x6699FF)
+            lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpDef, p.htSpDef)}") to 0x66FF99); lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpd, p.htSpd)}") to 0xFF99FF)
+
+            var mw = 0; lines.forEach { mw = maxOf(mw, textRenderer.getWidth(it.first)) }
+            if (heldItemLine >= 0) {
+                mw = maxOf(mw, textRenderer.getWidth(lines[heldItemLine].first) + 14)
+            }
+            tooltipCacheLines = lines
+            tooltipCacheHeldLine = heldItemLine
+            tooltipCacheMaxWidth = mw
         }
-        lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to 0xFFFFFF)
-        lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsHp, p.htHp)}") to 0x66FF66); lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsAtk, p.htAtk)}") to 0xFF6666)
-        lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsDef, p.htDef)}") to 0xFFCC66); lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpAtk, p.htSpAtk)}") to 0x6699FF)
-        lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpDef, p.htSpDef)}") to 0x66FF99); lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpd, p.htSpd)}") to 0xFF99FF)
-
-        var mw = 0; lines.forEach { mw = maxOf(mw, textRenderer.getWidth(it.first)) }
-        if (heldItemLine >= 0) {
-            mw = maxOf(mw, textRenderer.getWidth(lines[heldItemLine].first) + 14)
-        }
+        val lines = tooltipCacheLines
+        val heldItemLine = tooltipCacheHeldLine
+        val mw = tooltipCacheMaxWidth
         val pad = 4
         val tx = minOf(mx + 12, width - mw - 12)
         val th = lines.size * 10 + pad
@@ -611,6 +858,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         if (wasInInput && !isMouseOverAnyInput(mx, my)) {
             focused = null
         }
+        // 与 render 相同的 IV 检测：事件读缓存前确保 minIvs 与输入框一致
+        if (syncIvFields()) rebuildFiltered()
         val filtered = filteredList()
         val lx = width / 2 - 148
         val startY = 96
@@ -631,6 +880,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             }
             return true
         }
+        if (syncIvFields()) rebuildFiltered()
         val filtered = filteredList()
         val maxVisible = maxOf(0, (height - 96 - 48) / rowHeight)
         scrollOffset = (scrollOffset - v.toInt()).coerceIn(0, maxOf(0, filtered.size - maxVisible))
@@ -646,6 +896,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             pokemonList = listOf()
             iconData.clear()
             loadedAll = false
+            rebuildFiltered()
             ClientPlayNetworking.send(RequestMyPokemonPayload(0, requestId))
         } else {
             client?.player?.sendMessage(payload.message.copy().formatted(Formatting.RED), false)
@@ -659,5 +910,6 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         const val MAX_TYPE_LIST_ROWS = 8
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
+        val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
     }
 }

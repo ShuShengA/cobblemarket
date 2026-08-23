@@ -73,7 +73,13 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         typeFilter = allTypes[typeIdx].second
     }
 
-    private data class IconData(val renderable: RenderablePokemon, val state: FloatingState)
+    private data class IconData(
+        val renderable: RenderablePokemon,
+        val state: FloatingState,
+        // 球种/携带物栈随图标缓存：render 每帧 new ItemStack 是分配热点，构建一次复用
+        val ballStack: ItemStack?,
+        val heldStack: ItemStack?
+    )
     private val iconData = mutableMapOf<Int, IconData>()
 
     private val speciesNameCache = mutableMapOf<String, String>()
@@ -91,8 +97,27 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             val species = PokemonSpecies.getByIdentifier(id) ?: continue
             val aspects = p.aspects.toMutableSet()
             if (p.shiny && "shiny" !in aspects) aspects.add("shiny")
-            iconData[i] = IconData(RenderablePokemon(species, aspects, ItemStack.EMPTY), FloatingState())
+            iconData[i] = IconData(
+                RenderablePokemon(species, aspects, ItemStack.EMPTY),
+                FloatingState(),
+                ballStack = buildBallStack(p.ball),
+                heldStack = buildHeldStack(p.heldItemId)
+            )
         }
+    }
+
+    /** 球种栈（解析失败为 null；渲染逻辑与原来一致：ball 非空就占位 12px，无论解析成败） */
+    private fun buildBallStack(ball: String): ItemStack? {
+        val ballId = Identifier.tryParse(ball.removePrefix("item.").replaceFirst(".", ":")) ?: return null
+        return ItemStack(Registries.ITEM.get(ballId))
+    }
+
+    /** 携带物栈（空气视为无）；缓存供行渲染每帧复用 */
+    private fun buildHeldStack(heldItemId: String): ItemStack? {
+        if (heldItemId.isEmpty()) return null
+        val heldId = Identifier.tryParse(heldItemId) ?: return null
+        val heldItem = Registries.ITEM.get(heldId)
+        return if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) ItemStack(heldItem) else null
     }
 
     // ── 物品 tab（照搬 ItemSellScreen 本地背包扫描） ──
@@ -170,6 +195,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             // Row 1: Search (full width)
             searchField = TextFieldWidget(textRenderer, leftX + 2, 50, panelWidth - 4, 16, Text.translatable("cobblemarket.sell.search"))
             searchField?.setPlaceholder(Text.translatable("cobblemarket.sell.search"))
+            // 搜索变化时重建过滤缓存（render 每帧只读，见 rebuildFiltered 注释）
+            searchField?.setChangedListener { rebuildFiltered() }
             addSelectableChild(searchField)
             addDrawableChild(searchField)
 
@@ -219,6 +246,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 ClientPlayNetworking.send(RequestMyPokemonPayload(0, requestId))
                 loaded = true
             }
+            rebuildFiltered()
         } else {
             loadInventory()
         }
@@ -263,6 +291,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             pokemonList = pokemonList + payload.pokemon
             buildIconCache(startIdx)
         }
+        rebuildFiltered()
         if (payload.hasMore) {
             ClientPlayNetworking.send(RequestMyPokemonPayload(payload.page + 1, requestId))
         } else {
@@ -488,9 +517,16 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     // ── 列表渲染 ──
 
-    private fun filteredPokemon(): List<PokemonPreview> {
+    // 过滤结果缓存（照黑名单界面的 rebuildFiltered 模式）：数据/搜索/IV/筛选变化时重建，
+    // render/renderBackground 每帧只读。indexedFilteredCache 同缓存带原始下标，省去行循环里每帧 indexOf。
+    private var filteredCache = listOf<PokemonPreview>()
+    private var indexedFilteredCache = listOf<IndexedValue<PokemonPreview>>()
+
+    private fun filteredPokemon(): List<PokemonPreview> = filteredCache
+
+    private fun rebuildFiltered() {
         syncIvFields()
-        return pokemonList.filter { p ->
+        filteredCache = pokemonList.filter { p ->
             val q = searchField?.text?.trim()?.takeIf { it.isNotEmpty() }
             (q == null || speciesDisplay(p).contains(q, ignoreCase = true) || p.speciesName.contains(q, ignoreCase = true)) &&
             (!shinyOnly || p.shiny) &&
@@ -509,6 +545,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 else -> true
             }
         }
+        indexedFilteredCache = filteredCache.withIndex().toList()
     }
 
     private fun htButtonText(): Text = Text.translatable(when (htFilter) {
@@ -526,15 +563,19 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         }
     }
 
-    private fun syncIvFields() {
+    /** IV 输入框 → minIvs 同步；返回是否有变化（变化时调用方重建过滤缓存） */
+    private fun syncIvFields(): Boolean {
         val fields = arrayOf(hpF, atkF, defF, spaF, spdF, speF)
+        var changed = false
         for (i in 0..5) {
             val raw = fields[i]?.text ?: ""
             val digits = raw.filter { it.isDigit() }.take(2)
             val v = digits.toIntOrNull()?.coerceIn(0, 31) ?: -1
             if (digits != raw) fields[i]?.text = if (v < 0) "" else v.toString()
+            if (minIvs[i] != v) changed = true
             minIvs[i] = v
         }
+        return changed
     }
 
     private fun typeColor(tk: String) = when (tk.substringAfterLast(".").lowercase()) {
@@ -585,13 +626,21 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         val panelBottom = height - 32
         val sliceH = 16
 
-        drawPanelSlice(context, Identifier.of("cobblemarket", "textures/gui/market_panel_auction_house_top.png"), panelLeft, panelTop)
+        val top = Identifier.of("cobblemarket", "textures/gui/market_panel_auction_house_top.png")
+        val mid = Identifier.of("cobblemarket", "textures/gui/market_panel_middle.png")
+        val bot = Identifier.of("cobblemarket", "textures/gui/market_panel_bottom.png")
+
+        drawPanelSlice(context, top, panelLeft, panelTop)
         var y = panelTop + sliceH
         while (y < panelBottom - sliceH) {
-            drawPanelSlice(context, Identifier.of("cobblemarket", "textures/gui/market_panel_middle.png"), panelLeft, y)
+            drawPanelSlice(context, mid, panelLeft, y, minOf(sliceH, panelBottom - sliceH - y))
             y += sliceH
         }
-        drawPanelSlice(context, Identifier.of("cobblemarket", "textures/gui/market_panel_auction_house_bottom.png"), panelLeft, panelBottom - sliceH)
+        drawPanelSlice(context, bot, panelLeft, panelBottom - sliceH)
+
+        // IV 输入变化时重建过滤缓存（原 filteredPokemon 每次调用都先 syncIvFields，缓存后在此统一检测；
+        // renderBackground 每帧先于 render 运行，检测一次即可覆盖本帧全部读缓存点）
+        if (syncIvFields()) rebuildFiltered()
 
         val leftX = width / 2 - panelWidth / 2
         val startY = getListStartY()
@@ -671,18 +720,16 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         }
 
         if (currentTab == 0) {
-            val displayList = filteredPokemon()
-            displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, p ->
+            val displayList = indexedFilteredCache
+            displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, (origIndex, p) ->
                 val y = startY + i * rowHeight
-                val origIndex = pokemonList.indexOf(p)
                 // 槽背景（GUI 层，弹窗遮罩自动压暗，照常渲染）；3D 精灵弹窗打开时颜色压暗
                 val slotX = leftX + 2
                 val slotY = y + 2
-                val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
                 context.matrices.push()
                 context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
                 context.matrices.scale(20f / 66f, 20f / 66f, 1f)
-                context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
+                context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
                 // 预览弹窗打开时不渲染 3D（模型层在衬底之上，压暗仍会浮在弹窗上）
                 if (dialogPokemon == null && dialogItem == null) renderPokemonIcon(context, origIndex, slotX, slotY, 20)
@@ -695,13 +742,11 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 context.drawText(textRenderer, src, sx, y + 7, srcColor, false)
                 sx += textRenderer.getWidth(src) + 4
 
-                // Ball icon（球种统一在精灵名称左侧；弹窗打开时不渲染）
+                // Ball icon（球种统一在精灵名称左侧；弹窗打开时不渲染；ball 非空就占位 12px，与原来一致）
                 if (dialogPokemon == null && dialogItem == null && p.ball.isNotEmpty()) {
-                    val ballId = Identifier.tryParse(p.ball.removePrefix("item.").replaceFirst(".", ":"))
-                    if (ballId != null) {
-                        val bi = Registries.ITEM.get(ballId)
+                    iconData[origIndex]?.ballStack?.let { ballStack ->
                         com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                            itemStack = ItemStack(bi), x = sx.toDouble(), y = y + 6.0, scale = 0.6, matrixStack = context.matrices)
+                            itemStack = ballStack, x = sx.toDouble(), y = y + 6.0, scale = 0.6, matrixStack = context.matrices)
                     }
                     sx += 12
                 }
@@ -717,20 +762,17 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
                 // Gender icon（紧跟名字）
                 if (p.gender == "MALE" || p.gender == "FEMALE") {
-                    val gi = Identifier.of("cobblemon", if (p.gender == "MALE") "textures/gui/pc/gender_icon_male.png" else "textures/gui/pc/gender_icon_female.png")
+                    val gi = if (p.gender == "MALE") GENDER_ICON_MALE else GENDER_ICON_FEMALE
                     com.cobblemon.mod.common.api.gui.blitk(matrixStack = context.matrices, texture = gi, x = sx, y = y + 7, width = 6, height = 8)
                     sx += 8
                 }
 
-                // Held item icon（紧跟性别；弹窗打开时不渲染）
-                if (dialogPokemon == null && dialogItem == null && p.heldItemId.isNotEmpty()) {
-                    Identifier.tryParse(p.heldItemId)?.let { heldId ->
-                        val heldItem = Registries.ITEM.get(heldId)
-                        if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
-                            com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                                itemStack = ItemStack(heldItem), x = sx.toDouble(), y = y + 6.0, scale = 0.6, matrixStack = context.matrices)
-                            sx += 12
-                        }
+                // Held item icon（紧跟性别；弹窗打开时不渲染；空气/空 id 已过滤为 null）
+                if (dialogPokemon == null && dialogItem == null) {
+                    iconData[origIndex]?.heldStack?.let { heldStack ->
+                        com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                            itemStack = heldStack, x = sx.toDouble(), y = y + 6.0, scale = 0.6, matrixStack = context.matrices)
+                        sx += 12
                     }
                 }
 
@@ -758,42 +800,58 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         }
     }
 
+    // tooltip 内容缓存：内容只取决于条目，悬停同一行时每帧重建全部文本行是悬停掉帧主因
+    private var tooltipCacheKey: java.util.UUID? = null
+    private var tooltipCacheLines: List<Pair<Text, Int>> = emptyList()
+    private var tooltipCacheHeldLine = -1
+    private var tooltipCacheMaxWidth = 0
+
     // 悬停提示（照搬 SellSelectScreen）
     private fun renderTooltip(context: DrawContext, p: PokemonPreview, mx: Int, my: Int, bgState: Int) {
-        val hp = Text.translatable("cobblemon.stat.hp.name").string
-        val atk = Text.translatable("cobblemon.stat.attack.name").string
-        val def = Text.translatable("cobblemon.stat.defence.name").string
-        val spa = Text.translatable("cobblemon.stat.special_attack.name").string
-        val spd = Text.translatable("cobblemon.stat.special_defence.name").string
-        val spe = Text.translatable("cobblemon.stat.speed.name").string
-        val typeText = Text.translatable(p.primaryType).string +
-            if (p.secondaryType.isNotEmpty()) " + ${Text.translatable(p.secondaryType).string}" else ""
+        // 文本行缓存：悬停同一行时内容不变，只在悬停目标变化时重建（见 tooltipCacheKey 注释）
+        if (tooltipCacheKey != p.uuid) {
+            tooltipCacheKey = p.uuid
+            val hp = Text.translatable("cobblemon.stat.hp.name").string
+            val atk = Text.translatable("cobblemon.stat.attack.name").string
+            val def = Text.translatable("cobblemon.stat.defence.name").string
+            val spa = Text.translatable("cobblemon.stat.special_attack.name").string
+            val spd = Text.translatable("cobblemon.stat.special_defence.name").string
+            val spe = Text.translatable("cobblemon.stat.speed.name").string
+            val typeText = Text.translatable(p.primaryType).string +
+                if (p.secondaryType.isNotEmpty()) " + ${Text.translatable(p.secondaryType).string}" else ""
 
-        val hasHeldItem = p.heldItemId.isNotEmpty() &&
-            Identifier.tryParse(p.heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
+            val hasHeldItem = p.heldItemId.isNotEmpty() &&
+                Identifier.tryParse(p.heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
 
-        val lines = mutableListOf<Pair<Text, Int>>()
-        lines.add(EntryBadgeRenderer.nameWithShinyStar(speciesDisplay(p), p.shiny)
-            .copy().append(Text.literal("  Lv.${p.level}")) to 0xFFFFFF)
-        lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText") to 0xFFFFFF)
-        lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
-            .append(EntryBadgeRenderer.natureText(p.natureBase, p.nature))
-            .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
-            .append(Text.translatable(p.ability)) to 0xFFFFFF)
-        var heldItemLine = -1
-        if (hasHeldItem) {
-            heldItemLine = lines.size
-            lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to 0xFFFFFF)
+            val lines = mutableListOf<Pair<Text, Int>>()
+            lines.add(EntryBadgeRenderer.nameWithShinyStar(speciesDisplay(p), p.shiny)
+                .copy().append(Text.literal("  Lv.${p.level}")) to 0xFFFFFF)
+            lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText") to 0xFFFFFF)
+            lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
+                .append(EntryBadgeRenderer.natureText(p.natureBase, p.nature))
+                .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
+                .append(Text.translatable(p.ability)) to 0xFFFFFF)
+            var heldItemLine = -1
+            if (hasHeldItem) {
+                heldItemLine = lines.size
+                lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to 0xFFFFFF)
+            }
+            lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to 0xFFFFFF)
+            lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsHp, p.htHp)}") to 0x66FF66); lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsAtk, p.htAtk)}") to 0xFF6666)
+            lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsDef, p.htDef)}") to 0xFFCC66); lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpAtk, p.htSpAtk)}") to 0x6699FF)
+            lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpDef, p.htSpDef)}") to 0x66FF99); lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpd, p.htSpd)}") to 0xFF99FF)
+
+            var mw = 0; lines.forEach { mw = maxOf(mw, textRenderer.getWidth(it.first)) }
+            if (heldItemLine >= 0) {
+                mw = maxOf(mw, textRenderer.getWidth(lines[heldItemLine].first) + 14)
+            }
+            tooltipCacheLines = lines
+            tooltipCacheHeldLine = heldItemLine
+            tooltipCacheMaxWidth = mw
         }
-        lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to 0xFFFFFF)
-        lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsHp, p.htHp)}") to 0x66FF66); lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsAtk, p.htAtk)}") to 0xFF6666)
-        lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsDef, p.htDef)}") to 0xFFCC66); lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpAtk, p.htSpAtk)}") to 0x6699FF)
-        lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpDef, p.htSpDef)}") to 0x66FF99); lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpd, p.htSpd)}") to 0xFF99FF)
-
-        var mw = 0; lines.forEach { mw = maxOf(mw, textRenderer.getWidth(it.first)) }
-        if (heldItemLine >= 0) {
-            mw = maxOf(mw, textRenderer.getWidth(lines[heldItemLine].first) + 14)
-        }
+        val lines = tooltipCacheLines
+        val heldItemLine = tooltipCacheHeldLine
+        val mw = tooltipCacheMaxWidth
         val pad = 4
         val tx = minOf(mx + 12, width - mw - 12)
         val th = lines.size * 10 + pad
@@ -823,10 +881,10 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         context.matrices.pop()
     }
 
-    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int) {
+    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int, sliceH: Int = 16) {
         context.matrices.push()
         context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(0.5f, 0.5f, 1f)
+        context.matrices.scale(0.5f, 0.5f * sliceH / 16f, 1f)
         context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
         context.matrices.pop()
     }
@@ -909,5 +967,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     companion object {
         private var auctionRequestId = 0
+        val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
+        val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
+        val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
     }
 }

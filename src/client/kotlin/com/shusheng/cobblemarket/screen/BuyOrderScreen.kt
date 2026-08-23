@@ -55,6 +55,10 @@ class BuyOrderScreen(
 
     private var currentTab = initialTab.coerceIn(0, 1) // 0 = 全部, 1 = 我的
     private var entries = listOf<BuyOrderEntry>()
+    // 过滤结果缓存：数据/搜索变化时重建，render 每帧只读（避免每帧全量 filter+sort）
+    private var displayCache = listOf<BuyOrderEntry>()
+    // 带索引列表缓存（IndexedValue.index = entries 中的原始索引）：render 行循环每帧 entries.indexOf 是扫描热点，重建显示缓存时同步构建
+    private var indexedDisplay = listOf<IndexedValue<BuyOrderEntry>>()
     private var searchField: TextFieldWidget? = null
     private var scrollOffset = 0
     private var hoveredRow = -1
@@ -152,22 +156,49 @@ class BuyOrderScreen(
     private fun rowLeftX() = width / 2 - panelWidth / 2 + PANEL_BORDER_X
     private fun rowW() = panelWidth - 2 * PANEL_BORDER_X
 
-    // 行首图标缓存（指定物种的精灵单渲染 3D 图标，照拍卖模式）
-    private data class IconData(val displayName: String, val renderable: RenderablePokemon?, val state: FloatingState)
+    // 行首图标/行显示数据缓存（数据到达时构建，render 每帧只读）：
+    // name/nameColor/itemStack 此前每行每帧解析（物种查找只为属性色），是行渲染分配热点
+    private data class IconData(
+        val name: String,            // 行内截断后的显示名
+        val renderable: RenderablePokemon?,
+        val state: FloatingState,
+        val nameColor: Int,          // 属性色（物种解析失败/任意精灵/物品为白）
+        val itemStack: ItemStack?    // 物品单行图标栈
+    )
     private val iconData = mutableMapOf<Int, IconData>()
     private val iconSize = 20
+
+    // tooltip 内容缓存：静态行只取决于条目，悬停同一行时每帧重建全部文本行是悬停掉帧主因；
+    // 数量（交付中剩余量会变）与到期倒计时为动态行，每帧单独构建
+    private var tooltipCacheKey: UUID? = null
+    private var tooltipCacheLines: List<Pair<net.minecraft.text.OrderedText?, Int>> = emptyList()
+    private var tooltipCacheQuantityLine = -1  // 物品单数量行的插入点（缓存行中的索引），-1 = 无数量行
+    private var tooltipCacheMaxWidth = 0
 
     private fun cacheIcons() {
         iconData.clear()
         entries.forEachIndexed { index, entry ->
-            if (entry.type != "POKEMON" || entry.speciesId == null) return@forEachIndexed
-            val id = Identifier.tryParse(entry.speciesId) ?: return@forEachIndexed
-            val species = PokemonSpecies.getByIdentifier(id) ?: return@forEachIndexed
+            // 行内截断长度与行渲染一致（物品 46 / 精灵 36）
+            val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(
+                entryName(entry), if (entry.type == "ITEM") 46 else 36)
+            if (entry.type == "ITEM") {
+                iconData[index] = IconData(
+                    name = name, renderable = null, state = FloatingState(), nameColor = 0xFFFFFF,
+                    itemStack = Identifier.tryParse(entry.itemId)?.let { ItemStack(Registries.ITEM.get(it)) }
+                )
+                return@forEachIndexed
+            }
+            val species = entry.speciesId?.let { Identifier.tryParse(it)?.let { id -> PokemonSpecies.getByIdentifier(id) } }
+            val nameColor = species?.let { typeColor("cobblemon.type.${it.primaryType.name.lowercase()}") } ?: 0xFFFFFF
+            if (species == null) {
+                // 任意精灵单/物种解析失败：不渲染 3D（行内画「?」，与无缓存时一致），名称与颜色仍用缓存
+                iconData[index] = IconData(name, null, FloatingState(), nameColor, null)
+                return@forEachIndexed
+            }
             // 仅闪要求时叠加 shiny aspect 渲染闪光形态；其余用标准形态
             val aspects = mutableSetOf<String>()
             if (entry.shinyFilter == PokemonBlacklistEntry.SHINY_YES) aspects.add("shiny")
-            val displayName = com.shusheng.cobblemarket.util.SpeciesText.displayName(species)
-            iconData[index] = IconData(displayName, RenderablePokemon(species, aspects, ItemStack.EMPTY), FloatingState())
+            iconData[index] = IconData(name, RenderablePokemon(species, aspects, ItemStack.EMPTY), FloatingState(), nameColor, null)
         }
     }
 
@@ -275,7 +306,7 @@ class BuyOrderScreen(
         backButton = NineSliceButton(
             width / 2 + panelWidth / 2 - PANEL_BORDER_X - 50, 10, 50, 16,
             Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(if (adminMode) AdminScreen() else MarketEntryScreen()) },
+            { client?.setScreen(if (adminMode) AdminScreen() else MarketEntryScreen(skipDropAnim = true)) },
             texture = BUY_ORDER_BUTTON_TEXTURE,
             texH = BUY_ORDER_BUTTON_TEX_H
         )
@@ -319,6 +350,7 @@ class BuyOrderScreen(
         searchField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.search").formatted(Formatting.GRAY))
         // 本地过滤无网络请求，无需防抖；搜索变化重置滚动并重建行按钮
         searchField?.setChangedListener {
+            rebuildDisplayList()
             scrollOffset = 0
             hoveredRow = -1
             rebuildRowButtons()
@@ -328,6 +360,7 @@ class BuyOrderScreen(
 
         // 不重置 scrollOffset：交付弹窗关闭/resize 重建时保留浏览位置（switchTab 才显式归零）
         ClientPlayNetworking.send(RequestBuyOrderListPayload())
+        rebuildDisplayList()
     }
 
     private fun updateTabButtons() {
@@ -341,6 +374,7 @@ class BuyOrderScreen(
     private fun switchTab(tab: Int) {
         currentTab = tab
         searchField?.text = ""
+        rebuildDisplayList()
         scrollOffset = 0
         hoveredRow = -1
         updateTabButtons()
@@ -351,6 +385,7 @@ class BuyOrderScreen(
 
     fun onBuyOrderList(payload: BuyOrderListDataPayload) {
         entries = payload.entries
+        rebuildDisplayList()
         cacheIcons()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayCount() - getMaxVisibleRows()))
         rebuildRowButtons()
@@ -380,6 +415,7 @@ class BuyOrderScreen(
             "UPDATED" -> entries = entries.map { if (it.id == e.id) e else it }
             "CLOSED" -> entries = entries.filterNot { it.id == e.id }
         }
+        rebuildDisplayList()
         cacheIcons()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayCount() - getMaxVisibleRows()))
         rebuildRowButtons()
@@ -406,9 +442,12 @@ class BuyOrderScreen(
 
     // ── 过滤与列表 ──
 
-    private fun displayList(): List<BuyOrderEntry> {
+    private fun displayList(): List<BuyOrderEntry> = displayCache
+
+    /** 数据/搜索变化时重建显示缓存（排序只在这里做一次，render 每帧只读） */
+    private fun rebuildDisplayList() {
         val query = searchField?.text?.trim()?.takeIf { it.isNotEmpty() }
-        return entries.filter { entry ->
+        displayCache = entries.filter { entry ->
             // 管理员模式显示全部（无「我的」过滤）
             if (adminMode || currentTab == 0) true else isMine(entry)
         }.filter { entry ->
@@ -416,6 +455,7 @@ class BuyOrderScreen(
             query == null || entryName(entry).contains(query, ignoreCase = true) ||
                 entry.buyerName.contains(query, ignoreCase = true)
         }.sortedByDescending { it.createdAt }
+        indexedDisplay = displayCache.map { IndexedValue(entries.indexOf(it), it) }
     }
 
     private fun displayCount() = displayList().size
@@ -622,16 +662,6 @@ class BuyOrderScreen(
                 leftX + PANEL_BORDER_X + 2, 20, 0x55FFFF)
         }
 
-        // 操作结果提示
-        if (resultMsg != null) {
-            if (System.currentTimeMillis() > resultUntil) {
-                resultMsg = null
-            } else {
-                // height-52：面板底部边框带（height-48 起）上方 4px，避免提示文字与边框重合
-                context.drawCenteredTextWithShadow(textRenderer, resultMsg!!, centerX, height - 52, 0x55FF55)
-            }
-        }
-
         // 分隔线缩进到行区域（不压背景左右边框）
         context.fill(rowL, startY - 2, rowL + rowW(), startY - 1, 0xFF555555.toInt())
 
@@ -645,38 +675,32 @@ class BuyOrderScreen(
 
         // 弹窗打开时行内图标不渲染（物品/精灵模型图标走独立渲染层，z 平移盖不住，会刺穿遮罩）
         val anyDialogOpen = anyDialogOpen()
-        displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
+        indexedDisplay.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, (origIndex, entry) ->
             val y = startY + i * rowHeight
-            val origIndex = entries.indexOf(entry)
             val slotX = rowL + 2
             val slotY = y + 2
 
             // 行首图标槽（照精灵市场）：精灵单 3D 渲染（弹窗打开时不渲染——模型层在衬底之上，压暗仍会浮在弹窗背景上；
             // 任意精灵画 ?），物品单画物品图标（弹窗打开时隐藏）
+            val rowData = iconData[origIndex]
             if (entry.type == "POKEMON") {
-                val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
                 context.matrices.push()
                 context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
                 context.matrices.scale(iconSize / 66f, iconSize / 66f, 1f)
-                context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
+                context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
-                if (iconData.containsKey(origIndex)) {
+                if (rowData?.renderable != null) {
                     if (!anyDialogOpen) renderPokemonIcon(context, origIndex, slotX, slotY, iconSize)
                 } else {
                     context.drawCenteredTextWithShadow(textRenderer, "?", slotX + iconSize / 2, slotY + 6, 0xAAAAAA)
                 }
             } else if (!anyDialogOpen) {
-                Identifier.tryParse(entry.itemId)?.let { id ->
-                    context.drawItem(ItemStack(Registries.ITEM.get(id)), slotX + 2, slotY)
-                }
+                rowData?.itemStack?.let { context.drawItem(it, slotX + 2, slotY) }
             }
 
             // 名称（属性色，照精灵市场）+ 条件徽章（★/☆/HT）
-            val nameColor = if (entry.type == "POKEMON") {
-                val species = entry.speciesId?.let { Identifier.tryParse(it)?.let { id -> PokemonSpecies.getByIdentifier(id) } }
-                species?.let { typeColor("cobblemon.type.${it.primaryType.name.lowercase()}") } ?: 0xFFFFFF
-            } else 0xFFFFFF
-            val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(entryName(entry), if (entry.type == "ITEM") 46 else 36)
+            val nameColor = rowData?.nameColor ?: 0xFFFFFF
+            val name = rowData?.name ?: com.shusheng.cobblemarket.util.TextUtil.truncateString(entryName(entry), if (entry.type == "ITEM") 46 else 36)
             context.drawTextWithShadow(textRenderer, name, rowL + 40, y + 7, nameColor)
             var sx = rowL + 40 + textRenderer.getWidth(name)
             conditionBadges(entry).forEach { (badge, color) ->
@@ -724,18 +748,19 @@ class BuyOrderScreen(
     // 320×32 纹理：整图（含左右边框）横向拉伸至面板宽、纵向 0.5 缩为 16 逻辑高。
     // 只画局部再拉伸会导致右边框丢失，按钮看起来超出背景
     private fun drawSlice(context: DrawContext, texture: Identifier, x: Int, y: Int) {
+        // 贴图 640×32：x 方向按面板宽/640 缩放，采样整张（320 旧贴图时是 /320 采样 320 宽）
         context.matrices.push()
         context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(panelWidth / 320f, 0.5f, 1f)
-        context.drawTexture(texture, 0, 0, 0f, 0f, 320, 32, 320, 32)
+        context.matrices.scale(panelWidth / 640f, 0.5f, 1f)
+        context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
         context.matrices.pop()
     }
 
     private fun drawSliceStretched(context: DrawContext, texture: Identifier, x: Int, y: Int, h: Int) {
         context.matrices.push()
         context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(panelWidth / 320f, h / 32f, 1f)
-        context.drawTexture(texture, 0, 0, 0f, 0f, 320, 32, 320, 32)
+        context.matrices.scale(panelWidth / 640f, h / 32f, 1f)
+        context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
         context.matrices.pop()
     }
 
@@ -743,84 +768,117 @@ class BuyOrderScreen(
         // 前景（标题/余额/行内容/tooltip）全部在 renderBackground 绘制（早于弹窗遮罩），
         // 这里只渲染 children（弹窗遮罩/背景 Drawable 与各控件）
         super.render(context, mouseX, mouseY, delta)
+        // 操作结果提示画在最后（弹窗遮罩之上），否则创建弹窗打开时被遮罩压暗看不见
+        if (resultMsg != null) {
+            if (System.currentTimeMillis() > resultUntil) {
+                resultMsg = null
+            } else {
+                // height-52：面板底部边框带（height-48 起）上方 4px，避免提示文字与边框重合
+                context.drawCenteredTextWithShadow(textRenderer, resultMsg!!, width / 2, height - 52, 0x55FF55)
+            }
+        }
     }
 
     // 悬停信息面板：照精灵市场 tooltip 结构（自绘九宫格面板 + 固定行高，信息同市场列表）
     private fun renderTooltip(context: DrawContext, entry: BuyOrderEntry, mouseX: Int, mouseY: Int) {
-        val w = 0xFFFFFF
-        val ivColors = intArrayOf(0x66FF66, 0xFF6666, 0xFFCC66, 0x6699FF, 0x66FF99, 0xFF99FF)
+        // 静态行缓存：内容只取决于条目（见 tooltipCacheKey 字段注释），悬停目标变化时才重建
+        if (tooltipCacheKey != entry.id) {
+            tooltipCacheKey = entry.id
+            val w = 0xFFFFFF
+            val ivColors = intArrayOf(0x66FF66, 0xFF6666, 0xFFCC66, 0x6699FF, 0x66FF99, 0xFF99FF)
 
-        val lines = mutableListOf<Pair<net.minecraft.text.OrderedText?, Int>>() // null = 分割线行
-        lines.add(Text.literal(entryName(entry)).asOrderedText() to w)
-        if (entry.type == "POKEMON") {
-            // 条件行：闪光用星星图标（★ 金 = 仅闪，☆ 灰 = 仅非闪，不限不显示）+ 特训
-            // （filter_ht_any 自带「特训：」前缀，不能叠加 tooltip_ht 标签；此处统一用不带前缀的三态文案）
-            val htLabel = when (entry.htFilter) {
-                PokemonBlacklistEntry.HT_ONLY -> Text.translatable("cobblemarket.gui.filter_ht_on").string
-                PokemonBlacklistEntry.HT_NONE -> Text.translatable("cobblemarket.gui.filter_ht_off").string
-                else -> Text.translatable("cobblemarket.buy_order.any").string
+            val lines = mutableListOf<Pair<net.minecraft.text.OrderedText?, Int>>() // null = 分割线行
+            lines.add(Text.literal(entryName(entry)).asOrderedText() to w)
+            if (entry.type == "POKEMON") {
+                // 条件行：闪光用星星图标（★ 金 = 仅闪，☆ 灰 = 仅非闪，不限不显示）+ 特训
+                // （filter_ht_any 自带「特训：」前缀，不能叠加 tooltip_ht 标签；此处统一用不带前缀的三态文案）
+                val htLabel = when (entry.htFilter) {
+                    PokemonBlacklistEntry.HT_ONLY -> Text.translatable("cobblemarket.gui.filter_ht_on").string
+                    PokemonBlacklistEntry.HT_NONE -> Text.translatable("cobblemarket.gui.filter_ht_off").string
+                    else -> Text.translatable("cobblemarket.buy_order.any").string
+                }
+                val condLine = Text.literal("")
+                when (entry.shinyFilter) {
+                    PokemonBlacklistEntry.SHINY_YES -> condLine.append(Text.literal("★").formatted(Formatting.GOLD))
+                    PokemonBlacklistEntry.SHINY_NO -> condLine.append(Text.literal("☆").formatted(Formatting.GRAY))
+                }
+                condLine.append(Text.literal("  ${Text.translatable("cobblemarket.buy_order.tooltip_ht").string} $htLabel"))
+                lines.add(condLine.asOrderedText() to w)
+                // 性格 + 特性（照精灵市场同排格式，通用 key 自带冒号）
+                val natureTxt = entry.natureKey?.let { Text.translatable(it).string } ?: Text.translatable("cobblemarket.buy_order.any").string
+                val abilityTxt = entry.abilityKey?.let { Text.translatable(it).string } ?: Text.translatable("cobblemarket.buy_order.any").string
+                lines.add(Text.literal(
+                    "${Text.translatable("cobblemarket.gui.tooltip_nature").string}$natureTxt  " +
+                    "${Text.translatable("cobblemarket.gui.tooltip_ability").string}$abilityTxt"
+                ).asOrderedText() to w)
+                // 形态（有限定时）
+                if (entry.aspects.isNotEmpty() && PokemonBlacklistEntry.ALL_FORMS !in entry.aspects) {
+                    val formLabel = if (entry.aspects.isEmpty()) Text.translatable("cobblemarket.blacklist.form_default").string
+                        else entry.aspects.joinToString("/") { aspectLabel(it) }
+                    lines.add(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_form").string} $formLabel").asOrderedText() to w)
+                }
+                // IV 要求（照精灵市场六行彩色；-1 = 不限显示 —）
+                val hp = Text.translatable("cobblemon.stat.hp.name").string
+                val atk = Text.translatable("cobblemon.stat.attack.name").string
+                val def = Text.translatable("cobblemon.stat.defence.name").string
+                val spa = Text.translatable("cobblemon.stat.special_attack.name").string
+                val spd = Text.translatable("cobblemon.stat.special_defence.name").string
+                val spe = Text.translatable("cobblemon.stat.speed.name").string
+                lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs").asOrderedText() to w)
+                fun ivReq(v: Int) = if (v < 0) "—" else v.toString()
+                lines.add(Text.literal("  $hp:${ivReq(entry.ivHp)}").asOrderedText() to ivColors[0])
+                lines.add(Text.literal("  $atk:${ivReq(entry.ivAtk)}").asOrderedText() to ivColors[1])
+                lines.add(Text.literal("  $def:${ivReq(entry.ivDef)}").asOrderedText() to ivColors[2])
+                lines.add(Text.literal("  $spa:${ivReq(entry.ivSpAtk)}").asOrderedText() to ivColors[3])
+                lines.add(Text.literal("  $spd:${ivReq(entry.ivSpDef)}").asOrderedText() to ivColors[4])
+                lines.add(Text.literal("  $spe:${ivReq(entry.ivSpd)}").asOrderedText() to ivColors[5])
             }
-            val condLine = Text.literal("")
-            when (entry.shinyFilter) {
-                PokemonBlacklistEntry.SHINY_YES -> condLine.append(Text.literal("★").formatted(Formatting.GOLD))
-                PokemonBlacklistEntry.SHINY_NO -> condLine.append(Text.literal("☆").formatted(Formatting.GRAY))
-            }
-            condLine.append(Text.literal("  ${Text.translatable("cobblemarket.buy_order.tooltip_ht").string} $htLabel"))
-            lines.add(condLine.asOrderedText() to w)
-            // 性格 + 特性（照精灵市场同排格式，通用 key 自带冒号）
-            val natureTxt = entry.natureKey?.let { Text.translatable(it).string } ?: Text.translatable("cobblemarket.buy_order.any").string
-            val abilityTxt = entry.abilityKey?.let { Text.translatable(it).string } ?: Text.translatable("cobblemarket.buy_order.any").string
+            // 数量行是动态行（交付期间剩余量会变），只记录插入点（价格行之前，与原顺序一致）
+            var quantityLine = -1
+            if (entry.type == "ITEM") quantityLine = lines.size
+            // 价格区间（独立行，照精灵市场价格行的灰色标签格式）
             lines.add(Text.literal(
-                "${Text.translatable("cobblemarket.gui.tooltip_nature").string}$natureTxt  " +
-                "${Text.translatable("cobblemarket.gui.tooltip_ability").string}$abilityTxt"
+                "${Text.translatable("cobblemarket.buy_order.tooltip_price").formatted(Formatting.GRAY).string} " +
+                "${com.shusheng.cobblemarket.client.formatPrice(entry.minPrice)}~${com.shusheng.cobblemarket.client.formatPrice(entry.maxPrice)}◆"
             ).asOrderedText() to w)
-            // 形态（有限定时）
-            if (entry.aspects.isNotEmpty() && PokemonBlacklistEntry.ALL_FORMS !in entry.aspects) {
-                val formLabel = if (entry.aspects.isEmpty()) Text.translatable("cobblemarket.blacklist.form_default").string
-                    else entry.aspects.joinToString("/") { aspectLabel(it) }
-                lines.add(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_form").string} $formLabel").asOrderedText() to w)
+            // 买家留言区块：分割线夹多行内容（照拍卖规则面板样式），无备注不显示
+            if (entry.note.isNotEmpty()) {
+                lines.add(null to w)
+                val noteLabel = Text.literal(Text.translatable("cobblemarket.buy_order.tooltip_note").string)
+                    .append(Text.literal(entry.note))
+                textRenderer.wrapLines(noteLabel, MAX_TOOLTIP_W).forEach { lines.add(it to 0xFFDD99) }
+                lines.add(null to w)
             }
-            // IV 要求（照精灵市场六行彩色；-1 = 不限显示 —）
-            val hp = Text.translatable("cobblemon.stat.hp.name").string
-            val atk = Text.translatable("cobblemon.stat.attack.name").string
-            val def = Text.translatable("cobblemon.stat.defence.name").string
-            val spa = Text.translatable("cobblemon.stat.special_attack.name").string
-            val spd = Text.translatable("cobblemon.stat.special_defence.name").string
-            val spe = Text.translatable("cobblemon.stat.speed.name").string
-            lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs").asOrderedText() to w)
-            fun ivReq(v: Int) = if (v < 0) "—" else v.toString()
-            lines.add(Text.literal("  $hp:${ivReq(entry.ivHp)}").asOrderedText() to ivColors[0])
-            lines.add(Text.literal("  $atk:${ivReq(entry.ivAtk)}").asOrderedText() to ivColors[1])
-            lines.add(Text.literal("  $def:${ivReq(entry.ivDef)}").asOrderedText() to ivColors[2])
-            lines.add(Text.literal("  $spa:${ivReq(entry.ivSpAtk)}").asOrderedText() to ivColors[3])
-            lines.add(Text.literal("  $spd:${ivReq(entry.ivSpDef)}").asOrderedText() to ivColors[4])
-            lines.add(Text.literal("  $spe:${ivReq(entry.ivSpd)}").asOrderedText() to ivColors[5])
+            // 买家（照精灵市场卖家/价格行的灰标签格式）
+            lines.add(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_buyer").formatted(Formatting.GRAY).string} ${entry.buyerName}").asOrderedText() to w)
+            // 到期行为动态行，不缓存
+
+            var maxWidth = 0
+            lines.forEach { (line, _) -> line?.let { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) } }
+            tooltipCacheLines = lines
+            tooltipCacheQuantityLine = quantityLine
+            tooltipCacheMaxWidth = maxWidth
         }
-        // 数量（独立行，仅物品单；精灵单固定 1 只不显示）
-        if (entry.type == "ITEM") {
+        // 动态行（数量 + 到期倒计时）每帧构建
+        val staticLines = tooltipCacheLines
+        val quantityLine = tooltipCacheQuantityLine
+        val lines = ArrayList<Pair<net.minecraft.text.OrderedText?, Int>>(staticLines.size + 2)
+        if (quantityLine >= 0) {
+            lines.addAll(staticLines.subList(0, quantityLine))
             val qty = if (entry.remainingCount < entry.totalCount)
                 "${entry.remainingCount}/${entry.totalCount}" else entry.totalCount.toString()
-            lines.add(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_quantity").string} $qty").asOrderedText() to w)
+            lines.add(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_quantity").string} $qty").asOrderedText() to 0xFFFFFF)
+            lines.addAll(staticLines.subList(quantityLine, staticLines.size))
+        } else {
+            lines.addAll(staticLines)
         }
-        // 价格区间（独立行，照精灵市场价格行的灰色标签格式）
-        lines.add(Text.literal(
-            "${Text.translatable("cobblemarket.buy_order.tooltip_price").formatted(Formatting.GRAY).string} " +
-            "${com.shusheng.cobblemarket.client.formatPrice(entry.minPrice)}~${com.shusheng.cobblemarket.client.formatPrice(entry.maxPrice)}◆"
-        ).asOrderedText() to w)
-        // 买家留言区块：分割线夹多行内容（照拍卖规则面板样式），无备注不显示
-        if (entry.note.isNotEmpty()) {
-            lines.add(null to w)
-            val noteLabel = Text.literal(Text.translatable("cobblemarket.buy_order.tooltip_note").string)
-                .append(Text.literal(entry.note))
-            textRenderer.wrapLines(noteLabel, MAX_TOOLTIP_W).forEach { lines.add(it to 0xFFDD99) }
-            lines.add(null to w)
-        }
-        // 买家 + 到期（照精灵市场卖家/价格行的灰标签格式）
-        lines.add(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_buyer").formatted(Formatting.GRAY).string} ${entry.buyerName}").asOrderedText() to w)
-        lines.add(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_expires").formatted(Formatting.GRAY).string} ${formatRemaining(entry.expiresAt)}").asOrderedText() to w)
+        lines.add(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_expires").formatted(Formatting.GRAY).string} ${formatRemaining(entry.expiresAt)}").asOrderedText() to 0xFFFFFF)
 
-        var maxWidth = 0
-        lines.forEach { (line, _) -> line?.let { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) } }
+        var maxWidth = tooltipCacheMaxWidth
+        if (quantityLine >= 0) {
+            lines[quantityLine].first?.let { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
+        }
+        lines.last().first?.let { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
 
         val padding = 4
         val tx = minOf(mouseX + 12, width - maxWidth - 12)
@@ -851,9 +909,16 @@ class BuyOrderScreen(
     // 买家头像（照精灵市场）
     private val defaultSkinTexture = Identifier.of("minecraft", "textures/entity/player/wide/steve.png")
 
+    // 皮肤纹理缓存：每行每帧创建 GameProfile 并查 skinProvider 是分配热点，首个结果按 UUID 缓存
+    private val skinCache = mutableMapOf<UUID, Identifier>()
+
     private fun getSellerSkin(uuid: UUID, name: String): Identifier {
-        client?.networkHandler?.getPlayerListEntry(uuid)?.skinTextures?.texture()?.let { return it }
-        return client?.skinProvider?.getSkinTextures(com.mojang.authlib.GameProfile(uuid, name))?.texture() ?: defaultSkinTexture
+        skinCache[uuid]?.let { return it }
+        val skin = client?.networkHandler?.getPlayerListEntry(uuid)?.skinTextures?.texture()
+            ?: client?.skinProvider?.getSkinTextures(com.mojang.authlib.GameProfile(uuid, name))?.texture()
+            ?: defaultSkinTexture
+        skinCache[uuid] = skin
+        return skin
     }
 
     private fun drawSellerAvatar(context: DrawContext, uuid: UUID, name: String, x: Int, y: Int, size: Int) {
@@ -1130,11 +1195,10 @@ class BuyOrderScreen(
             val slotSize = 28
             val slotX = centerX + 66
             val slotY = dialogY + 42
-            val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
             context.matrices.push()
             context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
             context.matrices.scale(slotSize / 66f, slotSize / 66f, 1f)
-            context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
+            context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
             context.matrices.pop()
             previewRenderable?.let { rp ->
                 val matrices = context.matrices
@@ -2294,6 +2358,7 @@ class BuyOrderScreen(
         // 主界面搜索文本恢复（弹窗分支下 searchField 被隐藏，恢复文本无害）；
         // text setter 会触发监听器把滚动归零，恢复后还原滚动位置
         searchField?.text = savedSearch
+        rebuildDisplayList()
         scrollOffset = savedScroll.coerceIn(0, maxOf(0, displayCount() - getMaxVisibleRows()))
         rebuildRowButtons()
     }
@@ -2311,8 +2376,11 @@ class BuyOrderScreen(
         private const val PANEL_BORDER_X = 8
         private const val PANEL_BORDER_Y = 17
         private val BUY_ORDER_PANEL_TOP = Identifier.of("cobblemarket", "textures/gui/buy_order_panel_top.png")
-        private val BUY_ORDER_PANEL_MIDDLE = Identifier.of("cobblemarket", "textures/gui/buy_order_panel_middle.png")
-        private val BUY_ORDER_PANEL_BOTTOM = Identifier.of("cobblemarket", "textures/gui/buy_order_panel_bottom.png")
+        // 中间/底部与精灵市场共用（贴图内容一致，顶部专用）
+        private val BUY_ORDER_PANEL_MIDDLE = Identifier.of("cobblemarket", "textures/gui/market_panel_middle.png")
+        private val BUY_ORDER_PANEL_BOTTOM = Identifier.of("cobblemarket", "textures/gui/market_panel_bottom.png")
+        // 精灵槽背景（行内与创建弹窗预览槽共用）
+        private val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
         // 按钮贴图（40×80 = 普通/悬停两段），求购单界面所有按钮统一使用
         private val BUY_ORDER_BUTTON_TEXTURE = Identifier.of("cobblemarket", "textures/gui/buy_order_button.png")
         private const val BUY_ORDER_BUTTON_TEX_H = 80

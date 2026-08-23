@@ -19,6 +19,7 @@ import net.minecraft.sound.SoundEvent
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
+import java.util.UUID
 
 class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
 
@@ -47,11 +48,15 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     private var hoveredSlot = -1
     private var cancelEntry: ItemEntry? = null
 
+    // 物品 NBT 解析缓存：数据到达时一次性反序列化，避免 render 每帧 fromNbtOrEmpty 造成 GC 压力
+    private val entryStacks = mutableMapOf<UUID, ItemStack>()
+    private val tooltipStackLines = mutableMapOf<UUID, List<Pair<Text, Int>>>()
+
     private fun columns() = (panelWidth + gap) / (slotSize + gap)
     private fun getGridStartY() = 84
-    // 底部预留 56px（翻页按钮 20 + 面板底边框 16 + 间距 20），
+    // 底部预留 72px（照精灵市场：按钮 20 + 底部分割线 4 + 面板底边框 16 + 间距），
     // 保证窗口高度为任意值时翻页按钮都不会遮住面板底部边框
-    private fun rows() = maxOf(0, (height - getGridStartY() - 56) / (slotSize + gap))
+    private fun rows() = maxOf(0, (height - getGridStartY() - 72) / (slotSize + gap))
 
     private fun prevPage() { if (currentPage > 1) { currentPage--; refreshData() } }
     private fun nextPage() { if (currentPage < totalPages) { currentPage++; refreshData() } }
@@ -126,10 +131,12 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         addSelectableChild(sellerField)
         addDrawableChild(sellerField)
 
+        // 分页（照精灵市场：底部分割线在网格最后一行下方 4px 对称，按钮在其与背景底边之间居中偏上 5px）
         val gridBottom = getGridStartY() + rows() * (slotSize + gap)
-        prevButton = NineSliceButton(leftX, gridBottom, 80, 20, Text.translatable("cobblemarket.gui.prev"), { prevPage() })
+        val btnY = (gridBottom + 5 + (height - 32)) / 2 - 10 - 5
+        prevButton = NineSliceButton(leftX, btnY, 80, 20, Text.translatable("cobblemarket.gui.prev"), { prevPage() })
         addDrawableChild(prevButton)
-        nextButton = NineSliceButton(leftX + panelWidth - 80, gridBottom, 80, 20, Text.translatable("cobblemarket.gui.next"), { nextPage() })
+        nextButton = NineSliceButton(leftX + panelWidth - 80, btnY, 80, 20, Text.translatable("cobblemarket.gui.next"), { nextPage() })
         addDrawableChild(nextButton)
 
         refreshData()
@@ -163,6 +170,19 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         entries = payload.entries
         totalPages = payload.totalPages
         currentPage = payload.currentPage
+        rebuildEntryCaches(payload.entries)
+    }
+
+    private fun rebuildEntryCaches(newEntries: List<ItemEntry>) {
+        entryStacks.clear()
+        tooltipStackLines.clear()
+        val registry = client?.world?.registryManager ?: return
+        for (entry in newEntries) {
+            val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
+            entryStacks[entry.id] = stack
+            tooltipStackLines[entry.id] = stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC)
+                .map { it to 0xFFFFFF }
+        }
     }
 
     fun onMarketResult(payload: MarketResultPayload) {
@@ -253,9 +273,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             Text.translatable("cobblemarket.item.cancel_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
 
-        val registry = client?.world?.registryManager
-        if (registry != null) {
-            val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
+        entryStacks[entry.id]?.let { stack ->
             context.drawItem(stack, centerX - 8, dialogY + 26)
             context.drawCenteredTextWithShadow(textRenderer, stack.name, centerX, dialogY + 46, 0xFFFFFF)
         }
@@ -286,10 +304,10 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         context.matrices.pop()
     }
 
-    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int) {
+    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int, sliceH: Int = 16) {
         context.matrices.push()
         context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(0.5f, 0.5f, 1f)
+        context.matrices.scale(0.5f, 0.5f * sliceH / 16f, 1f)
         context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
         context.matrices.pop()
     }
@@ -307,7 +325,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         drawPanelSlice(context, top, panelLeft, panelTop)
         var y = panelTop + sliceH
         while (y < panelBottom - sliceH) {
-            drawPanelSlice(context, mid, panelLeft, y)
+            drawPanelSlice(context, mid, panelLeft, y, minOf(sliceH, panelBottom - sliceH - y))
             y += sliceH
         }
         drawPanelSlice(context, bot, panelLeft, panelBottom - sliceH)
@@ -333,6 +351,9 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
 
         val dividerY = getGridStartY() - 4
         context.fill(leftX, dividerY, leftX + panelWidth, dividerY + 1, 0xFF555555.toInt())
+        // 底部分割线：最多显示行数的网格最后一行下方 4px（与顶部对称），分页按钮在其与背景底边之间居中
+        val gridBottom = getGridStartY() + rows() * (slotSize + gap)
+        context.fill(leftX, gridBottom + 4, leftX + panelWidth, gridBottom + 5, 0xFF555555.toInt())
 
         val cols = columns()
         val rows = rows()
@@ -356,9 +377,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             val rowState = if (index == hoveredSlot) 1 else 0
             drawNineSlice(context, ROW_BACKGROUND_TEXTURE, x, y, slotSize, slotSize, rowState, ROW_BACKGROUND_TEX_H)
 
-            val registry = client?.world?.registryManager
-            if (registry != null) {
-                val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
+            entryStacks[entry.id]?.let { stack ->
                 context.drawItem(stack, x + (slotSize - 16) / 2, y + (slotSize - 16) / 2)
             }
 
@@ -379,11 +398,10 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     }
 
     private fun renderItemTooltip(context: DrawContext, entry: ItemEntry, mouseX: Int, mouseY: Int) {
-        val registry = client?.world?.registryManager
         val lines = mutableListOf<Pair<Text, Int>>()
-        if (registry != null) {
-            val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
-            lines.addAll(stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC).map { it to 0xFFFFFF })
+        val stackLines = tooltipStackLines[entry.id]
+        if (stackLines != null) {
+            lines.addAll(stackLines)
         } else {
             lines.add(Text.literal(entry.itemId) to 0xFFFFFF)
         }

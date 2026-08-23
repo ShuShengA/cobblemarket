@@ -44,6 +44,19 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private var currentTab = 0 // 0 = 精灵, 1 = 物品
     private var pokemonEntries = listOf<PokemonPriceLimitEntry>()
     private var itemEntries = listOf<ItemPriceLimitEntry>()
+    // 过滤结果缓存：数据/搜索/筛选变化时重建，render 每帧只读（避免每帧全量 filter）
+    private var filteredPokemonCache = listOf<PokemonPriceLimitEntry>()
+    private var filteredItemsCache = listOf<ItemPriceLimitEntry>()
+    // 过滤结果带原索引（iconData 以 pokemonEntries 索引为 key）：行渲染每帧 indexOf 是 O(n) 扫描，
+    // 重建时一并构建；行显示字符串（物种解析 + 多段翻译拼接）同样随重建缓存
+    private var filteredPokemonIndexed = listOf<IndexedValue<PokemonPriceLimitEntry>>()
+    private var pokemonRowTexts = listOf<String>()
+    private var itemRowTexts = listOf<String>()
+    // 物品图标栈缓存（itemId → 解析栈）：行内每帧 tryParse + ItemStack 是分配热点，数据到达时构建
+    private val itemIconStacks = mutableMapOf<String, ItemStack>()
+    // tooltip 文本行缓存：内容只取决于条目，悬停同一行时每帧重建是悬停掉帧主因
+    private var tooltipCacheKey: Any? = null
+    private var tooltipCacheLines: List<String> = emptyList()
     private var searchField: TextFieldWidget? = null
     private var hoveredRow = -1
     private var scrollOffset = 0
@@ -107,7 +120,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private val iconData = mutableMapOf<Int, IconData>()
     private val iconSize = 20
 
-    private fun getListStartY() = 68
+    private fun getListStartY() = 80
     private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 48) / rowHeight)
 
     // ── 通用文本 ──
@@ -148,17 +161,18 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         backButton = backBtn
         addDrawableChild(backBtn)
 
-        // tab 切换按钮
-        pokemonTabButton = NineSliceButton(centerX - 62, 32, 60, 14, Text.literal(""), { switchTab(0) })
-        itemTabButton = NineSliceButton(centerX + 2, 32, 60, 14, Text.literal(""), { switchTab(1) })
+        // tab 切换按钮（标题下方留出物品 id 提示行）
+        pokemonTabButton = NineSliceButton(centerX - 62, 44, 60, 14, Text.literal(""), { switchTab(0) })
+        itemTabButton = NineSliceButton(centerX + 2, 44, 60, 14, Text.literal(""), { switchTab(1) })
         addDrawableChild(pokemonTabButton)
         addDrawableChild(itemTabButton)
         updateTabButtons()
 
-        searchField = TextFieldWidget(textRenderer, leftX + 2, 50, panelWidth - 4 - 84 - 20, 16, Text.translatable("cobblemarket.gui.search"))
+        searchField = TextFieldWidget(textRenderer, leftX + 2, 62, panelWidth - 4 - 84 - 20, 16, Text.translatable("cobblemarket.gui.search"))
         updateSearchPlaceholder()
         // 搜索变化时重建行按钮：否则过滤后残留旧列表的编辑/删除按钮（与物品黑名单同款问题）
         searchField?.setChangedListener { _ ->
+            rebuildFiltered()
             scrollOffset = 0
             rebuildRowButtons()
         }
@@ -166,7 +180,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         addDrawableChild(searchField)
 
         val addBtn = NineSliceButton(
-            leftX + panelWidth - 84, 50, 18, 16,
+            leftX + panelWidth - 84, 62, 18, 16,
             Text.literal("+"), { openAddDialog() }
         )
         addButton = addBtn
@@ -174,7 +188,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
         // 特训筛选（仅精灵 tab）：列表按规则的特训维度过滤
         htFilterButton = NineSliceButton(
-            leftX + panelWidth - 60, 50, 60, 16,
+            leftX + panelWidth - 60, 62, 60, 16,
             htFilterButtonText(),
             { toggleListHtFilter() },
             if (listHtFilter != 0) GOLD_COLOR else 0xFFFFFF
@@ -184,6 +198,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
         scrollOffset = 0
         requestCurrentTabData()
+        rebuildFiltered()
     }
 
     private fun updateTabButtons() {
@@ -197,6 +212,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         currentTab = tab
         searchField?.text = ""
         updateSearchPlaceholder()
+        rebuildFiltered()
         scrollOffset = 0
         hoveredRow = -1
         updateTabButtons()
@@ -373,11 +389,10 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         val slotSize = 28
         val slotX = centerX + 66
         val slotY = dialogY + 30
-        val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
         context.matrices.push()
         context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
         context.matrices.scale(slotSize / 66f, slotSize / 66f, 1f)
-        context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
+        context.drawTexture(SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
         context.matrices.pop()
 
         // 物种留空（= 全部精灵）时槽位画 "?"
@@ -860,6 +875,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     fun onPokemonPriceLimitData(payload: PokemonPriceLimitDataPayload) {
         pokemonEntries = payload.entries
+        tooltipCacheKey = null
+        rebuildFiltered()
         cacheIcons()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, pokemonEntries.size - getMaxVisibleRows()))
         rebuildRowButtons()
@@ -867,8 +884,19 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     fun onItemPriceLimitData(payload: ItemPriceLimitDataPayload) {
         itemEntries = payload.entries
+        tooltipCacheKey = null
+        rebuildItemIconStacks()
+        rebuildFiltered()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, itemEntries.size - getMaxVisibleRows()))
         rebuildRowButtons()
+    }
+
+    /** 一次性解析全部物品图标栈（render 每帧只读缓存，见 itemIconStacks 注释） */
+    private fun rebuildItemIconStacks() {
+        itemIconStacks.clear()
+        itemEntries.forEach { entry ->
+            Identifier.tryParse(entry.itemId)?.let { id -> itemIconStacks[entry.itemId] = ItemStack(Registries.ITEM.get(id)) }
+        }
     }
 
     private fun cacheIcons() {
@@ -918,14 +946,29 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         return if (entry.vCount >= 0) "$name ${entry.vCount}V" else name
     }
 
-    private fun filteredPokemon(): List<PokemonPriceLimitEntry> {
+    private fun filteredPokemon(): List<PokemonPriceLimitEntry> = filteredPokemonCache
+
+    /** 数据/搜索/筛选变化时重建过滤缓存（render 每帧只读）；
+     *  索引/行显示字符串随过滤一并重建，行渲染不再每帧 indexOf / 拼文本 */
+    private fun rebuildFiltered() {
         val query = searchField?.text?.trim()?.takeIf { it.isNotEmpty() }
-        return pokemonEntries.filter { entry ->
-            (query == null || pokemonFilterText(entry).contains(query, ignoreCase = true) ||
-                entry.speciesId.contains(query, ignoreCase = true)) &&
-            // 特训筛选：0 = 不限，2 = 不含特训
-            (listHtFilter == PokemonPriceLimitEntry.HT_ANY || entry.htFilter == listHtFilter)
+        filteredPokemonIndexed = pokemonEntries.mapIndexedNotNull { index, entry ->
+            if ((query == null || pokemonFilterText(entry).contains(query, ignoreCase = true) ||
+                    entry.speciesId.contains(query, ignoreCase = true)) &&
+                // 特训筛选：0 = 不限，2 = 不含特训
+                (listHtFilter == PokemonPriceLimitEntry.HT_ANY || entry.htFilter == listHtFilter)
+            ) IndexedValue(index, entry) else null
         }
+        filteredPokemonCache = filteredPokemonIndexed.map { it.value }
+        pokemonRowTexts = filteredPokemonCache.map { entry ->
+            val vText = if (entry.vCount >= 0) " · ${entry.vCount}V" else ""
+            "${pokemonName(entry.speciesId)}$vText · ${formLabel(entry.aspects.toSet())} · ${priceText(entry.minPrice, entry.maxPrice)}"
+        }
+        filteredItemsCache = if (query == null) itemEntries else itemEntries.filter { entry ->
+            itemDisplay(entry.itemId).contains(query, ignoreCase = true) ||
+                entry.itemId.contains(query, ignoreCase = true)
+        }
+        itemRowTexts = filteredItemsCache.map { "${itemDisplay(it.itemId)} · ${priceText(it.minPrice, it.maxPrice)}" }
     }
 
     private fun htFilterButtonText(): Text = Text.translatable(
@@ -937,18 +980,13 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         listHtFilter = if (listHtFilter == PokemonPriceLimitEntry.HT_ANY) PokemonPriceLimitEntry.HT_NONE else PokemonPriceLimitEntry.HT_ANY
         htFilterButton?.setMessage(htFilterButtonText())
         htFilterButton?.textColor = if (listHtFilter != 0) GOLD_COLOR else 0xFFFFFF
+        rebuildFiltered()
         scrollOffset = 0
         hoveredRow = -1
         rebuildRowButtons()
     }
 
-    private fun filteredItems(): List<ItemPriceLimitEntry> {
-        val query = searchField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: return itemEntries
-        return itemEntries.filter { entry ->
-            itemDisplay(entry.itemId).contains(query, ignoreCase = true) ||
-                entry.itemId.contains(query, ignoreCase = true)
-        }
-    }
+    private fun filteredItems(): List<ItemPriceLimitEntry> = filteredItemsCache
 
     private fun displayCount(): Int = if (currentTab == 0) filteredPokemon().size else filteredItems().size
 
@@ -1019,7 +1057,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         drawPanelSlice(context, top, panelLeft, panelTop)
         var y = panelTop + sliceH
         while (y < panelBottom - sliceH) {
-            drawPanelSlice(context, mid, panelLeft, y)
+            drawPanelSlice(context, mid, panelLeft, y, minOf(sliceH, panelBottom - sliceH - y))
             y += sliceH
         }
         drawPanelSlice(context, bot, panelLeft, panelBottom - sliceH)
@@ -1058,6 +1096,13 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             Text.translatable("cobblemarket.op.price_limit").formatted(Formatting.GOLD),
             centerX, 20, 0xFFFFFF)
 
+        // 物品 tab 提示：搜不到的物品可输入真实 id（F3+H 显示高级提示框）
+        if (currentTab == 1) {
+            context.drawCenteredTextWithShadow(textRenderer,
+                Text.translatable("cobblemarket.gui.item_id_hint").string,
+                centerX, 33, 0xFFAAAAAA.toInt())
+        }
+
         val startY = getListStartY()
         // 分割线贴搜索行底部（y=66）：tab 行让出 2px 后搜索框在 50~66，线画 66~67 不重叠
         context.fill(leftX, startY - 2, leftX + panelWidth, startY - 1, 0xFF555555.toInt())
@@ -1070,17 +1115,18 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
         if (currentTab == 0) {
             val displayList = filteredPokemon()
+            val indexedList = filteredPokemonIndexed
+            val rowTexts = pokemonRowTexts
             displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
                 val y = startY + i * rowHeight
-                val origIndex = pokemonEntries.indexOf(entry)
+                val origIndex = indexedList[scrollOffset + i].index
                 // 槽背景（GUI 层，弹窗遮罩自动压暗，照常渲染）；3D 精灵弹窗打开时颜色压暗
                 val slotX = leftX + 2
                 val slotY = y + 2
-                val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
                 context.matrices.push()
                 context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
                 context.matrices.scale(iconSize / 66f, iconSize / 66f, 1f)
-                context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
+                context.drawTexture(SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
                 if (iconData.containsKey(origIndex)) {
                     // 弹窗打开时不渲染 3D（模型层在衬底之上，压暗仍会浮在弹窗上）
@@ -1090,8 +1136,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                     context.drawCenteredTextWithShadow(textRenderer, "?", slotX + iconSize / 2, slotY + iconSize / 2 - 4, 0xFFFFFF)
                 }
                 // 闪光标记用符号：金色 ★ = 仅闪光，白色 ☆ = 仅非闪光（与按钮一致）
-                val vText = if (entry.vCount >= 0) " · ${entry.vCount}V" else ""
-                val line = "${pokemonName(entry.speciesId)}$vText · ${formLabel(entry.aspects.toSet())} · ${priceText(entry.minPrice, entry.maxPrice)}"
+                val line = rowTexts[scrollOffset + i]
                 var cursor = leftX + 28
                 when (entry.shinyFilter) {
                     PokemonPriceLimitEntry.SHINY_YES -> {
@@ -1115,17 +1160,15 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             }
         } else {
             val displayList = filteredItems()
+            val rowTexts = itemRowTexts
             displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
                 val y = startY + i * rowHeight
                 // 弹窗打开时行内物品图标不渲染（drawItem 硬编码 z 抬高，会刺穿弹窗遮罩）
                 if (addField == null) {
-                    Identifier.tryParse(entry.itemId)?.let { id ->
-                        context.drawItem(ItemStack(Registries.ITEM.get(id)), leftX + 4, y + 4)
-                    }
+                    itemIconStacks[entry.itemId]?.let { context.drawItem(it, leftX + 4, y + 4) }
                 }
-                val line = "${itemDisplay(entry.itemId)} · ${priceText(entry.minPrice, entry.maxPrice)}"
                 context.drawTextWithShadow(textRenderer,
-                    com.shusheng.cobblemarket.util.TextUtil.truncateString(line, 170),
+                    com.shusheng.cobblemarket.util.TextUtil.truncateString(rowTexts[scrollOffset + i], 170),
                     leftX + 24, y + 7, 0xFFFFFF)
             }
             if (hoveredRow >= 0) {
@@ -1144,13 +1187,22 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     }
 
     private fun renderPokemonTooltip(context: DrawContext, entry: PokemonPriceLimitEntry, mouseX: Int, mouseY: Int) {
+        // 文本行缓存：悬停同一行时内容不变，只在悬停目标变化时重建（见 tooltipCacheKey 注释）
+        if (tooltipCacheKey != entry) {
+            tooltipCacheKey = entry
+            tooltipCacheLines = buildPokemonTooltipLines(entry)
+        }
+        drawTooltip(context, tooltipCacheLines, mouseX, mouseY)
+    }
+
+    private fun buildPokemonTooltipLines(entry: PokemonPriceLimitEntry): List<String> {
         val lines = mutableListOf(pokemonName(entry.speciesId))
         lines.add(Text.translatable("cobblemarket.price_limit.v_label").string + ": " + vLabel(entry.vCount))
         lines.add(shinyLabel(entry.shinyFilter))
         lines.add(formLabel(entry.aspects.toSet()))
         lines.add(htLabel(entry.htFilter))
         lines.add(priceText(entry.minPrice, entry.maxPrice))
-        drawTooltip(context, lines, mouseX, mouseY)
+        return lines
     }
 
     // 特训维度标签（tooltip 用）：不限 / 不含特训
@@ -1169,8 +1221,11 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     }
 
     private fun renderItemTooltip(context: DrawContext, entry: ItemPriceLimitEntry, mouseX: Int, mouseY: Int) {
-        val lines = mutableListOf(itemDisplay(entry.itemId), entry.itemId, priceText(entry.minPrice, entry.maxPrice))
-        drawTooltip(context, lines, mouseX, mouseY)
+        if (tooltipCacheKey != entry) {
+            tooltipCacheKey = entry
+            tooltipCacheLines = mutableListOf(itemDisplay(entry.itemId), entry.itemId, priceText(entry.minPrice, entry.maxPrice))
+        }
+        drawTooltip(context, tooltipCacheLines, mouseX, mouseY)
     }
 
     private fun drawTooltip(context: DrawContext, lines: List<String>, mouseX: Int, mouseY: Int) {
@@ -1192,10 +1247,10 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         context.matrices.pop()
     }
 
-    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int) {
+    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int, sliceH: Int = 16) {
         context.matrices.push()
         context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(0.5f, 0.5f, 1f)
+        context.matrices.scale(0.5f, 0.5f * sliceH / 16f, 1f)
         context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
         context.matrices.pop()
     }
@@ -1292,4 +1347,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     }
 
     override fun shouldPause() = false
+
+    private companion object {
+        val SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
+    }
 }
