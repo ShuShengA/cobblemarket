@@ -9,7 +9,7 @@
 ### 1.1 服务端权威
 所有交易逻辑在服务器端执行。客户端只负责显示与发送操作请求，**任何客户端数据都不作为资产依据**：
 
-- 货币余额：以服务端存储为准（CobbleDollars 服务端玩家数据 / 背包货币物品）
+- 货币余额：以服务端存储为准（Cobblemon Economy / CobbleDollars 服务端玩家数据 / 背包货币物品）
 - 客户端仅缓存余额用于显示（BalanceCache），修改客户端内存不影响服务端账本
 - 所有资金/物品变动都通过服务端校验并持久化
 
@@ -103,9 +103,12 @@
 ## 7. 货币系统依赖边界
 
 - **市场本身从不凭空产生货币**：所有资金变动都是账面流转（买家付款、退款、卖家收款），不存在"无中生有"的路径——刷钱漏洞永远不会来自市场代码
-- **物品货币模式**（`cobbledollars=false`）：货币就是背包物品，完全由服务端权威的原版背包管理，零外部依赖风险
-- **CobbleDollars 模式**：货币由 CobbleDollars 模组管理。若该模组自身存在刷钱漏洞，市场无法识别"非法来源"的货币——这是上游依赖的信任边界，不是市场的缺陷
-- **应对**：服主发现货币模组漏洞时，可在配置中切换回物品货币模式（`currency.cobbledollars = false`），市场功能不受影响
+- **物品货币模式**（`cobbledollars=false` 且 `cobblemonEconomy=false`）：货币就是背包物品，完全由服务端权威的原版背包管理，零外部依赖风险
+- **Cobblemon Economy 模式**（`cobblemonEconomy=true`）：货币由 Cobblemon Economy 模组管理，其 API 内部可按 main_currency 配置桥接到 CobbleDollars/Impactor 后端。若该模组（或其桥接后端）自身存在刷钱漏洞，市场无法识别"非法来源"的货币——这是上游依赖的信任边界，不是市场的缺陷
+- **PCO 结算**（`cobecoCurrency=PCO`）：市场改用 PokeCoins 结算时信任边界同上——PCO 账本同样由 cobeco 管理，若 PCO 存在刷取途径，市场无法识别非法来源
+- **镜像机制扩大信任边界**：装有 CobbleDollars 时 cobeco 会双向镜像两边余额（0.0.17 已实测）——任一上游存在漏洞，污染会经镜像机制扩散到另一侧；两侧余额一致不代表安全，只代表同步
+- **CobbleDollars 模式**：货币由 CobbleDollars 模组管理，信任边界同上
+- **应对**：服主发现货币模组漏洞时，可在配置中关闭对应开关（`currency.cobblemonEconomy = false`、`currency.cobbledollars = false`）切换回物品货币模式，市场功能不受影响
 
 ---
 

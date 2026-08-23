@@ -674,8 +674,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         if (bal.isNotEmpty()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.gui.balance", bal).string,
-                width / 2, btnStartY - 26, 0x55FFFF
+                Text.translatable("cobblemarket.gui.balance",
+                    Text.literal(bal + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+                width / 2, btnStartY - 26, 0xFFFFFF
             )
         }
     }

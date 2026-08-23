@@ -385,10 +385,10 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 centerX, dialogY + 128, 0xAAAAAA)
         }
 
-        // 精灵预览槽位
+        // 精灵预览槽位（dialogY+24 与黑名单一致：槽位 28 高与输入框 16 高垂直中心对齐）
         val slotSize = 28
         val slotX = centerX + 66
-        val slotY = dialogY + 30
+        val slotY = dialogY + 24
         context.matrices.push()
         context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
         context.matrices.scale(slotSize / 66f, slotSize / 66f, 1f)

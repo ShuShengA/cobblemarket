@@ -15,7 +15,7 @@ ban and blacklist moderation, and transaction history auditing.
 
 - Minecraft version: 1.21.1 (Fabric)
 - Requirements: Fabric API, Fabric Language Kotlin, Cobblemon ≥ 1.7.0
-- Optional: CobbleDollars (virtual currency), Cobblemon Smartphone (in-game app entry)
+- Optional: CobbleDollars / Cobblemon Economy (virtual currency), Cobblemon Smartphone (in-game app entry)
 - License: MIT
 
 This mod is currently in Beta. All features are fully functional, but unknown
@@ -245,8 +245,10 @@ Add items by name or ID, with fuzzy-match selection.
 
 Config file: config/cobblemarket.json (generated on first launch)
 
-currency.cobbledollars          auto       Use CobbleDollars currency (auto-enabled when the mod is installed)
-currency.item                   minecraft:diamond   Item currency ID (used when not using CobbleDollars)
+currency.cobblemonEconomy       auto       Prefer Cobblemon Economy's currency API (auto-enabled when the mod is installed; its built-in bridge can route to CobbleDollars/Impactor — set main_currency in the cobeco config to share one balance with CobbleDollars)
+currency.cobecoCurrency         POKE      cobeco settlement currency: POKE=PokeDollars, PCO=PokeCoins (only used when cobblemonEconomy=true)
+currency.cobbledollars          auto       Use CobbleDollars currency (auto-enabled when the mod is installed; ignored when cobblemonEconomy=true)
+currency.item                   minecraft:diamond   Item currency ID (used when not using either virtual currency)
 pokemonListingFeePercent        5.0        Pokémon listing fee percentage (0 = no fee)
 itemListingFeePercent           5.0        Item listing fee percentage (0 = no fee)
 maxPokemonListingsPerPlayer     0          Max active Pokémon listings per player (0 = unlimited)
@@ -260,9 +262,9 @@ pendingReturnRetentionDays      30         Days to keep unclaimed returns; overd
 
 13. Economy
 
-- Currency: diamonds by default, configurable to any item; if CobbleDollars
-  is installed, it is used automatically as virtual currency with no
-  inventory-space issues
+- Currency: diamonds by default, configurable to any item; if a virtual
+  currency mod is installed it is used automatically (priority: Cobblemon
+  Economy → CobbleDollars) with no inventory-space issues
 - Fees: charged to the seller on listing (percentage); buyers pay the
   sticker price
 - Pending balance: sale proceeds enter the seller's pending balance and are

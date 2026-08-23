@@ -791,21 +791,21 @@ object AuctionNetwork {
                 else 0
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, auction.sellerUuid,
-                    // 聊天消息用货币名（◆ 只用于行内显示）
+                    // 聊天消息货币名走 CurrencyHandler.currencyText()（translatable 随模式翻译）
                     Text.translatable(
                         "cobblemarket.auction.settled_seller",
                         auction.speciesText(),
-                        fmtLimit(auction.currentPrice.toLong()),
-                        CurrencyHandler.currencyText(),
-                        fmtLimit((auction.currentPrice - fee).toLong()),
-                        fmtLimit(fee.toLong())
+                        CurrencyHandler.goldAmount(fmtLimit(auction.currentPrice.toLong())),
+                        CurrencyHandler.goldCurrencyText(),
+                        CurrencyHandler.goldAmount(fmtLimit((auction.currentPrice - fee).toLong())),
+                        CurrencyHandler.goldAmount(fmtLimit(fee.toLong()))
                     ).formatted(Formatting.GOLD)
                 )
                 auction.currentBidderUuid?.let { winnerUuid ->
                     com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                         server, winnerUuid,
                         Text.translatable("cobblemarket.auction.settled_winner", auction.speciesText())
-                            .formatted(Formatting.GREEN)
+                            .formatted(Formatting.GOLD)
                     )
                     // 赢家庆祝动画（在线者）：与落槌铃声同批发送，天然同步
                     if (auction.type == com.shusheng.cobblemarket.market.AuctionType.POKEMON) {

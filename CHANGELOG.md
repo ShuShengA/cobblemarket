@@ -7,6 +7,7 @@
 - 设置新增「待领取装不下掉落」开关（默认关）：开启后，领取待领取物品时背包放不下的部分会掉在地上（可能消失或被他人捡走，风险自负）；关闭时保持原样留在待领取，下次再领
 - **管理员「所有求购」界面**：管理员面板新增入口，可查看全部求购单并强制下架——冻结金退还给买家，待确认交付的货物退回卖家，买卖双方都会收到通知（离线则上线补发）；面板按钮重新排列为两列布局
 - **进入市场动画**：按 K 键/手机 App/其他入口打开市场入口时播放掉落动画——动画图从屏幕顶外落到入口位置并放大，短暂停留后变暗淡出、入口界面随之透出；设置弹窗新增「进入市场动画」开关（默认开，个人设置）
+- **支持 Cobblemon Economy 货币**：新增第三种货币模式——装了 Cobblemon Economy 的服务器，市场直接走其货币 API（其内置桥接可路由到 CobbleDollars/Impactor 后端，服主配置 main_currency 后市场与 CobbleDollars 商人共享同一余额）。货币优先级 cobeco → CobbleDollars → 物品；全新安装自动探测，旧配置升级行为不变；新开关 `currency.cobblemonEconomy`，可选 `currency.cobecoCurrency`（POKE 默认/PCO）在 PokeDollars 与 PokeCoins 之间切换结算货币；价格单位统一为 ₽（PokeDollars/CobbleDollars 模式，行内与弹窗一致）；服主向货币规则完整说明见 docs/currency_zh.md
 
 ### 改动
 

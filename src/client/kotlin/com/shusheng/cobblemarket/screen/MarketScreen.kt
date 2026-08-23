@@ -901,13 +901,17 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             centerX, 14, 0xFFFFFF
         )
 
-        // 余额（货币蓝）+ 待收款（绿），按钮行下方，左对齐；余额来自全局缓存，交易操作后自动刷新
-        val balPrefix = com.shusheng.cobblemarket.client.BalanceCache.balance.takeIf { it.isNotEmpty() }
-            ?.let { Text.translatable("cobblemarket.gui.balance", it).string + "  " } ?: ""
-        context.drawTextWithShadow(textRenderer, balPrefix, leftX, 31, 0x55FFFF)
+        // 余额 + 待收款：文字标签默认色，金额蓝/绿（2026-08-24 拍板）；余额来自全局缓存，交易操作后自动刷新
+        val balText: Text? = com.shusheng.cobblemarket.client.BalanceCache.balance.takeIf { it.isNotEmpty() }?.let {
+            Text.translatable("cobblemarket.gui.balance",
+                Text.literal(it + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD))
+        }
+        val balW = balText?.let { textRenderer.getWidth(it) + 4 } ?: 0
+        if (balText != null) context.drawTextWithShadow(textRenderer, balText, leftX, 31, 0xFFFFFF)
         context.drawTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.gui.pending_balance", com.shusheng.cobblemarket.client.formatBalanceLong(pendingBalance) + " ◆").string,
-            leftX + textRenderer.getWidth(balPrefix), 31, 0x55FF55)
+            Text.translatable("cobblemarket.gui.pending_balance",
+                Text.literal(com.shusheng.cobblemarket.client.formatBalanceLong(pendingBalance) + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GREEN)),
+            leftX + balW, 31, 0xFFFFFF)
 
         // Page indicator（右对齐：左侧放余额行，长数字互不干扰）
         val pageText = Text.translatable("cobblemarket.gui.page", currentPage, totalPages).formatted(Formatting.GRAY)
@@ -1025,9 +1029,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             context.drawText(textRenderer, levelText, leftX + 135, y + 7, 0x000000, false)
 
             // Price（右对齐到按钮左缘：价格再长也只向左延伸，不会遮按钮）
-            val priceText = "${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ◆"
+            val priceText = "${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
             val btnLeft = leftX + panelWidth - 42
-            context.drawTextWithShadow(textRenderer, priceText, btnLeft - textRenderer.getWidth(priceText) - 4, y + 7, 0x55FFFF)
+            context.drawTextWithShadow(textRenderer, priceText, btnLeft - textRenderer.getWidth(priceText) - 4, y + 7, 0xFFAA00)
         }
 
         // Tooltip on hover
@@ -1424,8 +1428,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpAtk, entry.htSpAtk)}") to ivColors[3])
             lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}") to ivColors[4])
             lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}") to ivColors[5])
-            lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).string} ${entry.sellerName}") to w)
-            lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).string} ${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}") to 0x55FFFF)
+            lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(" ").append(Text.literal(entry.sellerName)) to w)
+            lines.add(Text.translatable("cobblemarket.gui.tooltip_price").append(" ").append(
+                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)) to w)
 
             var maxWidth = 0
             lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }

@@ -1,8 +1,8 @@
 # CobbleMarket
 
-A player-to-player trading market for Cobblemon servers — buy and sell Pokémon and items, with listing fees, per-player bans, transaction history, expired listing returns, and optional CobbleDollars currency support.
+A player-to-player trading market for Cobblemon servers — buy and sell Pokémon and items, with listing fees, per-player bans, transaction history, expired listing returns, and optional CobbleDollars / Cobblemon Economy currency support.
 
-一个面向 Cobblemon 服务器的玩家交易市场模组：支持精灵与物品的挂单买卖，包含手续费、封禁、交易历史、过期退回，并支持 CobbleDollars 虚拟货币。
+一个面向 Cobblemon 服务器的玩家交易市场模组：支持精灵与物品的挂单买卖，包含手续费、封禁、交易历史、过期退回，并支持 CobbleDollars / Cobblemon Economy 虚拟货币。
 
 ## Features
 
@@ -13,7 +13,7 @@ A player-to-player trading market for Cobblemon servers — buy and sell Pokémo
 - **Pending Balance** — seller earnings accrue in a pending balance; collect anytime, safely kept even if your inventory is full
 - **Ban System** — ban players from trading with `/market ban <player> [duration] [reason]`; bans only restrict trading, never freeze assets
 - **Transaction History** — in-game history screen plus CSV logs under `config/cobblemarket/history/`
-- **Currency** — item currency (diamond by default, configurable) or **CobbleDollars** virtual currency (auto-detected)
+- **Currency** — item currency (diamond by default, configurable) or virtual currency (**Cobblemon Economy** → **CobbleDollars**, auto-detected)
 - **Admin Tools** — cancel any listing, Pokémon blacklist (species + IV), item blacklist
 - **Open the market** — press `K`, use `/market gui`, or the Cobblemon Smartphone app (auto-integrated)
 
@@ -26,7 +26,7 @@ A player-to-player trading market for Cobblemon servers — buy and sell Pokémo
 - **待领余额** — 卖家收益进入待领余额，随时领取，背包满也不会丢
 - **封禁系统** — `/market ban <玩家> [时长] [原因]` 封禁交易；封禁只限制交易，不冻结资产
 - **交易历史** — 游戏内历史界面 + `config/cobblemarket/history/` 下的 CSV 日志
-- **货币** — 物品货币（默认钻石，可配置）或 **CobbleDollars** 虚拟货币（自动检测）
+- **货币** — 物品货币（默认钻石，可配置）或虚拟货币（**Cobblemon Economy** → **CobbleDollars**，自动检测）
 - **管理员工具** — 取消任意挂单、精灵黑名单（物种+IV）、物品黑名单
 - **打开市场** — 按 `K`、`/market gui`，或 Cobblemon Smartphone 应用（自动集成）
 
@@ -41,7 +41,7 @@ A player-to-player trading market for Cobblemon servers — buy and sell Pokémo
 - [Fabric API](https://modrinth.com/mod/fabric-api)
 - [Fabric Language Kotlin](https://modrinth.com/mod/fabric-language-kotlin)
 - [Cobblemon](https://modrinth.com/mod/cobblemon) ≥ 1.7.0
-- Optional: [CobbleDollars](https://modrinth.com/mod/cobbledollars) for virtual currency; Cobblemon Smartphone for the smartphone app entry
+- Optional: [CobbleDollars](https://modrinth.com/mod/cobbledollars) or [Cobblemon Economy](https://modrinth.com/mod/cobblemon-economy) for virtual currency; Cobblemon Smartphone for the smartphone app entry
 
 ## Commands / 命令
 
@@ -72,10 +72,14 @@ Market data is stored in `world/data/cobblemarket*.dat`. On every startup, the m
 
 Config file: `config/cobblemarket.json` (generated on first launch)
 
+Full currency system guide (server owners): [中文](docs/currency_zh.md) / [English](docs/currency_en.md)
+
 | Key | Default | Description |
 |---|---|---|
-| `currency.cobbledollars` | auto | Use CobbleDollars currency (auto-enabled when the mod is installed) |
-| `currency.item` | `minecraft:diamond` | Currency item ID when not using CobbleDollars |
+| `currency.cobblemonEconomy` | auto | Prefer Cobblemon Economy's currency API (auto-enabled when the mod is installed; its built-in bridge can route to CobbleDollars/Impactor — set `main_currency` in the cobeco config to share one balance with CobbleDollars) |
+| `currency.cobecoCurrency` | `POKE` | cobeco settlement currency: `POKE`=PokeDollars, `PCO`=PokeCoins (only used when `cobblemonEconomy=true`) |
+| `currency.cobbledollars` | auto | Use CobbleDollars currency (auto-enabled when the mod is installed; ignored when `cobblemonEconomy=true`) |
+| `currency.item` | `minecraft:diamond` | Currency item ID when not using either virtual currency |
 | `pokemonListingFeePercent` | 5.0 | Pokémon listing fee percentage (0 = no fee) |
 | `itemListingFeePercent` | 5.0 | Item listing fee percentage (0 = no fee) |
 | `maxPokemonListingsPerPlayer` | 0 | Max active Pokémon listings per player (0 = unlimited) |

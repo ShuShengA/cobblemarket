@@ -273,7 +273,7 @@ class BuyOrderScreen(
     // 行内价格区间用缩写（与物品市场网格同款 k/M/B）；完整价格见悬停面板
     private fun priceRangeText(entry: BuyOrderEntry): String =
         "${com.shusheng.cobblemarket.client.formatPriceShort(entry.minPrice)}~" +
-        "${com.shusheng.cobblemarket.client.formatPriceShort(entry.maxPrice)}◆"
+        "${com.shusheng.cobblemarket.client.formatPriceShort(entry.maxPrice)}${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
 
     // 精灵单固定 1 只，不显示数量（空串 = 无数量段）
     private fun countText(entry: BuyOrderEntry): String =
@@ -302,9 +302,9 @@ class BuyOrderScreen(
         val centerX = width / 2
         val leftX = centerX - panelWidth / 2
 
-        // 返回按钮：右缘避开背景右边框（PANEL_BORDER_X）、顶边 10px；求购单界面按钮统一用专属贴图
+        // 返回按钮：右缘离面板右缘 12px（边框视觉宽约 10~12，内缩 8 仍压框；顶边 13px 与拍卖场一致）
         backButton = NineSliceButton(
-            width / 2 + panelWidth / 2 - PANEL_BORDER_X - 50, 10, 50, 16,
+            width / 2 + panelWidth / 2 - 12 - 50, 13, 50, 16,
             Text.translatable("cobblemarket.gui.back"),
             { client?.setScreen(if (adminMode) AdminScreen() else MarketEntryScreen(skipDropAnim = true)) },
             texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -332,9 +332,9 @@ class BuyOrderScreen(
             }
             updateTabButtons()
 
-            // 发布求购按钮（tab 行右侧，避开背景右边框）
+            // 发布求购按钮（tab 行右侧，右缘离面板右缘 12px，与返回按钮同列对齐）
             val createBtn = NineSliceButton(
-                leftX + panelWidth - PANEL_BORDER_X - 28, 32, 28, 14,
+                leftX + panelWidth - 12 - 28, 32, 28, 14,
                 Text.literal("+"),
                 { openCreateDialog() },
                 texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -658,8 +658,9 @@ class BuyOrderScreen(
         val balText = com.shusheng.cobblemarket.client.BalanceCache.balance
         if (balText.isNotEmpty()) {
             context.drawTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.gui.balance", balText).string,
-                leftX + PANEL_BORDER_X + 2, 20, 0x55FFFF)
+                Text.translatable("cobblemarket.gui.balance",
+                    Text.literal(balText + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+                leftX + PANEL_BORDER_X + 2, 20, 0xFFFFFF)
         }
 
         // 分隔线缩进到行区域（不压背景左右边框）
@@ -727,7 +728,7 @@ class BuyOrderScreen(
                 val rightText = if (countStr.isEmpty()) priceRangeText(entry) else "$countStr  ${priceRangeText(entry)}"
                 // 管理员模式无行按钮，价格区间贴右缘；普通模式给行按钮留位
                 val btnLeft = if (adminMode) rowL + rowW() - 4 else rowL + rowW() - 50
-                context.drawTextWithShadow(textRenderer, rightText, btnLeft - 4 - textRenderer.getWidth(rightText), y + 7, 0x55FFFF)
+                context.drawTextWithShadow(textRenderer, rightText, btnLeft - 4 - textRenderer.getWidth(rightText), y + 7, 0xFFAA00)
             }
         }
 
@@ -836,10 +837,9 @@ class BuyOrderScreen(
             // 数量行是动态行（交付期间剩余量会变），只记录插入点（价格行之前，与原顺序一致）
             var quantityLine = -1
             if (entry.type == "ITEM") quantityLine = lines.size
-            // 价格区间（独立行，照精灵市场价格行的灰色标签格式）
-            lines.add(Text.literal(
-                "${Text.translatable("cobblemarket.buy_order.tooltip_price").formatted(Formatting.GRAY).string} " +
-                "${com.shusheng.cobblemarket.client.formatPrice(entry.minPrice)}~${com.shusheng.cobblemarket.client.formatPrice(entry.maxPrice)}◆"
+            // 价格区间：标签默认色，金额段蓝色（2026-08-24 拍板）
+            lines.add(Text.translatable("cobblemarket.buy_order.tooltip_price").append(" ").append(
+                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.minPrice)}~${com.shusheng.cobblemarket.client.formatPrice(entry.maxPrice)}${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GOLD)
             ).asOrderedText() to w)
             // 买家留言区块：分割线夹多行内容（照拍卖规则面板样式），无备注不显示
             if (entry.note.isNotEmpty()) {
@@ -849,8 +849,8 @@ class BuyOrderScreen(
                 textRenderer.wrapLines(noteLabel, MAX_TOOLTIP_W).forEach { lines.add(it to 0xFFDD99) }
                 lines.add(null to w)
             }
-            // 买家（照精灵市场卖家/价格行的灰标签格式）
-            lines.add(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_buyer").formatted(Formatting.GRAY).string} ${entry.buyerName}").asOrderedText() to w)
+            // 买家：纯文字行默认色
+            lines.add(Text.translatable("cobblemarket.buy_order.tooltip_buyer").append(" ").append(Text.literal(entry.buyerName)).asOrderedText() to w)
             // 到期行为动态行，不缓存
 
             var maxWidth = 0
@@ -872,7 +872,7 @@ class BuyOrderScreen(
         } else {
             lines.addAll(staticLines)
         }
-        lines.add(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_expires").formatted(Formatting.GRAY).string} ${formatRemaining(entry.expiresAt)}").asOrderedText() to 0xFFFFFF)
+        lines.add(Text.translatable("cobblemarket.buy_order.tooltip_expires").append(" ").append(Text.literal(formatRemaining(entry.expiresAt))).asOrderedText() to 0xFFFFFF)
 
         var maxWidth = tooltipCacheMaxWidth
         if (quantityLine >= 0) {
@@ -1055,7 +1055,8 @@ class BuyOrderScreen(
         addDrawableChild(createShinyButton)
         updateCreateShinyButton()
 
-        createSpeciesField = TextFieldWidget(textRenderer, centerX - 82, dialogY + 48, 148, 16, Text.literal(""))
+        // 位置照黑名单添加弹窗（centerX-80 宽 140，与精灵槽 centerX+66 间距 6px）
+        createSpeciesField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 48, 140, 16, Text.literal(""))
         createSpeciesField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_species").formatted(Formatting.GRAY))
         createSpeciesField?.setChangedListener { updatePokemonPreview(it) }
         addDrawableChild(createSpeciesField)
@@ -1129,7 +1130,7 @@ class BuyOrderScreen(
         addDrawableChild(createMaxPriceField)
 
         // 备注（额外需求提醒卖家，选填）
-        createNoteField = TextFieldWidget(textRenderer, centerX - 82, dialogY + 194, 148, 16, Text.literal(""))
+        createNoteField = TextFieldWidget(textRenderer, centerX - 74, dialogY + 194, 148, 16, Text.literal(""))
         createNoteField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_note").formatted(Formatting.GRAY))
         createNoteField?.setMaxLength(100)
         addDrawableChild(createNoteField)
@@ -1169,7 +1170,7 @@ class BuyOrderScreen(
         addDrawableChild(createMaxPriceField)
 
         // 备注（额外需求提醒卖家，选填）
-        createNoteField = TextFieldWidget(textRenderer, centerX - 82, dialogY + 126, 148, 16, Text.literal(""))
+        createNoteField = TextFieldWidget(textRenderer, centerX - 74, dialogY + 126, 148, 16, Text.literal(""))
         createNoteField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_note").formatted(Formatting.GRAY))
         createNoteField?.setMaxLength(100)
         addDrawableChild(createNoteField)
@@ -1222,12 +1223,13 @@ class BuyOrderScreen(
                 }
             }
             // 冻结提示：发布时冻结 maxPrice × 1（性格列表展开时隐藏——提示在列表覆盖区内）
+            // 文字默认色，金额+单位金色（2026-08-24 拍板）
             if (!natureListOpen) {
                 context.drawCenteredTextWithShadow(textRenderer,
                     Text.translatable("cobblemarket.buy_order.frozen_hint",
-                        (createMaxPriceField?.text?.toIntOrNull() ?: 0).toLong(),
-                        com.shusheng.cobblemarket.client.displayActiveCurrency()).string,
-                    centerX, dialogY + 214, 0xAAAAAA)
+                        Text.literal((createMaxPriceField?.text?.toIntOrNull() ?: 0).toLong().toString()).formatted(Formatting.GOLD),
+                        Text.literal(com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+                    centerX, dialogY + 214, 0xFFFFFF)
             }
         } else {
             // 物品预览图标（右侧，优先显示点选项）
@@ -1241,13 +1243,15 @@ class BuyOrderScreen(
                 }
             }
             // 冻结提示：发布时冻结 maxPrice × 件数（物品匹配列表展开时隐藏——提示在列表覆盖区内）
+            // 文字默认色，金额+单位金色（2026-08-24 拍板）
             if (!itemListOpen) {
                 val maxPrice = createMaxPriceField?.text?.toIntOrNull() ?: 0
                 val count = createCountField?.text?.toIntOrNull() ?: 0
                 context.drawCenteredTextWithShadow(textRenderer,
-                    Text.translatable("cobblemarket.buy_order.frozen_hint", maxPrice.toLong() * count,
-                        com.shusheng.cobblemarket.client.displayActiveCurrency()).string,
-                    centerX, dialogY + 146, 0xAAAAAA)
+                    Text.translatable("cobblemarket.buy_order.frozen_hint",
+                        Text.literal((maxPrice.toLong() * count).toString()).formatted(Formatting.GOLD),
+                        Text.literal(com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+                    centerX, dialogY + 146, 0xFFFFFF)
             }
         }
     }
@@ -1843,11 +1847,12 @@ class BuyOrderScreen(
             context.drawCenteredTextWithShadow(textRenderer,
                 "$itemName ×${pending.count}",
                 centerX, dialogY + 28, 0xFFFFFF)
-            // 卖家 + 出价
+            // 卖家（默认色）+ 出价（金额段蓝色，2026-08-24 拍板）
             context.drawCenteredTextWithShadow(textRenderer,
-                "${Text.translatable("cobblemarket.buy_order.review_seller").string}${pending.sellerName}  " +
-                "${Text.translatable("cobblemarket.buy_order.review_price").string}${com.shusheng.cobblemarket.client.formatPrice(pending.price)}${com.shusheng.cobblemarket.client.displayActiveCurrency()}",
-                centerX, dialogY + 58, 0x55FFFF)
+                Text.translatable("cobblemarket.buy_order.review_seller").append(Text.literal(pending.sellerName + "  "))
+                    .append(Text.translatable("cobblemarket.buy_order.review_price"))
+                    .append(Text.literal(com.shusheng.cobblemarket.client.formatPrice(pending.price) + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+                centerX, dialogY + 58, 0xFFFFFF)
         }
         // 拒绝原因输入框占据原说明行位置（placeholder 已说明用途）
     }
@@ -1997,10 +2002,11 @@ class BuyOrderScreen(
             Text.translatable("cobblemarket.buy_order.deliver_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
 
-        // 订单摘要
+        // 订单摘要：名称默认色，价格区间蓝色（2026-08-24 拍板）
         context.drawCenteredTextWithShadow(textRenderer,
-            "${entryName(entry)}  ${priceRangeText(entry)}",
-            centerX, dialogY + 24, 0x55FFFF)
+            Text.literal("${entryName(entry)}  ").append(
+                Text.literal(priceRangeText(entry)).formatted(Formatting.GOLD)),
+            centerX, dialogY + 24, 0xFFFFFF)
 
         // 买家留言（有备注时显示，灰色截断；卖家交付前须知）
         if (entry.note.isNotEmpty()) {
@@ -2373,7 +2379,8 @@ class BuyOrderScreen(
     companion object {
         // 背景三段贴图左右边框实际像素 17（用户实测），内容与行背景统一避开此宽度
         // 横竖边框分离：2026-08-22 用户更换背景图，左右边框 17→8（行/搜索框/按钮向外扩 18px），上下仍 17
-        private const val PANEL_BORDER_X = 8
+        // 内容区左右内缩：求购单专属面板纹理的边框视觉宽约 10~12px，8px 会盖住边框装饰（行/分割线/按钮统一 12）
+        private const val PANEL_BORDER_X = 12
         private const val PANEL_BORDER_Y = 17
         private val BUY_ORDER_PANEL_TOP = Identifier.of("cobblemarket", "textures/gui/buy_order_panel_top.png")
         // 中间/底部与精灵市场共用（贴图内容一致，顶部专用）

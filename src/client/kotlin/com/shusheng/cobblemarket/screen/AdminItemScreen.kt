@@ -279,16 +279,16 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         }
 
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).append(" ").append(entry.sellerName),
+            Text.translatable("cobblemarket.gui.tooltip_seller").append(" ").append(entry.sellerName),
             centerX, dialogY + 66, 0xFFFFFF)
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.item.sell_count").formatted(Formatting.GRAY).append(": ").append("×${entry.count}"),
+            Text.translatable("cobblemarket.item.sell_count").append(": ").append("×${entry.count}"),
             centerX, dialogY + 80, 0xFFFFFF)
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.gui.tooltip_price").formatted(Formatting.GRAY).append(" ").append(
-                Text.literal("${entry.price} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.AQUA)
+            Text.translatable("cobblemarket.gui.tooltip_price").append(" ").append(
+                Text.literal("${entry.price} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)
             ),
-            centerX, dialogY + 94, 0x55FFFF)
+            centerX, dialogY + 94, 0xFFFFFF)
 
         val btnW = 80
         val btnH = 20
@@ -385,8 +385,8 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 2, 0xFFFFFF, false)
 
             // 价格过长时用缩写（与物品市场界面一致），完整价格见 tooltip
-            val priceText = "${com.shusheng.cobblemarket.client.formatPriceShort(entry.price)} ◆"
-            context.drawText(textRenderer, priceText, x + 3, y + slotSize - 10, 0x55FFFF, false)
+            val priceText = "${com.shusheng.cobblemarket.client.formatPriceShort(entry.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
+            context.drawText(textRenderer, priceText, x + 3, y + slotSize - 10, 0xFFAA00, false)
         }
 
         if (hoveredSlot in displayEntries.indices) {
@@ -405,11 +405,11 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         } else {
             lines.add(Text.literal(entry.itemId) to 0xFFFFFF)
         }
-        lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").formatted(Formatting.GRAY).append(" ").append(entry.sellerName) to 0xFFFFFF)
-        // 价格行整体蓝色：数值与货币单位同色，与行内价格一致
-        lines.add(Text.translatable("cobblemarket.item.tooltip_price").formatted(Formatting.GRAY).append(" ").append(
-            Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.AQUA)
-        ) to 0x55FFFF)
+        lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(" ").append(entry.sellerName) to 0xFFFFFF)
+        // 价格行：标签默认色，金额段蓝色（2026-08-24 拍板）
+        lines.add(Text.translatable("cobblemarket.item.tooltip_price").append(" ").append(
+            Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)
+        ) to 0xFFFFFF)
         lines.add(Text.literal("×${entry.count}") to 0xFFFFFF)
 
         var maxWidth = 0

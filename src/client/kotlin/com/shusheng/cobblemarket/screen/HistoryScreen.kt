@@ -137,8 +137,8 @@ class HistoryScreen(private val showAll: Boolean = false) :
             val middle = if (showAll) "$seller$buyer $speciesText" else "$speciesText"
             context.drawTextWithShadow(textRenderer, middle, x, y + 4, 0xFFFFFF)
             x += textRenderer.getWidth(middle) + 6
-            val pricePart = "| ${com.shusheng.cobblemarket.client.formatPrice(e.price)} ◆"
-            context.drawTextWithShadow(textRenderer, pricePart, x, y + 4, 0x55FFFF)
+            val pricePart = "| ${com.shusheng.cobblemarket.client.formatPrice(e.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
+            context.drawTextWithShadow(textRenderer, pricePart, x, y + 4, 0xFFAA00)
             if (!showAll && buyer.isNotEmpty()) {
                 x += textRenderer.getWidth(pricePart) + 6
                 context.drawTextWithShadow(textRenderer, buyer.trimStart(), x, y + 4, 0xFFFFFF)
@@ -156,7 +156,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
     private fun typeColor(type: String): Int = when (type) {
         "ADD" -> 0x55FF55
         "PURCHASE" -> 0xFFAA00
-        "BUY" -> 0x55FFFF
+        "BUY" -> 0xFFAA00
         "CANCEL" -> 0xAAAAAA
         "RETURN" -> 0x55AAFF
         else -> 0xFFFFFF

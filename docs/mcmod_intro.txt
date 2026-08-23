@@ -13,7 +13,7 @@ CobbleMarket 是一个为 Cobblemon 开发的玩家间交易市场模组（Fabri
 
 - 对应 Minecraft 版本：1.21.1（Fabric）
 - 前置：Fabric API、Fabric Language Kotlin、Cobblemon ≥ 1.7.0
-- 可选：CobbleDollars（虚拟货币）、Cobblemon Smartphone（手机 App 入口）
+- 可选：CobbleDollars / Cobblemon Economy（虚拟货币）、Cobblemon Smartphone（手机 App 入口）
 - 开源协议：MIT
 
 ⭕截图：模组封面/主界面一览⭕
@@ -218,8 +218,10 @@ CobbleMarket 是一个为 Cobblemon 开发的玩家间交易市场模组（Fabri
 
 配置文件：config/cobblemarket.json（首次启动自动生成）
 
-currency.cobbledollars          自动      使用 CobbleDollars 货币（检测到该模组时自动启用）
-currency.item                   minecraft:diamond   物品货币 ID（未使用 CobbleDollars 时生效）
+currency.cobblemonEconomy      自动      优先使用 Cobblemon Economy 货币 API（检测到该模组时自动启用；cobeco 内置桥接可路由到 CobbleDollars/Impactor，服主在 cobeco 配置里设置 main_currency 后与 CobbleDollars 共享同一余额）
+currency.cobecoCurrency         POKE     cobeco 结算货币：POKE=PokeDollars，PCO=PokeCoins（仅 cobblemonEconomy=true 时生效）
+currency.cobbledollars          自动      使用 CobbleDollars 货币（检测到该模组时自动启用；cobblemonEconomy=true 时被忽略）
+currency.item                   minecraft:diamond   物品货币 ID（未使用上述虚拟货币时生效）
 pokemonListingFeePercent        5.0       精灵上架手续费百分比（0 = 免手续费）
 itemListingFeePercent           5.0       物品上架手续费百分比（0 = 免手续费）
 maxPokemonListingsPerPlayer     0         每玩家同时活跃精灵挂单上限（0 = 不限）
@@ -233,7 +235,7 @@ pendingReturnRetentionDays      30        过期返还保留天数；超期未�
 
 十三、经济系统说明
 
-- 货币：默认以钻石为货币，服主可配置为任意物品；若服务器安装了 CobbleDollars，自动切换为虚拟货币，无背包空间问题
+- 货币：默认以钻石为货币，服主可配置为任意物品；安装了虚拟货币模组时自动切换（优先级：Cobblemon Economy → CobbleDollars），无背包空间问题
 - 手续费：卖家上架时扣除（百分比），买家用标价购买
 - 待收款：卖出收益先进入卖家的"待收款"，由卖家主动领取；
   领取时背包满也不丢钱——剩余部分保留在账本，清空背包后继续领取

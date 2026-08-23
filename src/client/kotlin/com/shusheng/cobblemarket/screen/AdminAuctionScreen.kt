@@ -111,10 +111,12 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         return if (t == entry.species) (entry.extraData["speciesName"] ?: entry.species) else t
     }
 
-    private fun displayPriceText(entry: AuctionEntry): String {
+    /** 价格文本：金额+单位金色；无出价时「起拍」前缀白色（2026-08-24 拍板：文字默认色） */
+    private fun displayPriceText(entry: AuctionEntry): Text {
         val price = if (entry.currentPrice > 0) entry.currentPrice else entry.startingPrice
-        val text = com.shusheng.cobblemarket.client.formatPrice(price)
-        return (if (entry.currentPrice > 0) text else "${Text.translatable("cobblemarket.auction.from").string}$text") + " ◆"
+        val priceT = Text.literal(com.shusheng.cobblemarket.client.formatPrice(price) + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)
+        return if (entry.currentPrice > 0) priceT
+        else Text.translatable("cobblemarket.auction.from").append(priceT)
     }
 
     private fun formatRemaining(endsAt: Long): String {
@@ -525,7 +527,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             context.drawTexture(hammerTex, 0, 0, 0f, 0f, 24, 24, 24, 24)
             context.matrices.pop()
 
-            context.drawTextWithShadow(textRenderer, priceStr, priceX, y + 7, 0x55FFFF)
+            context.drawTextWithShadow(textRenderer, priceStr, priceX, y + 7, 0xFFFFFF)
             if (bidPart.isNotEmpty()) {
                 context.drawTextWithShadow(textRenderer, bidPart,
                     priceX + textRenderer.getWidth(priceStr), y + 7, 0xAAAAAA)
@@ -612,10 +614,10 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         // 分割线：上方精灵信息，下方拍卖信息
         lines.add(null to 0xFFFFFF)
         lines.add(Text.literal("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}") to 0xFFFFFF)
-        val priceLine = Text.literal("${Text.translatable("cobblemarket.auction.current_price").string}: ${displayPriceText(entry)}")
+        val priceLine = Text.translatable("cobblemarket.auction.current_price").append(": ").append(displayPriceText(entry))
         lines.add((if (entry.bidCount > 0)
             priceLine.append(Text.literal("  ×${entry.bidCount}").formatted(Formatting.GRAY))
-        else priceLine) to 0x55FFFF)
+        else priceLine) to 0xFFFFFF)
         lines.add(Text.literal("${Text.translatable("cobblemarket.auction.ends").string}: ${formatRemaining(entry.endsAt)}") to 0xFFFFFF)
         if (entry.currentBidderName.isNotEmpty()) {
             lines.add(Text.literal("${Text.translatable("cobblemarket.auction.leader").string}: ${entry.currentBidderName}") to 0xFFDD66)
@@ -670,10 +672,10 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             itemTooltipCacheMaxWidth = mw
         }
         val lines = itemTooltipCacheLines.toMutableList()
-        val priceLine = Text.literal("${Text.translatable("cobblemarket.auction.current_price").string}: ${displayPriceText(entry)}")
+        val priceLine = Text.translatable("cobblemarket.auction.current_price").append(": ").append(displayPriceText(entry))
         lines.add((if (entry.bidCount > 0)
             priceLine.append(Text.literal("  ×${entry.bidCount}").formatted(Formatting.GRAY))
-        else priceLine) to 0x55FFFF)
+        else priceLine) to 0xFFFFFF)
         lines.add(Text.literal("${Text.translatable("cobblemarket.auction.ends").string}: ${formatRemaining(entry.endsAt)}") to 0xFFFFFF)
         if (entry.currentBidderName.isNotEmpty()) {
             lines.add(Text.literal("${Text.translatable("cobblemarket.auction.leader").string}: ${entry.currentBidderName}") to 0xFFDD66)
@@ -814,10 +816,18 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             context.drawTextWithShadow(textRenderer, text, auctionX, ay, color)
             ay += 10
         }
+        fun auctionLine(text: Text, color: Int = 0xFFFFFF) {
+            context.drawTextWithShadow(textRenderer, text, auctionX, ay, color)
+            ay += 10
+        }
         auctionLine("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}")
-        auctionLine("${Text.translatable("cobblemarket.auction.current_price").string}: ${displayPriceText(entry)}", 0x55FFFF)
-        auctionLine("${Text.translatable("cobblemarket.auction.starting_price").string}: ${com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice)} ${com.shusheng.cobblemarket.client.displayActiveCurrency()}", 0x55FFFF)
-        auctionLine("${Text.translatable("cobblemarket.auction.min_increment").string}: ${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ${com.shusheng.cobblemarket.client.displayActiveCurrency()}", 0x55FFFF)
+        // 价格三行：标签默认色，金额段蓝色（2026-08-24 拍板）
+        auctionLine(Text.translatable("cobblemarket.auction.current_price").append(": ").append(
+            displayPriceText(entry)))
+        auctionLine(Text.translatable("cobblemarket.auction.starting_price").append(": ").append(
+            Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GOLD)))
+        auctionLine(Text.translatable("cobblemarket.auction.min_increment").append(": ").append(
+            Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GOLD)))
         auctionLine("${Text.translatable("cobblemarket.auction.ends").string}: ${formatRemaining(entry.endsAt)}", 0xAAAAAA)
         auctionLine("${Text.translatable("cobblemarket.auction.bids_count").string}: ${entry.bidCount}", 0xAAAAAA)
         if (entry.currentBidderName.isNotEmpty()) {

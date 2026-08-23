@@ -576,7 +576,7 @@ object BuyOrderNetwork {
                 }
                 ServerPlayNetworking.send(
                     player,
-                    MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.closed", refund, CurrencyHandler.currencyText()))
+                    MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.closed", CurrencyHandler.goldAmount(refund), CurrencyHandler.goldCurrencyText()))
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
@@ -978,7 +978,7 @@ object BuyOrderNetwork {
                 }
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, pending.sellerUuid,
                     // 到账金额 + 手续费一并提示：买家付的是 gross，卖家到手 gross-fee，不说清会产生疑问
-                    Text.translatable("cobblemarket.buy_order.accepted_seller", order.requirementText(), gross - fee, fee, CurrencyHandler.currencyText()).formatted(Formatting.GREEN))
+                    Text.translatable("cobblemarket.buy_order.accepted_seller", order.requirementText(), CurrencyHandler.goldAmount(gross - fee), CurrencyHandler.goldAmount(fee), CurrencyHandler.goldCurrencyText()).formatted(Formatting.GREEN))
                 broadcastEvent(server, if (order.isOpen()) "UPDATED" else "CLOSED", buyOrderToEntry(order))
             }
         }
