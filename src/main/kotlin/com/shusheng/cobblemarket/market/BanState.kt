@@ -24,6 +24,8 @@ class BanState private constructor() : PersistentState() {
     private val bans = mutableMapOf<UUID, BanInfo>()
 
     fun ban(playerUuid: UUID, playerName: String, bannedBy: String, expiresAt: Long?, reason: String) {
+        // 先删后插：重复封禁（改时长/理由）时 put 覆盖不移动位置，强制移到末尾保证最新在前
+        bans.remove(playerUuid)
         bans[playerUuid] = BanInfo(playerUuid, playerName, bannedBy, System.currentTimeMillis(), expiresAt, reason)
         markDirty()
     }

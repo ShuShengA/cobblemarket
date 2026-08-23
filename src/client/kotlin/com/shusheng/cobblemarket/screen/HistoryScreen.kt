@@ -41,7 +41,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
         addDrawableChild(NineSliceButton(
             leftX + panelWidth - 50, 18, 50, 16,
             Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(MarketEntryScreen()) }
+            { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) }
         ))
 
         if (!loaded) {
@@ -63,10 +63,10 @@ class HistoryScreen(private val showAll: Boolean = false) :
         entries = payload.entries
     }
 
-    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int) {
+    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int, sliceH: Int = 16) {
         context.matrices.push()
         context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(0.5f, 0.5f, 1f)
+        context.matrices.scale(0.5f, 0.5f * sliceH / 16f, 1f)
         context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
         context.matrices.pop()
     }
@@ -84,7 +84,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
         drawPanelSlice(context, top, panelLeft, panelTop)
         var y = panelTop + sliceH
         while (y < panelBottom - sliceH) {
-            drawPanelSlice(context, mid, panelLeft, y)
+            drawPanelSlice(context, mid, panelLeft, y, minOf(sliceH, panelBottom - sliceH - y))
             y += sliceH
         }
         drawPanelSlice(context, bot, panelLeft, panelBottom - sliceH)
@@ -100,6 +100,8 @@ class HistoryScreen(private val showAll: Boolean = false) :
         val rowHeight = 18
         val dateFormat = SimpleDateFormat("MM-dd HH:mm")
         val panelHalf = panelWidth / 2
+        // 按钮行与第一条记录之间的分割线（按钮底 34、列表顶 48 → 线在正中 41）
+        context.fill(width / 2 - panelHalf, 41, width / 2 + panelHalf, 42, 0xFF555555.toInt())
         // Bottom border is 16px tall; content should end before height-48
         val maxVisible = maxOf(3, (height - 48 - startY) / rowHeight)
 

@@ -22,6 +22,9 @@ class ItemPriceLimitState private constructor() : PersistentState() {
     private val entries = mutableMapOf<String, ItemPriceLimitEntry>()
 
     fun add(entry: ItemPriceLimitEntry) {
+        // 先删后插：LinkedHashMap 对已存在 key 的 put 只覆盖值不移动位置，
+        // 重复添加同一物品会留在旧位置（列表显示"没加到第一行"），强制移到末尾保证最新在前
+        entries.remove(entry.itemId)
         entries[entry.itemId] = entry
         markDirty()
     }

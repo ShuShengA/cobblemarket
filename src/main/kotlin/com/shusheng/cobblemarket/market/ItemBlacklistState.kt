@@ -12,6 +12,8 @@ class ItemBlacklistState private constructor() : PersistentState() {
     private val blacklist = mutableSetOf<String>()
 
     fun add(itemId: String) {
+        // 先删后插：LinkedHashSet 对已存在元素的 add 不移动位置，重复添加会留在旧位置（列表显示"没加到第一行"）
+        blacklist.remove(itemId)
         blacklist.add(itemId)
         markDirty()
     }
