@@ -687,8 +687,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         val balText = com.shusheng.cobblemarket.client.BalanceCache.balance
         if (balText.isNotEmpty()) {
             context.drawTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.gui.balance", balText).string,
-                leftX + 4, 20, 0x55FFFF)
+                Text.translatable("cobblemarket.gui.balance",
+                    Text.literal(balText + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+                leftX + 4, 20, 0xFFFFFF)
         }
 
         val startY = getListStartY()

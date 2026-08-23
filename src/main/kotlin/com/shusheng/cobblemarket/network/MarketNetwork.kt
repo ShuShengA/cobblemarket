@@ -1130,8 +1130,8 @@ object MarketNetwork {
                             false,
                             Text.translatable(
                                 "cobblemarket.network.need_diamonds",
-                                listing.price,
-                                com.shusheng.cobblemarket.config.CurrencyHandler.currencyText()
+                                com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(listing.price),
+                                com.shusheng.cobblemarket.config.CurrencyHandler.goldCurrencyText()
                             )
                         )
                     )
@@ -1698,7 +1698,7 @@ object MarketNetwork {
                     ServerPlayNetworking.send(
                         player, MarketResultPayload(
                             false,
-                            Text.translatable("cobblemarket.cmd.need_fee", fee, CurrencyHandler.currencyText())
+                            Text.translatable("cobblemarket.cmd.need_fee", CurrencyHandler.goldAmount(fee), CurrencyHandler.goldCurrencyText())
                         )
                     )
                     return@execute
@@ -1744,18 +1744,18 @@ object MarketNetwork {
                         "cobblemarket.cmd.listed_fee",
                         pokemon.species.translatedName,
                         pokemon.level,
-                        payload.price,
-                        CurrencyHandler.currencyText(),
-                        fee,
-                        CurrencyHandler.currencyText()
+                        CurrencyHandler.goldAmount(payload.price),
+                        CurrencyHandler.goldCurrencyText(),
+                        CurrencyHandler.goldAmount(fee),
+                        CurrencyHandler.goldCurrencyText()
                     )
                 else
                     Text.translatable(
                         "cobblemarket.cmd.listed",
                         pokemon.species.translatedName,
                         pokemon.level,
-                        payload.price,
-                        CurrencyHandler.currencyText()
+                        CurrencyHandler.goldAmount(payload.price),
+                        CurrencyHandler.goldCurrencyText()
                     )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
@@ -1927,7 +1927,7 @@ object MarketNetwork {
                     ServerPlayNetworking.send(
                         player, MarketResultPayload(
                             false,
-                            Text.translatable("cobblemarket.cmd.need_fee", fee, CurrencyHandler.currencyText())
+                            Text.translatable("cobblemarket.cmd.need_fee", CurrencyHandler.goldAmount(fee), CurrencyHandler.goldCurrencyText())
                         )
                     )
                     return@execute
@@ -1974,18 +1974,18 @@ object MarketNetwork {
                         "cobblemarket.item.listed_fee",
                         payload.count,
                         targetStack.item.name,
-                        payload.price,
-                        CurrencyHandler.currencyText(),
-                        fee,
-                        CurrencyHandler.currencyText()
+                        CurrencyHandler.goldAmount(payload.price),
+                        CurrencyHandler.goldCurrencyText(),
+                        CurrencyHandler.goldAmount(fee),
+                        CurrencyHandler.goldCurrencyText()
                     )
                 else
                     Text.translatable(
                         "cobblemarket.item.listed",
                         payload.count,
                         targetStack.item.name,
-                        payload.price,
-                        CurrencyHandler.currencyText()
+                        CurrencyHandler.goldAmount(payload.price),
+                        CurrencyHandler.goldCurrencyText()
                     )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
@@ -2155,8 +2155,8 @@ object MarketNetwork {
                             false,
                             Text.translatable(
                                 "cobblemarket.network.need_diamonds",
-                                totalPrice,
-                                CurrencyHandler.currencyText()
+                                CurrencyHandler.goldAmount(totalPrice),
+                                CurrencyHandler.goldCurrencyText()
                             )
                         )
                     )
@@ -2381,9 +2381,9 @@ object MarketNetwork {
                 // 只清掉已实际发放的部分，差额留在账本（单方法内完成，无中间态）
                 state.claimPendingBalance(player.uuid, given)
                 val msg = if (given < amount)
-                    Text.translatable("cobblemarket.cmd.collected_partial", given, CurrencyHandler.currencyText())
+                    Text.translatable("cobblemarket.cmd.collected_partial", CurrencyHandler.goldAmount(given), CurrencyHandler.goldCurrencyText())
                 else
-                    Text.translatable("cobblemarket.cmd.collected", amount, CurrencyHandler.currencyText())
+                    Text.translatable("cobblemarket.cmd.collected", CurrencyHandler.goldAmount(amount), CurrencyHandler.goldCurrencyText())
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 ServerPlayNetworking.send(player, MarketResultPayload(true, msg))

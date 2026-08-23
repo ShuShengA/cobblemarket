@@ -15,6 +15,12 @@ object CobbleMarketConfig {
 
     var cobbledollars: Boolean = false
         private set
+    /** 装了 Cobblemon Economy 时是否优先走它的货币 API（其内部桥接可路由到 CobbleDollars/Impactor 后端） */
+    var cobblemonEconomy: Boolean = false
+        private set
+    /** cobeco 模式下的结算货币：POKE=PokeDollars（默认），PCO=PokeCoins；仅 cobblemonEconomy=true 时生效 */
+    var cobecoCurrency: String = "POKE"
+        private set
     var currencyItem: String = "minecraft:diamond"
         private set
     var pokemonListingFeePercent: Double = 5.0
@@ -66,8 +72,10 @@ object CobbleMarketConfig {
 
     fun load() {
         val hasCD = try { Class.forName("fr.harmex.cobbledollars.common.utils.CobbleDollarsPlayer"); true } catch (_: Exception) { false }
+        val hasCobeco = try { Class.forName("com.cobblemon.economy.fabric.CobblemonEconomy"); true } catch (_: Exception) { false }
         if (!configFile.exists()) {
             cobbledollars = hasCD
+            cobblemonEconomy = hasCobeco
             save()
         } else {
             try {
@@ -87,8 +95,18 @@ object CobbleMarketConfig {
                 val currency = data["currency"] as? Map<*, *>
                 if (currency != null) {
                     cobbledollars = (currency["cobbledollars"] as? Boolean ?: hasCD) && hasCD
+                    // cobblemonEconomy 旧配置缺失时固定 false（升级无感），勿改成「缺失按探测兜底」：
+                    // 老服主已用 cobbledollars=true 运营市场，升级后若因装了 cobeco 被自动切换后端，
+                    // 余额存储会变（除非服主在 cobeco 里开了 main_currency 桥接），行为突变。
+                    // 探测值只在无配置文件的全新安装时作为默认（见上方 !configFile.exists() 分支）
+                    cobblemonEconomy = (currency["cobblemonEconomy"] as? Boolean ?: false) && hasCobeco
+                    // 结算货币归一化：大小写/全名/缩写都认（PCO/pco/PokeCoins → PCO），其余回 POKE（防服主写错值静默用错货币）
+                    cobecoCurrency = when (currency["cobecoCurrency"]?.toString()?.lowercase()) {
+                        "pco", "pokecoins" -> "PCO"
+                        else -> "POKE"
+                    }
                     currencyItem = currency["item"] as? String ?: "minecraft:diamond"
-                    if (!currency.containsKey("cobbledollars") || !currency.containsKey("item")) missingKeys = true
+                    if (!currency.containsKey("cobbledollars") || !currency.containsKey("cobblemonEconomy") || !currency.containsKey("cobecoCurrency") || !currency.containsKey("item")) missingKeys = true
                 }
                 val legacyFee = data["listingFeePercent"] as? Double
                 // 手续费钳制 0~100：超过 100% 会让卖家账本变负数（抵消后续所有收入）
@@ -132,8 +150,10 @@ object CobbleMarketConfig {
     fun save() {
         val data = mapOf(
             "_comments" to mapOf(
-                "currency.cobbledollars" to "是否使用 CobbleDollars 货币（true/false）/ Whether to use CobbleDollars currency (true/false)",
-                "currency.item" to "货币物品 ID（cobbledollars=false 时生效）/ Currency item ID (used when cobbledollars=false)",
+                "currency.cobbledollars" to "是否使用 CobbleDollars 货币（true/false，cobblemonEconomy=true 时被忽略）。⚠ 货币配置仅在服务器启动时读取，修改后需重启生效 / Whether to use CobbleDollars currency (true/false, ignored when cobblemonEconomy=true). ⚠ Currency settings are read only at server startup — restart after changes",
+                "currency.cobblemonEconomy" to "是否优先使用 Cobblemon Economy 的货币 API（true/false）。true 时市场余额走 cobeco 后端，其内置桥接可路由到 CobbleDollars/Impactor——若服主在 cobeco 配置里把 main_currency 设为 cobbledollars，市场与 CobbleDollars 商人共享同一余额；旧配置升级默认 false（行为不变），全新安装默认按探测自动开启 / Prefer Cobblemon Economy's currency API (true/false). When true the market uses the cobeco backend, whose built-in bridge can route to CobbleDollars/Impactor — if main_currency=cobbledollars in cobeco config, the market and CobbleDollars merchants share one balance; defaults to false on config upgrade (no behavior change) and to auto-detection on fresh installs",
+                "currency.cobecoCurrency" to "Cobblemon Economy 结算货币：POKE=PokeDollars（默认），PCO=PokeCoins（写 PCO 或 PokeCoins 均可，不区分大小写）。仅 cobblemonEconomy=true 时生效；PCO 与 PokeDollars 是两套独立账本，市场用 PCO 结算时玩家 /pco 查到的余额就是市场余额 / Cobblemon Economy settlement currency: POKE=PokeDollars (default), PCO=PokeCoins (either PCO or PokeCoins, case-insensitive). Only used when cobblemonEconomy=true; PCO and PokeDollars are separate ledgers — with PCO the market balance equals what players see via /pco",
+                "currency.item" to "货币物品 ID（cobbledollars 与 cobblemonEconomy 均为 false 时生效）/ Currency item ID (used when cobbledollars and cobblemonEconomy are both false)",
                 "pokemonListingFeePercent" to "精灵市场上架手续费百分比（0=免手续费）/ Pokémon listing fee percentage (0=no fee)",
                 "itemListingFeePercent" to "物品市场上架手续费百分比（0=免手续费）/ Item listing fee percentage (0=no fee)",
                 "maxPokemonListingsPerPlayer" to "每个玩家同时活跃的精灵上架数量上限（0=不限制）/ Max active Pokémon listings per player (0=unlimited)",
@@ -152,7 +172,7 @@ object CobbleMarketConfig {
                 "maxBuyOrdersPerPlayer" to "每个玩家同时进行的求购单数量上限，精灵与物品合计（0=不限制）。求购单列表全量下发给所有客户端，玩家较多的服务器建议保持较小值，避免全服活跃求购单总量过大导致卡顿 / Max concurrent buy orders per player, Pokémon and items combined (0=unlimited). The buy order list is broadcast in full to every client, so on crowded servers keep this small to avoid lag from too many active orders",
                 "celebrationAnimationEnabled" to "获得精灵时的庆祝动画开关（默认开启）。买到精灵、拍到精灵、求购单接受交付时，在获得者屏幕中央播放该精灵的弹跳动画；关闭后服务端不再下发动画包 / Celebration animation switch when obtaining a Pokémon (on by default). Plays a bouncing animation of the Pokémon on the receiver's screen when buying, winning an auction, or accepting a buy order delivery; when off the server stops sending the animation packet"
             ),
-            "currency" to mapOf("cobbledollars" to cobbledollars, "item" to currencyItem),
+            "currency" to mapOf("cobbledollars" to cobbledollars, "cobblemonEconomy" to cobblemonEconomy, "cobecoCurrency" to cobecoCurrency, "item" to currencyItem),
             "pokemonListingFeePercent" to pokemonListingFeePercent,
             "itemListingFeePercent" to itemListingFeePercent,
             "maxPokemonListingsPerPlayer" to maxPokemonListingsPerPlayer,

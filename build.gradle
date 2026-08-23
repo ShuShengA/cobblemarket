@@ -45,11 +45,12 @@ dependencies {
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
     modImplementation "net.fabricmc:fabric-language-kotlin:${project.fabric_kotlin_version}"
-	// Cobblemon / CobbleDollars / Smartphone 从 Modrinth Maven 拉取（版本 ID 固定到 fabric 1.21.1 的发布，
+	// Cobblemon / CobbleDollars / Cobblemon Economy / Smartphone 从 Modrinth Maven 拉取（版本 ID 固定到 fabric 1.21.1 的发布，
 	// 避免同版本号多 MC 版本的歧义）；第三方 jar 不入库（Cobblemon 130MB + 许可限制）
 	modImplementation "maven.modrinth:cobblemon:kF7CvxTo"
 	modLocalRuntime "maven.modrinth:cobblemon:kF7CvxTo"
 	modCompileOnly "maven.modrinth:cobbledollars:cqsHXSXe"
+	modCompileOnly "maven.modrinth:cobblemon-economy:CfJu3YAf"
 	modCompileOnly "maven.modrinth:cobblemon-smartphone:w7JqnSrT"
 }
 
