@@ -15,6 +15,7 @@ import net.minecraft.item.tooltip.TooltipType
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
+import java.util.UUID
 
 class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) {
 
@@ -30,6 +31,10 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
     private var prevButton: NineSliceButton? = null
     private var nextButton: NineSliceButton? = null
     private var claimButton: NineSliceButton? = null
+
+    // 物品 NBT 解析缓存：数据到达时一次性反序列化，避免 render 每帧 fromNbtOrEmpty 造成 GC 压力
+    private val entryStacks = mutableMapOf<UUID, ItemStack>()
+    private val tooltipStackLines = mutableMapOf<UUID, List<Pair<Text, Int>>>()
 
     private fun columns() = (panelWidth + gap) / (slotSize + gap)
     private fun getGridStartY() = 48
@@ -90,6 +95,19 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
         totalPages = payload.totalPages
         currentPage = payload.currentPage
         loaded = true
+        rebuildEntryCaches(payload.items)
+    }
+
+    private fun rebuildEntryCaches(newEntries: List<ItemEntry>) {
+        entryStacks.clear()
+        tooltipStackLines.clear()
+        val registry = client?.world?.registryManager ?: return
+        for (entry in newEntries) {
+            val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
+            entryStacks[entry.id] = stack
+            tooltipStackLines[entry.id] = stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC)
+                .map { it to 0xFFFFFF }
+        }
     }
 
     fun onMarketResult(payload: MarketResultPayload) {
@@ -98,10 +116,10 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
         requestData()
     }
 
-    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int) {
+    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int, sliceH: Int = 16) {
         context.matrices.push()
         context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(0.5f, 0.5f, 1f)
+        context.matrices.scale(0.5f, 0.5f * sliceH / 16f, 1f)
         context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
         context.matrices.pop()
     }
@@ -119,7 +137,7 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
         drawPanelSlice(context, top, panelLeft, panelTop)
         var y = panelTop + sliceH
         while (y < panelBottom - sliceH) {
-            drawPanelSlice(context, mid, panelLeft, y)
+            drawPanelSlice(context, mid, panelLeft, y, minOf(sliceH, panelBottom - sliceH - y))
             y += sliceH
         }
         drawPanelSlice(context, bot, panelLeft, panelBottom - sliceH)
@@ -174,9 +192,7 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
             val rowState = if (index == hoveredSlot) 1 else 0
             drawNineSlice(context, ROW_BACKGROUND_TEXTURE, x, y, slotSize, slotSize, rowState, ROW_BACKGROUND_TEX_H)
 
-            val registry = client?.world?.registryManager
-            if (registry != null) {
-                val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
+            entryStacks[entry.id]?.let { stack ->
                 context.drawItem(stack, x + (slotSize - 16) / 2, y + (slotSize - 16) / 2)
             }
 
@@ -194,11 +210,10 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
     }
 
     private fun renderItemTooltip(context: DrawContext, entry: ItemEntry, mouseX: Int, mouseY: Int) {
-        val registry = client?.world?.registryManager
         val lines = mutableListOf<Pair<Text, Int>>()
-        if (registry != null) {
-            val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
-            lines.addAll(stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC).map { it to 0xFFFFFF })
+        val stackLines = tooltipStackLines[entry.id]
+        if (stackLines != null) {
+            lines.addAll(stackLines)
         } else {
             lines.add(Text.literal(entry.itemId) to 0xFFFFFF)
         }

@@ -22,7 +22,8 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
     private val panelWidth = 296
     private val rowHeight = 24
 
-    private data class SellItem(val stack: ItemStack, val count: Int)
+    // name：显示名在背包扫描时构建一次，render 每帧取 stack.name 是分配热点
+    private data class SellItem(val stack: ItemStack, val count: Int, val name: String)
 
     private var items = listOf<SellItem>()
     private val sellButtons = mutableListOf<NineSliceButton>()
@@ -65,7 +66,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
                 if (idx >= 0) {
                     list[idx] = list[idx].copy(count = list[idx].count + stack.count)
                 } else {
-                    list.add(SellItem(stack.copy(), stack.count))
+                    list.add(SellItem(stack.copy(), stack.count, stack.name.string))
                 }
             }
         }
@@ -145,7 +146,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
 
         context.drawItem(entry.stack, centerX - 8, dialogY + 26)
         context.drawCenteredTextWithShadow(textRenderer,
-            entry.stack.name, centerX, dialogY + 46, 0xFFFFFF)
+            entry.name, centerX, dialogY + 46, 0xFFFFFF)
 
         context.drawTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.sell_count").string + "（" + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}）",
@@ -190,10 +191,10 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         closeConfirmDialog()
     }
 
-    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int) {
+    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int, sliceH: Int = 16) {
         context.matrices.push()
         context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(0.5f, 0.5f, 1f)
+        context.matrices.scale(0.5f, 0.5f * sliceH / 16f, 1f)
         context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
         context.matrices.pop()
     }
@@ -211,7 +212,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         drawPanelSlice(context, top, panelLeft, panelTop)
         var y = panelTop + sliceH
         while (y < panelBottom - sliceH) {
-            drawPanelSlice(context, mid, panelLeft, y)
+            drawPanelSlice(context, mid, panelLeft, y, minOf(sliceH, panelBottom - sliceH - y))
             y += sliceH
         }
         drawPanelSlice(context, bot, panelLeft, panelBottom - sliceH)
@@ -273,7 +274,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         items.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, item ->
             val y = startY + i * rowHeight
             context.drawItem(item.stack, leftX + 2, y + 2)
-            context.drawTextWithShadow(textRenderer, item.stack.name, leftX + 24, y + 6, 0xFFFFFF)
+            context.drawTextWithShadow(textRenderer, item.name, leftX + 24, y + 6, 0xFFFFFF)
             context.drawTextWithShadow(textRenderer, "×${item.count}", leftX + 200, y + 6, 0xAAAAAA)
         }
 
@@ -289,19 +290,34 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         }
     }
 
+    // tooltip 内容缓存：悬停同一物品时每帧双背包扫描 + getTooltip 是悬停掉帧主因。
+    // 内容要反映实时耐久/计时，悬停目标变化时立即重建；同一目标悬停期间 250ms 节流重建
+    private var tooltipCacheKey: SellItem? = null
+    private var tooltipCacheLines: List<Text> = emptyList()
+    private var tooltipCacheMaxWidth = 0
+    private var lastTooltipBuild = 0L
+
     private fun renderItemTooltip(context: DrawContext, entry: SellItem, mouseX: Int, mouseY: Int) {
-        // 悬停时实时取对应栈：优先屏幕容器槽位（服务端同步数据，计时准确，与背包界面一致）；
-        // 回退本地背包（客户端 tick 本地计时有漂移），再回退快照
-        val liveStack = client?.player?.playerScreenHandler?.slots
-            ?.firstOrNull { it.hasStack() && com.shusheng.cobblemarket.network.itemsEqualForTrading(it.stack, entry.stack) }
-            ?.stack
-            ?: client?.player?.inventory?.main?.firstOrNull {
-                com.shusheng.cobblemarket.network.itemsEqualForTrading(it, entry.stack)
-            }
-            ?: entry.stack
-        val lines = liveStack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC)
-        var maxWidth = 0
-        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
+        val now = System.currentTimeMillis()
+        if (tooltipCacheKey !== entry || now - lastTooltipBuild >= 250) {
+            tooltipCacheKey = entry
+            lastTooltipBuild = now
+            // 悬停时实时取对应栈：优先屏幕容器槽位（服务端同步数据，计时准确，与背包界面一致）；
+            // 回退本地背包（客户端 tick 本地计时有漂移），再回退快照
+            val liveStack = client?.player?.playerScreenHandler?.slots
+                ?.firstOrNull { it.hasStack() && com.shusheng.cobblemarket.network.itemsEqualForTrading(it.stack, entry.stack) }
+                ?.stack
+                ?: client?.player?.inventory?.main?.firstOrNull {
+                    com.shusheng.cobblemarket.network.itemsEqualForTrading(it, entry.stack)
+                }
+                ?: entry.stack
+            tooltipCacheLines = liveStack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC)
+            var maxWidth = 0
+            tooltipCacheLines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
+            tooltipCacheMaxWidth = maxWidth
+        }
+        val lines = tooltipCacheLines
+        val maxWidth = tooltipCacheMaxWidth
 
         val padding = 4
         val tx = minOf(mouseX + 12, width - maxWidth - 12)
