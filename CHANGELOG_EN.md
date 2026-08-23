@@ -32,6 +32,8 @@
 - Fixed buy order creation dialog validation messages being darkened and invisible under the dialog overlay (now rendered above the overlay)
 - Fixed Int overflow in fee calculation (auction settlement, seller notification, and pokemon listing): price × feePercent could wrap around above ~214.7M, producing a negative or zero fee (fee evasion, phantom seller credit, or data corruption in the extreme case) — now computed in Long
 - Fixed sustained FPS drops while market screens are open — they stay smooth no matter how many listings there are
+- Fixed the garbled seller notification after a buy order delivery was accepted — the message template has 5 placeholders but only 4 args were passed, with the amount/currency order swapped (mixed-up amounts and leftover %s)
+- Fixed the first row's 3D icon in the Pokémon picker always showing the first party Pokémon after searching (buy order delivery and auction creation — same root cause): the filtered-position index was used to look up the icon cache built with original list indices; filtering now keeps the original index
 
 ## 1.0.0-beta.6 (in development, unreleased)
 
