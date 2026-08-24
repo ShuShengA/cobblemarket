@@ -142,7 +142,10 @@ class BuyOrderScreen(
     private var deliverEntry: BuyOrderEntry? = null
     // 精灵交付：所选精灵（经 SellSelectScreen 交付模式选择后回传）
     private var deliverSelectedPokemon: PokemonPreview? = null
+    /** 物品交付所选形态（多形态时经 ItemVariantSelectScreen 选择；单形态自动取唯一一组） */
+    private var deliverVariant: ItemStack? = null
     private var deliverSelectButton: NineSliceButton? = null
+    private var deliverVariantButton: NineSliceButton? = null
     private var deliverPriceField: TextFieldWidget? = null
     private var deliverConfirmButton: NineSliceButton? = null
     private var deliverCancelButton: NineSliceButton? = null
@@ -394,12 +397,17 @@ class BuyOrderScreen(
         pendingDeliverOrderId = null
         val order = entries.firstOrNull { it.id == orderId }
         if (order == null) {
-            // 订单已结束（期间被关闭/凑满），丢弃所选精灵
+            // 订单已结束（期间被关闭/凑满），丢弃所选精灵/形态
             pendingDeliverPokemon = null
+            pendingDeliverVariant = null
             return
         }
         val pokemon = pendingDeliverPokemon
         pendingDeliverPokemon = null
+        // 物品形态选择回传：先消费到 deliverVariant 再打开弹窗，防「多形态又跳回选择界面」死循环
+        val variant = pendingDeliverVariant
+        pendingDeliverVariant = null
+        if (variant != null) deliverVariant = variant
         openDeliverDialog(order)
         if (pokemon != null) {
             deliverSelectedPokemon = pokemon
@@ -1160,17 +1168,18 @@ class BuyOrderScreen(
         createCountField?.setTextPredicate { it.length <= 4 && it.all { c -> c.isDigit() } }
         addDrawableChild(createCountField)
 
-        createMinPriceField = TextFieldWidget(textRenderer, centerX - 75, dialogY + 106, 74, 16, Text.literal(""))
+        // min/max/备注与上方搜索框左右缘完全对齐（搜索框 centerX-82 宽 148）
+        createMinPriceField = TextFieldWidget(textRenderer, centerX - 82, dialogY + 106, 72, 16, Text.literal(""))
         createMinPriceField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_min_price").formatted(Formatting.GRAY))
         createMinPriceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(createMinPriceField)
-        createMaxPriceField = TextFieldWidget(textRenderer, centerX + 3, dialogY + 106, 74, 16, Text.literal(""))
+        createMaxPriceField = TextFieldWidget(textRenderer, centerX - 6, dialogY + 106, 72, 16, Text.literal(""))
         createMaxPriceField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_max_price").formatted(Formatting.GRAY))
         createMaxPriceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(createMaxPriceField)
 
         // 备注（额外需求提醒卖家，选填）
-        createNoteField = TextFieldWidget(textRenderer, centerX - 74, dialogY + 126, 148, 16, Text.literal(""))
+        createNoteField = TextFieldWidget(textRenderer, centerX - 82, dialogY + 126, 148, 16, Text.literal(""))
         createNoteField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_note").formatted(Formatting.GRAY))
         createNoteField?.setMaxLength(100)
         addDrawableChild(createNoteField)
@@ -1238,7 +1247,7 @@ class BuyOrderScreen(
                 Identifier.tryParse(idStr)?.let { id ->
                     val item = Registries.ITEM.get(id)
                     if (item != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
-                        context.drawItem(ItemStack(item), centerX + 72, dialogY + 44)
+                        context.drawItem(ItemStack(item), centerX + 72, dialogY + 48)
                     }
                 }
             }
@@ -1924,7 +1933,7 @@ class BuyOrderScreen(
         if (entry.type == "POKEMON") {
             // 选择精灵按钮：打开上架选择界面（交付模式），选完回传本弹窗
             deliverSelectButton = NineSliceButton(
-                centerX - 82, dialogY + 46, 148, 16,
+                centerX - 74, dialogY + 46, 148, 16,
                 Text.literal(""),
                 { openDeliverSelect() },
                 texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -1940,7 +1949,13 @@ class BuyOrderScreen(
             deliverPriceField?.text = entry.minPrice.toString()
             addDrawableChild(deliverPriceField)
         } else {
-            val backCount = backpackCount(entry.itemId)
+            // 物品交付形态：默认取第一组；多形态时「选择形态」按钮可换（照精灵交付的选择精灵按钮），
+            // 不自动跳转选择界面——自动跳转会导致返回时 pending 残留、下次打开列表误跳（已修）
+            if (deliverVariant == null) {
+                deliverVariant = variantGroups(entry.itemId).firstOrNull()?.first
+            }
+
+            val backCount = deliverVariant?.count ?: 0
             val prefillCount = minOf(entry.remainingCount, backCount).coerceAtLeast(1)
             deliverCountField = TextFieldWidget(textRenderer, centerX - 40, dialogY + 62, 80, 16, Text.literal(""))
             deliverCountField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.deliver_count").formatted(Formatting.GRAY))
@@ -1954,6 +1969,23 @@ class BuyOrderScreen(
             deliverPriceField?.setChangedListener { updateDeliverConfirmActive() }
             deliverPriceField?.text = entry.minPrice.toString()
             addDrawableChild(deliverPriceField)
+
+            // 选择形态按钮（照精灵交付的「选择精灵」按钮：严格居中 centerX-74 宽 148）：
+            // 多形态时显示在形态行位置（替代图标+名称行，文案显示当前形态名）
+            deliverVariantButton = NineSliceButton(
+                centerX - 74, dialogY + 44, 148, 16,
+                Text.literal(""),
+                {
+                    val e = deliverEntry ?: return@NineSliceButton
+                    pendingDeliverOrderId = e.id
+                    client?.setScreen(ItemVariantSelectScreen(e.id, e.itemId))
+                },
+                texture = BUY_ORDER_BUTTON_TEXTURE,
+                texH = BUY_ORDER_BUTTON_TEX_H
+            )
+            deliverVariantButton?.visible = variantGroups(entry.itemId).size > 1
+            addDrawableChild(deliverVariantButton)
+            updateDeliverVariantButton()
         }
 
         // 按钮顺序照惯例：确认在左，取消在右
@@ -2006,7 +2038,7 @@ class BuyOrderScreen(
         context.drawCenteredTextWithShadow(textRenderer,
             Text.literal("${entryName(entry)}  ").append(
                 Text.literal(priceRangeText(entry)).formatted(Formatting.GOLD)),
-            centerX, dialogY + 24, 0xFFFFFF)
+            centerX, dialogY + 27, 0xFFFFFF)
 
         // 买家留言（有备注时显示，灰色截断；卖家交付前须知）
         if (entry.note.isNotEmpty()) {
@@ -2014,59 +2046,78 @@ class BuyOrderScreen(
                 com.shusheng.cobblemarket.util.TextUtil.truncateString(
                     "${Text.translatable("cobblemarket.buy_order.tooltip_note").string}${entry.note}", 240
                 ),
-                centerX, dialogY + 34, 0xFFDD99)
+                centerX, dialogY + 38, 0xFFDD99)
         }
 
         if (entry.type == "POKEMON") {
-            // 已选精灵信息（名称 + 匹配状态；未选择时提示）
+            // 已选精灵信息（名称 + 匹配状态；未选择时提示）：
+            // 整体居中，垂直在按钮（+46~62）与输入框（+84）中间（区域中心 73 → 文字基线 70）
             val p = deliverSelectedPokemon
             if (p != null) {
                 val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(speciesDisplay(p), 60)
-                context.drawTextWithShadow(textRenderer,
-                    name,
-                    centerX - 118, dialogY + 66, 0xFFFFFF)
-                if (clientMatchesPokemon(p, entry)) {
-                    context.drawTextWithShadow(textRenderer,
-                        Text.translatable("cobblemarket.buy_order.match_ok_full").string,
-                        centerX - 118 + textRenderer.getWidth(name) + 4,
-                        dialogY + 66, 0x55FF55)
-                } else {
-                    context.drawTextWithShadow(textRenderer,
-                        Text.translatable("cobblemarket.buy_order.match_no_full").string,
-                        centerX - 118 + textRenderer.getWidth(name) + 4,
-                        dialogY + 66, 0xFF6666)
-                }
+                val matchText = if (clientMatchesPokemon(p, entry))
+                    Text.translatable("cobblemarket.buy_order.match_ok_full").string to 0x55FF55
+                else
+                    Text.translatable("cobblemarket.buy_order.match_no_full").string to 0xFF6666
+                val totalW = textRenderer.getWidth(name) + 4 + textRenderer.getWidth(matchText.first)
+                val startX = centerX - totalW / 2
+                context.drawTextWithShadow(textRenderer, name, startX, dialogY + 70, 0xFFFFFF)
+                context.drawTextWithShadow(textRenderer, matchText.first, startX + textRenderer.getWidth(name) + 4, dialogY + 70, matchText.second)
             } else {
-                context.drawTextWithShadow(textRenderer,
+                context.drawCenteredTextWithShadow(textRenderer,
                     Text.translatable("cobblemarket.buy_order.not_selected").formatted(Formatting.GRAY),
-                    centerX - 118, dialogY + 66, 0xAAAAAA)
+                    centerX, dialogY + 70, 0xAAAAAA)
             }
-            // 单价输入标签：紧贴输入框左缘（输入框 x = centerX-40）
+            // 单价输入标签：紧贴输入框左缘（输入框 x = centerX-40；+88 = 文字中心对齐输入框中心）
             val priceLabel = Text.translatable("cobblemarket.buy_order.deliver_price").string
             context.drawTextWithShadow(textRenderer,
                 priceLabel,
-                centerX - 44 - textRenderer.getWidth(priceLabel), dialogY + 84, 0xFFFFFF)
+                centerX - 44 - textRenderer.getWidth(priceLabel), dialogY + 88, 0xFFFFFF)
         } else {
-            val backCount = backpackCount(entry.itemId)
-            // 背包持有量 + 件数输入标签
-            context.drawTextWithShadow(textRenderer,
-                "${Text.translatable("cobblemarket.buy_order.backpack").string} $backCount",
-                centerX - 120, dialogY + 48, 0xAAAAAA)
-            // 件数/单价标签：紧贴对应输入框左缘（输入框 x = centerX-40）
+            // 形态行（与「选择形态」按钮同位置，弹窗居中语言）：
+            // 无物品=居中提示；单形态=图标+名称+数量整体居中；多形态=按钮（可见时代替本行）
+            val variant = deliverVariant
+            val multiVariant = variantGroups(entry.itemId).size > 1
+            if (variant != null && !multiVariant) {
+                val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(variant.name.string, 24)
+                val countStr = "×${variant.count}"
+                // 整体居中：图标 16 + 间距 4 + 名称 + 间距 4 + 数量
+                val totalW = 16 + 4 + textRenderer.getWidth(name) + 4 + textRenderer.getWidth(countStr)
+                val startX = centerX - totalW / 2
+                context.drawItem(variant, startX, dialogY + 44)
+                context.drawTextWithShadow(textRenderer, name, startX + 20, dialogY + 48, 0xFFFFFF)
+                context.drawTextWithShadow(textRenderer, countStr, startX + 20 + textRenderer.getWidth(name) + 4, dialogY + 48, 0xAAAAAA)
+            } else if (variant == null) {
+                context.drawCenteredTextWithShadow(textRenderer,
+                    Text.translatable("cobblemarket.buy_order.variant_empty").formatted(Formatting.GRAY),
+                    centerX, dialogY + 48, 0xAAAAAA)
+            }
+            // 件数/单价标签：紧贴对应输入框左缘（输入框 x = centerX-40；+4 = 文字中心对齐输入框中心）
             val countLabel = Text.translatable("cobblemarket.buy_order.deliver_count").string
             context.drawTextWithShadow(textRenderer,
                 countLabel,
-                centerX - 44 - textRenderer.getWidth(countLabel), dialogY + 62, 0xFFFFFF)
+                centerX - 44 - textRenderer.getWidth(countLabel), dialogY + 66, 0xFFFFFF)
             val priceLabel2 = Text.translatable("cobblemarket.buy_order.deliver_price").string
             context.drawTextWithShadow(textRenderer,
                 priceLabel2,
-                centerX - 44 - textRenderer.getWidth(priceLabel2), dialogY + 84, 0xFFFFFF)
+                centerX - 44 - textRenderer.getWidth(priceLabel2), dialogY + 88, 0xFFFFFF)
         }
     }
 
     private fun speciesDisplay(p: PokemonPreview): String {
         val t = Text.translatable(p.species).string
         return if (t == p.species) p.speciesName else t
+    }
+
+    /** 形态按钮文案：显示当前所选形态名（未选时仅提示文字） */
+    private fun updateDeliverVariantButton() {
+        val v = deliverVariant
+        val label = if (v != null) {
+            "${Text.translatable("cobblemarket.buy_order.variant_select").string}: ${com.shusheng.cobblemarket.util.TextUtil.truncateString(v.name.string, 46)}"
+        } else {
+            Text.translatable("cobblemarket.buy_order.variant_select").string
+        }
+        deliverVariantButton?.setMessage(Text.literal(label))
     }
 
     /** 打开上架选择界面（交付模式）：订单 id 静态暂存，选完精灵回传后恢复交付弹窗 */
@@ -2130,6 +2181,24 @@ class BuyOrderScreen(
         return total
     }
 
+    /** 背包中该 itemId 的形态分组：每组 = (示例栈, 数量)，按组件一致聚合 */
+    private fun variantGroups(itemId: String): List<Pair<ItemStack, Int>> {
+        val inv = client?.player?.inventory ?: return emptyList()
+        val groups = mutableListOf<Pair<ItemStack, Int>>()
+        for (i in 0 until inv.size()) {
+            val stack = inv.getStack(i)
+            if (stack.isEmpty || Registries.ITEM.getId(stack.item).toString() != itemId) continue
+            val idx = groups.indexOfFirst { com.shusheng.cobblemarket.network.itemsEqualForTrading(it.first, stack) }
+            if (idx >= 0) {
+                groups[idx] = groups[idx].first to groups[idx].second + stack.count
+            } else {
+                // copy：背包栈是活引用，交付扣减会动它，示例栈必须独立
+                groups.add(stack.copy() to stack.count)
+            }
+        }
+        return groups
+    }
+
     // 确认按钮保持可点：点击时逐项校验并给出明确红字反馈（禁用按钮点击无反应，玩家不知道原因）
     private fun updateDeliverConfirmActive() {
         deliverConfirmButton?.active = true
@@ -2156,17 +2225,30 @@ class BuyOrderScreen(
             sendToServer(DeliverPokemonBuyOrderPayload(entry.id, p.uuid, price))
         } else {
             val count = deliverCountField?.text?.toIntOrNull() ?: 0
-            if (count !in 1..entry.remainingCount || count > backpackCount(entry.itemId)) {
+            val variantCount = deliverVariant?.count ?: 0
+            if (count !in 1..entry.remainingCount || count > variantCount) {
                 client?.player?.sendMessage(Text.translatable("cobblemarket.buy_order.wrong_count").formatted(Formatting.RED), false)
                 return
             }
-            sendToServer(DeliverItemBuyOrderPayload(entry.id, count, price))
+            // 所选形态序列化随包发送：服务端重建权威参考栈（不信任客户端），照上架路径
+            val variantNbt = try {
+                deliverVariant?.encode(client?.world?.registryManager) as? net.minecraft.nbt.NbtCompound
+            } catch (e: Exception) {
+                null
+            }
+            if (variantNbt == null) {
+                client?.player?.sendMessage(Text.translatable("cobblemarket.buy_order.wrong_count").formatted(Formatting.RED), false)
+                return
+            }
+            sendToServer(DeliverItemBuyOrderPayload(entry.id, count, price, variantNbt))
         }
     }
 
     private fun closeDialogs() {
         deliverEntry = null
         deliverSelectedPokemon = null
+        deliverVariant = null
+        deliverVariantButton = null
         deliverSelectButton = null
         deliverPriceField = null
         deliverCountField = null
@@ -2401,8 +2483,9 @@ class BuyOrderScreen(
         private const val MAX_ITEM_LIST_ROWS = 6
 
         // 交付流程跨界面传递（SellSelectScreen 交付模式 → 新建的 BuyOrderScreen）：
-        // 界面切换时实例销毁，静态暂存订单 id 与所选精灵
+        // 界面切换时实例销毁，静态暂存订单 id 与所选精灵/物品形态
         var pendingDeliverOrderId: UUID? = null
         var pendingDeliverPokemon: PokemonPreview? = null
+        var pendingDeliverVariant: ItemStack? = null
     }
 }

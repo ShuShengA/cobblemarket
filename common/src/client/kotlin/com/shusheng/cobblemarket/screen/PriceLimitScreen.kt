@@ -428,7 +428,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         editingItem = entry
         hideMainControls()
         val centerX = width / 2
-        val dialogY = height / 2 - 65
+        val dialogY = height / 2 - 71
 
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -436,26 +436,26 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             }
         })
 
-        addField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 30, 140, 16, Text.literal(""))
+        addField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 40, 140, 16, Text.literal(""))
         addField?.setPlaceholder(Text.translatable("cobblemarket.blacklist.item_add_placeholder"))
         addField?.setChangedListener { updateItemPreview(it) }
         addDrawableChild(addField)
 
-        itemSelectButton = NineSliceButton(centerX - 80, dialogY + 48, 140, 14, Text.literal(""), { toggleItemList() })
+        itemSelectButton = NineSliceButton(centerX - 80, dialogY + 58, 140, 14, Text.literal(""), { toggleItemList() })
         itemSelectButton?.visible = false
         addDrawableChild(itemSelectButton)
 
-        minField = createPriceField(centerX - 48, dialogY + 66, "cobblemarket.price_limit.min_placeholder")
-        maxField = createPriceField(centerX + 2, dialogY + 66, "cobblemarket.price_limit.max_placeholder")
+        minField = createPriceField(centerX - 48, dialogY + 78, "cobblemarket.price_limit.min_placeholder")
+        maxField = createPriceField(centerX + 2, dialogY + 78, "cobblemarket.price_limit.max_placeholder")
 
         addConfirmButton = NineSliceButton(
-            centerX - 85, dialogY + 88, 80, 20,
+            centerX - 85, dialogY + 100, 80, 20,
             Text.translatable("cobblemarket.blacklist.add"),
             { confirmItemAdd() }
         )
         addDrawableChild(addConfirmButton)
         addCancelButton = NineSliceButton(
-            centerX + 5, dialogY + 88, 80, 20,
+            centerX + 5, dialogY + 100, 80, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeDialog() }
         )
@@ -472,7 +472,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private fun renderItemDialogBackground(context: DrawContext) {
         val centerX = width / 2
         val dialogW = 220
-        val dialogH = 130
+        val dialogH = 142
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
@@ -481,8 +481,12 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.price_limit.add_item_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
+        // 标题下提示：搜不到的物品可输入真实 id（F3+H 显示高级提示框）
+        context.drawCenteredTextWithShadow(textRenderer,
+            Text.translatable("cobblemarket.gui.item_id_hint").string,
+            centerX, dialogY + 26, 0xFFAAAAAA.toInt())
 
-        // 本地校验错误提示：画在弹窗下沿外，避免与 +30 起的物品输入框/控件重叠
+        // 本地校验错误提示：画在弹窗下沿外，避免与 +40 起的物品输入框/控件重叠
         dialogError?.let {
             context.drawCenteredTextWithShadow(textRenderer, it, centerX, dialogY + dialogH + 8, 0xFF5555)
         }
@@ -490,7 +494,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         if (!itemListOpen) {
             context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("cobblemarket.price_limit.hint"),
-                centerX, dialogY + 118, 0xAAAAAA)
+                centerX, dialogY + 130, 0xAAAAAA)
         }
 
         // 物品预览
@@ -498,7 +502,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             Identifier.tryParse(itemId)?.let { id ->
                 val item = Registries.ITEM.get(id)
                 if (item != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
-                    context.drawItem(ItemStack(item), centerX + 66, dialogY + 30)
+                    context.drawItem(ItemStack(item), centerX + 66, dialogY + 42)
                 }
             }
         }
@@ -1095,13 +1099,6 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.op.price_limit").formatted(Formatting.GOLD),
             centerX, 20, 0xFFFFFF)
-
-        // 物品 tab 提示：搜不到的物品可输入真实 id（F3+H 显示高级提示框）
-        if (currentTab == 1) {
-            context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.gui.item_id_hint").string,
-                centerX, 33, 0xFFAAAAAA.toInt())
-        }
 
         val startY = getListStartY()
         // 分割线贴搜索行底部（y=66）：tab 行让出 2px 后搜索框在 50~66，线画 66~67 不重叠
