@@ -1,0 +1,40 @@
+# NeoForge 模块占位：入口类 / 平台实现 / mixin 声明在移植第 6~7 步填充
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+
+[[mods]]
+modId="cobblemarket"
+version="${version}"
+displayName="CobbleMarket"
+authors="Shu_ShengA"
+description='''A player-to-player trading market for Cobblemon: buy and sell Pokémon and items, with configurable listing fees, per-player bans, transaction history, expired listing returns, and optional CobbleDollars / Cobblemon Economy currency support.
+面向 Cobblemon 服务器的玩家交易市场：支持精灵与物品挂单买卖、可配置手续费、封禁、交易历史、过期退回，支持 CobbleDollars / Cobblemon Economy 虚拟货币。'''
+
+[[dependencies.cobblemarket]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.215,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.cobblemarket]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1,1.22)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.cobblemarket]]
+modId="kotlinforforge"
+type="required"
+versionRange="[5.12.0,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.cobblemarket]]
+modId="cobblemon"
+type="required"
+versionRange="[1.7.3,)"
+ordering="NONE"
+side="BOTH"

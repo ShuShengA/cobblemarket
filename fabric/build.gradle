@@ -1,0 +1,91 @@
+plugins {
+	id 'com.gradleup.shadow'
+}
+
+architectury {
+	platformSetupLoomIde()
+	fabric()
+}
+
+configurations {
+	common {
+		canBeResolved = true
+		canBeConsumed = false
+	}
+	compileClasspath.extendsFrom common
+	runtimeClasspath.extendsFrom common
+	developmentFabric.extendsFrom common
+
+	shadowBundle {
+		canBeResolved = true
+		canBeConsumed = false
+	}
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+	mods {
+		register("cobblemarket") {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+// 同 common：fabric 的 jar 将来含 client 入口类，transform 需 client 编译类路径
+afterEvaluate {
+	configurations.architecturyTransformerClasspath.extendsFrom(configurations.clientCompileClasspath)
+}
+
+fabricApi {
+	configureDataGeneration {
+		client = true
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+	mappings "net.fabricmc:yarn:${rootProject.yarn_mappings}:v2"
+	modImplementation "net.fabricmc:fabric-loader:${rootProject.loader_version}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_api_version}"
+	modImplementation "net.fabricmc:fabric-language-kotlin:${rootProject.fabric_kotlin_version}"
+	modImplementation "dev.architectury:architectury-fabric:${rootProject.architectury_api_version}"
+
+	// Cobblemon 运行时；第三方 jar 不入库（Cobblemon 130MB + 许可限制）
+	modImplementation "maven.modrinth:cobblemon:kF7CvxTo"
+	modLocalRuntime "maven.modrinth:cobblemon:kF7CvxTo"
+	modCompileOnly "maven.modrinth:cobbledollars:cqsHXSXe"
+	modCompileOnly "maven.modrinth:cobblemon-economy:CfJu3YAf"
+	modCompileOnly "maven.modrinth:cobblemon-smartphone:w7JqnSrT"
+
+	common(project(path: ':common', configuration: 'namedElements')) { transitive = false }
+	shadowBundle project(path: ':common', configuration: 'transformProductionFabric')
+}
+
+processResources {
+	inputs.property 'version', project.version
+
+	filesMatching('fabric.mod.json') {
+		expand version: project.version
+	}
+}
+
+shadowJar {
+	configurations = [project.configurations.shadowBundle]
+	archiveClassifier = 'dev-shadow'
+
+	// loom 1.11 split env 下 client 源集输出是独立目录（build/classes/kotlin/client），
+	// shadow 插件默认只收集 main 输出，会丢客户端类（入口 CobbleMarketClientFabric、
+	// ClientBridgeKtImpl 等），必须显式补上
+	from(sourceSets.client.output)
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+	from(rootProject.file("LICENSE")) {
+		rename { "${it}_fabric" }
+	}
+}
+
+remapJar {
+	inputFile.set shadowJar.archiveFile
+}
