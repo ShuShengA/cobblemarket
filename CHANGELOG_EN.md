@@ -8,6 +8,9 @@
 - **Admin "All Buy Orders" screen**: new entry in the admin panel to view every buy order and force-cancel them — the buyer's frozen money is refunded, pending deliveries return to their sellers, and both sides get notified (queued for offline players); admin panel buttons rearranged into a two-column layout
 - **Market entry animation**: opening the market entry via hotkey K / smartphone app / other entry points plays a drop animation — the animation image falls from above the screen onto the entry position while scaling up, holds briefly, then fades out revealing the entry screen; new "Market Entry Animation" toggle in Settings (on by default, per-player)
 - **Cobblemon Economy currency support**: a third currency mode — servers with Cobblemon Economy installed use its currency API directly (its built-in bridge routes to CobbleDollars/Impactor backends; set main_currency to share one balance between the market and CobbleDollars merchants). Currency priority: cobeco → CobbleDollars → items; auto-detected on fresh installs, no behavior change on config upgrades; new `currency.cobblemonEconomy` switch plus optional `currency.cobecoCurrency` (POKE default / PCO) to settle in PokeDollars or PokeCoins; prices now use ₽ as the unified unit in PokeDollars/CobbleDollars modes (inline and dialogs alike); full server-owner currency guide in docs/currency_en.md
+- **Native NeoForge support**: a NeoForge build (cobblemarket-neoforge-1.0.0.jar) with feature parity and save compatibility with the Fabric build; requires Kotlin for Forge and Cobblemon (NeoForge), no Architectury API needed; Cobblemon Economy has no NeoForge build, so that platform falls back to CobbleDollars / item currency
+- **Container content validation**: the item blacklist, price limits, and the egg-trading switch now apply to items inside containers too — listings, auctions, and buy order deliveries recursively inspect container contents (shulker boxes etc.) so restricted items can't be smuggled past governance
+- **Item variant selection for buy order delivery**: when your inventory has the same item in multiple component variants (e.g. shulker boxes with different contents), you can now pick which variant to deliver — the selection list shows icons and counts with full tooltips, and the delivery dialog has a change button; single-variant delivery is unchanged
 
 ### Changes
 
@@ -34,6 +37,8 @@
 - Fixed sustained FPS drops while market screens are open — they stay smooth no matter how many listings there are
 - Fixed the garbled seller notification after a buy order delivery was accepted — the message template has 5 placeholders but only 4 args were passed, with the amount/currency order swapped (mixed-up amounts and leftover %s)
 - Fixed the first row's 3D icon in the Pokémon picker always showing the first party Pokémon after searching (buy order delivery and auction creation — same root cause): the filtered-position index was used to look up the icon cache built with original list indices; filtering now keeps the original index
+- Fixed a false "CobbleMarket state save failed" error when players log out: on NeoForge, persistent state writes are asynchronous, so verifying right after saving misreported failures; verification is now delayed, and saves are skipped entirely when there is nothing unsaved
+- Fixed purchase success messages (Pokémon/items) showing amounts in green instead of the standard gold: the %d placeholders dropped the text color; they now use %s with gold-formatted amount text
 
 ## 1.0.0-beta.6 (in development, unreleased)
 
