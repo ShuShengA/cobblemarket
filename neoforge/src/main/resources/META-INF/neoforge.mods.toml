@@ -1,4 +1,3 @@
-# NeoForge 模块占位：入口类 / 平台实现 / mixin 声明在移植第 6~7 步填充
 modLoader="javafml"
 loaderVersion="[4,)"
 license="MIT"
@@ -26,6 +25,13 @@ ordering="NONE"
 side="BOTH"
 
 [[dependencies.cobblemarket]]
+modId="architectury"
+type="required"
+versionRange="[13.0.8,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.cobblemarket]]
 modId="kotlinforforge"
 type="required"
 versionRange="[5.12.0,)"
@@ -38,3 +44,9 @@ type="required"
 versionRange="[1.7.3,)"
 ordering="NONE"
 side="BOTH"
+
+# 客户端 mixin（ScreenMixin，庆祝动画渲染），配置与 refmap 随 common 打进 jar；
+# clientOnly 保证专用服务器不解析客户端 mixin 配置
+[[mixins]]
+config="cobblemarket.client.mixins.json"
+clientOnly=true

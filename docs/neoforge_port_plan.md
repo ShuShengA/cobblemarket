@@ -67,6 +67,29 @@
    已删除，mixin 配置唯一来源 = common。
 5. `mappings loom.layered {}` 写法（yarn + yarn-mappings-patch-neoforge 双层合成单一依赖）。
 
+### 步骤 6 实测发现的坑（neoforge 平台实现，2026-08-24）
+
+6. **网络协商要求双端注册集合完全一致**：`NetworkComponentNegotiator` 规定任何一端缺少另一端注册的
+   非 optional payload（同 id + 同流向）直接断连。common 的 56 个 C2S 由服务端注册 playToServer，
+   neoforge 客户端也必须空注册同名类型才能进服（fabric 无此机制：发送前不校验本地注册）。
+   落地：`neoforge/.../platform/neoforge/C2SClientRegistration.kt` 硬编码 56 个 (ID, CODEC) 清单，
+   客户端入口调用。**新增 C2S payload 必须同步此清单**，漏加会在进服协商时直接断连（fail-fast，易发现）。
+7. **单机双端同进程会重复注册同 id payload**（NetworkRegistry 按 protocol+id 判重，抛
+   "already registered"）。去重设计：带业务 handler 的注册（服务端 C2S、客户端 S2C）用
+   `EventPriority.HIGH` 先注册；空注册（服务端 S2C 类型、客户端 C2S 清单）用 NORMAL 晚到，
+   经 `NeoForgePlatform.markPayloadRegistered(id)` 检查后跳过。专用服务器/专用客户端只有一侧逻辑，照常注册。
+8. **FMLJavaModLoadingContext 在 21.1 已移除**（ModLoadingContext 的 activeContainer 在 mod 类加载后
+   即清空）：获取 mod event bus 的唯一可靠途径是 `@Mod` 构造器注入 `IEventBus`（只允许一个 public
+   构造器）+ 模块内静态持有（`NeoForgePlatform.modBus`）。客户端初始化因此放在 @Mod 构造器内
+   （`FMLEnvironment.dist.isClient` 判断），而非 FMLClientSetupEvent。
+9. **mixin refmap 无需处理**（查证结论）：loom 1.11 不解析 neoforge.mods.toml 的 [[mixins]] 段，
+   也不会重映射 shadowBundle 里 common 的 refmap；但 refmap 的 `named:intermediary` 形态被
+   neoforge 21.1 运行时原生支持——Cobblemon neoforge 版（同构 yarn+三模块项目）的 refmap 正是
+   此形态且生产可用，architectury-neoforge 官方 jar 亦同。remapJar 只重映射 .class（yarn → official），
+   最终 jar 内所有签名已是 official 名，与运行时匹配。
+10. neoforge 模块单源集：`ClientBridgeKtImpl.kt`、`C2SClientRegistration.kt`、客户端入口逻辑都在
+    main 源集（见坑 1），专用服务器不会执行其代码（入口处 dist 判断）。
+
 ## 四、依赖双平台映射
 
 | 依赖 | fabric | neoforge |
@@ -89,7 +112,7 @@
 3. 代码全量迁移 common，fabric 端编译修复 → **fabric 游戏内回归验证**（改造没破坏原功能）
 4. 平台抽象逐一替换：网络桥（30 文件机械替换）→ 事件 → 按键 → 杂项
 5. fabric 端最终验证 + 提交
-6. neoforge 模块搭建至构建通过
+6. neoforge 模块搭建至构建通过 ✅ 2026-08-24（含坑 6~10）
 7. neoforge 游戏内验证（原生 neoforge 实例，非 Connector）
 8. 双平台验收清单逐项过
 
