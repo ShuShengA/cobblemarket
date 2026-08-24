@@ -1,110 +1,75 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+	id 'dev.architectury.loom' version "${architectury_loom_version}" apply false
+	id 'architectury-plugin' version "${architectury_plugin_version}"
+	id 'org.jetbrains.kotlin.jvm' version "${kotlin_version}" apply false
+	id 'com.gradleup.shadow' version "${shadow_version}" apply false
 	id 'maven-publish'
-	id "org.jetbrains.kotlin.jvm" version "2.4.10"
 }
 
-repositories {
-	maven {
-		name = "Modrinth"
-		url = "https://api.modrinth.com/maven"
-		content {
-			includeGroup "maven.modrinth"
-		}
-	}
-	maven {
-		name = "Cobblemon"
-		url = "https://impactdev.net"
-	}
+architectury {
+	minecraft = project.minecraft_version
 }
 
-loom {
-	splitEnvironmentSourceSets()
-	mods {
-		register("cobblemarket") {
-			sourceSet sourceSets.main
-			sourceSet sourceSets.client
-		}
-	}
+allprojects {
+	group = rootProject.group
+	version = rootProject.version
 }
 
-fabricApi {
-	configureDataGeneration {
-		client = true
-	}
-}
+subprojects {
+	apply plugin: 'dev.architectury.loom'
+	apply plugin: 'architectury-plugin'
+	apply plugin: 'org.jetbrains.kotlin.jvm'
+	apply plugin: 'maven-publish'
 
-dependencies {
-	// To change the versions see the gradle.properties file
-	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-
-	// Fabric API. This is technically optional, but you probably want it anyway.
-	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-    modImplementation "net.fabricmc:fabric-language-kotlin:${project.fabric_kotlin_version}"
-	// Cobblemon / CobbleDollars / Cobblemon Economy / Smartphone 从 Modrinth Maven 拉取（版本 ID 固定到 fabric 1.21.1 的发布，
-	// 避免同版本号多 MC 版本的歧义）；第三方 jar 不入库（Cobblemon 130MB + 许可限制）
-	modImplementation "maven.modrinth:cobblemon:kF7CvxTo"
-	modLocalRuntime "maven.modrinth:cobblemon:kF7CvxTo"
-	modCompileOnly "maven.modrinth:cobbledollars:cqsHXSXe"
-	modCompileOnly "maven.modrinth:cobblemon-economy:CfJu3YAf"
-	modCompileOnly "maven.modrinth:cobblemon-smartphone:w7JqnSrT"
-}
-
-processResources {
-	def version = project.version
-	inputs.property "version", version
-
-	filesMatching("fabric.mod.json") {
-		expand "version": version
-	}
-}
-
-tasks.withType(JavaCompile).configureEach {
-	it.options.release = 21
-}
-
-kotlin {
-	compilerOptions {
-		jvmTarget = JvmTarget.JVM_21
-	}
-}
-
-java {
-	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-	// if it is present.
-	// If you remove this line, sources will not be generated.
-	withSourcesJar()
-
-	sourceCompatibility = JavaVersion.VERSION_21
-	targetCompatibility = JavaVersion.VERSION_21
-}
-
-jar {
-	def projectName = project.name
-	inputs.property "projectName", projectName
-
-	from("LICENSE") {
-		rename { "${it}_$projectName"}
-	}
-}
-
-// configure the maven publication
-publishing {
-	publications {
-		create("mavenJava", MavenPublication) {
-			from components.java
-		}
+	base {
+		archivesName = "cobblemarket-${project.name}"
 	}
 
-	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
 	repositories {
-		// Add repositories to publish to here.
-		// Notice: This block does NOT have the same function as the block in the top level.
-		// The repositories here will be used for publishing your artifact, not for
-		// retrieving dependencies.
+		maven {
+			name = "Modrinth"
+			url = "https://api.modrinth.com/maven"
+			content {
+				includeGroup "maven.modrinth"
+			}
+		}
+		maven {
+			name = "Cobblemon"
+			url = "https://impactdev.net"
+			// 只服务 Cobblemon 官方坐标，避免解析 neoforge 等依赖时误撞该仓库超时
+			content {
+				includeGroup "com.cobblemon"
+			}
+		}
+		maven {
+			name = 'Architectury'
+			url = 'https://maven.architectury.dev/'
+			content {
+				includeGroup 'dev.architectury'
+			}
+		}
+		maven {
+			name = 'NeoForged'
+			url = 'https://maven.neoforged.net/releases'
+		}
+		mavenCentral()
+	}
+
+	tasks.withType(JavaCompile).configureEach {
+		it.options.release = 21
+	}
+
+	kotlin {
+		compilerOptions {
+			jvmTarget = JvmTarget.JVM_21
+		}
+	}
+
+	java {
+		withSourcesJar()
+		sourceCompatibility = JavaVersion.VERSION_21
+		targetCompatibility = JavaVersion.VERSION_21
 	}
 }

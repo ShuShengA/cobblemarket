@@ -1,0 +1,31 @@
+architectury {
+	common(rootProject.enabled_platforms.split(','))
+}
+
+loom {
+	// common 模块同样拆分 main/client 源集（client 端 33 个文件 + ScreenMixin）
+	splitEnvironmentSourceSets()
+}
+
+// transformProduction* 的重映射 classpath（architecturyTransformerClasspath）默认
+// 只继承 main 的 compileClasspath（服务端类），但 common 的 jar 含 client 源集类
+// （引用 ClientPlayerEntity 等客户端类型），必须补上 client 编译类路径
+afterEvaluate {
+	configurations.architecturyTransformerClasspath.extendsFrom(configurations.clientCompileClasspath)
+}
+
+dependencies {
+	// We depend on Fabric Loader here to use the @Environment annotations
+	// and get Mixin dependencies
+	minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+	mappings "net.fabricmc:yarn:${rootProject.yarn_mappings}:v2"
+	modImplementation "net.fabricmc:fabric-loader:${rootProject.loader_version}"
+	modImplementation "dev.architectury:architectury:${rootProject.architectury_api_version}"
+
+	// Cobblemon / CobbleDollars / Smartphone 仅编译期引用，
+	// 运行时由各平台模块提供对应加载器版本（ID 固定到 1.21.1 的发布，避免同版本号多 MC 版本歧义）。
+	// cobeco 已完全桥接（CobecoBridge），common 不再直接引用其类；fabric-api 引用已全部清零
+	modCompileOnly "maven.modrinth:cobblemon:kF7CvxTo"
+	modCompileOnly "maven.modrinth:cobbledollars:cqsHXSXe"
+	modCompileOnly "maven.modrinth:cobblemon-smartphone:w7JqnSrT"
+}
