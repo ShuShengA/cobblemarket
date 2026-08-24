@@ -62,9 +62,10 @@ class ItemVariantSelectScreen(
             { client?.setScreen(BuyOrderScreen()) }
         ))
         // 确认交付按钮（照 SellSelectScreen 交付模式）：选中一行后激活；
-        // 面板底边在 height-32，按钮底留 4px 边距 → y = height-32-4-20 = height-56
+        // 按钮下方还要放滚动指示文字（照历史界面 y=height-49），按钮底留到 height-60
+        // → y = height-60-20 = height-80
         confirmButton = NineSliceButton(
-            width / 2 - 42, height - 56, 84, 20,
+            width / 2 - 42, height - 80, 84, 20,
             Text.translatable("cobblemarket.buy_order.variant_confirm"),
             { confirmSelection() }
         )
@@ -156,14 +157,21 @@ class ItemVariantSelectScreen(
                 centerX, startY + 20, 0xFFFFFF
             )
         }
+        // 滚动位置指示（照全部交易历史界面：底部居中灰色数字 x-y / N，仅需滚动时显示；
+        // y=height-49 在确认按钮（底 height-60）下方、面板底边框上方，与历史界面同位置）
+        if (variants.size > visible) {
+            context.drawCenteredTextWithShadow(textRenderer,
+                "${scrollOffset + 1}-${minOf(scrollOffset + visible, variants.size)} / ${variants.size}",
+                width / 2, height - 49, 0x888888)
+        }
         if (hovered in variants.indices) {
             renderVariantTooltip(context, variants[hovered], mouseX, mouseY)
         }
     }
 
-    /** 可见行数：列表区底 = 确认按钮顶（height-56）上方 4px */
+    /** 可见行数：列表区底 = 确认按钮顶（height-80）上方 4px */
     private fun visibleRows(): Int {
-        val listBottom = height - 56 - 4
+        val listBottom = height - 80 - 4
         return maxOf(0, (listBottom - 36) / 26)
     }
 

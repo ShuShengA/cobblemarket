@@ -1852,10 +1852,16 @@ class BuyOrderScreen(
                 centerX, dialogY + 22
             )
         } else {
+            // 物品行：图标 + 名称 + 数量整体居中（照交付弹窗形态行格式）；
+            // 垂直在标题（+14）与卖家行（+58）中间：物品行中心 ≈ 36 → 图标 y=28、文字基线 y=32
             val itemName = itemDisplay(entry.itemId)
-            context.drawCenteredTextWithShadow(textRenderer,
-                "$itemName ×${pending.count}",
-                centerX, dialogY + 28, 0xFFFFFF)
+            val countStr = "×${pending.count}"
+            val itemStack = Identifier.tryParse(entry.itemId)?.let { ItemStack(Registries.ITEM.get(it)) } ?: ItemStack.EMPTY
+            val totalW = 16 + 4 + textRenderer.getWidth(itemName) + 4 + textRenderer.getWidth(countStr)
+            val startX = centerX - totalW / 2
+            context.drawItem(itemStack, startX, dialogY + 28)
+            context.drawTextWithShadow(textRenderer, itemName, startX + 20, dialogY + 32, 0xFFFFFF)
+            context.drawTextWithShadow(textRenderer, countStr, startX + 20 + textRenderer.getWidth(itemName) + 4, dialogY + 32, 0xAAAAAA)
             // 卖家（默认色）+ 出价（金额段蓝色，2026-08-24 拍板）
             context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("cobblemarket.buy_order.review_seller").append(Text.literal(pending.sellerName + "  "))
@@ -2074,12 +2080,14 @@ class BuyOrderScreen(
                 priceLabel,
                 centerX - 44 - textRenderer.getWidth(priceLabel), dialogY + 88, 0xFFFFFF)
         } else {
-            // 形态行（与「选择形态」按钮同位置，弹窗居中语言）：
-            // 无物品=居中提示；单形态=图标+名称+数量整体居中；多形态=按钮（可见时代替本行）
+            // 形态行（统一「图标 + 名称 + 数量」格式，照形态选择界面的行）：
+            // 单形态=图标+名称+数量整体居中；多形态=图标 + 「选择形态」按钮（按钮文案含名称）；
+            // 无物品=居中提示
             val variant = deliverVariant
             val multiVariant = variantGroups(entry.itemId).size > 1
             if (variant != null && !multiVariant) {
-                val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(variant.name.string, 24)
+                // 名称完全显示（不截断——物品名本身不长，弹窗内空间足够）
+                val name = variant.name.string
                 val countStr = "×${variant.count}"
                 // 整体居中：图标 16 + 间距 4 + 名称 + 间距 4 + 数量
                 val totalW = 16 + 4 + textRenderer.getWidth(name) + 4 + textRenderer.getWidth(countStr)
@@ -2087,7 +2095,10 @@ class BuyOrderScreen(
                 context.drawItem(variant, startX, dialogY + 44)
                 context.drawTextWithShadow(textRenderer, name, startX + 20, dialogY + 48, 0xFFFFFF)
                 context.drawTextWithShadow(textRenderer, countStr, startX + 20 + textRenderer.getWidth(name) + 4, dialogY + 48, 0xAAAAAA)
-            } else if (variant == null) {
+            } else if (variant != null) {
+                // 多形态：图标画在「选择形态」按钮左侧（按钮 centerX-74，图标与按钮间隙 6px）
+                context.drawItem(variant, centerX - 96, dialogY + 44)
+            } else {
                 context.drawCenteredTextWithShadow(textRenderer,
                     Text.translatable("cobblemarket.buy_order.variant_empty").formatted(Formatting.GRAY),
                     centerX, dialogY + 48, 0xAAAAAA)
