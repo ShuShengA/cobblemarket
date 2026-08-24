@@ -28,6 +28,7 @@ import net.minecraft.item.ItemStack
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
+import net.minecraft.network.codec.PacketCodecs
 import net.minecraft.network.packet.CustomPayload
 import net.minecraft.registry.Registries
 import net.minecraft.server.MinecraftServer
@@ -345,14 +346,19 @@ data class DeliverPokemonBuyOrderPayload(
 data class DeliverItemBuyOrderPayload(
     val orderId: UUID,
     val count: Int,
-    val price: Int
+    val price: Int,
+    /** 所选形态的序列化（客户端背包示例栈）：服务端重建为权威参考栈，不信任客户端一致性 */
+    val variantNbt: NbtCompound,
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<DeliverItemBuyOrderPayload>(CobbleMarket.id("deliver_item_buy_order"))
         val CODEC: PacketCodec<PacketByteBuf, DeliverItemBuyOrderPayload> = PacketCodec.of(
-            { p, b -> b.writeUuid(p.orderId); b.writeInt(p.count); b.writeInt(p.price) },
-            { b -> DeliverItemBuyOrderPayload(b.readUuid(), b.readInt(), b.readInt()) }
+            { p, b ->
+                b.writeUuid(p.orderId); b.writeInt(p.count); b.writeInt(p.price)
+                PacketCodecs.NBT_COMPOUND.encode(b, p.variantNbt)
+            },
+            { b -> DeliverItemBuyOrderPayload(b.readUuid(), b.readInt(), b.readInt(), PacketCodecs.NBT_COMPOUND.decode(b)) }
         )
     }
 }
@@ -796,17 +802,26 @@ object BuyOrderNetwork {
                     }
                 }
 
-                // 参考栈：背包中第一个 itemId 匹配的栈，决定本次交付的具体形态（附魔/名称等组件）。
-                // 求购单只指定 itemId，但同一次交付必须组件一致——否则「32 锋利V + 32 保护I」会被
-                // 按参考栈标准化成 64 个锋利V，凭空放大价值（拍卖/上架路径同样按组件匹配）。
-                // 必须 .copy()：下面扣物品会 decrement 背包里的栈，参考栈若是引用会被扣空，
-                // 之后 itemsEqualForTrading 的 b.isEmpty 判定会让剩余栈全部匹配失败。
+                // 参考栈 = 客户端所选形态（经 ItemVariantSelectScreen 选择后随包发送的序列化），
+                // 服务端重建为权威栈（不信任客户端一致性）。求购单只指定 itemId，但同一次交付
+                // 必须组件一致——否则「32 锋利V + 32 保护I」会被按参考栈标准化成 64 个锋利V，
+                // 凭空放大价值（拍卖/上架路径同样按组件匹配）。
                 val main = player.inventory.main
-                val referenceStack = main.firstOrNull {
-                    !it.isEmpty && Registries.ITEM.getId(it.item).toString() == order.itemId
-                }?.copy()
+                val referenceStack = try {
+                    ItemStack.fromNbtOrEmpty(player.serverWorld.registryManager, payload.variantNbt)
+                        .takeIf { !it.isEmpty && Registries.ITEM.getId(it.item).toString() == order.itemId }
+                } catch (e: Exception) {
+                    null
+                }
                 if (referenceStack == null) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.not_found")))
+                    return@execute
+                }
+
+                // 容器内容校验：交付的容器物品内不得含黑名单/限价物品/未开开关的蛋（防塞箱绕过）
+                val containerReject = com.shusheng.cobblemarket.market.ContainerTradeCheck.check(referenceStack, server)
+                if (containerReject != null) {
+                    sendToPlayer(player, MarketResultPayload(false, containerReject))
                     return@execute
                 }
                 // 背包足额：只统计与参考栈组件一致的部分

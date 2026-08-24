@@ -24,9 +24,18 @@ import java.io.File
 object PersistHelper {
 
     private const val SAVE_COOLDOWN_MS = 3000L
+    /** neoforge 的 PersistentState.save 走 IO worker 异步写盘，验证须延迟到写盘完成后 */
+    private const val VERIFY_DELAY_MS = 1000L
+    private const val VERIFY_RETRY_MS = 2000L
+    private const val VERIFY_MAX_ATTEMPTS = 3
 
     private var pendingSave = false
     private var lastTradeAt = 0L
+
+    // 延迟验证状态：mtime 对比推迟到异步 IO 写盘完成后（见 tick）
+    private var pendingVerifyBefore: Map<String, Long?> = emptyMap()
+    private var pendingVerifyAt = 0L
+    private var verifyAttempts = 0
 
     /** 交易成功后调用：节流合并，到点全量落盘 */
     fun requestSave(server: MinecraftServer) {
@@ -34,40 +43,79 @@ object PersistHelper {
         lastTradeAt = System.currentTimeMillis()
     }
 
+    /**
+     * 服务器停止/新世界启动时清空全部待办：PersistHelper 是进程级静态，单机切换存档
+     * （同一进程）时未到期的延迟验证/节流保存会残留到新世界，用旧世界的 mtime 快照
+     * 对比新世界文件导致误报「保存失败」。数据本身由 MC 关服保存保证落盘，无需补救。
+     */
+    fun reset() {
+        pendingSave = false
+        lastTradeAt = 0L
+        pendingVerifyAt = 0L
+        pendingVerifyBefore = emptyMap()
+        verifyAttempts = 0
+    }
+
     /** 玩家断开后调用（延迟一 tick，确保 MC 已完成该玩家数据的保存）：立即保存模组状态 */
     fun onPlayerDisconnect(server: MinecraftServer) {
         server.execute { saveModStates(server) }
     }
 
-    /** END_SERVER_TICK 调用：节流到点执行全量保存 */
+    /** END_SERVER_TICK 调用：延迟验证到期检查 + 节流到点执行全量保存 */
     fun tick(server: MinecraftServer) {
-        if (pendingSave && System.currentTimeMillis() - lastTradeAt >= SAVE_COOLDOWN_MS) {
+        val now = System.currentTimeMillis()
+        verifyPending(server, now)
+        if (pendingSave && now - lastTradeAt >= SAVE_COOLDOWN_MS) {
             pendingSave = false
             StateBackup.backupAll(server)
             val before = stateFileMtimes(server)
             val ok = server.saveAll(false, false, false)
-            verifySaved(server, ok, before, stateFileMtimes(server))
+            if (!ok) {
+                // saveAll 返回 false = 明确失败，立即告警（无需等 mtime）
+                alertSaveFailed(server)
+            } else {
+                scheduleVerify(before)
+            }
         }
     }
 
     /** 立即保存模组状态（玩家数据由 MC 在断开时已保存，这里只追模组，窗口 0 防蒸发） */
     private fun saveModStates(server: MinecraftServer) {
+        // 无未落盘变更时跳过：状态已与玩家数据一致；此时 save() 因无脏数据不写文件，
+        // mtime 验证会把「无需保存」误报为保存失败
+        if (!pendingSave) return
+        pendingSave = false
         StateBackup.backupAll(server)
         val before = stateFileMtimes(server)
         server.overworld.persistentStateManager.save()
-        verifySaved(server, true, before, stateFileMtimes(server))
+        scheduleVerify(before)
     }
 
-    /** 保存结果验证：saveAll 返回 false 或模组状态文件 mtime 全部未变 = 保存失败 */
-    private fun verifySaved(
-        server: MinecraftServer,
-        saveAllOk: Boolean,
-        before: Map<String, Long?>,
-        after: Map<String, Long?>
-    ) {
-        val changed = after.any { (name, mtime) -> mtime != before[name] }
-        if (saveAllOk && changed) return
-        CobbleMarket.LOGGER.error("CobbleMarket state save failed or was skipped (saveAllOk={}, mtimeChanged={})", saveAllOk, changed)
+    /** 延迟验证：neoforge 的 save/saveAll 异步写盘，立即查 mtime 会误报「保存失败」 */
+    private fun scheduleVerify(before: Map<String, Long?>) {
+        pendingVerifyBefore = before
+        pendingVerifyAt = System.currentTimeMillis() + VERIFY_DELAY_MS
+        verifyAttempts = 1
+    }
+
+    private fun verifyPending(server: MinecraftServer, now: Long) {
+        if (pendingVerifyAt <= 0 || now < pendingVerifyAt) return
+        val changed = stateFileMtimes(server).any { (name, mtime) -> mtime != pendingVerifyBefore[name] }
+        if (!changed && verifyAttempts < VERIFY_MAX_ATTEMPTS) {
+            // 写盘可能仍在进行（异步 IO），延长重试
+            verifyAttempts++
+            pendingVerifyAt = now + VERIFY_RETRY_MS
+            return
+        }
+        pendingVerifyAt = 0
+        if (!changed) {
+            alertSaveFailed(server)
+        }
+    }
+
+    /** 保存失败告警：日志 error + 给在线 OP 发显眼提示 */
+    private fun alertSaveFailed(server: MinecraftServer) {
+        CobbleMarket.LOGGER.error("CobbleMarket state save failed or was skipped (mtime unchanged after {} verification attempts)", verifyAttempts)
         val msg = net.minecraft.text.Text.translatable("cobblemarket.persist.save_failed").formatted(Formatting.RED)
         server.playerManager.playerList
             .filter { it.hasPermissionLevel(2) }

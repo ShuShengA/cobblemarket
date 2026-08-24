@@ -47,6 +47,8 @@ object CobbleMarket {
 		TransactionHistory.register()
 
 		onServerStarting { server ->
+			// 清空上一世界残留的保存待办（单机切存档同进程，静态状态不得跨世界——见 PersistHelper.reset）
+			com.shusheng.cobblemarket.util.PersistHelper.reset()
 			// 世界加载前校验 PersistentState 数据文件：损坏则从 .bak 恢复，再制作新备份
 			com.shusheng.cobblemarket.util.StateBackup.verifyAndBackup(server)
 		}
