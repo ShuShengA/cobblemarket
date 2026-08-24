@@ -25,13 +25,6 @@ ordering="NONE"
 side="BOTH"
 
 [[dependencies.cobblemarket]]
-modId="architectury"
-type="required"
-versionRange="[13.0.8,)"
-ordering="NONE"
-side="BOTH"
-
-[[dependencies.cobblemarket]]
 modId="kotlinforforge"
 type="required"
 versionRange="[5.12.0,)"
