@@ -55,6 +55,9 @@ shadowJar {
 	configurations = [project.configurations.shadowBundle]
 	archiveClassifier = 'dev-shadow'
 
+	// mixin 配置/refmap 随 common 的 shadowBundle jar 原样打进（named:intermediary 形态，
+	// neoforge 21.1 运行时原生支持该命名空间——Cobblemon neoforge 版同形态实证）
+
 	// neoforge 不支持 loom split env（forge 平台 + split jars 冲突），单源集：
 	// 客户端实现类也放 main 源集，无需补 client 输出（与 fabric 模块不同）
 
