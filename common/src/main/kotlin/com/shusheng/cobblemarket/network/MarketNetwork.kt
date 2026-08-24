@@ -1162,8 +1162,8 @@ object MarketNetwork {
                         Text.translatable(
                             "cobblemarket.network.bought",
                             listing.speciesText(),
-                            listing.price,
-                            com.shusheng.cobblemarket.config.CurrencyHandler.currencyText()
+                            com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(listing.price),
+                            com.shusheng.cobblemarket.config.CurrencyHandler.goldCurrencyText()
                         )
                     )
                 )
@@ -1816,6 +1816,13 @@ object MarketNetwork {
                     }
                 }
 
+                // 容器内容校验：黑名单/限价/蛋开关对容器内物品同样生效（防塞箱绕过）
+                val containerReject = com.shusheng.cobblemarket.market.ContainerTradeCheck.check(targetStack, server)
+                if (containerReject != null) {
+                    sendToPlayer(player, MarketResultPayload(false, containerReject))
+                    return@execute
+                }
+
                 val main = player.inventory.main
                 var available = 0
                 for (i in 0 until main.size) {
@@ -2205,8 +2212,8 @@ object MarketNetwork {
                             Identifier.tryParse(listing.itemId)
                                 ?.let { Registries.ITEM.get(it).name }
                                 ?: Text.literal(listing.itemId),
-                            totalPrice,
-                            CurrencyHandler.currencyText()
+                            CurrencyHandler.goldAmount(totalPrice),
+                            CurrencyHandler.goldCurrencyText()
                         )
                     )
                 )

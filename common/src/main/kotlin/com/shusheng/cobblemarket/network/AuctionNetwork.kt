@@ -501,6 +501,14 @@ object AuctionNetwork {
                         return@execute
                     }
                 }
+
+                // 容器内容校验：黑名单/限价/蛋开关对容器内物品同样生效（防塞箱绕过）
+                val containerReject = com.shusheng.cobblemarket.market.ContainerTradeCheck.check(targetStack, server)
+                if (containerReject != null) {
+                    sendToPlayer(player, MarketResultPayload(false, containerReject))
+                    return@execute
+                }
+
                 val maxAuctions = CobbleMarketConfig.maxAuctionsPerPlayer
                 if (maxAuctions > 0 && AuctionState.get(server).countActiveBySeller(player.uuid) >= maxAuctions) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.max_active", maxAuctions)))
