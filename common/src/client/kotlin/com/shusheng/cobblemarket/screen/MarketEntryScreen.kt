@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.screen
 import com.mojang.blaze3d.systems.RenderSystem
 import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.client.MarketStateCache
+import com.shusheng.cobblemarket.client.OakTips
 import com.shusheng.cobblemarket.network.RequestBalancePayload
 import com.shusheng.cobblemarket.network.SetMarketEnabledPayload
 import com.shusheng.cobblemarket.platform.sendToServer
@@ -17,6 +18,7 @@ import net.minecraft.util.Identifier
 import org.lwjgl.opengl.GL11
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text.translatable("cobblemarket.entry.title")) {
@@ -46,6 +48,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     // 市场关闭提示（入口点击被拦截时显示，3 秒）
     private var closedNoticeUntil = 0L
+
+    // 大木博士知识点气泡：进入入口界面（新建实例）随机抽一句，一直显示；
+    // 点击立绘主动换下一条；resize 重建不换句
+    private var oakTipText: String? = null
 
     // 设置弹窗开关切换提示（1.5 秒 toast）
     private var settingsToastUntil = 0L
@@ -77,6 +83,12 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         entryButtons.clear()
         if (dropAnimStart < 0) dropAnimStart = System.currentTimeMillis()
         sendToServer(RequestBalancePayload())
+        // 大木博士知识点：按语言加载 json，每次进入入口界面（新建实例）随机抽一句；
+        // 从子界面返回入口也是新建实例，同样换句；resize 重建走 init 但成员已缓存，不换句
+        client?.let { OakTips.load(it.resourceManager, it.options.language) }
+        if (oakTipText == null) {
+            oakTipText = OakTips.randomTip()
+        }
         val centerX = width / 2
         val btnW = 87
         val btnH = 24
@@ -130,13 +142,12 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             ))
         }
 
-        // 背景底部两角的独立小按钮（纯图标 + row_background 风格，悬停显示名称），
-        // OP：求购单移到设置按钮正上方（右列、与仅OP同排）；非 OP：求购单仍在左下角
+        // 背景底部两角的独立小按钮（纯图标 + row_background 风格，悬停显示名称）：
+        // 左下求购单（OP 与非 OP 同位置）、右下设置
         val cornerSize = 22
         val cornerY = bgBottom() - cornerSize - 5
-        // 设置按钮 x 中心 = centerX+79，求购单以同一中心对齐（正上方），22 宽 → 左缘 centerX+68
-        val buyOrderX = if (isAdmin) centerX + 68 else centerX - 96 + 6
-        val buyOrderY = if (isAdmin) startY + (btnH + gap) + btnH + 4 + 1 else cornerY
+        val buyOrderX = centerX - 96 + 6
+        val buyOrderY = cornerY
         val buyOrderBtn = NineSliceButton(
             buyOrderX, buyOrderY,
             cornerSize, cornerSize,
@@ -534,10 +545,58 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         context.matrices.pop()
     }
 
+    /**
+     * 中文友好的知识点换行：逐字符累加宽度、超 maxW 才断行（空格当普通字符，不会像 wrapLines 那样
+     * 见空格就提前断，避免「《宝可梦 朱/紫》」被拆成「《宝可梦」+「朱/紫》」）；
+     * 连续的非 CJK 字符（英文单词/数字）作为整体，超宽时整个挪到下一行，不在词中间断。
+     */
+    private fun wrapTip(tip: String, maxW: Int, indentPx: Int): List<net.minecraft.text.OrderedText> {
+        val result = mutableListOf<net.minecraft.text.OrderedText>()
+        val sb = StringBuilder()
+        var width = 0
+        var i = 0
+        while (i < tip.length) {
+            val ch = tip[i]
+            val cjk = ch.code in 0x2E80..0x9FFF || ch.code in 0x3000..0x303F || ch.code in 0xFF00..0xFFEF
+            val word: String
+            if (cjk) {
+                word = ch.toString()
+                i++
+            } else {
+                val start = i
+                while (i < tip.length) {
+                    val c = tip[i].code
+                    if (c in 0x2E80..0x9FFF || c in 0x3000..0x303F || c in 0xFF00..0xFFEF) break
+                    i++
+                }
+                word = tip.substring(start, i)
+            }
+            val w = textRenderer.getWidth(word)
+            // 首行缩进（中文 2 汉字宽），第一行可用宽度相应减少，避免文字戳出气泡右壁
+            val lineMax = if (result.isEmpty()) maxW - indentPx else maxW
+            if (width + w > lineMax && sb.isNotEmpty()) {
+                result.add(Text.literal(sb.toString()).asOrderedText())
+                sb.setLength(0)
+                width = 0
+            }
+            sb.append(word)
+            width += w
+        }
+        if (sb.isNotEmpty()) result.add(Text.literal(sb.toString()).asOrderedText())
+        return result
+    }
+
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         // 掉落动画播完前按钮不可点（事件分发与渲染无关，init 已创建的按钮会照常响应，需显式拦截）
         val total = DROP_DURATION_MS + HOLD_DURATION_MS + FADE_DURATION_MS
         if (ClientConfig.entryDropAnimation && System.currentTimeMillis() - dropAnimStart < total) return true
+        // 点击大木博士立绘（48×128 主体区域）：主动切换下一条知识点
+        val oakX = width / 2 - 128 - 1 - 48
+        val oakY = bgBottom() - 5 - 128
+        if (mouseX >= oakX && mouseX < oakX + 48 && mouseY >= oakY && mouseY < oakY + 128) {
+            oakTipText = OakTips.randomTip()
+            return true
+        }
         return super.mouseClicked(mouseX, mouseY, button)
     }
 
@@ -650,6 +709,55 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             val pikaX = trackLeft + (runT * trackW / PIKA_CYCLE_MS).toInt()
             context.drawTexture(pikaTex, pikaX, pikaY, 0f, 0f, 48, 48, 48, 48)
         }
+        // 大木博士立绘：画在皮卡丘之后，跑酷经过左侧时从立绘下层穿过；
+        // 底边与左下角求购单按钮底边齐平（bgBottom()-5）、视觉主体右缘贴背景左缘留 1px。
+        // 原图 80×128 左右各 16px 透明边 → uv 裁剪出 48×128 主体
+        context.drawTexture(
+            Identifier.of("cobblemarket", "textures/gui/oak.png"),
+            width / 2 - 128 - 1 - 48,
+            bgBottom() - 5 - 128,
+            16f, 0f, 48, 128, 80, 128
+        )
+        // 大木博士知识点气泡：画在立绘之上（最顶层），持续显示；进入界面随机抽、点击立绘换下一条。
+        // 贴图 140×152，文字区在图上 (13,58)~(122,121)（110×64，每行 9px）；
+        // 排版超 7 行（64/9）的长句整体等比放大 k，文字随矩阵一起放大，气泡内比例不变。
+        // 锚定：气泡在博士头顶左侧——本体边界 (3,43)~(139,151)，右缘（x=139）压住立绘左缘 26px（整体右移 30px）、
+        // 底边（y=151）贴立绘顶部上方 4px。位置与立绘固定绑定（不做防出屏移动，小窗口超出部分直接裁掉）
+        val tip = oakTipText
+        if (tip != null) {
+            // 字号中英统一（英文 0.75 缩放过小字，用户改回 1:1）；行距 9px。
+            // 排版：中文走自定义 wrapTip（空格不提前断行、首行缩进 2 汉字宽）；
+            // 英文走原版 wrapLines（按空格断词的标准英文排版，首行顶格不缩进）
+            val isZh = (client?.options?.language ?: "en_us").startsWith("zh")
+            val fontScale = 1f
+            val wrapW = (110 / fontScale).toInt()
+            val tipLines = if (isZh) {
+                wrapTip(tip, wrapW, (TIP_INDENT_PX / fontScale).roundToInt())
+            } else {
+                textRenderer.wrapLines(Text.literal(tip), wrapW)
+            }
+            val k = maxOf(1f, tipLines.size * 9f / 64f)
+            val bgLeft = width / 2 - 128
+            val oakTop = bgBottom() - 5 - 128
+            val bubbleX = bgLeft - 1 - 48 - 4 - 139 + 30 + 4
+            val bubbleY = oakTop - 4 - 151 + 4
+            context.matrices.push()
+            context.matrices.translate(bubbleX.toDouble(), bubbleY.toDouble(), 0.0)
+            context.matrices.scale(k, k, 1f)
+            context.drawTexture(Identifier.of("cobblemarket", "textures/gui/chat_bubble.png"), 0, 0, 0f, 0f, 140, 152, 140, 152)
+            // 文字层再套字号缩放（中文 1:1，英文 0.75）
+            context.matrices.scale(fontScale, fontScale, 1f)
+            val tx = (13 / fontScale).roundToInt()
+            var ty = (58 / fontScale).roundToInt()
+            val lineH = (9 / fontScale).roundToInt()
+            val indent = if (isZh) (TIP_INDENT_PX / fontScale).roundToInt() else 0
+            tipLines.forEachIndexed { index, line ->
+                // 中文首行缩进 2 个汉字宽，其余行顶格；英文全部顶格
+                context.drawText(textRenderer, line, if (index == 0) tx + indent else tx, ty, 0xFF333333.toInt(), false)
+                ty += lineH
+            }
+            context.matrices.pop()
+        }
         // 市场关闭：常驻红字横幅 + 点击入口时的 3 秒提示（OP 两者都不显示——
         // 开关按钮的双态图标就是 OP 自己的状态指示，横幅对 OP 是冗余噪音）
         if (!com.shusheng.cobblemarket.client.MarketStateCache.enabled) {
@@ -689,7 +797,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 入口掉落动画三段：下落 → 落地停留 → 淡出（淡出期间入口界面从图下透出，慢慢显现）
         private const val DROP_DURATION_MS = 300L
         private const val HOLD_DURATION_MS = 100L
-        private const val FADE_DURATION_MS = 120L
+        private const val FADE_DURATION_MS = 100L
+        // 知识点气泡首行缩进（2 个汉字宽 = 16px）
+        private const val TIP_INDENT_PX = 16
         // 皮卡丘跑步动画：直线一趟时长 / 每帧切换间隔 / 环绕一圈时长
         private const val PIKA_CYCLE_MS = 3000L
         private const val PIKA_FRAME_MS = 100L
