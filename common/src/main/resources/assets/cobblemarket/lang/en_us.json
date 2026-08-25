@@ -455,6 +455,7 @@
   "cobblemarket.buy_order.review_reject": "Reject",
   "cobblemarket.buy_order.review_seller": "Seller: ",
   "cobblemarket.buy_order.review_price": "Price: ",
+  "cobblemarket.buy_order.review_total": "total ",
   "cobblemarket.buy_order.review_hint": "Accepting settles at the offered price; rejecting returns the goods to the seller",
   "cobblemarket.buy_order.accepted": "Delivery accepted; goods await pickup",
   "cobblemarket.buy_order.accepted_seller": "Your delivery (%s) was accepted by the buyer. You received %s %s (fee %s %s deducted)",

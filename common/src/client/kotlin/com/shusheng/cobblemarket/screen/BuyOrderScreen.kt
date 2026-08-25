@@ -1864,12 +1864,16 @@ class BuyOrderScreen(
             context.drawItem(itemStack, startX, dialogY + 28)
             context.drawTextWithShadow(textRenderer, itemName, startX + 20, dialogY + 32, 0xFFFFFF)
             context.drawTextWithShadow(textRenderer, countStr, startX + 20 + textRenderer.getWidth(itemName) + 4, dialogY + 32, 0xAAAAAA)
-            // 卖家（默认色）+ 出价（金额段蓝色，2026-08-24 拍板）
+            // 卖家（默认色）+ 出价（金额段蓝色，2026-08-24 拍板）+ 件数与总价（金额蓝色；Long 防溢出）
+            // y=50：贴近物品行（中心 36）、与下方拒绝输入框（76）留 26px 呼吸空间
             context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("cobblemarket.buy_order.review_seller").append(Text.literal(pending.sellerName + "  "))
                     .append(Text.translatable("cobblemarket.buy_order.review_price"))
-                    .append(Text.literal(com.shusheng.cobblemarket.client.formatPrice(pending.price) + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
-                centerX, dialogY + 58, 0xFFFFFF)
+                    .append(Text.literal(com.shusheng.cobblemarket.client.formatPrice(pending.price) + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD))
+                    .append(Text.literal(" ×${pending.count} ").formatted(Formatting.GRAY))
+                    .append(Text.translatable("cobblemarket.buy_order.review_total"))
+                    .append(Text.literal(com.shusheng.cobblemarket.client.formatPriceLong(pending.price.toLong() * pending.count) + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+                centerX, dialogY + 50, 0xFFFFFF)
         }
         // 拒绝原因输入框占据原说明行位置（placeholder 已说明用途）
     }
