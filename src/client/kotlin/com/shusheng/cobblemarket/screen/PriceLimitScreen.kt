@@ -155,6 +155,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         addDrawableChild(itemTabButton)
         updateTabButtons()
 
+        val savedSearch = searchField?.text ?: ""
         searchField = TextFieldWidget(textRenderer, leftX + 2, 50, panelWidth - 4 - 84 - 20, 16, Text.translatable("cobblemarket.gui.search"))
         updateSearchPlaceholder()
         // 搜索变化时重建行按钮：否则过滤后残留旧列表的编辑/删除按钮（与物品黑名单同款问题）
@@ -164,6 +165,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
+        searchField?.text = savedSearch
 
         val addBtn = NineSliceButton(
             leftX + panelWidth - 84, 50, 18, 16,

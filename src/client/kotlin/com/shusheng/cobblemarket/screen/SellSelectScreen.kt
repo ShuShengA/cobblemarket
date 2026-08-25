@@ -94,11 +94,18 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         val lx = width / 2 - 148
         val panelW = 296
 
+        // 重建（弹窗关闭等 clearChildren+init）会清空搜索词与 IV 输入：保存恢复
+        val savedSearch = searchField?.text ?: ""
+        val savedIv = arrayOf(
+            hpF?.text ?: "", atkF?.text ?: "", defF?.text ?: "",
+            spaF?.text ?: "", spdF?.text ?: "", speF?.text ?: ""
+        )
         // Row 1: Search (full width)
         searchField = TextFieldWidget(textRenderer, lx + 2, 30, panelW - 4, 16, Text.translatable("cobblemarket.sell.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.sell.search"))
         addSelectableChild(searchField)
         addDrawableChild(searchField)
+        searchField?.text = savedSearch
 
         // Row 2 (y=50): IV fields
         fun mkIv(x: Int, ph: String): TextFieldWidget {
@@ -110,6 +117,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         }
         hpF = mkIv(lx + 2, "HP"); atkF = mkIv(lx + 51, "ATK"); defF = mkIv(lx + 100, "DEF")
         spaF = mkIv(lx + 149, "SpA"); spdF = mkIv(lx + 198, "SpD"); speF = mkIv(lx + 247, "Spd")
+        val ivFields = arrayOf(hpF, atkF, defF, spaF, spdF, speF)
+        savedIv.forEachIndexed { i, t -> ivFields[i]?.text = t }
 
         // 返回按钮：右上角（与精灵市场统一；交付模式返回求购单界面）
         addDrawableChild(NineSliceButton(
@@ -214,15 +223,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
     private fun rebuildTypeList() {
         typeOptionButtons.forEach { remove(it) }
         typeOptionButtons.clear()
-        // 展开时只隐藏**被列表覆盖**的控件：列表从 y=96 起最多 8 行盖到 208，
-        // 所以只有 Row3（y=72~92 的按钮行）需要让位。搜索框(y=30~46)与 IV 行(y=50~66)
-        // 都在列表上方、完全不被遮挡，必须保持可见——精灵市场同理（那边搜索框也不隐藏，
-        // 它隐藏 IV 是因为它的 IV 两行落在列表覆盖区内，布局不同不能照抄名单）
-        shinyBtn?.visible = !typeListOpen
-        genderBtn?.visible = !typeListOpen
-        priceField?.visible = !typeListOpen && !deliverMode
-        sellBtn?.visible = !typeListOpen
-        htBtn?.visible = !typeListOpen
+        // 列表从 y=96 起、Row3 按钮行在 y=72~92 结束——列表不覆盖按钮行，无需隐藏同行按钮
+        // （照精灵市场：展开属性列表时筛选按钮行保持可见，只隐藏被列表覆盖的区域）
         if (!typeListOpen) return
         val lx = width / 2 - 148
         allTypes.drop(typeListScroll).take(MAX_TYPE_LIST_ROWS).forEachIndexed { i, (_, key) ->
