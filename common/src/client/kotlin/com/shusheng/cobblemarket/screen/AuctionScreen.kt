@@ -225,11 +225,13 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         rulesButton = rulesBtn
         addDrawableChild(rulesBtn)
 
+        val savedSearch = searchField?.text ?: ""
         searchField = TextFieldWidget(textRenderer, leftX + 2, 50, panelWidth - 4 - 52 - 20, 16, Text.translatable("cobblemarket.gui.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.gui.search_placeholder").formatted(Formatting.GRAY))
         searchField?.setChangedListener { updateAbilityOptions(it); rebuildFiltered(); rebuildBidButtons() }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
+        searchField?.text = savedSearch
 
         val createBtn = NineSliceButton(
             leftX + panelWidth - 72, 50, 18, 16,
