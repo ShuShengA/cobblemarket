@@ -455,6 +455,7 @@
   "cobblemarket.buy_order.review_reject": "拒绝",
   "cobblemarket.buy_order.review_seller": "卖家: ",
   "cobblemarket.buy_order.review_price": "出价: ",
+  "cobblemarket.buy_order.review_total": "总价 ",
   "cobblemarket.buy_order.review_hint": "接受后将按出价成交；拒绝则货物退回卖家",
   "cobblemarket.buy_order.accepted": "已接受交付，货物已进待领取",
   "cobblemarket.buy_order.accepted_seller": "你的交付（%s）已被买家接受，到账 %s %s（手续费 %s %s 已扣除）",
