@@ -59,7 +59,7 @@ fun <T : CustomPayload> registerC2S(
         event.registrar(PAYLOAD_VERSION).playToServer(id, codec) { payload, context ->
             handler(payload, context.player() as ServerPlayerEntity)
         }
-        NeoForgePlatform.markPayloadRegistered(id.id())
+        NeoForgePlatform.markPayloadRegistered(id.id(), DIR_C2S)
     }
 }
 
@@ -73,7 +73,7 @@ fun <T : CustomPayload> registerS2CType(
 ) {
     NeoForgePlatform.modEventBus().addListener(RegisterPayloadHandlersEvent::class.java) { event ->
         // 单机时客户端已先行注册同 id（真 handler，HIGH），这里跳过；专用服务器正常注册
-        if (NeoForgePlatform.markPayloadRegistered(id.id())) {
+        if (NeoForgePlatform.markPayloadRegistered(id.id(), DIR_S2C)) {
             event.registrar(PAYLOAD_VERSION).playToClient(id, codec) { _, _ -> }
         }
     }

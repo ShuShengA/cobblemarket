@@ -111,41 +111,6 @@ data class ListingEntry(
     }
 }
 
-// ── 蛋交易开关 ──
-
-class RequestEggTradingPayload : CustomPayload {
-    override fun getId() = ID
-    companion object {
-        val ID = CustomPayload.Id<RequestEggTradingPayload>(CobbleMarket.id("request_egg_trading"))
-        val CODEC: PacketCodec<PacketByteBuf, RequestEggTradingPayload> = PacketCodec.of(
-            { _, b -> b.writeInt(0) },
-            { b -> b.readInt(); RequestEggTradingPayload() }
-        )
-    }
-}
-
-data class SetEggTradingPayload(val enabled: Boolean) : CustomPayload {
-    override fun getId() = ID
-    companion object {
-        val ID = CustomPayload.Id<SetEggTradingPayload>(CobbleMarket.id("set_egg_trading"))
-        val CODEC: PacketCodec<PacketByteBuf, SetEggTradingPayload> = PacketCodec.of(
-            { p, b -> b.writeBoolean(p.enabled) },
-            { b -> SetEggTradingPayload(b.readBoolean()) }
-        )
-    }
-}
-
-data class EggTradingStatePayload(val enabled: Boolean) : CustomPayload {
-    override fun getId() = ID
-    companion object {
-        val ID = CustomPayload.Id<EggTradingStatePayload>(CobbleMarket.id("egg_trading_state"))
-        val CODEC: PacketCodec<PacketByteBuf, EggTradingStatePayload> = PacketCodec.of(
-            { p, b -> b.writeBoolean(p.enabled) },
-            { b -> EggTradingStatePayload(b.readBoolean()) }
-        )
-    }
-}
-
 // ── S2C: 市场总开关状态（登录补发 + /market on|off 切换时全员广播） ──
 
 data class MarketStatePayload(val enabled: Boolean) : CustomPayload {
@@ -937,7 +902,6 @@ internal fun canFitInInventory(player: ServerPlayerEntity, stack: ItemStack): Bo
 object MarketNetwork {
 
     fun register() {
-        registerS2CType(EggTradingStatePayload.ID, EggTradingStatePayload.CODEC)
         registerS2CType(MarketStatePayload.ID, MarketStatePayload.CODEC)
         registerS2CType(MyPokemonListPayload.ID, MyPokemonListPayload.CODEC)
         registerS2CType(HistoryDataPayload.ID, HistoryDataPayload.CODEC)
@@ -2360,25 +2324,6 @@ object MarketNetwork {
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, msg))
-            }
-        }
-
-        registerC2S(RequestEggTradingPayload.ID, RequestEggTradingPayload.CODEC) { _, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
-            val server = player.server
-            // 与交易路径一致在主线程读，避免 netty 线程跨线程读配置
-            server.execute {
-                sendToPlayer(player, EggTradingStatePayload(com.shusheng.cobblemarket.config.CobbleMarketConfig.eggTradingEnabled))
-            }
-        }
-
-        registerC2S(SetEggTradingPayload.ID, SetEggTradingPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
-            val server = player.server
-            // 写配置 + 落盘在主线程执行：与交易路径的读同线程（无可见性问题），且文件 IO 不阻塞 netty 线程
-            server.execute {
-                com.shusheng.cobblemarket.config.CobbleMarketConfig.setEggTradingEnabled(payload.enabled)
-                sendToPlayer(player, EggTradingStatePayload(payload.enabled))
             }
         }
 

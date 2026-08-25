@@ -494,7 +494,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         if (!itemListOpen) {
             context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("cobblemarket.price_limit.hint"),
-                centerX, dialogY + 130, 0xAAAAAA)
+                centerX, dialogY + 126, 0xAAAAAA)
         }
 
         // 物品预览
@@ -1099,6 +1099,13 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.op.price_limit").formatted(Formatting.GOLD),
             centerX, 20, 0xFFFFFF)
+
+        // 物品 tab：储存类模组容器（自定义存储格式）无法校验内容，兜底=把容器物品本身加黑名单
+        if (currentTab == 1) {
+            context.drawCenteredTextWithShadow(textRenderer,
+                Text.translatable("cobblemarket.op.storage_container_hint").formatted(Formatting.GRAY),
+                centerX, 30, 0xFFFFFF)
+        }
 
         val startY = getListStartY()
         // 分割线贴搜索行底部（y=66）：tab 行让出 2px 后搜索框在 50~66，线画 66~67 不重叠

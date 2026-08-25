@@ -54,6 +54,10 @@ object MarketCommands {
                         .requires { it.hasPermissionLevel(2) }
                         .executes(::marketOff)
                     )
+                    .then(CommandManager.literal("reload")
+                        .requires { it.hasPermissionLevel(2) }
+                        .executes(::reloadConfig)
+                    )
             )
         }
 
@@ -64,6 +68,27 @@ object MarketCommands {
     }
 
     private fun marketOn(context: CommandContext<ServerCommandSource>): Int = setMarketEnabled(context, true)
+
+    /** 热重载配置：货币除外（运行时切换账本错乱），货币有变更时附提示 */
+    private fun reloadConfig(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val server = source.server
+        val oldEnabled = CobbleMarketConfig.marketEnabled
+        val currencyChanged = CobbleMarketConfig.reload()
+        // 市场总开关随重载变化时即时广播（与 /market on/off 同一机制）
+        if (CobbleMarketConfig.marketEnabled != oldEnabled) {
+            com.shusheng.cobblemarket.network.toggleMarketEnabled(server, CobbleMarketConfig.marketEnabled)
+        }
+        source.sendFeedback({
+            Text.translatable("cobblemarket.market.cmd_reload").formatted(Formatting.GREEN)
+                .append(
+                    if (currencyChanged)
+                        Text.translatable("cobblemarket.market.cmd_reload_currency").formatted(Formatting.GOLD)
+                    else Text.literal("")
+                )
+        }, true)
+        return Command.SINGLE_SUCCESS
+    }
 
     private fun marketOff(context: CommandContext<ServerCommandSource>): Int = setMarketEnabled(context, false)
 

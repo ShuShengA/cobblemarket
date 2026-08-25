@@ -12,6 +12,7 @@ import com.shusheng.cobblemarket.network.BuyOrderNetwork
 import com.shusheng.cobblemarket.network.CelebrationNetwork
 import com.shusheng.cobblemarket.network.ItemBlacklistNetwork
 import com.shusheng.cobblemarket.network.MarketNetwork
+import com.shusheng.cobblemarket.network.ServerConfigNetwork
 import com.shusheng.cobblemarket.network.PriceLimitNetwork
 import com.shusheng.cobblemarket.platform.onPlayerDisconnect
 import com.shusheng.cobblemarket.platform.onPlayerJoin
@@ -41,6 +42,7 @@ object CobbleMarket {
 		AuctionNetwork.register()
 		BuyOrderNetwork.register()
 		CelebrationNetwork.register()
+		ServerConfigNetwork.register()
 		BalanceNetwork.register()
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()

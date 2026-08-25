@@ -53,7 +53,8 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     private val tooltipStackLines = mutableMapOf<UUID, List<Pair<Text, Int>>>()
 
     private fun columns() = (panelWidth + gap) / (slotSize + gap)
-    private fun getGridStartY() = 84
+    // 84→88：卖家搜索框底边(80)与顶部分割线(80)贴死，网格起始下移 4px 留出间隙
+    private fun getGridStartY() = 88
     // 底部预留 72px（照精灵市场：按钮 20 + 底部分割线 4 + 面板底边框 16 + 间距），
     // 保证窗口高度为任意值时翻页按钮都不会遮住面板底部边框
     private fun rows() = maxOf(0, (height - getGridStartY() - 72) / (slotSize + gap))

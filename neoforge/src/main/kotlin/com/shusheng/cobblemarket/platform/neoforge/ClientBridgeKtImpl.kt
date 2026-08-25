@@ -39,7 +39,7 @@ fun <T : CustomPayload> registerS2C(
     // 发现同 id 已注册则跳过（见 PlatformBridgeKtImpl.registerS2CType）
     NeoForgePlatform.modEventBus().addListener(EventPriority.HIGH, RegisterPayloadHandlersEvent::class.java) { event ->
         event.registrar(PAYLOAD_VERSION).playToClient(id, codec) { payload, _ -> handler(payload) }
-        NeoForgePlatform.markPayloadRegistered(id.id())
+        NeoForgePlatform.markPayloadRegistered(id.id(), DIR_S2C)
     }
 }
 

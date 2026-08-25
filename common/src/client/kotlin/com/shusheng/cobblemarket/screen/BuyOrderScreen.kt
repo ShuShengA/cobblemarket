@@ -481,12 +481,12 @@ class BuyOrderScreen(
             val y = startY + i * rowHeight
             val mine = isMine(entry)
             val hasPending = entry.pending != null
-            // 行按钮语义：我的+待确认=处理交付；我的=关闭；他人+待确认=待确认（锁定）；他人=交付
+            // 行按钮语义：我的+待确认=处理交付；我的=关闭（下架，统一红 ✕）；他人+待确认=待确认（锁定）；他人=交付
             val btn = NineSliceButton(
                 rowLeftX() + rowW() - 50, y + 4, 44, 16,
-                Text.translatable(when {
+                if (mine && !hasPending) Text.literal("✕").formatted(Formatting.RED)
+                else Text.translatable(when {
                     mine && hasPending -> "cobblemarket.buy_order.review"
-                    mine -> "cobblemarket.buy_order.close"
                     hasPending -> "cobblemarket.buy_order.pending_mark"
                     else -> "cobblemarket.buy_order.deliver"
                 }),

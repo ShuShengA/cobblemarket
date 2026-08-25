@@ -214,7 +214,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         return field
     }
 
-    private fun getListStartY() = if (filterExpanded) 160 else 84
+    // 84→88：卖家搜索框底边(80)与顶部分割线(80)贴死，列表起始下移 4px 留出间隙
+    private fun getListStartY() = if (filterExpanded) 160 else 88
     // 预留 72 = 分页按钮高 20 + 4 空隙 + 底部边框切片 16 + 背景底边下空隙（照精灵市场：按钮不压背景底部边框）
     private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 72) / 24)
 
@@ -226,7 +227,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         val rowHeight = 24
         displayedListings().take(getMaxVisibleRows()).forEachIndexed { di, (_, entry) ->
             val y = startY + di * rowHeight
-            val btn = NineSliceButton(leftX + panelWidth - 42, y + 4, 38, 16, Text.literal("✕"), ButtonWidget.PressAction { cancelListing(entry) })
+            val btn = NineSliceButton(leftX + panelWidth - 42, y + 4, 38, 16, Text.literal("✕").formatted(Formatting.RED), ButtonWidget.PressAction { cancelListing(entry) })
             cancelButtons.add(btn)
             addDrawableChild(btn)
         }

@@ -1,0 +1,514 @@
+package com.shusheng.cobblemarket.screen
+
+import com.shusheng.cobblemarket.network.RequestServerConfigPayload
+import com.shusheng.cobblemarket.network.SaveServerConfigPayload
+import com.shusheng.cobblemarket.network.ServerConfigDataPayload
+import com.shusheng.cobblemarket.platform.sendToServer
+import net.minecraft.client.MinecraftClient
+import net.minecraft.client.gui.DrawContext
+import net.minecraft.client.gui.Drawable
+import net.minecraft.client.gui.screen.Screen
+import net.minecraft.client.gui.widget.TextFieldWidget
+import net.minecraft.text.Text
+import net.minecraft.util.Formatting
+import net.minecraft.util.Identifier
+
+/**
+ * 服务器配置可视化编辑（入口界面「服务器配置」按钮，仅 OP 可达）。
+ * 视觉照入口界面的玩家设置弹窗：遮罩 + 居中弹窗 + 左标签右控件 + switch_icon 开关 + done 按钮。
+ * 打开时请求快照，数字输入框失焦提交、开关即时提交；服务端钳制后回发新快照刷新界面。
+ * 货币配置与 auctionDurationOptions 不在此列（见 ServerConfigNetwork 头注释）。
+ */
+class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_config")) {
+
+    private val dialogW = 260
+    private val rowHeight = 24
+
+    /** 数字配置行定义：key → 是否整数（费率支持小数） */
+    private data class NumDef(val labelKey: String, val isInt: Boolean)
+
+    private val numDefs = listOf(
+        NumDef("cobblemarket.op.scfg_pokemon_fee", false) to "pokemonFee",
+        NumDef("cobblemarket.op.scfg_item_fee", false) to "itemFee",
+        NumDef("cobblemarket.op.scfg_max_pokemon", true) to "maxPokemonListings",
+        NumDef("cobblemarket.op.scfg_max_items", true) to "maxItemListings",
+        NumDef("cobblemarket.op.scfg_listing_days", true) to "listingDays",
+        NumDef("cobblemarket.op.scfg_pending_days", true) to "pendingDays",
+        NumDef("cobblemarket.op.scfg_auction_fee", false) to "auctionFee",
+        NumDef("cobblemarket.op.scfg_auction_min_bid", true) to "auctionMinBid",
+        NumDef("cobblemarket.op.scfg_anti_snipe", true) to "antiSnipe",
+        NumDef("cobblemarket.op.scfg_max_auctions", true) to "maxAuctions",
+        NumDef("cobblemarket.op.scfg_auction_durations", false) to "auctionDurations",
+        NumDef("cobblemarket.op.scfg_buyorder_fee", false) to "buyOrderFee",
+        NumDef("cobblemarket.op.scfg_buyorder_days", true) to "buyOrderExpiry",
+        NumDef("cobblemarket.op.scfg_max_buyorders", true) to "maxBuyOrders",
+    )
+
+    private val toggleDefs = listOf(
+        "cobblemarket.op.scfg_egg_trading" to "eggTrading",
+        "cobblemarket.op.scfg_celebration" to "celebration",
+    )
+
+    private val numFields = mutableMapOf<String, TextFieldWidget>()
+    private val toggleButtons = mutableMapOf<String, NineSliceButton>()
+    // 每个数字输入框后的重置按钮（恢复该行为服务端快照值）
+    private val resetButtons = mutableMapOf<String, NineSliceButton>()
+    private var saveButton: NineSliceButton? = null
+    private var cancelButton: NineSliceButton? = null
+    private var scrollOffset = 0
+    // 编辑只改本地状态：开关的本地值（保存时提交，快照刷新时重置）
+    private val localToggles = mutableMapOf<String, Boolean>()
+    private var savedToastUntil = 0L
+    private val totalRows = numDefs.size + toggleDefs.size
+
+    // ── 蛋交易二次确认弹窗（照 AdminScreen 原模板：开启有 3 秒冷静期，蛋可绕过精灵黑名单） ──
+    private var eggConfirmOpen = false
+    private var eggConfirmOpenedAt = 0L
+    private var eggConfirmButton: NineSliceButton? = null
+    private var eggCancelButton: NineSliceButton? = null
+    // 确认弹窗关闭/resize 走 clearChildren+init 重建，未提交的编辑（输入框+开关）需保存/恢复
+    private var savedFieldTexts: Map<String, String>? = null
+    private var savedToggles: Map<String, Boolean>? = null
+
+    private fun savePendingEdits() {
+        savedFieldTexts = numFields.mapValues { it.value.text }
+        savedToggles = localToggles.toMap()
+    }
+
+    // 弹窗几何：标题区 30 + 行区（滚动）+ 底部提示/done 区 34，总高不超过屏幕
+    private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 34)
+    private fun dialogY() = height / 2 - dialogH() / 2
+    private fun listStartY() = dialogY() + 30
+    private fun listAreaH() = dialogH() - 30 - 34
+    private fun getMaxVisibleRows() = maxOf(0, listAreaH() / rowHeight)
+
+    companion object {
+        /** 最新服务端快照（S2C 到达时更新；Screen 关闭后仍保留，重开可先显示旧值） */
+        var latest: ServerConfigDataPayload? = null
+            private set
+
+        /** S2C 处理入口（CobbleMarketClient 调用） */
+        fun onConfigData(payload: ServerConfigDataPayload) {
+            latest = payload
+            val screen = MinecraftClient.getInstance().currentScreen
+            if (screen is ServerConfigScreen) screen.refreshFrom(payload)
+        }
+    }
+
+    override fun init() {
+        super.init()
+        val dialogX = width / 2 - dialogW / 2
+        val startY = listStartY()
+        numDefs.forEach { (def, key) ->
+            // 输入框与重置按钮不重叠：输入框右缘=228、按钮 230~250（间隙 2px）
+            val isDurations = key == "auctionDurations"
+            val field = TextFieldWidget(textRenderer, dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16, Text.literal(""))
+            field.setTextPredicate { text ->
+                when {
+                    isDurations -> text.all { it.isDigit() || it == ',' }
+                    def.isInt -> text.all { it.isDigit() }
+                    else -> text.all { it.isDigit() || it == '.' }
+                }
+            }
+            field.setMaxLength(if (isDurations) 60 else 10)
+            numFields[key] = field
+            addSelectableChild(field)
+            addDrawableChild(field)
+            // 重置按钮（↺ 符号，双语通用）：恢复该行为服务端快照值
+            val resetBtn = NineSliceButton(
+                dialogX + dialogW - 10 - 20, startY, 20, 16,
+                Text.literal("↺"),
+                {
+                    numFields[key]?.text =
+                        if (key == "auctionDurations") (latest?.auctionDurations ?: "")
+                        else snapshotText(key, latest)
+                }
+            )
+            resetButtons[key] = resetBtn
+            addDrawableChild(resetBtn)
+        }
+        toggleDefs.forEach { (_, key) ->
+            val btn = NineSliceButton(
+                dialogX + dialogW - 10 - 22, startY, 22, 22,
+                Text.literal(""),
+                // 点击只切本地状态（乐观 UI），保存时才提交；蛋交易关→开需二次确认
+                {
+                    if (key == "eggTrading" && !currentToggleValue("eggTrading")) {
+                        openEggConfirmDialog()
+                    } else {
+                        localToggles[key] = !currentToggleValue(key)
+                        toggleButtons[key]?.iconLeft = toggleIconFor(key, null)
+                    }
+                },
+                iconLeft = toggleIcon(key),
+                iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+                texture = ROW_BACKGROUND_TEXTURE,
+                texH = ROW_BACKGROUND_TEX_H
+            )
+            toggleButtons[key] = btn
+            addDrawableChild(btn)
+        }
+        // 底部双按钮：保存（提交全部 + 服务端落盘，等价改文件后 /market reload）、取消（放弃修改关闭）
+        saveButton = NineSliceButton(
+            width / 2 - 62, dialogY() + dialogH() - 26, 60, 20,
+            Text.translatable("cobblemarket.op.scfg_save"),
+            { save() }
+        )
+        addDrawableChild(saveButton)
+        cancelButton = NineSliceButton(
+            width / 2 + 2, dialogY() + dialogH() - 26, 60, 20,
+            Text.translatable("cobblemarket.op.scfg_cancel"),
+            { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) }
+        )
+        addDrawableChild(cancelButton)
+        rebuildPositions()
+        // 确认弹窗关闭/resize 走 clearChildren+init 重建：恢复未提交的编辑，且不重新请求快照
+        // （请求会把本地编辑的开关状态冲回服务端旧值——蛋交易确认后按钮图标变回关就是这个原因）
+        if (savedFieldTexts != null) {
+            savedFieldTexts!!.forEach { (key, text) -> numFields[key]?.text = text }
+            savedToggles?.let { saved -> localToggles.clear(); localToggles.putAll(saved) }
+            toggleDefs.forEach { (_, key) -> toggleButtons[key]?.iconLeft = toggleIconFor(key, null) }
+            savedFieldTexts = null
+            savedToggles = null
+        } else {
+            // 首次打开/普通重建：请求快照（服务端回发后 refreshFrom 填值）
+            sendToServer(RequestServerConfigPayload())
+        }
+    }
+
+    private fun rebuildPositions() {
+        val dialogX = width / 2 - dialogW / 2
+        val startY = listStartY()
+        var row = 0
+        // visible 必须叠加 !eggConfirmOpen：确认弹窗打开时任何重建（滚动/resize）都不能把下层控件改回可见
+        numDefs.forEach { (_, key) ->
+            val y = startY + (row - scrollOffset) * rowHeight
+            val field = numFields[key] ?: return@forEach
+            val visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
+            field.x = dialogX + dialogW - 10 - 20 - 2 - 54
+            field.y = y + 4
+            field.visible = visible
+            val resetBtn = resetButtons[key]
+            resetBtn?.x = dialogX + dialogW - 10 - 20
+            resetBtn?.y = y + 4
+            resetBtn?.visible = visible
+            row++
+        }
+        toggleDefs.forEach { (_, key) ->
+            val y = startY + (row - scrollOffset) * rowHeight
+            val btn = toggleButtons[key] ?: return@forEach
+            btn.x = dialogX + dialogW - 10 - 22
+            btn.y = y + 1
+            btn.visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
+            row++
+        }
+    }
+
+    // ── 快照 → 界面刷新 ──
+
+    private fun refreshFrom(payload: ServerConfigDataPayload) {
+        numDefs.forEach { (_, key) ->
+            val field = numFields[key] ?: return@forEach
+            // 聚焦中的输入框不覆盖（用户正在输入）；保存后回发的快照会刷新全部
+            if (focused !== field) {
+                field.text = if (key == "auctionDurations") payload.auctionDurations else snapshotText(key, payload)
+            }
+        }
+        // 服务端快照到达：本地开关状态重置（保存回发 / 打开时首次填充）
+        localToggles.clear()
+        toggleDefs.forEach { (_, key) ->
+            toggleButtons[key]?.iconLeft = toggleIconFor(key, payload)
+        }
+    }
+
+    private fun snapshotText(key: String, payload: ServerConfigDataPayload?): String {
+        val v = numValue(key, payload)
+        return if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+    }
+
+    private fun numValue(key: String, payload: ServerConfigDataPayload?): Double = when (key) {
+        "pokemonFee" -> payload?.pokemonFee ?: 5.0
+        "itemFee" -> payload?.itemFee ?: 5.0
+        "maxPokemonListings" -> (payload?.maxPokemonListings ?: 0).toDouble()
+        "maxItemListings" -> (payload?.maxItemListings ?: 0).toDouble()
+        "listingDays" -> (payload?.listingDays ?: 14).toDouble()
+        "pendingDays" -> (payload?.pendingDays ?: 30).toDouble()
+        "auctionFee" -> payload?.auctionFee ?: 5.0
+        "auctionMinBid" -> (payload?.auctionMinBid ?: 100).toDouble()
+        "antiSnipe" -> (payload?.antiSnipe ?: 120).toDouble()
+        "maxAuctions" -> (payload?.maxAuctions ?: 3).toDouble()
+        "buyOrderFee" -> payload?.buyOrderFee ?: 5.0
+        "buyOrderExpiry" -> (payload?.buyOrderExpiry ?: 3).toDouble()
+        "maxBuyOrders" -> (payload?.maxBuyOrders ?: 5).toDouble()
+        else -> 0.0
+    }
+
+    private fun currentToggleValue(key: String): Boolean {
+        // 本地未保存的编辑值优先（否则连续点击算出同一个结果，开关只能点一次）
+        localToggles[key]?.let { return it }
+        val p = latest
+        return when (key) {
+            "eggTrading" -> p?.eggTrading ?: false
+            "celebration" -> p?.celebration ?: true
+            else -> false
+        }
+    }
+
+    private fun toggleIcon(key: String): Identifier = toggleIconFor(key, null)
+
+    private fun toggleIconFor(key: String, payload: ServerConfigDataPayload?): Identifier {
+        // 优先级：回发快照值 > 本地未保存的编辑值 > 旧快照
+        val on = payload?.let { p ->
+            when (key) {
+                "eggTrading" -> p.eggTrading
+                "celebration" -> p.celebration
+                else -> false
+            }
+        } ?: localToggles[key] ?: when (key) {
+            "eggTrading" -> latest?.eggTrading ?: false
+            "celebration" -> latest?.celebration ?: true
+            else -> false
+        }
+        return Identifier.of("cobblemarket", if (on) "textures/gui/switch_icon_on.png" else "textures/gui/switch_icon_off.png")
+    }
+
+    // ── 保存 ──
+
+    /** 保存：收集全部字段（输入框非法/空 → 回退服务端旧值），一次性提交；服务端落盘后回发快照 */
+    private fun save() {
+        fun intOr(key: String, fallback: Int): Int {
+            val text = numFields[key]?.text.orEmpty()
+            return text.toIntOrNull() ?: fallback
+        }
+        fun doubleOr(key: String, fallback: Double): Double {
+            val text = numFields[key]?.text.orEmpty()
+            return text.toDoubleOrNull() ?: fallback
+        }
+        val p = latest
+        sendToServer(SaveServerConfigPayload(
+            pokemonFee = doubleOr("pokemonFee", p?.pokemonFee ?: 5.0),
+            itemFee = doubleOr("itemFee", p?.itemFee ?: 5.0),
+            maxPokemonListings = intOr("maxPokemonListings", p?.maxPokemonListings ?: 0),
+            maxItemListings = intOr("maxItemListings", p?.maxItemListings ?: 0),
+            listingDays = intOr("listingDays", p?.listingDays ?: 14),
+            pendingDays = intOr("pendingDays", p?.pendingDays ?: 30),
+            auctionFee = doubleOr("auctionFee", p?.auctionFee ?: 5.0),
+            auctionMinBid = intOr("auctionMinBid", p?.auctionMinBid ?: 100),
+            antiSnipe = intOr("antiSnipe", p?.antiSnipe ?: 120),
+            maxAuctions = intOr("maxAuctions", p?.maxAuctions ?: 3),
+            buyOrderFee = doubleOr("buyOrderFee", p?.buyOrderFee ?: 5.0),
+            buyOrderExpiry = intOr("buyOrderExpiry", p?.buyOrderExpiry ?: 3),
+            maxBuyOrders = intOr("maxBuyOrders", p?.maxBuyOrders ?: 5),
+            eggTrading = localToggles["eggTrading"] ?: (p?.eggTrading ?: false),
+            celebration = localToggles["celebration"] ?: (p?.celebration ?: true),
+            auctionDurations = numFields["auctionDurations"]?.text.orEmpty()
+                .ifBlank { p?.auctionDurations ?: "" },
+        ))
+        // 乐观提示（服务端回发快照确认最终值；保存后按钮侧 toast 1.5 秒）
+        savedToastUntil = System.currentTimeMillis() + 1500
+    }
+
+    // ── 蛋交易二次确认弹窗（照 AdminScreen 原模板：3 秒冷静期） ──
+
+    private fun setControlsVisible(visible: Boolean) {
+        numFields.values.forEach { it.visible = visible }
+        resetButtons.values.forEach { it.visible = visible }
+        toggleButtons.values.forEach { it.visible = visible }
+        saveButton?.visible = visible
+        cancelButton?.visible = visible
+    }
+
+    private fun openEggConfirmDialog() {
+        eggConfirmOpen = true
+        eggConfirmOpenedAt = System.currentTimeMillis()
+        // 保存未提交的编辑（关闭弹窗走 clearChildren+init 重建，init 里恢复）
+        savePendingEdits()
+        setControlsVisible(false)
+
+        // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染）
+        addDrawable(object : Drawable {
+            override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+                renderEggConfirmBackground(context)
+            }
+        })
+
+        val centerX = width / 2
+        val dialogY = height / 2 - 75
+        eggConfirmButton = NineSliceButton(
+            centerX - 85, dialogY + 116, 80, 20,
+            Text.translatable("cobblemarket.op.egg_confirm_yes"),
+            { confirmEggTrading() }
+        )
+        addDrawableChild(eggConfirmButton)
+        eggCancelButton = NineSliceButton(
+            centerX + 5, dialogY + 116, 80, 20,
+            Text.translatable("cobblemarket.buy_confirm.cancel"),
+            { closeEggConfirmDialog() }
+        )
+        addDrawableChild(eggCancelButton)
+    }
+
+    private fun closeEggConfirmDialog() {
+        eggConfirmOpen = false
+        eggConfirmButton = null
+        eggCancelButton = null
+        clearChildren()
+        init()
+    }
+
+    private fun confirmEggTrading() {
+        // 只切本地状态（保存时才提交）；先更新保存快照再关闭——
+        // 否则 init 恢复会用弹窗打开时的旧快照把刚确认的「开」覆盖回关
+        localToggles["eggTrading"] = true
+        savePendingEdits()
+        closeEggConfirmDialog()
+    }
+
+    private fun renderEggConfirmBackground(context: DrawContext) {
+        val centerX = width / 2
+        val dialogW = 280
+        val dialogH = 150
+        val dialogX = centerX - dialogW / 2
+        val dialogY = height / 2 - dialogH / 2
+
+        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
+        context.drawCenteredTextWithShadow(textRenderer,
+            Text.translatable("cobblemarket.op.egg_confirm_title").formatted(Formatting.GOLD),
+            centerX, dialogY + 14, 0xFFFFFF)
+    }
+
+    private fun renderEggConfirmText(context: DrawContext) {
+        val centerX = width / 2
+        val dialogX = centerX - 140
+        val dialogY = height / 2 - 75
+
+        // 逐行渲染：语言文件显式分行（每行红/白两个槽位），红=警告、白=普通；空行跳过（中英行数不同）
+        val lines = (1..9).map { i ->
+            listOf(
+                "cobblemarket.op.egg_l${i}_warn" to 0xFF5555,
+                "cobblemarket.op.egg_l${i}_text" to 0xFFFFFF,
+            )
+        }
+        var ty = dialogY + 32
+        lines.forEach { line ->
+            val segs = line.mapNotNull { (key, color) ->
+                val text = Text.translatable(key).string
+                if (text.isEmpty()) null else text to color
+            }
+            if (segs.isEmpty()) return@forEach
+            val lineWidth = segs.sumOf { textRenderer.getWidth(it.first) }
+            var tx = dialogX + 20 + (240 - lineWidth) / 2
+            segs.forEach { (text, color) ->
+                context.drawTextWithShadow(textRenderer, text, tx, ty, color)
+                tx += textRenderer.getWidth(text)
+            }
+            ty += 9
+        }
+    }
+
+    /** 冷静期：3 秒内确认按钮禁用并显示倒计时 */
+    private fun updateEggConfirmButtons() {
+        val cooldownLeft = 3 - (System.currentTimeMillis() - eggConfirmOpenedAt) / 1000
+        val canConfirm = cooldownLeft <= 0
+        eggConfirmButton?.active = canConfirm
+        eggConfirmButton?.message = if (canConfirm)
+            Text.translatable("cobblemarket.op.egg_confirm_yes")
+        else
+            Text.translatable("cobblemarket.op.egg_confirm_yes_countdown", cooldownLeft)
+    }
+
+    // ── 滚动 ──
+
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        // 点击空白处结束输入状态（照 AdminItemScreen 惯例：点前焦点在输入框、点击位置不在任何输入框 → 取消焦点）
+        val wasInInput = focused is TextFieldWidget
+        val result = super.mouseClicked(mouseX, mouseY, button)
+        if (wasInInput && !numFields.values.any { it.isMouseOver(mouseX, mouseY) }) {
+            focused = null
+        }
+        return result
+    }
+
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+        // 确认弹窗打开时不滚动下层列表
+        if (eggConfirmOpen) return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)
+        val maxScroll = maxOf(0, totalRows - getMaxVisibleRows())
+        if (maxScroll > 0) {
+            scrollOffset = (scrollOffset - verticalAmount.toInt()).coerceIn(0, maxScroll)
+            rebuildPositions()
+            return true
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)
+    }
+
+    override fun resize(client: MinecraftClient, width: Int, height: Int) {
+        scrollOffset = scrollOffset.coerceIn(0, maxOf(0, totalRows - getMaxVisibleRows()))
+        val wasEggConfirmOpen = eggConfirmOpen
+        // 重建前保存未提交编辑（init 里恢复且不重新请求快照）
+        savePendingEdits()
+        super.resize(client, width, height)
+        if (wasEggConfirmOpen) {
+            eggConfirmOpen = false
+            openEggConfirmDialog()
+        }
+    }
+
+    // ── 渲染（遮罩 + 居中弹窗，照入口设置弹窗） ──
+
+    override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        val dialogX = width / 2 - dialogW / 2
+        drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY(), dialogW, dialogH(), 0, DIALOG_BACKGROUND_TEX_H)
+    }
+
+    override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        super.render(context, mouseX, mouseY, delta)
+        if (eggConfirmOpen) {
+            renderEggConfirmText(context)
+            updateEggConfirmButtons()
+            return
+        }
+        val centerX = width / 2
+        val dialogX = centerX - dialogW / 2
+        context.drawCenteredTextWithShadow(textRenderer,
+            Text.translatable("cobblemarket.op.server_config").formatted(Formatting.GOLD),
+            centerX, dialogY() + 14, 0xFFFFFF)
+
+        val startY = listStartY()
+        var row = 0
+        numDefs.forEach { (def, _) ->
+            if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
+                val rowY = startY + (row - scrollOffset) * rowHeight
+                // 行间分割线（照设置弹窗：每行上方一条）
+                context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
+                context.drawTextWithShadow(textRenderer,
+                    Text.translatable(def.labelKey),
+                    dialogX + 10, rowY + 7, 0xFFFFFF)
+            }
+            row++
+        }
+        toggleDefs.forEach { (labelKey, _) ->
+            if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
+                val rowY = startY + (row - scrollOffset) * rowHeight
+                context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
+                context.drawTextWithShadow(textRenderer,
+                    Text.translatable(labelKey),
+                    dialogX + 10, rowY + 7, 0xFFFFFF)
+            }
+            row++
+        }
+        // 底部提示 / 保存成功 toast（1.5 秒）
+        if (System.currentTimeMillis() < savedToastUntil) {
+            context.drawCenteredTextWithShadow(textRenderer,
+                Text.translatable("cobblemarket.op.scfg_saved").formatted(Formatting.GREEN),
+                centerX, dialogY() + dialogH() - 38, 0xFFFFFF)
+        } else {
+            context.drawCenteredTextWithShadow(textRenderer,
+                Text.translatable("cobblemarket.op.scfg_hint").formatted(Formatting.GRAY),
+                centerX, dialogY() + dialogH() - 38, 0xFFFFFF)
+        }
+    }
+
+    override fun shouldPause() = false
+}

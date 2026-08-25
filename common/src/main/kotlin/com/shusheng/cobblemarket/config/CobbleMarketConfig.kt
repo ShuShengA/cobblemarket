@@ -14,6 +14,9 @@ object CobbleMarketConfig {
     private val configFile: File
         get() = configDir().resolve("cobblemarket.json").toFile()
 
+    /** 热重载时文件里的货币配置与运行时值不一致（供 reload 命令回显提示） */
+    private var currencyChangedSinceReload = false
+
     var cobbledollars: Boolean = false
         private set
     /** 装了 Cobblemon Economy 时是否优先走它的货币 API（其内部桥接可路由到 CobbleDollars/Impactor 后端） */
@@ -71,7 +74,38 @@ object CobbleMarketConfig {
         save()
     }
 
-    fun load() {
+    // ── 服务器配置 GUI 编辑 setter（钳制规则与 load() 一致；save() 由调用方统一执行） ──
+
+    fun setPokemonListingFeePercent(v: Double) { pokemonListingFeePercent = v.coerceIn(0.0, 100.0) }
+    fun setItemListingFeePercent(v: Double) { itemListingFeePercent = v.coerceIn(0.0, 100.0) }
+    fun setMaxPokemonListingsPerPlayer(v: Int) { maxPokemonListingsPerPlayer = v.coerceAtLeast(0) }
+    fun setMaxItemListingsPerPlayer(v: Int) { maxItemListingsPerPlayer = v.coerceAtLeast(0) }
+    fun setListingDurationDays(v: Int) { listingDurationDays = v.coerceAtLeast(1) }
+    fun setPendingReturnRetentionDays(v: Int) { pendingReturnRetentionDays = v.coerceAtLeast(0) }
+    fun setAuctionFeePercent(v: Double) { auctionFeePercent = v.coerceIn(0.0, 100.0) }
+    fun setAuctionMinBidIncrement(v: Int) { auctionMinBidIncrement = v.coerceAtLeast(1) }
+    fun setAuctionAntiSnipeSeconds(v: Int) { auctionAntiSnipeSeconds = v.coerceAtLeast(0) }
+    fun setMaxAuctionsPerPlayer(v: Int) { maxAuctionsPerPlayer = v.coerceAtLeast(0) }
+    fun setBuyOrderFeePercent(v: Double) { buyOrderFeePercent = v.coerceIn(0.0, 100.0) }
+    fun setBuyOrderExpiryDays(v: Int) { buyOrderExpiryDays = v.coerceAtLeast(1) }
+    fun setMaxBuyOrdersPerPlayer(v: Int) { maxBuyOrdersPerPlayer = v.coerceAtLeast(0) }
+    fun setCelebrationAnimationEnabled(v: Boolean) { celebrationAnimationEnabled = v }
+
+    /** 拍卖时长选项（逗号分隔分钟，如 "720,1440"）；解析为空/全非法时保持旧值 */
+    fun setAuctionDurationOptions(raw: String) {
+        val parsed = raw.split(',')
+            .mapNotNull { it.trim().toIntOrNull() }
+            .map { it.coerceAtLeast(1) }
+        if (parsed.isNotEmpty()) {
+            auctionDurationOptions = parsed
+        }
+    }
+
+    /**
+     * 读取配置文件。skipCurrency=true（/market reload 专用）时不应用货币字段、不重建货币 handler——
+     * 运行时切换货币后端会账本错乱（挂单/冻结金按旧货币记账），只比较并记录差异供命令回显。
+     */
+    fun load(skipCurrency: Boolean = false) {
         val hasCD = try { Class.forName("fr.harmex.cobbledollars.common.utils.CobbleDollarsPlayer"); true } catch (_: Exception) { false }
         val hasCobeco = cobecoAvailable()
         if (!configFile.exists()) {
@@ -95,19 +129,28 @@ object CobbleMarketConfig {
                 var missingKeys = knownKeys.any { !data.containsKey(it) }
                 val currency = data["currency"] as? Map<*, *>
                 if (currency != null) {
-                    cobbledollars = (currency["cobbledollars"] as? Boolean ?: hasCD) && hasCD
+                    val fileCobbledollars = (currency["cobbledollars"] as? Boolean ?: hasCD) && hasCD
                     // cobblemonEconomy 旧配置缺失时固定 false（升级无感），勿改成「缺失按探测兜底」：
                     // 老服主已用 cobbledollars=true 运营市场，升级后若因装了 cobeco 被自动切换后端，
                     // 余额存储会变（除非服主在 cobeco 里开了 main_currency 桥接），行为突变。
                     // 探测值只在无配置文件的全新安装时作为默认（见上方 !configFile.exists() 分支）
-                    cobblemonEconomy = (currency["cobblemonEconomy"] as? Boolean ?: false) && hasCobeco
+                    val fileCobeco = (currency["cobblemonEconomy"] as? Boolean ?: false) && hasCobeco
                     // 结算货币归一化：大小写/全名/缩写都认（PCO/pco/PokeCoins → PCO），其余回 POKE（防服主写错值静默用错货币）
-                    cobecoCurrency = when (currency["cobecoCurrency"]?.toString()?.lowercase()) {
+                    val fileCobecoCurrency = when (currency["cobecoCurrency"]?.toString()?.lowercase()) {
                         "pco", "pokecoins" -> "PCO"
                         else -> "POKE"
                     }
-                    currencyItem = currency["item"] as? String ?: "minecraft:diamond"
+                    val fileCurrencyItem = currency["item"] as? String ?: "minecraft:diamond"
                     if (!currency.containsKey("cobbledollars") || !currency.containsKey("cobblemonEconomy") || !currency.containsKey("cobecoCurrency") || !currency.containsKey("item")) missingKeys = true
+                    if (skipCurrency) {
+                        currencyChangedSinceReload = fileCobbledollars != cobbledollars || fileCobeco != cobblemonEconomy ||
+                            fileCobecoCurrency != cobecoCurrency || fileCurrencyItem != currencyItem
+                    } else {
+                        cobbledollars = fileCobbledollars
+                        cobblemonEconomy = fileCobeco
+                        cobecoCurrency = fileCobecoCurrency
+                        currencyItem = fileCurrencyItem
+                    }
                 }
                 val legacyFee = data["listingFeePercent"] as? Double
                 // 手续费钳制 0~100：超过 100% 会让卖家账本变负数（抵消后续所有收入）
@@ -145,7 +188,14 @@ object CobbleMarketConfig {
                 save()
             }
         }
-        CurrencyHandler.load(this)
+        if (!skipCurrency) CurrencyHandler.load(this)
+    }
+
+    /** /market reload 专用：重载除货币外的全部配置；返回 true = 文件里货币配置与运行时不一致（需重启生效） */
+    fun reload(): Boolean {
+        currencyChangedSinceReload = false
+        load(skipCurrency = true)
+        return currencyChangedSinceReload
     }
 
     fun save() {

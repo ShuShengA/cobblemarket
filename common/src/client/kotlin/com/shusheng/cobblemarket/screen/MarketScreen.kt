@@ -360,7 +360,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         displayedListings().take(getMaxVisibleRows()).forEachIndexed { di, (origIndex, entry) ->
             val y = startY + di * rowHeight
             val isMine = playerUuid != null && entry.sellerUuid == playerUuid
-            val label = if (isMine) Text.literal("✕") else Text.translatable("cobblemarket.gui.buy")
+            val label = if (isMine) Text.literal("✕").formatted(Formatting.RED) else Text.translatable("cobblemarket.gui.buy")
             val action = if (isMine)
                 ButtonWidget.PressAction { openCancelDialog(entry) }
             else
