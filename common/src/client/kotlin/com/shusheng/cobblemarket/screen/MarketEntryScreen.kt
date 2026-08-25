@@ -105,7 +105,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         val rowCount = if (isAdmin) 3 else 2
         // 行 1-2 用 gap 间隙；行 3（仅OP）与行 2 保持 4px 间隙，不随 gap 增大下移（与分割线/开关按钮上下间隙对称各 2px）
         totalH = btnH * rowCount + gap * (rowCount - 1) - if (isAdmin) gap - 5 else 0
-        val startY = height / 2 - totalH / 2
+        // 逻辑高度不足时整体上移：背景贴图（213 高）顶部比逻辑背景（160）再向上多 33px，
+        // 贴图顶 = btnStartY - 14 - (160-totalH)/2 - 33，必须 ≥ 屏幕顶（精灵市场面板锚顶 y=2 从不裁）
+        val startY = maxOf(height / 2 - totalH / 2, 47 + (160 - totalH) / 2)
         btnStartY = startY
 
         // 行 1：精灵市场按钮用小卡比兽 8 帧动画图标（100ms/帧，照皮卡丘动画帧率）
@@ -610,14 +612,31 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 掉落动画播完前按钮不可点（事件分发与渲染无关，init 已创建的按钮会照常响应，需显式拦截）
         val total = DROP_DURATION_MS + HOLD_DURATION_MS + FADE_DURATION_MS
         if (ClientConfig.entryDropAnimation && System.currentTimeMillis() - dropAnimStart < total) return true
-        // 点击大木博士立绘（48×128 主体区域）：主动切换下一条知识点
-        val oakX = width / 2 - 128 - 1 - 48
-        val oakY = bgBottom() - 5 - 128
-        if (mouseX >= oakX && mouseX < oakX + 48 && mouseY >= oakY && mouseY < oakY + 128) {
+        // 点击大木博士立绘（48×128 主体区域，随 oakScaleFactor 缩放）：主动切换下一条知识点
+        val oakK = oakScaleFactor()
+        val oakRight = width / 2 - 128 - 1
+        val oakBottom = bgBottom() - 5
+        val oakLeft = oakRight - 48 * oakK
+        val oakTop = oakBottom - 128 * oakK
+        if (mouseX >= oakLeft && mouseX < oakRight && mouseY >= oakTop && mouseY < oakBottom) {
             oakTipText = OakTips.randomTip()
             return true
         }
         return super.mouseClicked(mouseX, mouseY, button)
+    }
+
+    /**
+     * 大木博士三元素（立绘+气泡+文字）整体缩放系数：锚定立绘底边（bgBottom()-5）与右缘（bgLeft-1），
+     * 小逻辑分辨率（GUI Scale 3 等）下按「气泡视觉顶 ≥ 屏幕顶 4px、气泡视觉左缘 ≥ 屏幕左缘 4px」约束缩小
+     * （设计偏移：气泡视觉顶距锚点 236、左缘距锚点 155），下限 0.25 防极小窗口缩到看不见。
+     */
+    private fun oakScaleFactor(): Float {
+        val oakBottom = bgBottom() - 5
+        val bgLeft = width / 2 - 128
+        val kv = (oakBottom - 4) / 236f
+        val kh = (bgLeft - 4) / 155f
+        // OAK_BASE_SCALE：原始尺寸偏大（立绘+气泡总高接近入口背景高度），设计上整体缩小
+        return (minOf(1f, kv, kh) * OAK_BASE_SCALE).coerceAtLeast(0.25f)
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -731,13 +750,19 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         }
         // 大木博士立绘：画在皮卡丘之后，跑酷经过左侧时从立绘下层穿过；
         // 底边与左下角求购单按钮底边齐平（bgBottom()-5）、视觉主体右缘贴背景左缘留 1px。
-        // 原图 80×128 左右各 16px 透明边 → uv 裁剪出 48×128 主体
+        // 原图 80×128 左右各 16px 透明边 → uv 裁剪出 48×128 主体。
+        // 立绘与气泡作为整体锚定「立绘底边+右缘」，小逻辑分辨率下按 oakScaleFactor() 整体缩放
+        val oakBottom = bgBottom() - 5
+        val oakK = oakScaleFactor()
+        context.matrices.push()
+        context.matrices.translate((width / 2 - 128 - 1).toDouble(), oakBottom.toDouble(), 0.0)
+        context.matrices.scale(oakK, oakK, 1f)
         context.drawTexture(
             Identifier.of("cobblemarket", "textures/gui/oak.png"),
-            width / 2 - 128 - 1 - 48,
-            bgBottom() - 5 - 128,
+            -48, -128,
             16f, 0f, 48, 128, 80, 128
         )
+        context.matrices.pop()
         // 大木博士知识点气泡：画在立绘之上（最顶层），持续显示；进入界面随机抽、点击立绘换下一条。
         // 贴图 140×152，文字区在图上 (13,58)~(122,121)（110×64，每行 9px）；
         // 排版超 7 行（64/9）的长句整体等比放大 k，文字随矩阵一起放大，气泡内比例不变。
@@ -758,11 +783,14 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             }
             val k = maxOf(1f, tipLines.size * 9f / 64f)
             val bgLeft = width / 2 - 128
-            val oakTop = bgBottom() - 5 - 128
-            val bubbleX = bgLeft - 1 - 48 - 4 - 139 + 30 + 4
-            val bubbleY = oakTop - 4 - 151 + 4
+            // 气泡随立绘一起整体缩放（oakK），锚点与立绘相同（立绘底边+右缘）；
+            // 设计偏移：气泡图原点距锚点 (-158, -279)（= 原 bubbleX/bubbleY 相对 bgLeft-1 / oakBottom）
+            val oakBottom = bgBottom() - 5
+            val oakK = oakScaleFactor()
             context.matrices.push()
-            context.matrices.translate(bubbleX.toDouble(), bubbleY.toDouble(), 0.0)
+            context.matrices.translate((bgLeft - 1).toDouble(), oakBottom.toDouble(), 0.0)
+            context.matrices.scale(oakK, oakK, 1f)
+            context.matrices.translate(-158.0, -279.0, 0.0)
             context.matrices.scale(k, k, 1f)
             context.drawTexture(Identifier.of("cobblemarket", "textures/gui/chat_bubble.png"), 0, 0, 0f, 0f, 140, 152, 140, 152)
             // 文字层再套字号缩放（中文 1:1，英文 0.75）
@@ -820,6 +848,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         private const val FADE_DURATION_MS = 100L
         // 知识点气泡首行缩进（2 个汉字宽 = 16px）
         private const val TIP_INDENT_PX = 16
+        // 大木博士三元素设计缩放（原始尺寸偏大，整体缩到 80%）
+        private const val OAK_BASE_SCALE = 0.8f
         // 皮卡丘跑步动画：直线一趟时长 / 每帧切换间隔 / 环绕一圈时长
         private const val PIKA_CYCLE_MS = 3000L
         private const val PIKA_FRAME_MS = 100L
