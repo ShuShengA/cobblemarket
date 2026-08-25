@@ -43,6 +43,8 @@ object CobbleMarket : ModInitializer {
 		TransactionHistory.register()
 
 		ServerLifecycleEvents.SERVER_STARTING.register { server ->
+			// 清空上一存档残留的节流保存待办（单机同进程切档会误报保存失败）
+			com.shusheng.cobblemarket.util.PersistHelper.reset()
 			// 世界加载前校验 PersistentState 数据文件：损坏则从 .bak 恢复，再制作新备份
 			com.shusheng.cobblemarket.util.StateBackup.verifyAndBackup(server)
 		}
