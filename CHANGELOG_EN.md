@@ -45,7 +45,7 @@
 - Fixed a false "CobbleMarket state save failed" error when players log out: on NeoForge, persistent state writes are asynchronous, so verifying right after saving misreported failures; verification is now delayed, and saves are skipped entirely when there is nothing unsaved
 - Fixed purchase success messages (Pokémon/items) showing amounts in green instead of the standard gold: the %d placeholders dropped the text color; they now use %s with gold-formatted amount text
 
-## 1.0.0-beta.6 (in development, unreleased)
+## 1.0.0-beta.6 (released)
 
 ### New Feature: Buy Orders
 
@@ -94,7 +94,7 @@
 
 - Fixed trade data loss when the server shuts down abnormally (killed process / crash): listed Pokémon or items could vanish — market data is now force-saved within seconds after every trade and immediately when a player disconnects, no longer relying on the autosave cycle; online OPs get a red-text alert if a save ever fails
 
-## 1.0.0-beta.5 (development complete, unreleased)
+## 1.0.0-beta.5 (released)
 
 ### New Features: Cobblemon Utility+ Support (Hyper Training)
 
