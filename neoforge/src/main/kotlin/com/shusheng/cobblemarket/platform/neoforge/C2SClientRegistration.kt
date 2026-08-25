@@ -40,7 +40,6 @@ import com.shusheng.cobblemarket.network.RequestAuctionListPayload
 import com.shusheng.cobblemarket.network.RequestBalancePayload
 import com.shusheng.cobblemarket.network.RequestBanListPayload
 import com.shusheng.cobblemarket.network.RequestBuyOrderListPayload
-import com.shusheng.cobblemarket.network.RequestEggTradingPayload
 import com.shusheng.cobblemarket.network.RequestHistoryPayload
 import com.shusheng.cobblemarket.network.RequestItemBlacklistPayload
 import com.shusheng.cobblemarket.network.RequestItemMarketPayload
@@ -52,9 +51,10 @@ import com.shusheng.cobblemarket.network.RequestPlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.network.RequestPokemonBlacklistPayload
 import com.shusheng.cobblemarket.network.RequestPokemonPriceLimitPayload
 import com.shusheng.cobblemarket.network.RequestPokemonReturnPayload
+import com.shusheng.cobblemarket.network.RequestServerConfigPayload
+import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.SellFromStoragePayload
 import com.shusheng.cobblemarket.network.SellItemPayload
-import com.shusheng.cobblemarket.network.SetEggTradingPayload
 import com.shusheng.cobblemarket.network.SetMarketEnabledPayload
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
@@ -116,7 +116,6 @@ fun registerClientC2S() {
         c2s(registrar, RequestBalancePayload.ID, RequestBalancePayload.CODEC)
         c2s(registrar, RequestBanListPayload.ID, RequestBanListPayload.CODEC)
         c2s(registrar, RequestBuyOrderListPayload.ID, RequestBuyOrderListPayload.CODEC)
-        c2s(registrar, RequestEggTradingPayload.ID, RequestEggTradingPayload.CODEC)
         c2s(registrar, RequestHistoryPayload.ID, RequestHistoryPayload.CODEC)
         c2s(registrar, RequestItemBlacklistPayload.ID, RequestItemBlacklistPayload.CODEC)
         c2s(registrar, RequestItemMarketPayload.ID, RequestItemMarketPayload.CODEC)
@@ -128,9 +127,10 @@ fun registerClientC2S() {
         c2s(registrar, RequestPokemonBlacklistPayload.ID, RequestPokemonBlacklistPayload.CODEC)
         c2s(registrar, RequestPokemonPriceLimitPayload.ID, RequestPokemonPriceLimitPayload.CODEC)
         c2s(registrar, RequestPokemonReturnPayload.ID, RequestPokemonReturnPayload.CODEC)
+        c2s(registrar, RequestServerConfigPayload.ID, RequestServerConfigPayload.CODEC)
+        c2s(registrar, SaveServerConfigPayload.ID, SaveServerConfigPayload.CODEC)
         c2s(registrar, SellFromStoragePayload.ID, SellFromStoragePayload.CODEC)
         c2s(registrar, SellItemPayload.ID, SellItemPayload.CODEC)
-        c2s(registrar, SetEggTradingPayload.ID, SetEggTradingPayload.CODEC)
         c2s(registrar, SetMarketEnabledPayload.ID, SetMarketEnabledPayload.CODEC)
     }
 }
@@ -141,7 +141,7 @@ private fun <T : CustomPayload> c2s(
     codec: PacketCodec<in PacketByteBuf, T>,
 ) {
     // 单机时服务端已注册同 id（业务 handler，HIGH），空注册跳过；专用客户端正常注册
-    if (NeoForgePlatform.markPayloadRegistered(id.id())) {
+    if (NeoForgePlatform.markPayloadRegistered(id.id(), DIR_C2S)) {
         registrar.playToServer(id, codec) { _, _ -> }
     }
 }

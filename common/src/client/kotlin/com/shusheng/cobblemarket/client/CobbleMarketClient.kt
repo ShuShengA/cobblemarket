@@ -12,7 +12,6 @@ import com.shusheng.cobblemarket.network.BuyOrderListDataPayload
 import com.shusheng.cobblemarket.network.PlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.network.AuctionWarnSoundPayload
 import com.shusheng.cobblemarket.network.BalanceDataPayload
-import com.shusheng.cobblemarket.network.EggTradingStatePayload
 import com.shusheng.cobblemarket.network.BanListDataPayload
 import com.shusheng.cobblemarket.network.HistoryDataPayload
 import com.shusheng.cobblemarket.network.ItemBlacklistDataPayload
@@ -27,6 +26,7 @@ import com.shusheng.cobblemarket.network.PokemonBlacklistDataPayload
 import com.shusheng.cobblemarket.network.PokemonPriceLimitDataPayload
 import com.shusheng.cobblemarket.network.PokemonReturnDataPayload
 import com.shusheng.cobblemarket.network.RequestBalancePayload
+import com.shusheng.cobblemarket.network.ServerConfigDataPayload
 import com.shusheng.cobblemarket.screen.AdminAuctionScreen
 import com.shusheng.cobblemarket.screen.AdminBanScreen
 import com.shusheng.cobblemarket.screen.AuctionCreateScreen
@@ -46,6 +46,7 @@ import com.shusheng.cobblemarket.screen.ItemSellScreen
 import com.shusheng.cobblemarket.screen.PokemonReturnScreen
 import com.shusheng.cobblemarket.screen.PriceLimitScreen
 import com.shusheng.cobblemarket.screen.SellSelectScreen
+import com.shusheng.cobblemarket.screen.ServerConfigScreen
 
 import com.shusheng.cobblemarket.platform.isModLoaded
 import com.shusheng.cobblemarket.platform.onClientTick
@@ -271,14 +272,7 @@ object CobbleMarketClient {
             }
         }
 
-        registerS2C(EggTradingStatePayload.ID, EggTradingStatePayload.CODEC) { payload ->
-            MinecraftClient.getInstance().execute {
-                val screen = MinecraftClient.getInstance().currentScreen
-                if (screen is AdminScreen) {
-                    screen.onEggTradingState(payload.enabled)
-                }
-            }
-        }
+        // 蛋交易状态统一走服务器配置快照（ServerConfigDataPayload）；原 egg_trading_state 通道已随管理面板开关移除
 
         registerS2C(AuctionDurationsPayload.ID, AuctionDurationsPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
@@ -314,6 +308,13 @@ object CobbleMarketClient {
                 if (screen is AdminBanScreen) {
                     screen.onBanList(payload)
                 }
+            }
+        }
+
+        registerS2C(ServerConfigDataPayload.ID, ServerConfigDataPayload.CODEC) { payload ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                ServerConfigScreen.onConfigData(payload)
             }
         }
 
@@ -438,4 +439,4 @@ private fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean 
         s is ItemMarketScreen || s is ItemSellScreen || s is ItemReturnScreen || s is PokemonReturnScreen ||
         s is BuyConfirmScreen || s is AdminScreen || s is AdminPokemonScreen || s is AdminItemScreen || s is AdminBanScreen ||
         s is BlacklistScreen || s is PriceLimitScreen || s is AuctionScreen || s is AuctionCreateScreen ||
-        s is BuyOrderScreen || s is AdminAuctionScreen
+        s is BuyOrderScreen || s is AdminAuctionScreen || s is ServerConfigScreen

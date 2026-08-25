@@ -14,7 +14,8 @@ class NineSliceButton(
     message: Text,
     onPress: PressAction,
     var textColor: Int = 0xFFFFFF,
-    private val clickSound: Identifier = Identifier.of("cobblemarket", "button_click"),
+    /** 点击音效；null = 静音（由业务逻辑按结果自行播放，如出价按钮校验失败播 fail） */
+    var clickSound: Identifier? = Identifier.of("cobblemarket", "button_click"),
     // 可选图标（默认 24×24 纹理按 iconScale 缩放居中；纯图标按钮传空 message；性别按钮运行时切换用 var）
     var iconLeft: Identifier? = null,
     // 第二图标（并排绘制，间距 1px；性别按钮不限态用 ♂♀ 双图标）
@@ -80,10 +81,12 @@ class NineSliceButton(
     }
 
     override fun playDownSound(soundManager: SoundManager) {
-        soundManager.play(PositionedSoundInstance.master(
-            SoundEvent.of(clickSound),
-            1.0f
-        ))
+        clickSound?.let {
+            soundManager.play(PositionedSoundInstance.master(
+                SoundEvent.of(it),
+                1.0f
+            ))
+        }
     }
 
     companion object {

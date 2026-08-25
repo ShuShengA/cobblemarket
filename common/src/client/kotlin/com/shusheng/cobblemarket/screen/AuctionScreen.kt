@@ -13,6 +13,8 @@ import com.shusheng.cobblemarket.network.RequestAuctionListPayload
 import com.shusheng.cobblemarket.network.RequestBalancePayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.MinecraftClient
+import net.minecraft.client.sound.PositionedSoundInstance
+import net.minecraft.sound.SoundEvent
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
@@ -78,6 +80,9 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
     private var bidEntry: AuctionEntry? = null
     private var bidField: TextFieldWidget? = null
     private var bidConfirmButton: NineSliceButton? = null
+    // 出价校验失败提示（按钮下方红字，2 秒后消失；重新输入时清除）
+    private var bidErrorText: net.minecraft.text.Text? = null
+    private var bidErrorUntil = 0L
     private var bidCancelButton: NineSliceButton? = null
     private var bidRenderable: RenderablePokemon? = null
     private val bidPreviewState = FloatingState()
@@ -752,13 +757,16 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         bidField?.setPlaceholder(Text.translatable("cobblemarket.auction.bid_placeholder").formatted(Formatting.GRAY))
         bidField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         bidField?.text = minValid.toString()
+        // 重新输入时清除校验失败提示
+        bidField?.setChangedListener { bidErrorText = null }
         addDrawableChild(bidField)
 
+        // 音效由 confirmBid 按校验结果播放（失败 fail.ogg / 成功 auction_bid 金币音效）
         bidConfirmButton = NineSliceButton(
             centerX + 10, dialogY + 132, 56, 20,
             Text.translatable("cobblemarket.auction.confirm_bid"),
             { confirmBid() },
-            clickSound = Identifier.of("cobblemarket", "auction_bid")
+            clickSound = null
         )
         addDrawableChild(bidConfirmButton)
         bidCancelButton = NineSliceButton(
@@ -909,13 +917,37 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         if (entry.currentBidderName.isNotEmpty()) {
             auctionLine("${Text.translatable("cobblemarket.auction.leader").string}: ${entry.currentBidderName}", 0xFFDD66)
         }
+
+        // 出价校验失败提示（按钮下方红字，2 秒后消失；重新输入时清除）
+        if (bidErrorText != null && System.currentTimeMillis() < bidErrorUntil) {
+            context.drawCenteredTextWithShadow(textRenderer, bidErrorText, centerX, dialogY + 158, 0xFFFFFF)
+        }
     }
 
     private fun confirmBid() {
         val entry = bidEntry ?: return
         val amount = bidField?.text?.toIntOrNull() ?: return
-        if (amount < entry.startingPrice || amount <= entry.currentPrice) return
-        if (entry.currentPrice > 0 && amount - entry.currentPrice < entry.minIncrement) return
+        val invalid = amount < entry.startingPrice || amount <= entry.currentPrice ||
+            (entry.currentPrice > 0 && amount - entry.currentPrice < entry.minIncrement)
+        if (invalid) {
+            // 无效出价：红字提示 2 秒 + fail 音效（原先是静默返回，玩家无感知）
+            bidErrorText = Text.translatable("cobblemarket.auction.bid_too_low").formatted(Formatting.RED)
+            bidErrorUntil = System.currentTimeMillis() + 2000
+            MinecraftClient.getInstance().soundManager.play(
+                PositionedSoundInstance.master(
+                    SoundEvent.of(Identifier.of("cobblemarket", "fail")),
+                    1.0f
+                )
+            )
+            return
+        }
+        // 有效出价：金币音效（照原按钮 clickSound）
+        MinecraftClient.getInstance().soundManager.play(
+            PositionedSoundInstance.master(
+                SoundEvent.of(Identifier.of("cobblemarket", "auction_bid")),
+                1.0f
+            )
+        )
         sendToServer(PlaceBidPayload(entry.id, amount))
     }
 

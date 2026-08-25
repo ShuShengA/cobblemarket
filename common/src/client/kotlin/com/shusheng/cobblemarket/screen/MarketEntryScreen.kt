@@ -40,6 +40,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsGroudonFlyButton: NineSliceButton? = null
     // 入口底部居中的市场总开关（仅 OP 可见）
     private var marketSwitchBtn: NineSliceButton? = null
+    // 入口底部市场总开关左侧的服务器配置按钮（仅 OP 可见）
+    private var serverConfigBtn: NineSliceButton? = null
     // 停市确认弹窗（照 AdminScreen 蛋交易确认弹窗：3 秒冷静期 + 红白双色文字）
     private var marketConfirmOpen = false
     private var marketConfirmOpenedAt = 0L
@@ -106,18 +108,20 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         val startY = height / 2 - totalH / 2
         btnStartY = startY
 
-        // 行 1
+        // 行 1：精灵市场按钮用小卡比兽 8 帧动画图标（100ms/帧，照皮卡丘动画帧率）
         entryButtons += addDrawableChild(TextureButton(
             leftX, startY, btnW, btnH,
             Text.translatable("cobblemarket.entry.pokemon"),
             { openIfMarketEnabled { client?.setScreen(MarketScreen()) } },
-            Identifier.of("cobblemarket", "textures/gui/pokeball_icon.png")
+            iconFrames = (0..7).map { Identifier.of("cobblemarket", "textures/gui/munchlax/munchlax_$it.png") },
+            iconTexSize = 48,
+            iconDisplaySize = 18
         ))
         entryButtons += addDrawableChild(TextureButton(
             rightX, startY, btnW, btnH,
             Text.translatable("cobblemarket.entry.item"),
             { openIfMarketEnabled { openItemMarket() } },
-            Identifier.of("cobblemarket", "textures/gui/item_icon.png")
+            Identifier.of("cobblemarket", "textures/gui/pokeball_icon.png")
         ))
         // 行 2
         entryButtons += addDrawableChild(TextureButton(
@@ -174,6 +178,22 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         )
         settingsBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.settings")))
         entryButtons += addDrawableChild(settingsBtn)
+
+        // 服务器配置（仅 OP 可见）：市场总开关右侧同尺寸按钮，关市时照常可进（OP 管理能力）
+        if (isAdmin) {
+            serverConfigBtn = NineSliceButton(
+                centerX + cornerSize / 2 + 4, cornerY,
+                cornerSize, cornerSize,
+                Text.literal(""),
+                { openIfMarketEnabled(opBypass = true) { client?.setScreen(ServerConfigScreen()) } },
+                iconLeft = Identifier.of("cobblemarket", "textures/gui/server_config_icon.png"),
+                iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+                texture = ROW_BACKGROUND_TEXTURE,
+                texH = ROW_BACKGROUND_TEX_H
+            )
+            serverConfigBtn?.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.server_config")))
+            entryButtons += addDrawableChild(serverConfigBtn!!)
+        }
 
         // 市场总开关（仅 OP 可见）：紧急停市/恢复，与求购单/设置按钮同尺寸，居底
         if (isAdmin) {
