@@ -34,6 +34,16 @@ object PersistHelper {
         lastTradeAt = System.currentTimeMillis()
     }
 
+    /**
+     * 服务器停止/新世界启动时清空全部待办：PersistHelper 是进程级静态，单机切换存档
+     * （同一进程）时未到期的节流保存会残留到新世界，用旧世界状态对比新世界文件导致误报「保存失败」。
+     * 数据本身由 MC 关服保存保证落盘，无需补救。
+     */
+    fun reset() {
+        pendingSave = false
+        lastTradeAt = 0L
+    }
+
     /** 玩家断开后调用（延迟一 tick，确保 MC 已完成该玩家数据的保存）：立即保存模组状态 */
     fun onPlayerDisconnect(server: MinecraftServer) {
         server.execute { saveModStates(server) }
@@ -52,6 +62,10 @@ object PersistHelper {
 
     /** 立即保存模组状态（玩家数据由 MC 在断开时已保存，这里只追模组，窗口 0 防蒸发） */
     private fun saveModStates(server: MinecraftServer) {
+        // 无未落盘变更时跳过：状态已与玩家数据一致；此时 save() 因无脏数据不写文件，
+        // mtime 验证会把「无需保存」误报为保存失败（玩家只是路过退出也会刷屏告警）
+        if (!pendingSave) return
+        pendingSave = false
         StateBackup.backupAll(server)
         val before = stateFileMtimes(server)
         server.overworld.persistentStateManager.save()
