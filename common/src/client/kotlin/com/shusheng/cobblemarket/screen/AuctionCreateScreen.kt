@@ -268,9 +268,24 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         init()
     }
 
-    private fun rebuild() { clearChildren(); init() }
+    private fun rebuild(keepInputs: Boolean = true) {
+        // 闪光/属性/特训/tab 切换的重建会清空搜索词与 IV 输入：默认保存恢复；
+        // 重置按钮走 rebuild(keepInputs = false) 显式清空
+        val savedSearch = searchField?.text ?: ""
+        val savedIv = arrayOf(
+            hpF?.text ?: "", atkF?.text ?: "", defF?.text ?: "",
+            spaF?.text ?: "", spdF?.text ?: "", speF?.text ?: ""
+        )
+        clearChildren()
+        init()
+        if (keepInputs) {
+            searchField?.text = savedSearch
+            val fields = arrayOf(hpF, atkF, defF, spaF, spdF, speF)
+            savedIv.forEachIndexed { i, t -> fields[i]?.text = t }
+        }
+    }
 
-    // 重置全部筛选条件（搜索框/IV 输入框由 rebuild 重建自然清空）
+    // 重置全部筛选条件（输入框由 rebuild(keepInputs=false) 显式清空）
     private fun resetFilters() {
         shinyOnly = false
         typeFilter = ""
@@ -278,7 +293,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         minIvs.fill(-1)
         htFilter = 0
         scrollOffset = 0
-        rebuild()
+        rebuild(keepInputs = false)
     }
 
     fun onPokemonList(payload: MyPokemonListPayload) {

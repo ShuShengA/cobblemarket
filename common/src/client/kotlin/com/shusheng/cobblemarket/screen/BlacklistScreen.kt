@@ -140,6 +140,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         addDrawableChild(itemTabButton)
         updateTabButtons()
 
+        val savedSearch = searchField?.text ?: ""
         searchField = TextFieldWidget(textRenderer, leftX + 2, 62, panelWidth - 4 - 84 - 20, 16, Text.translatable("cobblemarket.gui.search"))
         updateSearchPlaceholder()
         // 搜索变化时重建行按钮：否则过滤后残留旧列表的删除按钮（与价格限制同款问题）
@@ -151,6 +152,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
+        searchField?.text = savedSearch
 
         val addBtn = NineSliceButton(
             leftX + panelWidth - 84, 62, 18, 16,

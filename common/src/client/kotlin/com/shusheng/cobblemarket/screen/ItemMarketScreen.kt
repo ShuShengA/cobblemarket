@@ -101,6 +101,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         addDrawableChild(backButton)
 
         // 搜索框
+        val savedSearch = searchField?.text ?: ""
         searchField = TextFieldWidget(textRenderer, leftX + 2, 44, 132, 16, Text.translatable("cobblemarket.item.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.item.search").formatted(Formatting.GRAY))
         // 服务端搜索：文字变化只标记 dirty，tick 防抖后回到第一页重新拉取（与精灵市场一致）
@@ -110,6 +111,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
+        searchField?.text = savedSearch
 
         // 上架按钮（+）
         sellAddButton = NineSliceButton(

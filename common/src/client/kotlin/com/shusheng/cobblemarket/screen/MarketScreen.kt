@@ -670,11 +670,23 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     }
 
     private fun toggleFilters() {
+        // clearChildren+init 重建会清空输入框（搜索词/IV 值丢失，玩家无法继续筛选）：
+        // 重建前保存、重建后恢复（照 resize 的 oldSearch/oldIv 处理）
+        val oldSearch = searchField?.text ?: ""
+        val oldIv = if (filterExpanded) arrayOf(
+            hpField?.text ?: "", atkField?.text ?: "", defField?.text ?: "",
+            spaField?.text ?: "", spdField?.text ?: "", speField?.text ?: ""
+        ) else emptyArray()
         filterExpanded = !filterExpanded
         applyFilterVisibility()
         // Rebuild the screen to correctly show/hide filter controls
         clearChildren()
         init()
+        searchField?.text = oldSearch
+        if (filterExpanded) {
+            val fields = arrayOf(hpField, atkField, defField, spaField, spdField, speField)
+            oldIv.forEachIndexed { i, t -> fields[i]?.text = t }
+        }
         if (client != null) rebuildBuyButtons()
     }
 

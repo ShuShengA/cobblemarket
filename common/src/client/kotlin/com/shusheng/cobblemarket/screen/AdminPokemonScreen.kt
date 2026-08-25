@@ -117,6 +117,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         ))
 
         // 物种搜索框 + 折叠
+        val savedSearch = searchField?.text ?: ""
+        val savedSeller = sellerField?.text ?: ""
         searchField = TextFieldWidget(textRenderer, leftX + 2, 44, panelWidth - 4 - 52, 16, Text.translatable("cobblemarket.gui.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.gui.search_placeholder").formatted(Formatting.GRAY))
         // 服务端搜索：文字变化只标记 dirty，tick 防抖后回到第一页重新拉取（与精灵市场一致）
@@ -126,6 +128,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
+        searchField?.text = savedSearch
 
         filterToggleButton = NineSliceButton(
             leftX + panelWidth - 52, 44, 50, 16,
@@ -143,6 +146,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         }
         addSelectableChild(sellerField)
         addDrawableChild(sellerField)
+        sellerField?.text = savedSeller
 
         if (filterExpanded) {
             hpField = createIvField(leftX + 4, 88, "HP")

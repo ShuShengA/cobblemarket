@@ -236,6 +236,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         backButton = backBtn
         addDrawableChild(backBtn)
 
+        val savedSearch = searchField?.text ?: ""
         searchField = net.minecraft.client.gui.widget.TextFieldWidget(
             textRenderer, leftX + 2, 44, panelWidth - 4, 16, Text.translatable("cobblemarket.gui.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.auction.search_placeholder").formatted(Formatting.GRAY))
@@ -243,6 +244,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         searchField?.setChangedListener { rebuildFiltered() }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
+        searchField?.text = savedSearch
 
         sendToServer(RequestAuctionListPayload())
         rebuildFiltered()

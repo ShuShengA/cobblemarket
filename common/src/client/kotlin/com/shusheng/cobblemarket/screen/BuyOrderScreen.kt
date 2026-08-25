@@ -349,6 +349,7 @@ class BuyOrderScreen(
         }
 
         // 搜索框（y=48；与行区域同宽，避开背景左右边框；本地过滤——列表全量下发，照拍卖场模式）
+        val savedSearch = searchField?.text ?: ""
         searchField = TextFieldWidget(textRenderer, rowLeftX(), 48, rowW(), 16, Text.translatable("cobblemarket.gui.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.search").formatted(Formatting.GRAY))
         // 本地过滤无网络请求，无需防抖；搜索变化重置滚动并重建行按钮
@@ -360,6 +361,7 @@ class BuyOrderScreen(
         }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
+        searchField?.text = savedSearch
 
         // 不重置 scrollOffset：交付弹窗关闭/resize 重建时保留浏览位置（switchTab 才显式归零）
         sendToServer(RequestBuyOrderListPayload())

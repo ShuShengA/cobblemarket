@@ -99,6 +99,8 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         )
         addDrawableChild(backButton)
 
+        val savedSearch = searchField?.text ?: ""
+        val savedSeller = sellerField?.text ?: ""
         searchField = TextFieldWidget(textRenderer, leftX + 2, 44, 132, 16, Text.translatable("cobblemarket.item.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.item.search").formatted(Formatting.GRAY))
         // 服务端搜索：文字变化只标记 dirty，tick 防抖后回到第一页重新拉取（与精灵市场一致）
@@ -108,6 +110,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
+        searchField?.text = savedSearch
 
         sortButton = NineSliceButton(
             leftX + panelWidth - 88, 44, 86, 16,
@@ -131,6 +134,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         }
         addSelectableChild(sellerField)
         addDrawableChild(sellerField)
+        sellerField?.text = savedSeller
 
         // 分页（照精灵市场：底部分割线在网格最后一行下方 4px 对称，按钮在其与背景底边之间居中偏上 5px）
         val gridBottom = getGridStartY() + rows() * (slotSize + gap)
