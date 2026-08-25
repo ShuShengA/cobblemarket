@@ -67,6 +67,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         backButton = backBtn
         addDrawableChild(backBtn)
 
+        val savedName = nameField?.text ?: ""
         nameField = TextFieldWidget(textRenderer, leftX + 2, 44, 120, 16, Text.literal(""))
         nameField?.setPlaceholder(Text.translatable("cobblemarket.ban.player_name"))
         // 防抖 250ms 后请求联想（服务端节流 500ms，连续输入只发最终态）
@@ -81,6 +82,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         }
         addSelectableChild(nameField)
         addDrawableChild(nameField)
+        nameField?.text = savedName
 
         durationField = TextFieldWidget(textRenderer, leftX + 126, 44, 90, 16, Text.literal(""))
         durationField?.setPlaceholder(Text.translatable("cobblemarket.ban.duration"))
