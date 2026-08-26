@@ -48,7 +48,9 @@ class MarketState private constructor() : PersistentState() {
         // 特性/性格精确匹配（翻译 key，extraData 原值比较）
         ability: String? = null,
         nature: String? = null,
-        minIvs: Map<String, Int> = emptyMap(),
+        ivExact: Map<String, Int> = emptyMap(),
+        // IV 比较方式（key 同 ivExact）：0 = 等于，1 = 大于等于，2 = 小于等于
+        ivOps: Map<String, Int> = emptyMap(),
         sellerUuid: UUID? = null,
         sellerName: String? = null,
         // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
@@ -71,14 +73,20 @@ class MarketState private constructor() : PersistentState() {
         // 特性精确匹配（翻译 key）；性格按生效性格匹配（薄荷改成该性格也算）
         ability?.let { a -> results = results.filter { it.extraData["ability"] == a } }
         nature?.let { n -> results = results.filter { it.extraData["nature"] == n } }
-        minIvs.forEach { (statName, value) ->
+        ivExact.forEach { (statName, value) ->
             // 按有效值匹配：特训项（ht 值 >= 0）用特训值，未特训用真实值——
-            // 原生 31 与训练 31 搜 31 都应命中
+            // 原生 31 与训练 31 搜 31 都应命中。比较方式按 ivOps（默认等于）
+            val op = ivOps[statName] ?: 0
             val htName = statName.replace("ivs", "ht")
             results = results.filter {
                 val real = it.extraData[statName]?.toIntOrNull() ?: 0
                 val ht = it.extraData[htName]?.toIntOrNull() ?: -1
-                (if (ht >= 0) ht else real) == value
+                val eff = if (ht >= 0) ht else real
+                when (op) {
+                    1 -> eff >= value
+                    2 -> eff <= value
+                    else -> eff == value
+                }
             }
         }
         sellerUuid?.let { u -> results = results.filter { it.sellerUuid == u } }
