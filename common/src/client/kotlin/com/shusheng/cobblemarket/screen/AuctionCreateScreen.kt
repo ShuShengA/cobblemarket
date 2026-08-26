@@ -534,7 +534,10 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     }
 
     private fun confirmCreate() {
-        val starting = startingField?.text?.toIntOrNull() ?: return
+        val starting = startingField?.text?.toIntOrNull() ?: run {
+            playFailSound()
+            return
+        }
         if (starting <= 0) { playFailSound(); return }
         val increment = incrementField?.text?.toIntOrNull() ?: 0 // 0 = 用服务器默认
         if (increment < 0) { playFailSound(); return }
@@ -544,7 +547,10 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         if (pokemon != null) {
             sendToServer(CreatePokemonAuctionPayload(pokemon.uuid, starting, increment, durationIndexToSend))
         } else if (item != null) {
-            val count = countField?.text?.toIntOrNull() ?: return
+            val count = countField?.text?.toIntOrNull() ?: run {
+                playFailSound()
+                return
+            }
             if (count <= 0 || count > item.count) { playFailSound(); return }
             val registry = client?.world?.registryManager ?: return
             val itemId = Registries.ITEM.getId(item.stack.item).toString()

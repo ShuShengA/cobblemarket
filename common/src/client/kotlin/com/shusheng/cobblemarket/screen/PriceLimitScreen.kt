@@ -122,7 +122,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private val iconData = mutableMapOf<Int, IconData>()
     private val iconSize = 20
 
-    private fun getListStartY() = 80
+    private fun getListStartY() = 86
     private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 48) / rowHeight)
 
     // ── 通用文本 ──
@@ -832,7 +832,10 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     private fun confirmItemAdd() {
         // 先检查物品输入（空输入直接返回，不置价格提示），再校验价格
-        val input = addField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        val input = addField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: run {
+            playFailSound()
+            return
+        }
         val prices = validatePrices() ?: return
         val selected = matchedItems.getOrNull(selectedItemIndex)
         sendToServer(AddItemPriceLimitPayload(

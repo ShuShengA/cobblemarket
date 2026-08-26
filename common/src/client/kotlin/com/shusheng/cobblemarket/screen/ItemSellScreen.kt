@@ -1,5 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.playFailSound
+
 import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.SellItemPayload
 import com.shusheng.cobblemarket.platform.sendToServer
@@ -181,9 +183,18 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
 
     private fun confirmSell() {
         val entry = selectedItem ?: return
-        val count = countField?.text?.toIntOrNull() ?: return
-        val price = priceField?.text?.toIntOrNull() ?: return
-        if (count <= 0 || count > entry.count || price <= 0) return
+        val count = countField?.text?.toIntOrNull() ?: run {
+            playFailSound()
+            return
+        }
+        val price = priceField?.text?.toIntOrNull() ?: run {
+            playFailSound()
+            return
+        }
+        if (count <= 0 || count > entry.count || price <= 0) {
+            playFailSound()
+            return
+        }
         val registry = client?.world?.registryManager ?: return
         val itemId = Registries.ITEM.getId(entry.stack.item).toString()
         val itemNbt = entry.stack.encode(registry, NbtCompound()) as? NbtCompound ?: NbtCompound()
