@@ -51,6 +51,8 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
     private fun pageItems(): List<PokemonPreview> = pokemon.take(maxOf(0, maxVisible()))
 
     private fun requestData() {
+        lastListRequestAt = System.currentTimeMillis()
+        pendingPage = 0 // 非翻页路径（领取后刷新、拍卖结算等）取消未发出的翻页目标
         val size = minOf(maxVisible(), 30).coerceAtLeast(1)
         sendToServer(RequestPokemonReturnPayload(currentPage, size))
     }
@@ -59,11 +61,48 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
     fun onAuctionSettled() {
         requestData()
     }
+
+    // 翻页请求在途标志：响应到达前不重复发请求
+    private var pageRequestInFlight = false
+
+    // 最近一次列表请求发送时间：补发节奏与服务端节流窗口（request_pokemon_return 500ms）对齐，
+    // 窗口内不发——请求若被服务端静默丢弃则无响应，inFlight 会永久卡死按钮
+    private var lastListRequestAt = 0L
+
+    // 待翻页目标：点击立即更新页码并把目标页记到这里，tick 在窗口允许时补发请求。
+    // 连点合并到最终目标页（中间页不发），点击永远有立即反馈，且请求永不撞节流窗口
+    private var pendingPage = 0
+
+    private fun updatePageButtons() {
+        prevButton?.active = currentPage > 1
+        nextButton?.active = currentPage < totalPages
+    }
+
+    // 兜底 + 补发：1s 未收到响应强制复位 inFlight（防锁灰）；窗口允许且无在途时补发翻页目标
+    override fun tick() {
+        if (pageRequestInFlight && System.currentTimeMillis() - lastListRequestAt > 1000) {
+            pageRequestInFlight = false
+        }
+        if (!pageRequestInFlight && pendingPage != 0 && System.currentTimeMillis() - lastListRequestAt >= PAGE_CLICK_INTERVAL_MS) {
+            currentPage = pendingPage.coerceIn(1, maxOf(1, totalPages))
+            pendingPage = 0
+            pageRequestInFlight = true
+            updatePageButtons()
+            requestData()
+        }
+    }
+
     private fun prevPage() {
-        if (currentPage > 1) { currentPage--; requestData() }
+        if (currentPage <= 1) return
+        currentPage--
+        pendingPage = currentPage
+        updatePageButtons()
     }
     private fun nextPage() {
-        if (currentPage < totalPages) { currentPage++; requestData() }
+        if (currentPage >= totalPages) return
+        currentPage++
+        pendingPage = currentPage
+        updatePageButtons()
     }
 
     // 物种显示名缓存：species 字段是翻译 key，客户端本地翻译（随客户端语言），
@@ -114,6 +153,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
         val btnY = (listBottom + 5 + (height - 32)) / 2 - 10 - 5
         prevButton = NineSliceButton(leftX, btnY, 80, 20, Text.translatable("cobblemarket.gui.prev"), { prevPage() })
         addDrawableChild(prevButton)
+        updatePageButtons()
         claimButton = NineSliceButton(width / 2 - 50, btnY, 100, 20, Text.translatable("cobblemarket.return.claim"), { claimAll() })
         addDrawableChild(claimButton)
         nextButton = NineSliceButton(leftX + panelWidth - 80, btnY, 80, 20, Text.translatable("cobblemarket.gui.next"), { nextPage() })
@@ -128,9 +168,12 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
     }
 
     fun onReturnData(payload: PokemonReturnDataPayload) {
+        pageRequestInFlight = false
         pokemon = payload.pokemon
         totalPages = payload.totalPages
-        currentPage = payload.currentPage
+        // 有未发出的翻页目标时保留乐观页码（tick 稍后补发），避免页码回跳
+        if (pendingPage == 0) currentPage = payload.currentPage
+        updatePageButtons()
         loaded = true
         tooltipCacheKey = null
         buildIconCache()
@@ -390,5 +433,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
         val SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
+        /** 翻页点击最小间隔：与服务端 request_pokemon_return 节流窗口一致，保证请求不被静默丢弃 */
+        const val PAGE_CLICK_INTERVAL_MS = 500L
     }
 }

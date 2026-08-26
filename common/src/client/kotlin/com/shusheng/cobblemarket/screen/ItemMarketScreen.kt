@@ -148,6 +148,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         addDrawableChild(prevButton)
         nextButton = NineSliceButton(leftX + panelWidth - 80, btnY, 80, 20, Text.translatable("cobblemarket.gui.next"), { nextPage() })
         addDrawableChild(nextButton)
+        updatePageButtons()
 
         refreshData()
     }
@@ -157,6 +158,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     }
 
     private fun refreshData() {
+        lastListRequestAt = System.currentTimeMillis()
+        pendingPage = 0 // 非翻页路径（搜索/排序/购买后刷新）取消未发出的翻页目标
         val query = searchField?.text?.trim() ?: ""
         sendToServer(
             RequestItemMarketPayload(
@@ -169,6 +172,18 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     // 防抖计时器（照精灵市场）：250ms 静默后统一发请求
     override fun tick() {
+        // 兜底：翻页请求 1s 未收到响应（如服务端节流静默丢弃）强制复位 inFlight，防止按钮永久锁灰
+        if (pageRequestInFlight && System.currentTimeMillis() - lastListRequestAt > 1000) {
+            pageRequestInFlight = false
+        }
+        // 目标页码补发：窗口允许且无在途时发出请求（连点合并到最终目标页）
+        if (!pageRequestInFlight && pendingPage != 0 && System.currentTimeMillis() - lastListRequestAt >= PAGE_CLICK_INTERVAL_MS) {
+            currentPage = pendingPage.coerceIn(1, maxOf(1, totalPages))
+            pendingPage = 0
+            pageRequestInFlight = true
+            updatePageButtons()
+            refreshData()
+        }
         if (searchDirty && System.currentTimeMillis() - lastSearchEdit >= 250) {
             searchDirty = false
             currentPage = 1
@@ -183,8 +198,11 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     fun onItemMarketData(payload: ItemMarketDataPayload) {
         entries = payload.entries
         totalPages = payload.totalPages
-        currentPage = payload.currentPage
+        // 有未发出的翻页目标时保留乐观页码（tick 稍后补发），避免页码回跳
+        if (pendingPage == 0) currentPage = payload.currentPage
         pendingBalance = payload.pendingBalance
+        pageRequestInFlight = false
+        updatePageButtons()
         rebuildEntryStacks()
     }
 
@@ -216,18 +234,39 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         refreshData()
     }
 
+    // 翻页请求在途标志：响应到达前不重复发请求
+    private var pageRequestInFlight = false
+
+    // 最近一次列表请求发送时间：补发节奏与服务端节流窗口（request_item_market 500ms）对齐，
+    // 窗口内不发——请求若被服务端静默丢弃则无响应，inFlight 会永久卡死按钮
+    private var lastListRequestAt = 0L
+
+    // 待翻页目标：点击立即更新页码并把目标页记到这里，tick 在窗口允许时补发请求。
+    // 连点合并到最终目标页（中间页不发），点击永远有立即反馈，且请求永不撞节流窗口
+    private var pendingPage = 0
+
+    private fun updatePageButtons() {
+        prevButton?.active = currentPage > 1
+        nextButton?.active = currentPage < totalPages
+    }
+
     private fun prevPage() {
-        if (currentPage > 1) {
-            currentPage--
-            refreshData()
-        }
+        if (currentPage <= 1) return
+        currentPage--
+        pendingPage = currentPage
+        updatePageButtons()
     }
 
     private fun nextPage() {
-        if (currentPage < totalPages) {
-            currentPage++
-            refreshData()
-        }
+        if (currentPage >= totalPages) return
+        currentPage++
+        pendingPage = currentPage
+        updatePageButtons()
+    }
+
+    private companion object {
+        /** 补发请求最小间隔：与服务端 request_item_market 节流窗口一致，保证请求不被静默丢弃 */
+        const val PAGE_CLICK_INTERVAL_MS = 500L
     }
 
     private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int, sliceH: Int = 16) {
@@ -576,7 +615,10 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     private fun confirmBuy() {
         val entry = selectedEntry ?: return
-        val count = buyCountField?.text?.toIntOrNull() ?: return
+        val count = buyCountField?.text?.toIntOrNull() ?: run {
+            playFailSound()
+            return
+        }
         if (count <= 0 || count > entry.count) {
             // 无效数量：红字提示 2 秒 + fail 音效（原先静默返回，玩家无感知）
             buyErrorText = Text.translatable("cobblemarket.item.buy_too_many").formatted(Formatting.RED)
