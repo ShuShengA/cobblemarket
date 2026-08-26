@@ -109,12 +109,14 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             { client?.setScreen(MarketScreen()) }
         ))
 
+        // 按钮放在底部分割线（listBottom+4）与背景底边（height-32）之间居中（照精灵市场分页按钮布局）
         val listBottom = getListStartY() + maxVisible() * rowHeight
-        prevButton = NineSliceButton(leftX, listBottom, 80, 20, Text.translatable("cobblemarket.gui.prev"), { prevPage() })
+        val btnY = (listBottom + 5 + (height - 32)) / 2 - 10 - 5
+        prevButton = NineSliceButton(leftX, btnY, 80, 20, Text.translatable("cobblemarket.gui.prev"), { prevPage() })
         addDrawableChild(prevButton)
-        claimButton = NineSliceButton(width / 2 - 50, listBottom, 100, 20, Text.translatable("cobblemarket.return.claim"), { claimAll() })
+        claimButton = NineSliceButton(width / 2 - 50, btnY, 100, 20, Text.translatable("cobblemarket.return.claim"), { claimAll() })
         addDrawableChild(claimButton)
-        nextButton = NineSliceButton(leftX + panelWidth - 80, listBottom, 80, 20, Text.translatable("cobblemarket.gui.next"), { nextPage() })
+        nextButton = NineSliceButton(leftX + panelWidth - 80, btnY, 80, 20, Text.translatable("cobblemarket.gui.next"), { nextPage() })
         addDrawableChild(nextButton)
 
         requestData()
@@ -212,6 +214,9 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
 
         val dividerY = 44
         context.fill(leftX, dividerY, leftX + panelWidth, dividerY + 1, 0xFF555555.toInt())
+        // 底部分割线：列表最后一行下方 4px（照精灵市场分页布局），按钮在其与背景底边之间居中
+        val listBottom = getListStartY() + maxVisible() * rowHeight
+        context.fill(leftX, listBottom + 4, leftX + panelWidth, listBottom + 5, 0xFF555555.toInt())
 
         if (pokemon.isEmpty() && loaded) {
             context.drawCenteredTextWithShadow(textRenderer,

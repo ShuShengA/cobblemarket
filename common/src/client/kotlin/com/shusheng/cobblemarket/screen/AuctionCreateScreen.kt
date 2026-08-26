@@ -1,5 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.playFailSound
+
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
@@ -58,7 +60,10 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private var shinyOnly = false
     private var typeFilter = ""
     private var typeIdx = 0
-    private val minIvs = IntArray(6) { -1 }
+    private val ivExact = IntArray(6) { -1 }
+    // IV 比较方式：0 = 等于（默认），1 = 大于等于，2 = 小于等于
+    private val ivOps = IntArray(6)
+    private val ivOpButtons = mutableMapOf<Int, NineSliceButton>()
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
     private var htFilter = 0
     private var htButton: NineSliceButton? = null
@@ -202,14 +207,32 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
             // Row 2 (y=70): IV fields（照搬 SellSelectScreen）
             fun mkIv(x: Int, ph: String): TextFieldWidget {
-                val f = TextFieldWidget(textRenderer, x, 70, 46, 16, Text.literal(""))
+                val f = TextFieldWidget(textRenderer, x, 70, 28, 16, Text.literal(""))
                 f.setPlaceholder(Text.literal(ph))
                 f.setTextPredicate { it.length <= 2 && it.all { c -> c.isDigit() } }
                 addSelectableChild(f); addDrawableChild(f)
                 return f
             }
-            hpF = mkIv(leftX + 2, "HP"); atkF = mkIv(leftX + 51, "ATK"); defF = mkIv(leftX + 100, "DEF")
-            spaF = mkIv(leftX + 149, "SpA"); spdF = mkIv(leftX + 198, "SpD"); speF = mkIv(leftX + 247, "Spd")
+            hpF = mkIv(leftX + 2, "HP"); atkF = mkIv(leftX + 49, "ATK"); defF = mkIv(leftX + 96, "DEF")
+            spaF = mkIv(leftX + 143, "SpA"); spdF = mkIv(leftX + 190, "SpD"); speF = mkIv(leftX + 237, "Spd")
+
+            // 三态比较按钮（= / ≥ / ≤ 循环，默认 = 与旧行为一致；非默认金色高亮；贴自己框成组）
+            ivOpButtons.clear()
+            for (i in 0..5) {
+                val bx = leftX + 2 + i * 47 + 29
+                val btn = NineSliceButton(
+                    bx, 70, 14, 16,
+                    Text.literal(if (ivOps[i] == 1) "≥" else if (ivOps[i] == 2) "≤" else "="),
+                    {
+                        ivOps[i] = (ivOps[i] + 1) % 3
+                        syncIvOpButtons()
+                        rebuildFiltered()
+                    },
+                    textColor = if (ivOps[i] != 0) GOLD_COLOR else 0xFFFFFF
+                )
+                ivOpButtons[i] = btn
+                addDrawableChild(btn)
+            }
 
             // Row 3 (y=90): 闪光 + 类型筛选（照搬 SellSelectScreen，无价格/卖出按钮）
             val btnY = 90
@@ -268,6 +291,20 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         init()
     }
 
+    /** IV 比较匹配：0 = 等于，1 = 大于等于，2 = 小于等于 */
+    private fun ivMatch(op: Int, eff: Int, value: Int): Boolean = when (op) {
+        1 -> eff >= value
+        2 -> eff <= value
+        else -> eff == value
+    }
+
+    private fun syncIvOpButtons() {
+        ivOpButtons.forEach { (i, btn) ->
+            btn.message = Text.literal(if (ivOps[i] == 1) "≥" else if (ivOps[i] == 2) "≤" else "=")
+            btn.textColor = if (ivOps[i] != 0) GOLD_COLOR else 0xFFFFFF
+        }
+    }
+
     private fun rebuild(keepInputs: Boolean = true) {
         // 闪光/属性/特训/tab 切换的重建会清空搜索词与 IV 输入：默认保存恢复；
         // 重置按钮走 rebuild(keepInputs = false) 显式清空
@@ -290,7 +327,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         shinyOnly = false
         typeFilter = ""
         typeIdx = 0
-        minIvs.fill(-1)
+        ivExact.fill(-1)
+        for (i in 0..5) ivOps[i] = 0
         htFilter = 0
         scrollOffset = 0
         rebuild(keepInputs = false)
@@ -335,6 +373,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         searchField?.visible = false
         hpF?.visible = false; atkF?.visible = false; defF?.visible = false
         spaF?.visible = false; spdF?.visible = false; speF?.visible = false
+        ivOpButtons.values.forEach { it.visible = false }
         shinyButton?.visible = false
         typeButton?.visible = false
         htButton?.visible = false
@@ -496,9 +535,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     private fun confirmCreate() {
         val starting = startingField?.text?.toIntOrNull() ?: return
-        if (starting <= 0) return
+        if (starting <= 0) { playFailSound(); return }
         val increment = incrementField?.text?.toIntOrNull() ?: 0 // 0 = 用服务器默认
-        if (increment < 0) return
+        if (increment < 0) { playFailSound(); return }
         val durationIndexToSend = durationIndex
         val pokemon = dialogPokemon
         val item = dialogItem
@@ -506,7 +545,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             sendToServer(CreatePokemonAuctionPayload(pokemon.uuid, starting, increment, durationIndexToSend))
         } else if (item != null) {
             val count = countField?.text?.toIntOrNull() ?: return
-            if (count <= 0 || count > item.count) return
+            if (count <= 0 || count > item.count) { playFailSound(); return }
             val registry = client?.world?.registryManager ?: return
             val itemId = Registries.ITEM.getId(item.stack.item).toString()
             val itemNbt = item.stack.encode(registry, NbtCompound()) as? NbtCompound ?: NbtCompound()
@@ -549,12 +588,12 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             (!shinyOnly || p.shiny) &&
             (typeFilter.isEmpty() || p.primaryType == typeFilter || p.secondaryType == typeFilter) &&
             // IV 按有效值匹配：特训项用特训值，未特训用真实值（原生 31 与训练 31 都命中）
-            (minIvs[0] < 0 || (if (p.htHp >= 0) p.htHp else p.ivsHp) == minIvs[0]) &&
-            (minIvs[1] < 0 || (if (p.htAtk >= 0) p.htAtk else p.ivsAtk) == minIvs[1]) &&
-            (minIvs[2] < 0 || (if (p.htDef >= 0) p.htDef else p.ivsDef) == minIvs[2]) &&
-            (minIvs[3] < 0 || (if (p.htSpAtk >= 0) p.htSpAtk else p.ivsSpAtk) == minIvs[3]) &&
-            (minIvs[4] < 0 || (if (p.htSpDef >= 0) p.htSpDef else p.ivsSpDef) == minIvs[4]) &&
-            (minIvs[5] < 0 || (if (p.htSpd >= 0) p.htSpd else p.ivsSpd) == minIvs[5]) &&
+            (ivExact[0] < 0 || ivMatch(ivOps[0], if (p.htHp >= 0) p.htHp else p.ivsHp, ivExact[0])) &&
+            (ivExact[1] < 0 || ivMatch(ivOps[1], if (p.htAtk >= 0) p.htAtk else p.ivsAtk, ivExact[1])) &&
+            (ivExact[2] < 0 || ivMatch(ivOps[2], if (p.htDef >= 0) p.htDef else p.ivsDef, ivExact[2])) &&
+            (ivExact[3] < 0 || ivMatch(ivOps[3], if (p.htSpAtk >= 0) p.htSpAtk else p.ivsSpAtk, ivExact[3])) &&
+            (ivExact[4] < 0 || ivMatch(ivOps[4], if (p.htSpDef >= 0) p.htSpDef else p.ivsSpDef, ivExact[4])) &&
+            (ivExact[5] < 0 || ivMatch(ivOps[5], if (p.htSpd >= 0) p.htSpd else p.ivsSpd, ivExact[5])) &&
             // 特训筛选三态
             when (htFilter) {
                 1 -> p.htHp >= 0 || p.htAtk >= 0 || p.htDef >= 0 || p.htSpAtk >= 0 || p.htSpDef >= 0 || p.htSpd >= 0
@@ -580,7 +619,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         }
     }
 
-    /** IV 输入框 → minIvs 同步；返回是否有变化（变化时调用方重建过滤缓存） */
+    /** IV 输入框 → ivExact 同步；返回是否有变化（变化时调用方重建过滤缓存） */
     private fun syncIvFields(): Boolean {
         val fields = arrayOf(hpF, atkF, defF, spaF, spdF, speF)
         var changed = false
@@ -589,8 +628,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             val digits = raw.filter { it.isDigit() }.take(2)
             val v = digits.toIntOrNull()?.coerceIn(0, 31) ?: -1
             if (digits != raw) fields[i]?.text = if (v < 0) "" else v.toString()
-            if (minIvs[i] != v) changed = true
-            minIvs[i] = v
+            if (ivExact[i] != v) changed = true
+            ivExact[i] = v
         }
         return changed
     }

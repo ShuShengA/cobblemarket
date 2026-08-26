@@ -74,12 +74,14 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
             { client?.setScreen(ItemMarketScreen()) }
         ))
 
+        // 按钮放在底部分割线（gridBottom+4）与背景底边（height-32）之间居中（照物品市场分页按钮布局）
         val gridBottom = getGridStartY() + rows() * (slotSize + gap)
-        prevButton = NineSliceButton(leftX, gridBottom, 80, 20, Text.translatable("cobblemarket.gui.prev"), { prevPage() })
+        val btnY = (gridBottom + 5 + (height - 32)) / 2 - 10 - 5
+        prevButton = NineSliceButton(leftX, btnY, 80, 20, Text.translatable("cobblemarket.gui.prev"), { prevPage() })
         addDrawableChild(prevButton)
-        claimButton = NineSliceButton(width / 2 - 50, gridBottom, 100, 20, Text.translatable("cobblemarket.return.claim"), { claimAll() })
+        claimButton = NineSliceButton(width / 2 - 50, btnY, 100, 20, Text.translatable("cobblemarket.return.claim"), { claimAll() })
         addDrawableChild(claimButton)
-        nextButton = NineSliceButton(leftX + panelWidth - 80, gridBottom, 80, 20, Text.translatable("cobblemarket.gui.next"), { nextPage() })
+        nextButton = NineSliceButton(leftX + panelWidth - 80, btnY, 80, 20, Text.translatable("cobblemarket.gui.next"), { nextPage() })
         addDrawableChild(nextButton)
 
         requestData()
@@ -162,6 +164,9 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
 
         val dividerY = 44
         context.fill(leftX, dividerY, leftX + panelWidth, dividerY + 1, 0xFF555555.toInt())
+        // 底部分割线：网格最后一行下方 4px（照物品市场分页布局），按钮在其与背景底边之间居中
+        val gridBottom = getGridStartY() + rows() * (slotSize + gap)
+        context.fill(leftX, gridBottom + 4, leftX + panelWidth, gridBottom + 5, 0xFF555555.toInt())
 
         if (items.isEmpty() && loaded) {
             context.drawCenteredTextWithShadow(textRenderer,

@@ -38,7 +38,10 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private var showMineOnly = false
     private var filterExpanded = false
     private var sortMode = "NEWEST"
-    private val minIvs = IntArray(6) { -1 }
+    private val ivExact = IntArray(6) { -1 }
+    // IV 比较方式：0 = 等于（默认），1 = 大于等于，2 = 小于等于
+    private val ivOps = IntArray(6)
+    private val ivOpButtons = mutableMapOf<Int, NineSliceButton>()
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
     private var htFilter = 0
     private var htButton: NineSliceButton? = null
@@ -157,6 +160,13 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             spdField = createIvField(leftX + 100, 112, "SpD")
             speField = createIvField(leftX + 196, 112, "Spd")
 
+            // 三态比较按钮（= / ≥ / ≤ 循环，默认 = 与旧行为一致；非默认金色高亮）
+            ivOpButtons.clear()
+            listOf(0 to (leftX + 4), 1 to (leftX + 100), 2 to (leftX + 196)).forEach { (i, bx) ->
+                addIvOpButton(bx + 69, 88, i)
+                addIvOpButton(bx + 69, 112, i + 3)
+            }
+
             shinyButton = NineSliceButton(
                 leftX + 4, 136, 30, 20,
                 Text.literal(if (shinyOnly) "★" else "☆"),
@@ -209,8 +219,32 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         refreshData()
     }
 
+    /** IV 三态比较按钮：= → ≥ → ≤ 循环；切换立即重发筛选请求（过滤条件变了） */
+    private fun addIvOpButton(x: Int, y: Int, index: Int) {
+        val btn = NineSliceButton(
+            x, y, 20, 16,
+            Text.literal(if (ivOps[index] == 1) "≥" else if (ivOps[index] == 2) "≤" else "="),
+            {
+                ivOps[index] = (ivOps[index] + 1) % 3
+                syncIvOpButtons()
+                currentPage = 1
+                refreshData()
+            },
+            textColor = if (ivOps[index] != 0) GOLD_COLOR else 0xFFFFFF
+        )
+        ivOpButtons[index] = btn
+        addDrawableChild(btn)
+    }
+
+    private fun syncIvOpButtons() {
+        ivOpButtons.forEach { (i, btn) ->
+            btn.message = Text.literal(if (ivOps[i] == 1) "≥" else if (ivOps[i] == 2) "≤" else "=")
+            btn.textColor = if (ivOps[i] != 0) GOLD_COLOR else 0xFFFFFF
+        }
+    }
+
     private fun createIvField(x: Int, y: Int, placeholder: String): TextFieldWidget {
-        val field = TextFieldWidget(textRenderer, x, y, 92, 16, Text.literal(""))
+        val field = TextFieldWidget(textRenderer, x, y, 68, 16, Text.literal(""))
         field.setPlaceholder(Text.literal(placeholder))
         field.setTextPredicate { it.length <= 2 && it.all { c -> c.isDigit() } }
         addSelectableChild(field)
@@ -297,7 +331,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         htFilter = 0
         sortMode = "NEWEST"
         currentPage = 1
-        for (i in 0..5) minIvs[i] = -1
+        for (i in 0..5) { ivExact[i] = -1; ivOps[i] = 0 }
+        syncIvOpButtons()
         hpField?.text = ""; atkField?.text = ""; defField?.text = ""
         spaField?.text = ""; spdField?.text = ""; speField?.text = ""
         shinyButton.message = Text.literal("☆")
@@ -342,8 +377,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             val digits = raw.filter { it.isDigit() }.take(2)
             val iv = if (digits.isEmpty()) -1 else digits.toIntOrNull()?.coerceIn(0, 31) ?: -1
             if (digits != raw) fields[i]?.text = if (iv <= 0) "" else iv.toString()
-            if (minIvs[i] != iv) changed = true
-            minIvs[i] = iv
+            if (ivExact[i] != iv) changed = true
+            ivExact[i] = iv
         }
         return changed
     }
@@ -357,12 +392,18 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 shinyOnly = shinyOnly,
                 sortMode = sortMode,
                 page = currentPage,
-                minIvsHp = minIvs[0],
-                minIvsAtk = minIvs[1],
-                minIvsDef = minIvs[2],
-                minIvsSpAtk = minIvs[3],
-                minIvsSpDef = minIvs[4],
-                minIvsSpd = minIvs[5],
+                ivExactHp = ivExact[0],
+                ivExactAtk = ivExact[1],
+                ivExactDef = ivExact[2],
+                ivExactSpAtk = ivExact[3],
+                ivExactSpDef = ivExact[4],
+                ivExactSpd = ivExact[5],
+                ivOpHp = ivOps[0],
+                ivOpAtk = ivOps[1],
+                ivOpDef = ivOps[2],
+                ivOpSpAtk = ivOps[3],
+                ivOpSpDef = ivOps[4],
+                ivOpSpd = ivOps[5],
                 pageSize = getMaxVisibleRows(),
                 mineOnly = showMineOnly,
                 htFilter = htFilter

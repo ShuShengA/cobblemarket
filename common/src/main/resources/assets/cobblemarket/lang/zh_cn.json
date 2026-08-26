@@ -62,6 +62,7 @@
   "cobblemarket.item.buy_title": "购买物品",
   "cobblemarket.item.buy_count": "购买数量",
   "cobblemarket.item.buy_total": "总价",
+  "cobblemarket.item.buy_too_many": "购买数量超过库存",
   "cobblemarket.entry.history": "交易历史",
   "cobblemarket.entry.all_history": "全部交易历史",
   "cobblemarket.entry.op": "仅OP",

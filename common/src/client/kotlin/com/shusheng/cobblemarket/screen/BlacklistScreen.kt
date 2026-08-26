@@ -1,5 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.playFailSound
+
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
@@ -628,7 +630,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     }
 
     private fun confirmAddAll() {
-        if (matchedItems.isEmpty()) return
+        if (matchedItems.isEmpty()) {
+            playFailSound()
+            return
+        }
         sendToServer(com.shusheng.cobblemarket.network.AddItemsBlacklistPayload(matchedItems))
         closeDialog()
     }

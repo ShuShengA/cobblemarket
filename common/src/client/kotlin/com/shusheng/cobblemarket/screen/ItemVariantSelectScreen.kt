@@ -62,10 +62,11 @@ class ItemVariantSelectScreen(
             { client?.setScreen(BuyOrderScreen()) }
         ))
         // 确认交付按钮（照 SellSelectScreen 交付模式）：选中一行后激活；
-        // 按钮下方还要放滚动指示文字（照历史界面 y=height-49），按钮底留到 height-60
-        // → y = height-60-20 = height-80
+        // 按钮放在底部分割线（列表底+4）与 height-60（滚动指示文字上方）之间垂直居中
+        val listBottom = 36 + visibleRows() * 26
+        val btnY = (listBottom + 5 + (height - 60)) / 2 - 10 - 5
         confirmButton = NineSliceButton(
-            width / 2 - 42, height - 80, 84, 20,
+            width / 2 - 42, btnY, 84, 20,
             Text.translatable("cobblemarket.buy_order.variant_confirm"),
             { confirmSelection() }
         )
@@ -122,6 +123,9 @@ class ItemVariantSelectScreen(
         val startY = 36
         // 列表顶部分割线（照物品市场：网格上方 4px 处，颜色一致）
         context.fill(lx, startY - 2, lx + 296, startY - 1, 0xFF555555.toInt())
+        // 底部分割线：列表最后一行下方 4px（照精灵市场分页布局），按钮在其与 height-60 之间居中
+        val listBottom = 36 + visibleRows() * 26
+        context.fill(lx, listBottom + 4, lx + 296, listBottom + 5, 0xFF555555.toInt())
         val rowH = 26
 
         // 列表区：顶部 startY 到底部确认按钮上方 4px；形态组多时滚轮翻动，行与固定按钮永不重叠
@@ -169,9 +173,9 @@ class ItemVariantSelectScreen(
         }
     }
 
-    /** 可见行数：列表区底 = 确认按钮顶（height-80）上方 4px */
+    /** 可见行数：列表区底收到 height-104，下方留给分割线+居中按钮+滚动指示（照精灵市场分页布局） */
     private fun visibleRows(): Int {
-        val listBottom = height - 80 - 4
+        val listBottom = height - 104
         return maxOf(0, (listBottom - 36) / 26)
     }
 

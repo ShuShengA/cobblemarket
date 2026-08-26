@@ -24,10 +24,11 @@ import java.io.File
 object PersistHelper {
 
     private const val SAVE_COOLDOWN_MS = 3000L
-    /** neoforge 的 PersistentState.save 走 IO worker 异步写盘，验证须延迟到写盘完成后 */
-    private const val VERIFY_DELAY_MS = 1000L
-    private const val VERIFY_RETRY_MS = 2000L
-    private const val VERIFY_MAX_ATTEMPTS = 3
+    /** neoforge 的 SavedData.save 走 IOUtilities.withIOWorker 异步写盘，验证须延迟到写盘完成后 */
+    private const val VERIFY_DELAY_MS = 2000L
+    /** 重试间隔基数：每次翻倍（4s→8s→16s，总窗口 2+4+8+16=30s）——IO worker 队列积压时写盘可能滞后数秒 */
+    private const val VERIFY_RETRY_BASE_MS = 2000L
+    private const val VERIFY_MAX_ATTEMPTS = 4
 
     private var pendingSave = false
     private var lastTradeAt = 0L
@@ -102,9 +103,9 @@ object PersistHelper {
         if (pendingVerifyAt <= 0 || now < pendingVerifyAt) return
         val changed = stateFileMtimes(server).any { (name, mtime) -> mtime != pendingVerifyBefore[name] }
         if (!changed && verifyAttempts < VERIFY_MAX_ATTEMPTS) {
-            // 写盘可能仍在进行（异步 IO），延长重试
+            // 写盘可能仍在进行（IO worker 队列积压），重试间隔翻倍
             verifyAttempts++
-            pendingVerifyAt = now + VERIFY_RETRY_MS
+            pendingVerifyAt = now + (VERIFY_RETRY_BASE_MS shl verifyAttempts)
             return
         }
         pendingVerifyAt = 0

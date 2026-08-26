@@ -1,5 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.playFailSound
+
 import com.mojang.blaze3d.systems.RenderSystem
 import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.client.MarketStateCache
@@ -68,6 +70,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         if (com.shusheng.cobblemarket.client.MarketStateCache.enabled || (opBypass && isOp)) {
             open()
         } else {
+            // 关市拦截：3 秒提示 + fail 音效（玩家点交易入口的即时反馈）
+            com.shusheng.cobblemarket.client.playFailSound()
             closedNoticeUntil = System.currentTimeMillis() + 3000
         }
     }
@@ -806,23 +810,19 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             }
             context.matrices.pop()
         }
-        // 市场关闭：常驻红字横幅 + 点击入口时的 3 秒提示（OP 两者都不显示——
-        // 开关按钮的双态图标就是 OP 自己的状态指示，横幅对 OP 是冗余噪音）
+        // 市场关闭：常驻红字横幅 + 点击入口时的 3 秒提示（OP 同样显示——服主也需要直观看到当前状态）
         if (!com.shusheng.cobblemarket.client.MarketStateCache.enabled) {
-            val isOp = client?.player?.hasPermissionLevel(2) == true
-            if (!isOp) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.market.closed_banner").string,
+                width / 2, btnStartY - 14, 0xFF5555
+            )
+            if (System.currentTimeMillis() < closedNoticeUntil) {
                 context.drawCenteredTextWithShadow(
                     textRenderer,
-                    Text.translatable("cobblemarket.market.closed_banner").string,
-                    width / 2, btnStartY - 14, 0xFF5555
+                    Text.translatable("cobblemarket.market.closed").string,
+                    width / 2, height - 36, 0xFF5555
                 )
-                if (System.currentTimeMillis() < closedNoticeUntil) {
-                    context.drawCenteredTextWithShadow(
-                        textRenderer,
-                        Text.translatable("cobblemarket.market.closed").string,
-                        width / 2, height - 36, 0xFF5555
-                    )
-                }
             }
         }
         // 余额（标题下方，来自全局缓存）

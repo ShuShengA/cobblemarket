@@ -429,6 +429,16 @@ object CobbleMarketClient {
     }
 }
 
+/** 客户端本地校验失败音效（弹窗输入非法、关市拦截等场景共用） */
+fun playFailSound() {
+    MinecraftClient.getInstance().soundManager.play(
+        PositionedSoundInstance.master(
+            SoundEvent.of(Identifier.of("cobblemarket", "fail")),
+            1.0f
+        )
+    )
+}
+
 /**
  * 支持按 E 返回游戏的本模组界面白名单。
  * 新增界面要支持 E 键关闭 = 在这里补一行（别把白名单散回 tick 里）。

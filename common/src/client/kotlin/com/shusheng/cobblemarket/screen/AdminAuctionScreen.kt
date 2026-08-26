@@ -269,6 +269,11 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 // 弹窗同步最新数据（与拍卖场一致，弹窗内价格不过期）
                 if (cancelEntry?.id == e.id) cancelEntry = e
             }
+            "CANCELLED" -> payload.entry?.let { e ->
+                // 强制下架：立即从列表移除（不播落槌动画），settlingUntil 清理防残留
+                entries = entries.filterNot { it.id == e.id }
+                settlingUntil.remove(e.id)
+            }
             "SETTLED" -> payload.entry?.let { e ->
                 // 延迟 1.5 秒移除（照搬拍卖场：显示「结算中」+ 落槌图标敲击动画）
                 settlingUntil[e.id] = System.currentTimeMillis() + 1500
@@ -307,7 +312,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             }
         }
         val centerX = width / 2
-        val dialogY = height / 2 - 95
+        val dialogY = height / 2 - 110
 
         // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染，照搬出价弹窗）
         addDrawable(object : Drawable {
@@ -316,14 +321,16 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             }
         })
 
+        // 按钮右移 10px（-60→-50、+4→+14）：给左列信息区（王冠 IV 行等长文字）腾空间，
+        // 英文下左列行宽更大，原位置会压到按钮；右列竞拍信息在 y 28~100 不冲突
         cancelConfirmButton = NineSliceButton(
-            centerX - 60, dialogY + 148, 56, 20,
+            centerX - 50, dialogY + 190, 56, 20,
             Text.translatable("cobblemarket.auction.force_cancel"),
             { confirmCancel() }
         )
         addDrawableChild(cancelConfirmButton)
         cancelCancelButton = NineSliceButton(
-            centerX + 4, dialogY + 148, 56, 20,
+            centerX + 14, dialogY + 190, 56, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeCancelDialog() }
         )
@@ -709,7 +716,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         val entry = cancelEntry ?: return
         val centerX = width / 2
         val dialogW = 280
-        val dialogH = 190
+        val dialogH = 220
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
@@ -836,12 +843,13 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             auctionLine("${Text.translatable("cobblemarket.auction.leader").string}: ${entry.currentBidderName}", 0xFFDD66)
         }
         // 提示两排放按钮上方居中，避开左右两列信息
+        // 灰字与按钮组中心对齐（按钮右移 10px 后中心在 centerX+10）
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.auction.force_cancel_confirm_1").formatted(Formatting.GRAY),
-            centerX, dialogY + 120, 0xFFFFFF)
+            centerX + 10, dialogY + 166, 0xFFFFFF)
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.auction.force_cancel_confirm_2").formatted(Formatting.GRAY),
-            centerX, dialogY + 130, 0xFFFFFF)
+            centerX + 10, dialogY + 176, 0xFFFFFF)
     }
 
     // ── 交互 ──
