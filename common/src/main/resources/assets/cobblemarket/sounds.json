@@ -31,6 +31,14 @@
       }
     ]
   },
+  "fail": {
+    "sounds": [
+      {
+        "name": "cobblemarket:fail",
+        "stream": false
+      }
+    ]
+  },
   "auction_bid": {
     "sounds": [
       {

@@ -119,7 +119,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private val iconData = mutableMapOf<Int, IconData>()
     private val iconSize = 20
 
-    private fun getListStartY() = 80
+    private fun getListStartY() = 86
     private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 48) / rowHeight)
 
     override fun init() {
@@ -380,7 +380,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     }
 
     private fun confirmPokemonAdd() {
-        val input = addField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        val input = addField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: run {
+            playFailSound()
+            return
+        }
         // 优先发送客户端本地解析出的物种 ID（中文输入在客户端解析）；
         // 服务端只有英文环境，发原文会导致中文名解析失败被静默丢弃
         val speciesInput = previewSpecies?.resourceIdentifier?.toString() ?: input
@@ -667,7 +670,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     }
 
     private fun confirmItemAdd() {
-        val input = addField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        val input = addField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: run {
+            playFailSound()
+            return
+        }
         // 优先发送用户点选的物品 ID；未点选时回退到自动解析（唯一匹配/原文）
         val selected = matchedItems.getOrNull(selectedItemIndex)
         sendToServer(AddItemBlacklistPayload(selected ?: resolveMatchingItems(input).firstOrNull() ?: input))
