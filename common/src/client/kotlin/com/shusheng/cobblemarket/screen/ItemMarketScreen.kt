@@ -1,5 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.playFailSound
+
 import com.shusheng.cobblemarket.network.BuyItemPayload
 import com.shusheng.cobblemarket.network.CancelItemPayload
 import com.shusheng.cobblemarket.network.CollectBalancePayload
@@ -61,6 +63,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     private var selectedEntry: ItemEntry? = null
     private var buyCountField: TextFieldWidget? = null
+    // 购买数量校验失败提示（按钮上方红字，2 秒后消失；重新输入时清除）
+    private var buyErrorText: net.minecraft.text.Text? = null
+    private var buyErrorUntil = 0L
     private var cancelEntry: ItemEntry? = null
 
     private fun columns() = (panelWidth + gap) / (slotSize + gap)
@@ -439,6 +444,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         buyCountField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 72, 100, 16, Text.literal(""))
         buyCountField?.setPlaceholder(Text.translatable("cobblemarket.item.buy_count"))
         buyCountField?.setTextPredicate { it.length <= 4 && it.all { c -> c.isDigit() } }
+        // 重新输入时清除校验失败提示
+        buyCountField?.setChangedListener { buyErrorText = null }
         addDrawableChild(buyCountField)
 
         addDrawableChild(NineSliceButton(
@@ -570,7 +577,18 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private fun confirmBuy() {
         val entry = selectedEntry ?: return
         val count = buyCountField?.text?.toIntOrNull() ?: return
-        if (count <= 0 || count > entry.count) return
+        if (count <= 0 || count > entry.count) {
+            // 无效数量：红字提示 2 秒 + fail 音效（原先静默返回，玩家无感知）
+            buyErrorText = Text.translatable("cobblemarket.item.buy_too_many").formatted(Formatting.RED)
+            buyErrorUntil = System.currentTimeMillis() + 2000
+            MinecraftClient.getInstance().soundManager.play(
+                PositionedSoundInstance.master(
+                    SoundEvent.of(Identifier.of("cobblemarket", "fail")),
+                    1.0f
+                )
+            )
+            return
+        }
         sendToServer(BuyItemPayload(entry.id, count))
         closeBuyDialog()
     }
@@ -594,6 +612,11 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.buy_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
+
+        // 购买数量校验失败提示（按钮上方红字，2 秒后消失）
+        if (buyErrorText != null && System.currentTimeMillis() < buyErrorUntil) {
+            context.drawCenteredTextWithShadow(textRenderer, buyErrorText, centerX, dialogY + 108, 0xFFFFFF)
+        }
 
         val registry = client?.world?.registryManager
         if (registry != null) {

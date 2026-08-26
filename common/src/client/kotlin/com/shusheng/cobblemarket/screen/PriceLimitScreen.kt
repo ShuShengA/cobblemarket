@@ -1,5 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.playFailSound
+
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
@@ -792,16 +794,18 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     private fun parsePrice(text: String?): Int? = text?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
 
-    /** 本地校验价格合法性；通过返回 (min, max)，失败置 dialogError 并返回 null */
+    /** 本地校验价格合法性；通过返回 (min, max)，失败置 dialogError + fail 音效并返回 null */
     private fun validatePrices(): Pair<Int?, Int?>? {
         val min = parsePrice(minField?.text)
         val max = parsePrice(maxField?.text)
         if (min == null && max == null) {
             dialogError = Text.translatable("cobblemarket.price_limit.need_one").string
+            playFailSound()
             return null
         }
         if (min != null && max != null && min > max) {
             dialogError = Text.translatable("cobblemarket.price_limit.invalid_range").string
+            playFailSound()
             return null
         }
         return min to max

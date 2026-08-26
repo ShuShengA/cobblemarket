@@ -715,7 +715,8 @@ object AuctionNetwork {
                             .formatted(Formatting.RED)
                     )
                 }
-                broadcastEvent(server, "SETTLED", auctionToEntry(auction))
+                // 强制下架用 CANCELLED 事件：客户端立即移除，不播 1.5 秒落槌动画（管理操作要干脆）
+                broadcastEvent(server, "CANCELLED", auctionToEntry(auction))
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.auction.force_cancelled")))

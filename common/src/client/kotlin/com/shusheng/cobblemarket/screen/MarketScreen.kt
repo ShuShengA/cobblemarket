@@ -267,8 +267,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
         // 三态比较按钮（= / ≥ / ≤ 循环，默认 = 与旧行为一致；非默认金色高亮）
         listOf(0 to (leftX + 4), 1 to (leftX + 100), 2 to (leftX + 196)).forEach { (i, bx) ->
-            addIvOpButton(bx + 70, 90, i)
-            addIvOpButton(bx + 70, 114, i + 3)
+            addIvOpButton(bx + 69, 90, i)
+            addIvOpButton(bx + 69, 114, i + 3)
         }
 
         // Row 5 (y=138): Shiny(符号) + Sort + HT + Mine + Reset

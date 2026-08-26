@@ -265,6 +265,13 @@ data class AdminRequestPokemonPayload(
     val ivExactSpAtk: Int,
     val ivExactSpDef: Int,
     val ivExactSpd: Int,
+    // IV 比较方式：0 = 等于（默认），1 = 大于等于，2 = 小于等于
+    val ivOpHp: Int,
+    val ivOpAtk: Int,
+    val ivOpDef: Int,
+    val ivOpSpAtk: Int,
+    val ivOpSpDef: Int,
+    val ivOpSpd: Int,
     val pageSize: Int,
     val mineOnly: Boolean,
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
@@ -276,28 +283,50 @@ data class AdminRequestPokemonPayload(
         val ID = CustomPayload.Id<AdminRequestPokemonPayload>(CobbleMarket.id("admin_request_pokemon"))
         val CODEC: PacketCodec<PacketByteBuf, AdminRequestPokemonPayload> = PacketCodec.of(
             { p, b ->
-                b.writeString(p.speciesFilter); b.writeString(p.sellerFilter); b.writeBoolean(p.shinyOnly); b.writeString(
-                p.sortMode
-            ); b.writeInt(p.page); b.writeInt(p.ivExactHp); b.writeInt(p.ivExactAtk); b.writeInt(p.ivExactDef); b.writeInt(
-                p.ivExactSpAtk
-            ); b.writeInt(p.ivExactSpDef); b.writeInt(p.ivExactSpd); b.writeInt(p.pageSize); b.writeBoolean(p.mineOnly); b.writeInt(p.htFilter)
+                b.writeString(p.speciesFilter)
+                b.writeString(p.sellerFilter)
+                b.writeBoolean(p.shinyOnly)
+                b.writeString(p.sortMode)
+                b.writeInt(p.page)
+                b.writeInt(p.ivExactHp)
+                b.writeInt(p.ivExactAtk)
+                b.writeInt(p.ivExactDef)
+                b.writeInt(p.ivExactSpAtk)
+                b.writeInt(p.ivExactSpDef)
+                b.writeInt(p.ivExactSpd)
+                b.writeInt(p.ivOpHp)
+                b.writeInt(p.ivOpAtk)
+                b.writeInt(p.ivOpDef)
+                b.writeInt(p.ivOpSpAtk)
+                b.writeInt(p.ivOpSpDef)
+                b.writeInt(p.ivOpSpd)
+                b.writeInt(p.pageSize)
+                b.writeBoolean(p.mineOnly)
+                b.writeInt(p.htFilter)
             },
+            // 读端用具名参数，读写字段顺序必须一致
             { b ->
                 AdminRequestPokemonPayload(
-                    b.readString(),
-                    b.readString(),
-                    b.readBoolean(),
-                    b.readString(),
-                    b.readInt(),
-                    b.readInt(),
-                    b.readInt(),
-                    b.readInt(),
-                    b.readInt(),
-                    b.readInt(),
-                    b.readInt(),
-                    b.readInt(),
-                    b.readBoolean(),
-                    b.readInt()
+                    speciesFilter = b.readString(),
+                    sellerFilter = b.readString(),
+                    shinyOnly = b.readBoolean(),
+                    sortMode = b.readString(),
+                    page = b.readInt(),
+                    ivExactHp = b.readInt(),
+                    ivExactAtk = b.readInt(),
+                    ivExactDef = b.readInt(),
+                    ivExactSpAtk = b.readInt(),
+                    ivExactSpDef = b.readInt(),
+                    ivExactSpd = b.readInt(),
+                    ivOpHp = b.readInt(),
+                    ivOpAtk = b.readInt(),
+                    ivOpDef = b.readInt(),
+                    ivOpSpAtk = b.readInt(),
+                    ivOpSpDef = b.readInt(),
+                    ivOpSpd = b.readInt(),
+                    pageSize = b.readInt(),
+                    mineOnly = b.readBoolean(),
+                    htFilter = b.readInt()
                 )
             }
         )
@@ -1268,6 +1297,14 @@ object MarketNetwork {
                         if (payload.ivExactSpAtk >= 0) put("ivsSpAtk", payload.ivExactSpAtk)
                         if (payload.ivExactSpDef >= 0) put("ivsSpDef", payload.ivExactSpDef)
                         if (payload.ivExactSpd >= 0) put("ivsSpd", payload.ivExactSpd)
+                    },
+                    ivOps = buildMap {
+                        if (payload.ivExactHp >= 0) put("ivsHp", payload.ivOpHp.coerceIn(0, 2))
+                        if (payload.ivExactAtk >= 0) put("ivsAtk", payload.ivOpAtk.coerceIn(0, 2))
+                        if (payload.ivExactDef >= 0) put("ivsDef", payload.ivOpDef.coerceIn(0, 2))
+                        if (payload.ivExactSpAtk >= 0) put("ivsSpAtk", payload.ivOpSpAtk.coerceIn(0, 2))
+                        if (payload.ivExactSpDef >= 0) put("ivsSpDef", payload.ivOpSpDef.coerceIn(0, 2))
+                        if (payload.ivExactSpd >= 0) put("ivsSpd", payload.ivOpSpd.coerceIn(0, 2))
                     },
                     sellerUuid = if (payload.mineOnly) player.uuid else null,
                     sellerName = payload.sellerFilter.ifBlank { null },

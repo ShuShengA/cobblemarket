@@ -18,8 +18,13 @@ object TextUtil {
 
     // IV 显示：极限特训过（hyper trained）时显示「真实值（特训值）」，未特训只显示真实值。
     // 用于市场/拍卖/上架等界面的个体值展示，与 Cobblemon 队伍详情格式一致。
-    fun ivText(real: Int, hyperTrained: Int): String =
-        if (hyperTrained >= 0) "$real（$hyperTrained）" else "$real"
+    // 括号按语言：中文全角（排版惯例），英文半角（全角括号在英文里占 16px，强制下架弹窗左列
+    // IV 行会压到下架按钮）
+    fun ivText(real: Int, hyperTrained: Int): String {
+        if (hyperTrained < 0) return "$real"
+        val zh = MinecraftClient.getInstance().options.language.startsWith("zh")
+        return if (zh) "$real（$hyperTrained）" else "$real($hyperTrained)"
+    }
 
     // 选中标记文本：黑色 ●（按钮底色为白色，白色 ● 对比度不足）+ 白色标签。
     // 供 tab 按钮与展开列表的选中项使用。

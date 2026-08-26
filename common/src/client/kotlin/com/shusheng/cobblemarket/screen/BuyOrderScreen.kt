@@ -1,5 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.playFailSound
+
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
@@ -1273,6 +1275,7 @@ class BuyOrderScreen(
         if (minPrice < 1 || maxPrice < minPrice) {
             resultMsg = Text.translatable("cobblemarket.buy_order.invalid_price").string
             resultUntil = System.currentTimeMillis() + 3000
+            playFailSound()
             return
         }
         if (createTab == 0) {
@@ -1851,7 +1854,8 @@ class BuyOrderScreen(
             EntryBadgeRenderer.drawInfoLines(
                 context, listing,
                 EntryBadgeRenderer.nameWithShinyStar(name, pending.shiny),
-                centerX, dialogY + 22
+                // +26：标题基线在 +14（字底约 +15），起点 +22 时名字行与标题几乎贴合，留 4px 间隙
+                centerX, dialogY + 26
             )
         } else {
             // 物品行：图标 + 名称 + 数量整体居中（照交付弹窗形态行格式）；

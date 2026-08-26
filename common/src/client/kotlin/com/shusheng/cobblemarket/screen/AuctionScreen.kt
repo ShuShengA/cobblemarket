@@ -1,5 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.playFailSound
+
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
@@ -533,6 +535,11 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
             "SETTLED" -> payload.entry?.let { e ->
                 // 延迟移除：保留 1.5 秒显示「结算中」+ 落槌动画，期间出价按钮不生成
                 settlingUntil[e.id] = System.currentTimeMillis() + 1500
+            }
+            "CANCELLED" -> payload.entry?.let { e ->
+                // 强制下架：立即从列表移除（不播落槌动画），settlingUntil 清理防残留
+                entries = entries.filterNot { it.id == e.id }
+                settlingUntil.remove(e.id)
             }
         }
         rebuildFiltered()
