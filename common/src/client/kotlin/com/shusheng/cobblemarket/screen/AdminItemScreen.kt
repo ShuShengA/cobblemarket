@@ -59,8 +59,32 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     // 保证窗口高度为任意值时翻页按钮都不会遮住面板底部边框
     private fun rows() = maxOf(0, (height - getGridStartY() - 72) / (slotSize + gap))
 
-    private fun prevPage() { if (currentPage > 1) { currentPage--; refreshData() } }
-    private fun nextPage() { if (currentPage < totalPages) { currentPage++; refreshData() } }
+    // 翻页请求在途标志：响应到达前禁用翻页按钮，防止快速连点
+    private var pageRequestInFlight = false
+
+    // 最近一次列表请求发送时间：仅用于 tick 兜底超时复位（管理端请求服务端无节流）
+    private var lastListRequestAt = 0L
+
+    private fun updatePageButtons() {
+        prevButton?.active = !pageRequestInFlight && currentPage > 1
+        nextButton?.active = !pageRequestInFlight && currentPage < totalPages
+    }
+
+    private fun prevPage() {
+        if (pageRequestInFlight || currentPage <= 1) return
+        pageRequestInFlight = true
+        updatePageButtons()
+        currentPage--
+        refreshData()
+    }
+
+    private fun nextPage() {
+        if (pageRequestInFlight || currentPage >= totalPages) return
+        pageRequestInFlight = true
+        updatePageButtons()
+        currentPage++
+        refreshData()
+    }
 
 
     private fun sortDisplay(): String = when (sortMode) {
@@ -141,6 +165,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         val btnY = (gridBottom + 5 + (height - 32)) / 2 - 10 - 5
         prevButton = NineSliceButton(leftX, btnY, 80, 20, Text.translatable("cobblemarket.gui.prev"), { prevPage() })
         addDrawableChild(prevButton)
+        updatePageButtons()
         nextButton = NineSliceButton(leftX + panelWidth - 80, btnY, 80, 20, Text.translatable("cobblemarket.gui.next"), { nextPage() })
         addDrawableChild(nextButton)
 
@@ -148,6 +173,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     }
 
     private fun refreshData() {
+        lastListRequestAt = System.currentTimeMillis()
         val query = searchField?.text?.trim() ?: ""
         sendToServer(
             AdminRequestItemPayload(
@@ -164,6 +190,11 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
 
     // 防抖计时器（照精灵市场）：250ms 静默后统一发请求
     override fun tick() {
+        // 兜底：翻页请求 1s 未收到响应强制复位 inFlight，防止按钮永久锁灰
+        if (pageRequestInFlight && System.currentTimeMillis() - lastListRequestAt > 1000) {
+            pageRequestInFlight = false
+            updatePageButtons()
+        }
         if (searchDirty && System.currentTimeMillis() - lastSearchEdit >= 250) {
             searchDirty = false
             currentPage = 1
@@ -172,6 +203,8 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     }
 
     fun onItemMarketData(payload: ItemMarketDataPayload) {
+        pageRequestInFlight = false
+        updatePageButtons()
         entries = payload.entries
         totalPages = payload.totalPages
         currentPage = payload.currentPage

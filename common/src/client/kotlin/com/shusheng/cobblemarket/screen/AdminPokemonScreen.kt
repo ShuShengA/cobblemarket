@@ -214,6 +214,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         addDrawableChild(prevButton)
         nextButton = NineSliceButton(leftX + panelWidth - 80, btnY, 80, 20, Text.translatable("cobblemarket.gui.next"), { nextPage() })
         addDrawableChild(nextButton)
+        updatePageButtons()
 
         rebuildCancelButtons()
         refreshData()
@@ -366,8 +367,32 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         lastSearchEdit = System.currentTimeMillis()
     }
 
-    private fun prevPage() { if (currentPage > 1) { currentPage--; refreshData() } }
-    private fun nextPage() { if (currentPage < totalPages) { currentPage++; refreshData() } }
+    // 翻页请求在途标志：响应到达前禁用翻页按钮，防止快速连点
+    private var pageRequestInFlight = false
+
+    // 最近一次列表请求发送时间：仅用于 tick 兜底超时复位（管理端请求服务端无节流）
+    private var lastListRequestAt = 0L
+
+    private fun updatePageButtons() {
+        prevButton?.active = !pageRequestInFlight && currentPage > 1
+        nextButton?.active = !pageRequestInFlight && currentPage < totalPages
+    }
+
+    private fun prevPage() {
+        if (pageRequestInFlight || currentPage <= 1) return
+        pageRequestInFlight = true
+        updatePageButtons()
+        currentPage--
+        refreshData()
+    }
+
+    private fun nextPage() {
+        if (pageRequestInFlight || currentPage >= totalPages) return
+        pageRequestInFlight = true
+        updatePageButtons()
+        currentPage++
+        refreshData()
+    }
 
     private fun syncIvFromFields(): Boolean {
         val fields = arrayOf(hpField, atkField, defField, spaField, spdField, speField)
@@ -384,6 +409,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     }
 
     private fun refreshData() {
+        lastListRequestAt = System.currentTimeMillis()
         sendToServer(
             AdminRequestPokemonPayload(
                 // 中文物种名在客户端转成资源路径 id（照精灵市场），服务端只存英文资源名
@@ -413,6 +439,11 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
 
     // 防抖计时器（照精灵市场）：250ms 静默后统一发请求
     override fun tick() {
+        // 兜底：翻页请求 1s 未收到响应强制复位 inFlight，防止按钮永久锁灰
+        if (pageRequestInFlight && System.currentTimeMillis() - lastListRequestAt > 1000) {
+            pageRequestInFlight = false
+            updatePageButtons()
+        }
         if (searchDirty && System.currentTimeMillis() - lastSearchEdit >= 250) {
             searchDirty = false
             currentPage = 1
@@ -421,6 +452,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     }
 
     fun onMarketData(payload: MarketDataPayload) {
+        pageRequestInFlight = false
+        updatePageButtons()
         listings = payload.entries
         totalPages = payload.totalPages
         currentPage = payload.currentPage
