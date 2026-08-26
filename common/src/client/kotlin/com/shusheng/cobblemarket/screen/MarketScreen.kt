@@ -48,7 +48,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var typeFilterIndex = 0
     private var abilityFilter = ""   // 特性翻译 key（空 = 不限）
     private var natureFilter = ""    // 性格翻译 key（空 = 不限；按生效性格匹配，不分薄荷）
-    private val minIvs = IntArray(6) { -1 }
+    private val ivExact = IntArray(6) { -1 }
+    // IV 比较方式：0 = 等于（默认），1 = 大于等于，2 = 小于等于
+    private val ivOps = IntArray(6)
+    // IV 序号 → 按钮（创建顺序与 IV 序号不一致，按 index 映射避免状态同步错位）
+    private val ivOpButtons = mutableMapOf<Int, NineSliceButton>()
 
     // 筛选展开列表：filterListOpen = ""/type/ability/nature；互斥展开、限高滚动
     private var filterListOpen = ""
@@ -250,7 +254,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         )
         addDrawableChild(natureButton)
 
-        // Row 3 (y=78): HP, Atk, Def IV inputs
+        // Row 3 (y=78): HP, Atk, Def IV inputs（输入框 68 宽 + 右侧 20 宽三态比较按钮）
+        ivOpButtons.clear()
         hpField = createIvField(leftX + 4, 90, "HP")
         atkField = createIvField(leftX + 100, 90, "ATK")
         defField = createIvField(leftX + 196, 90, "DEF")
@@ -259,6 +264,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         spaField = createIvField(leftX + 4, 114, "SpA")
         spdField = createIvField(leftX + 100, 114, "SpD")
         speField = createIvField(leftX + 196, 114, "Spd")
+
+        // 三态比较按钮（= / ≥ / ≤ 循环，默认 = 与旧行为一致；非默认金色高亮）
+        listOf(0 to (leftX + 4), 1 to (leftX + 100), 2 to (leftX + 196)).forEach { (i, bx) ->
+            addIvOpButton(bx + 70, 90, i)
+            addIvOpButton(bx + 70, 114, i + 3)
+        }
 
         // Row 5 (y=138): Shiny(符号) + Sort + HT + Mine + Reset
         shinyButton = NineSliceButton(
@@ -329,8 +340,38 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         applyFilterVisibility() // Apply current collapsed state
     }
 
+    private fun ivOpSymbol(op: Int): String = when (op) {
+        1 -> "≥"
+        2 -> "≤"
+        else -> "="
+    }
+
+    /** IV 三态比较按钮：= → ≥ → ≤ 循环；切换立即重发筛选请求（过滤条件变了） */
+    private fun addIvOpButton(x: Int, y: Int, index: Int) {
+        val btn = NineSliceButton(
+            x, y, 20, 16,
+            Text.literal(ivOpSymbol(ivOps[index])),
+            {
+                ivOps[index] = (ivOps[index] + 1) % 3
+                syncIvOpButtons()
+                currentPage = 1
+                refreshData()
+            },
+            textColor = if (ivOps[index] != 0) GOLD_COLOR else 0xFFFFFF
+        )
+        ivOpButtons[index] = btn
+        addDrawableChild(btn)
+    }
+
+    private fun syncIvOpButtons() {
+        ivOpButtons.forEach { (index, btn) ->
+            btn.message = Text.literal(ivOpSymbol(ivOps[index]))
+            btn.textColor = if (ivOps[index] != 0) GOLD_COLOR else 0xFFFFFF
+        }
+    }
+
     private fun createIvField(x: Int, y: Int, placeholder: String): TextFieldWidget {
-        val field = TextFieldWidget(textRenderer, x, y, 92, 16, Text.literal(""))
+        val field = TextFieldWidget(textRenderer, x, y, 68, 16, Text.literal(""))
         field.setPlaceholder(Text.literal(placeholder))
         field.setTextPredicate { it.length <= 2 && it.all { c -> c.isDigit() } }
         addSelectableChild(field)
@@ -706,7 +747,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         typeFilterIndex = 0
         sortMode = "NEWEST"
         currentPage = 1
-        for (i in 0..5) minIvs[i] = -1
+        for (i in 0..5) { ivExact[i] = -1; ivOps[i] = 0 }
+        syncIvOpButtons()
         hpField?.text = ""
         atkField?.text = ""
         defField?.text = ""
@@ -795,8 +837,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             // 0: user explicitly typed "0", filter for IV == 0
             val iv = if (digits.isEmpty()) -1 else digits.toIntOrNull()?.coerceIn(0, 31) ?: -1
             if (digits != raw) fields[i]?.text = if (iv <= 0) "" else iv.toString()
-            if (minIvs[i] != iv) changed = true
-            minIvs[i] = iv
+            if (ivExact[i] != iv) changed = true
+            ivExact[i] = iv
         }
         return changed
     }
@@ -810,7 +852,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         }
     }
 
-    private fun refreshData(ivs: IntArray = minIvs) {
+    private fun refreshData(ivs: IntArray = ivExact) {
         sendToServer(
             RequestMarketPayload(
                 speciesFilter = localizeSpeciesQuery(searchField?.text?.trim().orEmpty()),
@@ -823,12 +865,18 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 typeFilter = typeFilter,
                 abilityFilter = abilityFilter,
                 natureFilter = natureFilter,
-                minIvsHp = ivs[0],
-                minIvsAtk = ivs[1],
-                minIvsDef = ivs[2],
-                minIvsSpAtk = ivs[3],
-                minIvsSpDef = ivs[4],
-                minIvsSpd = ivs[5],
+                ivExactHp = ivs[0],
+                ivExactAtk = ivs[1],
+                ivExactDef = ivs[2],
+                ivExactSpAtk = ivs[3],
+                ivExactSpDef = ivs[4],
+                ivExactSpd = ivs[5],
+                ivOpHp = ivOps[0],
+                ivOpAtk = ivOps[1],
+                ivOpDef = ivOps[2],
+                ivOpSpAtk = ivOps[3],
+                ivOpSpDef = ivOps[4],
+                ivOpSpd = ivOps[5],
                 pageSize = getMaxVisibleRows(),
                 mineOnly = showMineOnly,
                 htFilter = htFilter
@@ -897,7 +945,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // IV 变化与搜索框共用 250ms 防抖（searchDirty/lastSearchEdit，见 init 注释）：
         // 立即发包时，快速输入 "31" 会先发 atk=3 再发 atk=31，后一个请求落在
         // 服务端 250ms 节流窗口内被静默丢弃，列表停留在旧结果上。
-        // minIvs 每帧同步，防抖期间其他按钮触发的 refreshData 仍带最新 IV 值。
+        // ivExact 每帧同步，防抖期间其他按钮触发的 refreshData 仍带最新 IV 值。
         if (syncIvFromFields()) {
             searchDirty = true
             lastSearchEdit = System.currentTimeMillis()

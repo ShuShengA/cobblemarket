@@ -167,12 +167,19 @@ data class RequestMarketPayload(
     // 特性/性格筛选（翻译 key；空串 = 不限）
     val abilityFilter: String,
     val natureFilter: String,
-    val minIvsHp: Int,
-    val minIvsAtk: Int,
-    val minIvsDef: Int,
-    val minIvsSpAtk: Int,
-    val minIvsSpDef: Int,
-    val minIvsSpd: Int,
+    val ivExactHp: Int,
+    val ivExactAtk: Int,
+    val ivExactDef: Int,
+    val ivExactSpAtk: Int,
+    val ivExactSpDef: Int,
+    val ivExactSpd: Int,
+    // IV 比较方式：0 = 等于（默认），1 = 大于等于，2 = 小于等于
+    val ivOpHp: Int,
+    val ivOpAtk: Int,
+    val ivOpDef: Int,
+    val ivOpSpAtk: Int,
+    val ivOpSpDef: Int,
+    val ivOpSpd: Int,
     val pageSize: Int,
     val mineOnly: Boolean,
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
@@ -184,37 +191,60 @@ data class RequestMarketPayload(
         val ID = CustomPayload.Id<RequestMarketPayload>(CobbleMarket.id("request_market"))
         val CODEC: PacketCodec<PacketByteBuf, RequestMarketPayload> = PacketCodec.of(
             { p, b ->
-                b.writeString(p.speciesFilter); b.writeBoolean(p.shinyOnly); b.writeInt(p.minLevel); b.writeInt(p.maxLevel); b.writeString(
-                p.sortMode
-            ); b.writeInt(p.page); b.writeString(p.genderFilter); b.writeString(p.typeFilter); b.writeString(p.abilityFilter); b.writeString(
-                p.natureFilter
-            ); b.writeInt(p.minIvsHp); b.writeInt(
-                p.minIvsAtk
-            ); b.writeInt(p.minIvsDef); b.writeInt(p.minIvsSpAtk); b.writeInt(p.minIvsSpDef); b.writeInt(p.minIvsSpd); b.writeInt(
-                p.pageSize
-            ); b.writeBoolean(p.mineOnly); b.writeInt(p.htFilter)
+                b.writeString(p.speciesFilter)
+                b.writeBoolean(p.shinyOnly)
+                b.writeInt(p.minLevel)
+                b.writeInt(p.maxLevel)
+                b.writeString(p.sortMode)
+                b.writeInt(p.page)
+                b.writeString(p.genderFilter)
+                b.writeString(p.typeFilter)
+                b.writeString(p.abilityFilter)
+                b.writeString(p.natureFilter)
+                b.writeInt(p.ivExactHp)
+                b.writeInt(p.ivExactAtk)
+                b.writeInt(p.ivExactDef)
+                b.writeInt(p.ivExactSpAtk)
+                b.writeInt(p.ivExactSpDef)
+                b.writeInt(p.ivExactSpd)
+                b.writeInt(p.ivOpHp)
+                b.writeInt(p.ivOpAtk)
+                b.writeInt(p.ivOpDef)
+                b.writeInt(p.ivOpSpAtk)
+                b.writeInt(p.ivOpSpDef)
+                b.writeInt(p.ivOpSpd)
+                b.writeInt(p.pageSize)
+                b.writeBoolean(p.mineOnly)
+                b.writeInt(p.htFilter)
             },
+            // 读端用具名参数，读写字段顺序必须一致
             { b ->
                 RequestMarketPayload(
-                    b.readString(),
-                    b.readBoolean(),
-                    b.readInt(),
-                    b.readInt(),
-                    b.readString(),
-                    b.readInt(),
-                    b.readString(),
-                    b.readString(),
-                    b.readString(),
-                    b.readString(),
-                    b.readInt(),
-                    b.readInt(),
-                    b.readInt(),
-                    b.readInt(),
-                    b.readInt(),
-                    b.readInt(),
-                    b.readInt(),
-                    b.readBoolean(),
-                    b.readInt()
+                    speciesFilter = b.readString(),
+                    shinyOnly = b.readBoolean(),
+                    minLevel = b.readInt(),
+                    maxLevel = b.readInt(),
+                    sortMode = b.readString(),
+                    page = b.readInt(),
+                    genderFilter = b.readString(),
+                    typeFilter = b.readString(),
+                    abilityFilter = b.readString(),
+                    natureFilter = b.readString(),
+                    ivExactHp = b.readInt(),
+                    ivExactAtk = b.readInt(),
+                    ivExactDef = b.readInt(),
+                    ivExactSpAtk = b.readInt(),
+                    ivExactSpDef = b.readInt(),
+                    ivExactSpd = b.readInt(),
+                    ivOpHp = b.readInt(),
+                    ivOpAtk = b.readInt(),
+                    ivOpDef = b.readInt(),
+                    ivOpSpAtk = b.readInt(),
+                    ivOpSpDef = b.readInt(),
+                    ivOpSpd = b.readInt(),
+                    pageSize = b.readInt(),
+                    mineOnly = b.readBoolean(),
+                    htFilter = b.readInt()
                 )
             }
         )
@@ -229,12 +259,12 @@ data class AdminRequestPokemonPayload(
     val shinyOnly: Boolean,
     val sortMode: String,
     val page: Int,
-    val minIvsHp: Int,
-    val minIvsAtk: Int,
-    val minIvsDef: Int,
-    val minIvsSpAtk: Int,
-    val minIvsSpDef: Int,
-    val minIvsSpd: Int,
+    val ivExactHp: Int,
+    val ivExactAtk: Int,
+    val ivExactDef: Int,
+    val ivExactSpAtk: Int,
+    val ivExactSpDef: Int,
+    val ivExactSpd: Int,
     val pageSize: Int,
     val mineOnly: Boolean,
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
@@ -248,9 +278,9 @@ data class AdminRequestPokemonPayload(
             { p, b ->
                 b.writeString(p.speciesFilter); b.writeString(p.sellerFilter); b.writeBoolean(p.shinyOnly); b.writeString(
                 p.sortMode
-            ); b.writeInt(p.page); b.writeInt(p.minIvsHp); b.writeInt(p.minIvsAtk); b.writeInt(p.minIvsDef); b.writeInt(
-                p.minIvsSpAtk
-            ); b.writeInt(p.minIvsSpDef); b.writeInt(p.minIvsSpd); b.writeInt(p.pageSize); b.writeBoolean(p.mineOnly); b.writeInt(p.htFilter)
+            ); b.writeInt(p.page); b.writeInt(p.ivExactHp); b.writeInt(p.ivExactAtk); b.writeInt(p.ivExactDef); b.writeInt(
+                p.ivExactSpAtk
+            ); b.writeInt(p.ivExactSpDef); b.writeInt(p.ivExactSpd); b.writeInt(p.pageSize); b.writeBoolean(p.mineOnly); b.writeInt(p.htFilter)
             },
             { b ->
                 AdminRequestPokemonPayload(
@@ -932,13 +962,21 @@ object MarketNetwork {
                     typeFilter = payload.typeFilter.ifBlank { null },
                     ability = payload.abilityFilter.ifBlank { null },
                     nature = payload.natureFilter.ifBlank { null },
-                    minIvs = buildMap {
-                        if (payload.minIvsHp >= 0) put("ivsHp", payload.minIvsHp)
-                        if (payload.minIvsAtk >= 0) put("ivsAtk", payload.minIvsAtk)
-                        if (payload.minIvsDef >= 0) put("ivsDef", payload.minIvsDef)
-                        if (payload.minIvsSpAtk >= 0) put("ivsSpAtk", payload.minIvsSpAtk)
-                        if (payload.minIvsSpDef >= 0) put("ivsSpDef", payload.minIvsSpDef)
-                        if (payload.minIvsSpd >= 0) put("ivsSpd", payload.minIvsSpd)
+                    ivExact = buildMap {
+                        if (payload.ivExactHp >= 0) put("ivsHp", payload.ivExactHp)
+                        if (payload.ivExactAtk >= 0) put("ivsAtk", payload.ivExactAtk)
+                        if (payload.ivExactDef >= 0) put("ivsDef", payload.ivExactDef)
+                        if (payload.ivExactSpAtk >= 0) put("ivsSpAtk", payload.ivExactSpAtk)
+                        if (payload.ivExactSpDef >= 0) put("ivsSpDef", payload.ivExactSpDef)
+                        if (payload.ivExactSpd >= 0) put("ivsSpd", payload.ivExactSpd)
+                    },
+                    ivOps = buildMap {
+                        if (payload.ivExactHp >= 0) put("ivsHp", payload.ivOpHp.coerceIn(0, 2))
+                        if (payload.ivExactAtk >= 0) put("ivsAtk", payload.ivOpAtk.coerceIn(0, 2))
+                        if (payload.ivExactDef >= 0) put("ivsDef", payload.ivOpDef.coerceIn(0, 2))
+                        if (payload.ivExactSpAtk >= 0) put("ivsSpAtk", payload.ivOpSpAtk.coerceIn(0, 2))
+                        if (payload.ivExactSpDef >= 0) put("ivsSpDef", payload.ivOpSpDef.coerceIn(0, 2))
+                        if (payload.ivExactSpd >= 0) put("ivsSpd", payload.ivOpSpd.coerceIn(0, 2))
                     },
                     sellerUuid = if (payload.mineOnly) player.uuid else null,
                     htFilter = payload.htFilter
@@ -1223,13 +1261,13 @@ object MarketNetwork {
                     species = payload.speciesFilter.ifBlank { null },
                     shiny = if (payload.shinyOnly) true else null,
                     sortBy = sortMode,
-                    minIvs = buildMap {
-                        if (payload.minIvsHp >= 0) put("ivsHp", payload.minIvsHp)
-                        if (payload.minIvsAtk >= 0) put("ivsAtk", payload.minIvsAtk)
-                        if (payload.minIvsDef >= 0) put("ivsDef", payload.minIvsDef)
-                        if (payload.minIvsSpAtk >= 0) put("ivsSpAtk", payload.minIvsSpAtk)
-                        if (payload.minIvsSpDef >= 0) put("ivsSpDef", payload.minIvsSpDef)
-                        if (payload.minIvsSpd >= 0) put("ivsSpd", payload.minIvsSpd)
+                    ivExact = buildMap {
+                        if (payload.ivExactHp >= 0) put("ivsHp", payload.ivExactHp)
+                        if (payload.ivExactAtk >= 0) put("ivsAtk", payload.ivExactAtk)
+                        if (payload.ivExactDef >= 0) put("ivsDef", payload.ivExactDef)
+                        if (payload.ivExactSpAtk >= 0) put("ivsSpAtk", payload.ivExactSpAtk)
+                        if (payload.ivExactSpDef >= 0) put("ivsSpDef", payload.ivExactSpDef)
+                        if (payload.ivExactSpd >= 0) put("ivsSpd", payload.ivExactSpd)
                     },
                     sellerUuid = if (payload.mineOnly) player.uuid else null,
                     sellerName = payload.sellerFilter.ifBlank { null },
