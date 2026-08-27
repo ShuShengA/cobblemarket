@@ -13,6 +13,16 @@ import java.io.File
  * 动画开关按**频率**分两个而不是按来源分三个：市场直购随时可买、最高频，
  * 拍卖成交与求购单接受都是低频事件，合用一个开关。
  */
+/** 余额 HUD 显示模式 */
+enum class BalanceHudMode {
+    /** 一直显示 */
+    ALWAYS,
+    /** 余额变动后显示 5 秒 */
+    ON_CHANGE,
+    /** 关闭 */
+    OFF
+}
+
 object ClientConfig {
     private val gson = GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create()
     private val configFile: File
@@ -42,6 +52,10 @@ object ClientConfig {
     var dropOverflowOnClaim: Boolean = false
         private set
 
+    /** 余额 HUD 显示模式（个人设置，设置弹窗三态循环）：ALWAYS 一直显示 / ON_CHANGE 余额变动后显示 5 秒 / OFF 关闭 */
+    var balanceHudMode: BalanceHudMode = BalanceHudMode.ALWAYS
+        private set
+
     fun load() {
         if (!configFile.exists()) {
             save()
@@ -57,6 +71,12 @@ object ClientConfig {
             entryDropAnimation = data["entryDropAnimation"] as? Boolean ?: true
             pikachuRunLoop = data["pikachuRunLoop"] as? Boolean ?: false
             groudonFly = data["groudonFly"] as? Boolean ?: false
+            // 旧布尔开关升级映射：true → ALWAYS，false → OFF；新配置存三态 Int
+            balanceHudMode = when (data["balanceHudMode"] as? Double) {
+                1.0 -> BalanceHudMode.ON_CHANGE
+                2.0 -> BalanceHudMode.OFF
+                else -> if (data["showBalanceHud"] as? Boolean == false) BalanceHudMode.OFF else BalanceHudMode.ALWAYS
+            }
             if (legacy != null) save()
         } catch (e: Exception) {
             CobbleMarketClient.LOGGER.warn("Failed to load client config: ${e.message}")
@@ -94,6 +114,22 @@ object ClientConfig {
         save()
     }
 
+    fun setBalanceHudMode(v: BalanceHudMode) {
+        balanceHudMode = v
+        save()
+    }
+
+    /** 三态循环：ALWAYS → ON_CHANGE → OFF → ALWAYS */
+    fun cycleBalanceHudMode(): BalanceHudMode {
+        balanceHudMode = when (balanceHudMode) {
+            BalanceHudMode.ALWAYS -> BalanceHudMode.ON_CHANGE
+            BalanceHudMode.ON_CHANGE -> BalanceHudMode.OFF
+            BalanceHudMode.OFF -> BalanceHudMode.ALWAYS
+        }
+        save()
+        return balanceHudMode
+    }
+
     private fun save() {
         try {
             configFile.writeText(
@@ -106,6 +142,7 @@ object ClientConfig {
                             "entryDropAnimation" to "按快捷键/手机App打开市场入口时是否播放进入市场动画（个人设置）/ Whether to play the market entry animation when opening the market via hotkey or smartphone app (personal setting)",
                             "pikachuRunLoop" to "皮卡丘跑步机：开启后皮卡丘绕入口/管理面板背景边缘环绕跑（默认沿背景顶部直线跑）/ Pikachu Treadmill: when on, Pikachu runs around the border of the entry/admin background instead of the straight top run",
                             "groudonFly" to "据说固拉多一生都在寻找这个按钮：开启后固拉多在精灵市场/上架选择界面穿梭飞行 / It is said Groudon spends its whole life looking for this button: when on, Groudon flies across the pokemon market and sell-select screens",
+                            "balanceHudMode" to "余额 HUD 显示模式：0=一直显示（默认），1=余额变动时显示 5 秒，2=关闭；可在市场入口界面右下角的设置里改 / Balance HUD mode: 0=always show (default), 1=show 5 seconds when the balance changes, 2=off; editable via the gear button on the market entry screen",
                             "_note" to "服主还可在服务端配置 cobblemarket.json 的 celebrationAnimationEnabled 里全局关闭动画，那种情况下本文件的开关不起作用 / The server owner can also disable animations globally via celebrationAnimationEnabled in the server-side cobblemarket.json, in which case these switches have no effect"
                         ),
                         "celebrationOnMarketBuy" to celebrationOnMarketBuy,
@@ -113,7 +150,8 @@ object ClientConfig {
                         "dropOverflowOnClaim" to dropOverflowOnClaim,
                         "entryDropAnimation" to entryDropAnimation,
                         "pikachuRunLoop" to pikachuRunLoop,
-                        "groudonFly" to groudonFly
+                        "groudonFly" to groudonFly,
+                        "balanceHudMode" to balanceHudMode.ordinal
                     )
                 )
             )

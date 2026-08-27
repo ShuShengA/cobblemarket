@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.mojang.blaze3d.systems.RenderSystem
+import com.shusheng.cobblemarket.client.BalanceHudMode
 import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.client.MarketStateCache
 import com.shusheng.cobblemarket.client.OakTips
@@ -40,6 +41,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsEntryDropButton: NineSliceButton? = null
     private var settingsPikachuLoopButton: NineSliceButton? = null
     private var settingsGroudonFlyButton: NineSliceButton? = null
+    private var settingsBalanceHudButton: NineSliceButton? = null
     // 入口底部居中的市场总开关（仅 OP 可见）
     private var marketSwitchBtn: NineSliceButton? = null
     // 入口底部市场总开关左侧的服务器配置按钮（仅 OP 可见）
@@ -291,8 +293,15 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsPikachuLoopButton?.let { b -> b.x = switchX; b.y = dialogY + 134; addDrawableChild(b) }
         settingsGroudonFlyButton = makeSwitchButton(ClientConfig.groudonFly) { toggleGroudonFly() }
         settingsGroudonFlyButton?.let { b -> b.x = switchX; b.y = dialogY + 160; addDrawableChild(b) }
+        // 三态循环文字按钮（一直/变动/关闭），点击循环切换
+        settingsBalanceHudButton = NineSliceButton(
+            centerX + 40, dialogY + 187, 46, 20,
+            Text.translatable(balanceHudModeKey()),
+            { cycleBalanceHud() }
+        )
+        addDrawableChild(settingsBalanceHudButton)
         addDrawableChild(NineSliceButton(
-            centerX - 28, dialogY + 186, 56, 20,
+            centerX - 28, dialogY + 212, 56, 20,
             Text.translatable("cobblemarket.settings.done"),
             { closeSettingsDialog() }
         ))
@@ -306,6 +315,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsEntryDropButton = null
         settingsPikachuLoopButton = null
         settingsGroudonFlyButton = null
+        settingsBalanceHudButton = null
         clearChildren()
         init()
     }
@@ -366,6 +376,20 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         showSettingsToast("cobblemarket.settings.groudon_fly", ClientConfig.groudonFly)
     }
 
+    private fun balanceHudModeKey(): String = when (ClientConfig.balanceHudMode) {
+        BalanceHudMode.ALWAYS -> "cobblemarket.settings.balance_hud_always"
+        BalanceHudMode.ON_CHANGE -> "cobblemarket.settings.balance_hud_change"
+        BalanceHudMode.OFF -> "cobblemarket.settings.balance_hud_off"
+    }
+
+    private fun cycleBalanceHud() {
+        ClientConfig.cycleBalanceHudMode()
+        settingsBalanceHudButton?.message = Text.translatable(balanceHudModeKey())
+        settingsToastText = Text.translatable("cobblemarket.settings.balance_hud").append(" ")
+            .append(Text.translatable(balanceHudModeKey()))
+        settingsToastUntil = System.currentTimeMillis() + 1500
+    }
+
     /** 开关切换 toast：「标签 开/关」，1.5 秒后消失 */
     private fun showSettingsToast(labelKey: String, on: Boolean) {
         settingsToastText = Text.translatable(labelKey).append(" ")
@@ -386,10 +410,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             Text.translatable("cobblemarket.settings.title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF
         )
-        // 开关项分割线：标题下 + 每两行之间（行按钮 y=30/56/82/108/134/160、行高 22 → 线在 27/54/80/106/132/158）
+        // 开关项分割线：标题下 + 每两行之间（行按钮 y=30/56/82/108/134/160/186、行高 22 → 线在 27/54/80/106/132/158/184）
         val lineX1 = centerX - 88
         val lineX2 = centerX + 88
-        for (lineY in intArrayOf(27, 54, 80, 106, 132, 158)) {
+        for (lineY in intArrayOf(27, 54, 80, 106, 132, 158, 184)) {
             context.fill(lineX1, dialogY + lineY, lineX2, dialogY + lineY + 1, 0xFF555555.toInt())
         }
     }
@@ -427,6 +451,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             textRenderer,
             toggleText("cobblemarket.settings.groudon_fly", ClientConfig.groudonFly),
             centerX - 80, dialogY + 167, 0xFFFFFF
+        )
+        context.drawTextWithShadow(
+            textRenderer,
+            Text.translatable("cobblemarket.settings.balance_hud"),
+            centerX - 80, dialogY + 193, 0xFFFFFF
         )
     }
 
@@ -634,6 +663,13 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         val oakTop = oakBottom - 128 * oakK
         if (mouseX >= oakLeft && mouseX < oakRight && mouseY >= oakTop && mouseY < oakBottom) {
             oakTipText = OakTips.randomTip()
+            // 点击按钮音效（与界面按钮同款）
+            MinecraftClient.getInstance().soundManager.play(
+                net.minecraft.client.sound.PositionedSoundInstance.master(
+                    net.minecraft.sound.SoundEvent.of(net.minecraft.util.Identifier.of("cobblemarket", "button_click")),
+                    1.0f
+                )
+            )
             return true
         }
         return super.mouseClicked(mouseX, mouseY, button)
@@ -851,7 +887,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     companion object {
         private const val DIALOG_W = 200
-        private const val DIALOG_H = 220
+        private const val DIALOG_H = 246
         // 入口掉落动画三段：下落 → 落地停留 → 淡出（淡出期间入口界面从图下透出，慢慢显现）
         private const val DROP_DURATION_MS = 300L
         private const val HOLD_DURATION_MS = 100L
