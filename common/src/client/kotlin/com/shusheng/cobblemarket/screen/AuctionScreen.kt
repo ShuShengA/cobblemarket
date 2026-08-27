@@ -1158,8 +1158,9 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
                 HAMMER_TEX_LEFT_NO
             context.matrices.push()
             context.matrices.translate((priceX - 16).toDouble(), (y + 6).toDouble(), 0.0)
-            context.matrices.scale(0.5f, 0.5f, 1f)
-            context.drawTexture(hammerTex, 0, 0, 0f, 0f, 24, 24, 24, 24)
+            // 48×48 贴图按 0.25 缩到 12×12 显示（原 24 贴图 0.5 缩放的视觉尺寸不变，清晰度翻倍）
+            context.matrices.scale(0.25f, 0.25f, 1f)
+            context.drawTexture(hammerTex, 0, 0, 0f, 0f, 48, 48, 48, 48)
             context.matrices.pop()
 
             context.drawTextWithShadow(textRenderer, priceStr, priceX, y + 7, 0xFFFFFF)
