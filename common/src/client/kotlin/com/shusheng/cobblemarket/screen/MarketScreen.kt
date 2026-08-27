@@ -200,10 +200,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         ))
 
         // Collect balance button (top-left)
-        addDrawableChild(NineSliceButton(
+        collectButton = NineSliceButton(
             leftX, 13, 50, 16,
             Text.translatable("cobblemarket.gui.collect"), { collectBalance() }
-        ))
+        )
+        addDrawableChild(collectButton)
 
         // Expired returns button
         addDrawableChild(NineSliceButton(
@@ -778,12 +779,13 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     // 翻页请求在途标志：响应到达前不重复发请求
     private var pageRequestInFlight = false
 
-    // 最近一次列表请求发送时间：补发节奏与服务端节流窗口（request_market 250ms）对齐，
-    // 窗口内不发——请求若被服务端静默丢弃则无响应，inFlight 会永久卡死按钮
+    // 最近一次列表请求发送时间：补发节奏对齐服务端节流窗口（request_market 250ms）
+    // 并留 100ms 余量——窗口同宽时网络抖动会让请求恰好落入服务端窗口被静默丢弃
     private var lastListRequestAt = 0L
 
     // 待翻页目标：点击立即更新页码并把目标页记到这里，tick 在窗口允许时补发请求。
-    // 连点合并到最终目标页（中间页不发），点击永远有立即反馈，且请求永不撞节流窗口
+    // 连点合并到最终目标页（中间页不发）；补发后保留目标，响应确认到达才清——
+    // 请求若被静默丢弃，1s 兜底复位后 tick 自动重试
     private var pendingPage = 0
 
     private fun updatePageButtons() {
@@ -871,13 +873,13 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         if (pageRequestInFlight && System.currentTimeMillis() - lastListRequestAt > 1000) {
             pageRequestInFlight = false
         }
-        // 目标页码补发：窗口允许且无在途时发出请求（连点合并到最终目标页）
+        // 目标页码补发：窗口允许且无在途时发出请求（连点合并到最终目标页；
+        // 目标保留到响应确认，请求被丢弃时兜底复位后自动重试）
         if (!pageRequestInFlight && pendingPage != 0 && System.currentTimeMillis() - lastListRequestAt >= PAGE_CLICK_INTERVAL_MS) {
             currentPage = pendingPage.coerceIn(1, maxOf(1, totalPages))
-            pendingPage = 0
             pageRequestInFlight = true
             updatePageButtons()
-            refreshData()
+            refreshData(resetPending = false)
         }
         if (searchDirty && System.currentTimeMillis() - lastSearchEdit >= 250) {
             searchDirty = false
@@ -886,9 +888,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         }
     }
 
-    private fun refreshData(ivs: IntArray = ivExact) {
+    private fun refreshData(ivs: IntArray = ivExact, resetPending: Boolean = true) {
         lastListRequestAt = System.currentTimeMillis()
-        pendingPage = 0 // 非翻页路径（搜索/筛选/购买后刷新）取消未发出的翻页目标
+        if (resetPending) pendingPage = 0 // 非翻页路径（搜索/筛选/购买后刷新）取消未发出的翻页目标
         sendToServer(
             RequestMarketPayload(
                 speciesFilter = localizeSpeciesQuery(searchField?.text?.trim().orEmpty()),
@@ -989,6 +991,24 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
         val centerX = width / 2
         val leftX = centerX - panelWidth / 2
+
+        // 收款按钮右上角金币角标（8×8，仅 2px 露在角外，红点通知样式）：有待收款时显示；
+        // 弹窗打开时此段在遮罩之前渲染，角标随下层一起被压暗
+        if (pendingBalance > 0) {
+            context.matrices.push()
+            context.matrices.translate((leftX + 50 - 6).toDouble(), (13 - 2).toDouble(), 0.0)
+            context.matrices.scale(1f / 6f, 1f / 6f, 1f)
+            context.drawTexture(COIN_ICON, 0, 0, 0f, 0f, 48, 48, 48, 48)
+            context.matrices.pop()
+        }
+        // 待领取按钮右上角红点（与收款角标同位置样式）：有待领取精灵时显示
+        if (pendingReturns > 0) {
+            context.matrices.push()
+            context.matrices.translate((leftX + 102 - 6).toDouble(), (13 - 2).toDouble(), 0.0)
+            context.matrices.scale(1f / 6f, 1f / 6f, 1f)
+            context.drawTexture(RED_DOT, 0, 0, 0f, 0f, 48, 48, 48, 48)
+            context.matrices.pop()
+        }
 
         // Row 0 (y=8): Title
         context.drawCenteredTextWithShadow(
@@ -1590,8 +1610,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
         const val MAX_FILTER_LIST_ROWS = 8
-        /** 翻页点击最小间隔：与服务端 request_market 节流窗口一致，保证请求不被静默丢弃 */
-        const val PAGE_CLICK_INTERVAL_MS = 250L
+        /** 补发请求最小间隔：服务端 request_market 节流 250ms + 100ms 余量，防网络抖动边界丢弃 */
+        const val PAGE_CLICK_INTERVAL_MS = 350L
+        /** 收款按钮右上角金币角标（48×48 源图按 1/6 缩到 8×8） */
+        val COIN_ICON = Identifier.of("cobblemarket", "textures/gui/coin_icon.png")
+        /** 待领取按钮右上角红点（48×48 源图按 1/6 缩到 8×8） */
+        val RED_DOT = Identifier.of("cobblemarket", "textures/gui/red_dot.png")
     }
 
     override fun resize(client: net.minecraft.client.MinecraftClient, width: Int, height: Int) {
@@ -1609,15 +1633,28 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     }
 
     private var pendingBalance = 0L
+    /** 待领取精灵数量：>0 时待领取按钮右上角画红点（随市场数据响应刷新） */
+    private var pendingReturns = 0
+    /** 收款按钮引用：右上角金币角标按 pendingBalance 显隐（render 里直接按坐标画，不依赖按钮状态） */
+    private var collectButton: NineSliceButton? = null
 
     fun onMarketData(payload: MarketDataPayload) {
         pageRequestInFlight = false
         listings = payload.entries
         totalPages = payload.totalPages
-        // 有未发出的翻页目标时保留乐观页码（tick 稍后补发），避免页码回跳
-        if (pendingPage == 0) currentPage = payload.currentPage
+        when {
+            pendingPage == 0 -> currentPage = payload.currentPage
+            // 目标页已到达（或被服务端 clamp 出界）：确认，清目标
+            payload.currentPage == pendingPage || pendingPage > payload.totalPages -> {
+                pendingPage = 0
+                currentPage = payload.currentPage
+            }
+            // 目标未达（罕见）：保留目标由 tick 继续重试，页码维持乐观值
+            else -> {}
+        }
         updatePageButtons()
         pendingBalance = payload.pendingBalance
+        pendingReturns = payload.pendingReturns
         indexedListings = listings.withIndex().toList()
         cacheIcons()
         rebuildBuyButtons()

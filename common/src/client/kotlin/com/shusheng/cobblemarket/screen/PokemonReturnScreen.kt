@@ -50,9 +50,9 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
     // 协议分页：服务端按请求的 pageSize 切片，本地只做防溢出截断
     private fun pageItems(): List<PokemonPreview> = pokemon.take(maxOf(0, maxVisible()))
 
-    private fun requestData() {
+    private fun requestData(resetPending: Boolean = true) {
         lastListRequestAt = System.currentTimeMillis()
-        pendingPage = 0 // 非翻页路径（领取后刷新、拍卖结算等）取消未发出的翻页目标
+        if (resetPending) pendingPage = 0 // 非翻页路径（领取后刷新、拍卖结算等）取消未发出的翻页目标
         val size = minOf(maxVisible(), 30).coerceAtLeast(1)
         sendToServer(RequestPokemonReturnPayload(currentPage, size))
     }
@@ -83,12 +83,12 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
         if (pageRequestInFlight && System.currentTimeMillis() - lastListRequestAt > 1000) {
             pageRequestInFlight = false
         }
+        // 目标保留到响应确认，请求被丢弃时兜底复位后自动重试
         if (!pageRequestInFlight && pendingPage != 0 && System.currentTimeMillis() - lastListRequestAt >= PAGE_CLICK_INTERVAL_MS) {
             currentPage = pendingPage.coerceIn(1, maxOf(1, totalPages))
-            pendingPage = 0
             pageRequestInFlight = true
             updatePageButtons()
-            requestData()
+            requestData(resetPending = false)
         }
     }
 
@@ -171,8 +171,16 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
         pageRequestInFlight = false
         pokemon = payload.pokemon
         totalPages = payload.totalPages
-        // 有未发出的翻页目标时保留乐观页码（tick 稍后补发），避免页码回跳
-        if (pendingPage == 0) currentPage = payload.currentPage
+        when {
+            pendingPage == 0 -> currentPage = payload.currentPage
+            // 目标页已到达（或被服务端 clamp 出界）：确认，清目标
+            payload.currentPage == pendingPage || pendingPage > payload.totalPages -> {
+                pendingPage = 0
+                currentPage = payload.currentPage
+            }
+            // 目标未达（罕见）：保留目标由 tick 继续重试，页码维持乐观值
+            else -> {}
+        }
         updatePageButtons()
         loaded = true
         tooltipCacheKey = null
@@ -434,7 +442,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
         val SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
-        /** 翻页点击最小间隔：与服务端 request_pokemon_return 节流窗口一致，保证请求不被静默丢弃 */
-        const val PAGE_CLICK_INTERVAL_MS = 500L
+        /** 补发请求最小间隔：服务端 request_pokemon_return 节流 500ms + 100ms 余量，防网络抖动边界丢弃 */
+        const val PAGE_CLICK_INTERVAL_MS = 600L
     }
 }
