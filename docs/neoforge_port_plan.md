@@ -51,7 +51,7 @@
 | `registerC2S` / `registerS2C` / `registerS2CType` / `sendToPlayer` / `sendToServer` | 网络（56 C2S + 25 S2C + 210/76 send 已全部替换） | PayloadTypeRegistry + Networking | IPayloadRegistrar / PacketDistributor |
 | `onServerStarting/Started/Stopped` / `onServerTickEnd` / `onPlayerJoin` / `onPlayerDisconnect` / `registerCommands` | 服务端事件 + 命令 | LifecycleEvents + TickEvents + ConnectionEvents + CommandRegistrationCallback | ServerStartedEvent/StoppingEvent/TickEvent.Post + RegisterCommandsEvent |
 | `onClientTick` / `registerKeyBinding` / `registerHudRender` | 客户端 | ClientTickEvents + KeyBindingHelper + HudRenderCallback | ClientTickEvent.Post + RegisterKeyMappingsEvent + RegisterGuiLayersEvent |
-| `cobecoAvailable/GetBalance/Remove/Add` | cobeco 货币（CurrencyHandler 已全走桥接，common 零 cobeco 引用） | cobeco jar 真实实现 | **恒不可用**（返回 false/null，货币自动降级） |
+| `Cobblemon EconomyAvailable/GetBalance/Remove/Add` | Cobblemon Economy 货币（CurrencyHandler 已全走桥接，common 零 Cobblemon Economy 引用） | Cobblemon Economy jar 真实实现 | **恒不可用**（返回 false/null，货币自动降级） |
 | Smartphone app 注册 | **无需桥接**：neoforge 版 jar 已查证含相同 API 类（SmartphoneAction/SmartphoneActionRegistry），common 直接保留引用 | — | — |
 
 ### 步骤 4 实测发现的坑（构建/打包层）

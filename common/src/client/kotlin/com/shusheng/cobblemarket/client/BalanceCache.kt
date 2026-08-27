@@ -7,6 +7,6 @@ package com.shusheng.cobblemarket.client
 object BalanceCache {
     var balance: String = ""
     var pendingBalance: Long = 0L
-    /** 服务端当前货币标识（物品 ID 或虚拟货币翻译 key：cobeco POKE=PokeDollars / cobeco PCO=PokeCoins / CobbleDollars=CobbleDollars），余额包携带；弹窗/悬停货币名统一从这里取 */
+    /** 服务端当前货币标识（物品 ID 或虚拟货币翻译 key：Cobblemon Economy POKE=PokeDollars / Cobblemon Economy PCO=PokeCoins / CobbleDollars=CobbleDollars），余额包携带；弹窗/悬停货币名统一从这里取 */
     var currencyName: String = ""
 }

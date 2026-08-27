@@ -4,6 +4,9 @@ import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.platform.cobecoAdd
 import com.shusheng.cobblemarket.platform.cobecoGetBalance
 import com.shusheng.cobblemarket.platform.cobecoRemove
+import com.shusheng.cobblemarket.platform.impactorAdd
+import com.shusheng.cobblemarket.platform.impactorGetBalance
+import com.shusheng.cobblemarket.platform.impactorRemove
 import fr.harmex.cobbledollars.common.utils.CobbleDollarsPlayer
 import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
@@ -17,15 +20,21 @@ import java.math.RoundingMode
 object CurrencyHandler {
     private var useCobbleDollars = false
     private var useCobeco = false
-    /** cobeco 模式下是否用 PokeCoins（PCO）结算；false=用 PokeDollars（POKE） */
+    /** Cobblemon Economy 模式下是否用 PokeCoins（PCO）结算；false=用 PokeDollars（POKE） */
     private var usePco = false
+    /** Impactor 直连（不装 Cobblemon Economy 时）；优先级低于 Cobblemon Economy 与 CobbleDollars */
+    private var useImpactor = false
 
     fun load(config: CobbleMarketConfig) {
         useCobeco = config.cobblemonEconomy
         usePco = useCobeco && config.cobecoCurrency == "PCO"
-        // cobeco 优先：两个开关都为 true 时走 cobeco（其 API 内部按 main_currency 桥接路由到 CobbleDollars/Impactor 后端）
+        // 优先级 Cobblemon Economy → CobbleDollars → Impactor → 物品：
+        // Cobblemon Economy 在场时优先走它（其 API 内部按 main_currency 桥接路由到 CobbleDollars/Impactor 后端）；
+        // 两个虚拟开关都为 true 时 CobbleDollars 优先（升级无感：Impactor 常作为其它模组的基础依赖被装，
+        // 若让它优先，老服主升级后市场会突然切到 Impactor 账户）
         useCobbleDollars = !useCobeco && config.cobbledollars
-        CobbleMarket.LOGGER.info("Currency: ${if (useCobeco) "Cobblemon Economy (" + (if (usePco) "PCO" else "PokeDollars") + ")" else if (useCobbleDollars) "CobbleDollars" else config.currencyItem}")
+        useImpactor = !useCobeco && !useCobbleDollars && config.impactor
+        CobbleMarket.LOGGER.info("Currency: ${if (useCobeco) "Cobblemon Economy (" + (if (usePco) "PCO" else "PokeDollars") + ")" else if (useCobbleDollars) "CobbleDollars" else if (useImpactor) "Impactor" else config.currencyItem}")
     }
 
     // 货币物品动态解析：初始化时 Cobblemon 物品可能尚未注册（mod 加载顺序），
@@ -34,11 +43,11 @@ object CurrencyHandler {
 
     fun getBalance(player: ServerPlayerEntity): BigInteger {
         if (useCobeco) {
-            // cobeco 余额为 BigDecimal（可能有小数），取整向零截断，与其内部扣款粒度一致
+            // Cobblemon Economy 余额为 BigDecimal（可能有小数），取整向零截断，与其内部扣款粒度一致
             val raw = cobecoGetBalance(player.uuid, usePco)
             if (raw == null) {
                 // 桥接内部已捕获异常（含 mod 被移除时的 NoClassDefFoundError）
-                CobbleMarket.LOGGER.error("Failed to get cobeco balance for {}", player.uuid)
+                CobbleMarket.LOGGER.error("Failed to get Cobblemon Economy balance for {}", player.uuid)
                 return BigInteger.ZERO
             }
             return raw.setScale(0, RoundingMode.DOWN).toBigInteger()
@@ -47,6 +56,16 @@ object CurrencyHandler {
             return try {
                 (player as CobbleDollarsPlayer).`cobbleDollars$getCobbleDollars`()
             } catch (e: Exception) { BigInteger.ZERO }
+        }
+        if (useImpactor) {
+            // Impactor 余额为 BigDecimal（可能有小数），取整向零截断（与 Cobblemon Economy 分支同规则）
+            val raw = impactorGetBalance(player.uuid)
+            if (raw == null) {
+                // 桥接内部已捕获异常（含 mod 被移除时的 NoClassDefFoundError）
+                CobbleMarket.LOGGER.error("Failed to get Impactor balance for {}", player.uuid)
+                return BigInteger.ZERO
+            }
+            return raw.setScale(0, RoundingMode.DOWN).toBigInteger()
         }
         val item = currencyItem()
         var total = 0
@@ -77,6 +96,11 @@ object CurrencyHandler {
                 CobbleMarket.LOGGER.error("Failed to remove {} currency from {}", amount, player.uuid, e)
                 false
             }
+        }
+        if (useImpactor) {
+            // withdraw 余额不足返回 unsuccessful → false，与物品模式「余额不足」语义一致；
+            // 桥接内部捕获异常（mod 被移除等）同样返回 false
+            return impactorRemove(player.uuid, BigDecimal.valueOf(amount.toLong()))
         }
         val item = currencyItem()
         val inv = player.inventory
@@ -122,6 +146,10 @@ object CurrencyHandler {
                 0L
             }
         }
+        if (useImpactor) {
+            // 桥接内部捕获异常（mod 被移除等）返回 false，按未发放处理
+            return if (impactorAdd(player.uuid, BigDecimal.valueOf(amount))) amount else 0L
+        }
         val item = currencyItem()
         var given = 0L
         var remaining = amount
@@ -139,13 +167,13 @@ object CurrencyHandler {
         return given
     }
 
-    /** 虚拟货币分支（Cobblemon Economy / CobbleDollars）的货币名显示跟随后端：
-     *  cobeco POKE 显示 PokeDollars、cobeco PCO 显示 PokeCoins、CobbleDollars 显示 CobbleDollars（与物品模式显示物品名同理） */
-    private val virtualCurrency: Boolean get() = useCobeco || useCobbleDollars
+    /** 虚拟货币分支（Cobblemon Economy / CobbleDollars / Impactor）——界面与聊天统一显示 ₽（见 currencyText/客户端 CurrencyDisplay） */
+    private val virtualCurrency: Boolean get() = useCobeco || useCobbleDollars || useImpactor
 
     private fun virtualCurrencyKey(): String = when {
         usePco -> POKECOINS_KEY
         useCobeco -> POKEDOLLARS_KEY
+        useImpactor -> IMPACTOR_KEY
         else -> COBBLEDOLLARS_KEY
     }
 
@@ -160,9 +188,10 @@ object CurrencyHandler {
         return Registries.ITEM.getId(currencyItem()).toString()
     }
 
-    /** 聊天消息用的货币文本：嵌套 Text，客户端按玩家语言翻译（与 payload 字段同理，不做服务端渲染） */
+    /** 聊天消息用的货币文本：虚拟货币统一 ₽ 符号（2026-08-27 用户拍板，不显示货币名），
+     *  物品模式返回物品名翻译（客户端按玩家语言渲染） */
     fun currencyText(): net.minecraft.text.Text {
-        if (virtualCurrency) return net.minecraft.text.Text.translatable(virtualCurrencyKey())
+        if (virtualCurrency) return net.minecraft.text.Text.literal("₽")
         return net.minecraft.text.Text.translatable(currencyItem().translationKey)
     }
 
@@ -182,4 +211,7 @@ object CurrencyHandler {
 
     /** CobbleDollars 模式的货币标识（翻译 key，显示 CobbleDollars） */
     const val COBBLEDOLLARS_KEY = "cobblemarket.currency.cobbledollars"
+
+    /** Impactor 直连模式的货币标识（客户端 CurrencyDisplay 统一显示 ₽） */
+    const val IMPACTOR_KEY = "cobblemarket.currency.impactor"
 }

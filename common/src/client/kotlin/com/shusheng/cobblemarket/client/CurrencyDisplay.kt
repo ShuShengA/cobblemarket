@@ -7,15 +7,17 @@ import net.minecraft.util.Identifier
 /**
  * 货币显示名：payload 的 currencyName 字段，物品模式下发的是物品 ID，
  * 客户端按玩家自己的语言渲染物品名；虚拟货币下发翻译 key
- * （cobeco POKE=PokeDollars，cobeco PCO=PokeCoins，CobbleDollars=CobbleDollars），客户端翻译后显示。
+ * （Cobblemon Economy POKE=PokeDollars，Cobblemon Economy PCO=PokeCoins，CobbleDollars=CobbleDollars），客户端翻译后显示。
  * 服务端语言恒为 en_us 且受资源环境影响，货币名必须在客户端渲染。
  */
 fun displayCurrency(raw: String): String {
+    // 虚拟货币（Cobblemon Economy POKE/PCO、CobbleDollars、Impactor）统一显示 ₽（2026-08-27 用户拍板，不显示货币名）
     if (raw == com.shusheng.cobblemarket.config.CurrencyHandler.POKEDOLLARS_KEY ||
         raw == com.shusheng.cobblemarket.config.CurrencyHandler.POKECOINS_KEY ||
-        raw == com.shusheng.cobblemarket.config.CurrencyHandler.COBBLEDOLLARS_KEY
+        raw == com.shusheng.cobblemarket.config.CurrencyHandler.COBBLEDOLLARS_KEY ||
+        raw == com.shusheng.cobblemarket.config.CurrencyHandler.IMPACTOR_KEY
     ) {
-        return Text.translatable(raw).string
+        return "₽"
     }
     val id = Identifier.tryParse(raw) ?: return raw
     val item = Registries.ITEM.get(id)
@@ -25,9 +27,6 @@ fun displayCurrency(raw: String): String {
     return if (name == item.translationKey) id.path else name
 }
 
-/** 行内/弹窗金额单位：PCO 模式 PCo（与 cobeco 游戏内一致），其余（PokeDollars/CobbleDollars/物品）统一 ₽。
- *  2026-08-24 起弹窗内金额行也统一用此单位（原 displayActiveCurrency 全名 PokeCoins 已弃用删除） */
-fun inlineCurrencyUnit(): String = when (BalanceCache.currencyName) {
-    com.shusheng.cobblemarket.config.CurrencyHandler.POKECOINS_KEY -> "PCo"
-    else -> "₽"
-}
+/** 行内/弹窗金额单位：所有货币模式统一 ₽（2026-08-27 用户拍板：PCO 不再特殊显示 PCo）。
+ *  货币名区分仍在悬停/弹窗的 displayCurrency（PCO 显示 PokeCoins 全名），符号统一。 */
+fun inlineCurrencyUnit(): String = "₽"

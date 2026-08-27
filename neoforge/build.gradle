@@ -35,8 +35,11 @@ dependencies {
 	// Kotlin for Forge + neoforge 版 Cobblemon（1.7.3 与 fabric 端一致）
 	modImplementation "maven.modrinth:kotlin-for-forge:uhJhCT7X"
 	modImplementation "maven.modrinth:cobblemon:S1TrAn8c"
-	// Cobblemon Economy 无 neoforge 版：货币自动降级 CobbleDollars / 物品（方案第三节 CobecoBridge）
+	// Cobblemon Economy 无 neoforge 版：货币自动降级 CobbleDollars / Impactor 直连 / 物品
 	modCompileOnly "maven.modrinth:cobbledollars:Iqiqjfsi"
+	// Impactor 经济 API（服务端专用模组；compileOnly 不进包，运行时服主装 Impactor 本体）
+	// 本地完整 jar：官方 maven 的 economy 坐标只发布 dev-slim 变体（缺 services.Service 父接口，编译不过）
+	modCompileOnly files('libs/Impactor-Neoforge-5.3.5+1.21.1.jar')
 	modCompileOnly "maven.modrinth:cobblemon-smartphone:TXLuE5FW"
 
 	common(project(path: ':common', configuration: 'namedElements')) { transitive = false }

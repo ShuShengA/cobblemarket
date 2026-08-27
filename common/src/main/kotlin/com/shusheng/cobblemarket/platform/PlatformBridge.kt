@@ -85,14 +85,14 @@ fun registerCommands(
     ) -> Unit,
 ): Unit = throw AssertionError()
 
-// ── Cobblemon Economy（cobeco）货币桥接 ──
-// 仅 fabric 存在 cobeco；neoforge 端恒不可用（cobecoAvailable=false），货币自动降级。
+// ── Cobblemon Economy货币桥接 ──
+// 仅 fabric 存在 Cobblemon Economy；neoforge 端恒不可用（Cobblemon EconomyAvailable=false），货币自动降级。
 
-/** cobeco 是否可用（模组存在）；配置开关在 CurrencyHandler。neoforge 恒 false。 */
+/** Cobblemon Economy 是否可用（模组存在）；配置开关在 CurrencyHandler。neoforge 恒 false。 */
 @ExpectPlatform
 fun cobecoAvailable(): Boolean = throw AssertionError()
 
-/** 查 cobeco 余额；不可用/异常返回 null。usePco=true 走 PokeCoins，否则 PokeDollars。 */
+/** 查 Cobblemon Economy 余额；不可用/异常返回 null。usePco=true 走 PokeCoins，否则 PokeDollars。 */
 @ExpectPlatform
 fun cobecoGetBalance(uuid: UUID, usePco: Boolean): BigDecimal? = throw AssertionError()
 
@@ -103,3 +103,22 @@ fun cobecoRemove(uuid: UUID, amount: BigDecimal, usePco: Boolean): Boolean = thr
 /** 入账；不可用返回 false。 */
 @ExpectPlatform
 fun cobecoAdd(uuid: UUID, amount: BigDecimal, usePco: Boolean): Boolean = throw AssertionError()
+
+// ── Impactor 直连（双平台）：不依赖 Cobblemon Economy，直接走 Impactor 的 EconomyService API。
+// 与 Cobblemon Economy 桥接互斥使用（Cobblemon Economy 在场时优先 Cobblemon Economy，见 CurrencyHandler 优先级）。
+
+/** Impactor 是否可用（模组存在）；配置开关在 CurrencyHandler */
+@ExpectPlatform
+fun impactorAvailable(): Boolean = throw AssertionError()
+
+/** 查 Impactor 主货币余额；不可用/异常返回 null */
+@ExpectPlatform
+fun impactorGetBalance(uuid: UUID): BigDecimal? = throw AssertionError()
+
+/** 扣款；不可用/余额不足返回 false */
+@ExpectPlatform
+fun impactorRemove(uuid: UUID, amount: BigDecimal): Boolean = throw AssertionError()
+
+/** 入账；不可用返回 false */
+@ExpectPlatform
+fun impactorAdd(uuid: UUID, amount: BigDecimal): Boolean = throw AssertionError()

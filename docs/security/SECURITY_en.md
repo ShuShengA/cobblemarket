@@ -105,8 +105,8 @@ All fallible checks (blacklist, price limits, quantity, stock, balance) run **be
 - **The market never creates money out of thin air**: every fund change is ledger flow (buyer payment, refund, seller income). No "free money" path exists — money exploits can never originate from the market code
 - **Item currency mode** (`cobbledollars=false` and `cobblemonEconomy=false`): currency is inventory items, fully managed by the server-authoritative vanilla inventory — zero external dependency risk
 - **Cobblemon Economy mode** (`cobblemonEconomy=true`): currency is managed by the Cobblemon Economy mod, whose API can bridge to CobbleDollars/Impactor backends via its main_currency config. If that mod (or its bridged backend) has its own money exploit, the market cannot distinguish "illegally sourced" money — this is an upstream dependency boundary, not a market defect
-- **PCO settlement** (`cobecoCurrency=PCO`): the same trust boundary applies when the market settles in PokeCoins — the PCO ledger is also managed by cobeco, so the market cannot tell illegally sourced PCO apart
-- **Mirror sync widens the trust boundary**: with CobbleDollars installed, cobeco mirrors both balances two-way (verified on 0.0.17) — an exploit in either upstream spreads to the other side through the mirror; matching balances mean sync, not security
+- **PCO settlement** (`cobecoCurrency=PCO`): the same trust boundary applies when the market settles in PokeCoins — the PCO ledger is also managed by Cobblemon Economy, so the market cannot tell illegally sourced PCO apart
+- **Mirror sync widens the trust boundary**: with CobbleDollars installed, Cobblemon Economy mirrors both balances two-way (verified on 0.0.17) — an exploit in either upstream spreads to the other side through the mirror; matching balances mean sync, not security
 - **CobbleDollars mode**: currency is managed by the CobbleDollars mod; same trust boundary as above
 - **Mitigation**: server owners can turn off the relevant switches (`currency.cobblemonEconomy = false`, `currency.cobbledollars = false`) and fall back to item currency mode at any time; the market is unaffected
 
