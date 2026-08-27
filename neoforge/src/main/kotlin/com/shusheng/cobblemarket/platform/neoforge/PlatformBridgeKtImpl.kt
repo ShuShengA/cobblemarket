@@ -25,7 +25,9 @@ import net.neoforged.neoforge.event.server.ServerStoppedEvent
 import net.neoforged.neoforge.event.tick.ServerTickEvent
 import net.neoforged.neoforge.network.PacketDistributor
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent
+import net.impactdev.impactor.api.economy.EconomyService
 import java.math.BigDecimal
+import java.util.concurrent.TimeUnit
 import java.nio.file.Path
 import java.util.UUID
 
@@ -123,8 +125,8 @@ fun registerCommands(
     }
 }
 
-// ── Cobblemon Economy（cobeco）──
-// cobeco 无 neoforge 版（fabric-only）：恒不可用，货币自动降级（见 CurrencyHandler）
+// ── Cobblemon Economy──
+// Cobblemon Economy 无 neoforge 版（fabric-only）：恒不可用，货币自动降级（见 CurrencyHandler）
 
 fun cobecoAvailable(): Boolean = false
 
@@ -133,3 +135,28 @@ fun cobecoGetBalance(uuid: UUID, usePco: Boolean): BigDecimal? = null
 fun cobecoRemove(uuid: UUID, amount: BigDecimal, usePco: Boolean): Boolean = false
 
 fun cobecoAdd(uuid: UUID, amount: BigDecimal, usePco: Boolean): Boolean = false
+
+// ── Impactor 直连（双平台）：Impactor 有 neoforge 版，与 fabric 实现完全一致 ──
+
+fun impactorAvailable(): Boolean = isModLoaded("impactor")
+
+fun impactorGetBalance(uuid: UUID): BigDecimal? = try {
+    val service = EconomyService.instance()
+    service.account(uuid).get(2, TimeUnit.SECONDS).balance()
+} catch (_: Throwable) {
+    null
+}
+
+fun impactorRemove(uuid: UUID, amount: BigDecimal): Boolean = try {
+    val service = EconomyService.instance()
+    service.account(uuid).get(2, TimeUnit.SECONDS).withdraw(amount).successful()
+} catch (_: Throwable) {
+    false
+}
+
+fun impactorAdd(uuid: UUID, amount: BigDecimal): Boolean = try {
+    val service = EconomyService.instance()
+    service.account(uuid).get(2, TimeUnit.SECONDS).deposit(amount).successful()
+} catch (_: Throwable) {
+    false
+}

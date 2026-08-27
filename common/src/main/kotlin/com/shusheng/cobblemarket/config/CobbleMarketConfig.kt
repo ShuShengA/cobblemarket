@@ -4,6 +4,7 @@ import com.google.gson.GsonBuilder
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.platform.cobecoAvailable
 import com.shusheng.cobblemarket.platform.configDir
+import com.shusheng.cobblemarket.platform.impactorAvailable
 import net.minecraft.item.Item
 import net.minecraft.registry.Registries
 import net.minecraft.util.Identifier
@@ -19,11 +20,17 @@ object CobbleMarketConfig {
 
     var cobbledollars: Boolean = false
         private set
-    /** 装了 Cobblemon Economy 时是否优先走它的货币 API（其内部桥接可路由到 CobbleDollars/Impactor 后端） */
+    /** 装了 Cobblemon Economy 时是否优先走它的货币 API（其内部桥接可路由到 CobbleDollars/Impactor 后端）。
+     *  ⚠ 仅 Fabric 平台生效：Cobblemon Economy 无 NeoForge 版，NeoForge 上此开关恒被忽略 */
     var cobblemonEconomy: Boolean = false
         private set
-    /** cobeco 模式下的结算货币：POKE=PokeDollars（默认），PCO=PokeCoins；仅 cobblemonEconomy=true 时生效 */
+    /** Cobblemon Economy 模式下的结算货币：POKE=PokeDollars（默认），PCO=PokeCoins；仅 cobblemonEconomy=true 时生效 */
     var cobecoCurrency: String = "POKE"
+        private set
+    /** Impactor 直连：不装 Cobblemon Economy 时直接走 Impactor 的 EconomyService API（双平台可用）。
+     *  优先级低于 Cobblemon Economy 与 CobbleDollars（两者任一开启时此开关被忽略）；默认 false 且不参与
+     *  全新安装自动探测（Impactor 常作为其它模组的基础依赖被装，自动开启会静默切换老服主货币） */
+    var impactor: Boolean = false
         private set
     var currencyItem: String = "minecraft:diamond"
         private set
@@ -108,9 +115,13 @@ object CobbleMarketConfig {
     fun load(skipCurrency: Boolean = false) {
         val hasCD = try { Class.forName("fr.harmex.cobbledollars.common.utils.CobbleDollarsPlayer"); true } catch (_: Exception) { false }
         val hasCobeco = cobecoAvailable()
+        val hasImpactor = impactorAvailable()
         if (!configFile.exists()) {
             cobbledollars = hasCD
             cobblemonEconomy = hasCobeco
+            // impactor 默认 false：不参与全新安装自动探测（Impactor 常被其它模组当作基础依赖装，
+            // 自动开启会静默切换货币后端；服主显式写 true 才启用）
+            impactor = false
             save()
         } else {
             try {
@@ -131,8 +142,8 @@ object CobbleMarketConfig {
                 if (currency != null) {
                     val fileCobbledollars = (currency["cobbledollars"] as? Boolean ?: hasCD) && hasCD
                     // cobblemonEconomy 旧配置缺失时固定 false（升级无感），勿改成「缺失按探测兜底」：
-                    // 老服主已用 cobbledollars=true 运营市场，升级后若因装了 cobeco 被自动切换后端，
-                    // 余额存储会变（除非服主在 cobeco 里开了 main_currency 桥接），行为突变。
+                    // 老服主已用 cobbledollars=true 运营市场，升级后若因装了 Cobblemon Economy 被自动切换后端，
+                    // 余额存储会变（除非服主在 Cobblemon Economy 里开了 main_currency 桥接），行为突变。
                     // 探测值只在无配置文件的全新安装时作为默认（见上方 !configFile.exists() 分支）
                     val fileCobeco = (currency["cobblemonEconomy"] as? Boolean ?: false) && hasCobeco
                     // 结算货币归一化：大小写/全名/缩写都认（PCO/pco/PokeCoins → PCO），其余回 POKE（防服主写错值静默用错货币）
@@ -140,15 +151,17 @@ object CobbleMarketConfig {
                         "pco", "pokecoins" -> "PCO"
                         else -> "POKE"
                     }
+                    val fileImpactor = (currency["impactor"] as? Boolean ?: false) && hasImpactor
                     val fileCurrencyItem = currency["item"] as? String ?: "minecraft:diamond"
-                    if (!currency.containsKey("cobbledollars") || !currency.containsKey("cobblemonEconomy") || !currency.containsKey("cobecoCurrency") || !currency.containsKey("item")) missingKeys = true
+                    if (!currency.containsKey("cobbledollars") || !currency.containsKey("cobblemonEconomy") || !currency.containsKey("cobecoCurrency") || !currency.containsKey("impactor") || !currency.containsKey("item")) missingKeys = true
                     if (skipCurrency) {
                         currencyChangedSinceReload = fileCobbledollars != cobbledollars || fileCobeco != cobblemonEconomy ||
-                            fileCobecoCurrency != cobecoCurrency || fileCurrencyItem != currencyItem
+                            fileCobecoCurrency != cobecoCurrency || fileImpactor != impactor || fileCurrencyItem != currencyItem
                     } else {
                         cobbledollars = fileCobbledollars
                         cobblemonEconomy = fileCobeco
                         cobecoCurrency = fileCobecoCurrency
+                        impactor = fileImpactor
                         currencyItem = fileCurrencyItem
                     }
                 }
@@ -202,9 +215,10 @@ object CobbleMarketConfig {
         val data = mapOf(
             "_comments" to mapOf(
                 "currency.cobbledollars" to "是否使用 CobbleDollars 货币（true/false，cobblemonEconomy=true 时被忽略）。⚠ 货币配置仅在服务器启动时读取，修改后需重启生效 / Whether to use CobbleDollars currency (true/false, ignored when cobblemonEconomy=true). ⚠ Currency settings are read only at server startup — restart after changes",
-                "currency.cobblemonEconomy" to "是否优先使用 Cobblemon Economy 的货币 API（true/false）。true 时市场余额走 cobeco 后端，其内置桥接可路由到 CobbleDollars/Impactor——若服主在 cobeco 配置里把 main_currency 设为 cobbledollars，市场与 CobbleDollars 商人共享同一余额；旧配置升级默认 false（行为不变），全新安装默认按探测自动开启 / Prefer Cobblemon Economy's currency API (true/false). When true the market uses the cobeco backend, whose built-in bridge can route to CobbleDollars/Impactor — if main_currency=cobbledollars in cobeco config, the market and CobbleDollars merchants share one balance; defaults to false on config upgrade (no behavior change) and to auto-detection on fresh installs",
+                "currency.cobblemonEconomy" to "是否优先使用 Cobblemon Economy 的货币 API（true/false）。true 时市场余额走 Cobblemon Economy 后端，其内置桥接可路由到 CobbleDollars/Impactor——若服主在 Cobblemon Economy 配置里把 main_currency 设为 cobbledollars，市场与 CobbleDollars 商人共享同一余额；旧配置升级默认 false（行为不变），全新安装默认按探测自动开启。⚠ 仅 Fabric 平台生效：Cobblemon Economy 无 NeoForge 版，NeoForge 上此开关恒被忽略 / Prefer Cobblemon Economy's currency API (true/false). When true the market uses the Cobblemon Economy backend, whose built-in bridge can route to CobbleDollars/Impactor — if main_currency=cobbledollars in Cobblemon Economy config, the market and CobbleDollars merchants share one balance; defaults to false on config upgrade (no behavior change) and to auto-detection on fresh installs. ⚠ Fabric only: Cobblemon Economy has no NeoForge build, so this switch is always ignored on NeoForge",
                 "currency.cobecoCurrency" to "Cobblemon Economy 结算货币：POKE=PokeDollars（默认），PCO=PokeCoins（写 PCO 或 PokeCoins 均可，不区分大小写）。仅 cobblemonEconomy=true 时生效；PCO 与 PokeDollars 是两套独立账本，市场用 PCO 结算时玩家 /pco 查到的余额就是市场余额 / Cobblemon Economy settlement currency: POKE=PokeDollars (default), PCO=PokeCoins (either PCO or PokeCoins, case-insensitive). Only used when cobblemonEconomy=true; PCO and PokeDollars are separate ledgers — with PCO the market balance equals what players see via /pco",
-                "currency.item" to "货币物品 ID（cobbledollars 与 cobblemonEconomy 均为 false 时生效）/ Currency item ID (used when cobbledollars and cobblemonEconomy are both false)",
+                "currency.impactor" to "Impactor 直连开关（true/false，双平台可用）：不装 Cobblemon Economy 时直接走 Impactor 的 EconomyService API，市场余额即 Impactor 主货币账户。优先级低于 cobblemonEconomy 与 cobbledollars（两者任一开启时被忽略）；默认 false 且不参与全新安装自动探测（Impactor 常被其它模组当作基础依赖安装，自动开启会静默切换货币后端），想用请显式写 true / Direct Impactor integration (true/false, works on both loaders): without Cobblemon Economy, the market talks to Impactor's EconomyService API directly and the market balance is the Impactor primary currency account. Lower priority than cobblemonEconomy and cobbledollars (ignored when either is on); defaults to false and is NOT auto-detected on fresh installs (Impactor is often installed as a library by other mods — auto-enabling would silently switch the currency backend), set true explicitly to use it",
+                "currency.item" to "货币物品 ID（cobbledollars / cobblemonEconomy / impactor 均为 false 时生效）/ Currency item ID (used when cobbledollars, cobblemonEconomy and impactor are all false)",
                 "pokemonListingFeePercent" to "精灵市场上架手续费百分比（0=免手续费）/ Pokémon listing fee percentage (0=no fee)",
                 "itemListingFeePercent" to "物品市场上架手续费百分比（0=免手续费）/ Item listing fee percentage (0=no fee)",
                 "maxPokemonListingsPerPlayer" to "每个玩家同时活跃的精灵上架数量上限（0=不限制）/ Max active Pokémon listings per player (0=unlimited)",
@@ -223,7 +237,7 @@ object CobbleMarketConfig {
                 "maxBuyOrdersPerPlayer" to "每个玩家同时进行的求购单数量上限，精灵与物品合计（0=不限制）。求购单列表全量下发给所有客户端，玩家较多的服务器建议保持较小值，避免全服活跃求购单总量过大导致卡顿 / Max concurrent buy orders per player, Pokémon and items combined (0=unlimited). The buy order list is broadcast in full to every client, so on crowded servers keep this small to avoid lag from too many active orders",
                 "celebrationAnimationEnabled" to "获得精灵时的庆祝动画开关（默认开启）。买到精灵、拍到精灵、求购单接受交付时，在获得者屏幕中央播放该精灵的弹跳动画；关闭后服务端不再下发动画包 / Celebration animation switch when obtaining a Pokémon (on by default). Plays a bouncing animation of the Pokémon on the receiver's screen when buying, winning an auction, or accepting a buy order delivery; when off the server stops sending the animation packet"
             ),
-            "currency" to mapOf("cobbledollars" to cobbledollars, "cobblemonEconomy" to cobblemonEconomy, "cobecoCurrency" to cobecoCurrency, "item" to currencyItem),
+            "currency" to mapOf("cobbledollars" to cobbledollars, "cobblemonEconomy" to cobblemonEconomy, "cobecoCurrency" to cobecoCurrency, "impactor" to impactor, "item" to currencyItem),
             "pokemonListingFeePercent" to pokemonListingFeePercent,
             "itemListingFeePercent" to itemListingFeePercent,
             "maxPokemonListingsPerPlayer" to maxPokemonListingsPerPlayer,

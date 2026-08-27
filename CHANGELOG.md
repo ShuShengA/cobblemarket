@@ -7,13 +7,14 @@
 - 设置新增「待领取装不下掉落」开关（默认关）：开启后，领取待领取物品时背包放不下的部分会掉在地上（可能消失或被他人捡走，风险自负）；关闭时保持原样留在待领取，下次再领
 - **管理员「所有求购」界面**：管理员面板新增入口，可查看全部求购单并强制下架——冻结金退还给买家，待确认交付的货物退回卖家，买卖双方都会收到通知（离线则上线补发）；面板按钮重新排列为两列布局
 - **进入市场动画**：按 K 键/手机 App/其他入口打开市场入口时播放掉落动画——动画图从屏幕顶外落到入口位置并放大，短暂停留后变暗淡出、入口界面随之透出；设置弹窗新增「进入市场动画」开关（默认开，个人设置）
-- **支持 Cobblemon Economy 货币**：新增第三种货币模式——装了 Cobblemon Economy 的服务器，市场直接走其货币 API（其内置桥接可路由到 CobbleDollars/Impactor 后端，服主配置 main_currency 后市场与 CobbleDollars 商人共享同一余额）。货币优先级 cobeco → CobbleDollars → 物品；全新安装自动探测，旧配置升级行为不变；新开关 `currency.cobblemonEconomy`，可选 `currency.cobecoCurrency`（POKE 默认/PCO）在 PokeDollars 与 PokeCoins 之间切换结算货币；价格单位统一为 ₽（PokeDollars/CobbleDollars 模式，行内与弹窗一致）；服主向货币规则完整说明见 docs/currency_zh.md
+- **支持 Cobblemon Economy 货币**：新增第三种货币模式——装了 Cobblemon Economy 的服务器，市场直接走其货币 API（其内置桥接可路由到 CobbleDollars/Impactor 后端，服主配置 main_currency 后市场与 CobbleDollars 商人共享同一余额）。货币优先级 Cobblemon Economy → CobbleDollars → 物品；全新安装自动探测，旧配置升级行为不变；新开关 `currency.cobblemonEconomy`，可选 `currency.cobecoCurrency`（POKE 默认/PCO）在 PokeDollars 与 PokeCoins 之间切换结算货币；价格单位统一为 ₽（PokeDollars/CobbleDollars 模式，行内与弹窗一致）；服主向货币规则完整说明见 docs/currency_zh.md
 - **原生 NeoForge 支持**：新增 NeoForge 版模组（cobblemarket-neoforge-1.0.0.jar），与 Fabric 版功能一致、存档互通；依赖 Kotlin for Forge 与 Cobblemon（NeoForge 版），无需安装 Architectury API；Cobblemon Economy 无 NeoForge 版，该平台货币自动降级 CobbleDollars / 物品
 - **容器内容校验**：物品黑名单、价格限制、蛋交易开关对容器内物品同样生效——上架/拍卖/求购单交付时递归检查容器内容（潜影箱等），防止把受限物品装进容器绕过治理
 - **物品求购交付可选形态**：背包中同一物品存在多种组件形态（如内容不同的潜影箱）时，交付前先选择要交付哪一种——选择列表显示图标与数量、悬停可见容器内容，交付弹窗内可随时更换；单形态交付流程不变
 - **大木博士与知识点气泡**：入口界面新增常驻大木博士立绘，头顶聊天气泡随机展示宝可梦冷知识（内置 448 条中英双语，可自行增删替换）；每次进入入口界面随机换一条，点击大木博士可主动切换
 - **配置热重载**：新增 `/market reload` 命令（OP）——费率、上限、时长、开关等配置改文件后即时生效，无需重启；市场总开关随重载变化时全员同步；货币配置需重启生效（重载时若检测到变更会提示）
 - **服务器配置可视化编辑**：入口界面市场总开关左侧新增「服务器配置」按钮（仅 OP 可见）——费率、上限、时长、开关等 15 项配置可直接在游戏内编辑（数字输入框失焦保存、开关点击即生效），无需改配置文件；货币配置与拍卖时长列表仍需编辑配置文件
+- **Impactor 直连支持**：不装 Cobblemon Economy 也能用 Impactor 货币——新增 `currency.impactor` 开关（双平台可用，NeoForge 服主从此有了虚拟货币直连路径），市场直接读写 Impactor 的 EconomyService API；货币优先级 Cobblemon Economy → CobbleDollars → Impactor → 物品；Impactor 不参与全新安装自动探测（它常被其它模组当作基础依赖安装，自动开启会静默切换货币），服主显式开启；配置注释补明 coblemonEconomy 仅 Fabric 平台生效
 
 ### 改动
 
@@ -23,6 +24,7 @@
 - 封禁管理、黑名单、价格限制界面新增的条目显示在最上面（最新的在前），方便管理
 - 拍卖场与求购单列表同样最新的在最上面（实时新单也插在顶部）
 - 交易历史 CSV 新增「详情」列：精灵完整数值（等级/闪光/IV/特训/性格/特性/性别/球种/携带物/形态）与物品 NBT 文本化，补偿对账时可按记录精确复刻
+- 价格单位与货币名全模式统一：虚拟货币（Cobblemon Economy POKE/PCO、CobbleDollars）在行内、弹窗、悬停与聊天消息中一律只显示 ₽，不再显示 PCo/PokeDollars/PokeCoins 等货币名（PCO 仅作为后端账本路由）；物品货币仍显示物品名
 
 ### 修复
 

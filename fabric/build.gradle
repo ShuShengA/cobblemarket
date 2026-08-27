@@ -57,6 +57,9 @@ dependencies {
 	modLocalRuntime "maven.modrinth:cobblemon:kF7CvxTo"
 	modCompileOnly "maven.modrinth:cobbledollars:cqsHXSXe"
 	modCompileOnly "maven.modrinth:cobblemon-economy:CfJu3YAf"
+	// Impactor 经济 API（服务端专用模组；compileOnly 不进包，运行时服主装 Impactor 本体）
+	// 本地完整 jar：官方 maven 的 economy 坐标只发布 dev-slim 变体（缺 services.Service 父接口，编译不过）
+	modCompileOnly files('libs/Impactor-Fabric-5.3.5+1.21.1.jar')
 	modCompileOnly "maven.modrinth:cobblemon-smartphone:w7JqnSrT"
 
 	common(project(path: ':common', configuration: 'namedElements')) { transitive = false }

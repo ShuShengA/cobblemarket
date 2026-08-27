@@ -6,6 +6,8 @@ package com.shusheng.cobblemarket.platform.fabric
 
 import com.cobblemon.economy.fabric.CobblemonEconomy
 import com.mojang.brigadier.CommandDispatcher
+import net.impactdev.impactor.api.economy.EconomyService
+import java.util.concurrent.TimeUnit
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents
@@ -107,9 +109,9 @@ fun registerCommands(
     }
 }
 
-// ── Cobblemon Economy（cobeco）──
+// ── Cobblemon Economy──
 
-fun cobecoAvailable(): Boolean = isModLoaded("cobblemon_economy")
+fun cobecoAvailable(): Boolean = isModLoaded("cobblemon-economy")
 
 fun cobecoGetBalance(uuid: UUID, usePco: Boolean): BigDecimal? = try {
     val eco = CobblemonEconomy.getEconomyManager() ?: return null
@@ -129,6 +131,31 @@ fun cobecoAdd(uuid: UUID, amount: BigDecimal, usePco: Boolean): Boolean = try {
     val eco = CobblemonEconomy.getEconomyManager() ?: return false
     if (usePco) eco.addPco(uuid, amount) else eco.addBalance(uuid, amount)
     true
+} catch (_: Throwable) {
+    false
+}
+
+// ── Impactor 直连 ──
+
+fun impactorAvailable(): Boolean = isModLoaded("impactor")
+
+fun impactorGetBalance(uuid: UUID): BigDecimal? = try {
+    val service = EconomyService.instance()
+    service.account(uuid).get(2, TimeUnit.SECONDS).balance()
+} catch (_: Throwable) {
+    null
+}
+
+fun impactorRemove(uuid: UUID, amount: BigDecimal): Boolean = try {
+    val service = EconomyService.instance()
+    service.account(uuid).get(2, TimeUnit.SECONDS).withdraw(amount).successful()
+} catch (_: Throwable) {
+    false
+}
+
+fun impactorAdd(uuid: UUID, amount: BigDecimal): Boolean = try {
+    val service = EconomyService.instance()
+    service.account(uuid).get(2, TimeUnit.SECONDS).deposit(amount).successful()
 } catch (_: Throwable) {
     false
 }
