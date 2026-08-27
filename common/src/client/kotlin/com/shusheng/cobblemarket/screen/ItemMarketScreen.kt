@@ -669,10 +669,11 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         closeBuyDialog()
     }
 
-    private fun buyTotal(): Int {
+    /** 总价 Long 计算：单价 9 位 × 数量 4 位可超 Int 上限，Int 相乘会溢出显示负数 */
+    private fun buyTotal(): Long {
         val entry = selectedEntry ?: return 0
         val count = buyCountField?.text?.toIntOrNull() ?: 0
-        return entry.price * count
+        return entry.price.toLong() * count
     }
 
     private fun renderBuyDialogBackground(context: DrawContext) {

@@ -670,8 +670,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             renderTooltip(context, displayList[hoveredRow].value, displayList[hoveredRow].index, mouseX, mouseY)
         }
 
-        prevButton.active = currentPage > 1
-        nextButton.active = currentPage < totalPages
+        // 每帧刷新按钮状态（render 覆写为最新 currentPage/totalPages，含 inFlight 置灰，见 updatePageButtons）
+        updatePageButtons()
 
         if (confirmEntry != null) {
             renderConfirmDialog(context, mouseX, mouseY)

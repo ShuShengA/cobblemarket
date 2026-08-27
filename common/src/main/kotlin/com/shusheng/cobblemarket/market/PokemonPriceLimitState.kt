@@ -20,8 +20,12 @@ data class PriceBounds(val min: Int?, val max: Int?)
 fun mergePriceBounds(a: PriceBounds?, b: PriceBounds?): PriceBounds? {
     if (a == null) return b
     if (b == null) return a
-    val min = (a.min ?: 0) + (b.min ?: 0)
-    val max = if (a.max != null && b.max != null) a.max + b.max else null
+    // Long 相加 + 封顶：两侧 Int 相加可能溢出回绕成负，导致 price < min / price > max
+    // 永不触发、限价静默失效（界面输入单侧限 9 位触发不了，防的是手改配置的极端值）
+    val min = ((a.min ?: 0).toLong() + (b.min ?: 0)).coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
+    val max = if (a.max != null && b.max != null) {
+        (a.max.toLong() + b.max).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    } else null
     return if (min == 0 && max == null) null else PriceBounds(min, max)
 }
 

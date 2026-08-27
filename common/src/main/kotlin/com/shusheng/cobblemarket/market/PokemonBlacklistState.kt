@@ -38,6 +38,9 @@ data class PokemonBlacklistEntry(
         const val HT_ANY = 0
         const val HT_ONLY = 1
         const val HT_NONE = 2
+        /** 服务端 aspects 条目上限（一个物种的形态最多几十个，正常客户端远达不到）：
+         *  恶意客户端可发海量 aspects 随订单/黑名单持久化并全服广播，撑爆存档与 S2C 包 */
+        const val MAX_ASPECTS = 64
     }
 
     fun matches(targetSpeciesId: String, ivs: IVs, htIvs: Map<com.cobblemon.mod.common.api.pokemon.stats.Stat, Int>, targetAspects: Set<String>, formAspectUnion: Set<String>, targetShiny: Boolean, targetHasHt: Boolean): Boolean {

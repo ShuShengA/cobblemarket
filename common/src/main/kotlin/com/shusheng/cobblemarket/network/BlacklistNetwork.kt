@@ -149,6 +149,13 @@ object BlacklistNetwork {
                             .formatted(net.minecraft.util.Formatting.RED), false)
                     return@execute
                 }
+                // 形态列表上限（同求购单）：恶意/异常输入不随条目持久化膨胀
+                if (payload.aspects.size > PokemonBlacklistEntry.MAX_ASPECTS) {
+                    player.sendMessage(
+                        net.minecraft.text.Text.translatable("cobblemarket.blacklist.not_found")
+                            .formatted(net.minecraft.util.Formatting.RED), false)
+                    return@execute
+                }
                 val entry = PokemonBlacklistEntry(
                     id = UUID.randomUUID(),
                     speciesId = speciesId,

@@ -431,8 +431,8 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             renderItemTooltip(context, displayEntries[hoveredSlot], mouseX, mouseY)
         }
 
-        prevButton?.active = currentPage > 1
-        nextButton?.active = currentPage < totalPages
+        // 每帧刷新按钮状态（render 覆写为最新 currentPage/totalPages，含 inFlight 置灰，见 updatePageButtons）
+        updatePageButtons()
     }
 
     private fun renderItemTooltip(context: DrawContext, entry: ItemEntry, mouseX: Int, mouseY: Int) {

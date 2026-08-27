@@ -434,6 +434,11 @@ object BuyOrderNetwork {
                 if (marketBlocked(player)) return@execute
                 if (!checkPrices(player, payload.minPrice, payload.maxPrice)) return@execute
                 if (!checkOrderLimit(server, player)) return@execute
+                // 形态列表上限：恶意客户端可发海量 aspects 随订单持久化 + 全服广播（正常客户端一个物种形态最多几十个）
+                if (payload.aspects.size > PokemonBlacklistEntry.MAX_ASPECTS) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.not_found")))
+                    return@execute
+                }
                 // 物种解析：空 = 任意精灵；解析失败明确反馈
                 val speciesId = payload.speciesId.trim().ifEmpty { null }
                 var speciesKey: String? = null
