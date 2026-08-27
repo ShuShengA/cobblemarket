@@ -353,7 +353,9 @@ data class MarketDataPayload(
     val entries: List<ListingEntry>,
     val totalPages: Int,
     val currentPage: Int,
-    val pendingBalance: Long
+    val pendingBalance: Long,
+    /** 待领取精灵数量（>0 时客户端收款按钮旁红点提示；管理端响应恒 0） */
+    val pendingReturns: Int
 ) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
@@ -366,11 +368,18 @@ data class MarketDataPayload(
                 b.writeInt(p.totalPages)
                 b.writeInt(p.currentPage)
                 b.writeLong(p.pendingBalance)
+                b.writeVarInt(p.pendingReturns)
             },
             { b ->
                 val size = b.readVarInt()
                 val entries = (0 until size).map { ListingEntry.read(b) }
-                MarketDataPayload(entries, b.readInt(), b.readInt(), b.readLong())
+                MarketDataPayload(
+                    entries = entries,
+                    totalPages = b.readInt(),
+                    currentPage = b.readInt(),
+                    pendingBalance = b.readLong(),
+                    pendingReturns = b.readVarInt()
+                )
             }
         )
     }
@@ -662,7 +671,9 @@ data class ItemMarketDataPayload(
     val entries: List<ItemEntry>,
     val totalPages: Int,
     val currentPage: Int,
-    val pendingBalance: Long
+    val pendingBalance: Long,
+    /** 待领取物品数量（>0 时客户端收款按钮旁红点提示；管理端响应恒 0） */
+    val pendingReturns: Int
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -675,11 +686,18 @@ data class ItemMarketDataPayload(
                 b.writeInt(p.totalPages)
                 b.writeInt(p.currentPage)
                 b.writeLong(p.pendingBalance)
+                b.writeVarInt(p.pendingReturns)
             },
             { b ->
                 val size = b.readVarInt()
                 val entries = (0 until size).map { ItemEntry.read(b) }
-                ItemMarketDataPayload(entries, b.readInt(), b.readInt(), b.readLong())
+                ItemMarketDataPayload(
+                    entries = entries,
+                    totalPages = b.readInt(),
+                    currentPage = b.readInt(),
+                    pendingBalance = b.readLong(),
+                    pendingReturns = b.readVarInt()
+                )
             }
         )
     }
@@ -1061,7 +1079,8 @@ object MarketNetwork {
                         pageEntries,
                         maxOf(1, totalPages),
                         clampedPage,
-                        state.getPendingBalance(player.uuid)
+                        state.getPendingBalance(player.uuid),
+                        state.getPendingReturns(player.uuid).size
                     )
                 )
             }
@@ -1355,7 +1374,7 @@ object MarketNetwork {
                     }
                 }
 
-                sendToPlayer(player, MarketDataPayload(pageEntries, maxOf(1, totalPages), clampedPage, 0L))
+                sendToPlayer(player, MarketDataPayload(pageEntries, maxOf(1, totalPages), clampedPage, 0L, 0))
             }
         }
 
@@ -1437,7 +1456,7 @@ object MarketNetwork {
 
                 sendToPlayer(
                     player,
-                    ItemMarketDataPayload(pageEntries, maxOf(1, totalPages), clampedPage, 0L)
+                    ItemMarketDataPayload(pageEntries, maxOf(1, totalPages), clampedPage, 0L, 0)
                 )
             }
         }
@@ -2055,7 +2074,8 @@ object MarketNetwork {
                         pageEntries,
                         maxOf(1, totalPages),
                         clampedPage,
-                        MarketState.get(server).getPendingBalance(player.uuid)
+                        MarketState.get(server).getPendingBalance(player.uuid),
+                        ItemMarketState.get(server).getPendingReturns(player.uuid).size
                     )
                 )
             }
