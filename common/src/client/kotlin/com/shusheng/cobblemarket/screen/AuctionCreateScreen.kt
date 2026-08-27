@@ -353,6 +353,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     }
 
     fun onMarketResult(payload: MarketResultPayload) {
+        createInFlight = false
         if (payload.success) {
             // 上架成功：回到拍卖场并保持当前 tab（物品上架留在物品 tab）
             client?.setScreen(AuctionScreen(currentTab))
@@ -533,7 +534,12 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         updateDurationButton()
     }
 
+    /** 创建请求在途标志：连点防重（onMarketResult 响应时复位） */
+    private var createInFlight = false
+
     private fun confirmCreate() {
+        // 防重：请求在途时忽略连点（服务端有 UUID 校验+节流兜底，这里防误发与响应混杂）
+        if (createInFlight) return
         val starting = startingField?.text?.toIntOrNull() ?: run {
             playFailSound()
             return
@@ -545,6 +551,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         val pokemon = dialogPokemon
         val item = dialogItem
         if (pokemon != null) {
+            createInFlight = true
             sendToServer(CreatePokemonAuctionPayload(pokemon.uuid, starting, increment, durationIndexToSend))
         } else if (item != null) {
             val count = countField?.text?.toIntOrNull() ?: run {
@@ -552,9 +559,13 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 return
             }
             if (count <= 0 || count > item.count) { playFailSound(); return }
-            val registry = client?.world?.registryManager ?: return
+            val registry = client?.world?.registryManager ?: run {
+                playFailSound()
+                return
+            }
             val itemId = Registries.ITEM.getId(item.stack.item).toString()
             val itemNbt = item.stack.encode(registry, NbtCompound()) as? NbtCompound ?: NbtCompound()
+            createInFlight = true
             sendToServer(CreateItemAuctionPayload(itemId, itemNbt, count, starting, increment, durationIndexToSend))
         }
         // 不立即关闭：等 onMarketResult 响应（成功跳转拍卖场，失败保留弹窗供改价重试）

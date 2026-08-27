@@ -138,6 +138,10 @@ data class SetMarketEnabledPayload(val enabled: Boolean) : CustomPayload {
 }
 
 /** 市场总开关切换（命令与入口按钮共用）：落盘 + 全员广播 */
+/** 搜索词解析出的物品 ID 上限：恶意客户端可发海量 ID 放大 O(n²) 过滤（正常搜索词最多解析出几十个）；
+ *  服务端 take 钳制 + toSet() 把「挂单数 × ID 数」线性查找降为 O(1) */
+private const val MAX_ITEM_IDS = 256
+
 fun toggleMarketEnabled(server: net.minecraft.server.MinecraftServer, enabled: Boolean) {
     com.shusheng.cobblemarket.config.CobbleMarketConfig.setMarketEnabled(enabled)
     server.playerManager.playerList.forEach { sendToPlayer(it, MarketStatePayload(enabled)) }
@@ -1428,7 +1432,7 @@ object MarketNetwork {
                 ).let { list ->
                     val query = payload.itemFilter.trim()
                     if (query.isEmpty()) list
-                    else list.filter { it.itemId in payload.itemIds }
+                    else list.filter { it.itemId in payload.itemIds.take(MAX_ITEM_IDS).toSet() }
                 }
 
                 // 上限 84（12 行）：网格页容量随窗口，上限低于容量会导致末行空槽+多余分页；
@@ -2042,7 +2046,7 @@ object MarketNetwork {
                 ).let { list ->
                     val query = payload.query.trim()
                     if (query.isEmpty()) list
-                    else list.filter { it.itemId in payload.itemIds }
+                    else list.filter { it.itemId in payload.itemIds.take(MAX_ITEM_IDS).toSet() }
                 }
 
                 // 上限 84（12 行）：网格页容量随窗口，上限低于容量会导致末行空槽+多余分页；

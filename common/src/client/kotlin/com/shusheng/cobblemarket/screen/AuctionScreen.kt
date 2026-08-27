@@ -81,6 +81,8 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
     // ── 出价弹窗 ──
     private var bidEntry: AuctionEntry? = null
     private var bidField: TextFieldWidget? = null
+    /** 玩家是否手动编辑过出价输入：BID 广播只在未编辑时更新预填，不覆盖玩家输入 */
+    private var bidEdited = false
     private var bidConfirmButton: NineSliceButton? = null
     // 出价校验失败提示（按钮下方红字，2 秒后消失；重新输入时清除）
     private var bidErrorText: net.minecraft.text.Text? = null
@@ -523,13 +525,16 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
             }
             "BID" -> payload.entry?.let { e ->
                 entries = entries.map { if (it.id == e.id) e else it }
-                // 出价弹窗同步最新数据（他人出价后弹窗内价格/预填不过期）
+                // 出价弹窗同步最新数据（他人出价后弹窗内价格/预填不过期）；
+                // 玩家已开始输入时不再覆盖（bidEdited 由 changedListener 置位），保护输入内容
                 if (bidEntry?.id == e.id) {
                     bidEntry = e
-                    val minValid = if (e.currentPrice > 0)
-                        (e.currentPrice.toLong() + e.minIncrement).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-                    else e.startingPrice
-                    bidField?.text = minValid.toString()
+                    if (!bidEdited) {
+                        val minValid = if (e.currentPrice > 0)
+                            (e.currentPrice.toLong() + e.minIncrement).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                        else e.startingPrice
+                        bidField?.text = minValid.toString()
+                    }
                 }
             }
             "SETTLED" -> payload.entry?.let { e ->
@@ -766,8 +771,10 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         bidField?.setPlaceholder(Text.translatable("cobblemarket.auction.bid_placeholder").formatted(Formatting.GRAY))
         bidField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         bidField?.text = minValid.toString()
+        // 打开弹窗时重置「玩家已编辑」标志：之后 BID 广播只更新未动过的预填，不覆盖玩家输入
+        bidEdited = false
         // 重新输入时清除校验失败提示
-        bidField?.setChangedListener { bidErrorText = null }
+        bidField?.setChangedListener { bidEdited = true; bidErrorText = null }
         addDrawableChild(bidField)
 
         // 音效由 confirmBid 按校验结果播放（失败 fail.ogg / 成功 auction_bid 金币音效）

@@ -192,7 +192,8 @@ object BanNetwork {
                     System.currentTimeMillis() + ms
                 }
 
-                BanState.get(server).ban(target.first, target.second, player.name.string, expiresAt, payload.reason)
+                // 封禁理由长度钳制（防超长输入撑大存档/广播；正常理由远小于上限）
+                BanState.get(server).ban(target.first, target.second, player.name.string, expiresAt, payload.reason.take(100))
 
                 val msg = if (expiresAt == null)
                     Text.translatable("cobblemarket.ban.banned", target.second)

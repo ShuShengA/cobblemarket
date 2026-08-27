@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.network
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.market.ItemPriceLimitEntry
 import com.shusheng.cobblemarket.market.ItemPriceLimitState
+import com.shusheng.cobblemarket.market.PokemonBlacklistEntry
 import com.shusheng.cobblemarket.market.PokemonPriceLimitEntry
 import com.shusheng.cobblemarket.market.PokemonPriceLimitState
 import com.shusheng.cobblemarket.platform.registerC2S
@@ -260,6 +261,12 @@ object PriceLimitNetwork {
                         }
                 }
                 val state = PokemonPriceLimitState.get(server)
+                // 形态列表上限（同求购单/黑名单）：恶意/异常输入不随条目持久化膨胀
+                if (payload.aspects.size > PokemonBlacklistEntry.MAX_ASPECTS) {
+                    player.sendMessage(
+                        Text.translatable("cobblemarket.blacklist.not_found").formatted(Formatting.RED), false)
+                    return@execute
+                }
                 // 编辑语义：替换原条目（改了形态/物种/V 数/闪光/特训等 key 字段时，旧条目不再残留）
                 payload.original?.let { state.remove(it.speciesId, it.vCount, it.shinyFilter, it.aspects, it.htFilter) }
                 state.add(
