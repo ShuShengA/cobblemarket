@@ -127,20 +127,26 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             rightX, startY, btnW, btnH,
             Text.translatable("cobblemarket.entry.item"),
             { openIfMarketEnabled { openItemMarket() } },
-            Identifier.of("cobblemarket", "textures/gui/pokeball_icon.png")
+            Identifier.of("cobblemarket", "textures/gui/pokeball_icon.png"),
+            iconTexSize = 48,
+            iconDisplaySize = 18
         ))
         // 行 2
         entryButtons += addDrawableChild(TextureButton(
             leftX, startY + btnH + gap, btnW, btnH,
             Text.translatable("cobblemarket.entry.history"),
             { openIfMarketEnabled { client?.setScreen(HistoryScreen()) } },
-            Identifier.of("cobblemarket", "textures/gui/history_icon.png")
+            Identifier.of("cobblemarket", "textures/gui/history_icon.png"),
+            iconTexSize = 48,
+            iconDisplaySize = 18
         ))
         entryButtons += addDrawableChild(TextureButton(
             rightX, startY + btnH + gap, btnW, btnH,
             Text.translatable("cobblemarket.entry.auction"),
             { openIfMarketEnabled { client?.setScreen(AuctionScreen()) } },
-            Identifier.of("cobblemarket", "textures/gui/auction_gavel_left.png")
+            Identifier.of("cobblemarket", "textures/gui/auction_gavel_left.png"),
+            iconTexSize = 48,
+            iconDisplaySize = 18
         ))
         // 行 3：管理员面板居中（仅 OP），左侧放 OP 图标
         if (isAdmin) {
@@ -148,7 +154,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                 centerX - btnW / 2, startY + (btnH + gap) + btnH + 4, btnW, btnH,
                 Text.translatable("cobblemarket.entry.op"),
                 { openIfMarketEnabled(opBypass = true) { client?.setScreen(AdminScreen()) } },
-                Identifier.of("cobblemarket", "textures/gui/op_icon.png")
+                Identifier.of("cobblemarket", "textures/gui/op_icon.png"),
+                iconTexSize = 48,
+                iconDisplaySize = 18
             ))
         }
 
@@ -179,6 +187,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             Text.literal(""),
             { openIfMarketEnabled { openSettingsDialog() } },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/settings_icon.png"),
+            // 48×48 贴图缩到 18×18 显示（照求购单按钮）
+            iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             texture = ROW_BACKGROUND_TEXTURE,
             texH = ROW_BACKGROUND_TEX_H
         )
