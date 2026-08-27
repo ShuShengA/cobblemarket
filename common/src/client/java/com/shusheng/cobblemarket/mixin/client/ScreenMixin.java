@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.mixin.client;
 
+import com.shusheng.cobblemarket.client.CobbleMarketClientKt;
 import com.shusheng.cobblemarket.client.PokemonCelebrationAnimation;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -19,8 +20,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Screen.class)
 public abstract class ScreenMixin {
 
+    // 诊断日志（一次性）：验证注入点确实在运行
+    private static boolean hudDiagLogged = false;
+
     @Inject(method = "renderWithTooltip", at = @At("TAIL"))
     private void cobblemarket$renderCelebrationOverlay(DrawContext context, int mouseX, int mouseY, float deltaTicks, CallbackInfo ci) {
         PokemonCelebrationAnimation.renderOverlay(context);
+        // 余额 HUD：界面（含弹窗遮罩）画完后补画，保证竞价/购买弹窗打开时余额不被压暗
+        CobbleMarketClientKt.renderBalanceHud(context);
     }
 }

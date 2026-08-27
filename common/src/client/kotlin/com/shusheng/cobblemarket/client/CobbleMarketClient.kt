@@ -43,13 +43,16 @@ import com.shusheng.cobblemarket.screen.MarketScreen
 import com.shusheng.cobblemarket.screen.ItemMarketScreen
 import com.shusheng.cobblemarket.screen.ItemReturnScreen
 import com.shusheng.cobblemarket.screen.ItemSellScreen
+import com.shusheng.cobblemarket.screen.ItemVariantSelectScreen
 import com.shusheng.cobblemarket.screen.PokemonReturnScreen
 import com.shusheng.cobblemarket.screen.PriceLimitScreen
 import com.shusheng.cobblemarket.screen.SellSelectScreen
 import com.shusheng.cobblemarket.screen.ServerConfigScreen
+import com.shusheng.cobblemarket.screen.drawNineSlice
 
 import com.shusheng.cobblemarket.platform.isModLoaded
 import com.shusheng.cobblemarket.platform.onClientTick
+import com.shusheng.cobblemarket.platform.registerHudRender
 import com.shusheng.cobblemarket.platform.registerKeyBinding
 
 import com.shusheng.cobblemarket.platform.registerS2C
@@ -64,12 +67,19 @@ import net.minecraft.util.Identifier
 import org.lwjgl.glfw.GLFW
 import org.slf4j.LoggerFactory
 
+private val HUD_BALANCE_BG = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/hud_balance_bg.png")
+private const val HUD_BALANCE_BG_TEX_H = 40
+
 object CobbleMarketClient {
 
     val LOGGER = LoggerFactory.getLogger(CobbleMarket.MOD_ID)
 
     private lateinit var openMarketKey: KeyBinding
     private var wasEPressed = false
+
+    /** 余额 HUD 低频兜底轮询计时（交易响应已即时刷新，这里兜住离线收益补发等） */
+    private var lastBalancePollAt = 0L
+
 
     // 成交铃声定时（tick 触发）：落槌立即播放，铃声 0.4 秒后（多拍卖同批结算时铃声只响一次）
     private var bellSoundAt = 0L
@@ -111,6 +121,16 @@ object CobbleMarketClient {
                 }
             }
             wasEPressed = ePressed
+            // 余额 HUD 低频兜底刷新：30 秒一次（非 OFF 模式且已进入世界时）
+            if (ClientConfig.balanceHudMode != BalanceHudMode.OFF && client.player != null &&
+                (lastBalancePollAt == 0L || tickNow - lastBalancePollAt >= 30_000)
+            ) {
+                lastBalancePollAt = tickNow
+                sendToServer(RequestBalancePayload())
+            }
+        }
+        registerHudRender { context, _ ->
+            renderBalanceHud(context)
         }
 
         registerS2C(OpenMarketPayload.ID, OpenMarketPayload.CODEC) { _ ->
@@ -444,9 +464,80 @@ fun playFailSound() {
  * 新增界面要支持 E 键关闭 = 在这里补一行（别把白名单散回 tick 里）。
  * 输入框聚焦时 E 不生效（打字保护在调用侧判断）。
  */
+/** 余额 HUD：左上角金额 + 货币符号（金色，金额规范色）；常驻所有界面（渲染在最顶层，弹窗打开时也可见——竞价/购买时玩家能看到剩余余额）；开关关闭、未进世界时不画。
+ *  公开顶层函数：HudRenderCallback（无界面）与 ScreenMixin（界面之上）两处调用。 */
+/** 上次 HUD 余额文本（ON_CHANGE 模式变动检测） */
+private var lastHudBalanceText: String? = null
+
+/** ON_CHANGE 模式：余额最近一次变动时刻 */
+private var lastBalanceChangeAt = 0L
+
+fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
+    val client = MinecraftClient.getInstance()
+    if (client.player == null) return
+    val text = "${hudBalanceText(client)} ${inlineCurrencyUnit()}"
+    // 三态显示判断：ALWAYS 恒显；ON_CHANGE 文本变化后显 5 秒；OFF 不显
+    val visible = when (ClientConfig.balanceHudMode) {
+        BalanceHudMode.OFF -> false
+        BalanceHudMode.ALWAYS -> true
+        BalanceHudMode.ON_CHANGE -> {
+            if (text != lastHudBalanceText) {
+                lastHudBalanceText = text
+                lastBalanceChangeAt = System.currentTimeMillis()
+            }
+            System.currentTimeMillis() - lastBalanceChangeAt < 5_000
+        }
+    }
+    if (!visible) return
+    // 「适应」模式淡出：显示期最后 800ms 背景+文字整体线性渐隐（入口动画暗淡同款手法）
+    var alphaF = 1f
+    if (ClientConfig.balanceHudMode == BalanceHudMode.ON_CHANGE) {
+        val remaining = 5_000 - (System.currentTimeMillis() - lastBalanceChangeAt)
+        if (remaining < 800) alphaF = (remaining / 800f).coerceIn(0f, 1f)
+    }
+    if (alphaF <= 0f) return
+    // 与庆祝动画同款三层：flush 提交遮罩 → 清深度缓冲（遮罩用 z=100 平移写入深度，
+    // 不清会被深度测试拒绝）→ 画 HUD → 立即提交
+    context.draw()
+    com.mojang.blaze3d.systems.RenderSystem.clear(
+        org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT,
+        MinecraftClient.IS_SYSTEM_MAC
+    )
+    // RGB 随 alpha 一起衰减（照入口动画淡出）：context.setShaderColor 同时作用于
+    // drawTexture（背景贴图）与文字渲染；RenderSystem 全局色不响应 drawTexture，勿混用
+    context.setShaderColor(alphaF, alphaF, alphaF, alphaF)
+    // 背景框：HUD 专属九宫格贴图（40×40），宽随文字自适应，高 14
+    val textW = client.textRenderer.getWidth(text)
+    drawNineSlice(
+        context,
+        HUD_BALANCE_BG,
+        0, 0, textW + 10, 14,
+        0, HUD_BALANCE_BG_TEX_H
+    )
+    context.drawTextWithShadow(client.textRenderer, text, 5, 2, 0xFFAA00)
+    context.setShaderColor(1f, 1f, 1f, 1f)
+    context.draw()
+}
+
+/** HUD 余额文本：虚拟货币用服务端下发缓存；物品货币本地实时数背包（丢/捡物品下一帧即变，零网络开销） */
+private fun hudBalanceText(client: MinecraftClient): String {
+    val raw = BalanceCache.currencyName
+    val itemId = net.minecraft.util.Identifier.tryParse(raw)
+    if (itemId == null) return BalanceCache.balance // 虚拟货币 key
+    val item = net.minecraft.registry.Registries.ITEM.get(itemId)
+    val player = client.player ?: return BalanceCache.balance
+    var total = 0
+    val inv = player.inventory
+    for (i in 0 until inv.size()) {
+        val stack = inv.getStack(i)
+        if (stack.isOf(item)) total += stack.count
+    }
+    return formatBalanceLong(total.toLong())
+}
+
 private fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean =
     s is MarketScreen || s is SellSelectScreen || s is HistoryScreen || s is MarketEntryScreen ||
         s is ItemMarketScreen || s is ItemSellScreen || s is ItemReturnScreen || s is PokemonReturnScreen ||
         s is BuyConfirmScreen || s is AdminScreen || s is AdminPokemonScreen || s is AdminItemScreen || s is AdminBanScreen ||
         s is BlacklistScreen || s is PriceLimitScreen || s is AuctionScreen || s is AuctionCreateScreen ||
-        s is BuyOrderScreen || s is AdminAuctionScreen || s is ServerConfigScreen
+        s is BuyOrderScreen || s is AdminAuctionScreen || s is ServerConfigScreen || s is ItemVariantSelectScreen
