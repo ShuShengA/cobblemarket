@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.AdminBanPayload
 import com.shusheng.cobblemarket.network.AdminUnbanPayload
 import com.shusheng.cobblemarket.network.BanEntry
@@ -102,7 +103,10 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     }
 
     private fun doBan() {
-        val name = nameField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        val name = nameField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: run {
+            playFailSound()
+            return
+        }
         val duration = durationField?.text?.trim() ?: ""
         openBanConfirmDialog(name, duration)
     }

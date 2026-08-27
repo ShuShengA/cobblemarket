@@ -840,7 +840,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 }
 
                 // Level
-                context.drawText(textRenderer, "Lv.${p.level}", leftX + 200, y + 7, 0xAAAAAA, false)
+                val levelText = Text.translatable("cobblemarket.gui.lv").string + p.level
+                context.drawText(textRenderer, levelText, leftX + 200, y + 7, 0x000000, false)
             }
         } else {
             items.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, item ->

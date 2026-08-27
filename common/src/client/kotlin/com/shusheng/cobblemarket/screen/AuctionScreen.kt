@@ -935,7 +935,10 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
 
     private fun confirmBid() {
         val entry = bidEntry ?: return
-        val amount = bidField?.text?.toIntOrNull() ?: return
+        val amount = bidField?.text?.toIntOrNull() ?: run {
+            playFailSound()
+            return
+        }
         val invalid = amount < entry.startingPrice || amount <= entry.currentPrice ||
             (entry.currentPrice > 0 && amount - entry.currentPrice < entry.minIncrement)
         if (invalid) {

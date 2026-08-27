@@ -658,7 +658,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             drawSellerAvatar(context, entry.sellerUuid, entry.sellerName, leftX + 115, y + 4, 16)
 
             val levelText = Text.translatable("cobblemarket.gui.lv").string + entry.level
-            context.drawText(textRenderer, levelText, leftX + 135, y + 7, 0xAAAAAA, false)
+            context.drawText(textRenderer, levelText, leftX + 135, y + 7, 0x000000, false)
 
             // 价格右对齐到取消按钮左缘
             val priceText = "${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"

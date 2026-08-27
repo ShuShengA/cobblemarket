@@ -424,6 +424,7 @@
   "cobblemarket.buy_order.frozen_hint": "Publishing freezes %s %s (settled at actual price, difference refunded)",
   "cobblemarket.buy_order.invalid_price": "Invalid price or count",
   "cobblemarket.buy_order.deliver_title": "Deliver to Buy Order",
+  "cobblemarket.buy_order.price_range_prefix": "each ",
   "cobblemarket.buy_order.deliver_price": "Unit price",
   "cobblemarket.buy_order.deliver_count": "Count",
   "cobblemarket.buy_order.variant_title": "Select the item to deliver",

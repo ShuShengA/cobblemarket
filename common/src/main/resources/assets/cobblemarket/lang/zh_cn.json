@@ -424,6 +424,7 @@
   "cobblemarket.buy_order.frozen_hint": "发布将冻结 %s %s（成交按实际价结算，差额退还）",
   "cobblemarket.buy_order.invalid_price": "价格或数量无效",
   "cobblemarket.buy_order.deliver_title": "交付求购单",
+  "cobblemarket.buy_order.price_range_prefix": "单价 ",
   "cobblemarket.buy_order.deliver_price": "成交单价",
   "cobblemarket.buy_order.deliver_count": "交付件数",
   "cobblemarket.buy_order.variant_title": "选择要交付的物品",

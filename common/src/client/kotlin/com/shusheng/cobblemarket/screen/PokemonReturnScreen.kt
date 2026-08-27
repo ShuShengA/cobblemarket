@@ -313,7 +313,8 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                     itemStack = heldStack, x = sx.toDouble(), y = y + 6.0, scale = 0.6, matrixStack = context.matrices)
                 sx += 12
             }
-            context.drawText(textRenderer, "Lv.${p.level}", leftX + 135, y + 7, 0xAAAAAA, false)
+            val levelText = Text.translatable("cobblemarket.gui.lv").string + p.level
+            context.drawText(textRenderer, levelText, leftX + 135, y + 7, 0x000000, false)
         }
 
         if (hoveredRow in visible.indices) {
