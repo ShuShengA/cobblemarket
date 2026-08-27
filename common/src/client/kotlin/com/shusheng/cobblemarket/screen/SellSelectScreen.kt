@@ -5,6 +5,7 @@ import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.entity.PoseType
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
+import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.*
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
@@ -432,8 +433,11 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
     private fun sellSelected() {
         val filtered = filteredList()
         if (selectedIndex !in filtered.indices) return
-        val price = priceField?.text?.toIntOrNull() ?: return
-        if (price <= 0) return
+        val price = priceField?.text?.toIntOrNull() ?: run {
+            playFailSound()
+            return
+        }
+        if (price <= 0) { playFailSound(); return }
         sendToServer(SellFromStoragePayload(filtered[selectedIndex].uuid, price))
     }
 
@@ -575,7 +579,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             }
 
             // Level
-            context.drawText(textRenderer, "Lv.${e.level}", lx + 135, y + 7, 0xAAAAAA, false)
+            val levelText = Text.translatable("cobblemarket.gui.lv").string + e.level
+            context.drawText(textRenderer, levelText, lx + 135, y + 7, 0x000000, false)
         }
 
         // Tooltip on hover

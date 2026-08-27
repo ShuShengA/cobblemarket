@@ -2050,10 +2050,12 @@ class BuyOrderScreen(
             Text.translatable("cobblemarket.buy_order.deliver_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
 
-        // 订单摘要：名称默认色，价格区间蓝色（2026-08-24 拍板）
+        // 订单摘要：名称默认色，价格区间金色（2026-08-24 拍板；区间是单价区间，标注「单价」防误读）
         context.drawCenteredTextWithShadow(textRenderer,
             Text.literal("${entryName(entry)}  ").append(
-                Text.literal(priceRangeText(entry)).formatted(Formatting.GOLD)),
+                Text.literal(
+                    Text.translatable("cobblemarket.buy_order.price_range_prefix").string + priceRangeText(entry)
+                ).formatted(Formatting.GOLD)),
             centerX, dialogY + 27, 0xFFFFFF)
 
         // 买家留言（有备注时显示，灰色截断；卖家交付前须知）
