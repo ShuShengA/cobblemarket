@@ -61,7 +61,7 @@ Cobblemon Economy 自己的配置（`world/config/cobblemon-economy/` 下）中�
 
 | 值 | 余额存储位置 |
 |---|---|
-| `Cobblemon Economy`（默认） | Cobblemon Economy 自己的 SQLite 数据库 |
+| `cobeco`（默认） | Cobblemon Economy 自己的 SQLite 数据库 |
 | `cobbledollars` | CobbleDollars 模组的玩家余额 |
 | `impactor` | Impactor 模组的主货币账户 |
 
@@ -71,7 +71,7 @@ Cobblemon Economy 自己的配置（`world/config/cobblemon-economy/` 下）中�
 
 ### main_currency 与 POKE/PCO 是两回事（勿混淆）
 
-- `main_currency` 只决定 **PokeDollars 账本存哪里**（`Cobblemon Economy` / `cobbledollars` / `impactor`），**不是** POKE/PCO 的选择开关
+- `main_currency` 只决定 **PokeDollars 账本存哪里**（`cobeco` / `cobbledollars` / `impactor`），**不是** POKE/PCO 的选择开关
 - **PCO 不参与任何桥接**：PCO 是 Cobblemon Economy 内部独立账本，无论 `main_currency` 配什么，PCO 余额都只存在 Cobblemon Economy 自己那里。市场配 `cobecoCurrency = "PCO"` 时走的是 PCO 账本，与 Impactor / CobbleDollars 无关
 - Cobblemon Economy 配置里的 `shops.*.currency`（POKE/PCO）是 **Cobblemon Economy NPC 商店**的货币，只影响商店显示，与市场无关；市场用哪种货币只看 `cobblemarket.json` 的 `currency.cobecoCurrency`
 
@@ -79,9 +79,9 @@ Cobblemon Economy 自己的配置（`world/config/cobblemon-economy/` 下）中�
 
 | 安装的模组 | Cobblemon Economy 的 main_currency | 市场扣的钱 |
 |---|---|---|
-| 仅 Cobblemon Economy | `Cobblemon Economy`（默认） | Cobblemon Economy SQLite 的 PokeDollars |
+| 仅 Cobblemon Economy | `cobeco`（默认） | Cobblemon Economy SQLite 的 PokeDollars |
 | 仅 CobbleDollars | — | CobbleDollars 余额 |
-| 两者都装（新服） | `Cobblemon Economy`（默认） | Cobblemon Economy SQLite 的 PokeDollars；镜像机制使 CobbleDollars 商人余额同步一致 |
+| 两者都装（新服） | `cobeco`（默认） | Cobblemon Economy SQLite 的 PokeDollars；镜像机制使 CobbleDollars 商人余额同步一致 |
 | 两者都装（新服） | `cobbledollars` | CobbleDollars 余额为主账本；镜像机制使两边一致 |
 | 两者都装（老服升级） | 任意 | 原货币不变（升级无感） |
 | Cobblemon Economy + Impactor | `impactor` | Impactor 主货币账户（经 Cobblemon Economy 桥接） |

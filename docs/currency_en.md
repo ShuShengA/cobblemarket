@@ -61,7 +61,7 @@ In Cobblemon Economy's own config (under `world/config/cobblemon-economy/`), `ma
 
 | Value | Balance storage |
 |---|---|
-| `Cobblemon Economy` (default) | Cobblemon Economy's own SQLite database |
+| `cobeco` (default) | Cobblemon Economy's own SQLite database |
 | `cobbledollars` | the CobbleDollars mod's player balances |
 | `impactor` | the Impactor mod's primary currency accounts |
 
@@ -71,7 +71,7 @@ In Cobblemon Economy's own config (under `world/config/cobblemon-economy/`), `ma
 
 ### main_currency and POKE/PCO are two different things (don't confuse them)
 
-- `main_currency` only decides **where the PokeDollars ledger lives** (`Cobblemon Economy` / `cobbledollars` / `impactor`) — it is **not** a POKE/PCO selector
+- `main_currency` only decides **where the PokeDollars ledger lives** (`cobeco` / `cobbledollars` / `impactor`) — it is **not** a POKE/PCO selector
 - **PCO never participates in bridging**: PCO is an independent internal Cobblemon Economy ledger. No matter what `main_currency` is set to, PCO balances stay inside Cobblemon Economy. When the market sets `cobecoCurrency = "PCO"`, it operates on the PCO ledger and has nothing to do with Impactor / CobbleDollars
 - Cobblemon Economy's `shops.*.currency` (POKE/PCO) is the currency of **Cobblemon Economy's NPC shops** — it only affects shop display and is unrelated to the market; which currency the market uses is decided solely by `currency.cobecoCurrency` in `cobblemarket.json`
 
@@ -79,9 +79,9 @@ In Cobblemon Economy's own config (under `world/config/cobblemon-economy/`), `ma
 
 | Installed mods | Cobblemon Economy's main_currency | What the market charges |
 |---|---|---|
-| Cobblemon Economy only | `Cobblemon Economy` (default) | Cobblemon Economy SQLite PokeDollars |
+| Cobblemon Economy only | `cobeco` (default) | Cobblemon Economy SQLite PokeDollars |
 | CobbleDollars only | — | CobbleDollars balances |
-| Both (fresh install) | `Cobblemon Economy` (default) | Cobblemon Economy SQLite PokeDollars; mirror sync keeps CobbleDollars merchant balances consistent |
+| Both (fresh install) | `cobeco` (default) | Cobblemon Economy SQLite PokeDollars; mirror sync keeps CobbleDollars merchant balances consistent |
 | Both (fresh install) | `cobbledollars` | CobbleDollars balances as primary; mirror sync keeps both sides consistent |
 | Both (upgraded server) | any | previous currency unchanged (no surprise) |
 | Cobblemon Economy + Impactor | `impactor` | Impactor primary currency accounts (via Cobblemon Economy bridge) |
