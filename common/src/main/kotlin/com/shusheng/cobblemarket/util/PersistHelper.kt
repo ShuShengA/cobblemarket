@@ -20,6 +20,8 @@ import java.io.File
  * 3. 每次保存前刷新 .bak 备份（防保存过程中断电写坏文件）；
  * 4. 保存后按文件 mtime 验证是否真的写盘（MC 会吞掉 PersistentState 写盘异常并清除脏标志，
  *    不做验证的话「以为存了其实没存」）——失败时日志 error + 给在线 OP 发显眼告警。
+ *    验证基准取「节流窗口首笔交易时刻」的快照而非 saveAll 前一刻：MC 的 5 分钟自动保存可能
+ *    恰好在交易后抢先写盘（数据已安全落盘、我们的 saveAll 空跑），对比保存前一刻会误报失败。
  */
 object PersistHelper {
 
@@ -32,6 +34,8 @@ object PersistHelper {
 
     private var pendingSave = false
     private var lastTradeAt = 0L
+    /** 节流窗口首笔交易时刻的 mtime 快照：验证基准（相对交易时刻有落盘即成功，谁写的盘无所谓） */
+    private var pendingSaveMtimes: Map<String, Long?> = emptyMap()
 
     // 延迟验证状态：mtime 对比推迟到异步 IO 写盘完成后（见 tick）
     private var pendingVerifyBefore: Map<String, Long?> = emptyMap()
@@ -40,6 +44,10 @@ object PersistHelper {
 
     /** 交易成功后调用：节流合并，到点全量落盘 */
     fun requestSave(server: MinecraftServer) {
+        if (!pendingSave) {
+            // 节流窗口第一笔交易时拍快照；窗口内后续交易不重拍——验证目标覆盖窗口内全部交易
+            pendingSaveMtimes = stateFileMtimes(server)
+        }
         pendingSave = true
         lastTradeAt = System.currentTimeMillis()
     }
@@ -52,6 +60,7 @@ object PersistHelper {
     fun reset() {
         pendingSave = false
         lastTradeAt = 0L
+        pendingSaveMtimes = emptyMap()
         pendingVerifyAt = 0L
         pendingVerifyBefore = emptyMap()
         verifyAttempts = 0
@@ -69,13 +78,13 @@ object PersistHelper {
         if (pendingSave && now - lastTradeAt >= SAVE_COOLDOWN_MS) {
             pendingSave = false
             StateBackup.backupAll(server)
-            val before = stateFileMtimes(server)
             val ok = server.saveAll(false, false, false)
             if (!ok) {
                 // saveAll 返回 false = 明确失败，立即告警（无需等 mtime）
                 alertSaveFailed(server)
             } else {
-                scheduleVerify(before)
+                // 验证基准 = 交易时刻快照：自动保存抢先写盘也算成功（数据已落盘）
+                scheduleVerify(pendingSaveMtimes)
             }
         }
     }
@@ -87,9 +96,9 @@ object PersistHelper {
         if (!pendingSave) return
         pendingSave = false
         StateBackup.backupAll(server)
-        val before = stateFileMtimes(server)
         server.overworld.persistentStateManager.save()
-        scheduleVerify(before)
+        // 验证基准 = 交易时刻快照（自动保存抢先写盘也算成功）
+        scheduleVerify(pendingSaveMtimes)
     }
 
     /** 延迟验证：neoforge 的 save/saveAll 异步写盘，立即查 mtime 会误报「保存失败」 */
