@@ -6,6 +6,7 @@ license="MIT"
 modId="cobblemarket"
 version="${version}"
 displayName="CobbleMarket"
+displayURL="https://www.curseforge.com/minecraft/mc-mods/cobblemarket"
 authors="Shu_ShengA"
 description='''A player-to-player trading market for Cobblemon: buy and sell Pokémon and items, with configurable listing fees, per-player bans, transaction history, expired listing returns, and optional CobbleDollars / Cobblemon Economy currency support.
 面向 Cobblemon 服务器的玩家交易市场：支持精灵与物品挂单买卖、可配置手续费、封禁、交易历史、过期退回，支持 CobbleDollars / Cobblemon Economy 虚拟货币。'''

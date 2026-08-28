@@ -7,6 +7,9 @@
 	"authors": [
 		"Shu_ShengA"
 	],
+	"contact": {
+		"homepage": "https://www.curseforge.com/minecraft/mc-mods/cobblemarket"
+	},
 	"license": "MIT",
 	"icon": "assets/cobblemarket/icon.png",
 	"environment": "*",
