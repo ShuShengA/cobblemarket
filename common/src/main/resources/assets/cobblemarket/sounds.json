@@ -7,6 +7,14 @@
       }
     ]
   },
+  "screen_close": {
+    "sounds": [
+      {
+        "name": "cobblemarket:close",
+        "stream": false
+      }
+    ]
+  },
   "open_entry": {
     "sounds": [
       {

@@ -372,7 +372,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
-        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.price_limit.add_title").formatted(Formatting.GOLD),
@@ -480,7 +480,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
-        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.price_limit.add_item_title").formatted(Formatting.GOLD),
