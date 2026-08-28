@@ -301,7 +301,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 100.0)
-        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        drawScreenDimMask(context, width, height)
         context.matrices.pop()
 
         context.matrices.push()

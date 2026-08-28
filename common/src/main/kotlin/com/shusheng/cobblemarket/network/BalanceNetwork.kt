@@ -26,13 +26,28 @@ class RequestBalancePayload : CustomPayload {
 
 // ── S2C：余额数据（balance 已做千分位格式化，客户端直接显示） ──
 
-data class BalanceDataPayload(val balance: String, val pendingBalance: Long, val currencyName: String) : CustomPayload {
+data class BalanceDataPayload(
+    val balance: String,
+    val pendingBalance: Long,
+    val currencyName: String,
+    /** 原始数值（千分位格式化前的 Long，超 Long 上限钳制）：客户端 HUD 变动提示用差值对比 */
+    val balanceRaw: Long
+) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<BalanceDataPayload>(CobbleMarket.id("balance_data"))
         val CODEC: PacketCodec<PacketByteBuf, BalanceDataPayload> = PacketCodec.of(
-            { p, b -> b.writeString(p.balance); b.writeLong(p.pendingBalance); b.writeString(p.currencyName) },
-            { b -> BalanceDataPayload(b.readString(), b.readLong(), b.readString()) }
+            { p, b ->
+                b.writeString(p.balance); b.writeLong(p.pendingBalance); b.writeString(p.currencyName); b.writeLong(p.balanceRaw)
+            },
+            { b ->
+                BalanceDataPayload(
+                    balance = b.readString(),
+                    pendingBalance = b.readLong(),
+                    currencyName = b.readString(),
+                    balanceRaw = b.readLong()
+                )
+            }
         )
     }
 }
@@ -59,9 +74,18 @@ object BalanceNetwork {
             if (!RequestThrottle.allow(player.uuid, "request_balance", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
-                val bal = formatBalance(CurrencyHandler.getBalance(player))
+                val raw = CurrencyHandler.getBalance(player)
+                val bal = formatBalance(raw)
                 val pending = MarketState.get(server).getPendingBalance(player.uuid)
-                sendToPlayer(player, BalanceDataPayload(bal, pending, CurrencyHandler.getCurrencyId()))
+                sendToPlayer(
+                    player,
+                    BalanceDataPayload(
+                        bal,
+                        pending,
+                        CurrencyHandler.getCurrencyId(),
+                        raw.min(java.math.BigInteger.valueOf(Long.MAX_VALUE)).toLong()
+                    )
+                )
             }
         }
     }

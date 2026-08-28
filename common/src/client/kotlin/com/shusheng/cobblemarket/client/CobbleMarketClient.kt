@@ -117,13 +117,23 @@ object CobbleMarketClient {
                 val screen = client.currentScreen
                 val inputFocused = screen?.focused is TextFieldWidget
                 if (!inputFocused && isMarketScreen(screen)) {
-                    client.setScreen(null)
+                    if (ClientConfig.marketAnimation) {
+                        // 关闭动画：界面整体上滑出屏，200ms 后真正关闭（tick 兜底见 CloseAnimation.onTick）
+                        CloseAnimation.start()
+                    } else {
+                        // 动画关：音效仍播（与动画解绑），直接关闭
+                        CloseAnimation.playCloseSound()
+                        client.setScreen(null)
+                    }
                 }
             }
             wasEPressed = ePressed
-            // 余额 HUD 低频兜底刷新：30 秒一次（非 OFF 模式且已进入世界时）
+            // 关闭动画播完真正关闭界面
+            CloseAnimation.onTick(client)
+            // 余额 HUD 兜底刷新：2 秒一次（覆盖 bank/指令/其它 mod 等外部余额变化；
+            // 市场交易仍走响应即时刷新；负载每人每分钟 30 次轻量查询，可忽略）
             if (ClientConfig.balanceHudMode != BalanceHudMode.OFF && client.player != null &&
-                (lastBalancePollAt == 0L || tickNow - lastBalancePollAt >= 30_000)
+                (lastBalancePollAt == 0L || tickNow - lastBalancePollAt >= 2_000)
             ) {
                 lastBalancePollAt = tickNow
                 sendToServer(RequestBalancePayload())
@@ -236,6 +246,7 @@ object CobbleMarketClient {
         registerS2C(BalanceDataPayload.ID, BalanceDataPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 BalanceCache.balance = payload.balance
+                BalanceCache.balanceRaw = payload.balanceRaw
                 BalanceCache.pendingBalance = payload.pendingBalance
                 BalanceCache.currencyName = payload.currencyName
             }
@@ -472,10 +483,22 @@ private var lastHudBalanceText: String? = null
 /** ON_CHANGE 模式：余额最近一次变动时刻 */
 private var lastBalanceChangeAt = 0L
 
+/** 余额变动提示：上次原始值 + 差值 + 显示截止时间（+绿/-红浮字 2 秒，照 CobbleDollars 的变动提示） */
+private var lastBalanceRaw: Long? = null
+private var hudDiff = 0L
+private var hudDiffUntil = 0L
+
 fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
     val client = MinecraftClient.getInstance()
     if (client.player == null) return
     val text = "${hudBalanceText(client)} ${inlineCurrencyUnit()}"
+    // 余额变动检测（每帧，OFF 模式也跟踪避免切回时误报）：差值驱动 +绿/-红浮字
+    val rawNow = hudBalanceRaw(client)
+    if (lastBalanceRaw != null && rawNow != lastBalanceRaw!!) {
+        hudDiff = rawNow - lastBalanceRaw!!
+        hudDiffUntil = System.currentTimeMillis() + 2_000
+    }
+    lastBalanceRaw = rawNow
     // 三态显示判断：ALWAYS 恒显；ON_CHANGE 文本变化后显 5 秒；OFF 不显
     val visible = when (ClientConfig.balanceHudMode) {
         BalanceHudMode.OFF -> false
@@ -506,33 +529,56 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
     // RGB 随 alpha 一起衰减（照入口动画淡出）：context.setShaderColor 同时作用于
     // drawTexture（背景贴图）与文字渲染；RenderSystem 全局色不响应 drawTexture，勿混用
     context.setShaderColor(alphaF, alphaF, alphaF, alphaF)
-    // 背景框：HUD 专属九宫格贴图（40×40），宽随文字自适应，高 14
+    // 背景框：HUD 专属九宫格贴图（40×40），宽随文字自适应，高 16
     val textW = client.textRenderer.getWidth(text)
     drawNineSlice(
         context,
         HUD_BALANCE_BG,
-        0, 0, textW + 10, 14,
+        0, 0, textW + 10, 16,
         0, HUD_BALANCE_BG_TEX_H
     )
-    context.drawTextWithShadow(client.textRenderer, text, 5, 2, 0xFFAA00)
+    context.drawTextWithShadow(client.textRenderer, text, 5, 4, 0xFFAA00)
+    // 余额变动浮字：+绿/-红，2 秒后消失（照 CobbleDollars 右下角的变动提示）
+    if (hudDiff != 0L && System.currentTimeMillis() < hudDiffUntil) {
+        val diffText = if (hudDiff > 0) "+${formatBalanceLong(hudDiff)}" else formatBalanceLong(hudDiff).toString()
+        val diffColor = if (hudDiff > 0) 0x55FF55 else 0xFF5555
+        context.drawTextWithShadow(client.textRenderer, diffText, textW + 14, 4, diffColor)
+    }
     context.setShaderColor(1f, 1f, 1f, 1f)
     context.draw()
 }
 
-/** HUD 余额文本：虚拟货币用服务端下发缓存；物品货币本地实时数背包（丢/捡物品下一帧即变，零网络开销） */
+/** HUD 余额文本：虚拟货币用服务端下发缓存；物品货币本地实时数背包（丢/捡物品下一帧即变，零网络开销）。
+ *  判断用虚拟 key 列表（与 displayCurrency 一致）——不要用 Identifier.tryParse 区分：
+ *  无冒号的虚拟 key 会被解析成 minecraft:xxx（默认命名空间）误入物品分支，HUD 恒显 0 */
 private fun hudBalanceText(client: MinecraftClient): String {
     val raw = BalanceCache.currencyName
-    val itemId = net.minecraft.util.Identifier.tryParse(raw)
-    if (itemId == null) return BalanceCache.balance // 虚拟货币 key
+    val virtual = raw == com.shusheng.cobblemarket.config.CurrencyHandler.POKEDOLLARS_KEY ||
+        raw == com.shusheng.cobblemarket.config.CurrencyHandler.POKECOINS_KEY ||
+        raw == com.shusheng.cobblemarket.config.CurrencyHandler.COBBLEDOLLARS_KEY ||
+        raw == com.shusheng.cobblemarket.config.CurrencyHandler.IMPACTOR_KEY
+    if (virtual) return BalanceCache.balance
+    return formatBalanceLong(hudBalanceRaw(client))
+}
+
+/** HUD 余额原始数值：虚拟货币用服务端下发；物品货币本地数背包（丢/捡物品下一帧即变） */
+private fun hudBalanceRaw(client: MinecraftClient): Long {
+    val raw = BalanceCache.currencyName
+    val virtual = raw == com.shusheng.cobblemarket.config.CurrencyHandler.POKEDOLLARS_KEY ||
+        raw == com.shusheng.cobblemarket.config.CurrencyHandler.POKECOINS_KEY ||
+        raw == com.shusheng.cobblemarket.config.CurrencyHandler.COBBLEDOLLARS_KEY ||
+        raw == com.shusheng.cobblemarket.config.CurrencyHandler.IMPACTOR_KEY
+    if (virtual) return BalanceCache.balanceRaw
+    val itemId = net.minecraft.util.Identifier.tryParse(raw) ?: return BalanceCache.balanceRaw
     val item = net.minecraft.registry.Registries.ITEM.get(itemId)
-    val player = client.player ?: return BalanceCache.balance
-    var total = 0
+    val player = client.player ?: return BalanceCache.balanceRaw
+    var total = 0L
     val inv = player.inventory
     for (i in 0 until inv.size()) {
         val stack = inv.getStack(i)
         if (stack.isOf(item)) total += stack.count
     }
-    return formatBalanceLong(total.toLong())
+    return total
 }
 
 private fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean =

@@ -1365,7 +1365,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // 遮罩（提高 z，盖住底层列表）
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 100.0)
-        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        drawScreenDimMask(context, width, height)
         context.matrices.pop()
 
         // 弹窗背景（z 高于遮罩）

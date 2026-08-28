@@ -592,7 +592,7 @@ class BuyOrderScreen(
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
-        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.buy_order.force_cancel_title").formatted(Formatting.GOLD),
@@ -1196,7 +1196,7 @@ class BuyOrderScreen(
         val dialogX = centerX - dialogW / 2
         val dialogY = createDialogY()
 
-        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        drawScreenDimMask(context, width, height)
         // 不透明衬底：弹窗背景贴图中间区域半透明，下层行内容（精灵图标/数量/价格）会透过
         context.fill(dialogX, dialogY, dialogX + dialogW, dialogY + dialogH, 0xFF2A2A2A.toInt())
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
@@ -1836,7 +1836,7 @@ class BuyOrderScreen(
         val dialogX = centerX - dialogW / 2
         val dialogY = if (entry.type == "POKEMON") height / 2 - 110 else height / 2 - 95
 
-        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        drawScreenDimMask(context, width, height)
         // 不透明衬底：弹窗背景贴图中间区域半透明，下层行内容（精灵图标/数量/价格）会透过
         context.fill(dialogX, dialogY, dialogX + dialogW, dialogY + dialogH, 0xFF2A2A2A.toInt())
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
@@ -2042,7 +2042,7 @@ class BuyOrderScreen(
         val dialogX = centerX - dialogW / 2
         val dialogY = deliverDialogY()
 
-        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        drawScreenDimMask(context, width, height)
         // 不透明衬底：弹窗背景贴图中间区域半透明，下层行内容（精灵图标/数量/价格）会透过
         context.fill(dialogX, dialogY, dialogX + dialogW, dialogY + dialogH, 0xFF2A2A2A.toInt())
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)

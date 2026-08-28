@@ -371,7 +371,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
-        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.op.egg_confirm_title").formatted(Formatting.GOLD),
@@ -457,7 +457,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     // ── 渲染（遮罩 + 居中弹窗，照入口设置弹窗） ──
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        drawScreenDimMask(context, width, height)
         val dialogX = width / 2 - dialogW / 2
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY(), dialogW, dialogH(), 0, DIALOG_BACKGROUND_TEX_H)
     }

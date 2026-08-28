@@ -287,7 +287,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsAuctionButton?.let { b -> b.x = switchX; b.y = dialogY + 56; addDrawableChild(b) }
         settingsDropButton = makeSwitchButton(ClientConfig.dropOverflowOnClaim) { toggleDropOverflow() }
         settingsDropButton?.let { b -> b.x = switchX; b.y = dialogY + 82; addDrawableChild(b) }
-        settingsEntryDropButton = makeSwitchButton(ClientConfig.entryDropAnimation) { toggleEntryDropAnimation() }
+        settingsEntryDropButton = makeSwitchButton(ClientConfig.marketAnimation) { toggleMarketAnim() }
         settingsEntryDropButton?.let { b -> b.x = switchX; b.y = dialogY + 108; addDrawableChild(b) }
         settingsPikachuLoopButton = makeSwitchButton(ClientConfig.pikachuRunLoop) { togglePikachuLoop() }
         settingsPikachuLoopButton?.let { b -> b.x = switchX; b.y = dialogY + 134; addDrawableChild(b) }
@@ -358,10 +358,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         showSettingsToast("cobblemarket.settings.drop_overflow", ClientConfig.dropOverflowOnClaim)
     }
 
-    private fun toggleEntryDropAnimation() {
-        ClientConfig.setEntryDropAnimation(!ClientConfig.entryDropAnimation)
-        settingsEntryDropButton?.iconLeft = switchIconFor(ClientConfig.entryDropAnimation)
-        showSettingsToast("cobblemarket.settings.animation_entry", ClientConfig.entryDropAnimation)
+    private fun toggleMarketAnim() {
+        ClientConfig.setMarketAnimation(!ClientConfig.marketAnimation)
+        settingsEntryDropButton?.iconLeft = switchIconFor(ClientConfig.marketAnimation)
+        showSettingsToast("cobblemarket.settings.animation_entry", ClientConfig.marketAnimation)
     }
 
     private fun togglePikachuLoop() {
@@ -403,7 +403,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         val dialogX = centerX - DIALOG_W / 2
         val dialogY = bgBottom() - 87 - DIALOG_H / 2 // 弹窗中心与背景中心对齐（背景中心 = bgBottom - 87）
 
-        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, DIALOG_W, DIALOG_H, 0, DIALOG_BACKGROUND_TEX_H)
         context.drawCenteredTextWithShadow(
             textRenderer,
@@ -439,7 +439,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         )
         context.drawTextWithShadow(
             textRenderer,
-            toggleText("cobblemarket.settings.animation_entry", ClientConfig.entryDropAnimation),
+            toggleText("cobblemarket.settings.animation_entry", ClientConfig.marketAnimation),
             centerX - 80, dialogY + 115, 0xFFFFFF
         )
         context.drawTextWithShadow(
@@ -524,7 +524,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
-        context.fill(0, 0, width, height, 0xC0000000.toInt())
+        drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.market.confirm_title").formatted(Formatting.GOLD),
@@ -654,7 +654,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         // 掉落动画播完前按钮不可点（事件分发与渲染无关，init 已创建的按钮会照常响应，需显式拦截）
         val total = DROP_DURATION_MS + HOLD_DURATION_MS + FADE_DURATION_MS
-        if (ClientConfig.entryDropAnimation && System.currentTimeMillis() - dropAnimStart < total) return true
+        if (ClientConfig.marketAnimation && System.currentTimeMillis() - dropAnimStart < total) return true
         // 点击大木博士立绘（48×128 主体区域，随 oakScaleFactor 缩放）：主动切换下一条知识点
         val oakK = oakScaleFactor()
         val oakRight = width / 2 - 128 - 1
@@ -693,9 +693,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 打开入口的掉落动画（照购买精灵动画，个人设置可关）：
         // 下落+停留阶段只画暗底+掉落图；淡出阶段完整渲染入口界面、掉落图渐透明——界面随图淡出慢慢显现
         val animElapsed = System.currentTimeMillis() - dropAnimStart
-        if (ClientConfig.entryDropAnimation) {
+        if (ClientConfig.marketAnimation) {
             if (animElapsed < DROP_DURATION_MS + HOLD_DURATION_MS) {
-                renderDarkening(context)
+                // 下落+停留阶段不画暗化背景（2026-08-28 拍板：只在淡出阶段交叉渐变，避免"暗→亮"的跳变）
                 renderDropImage(context, animElapsed, 1f)
                 return
             }
@@ -889,7 +889,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         private const val DIALOG_W = 200
         private const val DIALOG_H = 246
         // 入口掉落动画三段：下落 → 落地停留 → 淡出（淡出期间入口界面从图下透出，慢慢显现）
-        private const val DROP_DURATION_MS = 300L
+        private const val DROP_DURATION_MS = 100L
         private const val HOLD_DURATION_MS = 100L
         private const val FADE_DURATION_MS = 100L
         // 知识点气泡首行缩进（2 个汉字宽 = 16px）

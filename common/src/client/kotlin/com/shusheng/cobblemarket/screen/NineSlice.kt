@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.CloseAnimation
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.util.Identifier
 
@@ -18,6 +19,12 @@ const val DIALOG_BACKGROUND_TEX_H = 40
 
 val BUTTON_TEXTURE = Identifier.of("cobblemarket", "textures/gui/button_9slice.png")
 const val BUTTON_TEX_H = 80
+
+/** 弹窗全屏半透明遮罩：关闭动画进行中跳过绘制——按 E/Esc 后游戏画面立刻变亮，遮罩不随界面上缩 */
+fun drawScreenDimMask(context: DrawContext, width: Int, height: Int) {
+    if (CloseAnimation.isActive()) return
+    context.fill(0, 0, width, height, 0xC0000000.toInt())
+}
 
 fun drawNineSlice(
     context: DrawContext,
