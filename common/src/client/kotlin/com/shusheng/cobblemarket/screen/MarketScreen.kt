@@ -532,6 +532,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // 展开时隐藏被覆盖的控件（IV 两行 + 底行按钮 + 行按钮，列表从 y=86 起最多 8 行）；
         // 行按钮必须 visible=false：列表按钮背景贴图中间区域半透明，下层行按钮文字会透出
         listOf(hpField, atkField, defField, spaField, spdField, speField).forEach { it?.visible = !open }
+        // IV 三态比较按钮（= / ≥ / ≤）随输入框一起隐藏，否则会从展开列表里透出
+        ivOpButtons.values.forEach { it.visible = !open }
         if (::shinyButton.isInitialized) shinyButton.visible = !open
         if (::sortButton.isInitialized) sortButton.visible = !open
         htButton?.visible = !open
