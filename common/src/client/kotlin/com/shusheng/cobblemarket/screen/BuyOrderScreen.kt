@@ -1902,6 +1902,8 @@ class BuyOrderScreen(
             ivsSpAtk = i("ivsSpAtk"), ivsSpDef = i("ivsSpDef"), ivsSpd = i("ivsSpd"),
             htHp = ht("htHp"), htAtk = ht("htAtk"), htDef = ht("htDef"),
             htSpAtk = ht("htSpAtk"), htSpDef = ht("htSpDef"), htSpd = ht("htSpd"),
+            evsHp = i("evsHp"), evsAtk = i("evsAtk"), evsDef = i("evsDef"),
+            evsSpAtk = i("evsSpAtk"), evsSpDef = i("evsSpDef"), evsSpd = i("evsSpd"),
             nature = d["nature"] ?: "",
             natureBase = d["natureBase"] ?: d["nature"] ?: "",
             ability = d["ability"] ?: "",

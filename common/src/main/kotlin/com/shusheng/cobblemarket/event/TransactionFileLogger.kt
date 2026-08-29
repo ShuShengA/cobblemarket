@@ -73,7 +73,7 @@ object TransactionFileLogger {
                     字段：时间, 类型, 分类, 卖家, 买家, 精灵/物品, 价格, 手续费, 详情
 
                     详情列（"|"分隔，缺失字段整段省略）：
-                    精灵：lv=等级|shiny=Y/N|ivs=六项个体值|ht=特训项|nature=生效性格|base=原生性格|ability=特性|gender=性别|ball=球种|held=携带物|form=形态
+                    精灵：lv=等级|shiny=Y/N|ivs=六项个体值|evs=六项努力值|ht=特训项:特训值|nature=生效性格|base=原生性格|ability=特性|gender=性别|ball=球种|held=携带物|form=形态
                     物品：count=数量|nbt={完整NBT文本}
 
                     【玩家报告"上架的精灵/物品消失了"时，按三步对账补偿】

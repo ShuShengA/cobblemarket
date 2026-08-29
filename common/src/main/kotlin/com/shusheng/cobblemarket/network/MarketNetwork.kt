@@ -46,6 +46,9 @@ data class ListingEntry(
     // 极限特训值（hyper training，-1 = 未特训）：显示「真实值（特训值）」用
     val htHp: Int, val htAtk: Int, val htDef: Int,
     val htSpAtk: Int, val htSpDef: Int, val htSpd: Int,
+    // 努力值（EV）：上架时的训练快照，详情显示用
+    val evsHp: Int, val evsAtk: Int, val evsDef: Int,
+    val evsSpAtk: Int, val evsSpDef: Int, val evsSpd: Int,
     val nature: String,
     val natureBase: String,    // 原生性格（与 nature 不同 = 用过薄荷）
     val ability: String,
@@ -71,6 +74,8 @@ data class ListingEntry(
         buf.writeInt(ivsSpAtk); buf.writeInt(ivsSpDef); buf.writeInt(ivsSpd)
         buf.writeInt(htHp); buf.writeInt(htAtk); buf.writeInt(htDef)
         buf.writeInt(htSpAtk); buf.writeInt(htSpDef); buf.writeInt(htSpd)
+        buf.writeInt(evsHp); buf.writeInt(evsAtk); buf.writeInt(evsDef)
+        buf.writeInt(evsSpAtk); buf.writeInt(evsSpDef); buf.writeInt(evsSpd)
         buf.writeString(nature)
         buf.writeString(natureBase)
         buf.writeString(ability)
@@ -98,6 +103,8 @@ data class ListingEntry(
             ivsSpAtk = buf.readInt(), ivsSpDef = buf.readInt(), ivsSpd = buf.readInt(),
             htHp = buf.readInt(), htAtk = buf.readInt(), htDef = buf.readInt(),
             htSpAtk = buf.readInt(), htSpDef = buf.readInt(), htSpd = buf.readInt(),
+            evsHp = buf.readInt(), evsAtk = buf.readInt(), evsDef = buf.readInt(),
+            evsSpAtk = buf.readInt(), evsSpDef = buf.readInt(), evsSpd = buf.readInt(),
             nature = buf.readString(),
             natureBase = buf.readString(),
             ability = buf.readString(),
@@ -470,7 +477,9 @@ data class PokemonPreview(
     val source: String, // "party" or "pc"
     val slot: Int,
     val heldItemId: String,
-    val aspects: List<String> // 精灵形态（shiny/性别/地区形态等），客户端渲染 3D 图标用
+    val aspects: List<String>, // 精灵形态（shiny/性别/地区形态等），客户端渲染 3D 图标用
+    // 努力值（EV）：上架选择/待领取等场景的详情显示用
+    val evsHp: Int, val evsAtk: Int, val evsDef: Int, val evsSpAtk: Int, val evsSpDef: Int, val evsSpd: Int
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(uuid); buf.writeString(species); buf.writeString(speciesId); buf.writeString(speciesName)
@@ -483,6 +492,8 @@ data class PokemonPreview(
         buf.writeString(ball); buf.writeString(primaryType); buf.writeString(secondaryType)
         buf.writeString(source); buf.writeInt(slot); buf.writeString(heldItemId)
         buf.writeVarInt(aspects.size); aspects.forEach { buf.writeString(it) }
+        buf.writeInt(evsHp); buf.writeInt(evsAtk); buf.writeInt(evsDef)
+        buf.writeInt(evsSpAtk); buf.writeInt(evsSpDef); buf.writeInt(evsSpd)
     }
 
     companion object {
@@ -494,7 +505,8 @@ data class PokemonPreview(
             buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
             buf.readString(), buf.readString(), buf.readString(),
             buf.readString(), buf.readInt(), buf.readString(),
-            (0 until buf.readVarInt()).map { buf.readString() }
+            (0 until buf.readVarInt()).map { buf.readString() },
+            buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt()
         )
     }
 }
@@ -1064,6 +1076,12 @@ object MarketNetwork {
                             htSpAtk = detail["htSpAtk"]?.toIntOrNull() ?: -1,
                             htSpDef = detail["htSpDef"]?.toIntOrNull() ?: -1,
                             htSpd = detail["htSpd"]?.toIntOrNull() ?: -1,
+                            evsHp = detail["evsHp"]?.toIntOrNull() ?: 0,
+                            evsAtk = detail["evsAtk"]?.toIntOrNull() ?: 0,
+                            evsDef = detail["evsDef"]?.toIntOrNull() ?: 0,
+                            evsSpAtk = detail["evsSpAtk"]?.toIntOrNull() ?: 0,
+                            evsSpDef = detail["evsSpDef"]?.toIntOrNull() ?: 0,
+                            evsSpd = detail["evsSpd"]?.toIntOrNull() ?: 0,
                             nature = detail["nature"] ?: "?",
                             natureBase = detail["natureBase"] ?: detail["nature"] ?: "?",
                             ability = detail["ability"] ?: "?",
@@ -1365,6 +1383,12 @@ object MarketNetwork {
                             htSpAtk = detail["htSpAtk"]?.toIntOrNull() ?: -1,
                             htSpDef = detail["htSpDef"]?.toIntOrNull() ?: -1,
                             htSpd = detail["htSpd"]?.toIntOrNull() ?: -1,
+                            evsHp = detail["evsHp"]?.toIntOrNull() ?: 0,
+                            evsAtk = detail["evsAtk"]?.toIntOrNull() ?: 0,
+                            evsDef = detail["evsDef"]?.toIntOrNull() ?: 0,
+                            evsSpAtk = detail["evsSpAtk"]?.toIntOrNull() ?: 0,
+                            evsSpDef = detail["evsSpDef"]?.toIntOrNull() ?: 0,
+                            evsSpd = detail["evsSpd"]?.toIntOrNull() ?: 0,
                             nature = detail["nature"] ?: "?",
                             natureBase = detail["natureBase"] ?: detail["nature"] ?: "?",
                             ability = detail["ability"] ?: "?",
@@ -2578,6 +2602,12 @@ object MarketNetwork {
             "htSpAtk" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK] ?: -1).toString(),
             "htSpDef" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE] ?: -1).toString(),
             "htSpd" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: -1).toString(),
+            "evsHp" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP].toString(),
+            "evsAtk" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK].toString(),
+            "evsDef" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.DEFENCE].toString(),
+            "evsSpAtk" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK].toString(),
+            "evsSpDef" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE].toString(),
+            "evsSpd" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED].toString(),
             "nature" to "cobblemon.nature.${pokemon.effectiveNature.name.path}",
             // 原生性格（薄荷不改）：与 nature 不同 = 用过薄荷，客户端斜体显示
             "natureBase" to "cobblemon.nature.${pokemon.nature.name.path}",
@@ -2627,7 +2657,13 @@ object MarketNetwork {
             source = source,
             slot = slot,
             heldItemId = if (pokemon.heldItem().isEmpty) "" else Registries.ITEM.getId(pokemon.heldItem().item).toString(),
-            aspects = pokemon.aspects.toList()
+            aspects = pokemon.aspects.toList(),
+            evsHp = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP] ?: 0,
+            evsAtk = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK] ?: 0,
+            evsDef = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.DEFENCE] ?: 0,
+            evsSpAtk = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK] ?: 0,
+            evsSpDef = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE] ?: 0,
+            evsSpd = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: 0
         )
 
     fun openScreen(player: ServerPlayerEntity) {

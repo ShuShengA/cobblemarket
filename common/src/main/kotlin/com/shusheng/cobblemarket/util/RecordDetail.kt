@@ -12,6 +12,7 @@ import net.minecraft.nbt.NbtCompound
 object RecordDetail {
 
     private val STAT_KEYS = listOf("ivsHp", "ivsAtk", "ivsDef", "ivsSpAtk", "ivsSpDef", "ivsSpd")
+    private val EV_KEYS = listOf("evsHp", "evsAtk", "evsDef", "evsSpAtk", "evsSpDef", "evsSpd")
     private val HT_KEYS = listOf(
         "htHp" to "HP", "htAtk" to "ATK", "htDef" to "DEF",
         "htSpAtk" to "SPA", "htSpDef" to "SPD", "htSpd" to "SPE"
@@ -22,8 +23,9 @@ object RecordDetail {
         parts.add("lv=$level")
         parts.add("shiny=" + if (shiny) "Y" else "N")
         parts.add("ivs=" + STAT_KEYS.joinToString("/") { extraData[it] ?: "?" })
+        parts.add("evs=" + EV_KEYS.joinToString("/") { extraData[it] ?: "?" })
         val ht = HT_KEYS.mapNotNull { (key, abbr) ->
-            if ((extraData[key]?.toIntOrNull() ?: -1) >= 0) abbr else null
+            (extraData[key]?.toIntOrNull() ?: -1).takeIf { it >= 0 }?.let { "$abbr:$it" }
         }
         if (ht.isNotEmpty()) parts.add("ht=" + ht.joinToString(","))
         val nature = extraData["nature"]?.stripPrefix()

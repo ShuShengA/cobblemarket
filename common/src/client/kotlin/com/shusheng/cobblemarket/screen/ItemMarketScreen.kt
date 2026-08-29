@@ -152,7 +152,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         addDrawableChild(nextButton)
         updatePageButtons()
 
-        refreshData()
+        requestFilterRefresh()
     }
 
     private fun openItemSellScreen() {
@@ -186,10 +186,16 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             updatePageButtons()
             refreshData(resetPending = false)
         }
+        // 筛选变更补发：与翻页共用 inFlight/窗口
+        if (!pageRequestInFlight && pendingFilterRefresh && System.currentTimeMillis() - lastListRequestAt >= PAGE_CLICK_INTERVAL_MS) {
+            pendingFilterRefresh = false
+            pageRequestInFlight = true
+            refreshData(resetPending = false)
+        }
         if (searchDirty && System.currentTimeMillis() - lastSearchEdit >= 250) {
             searchDirty = false
             currentPage = 1
-            refreshData()
+            requestFilterRefresh()
         }
     }
 
@@ -235,14 +241,14 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         }
         sortButton?.message = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
         currentPage = 1
-        refreshData()
+        requestFilterRefresh()
     }
 
     private fun toggleMineOnly() {
         showMineOnly = !showMineOnly
         mineButton?.message = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         currentPage = 1
-        refreshData()
+        requestFilterRefresh()
     }
 
     // 翻页请求在途标志：响应到达前不重复发请求
@@ -256,6 +262,18 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     // 连点合并到最终目标页（中间页不发）；补发后保留目标，响应确认到达才清——
     // 请求若被静默丢弃，1s 兜底复位后 tick 自动重试
     private var pendingPage = 0
+
+    // 筛选变更待发标志：筛选按钮连点/搜索防抖后若仍在服务端节流窗口内，记标志由 tick 补发
+    private var pendingFilterRefresh = false
+
+    /** 筛选/搜索等「当前筛选态」请求统一入口：窗口允许立即发，否则排队 tick 补发 */
+    private fun requestFilterRefresh() {
+        if (!pageRequestInFlight && System.currentTimeMillis() - lastListRequestAt >= PAGE_CLICK_INTERVAL_MS) {
+            refreshData()
+        } else {
+            pendingFilterRefresh = true
+        }
+    }
 
     private fun updatePageButtons() {
         prevButton?.active = currentPage > 1
@@ -714,7 +732,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     fun onMarketResult(payload: MarketResultPayload) {
         if (payload.success) {
             client?.player?.sendMessage(payload.message.copy().formatted(Formatting.GREEN), false)
-            refreshData()
+            requestFilterRefresh()
         } else {
             client?.player?.sendMessage(payload.message.copy().formatted(Formatting.RED), false)
         }

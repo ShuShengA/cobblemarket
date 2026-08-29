@@ -337,7 +337,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         addDrawableChild(nextButton)
 
         rebuildBuyButtons()
-        refreshData()
+        requestFilterRefresh()
         applyFilterVisibility() // Apply current collapsed state
     }
 
@@ -356,7 +356,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 ivOps[index] = (ivOps[index] + 1) % 3
                 syncIvOpButtons()
                 currentPage = 1
-                refreshData()
+                requestFilterRefresh()
             },
             textColor = if (ivOps[index] != 0) GOLD_COLOR else 0xFFFFFF
         )
@@ -486,7 +486,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         }
         currentPage = 1
         updateGenderButton()
-        refreshData()
+        requestFilterRefresh()
     }
 
     // ── 属性/特性/性格展开选择（互斥、限高滚动、展开时隐藏被覆盖控件） ──
@@ -598,7 +598,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         filterListOpen = ""
         rebuildFilterList()
         currentPage = 1
-        refreshData()
+        requestFilterRefresh()
     }
 
     /** 搜索框物种解析 → 特性筛选选项（与求购单创建同语义）；解析不出则清空选项并重置选择 */
@@ -636,7 +636,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // 开 = 金色 ★，关 = 白色 ☆（与价格限制/黑名单的闪光按钮一致）
         shinyButton.textColor = if (shinyOnly) GOLD_COLOR else 0xFFFFFF
         mineButton.message = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
-        refreshData()
+        requestFilterRefresh()
     }
 
     // ── Hyper trained filter ──
@@ -677,7 +677,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         }
         currentPage = 1
         sortButton.message = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
-        refreshData()
+        requestFilterRefresh()
     }
 
     private fun sortDisplay(): String = when (sortMode) {
@@ -738,7 +738,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         showMineOnly = !showMineOnly
         mineButton.message = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         currentPage = 1
-        refreshData()
+        requestFilterRefresh()
     }
 
     private fun resetFilters() {
@@ -773,7 +773,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         (abilityButton as? NineSliceButton)?.textColor = 0xFFFFFF
         (natureButton as? NineSliceButton)?.textColor = 0xFFFFFF
         sortButton.message = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
-        refreshData()
+        requestFilterRefresh()
     }
 
     // ── Pagination ──
@@ -789,6 +789,19 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     // 连点合并到最终目标页（中间页不发）；补发后保留目标，响应确认到达才清——
     // 请求若被静默丢弃，1s 兜底复位后 tick 自动重试
     private var pendingPage = 0
+
+    // 筛选变更待发标志：筛选按钮连点/搜索防抖后若仍在服务端节流窗口内，记标志由 tick 补发
+    // （否则第二次请求被 250ms 节流静默丢弃，按钮状态与列表数据错位）
+    private var pendingFilterRefresh = false
+
+    /** 筛选/搜索等「当前筛选态」请求统一入口：窗口允许立即发，否则排队 tick 补发 */
+    private fun requestFilterRefresh() {
+        if (!pageRequestInFlight && System.currentTimeMillis() - lastListRequestAt >= PAGE_CLICK_INTERVAL_MS) {
+            refreshData()
+        } else {
+            pendingFilterRefresh = true
+        }
+    }
 
     private fun updatePageButtons() {
         prevButton?.active = currentPage > 1
@@ -883,10 +896,16 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             updatePageButtons()
             refreshData(resetPending = false)
         }
+        // 筛选变更补发：与翻页共用 inFlight/窗口（筛选优先级低于翻页目标，翻页完成后再发筛选态）
+        if (!pageRequestInFlight && pendingFilterRefresh && System.currentTimeMillis() - lastListRequestAt >= PAGE_CLICK_INTERVAL_MS) {
+            pendingFilterRefresh = false
+            pageRequestInFlight = true
+            refreshData(resetPending = false)
+        }
         if (searchDirty && System.currentTimeMillis() - lastSearchEdit >= 250) {
             searchDirty = false
             currentPage = 1
-            refreshData()
+            requestFilterRefresh()
         }
     }
 
@@ -1540,12 +1559,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to w)
             }
             lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to w)
-            lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsHp, entry.htHp)}") to ivColors[0])
-            lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsAtk, entry.htAtk)}") to ivColors[1])
-            lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsDef, entry.htDef)}") to ivColors[2])
-            lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpAtk, entry.htSpAtk)}") to ivColors[3])
-            lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}") to ivColors[4])
-            lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}") to ivColors[5])
+            lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsHp, entry.htHp)}").append(Text.literal("   EV:${entry.evsHp}").formatted(Formatting.RED)) to ivColors[0])
+            lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsAtk, entry.htAtk)}").append(Text.literal("   EV:${entry.evsAtk}").formatted(Formatting.RED)) to ivColors[1])
+            lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsDef, entry.htDef)}").append(Text.literal("   EV:${entry.evsDef}").formatted(Formatting.RED)) to ivColors[2])
+            lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpAtk, entry.htSpAtk)}").append(Text.literal("   EV:${entry.evsSpAtk}").formatted(Formatting.RED)) to ivColors[3])
+            lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("   EV:${entry.evsSpDef}").formatted(Formatting.RED)) to ivColors[4])
+            lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("   EV:${entry.evsSpd}").formatted(Formatting.RED)) to ivColors[5])
             lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(" ").append(Text.literal(entry.sellerName)) to w)
             lines.add(Text.translatable("cobblemarket.gui.tooltip_price").append(" ").append(
                 Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)) to w)
