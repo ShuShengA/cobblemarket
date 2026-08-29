@@ -207,7 +207,7 @@ class BuyOrderScreen(
         }
     }
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false) {
+    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false, delta: Float = 0f) {
         val data = iconData[index] ?: return
         val renderable = data.renderable ?: return
         val matrices = context.matrices
@@ -216,12 +216,15 @@ class BuyOrderScreen(
             context.enableScissor(x - 1, y + 1, x + size + 2, y + size + 2)
             matrices.translate(x + size / 2.0, y + 1.0, 0.0)
             matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
+            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
             drawProfilePokemon(
                 renderablePokemon = renderable,
                 matrixStack = matrices,
                 rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
                 state = data.state,
-                partialTicks = 0f,
+                partialTicks = if (useFloat) delta else 0f,
                 scale = 4.5f,
                 // 弹窗打开时压暗（模型走独立渲染层，遮罩盖不住；颜色系数模拟遮罩效果）
                 r = if (dark) 0.35f else 1f,
@@ -703,7 +706,7 @@ class BuyOrderScreen(
                 context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
                 if (rowData?.renderable != null) {
-                    if (!anyDialogOpen) renderPokemonIcon(context, origIndex, slotX, slotY, iconSize)
+                    if (!anyDialogOpen) renderPokemonIcon(context, origIndex, slotX, slotY, iconSize, delta = delta)
                 } else {
                     context.drawCenteredTextWithShadow(textRenderer, "?", slotX + iconSize / 2, slotY + 6, 0xAAAAAA)
                 }
@@ -975,7 +978,7 @@ class BuyOrderScreen(
 
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-                renderCreateDialogBackground(context)
+                renderCreateDialogBackground(context, delta)
             }
         })
 
@@ -1189,7 +1192,7 @@ class BuyOrderScreen(
         addDrawableChild(createNoteField)
     }
 
-    private fun renderCreateDialogBackground(context: DrawContext) {
+    private fun renderCreateDialogBackground(context: DrawContext, delta: Float) {
         val centerX = width / 2
         val dialogW = 280
         val dialogH = if (createTab == 0) 276 else 196
@@ -1221,12 +1224,15 @@ class BuyOrderScreen(
                     context.enableScissor(slotX - 1, slotY + 1, slotX + slotSize + 2, slotY + slotSize + 2)
                     matrices.translate(slotX + slotSize / 2.0, slotY + 1.0, 0.0)
                     matrices.scale(slotSize / 25f * 2.5f, slotSize / 25f * 2.5f, 1f)
+                    // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+                    val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                        com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
                     drawProfilePokemon(
                         renderablePokemon = rp,
                         matrixStack = matrices,
                         rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
                         state = previewState,
-                        partialTicks = 0f,
+                        partialTicks = if (useFloat) delta else 0f,
                         scale = 4.5f
                     )
                 } catch (_: Exception) {

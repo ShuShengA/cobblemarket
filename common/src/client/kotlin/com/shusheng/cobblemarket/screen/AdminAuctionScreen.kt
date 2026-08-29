@@ -199,7 +199,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         return if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) ItemStack(heldItem) else null
     }
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int) {
+    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
         val data = iconData[index] ?: return run {
             val tc = 0x88888888.toInt()
             context.fill(x, y, x + size, y + size, tc)
@@ -210,10 +210,13 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             context.enableScissor(x - 1, y + 1, x + size + 2, y + size + 2)
             matrices.translate(x + size / 2.0, y + 1.0, 0.0)
             matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
+            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
             drawProfilePokemon(
                 renderablePokemon = data.renderable, matrixStack = matrices,
                 rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
-                state = data.state, partialTicks = 0f, scale = 4.5f
+                state = data.state, partialTicks = if (useFloat) delta else 0f, scale = 4.5f
             )
         } catch (_: Exception) {
         } finally {
@@ -317,7 +320,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染，照搬出价弹窗）
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-                renderCancelDialogBackground(context)
+                renderCancelDialogBackground(context, delta)
             }
         })
 
@@ -477,7 +480,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
                 if (iconData.containsKey(origIndex)) {
-                    renderPokemonIcon(context, origIndex, slotX, slotY, iconSize)
+                    renderPokemonIcon(context, origIndex, slotX, slotY, iconSize, delta = delta)
                 }
                 // 图标链 + 属性色名称 + 金色闪光星标（照搬拍卖场行）
                 var sx = leftX + 28
@@ -713,7 +716,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
 
     // ── 强制下架弹窗渲染（照搬出价弹窗两列布局） ──
 
-    private fun renderCancelDialogBackground(context: DrawContext) {
+    private fun renderCancelDialogBackground(context: DrawContext, delta: Float) {
         val entry = cancelEntry ?: return
         val centerX = width / 2
         val dialogW = 280
@@ -744,12 +747,15 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                     context.enableScissor(slotX - 1, slotY + 1, slotX + slotSize + 2, slotY + slotSize + 2)
                     matrices.translate(slotX + slotSize / 2.0, slotY + 1.0, 0.0)
                     matrices.scale(slotSize / 25f * 2.5f, slotSize / 25f * 2.5f, 1f)
+                    // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+                    val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                        com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
                     drawProfilePokemon(
                         renderablePokemon = rp,
                         matrixStack = matrices,
                         rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
                         state = cancelPreviewState,
-                        partialTicks = 0f,
+                        partialTicks = if (useFloat) delta else 0f,
                         scale = 4.5f
                     )
                 } catch (_: Exception) {

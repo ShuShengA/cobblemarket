@@ -49,6 +49,6 @@ fun onClientTick(handler: (client: MinecraftClient) -> Unit) {
 fun registerKeyBinding(binding: KeyBinding): KeyBinding =
     KeyBindingHelper.registerKeyBinding(binding)
 
-fun registerHudRender(handler: (context: DrawContext) -> Unit) {
-    HudRenderCallback.EVENT.register { context, _ -> handler(context) }
+fun registerHudRender(handler: (context: DrawContext, delta: Float) -> Unit) {
+    HudRenderCallback.EVENT.register { context, tickCounter -> handler(context, tickCounter.getTickDelta(true)) }
 }

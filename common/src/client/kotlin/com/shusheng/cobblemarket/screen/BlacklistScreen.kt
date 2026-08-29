@@ -257,7 +257,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-                renderPokemonDialogBackground(context)
+                renderPokemonDialogBackground(context, delta)
             }
         })
 
@@ -331,7 +331,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         return field
     }
 
-    private fun renderPokemonDialogBackground(context: DrawContext) {
+    private fun renderPokemonDialogBackground(context: DrawContext, delta: Float) {
         val centerX = width / 2
         val dialogW = 220
         val dialogH = 180
@@ -363,12 +363,15 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 context.enableScissor(slotX - 1, slotY + 1, slotX + slotSize + 2, slotY + slotSize + 2)
                 matrices.translate(slotX + slotSize / 2.0, slotY + 1.0, 0.0)
                 matrices.scale(slotSize / 25f * 2.5f, slotSize / 25f * 2.5f, 1f)
+                // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+                val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                    com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
                 drawProfilePokemon(
                     renderablePokemon = rp,
                     matrixStack = matrices,
                     rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
                     state = previewState,
-                    partialTicks = 0f,
+                    partialTicks = if (useFloat) delta else 0f,
                     scale = 4.5f
                 )
             } catch (_: Exception) {
@@ -852,7 +855,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         }
     }
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false) {
+    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false, delta: Float = 0f) {
         val data = iconData[index] ?: return
         val matrices = context.matrices
         matrices.push()
@@ -860,12 +863,15 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             context.enableScissor(x - 1, y + 1, x + size + 2, y + size + 2)
             matrices.translate(x + size / 2.0, y + 1.0, 0.0)
             matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
+            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
             drawProfilePokemon(
                 renderablePokemon = data.renderable,
                 matrixStack = matrices,
                 rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
                 state = data.state,
-                partialTicks = 0f,
+                partialTicks = if (useFloat) delta else 0f,
                 scale = 4.5f,
                 // 弹窗打开时压暗（模型走独立渲染层，遮罩盖不住；颜色系数模拟遮罩效果）
                 r = if (dark) 0.35f else 1f,
@@ -1076,7 +1082,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 context.drawTexture(SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
                 // 弹窗打开时不渲染 3D（模型层在衬底之上，压暗仍会浮在弹窗上）
-                if (addField == null) renderPokemonIcon(context, origIndex, slotX, slotY, iconSize)
+                if (addField == null) renderPokemonIcon(context, origIndex, slotX, slotY, iconSize, delta = delta)
                 // 截断防止超长条目（六项个体值全填）与编辑/删除按钮重叠；完整信息在悬停 tooltip
                 context.drawTextWithShadow(textRenderer,
                     com.shusheng.cobblemarket.util.TextUtil.truncateString(rowTexts[scrollOffset + i], 170),

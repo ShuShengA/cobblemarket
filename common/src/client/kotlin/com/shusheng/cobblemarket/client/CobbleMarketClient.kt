@@ -139,7 +139,7 @@ object CobbleMarketClient {
                 sendToServer(RequestBalancePayload())
             }
         }
-        registerHudRender { context ->
+        registerHudRender { context, _ ->
             renderBalanceHud(context)
         }
 
@@ -491,6 +491,8 @@ private var hudDiffUntil = 0L
 fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
     val client = MinecraftClient.getInstance()
     if (client.player == null) return
+    // F3 调试界面打开时不画（左上角帧率区会被 HUD 挡住）；shouldShowDebugHud 封装了「F3 开且 HUD 未隐藏」的判断
+    if (client.debugHud.shouldShowDebugHud()) return
     val text = "${hudBalanceText(client)} ${inlineCurrencyUnit()}"
     // 余额变动检测（每帧，OFF 模式也跟踪避免切回时误报）：差值驱动 +绿/-红浮字
     val rawNow = hudBalanceRaw(client)

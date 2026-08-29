@@ -38,4 +38,4 @@ fun onClientTick(handler: (client: MinecraftClient) -> Unit): Unit = throw Asser
 fun registerKeyBinding(binding: KeyBinding): KeyBinding = throw AssertionError()
 
 @ExpectPlatform
-fun registerHudRender(handler: (context: DrawContext) -> Unit): Unit = throw AssertionError()
+fun registerHudRender(handler: (context: DrawContext, delta: Float) -> Unit): Unit = throw AssertionError()

@@ -79,10 +79,13 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
             matrices.push()
             matrices.translate(centerX.toDouble(), (iconY + iconSize / 2).toDouble(), 0.0)
             matrices.scale(iconSize / 25f * 2.5f, iconSize / 25f * 2.5f, 1f)
+            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
             drawProfilePokemon(
                 renderablePokemon = rp, matrixStack = matrices,
                 rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
-                state = state, partialTicks = 0f, scale = 4.5f
+                state = state, partialTicks = if (useFloat) delta else 0f, scale = 4.5f
             )
             matrices.pop()
         }

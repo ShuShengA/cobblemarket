@@ -1100,7 +1100,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             context.matrices.pop()
 
             // 3D Pokemon icon（弹窗打开时不渲染——模型层在衬底/遮罩之上，压暗仍会浮在弹窗上）
-            if (!dialogOpen) renderPokemonIcon(context, origIndex, leftX + 2, y + 2, iconSize)
+            if (!dialogOpen) renderPokemonIcon(context, origIndex, leftX + 2, y + 2, iconSize, delta = delta)
 
             // Ball icon（球种统一在精灵名称左侧；弹窗打开时隐藏——物品图标无色调参数无法变暗）
             if (!dialogOpen) {
@@ -1190,7 +1190,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         }
 
         if (confirmEntry != null || cancelEntry != null) {
-            renderConfirmDialog(context, mouseX, mouseY)
+            renderConfirmDialog(context, mouseX, mouseY, delta)
         }
     }
 
@@ -1375,7 +1375,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         if (mirrored && wasCull) org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_CULL_FACE)
     }
 
-    private fun renderConfirmDialog(context: DrawContext, mouseX: Int, mouseY: Int) {
+    private fun renderConfirmDialog(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val entry = confirmEntry ?: cancelEntry ?: return
         val centerX = width / 2
         val dialogW = 220
@@ -1415,10 +1415,13 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             matrices.push()
             matrices.translate((iconX + iconSize / 2).toDouble(), (iconY + 1).toDouble(), 0.0)
             matrices.scale(iconSize / 25f * 2.5f, iconSize / 25f * 2.5f, 1f)
+            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
             drawProfilePokemon(
                 renderablePokemon = rp, matrixStack = matrices,
                 rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
-                state = confirmState, partialTicks = 0f, scale = 4.5f
+                state = confirmState, partialTicks = if (useFloat) delta else 0f, scale = 4.5f
             )
             matrices.pop()
         }
@@ -1472,7 +1475,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     // ── 3D Pokemon icon rendering ──
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false) {
+    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false, delta: Float = 0f) {
         val data = iconData[index] ?: run {
             // Fallback: type-colored placeholder
             val entry = listings.getOrNull(index) ?: return
@@ -1492,6 +1495,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             matrices.translate(x + size / 2.0, y + 1.0, 0.0)
             matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
 
+            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
             drawProfilePokemon(
                 renderablePokemon = data.renderable,
                 matrixStack = matrices,
@@ -1501,7 +1507,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                     0f
                 ),
                 state = data.state,
-                partialTicks = 0f,
+                partialTicks = if (useFloat) delta else 0f,
                 scale = 4.5f,
                 // 弹窗打开时压暗（模型走独立渲染层，遮罩盖不住；颜色系数模拟遮罩效果）
                 r = if (dark) 0.35f else 1f,

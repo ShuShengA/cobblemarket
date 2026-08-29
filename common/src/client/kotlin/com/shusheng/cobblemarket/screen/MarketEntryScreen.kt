@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.client.playFailSound
 
 import com.mojang.blaze3d.systems.RenderSystem
 import com.shusheng.cobblemarket.client.BalanceHudMode
+import com.shusheng.cobblemarket.client.IconAnimMode
 import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.client.MarketStateCache
 import com.shusheng.cobblemarket.client.OakTips
@@ -42,6 +43,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsPikachuLoopButton: NineSliceButton? = null
     private var settingsGroudonFlyButton: NineSliceButton? = null
     private var settingsBalanceHudButton: NineSliceButton? = null
+    private var settingsIconAnimButton: NineSliceButton? = null
     // 入口底部居中的市场总开关（仅 OP 可见）
     private var marketSwitchBtn: NineSliceButton? = null
     // 入口底部市场总开关左侧的服务器配置按钮（仅 OP 可见）
@@ -300,8 +302,15 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             { cycleBalanceHud() }
         )
         addDrawableChild(settingsBalanceHudButton)
+        // 精灵图标展示模式两态循环（静态/动态），同 balanceHud 模板
+        settingsIconAnimButton = NineSliceButton(
+            centerX + 40, dialogY + 212, 46, 20,
+            Text.translatable(iconAnimModeKey()),
+            { cycleIconAnim() }
+        )
+        addDrawableChild(settingsIconAnimButton)
         addDrawableChild(NineSliceButton(
-            centerX - 28, dialogY + 212, 56, 20,
+            centerX - 28, dialogY + 238, 56, 20,
             Text.translatable("cobblemarket.settings.done"),
             { closeSettingsDialog() }
         ))
@@ -316,6 +325,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsPikachuLoopButton = null
         settingsGroudonFlyButton = null
         settingsBalanceHudButton = null
+        settingsIconAnimButton = null
         clearChildren()
         init()
     }
@@ -390,6 +400,19 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsToastUntil = System.currentTimeMillis() + 1500
     }
 
+    private fun iconAnimModeKey(): String = when (ClientConfig.iconAnimMode) {
+        IconAnimMode.STATIC -> "cobblemarket.settings.icon_anim_static"
+        IconAnimMode.FLOAT -> "cobblemarket.settings.icon_anim_dynamic"
+    }
+
+    private fun cycleIconAnim() {
+        ClientConfig.cycleIconAnimMode()
+        settingsIconAnimButton?.message = Text.translatable(iconAnimModeKey())
+        settingsToastText = Text.translatable("cobblemarket.settings.icon_anim").append(" ")
+            .append(Text.translatable(iconAnimModeKey()))
+        settingsToastUntil = System.currentTimeMillis() + 1500
+    }
+
     /** 开关切换 toast：「标签 开/关」，1.5 秒后消失 */
     private fun showSettingsToast(labelKey: String, on: Boolean) {
         settingsToastText = Text.translatable(labelKey).append(" ")
@@ -410,10 +433,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             Text.translatable("cobblemarket.settings.title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF
         )
-        // 开关项分割线：标题下 + 每两行之间（行按钮 y=30/56/82/108/134/160/186、行高 22 → 线在 27/54/80/106/132/158/184）
+        // 开关项分割线：标题下 + 每两行之间（行按钮 y=30/56/82/108/134/160/186/212、行高 22 → 线在 27/54/80/106/132/158/184/210）
         val lineX1 = centerX - 88
         val lineX2 = centerX + 88
-        for (lineY in intArrayOf(27, 54, 80, 106, 132, 158, 184)) {
+        for (lineY in intArrayOf(27, 54, 80, 106, 132, 158, 184, 210)) {
             context.fill(lineX1, dialogY + lineY, lineX2, dialogY + lineY + 1, 0xFF555555.toInt())
         }
     }
@@ -456,6 +479,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             textRenderer,
             Text.translatable("cobblemarket.settings.balance_hud"),
             centerX - 80, dialogY + 193, 0xFFFFFF
+        )
+        context.drawTextWithShadow(
+            textRenderer,
+            Text.translatable("cobblemarket.settings.icon_anim"),
+            centerX - 80, dialogY + 218, 0xFFFFFF
         )
     }
 
@@ -887,7 +915,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     companion object {
         private const val DIALOG_W = 200
-        private const val DIALOG_H = 246
+        private const val DIALOG_H = 272
         // 入口掉落动画三段：下落 → 落地停留 → 淡出（淡出期间入口界面从图下透出，慢慢显现）
         private const val DROP_DURATION_MS = 100L
         private const val HOLD_DURATION_MS = 100L

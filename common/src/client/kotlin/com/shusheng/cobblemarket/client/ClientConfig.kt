@@ -13,6 +13,14 @@ import java.io.File
  * 动画开关按**频率**分两个而不是按来源分三个：市场直购随时可买、最高频，
  * 拍卖成交与求购单接受都是低频事件，合用一个开关。
  */
+/** 精灵图标展示模式 */
+enum class IconAnimMode {
+    /** 完全静态：固定姿势 + 固定旋转角（视觉偏好选项，性能与浮动无差别） */
+    STATIC,
+    /** 动态（默认）：播放 idle 待机动画（与 Cobblemon 队伍界面同款），几乎零开销 */
+    FLOAT
+}
+
 /** 余额 HUD 显示模式 */
 enum class BalanceHudMode {
     /** 一直显示 */
@@ -56,6 +64,10 @@ object ClientConfig {
     var balanceHudMode: BalanceHudMode = BalanceHudMode.ALWAYS
         private set
 
+    /** 精灵图标展示模式（个人设置，设置弹窗两态循环）：STATIC 静态 / FLOAT 动态（默认） */
+    var iconAnimMode: IconAnimMode = IconAnimMode.FLOAT
+        private set
+
     fun load() {
         if (!configFile.exists()) {
             save()
@@ -77,6 +89,8 @@ object ClientConfig {
                 2.0 -> BalanceHudMode.OFF
                 else -> if (data["showBalanceHud"] as? Boolean == false) BalanceHudMode.OFF else BalanceHudMode.ALWAYS
             }
+            // 只有显式存过 0（静态）才保持静态；无字段（旧版本升级）、1（浮动）、2（已砍掉的完整动画占位）一律按新默认浮动
+            iconAnimMode = if (data["iconAnimMode"] as? Double == 0.0) IconAnimMode.STATIC else IconAnimMode.FLOAT
             if (legacy != null) save()
         } catch (e: Exception) {
             CobbleMarketClient.LOGGER.warn("Failed to load client config: ${e.message}")
@@ -119,6 +133,16 @@ object ClientConfig {
         save()
     }
 
+    /** 两态循环：STATIC ↔ FLOAT */
+    fun cycleIconAnimMode(): IconAnimMode {
+        iconAnimMode = when (iconAnimMode) {
+            IconAnimMode.STATIC -> IconAnimMode.FLOAT
+            IconAnimMode.FLOAT -> IconAnimMode.STATIC
+        }
+        save()
+        return iconAnimMode
+    }
+
     /** 三态循环：ALWAYS → ON_CHANGE → OFF → ALWAYS */
     fun cycleBalanceHudMode(): BalanceHudMode {
         balanceHudMode = when (balanceHudMode) {
@@ -143,6 +167,7 @@ object ClientConfig {
                             "pikachuRunLoop" to "皮卡丘跑步机：开启后皮卡丘绕入口/管理面板背景边缘环绕跑（默认沿背景顶部直线跑）/ Pikachu Treadmill: when on, Pikachu runs around the border of the entry/admin background instead of the straight top run",
                             "groudonFly" to "据说固拉多一生都在寻找这个按钮：开启后固拉多在精灵市场/上架选择界面穿梭飞行 / It is said Groudon spends its whole life looking for this button: when on, Groudon flies across the pokemon market and sell-select screens",
                             "balanceHudMode" to "余额 HUD 显示模式：0=一直显示（默认），1=余额变动时显示 5 秒，2=关闭；可在市场入口界面右下角的设置里改 / Balance HUD mode: 0=always show (default), 1=show 5 seconds when the balance changes, 2=off; editable via the gear button on the market entry screen",
+                            "iconAnimMode" to "精灵图标展示模式：0=完全静态，1=动态（默认，播放 Cobblemon 内置待机动画）；可在市场入口界面右下角的设置里改 / Pokemon icon mode: 0=static, 1=dynamic (default, plays Cobblemon's built-in idle animation); editable via the gear button on the market entry screen",
                             "_note" to "服主还可在服务端配置 cobblemarket.json 的 celebrationAnimationEnabled 里全局关闭动画，那种情况下本文件的开关不起作用 / The server owner can also disable animations globally via celebrationAnimationEnabled in the server-side cobblemarket.json, in which case these switches have no effect"
                         ),
                         "celebrationOnMarketBuy" to celebrationOnMarketBuy,
@@ -151,7 +176,8 @@ object ClientConfig {
                         "marketAnimation" to marketAnimation,
                         "pikachuRunLoop" to pikachuRunLoop,
                         "groudonFly" to groudonFly,
-                        "balanceHudMode" to balanceHudMode.ordinal
+                        "balanceHudMode" to balanceHudMode.ordinal,
+                        "iconAnimMode" to iconAnimMode.ordinal
                     )
                 )
             )
