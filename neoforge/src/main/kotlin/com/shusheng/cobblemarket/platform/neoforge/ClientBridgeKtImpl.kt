@@ -68,10 +68,10 @@ fun registerKeyBinding(binding: KeyBinding): KeyBinding {
     return binding
 }
 
-fun registerHudRender(handler: (context: DrawContext) -> Unit) {
+fun registerHudRender(handler: (context: DrawContext, delta: Float) -> Unit) {
     // RenderGuiEvent.Post（EVENT_BUS）：每帧 HUD 渲染后触发，含无界面时的游戏画面——
     // RegisterGuiLayersEvent 的层只在有 Screen 时渲染，无界面时余额 HUD 会消失
     NeoForge.EVENT_BUS.addListener(RenderGuiEvent.Post::class.java) { event ->
-        handler(event.guiGraphics)
+        handler(event.guiGraphics, event.partialTick.getTickDelta(true))
     }
 }

@@ -537,7 +537,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             context.matrices.pop()
             val iconX = lx + 2
             val iconY = y + 2
-            renderPokemonIcon(context, origIdx, iconX, iconY, iconSize)
+            renderPokemonIcon(context, origIdx, iconX, iconY, iconSize, delta = delta)
 
             // Species（[队]/[PC] 固定色，精灵名属性色 + 金色闪光星标拆段绘制）
             val src = Text.translatable(if (e.source == "party") "cobblemarket.sell.party" else "cobblemarket.sell.pc").string
@@ -785,7 +785,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         if (mirrored && wasCull) org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_CULL_FACE)
     }
 
-    private fun renderPokemonIcon(context: DrawContext, origIdx: Int, x: Int, y: Int, size: Int) {
+    private fun renderPokemonIcon(context: DrawContext, origIdx: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
         val data = iconData[origIdx] ?: return run {
             val tc = 0x88888888.toInt()
             context.fill(x, y, x + size, y + size, tc)
@@ -796,10 +796,13 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             context.enableScissor(x - 1, y + 1, x + size + 2, y + size + 2)
             matrices.translate(x + size / 2.0, y + 1.0, 0.0)
             matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
+            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
             drawProfilePokemon(
                 renderablePokemon = data.renderable, matrixStack = matrices,
                 rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
-                state = data.state, partialTicks = 0f, scale = 4.5f
+                state = data.state, partialTicks = if (useFloat) delta else 0f, scale = 4.5f
             )
         } catch (_: Exception) {
         } finally {

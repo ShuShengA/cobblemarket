@@ -676,7 +676,7 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         return if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) ItemStack(heldItem) else null
     }
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int) {
+    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
         val data = iconData[index] ?: return
         val matrices = context.matrices
         matrices.push()
@@ -684,12 +684,15 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
             context.enableScissor(x - 1, y + 1, x + size + 2, y + size + 2)
             matrices.translate(x + size / 2.0, y + 1.0, 0.0)
             matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
+            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
             drawProfilePokemon(
                 renderablePokemon = data.renderable,
                 matrixStack = matrices,
                 rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
                 state = data.state,
-                partialTicks = 0f,
+                partialTicks = if (useFloat) delta else 0f,
                 scale = 4.5f
             )
         } catch (_: Exception) {
@@ -759,7 +762,7 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
 
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-                renderBidDialogBackground(context)
+                renderBidDialogBackground(context, delta)
             }
         })
 
@@ -793,7 +796,7 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         addDrawableChild(bidCancelButton)
     }
 
-    private fun renderBidDialogBackground(context: DrawContext) {
+    private fun renderBidDialogBackground(context: DrawContext, delta: Float) {
         val entry = bidEntry ?: return
         val centerX = width / 2
         val dialogW = 280
@@ -824,12 +827,15 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
                     context.enableScissor(slotX - 1, slotY + 1, slotX + slotSize + 2, slotY + slotSize + 2)
                     matrices.translate(slotX + slotSize / 2.0, slotY + 1.0, 0.0)
                     matrices.scale(slotSize / 25f * 2.5f, slotSize / 25f * 2.5f, 1f)
+                    // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+                    val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                        com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
                     drawProfilePokemon(
                         renderablePokemon = rp,
                         matrixStack = matrices,
                         rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
                         state = bidPreviewState,
-                        partialTicks = 0f,
+                        partialTicks = if (useFloat) delta else 0f,
                         scale = 4.5f
                     )
                 } catch (_: Exception) {
@@ -1114,7 +1120,7 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
                 context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
                 if (iconData.containsKey(origIndex)) {
-                    renderPokemonIcon(context, origIndex, slotX, slotY, iconSize)
+                    renderPokemonIcon(context, origIndex, slotX, slotY, iconSize, delta = delta)
                 }
                 // 图标链 + 属性色名称 + 金色闪光星标（照搬 SellSelectScreen 风格，右侧让位价格/倒计时）
                 var sx = leftX + 28

@@ -435,7 +435,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     }
 
     // 弹窗打开时：预览精灵画在起拍价输入框上方，以输入框水平居中
-    private fun renderPreviewAboveField(context: DrawContext) {
+    private fun renderPreviewAboveField(context: DrawContext, delta: Float) {
         val slotSize = 28
         val dialogY = height / 2 - (if (dialogItem != null) 180 else 150) / 2
         val fieldX = width / 2 - 20
@@ -455,12 +455,15 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             context.enableScissor(slotX - 1, slotY + 1, slotX + slotSize + 2, slotY + slotSize + 2)
             matrices.translate(slotX + slotSize / 2.0, slotY + 1.0, 0.0)
             matrices.scale(slotSize / 25f * 2.5f, slotSize / 25f * 2.5f, 1f)
+            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
             drawProfilePokemon(
                 renderablePokemon = rp,
                 matrixStack = matrices,
                 rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
                 state = dialogPreviewState,
-                partialTicks = 0f,
+                partialTicks = if (useFloat) delta else 0f,
                 scale = 4.5f
             )
         } catch (_: Exception) {
@@ -663,7 +666,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     private fun displayCount(): Int = if (currentTab == 0) filteredPokemon().size else items.size
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false) {
+    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false, delta: Float = 0f) {
         val data = iconData[index] ?: return run {
             val tc = 0x88888888.toInt()
             context.fill(x, y, x + size, y + size, tc)
@@ -674,12 +677,15 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             context.enableScissor(x - 1, y + 1, x + size + 2, y + size + 2)
             matrices.translate(x + size / 2.0, y + 1.0, 0.0)
             matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
+            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
             drawProfilePokemon(
                 renderablePokemon = data.renderable,
                 matrixStack = matrices,
                 rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
                 state = data.state,
-                partialTicks = 0f,
+                partialTicks = if (useFloat) delta else 0f,
                 scale = 4.5f,
                 // 弹窗打开时压暗（模型走独立渲染层，遮罩盖不住；颜色系数模拟遮罩效果）
                 r = if (dark) 0.35f else 1f,
@@ -744,7 +750,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         if (dialogPokemon != null || dialogItem != null) {
             // 弹窗打开时：精灵预览显示在起拍价输入框上方（以输入框居中）
             if (dialogPokemon != null && dialogRenderable != null) {
-                renderPreviewAboveField(context)
+                renderPreviewAboveField(context, delta)
             }
             return
         }
@@ -806,7 +812,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
                 // 预览弹窗打开时不渲染 3D（模型层在衬底之上，压暗仍会浮在弹窗上）
-                if (dialogPokemon == null && dialogItem == null) renderPokemonIcon(context, origIndex, slotX, slotY, 20)
+                if (dialogPokemon == null && dialogItem == null) renderPokemonIcon(context, origIndex, slotX, slotY, 20, delta = delta)
 
                 // 来源（[队]/[PC] 固定色，精灵名属性色 + 金色闪光星标，照搬 SellSelectScreen）
                 val src = Text.translatable(if (p.source == "party") "cobblemarket.sell.party" else "cobblemarket.sell.pc").string
