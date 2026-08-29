@@ -74,7 +74,7 @@ object PokemonCelebrationAnimation {
     fun register() {
         // 无界面时走 HUD 阶段；有界面时交给 ScreenMixin（renderWithTooltip 之后）。
         // 两条路径互斥——同帧画两次会让淡出阶段的 alpha 叠加，尾巴偏亮且消失突兀。
-        registerHudRender { context, _ ->
+        registerHudRender { context ->
             if (MinecraftClient.getInstance()?.currentScreen == null) {
                 renderOverlay(context)
             }

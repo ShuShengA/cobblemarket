@@ -15,6 +15,7 @@ import net.minecraft.network.packet.CustomPayload
 import net.minecraft.util.Identifier
 import net.neoforged.bus.api.EventPriority
 import net.neoforged.neoforge.client.event.ClientTickEvent
+import net.neoforged.neoforge.client.event.RenderGuiEvent
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent
 import net.neoforged.neoforge.common.NeoForge
@@ -57,16 +58,20 @@ fun onClientTick(handler: (client: MinecraftClient) -> Unit) {
 
 fun registerKeyBinding(binding: KeyBinding): KeyBinding {
     NeoForgePlatform.modEventBus().addListener(RegisterKeyMappingsEvent::class.java) { event ->
-        event.register(binding)
+        // 与 RegisterGuiLayersEvent 同族注册类事件：启动流程可能重复触发，幂等处理防重复注册
+        try {
+            event.register(binding)
+        } catch (_: IllegalArgumentException) {
+            // 按键已注册：忽略
+        }
     }
     return binding
 }
 
-fun registerHudRender(handler: (context: DrawContext, tickCounter: RenderTickCounter) -> Unit) {
-    NeoForgePlatform.modEventBus().addListener(RegisterGuiLayersEvent::class.java) { event ->
-        // fabric HudRenderCallback 的对应物：最顶层 GUI 层（无界面时也会渲染，语义一致）
-        event.registerAboveAll(Identifier.of("cobblemarket", "hud"), LayeredDrawer.Layer { context, tickCounter ->
-            handler(context, tickCounter)
-        })
+fun registerHudRender(handler: (context: DrawContext) -> Unit) {
+    // RenderGuiEvent.Post（EVENT_BUS）：每帧 HUD 渲染后触发，含无界面时的游戏画面——
+    // RegisterGuiLayersEvent 的层只在有 Screen 时渲染，无界面时余额 HUD 会消失
+    NeoForge.EVENT_BUS.addListener(RenderGuiEvent.Post::class.java) { event ->
+        handler(event.guiGraphics)
     }
 }
