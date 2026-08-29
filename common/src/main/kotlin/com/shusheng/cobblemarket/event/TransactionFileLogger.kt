@@ -26,8 +26,8 @@ object TransactionFileLogger {
             val date = dateFormat.format(instant)
             if (date != currentDate) {
                 currentDate = date
-                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,精灵,价格,手续费,详情")
-                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Species,Price,Fee,Details")
+                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,精灵/物品,价格,手续费,详情")
+                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Pokemon/Item,Price,Fee,Details")
             }
             val zhFile = currentZhFile ?: return
             val enFile = currentEnFile ?: return

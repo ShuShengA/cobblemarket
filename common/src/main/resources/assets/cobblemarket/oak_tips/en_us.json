@@ -491,7 +491,7 @@
   "Regional forms: Alolan, Galarian, Hisuian and Paldean forms change type and appearance — the same Pokédex number in different forms is a collector's nightmare.",
   "Friendship and Affection are separate systems: Friendship affects evolutions and Return, while Affection (from XY) affects battle luck like critical hits and surviving KOs.",
   "Exp. Candies: since Gen 8 you can level up directly with candies, skipping the grind — but candy-only training skips EV management.",
-  "EV limits: 510 total EVs with a maximum of 252 per stat, meaning at most two stats can be maxed — the common \"252/252/4\" spread exists for this reason.",
+  "EV limits: 510 total with a maximum of 252 per stat (since Gen 6; 255 before). Every 4 EVs grant 1 stat point, so the common \"252/252/4\" spread uses only 508 points — the remaining 2 EVs grant nothing, an unavoidable remainder under the caps.",
   "A wild 6IV Pokémon appears at roughly 1 in 1 billion odds: real 6IVs come from Destiny Knot breeding or Bottle Caps — don't expect to find one in the wild.",
   "Pokérus: a rare positive virus that doubles EV gains and spreads through the party; after being cured the Pokémon keeps an immunity mark but can no longer spread it — a collector's lucky charm.",
   "The Exp. Share became party-wide from Gen 6: no more swap-training, though some players criticized it for making the games too easy.",

@@ -624,7 +624,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private fun rebuildVList() {
         vOptionButtons.forEach { remove(it) }
         vOptionButtons.clear()
-        formButton?.visible = !vListOpen
+        // 收起时只在形态选项已解析（物种已指定）时恢复形态按钮；空物种时保持隐藏（与 updatePreview 一致）
+        formButton?.visible = !vListOpen && formOptions.size > 1
         // V 档列表展开时覆盖特训按钮位置（dialogY+62 起），隐藏避免点击拦截
         ruleHtButton?.visible = !vListOpen
         minField?.visible = !vListOpen

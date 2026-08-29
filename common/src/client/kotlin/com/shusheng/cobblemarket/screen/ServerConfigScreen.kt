@@ -114,14 +114,15 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             numFields[key] = field
             addSelectableChild(field)
             addDrawableChild(field)
-            // 重置按钮（↺ 符号，双语通用）：恢复该行为服务端快照值
+            // 重置按钮（↺ 符号，双语通用）：恢复该行为默认值并立即提交回服务器（真正重置配置）
             val resetBtn = NineSliceButton(
                 dialogX + dialogW - 10 - 20, startY, 20, 16,
                 Text.literal("↺"),
                 {
                     numFields[key]?.text =
                         if (key == "auctionDurations") (latest?.auctionDurations ?: "")
-                        else snapshotText(key, latest)
+                        else snapshotText(key, null)
+                    save()
                 }
             )
             resetButtons[key] = resetBtn
