@@ -854,6 +854,12 @@ object AuctionNetwork {
             "htSpAtk" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK] ?: -1).toString(),
             "htSpDef" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE] ?: -1).toString(),
             "htSpd" to (htIvs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: -1).toString(),
+            "evsHp" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP].toString(),
+            "evsAtk" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK].toString(),
+            "evsDef" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.DEFENCE].toString(),
+            "evsSpAtk" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK].toString(),
+            "evsSpDef" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE].toString(),
+            "evsSpd" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED].toString(),
             "nature" to "cobblemon.nature.${pokemon.effectiveNature.name.path}",
             // 原生性格（薄荷不改）：与 nature 不同 = 用过薄荷，客户端斜体显示
             "natureBase" to "cobblemon.nature.${pokemon.nature.name.path}",

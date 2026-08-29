@@ -95,12 +95,12 @@ object EntryBadgeRenderer {
             lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to 0xFFFFFF)
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to 0xFFFFFF)
-        lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsHp, entry.htHp)}") to 0x66FF66)
-        lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsAtk, entry.htAtk)}") to 0xFF6666)
-        lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsDef, entry.htDef)}") to 0xFFCC66)
-        lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpAtk, entry.htSpAtk)}") to 0x6699FF)
-        lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}") to 0x66FF99)
-        lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}") to 0xFF99FF)
+        lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsHp, entry.htHp)}").append(Text.literal("  EV:${entry.evsHp}").formatted(Formatting.RED)) to 0x66FF66)
+        lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsAtk, entry.htAtk)}").append(Text.literal("  EV:${entry.evsAtk}").formatted(Formatting.RED)) to 0xFF6666)
+        lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsDef, entry.htDef)}").append(Text.literal("  EV:${entry.evsDef}").formatted(Formatting.RED)) to 0xFFCC66)
+        lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpAtk, entry.htSpAtk)}").append(Text.literal("  EV:${entry.evsSpAtk}").formatted(Formatting.RED)) to 0x6699FF)
+        lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("  EV:${entry.evsSpDef}").formatted(Formatting.RED)) to 0x66FF99)
+        lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("  EV:${entry.evsSpd}").formatted(Formatting.RED)) to 0xFF99FF)
         lines.add(
             Text.translatable("cobblemarket.gui.tooltip_seller").append(" ").append(Text.literal(entry.sellerName)) to 0xFFFFFF
         )
