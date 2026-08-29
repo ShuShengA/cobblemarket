@@ -374,7 +374,7 @@
 
   "cobblemarket.ban.title": "封禁管理",
   "cobblemarket.ban.player_name": "玩家名",
-  "cobblemarket.ban.duration": "时长(1d/12h/30m)",
+  "cobblemarket.ban.duration": "1d/12h/30m",
   "cobblemarket.ban.ban": "封禁",
   "cobblemarket.ban.unban": "解封",
   "cobblemarket.ban.banned": "已将 %s 封禁交易！",

@@ -139,7 +139,7 @@ object CobbleMarketClient {
                 sendToServer(RequestBalancePayload())
             }
         }
-        registerHudRender { context, _ ->
+        registerHudRender { context ->
             renderBalanceHud(context)
         }
 
