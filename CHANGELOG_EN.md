@@ -16,6 +16,11 @@
 - **In-game server config editor**: a new "Server Config" button (OP only) sits left of the market master switch on the entry screen — fees, limits, durations, and toggles (15 settings) can now be edited in-game (number fields save when you click elsewhere, toggles apply instantly), no config file editing needed; currency settings and auction duration options still require editing the config file
 - **Direct Impactor integration**: use Impactor currency without Cobblemon Economy — new `currency.impactor` switch (works on both loaders; NeoForge owners now have a direct virtual-currency path), the market reads/writes Impactor's EconomyService API directly; priority is Cobblemon Economy → CobbleDollars → Impactor → items; Impactor is not auto-detected on fresh installs (it is often installed as a library by other mods — auto-enabling would silently switch the currency), owners opt in explicitly; config comments now note cobblemonEconomy is Fabric-only
 - **In-game balance HUD**: a market balance display in the top-left corner of the game (gold amount + dark rounded background frame, visible on every screen — players can see their remaining balance even inside bid/purchase dialogs); item currency mode counts the inventory locally in real time (dropping/picking up currency items updates instantly); virtual currencies refresh after trades plus a 30-second low-frequency fallback; three-state Settings toggle — always show (default) / show 5 seconds on balance change / off
+- **Server-wide auction broadcasts**: creating or selling an auction now broadcasts to everyone in chat — hovering the lot name shows full details (Pokémon level/IVs/EVs/nature/ball, item enchantments), and clicking it jumps straight to that lot's bid dialog
+- **Buy order review shortcut**: new-delivery notifications now carry a "Review" button that jumps straight to the review dialog; offline queued notices work the same way
+- **Pokémon icon animation**: icons on every screen now play Cobblemon's built-in idle animation by default, with a new two-state setting to switch back to fully static
+- **Enchantment details visible**: items in auctions and buy order deliveries now show their full enchantments and other tooltip lines — list hover, bid dialog, broadcast hover, and review dialog all match
+- **Ledger covers auctions and buy orders**: auctions (listed/sold/unsold/force-cancelled) and buy orders (placed/filled/closed/expired/force-cancelled) are all written to the transaction history CSV, with a new enchantment summary in the Details column for exact recreation
 
 ### Changes
 
@@ -47,6 +52,9 @@
 - Fixed a false "CobbleMarket state save failed" error when players log out: on NeoForge, persistent state writes are asynchronous, so verifying right after saving misreported failures; verification is now delayed, and saves are skipped entirely when there is nothing unsaved
 - Fixed purchase success messages (Pokémon/items) showing amounts in green instead of the standard gold: the %d placeholders dropped the text color; they now use %s with gold-formatted amount text
 - Fixed rapid page-turning in market screens permanently graying out the prev/next buttons and leaving stale content: paging now merges clicks into a target page — each click updates the page number immediately (instant feedback), requests queue behind the server-side throttle window (pokemon market 250ms, item market/pending claims 500ms), and rapid clicks only send one request for the final page; a 1-second response timeout also force-resets the in-flight flag, so a silently dropped request can no longer lock the paging buttons (pokemon/item markets and both pending claims screens; the two admin screens also got the timeout fallback)
+- The balance HUD hides itself while the F3 debug screen is open, no longer covering the FPS readout
+- Custom Poké Balls from addon mods now show their icon and name correctly (previously blank due to hard-coded Cobblemon namespace)
+- Pokémon/item market listings force-cancelled by an admin now notify the seller with a dedicated red message (consistent with auctions and buy orders)
 
 ## 1.0.0-beta.6 (released)
 
@@ -155,6 +163,7 @@
 - Config comments improved: max auction limit notes "Pokémon + items combined" and performance advice for crowded servers
 - Market price input limit relaxed to 9 digits (consistent with auction and price limit fields)
 - Item market and admin "all listed items" page capacity raised from 30 to 84 items: bigger windows show more per page with less paging (smaller windows show fewer)
+- Hover panels and confirm dialogs now show a "Ball:" text line (custom balls are recognizable at a glance)
 
 ### Fixes
 
