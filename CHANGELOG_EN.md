@@ -43,6 +43,7 @@
 ### Fixes
 
 - Fixed some Pokémon icons being clipped at the slot edge when their model leaned past it — the icon clipping region is widened so oversized or off-center models render fully
+- Fixed the item name and its enchantment lines touching with zero gap in the buy order item review dialog — added 3px spacing between them
 - Fixed item icons (balls/held items — drawItem render layer) and some Pokémon model icons (emissive layer) piercing through dialog masks — present in existing screens (market/auction/admin) since beta.1; item icons are now hidden while dialogs are open (render-layer limit), and Pokémon 3D icons are dimmed via color parameters
 - Fixed new item blacklist entries still appearing at the bottom of the list (the send path was missing the reverse); re-adding the same entry in blacklist/ban/price limit now moves it to the top instead of keeping its old position
 - Fixed buy order creation dialog validation messages being darkened and invisible under the dialog overlay (now rendered above the overlay)

@@ -1914,7 +1914,8 @@ class BuyOrderScreen(
             context.drawTextWithShadow(textRenderer, itemName, startX + 20, dialogY + 32, 0xFFFFFF)
             context.drawTextWithShadow(textRenderer, countStr, startX + 20 + textRenderer.getWidth(itemName) + 4, dialogY + 32, 0xAAAAAA)
             // 物品词条（附魔/名称等，去首行物品名；超过上限才截断以「…」收尾）
-            var ty = dialogY + 40
+            // +43：物品名顶 32 + 字高 8 = 底 40，与词条顶留 3px 缝隙（原 40 完全贴死）
+            var ty = dialogY + 43
             val shown = if (reviewItemTooltipLines.size > MAX_ITEM_EXTRA_ROWS) reviewItemTooltipLines.take(MAX_ITEM_EXTRA_ROWS - 1) + Text.literal("…") else reviewItemTooltipLines
             shown.forEach { line ->
                 context.drawCenteredTextWithShadow(textRenderer, line, centerX, ty, 0xFFFFFF)
