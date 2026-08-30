@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.mixin.client;
 
 import com.shusheng.cobblemarket.client.CloseAnimation;
 import com.shusheng.cobblemarket.client.CobbleMarketClientKt;
+import com.shusheng.cobblemarket.client.EnterAnimation;
 import com.shusheng.cobblemarket.client.PokemonCelebrationAnimation;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -27,6 +28,8 @@ public abstract class ScreenMixin {
 
     @Inject(method = "renderWithTooltip", at = @At("HEAD"))
     private void cobblemarket$closeAnimHead(DrawContext context, int mouseX, int mouseY, float deltaTicks, CallbackInfo ci) {
+        // 进场动画（聊天跳转）：先 push 进场、再 push 关闭，TAIL 逆序 pop（两者不同时进行，栈配对安全）
+        EnterAnimation.INSTANCE.pushTransform(context);
         CloseAnimation.INSTANCE.pushTransform(context);
     }
 
@@ -37,6 +40,7 @@ public abstract class ScreenMixin {
         CobbleMarketClientKt.renderBalanceHud(context);
         // 关闭动画矩阵恢复（与 HEAD 配对；动画中界面内容与 HUD 一起滑出）
         CloseAnimation.INSTANCE.popTransform(context);
+        EnterAnimation.INSTANCE.popTransform(context);
     }
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)

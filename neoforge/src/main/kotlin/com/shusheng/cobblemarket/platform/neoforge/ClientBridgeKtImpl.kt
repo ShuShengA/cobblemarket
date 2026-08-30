@@ -9,12 +9,15 @@ import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.LayeredDrawer
 import net.minecraft.client.option.KeyBinding
 import net.minecraft.client.render.RenderTickCounter
+import com.mojang.brigadier.arguments.StringArgumentType
 import net.minecraft.network.RegistryByteBuf
 import net.minecraft.network.codec.PacketCodec
 import net.minecraft.network.packet.CustomPayload
+import net.minecraft.server.command.CommandManager
 import net.minecraft.util.Identifier
 import net.neoforged.bus.api.EventPriority
 import net.neoforged.neoforge.client.event.ClientTickEvent
+import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent
 import net.neoforged.neoforge.client.event.RenderGuiEvent
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent
@@ -73,5 +76,21 @@ fun registerHudRender(handler: (context: DrawContext, delta: Float) -> Unit) {
     // RegisterGuiLayersEvent 的层只在有 Screen 时渲染，无界面时余额 HUD 会消失
     NeoForge.EVENT_BUS.addListener(RenderGuiEvent.Post::class.java) { event ->
         handler(event.guiGraphics, event.partialTick.getTickDelta(true))
+    }
+}
+
+fun registerClientCommand(name: String, onRun: (args: String) -> Unit) {
+    NeoForge.EVENT_BUS.addListener(RegisterClientCommandsEvent::class.java) { event ->
+        event.dispatcher.register(
+            CommandManager.literal(name)
+                .requires { true } // 客户端本地指令：任何玩家点击都可用（原版 literal 默认 OP 权限）
+                .then(
+                    CommandManager.argument("args", StringArgumentType.greedyString())
+                        .executes { ctx ->
+                            onRun(StringArgumentType.getString(ctx, "args"))
+                            1
+                        }
+                )
+        )
     }
 }

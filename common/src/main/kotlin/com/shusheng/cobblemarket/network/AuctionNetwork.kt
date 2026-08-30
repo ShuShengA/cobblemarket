@@ -4,6 +4,10 @@ import com.cobblemon.mod.common.Cobblemon
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.config.CurrencyHandler
+import com.shusheng.cobblemarket.event.TransactionCategory
+import com.shusheng.cobblemarket.event.TransactionHistory
+import com.shusheng.cobblemarket.event.TransactionRecord
+import com.shusheng.cobblemarket.event.TransactionType
 import com.shusheng.cobblemarket.market.AuctionBid
 import com.shusheng.cobblemarket.market.AuctionListing
 import com.shusheng.cobblemarket.market.AuctionState
@@ -24,9 +28,14 @@ import net.minecraft.network.codec.PacketCodecs
 import net.minecraft.network.packet.CustomPayload
 import net.minecraft.registry.Registries
 import net.minecraft.server.MinecraftServer
+import net.minecraft.text.ClickEvent
+import net.minecraft.text.HoverEvent
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
+import net.minecraft.util.Identifier
 import java.util.UUID
+import com.shusheng.cobblemarket.util.RecordDetail
+import com.shusheng.cobblemarket.util.TypeTextColors
 
 // ── DTO：精简拍卖条目（不含 NBT/出价明细，客户端列表用） ──
 
@@ -48,7 +57,9 @@ data class AuctionEntry(
     val bidCount: Int,
     val endsAt: Long,
     /** 创建时间：客户端「最新在上」排序用 */
-    val createdAt: Long
+    val createdAt: Long,
+    /** 物品拍卖的组件 NBT（附魔/名称等词条显示用；精灵拍卖为 null）。通常几百字节，可接受 */
+    val itemNbt: NbtCompound?
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(id)
@@ -70,6 +81,8 @@ data class AuctionEntry(
         buf.writeInt(bidCount)
         buf.writeLong(endsAt)
         buf.writeLong(createdAt)
+        buf.writeBoolean(itemNbt != null)
+        itemNbt?.let { PacketCodecs.NBT_COMPOUND.encode(buf, it) }
     }
 
     companion object {
@@ -90,7 +103,8 @@ data class AuctionEntry(
             currentBidderName = buf.readString(),
             bidCount = buf.readInt(),
             endsAt = buf.readLong(),
-            createdAt = buf.readLong()
+            createdAt = buf.readLong(),
+            itemNbt = if (buf.readBoolean()) PacketCodecs.NBT_COMPOUND.decode(buf) else null
         )
     }
 }
@@ -113,7 +127,8 @@ fun auctionToEntry(a: AuctionListing): AuctionEntry = AuctionEntry(
     currentBidderName = a.currentBidderName,
     bidCount = a.bids.size,
     endsAt = a.endsAt,
-    createdAt = a.createdAt
+    createdAt = a.createdAt,
+    itemNbt = if (a.type == AuctionType.ITEM) a.itemNbt else null
 )
 
 // ── C2S：OP 强制下架拍卖 ──
@@ -451,6 +466,8 @@ object AuctionNetwork {
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.auction.created")))
                 broadcastEvent(server, "NEW", auctionToEntry(auction))
+                announceAuction(server, auction)
+                recordAuction(server, auction, TransactionType.ADD)
             }
         }
 
@@ -587,6 +604,8 @@ object AuctionNetwork {
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.auction.created")))
                 broadcastEvent(server, "NEW", auctionToEntry(auction))
+                announceAuction(server, auction)
+                recordAuction(server, auction, TransactionType.ADD)
             }
         }
 
@@ -720,6 +739,7 @@ object AuctionNetwork {
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.auction.force_cancelled")))
+                recordAuction(server, auction, TransactionType.CANCEL, "admin")
             }
         }
     }
@@ -812,12 +832,16 @@ object AuctionNetwork {
                         CelebrationNetwork.sendFromEntry(server, winnerUuid, auction.species, auction.shiny, auction.extraData, CelebrationSource.AUCTION)
                     }
                 }
+                // 成交全服播报（与创建播报闭环：上架有人喊、成交有人喊；流拍/强制下架不播，2026-08-30 拍板）
+                // 成交 CSV 记录在 AuctionState.settleExpiredAuctions 内已有，这里不重复记
+                server.playerManager.playerList.forEach { it.sendMessage(settlementAnnouncement(auction)) }
             } else {
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, auction.sellerUuid,
                     Text.translatable("cobblemarket.auction.settled_unsold", auction.speciesText())
                         .formatted(Formatting.YELLOW)
                 )
+                recordAuction(server, auction, TransactionType.CANCEL, "unsold")
             }
         }
     }
@@ -865,12 +889,181 @@ object AuctionNetwork {
             "natureBase" to "cobblemon.nature.${pokemon.nature.name.path}",
             "ability" to "cobblemon.ability.${pokemon.ability.name}",
             "gender" to pokemon.gender.name,
-            "ball" to "item.cobblemon.${pokemon.caughtBall.name.path}",
-            "ballItem" to "cobblemon:${pokemon.caughtBall.name.path}",
+            "ball" to "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
+            "ballItem" to pokemon.caughtBall.name.toString(),
             "heldItemId" to (if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString()),
             "aspects" to pokemon.aspects.joinToString(",")
         )
         pokemon.secondaryType?.let { extra["secondaryType"] = "cobblemon.type.${it.name.lowercase()}" }
         return extra
+    }
+
+    // ── 拍卖创建全服聊天播报 ──
+
+    /** 全服播报新拍品：拍品名带 hover 详情 + 点击直达出价弹窗（客户端指令 /cobblemarket auction <id>）。
+     *  名字下划线 + 金色 [点击出价] 按钮提示可点（玩家不会想到裸名字能点击）。 */
+    private fun announceAuction(server: MinecraftServer, auction: AuctionListing) {
+        // 拍品名：精灵 = 翻译名 + 属性色 + 下划线（闪光前缀金★）；物品 = 物品翻译名 + 下划线
+        // styled/append 只在 MutableText 上，speciesText 返回 Text，先包一层 literal 再上样式
+        val baseName: Text = if (auction.type == AuctionType.POKEMON) {
+            Text.literal("").append(auction.speciesText()).styled {
+                it.withColor(TypeTextColors.color(auction.extraData["primaryType"] ?: "cobblemon.type.normal"))
+                    .withUnderline(true)
+            }
+        } else {
+            Text.literal("").append(auction.speciesText()).styled { it.withUnderline(true) }
+        }
+        val nameText = if (auction.type == AuctionType.POKEMON && auction.shiny) {
+            Text.literal("").append(Text.literal("★ ").formatted(Formatting.GOLD)).append(baseName)
+        } else Text.literal("").append(baseName)
+        val bidLabel = Text.translatable("cobblemarket.chat.bid_button").formatted(Formatting.GOLD, Formatting.UNDERLINE)
+        val clickableName = Text.literal("").append(nameText).append(Text.literal(" ")).append(bidLabel)
+            .styled {
+                it.withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket auction ${auction.id}"))
+                    .withHoverEvent(HoverEvent(HoverEvent.Action.SHOW_TEXT, buildAnnouncementHover(auction)))
+            }
+        // 金额与货币名恒金（聊天颜色模板）；主体蓝（2026-08-30 拍板），名字属性色/按钮/金额子样式优先于父级蓝
+        val priceText = Text.literal("")
+            .append(CurrencyHandler.goldAmount(auction.startingPrice))
+            .append(CurrencyHandler.goldCurrencyText())
+        val msg = Text.literal("[拍卖] ").formatted(Formatting.GOLD)
+            .append(Text.translatable("cobblemarket.chat.auction_announce", Text.literal(auction.sellerName), clickableName, priceText).formatted(Formatting.BLUE))
+        server.playerManager.playerList.forEach { it.sendMessage(msg) }
+    }
+
+    /** 物品附魔词条行（提取逻辑共享 RecordDetail.enchantmentLevels）；
+     *  NBT 键是 ID 形式（minecraft:fortune），翻译 key 需转点号（enchantment.minecraft.fortune） */
+    private fun enchantmentLines(auction: AuctionListing): List<Text> =
+        com.shusheng.cobblemarket.util.RecordDetail.enchantmentLevels(auction.itemNbt).map { (key, level) ->
+            Text.translatable("enchantment.${key.replace(':', '.')}")
+                .append(Text.literal(" ${romanNumeral(level)}"))
+                .formatted(Formatting.AQUA)
+        }
+
+    /** 附魔等级罗马数字（原版惯例；超 10 直接阿拉伯数字） */
+    private fun romanNumeral(v: Int): String = when (v) {
+        1 -> "I"; 2 -> "II"; 3 -> "III"; 4 -> "IV"; 5 -> "V"
+        6 -> "VI"; 7 -> "VII"; 8 -> "VIII"; 9 -> "IX"; 10 -> "X"
+        else -> v.toString()
+    }
+
+    /** CSV 账本记录：创建=上架、成交=卖出（赢家为买家）、流拍/强制下架=下架（reason 区分）；与市场账本同库 */
+    private fun recordAuction(server: MinecraftServer, auction: AuctionListing, type: TransactionType, reason: String? = null) {
+        val category = if (auction.type == AuctionType.POKEMON) TransactionCategory.POKEMON else TransactionCategory.ITEM
+        val detailBase = if (auction.type == AuctionType.POKEMON)
+            RecordDetail.pokemon(auction.extraData, auction.level, auction.shiny)
+        else
+            RecordDetail.item(auction.itemNbt, auction.count)
+        val fee = if (type == TransactionType.PURCHASE && CobbleMarketConfig.auctionFeePercent > 0)
+            Math.ceil(auction.currentPrice.toLong() * CobbleMarketConfig.auctionFeePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        else 0
+        TransactionHistory.get(server).addRecord(TransactionRecord(
+            timestamp = System.currentTimeMillis(),
+            type = type,
+            category = category,
+            sellerUuid = auction.sellerUuid,
+            sellerName = auction.sellerName,
+            buyerUuid = if (type == TransactionType.PURCHASE) auction.currentBidderUuid else null,
+            buyerName = if (type == TransactionType.PURCHASE) auction.currentBidderName else "",
+            species = if (auction.type == AuctionType.POKEMON) (auction.extraData["speciesKey"] ?: auction.species) else auction.species,
+            price = if (type == TransactionType.PURCHASE) auction.currentPrice else auction.startingPrice,
+            fee = fee,
+            detail = if (reason != null) "$detailBase|reason=$reason" else detailBase
+        ))
+    }
+
+    /** 成交全服播报：金 [拍卖] 标签 + 蓝主体 + 属性色名字（闪光带金★）+ 金金额——金币符号恒金铁律；
+     *  名字不带点击（拍品已结束），纯展示 */
+    private fun settlementAnnouncement(auction: AuctionListing): Text {
+        val nameText = if (auction.type == AuctionType.POKEMON) {
+            val colored = Text.literal("").append(auction.speciesText()).styled {
+                it.withColor(TypeTextColors.color(auction.extraData["primaryType"] ?: "cobblemon.type.normal"))
+            }
+            if (auction.shiny) Text.literal("").append(Text.literal("★ ").formatted(Formatting.GOLD)).append(colored)
+            else colored
+        } else {
+            Text.literal("").append(auction.speciesText())
+        }
+        val priceText = Text.literal("")
+            .append(CurrencyHandler.goldAmount(auction.currentPrice))
+            .append(CurrencyHandler.goldCurrencyText())
+        return Text.literal("[拍卖] ").formatted(Formatting.GOLD)
+            .append(Text.translatable("cobblemarket.chat.auction_sold_announce", Text.literal(auction.currentBidderName), priceText, nameText).formatted(Formatting.BLUE))
+    }
+
+    /** 悬浮详情（多行彩色文字，发出时为快照）：结构仿出价弹窗左列——名字行/属性/性格/特性/携带物/IV+EV 竖排六行，
+     *  尾部拍卖信息（起拍价/最低加价/结束时间）；物品版 = 数量 + 拍卖信息 */
+    private fun buildAnnouncementHover(auction: AuctionListing): Text {
+        val lines = mutableListOf<Text>()
+        if (auction.type == AuctionType.POKEMON) {
+            val extra = auction.extraData
+            // 名字行：Lv + 性别（名字本身在消息正文，这里补数值）
+            val lvLine = Text.translatable("cobblemarket.gui.lv").append(Text.literal("${auction.level}"))
+                .append(Text.literal(" "))
+                .append(
+                    when (extra["gender"]) {
+                        "MALE" -> Text.translatable("cobblemarket.aspect.male")
+                        "FEMALE" -> Text.translatable("cobblemarket.aspect.female")
+                        else -> Text.literal("")
+                    }
+                )
+            lines.add(lvLine)
+            // 属性行（主 + 副）
+            val primaryType = extra["primaryType"] ?: ""
+            val secondaryType = extra["secondaryType"] ?: ""
+            lines.add(
+                Text.translatable("cobblemarket.gui.tooltip_type").append(
+                    if (primaryType.isNotEmpty()) Text.translatable(primaryType) else Text.literal("-")
+                ).append(
+                    if (secondaryType.isNotEmpty()) Text.literal(" + ").append(Text.translatable(secondaryType)) else Text.literal("")
+                )
+            )
+            // 性格（薄荷生效值） / 特性 / 球种
+            extra["nature"]?.takeIf { it.isNotEmpty() }?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_nature").append(Text.translatable(it))) }
+            extra["ability"]?.takeIf { it.isNotEmpty() }?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_ability").append(Text.translatable(it))) }
+            extra["ball"]?.takeIf { it.isNotEmpty() }?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_ball").append(Text.translatable(it))) }
+            // 携带物（有则一行）
+            val heldItemId = extra["heldItemId"].orEmpty()
+            val heldKey = heldItemId.takeIf { it.isNotEmpty() }?.let { Identifier.tryParse(it) }?.let {
+                if (it == Identifier.of("minecraft", "air")) null else Registries.ITEM.get(it).translationKey
+            }
+            heldKey?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_held").append(Text.translatable(it))) }
+            // IV 段：标签 + 六行竖排（仿出价弹窗左列：stat:IV  EV:N，行色按属性色系，EV 红；聊天 16 色近似弹窗 ARGB）
+            lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs"))
+            val hp = Text.translatable("cobblemon.stat.hp.name")
+            val atk = Text.translatable("cobblemon.stat.attack.name")
+            val def = Text.translatable("cobblemon.stat.defence.name")
+            val spa = Text.translatable("cobblemon.stat.special_attack.name")
+            val spd = Text.translatable("cobblemon.stat.special_defence.name")
+            val spe = Text.translatable("cobblemon.stat.speed.name")
+            fun ivLine(stat: Text, ivKey: String, evKey: String, color: Formatting): Text =
+                Text.literal("  ").append(stat)
+                    .append(Text.literal(":${extra[ivKey]?.toIntOrNull() ?: 0}"))
+                    .formatted(color) // 整段「stat:IV」同色（与弹窗行色一致，文字+数字都变色）
+                    .append(Text.literal("  EV:${extra[evKey]?.toIntOrNull() ?: 0}").formatted(Formatting.RED))
+            lines.add(ivLine(hp, "ivsHp", "evsHp", Formatting.GREEN))
+            lines.add(ivLine(atk, "ivsAtk", "evsAtk", Formatting.RED))
+            lines.add(ivLine(def, "ivsDef", "evsDef", Formatting.GOLD))
+            lines.add(ivLine(spa, "ivsSpAtk", "evsSpAtk", Formatting.BLUE))
+            lines.add(ivLine(spd, "ivsSpDef", "evsSpDef", Formatting.GREEN))
+            lines.add(ivLine(spe, "ivsSpd", "evsSpd", Formatting.LIGHT_PURPLE))
+        } else {
+            lines.add(Text.translatable("cobblemarket.auction.count").append(Text.literal("${auction.count}")))
+            // 附魔词条行（原版 tooltip 同款：附魔名 + 罗马等级，AQUA 色）
+            lines.addAll(enchantmentLines(auction))
+        }
+        lines.add(
+            Text.translatable("cobblemarket.auction.starting_price")
+                .append(Text.literal("").append(CurrencyHandler.goldAmount(auction.startingPrice)).append(CurrencyHandler.goldCurrencyText()))
+        )
+        lines.add(Text.translatable("cobblemarket.auction.min_increment").append(Text.literal("${auction.minIncrement}")))
+        val minutesLeft = ((auction.endsAt - System.currentTimeMillis()) / 60_000).coerceAtLeast(1)
+        lines.add(Text.translatable("cobblemarket.auction.ends").append(Text.translatable("cobblemarket.chat.ends_minutes", minutesLeft)))
+        var hover: net.minecraft.text.MutableText = Text.literal("")
+        lines.forEachIndexed { i, line ->
+            hover = hover.append(line)
+            if (i < lines.size - 1) hover = hover.append(Text.literal("\n"))
+        }
+        return hover
     }
 }

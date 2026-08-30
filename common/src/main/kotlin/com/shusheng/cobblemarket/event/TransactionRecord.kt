@@ -4,7 +4,9 @@ import net.minecraft.nbt.NbtCompound
 import java.util.UUID
 
 enum class TransactionType {
-    ADD, PURCHASE, CANCEL, RETURN
+    ADD, PURCHASE, CANCEL, RETURN,
+    /** 求购单发布（买家冻结资金挂单；无对应货物上架，独立于 ADD） */
+    ORDER
 }
 
 enum class TransactionCategory {

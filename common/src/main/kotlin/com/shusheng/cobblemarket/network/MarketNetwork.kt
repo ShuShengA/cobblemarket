@@ -1427,7 +1427,9 @@ object MarketNetwork {
                 )
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, listing.sellerUuid,
-                    Text.translatable("cobblemarket.cmd.cancelled", listing.speciesText())
+                    // 强制下架专属红通知（与拍卖/求购对齐；主动下架的白色通用词条不动）
+                    Text.translatable("cobblemarket.op.cancelled_notice", listing.speciesText())
+                        .formatted(Formatting.RED)
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
@@ -1520,14 +1522,16 @@ object MarketNetwork {
                         detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
                     )
                 )
-                com.shusheng.cobblemarket.market.OfflineMessageState.notify(
-                    server, listing.sellerUuid,
-                    Text.translatable("cobblemarket.item.cancelled")
-                )
                 // 物品名传翻译 Text（客户端按玩家语言渲染），与精灵下架的 speciesText() 一致，不能传裸 itemId
                 val itemName = Identifier.tryParse(listing.itemId)
                     ?.let { Registries.ITEM.get(it).name }
                     ?: Text.literal(listing.itemId)
+                com.shusheng.cobblemarket.market.OfflineMessageState.notify(
+                    server, listing.sellerUuid,
+                    // 强制下架专属红通知（与拍卖/求购对齐；主动下架的白色通用词条不动）
+                    Text.translatable("cobblemarket.op.cancelled_notice", itemName)
+                        .formatted(Formatting.RED)
+                )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(
@@ -2613,8 +2617,8 @@ object MarketNetwork {
             "natureBase" to "cobblemon.nature.${pokemon.nature.name.path}",
             "ability" to "cobblemon.ability.${pokemon.ability.name}",
             "gender" to pokemon.gender.name,
-            "ball" to "item.cobblemon.${pokemon.caughtBall.name.path}",
-            "ballItem" to "cobblemon:${pokemon.caughtBall.name.path}",
+            "ball" to "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
+            "ballItem" to pokemon.caughtBall.name.toString(),
             "heldItemId" to (if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString()),
             // 精灵形态（性别/地区等），客户端渲染 3D 图标用；逗号分隔，aspect 名不含逗号
             "aspects" to pokemon.aspects.joinToString(",")
@@ -2651,7 +2655,7 @@ object MarketNetwork {
             htSpAtk = pokemon.ivs.hyperTrainedIVs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK] ?: -1,
             htSpDef = pokemon.ivs.hyperTrainedIVs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE] ?: -1,
             htSpd = pokemon.ivs.hyperTrainedIVs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: -1,
-            ball = "item.cobblemon.${pokemon.caughtBall.name.path}",
+            ball = "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
             primaryType = "cobblemon.type.${pokemon.primaryType.name.lowercase()}",
             secondaryType = pokemon.secondaryType?.let { "cobblemon.type.${it.name.lowercase()}" } ?: "",
             source = source,

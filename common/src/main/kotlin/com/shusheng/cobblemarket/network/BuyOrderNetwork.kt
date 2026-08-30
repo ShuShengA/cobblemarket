@@ -5,6 +5,10 @@ import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.config.CurrencyHandler
 import com.shusheng.cobblemarket.market.BanState
+import com.shusheng.cobblemarket.event.TransactionCategory
+import com.shusheng.cobblemarket.event.TransactionHistory
+import com.shusheng.cobblemarket.event.TransactionRecord
+import com.shusheng.cobblemarket.event.TransactionType
 import com.shusheng.cobblemarket.market.BuyOrder
 import com.shusheng.cobblemarket.market.BuyOrderState
 import com.shusheng.cobblemarket.market.BuyOrderStatus
@@ -32,6 +36,7 @@ import net.minecraft.network.codec.PacketCodecs
 import net.minecraft.network.packet.CustomPayload
 import net.minecraft.registry.Registries
 import net.minecraft.server.MinecraftServer
+import net.minecraft.text.ClickEvent
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import java.util.UUID
@@ -47,7 +52,9 @@ data class BuyOrderPendingEntry(
     val level: Int,
     val shiny: Boolean,
     val extraData: Map<String, String>, // 精灵展示字段（IV/球种等）
-    val count: Int             // 物品件数（精灵 = 1）
+    val count: Int,            // 物品件数（精灵 = 1）
+    /** 物品交付的组件 NBT（附魔/名称等验收核对用；精灵交付为 null） */
+    val itemNbt: NbtCompound?
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(id)
@@ -60,6 +67,8 @@ data class BuyOrderPendingEntry(
         buf.writeVarInt(extraData.size)
         extraData.forEach { (k, v) -> buf.writeString(k); buf.writeString(v) }
         buf.writeInt(count)
+        buf.writeBoolean(itemNbt != null)
+        itemNbt?.let { PacketCodecs.NBT_COMPOUND.encode(buf, it) }
     }
 
     companion object {
@@ -71,7 +80,8 @@ data class BuyOrderPendingEntry(
             level = buf.readInt(),
             shiny = buf.readBoolean(),
             extraData = (0 until buf.readVarInt()).associate { buf.readString() to buf.readString() },
-            count = buf.readInt()
+            count = buf.readInt(),
+            itemNbt = if (buf.readBoolean()) PacketCodecs.NBT_COMPOUND.decode(buf) else null
         )
     }
 }
@@ -190,7 +200,8 @@ fun buyOrderToEntry(o: BuyOrder): BuyOrderEntry = BuyOrderEntry(
             level = p.level,
             shiny = p.shiny,
             extraData = p.extraData,
-            count = p.count
+            count = p.count,
+            itemNbt = p.itemNbt
         )
     }
 )
@@ -492,6 +503,7 @@ object BuyOrderNetwork {
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.created")))
                 broadcastEvent(server, "NEW", buyOrderToEntry(order))
+                recordOrder(server, order, TransactionType.ORDER)
             }
         }
 
@@ -551,6 +563,7 @@ object BuyOrderNetwork {
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.created")))
                 broadcastEvent(server, "NEW", buyOrderToEntry(order))
+                recordOrder(server, order, TransactionType.ORDER)
             }
         }
 
@@ -582,6 +595,7 @@ object BuyOrderNetwork {
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 broadcastEvent(server, "CLOSED", buyOrderToEntry(order))
+                recordOrder(server, order, TransactionType.CANCEL, "user")
             }
         }
 
@@ -621,6 +635,7 @@ object BuyOrderNetwork {
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 broadcastEvent(server, "CLOSED", buyOrderToEntry(order))
+                recordOrder(server, order, TransactionType.CANCEL, "admin")
             }
         }
 
@@ -745,7 +760,7 @@ object BuyOrderNetwork {
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.delivered_pending")))
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, order.buyerUuid,
-                    Text.translatable("cobblemarket.buy_order.pending_buyer", order.requirementText()).formatted(Formatting.GREEN))
+                    pendingReviewNotice(order))
                 broadcastEvent(server, "UPDATED", buyOrderToEntry(order))
             }
         }
@@ -898,7 +913,7 @@ object BuyOrderNetwork {
                     MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.delivered_items_pending", payload.count))
                 )
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, order.buyerUuid,
-                    Text.translatable("cobblemarket.buy_order.pending_buyer", order.requirementText()).formatted(Formatting.GREEN))
+                    pendingReviewNotice(order))
                 broadcastEvent(server, "UPDATED", buyOrderToEntry(order))
             }
         }
@@ -1049,6 +1064,7 @@ object BuyOrderNetwork {
             broadcastEvent(server, "CLOSED", buyOrderToEntry(order))
             com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, order.buyerUuid,
                 Text.translatable("cobblemarket.buy_order.expired", order.requirementText()).formatted(Formatting.YELLOW))
+            recordOrder(server, order, TransactionType.CANCEL, "expired")
         }
     }
 
@@ -1139,8 +1155,8 @@ object BuyOrderNetwork {
             "natureBase" to "cobblemon.nature.${pokemon.nature.name.path}",
             "ability" to "cobblemon.ability.${pokemon.ability.name}",
             "gender" to pokemon.gender.name,
-            "ball" to "item.cobblemon.${pokemon.caughtBall.name.path}",
-            "ballItem" to "cobblemon:${pokemon.caughtBall.name.path}",
+            "ball" to "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
+            "ballItem" to pokemon.caughtBall.name.toString(),
             "heldItemId" to (if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString()),
             "aspects" to pokemon.aspects.joinToString(",")
         )
@@ -1158,5 +1174,36 @@ object BuyOrderNetwork {
             if (dropped != null) dropped.setToDefaultPickupDelay()
         }
         player.inventory.markDirty()
+    }
+
+    /** CSV 账本记录：发布=求购（ORDER，发起者占卖家列）、关闭/过期/强制下架=下架（reason 区分）；交付成交已有 PURCHASE 记录 */
+    private fun recordOrder(server: MinecraftServer, order: BuyOrder, type: TransactionType, reason: String? = null) {
+        val category = if (order.type == BuyOrderType.POKEMON) TransactionCategory.POKEMON else TransactionCategory.ITEM
+        TransactionHistory.get(server).addRecord(TransactionRecord(
+            timestamp = System.currentTimeMillis(),
+            type = type,
+            category = category,
+            // 求购单无货物：发起者（买家）占卖家列，对账按名字筛选
+            sellerUuid = order.buyerUuid,
+            sellerName = order.buyerName,
+            buyerUuid = null,
+            buyerName = "",
+            species = if (order.type == BuyOrderType.POKEMON) (order.speciesKey ?: "any") else order.itemId,
+            price = order.maxPrice,
+            fee = 0,
+            detail = reason ?: ""
+        ))
+    }
+
+    /** 求购单待确认通知（绿，聊天颜色模板）+ 金色下划线 [查看待交付] 按钮：
+     *  点击走客户端指令 /cobblemarket review <orderId>，打开界面直达确认交付弹窗（看货后再决定接受/拒绝） */
+    private fun pendingReviewNotice(order: com.shusheng.cobblemarket.market.BuyOrder): Text {
+        val button = Text.translatable("cobblemarket.chat.review_button").styled {
+            it.withColor(Formatting.GOLD)
+                .withUnderline(true)
+                .withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket review ${order.id}"))
+        }
+        return Text.translatable("cobblemarket.buy_order.pending_buyer", order.requirementText()).formatted(Formatting.GREEN)
+            .append(Text.literal(" ")).append(button)
     }
 }

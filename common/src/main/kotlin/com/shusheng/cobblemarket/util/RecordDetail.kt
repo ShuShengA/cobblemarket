@@ -46,9 +46,23 @@ object RecordDetail {
         return parts.joinToString("|")
     }
 
+    /** 物品附魔等级表（NBT components.minecraft:enchantments.levels → id:等级；无附魔/解析失败为空表） */
+    fun enchantmentLevels(itemNbt: NbtCompound?): Map<String, Int> {
+        val nbt = itemNbt ?: return emptyMap()
+        val components = try { nbt.getCompound("components") } catch (e: Exception) { return emptyMap() }
+        if (!components.contains("minecraft:enchantments")) return emptyMap()
+        val ench = try { components.getCompound("minecraft:enchantments") } catch (e: Exception) { return emptyMap() }
+        if (!ench.contains("levels")) return emptyMap()
+        val levels = try { ench.getCompound("levels") } catch (e: Exception) { return emptyMap() }
+        return levels.keys.associateWith { levels.getInt(it) }
+    }
+
     fun item(itemNbt: NbtCompound?, count: Int?): String {
         val parts = mutableListOf<String>()
         if (count != null) parts.add("count=$count")
+        // 附魔摘要（可读，英文 key 形式与 ivs/nature 字段风格一致）；NBT 全文仍保留（精确复刻）
+        val ench = enchantmentLevels(itemNbt)
+        if (ench.isNotEmpty()) parts.add("ench=" + ench.entries.joinToString(",") { "${it.key}:${it.value}" })
         if (itemNbt != null && !itemNbt.isEmpty) parts.add("nbt=${itemNbt.toString()}")
         return parts.joinToString("|")
     }
