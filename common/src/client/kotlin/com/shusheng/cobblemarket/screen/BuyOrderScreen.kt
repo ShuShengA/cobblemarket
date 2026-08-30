@@ -30,7 +30,9 @@ import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.TextFieldWidget
+import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
+import net.minecraft.item.tooltip.TooltipType
 import net.minecraft.registry.Registries
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
@@ -46,7 +48,9 @@ import java.util.UUID
 class BuyOrderScreen(
     private val initialTab: Int = 0,
     /** 管理员模式（管理面板「所有求购」入口）：无 tab/发布按钮，行按钮改为「下架」，点行弹强制下架确认 */
-    private val adminMode: Boolean = false
+    private val adminMode: Boolean = false,
+    /** 聊天通知点击直达：打开界面后列表到达时自动弹出该单的确认交付弹窗（找不到则静默等待下次刷新） */
+    private val initialReviewOrderId: java.util.UUID? = null
 ) : Screen(Text.translatable("cobblemarket.buy_order.title")) {
 
     // 防串扰：界面关闭后到达的响应丢弃（照 SellSelectScreen）
@@ -131,6 +135,11 @@ class BuyOrderScreen(
 
     // ── 买家确认弹窗状态（处理待确认交付） ──
     private var reviewEntry: BuyOrderEntry? = null
+    /** 待定位的求购单（聊天点击直达）：列表数据每次更新后尝试打开确认交付弹窗，成功即清除 */
+    private var pendingReviewLocate: java.util.UUID? = initialReviewOrderId
+    /** 确认交付弹窗物品词条行（附魔/名称等，打开时从 itemNbt 重建一次；去首行物品名）与额外行数（布局下移用） */
+    private var reviewItemTooltipLines: List<Text> = emptyList()
+    private var reviewItemExtraRows = 0
     /** 管理员模式：强制下架确认弹窗的条目与按钮 */
     private var forceCancelEntry: BuyOrderEntry? = null
     private var forceCancelConfirmButton: NineSliceButton? = null
@@ -399,6 +408,7 @@ class BuyOrderScreen(
         cacheIcons()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayCount() - getMaxVisibleRows()))
         rebuildRowButtons()
+        tryLocateInitialReview()
         // 交付流程回传：从精灵选择界面返回后恢复交付弹窗并带入所选精灵
         val orderId = pendingDeliverOrderId ?: return
         pendingDeliverOrderId = null
@@ -434,6 +444,17 @@ class BuyOrderScreen(
         cacheIcons()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayCount() - getMaxVisibleRows()))
         rebuildRowButtons()
+        tryLocateInitialReview()
+    }
+
+    /** 聊天点击直达：列表数据就绪后定位求购单并弹其确认交付弹窗 */
+    private fun tryLocateInitialReview() {
+        pendingReviewLocate?.let { id ->
+            entries.find { it.id == id }?.let { e ->
+                pendingReviewLocate = null
+                openReviewDialog(e)
+            }
+        }
     }
 
     fun onMarketResult(payload: MarketResultPayload) {
@@ -1782,6 +1803,21 @@ class BuyOrderScreen(
 
     private fun openReviewDialog(entry: BuyOrderEntry) {
         reviewEntry = entry
+        // 物品词条行（附魔等）：打开时重建一次，弹窗渲染每帧只读；行数决定后续控件下移量
+        reviewItemTooltipLines = emptyList()
+        reviewItemExtraRows = 0
+        if (entry.type == "ITEM") {
+            entry.pending?.itemNbt?.let { nbt ->
+                client?.world?.registryManager?.let { rm ->
+                    val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
+                    if (!stack.isEmpty) {
+                        val lines = stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC).drop(1)
+                        reviewItemTooltipLines = lines
+                        reviewItemExtraRows = minOf(lines.size, MAX_ITEM_EXTRA_ROWS)
+                    }
+                }
+            }
+        }
         // 隐藏主界面控件
         backButton?.visible = false
         createButton?.visible = false
@@ -1796,11 +1832,11 @@ class BuyOrderScreen(
         })
 
         val centerX = width / 2
-        val dialogY = if (entry.type == "POKEMON") height / 2 - 110 else height / 2 - 95
-        val btnY = if (entry.type == "POKEMON") dialogY + 180 else dialogY + 104
+        val dialogY = if (entry.type == "POKEMON") height / 2 - 110 else height / 2 - (190 + reviewItemExtraRows * 9) / 2
+        val btnY = if (entry.type == "POKEMON") dialogY + 180 else dialogY + 104 + reviewItemExtraRows * 9
 
         // 拒绝原因输入框（选填，发给卖家）
-        reviewReasonField = TextFieldWidget(textRenderer, centerX - 120, dialogY + if (entry.type == "POKEMON") 154 else 76, 240, 16, Text.literal(""))
+        reviewReasonField = TextFieldWidget(textRenderer, centerX - 120, dialogY + if (entry.type == "POKEMON") 154 else 76 + reviewItemExtraRows * 9, 240, 16, Text.literal(""))
         reviewReasonField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.review_reason").formatted(Formatting.GRAY))
         reviewReasonField?.setMaxLength(100)
         addDrawableChild(reviewReasonField)
@@ -1837,10 +1873,10 @@ class BuyOrderScreen(
         val pending = entry.pending ?: return
         val centerX = width / 2
         val dialogW = 280
-        // 精灵单：完整信息行（照市场确认弹窗），弹窗更高；物品单：简洁布局
-        val dialogH = if (entry.type == "POKEMON") 220 else 190
+        // 精灵单：完整信息行（照市场确认弹窗），弹窗更高；物品单：简洁布局 + 词条行（≤3）动态加高
+        val dialogH = if (entry.type == "POKEMON") 220 else 190 + reviewItemExtraRows * 9
         val dialogX = centerX - dialogW / 2
-        val dialogY = if (entry.type == "POKEMON") height / 2 - 110 else height / 2 - 95
+        val dialogY = if (entry.type == "POKEMON") height / 2 - 110 else height / 2 - dialogH / 2
 
         drawScreenDimMask(context, width, height)
         // 不透明衬底：弹窗背景贴图中间区域半透明，下层行内容（精灵图标/数量/价格）会透过
@@ -1868,14 +1904,24 @@ class BuyOrderScreen(
             // 垂直在标题（+14）与卖家行（+58）中间：物品行中心 ≈ 36 → 图标 y=28、文字基线 y=32
             val itemName = itemDisplay(entry.itemId)
             val countStr = "×${pending.count}"
-            val itemStack = Identifier.tryParse(entry.itemId)?.let { ItemStack(Registries.ITEM.get(it)) } ?: ItemStack.EMPTY
+            // 图标用带 NBT 的重建（附魔光效可见）；失败回退纯物品
+            val itemStack = pending.itemNbt?.let { nbt ->
+                client?.world?.registryManager?.let { rm -> ItemStack.fromNbtOrEmpty(rm, nbt) }?.takeIf { !it.isEmpty }
+            } ?: (Identifier.tryParse(entry.itemId)?.let { ItemStack(Registries.ITEM.get(it)) } ?: ItemStack.EMPTY)
             val totalW = 16 + 4 + textRenderer.getWidth(itemName) + 4 + textRenderer.getWidth(countStr)
             val startX = centerX - totalW / 2
             context.drawItem(itemStack, startX, dialogY + 28)
             context.drawTextWithShadow(textRenderer, itemName, startX + 20, dialogY + 32, 0xFFFFFF)
             context.drawTextWithShadow(textRenderer, countStr, startX + 20 + textRenderer.getWidth(itemName) + 4, dialogY + 32, 0xAAAAAA)
+            // 物品词条（附魔/名称等，去首行物品名；超过上限才截断以「…」收尾）
+            var ty = dialogY + 40
+            val shown = if (reviewItemTooltipLines.size > MAX_ITEM_EXTRA_ROWS) reviewItemTooltipLines.take(MAX_ITEM_EXTRA_ROWS - 1) + Text.literal("…") else reviewItemTooltipLines
+            shown.forEach { line ->
+                context.drawCenteredTextWithShadow(textRenderer, line, centerX, ty, 0xFFFFFF)
+                ty += 9
+            }
             // 卖家（默认色）+ 出价（金额段蓝色，2026-08-24 拍板）+ 件数与总价（金额蓝色；Long 防溢出）
-            // y=50：贴近物品行（中心 36）、与下方拒绝输入框（76）留 26px 呼吸空间
+            // y 随词条行数下移，与拒绝输入框（76 + 行数*9）保持 26px 呼吸空间
             context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("cobblemarket.buy_order.review_seller").append(Text.literal(pending.sellerName + "  "))
                     .append(Text.translatable("cobblemarket.buy_order.review_price"))
@@ -1883,7 +1929,7 @@ class BuyOrderScreen(
                     .append(Text.literal(" ×${pending.count} ").formatted(Formatting.GRAY))
                     .append(Text.translatable("cobblemarket.buy_order.review_total"))
                     .append(Text.literal(com.shusheng.cobblemarket.client.formatPriceLong(pending.price.toLong() * pending.count) + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
-                centerX, dialogY + 50, 0xFFFFFF)
+                centerX, dialogY + 50 + reviewItemExtraRows * 9, 0xFFFFFF)
         }
         // 拒绝原因输入框占据原说明行位置（placeholder 已说明用途）
     }
@@ -2490,6 +2536,8 @@ class BuyOrderScreen(
     }
 
     companion object {
+        // 确认交付弹窗物品词条行数上限（附魔+属性行最多约此量级；超出截断「…」防异常 NBT 撑爆弹窗）
+        private const val MAX_ITEM_EXTRA_ROWS = 12
         // 背景三段贴图左右边框实际像素 17（用户实测），内容与行背景统一避开此宽度
         // 横竖边框分离：2026-08-22 用户更换背景图，左右边框 17→8（行/搜索框/按钮向外扩 18px），上下仍 17
         // 内容区左右内缩：求购单专属面板纹理的边框视觉宽约 10~12px，8px 会盖住边框装饰（行/分割线/按钮统一 12）

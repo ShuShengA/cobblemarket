@@ -4,6 +4,9 @@
 
 package com.shusheng.cobblemarket.platform.fabric
 
+import com.mojang.brigadier.arguments.StringArgumentType
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking
@@ -51,4 +54,19 @@ fun registerKeyBinding(binding: KeyBinding): KeyBinding =
 
 fun registerHudRender(handler: (context: DrawContext, delta: Float) -> Unit) {
     HudRenderCallback.EVENT.register { context, tickCounter -> handler(context, tickCounter.getTickDelta(true)) }
+}
+
+fun registerClientCommand(name: String, onRun: (args: String) -> Unit) {
+    ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
+        dispatcher.register(
+            ClientCommandManager.literal(name)
+                .then(
+                    ClientCommandManager.argument("args", StringArgumentType.greedyString())
+                        .executes { ctx ->
+                            onRun(StringArgumentType.getString(ctx, "args"))
+                            1
+                        }
+                )
+        )
+    }
 }

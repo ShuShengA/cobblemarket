@@ -21,7 +21,9 @@ import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.TextFieldWidget
+import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
+import net.minecraft.item.tooltip.TooltipType
 import net.minecraft.registry.Registries
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
@@ -34,7 +36,11 @@ import java.util.UUID
  * 拍卖大厅：精灵 / 物品 / 我的 三个 tab。
  * 数据：全量 ACTIVE 快照 + 服务端增量事件（NEW/BID/SETTLED）合并刷新，倒计时每帧实时计算。
  */
-class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable("cobblemarket.auction.title")) {
+class AuctionScreen(
+    private val initialTab: Int = 0,
+    /** 聊天播报点击直达：打开界面后列表到达时自动弹出该拍品的出价弹窗（找不到则静默等待下次刷新） */
+    private val initialBidAuctionId: java.util.UUID? = null
+) : Screen(Text.translatable("cobblemarket.auction.title")) {
 
     private val panelWidth = 296
     private val rowHeight = 24
@@ -80,6 +86,10 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
 
     // ── 出价弹窗 ──
     private var bidEntry: AuctionEntry? = null
+    /** 待定位的拍品（聊天点击直达）：列表数据每次更新后尝试打开出价弹窗，成功即清除 */
+    private var pendingBidLocate: java.util.UUID? = initialBidAuctionId
+    /** 出价弹窗物品词条行（附魔/名称等，弹窗打开时从 itemNbt 重建一次；去首行物品名——弹窗已显示） */
+    private var bidItemTooltipLines: List<Text> = emptyList()
     private var bidField: TextFieldWidget? = null
     /** 玩家是否手动编辑过出价输入：BID 广播只在未编辑时更新预填，不覆盖玩家输入 */
     private var bidEdited = false
@@ -515,6 +525,18 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         cacheIcons()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayCount() - getMaxVisibleRows()))
         rebuildBidButtons()
+        tryLocateInitialBid()
+    }
+
+    /** 聊天点击直达：列表数据就绪后定位拍品并弹其出价弹窗；
+     *  自己发布的拍品不弹（与界面内行为一致：卖家行不生成出价按钮） */
+    private fun tryLocateInitialBid() {
+        pendingBidLocate?.let { id ->
+            entries.find { it.id == id }?.let { e ->
+                pendingBidLocate = null
+                if (!isMine(e)) openBidDialog(e)
+            }
+        }
     }
 
     fun onAuctionEvent(payload: AuctionEventPayload) {
@@ -551,6 +573,7 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         cacheIcons()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayCount() - getMaxVisibleRows()))
         rebuildBidButtons()
+        tryLocateInitialBid()
     }
 
     /** 出价弹窗是否打开（供全局音效判断：出价成功不播 result_success，避免与金币声叠音） */
@@ -758,6 +781,17 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
                 if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
                 bidRenderable = RenderablePokemon(species, aspects, ItemStack.EMPTY)
             }
+        } else {
+            // 物品词条行（附魔等）：打开时重建一次，弹窗渲染每帧只读（每帧解析 NBT + getTooltip 是渲染热点）
+            bidItemTooltipLines = emptyList()
+            entry.itemNbt?.let { nbt ->
+                client?.world?.registryManager?.let { rm ->
+                    val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
+                    if (!stack.isEmpty) {
+                        bidItemTooltipLines = stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC).drop(1)
+                    }
+                }
+            }
         }
 
         addDrawable(object : Drawable {
@@ -899,6 +933,10 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
                 infoX, iy, 0xFFFFFF)
             iy += 10
             infoLine("${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(extra["ability"] ?: "").string}")
+            // 球种（特性行下，与其他界面顺序统一；自定义球玩家需要文字说明——行内小图标认不出）
+            extra["ball"]?.takeIf { it.isNotEmpty() }?.let {
+                infoLine("${Text.translatable("cobblemarket.gui.tooltip_ball").string}${Text.translatable(it).string}")
+            }
             val heldItemId = extra["heldItemId"].orEmpty()
             val hasHeldItem = heldItemId.isNotEmpty() &&
                 Identifier.tryParse(heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
@@ -918,6 +956,8 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
         } else {
             infoLine(displayName(entry))
             infoLine("×${entry.count}")
+            // 物品词条（附魔/名称等，原版 tooltip 去首行物品名）
+            bidItemTooltipLines.forEach { infoLineText(it, 0xFFFFFF) }
         }
 
         // ── 右列：竞拍信息 ──
@@ -1284,6 +1324,9 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
                 .append(EntryBadgeRenderer.natureText(extra["natureBase"] ?: "", extra["nature"] ?: ""))
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
                 .append(Text.translatable(extra["ability"] ?: "")) to 0xFFFFFF)
+            extra["ball"]?.takeIf { it.isNotEmpty() }?.let {
+                staticLines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_ball").string}${Text.translatable(it).string}") to 0xFFFFFF)
+            }
             val heldItemId = extra["heldItemId"].orEmpty()
             val hasHeldItem = heldItemId.isNotEmpty() &&
                 Identifier.tryParse(heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
@@ -1366,6 +1409,18 @@ class AuctionScreen(private val initialTab: Int = 0) : Screen(Text.translatable(
             itemTooltipCacheKey = entry.id
             val staticLines = mutableListOf<Pair<Text, Int>>()
             staticLines.add(Text.literal(displayName(entry)) to 0xFFFFFF)
+            // 物品词条（附魔/名称等；原版 tooltip 去首行物品名，与名称行去重）
+            entry.itemNbt?.let { nbt ->
+                client?.world?.registryManager?.let { rm ->
+                    val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
+                    if (!stack.isEmpty) {
+                        staticLines.addAll(
+                            stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC)
+                                .drop(1).map { it to 0xFFFFFF }
+                        )
+                    }
+                }
+            }
             staticLines.add(Text.literal("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}") to 0xFFFFFF)
             var mw = 0
             staticLines.forEach { mw = maxOf(mw, textRenderer.getWidth(it.first)) }

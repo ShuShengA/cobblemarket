@@ -39,3 +39,8 @@ fun registerKeyBinding(binding: KeyBinding): KeyBinding = throw AssertionError()
 
 @ExpectPlatform
 fun registerHudRender(handler: (context: DrawContext, delta: Float) -> Unit): Unit = throw AssertionError()
+
+/** 注册客户端本地指令（聊天可点击按钮的落地路径；不经过服务端）。
+ *  onRun 收到指令参数原文（首个空格后的全部内容）。 */
+@ExpectPlatform
+fun registerClientCommand(name: String, onRun: (args: String) -> Unit): Unit = throw AssertionError()

@@ -52,6 +52,7 @@ import com.shusheng.cobblemarket.screen.drawNineSlice
 
 import com.shusheng.cobblemarket.platform.isModLoaded
 import com.shusheng.cobblemarket.platform.onClientTick
+import com.shusheng.cobblemarket.platform.registerClientCommand
 import com.shusheng.cobblemarket.platform.registerHudRender
 import com.shusheng.cobblemarket.platform.registerKeyBinding
 
@@ -141,6 +142,27 @@ object CobbleMarketClient {
         }
         registerHudRender { context, _ ->
             renderBalanceHud(context)
+        }
+
+        // 聊天可点击按钮的落地路径（点击 = RUN_COMMAND 本地执行，不经过聊天栏回显、不发服务端）：
+        // 求购单待确认通知的 [查看待交付] 与拍卖播报的拍品名都指向这里；进场动画 + 打开市场音效
+        registerClientCommand("cobblemarket") { args ->
+            val client = MinecraftClient.getInstance()
+            val parts = args.trim().split(" ")
+            when (parts.getOrNull(0)) {
+                "review" -> parts.getOrNull(1)?.let { uuidStr ->
+                    runCatching { java.util.UUID.fromString(uuidStr) }.getOrNull()?.let { id ->
+                        EnterAnimation.start()
+                        client.setScreen(com.shusheng.cobblemarket.screen.BuyOrderScreen(initialReviewOrderId = id))
+                    }
+                }
+                "auction" -> parts.getOrNull(1)?.let { uuidStr ->
+                    runCatching { java.util.UUID.fromString(uuidStr) }.getOrNull()?.let { id ->
+                        EnterAnimation.start()
+                        client.setScreen(com.shusheng.cobblemarket.screen.AuctionScreen(initialBidAuctionId = id))
+                    }
+                }
+            }
         }
 
         registerS2C(OpenMarketPayload.ID, OpenMarketPayload.CODEC) { _ ->

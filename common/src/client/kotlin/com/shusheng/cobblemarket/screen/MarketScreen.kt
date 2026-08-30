@@ -1559,6 +1559,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 .append(EntryBadgeRenderer.natureText(entry.natureBase, entry.nature))
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
                 .append(Text.translatable(entry.ability)) to w)
+            if (entry.ball.isNotEmpty()) {
+                lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_ball").string}${Text.translatable(entry.ball).string}") to w)
+            }
             var heldItemLine = -1
             if (hasHeldItem) {
                 heldItemLine = lines.size

@@ -89,6 +89,9 @@ object EntryBadgeRenderer {
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
                 .append(Text.translatable(entry.ability)) to 0xFFFFFF
         )
+        if (entry.ball.isNotEmpty()) {
+            lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_ball").string}${Text.translatable(entry.ball).string}") to 0xFFFFFF)
+        }
         var heldItemLine = -1
         if (hasHeldItem) {
             heldItemLine = lines.size
