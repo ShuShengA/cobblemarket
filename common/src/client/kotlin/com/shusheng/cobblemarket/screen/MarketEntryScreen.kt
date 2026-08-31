@@ -185,6 +185,22 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         buyOrderBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.buy_order")))
         entryButtons += addDrawableChild(buyOrderBtn)
 
+        // 喵喵银行（金融系统入口）：求购单右侧，所有玩家可见；与求购单间隙 4px（同总开关→服务器配置间隙）
+        // 不套 openIfMarketEnabled：关市期间看账/还款照常可用，界面内「新增借贷」按钮再按开关禁用（只拦新交易不卡资产）
+        val meowthBankBtn = NineSliceButton(
+            centerX - 64, cornerY,
+            cornerSize, cornerSize,
+            Text.literal(""),
+            { client?.setScreen(MeowthBankScreen()) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/meowth_bank_icon.png"),
+            // 48×48 贴图缩到 18×18 显示（照求购单按钮）
+            iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+            texture = ROW_BACKGROUND_TEXTURE,
+            texH = ROW_BACKGROUND_TEX_H
+        )
+        meowthBankBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.meowth_bank")))
+        entryButtons += addDrawableChild(meowthBankBtn)
+
         val settingsBtn = NineSliceButton(
             centerX + 96 - cornerSize - 6, cornerY,
             cornerSize, cornerSize,

@@ -40,6 +40,7 @@ import com.shusheng.cobblemarket.screen.BuyOrderScreen
 import com.shusheng.cobblemarket.screen.HistoryScreen
 import com.shusheng.cobblemarket.screen.MarketEntryScreen
 import com.shusheng.cobblemarket.screen.MarketScreen
+import com.shusheng.cobblemarket.screen.MeowthBankScreen
 import com.shusheng.cobblemarket.screen.ItemMarketScreen
 import com.shusheng.cobblemarket.screen.ItemReturnScreen
 import com.shusheng.cobblemarket.screen.ItemSellScreen
@@ -610,4 +611,5 @@ private fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean 
         s is ItemMarketScreen || s is ItemSellScreen || s is ItemReturnScreen || s is PokemonReturnScreen ||
         s is BuyConfirmScreen || s is AdminScreen || s is AdminPokemonScreen || s is AdminItemScreen || s is AdminBanScreen ||
         s is BlacklistScreen || s is PriceLimitScreen || s is AuctionScreen || s is AuctionCreateScreen ||
-        s is BuyOrderScreen || s is AdminAuctionScreen || s is ServerConfigScreen || s is ItemVariantSelectScreen
+        s is BuyOrderScreen || s is AdminAuctionScreen || s is ServerConfigScreen || s is ItemVariantSelectScreen ||
+        s is MeowthBankScreen
