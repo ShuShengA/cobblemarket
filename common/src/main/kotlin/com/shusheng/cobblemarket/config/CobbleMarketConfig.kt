@@ -10,6 +10,9 @@ import net.minecraft.registry.Registries
 import net.minecraft.util.Identifier
 import java.io.File
 
+/** 分期方案（每期 7 天）：期数 + 每期费率（0.005 = 0.5%） */
+data class LoanPlan(val periods: Int, val feeRate: Double)
+
 object CobbleMarketConfig {
     private val gson = GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create()
     private val configFile: File
@@ -69,6 +72,46 @@ object CobbleMarketConfig {
     var marketEnabled: Boolean = true
         private set
 
+    // ── 金融系统（finance 段，启动级：reload 跳过应用仅比较差异，改后需重启） ──
+
+    /** 金融系统总开关（默认关闭：借贷影响经济安全，不主动打开） */
+    var financeEnabled: Boolean = false
+        private set
+    /** 现金贷开关（借呗——银行柜台主动借款） */
+    var cashLoanEnabled: Boolean = true
+        private set
+    /** 消费贷开关（喵喵支付——购买/拍卖出价时垫付） */
+    var consumerLoanEnabled: Boolean = true
+        private set
+    /** 分期方案数组（每期 7 天，期数 + 每期费率） */
+    var loanPlans: List<LoanPlan> = listOf(LoanPlan(3, 0.005), LoanPlan(6, 0.008), LoanPlan(12, 0.012))
+        private set
+    /** 额度公式系数：近30天交易额权重 */
+    var creditLimitRecent30Weight: Double = 0.5
+        private set
+    /** 额度公式系数：历史交易额权重 */
+    var creditLimitHistoryWeight: Double = 0.1
+        private set
+    /** 额度公式系数：当前欠款权重（负向） */
+    var creditLimitDebtWeight: Double = 0.3
+        private set
+    var creditLimitMin: Long = 0L
+        private set
+    var creditLimitMax: Long = 100_000L
+        private set
+    /** 到期自动划扣最低保留：最多划到余额=此值为止（划不足进 OVERDUE） */
+    var autoRepayMinBalance: Long = 1_000L
+        private set
+    /** 逾期天数三档（可改）：手续费翻倍 */
+    var overdueFeeDoubleDays: Int = 7
+        private set
+    /** 逾期天数三档（可改）：冻结挂单/待领取（复用 BanState，来源 FINANCE） */
+    var overdueFreezeDays: Int = 14
+        private set
+    /** 逾期天数三档（可改）：坏账冲销 */
+    var overdueBadDebtDays: Int = 30
+        private set
+
     /** 市场总开关切换并落盘（仅管理端命令/面板调用） */
     fun setMarketEnabled(v: Boolean) {
         marketEnabled = v
@@ -98,6 +141,40 @@ object CobbleMarketConfig {
     fun setMaxBuyOrdersPerPlayer(v: Int) { maxBuyOrdersPerPlayer = v.coerceAtLeast(0) }
     fun setCelebrationAnimationEnabled(v: Boolean) { celebrationAnimationEnabled = v }
 
+    // ── 金融系统 setter（ServerConfigScreen 金融区块；利息快照制：改配置只影响新贷款，存量贷款用创建时快照） ──
+
+    fun setFinanceEnabled(v: Boolean) { financeEnabled = v }
+    fun setCashLoanEnabled(v: Boolean) { cashLoanEnabled = v }
+    fun setConsumerLoanEnabled(v: Boolean) { consumerLoanEnabled = v }
+
+    /** 分期方案文本（"3:0.005,6:0.008,12:0.012"）；解析为空/全非法时保持旧值 */
+    fun setLoanPlansText(raw: String) {
+        val parsed = raw.split(',')
+            .mapNotNull { part ->
+                val seg = part.trim().split(':')
+                if (seg.size != 2) return@mapNotNull null
+                val p = seg[0].trim().toIntOrNull()?.coerceAtLeast(1)
+                val r = seg[1].trim().toDoubleOrNull()?.coerceIn(0.0, 1.0)
+                if (p != null && r != null) LoanPlan(p, r) else null
+            }
+        if (parsed.isNotEmpty()) {
+            loanPlans = parsed
+        }
+    }
+
+    /** 分期方案序列化文本（GUI 回显/快照用） */
+    fun loanPlansText(): String = loanPlans.joinToString(",") { "${it.periods}:${it.feeRate}" }
+
+    fun setCreditLimitRecent30Weight(v: Double) { creditLimitRecent30Weight = v.coerceIn(0.0, 10.0) }
+    fun setCreditLimitHistoryWeight(v: Double) { creditLimitHistoryWeight = v.coerceIn(0.0, 10.0) }
+    fun setCreditLimitDebtWeight(v: Double) { creditLimitDebtWeight = v.coerceIn(0.0, 10.0) }
+    fun setCreditLimitMin(v: Long) { creditLimitMin = v.coerceAtLeast(0L) }
+    fun setCreditLimitMax(v: Long) { creditLimitMax = v.coerceAtLeast(creditLimitMin) }
+    fun setAutoRepayMinBalance(v: Long) { autoRepayMinBalance = v.coerceAtLeast(0L) }
+    fun setOverdueFeeDoubleDays(v: Int) { overdueFeeDoubleDays = v.coerceAtLeast(0) }
+    fun setOverdueFreezeDays(v: Int) { overdueFreezeDays = v.coerceAtLeast(0) }
+    fun setOverdueBadDebtDays(v: Int) { overdueBadDebtDays = v.coerceAtLeast(0) }
+
     /** 拍卖时长选项（逗号分隔分钟，如 "720,1440"）；解析为空/全非法时保持旧值 */
     fun setAuctionDurationOptions(raw: String) {
         val parsed = raw.split(',')
@@ -111,6 +188,7 @@ object CobbleMarketConfig {
     /**
      * 读取配置文件。skipCurrency=true（/market reload 专用）时不应用货币字段、不重建货币 handler——
      * 运行时切换货币后端会账本错乱（挂单/冻结金按旧货币记账），只比较并记录差异供命令回显。
+     * 金融段可正常热重载（利息快照制：改配置只影响新贷款，存量贷款用创建时的 dailyRate 快照）。
      */
     fun load(skipCurrency: Boolean = false) {
         val hasCD = try { Class.forName("fr.harmex.cobbledollars.common.utils.CobbleDollarsPlayer"); true } catch (_: Exception) { false }
@@ -135,7 +213,8 @@ object CobbleMarketConfig {
                     "pendingReturnRetentionDays", "auctionFeePercent", "auctionDurationOptions",
                     "auctionMinBidIncrement", "auctionAntiSnipeSeconds", "maxAuctionsPerPlayer",
                     "eggTradingEnabled", "buyOrderFeePercent", "buyOrderExpiryDays",
-                    "maxBuyOrdersPerPlayer", "celebrationAnimationEnabled", "marketEnabled"
+                    "maxBuyOrdersPerPlayer", "celebrationAnimationEnabled", "marketEnabled",
+                    "finance"
                 )
                 var missingKeys = knownKeys.any { !data.containsKey(it) }
                 val currency = data["currency"] as? Map<*, *>
@@ -164,6 +243,49 @@ object CobbleMarketConfig {
                         impactor = fileImpactor
                         currencyItem = fileCurrencyItem
                     }
+                }
+                val finance = data["finance"] as? Map<*, *>
+                if (finance != null) {
+                    val financeKeys = setOf(
+                        "enabled", "cashLoanEnabled", "consumerLoanEnabled", "loanPlans",
+                        "creditLimit", "autoRepayMinBalance", "overdueDays"
+                    )
+                    if (financeKeys.any { !finance.containsKey(it) }) missingKeys = true
+                    val fileEnabled = finance["enabled"] as? Boolean ?: false
+                    val fileCash = finance["cashLoanEnabled"] as? Boolean ?: true
+                    val fileConsumer = finance["consumerLoanEnabled"] as? Boolean ?: true
+                    val filePlans = (finance["loanPlans"] as? List<*>)
+                        ?.mapNotNull { it as? Map<*, *> }
+                        ?.mapNotNull { m ->
+                            val p = (m["periods"] as? Number)?.toInt()?.coerceAtLeast(1)
+                            val r = (m["feeRate"] as? Number)?.toDouble()?.coerceIn(0.0, 1.0)
+                            if (p != null && r != null) LoanPlan(p, r) else null
+                        } ?: emptyList()
+                    val creditLimit = finance["creditLimit"] as? Map<*, *>
+                    val fileRecent30 = (creditLimit?.get("recent30Weight") as? Number)?.toDouble() ?: 0.5
+                    val fileHistory = (creditLimit?.get("historyWeight") as? Number)?.toDouble() ?: 0.1
+                    val fileDebt = (creditLimit?.get("debtWeight") as? Number)?.toDouble() ?: 0.3
+                    val fileLimitMin = (creditLimit?.get("min") as? Number)?.toLong() ?: 0L
+                    val fileLimitMax = (creditLimit?.get("max") as? Number)?.toLong() ?: 100_000L
+                    val fileMinBalance = (finance["autoRepayMinBalance"] as? Number)?.toLong() ?: 1_000L
+                    val overdueDays = finance["overdueDays"] as? Map<*, *>
+                    val fileFeeDouble = (overdueDays?.get("feeDouble") as? Number)?.toInt() ?: 7
+                    val fileFreeze = (overdueDays?.get("freeze") as? Number)?.toInt() ?: 14
+                    val fileBadDebt = (overdueDays?.get("badDebt") as? Number)?.toInt() ?: 30
+                    financeEnabled = fileEnabled
+                    cashLoanEnabled = fileCash
+                    consumerLoanEnabled = fileConsumer
+                    loanPlans = filePlans.ifEmpty { listOf(LoanPlan(3, 0.005), LoanPlan(6, 0.008), LoanPlan(12, 0.012)) }
+                    creditLimitRecent30Weight = fileRecent30
+                    creditLimitHistoryWeight = fileHistory
+                    creditLimitDebtWeight = fileDebt
+                    creditLimitMin = fileLimitMin.coerceAtLeast(0L)
+                    creditLimitMax = fileLimitMax.coerceAtLeast(fileLimitMin)
+                    autoRepayMinBalance = fileMinBalance.coerceAtLeast(0L)
+                    // 逾期三档钳制：0 也可（关闭该档位动作），负数钳 0
+                    overdueFeeDoubleDays = fileFeeDouble.coerceAtLeast(0)
+                    overdueFreezeDays = fileFreeze.coerceAtLeast(0)
+                    overdueBadDebtDays = fileBadDebt.coerceAtLeast(0)
                 }
                 val legacyFee = data["listingFeePercent"] as? Double
                 // 手续费钳制 0~100：超过 100% 会让卖家账本变负数（抵消后续所有收入）
@@ -235,7 +357,14 @@ object CobbleMarketConfig {
                 "buyOrderExpiryDays" to "求购单过期天数（到期自动关闭，剩余冻结金退买家待领余额）/ Buy order expiry in days (expired orders close automatically and refund frozen money)",
                 "marketEnabled" to "市场总开关（默认开启）：紧急情况可整体关闭市场功能——所有买卖/拍卖/求购操作被拦截并提示，但待领取、余额等取回自己资产的操作仍可用。可在游戏内用 /market on|off 切换 / Master market switch (on by default): emergency kill switch for the entire market — all buy/sell/auction/buy-order operations are blocked with a notice, while claiming returns and collecting balances still work. Toggle in-game via /market on|off",
                 "maxBuyOrdersPerPlayer" to "每个玩家同时进行的求购单数量上限，精灵与物品合计（0=不限制）。求购单列表全量下发给所有客户端，玩家较多的服务器建议保持较小值，避免全服活跃求购单总量过大导致卡顿 / Max concurrent buy orders per player, Pokémon and items combined (0=unlimited). The buy order list is broadcast in full to every client, so on crowded servers keep this small to avoid lag from too many active orders",
-                "celebrationAnimationEnabled" to "获得精灵时的庆祝动画开关（默认开启）。买到精灵、拍到精灵、求购单接受交付时，在获得者屏幕中央播放该精灵的弹跳动画；关闭后服务端不再下发动画包 / Celebration animation switch when obtaining a Pokémon (on by default). Plays a bouncing animation of the Pokémon on the receiver's screen when buying, winning an auction, or accepting a buy order delivery; when off the server stops sending the animation packet"
+                "celebrationAnimationEnabled" to "获得精灵时的庆祝动画开关（默认开启）。买到精灵、拍到精灵、求购单接受交付时，在获得者屏幕中央播放该精灵的弹跳动画；关闭后服务端不再下发动画包 / Celebration animation switch when obtaining a Pokémon (on by default). Plays a bouncing animation of the Pokémon on the receiver's screen when buying, winning an auction, or accepting a buy order delivery; when off the server stops sending the animation packet",
+                "finance.enabled" to "金融系统总开关（默认关闭）。开启后玩家可借贷/使用喵喵支付；关闭时禁止新增借贷与信用支付，已有贷款照常运行（还款/逾期/坏账不受影响） / Master switch for the finance system (off by default). When on, players can take loans and use Meowth Pay; when off, new loans and credit payments are blocked while existing loans keep running (repayment/overdue/bad debt unaffected)",
+                "finance.cashLoanEnabled" to "现金贷开关（借呗）：玩家在喵喵银行柜台主动借款 / Cash loan switch (Jiebei-style): players borrow cash directly at the Meowth Bank counter",
+                "finance.consumerLoanEnabled" to "消费贷开关（喵喵支付）：购买精灵/物品、拍卖出价时可选择信用垫付 / Consumer loan switch (Meowth Pay): credit payment option when buying Pokémon/items or bidding in auctions",
+                "finance.loanPlans" to "分期方案数组：periods=期数（每期 7 天），feeRate=每期费率（0.005=0.5%）。UI 只显示每期费率，不写年化 / Loan plan array: periods=number of periods (7 days each), feeRate=fee per period (0.005=0.5%). The UI shows only the per-period fee, never an annualized rate",
+                "finance.creditLimit" to "额度公式系数：额度 = 近30天交易额×recent30Weight + 历史交易额×historyWeight − 当前欠款×debtWeight，结果钳制在 min~max。借贷来源的交易不计入交易额（防借→买→额度涨→再借循环） / Credit limit formula weights: limit = last-30-day volume×recent30Weight + all-time volume×historyWeight − current debt×debtWeight, clamped to min~max. Loan-funded trades never count toward volume (prevents borrow→buy→limit-up→borrow loops)",
+                "finance.autoRepayMinBalance" to "到期自动划扣最低保留：每期到期自动从玩家市场余额全额划扣当期应还（本金+利息），最多划到余额=此值为止；划不足进入逾期流程 / Minimum balance kept during auto-repayment: on each due date the full period payment is auto-deducted from the player's market balance, stopping at this floor; any shortfall enters the overdue flow",
+                "finance.overdueDays" to "逾期天数三档：feeDouble=逾期该天数后市场手续费翻倍，freeze=冻结挂单/待领取（拦交易不拦取回），badDebt=坏账冲销 / Overdue day tiers: feeDouble=fee doubling after this many days overdue, freeze=freeze listings/returns (blocks trading, not withdrawals), badDebt=write-off as bad debt"
             ),
             "currency" to mapOf("cobbledollars" to cobbledollars, "cobblemonEconomy" to cobblemonEconomy, "cobecoCurrency" to cobecoCurrency, "impactor" to impactor, "item" to currencyItem),
             "pokemonListingFeePercent" to pokemonListingFeePercent,
@@ -254,7 +383,26 @@ object CobbleMarketConfig {
             "buyOrderExpiryDays" to buyOrderExpiryDays,
             "maxBuyOrdersPerPlayer" to maxBuyOrdersPerPlayer,
             "celebrationAnimationEnabled" to celebrationAnimationEnabled,
-            "marketEnabled" to marketEnabled
+            "marketEnabled" to marketEnabled,
+            "finance" to mapOf(
+                "enabled" to financeEnabled,
+                "cashLoanEnabled" to cashLoanEnabled,
+                "consumerLoanEnabled" to consumerLoanEnabled,
+                "loanPlans" to loanPlans.map { mapOf("periods" to it.periods, "feeRate" to it.feeRate) },
+                "creditLimit" to mapOf(
+                    "recent30Weight" to creditLimitRecent30Weight,
+                    "historyWeight" to creditLimitHistoryWeight,
+                    "debtWeight" to creditLimitDebtWeight,
+                    "min" to creditLimitMin,
+                    "max" to creditLimitMax
+                ),
+                "autoRepayMinBalance" to autoRepayMinBalance,
+                "overdueDays" to mapOf(
+                    "feeDouble" to overdueFeeDoubleDays,
+                    "freeze" to overdueFreezeDays,
+                    "badDebt" to overdueBadDebtDays
+                )
+            )
         )
         configFile.writeText(gson.toJson(data))
     }
