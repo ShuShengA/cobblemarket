@@ -56,6 +56,8 @@ object CobbleMarket {
 		}
 		onServerStarted { server ->
 			TransactionHistory.historyRef = TransactionHistory.get(server)
+			// 金融系统状态预热（照 TransactionHistory 模式；批次 3 起实际读写）
+			com.shusheng.cobblemarket.finance.FinanceState.get(server)
 		}
 		onServerStopped { server ->
 			// 正常关服保存完成后，用最新数据刷新备份

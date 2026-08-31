@@ -17,7 +17,7 @@ import net.minecraft.util.Identifier
  * 服务器配置可视化编辑（入口界面「服务器配置」按钮，仅 OP 可达）。
  * 视觉照入口界面的玩家设置弹窗：遮罩 + 居中弹窗 + 左标签右控件 + switch_icon 开关 + done 按钮。
  * 打开时请求快照，数字输入框失焦提交、开关即时提交；服务端钳制后回发新快照刷新界面。
- * 货币配置与 auctionDurationOptions 不在此列（见 ServerConfigNetwork 头注释）。
+ * 货币配置不在此列（运行时切换账本错乱，需重启生效）；金融配置在独立区块内（上下分割线对）。
  */
 class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_config")) {
 
@@ -49,6 +49,31 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         "cobblemarket.op.scfg_celebration" to "celebration",
     )
 
+    // ── 金融系统（喵喵银行）配置区块：排在列表尾部，区块上下各一条分割线 ──
+
+    private val financeNumDefs = listOf(
+        NumDef("cobblemarket.op.scfg_loan_plans", false) to "loanPlans",
+        NumDef("cobblemarket.op.scfg_credit_recent30", false) to "creditRecent30",
+        NumDef("cobblemarket.op.scfg_credit_history", false) to "creditHistory",
+        NumDef("cobblemarket.op.scfg_credit_debt", false) to "creditDebt",
+        NumDef("cobblemarket.op.scfg_credit_min", true) to "creditMin",
+        NumDef("cobblemarket.op.scfg_credit_max", true) to "creditMax",
+        NumDef("cobblemarket.op.scfg_min_balance", true) to "autoRepayMinBalance",
+        NumDef("cobblemarket.op.scfg_overdue_fee_double", true) to "overdueFeeDouble",
+        NumDef("cobblemarket.op.scfg_overdue_freeze", true) to "overdueFreeze",
+        NumDef("cobblemarket.op.scfg_overdue_bad_debt", true) to "overdueBadDebt",
+    )
+
+    private val financeToggleDefs = listOf(
+        "cobblemarket.op.scfg_finance_enabled" to "financeEnabled",
+        "cobblemarket.op.scfg_cash_loan" to "cashLoan",
+        "cobblemarket.op.scfg_consumer_loan" to "consumerLoan",
+    )
+
+    /** 全部行（原配置 + 金融区块），渲染顺序与列表定义一致 */
+    private fun allNumDefs() = numDefs + financeNumDefs
+    private fun allToggleDefs() = toggleDefs + financeToggleDefs
+
     private val numFields = mutableMapOf<String, TextFieldWidget>()
     private val toggleButtons = mutableMapOf<String, NineSliceButton>()
     // 每个数字输入框后的重置按钮（恢复该行为服务端快照值）
@@ -59,7 +84,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     // 编辑只改本地状态：开关的本地值（保存时提交，快照刷新时重置）
     private val localToggles = mutableMapOf<String, Boolean>()
     private var savedToastUntil = 0L
-    private val totalRows = numDefs.size + toggleDefs.size
+    private val totalRows = allNumDefs().size + allToggleDefs().size
 
     // ── 蛋交易二次确认弹窗（照 AdminScreen 原模板：开启有 3 秒冷静期，蛋可绕过精灵黑名单） ──
     private var eggConfirmOpen = false
@@ -99,18 +124,20 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         super.init()
         val dialogX = width / 2 - dialogW / 2
         val startY = listStartY()
-        numDefs.forEach { (def, key) ->
+        allNumDefs().forEach { (def, key) ->
             // 输入框与重置按钮不重叠：输入框右缘=228、按钮 230~250（间隙 2px）
             val isDurations = key == "auctionDurations"
+            val isPlans = key == "loanPlans"
             val field = TextFieldWidget(textRenderer, dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16, Text.literal(""))
             field.setTextPredicate { text ->
                 when {
                     isDurations -> text.all { it.isDigit() || it == ',' }
+                    isPlans -> text.all { it.isDigit() || it == ':' || it == '.' || it == ',' }
                     def.isInt -> text.all { it.isDigit() }
                     else -> text.all { it.isDigit() || it == '.' }
                 }
             }
-            field.setMaxLength(if (isDurations) 60 else 10)
+            field.setMaxLength(if (isDurations || isPlans) 60 else 10)
             numFields[key] = field
             addSelectableChild(field)
             addDrawableChild(field)
@@ -119,16 +146,18 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 dialogX + dialogW - 10 - 20, startY, 20, 16,
                 Text.literal("↺"),
                 {
-                    numFields[key]?.text =
-                        if (key == "auctionDurations") (latest?.auctionDurations ?: "")
-                        else snapshotText(key, null)
+                    numFields[key]?.text = when (key) {
+                        "auctionDurations" -> latest?.auctionDurations ?: ""
+                        "loanPlans" -> latest?.loanPlans ?: ""
+                        else -> snapshotText(key, null)
+                    }
                     save()
                 }
             )
             resetButtons[key] = resetBtn
             addDrawableChild(resetBtn)
         }
-        toggleDefs.forEach { (_, key) ->
+        allToggleDefs().forEach { (_, key) ->
             val btn = NineSliceButton(
                 dialogX + dialogW - 10 - 22, startY, 22, 22,
                 Text.literal(""),
@@ -182,7 +211,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         val startY = listStartY()
         var row = 0
         // visible 必须叠加 !eggConfirmOpen：确认弹窗打开时任何重建（滚动/resize）都不能把下层控件改回可见
-        numDefs.forEach { (_, key) ->
+        allNumDefs().forEach { (_, key) ->
             val y = startY + (row - scrollOffset) * rowHeight
             val field = numFields[key] ?: return@forEach
             val visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
@@ -195,7 +224,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             resetBtn?.visible = visible
             row++
         }
-        toggleDefs.forEach { (_, key) ->
+        allToggleDefs().forEach { (_, key) ->
             val y = startY + (row - scrollOffset) * rowHeight
             val btn = toggleButtons[key] ?: return@forEach
             btn.x = dialogX + dialogW - 10 - 22
@@ -208,16 +237,20 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     // ── 快照 → 界面刷新 ──
 
     private fun refreshFrom(payload: ServerConfigDataPayload) {
-        numDefs.forEach { (_, key) ->
+        allNumDefs().forEach { (_, key) ->
             val field = numFields[key] ?: return@forEach
             // 聚焦中的输入框不覆盖（用户正在输入）；保存后回发的快照会刷新全部
             if (focused !== field) {
-                field.text = if (key == "auctionDurations") payload.auctionDurations else snapshotText(key, payload)
+                field.text = when (key) {
+                    "auctionDurations" -> payload.auctionDurations
+                    "loanPlans" -> payload.loanPlans
+                    else -> snapshotText(key, payload)
+                }
             }
         }
         // 服务端快照到达：本地开关状态重置（保存回发 / 打开时首次填充）
         localToggles.clear()
-        toggleDefs.forEach { (_, key) ->
+        allToggleDefs().forEach { (_, key) ->
             toggleButtons[key]?.iconLeft = toggleIconFor(key, payload)
         }
     }
@@ -241,6 +274,15 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         "buyOrderFee" -> payload?.buyOrderFee ?: 5.0
         "buyOrderExpiry" -> (payload?.buyOrderExpiry ?: 3).toDouble()
         "maxBuyOrders" -> (payload?.maxBuyOrders ?: 5).toDouble()
+        "creditRecent30" -> payload?.creditRecent30 ?: 0.5
+        "creditHistory" -> payload?.creditHistory ?: 0.1
+        "creditDebt" -> payload?.creditDebt ?: 0.3
+        "creditMin" -> (payload?.creditMin ?: 0L).toDouble()
+        "creditMax" -> (payload?.creditMax ?: 100_000L).toDouble()
+        "autoRepayMinBalance" -> (payload?.autoRepayMinBalance ?: 1_000L).toDouble()
+        "overdueFeeDouble" -> (payload?.overdueFeeDouble ?: 7).toDouble()
+        "overdueFreeze" -> (payload?.overdueFreeze ?: 14).toDouble()
+        "overdueBadDebt" -> (payload?.overdueBadDebt ?: 30).toDouble()
         else -> 0.0
     }
 
@@ -251,6 +293,9 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         return when (key) {
             "eggTrading" -> p?.eggTrading ?: false
             "celebration" -> p?.celebration ?: true
+            "financeEnabled" -> p?.financeEnabled ?: false
+            "cashLoan" -> p?.cashLoanEnabled ?: true
+            "consumerLoan" -> p?.consumerLoanEnabled ?: true
             else -> false
         }
     }
@@ -263,11 +308,17 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             when (key) {
                 "eggTrading" -> p.eggTrading
                 "celebration" -> p.celebration
+                "financeEnabled" -> p.financeEnabled
+                "cashLoan" -> p.cashLoanEnabled
+                "consumerLoan" -> p.consumerLoanEnabled
                 else -> false
             }
         } ?: localToggles[key] ?: when (key) {
             "eggTrading" -> latest?.eggTrading ?: false
             "celebration" -> latest?.celebration ?: true
+            "financeEnabled" -> latest?.financeEnabled ?: false
+            "cashLoan" -> latest?.cashLoanEnabled ?: true
+            "consumerLoan" -> latest?.consumerLoanEnabled ?: true
             else -> false
         }
         return Identifier.of("cobblemarket", if (on) "textures/gui/switch_icon_on.png" else "textures/gui/switch_icon_off.png")
@@ -284,6 +335,10 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         fun doubleOr(key: String, fallback: Double): Double {
             val text = numFields[key]?.text.orEmpty()
             return text.toDoubleOrNull() ?: fallback
+        }
+        fun longOr(key: String, fallback: Long): Long {
+            val text = numFields[key]?.text.orEmpty()
+            return text.toLongOrNull() ?: fallback
         }
         val p = latest
         sendToServer(SaveServerConfigPayload(
@@ -304,6 +359,20 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             celebration = localToggles["celebration"] ?: (p?.celebration ?: true),
             auctionDurations = numFields["auctionDurations"]?.text.orEmpty()
                 .ifBlank { p?.auctionDurations ?: "" },
+            financeEnabled = localToggles["financeEnabled"] ?: (p?.financeEnabled ?: false),
+            cashLoanEnabled = localToggles["cashLoan"] ?: (p?.cashLoanEnabled ?: true),
+            consumerLoanEnabled = localToggles["consumerLoan"] ?: (p?.consumerLoanEnabled ?: true),
+            loanPlans = numFields["loanPlans"]?.text.orEmpty()
+                .ifBlank { p?.loanPlans ?: "" },
+            creditRecent30 = doubleOr("creditRecent30", p?.creditRecent30 ?: 0.5),
+            creditHistory = doubleOr("creditHistory", p?.creditHistory ?: 0.1),
+            creditDebt = doubleOr("creditDebt", p?.creditDebt ?: 0.3),
+            creditMin = longOr("creditMin", p?.creditMin ?: 0L),
+            creditMax = longOr("creditMax", p?.creditMax ?: 100_000L),
+            autoRepayMinBalance = longOr("autoRepayMinBalance", p?.autoRepayMinBalance ?: 1_000L),
+            overdueFeeDouble = intOr("overdueFeeDouble", p?.overdueFeeDouble ?: 7),
+            overdueFreeze = intOr("overdueFreeze", p?.overdueFreeze ?: 14),
+            overdueBadDebt = intOr("overdueBadDebt", p?.overdueBadDebt ?: 30),
         ))
         // 乐观提示（服务端回发快照确认最终值；保存后按钮侧 toast 1.5 秒）
         savedToastUntil = System.currentTimeMillis() + 1500
@@ -478,7 +547,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
 
         val startY = listStartY()
         var row = 0
-        numDefs.forEach { (def, _) ->
+        allNumDefs().forEach { (def, _) ->
             if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
                 val rowY = startY + (row - scrollOffset) * rowHeight
                 // 行间分割线（照设置弹窗：每行上方一条）
@@ -489,7 +558,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             }
             row++
         }
-        toggleDefs.forEach { (labelKey, _) ->
+        allToggleDefs().forEach { (labelKey, _) ->
             if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
                 val rowY = startY + (row - scrollOffset) * rowHeight
                 context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
@@ -498,6 +567,11 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                     dialogX + 10, rowY + 7, 0xFFFFFF)
             }
             row++
+        }
+        // 金融区块底线：与金融首行上方的行线（=区块顶线）构成上下分割线对；滚动到底时可见
+        if (totalRows in scrollOffset until scrollOffset + getMaxVisibleRows()) {
+            val bottomY = startY + (totalRows - scrollOffset) * rowHeight
+            context.fill(dialogX + 6, bottomY, dialogX + dialogW - 6, bottomY + 1, 0xFF555555.toInt())
         }
         // 底部提示 / 保存成功 toast（1.5 秒）
         if (System.currentTimeMillis() < savedToastUntil) {

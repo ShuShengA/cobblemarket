@@ -51,6 +51,21 @@ data class ServerConfigDataPayload(
     val celebration: Boolean,
     /** 拍卖时长选项，逗号分隔（分钟）；服务端解析为 List<Int> */
     val auctionDurations: String,
+    // ── 金融系统（喵喵银行）配置 ──
+    val financeEnabled: Boolean,
+    val cashLoanEnabled: Boolean,
+    val consumerLoanEnabled: Boolean,
+    /** 分期方案文本（"3:0.005,6:0.008,12:0.012"） */
+    val loanPlans: String,
+    val creditRecent30: Double,
+    val creditHistory: Double,
+    val creditDebt: Double,
+    val creditMin: Long,
+    val creditMax: Long,
+    val autoRepayMinBalance: Long,
+    val overdueFeeDouble: Int,
+    val overdueFreeze: Int,
+    val overdueBadDebt: Int,
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -73,6 +88,19 @@ data class ServerConfigDataPayload(
                 b.writeBoolean(p.eggTrading)
                 b.writeBoolean(p.celebration)
                 b.writeString(p.auctionDurations)
+                b.writeBoolean(p.financeEnabled)
+                b.writeBoolean(p.cashLoanEnabled)
+                b.writeBoolean(p.consumerLoanEnabled)
+                b.writeString(p.loanPlans)
+                b.writeDouble(p.creditRecent30)
+                b.writeDouble(p.creditHistory)
+                b.writeDouble(p.creditDebt)
+                b.writeLong(p.creditMin)
+                b.writeLong(p.creditMax)
+                b.writeLong(p.autoRepayMinBalance)
+                b.writeInt(p.overdueFeeDouble)
+                b.writeInt(p.overdueFreeze)
+                b.writeInt(p.overdueBadDebt)
             },
             // 读端用具名参数，读写字段顺序必须一致
             { b -> ServerConfigDataPayload(
@@ -92,6 +120,19 @@ data class ServerConfigDataPayload(
                 eggTrading = b.readBoolean(),
                 celebration = b.readBoolean(),
                 auctionDurations = b.readString(),
+                financeEnabled = b.readBoolean(),
+                cashLoanEnabled = b.readBoolean(),
+                consumerLoanEnabled = b.readBoolean(),
+                loanPlans = b.readString(),
+                creditRecent30 = b.readDouble(),
+                creditHistory = b.readDouble(),
+                creditDebt = b.readDouble(),
+                creditMin = b.readLong(),
+                creditMax = b.readLong(),
+                autoRepayMinBalance = b.readLong(),
+                overdueFeeDouble = b.readInt(),
+                overdueFreeze = b.readInt(),
+                overdueBadDebt = b.readInt(),
             ) }
         )
     }
@@ -117,6 +158,21 @@ data class SaveServerConfigPayload(
     val celebration: Boolean,
     /** 拍卖时长选项，逗号分隔（分钟）；服务端解析为 List<Int>，解析失败保持旧值 */
     val auctionDurations: String,
+    // ── 金融系统（喵喵银行）配置 ──
+    val financeEnabled: Boolean,
+    val cashLoanEnabled: Boolean,
+    val consumerLoanEnabled: Boolean,
+    /** 分期方案文本（"3:0.005,6:0.008,12:0.012"）；解析失败保持旧值 */
+    val loanPlans: String,
+    val creditRecent30: Double,
+    val creditHistory: Double,
+    val creditDebt: Double,
+    val creditMin: Long,
+    val creditMax: Long,
+    val autoRepayMinBalance: Long,
+    val overdueFeeDouble: Int,
+    val overdueFreeze: Int,
+    val overdueBadDebt: Int,
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -139,6 +195,19 @@ data class SaveServerConfigPayload(
                 b.writeBoolean(p.eggTrading)
                 b.writeBoolean(p.celebration)
                 b.writeString(p.auctionDurations)
+                b.writeBoolean(p.financeEnabled)
+                b.writeBoolean(p.cashLoanEnabled)
+                b.writeBoolean(p.consumerLoanEnabled)
+                b.writeString(p.loanPlans)
+                b.writeDouble(p.creditRecent30)
+                b.writeDouble(p.creditHistory)
+                b.writeDouble(p.creditDebt)
+                b.writeLong(p.creditMin)
+                b.writeLong(p.creditMax)
+                b.writeLong(p.autoRepayMinBalance)
+                b.writeInt(p.overdueFeeDouble)
+                b.writeInt(p.overdueFreeze)
+                b.writeInt(p.overdueBadDebt)
             },
             // 读端用具名参数，读写字段顺序必须一致
             { b -> SaveServerConfigPayload(
@@ -158,6 +227,19 @@ data class SaveServerConfigPayload(
                 eggTrading = b.readBoolean(),
                 celebration = b.readBoolean(),
                 auctionDurations = b.readString(),
+                financeEnabled = b.readBoolean(),
+                cashLoanEnabled = b.readBoolean(),
+                consumerLoanEnabled = b.readBoolean(),
+                loanPlans = b.readString(),
+                creditRecent30 = b.readDouble(),
+                creditHistory = b.readDouble(),
+                creditDebt = b.readDouble(),
+                creditMin = b.readLong(),
+                creditMax = b.readLong(),
+                autoRepayMinBalance = b.readLong(),
+                overdueFeeDouble = b.readInt(),
+                overdueFreeze = b.readInt(),
+                overdueBadDebt = b.readInt(),
             ) }
         )
     }
@@ -206,6 +288,19 @@ object ServerConfigNetwork {
         eggTrading = CobbleMarketConfig.eggTradingEnabled,
         celebration = CobbleMarketConfig.celebrationAnimationEnabled,
         auctionDurations = CobbleMarketConfig.auctionDurationOptions.joinToString(","),
+        financeEnabled = CobbleMarketConfig.financeEnabled,
+        cashLoanEnabled = CobbleMarketConfig.cashLoanEnabled,
+        consumerLoanEnabled = CobbleMarketConfig.consumerLoanEnabled,
+        loanPlans = CobbleMarketConfig.loanPlansText(),
+        creditRecent30 = CobbleMarketConfig.creditLimitRecent30Weight,
+        creditHistory = CobbleMarketConfig.creditLimitHistoryWeight,
+        creditDebt = CobbleMarketConfig.creditLimitDebtWeight,
+        creditMin = CobbleMarketConfig.creditLimitMin,
+        creditMax = CobbleMarketConfig.creditLimitMax,
+        autoRepayMinBalance = CobbleMarketConfig.autoRepayMinBalance,
+        overdueFeeDouble = CobbleMarketConfig.overdueFeeDoubleDays,
+        overdueFreeze = CobbleMarketConfig.overdueFreezeDays,
+        overdueBadDebt = CobbleMarketConfig.overdueBadDebtDays,
     )
 
     /** 批量应用（钳制规则与各 setter 一致）；eggTrading 走既有 setter（含 save，重复落盘无害） */
@@ -226,5 +321,18 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setEggTradingEnabled(p.eggTrading)
         CobbleMarketConfig.setCelebrationAnimationEnabled(p.celebration)
         CobbleMarketConfig.setAuctionDurationOptions(p.auctionDurations)
+        CobbleMarketConfig.setFinanceEnabled(p.financeEnabled)
+        CobbleMarketConfig.setCashLoanEnabled(p.cashLoanEnabled)
+        CobbleMarketConfig.setConsumerLoanEnabled(p.consumerLoanEnabled)
+        CobbleMarketConfig.setLoanPlansText(p.loanPlans)
+        CobbleMarketConfig.setCreditLimitRecent30Weight(p.creditRecent30)
+        CobbleMarketConfig.setCreditLimitHistoryWeight(p.creditHistory)
+        CobbleMarketConfig.setCreditLimitDebtWeight(p.creditDebt)
+        CobbleMarketConfig.setCreditLimitMin(p.creditMin)
+        CobbleMarketConfig.setCreditLimitMax(p.creditMax)
+        CobbleMarketConfig.setAutoRepayMinBalance(p.autoRepayMinBalance)
+        CobbleMarketConfig.setOverdueFeeDoubleDays(p.overdueFeeDouble)
+        CobbleMarketConfig.setOverdueFreezeDays(p.overdueFreeze)
+        CobbleMarketConfig.setOverdueBadDebtDays(p.overdueBadDebt)
     }
 }
