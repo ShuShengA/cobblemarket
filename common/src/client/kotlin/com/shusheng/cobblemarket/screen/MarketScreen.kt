@@ -91,6 +91,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var confirmDisplayName = ""
     private val confirmState = FloatingState()
 
+    /** 喵喵支付可用（消费贷开关，CreditInfoPayload 拉取；未拉取默认隐藏，响应后按真实状态） */
+    private var payAvailable = false
+
     private val typeOptions = listOf(
         "", "normal", "fire", "water", "electric", "grass", "ice", "fighting", "poison", "ground",
         "flying", "psychic", "bug", "rock", "ghost", "dragon", "dark", "steel", "fairy"
@@ -431,6 +434,13 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // 收起可能展开的筛选列表（否则列表按钮残留在遮罩下可点）
         filterListOpen = ""
         rebuildFilterList()
+        // 拉消费贷开关（喵喵支付按钮显示依据）
+        sendToServer(RequestCreditInfoPayload())
+    }
+
+    /** 消费贷开关快照（打开购买确认弹窗时拉取）：控制喵喵支付按钮显示与弹窗宽度 */
+    fun onCreditInfo(payload: CreditInfoPayload) {
+        payAvailable = payload.consumerLoanEnabled
     }
 
     private fun openCancelDialog(entry: ListingEntry) {
@@ -449,7 +459,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     private fun confirmPurchase() {
         val entry = confirmEntry ?: return
-        sendToServer(BuyFromMarketPayload(entry.id))
+        sendToServer(BuyFromMarketPayload(entry.id, -1))
         closeConfirmDialog()
     }
 
@@ -457,6 +467,23 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val entry = cancelEntry ?: return
         sendToServer(CancelFromMarketPayload(entry.id))
         closeConfirmDialog()
+    }
+
+    /** 打开喵喵支付独立界面（MeowthPayScreen）：确认回调发喵喵支付购买请求 */
+    private fun openMeowthPay() {
+        val entry = confirmEntry ?: return
+        val descName = EntryBadgeRenderer.nameWithShinyStar(
+            if (confirmDisplayName.isNotEmpty()) confirmDisplayName else entry.species, entry.shiny
+        )
+        client?.setScreen(MeowthPayScreen(
+            itemDesc = descName,
+            amount = entry.price.toLong(),
+            onConfirm = { plan ->
+                sendToServer(BuyFromMarketPayload(entry.id, plan))
+                client?.setScreen(MarketScreen())
+            },
+            onBack = { client?.setScreen(MarketScreen()) }
+        ))
     }
 
     // 带索引列表缓存：render/renderBackground 每帧调用 displayedListings()，
@@ -823,7 +850,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     }
 
     private fun requestBuy(listingId: java.util.UUID) {
-        sendToServer(BuyFromMarketPayload(listingId))
+        sendToServer(BuyFromMarketPayload(listingId, -1))
     }
 
     private fun openSellScreen() {
@@ -1378,7 +1405,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private fun renderConfirmDialog(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val entry = confirmEntry ?: cancelEntry ?: return
         val centerX = width / 2
-        val dialogW = 220
+        // 喵喵支付可用时加宽 280 容纳三枚按钮；不可用回退原宽度 220（两枚）
+        val dialogW = if (payAvailable) 280 else 220
         val dialogH = 250
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -1431,20 +1459,32 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             if (confirmDisplayName.isNotEmpty()) confirmDisplayName else entry.species, entry.shiny)
         EntryBadgeRenderer.drawInfoLines(context, entry, name, centerX, dialogY + 62)
 
-        // 按钮
+        // 按钮行（btnY = 弹窗底 -30；购买且喵喵支付可用：三枚并排；否则两枚）
         val btnW = 80
         val btnH = 20
         val btnY = dialogY + dialogH - 30
-        val confirmX = centerX - btnW - 5
-        val cancelX = centerX + 5
+        val threeButtons = cancelEntry == null && payAvailable
+        val confirmX = if (threeButtons) centerX - btnW - 44 else centerX - btnW - 5
+        val payX3 = centerX - 40
+        val cancelX = if (threeButtons) centerX + 44 else centerX + 5
         val confirmHover = mouseX in confirmX..(confirmX + btnW) && mouseY in btnY..(btnY + btnH)
         val cancelHover = mouseX in cancelX..(cancelX + btnW) && mouseY in btnY..(btnY + btnH)
+        val payHover3 = mouseX in payX3..(payX3 + btnW) && mouseY in btnY..(btnY + btnH)
 
         drawNineSlice(context, BUTTON_TEXTURE, confirmX, btnY, btnW, btnH, if (confirmHover) 1 else 0, BUTTON_TEX_H)
         drawNineSlice(context, BUTTON_TEXTURE, cancelX, btnY, btnW, btnH, if (cancelHover) 1 else 0, BUTTON_TEX_H)
         val confirmKey = if (cancelEntry != null) "cobblemarket.item.cancel_confirm" else "cobblemarket.buy_confirm.confirm"
         context.drawCenteredTextWithShadow(textRenderer, Text.translatable(confirmKey), confirmX + btnW / 2, btnY + (btnH - 8) / 2, 0xFFFFFF)
         context.drawCenteredTextWithShadow(textRenderer, Text.translatable("cobblemarket.buy_confirm.cancel"), cancelX + btnW / 2, btnY + (btnH - 8) / 2, 0xFFFFFF)
+        // 中间喵喵支付按钮（点击进独立 MeowthPayScreen）
+        if (threeButtons) {
+            drawNineSlice(context, BUTTON_TEXTURE, payX3, btnY, btnW, btnH, if (payHover3) 1 else 0, BUTTON_TEX_H)
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.buy_confirm.meowth_pay"),
+                payX3 + btnW / 2, btnY + (btnH - 8) / 2, 0xFFFFFF
+            )
+        }
         context.matrices.pop()
     }
 
@@ -1452,11 +1492,22 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val centerX = width / 2
         val dialogH = 250
         val dialogY = height / 2 - dialogH / 2
+        // 中间喵喵支付按钮（购买确认弹窗且消费贷开）：点击进独立 MeowthPayScreen
+        if (cancelEntry == null && payAvailable) {
+            val btnY = dialogY + dialogH - 30
+            val payX = centerX - 40
+            if (mx in payX..(payX + 80) && my in btnY..(btnY + 20)) {
+                playClickSound()
+                openMeowthPay()
+                return
+            }
+        }
         val btnW = 80
         val btnH = 20
         val btnY = dialogY + dialogH - 30
-        val confirmX = centerX - btnW - 5
-        val cancelX = centerX + 5
+        val threeButtons = cancelEntry == null && payAvailable
+        val confirmX = if (threeButtons) centerX - btnW - 44 else centerX - btnW - 5
+        val cancelX = if (threeButtons) centerX + 44 else centerX + 5
         if (mx in confirmX..(confirmX + btnW) && my in btnY..(btnY + btnH)) {
             playClickSound()
             if (cancelEntry != null) confirmCancel() else confirmPurchase()

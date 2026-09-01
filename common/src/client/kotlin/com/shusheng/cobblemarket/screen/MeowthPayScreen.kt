@@ -4,45 +4,40 @@ import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
-import com.shusheng.cobblemarket.network.RequestLoanPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
-import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import kotlin.math.roundToLong
 
 /**
- * 应急贷款（借呗）：弹窗式界面照拍卖出价界面模式。
- * 顶部可用额度/当前欠款 → 金额输入框 → 3 档方案按钮（默认第一档）→ 申请 → 确认弹窗（黄金模板）。
- * 打开时拉取额度信息；借款成功后服务端回发额度快照，界面即时刷新可用额度。
+ * 喵喵支付（消费贷，批次 4）：独立弹窗式界面照 LoanScreen 模板。
+ * 商品名+金额 → 三档方案按钮（默认第一档）→ 动态估算行（每期约还/共约还）→ 确认支付 → 黄金模板确认弹窗。
+ * 确认后回调 onConfirm(planIndex)（精灵购买发 BuyFromMarketPayload、物品购买发 BuyItemPayload）。
  */
-class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
+class MeowthPayScreen(
+    private val itemDesc: Text,
+    private val amount: Long,
+    private val onConfirm: (Int) -> Unit,
+    private val onBack: () -> Unit
+) : Screen(Text.translatable("cobblemarket.meowth_pay.title")) {
 
     private val dialogW = 280
-    private val dialogH = 200
+    private val dialogH = 170
 
-    private var limit = 0L
-    private var debt = 0L
-    private var hasOverdue = false
-    private var hasBadDebt = false
-    private var infoLoaded = false
     private var plans = listOf<Pair<Int, Double>>()
     private var selectedPlan = 0
+    private var infoLoaded = false
 
-    private var amountField: TextFieldWidget? = null
-    /** 输入内容暂存：init 重建（resize/关确认弹窗）后恢复，避免输入丢失 */
-    private var pendingAmountText = ""
     private val planButtons = mutableListOf<NineSliceButton>()
-    private var applyButton: NineSliceButton? = null
     private var backButton: NineSliceButton? = null
+    private var payButton: NineSliceButton? = null
 
-    // ── 确认弹窗（黄金模板：visible 隐藏下层 + Drawable 背景 + 按钮 + resize 重建） ──
+    // ── 确认弹窗（黄金模板照 LoanScreen.openConfirmDialog） ──
     private var confirmOpen = false
-    private var confirmAmount = 0L
     private var confirmConfirmButton: NineSliceButton? = null
     private var confirmCancelButton: NineSliceButton? = null
 
@@ -51,35 +46,23 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
         val dialogX = width / 2 - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
-        // 返回按钮：右上角内移 8px 避开弹窗九宫格边框（6px 边框 + 2px 空隙）
+        // 返回按钮：右上角内移 8px（照 LoanScreen）
         backButton = NineSliceButton(
             dialogX + dialogW - 58, dialogY + 8, 50, 16,
             Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(MeowthBankScreen()) }
+            { client?.setScreen(null); onBack() }
         )
         addDrawableChild(backButton)
 
-        // 金额输入框（只数字；右对齐照 ServerConfigScreen 输入框惯例）；
-        // text 每次重建后从 pendingAmountText 恢复，setChangedListener 同步（防 resize/关弹窗丢输入）
-        amountField = TextFieldWidget(textRenderer, dialogX + 130, dialogY + 86, 130, 16, Text.literal(""))
-        amountField?.setMaxLength(10)
-        amountField?.setTextPredicate { it.all(Char::isDigit) }
-        amountField?.setChangedListener { pendingAmountText = it }
-        amountField?.text = pendingAmountText
-        addSelectableChild(amountField)
-        addDrawableChild(amountField)
-
         rebuildPlanButtons(dialogX, dialogY)
 
-        applyButton = NineSliceButton(
-            dialogX + 90, dialogY + 130, 100, 16,
-            Text.translatable("cobblemarket.loan.apply"),
-            {
-                val amount = amountField?.text?.toLongOrNull() ?: 0L
-                if (amount > 0) openConfirmDialog(amount)
-            }
+        // 确认支付（点开黄金模板确认弹窗）
+        payButton = NineSliceButton(
+            dialogX + 90, dialogY + 114, 100, 16,
+            Text.translatable("cobblemarket.meowth_pay.confirm_btn"),
+            { openConfirmDialog() }
         )
-        addDrawableChild(applyButton)
+        addDrawableChild(payButton)
 
         if (!infoLoaded) {
             sendToServer(RequestCreditInfoPayload())
@@ -87,14 +70,13 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
         }
     }
 
-    /** 方案按钮行：并排间距 4px，选中档前缀 ▶ */
     private fun rebuildPlanButtons(dialogX: Int, dialogY: Int) {
         planButtons.forEach(::remove)
         planButtons.clear()
         val btnW = 84
         plans.forEachIndexed { i, (periods, fee) ->
             val btn = NineSliceButton(
-                dialogX + 10 + i * (btnW + 4), dialogY + 110, btnW, 16,
+                dialogX + 10 + i * (btnW + 4), dialogY + 72, btnW, 16,
                 Text.literal(planLabel(periods, fee, i == selectedPlan)),
                 {
                     selectedPlan = i
@@ -112,24 +94,23 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
         }
     }
 
-    /** 方案按钮文案：「▶3期·0.5%」（费率一位小数百分比，选中加 ▶） */
+    /** 方案按钮文案：「▶3期·0.5%」（照 LoanScreen） */
     private fun planLabel(periods: Int, feeRate: Double, selected: Boolean): String {
         val base = Text.translatable("cobblemarket.loan.plan_btn", periods, planPercentText(feeRate)).string
         return if (selected) "▶$base" else base
     }
 
-    /** 费率百分比文本（0.005 → 0.5%；截断一位小数，自实现避开 Locale） */
     private fun planPercentText(feeRate: Double): String {
         val tenths = (feeRate * 1000).roundToLong()
         return if (tenths % 10 == 0L) "${tenths / 10}%" else "${tenths / 10}.${tenths % 10}%"
     }
 
-    /** 额度信息快照（打开时拉取 / 借款成功后服务端回发刷新） */
+    /** 估算利息（照 LoanScreen 确认弹窗公式）：等额本金，各期剩余之和 = P×(n+1)/2 */
+    private fun estInterest(periods: Int, feeRate: Double): Long =
+        Math.round(amount * feeRate * (periods + 1) / 2.0)
+
+    /** 分期方案快照（打开时拉取） */
     fun onCreditInfo(payload: CreditInfoPayload) {
-        limit = payload.limit
-        debt = payload.debt
-        hasOverdue = payload.hasOverdue
-        hasBadDebt = payload.hasBadDebt
         val parsed = payload.plans.split(',')
             .mapNotNull { part ->
                 val seg = part.trim().split(':')
@@ -145,23 +126,20 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
         }
     }
 
-    // ── 确认弹窗（黄金模板照 AdminAuctionScreen.openCancelDialog） ──
+    // ── 确认弹窗（黄金模板照 LoanScreen.openConfirmDialog） ──
 
-    private fun openConfirmDialog(amount: Long) {
-        confirmAmount = amount
+    private fun openConfirmDialog() {
+        if (plans.getOrNull(selectedPlan) == null) return
         confirmOpen = true
-        // 隐藏下层控件（弹窗打开期间不可交互；closeConfirmDialog 的 init 重建会恢复）；
-        // 输入框必须失焦：隐藏后仍聚焦会吃掉 E 键退出和后续键盘输入
-        amountField?.setFocused(false)
-        amountField?.visible = false
+        // 隐藏下层控件（弹窗打开期间不可交互；closeConfirmDialog 的 init 重建会恢复）
         planButtons.forEach { it.visible = false }
-        applyButton?.visible = false
         backButton?.visible = false
+        payButton?.visible = false
 
         val centerX = width / 2
         val dialogY = height / 2 - 90
 
-        // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染，照搬取消弹窗）
+        // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染，照搬 LoanScreen）
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
                 renderConfirmBackground(context)
@@ -171,7 +149,7 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
         confirmConfirmButton = NineSliceButton(
             centerX - 50, dialogY + 144, 56, 20,
             Text.translatable("cobblemarket.loan.confirm_btn"),
-            { confirmLoan() }
+            { confirmPay() }
         )
         addDrawableChild(confirmConfirmButton)
         confirmCancelButton = NineSliceButton(
@@ -190,35 +168,40 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
         init()
     }
 
-    private fun confirmLoan() {
-        if (plans.getOrNull(selectedPlan) == null) return
-        sendToServer(RequestLoanPayload(confirmAmount, selectedPlan))
-        closeConfirmDialog()
+    private fun confirmPay() {
+        val plan = plans.getOrNull(selectedPlan) ?: return
+        onConfirm(selectedPlan)
     }
 
     private fun renderConfirmBackground(context: DrawContext) {
+        val (periods, feeRate) = plans.getOrNull(selectedPlan) ?: return
         val centerX = width / 2
         val dW = 280
         val dH = 180
         val dialogX = centerX - dW / 2
         val dialogY = height / 2 - dH / 2
-        val (periods, feeRate) = plans.getOrNull(selectedPlan) ?: return
 
         drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dW, dH, 0, DIALOG_BACKGROUND_TEX_H)
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.loan.confirm_title").formatted(Formatting.GOLD),
+            Text.translatable("cobblemarket.meowth_pay.confirm_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF
         )
 
-        // 估算利息（等额本金：剩余本金逐期递减，各期剩余之和 = P×(n+1)/2；Double 实算四舍五入）
-        val estInterest = Math.round(confirmAmount * feeRate * (periods + 1) / 2.0)
         val lineX = dialogX + 12
         var ly = dialogY + 42
+        // 商品名按可用宽度截断（长名不溢出弹窗）
+        val itemLine = Text.translatable("cobblemarket.meowth_pay.confirm_item").append(" ").append(itemDesc)
         context.drawTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.loan.confirm_amount", formatPriceLong(confirmAmount), inlineCurrencyUnit()),
+            com.shusheng.cobblemarket.util.TextUtil.truncateString(itemLine.string, dW - 24),
+            lineX, ly, 0xFFFFFF
+        )
+        ly += 18
+        context.drawTextWithShadow(
+            textRenderer,
+            Text.translatable("cobblemarket.meowth_pay.confirm_amount", formatPriceLong(amount), inlineCurrencyUnit()),
             lineX, ly, 0xFFFFFF
         )
         ly += 18
@@ -232,7 +215,8 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
             textRenderer,
             Text.translatable(
                 "cobblemarket.loan.confirm_each",
-                formatPriceLong(confirmAmount / periods), inlineCurrencyUnit()
+                formatPriceLong(amount / periods + estInterest(periods, feeRate) / periods),
+                inlineCurrencyUnit()
             ),
             lineX, ly, 0xFFFFFF
         )
@@ -241,29 +225,19 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
             textRenderer,
             Text.translatable(
                 "cobblemarket.loan.confirm_total",
-                formatPriceLong(confirmAmount + estInterest), inlineCurrencyUnit()
+                formatPriceLong(amount + estInterest(periods, feeRate)),
+                inlineCurrencyUnit()
             ),
             lineX, ly, 0x55FFFF
         )
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
-        // 点击空白处结束输入状态（照 AdminItemScreen 惯例：点前焦点在输入框、点击位置不在输入框 → 取消焦点）
-        val wasInInput = focused is TextFieldWidget
-        val result = super.mouseClicked(mouseX, mouseY, button)
-        if (wasInInput && amountField?.isMouseOver(mouseX, mouseY) != true) {
-            focused = null
-        }
-        return result
-    }
-
     override fun resize(client: MinecraftClient, width: Int, height: Int) {
         val confirm = confirmOpen
-        val amount = confirmAmount
         super.resize(client, width, height)
         if (confirm) {
             confirmOpen = false
-            openConfirmDialog(amount)
+            openConfirmDialog()
         }
     }
 
@@ -285,35 +259,34 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
         val dialogY = height / 2 - dialogH / 2
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.loan.title").formatted(Formatting.GOLD),
+            Text.translatable("cobblemarket.meowth_pay.title").formatted(Formatting.GOLD),
             width / 2, dialogY + 14, 0xFFFFFF
         )
-        // 可用额度 / 当前欠款（价格+货币名照全模组规矩用蓝色）
+        // 商品行：名称 + 金额（价格+货币名照全模组规矩用蓝色；长名截断）
         context.drawTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.loan.limit_line", formatPriceLong(limit), inlineCurrencyUnit()),
-            dialogX + 12, dialogY + 40, 0x55FFFF
+            Text.translatable(
+                "cobblemarket.meowth_pay.item_line",
+                com.shusheng.cobblemarket.util.TextUtil.truncateString(itemDesc.string, 120),
+                formatPriceLong(amount),
+                inlineCurrencyUnit()
+            ),
+            dialogX + 12, dialogY + 40, 0xFFFFFF
         )
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.loan.debt_line", formatPriceLong(debt), inlineCurrencyUnit()),
-            dialogX + 12, dialogY + 58, 0x55FFFF
-        )
-        if (hasBadDebt || hasOverdue) {
+        // 动态估算行：随选中方案刷新（玩家能看到每期/总计该还多少）
+        val (periods, feeRate) = plans.getOrNull(selectedPlan) ?: (0 to 0.0)
+        if (periods > 0) {
             context.drawTextWithShadow(
                 textRenderer,
                 Text.translatable(
-                    if (hasBadDebt) "cobblemarket.loan.bad_debt_hint" else "cobblemarket.loan.overdue_hint"
-                ).formatted(Formatting.RED),
-                dialogX + 12, dialogY + 76, 0xFFFFFF
+                    "cobblemarket.meowth_pay.each_est",
+                    formatPriceLong(amount / periods + estInterest(periods, feeRate) / periods),
+                    formatPriceLong(amount + estInterest(periods, feeRate)),
+                    inlineCurrencyUnit()
+                ),
+                dialogX + 12, dialogY + 96, 0x888888
             )
         }
-        // 金额输入框标签
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.loan.amount_label"),
-            dialogX + 12, dialogY + 90, 0xFFFFFF
-        )
     }
 
     override fun shouldPause() = false

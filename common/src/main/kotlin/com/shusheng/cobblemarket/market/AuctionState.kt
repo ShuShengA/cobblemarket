@@ -217,10 +217,14 @@ class AuctionState private constructor() : PersistentState() {
             }
             if (sold) {
                 val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.auctionFeePercent
-                val fee = if (feePercent > 0)
+                val baseFee = if (feePercent > 0)
                     // toLong 先提升：Int×Int 在价格×费率超过 21.5 亿时环绕溢出（fee 可算成负/0，逃税或凭空生钱）
-                    Math.ceil(auction.currentPrice.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-                else 0
+                    Math.ceil(auction.currentPrice.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
+                else 0L
+                // 逾期制裁：卖家（付款方）逾期 ≥7 天 → 手续费翻倍
+                val fee = com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+                    com.shusheng.cobblemarket.finance.FinanceState.get(server), auction.sellerUuid, currentTime, baseFee
+                ).toInt()
                 MarketState.get(server).addPendingBalance(auction.sellerUuid, (auction.currentPrice - fee).toLong())
                 // 金融系统成交挂钩子：拍卖成交计入赢家（买入方）交易额；赢家可能离线，IP/OP 判定在 recordTrade 内按在线状态取
                 com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(

@@ -56,8 +56,23 @@ data class LoanRecord(
         return Math.round(remainingPrincipal * dailyRate * days)
     }
 
+    /**
+     * 到期期数（固定基准：借后第 7/14/21 天…，与还款解耦，防滚动基准「还一期欠二期却算追平」的欠期蒸发）。
+     * 利息基准仍是 lastRepayAt（每次还款刷新），两职责分离。
+     */
+    fun duePeriodsAt(now: Long): Int =
+        minOf(periodsTotal, (((now - createdAt).coerceAtLeast(0)) / DAY_MS_LONG).toInt())
+
+    /** 逾期天数：距最早欠期（第 periodsPaid+1 期）到期日已过的整天数；未欠期返回 0（批次 6 制裁档位用） */
+    fun overdueDaysAt(now: Long): Long {
+        if (duePeriodsAt(now) <= periodsPaid) return 0
+        val firstDueAt = createdAt + (periodsPaid + 1) * DAY_MS_LONG
+        return ((now - firstDueAt).coerceAtLeast(0)) / DAY_MS_LONG
+    }
+
     companion object {
         const val DAY_MS = 24.0 * 60 * 60 * 1000
+        const val DAY_MS_LONG = 24L * 60 * 60 * 1000
     }
 }
 
@@ -149,13 +164,26 @@ class FinanceState private constructor() : PersistentState() {
         return record
     }
 
-    /** 还款一期：期数 +1，刷新计息基准；满期自动转 CLOSED */
+    /** 还款一期：期数 +1，刷新计息基准；满期转 CLOSED，追平欠期回 ACTIVE（解除逾期），仍欠期保持 OVERDUE */
     fun recordRepayment(id: Long, now: Long): Boolean {
         val record = loans[id] ?: return false
         if (record.status == LoanStatus.CLOSED || record.status == LoanStatus.BAD_DEBT) return false
         val paid = record.periodsPaid + 1
-        val status = if (paid >= record.periodsTotal) LoanStatus.CLOSED else record.status
+        val status = when {
+            paid >= record.periodsTotal -> LoanStatus.CLOSED
+            paid >= record.duePeriodsAt(now) -> LoanStatus.ACTIVE
+            else -> LoanStatus.OVERDUE
+        }
         loans[id] = record.copy(periodsPaid = paid, lastRepayAt = now, status = status)
+        markDirty()
+        return true
+    }
+
+    /** 提前结清：剩余期数一次付清，直接 CLOSED（本金=剩余本金，利息=调用方实算后扣收） */
+    fun settleLoan(id: Long, now: Long): Boolean {
+        val record = loans[id] ?: return false
+        if (record.status == LoanStatus.CLOSED || record.status == LoanStatus.BAD_DEBT) return false
+        loans[id] = record.copy(periodsPaid = record.periodsTotal, lastRepayAt = now, status = LoanStatus.CLOSED)
         markDirty()
         return true
     }
@@ -263,13 +291,16 @@ class FinanceState private constructor() : PersistentState() {
             .map { it.key }
             .toSet()
         return loans.values
-            .filter { it.playerUuid in debtors && it.status != LoanStatus.CLOSED }
+            .filter { it.playerUuid in debtors && it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
             .sumOf { it.remainingPrincipal.toLong() }
     }
 
     /**
-     * 可用额度：近30天计入额×recent30Weight + 历史累计计入额×historyWeight − 欠款×debtWeight，钳 min~max。
-     * 欠款 = 未结清贷款（CLOSED 除外）剩余本金之和；公式基于交易额自动适配服务器通胀水平。
+     * 可用额度（信用卡模型，2026-09-02 拍板）：
+     * 信用基础 = max(近30天计入额×recent30Weight + 历史累计计入额×historyWeight, min)；
+     * 可用额度 = max(0, 信用基础 − 未还欠款全额)，钳 max。
+     * 欠款 = 未结清贷款（CLOSED/BAD_DEBT 除外）剩余本金之和——现金贷与消费贷（喵喵支付）共享同一额度池，
+     * 借多少扣多少、还清即恢复；交易额加权自动适配服务器通胀水平（欠款系数 debtWeight 已废弃）。
      */
     fun creditLimitFor(playerUuid: UUID, now: Long): Long {
         val recent = tradeRecords[playerUuid]
@@ -277,13 +308,14 @@ class FinanceState private constructor() : PersistentState() {
             ?.sumOf { it.countedAmount } ?: 0L
         val history = totalCountedVolume[playerUuid] ?: 0L
         val debt = loans.values
-            .filter { it.playerUuid == playerUuid && it.status != LoanStatus.CLOSED }
+            .filter { it.playerUuid == playerUuid && it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
             .sumOf { it.remainingPrincipal.toLong() }
         // Long×Double → Double 实算后四舍五入（金额一律 Long 的钳制前形态）
-        val raw = recent * CobbleMarketConfig.creditLimitRecent30Weight +
-            history * CobbleMarketConfig.creditLimitHistoryWeight -
-            debt * CobbleMarketConfig.creditLimitDebtWeight
-        return Math.round(raw).coerceIn(CobbleMarketConfig.creditLimitMin, CobbleMarketConfig.creditLimitMax)
+        val base = Math.round(
+            recent * CobbleMarketConfig.creditLimitRecent30Weight +
+                history * CobbleMarketConfig.creditLimitHistoryWeight
+        ).coerceAtLeast(CobbleMarketConfig.creditLimitMin)
+        return (base - debt).coerceAtLeast(0L).coerceAtMost(CobbleMarketConfig.creditLimitMax)
     }
 
     // ── NBT ──

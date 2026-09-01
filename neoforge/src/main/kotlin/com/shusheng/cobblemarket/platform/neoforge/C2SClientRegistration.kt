@@ -40,17 +40,22 @@ import com.shusheng.cobblemarket.network.RequestAuctionListPayload
 import com.shusheng.cobblemarket.network.RequestBalancePayload
 import com.shusheng.cobblemarket.network.RequestBanListPayload
 import com.shusheng.cobblemarket.network.RequestBuyOrderListPayload
+import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestHistoryPayload
 import com.shusheng.cobblemarket.network.RequestItemBlacklistPayload
 import com.shusheng.cobblemarket.network.RequestItemMarketPayload
 import com.shusheng.cobblemarket.network.RequestItemPriceLimitPayload
 import com.shusheng.cobblemarket.network.RequestItemReturnPayload
+import com.shusheng.cobblemarket.network.RequestLoanHistoryPayload
+import com.shusheng.cobblemarket.network.RequestLoanPayload
 import com.shusheng.cobblemarket.network.RequestMarketPayload
 import com.shusheng.cobblemarket.network.RequestMyPokemonPayload
 import com.shusheng.cobblemarket.network.RequestPlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.network.RequestPokemonBlacklistPayload
 import com.shusheng.cobblemarket.network.RequestPokemonPriceLimitPayload
 import com.shusheng.cobblemarket.network.RequestPokemonReturnPayload
+import com.shusheng.cobblemarket.network.RequestRepayListPayload
+import com.shusheng.cobblemarket.network.RequestRepayPayload
 import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.SellFromStoragePayload
@@ -116,17 +121,22 @@ fun registerClientC2S() {
         c2s(registrar, RequestBalancePayload.ID, RequestBalancePayload.CODEC)
         c2s(registrar, RequestBanListPayload.ID, RequestBanListPayload.CODEC)
         c2s(registrar, RequestBuyOrderListPayload.ID, RequestBuyOrderListPayload.CODEC)
+        c2s(registrar, RequestCreditInfoPayload.ID, RequestCreditInfoPayload.CODEC)
         c2s(registrar, RequestHistoryPayload.ID, RequestHistoryPayload.CODEC)
         c2s(registrar, RequestItemBlacklistPayload.ID, RequestItemBlacklistPayload.CODEC)
         c2s(registrar, RequestItemMarketPayload.ID, RequestItemMarketPayload.CODEC)
         c2s(registrar, RequestItemPriceLimitPayload.ID, RequestItemPriceLimitPayload.CODEC)
         c2s(registrar, RequestItemReturnPayload.ID, RequestItemReturnPayload.CODEC)
+        c2s(registrar, RequestLoanHistoryPayload.ID, RequestLoanHistoryPayload.CODEC)
+        c2s(registrar, RequestLoanPayload.ID, RequestLoanPayload.CODEC)
         c2s(registrar, RequestMarketPayload.ID, RequestMarketPayload.CODEC)
         c2s(registrar, RequestMyPokemonPayload.ID, RequestMyPokemonPayload.CODEC)
         c2s(registrar, RequestPlayerNameSuggestionsPayload.ID, RequestPlayerNameSuggestionsPayload.CODEC)
         c2s(registrar, RequestPokemonBlacklistPayload.ID, RequestPokemonBlacklistPayload.CODEC)
         c2s(registrar, RequestPokemonPriceLimitPayload.ID, RequestPokemonPriceLimitPayload.CODEC)
         c2s(registrar, RequestPokemonReturnPayload.ID, RequestPokemonReturnPayload.CODEC)
+        c2s(registrar, RequestRepayListPayload.ID, RequestRepayListPayload.CODEC)
+        c2s(registrar, RequestRepayPayload.ID, RequestRepayPayload.CODEC)
         c2s(registrar, RequestServerConfigPayload.ID, RequestServerConfigPayload.CODEC)
         c2s(registrar, SaveServerConfigPayload.ID, SaveServerConfigPayload.CODEC)
         c2s(registrar, SellFromStoragePayload.ID, SellFromStoragePayload.CODEC)

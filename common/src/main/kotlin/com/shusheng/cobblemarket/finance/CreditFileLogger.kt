@@ -50,7 +50,7 @@ object CreditFileLogger {
         }
     }
 
-    /** 还款事件：主动 / 自动划扣 / 提前结清 */
+    /** 还款事件：主动 / 自动划扣 / 提前结清；detail 双语（CSV 中英双份，照 logLoan） */
     fun logRepayment(
         playerUuid: UUID,
         playerName: String,
@@ -59,6 +59,7 @@ object CreditFileLogger {
         interest: Long,
         method: RepayMethod,
         detail: String,
+        detailEn: String = detail,
         timestamp: Long = System.currentTimeMillis()
     ) {
         try {
@@ -66,7 +67,7 @@ object CreditFileLogger {
             val zhFile = currentRepayZh ?: return
             val enFile = currentRepayEn ?: return
             val lineZh = buildRepayLine(playerName, loanId, principalPart, interest, method, detail, timestamp, true)
-            val lineEn = buildRepayLine(playerName, loanId, principalPart, interest, method, detail, timestamp, false)
+            val lineEn = buildRepayLine(playerName, loanId, principalPart, interest, method, detailEn, timestamp, false)
             Files.writeString(zhFile.toPath(), lineZh + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
             Files.writeString(enFile.toPath(), lineEn + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
         } catch (e: Exception) {

@@ -760,7 +760,7 @@ object AuctionNetwork {
         else
             Text.translatable("cobblemarket.ban.remaining", BanState.formatRemaining(banInfo.expiresAt!! - System.currentTimeMillis()))
         val banMsg = if (banInfo.reason.isNotBlank())
-            Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, banInfo.reason)
+            Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, com.shusheng.cobblemarket.market.BanState.reasonText(banInfo.reason))
         else
             Text.translatable("cobblemarket.ban.banned_msg_time", timeDesc)
         sendToPlayer(player, MarketResultPayload(false, banMsg))
@@ -803,12 +803,16 @@ object AuctionNetwork {
             }
             // 聊天通知：卖家（成交/流拍）+ 赢家（离线则入队补发）
             if (auction.status == com.shusheng.cobblemarket.market.AuctionStatus.SOLD) {
-                // 手续费同结算公式重算：卖家到手 = 成交价 - 手续费，消息里一并说明避免疑问
+                // 手续费同结算公式重算（含逾期翻倍）：卖家到手 = 成交价 - 手续费，消息里一并说明避免疑问
                 val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.auctionFeePercent
-                val fee = if (feePercent > 0)
+                val baseFee = if (feePercent > 0)
                     // toLong 先提升：与结算同公式，防 Int×Int 环绕溢出（消息与扣费保持一致）
-                    Math.ceil(auction.currentPrice.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-                else 0
+                    Math.ceil(auction.currentPrice.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
+                else 0L
+                val fee = com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+                    com.shusheng.cobblemarket.finance.FinanceState.get(server), auction.sellerUuid,
+                    System.currentTimeMillis(), baseFee
+                ).toInt()
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, auction.sellerUuid,
                     // 聊天消息货币名走 CurrencyHandler.currencyText()（translatable 随模式翻译）
@@ -954,8 +958,14 @@ object AuctionNetwork {
             RecordDetail.pokemon(auction.extraData, auction.level, auction.shiny)
         else
             RecordDetail.item(auction.itemNbt, auction.count)
+        // 账本 fee 与实际扣费一致（含逾期翻倍，付款方=卖家）
         val fee = if (type == TransactionType.PURCHASE && CobbleMarketConfig.auctionFeePercent > 0)
-            Math.ceil(auction.currentPrice.toLong() * CobbleMarketConfig.auctionFeePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+                com.shusheng.cobblemarket.finance.FinanceState.get(server), auction.sellerUuid,
+                System.currentTimeMillis(),
+                Math.ceil(auction.currentPrice.toLong() * CobbleMarketConfig.auctionFeePercent / 100.0).toLong()
+                    .coerceAtMost(Int.MAX_VALUE.toLong())
+            ).toInt()
         else 0
         TransactionHistory.get(server).addRecord(TransactionRecord(
             timestamp = System.currentTimeMillis(),

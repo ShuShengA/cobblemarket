@@ -4,6 +4,8 @@ import com.shusheng.cobblemarket.client.playFailSound
 
 import com.shusheng.cobblemarket.network.BuyItemPayload
 import com.shusheng.cobblemarket.network.CancelItemPayload
+import com.shusheng.cobblemarket.network.CreditInfoPayload
+import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.network.CollectBalancePayload
 import com.shusheng.cobblemarket.network.RequestBalancePayload
 import com.shusheng.cobblemarket.network.ItemEntry
@@ -69,6 +71,11 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private var buyErrorText: net.minecraft.text.Text? = null
     private var buyErrorUntil = 0L
     private var cancelEntry: ItemEntry? = null
+
+    // ── 喵喵支付（消费贷，批次 4）：购买弹窗内入口按钮，点击进独立 MeowthPayScreen ──
+    private var buyPayButton: NineSliceButton? = null
+    /** 消费贷开关（CreditInfoPayload 拉取）：关时弹窗自动回缩到原高度 170、不显示喵喵支付按钮 */
+    private var payAvailable = false
 
     private fun columns() = (panelWidth + gap) / (slotSize + gap)
     private fun getGridStartY() = 68
@@ -524,7 +531,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         selectedEntry = entry
         setMainControlsVisible(false)
         val centerX = width / 2
-        val dialogY = height / 2 - 85
+        // 弹窗高度随消费贷开关收缩（210/170），dialogY 与 renderBuyDialogBackground 同公式
+        val dialogY = height / 2 - buyDialogH() / 2
 
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -539,23 +547,80 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         buyCountField?.setChangedListener { buyErrorText = null }
         addDrawableChild(buyCountField)
 
+        // 按钮行 y 随弹窗高度收缩：210 高 → y+140；170 高 → y+128
+        val btnRowY = dialogY + (if (payAvailable) 140 else 128)
         addDrawableChild(NineSliceButton(
-            centerX - 85, dialogY + 128, 80, 20,
+            centerX - 85, btnRowY, 80, 20,
             Text.translatable("cobblemarket.gui.buy"),
             { confirmBuy() }
         ))
         addDrawableChild(NineSliceButton(
-            centerX + 5, dialogY + 128, 80, 20,
+            centerX + 5, btnRowY, 80, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeBuyDialog() }
         ))
+
+        // 喵喵支付入口（点击进独立 MeowthPayScreen 选方案）；消费贷关时不显示
+        if (payAvailable) {
+            buyPayButton = NineSliceButton(
+                centerX - 85, dialogY + 164, 80, 20,
+                Text.translatable("cobblemarket.buy_confirm.meowth_pay"),
+                { openMeowthPay() }
+            )
+            addDrawableChild(buyPayButton)
+        }
+
+        // 拉消费贷开关（喵喵支付按钮显示与弹窗高度依据）
+        sendToServer(RequestCreditInfoPayload())
+    }
+
+    /** 购买弹窗高度：消费贷开 210（含喵喵支付行）/ 关 170（原尺寸） */
+    private fun buyDialogH(): Int = if (payAvailable) 210 else 170
+
+    /** 消费贷开关快照（打开购买弹窗时拉取）：状态变化时重建弹窗控件（含输入恢复） */
+    fun onCreditInfo(payload: CreditInfoPayload) {
+        val available = payload.consumerLoanEnabled
+        if (available == payAvailable) return
+        payAvailable = available
+        val entry = selectedEntry ?: return
+        val countText = buyCountField?.text ?: ""
+        closeBuyDialog()
+        openBuyDialog(entry)
+        buyCountField?.text = countText
     }
 
     private fun closeBuyDialog() {
         selectedEntry = null
         buyCountField = null
+        buyPayButton = null
         clearChildren()
         init()
+    }
+
+    /** 打开喵喵支付独立界面（数量校验同现金购买；确认回调发喵喵支付物品购买请求） */
+    private fun openMeowthPay() {
+        val entry = selectedEntry ?: return
+        val count = buyCountField?.text?.toIntOrNull() ?: run {
+            playFailSound()
+            return
+        }
+        if (count <= 0 || count > entry.count) {
+            buyErrorText = Text.translatable("cobblemarket.item.buy_too_many").formatted(Formatting.RED)
+            buyErrorUntil = System.currentTimeMillis() + 2000
+            playFailSound()
+            return
+        }
+        val itemName = Identifier.tryParse(entry.itemId)?.let { Registries.ITEM.get(it).name }
+            ?: Text.literal(entry.itemId)
+        client?.setScreen(MeowthPayScreen(
+            itemDesc = Text.literal("$count×").append(itemName),
+            amount = entry.price.toLong() * count,
+            onConfirm = { plan ->
+                sendToServer(BuyItemPayload(entry.id, count, plan))
+                client?.setScreen(ItemMarketScreen())
+            },
+            onBack = { client?.setScreen(ItemMarketScreen()) }
+        ))
     }
 
     private fun openCancelDialog(entry: ItemEntry) {
@@ -683,7 +748,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             )
             return
         }
-        sendToServer(BuyItemPayload(entry.id, count))
+        sendToServer(BuyItemPayload(entry.id, count, -1))
         closeBuyDialog()
     }
 
@@ -698,7 +763,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         val entry = selectedEntry ?: return
         val centerX = width / 2
         val dialogW = 220
-        val dialogH = 170
+        // 弹窗高度随消费贷开关收缩：210（含喵喵支付行）/ 170（原尺寸）
+        val dialogH = buyDialogH()
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
@@ -708,9 +774,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             Text.translatable("cobblemarket.item.buy_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
 
-        // 购买数量校验失败提示（按钮上方红字，2 秒后消失）
+        // 购买数量校验失败提示（按钮上方红字，2 秒后消失；y 随弹窗高度收缩）
         if (buyErrorText != null && System.currentTimeMillis() < buyErrorUntil) {
-            context.drawCenteredTextWithShadow(textRenderer, buyErrorText, centerX, dialogY + 108, 0xFFFFFF)
+            context.drawCenteredTextWithShadow(textRenderer, buyErrorText, centerX, dialogY + (if (payAvailable) 128 else 108), 0xFFFFFF)
         }
 
         val registry = client?.world?.registryManager

@@ -8,7 +8,9 @@ import com.shusheng.cobblemarket.client.IconAnimMode
 import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.client.MarketStateCache
 import com.shusheng.cobblemarket.client.OakTips
+import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestBalancePayload
+import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.network.SetMarketEnabledPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.MinecraftClient
@@ -56,6 +58,12 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     // 市场关闭提示（入口点击被拦截时显示，3 秒）
     private var closedNoticeUntil = 0L
+    // 金融系统关闭提示（点置灰的喵喵银行按钮时显示，3 秒）
+    private var financeNoticeUntil = 0L
+    // 金融总开关（CreditInfoPayload 拉取；喵喵银行按钮置灰依据，未拉取时默认开=乐观，服务端兜底）
+    private var financeEnabled = true
+    private var meowthBankBtn: NineSliceButton? = null
+    private var creditInfoLoaded = false
 
     // 大木博士知识点气泡：进入入口界面（新建实例）随机抽一句，一直显示；
     // 点击立绘主动换下一条；resize 重建不换句
@@ -64,6 +72,12 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     // 设置弹窗开关切换提示（1.5 秒 toast）
     private var settingsToastUntil = 0L
     private var settingsToastText: Text = Text.literal("")
+
+    /** 金融开关快照（进入入口界面时拉取）：喵喵银行按钮置灰依据 */
+    fun onCreditInfo(payload: CreditInfoPayload) {
+        financeEnabled = payload.financeEnabled
+        meowthBankBtn?.dimmed = !payload.financeEnabled
+    }
 
     /**
      * 市场总开关客户端门控：关闭时只提示，不进入任何交易界面。
@@ -191,15 +205,29 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             centerX - 64, cornerY,
             cornerSize, cornerSize,
             Text.literal(""),
-            { client?.setScreen(MeowthBankScreen()) },
+            {
+                // 金融总开关关：置灰按钮点击给提示（dimmed 不影响可点性，见 NineSliceButton）
+                if (financeEnabled) client?.setScreen(MeowthBankScreen())
+                else {
+                    com.shusheng.cobblemarket.client.playFailSound()
+                    financeNoticeUntil = System.currentTimeMillis() + 3000
+                }
+            },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/meowth_bank_icon.png"),
             // 48×48 贴图缩到 18×18 显示（照求购单按钮）
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             texture = ROW_BACKGROUND_TEXTURE,
             texH = ROW_BACKGROUND_TEX_H
         )
+        meowthBankBtn.dimmed = !financeEnabled
+        this.meowthBankBtn = meowthBankBtn
         meowthBankBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.meowth_bank")))
         entryButtons += addDrawableChild(meowthBankBtn)
+
+        if (!creditInfoLoaded) {
+            sendToServer(RequestCreditInfoPayload())
+            creditInfoLoaded = true
+        }
 
         val settingsBtn = NineSliceButton(
             centerX + 96 - cornerSize - 6, cornerY,
@@ -914,6 +942,14 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                     width / 2, height - 36, 0xFF5555
                 )
             }
+        }
+        // 金融系统关闭提示（点置灰喵喵银行按钮，3 秒；独立于市场关闭提示）
+        if (System.currentTimeMillis() < financeNoticeUntil) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.entry.finance_closed").string,
+                width / 2, height - 36, 0xFF5555
+            )
         }
         // 余额（标题下方，来自全局缓存）
         val bal = com.shusheng.cobblemarket.client.BalanceCache.balance
