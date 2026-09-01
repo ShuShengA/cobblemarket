@@ -32,6 +32,12 @@ class NineSliceButton(
     // 开关式按钮的按下视觉：面板展开期间保持"按下态"（纹理第三段；只有两段的纹理自动退回悬停态）
     var pressedVisual: Boolean = false
 
+    /**
+     * 置灰视觉（不影响 active 与点击）：渲染尾部盖半透明黑遮罩，照精灵图标压暗惯例。
+     * 用于「功能未开放但点击要有提示」的按钮——active=false 会吞掉 onPress，无法做点击提示。
+     */
+    var dimmed: Boolean = false
+
     override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val maxState = texH / NINE_SLICE_STATE_H - 1
         val state = when {
@@ -77,6 +83,10 @@ class NineSliceButton(
         } else {
             val textX = x + iconSpace + (width - iconSpace - font.getWidth(message)) / 2
             context.drawTextWithShadow(font, message, textX, textY, color)
+        }
+        // 置灰遮罩（视觉置灰但保留可点击性，见 dimmed 注释）
+        if (dimmed) {
+            context.fill(x, y, x + width, y + height, 0x66000000)
         }
     }
 

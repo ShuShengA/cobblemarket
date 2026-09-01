@@ -100,6 +100,16 @@ class BanState private constructor() : PersistentState() {
         fun get(server: MinecraftServer): BanState =
             server.overworld.persistentStateManager.getOrCreate(TYPE, "${CobbleMarket.MOD_ID}_bans")
 
+        /**
+         * 封禁理由渲染约定：以 $ 开头的 reason 是 translatable key（系统来源，渲染时按玩家语言翻译）；
+         * 玩家手动填写的理由原样显示（不翻译）。
+         */
+        fun reasonText(reason: String): net.minecraft.text.Text =
+            if (reason.startsWith("$"))
+                net.minecraft.text.Text.translatable(reason.removePrefix("$"))
+            else
+                net.minecraft.text.Text.literal(reason)
+
         fun parseDurationMs(input: String): Long? {
             val regex = Regex("(\\d+)([dhm])")
             var total = 0L

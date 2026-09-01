@@ -48,23 +48,30 @@ class RequestCreditInfoPayload : CustomPayload {
     }
 }
 
-// ── S2C：信用额度信息（可用额度/当前欠款/是否有逾期禁借） ──
+// ── S2C：信用额度信息（可用额度/当前欠款/逾期禁借/坏账禁借） ──
 
 data class CreditInfoPayload(
     val limit: Long,
     val debt: Long,
     val hasOverdue: Boolean,
+    /** 有坏账（已注销）贷款：永久禁借，界面提示与逾期区分 */
+    val hasBadDebt: Boolean,
     /** 分期方案文本（"3:0.005,6:0.008,12:0.012"），客户端借款界面渲染方案按钮用 */
-    val plans: String
+    val plans: String,
+    /** 金融总开关（入口喵喵银行按钮置灰依据） */
+    val financeEnabled: Boolean,
+    /** 消费贷（喵喵支付）开关 = 总开关 && consumerLoanEnabled（购买弹窗按钮显示依据） */
+    val consumerLoanEnabled: Boolean
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<CreditInfoPayload>(CobbleMarket.id("credit_info"))
         val CODEC: PacketCodec<PacketByteBuf, CreditInfoPayload> = PacketCodec.of(
             { p, b ->
-                b.writeLong(p.limit); b.writeLong(p.debt); b.writeBoolean(p.hasOverdue); b.writeString(p.plans)
+                b.writeLong(p.limit); b.writeLong(p.debt); b.writeBoolean(p.hasOverdue); b.writeBoolean(p.hasBadDebt)
+                b.writeString(p.plans); b.writeBoolean(p.financeEnabled); b.writeBoolean(p.consumerLoanEnabled)
             },
-            { b -> CreditInfoPayload(b.readLong(), b.readLong(), b.readBoolean(), b.readString()) }
+            { b -> CreditInfoPayload(b.readLong(), b.readLong(), b.readBoolean(), b.readBoolean(), b.readString(), b.readBoolean(), b.readBoolean()) }
         )
     }
 }
@@ -78,6 +85,76 @@ data class RequestLoanHistoryPayload(val all: Boolean) : CustomPayload {
         val CODEC: PacketCodec<PacketByteBuf, RequestLoanHistoryPayload> = PacketCodec.of(
             { p, b -> b.writeBoolean(p.all) },
             { b -> RequestLoanHistoryPayload(b.readBoolean()) }
+        )
+    }
+}
+
+// ── C2S：请求还款柜台列表（未结清贷款明细） ──
+
+class RequestRepayListPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestRepayListPayload>(CobbleMarket.id("request_repay_list"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestRepayListPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestRepayListPayload() }
+        )
+    }
+}
+
+// ── S2C：还款柜台列表（金额由服务端实算，客户端只展示） ──
+
+data class RepayEntry(
+    val id: Long,
+    val periodsTotal: Int,
+    val periodsPaid: Int,
+    /** 剩余本金（CLOSED 恒 0；列表只含未结清） */
+    val remaining: Long,
+    /** 本期应还本金（最后一期兜底整除尾差） */
+    val periodPrincipal: Long,
+    /** 本期利息（实算到服务端返回时刻） */
+    val periodInterest: Long,
+    /** 结清总额（剩余本金 + 利息，提前结清实扣基准） */
+    val settleTotal: Long,
+    val status: String,
+    /** 已欠期数（到期期数 − 已还期数，OVERDUE 弹窗提示用） */
+    val dueCount: Int
+) {
+    fun write(buf: PacketByteBuf) {
+        buf.writeLong(id); buf.writeInt(periodsTotal); buf.writeInt(periodsPaid); buf.writeLong(remaining)
+        buf.writeLong(periodPrincipal); buf.writeLong(periodInterest); buf.writeLong(settleTotal)
+        buf.writeString(status); buf.writeInt(dueCount)
+    }
+
+    companion object {
+        fun read(buf: PacketByteBuf) = RepayEntry(
+            buf.readLong(), buf.readInt(), buf.readInt(), buf.readLong(),
+            buf.readLong(), buf.readLong(), buf.readLong(),
+            buf.readString(), buf.readInt()
+        )
+    }
+}
+
+data class RepayListDataPayload(val entries: List<RepayEntry>) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RepayListDataPayload>(CobbleMarket.id("repay_list_data"))
+        val CODEC: PacketCodec<PacketByteBuf, RepayListDataPayload> = PacketCodec.of(
+            { p, b -> b.writeVarInt(p.entries.size); p.entries.forEach { it.write(b) } },
+            { b -> RepayListDataPayload((0 until b.readVarInt()).map { RepayEntry.read(b) }) }
+        )
+    }
+}
+
+// ── C2S：还款执行（settle=false 还一期 / true 提前结清；金额服务端实算，客户端不传） ──
+
+data class RequestRepayPayload(val loanId: Long, val settle: Boolean) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestRepayPayload>(CobbleMarket.id("request_repay"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestRepayPayload> = PacketCodec.of(
+            { p, b -> b.writeLong(p.loanId); b.writeBoolean(p.settle) },
+            { b -> RequestRepayPayload(b.readLong(), b.readBoolean()) }
         )
     }
 }
@@ -137,6 +214,7 @@ object FinanceNetwork {
     fun register() {
         registerS2CType(CreditInfoPayload.ID, CreditInfoPayload.CODEC)
         registerS2CType(LoanHistoryDataPayload.ID, LoanHistoryDataPayload.CODEC)
+        registerS2CType(RepayListDataPayload.ID, RepayListDataPayload.CODEC)
 
         // ── 应急贷款借款 ──
         registerC2S(RequestLoanPayload.ID, RequestLoanPayload.CODEC) { payload, player ->
@@ -150,8 +228,13 @@ object FinanceNetwork {
                     player.sendMessage(Text.translatable("cobblemarket.loan.finance_disabled").formatted(Formatting.RED), false)
                     return@execute
                 }
-                // 逾期/坏账禁止新增借贷（ACTIVE 不拦：允许多笔并存）
-                if (state.getLoansByPlayer(player.uuid).any { it.status == LoanStatus.OVERDUE || it.status == LoanStatus.BAD_DEBT }) {
+                // 逾期/坏账禁止新增借贷（ACTIVE 不拦：允许多笔并存）；文案区分：逾期=暂时，坏账=永久
+                val mine = state.getLoansByPlayer(player.uuid)
+                if (mine.any { it.status == LoanStatus.BAD_DEBT }) {
+                    player.sendMessage(Text.translatable("cobblemarket.loan.bad_debt_blocked").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                if (mine.any { it.status == LoanStatus.OVERDUE }) {
                     player.sendMessage(Text.translatable("cobblemarket.loan.overdue_blocked").formatted(Formatting.RED), false)
                     return@execute
                 }
@@ -240,6 +323,20 @@ object FinanceNetwork {
             }
         }
 
+        // ── 还款柜台列表 ──
+        registerC2S(RequestRepayListPayload.ID, RequestRepayListPayload.CODEC) { _, player ->
+            if (!RequestThrottle.allow(player.uuid, "request_repay_list", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute { com.shusheng.cobblemarket.finance.FinanceService.sendRepayList(player) }
+        }
+
+        // ── 还款执行（还一期 / 提前结清；金额服务端实算） ──
+        registerC2S(RequestRepayPayload.ID, RequestRepayPayload.CODEC) { payload, player ->
+            if (!RequestThrottle.allow(player.uuid, "request_repay", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute { com.shusheng.cobblemarket.finance.FinanceService.executeRepay(player, payload.loanId, payload.settle) }
+        }
+
         // ── 借款历史 ──
         registerC2S(RequestLoanHistoryPayload.ID, RequestLoanHistoryPayload.CODEC) { payload, player ->
             if (!RequestThrottle.allow(player.uuid, "request_loan_history", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
@@ -268,17 +365,21 @@ object FinanceNetwork {
         }
     }
 
-    /** 额度信息快照：可用额度 + 欠款 + 逾期禁借标记（借款成功后也用它回发刷新） */
-    private fun sendCreditInfo(player: ServerPlayerEntity, state: FinanceState, now: Long) {
+    /** 额度信息快照：可用额度 + 欠款 + 逾期/坏账禁借标记（借款成功/还款后也用它回发刷新） */
+    fun sendCreditInfo(player: ServerPlayerEntity, state: FinanceState, now: Long) {
         val mine = state.getLoansByPlayer(player.uuid)
-        val debt = mine.filter { it.status != LoanStatus.CLOSED }.sumOf { it.remainingPrincipal.toLong() }
+        val debt = mine.filter { it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
+            .sumOf { it.remainingPrincipal.toLong() }
         sendToPlayer(
             player,
             CreditInfoPayload(
                 limit = state.creditLimitFor(player.uuid, now),
                 debt = debt,
-                hasOverdue = mine.any { it.status == LoanStatus.OVERDUE || it.status == LoanStatus.BAD_DEBT },
-                plans = CobbleMarketConfig.loanPlansText()
+                hasOverdue = mine.any { it.status == LoanStatus.OVERDUE },
+                hasBadDebt = mine.any { it.status == LoanStatus.BAD_DEBT },
+                plans = CobbleMarketConfig.loanPlansText(),
+                financeEnabled = CobbleMarketConfig.financeEnabled,
+                consumerLoanEnabled = CobbleMarketConfig.financeEnabled && CobbleMarketConfig.consumerLoanEnabled
             )
         )
     }

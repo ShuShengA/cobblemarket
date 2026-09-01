@@ -13,7 +13,9 @@ import net.minecraft.util.Identifier
 
 /**
  * 喵喵银行：金融系统入口界面。
- * 标题下「可用额度/当前欠款」信息行 → 应急贷款按钮（LoanScreen）；
+ * 背景与入口界面同锚定公式（背景顶 bgTop 随窗口/OP 行数动态），切换界面背景不跳动；
+ * 全部元素按背景顶相对偏移布局（原「背景垂直居中」方案比入口低 21px，2026-09-02 对齐）。
+ * 标题下「可用额度/当前欠款」信息行 → 应急贷款按钮（LoanScreen）→ 还款柜台按钮（RepayScreen）；
  * 底部左「借款历史」/ 右「全部借款历史」（仅 OP）→ LoanHistoryScreen。
  * 进入界面时拉取额度信息（RequestCreditInfoPayload）。
  */
@@ -24,27 +26,50 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
     private var debt = 0L
     private var infoLoaded = false
 
+    /**
+     * 背景顶（照 MarketEntryScreen.bgBottom 同款锚定公式：普通 2 行 / OP 3 行 → 背景位置与入口完全一致）
+     */
+    private fun bgTop(): Int {
+        val isAdmin = client?.player?.hasPermissionLevel(2) == true
+        val rowCount = if (isAdmin) 3 else 2
+        val btnH = 24
+        val gap = 8
+        val totalH = btnH * rowCount + gap * (rowCount - 1) - if (isAdmin) gap - 5 else 0
+        val startY = maxOf(height / 2 - totalH / 2, 47 + (160 - totalH) / 2)
+        return startY - 14 - (160 - totalH) / 2 - 33
+    }
+
     override fun init() {
         super.init()
-        // 返回按钮：背景右上区域（照全模组惯例——列表界面均为面板右上角 50×16；
-        // 背景垂直居中顶边 height/2-106，位置按实测左移 9px、上移 5px）
+        val bgTop = bgTop()
+
+        // 返回按钮：右边缘与「全部借款历史」按钮右边缘对齐
+        // （全部借款历史：x=width/2+25 宽 80 → 右边缘 width/2+105；返回按钮宽 50 → x=width/2+55）
         backButton = NineSliceButton(
-            width / 2 + 39, height / 2 - 85, 50, 16,
+            width / 2 + 55, bgTop + 46, 50, 16,
             Text.translatable("cobblemarket.gui.back"),
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) }
         )
         addDrawableChild(backButton)
 
-        // 应急贷款入口（背景中部：额度/欠款两行 + 按钮组成信息组，居中放在标题与底部按钮之间的空档；100×16）
+        // 应急贷款入口（信息组：额度/欠款两行 + 按钮组成，居中放在标题与底部按钮之间的空档；100×16）
         addDrawableChild(NineSliceButton(
-            width / 2 - 50, height / 2 + 2, 100, 16,
+            width / 2 - 50, bgTop + 108, 100, 16,
             Text.translatable("cobblemarket.loan.title"),
             { client?.setScreen(LoanScreen()) }
         ))
 
-        // 借款历史（左下）：所有玩家可见 → 我的借贷流水
+        // 还款柜台入口（应急贷款下方 4px，与底部按钮留空；100×16）→ RepayScreen
         addDrawableChild(NineSliceButton(
-            width / 2 - 105, height / 2 + 58, 80, 16,
+            width / 2 - 50, bgTop + 128, 100, 16,
+            Text.translatable("cobblemarket.repay.button"),
+            { client?.setScreen(RepayScreen()) }
+        ))
+
+        // 借款历史（左下）：所有玩家可见 → 我的借贷流水
+        // （右移 3px：背景贴图内部边框不对称（左 17px/右 13px），按视觉边框对齐两边各 9px）
+        addDrawableChild(NineSliceButton(
+            width / 2 - 102, bgTop + 164, 80, 16,
             Text.translatable("cobblemarket.meowth_bank.loan_history"),
             { client?.setScreen(LoanHistoryScreen(showAll = false)) }
         ))
@@ -52,7 +77,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         // 全部借款历史（右下）：仅 OP → 全服借贷流水审计
         if (client?.player?.hasPermissionLevel(2) == true) {
             addDrawableChild(NineSliceButton(
-                width / 2 + 25, height / 2 + 58, 80, 16,
+                width / 2 + 25, bgTop + 164, 80, 16,
                 Text.translatable("cobblemarket.meowth_bank.all_loan_history"),
                 { client?.setScreen(LoanHistoryScreen(showAll = true)) }
             ))
@@ -71,30 +96,30 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-        // 背景垂直居中（与入口界面视觉位置一致，入口贴图中心 ≈ 屏幕中心偏上十几 px）；贴图 256×213
+        // 背景 256×213，顶边与入口界面同锚定公式（切换界面背景不跳动）
         val bg = Identifier.of("cobblemarket", "textures/gui/meowth_bank_background.png")
-        context.drawTexture(bg, width / 2 - 128, height / 2 - 106, 0f, 0f, 256, 213, 256, 213)
+        context.drawTexture(bg, width / 2 - 128, bgTop(), 0f, 0f, 256, 213, 256, 213)
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         super.render(context, mouseX, mouseY, delta)
+        val bgTop = bgTop()
         // 标题：背景内顶部边框（27px）下方 4px 处
         context.drawCenteredTextWithShadow(
             textRenderer,
             Text.translatable("cobblemarket.meowth_bank.title").formatted(Formatting.GOLD, Formatting.BOLD),
-            width / 2, height / 2 - 75, 0xFFFFFF
+            width / 2, bgTop + 31, 0xFFFFFF
         )
-        // 背景中部信息组：「可用额度 / 当前欠款」两行 + 应急贷款按钮，
-        // 居中放在标题（底 ≈ height/2−71）与底部按钮（顶 height/2+50）之间的空档（价格+货币名照全模组规矩用蓝色）
+        // 信息组：「可用额度 / 当前欠款」两行（价格+货币名照全模组规矩用蓝色）
         context.drawCenteredTextWithShadow(
             textRenderer,
             Text.translatable("cobblemarket.loan.limit_line", formatPriceLong(limit), inlineCurrencyUnit()),
-            width / 2, height / 2 - 25, 0x55FFFF
+            width / 2, bgTop + 81, 0x55FFFF
         )
         context.drawCenteredTextWithShadow(
             textRenderer,
             Text.translatable("cobblemarket.loan.debt_line", formatPriceLong(debt), inlineCurrencyUnit()),
-            width / 2, height / 2 - 15, 0x55FFFF
+            width / 2, bgTop + 91, 0x55FFFF
         )
     }
 

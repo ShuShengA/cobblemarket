@@ -55,7 +55,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         NumDef("cobblemarket.op.scfg_loan_plans", false) to "loanPlans",
         NumDef("cobblemarket.op.scfg_credit_recent30", false) to "creditRecent30",
         NumDef("cobblemarket.op.scfg_credit_history", false) to "creditHistory",
-        NumDef("cobblemarket.op.scfg_credit_debt", false) to "creditDebt",
+        // 「额度系数·欠款」已废弃：欠款改为全额扣减（信用卡模型），2026-09-02 拍板
         NumDef("cobblemarket.op.scfg_credit_min", true) to "creditMin",
         NumDef("cobblemarket.op.scfg_credit_max", true) to "creditMax",
         NumDef("cobblemarket.op.scfg_ip_debt_limit", true) to "ipDebtLimit",

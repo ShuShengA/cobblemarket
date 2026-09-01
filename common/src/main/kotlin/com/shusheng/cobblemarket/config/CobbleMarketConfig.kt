@@ -92,7 +92,7 @@ object CobbleMarketConfig {
     /** 额度公式系数：历史交易额权重 */
     var creditLimitHistoryWeight: Double = 0.1
         private set
-    /** 额度公式系数：当前欠款权重（负向） */
+    /** @deprecated 欠款权重已废弃（2026-09-02 拍板：欠款改全额扣减，信用卡模型）；字段保留仅兼容旧配置 */
     var creditLimitDebtWeight: Double = 0.3
         private set
     var creditLimitMin: Long = 0L

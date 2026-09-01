@@ -398,14 +398,15 @@ data class MarketDataPayload(
 
 // ── C2S: Buy listing ──
 
-data class BuyFromMarketPayload(val listingId: UUID) : CustomPayload {
+data class BuyFromMarketPayload(val listingId: UUID, val planIndex: Int) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
     companion object {
         val ID = CustomPayload.Id<BuyFromMarketPayload>(CobbleMarket.id("buy_from_market"))
         val CODEC: PacketCodec<PacketByteBuf, BuyFromMarketPayload> = PacketCodec.of(
-            { p, b -> b.writeUuid(p.listingId) },
-            { b -> BuyFromMarketPayload(b.readUuid()) }
+            // planIndex：-1 = 现金购买；≥0 = 喵喵支付分期方案下标
+            { p, b -> b.writeUuid(p.listingId); b.writeInt(p.planIndex) },
+            { b -> BuyFromMarketPayload(b.readUuid(), b.readInt()) }
         )
     }
 }
@@ -763,14 +764,15 @@ data class AdminCancelItemPayload(val listingId: UUID) : CustomPayload {
 
 // ── C2S: Buy item ──
 
-data class BuyItemPayload(val listingId: UUID, val count: Int) : CustomPayload {
+data class BuyItemPayload(val listingId: UUID, val count: Int, val planIndex: Int) : CustomPayload {
     override fun getId() = ID
 
     companion object {
         val ID = CustomPayload.Id<BuyItemPayload>(CobbleMarket.id("buy_item"))
         val CODEC: PacketCodec<PacketByteBuf, BuyItemPayload> = PacketCodec.of(
-            { p, b -> b.writeUuid(p.listingId); b.writeInt(p.count) },
-            { b -> BuyItemPayload(b.readUuid(), b.readInt()) }
+            // planIndex：-1 = 现金购买；≥0 = 喵喵支付分期方案下标
+            { p, b -> b.writeUuid(p.listingId); b.writeInt(p.count); b.writeInt(p.planIndex) },
+            { b -> BuyItemPayload(b.readUuid(), b.readInt(), b.readInt()) }
         )
     }
 }
@@ -1125,7 +1127,7 @@ object MarketNetwork {
                             BanState.formatRemaining(banInfo.expiresAt!! - banCheckTime)
                         )
                     val banMsg = if (banInfo.reason.isNotBlank())
-                        Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, banInfo.reason)
+                        Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, com.shusheng.cobblemarket.market.BanState.reasonText(banInfo.reason))
                     else
                         Text.translatable("cobblemarket.ban.banned_msg_time", timeDesc)
                     sendToPlayer(player, MarketResultPayload(false, banMsg))
@@ -1173,7 +1175,18 @@ object MarketNetwork {
                     return@execute
                 }
 
-                if (!removeCurrency(player, listing.price)) {
+                // 喵喵支付（消费贷）：信用校验 + 准备金垫付；否则现金扣款
+                val meowth = payload.planIndex >= 0
+                if (meowth) {
+                    val payErr = com.shusheng.cobblemarket.finance.FinanceService.meowthCheck(
+                        player, listing.price.toLong(), payload.planIndex, System.currentTimeMillis()
+                    )
+                    if (payErr != null) {
+                        sendToPlayer(player, MarketResultPayload(false, payErr))
+                        return@execute
+                    }
+                    com.shusheng.cobblemarket.finance.FinanceState.get(server).withdrawReserve(listing.price.toLong())
+                } else if (!removeCurrency(player, listing.price)) {
                     sendToPlayer(
                         player,
                         MarketResultPayload(
@@ -1196,20 +1209,33 @@ object MarketNetwork {
                     false
                 }
                 if (!added) {
-                    val refunded = giveCurrency(player, listing.price)
-                    if (refunded < listing.price.toLong()) {
-                        // 退款未全部到账（背包满）：差额转入待领余额兜底，避免买家钱被吞
-                        state.addPendingBalance(player.uuid, listing.price.toLong() - refunded)
-                        CobbleMarket.LOGGER.error(
-                            "Partial refund for buyer {} on listing {}; {} moved to pending balance",
-                            player.uuid, listing.id, listing.price.toLong() - refunded
-                        )
+                    if (meowth) {
+                        // 信用支付失败回池（贷款未创建，无需撤销）
+                        com.shusheng.cobblemarket.finance.FinanceState.get(server).depositReserve(listing.price.toLong())
+                    } else {
+                        val refunded = giveCurrency(player, listing.price)
+                        if (refunded < listing.price.toLong()) {
+                            // 退款未全部到账（背包满）：差额转入待领余额兜底，避免买家钱被吞
+                            state.addPendingBalance(player.uuid, listing.price.toLong() - refunded)
+                            CobbleMarket.LOGGER.error(
+                                "Partial refund for buyer {} on listing {}; {} moved to pending balance",
+                                player.uuid, listing.id, listing.price.toLong() - refunded
+                            )
+                        }
                     }
                     sendToPlayer(
                         player,
                         MarketResultPayload(false, Text.translatable("cobblemarket.network.storage_full"))
                     )
                     return@execute
+                }
+
+                // 喵喵支付记账（货物已入队）：创建消费贷 + 审计 CSV + IP 记录
+                if (meowth) {
+                    com.shusheng.cobblemarket.finance.FinanceService.meowthPaySettle(
+                        server, player, listing.price.toLong(), payload.planIndex,
+                        com.shusheng.cobblemarket.finance.LoanSource.POKEMON_BUY, System.currentTimeMillis()
+                    )
                 }
 
                 state.addPendingBalance(listing.sellerUuid, listing.price.toLong())
@@ -1225,9 +1251,11 @@ object MarketNetwork {
                     )
                 )
 
-                // 金融系统成交挂钩子：买家成交计入其交易额（额度公式数据源；防刷三层在 recordTrade 内成交时快照判定）
+                // 金融系统成交挂钩子：买家成交计入其交易额（额度公式数据源；防刷三层在 recordTrade 内成交时快照判定；
+                // 喵喵支付成交标 loanFunded → 不计入交易额，防借→买→额度涨→再借循环）
                 com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
-                    server, player.uuid, listing.sellerUuid, listing.price.toLong(), System.currentTimeMillis()
+                    server, player.uuid, listing.sellerUuid, listing.price.toLong(), System.currentTimeMillis(),
+                    loanFunded = meowth
                 )
 
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
@@ -1236,14 +1264,29 @@ object MarketNetwork {
                     player,
                     MarketResultPayload(
                         true,
-                        Text.translatable(
-                            "cobblemarket.network.bought",
-                            listing.speciesText(),
-                            com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(listing.price),
-                            com.shusheng.cobblemarket.config.CurrencyHandler.goldCurrencyText()
-                        )
+                        if (meowth)
+                            Text.translatable(
+                                "cobblemarket.buy_confirm.paid_by_meowth",
+                                listing.speciesText(),
+                                com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(listing.price),
+                                com.shusheng.cobblemarket.config.CurrencyHandler.goldCurrencyText(),
+                                com.shusheng.cobblemarket.config.CobbleMarketConfig.loanPlans.getOrNull(payload.planIndex)?.periods ?: 1
+                            )
+                        else
+                            Text.translatable(
+                                "cobblemarket.network.bought",
+                                listing.speciesText(),
+                                com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(listing.price),
+                                com.shusheng.cobblemarket.config.CurrencyHandler.goldCurrencyText()
+                            )
                     )
                 )
+                // 喵喵支付成功后回发额度快照（欠款已变，喵喵银行/应急贷款界面即时刷新）
+                if (meowth) {
+                    com.shusheng.cobblemarket.network.FinanceNetwork.sendCreditInfo(
+                        player, com.shusheng.cobblemarket.finance.FinanceState.get(server), System.currentTimeMillis()
+                    )
+                }
 
                 // 买家庆祝动画：精灵已进队伍，所有权转移完成
                 CelebrationNetwork.sendFromEntry(player, listing.species, listing.shiny, listing.extraData, CelebrationSource.MARKET)
@@ -1613,7 +1656,7 @@ object MarketNetwork {
                             BanState.formatRemaining(banInfo.expiresAt!! - banCheckTime)
                         )
                     val banMsg = if (banInfo.reason.isNotBlank())
-                        Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, banInfo.reason)
+                        Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, com.shusheng.cobblemarket.market.BanState.reasonText(banInfo.reason))
                     else
                         Text.translatable("cobblemarket.ban.banned_msg_time", timeDesc)
                     sendToPlayer(player, MarketResultPayload(false, banMsg))
@@ -1758,8 +1801,14 @@ object MarketNetwork {
                 // 副作用阶段：扣手续费 → 移除精灵 → 挂单入库
                 // Listing fee check
                 val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.pokemonListingFeePercent
-                // toLong 先提升：Int×Int 在价格×费率超过 21.5 亿时环绕溢出（fee 可算成负/0，逃税或凭空生钱）
-                val fee = if (feePercent > 0) Math.ceil(payload.price.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0
+                // toLong 先提升：Int×Int 在价格×费率超过 21.5 亿时环绕溢出（fee 可算成负/0，逃税或凭空生钱）；
+                // 逾期制裁：上架者逾期 ≥7 天 → 手续费翻倍
+                val fee = if (feePercent > 0)
+                    com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+                        com.shusheng.cobblemarket.finance.FinanceState.get(server), player.uuid, now,
+                        Math.ceil(payload.price.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
+                    ).toInt()
+                else 0
                 if (fee > 0 && !CurrencyHandler.remove(player, fee)) {
                     sendToPlayer(
                         player, MarketResultPayload(
@@ -1846,7 +1895,7 @@ object MarketNetwork {
                             BanState.formatRemaining(banInfo.expiresAt!! - banCheckTime)
                         )
                     val banMsg = if (banInfo.reason.isNotBlank())
-                        Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, banInfo.reason)
+                        Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, com.shusheng.cobblemarket.market.BanState.reasonText(banInfo.reason))
                     else
                         Text.translatable("cobblemarket.ban.banned_msg_time", timeDesc)
                     sendToPlayer(player, MarketResultPayload(false, banMsg))
@@ -1990,10 +2039,15 @@ object MarketNetwork {
                 }
                 player.inventory.markDirty()
 
-                // 手续费（基于总价）；失败时退还已扣物品并中止
+                // 手续费（基于总价）；失败时退还已扣物品并中止；逾期制裁：上架者逾期 ≥7 天 → 翻倍
                 val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.itemListingFeePercent
                 val totalPrice = payload.price.toLong() * payload.count
-                val fee = if (feePercent > 0) Math.ceil(totalPrice * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0
+                val fee = if (feePercent > 0)
+                    com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+                        com.shusheng.cobblemarket.finance.FinanceState.get(server), player.uuid, System.currentTimeMillis(),
+                        Math.ceil(totalPrice * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
+                    ).toInt()
+                else 0
                 if (fee > 0 && !CurrencyHandler.remove(player, fee)) {
                     giveBackItem(targetStack.copyWithCount(payload.count), player)
                     sendToPlayer(
@@ -2135,7 +2189,7 @@ object MarketNetwork {
                             BanState.formatRemaining(banInfo.expiresAt!! - banCheckTime)
                         )
                     val banMsg = if (banInfo.reason.isNotBlank())
-                        Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, banInfo.reason)
+                        Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, com.shusheng.cobblemarket.market.BanState.reasonText(banInfo.reason))
                     else
                         Text.translatable("cobblemarket.ban.banned_msg_time", timeDesc)
                     sendToPlayer(player, MarketResultPayload(false, banMsg))
@@ -2219,7 +2273,18 @@ object MarketNetwork {
                     return@execute
                 }
                 val totalPrice = totalPriceLong.toInt()
-                if (!CurrencyHandler.remove(player, totalPrice)) {
+                // 喵喵支付（消费贷）：信用校验 + 准备金垫付；否则现金扣款
+                val meowth = payload.planIndex >= 0
+                if (meowth) {
+                    val payErr = com.shusheng.cobblemarket.finance.FinanceService.meowthCheck(
+                        player, totalPriceLong, payload.planIndex, System.currentTimeMillis()
+                    )
+                    if (payErr != null) {
+                        sendToPlayer(player, MarketResultPayload(false, payErr))
+                        return@execute
+                    }
+                    com.shusheng.cobblemarket.finance.FinanceState.get(server).withdrawReserve(totalPriceLong)
+                } else if (!CurrencyHandler.remove(player, totalPrice)) {
                     sendToPlayer(
                         player,
                         MarketResultPayload(
@@ -2253,14 +2318,19 @@ object MarketNetwork {
                         }
                         player.inventory.markDirty()
                     }
-                    val refunded = CurrencyHandler.give(player, totalPrice.toLong())
-                    if (refunded < totalPrice.toLong()) {
-                        // 退款未全部到账（背包满）：差额转入待领余额兜底，避免买家钱被吞
-                        MarketState.get(server).addPendingBalance(player.uuid, totalPrice.toLong() - refunded)
-                        CobbleMarket.LOGGER.error(
-                            "Partial refund for buyer {} on item listing {}; {} moved to pending balance",
-                            player.uuid, listing.id, totalPrice.toLong() - refunded
-                        )
+                    if (meowth) {
+                        // 信用支付失败回池（贷款未创建，无需撤销）
+                        com.shusheng.cobblemarket.finance.FinanceState.get(server).depositReserve(totalPriceLong)
+                    } else {
+                        val refunded = CurrencyHandler.give(player, totalPrice.toLong())
+                        if (refunded < totalPrice.toLong()) {
+                            // 退款未全部到账（背包满）：差额转入待领余额兜底，避免买家钱被吞
+                            MarketState.get(server).addPendingBalance(player.uuid, totalPrice.toLong() - refunded)
+                            CobbleMarket.LOGGER.error(
+                                "Partial refund for buyer {} on item listing {}; {} moved to pending balance",
+                                player.uuid, listing.id, totalPrice.toLong() - refunded
+                            )
+                        }
                     }
                     sendToPlayer(
                         player,
@@ -2269,10 +2339,18 @@ object MarketNetwork {
                     return@execute
                 }
 
+                // 喵喵支付记账（货物已放入）：创建消费贷 + 审计 CSV + IP 记录
+                if (meowth) {
+                    com.shusheng.cobblemarket.finance.FinanceService.meowthPaySettle(
+                        server, player, totalPriceLong, payload.planIndex,
+                        com.shusheng.cobblemarket.finance.LoanSource.ITEM_BUY, System.currentTimeMillis()
+                    )
+                }
                 MarketState.get(server).addPendingBalance(listing.sellerUuid, totalPrice.toLong())
-                // 金融系统成交挂钩子：物品购买成交计入买家交易额
+                // 金融系统成交挂钩子：物品购买成交计入买家交易额（喵喵支付标 loanFunded 不计额，防借→买循环）
                 com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
-                    server, player.uuid, listing.sellerUuid, totalPrice.toLong(), System.currentTimeMillis()
+                    server, player.uuid, listing.sellerUuid, totalPrice.toLong(), System.currentTimeMillis(),
+                    loanFunded = meowth
                 )
                 listing.count -= count
                 if (listing.count <= 0) {
@@ -2301,22 +2379,38 @@ object MarketNetwork {
 
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                val boughtItemName = Identifier.tryParse(listing.itemId)
+                    ?.let { Registries.ITEM.get(it).name }
+                    ?: Text.literal(listing.itemId)
                 sendToPlayer(
                     player,
                     MarketResultPayload(
                         true,
-                        Text.translatable(
-                            "cobblemarket.item.bought",
-                            count,
-                            // 物品名传翻译 Text（客户端按玩家语言渲染），不能传裸 itemId
-                            Identifier.tryParse(listing.itemId)
-                                ?.let { Registries.ITEM.get(it).name }
-                                ?: Text.literal(listing.itemId),
-                            CurrencyHandler.goldAmount(totalPrice),
-                            CurrencyHandler.goldCurrencyText()
-                        )
+                        if (meowth)
+                            Text.translatable(
+                                "cobblemarket.buy_confirm.paid_by_meowth_item",
+                                count,
+                                boughtItemName,
+                                CurrencyHandler.goldAmount(totalPrice),
+                                CurrencyHandler.goldCurrencyText(),
+                                com.shusheng.cobblemarket.config.CobbleMarketConfig.loanPlans.getOrNull(payload.planIndex)?.periods ?: 1
+                            )
+                        else
+                            Text.translatable(
+                                "cobblemarket.item.bought",
+                                count,
+                                boughtItemName,
+                                CurrencyHandler.goldAmount(totalPrice),
+                                CurrencyHandler.goldCurrencyText()
+                            )
                     )
                 )
+                // 喵喵支付成功后回发额度快照（欠款已变）
+                if (meowth) {
+                    com.shusheng.cobblemarket.network.FinanceNetwork.sendCreditInfo(
+                        player, com.shusheng.cobblemarket.finance.FinanceState.get(server), System.currentTimeMillis()
+                    )
+                }
 
                 val soldItemName = Identifier.tryParse(listing.itemId)?.let { Registries.ITEM.get(it).name }
                     ?: Text.literal(listing.itemId)

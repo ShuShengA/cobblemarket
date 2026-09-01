@@ -78,12 +78,16 @@ object CobbleMarket {
 		// 交易后节流全量落盘的定时检查（见 PersistHelper）
 		onServerTickEnd { server ->
 			com.shusheng.cobblemarket.util.PersistHelper.tick(server)
+			// 金融系统自动划扣扫描（内部 60 秒节流，见 FinanceService）
+			com.shusheng.cobblemarket.finance.FinanceService.tick(server)
 		}
 		onPlayerJoin { player ->
 			val state = MarketState.get(player.server)
 			val stateServer = player.server
 
 			stateServer.execute {
+				// 金融系统：登录即检查该玩家贷款的到期划扣（覆盖「到期后玩家才上线」场景）
+				com.shusheng.cobblemarket.finance.FinanceService.onPlayerJoin(player)
 				val balance = state.getPendingBalance(player.uuid)
 				if (balance > 0) {
 					player.sendMessage(

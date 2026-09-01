@@ -341,7 +341,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         val lines = listOf(
             "${Text.translatable("cobblemarket.ban.target").string} ${entry.playerName}",
             "${Text.translatable("cobblemarket.ban.by").string} ${entry.bannedBy}",
-            "${Text.translatable("cobblemarket.ban.reason_label").string} ${entry.reason.ifBlank { "-" }}"
+            "${Text.translatable("cobblemarket.ban.reason_label").string} ${com.shusheng.cobblemarket.market.BanState.reasonText(entry.reason).string.ifBlank { "-" }}"
         )
 
         var maxWidth = 0

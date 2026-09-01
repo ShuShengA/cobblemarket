@@ -145,7 +145,7 @@ object MarketCommands {
         // 若目标在线，即时通知
         server.playerManager.getPlayer(target.first)?.sendMessage(
             if (reason.isNotBlank())
-                Text.translatable("cobblemarket.ban.banned_msg_reason", reason).formatted(Formatting.RED)
+                Text.translatable("cobblemarket.ban.banned_msg_reason", com.shusheng.cobblemarket.market.BanState.reasonText(reason)).formatted(Formatting.RED)
             else
                 Text.translatable("cobblemarket.ban.banned_msg").formatted(Formatting.RED),
             false

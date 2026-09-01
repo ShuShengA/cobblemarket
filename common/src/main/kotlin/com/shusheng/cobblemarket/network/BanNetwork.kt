@@ -255,7 +255,7 @@ object BanNetwork {
         else
             Text.translatable("cobblemarket.ban.remaining", BanState.formatRemaining(expiresAt - System.currentTimeMillis()))
         val msg = if (reason.isNotBlank())
-            Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, reason)
+            Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, com.shusheng.cobblemarket.market.BanState.reasonText(reason))
         else
             Text.translatable("cobblemarket.ban.banned_msg_time", timeDesc)
         return msg.formatted(Formatting.RED)

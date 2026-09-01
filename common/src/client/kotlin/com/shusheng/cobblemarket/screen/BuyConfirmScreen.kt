@@ -5,11 +5,12 @@ import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.network.BuyFromMarketPayload
+import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.ListingEntry
+import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
-import net.minecraft.client.gui.widget.ButtonWidget
 import net.minecraft.item.ItemStack
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
@@ -21,6 +22,13 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
     private var renderable: RenderablePokemon? = null
     private var displayName = ""
     private val state = FloatingState()
+
+    // ── 喵喵支付（消费贷，批次 4）：底部两行按钮 + 展开三档方案 ──
+    private var plans = listOf<Pair<Int, Double>>()
+    private var selectedPlan = 0
+    private var payModeOpen = false
+    private val planButtons = mutableListOf<TextureButton>()
+    private var payButton: TextureButton? = null
 
     override fun init() {
         super.init()
@@ -42,24 +50,104 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
         val btnW = 100
         val btnH = 22
         val gap = 10
-        val btnY = height - 36
+        val row1Y = height - 58
+        val row2Y = height - 34
 
         addDrawableChild(TextureButton(
-            centerX - btnW - gap / 2, btnY, btnW, btnH,
+            centerX - btnW - gap / 2, row1Y, btnW, btnH,
             Text.translatable("cobblemarket.buy_confirm.confirm"),
             { confirm() }
         ))
 
         addDrawableChild(TextureButton(
-            centerX + gap / 2, btnY, btnW, btnH,
+            centerX + gap / 2, row1Y, btnW, btnH,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { client?.setScreen(MarketScreen()) }
         ))
+
+        // 喵喵支付（点开前）/ 确认支付（点开后）
+        payButton = TextureButton(
+            centerX - btnW - gap / 2, row2Y, btnW, btnH,
+            payLabel(),
+            { togglePay() }
+        )
+        addDrawableChild(payButton)
+
+        rebuildPlanButtons()
+
+        // 拉分期方案（CreditInfoPayload.plans；服务端回发后方案按钮才有内容）
+        sendToServer(RequestCreditInfoPayload())
+    }
+
+    private fun payLabel(): Text = Text.translatable(
+        if (payModeOpen) "cobblemarket.buy_confirm.confirm_pay" else "cobblemarket.buy_confirm.meowth_pay"
+    )
+
+    private fun togglePay() {
+        if (!payModeOpen) {
+            payModeOpen = true
+            rebuildPlanButtons()
+            payButton?.setMessage(payLabel())
+        } else {
+            sendToServer(BuyFromMarketPayload(entry.id, selectedPlan))
+            client?.setScreen(MarketScreen())
+        }
     }
 
     private fun confirm() {
-        sendToServer(BuyFromMarketPayload(entry.id))
+        sendToServer(BuyFromMarketPayload(entry.id, -1))
         client?.setScreen(MarketScreen())
+    }
+
+    /** 方案按钮行：展开时显示（84×16 并排 4px 间隙，选中档前缀 ▶，照 LoanScreen） */
+    private fun rebuildPlanButtons() {
+        planButtons.forEach(::remove)
+        planButtons.clear()
+        if (!payModeOpen) return
+        val startX = width / 2 - 130
+        val y = height - 84
+        plans.forEachIndexed { i, (periods, fee) ->
+            val btn = TextureButton(
+                startX + i * 88, y, 84, 16,
+                Text.literal(planLabel(periods, fee, i == selectedPlan)),
+                {
+                    selectedPlan = i
+                    planButtons.forEachIndexed { j, b ->
+                        b.setMessage(Text.literal(planLabel(plans[j].first, plans[j].second, j == selectedPlan)))
+                    }
+                }
+            )
+            planButtons.add(btn)
+            addDrawableChild(btn)
+        }
+    }
+
+    private fun planLabel(periods: Int, feeRate: Double, selected: Boolean): String {
+        val base = Text.translatable("cobblemarket.loan.plan_btn", periods, planPercentText(feeRate)).string
+        return if (selected) "▶$base" else base
+    }
+
+    /** 费率百分比文本（0.005 → 0.5%；截断一位小数，自实现避开 Locale，照 LoanScreen） */
+    private fun planPercentText(feeRate: Double): String {
+        val tenths = Math.round(feeRate * 1000)
+        return if (tenths % 10 == 0L) "${tenths / 10}%" else "${tenths / 10}.${tenths % 10}%"
+    }
+
+    /** 分期方案快照（进入弹窗时拉取） */
+    fun onCreditInfo(payload: CreditInfoPayload) {
+        val parsed = payload.plans.split(',')
+            .mapNotNull { part ->
+                val seg = part.trim().split(':')
+                if (seg.size != 2) return@mapNotNull null
+                val p = seg[0].trim().toIntOrNull()?.coerceAtLeast(1)
+                val r = seg[1].trim().toDoubleOrNull()?.coerceIn(0.0, 1.0)
+                if (p != null && r != null) p to r else null
+            }
+        if (parsed.isNotEmpty() && parsed != plans) {
+            plans = parsed
+            selectedPlan = selectedPlan.coerceIn(0, plans.size - 1)
+            if (payModeOpen) rebuildPlanButtons()
+        }
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {

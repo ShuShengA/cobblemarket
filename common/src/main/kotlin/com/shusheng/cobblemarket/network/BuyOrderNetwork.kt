@@ -951,7 +951,7 @@ object BuyOrderNetwork {
                 // 资金结算：买家冻结金按实际价扣（差价退待领），卖家收实际价-中介费
                 val unitDiff = (order.maxPrice - pending.price).toLong()
                 val gross = pending.price.toLong() * pending.count
-                val fee = deliveryFee(gross)
+                val fee = deliveryFee(server, order.buyerUuid, gross, now)
                 MarketState.get(server).addPendingBalance(order.buyerUuid, unitDiff * pending.count)
                 MarketState.get(server).addPendingBalance(pending.sellerUuid, gross - fee)
                 // 金融系统成交挂钩子：求购交付成交计入买家（求购发起方）交易额
@@ -1078,12 +1078,15 @@ object BuyOrderNetwork {
         }
     }
 
-    /** 中介费：成交总额 × 费率，向上取整（照拍卖成交费算法） */
-    private fun deliveryFee(gross: Long): Long {
+    /** 中介费：成交总额 × 费率，向上取整（照拍卖成交费算法；买家逾期 ≥7 天翻倍） */
+    private fun deliveryFee(server: MinecraftServer, payerUuid: java.util.UUID, gross: Long, now: Long): Long {
         val feePercent = CobbleMarketConfig.buyOrderFeePercent
-        return if (feePercent > 0)
+        val base = if (feePercent > 0)
             Math.ceil(gross * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
         else 0L
+        return com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+            com.shusheng.cobblemarket.finance.FinanceState.get(server), payerUuid, now, base
+        )
     }
 
     private fun checkPrices(player: net.minecraft.server.network.ServerPlayerEntity, minPrice: Int, maxPrice: Int): Boolean {
@@ -1114,7 +1117,7 @@ object BuyOrderNetwork {
         else
             Text.translatable("cobblemarket.ban.remaining", BanState.formatRemaining(banInfo.expiresAt!! - System.currentTimeMillis()))
         val banMsg = if (banInfo.reason.isNotBlank())
-            Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, banInfo.reason)
+            Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, com.shusheng.cobblemarket.market.BanState.reasonText(banInfo.reason))
         else
             Text.translatable("cobblemarket.ban.banned_msg_time", timeDesc)
         sendToPlayer(player, MarketResultPayload(false, banMsg))
