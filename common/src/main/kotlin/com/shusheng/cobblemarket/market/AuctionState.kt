@@ -222,6 +222,10 @@ class AuctionState private constructor() : PersistentState() {
                     Math.ceil(auction.currentPrice.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                 else 0
                 MarketState.get(server).addPendingBalance(auction.sellerUuid, (auction.currentPrice - fee).toLong())
+                // 金融系统成交挂钩子：拍卖成交计入赢家（买入方）交易额；赢家可能离线，IP/OP 判定在 recordTrade 内按在线状态取
+                com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
+                    server, winnerUuid, auction.sellerUuid, auction.currentPrice.toLong(), currentTime
+                )
                 try {
                     com.shusheng.cobblemarket.event.TransactionHistory.get(server).addRecord(
                         com.shusheng.cobblemarket.event.TransactionRecord(

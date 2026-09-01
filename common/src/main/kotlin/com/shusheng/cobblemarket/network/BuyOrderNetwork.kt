@@ -954,6 +954,10 @@ object BuyOrderNetwork {
                 val fee = deliveryFee(gross)
                 MarketState.get(server).addPendingBalance(order.buyerUuid, unitDiff * pending.count)
                 MarketState.get(server).addPendingBalance(pending.sellerUuid, gross - fee)
+                // 金融系统成交挂钩子：求购交付成交计入买家（求购发起方）交易额
+                com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
+                    server, order.buyerUuid, pending.sellerUuid, gross, now
+                )
                 order.pendingDeliveries.remove(pending)
                 order.remainingCount -= pending.count
                 val category = if (order.type == BuyOrderType.POKEMON)

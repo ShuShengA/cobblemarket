@@ -35,14 +35,14 @@ object CreditFileLogger {
     private var currentRepayZh: File? = null
     private var currentRepayEn: File? = null
 
-    /** 贷款事件：创建（柜台/购精灵/购物品/拍卖出价）/ 转正 / 撤销 / 结清 / 逾期 / 坏账 */
-    fun logLoan(record: LoanRecord, type: LoanLogType, detail: String, timestamp: Long = System.currentTimeMillis()) {
+    /** 贷款事件：创建（柜台/购精灵/购物品/拍卖出价）/ 转正 / 撤销 / 结清 / 逾期 / 坏账；detail 双语（CSV 中英双份） */
+    fun logLoan(record: LoanRecord, type: LoanLogType, detail: String, detailEn: String = detail, timestamp: Long = System.currentTimeMillis()) {
         try {
             refreshFiles(timestamp)
             val zhFile = currentLoanZh ?: return
             val enFile = currentLoanEn ?: return
             val lineZh = buildLoanLine(record, type, detail, timestamp, true)
-            val lineEn = buildLoanLine(record, type, detail, timestamp, false)
+            val lineEn = buildLoanLine(record, type, detailEn, timestamp, false)
             Files.writeString(zhFile.toPath(), lineZh + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
             Files.writeString(enFile.toPath(), lineEn + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
         } catch (e: Exception) {

@@ -1,5 +1,10 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.formatPriceLong
+import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.network.CreditInfoPayload
+import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
+import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.text.Text
@@ -7,14 +12,17 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 
 /**
- * 喵喵银行：金融系统入口界面（信用借贷/还款/信用钱包）。
- * 当前为占位骨架（标题 + 返回按钮），金融 UI 按 finance-plan 模板映射后续填充：
- * 顶部信用条（余额行模板）/ 我的信用（HistoryScreen 列表模板）/
- * 应急贷款（输入框 + 确认弹窗黄金模板）/ 还款柜台（待领取列表模板）。
+ * 喵喵银行：金融系统入口界面。
+ * 标题下「可用额度/当前欠款」信息行 → 应急贷款按钮（LoanScreen）；
+ * 底部左「借款历史」/ 右「全部借款历史」（仅 OP）→ LoanHistoryScreen。
+ * 进入界面时拉取额度信息（RequestCreditInfoPayload）。
  */
 class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.title")) {
 
     private var backButton: NineSliceButton? = null
+    private var limit = 0L
+    private var debt = 0L
+    private var infoLoaded = false
 
     override fun init() {
         super.init()
@@ -27,30 +35,39 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         )
         addDrawableChild(backButton)
 
-        // 借款历史（左下）：返回按钮的全镜像（y 关于背景中心线对称 + x 水平镜像），80×16，所有玩家可见；
-        // 实测再上移 11px、左移 10px、左移 6px
+        // 应急贷款入口（背景中部：额度/欠款两行 + 按钮组成信息组，居中放在标题与底部按钮之间的空档；100×16）
+        addDrawableChild(NineSliceButton(
+            width / 2 - 50, height / 2 + 2, 100, 16,
+            Text.translatable("cobblemarket.loan.title"),
+            { client?.setScreen(LoanScreen()) }
+        ))
+
+        // 借款历史（左下）：所有玩家可见 → 我的借贷流水
         addDrawableChild(NineSliceButton(
             width / 2 - 105, height / 2 + 58, 80, 16,
             Text.translatable("cobblemarket.meowth_bank.loan_history"),
-            { showComingSoon() }
+            { client?.setScreen(LoanHistoryScreen(showAll = false)) }
         ))
 
-        // 全部借款历史（右下）：与借款历史关于背景竖直中心线左右镜像，80×16，仅 OP 可见
+        // 全部借款历史（右下）：仅 OP → 全服借贷流水审计
         if (client?.player?.hasPermissionLevel(2) == true) {
             addDrawableChild(NineSliceButton(
                 width / 2 + 25, height / 2 + 58, 80, 16,
                 Text.translatable("cobblemarket.meowth_bank.all_loan_history"),
-                { showComingSoon() }
+                { client?.setScreen(LoanHistoryScreen(showAll = true)) }
             ))
+        }
+
+        if (!infoLoaded) {
+            sendToServer(RequestCreditInfoPayload())
+            infoLoaded = true
         }
     }
 
-    /** 占位按钮点击：界面未实现，聊天栏提示装修中（金融批次实现后替换为跳转） */
-    private fun showComingSoon() {
-        client?.player?.sendMessage(
-            Text.translatable("cobblemarket.meowth_bank.coming_soon").formatted(Formatting.YELLOW),
-            false
-        )
+    /** 额度信息快照（进入界面时拉取） */
+    fun onCreditInfo(payload: CreditInfoPayload) {
+        limit = payload.limit
+        debt = payload.debt
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -67,10 +84,17 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             Text.translatable("cobblemarket.meowth_bank.title").formatted(Formatting.GOLD, Formatting.BOLD),
             width / 2, height / 2 - 75, 0xFFFFFF
         )
+        // 背景中部信息组：「可用额度 / 当前欠款」两行 + 应急贷款按钮，
+        // 居中放在标题（底 ≈ height/2−71）与底部按钮（顶 height/2+50）之间的空档（价格+货币名照全模组规矩用蓝色）
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.meowth_bank.coming_soon"),
-            width / 2, height / 2, 0xAAAAAA
+            Text.translatable("cobblemarket.loan.limit_line", formatPriceLong(limit), inlineCurrencyUnit()),
+            width / 2, height / 2 - 25, 0x55FFFF
+        )
+        context.drawCenteredTextWithShadow(
+            textRenderer,
+            Text.translatable("cobblemarket.loan.debt_line", formatPriceLong(debt), inlineCurrencyUnit()),
+            width / 2, height / 2 - 15, 0x55FFFF
         )
     }
 

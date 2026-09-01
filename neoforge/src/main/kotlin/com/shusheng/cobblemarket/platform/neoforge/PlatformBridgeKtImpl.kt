@@ -45,6 +45,9 @@ import java.util.UUID
 
 fun configDir(): Path = FMLPaths.CONFIGDIR.get()
 
+fun getPlayerIp(player: ServerPlayerEntity): String? =
+    player.ip.takeIf { it.isNotEmpty() }
+
 fun isModLoaded(modId: String): Boolean = ModList.get().isLoaded(modId)
 
 // ── 网络：C2S 注册 + 服务端发送 ──

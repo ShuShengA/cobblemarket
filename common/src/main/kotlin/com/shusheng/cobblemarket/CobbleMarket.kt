@@ -10,6 +10,7 @@ import com.shusheng.cobblemarket.network.BanNetwork
 import com.shusheng.cobblemarket.network.BlacklistNetwork
 import com.shusheng.cobblemarket.network.BuyOrderNetwork
 import com.shusheng.cobblemarket.network.CelebrationNetwork
+import com.shusheng.cobblemarket.network.FinanceNetwork
 import com.shusheng.cobblemarket.network.ItemBlacklistNetwork
 import com.shusheng.cobblemarket.network.MarketNetwork
 import com.shusheng.cobblemarket.network.ServerConfigNetwork
@@ -44,6 +45,7 @@ object CobbleMarket {
 		CelebrationNetwork.register()
 		ServerConfigNetwork.register()
 		BalanceNetwork.register()
+		FinanceNetwork.register()
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()
 		TransactionHistory.register()

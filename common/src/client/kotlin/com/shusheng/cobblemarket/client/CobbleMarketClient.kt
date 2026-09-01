@@ -13,7 +13,9 @@ import com.shusheng.cobblemarket.network.PlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.network.AuctionWarnSoundPayload
 import com.shusheng.cobblemarket.network.BalanceDataPayload
 import com.shusheng.cobblemarket.network.BanListDataPayload
+import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.HistoryDataPayload
+import com.shusheng.cobblemarket.network.LoanHistoryDataPayload
 import com.shusheng.cobblemarket.network.ItemBlacklistDataPayload
 import com.shusheng.cobblemarket.network.ItemMarketDataPayload
 import com.shusheng.cobblemarket.network.ItemPriceLimitDataPayload
@@ -38,6 +40,8 @@ import com.shusheng.cobblemarket.screen.AdminScreen
 import com.shusheng.cobblemarket.screen.BuyConfirmScreen
 import com.shusheng.cobblemarket.screen.BuyOrderScreen
 import com.shusheng.cobblemarket.screen.HistoryScreen
+import com.shusheng.cobblemarket.screen.LoanHistoryScreen
+import com.shusheng.cobblemarket.screen.LoanScreen
 import com.shusheng.cobblemarket.screen.MarketEntryScreen
 import com.shusheng.cobblemarket.screen.MarketScreen
 import com.shusheng.cobblemarket.screen.MeowthBankScreen
@@ -214,6 +218,28 @@ object CobbleMarketClient {
                 val screen = client.currentScreen
                 if (screen is HistoryScreen) {
                     screen.onHistoryData(payload)
+                }
+            }
+        }
+
+        registerS2C(CreditInfoPayload.ID, CreditInfoPayload.CODEC) { payload ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                when (screen) {
+                    // 喵喵银行与应急贷款共用同一份额度快照（借款成功后服务端回发刷新）
+                    is MeowthBankScreen -> screen.onCreditInfo(payload)
+                    is LoanScreen -> screen.onCreditInfo(payload)
+                }
+            }
+        }
+
+        registerS2C(LoanHistoryDataPayload.ID, LoanHistoryDataPayload.CODEC) { payload ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                if (screen is LoanHistoryScreen) {
+                    screen.onLoanHistoryData(payload)
                 }
             }
         }
@@ -612,4 +638,4 @@ private fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean 
         s is BuyConfirmScreen || s is AdminScreen || s is AdminPokemonScreen || s is AdminItemScreen || s is AdminBanScreen ||
         s is BlacklistScreen || s is PriceLimitScreen || s is AuctionScreen || s is AuctionCreateScreen ||
         s is BuyOrderScreen || s is AdminAuctionScreen || s is ServerConfigScreen || s is ItemVariantSelectScreen ||
-        s is MeowthBankScreen
+        s is MeowthBankScreen || s is LoanScreen || s is LoanHistoryScreen

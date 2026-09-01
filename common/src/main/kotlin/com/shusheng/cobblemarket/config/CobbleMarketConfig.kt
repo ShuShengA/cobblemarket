@@ -102,6 +102,9 @@ object CobbleMarketConfig {
     /** 到期自动划扣最低保留：最多划到余额=此值为止（划不足进 OVERDUE） */
     var autoRepayMinBalance: Long = 1_000L
         private set
+    /** 同 IP 未结清欠款总和上限（防同 IP 多小号分散借款转给主账号；OP 豁免；0=不限制） */
+    var ipDebtLimit: Long = 100_000L
+        private set
     /** 逾期天数三档（可改）：手续费翻倍 */
     var overdueFeeDoubleDays: Int = 7
         private set
@@ -171,6 +174,7 @@ object CobbleMarketConfig {
     fun setCreditLimitMin(v: Long) { creditLimitMin = v.coerceAtLeast(0L) }
     fun setCreditLimitMax(v: Long) { creditLimitMax = v.coerceAtLeast(creditLimitMin) }
     fun setAutoRepayMinBalance(v: Long) { autoRepayMinBalance = v.coerceAtLeast(0L) }
+    fun setIpDebtLimit(v: Long) { ipDebtLimit = v.coerceAtLeast(0L) }
     fun setOverdueFeeDoubleDays(v: Int) { overdueFeeDoubleDays = v.coerceAtLeast(0) }
     fun setOverdueFreezeDays(v: Int) { overdueFreezeDays = v.coerceAtLeast(0) }
     fun setOverdueBadDebtDays(v: Int) { overdueBadDebtDays = v.coerceAtLeast(0) }
@@ -248,7 +252,7 @@ object CobbleMarketConfig {
                 if (finance != null) {
                     val financeKeys = setOf(
                         "enabled", "cashLoanEnabled", "consumerLoanEnabled", "loanPlans",
-                        "creditLimit", "autoRepayMinBalance", "overdueDays"
+                        "creditLimit", "autoRepayMinBalance", "ipDebtLimit", "overdueDays"
                     )
                     if (financeKeys.any { !finance.containsKey(it) }) missingKeys = true
                     val fileEnabled = finance["enabled"] as? Boolean ?: false
@@ -268,6 +272,7 @@ object CobbleMarketConfig {
                     val fileLimitMin = (creditLimit?.get("min") as? Number)?.toLong() ?: 0L
                     val fileLimitMax = (creditLimit?.get("max") as? Number)?.toLong() ?: 100_000L
                     val fileMinBalance = (finance["autoRepayMinBalance"] as? Number)?.toLong() ?: 1_000L
+                    val fileIpDebtLimit = (finance["ipDebtLimit"] as? Number)?.toLong() ?: 100_000L
                     val overdueDays = finance["overdueDays"] as? Map<*, *>
                     val fileFeeDouble = (overdueDays?.get("feeDouble") as? Number)?.toInt() ?: 7
                     val fileFreeze = (overdueDays?.get("freeze") as? Number)?.toInt() ?: 14
@@ -282,6 +287,7 @@ object CobbleMarketConfig {
                     creditLimitMin = fileLimitMin.coerceAtLeast(0L)
                     creditLimitMax = fileLimitMax.coerceAtLeast(fileLimitMin)
                     autoRepayMinBalance = fileMinBalance.coerceAtLeast(0L)
+                    ipDebtLimit = fileIpDebtLimit.coerceAtLeast(0L)
                     // 逾期三档钳制：0 也可（关闭该档位动作），负数钳 0
                     overdueFeeDoubleDays = fileFeeDouble.coerceAtLeast(0)
                     overdueFreezeDays = fileFreeze.coerceAtLeast(0)
@@ -364,6 +370,7 @@ object CobbleMarketConfig {
                 "finance.loanPlans" to "分期方案数组：periods=期数（每期 7 天），feeRate=每期费率（0.005=0.5%）。UI 只显示每期费率，不写年化 / Loan plan array: periods=number of periods (7 days each), feeRate=fee per period (0.005=0.5%). The UI shows only the per-period fee, never an annualized rate",
                 "finance.creditLimit" to "额度公式系数：额度 = 近30天交易额×recent30Weight + 历史交易额×historyWeight − 当前欠款×debtWeight，结果钳制在 min~max。借贷来源的交易不计入交易额（防借→买→额度涨→再借循环） / Credit limit formula weights: limit = last-30-day volume×recent30Weight + all-time volume×historyWeight − current debt×debtWeight, clamped to min~max. Loan-funded trades never count toward volume (prevents borrow→buy→limit-up→borrow loops)",
                 "finance.autoRepayMinBalance" to "到期自动划扣最低保留：每期到期自动从玩家市场余额全额划扣当期应还（本金+利息），最多划到余额=此值为止；划不足进入逾期流程 / Minimum balance kept during auto-repayment: on each due date the full period payment is auto-deducted from the player's market balance, stopping at this floor; any shortfall enters the overdue flow",
+                "finance.ipDebtLimit" to "同 IP 未结清欠款总和上限（防同 IP 多小号分散借款转账给主账号；OP 豁免；0=不限制）：借款/喵喵支付时，同 IP 30 天窗口内所有玩家的未结清欠款总和+本次金额超过此值则拒绝 / Cap on total outstanding debt per IP (blocks many alt accounts on one IP borrowing and funneling money to a main account; OPs exempt; 0=disabled): when borrowing or paying via Meowth Pay, the request is rejected if the combined outstanding debt of all players seen on the same IP within 30 days plus this amount exceeds the cap",
                 "finance.overdueDays" to "逾期天数三档：feeDouble=逾期该天数后市场手续费翻倍，freeze=冻结挂单/待领取（拦交易不拦取回），badDebt=坏账冲销 / Overdue day tiers: feeDouble=fee doubling after this many days overdue, freeze=freeze listings/returns (blocks trading, not withdrawals), badDebt=write-off as bad debt"
             ),
             "currency" to mapOf("cobbledollars" to cobbledollars, "cobblemonEconomy" to cobblemonEconomy, "cobecoCurrency" to cobecoCurrency, "impactor" to impactor, "item" to currencyItem),
@@ -397,6 +404,7 @@ object CobbleMarketConfig {
                     "max" to creditLimitMax
                 ),
                 "autoRepayMinBalance" to autoRepayMinBalance,
+                "ipDebtLimit" to ipDebtLimit,
                 "overdueDays" to mapOf(
                     "feeDouble" to overdueFeeDoubleDays,
                     "freeze" to overdueFreezeDays,
