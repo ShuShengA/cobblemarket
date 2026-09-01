@@ -73,9 +73,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsToastUntil = 0L
     private var settingsToastText: Text = Text.literal("")
 
-    /** 金融开关快照（进入入口界面时拉取）：喵喵银行按钮置灰依据 */
+    /** 金融开关快照（进入入口界面时拉取）：喵喵银行按钮置灰依据 + 写全局缓存供购买弹窗读取 */
     fun onCreditInfo(payload: CreditInfoPayload) {
         financeEnabled = payload.financeEnabled
+        com.shusheng.cobblemarket.client.FinanceCache.financeEnabled = payload.financeEnabled
+        com.shusheng.cobblemarket.client.FinanceCache.consumerLoanEnabled = payload.consumerLoanEnabled
         meowthBankBtn?.dimmed = !payload.financeEnabled
     }
 

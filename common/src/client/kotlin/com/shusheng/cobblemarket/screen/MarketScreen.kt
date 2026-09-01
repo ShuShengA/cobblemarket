@@ -91,8 +91,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var confirmDisplayName = ""
     private val confirmState = FloatingState()
 
-    /** 喵喵支付可用（消费贷开关，CreditInfoPayload 拉取；未拉取默认隐藏，响应后按真实状态） */
-    private var payAvailable = false
+    /** 喵喵支付可用（消费贷开关）：初始读全局缓存（入口界面已拉取），避免首次打开弹窗宽度闪烁 */
+    private var payAvailable = com.shusheng.cobblemarket.client.FinanceCache.consumerLoanEnabled
 
     private val typeOptions = listOf(
         "", "normal", "fire", "water", "electric", "grass", "ice", "fighting", "poison", "ground",
@@ -438,9 +438,10 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         sendToServer(RequestCreditInfoPayload())
     }
 
-    /** 消费贷开关快照（打开购买确认弹窗时拉取）：控制喵喵支付按钮显示与弹窗宽度 */
+    /** 消费贷开关快照（打开购买确认弹窗时拉取）：控制喵喵支付按钮显示与弹窗宽度 + 回写缓存 */
     fun onCreditInfo(payload: CreditInfoPayload) {
         payAvailable = payload.consumerLoanEnabled
+        com.shusheng.cobblemarket.client.FinanceCache.consumerLoanEnabled = payload.consumerLoanEnabled
     }
 
     private fun openCancelDialog(entry: ListingEntry) {
