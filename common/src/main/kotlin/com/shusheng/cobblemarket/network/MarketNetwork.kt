@@ -1225,6 +1225,11 @@ object MarketNetwork {
                     )
                 )
 
+                // 金融系统成交挂钩子：买家成交计入其交易额（额度公式数据源；防刷三层在 recordTrade 内成交时快照判定）
+                com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
+                    server, player.uuid, listing.sellerUuid, listing.price.toLong(), System.currentTimeMillis()
+                )
+
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(
@@ -2265,6 +2270,10 @@ object MarketNetwork {
                 }
 
                 MarketState.get(server).addPendingBalance(listing.sellerUuid, totalPrice.toLong())
+                // 金融系统成交挂钩子：物品购买成交计入买家交易额
+                com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
+                    server, player.uuid, listing.sellerUuid, totalPrice.toLong(), System.currentTimeMillis()
+                )
                 listing.count -= count
                 if (listing.count <= 0) {
                     listing.status = ListingStatus.SOLD

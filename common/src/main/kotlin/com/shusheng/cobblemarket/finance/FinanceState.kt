@@ -1,6 +1,8 @@
 package com.shusheng.cobblemarket.finance
 
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.config.CobbleMarketConfig
+import com.shusheng.cobblemarket.platform.getPlayerIp
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.nbt.NbtList
 import net.minecraft.registry.RegistryWrapper
@@ -25,6 +27,8 @@ data class LoanRecord(
     val periodsTotal: Int,
     /** 已还期数 */
     val periodsPaid: Int,
+    /** 借款时刻（历史界面显示用；lastRepayAt 会被每次还款刷新，不能复用） */
+    val createdAt: Long,
     /** 上次还款时刻：利息实算基准 */
     val lastRepayAt: Long,
     /** 日利率快照（创建时从配置取，改配置不影响存量贷款） */
@@ -57,8 +61,21 @@ data class LoanRecord(
     }
 }
 
-/** 防刷 IP 记录（30 天窗口，批次 2 额度计算启用） */
+/** 防刷 IP 记录（30 天窗口） */
 data class IpEntry(val ip: String, val at: Long)
+
+/**
+ * 成交记录（额度公式数据源，买入方视角）：countedAmount 为防刷三层在成交时快照判定后的实际计入额
+ * （贷款/交易对/IP 状态随时间变，事后回算会失真；0 = 全额不计）。
+ */
+data class TradeRecord(
+    /** 原始成交价（全服累计成交额用） */
+    val amount: Long,
+    val at: Long,
+    val counterpartyUuid: UUID,
+    /** 计入交易额的金额（防刷三层后；同 IP 降权为 amount×0.9） */
+    val countedAmount: Long
+)
 
 /**
  * 金融系统持久化状态（world/data/cobblemarket_finance.dat，PersistHelper/StateBackup 自动兜底）：
@@ -72,6 +89,9 @@ class FinanceState private constructor() : PersistentState() {
     private var nextLoanId: Long = 1L
     private var totalTradingVolume: Long = 0L
     private val ipHistory = mutableMapOf<UUID, MutableList<IpEntry>>()
+    private val tradeRecords = mutableMapOf<UUID, MutableList<TradeRecord>>()
+    /** 每玩家历史累计计入额（窗口清理后仍保留，供额度公式历史项） */
+    private val totalCountedVolume = mutableMapOf<UUID, Long>()
 
     // ── 准备金池 ──
 
@@ -118,6 +138,7 @@ class FinanceState private constructor() : PersistentState() {
             principal = principal,
             periodsTotal = periodsTotal,
             periodsPaid = 0,
+            createdAt = now,
             lastRepayAt = now,
             dailyRate = dailyRate,
             source = source,
@@ -181,6 +202,90 @@ class FinanceState private constructor() : PersistentState() {
         return list.filter { now - it.at <= IP_WINDOW_MS }
     }
 
+    // ── 成交记录 + 额度计算 ──
+
+    /**
+     * 记录一笔成交（买入方视角，额度只算买入方——借贷对应「花钱的能力」）。
+     * 防刷三层在成交时快照判定：
+     * 1. 借贷来源（loanFunded，喵喵支付垫付）或买家当时有未结清贷款 → 全额不计（防借→买→额度涨→再借循环）
+     * 2. 30 天内同一买卖对已达 MAX_SAME_PAIR_TRADES 笔 → 该笔不计
+     * 3. 买卖双方同 IP（买家非 OP）→ 计入额 ×0.9
+     * 全服累计成交额不受防刷影响（仅入口展示用）。顺带记录双方 IP（在线才记）。
+     */
+    fun recordTrade(
+        server: MinecraftServer,
+        buyerUuid: UUID,
+        sellerUuid: UUID,
+        amount: Long,
+        now: Long,
+        loanFunded: Boolean = false
+    ) {
+        if (amount <= 0) return
+        addTradingVolume(amount)
+        val buyer = server.playerManager.getPlayer(buyerUuid)
+        val seller = server.playerManager.getPlayer(sellerUuid)
+        if (buyer != null) {
+            getPlayerIp(buyer)?.let { recordIp(buyerUuid, it, now) }
+        }
+        if (seller != null) {
+            getPlayerIp(seller)?.let { recordIp(sellerUuid, it, now) }
+        }
+        val list = tradeRecords.getOrPut(buyerUuid) { mutableListOf() }
+        list.removeAll { now - it.at > TRADE_WINDOW_MS }
+        val pairCount = list.count { it.counterpartyUuid == sellerUuid }
+        val hasOpenLoan = loans.values.any { it.playerUuid == buyerUuid && it.status != LoanStatus.CLOSED }
+        val buyerOp = buyer?.hasPermissionLevel(2) == true
+        val buyerIp = latestIpOf(buyerUuid, now)
+        val sameIp = !buyerOp && buyerIp != null && buyerIp == latestIpOf(sellerUuid, now)
+        val counted = when {
+            loanFunded || hasOpenLoan -> 0L
+            pairCount >= MAX_SAME_PAIR_TRADES -> 0L
+            sameIp -> amount * 9 / 10
+            else -> amount
+        }
+        list.add(TradeRecord(amount, now, sellerUuid, counted))
+        totalCountedVolume[buyerUuid] = (totalCountedVolume[buyerUuid] ?: 0L) + counted
+        markDirty()
+    }
+
+    /** 30 天内最近一次 IP（无记录返回 null） */
+    private fun latestIpOf(uuid: UUID, now: Long): String? =
+        getIpEntries(uuid, now).maxByOrNull { it.at }?.ip
+
+    /**
+     * 同 IP 未结清欠款总和（防同 IP 多小号分散借款转给主账号）：
+     * 30 天窗口内记录过该 IP 的所有玩家，其未结清贷款（CLOSED 除外）剩余本金之和。
+     * 遍历 ipHistory 反查（借款为低频操作且有节流，性能无压力）。
+     */
+    fun debtByIp(ip: String, now: Long): Long {
+        val debtors = ipHistory.entries
+            .filter { (_, entries) -> entries.any { it.ip == ip && now - it.at <= IP_WINDOW_MS } }
+            .map { it.key }
+            .toSet()
+        return loans.values
+            .filter { it.playerUuid in debtors && it.status != LoanStatus.CLOSED }
+            .sumOf { it.remainingPrincipal.toLong() }
+    }
+
+    /**
+     * 可用额度：近30天计入额×recent30Weight + 历史累计计入额×historyWeight − 欠款×debtWeight，钳 min~max。
+     * 欠款 = 未结清贷款（CLOSED 除外）剩余本金之和；公式基于交易额自动适配服务器通胀水平。
+     */
+    fun creditLimitFor(playerUuid: UUID, now: Long): Long {
+        val recent = tradeRecords[playerUuid]
+            ?.filter { now - it.at <= TRADE_WINDOW_MS }
+            ?.sumOf { it.countedAmount } ?: 0L
+        val history = totalCountedVolume[playerUuid] ?: 0L
+        val debt = loans.values
+            .filter { it.playerUuid == playerUuid && it.status != LoanStatus.CLOSED }
+            .sumOf { it.remainingPrincipal.toLong() }
+        // Long×Double → Double 实算后四舍五入（金额一律 Long 的钳制前形态）
+        val raw = recent * CobbleMarketConfig.creditLimitRecent30Weight +
+            history * CobbleMarketConfig.creditLimitHistoryWeight -
+            debt * CobbleMarketConfig.creditLimitDebtWeight
+        return Math.round(raw).coerceIn(CobbleMarketConfig.creditLimitMin, CobbleMarketConfig.creditLimitMax)
+    }
+
     // ── NBT ──
 
     override fun writeNbt(nbt: NbtCompound, registryLookup: RegistryWrapper.WrapperLookup): NbtCompound {
@@ -196,6 +301,7 @@ class FinanceState private constructor() : PersistentState() {
             c.putLong("principal", record.principal)
             c.putInt("periodsTotal", record.periodsTotal)
             c.putInt("periodsPaid", record.periodsPaid)
+            c.putLong("createdAt", record.createdAt)
             c.putLong("lastRepayAt", record.lastRepayAt)
             c.putDouble("dailyRate", record.dailyRate)
             c.putString("source", record.source.name)
@@ -218,11 +324,40 @@ class FinanceState private constructor() : PersistentState() {
             ipList.add(c)
         }
         nbt.put("ipHistory", ipList)
+        val tradeList = NbtList()
+        tradeRecords.forEach { (uuid, entries) ->
+            val c = NbtCompound()
+            c.putUuid("uuid", uuid)
+            val sub = NbtList()
+            entries.forEach { e ->
+                val ec = NbtCompound()
+                ec.putLong("amount", e.amount)
+                ec.putLong("at", e.at)
+                ec.putUuid("counterparty", e.counterpartyUuid)
+                ec.putLong("counted", e.countedAmount)
+                sub.add(ec)
+            }
+            c.put("entries", sub)
+            tradeList.add(c)
+        }
+        nbt.put("tradeRecords", tradeList)
+        val volumeList = NbtList()
+        totalCountedVolume.forEach { (uuid, v) ->
+            val c = NbtCompound()
+            c.putUuid("uuid", uuid)
+            c.putLong("volume", v)
+            volumeList.add(c)
+        }
+        nbt.put("totalCountedVolume", volumeList)
         return nbt
     }
 
     companion object {
         private const val IP_WINDOW_MS = 30L * 24 * 60 * 60 * 1000
+        /** 成交额窗口（额度公式近30天项） */
+        private const val TRADE_WINDOW_MS = 30L * 24 * 60 * 60 * 1000
+        /** 30 天内同一买卖对达到该笔数后，该对后续成交不计入交易额（防刷第 2 层） */
+        private const val MAX_SAME_PAIR_TRADES = 3
 
         private val TYPE = PersistentState.Type(
             { FinanceState() },
@@ -241,6 +376,7 @@ class FinanceState private constructor() : PersistentState() {
                                 principal = c.getLong("principal"),
                                 periodsTotal = c.getInt("periodsTotal"),
                                 periodsPaid = c.getInt("periodsPaid"),
+                                createdAt = c.getLong("createdAt"),
                                 lastRepayAt = c.getLong("lastRepayAt"),
                                 dailyRate = c.getDouble("dailyRate"),
                                 source = try { LoanSource.valueOf(c.getString("source")) } catch (_: Exception) { LoanSource.COUNTER },
@@ -262,6 +398,34 @@ class FinanceState private constructor() : PersistentState() {
                             ipHistory[c.getUuid("uuid")] = list
                         } catch (e: Exception) {
                             CobbleMarket.LOGGER.warn("Skipping corrupted finance ip entry: {}", e.message)
+                        }
+                    }
+                    nbt.getList("tradeRecords", NbtList.COMPOUND_TYPE.toInt()).forEach { element ->
+                        try {
+                            val c = element as NbtCompound
+                            val list = mutableListOf<TradeRecord>()
+                            c.getList("entries", NbtList.COMPOUND_TYPE.toInt()).forEach { sub ->
+                                val ec = sub as NbtCompound
+                                list.add(
+                                    TradeRecord(
+                                        amount = ec.getLong("amount"),
+                                        at = ec.getLong("at"),
+                                        counterpartyUuid = ec.getUuid("counterparty"),
+                                        countedAmount = ec.getLong("counted")
+                                    )
+                                )
+                            }
+                            tradeRecords[c.getUuid("uuid")] = list
+                        } catch (e: Exception) {
+                            CobbleMarket.LOGGER.warn("Skipping corrupted finance trade entry: {}", e.message)
+                        }
+                    }
+                    nbt.getList("totalCountedVolume", NbtList.COMPOUND_TYPE.toInt()).forEach { element ->
+                        try {
+                            val c = element as NbtCompound
+                            totalCountedVolume[c.getUuid("uuid")] = c.getLong("volume")
+                        } catch (e: Exception) {
+                            CobbleMarket.LOGGER.warn("Skipping corrupted finance volume entry: {}", e.message)
                         }
                     }
                 }

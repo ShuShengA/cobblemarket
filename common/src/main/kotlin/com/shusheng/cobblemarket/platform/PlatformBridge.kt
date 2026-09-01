@@ -56,6 +56,10 @@ fun <T : CustomPayload> registerS2CType(
 
 // ── 服务端生命周期 / tick / 玩家连接事件 ──
 
+/** 在线玩家连接 IP 文本（金融防刷同 IP 降权用）；离线/获取失败返回 null。 */
+@ExpectPlatform
+fun getPlayerIp(player: ServerPlayerEntity): String? = throw AssertionError()
+
 @ExpectPlatform
 fun onServerStarting(handler: (server: MinecraftServer) -> Unit): Unit = throw AssertionError()
 

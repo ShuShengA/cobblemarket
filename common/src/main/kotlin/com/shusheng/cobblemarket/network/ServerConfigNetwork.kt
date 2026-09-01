@@ -63,6 +63,7 @@ data class ServerConfigDataPayload(
     val creditMin: Long,
     val creditMax: Long,
     val autoRepayMinBalance: Long,
+    val ipDebtLimit: Long,
     val overdueFeeDouble: Int,
     val overdueFreeze: Int,
     val overdueBadDebt: Int,
@@ -98,6 +99,7 @@ data class ServerConfigDataPayload(
                 b.writeLong(p.creditMin)
                 b.writeLong(p.creditMax)
                 b.writeLong(p.autoRepayMinBalance)
+                b.writeLong(p.ipDebtLimit)
                 b.writeInt(p.overdueFeeDouble)
                 b.writeInt(p.overdueFreeze)
                 b.writeInt(p.overdueBadDebt)
@@ -130,6 +132,7 @@ data class ServerConfigDataPayload(
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
                 autoRepayMinBalance = b.readLong(),
+                ipDebtLimit = b.readLong(),
                 overdueFeeDouble = b.readInt(),
                 overdueFreeze = b.readInt(),
                 overdueBadDebt = b.readInt(),
@@ -170,6 +173,7 @@ data class SaveServerConfigPayload(
     val creditMin: Long,
     val creditMax: Long,
     val autoRepayMinBalance: Long,
+    val ipDebtLimit: Long,
     val overdueFeeDouble: Int,
     val overdueFreeze: Int,
     val overdueBadDebt: Int,
@@ -205,6 +209,7 @@ data class SaveServerConfigPayload(
                 b.writeLong(p.creditMin)
                 b.writeLong(p.creditMax)
                 b.writeLong(p.autoRepayMinBalance)
+                b.writeLong(p.ipDebtLimit)
                 b.writeInt(p.overdueFeeDouble)
                 b.writeInt(p.overdueFreeze)
                 b.writeInt(p.overdueBadDebt)
@@ -237,6 +242,7 @@ data class SaveServerConfigPayload(
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
                 autoRepayMinBalance = b.readLong(),
+                ipDebtLimit = b.readLong(),
                 overdueFeeDouble = b.readInt(),
                 overdueFreeze = b.readInt(),
                 overdueBadDebt = b.readInt(),
@@ -298,6 +304,7 @@ object ServerConfigNetwork {
         creditMin = CobbleMarketConfig.creditLimitMin,
         creditMax = CobbleMarketConfig.creditLimitMax,
         autoRepayMinBalance = CobbleMarketConfig.autoRepayMinBalance,
+        ipDebtLimit = CobbleMarketConfig.ipDebtLimit,
         overdueFeeDouble = CobbleMarketConfig.overdueFeeDoubleDays,
         overdueFreeze = CobbleMarketConfig.overdueFreezeDays,
         overdueBadDebt = CobbleMarketConfig.overdueBadDebtDays,
@@ -331,6 +338,7 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setCreditLimitMin(p.creditMin)
         CobbleMarketConfig.setCreditLimitMax(p.creditMax)
         CobbleMarketConfig.setAutoRepayMinBalance(p.autoRepayMinBalance)
+        CobbleMarketConfig.setIpDebtLimit(p.ipDebtLimit)
         CobbleMarketConfig.setOverdueFeeDoubleDays(p.overdueFeeDouble)
         CobbleMarketConfig.setOverdueFreezeDays(p.overdueFreeze)
         CobbleMarketConfig.setOverdueBadDebtDays(p.overdueBadDebt)

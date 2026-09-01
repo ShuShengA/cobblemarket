@@ -58,6 +58,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         NumDef("cobblemarket.op.scfg_credit_debt", false) to "creditDebt",
         NumDef("cobblemarket.op.scfg_credit_min", true) to "creditMin",
         NumDef("cobblemarket.op.scfg_credit_max", true) to "creditMax",
+        NumDef("cobblemarket.op.scfg_ip_debt_limit", true) to "ipDebtLimit",
         NumDef("cobblemarket.op.scfg_min_balance", true) to "autoRepayMinBalance",
         NumDef("cobblemarket.op.scfg_overdue_fee_double", true) to "overdueFeeDouble",
         NumDef("cobblemarket.op.scfg_overdue_freeze", true) to "overdueFreeze",
@@ -73,6 +74,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     /** 全部行（原配置 + 金融区块），渲染顺序与列表定义一致 */
     private fun allNumDefs() = numDefs + financeNumDefs
     private fun allToggleDefs() = toggleDefs + financeToggleDefs
+    /** 金融区块首行索引：区块内行间无分割线（配置连排），首行上方行线即顶线、末行下方画底线 */
+    private fun financeStartRow() = numDefs.size + toggleDefs.size
 
     private val numFields = mutableMapOf<String, TextFieldWidget>()
     private val toggleButtons = mutableMapOf<String, NineSliceButton>()
@@ -211,9 +214,10 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         val startY = listStartY()
         var row = 0
         // visible 必须叠加 !eggConfirmOpen：确认弹窗打开时任何重建（滚动/resize）都不能把下层控件改回可见
-        allNumDefs().forEach { (_, key) ->
+        // 行顺序：原数字配置 → 原开关 → 金融数字 → 金融开关（金融区块整体排在列表尾部）
+        fun placeNumField(key: String) {
             val y = startY + (row - scrollOffset) * rowHeight
-            val field = numFields[key] ?: return@forEach
+            val field = numFields[key] ?: return
             val visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
             field.x = dialogX + dialogW - 10 - 20 - 2 - 54
             field.y = y + 4
@@ -224,14 +228,18 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             resetBtn?.visible = visible
             row++
         }
-        allToggleDefs().forEach { (_, key) ->
+        fun placeToggle(key: String) {
             val y = startY + (row - scrollOffset) * rowHeight
-            val btn = toggleButtons[key] ?: return@forEach
+            val btn = toggleButtons[key] ?: return
             btn.x = dialogX + dialogW - 10 - 22
             btn.y = y + 1
             btn.visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
             row++
         }
+        numDefs.forEach { (_, key) -> placeNumField(key) }
+        toggleDefs.forEach { (_, key) -> placeToggle(key) }
+        financeNumDefs.forEach { (_, key) -> placeNumField(key) }
+        financeToggleDefs.forEach { (_, key) -> placeToggle(key) }
     }
 
     // ── 快照 → 界面刷新 ──
@@ -279,6 +287,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         "creditDebt" -> payload?.creditDebt ?: 0.3
         "creditMin" -> (payload?.creditMin ?: 0L).toDouble()
         "creditMax" -> (payload?.creditMax ?: 100_000L).toDouble()
+        "ipDebtLimit" -> (payload?.ipDebtLimit ?: 100_000L).toDouble()
         "autoRepayMinBalance" -> (payload?.autoRepayMinBalance ?: 1_000L).toDouble()
         "overdueFeeDouble" -> (payload?.overdueFeeDouble ?: 7).toDouble()
         "overdueFreeze" -> (payload?.overdueFreeze ?: 14).toDouble()
@@ -369,6 +378,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             creditDebt = doubleOr("creditDebt", p?.creditDebt ?: 0.3),
             creditMin = longOr("creditMin", p?.creditMin ?: 0L),
             creditMax = longOr("creditMax", p?.creditMax ?: 100_000L),
+            ipDebtLimit = longOr("ipDebtLimit", p?.ipDebtLimit ?: 100_000L),
             autoRepayMinBalance = longOr("autoRepayMinBalance", p?.autoRepayMinBalance ?: 1_000L),
             overdueFeeDouble = intOr("overdueFeeDouble", p?.overdueFeeDouble ?: 7),
             overdueFreeze = intOr("overdueFreeze", p?.overdueFreeze ?: 14),
@@ -547,28 +557,36 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
 
         val startY = listStartY()
         var row = 0
-        allNumDefs().forEach { (def, _) ->
+        // 行顺序与 rebuildPositions 一致：原数字 → 原开关 → 金融数字 → 金融开关
+        fun drawRowLine(rowY: Int) {
+            context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
+        }
+        fun drawNumRow(def: NumDef) {
             if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
                 val rowY = startY + (row - scrollOffset) * rowHeight
-                // 行间分割线（照设置弹窗：每行上方一条）
-                context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
+                // 行间分割线（照设置弹窗：每行上方一条）；金融区块只在首行上方画顶线（区块内连排无线）
+                if (row <= financeStartRow()) drawRowLine(rowY)
                 context.drawTextWithShadow(textRenderer,
                     Text.translatable(def.labelKey),
                     dialogX + 10, rowY + 7, 0xFFFFFF)
             }
             row++
         }
-        allToggleDefs().forEach { (labelKey, _) ->
+        fun drawToggleRow(labelKey: String) {
             if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
                 val rowY = startY + (row - scrollOffset) * rowHeight
-                context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
+                if (row <= financeStartRow()) drawRowLine(rowY)
                 context.drawTextWithShadow(textRenderer,
                     Text.translatable(labelKey),
                     dialogX + 10, rowY + 7, 0xFFFFFF)
             }
             row++
         }
-        // 金融区块底线：与金融首行上方的行线（=区块顶线）构成上下分割线对；滚动到底时可见
+        numDefs.forEach { (def, _) -> drawNumRow(def) }
+        toggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
+        financeNumDefs.forEach { (def, _) -> drawNumRow(def) }
+        financeToggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
+        // 金融区块底线（区块末行下方）：与首行上方行线构成上下分割线对；滚动到底时可见
         if (totalRows in scrollOffset until scrollOffset + getMaxVisibleRows()) {
             val bottomY = startY + (totalRows - scrollOffset) * rowHeight
             context.fill(dialogX + 6, bottomY, dialogX + dialogW - 6, bottomY + 1, 0xFF555555.toInt())

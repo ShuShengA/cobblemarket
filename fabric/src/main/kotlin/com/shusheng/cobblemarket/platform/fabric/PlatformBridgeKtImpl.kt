@@ -37,6 +37,9 @@ import java.util.UUID
 
 fun configDir(): Path = FabricLoader.getInstance().configDir
 
+fun getPlayerIp(player: ServerPlayerEntity): String? =
+    player.ip.takeIf { it.isNotEmpty() }
+
 fun isModLoaded(modId: String): Boolean = FabricLoader.getInstance().isModLoaded(modId)
 
 // ── 网络 ──
