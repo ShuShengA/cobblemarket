@@ -74,8 +74,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     // ── 喵喵支付（消费贷，批次 4）：购买弹窗内入口按钮，点击进独立 MeowthPayScreen ──
     private var buyPayButton: NineSliceButton? = null
-    /** 消费贷开关（CreditInfoPayload 拉取）：关时弹窗自动回缩到原高度 170、不显示喵喵支付按钮 */
-    private var payAvailable = false
+    /** 消费贷开关：初始读全局缓存（入口界面已拉取）避免首次打开弹窗高度闪烁；关时弹窗 170 无喵喵支付按钮 */
+    private var payAvailable = com.shusheng.cobblemarket.client.FinanceCache.consumerLoanEnabled
 
     private fun columns() = (panelWidth + gap) / (slotSize + gap)
     private fun getGridStartY() = 68
@@ -577,9 +577,10 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     /** 购买弹窗高度：消费贷开 210（含喵喵支付行）/ 关 170（原尺寸） */
     private fun buyDialogH(): Int = if (payAvailable) 210 else 170
 
-    /** 消费贷开关快照（打开购买弹窗时拉取）：状态变化时重建弹窗控件（含输入恢复） */
+    /** 消费贷开关快照（打开购买弹窗时拉取）：状态变化时重建弹窗控件（含输入恢复）+ 回写缓存 */
     fun onCreditInfo(payload: CreditInfoPayload) {
         val available = payload.consumerLoanEnabled
+        com.shusheng.cobblemarket.client.FinanceCache.consumerLoanEnabled = available
         if (available == payAvailable) return
         payAvailable = available
         val entry = selectedEntry ?: return
