@@ -21,6 +21,7 @@ import net.minecraft.network.packet.CustomPayload
 import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
+import java.util.UUID
 
 // ── C2S：应急贷款借款请求（金额 + 分期方案下标） ──
 
@@ -159,10 +160,55 @@ data class RequestRepayPayload(val loanId: Long, val settle: Boolean) : CustomPa
     }
 }
 
+// ── C2S：请求金融统计（全服累计成交额所有玩家可见；准备金池/坏账总额仅 OP） ──
+
+class RequestFinanceStatsPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestFinanceStatsPayload>(CobbleMarket.id("request_finance_stats"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestFinanceStatsPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestFinanceStatsPayload() }
+        )
+    }
+}
+
+// ── S2C：金融统计（非 OP 时 reservePool/badDebtTotal 为 -1 表示无权限） ──
+
+data class FinanceStatsPayload(
+    val totalVolume: Long,
+    val reservePool: Long,
+    val badDebtTotal: Long
+) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<FinanceStatsPayload>(CobbleMarket.id("finance_stats"))
+        val CODEC: PacketCodec<PacketByteBuf, FinanceStatsPayload> = PacketCodec.of(
+            { p, b -> b.writeLong(p.totalVolume); b.writeLong(p.reservePool); b.writeLong(p.badDebtTotal) },
+            { b -> FinanceStatsPayload(b.readLong(), b.readLong(), b.readLong()) }
+        )
+    }
+}
+
+// ── C2S：撤销玩家全部坏账（仅 OP；批次 7 服主干预双入口之一） ──
+
+data class RequestRevokeBadDebtPayload(val playerUuid: UUID) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestRevokeBadDebtPayload>(CobbleMarket.id("request_revoke_bad_debt"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestRevokeBadDebtPayload> = PacketCodec.of(
+            { p, b -> b.writeUuid(p.playerUuid) },
+            { b -> RequestRevokeBadDebtPayload(b.readUuid()) }
+        )
+    }
+}
+
 // ── S2C：借款历史数据 ──
 
 data class LoanHistoryEntry(
     val id: Long,
+    /** 借款人 UUID（OP 全服流水撤销坏账按钮用） */
+    val playerUuid: UUID,
     /** 借款时刻（创建时间，非还款刷新过的 lastRepayAt） */
     val timestamp: Long,
     val playerName: String,
@@ -174,17 +220,20 @@ data class LoanHistoryEntry(
     val source: String,
     val status: String,
     /** 剩余本金（CLOSED 恒 0） */
-    val remaining: Long
+    val remaining: Long,
+    /** 借款人最近 IP（仅 OP 全服流水下发，小号排查用；普通玩家视图为空串） */
+    val ip: String
 ) {
     fun write(buf: PacketByteBuf) {
-        buf.writeLong(id); buf.writeLong(timestamp); buf.writeString(playerName); buf.writeLong(principal)
+        buf.writeLong(id); buf.writeUuid(playerUuid); buf.writeLong(timestamp); buf.writeString(playerName); buf.writeLong(principal)
         buf.writeInt(periodsTotal); buf.writeInt(periodsPaid); buf.writeDouble(feeRate)
-        buf.writeString(source); buf.writeString(status); buf.writeLong(remaining)
+        buf.writeString(source); buf.writeString(status); buf.writeLong(remaining); buf.writeString(ip)
     }
 
     companion object {
         fun read(buf: PacketByteBuf) = LoanHistoryEntry(
             buf.readLong(),
+            buf.readUuid(),
             buf.readLong(),
             buf.readString(),
             buf.readLong(),
@@ -193,7 +242,8 @@ data class LoanHistoryEntry(
             buf.readDouble(),
             buf.readString(),
             buf.readString(),
-            buf.readLong()
+            buf.readLong(),
+            buf.readString()
         )
     }
 }
@@ -215,6 +265,7 @@ object FinanceNetwork {
         registerS2CType(CreditInfoPayload.ID, CreditInfoPayload.CODEC)
         registerS2CType(LoanHistoryDataPayload.ID, LoanHistoryDataPayload.CODEC)
         registerS2CType(RepayListDataPayload.ID, RepayListDataPayload.CODEC)
+        registerS2CType(FinanceStatsPayload.ID, FinanceStatsPayload.CODEC)
 
         // ── 应急贷款借款 ──
         registerC2S(RequestLoanPayload.ID, RequestLoanPayload.CODEC) { payload, player ->
@@ -224,8 +275,13 @@ object FinanceNetwork {
             server.execute {
                 val state = FinanceState.get(server)
                 val now = System.currentTimeMillis()
-                if (!CobbleMarketConfig.financeEnabled || !CobbleMarketConfig.cashLoanEnabled) {
+                // 文案区分：总开关关 = 喵喵银行没开门；现金贷关 = 喵喵的帮助暂未开放
+                if (!CobbleMarketConfig.financeEnabled) {
                     player.sendMessage(Text.translatable("cobblemarket.loan.finance_disabled").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                if (!CobbleMarketConfig.cashLoanEnabled) {
+                    player.sendMessage(Text.translatable("cobblemarket.loan.cash_loan_disabled").formatted(Formatting.RED), false)
                     return@execute
                 }
                 // 逾期/坏账禁止新增借贷（ACTIVE 不拦：允许多笔并存）；文案区分：逾期=暂时，坏账=永久
@@ -323,6 +379,64 @@ object FinanceNetwork {
             }
         }
 
+        // ── 金融统计（全服累计成交额所有人可见；准备金池/坏账总额仅 OP） ──
+        registerC2S(RequestFinanceStatsPayload.ID, RequestFinanceStatsPayload.CODEC) { _, player ->
+            if (!RequestThrottle.allow(player.uuid, "request_finance_stats", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val state = FinanceState.get(server)
+                val isOp = player.hasPermissionLevel(2)
+                sendToPlayer(
+                    player,
+                    FinanceStatsPayload(
+                        totalVolume = state.getTotalTradingVolume(),
+                        reservePool = if (isOp) state.getReservePool() else -1,
+                        badDebtTotal = if (isOp) state.getBadDebtTotal() else -1
+                    )
+                )
+            }
+        }
+
+        // ── 撤销玩家全部坏账（仅 OP；与 /market loan clear 命令双入口） ──
+        registerC2S(RequestRevokeBadDebtPayload.ID, RequestRevokeBadDebtPayload.CODEC) { payload, player ->
+            if (!RequestThrottle.allow(player.uuid, "request_revoke_bad_debt", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute {
+                if (!player.hasPermissionLevel(2)) return@execute
+                val state = FinanceState.get(server)
+                val removed = state.clearBadDebts(payload.playerUuid)
+                if (removed.isNotEmpty()) {
+                    val now = System.currentTimeMillis()
+                    removed.forEach { record ->
+                        CreditFileLogger.logLoan(
+                            record, com.shusheng.cobblemarket.finance.LoanLogType.REVOKED,
+                            detail = "服主撤销坏账",
+                            detailEn = "Bad debt revoked by admin",
+                            timestamp = now
+                        )
+                    }
+                    // 撤销后重新评估冻结（坏账冻结随记录消失解除；仍逾期 ≥14 天的贷款保持冻结）
+                    com.shusheng.cobblemarket.finance.FinanceService.syncFreeze(server, payload.playerUuid)
+                    com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                    player.sendMessage(
+                        Text.translatable("cobblemarket.repay.revoke_success", removed.first().playerName, removed.size)
+                            .formatted(Formatting.GREEN),
+                        false
+                    )
+                    // 回发全服流水刷新（撤销按钮所在界面）
+                    sendToPlayer(
+                        player,
+                        LoanHistoryDataPayload(buildLoanHistoryEntries(state, state.getAllLoans(), all = true))
+                    )
+                } else {
+                    player.sendMessage(
+                        Text.translatable("cobblemarket.repay.revoke_none").formatted(Formatting.RED),
+                        false
+                    )
+                }
+            }
+        }
+
         // ── 还款柜台列表 ──
         registerC2S(RequestRepayListPayload.ID, RequestRepayListPayload.CODEC) { _, player ->
             if (!RequestThrottle.allow(player.uuid, "request_repay_list", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
@@ -346,24 +460,37 @@ object FinanceNetwork {
                 // all=true 仅 OP 有效（全服借贷流水审计），普通玩家回退为本人借款历史
                 val loans = if (payload.all && player.hasPermissionLevel(2)) state.getAllLoans()
                 else state.getLoansByPlayer(player.uuid)
-                val entries = loans.sortedByDescending { it.id }.map { r ->
-                    LoanHistoryEntry(
-                        id = r.id,
-                        timestamp = r.createdAt,
-                        playerName = r.playerName,
-                        principal = r.principal,
-                        periodsTotal = r.periodsTotal,
-                        periodsPaid = r.periodsPaid,
-                        feeRate = r.dailyRate * 7.0,
-                        source = r.source.name,
-                        status = r.status.name,
-                        remaining = r.remainingPrincipal
-                    )
-                }
+                val entries = buildLoanHistoryEntries(state, loans, all = payload.all && player.hasPermissionLevel(2))
+                sendToPlayer(player, LoanHistoryDataPayload(entries))
                 sendToPlayer(player, LoanHistoryDataPayload(entries))
             }
         }
     }
+
+    /** 借款历史条目构造（借款历史请求与撤销坏账后回发共用）；all=true 时带最近 IP（小号排查） */
+    private fun buildLoanHistoryEntries(
+        state: FinanceState,
+        loans: List<com.shusheng.cobblemarket.finance.LoanRecord>,
+        all: Boolean
+    ): List<LoanHistoryEntry> =
+        loans.sortedByDescending { it.id }.map { r ->
+            LoanHistoryEntry(
+                id = r.id,
+                playerUuid = r.playerUuid,
+                timestamp = r.createdAt,
+                playerName = r.playerName,
+                principal = r.principal,
+                periodsTotal = r.periodsTotal,
+                periodsPaid = r.periodsPaid,
+                feeRate = r.dailyRate * 7.0,
+                source = r.source.name,
+                status = r.status.name,
+                remaining = r.remainingPrincipal,
+                ip = if (all)
+                    state.getIpEntries(r.playerUuid, System.currentTimeMillis()).maxByOrNull { it.at }?.ip ?: ""
+                else ""
+            )
+        }
 
     /** 额度信息快照：可用额度 + 欠款 + 逾期/坏账禁借标记（借款成功/还款后也用它回发刷新） */
     fun sendCreditInfo(player: ServerPlayerEntity, state: FinanceState, now: Long) {

@@ -22,8 +22,10 @@ import net.minecraft.util.Identifier
 class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.title")) {
 
     private var backButton: NineSliceButton? = null
-    private var limit = 0L
-    private var debt = 0L
+    private var rulesButton: NineSliceButton? = null
+    // 初始读全局缓存（60 秒兜底轮询写入）秒显不闪；-1 = 未拉取，响应到达后更新
+    private var limit = com.shusheng.cobblemarket.client.FinanceCache.creditLimit
+    private var debt = com.shusheng.cobblemarket.client.FinanceCache.creditDebt
     private var infoLoaded = false
 
     /**
@@ -51,6 +53,14 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) }
         )
         addDrawableChild(backButton)
+
+        // 规则按钮：返回按钮下方 4px（悬停显示借款规则与后果面板，照拍卖场规则按钮）
+        rulesButton = NineSliceButton(
+            width / 2 + 55, bgTop + 66, 50, 16,
+            Text.translatable("cobblemarket.meowth_bank.rules"),
+            { }
+        )
+        addDrawableChild(rulesButton)
 
         // 应急贷款入口（信息组：额度/欠款两行 + 按钮组成，居中放在标题与底部按钮之间的空档；100×16）
         addDrawableChild(NineSliceButton(
@@ -110,18 +120,102 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             Text.translatable("cobblemarket.meowth_bank.title").formatted(Formatting.GOLD, Formatting.BOLD),
             width / 2, bgTop + 31, 0xFFFFFF
         )
-        // 信息组：「可用额度 / 当前欠款」两行（价格+货币名照全模组规矩用蓝色）
+        // 信息组：「可用额度 / 当前欠款」两行（价格+货币名照全模组规矩用蓝色）；
+        // 缓存未拉取（-1）时按 0 显示（秒显优先，响应到达即更新）
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.loan.limit_line", formatPriceLong(limit), inlineCurrencyUnit()),
+            Text.translatable("cobblemarket.loan.limit_line", formatPriceLong(limit.coerceAtLeast(0)), inlineCurrencyUnit()),
             width / 2, bgTop + 81, 0x55FFFF
         )
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.loan.debt_line", formatPriceLong(debt), inlineCurrencyUnit()),
+            Text.translatable("cobblemarket.loan.debt_line", formatPriceLong(debt.coerceAtLeast(0)), inlineCurrencyUnit()),
             width / 2, bgTop + 91, 0x55FFFF
         )
+
+        // 规则按钮悬停面板（照拍卖场规则面板：自绘 + 悬停位置自适应）
+        if (rulesButton?.isHovered == true) {
+            renderRulesPanel(context, mouseX, mouseY)
+        }
     }
 
+    /** 借款规则与后果面板（照拍卖场规则面板；每条 = 红色关键字 + 白色正文，正文超宽换行） */
+    private fun renderRulesPanel(context: DrawContext, mx: Int, my: Int) {
+        val maxTextWidth = 280
+        val pad = 4
+        val lineH = 10
+        val dividerH = 4
+        // 每条 = (红段 warn, 白段 text)；text 按「面板宽 − warn 宽 − 4」逐字符填满换行（wrapTip 中文友好断行）
+        val rules = (1..7).map { i ->
+            Text.translatable("cobblemarket.meowth_bank.rule.${i}_warn").string to
+                Text.translatable("cobblemarket.meowth_bank.rule.${i}_text").string
+        }
+        val wrappedTexts = rules.map { (warn, text) ->
+            val warnW = textRenderer.getWidth(warn)
+            wrapRuleText(text, maxTextWidth - warnW - 4)
+        }
+        val totalLines = wrappedTexts.sumOf { maxOf(1, it.size) }
+        val panelW = maxTextWidth + 2 * pad
+        val panelH = totalLines * lineH + (rules.size - 1) * dividerH + 2 * pad
+        val tx = minOf(mx + 12, width - panelW - 12)
+        val ty = if (my - panelH - 4 <= 0) minOf(my + 12, height - panelH) else my - panelH - 4
+
+        context.matrices.push()
+        context.matrices.translate(0.0, 0.0, 400.0)
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx, ty, panelW, panelH, 1, ROW_BACKGROUND_TEX_H)
+        var y = ty + pad
+        rules.forEachIndexed { ri, (warn, _) ->
+            if (ri > 0) {
+                context.fill(tx + pad, y, tx + panelW - pad, y + 1, 0xFF555555.toInt())
+                y += dividerH
+            }
+            val warnW = textRenderer.getWidth(warn)
+            if (warn.isNotEmpty()) {
+                context.drawTextWithShadow(textRenderer, warn, tx + pad, y, 0xFF5555)
+            }
+            wrappedTexts[ri].forEachIndexed { li, line ->
+                val lx = if (li == 0 && warn.isNotEmpty()) tx + pad + warnW + 4 else tx + pad
+                context.drawTextWithShadow(textRenderer, line, lx, y, 0xFFFFFF)
+                y += lineH
+            }
+        }
+        context.matrices.pop()
+    }
+
+    /**
+     * 规则面板断行：按空格分词（英文友好），超长词（中文整串无空格）逐字符硬断填满。
+     * wrapTip（气泡专用，空格当普通字符）不适用英文长句——整句当一个词会溢出面板。
+     */
+    private fun wrapRuleText(text: String, maxW: Int): List<net.minecraft.text.OrderedText> {
+        val result = mutableListOf<net.minecraft.text.OrderedText>()
+        val sb = StringBuilder()
+        fun width(): Int = textRenderer.getWidth(sb.toString())
+        fun flush() {
+            if (sb.isNotEmpty()) {
+                result.add(Text.literal(sb.toString()).asOrderedText())
+                sb.setLength(0)
+            }
+        }
+        for (token in text.split(' ')) {
+            if (token.isEmpty()) continue
+            val tokenW = textRenderer.getWidth(token)
+            if (tokenW > maxW) {
+                // 超长词（中文整串）：逐字符硬断填满
+                flush()
+                var cur = token
+                while (cur.isNotEmpty()) {
+                    var cut = cur.length
+                    while (cut > 1 && textRenderer.getWidth(cur.substring(0, cut)) > maxW) cut--
+                    result.add(Text.literal(cur.substring(0, cut)).asOrderedText())
+                    cur = cur.substring(cut)
+                }
+                continue
+            }
+            if (sb.isNotEmpty() && width() + textRenderer.getWidth(" ") + tokenW > maxW) flush()
+            sb.append(if (sb.isEmpty()) token else " $token")
+        }
+        flush()
+        return result
+    }
     override fun shouldPause() = false
 }
