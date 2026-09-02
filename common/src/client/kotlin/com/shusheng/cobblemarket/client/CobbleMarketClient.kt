@@ -15,6 +15,9 @@ import com.shusheng.cobblemarket.network.BalanceDataPayload
 import com.shusheng.cobblemarket.network.BanListDataPayload
 import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.HistoryDataPayload
+import com.shusheng.cobblemarket.network.FinanceStatsPayload
+import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
+import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
 import com.shusheng.cobblemarket.network.LoanHistoryDataPayload
 import com.shusheng.cobblemarket.network.RepayListDataPayload
 import com.shusheng.cobblemarket.network.ItemBlacklistDataPayload
@@ -88,6 +91,7 @@ object CobbleMarketClient {
 
     /** 余额 HUD 低频兜底轮询计时（交易响应已即时刷新，这里兜住离线收益补发等） */
     private var lastBalancePollAt = 0L
+    private var lastFinancePollAt = 0L
 
 
     // 成交铃声定时（tick 触发）：落槌立即播放，铃声 0.4 秒后（多拍卖同批结算时铃声只响一次）
@@ -146,6 +150,13 @@ object CobbleMarketClient {
             ) {
                 lastBalancePollAt = tickNow
                 sendToServer(RequestBalancePayload())
+            }
+            // 金融数据兜底刷新：60 秒一次（额度/欠款/累计成交额进全局缓存，界面打开秒显不闪；
+            // 进服后首个 tick 即拉，玩家开市场前缓存已就绪）
+            if (client.player != null && (lastFinancePollAt == 0L || tickNow - lastFinancePollAt >= 60_000)) {
+                lastFinancePollAt = tickNow
+                sendToServer(RequestCreditInfoPayload())
+                sendToServer(RequestFinanceStatsPayload())
             }
         }
         registerHudRender { context, _ ->
@@ -228,6 +239,12 @@ object CobbleMarketClient {
         registerS2C(CreditInfoPayload.ID, CreditInfoPayload.CODEC) { payload ->
             val client = MinecraftClient.getInstance()
             client.execute {
+                // 先写全局缓存（额度/欠款/开关），再转发界面——界面打开读缓存秒显
+                val cache = FinanceCache
+                cache.financeEnabled = payload.financeEnabled
+                cache.consumerLoanEnabled = payload.consumerLoanEnabled
+                cache.creditLimit = payload.limit
+                cache.creditDebt = payload.debt
                 val screen = client.currentScreen
                 when (screen) {
                     // 喵喵银行与应急贷款共用同一份额度快照（借款成功后服务端回发刷新）；
@@ -259,6 +276,20 @@ object CobbleMarketClient {
                 val screen = client.currentScreen
                 if (screen is RepayScreen) {
                     screen.onRepayListData(payload)
+                }
+            }
+        }
+
+        registerS2C(FinanceStatsPayload.ID, FinanceStatsPayload.CODEC) { payload ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                // 先写全局缓存（累计成交额），再转发界面
+                FinanceCache.totalVolume = payload.totalVolume
+                val screen = client.currentScreen
+                when (screen) {
+                    // 入口界面：全服累计成交额；管理面板：准备金池/坏账总额告警
+                    is MarketEntryScreen -> screen.onFinanceStats(payload)
+                    is AdminScreen -> screen.onFinanceStats(payload)
                 }
             }
         }

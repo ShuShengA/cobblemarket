@@ -34,7 +34,9 @@ data class LoanRecord(
     /** 日利率快照（创建时从配置取，改配置不影响存量贷款） */
     val dailyRate: Double,
     val source: LoanSource,
-    val status: LoanStatus
+    val status: LoanStatus,
+    /** 已发「到期前 1 天提醒」的期号（每期提醒一次，防扫描重复刷屏；批次 7） */
+    val dueRemindedPeriods: Int = 0
 ) {
     /** 剩余本金（提前结清也用它；CLOSED 后恒 0，防报表/界面显示残留尾差） */
     val remainingPrincipal: Long get() =
@@ -206,6 +208,44 @@ class FinanceState private constructor() : PersistentState() {
         return true
     }
 
+    /** 标记第 n 期已发「到期前 1 天提醒」（每期一次，防扫描重复；批次 7） */
+    fun markDueReminded(id: Long, period: Int): Boolean {
+        val record = loans[id] ?: return false
+        if (record.dueRemindedPeriods >= period) return false
+        loans[id] = record.copy(dueRemindedPeriods = period)
+        markDirty()
+        return true
+    }
+
+    /**
+     * 撤销玩家全部坏账（服主干预，批次 7）：删除 BAD_DEBT 贷款记录（审计 CSV 已有 BAD_DEBT 事件留痕），
+     * 返回撤销的贷款列表（调用方逐笔写撤销审计）。删除后借款校验恢复放行；冻结由调用方 syncFreeze 重新评估。
+     */
+    fun clearBadDebts(playerUuid: UUID): List<LoanRecord> {
+        val removed = loans.values.filter { it.playerUuid == playerUuid && it.status == LoanStatus.BAD_DEBT }.toList()
+        removed.forEach { loans.remove(it.id) }
+        if (removed.isNotEmpty()) markDirty()
+        return removed
+    }
+
+    /** 坏账总额（未收回本金合计；OP 面板展示，批次 7） */
+    fun getBadDebtTotal(): Long =
+        loans.values.filter { it.status == LoanStatus.BAD_DEBT }.sumOf { it.remainingPrincipal.toLong() }
+
+    /**
+     * 清理已结清贷款（批次 7）：CLOSED 且结清（lastRepayAt）超过保留期的记录从状态删除，
+     * 防存档无限膨胀（审计 CSV 是长期账本，历史照常可查）；逾期/坏账永久保留（制裁/禁借依据）。
+     * 返回清理笔数。
+     */
+    fun purgeClosedLoans(now: Long, retainDays: Long): Int {
+        val expired = loans.values.filter {
+            it.status == LoanStatus.CLOSED && now - it.lastRepayAt > retainDays * LoanRecord.DAY_MS_LONG
+        }
+        expired.forEach { loans.remove(it.id) }
+        if (expired.isNotEmpty()) markDirty()
+        return expired.size
+    }
+
     // ── 全服累计成交额（仅入口界面展示，不参与任何金融计算） ──
 
     fun getTotalTradingVolume(): Long = totalTradingVolume
@@ -338,6 +378,7 @@ class FinanceState private constructor() : PersistentState() {
             c.putDouble("dailyRate", record.dailyRate)
             c.putString("source", record.source.name)
             c.putString("status", record.status.name)
+            c.putInt("dueReminded", record.dueRemindedPeriods)
             loanList.add(c)
         }
         nbt.put("loans", loanList)
@@ -412,7 +453,8 @@ class FinanceState private constructor() : PersistentState() {
                                 lastRepayAt = c.getLong("lastRepayAt"),
                                 dailyRate = c.getDouble("dailyRate"),
                                 source = try { LoanSource.valueOf(c.getString("source")) } catch (_: Exception) { LoanSource.COUNTER },
-                                status = try { LoanStatus.valueOf(c.getString("status")) } catch (_: Exception) { LoanStatus.ACTIVE }
+                                status = try { LoanStatus.valueOf(c.getString("status")) } catch (_: Exception) { LoanStatus.ACTIVE },
+                                dueRemindedPeriods = c.getInt("dueReminded")
                             )
                             loans[record.id] = record
                         } catch (e: Exception) {

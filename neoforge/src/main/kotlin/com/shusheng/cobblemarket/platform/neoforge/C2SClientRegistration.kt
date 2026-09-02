@@ -41,6 +41,7 @@ import com.shusheng.cobblemarket.network.RequestBalancePayload
 import com.shusheng.cobblemarket.network.RequestBanListPayload
 import com.shusheng.cobblemarket.network.RequestBuyOrderListPayload
 import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
+import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
 import com.shusheng.cobblemarket.network.RequestHistoryPayload
 import com.shusheng.cobblemarket.network.RequestItemBlacklistPayload
 import com.shusheng.cobblemarket.network.RequestItemMarketPayload
@@ -56,6 +57,7 @@ import com.shusheng.cobblemarket.network.RequestPokemonPriceLimitPayload
 import com.shusheng.cobblemarket.network.RequestPokemonReturnPayload
 import com.shusheng.cobblemarket.network.RequestRepayListPayload
 import com.shusheng.cobblemarket.network.RequestRepayPayload
+import com.shusheng.cobblemarket.network.RequestRevokeBadDebtPayload
 import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.SellFromStoragePayload
@@ -122,6 +124,7 @@ fun registerClientC2S() {
         c2s(registrar, RequestBanListPayload.ID, RequestBanListPayload.CODEC)
         c2s(registrar, RequestBuyOrderListPayload.ID, RequestBuyOrderListPayload.CODEC)
         c2s(registrar, RequestCreditInfoPayload.ID, RequestCreditInfoPayload.CODEC)
+        c2s(registrar, RequestFinanceStatsPayload.ID, RequestFinanceStatsPayload.CODEC)
         c2s(registrar, RequestHistoryPayload.ID, RequestHistoryPayload.CODEC)
         c2s(registrar, RequestItemBlacklistPayload.ID, RequestItemBlacklistPayload.CODEC)
         c2s(registrar, RequestItemMarketPayload.ID, RequestItemMarketPayload.CODEC)
@@ -137,6 +140,7 @@ fun registerClientC2S() {
         c2s(registrar, RequestPokemonReturnPayload.ID, RequestPokemonReturnPayload.CODEC)
         c2s(registrar, RequestRepayListPayload.ID, RequestRepayListPayload.CODEC)
         c2s(registrar, RequestRepayPayload.ID, RequestRepayPayload.CODEC)
+        c2s(registrar, RequestRevokeBadDebtPayload.ID, RequestRevokeBadDebtPayload.CODEC)
         c2s(registrar, RequestServerConfigPayload.ID, RequestServerConfigPayload.CODEC)
         c2s(registrar, SaveServerConfigPayload.ID, SaveServerConfigPayload.CODEC)
         c2s(registrar, SellFromStoragePayload.ID, SellFromStoragePayload.CODEC)

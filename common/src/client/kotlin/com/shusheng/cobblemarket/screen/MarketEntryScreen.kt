@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.mojang.blaze3d.systems.RenderSystem
@@ -9,8 +10,10 @@ import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.client.MarketStateCache
 import com.shusheng.cobblemarket.client.OakTips
 import com.shusheng.cobblemarket.network.CreditInfoPayload
+import com.shusheng.cobblemarket.network.FinanceStatsPayload
 import com.shusheng.cobblemarket.network.RequestBalancePayload
 import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
+import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
 import com.shusheng.cobblemarket.network.SetMarketEnabledPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.MinecraftClient
@@ -64,6 +67,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var financeEnabled = true
     private var meowthBankBtn: NineSliceButton? = null
     private var creditInfoLoaded = false
+    // 全服累计成交额（批次 7 入口展示；仅氛围展示不参与任何计算）；
+    // 初始读全局缓存（60 秒兜底轮询写入）秒显不闪，打开后仍发请求刷新
+    private var totalVolume = com.shusheng.cobblemarket.client.FinanceCache.totalVolume
+    private var statsLoaded = false
 
     // 大木博士知识点气泡：进入入口界面（新建实例）随机抽一句，一直显示；
     // 点击立绘主动换下一条；resize 重建不换句
@@ -79,6 +86,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         com.shusheng.cobblemarket.client.FinanceCache.financeEnabled = payload.financeEnabled
         com.shusheng.cobblemarket.client.FinanceCache.consumerLoanEnabled = payload.consumerLoanEnabled
         meowthBankBtn?.dimmed = !payload.financeEnabled
+    }
+
+    /** 金融统计快照（进入入口界面时拉取）：全服累计成交额展示 */
+    fun onFinanceStats(payload: FinanceStatsPayload) {
+        totalVolume = payload.totalVolume
     }
 
     /**
@@ -229,6 +241,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         if (!creditInfoLoaded) {
             sendToServer(RequestCreditInfoPayload())
             creditInfoLoaded = true
+        }
+        if (!statsLoaded) {
+            sendToServer(RequestFinanceStatsPayload())
+            statsLoaded = true
         }
 
         val settingsBtn = NineSliceButton(
@@ -809,6 +825,18 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             Text.translatable("cobblemarket.entry.title").formatted(Formatting.GOLD, Formatting.BOLD),
             width / 2, btnStartY - 48, 0xFFFFFF
         )
+        // 全服累计成交额（标题与余额之间；服务器经济规模氛围展示，不参与任何计算）
+        if (totalVolume >= 0) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable(
+                    "cobblemarket.entry.total_volume",
+                    com.shusheng.cobblemarket.client.formatPriceLong(totalVolume),
+                    inlineCurrencyUnit()
+                ),
+                width / 2, btnStartY - 37, 0x55FFFF
+            )
+        }
         // 底部三个小按钮上方的分割线（跨度 = 避开背景左右边框各 25）
         // 放在「仅OP行底边」与「小按钮顶边」的正中间：小按钮 top=bgBottom()-27、行3底=bgBottom()-32，
         // 两者相差 5px → 分割线 = bgBottom()-30（上下间隙各 2px）

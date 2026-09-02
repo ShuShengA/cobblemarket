@@ -261,7 +261,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
             else
                 Text.literal(entry.durationDisplay)
             context.drawTextWithShadow(textRenderer,
-                Text.literal("${entry.playerName}  ·  ${entry.bannedBy}  ·  ").append(durationText),
+                Text.literal("${entry.playerName}  ·  ").append(com.shusheng.cobblemarket.market.BanState.reasonText(entry.bannedBy)).append("  ·  ").append(durationText),
                 leftX + 4, y + 5, 0xFFFFFF)
         }
 
@@ -340,7 +340,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     private fun renderBanTooltip(context: DrawContext, entry: BanEntry, mouseX: Int, mouseY: Int) {
         val lines = listOf(
             "${Text.translatable("cobblemarket.ban.target").string} ${entry.playerName}",
-            "${Text.translatable("cobblemarket.ban.by").string} ${entry.bannedBy}",
+            "${Text.translatable("cobblemarket.ban.by").string} ${com.shusheng.cobblemarket.market.BanState.reasonText(entry.bannedBy).string}",
             "${Text.translatable("cobblemarket.ban.reason_label").string} ${com.shusheng.cobblemarket.market.BanState.reasonText(entry.reason).string.ifBlank { "-" }}"
         )
 

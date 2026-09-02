@@ -25,8 +25,9 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
     private val dialogW = 280
     private val dialogH = 200
 
-    private var limit = 0L
-    private var debt = 0L
+    // 初始读全局缓存（60 秒兜底轮询写入）秒显不闪；-1 = 未拉取，响应到达后更新
+    private var limit = com.shusheng.cobblemarket.client.FinanceCache.creditLimit
+    private var debt = com.shusheng.cobblemarket.client.FinanceCache.creditDebt
     private var hasOverdue = false
     private var hasBadDebt = false
     private var infoLoaded = false
@@ -288,15 +289,15 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
             Text.translatable("cobblemarket.loan.title").formatted(Formatting.GOLD),
             width / 2, dialogY + 14, 0xFFFFFF
         )
-        // 可用额度 / 当前欠款（价格+货币名照全模组规矩用蓝色）
+        // 可用额度 / 当前欠款（价格+货币名照全模组规矩用蓝色；缓存未拉取按 0 显示，响应到达即更新）
         context.drawTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.loan.limit_line", formatPriceLong(limit), inlineCurrencyUnit()),
+            Text.translatable("cobblemarket.loan.limit_line", formatPriceLong(limit.coerceAtLeast(0)), inlineCurrencyUnit()),
             dialogX + 12, dialogY + 40, 0x55FFFF
         )
         context.drawTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.loan.debt_line", formatPriceLong(debt), inlineCurrencyUnit()),
+            Text.translatable("cobblemarket.loan.debt_line", formatPriceLong(debt.coerceAtLeast(0)), inlineCurrencyUnit()),
             dialogX + 12, dialogY + 58, 0x55FFFF
         )
         if (hasBadDebt || hasOverdue) {

@@ -156,13 +156,13 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
         entries.drop(scrollOffset).take(maxVisible).forEachIndexed { i, e ->
             val y = startY + i * rowHeight
             var x = leftX + 5
-            context.drawTextWithShadow(textRenderer, "#${e.id}", x, y + 4, 0xFFFFFF)
+            context.drawTextWithShadow(textRenderer, "#${e.id}", x, y + 8, 0xFFFFFF)
             x += textRenderer.getWidth("#${e.id}") + 4
             val periods = Text.translatable("cobblemarket.loan_history.periods", e.periodsPaid, e.periodsTotal)
-            context.drawTextWithShadow(textRenderer, periods, x, y + 4, 0x888888)
+            context.drawTextWithShadow(textRenderer, periods, x, y + 8, 0x888888)
             x += textRenderer.getWidth(periods) + 6
             val statusText = Text.translatable("cobblemarket.loan_history.status.${e.status}").string
-            context.drawTextWithShadow(textRenderer, statusText, x, y + 4, statusColor(e.status))
+            context.drawTextWithShadow(textRenderer, statusText, x, y + 8, statusColor(e.status))
             x += textRenderer.getWidth(statusText) + 6
             val remainingText = Text.translatable(
                 "cobblemarket.repay.remaining",
@@ -176,7 +176,7 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
             context.drawTextWithShadow(
                 textRenderer,
                 TextUtil.truncateString(remainingText, btnLeftX - 5 - drawX),
-                drawX, y + 4, 0x55FFFF
+                drawX, y + 8, 0x55FFFF
             )
         }
 

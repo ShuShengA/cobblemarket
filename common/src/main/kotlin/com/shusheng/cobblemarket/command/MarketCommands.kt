@@ -4,6 +4,10 @@ import com.mojang.brigadier.Command
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
+import com.shusheng.cobblemarket.finance.CreditFileLogger
+import com.shusheng.cobblemarket.finance.FinanceService
+import com.shusheng.cobblemarket.finance.FinanceState
+import com.shusheng.cobblemarket.finance.LoanLogType
 import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.network.MarketNetwork
 import com.shusheng.cobblemarket.network.MarketStatePayload
@@ -58,6 +62,14 @@ object MarketCommands {
                         .requires { it.hasPermissionLevel(2) }
                         .executes(::reloadConfig)
                     )
+                    .then(CommandManager.literal("loan")
+                        .requires { it.hasPermissionLevel(2) }
+                        .then(CommandManager.literal("clear")
+                            .then(CommandManager.argument("player", StringArgumentType.word())
+                                .executes(::loanClear)
+                            )
+                        )
+                    )
             )
         }
 
@@ -68,6 +80,41 @@ object MarketCommands {
     }
 
     private fun marketOn(context: CommandContext<ServerCommandSource>): Int = setMarketEnabled(context, true)
+
+    /** /market loan clear <玩家>：撤销该玩家全部坏账（批次 7 服主干预，与全服流水界面撤销按钮双入口） */
+    private fun loanClear(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val server = source.server
+        val name = StringArgumentType.getString(context, "player")
+        val target = BanState.resolvePlayer(server, name)
+        if (target == null) {
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            return 0
+        }
+        val state = FinanceState.get(server)
+        val removed = state.clearBadDebts(target.first)
+        if (removed.isNotEmpty()) {
+            val now = System.currentTimeMillis()
+            removed.forEach { record ->
+                CreditFileLogger.logLoan(
+                    record, LoanLogType.REVOKED,
+                    detail = "服主撤销坏账",
+                    detailEn = "Bad debt revoked by admin",
+                    timestamp = now
+                )
+            }
+            // 撤销后重新评估冻结（坏账冻结随记录消失解除；仍逾期 ≥14 天的贷款保持冻结）
+            FinanceService.syncFreeze(server, target.first)
+            com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+            source.sendFeedback(
+                { Text.translatable("cobblemarket.repay.revoke_success", target.second, removed.size).formatted(Formatting.GREEN) },
+                false
+            )
+        } else {
+            source.sendError(Text.translatable("cobblemarket.repay.revoke_none"))
+        }
+        return 1
+    }
 
     /** 热重载配置：货币除外（运行时切换账本错乱），货币有变更时附提示 */
     private fun reloadConfig(context: CommandContext<ServerCommandSource>): Int {

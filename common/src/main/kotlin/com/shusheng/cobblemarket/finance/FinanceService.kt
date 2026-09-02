@@ -27,8 +27,12 @@ object FinanceService {
     private const val AUTO_REPAY_SCAN_TICKS = 20 * 60
     /** 逾期制裁扫描：每 1440 次划扣扫描（60 秒一次）= 每天一次 */
     private const val SANCTION_SCAN_MULTIPLE = 24 * 60
-    /** FINANCE 来源封禁标记（BanInfo.bannedBy 约定值；解冻只解此来源，不碰 OP 手动封禁） */
-    private const val FINANCE_BAN_MARK = "Finance"
+    /** FINANCE 来源封禁标记（BanInfo.bannedBy；$ 前缀 = 翻译 key，封禁列表显示「喵喵行长」；解冻只解此来源） */
+    private const val FINANCE_BAN_MARK = "\$cobblemarket.ban.by_finance"
+    /** 旧版本存的标记值（"Finance"），解冻判断兼容存量封禁 */
+    private const val LEGACY_FINANCE_BAN_MARK = "Finance"
+    /** 已结清贷款保留天数（批次 7 拍板：结清 90 天后从状态清除，审计 CSV 仍可查历史） */
+    private const val CLOSED_LOAN_RETAIN_DAYS = 90L
 
     private var tickCount = 0
     private var sanctionTickCount = 0
@@ -147,7 +151,11 @@ object FinanceService {
      * 额度校验查完整额度公式（欠款×0.3 已含负向项）。
      */
     fun meowthCheck(player: ServerPlayerEntity, amount: Long, planIndex: Int, now: Long): Text? {
-        if (!CobbleMarketConfig.financeEnabled || !CobbleMarketConfig.consumerLoanEnabled) {
+        // 文案区分：总开关关 = 喵喵银行没开门；消费贷关 = 喵喵支付暂未开放
+        if (!CobbleMarketConfig.financeEnabled) {
+            return Text.translatable("cobblemarket.loan.finance_disabled").formatted(Formatting.RED)
+        }
+        if (!CobbleMarketConfig.consumerLoanEnabled) {
             return Text.translatable("cobblemarket.loan.consumer_disabled").formatted(Formatting.RED)
         }
         val state = FinanceState.get(player.server)
@@ -239,9 +247,35 @@ object FinanceService {
      */
     fun processSanctions(server: MinecraftServer, now: Long) {
         val state = FinanceState.get(server)
+        // 已结清贷款清理（结清超 90 天删除，防存档无限膨胀；审计 CSV 保留历史）
+        val purged = state.purgeClosedLoans(now, CLOSED_LOAN_RETAIN_DAYS)
+        if (purged > 0) {
+            com.shusheng.cobblemarket.CobbleMarket.LOGGER.info("[Finance] purged {} closed loan record(s) older than {} days", purged, CLOSED_LOAN_RETAIN_DAYS)
+            com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+        }
         val online = server.playerManager.playerList.associateBy { it.uuid }
         state.getAllLoans().forEach { loan ->
             if (loan.status == LoanStatus.CLOSED || loan.status == LoanStatus.BAD_DEBT) return@forEach
+            // 到期前 1 天提醒（ACTIVE 且本期未提醒过）：黄色，每期一次，防重复刷屏
+            if (loan.status == LoanStatus.ACTIVE && loan.periodsPaid < loan.periodsTotal &&
+                loan.dueRemindedPeriods <= loan.periodsPaid
+            ) {
+                val nextDueAt = loan.createdAt + (loan.periodsPaid + 1) * LoanRecord.DAY_MS_LONG
+                val dueIn = nextDueAt - now
+                if (dueIn in 1..LoanRecord.DAY_MS_LONG &&
+                    state.markDueReminded(loan.id, loan.periodsPaid + 1)
+                ) {
+                    online[loan.playerUuid]?.sendMessage(
+                        Text.translatable(
+                            "cobblemarket.repay.due_soon",
+                            loan.id,
+                            CurrencyHandler.goldAmount(loan.nextPeriodPrincipal),
+                            CurrencyHandler.goldCurrencyText()
+                        ).formatted(Formatting.YELLOW),
+                        false
+                    )
+                }
+            }
             val days = loan.overdueDaysAt(now)
             if (days < 7) return@forEach
             val player = online[loan.playerUuid]
@@ -320,7 +354,7 @@ object FinanceService {
             ensureFrozen(server, uuid, name)
         } else {
             val info = banState.getBanInfo(uuid, now)
-            if (info != null && info.bannedBy == FINANCE_BAN_MARK) {
+            if (info != null && (info.bannedBy == FINANCE_BAN_MARK || info.bannedBy == LEGACY_FINANCE_BAN_MARK)) {
                 banState.unban(uuid)
                 server.playerManager.getPlayer(uuid)?.sendMessage(
                     Text.translatable("cobblemarket.repay.unfrozen").formatted(Formatting.GREEN),
@@ -449,7 +483,7 @@ object FinanceService {
         val now = System.currentTimeMillis()
         val entries = state.getLoansByPlayer(player.uuid)
             .filter { it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
-            .sortedBy { it.id }
+            .sortedByDescending { it.id }
             .map { r ->
                 val interest = r.interestSince(now)
                 RepayEntry(

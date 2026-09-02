@@ -1,6 +1,11 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.ClientConfig
+import com.shusheng.cobblemarket.client.formatPriceLong
+import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.network.FinanceStatsPayload
+import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
+import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
@@ -16,11 +21,22 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
     private var btnStartY = 0
     private var totalH = 0
 
+    // 金融系统 OP 告警（批次 7）：准备金池（负值红色告警）+ 坏账总额；-1 = 未拉取
+    private var reservePool = -1L
+    private var badDebtTotal = -1L
+    private var statsLoaded = false
+
     companion object {
         // 皮卡丘跑步动画参数（与入口界面一致，共享时间基准实现切换不重置）
         private const val PIKA_CYCLE_MS = 3000L
         private const val PIKA_FRAME_MS = 100L
         private const val PIKA_LOOP_MS = 8000L
+    }
+
+    /** 金融统计快照（进入管理面板时拉取）：准备金池告警行 */
+    fun onFinanceStats(payload: FinanceStatsPayload) {
+        reservePool = payload.reservePool
+        badDebtTotal = payload.badDebtTotal
     }
 
     private fun addMenuButton(x: Int, y: Int, w: Int, h: Int, text: Text, action: net.minecraft.client.gui.widget.ButtonWidget.PressAction, iconLeft: Identifier? = null): TextureButton {
@@ -43,6 +59,11 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         totalH = btnH * rowCount + gap * (rowCount - 1)
         val startY = height / 2 - totalH / 2 + 5 // 按钮整体下移 5px
         btnStartY = startY
+
+        if (!statsLoaded) {
+            sendToServer(RequestFinanceStatsPayload())
+            statsLoaded = true
+        }
 
         // 行 1
         addMenuButton(
@@ -111,6 +132,26 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             Text.translatable("cobblemarket.op.title").formatted(Formatting.GOLD, Formatting.BOLD),
             width / 2, btnStartY - 33, 0xFFFFFF
         )
+        // 金融系统告警行（批次 7）：准备金池 + 坏账总额；准备金为负（服主负债）整行红色告警
+        if (reservePool >= 0 || badDebtTotal >= 0) {
+            val poolText = if (reservePool >= 0)
+                Text.translatable("cobblemarket.op.reserve_line", formatPriceLong(reservePool), inlineCurrencyUnit())
+            else Text.literal("")
+            val debtText = if (badDebtTotal >= 0)
+                Text.translatable("cobblemarket.op.bad_debt_line", formatPriceLong(badDebtTotal), inlineCurrencyUnit())
+            else Text.literal("")
+            val alert = reservePool < 0
+            val line = if (poolText.string.isNotEmpty() && debtText.string.isNotEmpty())
+                Text.literal(poolText.string + "  " + debtText.string)
+            else if (poolText.string.isNotEmpty()) poolText else debtText
+            if (line.string.isNotEmpty()) {
+                context.drawCenteredTextWithShadow(
+                    textRenderer,
+                    if (alert) line.formatted(Formatting.RED) else line,
+                    width / 2, btnStartY - 18, 0xFFFFFF
+                )
+            }
+        }
         // 皮卡丘跑步动画（照入口界面，同一时间基准公式——两界面切换时位置/帧延续，不从头跑）
         val pikaFrame = ((System.currentTimeMillis() / PIKA_FRAME_MS) % 4).toInt()
         val pikaTex = Identifier.of("cobblemarket", "textures/gui/pikachu/pikachu_move_$pikaFrame.png")
