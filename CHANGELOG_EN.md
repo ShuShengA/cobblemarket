@@ -18,6 +18,10 @@
 - **Meowth Bank rules panel**: a new "Rules" button under the back button in Meowth Bank — hover it to see loan rules and consequences (installments / auto-deduct / three-tier sanctions / shared limit / interest), with key points in red
 - **Bad-debt tab in the all-loans ledger**: the OP all-loans screen gains "All / Bad Debt" tabs to filter every bad debt record at once; repaid loan records are auto-purged after 90 days (the audit ledger keeps the full history forever)
 
+### Fixes
+
+- Fixed the Pokémon icon clip regression: the idle-animation rework had overwritten the previously widened scissor clip areas back to the old values, cutting a corner off models that stick out of their slots again — all 15 spots across 10 screens restored to the widened standard
+
 ## 1.0.0 (in development, unreleased)
 
 ### New Feature
