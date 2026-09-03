@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.client.formatPriceLong
+import com.shusheng.cobblemarket.client.formatPriceShortLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.network.FinanceStatsPayload
 import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
@@ -37,6 +38,20 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
     fun onFinanceStats(payload: FinanceStatsPayload) {
         reservePool = payload.reservePool
         badDebtTotal = payload.badDebtTotal
+    }
+
+    /** 大额金额悬停提示：鼠标附近小面板显示完整千分位数字 */
+    private fun renderAmountTooltip(context: DrawContext, mx: Int, my: Int, fullText: String) {
+        val pad = 4
+        val w = textRenderer.getWidth(fullText) + 2 * pad
+        val h = 14
+        val tx = minOf(mx + 12, width - w - 4)
+        val ty = maxOf(my - h - 4, 0)
+        context.matrices.push()
+        context.matrices.translate(0.0, 0.0, 400.0)
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx, ty, w, h, 1, ROW_BACKGROUND_TEX_H)
+        context.drawTextWithShadow(textRenderer, fullText, tx + pad, ty + 3, 0xFFD700.toInt())
+        context.matrices.pop()
     }
 
     private fun addMenuButton(x: Int, y: Int, w: Int, h: Int, text: Text, action: net.minecraft.client.gui.widget.ButtonWidget.PressAction, iconLeft: Identifier? = null): TextureButton {
@@ -134,22 +149,51 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         )
         // 金融系统告警行（批次 7）：准备金池 + 坏账总额；准备金为负（服主负债）整行红色告警
         if (reservePool >= 0 || badDebtTotal >= 0) {
-            val poolText = if (reservePool >= 0)
-                Text.translatable("cobblemarket.op.reserve_line", formatPriceLong(reservePool), inlineCurrencyUnit())
-            else Text.literal("")
-            val debtText = if (badDebtTotal >= 0)
-                Text.translatable("cobblemarket.op.bad_debt_line", formatPriceLong(badDebtTotal), inlineCurrencyUnit())
-            else Text.literal("")
+            // 金额用单位缩写（k/M/B），悬停显示完整数字；金额金色，准备金为负整行红；
+            // 准备金行已拉取（!= -1）就渲染——负值走红色告警不能丢行
             val alert = reservePool < 0
-            val line = if (poolText.string.isNotEmpty() && debtText.string.isNotEmpty())
-                Text.literal(poolText.string + "  " + debtText.string)
-            else if (poolText.string.isNotEmpty()) poolText else debtText
-            if (line.string.isNotEmpty()) {
+            val poolY = btnStartY - 20
+            val debtY = btnStartY - 10
+            if (reservePool != -1L) {
                 context.drawCenteredTextWithShadow(
                     textRenderer,
-                    if (alert) line.formatted(Formatting.RED) else line,
-                    width / 2, btnStartY - 18, 0xFFFFFF
+                    Text.translatable(
+                        "cobblemarket.op.reserve_line",
+                        Text.literal(formatPriceShortLong(reservePool)).formatted(if (alert) Formatting.RED else Formatting.GOLD),
+                        Text.literal(inlineCurrencyUnit()).formatted(if (alert) Formatting.RED else Formatting.GOLD)
+                    ),
+                    width / 2, poolY, 0xFFFFFF
                 )
+                // 悬停显示完整数字（X 限行文字范围内，防面板外触发）
+                val lineW = textRenderer.getWidth(
+                    Text.translatable(
+                        "cobblemarket.op.reserve_line",
+                        formatPriceShortLong(reservePool), inlineCurrencyUnit()
+                    )
+                )
+                if (mouseY in poolY..(poolY + 9) && Math.abs(mouseX - width / 2) <= lineW / 2) {
+                    renderAmountTooltip(context, mouseX, mouseY, formatPriceLong(reservePool))
+                }
+            }
+            if (badDebtTotal != -1L) {
+                context.drawCenteredTextWithShadow(
+                    textRenderer,
+                    Text.translatable(
+                        "cobblemarket.op.bad_debt_line",
+                        Text.literal(formatPriceShortLong(badDebtTotal)).formatted(Formatting.GOLD),
+                        Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)
+                    ),
+                    width / 2, debtY, 0xFFFFFF
+                )
+                val lineW = textRenderer.getWidth(
+                    Text.translatable(
+                        "cobblemarket.op.bad_debt_line",
+                        formatPriceShortLong(badDebtTotal), inlineCurrencyUnit()
+                    )
+                )
+                if (mouseY in debtY..(debtY + 9) && Math.abs(mouseX - width / 2) <= lineW / 2) {
+                    renderAmountTooltip(context, mouseX, mouseY, formatPriceLong(badDebtTotal))
+                }
             }
         }
         // 皮卡丘跑步动画（照入口界面，同一时间基准公式——两界面切换时位置/帧延续，不从头跑）

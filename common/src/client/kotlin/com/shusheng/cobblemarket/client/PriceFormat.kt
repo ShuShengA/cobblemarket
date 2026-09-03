@@ -38,3 +38,14 @@ private fun oneDecimal(v: Double): String {
     val tenths = (v * 10).toInt()
     return "${tenths / 10}.${tenths % 10}"
 }
+
+/**
+ * Long 版价格缩写（管理面板大额告警行用）：4 位以内原样显示，更大用 k/M/B（截断 1 位小数）。
+ * 完整数字见悬停 tooltip（formatPriceLong）。
+ */
+fun formatPriceShortLong(price: Long): String = when {
+    price < 10_000 -> price.toString()
+    price < 1_000_000 -> "${oneDecimal(price / 1000.0)}k"
+    price < 1_000_000_000 -> "${oneDecimal(price / 1_000_000.0)}M"
+    else -> "${oneDecimal(price / 1_000_000_000.0)}B"
+}
