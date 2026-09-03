@@ -120,10 +120,6 @@ In real time on view/deposit/withdraw (principal × daily rate × full days); de
 
 `ipDebtLimit` aggregates the debt of every player who used that IP in the last 30 days. For dorm/cyber-café NAT sharing, raise the cap to 3× the limit max or set 0.
 
-### IP features broken behind a tunnel (Sakura FRP etc.)?
-
-Behind an FRP tunnel every player shows the same IP (127.0.0.1): the same-IP cap becomes server-wide, the same-IP discount hits everyone, and IP-based alt spotting stops working. Fix: enable PROXY Protocol on the tunnel (Sakura FRP: add `proxy_protocol_version = v2` in the tunnel's custom settings) and install a supporting server mod (e.g. HAProxyCompat on Modrinth, works on both Fabric and NeoForge). If that's not possible, set `ipDebtLimit` to 0.
-
 ### What happens to a player after bad debt?
 
 Trading is frozen and borrowing is permanently blocked. Owner intervention has two levels: unban via the ban screen (trading restored, borrowing still blocked), or revoke the bad debt (trading and borrowing fully restored; the audit ledger keeps a revoke event).
