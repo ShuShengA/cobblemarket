@@ -269,7 +269,10 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
 
     private fun snapshotText(key: String, payload: ServerConfigDataPayload?): String {
         val v = numValue(key, payload)
-        return if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+        // 小数用 BigDecimal 明文格式化：Double.toString 对极小值输出科学计数法（1.0E-4），
+        // 输入框过滤器只允许数字+小数点，E/- 会被拒导致显示空
+        return if (v == v.toLong().toDouble()) v.toLong().toString()
+        else java.math.BigDecimal.valueOf(v).stripTrailingZeros().toPlainString()
     }
 
     private fun numValue(key: String, payload: ServerConfigDataPayload?): Double = when (key) {
