@@ -48,7 +48,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         // 返回按钮：右边缘与「全部借款历史」按钮右边缘对齐
         // （全部借款历史：x=width/2+25 宽 80 → 右边缘 width/2+105；返回按钮宽 50 → x=width/2+55）
         backButton = NineSliceButton(
-            width / 2 + 55, bgTop + 46, 50, 16,
+            width / 2 + 55, bgTop + 47, 50, 16,
             Text.translatable("cobblemarket.gui.back"),
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) }
         )
@@ -56,7 +56,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
 
         // 规则按钮：返回按钮下方 4px（悬停显示借款规则与后果面板，照拍卖场规则按钮）
         rulesButton = NineSliceButton(
-            width / 2 + 55, bgTop + 66, 50, 16,
+            width / 2 + 55, bgTop + 67, 50, 16,
             Text.translatable("cobblemarket.meowth_bank.rules"),
             { }
         )
