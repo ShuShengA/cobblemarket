@@ -49,6 +49,8 @@ data class ListingEntry(
     // 努力值（EV）：上架时的训练快照，详情显示用
     val evsHp: Int, val evsAtk: Int, val evsDef: Int,
     val evsSpAtk: Int, val evsSpDef: Int, val evsSpd: Int,
+    /** 亲密度（上架时快照） */
+    val friendship: Int,
     val nature: String,
     val natureBase: String,    // 原生性格（与 nature 不同 = 用过薄荷）
     val ability: String,
@@ -76,6 +78,7 @@ data class ListingEntry(
         buf.writeInt(htSpAtk); buf.writeInt(htSpDef); buf.writeInt(htSpd)
         buf.writeInt(evsHp); buf.writeInt(evsAtk); buf.writeInt(evsDef)
         buf.writeInt(evsSpAtk); buf.writeInt(evsSpDef); buf.writeInt(evsSpd)
+        buf.writeInt(friendship)
         buf.writeString(nature)
         buf.writeString(natureBase)
         buf.writeString(ability)
@@ -105,6 +108,7 @@ data class ListingEntry(
             htSpAtk = buf.readInt(), htSpDef = buf.readInt(), htSpd = buf.readInt(),
             evsHp = buf.readInt(), evsAtk = buf.readInt(), evsDef = buf.readInt(),
             evsSpAtk = buf.readInt(), evsSpDef = buf.readInt(), evsSpd = buf.readInt(),
+            friendship = buf.readInt(),
             nature = buf.readString(),
             natureBase = buf.readString(),
             ability = buf.readString(),
@@ -480,7 +484,9 @@ data class PokemonPreview(
     val heldItemId: String,
     val aspects: List<String>, // 精灵形态（shiny/性别/地区形态等），客户端渲染 3D 图标用
     // 努力值（EV）：上架选择/待领取等场景的详情显示用
-    val evsHp: Int, val evsAtk: Int, val evsDef: Int, val evsSpAtk: Int, val evsSpDef: Int, val evsSpd: Int
+    val evsHp: Int, val evsAtk: Int, val evsDef: Int, val evsSpAtk: Int, val evsSpDef: Int, val evsSpd: Int,
+    /** 亲密度（预览快照） */
+    val friendship: Int
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(uuid); buf.writeString(species); buf.writeString(speciesId); buf.writeString(speciesName)
@@ -495,6 +501,7 @@ data class PokemonPreview(
         buf.writeVarInt(aspects.size); aspects.forEach { buf.writeString(it) }
         buf.writeInt(evsHp); buf.writeInt(evsAtk); buf.writeInt(evsDef)
         buf.writeInt(evsSpAtk); buf.writeInt(evsSpDef); buf.writeInt(evsSpd)
+        buf.writeInt(friendship)
     }
 
     companion object {
@@ -507,7 +514,8 @@ data class PokemonPreview(
             buf.readString(), buf.readString(), buf.readString(),
             buf.readString(), buf.readInt(), buf.readString(),
             (0 until buf.readVarInt()).map { buf.readString() },
-            buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt()
+            buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
+            buf.readInt()
         )
     }
 }
@@ -1084,6 +1092,7 @@ object MarketNetwork {
                             evsSpAtk = detail["evsSpAtk"]?.toIntOrNull() ?: 0,
                             evsSpDef = detail["evsSpDef"]?.toIntOrNull() ?: 0,
                             evsSpd = detail["evsSpd"]?.toIntOrNull() ?: 0,
+                            friendship = detail["friendship"]?.toIntOrNull() ?: 0,
                             nature = detail["nature"] ?: "?",
                             natureBase = detail["natureBase"] ?: detail["nature"] ?: "?",
                             ability = detail["ability"] ?: "?",
@@ -1437,6 +1446,7 @@ object MarketNetwork {
                             evsSpAtk = detail["evsSpAtk"]?.toIntOrNull() ?: 0,
                             evsSpDef = detail["evsSpDef"]?.toIntOrNull() ?: 0,
                             evsSpd = detail["evsSpd"]?.toIntOrNull() ?: 0,
+                            friendship = detail["friendship"]?.toIntOrNull() ?: 0,
                             nature = detail["nature"] ?: "?",
                             natureBase = detail["natureBase"] ?: detail["nature"] ?: "?",
                             ability = detail["ability"] ?: "?",
@@ -2715,6 +2725,7 @@ object MarketNetwork {
             "evsSpAtk" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK].toString(),
             "evsSpDef" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE].toString(),
             "evsSpd" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED].toString(),
+            "friendship" to pokemon.friendship.toString(),
             "nature" to "cobblemon.nature.${pokemon.effectiveNature.name.path}",
             // 原生性格（薄荷不改）：与 nature 不同 = 用过薄荷，客户端斜体显示
             "natureBase" to "cobblemon.nature.${pokemon.nature.name.path}",
@@ -2770,7 +2781,8 @@ object MarketNetwork {
             evsDef = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.DEFENCE] ?: 0,
             evsSpAtk = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK] ?: 0,
             evsSpDef = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE] ?: 0,
-            evsSpd = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: 0
+            evsSpd = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: 0,
+            friendship = pokemon.friendship
         )
 
     fun openScreen(player: ServerPlayerEntity) {

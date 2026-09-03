@@ -888,6 +888,7 @@ object AuctionNetwork {
             "evsSpAtk" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK].toString(),
             "evsSpDef" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE].toString(),
             "evsSpd" to pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED].toString(),
+            "friendship" to pokemon.friendship.toString(),
             "nature" to "cobblemon.nature.${pokemon.effectiveNature.name.path}",
             // 原生性格（薄荷不改）：与 nature 不同 = 用过薄荷，客户端斜体显示
             "natureBase" to "cobblemon.nature.${pokemon.nature.name.path}",
