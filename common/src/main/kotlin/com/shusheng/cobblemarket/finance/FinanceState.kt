@@ -343,8 +343,10 @@ class FinanceState private constructor() : PersistentState() {
      * 借多少扣多少、还清即恢复；交易额加权自动适配服务器通胀水平（欠款系数 debtWeight 已废弃）。
      */
     fun creditLimitFor(playerUuid: UUID, now: Long): Long {
+        // 近30天计入额：冷却期内（成交后 N 小时内）不计入——防「现刷现借」组团套现跑路（冷却时长服主可配，0 = 不冷却）
+        val cooldownMs = CobbleMarketConfig.creditLimitCooldownHours * 60L * 60 * 1000
         val recent = tradeRecords[playerUuid]
-            ?.filter { now - it.at <= TRADE_WINDOW_MS }
+            ?.filter { now - it.at > cooldownMs && now - it.at <= TRADE_WINDOW_MS }
             ?.sumOf { it.countedAmount } ?: 0L
         val history = totalCountedVolume[playerUuid] ?: 0L
         val debt = loans.values
