@@ -81,6 +81,12 @@ data class LoanRecord(
 /** 防刷 IP 记录（30 天窗口） */
 data class IpEntry(val ip: String, val at: Long)
 
+/** 活期存款账户（本金 + 结算基准；利息按天实算，查看/取款时结算入本金并刷新基准） */
+data class DepositAccount(
+    val principal: Long,
+    val lastSettleAt: Long
+)
+
 /**
  * 成交记录（额度公式数据源，买入方视角）：countedAmount 为防刷三层在成交时快照判定后的实际计入额
  * （贷款/交易对/IP 状态随时间变，事后回算会失真；0 = 全额不计）。
@@ -109,6 +115,8 @@ class FinanceState private constructor() : PersistentState() {
     private val tradeRecords = mutableMapOf<UUID, MutableList<TradeRecord>>()
     /** 每玩家历史累计计入额（窗口清理后仍保留，供额度公式历史项） */
     private val totalCountedVolume = mutableMapOf<UUID, Long>()
+    /** 活期存款：本金（利息不预存，查看/取款时实算结算入账）+ 上次结算时刻（存取刷新） */
+    private val deposits = mutableMapOf<UUID, DepositAccount>()
 
     // ── 准备金池 ──
 
@@ -246,6 +254,49 @@ class FinanceState private constructor() : PersistentState() {
         return expired.size
     }
 
+    // ── 活期存款（批次 7.5：存钱进池吃利息，取款池出；利息从池出，池负照发=服主兜底） ──
+
+    /** 距上次结算的利息（实算）：本金 × 日息 × 整天数；调用方结算后 resetSettle 刷新基准 */
+    fun depositInterest(uuid: UUID, now: Long): Long {
+        val account = deposits[uuid] ?: return 0
+        val days = ((now - account.lastSettleAt).coerceAtLeast(0)) / LoanRecord.DAY_MS_LONG
+        return Math.round(account.principal.toDouble() * CobbleMarketConfig.dailyDepositRate * days.toDouble())
+    }
+
+    /** 存款余额（本金 + 未结算利息；界面展示用，不改状态） */
+    fun getDepositBalance(uuid: UUID, now: Long): Long =
+        deposits[uuid]?.let { it.principal + depositInterest(uuid, now) } ?: 0L
+
+    /** 存款：本金 +N 并先结算既有利息入本金；刷新结算基准 */
+    fun depositMoney(uuid: UUID, amount: Long, now: Long): Long {
+        val settled = deposits[uuid]?.principal ?: 0L
+        val interest = depositInterest(uuid, now)
+        deposits[uuid] = DepositAccount(settled + interest + amount, now)
+        markDirty()
+        return deposits[uuid]!!.principal
+    }
+
+    /** 取款结算：利息先入账，取出 take（≤ 总额）；返回 (本金部分, 利息部分)；剩余记为新本金并刷新基准 */
+    fun withdrawMoney(uuid: UUID, amount: Long, now: Long): Pair<Long, Long> {
+        val account = deposits[uuid] ?: return 0L to 0L
+        val interest = depositInterest(uuid, now)
+        val total = account.principal + interest
+        val take = amount.coerceAtMost(total)
+        val interestPart = minOf(take, interest)
+        val principalPart = take - interestPart
+        val remaining = total - take
+        if (remaining > 0) {
+            deposits[uuid] = DepositAccount(remaining, now)
+        } else {
+            deposits.remove(uuid)
+        }
+        markDirty()
+        return principalPart to interestPart
+    }
+
+    /** 全服存款总额（OP 面板展示用） */
+    fun getTotalDeposits(): Long = deposits.values.sumOf { it.principal }
+
     // ── 全服累计成交额（仅入口界面展示，不参与任何金融计算） ──
 
     fun getTotalTradingVolume(): Long = totalTradingVolume
@@ -299,7 +350,9 @@ class FinanceState private constructor() : PersistentState() {
             getPlayerIp(seller)?.let { recordIp(sellerUuid, it, now) }
         }
         val list = tradeRecords.getOrPut(buyerUuid) { mutableListOf() }
-        list.removeAll { now - it.at > TRADE_WINDOW_MS }
+        // 交易对检测窗口/笔数可配（服主调防刷强度；与额度公式的「近30天交易额」窗口无关）
+        val pairWindowMs = CobbleMarketConfig.tradePairWindowDays * LoanRecord.DAY_MS_LONG
+        list.removeAll { now - it.at > pairWindowMs }
         val pairCount = list.count { it.counterpartyUuid == sellerUuid }
         val hasOpenLoan = loans.values.any { it.playerUuid == buyerUuid && it.status != LoanStatus.CLOSED }
         val buyerOp = buyer?.hasPermissionLevel(2) == true
@@ -307,7 +360,7 @@ class FinanceState private constructor() : PersistentState() {
         val sameIp = !buyerOp && buyerIp != null && buyerIp == latestIpOf(sellerUuid, now)
         val counted = when {
             loanFunded || hasOpenLoan -> 0L
-            pairCount >= MAX_SAME_PAIR_TRADES -> 0L
+            pairCount >= CobbleMarketConfig.tradePairMaxTrades -> 0L
             sameIp -> amount * 9 / 10
             else -> amount
         }
@@ -424,6 +477,15 @@ class FinanceState private constructor() : PersistentState() {
             volumeList.add(c)
         }
         nbt.put("totalCountedVolume", volumeList)
+        val depositList = NbtList()
+        deposits.forEach { (uuid, account) ->
+            val c = NbtCompound()
+            c.putUuid("uuid", uuid)
+            c.putLong("principal", account.principal)
+            c.putLong("lastSettleAt", account.lastSettleAt)
+            depositList.add(c)
+        }
+        nbt.put("deposits", depositList)
         return nbt
     }
 
@@ -431,8 +493,6 @@ class FinanceState private constructor() : PersistentState() {
         private const val IP_WINDOW_MS = 30L * 24 * 60 * 60 * 1000
         /** 成交额窗口（额度公式近30天项） */
         private const val TRADE_WINDOW_MS = 30L * 24 * 60 * 60 * 1000
-        /** 30 天内同一买卖对达到该笔数后，该对后续成交不计入交易额（防刷第 2 层） */
-        private const val MAX_SAME_PAIR_TRADES = 3
 
         private val TYPE = PersistentState.Type(
             { FinanceState() },
@@ -502,6 +562,14 @@ class FinanceState private constructor() : PersistentState() {
                             totalCountedVolume[c.getUuid("uuid")] = c.getLong("volume")
                         } catch (e: Exception) {
                             CobbleMarket.LOGGER.warn("Skipping corrupted finance volume entry: {}", e.message)
+                        }
+                    }
+                    nbt.getList("deposits", NbtList.COMPOUND_TYPE.toInt()).forEach { element ->
+                        try {
+                            val c = element as NbtCompound
+                            deposits[c.getUuid("uuid")] = DepositAccount(c.getLong("principal"), c.getLong("lastSettleAt"))
+                        } catch (e: Exception) {
+                            CobbleMarket.LOGGER.warn("Skipping corrupted finance deposit entry: {}", e.message)
                         }
                     }
                 }

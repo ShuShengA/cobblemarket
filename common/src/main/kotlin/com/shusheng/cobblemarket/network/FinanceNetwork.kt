@@ -190,6 +190,62 @@ data class FinanceStatsPayload(
     }
 }
 
+// ── C2S：活期存款（批次 7.5；总开关关时拒绝存款，取款永远开放——钱是玩家的不能卡） ──
+
+data class RequestDepositPayload(val amount: Long) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestDepositPayload>(CobbleMarket.id("request_deposit"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestDepositPayload> = PacketCodec.of(
+            { p, b -> b.writeLong(p.amount) },
+            { b -> RequestDepositPayload(b.readLong()) }
+        )
+    }
+}
+
+// ── C2S：取款（金额 ≤ 存款余额；取款不受总开关限制） ──
+
+data class RequestWithdrawPayload(val amount: Long) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestWithdrawPayload>(CobbleMarket.id("request_withdraw"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestWithdrawPayload> = PacketCodec.of(
+            { p, b -> b.writeLong(p.amount) },
+            { b -> RequestWithdrawPayload(b.readLong()) }
+        )
+    }
+}
+
+// ── C2S：请求存款信息（余额/累计利息/日利率） ──
+
+class RequestDepositInfoPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestDepositInfoPayload>(CobbleMarket.id("request_deposit_info"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestDepositInfoPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestDepositInfoPayload() }
+        )
+    }
+}
+
+// ── S2C：存款信息 ──
+
+data class DepositInfoPayload(
+    val balance: Long,
+    val interest: Long,
+    val rate: Double
+) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<DepositInfoPayload>(CobbleMarket.id("deposit_info"))
+        val CODEC: PacketCodec<PacketByteBuf, DepositInfoPayload> = PacketCodec.of(
+            { p, b -> b.writeLong(p.balance); b.writeLong(p.interest); b.writeDouble(p.rate) },
+            { b -> DepositInfoPayload(b.readLong(), b.readLong(), b.readDouble()) }
+        )
+    }
+}
+
 // ── C2S：撤销玩家全部坏账（仅 OP；批次 7 服主干预双入口之一） ──
 
 data class RequestRevokeBadDebtPayload(val playerUuid: UUID) : CustomPayload {
@@ -266,6 +322,7 @@ object FinanceNetwork {
         registerS2CType(LoanHistoryDataPayload.ID, LoanHistoryDataPayload.CODEC)
         registerS2CType(RepayListDataPayload.ID, RepayListDataPayload.CODEC)
         registerS2CType(FinanceStatsPayload.ID, FinanceStatsPayload.CODEC)
+        registerS2CType(DepositInfoPayload.ID, DepositInfoPayload.CODEC)
 
         // ── 应急贷款借款 ──
         registerC2S(RequestLoanPayload.ID, RequestLoanPayload.CODEC) { payload, player ->
@@ -379,6 +436,97 @@ object FinanceNetwork {
             }
         }
 
+        // ── 活期存款（总开关只拦存款，取款永远开放——钱是玩家的不能卡） ──
+        registerC2S(RequestDepositPayload.ID, RequestDepositPayload.CODEC) { payload, player ->
+            if (!RequestThrottle.allow(player.uuid, "request_deposit", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val state = FinanceState.get(server)
+                val now = System.currentTimeMillis()
+                if (!CobbleMarketConfig.financeEnabled) {
+                    player.sendMessage(Text.translatable("cobblemarket.loan.finance_disabled").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                val amount = payload.amount
+                if (amount <= 0 || amount > Int.MAX_VALUE) {
+                    player.sendMessage(Text.translatable("cobblemarket.loan.invalid_amount").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                // 分批扣款（防 Int 溢出）+ 入池 + 记账（利息先结算入本金）
+                if (!com.shusheng.cobblemarket.finance.FinanceService.removeInChunks(player, amount)) {
+                    player.sendMessage(
+                        Text.translatable(
+                            "cobblemarket.network.need_diamonds",
+                            com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(amount),
+                            com.shusheng.cobblemarket.config.CurrencyHandler.goldCurrencyText()
+                        ).formatted(Formatting.RED),
+                        false
+                    )
+                    return@execute
+                }
+                state.depositReserve(amount)
+                val newBalance = state.depositMoney(player.uuid, amount, now)
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                player.sendMessage(
+                    Text.translatable(
+                        "cobblemarket.deposit.success",
+                        com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(amount),
+                        com.shusheng.cobblemarket.config.CurrencyHandler.goldCurrencyText()
+                    ).formatted(Formatting.GREEN),
+                    false
+                )
+                sendDepositInfo(player, state, now)
+            }
+        }
+
+        registerC2S(RequestWithdrawPayload.ID, RequestWithdrawPayload.CODEC) { payload, player ->
+            if (!RequestThrottle.allow(player.uuid, "request_withdraw", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val state = FinanceState.get(server)
+                val now = System.currentTimeMillis()
+                val amount = payload.amount
+                if (amount <= 0) {
+                    player.sendMessage(Text.translatable("cobblemarket.loan.invalid_amount").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                val balance = state.getDepositBalance(player.uuid, now)
+                if (balance <= 0) {
+                    player.sendMessage(Text.translatable("cobblemarket.deposit.empty").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                // 结算取出：利息入账后取出；池出账 + 发放（背包满挂待领取兜底）
+                val (principalPart, interestPart) = state.withdrawMoney(player.uuid, amount, now)
+                if (principalPart + interestPart <= 0) {
+                    player.sendMessage(Text.translatable("cobblemarket.deposit.empty").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                val take = principalPart + interestPart
+                state.withdrawReserve(take)
+                val given = com.shusheng.cobblemarket.config.CurrencyHandler.give(player, take)
+                if (given < take) {
+                    MarketState.get(server).addPendingBalance(player.uuid, take - given)
+                }
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                player.sendMessage(
+                    Text.translatable(
+                        "cobblemarket.deposit.withdrawn",
+                        com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(take),
+                        com.shusheng.cobblemarket.config.CurrencyHandler.goldCurrencyText(),
+                        com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(interestPart)
+                    ).formatted(Formatting.GREEN),
+                    false
+                )
+                sendDepositInfo(player, state, now)
+            }
+        }
+
+        registerC2S(RequestDepositInfoPayload.ID, RequestDepositInfoPayload.CODEC) { _, player ->
+            if (!RequestThrottle.allow(player.uuid, "request_deposit_info", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute { sendDepositInfo(player, FinanceState.get(server), System.currentTimeMillis()) }
+        }
+
         // ── 金融统计（全服累计成交额所有人可见；准备金池/坏账总额仅 OP） ──
         registerC2S(RequestFinanceStatsPayload.ID, RequestFinanceStatsPayload.CODEC) { _, player ->
             if (!RequestThrottle.allow(player.uuid, "request_finance_stats", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
@@ -465,6 +613,19 @@ object FinanceNetwork {
                 sendToPlayer(player, LoanHistoryDataPayload(entries))
             }
         }
+    }
+
+    /** 存款信息回发（存取成功后刷新界面） */
+    private fun sendDepositInfo(player: ServerPlayerEntity, state: FinanceState, now: Long) {
+        val interest = state.depositInterest(player.uuid, now)
+        sendToPlayer(
+            player,
+            DepositInfoPayload(
+                balance = state.getDepositBalance(player.uuid, now),
+                interest = interest,
+                rate = CobbleMarketConfig.dailyDepositRate
+            )
+        )
     }
 
     /** 借款历史条目构造（借款历史请求与撤销坏账后回发共用）；all=true 时带最近 IP（小号排查） */

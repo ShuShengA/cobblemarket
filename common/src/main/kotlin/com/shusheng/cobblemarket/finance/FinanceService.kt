@@ -502,7 +502,7 @@ object FinanceService {
     }
 
     /** 分批扣款（CurrencyHandler.remove 为 Int 签名，总额可能超 Int）；调用前已 getBalance 预检，竞态窗口可忽略 */
-    private fun removeInChunks(player: ServerPlayerEntity, total: Long): Boolean {
+    fun removeInChunks(player: ServerPlayerEntity, total: Long): Boolean {
         if (total <= 0) return true
         var remaining = total
         while (remaining > 0) {
