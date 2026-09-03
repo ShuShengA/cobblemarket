@@ -111,6 +111,12 @@ object CobbleMarketConfig {
     /** 交易对检测笔数：窗口内同一买卖对达到该笔数后，该对后续成交不计入交易额 */
     var tradePairMaxTrades: Long = 3L
         private set
+    /** 喵喵紫卡全服上限（张） */
+    var purpleCardCount: Long = 20L
+        private set
+    /** 喵喵紫卡持有者额度（固定值，不受额度公式/上下限钳制） */
+    var purpleCardCreditLimit: Long = 1_000_000L
+        private set
     /** 到期自动划扣最低保留：最多划到余额=此值为止（划不足进 OVERDUE） */
     var autoRepayMinBalance: Long = 1_000L
         private set
@@ -189,6 +195,8 @@ object CobbleMarketConfig {
     fun setDailyDepositRate(v: Double) { dailyDepositRate = v.coerceIn(0.0, 1.0) }
     fun setTradePairWindowDays(v: Long) { tradePairWindowDays = v.coerceAtLeast(1L) }
     fun setTradePairMaxTrades(v: Long) { tradePairMaxTrades = v.coerceAtLeast(1L) }
+    fun setPurpleCardCount(v: Long) { purpleCardCount = v.coerceAtLeast(0L) }
+    fun setPurpleCardCreditLimit(v: Long) { purpleCardCreditLimit = v.coerceAtLeast(0L) }
     fun setAutoRepayMinBalance(v: Long) { autoRepayMinBalance = v.coerceAtLeast(0L) }
     fun setIpDebtLimit(v: Long) { ipDebtLimit = v.coerceAtLeast(0L) }
     fun setOverdueFeeDoubleDays(v: Int) { overdueFeeDoubleDays = v.coerceAtLeast(0) }
@@ -292,6 +300,8 @@ object CobbleMarketConfig {
                     val fileDepositRate = (finance["dailyDepositRate"] as? Number)?.toDouble() ?: 0.0001
                     val filePairWindow = (finance["tradePairWindowDays"] as? Number)?.toLong() ?: 30L
                     val filePairMax = (finance["tradePairMaxTrades"] as? Number)?.toLong() ?: 3L
+                    val fileCardCount = (finance["purpleCardCount"] as? Number)?.toLong() ?: 20L
+                    val fileCardLimit = (finance["purpleCardCreditLimit"] as? Number)?.toLong() ?: 1_000_000L
                     val fileIpDebtLimit = (finance["ipDebtLimit"] as? Number)?.toLong() ?: 100_000L
                     val overdueDays = finance["overdueDays"] as? Map<*, *>
                     val fileFeeDouble = (overdueDays?.get("feeDouble") as? Number)?.toInt() ?: 7
@@ -311,6 +321,8 @@ object CobbleMarketConfig {
                     dailyDepositRate = fileDepositRate.coerceIn(0.0, 1.0)
                     tradePairWindowDays = filePairWindow.coerceAtLeast(1L)
                     tradePairMaxTrades = filePairMax.coerceAtLeast(1L)
+                    purpleCardCount = fileCardCount.coerceAtLeast(0L)
+                    purpleCardCreditLimit = fileCardLimit.coerceAtLeast(0L)
                     ipDebtLimit = fileIpDebtLimit.coerceAtLeast(0L)
                     // 逾期三档钳制：0 也可（关闭该档位动作），负数钳 0
                     overdueFeeDoubleDays = fileFeeDouble.coerceAtLeast(0)
@@ -432,6 +444,8 @@ object CobbleMarketConfig {
                 "dailyDepositRate" to dailyDepositRate,
                 "tradePairWindowDays" to tradePairWindowDays,
                 "tradePairMaxTrades" to tradePairMaxTrades,
+                "purpleCardCount" to purpleCardCount,
+                "purpleCardCreditLimit" to purpleCardCreditLimit,
                 "ipDebtLimit" to ipDebtLimit,
                 "overdueDays" to mapOf(
                     "feeDouble" to overdueFeeDoubleDays,

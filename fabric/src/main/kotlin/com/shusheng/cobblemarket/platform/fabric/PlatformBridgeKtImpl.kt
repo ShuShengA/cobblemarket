@@ -162,3 +162,10 @@ fun impactorAdd(uuid: UUID, amount: BigDecimal): Boolean = try {
 } catch (_: Throwable) {
     false
 }
+
+fun registerItems(items: List<Pair<net.minecraft.util.Identifier, () -> net.minecraft.item.Item>>) {
+    // fabric 物品注册：common 初始化阶段直接执行（此时 Registry 可写）
+    items.forEach { (id, factory) ->
+        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM, id, factory())
+    }
+}

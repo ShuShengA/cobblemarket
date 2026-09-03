@@ -247,6 +247,7 @@ object CobbleMarketClient {
                 cache.consumerLoanEnabled = payload.consumerLoanEnabled
                 cache.creditLimit = payload.limit
                 cache.creditDebt = payload.debt
+                cache.hasPurpleCard = payload.hasPurpleCard
                 val screen = client.currentScreen
                 when (screen) {
                     // 喵喵银行与应急贷款共用同一份额度快照（借款成功后服务端回发刷新）；

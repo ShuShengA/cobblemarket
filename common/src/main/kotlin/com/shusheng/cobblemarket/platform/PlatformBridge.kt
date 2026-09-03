@@ -75,6 +75,10 @@ fun onServerTickEnd(handler: (server: MinecraftServer) -> Unit): Unit = throw As
 @ExpectPlatform
 fun onPlayerJoin(handler: (player: ServerPlayerEntity) -> Unit): Unit = throw AssertionError()
 
+/** 物品注册（双平台）：传入 (id, 物品工厂) 列表，在对应平台的物品注册时机逐一注册 */
+@ExpectPlatform
+fun registerItems(items: List<Pair<net.minecraft.util.Identifier, () -> net.minecraft.item.Item>>): Unit = throw AssertionError()
+
 @ExpectPlatform
 fun onPlayerDisconnect(handler: (player: ServerPlayerEntity) -> Unit): Unit = throw AssertionError()
 

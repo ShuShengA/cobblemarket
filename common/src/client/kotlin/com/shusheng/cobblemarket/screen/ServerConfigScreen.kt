@@ -62,6 +62,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         NumDef("cobblemarket.op.scfg_deposit_rate", false) to "depositRate",
         NumDef("cobblemarket.op.scfg_pair_window", true) to "pairWindow",
         NumDef("cobblemarket.op.scfg_pair_max", true) to "pairMax",
+        NumDef("cobblemarket.op.scfg_card_count", true) to "cardCount",
+        NumDef("cobblemarket.op.scfg_card_limit", true) to "cardLimit",
         NumDef("cobblemarket.op.scfg_ip_debt_limit", true) to "ipDebtLimit",
         NumDef("cobblemarket.op.scfg_min_balance", true) to "autoRepayMinBalance",
         NumDef("cobblemarket.op.scfg_overdue_fee_double", true) to "overdueFeeDouble",
@@ -310,6 +312,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         "depositRate" -> payload?.dailyDepositRate ?: 0.0001
         "pairWindow" -> (payload?.tradePairWindowDays ?: 30L).toDouble()
         "pairMax" -> (payload?.tradePairMaxTrades ?: 3L).toDouble()
+        "cardCount" -> (payload?.purpleCardCount ?: 20L).toDouble()
+        "cardLimit" -> (payload?.purpleCardCreditLimit ?: 1_000_000L).toDouble()
         "ipDebtLimit" -> (payload?.ipDebtLimit ?: 100_000L).toDouble()
         "autoRepayMinBalance" -> (payload?.autoRepayMinBalance ?: 1_000L).toDouble()
         "overdueFeeDouble" -> (payload?.overdueFeeDouble ?: 7).toDouble()
@@ -405,6 +409,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             dailyDepositRate = doubleOr("depositRate", p?.dailyDepositRate ?: 0.0001),
             tradePairWindowDays = longOr("pairWindow", p?.tradePairWindowDays ?: 30L),
             tradePairMaxTrades = longOr("pairMax", p?.tradePairMaxTrades ?: 3L),
+            purpleCardCount = longOr("cardCount", p?.purpleCardCount ?: 20L),
+            purpleCardCreditLimit = longOr("cardLimit", p?.purpleCardCreditLimit ?: 1_000_000L),
             ipDebtLimit = longOr("ipDebtLimit", p?.ipDebtLimit ?: 100_000L),
             autoRepayMinBalance = longOr("autoRepayMinBalance", p?.autoRepayMinBalance ?: 1_000L),
             overdueFeeDouble = intOr("overdueFeeDouble", p?.overdueFeeDouble ?: 7),

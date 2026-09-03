@@ -163,3 +163,14 @@ fun impactorAdd(uuid: UUID, amount: BigDecimal): Boolean = try {
 } catch (_: Throwable) {
     false
 }
+
+fun registerItems(items: List<Pair<net.minecraft.util.Identifier, () -> net.minecraft.item.Item>>) {
+    // neoforge 物品注册：RegisterEvent 时机注册（照 payload 注册的 modEventBus 模式）
+    NeoForgePlatform.modEventBus().addListener(net.neoforged.neoforge.registries.RegisterEvent::class.java) { event ->
+        if (event.registryKey == net.minecraft.registry.Registries.ITEM.key) {
+            items.forEach { (id, factory) ->
+                event.register(net.minecraft.registry.Registries.ITEM.key, id, factory)
+            }
+        }
+    }
+}
