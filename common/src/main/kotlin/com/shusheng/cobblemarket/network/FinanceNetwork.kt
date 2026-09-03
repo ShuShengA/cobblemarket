@@ -62,7 +62,9 @@ data class CreditInfoPayload(
     /** 金融总开关（入口喵喵银行按钮置灰依据） */
     val financeEnabled: Boolean,
     /** 消费贷（喵喵支付）开关 = 总开关 && consumerLoanEnabled（购买弹窗按钮显示依据） */
-    val consumerLoanEnabled: Boolean
+    val consumerLoanEnabled: Boolean,
+    /** 喵喵紫卡持有者（补发按钮显示依据） */
+    val hasPurpleCard: Boolean
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -71,8 +73,9 @@ data class CreditInfoPayload(
             { p, b ->
                 b.writeLong(p.limit); b.writeLong(p.debt); b.writeBoolean(p.hasOverdue); b.writeBoolean(p.hasBadDebt)
                 b.writeString(p.plans); b.writeBoolean(p.financeEnabled); b.writeBoolean(p.consumerLoanEnabled)
+                b.writeBoolean(p.hasPurpleCard)
             },
-            { b -> CreditInfoPayload(b.readLong(), b.readLong(), b.readBoolean(), b.readBoolean(), b.readString(), b.readBoolean(), b.readBoolean()) }
+            { b -> CreditInfoPayload(b.readLong(), b.readLong(), b.readBoolean(), b.readBoolean(), b.readString(), b.readBoolean(), b.readBoolean(), b.readBoolean()) }
         )
     }
 }
@@ -242,6 +245,19 @@ data class DepositInfoPayload(
         val CODEC: PacketCodec<PacketByteBuf, DepositInfoPayload> = PacketCodec.of(
             { p, b -> b.writeLong(p.balance); b.writeLong(p.interest); b.writeDouble(p.rate) },
             { b -> DepositInfoPayload(b.readLong(), b.readLong(), b.readDouble()) }
+        )
+    }
+}
+
+// ── C2S：补发喵喵紫卡凭证（持有者丢弃后从喵喵银行重新领取） ──
+
+class RequestPurpleCardRedoPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestPurpleCardRedoPayload>(CobbleMarket.id("request_purple_card_redo"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestPurpleCardRedoPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestPurpleCardRedoPayload() }
         )
     }
 }
@@ -433,6 +449,23 @@ object FinanceNetwork {
             val server = player.server
             server.execute {
                 sendCreditInfo(player, FinanceState.get(server), System.currentTimeMillis())
+            }
+        }
+
+        // ── 补发喵喵紫卡凭证（持有者从喵喵银行重新领取） ──
+        registerC2S(RequestPurpleCardRedoPayload.ID, RequestPurpleCardRedoPayload.CODEC) { _, player ->
+            if (!RequestThrottle.allow(player.uuid, "request_purple_card_redo", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val state = FinanceState.get(server)
+                if (!state.isPurpleCardHolder(player.uuid)) {
+                    player.sendMessage(Text.translatable("cobblemarket.card.not_holder_self").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                val item = net.minecraft.registry.Registries.ITEM.get(CobbleMarket.id("meowth_purple_card"))
+                val added = player.inventory.insertStack(net.minecraft.item.ItemStack(item))
+                if (!added) player.dropItem(net.minecraft.item.ItemStack(item), false)
+                player.sendMessage(Text.translatable("cobblemarket.card.redo_success").formatted(Formatting.GREEN), false)
             }
         }
 
@@ -667,7 +700,8 @@ object FinanceNetwork {
                 hasBadDebt = mine.any { it.status == LoanStatus.BAD_DEBT },
                 plans = CobbleMarketConfig.loanPlansText(),
                 financeEnabled = CobbleMarketConfig.financeEnabled,
-                consumerLoanEnabled = CobbleMarketConfig.financeEnabled && CobbleMarketConfig.consumerLoanEnabled
+                consumerLoanEnabled = CobbleMarketConfig.financeEnabled && CobbleMarketConfig.consumerLoanEnabled,
+                hasPurpleCard = state.isPurpleCardHolder(player.uuid)
             )
         )
     }

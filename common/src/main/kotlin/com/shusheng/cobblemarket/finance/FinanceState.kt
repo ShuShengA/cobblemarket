@@ -117,6 +117,8 @@ class FinanceState private constructor() : PersistentState() {
     private val totalCountedVolume = mutableMapOf<UUID, Long>()
     /** 活期存款：本金（利息不预存，查看/取款时实算结算入账）+ 上次结算时刻（存取刷新） */
     private val deposits = mutableMapOf<UUID, DepositAccount>()
+    /** 喵喵紫卡持有者（额度凭证绑状态不绑物品；上限由配置 purpleCardCount 控制） */
+    private val purpleCardHolders = mutableSetOf<UUID>()
 
     // ── 准备金池 ──
 
@@ -253,6 +255,26 @@ class FinanceState private constructor() : PersistentState() {
         if (expired.isNotEmpty()) markDirty()
         return expired.size
     }
+
+    // ── 喵喵紫卡（额度凭证：持有者额度 = 配置固定值 − 欠款；物品只是凭证，状态才是额度依据） ──
+
+    fun isPurpleCardHolder(uuid: UUID): Boolean = uuid in purpleCardHolders
+
+    fun addPurpleCardHolder(uuid: UUID): Boolean {
+        if (!purpleCardHolders.add(uuid)) return false
+        markDirty()
+        return true
+    }
+
+    fun removePurpleCardHolder(uuid: UUID): Boolean {
+        if (!purpleCardHolders.remove(uuid)) return false
+        markDirty()
+        return true
+    }
+
+    fun getPurpleCardHolderCount(): Int = purpleCardHolders.size
+
+    fun getAllPurpleCardHolders(): Set<UUID> = purpleCardHolders.toSet()
 
     // ── 活期存款（批次 7.5：存钱进池吃利息，取款池出；利息从池出，池负照发=服主兜底） ──
 
@@ -409,6 +431,10 @@ class FinanceState private constructor() : PersistentState() {
         val debt = loans.values
             .filter { it.playerUuid == playerUuid && it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
             .sumOf { it.remainingPrincipal.toLong() }
+        // 喵喵紫卡持有者：额度 = 配置固定值 − 欠款（不受公式/上下限钳制）
+        if (isPurpleCardHolder(playerUuid)) {
+            return (CobbleMarketConfig.purpleCardCreditLimit - debt).coerceAtLeast(0L)
+        }
         // Long×Double → Double 实算后四舍五入（金额一律 Long 的钳制前形态）
         val base = Math.round(
             recent * CobbleMarketConfig.creditLimitRecent30Weight +
@@ -490,6 +516,13 @@ class FinanceState private constructor() : PersistentState() {
             depositList.add(c)
         }
         nbt.put("deposits", depositList)
+        val cardList = NbtList()
+        purpleCardHolders.forEach { uuid ->
+            val c = NbtCompound()
+            c.putUuid("uuid", uuid)
+            cardList.add(c)
+        }
+        nbt.put("purpleCards", cardList)
         return nbt
     }
 
@@ -574,6 +607,13 @@ class FinanceState private constructor() : PersistentState() {
                             deposits[c.getUuid("uuid")] = DepositAccount(c.getLong("principal"), c.getLong("lastSettleAt"))
                         } catch (e: Exception) {
                             CobbleMarket.LOGGER.warn("Skipping corrupted finance deposit entry: {}", e.message)
+                        }
+                    }
+                    nbt.getList("purpleCards", NbtList.COMPOUND_TYPE.toInt()).forEach { element ->
+                        try {
+                            purpleCardHolders.add((element as NbtCompound).getUuid("uuid"))
+                        } catch (e: Exception) {
+                            CobbleMarket.LOGGER.warn("Skipping corrupted finance purple card entry: {}", e.message)
                         }
                     }
                 }

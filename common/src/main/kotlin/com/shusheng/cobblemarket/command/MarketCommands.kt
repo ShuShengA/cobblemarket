@@ -70,6 +70,22 @@ object MarketCommands {
                             )
                         )
                     )
+                    .then(CommandManager.literal("card")
+                        .requires { it.hasPermissionLevel(2) }
+                        .then(CommandManager.literal("give")
+                            .then(CommandManager.argument("player", StringArgumentType.word())
+                                .executes(::cardGive)
+                            )
+                        )
+                        .then(CommandManager.literal("revoke")
+                            .then(CommandManager.argument("player", StringArgumentType.word())
+                                .executes(::cardRevoke)
+                            )
+                        )
+                        .then(CommandManager.literal("list")
+                            .executes(::cardList)
+                        )
+                    )
             )
         }
 
@@ -80,6 +96,85 @@ object MarketCommands {
     }
 
     private fun marketOn(context: CommandContext<ServerCommandSource>): Int = setMarketEnabled(context, true)
+
+    /** /market card give <玩家>：发喵喵紫卡（限额检查；额度绑定状态，物品只是凭证） */
+    private fun cardGive(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val server = source.server
+        val name = StringArgumentType.getString(context, "player")
+        val target = BanState.resolvePlayer(server, name)
+        if (target == null) {
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            return 0
+        }
+        val state = com.shusheng.cobblemarket.finance.FinanceState.get(server)
+        if (state.isPurpleCardHolder(target.first)) {
+            source.sendError(Text.translatable("cobblemarket.card.already_holder", target.second))
+            return 0
+        }
+        val max = com.shusheng.cobblemarket.config.CobbleMarketConfig.purpleCardCount
+        if (max > 0 && state.getPurpleCardHolderCount() >= max) {
+            source.sendError(Text.translatable("cobblemarket.card.cap_reached", max))
+            return 0
+        }
+        state.addPurpleCardHolder(target.first)
+        // 物品凭证（在线才发；离线下次上线由补发按钮领取）
+        server.playerManager.getPlayer(target.first)?.let { p ->
+            val item = net.minecraft.registry.Registries.ITEM.get(com.shusheng.cobblemarket.CobbleMarket.id("meowth_purple_card"))
+            val added = p.inventory.insertStack(net.minecraft.item.ItemStack(item))
+            if (!added) p.dropItem(net.minecraft.item.ItemStack(item), false)
+        }
+        com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+        source.sendFeedback(
+            { Text.translatable("cobblemarket.card.given", target.second).formatted(Formatting.GREEN) },
+            false
+        )
+        return 1
+    }
+
+    /** /market card revoke <玩家>：收回紫卡（状态删除即额度作废；物品凭证无需回收） */
+    private fun cardRevoke(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val server = source.server
+        val name = StringArgumentType.getString(context, "player")
+        val target = BanState.resolvePlayer(server, name)
+        if (target == null) {
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            return 0
+        }
+        val state = com.shusheng.cobblemarket.finance.FinanceState.get(server)
+        if (!state.removePurpleCardHolder(target.first)) {
+            source.sendError(Text.translatable("cobblemarket.card.not_holder", target.second))
+            return 0
+        }
+        com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+        source.sendFeedback(
+            { Text.translatable("cobblemarket.card.revoked", target.second).formatted(Formatting.GREEN) },
+            false
+        )
+        return 1
+    }
+
+    /** /market card list：列出全部持有者 */
+    private fun cardList(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val server = source.server
+        val state = com.shusheng.cobblemarket.finance.FinanceState.get(server)
+        val holders = state.getAllPurpleCardHolders()
+        val max = com.shusheng.cobblemarket.config.CobbleMarketConfig.purpleCardCount
+        source.sendFeedback(
+            {
+                Text.translatable("cobblemarket.card.list_header", holders.size, max).formatted(Formatting.GOLD)
+            },
+            false
+        )
+        holders.forEach { uuid ->
+            val name = server.playerManager.getPlayer(uuid)?.name?.string
+                ?: server.userCache?.getByUuid(uuid)?.orElse(null)?.name ?: uuid.toString()
+            source.sendFeedback({ Text.literal(" - $name") }, false)
+        }
+        return 1
+    }
 
     /** /market loan clear <玩家>：撤销该玩家全部坏账（批次 7 服主干预，与全服流水界面撤销按钮双入口） */
     private fun loanClear(context: CommandContext<ServerCommandSource>): Int {

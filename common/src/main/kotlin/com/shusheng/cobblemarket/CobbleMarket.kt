@@ -31,10 +31,19 @@ object CobbleMarket {
 
 	val LOGGER = LoggerFactory.getLogger(MOD_ID)
 
+	/** 紫卡丢弃扫描节流计数（每 100 tick = 5 秒扫一次） */
+	private var cardScanTick = 0
+
 	/** 由各平台入口类（fabric 的 CobbleMarketFabric 等）在对应初始化阶段调用。 */
 	fun init() {
 		LOGGER.info("CobbleMarket initializing...")
 		com.shusheng.cobblemarket.config.CobbleMarketConfig.load()
+		// 喵喵紫卡物品注册（额度凭证，绑定 FinanceState 持有者状态）
+		com.shusheng.cobblemarket.platform.registerItems(
+			listOf(
+				id("meowth_purple_card") to { com.shusheng.cobblemarket.finance.MeowthPurpleCardItem() }
+			)
+		)
 		MarketNetwork.register()
 		BanNetwork.register()
 		BlacklistNetwork.register()
@@ -80,6 +89,11 @@ object CobbleMarket {
 			com.shusheng.cobblemarket.util.PersistHelper.tick(server)
 			// 金融系统自动划扣扫描（内部 60 秒节流，见 FinanceService）
 			com.shusheng.cobblemarket.finance.FinanceService.tick(server)
+			// 喵喵紫卡丢弃即消失扫描（5 秒节流）
+			if (++cardScanTick >= 100) {
+				cardScanTick = 0
+				com.shusheng.cobblemarket.finance.MeowthPurpleCardItem.scanAndDiscardDroppedCards(server)
+			}
 		}
 		onPlayerJoin { player ->
 			val state = MarketState.get(player.server)

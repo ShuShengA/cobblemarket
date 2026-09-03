@@ -68,6 +68,8 @@ data class ServerConfigDataPayload(
     val dailyDepositRate: Double,
     val tradePairWindowDays: Long,
     val tradePairMaxTrades: Long,
+    val purpleCardCount: Long,
+    val purpleCardCreditLimit: Long,
     val autoRepayMinBalance: Long,
     val ipDebtLimit: Long,
     val overdueFeeDouble: Int,
@@ -106,6 +108,8 @@ data class ServerConfigDataPayload(
                 b.writeDouble(p.dailyDepositRate)
                 b.writeLong(p.tradePairWindowDays)
                 b.writeLong(p.tradePairMaxTrades)
+                b.writeLong(p.purpleCardCount)
+                b.writeLong(p.purpleCardCreditLimit)
                 b.writeLong(p.creditMin)
                 b.writeLong(p.creditMax)
                 b.writeLong(p.autoRepayMinBalance)
@@ -143,6 +147,8 @@ data class ServerConfigDataPayload(
                 dailyDepositRate = b.readDouble(),
                 tradePairWindowDays = b.readLong(),
                 tradePairMaxTrades = b.readLong(),
+                purpleCardCount = b.readLong(),
+                purpleCardCreditLimit = b.readLong(),
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
                 autoRepayMinBalance = b.readLong(),
@@ -188,6 +194,8 @@ data class SaveServerConfigPayload(
     val dailyDepositRate: Double,
     val tradePairWindowDays: Long,
     val tradePairMaxTrades: Long,
+    val purpleCardCount: Long,
+    val purpleCardCreditLimit: Long,
     val creditMin: Long,
     val creditMax: Long,
     val autoRepayMinBalance: Long,
@@ -228,6 +236,8 @@ data class SaveServerConfigPayload(
                 b.writeDouble(p.dailyDepositRate)
                 b.writeLong(p.tradePairWindowDays)
                 b.writeLong(p.tradePairMaxTrades)
+                b.writeLong(p.purpleCardCount)
+                b.writeLong(p.purpleCardCreditLimit)
                 b.writeLong(p.creditMin)
                 b.writeLong(p.creditMax)
                 b.writeLong(p.autoRepayMinBalance)
@@ -265,6 +275,8 @@ data class SaveServerConfigPayload(
                 dailyDepositRate = b.readDouble(),
                 tradePairWindowDays = b.readLong(),
                 tradePairMaxTrades = b.readLong(),
+                purpleCardCount = b.readLong(),
+                purpleCardCreditLimit = b.readLong(),
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
                 autoRepayMinBalance = b.readLong(),
@@ -326,6 +338,8 @@ object ServerConfigNetwork {
         dailyDepositRate = CobbleMarketConfig.dailyDepositRate,
         tradePairWindowDays = CobbleMarketConfig.tradePairWindowDays,
         tradePairMaxTrades = CobbleMarketConfig.tradePairMaxTrades,
+        purpleCardCount = CobbleMarketConfig.purpleCardCount,
+        purpleCardCreditLimit = CobbleMarketConfig.purpleCardCreditLimit,
         consumerLoanEnabled = CobbleMarketConfig.consumerLoanEnabled,
         loanPlans = CobbleMarketConfig.loanPlansText(),
         creditRecent30 = CobbleMarketConfig.creditLimitRecent30Weight,
@@ -363,6 +377,8 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setDailyDepositRate(p.dailyDepositRate)
         CobbleMarketConfig.setTradePairWindowDays(p.tradePairWindowDays)
         CobbleMarketConfig.setTradePairMaxTrades(p.tradePairMaxTrades)
+        CobbleMarketConfig.setPurpleCardCount(p.purpleCardCount)
+        CobbleMarketConfig.setPurpleCardCreditLimit(p.purpleCardCreditLimit)
         CobbleMarketConfig.setCashLoanEnabled(p.cashLoanEnabled)
         CobbleMarketConfig.setConsumerLoanEnabled(p.consumerLoanEnabled)
         CobbleMarketConfig.setLoanPlansText(p.loanPlans)

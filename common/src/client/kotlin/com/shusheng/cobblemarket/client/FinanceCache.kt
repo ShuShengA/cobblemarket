@@ -15,4 +15,6 @@ object FinanceCache {
     var creditDebt = -1L
     /** 全服累计成交额（-1 = 未拉取） */
     var totalVolume = -1L
+    /** 喵喵紫卡持有者（补发按钮显示依据） */
+    var hasPurpleCard = false
 }
