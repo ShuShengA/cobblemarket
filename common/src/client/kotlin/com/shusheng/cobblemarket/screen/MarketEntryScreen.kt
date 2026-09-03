@@ -93,6 +93,20 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         totalVolume = payload.totalVolume
     }
 
+    /** 大额金额悬停提示：鼠标附近小面板显示完整千分位数字（照 AdminScreen） */
+    private fun renderAmountTooltip(context: DrawContext, mx: Int, my: Int, fullText: String) {
+        val pad = 4
+        val w = textRenderer.getWidth(fullText) + 2 * pad
+        val h = 14
+        val tx = minOf(mx + 12, width - w - 4)
+        val ty = maxOf(my - h - 4, 0)
+        context.matrices.push()
+        context.matrices.translate(0.0, 0.0, 400.0)
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx, ty, w, h, 1, ROW_BACKGROUND_TEX_H)
+        context.drawTextWithShadow(textRenderer, fullText, tx + pad, ty + 3, 0xFFD700.toInt())
+        context.matrices.pop()
+    }
+
     /**
      * 市场总开关客户端门控：关闭时只提示，不进入任何交易界面。
      * opBypass=true 的入口（管理面板）对 OP 放行——关市期间服主仍需下架/黑名单/价格限制等管理能力。
@@ -825,17 +839,28 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             Text.translatable("cobblemarket.entry.title").formatted(Formatting.GOLD, Formatting.BOLD),
             width / 2, btnStartY - 48, 0xFFFFFF
         )
-        // 全服累计成交额（标题与余额之间；服务器经济规模氛围展示，不参与任何计算）
+        // 全服累计成交额（标题与余额之间；服务器经济规模氛围展示，不参与任何计算）；
+        // 金额单位缩写（k/M/B），悬停显示完整数字
         if (totalVolume >= 0) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.translatable(
                     "cobblemarket.entry.total_volume",
-                    com.shusheng.cobblemarket.client.formatPriceLong(totalVolume),
+                    com.shusheng.cobblemarket.client.formatPriceShortLong(totalVolume),
                     inlineCurrencyUnit()
                 ),
                 width / 2, btnStartY - 37, 0x55FFFF
             )
+            val lineW = textRenderer.getWidth(
+                Text.translatable(
+                    "cobblemarket.entry.total_volume",
+                    com.shusheng.cobblemarket.client.formatPriceShortLong(totalVolume),
+                    inlineCurrencyUnit()
+                )
+            )
+            if (mouseY in (btnStartY - 37)..(btnStartY - 28) && Math.abs(mouseX - width / 2) <= lineW / 2) {
+                renderAmountTooltip(context, mouseX, mouseY, com.shusheng.cobblemarket.client.formatPriceLong(totalVolume))
+            }
         }
         // 底部三个小按钮上方的分割线（跨度 = 避开背景左右边框各 25）
         // 放在「仅OP行底边」与「小按钮顶边」的正中间：小按钮 top=bgBottom()-27、行3底=bgBottom()-32，
