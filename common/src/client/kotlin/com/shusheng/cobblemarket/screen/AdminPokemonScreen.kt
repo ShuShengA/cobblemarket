@@ -708,7 +708,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         val matrices = context.matrices
         matrices.push()
         try {
-            context.enableScissor(x - 4, y + 1, x + size + 4, y + size + 2)
+            context.enableScissor(x - 4, y - 4, x + size + 4, y + size + 4)
             matrices.translate(x + size / 2.0, y + 1.0, 0.0)
             matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
             // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
