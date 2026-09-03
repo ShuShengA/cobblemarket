@@ -131,8 +131,8 @@ data class ServerConfigDataPayload(
                 loanPlans = b.readString(),
                 creditRecent30 = b.readDouble(),
                 creditHistory = b.readDouble(),
-                creditCooldown = b.readLong(),
                 creditDebt = b.readDouble(),
+                creditCooldown = b.readLong(),
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
                 autoRepayMinBalance = b.readLong(),
@@ -172,9 +172,9 @@ data class SaveServerConfigPayload(
     /** 分期方案文本（"3:0.005,6:0.008,12:0.012"）；解析失败保持旧值 */
     val loanPlans: String,
     val creditRecent30: Double,
-    val creditCooldown: Long,
     val creditHistory: Double,
     val creditDebt: Double,
+    val creditCooldown: Long,
     val creditMin: Long,
     val creditMax: Long,
     val autoRepayMinBalance: Long,
@@ -208,10 +208,10 @@ data class SaveServerConfigPayload(
                 b.writeBoolean(p.cashLoanEnabled)
                 b.writeBoolean(p.consumerLoanEnabled)
                 b.writeString(p.loanPlans)
-                b.writeLong(p.creditCooldown)
                 b.writeDouble(p.creditRecent30)
                 b.writeDouble(p.creditHistory)
                 b.writeDouble(p.creditDebt)
+                b.writeLong(p.creditCooldown)
                 b.writeLong(p.creditMin)
                 b.writeLong(p.creditMax)
                 b.writeLong(p.autoRepayMinBalance)
@@ -241,11 +241,11 @@ data class SaveServerConfigPayload(
                 financeEnabled = b.readBoolean(),
                 cashLoanEnabled = b.readBoolean(),
                 consumerLoanEnabled = b.readBoolean(),
-                creditCooldown = b.readLong(),
                 loanPlans = b.readString(),
                 creditRecent30 = b.readDouble(),
                 creditHistory = b.readDouble(),
                 creditDebt = b.readDouble(),
+                creditCooldown = b.readLong(),
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
                 autoRepayMinBalance = b.readLong(),
