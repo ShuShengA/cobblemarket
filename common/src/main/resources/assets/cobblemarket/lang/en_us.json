@@ -109,6 +109,7 @@
   "cobblemarket.op.scfg_credit_min": "Credit limit min",
   "cobblemarket.op.scfg_credit_max": "Credit limit max",
   "cobblemarket.op.scfg_credit_cooldown": "Credit growth cooldown (hours)",
+  "cobblemarket.op.finance_config": "Meowth Bank Config",
   "cobblemarket.op.scfg_deposit_rate": "Deposit daily rate",
   "cobblemarket.op.scfg_pair_window": "Same-pair detection window (days)",
   "cobblemarket.op.scfg_pair_max": "Same-pair trade cap (trades)",
