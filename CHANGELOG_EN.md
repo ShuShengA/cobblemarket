@@ -22,6 +22,10 @@
 - **Meowth Bank rules panel**: a new "Rules" button under the back button in Meowth Bank — hover it to see loan rules and consequences (installments / auto-deduct / three-tier sanctions / shared limit / interest), with key points in red
 - **Bad-debt tab in the all-loans ledger**: the OP all-loans screen gains "All / Bad Debt" tabs to filter every bad debt record at once; repaid loan records are auto-purged after 90 days (the audit ledger keeps the full history forever)
 
+### Changes
+
+- Finance configs moved from the Server Config screen into a dedicated "Meowth Bank Config" screen — a new button at the bottom of the main screen opens it, with all Meowth Bank settings (switches / rates / limits / anti-abuse params) edited in one place
+
 ### Fixes
 
 - Fixed the buy-order delivery Pokémon icon being clipped: the idle-animation rework had overwritten its previously widened clip area back to the old values
