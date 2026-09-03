@@ -1957,6 +1957,7 @@ class BuyOrderScreen(
             htSpAtk = ht("htSpAtk"), htSpDef = ht("htSpDef"), htSpd = ht("htSpd"),
             evsHp = i("evsHp"), evsAtk = i("evsAtk"), evsDef = i("evsDef"),
             evsSpAtk = i("evsSpAtk"), evsSpDef = i("evsSpDef"), evsSpd = i("evsSpd"),
+            friendship = i("friendship"),
             nature = d["nature"] ?: "",
             natureBase = d["natureBase"] ?: d["nature"] ?: "",
             ability = d["ability"] ?: "",
