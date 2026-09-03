@@ -62,18 +62,25 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         )
         addDrawableChild(rulesButton)
 
-        // 应急贷款入口（信息组：额度/欠款两行 + 按钮组成，居中放在标题与底部按钮之间的空档；100×16）
+        // 应急贷款入口（信息组：额度/欠款两行 + 按钮组成；100×16；批次 7.5 整体上移给存款按钮腾位）
         addDrawableChild(NineSliceButton(
-            width / 2 - 50, bgTop + 108, 100, 16,
+            width / 2 - 50, bgTop + 96, 100, 16,
             Text.translatable("cobblemarket.loan.title"),
             { client?.setScreen(LoanScreen()) }
         ))
 
-        // 还款柜台入口（应急贷款下方 4px，与底部按钮留空；100×16）→ RepayScreen
+        // 还款柜台入口（应急贷款下方 4px；100×16）→ RepayScreen
         addDrawableChild(NineSliceButton(
-            width / 2 - 50, bgTop + 128, 100, 16,
+            width / 2 - 50, bgTop + 116, 100, 16,
             Text.translatable("cobblemarket.repay.button"),
             { client?.setScreen(RepayScreen()) }
+        ))
+
+        // 存款/取款入口（还款柜台下方 4px；100×16）→ DepositScreen
+        addDrawableChild(NineSliceButton(
+            width / 2 - 50, bgTop + 136, 100, 16,
+            Text.translatable("cobblemarket.deposit.button"),
+            { client?.setScreen(DepositScreen()) }
         ))
 
         // 借款历史（左下）：所有玩家可见 → 我的借贷流水
@@ -121,16 +128,16 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             width / 2, bgTop + 31, 0xFFFFFF
         )
         // 信息组：「可用额度 / 当前欠款」两行（价格+货币名照全模组规矩用蓝色）；
-        // 缓存未拉取（-1）时按 0 显示（秒显优先，响应到达即更新）
+        // 缓存未拉取（-1）时按 0 显示（秒显优先，响应到达即更新）；批次 7.5 上移 10px 给存款按钮腾位
         context.drawCenteredTextWithShadow(
             textRenderer,
             Text.translatable("cobblemarket.loan.limit_line", formatPriceLong(limit.coerceAtLeast(0)), inlineCurrencyUnit()),
-            width / 2, bgTop + 81, 0x55FFFF
+            width / 2, bgTop + 71, 0x55FFFF
         )
         context.drawCenteredTextWithShadow(
             textRenderer,
             Text.translatable("cobblemarket.loan.debt_line", formatPriceLong(debt.coerceAtLeast(0)), inlineCurrencyUnit()),
-            width / 2, bgTop + 91, 0x55FFFF
+            width / 2, bgTop + 79, 0x55FFFF
         )
 
         // 规则按钮悬停面板（照拍卖场规则面板：自绘 + 悬停位置自适应）

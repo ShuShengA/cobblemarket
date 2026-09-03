@@ -102,6 +102,15 @@ object CobbleMarketConfig {
     /** 额度冷却时长（小时）：成交后 N 小时内不计入额度（防「现刷现借」组团套现跑路）；0 = 不冷却 */
     var creditLimitCooldownHours: Long = 24L
         private set
+    /** 活期存款日利率（默认 0.0001 = 0.01%/天，年化约 3.65%）；利息实算，查看/取款时结算 */
+    var dailyDepositRate: Double = 0.0001
+        private set
+    /** 交易对检测窗口（天）：同对成交的计数窗口（与额度公式的「近30天交易额」窗口无关） */
+    var tradePairWindowDays: Long = 30L
+        private set
+    /** 交易对检测笔数：窗口内同一买卖对达到该笔数后，该对后续成交不计入交易额 */
+    var tradePairMaxTrades: Long = 3L
+        private set
     /** 到期自动划扣最低保留：最多划到余额=此值为止（划不足进 OVERDUE） */
     var autoRepayMinBalance: Long = 1_000L
         private set
@@ -177,6 +186,9 @@ object CobbleMarketConfig {
     fun setCreditLimitMin(v: Long) { creditLimitMin = v.coerceAtLeast(0L) }
     fun setCreditLimitMax(v: Long) { creditLimitMax = v.coerceAtLeast(creditLimitMin) }
     fun setCreditLimitCooldownHours(v: Long) { creditLimitCooldownHours = v.coerceAtLeast(0L) }
+    fun setDailyDepositRate(v: Double) { dailyDepositRate = v.coerceIn(0.0, 1.0) }
+    fun setTradePairWindowDays(v: Long) { tradePairWindowDays = v.coerceAtLeast(1L) }
+    fun setTradePairMaxTrades(v: Long) { tradePairMaxTrades = v.coerceAtLeast(1L) }
     fun setAutoRepayMinBalance(v: Long) { autoRepayMinBalance = v.coerceAtLeast(0L) }
     fun setIpDebtLimit(v: Long) { ipDebtLimit = v.coerceAtLeast(0L) }
     fun setOverdueFeeDoubleDays(v: Int) { overdueFeeDoubleDays = v.coerceAtLeast(0) }
@@ -277,6 +289,9 @@ object CobbleMarketConfig {
                     val fileCooldown = (creditLimit?.get("cooldownHours") as? Number)?.toLong() ?: 24L
                     val fileLimitMax = (creditLimit?.get("max") as? Number)?.toLong() ?: 100_000L
                     val fileMinBalance = (finance["autoRepayMinBalance"] as? Number)?.toLong() ?: 1_000L
+                    val fileDepositRate = (finance["dailyDepositRate"] as? Number)?.toDouble() ?: 0.0001
+                    val filePairWindow = (finance["tradePairWindowDays"] as? Number)?.toLong() ?: 30L
+                    val filePairMax = (finance["tradePairMaxTrades"] as? Number)?.toLong() ?: 3L
                     val fileIpDebtLimit = (finance["ipDebtLimit"] as? Number)?.toLong() ?: 100_000L
                     val overdueDays = finance["overdueDays"] as? Map<*, *>
                     val fileFeeDouble = (overdueDays?.get("feeDouble") as? Number)?.toInt() ?: 7
@@ -293,6 +308,9 @@ object CobbleMarketConfig {
                     creditLimitMax = fileLimitMax.coerceAtLeast(fileLimitMin)
                     creditLimitCooldownHours = fileCooldown.coerceAtLeast(0L)
                     autoRepayMinBalance = fileMinBalance.coerceAtLeast(0L)
+                    dailyDepositRate = fileDepositRate.coerceIn(0.0, 1.0)
+                    tradePairWindowDays = filePairWindow.coerceAtLeast(1L)
+                    tradePairMaxTrades = filePairMax.coerceAtLeast(1L)
                     ipDebtLimit = fileIpDebtLimit.coerceAtLeast(0L)
                     // 逾期三档钳制：0 也可（关闭该档位动作），负数钳 0
                     overdueFeeDoubleDays = fileFeeDouble.coerceAtLeast(0)
@@ -411,6 +429,9 @@ object CobbleMarketConfig {
                     "cooldownHours" to creditLimitCooldownHours
                 ),
                 "autoRepayMinBalance" to autoRepayMinBalance,
+                "dailyDepositRate" to dailyDepositRate,
+                "tradePairWindowDays" to tradePairWindowDays,
+                "tradePairMaxTrades" to tradePairMaxTrades,
                 "ipDebtLimit" to ipDebtLimit,
                 "overdueDays" to mapOf(
                     "feeDouble" to overdueFeeDoubleDays,

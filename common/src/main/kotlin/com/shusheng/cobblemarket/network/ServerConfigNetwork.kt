@@ -64,6 +64,10 @@ data class ServerConfigDataPayload(
     val creditMax: Long,
     /** 额度冷却时长（小时，0=不冷却） */
     val creditCooldown: Long,
+    /** 活期存款日利率 */
+    val dailyDepositRate: Double,
+    val tradePairWindowDays: Long,
+    val tradePairMaxTrades: Long,
     val autoRepayMinBalance: Long,
     val ipDebtLimit: Long,
     val overdueFeeDouble: Int,
@@ -99,6 +103,9 @@ data class ServerConfigDataPayload(
                 b.writeDouble(p.creditHistory)
                 b.writeDouble(p.creditDebt)
                 b.writeLong(p.creditCooldown)
+                b.writeDouble(p.dailyDepositRate)
+                b.writeLong(p.tradePairWindowDays)
+                b.writeLong(p.tradePairMaxTrades)
                 b.writeLong(p.creditMin)
                 b.writeLong(p.creditMax)
                 b.writeLong(p.autoRepayMinBalance)
@@ -133,6 +140,9 @@ data class ServerConfigDataPayload(
                 creditHistory = b.readDouble(),
                 creditDebt = b.readDouble(),
                 creditCooldown = b.readLong(),
+                dailyDepositRate = b.readDouble(),
+                tradePairWindowDays = b.readLong(),
+                tradePairMaxTrades = b.readLong(),
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
                 autoRepayMinBalance = b.readLong(),
@@ -175,6 +185,9 @@ data class SaveServerConfigPayload(
     val creditHistory: Double,
     val creditDebt: Double,
     val creditCooldown: Long,
+    val dailyDepositRate: Double,
+    val tradePairWindowDays: Long,
+    val tradePairMaxTrades: Long,
     val creditMin: Long,
     val creditMax: Long,
     val autoRepayMinBalance: Long,
@@ -212,6 +225,9 @@ data class SaveServerConfigPayload(
                 b.writeDouble(p.creditHistory)
                 b.writeDouble(p.creditDebt)
                 b.writeLong(p.creditCooldown)
+                b.writeDouble(p.dailyDepositRate)
+                b.writeLong(p.tradePairWindowDays)
+                b.writeLong(p.tradePairMaxTrades)
                 b.writeLong(p.creditMin)
                 b.writeLong(p.creditMax)
                 b.writeLong(p.autoRepayMinBalance)
@@ -246,6 +262,9 @@ data class SaveServerConfigPayload(
                 creditHistory = b.readDouble(),
                 creditDebt = b.readDouble(),
                 creditCooldown = b.readLong(),
+                dailyDepositRate = b.readDouble(),
+                tradePairWindowDays = b.readLong(),
+                tradePairMaxTrades = b.readLong(),
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
                 autoRepayMinBalance = b.readLong(),
@@ -304,6 +323,9 @@ object ServerConfigNetwork {
         financeEnabled = CobbleMarketConfig.financeEnabled,
         cashLoanEnabled = CobbleMarketConfig.cashLoanEnabled,
         creditCooldown = CobbleMarketConfig.creditLimitCooldownHours,
+        dailyDepositRate = CobbleMarketConfig.dailyDepositRate,
+        tradePairWindowDays = CobbleMarketConfig.tradePairWindowDays,
+        tradePairMaxTrades = CobbleMarketConfig.tradePairMaxTrades,
         consumerLoanEnabled = CobbleMarketConfig.consumerLoanEnabled,
         loanPlans = CobbleMarketConfig.loanPlansText(),
         creditRecent30 = CobbleMarketConfig.creditLimitRecent30Weight,
@@ -338,6 +360,9 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setAuctionDurationOptions(p.auctionDurations)
         CobbleMarketConfig.setFinanceEnabled(p.financeEnabled)
         CobbleMarketConfig.setCreditLimitCooldownHours(p.creditCooldown)
+        CobbleMarketConfig.setDailyDepositRate(p.dailyDepositRate)
+        CobbleMarketConfig.setTradePairWindowDays(p.tradePairWindowDays)
+        CobbleMarketConfig.setTradePairMaxTrades(p.tradePairMaxTrades)
         CobbleMarketConfig.setCashLoanEnabled(p.cashLoanEnabled)
         CobbleMarketConfig.setConsumerLoanEnabled(p.consumerLoanEnabled)
         CobbleMarketConfig.setLoanPlansText(p.loanPlans)
