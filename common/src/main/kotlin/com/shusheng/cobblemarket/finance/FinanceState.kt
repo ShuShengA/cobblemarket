@@ -401,7 +401,11 @@ class FinanceState private constructor() : PersistentState() {
         val recent = tradeRecords[playerUuid]
             ?.filter { now - it.at > cooldownMs && now - it.at <= TRADE_WINDOW_MS }
             ?.sumOf { it.countedAmount } ?: 0L
-        val history = totalCountedVolume[playerUuid] ?: 0L
+        // history 同步冷却：扣除冷却期内计入的成交额（否则对刷者经 history×0.1 冷却期内即可借，冷却形同虚设）
+        val cooldownPending = tradeRecords[playerUuid]
+            ?.filter { now - it.at <= cooldownMs }
+            ?.sumOf { it.countedAmount } ?: 0L
+        val history = ((totalCountedVolume[playerUuid] ?: 0L) - cooldownPending).coerceAtLeast(0L)
         val debt = loans.values
             .filter { it.playerUuid == playerUuid && it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
             .sumOf { it.remainingPrincipal.toLong() }
