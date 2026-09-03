@@ -58,6 +58,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         // 「额度系数·欠款」已废弃：欠款改为全额扣减（信用卡模型），2026-09-02 拍板
         NumDef("cobblemarket.op.scfg_credit_min", true) to "creditMin",
         NumDef("cobblemarket.op.scfg_credit_max", true) to "creditMax",
+        NumDef("cobblemarket.op.scfg_credit_cooldown", true) to "creditCooldown",
         NumDef("cobblemarket.op.scfg_ip_debt_limit", true) to "ipDebtLimit",
         NumDef("cobblemarket.op.scfg_min_balance", true) to "autoRepayMinBalance",
         NumDef("cobblemarket.op.scfg_overdue_fee_double", true) to "overdueFeeDouble",
@@ -287,6 +288,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         "creditDebt" -> payload?.creditDebt ?: 0.3
         "creditMin" -> (payload?.creditMin ?: 0L).toDouble()
         "creditMax" -> (payload?.creditMax ?: 100_000L).toDouble()
+        "creditCooldown" -> (payload?.creditCooldown ?: 24L).toDouble()
         "ipDebtLimit" -> (payload?.ipDebtLimit ?: 100_000L).toDouble()
         "autoRepayMinBalance" -> (payload?.autoRepayMinBalance ?: 1_000L).toDouble()
         "overdueFeeDouble" -> (payload?.overdueFeeDouble ?: 7).toDouble()
@@ -378,6 +380,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             creditDebt = doubleOr("creditDebt", p?.creditDebt ?: 0.3),
             creditMin = longOr("creditMin", p?.creditMin ?: 0L),
             creditMax = longOr("creditMax", p?.creditMax ?: 100_000L),
+            creditCooldown = longOr("creditCooldown", p?.creditCooldown ?: 24L),
             ipDebtLimit = longOr("ipDebtLimit", p?.ipDebtLimit ?: 100_000L),
             autoRepayMinBalance = longOr("autoRepayMinBalance", p?.autoRepayMinBalance ?: 1_000L),
             overdueFeeDouble = intOr("overdueFeeDouble", p?.overdueFeeDouble ?: 7),

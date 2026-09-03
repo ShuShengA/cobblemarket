@@ -108,6 +108,7 @@
   "cobblemarket.op.scfg_credit_debt": "Credit weight - debt",
   "cobblemarket.op.scfg_credit_min": "Credit limit min",
   "cobblemarket.op.scfg_credit_max": "Credit limit max",
+  "cobblemarket.op.scfg_credit_cooldown": "Credit cooldown (hours)",
   "cobblemarket.op.scfg_ip_debt_limit": "IP debt cap",
   "cobblemarket.op.scfg_min_balance": "Auto-repay min balance",
   "cobblemarket.op.scfg_overdue_fee_double": "Overdue fee doubling (days)",

@@ -62,6 +62,8 @@ data class ServerConfigDataPayload(
     val creditDebt: Double,
     val creditMin: Long,
     val creditMax: Long,
+    /** 额度冷却时长（小时，0=不冷却） */
+    val creditCooldown: Long,
     val autoRepayMinBalance: Long,
     val ipDebtLimit: Long,
     val overdueFeeDouble: Int,
@@ -96,6 +98,7 @@ data class ServerConfigDataPayload(
                 b.writeDouble(p.creditRecent30)
                 b.writeDouble(p.creditHistory)
                 b.writeDouble(p.creditDebt)
+                b.writeLong(p.creditCooldown)
                 b.writeLong(p.creditMin)
                 b.writeLong(p.creditMax)
                 b.writeLong(p.autoRepayMinBalance)
@@ -128,6 +131,7 @@ data class ServerConfigDataPayload(
                 loanPlans = b.readString(),
                 creditRecent30 = b.readDouble(),
                 creditHistory = b.readDouble(),
+                creditCooldown = b.readLong(),
                 creditDebt = b.readDouble(),
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
@@ -168,6 +172,7 @@ data class SaveServerConfigPayload(
     /** 分期方案文本（"3:0.005,6:0.008,12:0.012"）；解析失败保持旧值 */
     val loanPlans: String,
     val creditRecent30: Double,
+    val creditCooldown: Long,
     val creditHistory: Double,
     val creditDebt: Double,
     val creditMin: Long,
@@ -203,6 +208,7 @@ data class SaveServerConfigPayload(
                 b.writeBoolean(p.cashLoanEnabled)
                 b.writeBoolean(p.consumerLoanEnabled)
                 b.writeString(p.loanPlans)
+                b.writeLong(p.creditCooldown)
                 b.writeDouble(p.creditRecent30)
                 b.writeDouble(p.creditHistory)
                 b.writeDouble(p.creditDebt)
@@ -235,6 +241,7 @@ data class SaveServerConfigPayload(
                 financeEnabled = b.readBoolean(),
                 cashLoanEnabled = b.readBoolean(),
                 consumerLoanEnabled = b.readBoolean(),
+                creditCooldown = b.readLong(),
                 loanPlans = b.readString(),
                 creditRecent30 = b.readDouble(),
                 creditHistory = b.readDouble(),
@@ -296,6 +303,7 @@ object ServerConfigNetwork {
         auctionDurations = CobbleMarketConfig.auctionDurationOptions.joinToString(","),
         financeEnabled = CobbleMarketConfig.financeEnabled,
         cashLoanEnabled = CobbleMarketConfig.cashLoanEnabled,
+        creditCooldown = CobbleMarketConfig.creditLimitCooldownHours,
         consumerLoanEnabled = CobbleMarketConfig.consumerLoanEnabled,
         loanPlans = CobbleMarketConfig.loanPlansText(),
         creditRecent30 = CobbleMarketConfig.creditLimitRecent30Weight,
@@ -329,6 +337,7 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setCelebrationAnimationEnabled(p.celebration)
         CobbleMarketConfig.setAuctionDurationOptions(p.auctionDurations)
         CobbleMarketConfig.setFinanceEnabled(p.financeEnabled)
+        CobbleMarketConfig.setCreditLimitCooldownHours(p.creditCooldown)
         CobbleMarketConfig.setCashLoanEnabled(p.cashLoanEnabled)
         CobbleMarketConfig.setConsumerLoanEnabled(p.consumerLoanEnabled)
         CobbleMarketConfig.setLoanPlansText(p.loanPlans)

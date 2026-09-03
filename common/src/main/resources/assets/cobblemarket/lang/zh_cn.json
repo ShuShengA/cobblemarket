@@ -108,6 +108,7 @@
   "cobblemarket.op.scfg_credit_debt": "额度系数·欠款",
   "cobblemarket.op.scfg_credit_min": "额度下限",
   "cobblemarket.op.scfg_credit_max": "额度上限",
+  "cobblemarket.op.scfg_credit_cooldown": "额度冷却时长（小时）",
   "cobblemarket.op.scfg_ip_debt_limit": "同IP待还上限",
   "cobblemarket.op.scfg_min_balance": "自动还款最低保留",
   "cobblemarket.op.scfg_overdue_fee_double": "逾期手续费翻倍（天）",
