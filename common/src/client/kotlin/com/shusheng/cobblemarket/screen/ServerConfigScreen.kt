@@ -145,6 +145,18 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 }
             }
             field.setMaxLength(if (isDurations || isPlans) 60 else 10)
+            // 防刷参数悬停解释（服主向）：「交易对」等术语加 tooltip
+            when (key) {
+                "pairWindow", "pairMax" -> field.setTooltip(
+                    net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.scfg_pair_tip"))
+                )
+                "creditCooldown" -> field.setTooltip(
+                    net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.scfg_cooldown_tip"))
+                )
+                "depositRate" -> field.setTooltip(
+                    net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.scfg_deposit_rate_tip"))
+                )
+            }
             numFields[key] = field
             addSelectableChild(field)
             addDrawableChild(field)
