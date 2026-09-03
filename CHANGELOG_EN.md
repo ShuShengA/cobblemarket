@@ -23,6 +23,7 @@
 ### Fixes
 
 - Fixed the buy-order delivery Pokémon icon being clipped: the idle-animation rework had overwritten its previously widened clip area back to the old values
+- Fixed buy-order row icons showing the default form when the order requests a special form (the renderer wasn't using the order's form data; aligned with auction row icons)
 
 ## 1.0.0 (in development, unreleased)
 
