@@ -1543,7 +1543,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val matrices = context.matrices
         matrices.push()
         try {
-            context.enableScissor(x - 4, y + 1, x + size + 4, y + size + 2)
+            context.enableScissor(x - 4, y - 4, x + size + 4, y + size + 4)
             matrices.translate(x + size / 2.0, y + 1.0, 0.0)
             matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
 
