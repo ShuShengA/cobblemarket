@@ -209,9 +209,10 @@ class BuyOrderScreen(
                 iconData[index] = IconData(name, null, FloatingState(), nameColor, null)
                 return@forEachIndexed
             }
-            // 仅闪要求时叠加 shiny aspect 渲染闪光形态；其余用标准形态
-            val aspects = mutableSetOf<String>()
-            if (entry.shinyFilter == PokemonBlacklistEntry.SHINY_YES) aspects.add("shiny")
+            // 用求购单真实 aspects 渲染形态（地区形态/性别差异等，照拍卖场行图标）；
+            // 仅闪要求时叠加 shiny aspect 渲染闪光形态
+            val aspects = entry.aspects.toMutableSet()
+            if (entry.shinyFilter == PokemonBlacklistEntry.SHINY_YES && "shiny" !in aspects) aspects.add("shiny")
             iconData[index] = IconData(name, RenderablePokemon(species, aspects, ItemStack.EMPTY), FloatingState(), nameColor, null)
         }
     }
