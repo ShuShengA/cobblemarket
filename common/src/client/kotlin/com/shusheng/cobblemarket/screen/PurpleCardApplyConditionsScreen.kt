@@ -302,6 +302,16 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
         return true
     }
 
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        // 点击空白处结束输入状态（照 LoanScreen 惯例：点前焦点在输入框、点击位置不在任何输入框 → 取消焦点）
+        val wasInInput = focused is TextFieldWidget
+        val result = super.mouseClicked(mouseX, mouseY, button)
+        if (wasInInput && numFields.values.none { it.isMouseOver(mouseX, mouseY) }) {
+            focused = null
+        }
+        return result
+    }
+
     override fun resize(client: MinecraftClient, width: Int, height: Int) {
         super.resize(client, width, height)
         rebuildPositions()
@@ -309,3 +319,4 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
 
     override fun shouldPause() = false
 }
+
