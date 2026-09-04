@@ -71,6 +71,9 @@ data class ServerConfigDataPayload(
     val purpleCardCount: Long,
     val purpleCardCreditLimit: Long,
     val purpleCardSelfApply: Boolean,
+    val purpleCardApplyAsset: Long,
+    val purpleCardApplyVolume: Long,
+    val purpleCardApplyCredit: Long,
     val autoRepayMinBalance: Long,
     val ipDebtLimit: Long,
     val overdueFeeDouble: Int,
@@ -112,6 +115,9 @@ data class ServerConfigDataPayload(
                 b.writeLong(p.purpleCardCount)
                 b.writeLong(p.purpleCardCreditLimit)
                 b.writeBoolean(p.purpleCardSelfApply)
+                b.writeLong(p.purpleCardApplyAsset)
+                b.writeLong(p.purpleCardApplyVolume)
+                b.writeLong(p.purpleCardApplyCredit)
                 b.writeLong(p.creditMin)
                 b.writeLong(p.creditMax)
                 b.writeLong(p.autoRepayMinBalance)
@@ -152,6 +158,9 @@ data class ServerConfigDataPayload(
                 purpleCardCount = b.readLong(),
                 purpleCardCreditLimit = b.readLong(),
                 purpleCardSelfApply = b.readBoolean(),
+                purpleCardApplyAsset = b.readLong(),
+                purpleCardApplyVolume = b.readLong(),
+                purpleCardApplyCredit = b.readLong(),
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
                 autoRepayMinBalance = b.readLong(),
@@ -200,6 +209,9 @@ data class SaveServerConfigPayload(
     val purpleCardCount: Long,
     val purpleCardCreditLimit: Long,
     val purpleCardSelfApply: Boolean,
+    val purpleCardApplyAsset: Long,
+    val purpleCardApplyVolume: Long,
+    val purpleCardApplyCredit: Long,
     val creditMin: Long,
     val creditMax: Long,
     val autoRepayMinBalance: Long,
@@ -243,6 +255,9 @@ data class SaveServerConfigPayload(
                 b.writeLong(p.purpleCardCount)
                 b.writeLong(p.purpleCardCreditLimit)
                 b.writeBoolean(p.purpleCardSelfApply)
+                b.writeLong(p.purpleCardApplyAsset)
+                b.writeLong(p.purpleCardApplyVolume)
+                b.writeLong(p.purpleCardApplyCredit)
                 b.writeLong(p.creditMin)
                 b.writeLong(p.creditMax)
                 b.writeLong(p.autoRepayMinBalance)
@@ -283,6 +298,9 @@ data class SaveServerConfigPayload(
                 purpleCardCount = b.readLong(),
                 purpleCardCreditLimit = b.readLong(),
                 purpleCardSelfApply = b.readBoolean(),
+                purpleCardApplyAsset = b.readLong(),
+                purpleCardApplyVolume = b.readLong(),
+                purpleCardApplyCredit = b.readLong(),
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
                 autoRepayMinBalance = b.readLong(),
@@ -347,6 +365,9 @@ object ServerConfigNetwork {
         purpleCardCount = CobbleMarketConfig.purpleCardCount,
         purpleCardCreditLimit = CobbleMarketConfig.purpleCardCreditLimit,
         purpleCardSelfApply = CobbleMarketConfig.purpleCardSelfApply,
+        purpleCardApplyAsset = CobbleMarketConfig.purpleCardApplyAsset,
+        purpleCardApplyVolume = CobbleMarketConfig.purpleCardApplyVolume,
+        purpleCardApplyCredit = CobbleMarketConfig.purpleCardApplyCredit,
         consumerLoanEnabled = CobbleMarketConfig.consumerLoanEnabled,
         loanPlans = CobbleMarketConfig.loanPlansText(),
         creditRecent30 = CobbleMarketConfig.creditLimitRecent30Weight,
@@ -387,6 +408,9 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setPurpleCardCount(p.purpleCardCount)
         CobbleMarketConfig.setPurpleCardCreditLimit(p.purpleCardCreditLimit)
         CobbleMarketConfig.setPurpleCardSelfApply(p.purpleCardSelfApply)
+        CobbleMarketConfig.setPurpleCardApplyAsset(p.purpleCardApplyAsset)
+        CobbleMarketConfig.setPurpleCardApplyVolume(p.purpleCardApplyVolume)
+        CobbleMarketConfig.setPurpleCardApplyCredit(p.purpleCardApplyCredit)
         CobbleMarketConfig.setCashLoanEnabled(p.cashLoanEnabled)
         CobbleMarketConfig.setConsumerLoanEnabled(p.consumerLoanEnabled)
         CobbleMarketConfig.setLoanPlansText(p.loanPlans)

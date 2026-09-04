@@ -97,6 +97,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 is ServerConfigScreen -> screen.refreshFrom(payload)
                 is FinanceConfigScreen -> screen.refreshFrom(payload)
                 is PurpleCardConfigScreen -> screen.refreshFrom(payload)
+                is PurpleCardApplyConditionsScreen -> screen.refreshFrom(payload)
             }
         }
     }
@@ -380,6 +381,9 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             purpleCardCount = p?.purpleCardCount ?: 20L,
             purpleCardCreditLimit = p?.purpleCardCreditLimit ?: 1_000_000L,
             purpleCardSelfApply = p?.purpleCardSelfApply ?: false,
+            purpleCardApplyAsset = p?.purpleCardApplyAsset ?: 0L,
+            purpleCardApplyVolume = p?.purpleCardApplyVolume ?: 0L,
+            purpleCardApplyCredit = p?.purpleCardApplyCredit ?: 0L,
             ipDebtLimit = p?.ipDebtLimit ?: 100_000L,
             autoRepayMinBalance = p?.autoRepayMinBalance ?: 1_000L,
             overdueFeeDouble = p?.overdueFeeDouble ?: 7,

@@ -276,6 +276,26 @@ class FinanceState private constructor() : PersistentState() {
 
     fun getAllPurpleCardHolders(): Set<UUID> = purpleCardHolders.toSet()
 
+    /**
+     * 自行申请紫卡资格校验（三项条件全部满足；0 = 不要求）：
+     * 资产 = 当前现金余额（调用方传）、消费 = 历史买入成交额累计、额度 = 信用基础（无欠款公式值）。
+     */
+    fun isPurpleCardEligible(playerUuid: UUID, cashBalance: Long, now: Long): Boolean {
+        if (purpleCardHolders.contains(playerUuid)) return false
+        if (CobbleMarketConfig.purpleCardApplyAsset > 0 && cashBalance < CobbleMarketConfig.purpleCardApplyAsset) return false
+        if (CobbleMarketConfig.purpleCardApplyVolume > 0 &&
+            (totalCountedVolume[playerUuid] ?: 0L) < CobbleMarketConfig.purpleCardApplyVolume
+        ) return false
+        if (CobbleMarketConfig.purpleCardApplyCredit > 0) {
+            val debt = loans.values
+                .filter { it.playerUuid == playerUuid && it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
+                .sumOf { it.remainingPrincipal.toLong() }
+            val creditBase = creditLimitFor(playerUuid, now) + debt
+            if (creditBase < CobbleMarketConfig.purpleCardApplyCredit) return false
+        }
+        return true
+    }
+
     // ── 活期存款（批次 7.5：存钱进池吃利息，取款池出；利息从池出，池负照发=服主兜底） ──
 
     /** 距上次结算的利息（实算）：本金 × 日息 × 整天数；调用方结算后 resetSettle 刷新基准 */
