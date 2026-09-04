@@ -76,27 +76,13 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             { client?.setScreen(RepayScreen()) }
         ))
 
-        // 存款/取款入口（还款柜台下方 4px）→ DepositScreen；
-        // 紫卡持有者时两枚并排（存款 80 宽 + 补发紫卡 80 宽），非持有者居中 100 宽
-        val hasCard = com.shusheng.cobblemarket.client.FinanceCache.hasPurpleCard
+        // 存款/取款入口（还款柜台下方 4px；100×16）→ DepositScreen
+        // （补发紫卡按钮已移除：后续功能换别的入口，服务端补发协议保留待用）
         addDrawableChild(NineSliceButton(
-            if (hasCard) width / 2 - 90 else width / 2 - 50,
-            bgTop + 136,
-            if (hasCard) 80 else 100, 16,
+            width / 2 - 50, bgTop + 136, 100, 16,
             Text.translatable("cobblemarket.deposit.button"),
             { client?.setScreen(DepositScreen()) }
         ))
-        if (hasCard) {
-            addDrawableChild(NineSliceButton(
-                width / 2 + 10, bgTop + 136, 80, 16,
-                Text.translatable("cobblemarket.card.redo_button"),
-                {
-                    com.shusheng.cobblemarket.platform.sendToServer(
-                        com.shusheng.cobblemarket.network.RequestPurpleCardRedoPayload()
-                    )
-                }
-            ))
-        }
 
         // 借款历史（左下）：所有玩家可见 → 我的借贷流水
         // （右移 3px：背景贴图内部边框不对称（左 17px/右 13px），按视觉边框对齐两边各 9px）
