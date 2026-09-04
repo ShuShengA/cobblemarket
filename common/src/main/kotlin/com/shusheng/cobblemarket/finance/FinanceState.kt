@@ -280,7 +280,7 @@ class FinanceState private constructor() : PersistentState() {
      * 自行申请紫卡资格校验（三项条件全部满足；0 = 不要求）：
      * 资产 = 当前现金余额（调用方传）、消费 = 历史买入成交额累计、额度 = 信用基础（无欠款公式值）。
      */
-    fun isPurpleCardEligible(playerUuid: UUID, cashBalance: Long, now: Long): Boolean {
+    fun isPurpleCardEligible(playerUuid: UUID, cashBalance: Long, dexCount: Int, now: Long): Boolean {
         if (purpleCardHolders.contains(playerUuid)) return false
         if (CobbleMarketConfig.purpleCardApplyAsset > 0 && cashBalance < CobbleMarketConfig.purpleCardApplyAsset) return false
         if (CobbleMarketConfig.purpleCardApplyVolume > 0 &&
@@ -293,6 +293,14 @@ class FinanceState private constructor() : PersistentState() {
             val creditBase = creditLimitFor(playerUuid, now) + debt
             if (creditBase < CobbleMarketConfig.purpleCardApplyCredit) return false
         }
+        if (CobbleMarketConfig.purpleCardApplyDeposit > 0 &&
+            getDepositBalance(playerUuid, now) < CobbleMarketConfig.purpleCardApplyDeposit
+        ) return false
+        if (CobbleMarketConfig.purpleCardApplyNoOverdue && loans.values.any {
+                it.playerUuid == playerUuid && (it.status == LoanStatus.OVERDUE || it.status == LoanStatus.BAD_DEBT)
+            }
+        ) return false
+        if (CobbleMarketConfig.purpleCardApplyDex > 0 && dexCount < CobbleMarketConfig.purpleCardApplyDex) return false
         return true
     }
 

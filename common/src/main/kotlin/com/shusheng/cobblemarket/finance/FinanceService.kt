@@ -226,6 +226,28 @@ object FinanceService {
         )
     }
 
+    /**
+     * 图鉴收集数（已捕捉物种数）：Cobblemon 图鉴数据，物种记录 aspects 非空 = 有捕捉记录。
+     * 紫卡自行申请条件用；Cobblemon 未安装/数据异常返回 0（条件自然不满足）。
+     */
+    fun getCaughtSpeciesCount(server: MinecraftServer, uuid: UUID): Int {
+        return try {
+            val data = com.cobblemon.mod.common.Cobblemon.playerDataManager.get(
+                uuid, com.cobblemon.mod.common.api.storage.player.PlayerInstancedDataStoreTypes.POKEDEX
+            )
+            val manager = data as? com.cobblemon.mod.common.api.pokedex.PokedexManager ?: return 0
+            // SpeciesDexRecord.aspects 是 Kotlin private（getter 公开但 Kotlin 侧不可访问）——反射读；
+            // aspects 非空 = 该物种有捕捉记录（申请时一次性调用，开销可忽略）
+            val getAspects = com.cobblemon.mod.common.api.pokedex.SpeciesDexRecord::class.java.getMethod("getAspects")
+            manager.speciesRecords.values.count { rec ->
+                (getAspects.invoke(rec) as? Set<*>)?.isNotEmpty() == true
+            }
+        } catch (e: Throwable) {
+            com.shusheng.cobblemarket.CobbleMarket.LOGGER.warn("Failed to read cobblemon pokedex for {}: {}", uuid, e.message)
+            0
+        }
+    }
+
     // ── 逾期制裁三档（批次 6：7 天手续费翻倍 / 14 天冻结 / 30 天坏账） ──
 
     /** 手续费乘数（百分比 100/200）：付款方有逾期 ≥7 天的未结清贷款 → 翻倍 */
