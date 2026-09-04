@@ -119,6 +119,7 @@
   "cobblemarket.op.scfg_pair_max": "Same-pair trade cap (trades)",
   "cobblemarket.op.scfg_card_count": "Purple card server cap (cards)",
   "cobblemarket.op.scfg_card_limit": "Purple card credit limit",
+  "cobblemarket.op.scfg_card_self_apply": "Allow players to self-apply for the purple card",
   "cobblemarket.op.scfg_pair_tip": "Once the same buyer-seller pair reaches this many trades within the window, their later trades no longer count toward the credit limit (anti-wash-trading)",
   "cobblemarket.op.scfg_cooldown_tip": "Trades don't count toward the credit limit until this delay passes (the limit grows on a delay, closing the farm-then-borrow window; 0 = off)",
   "cobblemarket.op.scfg_deposit_rate_tip": "Daily interest rate for demand deposits (0.0001 = 0.01% per day ≈ 3.65% per year), paid from the reserve pool",
