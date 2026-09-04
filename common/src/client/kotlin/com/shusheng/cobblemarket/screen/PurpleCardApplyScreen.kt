@@ -122,13 +122,14 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
                 } else {
                     "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)}"
                 }
+                // 行尾短符号（✓/✗ 绿红，长文案超宽改用颜色表意；完整语义在申请按钮文案）
                 val mark = if (entry.satisfied)
-                    Text.translatable("cobblemarket.buy_order.match_ok_full").string to 0x55FF55
+                    Text.translatable("cobblemarket.buy_order.match_ok").string to 0x55FF55
                 else
-                    Text.translatable("cobblemarket.buy_order.match_no_full").string to 0xFF6666
+                    Text.translatable("cobblemarket.buy_order.match_no").string to 0xFF6666
                 context.drawTextWithShadow(textRenderer, label, dialogX + 14, y, 0xFFFFFF)
-                context.drawTextWithShadow(textRenderer, valueText, dialogX + 110, y, 0x55FFFF)
-                context.drawTextWithShadow(textRenderer, mark.first, dialogX + 252, y, mark.second)
+                context.drawTextWithShadow(textRenderer, valueText, dialogX + 104, y, 0x55FFFF)
+                context.drawTextWithShadow(textRenderer, mark.first, dialogX + dialogW - 26, y, mark.second)
                 y += 15
             }
             // 申请费用行

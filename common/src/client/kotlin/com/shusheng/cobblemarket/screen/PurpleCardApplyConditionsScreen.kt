@@ -45,7 +45,7 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
     private var savedToastUntil = 0L
     private val totalRows = numDefs.size + toggleDefs.size
 
-    private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 34)
+    private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 44)
     private fun dialogY() = height / 2 - dialogH() / 2
     private fun listStartY() = dialogY() + 30
     private fun listAreaH() = dialogH() - 30 - 34

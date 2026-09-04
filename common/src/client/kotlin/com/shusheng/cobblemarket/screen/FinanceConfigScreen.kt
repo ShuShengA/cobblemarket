@@ -57,7 +57,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
     private val totalRows = numDefs.size + toggleDefs.size + 1
     private var cardOpenButton: NineSliceButton? = null
 
-    private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 34)
+    private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 44)
     private fun dialogY() = height / 2 - dialogH() / 2
     private fun listStartY() = dialogY() + 30
     private fun listAreaH() = dialogH() - 30 - 34
