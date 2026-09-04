@@ -26,15 +26,24 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
         NumDef("cobblemarket.op.scfg_apply_asset", true) to "applyAsset",
         NumDef("cobblemarket.op.scfg_apply_volume", true) to "applyVolume",
         NumDef("cobblemarket.op.scfg_apply_credit", true) to "applyCredit",
+        NumDef("cobblemarket.op.scfg_apply_deposit", true) to "applyDeposit",
+        NumDef("cobblemarket.op.scfg_apply_dex", true) to "applyDex",
+        NumDef("cobblemarket.op.scfg_apply_fee", true) to "applyFee",
+    )
+
+    private val toggleDefs = listOf(
+        "cobblemarket.op.scfg_apply_no_overdue" to "applyNoOverdue",
     )
 
     private val numFields = mutableMapOf<String, TextFieldWidget>()
     private val resetButtons = mutableMapOf<String, NineSliceButton>()
+    private val toggleButtons = mutableMapOf<String, NineSliceButton>()
+    private val localToggles = mutableMapOf<String, Boolean>()
     private var saveButton: NineSliceButton? = null
     private var cancelButton: NineSliceButton? = null
     private var scrollOffset = 0
     private var savedToastUntil = 0L
-    private val totalRows = numDefs.size
+    private val totalRows = numDefs.size + toggleDefs.size
 
     private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 34)
     private fun dialogY() = height / 2 - dialogH() / 2
@@ -51,16 +60,17 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
             field.setTextPredicate { text -> if (def.isInt) text.all { it.isDigit() } else text.all { it.isDigit() || it == '.' } }
             field.setMaxLength(10)
             // 口径解释（服主向）
-            when (key) {
-                "applyAsset" -> field.setTooltip(
-                    net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.scfg_apply_asset_tip"))
-                )
-                "applyVolume" -> field.setTooltip(
-                    net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.scfg_apply_volume_tip"))
-                )
-                "applyCredit" -> field.setTooltip(
-                    net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.scfg_apply_credit_tip"))
-                )
+            val tipKey = when (key) {
+                "applyAsset" -> "cobblemarket.op.scfg_apply_asset_tip"
+                "applyVolume" -> "cobblemarket.op.scfg_apply_volume_tip"
+                "applyCredit" -> "cobblemarket.op.scfg_apply_credit_tip"
+                "applyDeposit" -> "cobblemarket.op.scfg_apply_deposit_tip"
+                "applyDex" -> "cobblemarket.op.scfg_apply_dex_tip"
+                "applyFee" -> "cobblemarket.op.scfg_apply_fee_tip"
+                else -> null
+            }
+            if (tipKey != null) {
+                field.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable(tipKey)))
             }
             numFields[key] = field
             addSelectableChild(field)
@@ -75,6 +85,22 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
             )
             resetButtons[key] = resetBtn
             addDrawableChild(resetBtn)
+        }
+        toggleDefs.forEach { (_, key) ->
+            val btn = NineSliceButton(
+                dialogX + dialogW - 10 - 22, startY, 22, 22,
+                Text.literal(""),
+                {
+                    localToggles[key] = !currentToggleValue(key)
+                    toggleButtons[key]?.iconLeft = toggleIconFor(key, null)
+                },
+                iconLeft = toggleIcon(key),
+                iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+                texture = ROW_BACKGROUND_TEXTURE,
+                texH = ROW_BACKGROUND_TEX_H
+            )
+            toggleButtons[key] = btn
+            addDrawableChild(btn)
         }
         saveButton = NineSliceButton(
             width / 2 - 62, dialogY() + dialogH() - 26, 60, 20,
@@ -102,7 +128,31 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
         "applyAsset" -> (payload?.purpleCardApplyAsset ?: 0L).toDouble()
         "applyVolume" -> (payload?.purpleCardApplyVolume ?: 0L).toDouble()
         "applyCredit" -> (payload?.purpleCardApplyCredit ?: 0L).toDouble()
+        "applyDeposit" -> (payload?.purpleCardApplyDeposit ?: 0L).toDouble()
+        "applyDex" -> (payload?.purpleCardApplyDex ?: 0L).toDouble()
+        "applyFee" -> (payload?.purpleCardApplyFee ?: 0L).toDouble()
         else -> 0.0
+    }
+
+    private fun toggleIcon(key: String): net.minecraft.util.Identifier? = toggleIconFor(key, null)
+
+    private fun toggleIconFor(key: String, p: ServerConfigDataPayload?): net.minecraft.util.Identifier? {
+        val on = when (key) {
+            "applyNoOverdue" -> p?.purpleCardApplyNoOverdue ?: false
+            else -> false
+        }
+        return if (on)
+            net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/switch_icon_on.png")
+        else
+            net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/switch_icon_off.png")
+    }
+
+    private fun currentToggleValue(key: String): Boolean {
+        val p = ServerConfigScreen.latest
+        return when (key) {
+            "applyNoOverdue" -> localToggles["applyNoOverdue"] ?: (p?.purpleCardApplyNoOverdue ?: false)
+            else -> false
+        }
     }
 
     fun refreshFrom(payload: ServerConfigDataPayload) {
@@ -112,6 +162,10 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
                 field.text = snapshotText(key, payload)
             }
         }
+        toggleDefs.forEach { (_, key) ->
+            toggleButtons[key]?.iconLeft = toggleIconFor(key, payload)
+        }
+        localToggles.clear()
     }
 
     private fun save() {
@@ -153,6 +207,10 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
             purpleCardApplyAsset = longOr("applyAsset", p?.purpleCardApplyAsset ?: 0L),
             purpleCardApplyVolume = longOr("applyVolume", p?.purpleCardApplyVolume ?: 0L),
             purpleCardApplyCredit = longOr("applyCredit", p?.purpleCardApplyCredit ?: 0L),
+            purpleCardApplyDeposit = longOr("applyDeposit", p?.purpleCardApplyDeposit ?: 0L),
+            purpleCardApplyNoOverdue = localToggles["applyNoOverdue"] ?: (p?.purpleCardApplyNoOverdue ?: false),
+            purpleCardApplyDex = longOr("applyDex", p?.purpleCardApplyDex ?: 0L),
+            purpleCardApplyFee = longOr("applyFee", p?.purpleCardApplyFee ?: 0L),
             ipDebtLimit = p?.ipDebtLimit ?: 100_000L,
             autoRepayMinBalance = p?.autoRepayMinBalance ?: 1_000L,
             overdueFeeDouble = p?.overdueFeeDouble ?: 7,
@@ -176,6 +234,14 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
             resetButtons[key]?.x = dialogX + dialogW - 10 - 20
             resetButtons[key]?.y = y + 4
             resetButtons[key]?.visible = visible
+            row++
+        }
+        toggleDefs.forEach { (_, key) ->
+            val y = startY + (row - scrollOffset) * rowHeight
+            val btn = toggleButtons[key] ?: return@forEach
+            btn.x = dialogX + dialogW - 10 - 22
+            btn.y = y + 1
+            btn.visible = row in scrollOffset until scrollOffset + getMaxVisibleRows()
             row++
         }
     }
@@ -202,6 +268,15 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
             context.drawTextWithShadow(
                 textRenderer,
                 Text.translatable(def.labelKey),
+                dialogX + 10, rowY + 7, 0xFFFFFF
+            )
+        }
+        toggleDefs.forEachIndexed { i, (labelKey, _) ->
+            val rowY = startY + (numDefs.size + i) * rowHeight
+            context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
+            context.drawTextWithShadow(
+                textRenderer,
+                Text.translatable(labelKey),
                 dialogX + 10, rowY + 7, 0xFFFFFF
             )
         }
