@@ -111,6 +111,8 @@
   "cobblemarket.op.scfg_credit_cooldown": "额度增长冷却时长（小时）",
   "cobblemarket.op.finance_config": "喵喵银行配置",
   "cobblemarket.op.finance_entry": "喵喵银行",
+  "cobblemarket.op.card_config": "喵喵紫卡配置",
+  "cobblemarket.op.card_entry": "喵喵紫卡",
   "cobblemarket.op.finance_open": "配置",
   "cobblemarket.op.scfg_deposit_rate": "存款日利率",
   "cobblemarket.op.scfg_pair_window": "同对交易检测窗口（天）",

@@ -111,6 +111,8 @@
   "cobblemarket.op.scfg_credit_cooldown": "Credit growth cooldown (hours)",
   "cobblemarket.op.finance_config": "Meowth Bank Config",
   "cobblemarket.op.finance_entry": "Meowth Bank",
+  "cobblemarket.op.card_config": "Purple Card Config",
+  "cobblemarket.op.card_entry": "Meowth Purple Card",
   "cobblemarket.op.finance_open": "Config",
   "cobblemarket.op.scfg_deposit_rate": "Deposit daily rate",
   "cobblemarket.op.scfg_pair_window": "Same-pair detection window (days)",

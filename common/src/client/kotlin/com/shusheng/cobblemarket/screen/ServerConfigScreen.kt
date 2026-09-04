@@ -96,6 +96,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             when (screen) {
                 is ServerConfigScreen -> screen.refreshFrom(payload)
                 is FinanceConfigScreen -> screen.refreshFrom(payload)
+                is PurpleCardConfigScreen -> screen.refreshFrom(payload)
             }
         }
     }
