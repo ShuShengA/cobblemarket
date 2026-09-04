@@ -141,26 +141,27 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             width / 2, bgTop + 79, 0x55FFFF
         )
 
-        // 紫卡持有者：左侧展示旋转的紫卡（物品落地默认动画，绕 Y 轴每 2 秒一圈）
+        // 紫卡持有者：左侧展示旋转的紫卡（屏幕平面内绕 Z 轴转圈，不左右摆；每 2 秒一圈）
         if (com.shusheng.cobblemarket.client.FinanceCache.hasPurpleCard) {
             val cardItem = net.minecraft.registry.Registries.ITEM.get(
                 net.minecraft.util.Identifier.of("cobblemarket", "meowth_purple_card")
             )
             if (cardItem != net.minecraft.registry.Registries.ITEM.get(net.minecraft.util.Identifier.of("minecraft", "air"))) {
-                val cardSize = 24
-                val cardX = width / 2 - 96
-                val cardY = bgTop + 92
-                val angle = (System.currentTimeMillis() % 2000) / 2000f * 360f
-                context.matrices.push()
-                context.matrices.translate((cardX + cardSize / 2).toDouble(), (cardY + cardSize / 2).toDouble(), 100.0)
-                context.matrices.multiply(org.joml.Quaternionf().rotateY(Math.toRadians(angle.toDouble()).toFloat()))
-                context.matrices.translate(-(cardX + cardSize / 2).toDouble(), -(cardY + cardSize / 2).toDouble(), 0.0)
+                // 照地面物品动画（ItemEntityRenderer）：绕 Y 轴自转 + 上下正弦浮动
+                // 显示尺寸 = 16 × scale ≈ 104px（背景 213 高的一半）；左侧贴边框内（-124），
+                // 垂直居中（bgTop+54），右缘 -20 与按钮区 -50 留 30px 空隙
+                val scale = 6.5
+                val displaySize = (16 * scale).toInt()
+                val cardX = width / 2 - 150
+                val now = System.currentTimeMillis()
+                // 轻微上下浮动 ±3px，周期 1.5 秒（无旋转：GUI 正交投影下 Y 轴旋转只会像左右摆）
+                val bob = Math.sin(now / 1500.0 * Math.PI * 2) * 3
+                val cardY = (bgTop + 54 + bob).toInt()
                 com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                     itemStack = net.minecraft.item.ItemStack(cardItem),
-                    x = cardX.toDouble(), y = cardY.toDouble(), scale = 1.5,
+                    x = cardX.toDouble(), y = cardY.toDouble(), scale = scale.toDouble(),
                     matrixStack = context.matrices
                 )
-                context.matrices.pop()
             }
         }
 
