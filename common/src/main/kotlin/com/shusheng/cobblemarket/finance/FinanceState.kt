@@ -276,6 +276,9 @@ class FinanceState private constructor() : PersistentState() {
 
     fun getAllPurpleCardHolders(): Set<UUID> = purpleCardHolders.toSet()
 
+    /** 玩家历史累计计入成交额（申请条件「消费金额」口径） */
+    fun getTotalCountedVolumeOf(playerUuid: UUID): Long = totalCountedVolume[playerUuid] ?: 0L
+
     /**
      * 自行申请紫卡资格校验（三项条件全部满足；0 = 不要求）：
      * 资产 = 当前现金余额（调用方传）、消费 = 历史买入成交额累计、额度 = 信用基础（无欠款公式值）。

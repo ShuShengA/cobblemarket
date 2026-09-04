@@ -54,6 +54,8 @@ import com.shusheng.cobblemarket.network.RequestLoanPayload
 import com.shusheng.cobblemarket.network.RequestMarketPayload
 import com.shusheng.cobblemarket.network.RequestMyPokemonPayload
 import com.shusheng.cobblemarket.network.RequestPlayerNameSuggestionsPayload
+import com.shusheng.cobblemarket.network.RequestPurpleCardApplyInfoPayload
+import com.shusheng.cobblemarket.network.RequestPurpleCardApplyPayload
 import com.shusheng.cobblemarket.network.RequestPurpleCardRedoPayload
 import com.shusheng.cobblemarket.network.RequestPokemonBlacklistPayload
 import com.shusheng.cobblemarket.network.RequestPokemonPriceLimitPayload
@@ -141,6 +143,8 @@ fun registerClientC2S() {
         c2s(registrar, RequestMarketPayload.ID, RequestMarketPayload.CODEC)
         c2s(registrar, RequestMyPokemonPayload.ID, RequestMyPokemonPayload.CODEC)
         c2s(registrar, RequestPlayerNameSuggestionsPayload.ID, RequestPlayerNameSuggestionsPayload.CODEC)
+        c2s(registrar, RequestPurpleCardApplyInfoPayload.ID, RequestPurpleCardApplyInfoPayload.CODEC)
+        c2s(registrar, RequestPurpleCardApplyPayload.ID, RequestPurpleCardApplyPayload.CODEC)
         c2s(registrar, RequestPurpleCardRedoPayload.ID, RequestPurpleCardRedoPayload.CODEC)
         c2s(registrar, RequestPokemonBlacklistPayload.ID, RequestPokemonBlacklistPayload.CODEC)
         c2s(registrar, RequestPokemonPriceLimitPayload.ID, RequestPokemonPriceLimitPayload.CODEC)
