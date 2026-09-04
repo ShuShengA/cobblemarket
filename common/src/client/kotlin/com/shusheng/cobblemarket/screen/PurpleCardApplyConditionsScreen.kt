@@ -137,8 +137,14 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
     private fun toggleIcon(key: String): net.minecraft.util.Identifier? = toggleIconFor(key, null)
 
     private fun toggleIconFor(key: String, p: ServerConfigDataPayload?): net.minecraft.util.Identifier? {
-        val on = when (key) {
-            "applyNoOverdue" -> p?.purpleCardApplyNoOverdue ?: false
+        // 优先级：回发快照值 > 本地未保存的编辑值 > 旧快照（照 ServerConfigScreen）
+        val on = p?.let { snapshot ->
+            when (key) {
+                "applyNoOverdue" -> snapshot.purpleCardApplyNoOverdue
+                else -> false
+            }
+        } ?: localToggles[key] ?: when (key) {
+            "applyNoOverdue" -> ServerConfigScreen.latest?.purpleCardApplyNoOverdue ?: false
             else -> false
         }
         return if (on)

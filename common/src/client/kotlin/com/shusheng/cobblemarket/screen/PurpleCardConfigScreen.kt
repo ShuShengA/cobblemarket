@@ -125,8 +125,14 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
     private fun toggleIcon(key: String): net.minecraft.util.Identifier? = toggleIconFor(key, null)
 
     private fun toggleIconFor(key: String, p: ServerConfigDataPayload?): net.minecraft.util.Identifier? {
-        val on = when (key) {
-            "cardSelfApply" -> p?.purpleCardSelfApply ?: false
+        // 优先级：回发快照值 > 本地未保存的编辑值 > 旧快照（照 ServerConfigScreen）
+        val on = p?.let { snapshot ->
+            when (key) {
+                "cardSelfApply" -> snapshot.purpleCardSelfApply
+                else -> false
+            }
+        } ?: localToggles[key] ?: when (key) {
+            "cardSelfApply" -> ServerConfigScreen.latest?.purpleCardSelfApply ?: false
             else -> false
         }
         return if (on)
