@@ -175,10 +175,18 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         toggleIconFor(key, null)
 
     private fun toggleIconFor(key: String, p: ServerConfigDataPayload?): net.minecraft.util.Identifier? {
-        val on = when (key) {
-            "financeEnabled" -> p?.financeEnabled ?: false
-            "cashLoan" -> p?.cashLoanEnabled ?: true
-            "consumerLoan" -> p?.consumerLoanEnabled ?: true
+        // 优先级：回发快照值 > 本地未保存的编辑值 > 旧快照（照 ServerConfigScreen）
+        val on = p?.let { snapshot ->
+            when (key) {
+                "financeEnabled" -> snapshot.financeEnabled
+                "cashLoan" -> snapshot.cashLoanEnabled
+                "consumerLoan" -> snapshot.consumerLoanEnabled
+                else -> false
+            }
+        } ?: localToggles[key] ?: when (key) {
+            "financeEnabled" -> ServerConfigScreen.latest?.financeEnabled ?: false
+            "cashLoan" -> ServerConfigScreen.latest?.cashLoanEnabled ?: true
+            "consumerLoan" -> ServerConfigScreen.latest?.consumerLoanEnabled ?: true
             else -> false
         }
         return if (on)
