@@ -127,6 +127,8 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
             var y = dialogY + 96
             conditionKeys.forEachIndexed { i, key ->
                 val entry = payload.conditions.getOrNull(i) ?: return@forEachIndexed
+                // 门槛 0/关 = 不要求，该行不显示
+                if (entry.requirement <= 0) return@forEachIndexed
                 val label = Text.translatable(key).string
                 val isBool = i == 5 // 无逾期记录项
                 val valueText = if (isBool) {
