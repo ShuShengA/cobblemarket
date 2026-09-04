@@ -141,28 +141,20 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             width / 2, bgTop + 79, 0x55FFFF
         )
 
-        // 紫卡持有者：左侧展示旋转的紫卡（屏幕平面内绕 Z 轴转圈，不左右摆；每 2 秒一圈）
-        if (com.shusheng.cobblemarket.client.FinanceCache.hasPurpleCard) {
-            val cardItem = net.minecraft.registry.Registries.ITEM.get(
-                net.minecraft.util.Identifier.of("cobblemarket", "meowth_purple_card")
+        // 左侧紫卡展示（所有玩家可见，无动画；点击打开申请紫卡弹窗）
+        val cardItem = net.minecraft.registry.Registries.ITEM.get(
+            net.minecraft.util.Identifier.of("cobblemarket", "meowth_purple_card")
+        )
+        if (cardItem != net.minecraft.registry.Registries.ITEM.get(net.minecraft.util.Identifier.of("minecraft", "air"))) {
+            // 显示尺寸 = 16 × scale ≈ 104px；完全移出背景：卡右缘（+104）贴背景左缘（-128）→ x = -232
+            val scale = 6.5
+            val cardX = width / 2 - 232
+            val cardY = bgTop + 54
+            com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                itemStack = net.minecraft.item.ItemStack(cardItem),
+                x = cardX.toDouble(), y = cardY.toDouble(), scale = scale.toDouble(),
+                matrixStack = context.matrices
             )
-            if (cardItem != net.minecraft.registry.Registries.ITEM.get(net.minecraft.util.Identifier.of("minecraft", "air"))) {
-                // 照地面物品动画（ItemEntityRenderer）：绕 Y 轴自转 + 上下正弦浮动
-                // 显示尺寸 = 16 × scale ≈ 104px（背景 213 高的一半）；左侧贴边框内（-124），
-                // 垂直居中（bgTop+54），右缘 -20 与按钮区 -50 留 30px 空隙
-                val scale = 6.5
-                val displaySize = (16 * scale).toInt()
-                val cardX = width / 2 - 150
-                val now = System.currentTimeMillis()
-                // 轻微上下浮动 ±3px，周期 1.5 秒（无旋转：GUI 正交投影下 Y 轴旋转只会像左右摆）
-                val bob = Math.sin(now / 1500.0 * Math.PI * 2) * 3
-                val cardY = (bgTop + 54 + bob).toInt()
-                com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                    itemStack = net.minecraft.item.ItemStack(cardItem),
-                    x = cardX.toDouble(), y = cardY.toDouble(), scale = scale.toDouble(),
-                    matrixStack = context.matrices
-                )
-            }
         }
 
         // 规则按钮悬停面板（照拍卖场规则面板：自绘 + 悬停位置自适应）
@@ -249,5 +241,18 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         flush()
         return result
     }
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        val result = super.mouseClicked(mouseX, mouseY, button)
+        if (button != 0) return result
+        // 左侧紫卡点击 → 申请紫卡弹窗（区域与渲染一致：x -232 宽 104、y bgTop+54 高 104）
+        val cardX = width / 2 - 232
+        val cardY = bgTop() + 54
+        if (mouseX >= cardX && mouseX < cardX + 104 && mouseY >= cardY && mouseY < cardY + 104) {
+            client?.setScreen(PurpleCardApplyScreen())
+            return true
+        }
+        return result
+    }
+
     override fun shouldPause() = false
 }
