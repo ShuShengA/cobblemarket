@@ -385,6 +385,16 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         return true
     }
 
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        // 点击空白处结束输入状态（照 LoanScreen 惯例）
+        val wasInInput = focused is TextFieldWidget
+        val result = super.mouseClicked(mouseX, mouseY, button)
+        if (wasInInput && numFields.values.none { it.isMouseOver(mouseX, mouseY) }) {
+            focused = null
+        }
+        return result
+    }
+
     override fun resize(client: MinecraftClient, width: Int, height: Int) {
         super.resize(client, width, height)
         rebuildPositions()
@@ -392,3 +402,4 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
 
     override fun shouldPause() = false
 }
+
