@@ -141,6 +141,29 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             width / 2, bgTop + 79, 0x55FFFF
         )
 
+        // 紫卡持有者：左侧展示旋转的紫卡（物品落地默认动画，绕 Y 轴每 2 秒一圈）
+        if (com.shusheng.cobblemarket.client.FinanceCache.hasPurpleCard) {
+            val cardItem = net.minecraft.registry.Registries.ITEM.get(
+                net.minecraft.util.Identifier.of("cobblemarket", "meowth_purple_card")
+            )
+            if (cardItem != net.minecraft.registry.Registries.ITEM.get(net.minecraft.util.Identifier.of("minecraft", "air"))) {
+                val cardSize = 24
+                val cardX = width / 2 - 96
+                val cardY = bgTop + 92
+                val angle = (System.currentTimeMillis() % 2000) / 2000f * 360f
+                context.matrices.push()
+                context.matrices.translate((cardX + cardSize / 2).toDouble(), (cardY + cardSize / 2).toDouble(), 100.0)
+                context.matrices.multiply(org.joml.Quaternionf().rotateY(Math.toRadians(angle.toDouble()).toFloat()))
+                context.matrices.translate(-(cardX + cardSize / 2).toDouble(), -(cardY + cardSize / 2).toDouble(), 0.0)
+                com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                    itemStack = net.minecraft.item.ItemStack(cardItem),
+                    x = cardX.toDouble(), y = cardY.toDouble(), scale = 1.5,
+                    matrixStack = context.matrices
+                )
+                context.matrices.pop()
+            }
+        }
+
         // 规则按钮悬停面板（照拍卖场规则面板：自绘 + 悬停位置自适应）
         if (rulesButton?.isHovered == true) {
             renderRulesPanel(context, mouseX, mouseY)
