@@ -379,6 +379,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             tradePairMaxTrades = p?.tradePairMaxTrades ?: 3L,
             purpleCardCount = p?.purpleCardCount ?: 20L,
             purpleCardCreditLimit = p?.purpleCardCreditLimit ?: 1_000_000L,
+            purpleCardSelfApply = p?.purpleCardSelfApply ?: false,
             ipDebtLimit = p?.ipDebtLimit ?: 100_000L,
             autoRepayMinBalance = p?.autoRepayMinBalance ?: 1_000L,
             overdueFeeDouble = p?.overdueFeeDouble ?: 7,

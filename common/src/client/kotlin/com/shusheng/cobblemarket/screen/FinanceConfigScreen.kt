@@ -254,6 +254,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             // 紫卡字段回填快照（已迁移到 PurpleCardConfigScreen 编辑）
             purpleCardCount = p?.purpleCardCount ?: 20L,
             purpleCardCreditLimit = p?.purpleCardCreditLimit ?: 1_000_000L,
+            purpleCardSelfApply = p?.purpleCardSelfApply ?: false,
             ipDebtLimit = longOr("ipDebtLimit", p?.ipDebtLimit ?: 100_000L),
             autoRepayMinBalance = longOr("autoRepayMinBalance", p?.autoRepayMinBalance ?: 1_000L),
             overdueFeeDouble = intOr("overdueFeeDouble", p?.overdueFeeDouble ?: 7),

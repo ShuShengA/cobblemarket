@@ -27,13 +27,19 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
         NumDef("cobblemarket.op.scfg_card_limit", true) to "cardLimit",
     )
 
+    private val toggleDefs = listOf(
+        "cobblemarket.op.scfg_card_self_apply" to "cardSelfApply",
+    )
+
     private val numFields = mutableMapOf<String, TextFieldWidget>()
     private val resetButtons = mutableMapOf<String, NineSliceButton>()
+    private val toggleButtons = mutableMapOf<String, NineSliceButton>()
+    private val localToggles = mutableMapOf<String, Boolean>()
     private var saveButton: NineSliceButton? = null
     private var cancelButton: NineSliceButton? = null
     private var scrollOffset = 0
     private var savedToastUntil = 0L
-    private val totalRows = numDefs.size
+    private val totalRows = numDefs.size + toggleDefs.size
 
     private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 34)
     private fun dialogY() = height / 2 - dialogH() / 2
@@ -63,6 +69,22 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
             resetButtons[key] = resetBtn
             addDrawableChild(resetBtn)
         }
+        toggleDefs.forEach { (_, key) ->
+            val btn = NineSliceButton(
+                dialogX + dialogW - 10 - 22, startY, 22, 22,
+                Text.literal(""),
+                {
+                    localToggles[key] = !currentToggleValue(key)
+                    toggleButtons[key]?.iconLeft = toggleIconFor(key, null)
+                },
+                iconLeft = toggleIcon(key),
+                iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+                texture = ROW_BACKGROUND_TEXTURE,
+                texH = ROW_BACKGROUND_TEX_H
+            )
+            toggleButtons[key] = btn
+            addDrawableChild(btn)
+        }
         saveButton = NineSliceButton(
             width / 2 - 62, dialogY() + dialogH() - 26, 60, 20,
             Text.translatable("cobblemarket.op.scfg_save"),
@@ -91,6 +113,27 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
         else -> 0.0
     }
 
+    private fun toggleIcon(key: String): net.minecraft.util.Identifier? = toggleIconFor(key, null)
+
+    private fun toggleIconFor(key: String, p: ServerConfigDataPayload?): net.minecraft.util.Identifier? {
+        val on = when (key) {
+            "cardSelfApply" -> p?.purpleCardSelfApply ?: false
+            else -> false
+        }
+        return if (on)
+            net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/switch_icon_on.png")
+        else
+            net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/switch_icon_off.png")
+    }
+
+    private fun currentToggleValue(key: String): Boolean {
+        val p = ServerConfigScreen.latest
+        return when (key) {
+            "cardSelfApply" -> localToggles["cardSelfApply"] ?: (p?.purpleCardSelfApply ?: false)
+            else -> false
+        }
+    }
+
     fun refreshFrom(payload: ServerConfigDataPayload) {
         numDefs.forEach { (_, key) ->
             val field = numFields[key] ?: return@forEach
@@ -98,6 +141,10 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
                 field.text = snapshotText(key, payload)
             }
         }
+        toggleDefs.forEach { (_, key) ->
+            toggleButtons[key]?.iconLeft = toggleIconFor(key, payload)
+        }
+        localToggles.clear()
     }
 
     private fun save() {
@@ -135,6 +182,7 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
             tradePairMaxTrades = p?.tradePairMaxTrades ?: 3L,
             purpleCardCount = longOr("cardCount", p?.purpleCardCount ?: 20L),
             purpleCardCreditLimit = longOr("cardLimit", p?.purpleCardCreditLimit ?: 1_000_000L),
+            purpleCardSelfApply = localToggles["cardSelfApply"] ?: (p?.purpleCardSelfApply ?: false),
             ipDebtLimit = p?.ipDebtLimit ?: 100_000L,
             autoRepayMinBalance = p?.autoRepayMinBalance ?: 1_000L,
             overdueFeeDouble = p?.overdueFeeDouble ?: 7,
@@ -158,6 +206,14 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
             resetButtons[key]?.x = dialogX + dialogW - 10 - 20
             resetButtons[key]?.y = y + 4
             resetButtons[key]?.visible = visible
+            row++
+        }
+        toggleDefs.forEach { (_, key) ->
+            val y = startY + (row - scrollOffset) * rowHeight
+            val btn = toggleButtons[key] ?: return@forEach
+            btn.x = dialogX + dialogW - 10 - 22
+            btn.y = y + 1
+            btn.visible = row in scrollOffset until scrollOffset + getMaxVisibleRows()
             row++
         }
     }
@@ -184,6 +240,15 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
             context.drawTextWithShadow(
                 textRenderer,
                 Text.translatable(def.labelKey),
+                dialogX + 10, rowY + 7, 0xFFFFFF
+            )
+        }
+        toggleDefs.forEachIndexed { i, (labelKey, _) ->
+            val rowY = startY + (numDefs.size + i) * rowHeight
+            context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
+            context.drawTextWithShadow(
+                textRenderer,
+                Text.translatable(labelKey),
                 dialogX + 10, rowY + 7, 0xFFFFFF
             )
         }

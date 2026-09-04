@@ -70,6 +70,7 @@ data class ServerConfigDataPayload(
     val tradePairMaxTrades: Long,
     val purpleCardCount: Long,
     val purpleCardCreditLimit: Long,
+    val purpleCardSelfApply: Boolean,
     val autoRepayMinBalance: Long,
     val ipDebtLimit: Long,
     val overdueFeeDouble: Int,
@@ -110,6 +111,7 @@ data class ServerConfigDataPayload(
                 b.writeLong(p.tradePairMaxTrades)
                 b.writeLong(p.purpleCardCount)
                 b.writeLong(p.purpleCardCreditLimit)
+                b.writeBoolean(p.purpleCardSelfApply)
                 b.writeLong(p.creditMin)
                 b.writeLong(p.creditMax)
                 b.writeLong(p.autoRepayMinBalance)
@@ -149,6 +151,7 @@ data class ServerConfigDataPayload(
                 tradePairMaxTrades = b.readLong(),
                 purpleCardCount = b.readLong(),
                 purpleCardCreditLimit = b.readLong(),
+                purpleCardSelfApply = b.readBoolean(),
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
                 autoRepayMinBalance = b.readLong(),
@@ -196,6 +199,7 @@ data class SaveServerConfigPayload(
     val tradePairMaxTrades: Long,
     val purpleCardCount: Long,
     val purpleCardCreditLimit: Long,
+    val purpleCardSelfApply: Boolean,
     val creditMin: Long,
     val creditMax: Long,
     val autoRepayMinBalance: Long,
@@ -238,6 +242,7 @@ data class SaveServerConfigPayload(
                 b.writeLong(p.tradePairMaxTrades)
                 b.writeLong(p.purpleCardCount)
                 b.writeLong(p.purpleCardCreditLimit)
+                b.writeBoolean(p.purpleCardSelfApply)
                 b.writeLong(p.creditMin)
                 b.writeLong(p.creditMax)
                 b.writeLong(p.autoRepayMinBalance)
@@ -277,6 +282,7 @@ data class SaveServerConfigPayload(
                 tradePairMaxTrades = b.readLong(),
                 purpleCardCount = b.readLong(),
                 purpleCardCreditLimit = b.readLong(),
+                purpleCardSelfApply = b.readBoolean(),
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
                 autoRepayMinBalance = b.readLong(),
@@ -340,6 +346,7 @@ object ServerConfigNetwork {
         tradePairMaxTrades = CobbleMarketConfig.tradePairMaxTrades,
         purpleCardCount = CobbleMarketConfig.purpleCardCount,
         purpleCardCreditLimit = CobbleMarketConfig.purpleCardCreditLimit,
+        purpleCardSelfApply = CobbleMarketConfig.purpleCardSelfApply,
         consumerLoanEnabled = CobbleMarketConfig.consumerLoanEnabled,
         loanPlans = CobbleMarketConfig.loanPlansText(),
         creditRecent30 = CobbleMarketConfig.creditLimitRecent30Weight,
@@ -379,6 +386,7 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setTradePairMaxTrades(p.tradePairMaxTrades)
         CobbleMarketConfig.setPurpleCardCount(p.purpleCardCount)
         CobbleMarketConfig.setPurpleCardCreditLimit(p.purpleCardCreditLimit)
+        CobbleMarketConfig.setPurpleCardSelfApply(p.purpleCardSelfApply)
         CobbleMarketConfig.setCashLoanEnabled(p.cashLoanEnabled)
         CobbleMarketConfig.setConsumerLoanEnabled(p.consumerLoanEnabled)
         CobbleMarketConfig.setLoanPlansText(p.loanPlans)
