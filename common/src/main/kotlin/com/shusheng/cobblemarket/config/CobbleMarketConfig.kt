@@ -120,6 +120,15 @@ object CobbleMarketConfig {
     /** 允许玩家自行申请紫卡（默认关；开启后玩家从喵喵银行紫卡入口申请） */
     var purpleCardSelfApply: Boolean = false
         private set
+    /** 自行申请条件：玩家当前现金余额门槛（0 = 不要求） */
+    var purpleCardApplyAsset: Long = 0L
+        private set
+    /** 自行申请条件：历史买入成交额累计门槛（0 = 不要求） */
+    var purpleCardApplyVolume: Long = 0L
+        private set
+    /** 自行申请条件：信用基础（无欠款额度公式值）门槛（0 = 不要求） */
+    var purpleCardApplyCredit: Long = 0L
+        private set
     /** 到期自动划扣最低保留：最多划到余额=此值为止（划不足进 OVERDUE） */
     var autoRepayMinBalance: Long = 1_000L
         private set
@@ -201,6 +210,9 @@ object CobbleMarketConfig {
     fun setPurpleCardCount(v: Long) { purpleCardCount = v.coerceAtLeast(0L) }
     fun setPurpleCardCreditLimit(v: Long) { purpleCardCreditLimit = v.coerceAtLeast(0L) }
     fun setPurpleCardSelfApply(v: Boolean) { purpleCardSelfApply = v }
+    fun setPurpleCardApplyAsset(v: Long) { purpleCardApplyAsset = v.coerceAtLeast(0L) }
+    fun setPurpleCardApplyVolume(v: Long) { purpleCardApplyVolume = v.coerceAtLeast(0L) }
+    fun setPurpleCardApplyCredit(v: Long) { purpleCardApplyCredit = v.coerceAtLeast(0L) }
     fun setAutoRepayMinBalance(v: Long) { autoRepayMinBalance = v.coerceAtLeast(0L) }
     fun setIpDebtLimit(v: Long) { ipDebtLimit = v.coerceAtLeast(0L) }
     fun setOverdueFeeDoubleDays(v: Int) { overdueFeeDoubleDays = v.coerceAtLeast(0) }
@@ -307,6 +319,9 @@ object CobbleMarketConfig {
                     val fileCardCount = (finance["purpleCardCount"] as? Number)?.toLong() ?: 20L
                     val fileCardLimit = (finance["purpleCardCreditLimit"] as? Number)?.toLong() ?: 1_000_000L
                     val fileCardSelfApply = finance["purpleCardSelfApply"] as? Boolean ?: false
+                    val fileApplyAsset = (finance["purpleCardApplyAsset"] as? Number)?.toLong() ?: 0L
+                    val fileApplyVolume = (finance["purpleCardApplyVolume"] as? Number)?.toLong() ?: 0L
+                    val fileApplyCredit = (finance["purpleCardApplyCredit"] as? Number)?.toLong() ?: 0L
                     val fileIpDebtLimit = (finance["ipDebtLimit"] as? Number)?.toLong() ?: 100_000L
                     val overdueDays = finance["overdueDays"] as? Map<*, *>
                     val fileFeeDouble = (overdueDays?.get("feeDouble") as? Number)?.toInt() ?: 7
@@ -329,6 +344,9 @@ object CobbleMarketConfig {
                     purpleCardCount = fileCardCount.coerceAtLeast(0L)
                     purpleCardCreditLimit = fileCardLimit.coerceAtLeast(0L)
                     purpleCardSelfApply = fileCardSelfApply
+                    purpleCardApplyAsset = fileApplyAsset.coerceAtLeast(0L)
+                    purpleCardApplyVolume = fileApplyVolume.coerceAtLeast(0L)
+                    purpleCardApplyCredit = fileApplyCredit.coerceAtLeast(0L)
                     ipDebtLimit = fileIpDebtLimit.coerceAtLeast(0L)
                     // 逾期三档钳制：0 也可（关闭该档位动作），负数钳 0
                     overdueFeeDoubleDays = fileFeeDouble.coerceAtLeast(0)
@@ -453,6 +471,9 @@ object CobbleMarketConfig {
                 "purpleCardCount" to purpleCardCount,
                 "purpleCardCreditLimit" to purpleCardCreditLimit,
                 "purpleCardSelfApply" to purpleCardSelfApply,
+                "purpleCardApplyAsset" to purpleCardApplyAsset,
+                "purpleCardApplyVolume" to purpleCardApplyVolume,
+                "purpleCardApplyCredit" to purpleCardApplyCredit,
                 "ipDebtLimit" to ipDebtLimit,
                 "overdueDays" to mapOf(
                     "feeDouble" to overdueFeeDoubleDays,

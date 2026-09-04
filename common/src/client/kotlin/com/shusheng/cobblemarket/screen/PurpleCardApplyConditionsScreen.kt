@@ -12,10 +12,10 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 
 /**
- * 喵喵紫卡配置界面（批次 7.5 拆分）：从喵喵银行配置界面拆出紫卡相关配置。
- * 保存时紫卡字段提交编辑值、其余字段回填服务端快照原值（照 FinanceConfigScreen 模式）。
+ * 自行申请紫卡条件配置界面（批次 7.5）：资产/消费金额/额度三项门槛（0 = 不要求）。
+ * 照 PurpleCardConfigScreen 模式；保存时条件字段提交编辑值、其余回填快照。
  */
-class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_config")) {
+class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op.card_conditions")) {
 
     private val dialogW = 260
     private val rowHeight = 24
@@ -23,25 +23,18 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
     private data class NumDef(val labelKey: String, val isInt: Boolean)
 
     private val numDefs = listOf(
-        NumDef("cobblemarket.op.scfg_card_count", true) to "cardCount",
-        NumDef("cobblemarket.op.scfg_card_limit", true) to "cardLimit",
-    )
-
-    private val toggleDefs = listOf(
-        "cobblemarket.op.scfg_card_self_apply" to "cardSelfApply",
+        NumDef("cobblemarket.op.scfg_apply_asset", true) to "applyAsset",
+        NumDef("cobblemarket.op.scfg_apply_volume", true) to "applyVolume",
+        NumDef("cobblemarket.op.scfg_apply_credit", true) to "applyCredit",
     )
 
     private val numFields = mutableMapOf<String, TextFieldWidget>()
     private val resetButtons = mutableMapOf<String, NineSliceButton>()
-    private val toggleButtons = mutableMapOf<String, NineSliceButton>()
-    private val localToggles = mutableMapOf<String, Boolean>()
     private var saveButton: NineSliceButton? = null
     private var cancelButton: NineSliceButton? = null
     private var scrollOffset = 0
     private var savedToastUntil = 0L
-    // +1 = 自行申请条件入口行（左标签 + 右「配置」按钮）
-    private val totalRows = numDefs.size + toggleDefs.size + 1
-    private var conditionsOpenButton: NineSliceButton? = null
+    private val totalRows = numDefs.size
 
     private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 34)
     private fun dialogY() = height / 2 - dialogH() / 2
@@ -57,6 +50,18 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
             val field = TextFieldWidget(textRenderer, dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16, Text.literal(""))
             field.setTextPredicate { text -> if (def.isInt) text.all { it.isDigit() } else text.all { it.isDigit() || it == '.' } }
             field.setMaxLength(10)
+            // 口径解释（服主向）
+            when (key) {
+                "applyAsset" -> field.setTooltip(
+                    net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.scfg_apply_asset_tip"))
+                )
+                "applyVolume" -> field.setTooltip(
+                    net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.scfg_apply_volume_tip"))
+                )
+                "applyCredit" -> field.setTooltip(
+                    net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.scfg_apply_credit_tip"))
+                )
+            }
             numFields[key] = field
             addSelectableChild(field)
             addDrawableChild(field)
@@ -71,22 +76,6 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
             resetButtons[key] = resetBtn
             addDrawableChild(resetBtn)
         }
-        toggleDefs.forEach { (_, key) ->
-            val btn = NineSliceButton(
-                dialogX + dialogW - 10 - 22, startY, 22, 22,
-                Text.literal(""),
-                {
-                    localToggles[key] = !currentToggleValue(key)
-                    toggleButtons[key]?.iconLeft = toggleIconFor(key, null)
-                },
-                iconLeft = toggleIcon(key),
-                iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-                texture = ROW_BACKGROUND_TEXTURE,
-                texH = ROW_BACKGROUND_TEX_H
-            )
-            toggleButtons[key] = btn
-            addDrawableChild(btn)
-        }
         saveButton = NineSliceButton(
             width / 2 - 62, dialogY() + dialogH() - 26, 60, 20,
             Text.translatable("cobblemarket.op.scfg_save"),
@@ -96,16 +85,9 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
         cancelButton = NineSliceButton(
             width / 2 + 2, dialogY() + dialogH() - 26, 60, 20,
             Text.translatable("cobblemarket.op.scfg_cancel"),
-            { client?.setScreen(FinanceConfigScreen()) }
+            { client?.setScreen(PurpleCardConfigScreen()) }
         )
         addDrawableChild(cancelButton)
-        // 自行申请条件入口行（列表末尾：标签 + 右侧「配置」按钮 → PurpleCardApplyConditionsScreen）
-        conditionsOpenButton = NineSliceButton(
-            dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16,
-            Text.translatable("cobblemarket.op.finance_open"),
-            { client?.setScreen(PurpleCardApplyConditionsScreen()) }
-        )
-        addDrawableChild(conditionsOpenButton)
         rebuildPositions()
         sendToServer(RequestServerConfigPayload())
     }
@@ -117,30 +99,10 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
     }
 
     private fun numValue(key: String, payload: ServerConfigDataPayload?): Double = when (key) {
-        "cardCount" -> (payload?.purpleCardCount ?: 20L).toDouble()
-        "cardLimit" -> (payload?.purpleCardCreditLimit ?: 1_000_000L).toDouble()
+        "applyAsset" -> (payload?.purpleCardApplyAsset ?: 0L).toDouble()
+        "applyVolume" -> (payload?.purpleCardApplyVolume ?: 0L).toDouble()
+        "applyCredit" -> (payload?.purpleCardApplyCredit ?: 0L).toDouble()
         else -> 0.0
-    }
-
-    private fun toggleIcon(key: String): net.minecraft.util.Identifier? = toggleIconFor(key, null)
-
-    private fun toggleIconFor(key: String, p: ServerConfigDataPayload?): net.minecraft.util.Identifier? {
-        val on = when (key) {
-            "cardSelfApply" -> p?.purpleCardSelfApply ?: false
-            else -> false
-        }
-        return if (on)
-            net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/switch_icon_on.png")
-        else
-            net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/switch_icon_off.png")
-    }
-
-    private fun currentToggleValue(key: String): Boolean {
-        val p = ServerConfigScreen.latest
-        return when (key) {
-            "cardSelfApply" -> localToggles["cardSelfApply"] ?: (p?.purpleCardSelfApply ?: false)
-            else -> false
-        }
     }
 
     fun refreshFrom(payload: ServerConfigDataPayload) {
@@ -150,10 +112,6 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
                 field.text = snapshotText(key, payload)
             }
         }
-        toggleDefs.forEach { (_, key) ->
-            toggleButtons[key]?.iconLeft = toggleIconFor(key, payload)
-        }
-        localToggles.clear()
     }
 
     private fun save() {
@@ -189,12 +147,12 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
             dailyDepositRate = p?.dailyDepositRate ?: 0.0001,
             tradePairWindowDays = p?.tradePairWindowDays ?: 30L,
             tradePairMaxTrades = p?.tradePairMaxTrades ?: 3L,
-            purpleCardCount = longOr("cardCount", p?.purpleCardCount ?: 20L),
-            purpleCardCreditLimit = longOr("cardLimit", p?.purpleCardCreditLimit ?: 1_000_000L),
-            purpleCardSelfApply = localToggles["cardSelfApply"] ?: (p?.purpleCardSelfApply ?: false),
-            purpleCardApplyAsset = p?.purpleCardApplyAsset ?: 0L,
-            purpleCardApplyVolume = p?.purpleCardApplyVolume ?: 0L,
-            purpleCardApplyCredit = p?.purpleCardApplyCredit ?: 0L,
+            purpleCardCount = p?.purpleCardCount ?: 20L,
+            purpleCardCreditLimit = p?.purpleCardCreditLimit ?: 1_000_000L,
+            purpleCardSelfApply = p?.purpleCardSelfApply ?: false,
+            purpleCardApplyAsset = longOr("applyAsset", p?.purpleCardApplyAsset ?: 0L),
+            purpleCardApplyVolume = longOr("applyVolume", p?.purpleCardApplyVolume ?: 0L),
+            purpleCardApplyCredit = longOr("applyCredit", p?.purpleCardApplyCredit ?: 0L),
             ipDebtLimit = p?.ipDebtLimit ?: 100_000L,
             autoRepayMinBalance = p?.autoRepayMinBalance ?: 1_000L,
             overdueFeeDouble = p?.overdueFeeDouble ?: 7,
@@ -220,20 +178,6 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
             resetButtons[key]?.visible = visible
             row++
         }
-        toggleDefs.forEach { (_, key) ->
-            val y = startY + (row - scrollOffset) * rowHeight
-            val btn = toggleButtons[key] ?: return@forEach
-            btn.x = dialogX + dialogW - 10 - 22
-            btn.y = y + 1
-            btn.visible = row in scrollOffset until scrollOffset + getMaxVisibleRows()
-            row++
-        }
-        // 自行申请条件入口行（列表末尾）
-        val y = startY + (row - scrollOffset) * rowHeight
-        val visible = row in scrollOffset until scrollOffset + getMaxVisibleRows()
-        conditionsOpenButton?.x = dialogX + dialogW - 10 - 20 - 2 - 54
-        conditionsOpenButton?.y = y + 4
-        conditionsOpenButton?.visible = visible
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -248,7 +192,7 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
         val dialogX = width / 2 - dialogW / 2
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.op.card_config").formatted(Formatting.GOLD, Formatting.BOLD),
+            Text.translatable("cobblemarket.op.card_conditions").formatted(Formatting.GOLD, Formatting.BOLD),
             centerX, dialogY() + 10, 0xFFFFFF
         )
         val startY = listStartY()
@@ -261,23 +205,6 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
                 dialogX + 10, rowY + 7, 0xFFFFFF
             )
         }
-        toggleDefs.forEachIndexed { i, (labelKey, _) ->
-            val rowY = startY + (numDefs.size + i) * rowHeight
-            context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
-            context.drawTextWithShadow(
-                textRenderer,
-                Text.translatable(labelKey),
-                dialogX + 10, rowY + 7, 0xFFFFFF
-            )
-        }
-        // 自行申请条件入口行（列表末尾）
-        val condRowY = startY + (numDefs.size + toggleDefs.size) * rowHeight
-        context.fill(dialogX + 6, condRowY, dialogX + dialogW - 6, condRowY + 1, 0xFF555555.toInt())
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.op.card_conditions_entry"),
-            dialogX + 10, condRowY + 7, 0xFFFFFF
-        )
         if (System.currentTimeMillis() < savedToastUntil) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
