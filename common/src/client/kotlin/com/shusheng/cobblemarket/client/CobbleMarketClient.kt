@@ -17,6 +17,7 @@ import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.HistoryDataPayload
 import com.shusheng.cobblemarket.network.DepositInfoPayload
 import com.shusheng.cobblemarket.network.PurpleCardApplyInfoPayload
+import com.shusheng.cobblemarket.network.BlackCardApplyInfoPayload
 import com.shusheng.cobblemarket.network.FinanceStatsPayload
 import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
@@ -50,6 +51,9 @@ import com.shusheng.cobblemarket.screen.DepositScreen
 import com.shusheng.cobblemarket.screen.FinanceConfigScreen
 import com.shusheng.cobblemarket.screen.PurpleCardApplyConditionsScreen
 import com.shusheng.cobblemarket.screen.PurpleCardApplyScreen
+import com.shusheng.cobblemarket.screen.BlackCardApplyScreen
+import com.shusheng.cobblemarket.screen.BlackCardConfigScreen
+import com.shusheng.cobblemarket.screen.BlackCardApplyConditionsScreen
 import com.shusheng.cobblemarket.screen.PurpleCardConfigScreen
 import com.shusheng.cobblemarket.screen.LoanHistoryScreen
 import com.shusheng.cobblemarket.screen.MeowthPayScreen
@@ -317,6 +321,16 @@ object CobbleMarketClient {
             client.execute {
                 val screen = client.currentScreen
                 if (screen is PurpleCardApplyScreen) {
+                    screen.onApplyInfo(payload)
+                }
+            }
+        }
+
+        registerS2C(BlackCardApplyInfoPayload.ID, BlackCardApplyInfoPayload.CODEC) { payload ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                if (screen is BlackCardApplyScreen) {
                     screen.onApplyInfo(payload)
                 }
             }
@@ -716,6 +730,7 @@ private fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean 
         s is BuyConfirmScreen || s is AdminScreen || s is AdminPokemonScreen || s is AdminItemScreen || s is AdminBanScreen ||
         s is BlacklistScreen || s is PriceLimitScreen || s is AuctionScreen || s is AuctionCreateScreen ||
         s is BuyOrderScreen || s is AdminAuctionScreen || s is ServerConfigScreen || s is FinanceConfigScreen ||
-        s is PurpleCardConfigScreen || s is PurpleCardApplyScreen || s is PurpleCardApplyConditionsScreen || s is ItemVariantSelectScreen ||
+        s is PurpleCardConfigScreen || s is PurpleCardApplyScreen || s is PurpleCardApplyConditionsScreen ||
+        s is BlackCardConfigScreen || s is BlackCardApplyScreen || s is BlackCardApplyConditionsScreen || s is ItemVariantSelectScreen ||
         s is MeowthBankScreen || s is LoanScreen || s is LoanHistoryScreen || s is RepayScreen || s is MeowthPayScreen ||
         s is DepositScreen

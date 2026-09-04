@@ -809,9 +809,12 @@ object AuctionNetwork {
                     // toLong 先提升：与结算同公式，防 Int×Int 环绕溢出（消息与扣费保持一致）
                     Math.ceil(auction.currentPrice.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
                 else 0L
-                val fee = com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
-                    com.shusheng.cobblemarket.finance.FinanceState.get(server), auction.sellerUuid,
-                    System.currentTimeMillis(), baseFee
+                val fee = com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
+                    com.shusheng.cobblemarket.finance.FinanceState.get(server),
+                    auction.sellerUuid,
+                    com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+                        com.shusheng.cobblemarket.finance.FinanceState.get(server), auction.sellerUuid, System.currentTimeMillis(), baseFee
+                    )
                 ).toInt()
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, auction.sellerUuid,
@@ -961,11 +964,15 @@ object AuctionNetwork {
             RecordDetail.item(auction.itemNbt, auction.count)
         // 账本 fee 与实际扣费一致（含逾期翻倍，付款方=卖家）
         val fee = if (type == TransactionType.PURCHASE && CobbleMarketConfig.auctionFeePercent > 0)
-            com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
-                com.shusheng.cobblemarket.finance.FinanceState.get(server), auction.sellerUuid,
-                System.currentTimeMillis(),
-                Math.ceil(auction.currentPrice.toLong() * CobbleMarketConfig.auctionFeePercent / 100.0).toLong()
-                    .coerceAtMost(Int.MAX_VALUE.toLong())
+            com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
+                com.shusheng.cobblemarket.finance.FinanceState.get(server),
+                auction.sellerUuid,
+                com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+                    com.shusheng.cobblemarket.finance.FinanceState.get(server), auction.sellerUuid,
+                    System.currentTimeMillis(),
+                    Math.ceil(auction.currentPrice.toLong() * CobbleMarketConfig.auctionFeePercent / 100.0).toLong()
+                        .coerceAtMost(Int.MAX_VALUE.toLong())
+                )
             ).toInt()
         else 0
         TransactionHistory.get(server).addRecord(TransactionRecord(

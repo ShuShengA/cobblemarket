@@ -2,10 +2,10 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
-import com.shusheng.cobblemarket.network.PurpleCardApplyInfoPayload
-import com.shusheng.cobblemarket.network.RequestPurpleCardApplyInfoPayload
-import com.shusheng.cobblemarket.network.RequestPurpleCardApplyPayload
-import com.shusheng.cobblemarket.network.RequestPurpleCardRedoPayload
+import com.shusheng.cobblemarket.network.BlackCardApplyInfoPayload
+import com.shusheng.cobblemarket.network.RequestBlackCardApplyInfoPayload
+import com.shusheng.cobblemarket.network.RequestBlackCardApplyPayload
+import com.shusheng.cobblemarket.network.RequestBlackCardRedoPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
@@ -14,15 +14,16 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 
 /**
- * 申请喵喵紫卡（批次 7.5）：上方紫卡大图 + 逐条申请条件（门槛/玩家当前值/✓✗，照交付精灵条件样式）。
+ * 申请喵喵黑卡（照紫卡申请界面）：上方黑卡大图 + 逐条申请条件（7 项：持有紫卡硬条件 + 六项门槛）。
  * 打开时拉取条件快照；全部满足且开关开启时可点「申请」（服务端复核扣费发卡）。
  */
-class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_title")) {
+class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_apply_title")) {
 
     private val dialogW = 300
     private val dialogH = 320
 
     private val conditionKeys = listOf(
+        "cobblemarket.card.black_need_purple",
         "cobblemarket.op.scfg_apply_asset",
         "cobblemarket.op.scfg_apply_volume",
         "cobblemarket.op.scfg_apply_credit",
@@ -31,9 +32,9 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
         "cobblemarket.op.scfg_apply_no_overdue",
     )
 
-    private var info: PurpleCardApplyInfoPayload? = null
+    private var info: BlackCardApplyInfoPayload? = null
     private var applyButton: NineSliceButton? = null
-    /** 已是持有者：按钮变「补发紫卡」 */
+    /** 已是持有者：按钮变「补发黑卡」 */
     private var isHolder = false
 
     override fun init() {
@@ -48,28 +49,28 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
             { client?.setScreen(MeowthBankScreen()) }
         ))
 
-        // 底部按钮（居中；持有者=补发紫卡，非持有者=申请，资格/开关不符时置灰文案区分）
+        // 底部按钮（居中；持有者=补发黑卡，非持有者=申请，资格/开关不符时置灰文案区分）
         applyButton = NineSliceButton(
             width / 2 - 50, dialogY + dialogH - 44, 100, 20,
-            Text.translatable("cobblemarket.card.apply_btn"),
+            Text.translatable("cobblemarket.card.black_apply_btn"),
             {
-                if (isHolder) sendToServer(RequestPurpleCardRedoPayload())
-                else sendToServer(RequestPurpleCardApplyPayload())
+                if (isHolder) sendToServer(RequestBlackCardRedoPayload())
+                else sendToServer(RequestBlackCardApplyPayload())
             }
         )
         applyButton?.active = false
         addDrawableChild(applyButton)
 
-        sendToServer(RequestPurpleCardApplyInfoPayload())
+        sendToServer(RequestBlackCardApplyInfoPayload())
     }
 
-    fun onApplyInfo(payload: PurpleCardApplyInfoPayload) {
+    fun onApplyInfo(payload: BlackCardApplyInfoPayload) {
         info = payload
         isHolder = payload.isHolder
         if (isHolder) {
-            // 持有者：按钮变「补发紫卡」（凭证丢失随时补）
+            // 持有者：按钮变「补发黑卡」（凭证丢失随时补）
             applyButton?.active = true
-            applyButton?.message = Text.translatable("cobblemarket.card.redo_button")
+            applyButton?.message = Text.translatable("cobblemarket.card.black_redo_button")
             return
         }
         applyButton?.active = payload.eligible && payload.selfApplyEnabled
@@ -77,7 +78,7 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
             when {
                 !payload.selfApplyEnabled -> "cobblemarket.card.apply_closed"
                 !payload.eligible -> "cobblemarket.card.apply_not_eligible"
-                else -> "cobblemarket.card.apply_btn"
+                else -> "cobblemarket.card.black_apply_btn"
             }
         )
     }
@@ -96,13 +97,13 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
         val dialogY = height / 2 - dialogH / 2
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.card.apply_title").formatted(Formatting.GOLD, Formatting.BOLD),
+            Text.translatable("cobblemarket.card.black_apply_title").formatted(Formatting.GOLD, Formatting.BOLD),
             centerX, dialogY + 14, 0xFFFFFF
         )
 
-        // 紫卡大图（56px 居中）
+        // 黑卡大图（56px 居中）
         val cardItem = net.minecraft.registry.Registries.ITEM.get(
-            Identifier.of("cobblemarket", "meowth_purple_card")
+            Identifier.of("cobblemarket", "meowth_black_card")
         )
         if (cardItem != net.minecraft.registry.Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
             val size = 56
@@ -127,13 +128,18 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
             var y = dialogY + 96
             conditionKeys.forEachIndexed { i, key ->
                 val entry = payload.conditions.getOrNull(i) ?: return@forEachIndexed
-                // 门槛 0/关 = 不要求，该行不显示
-                if (entry.requirement <= 0) return@forEachIndexed
+                // 门槛 0/关 = 不要求，该行不显示（硬条件「持有紫卡」除外，恒显示）
+                if (i != 0 && entry.requirement <= 0) return@forEachIndexed
                 val label = Text.translatable(key).string
-                val isBool = i == 5 // 无逾期记录项
+                val isBool = i == 0 || i == 6 // 持有紫卡硬条件 / 无逾期记录项
                 val valueText = if (isBool) {
-                    if (entry.current > 0) Text.translatable("cobblemarket.card.apply_no_record").string
-                    else Text.translatable("cobblemarket.card.apply_has_record").string
+                    if (entry.current > 0) {
+                        if (i == 0) Text.translatable("cobblemarket.card.black_holds_purple").string
+                        else Text.translatable("cobblemarket.card.apply_no_record").string
+                    } else {
+                        if (i == 0) Text.translatable("cobblemarket.card.black_no_purple").string
+                        else Text.translatable("cobblemarket.card.apply_has_record").string
+                    }
                 } else {
                     "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)}"
                 }

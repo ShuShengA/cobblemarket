@@ -38,10 +38,11 @@ object CobbleMarket {
 	fun init() {
 		LOGGER.info("CobbleMarket initializing...")
 		com.shusheng.cobblemarket.config.CobbleMarketConfig.load()
-		// 喵喵紫卡物品注册（额度凭证，绑定 FinanceState 持有者状态）
+		// 喵喵紫卡/黑卡物品注册（额度凭证，绑定 FinanceState 持有者状态）
 		com.shusheng.cobblemarket.platform.registerItems(
 			listOf(
-				id("meowth_purple_card") to { com.shusheng.cobblemarket.finance.MeowthPurpleCardItem() }
+				id("meowth_purple_card") to { com.shusheng.cobblemarket.finance.MeowthPurpleCardItem() },
+				id("meowth_black_card") to { com.shusheng.cobblemarket.finance.MeowthBlackCardItem() }
 			)
 		)
 		MarketNetwork.register()
@@ -89,11 +90,12 @@ object CobbleMarket {
 			com.shusheng.cobblemarket.util.PersistHelper.tick(server)
 			// 金融系统自动划扣扫描（内部 60 秒节流，见 FinanceService）
 			com.shusheng.cobblemarket.finance.FinanceService.tick(server)
-			// 喵喵紫卡丢弃即消失扫描（0.5 秒节流，近乎立即可见消失；
+			// 喵喵紫卡/黑卡丢弃即消失扫描（0.5 秒节流，近乎立即可见消失；
 			// 非持有者背包自删走物品自身的 inventoryTick，无需服务器扫描）
 			if (++cardScanTick >= 10) {
 				cardScanTick = 0
 				com.shusheng.cobblemarket.finance.MeowthPurpleCardItem.scanAndDiscardDroppedCards(server)
+				com.shusheng.cobblemarket.finance.MeowthBlackCardItem.scanAndDiscardDroppedCards(server)
 			}
 		}
 		onPlayerJoin { player ->

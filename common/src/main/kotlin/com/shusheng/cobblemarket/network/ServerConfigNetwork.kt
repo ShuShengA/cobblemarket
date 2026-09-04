@@ -78,6 +78,20 @@ data class ServerConfigDataPayload(
     val purpleCardApplyNoOverdue: Boolean,
     val purpleCardApplyDex: Long,
     val purpleCardApplyFee: Long,
+    val purpleCardRedoFee: Long,
+    val purpleCardFeeDiscount: Double,
+    val blackCardCount: Long,
+    val blackCardCreditLimit: Long,
+    val blackCardSelfApply: Boolean,
+    val blackCardApplyAsset: Long,
+    val blackCardApplyVolume: Long,
+    val blackCardApplyCredit: Long,
+    val blackCardApplyDeposit: Long,
+    val blackCardApplyNoOverdue: Boolean,
+    val blackCardApplyDex: Long,
+    val blackCardApplyFee: Long,
+    val blackCardRedoFee: Long,
+    val blackCardFeeDiscount: Double,
     val autoRepayMinBalance: Long,
     val ipDebtLimit: Long,
     val overdueFeeDouble: Int,
@@ -126,6 +140,20 @@ data class ServerConfigDataPayload(
                 b.writeBoolean(p.purpleCardApplyNoOverdue)
                 b.writeLong(p.purpleCardApplyDex)
                 b.writeLong(p.purpleCardApplyFee)
+                b.writeLong(p.purpleCardRedoFee)
+                b.writeDouble(p.purpleCardFeeDiscount)
+                b.writeLong(p.blackCardCount)
+                b.writeLong(p.blackCardCreditLimit)
+                b.writeBoolean(p.blackCardSelfApply)
+                b.writeLong(p.blackCardApplyAsset)
+                b.writeLong(p.blackCardApplyVolume)
+                b.writeLong(p.blackCardApplyCredit)
+                b.writeLong(p.blackCardApplyDeposit)
+                b.writeBoolean(p.blackCardApplyNoOverdue)
+                b.writeLong(p.blackCardApplyDex)
+                b.writeLong(p.blackCardApplyFee)
+                b.writeLong(p.blackCardRedoFee)
+                b.writeDouble(p.blackCardFeeDiscount)
                 b.writeLong(p.creditMin)
                 b.writeLong(p.creditMax)
                 b.writeLong(p.autoRepayMinBalance)
@@ -173,6 +201,20 @@ data class ServerConfigDataPayload(
                 purpleCardApplyNoOverdue = b.readBoolean(),
                 purpleCardApplyDex = b.readLong(),
                 purpleCardApplyFee = b.readLong(),
+                purpleCardRedoFee = b.readLong(),
+                purpleCardFeeDiscount = b.readDouble(),
+                blackCardCount = b.readLong(),
+                blackCardCreditLimit = b.readLong(),
+                blackCardSelfApply = b.readBoolean(),
+                blackCardApplyAsset = b.readLong(),
+                blackCardApplyVolume = b.readLong(),
+                blackCardApplyCredit = b.readLong(),
+                blackCardApplyDeposit = b.readLong(),
+                blackCardApplyNoOverdue = b.readBoolean(),
+                blackCardApplyDex = b.readLong(),
+                blackCardApplyFee = b.readLong(),
+                blackCardRedoFee = b.readLong(),
+                blackCardFeeDiscount = b.readDouble(),
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
                 autoRepayMinBalance = b.readLong(),
@@ -228,6 +270,20 @@ data class SaveServerConfigPayload(
     val purpleCardApplyNoOverdue: Boolean,
     val purpleCardApplyDex: Long,
     val purpleCardApplyFee: Long,
+    val purpleCardRedoFee: Long,
+    val purpleCardFeeDiscount: Double,
+    val blackCardCount: Long,
+    val blackCardCreditLimit: Long,
+    val blackCardSelfApply: Boolean,
+    val blackCardApplyAsset: Long,
+    val blackCardApplyVolume: Long,
+    val blackCardApplyCredit: Long,
+    val blackCardApplyDeposit: Long,
+    val blackCardApplyNoOverdue: Boolean,
+    val blackCardApplyDex: Long,
+    val blackCardApplyFee: Long,
+    val blackCardRedoFee: Long,
+    val blackCardFeeDiscount: Double,
     val creditMin: Long,
     val creditMax: Long,
     val autoRepayMinBalance: Long,
@@ -278,6 +334,20 @@ data class SaveServerConfigPayload(
                 b.writeBoolean(p.purpleCardApplyNoOverdue)
                 b.writeLong(p.purpleCardApplyDex)
                 b.writeLong(p.purpleCardApplyFee)
+                b.writeLong(p.purpleCardRedoFee)
+                b.writeDouble(p.purpleCardFeeDiscount)
+                b.writeLong(p.blackCardCount)
+                b.writeLong(p.blackCardCreditLimit)
+                b.writeBoolean(p.blackCardSelfApply)
+                b.writeLong(p.blackCardApplyAsset)
+                b.writeLong(p.blackCardApplyVolume)
+                b.writeLong(p.blackCardApplyCredit)
+                b.writeLong(p.blackCardApplyDeposit)
+                b.writeBoolean(p.blackCardApplyNoOverdue)
+                b.writeLong(p.blackCardApplyDex)
+                b.writeLong(p.blackCardApplyFee)
+                b.writeLong(p.blackCardRedoFee)
+                b.writeDouble(p.blackCardFeeDiscount)
                 b.writeLong(p.creditMin)
                 b.writeLong(p.creditMax)
                 b.writeLong(p.autoRepayMinBalance)
@@ -325,6 +395,20 @@ data class SaveServerConfigPayload(
                 purpleCardApplyNoOverdue = b.readBoolean(),
                 purpleCardApplyDex = b.readLong(),
                 purpleCardApplyFee = b.readLong(),
+                purpleCardRedoFee = b.readLong(),
+                purpleCardFeeDiscount = b.readDouble(),
+                blackCardCount = b.readLong(),
+                blackCardCreditLimit = b.readLong(),
+                blackCardSelfApply = b.readBoolean(),
+                blackCardApplyAsset = b.readLong(),
+                blackCardApplyVolume = b.readLong(),
+                blackCardApplyCredit = b.readLong(),
+                blackCardApplyDeposit = b.readLong(),
+                blackCardApplyNoOverdue = b.readBoolean(),
+                blackCardApplyDex = b.readLong(),
+                blackCardApplyFee = b.readLong(),
+                blackCardRedoFee = b.readLong(),
+                blackCardFeeDiscount = b.readDouble(),
                 creditMin = b.readLong(),
                 creditMax = b.readLong(),
                 autoRepayMinBalance = b.readLong(),
@@ -396,6 +480,20 @@ object ServerConfigNetwork {
         purpleCardApplyNoOverdue = CobbleMarketConfig.purpleCardApplyNoOverdue,
         purpleCardApplyDex = CobbleMarketConfig.purpleCardApplyDex,
         purpleCardApplyFee = CobbleMarketConfig.purpleCardApplyFee,
+        purpleCardRedoFee = CobbleMarketConfig.purpleCardRedoFee,
+        purpleCardFeeDiscount = CobbleMarketConfig.purpleCardFeeDiscount,
+        blackCardCount = CobbleMarketConfig.blackCardCount,
+        blackCardCreditLimit = CobbleMarketConfig.blackCardCreditLimit,
+        blackCardSelfApply = CobbleMarketConfig.blackCardSelfApply,
+        blackCardApplyAsset = CobbleMarketConfig.blackCardApplyAsset,
+        blackCardApplyVolume = CobbleMarketConfig.blackCardApplyVolume,
+        blackCardApplyCredit = CobbleMarketConfig.blackCardApplyCredit,
+        blackCardApplyDeposit = CobbleMarketConfig.blackCardApplyDeposit,
+        blackCardApplyNoOverdue = CobbleMarketConfig.blackCardApplyNoOverdue,
+        blackCardApplyDex = CobbleMarketConfig.blackCardApplyDex,
+        blackCardApplyFee = CobbleMarketConfig.blackCardApplyFee,
+        blackCardRedoFee = CobbleMarketConfig.blackCardRedoFee,
+        blackCardFeeDiscount = CobbleMarketConfig.blackCardFeeDiscount,
         consumerLoanEnabled = CobbleMarketConfig.consumerLoanEnabled,
         loanPlans = CobbleMarketConfig.loanPlansText(),
         creditRecent30 = CobbleMarketConfig.creditLimitRecent30Weight,
@@ -443,6 +541,20 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setPurpleCardApplyNoOverdue(p.purpleCardApplyNoOverdue)
         CobbleMarketConfig.setPurpleCardApplyDex(p.purpleCardApplyDex)
         CobbleMarketConfig.setPurpleCardApplyFee(p.purpleCardApplyFee)
+        CobbleMarketConfig.setPurpleCardRedoFee(p.purpleCardRedoFee)
+        CobbleMarketConfig.setPurpleCardFeeDiscount(p.purpleCardFeeDiscount)
+        CobbleMarketConfig.setBlackCardCount(p.blackCardCount)
+        CobbleMarketConfig.setBlackCardCreditLimit(p.blackCardCreditLimit)
+        CobbleMarketConfig.setBlackCardSelfApply(p.blackCardSelfApply)
+        CobbleMarketConfig.setBlackCardApplyAsset(p.blackCardApplyAsset)
+        CobbleMarketConfig.setBlackCardApplyVolume(p.blackCardApplyVolume)
+        CobbleMarketConfig.setBlackCardApplyCredit(p.blackCardApplyCredit)
+        CobbleMarketConfig.setBlackCardApplyDeposit(p.blackCardApplyDeposit)
+        CobbleMarketConfig.setBlackCardApplyNoOverdue(p.blackCardApplyNoOverdue)
+        CobbleMarketConfig.setBlackCardApplyDex(p.blackCardApplyDex)
+        CobbleMarketConfig.setBlackCardApplyFee(p.blackCardApplyFee)
+        CobbleMarketConfig.setBlackCardRedoFee(p.blackCardRedoFee)
+        CobbleMarketConfig.setBlackCardFeeDiscount(p.blackCardFeeDiscount)
         CobbleMarketConfig.setCashLoanEnabled(p.cashLoanEnabled)
         CobbleMarketConfig.setConsumerLoanEnabled(p.consumerLoanEnabled)
         CobbleMarketConfig.setLoanPlansText(p.loanPlans)

@@ -1084,8 +1084,12 @@ object BuyOrderNetwork {
         val base = if (feePercent > 0)
             Math.ceil(gross * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
         else 0L
-        return com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
-            com.shusheng.cobblemarket.finance.FinanceState.get(server), payerUuid, now, base
+        return com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
+            com.shusheng.cobblemarket.finance.FinanceState.get(server),
+            payerUuid,
+            com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+                com.shusheng.cobblemarket.finance.FinanceState.get(server), payerUuid, now, base
+            )
         )
     }
 

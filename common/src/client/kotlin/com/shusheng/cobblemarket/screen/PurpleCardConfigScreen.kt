@@ -25,6 +25,8 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
     private val numDefs = listOf(
         NumDef("cobblemarket.op.scfg_card_count", true) to "cardCount",
         NumDef("cobblemarket.op.scfg_card_limit", true) to "cardLimit",
+        NumDef("cobblemarket.op.scfg_card_redo_fee", true) to "cardRedoFee",
+        NumDef("cobblemarket.op.scfg_card_fee_discount", false) to "cardFeeDiscount",
     )
 
     private val toggleDefs = listOf(
@@ -57,6 +59,11 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
             val field = TextFieldWidget(textRenderer, dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16, Text.literal(""))
             field.setTextPredicate { text -> if (def.isInt) text.all { it.isDigit() } else text.all { it.isDigit() || it == '.' } }
             field.setMaxLength(10)
+            if (key == "cardFeeDiscount") {
+                field.setTooltip(
+                    net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.scfg_card_fee_discount_tip"))
+                )
+            }
             numFields[key] = field
             addSelectableChild(field)
             addDrawableChild(field)
@@ -119,6 +126,8 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
     private fun numValue(key: String, payload: ServerConfigDataPayload?): Double = when (key) {
         "cardCount" -> (payload?.purpleCardCount ?: 20L).toDouble()
         "cardLimit" -> (payload?.purpleCardCreditLimit ?: 1_000_000L).toDouble()
+        "cardRedoFee" -> (payload?.purpleCardRedoFee ?: 0L).toDouble()
+        "cardFeeDiscount" -> payload?.purpleCardFeeDiscount ?: 0.0
         else -> 0.0
     }
 
@@ -165,6 +174,7 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
     private fun save() {
         val p = ServerConfigScreen.latest
         fun longOr(key: String, fallback: Long): Long = numFields[key]?.text?.toLongOrNull() ?: fallback
+        fun doubleOr(key: String, fallback: Double): Double = numFields[key]?.text?.toDoubleOrNull() ?: fallback
         sendToServer(SaveServerConfigPayload(
             pokemonFee = p?.pokemonFee ?: 5.0,
             itemFee = p?.itemFee ?: 5.0,
@@ -205,6 +215,21 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
             purpleCardApplyNoOverdue = p?.purpleCardApplyNoOverdue ?: false,
             purpleCardApplyDex = p?.purpleCardApplyDex ?: 0L,
             purpleCardApplyFee = p?.purpleCardApplyFee ?: 0L,
+            purpleCardRedoFee = longOr("cardRedoFee", p?.purpleCardRedoFee ?: 0L),
+            purpleCardFeeDiscount = doubleOr("cardFeeDiscount", p?.purpleCardFeeDiscount ?: 0.0),
+            // 黑卡字段回填快照（在 BlackCardConfigScreen 编辑）
+            blackCardCount = p?.blackCardCount ?: 5L,
+            blackCardCreditLimit = p?.blackCardCreditLimit ?: 5_000_000L,
+            blackCardSelfApply = p?.blackCardSelfApply ?: false,
+            blackCardApplyAsset = p?.blackCardApplyAsset ?: 0L,
+            blackCardApplyVolume = p?.blackCardApplyVolume ?: 0L,
+            blackCardApplyCredit = p?.blackCardApplyCredit ?: 0L,
+            blackCardApplyDeposit = p?.blackCardApplyDeposit ?: 0L,
+            blackCardApplyNoOverdue = p?.blackCardApplyNoOverdue ?: false,
+            blackCardApplyDex = p?.blackCardApplyDex ?: 0L,
+            blackCardApplyFee = p?.blackCardApplyFee ?: 0L,
+            blackCardRedoFee = p?.blackCardRedoFee ?: 0L,
+            blackCardFeeDiscount = p?.blackCardFeeDiscount ?: 0.0,
             ipDebtLimit = p?.ipDebtLimit ?: 100_000L,
             autoRepayMinBalance = p?.autoRepayMinBalance ?: 1_000L,
             overdueFeeDouble = p?.overdueFeeDouble ?: 7,
@@ -262,32 +287,47 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
             centerX, dialogY() + 10, 0xFFFFFF
         )
         val startY = listStartY()
-        numDefs.forEachIndexed { i, (def, _) ->
-            val rowY = startY + i * rowHeight
+        var row = 0
+        fun drawRowLine(rowY: Int) {
             context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
-            context.drawTextWithShadow(
-                textRenderer,
-                Text.translatable(def.labelKey),
-                dialogX + 10, rowY + 7, 0xFFFFFF
-            )
         }
-        toggleDefs.forEachIndexed { i, (labelKey, _) ->
-            val rowY = startY + (numDefs.size + i) * rowHeight
-            context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
-            context.drawTextWithShadow(
-                textRenderer,
-                Text.translatable(labelKey),
-                dialogX + 10, rowY + 7, 0xFFFFFF
-            )
+        fun drawNumRow(def: NumDef) {
+            if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
+                val rowY = startY + (row - scrollOffset) * rowHeight
+                drawRowLine(rowY)
+                context.drawTextWithShadow(
+                    textRenderer,
+                    Text.translatable(def.labelKey),
+                    dialogX + 10, rowY + 7, 0xFFFFFF
+                )
+            }
+            row++
         }
+        fun drawToggleRow(labelKey: String) {
+            if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
+                val rowY = startY + (row - scrollOffset) * rowHeight
+                drawRowLine(rowY)
+                context.drawTextWithShadow(
+                    textRenderer,
+                    Text.translatable(labelKey),
+                    dialogX + 10, rowY + 7, 0xFFFFFF
+                )
+            }
+            row++
+        }
+        numDefs.forEach { (def, _) -> drawNumRow(def) }
+        toggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
         // 自行申请条件入口行（列表末尾）
-        val condRowY = startY + (numDefs.size + toggleDefs.size) * rowHeight
-        context.fill(dialogX + 6, condRowY, dialogX + dialogW - 6, condRowY + 1, 0xFF555555.toInt())
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.op.card_conditions_entry"),
-            dialogX + 10, condRowY + 7, 0xFFFFFF
-        )
+        if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
+            val condRowY = startY + (row - scrollOffset) * rowHeight
+            drawRowLine(condRowY)
+            context.drawTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.op.card_conditions_entry"),
+                dialogX + 10, condRowY + 7, 0xFFFFFF
+            )
+        }
+        row++
         if (System.currentTimeMillis() < savedToastUntil) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
