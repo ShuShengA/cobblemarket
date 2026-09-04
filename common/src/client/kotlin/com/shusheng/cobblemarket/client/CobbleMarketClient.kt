@@ -16,6 +16,7 @@ import com.shusheng.cobblemarket.network.BanListDataPayload
 import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.HistoryDataPayload
 import com.shusheng.cobblemarket.network.DepositInfoPayload
+import com.shusheng.cobblemarket.network.PurpleCardApplyInfoPayload
 import com.shusheng.cobblemarket.network.FinanceStatsPayload
 import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
@@ -307,6 +308,16 @@ object CobbleMarketClient {
                 val screen = client.currentScreen
                 if (screen is DepositScreen) {
                     screen.onDepositInfo(payload)
+                }
+            }
+        }
+
+        registerS2C(PurpleCardApplyInfoPayload.ID, PurpleCardApplyInfoPayload.CODEC) { payload ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                if (screen is PurpleCardApplyScreen) {
+                    screen.onApplyInfo(payload)
                 }
             }
         }

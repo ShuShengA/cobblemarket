@@ -249,6 +249,78 @@ data class DepositInfoPayload(
     }
 }
 
+// ── C2S：请求申请紫卡条件快照（打开申请界面时拉取） ──
+
+class RequestPurpleCardApplyInfoPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestPurpleCardApplyInfoPayload>(CobbleMarket.id("request_purple_card_apply_info"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestPurpleCardApplyInfoPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestPurpleCardApplyInfoPayload() }
+        )
+    }
+}
+
+// ── C2S：申请紫卡（服务端复核资格 + 扣申请费 + 发卡） ──
+
+class RequestPurpleCardApplyPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestPurpleCardApplyPayload>(CobbleMarket.id("request_purple_card_apply"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestPurpleCardApplyPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestPurpleCardApplyPayload() }
+        )
+    }
+}
+
+// ── S2C：申请条件快照（6 项条件 + 费用 + 资格 + 开关状态） ──
+
+data class ApplyConditionEntry(
+    val requirement: Long,
+    val current: Long,
+    val satisfied: Boolean
+) {
+    fun write(buf: PacketByteBuf) {
+        buf.writeLong(requirement); buf.writeLong(current); buf.writeBoolean(satisfied)
+    }
+
+    companion object {
+        fun read(buf: PacketByteBuf) = ApplyConditionEntry(buf.readLong(), buf.readLong(), buf.readBoolean())
+    }
+}
+
+data class PurpleCardApplyInfoPayload(
+    /** 6 项：资产/消费金额/额度/存款余额/图鉴数/无逾期（末项 requirement 0/1、current 0/1） */
+    val conditions: List<ApplyConditionEntry>,
+    val fee: Long,
+    val eligible: Boolean,
+    val selfApplyEnabled: Boolean
+) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<PurpleCardApplyInfoPayload>(CobbleMarket.id("purple_card_apply_info"))
+        val CODEC: PacketCodec<PacketByteBuf, PurpleCardApplyInfoPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeVarInt(p.conditions.size)
+                p.conditions.forEach { it.write(b) }
+                b.writeLong(p.fee)
+                b.writeBoolean(p.eligible)
+                b.writeBoolean(p.selfApplyEnabled)
+            },
+            { b ->
+                PurpleCardApplyInfoPayload(
+                    (0 until b.readVarInt()).map { ApplyConditionEntry.read(b) },
+                    b.readLong(),
+                    b.readBoolean(),
+                    b.readBoolean()
+                )
+            }
+        )
+    }
+}
+
 // ── C2S：补发喵喵紫卡凭证（持有者丢弃后从喵喵银行重新领取） ──
 
 class RequestPurpleCardRedoPayload : CustomPayload {
@@ -339,6 +411,7 @@ object FinanceNetwork {
         registerS2CType(RepayListDataPayload.ID, RepayListDataPayload.CODEC)
         registerS2CType(FinanceStatsPayload.ID, FinanceStatsPayload.CODEC)
         registerS2CType(DepositInfoPayload.ID, DepositInfoPayload.CODEC)
+        registerS2CType(PurpleCardApplyInfoPayload.ID, PurpleCardApplyInfoPayload.CODEC)
 
         // ── 应急贷款借款 ──
         registerC2S(RequestLoanPayload.ID, RequestLoanPayload.CODEC) { payload, player ->
@@ -449,6 +522,54 @@ object FinanceNetwork {
             val server = player.server
             server.execute {
                 sendCreditInfo(player, FinanceState.get(server), System.currentTimeMillis())
+            }
+        }
+
+        // ── 申请紫卡条件快照 ──
+        registerC2S(RequestPurpleCardApplyInfoPayload.ID, RequestPurpleCardApplyInfoPayload.CODEC) { _, player ->
+            if (!RequestThrottle.allow(player.uuid, "request_purple_card_apply_info", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute { sendPurpleCardApplyInfo(player) }
+        }
+
+        // ── 申请紫卡（复核资格 + 扣费 + 发卡） ──
+        registerC2S(RequestPurpleCardApplyPayload.ID, RequestPurpleCardApplyPayload.CODEC) { _, player ->
+            if (!RequestThrottle.allow(player.uuid, "request_purple_card_apply", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val state = FinanceState.get(server)
+                val now = System.currentTimeMillis()
+                if (!CobbleMarketConfig.purpleCardSelfApply) {
+                    player.sendMessage(Text.translatable("cobblemarket.card.apply_closed").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                val cash = CurrencyHandler.getBalance(player).toLong()
+                val dex = com.shusheng.cobblemarket.finance.FinanceService.getCaughtSpeciesCount(server, player.uuid)
+                if (!state.isPurpleCardEligible(player.uuid, cash, dex, now)) {
+                    player.sendMessage(Text.translatable("cobblemarket.card.apply_not_eligible").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                val max = CobbleMarketConfig.purpleCardCount
+                if (max > 0 && state.getPurpleCardHolderCount() >= max) {
+                    player.sendMessage(Text.translatable("cobblemarket.card.cap_reached", max).formatted(Formatting.RED), false)
+                    return@execute
+                }
+                val fee = CobbleMarketConfig.purpleCardApplyFee
+                if (fee > 0) {
+                    if (!com.shusheng.cobblemarket.finance.FinanceService.removeInChunks(player, fee)) {
+                        player.sendMessage(Text.translatable("cobblemarket.card.apply_fee_missing", fee).formatted(Formatting.RED), false)
+                        return@execute
+                    }
+                    state.depositReserve(fee)
+                }
+                state.addPurpleCardHolder(player.uuid)
+                val item = net.minecraft.registry.Registries.ITEM.get(CobbleMarket.id("meowth_purple_card"))
+                val added = player.inventory.insertStack(net.minecraft.item.ItemStack(item))
+                if (!added) player.dropItem(net.minecraft.item.ItemStack(item), false)
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                player.sendMessage(Text.translatable("cobblemarket.card.apply_success").formatted(Formatting.GREEN), false)
+                sendPurpleCardApplyInfo(player)
+                sendCreditInfo(player, state, now)
             }
         }
 
@@ -646,6 +767,44 @@ object FinanceNetwork {
                 sendToPlayer(player, LoanHistoryDataPayload(entries))
             }
         }
+    }
+
+    /** 申请紫卡条件快照（打开界面/申请后回发）：6 项条件 + 费用 + 资格 + 开关 */
+    private fun sendPurpleCardApplyInfo(player: ServerPlayerEntity) {
+        val server = player.server
+        val state = FinanceState.get(server)
+        val now = System.currentTimeMillis()
+        val cash = CurrencyHandler.getBalance(player).toLong()
+        val volume = state.getTotalCountedVolumeOf(player.uuid)
+        val deposit = state.getDepositBalance(player.uuid, now)
+        val dex = com.shusheng.cobblemarket.finance.FinanceService.getCaughtSpeciesCount(server, player.uuid)
+        val debt = state.getLoansByPlayer(player.uuid)
+            .filter { it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
+            .sumOf { it.remainingPrincipal.toLong() }
+        val creditBase = state.creditLimitFor(player.uuid, now) + debt
+        val hasBadRecord = state.getLoansByPlayer(player.uuid)
+            .any { it.status == LoanStatus.OVERDUE || it.status == LoanStatus.BAD_DEBT }
+        val conditions = listOf(
+            ApplyConditionEntry(CobbleMarketConfig.purpleCardApplyAsset, cash, cash >= CobbleMarketConfig.purpleCardApplyAsset),
+            ApplyConditionEntry(CobbleMarketConfig.purpleCardApplyVolume, volume, volume >= CobbleMarketConfig.purpleCardApplyVolume),
+            ApplyConditionEntry(CobbleMarketConfig.purpleCardApplyCredit, creditBase, creditBase >= CobbleMarketConfig.purpleCardApplyCredit),
+            ApplyConditionEntry(CobbleMarketConfig.purpleCardApplyDeposit, deposit, deposit >= CobbleMarketConfig.purpleCardApplyDeposit),
+            ApplyConditionEntry(CobbleMarketConfig.purpleCardApplyDex, dex.toLong(), dex.toLong() >= CobbleMarketConfig.purpleCardApplyDex),
+            ApplyConditionEntry(
+                if (CobbleMarketConfig.purpleCardApplyNoOverdue) 1L else 0L,
+                if (hasBadRecord) 0L else 1L,
+                !CobbleMarketConfig.purpleCardApplyNoOverdue || !hasBadRecord
+            ),
+        )
+        sendToPlayer(
+            player,
+            PurpleCardApplyInfoPayload(
+                conditions = conditions,
+                fee = CobbleMarketConfig.purpleCardApplyFee,
+                eligible = state.isPurpleCardEligible(player.uuid, cash, dex, now),
+                selfApplyEnabled = CobbleMarketConfig.purpleCardSelfApply
+            )
+        )
     }
 
     /** 存款信息回发（存取成功后刷新界面） */
