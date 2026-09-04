@@ -296,7 +296,9 @@ data class PurpleCardApplyInfoPayload(
     val conditions: List<ApplyConditionEntry>,
     val fee: Long,
     val eligible: Boolean,
-    val selfApplyEnabled: Boolean
+    val selfApplyEnabled: Boolean,
+    /** 已是持有者：界面按钮变「补发紫卡」 */
+    val isHolder: Boolean
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -308,11 +310,13 @@ data class PurpleCardApplyInfoPayload(
                 b.writeLong(p.fee)
                 b.writeBoolean(p.eligible)
                 b.writeBoolean(p.selfApplyEnabled)
+                b.writeBoolean(p.isHolder)
             },
             { b ->
                 PurpleCardApplyInfoPayload(
                     (0 until b.readVarInt()).map { ApplyConditionEntry.read(b) },
                     b.readLong(),
+                    b.readBoolean(),
                     b.readBoolean(),
                     b.readBoolean()
                 )
@@ -802,7 +806,8 @@ object FinanceNetwork {
                 conditions = conditions,
                 fee = CobbleMarketConfig.purpleCardApplyFee,
                 eligible = state.isPurpleCardEligible(player.uuid, cash, dex, now),
-                selfApplyEnabled = CobbleMarketConfig.purpleCardSelfApply
+                selfApplyEnabled = CobbleMarketConfig.purpleCardSelfApply,
+                isHolder = state.isPurpleCardHolder(player.uuid)
             )
         )
     }

@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.network.PurpleCardApplyInfoPayload
 import com.shusheng.cobblemarket.network.RequestPurpleCardApplyInfoPayload
 import com.shusheng.cobblemarket.network.RequestPurpleCardApplyPayload
+import com.shusheng.cobblemarket.network.RequestPurpleCardRedoPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
@@ -32,6 +33,8 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
 
     private var info: PurpleCardApplyInfoPayload? = null
     private var applyButton: NineSliceButton? = null
+    /** 已是持有者：按钮变「补发紫卡」 */
+    private var isHolder = false
 
     override fun init() {
         super.init()
@@ -45,11 +48,14 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
             { client?.setScreen(MeowthBankScreen()) }
         ))
 
-        // 申请按钮（底部居中；资格/开关不符时置灰，文案区分）
+        // 底部按钮（居中；持有者=补发紫卡，非持有者=申请，资格/开关不符时置灰文案区分）
         applyButton = NineSliceButton(
             width / 2 - 50, dialogY + dialogH - 44, 100, 20,
             Text.translatable("cobblemarket.card.apply_btn"),
-            { sendToServer(RequestPurpleCardApplyPayload()) }
+            {
+                if (isHolder) sendToServer(RequestPurpleCardRedoPayload())
+                else sendToServer(RequestPurpleCardApplyPayload())
+            }
         )
         applyButton?.active = false
         addDrawableChild(applyButton)
@@ -59,6 +65,13 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
 
     fun onApplyInfo(payload: PurpleCardApplyInfoPayload) {
         info = payload
+        isHolder = payload.isHolder
+        if (isHolder) {
+            // 持有者：按钮变「补发紫卡」（凭证丢失随时补）
+            applyButton?.active = true
+            applyButton?.message = Text.translatable("cobblemarket.card.redo_button")
+            return
+        }
         applyButton?.active = payload.eligible && payload.selfApplyEnabled
         applyButton?.message = Text.translatable(
             when {
