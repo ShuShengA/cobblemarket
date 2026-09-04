@@ -549,6 +549,7 @@
   "cobblemarket.card.list_header": "Purple card holders: %s/%s",
   "cobblemarket.card.redo_success": "Your purple card was reissued to your inventory",
   "cobblemarket.card.redo_button": "Card Reissue",
+  "cobblemarket.card.apply_title": "Apply for Purple Card",
   "cobblemarket.card.not_holder_removed": "This Meowth Purple Card doesn't belong to you — it was reclaimed",
   "cobblemarket.repay.op_bad_debt": "[Meowth Bank] %s's loan #%s became bad debt: principal %s %s unrecoverable",
   "cobblemarket.repay.revoke_success": "Revoked %s bad debt record(s) for %s",
