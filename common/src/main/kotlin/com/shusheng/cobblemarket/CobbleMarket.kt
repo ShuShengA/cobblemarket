@@ -33,8 +33,6 @@ object CobbleMarket {
 
 	/** 紫卡丢弃扫描节流计数（每 10 tick = 0.5 秒扫一次） */
 	private var cardScanTick = 0
-	/** 非持有者背包紫卡收回扫描节流（每 1200 tick = 60 秒扫一次） */
-	private var cardInvScanTick = 0
 
 	/** 由各平台入口类（fabric 的 CobbleMarketFabric 等）在对应初始化阶段调用。 */
 	fun init() {
@@ -91,15 +89,11 @@ object CobbleMarket {
 			com.shusheng.cobblemarket.util.PersistHelper.tick(server)
 			// 金融系统自动划扣扫描（内部 60 秒节流，见 FinanceService）
 			com.shusheng.cobblemarket.finance.FinanceService.tick(server)
-			// 喵喵紫卡丢弃即消失扫描（0.5 秒节流，近乎立即可见消失）
+			// 喵喵紫卡丢弃即消失扫描（0.5 秒节流，近乎立即可见消失；
+			// 非持有者背包自删走物品自身的 inventoryTick，无需服务器扫描）
 			if (++cardScanTick >= 10) {
 				cardScanTick = 0
 				com.shusheng.cobblemarket.finance.MeowthPurpleCardItem.scanAndDiscardDroppedCards(server)
-			}
-			// 非持有者背包紫卡收回扫描（60 秒节流，与金融兜底同频）
-			if (++cardInvScanTick >= 1200) {
-				cardInvScanTick = 0
-				com.shusheng.cobblemarket.finance.MeowthPurpleCardItem.scanPlayerInventories(server)
 			}
 		}
 		onPlayerJoin { player ->
