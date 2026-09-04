@@ -59,7 +59,9 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     // 编辑只改本地状态：开关的本地值（保存时提交，快照刷新时重置）
     private val localToggles = mutableMapOf<String, Boolean>()
     private var savedToastUntil = 0L
-    private val totalRows = numDefs.size + toggleDefs.size
+    // +1 = 喵喵银行配置入口行（左标签 + 右「配置」按钮）
+    private val totalRows = numDefs.size + toggleDefs.size + 1
+    private var financeOpenButton: NineSliceButton? = null
 
     // ── 蛋交易二次确认弹窗（照 AdminScreen 原模板：开启有 3 秒冷静期，蛋可绕过精灵黑名单） ──
     private var eggConfirmOpen = false
@@ -153,24 +155,26 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             toggleButtons[key] = btn
             addDrawableChild(btn)
         }
-        // 底部三按钮：保存（提交全部 + 服务端落盘，等价改文件后 /market reload）、喵喵银行配置（独立界面）、取消
+        // 底部双按钮：保存（提交全部 + 服务端落盘，等价改文件后 /market reload）、取消（放弃修改关闭）
         saveButton = NineSliceButton(
-            width / 2 - 92, dialogY() + dialogH() - 26, 60, 20,
+            width / 2 - 62, dialogY() + dialogH() - 26, 60, 20,
             Text.translatable("cobblemarket.op.scfg_save"),
             { save() }
         )
         addDrawableChild(saveButton)
-        addDrawableChild(NineSliceButton(
-            width / 2 - 30, dialogY() + dialogH() - 26, 80, 20,
-            Text.translatable("cobblemarket.op.finance_config"),
-            { client?.setScreen(FinanceConfigScreen()) }
-        ))
         cancelButton = NineSliceButton(
-            width / 2 + 52, dialogY() + dialogH() - 26, 60, 20,
+            width / 2 + 2, dialogY() + dialogH() - 26, 60, 20,
             Text.translatable("cobblemarket.op.scfg_cancel"),
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) }
         )
         addDrawableChild(cancelButton)
+        // 喵喵银行配置入口行：列表末尾（标签「喵喵银行」+ 右侧「配置」按钮 → FinanceConfigScreen）
+        financeOpenButton = NineSliceButton(
+            dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16,
+            Text.translatable("cobblemarket.op.finance_open"),
+            { client?.setScreen(FinanceConfigScreen()) }
+        )
+        addDrawableChild(financeOpenButton)
         rebuildPositions()
         // 确认弹窗关闭/resize 走 clearChildren+init 重建：恢复未提交的编辑，且不重新请求快照
         // （请求会把本地编辑的开关状态冲回服务端旧值——蛋交易确认后按钮图标变回关就是这个原因）
@@ -215,6 +219,12 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         }
         numDefs.forEach { (_, key) -> placeNumField(key) }
         toggleDefs.forEach { (_, key) -> placeToggle(key) }
+        // 喵喵银行配置入口行（列表末尾：标签「喵喵银行」+ 右侧「配置」按钮）
+        val y = startY + (row - scrollOffset) * rowHeight
+        val visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
+        financeOpenButton?.x = dialogX + dialogW - 10 - 20 - 2 - 54
+        financeOpenButton?.y = y + 4
+        financeOpenButton?.visible = visible
     }
 
     // ── 快照 → 界面刷新 ──
@@ -574,11 +584,17 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         }
         numDefs.forEach { (def, _) -> drawNumRow(def) }
         toggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
-        // 金融区块底线（区块末行下方）：与首行上方行线构成上下分割线对；滚动到底时可见
-        if (totalRows in scrollOffset until scrollOffset + getMaxVisibleRows()) {
-            val bottomY = startY + (totalRows - scrollOffset) * rowHeight
-            context.fill(dialogX + 6, bottomY, dialogX + dialogW - 6, bottomY + 1, 0xFF555555.toInt())
+        // 喵喵银行配置入口行（列表末尾）
+        if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
+            val rowY = startY + (row - scrollOffset) * rowHeight
+            drawRowLine(rowY)
+            context.drawTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.op.finance_entry"),
+                dialogX + 10, rowY + 7, 0xFFFFFF
+            )
         }
+        row++
         // 底部提示 / 保存成功 toast（1.5 秒）
         if (System.currentTimeMillis() < savedToastUntil) {
             context.drawCenteredTextWithShadow(textRenderer,
