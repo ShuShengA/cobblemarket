@@ -217,6 +217,21 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
             purpleCardApplyNoOverdue = localToggles["applyNoOverdue"] ?: (p?.purpleCardApplyNoOverdue ?: false),
             purpleCardApplyDex = longOr("applyDex", p?.purpleCardApplyDex ?: 0L),
             purpleCardApplyFee = longOr("applyFee", p?.purpleCardApplyFee ?: 0L),
+            purpleCardRedoFee = p?.purpleCardRedoFee ?: 0L,
+            purpleCardFeeDiscount = p?.purpleCardFeeDiscount ?: 0.0,
+            // 黑卡字段回填快照（在 BlackCardConfigScreen / BlackCardApplyConditionsScreen 编辑）
+            blackCardCount = p?.blackCardCount ?: 5L,
+            blackCardCreditLimit = p?.blackCardCreditLimit ?: 5_000_000L,
+            blackCardSelfApply = p?.blackCardSelfApply ?: false,
+            blackCardApplyAsset = p?.blackCardApplyAsset ?: 0L,
+            blackCardApplyVolume = p?.blackCardApplyVolume ?: 0L,
+            blackCardApplyCredit = p?.blackCardApplyCredit ?: 0L,
+            blackCardApplyDeposit = p?.blackCardApplyDeposit ?: 0L,
+            blackCardApplyNoOverdue = p?.blackCardApplyNoOverdue ?: false,
+            blackCardApplyDex = p?.blackCardApplyDex ?: 0L,
+            blackCardApplyFee = p?.blackCardApplyFee ?: 0L,
+            blackCardRedoFee = p?.blackCardRedoFee ?: 0L,
+            blackCardFeeDiscount = p?.blackCardFeeDiscount ?: 0.0,
             ipDebtLimit = p?.ipDebtLimit ?: 100_000L,
             autoRepayMinBalance = p?.autoRepayMinBalance ?: 1_000L,
             overdueFeeDouble = p?.overdueFeeDouble ?: 7,
@@ -268,24 +283,36 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
             centerX, dialogY() + 10, 0xFFFFFF
         )
         val startY = listStartY()
-        numDefs.forEachIndexed { i, (def, _) ->
-            val rowY = startY + i * rowHeight
+        var row = 0
+        fun drawRowLine(rowY: Int) {
             context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
-            context.drawTextWithShadow(
-                textRenderer,
-                Text.translatable(def.labelKey),
-                dialogX + 10, rowY + 7, 0xFFFFFF
-            )
         }
-        toggleDefs.forEachIndexed { i, (labelKey, _) ->
-            val rowY = startY + (numDefs.size + i) * rowHeight
-            context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
-            context.drawTextWithShadow(
-                textRenderer,
-                Text.translatable(labelKey),
-                dialogX + 10, rowY + 7, 0xFFFFFF
-            )
+        fun drawNumRow(def: NumDef) {
+            if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
+                val rowY = startY + (row - scrollOffset) * rowHeight
+                drawRowLine(rowY)
+                context.drawTextWithShadow(
+                    textRenderer,
+                    Text.translatable(def.labelKey),
+                    dialogX + 10, rowY + 7, 0xFFFFFF
+                )
+            }
+            row++
         }
+        fun drawToggleRow(labelKey: String) {
+            if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
+                val rowY = startY + (row - scrollOffset) * rowHeight
+                drawRowLine(rowY)
+                context.drawTextWithShadow(
+                    textRenderer,
+                    Text.translatable(labelKey),
+                    dialogX + 10, rowY + 7, 0xFFFFFF
+                )
+            }
+            row++
+        }
+        numDefs.forEach { (def, _) -> drawNumRow(def) }
+        toggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
         if (System.currentTimeMillis() < savedToastUntil) {
             context.drawCenteredTextWithShadow(
                 textRenderer,

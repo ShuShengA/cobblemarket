@@ -262,6 +262,18 @@ object FinanceService {
     fun applyFeeMultiplier(state: FinanceState, payerUuid: UUID, now: Long, baseFee: Long): Long =
         (baseFee * feeMultiplier(state, payerUuid, now) / 100).coerceAtMost(Int.MAX_VALUE.toLong())
 
+    /** 紫卡/黑卡持有者手续费减免（比例 0~1：0.5=减半；与逾期翻倍叠加，乘序无关；黑卡覆盖紫卡） */
+    fun applyHolderDiscount(state: FinanceState, payerUuid: UUID, fee: Long): Long {
+        // 黑卡优先：同时持有两张时按黑卡配置（高级卡语义，即使黑卡配置更低也按黑卡）
+        val blackDiscount = CobbleMarketConfig.blackCardFeeDiscount
+        if (blackDiscount > 0.0 && state.isBlackCardHolder(payerUuid)) {
+            return (fee * (1.0 - blackDiscount)).toLong()
+        }
+        val discount = CobbleMarketConfig.purpleCardFeeDiscount
+        if (discount <= 0.0 || !state.isPurpleCardHolder(payerUuid)) return fee
+        return (fee * (1.0 - discount)).toLong()
+    }
+
     /**
      * 制裁扫描（每天一次）：7 天档发提醒；14 天档加 FINANCE 冻结（不覆盖已有封禁）；
      * 30 天档坏账——标记 BAD_DEBT + CSV + 玩家通知 + OP 告警，冻结保持（防借→拖→销账→再来循环，服主手动解）。

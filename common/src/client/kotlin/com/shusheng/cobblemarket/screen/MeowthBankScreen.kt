@@ -156,6 +156,20 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
                 matrixStack = context.matrices
             )
         }
+        // 右侧黑卡展示（与紫卡对称：卡左缘贴背景右缘 → x = width/2 + 128；点击打开申请黑卡弹窗）
+        val blackCardItem = net.minecraft.registry.Registries.ITEM.get(
+            net.minecraft.util.Identifier.of("cobblemarket", "meowth_black_card")
+        )
+        if (blackCardItem != net.minecraft.registry.Registries.ITEM.get(net.minecraft.util.Identifier.of("minecraft", "air"))) {
+            val scale = 6.5
+            val cardX = width / 2 + 128
+            val cardY = bgTop + 54
+            com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                itemStack = net.minecraft.item.ItemStack(blackCardItem),
+                x = cardX.toDouble(), y = cardY.toDouble(), scale = scale.toDouble(),
+                matrixStack = context.matrices
+            )
+        }
 
         // 规则按钮悬停面板（照拍卖场规则面板：自绘 + 悬停位置自适应）
         if (rulesButton?.isHovered == true) {
@@ -249,6 +263,12 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         val cardY = bgTop() + 54
         if (mouseX >= cardX && mouseX < cardX + 104 && mouseY >= cardY && mouseY < cardY + 104) {
             client?.setScreen(PurpleCardApplyScreen())
+            return true
+        }
+        // 右侧黑卡点击 → 申请黑卡弹窗（与紫卡对称：x +128 宽 104）
+        val blackCardX = width / 2 + 128
+        if (mouseX >= blackCardX && mouseX < blackCardX + 104 && mouseY >= cardY && mouseY < cardY + 104) {
+            client?.setScreen(BlackCardApplyScreen())
             return true
         }
         return result

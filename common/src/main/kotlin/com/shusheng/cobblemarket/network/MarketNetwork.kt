@@ -1814,9 +1814,13 @@ object MarketNetwork {
                 // toLong 先提升：Int×Int 在价格×费率超过 21.5 亿时环绕溢出（fee 可算成负/0，逃税或凭空生钱）；
                 // 逾期制裁：上架者逾期 ≥7 天 → 手续费翻倍
                 val fee = if (feePercent > 0)
-                    com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
-                        com.shusheng.cobblemarket.finance.FinanceState.get(server), player.uuid, now,
-                        Math.ceil(payload.price.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
+                    com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
+                        com.shusheng.cobblemarket.finance.FinanceState.get(server),
+                        player.uuid,
+                        com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+                            com.shusheng.cobblemarket.finance.FinanceState.get(server), player.uuid, now,
+                            Math.ceil(payload.price.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
+                        )
                     ).toInt()
                 else 0
                 if (fee > 0 && !CurrencyHandler.remove(player, fee)) {
@@ -2053,9 +2057,13 @@ object MarketNetwork {
                 val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.itemListingFeePercent
                 val totalPrice = payload.price.toLong() * payload.count
                 val fee = if (feePercent > 0)
-                    com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
-                        com.shusheng.cobblemarket.finance.FinanceState.get(server), player.uuid, System.currentTimeMillis(),
-                        Math.ceil(totalPrice * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
+                    com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
+                        com.shusheng.cobblemarket.finance.FinanceState.get(server),
+                        player.uuid,
+                        com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+                            com.shusheng.cobblemarket.finance.FinanceState.get(server), player.uuid, System.currentTimeMillis(),
+                            Math.ceil(totalPrice * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
+                        )
                     ).toInt()
                 else 0
                 if (fee > 0 && !CurrencyHandler.remove(player, fee)) {

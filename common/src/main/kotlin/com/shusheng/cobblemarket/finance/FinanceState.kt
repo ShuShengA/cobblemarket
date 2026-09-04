@@ -119,6 +119,8 @@ class FinanceState private constructor() : PersistentState() {
     private val deposits = mutableMapOf<UUID, DepositAccount>()
     /** 喵喵紫卡持有者（额度凭证绑状态不绑物品；上限由配置 purpleCardCount 控制） */
     private val purpleCardHolders = mutableSetOf<UUID>()
+    /** 喵喵黑卡持有者（比紫卡高一级；额度/手续费减免黑卡覆盖紫卡；上限由配置 blackCardCount 控制） */
+    private val blackCardHolders = mutableSetOf<UUID>()
 
     // ── 准备金池 ──
 
@@ -276,6 +278,26 @@ class FinanceState private constructor() : PersistentState() {
 
     fun getAllPurpleCardHolders(): Set<UUID> = purpleCardHolders.toSet()
 
+    // ── 喵喵黑卡（高级卡：申请硬条件=持有紫卡） ──
+
+    fun isBlackCardHolder(uuid: UUID): Boolean = uuid in blackCardHolders
+
+    fun addBlackCardHolder(uuid: UUID): Boolean {
+        if (!blackCardHolders.add(uuid)) return false
+        markDirty()
+        return true
+    }
+
+    fun removeBlackCardHolder(uuid: UUID): Boolean {
+        if (!blackCardHolders.remove(uuid)) return false
+        markDirty()
+        return true
+    }
+
+    fun getBlackCardHolderCount(): Int = blackCardHolders.size
+
+    fun getAllBlackCardHolders(): Set<UUID> = blackCardHolders.toSet()
+
     /** 玩家历史累计计入成交额（申请条件「消费金额」口径） */
     fun getTotalCountedVolumeOf(playerUuid: UUID): Long = totalCountedVolume[playerUuid] ?: 0L
 
@@ -304,6 +326,36 @@ class FinanceState private constructor() : PersistentState() {
             }
         ) return false
         if (CobbleMarketConfig.purpleCardApplyDex > 0 && dexCount < CobbleMarketConfig.purpleCardApplyDex) return false
+        return true
+    }
+
+    /**
+     * 自行申请黑卡资格校验：紫卡六项条件 + 硬条件「必须持有紫卡」（黑卡比紫卡高级）。
+     * 资产/消费/额度/存款/无逾期/图鉴门槛与紫卡同构，用黑卡配置。
+     */
+    fun isBlackCardEligible(playerUuid: UUID, cashBalance: Long, dexCount: Int, now: Long): Boolean {
+        if (blackCardHolders.contains(playerUuid)) return false
+        // 硬条件：必须先持有紫卡
+        if (!purpleCardHolders.contains(playerUuid)) return false
+        if (CobbleMarketConfig.blackCardApplyAsset > 0 && cashBalance < CobbleMarketConfig.blackCardApplyAsset) return false
+        if (CobbleMarketConfig.blackCardApplyVolume > 0 &&
+            (totalCountedVolume[playerUuid] ?: 0L) < CobbleMarketConfig.blackCardApplyVolume
+        ) return false
+        if (CobbleMarketConfig.blackCardApplyCredit > 0) {
+            val debt = loans.values
+                .filter { it.playerUuid == playerUuid && it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
+                .sumOf { it.remainingPrincipal.toLong() }
+            val creditBase = creditLimitFor(playerUuid, now) + debt
+            if (creditBase < CobbleMarketConfig.blackCardApplyCredit) return false
+        }
+        if (CobbleMarketConfig.blackCardApplyDeposit > 0 &&
+            getDepositBalance(playerUuid, now) < CobbleMarketConfig.blackCardApplyDeposit
+        ) return false
+        if (CobbleMarketConfig.blackCardApplyNoOverdue && loans.values.any {
+                it.playerUuid == playerUuid && (it.status == LoanStatus.OVERDUE || it.status == LoanStatus.BAD_DEBT)
+            }
+        ) return false
+        if (CobbleMarketConfig.blackCardApplyDex > 0 && dexCount < CobbleMarketConfig.blackCardApplyDex) return false
         return true
     }
 
@@ -462,6 +514,10 @@ class FinanceState private constructor() : PersistentState() {
         val debt = loans.values
             .filter { it.playerUuid == playerUuid && it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
             .sumOf { it.remainingPrincipal.toLong() }
+        // 喵喵黑卡持有者：额度 = 黑卡配置固定值 − 欠款（高级卡覆盖紫卡；不受公式/上下限钳制）
+        if (isBlackCardHolder(playerUuid)) {
+            return (CobbleMarketConfig.blackCardCreditLimit - debt).coerceAtLeast(0L)
+        }
         // 喵喵紫卡持有者：额度 = 配置固定值 − 欠款（不受公式/上下限钳制）
         if (isPurpleCardHolder(playerUuid)) {
             return (CobbleMarketConfig.purpleCardCreditLimit - debt).coerceAtLeast(0L)
@@ -554,6 +610,13 @@ class FinanceState private constructor() : PersistentState() {
             cardList.add(c)
         }
         nbt.put("purpleCards", cardList)
+        val blackList = NbtList()
+        blackCardHolders.forEach { uuid ->
+            val c = NbtCompound()
+            c.putUuid("uuid", uuid)
+            blackList.add(c)
+        }
+        nbt.put("blackCards", blackList)
         return nbt
     }
 
@@ -645,6 +708,13 @@ class FinanceState private constructor() : PersistentState() {
                             purpleCardHolders.add((element as NbtCompound).getUuid("uuid"))
                         } catch (e: Exception) {
                             CobbleMarket.LOGGER.warn("Skipping corrupted finance purple card entry: {}", e.message)
+                        }
+                    }
+                    nbt.getList("blackCards", NbtList.COMPOUND_TYPE.toInt()).forEach { element ->
+                        try {
+                            blackCardHolders.add((element as NbtCompound).getUuid("uuid"))
+                        } catch (e: Exception) {
+                            CobbleMarket.LOGGER.warn("Skipping corrupted finance black card entry: {}", e.message)
                         }
                     }
                 }

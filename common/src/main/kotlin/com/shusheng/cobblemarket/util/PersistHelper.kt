@@ -42,7 +42,14 @@ object PersistHelper {
     private var pendingVerifyAt = 0L
     private var verifyAttempts = 0
 
-    /** 交易成功后调用：节流合并，到点全量落盘 */
+    /**
+     * 交易成功后调用：节流合并，到点全量落盘。
+     *
+     * ⚠ 只在模组状态（挂单/拍卖/求购/金融/封禁等 PersistentState）发生变化时调用。
+     * 无状态变化时调用会让 saveAll 空跑（MC 跳过无脏数据文件的写盘），mtime 验证
+     * 60 秒后误报「保存失败」——2026-09-04 补发紫卡（免费时无准备金池变化）教训。
+     * 纯发物品/纯发消息的流程不要调用：玩家数据由 MC 自己保存。
+     */
     fun requestSave(server: MinecraftServer) {
         if (!pendingSave) {
             // 节流窗口第一笔交易时拍快照；窗口内后续交易不重拍——验证目标覆盖窗口内全部交易

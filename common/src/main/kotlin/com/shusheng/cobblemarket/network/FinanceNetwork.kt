@@ -298,7 +298,9 @@ data class PurpleCardApplyInfoPayload(
     val eligible: Boolean,
     val selfApplyEnabled: Boolean,
     /** 已是持有者：界面按钮变「补发紫卡」 */
-    val isHolder: Boolean
+    val isHolder: Boolean,
+    /** 补发凭证费用（持有者界面显示补发费用行） */
+    val redoFee: Long
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -311,6 +313,7 @@ data class PurpleCardApplyInfoPayload(
                 b.writeBoolean(p.eligible)
                 b.writeBoolean(p.selfApplyEnabled)
                 b.writeBoolean(p.isHolder)
+                b.writeLong(p.redoFee)
             },
             { b ->
                 PurpleCardApplyInfoPayload(
@@ -318,7 +321,8 @@ data class PurpleCardApplyInfoPayload(
                     b.readLong(),
                     b.readBoolean(),
                     b.readBoolean(),
-                    b.readBoolean()
+                    b.readBoolean(),
+                    b.readLong()
                 )
             }
         )
@@ -334,6 +338,87 @@ class RequestPurpleCardRedoPayload : CustomPayload {
         val CODEC: PacketCodec<PacketByteBuf, RequestPurpleCardRedoPayload> = PacketCodec.of(
             { _, b -> b.writeInt(0) },
             { b -> b.readInt(); RequestPurpleCardRedoPayload() }
+        )
+    }
+}
+
+// ── 黑卡协议（照搬紫卡；申请硬条件=持有紫卡，条件快照多一项「持有紫卡」） ──
+
+// ── C2S：请求申请黑卡条件快照（打开申请界面时拉取） ──
+
+class RequestBlackCardApplyInfoPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestBlackCardApplyInfoPayload>(CobbleMarket.id("request_black_card_apply_info"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestBlackCardApplyInfoPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestBlackCardApplyInfoPayload() }
+        )
+    }
+}
+
+// ── C2S：申请黑卡（服务端复核资格 + 扣申请费 + 发卡） ──
+
+class RequestBlackCardApplyPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestBlackCardApplyPayload>(CobbleMarket.id("request_black_card_apply"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestBlackCardApplyPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestBlackCardApplyPayload() }
+        )
+    }
+}
+
+// ── S2C：申请条件快照（7 项：持有紫卡硬条件 + 六项门槛 + 费用 + 资格 + 开关状态） ──
+
+data class BlackCardApplyInfoPayload(
+    /** 7 项：持有紫卡（硬条件）+ 资产/消费金额/额度/存款余额/图鉴数/无逾期 */
+    val conditions: List<ApplyConditionEntry>,
+    val fee: Long,
+    val eligible: Boolean,
+    val selfApplyEnabled: Boolean,
+    /** 已是持有者：界面按钮变「补发黑卡」 */
+    val isHolder: Boolean,
+    /** 补发凭证费用（持有者界面显示补发费用行） */
+    val redoFee: Long
+) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<BlackCardApplyInfoPayload>(CobbleMarket.id("black_card_apply_info"))
+        val CODEC: PacketCodec<PacketByteBuf, BlackCardApplyInfoPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeVarInt(p.conditions.size)
+                p.conditions.forEach { it.write(b) }
+                b.writeLong(p.fee)
+                b.writeBoolean(p.eligible)
+                b.writeBoolean(p.selfApplyEnabled)
+                b.writeBoolean(p.isHolder)
+                b.writeLong(p.redoFee)
+            },
+            { b ->
+                BlackCardApplyInfoPayload(
+                    (0 until b.readVarInt()).map { ApplyConditionEntry.read(b) },
+                    b.readLong(),
+                    b.readBoolean(),
+                    b.readBoolean(),
+                    b.readBoolean(),
+                    b.readLong()
+                )
+            }
+        )
+    }
+}
+
+// ── C2S：补发喵喵黑卡凭证（持有者丢弃后从喵喵银行重新领取） ──
+
+class RequestBlackCardRedoPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestBlackCardRedoPayload>(CobbleMarket.id("request_black_card_redo"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestBlackCardRedoPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestBlackCardRedoPayload() }
         )
     }
 }
@@ -416,6 +501,7 @@ object FinanceNetwork {
         registerS2CType(FinanceStatsPayload.ID, FinanceStatsPayload.CODEC)
         registerS2CType(DepositInfoPayload.ID, DepositInfoPayload.CODEC)
         registerS2CType(PurpleCardApplyInfoPayload.ID, PurpleCardApplyInfoPayload.CODEC)
+        registerS2CType(BlackCardApplyInfoPayload.ID, BlackCardApplyInfoPayload.CODEC)
 
         // ── 应急贷款借款 ──
         registerC2S(RequestLoanPayload.ID, RequestLoanPayload.CODEC) { payload, player ->
@@ -558,6 +644,11 @@ object FinanceNetwork {
                     player.sendMessage(Text.translatable("cobblemarket.card.cap_reached", max).formatted(Formatting.RED), false)
                     return@execute
                 }
+                // 背包满则拒绝：紫卡落地会被扫描清除（付费白给），扣费前预检
+                if (player.inventory.getEmptySlot() == -1) {
+                    player.sendMessage(Text.translatable("cobblemarket.card.inventory_full").formatted(Formatting.RED), false)
+                    return@execute
+                }
                 val fee = CobbleMarketConfig.purpleCardApplyFee
                 if (fee > 0) {
                     if (!com.shusheng.cobblemarket.finance.FinanceService.removeInChunks(player, fee)) {
@@ -577,7 +668,7 @@ object FinanceNetwork {
             }
         }
 
-        // ── 补发喵喵紫卡凭证（持有者从喵喵银行重新领取） ──
+        // ── 补发喵喵紫卡凭证（持有者从喵喵银行重新领取；补发费进准备金池） ──
         registerC2S(RequestPurpleCardRedoPayload.ID, RequestPurpleCardRedoPayload.CODEC) { _, player ->
             if (!RequestThrottle.allow(player.uuid, "request_purple_card_redo", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
@@ -587,10 +678,111 @@ object FinanceNetwork {
                     player.sendMessage(Text.translatable("cobblemarket.card.not_holder_self").formatted(Formatting.RED), false)
                     return@execute
                 }
+                // 背包满则拒绝：紫卡落地会被扫描清除（付费白给），扣费前预检
+                if (player.inventory.getEmptySlot() == -1) {
+                    player.sendMessage(Text.translatable("cobblemarket.card.inventory_full").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                val fee = CobbleMarketConfig.purpleCardRedoFee
+                if (fee > 0) {
+                    if (!com.shusheng.cobblemarket.finance.FinanceService.removeInChunks(player, fee)) {
+                        player.sendMessage(Text.translatable("cobblemarket.card.redo_fee_missing", fee).formatted(Formatting.RED), false)
+                        return@execute
+                    }
+                    state.depositReserve(fee)
+                    // 只有收费时模组状态（准备金池）有变化才落盘：免费补发只发物品（玩家数据由 MC 保存），
+                    // 空跑 requestSave 会让 saveAll 无脏数据跳过写盘，mtime 验证误报「保存失败」
+                    com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                }
                 val item = net.minecraft.registry.Registries.ITEM.get(CobbleMarket.id("meowth_purple_card"))
                 val added = player.inventory.insertStack(net.minecraft.item.ItemStack(item))
                 if (!added) player.dropItem(net.minecraft.item.ItemStack(item), false)
                 player.sendMessage(Text.translatable("cobblemarket.card.redo_success").formatted(Formatting.GREEN), false)
+            }
+        }
+
+        // ── 申请黑卡条件快照 ──
+        registerC2S(RequestBlackCardApplyInfoPayload.ID, RequestBlackCardApplyInfoPayload.CODEC) { _, player ->
+            if (!RequestThrottle.allow(player.uuid, "request_black_card_apply_info", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute { sendBlackCardApplyInfo(player) }
+        }
+
+        // ── 申请黑卡（复核资格 + 扣费 + 发卡；硬条件=持有紫卡在 isBlackCardEligible 内） ──
+        registerC2S(RequestBlackCardApplyPayload.ID, RequestBlackCardApplyPayload.CODEC) { _, player ->
+            if (!RequestThrottle.allow(player.uuid, "request_black_card_apply", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val state = FinanceState.get(server)
+                val now = System.currentTimeMillis()
+                if (!CobbleMarketConfig.blackCardSelfApply) {
+                    player.sendMessage(Text.translatable("cobblemarket.card.apply_closed").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                val cash = CurrencyHandler.getBalance(player).toLong()
+                val dex = com.shusheng.cobblemarket.finance.FinanceService.getCaughtSpeciesCount(server, player.uuid)
+                if (!state.isBlackCardEligible(player.uuid, cash, dex, now)) {
+                    player.sendMessage(Text.translatable("cobblemarket.card.apply_not_eligible").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                val max = CobbleMarketConfig.blackCardCount
+                if (max > 0 && state.getBlackCardHolderCount() >= max) {
+                    player.sendMessage(Text.translatable("cobblemarket.card.black_cap_reached", max).formatted(Formatting.RED), false)
+                    return@execute
+                }
+                // 背包满则拒绝：黑卡落地会被扫描清除（付费白给），扣费前预检
+                if (player.inventory.getEmptySlot() == -1) {
+                    player.sendMessage(Text.translatable("cobblemarket.card.inventory_full").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                val fee = CobbleMarketConfig.blackCardApplyFee
+                if (fee > 0) {
+                    if (!com.shusheng.cobblemarket.finance.FinanceService.removeInChunks(player, fee)) {
+                        player.sendMessage(Text.translatable("cobblemarket.card.apply_fee_missing", fee).formatted(Formatting.RED), false)
+                        return@execute
+                    }
+                    state.depositReserve(fee)
+                }
+                state.addBlackCardHolder(player.uuid)
+                val item = net.minecraft.registry.Registries.ITEM.get(CobbleMarket.id("meowth_black_card"))
+                val added = player.inventory.insertStack(net.minecraft.item.ItemStack(item))
+                if (!added) player.dropItem(net.minecraft.item.ItemStack(item), false)
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                player.sendMessage(Text.translatable("cobblemarket.card.black_apply_success").formatted(Formatting.GREEN), false)
+                sendBlackCardApplyInfo(player)
+                sendCreditInfo(player, state, now)
+            }
+        }
+
+        // ── 补发喵喵黑卡凭证（持有者从喵喵银行重新领取；补发费进准备金池） ──
+        registerC2S(RequestBlackCardRedoPayload.ID, RequestBlackCardRedoPayload.CODEC) { _, player ->
+            if (!RequestThrottle.allow(player.uuid, "request_black_card_redo", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val state = FinanceState.get(server)
+                if (!state.isBlackCardHolder(player.uuid)) {
+                    player.sendMessage(Text.translatable("cobblemarket.card.not_holder_self_black").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                // 背包满则拒绝：黑卡落地会被扫描清除（付费白给），扣费前预检
+                if (player.inventory.getEmptySlot() == -1) {
+                    player.sendMessage(Text.translatable("cobblemarket.card.inventory_full").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                val fee = CobbleMarketConfig.blackCardRedoFee
+                if (fee > 0) {
+                    if (!com.shusheng.cobblemarket.finance.FinanceService.removeInChunks(player, fee)) {
+                        player.sendMessage(Text.translatable("cobblemarket.card.redo_fee_missing", fee).formatted(Formatting.RED), false)
+                        return@execute
+                    }
+                    state.depositReserve(fee)
+                    // 只有收费时模组状态（准备金池）有变化才落盘（同紫卡：免费补发不触发空跑保存误报）
+                    com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                }
+                val item = net.minecraft.registry.Registries.ITEM.get(CobbleMarket.id("meowth_black_card"))
+                val added = player.inventory.insertStack(net.minecraft.item.ItemStack(item))
+                if (!added) player.dropItem(net.minecraft.item.ItemStack(item), false)
+                player.sendMessage(Text.translatable("cobblemarket.card.black_redo_success").formatted(Formatting.GREEN), false)
             }
         }
 
@@ -807,7 +999,51 @@ object FinanceNetwork {
                 fee = CobbleMarketConfig.purpleCardApplyFee,
                 eligible = state.isPurpleCardEligible(player.uuid, cash, dex, now),
                 selfApplyEnabled = CobbleMarketConfig.purpleCardSelfApply,
-                isHolder = state.isPurpleCardHolder(player.uuid)
+                isHolder = state.isPurpleCardHolder(player.uuid),
+                redoFee = CobbleMarketConfig.purpleCardRedoFee
+            )
+        )
+    }
+
+    /** 申请黑卡条件快照回发（7 项：持有紫卡硬条件 + 六项门槛，照紫卡口径） */
+    private fun sendBlackCardApplyInfo(player: ServerPlayerEntity) {
+        val server = player.server
+        val state = FinanceState.get(server)
+        val now = System.currentTimeMillis()
+        val cash = CurrencyHandler.getBalance(player).toLong()
+        val volume = state.getTotalCountedVolumeOf(player.uuid)
+        val deposit = state.getDepositBalance(player.uuid, now)
+        val dex = com.shusheng.cobblemarket.finance.FinanceService.getCaughtSpeciesCount(server, player.uuid)
+        val debt = state.getLoansByPlayer(player.uuid)
+            .filter { it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
+            .sumOf { it.remainingPrincipal.toLong() }
+        val creditBase = state.creditLimitFor(player.uuid, now) + debt
+        val hasBadRecord = state.getLoansByPlayer(player.uuid)
+            .any { it.status == LoanStatus.OVERDUE || it.status == LoanStatus.BAD_DEBT }
+        val holdsPurple = state.isPurpleCardHolder(player.uuid)
+        val conditions = listOf(
+            // 硬条件：必须持有紫卡（requirement 1/current 0|1）
+            ApplyConditionEntry(1L, if (holdsPurple) 1L else 0L, holdsPurple),
+            ApplyConditionEntry(CobbleMarketConfig.blackCardApplyAsset, cash, cash >= CobbleMarketConfig.blackCardApplyAsset),
+            ApplyConditionEntry(CobbleMarketConfig.blackCardApplyVolume, volume, volume >= CobbleMarketConfig.blackCardApplyVolume),
+            ApplyConditionEntry(CobbleMarketConfig.blackCardApplyCredit, creditBase, creditBase >= CobbleMarketConfig.blackCardApplyCredit),
+            ApplyConditionEntry(CobbleMarketConfig.blackCardApplyDeposit, deposit, deposit >= CobbleMarketConfig.blackCardApplyDeposit),
+            ApplyConditionEntry(CobbleMarketConfig.blackCardApplyDex, dex.toLong(), dex.toLong() >= CobbleMarketConfig.blackCardApplyDex),
+            ApplyConditionEntry(
+                if (CobbleMarketConfig.blackCardApplyNoOverdue) 1L else 0L,
+                if (hasBadRecord) 0L else 1L,
+                !CobbleMarketConfig.blackCardApplyNoOverdue || !hasBadRecord
+            ),
+        )
+        sendToPlayer(
+            player,
+            BlackCardApplyInfoPayload(
+                conditions = conditions,
+                fee = CobbleMarketConfig.blackCardApplyFee,
+                eligible = state.isBlackCardEligible(player.uuid, cash, dex, now),
+                selfApplyEnabled = CobbleMarketConfig.blackCardSelfApply,
+                isHolder = state.isBlackCardHolder(player.uuid),
+                redoFee = CobbleMarketConfig.blackCardRedoFee
             )
         )
     }

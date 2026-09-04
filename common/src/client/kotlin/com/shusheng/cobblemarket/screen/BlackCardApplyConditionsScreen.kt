@@ -12,10 +12,10 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 
 /**
- * 喵喵银行配置界面（批次 7.5 拆分）：服务器配置界面只留入口按钮，全部金融配置移到这里。
- * 照 ServerConfigScreen 的行模式；保存时金融字段提交编辑值、其余字段回填服务端快照原值。
+ * 自行申请黑卡条件配置界面（照紫卡条件配置界面）：六项门槛 + 申请费（0 = 不要求）。
+ * 「持有紫卡」为硬条件不可配置，不在此界面。保存时条件字段提交编辑值、其余回填快照。
  */
-class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_config")) {
+class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op.black_card_conditions")) {
 
     private val dialogW = 260
     private val rowHeight = 24
@@ -23,40 +23,27 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
     private data class NumDef(val labelKey: String, val isInt: Boolean)
 
     private val numDefs = listOf(
-        NumDef("cobblemarket.op.scfg_loan_plans", false) to "loanPlans",
-        NumDef("cobblemarket.op.scfg_credit_recent30", false) to "creditRecent30",
-        NumDef("cobblemarket.op.scfg_credit_history", false) to "creditHistory",
-        NumDef("cobblemarket.op.scfg_credit_min", true) to "creditMin",
-        NumDef("cobblemarket.op.scfg_credit_max", true) to "creditMax",
-        NumDef("cobblemarket.op.scfg_credit_cooldown", true) to "creditCooldown",
-        NumDef("cobblemarket.op.scfg_deposit_rate", false) to "depositRate",
-        NumDef("cobblemarket.op.scfg_pair_window", true) to "pairWindow",
-        NumDef("cobblemarket.op.scfg_pair_max", true) to "pairMax",
-        NumDef("cobblemarket.op.scfg_ip_debt_limit", true) to "ipDebtLimit",
-        NumDef("cobblemarket.op.scfg_min_balance", true) to "autoRepayMinBalance",
-        NumDef("cobblemarket.op.scfg_overdue_fee_double", true) to "overdueFeeDouble",
-        NumDef("cobblemarket.op.scfg_overdue_freeze", true) to "overdueFreeze",
-        NumDef("cobblemarket.op.scfg_overdue_bad_debt", true) to "overdueBadDebt",
+        NumDef("cobblemarket.op.scfg_apply_asset", true) to "applyAsset",
+        NumDef("cobblemarket.op.scfg_apply_volume", true) to "applyVolume",
+        NumDef("cobblemarket.op.scfg_apply_credit", true) to "applyCredit",
+        NumDef("cobblemarket.op.scfg_apply_deposit", true) to "applyDeposit",
+        NumDef("cobblemarket.op.scfg_apply_dex", true) to "applyDex",
+        NumDef("cobblemarket.op.scfg_apply_fee", true) to "applyFee",
     )
 
     private val toggleDefs = listOf(
-        "cobblemarket.op.scfg_finance_enabled" to "financeEnabled",
-        "cobblemarket.op.scfg_cash_loan" to "cashLoan",
-        "cobblemarket.op.scfg_consumer_loan" to "consumerLoan",
+        "cobblemarket.op.scfg_apply_no_overdue" to "applyNoOverdue",
     )
 
     private val numFields = mutableMapOf<String, TextFieldWidget>()
-    private val toggleButtons = mutableMapOf<String, NineSliceButton>()
     private val resetButtons = mutableMapOf<String, NineSliceButton>()
+    private val toggleButtons = mutableMapOf<String, NineSliceButton>()
     private val localToggles = mutableMapOf<String, Boolean>()
     private var saveButton: NineSliceButton? = null
     private var cancelButton: NineSliceButton? = null
     private var scrollOffset = 0
     private var savedToastUntil = 0L
-    // +2 = 喵喵紫卡/黑卡配置入口行（左标签 + 右「配置」按钮）
-    private val totalRows = numDefs.size + toggleDefs.size + 2
-    private var cardOpenButton: NineSliceButton? = null
-    private var blackCardOpenButton: NineSliceButton? = null
+    private val totalRows = numDefs.size + toggleDefs.size
 
     private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 44)
     private fun dialogY() = height / 2 - dialogH() / 2
@@ -69,26 +56,21 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         val dialogX = width / 2 - dialogW / 2
         val startY = listStartY()
         numDefs.forEach { (def, key) ->
-            val isPlans = key == "loanPlans"
             val field = TextFieldWidget(textRenderer, dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16, Text.literal(""))
-            field.setTextPredicate { text ->
-                when {
-                    isPlans -> text.all { it.isDigit() || it == ':' || it == '.' || it == ',' }
-                    def.isInt -> text.all { it.isDigit() }
-                    else -> text.all { it.isDigit() || it == '.' }
-                }
+            field.setTextPredicate { text -> if (def.isInt) text.all { it.isDigit() } else text.all { it.isDigit() || it == '.' } }
+            field.setMaxLength(10)
+            // 口径解释（服主向）
+            val tipKey = when (key) {
+                "applyAsset" -> "cobblemarket.op.scfg_apply_asset_tip"
+                "applyVolume" -> "cobblemarket.op.scfg_apply_volume_tip"
+                "applyCredit" -> "cobblemarket.op.scfg_apply_credit_tip"
+                "applyDeposit" -> "cobblemarket.op.scfg_apply_deposit_tip"
+                "applyDex" -> "cobblemarket.op.scfg_apply_dex_tip"
+                "applyFee" -> "cobblemarket.op.scfg_apply_fee_tip"
+                else -> null
             }
-            field.setMaxLength(if (isPlans) 60 else 10)
-            when (key) {
-                "pairWindow", "pairMax" -> field.setTooltip(
-                    net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.scfg_pair_tip"))
-                )
-                "creditCooldown" -> field.setTooltip(
-                    net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.scfg_cooldown_tip"))
-                )
-                "depositRate" -> field.setTooltip(
-                    net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.scfg_deposit_rate_tip"))
-                )
+            if (tipKey != null) {
+                field.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable(tipKey)))
             }
             numFields[key] = field
             addSelectableChild(field)
@@ -97,10 +79,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
                 dialogX + dialogW - 10 - 20, startY, 20, 16,
                 Text.literal("↺"),
                 {
-                    numFields[key]?.text = when (key) {
-                        "loanPlans" -> ServerConfigScreen.latest?.loanPlans ?: ""
-                        else -> snapshotText(key, null)
-                    }
+                    numFields[key]?.text = snapshotText(key, null)
                     save()
                 }
             )
@@ -132,23 +111,9 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         cancelButton = NineSliceButton(
             width / 2 + 2, dialogY() + dialogH() - 26, 60, 20,
             Text.translatable("cobblemarket.op.scfg_cancel"),
-            { client?.setScreen(ServerConfigScreen()) }
-        )
-        addDrawableChild(cancelButton)
-        // 喵喵紫卡配置入口行（列表末尾：标签「喵喵紫卡」+ 右侧「配置」按钮 → PurpleCardConfigScreen）
-        cardOpenButton = NineSliceButton(
-            dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16,
-            Text.translatable("cobblemarket.op.finance_open"),
-            { client?.setScreen(PurpleCardConfigScreen()) }
-        )
-        addDrawableChild(cardOpenButton)
-        // 喵喵黑卡配置入口行（紫卡入口行下方 → BlackCardConfigScreen）
-        blackCardOpenButton = NineSliceButton(
-            dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16,
-            Text.translatable("cobblemarket.op.finance_open"),
             { client?.setScreen(BlackCardConfigScreen()) }
         )
-        addDrawableChild(blackCardOpenButton)
+        addDrawableChild(cancelButton)
         rebuildPositions()
         sendToServer(RequestServerConfigPayload())
     }
@@ -160,39 +125,26 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
     }
 
     private fun numValue(key: String, payload: ServerConfigDataPayload?): Double = when (key) {
-        "loanPlans" -> 0.0 // 文本型，special-case
-        "creditRecent30" -> payload?.creditRecent30 ?: 0.5
-        "creditHistory" -> payload?.creditHistory ?: 0.1
-        "creditMin" -> (payload?.creditMin ?: 0L).toDouble()
-        "creditMax" -> (payload?.creditMax ?: 100_000L).toDouble()
-        "creditCooldown" -> (payload?.creditCooldown ?: 24L).toDouble()
-        "depositRate" -> payload?.dailyDepositRate ?: 0.0001
-        "pairWindow" -> (payload?.tradePairWindowDays ?: 30L).toDouble()
-        "pairMax" -> (payload?.tradePairMaxTrades ?: 3L).toDouble()
-        "ipDebtLimit" -> (payload?.ipDebtLimit ?: 100_000L).toDouble()
-        "autoRepayMinBalance" -> (payload?.autoRepayMinBalance ?: 1_000L).toDouble()
-        "overdueFeeDouble" -> (payload?.overdueFeeDouble ?: 7).toDouble()
-        "overdueFreeze" -> (payload?.overdueFreeze ?: 14).toDouble()
-        "overdueBadDebt" -> (payload?.overdueBadDebt ?: 30).toDouble()
+        "applyAsset" -> (payload?.blackCardApplyAsset ?: 0L).toDouble()
+        "applyVolume" -> (payload?.blackCardApplyVolume ?: 0L).toDouble()
+        "applyCredit" -> (payload?.blackCardApplyCredit ?: 0L).toDouble()
+        "applyDeposit" -> (payload?.blackCardApplyDeposit ?: 0L).toDouble()
+        "applyDex" -> (payload?.blackCardApplyDex ?: 0L).toDouble()
+        "applyFee" -> (payload?.blackCardApplyFee ?: 0L).toDouble()
         else -> 0.0
     }
 
-    private fun toggleIcon(key: String): net.minecraft.util.Identifier? =
-        toggleIconFor(key, null)
+    private fun toggleIcon(key: String): net.minecraft.util.Identifier? = toggleIconFor(key, null)
 
     private fun toggleIconFor(key: String, p: ServerConfigDataPayload?): net.minecraft.util.Identifier? {
         // 优先级：回发快照值 > 本地未保存的编辑值 > 旧快照（照 ServerConfigScreen）
         val on = p?.let { snapshot ->
             when (key) {
-                "financeEnabled" -> snapshot.financeEnabled
-                "cashLoan" -> snapshot.cashLoanEnabled
-                "consumerLoan" -> snapshot.consumerLoanEnabled
+                "applyNoOverdue" -> snapshot.blackCardApplyNoOverdue
                 else -> false
             }
         } ?: localToggles[key] ?: when (key) {
-            "financeEnabled" -> ServerConfigScreen.latest?.financeEnabled ?: false
-            "cashLoan" -> ServerConfigScreen.latest?.cashLoanEnabled ?: true
-            "consumerLoan" -> ServerConfigScreen.latest?.consumerLoanEnabled ?: true
+            "applyNoOverdue" -> ServerConfigScreen.latest?.blackCardApplyNoOverdue ?: false
             else -> false
         }
         return if (on)
@@ -204,22 +156,16 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
     private fun currentToggleValue(key: String): Boolean {
         val p = ServerConfigScreen.latest
         return when (key) {
-            "financeEnabled" -> localToggles["financeEnabled"] ?: (p?.financeEnabled ?: false)
-            "cashLoan" -> localToggles["cashLoan"] ?: (p?.cashLoanEnabled ?: true)
-            "consumerLoan" -> localToggles["consumerLoan"] ?: (p?.consumerLoanEnabled ?: true)
+            "applyNoOverdue" -> localToggles["applyNoOverdue"] ?: (p?.blackCardApplyNoOverdue ?: false)
             else -> false
         }
     }
 
-    /** S2C 快照刷新（CobbleMarketClient 转发） */
     fun refreshFrom(payload: ServerConfigDataPayload) {
         numDefs.forEach { (_, key) ->
             val field = numFields[key] ?: return@forEach
             if (focused !== field) {
-                field.text = when (key) {
-                    "loanPlans" -> payload.loanPlans
-                    else -> snapshotText(key, payload)
-                }
+                field.text = snapshotText(key, payload)
             }
         }
         toggleDefs.forEach { (_, key) ->
@@ -230,11 +176,8 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
 
     private fun save() {
         val p = ServerConfigScreen.latest
-        fun intOr(key: String, fallback: Int): Int = numFields[key]?.text?.toIntOrNull() ?: fallback
-        fun doubleOr(key: String, fallback: Double): Double = numFields[key]?.text?.toDoubleOrNull() ?: fallback
         fun longOr(key: String, fallback: Long): Long = numFields[key]?.text?.toLongOrNull() ?: fallback
         sendToServer(SaveServerConfigPayload(
-            // 非金融字段全部回填快照原值（本界面不编辑）
             pokemonFee = p?.pokemonFee ?: 5.0,
             itemFee = p?.itemFee ?: 5.0,
             maxPokemonListings = p?.maxPokemonListings ?: 0,
@@ -251,21 +194,20 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             eggTrading = p?.eggTrading ?: false,
             celebration = p?.celebration ?: true,
             auctionDurations = p?.auctionDurations ?: "",
-            // 金融字段提交编辑值
-            financeEnabled = localToggles["financeEnabled"] ?: (p?.financeEnabled ?: false),
-            cashLoanEnabled = localToggles["cashLoan"] ?: (p?.cashLoanEnabled ?: true),
-            consumerLoanEnabled = localToggles["consumerLoan"] ?: (p?.consumerLoanEnabled ?: true),
-            loanPlans = numFields["loanPlans"]?.text.orEmpty().ifBlank { p?.loanPlans ?: "" },
-            creditRecent30 = doubleOr("creditRecent30", p?.creditRecent30 ?: 0.5),
-            creditHistory = doubleOr("creditHistory", p?.creditHistory ?: 0.1),
+            financeEnabled = p?.financeEnabled ?: false,
+            cashLoanEnabled = p?.cashLoanEnabled ?: true,
+            consumerLoanEnabled = p?.consumerLoanEnabled ?: true,
+            loanPlans = p?.loanPlans ?: "",
+            creditRecent30 = p?.creditRecent30 ?: 0.5,
+            creditHistory = p?.creditHistory ?: 0.1,
             creditDebt = p?.creditDebt ?: 0.3,
-            creditMin = longOr("creditMin", p?.creditMin ?: 0L),
-            creditMax = longOr("creditMax", p?.creditMax ?: 100_000L),
-            creditCooldown = longOr("creditCooldown", p?.creditCooldown ?: 24L),
-            dailyDepositRate = doubleOr("depositRate", p?.dailyDepositRate ?: 0.0001),
-            tradePairWindowDays = longOr("pairWindow", p?.tradePairWindowDays ?: 30L),
-            tradePairMaxTrades = longOr("pairMax", p?.tradePairMaxTrades ?: 3L),
-            // 紫卡字段回填快照（已迁移到 PurpleCardConfigScreen 编辑）
+            creditMin = p?.creditMin ?: 0L,
+            creditMax = p?.creditMax ?: 100_000L,
+            creditCooldown = p?.creditCooldown ?: 24L,
+            dailyDepositRate = p?.dailyDepositRate ?: 0.0001,
+            tradePairWindowDays = p?.tradePairWindowDays ?: 30L,
+            tradePairMaxTrades = p?.tradePairMaxTrades ?: 3L,
+            // 紫卡字段全部回填快照（本界面不编辑）
             purpleCardCount = p?.purpleCardCount ?: 20L,
             purpleCardCreditLimit = p?.purpleCardCreditLimit ?: 1_000_000L,
             purpleCardSelfApply = p?.purpleCardSelfApply ?: false,
@@ -278,24 +220,24 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             purpleCardApplyFee = p?.purpleCardApplyFee ?: 0L,
             purpleCardRedoFee = p?.purpleCardRedoFee ?: 0L,
             purpleCardFeeDiscount = p?.purpleCardFeeDiscount ?: 0.0,
-            // 黑卡字段回填快照（在 BlackCardConfigScreen 编辑）
+            // 黑卡字段：条件提交编辑值，其余回填快照
             blackCardCount = p?.blackCardCount ?: 5L,
             blackCardCreditLimit = p?.blackCardCreditLimit ?: 5_000_000L,
             blackCardSelfApply = p?.blackCardSelfApply ?: false,
-            blackCardApplyAsset = p?.blackCardApplyAsset ?: 0L,
-            blackCardApplyVolume = p?.blackCardApplyVolume ?: 0L,
-            blackCardApplyCredit = p?.blackCardApplyCredit ?: 0L,
-            blackCardApplyDeposit = p?.blackCardApplyDeposit ?: 0L,
-            blackCardApplyNoOverdue = p?.blackCardApplyNoOverdue ?: false,
-            blackCardApplyDex = p?.blackCardApplyDex ?: 0L,
-            blackCardApplyFee = p?.blackCardApplyFee ?: 0L,
+            blackCardApplyAsset = longOr("applyAsset", p?.blackCardApplyAsset ?: 0L),
+            blackCardApplyVolume = longOr("applyVolume", p?.blackCardApplyVolume ?: 0L),
+            blackCardApplyCredit = longOr("applyCredit", p?.blackCardApplyCredit ?: 0L),
+            blackCardApplyDeposit = longOr("applyDeposit", p?.blackCardApplyDeposit ?: 0L),
+            blackCardApplyNoOverdue = localToggles["applyNoOverdue"] ?: (p?.blackCardApplyNoOverdue ?: false),
+            blackCardApplyDex = longOr("applyDex", p?.blackCardApplyDex ?: 0L),
+            blackCardApplyFee = longOr("applyFee", p?.blackCardApplyFee ?: 0L),
             blackCardRedoFee = p?.blackCardRedoFee ?: 0L,
             blackCardFeeDiscount = p?.blackCardFeeDiscount ?: 0.0,
-            ipDebtLimit = longOr("ipDebtLimit", p?.ipDebtLimit ?: 100_000L),
-            autoRepayMinBalance = longOr("autoRepayMinBalance", p?.autoRepayMinBalance ?: 1_000L),
-            overdueFeeDouble = intOr("overdueFeeDouble", p?.overdueFeeDouble ?: 7),
-            overdueFreeze = intOr("overdueFreeze", p?.overdueFreeze ?: 14),
-            overdueBadDebt = intOr("overdueBadDebt", p?.overdueBadDebt ?: 30),
+            ipDebtLimit = p?.ipDebtLimit ?: 100_000L,
+            autoRepayMinBalance = p?.autoRepayMinBalance ?: 1_000L,
+            overdueFeeDouble = p?.overdueFeeDouble ?: 7,
+            overdueFreeze = p?.overdueFreeze ?: 14,
+            overdueBadDebt = p?.overdueBadDebt ?: 30,
         ))
         savedToastUntil = System.currentTimeMillis() + 1500
     }
@@ -304,41 +246,26 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         val dialogX = width / 2 - dialogW / 2
         val startY = listStartY()
         var row = 0
-        fun placeNumField(key: String) {
+        numDefs.forEach { (_, key) ->
             val y = startY + (row - scrollOffset) * rowHeight
-            val field = numFields[key] ?: return
+            val field = numFields[key] ?: return@forEach
             val visible = row in scrollOffset until scrollOffset + getMaxVisibleRows()
             field.x = dialogX + dialogW - 10 - 20 - 2 - 54
             field.y = y + 4
             field.visible = visible
-            val resetBtn = resetButtons[key]
-            resetBtn?.x = dialogX + dialogW - 10 - 20
-            resetBtn?.y = y + 4
-            resetBtn?.visible = visible
+            resetButtons[key]?.x = dialogX + dialogW - 10 - 20
+            resetButtons[key]?.y = y + 4
+            resetButtons[key]?.visible = visible
             row++
         }
-        fun placeToggle(key: String) {
+        toggleDefs.forEach { (_, key) ->
             val y = startY + (row - scrollOffset) * rowHeight
-            val btn = toggleButtons[key] ?: return
+            val btn = toggleButtons[key] ?: return@forEach
             btn.x = dialogX + dialogW - 10 - 22
             btn.y = y + 1
             btn.visible = row in scrollOffset until scrollOffset + getMaxVisibleRows()
             row++
         }
-        numDefs.forEach { (_, key) -> placeNumField(key) }
-        toggleDefs.forEach { (_, key) -> placeToggle(key) }
-        // 喵喵紫卡配置入口行（列表末尾）
-        val y = startY + (row - scrollOffset) * rowHeight
-        val visible = row in scrollOffset until scrollOffset + getMaxVisibleRows()
-        cardOpenButton?.x = dialogX + dialogW - 10 - 20 - 2 - 54
-        cardOpenButton?.y = y + 4
-        cardOpenButton?.visible = visible
-        // 喵喵黑卡配置入口行（紫卡入口行下方）
-        val blackY = startY + (row + 1 - scrollOffset) * rowHeight
-        val blackVisible = row + 1 in scrollOffset until scrollOffset + getMaxVisibleRows()
-        blackCardOpenButton?.x = dialogX + dialogW - 10 - 20 - 2 - 54
-        blackCardOpenButton?.y = blackY + 4
-        blackCardOpenButton?.visible = blackVisible
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -353,7 +280,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         val dialogX = width / 2 - dialogW / 2
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.op.finance_config").formatted(Formatting.GOLD, Formatting.BOLD),
+            Text.translatable("cobblemarket.op.black_card_conditions").formatted(Formatting.GOLD, Formatting.BOLD),
             centerX, dialogY() + 10, 0xFFFFFF
         )
         val startY = listStartY()
@@ -387,28 +314,6 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         }
         numDefs.forEach { (def, _) -> drawNumRow(def) }
         toggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
-        // 喵喵紫卡配置入口行（列表末尾）
-        if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
-            val rowY = startY + (row - scrollOffset) * rowHeight
-            drawRowLine(rowY)
-            context.drawTextWithShadow(
-                textRenderer,
-                Text.translatable("cobblemarket.op.card_entry"),
-                dialogX + 10, rowY + 7, 0xFFFFFF
-            )
-        }
-        row++
-        // 喵喵黑卡配置入口行
-        if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
-            val rowY = startY + (row - scrollOffset) * rowHeight
-            drawRowLine(rowY)
-            context.drawTextWithShadow(
-                textRenderer,
-                Text.translatable("cobblemarket.op.black_card_entry"),
-                dialogX + 10, rowY + 7, 0xFFFFFF
-            )
-        }
-        row++
         if (System.currentTimeMillis() < savedToastUntil) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
@@ -448,4 +353,3 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
 
     override fun shouldPause() = false
 }
-

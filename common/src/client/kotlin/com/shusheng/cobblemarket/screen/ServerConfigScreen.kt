@@ -98,6 +98,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 is FinanceConfigScreen -> screen.refreshFrom(payload)
                 is PurpleCardConfigScreen -> screen.refreshFrom(payload)
                 is PurpleCardApplyConditionsScreen -> screen.refreshFrom(payload)
+                is BlackCardConfigScreen -> screen.refreshFrom(payload)
+                is BlackCardApplyConditionsScreen -> screen.refreshFrom(payload)
             }
         }
     }
@@ -388,6 +390,21 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             purpleCardApplyNoOverdue = p?.purpleCardApplyNoOverdue ?: false,
             purpleCardApplyDex = p?.purpleCardApplyDex ?: 0L,
             purpleCardApplyFee = p?.purpleCardApplyFee ?: 0L,
+            purpleCardRedoFee = p?.purpleCardRedoFee ?: 0L,
+            purpleCardFeeDiscount = p?.purpleCardFeeDiscount ?: 0.0,
+            // 黑卡字段回填快照（在 BlackCardConfigScreen 编辑）
+            blackCardCount = p?.blackCardCount ?: 5L,
+            blackCardCreditLimit = p?.blackCardCreditLimit ?: 5_000_000L,
+            blackCardSelfApply = p?.blackCardSelfApply ?: false,
+            blackCardApplyAsset = p?.blackCardApplyAsset ?: 0L,
+            blackCardApplyVolume = p?.blackCardApplyVolume ?: 0L,
+            blackCardApplyCredit = p?.blackCardApplyCredit ?: 0L,
+            blackCardApplyDeposit = p?.blackCardApplyDeposit ?: 0L,
+            blackCardApplyNoOverdue = p?.blackCardApplyNoOverdue ?: false,
+            blackCardApplyDex = p?.blackCardApplyDex ?: 0L,
+            blackCardApplyFee = p?.blackCardApplyFee ?: 0L,
+            blackCardRedoFee = p?.blackCardRedoFee ?: 0L,
+            blackCardFeeDiscount = p?.blackCardFeeDiscount ?: 0.0,
             ipDebtLimit = p?.ipDebtLimit ?: 100_000L,
             autoRepayMinBalance = p?.autoRepayMinBalance ?: 1_000L,
             overdueFeeDouble = p?.overdueFeeDouble ?: 7,

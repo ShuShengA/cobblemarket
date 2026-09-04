@@ -75,15 +75,37 @@ object MarketCommands {
                         .requires { it.hasPermissionLevel(2) }
                         .then(CommandManager.literal("give")
                             .then(CommandManager.argument("player", EntityArgumentType.player())
+                                .then(CommandManager.argument("kind", StringArgumentType.word())
+                                    .suggests(::suggestCardKinds)
+                                    .executes(::cardGive)
+                                )
+                                // 缺省卡种 = purple（旧习惯兼容）
                                 .executes(::cardGive)
                             )
                         )
                         .then(CommandManager.literal("revoke")
                             .then(CommandManager.argument("player", EntityArgumentType.player())
+                                .then(CommandManager.argument("kind", StringArgumentType.word())
+                                    .suggests(::suggestCardKinds)
+                                    .executes(::cardRevoke)
+                                )
                                 .executes(::cardRevoke)
+                            )
+                            // 离线玩家走名字分支（照封禁管理：在线 playerManager → 离线 userCache）
+                            .then(CommandManager.argument("name", StringArgumentType.word())
+                                .suggests(::suggestOnlinePlayerNames)
+                                .then(CommandManager.argument("kind", StringArgumentType.word())
+                                    .suggests(::suggestCardKinds)
+                                    .executes(::cardRevokeByName)
+                                )
+                                .executes(::cardRevokeByName)
                             )
                         )
                         .then(CommandManager.literal("list")
+                            .then(CommandManager.argument("kind", StringArgumentType.word())
+                                .suggests(::suggestCardKinds)
+                                .executes(::cardList)
+                            )
                             .executes(::cardList)
                         )
                     )
@@ -98,7 +120,35 @@ object MarketCommands {
 
     private fun marketOn(context: CommandContext<ServerCommandSource>): Int = setMarketEnabled(context, true)
 
-    /** /market card give <玩家|选择器>：发喵喵紫卡（支持 @p/@s 选择器与玩家名联想；限额检查） */
+    /** 卡种联想：purple / black */
+    private fun suggestCardKinds(
+        context: CommandContext<ServerCommandSource>,
+        builder: com.mojang.brigadier.suggestion.SuggestionsBuilder
+    ): java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> =
+        builder.suggest("purple").suggest("black").buildFuture()
+
+    /** 在线玩家名联想（revoke 名字分支；离线名由服主手输全名） */
+    private fun suggestOnlinePlayerNames(
+        context: CommandContext<ServerCommandSource>,
+        builder: com.mojang.brigadier.suggestion.SuggestionsBuilder
+    ): java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> {
+        context.source.server.playerManager.playerList.forEach { builder.suggest(it.name.string) }
+        return builder.buildFuture()
+    }
+
+    /** 读取卡种参数（缺省/非法值一律 purple；"black" 才是黑卡） */
+    private fun readCardKind(context: CommandContext<ServerCommandSource>): String =
+        try {
+            context.getArgument("kind", String::class.java).lowercase()
+        } catch (_: Exception) {
+            "purple"
+        }
+
+    private fun cardNameOf(kind: String): Text = Text.translatable(
+        if (kind == "black") "cobblemarket.card.black_name" else "cobblemarket.card.purple_name"
+    )
+
+    /** /market card give <玩家|选择器> [purple|black]：发喵喵紫卡/黑卡（支持 @p/@s 选择器与玩家名联想；限额检查） */
     private fun cardGive(context: CommandContext<ServerCommandSource>): Int {
         val source = context.source
         val server = source.server
@@ -108,29 +158,41 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.ban.player_not_found", "?"))
             return 0
         }
+        val kind = readCardKind(context)
+        val black = kind == "black"
+        val cardName = cardNameOf(kind)
         val state = com.shusheng.cobblemarket.finance.FinanceState.get(server)
-        if (state.isPurpleCardHolder(player.uuid)) {
-            source.sendError(Text.translatable("cobblemarket.card.already_holder", player.name.string))
+        val isHolder = if (black) state.isBlackCardHolder(player.uuid) else state.isPurpleCardHolder(player.uuid)
+        if (isHolder) {
+            source.sendError(Text.translatable("cobblemarket.card.already_holder", player.name.string, cardName))
             return 0
         }
-        val max = com.shusheng.cobblemarket.config.CobbleMarketConfig.purpleCardCount
-        if (max > 0 && state.getPurpleCardHolderCount() >= max) {
+        val max = if (black) com.shusheng.cobblemarket.config.CobbleMarketConfig.blackCardCount
+        else com.shusheng.cobblemarket.config.CobbleMarketConfig.purpleCardCount
+        val count = if (black) state.getBlackCardHolderCount() else state.getPurpleCardHolderCount()
+        if (max > 0 && count >= max) {
             source.sendError(Text.translatable("cobblemarket.card.cap_reached", max))
             return 0
         }
-        state.addPurpleCardHolder(player.uuid)
-        val item = net.minecraft.registry.Registries.ITEM.get(com.shusheng.cobblemarket.CobbleMarket.id("meowth_purple_card"))
-        val added = player.inventory.insertStack(net.minecraft.item.ItemStack(item))
-        if (!added) player.dropItem(net.minecraft.item.ItemStack(item), false)
+        val item = net.minecraft.registry.Registries.ITEM.get(
+            com.shusheng.cobblemarket.CobbleMarket.id(if (black) "meowth_black_card" else "meowth_purple_card")
+        )
+        // 背包满则拒绝（卡落地会被扫描清除，等同没发）
+        if (player.inventory.getEmptySlot() == -1) {
+            source.sendError(Text.translatable("cobblemarket.card.inventory_full"))
+            return 0
+        }
+        if (black) state.addBlackCardHolder(player.uuid) else state.addPurpleCardHolder(player.uuid)
+        player.inventory.insertStack(net.minecraft.item.ItemStack(item))
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
         source.sendFeedback(
-            { Text.translatable("cobblemarket.card.given", player.name.string).formatted(Formatting.GREEN) },
+            { Text.translatable("cobblemarket.card.given", player.name.string, cardName).formatted(Formatting.GREEN) },
             false
         )
         return 1
     }
 
-    /** /market card revoke <玩家|选择器>：收回紫卡（状态删除即额度作废；物品凭证无需回收） */
+    /** /market card revoke <玩家|选择器> [purple|black]：收回紫卡/黑卡（状态删除即额度作废；物品凭证无需回收） */
     private fun cardRevoke(context: CommandContext<ServerCommandSource>): Int {
         val source = context.source
         val server = source.server
@@ -140,29 +202,72 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.ban.player_not_found", "?"))
             return 0
         }
+        val kind = readCardKind(context)
+        val black = kind == "black"
+        val cardName = cardNameOf(kind)
         val state = com.shusheng.cobblemarket.finance.FinanceState.get(server)
-        if (!state.removePurpleCardHolder(player.uuid)) {
-            source.sendError(Text.translatable("cobblemarket.card.not_holder", player.name.string))
+        val removed = if (black) state.removeBlackCardHolder(player.uuid) else state.removePurpleCardHolder(player.uuid)
+        if (!removed) {
+            source.sendError(Text.translatable("cobblemarket.card.not_holder", player.name.string, cardName))
             return 0
         }
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
         source.sendFeedback(
-            { Text.translatable("cobblemarket.card.revoked", player.name.string).formatted(Formatting.GREEN) },
+            { Text.translatable("cobblemarket.card.revoked", player.name.string, cardName).formatted(Formatting.GREEN) },
             false
         )
         return 1
     }
 
-    /** /market card list：列出全部持有者 */
+    /** /market card revoke <名字> [purple|black]：离线也能收回（照封禁管理：在线 playerManager → 离线 userCache） */
+    private fun cardRevokeByName(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val server = source.server
+        val name = StringArgumentType.getString(context, "name")
+        val kind = readCardKind(context)
+        val black = kind == "black"
+        val cardName = cardNameOf(kind)
+        val state = com.shusheng.cobblemarket.finance.FinanceState.get(server)
+        val holders = if (black) state.getAllBlackCardHolders() else state.getAllPurpleCardHolders()
+        // 解析顺序：在线 → userCache 名字查找 → 持有者集合内按「list 同款名字来源」反查兜底
+        // （findByName 偶有查不到但 getByUuid 能查到的缓存不一致，list 能显示的名字 revoke 必须能收）
+        fun displayNameOf(uuid: java.util.UUID): String? =
+            server.playerManager.getPlayer(uuid)?.name?.string
+                ?: server.userCache?.getByUuid(uuid)?.orElse(null)?.name
+        val uuid = server.playerManager.getPlayer(name)?.uuid
+            ?: server.userCache?.findByName(name)?.orElse(null)?.id
+            ?: holders.firstOrNull { u -> displayNameOf(u)?.equals(name, ignoreCase = true) == true }
+        if (uuid == null) {
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            return 0
+        }
+        val removed = if (black) state.removeBlackCardHolder(uuid) else state.removePurpleCardHolder(uuid)
+        if (!removed) {
+            source.sendError(Text.translatable("cobblemarket.card.not_holder", name, cardName))
+            return 0
+        }
+        com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+        source.sendFeedback(
+            { Text.translatable("cobblemarket.card.revoked", name, cardName).formatted(Formatting.GREEN) },
+            false
+        )
+        return 1
+    }
+
+    /** /market card list [purple|black]：列出对应卡种全部持有者（缺省 purple） */
     private fun cardList(context: CommandContext<ServerCommandSource>): Int {
         val source = context.source
         val server = source.server
+        val kind = readCardKind(context)
+        val black = kind == "black"
+        val cardName = cardNameOf(kind)
         val state = com.shusheng.cobblemarket.finance.FinanceState.get(server)
-        val holders = state.getAllPurpleCardHolders()
-        val max = com.shusheng.cobblemarket.config.CobbleMarketConfig.purpleCardCount
+        val holders = if (black) state.getAllBlackCardHolders() else state.getAllPurpleCardHolders()
+        val max = if (black) com.shusheng.cobblemarket.config.CobbleMarketConfig.blackCardCount
+        else com.shusheng.cobblemarket.config.CobbleMarketConfig.purpleCardCount
         source.sendFeedback(
             {
-                Text.translatable("cobblemarket.card.list_header", holders.size, max).formatted(Formatting.GOLD)
+                Text.translatable("cobblemarket.card.list_header", cardName, holders.size, max).formatted(Formatting.GOLD)
             },
             false
         )
