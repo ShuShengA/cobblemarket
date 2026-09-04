@@ -549,6 +549,7 @@
   "cobblemarket.card.list_header": "喵喵紫卡持有者：%s/%s",
   "cobblemarket.card.redo_success": "紫卡已补发到你的背包",
   "cobblemarket.card.redo_button": "补发紫卡",
+  "cobblemarket.card.not_holder_removed": "这张喵喵紫卡不属于你，已被收回",
   "cobblemarket.repay.op_bad_debt": "[喵喵银行] %s 的借款 #%s 已成坏账：本金 %s %s 无法收回",
   "cobblemarket.repay.revoke_success": "已撤销 %s 的 %s 笔坏账",
   "cobblemarket.repay.revoke_none": "该玩家没有坏账记录",
