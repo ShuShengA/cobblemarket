@@ -32,8 +32,6 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         NumDef("cobblemarket.op.scfg_deposit_rate", false) to "depositRate",
         NumDef("cobblemarket.op.scfg_pair_window", true) to "pairWindow",
         NumDef("cobblemarket.op.scfg_pair_max", true) to "pairMax",
-        NumDef("cobblemarket.op.scfg_card_count", true) to "cardCount",
-        NumDef("cobblemarket.op.scfg_card_limit", true) to "cardLimit",
         NumDef("cobblemarket.op.scfg_ip_debt_limit", true) to "ipDebtLimit",
         NumDef("cobblemarket.op.scfg_min_balance", true) to "autoRepayMinBalance",
         NumDef("cobblemarket.op.scfg_overdue_fee_double", true) to "overdueFeeDouble",
@@ -55,7 +53,9 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
     private var cancelButton: NineSliceButton? = null
     private var scrollOffset = 0
     private var savedToastUntil = 0L
-    private val totalRows = numDefs.size + toggleDefs.size
+    // +1 = 喵喵紫卡配置入口行（左标签 + 右「配置」按钮）
+    private val totalRows = numDefs.size + toggleDefs.size + 1
+    private var cardOpenButton: NineSliceButton? = null
 
     private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 34)
     private fun dialogY() = height / 2 - dialogH() / 2
@@ -134,6 +134,13 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             { client?.setScreen(ServerConfigScreen()) }
         )
         addDrawableChild(cancelButton)
+        // 喵喵紫卡配置入口行（列表末尾：标签「喵喵紫卡」+ 右侧「配置」按钮 → PurpleCardConfigScreen）
+        cardOpenButton = NineSliceButton(
+            dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16,
+            Text.translatable("cobblemarket.op.finance_open"),
+            { client?.setScreen(PurpleCardConfigScreen()) }
+        )
+        addDrawableChild(cardOpenButton)
         rebuildPositions()
         sendToServer(RequestServerConfigPayload())
     }
@@ -244,8 +251,9 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             dailyDepositRate = doubleOr("depositRate", p?.dailyDepositRate ?: 0.0001),
             tradePairWindowDays = longOr("pairWindow", p?.tradePairWindowDays ?: 30L),
             tradePairMaxTrades = longOr("pairMax", p?.tradePairMaxTrades ?: 3L),
-            purpleCardCount = longOr("cardCount", p?.purpleCardCount ?: 20L),
-            purpleCardCreditLimit = longOr("cardLimit", p?.purpleCardCreditLimit ?: 1_000_000L),
+            // 紫卡字段回填快照（已迁移到 PurpleCardConfigScreen 编辑）
+            purpleCardCount = p?.purpleCardCount ?: 20L,
+            purpleCardCreditLimit = p?.purpleCardCreditLimit ?: 1_000_000L,
             ipDebtLimit = longOr("ipDebtLimit", p?.ipDebtLimit ?: 100_000L),
             autoRepayMinBalance = longOr("autoRepayMinBalance", p?.autoRepayMinBalance ?: 1_000L),
             overdueFeeDouble = intOr("overdueFeeDouble", p?.overdueFeeDouble ?: 7),
@@ -282,6 +290,12 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         }
         numDefs.forEach { (_, key) -> placeNumField(key) }
         toggleDefs.forEach { (_, key) -> placeToggle(key) }
+        // 喵喵紫卡配置入口行（列表末尾）
+        val y = startY + (row - scrollOffset) * rowHeight
+        val visible = row in scrollOffset until scrollOffset + getMaxVisibleRows()
+        cardOpenButton?.x = dialogX + dialogW - 10 - 20 - 2 - 54
+        cardOpenButton?.y = y + 4
+        cardOpenButton?.visible = visible
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -330,6 +344,17 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         }
         numDefs.forEach { (def, _) -> drawNumRow(def) }
         toggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
+        // 喵喵紫卡配置入口行（列表末尾）
+        if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
+            val rowY = startY + (row - scrollOffset) * rowHeight
+            drawRowLine(rowY)
+            context.drawTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.op.card_entry"),
+                dialogX + 10, rowY + 7, 0xFFFFFF
+            )
+        }
+        row++
         if (System.currentTimeMillis() < savedToastUntil) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
