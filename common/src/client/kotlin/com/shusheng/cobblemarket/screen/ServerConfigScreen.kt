@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.ServerConfigDataPayload
@@ -123,16 +124,17 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             numFields[key] = field
             addSelectableChild(field)
             addDrawableChild(field)
-            // 重置按钮（↺ 符号，双语通用）：恢复该行为默认值并立即提交回服务器（真正重置配置）
+            // 重置按钮（↺ 符号，双语通用）：恢复该行为默认值，点下方「保存」统一提交（2026-09-05 拍板，不自动保存）
             val resetBtn = NineSliceButton(
                 dialogX + dialogW - 10 - 20, startY, 20, 16,
                 Text.literal("↺"),
                 {
+                    // 只填回默认值不提交：点下方「保存」统一生效（2026-09-05 拍板，重置按钮一律不自动保存）
                     numFields[key]?.text = when (key) {
-                        "auctionDurations" -> latest?.auctionDurations ?: ""
+                        // 拍卖时长重置 = 恢复默认档位（快照值可能已被服主改过，重置回快照等于没变）
+                        "auctionDurations" -> "720,1440,2880,4320"
                         else -> snapshotText(key, null)
                     }
-                    save()
                 }
             )
             resetButtons[key] = resetBtn
@@ -464,6 +466,11 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     }
 
     private fun confirmEggTrading() {
+        // 冷静期内点击：置灰按钮仍可点（dimmed 模式），播 fail 音效提示，不执行
+        if (System.currentTimeMillis() - eggConfirmOpenedAt < 3000L) {
+            playFailSound()
+            return
+        }
         // 只切本地状态（保存时才提交）；先更新保存快照再关闭——
         // 否则 init 恢复会用弹窗打开时的旧快照把刚确认的「开」覆盖回关
         localToggles["eggTrading"] = true
@@ -518,7 +525,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     private fun updateEggConfirmButtons() {
         val cooldownLeft = 3 - (System.currentTimeMillis() - eggConfirmOpenedAt) / 1000
         val canConfirm = cooldownLeft <= 0
-        eggConfirmButton?.active = canConfirm
+        eggConfirmButton?.dimmed = !canConfirm
         eggConfirmButton?.message = if (canConfirm)
             Text.translatable("cobblemarket.op.egg_confirm_yes")
         else

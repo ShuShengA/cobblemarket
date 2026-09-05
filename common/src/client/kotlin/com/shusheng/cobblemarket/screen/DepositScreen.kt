@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.DepositInfoPayload
 import com.shusheng.cobblemarket.network.RequestDepositInfoPayload
 import com.shusheng.cobblemarket.network.RequestDepositPayload
@@ -73,7 +74,10 @@ class DepositScreen : Screen(Text.translatable("cobblemarket.deposit.title")) {
 
     private fun sendDeposit() {
         val amount = amountField?.text?.toLongOrNull() ?: 0L
-        if (amount <= 0) return
+        if (amount <= 0) {
+            playFailSound()
+            return
+        }
         sendToServer(RequestDepositPayload(amount))
         amountField?.text = ""
         pendingAmountText = ""
@@ -81,7 +85,11 @@ class DepositScreen : Screen(Text.translatable("cobblemarket.deposit.title")) {
 
     private fun sendWithdraw() {
         val amount = amountField?.text?.toLongOrNull() ?: 0L
-        if (amount <= 0) return
+        // 金额非法 / 超过存款余额（快照实算含未结算利息）：本地拦截 + fail 音效，服务端仍会复核
+        if (amount <= 0 || amount > balance) {
+            playFailSound()
+            return
+        }
         sendToServer(RequestWithdrawPayload(amount))
         amountField?.text = ""
         pendingAmountText = ""

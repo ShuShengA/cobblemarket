@@ -179,7 +179,10 @@ object FinanceService {
             ).formatted(Formatting.RED)
         }
         val ip = com.shusheng.cobblemarket.platform.getPlayerIp(player)
-        if (CobbleMarketConfig.ipDebtLimit > 0 && ip != null && !player.hasPermissionLevel(2)) {
+        // 紫/黑卡持有者豁免：卡额度远高于默认 IP 上限，且小号不可能持卡（全服限量+门槛），卡本身就是强信任凭证
+        if (CobbleMarketConfig.ipDebtLimit > 0 && ip != null && !player.hasPermissionLevel(2)
+            && !state.isPurpleCardHolder(player.uuid) && !state.isBlackCardHolder(player.uuid)
+        ) {
             val ipDebt = state.debtByIp(ip, now)
             if (ipDebt + amount > CobbleMarketConfig.ipDebtLimit) {
                 return Text.translatable(
@@ -261,6 +264,15 @@ object FinanceService {
     /** 基础手续费 × 逾期乘数（钳 Int 上限，防 ×2 溢出） */
     fun applyFeeMultiplier(state: FinanceState, payerUuid: UUID, now: Long, baseFee: Long): Long =
         (baseFee * feeMultiplier(state, payerUuid, now) / 100).coerceAtMost(Int.MAX_VALUE.toLong())
+
+    /** 清除玩家背包中的紫卡物品（黑卡升级替代紫卡时主动调用：背包自检有 OP 豁免，主动清兜底） */
+    fun clearPurpleCardItems(player: ServerPlayerEntity) {
+        player.inventory.main.forEachIndexed { i, stack ->
+            if (stack.item is MeowthPurpleCardItem) {
+                player.inventory.setStack(i, net.minecraft.item.ItemStack.EMPTY)
+            }
+        }
+    }
 
     /** 紫卡/黑卡持有者手续费减免（比例 0~1：0.5=减半；与逾期翻倍叠加，乘序无关；黑卡覆盖紫卡） */
     fun applyHolderDiscount(state: FinanceState, payerUuid: UUID, fee: Long): Long {

@@ -48,6 +48,21 @@ data class PokemonCelebrationPayload(
     }
 }
 
+// ── S2C：发卡动画（紫金卡/黑金卡首次获得或补发）：卡片从申请界面图标位置放大飞到屏幕中央 ──
+
+data class CardCelebrationPayload(
+    val kind: String   // "purple" / "black"
+) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<CardCelebrationPayload>(CobbleMarket.id("card_celebration"))
+        val CODEC: PacketCodec<PacketByteBuf, CardCelebrationPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.kind) },
+            { b -> CardCelebrationPayload(b.readString()) }
+        )
+    }
+}
+
 /**
  * 获得精灵时的庆祝动画下发。
  *
@@ -61,11 +76,21 @@ object CelebrationNetwork {
 
     fun register() {
         registerS2CType(PokemonCelebrationPayload.ID, PokemonCelebrationPayload.CODEC)
+        registerS2CType(CardCelebrationPayload.ID, CardCelebrationPayload.CODEC)
     }
 
     fun send(player: ServerPlayerEntity, speciesId: String, aspects: List<String>, shiny: Boolean, source: CelebrationSource) {
         if (!CobbleMarketConfig.celebrationAnimationEnabled) return
         sendToPlayer(player, PokemonCelebrationPayload(speciesId, aspects, shiny, source.name))
+    }
+
+    /**
+     * 发卡动画（紫金卡/黑金卡首次获得或补发）：卡片从申请界面图标位置放大飞到屏幕中央，
+     * 像真的在发卡（客户端卡片放大动画，起点由申请界面点击时登记）。
+     */
+    fun sendCard(player: ServerPlayerEntity, kind: String) {
+        if (!CobbleMarketConfig.celebrationAnimationEnabled) return
+        sendToPlayer(player, CardCelebrationPayload(kind))
     }
 
     /**

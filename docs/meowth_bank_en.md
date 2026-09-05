@@ -34,6 +34,22 @@ Loans and Meowth Pay share one credit pool; deposits are independent of the cred
 - Deposits don't touch the credit limit and have no attack surface (it's the player's own money)
 - **With the master switch off, deposits are blocked but withdrawals always work** (players' money is never locked up)
 
+### Deposit-rate guard (blocks "borrow-to-deposit" arbitrage)
+
+Loans and deposits theoretically allow arbitrage: borrow, deposit into the bank, and farm the interest spread forever if it is positive. The guard clamps the deposit daily rate on config **load and save**, with the bound:
+
+```
+deposit daily rate cap = min( per-period fee × (periods + 1) ÷ (14 × periods) )   ← smallest over all loan plans
+```
+
+- This bound guarantees that under **any** repayment path (installment auto-deduct / early settle / repaying with own funds while the loan sits deposited the whole time), deposit interest income ≤ loan interest cost — arbitrage never pays
+- Exceeding it auto-clamps and logs a warning (owners see the misconfigured value); if the owner sets loan fees to 0 (interest-free loans), the deposit rate is clamped to 0 too — free borrowing cannot coexist with deposit interest
+- The default 0.0001 sits ~4.8× below the default plans' bound (3-period plan ≈ 0.000476), so normal tuning never hits the cap
+
+### Net-deposit requirement (blocks "borrow-to-inflate-deposit" card qualification)
+
+The Purple/Black card "deposit balance" requirement is judged by **net deposit**: net deposit = demand deposit balance − outstanding debt (bad-debt write-offs excluded). A player borrowing 50k and depositing it gains +50k deposit but +50k debt — net deposit unchanged, so borrowed money can't dress up assets to qualify. The apply screen's condition row shows the net value, making the rule transparent.
+
 ## 4. Loans and repayment
 
 - Each loan splits into **3/6/12 installments, one every 7 days**, with fixed due dates (day 7/14/21… after borrowing — early repayment never postpones them)
@@ -82,7 +98,7 @@ Available limit = max(0, credit base − total outstanding debt), then clamped t
 | Limit weight · all-time | 0.1 | Credit formula weight |
 | Limit min / max | 0 / 100000 | Min only backs players **without** debt (cold start); with debt the limit follows the raw formula |
 | `autoRepayMinBalance` | 1000 | Minimum balance kept by auto-deduct (balance never drops below it). Note: below this value auto-deduct **won't run** (goes overdue) — small economies should lower it or set 0 |
-| Deposit daily rate | 0.0001 | Daily interest rate for demand deposits (0.01%/day ≈ 3.65%/year); paid from the reserve pool |
+| Deposit daily rate | 0.0001 | Daily interest rate for demand deposits (0.01%/day ≈ 3.65%/year); paid from the reserve pool. **Hard cap guard**: cannot exceed the cheapest loan plan's arbitrage bound (auto-clamped + logged, see §10) |
 | Credit growth cooldown (hours) | 24 | Trades don't count toward the limit during this delay (0 = off) |
 | Same-pair window (days) / cap (trades) | 30 / 3 | Anti-wash-trading window and cap (see §6) |
 | `ipDebtLimit` | 100000 | Same-IP debt cap (see §6). Recommended: 1–3× the limit max; raise it for dorm/cyber-café servers to avoid false positives; 0 = disabled |
@@ -123,6 +139,14 @@ In real time on view/deposit/withdraw (principal × daily rate × full days); de
 ### What happens to a player after bad debt?
 
 Trading is frozen and borrowing is permanently blocked. Owner intervention has two levels: unban via the ban screen (trading restored, borrowing still blocked), or revoke the bad debt (trading and borrowing fully restored; the audit ledger keeps a revoke event).
+
+### Can players borrow, deposit, and farm interest?
+
+No. The **deposit-rate guard** (see §10) hard-caps the deposit daily rate (auto-clamped + logged on load and save), so the interest spread of any borrow → deposit → repay combination is ≤ 0 — arbitrage never pays. The default 0.0001 sits 4.8× below the default plans' arbitrage bound.
+
+### How is the card "deposit balance" requirement judged?
+
+By **net deposit**: net deposit = demand deposit balance − outstanding debt (bad-debt write-offs excluded). Borrowing to inflate the deposit can't satisfy the requirement — the loan directly reduces the net deposit, and the apply screen shows the net value.
 
 ### How do I verify the system works?
 

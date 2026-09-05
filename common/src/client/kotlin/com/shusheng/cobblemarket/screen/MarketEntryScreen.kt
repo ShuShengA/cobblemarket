@@ -617,6 +617,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     }
 
     private fun confirmMarketClose() {
+        // 冷静期内点击：置灰按钮仍可点（dimmed 模式），播 fail 音效提示，不执行
+        if (System.currentTimeMillis() - marketConfirmOpenedAt < 3000L) {
+            playFailSound()
+            return
+        }
         sendMarketEnabled(false)
         closeMarketConfirmDialog()
     }
@@ -674,7 +679,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private fun updateMarketConfirmButtons() {
         val cooldownLeft = 3 - (System.currentTimeMillis() - marketConfirmOpenedAt) / 1000
         val canConfirm = cooldownLeft <= 0
-        marketConfirmButton?.active = canConfirm
+        marketConfirmButton?.dimmed = !canConfirm
         marketConfirmButton?.message = if (canConfirm)
             Text.translatable("cobblemarket.market.confirm_yes")
         else

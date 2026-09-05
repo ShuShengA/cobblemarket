@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestLoanPayload
@@ -77,7 +78,12 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
             Text.translatable("cobblemarket.loan.apply"),
             {
                 val amount = amountField?.text?.toLongOrNull() ?: 0L
-                if (amount > 0) openConfirmDialog(amount)
+                // 金额非法 / 逾期 / 坏账：本地拦截 + fail 音效（逾期/坏账时界面已显示红色提示行）
+                if (amount <= 0 || hasBadDebt || hasOverdue) {
+                    playFailSound()
+                } else {
+                    openConfirmDialog(amount)
+                }
             }
         )
         addDrawableChild(applyButton)

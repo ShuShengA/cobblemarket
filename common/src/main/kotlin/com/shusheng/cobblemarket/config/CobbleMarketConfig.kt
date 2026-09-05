@@ -260,6 +260,19 @@ object CobbleMarketConfig {
     fun setCreditLimitMax(v: Long) { creditLimitMax = v.coerceAtLeast(creditLimitMin) }
     fun setCreditLimitCooldownHours(v: Long) { creditLimitCooldownHours = v.coerceAtLeast(0L) }
     fun setDailyDepositRate(v: Double) { dailyDepositRate = v.coerceIn(0.0, 1.0) }
+
+    /**
+     * 存贷利率护栏：存款日利率不得超过最便宜贷款方案的套利上界。
+     * 上界 = min(每期费率 × (期数+1) ÷ (14×期数))——覆盖任何还法（按期划扣/提前结清/自有资金还贷而贷款存满全程）
+     * 下存款利息收入 ≤ 贷款利息支出，套利无收益；免息方案（费率 0）时存款日利率同步钳 0。
+     */
+    fun enforceDepositRateGuard() {
+        val cap = loanPlans.minOfOrNull { it.feeRate * (it.periods + 1) / (14.0 * it.periods) } ?: 0.0
+        if (dailyDepositRate > cap) {
+            CobbleMarket.LOGGER.warn("Config dailyDepositRate={} exceeds loan arbitrage bound {}; clamped", dailyDepositRate, cap)
+            dailyDepositRate = cap
+        }
+    }
     fun setTradePairWindowDays(v: Long) { tradePairWindowDays = v.coerceAtLeast(1L) }
     fun setTradePairMaxTrades(v: Long) { tradePairMaxTrades = v.coerceAtLeast(1L) }
     fun setPurpleCardCount(v: Long) { purpleCardCount = v.coerceAtLeast(0L) }
@@ -430,6 +443,7 @@ object CobbleMarketConfig {
                     creditLimitCooldownHours = fileCooldown.coerceAtLeast(0L)
                     autoRepayMinBalance = fileMinBalance.coerceAtLeast(0L)
                     dailyDepositRate = fileDepositRate.coerceIn(0.0, 1.0)
+                    enforceDepositRateGuard() // loanPlans 已应用（上一行之前），套利上界可算
                     tradePairWindowDays = filePairWindow.coerceAtLeast(1L)
                     tradePairMaxTrades = filePairMax.coerceAtLeast(1L)
                     purpleCardCount = fileCardCount.coerceAtLeast(0L)
@@ -509,6 +523,7 @@ object CobbleMarketConfig {
     }
 
     fun save() {
+        enforceDepositRateGuard() // 双保险：落盘值恒为钳后值
         val data = mapOf(
             "_comments" to mapOf(
                 "currency.cobbledollars" to "是否使用 CobbleDollars 货币（true/false，cobblemonEconomy=true 时被忽略）。⚠ 货币配置仅在服务器启动时读取，修改后需重启生效 / Whether to use CobbleDollars currency (true/false, ignored when cobblemonEconomy=true). ⚠ Currency settings are read only at server startup — restart after changes",
@@ -540,7 +555,34 @@ object CobbleMarketConfig {
                 "finance.creditLimit" to "额度公式系数：额度 = 近30天交易额×recent30Weight + 历史交易额×historyWeight − 当前欠款×debtWeight，结果钳制在 min~max。借贷来源的交易不计入交易额（防借→买→额度涨→再借循环） / Credit limit formula weights: limit = last-30-day volume×recent30Weight + all-time volume×historyWeight − current debt×debtWeight, clamped to min~max. Loan-funded trades never count toward volume (prevents borrow→buy→limit-up→borrow loops)",
                 "finance.autoRepayMinBalance" to "到期自动划扣最低保留：每期到期自动从玩家市场余额全额划扣当期应还（本金+利息），最多划到余额=此值为止；划不足进入逾期流程 / Minimum balance kept during auto-repayment: on each due date the full period payment is auto-deducted from the player's market balance, stopping at this floor; any shortfall enters the overdue flow",
                 "finance.ipDebtLimit" to "同 IP 未结清欠款总和上限（防同 IP 多小号分散借款转账给主账号；OP 豁免；0=不限制）：借款/喵喵支付时，同 IP 30 天窗口内所有玩家的未结清欠款总和+本次金额超过此值则拒绝 / Cap on total outstanding debt per IP (blocks many alt accounts on one IP borrowing and funneling money to a main account; OPs exempt; 0=disabled): when borrowing or paying via Meowth Pay, the request is rejected if the combined outstanding debt of all players seen on the same IP within 30 days plus this amount exceeds the cap",
-                "finance.overdueDays" to "逾期天数三档：feeDouble=逾期该天数后市场手续费翻倍，freeze=冻结挂单/待领取（拦交易不拦取回），badDebt=坏账冲销 / Overdue day tiers: feeDouble=fee doubling after this many days overdue, freeze=freeze listings/returns (blocks trading, not withdrawals), badDebt=write-off as bad debt"
+                "finance.overdueDays" to "逾期天数三档：feeDouble=逾期该天数后市场手续费翻倍，freeze=冻结挂单/待领取（拦交易不拦取回），badDebt=坏账冲销 / Overdue day tiers: feeDouble=fee doubling after this many days overdue, freeze=freeze listings/returns (blocks trading, not withdrawals), badDebt=write-off as bad debt",
+                "finance.dailyDepositRate" to "活期存款日利率（0.0001=每天0.01%≈年化3.65%），利息从准备金池支出。⚠ 有防套利护栏：不得超过最便宜贷款方案的套利上界，超出自动钳制并记日志；贷款方案全免息时此值自动钳为 0 / Daily interest rate for demand deposits (0.0001=0.01% per day ≈ 3.65% per year), paid from the reserve pool. ⚠ Guarded against arbitrage: it cannot exceed the cheapest loan plan's safe bound — values above are auto-clamped and logged; with all loan plans fee-free it is clamped to 0",
+                "finance.tradePairWindowDays" to "交易对检测窗口天数：同一买卖对在此窗口内成交超过笔数上限后，该对后续成交不计入借款额度（防互买对刷，默认 30）/ Same-pair detection window in days: once the same buyer-seller pair exceeds the trade cap within this window, their later trades stop counting toward credit limits (anti wash-trading, default 30)",
+                "finance.tradePairMaxTrades" to "交易对检测笔数上限：同一买卖对在窗口内成交达到此笔数后，该对后续成交不计入借款额度（防互买对刷，默认 3）/ Same-pair trade cap: once a buyer-seller pair reaches this many trades within the window, their later trades stop counting toward credit limits (anti wash-trading, default 3)",
+                "finance.purpleCardCount" to "喵·紫金卡全服发放上限（0=不限制，默认 20）。额度绑定持有者状态而非物品，复制出的卡无效 / Server-wide cap on Meow·Purple Gold Cards (0=unlimited, default 20). The limit is bound to holder state, not the item — duplicated cards are worthless",
+                "finance.purpleCardCreditLimit" to "喵·紫金卡持有者的固定借款额度（默认 100 万）/ Fixed borrowing limit for Meow·Purple Gold Card holders (default 1,000,000)",
+                "finance.purpleCardSelfApply" to "是否允许玩家自行申请喵·紫金卡（需满足下方六项门槛 + 缴纳申请费）；关闭时仅服主可用 /market card give 发放 / Allow players to self-apply for the Purple Gold Card (must pass the six conditions below and pay the fee); when off, only owners can issue via /market card give",
+                "finance.purpleCardApplyAsset" to "紫卡申请门槛·资产：玩家当前现金余额达到该值才可申请（0=不要求）/ Purple apply condition · assets: the player's current cash balance must reach this to apply (0=not required)",
+                "finance.purpleCardApplyVolume" to "紫卡申请门槛·消费金额：玩家历史买入成交额累计达到该值才可申请（0=不要求）/ Purple apply condition · spending: the player's all-time counted buying volume must reach this to apply (0=not required)",
+                "finance.purpleCardApplyCredit" to "紫卡申请门槛·额度：玩家信用基础（无欠款时的额度公式值）达到该值才可申请（0=不要求）/ Purple apply condition · credit: the player's credit base (limit formula value without debt) must reach this to apply (0=not required)",
+                "finance.purpleCardApplyDeposit" to "紫卡申请门槛·净存款：玩家净存款（活期存款 − 未还欠款）达到该值才可申请——借钱充存款无效（0=不要求）/ Purple apply condition · net deposit: the player's net deposit (demand deposit − outstanding debt) must reach this to apply — borrowed money can't inflate it (0=not required)",
+                "finance.purpleCardApplyNoOverdue" to "紫卡申请门槛·无逾期：true=有逾期或坏账记录的玩家不能申请 / Purple apply condition · clean record: true=players with overdue or bad-debt records cannot apply",
+                "finance.purpleCardApplyDex" to "紫卡申请门槛·图鉴：玩家图鉴已捕捉物种数达到该值才可申请（0=不要求）/ Purple apply condition · Pokédex: the player's caught-species count must reach this to apply (0=not required)",
+                "finance.purpleCardApplyFee" to "喵·紫金卡申请费用（申请成功时扣除，进入准备金池；0=免费）/ Purple Gold Card application fee (charged on success, goes to the reserve pool; 0=free)",
+                "finance.purpleCardRedoFee" to "补发喵·紫金卡凭证费用（持有者丢弃凭证后在喵喵银行重新领取时扣除，进入准备金池；0=免费）/ Purple Gold Card reissue fee (charged when a holder re-obtains a lost card at Meowth Bank, goes to the reserve pool; 0=free)",
+                "finance.purpleCardFeeDiscount" to "喵·紫金卡持有者的市场手续费减免比例（上架费/拍卖成交费/求购中介费全覆盖，与逾期翻倍叠加；0=无减免）/ Market fee discount ratio for Purple Gold Card holders (covers listing/auction/buy-order fees, stacks with overdue doubling; 0=no discount)",
+                "finance.blackCardCount" to "喵·黑金卡全服发放上限（0=不限制，默认 5）。申请硬条件为持有喵·紫金卡；获得黑卡自动移除紫卡资格（升级替代）/ Server-wide cap on Meow·Black Gold Cards (0=unlimited, default 5). Applying requires holding the Purple Gold Card; obtaining the Black Gold Card auto-removes the Purple Gold Card qualification (upgrade replacement)",
+                "finance.blackCardCreditLimit" to "喵·黑金卡持有者的固定借款额度（默认 500 万）/ Fixed borrowing limit for Meow·Black Gold Card holders (default 5,000,000)",
+                "finance.blackCardSelfApply" to "是否允许玩家自行申请喵·黑金卡（需持有喵·紫金卡 + 满足六项门槛 + 缴纳申请费）；关闭时仅服主可用 /market card give 发放 / Allow players to self-apply for the Black Gold Card (requires holding the Purple Gold Card + the six conditions + the fee); when off, only owners can issue via /market card give",
+                "finance.blackCardApplyAsset" to "黑卡申请门槛·资产：玩家当前现金余额达到该值才可申请（0=不要求）/ Black apply condition · assets: the player's current cash balance must reach this to apply (0=not required)",
+                "finance.blackCardApplyVolume" to "黑卡申请门槛·消费金额：玩家历史买入成交额累计达到该值才可申请（0=不要求）/ Black apply condition · spending: the player's all-time counted buying volume must reach this to apply (0=not required)",
+                "finance.blackCardApplyCredit" to "黑卡申请门槛·额度：玩家信用基础（无欠款时的额度公式值）达到该值才可申请（0=不要求）/ Black apply condition · credit: the player's credit base (limit formula value without debt) must reach this to apply (0=not required)",
+                "finance.blackCardApplyDeposit" to "黑卡申请门槛·净存款：玩家净存款（活期存款 − 未还欠款）达到该值才可申请——借钱充存款无效（0=不要求）/ Black apply condition · net deposit: the player's net deposit (demand deposit − outstanding debt) must reach this to apply — borrowed money can't inflate it (0=not required)",
+                "finance.blackCardApplyNoOverdue" to "黑卡申请门槛·无逾期：true=有逾期或坏账记录的玩家不能申请 / Black apply condition · clean record: true=players with overdue or bad-debt records cannot apply",
+                "finance.blackCardApplyDex" to "黑卡申请门槛·图鉴：玩家图鉴已捕捉物种数达到该值才可申请（0=不要求）/ Black apply condition · Pokédex: the player's caught-species count must reach this to apply (0=not required)",
+                "finance.blackCardApplyFee" to "喵·黑金卡申请费用（申请成功时扣除，进入准备金池；0=免费）/ Black Gold Card application fee (charged on success, goes to the reserve pool; 0=free)",
+                "finance.blackCardRedoFee" to "补发喵·黑金卡凭证费用（持有者丢弃凭证后在喵喵银行重新领取时扣除，进入准备金池；0=免费）/ Black Gold Card reissue fee (charged when a holder re-obtains a lost card at Meowth Bank, goes to the reserve pool; 0=free)",
+                "finance.blackCardFeeDiscount" to "喵·黑金卡持有者的市场手续费减免比例（上架费/拍卖成交费/求购中介费全覆盖，与逾期翻倍叠加；0=无减免）/ Market fee discount ratio for Black Gold Card holders (covers listing/auction/buy-order fees, stacks with overdue doubling; 0=no discount)"
             ),
             "currency" to mapOf("cobbledollars" to cobbledollars, "cobblemonEconomy" to cobblemonEconomy, "cobecoCurrency" to cobecoCurrency, "impactor" to impactor, "item" to currencyItem),
             "pokemonListingFeePercent" to pokemonListingFeePercent,

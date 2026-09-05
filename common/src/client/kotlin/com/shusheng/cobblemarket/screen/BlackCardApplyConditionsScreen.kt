@@ -79,8 +79,8 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
                 dialogX + dialogW - 10 - 20, startY, 20, 16,
                 Text.literal("↺"),
                 {
+                    // 只填回默认值不提交：点下方「保存」统一生效（2026-09-05 拍板，重置按钮一律不自动保存）
                     numFields[key]?.text = snapshotText(key, null)
-                    save()
                 }
             )
             resetButtons[key] = resetBtn
