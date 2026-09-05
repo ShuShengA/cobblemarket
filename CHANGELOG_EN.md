@@ -40,6 +40,7 @@
 - Fixed the buy-order delivery Pokémon icon being clipped: the idle-animation rework had overwritten its previously widened clip area back to the old values
 - Fixed Purple Gold Card apply/reissue with a full inventory: the card used to drop to the ground and vanish instantly — now the request is refused with a clear-inventory hint (checked before any fee is taken)
 - Fixed buy-order row icons showing the default form when the order requests a special form
+- Fixed the false "market data save failed" red alert during automatic backup mods' backup runs: backup mods temporarily suspend server saving (savingDisabled), which silently skips the forced save-after-trade and tripped the mtime verification — the forced save is now deferred while saving is suspended and runs right after the backup ends, eliminating the false alarm
 
 ## 1.0.0 (released)
 
@@ -47,10 +48,9 @@
 
 - New "Claim overflow" toggle in Settings (off by default): when enabled, claiming item returns drops anything that doesn't fit into your inventory onto the ground (they may despawn or be picked up by others — at your own risk); when off, the remainder stays in pending returns for next time
 - **Admin "All Buy Orders" screen**: new entry in the admin panel to view every buy order and force-cancel them — the buyer's frozen money is refunded, pending deliveries return to their sellers, and both sides get notified (queued for offline players); admin panel buttons rearranged into a two-column layout
-- **Market entry animation**: opening the market entry via hotkey K / smartphone app / other entry points plays a drop animation — the animation image falls from above the screen onto the entry position while scaling up, holds briefly, then fades out revealing the entry screen; new "Market Animation" toggle in Settings (on by default, per-player) that also controls the slide-out close animation when pressing E/Esc
 - **Cobblemon Economy currency support**: a third currency mode — servers with Cobblemon Economy installed use its currency API directly (its built-in bridge routes to CobbleDollars/Impactor backends; set main_currency to share one balance between the market and CobbleDollars merchants). Currency priority: Cobblemon Economy → CobbleDollars → items; auto-detected on fresh installs, no behavior change on config upgrades; new `currency.cobblemonEconomy` switch plus optional `currency.cobecoCurrency` (POKE default / PCO) to settle in PokeDollars or PokeCoins; prices now use ₽ as the unified unit in PokeDollars/CobbleDollars modes (inline and dialogs alike); full server-owner currency guide in docs/currency_en.md
 - **Native NeoForge support**: a NeoForge build (cobblemarket-neoforge-1.0.0.jar) with feature parity and save compatibility with the Fabric build; requires Kotlin for Forge and Cobblemon (NeoForge), no Architectury API needed; Cobblemon Economy has no NeoForge build, so that platform falls back to CobbleDollars / item currency
-- **Container content validation**: the item blacklist, price limits, and the egg-trading switch now apply to items inside containers too — listings, auctions, and buy order deliveries recursively inspect container contents (shulker boxes etc.) so restricted items can't be smuggled past governance
+- **Container content validation**: the item blacklist, price limits, and the egg-trading switch now apply to items inside containers too — listings, auctions, and buy order deliveries recursively inspect container contents (vanilla containers like shulker boxes; mod containers are not checked) so restricted items can't be smuggled past governance
 - **Item variant selection for buy order delivery**: when your inventory has the same item in multiple component variants (e.g. shulker boxes with different contents), you can now pick which variant to deliver — the selection list shows icons and counts with full tooltips, and the delivery dialog has a change button; single-variant delivery is unchanged
 - **Professor Oak & tip bubble**: a Professor Oak portrait now stands permanently at the market entry screen, with a speech bubble above his head showing random Pokémon trivia (498 built-in tips in Chinese and English, editable and replaceable); a new random tip is picked each time the entry screen opens, and clicking Oak switches to the next one
 - **Config hot reload**: new `/market reload` command (OP) — fees, limits, durations, and toggles take effect immediately after editing the config file, no restart needed; changes to the market master switch are broadcast to everyone; currency settings still require a restart (reload notifies you if they were changed)
@@ -80,6 +80,7 @@
 - Divider line added between the button row and the record list in the transaction history screen (both personal and all-history views)
 - Transaction history CSVs gain a "Details" column: full Pokémon stats (level/shiny/IVs/hyper training/nature/ability/gender/ball/held item/form) and item NBT as text, so compensation can recreate items faithfully from the ledger
 - Price units and currency names are now unified across all modes: virtual currencies (Cobblemon Economy POKE/PCO, CobbleDollars) show only ₽ everywhere — inline, dialogs, hovers, and chat messages no longer display names like PCo/PokeDollars/PokeCoins; item currency still shows the item name
+- Added a ball-type text label to hover panels and confirmation dialogs (addon balls are recognizable at a glance)
 
 ### Fixes
 
@@ -93,7 +94,6 @@
 - Fixed a false "CobbleMarket state save failed" error when players log out: on NeoForge, persistent state writes are asynchronous, so verifying right after saving misreported failures; verification is now delayed, and saves are skipped entirely when there is nothing unsaved
 - Fixed purchase success messages (Pokémon/items) showing amounts in green instead of the standard gold: the %d placeholders dropped the text color; they now use %s with gold-formatted amount text
 - Fixed rapid page-turning in market screens permanently graying out the prev/next buttons and leaving stale content: paging now merges clicks into a target page — each click updates the page number immediately (instant feedback), requests queue behind the server-side throttle window (pokemon market 250ms, item market/pending claims 500ms), and rapid clicks only send one request for the final page; a 1-second response timeout also force-resets the in-flight flag, so a silently dropped request can no longer lock the paging buttons (pokemon/item markets and both pending claims screens; the two admin screens also got the timeout fallback)
-- The balance HUD hides itself while the F3 debug screen is open, no longer covering the FPS readout
 - Custom Poké Balls from addon mods now show their icon and name correctly (previously blank due to hard-coded Cobblemon namespace)
 - Pokémon/item market listings force-cancelled by an admin now notify the seller with a dedicated red message (consistent with auctions and buy orders)
 
