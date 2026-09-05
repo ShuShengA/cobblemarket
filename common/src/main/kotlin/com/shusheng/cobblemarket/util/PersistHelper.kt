@@ -83,6 +83,13 @@ object PersistHelper {
         val now = System.currentTimeMillis()
         verifyPending(server, now)
         if (pendingSave && now - lastTradeAt >= SAVE_COOLDOWN_MS) {
+            // 自动备份模组/自动保存关闭（savingDisabled）时 saveAll(force=false) 会被整体跳过——写盘不执行、
+            // mtime 验证 58 秒后必然误报「保存失败」；此时推迟重试，备份结束自动补落盘。
+            // 也不 force 写盘：备份期间写盘与备份模组的文件复制竞争，可能干扰备份一致性。
+            if (server.overworld.savingDisabled) {
+                lastTradeAt = now
+                return
+            }
             pendingSave = false
             StateBackup.backupAll(server)
             val ok = server.saveAll(false, false, false)
