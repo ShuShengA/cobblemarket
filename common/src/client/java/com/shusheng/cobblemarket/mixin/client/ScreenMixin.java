@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.mixin.client;
 
+import com.shusheng.cobblemarket.client.CardCelebrationAnimation;
 import com.shusheng.cobblemarket.client.CloseAnimation;
 import com.shusheng.cobblemarket.client.CobbleMarketClientKt;
 import com.shusheng.cobblemarket.client.EnterAnimation;
@@ -36,6 +37,7 @@ public abstract class ScreenMixin {
     @Inject(method = "renderWithTooltip", at = @At("TAIL"))
     private void cobblemarket$renderCelebrationOverlay(DrawContext context, int mouseX, int mouseY, float deltaTicks, CallbackInfo ci) {
         PokemonCelebrationAnimation.renderOverlay(context, deltaTicks);
+        CardCelebrationAnimation.INSTANCE.renderOverlay(context);
         // 余额 HUD：界面（含弹窗遮罩）画完后补画，保证竞价/购买弹窗打开时余额不被压暗
         CobbleMarketClientKt.renderBalanceHud(context);
         // 关闭动画矩阵恢复（与 HEAD 配对；动画中界面内容与 HUD 一起滑出）

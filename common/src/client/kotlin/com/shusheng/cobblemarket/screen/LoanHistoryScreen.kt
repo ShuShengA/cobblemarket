@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.LoanHistoryDataPayload
 import com.shusheng.cobblemarket.network.LoanHistoryEntry
 import com.shusheng.cobblemarket.network.RequestLoanHistoryPayload
@@ -166,15 +167,20 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
 
     private fun confirmRevoke() {
         val entry = revokeEntry ?: return
+        // 冷静期内点击：置灰按钮仍可点（dimmed 模式），播 fail 音效提示，不执行
+        if (System.currentTimeMillis() - revokeOpenedAt < 5000L) {
+            playFailSound()
+            return
+        }
         sendToServer(RequestRevokeBadDebtPayload(entry.playerUuid))
         closeRevokeDialog()
     }
 
-    /** 冷静期：5 秒内确认按钮禁用并显示倒计时 */
+    /** 冷静期：5 秒内确认按钮置灰（dimmed 保留可点性）并显示倒计时；点击时 confirmRevoke 播 fail 提示 */
     private fun updateRevokeButtons() {
         val cooldownLeft = 5 - (System.currentTimeMillis() - revokeOpenedAt) / 1000
         val canConfirm = cooldownLeft <= 0
-        revokeConfirmButton?.active = canConfirm
+        revokeConfirmButton?.dimmed = !canConfirm
         revokeConfirmButton?.message = if (canConfirm)
             Text.translatable("cobblemarket.loan_history.revoke_yes")
         else

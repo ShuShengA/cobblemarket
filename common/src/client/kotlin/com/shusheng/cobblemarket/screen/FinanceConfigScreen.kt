@@ -17,6 +17,9 @@ import net.minecraft.util.Formatting
  */
 class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_config")) {
 
+    /** 贷款方案默认文本（与 CobbleMarketConfig.loanPlans 默认值一致，重置按钮用） */
+    private val defaultLoanPlansText = "3:0.005,6:0.008,12:0.012"
+
     private val dialogW = 260
     private val rowHeight = 24
 
@@ -53,6 +56,12 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
     private var cancelButton: NineSliceButton? = null
     private var scrollOffset = 0
     private var savedToastUntil = 0L
+    /** 本次保存提交的数值字段解析值（key → Double；解析失败 = null 不参与对比；loanPlans 文本单独存） */
+    private var submittedNums: Map<String, Double?> = emptyMap()
+    /** 本次保存提交的贷款方案原始文本（对比服务器解析规范化后的回发文本） */
+    private var submittedPlansText: String? = null
+    /** 保存后被服务器调整的字段 → 黄色标记到期时间戳（8 秒行标签变色，无文案零宽度风险） */
+    private val adjustedUntil = mutableMapOf<String, Long>()
     // +2 = 喵喵紫卡/黑卡配置入口行（左标签 + 右「配置」按钮）
     private val totalRows = numDefs.size + toggleDefs.size + 2
     private var cardOpenButton: NineSliceButton? = null
@@ -97,11 +106,13 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
                 dialogX + dialogW - 10 - 20, startY, 20, 16,
                 Text.literal("↺"),
                 {
+                    // 只填回默认值不提交：多项重置（如贷款方案+存款日利率）点下方「保存」统一生效，
+                    // 避免单点重置立即保存时被护栏按「新值+旧方案」的中间态钳制（免息方案会把利率钳成 0）
                     numFields[key]?.text = when (key) {
-                        "loanPlans" -> ServerConfigScreen.latest?.loanPlans ?: ""
+                        // 方案重置 = 恢复默认方案（快照值可能已被服主改过，重置回快照等于没变）
+                        "loanPlans" -> defaultLoanPlansText
                         else -> snapshotText(key, null)
                     }
-                    save()
                 }
             )
             resetButtons[key] = resetBtn
@@ -150,6 +161,9 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         )
         addDrawableChild(blackCardOpenButton)
         rebuildPositions()
+        submittedNums = emptyMap()
+        submittedPlansText = null
+        adjustedUntil.clear()
         sendToServer(RequestServerConfigPayload())
     }
 
@@ -226,6 +240,23 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             toggleButtons[key]?.iconLeft = toggleIconFor(key, payload)
         }
         localToggles.clear()
+        // 统一调整对比：提交值 ≠ 回发值 → 该字段行标签黄 8 秒（贷款方案/权重/额度上限/交易对/日利率等所有钳制场景统一覆盖）
+        val now = System.currentTimeMillis()
+        val plansSubmitted = submittedPlansText
+        if (plansSubmitted != null && plansSubmitted != payload.loanPlans) {
+            adjustedUntil["loanPlans"] = now + 8000
+        }
+        submittedNums.forEach { (key, submitted) ->
+            if (submitted != null && submitted != numValue(key, payload)) {
+                adjustedUntil[key] = now + 8000
+            }
+        }
+        submittedPlansText = null
+        submittedNums = emptyMap()
+        // 日利率被钳制时额外掐掉绿 toast（底部黄字说明原因，优先显示）
+        if (adjustedUntil.containsKey("depositRate")) {
+            savedToastUntil = 0L
+        }
     }
 
     private fun save() {
@@ -233,6 +264,13 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         fun intOr(key: String, fallback: Int): Int = numFields[key]?.text?.toIntOrNull() ?: fallback
         fun doubleOr(key: String, fallback: Double): Double = numFields[key]?.text?.toDoubleOrNull() ?: fallback
         fun longOr(key: String, fallback: Long): Long = numFields[key]?.text?.toLongOrNull() ?: fallback
+        // 记录全部数值字段提交解析值 + 方案原始文本（回发时逐字段对比，被服务器调整的字段行标签变黄）
+        submittedNums = numDefs.map { (_, key) ->
+            key to if (key == "loanPlans") null else numFields[key]?.text?.toDoubleOrNull()
+        }.toMap()
+        submittedPlansText = numFields["loanPlans"]?.text
+        // 点保存视为读完上次的调整标记（本次提交若再被调整，回发时重新标记）
+        adjustedUntil.clear()
         sendToServer(SaveServerConfigPayload(
             // 非金融字段全部回填快照原值（本界面不编辑）
             pokemonFee = p?.pokemonFee ?: 5.0,
@@ -361,14 +399,16 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         fun drawRowLine(rowY: Int) {
             context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
         }
-        fun drawNumRow(def: NumDef) {
+        fun drawNumRow(def: NumDef, key: String) {
             if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
                 val rowY = startY + (row - scrollOffset) * rowHeight
                 drawRowLine(rowY)
+                // 保存后被服务器调整的字段：标签黄色 8 秒（无文案，中英零宽度风险）
+                val labelColor = if (System.currentTimeMillis() < (adjustedUntil[key] ?: 0L)) 0xFFFF55 else 0xFFFFFF
                 context.drawTextWithShadow(
                     textRenderer,
                     Text.translatable(def.labelKey),
-                    dialogX + 10, rowY + 7, 0xFFFFFF
+                    dialogX + 10, rowY + 7, labelColor
                 )
             }
             row++
@@ -385,7 +425,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             }
             row++
         }
-        numDefs.forEach { (def, _) -> drawNumRow(def) }
+        numDefs.forEach { (def, key) -> drawNumRow(def, key) }
         toggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
         // 喵喵紫卡配置入口行（列表末尾）
         if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
@@ -413,6 +453,14 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.translatable("cobblemarket.op.scfg_saved").formatted(Formatting.GREEN),
+                centerX, dialogY() + dialogH() - 38, 0xFFFFFF
+            )
+        } else if (System.currentTimeMillis() < (adjustedUntil["depositRate"] ?: 0L)) {
+            // 日利率钳制说明（8 秒后回落灰 hint）：服主看到「重置后保存又变 0」时知道是贷款方案护栏干的
+            val clampedText = snapshotText("depositRate", ServerConfigScreen.latest)
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.op.scfg_deposit_clamped", clampedText).formatted(Formatting.YELLOW),
                 centerX, dialogY() + dialogH() - 38, 0xFFFFFF
             )
         } else {

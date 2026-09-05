@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.platform.sendToServer
@@ -129,7 +130,10 @@ class MeowthPayScreen(
     // ── 确认弹窗（黄金模板照 LoanScreen.openConfirmDialog） ──
 
     private fun openConfirmDialog() {
-        if (plans.getOrNull(selectedPlan) == null) return
+        if (plans.getOrNull(selectedPlan) == null) {
+            playFailSound()
+            return
+        }
         confirmOpen = true
         // 隐藏下层控件（弹窗打开期间不可交互；closeConfirmDialog 的 init 重建会恢复）
         planButtons.forEach { it.visible = false }

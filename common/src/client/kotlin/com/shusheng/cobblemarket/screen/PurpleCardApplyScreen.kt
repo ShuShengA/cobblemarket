@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.PurpleCardApplyInfoPayload
 import com.shusheng.cobblemarket.network.RequestPurpleCardApplyInfoPayload
 import com.shusheng.cobblemarket.network.RequestPurpleCardApplyPayload
@@ -35,6 +36,8 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
     private var applyButton: NineSliceButton? = null
     /** 已是持有者：按钮变「补发紫卡」 */
     private var isHolder = false
+    /** 按钮可点状态（持有者恒可点；否则资格+开关；快照未到前 false = 置灰） */
+    private var canApply = false
 
     override fun init() {
         super.init()
@@ -53,11 +56,18 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
             width / 2 - 50, dialogY + dialogH - 44, 100, 20,
             Text.translatable("cobblemarket.card.apply_btn"),
             {
-                if (isHolder) sendToServer(RequestPurpleCardRedoPayload())
-                else sendToServer(RequestPurpleCardApplyPayload())
+                // 置灰态（资格不符/未开放/快照未到）：点击播 fail 音效提示，不发请求（照入口喵喵银行按钮 dimmed 模式）
+                if (!canApply) {
+                    playFailSound()
+                } else {
+                    // 登记卡片图标中心为发卡动画起点（服务端成功回包后从该位置放大飞到屏幕中央）
+                    com.shusheng.cobblemarket.client.CardCelebrationAnimation.setPendingStart(width / 2, dialogY + 58)
+                    if (isHolder) sendToServer(RequestPurpleCardRedoPayload())
+                    else sendToServer(RequestPurpleCardApplyPayload())
+                }
             }
         )
-        applyButton?.active = false
+        applyButton?.dimmed = true // 快照未到置灰，onApplyInfo 到达后按条件刷新
         addDrawableChild(applyButton)
 
         sendToServer(RequestPurpleCardApplyInfoPayload())
@@ -66,16 +76,18 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
     fun onApplyInfo(payload: PurpleCardApplyInfoPayload) {
         info = payload
         isHolder = payload.isHolder
+        canApply = payload.isHolder || (payload.eligible && payload.selfApplyEnabled)
+        applyButton?.dimmed = !canApply
         if (isHolder) {
             // 持有者：按钮变「补发紫卡」（凭证丢失随时补）
-            applyButton?.active = true
             applyButton?.message = Text.translatable("cobblemarket.card.redo_button")
             return
         }
-        applyButton?.active = payload.eligible && payload.selfApplyEnabled
         applyButton?.message = Text.translatable(
             when {
                 !payload.selfApplyEnabled -> "cobblemarket.card.apply_closed"
+                // 黑卡持有者：不是条件未满足，而是已升级（紫卡已被替代）
+                payload.holdsBlackCard -> "cobblemarket.card.black_already_holder"
                 !payload.eligible -> "cobblemarket.card.apply_not_eligible"
                 else -> "cobblemarket.card.apply_btn"
             }
@@ -124,37 +136,49 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
                 centerX, dialogY + 110, 0xFFFFFF
             )
         } else {
-            var y = dialogY + 96
-            conditionKeys.forEachIndexed { i, key ->
-                val entry = payload.conditions.getOrNull(i) ?: return@forEachIndexed
-                // 门槛 0/关 = 不要求，该行不显示
-                if (entry.requirement <= 0) return@forEachIndexed
-                val label = Text.translatable(key).string
-                val isBool = i == 5 // 无逾期记录项
-                val valueText = if (isBool) {
-                    if (entry.current > 0) Text.translatable("cobblemarket.card.apply_no_record").string
-                    else Text.translatable("cobblemarket.card.apply_has_record").string
-                } else {
-                    "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)}"
-                }
-                // 行尾短符号（✓/✗ 绿红，长文案超宽改用颜色表意；完整语义在申请按钮文案）
-                val mark = if (entry.satisfied)
-                    Text.translatable("cobblemarket.buy_order.match_ok").string to 0x55FF55
-                else
-                    Text.translatable("cobblemarket.buy_order.match_no").string to 0xFF6666
-                context.drawTextWithShadow(textRenderer, label, dialogX + 14, y, 0xFFFFFF)
-                context.drawTextWithShadow(textRenderer, valueText, dialogX + 104, y, 0x55FFFF)
-                context.drawTextWithShadow(textRenderer, mark.first, dialogX + dialogW - 26, y, mark.second)
-                y += 15
-            }
-            // 费用行：持有者显示补发费，否则显示申请费
+            // 持有者（补发模式）：条件与资格无关，只居中显示补发费用行；非持有者显示条件行 + 申请费用行
             val feeLine = Text.translatable(
                 if (isHolder) "cobblemarket.card.redo_fee_line" else "cobblemarket.card.apply_fee_line",
                 formatPriceLong(if (isHolder) payload.redoFee else payload.fee), inlineCurrencyUnit()
             )
-            context.drawTextWithShadow(textRenderer, feeLine, dialogX + 14, y + 2, 0x888888)
+            if (isHolder) {
+                context.drawCenteredTextWithShadow(textRenderer, feeLine, centerX, dialogY + 120, 0x888888)
+            } else {
+                var y = dialogY + 96
+                conditionKeys.forEachIndexed { i, key ->
+                    val entry = payload.conditions.getOrNull(i) ?: return@forEachIndexed
+                    // 门槛 0/关 = 不要求，该行不显示
+                    if (entry.requirement <= 0) return@forEachIndexed
+                    val label = Text.translatable(key).string
+                    val isBool = i == 5 // 无逾期记录项
+                    val valueText = if (isBool) {
+                        if (entry.current > 0) Text.translatable("cobblemarket.card.apply_no_record").string
+                        else Text.translatable("cobblemarket.card.apply_has_record").string
+                    } else {
+                        "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)}"
+                    }
+                    // 行尾短符号（✓/✗ 绿红，长文案超宽改用颜色表意；完整语义在申请按钮文案）
+                    val mark = if (entry.satisfied)
+                        Text.translatable("cobblemarket.buy_order.match_ok").string to 0x55FF55
+                    else
+                        Text.translatable("cobblemarket.buy_order.match_no").string to 0xFF6666
+                    // 两行布局：标签在上、带括号的条件值在下（英文长标签不再挤压数值）
+                    context.drawTextWithShadow(textRenderer, label, dialogX + 14, y, 0xFFFFFF)
+                    val valueLine = Text.translatable("cobblemarket.card.apply_cond_value", valueText)
+                    context.drawTextWithShadow(textRenderer, valueLine, dialogX + 14, y + 11, 0x55FFFF)
+                    context.drawTextWithShadow(textRenderer, mark.first, dialogX + dialogW - 26, y + 6, mark.second)
+                    y += 22
+                }
+                context.drawTextWithShadow(textRenderer, feeLine, dialogX + 14, y + 2, 0x888888)
+            }
         }
     }
 
     override fun shouldPause() = false
+
+    /** 卡片图标中心坐标（发卡动画起点动态读取用；与 render 中图标位置同公式） */
+    fun cardIconCenter(): Pair<Int, Int> {
+        val dialogY = height / 2 - dialogH / 2
+        return Pair(width / 2, dialogY + 30 + 28)
+    }
 }

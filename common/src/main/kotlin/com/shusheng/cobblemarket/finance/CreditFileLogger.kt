@@ -10,8 +10,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
-/** 贷款事件类型（loan_records 的类型列） */
-enum class LoanLogType { CREATED, CONFIRMED, REVOKED, CLOSED, OVERDUE, BAD_DEBT }
+/** 贷款事件类型（loan_records 的类型列）；REVOKED = 服主撤销坏账 */
+enum class LoanLogType { CREATED, REVOKED, CLOSED, OVERDUE, BAD_DEBT }
 
 /** 还款方式（repayment_records 的方式列） */
 enum class RepayMethod { MANUAL, AUTO, EARLY }
@@ -35,7 +35,7 @@ object CreditFileLogger {
     private var currentRepayZh: File? = null
     private var currentRepayEn: File? = null
 
-    /** 贷款事件：创建（柜台/购精灵/购物品/拍卖出价）/ 转正 / 撤销 / 结清 / 逾期 / 坏账；detail 双语（CSV 中英双份） */
+    /** 贷款事件：创建（柜台/购精灵/购物品）/ 撤销（服主撤销坏账）/ 结清 / 逾期 / 坏账；detail 双语（CSV 中英双份） */
     fun logLoan(record: LoanRecord, type: LoanLogType, detail: String, detailEn: String = detail, timestamp: Long = System.currentTimeMillis()) {
         try {
             refreshFiles(timestamp)
@@ -122,9 +122,8 @@ object CreditFileLogger {
                     本目录下的 CSV 是信用账本（每笔借贷/还款事件同步追加写盘，不受服务器崩溃/杀进程影响，只写不改）。
 
                     loan_records（贷款事件）：时间, 类型, 来源, 玩家, 本金, 期数, 日利率, 状态, 详情
-                      类型：创建（柜台=现金贷/借呗；购精灵/购物品/拍卖出价=消费贷/喵喵支付）、
-                            转正（拍卖出价成交）、撤销（拍卖出价流拍/被超解冻）、
-                            结清（还完全部期数）、逾期、坏账
+                      类型：创建（柜台=现金贷/借呗；购精灵/购物品=消费贷/喵喵支付）、
+                            撤销（服主撤销坏账）、结清（还完全部期数）、逾期、坏账
                       状态：ACTIVE 正常 / OVERDUE 逾期 / BAD_DEBT 坏账 / CLOSED 已结清
 
                     repayment_records（还款事件）：时间, 玩家, 贷款ID, 本金部分, 利息, 方式, 详情
@@ -153,9 +152,8 @@ object CreditFileLogger {
                     synchronously to disk, unaffected by server crashes or forced kills; append-only).
 
                     loan_records (loan events): Time, Type, Source, Player, Principal, Periods, Daily Rate, Status, Details
-                      Types: Created (Counter=cash loan/Jiebei; Pokémon purchase/Item purchase/Auction bid=consumer loan/Meowth Pay),
-                             Confirmed (auction bid won), Revoked (auction bid refunded after being outbid/unsold),
-                             Closed (all periods repaid), Overdue, Bad debt
+                      Types: Created (Counter=cash loan/Jiebei; Pokémon purchase/Item purchase=consumer loan/Meowth Pay),
+                             Revoked (bad debt revoked by admin), Closed (all periods repaid), Overdue, Bad debt
                       Status: ACTIVE / OVERDUE / BAD_DEBT / CLOSED
 
                     repayment_records (repayment events): Time, Player, Loan ID, Principal Part, Interest, Method, Details
@@ -178,7 +176,6 @@ object CreditFileLogger {
         val time = timeFormat.format(Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()))
         val typeName = when (type) {
             LoanLogType.CREATED -> if (zh) "创建" else "Created"
-            LoanLogType.CONFIRMED -> if (zh) "转正" else "Confirmed"
             LoanLogType.REVOKED -> if (zh) "撤销" else "Revoked"
             LoanLogType.CLOSED -> if (zh) "结清" else "Closed"
             LoanLogType.OVERDUE -> if (zh) "逾期" else "Overdue"
@@ -188,7 +185,6 @@ object CreditFileLogger {
             LoanSource.COUNTER -> if (zh) "柜台" else "Counter"
             LoanSource.POKEMON_BUY -> if (zh) "购精灵" else "Pokémon purchase"
             LoanSource.ITEM_BUY -> if (zh) "购物品" else "Item purchase"
-            LoanSource.AUCTION_BID -> if (zh) "拍卖出价" else "Auction bid"
         }
         return "$time,$typeName,$sourceName,${csvEscape(record.playerName)},${record.principal},${record.periodsTotal},${record.dailyRate},${record.status.name},${csvEscape(detail)}"
     }

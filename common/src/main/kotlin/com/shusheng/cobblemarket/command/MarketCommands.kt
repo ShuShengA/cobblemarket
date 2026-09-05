@@ -167,6 +167,11 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.card.already_holder", player.name.string, cardName))
             return 0
         }
+        // 升级替代互斥：给黑卡持有者发紫卡视为降级，拒绝并提示先收回黑卡
+        if (!black && state.isBlackCardHolder(player.uuid)) {
+            source.sendError(Text.translatable("cobblemarket.card.black_holder_block_purple", player.name.string))
+            return 0
+        }
         val max = if (black) com.shusheng.cobblemarket.config.CobbleMarketConfig.blackCardCount
         else com.shusheng.cobblemarket.config.CobbleMarketConfig.purpleCardCount
         val count = if (black) state.getBlackCardHolderCount() else state.getPurpleCardHolderCount()
@@ -182,8 +187,17 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.card.inventory_full"))
             return 0
         }
-        if (black) state.addBlackCardHolder(player.uuid) else state.addPurpleCardHolder(player.uuid)
+        if (black) {
+            state.addBlackCardHolder(player.uuid)
+            // 黑卡是紫卡的升级替代：获得黑卡自动移除紫卡资格，并主动清除背包紫卡（自检有 OP 豁免）
+            state.removePurpleCardHolder(player.uuid)
+            com.shusheng.cobblemarket.finance.FinanceService.clearPurpleCardItems(player)
+        } else {
+            state.addPurpleCardHolder(player.uuid)
+        }
+        com.shusheng.cobblemarket.network.FinanceNetwork.broadcastCardHolderBoard(server)
         player.inventory.insertStack(net.minecraft.item.ItemStack(item))
+        com.shusheng.cobblemarket.network.CelebrationNetwork.sendCard(player, if (black) "black" else "purple")
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
         source.sendFeedback(
             { Text.translatable("cobblemarket.card.given", player.name.string, cardName).formatted(Formatting.GREEN) },
@@ -211,6 +225,7 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.card.not_holder", player.name.string, cardName))
             return 0
         }
+        com.shusheng.cobblemarket.network.FinanceNetwork.broadcastCardHolderBoard(server)
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
         source.sendFeedback(
             { Text.translatable("cobblemarket.card.revoked", player.name.string, cardName).formatted(Formatting.GREEN) },
@@ -246,6 +261,7 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.card.not_holder", name, cardName))
             return 0
         }
+        com.shusheng.cobblemarket.network.FinanceNetwork.broadcastCardHolderBoard(server)
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
         source.sendFeedback(
             { Text.translatable("cobblemarket.card.revoked", name, cardName).formatted(Formatting.GREEN) },
@@ -265,13 +281,21 @@ object MarketCommands {
         val holders = if (black) state.getAllBlackCardHolders() else state.getAllPurpleCardHolders()
         val max = if (black) com.shusheng.cobblemarket.config.CobbleMarketConfig.blackCardCount
         else com.shusheng.cobblemarket.config.CobbleMarketConfig.purpleCardCount
+        // 按加入时间正序（先申请在前，排行感；同刻按名字）
+        val sortedHolders = holders.sortedWith(
+            compareBy(
+                { if (black) state.getBlackCardAddedAt(it) else state.getPurpleCardAddedAt(it) },
+                { server.playerManager.getPlayer(it)?.name?.string
+                    ?: server.userCache?.getByUuid(it)?.orElse(null)?.name ?: it.toString() }
+            )
+        )
         source.sendFeedback(
             {
                 Text.translatable("cobblemarket.card.list_header", cardName, holders.size, max).formatted(Formatting.GOLD)
             },
             false
         )
-        holders.forEach { uuid ->
+        sortedHolders.forEach { uuid ->
             val name = server.playerManager.getPlayer(uuid)?.name?.string
                 ?: server.userCache?.getByUuid(uuid)?.orElse(null)?.name ?: uuid.toString()
             source.sendFeedback({ Text.literal(" - $name") }, false)

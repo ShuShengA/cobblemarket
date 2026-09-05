@@ -18,6 +18,9 @@ import com.shusheng.cobblemarket.network.HistoryDataPayload
 import com.shusheng.cobblemarket.network.DepositInfoPayload
 import com.shusheng.cobblemarket.network.PurpleCardApplyInfoPayload
 import com.shusheng.cobblemarket.network.BlackCardApplyInfoPayload
+import com.shusheng.cobblemarket.network.CardCelebrationPayload
+import com.shusheng.cobblemarket.network.CardHolderBoardPayload
+import com.shusheng.cobblemarket.network.CardHolderListPayload
 import com.shusheng.cobblemarket.network.FinanceStatsPayload
 import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
@@ -54,6 +57,7 @@ import com.shusheng.cobblemarket.screen.PurpleCardApplyScreen
 import com.shusheng.cobblemarket.screen.BlackCardApplyScreen
 import com.shusheng.cobblemarket.screen.BlackCardConfigScreen
 import com.shusheng.cobblemarket.screen.BlackCardApplyConditionsScreen
+import com.shusheng.cobblemarket.screen.CardManageScreen
 import com.shusheng.cobblemarket.screen.PurpleCardConfigScreen
 import com.shusheng.cobblemarket.screen.LoanHistoryScreen
 import com.shusheng.cobblemarket.screen.MeowthPayScreen
@@ -112,6 +116,7 @@ object CobbleMarketClient {
     fun init() {
         ClientConfig.load()
         PokemonCelebrationAnimation.register()
+        CardCelebrationAnimation.register()
         openMarketKey = registerKeyBinding(
             KeyBinding(
                 "key.cobblemarket.open_market",
@@ -333,6 +338,32 @@ object CobbleMarketClient {
                 if (screen is BlackCardApplyScreen) {
                     screen.onApplyInfo(payload)
                 }
+            }
+        }
+
+        registerS2C(CardHolderListPayload.ID, CardHolderListPayload.CODEC) { payload ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                if (screen is CardManageScreen) {
+                    screen.onCardHolderList(payload)
+                }
+            }
+        }
+
+        registerS2C(CardHolderBoardPayload.ID, CardHolderBoardPayload.CODEC) { payload ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                if (screen is MeowthBankScreen) {
+                    screen.onCardHolderBoard(payload)
+                }
+            }
+        }
+
+        registerS2C(CardCelebrationPayload.ID, CardCelebrationPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                CardCelebrationAnimation.trigger(payload.kind)
             }
         }
 
@@ -731,6 +762,6 @@ private fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean 
         s is BlacklistScreen || s is PriceLimitScreen || s is AuctionScreen || s is AuctionCreateScreen ||
         s is BuyOrderScreen || s is AdminAuctionScreen || s is ServerConfigScreen || s is FinanceConfigScreen ||
         s is PurpleCardConfigScreen || s is PurpleCardApplyScreen || s is PurpleCardApplyConditionsScreen ||
-        s is BlackCardConfigScreen || s is BlackCardApplyScreen || s is BlackCardApplyConditionsScreen || s is ItemVariantSelectScreen ||
+        s is BlackCardConfigScreen || s is BlackCardApplyScreen || s is BlackCardApplyConditionsScreen || s is CardManageScreen || s is ItemVariantSelectScreen ||
         s is MeowthBankScreen || s is LoanScreen || s is LoanHistoryScreen || s is RepayScreen || s is MeowthPayScreen ||
         s is DepositScreen
