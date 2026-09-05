@@ -48,8 +48,8 @@
 
 - 设置新增「待领取装不下掉落」开关（默认关）：开启后，领取待领取物品时背包放不下的部分会掉在地上（可能消失或被他人捡走，风险自负）；关闭时保持原样留在待领取，下次再领
 - **管理员「所有求购」界面**：管理员面板新增入口，可查看全部求购单并强制下架——冻结金退还给买家，待确认交付的货物退回卖家，买卖双方都会收到通知（离线则上线补发）；面板按钮重新排列为两列布局
-- **支持 Cobblemon Economy 货币**：新增第三种货币模式——装了 Cobblemon Economy 的服务器，市场直接走其货币 API（其内置桥接可路由到 CobbleDollars/Impactor 后端，服主配置 main_currency 后市场与 CobbleDollars 商人共享同一余额）。货币优先级 Cobblemon Economy → CobbleDollars → 物品；全新安装自动探测，旧配置升级行为不变；新开关 `currency.cobblemonEconomy`，可选 `currency.cobecoCurrency`（POKE 默认/PCO）在 PokeDollars 与 PokeCoins 之间切换结算货币；价格单位统一为 ₽（PokeDollars/CobbleDollars 模式，行内与弹窗一致）；服主向货币规则完整说明见 docs/currency_zh.md
-- **原生 NeoForge 支持**：新增 NeoForge 版模组（cobblemarket-neoforge-1.0.0.jar），与 Fabric 版功能一致、存档互通；依赖 Kotlin for Forge 与 Cobblemon（NeoForge 版），无需安装 Architectury API；Cobblemon Economy 无 NeoForge 版，该平台货币自动降级 CobbleDollars / 物品
+- **支持 Cobblemon Economy 货币**：Fabric 平台新增货币模式（现共四种：Cobblemon Economy / CobbleDollars / Impactor / 物品）——装了 Cobblemon Economy 的服务器，市场直接走其货币 API（其内置桥接可路由到 CobbleDollars/Impactor 后端，服主配置 main_currency 后市场与 CobbleDollars 商人共享同一余额；不装 Cobblemon Economy 也可单独直连 Impactor）。货币优先级 Cobblemon Economy → CobbleDollars → Impactor → 物品；全新安装自动探测，旧配置升级行为不变；新开关 `currency.cobblemonEconomy`，可选 `currency.cobecoCurrency`（POKE 默认/PCO）在 PokeDollars 与 PokeCoins 之间切换结算货币；价格单位统一为 ₽（PokeDollars/CobbleDollars 模式，行内与弹窗一致）
+- **原生 NeoForge 支持**：新增 NeoForge 版模组（cobblemarket-neoforge-1.0.0.jar），与 Fabric 版功能一致、存档互通；依赖 Kotlin for Forge 与 Cobblemon（NeoForge 版），无需安装 Architectury API；Cobblemon Economy 无 NeoForge 版，该平台货币自动降级 CobbleDollars / Impactor / 物品（共三种）
 - **容器内容校验**：物品黑名单、价格限制、蛋交易开关对容器内物品同样生效——上架/拍卖/求购单交付时递归检查容器内容（潜影箱等原版容器，模组容器不做判定），防止把受限物品装进容器绕过治理
 - **物品求购交付可选形态**：背包中同一物品存在多种组件形态（如内容不同的潜影箱）时，交付前先选择要交付哪一种——选择列表显示图标与数量、悬停可见容器内容，交付弹窗内可随时更换；单形态交付流程不变
 - **大木博士与知识点气泡**：入口界面新增常驻大木博士立绘，头顶聊天气泡随机展示宝可梦冷知识（内置 498 条中英双语，可自行增删替换）；每次进入入口界面随机换一条，点击大木博士可主动切换
