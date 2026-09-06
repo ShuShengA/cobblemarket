@@ -12,6 +12,7 @@ import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
+import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.client.gui.widget.ButtonWidget
 import net.minecraft.client.sound.PositionedSoundInstance
 import net.minecraft.client.gui.widget.TextFieldWidget
@@ -49,7 +50,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private lateinit var shinyButton: NineSliceButton
     private lateinit var sortButton: ButtonWidget
     private lateinit var resetButton: ButtonWidget
-    private lateinit var mineButton: ButtonWidget
+    private lateinit var mineButton: NineSliceButton
     private lateinit var filterToggleButton: ButtonWidget
     private lateinit var prevButton: ButtonWidget
     private lateinit var nextButton: ButtonWidget
@@ -115,8 +116,11 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         // 返回
         addDrawableChild(NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(AdminScreen()) }
+            Text.literal(""),
+            { client?.setScreen(AdminScreen()) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         ))
 
         // 物种搜索框 + 折叠
@@ -133,11 +137,18 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         addDrawableChild(searchField)
         searchField?.text = savedSearch
 
+        // 筛选展开/收起按钮（搜索框右侧）：去文字化——展开显示 filter、收起显示 filter_close
         filterToggleButton = NineSliceButton(
             leftX + panelWidth - 52, 44, 50, 16,
-            Text.translatable(if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand"),
-            { toggleFilters() }
-        )
+            Text.literal(""),
+            { toggleFilters() },
+            iconLeft = Identifier.of("cobblemarket",
+                if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+        ).also {
+            it.setTooltip(Tooltip.of(Text.translatable(
+                if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand")))
+        }
         addDrawableChild(filterToggleButton)
 
         // 玩家搜索框（专属，始终显示）
@@ -191,10 +202,15 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             )
             addDrawableChild(htButton)
 
+            // 我的（personal/personal_click 双图标：关 = 全部，开 = 仅我的；悬停词条随状态）
             mineButton = NineSliceButton(
                 leftX + 192, 136, 50, 20,
-                Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine"),
-                { toggleMineOnly() }
+                Text.literal(""),
+                { toggleMineOnly() },
+                iconLeft = Identifier.of("cobblemarket",
+                    if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png"),
+                iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+                tooltip = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
             )
             addDrawableChild(mineButton)
 
@@ -210,9 +226,23 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         // 列表行数由 getMaxVisibleRows 预留 72 保证按钮不压最后一行）
         val listBottom = getListStartY() + getMaxVisibleRows() * 24
         val btnY = (listBottom + 5 + (height - 32)) / 2 - 10 - 5
-        prevButton = NineSliceButton(leftX, btnY, 80, 20, Text.translatable("cobblemarket.gui.prev"), { prevPage() })
+        prevButton = NineSliceButton(
+            leftX, btnY, 80, 20,
+            Text.literal(""),
+            { prevPage() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.prev")
+        )
         addDrawableChild(prevButton)
-        nextButton = NineSliceButton(leftX + panelWidth - 80, btnY, 80, 20, Text.translatable("cobblemarket.gui.next"), { nextPage() })
+        nextButton = NineSliceButton(
+            leftX + panelWidth - 80, btnY, 80, 20,
+            Text.literal(""),
+            { nextPage() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.next")
+        )
         addDrawableChild(nextButton)
         updatePageButtons()
 
@@ -299,7 +329,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private fun toggleMineOnly() {
         showMineOnly = !showMineOnly
         currentPage = 1
-        mineButton.message = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
+        mineButton.iconLeft = Identifier.of("cobblemarket",
+            if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png")
+        mineButton.setTooltip(Tooltip.of(Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")))
         refreshData()
     }
 
@@ -341,6 +373,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         htButton?.setMessage(htButtonText())
         htButton?.textColor = 0xFFFFFF
         sortButton.message = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
+        mineButton.iconLeft = Identifier.of("cobblemarket", "textures/gui/personal.png")
+        mineButton.setTooltip(Tooltip.of(Text.translatable("cobblemarket.gui.mine")))
         refreshData()
     }
 

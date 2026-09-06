@@ -144,19 +144,36 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
 
         addDrawableChild(NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(MarketScreen()) }
+            Text.literal(""),
+            { client?.setScreen(MarketScreen()) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         ))
 
         // 按钮放在底部分割线（listBottom+4）与背景底边（height-32）之间居中（照精灵市场分页按钮布局）
         val listBottom = getListStartY() + maxVisible() * rowHeight
         val btnY = (listBottom + 5 + (height - 32)) / 2 - 10 - 5
-        prevButton = NineSliceButton(leftX, btnY, 80, 20, Text.translatable("cobblemarket.gui.prev"), { prevPage() })
+        prevButton = NineSliceButton(
+            leftX, btnY, 80, 20,
+            Text.literal(""),
+            { prevPage() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.prev")
+        )
         addDrawableChild(prevButton)
         updatePageButtons()
         claimButton = NineSliceButton(width / 2 - 50, btnY, 100, 20, Text.translatable("cobblemarket.return.claim"), { claimAll() })
         addDrawableChild(claimButton)
-        nextButton = NineSliceButton(leftX + panelWidth - 80, btnY, 80, 20, Text.translatable("cobblemarket.gui.next"), { nextPage() })
+        nextButton = NineSliceButton(
+            leftX + panelWidth - 80, btnY, 80, 20,
+            Text.literal(""),
+            { nextPage() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.next")
+        )
         addDrawableChild(nextButton)
 
         requestData()

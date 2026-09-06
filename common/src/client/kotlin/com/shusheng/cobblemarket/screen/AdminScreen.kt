@@ -54,8 +54,8 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         context.matrices.pop()
     }
 
-    private fun addMenuButton(x: Int, y: Int, w: Int, h: Int, text: Text, action: net.minecraft.client.gui.widget.ButtonWidget.PressAction, iconLeft: Identifier? = null): TextureButton {
-        val btn = TextureButton(x, y, w, h, text, action, iconLeft = iconLeft)
+    private fun addMenuButton(x: Int, y: Int, w: Int, h: Int, text: Text, action: net.minecraft.client.gui.widget.ButtonWidget.PressAction, iconLeft: Identifier? = null, iconTexSize: Int = 24, iconDisplaySize: Int = 12, tooltip: Text? = null): TextureButton {
+        val btn = TextureButton(x, y, w, h, text, action, iconLeft = iconLeft, iconTexSize = iconTexSize, iconDisplaySize = iconDisplaySize, tooltip = tooltip)
         addDrawableChild(btn)
         return btn
     }
@@ -127,8 +127,11 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         // 行 5：返回按钮居中（蛋交易开关已移到服务器配置界面）
         addMenuButton(
             centerX - btnW / 2, startY + (btnH + gap) * 4, btnW, btnH,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) }
+            Text.literal(""),
+            { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexSize = 48, iconDisplaySize = 12,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         )
     }
 

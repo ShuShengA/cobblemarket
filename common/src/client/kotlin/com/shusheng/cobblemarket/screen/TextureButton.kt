@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
+import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.client.gui.widget.ButtonWidget
 import net.minecraft.client.sound.PositionedSoundInstance
 import net.minecraft.client.sound.SoundManager
@@ -20,7 +21,13 @@ class TextureButton(
     // 图标贴图实际尺寸与显示尺寸（默认 24 贴图缩到 12；48×48 动画帧用 iconTexSize=48/iconDisplaySize=18）
     private val iconTexSize: Int = 24,
     private val iconDisplaySize: Int = 12,
+    // 可选悬停词条（图标化按钮构造即挂上，替代文字说明）
+    tooltip: Text? = null,
 ) : ButtonWidget(x, y, width, height, message, onPress, ButtonWidget.DEFAULT_NARRATION_SUPPLIER) {
+
+    init {
+        if (tooltip != null) setTooltip(Tooltip.of(tooltip))
+    }
 
     private val texture = Identifier.of("cobblemarket", "textures/gui/button.png")
     private val textureWidth = 320
@@ -44,7 +51,9 @@ class TextureButton(
         } ?: iconLeft
         val iconY = y + (height - iconDisplaySize) / 2
         if (currentIcon != null) {
-            drawIcon(context, currentIcon, x + 5, iconY)
+            // 纯图标按钮（空文字）图标水平居中；有文字时图标靠左、文字在剩余空间居中
+            val iconX = if (message.string.isEmpty()) x + (width - iconDisplaySize) / 2 else x + 5
+            drawIcon(context, currentIcon, iconX, iconY)
         }
         if (iconRight != null) {
             drawIcon(context, iconRight, x + width - 5 - iconDisplaySize, iconY)

@@ -213,6 +213,7 @@
   "cobblemarket.price_limit.below_min": "Listing price below the minimum limit (%s)",
   "cobblemarket.price_limit.container_item_blocked": "The container inside the listed item holds a price-limited item (price limits can't apply to items inside containers, so it's blocked)",
   "cobblemarket.price_limit.above_max": "Listing price above the maximum limit (%s)",
+  "cobblemarket.price_limit.conflict": "This item is blocked by conflicting price-limit rules (no valid price range) and cannot be traded",
   "cobblemarket.price_limit.held_below_min": "Listing price below the minimum limit (%s, including held item)",
   "cobblemarket.price_limit.held_above_max": "Listing price above the maximum limit (%s, including held item)",
   "cobblemarket.gui.shiny_any": "Any",

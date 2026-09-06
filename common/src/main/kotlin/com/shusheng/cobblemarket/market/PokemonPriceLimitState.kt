@@ -12,7 +12,11 @@ import net.minecraft.server.MinecraftServer
 import net.minecraft.world.PersistentState
 
 // 价格上下限区间：null = 该侧不限制
-data class PriceBounds(val min: Int?, val max: Int?)
+data class PriceBounds(val min: Int?, val max: Int?) {
+
+    /** 空区间（下限 > 上限）：多条同档限价规则交集为空，该物品被交叉锁死、任何价格都过不了校验 */
+    val isEmptyRange: Boolean get() = min != null && max != null && min!! > max!!
+}
 
 // 精灵与携带物价格限制合并：下限两侧相加（不限侧按 0 参与）；
 // 上限仅当两侧都设限时相加（一侧不限则总上限不限——精灵部分可以定价无限高）。

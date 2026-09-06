@@ -399,6 +399,11 @@ object AuctionNetwork {
                 else null
                 val bounds = com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
                 if (bounds != null) {
+                    // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
+                    if (bounds.isEmptyRange) {
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.conflict")))
+                        return@execute
+                    }
                     // 携带物参与限价时用带说明的提示，玩家才知道总价里包含了携带物部分
                     if (bounds.min != null && payload.startingPrice < bounds.min) {
                         val key = if (heldItemId != null) "cobblemarket.auction.price_limit.held_below_min" else "cobblemarket.auction.price_limit.below_min"
@@ -511,6 +516,11 @@ object AuctionNetwork {
                 val itemBounds = com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
                     .getPriceBounds(targetStack, player.serverWorld.registryManager)
                 if (itemBounds != null) {
+                    // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
+                    if (itemBounds.isEmptyRange) {
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.conflict")))
+                        return@execute
+                    }
                     // 价格限制是单价语义：拍卖起拍价为整组总价，下限/上限按数量换算
                     val minTotal = itemBounds.min?.toLong()?.times(payload.count)
                     val maxTotal = itemBounds.max?.toLong()?.times(payload.count)
@@ -1037,14 +1047,19 @@ object AuctionNetwork {
                     }
                 )
             lines.add(lvLine)
-            // 属性行（主 + 副）
+            // 属性行（主 + 副）：属性名按属性色着色，与出价弹窗一致
             val primaryType = extra["primaryType"] ?: ""
             val secondaryType = extra["secondaryType"] ?: ""
             lines.add(
                 Text.translatable("cobblemarket.gui.tooltip_type").append(
-                    if (primaryType.isNotEmpty()) Text.translatable(primaryType) else Text.literal("-")
+                    if (primaryType.isNotEmpty())
+                        Text.translatable(primaryType).styled { it.withColor(TypeTextColors.color(primaryType)) }
+                    else Text.literal("-")
                 ).append(
-                    if (secondaryType.isNotEmpty()) Text.literal(" + ").append(Text.translatable(secondaryType)) else Text.literal("")
+                    if (secondaryType.isNotEmpty())
+                        Text.literal(" + ").append(
+                            Text.translatable(secondaryType).styled { it.withColor(TypeTextColors.color(secondaryType)) })
+                    else Text.literal("")
                 )
             )
             // 性格（薄荷生效值） / 特性 / 球种
@@ -1076,6 +1091,11 @@ object AuctionNetwork {
             lines.add(ivLine(spa, "ivsSpAtk", "evsSpAtk", Formatting.BLUE))
             lines.add(ivLine(spd, "ivsSpDef", "evsSpDef", Formatting.GREEN))
             lines.add(ivLine(spe, "ivsSpd", "evsSpd", Formatting.LIGHT_PURPLE))
+            // 亲密度（与出价弹窗一致：粉色，六项个体值下方）
+            lines.add(
+                Text.translatable("cobblemarket.gui.friendship", extra["friendship"]?.toIntOrNull() ?: 0)
+                    .styled { it.withColor(0xFF99CC) }
+            )
         } else {
             lines.add(Text.translatable("cobblemarket.auction.count").append(Text.literal("${auction.count}")))
             // 附魔词条行（原版 tooltip 同款：附魔名 + 罗马等级，AQUA 色）

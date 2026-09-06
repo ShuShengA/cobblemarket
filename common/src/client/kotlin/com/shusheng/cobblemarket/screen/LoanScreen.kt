@@ -13,6 +13,7 @@ import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.text.Text
+import net.minecraft.util.Identifier
 import net.minecraft.util.Formatting
 import kotlin.math.roundToLong
 
@@ -56,8 +57,11 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
         // 返回按钮：右上角内移 8px 避开弹窗九宫格边框（6px 边框 + 2px 空隙）
         backButton = NineSliceButton(
             dialogX + dialogW - 58, dialogY + 8, 50, 16,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(MeowthBankScreen()) }
+            Text.literal(""),
+            { client?.setScreen(MeowthBankScreen()) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         )
         addDrawableChild(backButton)
 

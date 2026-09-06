@@ -334,8 +334,11 @@ class BuyOrderScreen(
         // 返回按钮：右缘离面板右缘 12px（边框视觉宽约 10~12，内缩 8 仍压框；顶边 13px 与拍卖场一致）
         backButton = NineSliceButton(
             width / 2 + panelWidth / 2 - 12 - 50, 13, 50, 16,
-            Text.translatable("cobblemarket.gui.back"),
+            Text.literal(""),
             { client?.setScreen(if (adminMode) AdminScreen() else MarketEntryScreen(skipDropAnim = true)) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back"),
             texture = BUY_ORDER_BUTTON_TEXTURE,
             texH = BUY_ORDER_BUTTON_TEX_H
         )
@@ -758,9 +761,19 @@ class BuyOrderScreen(
                 rowData?.itemStack?.let { context.drawItem(it, slotX + 2, slotY) }
             }
 
-            // 名称（属性色，照精灵市场）+ 条件徽章（★/☆/HT）
+            // 名称（属性色，照精灵市场）+ 条件徽章（★/☆/HT）；物品行名照物品栏悬浮按稀有度着色
             val nameColor = rowData?.nameColor ?: 0xFFFFFF
-            val name = rowData?.name ?: com.shusheng.cobblemarket.util.TextUtil.truncateString(entryName(entry), if (entry.type == "ITEM") 46 else 36)
+            val name: Text = if (entry.type == "ITEM") {
+                val stack = rowData?.itemStack
+                if (stack != null && !stack.isEmpty) {
+                    com.shusheng.cobblemarket.util.TextUtil.truncateText(
+                        com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), 46)
+                } else {
+                    Text.literal(rowData?.name ?: com.shusheng.cobblemarket.util.TextUtil.truncateString(entryName(entry), 46))
+                }
+            } else {
+                Text.literal(rowData?.name ?: com.shusheng.cobblemarket.util.TextUtil.truncateString(entryName(entry), 36))
+            }
             context.drawTextWithShadow(textRenderer, name, rowL + 40, y + 7, nameColor)
             var sx = rowL + 40 + textRenderer.getWidth(name)
             conditionBadges(entry).forEach { (badge, color) ->
@@ -2061,7 +2074,11 @@ class BuyOrderScreen(
             val totalW = 16 + 4 + textRenderer.getWidth(itemName) + 4 + textRenderer.getWidth(countStr)
             val startX = centerX - totalW / 2
             context.drawItem(itemStack, startX, dialogY + 28)
-            context.drawTextWithShadow(textRenderer, itemName, startX + 20, dialogY + 32, 0xFFFFFF)
+            // 物品名照物品栏悬浮第一行按稀有度着色
+            context.drawTextWithShadow(textRenderer,
+                if (itemStack.isEmpty) Text.literal(itemName)
+                else com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(itemStack),
+                startX + 20, dialogY + 32, 0xFFFFFF)
             context.drawTextWithShadow(textRenderer, countStr, startX + 20 + textRenderer.getWidth(itemName) + 4, dialogY + 32, 0xAAAAAA)
             // 物品词条（附魔/名称等，去首行物品名；超过上限才截断以「…」收尾）；按住 Shift 展开高级词条
             //（列表已在函数头按 Shift 状态选好）；行距 10 与物品市场悬停一致（9 太贴）

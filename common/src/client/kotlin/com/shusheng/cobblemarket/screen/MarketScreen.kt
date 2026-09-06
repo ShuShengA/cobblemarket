@@ -9,6 +9,7 @@ import com.shusheng.cobblemarket.screen.SellSelectScreen
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
+import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.client.gui.widget.ButtonWidget
 import net.minecraft.client.sound.PositionedSoundInstance
 import net.minecraft.client.gui.widget.TextFieldWidget
@@ -68,7 +69,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private lateinit var shinyButton: NineSliceButton
     private lateinit var sortButton: ButtonWidget
     private lateinit var resetButton: ButtonWidget
-    private lateinit var mineButton: ButtonWidget
+    private lateinit var mineButton: NineSliceButton
     private lateinit var filterToggleButton: ButtonWidget
     private lateinit var prevButton: ButtonWidget
     private lateinit var nextButton: ButtonWidget
@@ -190,12 +191,18 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         addSelectableChild(searchField)
         addDrawableChild(searchField)
 
-        // Collapse/expand filters toggle (right of search field)
+        // 筛选展开/收起按钮（搜索框右侧）：去文字化——展开显示 filter、收起显示 filter_close
         filterToggleButton = NineSliceButton(
             leftX + panelWidth - 52, 44, 50, 16,
-            Text.literal(if (filterExpanded) "▲" else "▼"),
-            { toggleFilters() }
-        )
+            Text.literal(""),
+            { toggleFilters() },
+            iconLeft = Identifier.of("cobblemarket",
+                if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+        ).also {
+            it.setTooltip(Tooltip.of(Text.translatable(
+                if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand")))
+        }
         addDrawableChild(filterToggleButton)
 
         // Sell button (right of search, left of filter toggle)
@@ -222,7 +229,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // Back button (top-right, symmetric with collect)
         addDrawableChild(NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
-            Text.translatable("cobblemarket.gui.back"), { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) }
+            Text.literal(""),
+            { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         ))
 
         // Filter controls only when expanded
@@ -304,10 +315,15 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         )
         addDrawableChild(htButton)
 
+        // 我的（personal/personal_click 双图标：关 = 全部，开 = 仅我的；悬停词条随状态）
         mineButton = NineSliceButton(
             leftX + 192, 138, 50, 20,
-            Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine"),
-            { toggleMineOnly() }
+            Text.literal(""),
+            { toggleMineOnly() },
+            iconLeft = Identifier.of("cobblemarket",
+                if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         )
         addDrawableChild(mineButton)
 
@@ -331,21 +347,26 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
         prevButton = NineSliceButton(
             leftX, btnY, 80, 20,
-            Text.translatable("cobblemarket.gui.prev"),
-            { prevPage() }
+            Text.literal(""),
+            { prevPage() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.prev")
         )
         addDrawableChild(prevButton)
 
         nextButton = NineSliceButton(
             leftX + panelWidth - 80, btnY, 80, 20,
-            Text.translatable("cobblemarket.gui.next"),
-            { nextPage() }
+            Text.literal(""),
+            { nextPage() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.next")
         )
         addDrawableChild(nextButton)
 
         rebuildBuyButtons()
         requestFilterRefresh()
-        applyFilterVisibility() // Apply current collapsed state
     }
 
     private fun ivOpSymbol(op: Int): String = when (op) {
@@ -667,7 +688,6 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         shinyButton.message = Text.literal(if (shinyOnly) "★" else "☆")
         // 开 = 金色 ★，关 = 白色 ☆（与价格限制/黑名单的闪光按钮一致）
         shinyButton.textColor = if (shinyOnly) GOLD_COLOR else 0xFFFFFF
-        mineButton.message = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         requestFilterRefresh()
     }
 
@@ -741,10 +761,6 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     // ── Reset all filters ──
 
-    private fun applyFilterVisibility() {
-        filterToggleButton.message = Text.translatable(if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand")
-    }
-
     private fun toggleFilters() {
         // clearChildren+init 重建会清空输入框（搜索词/IV 值丢失，玩家无法继续筛选）：
         // 重建前保存、重建后恢复（照 resize 的 oldSearch/oldIv 处理）
@@ -754,7 +770,6 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             spaField?.text ?: "", spdField?.text ?: "", speField?.text ?: ""
         ) else emptyArray()
         filterExpanded = !filterExpanded
-        applyFilterVisibility()
         // Rebuild the screen to correctly show/hide filter controls
         clearChildren()
         init()
@@ -768,7 +783,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     private fun toggleMineOnly() {
         showMineOnly = !showMineOnly
-        mineButton.message = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
+        mineButton.iconLeft = Identifier.of("cobblemarket",
+            if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png")
+        mineButton.setTooltip(Tooltip.of(Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")))
         currentPage = 1
         requestFilterRefresh()
     }
@@ -805,6 +822,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         (abilityButton as? NineSliceButton)?.textColor = 0xFFFFFF
         (natureButton as? NineSliceButton)?.textColor = 0xFFFFFF
         sortButton.message = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
+        mineButton.iconLeft = Identifier.of("cobblemarket", "textures/gui/personal.png")
+        mineButton.setTooltip(Tooltip.of(Text.translatable("cobblemarket.gui.mine")))
         requestFilterRefresh()
     }
 

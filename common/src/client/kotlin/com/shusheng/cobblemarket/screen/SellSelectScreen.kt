@@ -48,6 +48,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
     // 性别筛选（照精灵市场：""=不限 → MALE → FEMALE 循环）
     private var genderFilter = ""
     private var typeFilter = ""
+
+    // [PC] 图标：Cobblemon 电脑物品栈（lazy 缓存，避免每帧查注册表）
+    private val pcItemStack: ItemStack by lazy { ItemStack(Registries.ITEM.get(Identifier.of("cobblemon", "pc"))) }
     private var typeIdx = 0
     private val ivExact = IntArray(6) { -1 }
     // IV 比较方式：0 = 等于（默认），1 = 大于等于，2 = 小于等于
@@ -177,8 +180,11 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         // 返回按钮：右上角（与精灵市场统一；交付模式返回求购单界面）
         addDrawableChild(NineSliceButton(
             lx + panelW - 50, 13, 50, 16,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(if (deliverMode) BuyOrderScreen() else MarketScreen()) }
+            Text.literal(""),
+            { client?.setScreen(if (deliverMode) BuyOrderScreen() else MarketScreen()) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         ))
 
         // Row 3 (y=72)：间距统一 4px，整行排满到面板右缘（lx+294），两种模式各自铺满不留空
@@ -539,13 +545,23 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             val iconY = y + 2
             renderPokemonIcon(context, origIdx, iconX, iconY, iconSize, delta = delta)
 
-            // Species（[队]/[PC] 固定色，精灵名属性色 + 金色闪光星标拆段绘制）
-            val src = Text.translatable(if (e.source == "party") "cobblemarket.sell.party" else "cobblemarket.sell.pc").string
+            // Species（[队]/[PC] 固定色，精灵名属性色 + 金色闪光星标拆段绘制；PC 用电脑物品图标，[] 保持原色）
             val tc = typeColor(if (e.primaryType.isNotEmpty()) e.primaryType else "cobblemon.type.normal")
             val srcColor = if (e.source == "party") 0x55FF55 else 0x55AAFF
             var sx = lx + 28
-            context.drawText(textRenderer, src, sx, y + 7, srcColor, false)
-            sx += textRenderer.getWidth(src) + 4
+            if (e.source == "party") {
+                val src = Text.translatable("cobblemarket.sell.party").string
+                context.drawText(textRenderer, src, sx, y + 7, srcColor, false)
+                sx += textRenderer.getWidth(src) + 4
+            } else {
+                context.drawText(textRenderer, "[", sx, y + 7, srcColor, false)
+                sx += textRenderer.getWidth("[")
+                com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                    itemStack = pcItemStack, x = sx.toDouble(), y = y + 5.0, scale = 0.75, matrixStack = context.matrices)
+                sx += 12
+                context.drawText(textRenderer, "]", sx, y + 7, srcColor, false)
+                sx += textRenderer.getWidth("]") + 4
+            }
 
             // Ball icon（球种统一在精灵名称左侧；ball 非空就占位 12px，无论解析成败，与原来一致）
             if (e.ball.isNotEmpty()) {
