@@ -100,6 +100,9 @@ data class BuyOrder(
     val natureKey: String?,    // 性格翻译 key，null = 不限
     // 物品要求（ITEM）
     val itemId: String,
+    // 物品组件要求（ITEM）：null/空 = 该物品所有变体（旧数据兼容）；
+    // 非空 = 交付物品组件须包含此快照（ItemRuleComponents 包含匹配，与黑名单/限价同语义）
+    val itemComponentsSpec: NbtCompound? = null,
     // 数量（精灵固定 1 只；物品=件数，多个卖家可部分交付）
     val totalCount: Int,
     var remainingCount: Int,
@@ -186,6 +189,7 @@ data class BuyOrder(
         abilityKey?.let { putString("abilityKey", it) }
         natureKey?.let { putString("natureKey", it) }
         putString("itemId", itemId)
+        itemComponentsSpec?.takeIf { !it.isEmpty }?.let { put("itemComponents", it) }
         putInt("totalCount", totalCount)
         putInt("remainingCount", remainingCount)
         putInt("minPrice", minPrice)
@@ -220,6 +224,7 @@ data class BuyOrder(
             abilityKey = if (nbt.contains("abilityKey")) nbt.getString("abilityKey") else null,
             natureKey = if (nbt.contains("natureKey")) nbt.getString("natureKey") else null,
             itemId = nbt.getString("itemId"),
+            itemComponentsSpec = if (nbt.contains("itemComponents")) nbt.getCompound("itemComponents").takeIf { !it.isEmpty } else null,
             totalCount = nbt.getInt("totalCount"),
             remainingCount = nbt.getInt("remainingCount"),
             minPrice = nbt.getInt("minPrice"),

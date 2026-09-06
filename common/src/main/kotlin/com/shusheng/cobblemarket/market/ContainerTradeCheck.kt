@@ -20,8 +20,8 @@ import net.minecraft.text.Text
  * 2. `BlockEntityTag.Items` 老格式兼容扫描（1.20.4- 容器结构，大量模组沿用）
  * 完全自定义存储格式的模组容器不在覆盖内——服主可把该容器物品本身加黑名单兜底。
  *
- * 只查内容物 itemId（与黑名单/价格限制既有的 itemId 粒度一致）；挂单物品自身的
- * 检查由各入口现有逻辑负责，本对象只负责容器内部。
+ * 内容物按组件粒度匹配（完整 ItemStack 可用的原版容器分支）；老格式容器只有 id，
+ * 组件无法验证，只按无组件条目匹配（挂单物品自身的检查由各入口现有逻辑负责，本对象只负责容器内部）。
  */
 object ContainerTradeCheck {
 
@@ -41,10 +41,10 @@ object ContainerTradeCheck {
         if (depth > MAX_DEPTH) {
             return Text.translatable("cobblemarket.blacklist.container_too_deep")
         }
-        // 原版标准：Container 组件
+        // 原版标准：Container 组件（inner 是完整 ItemStack，按组件粒度匹配）
         stack.get(DataComponentTypes.CONTAINER)?.let { container ->
             container.iterateNonEmpty().forEach { inner ->
-                checkItemId(Registries.ITEM.getId(inner.item).toString(), server)?.let { return it }
+                checkItemStack(inner, server, registry)?.let { return it }
                 checkStack(inner, registry, server, depth + 1)?.let { return it }
             }
         }
@@ -52,6 +52,20 @@ object ContainerTradeCheck {
         // 在子项 tag.BlockEntityTag 里，见 checkLegacyItems）
         stack.get(DataComponentTypes.BLOCK_ENTITY_DATA)?.let { beData ->
             checkLegacyItems(beData.nbt, server, depth + 1)?.let { return it }
+        }
+        return null
+    }
+
+    /** 容器内容物自身的治理校验（黑名单/限价/蛋开关，组件粒度），不递归其内容 */
+    private fun checkItemStack(stack: ItemStack, server: MinecraftServer, registry: DynamicRegistryManager): Text? {
+        if (ItemBlacklistState.get(server).matches(stack, registry)) {
+            return Text.translatable("cobblemarket.blacklist.container_item_blocked")
+        }
+        if (ItemPriceLimitState.get(server).getPriceBounds(stack, registry) != null) {
+            return Text.translatable("cobblemarket.price_limit.container_item_blocked")
+        }
+        if (isEggItem(Registries.ITEM.getId(stack.item).toString()) && !CobbleMarketConfig.eggTradingEnabled) {
+            return Text.translatable("cobblemarket.network.egg_trading_disabled_container")
         }
         return null
     }
@@ -79,10 +93,10 @@ object ContainerTradeCheck {
     }
 
     private fun checkItemId(itemId: String, server: MinecraftServer): Text? {
-        if (ItemBlacklistState.get(server).contains(itemId)) {
+        if (ItemBlacklistState.get(server).matchesByIdOnly(itemId)) {
             return Text.translatable("cobblemarket.blacklist.container_item_blocked")
         }
-        if (ItemPriceLimitState.get(server).getPriceBounds(itemId) != null) {
+        if (ItemPriceLimitState.get(server).getPriceBoundsByIdOnly(itemId) != null) {
             return Text.translatable("cobblemarket.price_limit.container_item_blocked")
         }
         // 蛋交易开关：蛋塞容器同样算绕过，与直挂共用开关语义

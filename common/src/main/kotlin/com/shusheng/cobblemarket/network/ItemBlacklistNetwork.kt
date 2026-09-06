@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.network
 
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.market.ItemBlacklistEntry
 import com.shusheng.cobblemarket.market.ItemBlacklistState
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
@@ -9,6 +10,18 @@ import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
 import net.minecraft.network.packet.CustomPayload
 import net.minecraft.registry.Registries
+
+// ── DTO 序列化 ──
+
+fun ItemBlacklistEntry.write(buf: PacketByteBuf) {
+    buf.writeString(itemId)
+    buf.writeNbt(componentsSpec)
+}
+
+fun readItemBlacklistEntry(buf: PacketByteBuf) = ItemBlacklistEntry(
+    itemId = buf.readString(),
+    componentsSpec = buf.readNbt()
+)
 
 // ── C2S: 请求物品黑名单 ──
 
@@ -49,41 +62,57 @@ data class AddItemsBlacklistPayload(val itemIds: List<String>) : CustomPayload {
     }
 }
 
-// ── C2S: 批量删除物品黑名单（解封当前搜索匹配的条目） ──
+// ── C2S: 批量删除物品黑名单（按条目键精确解封当前搜索匹配的条目；所见即所得——搜索过滤到变体级后不再按 itemId 连坐） ──
 
-data class RemoveItemsBlacklistPayload(val itemIds: List<String>) : CustomPayload {
+data class RemoveItemsBlacklistPayload(val entries: List<ItemBlacklistEntry>) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<RemoveItemsBlacklistPayload>(CobbleMarket.id("remove_items_blacklist"))
         val CODEC: PacketCodec<PacketByteBuf, RemoveItemsBlacklistPayload> = PacketCodec.of(
-            { p, b -> b.writeVarInt(p.itemIds.size); p.itemIds.forEach { b.writeString(it) } },
-            { b -> RemoveItemsBlacklistPayload((0 until b.readVarInt()).map { b.readString() }) }
+            { p, b -> b.writeVarInt(p.entries.size); p.entries.forEach { it.write(b) } },
+            { b -> RemoveItemsBlacklistPayload((0 until b.readVarInt()).map { readItemBlacklistEntry(b) }) }
         )
     }
 }
 
-// ── C2S: 删除物品黑名单 ──
+// ── C2S: 添加手持物品黑名单（服务端读主手物品提取组件快照，不信任客户端传输） ──
 
-data class RemoveItemBlacklistPayload(val itemId: String) : CustomPayload {
+class AddHeldItemBlacklistPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<AddHeldItemBlacklistPayload>(CobbleMarket.id("add_held_item_blacklist"))
+        val CODEC: PacketCodec<PacketByteBuf, AddHeldItemBlacklistPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); AddHeldItemBlacklistPayload() }
+        )
+    }
+}
+
+// ── C2S: 删除物品黑名单（按键 itemId + 组件快照） ──
+
+data class RemoveItemBlacklistPayload(
+    val itemId: String,
+    val componentsSpec: net.minecraft.nbt.NbtCompound?
+) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<RemoveItemBlacklistPayload>(CobbleMarket.id("remove_item_blacklist"))
         val CODEC: PacketCodec<PacketByteBuf, RemoveItemBlacklistPayload> = PacketCodec.of(
-            { p, b -> b.writeString(p.itemId) },
-            { b -> RemoveItemBlacklistPayload(b.readString()) }
+            { p, b -> b.writeString(p.itemId); b.writeNbt(p.componentsSpec) },
+            { b -> RemoveItemBlacklistPayload(b.readString(), b.readNbt()) }
         )
     }
 }
 
 // ── S2C: 物品黑名单列表 ──
 
-data class ItemBlacklistDataPayload(val entries: List<String>) : CustomPayload {
+data class ItemBlacklistDataPayload(val entries: List<ItemBlacklistEntry>) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<ItemBlacklistDataPayload>(CobbleMarket.id("item_blacklist_data"))
         val CODEC: PacketCodec<PacketByteBuf, ItemBlacklistDataPayload> = PacketCodec.of(
-            { p, b -> b.writeVarInt(p.entries.size); p.entries.forEach { b.writeString(it) } },
-            { b -> ItemBlacklistDataPayload((0 until b.readVarInt()).map { b.readString() }) }
+            { p, b -> b.writeVarInt(p.entries.size); p.entries.forEach { it.write(b) } },
+            { b -> ItemBlacklistDataPayload((0 until b.readVarInt()).map { readItemBlacklistEntry(b) }) }
         )
     }
 }
@@ -114,7 +143,29 @@ object ItemBlacklistNetwork {
                             .formatted(net.minecraft.util.Formatting.RED), false)
                     return@execute
                 }
-                ItemBlacklistState.get(server).add(itemId)
+                ItemBlacklistState.get(server).add(itemId, null)
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                val entries = ItemBlacklistState.get(server).getAll()
+                sendToPlayer(player, ItemBlacklistDataPayload(entries.reversed()))
+            }
+        }
+
+        registerC2S(AddHeldItemBlacklistPayload.ID, AddHeldItemBlacklistPayload.CODEC) { _, player ->
+            if (!player.hasPermissionLevel(2)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val heldStack = player.mainHandStack.copy()
+                if (heldStack.isEmpty) {
+                    player.sendMessage(
+                        net.minecraft.text.Text.translatable("cobblemarket.blacklist.held_item_empty")
+                            .formatted(net.minecraft.util.Formatting.RED), false)
+                    return@execute
+                }
+                ItemBlacklistState.get(server).add(
+                    Registries.ITEM.getId(heldStack.item).toString(),
+                    com.shusheng.cobblemarket.market.ItemRuleComponents.extractSpec(heldStack, player.serverWorld.registryManager)
+                )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val entries = ItemBlacklistState.get(server).getAll()
@@ -130,7 +181,7 @@ object ItemBlacklistNetwork {
                 var added = 0
                 payload.itemIds.forEach { id ->
                     if (net.minecraft.util.Identifier.tryParse(id) != null) {
-                        state.add(id)
+                        state.add(id, null)
                         added++
                     }
                 }
@@ -147,7 +198,7 @@ object ItemBlacklistNetwork {
             if (!player.hasPermissionLevel(2)) return@registerC2S
             val server = player.server
             server.execute {
-                ItemBlacklistState.get(server).remove(payload.itemId)
+                ItemBlacklistState.get(server).remove(payload.itemId, payload.componentsSpec)
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val entries = ItemBlacklistState.get(server).getAll()
@@ -160,7 +211,8 @@ object ItemBlacklistNetwork {
             val server = player.server
             server.execute {
                 val state = ItemBlacklistState.get(server)
-                payload.itemIds.forEach { state.remove(it) }
+                // 所见即所得：按条目键精确删除搜索过滤出的条目（搜索到变体级时只删显示的，不连坐同 itemId 的其它条目）
+                payload.entries.forEach { state.remove(it.itemId, it.componentsSpec) }
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, ItemBlacklistDataPayload(state.getAll().reversed()))

@@ -59,7 +59,9 @@ data class ListingEntry(
     val ballItem: String,
     val heldItemId: String,
     val currencyName: String,
-    val aspects: List<String> // 精灵形态（性别/地区等），客户端渲染 3D 图标用
+    val aspects: List<String>, // 精灵形态（性别/地区等），客户端渲染 3D 图标用
+    /** 拥有的证章 id 列表（外观展示用，证章不影响能力；上架时快照） */
+    val marks: List<String> = emptyList()
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(id)
@@ -88,6 +90,7 @@ data class ListingEntry(
         buf.writeString(heldItemId)
         buf.writeString(currencyName)
         buf.writeVarInt(aspects.size); aspects.forEach { buf.writeString(it) }
+        buf.writeVarInt(marks.size); marks.forEach { buf.writeString(it) }
     }
 
     companion object {
@@ -117,7 +120,8 @@ data class ListingEntry(
             ballItem = buf.readString(),
             heldItemId = buf.readString(),
             currencyName = buf.readString(),
-            aspects = (0 until buf.readVarInt()).map { buf.readString() }
+            aspects = (0 until buf.readVarInt()).map { buf.readString() },
+            marks = (0 until buf.readVarInt()).map { buf.readString() }
         )
     }
 }
@@ -486,7 +490,9 @@ data class PokemonPreview(
     // 努力值（EV）：上架选择/待领取等场景的详情显示用
     val evsHp: Int, val evsAtk: Int, val evsDef: Int, val evsSpAtk: Int, val evsSpDef: Int, val evsSpd: Int,
     /** 亲密度（预览快照） */
-    val friendship: Int
+    val friendship: Int,
+    /** 拥有的证章纹理路径列表（外观展示；服务端直接传纹理，客户端不依赖 Marks 注册表） */
+    val marks: List<String> = emptyList()
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(uuid); buf.writeString(species); buf.writeString(speciesId); buf.writeString(speciesName)
@@ -502,6 +508,7 @@ data class PokemonPreview(
         buf.writeInt(evsHp); buf.writeInt(evsAtk); buf.writeInt(evsDef)
         buf.writeInt(evsSpAtk); buf.writeInt(evsSpDef); buf.writeInt(evsSpd)
         buf.writeInt(friendship)
+        buf.writeVarInt(marks.size); marks.forEach { buf.writeString(it) }
     }
 
     companion object {
@@ -515,7 +522,8 @@ data class PokemonPreview(
             buf.readString(), buf.readInt(), buf.readString(),
             (0 until buf.readVarInt()).map { buf.readString() },
             buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
-            buf.readInt()
+            buf.readInt(),
+            (0 until buf.readVarInt()).map { buf.readString() }
         )
     }
 }
@@ -1151,7 +1159,8 @@ object MarketNetwork {
                             ballItem = detail["ballItem"] ?: "cobblemon:poke_ball",
                             heldItemId = detail["heldItemId"] ?: "",
                             currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
-                            aspects = parseAspects(detail)
+                            aspects = parseAspects(detail),
+                            marks = parseMarks(detail)
                         )
                     }
                 }
@@ -1505,7 +1514,8 @@ object MarketNetwork {
                             ballItem = detail["ballItem"] ?: "cobblemon:poke_ball",
                             heldItemId = detail["heldItemId"] ?: "",
                             currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
-                            aspects = parseAspects(detail)
+                            aspects = parseAspects(detail),
+                            marks = parseMarks(detail)
                         )
                     }
                 }
@@ -1770,7 +1780,9 @@ object MarketNetwork {
                 val heldItem = pokemon.heldItem()
                 val heldItemId = if (heldItem.isEmpty) null
                     else net.minecraft.registry.Registries.ITEM.getId(heldItem.item).toString()
-                if (heldItemId != null && com.shusheng.cobblemarket.market.ItemBlacklistState.get(server).contains(heldItemId)) {
+                if (heldItemId != null && com.shusheng.cobblemarket.market.ItemBlacklistState.get(server)
+                        .matches(heldItem, player.serverWorld.registryManager)
+                ) {
                     sendToPlayer(
                         player,
                         MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.held_item_blocked"))
@@ -1780,9 +1792,10 @@ object MarketNetwork {
                 // 价格限制检查：精灵规则（物种可空=全部精灵、V 档可空=不限、形态照黑名单语义）+ 携带物规则合并
                 val pokemonBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
                     .getPriceBounds(pokemon)
-                val itemBounds = heldItemId?.let {
-                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server).getPriceBounds(it)
-                }
+                val itemBounds = if (heldItemId != null)
+                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
+                        .getPriceBounds(heldItem, player.serverWorld.registryManager)
+                else null
                 val priceBounds = com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
                 if (priceBounds != null) {
                     // 携带物参与限价时用带说明的提示，玩家才知道总价里包含了携带物部分
@@ -1995,8 +2008,10 @@ object MarketNetwork {
                     return@execute
                 }
 
-                // 物品黑名单检查（以权威 itemId 为准）
-                if (com.shusheng.cobblemarket.market.ItemBlacklistState.get(server).contains(authoritativeItemId)) {
+                // 物品黑名单检查（以权威重建的物品为准，组件粒度）
+                if (com.shusheng.cobblemarket.market.ItemBlacklistState.get(server)
+                        .matches(targetStack, player.serverWorld.registryManager)
+                ) {
                     sendToPlayer(
                         player,
                         MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.item_blocked"))
@@ -2006,7 +2021,7 @@ object MarketNetwork {
 
                 // 价格限制检查
                 val itemPriceBounds = com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
-                    .getPriceBounds(authoritativeItemId)
+                    .getPriceBounds(targetStack, player.serverWorld.registryManager)
                 if (itemPriceBounds != null) {
                     if (itemPriceBounds.min != null && payload.price < itemPriceBounds.min) {
                         sendToPlayer(
@@ -2280,8 +2295,11 @@ object MarketNetwork {
                     )
                     return@execute
                 }
-                // 黑名单检查：拦截上架后被加入黑名单的存量挂单（治理即时生效）
-                if (com.shusheng.cobblemarket.market.ItemBlacklistState.get(server).contains(listing.itemId)) {
+                // 黑名单检查：拦截上架后被加入黑名单的存量挂单（治理即时生效，组件粒度）
+                val listingStack = ItemStack.fromNbtOrEmpty(player.serverWorld.registryManager, listing.itemNbt)
+                if (com.shusheng.cobblemarket.market.ItemBlacklistState.get(server)
+                        .matches(listingStack, player.serverWorld.registryManager)
+                ) {
                     sendToPlayer(
                         player,
                         MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.item_blocked"))
@@ -2747,6 +2765,10 @@ object MarketNetwork {
     /** 构建挂单展示数据；调用方负责 try-catch（上架路径要求零副作用后才扣费/移除）。 */
     // 旧挂单（aspects 功能上线前上架的）没有 aspects 数据，按性别兜底：
     // 性别差异物种的形态 aspect 恰好名为 male/female
+    /** 证章 id 列表解析（extraData 逗号分隔；外观展示用） */
+    private fun parseMarks(detail: Map<String, String>): List<String> =
+        detail["marks"]?.takeIf { it.isNotBlank() }?.split(",")?.filter { it.isNotEmpty() } ?: emptyList()
+
     private fun parseAspects(detail: Map<String, String>): List<String> =
         detail["aspects"]?.takeIf { it.isNotBlank() }?.split(",")
             ?: when (detail["gender"]) {
@@ -2793,7 +2815,8 @@ object MarketNetwork {
             "ballItem" to pokemon.caughtBall.name.toString(),
             "heldItemId" to (if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString()),
             // 精灵形态（性别/地区等），客户端渲染 3D 图标用；逗号分隔，aspect 名不含逗号
-            "aspects" to pokemon.aspects.joinToString(",")
+            "aspects" to pokemon.aspects.joinToString(","),
+            "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(",")
         )
         pokemon.secondaryType?.let { extra["secondaryType"] = "cobblemon.type.${it.name.lowercase()}" }
         return extra
@@ -2840,7 +2863,8 @@ object MarketNetwork {
             evsSpAtk = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK] ?: 0,
             evsSpDef = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE] ?: 0,
             evsSpd = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: 0,
-            friendship = pokemon.friendship
+            friendship = pokemon.friendship,
+            marks = pokemon.marks.map { it.texture.toString() }
         )
 
     fun openScreen(player: ServerPlayerEntity) {
