@@ -101,6 +101,7 @@ data class BuyOrderEntry(
     val abilityKey: String?,
     val natureKey: String?,
     val itemId: String,        // 物品单的物品 ID（精灵单为空串）
+    val itemComponentsSpec: net.minecraft.nbt.NbtCompound?, // 物品单的组件要求（null = 所有变体）
     val totalCount: Int,
     val remainingCount: Int,
     val minPrice: Int,
@@ -130,6 +131,7 @@ data class BuyOrderEntry(
         buf.writeBoolean(natureKey != null)
         natureKey?.let { buf.writeString(it) }
         buf.writeString(itemId)
+        buf.writeNbt(itemComponentsSpec)
         buf.writeInt(totalCount)
         buf.writeInt(remainingCount)
         buf.writeInt(minPrice)
@@ -157,6 +159,7 @@ data class BuyOrderEntry(
             abilityKey = if (buf.readBoolean()) buf.readString() else null,
             natureKey = if (buf.readBoolean()) buf.readString() else null,
             itemId = buf.readString(),
+            itemComponentsSpec = buf.readNbt(),
             totalCount = buf.readInt(),
             remainingCount = buf.readInt(),
             minPrice = buf.readInt(),
@@ -184,6 +187,7 @@ fun buyOrderToEntry(o: BuyOrder): BuyOrderEntry = BuyOrderEntry(
     abilityKey = o.abilityKey,
     natureKey = o.natureKey,
     itemId = o.itemId,
+    itemComponentsSpec = o.itemComponentsSpec,
     totalCount = o.totalCount,
     remainingCount = o.remainingCount,
     minPrice = o.minPrice,
@@ -294,7 +298,8 @@ data class CreateItemBuyOrderPayload(
     val totalCount: Int,
     val minPrice: Int,
     val maxPrice: Int,
-    val note: String           // 买家备注（可为空）
+    val note: String,          // 买家备注（可为空）
+    val useHeldItem: Boolean   // true = 用手持物品（含组件快照）作为求购要求
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -303,8 +308,9 @@ data class CreateItemBuyOrderPayload(
             { p, b ->
                 b.writeString(p.itemId); b.writeInt(p.totalCount); b.writeInt(p.minPrice); b.writeInt(p.maxPrice)
                 b.writeString(p.note)
+                b.writeBoolean(p.useHeldItem)
             },
-            { b -> CreateItemBuyOrderPayload(b.readString(), b.readInt(), b.readInt(), b.readInt(), b.readString()) }
+            { b -> CreateItemBuyOrderPayload(b.readString(), b.readInt(), b.readInt(), b.readInt(), b.readString(), b.readBoolean()) }
         )
     }
 }
@@ -515,7 +521,18 @@ object BuyOrderNetwork {
                 if (marketBlocked(player)) return@execute
                 if (!checkPrices(player, payload.minPrice, payload.maxPrice)) return@execute
                 if (!checkOrderLimit(server, player)) return@execute
-                val itemId = payload.itemId.trim()
+                // 手持物品模式：用手持物品（含组件快照）作为求购要求；否则用输入框的 itemId
+                val heldStack = if (payload.useHeldItem) player.mainHandStack.copy() else net.minecraft.item.ItemStack.EMPTY
+                val itemComponentsSpec = if (payload.useHeldItem) {
+                    com.shusheng.cobblemarket.market.ItemRuleComponents.extractSpec(heldStack, player.serverWorld.registryManager)
+                } else null
+                val itemId = if (payload.useHeldItem) {
+                    if (heldStack.isEmpty) {
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.held_item_empty")))
+                        return@execute
+                    }
+                    Registries.ITEM.getId(heldStack.item).toString()
+                } else payload.itemId.trim()
                 val itemIdentifier = net.minecraft.util.Identifier.tryParse(itemId)
                 if (itemIdentifier == null || !Registries.ITEM.getOrEmpty(itemIdentifier).isPresent) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.item_not_found")))
@@ -548,6 +565,7 @@ object BuyOrderNetwork {
                     abilityKey = null,
                     natureKey = null,
                     itemId = itemIdentifier.toString(),
+                    itemComponentsSpec = itemComponentsSpec,
                     totalCount = totalCount,
                     remainingCount = totalCount,
                     minPrice = payload.minPrice,
@@ -697,15 +715,18 @@ object BuyOrderNetwork {
                 val heldItem = pokemon.heldItem()
                 val heldItemId = if (heldItem.isEmpty) null
                     else Registries.ITEM.getId(heldItem.item).toString()
-                if (heldItemId != null && ItemBlacklistState.get(server).contains(heldItemId)) {
+                if (heldItemId != null && ItemBlacklistState.get(server)
+                        .matches(heldItem, player.serverWorld.registryManager)
+                ) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.held_item_blocked")))
                     return@execute
                 }
                 val pokemonBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
                     .getPriceBounds(pokemon)
-                val itemBounds = heldItemId?.let {
-                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server).getPriceBounds(it)
-                }
+                val itemBounds = if (heldItemId != null)
+                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
+                        .getPriceBounds(heldItem, player.serverWorld.registryManager)
+                else null
                 val bounds = com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
                 if (bounds != null) {
                     if (bounds.min != null && payload.price < bounds.min) {
@@ -804,24 +825,6 @@ object BuyOrderNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.egg_trading_disabled")))
                     return@execute
                 }
-                if (ItemBlacklistState.get(server).contains(order.itemId)) {
-                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.item_blocked")))
-                    return@execute
-                }
-                // 物品价格限制是单价语义：交付单价直接对照 bounds
-                val itemBounds = com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
-                    .getPriceBounds(order.itemId)
-                if (itemBounds != null) {
-                    if (itemBounds.min != null && payload.price < itemBounds.min) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_below", itemBounds.min)))
-                        return@execute
-                    }
-                    if (itemBounds.max != null && payload.price > itemBounds.max) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_above", itemBounds.max)))
-                        return@execute
-                    }
-                }
-
                 // 参考栈 = 客户端所选形态（经 ItemVariantSelectScreen 选择后随包发送的序列化），
                 // 服务端重建为权威栈（不信任客户端一致性）。求购单只指定 itemId，但同一次交付
                 // 必须组件一致——否则「32 锋利V + 32 保护I」会被按参考栈标准化成 64 个锋利V，
@@ -836,6 +839,32 @@ object BuyOrderNetwork {
                 if (referenceStack == null) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.not_found")))
                     return@execute
+                }
+
+                // 求购单组件要求校验：买家指定组件快照（如「锋利V」）时，交付物品组件须包含之
+                if (!com.shusheng.cobblemarket.market.ItemRuleComponents.matches(
+                        referenceStack, order.itemId, order.itemComponentsSpec, player.serverWorld.registryManager
+                    )) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.item_variant_not_matching")))
+                    return@execute
+                }
+                // 治理即时生效：物品黑名单/价格限制拦截存量订单的交付（组件粒度）
+                if (ItemBlacklistState.get(server).matches(referenceStack, player.serverWorld.registryManager)) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.item_blocked")))
+                    return@execute
+                }
+                // 物品价格限制是单价语义：交付单价直接对照 bounds
+                val itemBounds = com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
+                    .getPriceBounds(referenceStack, player.serverWorld.registryManager)
+                if (itemBounds != null) {
+                    if (itemBounds.min != null && payload.price < itemBounds.min) {
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_below", itemBounds.min)))
+                        return@execute
+                    }
+                    if (itemBounds.max != null && payload.price > itemBounds.max) {
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_above", itemBounds.max)))
+                        return@execute
+                    }
                 }
 
                 // 容器内容校验：交付的容器物品内不得含黑名单/限价物品/未开开关的蛋（防塞箱绕过）
@@ -1169,7 +1198,8 @@ object BuyOrderNetwork {
             "ball" to "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
             "ballItem" to pokemon.caughtBall.name.toString(),
             "heldItemId" to (if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString()),
-            "aspects" to pokemon.aspects.joinToString(",")
+            "aspects" to pokemon.aspects.joinToString(","),
+            "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(",")
         )
         pokemon.secondaryType?.let { extra["secondaryType"] = "cobblemon.type.${it.name.lowercase()}" }
         return extra

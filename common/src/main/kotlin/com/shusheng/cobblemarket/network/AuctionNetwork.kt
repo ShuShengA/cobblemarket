@@ -384,16 +384,19 @@ object AuctionNetwork {
                 val heldItem = pokemon.heldItem()
                 val heldItemId = if (heldItem.isEmpty) null
                     else net.minecraft.registry.Registries.ITEM.getId(heldItem.item).toString()
-                if (heldItemId != null && com.shusheng.cobblemarket.market.ItemBlacklistState.get(server).contains(heldItemId)) {
+                if (heldItemId != null && com.shusheng.cobblemarket.market.ItemBlacklistState.get(server)
+                        .matches(heldItem, player.serverWorld.registryManager)
+                ) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.held_item_blocked")))
                     return@execute
                 }
                 // 价格限制：起拍价视为上架价格校验（形态照黑名单语义）+ 携带物规则合并
                 val pokemonBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
                     .getPriceBounds(pokemon)
-                val itemBounds = heldItemId?.let {
-                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server).getPriceBounds(it)
-                }
+                val itemBounds = if (heldItemId != null)
+                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
+                        .getPriceBounds(heldItem, player.serverWorld.registryManager)
+                else null
                 val bounds = com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
                 if (bounds != null) {
                     // 携带物参与限价时用带说明的提示，玩家才知道总价里包含了携带物部分
@@ -499,12 +502,14 @@ object AuctionNetwork {
                     )
                     return@execute
                 }
-                if (com.shusheng.cobblemarket.market.ItemBlacklistState.get(server).contains(authoritativeItemId)) {
+                if (com.shusheng.cobblemarket.market.ItemBlacklistState.get(server)
+                        .matches(targetStack, player.serverWorld.registryManager)
+                ) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.item_blocked")))
                     return@execute
                 }
                 val itemBounds = com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
-                    .getPriceBounds(authoritativeItemId)
+                    .getPriceBounds(targetStack, player.serverWorld.registryManager)
                 if (itemBounds != null) {
                     // 价格限制是单价语义：拍卖起拍价为整组总价，下限/上限按数量换算
                     val minTotal = itemBounds.min?.toLong()?.times(payload.count)
@@ -636,7 +641,12 @@ object AuctionNetwork {
                         sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.egg_trading_disabled")))
                         return@execute
                     }
-                    if (com.shusheng.cobblemarket.market.ItemBlacklistState.get(server).contains(auction.species)) {
+                    val auctionStack = auction.itemNbt?.let {
+                        ItemStack.fromNbtOrEmpty(player.serverWorld.registryManager, it)
+                    } ?: ItemStack.EMPTY
+                    if (com.shusheng.cobblemarket.market.ItemBlacklistState.get(server)
+                            .matches(auctionStack, player.serverWorld.registryManager)
+                    ) {
                         sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.item_blocked")))
                         return@execute
                     }
@@ -900,7 +910,8 @@ object AuctionNetwork {
             "ball" to "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
             "ballItem" to pokemon.caughtBall.name.toString(),
             "heldItemId" to (if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString()),
-            "aspects" to pokemon.aspects.joinToString(",")
+            "aspects" to pokemon.aspects.joinToString(","),
+            "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(",")
         )
         pokemon.secondaryType?.let { extra["secondaryType"] = "cobblemon.type.${it.name.lowercase()}" }
         return extra

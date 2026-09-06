@@ -41,12 +41,14 @@ fun readPokemonPriceLimitEntry(buf: PacketByteBuf) = PokemonPriceLimitEntry(
 
 fun ItemPriceLimitEntry.write(buf: PacketByteBuf) {
     buf.writeString(itemId)
+    buf.writeNbt(componentsSpec)
     buf.writeBoolean(minPrice != null); minPrice?.let { buf.writeInt(it) }
     buf.writeBoolean(maxPrice != null); maxPrice?.let { buf.writeInt(it) }
 }
 
 fun readItemPriceLimitEntry(buf: PacketByteBuf) = ItemPriceLimitEntry(
     itemId = buf.readString(),
+    componentsSpec = buf.readNbt(),
     minPrice = if (buf.readBoolean()) buf.readInt() else null,
     maxPrice = if (buf.readBoolean()) buf.readInt() else null
 )
@@ -164,7 +166,8 @@ data class AddItemPriceLimitPayload(
     val minPrice: Int?,
     val maxPrice: Int?,
     // 编辑语义：非空 = 替换原条目（先删旧再插新），null = 新增
-    val originalItemId: String?
+    val originalItemId: String?,
+    val originalComponentsSpec: net.minecraft.nbt.NbtCompound?
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -175,28 +178,52 @@ data class AddItemPriceLimitPayload(
                 b.writeBoolean(p.minPrice != null); p.minPrice?.let { b.writeInt(it) }
                 b.writeBoolean(p.maxPrice != null); p.maxPrice?.let { b.writeInt(it) }
                 b.writeBoolean(p.originalItemId != null); p.originalItemId?.let { b.writeString(it) }
+                b.writeNbt(p.originalComponentsSpec)
             },
             { b ->
                 AddItemPriceLimitPayload(
                     itemName = b.readString(),
                     minPrice = if (b.readBoolean()) b.readInt() else null,
                     maxPrice = if (b.readBoolean()) b.readInt() else null,
-                    originalItemId = if (b.readBoolean()) b.readString() else null
+                    originalItemId = if (b.readBoolean()) b.readString() else null,
+                    originalComponentsSpec = b.readNbt()
                 )
             }
         )
     }
 }
 
+// ── C2S: 添加手持物品价格限制（服务端读主手物品提取组件快照，不信任客户端传输） ──
+
+data class AddHeldItemPriceLimitPayload(
+    val minPrice: Int?,
+    val maxPrice: Int?
+) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<AddHeldItemPriceLimitPayload>(CobbleMarket.id("add_held_item_price_limit"))
+        val CODEC: PacketCodec<PacketByteBuf, AddHeldItemPriceLimitPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeBoolean(p.minPrice != null); p.minPrice?.let { b.writeInt(it) }
+                b.writeBoolean(p.maxPrice != null); p.maxPrice?.let { b.writeInt(it) }
+            },
+            { b -> AddHeldItemPriceLimitPayload(if (b.readBoolean()) b.readInt() else null, if (b.readBoolean()) b.readInt() else null) }
+        )
+    }
+}
+
 // ── C2S: 删除物品价格限制 ──
 
-data class RemoveItemPriceLimitPayload(val itemId: String) : CustomPayload {
+data class RemoveItemPriceLimitPayload(
+    val itemId: String,
+    val componentsSpec: net.minecraft.nbt.NbtCompound?
+) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<RemoveItemPriceLimitPayload>(CobbleMarket.id("remove_item_price_limit"))
         val CODEC: PacketCodec<PacketByteBuf, RemoveItemPriceLimitPayload> = PacketCodec.of(
-            { p, b -> b.writeString(p.itemId) },
-            { b -> RemoveItemPriceLimitPayload(b.readString()) }
+            { p, b -> b.writeString(p.itemId); b.writeNbt(p.componentsSpec) },
+            { b -> RemoveItemPriceLimitPayload(b.readString(), b.readNbt()) }
         )
     }
 }
@@ -327,8 +354,46 @@ object PriceLimitNetwork {
                 }
                 val state = ItemPriceLimitState.get(server)
                 // 编辑语义：替换原条目（改选了物品时，旧条目不再残留）
-                payload.originalItemId?.let { state.remove(it) }
-                state.add(ItemPriceLimitEntry(itemId, minPrice, maxPrice))
+                payload.originalItemId?.let { state.remove(it, payload.originalComponentsSpec) }
+                state.add(ItemPriceLimitEntry(itemId, null, minPrice, maxPrice))
+                // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                val entries = ItemPriceLimitState.get(server).getAll()
+                sendToPlayer(player, ItemPriceLimitDataPayload(entries.reversed()))
+            }
+        }
+
+        registerC2S(AddHeldItemPriceLimitPayload.ID, AddHeldItemPriceLimitPayload.CODEC) { payload, player ->
+            if (!player.hasPermissionLevel(2)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val minPrice = payload.minPrice
+                val maxPrice = payload.maxPrice
+                if ((minPrice != null && minPrice <= 0) || (maxPrice != null && maxPrice <= 0)) {
+                    player.sendMessage(
+                        Text.translatable("cobblemarket.price_limit.invalid_price").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                if (minPrice != null && maxPrice != null && minPrice > maxPrice) {
+                    player.sendMessage(
+                        Text.translatable("cobblemarket.price_limit.invalid_range").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                val heldStack = player.mainHandStack.copy()
+                if (heldStack.isEmpty) {
+                    player.sendMessage(
+                        Text.translatable("cobblemarket.price_limit.held_item_empty").formatted(Formatting.RED), false)
+                    return@execute
+                }
+                val state = ItemPriceLimitState.get(server)
+                state.add(
+                    ItemPriceLimitEntry(
+                        itemId = net.minecraft.registry.Registries.ITEM.getId(heldStack.item).toString(),
+                        componentsSpec = com.shusheng.cobblemarket.market.ItemRuleComponents.extractSpec(heldStack, player.serverWorld.registryManager),
+                        minPrice = minPrice,
+                        maxPrice = maxPrice
+                    )
+                )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val entries = ItemPriceLimitState.get(server).getAll()
@@ -340,7 +405,7 @@ object PriceLimitNetwork {
             if (!player.hasPermissionLevel(2)) return@registerC2S
             val server = player.server
             server.execute {
-                ItemPriceLimitState.get(server).remove(payload.itemId)
+                ItemPriceLimitState.get(server).remove(payload.itemId, payload.componentsSpec)
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val entries = ItemPriceLimitState.get(server).getAll()
