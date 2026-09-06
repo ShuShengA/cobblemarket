@@ -34,7 +34,7 @@ dependencies {
 	modImplementation "dev.architectury:architectury-neoforge:${rootProject.architectury_api_version}"
 	// Kotlin for Forge + neoforge 版 Cobblemon（1.7.3 与 fabric 端一致）
 	modImplementation "maven.modrinth:kotlin-for-forge:uhJhCT7X"
-	modImplementation "maven.modrinth:cobblemon:S1TrAn8c"
+	modImplementation "maven.modrinth:cobblemon:2oL01rSF"
 	// Cobblemon Economy 无 neoforge 版：货币自动降级 CobbleDollars / Impactor 直连 / 物品
 	modCompileOnly "maven.modrinth:cobbledollars:Iqiqjfsi"
 	// Impactor 经济 API（服务端专用模组；compileOnly 不进包，运行时服主装 Impactor 本体）

@@ -35,7 +35,7 @@ side="BOTH"
 [[dependencies.cobblemarket]]
 modId="cobblemon"
 type="required"
-versionRange="[1.7.0,1.8.0)"
+versionRange="[1.8.0,1.9.0)"
 ordering="NONE"
 side="BOTH"
 
