@@ -76,7 +76,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
     private fun rebuildFiltered() {
         val query = searchField?.text?.trim()?.takeIf { it.isNotEmpty() }
         filteredCache = if (query == null) entries else entries.filter {
-            displayName(it).contains(query, ignoreCase = true) || it.sellerName.contains(query, ignoreCase = true)
+            displayName(it).contains(query, ignoreCase = true) || it.sellerName.contains(query, ignoreCase = true) ||
+                // 物品条目走搜索索引（名称/tooltip/TM 招式精确匹配，见 ItemSearchIndex）
+                (it.type == "ITEM" && com.shusheng.cobblemarket.client.ItemSearchIndex.entryMatches(it.species, it.itemNbt, query))
         }
         indexedFiltered = filteredCache.map { IndexedValue(entries.indexOf(it), it) }
     }

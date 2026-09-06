@@ -572,7 +572,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             // 数据包自创的超长 aspect 名截断，防止溢出按钮
             val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(opt.label, 124)
             val btn = NineSliceButton(
-                centerX - 80, dialogY + 62 + i * 14, 140, 14,
+                centerX - 80, dialogY + 62 + i * 16, 140, 14,
                 if (idx == formIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
                 { selectForm(idx) }
             )
@@ -594,7 +594,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private fun openItemDialog() {
         hideMainControls()
         val centerX = width / 2
-        val dialogY = height / 2 - 61
+        val dialogY = height / 2 - 71
 
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -666,7 +666,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             Identifier.tryParse(itemId)?.let { id ->
                 val item = Registries.ITEM.get(id)
                 if (item != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
-                    context.drawItem(ItemStack(item), centerX + 66, dialogY + 40)
+                    context.drawItem(ItemStack(item), centerX + 66, dialogY + 42)
                 }
             }
         }
@@ -702,6 +702,8 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             val id = Registries.ITEM.getId(item)
             if (item.name.string.contains(trimmed)) result.add(id.toString())
         }
+        // 搜索索引追加（TM 招式/附魔/tooltip 文本命中，见 ItemSearchIndex；精确匹配仍排前）
+        com.shusheng.cobblemarket.client.ItemSearchIndex.itemIdsMatching(input).forEach { result.add(it) }
         return result.toList()
     }
 
@@ -763,12 +765,12 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         batchAddButton?.visible = !itemListOpen && matchedItems.size > 1
         if (!itemListOpen) return
         val centerX = width / 2
-        val dialogY = height / 2 - 55
+        val dialogY = height / 2 - 71
         matchedItems.drop(itemListScroll).take(MAX_ITEM_LIST_ROWS).forEachIndexed { i, itemId ->
             val idx = itemListScroll + i
             val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(itemDisplay(itemId), 124)
             val btn = NineSliceButton(
-                centerX - 80, dialogY + 62 + i * 14, 140, 14,
+                centerX - 80, dialogY + 72 + i * 16, 140, 14,
                 if (idx == selectedItemIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
                 { selectItem(idx) }
             )
@@ -903,9 +905,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         }
         filteredPokemonCache = filteredPokemonIndexed.map { it.value }
         pokemonRowTexts = filteredPokemonCache.map { pokemonEntryDisplay(it) }
-        filteredItemsCache = if (query == null) itemEntries else itemEntries.filter { itemId ->
-            val name = Identifier.tryParse(itemId)?.let { Registries.ITEM.get(it).name.string } ?: itemId
-            name.contains(query, ignoreCase = true) || itemId.contains(query, ignoreCase = true)
+        // 搜索索引匹配（itemId + 名称 + tooltip 文本 + TM 招式，见 ItemSearchIndex；原版创造模式同款语义）
+        filteredItemsCache = if (query == null) itemEntries else {
+            val ids = com.shusheng.cobblemarket.client.ItemSearchIndex.itemIdsMatching(query).toSet()
+            itemEntries.filter { it in ids }
         }
         itemRowTexts = filteredItemsCache.map { itemEntryDisplay(it) }
     }
