@@ -7,6 +7,7 @@ import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.cobblemon.mod.common.pokemon.Species
+import com.shusheng.cobblemarket.market.ItemBlacklistEntry
 import com.shusheng.cobblemarket.market.PokemonBlacklistEntry
 import com.shusheng.cobblemarket.network.AddItemBlacklistPayload
 import com.shusheng.cobblemarket.network.AddPokemonBlacklistPayload
@@ -22,7 +23,9 @@ import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.TextFieldWidget
+import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
+import net.minecraft.item.tooltip.TooltipType
 import net.minecraft.registry.Registries
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
@@ -44,20 +47,26 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     // ── 主列表状态 ──
     private var currentTab = 0 // 0 = 精灵, 1 = 物品
     private var pokemonEntries = listOf<PokemonBlacklistEntry>()
-    private var itemEntries = listOf<String>()
+    private var itemEntries = listOf<ItemBlacklistEntry>()
     // 过滤结果缓存：数据/搜索/筛选变化时重建，render 每帧只读（避免每帧全量 filter）
     private var filteredPokemonCache = listOf<PokemonBlacklistEntry>()
-    private var filteredItemsCache = listOf<String>()
+    private var filteredItemsCache = listOf<ItemBlacklistEntry>()
     // 过滤结果带原索引（iconData 以 pokemonEntries 索引为 key）：行渲染每帧 indexOf 是 O(n) 扫描，
     // 重建时一并构建；行显示字符串（物种解析 + 多段翻译拼接）同样随重建缓存
     private var filteredPokemonIndexed = listOf<IndexedValue<PokemonBlacklistEntry>>()
     private var pokemonRowTexts = listOf<String>()
     private var itemRowTexts = listOf<String>()
-    // 物品图标栈缓存（itemId → 解析栈）：行内每帧 tryParse + ItemStack 是分配热点，数据到达时构建
-    private val itemIconStacks = mutableMapOf<String, ItemStack>()
+    // 物品图标栈缓存（条目 → 解析栈）：行内每帧 tryParse + ItemStack 是分配热点，数据到达时构建；
+    // 带组件快照的条目重建完整物品（真实组件渲染）
+    private val itemIconStacks = mutableMapOf<ItemBlacklistEntry, ItemStack>()
     // tooltip 文本行缓存：内容只取决于条目，悬停同一行时每帧重建是悬停掉帧主因
     private var tooltipCacheKey: Any? = null
     private var tooltipCacheLines: List<String> = emptyList()
+    // 物品行 tooltip 富文本缓存（Text 保留词条自带颜色，照物品市场；Shift 展开按需构建）
+    private var itemTooltipCacheKey: Any? = null
+    private var itemTooltipLines: List<Pair<Text, Int>> = emptyList()
+    private var itemTooltipAdvancedLines: List<Pair<Text, Int>>? = null
+    private var itemTooltipAdvancedType: TooltipType? = null
     private var searchField: TextFieldWidget? = null
     private var hoveredRow = -1
     private var scrollOffset = 0
@@ -107,12 +116,18 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     // ── 对话框状态（物品） ──
     // 添加对话框的匹配物品选择：输入后列出全部匹配物品（如"钻石"→钻石/钻石剑/钻石原矿…），点选确认
     private var matchedItems = listOf<String>()
+    // 物品添加对话框本地提示（画在弹窗下沿外；错误红字、信息绿字；输入变更时清除）
+    private var dialogError: String? = null
+    private var dialogErrorColor = 0xFF5555
     private var selectedItemIndex = -1
     private var itemListOpen = false
     private var itemListScroll = 0
     private val itemOptionButtons = mutableListOf<NineSliceButton>()
     private var itemSelectButton: NineSliceButton? = null
     private var batchAddButton: NineSliceButton? = null
+    private var heldAddButton: NineSliceButton? = null
+    // 手持添加模式：小手图标选中态（红底），点「添加」时提交手持物品条目
+    private var heldAddMode = false
     private var previewItemId: String? = null
 
     private data class IconData(val displayName: String, val renderable: RenderablePokemon, val state: FloatingState)
@@ -158,7 +173,9 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
         val addBtn = NineSliceButton(
             leftX + panelWidth - 84, 62, 18, 16,
-            Text.literal("+"), { openAddDialog() }
+            Text.literal(""), { openAddDialog() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
         )
         addButton = addBtn
         addDrawableChild(addBtn)
@@ -181,6 +198,8 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         )
         htFilterButton?.visible = currentTab == 0
         addDrawableChild(htFilterButton)
+
+        relayoutSearchRow()
 
         scrollOffset = 0
         rebuildFiltered()
@@ -205,6 +224,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         updateTabButtons()
         htFilterButton?.visible = currentTab == 0
         updateUnbanAllButton()
+        relayoutSearchRow()
         requestCurrentTabData()
     }
 
@@ -223,11 +243,22 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private fun updateUnbanAllButton() {
         val hasSearch = !searchField?.text?.trim().isNullOrEmpty()
         unbanAllButton?.visible = currentTab == 1 && hasSearch && filteredItems().isNotEmpty()
+        relayoutSearchRow()
+    }
+
+    /** 搜索行动态排布：右侧按钮（全部解封/特训筛选）可见时添加按钮在其左，否则添加按钮贴右；搜索框填满剩余空间 */
+    private fun relayoutSearchRow() {
+        val leftX = width / 2 - panelWidth / 2
+        val rightVisible = (unbanAllButton?.visible == true) || (htFilterButton?.visible == true)
+        val addX = if (rightVisible) leftX + panelWidth - 84 else leftX + panelWidth - 20
+        addButton?.x = addX
+        searchField?.setWidth(addX - 4 - (leftX + 2))
     }
 
     private fun confirmUnbanAll() {
         val list = filteredItems()
         if (list.isEmpty()) return
+        // 所见即所得：按过滤出的条目键精确解封（搜索到变体级时只删显示的条目）
         sendToServer(com.shusheng.cobblemarket.network.RemoveItemsBlacklistPayload(list))
     }
 
@@ -423,6 +454,8 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         else -> Text.translatable("cobblemarket.gui.shiny_any").string
     }
 
+    private fun alphaLabel(state: Int): String = ""
+
     // 特训维度标签（tooltip 用）：不限 / 不含特训
     private fun htLabel(filter: Int): String = Text.translatable(
         if (filter == PokemonBlacklistEntry.HT_ANY) "cobblemarket.gui.filter_ht_any" else "cobblemarket.gui.filter_ht_off"
@@ -593,14 +626,30 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
     private fun openItemDialog() {
         hideMainControls()
+        heldAddMode = false
         val centerX = width / 2
         val dialogY = height / 2 - 71
 
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
                 renderItemDialogBackground(context)
+                // 手持添加按钮悬停提示（小手图标，功能说明见词条）
+                heldAddButton?.takeIf { it.isHovered }?.let {
+                    drawTooltip(context, listOf(Text.translatable("cobblemarket.blacklist.add_held_item").string), mouseX, mouseY)
+                }
             }
         })
+
+        // 从手持物品添加（组件粒度）：搜索框左侧小手图标按钮，点击变红选中（获取手持物品），
+        // 再点「添加」确认才提交；服务端读主手物品提取组件快照
+        heldAddButton = NineSliceButton(
+            centerX - 104, dialogY + 40, 16, 16,
+            Text.literal(""),
+            { toggleHeldAdd() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/hand.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+        )
+        addDrawableChild(heldAddButton)
 
         addField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 40, 140, 16, Text.literal(""))
         addField?.setPlaceholder(Text.translatable("cobblemarket.blacklist.item_add_placeholder"))
@@ -661,6 +710,11 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             Text.translatable("cobblemarket.gui.item_id_hint").string,
             centerX, dialogY + 26, 0xFFAAAAAA.toInt())
 
+        // 本地校验错误/信息提示：画在弹窗下沿外，避免与 +40 起的物品输入框/控件重叠
+        dialogError?.let {
+            context.drawCenteredTextWithShadow(textRenderer, it, centerX, dialogY + dialogH + 8, dialogErrorColor)
+        }
+
         // 物品预览
         previewItemId?.let { itemId ->
             Identifier.tryParse(itemId)?.let { id ->
@@ -673,6 +727,12 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     }
 
     private fun confirmItemAdd() {
+        // 手持模式：直接提交手持物品条目（组件快照由服务端读主手提取）
+        if (heldAddMode) {
+            sendToServer(com.shusheng.cobblemarket.network.AddHeldItemBlacklistPayload())
+            closeDialog()
+            return
+        }
         val input = addField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: run {
             playFailSound()
             return
@@ -681,6 +741,25 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         val selected = matchedItems.getOrNull(selectedItemIndex)
         sendToServer(AddItemBlacklistPayload(selected ?: resolveMatchingItems(input).firstOrNull() ?: input))
         closeDialog()
+    }
+
+    private fun toggleHeldAdd() {
+        // 预检主手：空手播 fail 音效 + 弹窗下沿红字提醒，不切换模式；服务端红字提示仅兜底
+        val held = client?.player?.mainHandStack
+        if (held == null || held.isEmpty) {
+            dialogError = Text.translatable("cobblemarket.blacklist.held_item_empty").string
+            dialogErrorColor = 0xFF5555
+            playFailSound()
+            return
+        }
+        heldAddMode = !heldAddMode
+        // 选中态 = 按下视觉（红底），与求购单手持按钮一致；绿字提示明确当前状态与物品
+        heldAddButton?.pressedVisual = heldAddMode
+        dialogError = if (heldAddMode)
+            Text.translatable("cobblemarket.blacklist.held_item_selected", held.name).string
+        else
+            Text.translatable("cobblemarket.blacklist.held_item_cancelled").string
+        dialogErrorColor = 0x55FF55
     }
 
     // 收集全部匹配物品（优先级：ID 路径精确 > 翻译名精确 > 翻译名包含），保持注册表顺序稳定
@@ -717,6 +796,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
     /** 物品输入变更：重建匹配列表（照搬原物品黑名单） */
     private fun updateItemPreview(text: String) {
+        dialogError = null
         matchedItems = resolveMatchingItems(text)
         // 唯一匹配自动选中；多匹配等待用户点选
         selectedItemIndex = if (matchedItems.size == 1) 0 else -1
@@ -809,7 +889,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         itemSelectButton = null
         addConfirmButton = null
         batchAddButton = null
+        heldAddButton = null
+        heldAddMode = false
         addCancelButton = null
+        dialogError = null
         clearChildren()
         init()
     }
@@ -828,6 +911,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     fun onItemBlacklistData(payload: ItemBlacklistDataPayload) {
         itemEntries = payload.entries
         tooltipCacheKey = null
+        itemTooltipCacheKey = null
         rebuildItemIconStacks()
         rebuildFiltered()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, itemEntries.size - getMaxVisibleRows()))
@@ -839,8 +923,9 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     /** 一次性解析全部物品图标栈（render 每帧只读缓存，见 itemIconStacks 注释） */
     private fun rebuildItemIconStacks() {
         itemIconStacks.clear()
-        itemEntries.forEach { itemId ->
-            Identifier.tryParse(itemId)?.let { id -> itemIconStacks[itemId] = ItemStack(Registries.ITEM.get(id)) }
+        itemEntries.forEach { entry ->
+            com.shusheng.cobblemarket.client.ItemComponentsDisplay.iconStack(entry.itemId, entry.componentsSpec)
+                ?.let { itemIconStacks[entry] = it }
         }
     }
 
@@ -906,9 +991,9 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         filteredPokemonCache = filteredPokemonIndexed.map { it.value }
         pokemonRowTexts = filteredPokemonCache.map { pokemonEntryDisplay(it) }
         // 搜索索引匹配（itemId + 名称 + tooltip 文本 + TM 招式，见 ItemSearchIndex；原版创造模式同款语义）
+        // 条目级精确过滤：带组件条目按组件精确（搜「打鼾」只出打鼾 TM 条目），无组件条目仅物品文本命中
         filteredItemsCache = if (query == null) itemEntries else {
-            val ids = com.shusheng.cobblemarket.client.ItemSearchIndex.itemIdsMatching(query).toSet()
-            itemEntries.filter { it in ids }
+            itemEntries.filter { com.shusheng.cobblemarket.client.ItemSearchIndex.ruleEntryMatches(it.itemId, it.componentsSpec, query) }
         }
         itemRowTexts = filteredItemsCache.map { itemEntryDisplay(it) }
     }
@@ -928,7 +1013,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         rebuildRemoveButtons()
     }
 
-    private fun filteredItems(): List<String> = filteredItemsCache
+    private fun filteredItems(): List<ItemBlacklistEntry> = filteredItemsCache
 
     private fun displayCount(): Int = if (currentTab == 0) filteredPokemon().size else filteredItems().size
 
@@ -962,12 +1047,12 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 addDrawableChild(btn)
             }
         } else {
-            filteredItems().drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, itemId ->
+            filteredItems().drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
                 val y = startY + i * rowHeight
                 val btn = NineSliceButton(
                     leftX + panelWidth - 50, y + 4, 44, 16,
                     Text.translatable("cobblemarket.blacklist.remove"),
-                    { sendToServer(RemoveItemBlacklistPayload(itemId)) }
+                    { sendToServer(RemoveItemBlacklistPayload(entry.itemId, entry.componentsSpec)) }
                 )
                 btn.visible = addField == null
                 removeButtons.add(btn)
@@ -992,10 +1077,12 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         return if (parts.isEmpty()) name else "$name（${parts.joinToString(" ")}）"
     }
 
-    private fun itemEntryDisplay(itemId: String): String {
-        val name = itemDisplay(itemId)
-        // 主列表条目区宽约 210px，超长名截断防止与删除按钮重叠
-        return com.shusheng.cobblemarket.util.TextUtil.truncateString(name, 210)
+    private fun itemEntryDisplay(entry: ItemBlacklistEntry): String {
+        val name = itemDisplay(entry.itemId)
+        // 带组件快照的条目追加摘要（附魔名+等级等）；主列表条目区宽约 210px，超长名截断防止与删除按钮重叠
+        val summary = com.shusheng.cobblemarket.client.ItemComponentsDisplay.summary(entry.componentsSpec)
+        val full = if (summary.isEmpty()) name else "$name（$summary）"
+        return com.shusheng.cobblemarket.util.TextUtil.truncateString(full, 210)
     }
 
     // ── 渲染 ──
@@ -1100,11 +1187,11 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         } else {
             val displayList = filteredItems()
             val rowTexts = itemRowTexts
-            displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, itemId ->
+            displayList.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
                 val y = startY + i * rowHeight
                 // 弹窗打开时行内物品图标不渲染（drawItem 硬编码 z 抬高，会刺穿弹窗遮罩）
                 if (addField == null) {
-                    itemIconStacks[itemId]?.let { context.drawItem(it, leftX + 4, y + 4) }
+                    itemIconStacks[entry]?.let { context.drawItem(it, leftX + 4, y + 4) }
                 }
                 context.drawTextWithShadow(textRenderer, rowTexts[scrollOffset + i], leftX + 24, y + 7, 0xFFFFFF)
             }
@@ -1148,12 +1235,58 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         return lines
     }
 
-    private fun renderItemTooltip(context: DrawContext, itemId: String, mouseX: Int, mouseY: Int) {
-        if (tooltipCacheKey != itemId) {
-            tooltipCacheKey = itemId
-            tooltipCacheLines = listOf(itemEntryDisplay(itemId), itemId)
+    private fun renderItemTooltip(context: DrawContext, entry: ItemBlacklistEntry, mouseX: Int, mouseY: Int) {
+        // 照物品市场悬浮：真实物品词条（BASIC 常驻 / Shift 完整词条 / Ctrl 调试信息，Text 保留词条自带颜色）+ itemId 行
+        if (itemTooltipCacheKey != entry) {
+            itemTooltipCacheKey = entry
+            itemTooltipLines = buildItemTooltipLines(entry, TooltipType.BASIC)
+            itemTooltipAdvancedLines = null
+            itemTooltipAdvancedType = null
         }
-        drawTooltip(context, tooltipCacheLines, mouseX, mouseY)
+        val advanced = if (com.shusheng.cobblemarket.client.ItemComponentsDisplay.hoverExpanded()) {
+            val type = com.shusheng.cobblemarket.client.ItemComponentsDisplay.tooltipTypeForHover()
+            if (itemTooltipAdvancedType != type) {
+                itemTooltipAdvancedType = type
+                itemTooltipAdvancedLines = buildItemTooltipLines(entry, type)
+            }
+            itemTooltipAdvancedLines
+        } else {
+            itemTooltipAdvancedType = null
+            null
+        }
+        drawRichTooltip(context, advanced ?: itemTooltipLines, mouseX, mouseY)
+    }
+
+    private fun buildItemTooltipLines(entry: ItemBlacklistEntry, type: TooltipType): List<Pair<Text, Int>> {
+        val lines = mutableListOf<Pair<Text, Int>>()
+        val stack = itemIconStacks[entry]
+        if (stack != null) {
+            lines.addAll(com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(stack, client?.player, type).map { it to 0xFFFFFF })
+        } else {
+            lines.add(Text.literal(itemEntryDisplay(entry)) to 0xFFFFFF)
+        }
+        lines.add(Text.literal(entry.itemId).formatted(Formatting.DARK_GRAY) to 0xFFFFFF)
+        return lines
+    }
+
+    /** 富文本行 tooltip 渲染（照物品市场：Text 自带颜色样式优先于行色参数） */
+    private fun drawRichTooltip(context: DrawContext, lines: List<Pair<Text, Int>>, mouseX: Int, mouseY: Int) {
+        var maxWidth = 0
+        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
+
+        val padding = 4
+        val tx = minOf(mouseX + 12, width - maxWidth - 12)
+        val tooltipHeight = lines.size * 10 + padding
+        val tyAbove = mouseY - tooltipHeight - 4
+        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
+
+        context.matrices.push()
+        context.matrices.translate(0.0, 0.0, 400.0)
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
+        lines.forEachIndexed { i, (line, color) ->
+            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
+        }
+        context.matrices.pop()
     }
 
     private fun drawTooltip(context: DrawContext, lines: List<String>, mouseX: Int, mouseY: Int) {

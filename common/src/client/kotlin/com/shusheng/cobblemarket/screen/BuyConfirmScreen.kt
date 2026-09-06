@@ -50,8 +50,10 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
         val btnW = 100
         val btnH = 22
         val gap = 10
-        val row1Y = height - 58
-        val row2Y = height - 34
+        // 证章区块高度余量：按钮随证章行数上移（分割线 2×10 + 每行 12）
+        val marksExtra = if (entry.marks.isEmpty()) 0 else 20 + (if (entry.marks.size > 6) 12 else 0)
+        val row1Y = height - 58 - marksExtra
+        val row2Y = height - 34 - marksExtra
 
         addDrawableChild(TextureButton(
             centerX - btnW - gap / 2, row1Y, btnW, btnH,

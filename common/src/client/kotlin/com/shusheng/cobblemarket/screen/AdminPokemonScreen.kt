@@ -755,8 +755,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
 
             val lines = mutableListOf<Pair<Text, Int>>()
             lines.add(EntryBadgeRenderer.nameWithShinyStar(iconData[origIndex]?.displayName ?: entry.species, entry.shiny)
-                .copy().append(Text.literal("  ${Text.translatable("cobblemarket.gui.lv").string}${entry.level}")) to w)
-            lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}${Text.translatable(entry.primaryType).string}${if (entry.secondaryType.isNotEmpty()) " + ${Text.translatable(entry.secondaryType).string}" else ""}") to w)
+                .copy().append(Text.literal("  ${Text.translatable("cobblemarket.gui.lv").string}${entry.level}")) to typeColor(entry.primaryType))
+            lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string).append(EntryBadgeRenderer.typeLine(entry.primaryType, entry.secondaryType)) to w)
             lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(EntryBadgeRenderer.natureText(entry.natureBase, entry.nature))
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
@@ -826,7 +826,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         val entry = confirmEntry ?: return
         val centerX = width / 2
         val dialogW = 220
-        val dialogH = 240
+        val marksExtra = if (entry.marks.isEmpty()) 0 else 20 + (if (entry.marks.size > 6) 12 else 0)
+        val dialogH = 240 + marksExtra
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
@@ -887,7 +888,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
 
     private fun handleConfirmDialogClick(mx: Int, my: Int) {
         val centerX = width / 2
-        val dialogH = 240
+        val marksExtra = if (confirmEntry == null || confirmEntry!!.marks.isEmpty()) 0
+            else 20 + (if (confirmEntry!!.marks.size > 6) 12 else 0)
+        val dialogH = 240 + marksExtra
         val dialogY = height / 2 - dialogH / 2
         val btnY = dialogY + dialogH - 28
         val btnW = 80

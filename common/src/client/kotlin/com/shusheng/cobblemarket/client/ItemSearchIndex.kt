@@ -162,6 +162,17 @@ object ItemSearchIndex {
         return itemId == ENCHANTED_BOOK_ID && enchantTexts.values.any { it.contains(q) }
     }
 
+    /** 规则条目匹配（黑名单/限价/求购单列表搜索）：带组件快照时构造物品 NBT 走 [entryMatches] 精确；
+     * 无组件条目仅物品文本命中（搜「锋利」只出锋利V 条目，不把「所有附魔书」条目带出来）。空查询恒真 */
+    fun ruleEntryMatches(itemId: String, componentsSpec: net.minecraft.nbt.NbtCompound?, query: String): Boolean {
+        val nbt = if (componentsSpec != null && !componentsSpec.isEmpty) net.minecraft.nbt.NbtCompound().apply {
+            putString("id", itemId)
+            putInt("count", 1)
+            put("components", componentsSpec)
+        } else null
+        return entryMatches(itemId, nbt, query)
+    }
+
     /** 条目 NBT 的附魔显示名文本列表（非附魔书或解析失败返回空；精确过滤用——显示名不依赖注册表 key，Direct entry 兼容） */
     private fun enchantsOfItemNbt(itemNbt: net.minecraft.nbt.NbtCompound?, registryLookup: net.minecraft.registry.RegistryWrapper.WrapperLookup): List<String> {
         if (itemNbt == null) return emptyList()

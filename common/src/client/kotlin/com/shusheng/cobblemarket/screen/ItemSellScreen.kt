@@ -285,7 +285,12 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         items.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, item ->
             val y = startY + i * rowHeight
             context.drawItem(item.stack, leftX + 2, y + 2)
-            context.drawTextWithShadow(textRenderer, item.name, leftX + 24, y + 6, 0xFFFFFF)
+            // 组件摘要（附魔名+等级/TM 招式名等，照黑名单行显示；超长截断防覆盖数量文字）
+            val summary = com.shusheng.cobblemarket.client.ItemComponentsDisplay.summaryOfStack(item.stack)
+            val nameStr = if (summary.isEmpty()) item.name else item.name + "（$summary）"
+            context.drawTextWithShadow(textRenderer,
+                com.shusheng.cobblemarket.util.TextUtil.truncateString(nameStr, 200 - 24 - 6),
+                leftX + 24, y + 6, 0xFFFFFF)
             context.drawTextWithShadow(textRenderer, "×${item.count}", leftX + 200, y + 6, 0xAAAAAA)
         }
 
@@ -309,6 +314,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
     private var lastTooltipBuild = 0L
     /** Shift 展开的高级词条缓存（按住 Shift 才按需构建，同 250ms 节流重建） */
     private var tooltipAdvancedLines: List<Text>? = null
+    private var tooltipAdvancedType: net.minecraft.item.tooltip.TooltipType? = null
     private var tooltipAdvancedMaxWidth = 0
     private var lastAdvancedBuild = 0L
 
@@ -332,11 +338,12 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
             tooltipCacheMaxWidth = maxWidth
             tooltipAdvancedLines = null
         }
-        // 按住 Shift 展开高级词条（潜影箱内容等，照原版背包悬停；250ms 节流重建同 BASIC）
+        // 按住 Shift 展开完整词条 / Ctrl（F3+H 开启）展开调试信息（照原版背包悬停；250ms 节流重建同 BASIC）
         var lines = tooltipCacheLines
         var maxWidth = tooltipCacheMaxWidth
-        if (net.minecraft.client.gui.screen.Screen.hasShiftDown()) {
-            if (tooltipAdvancedLines == null || now - lastAdvancedBuild >= 250) {
+        if (com.shusheng.cobblemarket.client.ItemComponentsDisplay.hoverExpanded()) {
+            val type = com.shusheng.cobblemarket.client.ItemComponentsDisplay.tooltipTypeForHover()
+            if (tooltipAdvancedLines == null || tooltipAdvancedType != type || now - lastAdvancedBuild >= 250) {
                 lastAdvancedBuild = now
                 val liveStack = client?.player?.playerScreenHandler?.slots
                     ?.firstOrNull { it.hasStack() && com.shusheng.cobblemarket.network.itemsEqualForTrading(it.stack, entry.stack) }
@@ -345,12 +352,15 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
                         com.shusheng.cobblemarket.network.itemsEqualForTrading(it, entry.stack)
                     }
                     ?: entry.stack
-                tooltipAdvancedLines = liveStack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.ADVANCED)
+                tooltipAdvancedLines = com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(liveStack, client?.player, type)
+                tooltipAdvancedType = type
                 var amw = 0
                 tooltipAdvancedLines!!.forEach { amw = maxOf(amw, textRenderer.getWidth(it)) }
                 tooltipAdvancedMaxWidth = amw
             }
             tooltipAdvancedLines?.let { lines = it; maxWidth = tooltipAdvancedMaxWidth }
+        } else {
+            tooltipAdvancedType = null
         }
 
         val padding = 4

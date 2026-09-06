@@ -597,8 +597,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
 
             val staticLines = mutableListOf<Pair<Text?, Int>>()
             staticLines.add(EntryBadgeRenderer.nameWithShinyStar(displayName(entry), entry.shiny)
-                .copy().append(Text.literal("  Lv.${entry.level}")) to 0xFFFFFF)
-            staticLines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText") to 0xFFFFFF)
+                .copy().append(Text.literal("  Lv.${entry.level}")) to typeColor(primaryType))
+            staticLines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
+                .append(EntryBadgeRenderer.typeLine(primaryType, secondaryType)) to 0xFFFFFF)
             staticLines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(EntryBadgeRenderer.natureText(extra["natureBase"] ?: "", extra["nature"] ?: ""))
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
@@ -803,7 +804,8 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             val secondaryType = extra["secondaryType"] ?: ""
             val typeText = (if (primaryType.isNotEmpty()) Text.translatable(primaryType).string else "-") +
                 if (secondaryType.isNotEmpty()) " + ${Text.translatable(secondaryType).string}" else ""
-            infoLine("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText")
+            infoLineText(Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
+                .append(EntryBadgeRenderer.typeLine(primaryType, secondaryType)))
             // 性格（薄荷约定：原生斜体+括号生效）
             context.drawTextWithShadow(textRenderer,
                 Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)

@@ -14,6 +14,29 @@ import net.minecraft.util.Identifier
 // 购买/下架确认弹窗、购买确认页、管理员下架弹窗共用。
 object EntryBadgeRenderer {
 
+    /** 属性色表（2026-08-24 颜色模板；全模组精灵名/属性名显示统一用，见 [[pokemon-display-colors]]） */
+    fun typeColor(typeKey: String): Int = when (typeKey.substringAfterLast(".").lowercase()) {
+        "normal" -> 0xAAAA99; "fire" -> 0xFF4422; "water" -> 0x3399FF
+        "electric" -> 0xFFCC33; "grass" -> 0x77CC55; "ice" -> 0x66CCFF
+        "fighting" -> 0xBB5544; "poison" -> 0xAA5599; "ground" -> 0xDDBB55
+        "flying" -> 0x8899FF; "psychic" -> 0xFF5599; "bug" -> 0xAABB22
+        "rock" -> 0xBBAA66; "ghost" -> 0x6666BB; "dragon" -> 0x7766EE
+        "dark" -> 0x775544; "steel" -> 0xAAAABB; "fairy" -> 0xFFAAFF
+        else -> 0xFFFFFF
+    }
+
+    /** 类型行属性名分段着色：主属性名主色、「+ 副属性名」副色（标签文字由调用方拼接，默认白） */
+    fun typeLine(primaryType: String, secondaryType: String): Text {
+        val primary = Text.translatable(primaryType)
+            .setStyle(net.minecraft.text.Style.EMPTY.withColor(typeColor(primaryType)))
+        return if (secondaryType.isNotEmpty()) {
+            primary.append(Text.literal(" + ")).append(
+                Text.translatable(secondaryType)
+                    .setStyle(net.minecraft.text.Style.EMPTY.withColor(typeColor(secondaryType)))
+            )
+        } else primary
+    }
+
     /** 名称 + 金色闪光星标（★），非闪光不追加；Text 内嵌样式在绘制时按段渲染 */
     fun nameWithShinyStar(name: String, shiny: Boolean): Text =
         if (shiny) Text.literal(name).append(Text.literal(" ★").formatted(Formatting.GOLD))
@@ -77,11 +100,14 @@ object EntryBadgeRenderer {
             Identifier.tryParse(entry.heldItemId)
                 ?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
 
-        val lines = mutableListOf<Pair<Text, Int>>()
-        lines.add(displayName.copy().append(Text.literal("  ${Text.translatable("cobblemarket.gui.lv").string}${entry.level}")) to 0xFFFFFF)
+        // 行列表：null = 分割线（1px 灰线）；证章行 = 图标行（marksLine 索引处画图标）
+        val lines = mutableListOf<Pair<Text?, Int>>()
+        // 名字行 = 主属性色；Lv 段由渲染行统一着色
+        lines.add(displayName.copy().append(Text.literal("  ${Text.translatable("cobblemarket.gui.lv").string}${entry.level}")) to typeColor(entry.primaryType))
+        // 类型行：标签默认白 + 属性名分段着色（主属性主色/副属性副色）
         lines.add(
-            Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}${Text.translatable(entry.primaryType).string}" +
-                (if (entry.secondaryType.isNotEmpty()) " + ${Text.translatable(entry.secondaryType).string}" else "")) to 0xFFFFFF
+            Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
+                .append(typeLine(entry.primaryType, entry.secondaryType)) to 0xFFFFFF
         )
         lines.add(
             Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
@@ -105,6 +131,15 @@ object EntryBadgeRenderer {
         lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("  EV:${entry.evsSpDef}").formatted(Formatting.RED)) to 0x66FF99)
         lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("  EV:${entry.evsSpd}").formatted(Formatting.RED)) to 0xFF99FF)
         lines.add(Text.translatable("cobblemarket.gui.friendship", entry.friendship) to 0xFF99CC)
+        // 证章区块（证章不影响能力，纯外观展示）：亲密度下方两条分割线夹证章图标（每行 6 个，照 Cobblemon 摘要界面）
+        // 服务端直接传纹理路径（不依赖客户端 Marks 注册表解析）
+        var marksLine = -1
+        if (entry.marks.isNotEmpty()) {
+            lines.add(null to 0)
+            marksLine = lines.size
+            lines.add(null to 0)
+            lines.add(null to 0)
+        }
         lines.add(
             Text.translatable("cobblemarket.gui.tooltip_seller").append(" ").append(Text.literal(entry.sellerName)) to 0xFFFFFF
         )
@@ -114,25 +149,57 @@ object EntryBadgeRenderer {
         )
 
         var y = startY
-        lines.forEachIndexed { i, (line, color) ->
-            if (i == heldItemLine) {
-                // 携带物行：文字 + 物品图标整体居中
-                val textW = font.getWidth(line)
-                val x = centerX - (textW + 14) / 2
-                context.drawTextWithShadow(font, line, x, y, color)
-                Identifier.tryParse(entry.heldItemId)?.let { heldId ->
-                    com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                        itemStack = ItemStack(Registries.ITEM.get(heldId)),
-                        x = (x + textW + 2).toDouble(), y = y.toDouble(), scale = 0.6, matrixStack = context.matrices
-                    )
+        var i = 0
+        while (i < lines.size) {
+            val (line, color) = lines[i]
+            when {
+                line == null && i == marksLine -> {
+                    // 证章图标行：第一行最多 6 个居中；超过 6 个第二行居中显示「+N」（不再画图标防挤占面板）
+                    val textures = entry.marks.mapNotNull { Identifier.tryParse(it) }
+                    val rowW = minOf(6, textures.size) * 12 - 4
+                    textures.take(6).forEachIndexed { idx, texture ->
+                        com.cobblemon.mod.common.api.gui.blitk(
+                            matrixStack = context.matrices, texture = texture,
+                            x = centerX - rowW / 2 + idx * 12, y = y, width = 8, height = 8
+                        )
+                    }
+                    if (textures.size > 6) {
+                        context.drawCenteredTextWithShadow(font, "+${textures.size - 6}", centerX, y + 12, 0xAAAAAA)
+                        y += 24
+                    } else {
+                        y += 12
+                    }
                 }
-            } else if (i == 0) {
-                // 第一行（名字★Lv）走公共名字行函数（带公母图标）
-                drawNameLine(context, line, entry.gender, centerX, y, color)
-            } else {
-                context.drawCenteredTextWithShadow(font, line, centerX, y, color)
+                line == null -> {
+                    // 分割线：1px 灰线，宽度只包住证章图标行（首行证章数 × 12 - 4）
+                    val rowW = minOf(6, entry.marks.size) * 12 - 4
+                    context.fill(centerX - rowW / 2, y + 4, centerX + rowW / 2, y + 5, 0xFF555555.toInt())
+                    y += 10
+                }
+                i == heldItemLine -> {
+                    // 携带物行：文字 + 物品图标整体居中
+                    val textW = font.getWidth(line)
+                    val x = centerX - (textW + 14) / 2
+                    context.drawTextWithShadow(font, line, x, y, color)
+                    Identifier.tryParse(entry.heldItemId)?.let { heldId ->
+                        com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                            itemStack = ItemStack(Registries.ITEM.get(heldId)),
+                            x = (x + textW + 2).toDouble(), y = y.toDouble(), scale = 0.6, matrixStack = context.matrices
+                        )
+                    }
+                    y += 10
+                }
+                i == 0 -> {
+                    // 第一行（名字★Lv）走公共名字行函数（带公母图标）
+                    drawNameLine(context, line, entry.gender, centerX, y, color)
+                    y += 10
+                }
+                else -> {
+                    context.drawCenteredTextWithShadow(font, line, centerX, y, color)
+                    y += 10
+                }
             }
-            y += 10
+            i++
         }
         return y
     }

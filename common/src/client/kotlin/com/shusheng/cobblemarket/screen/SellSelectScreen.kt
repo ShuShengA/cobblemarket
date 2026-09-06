@@ -813,8 +813,10 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
 
     // tooltip 内容缓存：内容只取决于条目，悬停同一行时每帧重建全部文本行是悬停掉帧主因
     private var tooltipCacheKey: java.util.UUID? = null
-    private var tooltipCacheLines: List<Pair<Text, Int>> = emptyList()
+    private var tooltipCacheLines: List<Pair<Text?, Int>> = emptyList()
     private var tooltipCacheHeldLine = -1
+    private var tooltipCacheMarksLine = -1
+    private var tooltipCacheMarksRows = 0
     private var tooltipCacheMaxWidth = 0
 
     private fun renderTooltip(context: DrawContext, p: PokemonPreview, mx: Int, my: Int, bgState: Int) {
@@ -833,10 +835,11 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             val hasHeldItem = p.heldItemId.isNotEmpty() &&
                 Identifier.tryParse(p.heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
 
-            val lines = mutableListOf<Pair<Text, Int>>()
+            // 行列表：null = 分割线；证章行在 marksLine 索引处画图标
+            val lines = mutableListOf<Pair<Text?, Int>>()
             lines.add(EntryBadgeRenderer.nameWithShinyStar(speciesDisplay(p), p.shiny)
-                .copy().append(Text.literal("  Lv.${p.level}")) to 0xFFFFFF)
-            lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText") to 0xFFFFFF)
+                .copy().append(Text.literal("  Lv.${p.level}")) to typeColor(p.primaryType))
+            lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string).append(EntryBadgeRenderer.typeLine(p.primaryType, p.secondaryType)) to 0xFFFFFF)
             lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(EntryBadgeRenderer.natureText(p.natureBase, p.nature))
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
@@ -850,42 +853,82 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsHp, p.htHp)}").append(Text.literal("  EV:${p.evsHp}").formatted(Formatting.RED)) to 0x66FF66); lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsAtk, p.htAtk)}").append(Text.literal("  EV:${p.evsAtk}").formatted(Formatting.RED)) to 0xFF6666)
             lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsDef, p.htDef)}").append(Text.literal("  EV:${p.evsDef}").formatted(Formatting.RED)) to 0xFFCC66); lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpAtk, p.htSpAtk)}").append(Text.literal("  EV:${p.evsSpAtk}").formatted(Formatting.RED)) to 0x6699FF)
             lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpDef, p.htSpDef)}").append(Text.literal("  EV:${p.evsSpDef}").formatted(Formatting.RED)) to 0x66FF99); lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpd, p.htSpd)}").append(Text.literal("  EV:${p.evsSpd}").formatted(Formatting.RED)) to 0xFF99FF); lines.add(Text.translatable("cobblemarket.gui.friendship", p.friendship) to 0xFF99CC)
+            // 证章区块（拥有的全部证章，纯外观）：亲密度下方两条分割线夹图标（每行 6 个；服务端直接传纹理路径）
+            var marksLine = -1
+            var marksRows = 0
+            val markTextures = p.marks.mapNotNull { Identifier.tryParse(it) }
+            if (markTextures.isNotEmpty()) {
+                marksRows = if (markTextures.size > 6) 2 else 1
+                lines.add(null to 0)
+                marksLine = lines.size
+                lines.add(null to 0)
+                lines.add(null to 0)
+            }
 
-            var mw = 0; lines.forEach { mw = maxOf(mw, textRenderer.getWidth(it.first)) }
+            var mw = 0; lines.forEach { if (it.first != null) mw = maxOf(mw, textRenderer.getWidth(it.first)) }
             if (heldItemLine >= 0) {
                 mw = maxOf(mw, textRenderer.getWidth(lines[heldItemLine].first) + 14)
             }
+            if (marksRows > 0) mw = maxOf(mw, minOf(6, markTextures.size) * 12)
             tooltipCacheLines = lines
             tooltipCacheHeldLine = heldItemLine
+            tooltipCacheMarksLine = marksLine
+            tooltipCacheMarksRows = marksRows
             tooltipCacheMaxWidth = mw
         }
         val lines = tooltipCacheLines
         val heldItemLine = tooltipCacheHeldLine
+        val marksLine = tooltipCacheMarksLine
+        val marksRows = tooltipCacheMarksRows
         val mw = tooltipCacheMaxWidth
         val pad = 4
         val tx = minOf(mx + 12, width - mw - 12)
-        val th = lines.size * 10 + pad
+        val th = lines.size * 10 + pad + (marksRows - 1).coerceAtLeast(0) * 12
         val ty = if (my - th - 4 <= 0) minOf(my + 12, height - th) else my - th - 4
 
         context.matrices.push(); context.matrices.translate(0.0, 0.0, 400.0)
-        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - pad, ty - pad, mw + 2 * pad, lines.size * 10 + 2 * pad, bgState, ROW_BACKGROUND_TEX_H)
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - pad, ty - pad, mw + 2 * pad, th + pad, bgState, ROW_BACKGROUND_TEX_H)
+        var rowY = ty
         lines.forEachIndexed { i, (line, color) ->
-            if (i == heldItemLine) {
-                context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
+            if (line == null && i == marksLine) {
+                // 证章图标行：第一行最多 6 个；超过 6 个第二行显示「+N」
+                val textures = p.marks.mapNotNull { Identifier.tryParse(it) }
+                textures.take(6).forEachIndexed { idx, texture ->
+                    com.cobblemon.mod.common.api.gui.blitk(
+                        matrixStack = context.matrices, texture = texture,
+                        x = tx + idx * 12, y = rowY, width = 8, height = 8
+                    )
+                }
+                if (textures.size > 6) {
+                    context.drawTextWithShadow(textRenderer, "+${textures.size - 6}", tx, rowY + 12, 0xAAAAAA)
+                    rowY += 24
+                } else {
+                    rowY += 12
+                }
+            } else if (line == null) {
+                // 分割线：1px 灰线，宽度只包住证章图标行（首行证章数 × 12 - 4）
+                val rowW = minOf(6, p.marks.size) * 12 - 4
+                context.fill(tx, rowY + 4, tx + rowW, rowY + 5, 0xFF555555.toInt())
+                rowY += 10
+            } else if (i == heldItemLine) {
+                context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
                 Identifier.tryParse(p.heldItemId)?.let { heldId ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                         itemStack = ItemStack(Registries.ITEM.get(heldId)),
                         x = tx + textRenderer.getWidth(line) + 2.0,
-                        y = ty + i * 10 + 0.0,
+                        y = rowY + 0.0,
                         scale = 0.6,
                         matrixStack = context.matrices
                     )
                 }
+                rowY += 10
             } else if (i == 0) {
                 // 第一行（名字★Lv）带公母图标
-                EntryBadgeRenderer.drawNameLineLeft(context, line, p.gender, tx, ty + i * 10, color)
+                EntryBadgeRenderer.drawNameLineLeft(context, line, p.gender, tx, rowY, color)
+                rowY += 10
             } else {
-                context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
+                context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
+                rowY += 10
             }
         }
         context.matrices.pop()
