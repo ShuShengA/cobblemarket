@@ -52,7 +52,8 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     private val entryStacks = mutableMapOf<UUID, ItemStack>()
     private val tooltipStackLines = mutableMapOf<UUID, List<Pair<Text, Int>>>()
     /** Shift 展开的高级词条（列表加载时与 BASIC 双份构建，渲染按 Shift 状态切换） */
-    private val tooltipAdvancedLines = mutableMapOf<UUID, List<Pair<Text, Int>>>()
+    // 键 (entryId, TooltipType)：Shift/Ctrl 展开类型不同分别缓存
+    private val tooltipAdvancedLines = mutableMapOf<Pair<UUID, TooltipType>, List<Pair<Text, Int>>>()
 
     private fun columns() = (panelWidth + gap) / (slotSize + gap)
     // 84→88：卖家搜索框底边(80)与顶部分割线(80)贴死，网格起始下移 4px 留出间隙
@@ -443,12 +444,14 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
 
     private fun renderItemTooltip(context: DrawContext, entry: ItemEntry, mouseX: Int, mouseY: Int) {
         val lines = mutableListOf<Pair<Text, Int>>()
-        // 按住 Shift 展开高级词条（照原版背包悬停；Shift 按下时才构建，Fabric 信息块才能生成）
-        val stackLines = if (net.minecraft.client.gui.screen.Screen.hasShiftDown())
-            tooltipAdvancedLines[entry.id] ?: entryStacks[entry.id]?.getTooltip(
-                Item.TooltipContext.DEFAULT, client?.player, TooltipType.ADVANCED
-            )?.map { it to 0xFFFFFF }?.also { tooltipAdvancedLines[entry.id] = it } ?: tooltipStackLines[entry.id]
-        else tooltipStackLines[entry.id]
+        // 按住 Shift 展开完整词条 / Ctrl（F3+H 开启）展开调试信息（照原版背包悬停；按键按下时才构建，Fabric 信息块才能生成）
+        val stackLines = if (com.shusheng.cobblemarket.client.ItemComponentsDisplay.hoverExpanded()) {
+            val type = com.shusheng.cobblemarket.client.ItemComponentsDisplay.tooltipTypeForHover()
+            val key = entry.id to type
+            tooltipAdvancedLines[key] ?: entryStacks[entry.id]?.let {
+                com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(it, client?.player, type)
+            }?.map { it to 0xFFFFFF }?.also { tooltipAdvancedLines[key] = it } ?: tooltipStackLines[entry.id]
+        } else tooltipStackLines[entry.id]
         if (stackLines != null) {
             lines.addAll(stackLines)
         } else {

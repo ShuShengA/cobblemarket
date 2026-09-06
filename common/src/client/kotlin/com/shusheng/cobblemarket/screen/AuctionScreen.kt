@@ -98,6 +98,7 @@ class AuctionScreen(
     private var bidDialogW = 280
     /** 高级词条是否在 Shift 按住状态下构建（Fabric tooltip 的信息块只在构建时 Shift 按住才生成，松开后重建） */
     private var bidAdvancedBuiltWithShift = false
+    private var bidAdvancedType: TooltipType? = null
     private var bidField: TextFieldWidget? = null
     /** 玩家是否手动编辑过出价输入：BID 广播只在未编辑时更新预填，不覆盖玩家输入 */
     private var bidEdited = false
@@ -132,6 +133,7 @@ class AuctionScreen(
     private var itemTooltipCacheMaxWidth = 0
     /** Shift 展开的高级词条缓存（按住 Shift 才按需构建；null = 未构建） */
     private var itemTooltipAdvancedLines: List<Pair<Text, Int>>? = null
+    private var itemTooltipAdvancedType: TooltipType? = null
     private var itemTooltipAdvancedMaxWidth = 0
 
     // 精灵 tab：搜索框下方有性别/属性/特性/性格筛选按钮行，列表起点靠下；物品 tab 无筛选按钮，起点贴近搜索框
@@ -261,7 +263,9 @@ class AuctionScreen(
 
         val createBtn = NineSliceButton(
             leftX + panelWidth - 72, 50, 18, 16,
-            Text.literal("+"), { client?.setScreen(AuctionCreateScreen(currentTab)) }
+            Text.literal(""), { client?.setScreen(AuctionCreateScreen(currentTab)) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
         )
         createButton = createBtn
         addDrawableChild(createBtn)
@@ -852,18 +856,21 @@ class AuctionScreen(
     private fun renderBidDialogBackground(context: DrawContext, delta: Float) {
         val entry = bidEntry ?: return
         val centerX = width / 2
-        // ── 物品词条选择（先于布局）：按住 Shift 时若未在 Shift 状态下构建则重建 ADVANCED——
-        // Fabric tooltip 的信息块（如 TM 招式详情）只在构建时刻 Shift 按住时生成
+        // ── 物品词条选择（先于布局）：按住 Shift/Ctrl 时按需构建（Fabric tooltip 的信息块
+        // 如 TM 招式详情只在构建时刻按键按住时生成；类型变化重建）
         var itemLines: List<Text>? = null
         if (entry.type != "POKEMON") {
-            itemLines = if (net.minecraft.client.gui.screen.Screen.hasShiftDown()) {
-                if (!bidAdvancedBuiltWithShift) {
-                    bidItemAdvancedLines = buildBidItemLines(entry, TooltipType.ADVANCED)
+            itemLines = if (com.shusheng.cobblemarket.client.ItemComponentsDisplay.hoverExpanded()) {
+                val type = com.shusheng.cobblemarket.client.ItemComponentsDisplay.tooltipTypeForHover()
+                if (!bidAdvancedBuiltWithShift || bidAdvancedType != type) {
+                    bidItemAdvancedLines = buildBidItemLines(entry, type)
                     bidAdvancedBuiltWithShift = true
+                    bidAdvancedType = type
                 }
                 bidItemAdvancedLines
             } else {
                 bidAdvancedBuiltWithShift = false
+                bidAdvancedType = null
                 bidItemTooltipLines
             }
         }
@@ -964,18 +971,21 @@ class AuctionScreen(
             context.drawText(textRenderer, "  Lv.${entry.level}", cx + 2, iy, 0xFFFFFF, false)
             cx += 2 + textRenderer.getWidth("  Lv.${entry.level}")
             val gender = extra["gender"]
+            var genderW = 0
             if (gender == "MALE" || gender == "FEMALE") {
                 val gi = if (gender == "MALE") GENDER_ICON_MALE else GENDER_ICON_FEMALE
                 com.cobblemon.mod.common.api.gui.blitk(
                     matrixStack = context.matrices, texture = gi,
                     x = cx + 2, y = iy, width = 6, height = 8
                 )
+                genderW = 7
             }
             iy += 10
             val secondaryType = extra["secondaryType"] ?: ""
             val typeText = (if (primaryType.isNotEmpty()) Text.translatable(primaryType).string else "-") +
                 if (secondaryType.isNotEmpty()) " + ${Text.translatable(secondaryType).string}" else ""
-            infoLine("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText")
+            infoLineText(Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
+                .append(EntryBadgeRenderer.typeLine(primaryType, secondaryType)))
             // 性格（薄荷约定：原生斜体+括号生效）
             context.drawTextWithShadow(textRenderer,
                 Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
@@ -1368,8 +1378,9 @@ class AuctionScreen(
 
             val staticLines = mutableListOf<Pair<Text?, Int>>()
             staticLines.add(EntryBadgeRenderer.nameWithShinyStar(displayName(entry), entry.shiny)
-                .copy().append(Text.literal("  Lv.${entry.level}")) to 0xFFFFFF)
-            staticLines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_type").string}$typeText") to 0xFFFFFF)
+                .copy().append(Text.literal("  Lv.${entry.level}")) to typeColor(primaryType))
+            staticLines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
+                .append(EntryBadgeRenderer.typeLine(primaryType, secondaryType)) to 0xFFFFFF)
             staticLines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(EntryBadgeRenderer.natureText(extra["natureBase"] ?: "", extra["nature"] ?: ""))
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
@@ -1464,18 +1475,22 @@ class AuctionScreen(
             itemTooltipAdvancedLines = null
             itemTooltipAdvancedMaxWidth = 0
         }
-        // 按住 Shift 展开高级词条（潜影箱内容等，照原版背包悬停；按需构建缓存防每帧解析 NBT 掉帧）
+        // 按住 Shift 展开完整词条 / Ctrl（F3+H 开启）展开调试信息（照原版背包悬停；按需构建缓存防每帧解析 NBT 掉帧）
         var staticBase = itemTooltipCacheLines
         var maxWidth = itemTooltipCacheMaxWidth
-        if (net.minecraft.client.gui.screen.Screen.hasShiftDown()) {
-            if (itemTooltipAdvancedLines == null) {
-                itemTooltipAdvancedLines = buildItemStaticLines(entry, TooltipType.ADVANCED)
+        if (com.shusheng.cobblemarket.client.ItemComponentsDisplay.hoverExpanded()) {
+            val type = com.shusheng.cobblemarket.client.ItemComponentsDisplay.tooltipTypeForHover()
+            if (itemTooltipAdvancedLines == null || itemTooltipAdvancedType != type) {
+                itemTooltipAdvancedType = type
+                itemTooltipAdvancedLines = buildItemStaticLines(entry, type)
                 var amw = 0
                 itemTooltipAdvancedLines!!.forEach { amw = maxOf(amw, textRenderer.getWidth(it.first)) }
                 itemTooltipAdvancedMaxWidth = amw
             }
             staticBase = itemTooltipAdvancedLines!!
             maxWidth = itemTooltipAdvancedMaxWidth
+        } else {
+            itemTooltipAdvancedType = null
         }
         val lines = staticBase.toMutableList()
         val priceLine = Text.translatable("cobblemarket.auction.current_price").append(": ").append(displayPriceText(entry))
@@ -1516,7 +1531,7 @@ class AuctionScreen(
             client?.world?.registryManager?.let { rm ->
                 val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
                 if (!stack.isEmpty) {
-                    out.addAll(stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, type).drop(1))
+                    out.addAll(com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(stack, client?.player, type).drop(1))
                 }
             }
         }
@@ -1533,7 +1548,7 @@ class AuctionScreen(
                 val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
                 if (!stack.isEmpty) {
                     staticLines.addAll(
-                        stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, type)
+                        com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(stack, client?.player, type)
                             .drop(1).map { it to 0xFFFFFF }
                     )
                 }

@@ -76,6 +76,8 @@ class BuyOrderScreen(
     // 操作结果提示（服务端 MarketResult 到达后短暂显示）
     private var resultMsg: String? = null
     private var resultUntil = 0L
+    // 提示颜色：服务端结果消息默认绿，本地错误提示红（如空手点手持按钮）
+    private var resultMsgColor = 0x55FF55
 
     private data class FormOption(val label: String, val aspects: Set<String>)
 
@@ -96,6 +98,8 @@ class BuyOrderScreen(
     private var createNoteField: TextFieldWidget? = null
     private var createItemField: TextFieldWidget? = null
     private var createCountField: TextFieldWidget? = null
+    private var heldItemButton: NineSliceButton? = null
+    private var heldItemMode = false
     private val createIvFields = arrayOfNulls<TextFieldWidget>(6)
     private var createShinyFilter = PokemonBlacklistEntry.SHINY_ANY
     private var createHtFilter = PokemonBlacklistEntry.HT_ANY
@@ -143,6 +147,7 @@ class BuyOrderScreen(
     private var reviewItemAdvancedLines: List<Text> = emptyList()
     /** 高级词条是否在 Shift 按住状态下构建（Fabric tooltip 信息块只在构建时 Shift 按住才生成） */
     private var reviewAdvancedBuiltWithShift = false
+    private var reviewAdvancedType: TooltipType? = null
     private var reviewItemExtraRows = 0
     /** 管理员模式：强制下架确认弹窗的条目与按钮 */
     private var forceCancelEntry: BuyOrderEntry? = null
@@ -202,7 +207,7 @@ class BuyOrderScreen(
             if (entry.type == "ITEM") {
                 iconData[index] = IconData(
                     name = name, renderable = null, state = FloatingState(), nameColor = 0xFFFFFF,
-                    itemStack = Identifier.tryParse(entry.itemId)?.let { ItemStack(Registries.ITEM.get(it)) }
+                    itemStack = com.shusheng.cobblemarket.client.ItemComponentsDisplay.iconStack(entry.itemId, entry.itemComponentsSpec)
                 )
                 return@forEachIndexed
             }
@@ -269,8 +274,10 @@ class BuyOrderScreen(
         if (entry.type == "ITEM") {
             val id = Identifier.tryParse(entry.itemId) ?: return entry.itemId
             val item = Registries.ITEM.get(id)
-            val name = item.name.string
-            return if (name == item.translationKey) id.path else name
+            val name = if (item.name.string == item.translationKey) id.path else item.name.string
+            // 带组件要求的订单追加摘要（如「锋利V」）
+            val summary = com.shusheng.cobblemarket.client.ItemComponentsDisplay.summary(entry.itemComponentsSpec)
+            return if (summary.isEmpty()) name else "$name（$summary）"
         }
         val key = entry.speciesKey ?: return Text.translatable("cobblemarket.buy_order.any_pokemon").string
         val t = Text.translatable(key).string
@@ -357,8 +364,10 @@ class BuyOrderScreen(
             // 发布求购按钮（tab 行右侧，右缘离面板右缘 12px，与返回按钮同列对齐）
             val createBtn = NineSliceButton(
                 leftX + panelWidth - 12 - 28, 32, 28, 14,
-                Text.literal("+"),
+                Text.literal(""),
                 { openCreateDialog() },
+                iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
+                iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
                 texture = BUY_ORDER_BUTTON_TEXTURE,
                 texH = BUY_ORDER_BUTTON_TEX_H
             )
@@ -478,6 +487,8 @@ class BuyOrderScreen(
             }
         }
         resultMsg = payload.message.string
+        // 服务端结果消息统一绿色（覆盖本地错误提示的红色残留）
+        resultMsgColor = 0x55FF55
         resultUntil = System.currentTimeMillis() + 3000
     }
 
@@ -495,11 +506,16 @@ class BuyOrderScreen(
             // 搜索：物种名/物品名/买家名（本地过滤，照拍卖场模式）
             query == null || entryName(entry).contains(query, ignoreCase = true) ||
                 entry.buyerName.contains(query, ignoreCase = true) ||
-                // 物品单走搜索索引（名称/tooltip/TM 招式；求购单无 NBT，TM 按粗粒度）
-                (entry.type == "ITEM" && com.shusheng.cobblemarket.client.ItemSearchIndex.idMatches(entry.itemId, query))
+                // 物品单走搜索索引：带组件要求的订单按组件精确（搜「锋利」只出锋利V 订单、搜「打鼾」只出打鼾 TM 订单），
+                // 无组件订单仅物品文本命中（搜「锋利」不再带出所有附魔书订单）
+                (entry.type == "ITEM" && entryMatchesItem(entry, query))
         }.sortedByDescending { it.createdAt }
         indexedDisplay = displayCache.map { IndexedValue(entries.indexOf(it), it) }
     }
+
+    /** 求购单条目级搜索匹配：带组件要求的订单按组件精确，无组件订单仅物品文本命中（共用 ItemSearchIndex.ruleEntryMatches） */
+    private fun entryMatchesItem(entry: BuyOrderEntry, query: String): Boolean =
+        com.shusheng.cobblemarket.client.ItemSearchIndex.ruleEntryMatches(entry.itemId, entry.itemComponentsSpec, query)
 
     private fun displayCount() = displayList().size
 
@@ -818,7 +834,7 @@ class BuyOrderScreen(
                 resultMsg = null
             } else {
                 // height-52：面板底部边框带（height-48 起）上方 4px，避免提示文字与边框重合
-                context.drawCenteredTextWithShadow(textRenderer, resultMsg!!, width / 2, height - 52, 0x55FF55)
+                context.drawCenteredTextWithShadow(textRenderer, resultMsg!!, width / 2, height - 52, resultMsgColor)
             }
         }
     }
@@ -1007,9 +1023,15 @@ class BuyOrderScreen(
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
                 renderCreateDialogBackground(context, delta)
+                // 手持物品按钮悬停提示（小手图标，功能说明见词条）
+                heldItemButton?.takeIf { it.isHovered }?.let {
+                    drawSimpleTooltip(context, listOf(Text.translatable("cobblemarket.buy_order.use_held_item").string), mouseX, mouseY)
+                }
             }
         })
 
+        // 每次打开创建对话框重置手持模式（不跨次残留选中态）
+        heldItemMode = false
         rebuildCreateDialogWidgets()
     }
 
@@ -1032,6 +1054,8 @@ class BuyOrderScreen(
         createConfirmButton?.let { remove(it) }
         createCancelButton?.let { remove(it) }
         itemSelectButton?.let { remove(it) }
+        heldItemButton?.let { remove(it) }
+        heldItemButton = null
         formListButtons.forEach { remove(it) }
         formListButtons.clear()
         abilityListButtons.forEach { remove(it) }
@@ -1182,6 +1206,18 @@ class BuyOrderScreen(
     private fun buildItemCreateWidgets(dialogY: Int) {
         val centerX = width / 2
 
+        // 使用手持物品（组件粒度）：搜索框左侧小手图标按钮，按下态 = 手持模式；
+        // 服务端读主手物品提取组件快照作为求购要求
+        heldItemButton = NineSliceButton(
+            centerX - 106, dialogY + 48, 16, 16,
+            Text.literal(""),
+            { toggleHeldItemMode() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/hand.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+        )
+        addDrawableChild(heldItemButton)
+        updateHeldItemButton()
+
         createItemField = TextFieldWidget(textRenderer, centerX - 82, dialogY + 48, 148, 16, Text.literal(""))
         createItemField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_item").formatted(Formatting.GRAY))
         createItemField?.setChangedListener { updateItemPreview(it) }
@@ -1218,6 +1254,52 @@ class BuyOrderScreen(
         createNoteField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_note").formatted(Formatting.GRAY))
         createNoteField?.setMaxLength(100)
         addDrawableChild(createNoteField)
+    }
+
+    private fun updateHeldItemButton() {
+        // 选中态 = 按下视觉（pressedVisual 保持"按下态"渲染，见 NineSliceButton）
+        heldItemButton?.pressedVisual = heldItemMode
+    }
+
+    private fun toggleHeldItemMode() {
+        // 客户端预检主手：空手播 fail 音效 + 红字提示，不切换模式
+        val held = client?.player?.mainHandStack
+        if (held == null || held.isEmpty) {
+            playFailSound()
+            resultMsg = Text.translatable("cobblemarket.buy_order.held_item_empty").string
+            resultMsgColor = 0xFF5555
+            resultUntil = System.currentTimeMillis() + 3000
+            return
+        }
+        heldItemMode = !heldItemMode
+        updateHeldItemButton()
+        // 明确反馈当前模式与物品，玩家才明白红色按钮含义
+        resultMsg = if (heldItemMode)
+            Text.translatable("cobblemarket.buy_order.held_item_selected", held.name).string
+        else
+            Text.translatable("cobblemarket.buy_order.held_item_cancelled").string
+        resultMsgColor = 0x55FF55
+        resultUntil = System.currentTimeMillis() + 3000
+    }
+
+    /** 简版悬停提示（纯文字行）：发布对话框小手图标按钮用（行 tooltip 见 renderRowTooltip） */
+    private fun drawSimpleTooltip(context: DrawContext, lines: List<String>, mouseX: Int, mouseY: Int) {
+        var maxWidth = 0
+        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
+
+        val padding = 4
+        val tx = minOf(mouseX + 12, width - maxWidth - 12)
+        val tooltipHeight = lines.size * 10 + padding
+        val tyAbove = mouseY - tooltipHeight - 4
+        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
+
+        context.matrices.push()
+        context.matrices.translate(0.0, 0.0, 400.0)
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
+        lines.forEachIndexed { i, line ->
+            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, 0xFFFFFF)
+        }
+        context.matrices.pop()
     }
 
     private fun renderCreateDialogBackground(context: DrawContext, delta: Float) {
@@ -1336,22 +1418,27 @@ class BuyOrderScreen(
                 note = createNoteField?.text?.trim().orEmpty()
             ))
         } else {
-            // 优先发送点选项；未点选时取自动匹配首个；无匹配则报错
-            val itemId = matchedItems.getOrNull(selectedItemIndex)
-                ?: matchedItems.firstOrNull()
-                ?: resolveMatchingItems(createItemField?.text.orEmpty()).firstOrNull()
             val count = createCountField?.text?.toIntOrNull() ?: 0
-            if (itemId == null) {
-                resultMsg = Text.translatable("cobblemarket.buy_order.item_not_found").string
-                resultUntil = System.currentTimeMillis() + 3000
-                return
-            }
             if (count < 1) {
                 resultMsg = Text.translatable("cobblemarket.buy_order.invalid_price").string
                 resultUntil = System.currentTimeMillis() + 3000
                 return
             }
-            sendToServer(CreateItemBuyOrderPayload(itemId, count, minPrice, maxPrice, createNoteField?.text?.trim().orEmpty()))
+            if (heldItemMode) {
+                // 手持模式：itemId 由服务端读主手决定（含组件快照），客户端只传模式标志
+                sendToServer(CreateItemBuyOrderPayload("", count, minPrice, maxPrice, createNoteField?.text?.trim().orEmpty(), true))
+            } else {
+                // 优先发送点选项；未点选时取自动匹配首个；无匹配则报错
+                val itemId = matchedItems.getOrNull(selectedItemIndex)
+                    ?: matchedItems.firstOrNull()
+                    ?: resolveMatchingItems(createItemField?.text.orEmpty()).firstOrNull()
+                if (itemId == null) {
+                    resultMsg = Text.translatable("cobblemarket.buy_order.item_not_found").string
+                    resultUntil = System.currentTimeMillis() + 3000
+                    return
+                }
+                sendToServer(CreateItemBuyOrderPayload(itemId, count, minPrice, maxPrice, createNoteField?.text?.trim().orEmpty(), false))
+            }
         }
         closeDialogs()
     }
@@ -1811,13 +1898,13 @@ class BuyOrderScreen(
     // ── 买家确认弹窗（处理待确认交付） ──
 
     /** 验收弹窗物品词条构建（ADVANCED，去首行物品名；Shift 按住时调用才有 Fabric 信息块） */
-    private fun buildReviewItemLines(entry: BuyOrderEntry): List<Text> {
+    private fun buildReviewItemLines(entry: BuyOrderEntry, type: TooltipType): List<Text> {
         val out = mutableListOf<Text>()
         entry.pending?.itemNbt?.let { nbt ->
             client?.world?.registryManager?.let { rm ->
                 val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
                 if (!stack.isEmpty) {
-                    out.addAll(stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.ADVANCED).drop(1))
+                    out.addAll(com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(stack, client?.player, type).drop(1))
                 }
             }
         }
@@ -1839,7 +1926,7 @@ class BuyOrderScreen(
                     val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
                     if (!stack.isEmpty) {
                         val lines = stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC).drop(1)
-                        val advanced = stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.ADVANCED).drop(1)
+                        val advanced = com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(stack, client?.player, TooltipType.ADVANCED).drop(1)
                         reviewItemTooltipLines = lines
                         reviewItemAdvancedLines = advanced
                         reviewItemExtraRows = minOf(maxOf(lines.size, advanced.size), MAX_ITEM_EXTRA_ROWS)
@@ -1861,11 +1948,11 @@ class BuyOrderScreen(
         })
 
         val centerX = width / 2
-        val dialogY = if (entry.type == "POKEMON") height / 2 - 110 else height / 2 - (190 + reviewItemExtraRows * 9) / 2
-        val btnY = if (entry.type == "POKEMON") dialogY + 180 else dialogY + 104 + reviewItemExtraRows * 9
+        val dialogY = if (entry.type == "POKEMON") height / 2 - 110 else height / 2 - (149 + reviewItemExtraRows * 10) / 2
+        val btnY = if (entry.type == "POKEMON") dialogY + 180 else dialogY + 67 + reviewItemExtraRows * 10
 
         // 拒绝原因输入框（选填，发给卖家）
-        reviewReasonField = TextFieldWidget(textRenderer, centerX - 120, dialogY + if (entry.type == "POKEMON") 154 else 76 + reviewItemExtraRows * 9, 240, 16, Text.literal(""))
+        reviewReasonField = TextFieldWidget(textRenderer, centerX - 120, dialogY + if (entry.type == "POKEMON") 154 else 43 + reviewItemExtraRows * 10, 240, 16, Text.literal(""))
         reviewReasonField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.review_reason").formatted(Formatting.GRAY))
         reviewReasonField?.setMaxLength(100)
         addDrawableChild(reviewReasonField)
@@ -1902,32 +1989,43 @@ class BuyOrderScreen(
         val pending = entry.pending ?: return
         val centerX = width / 2
         val dialogW = 280
-        // 物品词条选择（先于布局）：Shift 按下未构建则重建（Fabric tooltip 信息块只在构建时 Shift 按住才生成）
+        // 物品词条选择（先于布局）：Shift 完整词条 / Ctrl 调试信息按需构建（Fabric tooltip 信息块只在构建时按键按住才生成）
         var itemLines: List<Text>? = null
         var itemExtra = 0
         if (entry.type == "ITEM") {
-            val tooltipLines = if (net.minecraft.client.gui.screen.Screen.hasShiftDown()) {
-                if (!reviewAdvancedBuiltWithShift) {
-                    reviewItemAdvancedLines = buildReviewItemLines(entry)
+            val tooltipLines = if (com.shusheng.cobblemarket.client.ItemComponentsDisplay.hoverExpanded()) {
+                val type = com.shusheng.cobblemarket.client.ItemComponentsDisplay.tooltipTypeForHover()
+                if (!reviewAdvancedBuiltWithShift || reviewAdvancedType != type) {
+                    reviewItemAdvancedLines = buildReviewItemLines(entry, type)
                     reviewAdvancedBuiltWithShift = true
+                    reviewAdvancedType = type
                 }
                 reviewItemAdvancedLines
             } else {
                 reviewAdvancedBuiltWithShift = false
+                reviewAdvancedType = null
                 reviewItemTooltipLines
             }
             itemLines = tooltipLines
             itemExtra = minOf(tooltipLines.size, MAX_ITEM_EXTRA_ROWS)
         }
         // 精灵单：完整信息行（照市场确认弹窗），弹窗更高；物品单：词条行数决定弹窗高度（Shift 展开动态伸缩）
-        val dialogH = if (entry.type == "POKEMON") 220 else 190 + itemExtra * 9
+        // 物品单 149：词条区（+44 起，行距 10 与物品市场一致）+ 卖家/出价/总价竖排三行 + 输入框 + 按钮，底部留白 18
+        val dialogH = if (entry.type == "POKEMON") {
+            // 证章区块高度余量（精灵单固定 220 基础上加证章行）
+            val marksCount = (entry.pending?.extraData?.get("marks") ?: "").split(",").filter { it.isNotEmpty() }.size
+            val marksExtra = if (marksCount == 0) 0 else 20 + (if (marksCount > 6) 12 else 0)
+            220 + marksExtra
+        } else 149 + itemExtra * 10
         val dialogX = centerX - dialogW / 2
         val dialogY = if (entry.type == "POKEMON") height / 2 - 110 else height / 2 - dialogH / 2
         // 物品分支控件位置每帧同步（Shift 展开/收起时布局动态伸缩，不挤压不空档）
         if (entry.type == "ITEM") {
-            reviewReasonField?.y = dialogY + 76 + itemExtra * 9
-            reviewAcceptButton?.y = dialogY + 104 + itemExtra * 9
-            reviewRejectButton?.y = dialogY + 104 + itemExtra * 9
+            val baseY = dialogY + 44 + itemExtra * 10
+            reviewReasonField?.y = baseY + 43
+            reviewAcceptButton?.y = baseY + 67
+            reviewRejectButton?.y = baseY + 67
+            reviewCancelButton?.y = baseY + 67
         }
 
         drawScreenDimMask(context, width, height)
@@ -1966,24 +2064,28 @@ class BuyOrderScreen(
             context.drawTextWithShadow(textRenderer, itemName, startX + 20, dialogY + 32, 0xFFFFFF)
             context.drawTextWithShadow(textRenderer, countStr, startX + 20 + textRenderer.getWidth(itemName) + 4, dialogY + 32, 0xAAAAAA)
             // 物品词条（附魔/名称等，去首行物品名；超过上限才截断以「…」收尾）；按住 Shift 展开高级词条
-            //（列表已在函数头按 Shift 状态选好）
+            //（列表已在函数头按 Shift 状态选好）；行距 10 与物品市场悬停一致（9 太贴）
             var ty = dialogY + 44
             val tooltipLines = itemLines ?: emptyList()
             val shown = if (tooltipLines.size > MAX_ITEM_EXTRA_ROWS) tooltipLines.take(MAX_ITEM_EXTRA_ROWS - 1) + Text.literal("…") else tooltipLines
             shown.forEach { line ->
                 context.drawCenteredTextWithShadow(textRenderer, line, centerX, ty, 0xFFFFFF)
-                ty += 9
+                ty += 10
             }
-            // 卖家（默认色）+ 出价（金额段蓝色，2026-08-24 拍板）+ 件数与总价（金额蓝色；Long 防溢出）
-            // y 随词条行数下移，与拒绝输入框（76 + 行数*9）保持 26px 呼吸空间
+            // 卖家 / 出价 / 总价竖排三行（2026-09-06 拍板：原来一行式太挤且底部留白过大；
+            // 标签默认色、金额金色照颜色模板；行距 10 与物品市场悬停一致）
+            val baseY = dialogY + 44 + itemExtra * 10
             context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.buy_order.review_seller").append(Text.literal(pending.sellerName + "  "))
-                    .append(Text.translatable("cobblemarket.buy_order.review_price"))
-                    .append(Text.literal(com.shusheng.cobblemarket.client.formatPrice(pending.price) + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD))
-                    .append(Text.literal(" ×${pending.count} ").formatted(Formatting.GRAY))
-                    .append(Text.translatable("cobblemarket.buy_order.review_total"))
-                    .append(Text.literal(com.shusheng.cobblemarket.client.formatPriceLong(pending.price.toLong() * pending.count) + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
-                centerX, dialogY + 50 + itemExtra * 9, 0xFFFFFF)
+                Text.translatable("cobblemarket.buy_order.review_seller").append(Text.literal(pending.sellerName)),
+                centerX, baseY + 10, 0xFFFFFF)
+            context.drawCenteredTextWithShadow(textRenderer,
+                Text.translatable("cobblemarket.buy_order.review_price").append(
+                    Text.literal(com.shusheng.cobblemarket.client.formatPrice(pending.price) + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+                centerX, baseY + 20, 0xFFFFFF)
+            context.drawCenteredTextWithShadow(textRenderer,
+                Text.translatable("cobblemarket.buy_order.review_total").append(
+                    Text.literal(com.shusheng.cobblemarket.client.formatPriceLong(pending.price.toLong() * pending.count) + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+                centerX, baseY + 30, 0xFFFFFF)
         }
         // 拒绝原因输入框占据原说明行位置（placeholder 已说明用途）
     }
@@ -2019,7 +2121,8 @@ class BuyOrderScreen(
             ballItem = d["ballItem"] ?: "",
             heldItemId = d["heldItemId"] ?: "",
             currencyName = "",
-            aspects = (d["aspects"] ?: "").split(",").filter { it.isNotEmpty() }
+            aspects = (d["aspects"] ?: "").split(",").filter { it.isNotEmpty() },
+            marks = (d["marks"] ?: "").split(",").filter { it.isNotEmpty() }
         )
     }
 
@@ -2188,7 +2291,7 @@ class BuyOrderScreen(
                     Text.translatable("cobblemarket.buy_order.match_no_full").string to 0xFF6666
                 val totalW = textRenderer.getWidth(name) + 4 + textRenderer.getWidth(matchText.first)
                 val startX = centerX - totalW / 2
-                context.drawTextWithShadow(textRenderer, name, startX, dialogY + 70, 0xFFFFFF)
+                context.drawTextWithShadow(textRenderer, name, startX, dialogY + 70, EntryBadgeRenderer.typeColor(p.primaryType))
                 context.drawTextWithShadow(textRenderer, matchText.first, startX + textRenderer.getWidth(name) + 4, dialogY + 70, matchText.second)
             } else {
                 context.drawCenteredTextWithShadow(textRenderer,

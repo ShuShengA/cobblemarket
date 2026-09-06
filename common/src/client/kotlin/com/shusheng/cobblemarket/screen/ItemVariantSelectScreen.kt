@@ -148,8 +148,14 @@ class ItemVariantSelectScreen(
             }
             drawNineSlice(context, ROW_BACKGROUND_TEXTURE, lx, y, 296, rowH - 2, rowState, ROW_BACKGROUND_TEX_H)
             context.drawItem(v.sample, lx + 4, y + 4)
-            context.drawTextWithShadow(textRenderer, v.sample.name, lx + 26, y + 8, 0xFFFFFF)
+            // 组件摘要（附魔名+等级/TM 招式名等，照黑名单行显示；超长截断防覆盖数量文字）
+            val summary = com.shusheng.cobblemarket.client.ItemComponentsDisplay.summaryOfStack(v.sample)
+            val nameStr = if (summary.isEmpty()) v.sample.name.string else v.sample.name.string + "（$summary）"
             val countText = "×${v.count}"
+            val nameMaxW = 292 - 26 - textRenderer.getWidth(countText) - 6
+            context.drawTextWithShadow(textRenderer,
+                com.shusheng.cobblemarket.util.TextUtil.truncateString(nameStr, nameMaxW),
+                lx + 26, y + 8, 0xFFFFFF)
             context.drawTextWithShadow(textRenderer, countText, lx + 292 - textRenderer.getWidth(countText), y + 8, 0xAAAAAA)
         }
         if (variants.isEmpty()) {
@@ -195,9 +201,10 @@ class ItemVariantSelectScreen(
         return false
     }
 
-    /** 悬停 tooltip：ADVANCED 完整信息（含容器内容），手动渲染不受 SHIFT 限制 */
+    /** 悬停 tooltip：照原版背包悬停按键语义（Shift 完整词条 / Ctrl+F3+H 调试信息） */
     private fun renderVariantTooltip(context: DrawContext, v: Variant, mouseX: Int, mouseY: Int) {
-        val lines = v.sample.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.ADVANCED)
+        val lines = com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(v.sample, client?.player,
+            com.shusheng.cobblemarket.client.ItemComponentsDisplay.tooltipTypeForHover())
             .map { it to 0xFFFFFF }
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }

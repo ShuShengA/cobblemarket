@@ -66,6 +66,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private var tooltipCacheLines: List<Pair<Text, Int>> = emptyList()
     /** Shift 展开词条缓存（按住 Shift 才按需构建，防每帧 getTooltip ADVANCED 解析 NBT 掉帧） */
     private var tooltipAdvancedLines: List<Pair<Text, Int>>? = null
+    private var tooltipAdvancedType: TooltipType? = null
 
     private var selectedEntry: ItemEntry? = null
     private var buyCountField: TextFieldWidget? = null
@@ -129,10 +130,12 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         addDrawableChild(searchField)
         searchField?.text = savedSearch
 
-        // 上架按钮（+）
+        // 上架按钮（choose 图标）
         sellAddButton = NineSliceButton(
             leftX + 136, 44, 18, 16,
-            Text.literal("+"), { openItemSellScreen() }
+            Text.literal(""), { openItemSellScreen() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
         )
         addDrawableChild(sellAddButton)
 
@@ -442,16 +445,25 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     }
 
     private fun renderItemTooltip(context: DrawContext, entry: ItemEntry, mouseX: Int, mouseY: Int) {
-        // 文本行缓存：悬停同一格时内容不变，只在悬停目标变化时重建（Shift 切换不影响缓存键）
+        // 文本行缓存：悬停同一格时内容不变，只在悬停目标变化时重建（Shift/Ctrl 切换不影响缓存键）
         if (tooltipCacheKey != entry.id) {
             tooltipCacheKey = entry.id
             tooltipCacheLines = buildTooltipLines(entry, TooltipType.BASIC)
             tooltipAdvancedLines = null
+            tooltipAdvancedType = null
         }
-        // 按住 Shift 展开高级词条（潜影箱内容等，照原版背包悬停行为）
-        val advanced = if (net.minecraft.client.gui.screen.Screen.hasShiftDown()) {
-            tooltipAdvancedLines ?: buildTooltipLines(entry, TooltipType.ADVANCED).also { tooltipAdvancedLines = it }
-        } else null
+        // 按住 Shift 展开完整词条 / Ctrl（F3+H 开启）展开调试信息（照原版背包悬停；类型变化重建缓存）
+        val advanced = if (com.shusheng.cobblemarket.client.ItemComponentsDisplay.hoverExpanded()) {
+            val type = com.shusheng.cobblemarket.client.ItemComponentsDisplay.tooltipTypeForHover()
+            if (tooltipAdvancedType != type) {
+                tooltipAdvancedType = type
+                tooltipAdvancedLines = buildTooltipLines(entry, type)
+            }
+            tooltipAdvancedLines
+        } else {
+            tooltipAdvancedType = null
+            null
+        }
         val lines = advanced ?: tooltipCacheLines
 
         var maxWidth = 0
@@ -479,7 +491,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         val stack = entryStacks[entry.id]
         val built = mutableListOf<Pair<Text, Int>>()
         if (stack != null) {
-            built.addAll(stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, type).map { it to 0xFFFFFF })
+            built.addAll(com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(stack, client?.player, type).map { it to 0xFFFFFF })
         } else {
             built.add(Text.literal(entry.itemId) to 0xFFFFFF)
         }
