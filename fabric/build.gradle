@@ -53,8 +53,8 @@ dependencies {
 	modImplementation "dev.architectury:architectury-fabric:${rootProject.architectury_api_version}"
 
 	// Cobblemon 运行时；第三方 jar 不入库（Cobblemon 130MB + 许可限制）
-	modImplementation "maven.modrinth:cobblemon:kF7CvxTo"
-	modLocalRuntime "maven.modrinth:cobblemon:kF7CvxTo"
+	modImplementation "maven.modrinth:cobblemon:YgmyyFcs"
+	modLocalRuntime "maven.modrinth:cobblemon:YgmyyFcs"
 	modCompileOnly "maven.modrinth:cobbledollars:cqsHXSXe"
 	modCompileOnly "maven.modrinth:cobblemon-economy:CfJu3YAf"
 	// Impactor 经济 API（服务端专用模组；compileOnly 不进包，运行时服主装 Impactor 本体）
