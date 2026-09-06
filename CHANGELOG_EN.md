@@ -4,7 +4,7 @@
 
 ### Changes
 
-- **Cobblemon 1.8 adaptation, 1.7 no longer supported**: version requirement updated to `[1.8.0, 1.9.0)` — **this version and all future versions require Cobblemon 1.8+**. Reason: 1.8's `drawProfilePokemon` (the GUI Pokémon renderer) had a breaking signature change (boolean → ProfileTransformType + a new parameter), and compiled output can only match one runtime signature — simultaneous 1.7/1.8 support is impossible, so the mod follows 1.8 (cheap to adapt, and 1.8 is now mainstream). Full API signature diff verified (this was the only breaking change); 1.7.x players should keep using 1.0.0
+- **Cobblemon 1.8 adaptation, 1.7 no longer supported**: this version and all future versions require Cobblemon 1.8+. Reason: 1.8's GUI Pokémon renderer (drawProfilePokemon) had a breaking signature change (boolean → ProfileTransformType + a new parameter); 1.7.x players should keep using 1.0.0
 
 ## 1.0.0 (released)
 
