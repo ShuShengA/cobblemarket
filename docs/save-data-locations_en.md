@@ -35,23 +35,25 @@ All data is persisted via Minecraft's PersistentState mechanism in the server wo
 
 ## Trade History CSV and Compensation Reconciliation
 
-Since beta.4 the mod writes every trade **synchronously** to a CSV ledger (independent of autosave, survives crashes/process kills) at `config/cobblemarket/history/history_<date>_<lang>.csv`, with fields: time (second precision), type (listed/sold/removed/returned), category, seller, buyer, Pokémon/item, price, fee.
+Since beta.4 the mod writes every trade **synchronously** to a CSV ledger (independent of autosave, survives crashes/process kills) at `config/cobblemarket/history/history_<date>_<lang>.csv`, with fields: time (second precision), type, category, seller, buyer, Pokémon/item, price, fee, details.
+
+Types (market/auction/buy-order full chain): listed (market/auction listing), buy order (buy order posted, the poster occupies the seller column), sold (market/auction sale, buy order delivery), removed (manual close/expired/unsold/admin force; the `reason=` column distinguishes: user / expired / admin / unsold), returned (pending return claimed).
+
+Details column: full Pokémon stats (level/shiny/IVs/EVs/hyper training/nature/ability/gender/ball/held item/form) and item components (count/enchantment summary/full NBT) — goods can be recreated faithfully.
 
 If a player reports "my listed Pokémon/item disappeared", server owners can reconcile in three steps to confirm whether it was lost and compensate:
 
-1. Filter today's CSV by player name and find the "listed" record for the item (note the price)
+1. Filter today's CSV by player name and find the "listed/buy order" record for the item (note the price)
 2. Confirm there is no subsequent "sold/removed/returned" record for it
-3. Confirm it is not currently in the market listings
+3. Confirm it is not currently in the market/auction/buy-order listings
 
-All three hold → the data was indeed lost due to an abnormal server shutdown → compensate the player at the price recorded in the CSV.
-
-Reconciliation limits: the CSV only records display names and prices — item enchantments/NBT details and Pokémon IVs/natures/shininess cannot be restored, only a fresh item of the same kind can be given; when reconciling Pokémon by display name, different forms may share the same name, so reconciliation only reaches "species" granularity.
+All three hold → the data was indeed lost due to an abnormal server shutdown → compensate the player at the price recorded in the CSV, and recreate the goods faithfully from the details column.
 
 ## Finance System (Meowth Bank) Credit Ledger CSVs
 
 Finance loan/repayment events are **synchronously appended** to a separate credit ledger (independent of autosave, survives crashes/process kills, append-only) at `config/cobblemarket/credit/` — a **separate directory, never mixed into the trade ledger**.
 
-- `loan_records_<date>_<lang>.csv` (loan events): Time, Type, Source, Player, Principal, Periods, Daily Rate, Status, Details. Types: Created (Counter=cash loan/Jiebei; Pokémon purchase/Item purchase/Auction bid=consumer loan/Meowth Pay), Confirmed (auction won), Revoked (auction unfrozen), Closed, Overdue, Bad debt.
+- `loan_records_<date>_<lang>.csv` (loan events): Time, Type, Source, Player, Principal, Periods, Daily Rate, Status, Details. Types: Created (Counter=cash loan/Jiebei; Pokémon purchase/Item purchase=consumer loan/Meowth Pay), Revoked (bad debt revoked by admin), Closed, Overdue, Bad debt.
 - `repayment_records_<date>_<lang>.csv` (repayment events): Time, Player, Loan ID, Principal Part, Interest, Method, Details. Methods: Manual / Auto / Early payoff.
 
 Split of duties: the trade ledger answers "where did the goods go", the credit ledger answers "where did the money go". For loan disputes: find the Created record in loan_records by player name (note the loan ID), then check every repayment for that loan ID in repayment_records. Full field descriptions are in the directory's README.

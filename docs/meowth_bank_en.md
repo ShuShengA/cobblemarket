@@ -65,7 +65,7 @@ The Purple/Black card "deposit balance" requirement is judged by **net deposit**
 | Any | Overdue status: new loans / Meowth Pay blocked, red notice | Catching up on installments restores it |
 | ≥ 7 days | Market fees doubled (for the payer) | Drops back under 7 days |
 | ≥ 14 days | Market trading frozen (reuses the ban system — blocks trading, never asset claims) | Repayment unfreezes automatically |
-| ≥ 30 days | Written off as bad debt: principal unrecoverable, trading stays frozen, OPs get an alert | Owner intervention (see §8) |
+| ≥ 30 days | Written off as bad debt: principal unrecoverable, trading stays frozen, OPs get an alert | Owner intervention (see §9) |
 
 - Sanctions recompute in real time after every repayment: one installment paid reduces overdue days by 7, downgrades apply immediately
 - Bad-debt players stay frozen permanently. Owners have two levels of intervention: **unban only** (trading restored, borrowing still blocked) or **revoke the bad debt** (trading and borrowing fully restored)
@@ -86,7 +86,32 @@ Available limit = max(0, credit base − total outstanding debt), then clamped t
 - **Credit growth cooldown** (default 24 hours, 0 = off): trades don't count toward the limit during the cooldown — the limit grows on a delay, closing the "farm-then-borrow-then-run" window for organized groups
 - **Same-IP debt cap** (`ipDebtLimit`): total outstanding debt of every player who used this IP within 30 days, plus the new loan, must not exceed the cap — blocks alt-army borrowing (OPs exempt; 0 = disabled)
 
-## 7. Configuration (editable in the in-game Server Config screen)
+## 7. Card system (Meow·Purple Gold Card / Meow·Black Gold Card)
+
+High-limit credential items — holders get a **fixed borrowing limit** (independent of the trade-volume formula). The limit is bound to holder state, not the item, so cards duplicated by item bugs are worthless; dropped cards vanish instantly (no trading), and holders can re-obtain the card at Meowth Bank for a reissue fee.
+
+### Meow·Purple Gold Card
+
+- Limit `purpleCardCreditLimit` (default 1M); server-wide cap `purpleCardCount` (default 20, 0 = unlimited)
+- How to get: the owner issues it via `/market card give <player>`; or, with self-apply enabled, players apply via the Purple Gold Card icon on the left of Meowth Bank (the application fee goes to the reserve pool)
+- Six self-apply conditions (all configurable, 0 = not required): asset (cash balance) / spending (all-time counted buying volume) / credit (credit base) / **net deposit** (demand deposit − outstanding debt, see §3) / Pokédex count / clean record
+- Fee discount: market fees are discounted by `purpleCardFeeDiscount` (listing/auction settlement/buy-order fees, stacks with overdue doubling, off by default)
+- Card holders are exempt from the same-IP debt cap (alts can't hold cards: server-wide cap + six conditions)
+
+### Meow·Black Gold Card
+
+- One tier above Purple: limit `blackCardCreditLimit` (default 5M); server cap `blackCardCount` (default 5)
+- Hard apply requirement: **must already hold the Purple Gold Card** + the six conditions (same shape, configurable) + the application fee
+- **Upgrade replacement**: obtaining the Black Gold Card auto-removes the Purple Gold Card qualification (no double slot); the Black Gold Card's limit and fee discount apply
+- Everything else matches the Purple Gold Card (drop-to-vanish / reissue fee / same-IP exemption)
+
+### Owner tools
+
+- `/market card give|revoke|list <player> [purple|black]`: issue/revoke/list (purple by default; revoke works for offline players)
+- Card management screen (under the Rules button in Meowth Bank, OP only): every holder listed with a per-row revoke button
+- Holder display panels (under each card in Meowth Bank, visible to everyone): the title shows holders/cap, and the panel lists holders (skin avatar + name, scrollable)
+
+## 8. Configuration (editable in the in-game Server Config screen)
 
 | Config | Default | Notes & advice |
 |---|---|---|
@@ -98,7 +123,7 @@ Available limit = max(0, credit base − total outstanding debt), then clamped t
 | Limit weight · all-time | 0.1 | Credit formula weight |
 | Limit min / max | 0 / 100000 | Min only backs players **without** debt (cold start); with debt the limit follows the raw formula |
 | `autoRepayMinBalance` | 1000 | Minimum balance kept by auto-deduct (balance never drops below it). Note: below this value auto-deduct **won't run** (goes overdue) — small economies should lower it or set 0 |
-| Deposit daily rate | 0.0001 | Daily interest rate for demand deposits (0.01%/day ≈ 3.65%/year); paid from the reserve pool. **Hard cap guard**: cannot exceed the cheapest loan plan's arbitrage bound (auto-clamped + logged, see §10) |
+| Deposit daily rate | 0.0001 | Daily interest rate for demand deposits (0.01%/day ≈ 3.65%/year); paid from the reserve pool. **Hard cap guard**: cannot exceed the cheapest loan plan's arbitrage bound (auto-clamped + logged, see §3) |
 | Credit growth cooldown (hours) | 24 | Trades don't count toward the limit during this delay (0 = off) |
 | Same-pair window (days) / cap (trades) | 30 / 3 | Anti-wash-trading window and cap (see §6) |
 | `ipDebtLimit` | 100000 | Same-IP debt cap (see §6). Recommended: 1–3× the limit max; raise it for dorm/cyber-café servers to avoid false positives; 0 = disabled |
@@ -106,7 +131,7 @@ Available limit = max(0, credit base − total outstanding debt), then clamped t
 
 > All finance configs hot-apply immediately (new loans use new config; existing loans keep their snapshotted rates). The only exception remains the currency backend (restart required, same as the market).
 
-## 8. Owner tools
+## 9. Owner tools
 
 - **All Loans** screen (Meowth Bank bottom-right, OP only): the server-wide loan ledger with each borrower's latest IP (alt spotting); a "Bad Debt" tab filters all bad debts; a "Revoke" button per bad-debt row (5-second cooldown confirmation dialog)
 - **`/market loan clear <player>`**: the command twin of the revoke button
@@ -114,7 +139,7 @@ Available limit = max(0, credit base − total outstanding debt), then clamped t
 - **Audit ledgers**: `config/cobblemarket/credit/` contains `loan_records_<date>_<lang>.csv` and `repayment_records_<date>_<lang>.csv` — Chinese and English copies, split by day, append-only; repayments split principal/interest with method (manual/auto/early)
 - **Automatic cleanup**: repaid loans are purged from state 90 days after settlement (the audit CSVs keep full history forever), preventing save bloat
 
-## 9. FAQ
+## 10. FAQ
 
 ### A player has enough balance but auto-deduct doesn't run?
 
@@ -142,7 +167,7 @@ Trading is frozen and borrowing is permanently blocked. Owner intervention has t
 
 ### Can players borrow, deposit, and farm interest?
 
-No. The **deposit-rate guard** (see §10) hard-caps the deposit daily rate (auto-clamped + logged on load and save), so the interest spread of any borrow → deposit → repay combination is ≤ 0 — arbitrage never pays. The default 0.0001 sits 4.8× below the default plans' arbitrage bound.
+No. The **deposit-rate guard** (see §3) hard-caps the deposit daily rate (auto-clamped + logged on load and save), so the interest spread of any borrow → deposit → repay combination is ≤ 0 — arbitrage never pays. The default 0.0001 sits 4.8× below the default plans' arbitrage bound.
 
 ### How is the card "deposit balance" requirement judged?
 
@@ -154,7 +179,7 @@ By **net deposit**: net deposit = demand deposit balance − outstanding debt (b
 - Sanctions escalate at 7/14/30 days; repayment downgrades them in real time
 - Check the reserve pool and bad-debt totals in the admin panel; reconcile via the audit CSVs
 
-## 10. Safety and trust boundaries
+## 11. Safety and trust boundaries
 
 - The reserve pool never creates money: lending leaves the pool, repayment returns to it, and bad debt only marks (the money already left)
 - Bad debt = the owner takes the loss (money taken and never repaid); a negative pool = owner debt, red-alerted in the admin panel
