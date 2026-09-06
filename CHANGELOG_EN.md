@@ -42,7 +42,6 @@
 
 - Finance configs moved from the Server Config screen into a dedicated "Meowth Bank Config" screen — a new button at the bottom of the main screen opens it, with all Meowth Bank settings (switches / rates / limits / anti-abuse params) edited in one place
 - The "allow players to self-apply" switch in the Purple Gold Card/Black Gold Card config screens now opens a confirmation dialog (5-second cooldown + red warning text) when turned on — prevents owners from enabling it before the apply conditions are configured, which would let players apply unconditionally and flood the server with cards
-- **Cobblemon dependency raised to 1.8** (version requirement `[1.8.0, 1.9.0)`): adapted to 1.8's new `drawProfilePokemon` signature (boolean → ProfileTransformType + a new parameter), verified via full API signature diff; 1.7.x players should keep using 1.0.0
 
 ### Fixes
 
