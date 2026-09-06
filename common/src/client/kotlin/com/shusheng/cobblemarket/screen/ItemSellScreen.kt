@@ -50,8 +50,11 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         val leftX = width / 2 - panelWidth / 2
         val backBtn = NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(ItemMarketScreen()) }
+            Text.literal(""),
+            { client?.setScreen(ItemMarketScreen()) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         )
         backButton = backBtn
         addDrawableChild(backBtn)
@@ -285,11 +288,10 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         items.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, item ->
             val y = startY + i * rowHeight
             context.drawItem(item.stack, leftX + 2, y + 2)
-            // 组件摘要（附魔名+等级/TM 招式名等，照黑名单行显示；超长截断防覆盖数量文字）
-            val summary = com.shusheng.cobblemarket.client.ItemComponentsDisplay.summaryOfStack(item.stack)
-            val nameStr = if (summary.isEmpty()) item.name else item.name + "（$summary）"
+            // 行名照物品栏悬浮第一行按稀有度着色（组件明细看悬停词条，行内不重复显示）
+            val nameText = com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(item.stack)
             context.drawTextWithShadow(textRenderer,
-                com.shusheng.cobblemarket.util.TextUtil.truncateString(nameStr, 200 - 24 - 6),
+                com.shusheng.cobblemarket.util.TextUtil.truncateText(nameText, 200 - 24 - 6),
                 leftX + 24, y + 6, 0xFFFFFF)
             context.drawTextWithShadow(textRenderer, "×${item.count}", leftX + 200, y + 6, 0xAAAAAA)
         }

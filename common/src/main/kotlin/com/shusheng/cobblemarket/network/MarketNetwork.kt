@@ -1798,6 +1798,11 @@ object MarketNetwork {
                 else null
                 val priceBounds = com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
                 if (priceBounds != null) {
+                    // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
+                    if (priceBounds.isEmptyRange) {
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.conflict")))
+                        return@execute
+                    }
                     // 携带物参与限价时用带说明的提示，玩家才知道总价里包含了携带物部分
                     if (priceBounds.min != null && payload.price < priceBounds.min) {
                         val key = if (heldItemId != null) "cobblemarket.price_limit.held_below_min" else "cobblemarket.price_limit.below_min"
@@ -2023,6 +2028,11 @@ object MarketNetwork {
                 val itemPriceBounds = com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
                     .getPriceBounds(targetStack, player.serverWorld.registryManager)
                 if (itemPriceBounds != null) {
+                    // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
+                    if (itemPriceBounds.isEmptyRange) {
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.conflict")))
+                        return@execute
+                    }
                     if (itemPriceBounds.min != null && payload.price < itemPriceBounds.min) {
                         sendToPlayer(
                             player,

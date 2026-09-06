@@ -213,6 +213,7 @@
   "cobblemarket.price_limit.below_min": "上架价格低于最低限制（%s）",
   "cobblemarket.price_limit.container_item_blocked": "挂单物品的容器内含有受价格限制的物品（限价无法约束容器内的物品，故禁止装容器出售）",
   "cobblemarket.price_limit.above_max": "上架价格高于最高限制（%s）",
+  "cobblemarket.price_limit.conflict": "该物品被多条限价规则交叉限制（无可用价格区间），无法交易",
   "cobblemarket.price_limit.held_below_min": "上架价格低于最低限制（%s，含携带物）",
   "cobblemarket.price_limit.held_above_max": "上架价格高于最高限制（%s，含携带物）",
   "cobblemarket.gui.shiny_any": "不限",

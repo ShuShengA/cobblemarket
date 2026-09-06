@@ -58,8 +58,11 @@ class ItemVariantSelectScreen(
         val lx = width / 2 - 148
         addDrawableChild(NineSliceButton(
             lx + 296 - 50, 13, 50, 16,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(BuyOrderScreen()) }
+            Text.literal(""),
+            { client?.setScreen(BuyOrderScreen()) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         ))
         // 确认交付按钮（照 SellSelectScreen 交付模式）：选中一行后激活；
         // 按钮固定贴底部（height-60 滚动指示文字上方 4px），分割线在按钮上方——形态组少时不留大空余
@@ -148,13 +151,12 @@ class ItemVariantSelectScreen(
             }
             drawNineSlice(context, ROW_BACKGROUND_TEXTURE, lx, y, 296, rowH - 2, rowState, ROW_BACKGROUND_TEX_H)
             context.drawItem(v.sample, lx + 4, y + 4)
-            // 组件摘要（附魔名+等级/TM 招式名等，照黑名单行显示；超长截断防覆盖数量文字）
-            val summary = com.shusheng.cobblemarket.client.ItemComponentsDisplay.summaryOfStack(v.sample)
-            val nameStr = if (summary.isEmpty()) v.sample.name.string else v.sample.name.string + "（$summary）"
+            // 行名照物品栏悬浮第一行按稀有度着色（组件明细看悬停词条，行内不重复显示）
+            val nameText = com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(v.sample)
             val countText = "×${v.count}"
             val nameMaxW = 292 - 26 - textRenderer.getWidth(countText) - 6
             context.drawTextWithShadow(textRenderer,
-                com.shusheng.cobblemarket.util.TextUtil.truncateString(nameStr, nameMaxW),
+                com.shusheng.cobblemarket.util.TextUtil.truncateText(nameText, nameMaxW),
                 lx + 26, y + 8, 0xFFFFFF)
             context.drawTextWithShadow(textRenderer, countText, lx + 292 - textRenderer.getWidth(countText), y + 8, 0xAAAAAA)
         }

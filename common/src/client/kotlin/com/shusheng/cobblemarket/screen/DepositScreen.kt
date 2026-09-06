@@ -13,6 +13,7 @@ import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.text.Text
+import net.minecraft.util.Identifier
 import net.minecraft.util.Formatting
 
 /**
@@ -41,8 +42,11 @@ class DepositScreen : Screen(Text.translatable("cobblemarket.deposit.title")) {
         // 返回按钮：右上角内移 8px（照 LoanScreen）
         addDrawableChild(NineSliceButton(
             dialogX + dialogW - 58, dialogY + 8, 50, 16,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(MeowthBankScreen()) }
+            Text.literal(""),
+            { client?.setScreen(MeowthBankScreen()) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         ))
 
         // 金额输入框（只数字；重建后恢复输入）

@@ -220,8 +220,11 @@ class AuctionScreen(
 
         val backBtn = NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) }
+            Text.literal(""),
+            { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         )
         backButton = backBtn
         addDrawableChild(backBtn)
@@ -1235,7 +1238,20 @@ class AuctionScreen(
                 val primaryType = entry.extraData["primaryType"] ?: ""
                 val tc = typeColor(if (primaryType.isNotEmpty()) primaryType else "cobblemon.type.normal")
                 val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(displayName(entry), 44)
-                context.drawTextWithShadow(textRenderer, name, sx, y + 7, tc)
+                if (entry.type == "ITEM") {
+                    // 物品行名照物品栏悬浮第一行按稀有度着色（行级缓存栈，不每帧解析 NBT）
+                    val stack = rowStacks[origIndex]?.itemStack
+                    if (stack != null) {
+                        context.drawTextWithShadow(textRenderer,
+                            com.shusheng.cobblemarket.util.TextUtil.truncateText(
+                                com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), 44),
+                            sx, y + 7, 0xFFFFFF)
+                    } else {
+                        context.drawTextWithShadow(textRenderer, name, sx, y + 7, tc)
+                    }
+                } else {
+                    context.drawTextWithShadow(textRenderer, name, sx, y + 7, tc)
+                }
                 sx += textRenderer.getWidth(name)
                 if (entry.shiny) {
                     context.drawText(textRenderer, "★", sx + 2, y + 7, GOLD_COLOR, false)

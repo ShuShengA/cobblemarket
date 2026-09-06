@@ -62,8 +62,11 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
 
         val backBtn = NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(AdminScreen()) }
+            Text.literal(""),
+            { client?.setScreen(AdminScreen()) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         )
         backButton = backBtn
         addDrawableChild(backBtn)

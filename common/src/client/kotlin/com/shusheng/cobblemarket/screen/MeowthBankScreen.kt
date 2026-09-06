@@ -66,8 +66,11 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         // （全部借款历史：x=width/2+25 宽 80 → 右边缘 width/2+105）
         backButton = NineSliceButton(
             width / 2 + 57, bgTop + 47, 48, 16,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) }
+            Text.literal(""),
+            { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         )
         addDrawableChild(backButton)
 

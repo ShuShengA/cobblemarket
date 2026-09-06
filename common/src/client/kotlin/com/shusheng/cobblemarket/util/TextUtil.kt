@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.util
 
 import net.minecraft.client.MinecraftClient
+import net.minecraft.item.ItemStack
 import net.minecraft.text.Text
 
 object TextUtil {
@@ -14,7 +15,10 @@ object TextUtil {
         return s.substring(0, end) + "…"
     }
 
-    fun truncateText(t: Text, maxWidth: Int): Text = Text.literal(truncateString(t.string, maxWidth))
+    fun truncateText(t: Text, maxWidth: Int): Text = Text.literal(truncateString(t.string, maxWidth)).setStyle(t.style)
+
+    // 物品显示名照物品栏悬浮第一行着色（按稀有度；名字自带样式码的物品如卡片不受影响）
+    fun rarityColoredName(stack: ItemStack): Text = stack.name.copy().formatted(stack.rarity.formatting)
 
     // IV 显示：极限特训过（hyper trained）时显示「真实值（特训值）」，未特训只显示真实值。
     // 用于市场/拍卖/上架等界面的个体值展示，与 Cobblemon 队伍详情格式一致。

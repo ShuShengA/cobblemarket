@@ -66,6 +66,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private val ivOpButtons = mutableMapOf<Int, NineSliceButton>()
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
     private var htFilter = 0
+
+    // [PC] 图标：Cobblemon 电脑物品栈（lazy 缓存，避免每帧查注册表）
+    private val pcItemStack: ItemStack by lazy { ItemStack(Registries.ITEM.get(Identifier.of("cobblemon", "pc"))) }
     private var htButton: NineSliceButton? = null
     private var hpF: TextFieldWidget? = null; private var atkF: TextFieldWidget? = null; private var defF: TextFieldWidget? = null
     private var spaF: TextFieldWidget? = null; private var spdF: TextFieldWidget? = null; private var speF: TextFieldWidget? = null
@@ -179,8 +182,11 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
         val backBtn = NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(AuctionScreen(currentTab)) }
+            Text.literal(""),
+            { client?.setScreen(AuctionScreen(currentTab)) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         )
         backButton = backBtn
         addDrawableChild(backBtn)
@@ -821,13 +827,23 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 // 预览弹窗打开时不渲染 3D（模型层在衬底之上，压暗仍会浮在弹窗上）
                 if (dialogPokemon == null && dialogItem == null) renderPokemonIcon(context, origIndex, slotX, slotY, 20, delta = delta)
 
-                // 来源（[队]/[PC] 固定色，精灵名属性色 + 金色闪光星标，照搬 SellSelectScreen）
-                val src = Text.translatable(if (p.source == "party") "cobblemarket.sell.party" else "cobblemarket.sell.pc").string
+                // 来源（[队]/[PC] 固定色，精灵名属性色 + 金色闪光星标，照搬 SellSelectScreen；PC 用电脑物品图标，[] 保持原色）
                 val tc = typeColor(if (p.primaryType.isNotEmpty()) p.primaryType else "cobblemon.type.normal")
                 val srcColor = if (p.source == "party") 0x55FF55 else 0x55AAFF
                 var sx = leftX + 28
-                context.drawText(textRenderer, src, sx, y + 7, srcColor, false)
-                sx += textRenderer.getWidth(src) + 4
+                if (p.source == "party") {
+                    val src = Text.translatable("cobblemarket.sell.party").string
+                    context.drawText(textRenderer, src, sx, y + 7, srcColor, false)
+                    sx += textRenderer.getWidth(src) + 4
+                } else {
+                    context.drawText(textRenderer, "[", sx, y + 7, srcColor, false)
+                    sx += textRenderer.getWidth("[")
+                    com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                        itemStack = pcItemStack, x = sx.toDouble(), y = y + 5.0, scale = 0.75, matrixStack = context.matrices)
+                    sx += 12
+                    context.drawText(textRenderer, "]", sx, y + 7, srcColor, false)
+                    sx += textRenderer.getWidth("]") + 4
+                }
 
                 // Ball icon（球种统一在精灵名称左侧；弹窗打开时不渲染；ball 非空就占位 12px，与原来一致）
                 if (dialogPokemon == null && dialogItem == null && p.ball.isNotEmpty()) {
@@ -871,12 +887,11 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             items.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, item ->
                 val y = startY + i * rowHeight
                 context.drawItem(item.stack, leftX + 4, y + 4)
-                // 组件摘要（附魔名+等级/TM 招式名等，照黑名单行显示）
-                val summary = com.shusheng.cobblemarket.client.ItemComponentsDisplay.summaryOfStack(item.stack)
-                val name = if (summary.isEmpty()) itemDisplay(item.stack)
-                    else "${itemDisplay(item.stack)}（$summary）"
+                // 行名照物品栏悬浮第一行按稀有度着色（组件明细看悬停词条，行内不重复显示）
+                val display = com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(item.stack)
+                    .copy().append(Text.literal(" ×${item.count}"))
                 context.drawTextWithShadow(textRenderer,
-                    com.shusheng.cobblemarket.util.TextUtil.truncateString("$name ×${item.count}", 200),
+                    com.shusheng.cobblemarket.util.TextUtil.truncateText(display, 200),
                     leftX + 24, y + 7, 0xFFFFFF)
             }
         }

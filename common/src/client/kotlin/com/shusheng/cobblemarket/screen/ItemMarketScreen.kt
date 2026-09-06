@@ -17,6 +17,7 @@ import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
+import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.client.sound.PositionedSoundInstance
 import net.minecraft.item.Item
@@ -113,7 +114,11 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         addDrawableChild(returnsButton)
         backButton = NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
-            Text.translatable("cobblemarket.gui.back"), { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) }
+            Text.literal(""),
+            { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         )
         addDrawableChild(backButton)
 
@@ -147,20 +152,38 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         )
         addDrawableChild(sortButton)
 
-        // 我的
+        // 我的（personal/personal_click 双图标：关 = 全部，开 = 仅我的；悬停词条随状态）
         mineButton = NineSliceButton(
             leftX + 156, 44, 50, 16,
-            Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine"),
-            { toggleMineOnly() }
+            Text.literal(""),
+            { toggleMineOnly() },
+            iconLeft = Identifier.of("cobblemarket",
+                if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         )
         addDrawableChild(mineButton)
 
         // 分页（照精灵市场：底部分割线在网格最后一行下方 4px 对称，按钮在其与背景底边之间居中偏上 5px）
         val gridBottom = getGridStartY() + rows() * (slotSize + gap)
         val btnY = (gridBottom + 5 + (height - 32)) / 2 - 10 - 5
-        prevButton = NineSliceButton(leftX, btnY, 80, 20, Text.translatable("cobblemarket.gui.prev"), { prevPage() })
+        prevButton = NineSliceButton(
+            leftX, btnY, 80, 20,
+            Text.literal(""),
+            { prevPage() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.prev")
+        )
         addDrawableChild(prevButton)
-        nextButton = NineSliceButton(leftX + panelWidth - 80, btnY, 80, 20, Text.translatable("cobblemarket.gui.next"), { nextPage() })
+        nextButton = NineSliceButton(
+            leftX + panelWidth - 80, btnY, 80, 20,
+            Text.literal(""),
+            { nextPage() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.next")
+        )
         addDrawableChild(nextButton)
         updatePageButtons()
 
@@ -260,7 +283,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     private fun toggleMineOnly() {
         showMineOnly = !showMineOnly
-        mineButton?.message = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
+        mineButton?.iconLeft = Identifier.of("cobblemarket",
+            if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png")
+        mineButton?.setTooltip(Tooltip.of(Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")))
         currentPage = 1
         requestFilterRefresh()
     }
@@ -736,7 +761,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         if (registry != null) {
             val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
             context.drawItem(stack, centerX - 8, dialogY + 26)
-            context.drawCenteredTextWithShadow(textRenderer, stack.name, centerX, dialogY + 46, 0xFFFFFF)
+            // 物品名照物品栏悬浮第一行按稀有度着色
+            context.drawCenteredTextWithShadow(textRenderer,
+                com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), centerX, dialogY + 46, 0xFFFFFF)
         }
 
         context.drawCenteredTextWithShadow(textRenderer,
@@ -810,7 +837,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         if (registry != null) {
             val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
             context.drawItem(stack, centerX - 8, dialogY + 26)
-            context.drawCenteredTextWithShadow(textRenderer, stack.name, centerX, dialogY + 46, 0xFFFFFF)
+            // 物品名照物品栏悬浮第一行按稀有度着色
+            context.drawCenteredTextWithShadow(textRenderer,
+                com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), centerX, dialogY + 46, 0xFFFFFF)
         }
 
         context.drawTextWithShadow(textRenderer,

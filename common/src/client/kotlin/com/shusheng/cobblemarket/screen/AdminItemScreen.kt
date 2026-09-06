@@ -10,6 +10,7 @@ import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
+import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.client.sound.PositionedSoundInstance
 import net.minecraft.item.Item
@@ -110,7 +111,9 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
 
     private fun toggleMineOnly() {
         showMineOnly = !showMineOnly
-        mineButton?.message = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
+        mineButton?.iconLeft = Identifier.of("cobblemarket",
+            if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png")
+        mineButton?.setTooltip(Tooltip.of(Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")))
         currentPage = 1
         refreshData()
     }
@@ -121,8 +124,11 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
 
         backButton = NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(AdminScreen()) }
+            Text.literal(""),
+            { client?.setScreen(AdminScreen()) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         )
         addDrawableChild(backButton)
 
@@ -146,10 +152,15 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         )
         addDrawableChild(sortButton)
 
+        // 我的（personal/personal_click 双图标：关 = 全部，开 = 仅我的；悬停词条随状态）
         mineButton = NineSliceButton(
             leftX + 156, 44, 50, 16,
-            Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine"),
-            { toggleMineOnly() }
+            Text.literal(""),
+            { toggleMineOnly() },
+            iconLeft = Identifier.of("cobblemarket",
+                if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         )
         addDrawableChild(mineButton)
 
@@ -166,10 +177,24 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         // 分页（照精灵市场：底部分割线在网格最后一行下方 4px 对称，按钮在其与背景底边之间居中偏上 5px）
         val gridBottom = getGridStartY() + rows() * (slotSize + gap)
         val btnY = (gridBottom + 5 + (height - 32)) / 2 - 10 - 5
-        prevButton = NineSliceButton(leftX, btnY, 80, 20, Text.translatable("cobblemarket.gui.prev"), { prevPage() })
+        prevButton = NineSliceButton(
+            leftX, btnY, 80, 20,
+            Text.literal(""),
+            { prevPage() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.prev")
+        )
         addDrawableChild(prevButton)
         updatePageButtons()
-        nextButton = NineSliceButton(leftX + panelWidth - 80, btnY, 80, 20, Text.translatable("cobblemarket.gui.next"), { nextPage() })
+        nextButton = NineSliceButton(
+            leftX + panelWidth - 80, btnY, 80, 20,
+            Text.literal(""),
+            { nextPage() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.next")
+        )
         addDrawableChild(nextButton)
 
         refreshData()

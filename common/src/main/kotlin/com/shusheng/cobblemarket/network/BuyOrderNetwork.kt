@@ -729,6 +729,11 @@ object BuyOrderNetwork {
                 else null
                 val bounds = com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
                 if (bounds != null) {
+                    // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
+                    if (bounds.isEmptyRange) {
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.conflict")))
+                        return@execute
+                    }
                     if (bounds.min != null && payload.price < bounds.min) {
                         sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_below", bounds.min)))
                         return@execute
@@ -857,6 +862,11 @@ object BuyOrderNetwork {
                 val itemBounds = com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
                     .getPriceBounds(referenceStack, player.serverWorld.registryManager)
                 if (itemBounds != null) {
+                    // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
+                    if (itemBounds.isEmptyRange) {
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.conflict")))
+                        return@execute
+                    }
                     if (itemBounds.min != null && payload.price < itemBounds.min) {
                         sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_below", itemBounds.min)))
                         return@execute

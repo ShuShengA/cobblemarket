@@ -48,8 +48,11 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
         // 返回按钮：右上角内移 8px
         addDrawableChild(NineSliceButton(
             dialogX + dialogW - 58, dialogY + 8, 50, 16,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(MeowthBankScreen()) }
+            Text.literal(""),
+            { client?.setScreen(MeowthBankScreen()) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         ))
 
         // 底部按钮（居中；持有者=补发黑卡，非持有者=申请，资格/开关不符时置灰文案区分）

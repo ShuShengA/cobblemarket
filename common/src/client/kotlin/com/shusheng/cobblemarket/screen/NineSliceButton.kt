@@ -1,7 +1,9 @@
 package com.shusheng.cobblemarket.screen
 
+import com.mojang.blaze3d.systems.RenderSystem
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
+import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.client.gui.widget.ButtonWidget
 import net.minecraft.client.sound.PositionedSoundInstance
 import net.minecraft.client.sound.SoundManager
@@ -24,10 +26,16 @@ class NineSliceButton(
     private val iconTexW: Int = 24,
     private val iconTexH: Int = 24,
     private val iconScale: Float = 0.5f,
+    // 可选悬停词条（图标化按钮构造即挂上，替代文字说明）
+    tooltip: Text? = null,
     // 可选背景纹理（默认按钮九宫格；入口右下角小按钮用 row_background）
     private val texture: Identifier = TEXTURE,
     private val texH: Int = TEX_H
 ) : ButtonWidget(x, y, width, height, message, onPress, ButtonWidget.DEFAULT_NARRATION_SUPPLIER) {
+
+    init {
+        if (tooltip != null) setTooltip(Tooltip.of(tooltip))
+    }
 
     // 开关式按钮的按下视觉：面板展开期间保持"按下态"（纹理第三段；只有两段的纹理自动退回悬停态）
     var pressedVisual: Boolean = false
@@ -59,7 +67,10 @@ class NineSliceButton(
                 context.matrices.push()
                 context.matrices.translate(ix.toDouble(), startY.toDouble(), 0.0)
                 context.matrices.scale(iconScale, iconScale, 1f)
+                // 禁用态图标与文字同样置灰（文字 0xA0A0A0 = 160/255 ≈ 0.627）
+                if (!active) RenderSystem.setShaderColor(0.627f, 0.627f, 0.627f, 1f)
                 context.drawTexture(id, 0, 0, 0f, 0f, iconTexW, iconTexH, iconTexW, iconTexH)
+                if (!active) RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
                 context.matrices.pop()
             }
             drawIcon(leftIcon, startX)

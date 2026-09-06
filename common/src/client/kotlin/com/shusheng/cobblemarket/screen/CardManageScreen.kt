@@ -32,8 +32,11 @@ class CardManageScreen : Screen(Text.translatable("cobblemarket.card.manage_titl
         // 返回按钮（右上，照 HistoryScreen）
         addDrawableChild(NineSliceButton(
             leftX + panelWidth - 50, 18, 50, 16,
-            Text.translatable("cobblemarket.gui.back"),
-            { client?.setScreen(MeowthBankScreen()) }
+            Text.literal(""),
+            { client?.setScreen(MeowthBankScreen()) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.back")
         ))
 
         rebuildRowButtons()
