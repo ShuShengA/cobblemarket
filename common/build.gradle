@@ -25,7 +25,7 @@ dependencies {
 	// Cobblemon / CobbleDollars / Smartphone 仅编译期引用，
 	// 运行时由各平台模块提供对应加载器版本（ID 固定到 1.21.1 的发布，避免同版本号多 MC 版本歧义）。
 	// Cobblemon Economy 已完全桥接（CobecoBridge），common 不再直接引用其类；fabric-api 引用已全部清零
-	modCompileOnly "maven.modrinth:cobblemon:kF7CvxTo"
+	modCompileOnly "maven.modrinth:cobblemon:YgmyyFcs"
 	modCompileOnly "maven.modrinth:cobbledollars:cqsHXSXe"
 	modCompileOnly "maven.modrinth:cobblemon-smartphone:w7JqnSrT"
 }

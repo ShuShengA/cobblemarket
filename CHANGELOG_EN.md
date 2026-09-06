@@ -1,6 +1,12 @@
 # Changelog
 
-## 1.0.0 (in development, unreleased)
+## 1.0.1 (released)
+
+### Changes
+
+- **Cobblemon 1.8 adaptation**: version requirement updated to `[1.8.0, 1.9.0)` — adapted to 1.8's new `drawProfilePokemon` signature (ProfileTransformType + a new parameter), verified via full API signature diff (the only breaking change; everything else on our dependency surface is unchanged); 1.7.x players should keep using 1.0.0
+
+## 1.0.0 (released)
 
 ### New Feature
 
