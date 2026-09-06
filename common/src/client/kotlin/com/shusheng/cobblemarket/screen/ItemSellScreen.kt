@@ -307,6 +307,10 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
     private var tooltipCacheLines: List<Text> = emptyList()
     private var tooltipCacheMaxWidth = 0
     private var lastTooltipBuild = 0L
+    /** Shift 展开的高级词条缓存（按住 Shift 才按需构建，同 250ms 节流重建） */
+    private var tooltipAdvancedLines: List<Text>? = null
+    private var tooltipAdvancedMaxWidth = 0
+    private var lastAdvancedBuild = 0L
 
     private fun renderItemTooltip(context: DrawContext, entry: SellItem, mouseX: Int, mouseY: Int) {
         val now = System.currentTimeMillis()
@@ -326,9 +330,28 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
             var maxWidth = 0
             tooltipCacheLines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
             tooltipCacheMaxWidth = maxWidth
+            tooltipAdvancedLines = null
         }
-        val lines = tooltipCacheLines
-        val maxWidth = tooltipCacheMaxWidth
+        // 按住 Shift 展开高级词条（潜影箱内容等，照原版背包悬停；250ms 节流重建同 BASIC）
+        var lines = tooltipCacheLines
+        var maxWidth = tooltipCacheMaxWidth
+        if (net.minecraft.client.gui.screen.Screen.hasShiftDown()) {
+            if (tooltipAdvancedLines == null || now - lastAdvancedBuild >= 250) {
+                lastAdvancedBuild = now
+                val liveStack = client?.player?.playerScreenHandler?.slots
+                    ?.firstOrNull { it.hasStack() && com.shusheng.cobblemarket.network.itemsEqualForTrading(it.stack, entry.stack) }
+                    ?.stack
+                    ?: client?.player?.inventory?.main?.firstOrNull {
+                        com.shusheng.cobblemarket.network.itemsEqualForTrading(it, entry.stack)
+                    }
+                    ?: entry.stack
+                tooltipAdvancedLines = liveStack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.ADVANCED)
+                var amw = 0
+                tooltipAdvancedLines!!.forEach { amw = maxOf(amw, textRenderer.getWidth(it)) }
+                tooltipAdvancedMaxWidth = amw
+            }
+            tooltipAdvancedLines?.let { lines = it; maxWidth = tooltipAdvancedMaxWidth }
+        }
 
         val padding = 4
         val tx = minOf(mouseX + 12, width - maxWidth - 12)

@@ -64,6 +64,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     // tooltip 文本行缓存：内容只取决于条目，悬停同一格时每帧重建文本行是悬停掉帧主因
     private var tooltipCacheKey: UUID? = null
     private var tooltipCacheLines: List<Pair<Text, Int>> = emptyList()
+    /** Shift 展开词条缓存（按住 Shift 才按需构建，防每帧 getTooltip ADVANCED 解析 NBT 掉帧） */
+    private var tooltipAdvancedLines: List<Pair<Text, Int>>? = null
 
     private var selectedEntry: ItemEntry? = null
     private var buyCountField: TextFieldWidget? = null
@@ -174,7 +176,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             RequestItemMarketPayload(
                 sortMode, currentPage, showMineOnly, columns() * rows(),
                 query,
-                com.shusheng.cobblemarket.network.resolveItemIdsByQuery(query)
+                com.shusheng.cobblemarket.client.ItemSearchIndex.itemIdsMatchingStrict(query),
+                com.shusheng.cobblemarket.client.ItemSearchIndex.tmMovesMatching(query).toList(),
+                com.shusheng.cobblemarket.client.ItemSearchIndex.enchantsMatching(query).toList()
             )
         )
     }
@@ -438,25 +442,17 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     }
 
     private fun renderItemTooltip(context: DrawContext, entry: ItemEntry, mouseX: Int, mouseY: Int) {
-        // 文本行缓存：悬停同一格时内容不变，只在悬停目标变化时重建
+        // 文本行缓存：悬停同一格时内容不变，只在悬停目标变化时重建（Shift 切换不影响缓存键）
         if (tooltipCacheKey != entry.id) {
             tooltipCacheKey = entry.id
-            val stack = entryStacks[entry.id]
-            val built = mutableListOf<Pair<Text, Int>>()
-            if (stack != null) {
-                built.addAll(stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC).map { it to 0xFFFFFF })
-            } else {
-                built.add(Text.literal(entry.itemId) to 0xFFFFFF)
-            }
-            built.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(" ").append(entry.sellerName) to 0xFFFFFF)
-            // 价格行：标签默认色，金额段蓝色（2026-08-24 拍板）
-            built.add(Text.translatable("cobblemarket.item.tooltip_price").append(" ").append(
-                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)
-            ) to 0xFFFFFF)
-            built.add(Text.literal("×${entry.count}") to 0xFFFFFF)
-            tooltipCacheLines = built
+            tooltipCacheLines = buildTooltipLines(entry, TooltipType.BASIC)
+            tooltipAdvancedLines = null
         }
-        val lines = tooltipCacheLines
+        // 按住 Shift 展开高级词条（潜影箱内容等，照原版背包悬停行为）
+        val advanced = if (net.minecraft.client.gui.screen.Screen.hasShiftDown()) {
+            tooltipAdvancedLines ?: buildTooltipLines(entry, TooltipType.ADVANCED).also { tooltipAdvancedLines = it }
+        } else null
+        val lines = advanced ?: tooltipCacheLines
 
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
@@ -477,6 +473,24 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     }
 
     private fun isInputFieldFocused() = focused?.let { f -> f === searchField || f === buyCountField } ?: false
+
+    /** 悬停词条构建（BASIC 常驻 / ADVANCED 按 Shift 构建）：物品词条 + 卖家 + 价格 + 数量 */
+    private fun buildTooltipLines(entry: ItemEntry, type: TooltipType): List<Pair<Text, Int>> {
+        val stack = entryStacks[entry.id]
+        val built = mutableListOf<Pair<Text, Int>>()
+        if (stack != null) {
+            built.addAll(stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, type).map { it to 0xFFFFFF })
+        } else {
+            built.add(Text.literal(entry.itemId) to 0xFFFFFF)
+        }
+        built.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(" ").append(entry.sellerName) to 0xFFFFFF)
+        // 价格行：标签默认色，金额段蓝色（2026-08-24 拍板）
+        built.add(Text.translatable("cobblemarket.item.tooltip_price").append(" ").append(
+            Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)
+        ) to 0xFFFFFF)
+        built.add(Text.literal("×${entry.count}") to 0xFFFFFF)
+        return built
+    }
 
     private fun isMouseOverAnyInput(mouseX: Double, mouseY: Double): Boolean =
         searchField?.isMouseOver(mouseX, mouseY) == true ||

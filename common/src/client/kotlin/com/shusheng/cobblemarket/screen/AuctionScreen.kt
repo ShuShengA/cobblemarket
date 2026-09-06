@@ -90,6 +90,14 @@ class AuctionScreen(
     private var pendingBidLocate: java.util.UUID? = initialBidAuctionId
     /** 出价弹窗物品词条行（附魔/名称等，弹窗打开时从 itemNbt 重建一次；去首行物品名——弹窗已显示） */
     private var bidItemTooltipLines: List<Text> = emptyList()
+    /** Shift 展开的高级词条（弹窗打开时双份构建，渲染按 Shift 状态切换，照背包悬停） */
+    private var bidItemAdvancedLines: List<Text> = emptyList()
+    /** 出价弹窗高度扩展行数（物品词条超基线行数时弹窗加高 + 按钮下移，防 ADVANCED 展开溢出） */
+    private var bidDialogExtraRows = 0
+    /** 出价弹窗宽度（按词条最大行宽自适应，防 ADVANCED 横排行超框；精灵类型恒 280） */
+    private var bidDialogW = 280
+    /** 高级词条是否在 Shift 按住状态下构建（Fabric tooltip 的信息块只在构建时 Shift 按住才生成，松开后重建） */
+    private var bidAdvancedBuiltWithShift = false
     private var bidField: TextFieldWidget? = null
     /** 玩家是否手动编辑过出价输入：BID 广播只在未编辑时更新预填，不覆盖玩家输入 */
     private var bidEdited = false
@@ -122,8 +130,12 @@ class AuctionScreen(
     private var itemTooltipCacheKey: UUID? = null
     private var itemTooltipCacheLines: List<Pair<Text, Int>> = emptyList()
     private var itemTooltipCacheMaxWidth = 0
+    /** Shift 展开的高级词条缓存（按住 Shift 才按需构建；null = 未构建） */
+    private var itemTooltipAdvancedLines: List<Pair<Text, Int>>? = null
+    private var itemTooltipAdvancedMaxWidth = 0
 
-    private fun getListStartY() = 92
+    // 精灵 tab：搜索框下方有性别/属性/特性/性格筛选按钮行，列表起点靠下；物品 tab 无筛选按钮，起点贴近搜索框
+    private fun getListStartY() = if (currentTab == 1) 70 else 92
     private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 48) / rowHeight)
 
     // ── 文本工具 ──
@@ -655,7 +667,9 @@ class AuctionScreen(
                 if (natureFilter.isNotEmpty() && d["nature"] != natureFilter) return@filter false
             }
             query == null || displayName(entry).contains(query, ignoreCase = true) ||
-                entry.species.contains(query, ignoreCase = true) || entry.sellerName.contains(query, ignoreCase = true)
+                entry.species.contains(query, ignoreCase = true) || entry.sellerName.contains(query, ignoreCase = true) ||
+                // 物品条目走搜索索引（名称/tooltip/TM 招式精确匹配，见 ItemSearchIndex）
+                (entry.type == "ITEM" && com.shusheng.cobblemarket.client.ItemSearchIndex.entryMatches(entry.species, entry.itemNbt, query))
         }.sortedByDescending { it.createdAt }
         indexedFiltered = filteredCache.map { IndexedValue(entries.indexOf(it), it) }
     }
@@ -770,10 +784,11 @@ class AuctionScreen(
         rebuildFilterList()
         bidButtons.forEach { it.visible = false }
         val centerX = width / 2
-        val dialogY = height / 2 - 95
 
         // 精灵预览
         if (entry.type == "POKEMON") {
+            bidDialogExtraRows = 0
+            bidDialogW = 280
             val id = Identifier.tryParse(entry.extraData["speciesId"] ?: "")
             val species = id?.let { PokemonSpecies.getByIdentifier(it) }
             if (species != null) {
@@ -782,17 +797,21 @@ class AuctionScreen(
                 bidRenderable = RenderablePokemon(species, aspects, ItemStack.EMPTY)
             }
         } else {
-            // 物品词条行（附魔等）：打开时重建一次，弹窗渲染每帧只读（每帧解析 NBT + getTooltip 是渲染热点）
-            bidItemTooltipLines = emptyList()
-            entry.itemNbt?.let { nbt ->
-                client?.world?.registryManager?.let { rm ->
-                    val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
-                    if (!stack.isEmpty) {
-                        bidItemTooltipLines = stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC).drop(1)
-                    }
-                }
-            }
+            // 物品词条行（附魔等）：打开时构建 BASIC + ADVANCED 双份（供布局估算；ADVANCED 此刻无 Shift，
+            // Fabric tooltip 的信息块不会生成——渲染时按住 Shift 会重建，见 renderBidDialogBackground）
+            bidItemTooltipLines = buildBidItemLines(entry, TooltipType.BASIC)
+            bidItemAdvancedLines = buildBidItemLines(entry, TooltipType.ADVANCED)
+            bidAdvancedBuiltWithShift = false
+            // 弹窗高度随词条行数扩展（按两份最大行数预留，Shift 展开不溢出；上限 9 行防超高）
+            // 基线 7 行：词条区底收在确认按钮上方，横排宽行的末尾不压按钮
+            bidDialogExtraRows = (minOf(maxOf(bidItemTooltipLines.size, bidItemAdvancedLines.size), 20) - 7)
+                .coerceIn(0, 9)
+            // 宽度初始只按 BASIC 行宽（未按 Shift 的初始状态不撑宽；渲染帧按当前 Shift 状态动态覆盖）
+            var maxLineW = 0
+            bidItemTooltipLines.forEach { maxLineW = maxOf(maxLineW, textRenderer.getWidth(it)) }
+            bidDialogW = (maxOf(280, maxLineW + 170)).coerceAtMost(width - 20)
         }
+        val dialogY = height / 2 - (190 + bidDialogExtraRows * 10) / 2
 
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -804,7 +823,7 @@ class AuctionScreen(
         val minValid = if (entry.currentPrice > 0)
             (entry.currentPrice.toLong() + entry.minIncrement).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         else entry.startingPrice
-        bidField = TextFieldWidget(textRenderer, centerX + 10, dialogY + 106, 120, 16, Text.literal(""))
+        bidField = TextFieldWidget(textRenderer, centerX + 10, dialogY + 106 + bidDialogExtraRows * 10, 120, 16, Text.literal(""))
         bidField?.setPlaceholder(Text.translatable("cobblemarket.auction.bid_placeholder").formatted(Formatting.GRAY))
         bidField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         bidField?.text = minValid.toString()
@@ -816,14 +835,14 @@ class AuctionScreen(
 
         // 音效由 confirmBid 按校验结果播放（失败 fail.ogg / 成功 auction_bid 金币音效）
         bidConfirmButton = NineSliceButton(
-            centerX + 10, dialogY + 132, 56, 20,
+            centerX + 10, dialogY + 132 + bidDialogExtraRows * 10, 56, 20,
             Text.translatable("cobblemarket.auction.confirm_bid"),
             { confirmBid() },
             clickSound = null
         )
         addDrawableChild(bidConfirmButton)
         bidCancelButton = NineSliceButton(
-            centerX + 74, dialogY + 132, 56, 20,
+            centerX + 74, dialogY + 132 + bidDialogExtraRows * 10, 56, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeBidDialog() }
         )
@@ -833,10 +852,41 @@ class AuctionScreen(
     private fun renderBidDialogBackground(context: DrawContext, delta: Float) {
         val entry = bidEntry ?: return
         val centerX = width / 2
-        val dialogW = 280
-        val dialogH = 190
+        // ── 物品词条选择（先于布局）：按住 Shift 时若未在 Shift 状态下构建则重建 ADVANCED——
+        // Fabric tooltip 的信息块（如 TM 招式详情）只在构建时刻 Shift 按住时生成
+        var itemLines: List<Text>? = null
+        if (entry.type != "POKEMON") {
+            itemLines = if (net.minecraft.client.gui.screen.Screen.hasShiftDown()) {
+                if (!bidAdvancedBuiltWithShift) {
+                    bidItemAdvancedLines = buildBidItemLines(entry, TooltipType.ADVANCED)
+                    bidAdvancedBuiltWithShift = true
+                }
+                bidItemAdvancedLines
+            } else {
+                bidAdvancedBuiltWithShift = false
+                bidItemTooltipLines
+            }
+        }
+        // 布局随当前词条行数/宽度动态伸缩（Shift 展开信息块不溢出），按钮位置每帧同步；
+        // 基线 7 行：词条区底收在确认按钮上方（56 + 7*10 ≈ 按钮顶），横排宽行末尾不压按钮
+        val lineCount = itemLines?.size ?: 0
+        val extra = (minOf(lineCount, 20) - 7).coerceIn(0, 9)
+        val dialogH = 190 + extra * 10
+        var maxLineW = 0
+        itemLines?.forEach { maxLineW = maxOf(maxLineW, textRenderer.getWidth(it)) }
+        val dialogW = if (entry.type == "POKEMON") 280 else (maxOf(280, maxLineW + 170)).coerceAtMost(width - 20)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
+        if (entry.type != "POKEMON") {
+            bidField?.y = dialogY + 106 + extra * 10
+            bidConfirmButton?.y = dialogY + 132 + extra * 10
+            bidCancelButton?.y = dialogY + 132 + extra * 10
+            // x 相对弹窗右缘锚定：弹窗随词条行宽变宽时输入框/按钮随右列一起右移，不被宽行压住
+            val rightAnchor = dialogX + dialogW - 130
+            bidField?.x = rightAnchor
+            bidConfirmButton?.x = rightAnchor
+            bidCancelButton?.x = rightAnchor + 62
+        }
 
         drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
@@ -956,12 +1006,12 @@ class AuctionScreen(
         } else {
             infoLine(displayName(entry))
             infoLine("×${entry.count}")
-            // 物品词条（附魔/名称等，原版 tooltip 去首行物品名）
-            bidItemTooltipLines.forEach { infoLineText(it, 0xFFFFFF) }
+            // 物品词条（附魔/名称等，原版 tooltip 去首行物品名；列表已在函数头按 Shift 状态选好）
+            itemLines?.forEach { infoLineText(it, 0xFFFFFF) }
         }
 
         // ── 右列：竞拍信息 ──
-        val auctionX = dialogX + 150
+        val auctionX = dialogX + dialogW - 140
         var ay = dialogY + 28
         fun auctionLine(text: String, color: Int = 0xFFFFFF) {
             context.drawTextWithShadow(textRenderer, text, auctionX, ay, color)
@@ -1407,27 +1457,27 @@ class AuctionScreen(
         // 静态行（名称/卖家）缓存；价格/倒计时/领先者为动态行每帧构建（见 itemTooltipCacheKey 字段注释）
         if (itemTooltipCacheKey != entry.id) {
             itemTooltipCacheKey = entry.id
-            val staticLines = mutableListOf<Pair<Text, Int>>()
-            staticLines.add(Text.literal(displayName(entry)) to 0xFFFFFF)
-            // 物品词条（附魔/名称等；原版 tooltip 去首行物品名，与名称行去重）
-            entry.itemNbt?.let { nbt ->
-                client?.world?.registryManager?.let { rm ->
-                    val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
-                    if (!stack.isEmpty) {
-                        staticLines.addAll(
-                            stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC)
-                                .drop(1).map { it to 0xFFFFFF }
-                        )
-                    }
-                }
-            }
-            staticLines.add(Text.literal("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}") to 0xFFFFFF)
+            itemTooltipCacheLines = buildItemStaticLines(entry, TooltipType.BASIC)
             var mw = 0
-            staticLines.forEach { mw = maxOf(mw, textRenderer.getWidth(it.first)) }
-            itemTooltipCacheLines = staticLines
+            itemTooltipCacheLines.forEach { mw = maxOf(mw, textRenderer.getWidth(it.first)) }
             itemTooltipCacheMaxWidth = mw
+            itemTooltipAdvancedLines = null
+            itemTooltipAdvancedMaxWidth = 0
         }
-        val lines = itemTooltipCacheLines.toMutableList()
+        // 按住 Shift 展开高级词条（潜影箱内容等，照原版背包悬停；按需构建缓存防每帧解析 NBT 掉帧）
+        var staticBase = itemTooltipCacheLines
+        var maxWidth = itemTooltipCacheMaxWidth
+        if (net.minecraft.client.gui.screen.Screen.hasShiftDown()) {
+            if (itemTooltipAdvancedLines == null) {
+                itemTooltipAdvancedLines = buildItemStaticLines(entry, TooltipType.ADVANCED)
+                var amw = 0
+                itemTooltipAdvancedLines!!.forEach { amw = maxOf(amw, textRenderer.getWidth(it.first)) }
+                itemTooltipAdvancedMaxWidth = amw
+            }
+            staticBase = itemTooltipAdvancedLines!!
+            maxWidth = itemTooltipAdvancedMaxWidth
+        }
+        val lines = staticBase.toMutableList()
         val priceLine = Text.translatable("cobblemarket.auction.current_price").append(": ").append(displayPriceText(entry))
         lines.add((if (entry.bidCount > 0)
             priceLine.append(Text.literal("  ×${entry.bidCount}").formatted(Formatting.GRAY))
@@ -1440,8 +1490,7 @@ class AuctionScreen(
             lines.add(Text.literal(Text.translatable("cobblemarket.auction.mine_mark").string) to 0x55FF55)
         }
 
-        var maxWidth = itemTooltipCacheMaxWidth
-        for (i in itemTooltipCacheLines.size until lines.size) {
+        for (i in staticBase.size until lines.size) {
             maxWidth = maxOf(maxWidth, textRenderer.getWidth(lines[i].first))
         }
 
@@ -1458,6 +1507,40 @@ class AuctionScreen(
             context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
         }
         context.matrices.pop()
+    }
+
+    /** 出价弹窗物品词条构建（原版 tooltip 去首行物品名；type 区分 BASIC/ADVANCED） */
+    private fun buildBidItemLines(entry: AuctionEntry, type: TooltipType): List<Text> {
+        val out = mutableListOf<Text>()
+        entry.itemNbt?.let { nbt ->
+            client?.world?.registryManager?.let { rm ->
+                val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
+                if (!stack.isEmpty) {
+                    out.addAll(stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, type).drop(1))
+                }
+            }
+        }
+        return out
+    }
+
+    /** 物品悬停静态行构建（名称 + 物品词条 + 卖家）；type 区分 BASIC/ADVANCED（Shift 展开） */
+    private fun buildItemStaticLines(entry: AuctionEntry, type: TooltipType): List<Pair<Text, Int>> {
+        val staticLines = mutableListOf<Pair<Text, Int>>()
+        staticLines.add(Text.literal(displayName(entry)) to 0xFFFFFF)
+        // 物品词条（附魔/名称等；原版 tooltip 去首行物品名，与名称行去重）
+        entry.itemNbt?.let { nbt ->
+            client?.world?.registryManager?.let { rm ->
+                val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
+                if (!stack.isEmpty) {
+                    staticLines.addAll(
+                        stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, type)
+                            .drop(1).map { it to 0xFFFFFF }
+                    )
+                }
+            }
+        }
+        staticLines.add(Text.literal("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}") to 0xFFFFFF)
+        return staticLines
     }
 
     private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int, sliceH: Int = 16) {

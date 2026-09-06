@@ -51,6 +51,8 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     // 物品 NBT 解析缓存：数据到达时一次性反序列化，避免 render 每帧 fromNbtOrEmpty 造成 GC 压力
     private val entryStacks = mutableMapOf<UUID, ItemStack>()
     private val tooltipStackLines = mutableMapOf<UUID, List<Pair<Text, Int>>>()
+    /** Shift 展开的高级词条（列表加载时与 BASIC 双份构建，渲染按 Shift 状态切换） */
+    private val tooltipAdvancedLines = mutableMapOf<UUID, List<Pair<Text, Int>>>()
 
     private fun columns() = (panelWidth + gap) / (slotSize + gap)
     // 84→88：卖家搜索框底边(80)与顶部分割线(80)贴死，网格起始下移 4px 留出间隙
@@ -179,7 +181,9 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             AdminRequestItemPayload(
                 sellerFilter = sellerField?.text?.trim() ?: "",
                 itemFilter = query,
-                itemIds = com.shusheng.cobblemarket.network.resolveItemIdsByQuery(query),
+                itemIds = com.shusheng.cobblemarket.client.ItemSearchIndex.itemIdsMatchingStrict(query),
+                tmMoves = com.shusheng.cobblemarket.client.ItemSearchIndex.tmMovesMatching(query).toList(),
+                enchants = com.shusheng.cobblemarket.client.ItemSearchIndex.enchantsMatching(query).toList(),
                 sortMode = sortMode,
                 page = currentPage,
                 pageSize = columns() * rows(),
@@ -214,12 +218,14 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     private fun rebuildEntryCaches(newEntries: List<ItemEntry>) {
         entryStacks.clear()
         tooltipStackLines.clear()
+        tooltipAdvancedLines.clear()
         val registry = client?.world?.registryManager ?: return
         for (entry in newEntries) {
             val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
             entryStacks[entry.id] = stack
             tooltipStackLines[entry.id] = stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC)
                 .map { it to 0xFFFFFF }
+            // ADVANCED 不在此构建：Fabric tooltip 信息块只在构建时 Shift 按住才生成，渲染处按需构建
         }
     }
 
@@ -437,7 +443,12 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
 
     private fun renderItemTooltip(context: DrawContext, entry: ItemEntry, mouseX: Int, mouseY: Int) {
         val lines = mutableListOf<Pair<Text, Int>>()
-        val stackLines = tooltipStackLines[entry.id]
+        // 按住 Shift 展开高级词条（照原版背包悬停；Shift 按下时才构建，Fabric 信息块才能生成）
+        val stackLines = if (net.minecraft.client.gui.screen.Screen.hasShiftDown())
+            tooltipAdvancedLines[entry.id] ?: entryStacks[entry.id]?.getTooltip(
+                Item.TooltipContext.DEFAULT, client?.player, TooltipType.ADVANCED
+            )?.map { it to 0xFFFFFF }?.also { tooltipAdvancedLines[entry.id] = it } ?: tooltipStackLines[entry.id]
+        else tooltipStackLines[entry.id]
         if (stackLines != null) {
             lines.addAll(stackLines)
         } else {

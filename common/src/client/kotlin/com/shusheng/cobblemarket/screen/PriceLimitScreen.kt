@@ -628,7 +628,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         vOptionButtons.forEach { remove(it) }
         vOptionButtons.clear()
         // 收起时只在形态选项已解析（物种已指定）时恢复形态按钮；空物种时保持隐藏（与 updatePreview 一致）
-        formButton?.visible = !vListOpen && formOptions.size > 1
+        // 形态按钮与 V 数按钮并排（dialogY+48 行），V 列表从 dialogY+62 起在其下方，不覆盖不隐藏
+        formButton?.visible = formOptions.size > 1
         // V 档列表展开时覆盖特训按钮位置（dialogY+62 起），隐藏避免点击拦截
         ruleHtButton?.visible = !vListOpen
         minField?.visible = !vListOpen
@@ -641,7 +642,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         vOptions.forEachIndexed { idx, v ->
             val label = vLabel(v)
             val btn = NineSliceButton(
-                centerX - 80, dialogY + 62 + idx * 14, 140, 14,
+                centerX - 80, dialogY + 62 + idx * 16, 140, 14,
                 if (idx == vIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
                 { selectV(idx) }
             )
@@ -690,12 +691,12 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     }
 
     // 展开的形态列表：每行一个选项，最多 8 行可见，超出滚动。
-    // 展开时隐藏被列表覆盖的控件（价格框 + 确认/取消按钮 + V 数按钮）——它们先于形态选项添加，
+    // 展开时隐藏被列表覆盖的控件（价格框 + 确认/取消按钮）——它们先于形态选项添加，
     // MC 点击遍历按添加顺序，不隐藏的话点击会被它们拦截，形态选项永远点不到。
+    // V 数按钮与形态按钮并排（dialogY+48 行），列表从 dialogY+62 起在其下方，不覆盖不隐藏
     private fun rebuildFormList() {
         formOptionButtons.forEach { remove(it) }
         formOptionButtons.clear()
-        vButton?.visible = !formListOpen
         // 形态列表展开时覆盖特训按钮位置（dialogY+62 起），隐藏避免点击拦截
         ruleHtButton?.visible = !formListOpen
         minField?.visible = !formListOpen
@@ -710,7 +711,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             // 数据包自创的超长 aspect 名截断，防止溢出按钮
             val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(opt.label, 124)
             val btn = NineSliceButton(
-                centerX - 80, dialogY + 62 + i * 14, 140, 14,
+                centerX - 80, dialogY + 62 + i * 16, 140, 14,
                 if (idx == formIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
                 { selectForm(idx) }
             )
@@ -739,6 +740,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             val id = Registries.ITEM.getId(item)
             if (item.name.string.contains(trimmed)) result.add(id.toString())
         }
+        // 搜索索引追加（TM 招式/附魔/tooltip 文本命中，见 ItemSearchIndex；精确匹配仍排前）
+        com.shusheng.cobblemarket.client.ItemSearchIndex.itemIdsMatching(input).forEach { result.add(it) }
         return result.toList()
     }
 
@@ -780,12 +783,12 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         addCancelButton?.visible = !itemListOpen
         if (!itemListOpen) return
         val centerX = width / 2
-        val dialogY = height / 2 - 65
+        val dialogY = height / 2 - 71
         matchedItems.drop(itemListScroll).take(MAX_ITEM_LIST_ROWS).forEachIndexed { i, itemId ->
             val idx = itemListScroll + i
             val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(itemDisplay(itemId), 124)
             val btn = NineSliceButton(
-                centerX - 80, dialogY + 62 + i * 14, 140, 14,
+                centerX - 80, dialogY + 72 + i * 16, 140, 14,
                 if (idx == selectedItemIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
                 { selectItem(idx) }
             )
@@ -984,9 +987,10 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             val vText = if (entry.vCount >= 0) " · ${entry.vCount}V" else ""
             "${pokemonName(entry.speciesId)}$vText · ${formLabel(entry.aspects.toSet())} · ${priceText(entry.minPrice, entry.maxPrice)}"
         }
-        filteredItemsCache = if (query == null) itemEntries else itemEntries.filter { entry ->
-            itemDisplay(entry.itemId).contains(query, ignoreCase = true) ||
-                entry.itemId.contains(query, ignoreCase = true)
+        // 搜索索引匹配（itemId + 名称 + tooltip 文本 + TM 招式，见 ItemSearchIndex；原版创造模式同款语义）
+        filteredItemsCache = if (query == null) itemEntries else {
+            val ids = com.shusheng.cobblemarket.client.ItemSearchIndex.itemIdsMatching(query).toSet()
+            itemEntries.filter { it.itemId in ids }
         }
         itemRowTexts = filteredItemsCache.map { "${itemDisplay(it.itemId)} · ${priceText(it.minPrice, it.maxPrice)}" }
     }

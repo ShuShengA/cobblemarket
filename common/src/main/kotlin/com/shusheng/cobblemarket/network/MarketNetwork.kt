@@ -674,7 +674,11 @@ data class RequestItemMarketPayload(
     val mineOnly: Boolean,
     val pageSize: Int,
     val query: String,
-    val itemIds: List<String>
+    val itemIds: List<String>,
+    /** 查询命中的招式 ID 集合（TM 搜索机制：条目 NBT 组件招式名精确过滤，见 ItemSearchIndex） */
+    val tmMoves: List<String>,
+    /** 查询命中的附魔 ID 集合（附魔书搜索的精确过滤，见 ItemSearchIndex） */
+    val enchants: List<String>
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -684,8 +688,17 @@ data class RequestItemMarketPayload(
             { p, b ->
                 b.writeString(p.sortMode); b.writeInt(p.page); b.writeBoolean(p.mineOnly); b.writeInt(p.pageSize); b.writeString(p.query)
                 b.writeVarInt(p.itemIds.size); p.itemIds.forEach { b.writeString(it) }
+                b.writeVarInt(p.tmMoves.size); p.tmMoves.forEach { b.writeString(it) }
+                b.writeVarInt(p.enchants.size); p.enchants.forEach { b.writeString(it) }
             },
-            { b -> RequestItemMarketPayload(b.readString(), b.readInt(), b.readBoolean(), b.readInt(), b.readString(), (0 until b.readVarInt()).map { b.readString() }) }
+            { b ->
+                RequestItemMarketPayload(
+                    b.readString(), b.readInt(), b.readBoolean(), b.readInt(), b.readString(),
+                    (0 until b.readVarInt()).map { b.readString() },
+                    (0 until b.readVarInt()).map { b.readString() },
+                    (0 until b.readVarInt()).map { b.readString() }
+                )
+            }
         )
     }
 }
@@ -734,6 +747,10 @@ data class AdminRequestItemPayload(
     val sellerFilter: String,
     val itemFilter: String,
     val itemIds: List<String>,
+    /** 查询命中的招式 ID 集合（TM 搜索机制，见 ItemSearchIndex） */
+    val tmMoves: List<String>,
+    /** 查询命中的附魔 ID 集合（附魔书搜索的精确过滤，见 ItemSearchIndex） */
+    val enchants: List<String>,
     val sortMode: String,
     val page: Int,
     val pageSize: Int,
@@ -747,11 +764,13 @@ data class AdminRequestItemPayload(
             { p, b ->
                 b.writeString(p.sellerFilter); b.writeString(p.itemFilter)
                 b.writeVarInt(p.itemIds.size); p.itemIds.forEach { b.writeString(it) }
+                b.writeVarInt(p.tmMoves.size); p.tmMoves.forEach { b.writeString(it) }
+                b.writeVarInt(p.enchants.size); p.enchants.forEach { b.writeString(it) }
                 b.writeString(p.sortMode); b.writeInt(p.page); b.writeInt(p.pageSize); b.writeBoolean(
                 p.mineOnly
             )
             },
-            { b -> AdminRequestItemPayload(b.readString(), b.readString(), (0 until b.readVarInt()).map { b.readString() }, b.readString(), b.readInt(), b.readInt(), b.readBoolean()) }
+            { b -> AdminRequestItemPayload(b.readString(), b.readString(), (0 until b.readVarInt()).map { b.readString() }, (0 until b.readVarInt()).map { b.readString() }, (0 until b.readVarInt()).map { b.readString() }, b.readString(), b.readInt(), b.readInt(), b.readBoolean()) }
         )
     }
 }
@@ -941,18 +960,49 @@ fun localizeSpeciesQuery(raw: String): String {
 }
 
 /** 客户端语言物品名搜索 → 匹配的物品 id 集合（服务端语言与客户端不同时靠 id 传递过滤；含 id 路径匹配，英文查询同样覆盖） */
-fun resolveItemIdsByQuery(query: String): List<String> {
-    val q = query.trim()
-    if (q.isEmpty()) return emptyList()
-    val result = mutableListOf<String>()
-    net.minecraft.registry.Registries.ITEM.forEach { item ->
-        val id = net.minecraft.registry.Registries.ITEM.getId(item)
-        if (id.path.contains(q, ignoreCase = true) || item.name.string.contains(q, ignoreCase = true)) {
-            result.add(id.toString())
-            if (result.size >= 200) return result
+/**
+ * TM 栈的招式 ID（非 TM 或解析失败返回 null；TM 搜索机制的条目级精确过滤用）。
+ * ⚠ 调用方须先判断条目 itemId == cobblemon:technical_machine 再调用，避免逐条目解析 NBT。
+ */
+fun tmMoveOfItemNbt(itemNbt: NbtCompound?, registryLookup: net.minecraft.registry.RegistryWrapper.WrapperLookup): String? {
+    if (itemNbt == null) return null
+    return try {
+        val stack = net.minecraft.item.ItemStack.fromNbtOrEmpty(registryLookup, itemNbt)
+        if (stack.isEmpty) null
+        else com.cobblemon.mod.common.item.components.TMMoveComponent.getTMMove(stack)?.name
+    } catch (_: Throwable) { null }
+}
+
+/** 条目 NBT 的附魔 ID 列表（非附魔书或解析失败返回空；附魔搜索的精确过滤用） */
+fun enchantsOfItemNbt(itemNbt: NbtCompound?, registryLookup: net.minecraft.registry.RegistryWrapper.WrapperLookup): List<String> {
+    if (itemNbt == null) return emptyList()
+    return try {
+        val stack = net.minecraft.item.ItemStack.fromNbtOrEmpty(registryLookup, itemNbt)
+        if (stack.isEmpty) emptyList()
+        else {
+            // 附魔书存 stored_enchantments 组件（普通物品才是 enchantments）——读 stored，回退普通
+            val comp = stack.get(net.minecraft.component.DataComponentTypes.STORED_ENCHANTMENTS)
+                ?: stack.enchantments
+            comp.enchantments.mapNotNull { it.key.map { k -> k.value.toString() }.orElse(null) }
         }
-    }
-    return result
+    } catch (_: Throwable) { emptyList() }
+}
+
+/** 搜索条目过滤：itemId 命中 || TM 条目且 NBT 招式命中 || 附魔书条目且 NBT 附魔命中（搜索机制的精确过滤，服务端） */
+fun matchesItemQuery(
+    itemId: String,
+    itemNbt: NbtCompound?,
+    itemIds: Set<String>,
+    tmMoves: Set<String>,
+    enchants: Set<String>,
+    registryLookup: net.minecraft.registry.RegistryWrapper.WrapperLookup
+): Boolean {
+    if (itemId in itemIds) return true
+    if (itemId == "cobblemon:technical_machine" && tmMoves.isNotEmpty() &&
+        tmMoveOfItemNbt(itemNbt, registryLookup)?.let { it in tmMoves } == true
+    ) return true
+    return itemId == "minecraft:enchanted_book" && enchants.isNotEmpty() &&
+        enchantsOfItemNbt(itemNbt, registryLookup).any { it in enchants }
 }
 
 /**
@@ -1516,7 +1566,7 @@ object MarketNetwork {
                 ).let { list ->
                     val query = payload.itemFilter.trim()
                     if (query.isEmpty()) list
-                    else list.filter { it.itemId in payload.itemIds.take(MAX_ITEM_IDS).toSet() }
+                    else list.filter { matchesItemQuery(it.itemId, it.itemNbt, payload.itemIds.take(MAX_ITEM_IDS).toSet(), payload.tmMoves.toSet(), payload.enchants.toSet(), server.overworld.registryManager) }
                 }
 
                 // 上限 84（12 行）：网格页容量随窗口，上限低于容量会导致末行空槽+多余分页；
@@ -2151,7 +2201,7 @@ object MarketNetwork {
                 ).let { list ->
                     val query = payload.query.trim()
                     if (query.isEmpty()) list
-                    else list.filter { it.itemId in payload.itemIds.take(MAX_ITEM_IDS).toSet() }
+                    else list.filter { matchesItemQuery(it.itemId, it.itemNbt, payload.itemIds.take(MAX_ITEM_IDS).toSet(), payload.tmMoves.toSet(), payload.enchants.toSet(), server.overworld.registryManager) }
                 }
 
                 // 上限 84（12 行）：网格页容量随窗口，上限低于容量会导致末行空槽+多余分页；

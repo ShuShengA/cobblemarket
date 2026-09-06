@@ -139,6 +139,10 @@ class BuyOrderScreen(
     private var pendingReviewLocate: java.util.UUID? = initialReviewOrderId
     /** 确认交付弹窗物品词条行（附魔/名称等，打开时从 itemNbt 重建一次；去首行物品名）与额外行数（布局下移用） */
     private var reviewItemTooltipLines: List<Text> = emptyList()
+    /** Shift 展开的高级词条（弹窗打开时双份构建，渲染按 Shift 状态切换） */
+    private var reviewItemAdvancedLines: List<Text> = emptyList()
+    /** 高级词条是否在 Shift 按住状态下构建（Fabric tooltip 信息块只在构建时 Shift 按住才生成） */
+    private var reviewAdvancedBuiltWithShift = false
     private var reviewItemExtraRows = 0
     /** 管理员模式：强制下架确认弹窗的条目与按钮 */
     private var forceCancelEntry: BuyOrderEntry? = null
@@ -490,7 +494,9 @@ class BuyOrderScreen(
         }.filter { entry ->
             // 搜索：物种名/物品名/买家名（本地过滤，照拍卖场模式）
             query == null || entryName(entry).contains(query, ignoreCase = true) ||
-                entry.buyerName.contains(query, ignoreCase = true)
+                entry.buyerName.contains(query, ignoreCase = true) ||
+                // 物品单走搜索索引（名称/tooltip/TM 招式；求购单无 NBT，TM 按粗粒度）
+                (entry.type == "ITEM" && com.shusheng.cobblemarket.client.ItemSearchIndex.idMatches(entry.itemId, query))
         }.sortedByDescending { it.createdAt }
         indexedDisplay = displayCache.map { IndexedValue(entries.indexOf(it), it) }
     }
@@ -1717,6 +1723,8 @@ class BuyOrderScreen(
             val id = Registries.ITEM.getId(item)
             if (item.name.string.contains(trimmed)) result.add(id.toString())
         }
+        // 搜索索引追加（TM 招式/附魔/tooltip 文本命中，见 ItemSearchIndex；精确匹配仍排前）
+        com.shusheng.cobblemarket.client.ItemSearchIndex.itemIdsMatching(input).forEach { result.add(it) }
         return result.toList()
     }
 
@@ -1802,10 +1810,28 @@ class BuyOrderScreen(
 
     // ── 买家确认弹窗（处理待确认交付） ──
 
+    /** 验收弹窗物品词条构建（ADVANCED，去首行物品名；Shift 按住时调用才有 Fabric 信息块） */
+    private fun buildReviewItemLines(entry: BuyOrderEntry): List<Text> {
+        val out = mutableListOf<Text>()
+        entry.pending?.itemNbt?.let { nbt ->
+            client?.world?.registryManager?.let { rm ->
+                val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
+                if (!stack.isEmpty) {
+                    out.addAll(stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.ADVANCED).drop(1))
+                }
+            }
+        }
+        return out
+    }
+
     private fun openReviewDialog(entry: BuyOrderEntry) {
         reviewEntry = entry
-        // 物品词条行（附魔等）：打开时重建一次，弹窗渲染每帧只读；行数决定后续控件下移量
+        // 物品词条行（附魔等）：打开时重建一次，弹窗渲染每帧只读；行数决定后续控件下移量；
+        // BASIC/ADVANCED 双份构建（渲染按 Shift 切换；ADVANCED 打开时无 Shift 缺信息块，
+        // 渲染按住 Shift 会重建）——布局按两份最大行数 + 6 行信息块余量预留（防展开溢出）
         reviewItemTooltipLines = emptyList()
+        reviewItemAdvancedLines = emptyList()
+        reviewAdvancedBuiltWithShift = false
         reviewItemExtraRows = 0
         if (entry.type == "ITEM") {
             entry.pending?.itemNbt?.let { nbt ->
@@ -1813,8 +1839,10 @@ class BuyOrderScreen(
                     val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
                     if (!stack.isEmpty) {
                         val lines = stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC).drop(1)
+                        val advanced = stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.ADVANCED).drop(1)
                         reviewItemTooltipLines = lines
-                        reviewItemExtraRows = minOf(lines.size, MAX_ITEM_EXTRA_ROWS)
+                        reviewItemAdvancedLines = advanced
+                        reviewItemExtraRows = minOf(maxOf(lines.size, advanced.size), MAX_ITEM_EXTRA_ROWS)
                     }
                 }
             }
@@ -1874,10 +1902,33 @@ class BuyOrderScreen(
         val pending = entry.pending ?: return
         val centerX = width / 2
         val dialogW = 280
-        // 精灵单：完整信息行（照市场确认弹窗），弹窗更高；物品单：简洁布局 + 词条行（≤3）动态加高
-        val dialogH = if (entry.type == "POKEMON") 220 else 190 + reviewItemExtraRows * 9
+        // 物品词条选择（先于布局）：Shift 按下未构建则重建（Fabric tooltip 信息块只在构建时 Shift 按住才生成）
+        var itemLines: List<Text>? = null
+        var itemExtra = 0
+        if (entry.type == "ITEM") {
+            val tooltipLines = if (net.minecraft.client.gui.screen.Screen.hasShiftDown()) {
+                if (!reviewAdvancedBuiltWithShift) {
+                    reviewItemAdvancedLines = buildReviewItemLines(entry)
+                    reviewAdvancedBuiltWithShift = true
+                }
+                reviewItemAdvancedLines
+            } else {
+                reviewAdvancedBuiltWithShift = false
+                reviewItemTooltipLines
+            }
+            itemLines = tooltipLines
+            itemExtra = minOf(tooltipLines.size, MAX_ITEM_EXTRA_ROWS)
+        }
+        // 精灵单：完整信息行（照市场确认弹窗），弹窗更高；物品单：词条行数决定弹窗高度（Shift 展开动态伸缩）
+        val dialogH = if (entry.type == "POKEMON") 220 else 190 + itemExtra * 9
         val dialogX = centerX - dialogW / 2
         val dialogY = if (entry.type == "POKEMON") height / 2 - 110 else height / 2 - dialogH / 2
+        // 物品分支控件位置每帧同步（Shift 展开/收起时布局动态伸缩，不挤压不空档）
+        if (entry.type == "ITEM") {
+            reviewReasonField?.y = dialogY + 76 + itemExtra * 9
+            reviewAcceptButton?.y = dialogY + 104 + itemExtra * 9
+            reviewRejectButton?.y = dialogY + 104 + itemExtra * 9
+        }
 
         drawScreenDimMask(context, width, height)
         // 不透明衬底：弹窗背景贴图中间区域半透明，下层行内容（精灵图标/数量/价格）会透过
@@ -1914,9 +1965,11 @@ class BuyOrderScreen(
             context.drawItem(itemStack, startX, dialogY + 28)
             context.drawTextWithShadow(textRenderer, itemName, startX + 20, dialogY + 32, 0xFFFFFF)
             context.drawTextWithShadow(textRenderer, countStr, startX + 20 + textRenderer.getWidth(itemName) + 4, dialogY + 32, 0xAAAAAA)
-            // 物品词条（附魔/名称等，去首行物品名；超过上限才截断以「…」收尾）
-            var ty = dialogY + 40
-            val shown = if (reviewItemTooltipLines.size > MAX_ITEM_EXTRA_ROWS) reviewItemTooltipLines.take(MAX_ITEM_EXTRA_ROWS - 1) + Text.literal("…") else reviewItemTooltipLines
+            // 物品词条（附魔/名称等，去首行物品名；超过上限才截断以「…」收尾）；按住 Shift 展开高级词条
+            //（列表已在函数头按 Shift 状态选好）
+            var ty = dialogY + 44
+            val tooltipLines = itemLines ?: emptyList()
+            val shown = if (tooltipLines.size > MAX_ITEM_EXTRA_ROWS) tooltipLines.take(MAX_ITEM_EXTRA_ROWS - 1) + Text.literal("…") else tooltipLines
             shown.forEach { line ->
                 context.drawCenteredTextWithShadow(textRenderer, line, centerX, ty, 0xFFFFFF)
                 ty += 9
@@ -1930,7 +1983,7 @@ class BuyOrderScreen(
                     .append(Text.literal(" ×${pending.count} ").formatted(Formatting.GRAY))
                     .append(Text.translatable("cobblemarket.buy_order.review_total"))
                     .append(Text.literal(com.shusheng.cobblemarket.client.formatPriceLong(pending.price.toLong() * pending.count) + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
-                centerX, dialogY + 50 + reviewItemExtraRows * 9, 0xFFFFFF)
+                centerX, dialogY + 50 + itemExtra * 9, 0xFFFFFF)
         }
         // 拒绝原因输入框占据原说明行位置（placeholder 已说明用途）
     }

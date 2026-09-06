@@ -37,6 +37,7 @@
 #### Others
 
 - **Pokémon friendship display**: every Pokémon detail view (market hover / auction details / purchase confirm / buy-order delivery / admin lists / sell previews / pending returns) now shows friendship under the six IVs
+- **Item search upgrade (follows the vanilla creative search semantics, and goes further)**: item search boxes (item market / admin list / blacklist / price limits / auctions / buy orders) now match item IDs, names, and full tooltip text; Cobblemon 1.8 technical machines (TMs) can be **searched by move name** (the vanilla creative search can't find TM moves — we filled in the missing move enumeration) — searching "snore" goes straight to the Snore TM, and future Cobblemon moves keep working automatically
 
 ### Changes
 
@@ -49,6 +50,7 @@
 - Fixed Purple Gold Card apply/reissue with a full inventory: the card used to drop to the ground and vanish instantly — now the request is refused with a clear-inventory hint (checked before any fee is taken)
 - Fixed buy-order row icons showing the default form when the order requests a special form
 - Fixed the false "market data save failed" red alert during automatic backup mods' backup runs: backup mods temporarily suspend server saving (savingDisabled), which silently skips the forced save-after-trade and tripped the mtime verification — the forced save is now deferred while saving is suspended and runs right after the backup ends, eliminating the false alarm
+- Fixed the "hold Shift for more info" hint on item hovers doing nothing: hover tooltips previously copied the hint line without implementing the expansion — holding Shift now expands advanced tooltip lines (full tooltip details / additional info rows, matching the vanilla inventory hover) in six screens: item market / auction (hover & bid dialog) / buy-order review dialog / sell picker / pending returns / admin list
 
 ## 1.0.1 (released)
 
