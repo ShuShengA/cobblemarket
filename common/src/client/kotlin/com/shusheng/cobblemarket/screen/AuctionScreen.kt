@@ -180,6 +180,12 @@ class AuctionScreen(
         else Text.translatable("cobblemarket.auction.from").append(priceT)
     }
 
+    /** 行内价格（缩写、无「起拍」前缀，与物品市场/求购单行内一致）：悬停与出价弹窗仍走 [displayPriceText] 千分位 */
+    private fun displayPriceCompactText(entry: AuctionEntry): Text {
+        val price = if (entry.currentPrice > 0) entry.currentPrice else entry.startingPrice
+        return Text.literal(com.shusheng.cobblemarket.client.formatPriceShort(price) + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)
+    }
+
     private fun typeColor(tk: String) = when (tk.substringAfterLast(".").lowercase()) {
         "normal" -> 0xAAAA99; "fire" -> 0xFF4422; "water" -> 0x3399FF
         "electric" -> 0xFFCC33; "grass" -> 0x77CC55; "ice" -> 0x66CCFF
@@ -1087,9 +1093,12 @@ class AuctionScreen(
             auctionLine("${Text.translatable("cobblemarket.auction.leader").string}: ${entry.currentBidderName}", 0xFFDD66)
         }
 
-        // 出价校验失败提示（按钮下方红字，2 秒后消失；重新输入时清除）
+        // 出价校验失败提示（两个按钮下方居中，2 秒后消失；重新输入时清除）。
+        // x 取「确认出价 / 取消」按钮组的中心而非弹窗中心：精灵模式左列证章图标行横向可到弹窗中线附近，
+        // 居中于弹窗会压在证章行上；y 跟随弹窗变高偏移（同输入框/按钮），否则会飘到输入框上
         if (bidErrorText != null && System.currentTimeMillis() < bidErrorUntil) {
-            context.drawCenteredTextWithShadow(textRenderer, bidErrorText, centerX, dialogY + 158, 0xFFFFFF)
+            val errorX = if (entry.type == "POKEMON") centerX + 70 else dialogX + dialogW - 71
+            context.drawCenteredTextWithShadow(textRenderer, bidErrorText, errorX, dialogY + 158 + extra * 10, 0xFFFFFF)
         }
     }
 
@@ -1111,6 +1120,15 @@ class AuctionScreen(
                     1.0f
                 )
             )
+            return
+        }
+        // 余额预判：不足时只给 fail 反馈，不播金币声也不发请求（金币声会让玩家误以为出价成功；
+        // 服务端扣款仍会二次校验，此处仅避免误报音效）。自己连续加价只扣差价，与服务端扣款口径一致。
+        val deduct = if (entry.currentBidderUuid == myUuid() && entry.currentPrice > 0) amount - entry.currentPrice else amount
+        if (com.shusheng.cobblemarket.client.BalanceCache.balanceRaw < deduct) {
+            bidErrorText = Text.translatable("cobblemarket.auction.not_enough").formatted(Formatting.RED)
+            bidErrorUntil = System.currentTimeMillis() + 2000
+            playFailSound()
             return
         }
         // 有效出价：金币音效（照原按钮 clickSound）
@@ -1325,8 +1343,8 @@ class AuctionScreen(
                     leftX + 28, y + 7, 0xFFFFFF)
             }
 
-            // 当前价（货币蓝）+ 出价次数（灰，拆段）
-            val priceStr = displayPriceText(entry)
+            // 当前价（行内缩写）+ 出价次数（灰，拆段）
+            val priceStr = displayPriceCompactText(entry)
             val bidPart = if (entry.bidCount > 0) " ×${entry.bidCount}" else ""
             val priceX = leftX + panelWidth - 56 - textRenderer.getWidth(priceStr) - textRenderer.getWidth(bidPart)
 
@@ -1348,13 +1366,17 @@ class AuctionScreen(
                     priceX + textRenderer.getWidth(priceStr), y + 7, 0xAAAAAA)
             }
 
-            // 结束倒计时（右移让位给行内图标链），左侧画卖家头像（照搬精灵市场）
+            // 结束倒计时 + 卖家头像：头像位置与精灵市场一致（leftX+127，各行对齐）；
+            // 127 是名字区所需宽度算出来的——名字(截断 44px)+星+性别+携带物+体型徽章 = 97px，
+            // 起点 leftX+28，再左就压住体型徽章。倒计时紧跟其右，价格区异常宽时整块左移兜底
             val remaining = formatRemaining(entry.endsAt)
             val remainingColor = if (entry.endsAt - System.currentTimeMillis() < 5 * 60 * 1000) 0xFF6666 else 0xAAAAAA
             val remW = textRenderer.getWidth(remaining)
+            val avatarX = leftX + 127
+            val shift = maxOf(0, avatarX + 20 + remW - (priceX - 16 - 6))
             context.drawTextWithShadow(textRenderer, remaining,
-                leftX + 156 - remW, y + 7, remainingColor)
-            drawSellerAvatar(context, entry.sellerUuid, entry.sellerName, leftX + 156 - remW - 20, y + 4, 16)
+                avatarX + 20 - shift, y + 7, remainingColor)
+            drawSellerAvatar(context, entry.sellerUuid, entry.sellerName, avatarX - shift, y + 4, 16)
 
             // 我的 tab 标记（价格右侧）
             if (currentTab == 2 && isMine(entry)) {
