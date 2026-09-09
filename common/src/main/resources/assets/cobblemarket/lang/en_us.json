@@ -445,6 +445,7 @@
   "cobblemarket.network.storage_full": "Your party and PC are both full!",
   "cobblemarket.network.inventory_full": "Your inventory is full! Free up space to cancel this listing.",
   "cobblemarket.network.party_last": "You must keep at least one Pokémon in your party!",
+  "cobblemarket.network.in_battle": "You can't do this during a battle. Try again after it ends",
   "cobblemarket.network.bought": "You bought %s for %s %s!",
   "cobblemarket.network.sold": "Your %s was sold!",
 
@@ -638,6 +639,9 @@
   "cobblemarket.card.apply_success": "Application approved! Your §6Meowth§d·Purple Gold Card§r has been issued",
   "cobblemarket.card.apply_fee_line": "Application fee: %s %s",
   "cobblemarket.card.apply_cond_value": "(%s)",
+  "cobblemarket.card.apply_credit_line": "Credit: %s",
+  "cobblemarket.card.apply_fee_discount": "Fee discount: %s",
+  "cobblemarket.card.apply_no_discount": "None",
   "cobblemarket.card.apply_no_record": "No overdue record",
   "cobblemarket.card.apply_has_record": "Has overdue record",
   "cobblemarket.card.not_holder_removed": "This §6Meowth§d·Purple Gold Card§r doesn't belong to you — it was reclaimed",

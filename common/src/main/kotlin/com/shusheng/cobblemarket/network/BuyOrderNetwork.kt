@@ -698,6 +698,11 @@ object BuyOrderNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.not_found")))
                     return@execute
                 }
+                // 对战中不可交付求购单（整个队伍）：战斗系统动态读队伍，抽走任何精灵都可能造成战斗内模型消失或变相复制
+                if (com.shusheng.cobblemarket.market.BattleGuard.isPlayerInBattle(player.uuid)) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.in_battle")))
+                    return@execute
+                }
                 if (fromParty && party.occupied() <= 1) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.party_last")))
                     return@execute

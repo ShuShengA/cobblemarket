@@ -303,7 +303,11 @@ data class PurpleCardApplyInfoPayload(
     /** 补发凭证费用（持有者界面显示补发费用行） */
     val redoFee: Long,
     /** 已持有黑金卡（升级替代）：紫卡申请按钮显示「已升级」而非「条件未满足」 */
-    val holdsBlackCard: Boolean
+    val holdsBlackCard: Boolean,
+    /** 卡的借款额度（界面权益展示） */
+    val creditLimit: Long,
+    /** 持有者手续费减免比例 0~1（界面权益展示；0 = 无减免） */
+    val feeDiscount: Double
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -318,16 +322,20 @@ data class PurpleCardApplyInfoPayload(
                 b.writeBoolean(p.isHolder)
                 b.writeLong(p.redoFee)
                 b.writeBoolean(p.holdsBlackCard)
+                b.writeLong(p.creditLimit)
+                b.writeDouble(p.feeDiscount)
             },
             { b ->
                 PurpleCardApplyInfoPayload(
-                    (0 until b.readVarInt()).map { ApplyConditionEntry.read(b) },
-                    b.readLong(),
-                    b.readBoolean(),
-                    b.readBoolean(),
-                    b.readBoolean(),
-                    b.readLong(),
-                    b.readBoolean()
+                    conditions = (0 until b.readVarInt()).map { ApplyConditionEntry.read(b) },
+                    fee = b.readLong(),
+                    eligible = b.readBoolean(),
+                    selfApplyEnabled = b.readBoolean(),
+                    isHolder = b.readBoolean(),
+                    redoFee = b.readLong(),
+                    holdsBlackCard = b.readBoolean(),
+                    creditLimit = b.readLong(),
+                    feeDiscount = b.readDouble()
                 )
             }
         )
@@ -386,7 +394,11 @@ data class BlackCardApplyInfoPayload(
     /** 已是持有者：界面按钮变「补发黑卡」 */
     val isHolder: Boolean,
     /** 补发凭证费用（持有者界面显示补发费用行） */
-    val redoFee: Long
+    val redoFee: Long,
+    /** 卡的借款额度（界面权益展示） */
+    val creditLimit: Long,
+    /** 持有者手续费减免比例 0~1（界面权益展示；0 = 无减免） */
+    val feeDiscount: Double
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -400,15 +412,19 @@ data class BlackCardApplyInfoPayload(
                 b.writeBoolean(p.selfApplyEnabled)
                 b.writeBoolean(p.isHolder)
                 b.writeLong(p.redoFee)
+                b.writeLong(p.creditLimit)
+                b.writeDouble(p.feeDiscount)
             },
             { b ->
                 BlackCardApplyInfoPayload(
-                    (0 until b.readVarInt()).map { ApplyConditionEntry.read(b) },
-                    b.readLong(),
-                    b.readBoolean(),
-                    b.readBoolean(),
-                    b.readBoolean(),
-                    b.readLong()
+                    conditions = (0 until b.readVarInt()).map { ApplyConditionEntry.read(b) },
+                    fee = b.readLong(),
+                    eligible = b.readBoolean(),
+                    selfApplyEnabled = b.readBoolean(),
+                    isHolder = b.readBoolean(),
+                    redoFee = b.readLong(),
+                    creditLimit = b.readLong(),
+                    feeDiscount = b.readDouble()
                 )
             }
         )
@@ -1183,7 +1199,9 @@ object FinanceNetwork {
                 selfApplyEnabled = CobbleMarketConfig.purpleCardSelfApply,
                 isHolder = state.isPurpleCardHolder(player.uuid),
                 redoFee = CobbleMarketConfig.purpleCardRedoFee,
-                holdsBlackCard = state.isBlackCardHolder(player.uuid)
+                holdsBlackCard = state.isBlackCardHolder(player.uuid),
+                creditLimit = CobbleMarketConfig.purpleCardCreditLimit,
+                feeDiscount = CobbleMarketConfig.purpleCardFeeDiscount
             )
         )
     }
@@ -1225,7 +1243,9 @@ object FinanceNetwork {
                 eligible = state.isBlackCardEligible(player.uuid, cash, dex, now),
                 selfApplyEnabled = CobbleMarketConfig.blackCardSelfApply,
                 isHolder = state.isBlackCardHolder(player.uuid),
-                redoFee = CobbleMarketConfig.blackCardRedoFee
+                redoFee = CobbleMarketConfig.blackCardRedoFee,
+                creditLimit = CobbleMarketConfig.blackCardCreditLimit,
+                feeDiscount = CobbleMarketConfig.blackCardFeeDiscount
             )
         )
     }

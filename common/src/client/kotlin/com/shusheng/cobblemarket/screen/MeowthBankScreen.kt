@@ -65,7 +65,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         // 返回按钮：右边缘与「全部借款历史」按钮右边缘对齐（48 宽 → x=width/2+57）
         // （全部借款历史：x=width/2+25 宽 80 → 右边缘 width/2+105）
         backButton = NineSliceButton(
-            width / 2 + 57, bgTop + 47, 48, 16,
+            width / 2 + 57, bgTop + 76, 48, 16,
             Text.literal(""),
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
@@ -74,9 +74,9 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         )
         addDrawableChild(backButton)
 
-        // 规则按钮：返回按钮下方 4px（悬停显示借款规则与后果面板，照拍卖场规则按钮）
+        // 规则按钮：返回按钮下方 4px，与「喵喵的帮助」按钮同一水平（悬停显示借款规则与后果面板，照拍卖场规则按钮）
         rulesButton = NineSliceButton(
-            width / 2 + 57, bgTop + 67, 48, 16,
+            width / 2 + 57, bgTop + 96, 48, 16,
             Text.translatable("cobblemarket.meowth_bank.rules"),
             { }
         )
@@ -86,7 +86,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         // 两张卡微缩图标在 render 叠加：紫卡左端、黑卡右端，互不粘连
         if (client?.player?.hasPermissionLevel(2) == true) {
             cardManageButton = NineSliceButton(
-                width / 2 + 57, bgTop + 87, 48, 16,
+                width / 2 + 57, bgTop + 116, 48, 16,
                 Text.literal(""),
                 { client?.setScreen(CardManageScreen()) }
             )
@@ -174,16 +174,17 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             width / 2, bgTop + 31, 0xFFFFFF
         )
         // 信息组：「可用额度 / 当前欠款」两行（价格+货币名照全模组规矩用蓝色）；
-        // 缓存未拉取（-1）时按 0 显示（秒显优先，响应到达即更新）；批次 7.5 上移 10px 给存款按钮腾位
+        // 缓存未拉取（-1）时按 0 显示（秒显优先，响应到达即更新）；
+        // 行距 14px；上移给右侧按钮列（返回按钮 y+76）让位，避免文字右缘压按钮
         context.drawCenteredTextWithShadow(
             textRenderer,
             Text.translatable("cobblemarket.loan.limit_line", formatPriceLong(limit.coerceAtLeast(0)), inlineCurrencyUnit()),
-            width / 2, bgTop + 71, 0x55FFFF
+            width / 2, bgTop + 50, 0x55FFFF
         )
         context.drawCenteredTextWithShadow(
             textRenderer,
             Text.translatable("cobblemarket.loan.debt_line", formatPriceLong(debt.coerceAtLeast(0)), inlineCurrencyUnit()),
-            width / 2, bgTop + 79, 0x55FFFF
+            width / 2, bgTop + 64, 0x55FFFF
         )
 
         // 左侧紫卡展示（所有玩家可见，无动画；点击打开申请紫卡弹窗）

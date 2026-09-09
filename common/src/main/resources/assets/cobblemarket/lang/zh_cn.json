@@ -445,6 +445,7 @@
   "cobblemarket.network.storage_full": "你的队伍和 PC 都已满！",
   "cobblemarket.network.inventory_full": "背包已满，请腾出空间再下架。",
   "cobblemarket.network.party_last": "队伍至少要保留一只精灵！",
+  "cobblemarket.network.in_battle": "对战期间无法进行此操作，请战斗结束后再试",
   "cobblemarket.network.bought": "你购买了 %s，花费 %s %s！",
   "cobblemarket.network.sold": "你的 %s 已卖出！",
 
@@ -638,6 +639,9 @@
   "cobblemarket.card.apply_success": "申请成功！§6喵§d·紫金卡§r已发放",
   "cobblemarket.card.apply_fee_line": "申请费用：%s %s",
   "cobblemarket.card.apply_cond_value": "（%s）",
+  "cobblemarket.card.apply_credit_line": "额度：%s",
+  "cobblemarket.card.apply_fee_discount": "手续费减免：%s",
+  "cobblemarket.card.apply_no_discount": "无",
   "cobblemarket.card.apply_no_record": "无逾期记录",
   "cobblemarket.card.apply_has_record": "有逾期记录",
   "cobblemarket.card.not_holder_removed": "这张§6喵§d·紫金卡§r不属于你，已被收回",

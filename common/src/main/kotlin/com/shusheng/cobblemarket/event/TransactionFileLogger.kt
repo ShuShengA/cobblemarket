@@ -26,8 +26,8 @@ object TransactionFileLogger {
             val date = dateFormat.format(instant)
             if (date != currentDate) {
                 currentDate = date
-                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,精灵/物品,价格,手续费,详情")
-                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Pokemon/Item,Price,Fee,Details")
+                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,卖家UUID,买家UUID,精灵/物品,价格,手续费,详情")
+                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Seller UUID,Buyer UUID,Pokemon/Item,Price,Fee,Details")
             }
             val zhFile = currentZhFile ?: return
             val enFile = currentEnFile ?: return
@@ -144,7 +144,10 @@ object TransactionFileLogger {
         val seller = csvEscape(record.sellerName)
         val buyer = csvEscape(record.buyerName)
         val species = csvEscape(speciesDisplay(record.species))
-        return "$time,$type,$category,$seller,$buyer,$species,${record.price},${record.fee},${csvEscape(record.detail)}"
+        // 卖家/买家 UUID 供程序回读按 UUID 匹配（改名玩家也查得到）；人读账本看名字列
+        val sellerUuid = record.sellerUuid.toString()
+        val buyerUuid = record.buyerUuid?.toString() ?: ""
+        return "$time,$type,$category,$seller,$buyer,$sellerUuid,$buyerUuid,$species,${record.price},${record.fee},${csvEscape(record.detail)}"
     }
 
     private fun typeName(type: TransactionType, lang: String): String = when (type) {
@@ -169,4 +172,105 @@ object TransactionFileLogger {
             "\"" + guarded.replace("\"", "\"\"") + "\""
         } else guarded
     }
+
+    // ── 回读（个人交易历史界面）：内存上限（全服 200 条）外的历史从 CSV 账本补 ──
+
+    /** 解析一条 CSV 行（引号状态机，兼容详情列中的逗号/引号） */
+    private fun parseCsvLine(line: String): List<String> {
+        val fields = mutableListOf<String>()
+        val cur = StringBuilder()
+        var inQuotes = false
+        var i = 0
+        while (i < line.length) {
+            val c = line[i]
+            when {
+                c == '"' && inQuotes && i + 1 < line.length && line[i + 1] == '"' -> { cur.append('"'); i++ }
+                c == '"' -> inQuotes = !inQuotes
+                c == ',' && !inQuotes -> { fields.add(cur.toString()); cur.setLength(0) }
+                else -> cur.append(c)
+            }
+            i++
+        }
+        fields.add(cur.toString())
+        return fields
+    }
+
+    /** 英文 CSV 类型名 → 枚举（回读固定读 en 文件，类型名不随语言变） */
+    private fun typeFromCsv(name: String): TransactionType? = when (name) {
+        "Listed" -> TransactionType.ADD
+        "Sold" -> TransactionType.PURCHASE
+        "Cancelled" -> TransactionType.CANCEL
+        "Returned" -> TransactionType.RETURN
+        "Order" -> TransactionType.ORDER
+        else -> null
+    }
+
+    /** 内存/CSV 合并去重键的时间部分（秒级，与 CSV 行格式一致） */
+    fun timestampKey(timestamp: Long): String =
+        timeFormat.format(Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()))
+
+    /**
+     * 回读最近 [days] 天（含今天）的 CSV 账本；[playerUuid]/[playerName] 同时非空时过滤该玩家
+     * （新格式行按 UUID 匹配——改名玩家也查得到；旧格式行无 UUID 列回退名字匹配），
+     * 都为 null 返回全部。结果按时间倒序。
+     */
+    fun readRecentRecords(playerUuid: java.util.UUID?, playerName: String?, days: Int): List<TransactionRecord> {
+        val dir = configDir().resolve("cobblemarket/history").toFile()
+        if (!dir.isDirectory) return emptyList()
+        val zone = ZoneId.systemDefault()
+        val out = mutableListOf<TransactionRecord>()
+        for (d in 0 until days) {
+            val date = dateFormat.format(java.time.LocalDate.now(zone).minusDays(d.toLong()))
+            val file = File(dir, "history_${date}_en_us.csv")
+            if (!file.isFile) continue
+            try {
+                file.forEachLine { line ->
+                    if (line.isBlank()) return@forEachLine
+                    val fields = parseCsvLine(line)
+                    if (fields.size < 7 || fields[0].startsWith("Time")) return@forEachLine
+                    val type = typeFromCsv(fields[1]) ?: return@forEachLine
+                    // 新格式（含 UUID 列）字段序：0时间 1类型 2分类 3卖家 4买家 5卖家UUID 6买家UUID 7物种 8价格 9手续费 10详情
+                    // 旧格式：0时间 1类型 2分类 3卖家 4买家 5物种 6价格 7手续费 8详情
+                    val hasUuid = fields.size >= 10
+                    val seller = fields[3].removePrefix("'")
+                    val buyer = fields[4].removePrefix("'")
+                    val sellerUuid = if (hasUuid) runCatching { java.util.UUID.fromString(fields[5]) }.getOrNull() else null
+                    val buyerUuid = if (hasUuid) fields[6].takeIf { it.isNotEmpty() }?.let { runCatching { java.util.UUID.fromString(it) }.getOrNull() } else null
+                    val species = fields[if (hasUuid) 7 else 5].removePrefix("'")
+                    val price = fields[if (hasUuid) 8 else 6].toIntOrNull() ?: return@forEachLine
+                    if (playerUuid != null) {
+                        // UUID 匹配优先（新行）；旧行无 UUID 回退名字匹配
+                        val uuidMatch = sellerUuid == playerUuid || buyerUuid == playerUuid
+                        val nameMatch = playerName != null && (seller == playerName || buyer == playerName)
+                        val nameFallbackAllowed = sellerUuid == null && (buyerUuid == null || buyer.isEmpty())
+                        if (!uuidMatch && !(nameFallbackAllowed && nameMatch)) return@forEachLine
+                    }
+                    val timestamp = try {
+                        java.time.LocalDateTime.parse(fields[0], timeFormat).atZone(zone).toInstant().toEpochMilli()
+                    } catch (e: Exception) {
+                        return@forEachLine
+                    }
+                    out.add(TransactionRecord(
+                        timestamp = timestamp,
+                        type = type,
+                        category = if (fields[2] == "ITEM") TransactionCategory.ITEM else TransactionCategory.POKEMON,
+                        sellerUuid = sellerUuid ?: LEGACY_RECORD_UUID,
+                        sellerName = seller,
+                        buyerUuid = buyerUuid,  // 旧行 null：BUY 判定回退名字
+                        buyerName = buyer,
+                        species = species,
+                        price = price,
+                        fee = 0,
+                        detail = ""
+                    ))
+                }
+            } catch (e: Exception) {
+                CobbleMarket.LOGGER.warn("Failed to read history CSV {}: {}", file.name, e.message)
+            }
+        }
+        return out.sortedByDescending { it.timestamp }
+    }
 }
+
+/** 旧格式 CSV 行无 UUID 时的占位（界面 BUY 判定据此回退名字匹配） */
+val LEGACY_RECORD_UUID: java.util.UUID = java.util.UUID(0L, 0L)
