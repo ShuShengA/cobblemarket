@@ -338,8 +338,13 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                     itemStack = heldStack, x = sx.toDouble(), y = y + 6.0, scale = 0.6, matrixStack = context.matrices)
                 sx += 12
             }
+            // 体型徽章（排在携带物图标之后，留 3px 空隙）
+            if (p.sizeCategory.isNotEmpty()) {
+                sx += 3
+                sx += EntryBadgeRenderer.drawSizeBadgeIcon(context, p.sizeCategory, sx, y + 7)
+            }
             val levelText = Text.translatable("cobblemarket.gui.lv").string + p.level
-            context.drawText(textRenderer, levelText, leftX + 135, y + 7, 0x000000, false)
+            context.drawText(textRenderer, levelText, leftX + 147, y + 7, 0x000000, false)
         }
 
         if (hoveredRow in visible.indices) {
@@ -426,6 +431,8 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                 lines.add(null to 0)
             }
             var mw = 0; lines.forEach { it.first?.let { t -> mw = maxOf(mw, textRenderer.getWidth(t)) } }
+            // 名字行尾部图标（公母 + 体型徽章）不计入文本宽度，单独补上
+            lines[0].first?.let { mw = maxOf(mw, EntryBadgeRenderer.nameLineWidth(it, p.gender, p.sizeCategory)) }
             if (heldItemLine >= 0) {
                 mw = maxOf(mw, textRenderer.getWidth(lines[heldItemLine].first) + 14)
             }
@@ -474,7 +481,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                 rowY += 10
             } else if (i == 0) {
                 // 第一行（名字★Lv）带公母图标
-                EntryBadgeRenderer.drawNameLineLeft(context, line, p.gender, tx, rowY, color)
+                EntryBadgeRenderer.drawNameLineLeft(context, line, p.gender, tx, rowY, color, p.sizeCategory)
                 rowY += 10
             } else {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)

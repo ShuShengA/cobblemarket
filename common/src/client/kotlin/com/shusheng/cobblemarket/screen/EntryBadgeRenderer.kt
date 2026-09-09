@@ -21,6 +21,74 @@ object EntryBadgeRenderer {
      */
     const val MARKS_PER_ROW = 10
 
+    /**
+     * 证章区块高度：上下分割线各 10 + 图标行（drawMarksRow 返回 12 或 24），即一行 32、两行 44，无证章为 0。
+     * 各弹窗按内容算高度时引用（改证章排布只改这里，不会与渲染分叉）。
+     */
+    fun marksBlockHeight(marks: List<String>): Int =
+        if (marks.isEmpty()) 0 else if (marks.size > MARKS_PER_ROW) 44 else 32
+
+    /**
+     * 是否显示携带物行（空 id 或解析成 air 为 false），与 drawInfoLines 内判定同源，
+     * 供各弹窗按内容算高度复用，避免高度计算与实际绘制分叉。
+     */
+    fun hasHeldItemLine(heldItemId: String): Boolean =
+        heldItemId.isNotEmpty() &&
+            Identifier.tryParse(heldItemId)
+                ?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
+
+    /** ListingEntry 版携带物行判定（取 heldItemId 字段） */
+    fun hasHeldItemLine(entry: ListingEntry): Boolean = hasHeldItemLine(entry.heldItemId)
+
+    /**
+     * 体型徽章（Cobblemon 详情页同款图标）：原图 37×16，按 0.5 缩放显示成 18.5×8，与公母图标齐高。
+     * 列表行/悬停窗/详情弹窗统一画图标；聊天播报悬浮窗用字母（服务端 Text，不走本文件）。
+     */
+    private const val SIZE_ICON_SCALE = 0.5F
+    private const val SIZE_ICON_TEX_W = 37
+    private const val SIZE_ICON_TEX_H = 16
+    /** 徽章显示宽度（取整，居中排版用） */
+    private const val SIZE_ICON_W = 19
+    /** 名字后面多个徽章之间的空隙 */
+    private const val BADGE_GAP = 3
+
+    /** 体型徽章纹理表（预建，避免每帧重复构造 Identifier） */
+    private val SIZE_BADGE_TEXTURES: Map<String, Identifier> =
+        listOf("xs", "s", "m", "l", "xl", "alpha")
+            .associateWith { Identifier.of("cobblemon", "textures/gui/summary/icon_size_$it.png") }
+
+    /** 体型徽章纹理；size 为空或非法值返回 null */
+    private fun sizeBadgeTexture(size: String): Identifier? = SIZE_BADGE_TEXTURES[size.lowercase()]
+
+    /**
+     * 画体型徽章图标（37×16 原图按 0.5 缩放），返回占用宽度（不含前导空隙）。
+     * 列表行内自行累进排版时用；size 为空返回 0。
+     */
+    fun drawSizeBadgeIcon(context: DrawContext, size: String, x: Int, y: Int): Int {
+        val tex = sizeBadgeTexture(size) ?: return 0
+        com.cobblemon.mod.common.api.gui.blitk(
+            matrixStack = context.matrices, texture = tex,
+            x = x / SIZE_ICON_SCALE, y = y / SIZE_ICON_SCALE,
+            width = SIZE_ICON_TEX_W, height = SIZE_ICON_TEX_H, scale = SIZE_ICON_SCALE
+        )
+        return SIZE_ICON_W
+    }
+
+    /**
+     * 名字行整体占宽（文本 + 公母图标 + 体型徽章），供悬停窗面板宽度计算。
+     * 图标不计入文本宽度，面板宽度只按文本算会顶出右边缘，故单独暴露。
+     */
+    fun nameLineWidth(name: Text, gender: String, size: String): Int =
+        MinecraftClient.getInstance().textRenderer.getWidth(name) + nameTailWidth(gender, size)
+
+    /** 名字行尾部（公母 + 体型徽章）占用宽度，供居中排版 */
+    private fun nameTailWidth(gender: String, size: String): Int {
+        var w = 0
+        if (gender == "MALE" || gender == "FEMALE") w += 2 + 6
+        if (size.isNotEmpty()) w += (if (w > 0) BADGE_GAP else 2) + SIZE_ICON_W
+        return w
+    }
+
     /** 属性色表（2026-08-24 颜色模板；全模组精灵名/属性名显示统一用，见 [[pokemon-display-colors]]） */
     fun typeColor(typeKey: String): Int = when (typeKey.substringAfterLast(".").lowercase()) {
         "normal" -> 0xAAAA99; "fire" -> 0xFF4422; "water" -> 0x3399FF
@@ -65,32 +133,47 @@ object EntryBadgeRenderer {
     }
 
     /**
-     * 左对齐名字行：名字文本 + 右侧公母图标（♂蓝/♀红，与市场行内同款）。
-     * 所有精灵详情面板的第一行统一走此函数（居中场景先算总宽再调本函数）。
+     * 左对齐名字行：名字文本 + 右侧公母图标（♂蓝/♀红）+ 体型徽章图标。
+     * 所有精灵详情面板/悬停窗的第一行统一走此函数（居中场景先算总宽再调本函数）。
      */
-    fun drawNameLineLeft(context: DrawContext, name: Text, gender: String, x: Int, y: Int, color: Int = 0xFFFFFF) {
+    fun drawNameLineLeft(
+        context: DrawContext, name: Text, gender: String, x: Int, y: Int,
+        color: Int = 0xFFFFFF, size: String = ""
+    ) {
         val font = MinecraftClient.getInstance().textRenderer
         context.drawTextWithShadow(font, name, x, y, color)
-        if (gender != "MALE" && gender != "FEMALE") return
-        val gi = if (gender == "MALE")
-            Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
-        else
-            Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
-        com.cobblemon.mod.common.api.gui.blitk(
-            matrixStack = context.matrices, texture = gi,
-            x = x + font.getWidth(name) + 2, y = y, width = 6, height = 8
-        )
+        val nameW = font.getWidth(name)
+        var cx = x + nameW
+        if (gender == "MALE" || gender == "FEMALE") {
+            val gi = if (gender == "MALE")
+                Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
+            else
+                Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
+            com.cobblemon.mod.common.api.gui.blitk(
+                matrixStack = context.matrices, texture = gi,
+                x = cx + 2, y = y, width = 6, height = 8
+            )
+            cx += 2 + 6
+        }
+        if (size.isNotEmpty()) {
+            cx += if (cx > x + nameW) BADGE_GAP else 2
+            drawSizeBadgeIcon(context, size, cx, y)
+        }
     }
 
-    /** 居中名字行：名字 + 公母图标整体居中（无性别信息时与普通居中文本一致） */
-    fun drawNameLine(context: DrawContext, name: Text, gender: String, centerX: Int, y: Int, color: Int = 0xFFFFFF) {
+    /** 居中名字行：名字 + 公母图标 + 体型徽章整体居中（详情弹窗用，无附加信息时与普通居中文本一致） */
+    fun drawNameLine(
+        context: DrawContext, name: Text, gender: String, centerX: Int, y: Int,
+        color: Int = 0xFFFFFF, size: String = ""
+    ) {
         val font = MinecraftClient.getInstance().textRenderer
-        if (gender != "MALE" && gender != "FEMALE") {
+        val tail = nameTailWidth(gender, size)
+        if (tail == 0) {
             context.drawCenteredTextWithShadow(font, name, centerX, y, color)
             return
         }
-        val totalW = font.getWidth(name) + 14
-        drawNameLineLeft(context, name, gender, centerX - totalW / 2, y, color)
+        val totalW = font.getWidth(name) + tail + 6
+        drawNameLineLeft(context, name, gender, centerX - totalW / 2, y, color, size)
     }
 
     /**
@@ -124,9 +207,7 @@ object EntryBadgeRenderer {
         val spd = Text.translatable("cobblemon.stat.special_defence.name").string
         val spe = Text.translatable("cobblemon.stat.speed.name").string
 
-        val hasHeldItem = entry.heldItemId.isNotEmpty() &&
-            Identifier.tryParse(entry.heldItemId)
-                ?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
+        val hasHeldItem = hasHeldItemLine(entry)
 
         // 行列表：null = 分割线（1px 灰线）；证章行 = 图标行（marksLine 索引处画图标）
         val lines = mutableListOf<Pair<Text?, Int>>()
@@ -218,8 +299,8 @@ object EntryBadgeRenderer {
                     y += 10
                 }
                 i == 0 -> {
-                    // 第一行（名字★Lv）走公共名字行函数（带公母图标）
-                    drawNameLine(context, line, entry.gender, centerX, y, color)
+                    // 第一行（名字★Lv）走公共名字行函数（带公母图标 + 体型字母）
+                    drawNameLine(context, line, entry.gender, centerX, y, color, entry.sizeCategory)
                     y += 10
                 }
                 else -> {

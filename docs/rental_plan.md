@@ -11,6 +11,11 @@
 - **删除是归还的必要动作**：租客那只删不干净 = 复制。删除优先，删不掉留标记，标记持久化。
 - **不拦截无害操作**：装备携带物、放进 PC 都不拦（快照兜底 + 到期扫描能覆盖）。
 
+## 技术约定（实现前必读）
+
+- **精灵 NBT 还原一律走 `util/PokemonLoader.fromNbt(registryManager, nbt)`**，勿手写 `Pokemon()`——Cobblemon 的实例方法 `loadFromNBT` 内部走 `copyFrom`，会丢掉 `isAlpha`（头目精灵永久变成普通体型，不可逆）。本功能涉及两处还原：**租客实例化**、**归还时从快照恢复**。
+- 判断其他 Cobblemon API 是否安全：内部走 `CODEC.decode` 的安全（如 `Pokemon.clone()`），走 `copyFrom` 的要怀疑字段覆盖不全。
+
 ## 与现有系统的关系
 
 | 系统 | 关系 |

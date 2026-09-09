@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.network
 import com.cobblemon.mod.common.Cobblemon
 import com.cobblemon.mod.common.api.storage.party.PartyPosition
 import com.shusheng.cobblemarket.config.CurrencyHandler
+import com.shusheng.cobblemarket.util.PokemonSize
 import com.shusheng.cobblemarket.util.RequestThrottle
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.market.BanState
@@ -61,7 +62,9 @@ data class ListingEntry(
     val currencyName: String,
     val aspects: List<String>, // 精灵形态（性别/地区等），客户端渲染 3D 图标用
     /** 拥有的证章 id 列表（外观展示用，证章不影响能力；上架时快照） */
-    val marks: List<String> = emptyList()
+    val marks: List<String> = emptyList(),
+    /** 体型分类（XS/S/M/L/XL/ALPHA），空串 = 无信息（旧数据） */
+    val sizeCategory: String = ""
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(id)
@@ -91,6 +94,7 @@ data class ListingEntry(
         buf.writeString(currencyName)
         buf.writeVarInt(aspects.size); aspects.forEach { buf.writeString(it) }
         buf.writeVarInt(marks.size); marks.forEach { buf.writeString(it) }
+        buf.writeString(sizeCategory)
     }
 
     companion object {
@@ -121,7 +125,8 @@ data class ListingEntry(
             heldItemId = buf.readString(),
             currencyName = buf.readString(),
             aspects = (0 until buf.readVarInt()).map { buf.readString() },
-            marks = (0 until buf.readVarInt()).map { buf.readString() }
+            marks = (0 until buf.readVarInt()).map { buf.readString() },
+            sizeCategory = buf.readString()
         )
     }
 }
@@ -492,7 +497,9 @@ data class PokemonPreview(
     /** 亲密度（预览快照） */
     val friendship: Int,
     /** 拥有的证章纹理路径列表（外观展示；服务端直接传纹理，客户端不依赖 Marks 注册表） */
-    val marks: List<String> = emptyList()
+    val marks: List<String> = emptyList(),
+    /** 体型分类（XS/S/M/L/XL/ALPHA），空串 = 无信息 */
+    val sizeCategory: String = ""
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(uuid); buf.writeString(species); buf.writeString(speciesId); buf.writeString(speciesName)
@@ -509,6 +516,7 @@ data class PokemonPreview(
         buf.writeInt(evsSpAtk); buf.writeInt(evsSpDef); buf.writeInt(evsSpd)
         buf.writeInt(friendship)
         buf.writeVarInt(marks.size); marks.forEach { buf.writeString(it) }
+        buf.writeString(sizeCategory)
     }
 
     companion object {
@@ -523,7 +531,8 @@ data class PokemonPreview(
             (0 until buf.readVarInt()).map { buf.readString() },
             buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
             buf.readInt(),
-            (0 until buf.readVarInt()).map { buf.readString() }
+            (0 until buf.readVarInt()).map { buf.readString() },
+            buf.readString()
         )
     }
 }
@@ -1160,7 +1169,8 @@ object MarketNetwork {
                             heldItemId = detail["heldItemId"] ?: "",
                             currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
                             aspects = parseAspects(detail),
-                            marks = parseMarks(detail)
+                            marks = parseMarks(detail),
+                            sizeCategory = PokemonSize.fromNbt(listing.pokemonNbt)
                         )
                     }
                 }
@@ -1222,7 +1232,7 @@ object MarketNetwork {
                 // 先校验挂单数据可加载，再扣款，避免解析失败吞掉买家的钱
                 val registryLookup = player.serverWorld.registryManager
                 val pokemon = try {
-                    com.cobblemon.mod.common.pokemon.Pokemon().loadFromNBT(registryLookup, listing.pokemonNbt)
+                    com.shusheng.cobblemarket.util.PokemonLoader.fromNbt(registryLookup, listing.pokemonNbt)
                 } catch (e: Exception) {
                     CobbleMarket.LOGGER.warn("Failed to load pokemon NBT for listing {}: {}", listing.id, e.message)
                     sendToPlayer(
@@ -1401,8 +1411,9 @@ object MarketNetwork {
                 }
 
                 val pokemon = try {
-                    com.cobblemon.mod.common.pokemon.Pokemon()
-                        .loadFromNBT(player.serverWorld.registryManager, listing.pokemonNbt)
+                    com.shusheng.cobblemarket.util.PokemonLoader.fromNbt(
+                        player.serverWorld.registryManager, listing.pokemonNbt
+                    )
                 } catch (e: Exception) {
                     // 挂单数据损坏时保留 ACTIVE 状态，等待管理员处理，避免精灵凭空消失
                     CobbleMarket.LOGGER.warn("Failed to load pokemon NBT for listing {}: {}", listing.id, e.message)
@@ -1524,7 +1535,8 @@ object MarketNetwork {
                             heldItemId = detail["heldItemId"] ?: "",
                             currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
                             aspects = parseAspects(detail),
-                            marks = parseMarks(detail)
+                            marks = parseMarks(detail),
+                            sizeCategory = PokemonSize.fromNbt(listing.pokemonNbt)
                         )
                     }
                 }
@@ -2725,8 +2737,9 @@ object MarketNetwork {
                 }
                 val previews = pageItems.mapIndexedNotNull { i, listing ->
                     try {
-                        val pokemon = com.cobblemon.mod.common.pokemon.Pokemon()
-                            .loadFromNBT(player.serverWorld.registryManager, listing.pokemonNbt)
+                        val pokemon = com.shusheng.cobblemarket.util.PokemonLoader.fromNbt(
+                            player.serverWorld.registryManager, listing.pokemonNbt
+                        )
                         toPreview(pokemon, "return", i)
                     } catch (e: Exception) {
                         // 单条损坏不影响其他退回的预览
@@ -2910,7 +2923,8 @@ object MarketNetwork {
             evsSpDef = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE] ?: 0,
             evsSpd = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: 0,
             friendship = pokemon.friendship,
-            marks = pokemon.marks.map { it.texture.toString() }
+            marks = pokemon.marks.map { it.texture.toString() },
+            sizeCategory = PokemonSize.from(pokemon)
         )
 
     fun openScreen(player: ServerPlayerEntity) {

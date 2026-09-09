@@ -594,6 +594,12 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
                 sx += 12
             }
 
+            // 体型徽章（排在携带物图标之后，留 3px 空隙）
+            if (e.sizeCategory.isNotEmpty()) {
+                sx += 3
+                sx += EntryBadgeRenderer.drawSizeBadgeIcon(context, e.sizeCategory, sx, y + 7)
+            }
+
             // Level
             val levelText = Text.translatable("cobblemarket.gui.lv").string + e.level
             context.drawText(textRenderer, levelText, lx + 135, y + 7, 0x000000, false)
@@ -882,6 +888,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             }
 
             var mw = 0; lines.forEach { if (it.first != null) mw = maxOf(mw, textRenderer.getWidth(it.first)) }
+            // 名字行尾部图标（公母 + 体型徽章）不计入文本宽度，单独补上
+            lines[0].first?.let { mw = maxOf(mw, EntryBadgeRenderer.nameLineWidth(it, p.gender, p.sizeCategory)) }
             if (heldItemLine >= 0) {
                 mw = maxOf(mw, textRenderer.getWidth(lines[heldItemLine].first) + 14)
             }
@@ -940,7 +948,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
                 rowY += 10
             } else if (i == 0) {
                 // 第一行（名字★Lv）带公母图标
-                EntryBadgeRenderer.drawNameLineLeft(context, line, p.gender, tx, rowY, color)
+                EntryBadgeRenderer.drawNameLineLeft(context, line, p.gender, tx, rowY, color, p.sizeCategory)
                 rowY += 10
             } else {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)

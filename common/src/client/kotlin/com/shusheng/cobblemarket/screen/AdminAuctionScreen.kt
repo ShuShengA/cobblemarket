@@ -322,8 +322,8 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             }
         }
         val centerX = width / 2
-        // 弹窗高度随证章区块扩展（无证章 220），按钮/提示统一相对弹窗底定位
-        val dialogH = 220 + cancelDialogMarksExtra(entry)
+        // 弹窗高度按左列信息区实际内容算（球种/携带物/证章都计入），按钮/提示统一相对弹窗底定位
+        val dialogH = cancelDialogHeight(entry)
         val dialogY = height / 2 - dialogH / 2
 
         // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染，照搬出价弹窗）
@@ -534,6 +534,13 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 rowStacks[origIndex]?.heldStack?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                         itemStack = heldStack, x = sx.toDouble(), y = y + 6.0, scale = 0.6, matrixStack = context.matrices)
+                    sx += 12
+                }
+                // 体型徽章（排在携带物图标之后，留 3px 空隙）
+                val sizeBadge = entry.extraData["size"].orEmpty()
+                if (sizeBadge.isNotEmpty()) {
+                    sx += 3
+                    sx += EntryBadgeRenderer.drawSizeBadgeIcon(context, sizeBadge, sx, y + 7)
                 }
             } else {
                 rowStacks[origIndex]?.itemStack?.let {
@@ -645,6 +652,8 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 staticLines.add(null to 0)
             }
             var mw = 0; staticLines.forEach { it.first?.let { t -> mw = maxOf(mw, textRenderer.getWidth(t)) } }
+            // 名字行尾部图标（公母 + 体型徽章）不计入文本宽度，单独补上
+            staticLines[0].first?.let { mw = maxOf(mw, EntryBadgeRenderer.nameLineWidth(it, entry.extraData["gender"] ?: "", entry.extraData["size"] ?: "")) }
             if (heldItemLine >= 0) {
                 mw = maxOf(mw, textRenderer.getWidth(staticLines[heldItemLine].first!!) + 14)
             }
@@ -711,7 +720,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 rowY += 10
             } else if (i == 0) {
                 // 第一行（名字★Lv）带公母图标
-                EntryBadgeRenderer.drawNameLineLeft(context, line, entry.extraData["gender"] ?: "", tx, rowY, color)
+                EntryBadgeRenderer.drawNameLineLeft(context, line, entry.extraData["gender"] ?: "", tx, rowY, color, entry.extraData["size"] ?: "")
                 rowY += 10
             } else {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
@@ -769,20 +778,25 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
      * 强制下架弹窗的证章区块额外高度（0 / 44 / 56）：
      * 上下分割线 20 + 图标行 12（超过一行再加 12 的「+N」行）+ 余量（保证按钮不压到左列最后一行）。
      */
-    private fun cancelDialogMarksExtra(entry: AuctionEntry): Int {
-        val count = entry.extraData["marks"].orEmpty().split(",").count { it.isNotEmpty() }
-        return when {
-            count == 0 -> 0
-            count > EntryBadgeRenderer.MARKS_PER_ROW -> 56
-            else -> 44
-        }
+    /**
+     * 强制取消弹窗高度：按左列信息区实际内容算——起始 +56，12 基础行
+     * （名字/类型/性格/特性/IV 标签/6×IV/亲密度）+ 球种/携带物行 + 证章区块，
+     * 底部再留 58px（提示两行在 -54/-44、按钮在 -30，照出价弹窗布局）。
+     * 加新信息行（如技能）时只改这里的 12。
+     */
+    private fun cancelDialogHeight(entry: AuctionEntry): Int {
+        val marks = entry.extraData["marks"].orEmpty().split(",").filter { it.isNotEmpty() }
+        val infoRows = 12 +
+            (if (entry.extraData["ball"].orEmpty().isNotEmpty()) 1 else 0) +
+            (if (EntryBadgeRenderer.hasHeldItemLine(entry.extraData["heldItemId"].orEmpty())) 1 else 0)
+        return 56 + infoRows * 10 + EntryBadgeRenderer.marksBlockHeight(marks) + 58
     }
 
     private fun renderCancelDialogBackground(context: DrawContext, delta: Float) {
         val entry = cancelEntry ?: return
         val centerX = width / 2
         val dialogW = 280
-        val dialogH = 220 + cancelDialogMarksExtra(entry)
+        val dialogH = cancelDialogHeight(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
@@ -876,7 +890,19 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             val hasHeldItem = heldItemId.isNotEmpty() &&
                 Identifier.tryParse(heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
             if (hasHeldItem) {
-                infoLine(Text.translatable("cobblemarket.gui.tooltip_held").string, 0xAAAAAA)
+                // 携带物行：标签（白色，与其他行一致）+ 右侧物品图标
+                val heldLabel = Text.translatable("cobblemarket.gui.tooltip_held").string
+                val heldY = iy
+                infoLine(heldLabel)
+                Identifier.tryParse(heldItemId)?.let { heldId ->
+                    com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                        itemStack = ItemStack(Registries.ITEM.get(heldId)),
+                        x = infoX + textRenderer.getWidth(heldLabel) + 2.0,
+                        y = heldY + 0.0,
+                        scale = 0.6,
+                        matrixStack = context.matrices
+                    )
+                }
             }
             val hp = Text.translatable("cobblemon.stat.hp.name").string
             val atk = Text.translatable("cobblemon.stat.attack.name").string

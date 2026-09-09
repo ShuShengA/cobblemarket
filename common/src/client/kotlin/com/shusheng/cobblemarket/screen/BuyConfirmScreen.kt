@@ -27,6 +27,8 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
     private var plans = listOf<Pair<Int, Double>>()
     private var selectedPlan = 0
     private var payModeOpen = false
+    /** 第一行按钮 y（init 按信息区高度算好，分期方案行跟随其上移） */
+    private var buttonRow1Y = 0
     private val planButtons = mutableListOf<TextureButton>()
     private var payButton: TextureButton? = null
 
@@ -50,10 +52,16 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
         val btnW = 100
         val btnH = 22
         val gap = 10
-        // 证章区块高度余量：按钮随证章行数上移（分割线 2×10 + 每行 12）
-        val marksExtra = if (entry.marks.isEmpty()) 0 else 20 + (if (entry.marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0)
-        val row1Y = height - 58 - marksExtra
-        val row2Y = height - 34 - marksExtra
+        // 按钮位置按信息区实际内容算：内容短时贴底（height - 58），内容长（证章/球种/携带物）时整体下移，
+        // 不再与价格行重叠。信息区起始 y = 26 + 30 + 8，13 基础行 + 球种/携带物行 + 证章区块。
+        // 加新信息行（如技能）时只改这里的 13。
+        val infoRows = 13 +
+            (if (entry.ball.isNotEmpty()) 1 else 0) +
+            (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0)
+        val contentBottom = 64 + infoRows * 10 + EntryBadgeRenderer.marksBlockHeight(entry.marks)
+        val row1Y = maxOf(height - 58, contentBottom + 10)
+        val row2Y = row1Y + 24
+        buttonRow1Y = row1Y
 
         addDrawableChild(TextureButton(
             centerX - btnW - gap / 2, row1Y, btnW, btnH,
@@ -107,7 +115,8 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
         planButtons.clear()
         if (!payModeOpen) return
         val startX = width / 2 - 130
-        val y = height - 84
+        // 方案行在第一行按钮上方（按钮高 22 + 4px 间隙 = 26）
+        val y = buttonRow1Y - 26
         plans.forEachIndexed { i, (periods, fee) ->
             val btn = TextureButton(
                 startX + i * 88, y, 84, 16,

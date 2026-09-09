@@ -1194,7 +1194,6 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 )
                 iconOffset = 8
             }
-
             // Held item icon (after gender；弹窗打开时不渲染，防刺穿遮罩)
             if (!dialogOpen) {
                 iconData[origIndex]?.heldStack?.let { heldStack ->
@@ -1208,13 +1207,19 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                     iconOffset += 12
                 }
             }
+            // 体型徽章（排在携带物图标之后，留 3px 空隙）
+            if (entry.sizeCategory.isNotEmpty()) {
+                if (iconOffset > 0) iconOffset += 3
+                iconOffset += EntryBadgeRenderer.drawSizeBadgeIcon(
+                    context, entry.sizeCategory, leftX + 40 + nameWidth + 2 + iconOffset, y + 7)
+            }
 
-            // Seller avatar
-            drawSellerAvatar(context, entry.sellerUuid, entry.sellerName, leftX + 115, y + 4, 16)
+            // Seller avatar（右移 12px 给名字区腾出体型徽章的位置）
+            drawSellerAvatar(context, entry.sellerUuid, entry.sellerName, leftX + 127, y + 4, 16)
 
             // Level
             val levelText = Text.translatable("cobblemarket.gui.lv").string + entry.level
-            context.drawText(textRenderer, levelText, leftX + 135, y + 7, 0x000000, false)
+            context.drawText(textRenderer, levelText, leftX + 147, y + 7, 0x000000, false)
 
             // Price（右对齐到按钮左缘：价格再长也只向左延伸，不会遮按钮）
             val priceText = "${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
@@ -1426,13 +1431,25 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         if (mirrored && wasCull) org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_CULL_FACE)
     }
 
+    /**
+     * 确认/下架弹窗高度：按信息区实际内容算——起始 +62，13 基础行
+     * （名字/类型/性格特性/[球种]/[携带物]/IV 标签/6×IV/亲密度/[证章]/卖家/价格）
+     * 加球种/携带物行与证章区块，底部再留 34px 给按钮（按钮高 20 + 4px 间隙 + 10px 边距）。
+     * 加新信息行（如技能）时只改这里的 13，按钮位置自动跟随。
+     */
+    private fun confirmDialogHeight(entry: ListingEntry): Int {
+        val infoRows = 13 +
+            (if (entry.ball.isNotEmpty()) 1 else 0) +
+            (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0)
+        return 62 + infoRows * 10 + EntryBadgeRenderer.marksBlockHeight(entry.marks) + 34
+    }
+
     private fun renderConfirmDialog(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val entry = confirmEntry ?: cancelEntry ?: return
         val centerX = width / 2
         // 喵喵支付可用时加宽 280 容纳三枚按钮；不可用回退原宽度 220（两枚）
         val dialogW = if (payAvailable) 280 else 220
-        val marksExtra = if (entry.marks.isEmpty()) 0 else 20 + (if (entry.marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0)
-        val dialogH = 250 + marksExtra
+        val dialogH = confirmDialogHeight(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
@@ -1516,9 +1533,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private fun handleConfirmDialogClick(mx: Int, my: Int) {
         val centerX = width / 2
         val confirmOrCancel = confirmEntry ?: cancelEntry
-        val marksExtra = if (confirmOrCancel == null || confirmOrCancel.marks.isEmpty()) 0
-            else 20 + (if (confirmOrCancel.marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0)
-        val dialogH = 250 + marksExtra
+        val dialogH = confirmOrCancel?.let { confirmDialogHeight(it) } ?: 250
         val dialogY = height / 2 - dialogH / 2
         // 中间喵喵支付按钮（购买确认弹窗且消费贷开）：点击进独立 MeowthPayScreen
         if (cancelEntry == null && payAvailable) {
@@ -1673,6 +1688,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
             var maxWidth = 0
             lines.forEach { if (it.first != null) maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
+            // 名字行尾部图标（公母 + 体型徽章）不计入文本宽度，单独补上
+            lines[0].first?.let { maxWidth = maxOf(maxWidth, EntryBadgeRenderer.nameLineWidth(it, entry.gender, entry.sizeCategory)) }
             if (heldItemLine >= 0) {
                 maxWidth = maxOf(maxWidth, textRenderer.getWidth(lines[heldItemLine].first) + 14)
             }
@@ -1735,7 +1752,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 rowY += 10
             } else if (i == 0) {
                 // 第一行（名字★Lv）带公母图标
-                EntryBadgeRenderer.drawNameLineLeft(context, line, entry.gender, tx, rowY, color)
+                EntryBadgeRenderer.drawNameLineLeft(context, line, entry.gender, tx, rowY, color, entry.sizeCategory)
                 rowY += 10
             } else {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
