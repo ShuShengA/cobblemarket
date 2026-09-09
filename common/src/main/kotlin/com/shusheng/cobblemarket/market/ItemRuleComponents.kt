@@ -54,6 +54,22 @@ object ItemRuleComponents {
         return out.takeIf { !it.isEmpty }
     }
 
+    /** 服务端侧：从「itemId + 客户端传来的组件快照」重建物品并重新提取白名单组件。
+     * 用于搜索路径添加变体条目（客户端构造快照，服务端不盲信——重建失败或非白名单组件一律丢弃）；失败返回 null */
+    fun sanitizeSpec(itemId: String, raw: NbtCompound?, registryLookup: RegistryWrapper.WrapperLookup): NbtCompound? {
+        if (raw == null || raw.isEmpty) return null
+        val stack = try {
+            ItemStack.fromNbtOrEmpty(registryLookup, NbtCompound().apply {
+                putString("id", itemId)
+                putInt("count", 1)
+                put("components", raw)
+            })
+        } catch (_: Throwable) {
+            return null
+        }
+        return extractSpec(stack, registryLookup)
+    }
+
     /** 条目组件要求的「具体程度」：附魔按个数计（锋利V+抢夺III=2 比 锋利V=1 更具体），其它组件各计 1；无组件=0。
      * 限价多条目命中的「最具体优先」用（2026-09-06 拍板：避免「锋利V [10,10]」压死「锋利V+抢夺III [20,30]」产生空区间） */
     fun specSize(spec: NbtCompound?): Int {

@@ -130,7 +130,7 @@ class BuyOrderScreen(
     private val abilityListButtons = mutableListOf<NineSliceButton>()
     private val natureListButtons = mutableListOf<NineSliceButton>()
     // 物品匹配（模糊搜索，照黑名单物品对话框）
-    private var matchedItems = listOf<String>()
+    private var matchedItems = listOf<com.shusheng.cobblemarket.client.ItemCandidate>()
     private var selectedItemIndex = -1
     private var itemListOpen = false
     private var itemListScroll = 0
@@ -1390,14 +1390,11 @@ class BuyOrderScreen(
             if (heldPreview != null) {
                 context.drawItem(heldPreview, centerX + 72, dialogY + 48)
             } else {
-                val previewId = matchedItems.getOrNull(selectedItemIndex) ?: matchedItems.firstOrNull()
-                previewId?.let { idStr ->
-                    Identifier.tryParse(idStr)?.let { id ->
-                        val item = Registries.ITEM.get(id)
-                        if (item != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
-                            context.drawItem(ItemStack(item), centerX + 72, dialogY + 48)
-                        }
-                    }
+                val preview = matchedItems.getOrNull(selectedItemIndex) ?: matchedItems.firstOrNull()
+                preview?.let { candidate ->
+                    com.shusheng.cobblemarket.client.ItemComponentsDisplay
+                        .iconStack(candidate.itemId, candidate.componentsSpec)
+                        ?.let { stack -> if (!stack.isEmpty) context.drawItem(stack, centerX + 72, dialogY + 48) }
                 }
             }
             // 冻结提示：发布时冻结 maxPrice × 件数（物品匹配列表展开时隐藏——提示在列表覆盖区内）
@@ -1458,15 +1455,23 @@ class BuyOrderScreen(
                 sendToServer(CreateItemBuyOrderPayload("", count, minPrice, maxPrice, createNoteField?.text?.trim().orEmpty(), true))
             } else {
                 // 优先发送点选项；未点选时取自动匹配首个；无匹配则报错
-                val itemId = matchedItems.getOrNull(selectedItemIndex)
+                val candidate = matchedItems.getOrNull(selectedItemIndex)
                     ?: matchedItems.firstOrNull()
                     ?: resolveMatchingItems(createItemField?.text.orEmpty()).firstOrNull()
-                if (itemId == null) {
+                if (candidate == null) {
                     resultMsg = Text.translatable("cobblemarket.buy_order.item_not_found").string
                     resultUntil = System.currentTimeMillis() + 3000
                     return
                 }
-                sendToServer(CreateItemBuyOrderPayload(itemId, count, minPrice, maxPrice, createNoteField?.text?.trim().orEmpty(), false))
+                sendToServer(CreateItemBuyOrderPayload(
+                    itemId = candidate.itemId,
+                    totalCount = count,
+                    minPrice = minPrice,
+                    maxPrice = maxPrice,
+                    note = createNoteField?.text?.trim().orEmpty(),
+                    useHeldItem = false,
+                    componentsSpec = candidate.componentsSpec,
+                ))
             }
         }
         closeDialogs()
@@ -1811,46 +1816,11 @@ class BuyOrderScreen(
 
     // 收集全部匹配物品（优先级：ID 路径精确 > 翻译名精确 > 翻译名包含），保持注册表顺序稳定（照黑名单物品对话框）。
     // 必须 tryParse（Identifier.of 对中文/空格等非法字符直接抛异常，输入即崩溃）
-    private fun resolveMatchingItems(input: String): List<String> {
-        val trimmed = input.trim()
-        if (trimmed.isEmpty()) return emptyList()
-        if (trimmed.contains(":")) {
-            // 显式 ID：唯一结果（无论注册表是否存在，服务端会校验）
-            return listOf(trimmed)
-        }
-        val lower = trimmed.lowercase().replace(" ", "_")
-        val result = LinkedHashSet<String>()
-        // cobblemon / minecraft 前缀优先（无命名空间的常用物品 ID）
-        listOf("cobblemon", "minecraft").forEach { ns ->
-            Identifier.tryParse("$ns:$lower")?.let { id ->
-                val item = Registries.ITEM.get(id)
-                if (item != Registries.ITEM.get(Identifier.of("minecraft", "air"))) result.add(id.toString())
-            }
-        }
-        Registries.ITEM.forEach { item ->
-            val id = Registries.ITEM.getId(item)
-            if (id.path == lower) result.add(id.toString())
-        }
-        Registries.ITEM.forEach { item ->
-            val id = Registries.ITEM.getId(item)
-            if (item.name.string == trimmed) result.add(id.toString())
-        }
-        Registries.ITEM.forEach { item ->
-            val id = Registries.ITEM.getId(item)
-            if (item.name.string.contains(trimmed)) result.add(id.toString())
-        }
-        // 搜索索引追加（TM 招式/附魔/tooltip 文本命中，见 ItemSearchIndex；精确匹配仍排前）
-        com.shusheng.cobblemarket.client.ItemSearchIndex.itemIdsMatching(input).forEach { result.add(it) }
-        return result.toList()
-    }
+    private fun resolveMatchingItems(input: String): List<com.shusheng.cobblemarket.client.ItemCandidate> =
+        com.shusheng.cobblemarket.client.ItemCandidateResolver.resolve(input)
 
-    private fun itemDisplay(itemId: String): String {
-        val id = Identifier.tryParse(itemId) ?: return itemId
-        val item = Registries.ITEM.get(id)
-        val name = item.name.string
-        // 无翻译的物品（第三方模组缺 lang）会显示翻译 key 原文（超长难读），fallback 到资源路径
-        return if (name == item.translationKey) id.path else name
-    }
+    private fun itemDisplay(itemId: String): String =
+        com.shusheng.cobblemarket.client.ItemCandidateResolver.displayNameOf(itemId)
 
     /** 物品输入变更：重建匹配列表（照黑名单物品对话框） */
     private fun updateItemPreview(text: String) {
@@ -1868,7 +1838,7 @@ class BuyOrderScreen(
     private fun updateItemSelectButton() {
         // 列表展开时按钮隐藏（rebuildItemList 已处理，这里防御其他路径恢复显示）
         itemSelectButton?.visible = matchedItems.isNotEmpty() && !itemListOpen
-        val label = matchedItems.getOrNull(selectedItemIndex)?.let { itemDisplay(it) }
+        val label = matchedItems.getOrNull(selectedItemIndex)?.displayName
             ?: if (matchedItems.size > 1)
                 Text.translatable("cobblemarket.buy_order.item_matches", matchedItems.size).string
             else ""
@@ -1911,9 +1881,9 @@ class BuyOrderScreen(
         if (!itemListOpen) return
         val centerX = width / 2
         val dialogY = createDialogY()
-        matchedItems.drop(itemListScroll).take(MAX_ITEM_LIST_ROWS).forEachIndexed { i, itemId ->
+        matchedItems.drop(itemListScroll).take(MAX_ITEM_LIST_ROWS).forEachIndexed { i, candidate ->
             val idx = itemListScroll + i
-            val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(itemDisplay(itemId), 124)
+            val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(candidate.displayName, 124)
             val btn = NineSliceButton(
                 centerX - 82, dialogY + 66 + i * 14, 148, 14,
                 if (idx == selectedItemIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),

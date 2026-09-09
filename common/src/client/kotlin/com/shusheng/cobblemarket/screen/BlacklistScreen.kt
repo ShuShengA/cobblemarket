@@ -115,7 +115,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
     // ── 对话框状态（物品） ──
     // 添加对话框的匹配物品选择：输入后列出全部匹配物品（如"钻石"→钻石/钻石剑/钻石原矿…），点选确认
-    private var matchedItems = listOf<String>()
+    private var matchedItems = listOf<com.shusheng.cobblemarket.client.ItemCandidate>()
     // 物品添加对话框本地提示（画在弹窗下沿外；错误红字、信息绿字；输入变更时清除）
     private var dialogError: String? = null
     private var dialogErrorColor = 0xFF5555
@@ -128,7 +128,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private var heldAddButton: NineSliceButton? = null
     // 手持添加模式：小手图标选中态（红底），点「添加」时提交手持物品条目
     private var heldAddMode = false
-    private var previewItemId: String? = null
+    private var previewCandidate: com.shusheng.cobblemarket.client.ItemCandidate? = null
 
     private data class IconData(val displayName: String, val renderable: RenderablePokemon, val state: FloatingState)
     private val iconData = mutableMapOf<Int, IconData>()
@@ -692,7 +692,9 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             playFailSound()
             return
         }
-        sendToServer(com.shusheng.cobblemarket.network.AddItemsBlacklistPayload(matchedItems))
+        sendToServer(com.shusheng.cobblemarket.network.AddItemsBlacklistPayload(
+            matchedItems.map { com.shusheng.cobblemarket.market.ItemBlacklistEntry(it.itemId, it.componentsSpec) }
+        ))
         closeDialog()
     }
 
@@ -735,13 +737,11 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         if (heldPreview != null) {
             context.drawItem(heldPreview, centerX + 66, dialogY + 42)
         } else if (!heldAddMode) {
-            previewItemId?.let { itemId ->
-                Identifier.tryParse(itemId)?.let { id ->
-                    val item = Registries.ITEM.get(id)
-                    if (item != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
-                        context.drawItem(ItemStack(item), centerX + 66, dialogY + 42)
-                    }
-                }
+            // 带组件变体重建真实物品（如「招式学习器 · 打鼾」显示对应 TM 图标）
+            previewCandidate?.let { candidate ->
+                com.shusheng.cobblemarket.client.ItemComponentsDisplay
+                    .iconStack(candidate.itemId, candidate.componentsSpec)
+                    ?.let { context.drawItem(it, centerX + 66, dialogY + 42) }
             }
         }
     }
@@ -757,9 +757,13 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             playFailSound()
             return
         }
-        // 优先发送用户点选的物品 ID；未点选时回退到自动解析（唯一匹配/原文）
+        // 优先发送用户点选的候选（含组件变体）；未点选时回退到自动解析（唯一匹配/原文）
         val selected = matchedItems.getOrNull(selectedItemIndex)
-        sendToServer(AddItemBlacklistPayload(selected ?: resolveMatchingItems(input).firstOrNull() ?: input))
+            ?: com.shusheng.cobblemarket.client.ItemCandidateResolver.resolve(input).firstOrNull()
+        sendToServer(
+            if (selected != null) AddItemBlacklistPayload(selected.itemId, selected.componentsSpec)
+            else AddItemBlacklistPayload(input)
+        )
         closeDialog()
     }
 
@@ -791,37 +795,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         dialogErrorColor = 0x55FF55
     }
 
-    // 收集全部匹配物品（优先级：ID 路径精确 > 翻译名精确 > 翻译名包含），保持注册表顺序稳定
-    private fun resolveMatchingItems(input: String): List<String> {
-        val trimmed = input.trim()
-        if (trimmed.isEmpty()) return emptyList()
-        if (trimmed.contains(":")) return listOf(trimmed)
-        val lower = trimmed.lowercase().replace(" ", "_")
-        val result = LinkedHashSet<String>()
-        Registries.ITEM.forEach { item ->
-            val id = Registries.ITEM.getId(item)
-            if (id.path == lower) result.add(id.toString())
-        }
-        Registries.ITEM.forEach { item ->
-            val id = Registries.ITEM.getId(item)
-            if (item.name.string == trimmed) result.add(id.toString())
-        }
-        Registries.ITEM.forEach { item ->
-            val id = Registries.ITEM.getId(item)
-            if (item.name.string.contains(trimmed)) result.add(id.toString())
-        }
-        // 搜索索引追加（TM 招式/附魔/tooltip 文本命中，见 ItemSearchIndex；精确匹配仍排前）
-        com.shusheng.cobblemarket.client.ItemSearchIndex.itemIdsMatching(input).forEach { result.add(it) }
-        return result.toList()
-    }
-
-    private fun itemDisplay(itemId: String): String {
-        val id = Identifier.tryParse(itemId) ?: return itemId
-        val item = Registries.ITEM.get(id)
-        val name = item.name.string
-        // 无翻译的物品（第三方模组缺 lang）会显示翻译 key 原文（超长难读），fallback 到资源路径
-        return if (name == item.translationKey) id.path else name
-    }
+    // 候选解析委托公共实现（ID/名称/tooltip 文本 + TM 招式/附魔变体展开，见 ItemCandidateResolver）：
+    // 招式/附魔命中展开为带组件快照的具体变体，选中后条目只命中该变体，不再连坐整个物品
+    private fun resolveMatchingItems(input: String): List<com.shusheng.cobblemarket.client.ItemCandidate> =
+        com.shusheng.cobblemarket.client.ItemCandidateResolver.resolve(input)
 
     /** 物品输入变更：重建匹配列表（照搬原物品黑名单） */
     private fun updateItemPreview(text: String) {
@@ -836,12 +813,12 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         rebuildItemList()
         updateItemSelectButton()
         batchAddButton?.visible = matchedItems.size > 1
-        previewItemId = matchedItems.getOrNull(selectedItemIndex) ?: matchedItems.firstOrNull()
+        previewCandidate = matchedItems.getOrNull(selectedItemIndex) ?: matchedItems.firstOrNull()
     }
 
     private fun updateItemSelectButton() {
         itemSelectButton?.visible = matchedItems.isNotEmpty()
-        val label = matchedItems.getOrNull(selectedItemIndex)?.let { itemDisplay(it) }
+        val label = matchedItems.getOrNull(selectedItemIndex)?.displayName
             ?: if (matchedItems.size > 1)
                 Text.translatable("cobblemarket.blacklist.item_matches", matchedItems.size).string
             else ""
@@ -866,7 +843,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         itemListOpen = false
         rebuildItemList()
         updateItemSelectButton()
-        previewItemId = matchedItems.getOrNull(idx)
+        previewCandidate = matchedItems.getOrNull(idx)
     }
 
     // 展开的匹配列表：与精灵形态列表同模式，展开时隐藏被覆盖的确认/取消按钮
@@ -879,9 +856,9 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         if (!itemListOpen) return
         val centerX = width / 2
         val dialogY = height / 2 - 71
-        matchedItems.drop(itemListScroll).take(MAX_ITEM_LIST_ROWS).forEachIndexed { i, itemId ->
+        matchedItems.drop(itemListScroll).take(MAX_ITEM_LIST_ROWS).forEachIndexed { i, candidate ->
             val idx = itemListScroll + i
-            val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(itemDisplay(itemId), 124)
+            val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(candidate.displayName, 124)
             val btn = NineSliceButton(
                 centerX - 80, dialogY + 72 + i * 16, 140, 14,
                 if (idx == selectedItemIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
@@ -913,7 +890,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         ivSpAtkField = null
         ivSpDefField = null
         ivSpdField = null
-        previewItemId = null
+        previewCandidate = null
         matchedItems = listOf()
         selectedItemIndex = -1
         itemListOpen = false
@@ -1111,7 +1088,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     }
 
     private fun itemEntryDisplay(entry: ItemBlacklistEntry): String {
-        val name = itemDisplay(entry.itemId)
+        val name = com.shusheng.cobblemarket.client.ItemCandidateResolver.displayNameOf(entry.itemId)
         // 带组件快照的条目追加摘要（附魔名+等级等）；主列表条目区宽约 210px，超长名截断防止与删除按钮重叠
         val summary = com.shusheng.cobblemarket.client.ItemComponentsDisplay.summary(entry.componentsSpec)
         val full = if (summary.isEmpty()) name else "$name（$summary）"
@@ -1442,7 +1419,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 if (savedSelectedItemIndex in matchedItems.indices) {
                     selectedItemIndex = savedSelectedItemIndex
                     updateItemSelectButton()
-                    previewItemId = matchedItems.getOrNull(selectedItemIndex)
+                    previewCandidate = matchedItems.getOrNull(selectedItemIndex)
                 }
             }
         }

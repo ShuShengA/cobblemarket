@@ -163,6 +163,8 @@ class RequestItemPriceLimitPayload : CustomPayload {
 
 data class AddItemPriceLimitPayload(
     val itemName: String,
+    // 具体变体的组件快照（搜索选中变体时非空）；null = 整个物品（所有变体）
+    val componentsSpec: net.minecraft.nbt.NbtCompound? = null,
     val minPrice: Int?,
     val maxPrice: Int?,
     // 编辑语义：非空 = 替换原条目（先删旧再插新），null = 新增
@@ -175,6 +177,7 @@ data class AddItemPriceLimitPayload(
         val CODEC: PacketCodec<PacketByteBuf, AddItemPriceLimitPayload> = PacketCodec.of(
             { p, b ->
                 b.writeString(p.itemName)
+                b.writeNbt(p.componentsSpec)
                 b.writeBoolean(p.minPrice != null); p.minPrice?.let { b.writeInt(it) }
                 b.writeBoolean(p.maxPrice != null); p.maxPrice?.let { b.writeInt(it) }
                 b.writeBoolean(p.originalItemId != null); p.originalItemId?.let { b.writeString(it) }
@@ -183,6 +186,7 @@ data class AddItemPriceLimitPayload(
             { b ->
                 AddItemPriceLimitPayload(
                     itemName = b.readString(),
+                    componentsSpec = b.readNbt(),
                     minPrice = if (b.readBoolean()) b.readInt() else null,
                     maxPrice = if (b.readBoolean()) b.readInt() else null,
                     originalItemId = if (b.readBoolean()) b.readString() else null,
@@ -355,7 +359,17 @@ object PriceLimitNetwork {
                 val state = ItemPriceLimitState.get(server)
                 // 编辑语义：替换原条目（改选了物品时，旧条目不再残留）
                 payload.originalItemId?.let { state.remove(it, payload.originalComponentsSpec) }
-                state.add(ItemPriceLimitEntry(itemId, null, minPrice, maxPrice))
+                state.add(
+                    ItemPriceLimitEntry(
+                        itemId = itemId,
+                        // 搜索路径的变体条目：客户端传组件快照，服务端重建后重新提取白名单组件（不盲信）
+                        componentsSpec = com.shusheng.cobblemarket.market.ItemRuleComponents.sanitizeSpec(
+                            itemId, payload.componentsSpec, player.serverWorld.registryManager
+                        ),
+                        minPrice = minPrice,
+                        maxPrice = maxPrice
+                    )
+                )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val entries = ItemPriceLimitState.get(server).getAll()

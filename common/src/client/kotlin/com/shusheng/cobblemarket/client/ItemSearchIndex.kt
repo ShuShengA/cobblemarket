@@ -5,6 +5,7 @@ import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
 import net.minecraft.item.tooltip.TooltipType
 import net.minecraft.registry.Registries
+import net.minecraft.util.Identifier
 
 /**
  * 物品搜索索引（照原版创造模式 SearchManager 思路，懒构建）：
@@ -18,6 +19,9 @@ object ItemSearchIndex {
 
     private const val TM_ITEM_ID = "cobblemon:technical_machine"
     private const val ENCHANTED_BOOK_ID = "minecraft:enchanted_book"
+    // 变体候选数量上限：宽泛查询（单字母等）可能命中数百个招式，逐个构造带组件物品栈会拖慢每次按键；
+    // 列表本身只显示前几行，截断不影响实际使用
+    private const val MAX_VARIANT_CANDIDATES = 100
 
     private var cacheLang: String? = null
     private var cacheMoveCount = -1
@@ -88,23 +92,13 @@ object ItemSearchIndex {
         enchantTexts = enchantMap
     }
 
-    /** 查询命中的 itemId 列表（含 TM 招式命中时的 technical_machine、附魔命中时的 enchanted_book 条目，供 ID 粒度场景） */
-    fun itemIdsMatching(query: String): List<String> = itemIdsMatchingInternal(query, true)
-
-    /** 严格版：不含 TM/附魔的粗粒度附加项（服务端精确过滤场景用——TM/附魔书条目必须走组件比对） */
-    fun itemIdsMatchingStrict(query: String): List<String> = itemIdsMatchingInternal(query, false)
-
-    private fun itemIdsMatchingInternal(query: String, includeVariants: Boolean): List<String> {
+    /** 查询命中的 itemId 列表（物品 ID/名称/tooltip 文本维度）。
+     * 不含 TM/附魔的粗粒度追加——变体候选走 [variantCandidates]（带组件快照），条目级精确匹配走 [entryMatches] */
+    fun itemIdsMatchingStrict(query: String): List<String> {
         ensureBuilt()
         val q = query.trim().lowercase()
         if (q.isEmpty()) return emptyList()
-        val ids = mutableListOf<String>()
-        itemTexts.forEach { (id, text) -> if (text.contains(q)) ids.add(id) }
-        if (includeVariants) {
-            if (moveTexts.values.any { it.contains(q) } && TM_ITEM_ID in itemTexts) ids.add(TM_ITEM_ID)
-            if (enchantTexts.values.any { it.contains(q) } && ENCHANTED_BOOK_ID in itemTexts) ids.add(ENCHANTED_BOOK_ID)
-        }
-        return ids.distinct()
+        return itemTexts.filterValues { it.contains(q) }.keys.toList()
     }
 
     /** 查询命中的招式 ID 集合（服务端按条目 NBT 组件精确过滤 TM 用） */
@@ -123,12 +117,62 @@ object ItemSearchIndex {
         return enchantTexts.filterValues { it.contains(q) }.keys
     }
 
-    /** 查询是否命中任意招式（本地过滤的粗粒度判断用） */
-    fun hasTmMoveMatch(query: String): Boolean {
+    /**
+     * 搜索命中的「具体变体」候选（TM 招式 / 附魔书，带组件快照）。
+     * 供黑名单/价格限制/求购单的添加对话框展开变体：搜「打鼾」得到「招式学习器 · 打鼾」，
+     * 选中后条目只命中这一个招式，不会连坐全部变体（无组件条目）。
+     */
+    fun variantCandidates(query: String): List<ItemCandidate> {
         ensureBuilt()
         val q = query.trim().lowercase()
-        if (q.isEmpty()) return false
-        return moveTexts.values.any { it.contains(q) }
+        if (q.isEmpty()) return emptyList()
+        val registryManager = MinecraftClient.getInstance().world?.registryManager ?: return emptyList()
+        val out = mutableListOf<ItemCandidate>()
+
+        if (TM_ITEM_ID in itemTexts) {
+            val tmName = displayNameOf(TM_ITEM_ID)
+            moveTexts.filterValues { it.contains(q) }.keys.forEach { moveName ->
+                if (out.size >= MAX_VARIANT_CANDIDATES) return@forEach
+                val move = com.cobblemon.mod.common.api.moves.Moves.getByName(moveName) ?: return@forEach
+                val spec = com.shusheng.cobblemarket.market.ItemRuleComponents.extractSpec(
+                    com.cobblemon.mod.common.item.components.TMMoveComponent.createStack(move), registryManager
+                ) ?: return@forEach
+                out.add(ItemCandidate(TM_ITEM_ID, spec, "$tmName · ${move.displayName.string}"))
+            }
+        }
+        if (ENCHANTED_BOOK_ID in itemTexts) {
+            val bookName = displayNameOf(ENCHANTED_BOOK_ID)
+            val enchants = registryManager.get(net.minecraft.registry.RegistryKeys.ENCHANTMENT)
+            enchantTexts.filterValues { it.contains(q) }.keys.forEach { enchId ->
+                if (out.size >= MAX_VARIANT_CANDIDATES) return@forEach
+                val entry = enchants.getEntry(Identifier.tryParse(enchId) ?: return@forEach).orElse(null)
+                    ?: return@forEach
+                val enchantment = entry.value()
+                // 逐级展开（I..上限）：条目语义是「附魔等级 ≥」，选 I = 全部等级、选满级 = 只有满级
+                for (level in 1..enchantment.maxLevel) {
+                    if (out.size >= MAX_VARIANT_CANDIDATES) break
+                    val spec = com.shusheng.cobblemarket.market.ItemRuleComponents.extractSpec(
+                        net.minecraft.item.EnchantedBookItem.forEnchantment(
+                            net.minecraft.enchantment.EnchantmentLevelEntry(entry, level)
+                        ), registryManager
+                    ) ?: continue
+                    out.add(ItemCandidate(ENCHANTED_BOOK_ID, spec, "$bookName · ${enchantmentName(enchantment, level)}"))
+                }
+            }
+        }
+        return out
+    }
+
+    /** 附魔名 + 罗马数字等级（照原版 Enchantment.getName：等级 1 且上限 1 的附魔不带后缀） */
+    private fun enchantmentName(enchantment: net.minecraft.enchantment.Enchantment, level: Int): String =
+        if (level == 1 && enchantment.maxLevel == 1) enchantment.description.string
+        else "${enchantment.description.string} ${net.minecraft.text.Text.translatable("enchantment.level.$level").string}"
+
+    /** 物品显示名（缺翻译回退资源路径，与界面原 itemDisplay 一致） */
+    private fun displayNameOf(itemId: String): String {
+        val id = Identifier.tryParse(itemId) ?: return itemId
+        val item = Registries.ITEM.get(id)
+        return if (item.name.string == item.translationKey) id.path else item.name.string
     }
 
     /** 条目级匹配（本地过滤，条目带 NBT 时精确）：itemId 文本命中 || TM 条目且 NBT 招式命中 || 附魔书条目且 NBT 附魔命中；空查询恒真 */
@@ -150,16 +194,6 @@ object ItemSearchIndex {
             return enchantsOfItemNbt(itemNbt, rm).any { it.contains(q) }
         }
         return false
-    }
-
-    /** 条目级匹配（本地过滤，无 NBT 场景粗粒度）：itemId 文本命中 || TM 条目且任意招式命中 || 附魔书条目且任意附魔命中；空查询恒真 */
-    fun idMatches(itemId: String, query: String): Boolean {
-        ensureBuilt()
-        val q = query.trim().lowercase()
-        if (q.isEmpty()) return true
-        if (itemTexts[itemId]?.contains(q) == true) return true
-        if (itemId == TM_ITEM_ID && moveTexts.values.any { it.contains(q) }) return true
-        return itemId == ENCHANTED_BOOK_ID && enchantTexts.values.any { it.contains(q) }
     }
 
     /** 规则条目匹配（黑名单/限价/求购单列表搜索）：带组件快照时构造物品 NBT 走 [entryMatches] 精确；
