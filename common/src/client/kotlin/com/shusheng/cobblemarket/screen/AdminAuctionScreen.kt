@@ -98,6 +98,8 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
     private var tooltipCacheStaticLines: List<Pair<Text?, Int>> = emptyList()
     private var tooltipCacheHeldLine = -1
     private var tooltipCacheMaxWidth = 0
+    /** 证章图标行在静态行列表中的索引（-1 = 无证章） */
+    private var tooltipCacheMarksLine = -1
     private var itemTooltipCacheKey: UUID? = null
     private var itemTooltipCacheLines: List<Pair<Text, Int>> = emptyList()
     private var itemTooltipCacheMaxWidth = 0
@@ -320,7 +322,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             }
         }
         val centerX = width / 2
-        val dialogY = height / 2 - 110
+        // 弹窗高度随证章区块扩展（无证章 220），按钮/提示统一相对弹窗底定位
+        val dialogH = 220 + cancelDialogMarksExtra(entry)
+        val dialogY = height / 2 - dialogH / 2
 
         // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染，照搬出价弹窗）
         addDrawable(object : Drawable {
@@ -332,13 +336,13 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         // 按钮右移 10px（-60→-50、+4→+14）：给左列信息区（王冠 IV 行等长文字）腾空间，
         // 英文下左列行宽更大，原位置会压到按钮；右列竞拍信息在 y 28~100 不冲突
         cancelConfirmButton = NineSliceButton(
-            centerX - 50, dialogY + 190, 56, 20,
+            centerX - 50, dialogY + dialogH - 30, 56, 20,
             Text.translatable("cobblemarket.auction.force_cancel"),
             { confirmCancel() }
         )
         addDrawableChild(cancelConfirmButton)
         cancelCancelButton = NineSliceButton(
-            centerX + 14, dialogY + 190, 56, 20,
+            centerX + 14, dialogY + dialogH - 30, 56, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeCancelDialog() }
         )
@@ -633,13 +637,25 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             staticLines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htDef"))}").append(Text.literal("  EV:${extra["evsDef"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)) to 0xFFCC66); staticLines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpAtk"))}").append(Text.literal("  EV:${extra["evsSpAtk"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)) to 0x6699FF)
             staticLines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpDef"))}").append(Text.literal("  EV:${extra["evsSpDef"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)) to 0x66FF99); staticLines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpd"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpd"))}").append(Text.literal("  EV:${extra["evsSpd"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)) to 0xFF99FF); staticLines.add(Text.translatable("cobblemarket.gui.friendship", extra["friendship"]?.toIntOrNull() ?: 0) to 0xFF99CC)
 
+            // 证章区块：亲密度下方分割线 + 证章图标行（下方那条分割线由拍卖信息前的分割线充当）
+            var marksLine = -1
+            if (extra["marks"].orEmpty().isNotEmpty()) {
+                staticLines.add(null to 0)
+                marksLine = staticLines.size
+                staticLines.add(null to 0)
+            }
             var mw = 0; staticLines.forEach { it.first?.let { t -> mw = maxOf(mw, textRenderer.getWidth(t)) } }
             if (heldItemLine >= 0) {
                 mw = maxOf(mw, textRenderer.getWidth(staticLines[heldItemLine].first!!) + 14)
             }
+            // 证章行宽（每行 MARKS_PER_ROW 个 12px 格）
+            if (marksLine >= 0) {
+                mw = maxOf(mw, minOf(EntryBadgeRenderer.MARKS_PER_ROW, extra["marks"].orEmpty().split(",").count { it.isNotEmpty() }) * 12)
+            }
             tooltipCacheStaticLines = staticLines
             tooltipCacheHeldLine = heldItemLine
             tooltipCacheMaxWidth = mw
+            tooltipCacheMarksLine = marksLine
         }
         // 动态行（当前价/倒计时/领先者随出价与时间变化）每帧构建
         val lines = tooltipCacheStaticLines.toMutableList()
@@ -660,32 +676,46 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             lines[i].first?.let { t -> mw = maxOf(mw, textRenderer.getWidth(t)) }
         }
         val heldItemLine = tooltipCacheHeldLine
+        val marksLine = tooltipCacheMarksLine
+        val marks = if (marksLine >= 0) entry.extraData["marks"].orEmpty().split(",").filter { it.isNotEmpty() } else emptyList()
         val pad = 4
         val tx = minOf(mouseX + 12, width - mw - 12)
-        val th = lines.size * 10 + pad
+        // 证章超过一行时第二行「+N」额外占 12px
+        val marksExtra = if (marksLine >= 0 && marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0
+        val th = lines.size * 10 + pad + marksExtra
         val ty = if (mouseY - th - 4 <= 0) minOf(mouseY + 12, height - th) else mouseY - th - 4
 
         context.matrices.push(); context.matrices.translate(0.0, 0.0, 400.0)
-        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - pad, ty - pad, mw + 2 * pad, lines.size * 10 + 2 * pad, 1, ROW_BACKGROUND_TEX_H)
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - pad, ty - pad, mw + 2 * pad, lines.size * 10 + 2 * pad + marksExtra, 1, ROW_BACKGROUND_TEX_H)
+        var rowY = ty
         lines.forEachIndexed { i, (line, color) ->
-            if (line == null) {
-                context.fill(tx, ty + i * 10 + 4, tx + mw, ty + i * 10 + 5, 0xFF555555.toInt())
+            if (line == null && i == marksLine) {
+                // 证章图标行：左对齐排（照市场悬停；超过 6 个第二行左对齐显示「+N」）
+                rowY += EntryBadgeRenderer.drawMarksRow(context, marks, tx, rowY)
+            } else if (line == null) {
+                // 分割线：1px 灰线，撑满提示框全宽（与信息区分隔线一致，不随证章数量变化）
+                val rowW = mw
+                context.fill(tx, rowY + 4, tx + rowW, rowY + 5, 0xFF555555.toInt())
+                rowY += 10
             } else if (i == heldItemLine) {
-                context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
+                context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
                 Identifier.tryParse(entry.extraData["heldItemId"].orEmpty())?.let { heldId ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                         itemStack = ItemStack(Registries.ITEM.get(heldId)),
                         x = tx + textRenderer.getWidth(line) + 2.0,
-                        y = ty + i * 10 + 0.0,
+                        y = rowY + 0.0,
                         scale = 0.6,
                         matrixStack = context.matrices
                     )
                 }
+                rowY += 10
             } else if (i == 0) {
                 // 第一行（名字★Lv）带公母图标
-                EntryBadgeRenderer.drawNameLineLeft(context, line, entry.extraData["gender"] ?: "", tx, ty + i * 10, color)
+                EntryBadgeRenderer.drawNameLineLeft(context, line, entry.extraData["gender"] ?: "", tx, rowY, color)
+                rowY += 10
             } else {
-                context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
+                context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
+                rowY += 10
             }
         }
         context.matrices.pop()
@@ -735,11 +765,24 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
 
     // ── 强制下架弹窗渲染（照搬出价弹窗两列布局） ──
 
+    /**
+     * 强制下架弹窗的证章区块额外高度（0 / 44 / 56）：
+     * 上下分割线 20 + 图标行 12（超过一行再加 12 的「+N」行）+ 余量（保证按钮不压到左列最后一行）。
+     */
+    private fun cancelDialogMarksExtra(entry: AuctionEntry): Int {
+        val count = entry.extraData["marks"].orEmpty().split(",").count { it.isNotEmpty() }
+        return when {
+            count == 0 -> 0
+            count > EntryBadgeRenderer.MARKS_PER_ROW -> 56
+            else -> 44
+        }
+    }
+
     private fun renderCancelDialogBackground(context: DrawContext, delta: Float) {
         val entry = cancelEntry ?: return
         val centerX = width / 2
         val dialogW = 280
-        val dialogH = 220
+        val dialogH = 220 + cancelDialogMarksExtra(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
@@ -845,6 +888,16 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             infoLineText(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsHp"]?.toIntOrNull() ?: 0, htExtra(extra, "htHp"))}").append(Text.literal("  EV:${extra["evsHp"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0x66FF66); infoLineText(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htAtk"))}").append(Text.literal("  EV:${extra["evsAtk"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0xFF6666)
             infoLineText(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htDef"))}").append(Text.literal("  EV:${extra["evsDef"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0xFFCC66); infoLineText(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpAtk"))}").append(Text.literal("  EV:${extra["evsSpAtk"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0x6699FF)
             infoLineText(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpDef"))}").append(Text.literal("  EV:${extra["evsSpDef"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0x66FF99); infoLineText(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpd"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpd"))}").append(Text.literal("  EV:${extra["evsSpd"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0xFF99FF); infoLineText(Text.translatable("cobblemarket.gui.friendship", extra["friendship"]?.toIntOrNull() ?: 0), 0xFF99CC)
+            // 证章区块：上下分割线夹证章图标行（左对齐，每行 MARKS_PER_ROW 个，照出价弹窗）
+            val marks = extra["marks"].orEmpty().split(",").filter { it.isNotEmpty() }
+            if (marks.isNotEmpty()) {
+                val rowW = dialogW - 156
+                context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF555555.toInt())
+                iy += 10
+                iy += EntryBadgeRenderer.drawMarksRow(context, marks, infoX, iy)
+                context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF555555.toInt())
+                iy += 10
+            }
         } else {
             infoLine(displayName(entry))
             infoLine("×${entry.count}")
@@ -878,10 +931,10 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         // 灰字与按钮组中心对齐（按钮右移 10px 后中心在 centerX+10）
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.auction.force_cancel_confirm_1").formatted(Formatting.GRAY),
-            centerX + 10, dialogY + 166, 0xFFFFFF)
+            centerX + 10, dialogY + dialogH - 54, 0xFFFFFF)
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.auction.force_cancel_confirm_2").formatted(Formatting.GRAY),
-            centerX + 10, dialogY + 176, 0xFFFFFF)
+            centerX + 10, dialogY + dialogH - 44, 0xFFFFFF)
     }
 
     // ── 交互 ──

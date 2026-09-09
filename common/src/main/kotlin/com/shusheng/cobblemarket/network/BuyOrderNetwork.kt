@@ -740,11 +740,11 @@ object BuyOrderNetwork {
                         return@execute
                     }
                     if (bounds.min != null && payload.price < bounds.min) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_below", bounds.min)))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_below", CurrencyHandler.formatAmount(bounds.min))))
                         return@execute
                     }
                     if (bounds.max != null && payload.price > bounds.max) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_above", bounds.max)))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_above", CurrencyHandler.formatAmount(bounds.max))))
                         return@execute
                     }
                 }
@@ -873,11 +873,11 @@ object BuyOrderNetwork {
                         return@execute
                     }
                     if (itemBounds.min != null && payload.price < itemBounds.min) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_below", itemBounds.min)))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_below", CurrencyHandler.formatAmount(itemBounds.min))))
                         return@execute
                     }
                     if (itemBounds.max != null && payload.price > itemBounds.max) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_above", itemBounds.max)))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_above", CurrencyHandler.formatAmount(itemBounds.max))))
                         return@execute
                     }
                 }

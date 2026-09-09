@@ -356,7 +356,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             centerX, dialogY + 80, 0xFFFFFF)
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.gui.tooltip_price").append(" ").append(
-                Text.literal("${entry.price} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)
+                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)
             ),
             centerX, dialogY + 94, 0xFFFFFF)
 

@@ -379,9 +379,11 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
 
     // tooltip 内容缓存：内容只取决于条目，悬停同一行时每帧重建全部文本行是悬停掉帧主因
     private var tooltipCacheKey: UUID? = null
-    private var tooltipCacheLines: List<Pair<Text, Int>> = emptyList()
+    private var tooltipCacheLines: List<Pair<Text?, Int>> = emptyList()
     private var tooltipCacheHeldLine = -1
     private var tooltipCacheMaxWidth = 0
+    /** 证章图标行索引（-1 = 无证章） */
+    private var tooltipCacheMarksLine = -1
 
     private fun renderTooltip(context: DrawContext, p: PokemonPreview, index: Int, mx: Int, my: Int) {
         // 文本行缓存：悬停同一行时内容不变，只在悬停目标变化时重建（见 tooltipCacheKey 注释）
@@ -396,7 +398,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             val typeText = Text.translatable(p.primaryType).string +
                 if (p.secondaryType.isNotEmpty()) " + ${Text.translatable(p.secondaryType).string}" else ""
 
-            val lines = mutableListOf<Pair<Text, Int>>()
+            val lines = mutableListOf<Pair<Text?, Int>>()
             lines.add(EntryBadgeRenderer.nameWithShinyStar(speciesDisplay(p), p.shiny).copy().append(Text.literal("  Lv.${p.level}")) to typeColor(p.primaryType))
             lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string).append(EntryBadgeRenderer.typeLine(p.primaryType, p.secondaryType)) to 0xFFFFFF)
             lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
@@ -415,42 +417,68 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsDef, p.htDef)}").append(Text.literal("  EV:${p.evsDef}").formatted(Formatting.RED)) to 0xFFCC66); lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpAtk, p.htSpAtk)}").append(Text.literal("  EV:${p.evsSpAtk}").formatted(Formatting.RED)) to 0x6699FF)
             lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpDef, p.htSpDef)}").append(Text.literal("  EV:${p.evsSpDef}").formatted(Formatting.RED)) to 0x66FF99); lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpd, p.htSpd)}").append(Text.literal("  EV:${p.evsSpd}").formatted(Formatting.RED)) to 0xFF99FF); lines.add(Text.translatable("cobblemarket.gui.friendship", p.friendship) to 0xFF99CC)
 
-            var mw = 0; lines.forEach { mw = maxOf(mw, textRenderer.getWidth(it.first)) }
+            // 证章区块：亲密度下方两条分割线夹证章图标（照市场悬停 tooltip）
+            var marksLine = -1
+            if (p.marks.isNotEmpty()) {
+                lines.add(null to 0)
+                marksLine = lines.size
+                lines.add(null to 0)
+                lines.add(null to 0)
+            }
+            var mw = 0; lines.forEach { it.first?.let { t -> mw = maxOf(mw, textRenderer.getWidth(t)) } }
             if (heldItemLine >= 0) {
                 mw = maxOf(mw, textRenderer.getWidth(lines[heldItemLine].first) + 14)
             }
+            // 证章行宽（每行 MARKS_PER_ROW 个 12px 格）
+            if (marksLine >= 0) mw = maxOf(mw, minOf(EntryBadgeRenderer.MARKS_PER_ROW, p.marks.size) * 12)
             tooltipCacheLines = lines
             tooltipCacheHeldLine = heldItemLine
             tooltipCacheMaxWidth = mw
+            tooltipCacheMarksLine = marksLine
         }
         val lines = tooltipCacheLines
         val heldItemLine = tooltipCacheHeldLine
+        val marksLine = tooltipCacheMarksLine
         val mw = tooltipCacheMaxWidth
 
         val pad = 4
         val tx = minOf(mx + 12, width - mw - 12)
-        val th = lines.size * 10 + pad
+        // 证章超过一行时第二行「+N」额外占 12px
+        val marksExtra = if (marksLine >= 0 && p.marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0
+        val th = lines.size * 10 + pad + marksExtra
         val ty = if (my - th - 4 <= 0) minOf(my + 12, height - th) else my - th - 4
 
         context.matrices.push(); context.matrices.translate(0.0, 0.0, 400.0)
-        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - pad, ty - pad, mw + 2 * pad, lines.size * 10 + 2 * pad, 1, ROW_BACKGROUND_TEX_H)
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - pad, ty - pad, mw + 2 * pad, lines.size * 10 + 2 * pad + marksExtra, 1, ROW_BACKGROUND_TEX_H)
+        var rowY = ty
         lines.forEachIndexed { i, (line, color) ->
-            if (i == heldItemLine) {
-                context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
+            if (line == null && i == marksLine) {
+                // 证章图标行：左对齐排（照市场悬停；超过 6 个第二行左对齐显示「+N」）
+                rowY += EntryBadgeRenderer.drawMarksRow(context, p.marks, tx, rowY)
+            } else if (line == null) {
+                // 分割线：1px 灰线，撑满提示框全宽（与信息区分隔线一致，不随证章数量变化）
+                val rowW = mw
+                context.fill(tx, rowY + 4, tx + rowW, rowY + 5, 0xFF555555.toInt())
+                rowY += 10
+            } else if (i == heldItemLine) {
+                context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
                 iconData[index]?.heldStack?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                         itemStack = heldStack,
                         x = tx + textRenderer.getWidth(line) + 2.0,
-                        y = ty + i * 10 + 0.0,
+                        y = rowY + 0.0,
                         scale = 0.6,
                         matrixStack = context.matrices
                     )
                 }
+                rowY += 10
             } else if (i == 0) {
                 // 第一行（名字★Lv）带公母图标
-                EntryBadgeRenderer.drawNameLineLeft(context, line, p.gender, tx, ty + i * 10, color)
+                EntryBadgeRenderer.drawNameLineLeft(context, line, p.gender, tx, rowY, color)
+                rowY += 10
             } else {
-                context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
+                context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
+                rowY += 10
             }
         }
         context.matrices.pop()

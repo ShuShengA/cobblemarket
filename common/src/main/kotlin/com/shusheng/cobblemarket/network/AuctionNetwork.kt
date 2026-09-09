@@ -530,11 +530,11 @@ object AuctionNetwork {
                     val minTotal = itemBounds.min?.toLong()?.times(payload.count)
                     val maxTotal = itemBounds.max?.toLong()?.times(payload.count)
                     if (minTotal != null && payload.startingPrice.toLong() < minTotal) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.price_limit.below_min", fmtLimit(minTotal))))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.price_limit.below_min", CurrencyHandler.formatAmount(minTotal))))
                         return@execute
                     }
                     if (maxTotal != null && payload.startingPrice.toLong() > maxTotal) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.price_limit.above_max", fmtLimit(maxTotal))))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.price_limit.above_max", CurrencyHandler.formatAmount(maxTotal))))
                         return@execute
                     }
                 }
@@ -687,7 +687,7 @@ object AuctionNetwork {
                 }
                 // 加价幅度（首笔出价只需 ≥ 起拍价）
                 if (auction.currentPrice > 0 && payload.amount - auction.currentPrice < auction.minIncrement) {
-                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.bid_increment", auction.minIncrement)))
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.bid_increment", CurrencyHandler.formatAmount(auction.minIncrement))))
                     return@execute
                 }
                 // 扣款与退款：
@@ -706,7 +706,7 @@ object AuctionNetwork {
                     // 出价者离线则入队补发
                     com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                         server, prevBidder,
-                        Text.translatable("cobblemarket.auction.outbid", payload.amount, auction.speciesText())
+                        Text.translatable("cobblemarket.auction.outbid", CurrencyHandler.goldAmount(payload.amount), auction.speciesText())
                             .formatted(Formatting.YELLOW)
                     )
                 }
@@ -770,11 +770,6 @@ object AuctionNetwork {
     }
 
     // ── 共享校验/广播 ──
-
-    /** 千分位格式化限制金额（Long，min×count 可能超 Int），用于价格限制提示 */
-    private fun fmtLimit(v: Long): String =
-        v.toString().reversed().chunked(3).joinToString(",").reversed()
-
 
     private fun banBlocked(server: MinecraftServer, player: net.minecraft.server.network.ServerPlayerEntity): Boolean {
         val banInfo = BanState.get(server).getBanInfo(player.uuid, System.currentTimeMillis())
@@ -847,10 +842,10 @@ object AuctionNetwork {
                     Text.translatable(
                         "cobblemarket.auction.settled_seller",
                         auction.speciesText(),
-                        CurrencyHandler.goldAmount(fmtLimit(auction.currentPrice.toLong())),
+                        CurrencyHandler.goldAmount(auction.currentPrice.toLong()),
                         CurrencyHandler.goldCurrencyText(),
-                        CurrencyHandler.goldAmount(fmtLimit((auction.currentPrice - fee).toLong())),
-                        CurrencyHandler.goldAmount(fmtLimit(fee.toLong()))
+                        CurrencyHandler.goldAmount((auction.currentPrice - fee).toLong()),
+                        CurrencyHandler.goldAmount(fee.toLong())
                     ).formatted(Formatting.GOLD)
                 )
                 auction.currentBidderUuid?.let { winnerUuid ->
