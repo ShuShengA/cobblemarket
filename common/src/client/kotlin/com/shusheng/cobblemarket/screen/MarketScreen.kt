@@ -1431,7 +1431,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val centerX = width / 2
         // 喵喵支付可用时加宽 280 容纳三枚按钮；不可用回退原宽度 220（两枚）
         val dialogW = if (payAvailable) 280 else 220
-        val marksExtra = if (entry.marks.isEmpty()) 0 else 20 + (if (entry.marks.size > 6) 12 else 0)
+        val marksExtra = if (entry.marks.isEmpty()) 0 else 20 + (if (entry.marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0)
         val dialogH = 250 + marksExtra
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -1517,7 +1517,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val centerX = width / 2
         val confirmOrCancel = confirmEntry ?: cancelEntry
         val marksExtra = if (confirmOrCancel == null || confirmOrCancel.marks.isEmpty()) 0
-            else 20 + (if (confirmOrCancel.marks.size > 6) 12 else 0)
+            else 20 + (if (confirmOrCancel.marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0)
         val dialogH = 250 + marksExtra
         val dialogY = height / 2 - dialogH / 2
         // 中间喵喵支付按钮（购买确认弹窗且消费贷开）：点击进独立 MeowthPayScreen
@@ -1655,13 +1655,13 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("   EV:${entry.evsSpDef}").formatted(Formatting.RED)) to ivColors[4])
             lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("   EV:${entry.evsSpd}").formatted(Formatting.RED)) to ivColors[5])
             lines.add(Text.translatable("cobblemarket.gui.friendship", entry.friendship) to 0xFF99CC)
-            // 证章区块（拥有的全部证章，纯外观）：亲密度下方两条分割线夹图标（每行 6 个）
+            // 证章区块（拥有的全部证章，纯外观）：亲密度下方两条分割线夹图标（每行 MARKS_PER_ROW 个）
             // 服务端直接传纹理路径（不依赖客户端 Marks 注册表解析）
             var marksLine = -1
             var marksRows = 0
             val markTextures = entry.marks.mapNotNull { Identifier.tryParse(it) }
             if (markTextures.isNotEmpty()) {
-                marksRows = if (markTextures.size > 6) 2 else 1
+                marksRows = if (markTextures.size > EntryBadgeRenderer.MARKS_PER_ROW) 2 else 1
                 lines.add(null to 0)
                 marksLine = lines.size
                 lines.add(null to 0)
@@ -1676,8 +1676,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             if (heldItemLine >= 0) {
                 maxWidth = maxOf(maxWidth, textRenderer.getWidth(lines[heldItemLine].first) + 14)
             }
-            // 证章行宽（每行 6 个 12px 格）
-            if (marksRows > 0) maxWidth = maxOf(maxWidth, minOf(6, entry.marks.size) * 12)
+            // 证章行宽（每行 MARKS_PER_ROW 个 12px 格）
+            if (marksRows > 0) maxWidth = maxOf(maxWidth, minOf(EntryBadgeRenderer.MARKS_PER_ROW, entry.marks.size) * 12)
             tooltipCacheLines = lines
             tooltipCacheHeldLine = heldItemLine
             tooltipCacheMarksLine = marksLine
@@ -1702,23 +1702,23 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         var rowY = ty
         lines.forEachIndexed { i, (line, color) ->
             if (line == null && i == marksLine) {
-                // 证章图标行：第一行最多 6 个；超过 6 个第二行显示「+N」
+                // 证章图标行：第一行最多 MARKS_PER_ROW 个；超出的部分第二行显示「+N」
                 val textures = entry.marks.mapNotNull { Identifier.tryParse(it) }
-                textures.take(6).forEachIndexed { idx, texture ->
+                textures.take(EntryBadgeRenderer.MARKS_PER_ROW).forEachIndexed { idx, texture ->
                     com.cobblemon.mod.common.api.gui.blitk(
                         matrixStack = context.matrices, texture = texture,
                         x = tx + idx * 12, y = rowY, width = 8, height = 8
                     )
                 }
-                if (textures.size > 6) {
-                    context.drawTextWithShadow(textRenderer, "+${textures.size - 6}", tx, rowY + 12, 0xAAAAAA)
+                if (textures.size > EntryBadgeRenderer.MARKS_PER_ROW) {
+                    context.drawCenteredTextWithShadow(textRenderer, "+${textures.size - EntryBadgeRenderer.MARKS_PER_ROW}", tx + minOf(EntryBadgeRenderer.MARKS_PER_ROW, textures.size) * 6, rowY + 12, 0xAAAAAA)
                     rowY += 24
                 } else {
                     rowY += 12
                 }
             } else if (line == null) {
-                // 分割线：1px 灰线，宽度只包住证章图标行（首行证章数 × 12 - 4）
-                val rowW = minOf(6, entry.marks.size) * 12 - 4
+                // 分割线：1px 灰线，撑满提示框全宽（与信息区分隔线一致，不随证章数量变化）
+                val rowW = maxWidth
                 context.fill(tx, rowY + 4, tx + rowW, rowY + 5, 0xFF555555.toInt())
                 rowY += 10
             } else if (i == heldItemLine) {

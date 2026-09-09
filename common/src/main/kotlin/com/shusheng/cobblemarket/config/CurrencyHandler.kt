@@ -199,9 +199,16 @@ object CurrencyHandler {
     fun goldCurrencyText(): net.minecraft.text.Text =
         currencyText().copy().formatted(net.minecraft.util.Formatting.GOLD)
 
-    /** 聊天消息用：金额数字金色（Int/Long/String 均可） */
+    /** 金额千分位格式化（整数类型 Long/Int/BigInteger；其它类型原样）。
+     *  聊天消息里的价格/金额统一走这里——2026-09-09 拍板「显示价格默认千分位」。 */
+    fun formatAmount(v: Any?): String {
+        if (v !is Long && v !is Int && v !is java.math.BigInteger) return v.toString()
+        return v.toString().reversed().chunked(3).joinToString(",").reversed()
+    }
+
+    /** 聊天消息用：金额数字金色（Int/Long/String 均可，整数类型自动千分位） */
     fun goldAmount(v: Any): net.minecraft.text.Text =
-        net.minecraft.text.Text.literal(v.toString()).formatted(net.minecraft.util.Formatting.GOLD)
+        net.minecraft.text.Text.literal(formatAmount(v)).formatted(net.minecraft.util.Formatting.GOLD)
 
     /** Cobblemon Economy POKE 结算的货币标识（翻译 key，显示 PokeDollars）；物品模式见 getCurrencyId() 的物品 ID 分支 */
     const val POKEDOLLARS_KEY = "cobblemarket.currency.pokedollars"

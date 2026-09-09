@@ -799,7 +799,7 @@ object FinanceNetwork {
                 val fee = CobbleMarketConfig.purpleCardApplyFee
                 if (fee > 0) {
                     if (!com.shusheng.cobblemarket.finance.FinanceService.removeInChunks(player, fee)) {
-                        player.sendMessage(Text.translatable("cobblemarket.card.apply_fee_missing", fee).formatted(Formatting.RED), false)
+                        player.sendMessage(Text.translatable("cobblemarket.card.apply_fee_missing", CurrencyHandler.formatAmount(fee)).formatted(Formatting.RED), false)
                         return@execute
                     }
                     state.depositReserve(fee)
@@ -835,7 +835,7 @@ object FinanceNetwork {
                 val fee = CobbleMarketConfig.purpleCardRedoFee
                 if (fee > 0) {
                     if (!com.shusheng.cobblemarket.finance.FinanceService.removeInChunks(player, fee)) {
-                        player.sendMessage(Text.translatable("cobblemarket.card.redo_fee_missing", fee).formatted(Formatting.RED), false)
+                        player.sendMessage(Text.translatable("cobblemarket.card.redo_fee_missing", CurrencyHandler.formatAmount(fee)).formatted(Formatting.RED), false)
                         return@execute
                     }
                     state.depositReserve(fee)
@@ -888,7 +888,7 @@ object FinanceNetwork {
                 val fee = CobbleMarketConfig.blackCardApplyFee
                 if (fee > 0) {
                     if (!com.shusheng.cobblemarket.finance.FinanceService.removeInChunks(player, fee)) {
-                        player.sendMessage(Text.translatable("cobblemarket.card.apply_fee_missing", fee).formatted(Formatting.RED), false)
+                        player.sendMessage(Text.translatable("cobblemarket.card.apply_fee_missing", CurrencyHandler.formatAmount(fee)).formatted(Formatting.RED), false)
                         return@execute
                     }
                     state.depositReserve(fee)
@@ -928,7 +928,7 @@ object FinanceNetwork {
                 val fee = CobbleMarketConfig.blackCardRedoFee
                 if (fee > 0) {
                     if (!com.shusheng.cobblemarket.finance.FinanceService.removeInChunks(player, fee)) {
-                        player.sendMessage(Text.translatable("cobblemarket.card.redo_fee_missing", fee).formatted(Formatting.RED), false)
+                        player.sendMessage(Text.translatable("cobblemarket.card.redo_fee_missing", CurrencyHandler.formatAmount(fee)).formatted(Formatting.RED), false)
                         return@execute
                     }
                     state.depositReserve(fee)

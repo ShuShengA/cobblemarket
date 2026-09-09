@@ -1825,7 +1825,7 @@ object MarketNetwork {
                         val key = if (heldItemId != null) "cobblemarket.price_limit.held_below_min" else "cobblemarket.price_limit.below_min"
                         sendToPlayer(
                             player,
-                            MarketResultPayload(false, Text.translatable(key, priceBounds.min))
+                            MarketResultPayload(false, Text.translatable(key, CurrencyHandler.formatAmount(priceBounds.min)))
                         )
                         return@execute
                     }
@@ -1833,7 +1833,7 @@ object MarketNetwork {
                         val key = if (heldItemId != null) "cobblemarket.price_limit.held_above_max" else "cobblemarket.price_limit.above_max"
                         sendToPlayer(
                             player,
-                            MarketResultPayload(false, Text.translatable(key, priceBounds.max))
+                            MarketResultPayload(false, Text.translatable(key, CurrencyHandler.formatAmount(priceBounds.max)))
                         )
                         return@execute
                     }
@@ -2053,14 +2053,14 @@ object MarketNetwork {
                     if (itemPriceBounds.min != null && payload.price < itemPriceBounds.min) {
                         sendToPlayer(
                             player,
-                            MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.below_min", itemPriceBounds.min))
+                            MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.below_min", CurrencyHandler.formatAmount(itemPriceBounds.min)))
                         )
                         return@execute
                     }
                     if (itemPriceBounds.max != null && payload.price > itemPriceBounds.max) {
                         sendToPlayer(
                             player,
-                            MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.above_max", itemPriceBounds.max))
+                            MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.above_max", CurrencyHandler.formatAmount(itemPriceBounds.max)))
                         )
                         return@execute
                     }

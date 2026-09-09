@@ -1274,10 +1274,21 @@ class BuyOrderScreen(
         heldItemButton?.pressedVisual = heldItemMode
     }
 
+    /** 主手物品（空手返回 null）：手持模式图标的统一数据源，实时读取保证换手后同步 */
+    private fun heldPreviewStack(): ItemStack? =
+        client?.player?.mainHandStack?.takeIf { !it.isEmpty }
+
+    /** 退出手持模式：开始搜索/点选物品时调用。两条添加路径互斥，避免提交的物品与界面显示不符 */
+    private fun exitHeldItemMode() {
+        if (!heldItemMode) return
+        heldItemMode = false
+        updateHeldItemButton()
+    }
+
     private fun toggleHeldItemMode() {
         // 客户端预检主手：空手播 fail 音效 + 红字提示，不切换模式
-        val held = client?.player?.mainHandStack
-        if (held == null || held.isEmpty) {
+        val held = heldPreviewStack()
+        if (held == null) {
             playFailSound()
             resultMsg = Text.translatable("cobblemarket.buy_order.held_item_empty").string
             resultMsgColor = 0xFF5555
@@ -1369,18 +1380,23 @@ class BuyOrderScreen(
             if (!natureListOpen) {
                 context.drawCenteredTextWithShadow(textRenderer,
                     Text.translatable("cobblemarket.buy_order.frozen_hint",
-                        Text.literal((createMaxPriceField?.text?.toIntOrNull() ?: 0).toLong().toString()).formatted(Formatting.GOLD),
+                        Text.literal(com.shusheng.cobblemarket.client.formatPriceLong((createMaxPriceField?.text?.toIntOrNull() ?: 0).toLong())).formatted(Formatting.GOLD),
                         Text.literal(com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
                     centerX, dialogY + 214, 0xFFFFFF)
             }
         } else {
-            // 物品预览图标（右侧，优先显示点选项）
-            val previewId = matchedItems.getOrNull(selectedItemIndex) ?: matchedItems.firstOrNull()
-            previewId?.let { idStr ->
-                Identifier.tryParse(idStr)?.let { id ->
-                    val item = Registries.ITEM.get(id)
-                    if (item != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
-                        context.drawItem(ItemStack(item), centerX + 72, dialogY + 48)
+            // 物品预览图标（右侧）：手持模式显示主手物品（文字+图标双重提醒），否则优先显示点选项
+            val heldPreview = if (heldItemMode) heldPreviewStack() else null
+            if (heldPreview != null) {
+                context.drawItem(heldPreview, centerX + 72, dialogY + 48)
+            } else {
+                val previewId = matchedItems.getOrNull(selectedItemIndex) ?: matchedItems.firstOrNull()
+                previewId?.let { idStr ->
+                    Identifier.tryParse(idStr)?.let { id ->
+                        val item = Registries.ITEM.get(id)
+                        if (item != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
+                            context.drawItem(ItemStack(item), centerX + 72, dialogY + 48)
+                        }
                     }
                 }
             }
@@ -1391,7 +1407,7 @@ class BuyOrderScreen(
                 val count = createCountField?.text?.toIntOrNull() ?: 0
                 context.drawCenteredTextWithShadow(textRenderer,
                     Text.translatable("cobblemarket.buy_order.frozen_hint",
-                        Text.literal((maxPrice.toLong() * count).toString()).formatted(Formatting.GOLD),
+                        Text.literal(com.shusheng.cobblemarket.client.formatPriceLong(maxPrice.toLong() * count)).formatted(Formatting.GOLD),
                         Text.literal(com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
                     centerX, dialogY + 146, 0xFFFFFF)
             }
@@ -1838,6 +1854,8 @@ class BuyOrderScreen(
 
     /** 物品输入变更：重建匹配列表（照黑名单物品对话框） */
     private fun updateItemPreview(text: String) {
+        // 打字即退出手持模式（两条添加路径互斥），随后按搜索路径走
+        exitHeldItemMode()
         matchedItems = resolveMatchingItems(text)
         // 唯一匹配自动选中；多匹配等待用户点选
         selectedItemIndex = if (matchedItems.size == 1) 0 else -1
@@ -1869,6 +1887,8 @@ class BuyOrderScreen(
     }
 
     private fun selectItem(idx: Int) {
+        // 点选搜索项同样退出手持模式（互斥）
+        exitHeldItemMode()
         selectedItemIndex = idx
         itemListOpen = false
         rebuildItemList()
@@ -2027,7 +2047,7 @@ class BuyOrderScreen(
         val dialogH = if (entry.type == "POKEMON") {
             // 证章区块高度余量（精灵单固定 220 基础上加证章行）
             val marksCount = (entry.pending?.extraData?.get("marks") ?: "").split(",").filter { it.isNotEmpty() }.size
-            val marksExtra = if (marksCount == 0) 0 else 20 + (if (marksCount > 6) 12 else 0)
+            val marksExtra = if (marksCount == 0) 0 else 20 + (if (marksCount > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0)
             220 + marksExtra
         } else 149 + itemExtra * 10
         val dialogX = centerX - dialogW / 2

@@ -14,6 +14,13 @@ import net.minecraft.util.Identifier
 // 购买/下架确认弹窗、购买确认页、管理员下架弹窗共用。
 object EntryBadgeRenderer {
 
+    /**
+     * 证章图标每行个数（2026-09-09 用户拍板 6 → 10）：一行 10 个 = 120px，
+     * 仍窄于提示框最宽文本行（价格/性格特性行约 130~140px），不会把提示框撑宽。
+     * 全部证章排布（内联渲染 + 公共函数）统一引用本常量，调整只改这里。
+     */
+    const val MARKS_PER_ROW = 10
+
     /** 属性色表（2026-08-24 颜色模板；全模组精灵名/属性名显示统一用，见 [[pokemon-display-colors]]） */
     fun typeColor(typeKey: String): Int = when (typeKey.substringAfterLast(".").lowercase()) {
         "normal" -> 0xAAAA99; "fire" -> 0xFF4422; "water" -> 0x3399FF
@@ -86,6 +93,27 @@ object EntryBadgeRenderer {
         drawNameLineLeft(context, name, gender, centerX - totalW / 2, y, color)
     }
 
+    /**
+     * 证章图标行：从 [leftX] 开始排列，每行最多 [MARKS_PER_ROW] 个 8×8 图标；超出的部分第二行居中显示灰色「+N」。
+     * 服务端直接传纹理路径（不依赖客户端 Marks 注册表解析）。返回该区块占用的高度（12 或 24）。
+     * 拍卖 / 管理端拍卖 / 待归还 / 管理端精灵悬停共用（照市场悬停 tooltip 的排法）。
+     */
+    fun drawMarksRow(context: DrawContext, marks: List<String>, leftX: Int, y: Int): Int {
+        val textures = marks.mapNotNull { Identifier.tryParse(it) }
+        if (textures.isEmpty()) return 0
+        textures.take(MARKS_PER_ROW).forEachIndexed { idx, texture ->
+            com.cobblemon.mod.common.api.gui.blitk(
+                matrixStack = context.matrices, texture = texture,
+                x = leftX + idx * 12, y = y, width = 8, height = 8
+            )
+        }
+        if (textures.size > MARKS_PER_ROW) {
+            context.drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer, "+${textures.size - MARKS_PER_ROW}", leftX + minOf(MARKS_PER_ROW, textures.size) * 6, y + 12, 0xAAAAAA)
+            return 24
+        }
+        return 12
+    }
+
     // 居中绘制信息行，返回下一行的 y
     fun drawInfoLines(context: DrawContext, entry: ListingEntry, displayName: Text, centerX: Int, startY: Int): Int {
         val font = MinecraftClient.getInstance().textRenderer
@@ -131,7 +159,7 @@ object EntryBadgeRenderer {
         lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("  EV:${entry.evsSpDef}").formatted(Formatting.RED)) to 0x66FF99)
         lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("  EV:${entry.evsSpd}").formatted(Formatting.RED)) to 0xFF99FF)
         lines.add(Text.translatable("cobblemarket.gui.friendship", entry.friendship) to 0xFF99CC)
-        // 证章区块（证章不影响能力，纯外观展示）：亲密度下方两条分割线夹证章图标（每行 6 个，照 Cobblemon 摘要界面）
+        // 证章区块（证章不影响能力，纯外观展示）：亲密度下方两条分割线夹证章图标（每行 MARKS_PER_ROW 个）
         // 服务端直接传纹理路径（不依赖客户端 Marks 注册表解析）
         var marksLine = -1
         if (entry.marks.isNotEmpty()) {
@@ -154,25 +182,25 @@ object EntryBadgeRenderer {
             val (line, color) = lines[i]
             when {
                 line == null && i == marksLine -> {
-                    // 证章图标行：第一行最多 6 个居中；超过 6 个第二行居中显示「+N」（不再画图标防挤占面板）
+                    // 证章图标行：第一行最多 MARKS_PER_ROW 个居中；超出的部分第二行居中显示「+N」（不再画图标防挤占面板）
                     val textures = entry.marks.mapNotNull { Identifier.tryParse(it) }
-                    val rowW = minOf(6, textures.size) * 12 - 4
-                    textures.take(6).forEachIndexed { idx, texture ->
+                    val rowW = minOf(MARKS_PER_ROW, textures.size) * 12 - 4
+                    textures.take(MARKS_PER_ROW).forEachIndexed { idx, texture ->
                         com.cobblemon.mod.common.api.gui.blitk(
                             matrixStack = context.matrices, texture = texture,
                             x = centerX - rowW / 2 + idx * 12, y = y, width = 8, height = 8
                         )
                     }
-                    if (textures.size > 6) {
-                        context.drawCenteredTextWithShadow(font, "+${textures.size - 6}", centerX, y + 12, 0xAAAAAA)
+                    if (textures.size > MARKS_PER_ROW) {
+                        context.drawCenteredTextWithShadow(font, "+${textures.size - MARKS_PER_ROW}", centerX, y + 12, 0xAAAAAA)
                         y += 24
                     } else {
                         y += 12
                     }
                 }
                 line == null -> {
-                    // 分割线：1px 灰线，宽度只包住证章图标行（首行证章数 × 12 - 4）
-                    val rowW = minOf(6, entry.marks.size) * 12 - 4
+                    // 分割线：1px 灰线，固定 6 格宽（不随证章数量变化）
+                    val rowW = 68
                     context.fill(centerX - rowW / 2, y + 4, centerX + rowW / 2, y + 5, 0xFF555555.toInt())
                     y += 10
                 }

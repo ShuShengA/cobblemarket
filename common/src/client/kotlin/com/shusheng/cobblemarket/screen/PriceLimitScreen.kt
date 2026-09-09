@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.formatPrice
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
@@ -144,9 +145,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         if (vCount >= 0) "${vCount}V" else Text.translatable("cobblemarket.price_limit.v_any").string
 
     private fun priceText(min: Int?, max: Int?): String = when {
-        min != null && max != null -> "$min ~ $max"
-        min != null -> "≥ $min"
-        max != null -> "≤ $max"
+        min != null && max != null -> "${formatPrice(min)} ~ ${formatPrice(max)}"
+        min != null -> "≥ ${formatPrice(min)}"
+        max != null -> "≤ ${formatPrice(max)}"
         else -> Text.translatable("cobblemarket.price_limit.unlimited").string
     }
 
@@ -540,7 +541,19 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             centerX, dialogY + 26, 0xFFAAAAAA.toInt())
 
         // 本地校验错误/信息提示：画在弹窗下沿外，避免与 +40 起的物品输入框/控件重叠
-        dialogError?.let {
+        // 手持模式实时读主手：换手/丢物品后文字与图标同步，不会文字与图标各说各话
+        if (heldAddMode) {
+            val held = heldPreviewStack()
+            if (held != null) {
+                context.drawCenteredTextWithShadow(textRenderer,
+                    Text.translatable("cobblemarket.blacklist.held_item_selected", held.name).string,
+                    centerX, dialogY + dialogH + 8, 0x55FF55)
+            } else {
+                context.drawCenteredTextWithShadow(textRenderer,
+                    Text.translatable("cobblemarket.blacklist.held_item_empty").string,
+                    centerX, dialogY + dialogH + 8, 0xFF5555)
+            }
+        } else dialogError?.let {
             context.drawCenteredTextWithShadow(textRenderer, it, centerX, dialogY + dialogH + 8, dialogErrorColor)
         }
 
@@ -550,12 +563,17 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 centerX, dialogY + 126, 0xAAAAAA)
         }
 
-        // 物品预览
-        previewItemId?.let { itemId ->
-            Identifier.tryParse(itemId)?.let { id ->
-                val item = Registries.ITEM.get(id)
-                if (item != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
-                    context.drawItem(ItemStack(item), centerX + 66, dialogY + 42)
+        // 物品预览：手持模式显示主手物品（文字+图标双重提醒），否则显示搜索预览
+        val heldPreview = if (heldAddMode) heldPreviewStack() else null
+        if (heldPreview != null) {
+            context.drawItem(heldPreview, centerX + 66, dialogY + 42)
+        } else if (!heldAddMode) {
+            previewItemId?.let { itemId ->
+                Identifier.tryParse(itemId)?.let { id ->
+                    val item = Registries.ITEM.get(id)
+                    if (item != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
+                        context.drawItem(ItemStack(item), centerX + 66, dialogY + 42)
+                    }
                 }
             }
         }
@@ -633,6 +651,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     /** 物品输入变更：重建匹配列表（照搬物品黑名单） */
     private fun updateItemPreview(text: String) {
+        // 打字即退出手持模式（两条添加路径互斥），随后按搜索路径走
+        exitHeldAddMode()
         dialogError = null
         matchedItems = resolveMatchingItems(text)
         // 唯一匹配自动选中；多匹配等待用户点选
@@ -812,6 +832,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     }
 
     private fun selectItem(idx: Int) {
+        // 点选搜索项同样退出手持模式（互斥）
+        exitHeldAddMode()
         selectedItemIndex = idx
         itemListOpen = false
         dialogError = null
@@ -909,22 +931,31 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         closeDialog()
     }
 
+    /** 主手物品（空手返回 null）：手持模式文字与图标的统一数据源，实时读取保证换手后同步 */
+    private fun heldPreviewStack(): ItemStack? =
+        client?.player?.mainHandStack?.takeIf { !it.isEmpty }
+
+    /** 退出手持模式：开始搜索/点选物品时调用。两条添加路径互斥，避免提交的物品与界面显示不符 */
+    private fun exitHeldAddMode() {
+        if (!heldAddMode) return
+        heldAddMode = false
+        heldAddButton?.pressedVisual = false
+    }
+
     private fun toggleHeldAdd() {
         // 预检主手：空手播 fail 音效 + 弹窗下沿红字提醒，不切换模式；服务端红字提示仅兜底
-        val held = client?.player?.mainHandStack
-        if (held == null || held.isEmpty) {
+        if (heldPreviewStack() == null) {
             dialogError = Text.translatable("cobblemarket.blacklist.held_item_empty").string
             dialogErrorColor = 0xFF5555
             playFailSound()
             return
         }
         heldAddMode = !heldAddMode
-        // 选中态 = 按下视觉（红底），与黑名单/求购单手持按钮一致；绿字提示明确当前状态与物品
+        // 选中态 = 按下视觉（红底），与黑名单/求购单手持按钮一致
+        // 选中后的文字/图标由渲染时实时读主手（换手同步）；取消时留一条绿字确认
         heldAddButton?.pressedVisual = heldAddMode
-        dialogError = if (heldAddMode)
-            Text.translatable("cobblemarket.blacklist.held_item_selected", held.name).string
-        else
-            Text.translatable("cobblemarket.blacklist.held_item_cancelled").string
+        dialogError = if (heldAddMode) null
+            else Text.translatable("cobblemarket.blacklist.held_item_cancelled").string
         dialogErrorColor = 0x55FF55
     }
 
