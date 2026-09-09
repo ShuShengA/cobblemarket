@@ -121,7 +121,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     // ── 对话框状态（物品） ──
     private var editingItem: ItemPriceLimitEntry? = null
-    private var matchedItems = listOf<String>()
+    private var matchedItems = listOf<com.shusheng.cobblemarket.client.ItemCandidate>()
     private var selectedItemIndex = -1
     private var itemListOpen = false
     private var itemListScroll = 0
@@ -130,7 +130,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private var heldAddButton: NineSliceButton? = null
     // 手持添加模式：小手图标选中态（红底），点「添加」时提交手持物品条目
     private var heldAddMode = false
-    private var previewItemId: String? = null
+    private var previewCandidate: com.shusheng.cobblemarket.client.ItemCandidate? = null
 
     private data class IconData(val displayName: String, val renderable: RenderablePokemon, val state: FloatingState)
     private val iconData = mutableMapOf<Int, IconData>()
@@ -157,12 +157,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         return species?.let { com.shusheng.cobblemarket.util.SpeciesText.displayName(it) } ?: speciesId
     }
 
-    private fun itemDisplay(itemId: String): String {
-        val id = Identifier.tryParse(itemId) ?: return itemId
-        val item = Registries.ITEM.get(id)
-        val name = item.name.string
-        return if (name == item.translationKey) id.path else name
-    }
+    private fun itemDisplay(itemId: String): String =
+        com.shusheng.cobblemarket.client.ItemCandidateResolver.displayNameOf(itemId)
 
     override fun init() {
         super.init()
@@ -568,13 +564,10 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         if (heldPreview != null) {
             context.drawItem(heldPreview, centerX + 66, dialogY + 42)
         } else if (!heldAddMode) {
-            previewItemId?.let { itemId ->
-                Identifier.tryParse(itemId)?.let { id ->
-                    val item = Registries.ITEM.get(id)
-                    if (item != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
-                        context.drawItem(ItemStack(item), centerX + 66, dialogY + 42)
-                    }
-                }
+            previewCandidate?.let { candidate ->
+                com.shusheng.cobblemarket.client.ItemComponentsDisplay
+                    .iconStack(candidate.itemId, candidate.componentsSpec)
+                    ?.let { stack -> if (!stack.isEmpty) context.drawItem(stack, centerX + 66, dialogY + 42) }
             }
         }
     }
@@ -661,7 +654,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         itemListScroll = 0
         rebuildItemList()
         updateItemSelectButton()
-        previewItemId = matchedItems.getOrNull(selectedItemIndex) ?: matchedItems.firstOrNull()
+        previewCandidate = matchedItems.getOrNull(selectedItemIndex) ?: matchedItems.firstOrNull()
     }
 
     // ── 精灵：V 档选择（照搬形态展开列表模式） ──
@@ -788,32 +781,12 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     // ── 物品：匹配列表选择（照搬物品黑名单） ──
 
-    private fun resolveMatchingItems(input: String): List<String> {
-        val trimmed = input.trim()
-        if (trimmed.isEmpty()) return emptyList()
-        if (trimmed.contains(":")) return listOf(trimmed)
-        val lower = trimmed.lowercase().replace(" ", "_")
-        val result = LinkedHashSet<String>()
-        Registries.ITEM.forEach { item ->
-            val id = Registries.ITEM.getId(item)
-            if (id.path == lower) result.add(id.toString())
-        }
-        Registries.ITEM.forEach { item ->
-            val id = Registries.ITEM.getId(item)
-            if (item.name.string == trimmed) result.add(id.toString())
-        }
-        Registries.ITEM.forEach { item ->
-            val id = Registries.ITEM.getId(item)
-            if (item.name.string.contains(trimmed)) result.add(id.toString())
-        }
-        // 搜索索引追加（TM 招式/附魔/tooltip 文本命中，见 ItemSearchIndex；精确匹配仍排前）
-        com.shusheng.cobblemarket.client.ItemSearchIndex.itemIdsMatching(input).forEach { result.add(it) }
-        return result.toList()
-    }
+    private fun resolveMatchingItems(input: String): List<com.shusheng.cobblemarket.client.ItemCandidate> =
+        com.shusheng.cobblemarket.client.ItemCandidateResolver.resolve(input)
 
     private fun updateItemSelectButton() {
         itemSelectButton?.visible = matchedItems.isNotEmpty()
-        val label = matchedItems.getOrNull(selectedItemIndex)?.let { itemDisplay(it) }
+        val label = matchedItems.getOrNull(selectedItemIndex)?.displayName
             ?: if (matchedItems.size > 1)
                 Text.translatable("cobblemarket.blacklist.item_matches", matchedItems.size).string
             else ""
@@ -839,7 +812,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         dialogError = null
         rebuildItemList()
         updateItemSelectButton()
-        previewItemId = matchedItems.getOrNull(idx)
+        previewCandidate = matchedItems.getOrNull(idx)
     }
 
     private fun rebuildItemList() {
@@ -852,9 +825,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         if (!itemListOpen) return
         val centerX = width / 2
         val dialogY = height / 2 - 71
-        matchedItems.drop(itemListScroll).take(MAX_ITEM_LIST_ROWS).forEachIndexed { i, itemId ->
+        matchedItems.drop(itemListScroll).take(MAX_ITEM_LIST_ROWS).forEachIndexed { i, candidate ->
             val idx = itemListScroll + i
-            val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(itemDisplay(itemId), 124)
+            val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(candidate.displayName, 124)
             val btn = NineSliceButton(
                 centerX - 80, dialogY + 72 + i * 16, 140, 14,
                 if (idx == selectedItemIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
@@ -921,7 +894,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         val prices = validatePrices() ?: return
         val selected = matchedItems.getOrNull(selectedItemIndex)
         sendToServer(AddItemPriceLimitPayload(
-            itemName = selected ?: resolveMatchingItems(input).firstOrNull() ?: input,
+            itemName = selected?.itemId ?: resolveMatchingItems(input).firstOrNull()?.itemId ?: input,
+            componentsSpec = selected?.componentsSpec,
             minPrice = prices.first,
             maxPrice = prices.second,
             // 编辑模式带原物品：服务端先删旧再插新（改选了物品也不会残留旧条目）
@@ -984,7 +958,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         formOptionButtons.clear()
         ruleHtFilter = PokemonPriceLimitEntry.HT_ANY
         ruleHtButton = null
-        previewItemId = null
+        previewCandidate = null
         matchedItems = listOf()
         selectedItemIndex = -1
         itemListOpen = false
@@ -1520,7 +1494,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 if (savedSelectedItemIndex in matchedItems.indices) {
                     selectedItemIndex = savedSelectedItemIndex
                     updateItemSelectButton()
-                    previewItemId = matchedItems.getOrNull(selectedItemIndex)
+                    previewCandidate = matchedItems.getOrNull(selectedItemIndex)
                 }
                 minField?.text = min
                 maxField?.text = max

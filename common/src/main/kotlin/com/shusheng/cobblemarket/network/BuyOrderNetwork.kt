@@ -299,7 +299,9 @@ data class CreateItemBuyOrderPayload(
     val minPrice: Int,
     val maxPrice: Int,
     val note: String,          // 买家备注（可为空）
-    val useHeldItem: Boolean   // true = 用手持物品（含组件快照）作为求购要求
+    val useHeldItem: Boolean,  // true = 用手持物品（含组件快照）作为求购要求
+    // 搜索路径选中的具体变体组件快照（如「招式学习器 · 打鼾」）；手持路径为 null（服务端读主手）
+    val componentsSpec: net.minecraft.nbt.NbtCompound? = null,
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -309,8 +311,17 @@ data class CreateItemBuyOrderPayload(
                 b.writeString(p.itemId); b.writeInt(p.totalCount); b.writeInt(p.minPrice); b.writeInt(p.maxPrice)
                 b.writeString(p.note)
                 b.writeBoolean(p.useHeldItem)
+                b.writeNbt(p.componentsSpec)
             },
-            { b -> CreateItemBuyOrderPayload(b.readString(), b.readInt(), b.readInt(), b.readInt(), b.readString(), b.readBoolean()) }
+            { b -> CreateItemBuyOrderPayload(
+                itemId = b.readString(),
+                totalCount = b.readInt(),
+                minPrice = b.readInt(),
+                maxPrice = b.readInt(),
+                note = b.readString(),
+                useHeldItem = b.readBoolean(),
+                componentsSpec = b.readNbt(),
+            ) }
         )
     }
 }
@@ -523,9 +534,6 @@ object BuyOrderNetwork {
                 if (!checkOrderLimit(server, player)) return@execute
                 // 手持物品模式：用手持物品（含组件快照）作为求购要求；否则用输入框的 itemId
                 val heldStack = if (payload.useHeldItem) player.mainHandStack.copy() else net.minecraft.item.ItemStack.EMPTY
-                val itemComponentsSpec = if (payload.useHeldItem) {
-                    com.shusheng.cobblemarket.market.ItemRuleComponents.extractSpec(heldStack, player.serverWorld.registryManager)
-                } else null
                 val itemId = if (payload.useHeldItem) {
                     if (heldStack.isEmpty) {
                         sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.held_item_empty")))
@@ -538,6 +546,12 @@ object BuyOrderNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.item_not_found")))
                     return@execute
                 }
+                // 组件快照：手持路径读主手提取；搜索路径用客户端传的快照重建后重新提取白名单组件（不盲信）
+                val itemComponentsSpec = if (payload.useHeldItem) {
+                    com.shusheng.cobblemarket.market.ItemRuleComponents.extractSpec(heldStack, player.serverWorld.registryManager)
+                } else com.shusheng.cobblemarket.market.ItemRuleComponents.sanitizeSpec(
+                    itemIdentifier.toString(), payload.componentsSpec, player.serverWorld.registryManager
+                )
                 val totalCount = payload.totalCount.coerceAtLeast(1)
                 // 冻结金上限钳制：CurrencyHandler.remove 为 Int 扣款，超限拒绝（防溢出吞钱）
                 val frozen = payload.maxPrice.toLong() * totalCount

@@ -6,6 +6,7 @@ import com.shusheng.cobblemarket.market.ItemBlacklistState
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
+import net.minecraft.nbt.NbtCompound
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
 import net.minecraft.network.packet.CustomPayload
@@ -38,26 +39,38 @@ class RequestItemBlacklistPayload : CustomPayload {
 
 // ── C2S: 添加物品黑名单 ──
 
-data class AddItemBlacklistPayload(val itemName: String) : CustomPayload {
+data class AddItemBlacklistPayload(
+    val itemName: String,
+    // 具体变体的组件快照（搜索「打鼾」选中「招式学习器 · 打鼾」时非空）；null = 整个物品（所有变体）
+    val componentsSpec: NbtCompound? = null,
+) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<AddItemBlacklistPayload>(CobbleMarket.id("add_item_blacklist"))
         val CODEC: PacketCodec<PacketByteBuf, AddItemBlacklistPayload> = PacketCodec.of(
-            { p, b -> b.writeString(p.itemName) },
-            { b -> AddItemBlacklistPayload(b.readString()) }
+            { p, b ->
+                b.writeString(p.itemName)
+                b.writeNbt(p.componentsSpec)
+            },
+            { b ->
+                AddItemBlacklistPayload(
+                    itemName = b.readString(),
+                    componentsSpec = b.readNbt(),
+                )
+            }
         )
     }
 }
 
 // ── C2S: 批量添加物品黑名单（完整物品 ID 列表，如蛋的全部属性变体） ──
 
-data class AddItemsBlacklistPayload(val itemIds: List<String>) : CustomPayload {
+data class AddItemsBlacklistPayload(val entries: List<ItemBlacklistEntry>) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<AddItemsBlacklistPayload>(CobbleMarket.id("add_items_blacklist"))
         val CODEC: PacketCodec<PacketByteBuf, AddItemsBlacklistPayload> = PacketCodec.of(
-            { p, b -> b.writeVarInt(p.itemIds.size); p.itemIds.forEach { b.writeString(it) } },
-            { b -> AddItemsBlacklistPayload((0 until b.readVarInt()).map { b.readString() }) }
+            { p, b -> b.writeVarInt(p.entries.size); p.entries.forEach { it.write(b) } },
+            { b -> AddItemsBlacklistPayload((0 until b.readVarInt()).map { readItemBlacklistEntry(b) }) }
         )
     }
 }
@@ -143,7 +156,13 @@ object ItemBlacklistNetwork {
                             .formatted(net.minecraft.util.Formatting.RED), false)
                     return@execute
                 }
-                ItemBlacklistState.get(server).add(itemId, null)
+                ItemBlacklistState.get(server).add(
+                    itemId,
+                    // 搜索路径的变体条目：客户端传组件快照，服务端重建后重新提取白名单组件（不盲信）
+                    com.shusheng.cobblemarket.market.ItemRuleComponents.sanitizeSpec(
+                        itemId, payload.componentsSpec, player.serverWorld.registryManager
+                    )
+                )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val entries = ItemBlacklistState.get(server).getAll()
@@ -179,9 +198,14 @@ object ItemBlacklistNetwork {
             server.execute {
                 val state = ItemBlacklistState.get(server)
                 var added = 0
-                payload.itemIds.forEach { id ->
-                    if (net.minecraft.util.Identifier.tryParse(id) != null) {
-                        state.add(id, null)
+                payload.entries.forEach { entry ->
+                    if (net.minecraft.util.Identifier.tryParse(entry.itemId) != null) {
+                        state.add(
+                            entry.itemId,
+                            com.shusheng.cobblemarket.market.ItemRuleComponents.sanitizeSpec(
+                                entry.itemId, entry.componentsSpec, player.serverWorld.registryManager
+                            )
+                        )
                         added++
                     }
                 }
