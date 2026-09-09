@@ -66,8 +66,8 @@ object CreditFileLogger {
             refreshFiles(timestamp)
             val zhFile = currentRepayZh ?: return
             val enFile = currentRepayEn ?: return
-            val lineZh = buildRepayLine(playerName, loanId, principalPart, interest, method, detail, timestamp, true)
-            val lineEn = buildRepayLine(playerName, loanId, principalPart, interest, method, detailEn, timestamp, false)
+            val lineZh = buildRepayLine(playerUuid, playerName, loanId, principalPart, interest, method, detail, timestamp, true)
+            val lineEn = buildRepayLine(playerUuid, playerName, loanId, principalPart, interest, method, detailEn, timestamp, false)
             Files.writeString(zhFile.toPath(), lineZh + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
             Files.writeString(enFile.toPath(), lineEn + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
         } catch (e: Exception) {
@@ -81,13 +81,13 @@ object CreditFileLogger {
         if (date == currentDate) return
         currentDate = date
         currentLoanZh = resolveFile(date, "loan_records", "zh_cn",
-            "时间,类型,来源,玩家,本金,期数,日利率,状态,详情")
+            "时间,类型,来源,玩家,玩家UUID,本金,期数,日利率,状态,详情")
         currentLoanEn = resolveFile(date, "loan_records", "en_us",
-            "Time,Type,Source,Player,Principal,Periods,Daily Rate,Status,Details")
+            "Time,Type,Source,Player,Player UUID,Principal,Periods,Daily Rate,Status,Details")
         currentRepayZh = resolveFile(date, "repayment_records", "zh_cn",
-            "时间,玩家,贷款ID,本金部分,利息,方式,详情")
+            "时间,玩家,玩家UUID,贷款ID,本金部分,利息,方式,详情")
         currentRepayEn = resolveFile(date, "repayment_records", "en_us",
-            "Time,Player,Loan ID,Principal Part,Interest,Method,Details")
+            "Time,Player,Player UUID,Loan ID,Principal Part,Interest,Method,Details")
     }
 
     private fun resolveFile(date: String, name: String, lang: String, header: String): File {
@@ -186,10 +186,12 @@ object CreditFileLogger {
             LoanSource.POKEMON_BUY -> if (zh) "购精灵" else "Pokémon purchase"
             LoanSource.ITEM_BUY -> if (zh) "购物品" else "Item purchase"
         }
-        return "$time,$typeName,$sourceName,${csvEscape(record.playerName)},${record.principal},${record.periodsTotal},${record.dailyRate},${record.status.name},${csvEscape(detail)}"
+        // 玩家 UUID 供程序按 UUID 对账（改名玩家也查得到）；人读账本看玩家名
+        return "$time,$typeName,$sourceName,${csvEscape(record.playerName)},${record.playerUuid},${record.principal},${record.periodsTotal},${record.dailyRate},${record.status.name},${csvEscape(detail)}"
     }
 
     private fun buildRepayLine(
+        playerUuid: UUID,
         playerName: String,
         loanId: Long,
         principalPart: Long,
@@ -205,7 +207,7 @@ object CreditFileLogger {
             RepayMethod.AUTO -> if (zh) "自动划扣" else "Auto"
             RepayMethod.EARLY -> if (zh) "提前结清" else "Early payoff"
         }
-        return "$time,${csvEscape(playerName)},$loanId,$principalPart,$interest,$methodName,${csvEscape(detail)}"
+        return "$time,${csvEscape(playerName)},$playerUuid,$loanId,$principalPart,$interest,$methodName,${csvEscape(detail)}"
     }
 
     private fun csvEscape(s: String): String {

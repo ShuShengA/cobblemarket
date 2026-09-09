@@ -1242,7 +1242,6 @@ object MarketNetwork {
                     )
                     return@execute
                 }
-
                 // 喵喵支付（消费贷）：信用校验 + 准备金垫付；否则现金扣款
                 val meowth = payload.planIndex >= 0
                 if (meowth) {
@@ -1270,11 +1269,18 @@ object MarketNetwork {
                 }
 
                 val party = Cobblemon.storage.getParty(player)
-                val added = try {
-                    party.add(pokemon)
-                } catch (e: Exception) {
-                    CobbleMarket.LOGGER.warn("Failed to add pokemon to party for buyer {}: {}", player.uuid, e.message)
-                    false
+                val inBattle = com.shusheng.cobblemarket.market.BattleGuard.isPlayerInBattle(player.uuid)
+                val added = if (inBattle) {
+                    // 对战中购买的精灵进待领取：战斗系统动态读队伍，进队会被切换面板切出参战（凭空补员）
+                    state.addPendingReturn(player.uuid, listing)
+                    true
+                } else {
+                    try {
+                        party.add(pokemon)
+                    } catch (e: Exception) {
+                        CobbleMarket.LOGGER.warn("Failed to add pokemon to party for buyer {}: {}", player.uuid, e.message)
+                        false
+                    }
                 }
                 if (!added) {
                     if (meowth) {
@@ -1407,7 +1413,10 @@ object MarketNetwork {
                     return@execute
                 }
                 val party = Cobblemon.storage.getParty(player)
-                if (!party.add(pokemon)) {
+                if (com.shusheng.cobblemarket.market.BattleGuard.isPlayerInBattle(player.uuid)) {
+                    // 对战中下架的精灵进待领取，战斗结束后领取（进队会被切换面板切出参战=凭空补员）
+                    state.addPendingReturn(player.uuid, listing)
+                } else if (!party.add(pokemon)) {
                     sendToPlayer(
                         player,
                         MarketResultPayload(false, Text.translatable("cobblemarket.network.storage_full"))
@@ -1746,6 +1755,14 @@ object MarketNetwork {
                     sendToPlayer(
                         player,
                         MarketResultPayload(false, Text.translatable("cobblemarket.network.not_found"))
+                    )
+                    return@execute
+                }
+                // 对战中不可上架（整个队伍）：战斗系统动态读队伍，抽走任何精灵都可能造成战斗内模型消失或变相复制
+                if (com.shusheng.cobblemarket.market.BattleGuard.isPlayerInBattle(player.uuid)) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.network.in_battle"))
                     )
                     return@execute
                 }
@@ -2666,12 +2683,26 @@ object MarketNetwork {
             server.execute {
                 val history = com.shusheng.cobblemarket.event.TransactionHistory.get(server)
                 val isAdmin = player.hasPermissionLevel(2)
-                val records =
-                    if (payload.all && isAdmin) history.getRecords() else history.getRecordsByPlayer(player.uuid)
-                // 界面内最多展示 500 条（滚动浏览），完整记录见 config/cobblemarket/history/ CSV 日志
+                val all = payload.all && isAdmin
+                // 数据源：最近 14 天 CSV 账本 + 内存记录兜底合并去重（键用 CSV 秒级时间）——
+                // 内存上限（全服 200 条）外的个人历史从 CSV 回读，不再被其他玩家的交易挤空
+                val csvRecords = com.shusheng.cobblemarket.event.TransactionFileLogger.readRecentRecords(
+                    if (all) null else player.uuid,
+                    if (all) null else player.name.string,
+                    14)
+                val memoryRecords = if (all) history.getRecords() else history.getRecordsByPlayer(player.uuid)
+                fun keyOf(r: com.shusheng.cobblemarket.event.TransactionRecord): String =
+                    "${com.shusheng.cobblemarket.event.TransactionFileLogger.timestampKey(r.timestamp)}|${r.type}|${r.category}|${r.sellerName}|${r.buyerName}|${r.species}|${r.price}"
+                val records = (csvRecords + memoryRecords).distinctBy { keyOf(it) }
+                    .sortedByDescending { it.timestamp }
+                // 界面内最多展示 500 条（滚动浏览），更早记录见 config/cobblemarket/history/ CSV 日志
                 val entries = records.take(500).map { r ->
-                    val t =
-                        if (r.type == com.shusheng.cobblemarket.event.TransactionType.PURCHASE && r.buyerUuid == player.uuid) "BUY" else r.type.name
+                    // BUY 判定：新记录按 UUID；旧格式 CSV 行（占位 UUID）回退名字（服务器上名字唯一）
+                    val t = if (r.type == com.shusheng.cobblemarket.event.TransactionType.PURCHASE &&
+                        (r.buyerUuid == player.uuid ||
+                            (r.buyerUuid == null && r.buyerName == player.name.string) ||
+                            (r.sellerUuid == com.shusheng.cobblemarket.event.LEGACY_RECORD_UUID && r.buyerName == player.name.string))
+                    ) "BUY" else r.type.name
                     HistoryEntry(t, r.category.name, r.species, r.price, r.buyerName, r.sellerName, r.timestamp)
                 }
                 sendToPlayer(player, HistoryDataPayload(entries))
@@ -2711,6 +2742,11 @@ object MarketNetwork {
             if (!RequestThrottle.allow(player.uuid, "claim_pokemon_return", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
+                // 对战中不可领取：精灵进队会被战斗切换面板切出参战（凭空补员），战斗结束后再领
+                if (com.shusheng.cobblemarket.market.BattleGuard.isPlayerInBattle(player.uuid)) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.in_battle")))
+                    return@execute
+                }
                 val state = MarketState.get(server)
                 val returned = state.claimReturns(player)
                 val remaining = state.getPendingReturns(player.uuid).size

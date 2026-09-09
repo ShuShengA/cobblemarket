@@ -138,6 +138,24 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
                 centerX, dialogY + 110, 0xFFFFFF
             )
         } else {
+            // 卡权益（图标右侧，持有者/申请者都显示）：额度（金额用全模组价格蓝 0x55FFFF，完整千分位）+ 手续费减免（0 = 无）
+            val rightsX = centerX + 36
+            context.drawTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.card.apply_credit_line",
+                    Text.literal("${formatPriceLong(payload.creditLimit)} ${inlineCurrencyUnit()}")
+                        .setStyle(net.minecraft.text.Style.EMPTY.withColor(0x55FFFF))),
+                rightsX, dialogY + 42, 0xFFFFFF
+            )
+            val pct = payload.feeDiscount * 100
+            val discountText = if (payload.feeDiscount <= 0)
+                Text.translatable("cobblemarket.card.apply_no_discount")
+            else Text.literal(if (pct % 1.0 == 0.0) "${pct.toInt()}%" else "$pct%")
+            context.drawTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.card.apply_fee_discount", discountText),
+                rightsX, dialogY + 60, 0xFFFFFF
+            )
             // 持有者（补发模式）：条件与资格无关，只居中显示补发费用行；非持有者显示条件行 + 申请费用行
             val feeLine = Text.translatable(
                 if (isHolder) "cobblemarket.card.redo_fee_line" else "cobblemarket.card.apply_fee_line",
