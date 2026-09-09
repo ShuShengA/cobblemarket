@@ -123,6 +123,12 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         else Text.translatable("cobblemarket.auction.from").append(priceT)
     }
 
+    /** 行内价格（缩写、无「起拍」前缀，与物品市场/求购单行内一致）：悬停与出价弹窗仍走 [displayPriceText] 千分位 */
+    private fun displayPriceCompactText(entry: AuctionEntry): Text {
+        val price = if (entry.currentPrice > 0) entry.currentPrice else entry.startingPrice
+        return Text.literal(com.shusheng.cobblemarket.client.formatPriceShort(price) + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)
+    }
+
     private fun formatRemaining(endsAt: Long): String {
         val ms = endsAt - System.currentTimeMillis()
         if (ms <= 0) return Text.translatable("cobblemarket.auction.ending").string
@@ -552,8 +558,8 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                     leftX + 28, y + 7, 0xFFFFFF)
             }
 
-            // 当前价（货币蓝）+ 出价次数（灰，拆段）
-            val priceStr = displayPriceText(entry)
+            // 当前价（行内缩写）+ 出价次数（灰，拆段）
+            val priceStr = displayPriceCompactText(entry)
             val bidPart = if (entry.bidCount > 0) " ×${entry.bidCount}" else ""
             val priceX = leftX + panelWidth - 56 - textRenderer.getWidth(priceStr) - textRenderer.getWidth(bidPart)
 
@@ -575,13 +581,17 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                     priceX + textRenderer.getWidth(priceStr), y + 7, 0xAAAAAA)
             }
 
-            // 结束倒计时，左侧画卖家头像（照搬拍卖场）
+            // 结束倒计时 + 卖家头像：头像位置与精灵市场一致（leftX+127，各行对齐）；
+            // 127 是名字区所需宽度算出来的——名字(截断 44px)+星+性别+携带物+体型徽章 = 97px，
+            // 起点 leftX+28，再左就压住体型徽章。倒计时紧跟其右，价格区异常宽时整块左移兜底
             val remaining = formatRemaining(entry.endsAt)
             val remainingColor = if (entry.endsAt - System.currentTimeMillis() < 5 * 60 * 1000) 0xFF6666 else 0xAAAAAA
             val remW = textRenderer.getWidth(remaining)
+            val avatarX = leftX + 127
+            val shift = maxOf(0, avatarX + 20 + remW - (priceX - 16 - 6))
             context.drawTextWithShadow(textRenderer, remaining,
-                leftX + 156 - remW, y + 7, remainingColor)
-            drawSellerAvatar(context, entry.sellerUuid, entry.sellerName, leftX + 156 - remW - 20, y + 4, 16)
+                avatarX + 20 - shift, y + 7, remainingColor)
+            drawSellerAvatar(context, entry.sellerUuid, entry.sellerName, avatarX - shift, y + 4, 16)
         }
 
         if (hoveredRow >= 0) {
