@@ -675,7 +675,6 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 )
                 iconOffset = 8
             }
-
             if (confirmEntry == null) {
                 iconData[origIndex]?.heldStack?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
@@ -688,11 +687,18 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                     iconOffset += 12
                 }
             }
+            // 体型徽章（排在携带物图标之后，留 3px 空隙）
+            if (entry.sizeCategory.isNotEmpty()) {
+                if (iconOffset > 0) iconOffset += 3
+                iconOffset += EntryBadgeRenderer.drawSizeBadgeIcon(
+                    context, entry.sizeCategory, leftX + 40 + nameWidth + 2 + iconOffset, y + 7)
+            }
 
-            drawSellerAvatar(context, entry.sellerUuid, entry.sellerName, leftX + 115, y + 4, 16)
+            // 右移 12px 给名字区腾出体型徽章的位置
+            drawSellerAvatar(context, entry.sellerUuid, entry.sellerName, leftX + 127, y + 4, 16)
 
             val levelText = Text.translatable("cobblemarket.gui.lv").string + entry.level
-            context.drawText(textRenderer, levelText, leftX + 135, y + 7, 0x000000, false)
+            context.drawText(textRenderer, levelText, leftX + 147, y + 7, 0x000000, false)
 
             // 价格右对齐到取消按钮左缘
             val priceText = "${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
@@ -823,6 +829,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
 
             var maxWidth = 0
             lines.forEach { it.first?.let { t -> maxWidth = maxOf(maxWidth, textRenderer.getWidth(t)) } }
+            // 名字行尾部图标（公母 + 体型徽章）不计入文本宽度，单独补上
+            lines[0].first?.let { maxWidth = maxOf(maxWidth, EntryBadgeRenderer.nameLineWidth(it, entry.gender, entry.sizeCategory)) }
             if (heldItemLine >= 0) {
                 maxWidth = maxOf(maxWidth, textRenderer.getWidth(lines[heldItemLine].first) + 14)
             }
@@ -873,7 +881,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 rowY += 10
             } else if (i == 0) {
                 // 第一行（名字★Lv）带公母图标
-                EntryBadgeRenderer.drawNameLineLeft(context, line, entry.gender, tx, rowY, color)
+                EntryBadgeRenderer.drawNameLineLeft(context, line, entry.gender, tx, rowY, color, entry.sizeCategory)
                 rowY += 10
             } else {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
@@ -883,12 +891,24 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         context.matrices.pop()
     }
 
+    /**
+     * 下架确认弹窗高度：按信息区实际内容算——起始 +60，13 基础行
+     * （名字/类型/性格特性/[球种]/[携带物]/IV 标签/6×IV/亲密度/[证章]/卖家/价格）
+     * 加球种/携带物行与证章区块，底部再留 32px 给按钮（按钮高 20 + 4px 间隙 + 8px 边距）。
+     * 加新信息行（如技能）时只改这里的 13，按钮位置自动跟随。
+     */
+    private fun confirmDialogHeight(entry: ListingEntry): Int {
+        val infoRows = 13 +
+            (if (entry.ball.isNotEmpty()) 1 else 0) +
+            (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0)
+        return 60 + infoRows * 10 + EntryBadgeRenderer.marksBlockHeight(entry.marks) + 32
+    }
+
     private fun renderConfirmDialog(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val entry = confirmEntry ?: return
         val centerX = width / 2
         val dialogW = 220
-        val marksExtra = if (entry.marks.isEmpty()) 0 else 20 + (if (entry.marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0)
-        val dialogH = 240 + marksExtra
+        val dialogH = confirmDialogHeight(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
@@ -949,9 +969,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
 
     private fun handleConfirmDialogClick(mx: Int, my: Int) {
         val centerX = width / 2
-        val marksExtra = if (confirmEntry == null || confirmEntry!!.marks.isEmpty()) 0
-            else 20 + (if (confirmEntry!!.marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0)
-        val dialogH = 240 + marksExtra
+        val dialogH = confirmEntry?.let { confirmDialogHeight(it) } ?: 240
         val dialogY = height / 2 - dialogH / 2
         val btnY = dialogY + dialogH - 28
         val btnW = 80

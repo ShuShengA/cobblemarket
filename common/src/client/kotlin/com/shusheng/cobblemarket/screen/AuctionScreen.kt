@@ -796,13 +796,16 @@ class AuctionScreen(
 
         // 精灵预览
         if (entry.type == "POKEMON") {
-            // 证章区块（上下分割线 20 + 图标行 12；超过一行再加 12 的「+N」行）折算成 10px 行，弹窗同步变高
-            val marksCount = entry.extraData["marks"].orEmpty().split(",").count { it.isNotEmpty() }
-            bidDialogExtraRows = when {
-                marksCount == 0 -> 0
-                marksCount > EntryBadgeRenderer.MARKS_PER_ROW -> 5
-                else -> 4
-            }
+            // 左列信息区实际高度折算成 10px 行，弹窗同步变高：起始 +56，12 基础行
+            // （名字/类型/性格/特性/IV 标签/6×IV/亲密度）+ 球种/携带物行 + 证章区块。
+            // 基线 190 只够 12 行，超出部分向上取整成整行（含底部 10px 余量）。
+            // 加新信息行（如技能）时只改这里的 12。
+            val marks = entry.extraData["marks"].orEmpty().split(",").filter { it.isNotEmpty() }
+            val infoRows = 12 +
+                (if (entry.extraData["ball"].orEmpty().isNotEmpty()) 1 else 0) +
+                (if (EntryBadgeRenderer.hasHeldItemLine(entry.extraData["heldItemId"].orEmpty())) 1 else 0)
+            val leftH = 56 + infoRows * 10 + EntryBadgeRenderer.marksBlockHeight(marks)
+            bidDialogExtraRows = ((leftH + 10 - 190 + 9) / 10).coerceAtLeast(0)
             bidDialogW = 280
             val id = Identifier.tryParse(entry.extraData["speciesId"] ?: "")
             val species = id?.let { PokemonSpecies.getByIdentifier(it) }
@@ -990,7 +993,12 @@ class AuctionScreen(
                     matrixStack = context.matrices, texture = gi,
                     x = cx + 2, y = iy, width = 6, height = 8
                 )
-                genderW = 7
+                genderW = 2 + 6
+            }
+            // 体型徽章（紧跟公母图标，留 3px 空隙）
+            val sizeBadge = extra["size"].orEmpty()
+            if (sizeBadge.isNotEmpty()) {
+                EntryBadgeRenderer.drawSizeBadgeIcon(context, sizeBadge, cx + genderW + if (genderW > 0) 3 else 2, iy)
             }
             iy += 10
             val secondaryType = extra["secondaryType"] ?: ""
@@ -1013,7 +1021,19 @@ class AuctionScreen(
             val hasHeldItem = heldItemId.isNotEmpty() &&
                 Identifier.tryParse(heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
             if (hasHeldItem) {
-                infoLine(Text.translatable("cobblemarket.gui.tooltip_held").string, 0xAAAAAA)
+                // 携带物行：标签（白色，与其他行一致）+ 右侧物品图标
+                val heldLabel = Text.translatable("cobblemarket.gui.tooltip_held").string
+                val heldY = iy
+                infoLine(heldLabel)
+                Identifier.tryParse(heldItemId)?.let { heldId ->
+                    com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                        itemStack = ItemStack(Registries.ITEM.get(heldId)),
+                        x = infoX + textRenderer.getWidth(heldLabel) + 2.0,
+                        y = heldY + 0.0,
+                        scale = 0.6,
+                        matrixStack = context.matrices
+                    )
+                }
             }
             val hp = Text.translatable("cobblemon.stat.hp.name").string
             val atk = Text.translatable("cobblemon.stat.attack.name").string
@@ -1289,6 +1309,12 @@ class AuctionScreen(
                         itemStack = heldStack, x = sx.toDouble(), y = y + 6.0, scale = 0.6, matrixStack = context.matrices)
                     sx += 12
                 }
+                // 体型徽章（排在携带物图标之后，留 3px 空隙）
+                val sizeBadge = entry.extraData["size"].orEmpty()
+                if (sizeBadge.isNotEmpty()) {
+                    sx += 3
+                    sx += EntryBadgeRenderer.drawSizeBadgeIcon(context, sizeBadge, sx, y + 7)
+                }
             } else {
                 rowStacks[origIndex]?.itemStack?.let {
                     context.drawItem(it, slotX + 2, slotY)
@@ -1444,6 +1470,8 @@ class AuctionScreen(
                 staticLines.add(null to 0)
             }
             var mw = 0; staticLines.forEach { it.first?.let { t -> mw = maxOf(mw, textRenderer.getWidth(t)) } }
+            // 名字行尾部图标（公母 + 体型徽章）不计入文本宽度，单独补上
+            staticLines[0].first?.let { mw = maxOf(mw, EntryBadgeRenderer.nameLineWidth(it, extra["gender"] ?: "", extra["size"] ?: "")) }
             if (heldItemLine >= 0) {
                 mw = maxOf(mw, textRenderer.getWidth(staticLines[heldItemLine].first!!) + 14)
             }
@@ -1513,7 +1541,7 @@ class AuctionScreen(
                 rowY += 10
             } else if (i == 0) {
                 // 第一行（名字★Lv）带公母图标
-                EntryBadgeRenderer.drawNameLineLeft(context, line, entry.extraData["gender"] ?: "", tx, rowY, color)
+                EntryBadgeRenderer.drawNameLineLeft(context, line, entry.extraData["gender"] ?: "", tx, rowY, color, entry.extraData["size"] ?: "")
                 rowY += 10
             } else {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)

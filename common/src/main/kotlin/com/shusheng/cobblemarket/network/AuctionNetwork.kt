@@ -15,6 +15,7 @@ import com.shusheng.cobblemarket.market.AuctionType
 import com.shusheng.cobblemarket.market.MarketState
 import com.shusheng.cobblemarket.platform.onServerTickEnd
 import com.shusheng.cobblemarket.market.BanState
+import com.shusheng.cobblemarket.util.PokemonSize
 import com.shusheng.cobblemarket.util.RequestThrottle
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
@@ -119,7 +120,10 @@ fun auctionToEntry(a: AuctionListing): AuctionEntry = AuctionEntry(
     level = a.level,
     shiny = a.shiny,
     count = a.count,
-    extraData = a.extraData,
+    // 体型分类：精灵拍卖才有；物品拍卖保持原样。旧拍卖从存档 NBT 现算，无需重新上架
+    extraData = if (a.type == AuctionType.POKEMON) {
+        a.extraData + ("size" to PokemonSize.fromNbt(a.pokemonNbt))
+    } else a.extraData,
     startingPrice = a.startingPrice,
     minIncrement = a.minIncrement,
     currentPrice = a.currentPrice,
@@ -669,8 +673,10 @@ object AuctionNetwork {
                 // 精灵拍卖治理即时生效：存量精灵拍卖加入黑名单后拦截出价
                 if (auction.type == AuctionType.POKEMON) {
                     val pokemon = try {
-                        com.cobblemon.mod.common.pokemon.Pokemon()
-                            .loadFromNBT(player.serverWorld.registryManager, auction.pokemonNbt ?: throw IllegalStateException("missing pokemonNbt"))
+                        com.shusheng.cobblemarket.util.PokemonLoader.fromNbt(
+                            player.serverWorld.registryManager,
+                            auction.pokemonNbt ?: throw IllegalStateException("missing pokemonNbt")
+                        )
                     } catch (e: Exception) {
                         CobbleMarket.LOGGER.warn("Failed to load pokemon NBT for auction {}: {}", auction.id, e.message)
                         sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.ended")))
@@ -1036,15 +1042,19 @@ object AuctionNetwork {
         val lines = mutableListOf<Text>()
         if (auction.type == AuctionType.POKEMON) {
             val extra = auction.extraData
-            // 名字行：Lv + 性别（名字本身在消息正文，这里补数值）
+            // 名字行：Lv + 性别 + 体型字母（名字本身在消息正文，这里补数值；聊天悬浮窗画不了纹理，体型用字母）
+            val genderText = when (extra["gender"]) {
+                "MALE" -> Text.translatable("cobblemarket.aspect.male")
+                "FEMALE" -> Text.translatable("cobblemarket.aspect.female")
+                else -> Text.literal("")
+            }
+            val sizeTag = PokemonSize.fromNbt(auction.pokemonNbt)
             val lvLine = Text.translatable("cobblemarket.gui.lv").append(Text.literal("${auction.level}"))
                 .append(Text.literal(" "))
+                .append(genderText)
                 .append(
-                    when (extra["gender"]) {
-                        "MALE" -> Text.translatable("cobblemarket.aspect.male")
-                        "FEMALE" -> Text.translatable("cobblemarket.aspect.female")
-                        else -> Text.literal("")
-                    }
+                    if (sizeTag.isEmpty()) Text.literal("")
+                    else Text.literal((if (genderText.string.isEmpty()) "" else " ") + sizeTag)
                 )
             lines.add(lvLine)
             // 属性行（主 + 副）：属性名按属性色着色，与出价弹窗一致

@@ -209,8 +209,9 @@ class MarketState private constructor() : PersistentState() {
     }
 
     private fun returnPokemon(player: ServerPlayerEntity, listing: MarketListing): Boolean {
-        val pokemon = com.cobblemon.mod.common.pokemon.Pokemon()
-            .loadFromNBT(player.serverWorld.registryManager, listing.pokemonNbt)
+        val pokemon = com.shusheng.cobblemarket.util.PokemonLoader.fromNbt(
+            player.serverWorld.registryManager, listing.pokemonNbt
+        )
         // Cobblemon 的 Party.add 在队伍满时自动转入 PC（溢出兜底），无需额外处理
         return Cobblemon.storage.getParty(player).add(pokemon)
     }

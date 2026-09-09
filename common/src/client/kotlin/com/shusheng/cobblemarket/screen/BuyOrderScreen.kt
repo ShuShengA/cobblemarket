@@ -1944,6 +1944,23 @@ class BuyOrderScreen(
         return out
     }
 
+    /**
+     * 审核弹窗高度：精灵单按信息区实际内容算——起始 +26，13 基础行
+     * （名字/类型/性格特性/[球种]/[携带物]/IV 标签/6×IV/亲密度/[证章]/卖家/价格）
+     * 加球种/携带物行与证章区块，底部再留 72px（输入框 16 + 6px 间隙 + 按钮 20 + 30px 边距）。
+     * 物品单按词条行数算。加新信息行（如技能）时只改这里的 13。
+     */
+    private fun reviewDialogHeight(entry: BuyOrderEntry, itemExtra: Int): Int =
+        if (entry.type != "POKEMON") 149 + itemExtra * 10
+        else {
+            val listing = entry.pending?.let { pendingToListing(entry, it) }
+            val infoRows = 13 +
+                (if (listing?.ball?.isNotEmpty() == true) 1 else 0) +
+                (if (listing != null && EntryBadgeRenderer.hasHeldItemLine(listing)) 1 else 0)
+            val marksH = if (listing != null) EntryBadgeRenderer.marksBlockHeight(listing.marks) else 0
+            26 + infoRows * 10 + marksH + 72
+        }
+
     private fun openReviewDialog(entry: BuyOrderEntry) {
         reviewEntry = entry
         // 物品词条行（附魔等）：打开时重建一次，弹窗渲染每帧只读；行数决定后续控件下移量；
@@ -1981,11 +1998,13 @@ class BuyOrderScreen(
         })
 
         val centerX = width / 2
-        val dialogY = if (entry.type == "POKEMON") height / 2 - 110 else height / 2 - (149 + reviewItemExtraRows * 10) / 2
-        val btnY = if (entry.type == "POKEMON") dialogY + 180 else dialogY + 67 + reviewItemExtraRows * 10
+        val dialogH = reviewDialogHeight(entry, reviewItemExtraRows)
+        val dialogY = height / 2 - dialogH / 2
+        // 精灵单：输入框/按钮相对弹窗底部锚定（弹窗高度随信息区内容变，底部间距固定）
+        val btnY = if (entry.type == "POKEMON") dialogY + dialogH - 40 else dialogY + 67 + reviewItemExtraRows * 10
 
         // 拒绝原因输入框（选填，发给卖家）
-        reviewReasonField = TextFieldWidget(textRenderer, centerX - 120, dialogY + if (entry.type == "POKEMON") 154 else 43 + reviewItemExtraRows * 10, 240, 16, Text.literal(""))
+        reviewReasonField = TextFieldWidget(textRenderer, centerX - 120, dialogY + if (entry.type == "POKEMON") dialogH - 66 else 43 + reviewItemExtraRows * 10, 240, 16, Text.literal(""))
         reviewReasonField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.review_reason").formatted(Formatting.GRAY))
         reviewReasonField?.setMaxLength(100)
         addDrawableChild(reviewReasonField)
@@ -2044,14 +2063,9 @@ class BuyOrderScreen(
         }
         // 精灵单：完整信息行（照市场确认弹窗），弹窗更高；物品单：词条行数决定弹窗高度（Shift 展开动态伸缩）
         // 物品单 149：词条区（+44 起，行距 10 与物品市场一致）+ 卖家/出价/总价竖排三行 + 输入框 + 按钮，底部留白 18
-        val dialogH = if (entry.type == "POKEMON") {
-            // 证章区块高度余量（精灵单固定 220 基础上加证章行）
-            val marksCount = (entry.pending?.extraData?.get("marks") ?: "").split(",").filter { it.isNotEmpty() }.size
-            val marksExtra = if (marksCount == 0) 0 else 20 + (if (marksCount > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0)
-            220 + marksExtra
-        } else 149 + itemExtra * 10
+        val dialogH = reviewDialogHeight(entry, itemExtra)
         val dialogX = centerX - dialogW / 2
-        val dialogY = if (entry.type == "POKEMON") height / 2 - 110 else height / 2 - dialogH / 2
+        val dialogY = height / 2 - dialogH / 2
         // 物品分支控件位置每帧同步（Shift 展开/收起时布局动态伸缩，不挤压不空档）
         if (entry.type == "ITEM") {
             val baseY = dialogY + 44 + itemExtra * 10
