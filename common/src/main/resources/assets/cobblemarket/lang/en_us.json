@@ -474,6 +474,7 @@
   "cobblemarket.ban.banned": "Banned %s from trading!",
   "cobblemarket.ban.banned_until": "Banned %s from trading (%s)",
   "cobblemarket.ban.unbanned": "Unbanned %s",
+  "cobblemarket.ban.unbanned_bad_debt": "This player has a written-off loan - unbanning only allows market trading",
   "cobblemarket.ban.not_banned": "%s is not banned",
   "cobblemarket.ban.invalid_duration": "Invalid duration! Use 1d / 12h / 30m",
   "cobblemarket.ban.player_not_found": "Player %s not found",

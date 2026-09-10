@@ -380,19 +380,24 @@ object FinanceService {
     }
 
     /**
+     * 是否持有坏账（BAD_DEBT）：解封提示等处的判定入口。
+     */
+    fun hasBadDebt(server: MinecraftServer, uuid: UUID): Boolean =
+        FinanceState.get(server).getLoansByPlayer(uuid).any { it.status == LoanStatus.BAD_DEBT }
+
+    /**
      * 冻结状态同步（还款/划扣后实时调用）：
-     * 坏账玩家保持冻结；仍有逾期 ≥14 天 → 确保冻结；全部降到 <14 → 只解 FINANCE 来源封禁（OP 封禁不动）。
+     * 坏账玩家不动封禁（服主解封即放行市场交易，借贷/喵喵支付另有独立拦截）；
+     * 仍有逾期 ≥14 天 → 确保冻结；全部降到 <14 → 只解 FINANCE 来源封禁（OP 封禁不动）。
      */
     fun syncFreeze(server: MinecraftServer, uuid: UUID) {
         val state = FinanceState.get(server)
         val now = System.currentTimeMillis()
         val loans = state.getLoansByPlayer(uuid)
         val name = loans.firstOrNull()?.playerName ?: ""
-        val hasBadDebt = loans.any { it.status == LoanStatus.BAD_DEBT }
-        if (hasBadDebt) {
-            ensureFrozen(server, uuid, name)
-            return
-        }
+        // 坏账：既不自动补冻结、也不自动解冻——封禁状态交给服主裁量（解封 = 放行市场交易）。
+        // 这里原先调 ensureFrozen，会把服主的解封在下一次登录（onPlayerJoin → processPlayerLoans）时自动撤销。
+        if (loans.any { it.status == LoanStatus.BAD_DEBT }) return
         val maxDays = loans
             .filter { it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
             .maxOfOrNull { it.overdueDaysAt(now) } ?: 0L

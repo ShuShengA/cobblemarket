@@ -435,6 +435,10 @@ object MarketCommands {
 
         if (BanState.get(server).unban(target.first) != null) {
             source.sendFeedback({ Text.translatable("cobblemarket.ban.unbanned", target.second).formatted(Formatting.GREEN) }, false)
+            // 坏账玩家解封只放行市场交易：借款/喵喵支付另有独立拦截，撤销坏账才是彻底恢复
+            if (FinanceService.hasBadDebt(server, target.first)) {
+                source.sendFeedback({ Text.translatable("cobblemarket.ban.unbanned_bad_debt").formatted(Formatting.YELLOW) }, false)
+            }
         } else {
             source.sendError(Text.translatable("cobblemarket.ban.not_banned", target.second))
             return 0

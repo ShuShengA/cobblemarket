@@ -474,6 +474,7 @@
   "cobblemarket.ban.banned": "已将 %s 封禁交易！",
   "cobblemarket.ban.banned_until": "已将 %s 封禁交易（%s）",
   "cobblemarket.ban.unbanned": "已解封 %s",
+  "cobblemarket.ban.unbanned_bad_debt": "该玩家有坏账，解封只放行市场交易",
   "cobblemarket.ban.not_banned": "%s 未被封禁",
   "cobblemarket.ban.invalid_duration": "无效的时长格式！支持 1d / 12h / 30m",
   "cobblemarket.ban.player_not_found": "未找到玩家 %s",
