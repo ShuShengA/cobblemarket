@@ -653,7 +653,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             }
 
             // Species name (translated) + 金色闪光星标（★，拆段绘制）
-            val displayName = iconData[origIndex]?.displayName ?: entry.species
+            // 名字截断 54px ≈ 6 个汉字（超出带「…」）：名字后图标链固定 55px，与头像 149 仍留余量
+            val displayName = com.shusheng.cobblemarket.util.TextUtil.truncateString(
+                iconData[origIndex]?.displayName ?: entry.species, 54)
             context.drawTextWithShadow(textRenderer, displayName, leftX + 40, y + 7, typeColor(entry.primaryType))
             var nameWidth = textRenderer.getWidth(displayName)
             if (entry.shiny) {
@@ -694,14 +696,15 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                     context, entry.sizeCategory, leftX + 40 + nameWidth + 2 + iconOffset, y + 7)
             }
 
-            // 右移 12px 给名字区腾出体型徽章的位置
-            drawSellerAvatar(context, entry.sellerUuid, entry.sellerName, leftX + 127, y + 4, 16)
+            // 头像位置与精灵市场/拍卖场一致（leftX+149：名字区最坏到 149px——6 字名 + 星 + 性别 + 携带物 + 体型徽章）
+            drawSellerAvatar(context, entry.sellerUuid, entry.sellerName, leftX + 149, y + 4, 16)
 
+            // 等级跟随头像右移，保持 20px 间距
             val levelText = Text.translatable("cobblemarket.gui.lv").string + entry.level
-            context.drawText(textRenderer, levelText, leftX + 147, y + 7, 0x000000, false)
+            context.drawText(textRenderer, levelText, leftX + 169, y + 7, 0x000000, false)
 
-            // 价格右对齐到取消按钮左缘
-            val priceText = "${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
+            // 价格右对齐到取消按钮左缘（行内缩写，同精灵市场；悬停窗仍为完整千分位）
+            val priceText = "${com.shusheng.cobblemarket.client.formatPriceShort(entry.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
             val btnLeft = leftX + panelWidth - 42
             context.drawTextWithShadow(textRenderer, priceText, btnLeft - textRenderer.getWidth(priceText) - 4, y + 7, 0xFFAA00)
         }

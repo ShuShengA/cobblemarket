@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.activeCurrencyUnit
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
 
@@ -864,7 +865,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                 )
             )
             if (mouseY in (btnStartY - 37)..(btnStartY - 28) && Math.abs(mouseX - width / 2) <= lineW / 2) {
-                renderAmountTooltip(context, mouseX, mouseY, com.shusheng.cobblemarket.client.formatPriceLong(totalVolume))
+                renderAmountTooltip(
+                    context, mouseX, mouseY,
+                    "${com.shusheng.cobblemarket.client.formatPriceLong(totalVolume)} ${activeCurrencyUnit()}"
+                )
             }
         }
         // 底部三个小按钮上方的分割线（跨度 = 避开背景左右边框各 25）

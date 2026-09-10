@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.ClientConfig
+import com.shusheng.cobblemarket.client.activeCurrencyUnit
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.formatPriceShortLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
@@ -175,7 +176,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
                     )
                 )
                 if (mouseY in poolY..(poolY + 9) && Math.abs(mouseX - width / 2) <= lineW / 2) {
-                    renderAmountTooltip(context, mouseX, mouseY, formatPriceLong(reservePool))
+                    renderAmountTooltip(context, mouseX, mouseY, "${formatPriceLong(reservePool)} ${activeCurrencyUnit()}")
                 }
             }
             if (badDebtTotal != -1L) {
@@ -195,7 +196,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
                     )
                 )
                 if (mouseY in debtY..(debtY + 9) && Math.abs(mouseX - width / 2) <= lineW / 2) {
-                    renderAmountTooltip(context, mouseX, mouseY, formatPriceLong(badDebtTotal))
+                    renderAmountTooltip(context, mouseX, mouseY, "${formatPriceLong(badDebtTotal)} ${activeCurrencyUnit()}")
                 }
             }
         }

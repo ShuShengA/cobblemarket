@@ -187,15 +187,18 @@ class RequestAuctionDurationsPayload : CustomPayload {
     }
 }
 
-// ── S2C：拍卖时长档位列表（分钟制，与配置文件一致） ──
+// ── S2C：拍卖时长档位列表（分钟制，与配置文件一致）+ 默认最低加价（上架界面占位符显示用） ──
 
-data class AuctionDurationsPayload(val durations: List<Int>) : CustomPayload {
+data class AuctionDurationsPayload(val durations: List<Int>, val minIncrement: Int) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<AuctionDurationsPayload>(CobbleMarket.id("auction_durations"))
         val CODEC: PacketCodec<PacketByteBuf, AuctionDurationsPayload> = PacketCodec.of(
-            { p, b -> b.writeVarInt(p.durations.size); p.durations.forEach { b.writeInt(it) } },
-            { b -> AuctionDurationsPayload((0 until b.readVarInt()).map { b.readInt() }) }
+            { p, b ->
+                b.writeVarInt(p.durations.size); p.durations.forEach { b.writeInt(it) }
+                b.writeInt(p.minIncrement)
+            },
+            { b -> AuctionDurationsPayload((0 until b.readVarInt()).map { b.readInt() }, b.readInt()) }
         )
     }
 }
@@ -319,8 +322,11 @@ object AuctionNetwork {
         registerS2CType(AuctionDurationsPayload.ID, AuctionDurationsPayload.CODEC)
 
         registerC2S(RequestAuctionDurationsPayload.ID, RequestAuctionDurationsPayload.CODEC) { _, player ->
-            // 只读数据，无权限要求：上架界面按钮显示用
-            sendToPlayer(player, AuctionDurationsPayload(CobbleMarketConfig.auctionDurationOptions))
+            // 只读数据，无权限要求：上架界面时长按钮 + 最低加价占位符显示用
+            sendToPlayer(player, AuctionDurationsPayload(
+                CobbleMarketConfig.auctionDurationOptions,
+                CobbleMarketConfig.auctionMinBidIncrement
+            ))
         }
 
         // 结束倒计时警告：每秒轮询活跃拍卖，向卖家/出价参与者定向发送渐强警告声
@@ -1111,11 +1117,15 @@ object AuctionNetwork {
             // 附魔词条行（原版 tooltip 同款：附魔名 + 罗马等级，AQUA 色）
             lines.addAll(enchantmentLines(auction))
         }
+        // 价格两行：标签 + 「: 」+ 金色千分位金额 + 金色货币名（与出价界面/管理端同款，原先漏了冒号、加价是裸数字）
         lines.add(
-            Text.translatable("cobblemarket.auction.starting_price")
-                .append(Text.literal("").append(CurrencyHandler.goldAmount(auction.startingPrice)).append(CurrencyHandler.goldCurrencyText()))
+            Text.translatable("cobblemarket.auction.starting_price").append(": ").append(
+                Text.literal("").append(CurrencyHandler.goldAmount(auction.startingPrice)).append(CurrencyHandler.goldCurrencyText()))
         )
-        lines.add(Text.translatable("cobblemarket.auction.min_increment").append(Text.literal("${auction.minIncrement}")))
+        lines.add(
+            Text.translatable("cobblemarket.auction.min_increment").append(": ").append(
+                Text.literal("").append(CurrencyHandler.goldAmount(auction.minIncrement)).append(CurrencyHandler.goldCurrencyText()))
+        )
         val minutesLeft = ((auction.endsAt - System.currentTimeMillis()) / 60_000).coerceAtLeast(1)
         lines.add(Text.translatable("cobblemarket.auction.ends").append(Text.translatable("cobblemarket.chat.ends_minutes", minutesLeft)))
         var hover: net.minecraft.text.MutableText = Text.literal("")

@@ -230,7 +230,8 @@ object FinanceService {
     }
 
     /**
-     * 图鉴收集数（已捕捉物种数）：Cobblemon 图鉴数据，物种记录 aspects 非空 = 有捕捉记录。
+     * 图鉴收集数（已捕捉物种数）：Cobblemon 图鉴数据，物种 knowledge 达到 OWNED = 捕捉过。
+     * 口径是「曾经拥有过」（含交易获得/孵化/入库同步）；「图鉴扫描到但没抓」只到 SEEN，不计入。
      * 紫卡自行申请条件用；Cobblemon 未安装/数据异常返回 0（条件自然不满足）。
      */
     fun getCaughtSpeciesCount(server: MinecraftServer, uuid: UUID): Int {
@@ -239,11 +240,11 @@ object FinanceService {
                 uuid, com.cobblemon.mod.common.api.storage.player.PlayerInstancedDataStoreTypes.POKEDEX
             )
             val manager = data as? com.cobblemon.mod.common.api.pokedex.PokedexManager ?: return 0
-            // SpeciesDexRecord.aspects 是 Kotlin private（getter 公开但 Kotlin 侧不可访问）——反射读；
-            // aspects 非空 = 该物种有捕捉记录（申请时一次性调用，开销可忽略）
-            val getAspects = com.cobblemon.mod.common.api.pokedex.SpeciesDexRecord::class.java.getMethod("getAspects")
-            manager.speciesRecords.values.count { rec ->
-                (getAspects.invoke(rec) as? Set<*>)?.isNotEmpty() == true
+            // 按 knowledge 判定（勿用 aspects 非空：图鉴扫描/遭遇时 aspects 就写入，会把只见过的算进来；
+            // Cobblemon 1.8 起旧枚举 CAUGHT 已更名 OWNED，见 FormDexRecord.CODEC 的兼容分支）。
+            // hasAtLeast 内部取各形态最高 knowledge；申请时一次性调用，开销可忽略
+            manager.speciesRecords.values.count {
+                it.hasAtLeast(com.cobblemon.mod.common.api.pokedex.PokedexEntryProgress.OWNED)
             }
         } catch (e: Throwable) {
             com.shusheng.cobblemarket.CobbleMarket.LOGGER.warn("Failed to read cobblemon pokedex for {}: {}", uuid, e.message)

@@ -324,6 +324,10 @@ class FinanceState private constructor() : PersistentState() {
         if (purpleCardHolders.contains(playerUuid)) return false
         // 升级替代互斥：已持有黑卡的玩家不能再申请紫卡（先收回黑卡）
         if (blackCardHolders.contains(playerUuid)) return false
+        // 坏账硬拦截：30 天注销 = 永久失去借贷资格，额度凭证不再发放。
+        // 不受 applyNoOverdue 开关影响（逾期是暂时的可恢复，坏账只有 OP 撤销才解除）；
+        // 否则坏账玩家占着限量名额却一分借不出来（借款/支付均被 bad_debt_blocked 拦）
+        if (loans.values.any { it.playerUuid == playerUuid && it.status == LoanStatus.BAD_DEBT }) return false
         if (CobbleMarketConfig.purpleCardApplyAsset > 0 && cashBalance < CobbleMarketConfig.purpleCardApplyAsset) return false
         if (CobbleMarketConfig.purpleCardApplyVolume > 0 &&
             (totalCountedVolume[playerUuid] ?: 0L) < CobbleMarketConfig.purpleCardApplyVolume
@@ -351,6 +355,8 @@ class FinanceState private constructor() : PersistentState() {
         if (blackCardHolders.contains(playerUuid)) return false
         // 硬条件：必须先持有紫卡
         if (!purpleCardHolders.contains(playerUuid)) return false
+        // 坏账硬拦截：同紫卡（不受 applyNoOverdue 开关影响）
+        if (loans.values.any { it.playerUuid == playerUuid && it.status == LoanStatus.BAD_DEBT }) return false
         if (CobbleMarketConfig.blackCardApplyAsset > 0 && cashBalance < CobbleMarketConfig.blackCardApplyAsset) return false
         if (CobbleMarketConfig.blackCardApplyVolume > 0 &&
             (totalCountedVolume[playerUuid] ?: 0L) < CobbleMarketConfig.blackCardApplyVolume

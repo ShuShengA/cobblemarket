@@ -600,9 +600,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
                 sx += EntryBadgeRenderer.drawSizeBadgeIcon(context, e.sizeCategory, sx, y + 7)
             }
 
-            // Level
+            // Level（位置与拍卖场选择精灵界面一致：名字再长、图标再全也不会盖住）
             val levelText = Text.translatable("cobblemarket.gui.lv").string + e.level
-            context.drawText(textRenderer, levelText, lx + 135, y + 7, 0x000000, false)
+            context.drawText(textRenderer, levelText, lx + 200, y + 7, 0x000000, false)
         }
 
         // Tooltip on hover

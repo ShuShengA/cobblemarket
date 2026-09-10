@@ -27,6 +27,12 @@ fun displayCurrency(raw: String): String {
     return if (name == item.translationKey) id.path else name
 }
 
-/** 行内/弹窗金额单位：所有货币模式统一 ₽（2026-08-27 用户拍板：PCO 不再特殊显示 PCo）。
- *  货币名区分仍在悬停/弹窗的 displayCurrency（PCO 显示 PokeCoins 全名），符号统一。 */
+/** 行内/弹窗金额单位：所有货币模式统一 ₽（2026-08-27 用户拍板：PCO 不再特殊显示 PCo）。 */
 fun inlineCurrencyUnit(): String = "₽"
+
+/** 悬停窗金额单位：物品货币显示物品名，虚拟货币 ₽（2026-08-27 拍板：悬停显物品名、行内显 ₽）。
+ *  余额包未到达时 currencyName 为空串，此处兜底 ₽ —— 直接 displayCurrency("") 会返回空串（tryParse 得 null） */
+fun activeCurrencyUnit(): String {
+    val raw = BalanceCache.currencyName
+    return if (raw.isEmpty()) "₽" else displayCurrency(raw)
+}

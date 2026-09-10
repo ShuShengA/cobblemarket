@@ -320,7 +320,8 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                 }
                 sx += 12
             }
-            val name = speciesDisplay(p)
+            // 名字截断 54px ≈ 6 个汉字（超出带「…」）：名字后图标链固定 55px，等级 169 仍有余量
+            val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(speciesDisplay(p), 54)
             context.drawTextWithShadow(textRenderer, name, sx, y + 7, tc)
             sx += textRenderer.getWidth(name)
             if (p.shiny) {
@@ -343,8 +344,9 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                 sx += 3
                 sx += EntryBadgeRenderer.drawSizeBadgeIcon(context, p.sizeCategory, sx, y + 7)
             }
+            // 等级右移（名字区最坏到 149px，右侧空白充足）
             val levelText = Text.translatable("cobblemarket.gui.lv").string + p.level
-            context.drawText(textRenderer, levelText, leftX + 147, y + 7, 0x000000, false)
+            context.drawText(textRenderer, levelText, leftX + 169, y + 7, 0x000000, false)
         }
 
         if (hoveredRow in visible.indices) {
