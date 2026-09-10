@@ -1,11 +1,11 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.client.requestCreditInfo
 
 import com.shusheng.cobblemarket.network.BuyItemPayload
 import com.shusheng.cobblemarket.network.CancelItemPayload
 import com.shusheng.cobblemarket.network.CreditInfoPayload
-import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.network.CollectBalancePayload
 import com.shusheng.cobblemarket.network.RequestBalancePayload
 import com.shusheng.cobblemarket.network.ItemEntry
@@ -622,7 +622,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         }
 
         // 拉消费贷开关（喵喵支付按钮显示与弹窗高度依据）
-        sendToServer(RequestCreditInfoPayload())
+        requestCreditInfo()
     }
 
     /** 购买弹窗高度：消费贷开 210（含喵喵支付行）/ 关 170（原尺寸） */

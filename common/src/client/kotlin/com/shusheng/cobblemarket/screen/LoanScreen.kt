@@ -3,8 +3,8 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.network.CreditInfoPayload
-import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestLoanPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.MinecraftClient
@@ -93,7 +93,7 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
         addDrawableChild(applyButton)
 
         if (!infoLoaded) {
-            sendToServer(RequestCreditInfoPayload())
+            requestCreditInfo()
             infoLoaded = true
         }
     }

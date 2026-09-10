@@ -3,9 +3,8 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.network.CreditInfoPayload
-import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
-import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
@@ -70,7 +69,7 @@ class MeowthPayScreen(
         addDrawableChild(payButton)
 
         if (!infoLoaded) {
-            sendToServer(RequestCreditInfoPayload())
+            requestCreditInfo()
             infoLoaded = true
         }
     }
