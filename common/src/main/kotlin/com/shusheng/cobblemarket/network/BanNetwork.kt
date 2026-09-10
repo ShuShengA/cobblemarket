@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.network
 
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.finance.FinanceService
 import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
@@ -219,6 +220,10 @@ object BanNetwork {
                     // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                     com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                     sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.ban.unbanned", removed.playerName)))
+                    // 坏账提示直发聊天栏（不再发一个 MarketResultPayload，避免重复播放成功音）
+                    if (FinanceService.hasBadDebt(server, payload.playerUuid)) {
+                        player.sendMessage(Text.translatable("cobblemarket.ban.unbanned_bad_debt").formatted(Formatting.YELLOW), false)
+                    }
                 } else {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.not_banned", payload.playerUuid.toString())))
                 }

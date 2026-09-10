@@ -170,6 +170,7 @@ fun toggleMarketEnabled(server: net.minecraft.server.MinecraftServer, enabled: B
 /**
  * 市场总开关拦截：marketEnabled=false 时拒绝一切交易写操作并提示。
  * 只拦交易，不拦取回资产（待领取/余额领取等入口不调用本函数，与封禁语义一致）。
+ * 坏账的市场交易限制走 FINANCE 来源封禁（服主可解封放行，见 FinanceService.syncFreeze）。
  */
 fun marketBlocked(player: net.minecraft.server.network.ServerPlayerEntity): Boolean {
     if (com.shusheng.cobblemarket.config.CobbleMarketConfig.marketEnabled) return false
