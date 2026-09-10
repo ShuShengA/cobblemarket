@@ -266,7 +266,7 @@ class AuctionScreen(
 
         val savedSearch = searchField?.text ?: ""
         searchField = TextFieldWidget(textRenderer, leftX + 2, 50, panelWidth - 4 - 52 - 20, 16, Text.translatable("cobblemarket.gui.search"))
-        searchField?.setPlaceholder(Text.translatable("cobblemarket.gui.search_placeholder").formatted(Formatting.GRAY))
+        updateSearchPlaceholder()
         searchField?.setChangedListener { updateAbilityOptions(it); rebuildFiltered(); rebuildBidButtons() }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
@@ -501,14 +501,7 @@ class AuctionScreen(
     private fun switchTab(tab: Int) {
         currentTab = tab
         searchField?.text = ""
-        // placeholder 跟随 tab：精灵 tab 显示宝可梦名称，物品 tab 显示物品提示，我的 tab（精灵+物品混合）显示通用提示
-        searchField?.setPlaceholder(Text.translatable(
-            when (tab) {
-                0 -> "cobblemarket.gui.search_placeholder"
-                1 -> "cobblemarket.item.search"
-                else -> "cobblemarket.auction.search_any"
-            }
-        ).formatted(Formatting.GRAY))
+        updateSearchPlaceholder()
         scrollOffset = 0
         hoveredRow = -1
         filterListOpen = ""
@@ -518,6 +511,18 @@ class AuctionScreen(
         applyFilterVisibility()
         rebuildFiltered()
         rebuildBidButtons()
+    }
+
+    // 搜索框占位符随 tab 切换：精灵 = 宝可梦名称...，物品 = 搜索物品，我的（精灵+物品混合）= 通用提示
+    // 抽成函数是因为 init() 也要调：resize 与「进创建界面再返回」都会重跑 init，写死会退回精灵提示
+    private fun updateSearchPlaceholder() {
+        searchField?.setPlaceholder(Text.translatable(
+            when (currentTab) {
+                0 -> "cobblemarket.gui.search_placeholder"
+                1 -> "cobblemarket.item.search"
+                else -> "cobblemarket.auction.search_any"
+            }
+        ).formatted(Formatting.GRAY))
     }
 
     private fun htButtonText(): Text = Text.translatable(when (htFilter) {
@@ -1325,10 +1330,11 @@ class AuctionScreen(
                 rowStacks[origIndex]?.itemStack?.let {
                     context.drawItem(it, slotX + 2, slotY)
                 }
-                val name = "${displayName(entry)} ×${entry.count}"
-                context.drawTextWithShadow(textRenderer,
-                    com.shusheng.cobblemarket.util.TextUtil.truncateString(name, 100),
-                    leftX + 28, y + 7, 0xFFFFFF)
+                // 数量宽度先扣出来再截断名字：整串一起截断会先吃掉「×N」，模组长名物品看不到卖多少个
+                val countSuffix = " ×${entry.count}"
+                val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(
+                    displayName(entry), 100 - textRenderer.getWidth(countSuffix)) + countSuffix
+                context.drawTextWithShadow(textRenderer, name, leftX + 28, y + 7, 0xFFFFFF)
             }
 
             // 当前价（行内缩写）+ 出价次数（灰，拆段）：货币单位紧跟 ×次数，中间不留空格

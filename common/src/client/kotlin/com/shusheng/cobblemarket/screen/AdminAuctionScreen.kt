@@ -540,10 +540,11 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 rowStacks[origIndex]?.itemStack?.let {
                     context.drawItem(it, slotX + 2, slotY)
                 }
-                val name = "${displayName(entry)} ×${entry.count}"
-                context.drawTextWithShadow(textRenderer,
-                    com.shusheng.cobblemarket.util.TextUtil.truncateString(name, 100),
-                    leftX + 28, y + 7, 0xFFFFFF)
+                // 数量宽度先扣出来再截断名字（照拍卖场）：整串一起截断会先吃掉「×N」
+                val countSuffix = " ×${entry.count}"
+                val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(
+                    displayName(entry), 100 - textRenderer.getWidth(countSuffix)) + countSuffix
+                context.drawTextWithShadow(textRenderer, name, leftX + 28, y + 7, 0xFFFFFF)
             }
 
             // 当前价（行内缩写）+ 出价次数（灰，拆段）：货币单位紧跟 ×次数，中间不留空格
