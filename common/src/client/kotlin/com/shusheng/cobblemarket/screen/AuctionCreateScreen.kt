@@ -410,7 +410,10 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         addDrawableChild(startingField)
 
         incrementField = TextFieldWidget(textRenderer, centerX - 20, dialogY + 72, 100, 16, Text.literal(""))
-        incrementField?.setPlaceholder(Text.translatable("cobblemarket.auction.increment_placeholder").formatted(Formatting.GRAY))
+        // 初始「留空=默认」；服务器配置到达后由 onDurations 换成真实默认值（玩家才能知道默认是多少）
+        incrementField?.setPlaceholder(
+            Text.translatable("cobblemarket.auction.increment_placeholder",
+                Text.translatable("cobblemarket.auction.increment_default")).formatted(Formatting.GRAY))
         incrementField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(incrementField)
 
@@ -526,6 +529,12 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     /** 服务端真实时长档位到达：更新选项与按钮显示（服务器自定义配置时按钮不再失真） */
     fun onDurations(payload: com.shusheng.cobblemarket.network.AuctionDurationsPayload) {
         if (closed) return
+        // 默认最低加价：占位符显示服务器真实配置值（原先写死「留空=默认」，玩家看不到具体数额）
+        if (payload.minIncrement > 0) {
+            incrementField?.setPlaceholder(
+                Text.translatable("cobblemarket.auction.increment_placeholder",
+                    "${com.shusheng.cobblemarket.client.formatPrice(payload.minIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GRAY))
+        }
         if (payload.durations.isEmpty()) return
         durationOptions = payload.durations
         durationIndex = durationIndex.coerceIn(0, durationOptions.size - 1)

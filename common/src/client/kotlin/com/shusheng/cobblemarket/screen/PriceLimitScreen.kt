@@ -1,6 +1,8 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.activeCurrencyUnit
 import com.shusheng.cobblemarket.client.formatPrice
+import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
@@ -144,10 +146,10 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private fun vLabel(vCount: Int): String =
         if (vCount >= 0) "${vCount}V" else Text.translatable("cobblemarket.price_limit.v_any").string
 
-    private fun priceText(min: Int?, max: Int?): String = when {
-        min != null && max != null -> "${formatPrice(min)} ~ ${formatPrice(max)}"
-        min != null -> "≥ ${formatPrice(min)}"
-        max != null -> "≤ ${formatPrice(max)}"
+    private fun priceText(min: Int?, max: Int?, unit: String): String = when {
+        min != null && max != null -> "${formatPrice(min)} ~ ${formatPrice(max)} $unit"
+        min != null -> "≥ ${formatPrice(min)} $unit"
+        max != null -> "≤ ${formatPrice(max)} $unit"
         else -> Text.translatable("cobblemarket.price_limit.unlimited").string
     }
 
@@ -1067,7 +1069,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         filteredPokemonCache = filteredPokemonIndexed.map { it.value }
         pokemonRowTexts = filteredPokemonCache.map { entry ->
             val vText = if (entry.vCount >= 0) " · ${entry.vCount}V" else ""
-            "${pokemonName(entry.speciesId)}$vText · ${formLabel(entry.aspects.toSet())} · ${priceText(entry.minPrice, entry.maxPrice)}"
+            "${pokemonName(entry.speciesId)}$vText · ${formLabel(entry.aspects.toSet())} · ${priceText(entry.minPrice, entry.maxPrice, inlineCurrencyUnit())}"
         }
         // 搜索索引匹配（itemId + 名称 + tooltip 文本 + TM 招式，见 ItemSearchIndex；原版创造模式同款语义）
         // 条目级精确过滤：带组件条目按组件精确（搜「打鼾」只出打鼾 TM 条目），无组件条目仅物品文本命中
@@ -1077,7 +1079,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         itemRowTexts = filteredItemsCache.map { entry ->
             val summary = com.shusheng.cobblemarket.client.ItemComponentsDisplay.summary(entry.componentsSpec)
             val name = if (summary.isEmpty()) itemDisplay(entry.itemId) else "${itemDisplay(entry.itemId)}（$summary）"
-            "$name · ${priceText(entry.minPrice, entry.maxPrice)}"
+            "$name · ${priceText(entry.minPrice, entry.maxPrice, inlineCurrencyUnit())}"
         }
     }
 
@@ -1311,7 +1313,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         lines.add(shinyLabel(entry.shinyFilter))
         lines.add(formLabel(entry.aspects.toSet()))
         lines.add(htLabel(entry.htFilter))
-        lines.add(priceText(entry.minPrice, entry.maxPrice))
+        lines.add(priceText(entry.minPrice, entry.maxPrice, activeCurrencyUnit()))
         return lines
     }
 
@@ -1360,7 +1362,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         } else {
             lines.add(Text.literal(itemDisplay(entry.itemId)) to 0xFFFFFF)
         }
-        lines.add(Text.literal(priceText(entry.minPrice, entry.maxPrice)) to 0xFFFFFF)
+        lines.add(Text.literal(priceText(entry.minPrice, entry.maxPrice, activeCurrencyUnit())) to 0xFFFFFF)
         return lines
     }
 

@@ -176,7 +176,7 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
                         if (entry.current > 0) Text.translatable("cobblemarket.card.apply_no_record").string
                         else Text.translatable("cobblemarket.card.apply_has_record").string
                     } else {
-                        "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)}"
+                        "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)} ${inlineCurrencyUnit()}"
                     }
                     // 行尾短符号（✓/✗ 绿红，长文案超宽改用颜色表意；完整语义在申请按钮文案）
                     val mark = if (entry.satisfied)

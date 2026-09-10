@@ -304,8 +304,8 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
             textRenderer,
             Text.translatable(
                 "cobblemarket.repay.dialog_split",
-                formatPriceLong(entry.periodPrincipal),
-                formatPriceLong(entry.periodInterest)
+                "${formatPriceLong(entry.periodPrincipal)} ${inlineCurrencyUnit()}",
+                "${formatPriceLong(entry.periodInterest)} ${inlineCurrencyUnit()}"
             ),
             lineX, ly, 0x888888
         )

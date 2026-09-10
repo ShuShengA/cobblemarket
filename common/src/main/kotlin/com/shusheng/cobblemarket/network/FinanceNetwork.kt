@@ -1176,8 +1176,10 @@ object FinanceNetwork {
         val dex = com.shusheng.cobblemarket.finance.FinanceService.getCaughtSpeciesCount(server, player.uuid)
         // 信用基础 = 无欠款公式值（勿用 creditLimitFor+debt 反推：欠款超基础时会被钳成欠款额，见 creditBaseFor 注释）
         val creditBase = state.creditBaseFor(player.uuid, now)
-        val hasBadRecord = state.getLoansByPlayer(player.uuid)
-            .any { it.status == LoanStatus.OVERDUE || it.status == LoanStatus.BAD_DEBT }
+        val mine = state.getLoansByPlayer(player.uuid)
+        val hasBadRecord = mine.any { it.status == LoanStatus.OVERDUE || it.status == LoanStatus.BAD_DEBT }
+        // 坏账是硬拦截（isPurpleCardEligible 内）：该行恒显示且不满足，让被拒的玩家看得到原因
+        val hasBadDebt = mine.any { it.status == LoanStatus.BAD_DEBT }
         val conditions = listOf(
             ApplyConditionEntry(CobbleMarketConfig.purpleCardApplyAsset, cash, cash >= CobbleMarketConfig.purpleCardApplyAsset),
             ApplyConditionEntry(CobbleMarketConfig.purpleCardApplyVolume, volume, volume >= CobbleMarketConfig.purpleCardApplyVolume),
@@ -1185,9 +1187,9 @@ object FinanceNetwork {
             ApplyConditionEntry(CobbleMarketConfig.purpleCardApplyDeposit, deposit, deposit >= CobbleMarketConfig.purpleCardApplyDeposit),
             ApplyConditionEntry(CobbleMarketConfig.purpleCardApplyDex, dex.toLong(), dex.toLong() >= CobbleMarketConfig.purpleCardApplyDex),
             ApplyConditionEntry(
-                if (CobbleMarketConfig.purpleCardApplyNoOverdue) 1L else 0L,
+                if (CobbleMarketConfig.purpleCardApplyNoOverdue || hasBadDebt) 1L else 0L,
                 if (hasBadRecord) 0L else 1L,
-                !CobbleMarketConfig.purpleCardApplyNoOverdue || !hasBadRecord
+                !hasBadDebt && (!CobbleMarketConfig.purpleCardApplyNoOverdue || !hasBadRecord)
             ),
         )
         sendToPlayer(
@@ -1218,8 +1220,10 @@ object FinanceNetwork {
         val dex = com.shusheng.cobblemarket.finance.FinanceService.getCaughtSpeciesCount(server, player.uuid)
         // 信用基础 = 无欠款公式值（紫卡持有者 = 紫卡额度；勿用 creditLimitFor+debt 反推，见 creditBaseFor 注释）
         val creditBase = state.creditBaseFor(player.uuid, now)
-        val hasBadRecord = state.getLoansByPlayer(player.uuid)
-            .any { it.status == LoanStatus.OVERDUE || it.status == LoanStatus.BAD_DEBT }
+        val mine = state.getLoansByPlayer(player.uuid)
+        val hasBadRecord = mine.any { it.status == LoanStatus.OVERDUE || it.status == LoanStatus.BAD_DEBT }
+        // 坏账是硬拦截（isBlackCardEligible 内）：该行恒显示且不满足，让被拒的玩家看得到原因
+        val hasBadDebt = mine.any { it.status == LoanStatus.BAD_DEBT }
         val holdsPurple = state.isPurpleCardHolder(player.uuid)
         val conditions = listOf(
             // 硬条件：必须持有紫卡（requirement 1/current 0|1）
@@ -1230,9 +1234,9 @@ object FinanceNetwork {
             ApplyConditionEntry(CobbleMarketConfig.blackCardApplyDeposit, deposit, deposit >= CobbleMarketConfig.blackCardApplyDeposit),
             ApplyConditionEntry(CobbleMarketConfig.blackCardApplyDex, dex.toLong(), dex.toLong() >= CobbleMarketConfig.blackCardApplyDex),
             ApplyConditionEntry(
-                if (CobbleMarketConfig.blackCardApplyNoOverdue) 1L else 0L,
+                if (CobbleMarketConfig.blackCardApplyNoOverdue || hasBadDebt) 1L else 0L,
                 if (hasBadRecord) 0L else 1L,
-                !CobbleMarketConfig.blackCardApplyNoOverdue || !hasBadRecord
+                !hasBadDebt && (!CobbleMarketConfig.blackCardApplyNoOverdue || !hasBadRecord)
             ),
         )
         sendToPlayer(
@@ -1343,13 +1347,16 @@ object FinanceNetwork {
         val mine = state.getLoansByPlayer(player.uuid)
         val debt = mine.filter { it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
             .sumOf { it.remainingPrincipal.toLong() }
+        val hasBadDebt = mine.any { it.status == LoanStatus.BAD_DEBT }
         sendToPlayer(
             player,
             CreditInfoPayload(
-                limit = state.creditLimitFor(player.uuid, now),
+                // 坏账玩家额度显示 0：坏账已从额度公式的欠款项剔除，直显公式值会「看着有额度却一分借不出来」
+                // （借款/喵喵支付均被 bad_debt_blocked 前置拦截，此处只改显示口径）
+                limit = if (hasBadDebt) 0L else state.creditLimitFor(player.uuid, now),
                 debt = debt,
                 hasOverdue = mine.any { it.status == LoanStatus.OVERDUE },
-                hasBadDebt = mine.any { it.status == LoanStatus.BAD_DEBT },
+                hasBadDebt = hasBadDebt,
                 plans = CobbleMarketConfig.loanPlansText(),
                 financeEnabled = CobbleMarketConfig.financeEnabled,
                 consumerLoanEnabled = CobbleMarketConfig.financeEnabled && CobbleMarketConfig.consumerLoanEnabled,

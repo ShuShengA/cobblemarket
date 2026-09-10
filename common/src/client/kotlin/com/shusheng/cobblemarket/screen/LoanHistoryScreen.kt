@@ -318,7 +318,7 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
             val source = Text.translatable("cobblemarket.loan_history.source.${e.source}").string
             val periodsText = Text.translatable("cobblemarket.loan_history.periods", e.periodsPaid, e.periodsTotal).string
             val ipPart = if (showAll && e.ip.isNotEmpty()) " IP:${e.ip}" else ""
-            val middle = "$owner${formatPriceLong(e.principal)}·$periodsText($source)$ipPart"
+            val middle = "$owner${formatPriceLong(e.principal)} ${inlineCurrencyUnit()}·$periodsText($source)$ipPart"
             // 剩余本金右对齐行尾（照列表界面惯例），中间部分按实际可用像素截断（truncateString 单位为像素）
             val pricePart = "| ${formatPriceLong(e.remaining)} ${inlineCurrencyUnit()}"
             val priceX = leftX + panelWidth - 5 - rightReserved - textRenderer.getWidth(pricePart)

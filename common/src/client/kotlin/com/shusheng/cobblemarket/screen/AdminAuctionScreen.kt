@@ -509,21 +509,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 }
                 val primaryType = entry.extraData["primaryType"] ?: ""
                 val tc = typeColor(if (primaryType.isNotEmpty()) primaryType else "cobblemon.type.normal")
-                val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(displayName(entry), 44)
-                if (entry.type == "ITEM") {
-                    // 物品行名照物品栏悬浮第一行按稀有度着色（行级缓存栈，不每帧解析 NBT）
-                    val stack = rowStacks[origIndex]?.itemStack
-                    if (stack != null) {
-                        context.drawTextWithShadow(textRenderer,
-                            com.shusheng.cobblemarket.util.TextUtil.truncateText(
-                                com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), 44),
-                            sx, y + 7, 0xFFFFFF)
-                    } else {
-                        context.drawTextWithShadow(textRenderer, name, sx, y + 7, tc)
-                    }
-                } else {
-                    context.drawTextWithShadow(textRenderer, name, sx, y + 7, tc)
-                }
+                // 名字截断 46px ≈ 5 个汉字（与拍卖场一致）
+                val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(displayName(entry), 46)
+                context.drawTextWithShadow(textRenderer, name, sx, y + 7, tc)
                 sx += textRenderer.getWidth(name)
                 if (entry.shiny) {
                     context.drawText(textRenderer, "★", sx + 2, y + 7, GOLD_COLOR, false)
@@ -558,10 +546,11 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                     leftX + 28, y + 7, 0xFFFFFF)
             }
 
-            // 当前价（行内缩写）+ 出价次数（灰，拆段）
+            // 当前价（行内缩写）+ 出价次数（灰，拆段）：货币单位紧跟 ×次数，中间不留空格
             val priceStr = displayPriceCompactText(entry)
-            val bidPart = if (entry.bidCount > 0) " ×${entry.bidCount}" else ""
-            val priceX = leftX + panelWidth - 56 - textRenderer.getWidth(priceStr) - textRenderer.getWidth(bidPart)
+            val bidPart = if (entry.bidCount > 0) "×${entry.bidCount}" else ""
+            // 价格区右端与拍卖场一致（本界面无行内出价按钮，右侧为纯余量）
+            val priceX = leftX + panelWidth - 54 - textRenderer.getWidth(priceStr) - textRenderer.getWidth(bidPart)
 
             // 价格左侧锤子图标：默认静止，敲击/落槌时切换敲击状态约 0.3 秒（照搬拍卖场）
             val hammerTex = if ((hammerHitUntil[entry.id] ?: 0L) > System.currentTimeMillis())
@@ -581,13 +570,13 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                     priceX + textRenderer.getWidth(priceStr), y + 7, 0xAAAAAA)
             }
 
-            // 结束倒计时 + 卖家头像：头像位置与精灵市场一致（leftX+127，各行对齐）；
-            // 127 是名字区所需宽度算出来的——名字(截断 44px)+星+性别+携带物+体型徽章 = 97px，
-            // 起点 leftX+28，再左就压住体型徽章。倒计时紧跟其右，价格区异常宽时整块左移兜底
+            // 结束倒计时 + 卖家头像：头像位置与拍卖场一致（leftX+149，各行对齐）；
+            // 名字区最坏到 141px（名字截断 46px + 星 + 性别 + 携带物 + 体型徽章，起点 leftX+40），
+            // 149 再留 8px 余量。倒计时紧跟其右，价格区异常宽时整块左移兜底
             val remaining = formatRemaining(entry.endsAt)
             val remainingColor = if (entry.endsAt - System.currentTimeMillis() < 5 * 60 * 1000) 0xFF6666 else 0xAAAAAA
             val remW = textRenderer.getWidth(remaining)
-            val avatarX = leftX + 127
+            val avatarX = leftX + 149
             val shift = maxOf(0, avatarX + 20 + remW - (priceX - 16 - 6))
             context.drawTextWithShadow(textRenderer, remaining,
                 avatarX + 20 - shift, y + 7, remainingColor)

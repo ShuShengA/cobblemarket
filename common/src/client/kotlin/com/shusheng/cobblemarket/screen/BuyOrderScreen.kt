@@ -201,9 +201,9 @@ class BuyOrderScreen(
     private fun cacheIcons() {
         iconData.clear()
         entries.forEachIndexed { index, entry ->
-            // 行内截断长度与行渲染一致（物品 46 / 精灵 36）
+            // 行内截断长度与行渲染一致（物品 56 / 精灵 54）
             val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(
-                entryName(entry), if (entry.type == "ITEM") 46 else 36)
+                entryName(entry), if (entry.type == "ITEM") 56 else 54)
             if (entry.type == "ITEM") {
                 iconData[index] = IconData(
                     name = name, renderable = null, state = FloatingState(), nameColor = 0xFFFFFF,
@@ -761,21 +761,23 @@ class BuyOrderScreen(
                 rowData?.itemStack?.let { context.drawItem(it, slotX + 2, slotY) }
             }
 
-            // 名称（属性色，照精灵市场）+ 条件徽章（★/☆/HT）；物品行名照物品栏悬浮按稀有度着色
+            // 名称（属性色，照精灵市场）+ 条件徽章（★/☆/HT）；物品行名照物品栏悬浮按稀有度着色。
+            // 名字起点 28：3D 图标被 scissor 裁到 rowL+26 为止，吃回原来白留的 14px；
+            // 名字区 28 到头像 96，扣掉闪光徽章（★/☆ 约 11px）后精灵名可用 57px → 截断 54px = 6 汉字完整
             val nameColor = rowData?.nameColor ?: 0xFFFFFF
             val name: Text = if (entry.type == "ITEM") {
                 val stack = rowData?.itemStack
                 if (stack != null && !stack.isEmpty) {
                     com.shusheng.cobblemarket.util.TextUtil.truncateText(
-                        com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), 46)
+                        com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), 56)
                 } else {
-                    Text.literal(rowData?.name ?: com.shusheng.cobblemarket.util.TextUtil.truncateString(entryName(entry), 46))
+                    Text.literal(rowData?.name ?: com.shusheng.cobblemarket.util.TextUtil.truncateString(entryName(entry), 56))
                 }
             } else {
-                Text.literal(rowData?.name ?: com.shusheng.cobblemarket.util.TextUtil.truncateString(entryName(entry), 36))
+                Text.literal(rowData?.name ?: com.shusheng.cobblemarket.util.TextUtil.truncateString(entryName(entry), 54))
             }
-            context.drawTextWithShadow(textRenderer, name, rowL + 40, y + 7, nameColor)
-            var sx = rowL + 40 + textRenderer.getWidth(name)
+            context.drawTextWithShadow(textRenderer, name, rowL + 28, y + 7, nameColor)
+            var sx = rowL + 28 + textRenderer.getWidth(name)
             conditionBadges(entry).forEach { (badge, color) ->
                 context.drawText(textRenderer, badge, sx + 2, y + 7, color, false)
                 sx += 2 + textRenderer.getWidth(badge)

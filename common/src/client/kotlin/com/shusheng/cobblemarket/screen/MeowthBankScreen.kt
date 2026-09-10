@@ -33,6 +33,8 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
     // 初始读全局缓存（60 秒兜底轮询写入）秒显不闪；-1 = 未拉取，响应到达后更新
     private var limit = com.shusheng.cobblemarket.client.FinanceCache.creditLimit
     private var debt = com.shusheng.cobblemarket.client.FinanceCache.creditDebt
+    /** 有坏账记录：额度被锁定（服务端 limit 传 0），额度行下方补一行红字说明 */
+    private var hasBadDebt = false
     // 持有者面板数据（两张卡下方，所有人可见；进入时拉取，服务端变化时广播刷新）
     private var purpleBoardEntries = listOf<CardHolderBoardEntry>()
     private var purpleBoardMax = 0L
@@ -144,6 +146,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
     fun onCreditInfo(payload: CreditInfoPayload) {
         limit = payload.limit
         debt = payload.debt
+        hasBadDebt = payload.hasBadDebt
     }
 
     /** 持有者面板快照（进入拉取/服务端广播刷新；滚动位置钳制到新名单长度） */
@@ -186,6 +189,14 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             Text.translatable("cobblemarket.loan.debt_line", formatPriceLong(debt.coerceAtLeast(0)), inlineCurrencyUnit()),
             width / 2, bgTop + 64, 0x55FFFF
         )
+        // 坏账警示：额度行已被服务端置 0，补一行红字说明原因（行高 9px，不与 bgTop+88 起的持有者面板重叠）
+        if (hasBadDebt) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.meowth_bank.bad_debt_locked").formatted(Formatting.RED),
+                width / 2, bgTop + 78, 0xFFFFFF
+            )
+        }
 
         // 左侧紫卡展示（所有玩家可见，无动画；点击打开申请紫卡弹窗）
         val cardItem = net.minecraft.registry.Registries.ITEM.get(
