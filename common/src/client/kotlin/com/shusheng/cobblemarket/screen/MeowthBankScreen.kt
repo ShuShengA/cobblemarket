@@ -2,11 +2,11 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.network.CardHolderBoardEntry
 import com.shusheng.cobblemarket.network.CardHolderBoardPayload
 import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestCardHolderBoardPayload
-import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import com.mojang.authlib.GameProfile
 import net.minecraft.client.gui.DrawContext
@@ -135,7 +135,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         }
 
         if (!infoLoaded) {
-            sendToServer(RequestCreditInfoPayload())
+            requestCreditInfo()
             infoLoaded = true
         }
         // 持有者面板数据（每次进入拉取；服务端变化时广播刷新）

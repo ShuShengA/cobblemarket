@@ -722,6 +722,8 @@ object FinanceNetwork {
                 if (given < amount) {
                     MarketState.get(server).addPendingBalance(player.uuid, amount - given)
                 }
+                // 钱进钱包后立即推余额（借款不走 MarketResultPayload，客户端不会主动补拉）
+                BalanceNetwork.sendBalanceTo(player)
                 val record = state.createLoan(
                     playerUuid = player.uuid,
                     playerName = player.name.string,
@@ -1056,6 +1058,8 @@ object FinanceNetwork {
                 if (given < take) {
                     MarketState.get(server).addPendingBalance(player.uuid, take - given)
                 }
+                // 钱出银行进钱包后立即推余额（取款不走 MarketResultPayload，客户端不会主动补拉）
+                BalanceNetwork.sendBalanceTo(player)
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 player.sendMessage(
                     Text.translatable(

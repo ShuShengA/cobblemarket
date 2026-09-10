@@ -4,6 +4,7 @@ import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
+import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.network.*
 import com.shusheng.cobblemarket.screen.SellSelectScreen
 import com.shusheng.cobblemarket.platform.sendToServer
@@ -460,7 +461,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         filterListOpen = ""
         rebuildFilterList()
         // 拉消费贷开关（喵喵支付按钮显示依据）
-        sendToServer(RequestCreditInfoPayload())
+        requestCreditInfo()
     }
 
     /** 消费贷开关快照（打开购买确认弹窗时拉取）：控制喵喵支付按钮显示与弹窗宽度 + 回写缓存 */

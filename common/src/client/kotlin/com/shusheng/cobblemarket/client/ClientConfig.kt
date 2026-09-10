@@ -68,6 +68,13 @@ object ClientConfig {
     var iconAnimMode: IconAnimMode = IconAnimMode.FLOAT
         private set
 
+    /** 余额 HUD 位置（归一化 0~1：x 是 HUD 左缘在「屏宽 − HUD 宽」中的占比，0=贴左、1=贴右；y 同理按高度）。
+     *  默认 (0, 0) = 左上角（老配置无此字段即保持原行为）。由「设置 → 余额HUD位置设置 → 自定义」拖动写入 */
+    var balanceHudX: Float = 0f
+        private set
+    var balanceHudY: Float = 0f
+        private set
+
     fun load() {
         if (!configFile.exists()) {
             save()
@@ -91,6 +98,9 @@ object ClientConfig {
             }
             // 只有显式存过 0（静态）才保持静态；无字段（旧版本升级）、1（浮动）、2（已砍掉的完整动画占位）一律按新默认浮动
             iconAnimMode = if (data["iconAnimMode"] as? Double == 0.0) IconAnimMode.STATIC else IconAnimMode.FLOAT
+            // 位置：无字段（旧版本升级）按左上角；越界值钳回 0~1
+            balanceHudX = ((data["balanceHudX"] as? Double)?.toFloat() ?: 0f).coerceIn(0f, 1f)
+            balanceHudY = ((data["balanceHudY"] as? Double)?.toFloat() ?: 0f).coerceIn(0f, 1f)
             if (legacy != null) save()
         } catch (e: Exception) {
             CobbleMarketClient.LOGGER.warn("Failed to load client config: ${e.message}")
@@ -143,6 +153,13 @@ object ClientConfig {
         return iconAnimMode
     }
 
+    /** 保存余额 HUD 位置（归一化坐标，越界自动钳制）：位置编辑界面点「确定」时调用 */
+    fun setBalanceHudPosition(x: Float, y: Float) {
+        balanceHudX = x.coerceIn(0f, 1f)
+        balanceHudY = y.coerceIn(0f, 1f)
+        save()
+    }
+
     /** 三态循环：ALWAYS → ON_CHANGE → OFF → ALWAYS */
     fun cycleBalanceHudMode(): BalanceHudMode {
         balanceHudMode = when (balanceHudMode) {
@@ -168,6 +185,8 @@ object ClientConfig {
                             "groudonFly" to "据说固拉多一生都在寻找这个按钮：开启后固拉多在精灵市场/上架选择界面穿梭飞行 / It is said Groudon spends its whole life looking for this button: when on, Groudon flies across the pokemon market and sell-select screens",
                             "balanceHudMode" to "余额 HUD 显示模式：0=一直显示（默认），1=余额变动时显示 5 秒，2=关闭；可在市场入口界面右下角的设置里改 / Balance HUD mode: 0=always show (default), 1=show 5 seconds when the balance changes, 2=off; editable via the gear button on the market entry screen",
                             "iconAnimMode" to "精灵图标展示模式：0=完全静态，1=动态（默认，播放 Cobblemon 内置待机动画）；可在市场入口界面右下角的设置里改 / Pokemon icon mode: 0=static, 1=dynamic (default, plays Cobblemon's built-in idle animation); editable via the gear button on the market entry screen",
+                            "balanceHudX" to "余额 HUD 水平位置（0=贴左，1=贴右，0.5=居中）；由设置里的「余额HUD位置设置 → 自定义」拖动写入，手改请填 0~1 / Balance HUD horizontal position (0=left, 1=right, 0.5=centered); written by dragging in Settings → Balance HUD position → Custom; keep within 0~1 if editing by hand",
+                            "balanceHudY" to "余额 HUD 垂直位置（0=贴顶，1=贴底，0.5=居中）；同样由拖动写入 / Balance HUD vertical position (0=top, 1=bottom, 0.5=centered); likewise written by dragging",
                             "_note" to "服主还可在服务端配置 cobblemarket.json 的 celebrationAnimationEnabled 里全局关闭动画，那种情况下本文件的开关不起作用 / The server owner can also disable animations globally via celebrationAnimationEnabled in the server-side cobblemarket.json, in which case these switches have no effect"
                         ),
                         "celebrationOnMarketBuy" to celebrationOnMarketBuy,
@@ -177,7 +196,9 @@ object ClientConfig {
                         "pikachuRunLoop" to pikachuRunLoop,
                         "groudonFly" to groudonFly,
                         "balanceHudMode" to balanceHudMode.ordinal,
-                        "iconAnimMode" to iconAnimMode.ordinal
+                        "iconAnimMode" to iconAnimMode.ordinal,
+                        "balanceHudX" to balanceHudX,
+                        "balanceHudY" to balanceHudY
                     )
                 )
             )

@@ -10,10 +10,10 @@ import com.shusheng.cobblemarket.client.IconAnimMode
 import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.client.MarketStateCache
 import com.shusheng.cobblemarket.client.OakTips
+import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.FinanceStatsPayload
 import com.shusheng.cobblemarket.network.RequestBalancePayload
-import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
 import com.shusheng.cobblemarket.network.SetMarketEnabledPayload
 import com.shusheng.cobblemarket.platform.sendToServer
@@ -49,6 +49,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsPikachuLoopButton: NineSliceButton? = null
     private var settingsGroudonFlyButton: NineSliceButton? = null
     private var settingsBalanceHudButton: NineSliceButton? = null
+    private var settingsBalanceHudPosButton: NineSliceButton? = null
     private var settingsIconAnimButton: NineSliceButton? = null
     // 入口底部居中的市场总开关（仅 OP 可见）
     private var marketSwitchBtn: NineSliceButton? = null
@@ -254,7 +255,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         entryButtons += addDrawableChild(meowthBankBtn)
 
         if (!creditInfoLoaded) {
-            sendToServer(RequestCreditInfoPayload())
+            requestCreditInfo()
             creditInfoLoaded = true
         }
         if (!statsLoaded) {
@@ -379,15 +380,22 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             { cycleBalanceHud() }
         )
         addDrawableChild(settingsBalanceHudButton)
+        // 余额 HUD 位置：进拖动编辑界面（自定义 → 拖动落位 → 确定）
+        settingsBalanceHudPosButton = NineSliceButton(
+            centerX + 40, dialogY + 213, 46, 20,
+            Text.translatable("cobblemarket.settings.balance_hud_position_custom"),
+            { openBalanceHudPosEditor() }
+        )
+        addDrawableChild(settingsBalanceHudPosButton)
         // 精灵图标展示模式两态循环（静态/动态），同 balanceHud 模板
         settingsIconAnimButton = NineSliceButton(
-            centerX + 40, dialogY + 212, 46, 20,
+            centerX + 40, dialogY + 239, 46, 20,
             Text.translatable(iconAnimModeKey()),
             { cycleIconAnim() }
         )
         addDrawableChild(settingsIconAnimButton)
         addDrawableChild(NineSliceButton(
-            centerX - 28, dialogY + 238, 56, 20,
+            centerX - 28, dialogY + 265, 56, 20,
             Text.translatable("cobblemarket.settings.done"),
             { closeSettingsDialog() }
         ))
@@ -402,9 +410,15 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsPikachuLoopButton = null
         settingsGroudonFlyButton = null
         settingsBalanceHudButton = null
+        settingsBalanceHudPosButton = null
         settingsIconAnimButton = null
         clearChildren()
         init()
+    }
+
+    /** 打开余额 HUD 位置编辑界面（拖动落位）：整个界面换掉，设置弹窗随之关闭；返回时新建入口界面 */
+    private fun openBalanceHudPosEditor() {
+        client?.setScreen(BalanceHudPositionScreen())
     }
 
     /** 开关行标签：只要标签本身，开关状态由右侧图标按钮表达（用户 2026-08-21 要求去掉开/关文字） */
@@ -510,10 +524,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             Text.translatable("cobblemarket.settings.title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF
         )
-        // 开关项分割线：标题下 + 每两行之间（行按钮 y=30/56/82/108/134/160/186/212、行高 22 → 线在 27/54/80/106/132/158/184/210）
+        // 开关项分割线：标题下 + 每两行之间（行按钮 y=30/56/82/108/134/160/187/213/239、行高 22 → 线在 27/54/80/106/132/158/184/237）；
+        // 187 与 213 两行同属余额 HUD 设置，中间不画线
         val lineX1 = centerX - 88
         val lineX2 = centerX + 88
-        for (lineY in intArrayOf(27, 54, 80, 106, 132, 158, 184, 210)) {
+        for (lineY in intArrayOf(27, 54, 80, 106, 132, 158, 184, 237)) {
             context.fill(lineX1, dialogY + lineY, lineX2, dialogY + lineY + 1, 0xFF555555.toInt())
         }
     }
@@ -559,8 +574,13 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         )
         context.drawTextWithShadow(
             textRenderer,
+            Text.translatable("cobblemarket.settings.balance_hud_position"),
+            centerX - 80, dialogY + 219, 0xFFFFFF
+        )
+        context.drawTextWithShadow(
+            textRenderer,
             Text.translatable("cobblemarket.settings.icon_anim"),
-            centerX - 80, dialogY + 218, 0xFFFFFF
+            centerX - 80, dialogY + 245, 0xFFFFFF
         )
     }
 
@@ -1031,7 +1051,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     companion object {
         private const val DIALOG_W = 200
-        private const val DIALOG_H = 272
+        private const val DIALOG_H = 298
         // 入口掉落动画三段：下落 → 落地停留 → 淡出（淡出期间入口界面从图下透出，慢慢显现）
         private const val DROP_DURATION_MS = 100L
         private const val HOLD_DURATION_MS = 100L

@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.finance
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.config.CurrencyHandler
 import com.shusheng.cobblemarket.market.BanState
+import com.shusheng.cobblemarket.network.BalanceNetwork
 import com.shusheng.cobblemarket.network.RepayEntry
 import com.shusheng.cobblemarket.network.RepayListDataPayload
 import com.shusheng.cobblemarket.platform.sendToPlayer
@@ -553,15 +554,22 @@ object FinanceService {
         sendToPlayer(player, RepayListDataPayload(entries))
     }
 
-    /** 分批扣款（CurrencyHandler.remove 为 Int 签名，总额可能超 Int）；调用前已 getBalance 预检，竞态窗口可忽略 */
+    /** 分批扣款（CurrencyHandler.remove 为 Int 签名，总额可能超 Int）；调用前已 getBalance 预检，竞态窗口可忽略。
+     *  扣款后把最新余额推给客户端：这里是喵喵银行所有扣钱包操作的公共出口（存款/还款/卡片付费/自动划扣），
+     *  它们不走 MarketResultPayload，客户端不会主动补拉，不推就只能等 2 秒兜底轮询。 */
     fun removeInChunks(player: ServerPlayerEntity, total: Long): Boolean {
         if (total <= 0) return true
         var remaining = total
         while (remaining > 0) {
             val chunk = minOf(remaining, Int.MAX_VALUE.toLong()).toInt()
-            if (!CurrencyHandler.remove(player, chunk)) return false
+            if (!CurrencyHandler.remove(player, chunk)) {
+                // 前面几批可能已扣掉：余额确实变了，仍要同步一次
+                BalanceNetwork.sendBalanceTo(player)
+                return false
+            }
             remaining -= chunk
         }
+        BalanceNetwork.sendBalanceTo(player)
         return true
     }
 }

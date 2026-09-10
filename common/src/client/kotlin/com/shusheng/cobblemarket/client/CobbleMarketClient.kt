@@ -47,6 +47,7 @@ import com.shusheng.cobblemarket.screen.BlacklistScreen
 import com.shusheng.cobblemarket.screen.AdminItemScreen
 import com.shusheng.cobblemarket.screen.AdminPokemonScreen
 import com.shusheng.cobblemarket.screen.AdminScreen
+import com.shusheng.cobblemarket.screen.BalanceHudPositionScreen
 import com.shusheng.cobblemarket.screen.BuyConfirmScreen
 import com.shusheng.cobblemarket.screen.BuyOrderScreen
 import com.shusheng.cobblemarket.screen.HistoryScreen
@@ -169,11 +170,15 @@ object CobbleMarketClient {
             }
             // 金融数据兜底刷新：60 秒一次（额度/欠款/累计成交额进全局缓存，界面打开秒显不闪；
             // 进服后首个 tick 即拉，玩家开市场前缓存已就绪）
+            // 这里的额度请求是兜底轮询，故意裸发不走 requestCreditInfo：它不指望某次响应，
+            // 用重试路径只会把界面的待响应状态搅乱
             if (client.player != null && (lastFinancePollAt == 0L || tickNow - lastFinancePollAt >= 60_000)) {
                 lastFinancePollAt = tickNow
                 sendToServer(RequestCreditInfoPayload())
                 sendToServer(RequestFinanceStatsPayload())
             }
+            // 界面额度请求未被响应（连点界面时被服务端限流吞掉）则重发，见 requestCreditInfo
+            tickCreditInfoRetry(client, tickNow)
         }
         registerHudRender { context, _ ->
             renderBalanceHud(context)
@@ -255,6 +260,9 @@ object CobbleMarketClient {
         registerS2C(CreditInfoPayload.ID, CreditInfoPayload.CODEC) { payload ->
             val client = MinecraftClient.getInstance()
             client.execute {
+                // 响应到了：停掉未响应重试（这个赋值必须在 execute 内——重试状态只在主线程读写）
+                creditInfoPending = false
+                creditInfoRetries = 0
                 // 先写全局缓存（额度/欠款/开关），再转发界面——界面打开读缓存秒显
                 val cache = FinanceCache
                 cache.financeEnabled = payload.financeEnabled
@@ -642,13 +650,78 @@ fun playFailSound() {
     )
 }
 
+// ── 额度快照请求：未响应自动重试 ──
+
+/** 重发间隔：大于服务端 500ms 限流窗口，保证重发必定被受理 */
+private const val CREDIT_INFO_RETRY_MS = 600L
+
+/** 最多重发次数：正常 600ms 内必回，回不来多半是服务端异常，用尽后等下次进界面 */
+private const val CREDIT_INFO_MAX_RETRIES = 3
+
+private var creditInfoPending = false
+private var creditInfoRequestedAt = 0L
+private var creditInfoRetries = 0
+
+/**
+ * 界面向服务端要额度快照（CreditInfoPayload）走这里，别直接发 RequestCreditInfoPayload。
+ *
+ * 服务端读请求有 500ms 限流（RequestThrottle），超限的请求被**静默丢弃**；而界面是
+ * 「init 里发一次就置 infoLoaded」的写法，收不到响应就永久停在空数据——应急贷款的三档
+ * 方案按钮、确认弹窗内容都依赖这份快照，被吞掉后弹窗连背景框都不画（整片空白）。
+ * 玩家快速连点两个界面（喵喵银行 → 应急贷款）时后一次必被吞，这里记录待响应状态，
+ * 超时未收到响应就重发；重发间隔大于限流窗口，重发必定被受理。
+ *
+ * 仅界面初始化走这条路径；60 秒兜底轮询在 tick 里裸发，不参与重试。
+ */
+fun requestCreditInfo() {
+    creditInfoPending = true
+    creditInfoRequestedAt = System.currentTimeMillis()
+    creditInfoRetries = 0
+    sendToServer(RequestCreditInfoPayload())
+}
+
+/** 客户端每 tick 检查：额度请求迟迟没回就重发（收到响应在 registerS2C 里清 pending） */
+private fun tickCreditInfoRetry(client: MinecraftClient, now: Long) {
+    if (!creditInfoPending) return
+    if (client.player == null) {
+        // 已离开世界：没有连接可发，作废待响应状态（重新进世界后由 60 秒兜底轮询补上）
+        creditInfoPending = false
+        return
+    }
+    if (now - creditInfoRequestedAt < CREDIT_INFO_RETRY_MS) return
+    if (creditInfoRetries >= CREDIT_INFO_MAX_RETRIES) {
+        creditInfoPending = false
+        return
+    }
+    creditInfoRetries++
+    creditInfoRequestedAt = now
+    sendToServer(RequestCreditInfoPayload())
+}
+
 /**
  * 支持按 E 返回游戏的本模组界面白名单。
  * 新增界面要支持 E 键关闭 = 在这里补一行（别把白名单散回 tick 里）。
  * 输入框聚焦时 E 不生效（打字保护在调用侧判断）。
  */
-/** 余额 HUD：左上角金额 + 货币符号（金色，金额规范色）；常驻所有界面（渲染在最顶层，弹窗打开时也可见——竞价/购买时玩家能看到剩余余额）；开关关闭、未进世界时不画。
+/** 余额 HUD：金额 + 货币符号（金色，金额规范色）；位置可配（设置 → 余额HUD位置设置 → 自定义拖动）；常驻所有界面（渲染在最顶层，弹窗打开时也可见——竞价/购买时玩家能看到剩余余额）；开关关闭、未进世界时不画。
  *  公开顶层函数：HudRenderCallback（无界面）与 ScreenMixin（界面之上）两处调用。 */
+
+/** 位置编辑中的实时归一化坐标（位置编辑界面打开时非 null；渲染优先于配置值，实现拖动时 HUD 跟随） */
+var hudPosOverride: Pair<Float, Float>? = null
+
+/** 余额 HUD 左上角像素坐标：归一化比例 × (屏尺寸 − HUD 尺寸)，钳制在屏内。
+ *  HUD 两处渲染点与位置编辑界面共用，位置换算只此一处。 */
+fun balanceHudPixelPos(screenW: Int, screenH: Int, hudW: Int, hudH: Int): Pair<Int, Int> {
+    val (nx, ny) = hudPosOverride ?: (ClientConfig.balanceHudX to ClientConfig.balanceHudY)
+    val maxX = (screenW - hudW).coerceAtLeast(0)
+    val maxY = (screenH - hudH).coerceAtLeast(0)
+    return ((nx * maxX + 0.5f).toInt()).coerceIn(0, maxX) to ((ny * maxY + 0.5f).toInt()).coerceIn(0, maxY)
+}
+
+/** 余额 HUD 当前尺寸（宽随文字自适应，高固定 16）：位置编辑界面的点击判定与吸附计算用 */
+fun balanceHudSize(client: net.minecraft.client.MinecraftClient): Pair<Int, Int> =
+    (client.textRenderer.getWidth("${hudBalanceText(client)} ${inlineCurrencyUnit()}") + 10) to 16
+
 /** 上次 HUD 余额文本（ON_CHANGE 模式变动检测） */
 private var lastHudBalanceText: String? = null
 
@@ -663,8 +736,10 @@ private var hudDiffUntil = 0L
 fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
     val client = MinecraftClient.getInstance()
     if (client.player == null) return
+    // 位置编辑界面：无视显示模式与淡出强制常亮（否则「关闭」模式下玩家看不到 HUD，无从拖动）
+    val editingPos = client.currentScreen is BalanceHudPositionScreen
     // F3 调试界面打开时不画（左上角帧率区会被 HUD 挡住）；shouldShowDebugHud 封装了「F3 开且 HUD 未隐藏」的判断
-    if (client.debugHud.shouldShowDebugHud()) return
+    if (!editingPos && client.debugHud.shouldShowDebugHud()) return
     val text = "${hudBalanceText(client)} ${inlineCurrencyUnit()}"
     // 余额变动检测（每帧，OFF 模式也跟踪避免切回时误报）：差值驱动 +绿/-红浮字
     val rawNow = hudBalanceRaw(client)
@@ -674,7 +749,7 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
     }
     lastBalanceRaw = rawNow
     // 三态显示判断：ALWAYS 恒显；ON_CHANGE 文本变化后显 5 秒；OFF 不显
-    val visible = when (ClientConfig.balanceHudMode) {
+    val visible = editingPos || when (ClientConfig.balanceHudMode) {
         BalanceHudMode.OFF -> false
         BalanceHudMode.ALWAYS -> true
         BalanceHudMode.ON_CHANGE -> {
@@ -688,7 +763,7 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
     if (!visible) return
     // 「适应」模式淡出：显示期最后 800ms 背景+文字整体线性渐隐（入口动画暗淡同款手法）
     var alphaF = 1f
-    if (ClientConfig.balanceHudMode == BalanceHudMode.ON_CHANGE) {
+    if (!editingPos && ClientConfig.balanceHudMode == BalanceHudMode.ON_CHANGE) {
         val remaining = 5_000 - (System.currentTimeMillis() - lastBalanceChangeAt)
         if (remaining < 800) alphaF = (remaining / 800f).coerceIn(0f, 1f)
     }
@@ -703,20 +778,31 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
     // RGB 随 alpha 一起衰减（照入口动画淡出）：context.setShaderColor 同时作用于
     // drawTexture（背景贴图）与文字渲染；RenderSystem 全局色不响应 drawTexture，勿混用
     context.setShaderColor(alphaF, alphaF, alphaF, alphaF)
-    // 背景框：HUD 专属九宫格贴图（40×40），宽随文字自适应，高 16
+    // 背景框：HUD 专属九宫格贴图（40×40），宽随文字自适应，高 16；左上角 = 归一化位置换算
     val textW = client.textRenderer.getWidth(text)
+    val hudW = textW + 10
+    val hudPos = balanceHudPixelPos(context.scaledWindowWidth, context.scaledWindowHeight, hudW, 16)
+    val hudX = hudPos.first
+    val hudY = hudPos.second
     drawNineSlice(
         context,
         HUD_BALANCE_BG,
-        0, 0, textW + 10, 16,
+        hudX, hudY, hudW, 16,
         0, HUD_BALANCE_BG_TEX_H
     )
-    context.drawTextWithShadow(client.textRenderer, text, 5, 4, 0xFFAA00)
+    context.drawTextWithShadow(client.textRenderer, text, hudX + 5, hudY + 4, 0xFFAA00)
     // 余额变动浮字：+绿/-红，2 秒后消失（照 CobbleDollars 右下角的变动提示）
     if (hudDiff != 0L && System.currentTimeMillis() < hudDiffUntil) {
         val diffText = if (hudDiff > 0) "+${formatBalanceLong(hudDiff)}" else formatBalanceLong(hudDiff).toString()
         val diffColor = if (hudDiff > 0) 0x55FF55 else 0xFF5555
-        context.drawTextWithShadow(client.textRenderer, diffText, textW + 14, 4, diffColor)
+        // 默认画在 HUD 右侧；右侧放不下（HUD 贴右边缘）才改画左侧——否则紧贴右边缘的 HUD
+        // 会把浮字整条推出屏幕。按「右侧实际放得下」判断，而不是「HUD 中心落在哪半边」：
+        // 后者会把整个右半屏（含吸附到屏幕中心的 HUD）都判成左侧
+        val diffW = client.textRenderer.getWidth(diffText)
+        val rightX = hudX + hudW + 4
+        val diffX = if (rightX + diffW <= context.scaledWindowWidth) rightX
+        else (hudX - 4 - diffW).coerceAtLeast(0)
+        context.drawTextWithShadow(client.textRenderer, diffText, diffX, hudY + 4, diffColor)
     }
     context.setShaderColor(1f, 1f, 1f, 1f)
     context.draw()
@@ -764,4 +850,4 @@ private fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean 
         s is PurpleCardConfigScreen || s is PurpleCardApplyScreen || s is PurpleCardApplyConditionsScreen ||
         s is BlackCardConfigScreen || s is BlackCardApplyScreen || s is BlackCardApplyConditionsScreen || s is CardManageScreen || s is ItemVariantSelectScreen ||
         s is MeowthBankScreen || s is LoanScreen || s is LoanHistoryScreen || s is RepayScreen || s is MeowthPayScreen ||
-        s is DepositScreen
+        s is DepositScreen || s is BalanceHudPositionScreen

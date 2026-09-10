@@ -10,6 +10,7 @@ import com.shusheng.cobblemarket.platform.sendToPlayer
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
 import net.minecraft.network.packet.CustomPayload
+import net.minecraft.server.network.ServerPlayerEntity
 
 // ── C2S：请求余额 ──
 
@@ -64,6 +65,26 @@ object BalanceNetwork {
         if (bal < billion) return bal.toString().reversed().chunked(3).joinToString(",").reversed()
         val tenths = bal.multiply(java.math.BigInteger.TEN).divide(billion).toLong()
         return "${tenths / 10}.${tenths % 10}B"
+    }
+
+    /**
+     * 把最新余额直接推给该玩家。
+     *
+     * 喵喵银行的钱包变动（存取款/借款/还款/卡片付费/自动划扣）不走 MarketResultPayload，
+     * 客户端不会像市场交易那样主动补拉，只能等 2 秒兜底轮询——这些操作后主动推一次，
+     * HUD 数字即时刷新，也省掉客户端再发一次请求的往返。
+     */
+    fun sendBalanceTo(player: ServerPlayerEntity) {
+        val raw = CurrencyHandler.getBalance(player)
+        sendToPlayer(
+            player,
+            BalanceDataPayload(
+                formatBalance(raw),
+                MarketState.get(player.server).getPendingBalance(player.uuid),
+                CurrencyHandler.getCurrencyId(),
+                raw.min(java.math.BigInteger.valueOf(Long.MAX_VALUE)).toLong()
+            )
+        )
     }
 
     fun register() {

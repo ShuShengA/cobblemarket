@@ -4,10 +4,10 @@ import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
+import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.network.BuyFromMarketPayload
 import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.ListingEntry
-import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
@@ -86,7 +86,7 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
         rebuildPlanButtons()
 
         // 拉分期方案（CreditInfoPayload.plans；服务端回发后方案按钮才有内容）
-        sendToServer(RequestCreditInfoPayload())
+        requestCreditInfo()
     }
 
     private fun payLabel(): Text = Text.translatable(
