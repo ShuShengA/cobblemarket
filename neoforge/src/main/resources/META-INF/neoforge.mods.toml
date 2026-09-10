@@ -1,6 +1,6 @@
 modLoader="javafml"
 loaderVersion="[4,)"
-license="MIT"
+license="GPL-3.0-only"
 
 [[mods]]
 modId="cobblemarket"
