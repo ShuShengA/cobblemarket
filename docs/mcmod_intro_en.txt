@@ -16,7 +16,7 @@ ban and blacklist moderation, and transaction history auditing.
 - Minecraft version: 1.21.1 (Fabric)
 - Requirements: Fabric API, Fabric Language Kotlin, Cobblemon ≥ 1.7.0
 - Optional: CobbleDollars / Cobblemon Economy (virtual currency), Cobblemon Smartphone (in-game app entry)
-- License: MIT
+- License: GPL-3.0
 
 This mod is currently in Beta. All features are fully functional, but unknown
 issues may exist. Test on a staging server before rolling out to production.

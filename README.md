@@ -99,4 +99,10 @@ This mod is designed with **server-authoritative architecture**: all transaction
 
 ## License / 许可
 
-MIT — see [LICENSE](LICENSE).
+**GPL-3.0** — see [LICENSE](LICENSE).
+
+Copyright (C) 2026 Shu_ShengA. This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 3. Any modified version you distribute must also be licensed under GPL-3.0 and must keep the original copyright notice.
+
+**Version note:** releases up to and including **1.0.1** were published under the MIT License; **1.1.0 and later** are licensed under GPL-3.0.
+
+**版本说明**：**1.0.1 及更早版本**以 MIT 许可证发布，**1.1.0 起**改用 GPL-3.0。分发修改后的版本时必须以同样的许可证开源，并保留原版权声明。

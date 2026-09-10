@@ -57,6 +57,7 @@
 - Buy order rows show longer Pokémon and item names (up to 6 CJK characters in full) instead of being cut down to three
 - Auction house, admin auction, Pokémon Market, admin Pokémon list and pending-return rows move the avatar, level and countdown further right, leaving a gap after the size badge; Pokémon names in the Pokémon Market, admin list and pending returns are truncated with an ellipsis past 6 CJK characters; the inline bid count in auction rows now sits flush against the price, with a tighter gap to the bid button
 - The minimum-increment hint on the auction creation screen now shows the server's configured default amount (e.g. "blank = 100") instead of a bare "blank = default"
+- Project license changed from MIT to GPL-3.0 (releases up to 1.0.1 remain under MIT)
 
 ### Fixes
 

@@ -14,7 +14,7 @@ CobbleMarket 是一个为 Cobblemon 开发的玩家间交易市场模组（Fabri
 - 对应 Minecraft 版本：1.21.1（Fabric）
 - 前置：Fabric API、Fabric Language Kotlin、Cobblemon ≥ 1.7.0
 - 可选：CobbleDollars / Cobblemon Economy（虚拟货币）、Cobblemon Smartphone（手机 App 入口）
-- 开源协议：MIT
+- 开源协议：GPL-3.0
 
 ⭕截图：模组封面/主界面一览⭕
 
