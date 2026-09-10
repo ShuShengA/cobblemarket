@@ -1159,7 +1159,6 @@ object FinanceNetwork {
                 else state.getLoansByPlayer(player.uuid)
                 val entries = buildLoanHistoryEntries(state, loans, all = payload.all && player.hasPermissionLevel(2))
                 sendToPlayer(player, LoanHistoryDataPayload(entries))
-                sendToPlayer(player, LoanHistoryDataPayload(entries))
             }
         }
     }
