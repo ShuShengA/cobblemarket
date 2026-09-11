@@ -23,6 +23,7 @@
 
 - **Grouped settings**: options in the settings panel are now grouped under gold "Pokemon" / "Items" headings
 - **Scrollable settings panel**: scroll with the mouse wheel when the options overflow one screen
+- **Celebration animations are now entirely the player's choice**: the server-side master switch was removed from the server config; the switches in each player's settings decide everything
 
 ### Fixes
 
@@ -31,6 +32,8 @@
 - **Chinese punctuation**: Chinese colons across the UI and config descriptions are now full-width (English text keeps half-width)
 - **Enchanted and renamed items rendered incorrectly in the auction house and its admin panel**: enchanted books appeared as plain books and renamed items showed their default name in those views; they now render from the item's full data (both list rows and detail dialogs)
 - **Held item icons ignored enchantments and custom names**: when a Pokemon's held item was enchanted or renamed, its icon in lists and detail views showed the plain item; the icons now render from the item's full data (auction house, buy orders, sell-select and admin panels)
+- **Held items missing from icons and animations**: Pokemon shown in list icons, hover previews and the celebration animation always appeared empty-handed; they now hold the item in their hand or mouth. Pokemon whose held item is hidden in the Cobblemon summary stay empty-handed everywhere as well
+- **Missing space after colons in English labels**: some English labels (Type / Ball / Nature / Ability / IVs) had no space after the colon, sticking to their value; now fixed
 
 ## 1.1.0 (in development, unreleased)
 
