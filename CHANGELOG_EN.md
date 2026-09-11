@@ -16,6 +16,8 @@
 ### Fixes
 
 - **List area going blank while a filter dropdown is open**: opening the type/ability/nature filter in the Pokemon market made every listing row disappear; only the rows actually covered by the dropdown are now skipped, and rows below it render as usual
+- **Uneven text height in Pokemon detail panels**: in the info lines of hover tooltips / buy confirmation / pending returns (type, ball, nature…), the leading Chinese characters could sit slightly higher than the rest of the line; the line is now aligned
+- **Chinese punctuation**: Chinese colons across the UI and config descriptions are now full-width (English text keeps half-width)
 
 ## 1.1.0 (in development, unreleased)
 

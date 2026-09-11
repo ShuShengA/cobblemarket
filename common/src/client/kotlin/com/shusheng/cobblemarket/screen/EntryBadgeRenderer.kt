@@ -169,7 +169,9 @@ object EntryBadgeRenderer {
         val font = MinecraftClient.getInstance().textRenderer
         val tail = nameTailWidth(gender, size)
         if (tail == 0) {
-            context.drawCenteredTextWithShadow(font, name, centerX, y, color)
+            // 与 drawInfoLines 同理：算好 x 再左对齐，绕开 drawCenteredTextWithShadow
+            // （那条路径下汉字会比后面的字符高一点点）
+            context.drawTextWithShadow(font, name, centerX - font.getWidth(name) / 2, y, color)
             return
         }
         val totalW = font.getWidth(name) + tail + 6
@@ -304,7 +306,9 @@ object EntryBadgeRenderer {
                     y += 10
                 }
                 else -> {
-                    context.drawCenteredTextWithShadow(font, line, centerX, y, color)
+                    // 用"算好 x 再左对齐"的方式画（视觉上仍是居中）：drawCenteredTextWithShadow
+                    // 在这套字体下会让行首汉字比后面的字高一点点，出价界面用 drawTextWithShadow 就正常
+                    context.drawTextWithShadow(font, line, centerX - font.getWidth(line) / 2, y, color)
                     y += 10
                 }
             }
