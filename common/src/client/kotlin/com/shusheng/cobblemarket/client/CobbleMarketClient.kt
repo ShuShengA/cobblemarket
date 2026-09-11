@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.network.AuctionDurationsPayload
 import com.shusheng.cobblemarket.network.AuctionEventPayload
 import com.shusheng.cobblemarket.network.AuctionListDataPayload
 import com.shusheng.cobblemarket.network.AuctionSettleSoundPayload
+import com.shusheng.cobblemarket.network.ItemCelebrationPayload
 import com.shusheng.cobblemarket.network.PokemonCelebrationPayload
 import com.shusheng.cobblemarket.network.MarketStatePayload
 import com.shusheng.cobblemarket.network.BuyOrderEventPayload
@@ -117,6 +118,7 @@ object CobbleMarketClient {
     fun init() {
         ClientConfig.load()
         PokemonCelebrationAnimation.register()
+        ItemCelebrationAnimation.register()
         CardCelebrationAnimation.register()
         openMarketKey = registerKeyBinding(
             KeyBinding(
@@ -454,6 +456,13 @@ object CobbleMarketClient {
             MinecraftClient.getInstance().execute {
                 // 获得精灵庆祝动画：买到/拍到/求购单接受交付均走这里（拍卖场景与落槌铃声同批触发，天然同步）
                 PokemonCelebrationAnimation.trigger(payload.speciesId, payload.aspects, payload.shiny, payload.source)
+            }
+        }
+
+        registerS2C(ItemCelebrationPayload.ID, ItemCelebrationPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                // 获得物品庆祝动画：与精灵侧同一口径，渲染是独立的一套（物品图标而非 3D 模型）
+                ItemCelebrationAnimation.trigger(payload.itemNbt, payload.count, payload.source)
             }
         }
 

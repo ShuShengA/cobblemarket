@@ -6,6 +6,8 @@ import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.heldIconStack
+import com.shusheng.cobblemarket.client.icon.ItemHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
@@ -111,7 +113,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 RenderablePokemon(species, aspects, ItemStack.EMPTY),
                 FloatingState(),
                 ballStack = buildBallStack(p.ball),
-                heldStack = buildHeldStack(p.heldItemId)
+                heldStack = heldIconStack(p.heldItemId, p.heldItemNbt)
             )
         }
     }
@@ -123,13 +125,6 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     }
 
     /** 携带物栈（空气视为无）；缓存供行渲染每帧复用 */
-    private fun buildHeldStack(heldItemId: String): ItemStack? {
-        if (heldItemId.isEmpty()) return null
-        val heldId = Identifier.tryParse(heldItemId) ?: return null
-        val heldItem = Registries.ITEM.get(heldId)
-        return if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) ItemStack(heldItem) else null
-    }
-
     // ── 物品 tab（照搬 ItemSellScreen 本地背包扫描） ──
     private data class SellItem(val stack: ItemStack, val count: Int)
     private var items = listOf<SellItem>()
@@ -914,6 +909,12 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         val previewRowL = width / 2 - panelWidth / 2
         IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
             ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
+        // 物品 tab 的大图：物品行没有注册表条目，按绝对索引从本地背包列表取
+        if (currentTab == 1 && hoveredRow >= 0) {
+            items.getOrNull(scrollOffset + hoveredRow)?.let {
+                ItemHoverPreview.render(context, it.stack, previewRowL, height)
+            }
+        }
     }
 
     // tooltip 内容缓存：内容只取决于条目，悬停同一行时每帧重建全部文本行是悬停掉帧主因
@@ -1025,9 +1026,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 rowY += 10
             } else if (i == heldItemLine) {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
-                Identifier.tryParse(p.heldItemId)?.let { heldId ->
+                heldIconStack(p.heldItemId, p.heldItemNbt)?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                        itemStack = ItemStack(Registries.ITEM.get(heldId)),
+                        itemStack = heldStack,
                         x = tx + textRenderer.getWidth(line) + 2.0,
                         y = rowY + 0.0,
                         scale = 0.6,

@@ -6,6 +6,7 @@ import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.icon.ItemHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
@@ -851,6 +852,12 @@ class BuyOrderScreen(
         val previewRowL = rowLeftX()
         IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + rowW())
             ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
+        // 物品求购单行的大图：物品图标不进注册表，按绝对索引从行缓存取（精灵行的 itemStack 为 null）
+        if (hoveredRow >= 0) {
+            iconData[scrollOffset + hoveredRow]?.itemStack?.let {
+                ItemHoverPreview.render(context, it, previewRowL, height)
+            }
+        }
     }
 
     // 悬停信息面板：照精灵市场 tooltip 结构（自绘九宫格面板 + 固定行高，信息同市场列表）

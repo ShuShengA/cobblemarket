@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.network.ListingEntry
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
@@ -292,9 +293,9 @@ object EntryBadgeRenderer {
                     val textW = font.getWidth(line)
                     val x = centerX - (textW + 14) / 2
                     context.drawTextWithShadow(font, line, x, y, color)
-                    Identifier.tryParse(entry.heldItemId)?.let { heldId ->
+                    heldIconStack(entry.heldItemId, entry.heldItemNbt)?.let { heldStack ->
                         com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                            itemStack = ItemStack(Registries.ITEM.get(heldId)),
+                            itemStack = heldStack,
                             x = (x + textW + 2).toDouble(), y = y.toDouble(), scale = 0.6, matrixStack = context.matrices
                         )
                     }

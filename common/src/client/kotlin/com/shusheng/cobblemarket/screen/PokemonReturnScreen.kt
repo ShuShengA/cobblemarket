@@ -4,6 +4,7 @@ import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import net.minecraft.registry.Registries
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
+import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
@@ -127,19 +128,12 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                 RenderablePokemon(species, aspects, ItemStack.EMPTY),
                 FloatingState(),
                 ballStack = Identifier.tryParse(p.ball.removePrefix("item.").replaceFirst(".", ":"))?.let { ItemStack(Registries.ITEM.get(it)) },
-                heldStack = buildHeldStack(p.heldItemId)
+                heldStack = heldIconStack(p.heldItemId, p.heldItemNbt)
             )
         }
     }
 
     /** 携带物栈（空气视为无）；缓存供行渲染每帧复用 */
-    private fun buildHeldStack(heldItemId: String): ItemStack? {
-        if (heldItemId.isEmpty()) return null
-        val heldId = Identifier.tryParse(heldItemId) ?: return null
-        val heldItem = Registries.ITEM.get(heldId)
-        return if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) ItemStack(heldItem) else null
-    }
-
     override fun init() {
         super.init()
         val leftX = width / 2 - panelWidth / 2

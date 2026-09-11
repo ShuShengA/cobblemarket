@@ -22,6 +22,7 @@ import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.ClickableWidget
+import net.minecraft.text.MutableText
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
@@ -44,6 +45,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsOpen = false
     private var settingsMarketButton: NineSliceButton? = null
     private var settingsAuctionButton: NineSliceButton? = null
+    private var settingsItemMarketButton: NineSliceButton? = null
+    private var settingsItemAuctionButton: NineSliceButton? = null
+    private var settingsItemHoverPreviewButton: NineSliceButton? = null
     private var settingsDropButton: NineSliceButton? = null
     private var settingsEntryDropButton: NineSliceButton? = null
     private var settingsPikachuLoopButton: NineSliceButton? = null
@@ -54,8 +58,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsHoverPreviewButton: NineSliceButton? = null
 
     /** 设置弹窗的一行：左侧标签 + 右侧控件；[newGroup] = 与上一行之间画一条分隔线（同组的连续行之间不画）。
+     *  [button] 为 null 时是本组的小标题行（只画标签、不可交互，但照常占一行高度）。
      *  行的顺序与数量只在 openSettingsDialog 里维护，y / 分隔线 / 标签位置全部由 settingsRows 推出 */
-    private class SettingsRow(val label: Text, val newGroup: Boolean, val button: NineSliceButton)
+    private class SettingsRow(val label: Text, val newGroup: Boolean, val button: NineSliceButton?)
 
     private val settingsRows = mutableListOf<SettingsRow>()
     /** 设置弹窗内容的滚动偏移（px）：行数没超出一屏时恒为 0（滚不动） */
@@ -375,12 +380,38 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         val textBtnX = centerX + 40
         settingsRows.clear()
 
+        // 精灵庆祝动画：沿用旧字段——老配置里把它关掉的玩家，精灵侧原样保持关闭
+        addSettingsHeading(Text.translatable("cobblemarket.settings.group_pokemon"))
         val marketBtn = makeSwitchButton(ClientConfig.celebrationOnMarketBuy) { toggleMarketAnimation() }
         settingsMarketButton = marketBtn
-        addSettingsRow(marketBtn, switchX, toggleText("cobblemarket.settings.animation_market", ClientConfig.celebrationOnMarketBuy))
+        addSettingsRow(marketBtn, switchX, toggleText("cobblemarket.settings.animation_market", ClientConfig.celebrationOnMarketBuy), newGroup = false)
         val auctionBtn = makeSwitchButton(ClientConfig.celebrationOnAuctionAndOrder) { toggleAuctionAnimation() }
         settingsAuctionButton = auctionBtn
-        addSettingsRow(auctionBtn, switchX, toggleText("cobblemarket.settings.animation_auction", ClientConfig.celebrationOnAuctionAndOrder))
+        addSettingsRow(auctionBtn, switchX, toggleText("cobblemarket.settings.animation_auction", ClientConfig.celebrationOnAuctionAndOrder), newGroup = false)
+        // 图标展示模式（两态循环：静态/动态，同 balanceHud 模板）与预览图也归精灵组
+        val iconAnimBtn = NineSliceButton(
+            0, 0, 46, 20,
+            Text.translatable(iconAnimModeKey()),
+            { cycleIconAnim() }
+        )
+        settingsIconAnimButton = iconAnimBtn
+        addSettingsRow(iconAnimBtn, textBtnX, Text.translatable("cobblemarket.settings.icon_anim"), newGroup = false)
+        val hoverPreviewBtn = makeSwitchButton(ClientConfig.hoverPreview) { toggleHoverPreview() }
+        settingsHoverPreviewButton = hoverPreviewBtn
+        addSettingsRow(hoverPreviewBtn, switchX, toggleText("cobblemarket.settings.hover_preview", ClientConfig.hoverPreview), newGroup = false)
+
+        // 物品侧三项：庆祝动画两项 + 悬停预览图，都与精灵侧各自独立（市场直购已接入，拍卖/求购待接）
+        addSettingsHeading(Text.translatable("cobblemarket.settings.group_item"))
+        val itemMarketBtn = makeSwitchButton(ClientConfig.celebrationItemOnMarketBuy) { toggleItemMarketAnimation() }
+        settingsItemMarketButton = itemMarketBtn
+        addSettingsRow(itemMarketBtn, switchX, toggleText("cobblemarket.settings.animation_market", ClientConfig.celebrationItemOnMarketBuy), newGroup = false)
+        val itemAuctionBtn = makeSwitchButton(ClientConfig.celebrationItemOnAuctionAndOrder) { toggleItemAuctionAnimation() }
+        settingsItemAuctionButton = itemAuctionBtn
+        addSettingsRow(itemAuctionBtn, switchX, toggleText("cobblemarket.settings.animation_auction", ClientConfig.celebrationItemOnAuctionAndOrder), newGroup = false)
+        val itemHoverPreviewBtn = makeSwitchButton(ClientConfig.hoverPreviewItem) { toggleItemHoverPreview() }
+        settingsItemHoverPreviewButton = itemHoverPreviewBtn
+        addSettingsRow(itemHoverPreviewBtn, switchX, toggleText("cobblemarket.settings.hover_preview_item", ClientConfig.hoverPreviewItem), newGroup = false)
+
         val dropBtn = makeSwitchButton(ClientConfig.dropOverflowOnClaim) { toggleDropOverflow() }
         settingsDropButton = dropBtn
         addSettingsRow(dropBtn, switchX, toggleText("cobblemarket.settings.drop_overflow", ClientConfig.dropOverflowOnClaim))
@@ -411,19 +442,6 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsBalanceHudPosButton = balanceHudPosBtn
         addSettingsRow(balanceHudPosBtn, textBtnX, Text.translatable("cobblemarket.settings.balance_hud_position"), newGroup = false)
 
-        // 精灵图标两项同组：展示模式两态循环（静态/动态），同 balanceHud 模板
-        val iconAnimBtn = NineSliceButton(
-            0, 0, 46, 20,
-            Text.translatable(iconAnimModeKey()),
-            { cycleIconAnim() }
-        )
-        settingsIconAnimButton = iconAnimBtn
-        addSettingsRow(iconAnimBtn, textBtnX, Text.translatable("cobblemarket.settings.icon_anim"))
-        // 精灵预览图：紧跟图标展示模式（同属精灵图标一类，中间不画分隔线）
-        val hoverPreviewBtn = makeSwitchButton(ClientConfig.hoverPreview) { toggleHoverPreview() }
-        settingsHoverPreviewButton = hoverPreviewBtn
-        addSettingsRow(hoverPreviewBtn, switchX, toggleText("cobblemarket.settings.hover_preview", ClientConfig.hoverPreview), newGroup = false)
-
         // done 固定在底部，不参与滚动
         addDrawableChild(NineSliceButton(
             centerX - 28, settingsDialogY() + SETTINGS_DONE_Y, 56, 20,
@@ -438,6 +456,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsOpen = false
         settingsMarketButton = null
         settingsAuctionButton = null
+        settingsItemMarketButton = null
+        settingsItemAuctionButton = null
+        settingsItemHoverPreviewButton = null
         settingsDropButton = null
         settingsEntryDropButton = null
         settingsPikachuLoopButton = null
@@ -487,6 +508,25 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         ClientConfig.setCelebrationOnAuctionAndOrder(!ClientConfig.celebrationOnAuctionAndOrder)
         settingsAuctionButton?.iconLeft = switchIconFor(ClientConfig.celebrationOnAuctionAndOrder)
         showSettingsToast("cobblemarket.settings.animation_auction", ClientConfig.celebrationOnAuctionAndOrder)
+    }
+
+    /** 物品侧两个开关的标签与精灵侧共用词条（靠分组标题区分），故 toast 也用同一个 key */
+    private fun toggleItemMarketAnimation() {
+        ClientConfig.setCelebrationItemOnMarketBuy(!ClientConfig.celebrationItemOnMarketBuy)
+        settingsItemMarketButton?.iconLeft = switchIconFor(ClientConfig.celebrationItemOnMarketBuy)
+        showSettingsToast("cobblemarket.settings.animation_market", ClientConfig.celebrationItemOnMarketBuy)
+    }
+
+    private fun toggleItemAuctionAnimation() {
+        ClientConfig.setCelebrationItemOnAuctionAndOrder(!ClientConfig.celebrationItemOnAuctionAndOrder)
+        settingsItemAuctionButton?.iconLeft = switchIconFor(ClientConfig.celebrationItemOnAuctionAndOrder)
+        showSettingsToast("cobblemarket.settings.animation_auction", ClientConfig.celebrationItemOnAuctionAndOrder)
+    }
+
+    private fun toggleItemHoverPreview() {
+        ClientConfig.setHoverPreviewItem(!ClientConfig.hoverPreviewItem)
+        settingsItemHoverPreviewButton?.iconLeft = switchIconFor(ClientConfig.hoverPreviewItem)
+        showSettingsToast("cobblemarket.settings.hover_preview_item", ClientConfig.hoverPreviewItem)
     }
 
     private fun toggleDropOverflow() {
@@ -588,7 +628,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             context.drawTextWithShadow(
                 textRenderer,
                 row.label,
-                centerX - 80, settingsRowY(i) + row.button.height / 2 - 4, 0xFFFFFF
+                centerX - 80, settingsRowY(i) + settingsRowHeight(i) / 2 - 4, 0xFFFFFF
             )
         }
     }
@@ -604,6 +644,14 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         addDrawableChild(button)
     }
 
+    /** 登记一个分组小标题行：没有控件，只画一行金色标签（如「精灵」「物品」），照常占一行高度 */
+    private fun addSettingsHeading(label: MutableText) {
+        settingsRows += SettingsRow(label.formatted(Formatting.GOLD), newGroup = true, button = null)
+    }
+
+    /** 行高：标题行没有控件，按控件行统一高 22 算，保证行步进对齐 */
+    private fun settingsRowHeight(index: Int): Int = settingsRows[index].button?.height ?: 22
+
     private fun settingsRowY(index: Int): Int =
         settingsDialogY() + SETTINGS_ROWS_TOP + index * SETTINGS_ROW_STEP - settingsScroll
 
@@ -615,14 +663,15 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private fun settingsRowVisible(index: Int): Boolean {
         val dialogY = settingsDialogY()
         val y = settingsRowY(index)
-        return y >= dialogY + SETTINGS_ROWS_TOP && y + settingsRows[index].button.height <= dialogY + SETTINGS_VIEW_BOTTOM
+        return y >= dialogY + SETTINGS_ROWS_TOP && y + settingsRowHeight(index) <= dialogY + SETTINGS_VIEW_BOTTOM
     }
 
-    /** 按当前滚动偏移摆放所有行（打开弹窗 / 滚轮 / resize 后调用） */
+    /** 按当前滚动偏移摆放所有行（打开弹窗 / 滚轮 / resize 后调用）；标题行没有控件，只由标签渲染跟随 */
     private fun layoutSettingsRows() {
         for ((i, row) in settingsRows.withIndex()) {
-            row.button.y = settingsRowY(i)
-            row.button.visible = settingsRowVisible(i)
+            val button = row.button ?: continue
+            button.y = settingsRowY(i)
+            button.visible = settingsRowVisible(i)
         }
     }
 

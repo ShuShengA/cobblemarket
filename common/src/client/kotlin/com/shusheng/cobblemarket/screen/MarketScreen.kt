@@ -19,6 +19,7 @@ import net.minecraft.sound.SoundEvent
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
+import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
@@ -139,19 +140,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 RenderablePokemon(species, aspects, ItemStack.EMPTY),
                 FloatingState(),
                 ballStack = Identifier.tryParse(entry.ballItem)?.let { ItemStack(Registries.ITEM.get(it)) },
-                heldStack = buildHeldStack(entry.heldItemId)
+                heldStack = heldIconStack(entry.heldItemId, entry.heldItemNbt)
             )
         }
     }
 
     /** 携带物栈（空气视为无）；缓存供行渲染每帧复用 */
-    private fun buildHeldStack(heldItemId: String): ItemStack? {
-        if (heldItemId.isEmpty()) return null
-        val heldId = Identifier.tryParse(heldItemId) ?: return null
-        val heldItem = Registries.ITEM.get(heldId)
-        return if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) ItemStack(heldItem) else null
-    }
-
     private val defaultSkinTexture = Identifier.of("minecraft", "textures/entity/player/wide/steve.png")
 
     // 皮肤纹理缓存：每行每帧创建 GameProfile 并查 skinProvider 是分配热点，首个结果按 UUID 缓存
@@ -1760,9 +1754,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 rowY += 10
             } else if (i == heldItemLine) {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
-                Identifier.tryParse(entry.heldItemId)?.let { heldId ->
+                heldIconStack(entry.heldItemId, entry.heldItemNbt)?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                        itemStack = ItemStack(Registries.ITEM.get(heldId)),
+                        itemStack = heldStack,
                         x = tx + textRenderer.getWidth(line) + 2.0,
                         y = rowY + 0.0,
                         scale = 0.6,

@@ -10,8 +10,9 @@ import java.io.File
  * 与服务端总开关的关系：服务端关掉是**压根不发包**（全服都没有），这里的开关只决定
  * “收到包之后播不播”。两层互不依赖，服主能一刀切，玩家也能自己关。
  *
- * 动画开关按**频率**分两个而不是按来源分三个：市场直购随时可买、最高频，
- * 拍卖成交与求购单接受都是低频事件，合用一个开关。
+ * 庆祝动画开关按**精灵 / 物品**分两组，每组内再按频率分两个：市场直购随时可买、最高频，
+ * 拍卖成交与求购单接受都是低频事件，合用一个开关。两组各自独立——玩家关掉精灵动画，
+ * 本意是「我买精灵别弹」，不该波及物品。
  */
 /** 精灵图标展示模式 */
 enum class IconAnimMode {
@@ -44,6 +45,14 @@ object ClientConfig {
     var celebrationOnAuctionAndOrder: Boolean = true
         private set
 
+    /** 市场上直接购买物品时的庆祝动画（物品侧，与精灵侧各自独立；默认开） */
+    var celebrationItemOnMarketBuy: Boolean = true
+        private set
+
+    /** 拍卖成交、求购单接受交付（物品侧）时的庆祝动画（默认开） */
+    var celebrationItemOnAuctionAndOrder: Boolean = true
+        private set
+
     /** 市场动画总开关：控制进入市场动画（入口掉落）与关闭市场动画（界面整体上滑出屏） */
     var marketAnimation: Boolean = true
         private set
@@ -72,6 +81,10 @@ object ClientConfig {
     var hoverPreview: Boolean = true
         private set
 
+    /** 悬停物品格时，在屏幕左侧显示该物品的放大预览（与精灵侧各自独立，默认开） */
+    var hoverPreviewItem: Boolean = true
+        private set
+
     /** 余额 HUD 位置（归一化 0~1：x 是 HUD 左缘在「屏宽 − HUD 宽」中的占比，0=贴左、1=贴右；y 同理按高度）。
      *  默认 (0, 0) = 左上角（老配置无此字段即保持原行为）。由「设置 → 余额HUD位置设置 → 自定义」拖动写入 */
     var balanceHudX: Float = 0f
@@ -90,6 +103,10 @@ object ClientConfig {
             val legacy = data["celebrationAnimationEnabled"] as? Boolean
             celebrationOnMarketBuy = data["celebrationOnMarketBuy"] as? Boolean ?: legacy ?: true
             celebrationOnAuctionAndOrder = data["celebrationOnAuctionAndOrder"] as? Boolean ?: legacy ?: true
+            // 物品侧两组与精灵侧各自独立，**不继承** legacy/精灵侧的取值：老玩家关掉精灵动画，
+            // 本意是「我买精灵别弹」，不该波及物品；物品侧给默认「开」是新增功能该有的默认值
+            celebrationItemOnMarketBuy = data["celebrationItemOnMarketBuy"] as? Boolean ?: true
+            celebrationItemOnAuctionAndOrder = data["celebrationItemOnAuctionAndOrder"] as? Boolean ?: true
             dropOverflowOnClaim = data["dropOverflowOnClaim"] as? Boolean ?: false
             marketAnimation = data["marketAnimation"] as? Boolean ?: data["entryDropAnimation"] as? Boolean ?: true
             pikachuRunLoop = data["pikachuRunLoop"] as? Boolean ?: false
@@ -104,6 +121,8 @@ object ClientConfig {
             iconAnimMode = if (data["iconAnimMode"] as? Double == 0.0) IconAnimMode.STATIC else IconAnimMode.FLOAT
             // 无字段（旧版本升级）按新默认「开」
             hoverPreview = data["hoverPreview"] as? Boolean ?: true
+            // 物品侧独立开关：无字段（旧版本升级）同样按新默认「开」
+            hoverPreviewItem = data["hoverPreviewItem"] as? Boolean ?: true
             // 位置：无字段（旧版本升级）按左上角；越界值钳回 0~1
             balanceHudX = ((data["balanceHudX"] as? Double)?.toFloat() ?: 0f).coerceIn(0f, 1f)
             balanceHudY = ((data["balanceHudY"] as? Double)?.toFloat() ?: 0f).coerceIn(0f, 1f)
@@ -121,6 +140,16 @@ object ClientConfig {
 
     fun setCelebrationOnAuctionAndOrder(v: Boolean) {
         celebrationOnAuctionAndOrder = v
+        save()
+    }
+
+    fun setCelebrationItemOnMarketBuy(v: Boolean) {
+        celebrationItemOnMarketBuy = v
+        save()
+    }
+
+    fun setCelebrationItemOnAuctionAndOrder(v: Boolean) {
+        celebrationItemOnAuctionAndOrder = v
         save()
     }
 
@@ -146,6 +175,11 @@ object ClientConfig {
 
     fun setHoverPreview(v: Boolean) {
         hoverPreview = v
+        save()
+    }
+
+    fun setHoverPreviewItem(v: Boolean) {
+        hoverPreviewItem = v
         save()
     }
 
@@ -190,18 +224,24 @@ object ClientConfig {
                         "_comments" to mapOf(
                             "celebrationOnMarketBuy" to "市场直接购买精灵时是否播放庆祝动画（个人设置，可在市场入口界面右下角的设置里改）/ Whether to play the celebration animation when buying a Pokémon directly from the market (personal setting, editable via the gear button on the market entry screen)",
                             "celebrationOnAuctionAndOrder" to "拍卖成交、求购单接受交付时是否播放庆祝动画（个人设置，同上）/ Whether to play the celebration animation when winning an auction or accepting a buy order delivery (personal setting, same place)",
+                            "celebrationItemOnMarketBuy" to "市场上直接购买物品时是否播放庆祝动画（个人设置，与精灵侧各自独立，同上）/ Whether to play the celebration animation when buying an item directly from the market (personal setting, independent from the Pokemon side, same place)",
+                            "celebrationItemOnAuctionAndOrder" to "拍卖成交、求购单接受交付（物品）时是否播放庆祝动画（个人设置，同上）/ Whether to play the celebration animation when winning an auction or accepting a buy order delivery (items) (personal setting, same place)",
                             "dropOverflowOnClaim" to "领取待领取物品时，装不下的部分掉落在地（可能消失或被他人捡走，风险自负）/ When claiming item returns, drop the parts that don't fit into the inventory onto the ground (they may despawn or be picked up by others — at your own risk)",
                             "marketAnimation" to "市场动画总开关：控制进入市场动画（入口掉落）与关闭市场动画（界面整体上滑出屏）（个人设置，可在市场入口界面右下角的设置里改）/ Master switch for market animations: controls the entry animation (drop onto the entry screen) and the close animation (screen slides up and out) (personal setting, editable via the gear button on the market entry screen)",
                             "pikachuRunLoop" to "皮卡丘跑步机：开启后皮卡丘绕入口/管理面板背景边缘环绕跑（默认沿背景顶部直线跑）/ Pikachu Treadmill: when on, Pikachu runs around the border of the entry/admin background instead of the straight top run",
                             "groudonFly" to "据说固拉多一生都在寻找这个按钮：开启后固拉多在精灵市场/上架选择界面穿梭飞行 / It is said Groudon spends its whole life looking for this button: when on, Groudon flies across the pokemon market and sell-select screens",
                             "balanceHudMode" to "余额 HUD 显示模式：0=一直显示（默认），1=余额变动时显示 5 秒，2=关闭；可在市场入口界面右下角的设置里改 / Balance HUD mode: 0=always show (default), 1=show 5 seconds when the balance changes, 2=off; editable via the gear button on the market entry screen",
                             "iconAnimMode" to "精灵图标展示模式：0=完全静态，1=动态（默认，播放 Cobblemon 内置待机动画）；可在市场入口界面右下角的设置里改 / Pokemon icon mode: 0=static, 1=dynamic (default, plays Cobblemon's built-in idle animation); editable via the gear button on the market entry screen",
+                            "hoverPreview" to "悬停精灵行时在屏幕左侧显示该精灵的放大预览（个人设置，可在市场入口界面右下角的设置里改）/ Show a large preview of the Pokemon on the left side of the screen when hovering its row (personal setting, editable via the gear button on the market entry screen)",
+                            "hoverPreviewItem" to "悬停物品格时在屏幕左侧显示该物品的放大预览（个人设置，与精灵侧各自独立，同上）/ Show a large preview of the item on the left side of the screen when hovering its slot (personal setting, independent from the Pokemon side, same place)",
                             "balanceHudX" to "余额 HUD 水平位置（0=贴左，1=贴右，0.5=居中）；由设置里的「余额HUD位置设置 → 自定义」拖动写入，手改请填 0~1 / Balance HUD horizontal position (0=left, 1=right, 0.5=centered); written by dragging in Settings → Balance HUD position → Custom; keep within 0~1 if editing by hand",
                             "balanceHudY" to "余额 HUD 垂直位置（0=贴顶，1=贴底，0.5=居中）；同样由拖动写入 / Balance HUD vertical position (0=top, 1=bottom, 0.5=centered); likewise written by dragging",
                             "_note" to "服主还可在服务端配置 cobblemarket.json 的 celebrationAnimationEnabled 里全局关闭动画，那种情况下本文件的开关不起作用 / The server owner can also disable animations globally via celebrationAnimationEnabled in the server-side cobblemarket.json, in which case these switches have no effect"
                         ),
                         "celebrationOnMarketBuy" to celebrationOnMarketBuy,
                         "celebrationOnAuctionAndOrder" to celebrationOnAuctionAndOrder,
+                        "celebrationItemOnMarketBuy" to celebrationItemOnMarketBuy,
+                        "celebrationItemOnAuctionAndOrder" to celebrationItemOnAuctionAndOrder,
                         "dropOverflowOnClaim" to dropOverflowOnClaim,
                         "marketAnimation" to marketAnimation,
                         "pikachuRunLoop" to pikachuRunLoop,
@@ -209,6 +249,7 @@ object ClientConfig {
                         "balanceHudMode" to balanceHudMode.ordinal,
                         "iconAnimMode" to iconAnimMode.ordinal,
                         "hoverPreview" to hoverPreview,
+                        "hoverPreviewItem" to hoverPreviewItem,
                         "balanceHudX" to balanceHudX,
                         "balanceHudY" to balanceHudY
                     )

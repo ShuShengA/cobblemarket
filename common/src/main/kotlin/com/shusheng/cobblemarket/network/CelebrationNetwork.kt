@@ -4,8 +4,10 @@ import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
+import net.minecraft.nbt.NbtCompound
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
+import net.minecraft.network.codec.PacketCodecs
 import net.minecraft.network.packet.CustomPayload
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.network.ServerPlayerEntity
@@ -48,6 +50,39 @@ data class PokemonCelebrationPayload(
     }
 }
 
+// ── S2C：获得物品庆祝动画（仅定向发给买家）：屏幕中央播放该物品的弹跳动画 ──
+
+/**
+ * 物品与精灵的庆祝动画是**两套独立渲染**（精灵画 3D 模型、物品画 GUI 图标栈），字段也完全不同，
+ * 所以单独一个包，而不是往 [PokemonCelebrationPayload] 里塞类型分支。
+ *
+ * [count] 单独传而不从 NBT 里取：挂单 NBT 存的是上架时的总量，买家可能只买走一部分。
+ */
+data class ItemCelebrationPayload(
+    val itemNbt: NbtCompound,  // 物品栈 NBT（含 id 与组件），客户端用 ItemStack.fromNbtOrEmpty 重建
+    val count: Int,            // 本次实际到手的数量
+    val source: String         // CelebrationSource.name
+) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<ItemCelebrationPayload>(CobbleMarket.id("item_celebration"))
+        val CODEC: PacketCodec<PacketByteBuf, ItemCelebrationPayload> = PacketCodec.of(
+            { p, b ->
+                PacketCodecs.NBT_COMPOUND.encode(b, p.itemNbt)
+                b.writeInt(p.count)
+                b.writeString(p.source)
+            },
+            { b ->
+                ItemCelebrationPayload(
+                    itemNbt = PacketCodecs.NBT_COMPOUND.decode(b),
+                    count = b.readInt(),
+                    source = b.readString()
+                )
+            }
+        )
+    }
+}
+
 // ── S2C：发卡动画（紫金卡/黑金卡首次获得或补发）：卡片从申请界面图标位置放大飞到屏幕中央 ──
 
 data class CardCelebrationPayload(
@@ -76,12 +111,27 @@ object CelebrationNetwork {
 
     fun register() {
         registerS2CType(PokemonCelebrationPayload.ID, PokemonCelebrationPayload.CODEC)
+        registerS2CType(ItemCelebrationPayload.ID, ItemCelebrationPayload.CODEC)
         registerS2CType(CardCelebrationPayload.ID, CardCelebrationPayload.CODEC)
     }
 
     fun send(player: ServerPlayerEntity, speciesId: String, aspects: List<String>, shiny: Boolean, source: CelebrationSource) {
         if (!CobbleMarketConfig.celebrationAnimationEnabled) return
         sendToPlayer(player, PokemonCelebrationPayload(speciesId, aspects, shiny, source.name))
+    }
+
+    /**
+     * 获得物品时的庆祝动画下发。触发口径与精灵完全一致：**物品所有权首次转到该玩家名下时播一次**
+     * （买到 / 拍到 / 求购单接受交付），领取待领取、退回、下架都不播。
+     */
+    fun sendItem(player: ServerPlayerEntity, itemNbt: NbtCompound, count: Int, source: CelebrationSource) {
+        if (!CobbleMarketConfig.celebrationAnimationEnabled) return
+        sendToPlayer(player, ItemCelebrationPayload(itemNbt, count, source.name))
+    }
+
+    /** 按 UUID 定向发送；接收者离线则跳过（同精灵版：动画是即时特效，不进离线补发队列） */
+    fun sendItem(server: MinecraftServer, uuid: UUID, itemNbt: NbtCompound, count: Int, source: CelebrationSource) {
+        server.playerManager.getPlayer(uuid)?.let { sendItem(it, itemNbt, count, source) }
     }
 
     /**

@@ -794,7 +794,7 @@ object BuyOrderNetwork {
                         species = pokemon.species.name,
                         level = pokemon.level,
                         shiny = pokemon.shiny,
-                        extraData = buildDeliveryExtra(pokemon, heldItem),
+                        extraData = buildDeliveryExtra(pokemon, heldItem, player.serverWorld.registryManager),
                         itemNbt = null,
                         count = 1,
                         deliveredAt = now
@@ -1058,6 +1058,11 @@ object BuyOrderNetwork {
                 // 买家庆祝动画：接受交付即所有权转移（货进买家待领取，精灵单固定 1 只）
                 if (order.type == BuyOrderType.POKEMON) {
                     CelebrationNetwork.sendFromEntry(player, pending.species, pending.shiny, pending.extraData, CelebrationSource.BUY_ORDER)
+                } else {
+                    // 物品求购单：交付的物品栈与数量（待交付记录里存着）
+                    pending.itemNbt?.let {
+                        CelebrationNetwork.sendItem(player, it, pending.count, CelebrationSource.BUY_ORDER)
+                    }
                 }
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, pending.sellerUuid,
                     // 到账金额 + 手续费一并提示：买家付的是 gross，卖家到手 gross-fee，不说清会产生疑问
@@ -1199,7 +1204,8 @@ object BuyOrderNetwork {
     /** 交付精灵的待领取展示字段（照拍卖/上架的 extraData 字段集，保证待领取列表渲染一致） */
     private fun buildDeliveryExtra(
         pokemon: com.cobblemon.mod.common.pokemon.Pokemon,
-        heldItemStack: ItemStack
+        heldItemStack: ItemStack,
+        registryManager: net.minecraft.registry.RegistryWrapper.WrapperLookup
     ): Map<String, String> {
         val htIvs = pokemon.ivs.hyperTrainedIVs // 极限特训值表（-1 = 未特训）
         val extra = mutableMapOf(
@@ -1227,6 +1233,9 @@ object BuyOrderNetwork {
             "ball" to "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
             "ballItem" to pokemon.caughtBall.name.toString(),
             "heldItemId" to (if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString()),
+            // 携带物完整 NBT（SNBT，仅带组件时非空）：客户端据此重建图标，
+            // 否则只按 ID 建会丢附魔光效与自定义名（2026-09-12）
+            "heldItemNbt" to encodeHeldItemNbt(heldItemStack, registryManager),
             "aspects" to pokemon.aspects.joinToString(","),
             "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(",")
         )

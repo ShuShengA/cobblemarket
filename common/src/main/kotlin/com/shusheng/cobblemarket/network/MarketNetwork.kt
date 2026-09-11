@@ -59,6 +59,9 @@ data class ListingEntry(
     val ball: String,
     val ballItem: String,
     val heldItemId: String,
+    /** 携带物完整 NBT（SNBT，仅带组件时非空）：客户端据此重建图标，否则丢附魔光效/自定义名。
+     *  旧数据无此字段 = 空串，客户端回退按 ID 建图标 */
+    val heldItemNbt: String = "",
     val currencyName: String,
     val aspects: List<String>, // 精灵形态（性别/地区等），客户端渲染 3D 图标用
     /** 拥有的证章 id 列表（外观展示用，证章不影响能力；上架时快照） */
@@ -91,6 +94,7 @@ data class ListingEntry(
         buf.writeString(ball)
         buf.writeString(ballItem)
         buf.writeString(heldItemId)
+        buf.writeString(heldItemNbt)
         buf.writeString(currencyName)
         buf.writeVarInt(aspects.size); aspects.forEach { buf.writeString(it) }
         buf.writeVarInt(marks.size); marks.forEach { buf.writeString(it) }
@@ -123,6 +127,7 @@ data class ListingEntry(
             ball = buf.readString(),
             ballItem = buf.readString(),
             heldItemId = buf.readString(),
+            heldItemNbt = buf.readString(),
             currencyName = buf.readString(),
             aspects = (0 until buf.readVarInt()).map { buf.readString() },
             marks = (0 until buf.readVarInt()).map { buf.readString() },
@@ -492,6 +497,9 @@ data class PokemonPreview(
     val source: String, // "party" or "pc"
     val slot: Int,
     val heldItemId: String,
+    /** 携带物完整 NBT（SNBT，仅带组件时非空）：客户端据此重建图标，否则丢附魔光效/自定义名。
+     *  旧数据无此字段 = 空串，客户端回退按 ID 建图标 */
+    val heldItemNbt: String = "",
     val aspects: List<String>, // 精灵形态（shiny/性别/地区形态等），客户端渲染 3D 图标用
     // 努力值（EV）：上架选择/待领取等场景的详情显示用
     val evsHp: Int, val evsAtk: Int, val evsDef: Int, val evsSpAtk: Int, val evsSpDef: Int, val evsSpd: Int,
@@ -511,7 +519,7 @@ data class PokemonPreview(
         buf.writeInt(htHp); buf.writeInt(htAtk); buf.writeInt(htDef)
         buf.writeInt(htSpAtk); buf.writeInt(htSpDef); buf.writeInt(htSpd)
         buf.writeString(ball); buf.writeString(primaryType); buf.writeString(secondaryType)
-        buf.writeString(source); buf.writeInt(slot); buf.writeString(heldItemId)
+        buf.writeString(source); buf.writeInt(slot); buf.writeString(heldItemId); buf.writeString(heldItemNbt)
         buf.writeVarInt(aspects.size); aspects.forEach { buf.writeString(it) }
         buf.writeInt(evsHp); buf.writeInt(evsAtk); buf.writeInt(evsDef)
         buf.writeInt(evsSpAtk); buf.writeInt(evsSpDef); buf.writeInt(evsSpd)
@@ -529,6 +537,7 @@ data class PokemonPreview(
             buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
             buf.readString(), buf.readString(), buf.readString(),
             buf.readString(), buf.readInt(), buf.readString(),
+            buf.readString(),   // heldItemNbt：与 write 端严格同序（write 在 heldItemId 之后）
             (0 until buf.readVarInt()).map { buf.readString() },
             buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
             buf.readInt(),
@@ -1168,6 +1177,7 @@ object MarketNetwork {
                             ball = detail["ball"] ?: "?",
                             ballItem = detail["ballItem"] ?: "cobblemon:poke_ball",
                             heldItemId = detail["heldItemId"] ?: "",
+                            heldItemNbt = detail["heldItemNbt"] ?: "",
                             currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
                             aspects = parseAspects(detail),
                             marks = parseMarks(detail),
@@ -1534,6 +1544,7 @@ object MarketNetwork {
                             ball = detail["ball"] ?: "?",
                             ballItem = detail["ballItem"] ?: "cobblemon:poke_ball",
                             heldItemId = detail["heldItemId"] ?: "",
+                            heldItemNbt = detail["heldItemNbt"] ?: "",
                             currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
                             aspects = parseAspects(detail),
                             marks = parseMarks(detail),
@@ -1702,7 +1713,7 @@ object MarketNetwork {
                     for (i in 0..5) {
                         try {
                             val p = party.get(PartyPosition(i)) ?: continue
-                            previews.add(toPreview(p, "party", i))
+                            previews.add(toPreview(p, "party", i, server.registryManager))
                         } catch (_: Exception) {
                         }
                     }
@@ -1720,7 +1731,7 @@ object MarketNetwork {
                         if (idx++ < skip) continue
                         if (sent >= pageSize) { hasMore = true; break }
                         try {
-                            previews.add(toPreview(p, "pc", idx - 1))
+                            previews.add(toPreview(p, "pc", idx - 1, server.registryManager))
                             sent++
                         } catch (_: Exception) {
                         }
@@ -1882,7 +1893,7 @@ object MarketNetwork {
                 }
                 val now = System.currentTimeMillis()
                 val extra = try {
-                    buildListingExtra(pokemon, heldItemStack)
+                    buildListingExtra(pokemon, heldItemStack, player.serverWorld.registryManager)
                 } catch (e: Exception) {
                     CobbleMarket.LOGGER.error("Failed to build listing data for pokemon {} by {}: {}", pokemonUuid, player.uuid, e.message)
                     sendToPlayer(
@@ -2503,6 +2514,10 @@ object MarketNetwork {
                     )
                 )
 
+                // 物品庆祝动画：与精灵同一口径——所有权首次转到买家名下时播一次。
+                // 数量按本次实际到手传（listing.itemNbt 存的是上架总量，部分购买时不能直接用它）
+                CelebrationNetwork.sendItem(player, listing.itemNbt, count, CelebrationSource.MARKET)
+
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 val boughtItemName = Identifier.tryParse(listing.itemId)
@@ -2741,7 +2756,7 @@ object MarketNetwork {
                         val pokemon = com.shusheng.cobblemarket.util.PokemonLoader.fromNbt(
                             player.serverWorld.registryManager, listing.pokemonNbt
                         )
-                        toPreview(pokemon, "return", i)
+                        toPreview(pokemon, "return", i, player.serverWorld.registryManager)
                     } catch (e: Exception) {
                         // 单条损坏不影响其他退回的预览
                         CobbleMarket.LOGGER.warn("Failed to build return preview for listing {}: {}", listing.id, e.message)
@@ -2839,7 +2854,8 @@ object MarketNetwork {
 
     private fun buildListingExtra(
         pokemon: com.cobblemon.mod.common.pokemon.Pokemon,
-        heldItemStack: ItemStack
+        heldItemStack: ItemStack,
+        registryManager: net.minecraft.registry.RegistryWrapper.WrapperLookup
     ): Map<String, String> {
         val htIvs = pokemon.ivs.hyperTrainedIVs // 极限特训值表（-1 = 未特训）
         val extra = mutableMapOf(
@@ -2874,6 +2890,9 @@ object MarketNetwork {
             "ball" to "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
             "ballItem" to pokemon.caughtBall.name.toString(),
             "heldItemId" to (if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString()),
+            // 携带物完整 NBT（SNBT，仅带组件时非空）：客户端据此重建图标，
+            // 否则只按 ID 建会丢附魔光效与自定义名（2026-09-12）
+            "heldItemNbt" to encodeHeldItemNbt(heldItemStack, registryManager),
             // 精灵形态（性别/地区等），客户端渲染 3D 图标用；逗号分隔，aspect 名不含逗号
             "aspects" to pokemon.aspects.joinToString(","),
             "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(",")
@@ -2882,7 +2901,12 @@ object MarketNetwork {
         return extra
     }
 
-    private fun toPreview(pokemon: com.cobblemon.mod.common.pokemon.Pokemon, source: String, slot: Int) =
+    private fun toPreview(
+        pokemon: com.cobblemon.mod.common.pokemon.Pokemon,
+        source: String,
+        slot: Int,
+        registryManager: net.minecraft.registry.RegistryWrapper.WrapperLookup
+    ) =
         PokemonPreview(
             uuid = pokemon.uuid,
             // 只发翻译 key，客户端本地翻译——服务端无玩家语言上下文，translatedName 永远是默认语言。
@@ -2916,6 +2940,8 @@ object MarketNetwork {
             source = source,
             slot = slot,
             heldItemId = if (pokemon.heldItem().isEmpty) "" else Registries.ITEM.getId(pokemon.heldItem().item).toString(),
+            // 携带物完整 NBT（SNBT，仅带组件时非空）：客户端据此重建图标，否则丢附魔光效/自定义名
+            heldItemNbt = encodeHeldItemNbt(pokemon.heldItem(), registryManager),
             aspects = pokemon.aspects.toList(),
             evsHp = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP] ?: 0,
             evsAtk = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK] ?: 0,

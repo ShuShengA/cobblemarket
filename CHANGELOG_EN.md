@@ -13,11 +13,24 @@
 - **Celebration upgrade**: the pop-out animation when you buy or win a Pokemon now lets out a battle cry (motion and sound), and stays in sync with the icons — idle and following your cursor by day, already asleep when it appears at night
 - **Cries on click**: clicking a Pokemon row in a list (or a Pokemon icon inside a dialog) plays that Pokemon's cry — a battle cry where the species has one, otherwise the regular cry; sleeping Pokemon and "Static" mode don't respond
 
+#### Item Animations
+
+- **Item celebration animation**: buying an item, winning an item auction or receiving an item buy-order delivery now drops the item icon in from the top of the screen with a bounce and a pickup sound
+- **Item hover preview**: hovering an item slot in the item market, or an item row in the auction house / buy orders, shows an enlarged icon of that item on the left side of the screen
+- **Separate item switches**: a new "Items" group in Settings (market purchase / auction & orders / item preview), independent from the "Pokemon" group
+
+#### Settings Screen
+
+- **Grouped settings**: options in the settings panel are now grouped under gold "Pokemon" / "Items" headings
+- **Scrollable settings panel**: scroll with the mouse wheel when the options overflow one screen
+
 ### Fixes
 
 - **List area going blank while a filter dropdown is open**: opening the type/ability/nature filter in the Pokemon market, the auction house or the sell-select screen made every listing row disappear; only the rows actually covered by the dropdown are now skipped, and rows below it render as usual
 - **Uneven text height in Pokemon detail panels**: in the info lines of hover tooltips / buy confirmation / pending returns (type, ball, nature…), the leading Chinese characters could sit slightly higher than the rest of the line; the line is now aligned
 - **Chinese punctuation**: Chinese colons across the UI and config descriptions are now full-width (English text keeps half-width)
+- **Enchanted and renamed items rendered incorrectly in the auction house and its admin panel**: enchanted books appeared as plain books and renamed items showed their default name in those views; they now render from the item's full data (both list rows and detail dialogs)
+- **Held item icons ignored enchantments and custom names**: when a Pokemon's held item was enchanted or renamed, its icon in lists and detail views showed the plain item; the icons now render from the item's full data (auction house, buy orders, sell-select and admin panels)
 
 ## 1.1.0 (in development, unreleased)
 

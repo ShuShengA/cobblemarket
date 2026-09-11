@@ -447,7 +447,7 @@ object AuctionNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.listing_failed")))
                     return@execute
                 }
-                val extra = buildAuctionExtra(pokemon, heldItemStack)
+                val extra = buildAuctionExtra(pokemon, heldItemStack, player.serverWorld.registryManager)
                 val now = System.currentTimeMillis()
                 val auction = AuctionListing(
                     id = UUID.randomUUID(),
@@ -869,6 +869,11 @@ object AuctionNetwork {
                     // 赢家庆祝动画（在线者）：与落槌铃声同批发送，天然同步
                     if (auction.type == com.shusheng.cobblemarket.market.AuctionType.POKEMON) {
                         CelebrationNetwork.sendFromEntry(server, winnerUuid, auction.species, auction.shiny, auction.extraData, CelebrationSource.AUCTION)
+                    } else {
+                        // 物品拍卖：物品栈 NBT 与竞得数量都在拍卖记录里（数量按拍到的，不是上架总量）
+                        auction.itemNbt?.let {
+                            CelebrationNetwork.sendItem(server, winnerUuid, it, auction.count, CelebrationSource.AUCTION)
+                        }
                     }
                 }
                 // 成交全服播报（与创建播报闭环：上架有人喊、成交有人喊；流拍/强制下架不播，2026-08-30 拍板）
@@ -897,7 +902,8 @@ object AuctionNetwork {
     // 照搬 MarketNetwork.buildListingExtra（保持展示字段一致）
     private fun buildAuctionExtra(
         pokemon: com.cobblemon.mod.common.pokemon.Pokemon,
-        heldItemStack: ItemStack
+        heldItemStack: ItemStack,
+        registryManager: net.minecraft.registry.RegistryWrapper.WrapperLookup
     ): Map<String, String> {
         val htIvs = pokemon.ivs.hyperTrainedIVs // 极限特训值表（-1 = 未特训）
         val extra = mutableMapOf(
@@ -932,6 +938,9 @@ object AuctionNetwork {
             "ball" to "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
             "ballItem" to pokemon.caughtBall.name.toString(),
             "heldItemId" to (if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString()),
+            // 携带物完整 NBT（SNBT，仅带组件时非空）：客户端据此重建图标，
+            // 否则只按 ID 建会丢附魔光效与自定义名（2026-09-12）
+            "heldItemNbt" to encodeHeldItemNbt(heldItemStack, registryManager),
             "aspects" to pokemon.aspects.joinToString(","),
             "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(",")
         )

@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.icon.ItemHoverPreview
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.client.requestCreditInfo
 
@@ -370,6 +371,15 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // 悬停格的物品大图：画在面板之下（面板在 renderBackground 里画，会自然盖住溢出到面板上的部分）。
+        // 用**上一帧**的 hoveredSlot——本帧的悬停判定要到 super.render 之后才算出，差一帧肉眼无感。
+        // 弹窗打开时不出（与精灵版同一规则）。
+        if (selectedEntry == null && cancelEntry == null && hoveredSlot in entries.indices) {
+            val hovered = entries[hoveredSlot]
+            entryStacks[hovered.id]?.let {
+                ItemHoverPreview.render(context, it, width / 2 - 160, height)
+            }
+        }
         super.render(context, mouseX, mouseY, delta)
 
         if (selectedEntry != null || cancelEntry != null) {

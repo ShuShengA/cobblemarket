@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.screen
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
+import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
@@ -109,7 +110,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
                 RenderablePokemon(species, aspects, ItemStack.EMPTY),
                 FloatingState(),
                 ballStack = buildBallStack(p.ball),
-                heldStack = buildHeldStack(p.heldItemId)
+                heldStack = heldIconStack(p.heldItemId, p.heldItemNbt)
             )
         }
     }
@@ -121,13 +122,6 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
     }
 
     /** 携带物栈（空气视为无）；缓存供行渲染每帧复用 */
-    private fun buildHeldStack(heldItemId: String): ItemStack? {
-        if (heldItemId.isEmpty()) return null
-        val heldId = Identifier.tryParse(heldItemId) ?: return null
-        val heldItem = Registries.ITEM.get(heldId)
-        return if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) ItemStack(heldItem) else null
-    }
-
     override fun init() {
         super.init()
         val lx = width / 2 - 148
@@ -960,9 +954,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
                 rowY += 10
             } else if (i == heldItemLine) {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
-                Identifier.tryParse(p.heldItemId)?.let { heldId ->
+                heldIconStack(p.heldItemId, p.heldItemNbt)?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                        itemStack = ItemStack(Registries.ITEM.get(heldId)),
+                        itemStack = heldStack,
                         x = tx + textRenderer.getWidth(line) + 2.0,
                         y = rowY + 0.0,
                         scale = 0.6,

@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.client.CardCelebrationAnimation;
 import com.shusheng.cobblemarket.client.CloseAnimation;
 import com.shusheng.cobblemarket.client.CobbleMarketClientKt;
 import com.shusheng.cobblemarket.client.EnterAnimation;
+import com.shusheng.cobblemarket.client.ItemCelebrationAnimation;
 import com.shusheng.cobblemarket.client.PokemonCelebrationAnimation;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -37,6 +38,7 @@ public abstract class ScreenMixin {
     @Inject(method = "renderWithTooltip", at = @At("TAIL"))
     private void cobblemarket$renderCelebrationOverlay(DrawContext context, int mouseX, int mouseY, float deltaTicks, CallbackInfo ci) {
         PokemonCelebrationAnimation.renderOverlay(context, deltaTicks);
+        ItemCelebrationAnimation.INSTANCE.renderOverlay(context, deltaTicks);
         CardCelebrationAnimation.INSTANCE.renderOverlay(context);
         // 余额 HUD：界面（含弹窗遮罩）画完后补画，保证竞价/购买弹窗打开时余额不被压暗
         CobbleMarketClientKt.renderBalanceHud(context);

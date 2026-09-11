@@ -1,11 +1,14 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.heldIconStack
+import com.shusheng.cobblemarket.client.iconStackOf
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.icon.ItemHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
@@ -722,13 +725,13 @@ class AuctionScreen(
                 rowStacks[index] = RowStacks(
                     ballStack = null,
                     heldStack = null,
-                    itemStack = Identifier.tryParse(entry.species)?.let { ItemStack(Registries.ITEM.get(it)) }
+                    itemStack = iconStackOf(entry.species, entry.itemNbt)
                 )
                 return@forEachIndexed
             }
             rowStacks[index] = RowStacks(
                 ballStack = entry.extraData["ballItem"]?.let { Identifier.tryParse(it)?.let { id -> ItemStack(Registries.ITEM.get(id)) } },
-                heldStack = buildHeldStack(entry.extraData["heldItemId"].orEmpty()),
+                heldStack = heldIconStack(entry.extraData),
                 itemStack = null
             )
             val id = Identifier.tryParse(entry.extraData["speciesId"] ?: "") ?: return@forEachIndexed
@@ -740,13 +743,6 @@ class AuctionScreen(
     }
 
     /** 携带物栈（空气视为无）；缓存供行渲染每帧复用（照精灵市场） */
-    private fun buildHeldStack(heldItemId: String): ItemStack? {
-        if (heldItemId.isEmpty()) return null
-        val heldId = Identifier.tryParse(heldItemId) ?: return null
-        val heldItem = Registries.ITEM.get(heldId)
-        return if (heldItem != Registries.ITEM.get(Identifier.of("minecraft", "air"))) ItemStack(heldItem) else null
-    }
-
     private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
         val data = iconData[index] ?: return
         // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
@@ -962,12 +958,9 @@ class AuctionScreen(
                 }
             }
         } else {
-            Identifier.tryParse(entry.species)?.let { id ->
-                val item = Registries.ITEM.get(id)
-                if (item != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
-                    val stack = ItemStack(item, entry.count)
-                    context.drawItem(stack, slotX + 6, slotY + 6)
-                }
+            // 物品拍卖：走完整 NBT 重建，附魔光效与自定义名称才显示得出来
+            iconStackOf(entry.species, entry.itemNbt)?.let { stack ->
+                if (!stack.isEmpty) context.drawItem(stack, slotX + 6, slotY + 6)
             }
         }
 
@@ -1036,9 +1029,9 @@ class AuctionScreen(
                 val heldLabel = Text.translatable("cobblemarket.gui.tooltip_held").string
                 val heldY = iy
                 infoLine(heldLabel)
-                Identifier.tryParse(heldItemId)?.let { heldId ->
+                heldIconStack(heldItemId, extra["heldItemNbt"])?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                        itemStack = ItemStack(Registries.ITEM.get(heldId)),
+                        itemStack = heldStack,
                         x = infoX + textRenderer.getWidth(heldLabel) + 2.0,
                         y = heldY + 0.0,
                         scale = 0.6,
@@ -1401,6 +1394,12 @@ class AuctionScreen(
         val previewRowL = width / 2 - panelWidth / 2
         IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
             ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
+        // 物品拍卖行的大图：物品图标不走图标注册表（那是精灵专用），按绝对索引从行栈缓存取
+        if (hoveredRow >= 0) {
+            rowStacks[scrollOffset + hoveredRow]?.itemStack?.let {
+                ItemHoverPreview.render(context, it, previewRowL, height)
+            }
+        }
     }
 
     // 拍卖规则悬停面板：标题金色（§6）、正文白色、重点红色（§c）、规则项间分割线
@@ -1555,9 +1554,9 @@ class AuctionScreen(
                 rowY += 10
             } else if (i == heldItemLine) {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
-                Identifier.tryParse(entry.extraData["heldItemId"].orEmpty())?.let { heldId ->
+                heldIconStack(entry.extraData)?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                        itemStack = ItemStack(Registries.ITEM.get(heldId)),
+                        itemStack = heldStack,
                         x = tx + textRenderer.getWidth(line) + 2.0,
                         y = rowY + 0.0,
                         scale = 0.6,
