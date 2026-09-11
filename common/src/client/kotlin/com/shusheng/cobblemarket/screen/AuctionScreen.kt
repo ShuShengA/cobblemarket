@@ -138,8 +138,10 @@ class AuctionScreen(
     private var itemTooltipAdvancedType: TooltipType? = null
     private var itemTooltipAdvancedMaxWidth = 0
 
-    // 精灵 tab：搜索框下方有性别/属性/特性/性格筛选按钮行，列表起点靠下；物品 tab 无筛选按钮，起点贴近搜索框
-    private fun getListStartY() = if (currentTab == 1) 70 else 92
+    // 精灵 tab：搜索框下方有性别/属性/特性/性格筛选按钮行，列表起点靠下；
+    // 物品 tab 与「我的」tab **都没有**筛选按钮行（筛选控件只在精灵 tab 显示，见 applyFilterVisibility），
+    // 所以列表起点贴近搜索框、分割线下面直接接列表
+    private fun getListStartY() = if (currentTab == 0) 92 else 70
     private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 48) / rowHeight)
 
     // ── 文本工具 ──
@@ -279,6 +281,8 @@ class AuctionScreen(
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f
         )
         createButton = createBtn
+        // 「我的」tab 是自己的挂单列表，没有上架入口
+        createBtn.visible = currentTab != 2
         addDrawableChild(createBtn)
 
         // 特训筛选按钮（+右侧，原规则按钮位置），仅精灵 tab 显示（拍卖列表全量下发，本地过滤即可）
@@ -403,6 +407,8 @@ class AuctionScreen(
         // 出价弹窗打开时才真的要隐藏（openBidDialog 会调用本函数收起列表，不能把控件恢复可见）
         searchField?.visible = bidEntry == null
         htButton?.visible = currentTab == 0 && bidEntry == null
+        // 「我的」tab 没有上架入口（出价弹窗期间已在 openBidDialog 里隐藏，这里补上 tab 条件即可）
+        createButton?.visible = currentTab != 2 && bidEntry == null
         bidButtons.forEach { it.visible = !open }
         if (!open) return
         val options: List<Pair<String, String>> = when (filterListOpen) {
@@ -508,6 +514,8 @@ class AuctionScreen(
         rebuildFilterList()
         updateTabButtons()
         htButton?.visible = currentTab == 0
+        // 「我的」tab 没有上架入口
+        createButton?.visible = currentTab != 2
         applyFilterVisibility()
         rebuildFiltered()
         rebuildBidButtons()

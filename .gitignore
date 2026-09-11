@@ -43,3 +43,6 @@ libs/
 # architectury
 
 .architectury-transformer/
+
+# 编译验证日志
+build_verify.log
