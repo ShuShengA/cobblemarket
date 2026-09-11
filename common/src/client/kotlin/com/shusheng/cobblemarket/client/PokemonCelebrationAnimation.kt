@@ -5,6 +5,9 @@ import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.mojang.blaze3d.systems.RenderSystem
+import com.shusheng.cobblemarket.client.icon.IconAnimationResolver
+import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.network.CelebrationSource
 import com.shusheng.cobblemarket.platform.registerHudRender
 import net.minecraft.client.MinecraftClient
@@ -12,7 +15,6 @@ import net.minecraft.client.gui.DrawContext
 import net.minecraft.item.ItemStack
 import net.minecraft.util.Identifier
 import net.minecraft.util.math.MathHelper
-import org.joml.Quaternionf
 import org.lwjgl.opengl.GL11
 import kotlin.math.PI
 
@@ -37,6 +39,10 @@ object PokemonCelebrationAnimation {
     private var state: FloatingState? = null
     private var startTime = 0L
     private var active = false
+
+    /** 本只的战斗吼叫是否已触发。**必须在第一帧渲染之后**触发：`addFirstAnimation` 依赖 `currentModel`，
+     *  而它是在 `applyAnimations` 里才被赋值的，刚 new 出来的 state 还没有模型。 */
+    private var cryTriggered = false
 
     /** 入队一只；空闲则立即开播，正在播则排队等前面播完 */
     fun trigger(speciesId: String, aspects: List<String>, shiny: Boolean, source: String) {
@@ -65,6 +71,7 @@ object PokemonCelebrationAnimation {
                 continue
             }
             state = FloatingState()
+            cryTriggered = false
             startTime = System.currentTimeMillis()
             active = true
             return
@@ -152,6 +159,22 @@ object PokemonCelebrationAnimation {
             alpha = 1f - (t - bounceEnd) / (1f - bounceEnd)
         }
 
+        // 与图标共用同一套解析器：白天待机 + 头跟随鼠标、晚上睡觉。
+        // 恒传 animate = true —— 庆祝动画不受「精灵图标动画」开关控制，只由它自己的两个庆祝开关管；
+        // preview 传 false —— 它不是悬停预览，不播走路。
+        val rotation = PokemonIconRenderer.iconRotation()
+        val anim = IconAnimationResolver.resolve(
+            renderable = rp,
+            state = st,
+            rotation = rotation,
+            centerX = scaledW / 2f,
+            centerY = scaledH / 2f - 100f + offsetY,
+            mouseX = IconRegistry.mouseX,
+            mouseY = IconRegistry.mouseY,
+            animate = true,
+            preview = false
+        )
+
         val matrices = context.matrices
         matrices.push()
         // 模型从原点向下延伸（头顶在原点）：落点上移半高（100px），让视觉中心对齐屏幕中心
@@ -160,17 +183,26 @@ object PokemonCelebrationAnimation {
             drawProfilePokemon(
                 renderablePokemon = rp,
                 matrixStack = matrices,
-                rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
+                rotation = rotation,
+                poseType = anim.poseType,
                 state = st,
                 // 传 delta 让精灵播放 idle 待机动画（呼吸浮动，与队伍界面同款）——弹跳不再是僵硬的死模型
                 partialTicks = delta,
                 // 最大约 200px；scale 参数围绕模型中心缩放，位置不会偏移
                 scale = 90f * scaleFactor,
+                headYaw = anim.headYaw,
+                headPitch = anim.headPitch,
                 r = alpha,
                 g = alpha,
                 b = alpha,
                 a = alpha
             )
+            // 登场吼一声。声音不用另写代码：FloatingState 没有 entity，Cobblemon 的
+            // BedrockSoundKeyframe 会走 SimpleSoundInstance.forUI(...) 自动播出来。
+            if (!cryTriggered) {
+                cryTriggered = true
+                st.addFirstAnimation(setOf("battle_cry", "cry"))
+            }
         } catch (_: Exception) {
         }
         matrices.pop()

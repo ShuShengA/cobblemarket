@@ -140,7 +140,10 @@ object IconAnimationResolver {
             renderable.species.getForm(renderable.aspects).behaviour.resting
         }
         if (!rest.canSleep) return false
-        val dayTime = MinecraftClient.getInstance()?.world?.time ?: return false
+        // 必须用 timeOfDay（一天内时间）—— 等价于原版的 `world.dayTime`。
+        // **不能**用 `world.time`：那是世界总 tick 数，不受 /time set 影响，且新世界从 0 开始
+        // （0 % 24000 = 0 恒等于白天），会让图标在明明是黑夜时死活不睡。
+        val dayTime = MinecraftClient.getInstance()?.world?.timeOfDay ?: return false
         return (dayTime % 24000L).toInt() in rest.times
     }
 }

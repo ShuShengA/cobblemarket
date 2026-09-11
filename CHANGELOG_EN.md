@@ -10,6 +10,7 @@
 - **Day/night sleeping icons**: when the in-game time enters a species' rest window, its icons switch to a sleeping pose (mirroring the vanilla rest schedule — each species has its own hours and about 40% sleep at all), waking automatically once it passes
 - **Hover preview**: hovering a Pokemon row shows an enlarged walking animation of that Pokemon on the left side of the screen — the row icon and the preview are the same Pokemon with fully synchronized motion
 - **Pokemon preview switch**: a new setting to turn the hover preview off on its own (without affecting the icons themselves)
+- **Celebration upgrade**: the pop-out animation when you buy or win a Pokemon now lets out a battle cry (motion and sound), and stays in sync with the icons — idle and following your cursor by day, already asleep when it appears at night
 
 ## 1.1.0 (in development, unreleased)
 
