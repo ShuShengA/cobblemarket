@@ -2,6 +2,8 @@ package com.shusheng.cobblemarket.client.icon
 
 import com.cobblemon.mod.common.client.gui.calculateHeadYawAndPitch
 import com.cobblemon.mod.common.client.render.models.blockbench.PosableState
+import com.cobblemon.mod.common.pokemon.ai.RestBehaviour
+import net.minecraft.client.MinecraftClient
 import com.cobblemon.mod.common.entity.PoseType
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import org.joml.Quaternionf
@@ -56,8 +58,19 @@ object IconAnimationResolver {
         // 静态模式：不推进动画也不跟随鼠标（与 cry 点击、睡眠一致）
         if (!animate) return DEFAULT
 
+        // 姿势优先级：睡眠时段（且该物种有睡眠姿态）> 预览态走路 > 待机。
+        // 睡眠优先于预览，正是「白天 walk / 晚上 sleep」；晚上又没有 sleep 姿态的物种继续走 walk。
+        val poseType = when {
+            isSleepingTime(renderable) && hasSleepPose(state) -> PoseType.SLEEP
+            preview -> walkPoseOrProfile(state)
+            else -> PoseType.PROFILE
+        }
+
+        // 睡觉时头不跟随鼠标（用户拍板）。姿势的实际切换由 drawProfilePokemon 内部的
+        // setPoseToFirstSuitable(poseType) 完成 —— 别在这里自己 setPose，会被那句覆盖（踩过）。
+        if (poseType == PoseType.SLEEP) return Result(poseType, 0f, 0f)
+
         // 头部跟随鼠标：复刻 Cobblemon 详情页大模型的做法（atan 求角 + rotLerp 平滑 + 扣掉图标自身的旋转角）。
-        // 唯一不照搬的是它的「看太久就回正」—— 那是给大图防止被一直盯的，16-20px 的小图标无所谓。
         // 无条件跟随：只悬停才跟的话，图标这么小可能一直触发不了。
         val animState = IconAnimationStates.of(state, preview)
         val (yaw, pitch) = calculateHeadYawAndPitch(
@@ -76,7 +89,7 @@ object IconAnimationResolver {
         // 姿势：预览态且模型确实有走路姿势时切 walk，否则待机。
         // 这里只“返回”姿势类型，实际切换由 drawProfilePokemon 内部的 setPoseToFirstSuitable(poseType) 完成
         // —— 若在这里自己 setPose，紧接着就会被那句覆盖掉（踩过一次）。
-        return Result(if (preview) walkPoseOrProfile(state) else PoseType.PROFILE, yaw, pitch)
+        return Result(poseType, yaw, pitch)
     }
 
     /**
@@ -92,5 +105,42 @@ object IconAnimationResolver {
             pose.poseTypes.any { it in PoseType.MOVING_POSES } && pose.isSuitable(state)
         }
         return if (hasWalk) PoseType.WALK else PoseType.PROFILE
+    }
+
+    /**
+     * 该模型有没有可用的睡眠姿态。
+     *
+     * 判断条件与 `PosableModel.getFirstSuitablePose` 内部保持一致（`SLEEP in poseTypes && isSuitable(state)`），
+     * **必须先自己确认**：`setPoseToFirstSuitable(SLEEP)` 找不到时不会保持原样，而是 fallback 到
+     * `poses.values.first()`，模型会莫名抽一下（已查证）。
+     *
+     * `SLEEP` 是个槽位、一个物种可能注册多个（陆地 `sleep` / 浮水 `water_surface_sleep` / 沉水 `water_sleep` /
+     * 战斗版 / 悬空版）。`FloatingState.getEntity() == null` 让 `isUnderWater` / `isInWater` / `isBattling`
+     * 恒为 false，水中版与战斗版的条件自然不通过，落到陆地/野外版 —— 所以不用自己按 poseName 挑。
+     */
+    private fun hasSleepPose(state: PosableState): Boolean {
+        val model = state.currentModel ?: return false
+        return model.poses.values.any { pose ->
+            PoseType.SLEEP in pose.poseTypes && pose.isSuitable(state)
+        }
+    }
+
+    /** `behaviour.resting` 按「物种 + 形态」缓存：`getForm(aspects)` 每帧每图标调用有开销（满页 45 个）。 */
+    private val restCache = HashMap<String, RestBehaviour>()
+
+    /**
+     * 游戏时间是否处于该物种的休息时段（复刻原版 `DrowsySensor` 的判定）。
+     *
+     * 刻意忽略 `drowsyChance` / `rouseChance` 随机与光照、方块条件 —— 那些是野外「真躺下」的门槛，
+     * 图标只按物种作息走：到点睡、过点醒，不能忽睡忽醒。
+     */
+    private fun isSleepingTime(renderable: RenderablePokemon): Boolean {
+        val key = renderable.species.resourceIdentifier.toString() + renderable.aspects.sorted().joinToString(",")
+        val rest = restCache.getOrPut(key) {
+            renderable.species.getForm(renderable.aspects).behaviour.resting
+        }
+        if (!rest.canSleep) return false
+        val dayTime = MinecraftClient.getInstance()?.world?.time ?: return false
+        return (dayTime % 24000L).toInt() in rest.times
     }
 }
