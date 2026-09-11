@@ -287,7 +287,6 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             buyOrderExpiry = p?.buyOrderExpiry ?: 3,
             maxBuyOrders = p?.maxBuyOrders ?: 5,
             eggTrading = p?.eggTrading ?: false,
-            celebration = p?.celebration ?: true,
             auctionDurations = p?.auctionDurations ?: "",
             // 金融字段提交编辑值
             financeEnabled = localToggles["financeEnabled"] ?: (p?.financeEnabled ?: false),

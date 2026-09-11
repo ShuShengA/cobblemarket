@@ -236,7 +236,7 @@ object ClientConfig {
                             "hoverPreviewItem" to "悬停物品格时在屏幕左侧显示该物品的放大预览（个人设置，与精灵侧各自独立，同上）/ Show a large preview of the item on the left side of the screen when hovering its slot (personal setting, independent from the Pokemon side, same place)",
                             "balanceHudX" to "余额 HUD 水平位置（0=贴左，1=贴右，0.5=居中）；由设置里的「余额HUD位置设置 → 自定义」拖动写入，手改请填 0~1 / Balance HUD horizontal position (0=left, 1=right, 0.5=centered); written by dragging in Settings → Balance HUD position → Custom; keep within 0~1 if editing by hand",
                             "balanceHudY" to "余额 HUD 垂直位置（0=贴顶，1=贴底，0.5=居中）；同样由拖动写入 / Balance HUD vertical position (0=top, 1=bottom, 0.5=centered); likewise written by dragging",
-                            "_note" to "服主还可在服务端配置 cobblemarket.json 的 celebrationAnimationEnabled 里全局关闭动画，那种情况下本文件的开关不起作用 / The server owner can also disable animations globally via celebrationAnimationEnabled in the server-side cobblemarket.json, in which case these switches have no effect"
+                            "_note" to "庆祝动画完全由玩家自己决定（市场入口右下角齿轮 → 设置）：服务端不再有总开关，本文件的开关就是唯一口径 / Celebration animations are entirely up to each player (gear button at the bottom-right of the market entry screen → Settings): there is no server-side master switch any more, these switches are the only thing that matters"
                         ),
                         "celebrationOnMarketBuy" to celebrationOnMarketBuy,
                         "celebrationOnAuctionAndOrder" to celebrationOnAuctionAndOrder,

@@ -8,6 +8,7 @@ import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.network.BuyFromMarketPayload
 import com.shusheng.cobblemarket.network.CreditInfoPayload
+import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.network.ListingEntry
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
@@ -45,7 +46,7 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
                 // 用挂单真实 aspects（含性别形态），否则雌性爱管侍会渲染成默认雄性模型
                 val aspects = entry.aspects.toMutableSet()
                 if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
-                renderable = RenderablePokemon(species, aspects, ItemStack.EMPTY)
+                renderable = RenderablePokemon(species, aspects, heldIconStack(entry.heldItemId, entry.heldItemNbt) ?: ItemStack.EMPTY)
             }
         }
 

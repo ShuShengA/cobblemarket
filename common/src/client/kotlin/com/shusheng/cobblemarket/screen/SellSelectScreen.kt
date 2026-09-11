@@ -106,11 +106,13 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             // 否则雌性爱管侍这类性别差异物种会渲染成默认雄性模型
             val aspects = p.aspects.toMutableSet()
             if (p.shiny && "shiny" !in aspects) aspects.add("shiny")
+            // 携带物同时喂给模型（Cobblemon 会渲染在手上/嘴上）与行内小图标
+            val held = heldIconStack(p.heldItemId, p.heldItemNbt)
             iconData[i] = IconData(
-                RenderablePokemon(species, aspects, ItemStack.EMPTY),
+                RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
                 FloatingState(),
                 ballStack = buildBallStack(p.ball),
-                heldStack = heldIconStack(p.heldItemId, p.heldItemNbt)
+                heldStack = held
             )
         }
     }

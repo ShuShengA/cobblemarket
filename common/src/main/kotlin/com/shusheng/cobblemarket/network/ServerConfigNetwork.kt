@@ -48,7 +48,6 @@ data class ServerConfigDataPayload(
     val buyOrderExpiry: Int,
     val maxBuyOrders: Int,
     val eggTrading: Boolean,
-    val celebration: Boolean,
     /** 拍卖时长选项，逗号分隔（分钟）；服务端解析为 List<Int> */
     val auctionDurations: String,
     // ── 金融系统（喵喵银行）配置 ──
@@ -117,7 +116,6 @@ data class ServerConfigDataPayload(
                 b.writeInt(p.buyOrderExpiry)
                 b.writeInt(p.maxBuyOrders)
                 b.writeBoolean(p.eggTrading)
-                b.writeBoolean(p.celebration)
                 b.writeString(p.auctionDurations)
                 b.writeBoolean(p.financeEnabled)
                 b.writeBoolean(p.cashLoanEnabled)
@@ -178,7 +176,6 @@ data class ServerConfigDataPayload(
                 buyOrderExpiry = b.readInt(),
                 maxBuyOrders = b.readInt(),
                 eggTrading = b.readBoolean(),
-                celebration = b.readBoolean(),
                 auctionDurations = b.readString(),
                 financeEnabled = b.readBoolean(),
                 cashLoanEnabled = b.readBoolean(),
@@ -244,7 +241,6 @@ data class SaveServerConfigPayload(
     val buyOrderExpiry: Int,
     val maxBuyOrders: Int,
     val eggTrading: Boolean,
-    val celebration: Boolean,
     /** 拍卖时长选项，逗号分隔（分钟）；服务端解析为 List<Int>，解析失败保持旧值 */
     val auctionDurations: String,
     // ── 金融系统（喵喵银行）配置 ──
@@ -311,7 +307,6 @@ data class SaveServerConfigPayload(
                 b.writeInt(p.buyOrderExpiry)
                 b.writeInt(p.maxBuyOrders)
                 b.writeBoolean(p.eggTrading)
-                b.writeBoolean(p.celebration)
                 b.writeString(p.auctionDurations)
                 b.writeBoolean(p.financeEnabled)
                 b.writeBoolean(p.cashLoanEnabled)
@@ -372,7 +367,6 @@ data class SaveServerConfigPayload(
                 buyOrderExpiry = b.readInt(),
                 maxBuyOrders = b.readInt(),
                 eggTrading = b.readBoolean(),
-                celebration = b.readBoolean(),
                 auctionDurations = b.readString(),
                 financeEnabled = b.readBoolean(),
                 cashLoanEnabled = b.readBoolean(),
@@ -462,7 +456,6 @@ object ServerConfigNetwork {
         buyOrderExpiry = CobbleMarketConfig.buyOrderExpiryDays,
         maxBuyOrders = CobbleMarketConfig.maxBuyOrdersPerPlayer,
         eggTrading = CobbleMarketConfig.eggTradingEnabled,
-        celebration = CobbleMarketConfig.celebrationAnimationEnabled,
         auctionDurations = CobbleMarketConfig.auctionDurationOptions.joinToString(","),
         financeEnabled = CobbleMarketConfig.financeEnabled,
         cashLoanEnabled = CobbleMarketConfig.cashLoanEnabled,
@@ -524,7 +517,6 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setBuyOrderExpiryDays(p.buyOrderExpiry)
         CobbleMarketConfig.setMaxBuyOrdersPerPlayer(p.maxBuyOrders)
         CobbleMarketConfig.setEggTradingEnabled(p.eggTrading)
-        CobbleMarketConfig.setCelebrationAnimationEnabled(p.celebration)
         CobbleMarketConfig.setAuctionDurationOptions(p.auctionDurations)
         CobbleMarketConfig.setFinanceEnabled(p.financeEnabled)
         CobbleMarketConfig.setCreditLimitCooldownHours(p.creditCooldown)

@@ -109,11 +109,13 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             val species = PokemonSpecies.getByIdentifier(id) ?: continue
             val aspects = p.aspects.toMutableSet()
             if (p.shiny && "shiny" !in aspects) aspects.add("shiny")
+            // 携带物同时喂给模型（Cobblemon 会渲染在手上/嘴上）与行内小图标
+            val held = heldIconStack(p.heldItemId, p.heldItemNbt)
             iconData[i] = IconData(
-                RenderablePokemon(species, aspects, ItemStack.EMPTY),
+                RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
                 FloatingState(),
                 ballStack = buildBallStack(p.ball),
-                heldStack = heldIconStack(p.heldItemId, p.heldItemNbt)
+                heldStack = held
             )
         }
     }
@@ -391,7 +393,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             if (species != null) {
                 val aspects = pokemon.aspects.toMutableSet()
                 if (pokemon.shiny && "shiny" !in aspects) aspects.add("shiny")
-                dialogRenderable = RenderablePokemon(species, aspects, ItemStack.EMPTY)
+                dialogRenderable = RenderablePokemon(species, aspects, heldIconStack(pokemon.heldItemId, pokemon.heldItemNbt) ?: ItemStack.EMPTY)
             }
         }
         // 点行 → 弹窗弹出 → 由弹窗里的精灵叫一声（用户拍板的「叫声转移」）。

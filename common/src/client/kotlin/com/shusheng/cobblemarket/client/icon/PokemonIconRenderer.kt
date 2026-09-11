@@ -1,9 +1,12 @@
 package com.shusheng.cobblemarket.client.icon
 
 import com.cobblemon.mod.common.client.gui.drawProfilePokemon
+import com.cobblemon.mod.common.client.render.item.HeldItemRenderer
 import com.cobblemon.mod.common.client.render.models.blockbench.PosableState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import net.minecraft.client.gui.DrawContext
+import net.minecraft.client.util.math.MatrixStack
+import net.minecraft.item.ItemStack
 import org.joml.Quaternionf
 
 /**
@@ -13,6 +16,30 @@ import org.joml.Quaternionf
  * 现收口到这里 —— 后续的动画能力只动 [IconAnimationResolver]，这些调用点不再改动。
  */
 object PokemonIconRenderer {
+
+    /** 携带物渲染器：无状态，复用一个实例即可（照 Cobblemon Summary 的 ModelWidget） */
+    private val heldItemRenderer = HeldItemRenderer()
+
+    /**
+     * 把携带物渲染到模型的手/嘴 locator 上。
+     *
+     * **`drawProfilePokemon` 不负责携带物**——它第一步就是把 `RenderablePokemon` 拆成
+     * `species` + `aspects`，`heldItem` 被丢弃。Cobblemon Summary 的做法是两者成对调用：
+     * 先 `drawProfilePokemon(...)`、紧接着 `HeldItemRenderer.renderOnModel(...)`
+     * （见 `ModelWidget.kt:113-131`，2026-09-12 查证）。必须在同一个矩阵作用域内、
+     * 且在 `drawProfilePokemon` **之后**调用（它内部才会给 state 设好 currentModel 与 locator）。
+     *
+     * @param matrices 默认用 context 当前的矩阵栈；三处 profile 渲染都在自己的 push 作用域内调
+     */
+    fun drawHeldItem(
+        context: DrawContext,
+        item: ItemStack,
+        state: PosableState,
+        matrices: MatrixStack = context.matrices
+    ) {
+        if (item.isEmpty) return
+        heldItemRenderer.renderOnModel(item, state, matrices, context.vertexConsumers, light = 0xF000F0)
+    }
 
     /** 全项目统一的图标缩放。庆祝动画与悬停大图走各自的 scale，不经过这里。 */
     const val ICON_SCALE = 4.5f
@@ -75,6 +102,8 @@ object PokemonIconRenderer {
                 headYaw = anim.headYaw,
                 headPitch = anim.headPitch
             )
+            // 携带物：与 drawProfilePokemon 成对（它不画这个），详见 drawHeldItem 注释
+            drawHeldItem(context, renderable.heldItem, state, matrices)
         } finally {
             if (useScissor) {
                 context.disableScissor()

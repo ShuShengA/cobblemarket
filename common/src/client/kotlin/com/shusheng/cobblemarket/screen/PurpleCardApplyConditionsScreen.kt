@@ -192,7 +192,6 @@ class PurpleCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.o
             buyOrderExpiry = p?.buyOrderExpiry ?: 3,
             maxBuyOrders = p?.maxBuyOrders ?: 5,
             eggTrading = p?.eggTrading ?: false,
-            celebration = p?.celebration ?: true,
             auctionDurations = p?.auctionDurations ?: "",
             financeEnabled = p?.financeEnabled ?: false,
             cashLoanEnabled = p?.cashLoanEnabled ?: true,

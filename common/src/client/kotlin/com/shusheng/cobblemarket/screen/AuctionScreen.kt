@@ -729,16 +729,18 @@ class AuctionScreen(
                 )
                 return@forEachIndexed
             }
+            // 携带物同时喂给模型（Cobblemon 会渲染在手上/嘴上）与行内小图标
+            val held = heldIconStack(entry.extraData)
             rowStacks[index] = RowStacks(
                 ballStack = entry.extraData["ballItem"]?.let { Identifier.tryParse(it)?.let { id -> ItemStack(Registries.ITEM.get(id)) } },
-                heldStack = heldIconStack(entry.extraData),
+                heldStack = held,
                 itemStack = null
             )
             val id = Identifier.tryParse(entry.extraData["speciesId"] ?: "") ?: return@forEachIndexed
             val species = PokemonSpecies.getByIdentifier(id) ?: return@forEachIndexed
             val aspects = (entry.extraData["aspects"] ?: "").split(",").filter { it.isNotEmpty() }.toMutableSet()
             if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
-            iconData[index] = IconData(displayName(entry), RenderablePokemon(species, aspects, ItemStack.EMPTY), FloatingState())
+            iconData[index] = IconData(displayName(entry), RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY), FloatingState())
         }
     }
 
@@ -827,7 +829,7 @@ class AuctionScreen(
             if (species != null) {
                 val aspects = (entry.extraData["aspects"] ?: "").split(",").filter { it.isNotEmpty() }.toMutableSet()
                 if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
-                bidRenderable = RenderablePokemon(species, aspects, ItemStack.EMPTY)
+                bidRenderable = RenderablePokemon(species, aspects, heldIconStack(entry.extraData) ?: ItemStack.EMPTY)
             }
         } else {
             // 物品词条行（附魔等）：打开时构建 BASIC + ADVANCED 双份（供布局估算；ADVANCED 此刻无 Shift，
@@ -1394,9 +1396,12 @@ class AuctionScreen(
         val previewRowL = width / 2 - panelWidth / 2
         IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
             ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
-        // 物品拍卖行的大图：物品图标不走图标注册表（那是精灵专用），按绝对索引从行栈缓存取
-        if (hoveredRow >= 0) {
-            rowStacks[scrollOffset + hoveredRow]?.itemStack?.let {
+        // 物品拍卖行的大图：物品图标不走图标注册表（那是精灵专用），从行栈缓存按**原始索引**取。
+        // ⚠ 必须走 indexedFiltered 的映射，不能用 scrollOffset + hoveredRow —— 后者是**过滤后**列表的行号，
+        // 而 rowStacks 的 key 是 entries（全量）的索引，有搜索/筛选时两者不是一回事
+        // （2026-09-12 踩过：精灵行悬停却弹出物品大图，就是索引错位取到了同位置的物品条目）
+        indexedFiltered.getOrNull(scrollOffset + hoveredRow)?.index?.let { absIdx ->
+            rowStacks[absIdx]?.itemStack?.let {
                 ItemHoverPreview.render(context, it, previewRowL, height)
             }
         }

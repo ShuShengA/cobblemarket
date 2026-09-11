@@ -2889,10 +2889,10 @@ object MarketNetwork {
             "gender" to pokemon.gender.name,
             "ball" to "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
             "ballItem" to pokemon.caughtBall.name.toString(),
-            "heldItemId" to (if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString()),
-            // 携带物完整 NBT（SNBT，仅带组件时非空）：客户端据此重建图标，
-            // 否则只按 ID 建会丢附魔光效与自定义名（2026-09-12）
-            "heldItemNbt" to encodeHeldItemNbt(heldItemStack, registryManager),
+            // 携带物：玩家在 Cobblemon 队伍详情里把携带物设成「隐藏」时（heldItemVisible）一律不下发，
+            // 否则图标/动画里显示着东西、与实际不符。判据与 Cobblemon 自己的一致（Pokemon.asRenderablePokemon）
+            "heldItemId" to if (!pokemon.heldItemVisible || heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString(),
+            "heldItemNbt" to if (pokemon.heldItemVisible) encodeHeldItemNbt(heldItemStack, registryManager) else "",
             // 精灵形态（性别/地区等），客户端渲染 3D 图标用；逗号分隔，aspect 名不含逗号
             "aspects" to pokemon.aspects.joinToString(","),
             "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(",")
@@ -2939,9 +2939,9 @@ object MarketNetwork {
             secondaryType = pokemon.secondaryType?.let { "cobblemon.type.${it.name.lowercase()}" } ?: "",
             source = source,
             slot = slot,
-            heldItemId = if (pokemon.heldItem().isEmpty) "" else Registries.ITEM.getId(pokemon.heldItem().item).toString(),
-            // 携带物完整 NBT（SNBT，仅带组件时非空）：客户端据此重建图标，否则丢附魔光效/自定义名
-            heldItemNbt = encodeHeldItemNbt(pokemon.heldItem(), registryManager),
+            // 携带物：与拍卖/求购同口径——隐藏（heldItemVisible = false）时不下发，判据与 Cobblemon 一致
+            heldItemId = if (!pokemon.heldItemVisible || pokemon.heldItem().isEmpty) "" else Registries.ITEM.getId(pokemon.heldItem().item).toString(),
+            heldItemNbt = if (pokemon.heldItemVisible) encodeHeldItemNbt(pokemon.heldItem(), registryManager) else "",
             aspects = pokemon.aspects.toList(),
             evsHp = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP] ?: 0,
             evsAtk = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK] ?: 0,

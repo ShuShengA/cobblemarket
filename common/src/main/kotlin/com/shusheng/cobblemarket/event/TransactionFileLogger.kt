@@ -77,7 +77,7 @@ object TransactionFileLogger {
                           退还（待领取退还）
 
                     详情列（"|"分隔，缺失字段整段省略）：
-                    精灵：lv=等级|shiny=Y/N|ivs=六项个体值|evs=六项努力值|ht=特训项:特训值|nature=生效性格|base=原生性格|ability=特性|gender=性别|ball=球种|held=携带物|form=形态
+                    精灵：lv=等级|shiny=Y/N|ivs=六项个体值|evs=六项努力值|ht=特训项：特训值|nature=生效性格|base=原生性格|ability=特性|gender=性别|ball=球种|held=携带物|form=形态
                     物品：count=数量|ench=附魔id:等级,逗号分隔|nbt={完整NBT文本}
                     下架类记录额外带 reason：user=买家/卖家主动、expired=过期、admin=管理员强制、unsold=拍卖流拍
 

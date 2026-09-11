@@ -93,12 +93,14 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             // 用挂单真实 aspects（性别形态/地区形态等），与其他界面一致
             val aspects = entry.aspects.toMutableSet()
             if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
+            // 携带物同时喂给模型（Cobblemon 会渲染在手上/嘴上）与行内小图标
+            val held = heldIconStack(entry.heldItemId, entry.heldItemNbt)
             iconData[index] = IconData(
                 species.translatedName.string,
-                RenderablePokemon(species, aspects, ItemStack.EMPTY),
+                RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
                 FloatingState(),
                 ballStack = Identifier.tryParse(entry.ballItem)?.let { ItemStack(Registries.ITEM.get(it)) },
-                heldStack = heldIconStack(entry.heldItemId, entry.heldItemNbt)
+                heldStack = held
             )
         }
     }
@@ -510,7 +512,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 // 用挂单真实 aspects（性别形态/地区形态等），与其他界面一致
                 val aspects = e.aspects.toMutableSet()
                 if (e.shiny && "shiny" !in aspects) aspects.add("shiny")
-                confirmRenderable = RenderablePokemon(species, aspects, ItemStack.EMPTY)
+                confirmRenderable = RenderablePokemon(species, aspects, heldIconStack(e.heldItemId, e.heldItemNbt) ?: ItemStack.EMPTY)
                 confirmDisplayName = species.translatedName.string
             }
         }

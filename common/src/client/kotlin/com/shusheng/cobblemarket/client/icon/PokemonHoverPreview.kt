@@ -94,6 +94,8 @@ object PokemonHoverPreview {
                 headYaw = anim.headYaw,
                 headPitch = anim.headPitch
             )
+            // 携带物：与 drawProfilePokemon 成对，否则大图里的精灵是空手的
+            PokemonIconRenderer.drawHeldItem(context, renderable.heldItem, state, matrices)
         } catch (_: Exception) {
         } finally {
             matrices.pop()

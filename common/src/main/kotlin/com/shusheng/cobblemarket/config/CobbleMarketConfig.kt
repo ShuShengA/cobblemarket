@@ -67,8 +67,6 @@ object CobbleMarketConfig {
         private set
     var maxBuyOrdersPerPlayer: Int = 5
         private set
-    var celebrationAnimationEnabled: Boolean = true
-        private set
     var marketEnabled: Boolean = true
         private set
 
@@ -227,7 +225,6 @@ object CobbleMarketConfig {
     fun setBuyOrderFeePercent(v: Double) { buyOrderFeePercent = v.coerceIn(0.0, 100.0) }
     fun setBuyOrderExpiryDays(v: Int) { buyOrderExpiryDays = v.coerceAtLeast(1) }
     fun setMaxBuyOrdersPerPlayer(v: Int) { maxBuyOrdersPerPlayer = v.coerceAtLeast(0) }
-    fun setCelebrationAnimationEnabled(v: Boolean) { celebrationAnimationEnabled = v }
 
     // ── 金融系统 setter（ServerConfigScreen 金融区块；利息快照制：改配置只影响新贷款，存量贷款用创建时快照） ──
 
@@ -343,7 +340,7 @@ object CobbleMarketConfig {
                     "pendingReturnRetentionDays", "auctionFeePercent", "auctionDurationOptions",
                     "auctionMinBidIncrement", "auctionAntiSnipeSeconds", "maxAuctionsPerPlayer",
                     "eggTradingEnabled", "buyOrderFeePercent", "buyOrderExpiryDays",
-                    "maxBuyOrdersPerPlayer", "celebrationAnimationEnabled", "marketEnabled",
+                    "maxBuyOrdersPerPlayer", "marketEnabled",
                     "finance"
                 )
                 var missingKeys = knownKeys.any { !data.containsKey(it) }
@@ -500,7 +497,6 @@ object CobbleMarketConfig {
                 val rawBuyOrderExpiry = (data["buyOrderExpiryDays"] as? Double)?.toInt()
                 buyOrderExpiryDays = (rawBuyOrderExpiry ?: 3).coerceAtLeast(1)
                 maxBuyOrdersPerPlayer = ((data["maxBuyOrdersPerPlayer"] as? Double)?.toInt() ?: 5).coerceAtLeast(0)
-                celebrationAnimationEnabled = data["celebrationAnimationEnabled"] as? Boolean ?: true
                 marketEnabled = data["marketEnabled"] as? Boolean ?: true
                 // 缺失字段补写：旧设置保留，新字段以默认值落盘（服主无需删配置）
                 if (missingKeys) {
@@ -547,7 +543,6 @@ object CobbleMarketConfig {
                 "buyOrderExpiryDays" to "求购单过期天数（到期自动关闭，剩余冻结金退买家待领余额）/ Buy order expiry in days (expired orders close automatically and refund frozen money)",
                 "marketEnabled" to "市场总开关（默认开启）：紧急情况可整体关闭市场功能——所有买卖/拍卖/求购操作被拦截并提示，但待领取、余额等取回自己资产的操作仍可用。可在游戏内用 /market on|off 切换 / Master market switch (on by default): emergency kill switch for the entire market — all buy/sell/auction/buy-order operations are blocked with a notice, while claiming returns and collecting balances still work. Toggle in-game via /market on|off",
                 "maxBuyOrdersPerPlayer" to "每个玩家同时进行的求购单数量上限，精灵与物品合计（0=不限制）。求购单列表全量下发给所有客户端，玩家较多的服务器建议保持较小值，避免全服活跃求购单总量过大导致卡顿 / Max concurrent buy orders per player, Pokémon and items combined (0=unlimited). The buy order list is broadcast in full to every client, so on crowded servers keep this small to avoid lag from too many active orders",
-                "celebrationAnimationEnabled" to "获得精灵时的庆祝动画开关（默认开启）。买到精灵、拍到精灵、求购单接受交付时，在获得者屏幕中央播放该精灵的弹跳动画；关闭后服务端不再下发动画包 / Celebration animation switch when obtaining a Pokémon (on by default). Plays a bouncing animation of the Pokémon on the receiver's screen when buying, winning an auction, or accepting a buy order delivery; when off the server stops sending the animation packet",
                 "finance.enabled" to "金融系统总开关（默认关闭）。开启后玩家可借贷/使用喵喵支付；关闭时禁止新增借贷与信用支付，已有贷款照常运行（还款/逾期/坏账不受影响） / Master switch for the finance system (off by default). When on, players can take loans and use Meowth Pay; when off, new loans and credit payments are blocked while existing loans keep running (repayment/overdue/bad debt unaffected)",
                 "finance.cashLoanEnabled" to "现金贷开关（借呗）：玩家在喵喵银行柜台主动借款 / Cash loan switch (Jiebei-style): players borrow cash directly at the Meowth Bank counter",
                 "finance.consumerLoanEnabled" to "消费贷开关（喵喵支付）：购买精灵/物品、拍卖出价时可选择信用垫付 / Consumer loan switch (Meowth Pay): credit payment option when buying Pokémon/items or bidding in auctions",
@@ -600,7 +595,6 @@ object CobbleMarketConfig {
             "buyOrderFeePercent" to buyOrderFeePercent,
             "buyOrderExpiryDays" to buyOrderExpiryDays,
             "maxBuyOrdersPerPlayer" to maxBuyOrdersPerPlayer,
-            "celebrationAnimationEnabled" to celebrationAnimationEnabled,
             "marketEnabled" to marketEnabled,
             "finance" to mapOf(
                 "enabled" to financeEnabled,

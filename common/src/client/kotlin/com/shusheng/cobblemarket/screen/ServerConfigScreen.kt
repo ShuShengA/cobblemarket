@@ -47,7 +47,6 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
 
     private val toggleDefs = listOf(
         "cobblemarket.op.scfg_egg_trading" to "eggTrading",
-        "cobblemarket.op.scfg_celebration" to "celebration",
     )
 
     private val numFields = mutableMapOf<String, TextFieldWidget>()
@@ -301,7 +300,6 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         val p = latest
         return when (key) {
             "eggTrading" -> p?.eggTrading ?: false
-            "celebration" -> p?.celebration ?: true
             "financeEnabled" -> p?.financeEnabled ?: false
             "cashLoan" -> p?.cashLoanEnabled ?: true
             "consumerLoan" -> p?.consumerLoanEnabled ?: true
@@ -316,7 +314,6 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         val on = payload?.let { p ->
             when (key) {
                 "eggTrading" -> p.eggTrading
-                "celebration" -> p.celebration
                 "financeEnabled" -> p.financeEnabled
                 "cashLoan" -> p.cashLoanEnabled
                 "consumerLoan" -> p.consumerLoanEnabled
@@ -324,7 +321,6 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             }
         } ?: localToggles[key] ?: when (key) {
             "eggTrading" -> latest?.eggTrading ?: false
-            "celebration" -> latest?.celebration ?: true
             "financeEnabled" -> latest?.financeEnabled ?: false
             "cashLoan" -> latest?.cashLoanEnabled ?: true
             "consumerLoan" -> latest?.consumerLoanEnabled ?: true
@@ -365,7 +361,6 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             buyOrderExpiry = intOr("buyOrderExpiry", p?.buyOrderExpiry ?: 3),
             maxBuyOrders = intOr("maxBuyOrders", p?.maxBuyOrders ?: 5),
             eggTrading = localToggles["eggTrading"] ?: (p?.eggTrading ?: false),
-            celebration = localToggles["celebration"] ?: (p?.celebration ?: true),
             auctionDurations = numFields["auctionDurations"]?.text.orEmpty()
                 .ifBlank { p?.auctionDurations ?: "" },
             // 金融字段全部回填快照原值（已迁移到 FinanceConfigScreen 编辑）

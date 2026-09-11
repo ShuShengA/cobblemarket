@@ -852,10 +852,15 @@ class BuyOrderScreen(
         val previewRowL = rowLeftX()
         IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + rowW())
             ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
-        // 物品求购单行的大图：物品图标不进注册表，按绝对索引从行缓存取（精灵行的 itemStack 为 null）
+        // 物品求购单行的大图：物品图标不进注册表，从行缓存取（精灵行的 itemStack 为 null）。
+        // ⚠ 必须走 indexedDisplay 的原始索引（同上方行渲染），不能用 scrollOffset + hoveredRow ——
+        // 后者是**过滤后**列表的行号，而 iconData 的 key 是 entries 的索引，有过滤时不是一回事
+        // （2026-09-12 踩过：拍卖场同样写法导致精灵行弹出物品大图）
         if (hoveredRow >= 0) {
-            iconData[scrollOffset + hoveredRow]?.itemStack?.let {
-                ItemHoverPreview.render(context, it, previewRowL, height)
+            indexedDisplay.getOrNull(scrollOffset + hoveredRow)?.let { (absIdx, _) ->
+                iconData[absIdx]?.itemStack?.let {
+                    ItemHoverPreview.render(context, it, previewRowL, height)
+                }
             }
         }
     }

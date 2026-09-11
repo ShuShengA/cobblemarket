@@ -455,7 +455,7 @@ object CobbleMarketClient {
         registerS2C(PokemonCelebrationPayload.ID, PokemonCelebrationPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 // 获得精灵庆祝动画：买到/拍到/求购单接受交付均走这里（拍卖场景与落槌铃声同批触发，天然同步）
-                PokemonCelebrationAnimation.trigger(payload.speciesId, payload.aspects, payload.shiny, payload.source)
+                PokemonCelebrationAnimation.trigger(payload.speciesId, payload.aspects, payload.shiny, payload.source, payload.heldItemNbt)
             }
         }
 

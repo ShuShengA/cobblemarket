@@ -26,7 +26,10 @@ data class PokemonCelebrationPayload(
     val speciesId: String,     // 物种资源 ID
     val aspects: List<String>, // 精灵形态（客户端叠加 shiny 渲染）
     val shiny: Boolean,
-    val source: String         // CelebrationSource.name
+    val source: String,        // CelebrationSource.name
+    /** 携带物完整 NBT（SNBT，仅带组件时非空）。客户端重建模型时喂给 RenderablePokemon——
+     *  Cobblemon 会把手/嘴上的物品渲染出来，不传的话动画里的精灵是空手的 */
+    val heldItemNbt: String = ""
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -37,13 +40,15 @@ data class PokemonCelebrationPayload(
                 b.writeVarInt(p.aspects.size); p.aspects.forEach { b.writeString(it) }
                 b.writeBoolean(p.shiny)
                 b.writeString(p.source)
+                b.writeString(p.heldItemNbt)
             },
             { b ->
                 PokemonCelebrationPayload(
                     speciesId = b.readString(),
                     aspects = (0 until b.readVarInt()).map { b.readString() },
                     shiny = b.readBoolean(),
-                    source = b.readString()
+                    source = b.readString(),
+                    heldItemNbt = b.readString()
                 )
             }
         )
@@ -115,9 +120,15 @@ object CelebrationNetwork {
         registerS2CType(CardCelebrationPayload.ID, CardCelebrationPayload.CODEC)
     }
 
-    fun send(player: ServerPlayerEntity, speciesId: String, aspects: List<String>, shiny: Boolean, source: CelebrationSource) {
-        if (!CobbleMarketConfig.celebrationAnimationEnabled) return
-        sendToPlayer(player, PokemonCelebrationPayload(speciesId, aspects, shiny, source.name))
+    fun send(
+        player: ServerPlayerEntity,
+        speciesId: String,
+        aspects: List<String>,
+        shiny: Boolean,
+        source: CelebrationSource,
+        heldItemNbt: String = ""
+    ) {
+        sendToPlayer(player, PokemonCelebrationPayload(speciesId, aspects, shiny, source.name, heldItemNbt))
     }
 
     /**
@@ -125,7 +136,6 @@ object CelebrationNetwork {
      * （买到 / 拍到 / 求购单接受交付），领取待领取、退回、下架都不播。
      */
     fun sendItem(player: ServerPlayerEntity, itemNbt: NbtCompound, count: Int, source: CelebrationSource) {
-        if (!CobbleMarketConfig.celebrationAnimationEnabled) return
         sendToPlayer(player, ItemCelebrationPayload(itemNbt, count, source.name))
     }
 
@@ -139,7 +149,6 @@ object CelebrationNetwork {
      * 像真的在发卡（客户端卡片放大动画，起点由申请界面点击时登记）。
      */
     fun sendCard(player: ServerPlayerEntity, kind: String) {
-        if (!CobbleMarketConfig.celebrationAnimationEnabled) return
         sendToPlayer(player, CardCelebrationPayload(kind))
     }
 
@@ -154,7 +163,9 @@ object CelebrationNetwork {
             speciesId = extraData["speciesId"] ?: species,
             aspects = (extraData["aspects"] ?: "").split(",").filter { it.isNotEmpty() },
             shiny = shiny,
-            source = source
+            source = source,
+            // 携带物一并下发：三个触发点的 extraData 都带着这个键（拍卖/求购/市场挂单同款口径）
+            heldItemNbt = extraData["heldItemNbt"].orEmpty()
         )
     }
 

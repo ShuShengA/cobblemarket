@@ -30,7 +30,12 @@ object PokemonCelebrationAnimation {
 
     private const val DURATION_MS = 2800L
 
-    private data class Pending(val speciesId: String, val aspects: List<String>, val shiny: Boolean)
+    private data class Pending(
+        val speciesId: String,
+        val aspects: List<String>,
+        val shiny: Boolean,
+        val heldItemNbt: String
+    )
 
     /** 待播队列：同一批获得多只（一次结算赢下几个拍卖）时依次播完，不互相覆盖 */
     private val queue = ArrayDeque<Pending>()
@@ -45,7 +50,7 @@ object PokemonCelebrationAnimation {
     private var cryTriggered = false
 
     /** 入队一只；空闲则立即开播，正在播则排队等前面播完 */
-    fun trigger(speciesId: String, aspects: List<String>, shiny: Boolean, source: String) {
+    fun trigger(speciesId: String, aspects: List<String>, shiny: Boolean, source: String, heldItemNbt: String = "") {
         // 个人开关按来源分流（服务端总开关是另一层：那层关了压根不发包）。
         // 未知来源（版本不匹配等）归到低频那组，宁可多播也不要静默吞掉。
         val allowed = if (source == CelebrationSource.MARKET.name)
@@ -53,7 +58,7 @@ object PokemonCelebrationAnimation {
         else
             ClientConfig.celebrationOnAuctionAndOrder
         if (!allowed) return
-        queue.addLast(Pending(speciesId, aspects, shiny))
+        queue.addLast(Pending(speciesId, aspects, shiny, heldItemNbt))
         if (!active) startNext()
     }
 
@@ -66,7 +71,8 @@ object PokemonCelebrationAnimation {
             val renderAspects = next.aspects.toMutableSet()
             if (next.shiny) renderAspects.add("shiny")
             renderable = try {
-                RenderablePokemon(species, renderAspects, ItemStack.EMPTY)
+                // 携带物一并喂给模型：Cobblemon 会把它渲染在手上/嘴上，不传则动画里的精灵是空手的
+                RenderablePokemon(species, renderAspects, heldIconStack("", next.heldItemNbt) ?: ItemStack.EMPTY)
             } catch (_: Exception) {
                 continue
             }
@@ -197,6 +203,10 @@ object PokemonCelebrationAnimation {
                 b = alpha,
                 a = alpha
             )
+            // 携带物：与 drawProfilePokemon 成对；外面套 alpha 让淡出阶段跟着一起变淡
+            RenderSystem.setShaderColor(1f, 1f, 1f, alpha)
+            PokemonIconRenderer.drawHeldItem(context, rp.heldItem, st, matrices)
+            RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
             // 登场吼一声。声音不用另写代码：FloatingState 没有 entity，Cobblemon 的
             // BedrockSoundKeyframe 会走 SimpleSoundInstance.forUI(...) 自动播出来。
             // **睡觉的精灵不叫**（与点击图标同一判据）；标志位无论叫没叫都置位，

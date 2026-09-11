@@ -1232,10 +1232,10 @@ object BuyOrderNetwork {
             "gender" to pokemon.gender.name,
             "ball" to "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
             "ballItem" to pokemon.caughtBall.name.toString(),
-            "heldItemId" to (if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString()),
-            // 携带物完整 NBT（SNBT，仅带组件时非空）：客户端据此重建图标，
-            // 否则只按 ID 建会丢附魔光效与自定义名（2026-09-12）
-            "heldItemNbt" to encodeHeldItemNbt(heldItemStack, registryManager),
+            // 携带物：玩家在 Cobblemon 队伍详情里把携带物设成「隐藏」时（heldItemVisible）一律不下发，
+            // 否则图标/动画里显示着东西、与实际不符。判据与 Cobblemon 自己的一致（Pokemon.asRenderablePokemon）
+            "heldItemId" to if (!pokemon.heldItemVisible || heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString(),
+            "heldItemNbt" to if (pokemon.heldItemVisible) encodeHeldItemNbt(heldItemStack, registryManager) else "",
             "aspects" to pokemon.aspects.joinToString(","),
             "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(",")
         )

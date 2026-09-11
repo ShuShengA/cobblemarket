@@ -192,7 +192,6 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
             buyOrderExpiry = p?.buyOrderExpiry ?: 3,
             maxBuyOrders = p?.maxBuyOrders ?: 5,
             eggTrading = p?.eggTrading ?: false,
-            celebration = p?.celebration ?: true,
             auctionDurations = p?.auctionDurations ?: "",
             financeEnabled = p?.financeEnabled ?: false,
             cashLoanEnabled = p?.cashLoanEnabled ?: true,

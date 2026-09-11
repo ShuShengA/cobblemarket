@@ -135,12 +135,14 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             val aspects = entry.aspects.toMutableSet()
             if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
             val displayName = com.shusheng.cobblemarket.util.SpeciesText.displayName(species)
+            // 携带物同时喂给模型（Cobblemon 会渲染在手上/嘴上）与行内小图标
+            val held = heldIconStack(entry.heldItemId, entry.heldItemNbt)
             iconData[index] = IconData(
                 displayName,
-                RenderablePokemon(species, aspects, ItemStack.EMPTY),
+                RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
                 FloatingState(),
                 ballStack = Identifier.tryParse(entry.ballItem)?.let { ItemStack(Registries.ITEM.get(it)) },
-                heldStack = heldIconStack(entry.heldItemId, entry.heldItemNbt)
+                heldStack = held
             )
         }
     }
@@ -448,7 +450,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val species = PokemonSpecies.getByIdentifier(id) ?: return
         val aspects = entry.aspects.toMutableSet()
         if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
-        confirmRenderable = RenderablePokemon(species, aspects, ItemStack.EMPTY)
+        // 携带物一并带上：确认弹窗里的精灵也要拿东西（详情弹窗渲染时由 drawHeldItem 画出来）
+        confirmRenderable = RenderablePokemon(species, aspects, heldIconStack(entry.heldItemId, entry.heldItemNbt) ?: ItemStack.EMPTY)
         confirmDisplayName = com.shusheng.cobblemarket.util.SpeciesText.displayName(species)
     }
 

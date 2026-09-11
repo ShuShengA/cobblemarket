@@ -192,16 +192,18 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 )
                 return@forEachIndexed
             }
+            // 携带物同时喂给模型（Cobblemon 会渲染在手上/嘴上）与行内小图标
+            val held = heldIconStack(entry.extraData)
             rowStacks[i] = RowStacks(
                 ballStack = entry.extraData["ballItem"]?.let { Identifier.tryParse(it)?.let { id -> ItemStack(Registries.ITEM.get(id)) } },
-                heldStack = heldIconStack(entry.extraData),
+                heldStack = held,
                 itemStack = null
             )
             val id = Identifier.tryParse(entry.extraData["speciesId"] ?: "") ?: return@forEachIndexed
             val species = PokemonSpecies.getByIdentifier(id) ?: return@forEachIndexed
             val aspects = (entry.extraData["aspects"] ?: "").split(",").filter { it.isNotEmpty() }.toMutableSet()
             if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
-            iconData[i] = IconData(displayName(entry), RenderablePokemon(species, aspects, ItemStack.EMPTY), FloatingState())
+            iconData[i] = IconData(displayName(entry), RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY), FloatingState())
         }
     }
 
@@ -318,7 +320,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             if (species != null) {
                 val aspects = (entry.extraData["aspects"] ?: "").split(",").filter { it.isNotEmpty() }.toMutableSet()
                 if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
-                cancelRenderable = RenderablePokemon(species, aspects, ItemStack.EMPTY)
+                cancelRenderable = RenderablePokemon(species, aspects, heldIconStack(entry.extraData) ?: ItemStack.EMPTY)
             }
         }
         // 点行 → 弹窗弹出 → 由弹窗里的精灵叫一声（用户拍板的「叫声转移」）。

@@ -124,11 +124,13 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             val species = PokemonSpecies.getByIdentifier(id) ?: return@forEachIndexed
             val aspects = mutableSetOf<String>()
             if (p.shiny) aspects.add("shiny")
+            // 携带物同时喂给模型（Cobblemon 会渲染在手上/嘴上）与行内小图标
+            val held = heldIconStack(p.heldItemId, p.heldItemNbt)
             iconData[i] = IconData(
-                RenderablePokemon(species, aspects, ItemStack.EMPTY),
+                RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
                 FloatingState(),
                 ballStack = Identifier.tryParse(p.ball.removePrefix("item.").replaceFirst(".", ":"))?.let { ItemStack(Registries.ITEM.get(it)) },
-                heldStack = heldIconStack(p.heldItemId, p.heldItemNbt)
+                heldStack = held
             )
         }
     }
