@@ -52,6 +52,15 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsBalanceHudPosButton: NineSliceButton? = null
     private var settingsIconAnimButton: NineSliceButton? = null
     private var settingsHoverPreviewButton: NineSliceButton? = null
+
+    /** 设置弹窗的一行：左侧标签 + 右侧控件；[newGroup] = 与上一行之间画一条分隔线（同组的连续行之间不画）。
+     *  行的顺序与数量只在 openSettingsDialog 里维护，y / 分隔线 / 标签位置全部由 settingsRows 推出 */
+    private class SettingsRow(val label: Text, val newGroup: Boolean, val button: NineSliceButton)
+
+    private val settingsRows = mutableListOf<SettingsRow>()
+    /** 设置弹窗内容的滚动偏移（px）：行数没超出一屏时恒为 0（滚不动） */
+    private var settingsScroll = 0
+
     // 入口底部居中的市场总开关（仅 OP 可见）
     private var marketSwitchBtn: NineSliceButton? = null
     // 入口底部市场总开关左侧的服务器配置按钮（仅 OP 可见）
@@ -347,11 +356,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     private fun openSettingsDialog() {
         settingsOpen = true
+        settingsScroll = 0
         // 隐藏下层控件（弹窗打开期间不可交互；closeSettingsDialog 的 init 重建会恢复）
         entryButtons.forEach { it.visible = false }
 
         val centerX = width / 2
-        val dialogY = bgBottom() - 87 - DIALOG_H / 2 // 弹窗中心与背景中心对齐（背景中心 = bgBottom - 87）
 
         // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染）
         addDrawable(object : Drawable {
@@ -360,49 +369,69 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             }
         })
 
-        // 开关行格式：左侧标签文字（统一左列 centerX-80）+ 右侧开关图标按钮（统一右列，switch_icon_on/off，22×22）
+        // 行格式：左侧标签文字（统一左列 centerX-80）+ 右侧控件（开关图标 22×22 走 switchX、文字按钮 46×20 走 textBtnX，两者右缘都对齐 centerX+86）。
+        // 新增设置项只需在这里按顺序加一行，y / 分隔线 / 标签位置都从行序推出（超过一屏时可滚动，见 layoutSettingsRows）
         val switchX = centerX + 64 // 右列 x：弹窗右缘(centerX+100) 留 14px 边距
-        settingsMarketButton = makeSwitchButton(ClientConfig.celebrationOnMarketBuy) { toggleMarketAnimation() }
-        settingsMarketButton?.let { b -> b.x = switchX; b.y = dialogY + 30; addDrawableChild(b) }
-        settingsAuctionButton = makeSwitchButton(ClientConfig.celebrationOnAuctionAndOrder) { toggleAuctionAnimation() }
-        settingsAuctionButton?.let { b -> b.x = switchX; b.y = dialogY + 56; addDrawableChild(b) }
-        settingsDropButton = makeSwitchButton(ClientConfig.dropOverflowOnClaim) { toggleDropOverflow() }
-        settingsDropButton?.let { b -> b.x = switchX; b.y = dialogY + 82; addDrawableChild(b) }
-        settingsEntryDropButton = makeSwitchButton(ClientConfig.marketAnimation) { toggleMarketAnim() }
-        settingsEntryDropButton?.let { b -> b.x = switchX; b.y = dialogY + 108; addDrawableChild(b) }
-        settingsPikachuLoopButton = makeSwitchButton(ClientConfig.pikachuRunLoop) { togglePikachuLoop() }
-        settingsPikachuLoopButton?.let { b -> b.x = switchX; b.y = dialogY + 134; addDrawableChild(b) }
-        settingsGroudonFlyButton = makeSwitchButton(ClientConfig.groudonFly) { toggleGroudonFly() }
-        settingsGroudonFlyButton?.let { b -> b.x = switchX; b.y = dialogY + 160; addDrawableChild(b) }
-        // 三态循环文字按钮（一直/变动/关闭），点击循环切换
-        settingsBalanceHudButton = NineSliceButton(
-            centerX + 40, dialogY + 187, 46, 20,
+        val textBtnX = centerX + 40
+        settingsRows.clear()
+
+        val marketBtn = makeSwitchButton(ClientConfig.celebrationOnMarketBuy) { toggleMarketAnimation() }
+        settingsMarketButton = marketBtn
+        addSettingsRow(marketBtn, switchX, toggleText("cobblemarket.settings.animation_market", ClientConfig.celebrationOnMarketBuy))
+        val auctionBtn = makeSwitchButton(ClientConfig.celebrationOnAuctionAndOrder) { toggleAuctionAnimation() }
+        settingsAuctionButton = auctionBtn
+        addSettingsRow(auctionBtn, switchX, toggleText("cobblemarket.settings.animation_auction", ClientConfig.celebrationOnAuctionAndOrder))
+        val dropBtn = makeSwitchButton(ClientConfig.dropOverflowOnClaim) { toggleDropOverflow() }
+        settingsDropButton = dropBtn
+        addSettingsRow(dropBtn, switchX, toggleText("cobblemarket.settings.drop_overflow", ClientConfig.dropOverflowOnClaim))
+        val entryDropBtn = makeSwitchButton(ClientConfig.marketAnimation) { toggleMarketAnim() }
+        settingsEntryDropButton = entryDropBtn
+        addSettingsRow(entryDropBtn, switchX, toggleText("cobblemarket.settings.animation_entry", ClientConfig.marketAnimation))
+        val pikachuBtn = makeSwitchButton(ClientConfig.pikachuRunLoop) { togglePikachuLoop() }
+        settingsPikachuLoopButton = pikachuBtn
+        addSettingsRow(pikachuBtn, switchX, toggleText("cobblemarket.settings.pikachu_loop", ClientConfig.pikachuRunLoop))
+        val groudonBtn = makeSwitchButton(ClientConfig.groudonFly) { toggleGroudonFly() }
+        settingsGroudonFlyButton = groudonBtn
+        addSettingsRow(groudonBtn, switchX, toggleText("cobblemarket.settings.groudon_fly", ClientConfig.groudonFly))
+
+        // 余额 HUD 两项同组（之间不画分隔线）；三态循环文字按钮（一直/变动/关闭），点击循环切换
+        val balanceHudBtn = NineSliceButton(
+            0, 0, 46, 20,
             Text.translatable(balanceHudModeKey()),
             { cycleBalanceHud() }
         )
-        addDrawableChild(settingsBalanceHudButton)
+        settingsBalanceHudButton = balanceHudBtn
+        addSettingsRow(balanceHudBtn, textBtnX, Text.translatable("cobblemarket.settings.balance_hud"))
         // 余额 HUD 位置：进拖动编辑界面（自定义 → 拖动落位 → 确定）
-        settingsBalanceHudPosButton = NineSliceButton(
-            centerX + 40, dialogY + 213, 46, 20,
+        val balanceHudPosBtn = NineSliceButton(
+            0, 0, 46, 20,
             Text.translatable("cobblemarket.settings.balance_hud_position_custom"),
             { openBalanceHudPosEditor() }
         )
-        addDrawableChild(settingsBalanceHudPosButton)
-        // 精灵图标展示模式两态循环（静态/动态），同 balanceHud 模板
-        settingsIconAnimButton = NineSliceButton(
-            centerX + 40, dialogY + 239, 46, 20,
+        settingsBalanceHudPosButton = balanceHudPosBtn
+        addSettingsRow(balanceHudPosBtn, textBtnX, Text.translatable("cobblemarket.settings.balance_hud_position"), newGroup = false)
+
+        // 精灵图标两项同组：展示模式两态循环（静态/动态），同 balanceHud 模板
+        val iconAnimBtn = NineSliceButton(
+            0, 0, 46, 20,
             Text.translatable(iconAnimModeKey()),
             { cycleIconAnim() }
         )
-        addDrawableChild(settingsIconAnimButton)
-        // 精灵预览图：紧跟图标展示模式（同属精灵图标一类，中间不画分割线）
-        settingsHoverPreviewButton = makeSwitchButton(ClientConfig.hoverPreview) { toggleHoverPreview() }
-        settingsHoverPreviewButton?.let { b -> b.x = switchX; b.y = dialogY + 265; addDrawableChild(b) }
+        settingsIconAnimButton = iconAnimBtn
+        addSettingsRow(iconAnimBtn, textBtnX, Text.translatable("cobblemarket.settings.icon_anim"))
+        // 精灵预览图：紧跟图标展示模式（同属精灵图标一类，中间不画分隔线）
+        val hoverPreviewBtn = makeSwitchButton(ClientConfig.hoverPreview) { toggleHoverPreview() }
+        settingsHoverPreviewButton = hoverPreviewBtn
+        addSettingsRow(hoverPreviewBtn, switchX, toggleText("cobblemarket.settings.hover_preview", ClientConfig.hoverPreview), newGroup = false)
+
+        // done 固定在底部，不参与滚动
         addDrawableChild(NineSliceButton(
-            centerX - 28, dialogY + 291, 56, 20,
+            centerX - 28, settingsDialogY() + SETTINGS_DONE_Y, 56, 20,
             Text.translatable("cobblemarket.settings.done"),
             { closeSettingsDialog() }
         ))
+
+        layoutSettingsRows()
     }
 
     private fun closeSettingsDialog() {
@@ -417,6 +446,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsBalanceHudPosButton = null
         settingsIconAnimButton = null
         settingsHoverPreviewButton = null
+        settingsRows.clear()
+        settingsScroll = 0
         clearChildren()
         init()
     }
@@ -526,7 +557,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private fun renderSettingsDialogBackground(context: DrawContext) {
         val centerX = width / 2
         val dialogX = centerX - DIALOG_W / 2
-        val dialogY = bgBottom() - 87 - DIALOG_H / 2 // 弹窗中心与背景中心对齐（背景中心 = bgBottom - 87）
+        val dialogY = settingsDialogY()
 
         drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, DIALOG_W, DIALOG_H, 0, DIALOG_BACKGROUND_TEX_H)
@@ -535,69 +566,102 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             Text.translatable("cobblemarket.settings.title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF
         )
-        // 开关项分割线：标题下 + 每两行之间（行按钮 y=30/56/82/108/134/160/187/213/239/265、行高 22 → 线在 27/54/80/106/132/158/184/237）；
-        // 187 与 213 两行同属余额 HUD 设置，中间不画线；239 与 265 同属精灵图标设置，中间也不画线
+        // 分隔线：标题下一条固定；其余画在「新组首行」上方 2px（跟着行一起滚，被推出可视区就不画）。
+        // 同组的连续行之间不画线（余额 HUD 两项、精灵图标两项各属一组）
         val lineX1 = centerX - 88
         val lineX2 = centerX + 88
-        for (lineY in intArrayOf(27, 54, 80, 106, 132, 158, 184, 237)) {
-            context.fill(lineX1, dialogY + lineY, lineX2, dialogY + lineY + 1, 0xFF555555.toInt())
+        context.fill(lineX1, dialogY + SETTINGS_LINE_TOP, lineX2, dialogY + SETTINGS_LINE_TOP + 1, 0xFF555555.toInt())
+        for (i in 1 until settingsRows.size) {
+            if (!settingsRows[i].newGroup) continue
+            val lineY = settingsRowY(i) - 2
+            if (lineY <= dialogY + SETTINGS_LINE_TOP + 1 || lineY > dialogY + SETTINGS_VIEW_BOTTOM) continue
+            context.fill(lineX1, lineY, lineX2, lineY + 1, 0xFF555555.toInt())
+        }
+        renderSettingsScrollbar(context)
+    }
+
+    /** 设置弹窗的行标签（统一左列），位置与可见性跟右侧控件完全同步 */
+    private fun renderSettingsLabels(context: DrawContext) {
+        val centerX = width / 2
+        for ((i, row) in settingsRows.withIndex()) {
+            if (!settingsRowVisible(i)) continue
+            context.drawTextWithShadow(
+                textRenderer,
+                row.label,
+                centerX - 80, settingsRowY(i) + row.button.height / 2 - 4, 0xFFFFFF
+            )
         }
     }
 
-    /** 设置弹窗四行开关的标签文字（统一左列，与右侧图标按钮垂直对齐） */
-    private fun renderSettingsLabels(context: DrawContext) {
-        val centerX = width / 2
-        val dialogY = bgBottom() - 87 - DIALOG_H / 2 // 弹窗中心与背景中心对齐（背景中心 = bgBottom - 87）
-        context.drawTextWithShadow(
-            textRenderer,
-            toggleText("cobblemarket.settings.animation_market", ClientConfig.celebrationOnMarketBuy),
-            centerX - 80, dialogY + 37, 0xFFFFFF
-        )
-        context.drawTextWithShadow(
-            textRenderer,
-            toggleText("cobblemarket.settings.animation_auction", ClientConfig.celebrationOnAuctionAndOrder),
-            centerX - 80, dialogY + 63, 0xFFFFFF
-        )
-        context.drawTextWithShadow(
-            textRenderer,
-            toggleText("cobblemarket.settings.drop_overflow", ClientConfig.dropOverflowOnClaim),
-            centerX - 80, dialogY + 89, 0xFFFFFF
-        )
-        context.drawTextWithShadow(
-            textRenderer,
-            toggleText("cobblemarket.settings.animation_entry", ClientConfig.marketAnimation),
-            centerX - 80, dialogY + 115, 0xFFFFFF
-        )
-        context.drawTextWithShadow(
-            textRenderer,
-            toggleText("cobblemarket.settings.pikachu_loop", ClientConfig.pikachuRunLoop),
-            centerX - 80, dialogY + 141, 0xFFFFFF
-        )
-        context.drawTextWithShadow(
-            textRenderer,
-            toggleText("cobblemarket.settings.groudon_fly", ClientConfig.groudonFly),
-            centerX - 80, dialogY + 167, 0xFFFFFF
-        )
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.settings.balance_hud"),
-            centerX - 80, dialogY + 193, 0xFFFFFF
-        )
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.settings.balance_hud_position"),
-            centerX - 80, dialogY + 219, 0xFFFFFF
-        )
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.settings.icon_anim"),
-            centerX - 80, dialogY + 245, 0xFFFFFF
-        )
-        context.drawTextWithShadow(
-            textRenderer,
-            toggleText("cobblemarket.settings.hover_preview", ClientConfig.hoverPreview),
-            centerX - 80, dialogY + 271, 0xFFFFFF
-        )
+    // ── 设置弹窗布局（行数据驱动：y / 可见性 / 分隔线 / 滚动共用同一套算法） ──
+
+    private fun settingsDialogY(): Int = bgBottom() - 87 - DIALOG_H / 2 // 弹窗中心与背景中心对齐（背景中心 = bgBottom - 87）
+
+    /** 登记一个设置行：x 固定；y 与可见性由 [layoutSettingsRows] 按滚动偏移统一给 */
+    private fun addSettingsRow(button: NineSliceButton, x: Int, label: Text, newGroup: Boolean = true) {
+        button.x = x
+        settingsRows += SettingsRow(label, newGroup, button)
+        addDrawableChild(button)
+    }
+
+    private fun settingsRowY(index: Int): Int =
+        settingsDialogY() + SETTINGS_ROWS_TOP + index * SETTINGS_ROW_STEP - settingsScroll
+
+    /**
+     * 整行是否完整落在内容可视区里——越界的行整行隐藏（渲染与点击一并失效）。
+     * 不用 enableScissor 裁剪：控件是 children，由 super.render() 渲染，而它内部会先画背景板，
+     * 一裁就把入口背景一起裁掉。故以「整行进/出」代替像素级裁剪，代价是滚动时上下边缘最多空出一行。
+     */
+    private fun settingsRowVisible(index: Int): Boolean {
+        val dialogY = settingsDialogY()
+        val y = settingsRowY(index)
+        return y >= dialogY + SETTINGS_ROWS_TOP && y + settingsRows[index].button.height <= dialogY + SETTINGS_VIEW_BOTTOM
+    }
+
+    /** 按当前滚动偏移摆放所有行（打开弹窗 / 滚轮 / resize 后调用） */
+    private fun layoutSettingsRows() {
+        for ((i, row) in settingsRows.withIndex()) {
+            row.button.y = settingsRowY(i)
+            row.button.visible = settingsRowVisible(i)
+        }
+    }
+
+    /** 内容总高比可视区高出多少像素（0 = 没超出，滚不动） */
+    private fun settingsMaxScroll(): Int {
+        if (settingsRows.isEmpty()) return 0
+        val contentH = (settingsRows.size - 1) * SETTINGS_ROW_STEP + 22
+        return maxOf(0, contentH - (SETTINGS_VIEW_BOTTOM - SETTINGS_ROWS_TOP))
+    }
+
+    /** 右侧滚动条：只有内容超出一屏才画（否则玩家不知道下面还有东西） */
+    private fun renderSettingsScrollbar(context: DrawContext) {
+        val maxScroll = settingsMaxScroll()
+        if (maxScroll <= 0) return
+        val dialogY = settingsDialogY()
+        val x = width / 2 + DIALOG_W / 2 - 5
+        val top = dialogY + SETTINGS_ROWS_TOP
+        val trackH = SETTINGS_VIEW_BOTTOM - SETTINGS_ROWS_TOP
+        val thumbH = maxOf(16, trackH * trackH / (trackH + maxScroll))
+        val thumbY = top + (trackH - thumbH) * settingsScroll / maxScroll
+        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
+        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
+    }
+
+    /** 设置弹窗内容滚动：鼠标在弹窗内才吃事件，一次一行（行高 26） */
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+        if (settingsOpen) {
+            val maxScroll = settingsMaxScroll()
+            val dialogX = width / 2 - DIALOG_W / 2
+            val dialogY = settingsDialogY()
+            val inside = mouseX >= dialogX && mouseX <= dialogX + DIALOG_W &&
+                mouseY >= dialogY && mouseY <= dialogY + DIALOG_H
+            if (maxScroll > 0 && inside) {
+                settingsScroll = (settingsScroll - (verticalAmount * SETTINGS_ROW_STEP).roundToInt()).coerceIn(0, maxScroll)
+                layoutSettingsRows()
+                return true
+            }
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)
     }
 
     override fun resize(client: MinecraftClient, width: Int, height: Int) {
@@ -871,7 +935,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                 context.drawCenteredTextWithShadow(
                     textRenderer,
                     settingsToastText,
-                    width / 2, bgBottom() - 87 - DIALOG_H / 2 + DIALOG_H + 6, 0xFFFFFF
+                    width / 2, settingsDialogY() + DIALOG_H + 6, 0xFFFFFF
                 )
             }
             return
@@ -1068,6 +1132,13 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     companion object {
         private const val DIALOG_W = 200
         private const val DIALOG_H = 324
+        // 设置弹窗内容区（相对弹窗顶）：行步进 26 = 控件高 22 + 间隙 4。
+        // 内容超过一屏靠滚动显示（整行进出，见 settingsRowVisible）；done 固定在底部不参与滚动
+        private const val SETTINGS_ROWS_TOP = 30      // 第一行控件顶 = 内容可视区顶
+        private const val SETTINGS_VIEW_BOTTOM = 287  // 内容可视区底（done 之上）
+        private const val SETTINGS_ROW_STEP = 26
+        private const val SETTINGS_LINE_TOP = 27      // 标题下的分隔线（固定，不参与滚动）
+        private const val SETTINGS_DONE_Y = 291
         // 入口掉落动画三段：下落 → 落地停留 → 淡出（淡出期间入口界面从图下透出，慢慢显现）
         private const val DROP_DURATION_MS = 100L
         private const val HOLD_DURATION_MS = 100L
