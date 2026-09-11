@@ -62,11 +62,7 @@ object IconCryClick {
      * @return 是否命中了某个图标（调用方一般不需要管，点了就点了）
      */
     fun playRowAt(mouseX: Double, mouseY: Double, rowLeft: Int, rowRight: Int): Boolean {
-        if (mouseX < rowLeft || mouseX >= rowRight) return false
-        // 行高 24、图标 20 且行内图标 y = 行 y + 2，所以图标矩形上下各放宽 2px 正好覆盖整行
-        val entry = IconRegistry.all.lastOrNull { e ->
-            mouseY >= e.y - 2 && mouseY < e.y + e.size + 2
-        } ?: return false
+        val entry = IconRegistry.entryInRow(mouseX, mouseY, rowLeft, rowRight) ?: return false
         play(entry.state, entry.renderable)
         return true
     }

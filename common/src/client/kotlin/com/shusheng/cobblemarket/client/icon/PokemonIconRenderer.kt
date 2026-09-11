@@ -51,7 +51,9 @@ object PokemonIconRenderer {
             mouseX = IconRegistry.mouseX,
             mouseY = IconRegistry.mouseY,
             animate = animate,
-            preview = preview
+            // 「精灵预览图」关掉时行内也不进预览态 —— 否则大图不显示、行里却自顾自走起来。
+            // 大图那一路是直接调解析器的（preview = true 恒成立），由 PokemonHoverPreview 自己把关开关
+            preview = preview && com.shusheng.cobblemarket.client.ClientConfig.hoverPreview
         )
 
         val matrices = context.matrices

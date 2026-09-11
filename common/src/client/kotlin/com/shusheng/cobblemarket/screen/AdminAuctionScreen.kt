@@ -4,6 +4,7 @@ import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.mojang.authlib.GameProfile
@@ -225,7 +226,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 state = data.state,
                 x = x, y = y, size = size,
                 delta = delta,
-                animate = useFloat
+                animate = useFloat,
+                // 鼠标停在这一行时进预览态（跟左侧大图一起走 walk）
+                preview = IconRegistry.isMouseInRow(y, size)
             )
         } catch (_: Exception) {
         }
@@ -597,6 +600,12 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 "${scrollOffset + 1}-${minOf(scrollOffset + visibleRows, filteredEntries().size)} / ${filteredEntries().size}",
                 centerX, height - 24, 0x888888)
         }
+
+        // 悬停预览大图：画在本界面内容全部之后才在面板之上。
+        // 弹窗打开时行内图标不渲染 → entryInRow 找不到 → 自动不显示，不用额外判断弹窗
+        val previewRowL = width / 2 - panelWidth / 2
+        IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
+            ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
     }
 
     // ── 悬停（照搬拍卖场，去掉「我的」标记） ──

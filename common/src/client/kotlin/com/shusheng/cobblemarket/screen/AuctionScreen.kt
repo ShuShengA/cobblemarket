@@ -6,6 +6,7 @@ import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.network.AuctionEntry
@@ -746,7 +747,9 @@ class AuctionScreen(
                 state = data.state,
                 x = x, y = y, size = size,
                 delta = delta,
-                animate = useFloat
+                animate = useFloat,
+                // 鼠标停在这一行时进预览态（跟左侧大图一起走 walk）
+                preview = IconRegistry.isMouseInRow(y, size)
             )
         } catch (_: Exception) {
         }
@@ -1378,6 +1381,12 @@ class AuctionScreen(
         if (rulesButton?.isHovered == true) {
             renderRulesPanel(context, mouseX, mouseY)
         }
+
+        // 悬停预览大图：画在本界面内容全部之后才在面板之上。
+        // 弹窗打开时行内图标不渲染 → entryInRow 找不到 → 自动不显示，不用额外判断弹窗
+        val previewRowL = width / 2 - panelWidth / 2
+        IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
+            ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
     }
 
     // 拍卖规则悬停面板：标题金色（§6）、正文白色、重点红色（§c）、规则项间分割线

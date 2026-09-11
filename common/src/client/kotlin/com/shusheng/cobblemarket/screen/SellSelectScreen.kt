@@ -5,6 +5,7 @@ import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.*
@@ -622,6 +623,12 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
 
         // 固拉多飞行：悬浮在界面之上（与精灵市场同公式，切换界面位置延续）。
         // flush 夹心 + 清深度：行内 3D 精灵图标/球种图标写深度或抬高 z，会盖住普通 GUI 纹理
+        // 悬停预览大图：画在固拉多之前（固拉多是最上层的特效）。
+        // 弹窗打开时行内图标不渲染 → entryInRow 找不到 → 自动不显示，不用额外判断弹窗
+        val previewRowL = width / 2 - 148
+        IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + 296)
+            ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
+
         context.draw()
         com.mojang.blaze3d.systems.RenderSystem.clear(org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT, net.minecraft.client.MinecraftClient.IS_SYSTEM_MAC)
         renderGroudonFly(context, false)
@@ -823,7 +830,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
                 state = data.state,
                 x = x, y = y, size = size,
                 delta = delta,
-                animate = useFloat
+                animate = useFloat,
+                // 鼠标停在这一行时进预览态（跟左侧大图一起走 walk）
+                preview = IconRegistry.isMouseInRow(y, size)
             )
         } catch (_: Exception) {
         }

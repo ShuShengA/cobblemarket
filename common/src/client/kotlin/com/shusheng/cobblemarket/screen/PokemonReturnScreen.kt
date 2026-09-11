@@ -6,6 +6,7 @@ import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.network.ClaimPokemonReturnPayload
 import com.shusheng.cobblemarket.network.MarketResultPayload
@@ -358,6 +359,11 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
         prevButton?.active = currentPage > 1
         nextButton?.active = currentPage < totalPages
         claimButton?.active = pokemon.isNotEmpty()
+
+        // 悬停预览大图：画在本界面内容全部之后才在面板之上（本界面无弹窗）
+        val previewRowL = width / 2 - panelWidth / 2
+        IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
+            ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
     }
 
     private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
@@ -375,7 +381,9 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                 state = data.state,
                 x = x, y = y, size = size,
                 delta = delta,
-                animate = useFloat
+                animate = useFloat,
+                // 鼠标停在这一行时进预览态（跟左侧大图一起走 walk）
+                preview = IconRegistry.isMouseInRow(y, size)
             )
         } catch (_: Exception) {
         }

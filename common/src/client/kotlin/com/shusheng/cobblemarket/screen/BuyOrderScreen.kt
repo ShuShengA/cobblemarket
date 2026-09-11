@@ -6,6 +6,7 @@ import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.market.PokemonBlacklistEntry
@@ -240,7 +241,9 @@ class BuyOrderScreen(
                 state = data.state,
                 x = x, y = y, size = size,
                 delta = delta,
-                animate = useFloat
+                animate = useFloat,
+                // 鼠标停在这一行时进预览态（跟左侧大图一起走 walk）
+                preview = IconRegistry.isMouseInRow(y, size)
             )
         } catch (_: Exception) {
         }
@@ -842,6 +845,12 @@ class BuyOrderScreen(
                 context.drawCenteredTextWithShadow(textRenderer, resultMsg!!, width / 2, height - 52, resultMsgColor)
             }
         }
+
+        // 悬停预览大图：画在本界面内容全部之后才在面板之上。
+        // 弹窗打开时行内图标不渲染 → entryInRow 找不到 → 自动不显示，不用额外判断弹窗
+        val previewRowL = rowLeftX()
+        IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + rowW())
+            ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
     }
 
     // 悬停信息面板：照精灵市场 tooltip 结构（自绘九宫格面板 + 固定行高，信息同市场列表）
