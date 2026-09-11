@@ -624,10 +624,19 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         // 固拉多飞行：悬浮在界面之上（与精灵市场同公式，切换界面位置延续）。
         // flush 夹心 + 清深度：行内 3D 精灵图标/球种图标写深度或抬高 z，会盖住普通 GUI 纹理
         // 悬停预览大图：画在固拉多之前（固拉多是最上层的特效）。
-        // 弹窗打开时行内图标不渲染 → entryInRow 找不到 → 自动不显示，不用额外判断弹窗
+        // **优先鼠标所在行；鼠标不悬停任何行时，若有选中行则显示选中那只**（常驻，用户 2026-09-11 拍板）。
+        // 注意这不是"选中优先于悬停"—— 悬停别的行照样切过去，选中只是鼠标离开后的兜底。
+        // 弹窗打开时行内图标不渲染 → 两边都找不到 → 自动不显示，不用额外判断弹窗
         val previewRowL = width / 2 - 148
-        IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + 296)
-            ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
+        val hoveredEntry = IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + 296)
+        val selectedEntry = if (hoveredEntry == null && selectedIndex >= 0) {
+            // 选中行的屏幕 y，与行渲染同一公式；滚出可视区时该位置没有图标，自然找不到
+            val selectedY = 96 + (selectedIndex - scrollOffset) * rowHeight
+            IconRegistry.entryInRow(previewRowL + 2.0, selectedY.toDouble(), previewRowL, previewRowL + 296)
+        } else null
+        (hoveredEntry ?: selectedEntry)?.let {
+            PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height)
+        }
 
         context.draw()
         com.mojang.blaze3d.systems.RenderSystem.clear(org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT, net.minecraft.client.MinecraftClient.IS_SYSTEM_MAC)
