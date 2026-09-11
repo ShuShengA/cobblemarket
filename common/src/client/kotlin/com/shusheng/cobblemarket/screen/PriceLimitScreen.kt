@@ -7,6 +7,7 @@ import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
@@ -1427,6 +1428,12 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         maxField?.isMouseOver(mouseX, mouseY) == true
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        // 图标点击叫声：弹窗图标精确命中；**弹窗打开时不做整行触发** —— 整行判定只看 y，
+        // 弹窗里精灵图标与输入框的 y 挨得近，会误把点输入框当成点图标
+        if (button == 0 && addField == null && !IconCryClick.playIconAt(mouseX, mouseY)) {
+            val rowL = width / 2 - panelWidth / 2
+            IconCryClick.playRowAt(mouseX, mouseY, rowL, rowL + panelWidth - 98)
+        }
         val wasInInput = isInputFieldFocused()
         val result = super.mouseClicked(mouseX, mouseY, button)
         if (wasInInput && !isMouseOverAnyInput(mouseX, mouseY)) {

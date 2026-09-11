@@ -199,9 +199,13 @@ object PokemonCelebrationAnimation {
             )
             // 登场吼一声。声音不用另写代码：FloatingState 没有 entity，Cobblemon 的
             // BedrockSoundKeyframe 会走 SimpleSoundInstance.forUI(...) 自动播出来。
+            // **睡觉的精灵不叫**（与点击图标同一判据）；标志位无论叫没叫都置位，
+            // 否则睡着时不触发、醒来后会补叫一声。
             if (!cryTriggered) {
                 cryTriggered = true
-                st.addFirstAnimation(setOf("battle_cry", "cry"))
+                if (!IconAnimationResolver.isSleeping(rp)) {
+                    st.addFirstAnimation(setOf("battle_cry", "cry"))
+                }
             }
         } catch (_: Exception) {
         }

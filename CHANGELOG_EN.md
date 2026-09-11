@@ -11,6 +11,7 @@
 - **Hover preview**: hovering a Pokemon row shows an enlarged walking animation of that Pokemon on the left side of the screen — the row icon and the preview are the same Pokemon with fully synchronized motion
 - **Pokemon preview switch**: a new setting to turn the hover preview off on its own (without affecting the icons themselves)
 - **Celebration upgrade**: the pop-out animation when you buy or win a Pokemon now lets out a battle cry (motion and sound), and stays in sync with the icons — idle and following your cursor by day, already asleep when it appears at night
+- **Cries on click**: clicking a Pokemon row in a list (or a Pokemon icon inside a dialog) plays that Pokemon's cry — a battle cry where the species has one, otherwise the regular cry; sleeping Pokemon and "Static" mode don't respond
 
 ## 1.1.0 (in development, unreleased)
 

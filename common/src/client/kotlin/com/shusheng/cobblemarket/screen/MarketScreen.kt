@@ -19,6 +19,7 @@ import net.minecraft.sound.SoundEvent
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
+import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
@@ -908,8 +909,21 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (confirmEntry != null || cancelEntry != null) {
+            // 弹窗是模态的：只响应弹窗自己的图标（此刻注册表里也只有它，下层行图标没渲染），
+            // 下层行一律不响应 —— 与悬停预览共用同一条规则
+            if (button == 0) IconCryClick.hitAt(mouseX, mouseY)?.let { IconCryClick.play(it.state, it.renderable) }
             handleConfirmDialogClick(mouseX.toInt(), mouseY.toInt())
             return true
+        }
+        // 行内：点整行触发叫声（图标只有 20px，点图标本身点不中）。右边界收窄到行尾按钮左侧，
+        // 免得点到按钮也响；**不 return** —— 点行原有的行为照常叠加
+        if (button == 0 && hoveredRow >= 0) {
+            val rowLeftX = width / 2 - panelWidth / 2
+            if (mouseX < rowLeftX + panelWidth - 42) {
+                displayedListings().getOrNull(hoveredRow)?.let { entry ->
+                    iconData[entry.index]?.let { IconCryClick.play(it.state, it.renderable) }
+                }
+            }
         }
         val wasInInput = isInputFieldFocused()
         val result = super.mouseClicked(mouseX, mouseY, button)

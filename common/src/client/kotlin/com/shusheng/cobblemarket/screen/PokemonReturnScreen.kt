@@ -4,6 +4,7 @@ import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import net.minecraft.registry.Registries
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
+import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.network.ClaimPokemonReturnPayload
@@ -487,6 +488,15 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             }
         }
         context.matrices.pop()
+    }
+
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        // 图标点击叫声：弹窗图标精确命中（本界面无弹窗），行内整行可点（行尾无按钮）
+        if (button == 0 && !IconCryClick.playIconAt(mouseX, mouseY)) {
+            val rowL = width / 2 - panelWidth / 2
+            IconCryClick.playRowAt(mouseX, mouseY, rowL, rowL + panelWidth)
+        }
+        return super.mouseClicked(mouseX, mouseY, button)
     }
 
     override fun shouldPause() = false

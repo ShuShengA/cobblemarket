@@ -61,7 +61,7 @@ object IconAnimationResolver {
         // 姿势优先级：睡眠时段（且该物种有睡眠姿态）> 预览态走路 > 待机。
         // 睡眠优先于预览，正是「白天 walk / 晚上 sleep」；晚上又没有 sleep 姿态的物种继续走 walk。
         val poseType = when {
-            isSleepingTime(renderable) && hasSleepPose(state) -> PoseType.SLEEP
+            isSleeping(renderable) && hasSleepPose(state) -> PoseType.SLEEP
             preview -> walkPoseOrProfile(state)
             else -> PoseType.PROFILE
         }
@@ -134,7 +134,7 @@ object IconAnimationResolver {
      * 刻意忽略 `drowsyChance` / `rouseChance` 随机与光照、方块条件 —— 那些是野外「真躺下」的门槛，
      * 图标只按物种作息走：到点睡、过点醒，不能忽睡忽醒。
      */
-    private fun isSleepingTime(renderable: RenderablePokemon): Boolean {
+    fun isSleeping(renderable: RenderablePokemon): Boolean {
         val key = renderable.species.resourceIdentifier.toString() + renderable.aspects.sorted().joinToString(",")
         val rest = restCache.getOrPut(key) {
             renderable.species.getForm(renderable.aspects).behaviour.resting

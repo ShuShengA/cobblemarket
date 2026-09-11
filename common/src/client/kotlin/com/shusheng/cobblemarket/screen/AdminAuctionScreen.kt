@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
@@ -322,6 +323,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 cancelRenderable = RenderablePokemon(species, aspects, ItemStack.EMPTY)
             }
         }
+        // 点行 → 弹窗弹出 → 由弹窗里的精灵叫一声（用户拍板的「叫声转移」）。
+        // 弹窗的 state 是常驻的，弹窗期间照常渲染推进，所以动画和声音都能正常播出来
+        cancelRenderable?.let { IconCryClick.play(cancelPreviewState, it) }
         val centerX = width / 2
         // 弹窗高度按左列信息区实际内容算（球种/携带物/证章都计入），按钮/提示统一相对弹窗底定位
         val dialogH = cancelDialogHeight(entry)
@@ -965,6 +969,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         searchField?.isMouseOver(mouseX, mouseY) == true
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        // 图标点击叫声：本界面**点行会开取消弹窗**，下层行图标随即不再渲染（主 render 直接 return），
+        // 触发在它身上的叫声会哑掉 —— 所以这里不做行内整行触发，叫声改由弹窗图标承担（见 openCancelDialog）
+        if (button == 0) IconCryClick.playIconAt(mouseX, mouseY)
         if (cancelEntry != null) {
             return super.mouseClicked(mouseX, mouseY, button)
         }

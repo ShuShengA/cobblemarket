@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
@@ -2527,6 +2528,12 @@ class BuyOrderScreen(
     // ── 交互 ──
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        // 图标点击叫声：弹窗图标精确命中；**弹窗打开时不做整行触发** —— 整行判定只看 y，
+        // 弹窗里精灵图标与输入框的 y 挨得近，会误把点输入框当成点图标
+        if (button == 0 && !anyDialogOpen() && !IconCryClick.playIconAt(mouseX, mouseY)) {
+            val rowL = rowLeftX()
+            IconCryClick.playRowAt(mouseX, mouseY, rowL, rowL + rowW() - 50)
+        }
         // 管理员模式：点击行弹下架确认（照 AdminAuctionScreen；弹窗打开时行点击由 anyDialogOpen 拦截下的空列表跳过）
         if (adminMode && forceCancelEntry == null) {
             val startY = getListStartY()

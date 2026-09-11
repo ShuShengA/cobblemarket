@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.screen
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
+import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.client.playFailSound
@@ -968,6 +969,11 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         priceField?.isMouseOver(mouseX, mouseY) == true
 
     override fun mouseClicked(mx: Double, my: Double, btn: Int): Boolean {
+        // 图标点击叫声：该界面行图标可选中、行内无按钮，所以触区是整行
+        if (btn == 0 && !IconCryClick.playIconAt(mx, my)) {
+            val rowL = width / 2 - 148
+            IconCryClick.playRowAt(mx, my, rowL, rowL + 296)
+        }
         val wasInInput = isInputFieldFocused()
         val r = super.mouseClicked(mx, my, btn)
         if (wasInInput && !isMouseOverAnyInput(mx, my)) {
