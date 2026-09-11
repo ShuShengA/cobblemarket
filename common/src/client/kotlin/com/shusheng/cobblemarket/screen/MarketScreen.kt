@@ -62,6 +62,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var filterListOpen = ""
     private var filterListScroll = 0
     private val filterOptionButtons = mutableListOf<NineSliceButton>()
+    /** 筛选展开列表的实际底边 y（每行 14、从 86 起）。被它盖住的行不渲染——反正看不见，画了反而刺穿列表 */
+    private var filterListBottomY = 0
     // 特性选项（搜索框物种解析后重建）
     private var abilityOptions = listOf<Pair<String, String>>() // (翻译 key, 显示名)
 
@@ -622,6 +624,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             filterOptionButtons.add(btn)
             addDrawableChild(btn)
         }
+        // 记下展开列表的实际底边，供行渲染判断哪些行被它盖住（见 filterListBottomY 注释）
+        filterListBottomY = 86 + minOf(options.size - filterListScroll, MAX_FILTER_LIST_ROWS) * 14
     }
 
     private fun isFilterSelected(kind: String, key: String, idx: Int): Boolean = when (kind) {
@@ -1131,10 +1135,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val rowHeight = 24
         val visibleRows = getMaxVisibleRows()
 
-        // 筛选展开列表打开时跳过分隔线与行内容（画在 children 之后，会刺穿列表按钮）
-        if (filterListOpen.isNotEmpty()) return
-
-        context.fill(leftX, dividerY, leftX + panelWidth, dividerY + 1, 0xFF555555.toInt())
+        // 上分隔线若落在展开列表的覆盖范围内则不画（它也在 children 之后，画了会刺穿列表）；
+        // 下分隔线在列表下方、不受影响，照常画。行内容见下面的逐行判断
+        if (filterListOpen.isEmpty() || dividerY >= filterListBottomY) {
+            context.fill(leftX, dividerY, leftX + panelWidth, dividerY + 1, 0xFF555555.toInt())
+        }
         // 底部分割线：最多显示行数的最后一行下方 4px（与顶部 startY-4 对称），分页按钮在其与背景底边之间居中
         val listBottom = getListStartY() + visibleRows * rowHeight
         context.fill(leftX, listBottom + 4, leftX + panelWidth, listBottom + 5, 0xFF555555.toInt())
@@ -1149,13 +1154,15 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             )
         }
 
-        // 筛选展开列表打开时跳过行内容与悬停（行内容画在 children 之后，会刺穿筛选列表按钮）
-        if (filterListOpen.isNotEmpty()) return
-
         // 确认弹窗打开时行内图标不渲染（物品/精灵模型图标走独立渲染层，z 平移盖不住，会刺穿遮罩）
         val dialogOpen = confirmEntry != null || cancelEntry != null
         displayList.take(visibleRows).forEachIndexed { di, (origIndex, entry) ->
             val y = startY + di * rowHeight
+
+            // 被筛选展开列表盖住的行不画：反正看不见，画了反而会刺穿列表（行内容在 children 之后画，
+            // 3D 图标尤其明显）。**只跳过被盖住的那几行**，列表下方的行照常显示——
+            // 早先这里是「展开就整片 return」，结果整个列表区域都空了
+            if (filterListOpen.isNotEmpty() && y < filterListBottomY) return@forEachIndexed
 
             // Pokemon icon slot background（GUI 层，弹窗遮罩会自动压暗，照常渲染）
             val slotX = leftX + 2

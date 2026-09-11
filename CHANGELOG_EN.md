@@ -13,6 +13,10 @@
 - **Celebration upgrade**: the pop-out animation when you buy or win a Pokemon now lets out a battle cry (motion and sound), and stays in sync with the icons — idle and following your cursor by day, already asleep when it appears at night
 - **Cries on click**: clicking a Pokemon row in a list (or a Pokemon icon inside a dialog) plays that Pokemon's cry — a battle cry where the species has one, otherwise the regular cry; sleeping Pokemon and "Static" mode don't respond
 
+### Fixes
+
+- **List area going blank while a filter dropdown is open**: opening the type/ability/nature filter in the Pokemon market made every listing row disappear; only the rows actually covered by the dropdown are now skipped, and rows below it render as usual
+
 ## 1.1.0 (in development, unreleased)
 
 ### New Feature
