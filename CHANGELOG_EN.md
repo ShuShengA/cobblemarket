@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0 (in development, unreleased)
+
+### New Feature
+
+#### Pokemon Icon Animations
+
+- **Head follows the cursor**: Pokemon icons in list rows turn their head to look at your cursor (matching the Summary screen), and turn back to centre after the cursor sits still for a while; icons set to "Static" don't follow at all
+- **Hover preview**: hovering a Pokemon row shows an enlarged walking animation of that Pokemon on the left side of the screen — the row icon and the preview are the same Pokemon with fully synchronized motion
+- **Pokemon preview switch**: a new setting to turn the hover preview off on its own (without affecting the icons themselves)
+
 ## 1.1.0 (in development, unreleased)
 
 ### New Feature

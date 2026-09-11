@@ -21,6 +21,7 @@ object PokemonIconRenderer {
      * 绘制一个 3D 精灵图标，图标矩形以左上角定位。
      *
      * @param animate       是否播放动画，即原先各调用点手里的 `useFloat`
+     * @param preview       是否处于预览态（该行正被悬停 / 是大图本身）：切走路姿势
      * @param useScissor    是否裁剪到图标外扩 4px；三个「裸渲染」处（两个弹窗预览 + 整屏确认页）传 false
      * @param centerAnchorY 纵向锚点取矩形中心而非 +1px；原先只有整屏确认页这样写
      */
@@ -33,6 +34,7 @@ object PokemonIconRenderer {
         size: Int,
         delta: Float,
         animate: Boolean,
+        preview: Boolean = false,
         useScissor: Boolean = true,
         centerAnchorY: Boolean = false
     ) {
@@ -48,7 +50,8 @@ object PokemonIconRenderer {
             centerY = y + size / 2f,
             mouseX = IconRegistry.mouseX,
             mouseY = IconRegistry.mouseY,
-            animate = animate
+            animate = animate,
+            preview = preview
         )
 
         val matrices = context.matrices

@@ -24,5 +24,39 @@ class IconAnimationState {
 object IconAnimationStates {
     private val states = WeakHashMap<PosableState, IconAnimationState>()
 
-    fun of(state: PosableState): IconAnimationState = states.getOrPut(state) { IconAnimationState() }
+    /**
+     * 悬停预览大图专用的一份，与行内图标分开。
+     *
+     * **必须分开**：同一个 `PosableState` 一帧内会被行内图标和大图各渲染一次，
+     * 若共用一份 yaw/pitch，两次 `rotLerp` 会各自朝自己的目标角度拉（两者屏幕位置不同，目标角度天然不同），
+     * 结果两边都在抖。
+     */
+    private val previewStates = WeakHashMap<PosableState, IconAnimationState>()
+
+    fun of(state: PosableState, preview: Boolean = false): IconAnimationState =
+        (if (preview) previewStates else states).getOrPut(state) { IconAnimationState() }
+
+    // ── 鼠标静止判定（全局共用：同一时刻整屏图标看到的是同一个鼠标位置）──
+
+    private var lastMouseX = Int.MIN_VALUE
+    private var lastMouseY = Int.MIN_VALUE
+    private var lastMouseMoveAt = System.currentTimeMillis()
+
+    /**
+     * 鼠标已静止的毫秒数；若本帧鼠标移动过则刷新计时并返回 0。
+     *
+     * 用于「鼠标长时间不动 → 精灵的头转回正前方」，照 Cobblemon 详情页的行为
+     * （`ModelWidget` 里 `MAX_SECONDS_LOOKING = 6` 秒）。差别：它判的是「鼠标**离开模型**」，
+     * 而图标是无条件跟随、没有悬停这个前提，所以这里改判「鼠标**静止**」。
+     */
+    fun mouseIdleMillis(mouseX: Int, mouseY: Int): Long {
+        val now = System.currentTimeMillis()
+        if (mouseX != lastMouseX || mouseY != lastMouseY) {
+            lastMouseX = mouseX
+            lastMouseY = mouseY
+            lastMouseMoveAt = now
+            return 0L
+        }
+        return now - lastMouseMoveAt
+    }
 }

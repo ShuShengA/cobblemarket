@@ -22,6 +22,7 @@
   "cobblemarket.settings.icon_anim": "精灵图标动画：",
   "cobblemarket.settings.icon_anim_static": "静态",
   "cobblemarket.settings.icon_anim_dynamic": "动态",
+  "cobblemarket.settings.hover_preview": "精灵预览图",
   "cobblemarket.settings.on_state": "开",
   "cobblemarket.settings.off_state": "关",
   "cobblemarket.settings.done": "完成",

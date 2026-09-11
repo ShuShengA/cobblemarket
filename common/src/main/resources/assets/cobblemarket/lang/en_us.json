@@ -22,6 +22,7 @@
   "cobblemarket.settings.icon_anim": "Pokémon icon animation: ",
   "cobblemarket.settings.icon_anim_static": "Static",
   "cobblemarket.settings.icon_anim_dynamic": "Dynamic",
+  "cobblemarket.settings.hover_preview": "Pokemon preview",
   "cobblemarket.settings.on_state": "ON",
   "cobblemarket.settings.off_state": "OFF",
   "cobblemarket.settings.done": "Done",

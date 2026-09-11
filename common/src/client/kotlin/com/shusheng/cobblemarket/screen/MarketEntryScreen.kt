@@ -51,6 +51,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsBalanceHudButton: NineSliceButton? = null
     private var settingsBalanceHudPosButton: NineSliceButton? = null
     private var settingsIconAnimButton: NineSliceButton? = null
+    private var settingsHoverPreviewButton: NineSliceButton? = null
     // 入口底部居中的市场总开关（仅 OP 可见）
     private var marketSwitchBtn: NineSliceButton? = null
     // 入口底部市场总开关左侧的服务器配置按钮（仅 OP 可见）
@@ -394,8 +395,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             { cycleIconAnim() }
         )
         addDrawableChild(settingsIconAnimButton)
+        // 精灵预览图：紧跟图标展示模式（同属精灵图标一类，中间不画分割线）
+        settingsHoverPreviewButton = makeSwitchButton(ClientConfig.hoverPreview) { toggleHoverPreview() }
+        settingsHoverPreviewButton?.let { b -> b.x = switchX; b.y = dialogY + 265; addDrawableChild(b) }
         addDrawableChild(NineSliceButton(
-            centerX - 28, dialogY + 265, 56, 20,
+            centerX - 28, dialogY + 291, 56, 20,
             Text.translatable("cobblemarket.settings.done"),
             { closeSettingsDialog() }
         ))
@@ -412,6 +416,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsBalanceHudButton = null
         settingsBalanceHudPosButton = null
         settingsIconAnimButton = null
+        settingsHoverPreviewButton = null
         clearChildren()
         init()
     }
@@ -477,6 +482,12 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         showSettingsToast("cobblemarket.settings.groudon_fly", ClientConfig.groudonFly)
     }
 
+    private fun toggleHoverPreview() {
+        ClientConfig.setHoverPreview(!ClientConfig.hoverPreview)
+        settingsHoverPreviewButton?.iconLeft = switchIconFor(ClientConfig.hoverPreview)
+        showSettingsToast("cobblemarket.settings.hover_preview", ClientConfig.hoverPreview)
+    }
+
     private fun balanceHudModeKey(): String = when (ClientConfig.balanceHudMode) {
         BalanceHudMode.ALWAYS -> "cobblemarket.settings.balance_hud_always"
         BalanceHudMode.ON_CHANGE -> "cobblemarket.settings.balance_hud_change"
@@ -524,8 +535,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             Text.translatable("cobblemarket.settings.title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF
         )
-        // 开关项分割线：标题下 + 每两行之间（行按钮 y=30/56/82/108/134/160/187/213/239、行高 22 → 线在 27/54/80/106/132/158/184/237）；
-        // 187 与 213 两行同属余额 HUD 设置，中间不画线
+        // 开关项分割线：标题下 + 每两行之间（行按钮 y=30/56/82/108/134/160/187/213/239/265、行高 22 → 线在 27/54/80/106/132/158/184/237）；
+        // 187 与 213 两行同属余额 HUD 设置，中间不画线；239 与 265 同属精灵图标设置，中间也不画线
         val lineX1 = centerX - 88
         val lineX2 = centerX + 88
         for (lineY in intArrayOf(27, 54, 80, 106, 132, 158, 184, 237)) {
@@ -581,6 +592,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             textRenderer,
             Text.translatable("cobblemarket.settings.icon_anim"),
             centerX - 80, dialogY + 245, 0xFFFFFF
+        )
+        context.drawTextWithShadow(
+            textRenderer,
+            toggleText("cobblemarket.settings.hover_preview", ClientConfig.hoverPreview),
+            centerX - 80, dialogY + 271, 0xFFFFFF
         )
     }
 
@@ -1051,7 +1067,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     companion object {
         private const val DIALOG_W = 200
-        private const val DIALOG_H = 298
+        private const val DIALOG_H = 324
         // 入口掉落动画三段：下落 → 落地停留 → 淡出（淡出期间入口界面从图下透出，慢慢显现）
         private const val DROP_DURATION_MS = 100L
         private const val HOLD_DURATION_MS = 100L

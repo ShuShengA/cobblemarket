@@ -68,6 +68,10 @@ object ClientConfig {
     var iconAnimMode: IconAnimMode = IconAnimMode.FLOAT
         private set
 
+    /** 悬停精灵行时，在屏幕左侧显示该精灵的放大预览（个人设置，设置弹窗开关，默认开） */
+    var hoverPreview: Boolean = true
+        private set
+
     /** 余额 HUD 位置（归一化 0~1：x 是 HUD 左缘在「屏宽 − HUD 宽」中的占比，0=贴左、1=贴右；y 同理按高度）。
      *  默认 (0, 0) = 左上角（老配置无此字段即保持原行为）。由「设置 → 余额HUD位置设置 → 自定义」拖动写入 */
     var balanceHudX: Float = 0f
@@ -98,6 +102,8 @@ object ClientConfig {
             }
             // 只有显式存过 0（静态）才保持静态；无字段（旧版本升级）、1（浮动）、2（已砍掉的完整动画占位）一律按新默认浮动
             iconAnimMode = if (data["iconAnimMode"] as? Double == 0.0) IconAnimMode.STATIC else IconAnimMode.FLOAT
+            // 无字段（旧版本升级）按新默认「开」
+            hoverPreview = data["hoverPreview"] as? Boolean ?: true
             // 位置：无字段（旧版本升级）按左上角；越界值钳回 0~1
             balanceHudX = ((data["balanceHudX"] as? Double)?.toFloat() ?: 0f).coerceIn(0f, 1f)
             balanceHudY = ((data["balanceHudY"] as? Double)?.toFloat() ?: 0f).coerceIn(0f, 1f)
@@ -135,6 +141,11 @@ object ClientConfig {
 
     fun setGroudonFly(v: Boolean) {
         groudonFly = v
+        save()
+    }
+
+    fun setHoverPreview(v: Boolean) {
+        hoverPreview = v
         save()
     }
 
@@ -197,6 +208,7 @@ object ClientConfig {
                         "groudonFly" to groudonFly,
                         "balanceHudMode" to balanceHudMode.ordinal,
                         "iconAnimMode" to iconAnimMode.ordinal,
+                        "hoverPreview" to hoverPreview,
                         "balanceHudX" to balanceHudX,
                         "balanceHudY" to balanceHudY
                     )

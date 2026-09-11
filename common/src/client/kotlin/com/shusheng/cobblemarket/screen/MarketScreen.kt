@@ -20,6 +20,7 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.mojang.authlib.GameProfile
 import java.util.UUID
@@ -1153,7 +1154,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             context.matrices.pop()
 
             // 3D Pokemon icon（弹窗打开时不渲染——模型层在衬底/遮罩之上，压暗仍会浮在弹窗上）
-            if (!dialogOpen) renderPokemonIcon(context, origIndex, leftX + 2, y + 2, iconSize, delta = delta)
+            // preview = 悬停行且预览图开关打开：该行图标切走路姿势，与大图保持一致（两者共用同一个 state）
+            if (!dialogOpen) renderPokemonIcon(
+                context, origIndex, leftX + 2, y + 2, iconSize, delta = delta,
+                preview = com.shusheng.cobblemarket.client.ClientConfig.hoverPreview && di == hoveredRow
+            )
 
             // Ball icon（球种统一在精灵名称左侧；弹窗打开时隐藏——物品图标无色调参数无法变暗）
             if (!dialogOpen) {
@@ -1238,6 +1243,15 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
         prevButton.active = currentPage > 1
         nextButton.active = currentPage < totalPages
+
+        // 悬停预览大图（最简版，先验证上层层级）：悬停哪行就显示哪只，位置固定在左侧空白区。
+        // 姿势的切换与还原都由解析器按「本行是否预览态」每帧决定，这里不需要手动清理
+        if (!dialogOpen && hoveredRow in displayList.indices) {
+            val previewIndex = displayList[hoveredRow].index
+            iconData[previewIndex]?.let { data ->
+                PokemonHoverPreview.render(context, data.renderable, data.state, leftX, height)
+            }
+        }
 
         // 固拉多飞行：悬浮在界面之上（盖住面板/行），弹窗打开时不画（遮罩应盖住它）。
         // flush 夹心 + 清深度（照庆祝动画）：行内 3D 精灵图标/物品图标写深度或抬高 z，
@@ -1573,7 +1587,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     // ── 3D Pokemon icon rendering ──
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
+    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f, preview: Boolean = false) {
         val data = iconData[index] ?: run {
             // Fallback: type-colored placeholder
             val entry = listings.getOrNull(index) ?: return
@@ -1596,7 +1610,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 state = data.state,
                 x = x, y = y, size = size,
                 delta = delta,
-                animate = useFloat
+                animate = useFloat,
+                preview = preview
             )
         } catch (e: Exception) {
             // Fallback on error（残留的 scissor/matrices 由 PokemonIconRenderer 的 finally 收尾）

@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.client.icon
 
+import com.cobblemon.mod.common.client.gui.calculateHeadYawAndPitch
 import com.cobblemon.mod.common.client.render.models.blockbench.PosableState
 import com.cobblemon.mod.common.entity.PoseType
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
@@ -26,6 +27,9 @@ object IconAnimationResolver {
     /** 默认结果：PROFILE 姿势、头部不偏转 —— 也正是改造前的行为。 */
     val DEFAULT = Result(PoseType.PROFILE, 0f, 0f)
 
+    /** 鼠标静止多久后头部转回正前方；照 Cobblemon 详情页的 `MAX_SECONDS_LOOKING = 6` 秒。 */
+    private const val LOOK_RESET_MS = 6_000L
+
     /**
      * @param renderable 该图标渲染的精灵（物种与形态决定有没有睡眠姿势、头部能不能转）
      * @param state      该图标的持久状态，跨帧的 yaw/pitch 从这里取
@@ -35,6 +39,8 @@ object IconAnimationResolver {
      * @param mouseX     当前鼠标 X（屏幕坐标）
      * @param mouseY     当前鼠标 Y（屏幕坐标）
      * @param animate    该图标是否在播放动画
+     * @param preview    是否处于预览态（悬停行 / 悬停大图）：切走路姿势，且用独立的一份 yaw/pitch
+     *                   （大图与行内共用 state，共用一份会被互相拉拽）
      */
     fun resolve(
         renderable: RenderablePokemon,
@@ -44,10 +50,47 @@ object IconAnimationResolver {
         centerY: Float,
         mouseX: Int,
         mouseY: Int,
-        animate: Boolean
+        animate: Boolean,
+        preview: Boolean = false
     ): Result {
-        // S0：管线占位，恒返回改造前的行为（PROFILE + 不转头），用来验证重构本身零视觉变化。
-        // S1 头部跟随 / S2 昼夜姿态 / S5 悬停 walk 在这里落地。
-        return DEFAULT
+        // 静态模式：不推进动画也不跟随鼠标（与 cry 点击、睡眠一致）
+        if (!animate) return DEFAULT
+
+        // 头部跟随鼠标：复刻 Cobblemon 详情页大模型的做法（atan 求角 + rotLerp 平滑 + 扣掉图标自身的旋转角）。
+        // 唯一不照搬的是它的「看太久就回正」—— 那是给大图防止被一直盯的，16-20px 的小图标无所谓。
+        // 无条件跟随：只悬停才跟的话，图标这么小可能一直触发不了。
+        val animState = IconAnimationStates.of(state, preview)
+        val (yaw, pitch) = calculateHeadYawAndPitch(
+            xCoordinate = centerX,
+            yCoordinate = centerY,
+            rotation = rotation,
+            mouseX = mouseX,
+            mouseY = mouseY,
+            currentYaw = animState.headYaw,
+            currentPitch = animState.headPitch,
+            // 鼠标长时间不动就把头转回正前方（详情页是「鼠标离开模型 6 秒」，见 mouseIdleMillis 注释）
+            resetToCenter = IconAnimationStates.mouseIdleMillis(mouseX, mouseY) >= LOOK_RESET_MS
+        )
+        animState.headYaw = yaw
+        animState.headPitch = pitch
+        // 姿势：预览态且模型确实有走路姿势时切 walk，否则待机。
+        // 这里只“返回”姿势类型，实际切换由 drawProfilePokemon 内部的 setPoseToFirstSuitable(poseType) 完成
+        // —— 若在这里自己 setPose，紧接着就会被那句覆盖掉（踩过一次）。
+        return Result(if (preview) walkPoseOrProfile(state) else PoseType.PROFILE, yaw, pitch)
+    }
+
+    /**
+     * 预览态用的姿势：模型注册了 MOVING_POSES 的姿势就返回 [PoseType.WALK]，否则退回 PROFILE。
+     *
+     * **不能直接返回 WALK 了事**：`setPoseToFirstSuitable` 找不到合适姿势时会 fallback 到
+     * `poses.values.first()`，模型会莫名抽一下（已查证其实现）。所以先自己确认有走路姿势。
+     * 姿势名也不写死——走路姿势按介质不同（ground_walk / air_fly / water_swim），由模型自己挑。
+     */
+    private fun walkPoseOrProfile(state: PosableState): PoseType {
+        val model = state.currentModel ?: return PoseType.PROFILE
+        val hasWalk = model.poses.values.any { pose ->
+            pose.poseTypes.any { it in PoseType.MOVING_POSES } && pose.isSuitable(state)
+        }
+        return if (hasWalk) PoseType.WALK else PoseType.PROFILE
     }
 }
