@@ -1013,7 +1013,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         // 图标点击叫声：弹窗图标精确命中；**弹窗打开时不做整行触发** —— 整行判定只看 y，
         // 弹窗里精灵图标与输入框的 y 挨得近，会误把点输入框当成点图标
-        if (button == 0 && confirmEntry == null && !IconCryClick.playIconAt(mouseX, mouseY)) {
+        // 先按图标矩形精确命中（弹窗里的图标照样能点），再考虑整行 —— 整行判定只看 y，
+        // 弹窗里精灵图标与输入框挨得近，会误把点输入框当成点图标，所以弹窗时不整行触发
+        if (button == 0 && !IconCryClick.playIconAt(mouseX, mouseY) && confirmEntry == null) {
             val rowL = width / 2 - panelWidth / 2
             IconCryClick.playRowAt(mouseX, mouseY, rowL, rowL + panelWidth - 42)
         }

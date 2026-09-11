@@ -63,6 +63,8 @@ class AuctionScreen(
     private var abilityFilter = ""
     private var natureFilter = ""
     private var filterListOpen = "" // ""/type/ability/nature；互斥展开
+    /** 筛选展开列表的实际底边 y（每行 14、从 88 起）。被它盖住的行不渲染——反正看不见，画了反而刺穿列表 */
+    private var filterListBottomY = 0
     private var filterListScroll = 0
     private val filterOptionButtons = mutableListOf<NineSliceButton>()
     private var abilityOptions = listOf<Pair<String, String>>()
@@ -436,6 +438,8 @@ class AuctionScreen(
             filterOptionButtons.add(btn)
             addDrawableChild(btn)
         }
+        // 记下展开列表的实际底边，供行渲染判断哪些行被它盖住（按实际选项数与滚动偏移算，不写死行数）
+        filterListBottomY = 88 + minOf(options.size - filterListScroll, MAX_FILTER_LIST_ROWS) * 14
     }
 
     private fun isFilterSelected(kind: String, key: String): Boolean = when (kind) {
@@ -1254,18 +1258,15 @@ class AuctionScreen(
             sendToServer(RequestAuctionListPayload())
         }
 
-        // 筛选展开列表打开时跳过分隔线与行内容（画在 children 之后，会刺穿列表按钮）；
-        // 规则悬停面板是浮层、必须最后画，所以两条路径各画一次
-        if (filterListOpen.isNotEmpty()) {
-            if (rulesButton?.isHovered == true) renderRulesPanel(context, mouseX, mouseY)
-            return
+        // 上分隔线若落在展开列表的覆盖范围内则不画（它也在 children 之后，画了会刺穿列表）；
+        // 被列表盖住的行见下面的逐行判断。规则悬停面板是浮层，由末尾那条路径统一处理
+        if (filterListOpen.isEmpty() || startY - 2 >= filterListBottomY) {
+            context.fill(leftX, startY - 2, leftX + panelWidth, startY - 1, 0xFF555555.toInt())
         }
-
-        context.fill(leftX, startY - 2, leftX + panelWidth, startY - 1, 0xFF555555.toInt())
 
         val displayList = filtered()
 
-        if (displayList.isEmpty()) {
+        if (displayList.isEmpty() && filterListOpen.isEmpty()) {
             context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("cobblemarket.auction.empty").formatted(Formatting.GRAY),
                 centerX, startY + 50, 0xFFFFFF)
@@ -1273,6 +1274,11 @@ class AuctionScreen(
 
         indexedFiltered.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, (origIndex, entry) ->
             val y = startY + i * rowHeight
+
+            // 被筛选展开列表盖住的行不画：反正看不见，画了反而会刺穿列表（行内容在 children 之后画）。
+            // **只跳过被盖住的那几行**——早先这里是「展开就整片 return」，结果整个列表区域都空了
+            if (filterListOpen.isNotEmpty() && y < filterListBottomY) return@forEachIndexed
+
             val slotX = leftX + 2
             val slotY = y + 2
             if (entry.type == "POKEMON") {
@@ -1705,7 +1711,9 @@ class AuctionScreen(
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         // 图标点击叫声：弹窗图标精确命中；**弹窗打开时不做整行触发** —— 整行判定只看 y，
         // 弹窗里精灵图标与输入框的 y 挨得近，会误把点输入框当成点图标
-        if (button == 0 && bidEntry == null && !IconCryClick.playIconAt(mouseX, mouseY)) {
+        // 先按图标矩形精确命中（弹窗里的图标照样能点），再考虑整行 —— 整行判定只看 y，
+        // 弹窗里精灵图标与输入框挨得近，会误把点输入框当成点图标，所以弹窗时不整行触发
+        if (button == 0 && !IconCryClick.playIconAt(mouseX, mouseY) && bidEntry == null) {
             val rowL = width / 2 - panelWidth / 2
             IconCryClick.playRowAt(mouseX, mouseY, rowL, rowL + panelWidth - 50)
         }

@@ -65,6 +65,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
     // 属性展开列表（照精灵市场：不限+19 属性、属性色、限高滚动、展开隐藏下层）
     private var typeListOpen = false
     private var typeListScroll = 0
+    /** 属性展开列表的实际底边 y（每行 14、从 96 起）。被它盖住的行不渲染——反正看不见，画了反而刺穿列表 */
+    private var typeListBottomY = 0
     private val typeOptionButtons = mutableListOf<NineSliceButton>()
     private var shinyBtn: NineSliceButton? = null
     private var genderBtn: NineSliceButton? = null
@@ -310,6 +312,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             typeOptionButtons.add(btn)
             addDrawableChild(btn)
         }
+        // 记下展开列表的实际底边，供行渲染判断哪些行被它盖住（按实际选项数与滚动偏移算，不写死行数）
+        typeListBottomY = 96 + minOf(allTypes.size - typeListScroll, MAX_TYPE_LIST_ROWS) * 14
     }
 
     private fun selectType(key: String) {
@@ -519,10 +523,11 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             context.drawCenteredTextWithShadow(textRenderer, "${scrollOffset + 1}-${minOf(scrollOffset + maxVisible, filtered.size)} / ${filtered.size}", width / 2, height - 49, 0x888888)
         }
 
-        // 属性展开列表打开时跳过行内容、悬停与列表区提示（都画在 children 之后，会刺穿列表按钮）
-        if (typeListOpen) return
+        // 属性展开列表打开时不计算悬停（列表盖着，下面的行不该有悬停高亮）；
+        // 被它盖住的行与提示文字见下面的逐行/逐处判断 —— 早先这里是「展开就整片 return」，
+        // 结果列表下方所有行都不渲染
         var hovered = -1
-        if (mouseX in lx..(lx + panelW) && mouseY >= startY) {
+        if (!typeListOpen && mouseX in lx..(lx + panelW) && mouseY >= startY) {
             val row = ((mouseY - startY) / rowHeight) + scrollOffset
             if (row in filtered.indices) hovered = row
         }
@@ -532,6 +537,11 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             val e = indexed.value
             val origIdx = indexed.index
             val y = startY + (i - scrollOffset) * rowHeight
+
+            // 被属性展开列表盖住的行不画：反正看不见，画了反而会刺穿列表（行内容在 children 之后画）。
+            // **只跳过被盖住的那几行**，列表下方的行照常显示
+            if (typeListOpen && y < typeListBottomY) continue
+
             val rowState = when { i == selectedIndex -> 2; i == hovered -> 1; else -> 0 }
             drawNineSlice(context, ROW_BACKGROUND_TEXTURE, lx, y, panelW, rowHeight, rowState, ROW_BACKGROUND_TEX_H)
 
@@ -615,10 +625,10 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         // 列表区提示（startY+50 落在展开列表覆盖范围内，所以留在 return 之后）
         if (filtered.isEmpty() && loaded && loadedAll) {
             // 只有全部分页拉完才能断言"没有"，否则匹配项可能还在未加载的页里
-            context.drawCenteredTextWithShadow(textRenderer, Text.translatable("cobblemarket.sell.no_pokemon").formatted(Formatting.GRAY), width / 2, startY + 50, 0xFFFFFF)
+            if (!typeListOpen) context.drawCenteredTextWithShadow(textRenderer, Text.translatable("cobblemarket.sell.no_pokemon").formatted(Formatting.GRAY), width / 2, startY + 50, 0xFFFFFF)
         }
         if (!loaded) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.translatable("cobblemarket.sell.loading").formatted(Formatting.GRAY), width / 2, startY + 50, 0xFFFFFF)
+            if (!typeListOpen) context.drawCenteredTextWithShadow(textRenderer, Text.translatable("cobblemarket.sell.loading").formatted(Formatting.GRAY), width / 2, startY + 50, 0xFFFFFF)
         }
 
         // 固拉多飞行：悬浮在界面之上（与精灵市场同公式，切换界面位置延续）。
