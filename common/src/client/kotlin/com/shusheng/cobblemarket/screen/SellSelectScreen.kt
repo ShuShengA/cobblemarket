@@ -1,10 +1,10 @@
 package com.shusheng.cobblemarket.screen
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
-import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
-import com.cobblemon.mod.common.entity.PoseType
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
+import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.*
 import com.shusheng.cobblemarket.platform.sendToServer
@@ -16,7 +16,6 @@ import net.minecraft.registry.Registries
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
-import org.joml.Quaternionf
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -474,6 +473,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        IconRegistry.beginFrame(mouseX, mouseY)
         val panelLeft = width / 2 - 160
         val panelTop = 2
         val panelBottom = height - 32
@@ -548,7 +548,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             // Species（[队]/[PC] 固定色，精灵名属性色 + 金色闪光星标拆段绘制；PC 用电脑物品图标，[] 保持原色）
             val tc = typeColor(if (e.primaryType.isNotEmpty()) e.primaryType else "cobblemon.type.normal")
             val srcColor = if (e.source == "party") 0x55FF55 else 0x55AAFF
-            var sx = lx + 28
+            var sx = lx + 26
             if (e.source == "party") {
                 val src = Text.translatable("cobblemarket.sell.party").string
                 context.drawText(textRenderer, src, sx, y + 7, srcColor, false)
@@ -812,24 +812,19 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             val tc = 0x88888888.toInt()
             context.fill(x, y, x + size, y + size, tc)
         }
-        val matrices = context.matrices
-        matrices.push()
+        // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+        val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+            com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
         try {
-            context.enableScissor(x - 4, y - 4, x + size + 4, y + size + 4)
-            matrices.translate(x + size / 2.0, y + 1.0, 0.0)
-            matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
-            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
-            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
-                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
-            drawProfilePokemon(
-                renderablePokemon = data.renderable, matrixStack = matrices,
-                rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
-                state = data.state, partialTicks = if (useFloat) delta else 0f, scale = 4.5f
+            PokemonIconRenderer.draw(
+                context = context,
+                renderable = data.renderable,
+                state = data.state,
+                x = x, y = y, size = size,
+                delta = delta,
+                animate = useFloat
             )
         } catch (_: Exception) {
-        } finally {
-            context.disableScissor()
-            matrices.pop()
         }
     }
 

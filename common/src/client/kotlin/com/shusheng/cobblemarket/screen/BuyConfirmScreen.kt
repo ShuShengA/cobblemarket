@@ -1,8 +1,9 @@
 package com.shusheng.cobblemarket.screen
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
-import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.network.BuyFromMarketPayload
@@ -15,7 +16,6 @@ import net.minecraft.item.ItemStack
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
-import org.joml.Quaternionf
 
 class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatable("cobblemarket.buy_confirm.title")) {
 
@@ -162,6 +162,7 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        IconRegistry.beginFrame(mouseX, mouseY)
         super.render(context, mouseX, mouseY, delta)
         val centerX = width / 2
 
@@ -174,19 +175,20 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
         val iconSize = 30
         val iconY = 26
         renderable?.let { rp ->
-            val matrices = context.matrices
-            matrices.push()
-            matrices.translate(centerX.toDouble(), (iconY + iconSize / 2).toDouble(), 0.0)
-            matrices.scale(iconSize / 25f * 2.5f, iconSize / 25f * 2.5f, 1f)
             // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
             val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
                 com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
-            drawProfilePokemon(
-                renderablePokemon = rp, matrixStack = matrices,
-                rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
-                state = state, partialTicks = if (useFloat) delta else 0f, scale = 4.5f
+            // 整屏页原先既无裁剪、纵向锚点也取矩形中心（其余界面是 +1），两处都照旧保留
+            PokemonIconRenderer.draw(
+                context = context,
+                renderable = rp,
+                state = state,
+                x = centerX - iconSize / 2, y = iconY, size = iconSize,
+                delta = delta,
+                animate = useFloat,
+                useScissor = false,
+                centerAnchorY = true
             )
-            matrices.pop()
         }
 
         val infoY = iconY + iconSize + 8

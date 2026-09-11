@@ -3,8 +3,9 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
-import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.market.PokemonBlacklistEntry
 import com.shusheng.cobblemarket.network.AcceptPendingDeliverPayload
@@ -37,7 +38,6 @@ import net.minecraft.registry.Registries
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
-import org.joml.Quaternionf
 import java.util.UUID
 
 /**
@@ -226,34 +226,22 @@ class BuyOrderScreen(
         }
     }
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false, delta: Float = 0f) {
+    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
         val data = iconData[index] ?: return
         val renderable = data.renderable ?: return
-        val matrices = context.matrices
-        matrices.push()
+        // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+        val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+            com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
         try {
-            context.enableScissor(x - 4, y - 4, x + size + 4, y + size + 4)
-            matrices.translate(x + size / 2.0, y + 1.0, 0.0)
-            matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
-            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
-            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
-                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
-            drawProfilePokemon(
-                renderablePokemon = renderable,
-                matrixStack = matrices,
-                rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
+            PokemonIconRenderer.draw(
+                context = context,
+                renderable = renderable,
                 state = data.state,
-                partialTicks = if (useFloat) delta else 0f,
-                scale = 4.5f,
-                // 弹窗打开时压暗（模型走独立渲染层，遮罩盖不住；颜色系数模拟遮罩效果）
-                r = if (dark) 0.35f else 1f,
-                g = if (dark) 0.35f else 1f,
-                b = if (dark) 0.35f else 1f
+                x = x, y = y, size = size,
+                delta = delta,
+                animate = useFloat
             )
         } catch (_: Exception) {
-        } finally {
-            context.disableScissor()
-            matrices.pop()
         }
     }
 
@@ -666,6 +654,7 @@ class BuyOrderScreen(
     // ── 渲染 ──
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        IconRegistry.beginFrame(mouseX, mouseY)
         val panelLeft = width / 2 - panelWidth / 2
         val panelTop = 2
         val panelBottom = height - 32
@@ -776,8 +765,8 @@ class BuyOrderScreen(
             } else {
                 Text.literal(rowData?.name ?: com.shusheng.cobblemarket.util.TextUtil.truncateString(entryName(entry), 54))
             }
-            context.drawTextWithShadow(textRenderer, name, rowL + 28, y + 7, nameColor)
-            var sx = rowL + 28 + textRenderer.getWidth(name)
+            context.drawTextWithShadow(textRenderer, name, rowL + 26, y + 7, nameColor)
+            var sx = rowL + 26 + textRenderer.getWidth(name)
             conditionBadges(entry).forEach { (badge, color) ->
                 context.drawText(textRenderer, badge, sx + 2, y + 7, color, false)
                 sx += 2 + textRenderer.getWidth(badge)
@@ -1354,27 +1343,19 @@ class BuyOrderScreen(
             context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
             context.matrices.pop()
             previewRenderable?.let { rp ->
-                val matrices = context.matrices
-                matrices.push()
+                // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+                val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                    com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
                 try {
-                    context.enableScissor(slotX - 4, slotY - 4, slotX + slotSize + 4, slotY + slotSize + 4)
-                    matrices.translate(slotX + slotSize / 2.0, slotY + 1.0, 0.0)
-                    matrices.scale(slotSize / 25f * 2.5f, slotSize / 25f * 2.5f, 1f)
-                    // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
-                    val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
-                        com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
-                    drawProfilePokemon(
-                        renderablePokemon = rp,
-                        matrixStack = matrices,
-                        rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
+                    PokemonIconRenderer.draw(
+                        context = context,
+                        renderable = rp,
                         state = previewState,
-                        partialTicks = if (useFloat) delta else 0f,
-                        scale = 4.5f
+                        x = slotX, y = slotY, size = slotSize,
+                        delta = delta,
+                        animate = useFloat
                     )
                 } catch (_: Exception) {
-                } finally {
-                    context.disableScissor()
-                    matrices.pop()
                 }
             }
             // 冻结提示：发布时冻结 maxPrice × 1（性格列表展开时隐藏——提示在列表覆盖区内）

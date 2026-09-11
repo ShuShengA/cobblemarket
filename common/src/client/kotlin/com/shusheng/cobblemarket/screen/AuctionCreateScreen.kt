@@ -3,8 +3,9 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
-import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.network.CreateItemAuctionPayload
 import com.shusheng.cobblemarket.network.CreatePokemonAuctionPayload
@@ -25,7 +26,6 @@ import net.minecraft.registry.Registries
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
-import org.joml.Quaternionf
 
 /**
  * 上架拍卖：精灵 / 物品 双 tab。
@@ -458,27 +458,19 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
         context.matrices.pop()
         val rp = dialogRenderable ?: return
-        val matrices = context.matrices
-        matrices.push()
+        // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+        val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+            com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
         try {
-            context.enableScissor(slotX - 4, slotY - 4, slotX + slotSize + 4, slotY + slotSize + 4)
-            matrices.translate(slotX + slotSize / 2.0, slotY + 1.0, 0.0)
-            matrices.scale(slotSize / 25f * 2.5f, slotSize / 25f * 2.5f, 1f)
-            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
-            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
-                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
-            drawProfilePokemon(
-                renderablePokemon = rp,
-                matrixStack = matrices,
-                rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
+            PokemonIconRenderer.draw(
+                context = context,
+                renderable = rp,
                 state = dialogPreviewState,
-                partialTicks = if (useFloat) delta else 0f,
-                scale = 4.5f
+                x = slotX, y = slotY, size = slotSize,
+                delta = delta,
+                animate = useFloat
             )
         } catch (_: Exception) {
-        } finally {
-            context.disableScissor()
-            matrices.pop()
         }
     }
 
@@ -681,40 +673,29 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     private fun displayCount(): Int = if (currentTab == 0) filteredPokemon().size else items.size
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false, delta: Float = 0f) {
+    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
         val data = iconData[index] ?: return run {
             val tc = 0x88888888.toInt()
             context.fill(x, y, x + size, y + size, tc)
         }
-        val matrices = context.matrices
-        matrices.push()
+        // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+        val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+            com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
         try {
-            context.enableScissor(x - 4, y - 4, x + size + 4, y + size + 4)
-            matrices.translate(x + size / 2.0, y + 1.0, 0.0)
-            matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
-            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
-            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
-                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
-            drawProfilePokemon(
-                renderablePokemon = data.renderable,
-                matrixStack = matrices,
-                rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
+            PokemonIconRenderer.draw(
+                context = context,
+                renderable = data.renderable,
                 state = data.state,
-                partialTicks = if (useFloat) delta else 0f,
-                scale = 4.5f,
-                // 弹窗打开时压暗（模型走独立渲染层，遮罩盖不住；颜色系数模拟遮罩效果）
-                r = if (dark) 0.35f else 1f,
-                g = if (dark) 0.35f else 1f,
-                b = if (dark) 0.35f else 1f
+                x = x, y = y, size = size,
+                delta = delta,
+                animate = useFloat
             )
         } catch (_: Exception) {
-        } finally {
-            context.disableScissor()
-            matrices.pop()
         }
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        IconRegistry.beginFrame(mouseX, mouseY)
         val panelLeft = width / 2 - 160
         val panelTop = 2
         val panelBottom = height - 32
@@ -839,7 +820,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 // 来源（[队]/[PC] 固定色，精灵名属性色 + 金色闪光星标，照搬 SellSelectScreen；PC 用电脑物品图标，[] 保持原色）
                 val tc = typeColor(if (p.primaryType.isNotEmpty()) p.primaryType else "cobblemon.type.normal")
                 val srcColor = if (p.source == "party") 0x55FF55 else 0x55AAFF
-                var sx = leftX + 28
+                var sx = leftX + 26
                 if (p.source == "party") {
                     val src = Text.translatable("cobblemarket.sell.party").string
                     context.drawText(textRenderer, src, sx, y + 7, srcColor, false)

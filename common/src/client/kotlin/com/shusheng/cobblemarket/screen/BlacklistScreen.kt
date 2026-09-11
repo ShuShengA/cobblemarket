@@ -3,8 +3,9 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
-import com.cobblemon.mod.common.client.gui.drawProfilePokemon
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.IconRegistry
+import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.cobblemon.mod.common.pokemon.Species
 import com.shusheng.cobblemarket.market.ItemBlacklistEntry
@@ -30,7 +31,6 @@ import net.minecraft.registry.Registries
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
-import org.joml.Quaternionf
 
 /**
  * 黑名单管理：精灵 / 物品 两个 tab（骨架照搬价格限制界面）。
@@ -391,27 +391,19 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         context.matrices.pop()
 
         previewRenderable?.let { rp ->
-            val matrices = context.matrices
-            matrices.push()
+            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
             try {
-                context.enableScissor(slotX - 4, slotY - 4, slotX + slotSize + 4, slotY + slotSize + 4)
-                matrices.translate(slotX + slotSize / 2.0, slotY + 1.0, 0.0)
-                matrices.scale(slotSize / 25f * 2.5f, slotSize / 25f * 2.5f, 1f)
-                // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
-                val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
-                    com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
-                drawProfilePokemon(
-                    renderablePokemon = rp,
-                    matrixStack = matrices,
-                    rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
+                PokemonIconRenderer.draw(
+                    context = context,
+                    renderable = rp,
                     state = previewState,
-                    partialTicks = if (useFloat) delta else 0f,
-                    scale = 4.5f
+                    x = slotX, y = slotY, size = slotSize,
+                    delta = delta,
+                    animate = useFloat
                 )
             } catch (_: Exception) {
-            } finally {
-                context.disableScissor()
-                matrices.pop()
             }
         }
     }
@@ -952,33 +944,21 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         }
     }
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, dark: Boolean = false, delta: Float = 0f) {
+    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
         val data = iconData[index] ?: return
-        val matrices = context.matrices
-        matrices.push()
+        // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+        val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+            com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
         try {
-            context.enableScissor(x - 4, y - 4, x + size + 4, y + size + 4)
-            matrices.translate(x + size / 2.0, y + 1.0, 0.0)
-            matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
-            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
-            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
-                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
-            drawProfilePokemon(
-                renderablePokemon = data.renderable,
-                matrixStack = matrices,
-                rotation = Quaternionf().rotateXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(35.0).toFloat(), 0f),
+            PokemonIconRenderer.draw(
+                context = context,
+                renderable = data.renderable,
                 state = data.state,
-                partialTicks = if (useFloat) delta else 0f,
-                scale = 4.5f,
-                // 弹窗打开时压暗（模型走独立渲染层，遮罩盖不住；颜色系数模拟遮罩效果）
-                r = if (dark) 0.35f else 1f,
-                g = if (dark) 0.35f else 1f,
-                b = if (dark) 0.35f else 1f
+                x = x, y = y, size = size,
+                delta = delta,
+                animate = useFloat
             )
         } catch (_: Exception) {
-        } finally {
-            context.disableScissor()
-            matrices.pop()
         }
     }
 
@@ -1098,6 +1078,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     // ── 渲染 ──
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        IconRegistry.beginFrame(mouseX, mouseY)
         val panelLeft = width / 2 - 160
         val panelTop = 2
         val panelBottom = height - 32
@@ -1186,7 +1167,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 // 截断防止超长条目（六项个体值全填）与编辑/删除按钮重叠；完整信息在悬停 tooltip
                 context.drawTextWithShadow(textRenderer,
                     com.shusheng.cobblemarket.util.TextUtil.truncateString(rowTexts[scrollOffset + i], 170),
-                    leftX + 28, y + 7, 0xFFFFFF)
+                    leftX + 26, y + 7, 0xFFFFFF)
             }
             if (hoveredRow >= 0) {
                 val actualIdx = scrollOffset + hoveredRow
