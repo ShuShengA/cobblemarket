@@ -555,6 +555,7 @@
   "cobblemarket.loan.insufficient_limit": "Not enough room (max: %s %s)",
   "cobblemarket.loan.ip_limit": "The network debt cap is %s %s and this loan would exceed it (including existing debt) — borrow less or repay some loans first",
   "cobblemarket.loan_history.title": "Loan History",
+  "cobblemarket.loan_history.folder_path": "Loan ledgers (CSV) are stored at: %s",
   "cobblemarket.loan_history.all_title": "All Loans",
   "cobblemarket.loan_history.empty": "No loan records yet",
   "cobblemarket.loan_history.periods": "%s/%s p",
