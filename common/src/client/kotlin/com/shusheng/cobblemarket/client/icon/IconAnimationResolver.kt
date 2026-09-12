@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.client.icon
 
+import com.shusheng.cobblemarket.client.ClientRestCache
 import com.cobblemon.mod.common.client.gui.calculateHeadYawAndPitch
 import com.cobblemon.mod.common.client.render.models.blockbench.PosableState
 import com.cobblemon.mod.common.pokemon.ai.RestBehaviour
@@ -125,9 +126,6 @@ object IconAnimationResolver {
         }
     }
 
-    /** `behaviour.resting` 按「物种 + 形态」缓存：`getForm(aspects)` 每帧每图标调用有开销（满页 45 个）。 */
-    private val restCache = HashMap<String, RestBehaviour>()
-
     /**
      * 游戏时间是否处于该物种的休息时段（复刻原版 `DrowsySensor` 的判定）。
      *
@@ -135,15 +133,14 @@ object IconAnimationResolver {
      * 图标只按物种作息走：到点睡、过点醒，不能忽睡忽醒。
      */
     fun isSleeping(renderable: RenderablePokemon): Boolean {
-        val key = renderable.species.resourceIdentifier.toString() + renderable.aspects.sorted().joinToString(",")
-        val rest = restCache.getOrPut(key) {
-            renderable.species.getForm(renderable.aspects).behaviour.resting
-        }
-        if (!rest.canSleep) return false
-        // 必须用 timeOfDay（一天内时间）—— 等价于原版的 `world.dayTime`。
-        // **不能**用 `world.time`：那是世界总 tick 数，不受 /time set 影响，且新世界从 0 开始
-        // （0 % 24000 = 0 恒等于白天），会让图标在明明是黑夜时死活不睡。
+        // 作息表由服务端下发（见 RestSyncNetwork）：Cobblemon 的 PokemonBehaviour 网络同步
+        // 只带 combat，resting 在专用服务器上永远是默认值（canSleep=false），直接读它会全域不睡。
+        // 必须用 timeOfDay（一天内时间），**不能**用 world.time：那是世界总 tick 数，
+        // 不受 /time set 影响，且新世界从 0 开始（0 % 24000 = 0 恒为白天），会让图标死活不睡。
         val dayTime = MinecraftClient.getInstance()?.world?.timeOfDay ?: return false
-        return (dayTime % 24000L).toInt() in rest.times
+        return ClientRestCache.isSleeping(
+            renderable.species.resourceIdentifier.toString(),
+            (dayTime % 24000L).toInt()
+        )
     }
 }

@@ -46,6 +46,8 @@
 
 ### Fixes
 
+- **Sleeping poses missing on dedicated servers**: they worked in singleplayer, but on a server no Pokemon slept at night; the server now sends the rest schedule to clients, so both behave the same
+- **Gyarados and other species lay asleep around the clock**: their data means "may doze off at any time of day", which we read as "always asleep"; now split by doze frequency — frequently drowsy species (Snorlax, Abra…) sleep at night, rarely-sleeping ones (Gyarados, Onix…) no longer show a sleeping pose
 - **List area going blank while a filter dropdown is open**: opening the type/ability/nature filter in the Pokemon market, the auction house or the sell-select screen made every listing row disappear; only the rows actually covered by the dropdown are now skipped, and rows below it render as usual
 - **Uneven text height in Pokemon detail panels**: in the info lines of hover tooltips / buy confirmation / pending returns (type, ball, nature…), the leading Chinese characters could sit slightly higher than the rest of the line; the line is now aligned
 - **Chinese punctuation**: Chinese colons across the UI and config descriptions are now full-width (English text keeps half-width)

@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.permission.RequestPermissionListPayload
 import com.shusheng.cobblemarket.permission.SavePlayerPermissionsPayload
 import com.shusheng.cobblemarket.permission.RemovePlayerPermissionsPayload
 import com.shusheng.cobblemarket.permission.RequestPermissionAuditPayload
+import com.shusheng.cobblemarket.network.RequestSpeciesRestPayload
 import com.shusheng.cobblemarket.network.AcceptPendingDeliverPayload
 import com.shusheng.cobblemarket.network.AddItemBlacklistPayload
 import com.shusheng.cobblemarket.network.AddItemPriceLimitPayload
@@ -182,6 +183,7 @@ fun registerClientC2S() {
         c2s(registrar, SavePlayerPermissionsPayload.ID, SavePlayerPermissionsPayload.CODEC)
         c2s(registrar, RemovePlayerPermissionsPayload.ID, RemovePlayerPermissionsPayload.CODEC)
         c2s(registrar, RequestPermissionAuditPayload.ID, RequestPermissionAuditPayload.CODEC)
+        c2s(registrar, RequestSpeciesRestPayload.ID, RequestSpeciesRestPayload.CODEC)
     }
 }
 

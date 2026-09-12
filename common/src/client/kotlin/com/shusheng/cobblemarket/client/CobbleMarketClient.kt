@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.client
 
+import com.shusheng.cobblemarket.network.SpeciesRestPayload
 import com.shusheng.cobblemarket.permission.PermissionAuditPayload
 import com.shusheng.cobblemarket.permission.PermissionListDataPayload
 import com.shusheng.cobblemarket.screen.PermissionScreen
@@ -500,6 +501,14 @@ object CobbleMarketClient {
         registerS2C(PermissionAuditPayload.ID, PermissionAuditPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 (MinecraftClient.getInstance().currentScreen as? PermissionScreen)?.onPermissionAudit(payload)
+            }
+        }
+
+        // 物种作息表（图标睡眠姿态的依据）：Cobblemon 不做 resting 的网络同步，
+        // 专用服务器上客户端读到的永远是默认值（canSleep=false），必须靠这张表
+        registerS2C(SpeciesRestPayload.ID, SpeciesRestPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                ClientRestCache.update(payload.entries)
             }
         }
 
