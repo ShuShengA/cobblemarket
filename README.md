@@ -59,6 +59,17 @@ For the full feature list, see the [CHANGELOG](CHANGELOG_EN.md).
 
 Admin commands require OP; `/market loan clear` is owner-only.
 
+| 命令 | 说明 |
+|---|---|
+| `/market gui` | 打开市场入口界面 |
+| `/market on` \| `/market off` | 开启 / 关闭整个市场（紧急总开关） |
+| `/market ban` \| `unban` \| `banlist` | 封禁玩家交易（`<玩家> [时长] [理由]`，如 `7d`、`12h`、`30m`）、解封、列出生效中的封禁 |
+| `/market card` | 管理喵·紫金卡 / 喵·黑金卡（`give` / `revoke` / `list`） |
+| `/market loan clear` | 撤销某玩家的坏账 |
+| `/market reload` | 应用配置文件的修改、免重启（货币配置仍需重启） |
+
+管理命令需 OP 权限；`/market loan clear` 仅服主可用。
+
 ## Data Safety / 数据安全
 
 Market data is stored in `world/data/cobblemarket*.dat`. On every startup, the mod verifies file integrity and maintains a rolling `.bak` backup:
