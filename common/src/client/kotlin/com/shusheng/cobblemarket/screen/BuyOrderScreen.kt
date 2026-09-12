@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
@@ -904,20 +905,20 @@ class BuyOrderScreen(
                     lines.add(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_form").string} $formLabel").asOrderedText() to w)
                 }
                 // IV 要求（照精灵市场六行彩色；-1 = 不限显示 —）
-                val hp = Text.translatable("cobblemon.stat.hp.name").string
-                val atk = Text.translatable("cobblemon.stat.attack.name").string
-                val def = Text.translatable("cobblemon.stat.defence.name").string
-                val spa = Text.translatable("cobblemon.stat.special_attack.name").string
-                val spd = Text.translatable("cobblemon.stat.special_defence.name").string
-                val spe = Text.translatable("cobblemon.stat.speed.name").string
+                val hp = StatNames.HP
+                val atk = StatNames.ATK
+                val def = StatNames.DEF
+                val spa = StatNames.SP_ATK
+                val spd = StatNames.SP_DEF
+                val spe = StatNames.SPEED
                 lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs").asOrderedText() to w)
                 fun ivReq(v: Int) = if (v < 0) "—" else v.toString()
-                lines.add(Text.literal("  $hp:${ivReq(entry.ivHp)}").asOrderedText() to ivColors[0])
-                lines.add(Text.literal("  $atk:${ivReq(entry.ivAtk)}").asOrderedText() to ivColors[1])
-                lines.add(Text.literal("  $def:${ivReq(entry.ivDef)}").asOrderedText() to ivColors[2])
-                lines.add(Text.literal("  $spa:${ivReq(entry.ivSpAtk)}").asOrderedText() to ivColors[3])
-                lines.add(Text.literal("  $spd:${ivReq(entry.ivSpDef)}").asOrderedText() to ivColors[4])
-                lines.add(Text.literal("  $spe:${ivReq(entry.ivSpd)}").asOrderedText() to ivColors[5])
+                lines.add(Text.literal("  $hp: ${ivReq(entry.ivHp)}").asOrderedText() to ivColors[0])
+                lines.add(Text.literal("  $atk: ${ivReq(entry.ivAtk)}").asOrderedText() to ivColors[1])
+                lines.add(Text.literal("  $def: ${ivReq(entry.ivDef)}").asOrderedText() to ivColors[2])
+                lines.add(Text.literal("  $spa: ${ivReq(entry.ivSpAtk)}").asOrderedText() to ivColors[3])
+                lines.add(Text.literal("  $spd: ${ivReq(entry.ivSpDef)}").asOrderedText() to ivColors[4])
+                lines.add(Text.literal("  $spe: ${ivReq(entry.ivSpd)}").asOrderedText() to ivColors[5])
             }
             // 数量行是动态行（交付期间剩余量会变），只记录插入点（价格行之前，与原顺序一致）
             var quantityLine = -1

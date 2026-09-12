@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.finance
 
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.platform.getPlayerIp
@@ -488,7 +489,7 @@ class FinanceState private constructor() : PersistentState() {
         list.removeAll { now - it.at > pairWindowMs }
         val pairCount = list.count { it.counterpartyUuid == sellerUuid }
         val hasOpenLoan = loans.values.any { it.playerUuid == buyerUuid && it.status != LoanStatus.CLOSED }
-        val buyerOp = buyer?.hasPermissionLevel(2) == true
+        val buyerOp = MarketPermissions.isOp(buyer)
         val buyerIp = latestIpOf(buyerUuid, now)
         val sameIp = !buyerOp && buyerIp != null && buyerIp == latestIpOf(sellerUuid, now)
         val counted = when {

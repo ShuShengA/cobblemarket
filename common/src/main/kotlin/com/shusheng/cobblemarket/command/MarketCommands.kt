@@ -1,5 +1,8 @@
 package com.shusheng.cobblemarket.command
 
+import com.shusheng.cobblemarket.permission.PermissionNetwork
+import com.shusheng.cobblemarket.permission.PermissionState
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.mojang.brigadier.Command
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
@@ -30,7 +33,7 @@ object MarketCommands {
                         .executes(::openGui)
                     )
                     .then(CommandManager.literal("ban")
-                        .requires { it.hasPermissionLevel(2) }
+                        .requires { MarketPermissions.has(it, MarketPermissions.BAN) }
                         .then(CommandManager.argument("player", StringArgumentType.word())
                             .executes(::banPlayer)
                             .then(CommandManager.argument("duration", StringArgumentType.word())
@@ -42,29 +45,29 @@ object MarketCommands {
                         )
                     )
                     .then(CommandManager.literal("unban")
-                        .requires { it.hasPermissionLevel(2) }
+                        .requires { MarketPermissions.has(it, MarketPermissions.BAN) }
                         .then(CommandManager.argument("player", StringArgumentType.word())
                             .executes(::unbanPlayer)
                         )
                     )
                     .then(CommandManager.literal("banlist")
-                        .requires { it.hasPermissionLevel(2) }
+                        .requires { MarketPermissions.has(it, MarketPermissions.BAN) }
                         .executes(::banList)
                     )
                     .then(CommandManager.literal("on")
-                        .requires { it.hasPermissionLevel(2) }
+                        .requires { MarketPermissions.has(it, MarketPermissions.MARKET) }
                         .executes(::marketOn)
                     )
                     .then(CommandManager.literal("off")
-                        .requires { it.hasPermissionLevel(2) }
+                        .requires { MarketPermissions.has(it, MarketPermissions.MARKET) }
                         .executes(::marketOff)
                     )
                     .then(CommandManager.literal("reload")
-                        .requires { it.hasPermissionLevel(2) }
+                        .requires { MarketPermissions.has(it, MarketPermissions.CONFIG) }
                         .executes(::reloadConfig)
                     )
                     .then(CommandManager.literal("loan")
-                        .requires { it.hasPermissionLevel(2) }
+                        .requires { it.hasPermissionLevel(2) }   // 撤销坏账只限 OP（服主干预，不随管理节点授予）
                         .then(CommandManager.literal("clear")
                             .then(CommandManager.argument("player", StringArgumentType.word())
                                 .executes(::loanClear)
@@ -72,7 +75,7 @@ object MarketCommands {
                         )
                     )
                     .then(CommandManager.literal("card")
-                        .requires { it.hasPermissionLevel(2) }
+                        .requires { MarketPermissions.has(it, MarketPermissions.FINANCE) }
                         .then(CommandManager.literal("give")
                             .then(CommandManager.argument("player", EntityArgumentType.player())
                                 .then(CommandManager.argument("kind", StringArgumentType.word())
@@ -107,6 +110,33 @@ object MarketCommands {
                                 .executes(::cardList)
                             )
                             .executes(::cardList)
+                        )
+                    )
+                    .then(CommandManager.literal("perm")
+                        // 权限授予是**服主专属**：只认 OP，不下放给任何管理节点 ——
+                        // 否则持有 config 节点的人能给自己加满全部节点（提权）
+                        .requires { it.hasPermissionLevel(2) }
+                        .then(CommandManager.literal("grant")
+                            .then(CommandManager.argument("player", StringArgumentType.word())
+                                .then(CommandManager.argument("node", StringArgumentType.word())
+                                    .suggests(::suggestPermNodes)
+                                    .executes(::permGrant)
+                                )
+                            )
+                        )
+                        .then(CommandManager.literal("revoke")
+                            .then(CommandManager.argument("player", StringArgumentType.word())
+                                .then(CommandManager.argument("node", StringArgumentType.word())
+                                    .suggests(::suggestPermNodes)
+                                    .executes(::permRevoke)
+                                )
+                            )
+                        )
+                        .then(CommandManager.literal("list")
+                            .executes { ctx -> permList(ctx, null) }
+                            .then(CommandManager.argument("player", StringArgumentType.word())
+                                .executes { ctx -> permList(ctx, StringArgumentType.getString(ctx, "player")) }
+                            )
                         )
                     )
             )
@@ -271,6 +301,107 @@ object MarketCommands {
     }
 
     /** /market card list [purple|black]：列出对应卡种全部持有者（缺省 purple） */
+    // ── /market perm：管理权限节点的授予 / 收回 / 查询（服主专属，见 docs/permission_nodes_plan.md） ──
+
+    /** 节点名补全：给出**去前缀的短名**（命令里短名与全名都收） */
+    private fun suggestPermNodes(
+        context: CommandContext<ServerCommandSource>,
+        builder: com.mojang.brigadier.suggestion.SuggestionsBuilder
+    ): java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> {
+        MarketPermissions.ALL.forEach { builder.suggest(it.removePrefix(MarketPermissions.PREFIX)) }
+        return builder.buildFuture()
+    }
+
+    /** 节点名容错：短名（blacklist）与全名（cobblemarket.admin.blacklist）都收；非法名返回 null */
+    private fun resolveNode(raw: String): String? {
+        val full = if (raw.startsWith(MarketPermissions.PREFIX)) raw else MarketPermissions.PREFIX + raw
+        return full.takeIf { it in MarketPermissions.ALL }
+    }
+
+    private fun permGrant(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val node = resolveNode(StringArgumentType.getString(context, "node"))
+        if (node == null) {
+            source.sendError(Text.translatable("cobblemarket.perm.unknown_node"))
+            return 0
+        }
+        val name = StringArgumentType.getString(context, "player")
+        val target = BanState.resolvePlayer(source.server, name)
+        if (target == null) {
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            return 0
+        }
+        val short = node.removePrefix(MarketPermissions.PREFIX)
+        if (!PermissionState.get(source.server).grant(target.first, target.second, node, source.name)) {
+            source.sendError(Text.translatable("cobblemarket.perm.already_holding", target.second, short))
+            return 0
+        }
+        // 在线即时生效：推新快照（离线不用管，下次登录补发）
+        PermissionNetwork.refresh(source.server, target.first)
+        source.sendFeedback({ Text.translatable("cobblemarket.perm.granted", target.second, short).formatted(Formatting.GREEN) }, false)
+        return 1
+    }
+
+    private fun permRevoke(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val node = resolveNode(StringArgumentType.getString(context, "node"))
+        if (node == null) {
+            source.sendError(Text.translatable("cobblemarket.perm.unknown_node"))
+            return 0
+        }
+        val name = StringArgumentType.getString(context, "player")
+        val target = BanState.resolvePlayer(source.server, name)
+        if (target == null) {
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            return 0
+        }
+        val short = node.removePrefix(MarketPermissions.PREFIX)
+        if (!PermissionState.get(source.server).revoke(target.first, node)) {
+            source.sendError(Text.translatable("cobblemarket.perm.not_holding", target.second, short))
+            return 0
+        }
+        PermissionNetwork.refresh(source.server, target.first)
+        source.sendFeedback({ Text.translatable("cobblemarket.perm.revoked", target.second, short).formatted(Formatting.GREEN) }, false)
+        return 1
+    }
+
+    /** 无参 = 列全部授予记录；带玩家名 = 列该玩家的节点 */
+    private fun permList(context: CommandContext<ServerCommandSource>, nameArg: String?): Int {
+        val source = context.source
+        val state = PermissionState.get(source.server)
+        if (nameArg == null) {
+            val all = state.getAll()
+            if (all.isEmpty()) {
+                source.sendFeedback({ Text.translatable("cobblemarket.perm.list_empty").formatted(Formatting.GRAY) }, false)
+                return 1
+            }
+            source.sendFeedback({ Text.translatable("cobblemarket.perm.list_title", all.size).formatted(Formatting.GOLD) }, false)
+            all.forEach { grant -> source.sendFeedback({ permLine(grant.playerName, grant.nodes) }, false) }
+            return all.size
+        }
+        val target = BanState.resolvePlayer(source.server, nameArg)
+        if (target == null) {
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", nameArg))
+            return 0
+        }
+        val nodes = state.getNodes(target.first)
+        if (nodes.isEmpty()) {
+            source.sendFeedback({ Text.translatable("cobblemarket.perm.list_empty_player", target.second).formatted(Formatting.GRAY) }, false)
+            return 1
+        }
+        source.sendFeedback({ permLine(target.second, nodes) }, false)
+        return nodes.size
+    }
+
+    /** 一名玩家的节点行：名字金色 + 短名白色，按 ALL 顺序稳定排列（不受授予先后影响） */
+    private fun permLine(playerName: String, nodes: Set<String>): Text =
+        Text.literal("$playerName: ").formatted(Formatting.GOLD).append(
+            Text.literal(
+                MarketPermissions.ALL.filter { it in nodes }
+                    .joinToString(", ") { it.removePrefix(MarketPermissions.PREFIX) }
+            ).formatted(Formatting.WHITE)
+        )
+
     private fun cardList(context: CommandContext<ServerCommandSource>): Int {
         val source = context.source
         val server = source.server

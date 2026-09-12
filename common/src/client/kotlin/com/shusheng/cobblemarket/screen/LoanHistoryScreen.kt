@@ -1,5 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.ClientPermissionCache
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
@@ -74,7 +76,7 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
     private fun rebuildTabButtons() {
         tabButtons.forEach(::remove)
         tabButtons.clear()
-        if (!showAll || client?.player?.hasPermissionLevel(2) != true) return
+        if (!showAll || !ClientPermissionCache.has(MarketPermissions.FINANCE)) return
         val leftX = width / 2 - panelWidth / 2
         val tabY = 24
         val btn1 = NineSliceButton(
@@ -111,7 +113,9 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
         rowButtons.forEach(::remove)
         rowButtons.clear()
         if (revokeEntry != null) return
-        if (!showAll || client?.player?.hasPermissionLevel(2) != true) return
+        // ⚠ 必须与行渲染里的 hasRevoke 判定**完全一致**：不一致就会出现「按钮建出来了、
+        // 金额却没为它让位」的完全重叠（2026-09-12 踩过，只有有金融管理节点的普通玩家触发）
+        if (!showAll || !ClientPermissionCache.isOp()) return
         val leftX = width / 2 - panelWidth / 2
         val rowHeight = 24
         val startY = 48
@@ -306,7 +310,7 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
 
             val leftX = width / 2 - panelHalf
             // 撤销按钮占最右 48px（仅 OP 全服流水的坏账行）
-            val hasRevoke = showAll && e.status == "BAD_DEBT" && client?.player?.hasPermissionLevel(2) == true
+            val hasRevoke = showAll && e.status == "BAD_DEBT" && ClientPermissionCache.isOp()
             val rightReserved = if (hasRevoke) 48 else 0
             var x = leftX + 5
             context.drawTextWithShadow(textRenderer, time, x, y + 8, 0x888888)

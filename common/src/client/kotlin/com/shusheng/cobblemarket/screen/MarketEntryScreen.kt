@@ -1,21 +1,20 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.ClientPermissionCache
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.client.activeCurrencyUnit
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
-import com.shusheng.cobblemarket.client.playFailSound
 
 import com.mojang.blaze3d.systems.RenderSystem
 import com.shusheng.cobblemarket.client.BalanceHudMode
 import com.shusheng.cobblemarket.client.IconAnimMode
 import com.shusheng.cobblemarket.client.ClientConfig
-import com.shusheng.cobblemarket.client.MarketStateCache
 import com.shusheng.cobblemarket.client.OakTips
 import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.FinanceStatsPayload
 import com.shusheng.cobblemarket.network.RequestBalancePayload
 import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
-import com.shusheng.cobblemarket.network.SetMarketEnabledPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
@@ -66,16 +65,6 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private val settingsRows = mutableListOf<SettingsRow>()
     /** 设置弹窗内容的滚动偏移（px）：行数没超出一屏时恒为 0（滚不动） */
     private var settingsScroll = 0
-
-    // 入口底部居中的市场总开关（仅 OP 可见）
-    private var marketSwitchBtn: NineSliceButton? = null
-    // 入口底部市场总开关左侧的服务器配置按钮（仅 OP 可见）
-    private var serverConfigBtn: NineSliceButton? = null
-    // 停市确认弹窗（照 AdminScreen 蛋交易确认弹窗：3 秒冷静期 + 红白双色文字）
-    private var marketConfirmOpen = false
-    private var marketConfirmOpenedAt = 0L
-    private var marketConfirmButton: NineSliceButton? = null
-    private var marketCancelButton: NineSliceButton? = null
 
     // 市场关闭提示（入口点击被拦截时显示，3 秒）
     private var closedNoticeUntil = 0L
@@ -129,8 +118,22 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
      * 市场总开关客户端门控：关闭时只提示，不进入任何交易界面。
      * opBypass=true 的入口（管理面板）对 OP 放行——关市期间服主仍需下架/黑名单/价格限制等管理能力。
      */
+    /** 上次算出的「能否管理」：权限快照到达时若状态翻转，入口要多一行/少一行 —— 只能重建 */
+    private var lastCanManage: Boolean? = null
+
+    /** 收到权限快照时刷新入口布局（登录 / 授予 / 收回时由网络层调用） */
+    fun refreshPermissionState() {
+        val now = ClientPermissionCache.canManage()
+        val changed = lastCanManage != null && lastCanManage != now
+        lastCanManage = now
+        if (changed) {
+            clearChildren()
+            init()   // 入口行数变了（多/少一个管理面板按钮），按钮位置全变，必须重建
+        }
+    }
+
     private fun openIfMarketEnabled(opBypass: Boolean = false, open: () -> Unit) {
-        val isOp = client?.player?.hasPermissionLevel(2) == true
+        val isOp = ClientPermissionCache.canManage()
         if (com.shusheng.cobblemarket.client.MarketStateCache.enabled || (opBypass && isOp)) {
             open()
         } else {
@@ -169,10 +172,13 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         val leftX = centerX - totalW / 2
         val rightX = leftX + btnW + colGap
 
-        val isAdmin = client?.player?.hasPermissionLevel(2) == true
-        val rowCount = if (isAdmin) 3 else 2
-        // 行 1-2 用 gap 间隙；行 3（仅OP）与行 2 保持 4px 间隙，不随 gap 增大下移（与分割线/开关按钮上下间隙对称各 2px）
-        totalH = btnH * rowCount + gap * (rowCount - 1) - if (isAdmin) gap - 5 else 0
+        // 管理面板入口：**有管理权限才显示**（没权限的玩家跟从前一样只有两行，入口按权限增减行）
+        val canManage = ClientPermissionCache.canManage()
+        val rowCount = if (canManage) 3 else 2
+        // 行 1-2 用 gap 间隙；行 3 与行 2 保持 4px 间隙，不随 gap 增大下移（与分割线/开关按钮上下间隙对称各 2px）
+        // ⚠ `- if (canManage) (gap - 5) else 0` 的 if 是**整体分支**（有权限时只减 3）。
+        // 别写成 `- gap - 5`（那是减 13）：内容区矮 10px → 背景上移 → 分割线压到第 3 行按钮上（踩过）
+        totalH = btnH * rowCount + gap * (rowCount - 1) - if (canManage) (gap - 5) else 0
         // 逻辑高度不足时整体上移：背景贴图（213 高）顶部比逻辑背景（160）再向上多 33px，
         // 贴图顶 = btnStartY - 14 - (160-totalH)/2 - 33，必须 ≥ 屏幕顶（精灵市场面板锚顶 y=2 从不裁）
         val startY = maxOf(height / 2 - totalH / 2, 47 + (160 - totalH) / 2)
@@ -212,15 +218,20 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             iconTexSize = 48,
             iconDisplaySize = 18
         ))
-        // 行 3：管理员面板居中（仅 OP），左侧放 OP 图标
-        if (isAdmin) {
+        // 行 3：管理员面板入口（仅 OP）——纯图标按钮居中、悬停显示名称。
+        // 2026-09-12：原文字「仅OP」是权限说明而非功能名（语义不对），去掉文字只留图标。
+        // 宽度别压太窄：button.png 是胶囊形（两端半圆），TextureButton 整图缩放会把半圆横向压扁，
+        // 22 宽时圆角只有 1.65×10 的竖尖角、非常难看；66 宽（圆角约 5×10）观感已接近缩窄前
+        // 管理面板入口：**有管理权限才显示**（没权限的玩家看不到，布局与从前一致）
+        if (canManage) {
             entryButtons += addDrawableChild(TextureButton(
-                centerX - btnW / 2, startY + (btnH + gap) + btnH + 4, btnW, btnH,
-                Text.translatable("cobblemarket.entry.op"),
+                centerX - 33, startY + (btnH + gap) + btnH + 4, 66, btnH,
+                Text.literal(""),
                 { openIfMarketEnabled(opBypass = true) { client?.setScreen(AdminScreen()) } },
                 Identifier.of("cobblemarket", "textures/gui/op_icon.png"),
                 iconTexSize = 48,
-                iconDisplaySize = 18
+                iconDisplaySize = 18,
+                tooltip = Text.translatable("cobblemarket.op.title")
             ))
         }
 
@@ -293,69 +304,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.settings")))
         entryButtons += addDrawableChild(settingsBtn)
 
-        // 服务器配置（仅 OP 可见）：市场总开关右侧同尺寸按钮，关市时照常可进（OP 管理能力）
-        if (isAdmin) {
-            serverConfigBtn = NineSliceButton(
-                centerX + cornerSize / 2 + 4, cornerY,
-                cornerSize, cornerSize,
-                Text.literal(""),
-                { openIfMarketEnabled(opBypass = true) { client?.setScreen(ServerConfigScreen()) } },
-                iconLeft = Identifier.of("cobblemarket", "textures/gui/server_config_icon.png"),
-                iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-                texture = ROW_BACKGROUND_TEXTURE,
-                texH = ROW_BACKGROUND_TEX_H
-            )
-            serverConfigBtn?.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.server_config")))
-            entryButtons += addDrawableChild(serverConfigBtn!!)
-        }
-
-        // 市场总开关（仅 OP 可见）：紧急停市/恢复，与求购单/设置按钮同尺寸，居底
-        if (isAdmin) {
-            marketSwitchBtn = NineSliceButton(
-                centerX - cornerSize / 2, cornerY,
-                cornerSize, cornerSize,
-                Text.literal(""),
-                { toggleMarketEnabled() },
-                iconLeft = marketSwitchIcon(),
-                // 48×48 贴图缩到 18×18 显示（按钮 22×22 留 2px 边距，源图高分辨率保持锐利）
-                iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-                texture = ROW_BACKGROUND_TEXTURE,
-                texH = ROW_BACKGROUND_TEX_H
-            )
-            marketSwitchBtn?.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.market_switch")))
-            entryButtons += addDrawableChild(marketSwitchBtn!!)
-        }
-
-        // resize 重建按钮后 visible 全是 true，停市确认弹窗开着时需恢复隐藏（老坑，照 AdminScreen）
-        if (marketConfirmOpen) entryButtons.forEach { it.visible = false }
-    }
-
-    // ── 市场总开关按钮（OP）：乐观切换 + 服务端广播回状态 ──
-
-    private fun marketSwitchIcon(): Identifier =
-        Identifier.of("cobblemarket", if (MarketStateCache.enabled) "textures/gui/emergency_button_on.png" else "textures/gui/emergency_button_off.png")
-
-    /** 服务端广播 MarketStatePayload 时同步刷新图标（切换后 / 他处命令切换时都能跟上） */
-    fun updateMarketSwitchIcon() {
-        marketSwitchBtn?.iconLeft = marketSwitchIcon()
-    }
-
-    private fun toggleMarketEnabled() {
-        if (settingsOpen) return  // 设置弹窗打开时开关按钮不可点（弹窗之下）
-        if (MarketStateCache.enabled) {
-            // 停市需二次确认（3 秒冷静期，红白双色警告，照蛋交易确认弹窗）
-            openMarketConfirmDialog()
-        } else {
-            // 恢复立即生效——紧急止损后的恢复不能被弹窗挡一步
-            sendMarketEnabled(true)
-        }
-    }
-
-    private fun sendMarketEnabled(target: Boolean) {
-        MarketStateCache.enabled = target
-        sendToServer(SetMarketEnabledPayload(target))
-        updateMarketSwitchIcon()
-        // 服务端广播（MarketStatePayload）会以权威状态刷新横幅；这里先乐观更新，避免等待的迟滞感
+        // 市场总开关 / 服务器配置两个 OP 按钮已移到管理面板（AdminScreen 底部，2026-09-12）
     }
 
     // ── 设置弹窗（客户端个人观感开关；以后新开关统一加在这里） ──
@@ -728,125 +677,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     override fun resize(client: MinecraftClient, width: Int, height: Int) {
         val wasSettingsOpen = settingsOpen
-        val wasMarketConfirmOpen = marketConfirmOpen
         super.resize(client, width, height)
         if (wasSettingsOpen) {
             settingsOpen = false
             openSettingsDialog()
         }
-        if (wasMarketConfirmOpen) {
-            marketConfirmOpen = false
-            openMarketConfirmDialog()
-        }
-    }
-
-    // ── 停市确认弹窗（照 AdminScreen 蛋交易确认弹窗模板） ──
-
-    private fun openMarketConfirmDialog() {
-        marketConfirmOpen = true
-        marketConfirmOpenedAt = System.currentTimeMillis()
-        // 隐藏下层控件（弹窗打开期间不可交互；closeMarketConfirmDialog 的 init 重建会恢复）
-        entryButtons.forEach { it.visible = false }
-
-        // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染）
-        addDrawable(object : Drawable {
-            override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-                renderMarketConfirmBackground(context)
-            }
-        })
-
-        val centerX = width / 2
-        val dialogY = height / 2 - 75
-        marketConfirmButton = NineSliceButton(
-            centerX - 85, dialogY + 116, 80, 20,
-            Text.translatable("cobblemarket.market.confirm_yes"),
-            { confirmMarketClose() }
-        )
-        addDrawableChild(marketConfirmButton)
-        marketCancelButton = NineSliceButton(
-            centerX + 5, dialogY + 116, 80, 20,
-            Text.translatable("cobblemarket.buy_confirm.cancel"),
-            { closeMarketConfirmDialog() }
-        )
-        addDrawableChild(marketCancelButton)
-    }
-
-    private fun closeMarketConfirmDialog() {
-        marketConfirmOpen = false
-        marketConfirmButton = null
-        marketCancelButton = null
-        clearChildren()
-        init()
-    }
-
-    private fun confirmMarketClose() {
-        // 冷静期内点击：置灰按钮仍可点（dimmed 模式），播 fail 音效提示，不执行
-        if (System.currentTimeMillis() - marketConfirmOpenedAt < 3000L) {
-            playFailSound()
-            return
-        }
-        sendMarketEnabled(false)
-        closeMarketConfirmDialog()
-    }
-
-    private fun renderMarketConfirmBackground(context: DrawContext) {
-        val centerX = width / 2
-        val dialogW = 280
-        val dialogH = 150
-        val dialogX = centerX - dialogW / 2
-        val dialogY = height / 2 - dialogH / 2
-
-        drawScreenDimMask(context, width, height)
-        drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
-        context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.market.confirm_title").formatted(Formatting.GOLD),
-            centerX, dialogY + 14, 0xFFFFFF)
-    }
-
-    private fun renderMarketConfirmText(context: DrawContext) {
-        val centerX = width / 2
-        val dialogX = centerX - 140
-        val dialogY = height / 2 - 75
-
-        // 逐行渲染：语言文件显式分行（每行红/白两个槽位），红=警告、白=普通；空行跳过（中英行数不同）
-        val lines = (1..6).map { i ->
-            listOf(
-                "cobblemarket.market.confirm_l${i}_warn" to 0xFF5555,
-                "cobblemarket.market.confirm_l${i}_text" to 0xFFFFFF,
-            )
-        }
-        var ty = dialogY + 32
-        lines.forEachIndexed { li, line ->
-            val segs = line.mapNotNull { (key, color) ->
-                val text = Text.translatable(key).string
-                if (text.isEmpty()) null else text to color
-            }
-            if (segs.isEmpty()) return@forEachIndexed
-            // 第 5、6 行（进行中拍卖不暂停的提醒，拆成两行避免溢出）加粗：重要性高于其他行
-            val bold = li == 4 || li == 5
-            fun display(text: String): net.minecraft.text.OrderedText =
-                if (bold) Text.literal(text).formatted(Formatting.BOLD).asOrderedText()
-                else Text.literal(text).asOrderedText()
-            val ordered = segs.map { (text, color) -> display(text) to color }
-            val lineWidth = ordered.sumOf { textRenderer.getWidth(it.first) }
-            var tx = dialogX + 20 + (240 - lineWidth) / 2
-            ordered.forEach { (text, color) ->
-                context.drawTextWithShadow(textRenderer, text, tx, ty, color)
-                tx += textRenderer.getWidth(text)
-            }
-            ty += 9
-        }
-    }
-
-    // 冷静期：3 秒内确认按钮禁用并显示倒计时
-    private fun updateMarketConfirmButtons() {
-        val cooldownLeft = 3 - (System.currentTimeMillis() - marketConfirmOpenedAt) / 1000
-        val canConfirm = cooldownLeft <= 0
-        marketConfirmButton?.dimmed = !canConfirm
-        marketConfirmButton?.message = if (canConfirm)
-            Text.translatable("cobblemarket.market.confirm_yes")
-        else
-            Text.translatable("cobblemarket.market.confirm_yes_countdown", cooldownLeft)
     }
 
     private fun openItemMarket() {
@@ -985,11 +820,6 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             }
         }
         super.render(context, mouseX, mouseY, delta)
-        if (marketConfirmOpen) {
-            renderMarketConfirmText(context)
-            updateMarketConfirmButtons()
-            return
-        }
         // 弹窗打开时标题/余额已被遮罩压住，不再重绘——否则会浮在弹窗之上
         if (settingsOpen) {
             renderSettingsLabels(context)

@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
@@ -1063,11 +1064,11 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         // 形态标签：全部形态/默认形态/具体 aspect，始终显示
         parts.add(formLabel(entry.aspects.toSet()))
         if (entry.ivHp >= 0) parts.add("HP${entry.ivHp}")
-        if (entry.ivAtk >= 0) parts.add("${Text.translatable("cobblemon.stat.attack.name").string}${entry.ivAtk}")
-        if (entry.ivDef >= 0) parts.add("${Text.translatable("cobblemon.stat.defence.name").string}${entry.ivDef}")
-        if (entry.ivSpAtk >= 0) parts.add("${Text.translatable("cobblemon.stat.special_attack.name").string}${entry.ivSpAtk}")
-        if (entry.ivSpDef >= 0) parts.add("${Text.translatable("cobblemon.stat.special_defence.name").string}${entry.ivSpDef}")
-        if (entry.ivSpd >= 0) parts.add("${Text.translatable("cobblemon.stat.speed.name").string}${entry.ivSpd}")
+        if (entry.ivAtk >= 0) parts.add("${StatNames.ATK}${entry.ivAtk}")
+        if (entry.ivDef >= 0) parts.add("${StatNames.DEF}${entry.ivDef}")
+        if (entry.ivSpAtk >= 0) parts.add("${StatNames.SP_ATK}${entry.ivSpAtk}")
+        if (entry.ivSpDef >= 0) parts.add("${StatNames.SP_DEF}${entry.ivSpDef}")
+        if (entry.ivSpd >= 0) parts.add("${StatNames.SPEED}${entry.ivSpd}")
         return if (parts.isEmpty()) name else "$name（${parts.joinToString(" ")}）"
     }
 
@@ -1227,12 +1228,12 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         lines.add(shinyLabel(entry.shinyFilter))
         lines.add(formLabel(entry.aspects.toSet()))
         lines.add(htLabel(entry.htFilter))
-        if (entry.ivHp >= 0) lines.add("${Text.translatable("cobblemon.stat.hp.name").string}: ${entry.ivHp}")
-        if (entry.ivAtk >= 0) lines.add("${Text.translatable("cobblemon.stat.attack.name").string}: ${entry.ivAtk}")
-        if (entry.ivDef >= 0) lines.add("${Text.translatable("cobblemon.stat.defence.name").string}: ${entry.ivDef}")
-        if (entry.ivSpAtk >= 0) lines.add("${Text.translatable("cobblemon.stat.special_attack.name").string}: ${entry.ivSpAtk}")
-        if (entry.ivSpDef >= 0) lines.add("${Text.translatable("cobblemon.stat.special_defence.name").string}: ${entry.ivSpDef}")
-        if (entry.ivSpd >= 0) lines.add("${Text.translatable("cobblemon.stat.speed.name").string}: ${entry.ivSpd}")
+        if (entry.ivHp >= 0) lines.add("${StatNames.HP}: ${entry.ivHp}")
+        if (entry.ivAtk >= 0) lines.add("${StatNames.ATK}: ${entry.ivAtk}")
+        if (entry.ivDef >= 0) lines.add("${StatNames.DEF}: ${entry.ivDef}")
+        if (entry.ivSpAtk >= 0) lines.add("${StatNames.SP_ATK}: ${entry.ivSpAtk}")
+        if (entry.ivSpDef >= 0) lines.add("${StatNames.SP_DEF}: ${entry.ivSpDef}")
+        if (entry.ivSpd >= 0) lines.add("${StatNames.SPEED}: ${entry.ivSpd}")
         return lines
     }
 

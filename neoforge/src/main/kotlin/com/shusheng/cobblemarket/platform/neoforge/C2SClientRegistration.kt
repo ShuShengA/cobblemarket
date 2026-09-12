@@ -1,5 +1,9 @@
 package com.shusheng.cobblemarket.platform.neoforge
 
+import com.shusheng.cobblemarket.permission.RequestPermissionSnapshotPayload
+import com.shusheng.cobblemarket.permission.RequestPermissionListPayload
+import com.shusheng.cobblemarket.permission.SavePlayerPermissionsPayload
+import com.shusheng.cobblemarket.permission.RemovePlayerPermissionsPayload
 import com.shusheng.cobblemarket.network.AcceptPendingDeliverPayload
 import com.shusheng.cobblemarket.network.AddItemBlacklistPayload
 import com.shusheng.cobblemarket.network.AddItemPriceLimitPayload
@@ -170,6 +174,12 @@ fun registerClientC2S() {
         c2s(registrar, SellFromStoragePayload.ID, SellFromStoragePayload.CODEC)
         c2s(registrar, SellItemPayload.ID, SellItemPayload.CODEC)
         c2s(registrar, SetMarketEnabledPayload.ID, SetMarketEnabledPayload.CODEC)
+
+        // 管理权限节点（2026-09-12 S1）：权限授予是服主专属，与其余管理权限分开
+        c2s(registrar, RequestPermissionSnapshotPayload.ID, RequestPermissionSnapshotPayload.CODEC)
+        c2s(registrar, RequestPermissionListPayload.ID, RequestPermissionListPayload.CODEC)
+        c2s(registrar, SavePlayerPermissionsPayload.ID, SavePlayerPermissionsPayload.CODEC)
+        c2s(registrar, RemovePlayerPermissionsPayload.ID, RemovePlayerPermissionsPayload.CODEC)
     }
 }
 

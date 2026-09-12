@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.util
 
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.CobbleMarket
 import net.minecraft.server.MinecraftServer
 import net.minecraft.util.WorldSavePath
@@ -142,7 +143,7 @@ object PersistHelper {
         CobbleMarket.LOGGER.error("CobbleMarket state save failed or was skipped (mtime unchanged after {} verification attempts)", verifyAttempts)
         val msg = net.minecraft.text.Text.translatable("cobblemarket.persist.save_failed").formatted(Formatting.RED)
         server.playerManager.playerList
-            .filter { it.hasPermissionLevel(2) }
+            .filter { MarketPermissions.isOp(it) }
             .forEach { it.sendMessage(msg, false) }
     }
 

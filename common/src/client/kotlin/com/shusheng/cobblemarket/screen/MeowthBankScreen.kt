@@ -1,5 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.ClientPermissionCache
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.requestCreditInfo
@@ -51,7 +53,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
      * 背景顶（照 MarketEntryScreen.bgBottom 同款锚定公式：普通 2 行 / OP 3 行 → 背景位置与入口完全一致）
      */
     private fun bgTop(): Int {
-        val isAdmin = client?.player?.hasPermissionLevel(2) == true
+        val isAdmin = ClientPermissionCache.has(MarketPermissions.FINANCE)
         val rowCount = if (isAdmin) 3 else 2
         val btnH = 24
         val gap = 8
@@ -86,7 +88,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
 
         // 卡片管理入口（仅 OP）：规则按钮下方 4px；与规则按钮同宽同 x（48×16），
         // 两张卡微缩图标在 render 叠加：紫卡左端、黑卡右端，互不粘连
-        if (client?.player?.hasPermissionLevel(2) == true) {
+        if (ClientPermissionCache.has(MarketPermissions.FINANCE)) {
             cardManageButton = NineSliceButton(
                 width / 2 + 57, bgTop + 116, 48, 16,
                 Text.literal(""),
@@ -126,7 +128,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         ))
 
         // 全部借款历史（右下）：仅 OP → 全服借贷流水审计
-        if (client?.player?.hasPermissionLevel(2) == true) {
+        if (ClientPermissionCache.has(MarketPermissions.FINANCE)) {
             addDrawableChild(NineSliceButton(
                 width / 2 + 25, bgTop + 164, 80, 16,
                 Text.translatable("cobblemarket.meowth_bank.all_loan_history"),

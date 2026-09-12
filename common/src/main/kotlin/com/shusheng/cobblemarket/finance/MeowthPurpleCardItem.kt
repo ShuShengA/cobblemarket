@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.finance
 
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import net.minecraft.entity.Entity
 import net.minecraft.entity.ItemEntity
 import net.minecraft.item.Item
@@ -23,7 +24,7 @@ class MeowthPurpleCardItem : Item(Settings().maxCount(1).fireproof()) {
         if (entity !is ServerPlayerEntity) return
         // 非持有者（OP 豁免：服主测试/管理不受限）背包里的卡自删——凭证只属于持有者
         val player = entity as ServerPlayerEntity
-        if (player.hasPermissionLevel(2)) return
+        if (MarketPermissions.isOp(player)) return
         val state = FinanceState.get(player.server)
         if (state.isPurpleCardHolder(player.uuid)) return
         stack.setCount(0)

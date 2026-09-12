@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.network
 
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.market.ItemPriceLimitEntry
 import com.shusheng.cobblemarket.market.ItemPriceLimitState
@@ -252,7 +253,7 @@ object PriceLimitNetwork {
         registerS2CType(ItemPriceLimitDataPayload.ID, ItemPriceLimitDataPayload.CODEC)
 
         registerC2S(RequestPokemonPriceLimitPayload.ID, RequestPokemonPriceLimitPayload.CODEC) { _, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.PRICE_LIMIT)) return@registerC2S
             val server = player.server
             server.execute {
                 val entries = PokemonPriceLimitState.get(server).getAll()
@@ -261,7 +262,7 @@ object PriceLimitNetwork {
         }
 
         registerC2S(AddPokemonPriceLimitPayload.ID, AddPokemonPriceLimitPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.PRICE_LIMIT)) return@registerC2S
             val server = player.server
             server.execute {
                 val vCount = payload.vCount.coerceIn(-1, PokemonPriceLimitState.V_COUNT_RANGE.last)
@@ -314,7 +315,7 @@ object PriceLimitNetwork {
         }
 
         registerC2S(RemovePokemonPriceLimitPayload.ID, RemovePokemonPriceLimitPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.PRICE_LIMIT)) return@registerC2S
             val server = player.server
             server.execute {
                 PokemonPriceLimitState.get(server).remove(payload.speciesId, payload.vCount, payload.shinyFilter, payload.aspects, payload.htFilter)
@@ -326,7 +327,7 @@ object PriceLimitNetwork {
         }
 
         registerC2S(RequestItemPriceLimitPayload.ID, RequestItemPriceLimitPayload.CODEC) { _, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.PRICE_LIMIT)) return@registerC2S
             val server = player.server
             server.execute {
                 val entries = ItemPriceLimitState.get(server).getAll()
@@ -335,7 +336,7 @@ object PriceLimitNetwork {
         }
 
         registerC2S(AddItemPriceLimitPayload.ID, AddItemPriceLimitPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.PRICE_LIMIT)) return@registerC2S
             val server = player.server
             server.execute {
                 val minPrice = payload.minPrice
@@ -378,7 +379,7 @@ object PriceLimitNetwork {
         }
 
         registerC2S(AddHeldItemPriceLimitPayload.ID, AddHeldItemPriceLimitPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.PRICE_LIMIT)) return@registerC2S
             val server = player.server
             server.execute {
                 val minPrice = payload.minPrice
@@ -416,7 +417,7 @@ object PriceLimitNetwork {
         }
 
         registerC2S(RemoveItemPriceLimitPayload.ID, RemoveItemPriceLimitPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.PRICE_LIMIT)) return@registerC2S
             val server = player.server
             server.execute {
                 ItemPriceLimitState.get(server).remove(payload.itemId, payload.componentsSpec)

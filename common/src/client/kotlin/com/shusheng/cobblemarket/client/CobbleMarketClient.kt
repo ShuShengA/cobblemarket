@@ -1,5 +1,8 @@
 package com.shusheng.cobblemarket.client
 
+import com.shusheng.cobblemarket.permission.PermissionListDataPayload
+import com.shusheng.cobblemarket.screen.PermissionScreen
+import com.shusheng.cobblemarket.permission.PermissionSnapshotPayload
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.network.AuctionDurationsPayload
 import com.shusheng.cobblemarket.network.AuctionEventPayload
@@ -469,8 +472,26 @@ object CobbleMarketClient {
         registerS2C(MarketStatePayload.ID, MarketStatePayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 MarketStateCache.enabled = payload.enabled
-                // 入口界面打开时同步开关按钮图标（登录补发 / 他人命令切换都能跟上）
-                (MinecraftClient.getInstance().currentScreen as? MarketEntryScreen)?.updateMarketSwitchIcon()
+                // 管理面板打开时同步开关按钮图标（登录补发 / 他人命令切换都能跟上）；
+                // 开关按钮 2026-09-12 从入口界面移到了管理面板
+                (MinecraftClient.getInstance().currentScreen as? AdminScreen)?.updateMarketSwitchIcon()
+            }
+        }
+
+        // 我的权限节点快照（登录 + 授予/收回时推送）：客户端据此决定管理入口与各按钮的可用状态
+        registerS2C(PermissionSnapshotPayload.ID, PermissionSnapshotPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                ClientPermissionCache.update(payload.nodes, payload.op)
+                // 界面正开着时即时重算置灰（被授予/收回的玩家不用重开界面）
+                (MinecraftClient.getInstance().currentScreen as? AdminScreen)?.refreshPermissionState()
+                (MinecraftClient.getInstance().currentScreen as? MarketEntryScreen)?.refreshPermissionState()
+            }
+        }
+
+        // 权限列表数据（权限管理界面；界面没开就丢弃）
+        registerS2C(PermissionListDataPayload.ID, PermissionListDataPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                (MinecraftClient.getInstance().currentScreen as? PermissionScreen)?.onPermissionList(payload)
             }
         }
 
@@ -542,6 +563,9 @@ object CobbleMarketClient {
             MinecraftClient.getInstance().execute {
                 val screen = MinecraftClient.getInstance().currentScreen
                 if (screen is AdminBanScreen) {
+                    screen.onNameSuggestions(payload)
+                } else if (screen is PermissionScreen) {
+                    // 权限管理界面也用同一套服务端玩家名联想（服务端那处权限已放宽到「任一管理权限」）
                     screen.onNameSuggestions(payload)
                 }
             }
@@ -853,7 +877,7 @@ private fun hudBalanceRaw(client: MinecraftClient): Long {
 internal fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean =
     s is MarketScreen || s is SellSelectScreen || s is HistoryScreen || s is MarketEntryScreen ||
         s is ItemMarketScreen || s is ItemSellScreen || s is ItemReturnScreen || s is PokemonReturnScreen ||
-        s is BuyConfirmScreen || s is AdminScreen || s is AdminPokemonScreen || s is AdminItemScreen || s is AdminBanScreen ||
+        s is BuyConfirmScreen || s is AdminScreen || s is PermissionScreen || s is AdminPokemonScreen || s is AdminItemScreen || s is AdminBanScreen ||
         s is BlacklistScreen || s is PriceLimitScreen || s is AuctionScreen || s is AuctionCreateScreen ||
         s is BuyOrderScreen || s is AdminAuctionScreen || s is ServerConfigScreen || s is FinanceConfigScreen ||
         s is PurpleCardConfigScreen || s is PurpleCardApplyScreen || s is PurpleCardApplyConditionsScreen ||

@@ -29,6 +29,12 @@ class TextureButton(
         if (tooltip != null) setTooltip(Tooltip.of(tooltip))
     }
 
+    /**
+     * 置灰视觉（不影响 active 与点击）：渲染尾部盖半透明黑遮罩，与 `NineSliceButton.dimmed` 同款。
+     * 用于「无权限但点击要给提示」的按钮 —— active=false 会吞掉 onPress，做不了点击提示。
+     */
+    var dimmed: Boolean = false
+
     private val texture = Identifier.of("cobblemarket", "textures/gui/button.png")
     private val textureWidth = 320
     private val textureHeight = 96
@@ -65,6 +71,11 @@ class TextureButton(
         val textX = x + iconSpace + (width - iconSpace - font.getWidth(message)) / 2
         val textY = y + (height - 8) / 2
         context.drawTextWithShadow(font, message, textX, textY, 0xFFFFFF)
+
+        // 置灰遮罩（视觉置灰但保留可点击性，见 dimmed 注释）
+        if (dimmed) {
+            context.fill(x, y, x + width, y + height, 0x66000000)
+        }
     }
 
     private fun drawIcon(context: DrawContext, icon: Identifier, x: Int, y: Int) {

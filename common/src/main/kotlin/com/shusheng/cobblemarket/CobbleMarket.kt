@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket
 
+import com.shusheng.cobblemarket.permission.PermissionNetwork
 import com.shusheng.cobblemarket.command.MarketCommands
 import com.shusheng.cobblemarket.event.TransactionHistory
 import com.shusheng.cobblemarket.market.ItemMarketState
@@ -56,6 +57,7 @@ object CobbleMarket {
 		ServerConfigNetwork.register()
 		BalanceNetwork.register()
 		FinanceNetwork.register()
+		PermissionNetwork.register()
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()
 		TransactionHistory.register()

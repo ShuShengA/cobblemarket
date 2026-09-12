@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import net.minecraft.registry.Registries
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
@@ -397,12 +398,12 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
         // 文本行缓存：悬停同一行时内容不变，只在悬停目标变化时重建（见 tooltipCacheKey 注释）
         if (tooltipCacheKey != p.uuid) {
             tooltipCacheKey = p.uuid
-            val hp = Text.translatable("cobblemon.stat.hp.name").string
-            val atk = Text.translatable("cobblemon.stat.attack.name").string
-            val def = Text.translatable("cobblemon.stat.defence.name").string
-            val spa = Text.translatable("cobblemon.stat.special_attack.name").string
-            val spd = Text.translatable("cobblemon.stat.special_defence.name").string
-            val spe = Text.translatable("cobblemon.stat.speed.name").string
+            val hp = StatNames.HP
+            val atk = StatNames.ATK
+            val def = StatNames.DEF
+            val spa = StatNames.SP_ATK
+            val spd = StatNames.SP_DEF
+            val spe = StatNames.SPEED
             val typeText = Text.translatable(p.primaryType).string +
                 if (p.secondaryType.isNotEmpty()) " + ${Text.translatable(p.secondaryType).string}" else ""
 
@@ -421,9 +422,9 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                 lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to 0xFFFFFF)
             }
             lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to 0xFFFFFF)
-            lines.add(Text.literal("  $hp:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsHp, p.htHp)}").append(Text.literal("  EV:${p.evsHp}").formatted(Formatting.RED)) to 0x66FF66); lines.add(Text.literal("  $atk:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsAtk, p.htAtk)}").append(Text.literal("  EV:${p.evsAtk}").formatted(Formatting.RED)) to 0xFF6666)
-            lines.add(Text.literal("  $def:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsDef, p.htDef)}").append(Text.literal("  EV:${p.evsDef}").formatted(Formatting.RED)) to 0xFFCC66); lines.add(Text.literal("  $spa:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpAtk, p.htSpAtk)}").append(Text.literal("  EV:${p.evsSpAtk}").formatted(Formatting.RED)) to 0x6699FF)
-            lines.add(Text.literal("  $spd:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpDef, p.htSpDef)}").append(Text.literal("  EV:${p.evsSpDef}").formatted(Formatting.RED)) to 0x66FF99); lines.add(Text.literal("  $spe:${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpd, p.htSpd)}").append(Text.literal("  EV:${p.evsSpd}").formatted(Formatting.RED)) to 0xFF99FF); lines.add(Text.translatable("cobblemarket.gui.friendship", p.friendship) to 0xFF99CC)
+            lines.add(Text.literal("  $hp: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsHp, p.htHp)}").append(Text.literal("  EV: ${p.evsHp}").formatted(Formatting.RED)) to 0x66FF66); lines.add(Text.literal("  $atk: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsAtk, p.htAtk)}").append(Text.literal("  EV: ${p.evsAtk}").formatted(Formatting.RED)) to 0xFF6666)
+            lines.add(Text.literal("  $def: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsDef, p.htDef)}").append(Text.literal("  EV: ${p.evsDef}").formatted(Formatting.RED)) to 0xFFCC66); lines.add(Text.literal("  $spa: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpAtk, p.htSpAtk)}").append(Text.literal("  EV: ${p.evsSpAtk}").formatted(Formatting.RED)) to 0x6699FF)
+            lines.add(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpDef, p.htSpDef)}").append(Text.literal("  EV: ${p.evsSpDef}").formatted(Formatting.RED)) to 0x66FF99); lines.add(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpd, p.htSpd)}").append(Text.literal("  EV: ${p.evsSpd}").formatted(Formatting.RED)) to 0xFF99FF); lines.add(Text.translatable("cobblemarket.gui.friendship", p.friendship) to 0xFF99CC)
 
             // 证章区块：亲密度下方两条分割线夹证章图标（照市场悬停 tooltip）
             var marksLine = -1

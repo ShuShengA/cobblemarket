@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.network
 
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.finance.FinanceService
 import com.shusheng.cobblemarket.market.BanState
@@ -134,7 +135,8 @@ object BanNetwork {
         registerS2CType(PlayerNameSuggestionsPayload.ID, PlayerNameSuggestionsPayload.CODEC)
 
         registerC2S(RequestPlayerNameSuggestionsPayload.ID, RequestPlayerNameSuggestionsPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            // 任一管理权限都能用（封禁界面要 BAN；权限管理界面是 OP 专属界面，同样走这里拿玩家名联想）
+            if (!MarketPermissions.canManage(player)) return@registerC2S
             val server = player.server
             server.execute {
                 val names = LinkedHashSet<String>()
@@ -173,7 +175,7 @@ object BanNetwork {
         }
 
         registerC2S(AdminBanPayload.ID, AdminBanPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.BAN)) return@registerC2S
             val server = player.server
             server.execute {
                 val target = BanState.resolvePlayer(server, payload.playerName)
@@ -212,7 +214,7 @@ object BanNetwork {
         }
 
         registerC2S(AdminUnbanPayload.ID, AdminUnbanPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.BAN)) return@registerC2S
             val server = player.server
             server.execute {
                 val removed = BanState.get(server).unban(payload.playerUuid)
@@ -231,7 +233,7 @@ object BanNetwork {
         }
 
         registerC2S(RequestBanListPayload.ID, RequestBanListPayload.CODEC) { _, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.BAN)) return@registerC2S
             val server = player.server
             server.execute {
                 val bans = BanState.get(server).getAllBans(System.currentTimeMillis())

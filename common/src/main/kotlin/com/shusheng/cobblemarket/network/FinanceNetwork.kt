@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.network
 
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.config.CurrencyHandler
@@ -81,7 +82,7 @@ data class CreditInfoPayload(
     }
 }
 
-// ── C2S：请求借款历史（all=true 仅 OP 有效，全服借贷流水） ──
+// ── C2S：请求借款历史（all=true 需金融管理节点，全服借贷流水） ──
 
 data class RequestLoanHistoryPayload(val all: Boolean) : CustomPayload {
     override fun getId() = ID
@@ -164,7 +165,7 @@ data class RequestRepayPayload(val loanId: Long, val settle: Boolean) : CustomPa
     }
 }
 
-// ── C2S：请求金融统计（全服累计成交额所有玩家可见；准备金池/坏账总额仅 OP） ──
+// ── C2S：请求金融统计（全服累计成交额所有玩家可见；准备金池/坏账总额限金融管理节点） ──
 
 class RequestFinanceStatsPayload : CustomPayload {
     override fun getId() = ID
@@ -444,7 +445,7 @@ class RequestBlackCardRedoPayload : CustomPayload {
     }
 }
 
-// ── 卡片管理（仅 OP）：持有者列表 + 界面内收回 ──
+// ── 卡片管理（金融管理节点）：持有者列表 + 界面内收回 ──
 
 // ── C2S：请求紫/黑卡持有者列表（卡片管理界面打开时拉取） ──
 
@@ -596,7 +597,7 @@ data class LoanHistoryEntry(
     val status: String,
     /** 剩余本金（CLOSED 恒 0） */
     val remaining: Long,
-    /** 借款人最近 IP（仅 OP 全服流水下发，小号排查用；普通玩家视图为空串） */
+    /** 借款人最近 IP（金融管理节点的全服流水下发，小号排查用；普通玩家视图为空串） */
     val ip: String
 ) {
     fun write(buf: PacketByteBuf) {
@@ -700,7 +701,7 @@ object FinanceNetwork {
                 // 同 IP 聚合欠款上限：防同 IP 多小号分散借款转给主账号（OP 豁免；0=不限制）；
                 // 紫/黑卡持有者豁免：卡额度远高于默认 IP 上限，且小号不可能持卡（全服限量+门槛），卡本身就是强信任凭证
                 val ip = getPlayerIp(player)
-                if (CobbleMarketConfig.ipDebtLimit > 0 && ip != null && !player.hasPermissionLevel(2)
+                if (CobbleMarketConfig.ipDebtLimit > 0 && ip != null && !MarketPermissions.isOp(player)
                     && !state.isPurpleCardHolder(player.uuid) && !state.isBlackCardHolder(player.uuid)
                 ) {
                     val ipDebt = state.debtByIp(ip, now)
@@ -945,9 +946,9 @@ object FinanceNetwork {
             }
         }
 
-        // ── 卡片管理（仅 OP）：请求持有者列表 ──
+        // ── 卡片管理（金融管理节点）：请求持有者列表 ──
         registerC2S(RequestCardHolderListPayload.ID, RequestCardHolderListPayload.CODEC) { _, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
             val server = player.server
             server.execute { sendCardHolderList(player) }
         }
@@ -958,10 +959,10 @@ object FinanceNetwork {
             server.execute { sendToPlayer(player, buildCardHolderBoard(server)) }
         }
 
-        // ── 卡片管理（仅 OP）：界面内收回（直接执行，无二次确认；收回后回发新列表） ──
+        // ── 卡片管理（金融管理节点）：界面内收回（直接执行，无二次确认；收回后回发新列表） ──
         registerC2S(RequestCardRevokePayload.ID, RequestCardRevokePayload.CODEC) { payload, player ->
             if (!RequestThrottle.allow(player.uuid, "request_card_revoke", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = FinanceState.get(server)
@@ -1080,13 +1081,13 @@ object FinanceNetwork {
             server.execute { sendDepositInfo(player, FinanceState.get(server), System.currentTimeMillis()) }
         }
 
-        // ── 金融统计（全服累计成交额所有人可见；准备金池/坏账总额仅 OP） ──
+        // ── 金融统计（全服累计成交额所有人可见；准备金池/坏账总额限金融管理节点） ──
         registerC2S(RequestFinanceStatsPayload.ID, RequestFinanceStatsPayload.CODEC) { _, player ->
             if (!RequestThrottle.allow(player.uuid, "request_finance_stats", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = FinanceState.get(server)
-                val isOp = player.hasPermissionLevel(2)
+                val isOp = MarketPermissions.has(player, MarketPermissions.FINANCE)
                 sendToPlayer(
                     player,
                     FinanceStatsPayload(
@@ -1103,7 +1104,7 @@ object FinanceNetwork {
             if (!RequestThrottle.allow(player.uuid, "request_revoke_bad_debt", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
-                if (!player.hasPermissionLevel(2)) return@execute
+                if (!MarketPermissions.isOp(player)) return@execute   // 撤销坏账只限 OP：服主干预手段，不随管理节点授予
                 val state = FinanceState.get(server)
                 val removed = state.clearBadDebts(payload.playerUuid)
                 if (removed.isNotEmpty()) {
@@ -1158,10 +1159,10 @@ object FinanceNetwork {
             val server = player.server
             server.execute {
                 val state = FinanceState.get(server)
-                // all=true 仅 OP 有效（全服借贷流水审计），普通玩家回退为本人借款历史
-                val loans = if (payload.all && player.hasPermissionLevel(2)) state.getAllLoans()
+                // all=true 需金融管理节点（全服借贷流水审计），普通玩家回退为本人借款历史
+                val loans = if (payload.all && MarketPermissions.has(player, MarketPermissions.FINANCE)) state.getAllLoans()
                 else state.getLoansByPlayer(player.uuid)
-                val entries = buildLoanHistoryEntries(state, loans, all = payload.all && player.hasPermissionLevel(2))
+                val entries = buildLoanHistoryEntries(state, loans, all = payload.all && MarketPermissions.has(player, MarketPermissions.FINANCE))
                 sendToPlayer(player, LoanHistoryDataPayload(entries))
             }
         }
@@ -1284,7 +1285,7 @@ object FinanceNetwork {
         server.playerManager.playerList.forEach { sendToPlayer(it, payload) }
     }
 
-    /** 卡片管理（仅 OP）：持有者列表回发（紫卡 ∪ 黑卡 混排，按加入时间正序=先申请在前，同刻按名字） */
+    /** 卡片管理（金融管理节点）：持有者列表回发（紫卡 ∪ 黑卡 混排，按加入时间正序=先申请在前，同刻按名字） */
     private fun sendCardHolderList(player: ServerPlayerEntity) {
         val server = player.server
         val state = FinanceState.get(server)

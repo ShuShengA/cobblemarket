@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.network
 
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.cobblemon.mod.common.Cobblemon
 import com.cobblemon.mod.common.api.storage.party.PartyPosition
 import com.shusheng.cobblemarket.config.CurrencyHandler
@@ -1467,7 +1468,7 @@ object MarketNetwork {
         }
 
         registerC2S(AdminRequestPokemonPayload.ID, AdminRequestPokemonPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.MARKET)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = MarketState.get(server)
@@ -1558,7 +1559,7 @@ object MarketNetwork {
         }
 
         registerC2S(AdminCancelPokemonPayload.ID, AdminCancelPokemonPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.MARKET)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = MarketState.get(server)
@@ -1595,7 +1596,7 @@ object MarketNetwork {
         }
 
         registerC2S(AdminRequestItemPayload.ID, AdminRequestItemPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.MARKET)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = ItemMarketState.get(server)
@@ -1643,7 +1644,7 @@ object MarketNetwork {
         }
 
         registerC2S(AdminCancelItemPayload.ID, AdminCancelItemPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.MARKET)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = ItemMarketState.get(server)
@@ -2700,7 +2701,7 @@ object MarketNetwork {
 
         // 入口界面的市场总开关按钮（OP）：写配置 + 全员广播，与命令同逻辑
         registerC2S(SetMarketEnabledPayload.ID, SetMarketEnabledPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.MARKET)) return@registerC2S
             val server = player.server
             server.execute { toggleMarketEnabled(server, payload.enabled) }
         }
@@ -2710,7 +2711,7 @@ object MarketNetwork {
             val server = player.server
             server.execute {
                 val history = com.shusheng.cobblemarket.event.TransactionHistory.get(server)
-                val isAdmin = player.hasPermissionLevel(2)
+                val isAdmin = MarketPermissions.has(player, MarketPermissions.MARKET)
                 val all = payload.all && isAdmin
                 // 数据源：最近 14 天 CSV 账本 + 内存记录兜底合并去重（键用 CSV 秒级时间）——
                 // 内存上限（全服 200 条）外的个人历史从 CSV 回读，不再被其他玩家的交易挤空

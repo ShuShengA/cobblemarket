@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.finance
 
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.config.CurrencyHandler
 import com.shusheng.cobblemarket.market.BanState
@@ -27,6 +28,8 @@ object FinanceService {
     /** 自动划扣扫描间隔：1200 tick（60 秒） */
     private const val AUTO_REPAY_SCAN_TICKS = 20 * 60
     /** 逾期制裁扫描：每 1440 次划扣扫描（60 秒一次）= 每天一次 */
+    /** 制裁扫描频率：每「扫描周期」（= AUTO_REPAY_SCAN_TICKS，1 分钟）累加 1 → 24*60 = 24 小时扫一次。
+     *  ⚠ 它走的是**真实时间**、不经 `LoanRecord.DAY_MS` —— 调整「一天」的换算不会影响它 */
     private const val SANCTION_SCAN_MULTIPLE = 24 * 60
     /** FINANCE 来源封禁标记（BanInfo.bannedBy；$ 前缀 = 翻译 key，封禁列表显示「喵喵行长」；解冻只解此来源） */
     private const val FINANCE_BAN_MARK = "\$cobblemarket.ban.by_finance"
@@ -181,7 +184,7 @@ object FinanceService {
         }
         val ip = com.shusheng.cobblemarket.platform.getPlayerIp(player)
         // 紫/黑卡持有者豁免：卡额度远高于默认 IP 上限，且小号不可能持卡（全服限量+门槛），卡本身就是强信任凭证
-        if (CobbleMarketConfig.ipDebtLimit > 0 && ip != null && !player.hasPermissionLevel(2)
+        if (CobbleMarketConfig.ipDebtLimit > 0 && ip != null && !MarketPermissions.isOp(player)
             && !state.isPurpleCardHolder(player.uuid) && !state.isBlackCardHolder(player.uuid)
         ) {
             val ipDebt = state.debtByIp(ip, now)
@@ -420,7 +423,7 @@ object FinanceService {
     /** 在线 OP 广播（坏账告警） */
     private fun notifyOps(server: MinecraftServer, text: Text) {
         server.playerManager.playerList.forEach { p ->
-            if (p.hasPermissionLevel(2)) p.sendMessage(text, false)
+            if (MarketPermissions.isOp(p)) p.sendMessage(text, false)
         }
     }
 

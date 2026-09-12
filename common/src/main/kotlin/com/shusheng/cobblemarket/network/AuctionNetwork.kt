@@ -1,5 +1,7 @@
 package com.shusheng.cobblemarket.network
 
+import com.shusheng.cobblemarket.permission.MarketPermissions
+import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.Cobblemon
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
@@ -742,7 +744,7 @@ object AuctionNetwork {
 
         registerC2S(ForceCancelAuctionPayload.ID, ForceCancelAuctionPayload.CODEC) { payload, player ->
             if (!RequestThrottle.allow(player.uuid, "force_cancel_auction", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.AUCTION)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = AuctionState.get(server)
@@ -1100,17 +1102,17 @@ object AuctionNetwork {
             heldKey?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_held").append(Text.translatable(it))) }
             // IV 段：标签 + 六行竖排（仿出价弹窗左列：stat:IV  EV:N，行色按属性色系，EV 红；聊天 16 色近似弹窗 ARGB）
             lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs"))
-            val hp = Text.translatable("cobblemon.stat.hp.name")
-            val atk = Text.translatable("cobblemon.stat.attack.name")
-            val def = Text.translatable("cobblemon.stat.defence.name")
-            val spa = Text.translatable("cobblemon.stat.special_attack.name")
-            val spd = Text.translatable("cobblemon.stat.special_defence.name")
-            val spe = Text.translatable("cobblemon.stat.speed.name")
+            val hp = Text.literal(StatNames.HP)
+            val atk = Text.literal(StatNames.ATK)
+            val def = Text.literal(StatNames.DEF)
+            val spa = Text.literal(StatNames.SP_ATK)
+            val spd = Text.literal(StatNames.SP_DEF)
+            val spe = Text.literal(StatNames.SPEED)
             fun ivLine(stat: Text, ivKey: String, evKey: String, color: Formatting): Text =
                 Text.literal("  ").append(stat)
-                    .append(Text.literal(":${extra[ivKey]?.toIntOrNull() ?: 0}"))
+                    .append(Text.literal(": ${extra[ivKey]?.toIntOrNull() ?: 0}"))
                     .formatted(color) // 整段「stat:IV」同色（与弹窗行色一致，文字+数字都变色）
-                    .append(Text.literal("  EV:${extra[evKey]?.toIntOrNull() ?: 0}").formatted(Formatting.RED))
+                    .append(Text.literal("  EV: ${extra[evKey]?.toIntOrNull() ?: 0}").formatted(Formatting.RED))
             lines.add(ivLine(hp, "ivsHp", "evsHp", Formatting.GREEN))
             lines.add(ivLine(atk, "ivsAtk", "evsAtk", Formatting.RED))
             lines.add(ivLine(def, "ivsDef", "evsDef", Formatting.GOLD))

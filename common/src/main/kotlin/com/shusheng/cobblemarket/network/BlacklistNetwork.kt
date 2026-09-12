@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.network
 
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.market.PokemonBlacklistEntry
 import com.shusheng.cobblemarket.market.PokemonBlacklistState
@@ -129,7 +130,7 @@ object BlacklistNetwork {
         registerS2CType(PokemonBlacklistDataPayload.ID, PokemonBlacklistDataPayload.CODEC)
 
         registerC2S(RequestPokemonBlacklistPayload.ID, RequestPokemonBlacklistPayload.CODEC) { _, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.BLACKLIST)) return@registerC2S
             val server = player.server
             server.execute {
                 val entries = PokemonBlacklistState.get(server).getAll()
@@ -138,7 +139,7 @@ object BlacklistNetwork {
         }
 
         registerC2S(AddPokemonBlacklistPayload.ID, AddPokemonBlacklistPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.BLACKLIST)) return@registerC2S
             val server = player.server
             server.execute {
                 val speciesId = com.shusheng.cobblemarket.util.SpeciesText.resolveByNameOrId(payload.speciesId)
@@ -181,7 +182,7 @@ object BlacklistNetwork {
         }
 
         registerC2S(RemovePokemonBlacklistPayload.ID, RemovePokemonBlacklistPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.BLACKLIST)) return@registerC2S
             val server = player.server
             server.execute {
                 PokemonBlacklistState.get(server).remove(payload.id)

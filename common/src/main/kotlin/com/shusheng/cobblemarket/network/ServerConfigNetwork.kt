@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.network
 
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.platform.registerC2S
@@ -10,7 +11,7 @@ import net.minecraft.network.codec.PacketCodec
 import net.minecraft.network.packet.CustomPayload
 
 /**
- * 服务器配置可视化编辑（入口界面「服务器配置」按钮，仅 OP）：
+ * 服务器配置可视化编辑（入口界面「服务器配置」按钮 / 服务器配置节点）：
  * 打开界面请求快照 → 数字输入框失焦提交 / 开关即时提交 → 服务端钳制 + 落盘 + 回发新快照。
  * 货币配置不在此列（运行时切换账本错乱，需重启生效，见 /market reload）；
  * auctionDurationOptions 列表项也不在此列（保留 json 编辑）。
@@ -424,13 +425,13 @@ object ServerConfigNetwork {
         registerS2CType(ServerConfigDataPayload.ID, ServerConfigDataPayload.CODEC)
 
         registerC2S(RequestServerConfigPayload.ID, RequestServerConfigPayload.CODEC) { _, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.CONFIG)) return@registerC2S
             val server = player.server
             server.execute { sendToPlayer(player, snapshot()) }
         }
 
         registerC2S(SaveServerConfigPayload.ID, SaveServerConfigPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.CONFIG)) return@registerC2S
             val server = player.server
             server.execute {
                 applyAll(payload)

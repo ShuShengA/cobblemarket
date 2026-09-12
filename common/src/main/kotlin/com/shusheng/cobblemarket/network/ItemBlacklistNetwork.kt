@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.network
 
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.market.ItemBlacklistEntry
 import com.shusheng.cobblemarket.market.ItemBlacklistState
@@ -136,7 +137,7 @@ object ItemBlacklistNetwork {
         registerS2CType(ItemBlacklistDataPayload.ID, ItemBlacklistDataPayload.CODEC)
 
         registerC2S(RequestItemBlacklistPayload.ID, RequestItemBlacklistPayload.CODEC) { _, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.BLACKLIST)) return@registerC2S
             val server = player.server
             server.execute {
                 val entries = ItemBlacklistState.get(server).getAll()
@@ -145,7 +146,7 @@ object ItemBlacklistNetwork {
         }
 
         registerC2S(AddItemBlacklistPayload.ID, AddItemBlacklistPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.BLACKLIST)) return@registerC2S
             val server = player.server
             server.execute {
                 val itemId = resolveItemId(payload.itemName)
@@ -171,7 +172,7 @@ object ItemBlacklistNetwork {
         }
 
         registerC2S(AddHeldItemBlacklistPayload.ID, AddHeldItemBlacklistPayload.CODEC) { _, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.BLACKLIST)) return@registerC2S
             val server = player.server
             server.execute {
                 val heldStack = player.mainHandStack.copy()
@@ -193,7 +194,7 @@ object ItemBlacklistNetwork {
         }
 
         registerC2S(AddItemsBlacklistPayload.ID, AddItemsBlacklistPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.BLACKLIST)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = ItemBlacklistState.get(server)
@@ -219,7 +220,7 @@ object ItemBlacklistNetwork {
         }
 
         registerC2S(RemoveItemBlacklistPayload.ID, RemoveItemBlacklistPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.BLACKLIST)) return@registerC2S
             val server = player.server
             server.execute {
                 ItemBlacklistState.get(server).remove(payload.itemId, payload.componentsSpec)
@@ -231,7 +232,7 @@ object ItemBlacklistNetwork {
         }
 
         registerC2S(RemoveItemsBlacklistPayload.ID, RemoveItemsBlacklistPayload.CODEC) { payload, player ->
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.BLACKLIST)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = ItemBlacklistState.get(server)

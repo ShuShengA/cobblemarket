@@ -29,6 +29,20 @@
 
 - **Custom mouse cursor**: the pointer becomes the mod's own icon while you are in the market's screens, and switches back to the system cursor when you leave; can be turned off in Settings
 
+#### Admin Permission Nodes
+
+- **Admin duties can be delegated**: the owner can hand a single admin duty to a player without granting OP — 8 nodes by domain (blacklist / price limits / bans / market admin / finance / auctions / buy orders / server config); OPs keep everything with zero setup
+- **Permissions screen**: a new entry at the bottom-left of the admin panel (OP only) — search a player, tick the nodes, save, and it applies immediately; online players need no relog
+- **Permission commands**: `/market perm grant|revoke|list` (owner-only; `list` shows every grant)
+- **Admin entries now grey out instead of disappearing**: entries on the admin panel and the entry screen always show, greyed out with a hint when you lack the permission — the layout no longer shifts with permissions
+
+### Changes
+
+- The admin panel now shows a separator line above its bottom buttons, and the Back button moved to the top-right (consistent with other screens)
+- The market master switch and Server Config entries moved from the market entry screen to the bottom of the admin panel; OPs now stop/resume the market and edit the server config from there
+- The admin panel entry on the market entry screen is now an icon-only button — the "OP Only" label is gone, and hovering it shows "Admin Panel"
+- The Server Config screen now shows a right-side scrollbar when the list overflows, so you can tell how much is left
+
 ### Fixes
 
 - **List area going blank while a filter dropdown is open**: opening the type/ability/nature filter in the Pokemon market, the auction house or the sell-select screen made every listing row disappear; only the rows actually covered by the dropdown are now skipped, and rows below it render as usual

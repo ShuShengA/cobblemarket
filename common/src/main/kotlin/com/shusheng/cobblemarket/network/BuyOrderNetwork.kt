@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.network
 
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.cobblemon.mod.common.Cobblemon
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
@@ -633,7 +634,7 @@ object BuyOrderNetwork {
 
         registerC2S(ForceCancelBuyOrderPayload.ID, ForceCancelBuyOrderPayload.CODEC) { payload, player ->
             if (!RequestThrottle.allow(player.uuid, "force_cancel_buy_order", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
-            if (!player.hasPermissionLevel(2)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.BUY_ORDER)) return@registerC2S
             val server = player.server
             server.execute {
                 settleExpiredAndBroadcast(server)
