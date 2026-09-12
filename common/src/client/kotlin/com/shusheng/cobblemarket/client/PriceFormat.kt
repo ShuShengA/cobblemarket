@@ -36,7 +36,8 @@ fun formatPriceShort(price: Int): String = when {
 /** 截断到 1 位小数（自实现，避开 String.format 的 Locale 小数点问题）。 */
 private fun oneDecimal(v: Double): String {
     val tenths = (v * 10).toInt()
-    return "${tenths / 10}.${tenths % 10}"
+    // 值 ≥ 10 直接取整：网格/列表格子很窄，`200.0k ₽` 会顶出边框，`200k ₽` 才放得下（5.0M 仍保留小数）
+    return if (tenths >= 100) "${tenths / 10}" else "${tenths / 10}.${tenths % 10}"
 }
 
 /**
