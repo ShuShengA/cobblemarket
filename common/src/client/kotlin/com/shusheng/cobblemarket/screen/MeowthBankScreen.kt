@@ -57,7 +57,9 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         val gap = 8
         val totalH = btnH * rowCount + gap * (rowCount - 1) - if (isAdmin) gap - 5 else 0
         val startY = maxOf(height / 2 - totalH / 2, 47 + (160 - totalH) / 2)
-        return startY - 14 - (160 - totalH) / 2 - 33
+        // ⚠ 这里是 146 不是 160：入口的等效式是 startY-47-(146-totalH)/2，
+        // 写成 160 会让背景比入口高 7px（(160-146)/2），从入口进喵喵银行会觉得整体上移
+        return startY - 14 - (146 - totalH) / 2 - 33
     }
 
     override fun init() {
