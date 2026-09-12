@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.command
 
+import com.shusheng.cobblemarket.permission.PermissionFileLogger
 import com.shusheng.cobblemarket.permission.PermissionNetwork
 import com.shusheng.cobblemarket.permission.PermissionState
 import com.shusheng.cobblemarket.permission.MarketPermissions
@@ -35,6 +36,7 @@ object MarketCommands {
                     .then(CommandManager.literal("ban")
                         .requires { MarketPermissions.has(it, MarketPermissions.BAN) }
                         .then(CommandManager.argument("player", StringArgumentType.word())
+                            .suggests(::suggestOnlinePlayerNames)
                             .executes(::banPlayer)
                             .then(CommandManager.argument("duration", StringArgumentType.word())
                                 .executes(::banPlayer)
@@ -47,6 +49,7 @@ object MarketCommands {
                     .then(CommandManager.literal("unban")
                         .requires { MarketPermissions.has(it, MarketPermissions.BAN) }
                         .then(CommandManager.argument("player", StringArgumentType.word())
+                            .suggests(::suggestOnlinePlayerNames)
                             .executes(::unbanPlayer)
                         )
                     )
@@ -70,6 +73,7 @@ object MarketCommands {
                         .requires { it.hasPermissionLevel(2) }   // 撤销坏账只限 OP（服主干预，不随管理节点授予）
                         .then(CommandManager.literal("clear")
                             .then(CommandManager.argument("player", StringArgumentType.word())
+                                .suggests(::suggestOnlinePlayerNames)
                                 .executes(::loanClear)
                             )
                         )
@@ -118,6 +122,7 @@ object MarketCommands {
                         .requires { it.hasPermissionLevel(2) }
                         .then(CommandManager.literal("grant")
                             .then(CommandManager.argument("player", StringArgumentType.word())
+                                .suggests(::suggestOnlinePlayerNames)
                                 .then(CommandManager.argument("node", StringArgumentType.word())
                                     .suggests(::suggestPermNodes)
                                     .executes(::permGrant)
@@ -126,6 +131,7 @@ object MarketCommands {
                         )
                         .then(CommandManager.literal("revoke")
                             .then(CommandManager.argument("player", StringArgumentType.word())
+                                .suggests(::suggestOnlinePlayerNames)
                                 .then(CommandManager.argument("node", StringArgumentType.word())
                                     .suggests(::suggestPermNodes)
                                     .executes(::permRevoke)
@@ -135,6 +141,7 @@ object MarketCommands {
                         .then(CommandManager.literal("list")
                             .executes { ctx -> permList(ctx, null) }
                             .then(CommandManager.argument("player", StringArgumentType.word())
+                                .suggests(::suggestOnlinePlayerNames)
                                 .executes { ctx -> permList(ctx, StringArgumentType.getString(ctx, "player")) }
                             )
                         )
@@ -336,6 +343,7 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.perm.already_holding", target.second, short))
             return 0
         }
+        PermissionFileLogger.log(source.name, target.second, target.first, setOf(node), emptySet())
         // 在线即时生效：推新快照（离线不用管，下次登录补发）
         PermissionNetwork.refresh(source.server, target.first)
         source.sendFeedback({ Text.translatable("cobblemarket.perm.granted", target.second, short).formatted(Formatting.GREEN) }, false)
@@ -360,6 +368,7 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.perm.not_holding", target.second, short))
             return 0
         }
+        PermissionFileLogger.log(source.name, target.second, target.first, emptySet(), setOf(node))
         PermissionNetwork.refresh(source.server, target.first)
         source.sendFeedback({ Text.translatable("cobblemarket.perm.revoked", target.second, short).formatted(Formatting.GREEN) }, false)
         return 1

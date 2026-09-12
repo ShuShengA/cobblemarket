@@ -4,7 +4,9 @@ import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.PlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.network.RequestPlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.permission.MarketPermissions
+import com.shusheng.cobblemarket.permission.PermissionAuditPayload
 import com.shusheng.cobblemarket.permission.PermissionListDataPayload
+import com.shusheng.cobblemarket.permission.RequestPermissionAuditPayload
 import com.shusheng.cobblemarket.permission.RemovePlayerPermissionsPayload
 import com.shusheng.cobblemarket.permission.RequestPermissionListPayload
 import com.shusheng.cobblemarket.permission.SavePlayerPermissionsPayload
@@ -18,6 +20,8 @@ import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.UUID
 
 /**
@@ -33,7 +37,16 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
 
     private val panelWidth = 300
     private val rowHeight = 22
-    private val listStartY = 68
+    // 面板自上而下：标题(20) → 页签行(44，高 14) → 搜索行(62，高 16) → 分割线(82) → 列表(86)
+    private val tabRowY = 44
+    private val searchRowY = 62
+    // 页签 1 有搜索行（62~78），列表接在它下面；页签 2 没有这一行，整段高度收掉，
+    // 分割线与首行直接贴着页签排（否则搜索行的空位会把列表顶下去，看着空一截）
+    private val grantsListStartY = 86
+    private val auditListStartY = 66
+
+    /** 当前页签的列表起始 y（分割线画在它上方 4px）：render / renderBackground / 行按钮都走这里 */
+    private fun listStartY() = if (currentTab == 0) grantsListStartY else auditListStartY
     private val editBtnX = panelWidth - 98          // 行内「编辑」左边界
     private val removeBtnX = panelWidth - 50        // 行内「删除」左边界（与编辑间隔 4px）
     // 搜索行（搜索框 + 「添加」）整体排在行内按钮的 x 区域左侧：两行按钮虽不同 y，
@@ -41,7 +54,17 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
     private val addBtnX = editBtnX - 4 - ADD_BTN_W  // 「添加」左边界（与行内按钮区隔 4px）
     private val searchFieldW = addBtnX - 4 - 2      // 搜索框宽（左边距 2、与添加键隔 4px）
 
-    // ── 主列表状态 ──
+    // ── 页签（照 PriceLimitScreen：tab 按钮重建 + 切换时重建行按钮）──
+    private var currentTab = 0                      // 0 = 权限授予，1 = 变更记录
+    private var grantsTabButton: NineSliceButton? = null
+    private var auditTabButton: NineSliceButton? = null
+
+    // ── 变更记录（页签 2）──
+    // 行文本缓存：时间格式化与词条拼接在数据到达时算一次，render 每帧只读
+    private data class AuditLine(val time: String, val who: String, val added: String, val removed: String, val tooltip: List<String>)
+    private var auditLines = listOf<AuditLine>()
+
+    // ── 主列表状态（页签 1）──
     private var entries = listOf<PermissionListDataPayload.Entry>()
     // 过滤结果与行文本缓存：render 每帧只读 —— 节点短标签要查词条再拼接，
     // 每帧现算在全量列表上是可见的掉帧源（照 PriceLimitScreen 的 rebuildFiltered 思路）
@@ -88,7 +111,10 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
     private val suggestionButtons = mutableListOf<NineSliceButton>()
 
     // 列表底部让出 48px 给页码行，避免最后一行压住 "x-y / n"
-    private fun maxVisible() = maxOf(0, (height - listStartY - 48) / rowHeight)
+    private fun maxVisible() = maxOf(0, (height - listStartY() - 48) / rowHeight)
+
+    /** 当前页签的条目数（滚动上限、悬停范围、页码、空态全走它） */
+    private fun displayCount() = if (currentTab == 0) filtered.size else auditLines.size
 
     private companion object {
         const val MAX_SUGGESTION_ROWS = 8
@@ -139,9 +165,11 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         backButton = backBtn
         addDrawableChild(backBtn)
 
+        rebuildTabButtons()
+
         val savedSearch = searchField?.text ?: ""
         // 搜索框右边界止于行内按钮区（panelWidth - 98），免得下拉与按钮、文字互相压
-        searchField = TextFieldWidget(textRenderer, leftX + 2, 44, searchFieldW, 16, Text.literal(""))
+        searchField = TextFieldWidget(textRenderer, leftX + 2, searchRowY, searchFieldW, 16, Text.literal(""))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.ban.player_name"))
         searchField?.setChangedListener {
             // 输入即过滤列表并重置页码：否则过滤后残留旧列表的行按钮（同 PriceLimitScreen）
@@ -165,17 +193,66 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
 
         // 列表只列已有节点的玩家，新玩家不出现在列表里 —— 「添加」按搜索框里的名字新建一条授予
         val addBtn = NineSliceButton(
-            leftX + addBtnX, 44, ADD_BTN_W, 16,
+            leftX + addBtnX, searchRowY, ADD_BTN_W, 16,
             Text.translatable("cobblemarket.perm.add"),
             { addBySearchName() }
         )
         addButton = addBtn
         addDrawableChild(addBtn)
 
+        // 搜索框与「添加」只属于页签 1：resize 回来也要按当前页签恢复显隐
+        val grantsTab = currentTab == 0
+        searchField?.visible = grantsTab
+        addButton?.visible = grantsTab
+
         scrollOffset = 0
         rebuildFiltered()
         rebuildRowButtons()
-        sendToServer(RequestPermissionListPayload())
+        requestCurrentTabData()
+    }
+
+    // ── 页签 ──
+
+    /** 页签按钮（两个 80×14，间隔 4px，居中；选中态用 ● 前缀，照项目 tab 惯例） */
+    private fun rebuildTabButtons() {
+        val centerX = width / 2
+        val grantsBtn = NineSliceButton(centerX - 82, tabRowY, 80, 14, Text.literal(""), { switchTab(0) })
+        val auditBtn = NineSliceButton(centerX + 2, tabRowY, 80, 14, Text.literal(""), { switchTab(1) })
+        grantsTabButton = grantsBtn
+        auditTabButton = auditBtn
+        addDrawableChild(grantsBtn)
+        addDrawableChild(auditBtn)
+        updateTabButtons()
+    }
+
+    private fun updateTabButtons() {
+        val grants = Text.translatable("cobblemarket.perm.tab_grants").string
+        val audit = Text.translatable("cobblemarket.perm.tab_audit").string
+        grantsTabButton?.setMessage(if (currentTab == 0) TextUtil.selectedText(grants) else Text.literal(grants))
+        auditTabButton?.setMessage(if (currentTab == 1) TextUtil.selectedText(audit) else Text.literal(audit))
+    }
+
+    private fun switchTab(tab: Int) {
+        if (currentTab == tab) return
+        currentTab = tab
+        scrollOffset = 0
+        hoveredRow = -1
+        updateTabButtons()
+        // 搜索框/「添加」只属于页签 1；顺带收起未决的联想请求，免得切回去时冒出旧候选
+        val grantsTab = tab == 0
+        searchField?.visible = grantsTab
+        addButton?.visible = grantsTab
+        suggestionsOpen = false
+        suggestDirty = false
+        lastRequestPrefix = null
+        suggestionButtons.forEach { it.visible = false }
+        rebuildRowButtons()
+        requestCurrentTabData()
+    }
+
+    private fun requestCurrentTabData() {
+        if (currentTab == 0) sendToServer(RequestPermissionListPayload())
+        else sendToServer(RequestPermissionAuditPayload())
     }
 
     // ── 数据接收 ──
@@ -183,7 +260,30 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
     fun onPermissionList(payload: PermissionListDataPayload) {
         entries = payload.entries
         rebuildFiltered()
-        scrollOffset = scrollOffset.coerceIn(0, maxOf(0, filtered.size - maxVisible()))
+        scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayCount() - maxVisible()))
+        rebuildRowButtons()
+    }
+
+    fun onPermissionAudit(payload: PermissionAuditPayload) {
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm")
+        val addedLabel = Text.translatable("cobblemarket.perm.audit_added").string
+        val removedLabel = Text.translatable("cobblemarket.perm.audit_removed").string
+        auditLines = payload.rows.map { row ->
+            val time = dateFormat.format(Date(row.timestamp))
+            val who = "${row.operator} → ${row.targetName}"
+            // 空字段 = 该半边无变更（服务端不再写占位符）：整段不渲染；
+            // 两段都空时这行只剩「时间 + 执行者 → 目标」
+            val added = row.added.takeIf { it.isNotBlank() }?.let { "$addedLabel: $it" }.orEmpty()
+            val removed = row.removed.takeIf { it.isNotBlank() }?.let { "$removedLabel: $it" }.orEmpty()
+            // 行内会被截断，悬停提示给完整内容
+            val tooltip = buildList {
+                add("$time  $who")
+                if (added.isNotEmpty()) add(added)
+                if (removed.isNotEmpty()) add(removed)
+            }
+            AuditLine(time, who, added, removed, tooltip)
+        }
+        scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayCount() - maxVisible()))
         rebuildRowButtons()
     }
 
@@ -227,9 +327,11 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         editButtons.clear()
         removeButtons.forEach { remove(it) }
         removeButtons.clear()
+        // 行内按钮只属于页签 1：页签 2 是只读记录，切过去不能留着上一页签的按钮
+        if (currentTab != 0) return
         val leftX = width / 2 - panelWidth / 2
         filtered.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, entry ->
-            val y = listStartY + i * rowHeight
+            val y = listStartY() + i * rowHeight
             val editBtn = NineSliceButton(
                 leftX + editBtnX, y + 3, 44, 16,
                 Text.translatable("cobblemarket.price_limit.edit"),
@@ -321,14 +423,19 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         addDrawableChild(cancelButton)
     }
 
-    /** 编辑层整层显隐：二次确认弹窗盖上来时藏掉（见 saveButton 注释） */
-    private fun setEditLayerVisible(visible: Boolean) {
-        nodeButtonByNode.values.forEach { it.visible = visible }
-        saveButton?.visible = visible
-        cancelButton?.visible = visible
+    /** 藏掉编辑层全部控件（二次确认弹窗盖上来时用，见 saveButton 注释）；恢复走整层重建 */
+    private fun hideEditLayer() {
+        nodeButtonByNode.values.forEach { it.visible = false }
+        saveButton?.visible = false
+        cancelButton?.visible = false
     }
 
     private fun renderEditDialogBackground(context: DrawContext) {
+        // 二次确认层盖上来时这一层整段不画：标题是 render 里直接绘制的文字（不是控件），
+        // 遮罩盖不住它（文字与 fill 不在同一层，后画的文字仍会浮在遮罩上），
+        // 只能整层跳过 —— 遮罩与弹窗底由确认层自己画，视觉上没有缺失
+        if (configConfirmOpen) return
+
         val centerX = width / 2
         val dialogX = centerX - DIALOG_W / 2
         val dialogY = height / 2 - DIALOG_H / 2
@@ -363,7 +470,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         configConfirmOpen = true
         configConfirmOpenedAt = System.currentTimeMillis()
         // 下层编辑弹窗整层控件藏掉：节点按钮与确认键 y 区域重叠，留着会按添加顺序拦掉确认点击
-        setEditLayerVisible(false)
+        hideEditLayer()
 
         // 弹窗背景（含遮罩）画在按钮之下：Drawable 在 children 之前渲染，后添加才能盖住编辑层
         addDrawable(object : Drawable {
@@ -480,6 +587,9 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         searchField?.visible = false
         backButton?.visible = false
         addButton?.visible = false
+        // 页签也一样：遮罩不是点击屏障，留着能在弹窗开着时把底下的列表换掉
+        grantsTabButton?.visible = false
+        auditTabButton?.visible = false
         editButtons.forEach { it.visible = false }
         removeButtons.forEach { it.visible = false }
         suggestionButtons.forEach { it.visible = false }
@@ -508,7 +618,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         val leftX = width / 2 - panelWidth / 2
         suggestions.drop(suggestScroll).take(MAX_SUGGESTION_ROWS).forEachIndexed { i, name ->
             val btn = NineSliceButton(
-                leftX + 2, 62 + i * SUGGEST_ROW_H, searchFieldW, SUGGEST_ROW_H,
+                leftX + 2, searchRowY + 18 + i * SUGGEST_ROW_H, searchFieldW, SUGGEST_ROW_H,
                 Text.literal(name),
                 {
                     suppressSuggest = true
@@ -553,19 +663,21 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
 
         val leftX = width / 2 - panelWidth / 2
         val visibleRows = maxVisible()
-        val listAreaBottom = listStartY + visibleRows * rowHeight
+        // 列表起始 y 随页签走（页签 2 没有搜索行，整段上提），悬停范围必须与 render 用同一个值
+        val startY = listStartY()
+        val listAreaBottom = startY + visibleRows * rowHeight
 
         hoveredRow = -1
-        if (mouseX in leftX..(leftX + panelWidth) && mouseY in listStartY..listAreaBottom) {
-            val row = (mouseY - listStartY) / rowHeight
+        if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom) {
+            val row = (mouseY - startY) / rowHeight
             // 悬停索引按"当前显示的行"算（与 render/rebuildRowButtons 同一套 drop+take），
             // 不能拿它当原始索引去查全量列表
-            val shownCount = minOf(visibleRows, filtered.size - scrollOffset)
+            val shownCount = minOf(visibleRows, displayCount() - scrollOffset)
             if (row in 0 until shownCount) hoveredRow = row
         }
 
-        filtered.drop(scrollOffset).take(visibleRows).forEachIndexed { di, _ ->
-            val rowY = listStartY + di * rowHeight
+        repeat(minOf(visibleRows, maxOf(0, displayCount() - scrollOffset))) { di ->
+            val rowY = startY + di * rowHeight
             val rowState = if (di == hoveredRow) 1 else 0
             drawNineSlice(context, ROW_BACKGROUND_TEXTURE, leftX, rowY, panelWidth, rowHeight, rowState, ROW_BACKGROUND_TEX_H)
         }
@@ -597,56 +709,87 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         // 联想列表展开时跳过分隔线与列表：这些文字画在 children 之后，会刺穿联想按钮
         if (suggestionsOpen) return
 
-        context.fill(leftX, listStartY - 4, leftX + panelWidth, listStartY - 3, 0xFF555555.toInt())
+        // 列表起始 y 随页签走（页签 2 没有搜索行，分割线与首行整段上提）
+        val startY = listStartY()
+        context.fill(leftX, startY - 4, leftX + panelWidth, startY - 3, 0xFF555555.toInt())
 
-        if (filtered.isEmpty()) {
+        if (displayCount() == 0) {
             context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.perm.list_empty").formatted(Formatting.GRAY),
-                centerX, listStartY + 30, 0xFFFFFF)
+                Text.translatable(if (currentTab == 0) "cobblemarket.perm.list_empty" else "cobblemarket.perm.audit_empty").formatted(Formatting.GRAY),
+                centerX, startY + 30, 0xFFFFFF)
             return
         }
 
-        filtered.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, _ ->
-            val y = listStartY + i * rowHeight
-            val idx = scrollOffset + i
-            var cursor = leftX + 6
-            // 混排行分两段绘制（名字金色 + 节点串白色）：drawCenteredTextWithShadow 会让行首汉字
-            // 比同行其他字高一点，这里自己算 x 走 drawTextWithShadow
-            val name = rowNames[idx]
-            context.drawTextWithShadow(textRenderer, name, cursor, y + 7, GOLD_COLOR)
-            cursor += textRenderer.getWidth(name)
-            val nodes = rowNodes[idx]
-            if (nodes.isNotEmpty()) {
-                val sep = "  ·  "
-                context.drawTextWithShadow(textRenderer, sep, cursor, y + 7, 0x555555)
-                cursor += textRenderer.getWidth(sep)
-                // 8 个节点短名（英文）拼起来远超行宽，按剩余宽度截断；完整节点列表看悬停提示
-                val remain = leftX + editBtnX - 6 - cursor
-                if (remain > 0) {
-                    context.drawTextWithShadow(textRenderer, TextUtil.truncateString(nodes, remain), cursor, y + 7, 0xFFFFFF)
+        if (currentTab == 0) {
+            filtered.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, _ ->
+                val y = startY + i * rowHeight
+                val idx = scrollOffset + i
+                var cursor = leftX + 6
+                // 混排行分两段绘制（名字金色 + 节点串白色）：drawCenteredTextWithShadow 会让行首汉字
+                // 比同行其他字高一点，这里自己算 x 走 drawTextWithShadow
+                val name = rowNames[idx]
+                context.drawTextWithShadow(textRenderer, name, cursor, y + 7, GOLD_COLOR)
+                cursor += textRenderer.getWidth(name)
+                val nodes = rowNodes[idx]
+                if (nodes.isNotEmpty()) {
+                    val sep = "  ·  "
+                    context.drawTextWithShadow(textRenderer, sep, cursor, y + 7, 0x555555)
+                    cursor += textRenderer.getWidth(sep)
+                    // 8 个节点短名（英文）拼起来远超行宽，按剩余宽度截断；完整节点列表看悬停提示
+                    val remain = leftX + editBtnX - 6 - cursor
+                    if (remain > 0) {
+                        context.drawTextWithShadow(textRenderer, TextUtil.truncateString(nodes, remain), cursor, y + 7, 0xFFFFFF)
+                    }
+                }
+            }
+        } else {
+            // 变更记录：时间(灰) + 执行者→目标(金) + 新增(绿)/移除(红)。
+            // 每段按剩余宽度截断，宁可截尾也不越过面板右边界（悬浮给完整内容）
+            val right = leftX + panelWidth - 6
+            auditLines.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, line ->
+                val y = startY + i * rowHeight
+                var cursor = leftX + 6
+                context.drawTextWithShadow(textRenderer, line.time, cursor, y + 7, 0x888888)
+                cursor += textRenderer.getWidth(line.time) + 6
+                val who = TextUtil.truncateString(line.who, (right - cursor - 40).coerceAtLeast(0))
+                context.drawTextWithShadow(textRenderer, who, cursor, y + 7, GOLD_COLOR)
+                cursor += textRenderer.getWidth(who) + 6
+                if (line.added.isNotEmpty() && cursor < right) {
+                    val text = TextUtil.truncateString(line.added, right - cursor)
+                    context.drawTextWithShadow(textRenderer, text, cursor, y + 7, 0x55FF55)
+                    cursor += textRenderer.getWidth(text) + 6
+                }
+                if (line.removed.isNotEmpty() && cursor < right) {
+                    context.drawTextWithShadow(textRenderer,
+                        TextUtil.truncateString(line.removed, right - cursor), cursor, y + 7, 0xFF5555)
                 }
             }
         }
 
-        if (filtered.size > maxVisible()) {
+        if (displayCount() > maxVisible()) {
             context.drawCenteredTextWithShadow(textRenderer,
-                "${scrollOffset + 1}-${minOf(scrollOffset + maxVisible(), filtered.size)} / ${filtered.size}",
+                "${scrollOffset + 1}-${minOf(scrollOffset + maxVisible(), displayCount())} / ${displayCount()}",
                 centerX, height - 49, 0x888888)
         }
 
-        // 悬停行提示：行内节点串会被截断，这里给完整节点列表（含英文长标签）
+        // 悬停行提示：行内文本会被截断，这里给完整内容
         if (hoveredRow >= 0) {
             val actualIdx = scrollOffset + hoveredRow
-            if (actualIdx in filtered.indices) {
-                renderRowTooltip(context, filtered[actualIdx], mouseX, mouseY)
+            if (currentTab == 0) {
+                if (actualIdx in filtered.indices) {
+                    val entry = filtered[actualIdx]
+                    renderTooltip(context, listOf(
+                        entry.playerName,
+                        if (entry.nodes.isEmpty()) "-" else entry.nodes.joinToString(", ") { nodeLabel(it) }
+                    ), mouseX, mouseY)
+                }
+            } else if (actualIdx in auditLines.indices) {
+                renderTooltip(context, auditLines[actualIdx].tooltip, mouseX, mouseY)
             }
         }
     }
 
-    private fun renderRowTooltip(context: DrawContext, entry: PermissionListDataPayload.Entry, mouseX: Int, mouseY: Int) {
-        val lines = mutableListOf(entry.playerName)
-        lines.add(if (entry.nodes.isEmpty()) "-" else entry.nodes.joinToString(", ") { nodeLabel(it) })
-
+    private fun renderTooltip(context: DrawContext, lines: List<String>, mouseX: Int, mouseY: Int) {
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
 
@@ -686,7 +829,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
             }
             return true
         }
-        scrollOffset = (scrollOffset - verticalAmount.toInt()).coerceIn(0, maxOf(0, filtered.size - maxVisible()))
+        scrollOffset = (scrollOffset - verticalAmount.toInt()).coerceIn(0, maxOf(0, displayCount() - maxVisible()))
         rebuildRowButtons()
         return true
     }

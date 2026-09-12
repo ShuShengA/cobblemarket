@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.client
 
+import com.shusheng.cobblemarket.permission.PermissionAuditPayload
 import com.shusheng.cobblemarket.permission.PermissionListDataPayload
 import com.shusheng.cobblemarket.screen.PermissionScreen
 import com.shusheng.cobblemarket.permission.PermissionSnapshotPayload
@@ -492,6 +493,13 @@ object CobbleMarketClient {
         registerS2C(PermissionListDataPayload.ID, PermissionListDataPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 (MinecraftClient.getInstance().currentScreen as? PermissionScreen)?.onPermissionList(payload)
+            }
+        }
+
+        // 权限变更审计（权限管理界面的「变更记录」页签）
+        registerS2C(PermissionAuditPayload.ID, PermissionAuditPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                (MinecraftClient.getInstance().currentScreen as? PermissionScreen)?.onPermissionAudit(payload)
             }
         }
 

@@ -61,6 +61,45 @@ data class PermissionSnapshotPayload(
 
 // ── 权限管理界面（仅 OP）的协议 ──
 
+/** C2S：请求权限变更审计（界面「变更记录」页签） */
+class RequestPermissionAuditPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestPermissionAuditPayload>(CobbleMarket.id("request_permission_audit"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestPermissionAuditPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestPermissionAuditPayload() }
+        )
+    }
+}
+
+/** S2C：权限变更审计记录（新的在前；节点为短名字符串） */
+data class PermissionAuditPayload(val rows: List<Row>) : CustomPayload {
+
+    data class Row(val timestamp: Long, val operator: String, val targetName: String, val added: String, val removed: String)
+
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<PermissionAuditPayload>(CobbleMarket.id("permission_audit"))
+        val CODEC: PacketCodec<PacketByteBuf, PermissionAuditPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeInt(p.rows.size)
+                p.rows.forEach { r ->
+                    b.writeLong(r.timestamp)
+                    b.writeString(r.operator)
+                    b.writeString(r.targetName)
+                    b.writeString(r.added)
+                    b.writeString(r.removed)
+                }
+            },
+            { b ->
+                val n = b.readInt()
+                PermissionAuditPayload(List(n) { Row(b.readLong(), b.readString(), b.readString(), b.readString(), b.readString()) })
+            }
+        )
+    }
+}
+
 /** C2S：请求权限列表（界面打开时） */
 class RequestPermissionListPayload : CustomPayload {
     override fun getId() = ID
@@ -163,6 +202,15 @@ object PermissionNetwork {
 
         registerS2CType(PermissionListDataPayload.ID, PermissionListDataPayload.CODEC)
 
+        registerS2CType(PermissionAuditPayload.ID, PermissionAuditPayload.CODEC)
+        registerC2S(RequestPermissionAuditPayload.ID, RequestPermissionAuditPayload.CODEC) { _, player ->
+            if (!MarketPermissions.isOp(player)) return@registerC2S
+            val rows = PermissionFileLogger.readRecent().map {
+                PermissionAuditPayload.Row(it.timestamp, it.operator, it.targetName, it.added, it.removed)
+            }
+            sendToPlayer(player, PermissionAuditPayload(rows))
+        }
+
         // ── 权限管理界面：**仅 OP**（权限授予是服主专属，不下放给任何管理节点，否则能自我提权）──
 
         registerC2S(RequestPermissionListPayload.ID, RequestPermissionListPayload.CODEC) { _, player ->
@@ -192,7 +240,8 @@ object PermissionNetwork {
                 }
                 // 只收合法节点：防客户端伪造未知节点写进表里
                 val nodes = payload.nodes.filter { it in MarketPermissions.ALL }.toSet()
-                PermissionState.get(server).setNodes(targetUuid, targetName, nodes, player.name.string)
+                val (added, removed) = PermissionState.get(server).setNodes(targetUuid, targetName, nodes, player.name.string)
+                PermissionFileLogger.log(player.name.string, targetName, targetUuid, added, removed)
                 refresh(server, targetUuid)              // 目标在线则即时刷新其按钮状态
                 sendToPlayer(player, listDataOf(server)) // 回刷新后的列表
             }
@@ -203,7 +252,10 @@ object PermissionNetwork {
             if (!RequestThrottle.allow(player.uuid, "remove_player_permissions", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
-                PermissionState.get(server).removePlayer(payload.playerUuid)
+                // 界面「删除」= 收回该玩家全部节点，同样记账（removed 为其原本的全部节点）
+                PermissionState.get(server).removePlayer(payload.playerUuid)?.let {
+                    PermissionFileLogger.log(player.name.string, it.playerName, it.playerUuid, emptySet(), it.nodes)
+                }
                 refresh(server, payload.playerUuid)
                 sendToPlayer(player, listDataOf(server))
             }
