@@ -155,7 +155,7 @@
   "cobblemarket.op.scfg_apply_fee_tip": "申请时一次性支付的费用（进入准备金池；0 = 免费）",
   "cobblemarket.op.scfg_pair_tip": "同一买卖双方在此窗口内成交达到上限笔数后，该对后续成交不再计入借款额度（防互买对刷）",
   "cobblemarket.op.scfg_cooldown_tip": "成交后此时间内不计入借款额度（额度增长延后到账，防「现刷现借」组团套现；0 = 关闭）",
-  "cobblemarket.op.scfg_deposit_rate_tip": "活期存款日利率（0.0001 = 每天万分之 1 = 年化约 3.65%），利息从准备金池支出",
+  "cobblemarket.op.scfg_deposit_rate_tip": "活期存款日利率（0.0001 = 每天万分之 1 = 年化约 3.65%），按实际存入时长计息、不满一天按比例；利息从准备金池支出",
   "cobblemarket.op.scfg_deposit_clamped": "日利率已自动钳制为 %s（贷款方案护栏）",
   "cobblemarket.op.scfg_ip_debt_limit": "同IP待还上限",
   "cobblemarket.op.scfg_min_balance": "自动还款最低保留",

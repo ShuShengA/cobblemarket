@@ -28,7 +28,7 @@ Loans and Meowth Pay share one credit pool; deposits are independent of the cred
 ## 3. Demand deposits
 
 - Deposits go into the **reserve pool** (funding real lending) and earn a **daily interest rate** (default 0.0001 = 0.01% per day ≈ 3.65% per year, configurable)
-- Interest = principal × daily rate × full days; it is **settled in real time on view/deposit/withdraw** (partial days earn nothing), and deposit/withdraw operations book accrued interest into the principal
+- Interest = principal × daily rate × the actual deposit duration; it is **settled in real time on view/deposit/withdraw** (partial days are prorated), and deposit/withdraw operations book accrued interest into the principal
 - Withdrawals are available anytime (interest included) back to the wallet; in item-currency mode any overflow goes to pending claims
 - **Interest is paid from the reserve pool**: a negative pool (owner debt) still pays, with the red admin-panel alert visible
 - Deposits don't touch the credit limit and have no attack surface (it's the player's own money)
@@ -155,7 +155,7 @@ Three common causes: ① the trade is still inside the **credit growth cooldown*
 
 ### When is deposit interest settled?
 
-In real time on view/deposit/withdraw (principal × daily rate × full days); deposit/withdraw operations book accrued interest into the principal. Partial days earn nothing.
+In real time on view/deposit/withdraw (principal × daily rate × the actual deposit duration); deposit/withdraw operations book accrued interest into the principal. Partial days are prorated.
 
 ### Are same-IP players punished for each other?
 

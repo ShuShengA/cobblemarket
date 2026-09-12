@@ -378,11 +378,21 @@ class FinanceState private constructor() : PersistentState() {
 
     // ── 活期存款（批次 7.5：存钱进池吃利息，取款池出；利息从池出，池负照发=服主兜底） ──
 
-    /** 距上次结算的利息（实算）：本金 × 日息 × 整天数；调用方结算后 resetSettle 刷新基准 */
+    /**
+     * 距上次结算的利息（实算）：本金 × 日息 × 实际时长占比；调用方结算后刷新基准。
+     *
+     * ⚠ 必须按实际时长比例算，不能改成「除以一天取整天数」：
+     * 存取都会把 lastSettleAt 重置为 now，取整天数会把不满一天的零头直接丢掉 ——
+     * 玩家存 23 小时 59 分与存 1 分钟收益相同（都是 0），频繁存取的玩家永远拿不到利息。
+     * 同理 elapsed 与 DAY_MS_LONG 都要先转 Double，否则整数除法会截断成 0。
+     */
     fun depositInterest(uuid: UUID, now: Long): Long {
         val account = deposits[uuid] ?: return 0
-        val days = ((now - account.lastSettleAt).coerceAtLeast(0)) / LoanRecord.DAY_MS_LONG
-        return Math.round(account.principal.toDouble() * CobbleMarketConfig.dailyDepositRate * days.toDouble())
+        val elapsed = (now - account.lastSettleAt).coerceAtLeast(0L)
+        return Math.round(
+            account.principal.toDouble() * CobbleMarketConfig.dailyDepositRate *
+                (elapsed.toDouble() / LoanRecord.DAY_MS_LONG.toDouble())
+        )
     }
 
     /** 存款余额（本金 + 未结算利息；界面展示用，不改状态） */
