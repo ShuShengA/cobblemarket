@@ -1,34 +1,42 @@
 # CobbleMarket
 
-A player-to-player trading market for Cobblemon servers — buy and sell Pokémon and items, with listing fees, per-player bans, transaction history, expired listing returns, and optional CobbleDollars / Cobblemon Economy currency support.
+A player-to-player trading market for Cobblemon servers, available for both **Fabric and NeoForge** — buy and sell Pokémon and items, with listing fees, per-player bans, transaction history, expired listing returns, and four currency modes (Cobblemon Economy / CobbleDollars / Impactor / item currency).
 
-一个面向 Cobblemon 服务器的玩家交易市场模组：支持精灵与物品的挂单买卖，包含手续费、封禁、交易历史、过期退回，并支持 CobbleDollars / Cobblemon Economy 虚拟货币。
+一个面向 Cobblemon 服务器的玩家交易市场模组，**同时提供 Fabric 与 NeoForge 两个版本**：支持精灵与物品的挂单买卖，包含手续费、封禁、交易历史、过期退回，并支持四种货币（Cobblemon Economy / CobbleDollars / Impactor / 物品货币）。
 
 ## Features
 
-- **Pokémon Market** — list Pokémon from your party or PC, browse with filters (species, shiny, gender, type, exact IV match, price/level/newest sorting) and paging
-- **Item Market** — sell items from your inventory; buyers purchase any quantity; item blacklist for admins
-- **Listing Fees** — configurable percentage fee for Pokémon and item listings
-- **Listing Expiry** — configurable duration (default 14 days); expired listings go to a return list you can claim anytime (partial claims supported)
-- **Pending Balance** — seller earnings accrue in a pending balance; collect anytime, safely kept even if your inventory is full
-- **Ban System** — ban players from trading with `/market ban <player> [duration] [reason]`; bans only restrict trading, never freeze assets
-- **Transaction History** — in-game history screen plus CSV logs under `config/cobblemarket/history/`
-- **Currency** — item currency (diamond by default, configurable) or virtual currency (**Cobblemon Economy** → **CobbleDollars**, auto-detected)
-- **Admin Tools** — cancel any listing, Pokémon blacklist (species + IV), item blacklist
+- **Pokémon Market** — sell Pokémon from your party or PC and browse every listing on the server
+- **Item Market** — sell items from your inventory; buyers purchase any quantity
+- **Auction House** — timed auctions with live bidding and automatic settlement
+- **Buy Orders** — post what you want and your price; other players deliver it
+- **Listing Fees & Returns** — configurable fees and expiry, with returns and pending earnings you can claim anytime
+- **Transaction History** — in-game history screen plus CSV ledgers for server owners
+- **Meowth Bank (optional finance system)** — credit loans, installment payments, deposits and card credentials (off by default)
+- **Currency** — item currency (diamond by default) or virtual currency (**Cobblemon Economy** / **CobbleDollars** / **Impactor**); Cobblemon Economy is Fabric-only, so NeoForge offers CobbleDollars / Impactor / item currency
+- **Ban System** — ban players from trading; bans restrict trading only and never freeze assets
+- **Admin Tools** — blacklists, price limits, bans, forced delistings and server config
+- **Client Settings** — per-player switches for animations, the balance HUD and the cursor
 - **Open the market** — press `K`, use `/market gui`, or the Cobblemon Smartphone app (auto-integrated)
+
+For the full feature list, see the [CHANGELOG](CHANGELOG_EN.md).
 
 ## 功能特性
 
-- **精灵市场** — 从队伍或 PC 上架精灵；支持物种、闪光、性别、属性、IV 精确匹配、价格/等级/最新排序与分页
-- **物品市场** — 背包物品上架，买家可购买任意数量；管理员可设物品黑名单
-- **上架手续费** — 精灵与物品分别可配置费率
-- **挂单过期** — 可配置天数（默认 14 天）；过期进入退回列表，随时可领取（支持部分领取）
-- **待领余额** — 卖家收益进入待领余额，随时领取，背包满也不会丢
-- **封禁系统** — `/market ban <玩家> [时长] [原因]` 封禁交易；封禁只限制交易，不冻结资产
-- **交易历史** — 游戏内历史界面 + `config/cobblemarket/history/` 下的 CSV 日志
-- **货币** — 物品货币（默认钻石，可配置）或虚拟货币（**Cobblemon Economy** → **CobbleDollars**，自动检测）
-- **管理员工具** — 取消任意挂单、精灵黑名单（物种+IV）、物品黑名单
+- **精灵市场** — 从队伍或 PC 上架精灵，并可浏览全服挂单
+- **物品市场** — 背包物品上架，买家可购买任意数量
+- **拍卖场** — 限时拍卖，实时竞价与自动结算
+- **求购单** — 挂出需求与价格，由其他玩家交付
+- **上架与退回** — 可配置的手续费与过期时限，退回与待领收益随时可领
+- **交易历史** — 游戏内历史界面 + 面向服主的 CSV 账本
+- **喵喵银行（可选金融系统）** — 信用借贷、分期支付、存款与卡片凭证（默认关闭）
+- **货币** — 物品货币（默认钻石）或虚拟货币（**Cobblemon Economy** / **CobbleDollars** / **Impactor**）；Cobblemon Economy 仅 Fabric 平台有，NeoForge 为 CobbleDollars / Impactor / 物品三种
+- **封禁系统** — 封禁玩家交易；只限制交易，不冻结资产
+- **管理工具** — 黑名单、价格限制、封禁、强制下架与服务器配置
+- **客户端设置** — 动画、余额 HUD 与鼠标光标等玩家侧开关
 - **打开市场** — 按 `K`、`/market gui`，或 Cobblemon Smartphone 应用（自动集成）
+
+完整功能列表见 [CHANGELOG](CHANGELOG.md)。
 
 ## Screenshots / 截图
 
@@ -38,21 +46,23 @@ A player-to-player trading market for Cobblemon servers — buy and sell Pokémo
 ## Requirements / 安装要求
 
 - Minecraft 1.21.1
-- [Fabric API](https://modrinth.com/mod/fabric-api)
-- [Fabric Language Kotlin](https://modrinth.com/mod/fabric-language-kotlin)
-- [Cobblemon](https://modrinth.com/mod/cobblemon) ≥ 1.7.0
-- Optional: [CobbleDollars](https://modrinth.com/mod/cobbledollars) or [Cobblemon Economy](https://modrinth.com/mod/cobblemon-economy) for virtual currency; Cobblemon Smartphone for the smartphone app entry
+- [Cobblemon](https://modrinth.com/mod/cobblemon) ≥ 1.8.0
+- **Fabric**: [Fabric API](https://modrinth.com/mod/fabric-api) + [Fabric Language Kotlin](https://modrinth.com/mod/fabric-language-kotlin)
+- **NeoForge**: [Kotlin for Forge](https://modrinth.com/mod/kotlin-for-forge) + Cobblemon (NeoForge build) — Architectury API is **not** required
+- Optional: [CobbleDollars](https://modrinth.com/mod/cobbledollars), [Cobblemon Economy](https://modrinth.com/mod/cobblemon-economy) (Fabric only) or [Impactor](https://modrinth.com/mod/impactor) for virtual currency; Cobblemon Smartphone for the smartphone app entry
 
 ## Commands / 命令
 
 | Command | Description |
 |---|---|
 | `/market gui` | Open the market entry screen |
-| `/market ban <player>` | Ban a player permanently from trading |
-| `/market ban <player> <duration>` | Ban for a duration, e.g. `7d`, `12h`, `30m` |
-| `/market ban <player> <duration> <reason>` | Ban with a reason shown to the player |
-| `/market unban <player>` | Remove a ban |
-| `/market banlist` | List all active bans |
+| `/market on` \| `/market off` | Turn the whole market on / off (emergency master switch) |
+| `/market ban` \| `unban` \| `banlist` | Ban a player from trading (`<player> [duration] [reason]`, e.g. `7d`, `12h`, `30m`), lift a ban, list active bans |
+| `/market card` | Manage Meow·Purple Gold Card / Meow·Black Gold Card (`give` / `revoke` / `list`) |
+| `/market loan clear` | Revoke a player's bad debts |
+| `/market reload` | Apply config file edits without restarting (currency settings still need a restart) |
+
+Admin commands require OP; `/market loan clear` is owner-only.
 
 ## Data Safety / 数据安全
 
@@ -70,16 +80,18 @@ Market data is stored in `world/data/cobblemarket*.dat`. On every startup, the m
 
 ## Configuration / 配置
 
-Config file: `config/cobblemarket.json` (generated on first launch)
+Config file: `config/cobblemarket.json` (generated on first launch). Most settings can be edited in-game — the **Server Config** screen (at the bottom of the admin panel) covers fees, limits, durations and switches, and the **Meowth Bank Config** screen reached from there covers the finance section. Editing the file by hand works too; `/market reload` applies the changes without a restart, except for currency settings, which still need one.
 
 Full currency system guide (server owners): [中文](docs/currency_zh.md) / [English](docs/currency_en.md)
+Meowth Bank finance guide (server owners): [中文](docs/meowth_bank_zh.md) / [English](docs/meowth_bank_en.md)
 
 | Key | Default | Description |
 |---|---|---|
 | `currency.cobblemonEconomy` | auto | Prefer Cobblemon Economy's currency API (auto-enabled when the mod is installed; its built-in bridge can route to CobbleDollars/Impactor — set `main_currency` in the cobeco config to share one balance with CobbleDollars) |
 | `currency.cobecoCurrency` | `POKE` | cobeco settlement currency: `POKE`=PokeDollars, `PCO`=PokeCoins (only used when `cobblemonEconomy=true`) |
 | `currency.cobbledollars` | auto | Use CobbleDollars currency (auto-enabled when the mod is installed; ignored when `cobblemonEconomy=true`) |
-| `currency.item` | `minecraft:diamond` | Currency item ID when not using either virtual currency |
+| `currency.impactor` | false | Talk to Impactor's economy API directly, on either loader (ignored when `cobblemonEconomy` or `cobbledollars` is on; never auto-enabled — set `true` explicitly) |
+| `currency.item` | `minecraft:diamond` | Currency item ID when no virtual currency is enabled |
 | `pokemonListingFeePercent` | 5.0 | Pokémon listing fee percentage (0 = no fee) |
 | `itemListingFeePercent` | 5.0 | Item listing fee percentage (0 = no fee) |
 | `maxPokemonListingsPerPlayer` | 0 | Max active Pokémon listings per player (0 = unlimited) |
