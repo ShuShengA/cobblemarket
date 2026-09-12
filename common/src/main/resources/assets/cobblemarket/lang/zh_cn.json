@@ -555,6 +555,7 @@
   "cobblemarket.loan.insufficient_limit": "可借上限不够（当前上限：%s %s）",
   "cobblemarket.loan.ip_limit": "本网络的欠款上限为 %s %s，本次借款会超出（含现有欠款），请减少金额或先还清部分欠款",
   "cobblemarket.loan_history.title": "借款历史",
+  "cobblemarket.loan_history.folder_path": "借贷账本（CSV）存放于：%s",
   "cobblemarket.loan_history.all_title": "全部借款历史",
   "cobblemarket.loan_history.empty": "暂无借款记录",
   "cobblemarket.loan_history.periods": "%s/%s期",

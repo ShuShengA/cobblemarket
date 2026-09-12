@@ -77,13 +77,31 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
         if (!showAll || client?.player?.hasPermissionLevel(2) != true) return
         val leftX = width / 2 - panelWidth / 2
         val tabY = 24
+        // info 图标（左上角）：借贷账本只在服务端落盘，路径靠悬停提示告知（原「打开文件夹」按钮
+        // 只会打开客户端自己的目录，服务器环境无意义 —— 与交易历史界面同一套做法）
+        val infoBtn = NineSliceButton(
+            leftX, 18, 16, 16,
+            Text.literal(""),
+            { },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/info.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+        )
+        infoBtn.setTooltip(
+            net.minecraft.client.gui.tooltip.Tooltip.of(
+                Text.translatable("cobblemarket.loan_history.folder_path", "config/cobblemarket/credit")
+            )
+        )
+        tabButtons.add(infoBtn)
+        addDrawableChild(infoBtn)
+
+        // 双 tab 居中：两个 50 宽 + 4 间隙 = 104，从中心两侧排开
         val btn1 = NineSliceButton(
-            leftX + 5, tabY, 50, 14,
+            width / 2 - 52, tabY, 50, 14,
             Text.literal((if (!showBadDebtOnly) "● " else "") + Text.translatable("cobblemarket.loan_history.tab_all").string),
             { switchTab(false) }
         )
         val btn2 = NineSliceButton(
-            leftX + 59, tabY, 50, 14,
+            width / 2 + 2, tabY, 50, 14,
             Text.literal((if (showBadDebtOnly) "● " else "") + Text.translatable("cobblemarket.loan_history.tab_bad_debt").string),
             { switchTab(true) }
         )
