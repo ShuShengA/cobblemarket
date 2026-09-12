@@ -38,11 +38,6 @@ For the full feature list, see the [CHANGELOG](CHANGELOG_EN.md).
 
 完整功能列表见 [CHANGELOG](CHANGELOG.md)。
 
-## Screenshots / 截图
-
-<!-- TODO: add screenshots -->
-<!-- 待补充：市场界面、上架界面、交易历史等截图 -->
-
 ## Requirements / 安装要求
 
 - Minecraft 1.21.1
