@@ -155,7 +155,7 @@
   "cobblemarket.op.scfg_apply_fee_tip": "One-time fee paid on application (goes to the reserve pool; 0 = free)",
   "cobblemarket.op.scfg_pair_tip": "Once the same buyer-seller pair reaches this many trades within the window, their later trades no longer count toward the credit limit (anti-wash-trading)",
   "cobblemarket.op.scfg_cooldown_tip": "Trades don't count toward the credit limit until this delay passes (the limit grows on a delay, closing the farm-then-borrow window; 0 = off)",
-  "cobblemarket.op.scfg_deposit_rate_tip": "Daily interest rate for demand deposits (0.0001 = 0.01% per day ≈ 3.65% per year), paid from the reserve pool",
+  "cobblemarket.op.scfg_deposit_rate_tip": "Daily interest rate for demand deposits (0.0001 = 0.01% per day ≈ 3.65% per year). Accrues by actual deposit time, prorated for partial days; paid from the reserve pool",
   "cobblemarket.op.scfg_deposit_clamped": "Rate auto-clamped to %s (plan guard)",
   "cobblemarket.op.scfg_ip_debt_limit": "IP debt cap",
   "cobblemarket.op.scfg_min_balance": "Auto-repay min balance",
