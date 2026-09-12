@@ -1144,7 +1144,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
         val startY = getListStartY()
         // 分割线贴搜索行底部（y=66）：tab 行让出 2px 后搜索框在 50~66，线画 66~67 不重叠
-        context.fill(leftX, startY - 2, leftX + panelWidth, startY - 1, 0xFF555555.toInt())
+        context.fill(leftX + panelWidth / 2 - 150, startY - 2, leftX + panelWidth / 2 + 150, startY - 1, 0xFF555555.toInt())
 
         if (displayCount() == 0) {
             context.drawCenteredTextWithShadow(textRenderer,

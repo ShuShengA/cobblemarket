@@ -104,7 +104,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
         val dateFormat = SimpleDateFormat("MM-dd HH:mm")
         val panelHalf = panelWidth / 2
         // 按钮行与第一条记录之间的分割线（按钮底 34、列表顶 48 → 线在正中 41）
-        context.fill(width / 2 - panelHalf, 41, width / 2 + panelHalf, 42, 0xFF555555.toInt())
+        context.fill(width / 2 - 150, 41, width / 2 + 150, 42, 0xFF555555.toInt())
         // Bottom border is 16px tall; content should end before height-48
         val maxVisible = maxOf(3, (height - 48 - startY) / rowHeight)
 

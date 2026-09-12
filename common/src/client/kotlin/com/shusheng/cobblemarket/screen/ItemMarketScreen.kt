@@ -435,10 +435,10 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         }
 
         val dividerY = getGridStartY() - 4
-        context.fill(leftX, dividerY, leftX + panelWidth, dividerY + 1, 0xFF555555.toInt())
+        context.fill(leftX + panelWidth / 2 - 150, dividerY, leftX + panelWidth / 2 + 150, dividerY + 1, 0xFF555555.toInt())
         // 底部分割线：最多显示行数的网格最后一行下方 4px（与顶部对称），分页按钮在其与背景底边之间居中
         val gridBottom = getGridStartY() + rows() * (slotSize + gap)
-        context.fill(leftX, gridBottom + 4, leftX + panelWidth, gridBottom + 5, 0xFF555555.toInt())
+        context.fill(leftX + panelWidth / 2 - 150, gridBottom + 4, leftX + panelWidth / 2 + 150, gridBottom + 5, 0xFF555555.toInt())
 
         val cols = columns()
         val rows = rows()

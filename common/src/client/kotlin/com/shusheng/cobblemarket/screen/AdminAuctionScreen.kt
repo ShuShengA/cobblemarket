@@ -473,6 +473,8 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             Text.translatable("cobblemarket.op.auction").formatted(Formatting.GOLD),
             centerX, 20, 0xFFFFFF)
 
+        // 顶部分割线：列表起始上方 4px（与其他列表界面一致；此前这屏漏画了）
+        context.fill(leftX + panelWidth / 2 - 150, getListStartY() - 4, leftX + panelWidth / 2 + 150, getListStartY() - 3, 0xFF555555.toInt())
         val startY = getListStartY()
         val visibleRows = getMaxVisibleRows()
         val filtered = filteredEntries()

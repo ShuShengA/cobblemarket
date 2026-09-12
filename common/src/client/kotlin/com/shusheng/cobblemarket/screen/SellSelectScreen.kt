@@ -506,7 +506,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         val lx = width / 2 - 148
         val panelW = 296
         val iconSize = 20
-        val startY = 96
+        val startY = 100
+        // 顶部分割线：列表起始上方 4px（与其他列表界面一致；此前这屏漏画了）
+        context.fill(lx - 2, startY - 4, lx + 298, startY - 3, 0xFF555555.toInt())
         // IV 输入变化时重建过滤缓存（原 filteredList 每次调用都先 syncIvFields，缓存后在此统一检测）
         if (syncIvFields()) rebuildFiltered()
         val filtered = filteredList()
@@ -1008,7 +1010,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         if (syncIvFields()) rebuildFiltered()
         val filtered = filteredList()
         val lx = width / 2 - 148
-        val startY = 96
+        val startY = 100
         val maxVisible = maxOf(0, (height - startY - 48) / rowHeight)
         if (mx in lx.toDouble()..(lx + 296).toDouble() && my >= startY) {
             val row = ((my - startY) / rowHeight).toInt() + scrollOffset

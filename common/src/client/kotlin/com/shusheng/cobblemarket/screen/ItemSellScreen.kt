@@ -276,7 +276,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
             centerX, 20, 0xFFFFFF)
 
         val dividerY = getListStartY() - 4
-        context.fill(leftX, dividerY, leftX + panelWidth, dividerY + 1, 0xFF555555.toInt())
+        context.fill(leftX + panelWidth / 2 - 150, dividerY, leftX + panelWidth / 2 + 150, dividerY + 1, 0xFF555555.toInt())
 
         if (items.isEmpty()) {
             context.drawCenteredTextWithShadow(textRenderer,

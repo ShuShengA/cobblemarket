@@ -711,7 +711,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
 
         // 列表起始 y 随页签走（页签 2 没有搜索行，分割线与首行整段上提）
         val startY = listStartY()
-        context.fill(leftX, startY - 4, leftX + panelWidth, startY - 3, 0xFF555555.toInt())
+        context.fill(leftX + panelWidth / 2 - 150, startY - 4, leftX + panelWidth / 2 + 150, startY - 3, 0xFF555555.toInt())
 
         if (displayCount() == 0) {
             context.drawCenteredTextWithShadow(textRenderer,

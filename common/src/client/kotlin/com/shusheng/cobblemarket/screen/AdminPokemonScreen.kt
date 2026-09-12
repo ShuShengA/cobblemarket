@@ -283,7 +283,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     }
 
     // 84→88：卖家搜索框底边(80)与顶部分割线(80)贴死，列表起始下移 4px 留出间隙
-    private fun getListStartY() = if (filterExpanded) 160 else 88
+    // 展开时用 164 而非 160：闪光/排序按钮排在 y=136、高 20（底边 156），而顶部分割线画在 listStartY-4，
+    // 160 的话分割线正好压在按钮底边上（收起时不建这些按钮所以看不出问题）
+    private fun getListStartY() = if (filterExpanded) 164 else 88
     // 预留 72 = 分页按钮高 20 + 4 空隙 + 底部边框切片 16 + 背景底边下空隙（照精灵市场：按钮不压背景底部边框）
     private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 72) / 24)
 
@@ -609,10 +611,10 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         val rowHeight = 24
         val visibleRows = getMaxVisibleRows()
 
-        context.fill(leftX, dividerY, leftX + panelWidth, dividerY + 1, 0xFF555555.toInt())
+        context.fill(leftX + panelWidth / 2 - 150, dividerY, leftX + panelWidth / 2 + 150, dividerY + 1, 0xFF555555.toInt())
         // 底部分割线：最多显示行数的最后一行下方 4px（与顶部 startY-4 对称），分页按钮在其与背景底边之间居中
         val listBottom = getListStartY() + visibleRows * rowHeight
-        context.fill(leftX, listBottom + 4, leftX + panelWidth, listBottom + 5, 0xFF555555.toInt())
+        context.fill(leftX + panelWidth / 2 - 150, listBottom + 4, leftX + panelWidth / 2 + 150, listBottom + 5, 0xFF555555.toInt())
 
         val displayList = displayedListings()
 

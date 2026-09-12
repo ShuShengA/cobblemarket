@@ -241,10 +241,10 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
             centerX, 32, 0xFFFFFF)
 
         val dividerY = 44
-        context.fill(leftX, dividerY, leftX + panelWidth, dividerY + 1, 0xFF555555.toInt())
+        context.fill(leftX + panelWidth / 2 - 150, dividerY, leftX + panelWidth / 2 + 150, dividerY + 1, 0xFF555555.toInt())
         // 底部分割线：网格最后一行下方 4px（照物品市场分页布局），按钮在其与背景底边之间居中
         val gridBottom = getGridStartY() + rows() * (slotSize + gap)
-        context.fill(leftX, gridBottom + 4, leftX + panelWidth, gridBottom + 5, 0xFF555555.toInt())
+        context.fill(leftX + panelWidth / 2 - 150, gridBottom + 4, leftX + panelWidth / 2 + 150, gridBottom + 5, 0xFF555555.toInt())
 
         if (items.isEmpty() && loaded) {
             context.drawCenteredTextWithShadow(textRenderer,

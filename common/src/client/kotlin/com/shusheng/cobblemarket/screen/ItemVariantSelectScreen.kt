@@ -124,9 +124,9 @@ class ItemVariantSelectScreen(
 
         val startY = 36
         // 列表顶部分割线（照物品市场：网格上方 4px 处，颜色一致）
-        context.fill(lx, startY - 2, lx + 296, startY - 1, 0xFF555555.toInt())
+        context.fill(lx - 2, startY - 2, lx + 298, startY - 1, 0xFF555555.toInt())
         // 底部分割线：固定在确认按钮上方 4px（按钮贴底 height-84），列表行多时限高滚动
-        context.fill(lx, height - 89, lx + 296, height - 88, 0xFF555555.toInt())
+        context.fill(lx - 2, height - 89, lx + 298, height - 88, 0xFF555555.toInt())
         val rowH = 26
 
         // 列表区：顶部 startY 到底部确认按钮上方 4px；形态组多时滚轮翻动，行与固定按钮永不重叠

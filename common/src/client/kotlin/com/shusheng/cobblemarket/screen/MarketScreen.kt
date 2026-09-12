@@ -1136,11 +1136,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // 上分隔线若落在展开列表的覆盖范围内则不画（它也在 children 之后，画了会刺穿列表）；
         // 下分隔线在列表下方、不受影响，照常画。行内容见下面的逐行判断
         if (filterListOpen.isEmpty() || dividerY >= filterListBottomY) {
-            context.fill(leftX, dividerY, leftX + panelWidth, dividerY + 1, 0xFF555555.toInt())
+            context.fill(leftX + panelWidth / 2 - 150, dividerY, leftX + panelWidth / 2 + 150, dividerY + 1, 0xFF555555.toInt())
         }
         // 底部分割线：最多显示行数的最后一行下方 4px（与顶部 startY-4 对称），分页按钮在其与背景底边之间居中
         val listBottom = getListStartY() + visibleRows * rowHeight
-        context.fill(leftX, listBottom + 4, leftX + panelWidth, listBottom + 5, 0xFF555555.toInt())
+        context.fill(leftX + panelWidth / 2 - 150, listBottom + 4, leftX + panelWidth / 2 + 150, listBottom + 5, 0xFF555555.toInt())
 
         val displayList = displayedListings()
 

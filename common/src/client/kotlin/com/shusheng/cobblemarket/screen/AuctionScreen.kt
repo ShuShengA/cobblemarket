@@ -1257,7 +1257,7 @@ class AuctionScreen(
         // 上分隔线若落在展开列表的覆盖范围内则不画（它也在 children 之后，画了会刺穿列表）；
         // 被列表盖住的行见下面的逐行判断。规则悬停面板是浮层，由末尾那条路径统一处理
         if (filterListOpen.isEmpty() || startY - 2 >= filterListBottomY) {
-            context.fill(leftX, startY - 2, leftX + panelWidth, startY - 1, 0xFF555555.toInt())
+            context.fill(leftX + panelWidth / 2 - 150, startY - 2, leftX + panelWidth / 2 + 150, startY - 1, 0xFF555555.toInt())
         }
 
         val displayList = filtered()
