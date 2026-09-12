@@ -25,6 +25,10 @@
 - **Scrollable settings panel**: scroll with the mouse wheel when the options overflow one screen
 - **Celebration animations are now entirely the player's choice**: the server-side master switch was removed from the server config; the switches in each player's settings decide everything
 
+#### Interface
+
+- **Custom mouse cursor**: the pointer becomes the mod's own icon while you are in the market's screens, and switches back to the system cursor when you leave; can be turned off in Settings
+
 ### Fixes
 
 - **List area going blank while a filter dropdown is open**: opening the type/ability/nature filter in the Pokemon market, the auction house or the sell-select screen made every listing row disappear; only the rows actually covered by the dropdown are now skipped, and rows below it render as usual

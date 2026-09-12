@@ -850,7 +850,7 @@ private fun hudBalanceRaw(client: MinecraftClient): Long {
     return total
 }
 
-private fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean =
+internal fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean =
     s is MarketScreen || s is SellSelectScreen || s is HistoryScreen || s is MarketEntryScreen ||
         s is ItemMarketScreen || s is ItemSellScreen || s is ItemReturnScreen || s is PokemonReturnScreen ||
         s is BuyConfirmScreen || s is AdminScreen || s is AdminPokemonScreen || s is AdminItemScreen || s is AdminBanScreen ||

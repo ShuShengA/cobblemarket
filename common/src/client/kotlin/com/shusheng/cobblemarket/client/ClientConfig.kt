@@ -85,6 +85,11 @@ object ClientConfig {
     var hoverPreviewItem: Boolean = true
         private set
 
+    /** 自定义鼠标光标：在本模组的界面里用模组自带的图标代替系统箭头（默认开）。
+     *  默认开是因为绝大多数玩家用的是 Windows 默认箭头；但用系统光标主题的玩家会看着别扭，故留开关 */
+    var customCursor: Boolean = true
+        private set
+
     /** 余额 HUD 位置（归一化 0~1：x 是 HUD 左缘在「屏宽 − HUD 宽」中的占比，0=贴左、1=贴右；y 同理按高度）。
      *  默认 (0, 0) = 左上角（老配置无此字段即保持原行为）。由「设置 → 余额HUD位置设置 → 自定义」拖动写入 */
     var balanceHudX: Float = 0f
@@ -123,6 +128,7 @@ object ClientConfig {
             hoverPreview = data["hoverPreview"] as? Boolean ?: true
             // 物品侧独立开关：无字段（旧版本升级）同样按新默认「开」
             hoverPreviewItem = data["hoverPreviewItem"] as? Boolean ?: true
+            customCursor = data["customCursor"] as? Boolean ?: true
             // 位置：无字段（旧版本升级）按左上角；越界值钳回 0~1
             balanceHudX = ((data["balanceHudX"] as? Double)?.toFloat() ?: 0f).coerceIn(0f, 1f)
             balanceHudY = ((data["balanceHudY"] as? Double)?.toFloat() ?: 0f).coerceIn(0f, 1f)
@@ -183,6 +189,11 @@ object ClientConfig {
         save()
     }
 
+    fun setCustomCursor(v: Boolean) {
+        customCursor = v
+        save()
+    }
+
     fun setBalanceHudMode(v: BalanceHudMode) {
         balanceHudMode = v
         save()
@@ -234,6 +245,7 @@ object ClientConfig {
                             "iconAnimMode" to "精灵图标展示模式：0=完全静态，1=动态（默认，播放 Cobblemon 内置待机动画）；可在市场入口界面右下角的设置里改 / Pokemon icon mode: 0=static, 1=dynamic (default, plays Cobblemon's built-in idle animation); editable via the gear button on the market entry screen",
                             "hoverPreview" to "悬停精灵行时在屏幕左侧显示该精灵的放大预览（个人设置，可在市场入口界面右下角的设置里改）/ Show a large preview of the Pokemon on the left side of the screen when hovering its row (personal setting, editable via the gear button on the market entry screen)",
                             "hoverPreviewItem" to "悬停物品格时在屏幕左侧显示该物品的放大预览（个人设置，与精灵侧各自独立，同上）/ Show a large preview of the item on the left side of the screen when hovering its slot (personal setting, independent from the Pokemon side, same place)",
+                            "customCursor" to "在本模组的界面里用模组自带的图标代替系统鼠标箭头（个人设置，默认开启；用系统光标主题的玩家可关掉）/ Replace the system mouse arrow with the mod's own icon while in this mod's screens (personal setting, on by default; turn off if you use a custom system cursor theme)",
                             "balanceHudX" to "余额 HUD 水平位置（0=贴左，1=贴右，0.5=居中）；由设置里的「余额HUD位置设置 → 自定义」拖动写入，手改请填 0~1 / Balance HUD horizontal position (0=left, 1=right, 0.5=centered); written by dragging in Settings → Balance HUD position → Custom; keep within 0~1 if editing by hand",
                             "balanceHudY" to "余额 HUD 垂直位置（0=贴顶，1=贴底，0.5=居中）；同样由拖动写入 / Balance HUD vertical position (0=top, 1=bottom, 0.5=centered); likewise written by dragging",
                             "_note" to "庆祝动画完全由玩家自己决定（市场入口右下角齿轮 → 设置）：服务端不再有总开关，本文件的开关就是唯一口径 / Celebration animations are entirely up to each player (gear button at the bottom-right of the market entry screen → Settings): there is no server-side master switch any more, these switches are the only thing that matters"
@@ -250,6 +262,7 @@ object ClientConfig {
                         "iconAnimMode" to iconAnimMode.ordinal,
                         "hoverPreview" to hoverPreview,
                         "hoverPreviewItem" to hoverPreviewItem,
+                        "customCursor" to customCursor,
                         "balanceHudX" to balanceHudX,
                         "balanceHudY" to balanceHudY
                     )

@@ -48,6 +48,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsItemMarketButton: NineSliceButton? = null
     private var settingsItemAuctionButton: NineSliceButton? = null
     private var settingsItemHoverPreviewButton: NineSliceButton? = null
+    private var settingsCursorButton: NineSliceButton? = null
     private var settingsDropButton: NineSliceButton? = null
     private var settingsEntryDropButton: NineSliceButton? = null
     private var settingsPikachuLoopButton: NineSliceButton? = null
@@ -442,6 +443,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsBalanceHudPosButton = balanceHudPosBtn
         addSettingsRow(balanceHudPosBtn, textBtnX, Text.translatable("cobblemarket.settings.balance_hud_position"), newGroup = false)
 
+        // 自定义鼠标光标：放最下方、独立成组（用系统光标主题的玩家可以关掉）
+        val cursorBtn = makeSwitchButton(ClientConfig.customCursor) { toggleCustomCursor() }
+        settingsCursorButton = cursorBtn
+        addSettingsRow(cursorBtn, switchX, toggleText("cobblemarket.settings.custom_cursor", ClientConfig.customCursor))
+
         // done 固定在底部，不参与滚动
         addDrawableChild(NineSliceButton(
             centerX - 28, settingsDialogY() + SETTINGS_DONE_Y, 56, 20,
@@ -459,6 +465,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsItemMarketButton = null
         settingsItemAuctionButton = null
         settingsItemHoverPreviewButton = null
+        settingsCursorButton = null
         settingsDropButton = null
         settingsEntryDropButton = null
         settingsPikachuLoopButton = null
@@ -527,6 +534,12 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         ClientConfig.setHoverPreviewItem(!ClientConfig.hoverPreviewItem)
         settingsItemHoverPreviewButton?.iconLeft = switchIconFor(ClientConfig.hoverPreviewItem)
         showSettingsToast("cobblemarket.settings.hover_preview_item", ClientConfig.hoverPreviewItem)
+    }
+
+    private fun toggleCustomCursor() {
+        ClientConfig.setCustomCursor(!ClientConfig.customCursor)
+        settingsCursorButton?.iconLeft = switchIconFor(ClientConfig.customCursor)
+        showSettingsToast("cobblemarket.settings.custom_cursor", ClientConfig.customCursor)
     }
 
     private fun toggleDropOverflow() {
