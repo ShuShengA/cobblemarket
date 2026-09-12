@@ -28,13 +28,23 @@ class HistoryScreen(private val showAll: Boolean = false) :
         super.init()
         val leftX = width / 2 - panelWidth / 2
 
-        // Open history folder button (top-left, all-history only)
+        // info 图标（左上角，仅全部交易历史）：模组多跑在服务器上，「打开文件夹」只会打开
+        // 自己客户端的目录、没有实际意义（2026-09-13 用户拍板）—— 改成纯信息展示，
+        // 悬停显示 CSV 账本在本机的存放路径，不再做点击动作
         if (showAll) {
-            addDrawableChild(NineSliceButton(
-                leftX, 18, 70, 16,
-                Text.translatable("cobblemarket.history.open_folder"),
-                { openHistoryFolder() }
-            ))
+            val infoBtn = NineSliceButton(
+                leftX, 18, 16, 16,
+                Text.literal(""),
+                { },
+                iconLeft = Identifier.of("cobblemarket", "textures/gui/info.png"),
+                iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+            )
+            infoBtn.setTooltip(
+                net.minecraft.client.gui.tooltip.Tooltip.of(
+                    Text.translatable("cobblemarket.history.folder_path", historyFolderPath())
+                )
+            )
+            addDrawableChild(infoBtn)
         }
 
         // Back button (top-right)
@@ -53,14 +63,11 @@ class HistoryScreen(private val showAll: Boolean = false) :
         }
     }
 
-    private fun openHistoryFolder() {
-        try {
-            val dir = configDir().resolve("cobblemarket/history")
-            dir.toFile().mkdirs()
-            Util.getOperatingSystem().open(dir)
-        } catch (_: Exception) {
-        }
-    }
+    /**
+     * CSV 账本的存放路径（仅用于 info 悬停提示，不做打开动作）。
+     * 只给「从 config 开始」的相对路径 —— 绝对路径又长又带着用户目录，服主照着 config 目录找就行。
+     */
+    private fun historyFolderPath(): String = "config/cobblemarket/history"
 
     fun onHistoryData(payload: HistoryDataPayload) {
         entries = payload.entries
@@ -104,7 +111,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
         val dateFormat = SimpleDateFormat("MM-dd HH:mm")
         val panelHalf = panelWidth / 2
         // 按钮行与第一条记录之间的分割线（按钮底 34、列表顶 48 → 线在正中 41）
-        context.fill(width / 2 - 150, 41, width / 2 + 150, 42, 0xFF555555.toInt())
+        drawPanelDivider(context, width / 2, 41)
         // Bottom border is 16px tall; content should end before height-48
         val maxVisible = maxOf(3, (height - 48 - startY) / rowHeight)
 

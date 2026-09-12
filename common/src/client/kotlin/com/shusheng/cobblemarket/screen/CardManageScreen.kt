@@ -165,7 +165,7 @@ class CardManageScreen : Screen(Text.translatable("cobblemarket.card.manage_titl
         val startY = 48
         val maxVisible = maxOf(3, (height - 48 - startY) / rowHeight)
         // 按钮行与第一条记录之间的分割线（照借款历史：按钮底 34、列表顶 48 → 线在正中 41）
-        context.fill(width / 2 - 150, 41, width / 2 + 150, 42, 0xFF555555.toInt())
+        drawPanelDivider(context, width / 2, 41)
         val visible = entries.drop(scrollOffset).take(maxVisible)
         if (visible.isEmpty() && loaded) {
             context.drawCenteredTextWithShadow(

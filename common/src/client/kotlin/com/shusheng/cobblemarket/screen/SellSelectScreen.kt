@@ -508,7 +508,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         val iconSize = 20
         val startY = 100
         // 顶部分割线：列表起始上方 4px（与其他列表界面一致；此前这屏漏画了）
-        context.fill(lx - 2, startY - 4, lx + 298, startY - 3, 0xFF555555.toInt())
+        drawPanelDivider(context, lx + 148, startY - 4)
         // IV 输入变化时重建过滤缓存（原 filteredList 每次调用都先 syncIvFields，缓存后在此统一检测）
         if (syncIvFields()) rebuildFiltered()
         val filtered = filteredList()

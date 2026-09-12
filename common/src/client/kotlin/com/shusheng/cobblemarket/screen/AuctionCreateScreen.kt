@@ -773,7 +773,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         }
 
         val startY = getListStartY()
-        context.fill(leftX + panelWidth / 2 - 150, startY - 2, leftX + panelWidth / 2 + 150, startY - 1, 0xFF555555.toInt())
+        drawPanelDivider(context, leftX + panelWidth / 2, startY - 2)
 
         if (currentTab == 0) {
             if (!loaded) {

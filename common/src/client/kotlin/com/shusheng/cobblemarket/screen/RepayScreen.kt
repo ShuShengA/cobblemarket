@@ -143,7 +143,7 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
         val panelHalf = panelWidth / 2
         val leftX = width / 2 - panelHalf
         // 按钮行与第一条记录之间的分割线（照 LoanHistoryScreen）
-        context.fill(leftX + panelWidth / 2 - 150, 41, leftX + panelWidth / 2 + 150, 42, 0xFF555555.toInt())
+        drawPanelDivider(context, leftX + panelWidth / 2, 41)
         val maxVisible = getMaxVisibleRows()
 
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, entries.size - maxVisible))

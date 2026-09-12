@@ -216,6 +216,24 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
     /** 页签按钮（两个 80×14，间隔 4px，居中；选中态用 ● 前缀，照项目 tab 惯例） */
     private fun rebuildTabButtons() {
         val centerX = width / 2
+        // info 图标（左上角）：权限审计只在服务端落盘，路径只能靠提示告知 ——
+        // 与交易历史 / 借贷账本两个界面同一套做法（页签居中后左边正好空出来）
+        val infoBtn = NineSliceButton(
+            // y=18 与另外两个界面（交易历史 / 借贷账本）的 info 统一，也和返回按钮同一水平线
+            // 面板宽 300 → 左边缘 = centerX - 150，这里 +2 留边距
+            centerX - 150, 18, 16, 16,
+            Text.literal(""),
+            { },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/info.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+        )
+        infoBtn.setTooltip(
+            net.minecraft.client.gui.tooltip.Tooltip.of(
+                Text.translatable("cobblemarket.perm.folder_path", "config/cobblemarket/permissions")
+            )
+        )
+        addDrawableChild(infoBtn)
+
         val grantsBtn = NineSliceButton(centerX - 82, tabRowY, 80, 14, Text.literal(""), { switchTab(0) })
         val auditBtn = NineSliceButton(centerX + 2, tabRowY, 80, 14, Text.literal(""), { switchTab(1) })
         grantsTabButton = grantsBtn
@@ -711,7 +729,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
 
         // 列表起始 y 随页签走（页签 2 没有搜索行，分割线与首行整段上提）
         val startY = listStartY()
-        context.fill(leftX + panelWidth / 2 - 150, startY - 4, leftX + panelWidth / 2 + 150, startY - 3, 0xFF555555.toInt())
+        drawPanelDivider(context, leftX + panelWidth / 2, startY - 4)
 
         if (displayCount() == 0) {
             context.drawCenteredTextWithShadow(textRenderer,

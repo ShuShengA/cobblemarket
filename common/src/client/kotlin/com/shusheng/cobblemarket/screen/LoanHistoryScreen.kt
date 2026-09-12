@@ -79,13 +79,32 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
         if (!showAll || !ClientPermissionCache.has(MarketPermissions.FINANCE)) return
         val leftX = width / 2 - panelWidth / 2
         val tabY = 24
+        // info 图标（左上角）：借贷账本都在服务端跑，路径只能靠提示告知 —— 与交易历史界面同一套做法
+        val infoBtn = NineSliceButton(
+            // y=18（不用 tabY=24）：16 高的图标放 24 会顶到 y=41 的分割线上（只剩 1px），
+            // 18 与交易历史界面的 info 同高，离分割线 7px
+            leftX, 18, 16, 16,
+            Text.literal(""),
+            { },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/info.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+        )
+        infoBtn.setTooltip(
+            net.minecraft.client.gui.tooltip.Tooltip.of(
+                Text.translatable("cobblemarket.loan_history.folder_path", "config/cobblemarket/credit")
+            )
+        )
+        tabButtons.add(infoBtn)
+        addDrawableChild(infoBtn)
+
+        // 双 tab 居中：两个 50 宽 + 4 间隙 = 104，从中心两侧排开
         val btn1 = NineSliceButton(
-            leftX + 5, tabY, 50, 14,
+            width / 2 - 52, tabY, 50, 14,
             Text.literal((if (!showBadDebtOnly) "● " else "") + Text.translatable("cobblemarket.loan_history.tab_all").string),
             { switchTab(false) }
         )
         val btn2 = NineSliceButton(
-            leftX + 59, tabY, 50, 14,
+            width / 2 + 2, tabY, 50, 14,
             Text.literal((if (showBadDebtOnly) "● " else "") + Text.translatable("cobblemarket.loan_history.tab_bad_debt").string),
             { switchTab(true) }
         )
@@ -289,7 +308,7 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
         val dateFormat = SimpleDateFormat("MM-dd HH:mm")
         val panelHalf = panelWidth / 2
         // 按钮行与第一条记录之间的分割线（按钮底 34、列表顶 48 → 线在正中 41）
-        context.fill(width / 2 - 150, 41, width / 2 + 150, 42, 0xFF555555.toInt())
+        drawPanelDivider(context, width / 2, 41)
         val maxVisible = maxOf(3, (height - 48 - startY) / rowHeight)
 
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayEntries().size - maxVisible))

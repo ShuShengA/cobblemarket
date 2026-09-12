@@ -611,10 +611,10 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         val rowHeight = 24
         val visibleRows = getMaxVisibleRows()
 
-        context.fill(leftX + panelWidth / 2 - 150, dividerY, leftX + panelWidth / 2 + 150, dividerY + 1, 0xFF555555.toInt())
+        drawPanelDivider(context, leftX + panelWidth / 2, dividerY)
         // 底部分割线：最多显示行数的最后一行下方 4px（与顶部 startY-4 对称），分页按钮在其与背景底边之间居中
         val listBottom = getListStartY() + visibleRows * rowHeight
-        context.fill(leftX + panelWidth / 2 - 150, listBottom + 4, leftX + panelWidth / 2 + 150, listBottom + 5, 0xFF555555.toInt())
+        drawPanelDivider(context, leftX + panelWidth / 2, listBottom + 4)
 
         val displayList = displayedListings()
 

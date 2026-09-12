@@ -247,7 +247,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         // 联想列表打开时跳过分隔线与封禁列表（画在 children 之后，会刺穿联想按钮）
         if (suggestionsOpen) return
 
-        context.fill(leftX + panelWidth / 2 - 150, listStartY - 4, leftX + panelWidth / 2 + 150, listStartY - 3, 0xFF555555.toInt())
+        drawPanelDivider(context, leftX + panelWidth / 2, listStartY - 4)
 
         if (bans.isEmpty()) {
             context.drawCenteredTextWithShadow(textRenderer,
