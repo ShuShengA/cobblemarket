@@ -59,6 +59,17 @@ For the full feature list, see the [CHANGELOG](CHANGELOG_EN.md).
 | `/market reload` | Apply config file edits without restarting (currency settings still need a restart) |
 
 Admin commands work for OPs, or for players granted the matching permission node; `/market perm` and `/market loan clear` stay owner-only and cannot be delegated.
+| 命令 | 说明 |
+|---|---|
+| `/market gui` | 打开市场入口界面 |
+| `/market on` \| `/market off` | 开启 / 关闭整个市场（紧急总开关）|
+| `/market ban` \| `unban` \| `banlist` | 封禁玩家交易（`<玩家> [时长] [理由]`，如 `7d`、`12h`、`30m`）、解封、列出生效中的封禁 |
+| `/market card` | 管理喵·紫金卡 / 喵·黑金卡（`give` / `revoke` / `list`）|
+| `/market perm` | 管理权限节点（`grant` / `revoke` / `list`）|
+| `/market loan clear` | 撤销某玩家的坏账 |
+| `/market reload` | 应用配置文件的修改、免重启（货币配置仍需重启）|
+
+管理命令 OP 可用，或由被授予对应权限节点的玩家使用；`/market perm` 与 `/market loan clear` 仅服主可用、不可分派。
 
 ## Data Safety / 数据安全
 
@@ -84,10 +95,10 @@ Meowth Bank finance guide (server owners): [中文](docs/meowth_bank_zh.md) / [E
 | Key | Default | Description |
 |---|---|---|
 | `currency.cobblemonEconomy` | auto | Prefer Cobblemon Economy's currency API (auto-enabled when the mod is installed; its built-in bridge can route to CobbleDollars/Impactor — set `main_currency` in the cobeco config to share one balance with CobbleDollars) |
-| `currency.cobecoCurrency` | `POKE` | cobeco settlement currency: `POKE`=PokeDollars, `PCO`=PokeCoins (only used when `cobblemonEconomy=true`) |
+| `currency.cobecoCurrency` \| `POKE` | cobeco settlement currency: `POKE`=PokeDollars, `PCO`=PokeCoins (only used when `cobblemonEconomy=true`) |
 | `currency.cobbledollars` | auto | Use CobbleDollars currency (auto-enabled when the mod is installed; ignored when `cobblemonEconomy=true`) |
 | `currency.impactor` | false | Talk to Impactor's economy API directly, on either loader (ignored when `cobblemonEconomy` or `cobbledollars` is on; never auto-enabled — set `true` explicitly) |
-| `currency.item` | `minecraft:diamond` | Currency item ID when no virtual currency is enabled |
+| `currency.item` \| `minecraft:diamond` | Currency item ID when no virtual currency is enabled |
 | `pokemonListingFeePercent` | 5.0 | Pokémon listing fee percentage (0 = no fee) |
 | `itemListingFeePercent` | 5.0 | Item listing fee percentage (0 = no fee) |
 | `maxPokemonListingsPerPlayer` | 0 | Max active Pokémon listings per player (0 = unlimited) |
