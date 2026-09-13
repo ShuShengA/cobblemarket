@@ -22,14 +22,14 @@ Loans and Meowth Pay share one credit pool; deposits are independent of the cred
 
 - The reserve pool is the single gateway for all loan money (`FinanceState`, persisted across restarts)
 - Lending / Meowth Pay → money leaves the pool (to the player/seller); principal and interest repayments return 100% to the pool
-- **The pool may go negative** (= owner debt, shown as a red alert in the admin panel); owners never need to pre-fund it
+- **The pool may go negative** (= owner debt, shown as a red alert in the Admin Panel); owners never need to pre-fund it
 - Bad-debt write-off does not move the pool (the money already left at lending time; the loss is already reflected)
 
 ## 3. Demand deposits
 
 - Deposits go into the **reserve pool** (funding real lending) and earn a **daily interest rate** (default 0.0001 = 0.01% per day ≈ 3.65% per year, configurable)
 - Interest = principal × daily rate × the actual deposit duration; it is **settled in real time on view/deposit/withdraw** (partial days are prorated), and deposit/withdraw operations book accrued interest into the principal
-- Withdrawals are available anytime (interest included) back to the wallet; in item-currency mode any overflow goes to pending claims
+- Withdrawals are available anytime (interest included) back to the wallet; in item-currency mode any overflow goes to Pending Claims
 - **Interest is paid from the reserve pool**: a negative pool (owner debt) still pays, with the red admin-panel alert visible
 - Deposits don't touch the credit limit and have no attack surface (it's the player's own money)
 - **With the master switch off, deposits are blocked but withdrawals always work** (players' money is never locked up)
@@ -135,7 +135,7 @@ High-limit credential items — holders get a **fixed borrowing limit** (indepen
 
 - **All Loans** screen (Meowth Bank bottom-right, OP only): the server-wide loan ledger with each borrower's latest IP (alt spotting); a "Bad Debt" tab filters all bad debts; a "Revoke" button per bad-debt row (5-second cooldown confirmation dialog)
 - **`/market loan clear <player>`**: the command twin of the revoke button
-- **Admin panel alert line**: current reserve pool + total bad debt; a negative pool (= owner debt) renders the whole line red
+- **Admin Panel alert line**: current reserve pool + total bad debt; a negative pool (= owner debt) renders the whole line red
 - **Audit ledgers**: `config/cobblemarket/credit/` contains `loan_records_<date>_<lang>.csv` and `repayment_records_<date>_<lang>.csv` — Chinese and English copies, split by day, append-only; repayments split principal/interest with method (manual/auto/early)
 - **Automatic cleanup**: repaid loans are purged from state 90 days after settlement (the audit CSVs keep full history forever), preventing save bloat
 
@@ -177,12 +177,12 @@ By **net deposit**: net deposit = demand deposit balance − outstanding debt (b
 
 - Borrow → yellow reminder one day before each due date → auto-deduct on the due date (sufficient balance) or red overdue notice (insufficient)
 - Sanctions escalate at 7/14/30 days; repayment downgrades them in real time
-- Check the reserve pool and bad-debt totals in the admin panel; reconcile via the audit CSVs
+- Check the reserve pool and bad-debt totals in the Admin Panel; reconcile via the audit CSVs
 
 ## 11. Safety and trust boundaries
 
 - The reserve pool never creates money: lending leaves the pool, repayment returns to it, and bad debt only marks (the money already left)
-- Bad debt = the owner takes the loss (money taken and never repaid); a negative pool = owner debt, red-alerted in the admin panel
+- Bad debt = the owner takes the loss (money taken and never repaid); a negative pool = owner debt, red-alerted in the Admin Panel
 - IP-based anti-abuse stops casual alts, not dedicated attackers behind proxies; the credit formula (new accounts have zero limit, volume-backed) + the credit growth cooldown + the sanction chain are the main defenses
 - Organized wash-trading cash-outs are squeezed by three layers: volume cost (1 credit needs 2 of real trades), same-pair detection (raises the cost), and the growth cooldown (closes the quick in-and-out window) — patient long-term farming can't be fully sealed off, and the limit max is the owner's risk-exposure dial
 - Turning the master switch off only blocks **new** lending — existing loans keep running, mirroring the market switch philosophy ("block new trades, never lock up assets")

@@ -88,7 +88,7 @@ Cobblemon Economy 自己的配置（`world/config/cobblemon-economy/` 下）中�
 | 仅 Impactor（无 Cobblemon Economy） | — | Impactor 主货币账户（市场直连，需 `currency.impactor=true`） |
 | 都不装 | — | 背包物品（默认钻石） |
 
-> 涉及 Cobblemon Economy 的行仅适用于 **Fabric** 平台（NeoForge 上 Cobblemon Economy 不可用，对应行自动跳过，可用的只有 CobbleDollars / Impactor 直连 / 物品）。
+> 涉及 Cobblemon Economy 的行仅适用于 **Fabric** 平台（NeoForge 上 Cobblemon Economy 不可用，对应行自动跳过，可用的只有 CobbleDollars / Impactor 直连/物品）。
 
 ## 五、常见问题
 
@@ -132,7 +132,7 @@ Cobblemon Economy 自己的配置（`world/config/cobblemon-economy/` 下）中�
 ## 六、安全与信任边界
 
 - 市场本身**从不凭空产生货币**：所有资金变动都是账面流转（买家付款、退款、卖家收款）
-- 虚拟货币由上游模组（Cobblemon Economy / CobbleDollars / Impactor）管理，若上游存在刷钱漏洞，市场无法识别"非法来源"的货币——这是上游依赖的信任边界，不是市场的缺陷
+- 虚拟货币由上游模组（Cobblemon Economy / CobbleDollars / Impactor）管理，若上游存在刷钱漏洞，市场无法识别「非法来源」的货币——这是上游依赖的信任边界，不是市场的缺陷
 - 紧急应对：把两个虚拟货币开关都设为 `false`，切换回物品货币模式，市场功能不受影响
 
 详见 [docs/security/SECURITY_zh.md](security/SECURITY_zh.md) 第 7 节「货币系统依赖边界」。

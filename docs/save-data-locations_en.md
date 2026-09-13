@@ -10,8 +10,8 @@ All data is persisted via Minecraft's PersistentState mechanism in the server wo
 | Feature | File (under `<world save>/data/`) |
 |---|---|
 | Pokémon market (listings + pending returns + pending balance) | `cobblemarket.dat` |
-| Item market | `cobblemarket_items.dat` |
-| Buy orders | `cobblemarket_buy_orders.dat` |
+| Item Market | `cobblemarket_items.dat` |
+| Buy Orders | `cobblemarket_buy_orders.dat` |
 | Auctions | `cobblemarket_auctions.dat` |
 | Pokémon blacklist | `cobblemarket_pokemon_blacklist.dat` |
 | Item blacklist | `cobblemarket_item_blacklist.dat` |
