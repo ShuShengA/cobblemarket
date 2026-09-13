@@ -60,6 +60,7 @@
 - The minimum-increment hint on the auction creation screen now shows the server's configured default amount (e.g. "blank = 100") instead of a bare "blank = default"
 - Project license changed from MIT to GPL-3.0 (releases up to 1.0.1 remain under MIT)
 - The in-game mod list now links to the official website, source code and issue tracker (the Fabric "Website" button previously pointed at the CurseForge download page)
+- The Links section of the in-game mod list shows the CurseForge download page again (it was dropped along with the switch to the official website)
 
 ### Fixes
 
