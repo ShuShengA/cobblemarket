@@ -12,6 +12,13 @@
 		"sources": "https://github.com/ShuShengA/cobblemarket",
 		"issues": "https://github.com/ShuShengA/cobblemarket/issues"
 	},
+	"custom": {
+		"modmenu": {
+			"links": {
+				"modmenu.curseforge": "https://www.curseforge.com/minecraft/mc-mods/cobblemarket"
+			}
+		}
+	},
 	"license": "GPL-3.0-only",
 	"icon": "assets/cobblemarket/icon.png",
 	"environment": "*",
