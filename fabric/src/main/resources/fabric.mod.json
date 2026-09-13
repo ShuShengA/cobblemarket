@@ -8,7 +8,9 @@
 		"Shu_ShengA"
 	],
 	"contact": {
-		"homepage": "https://www.curseforge.com/minecraft/mc-mods/cobblemarket"
+		"homepage": "https://shushenga.github.io/CobbleMarket-Website/",
+		"sources": "https://github.com/ShuShengA/cobblemarket-fabric",
+		"issues": "https://github.com/ShuShengA/cobblemarket-fabric/issues"
 	},
 	"license": "GPL-3.0-only",
 	"icon": "assets/cobblemarket/icon.png",
