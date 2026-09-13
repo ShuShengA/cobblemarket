@@ -2142,8 +2142,14 @@ object MarketNetwork {
                     val stack = main[i]
                     if (itemsEqualForTrading(stack, targetStack)) {
                         val r = minOf(remaining, stack.count)
+                        val before = stack.count
                         stack.decrement(r)
-                        remaining -= r
+                        // 按「实际扣掉多少」计，而不是「计划扣多少」：若外部模组在数据层拦截了
+                        // decrement（静默不生效），实际扣减量为 0 → remaining 不减 → 最终触发下面的
+                        // 防御性回滚，不会出现「挂单已入库但物品仍在背包」的虚增。
+                        // ⚠ 钳在 [0, r]：静默失败时段 0；外部往该栈加物品时（before-count 可能为负）段 r
+                        //   —— 后者保证与改动前行为一致（直接相减会把回滚量算成负数）。
+                        remaining -= (before - stack.count).coerceIn(0, r)
                         if (remaining <= 0) break
                     }
                 }
