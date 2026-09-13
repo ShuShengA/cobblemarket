@@ -261,3 +261,25 @@
 - Expired listings are now taken down immediately (they used to linger for over ten seconds and could still be bought)
 - Blacklist and price limit screens kept stale remove/edit buttons after searching (only cleared after clicking or scrolling): row buttons now rebuild immediately as the search text changes
 - Searching by name in the item market and the admin "all Pokémon/items" screens only filtered the current page (targets on other pages couldn't be found without paging manually): search is now server-side global filtering, matching the Pokémon market — results appear on the first page immediately
+
+## 1.0.0-beta.3 (released)
+
+### New Feature
+
+- **Price limits**: a new "Price Limits" entry on the admin panel, managed with Pokémon / item tabs — Pokémon rules cover four dimensions (species, blank = all Pokémon; IV count, any or exactly 0~6 perfect IVs; shiny filter, any / shiny only / non-shiny only; min / max price, either side optional); item rules are item + min / max price. When several rules match, the strictest intersection applies and over-limit prices are rejected at listing time (existing listings and purchases are unaffected); rules can be added, edited (adding the same combination overwrites it) and deleted; the data persists and is included in the save backup chain
+- **Shiny filter for the Pokémon blacklist**: blacklist entries gain a shiny filter (any / shiny only / non-shiny only), enforced at both listing and purchase time; existing data is treated as "any"
+
+### Changes
+
+- Shiny markers unified across the mod: gold ★ = shiny, white ☆ = non-shiny / off. The filter buttons in the market, sell-select, admin listings, price limits and blacklist screens are now symbols only (labels removed)
+- In-row shiny markers changed from white ☆ to gold ★ (market / admin / sell-select / returned-Pokémon rows, tooltips, confirmation dialog info lines, market icon badges)
+- Row icons and the add-dialog preview model on the price limit and blacklist screens now render with shiny colours when the rule is "shiny only"
+- Language files cleaned up: removed a duplicate shiny-button key and the unused `sell.shiny`
+
+## 1.0.0-beta.2 (released)
+
+### Fixes
+
+- **IV filter input debounce**: typing "31" quickly could leave the list stuck on the results for IV 3; requests are now debounced and sent once typing stops
+- **Ban messages follow the client language**: on an English server, Chinese players used to see English ban notices
+- **Pagination button position**: the pagination buttons on all listed-item screens no longer press against the panel border
