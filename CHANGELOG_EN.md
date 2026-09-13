@@ -39,21 +39,15 @@
 
 ### Changes
 
-- The admin panel now shows a separator line above its bottom buttons, and the Back button moved to the top-right (consistent with other screens)
 - The market master switch and Server Config entries moved from the market entry screen to the bottom of the admin panel; OPs now stop/resume the market and edit the server config from there
-- The admin panel entry on the market entry screen is now an icon-only button — the "OP Only" label is gone, and hovering it shows "Admin Panel"
-- The Server Config screen now shows a right-side scrollbar when the list overflows, so you can tell how much is left
 
 ### Fixes
 
-- **Sleeping poses missing on dedicated servers**: they worked in singleplayer, but on a server no Pokemon slept at night; the server now sends the rest schedule to clients, so both behave the same
-- **Gyarados and other species lay asleep around the clock**: their data means "may doze off at any time of day", which we read as "always asleep"; now split by doze frequency — frequently drowsy species (Snorlax, Abra…) sleep at night, rarely-sleeping ones (Gyarados, Onix…) no longer show a sleeping pose
 - **List area going blank while a filter dropdown is open**: opening the type/ability/nature filter in the Pokemon market, the auction house or the sell-select screen made every listing row disappear; only the rows actually covered by the dropdown are now skipped, and rows below it render as usual
 - **Uneven text height in Pokemon detail panels**: in the info lines of hover tooltips / buy confirmation / pending returns (type, ball, nature…), the leading Chinese characters could sit slightly higher than the rest of the line; the line is now aligned
 - **Chinese punctuation**: Chinese colons across the UI and config descriptions are now full-width (English text keeps half-width)
 - **Enchanted and renamed items rendered incorrectly in the auction house and its admin panel**: enchanted books appeared as plain books and renamed items showed their default name in those views; they now render from the item's full data (both list rows and detail dialogs)
 - **Held item icons ignored enchantments and custom names**: when a Pokemon's held item was enchanted or renamed, its icon in lists and detail views showed the plain item; the icons now render from the item's full data (auction house, buy orders, sell-select and admin panels)
-- **Held items missing from icons and animations**: Pokemon shown in list icons, hover previews and the celebration animation always appeared empty-handed; they now hold the item in their hand or mouth. Pokemon whose held item is hidden in the Cobblemon summary stay empty-handed everywhere as well
 - **Missing space after colons in English labels**: some English labels (Type / Ball / Nature / Ability / IVs) had no space after the colon, sticking to their value; now fixed
 
 ## 1.1.0 (in development, unreleased)
@@ -115,8 +109,6 @@
 - Auction house, admin auction, Pokémon Market, admin Pokémon list and pending-return rows move the avatar, level and countdown further right, leaving a gap after the size badge; Pokémon names in the Pokémon Market, admin list and pending returns are truncated with an ellipsis past 6 CJK characters; the inline bid count in auction rows now sits flush against the price, with a tighter gap to the bid button
 - The minimum-increment hint on the auction creation screen now shows the server's configured default amount (e.g. "blank = 100") instead of a bare "blank = default"
 - Project license changed from MIT to GPL-3.0 (releases up to 1.0.1 remain under MIT)
-- The in-game mod list now links to the official website, source code and issue tracker (the Fabric "Website" button previously pointed at the CurseForge download page)
-- The Links section of the in-game mod list shows the CurseForge download page again (it was dropped along with the switch to the official website)
 
 ### Fixes
 
