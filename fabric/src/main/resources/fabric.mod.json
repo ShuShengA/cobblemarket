@@ -9,8 +9,8 @@
 	],
 	"contact": {
 		"homepage": "https://shushenga.github.io/CobbleMarket-Website/",
-		"sources": "https://github.com/ShuShengA/cobblemarket-fabric",
-		"issues": "https://github.com/ShuShengA/cobblemarket-fabric/issues"
+		"sources": "https://github.com/ShuShengA/cobblemarket",
+		"issues": "https://github.com/ShuShengA/cobblemarket/issues"
 	},
 	"license": "GPL-3.0-only",
 	"icon": "assets/cobblemarket/icon.png",
