@@ -122,6 +122,7 @@
 - **Held-item line in the auction bid and admin auction detail dialogs had no icon and a grey label** (now consistent with every other screen: white label plus item icon)
 - **Prices missing their currency unit in the price-limit screen**: range / min / max prices in list rows and hovers now show a unit (₽ for virtual currencies, the item name for item currencies)
 - **Long item names squeezed out the count in Auction House and admin auction rows**: an over-long name truncated the "×N" suffix along with it, hiding how many are for sale — the count now always shows in full and the name truncates on its own
+- **Item icons showed no durability bar**: items in lists and detail dialogs never showed a durability bar, so players could unknowingly pay full price for a nearly-broken tool or piece of gear — damaged items now show the vanilla durability bar, and the tooltip adds a "Durability: X / Y" line (no Shift needed)
 
 ## 1.0.1 (released)
 
