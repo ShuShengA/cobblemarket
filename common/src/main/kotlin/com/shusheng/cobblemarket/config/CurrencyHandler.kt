@@ -60,7 +60,8 @@ object CurrencyHandler {
         CobbleMarket.LOGGER.warn(
             "⚠ Cobblemon Economy 与当前 Cobblemon（1.8+）不兼容：Cobblemon 1.8 把图鉴字段 " +
                 "PokedexEntryProgress.CAUGHT 改名为 OWNED，而 Cobblemon Economy（截至 0.0.17）仍引用旧字段名 —— " +
-                "玩家【选择初始精灵】时会抛 NoSuchFieldError 并崩掉服务器。" +
+                "玩家【获得、升级或进化精灵】时（选初始精灵 / 捕捉 / 孵化 / 交易 / 升级 / 进化 / 形态变化）" +
+                "都会抛 NoSuchFieldError 并崩掉服务器。" +
                 "建议把 currency.cobblemonEconomy 改为 false，改用 CobbleDollars / Impactor / 物品货币。" +
                 "（本模组不会替你自动切换货币 —— 那会让玩家余额对不上。）"
         )
