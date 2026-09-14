@@ -175,7 +175,7 @@ object ItemCelebrationAnimation {
         // ⚠ 若实测物品不跟着变淡（某些版本里 ItemRenderer 会重置 shader 颜色），
         //   改用「上浮 + 缩小」代替淡出，别在这里死磕。
         RenderSystem.setShaderColor(1f, 1f, 1f, alpha)
-        context.drawItem(current, 0, 0)
+        drawItemWithBar(context, current, 0, 0)
         RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
         matrices.pop()
 

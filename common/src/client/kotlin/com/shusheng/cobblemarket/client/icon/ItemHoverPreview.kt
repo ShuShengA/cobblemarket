@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.client.icon
 
 import com.mojang.blaze3d.systems.RenderSystem
 import com.shusheng.cobblemarket.client.ClientConfig
+import com.shusheng.cobblemarket.client.drawItemWithBar
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.item.ItemStack
@@ -46,7 +47,7 @@ object ItemHoverPreview {
         matrices.push()
         matrices.translate((centerX - 8f * s).toDouble(), (centerY - 8f * s).toDouble(), 0.0)
         matrices.scale(s, s, 1f)
-        context.drawItem(stack, 0, 0)
+        drawItemWithBar(context, stack, 0, 0)
         matrices.pop()
 
         // 大图走 immediate buffer，立刻提交，别留到帧末尾跟别人混在一起

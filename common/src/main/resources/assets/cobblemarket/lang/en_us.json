@@ -69,6 +69,7 @@
   "cobblemarket.item.listed": "Listed %d × %s for %d %s each!",
   "cobblemarket.item.listed_fee": "Listed %d × %s for %d %s each! Fee of %d %s charged.",
   "cobblemarket.item.tooltip_price": "Unit price: ",
+  "cobblemarket.item.durability": "Durability: %s / %s",
   "cobblemarket.item.bought": "You bought %d × %s for %s %s!",
   "cobblemarket.item.cancelled": "Listing cancelled and items returned.",
   "cobblemarket.item.cancel_title": "Confirm Cancel",

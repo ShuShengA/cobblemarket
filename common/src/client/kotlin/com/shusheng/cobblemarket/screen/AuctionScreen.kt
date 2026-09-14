@@ -37,6 +37,7 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import com.mojang.authlib.GameProfile
 import java.util.UUID
+import com.shusheng.cobblemarket.client.drawItemWithBar
 
 /**
  * 拍卖大厅：精灵 / 物品 / 我的 三个 tab。
@@ -963,7 +964,7 @@ class AuctionScreen(
         } else {
             // 物品拍卖：走完整 NBT 重建，附魔光效与自定义名称才显示得出来
             iconStackOf(entry.species, entry.itemNbt)?.let { stack ->
-                if (!stack.isEmpty) context.drawItem(stack, slotX + 6, slotY + 6)
+                if (!stack.isEmpty) drawItemWithBar(context, stack, slotX + 6, slotY + 6)
             }
         }
 
@@ -1327,7 +1328,7 @@ class AuctionScreen(
                 }
             } else {
                 rowStacks[origIndex]?.itemStack?.let {
-                    context.drawItem(it, slotX + 2, slotY)
+                    drawItemWithBar(context, it, slotX + 2, slotY)
                 }
                 // 数量宽度先扣出来再截断名字：整串一起截断会先吃掉「×N」，模组长名物品看不到卖多少个
                 val countSuffix = " ×${entry.count}"
