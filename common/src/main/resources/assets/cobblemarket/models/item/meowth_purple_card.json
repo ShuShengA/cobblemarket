@@ -2,6 +2,7 @@
   "credit": "Made with Blockbench",
   "textures": {
     "0": "cobblemarket:item/meowth_purple_card",
+    "1": "cobblemarket:item/meowth_card_edge",
     "particle": "cobblemarket:item/meowth_purple_card"
   },
   "elements": [
@@ -11,10 +12,10 @@
       "faces": {
         "north": { "uv": [0, 3, 16, 13], "texture": "#0" },
         "south": { "uv": [0, 3, 16, 13], "texture": "#0" },
-        "east": { "uv": [0, 3, 1, 13], "texture": "#0" },
-        "west": { "uv": [0, 3, 1, 13], "texture": "#0" },
-        "up": { "uv": [0, 3, 16, 4], "texture": "#0" },
-        "down": { "uv": [0, 12, 16, 13], "texture": "#0" }
+        "east": { "uv": [0, 0, 16, 16], "texture": "#1" },
+        "west": { "uv": [0, 0, 16, 16], "texture": "#1" },
+        "up": { "uv": [0, 0, 16, 16], "texture": "#1" },
+        "down": { "uv": [0, 0, 16, 16], "texture": "#1" }
       }
     }
   ],
