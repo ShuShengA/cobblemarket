@@ -1,7 +1,9 @@
 {
-  "credit": "CobbleMarket",
+  "format_version": "1.9.0",
+  "credit": "Made with Blockbench",
   "textures": {
     "0": "cobblemarket:item/meowth_purple_card",
+    "1": "cobblemarket:gui/hud_balance_bg",
     "particle": "cobblemarket:item/meowth_purple_card"
   },
   "elements": [
@@ -9,12 +11,12 @@
       "from": [0, 3, 6.5],
       "to": [16, 13, 9.5],
       "faces": {
-        "north": { "uv": [0, 3, 16, 13], "texture": "#0" },
-        "south": { "uv": [0, 3, 16, 13], "texture": "#0" },
-        "east": { "uv": [0, 3, 1, 13], "texture": "#0" },
-        "west": { "uv": [0, 3, 1, 13], "texture": "#0" },
-        "up": { "uv": [0, 3, 16, 4], "texture": "#0" },
-        "down": { "uv": [0, 12, 16, 13], "texture": "#0" }
+        "north": { "uv": [0, 2.9375, 16, 12.9375], "texture": "#0" },
+        "east": { "uv": [0, 0, 16, 16], "texture": "#1" },
+        "south": { "uv": [0, 2.9375, 16, 12.9375], "texture": "#0" },
+        "west": { "uv": [0, 0, 16, 16], "texture": "#1" },
+        "up": { "uv": [0, 0, 16, 16], "texture": "#1" },
+        "down": { "uv": [0, 0, 16, 16], "texture": "#1" }
       }
     }
   ],
