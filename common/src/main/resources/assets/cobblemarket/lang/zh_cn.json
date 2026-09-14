@@ -68,6 +68,7 @@
   "cobblemarket.item.listed": "已上架 %d 个 %s，单价 %d %s！",
   "cobblemarket.item.listed_fee": "已上架 %d 个 %s，单价 %d %s！手续费 %d %s 已扣除。",
   "cobblemarket.item.tooltip_price": "单价：",
+  "cobblemarket.item.durability": "耐久：%s / %s",
   "cobblemarket.item.bought": "你购买了 %d 个 %s，花费 %s %s！",
   "cobblemarket.item.cancelled": "已下架并返还给你。",
   "cobblemarket.item.cancel_title": "确认下架",

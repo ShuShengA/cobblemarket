@@ -16,6 +16,7 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import java.util.UUID
+import com.shusheng.cobblemarket.client.drawItemWithBar
 
 class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) {
 
@@ -276,7 +277,7 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
             drawNineSlice(context, ROW_BACKGROUND_TEXTURE, x, y, slotSize, slotSize, rowState, ROW_BACKGROUND_TEX_H)
 
             entryStacks[entry.id]?.let { stack ->
-                context.drawItem(stack, x + (slotSize - 16) / 2, y + (slotSize - 16) / 2)
+                drawItemWithBar(context, stack, x + (slotSize - 16) / 2, y + (slotSize - 16) / 2)
             }
 
             val countText = "×${entry.count}"

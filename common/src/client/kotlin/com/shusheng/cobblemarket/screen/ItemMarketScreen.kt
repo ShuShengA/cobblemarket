@@ -29,6 +29,7 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import java.util.UUID
+import com.shusheng.cobblemarket.client.drawItemWithBar
 
 class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
@@ -454,7 +455,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
             // 弹窗打开时本函数已在开头 return，此处无需图标条件（不会在弹窗下渲染）
             entryStacks[entry.id]?.let { stack ->
-                context.drawItem(stack, x + (slotSize - 16) / 2, y + (slotSize - 16) / 2)
+                drawItemWithBar(context, stack, x + (slotSize - 16) / 2, y + (slotSize - 16) / 2)
             }
 
             val countText = "×${entry.count}"
@@ -760,7 +761,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         val registry = client?.world?.registryManager
         if (registry != null) {
             val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
-            context.drawItem(stack, centerX - 8, dialogY + 26)
+            drawItemWithBar(context, stack, centerX - 8, dialogY + 26)
             // 物品名照物品栏悬浮第一行按稀有度着色
             context.drawCenteredTextWithShadow(textRenderer,
                 com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), centerX, dialogY + 46, 0xFFFFFF)
@@ -836,7 +837,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         val registry = client?.world?.registryManager
         if (registry != null) {
             val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
-            context.drawItem(stack, centerX - 8, dialogY + 26)
+            drawItemWithBar(context, stack, centerX - 8, dialogY + 26)
             // 物品名照物品栏悬浮第一行按稀有度着色
             context.drawCenteredTextWithShadow(textRenderer,
                 com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), centerX, dialogY + 46, 0xFFFFFF)

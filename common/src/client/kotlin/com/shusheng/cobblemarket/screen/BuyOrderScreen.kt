@@ -39,6 +39,7 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import org.joml.Quaternionf
 import java.util.UUID
+import com.shusheng.cobblemarket.client.drawItemWithBar
 
 /**
  * 求购单：玩家发布"我要买"订单（精灵/物品+单价区间），全服可见；
@@ -758,7 +759,7 @@ class BuyOrderScreen(
                     context.drawCenteredTextWithShadow(textRenderer, "?", slotX + iconSize / 2, slotY + 6, 0xAAAAAA)
                 }
             } else if (!anyDialogOpen) {
-                rowData?.itemStack?.let { context.drawItem(it, slotX + 2, slotY) }
+                rowData?.itemStack?.let { drawItemWithBar(context, it, slotX + 2, slotY) }
             }
 
             // 名称（属性色，照精灵市场）+ 条件徽章（★/☆/HT）；物品行名照物品栏悬浮按稀有度着色。
@@ -1390,13 +1391,13 @@ class BuyOrderScreen(
             // 物品预览图标（右侧）：手持模式显示主手物品（文字+图标双重提醒），否则优先显示点选项
             val heldPreview = if (heldItemMode) heldPreviewStack() else null
             if (heldPreview != null) {
-                context.drawItem(heldPreview, centerX + 72, dialogY + 48)
+                drawItemWithBar(context, heldPreview, centerX + 72, dialogY + 48)
             } else {
                 val preview = matchedItems.getOrNull(selectedItemIndex) ?: matchedItems.firstOrNull()
                 preview?.let { candidate ->
                     com.shusheng.cobblemarket.client.ItemComponentsDisplay
                         .iconStack(candidate.itemId, candidate.componentsSpec)
-                        ?.let { stack -> if (!stack.isEmpty) context.drawItem(stack, centerX + 72, dialogY + 48) }
+                        ?.let { stack -> if (!stack.isEmpty) drawItemWithBar(context, stack, centerX + 72, dialogY + 48) }
                 }
             }
             // 冻结提示：发布时冻结 maxPrice × 件数（物品匹配列表展开时隐藏——提示在列表覆盖区内）
@@ -2079,7 +2080,7 @@ class BuyOrderScreen(
             } ?: (Identifier.tryParse(entry.itemId)?.let { ItemStack(Registries.ITEM.get(it)) } ?: ItemStack.EMPTY)
             val totalW = 16 + 4 + textRenderer.getWidth(itemName) + 4 + textRenderer.getWidth(countStr)
             val startX = centerX - totalW / 2
-            context.drawItem(itemStack, startX, dialogY + 28)
+            drawItemWithBar(context, itemStack, startX, dialogY + 28)
             // 物品名照物品栏悬浮第一行按稀有度着色
             context.drawTextWithShadow(textRenderer,
                 if (itemStack.isEmpty) Text.literal(itemName)
@@ -2339,12 +2340,12 @@ class BuyOrderScreen(
                 // 整体居中：图标 16 + 间距 4 + 名称 + 间距 4 + 数量
                 val totalW = 16 + 4 + textRenderer.getWidth(name) + 4 + textRenderer.getWidth(countStr)
                 val startX = centerX - totalW / 2
-                context.drawItem(variant, startX, dialogY + 44)
+                drawItemWithBar(context, variant, startX, dialogY + 44)
                 context.drawTextWithShadow(textRenderer, name, startX + 20, dialogY + 48, 0xFFFFFF)
                 context.drawTextWithShadow(textRenderer, countStr, startX + 20 + textRenderer.getWidth(name) + 4, dialogY + 48, 0xAAAAAA)
             } else if (variant != null) {
                 // 多形态：图标画在「选择形态」按钮左侧（按钮 centerX-74，图标与按钮间隙 6px）
-                context.drawItem(variant, centerX - 96, dialogY + 44)
+                drawItemWithBar(context, variant, centerX - 96, dialogY + 44)
             } else {
                 context.drawCenteredTextWithShadow(textRenderer,
                     Text.translatable("cobblemarket.buy_order.variant_empty").formatted(Formatting.GRAY),

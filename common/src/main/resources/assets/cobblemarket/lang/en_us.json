@@ -68,6 +68,7 @@
   "cobblemarket.item.listed": "Listed %d × %s for %d %s each!",
   "cobblemarket.item.listed_fee": "Listed %d × %s for %d %s each! Fee of %d %s charged.",
   "cobblemarket.item.tooltip_price": "Unit price: ",
+  "cobblemarket.item.durability": "Durability: %s / %s",
   "cobblemarket.item.bought": "You bought %d × %s for %s %s!",
   "cobblemarket.item.cancelled": "Listing cancelled and items returned.",
   "cobblemarket.item.cancel_title": "Confirm Cancel",
@@ -456,7 +457,6 @@
 
   "cobblemarket.sell.title": "Select Pokémon to Sell",
   "cobblemarket.sell.search": "Search",
-  "cobblemarket.sell.shiny": "Shiny",
   "cobblemarket.sell.type": "Type",
   "cobblemarket.sell.price": "Price",
   "cobblemarket.sell.price_placeholder": "Enter price",

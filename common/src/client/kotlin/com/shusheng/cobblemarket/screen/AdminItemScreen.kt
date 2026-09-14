@@ -21,6 +21,7 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import java.util.UUID
+import com.shusheng.cobblemarket.client.drawItemWithBar
 
 class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
 
@@ -344,7 +345,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             centerX, dialogY + 14, 0xFFFFFF)
 
         entryStacks[entry.id]?.let { stack ->
-            context.drawItem(stack, centerX - 8, dialogY + 26)
+            drawItemWithBar(context, stack, centerX - 8, dialogY + 26)
             context.drawCenteredTextWithShadow(textRenderer, stack.name, centerX, dialogY + 46, 0xFFFFFF)
         }
 
@@ -448,7 +449,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             drawNineSlice(context, ROW_BACKGROUND_TEXTURE, x, y, slotSize, slotSize, rowState, ROW_BACKGROUND_TEX_H)
 
             entryStacks[entry.id]?.let { stack ->
-                context.drawItem(stack, x + (slotSize - 16) / 2, y + (slotSize - 16) / 2)
+                drawItemWithBar(context, stack, x + (slotSize - 16) / 2, y + (slotSize - 16) / 2)
             }
 
             val countText = "×${entry.count}"

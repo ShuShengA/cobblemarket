@@ -31,6 +31,7 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import org.joml.Quaternionf
+import com.shusheng.cobblemarket.client.drawItemWithBar
 
 /**
  * 黑名单管理：精灵 / 物品 两个 tab（骨架照搬价格限制界面）。
@@ -735,13 +736,13 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         // 物品预览：手持模式显示主手物品（文字+图标双重提醒），否则显示搜索预览
         val heldPreview = if (heldAddMode) heldPreviewStack() else null
         if (heldPreview != null) {
-            context.drawItem(heldPreview, centerX + 66, dialogY + 42)
+            drawItemWithBar(context, heldPreview, centerX + 66, dialogY + 42)
         } else if (!heldAddMode) {
             // 带组件变体重建真实物品（如「招式学习器 · 打鼾」显示对应 TM 图标）
             previewCandidate?.let { candidate ->
                 com.shusheng.cobblemarket.client.ItemComponentsDisplay
                     .iconStack(candidate.itemId, candidate.componentsSpec)
-                    ?.let { context.drawItem(it, centerX + 66, dialogY + 42) }
+                    ?.let { drawItemWithBar(context, it, centerX + 66, dialogY + 42) }
             }
         }
     }
@@ -1201,7 +1202,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 val y = startY + i * rowHeight
                 // 弹窗打开时行内物品图标不渲染（drawItem 硬编码 z 抬高，会刺穿弹窗遮罩）
                 if (addField == null) {
-                    itemIconStacks[entry]?.let { context.drawItem(it, leftX + 4, y + 4) }
+                    itemIconStacks[entry]?.let { drawItemWithBar(context, it, leftX + 4, y + 4) }
                 }
                 context.drawTextWithShadow(textRenderer, rowTexts[scrollOffset + i], leftX + 24, y + 7, 0xFFFFFF)
             }

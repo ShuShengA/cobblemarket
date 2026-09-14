@@ -62,16 +62,33 @@ object ItemComponentsDisplay {
      */
     fun itemTooltip(stack: ItemStack, player: net.minecraft.entity.player.PlayerEntity?, type: TooltipType): List<Text> {
         val lines = stack.getTooltip(net.minecraft.item.Item.TooltipContext.DEFAULT, player, type)
-        if (!type.isAdvanced() || MinecraftClient.getInstance().options.advancedItemTooltips) return lines
-        // 原版 isAdvanced 分支附带的调试行：物品 ID 行（DARK_GRAY + 可解析 Identifier）
-        // 与「N 个组件」行（DARK_GRAY + item.components 词条）——都是 F3+H 的 ADVANCED 套餐内容
-        val darkGray = net.minecraft.text.TextColor.fromFormatting(net.minecraft.util.Formatting.DARK_GRAY)
-        return lines.filterNot { line ->
-            if (line.style.color != darkGray) return@filterNot false
-            val content = line.content
-            net.minecraft.util.Identifier.tryParse(line.string) != null ||
-                (content is net.minecraft.text.TranslatableTextContent && content.key == "item.components")
+        val filtered = if (!type.isAdvanced() || MinecraftClient.getInstance().options.advancedItemTooltips) lines
+        else {
+            // 原版 isAdvanced 分支附带的调试行：物品 ID 行（DARK_GRAY + 可解析 Identifier）
+            // 与「N 个组件」行（DARK_GRAY + item.components 词条）——都是 F3+H 的 ADVANCED 套餐内容
+            val darkGray = net.minecraft.text.TextColor.fromFormatting(net.minecraft.util.Formatting.DARK_GRAY)
+            lines.filterNot { line ->
+                if (line.style.color != darkGray) return@filterNot false
+                val content = line.content
+                net.minecraft.util.Identifier.tryParse(line.string) != null ||
+                    (content is net.minecraft.text.TranslatableTextContent && content.key == "item.components")
+            }
         }
+        // 受损物品补一行耐久数值，**紧跟物品名**。原版只在 Shift 展开（ADVANCED）时才给这行，
+        // 但在市场里买东西不该要求玩家先按住 Shift —— 看不到耐久就可能高价买到快报废的工具。
+        // 满耐久不显示，与图标上的耐久条（drawItemWithBar）口径一致。
+        // 插在 index 1 而不是末尾：调用方有 `.drop(1)` 丢掉物品名的用法，放末尾会被丢掉的语义带偏。
+        if (!stack.isDamaged) return filtered
+        val out = filtered.toMutableList()
+        out.add(
+            minOf(1, out.size),
+            Text.translatable(
+                "cobblemarket.item.durability",
+                stack.maxDamage - stack.damage,
+                stack.maxDamage
+            ).formatted(net.minecraft.util.Formatting.GRAY)
+        )
+        return out
     }
 
     fun summary(spec: NbtCompound?): String {
