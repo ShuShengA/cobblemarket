@@ -112,24 +112,15 @@
 
 ### Fixes
 
-- **Deposit interest lost the partial day**: interest was settled in whole days since the last deposit/withdrawal, so any partial day was discarded by the next action — depositing for 23h59m paid the same as one minute, and players who deposited daily never earned anything. Interest now accrues by actual deposit time, prorated for partial days; the meaning of the daily rate is unchanged
-- **Abbreviated prices overflowing their cells**: abbreviations such as "200.0k" for 200,000 were wider than the grid/list cell when the integer part had several digits; values of 10 or more now drop the decimal ("200k"), matching the width of entries like "5.0M"
 - **Auction House "Mine" tab**: like the item tab, it has no filter row, so its list now starts right below the search box (it was laid out like the pokemon tab, leaving a blank row) and the divider follows suit; the "create auction" button is no longer shown on this tab
 - **Party Pokémon could be traded during battles**: listing/auctioning/delivering is now blocked while in battle (previously taking a Pokémon out broke its in-battle model, and a listed Pokémon could still be switched in to fight); Pokémon bought or unlisted during a battle now go to Pending Returns instead of the party
-- **Type names missing their type colors in the auction chat announcement's Pokémon hover details**
 - **Personal trade history was squeezed out by other players' trades**: the screen now reads the last 14 days of CSV ledgers (previously only the 200 shared in-memory records), showing up to 500 entries per player
 - **"Mine" button didn't refresh after resetting filters**: in the Pokémon Market and admin Pokémon list it could keep showing the "mine only" state after a reset
-- **Buy-order delivery Pokémon icon was clipped**: the idle-animation rework had overwritten its previously widened clip area back to the old values
 - **Buy-order rows showed the default form when a special form was requested**
 - **False "market data save failed" red alert during automatic backup mods' backup runs**: backup mods temporarily suspend server saving (savingDisabled), which silently skips the forced save-after-trade and tripped the mtime verification — the forced save is now deferred while saving is suspended and runs right after the backup ends, eliminating the false alarm
-- **Prices missing thousands separators**: the price in the admin Pokémon list hover, the admin item cancel dialog, the pending item return hover, the price-limit list and its hover, the buy-order publish freeze hint and the Item Market purchase total, plus every chat amount (auction broadcasts and bid warnings, card fee shortfalls, sale and refund notices, loans, price-limit warnings), now shows thousands separators
 - **Held-item line in the auction bid and admin auction detail dialogs had no icon and a grey label** (now consistent with every other screen: white label plus item icon)
-- **Coin sound and failure sound played together when bidding with insufficient funds**: only the failure sound now plays, with a red on-dialog message (an invalid bid amount likewise plays only the failure sound)
-- **Auction chat announcement's hover details**: the colon was missing after "Starting price" and "Min. increment", and the minimum increment showed as a plain number without gold color or currency unit
 - **Prices missing their currency unit in the price-limit screen**: range / min / max prices in list rows and hovers now show a unit (₽ for virtual currencies, the item name for item currencies)
-- **Search box placeholder in the Auction House's Item and Mine tabs didn't follow the active tab**: returning from the auction listing screen or resizing the window reverted it to "Species name..."; it now always shows the current tab's hint. Item search hints are now consistently "Search items..." across the Auction House, blacklist and price-limit screens
 - **Long item names squeezed out the count in Auction House and admin auction rows**: an over-long name truncated the "×N" suffix along with it, hiding how many are for sale — the count now always shows in full and the name truncates on its own
-- **Item deduction now counts what was actually removed**: listing, auctioning or delivering to a buy order used to count the *intended* amount — if an external mod intercepted the deduction at the data layer, a listing could be recorded while the item stayed in the inventory. It now counts what was actually removed and rolls back otherwise (theoretical boundary, never observed in practice)
 
 ## 1.0.1 (released)
 
