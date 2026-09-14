@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.client
 
 import net.minecraft.client.gui.DrawContext
+import net.minecraft.client.render.RenderLayer
 import net.minecraft.item.ItemStack
 
 /**
@@ -23,7 +24,16 @@ fun drawItemWithBar(context: DrawContext, stack: ItemStack, x: Int, y: Int) {
     if (!stack.isItemBarVisible) return
     val step = stack.itemBarStep
     val color = stack.itemBarColor
-    // 原版布局：黑底 + 彩色条，压在图标左下（相对图标左上角 +2,+13，13×2 像素）
-    context.fill(x + 2, y + 13, x + 15, y + 15, 0xFF000000.toInt())
-    context.fill(x + 2, y + 13, x + 2 + step, y + 14, color or 0xFF000000.toInt())
+    val bx = x + BAR_INSET_X
+    val by = y + BAR_INSET_Y
+    // ⚠ 必须用 GUI_OVERLAY 层（原版同款）：图标是 z=150 的 3D 模型，用默认的 getGui() 层
+    //    画条会被深度测试挡在图标不透明像素下面——钻石镐的柄斜穿左下角，会把条左端吃掉一截，
+    //    看起来就像「条偏右 / 缺一块」（2026-09-15 用户实机对照后定位到）
+    context.fill(RenderLayer.getGuiOverlay(), bx, by, bx + BAR_WIDTH, by + 2, 0xFF000000.toInt())
+    context.fill(RenderLayer.getGuiOverlay(), bx, by, bx + step, by + 1, color or 0xFF000000.toInt())
 }
+
+/** 耐久条相对图标左上角的位置与宽度（原版：+2 / +13、宽 13） */
+private const val BAR_INSET_X = 2
+private const val BAR_INSET_Y = 13
+private const val BAR_WIDTH = 13
