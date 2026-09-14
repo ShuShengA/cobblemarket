@@ -28,6 +28,7 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import java.util.UUID
+import com.shusheng.cobblemarket.client.drawItemWithBar
 
 /**
  * 管理员「所有拍卖」管理页。行渲染/悬停/确认弹窗全部照搬拍卖场（AuctionScreen），
@@ -541,7 +542,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 }
             } else {
                 rowStacks[origIndex]?.itemStack?.let {
-                    context.drawItem(it, slotX + 2, slotY)
+                    drawItemWithBar(context, it, slotX + 2, slotY)
                 }
                 // 数量宽度先扣出来再截断名字（照拍卖场）：整串一起截断会先吃掉「×N」
                 val countSuffix = " ×${entry.count}"
@@ -844,7 +845,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         } else {
             // 物品拍卖：走完整 NBT 重建，附魔光效与自定义名称才显示得出来
             iconStackOf(entry.species, entry.itemNbt)?.let { stack ->
-                if (!stack.isEmpty) context.drawItem(stack, slotX + 6, slotY + 6)
+                if (!stack.isEmpty) drawItemWithBar(context, stack, slotX + 6, slotY + 6)
             }
         }
 
