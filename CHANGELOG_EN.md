@@ -123,6 +123,7 @@
 - **Prices missing their currency unit in the price-limit screen**: range / min / max prices in list rows and hovers now show a unit (₽ for virtual currencies, the item name for item currencies)
 - **Long item names squeezed out the count in Auction House and admin auction rows**: an over-long name truncated the "×N" suffix along with it, hiding how many are for sale — the count now always shows in full and the name truncates on its own
 - **Item icons showed no durability bar**: items in lists and detail dialogs never showed a durability bar, so players could unknowingly pay full price for a nearly-broken tool or piece of gear — damaged items now show the vanilla durability bar, and the tooltip adds a "Durability: X / Y" line (no Shift needed)
+- **Buyer's note hidden behind the "Select variant" button in the delivery dialog**: when a buyer left a note such as "any durability is fine", the seller could not see it in the delivery dialog (the text sat underneath the button); the content below now shifts down one row when a note is present, so the note is fully visible
 
 ## 1.0.1 (released)
 
