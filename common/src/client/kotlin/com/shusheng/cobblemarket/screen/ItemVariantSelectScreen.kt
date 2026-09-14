@@ -12,6 +12,7 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import java.util.UUID
+import com.shusheng.cobblemarket.client.drawItemWithBar
 
 /**
  * 物品求购交付的形态选择：背包中同一物品存在多种组件形态（如内容不同的潜影箱）时，
@@ -150,7 +151,7 @@ class ItemVariantSelectScreen(
                 else -> 0
             }
             drawNineSlice(context, ROW_BACKGROUND_TEXTURE, lx, y, 296, rowH - 2, rowState, ROW_BACKGROUND_TEX_H)
-            context.drawItem(v.sample, lx + 4, y + 4)
+            drawItemWithBar(context, v.sample, lx + 4, y + 4)
             // 行名照物品栏悬浮第一行按稀有度着色（组件明细看悬停词条，行内不重复显示）
             val nameText = com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(v.sample)
             val countText = "×${v.count}"

@@ -18,6 +18,7 @@ import net.minecraft.registry.Registries
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
+import com.shusheng.cobblemarket.client.drawItemWithBar
 
 class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title")) {
 
@@ -149,7 +150,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
             Text.translatable("cobblemarket.item.sell_confirm_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
 
-        context.drawItem(entry.stack, centerX - 8, dialogY + 26)
+        drawItemWithBar(context, entry.stack, centerX - 8, dialogY + 26)
         context.drawCenteredTextWithShadow(textRenderer,
             entry.name, centerX, dialogY + 46, 0xFFFFFF)
 
@@ -287,7 +288,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         val startY = getListStartY()
         items.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, item ->
             val y = startY + i * rowHeight
-            context.drawItem(item.stack, leftX + 2, y + 2)
+            drawItemWithBar(context, item.stack, leftX + 2, y + 2)
             // 行名照物品栏悬浮第一行按稀有度着色（组件明细看悬停词条，行内不重复显示）
             val nameText = com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(item.stack)
             context.drawTextWithShadow(textRenderer,

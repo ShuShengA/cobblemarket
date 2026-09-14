@@ -26,6 +26,7 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import org.joml.Quaternionf
+import com.shusheng.cobblemarket.client.drawItemWithBar
 
 /**
  * 上架拍卖：精灵 / 物品 双 tab。
@@ -500,7 +501,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         val slotX = centerX + 66
         val slotY = dialogY + 24
         if (dialogItem != null) {
-            context.drawItem(dialogItem!!.stack, slotX + 6, slotY + 6)
+            drawItemWithBar(context, dialogItem!!.stack, slotX + 6, slotY + 6)
         }
 
         // 字段标签
@@ -901,7 +902,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         } else {
             items.drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, item ->
                 val y = startY + i * rowHeight
-                context.drawItem(item.stack, leftX + 4, y + 4)
+                drawItemWithBar(context, item.stack, leftX + 4, y + 4)
                 // 行名照物品栏悬浮第一行按稀有度着色（组件明细看悬停词条，行内不重复显示）
                 val display = com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(item.stack)
                     .copy().append(Text.literal(" ×${item.count}"))

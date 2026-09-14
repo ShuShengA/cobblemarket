@@ -23,6 +23,7 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import org.joml.Quaternionf
 import java.util.UUID
+import com.shusheng.cobblemarket.client.drawItemWithBar
 
 /**
  * 管理员「所有拍卖」管理页。行渲染/悬停/确认弹窗全部照搬拍卖场（AuctionScreen），
@@ -538,7 +539,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 }
             } else {
                 rowStacks[origIndex]?.itemStack?.let {
-                    context.drawItem(it, slotX + 2, slotY)
+                    drawItemWithBar(context, it, slotX + 2, slotY)
                 }
                 // 数量宽度先扣出来再截断名字（照拍卖场）：整串一起截断会先吃掉「×N」
                 val countSuffix = " ×${entry.count}"
@@ -845,7 +846,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 val item = Registries.ITEM.get(id)
                 if (item != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
                     val stack = ItemStack(item, entry.count)
-                    context.drawItem(stack, slotX + 6, slotY + 6)
+                    drawItemWithBar(context, stack, slotX + 6, slotY + 6)
                 }
             }
         }

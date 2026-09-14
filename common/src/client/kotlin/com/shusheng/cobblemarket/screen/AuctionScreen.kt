@@ -31,6 +31,7 @@ import net.minecraft.util.Identifier
 import org.joml.Quaternionf
 import com.mojang.authlib.GameProfile
 import java.util.UUID
+import com.shusheng.cobblemarket.client.drawItemWithBar
 
 /**
  * 拍卖大厅：精灵 / 物品 / 我的 三个 tab。
@@ -974,7 +975,7 @@ class AuctionScreen(
                 val item = Registries.ITEM.get(id)
                 if (item != Registries.ITEM.get(Identifier.of("minecraft", "air"))) {
                     val stack = ItemStack(item, entry.count)
-                    context.drawItem(stack, slotX + 6, slotY + 6)
+                    drawItemWithBar(context, stack, slotX + 6, slotY + 6)
                 }
             }
         }
@@ -1336,7 +1337,7 @@ class AuctionScreen(
                 }
             } else {
                 rowStacks[origIndex]?.itemStack?.let {
-                    context.drawItem(it, slotX + 2, slotY)
+                    drawItemWithBar(context, it, slotX + 2, slotY)
                 }
                 // 数量宽度先扣出来再截断名字：整串一起截断会先吃掉「×N」，模组长名物品看不到卖多少个
                 val countSuffix = " ×${entry.count}"
