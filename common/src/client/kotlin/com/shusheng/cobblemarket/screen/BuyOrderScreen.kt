@@ -2181,11 +2181,13 @@ class BuyOrderScreen(
 
         val centerX = width / 2
         val dialogY = deliverDialogY()
+        // 有买家留言时，其下所有控件整体下移一行（留言画在 +38，否则会被形态行按钮盖住）
+        val shift = deliverNoteShift()
 
         if (entry.type == "POKEMON") {
             // 选择精灵按钮：打开上架选择界面（交付模式），选完回传本弹窗
             deliverSelectButton = NineSliceButton(
-                centerX - 74, dialogY + 46, 148, 16,
+                centerX - 74, dialogY + 46 + shift, 148, 16,
                 Text.literal(""),
                 { openDeliverSelect() },
                 texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -2194,7 +2196,7 @@ class BuyOrderScreen(
             addDrawableChild(deliverSelectButton)
             updateDeliverSelectButton()
 
-            deliverPriceField = TextFieldWidget(textRenderer, centerX - 40, dialogY + 84, 80, 16, Text.literal(""))
+            deliverPriceField = TextFieldWidget(textRenderer, centerX - 40, dialogY + 84 + shift, 80, 16, Text.literal(""))
             deliverPriceField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.deliver_price").formatted(Formatting.GRAY))
             deliverPriceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
             deliverPriceField?.setChangedListener { updateDeliverConfirmActive() }
@@ -2209,13 +2211,13 @@ class BuyOrderScreen(
 
             val backCount = deliverVariant?.count ?: 0
             val prefillCount = minOf(entry.remainingCount, backCount).coerceAtLeast(1)
-            deliverCountField = TextFieldWidget(textRenderer, centerX - 40, dialogY + 62, 80, 16, Text.literal(""))
+            deliverCountField = TextFieldWidget(textRenderer, centerX - 40, dialogY + 62 + shift, 80, 16, Text.literal(""))
             deliverCountField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.deliver_count").formatted(Formatting.GRAY))
             deliverCountField?.setTextPredicate { it.length <= 4 && it.all { c -> c.isDigit() } }
             deliverCountField?.setChangedListener { updateDeliverConfirmActive() }
             deliverCountField?.text = if (backCount > 0) prefillCount.toString() else ""
             addDrawableChild(deliverCountField)
-            deliverPriceField = TextFieldWidget(textRenderer, centerX - 40, dialogY + 84, 80, 16, Text.literal(""))
+            deliverPriceField = TextFieldWidget(textRenderer, centerX - 40, dialogY + 84 + shift, 80, 16, Text.literal(""))
             deliverPriceField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.deliver_price").formatted(Formatting.GRAY))
             deliverPriceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
             deliverPriceField?.setChangedListener { updateDeliverConfirmActive() }
@@ -2225,7 +2227,7 @@ class BuyOrderScreen(
             // 选择形态按钮（照精灵交付的「选择精灵」按钮：严格居中 centerX-74 宽 148）：
             // 多形态时显示在形态行位置（替代图标+名称行，文案显示当前形态名）
             deliverVariantButton = NineSliceButton(
-                centerX - 74, dialogY + 44, 148, 16,
+                centerX - 74, dialogY + 44 + shift, 148, 16,
                 Text.literal(""),
                 {
                     val e = deliverEntry ?: return@NineSliceButton
@@ -2242,7 +2244,7 @@ class BuyOrderScreen(
 
         // 按钮顺序照惯例：确认在左，取消在右
         deliverConfirmButton = NineSliceButton(
-            centerX - 68, dialogY + confirmDeliverY(), 56, 20,
+            centerX - 68, dialogY + confirmDeliverY() + shift, 56, 20,
             Text.translatable("cobblemarket.buy_order.deliver_confirm"),
             { confirmDeliver() },
             texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -2250,7 +2252,7 @@ class BuyOrderScreen(
         )
         addDrawableChild(deliverConfirmButton)
         deliverCancelButton = NineSliceButton(
-            centerX + 8, dialogY + confirmDeliverY(), 56, 20,
+            centerX + 8, dialogY + confirmDeliverY() + shift, 56, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeDialogs() },
             texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -2270,11 +2272,22 @@ class BuyOrderScreen(
         return if (entry.type == "POKEMON") 112 else 110
     }
 
+    /**
+     * 买家留言占一行时的垂直偏移（留言画在 +38，约 9px 高）。
+     * 其后的形态行（选择形态 / 选择精灵按钮）与各输入框、按钮整体下移这一行，
+     * 否则留言会被按钮盖住（买家写「耐久不限」这类要求时卖家根本看不见）。
+     * 布局与渲染共用本函数，保证两侧算出的 y 始终一致。
+     */
+    private fun deliverNoteShift(): Int =
+        if (deliverEntry?.note?.isNotEmpty() == true) 11 else 0
+
     private fun renderDeliverDialogBackground(context: DrawContext) {
         val entry = deliverEntry ?: return
         val centerX = width / 2
         val dialogW = 280
-        val dialogH = if (entry.type == "POKEMON") 150 else 152
+        // 有买家留言时弹窗加高一行，与控件下移量一致（否则底部按钮会贴边）
+        val noteShift = deliverNoteShift()
+        val dialogH = (if (entry.type == "POKEMON") 150 else 152) + noteShift
         val dialogX = centerX - dialogW / 2
         val dialogY = deliverDialogY()
 
@@ -2315,18 +2328,18 @@ class BuyOrderScreen(
                     Text.translatable("cobblemarket.buy_order.match_no_full").string to 0xFF6666
                 val totalW = textRenderer.getWidth(name) + 4 + textRenderer.getWidth(matchText.first)
                 val startX = centerX - totalW / 2
-                context.drawTextWithShadow(textRenderer, name, startX, dialogY + 70, EntryBadgeRenderer.typeColor(p.primaryType))
-                context.drawTextWithShadow(textRenderer, matchText.first, startX + textRenderer.getWidth(name) + 4, dialogY + 70, matchText.second)
+                context.drawTextWithShadow(textRenderer, name, startX, dialogY + 70 + noteShift, EntryBadgeRenderer.typeColor(p.primaryType))
+                context.drawTextWithShadow(textRenderer, matchText.first, startX + textRenderer.getWidth(name) + 4, dialogY + 70 + noteShift, matchText.second)
             } else {
                 context.drawCenteredTextWithShadow(textRenderer,
                     Text.translatable("cobblemarket.buy_order.not_selected").formatted(Formatting.GRAY),
-                    centerX, dialogY + 70, 0xAAAAAA)
+                    centerX, dialogY + 70 + noteShift, 0xAAAAAA)
             }
             // 单价输入标签：紧贴输入框左缘（输入框 x = centerX-40；+88 = 文字中心对齐输入框中心）
             val priceLabel = Text.translatable("cobblemarket.buy_order.deliver_price").string
             context.drawTextWithShadow(textRenderer,
                 priceLabel,
-                centerX - 44 - textRenderer.getWidth(priceLabel), dialogY + 88, 0xFFFFFF)
+                centerX - 44 - textRenderer.getWidth(priceLabel), dialogY + 88 + noteShift, 0xFFFFFF)
         } else {
             // 形态行（统一「图标 + 名称 + 数量」格式，照形态选择界面的行）：
             // 单形态=图标+名称+数量整体居中；多形态=图标 + 「选择形态」按钮（按钮文案含名称）；
@@ -2340,26 +2353,26 @@ class BuyOrderScreen(
                 // 整体居中：图标 16 + 间距 4 + 名称 + 间距 4 + 数量
                 val totalW = 16 + 4 + textRenderer.getWidth(name) + 4 + textRenderer.getWidth(countStr)
                 val startX = centerX - totalW / 2
-                drawItemWithBar(context, variant, startX, dialogY + 44)
-                context.drawTextWithShadow(textRenderer, name, startX + 20, dialogY + 48, 0xFFFFFF)
-                context.drawTextWithShadow(textRenderer, countStr, startX + 20 + textRenderer.getWidth(name) + 4, dialogY + 48, 0xAAAAAA)
+                drawItemWithBar(context, variant, startX, dialogY + 44 + noteShift)
+                context.drawTextWithShadow(textRenderer, name, startX + 20, dialogY + 48 + noteShift, 0xFFFFFF)
+                context.drawTextWithShadow(textRenderer, countStr, startX + 20 + textRenderer.getWidth(name) + 4, dialogY + 48 + noteShift, 0xAAAAAA)
             } else if (variant != null) {
                 // 多形态：图标画在「选择形态」按钮左侧（按钮 centerX-74，图标与按钮间隙 6px）
-                drawItemWithBar(context, variant, centerX - 96, dialogY + 44)
+                drawItemWithBar(context, variant, centerX - 96, dialogY + 44 + noteShift)
             } else {
                 context.drawCenteredTextWithShadow(textRenderer,
                     Text.translatable("cobblemarket.buy_order.variant_empty").formatted(Formatting.GRAY),
-                    centerX, dialogY + 48, 0xAAAAAA)
+                    centerX, dialogY + 48 + noteShift, 0xAAAAAA)
             }
             // 件数/单价标签：紧贴对应输入框左缘（输入框 x = centerX-40；+4 = 文字中心对齐输入框中心）
             val countLabel = Text.translatable("cobblemarket.buy_order.deliver_count").string
             context.drawTextWithShadow(textRenderer,
                 countLabel,
-                centerX - 44 - textRenderer.getWidth(countLabel), dialogY + 66, 0xFFFFFF)
+                centerX - 44 - textRenderer.getWidth(countLabel), dialogY + 66 + noteShift, 0xFFFFFF)
             val priceLabel2 = Text.translatable("cobblemarket.buy_order.deliver_price").string
             context.drawTextWithShadow(textRenderer,
                 priceLabel2,
-                centerX - 44 - textRenderer.getWidth(priceLabel2), dialogY + 88, 0xFFFFFF)
+                centerX - 44 - textRenderer.getWidth(priceLabel2), dialogY + 88 + noteShift, 0xFFFFFF)
         }
     }
 
