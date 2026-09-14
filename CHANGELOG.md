@@ -59,7 +59,7 @@
 - 拍卖场、管理端拍卖场、精灵市场、管理端精灵列表与待领取精灵的行内头像、等级与倒计时再右移，与体型徽章留出间距；精灵市场、管理端精灵列表与待领取的精灵名超过 6 个汉字时截断加省略号；拍卖场与管理端拍卖场的行内出价次数紧贴价格、与出价按钮的间距收紧
 - 拍卖上架界面的最低加价输入框提示改为显示服务器配置的默认数额（如「留空=100」），不再只写「留空=默认」
 - 本项目许可证由 MIT 改为 GPL-3.0（1.0.1 及更早版本仍适用 MIT）
-- **暂时停用 Cobblemon Economy 货币**：Cobblemon 1.8 把图鉴的 `PokedexEntryProgress.CAUGHT` 改名成了 `OWNED`，而 Cobblemon Economy（截至 0.0.17）仍在引用旧字段名——玩家**选择初始精灵**时会导致服务器崩溃。本版本该货币开关固定为关闭（配置里写 true 也不生效，会在日志中说明原因）；使用 CobbleDollars / Impactor / 物品货币不受影响。待 Cobblemon Economy 适配 1.8 后恢复
+- **新增 Cobblemon Economy 兼容性警告**：Cobblemon 1.8 把图鉴的 `PokedexEntryProgress.CAUGHT` 改名成了 `OWNED`，而 Cobblemon Economy（截至 0.0.17）仍在引用旧字段名——**玩家选择初始精灵时会导致服务器崩溃**。启用了该货币的服务器启动时会收到醒目警告，建议改用 CobbleDollars / Impactor / 物品货币
 
 ### 修复
 
