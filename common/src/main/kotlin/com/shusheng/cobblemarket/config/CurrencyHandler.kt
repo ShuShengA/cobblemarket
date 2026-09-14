@@ -28,6 +28,7 @@ object CurrencyHandler {
     fun load(config: CobbleMarketConfig) {
         useCobeco = config.cobblemonEconomy
         usePco = useCobeco && config.cobecoCurrency == "PCO"
+        if (useCobeco) warnIfCobecoIncompatible()
         // 优先级 Cobblemon Economy → CobbleDollars → Impactor → 物品：
         // Cobblemon Economy 在场时优先走它（其 API 内部按 main_currency 桥接路由到 CobbleDollars/Impactor 后端）；
         // 两个虚拟开关都为 true 时 CobbleDollars 优先（升级无感：Impactor 常作为其它模组的基础依赖被装，
@@ -35,6 +36,34 @@ object CurrencyHandler {
         useCobbleDollars = !useCobeco && config.cobbledollars
         useImpactor = !useCobeco && !useCobbleDollars && config.impactor
         CobbleMarket.LOGGER.info("Currency: ${if (useCobeco) "Cobblemon Economy (" + (if (usePco) "PCO" else "PokeDollars") + ")" else if (useCobbleDollars) "CobbleDollars" else if (useImpactor) "Impactor" else config.currencyItem}")
+    }
+
+    /**
+     * Cobblemon Economy 与 Cobblemon 1.8+ 不兼容、会崩服 —— 但**本模组刻意不做任何自动处理**：
+     * 配置照原样生效、货币照常用，只在这里给一条醒目警告，让服主有据可查。
+     *
+     * 为什么不让它自动降级：**静默切换货币后端比崩溃危险得多** —— 崩溃立刻可见、有人会来查；
+     * 货币悄悄换掉则会让玩家余额对不上，往往几天后才发现，那时已经又交易了一堆。
+     * （用户 2026-09-15 拍板：宁可崩，也不要整个服务器货币错乱。）
+     *
+     * 版本判据：Cobblemon 1.8 把图鉴的 PokedexEntryProgress.CAUGHT 改名成 OWNED，
+     * 所以「OWNED 字段存在」即 1.8+（1.7 上只有 CAUGHT）。
+     */
+    private fun warnIfCobecoIncompatible() {
+        val isCobblemon18OrNewer = try {
+            Class.forName("com.cobblemon.mod.common.api.pokedex.PokedexEntryProgress").getField("OWNED")
+            true
+        } catch (_: Throwable) {
+            false
+        }
+        if (!isCobblemon18OrNewer) return
+        CobbleMarket.LOGGER.warn(
+            "⚠ Cobblemon Economy 与当前 Cobblemon（1.8+）不兼容：Cobblemon 1.8 把图鉴字段 " +
+                "PokedexEntryProgress.CAUGHT 改名为 OWNED，而 Cobblemon Economy（截至 0.0.17）仍引用旧字段名 —— " +
+                "玩家【选择初始精灵】时会抛 NoSuchFieldError 并崩掉服务器。" +
+                "建议把 currency.cobblemonEconomy 改为 false，改用 CobbleDollars / Impactor / 物品货币。" +
+                "（本模组不会替你自动切换货币 —— 那会让玩家余额对不上。）"
+        )
     }
 
     // 货币物品动态解析：初始化时 Cobblemon 物品可能尚未注册（mod 加载顺序），

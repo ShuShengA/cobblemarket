@@ -59,7 +59,7 @@
 - Auction house, admin auction, Pokémon Market, admin Pokémon list and pending-return rows move the avatar, level and countdown further right, leaving a gap after the size badge; Pokémon names in the Pokémon Market, admin list and pending returns are truncated with an ellipsis past 6 CJK characters; the inline bid count in auction rows now sits flush against the price, with a tighter gap to the bid button
 - The minimum-increment hint on the auction creation screen now shows the server's configured default amount (e.g. "blank = 100") instead of a bare "blank = default"
 - Project license changed from MIT to GPL-3.0 (releases up to 1.0.1 remain under MIT)
-- **Cobblemon Economy currency temporarily disabled**: Cobblemon 1.8 renamed the Pokédex field `PokedexEntryProgress.CAUGHT` to `OWNED`, but Cobblemon Economy (up to 0.0.17) still references the old name — this crashes the server when a player **chooses a starter Pokémon**. This version pins the currency switch to off (writing true in the config has no effect and logs the reason); CobbleDollars / Impactor / item currencies are unaffected. Support returns once Cobblemon Economy catches up with 1.8
+- **Cobblemon Economy compatibility warning**: Cobblemon 1.8 renamed the Pokédex field `PokedexEntryProgress.CAUGHT` to `OWNED`, but Cobblemon Economy (up to 0.0.17) still references the old name — this crashes the server when a player **chooses a starter Pokémon**. Servers with this currency enabled now get a prominent warning at startup; switching to CobbleDollars / Impactor / item currency is recommended
 
 ### Fixes
 

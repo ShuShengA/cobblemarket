@@ -326,8 +326,7 @@ object CobbleMarketConfig {
         val hasImpactor = impactorAvailable()
         if (!configFile.exists()) {
             cobbledollars = hasCD
-            // ⚠ Cobblemon Economy 货币暂时停用（见下方 fileCobeco 处的完整说明）：全新安装也不再自动探测
-            cobblemonEconomy = false
+            cobblemonEconomy = hasCobeco
             // impactor 默认 false：不参与全新安装自动探测（Impactor 常被其它模组当作基础依赖装，
             // 自动开启会静默切换货币后端；服主显式写 true 才启用）
             impactor = false
@@ -355,23 +354,11 @@ object CobbleMarketConfig {
                     // 老服主已用 cobbledollars=true 运营市场，升级后若因装了 Cobblemon Economy 被自动切换后端，
                     // 余额存储会变（除非服主在 Cobblemon Economy 里开了 main_currency 桥接），行为突变。
                     // 探测值只在无配置文件的全新安装时作为默认（见上方 !configFile.exists() 分支）
-                    // ⚠ Cobblemon Economy 货币**暂时停用**：本模组当前版本只支持 Cobblemon 1.8+，而它在 1.8 上必崩 ——
-                    //   Cobblemon 1.8 把图鉴字段 PokedexEntryProgress.CAUGHT 改名为 OWNED，
-                    //   而 Cobblemon Economy（截至 0.0.17）仍引用旧字段名 → 玩家**选择初始精灵**时
-                    //   NoSuchFieldError 直接崩掉服务端（与本模组无关，但装了就会被算到我们头上）。
-                    //   这里硬锁 false：服主在配置里写 true 也不生效，并会在日志里收到说明。
-                    //   待 Cobblemon Economy 适配 1.8 后，本模组发一个小版本解除锁定即可。
-                    val fileCobecoRequested = (currency["cobblemonEconomy"] as? Boolean ?: false) && hasCobeco
-                    if (fileCobecoRequested) {
-                        CobbleMarket.LOGGER.warn(
-                            "配置里启用了 Cobblemon Economy 货币，但当前版本已暂时停用该模式：" +
-                                "Cobblemon 1.8 将图鉴字段 PokedexEntryProgress.CAUGHT 改名为 OWNED，" +
-                                "而 Cobblemon Economy（截至 0.0.17）仍引用旧字段名，" +
-                                "会导致玩家选择初始精灵时服务器崩溃。已自动降级到下一个可用货币；" +
-                                "待 Cobblemon Economy 适配 1.8 后本模组会恢复支持。"
-                        )
-                    }
-                    val fileCobeco = false
+                    // ⚠ Cobblemon Economy 在 Cobblemon 1.8+ 上会导致崩服（CE 引用了已改名的图鉴字段），
+                    //   但**本模组刻意不做任何自动处理**：配置照原样生效、货币照常用，只在启动时给一条警告
+                    //   （见 CurrencyHandler.warnIfCobecoIncompatible）。理由：静默切换货币后端比崩溃危险得多 ——
+                    //   崩溃立刻可见、有人来查；货币悄悄换掉会让玩家余额对不上，往往几天后才发现。
+                    val fileCobeco = (currency["cobblemonEconomy"] as? Boolean ?: false) && hasCobeco
                     // 结算货币归一化：大小写/全名/缩写都认（PCO/pco/PokeCoins → PCO），其余回 POKE（防服主写错值静默用错货币）
                     val fileCobecoCurrency = when (currency["cobecoCurrency"]?.toString()?.lowercase()) {
                         "pco", "pokecoins" -> "PCO"
@@ -544,7 +531,7 @@ object CobbleMarketConfig {
         val data = mapOf(
             "_comments" to mapOf(
                 "currency.cobbledollars" to "是否使用 CobbleDollars 货币（true/false，cobblemonEconomy=true 时被忽略）。⚠ 货币配置仅在服务器启动时读取，修改后需重启生效 / Whether to use CobbleDollars currency (true/false, ignored when cobblemonEconomy=true). ⚠ Currency settings are read only at server startup — restart after changes",
-                "currency.cobblemonEconomy" to "⚠ 当前版本已暂时停用（Cobblemon 1.8 不兼容该模式，详见更新日志），此项恒为 false。是否优先使用 Cobblemon Economy 的货币 API（true/false）。true 时市场余额走 Cobblemon Economy 后端，其内置桥接可路由到 CobbleDollars/Impactor——若服主在 Cobblemon Economy 配置里把 main_currency 设为 cobbledollars，市场与 CobbleDollars 商人共享同一余额；旧配置升级默认 false（行为不变），全新安装默认按探测自动开启。⚠ 仅 Fabric 平台生效：Cobblemon Economy 无 NeoForge 版，NeoForge 上此开关恒被忽略 / ⚠ DISABLED in this version (incompatible with Cobblemon 1.8, see changelog) — this switch is always false. Prefer Cobblemon Economy's currency API (true/false). When true the market uses the Cobblemon Economy backend, whose built-in bridge can route to CobbleDollars/Impactor — if main_currency=cobbledollars in Cobblemon Economy config, the market and CobbleDollars merchants share one balance; defaults to false on config upgrade (no behavior change) and to auto-detection on fresh installs. ⚠ Fabric only: Cobblemon Economy has no NeoForge build, so this switch is always ignored on NeoForge",
+                "currency.cobblemonEconomy" to "⚠ 与 Cobblemon 1.8+ 不兼容（会导致玩家选择初始精灵时崩服），启用时服务器启动会给出警告。是否优先使用 Cobblemon Economy 的货币 API（true/false）。true 时市场余额走 Cobblemon Economy 后端，其内置桥接可路由到 CobbleDollars/Impactor——若服主在 Cobblemon Economy 配置里把 main_currency 设为 cobbledollars，市场与 CobbleDollars 商人共享同一余额；旧配置升级默认 false（行为不变），全新安装默认按探测自动开启。⚠ 仅 Fabric 平台生效：Cobblemon Economy 无 NeoForge 版，NeoForge 上此开关恒被忽略 / ⚠ Incompatible with Cobblemon 1.8+ (crashes the server when a player picks a starter Pokémon) — enabling it logs a warning at startup. Prefer Cobblemon Economy's currency API (true/false). When true the market uses the Cobblemon Economy backend, whose built-in bridge can route to CobbleDollars/Impactor — if main_currency=cobbledollars in Cobblemon Economy config, the market and CobbleDollars merchants share one balance; defaults to false on config upgrade (no behavior change) and to auto-detection on fresh installs. ⚠ Fabric only: Cobblemon Economy has no NeoForge build, so this switch is always ignored on NeoForge",
                 "currency.cobecoCurrency" to "Cobblemon Economy 结算货币：POKE=PokeDollars（默认），PCO=PokeCoins（写 PCO 或 PokeCoins 均可，不区分大小写）。仅 cobblemonEconomy=true 时生效；PCO 与 PokeDollars 是两套独立账本，市场用 PCO 结算时玩家 /pco 查到的余额就是市场余额 / Cobblemon Economy settlement currency: POKE=PokeDollars (default), PCO=PokeCoins (either PCO or PokeCoins, case-insensitive). Only used when cobblemonEconomy=true; PCO and PokeDollars are separate ledgers — with PCO the market balance equals what players see via /pco",
                 "currency.impactor" to "Impactor 直连开关（true/false，双平台可用）：不装 Cobblemon Economy 时直接走 Impactor 的 EconomyService API，市场余额即 Impactor 主货币账户。优先级低于 cobblemonEconomy 与 cobbledollars（两者任一开启时被忽略）；默认 false 且不参与全新安装自动探测（Impactor 常被其它模组当作基础依赖安装，自动开启会静默切换货币后端），想用请显式写 true / Direct Impactor integration (true/false, works on both loaders): without Cobblemon Economy, the market talks to Impactor's EconomyService API directly and the market balance is the Impactor primary currency account. Lower priority than cobblemonEconomy and cobbledollars (ignored when either is on); defaults to false and is NOT auto-detected on fresh installs (Impactor is often installed as a library by other mods — auto-enabling would silently switch the currency backend), set true explicitly to use it",
                 "currency.item" to "货币物品 ID（cobbledollars / cobblemonEconomy / impactor 均为 false 时生效）/ Currency item ID (used when cobbledollars, cobblemonEconomy and impactor are all false)",
