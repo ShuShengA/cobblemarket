@@ -1685,8 +1685,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 lines.add(null to 0)
                 lines.add(null to 0)
             }
-            lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(" ").append(Text.literal(entry.sellerName)) to w)
-            lines.add(Text.translatable("cobblemarket.gui.tooltip_price").append(" ").append(
+            lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)) to w)
+            lines.add(Text.translatable("cobblemarket.gui.tooltip_price").append(
                 Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)) to w)
 
             var maxWidth = 0

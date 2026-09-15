@@ -185,7 +185,9 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
         for (entry in newEntries) {
             val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
             entryStacks[entry.id] = stack
-            tooltipStackLines[entry.id] = stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC)
+            // 走统一入口（别直连 getTooltip）：受损物品才会多一行「耐久：X / Y」
+            tooltipStackLines[entry.id] = com.shusheng.cobblemarket.client.ItemComponentsDisplay
+                .itemTooltip(stack, client?.player, TooltipType.BASIC)
                 .map { it to 0xFFFFFF }
             // ADVANCED 不在此构建：Fabric tooltip 信息块只在构建时 Shift 按住才生成，渲染处按需构建
         }
@@ -308,9 +310,9 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
         } else {
             lines.add(Text.literal(entry.itemId) to 0xFFFFFF)
         }
-        lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(" ").append(entry.sellerName) to 0xFFFFFF)
+        lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(entry.sellerName) to 0xFFFFFF)
         // 价格行：标签默认色，金额段蓝色（2026-08-24 拍板）
-        lines.add(Text.translatable("cobblemarket.item.tooltip_price").append(" ").append(
+        lines.add(Text.translatable("cobblemarket.item.tooltip_price").append(
             Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)
         ) to 0xFFFFFF)
         lines.add(Text.literal("×${entry.count}") to 0xFFFFFF)

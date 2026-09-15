@@ -250,10 +250,10 @@ object EntryBadgeRenderer {
             lines.add(null to 0)
         }
         lines.add(
-            Text.translatable("cobblemarket.gui.tooltip_seller").append(" ").append(Text.literal(entry.sellerName)) to 0xFFFFFF
+            Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)) to 0xFFFFFF
         )
         lines.add(
-            Text.translatable("cobblemarket.gui.tooltip_price").append(" ").append(
+            Text.translatable("cobblemarket.gui.tooltip_price").append(
                 Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)) to 0xFFFFFF
         )
 
