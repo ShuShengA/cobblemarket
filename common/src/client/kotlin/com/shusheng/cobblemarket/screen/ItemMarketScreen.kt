@@ -521,9 +521,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         } else {
             built.add(Text.literal(entry.itemId) to 0xFFFFFF)
         }
-        built.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(" ").append(entry.sellerName) to 0xFFFFFF)
+        built.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(entry.sellerName) to 0xFFFFFF)
         // 价格行：标签默认色，金额段蓝色（2026-08-24 拍板）
-        built.add(Text.translatable("cobblemarket.item.tooltip_price").append(" ").append(
+        built.add(Text.translatable("cobblemarket.item.tooltip_price").append(
             Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)
         ) to 0xFFFFFF)
         built.add(Text.literal("×${entry.count}") to 0xFFFFFF)

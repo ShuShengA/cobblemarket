@@ -199,7 +199,7 @@ class MeowthPayScreen(
         val lineX = dialogX + 12
         var ly = dialogY + 42
         // 商品名按可用宽度截断（长名不溢出弹窗）
-        val itemLine = Text.translatable("cobblemarket.meowth_pay.confirm_item").append(" ").append(itemDesc)
+        val itemLine = Text.translatable("cobblemarket.meowth_pay.confirm_item").append(itemDesc)
         context.drawTextWithShadow(
             textRenderer,
             com.shusheng.cobblemarket.util.TextUtil.truncateString(itemLine.string, dW - 24),

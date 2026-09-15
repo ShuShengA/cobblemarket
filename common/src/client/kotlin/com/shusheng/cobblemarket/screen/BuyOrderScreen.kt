@@ -913,7 +913,7 @@ class BuyOrderScreen(
             var quantityLine = -1
             if (entry.type == "ITEM") quantityLine = lines.size
             // 价格区间：标签默认色，金额段蓝色（2026-08-24 拍板）
-            lines.add(Text.translatable("cobblemarket.buy_order.tooltip_price").append(" ").append(
+            lines.add(Text.translatable("cobblemarket.buy_order.tooltip_price").append(
                 Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.minPrice)}~${com.shusheng.cobblemarket.client.formatPrice(entry.maxPrice)}${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GOLD)
             ).asOrderedText() to w)
             // 买家留言区块：分割线夹多行内容（照拍卖规则面板样式），无备注不显示
@@ -925,7 +925,7 @@ class BuyOrderScreen(
                 lines.add(null to w)
             }
             // 买家：纯文字行默认色
-            lines.add(Text.translatable("cobblemarket.buy_order.tooltip_buyer").append(" ").append(Text.literal(entry.buyerName)).asOrderedText() to w)
+            lines.add(Text.translatable("cobblemarket.buy_order.tooltip_buyer").append(Text.literal(entry.buyerName)).asOrderedText() to w)
             // 到期行为动态行，不缓存
 
             var maxWidth = 0
@@ -947,7 +947,7 @@ class BuyOrderScreen(
         } else {
             lines.addAll(staticLines)
         }
-        lines.add(Text.translatable("cobblemarket.buy_order.tooltip_expires").append(" ").append(Text.literal(formatRemaining(entry.expiresAt))).asOrderedText() to 0xFFFFFF)
+        lines.add(Text.translatable("cobblemarket.buy_order.tooltip_expires").append(Text.literal(formatRemaining(entry.expiresAt))).asOrderedText() to 0xFFFFFF)
 
         var maxWidth = tooltipCacheMaxWidth
         if (quantityLine >= 0) {
@@ -1948,7 +1948,10 @@ class BuyOrderScreen(
                 client?.world?.registryManager?.let { rm ->
                     val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
                     if (!stack.isEmpty) {
-                        val lines = stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC).drop(1)
+                        // 走统一入口（别直连 getTooltip）：受损物品才会多一行「耐久：X / Y」
+                        // drop(1) 丢掉物品名（弹窗自己会画），耐久行紧随其后会被保留
+                        val lines = com.shusheng.cobblemarket.client.ItemComponentsDisplay
+                            .itemTooltip(stack, client?.player, TooltipType.BASIC).drop(1)
                         val advanced = com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(stack, client?.player, TooltipType.ADVANCED).drop(1)
                         reviewItemTooltipLines = lines
                         reviewItemAdvancedLines = advanced

@@ -38,7 +38,13 @@ object ItemComponentsDisplay {
         return summary(com.shusheng.cobblemarket.market.ItemRuleComponents.extractSpec(stack, registryManager))
     }
 
-    /** 悬停词条按键语义：Shift=完整词条、Ctrl=调试信息行（Fabric 注入只看构建时按键，与 F3+H 无关）、Shift+Ctrl=两者、不按=普通 */
+    /**
+     * 悬停词条按键语义（⚠ **本项目自定义，非原版行为**）：Shift=完整词条、Ctrl=组件明细、Shift+Ctrl=两者、不按=普通。
+     *
+     * 原版并没有「按住某个键展开」这回事：`TooltipType.ADVANCED` 由 F3+H（advancedItemTooltips）决定，
+     * `withCreative()` 原版只用在创造模式物品栏、且是**始终生效**不需要按键。这里的按键映射是本模组自己加的。
+     * （Fabric 注入只看构建时按键，与 F3+H 无关）
+     */
     fun tooltipTypeForHover(): TooltipType {
         val advanced = net.minecraft.client.gui.screen.Screen.hasShiftDown()
         val creative = net.minecraft.client.gui.screen.Screen.hasControlDown()
@@ -78,7 +84,8 @@ object ItemComponentsDisplay {
         // 但在市场里买东西不该要求玩家先按住 Shift —— 看不到耐久就可能高价买到快报废的工具。
         // 满耐久不显示，与图标上的耐久条（drawItemWithBar）口径一致。
         // 插在 index 1 而不是末尾：调用方有 `.drop(1)` 丢掉物品名的用法，放末尾会被丢掉的语义带偏。
-        if (!stack.isDamaged) return filtered
+        // ⚠ 仅普通悬停补：Shift 展开（ADVANCED）时原版自己就带 item.durability 行，补了会变成两行耐久
+        if (!stack.isDamaged || type.isAdvanced()) return filtered
         val out = filtered.toMutableList()
         out.add(
             minOf(1, out.size),

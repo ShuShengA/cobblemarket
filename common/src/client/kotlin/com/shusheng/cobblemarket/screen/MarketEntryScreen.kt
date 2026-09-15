@@ -486,7 +486,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private fun cycleBalanceHud() {
         ClientConfig.cycleBalanceHudMode()
         settingsBalanceHudButton?.message = Text.translatable(balanceHudModeKey())
-        settingsToastText = Text.translatable("cobblemarket.settings.balance_hud").append(" ")
+        settingsToastText = Text.translatable("cobblemarket.settings.balance_hud")
             .append(Text.translatable(balanceHudModeKey()))
         settingsToastUntil = System.currentTimeMillis() + 1500
     }
@@ -499,14 +499,14 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private fun cycleIconAnim() {
         ClientConfig.cycleIconAnimMode()
         settingsIconAnimButton?.message = Text.translatable(iconAnimModeKey())
-        settingsToastText = Text.translatable("cobblemarket.settings.icon_anim").append(" ")
+        settingsToastText = Text.translatable("cobblemarket.settings.icon_anim")
             .append(Text.translatable(iconAnimModeKey()))
         settingsToastUntil = System.currentTimeMillis() + 1500
     }
 
     /** 开关切换 toast：「标签 开/关」，1.5 秒后消失 */
     private fun showSettingsToast(labelKey: String, on: Boolean) {
-        settingsToastText = Text.translatable(labelKey).append(" ")
+        settingsToastText = Text.translatable(labelKey)
             .append(if (on) Text.translatable("cobblemarket.settings.on_state").formatted(Formatting.GREEN)
                 else Text.translatable("cobblemarket.settings.off_state").formatted(Formatting.RED))
         settingsToastUntil = System.currentTimeMillis() + 1500
