@@ -69,6 +69,15 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
 
     private var cancelRenderable: RenderablePokemon? = null
     private val cancelPreviewState = FloatingState()
+
+    /**
+     * 打开强制下架弹窗时要不要自动叫一声（替玩家点一下弹窗里的精灵图标）。
+     *
+     * **不能在 [openCancelDialog] 里直接播**：`addFirstAnimation` 依赖 `state.currentModel`，
+     * 而它要等 `drawProfilePokemon` 跑过才有值 —— 这份 state 虽然常驻，但「从没渲染过」时它仍是 null，
+     * 于是表现为「第一次开这个弹窗不叫、之后再开才叫」。改成挂标志，第一帧画完图标后再播。
+     */
+    private var cancelCryPending = false
     private var cancelConfirmButton: NineSliceButton? = null
     private var cancelCancelButton: NineSliceButton? = null
 
@@ -330,8 +339,10 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             }
         }
         // 点行 → 弹窗弹出 → 由弹窗里的精灵叫一声（用户拍板的「叫声转移」）。
-        // 弹窗的 state 是常驻的，弹窗期间照常渲染推进，所以动画和声音都能正常播出来
-        cancelRenderable?.let { IconCryClick.play(cancelPreviewState, it) }
+        // ⚠ 只挂标志、不在这里直接播：addFirstAnimation 依赖 state.currentModel，
+        //   而它要等 drawProfilePokemon 跑过才有值 —— 常驻 state 在「从没渲染过」时仍是 null，
+        //   原先直接播的写法只在开过一次之后才叫（见 cancelCryPending）
+        cancelCryPending = true
         val centerX = width / 2
         // 弹窗高度按左列信息区实际内容算（球种/携带物/证章都计入），按钮/提示统一相对弹窗底定位
         val dialogH = cancelDialogHeight(entry)
@@ -846,6 +857,12 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                         delta = delta,
                         animate = useFloat
                     )
+                    // 打开弹窗时自动叫一声（替玩家点一下这个图标）：**必须在渲染之后** ——
+                    // addFirstAnimation 依赖 currentModel，那是 drawProfilePokemon 里才建好的
+                    if (cancelCryPending) {
+                        cancelCryPending = false
+                        IconCryClick.play(cancelPreviewState, rp)
+                    }
                 } catch (_: Exception) {
                 }
             }

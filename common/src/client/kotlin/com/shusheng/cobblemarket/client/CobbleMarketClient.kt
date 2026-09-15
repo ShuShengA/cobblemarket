@@ -443,8 +443,11 @@ object CobbleMarketClient {
             MinecraftClient.getInstance().execute {
                 // 落槌立即播放（与条目消失同帧；受众已定向为卖家/参与者，多拍卖同批时各自播放）
                 MinecraftClient.getInstance().soundManager.play(
+                    // 同样走三参：落槌要的是**满音量** 1.0（三声警告 0.4/0.6/0.8 的递进终点）；
+                    // 两参版会把音量压成 0.25，那样落槌反而比警告声还轻
                     PositionedSoundInstance.master(
                         SoundEvent.of(Identifier.of("cobblemarket", "auction_gavel")),
+                        1.0f,
                         1.0f
                     )
                 )
@@ -521,10 +524,14 @@ object CobbleMarketClient {
         registerS2C(AuctionWarnSoundPayload.ID, AuctionWarnSoundPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 // 渐强警告声：1→0.4、2→0.6、3→0.8（与成交落槌 1.0 递进）
+                // ⚠ 必须走**三参**重载：两参版 `master(sound, x)` 的 x 是 **pitch**、音量被写死成 0.25。
+                //   原先传两参等于「响度不变、锤子越敲越尖」，人耳听感反而像渐弱（2026-09-15 用户听出来的）。
+                //   要调音量就得显式给 pitch：保持 1.0 = 原音高。
                 val volume = when (payload.knock) { 1 -> 0.4f; 2 -> 0.6f; else -> 0.8f }
                 MinecraftClient.getInstance().soundManager.play(
                     PositionedSoundInstance.master(
                         SoundEvent.of(Identifier.of("cobblemarket", "auction_gavel")),
+                        1.0f,
                         volume
                     )
                 )
