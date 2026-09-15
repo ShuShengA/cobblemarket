@@ -61,17 +61,6 @@ object IconRegistry {
     }
 
     /**
-     * 按物种名找本帧登记的图标，用作庆祝动画的起点（从界面上这只精灵的图标处起飞）。
-     *
-     * 只按物种匹配、不比对形态/闪光：同屏出现两只同种精灵时会取到渲染顺序靠后的那只 ——
-     * 起点差几行视觉上无所谓，而"拿不到就退回兜底起点"本来就是设计的一部分。
-     *
-     * @param speciesName 不带命名空间的物种名（如 `pikachu`），与 `Species.name` 同口径
-     */
-    fun entryOfSpecies(speciesName: String): Entry? =
-        entries.lastOrNull { it.renderable.species.name.equals(speciesName, ignoreCase = true) }
-
-    /**
      * 鼠标是否停在"这个图标所在的行"上（只看纵向）。
      *
      * 行内图标用它判断自己要不要进预览态（跟大图一起走 walk）。**只在行内调用点用它** ——
