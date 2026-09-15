@@ -1011,7 +1011,12 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         }
     }
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
+    private fun renderPokemonIcon(
+        context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f,
+        /** 本行是否被悬停（跟左侧大图一起走 walk）。**必须由调用方按行索引算**：
+         *  早先用 `IconRegistry.isMouseInRow` 只看纵向，鼠标跑到面板外侧、只要 y 平齐也会触发动画（2026-09-15） */
+        preview: Boolean = false
+    ) {
         val data = iconData[index] ?: return
         // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
         val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
@@ -1024,8 +1029,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 x = x, y = y, size = size,
                 delta = delta,
                 animate = useFloat,
-                // 鼠标停在这一行时进预览态（跟左侧大图一起走 walk）
-                preview = IconRegistry.isMouseInRow(y, size)
+                preview = preview
             )
         } catch (_: Exception) {
         }
@@ -1228,7 +1232,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 context.matrices.pop()
                 if (iconData.containsKey(origIndex)) {
                     // 弹窗打开时不渲染 3D（模型层在衬底之上，压暗仍会浮在弹窗上）
-                    if (addField == null) renderPokemonIcon(context, origIndex, slotX, slotY, iconSize, delta = delta)
+                    if (addField == null) renderPokemonIcon(context, origIndex, slotX, slotY, iconSize, delta = delta, preview = i == hoveredRow)
                 } else {
                     // 物种留空（全部精灵）：槽位画 "?"
                     context.drawCenteredTextWithShadow(textRenderer, "?", slotX + iconSize / 2, slotY + iconSize / 2 - 4, 0xFFFFFF)
@@ -1284,10 +1288,14 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         }
 
         // 悬停预览大图：画在本界面内容全部之后才在面板之上。
-        // 弹窗打开时行内图标不渲染 → entryInRow 找不到 → 自动不显示，不用额外判断弹窗
-        val previewRowL = width / 2 - panelWidth / 2
-        IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
-            ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
+        // **弹窗打开时一律不画**（照精灵市场）：addField 是两种弹窗（精灵/物品）共用的输入框字段，
+        // 非空即弹窗打开；这时注册表里只剩弹窗自己的图标，鼠标停在弹窗上照样能命中 entryInRow
+        // （它只按 y 匹配行范围 + x 在面板内）→ 左侧无故冒出大图（2026-09-15 实测）
+        if (addField == null) {
+            val previewRowL = width / 2 - panelWidth / 2
+            IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
+                ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
+        }
     }
 
     private fun renderPokemonTooltip(context: DrawContext, entry: PokemonPriceLimitEntry, mouseX: Int, mouseY: Int) {

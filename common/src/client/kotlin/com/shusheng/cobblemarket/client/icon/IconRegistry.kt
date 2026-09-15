@@ -60,15 +60,6 @@ object IconRegistry {
         return entries.lastOrNull { e -> my >= e.y - 2 && my < e.y + e.size + 2 }
     }
 
-    /**
-     * 鼠标是否停在"这个图标所在的行"上（只看纵向）。
-     *
-     * 行内图标用它判断自己要不要进预览态（跟大图一起走 walk）。**只在行内调用点用它** ——
-     * 弹窗里的图标不能用，否则鼠标划过弹窗图标时它会自顾自走起来，而那时大图是不显示的。
-     */
-    fun isMouseInRow(y: Int, size: Int): Boolean =
-        mouseY >= y - 2 && mouseY < y + size + 2
-
     /** 本帧全部图标，按登记顺序（即渲染顺序）。 */
     val all: List<Entry> get() = entries
 }

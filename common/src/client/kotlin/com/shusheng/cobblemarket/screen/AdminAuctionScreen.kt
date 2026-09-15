@@ -210,7 +210,12 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
     }
 
     /** 携带物栈（空气视为无）；缓存供行渲染每帧复用（照精灵市场） */
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
+    private fun renderPokemonIcon(
+        context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f,
+        /** 本行是否被悬停（跟左侧大图一起走 walk）。**必须由调用方按行索引算**：
+         *  早先用 `IconRegistry.isMouseInRow` 只看纵向，鼠标跑到面板外侧、只要 y 平齐也会触发动画（2026-09-15） */
+        preview: Boolean = false
+    ) {
         val data = iconData[index] ?: return run {
             val tc = 0x88888888.toInt()
             context.fill(x, y, x + size, y + size, tc)
@@ -226,8 +231,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 x = x, y = y, size = size,
                 delta = delta,
                 animate = useFloat,
-                // 鼠标停在这一行时进预览态（跟左侧大图一起走 walk）
-                preview = IconRegistry.isMouseInRow(y, size)
+                preview = preview
             )
         } catch (_: Exception) {
         }
@@ -499,7 +503,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
                 if (iconData.containsKey(origIndex)) {
-                    renderPokemonIcon(context, origIndex, slotX, slotY, iconSize, delta = delta)
+                    renderPokemonIcon(context, origIndex, slotX, slotY, iconSize, delta = delta, preview = i == hoveredRow)
                 }
                 // 图标链 + 属性色名称 + 金色闪光星标（照搬拍卖场行）
                 var sx = leftX + 26
@@ -603,10 +607,13 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         }
 
         // 悬停预览大图：画在本界面内容全部之后才在面板之上。
-        // 弹窗打开时行内图标不渲染 → entryInRow 找不到 → 自动不显示，不用额外判断弹窗
-        val previewRowL = width / 2 - panelWidth / 2
-        IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
-            ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
+        // **弹窗打开时一律不画**（照精灵市场）：这时注册表里只剩弹窗自己的图标，鼠标停在弹窗上
+        // 照样能命中 entryInRow（它只按 y 匹配行范围 + x 在面板内）→ 左侧无故冒出大图（2026-09-15 实测）
+        if (cancelEntry == null) {
+            val previewRowL = width / 2 - panelWidth / 2
+            IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
+                ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
+        }
     }
 
     // ── 悬停（照搬拍卖场，去掉「我的」标记） ──

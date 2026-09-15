@@ -554,7 +554,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             context.matrices.pop()
             val iconX = lx + 2
             val iconY = y + 2
-            renderPokemonIcon(context, origIdx, iconX, iconY, iconSize, delta = delta)
+            renderPokemonIcon(context, origIdx, iconX, iconY, iconSize, delta = delta, preview = i == hovered)
 
             // Species（[队]/[PC] 固定色，精灵名属性色 + 金色闪光星标拆段绘制；PC 用电脑物品图标，[] 保持原色）
             val tc = typeColor(if (e.primaryType.isNotEmpty()) e.primaryType else "cobblemon.type.normal")
@@ -836,7 +836,12 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         if (mirrored && wasCull) org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_CULL_FACE)
     }
 
-    private fun renderPokemonIcon(context: DrawContext, origIdx: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
+    private fun renderPokemonIcon(
+        context: DrawContext, origIdx: Int, x: Int, y: Int, size: Int, delta: Float = 0f,
+        /** 本行是否被悬停（跟左侧大图一起走 walk）。**必须由调用方按行索引算**：
+         *  早先用 `IconRegistry.isMouseInRow` 只看纵向，鼠标跑到面板外侧、只要 y 平齐也会触发动画（2026-09-15） */
+        preview: Boolean = false
+    ) {
         val data = iconData[origIdx] ?: return run {
             val tc = 0x88888888.toInt()
             context.fill(x, y, x + size, y + size, tc)
@@ -852,8 +857,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
                 x = x, y = y, size = size,
                 delta = delta,
                 animate = useFloat,
-                // 鼠标停在这一行时进预览态（跟左侧大图一起走 walk）
-                preview = IconRegistry.isMouseInRow(y, size)
+                preview = preview
             )
         } catch (_: Exception) {
         }

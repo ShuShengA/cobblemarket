@@ -57,11 +57,6 @@ object IconAnimationResolver {
         animate: Boolean,
         preview: Boolean = false
     ): Result {
-        // 先清掉已播完的主动画（叫声/战吼）。**必须自己做**：`PosableState.incrementAge` 里那段过期判定
-        // 只在有 entity 时运行，而我们的图标与庆祝动画全是 `FloatingState`（`getEntity() == null`），
-        // 那条路永远不走 —— 不清理的话 primary 会一直挂住，把待机/走路动画压死，精灵卡在最后一帧。
-        clearExpiredPrimaryAnimation(state)
-
         // 静态模式：不推进动画也不跟随鼠标（与 cry 点击、睡眠一致）
         if (!animate) return DEFAULT
 
@@ -190,14 +185,19 @@ object IconAnimationResolver {
         primaryAnimationName(renderable, "battle_cry")
 
     /**
-     * 清掉已播完的主动画。
+     * 清掉已播完的主动画（点击叫声的战吼）。
      *
      * 复刻 `PosableState.incrementAge` 的过期判定（`started + duration <= animationSeconds`），
      * **之所以必须自己写**：那段判定在 `incrementAge(entity)` 里、只在有 entity 时被调用，
-     * 而我们的图标与庆祝动画全是 `FloatingState`（`getEntity() == null`），它永远不跑 ——
-     * 不清理的话 primary 会永远挂住，待机/走路动画再也回不来（精灵卡在吼叫的最后一帧）。
+     * 而图标是 `FloatingState`（`getEntity() == null`），它永远不跑 ——
+     * 不清理的话 primary 会一直挂住，待机/走路动画再也回不来（精灵卡在吼叫的最后一帧）。
+     *
+     * ⚠ **只有长期存在的 state 需要它**（图标、悬停大图），所以由那两个调用方各自调。
+     * **庆祝动画不要调**：它的 state 是一次性的，而且提前放手会把战吼拦腰打断
+     * （2026-09-15 实测症状：「落下时是战吼，立刻被截断成普通待机动画」）。
+     * 这段以前挂在 [resolve] 里，等于把三种调用者一起管了 —— 已挪出。
      */
-    private fun clearExpiredPrimaryAnimation(state: PosableState) {
+    fun clearExpiredPrimaryAnimation(state: PosableState) {
         val primary = state.primaryAnimation ?: return
         if (primary.started + primary.duration <= state.animationSeconds) {
             state.primaryAnimation = null

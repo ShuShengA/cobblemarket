@@ -14,10 +14,11 @@
 - **Cries on click**: clicking a Pokemon row in a list (or a Pokemon icon inside a dialog) plays that Pokemon's cry — **the regular cry or a battle cry at random** (only species that actually have a battle cry animation can roll one; for everyone else it is always the regular cry); sleeping Pokemon and "Static" mode don't respond
 - **Battle cries are no longer battle-only**: in vanilla these animations are visible **only the moment a Pokemon is sent out to battle** (opening send-out, switching in, transforming); clicking a Pokemon on the Summary screen, in the Pokedex or in the trade screen always plays the regular cry. Now you can hear them by clicking icons in the Market, Auction House and Buy Orders, just like the celebration animation
 - **Keeps up with Cobblemon automatically**: when the official mod adds battle cry animations to more Pokemon, this mod **displays them without needing an update**
+- **Known issue: some Pokemon play a swimming animation on hover under Cobblemon 1.8.1**: starting with the official 1.8.1, pose conditions for Pokemon evaluate differently than in 1.8.0, so some Pokemon (Charizard and Pikachu, for example) show a water-swimming motion in their icons and hover preview. It is not yet clear whether this is an intended change on Cobblemon's side, so we are not working around it for now
 
 #### Item Animations
 
-- **Item celebration animation**: buying an item, winning an item auction or receiving an item buy-order delivery now drops the item icon in from the top of the screen with a bounce and a pickup sound
+- **Item celebration animation**: buying an item, winning an item auction or receiving an item buy-order delivery now flies the item icon from its position in the dialog to the centre of the screen (the same entrance the Pokemon celebration uses), holds for a moment, then fades out, with a pickup sound; when no icon is available (Meowth Pay, offline delivery) it still drops in from the top with a bounce
 - **Item hover preview**: hovering an item slot in the Item Market, or an item row in the Auction House / Buy Orders, shows an enlarged icon of that item on the left side of the screen
 - **Separate item switches**: a new "Items" group in Settings (market purchase / auction & orders / item preview), independent from the "Pokemon" group
 
@@ -51,6 +52,7 @@
 - **Enchanted and renamed items rendered incorrectly in the Auction House and its Admin Panel**: enchanted books appeared as plain books and renamed items showed their default name in those views; they now render from the item's full data (both list rows and detail dialogs)
 - **Held item icons ignored enchantments and custom names**: when a Pokemon's held item was enchanted or renamed, its icon in lists and detail views showed the plain item; the icons now render from the item's full data (Auction House, Buy Orders, sell-select and Admin Panels)
 - **Missing space after colons in English labels**: some English labels (Type / Ball / Nature / Ability / IVs) had no space after the colon, sticking to their value; now fixed
+- **The minimum bid increment hint on the auction listing screen never showed the server default**: the placeholder stayed at "leave blank = default" instead of showing the actual amount — the config was already fetched when the screen opened, but the field is only created when you open the listing window, so the update was always skipped (it only happened to show correctly after a window resize rebuilt the screen); it now displays correctly either way
 
 ## 1.1.0 (in development, unreleased)
 
