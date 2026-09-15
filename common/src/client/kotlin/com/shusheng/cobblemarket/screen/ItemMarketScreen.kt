@@ -31,6 +31,7 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import java.util.UUID
 import com.shusheng.cobblemarket.client.drawItemWithBar
+import com.shusheng.cobblemarket.client.ItemCelebrationAnimation
 
 class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
@@ -72,6 +73,15 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private var tooltipAdvancedType: TooltipType? = null
 
     private var selectedEntry: ItemEntry? = null
+
+    /**
+     * 购买弹窗里那个物品图标的屏幕位置，**渲染时记录**。
+     *
+     * 给物品庆祝动画当「图标起飞」的起点用 —— 确认购买后弹窗就关了、图标不复存在，坐标必须提前抓下来。
+     * 之所以在渲染时记、而不是在 [confirmBuy] 里重算：图标位置跟着 `dialogY` 走，
+     * 弹窗高度还会随消费贷开关伸缩（210/170），重算容易错位；渲染时记录则永远和实际画出来的一致。
+     */
+    private var buyDialogIconOrigin: ItemCelebrationAnimation.Origin? = null
     private var buyCountField: TextFieldWidget? = null
     // 购买数量校验失败提示（按钮上方红字，2 秒后消失；重新输入时清除）
     private var buyErrorText: net.minecraft.text.Text? = null
@@ -654,6 +664,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     private fun closeBuyDialog() {
         selectedEntry = null
+        buyDialogIconOrigin = null
         buyCountField = null
         buyPayButton = null
         clearChildren()
@@ -813,6 +824,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             )
             return
         }
+        // 登记物品庆祝动画的起飞起点 —— 就是本弹窗那个物品图标的位置与大小（关弹窗前先抓下来）。
+        // 起点带 3 秒过期（见 ItemCelebrationAnimation.setPendingOrigin），购买没成功也不会留脏值。
+        buyDialogIconOrigin?.let(ItemCelebrationAnimation::setPendingOrigin)
         sendToServer(BuyItemPayload(entry.id, count, -1))
         closeBuyDialog()
     }
@@ -848,6 +862,10 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         if (registry != null) {
             val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
             drawItemWithBar(context, stack, centerX - 8, dialogY + 26)
+            // 记下这个图标的位置（物品庆祝动画要从这里起飞）；物品图标基准 16×16
+            buyDialogIconOrigin = ItemCelebrationAnimation.Origin.ofIcon(
+                x = centerX - 8, y = dialogY + 26, size = 16
+            )
             // 物品名照物品栏悬浮第一行按稀有度着色
             context.drawCenteredTextWithShadow(textRenderer,
                 com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), centerX, dialogY + 46, 0xFFFFFF)

@@ -21,6 +21,7 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import com.shusheng.cobblemarket.client.heldIconStack
+import com.shusheng.cobblemarket.client.PokemonCelebrationAnimation
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
@@ -98,6 +99,15 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var confirmRenderable: RenderablePokemon? = null
     private var confirmDisplayName = ""
     private val confirmState = FloatingState()
+
+    /**
+     * 确认弹窗里那个精灵图标的屏幕位置，**渲染时记录**。
+     *
+     * 给庆祝动画当起飞起点用 —— 确认购买后弹窗就关了、图标不复存在，坐标必须提前抓下来。
+     * 之所以在渲染时记、而不是在 [confirmPurchase] 里重算：图标位置跟着 `dialogY` 走，
+     * 弹窗布局一改重算就会错位；渲染时记录则永远和实际画出来的一致。
+     */
+    private var confirmIconOrigin: PokemonCelebrationAnimation.Origin? = null
 
     /** 喵喵支付可用（消费贷开关）：初始读全局缓存（入口界面已拉取），避免首次打开弹窗宽度闪烁 */
     private var payAvailable = com.shusheng.cobblemarket.client.FinanceCache.consumerLoanEnabled
@@ -484,12 +494,22 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         cancelEntry = null
         confirmRenderable = null
         confirmDisplayName = ""
+        confirmIconOrigin = null
     }
 
     private fun confirmPurchase() {
         val entry = confirmEntry ?: return
+        registerCelebrationOrigin()
         sendToServer(BuyFromMarketPayload(entry.id, -1))
         closeConfirmDialog()
+    }
+
+    /**
+     * 关闭弹窗前登记庆祝动画的起飞起点 —— 就是本弹窗那个精灵图标的位置与大小。
+     * 起点带 3 秒过期（见 [PokemonCelebrationAnimation.setPendingOrigin]），购买没成功也不会留脏值。
+     */
+    private fun registerCelebrationOrigin() {
+        confirmIconOrigin?.let(PokemonCelebrationAnimation::setPendingOrigin)
     }
 
     private fun confirmCancel() {
@@ -508,6 +528,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             itemDesc = descName,
             amount = entry.price.toLong(),
             onConfirm = { plan ->
+                registerCelebrationOrigin()
                 sendToServer(BuyFromMarketPayload(entry.id, plan))
                 client?.setScreen(MarketScreen())
             },
@@ -1517,6 +1538,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         context.matrices.scale(iconSize / 66f, iconSize / 66f, 1f)
         context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
         context.matrices.pop()
+        // 记下这个图标的位置（庆祝动画要从这里起飞）；拿不到 renderable 时清掉，免得沿用上一只的旧坐标
+        confirmIconOrigin = if (confirmRenderable == null) null
+        else PokemonCelebrationAnimation.Origin.ofIcon(
+            x = iconX, y = iconY, size = iconSize, centerAnchorY = false
+        )
         confirmRenderable?.let { rp ->
             // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
             val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==

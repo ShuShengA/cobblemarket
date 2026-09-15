@@ -10,6 +10,9 @@ import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.ItemHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
+import com.shusheng.cobblemarket.client.PokemonCelebrationAnimation
+import com.shusheng.cobblemarket.client.ItemCelebrationAnimation
+import com.shusheng.cobblemarket.client.heldIconStack
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.market.PokemonBlacklistEntry
 import com.shusheng.cobblemarket.network.AcceptPendingDeliverPayload
@@ -162,6 +165,21 @@ class BuyOrderScreen(
     private var reviewAcceptButton: NineSliceButton? = null
     private var reviewRejectButton: NineSliceButton? = null
     private var reviewCancelButton: NineSliceButton? = null
+    /** 确认交付弹窗里的精灵模型（打开弹窗时按 pending 重建一次；物品单/物种解析失败为 null） */
+    private var reviewRenderable: RenderablePokemon? = null
+    private val reviewState = FloatingState()
+
+    /**
+     * 确认交付弹窗里那个精灵图标的屏幕位置，**渲染时记录**。
+     *
+     * 给庆祝动画当起飞起点用 —— 确认交付后弹窗就关了、图标不复存在，坐标必须提前抓下来。
+     * 之所以在渲染时记、而不是在 [acceptReview] 里重算：图标位置跟着 `dialogY` 走，
+     * 弹窗布局一改重算就会错位；渲染时记录则永远和实际画出来的一致。
+     */
+    private var reviewIconOrigin: PokemonCelebrationAnimation.Origin? = null
+
+    /** 确认交付弹窗里那个**物品**图标的屏幕位置（物品单才非 null）——物品庆祝动画的起飞起点，理由同上 */
+    private var reviewItemIconOrigin: ItemCelebrationAnimation.Origin? = null
 
     // ── 交付对话框状态 ──
     private var deliverEntry: BuyOrderEntry? = null
@@ -231,7 +249,12 @@ class BuyOrderScreen(
         }
     }
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
+    private fun renderPokemonIcon(
+        context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f,
+        /** 本行是否被悬停（跟左侧大图一起走 walk）。**必须由调用方按行索引算**：
+         *  早先用 `IconRegistry.isMouseInRow` 只看纵向，鼠标跑到面板外侧、只要 y 平齐也会触发动画（2026-09-15） */
+        preview: Boolean = false
+    ) {
         val data = iconData[index] ?: return
         val renderable = data.renderable ?: return
         // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
@@ -245,8 +268,7 @@ class BuyOrderScreen(
                 x = x, y = y, size = size,
                 delta = delta,
                 animate = useFloat,
-                // 鼠标停在这一行时进预览态（跟左侧大图一起走 walk）
-                preview = IconRegistry.isMouseInRow(y, size)
+                preview = preview
             )
         } catch (_: Exception) {
         }
@@ -749,7 +771,7 @@ class BuyOrderScreen(
                 context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
                 if (rowData?.renderable != null) {
-                    if (!anyDialogOpen) renderPokemonIcon(context, origIndex, slotX, slotY, iconSize, delta = delta)
+                    if (!anyDialogOpen) renderPokemonIcon(context, origIndex, slotX, slotY, iconSize, delta = delta, preview = i == hoveredRow)
                 } else {
                     context.drawCenteredTextWithShadow(textRenderer, "?", slotX + iconSize / 2, slotY + 6, 0xAAAAAA)
                 }
@@ -850,18 +872,22 @@ class BuyOrderScreen(
         }
 
         // 悬停预览大图：画在本界面内容全部之后才在面板之上。
-        // 弹窗打开时行内图标不渲染 → entryInRow 找不到 → 自动不显示，不用额外判断弹窗
-        val previewRowL = rowLeftX()
-        IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + rowW())
-            ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
-        // 物品求购单行的大图：物品图标不进注册表，从行缓存取（精灵行的 itemStack 为 null）。
-        // ⚠ 必须走 indexedDisplay 的原始索引（同上方行渲染），不能用 scrollOffset + hoveredRow ——
-        // 后者是**过滤后**列表的行号，而 iconData 的 key 是 entries 的索引，有过滤时不是一回事
-        // （2026-09-12 踩过：拍卖场同样写法导致精灵行弹出物品大图）
-        if (hoveredRow >= 0) {
-            indexedDisplay.getOrNull(scrollOffset + hoveredRow)?.let { (absIdx, _) ->
-                iconData[absIdx]?.itemStack?.let {
-                    ItemHoverPreview.render(context, it, previewRowL, height)
+        // **弹窗打开时一律不画**（照精灵市场）：大图画在 `super.render()` 之后，不拦会压住弹窗遮罩；
+        // 而且这时注册表里只剩弹窗自己的图标，鼠标停在弹窗上照样能命中 `entryInRow`（2026-09-15 实测）——
+        // 「弹窗打开 → 行内图标不渲染 → 自动查不到」这个旧假设不成立
+        if (!anyDialogOpen()) {
+            val previewRowL = rowLeftX()
+            IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + rowW())
+                ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
+            // 物品求购单行的大图：物品图标不进注册表，从行缓存取（精灵行的 itemStack 为 null）。
+            // ⚠ 必须走 indexedDisplay 的原始索引（同上方行渲染），不能用 scrollOffset + hoveredRow ——
+            // 后者是**过滤后**列表的行号，而 iconData 的 key 是 entries 的索引，有过滤时不是一回事
+            // （2026-09-12 踩过：拍卖场同样写法导致精灵行弹出物品大图）
+            if (hoveredRow >= 0) {
+                indexedDisplay.getOrNull(scrollOffset + hoveredRow)?.let { (absIdx, _) ->
+                    iconData[absIdx]?.itemStack?.let {
+                        ItemHoverPreview.render(context, it, previewRowL, height)
+                    }
                 }
             }
         }
@@ -1935,11 +1961,33 @@ class BuyOrderScreen(
                 (if (listing?.ball?.isNotEmpty() == true) 1 else 0) +
                 (if (listing != null && EntryBadgeRenderer.hasHeldItemLine(listing)) 1 else 0)
             val marksH = if (listing != null) EntryBadgeRenderer.marksBlockHeight(listing.marks) else 0
-            26 + infoRows * 10 + marksH + 72
+            // 顶部 62 = 标题 + 28 高的图标（占 +28~+56）+ 6px 间隙，名字行才起在 +62（照市场购买确认弹窗）
+            62 + infoRows * 10 + marksH + 72
         }
+
+    /**
+     * 按待确认交付的精灵重建弹窗里的 3D 模型（照市场购买确认弹窗的 buildConfirmRenderable）。
+     *
+     * speciesId / aspects 都取自 pending.extraData —— 就是卖家交付来的那一只，形态与实物一致；
+     * 闪光再兜底叠加（shiny 是独立字段）。携带物一并带上，弹窗里的精灵也拿东西。
+     */
+    private fun buildReviewRenderable(entry: BuyOrderEntry) {
+        val pending = entry.pending
+        if (entry.type != "POKEMON" || pending == null) { reviewRenderable = null; return }
+        val species = pending.extraData["speciesId"]
+            ?.let { Identifier.tryParse(it)?.let { id -> PokemonSpecies.getByIdentifier(id) } }
+        if (species == null) { reviewRenderable = null; return }
+        val aspects = (pending.extraData["aspects"] ?: "").split(",").filter { it.isNotEmpty() }.toMutableSet()
+        if (pending.shiny && "shiny" !in aspects) aspects.add("shiny")
+        reviewRenderable = RenderablePokemon(species, aspects, heldIconStack(pending.extraData) ?: ItemStack.EMPTY)
+    }
 
     private fun openReviewDialog(entry: BuyOrderEntry) {
         reviewEntry = entry
+        buildReviewRenderable(entry)
+        // 两个起点都清掉：弹窗可能在精灵单 / 物品单之间来回换，留着另一边会登记出错误起点
+        reviewIconOrigin = null
+        reviewItemIconOrigin = null
         // 物品词条行（附魔等）：打开时重建一次，弹窗渲染每帧只读；行数决定后续控件下移量；
         // BASIC/ADVANCED 双份构建（渲染按 Shift 切换；ADVANCED 打开时无 Shift 缺信息块，
         // 渲染按住 Shift 会重建）——布局按两份最大行数 + 6 行信息块余量预留（防展开溢出）
@@ -1973,7 +2021,7 @@ class BuyOrderScreen(
 
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-                renderReviewDialogBackground(context)
+                renderReviewDialogBackground(context, delta)
             }
         })
 
@@ -2016,7 +2064,7 @@ class BuyOrderScreen(
         addDrawableChild(reviewCancelButton)
     }
 
-    private fun renderReviewDialogBackground(context: DrawContext) {
+    private fun renderReviewDialogBackground(context: DrawContext, delta: Float) {
         val entry = reviewEntry ?: return
         val pending = entry.pending ?: return
         val centerX = width / 2
@@ -2064,6 +2112,39 @@ class BuyOrderScreen(
             centerX, dialogY + 14, 0xFFFFFF)
 
         if (entry.type == "POKEMON") {
+            // 精灵 3D 图标（槽背景 + 精灵）：与市场购买确认弹窗同一摆法——标题下方居中
+            val iconSize = 28
+            val iconX = centerX - iconSize / 2
+            val iconY = dialogY + 28
+            context.matrices.push()
+            context.matrices.translate(iconX.toDouble(), iconY.toDouble(), 0.0)
+            context.matrices.scale(iconSize / 66f, iconSize / 66f, 1f)
+            context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
+            context.matrices.pop()
+            // 记下这个图标的位置（庆祝动画要从这里起飞）；拿不到 renderable 时清掉，免得沿用上一只的旧坐标
+            reviewIconOrigin = if (reviewRenderable == null) null
+            else PokemonCelebrationAnimation.Origin.ofIcon(
+                x = iconX, y = iconY, size = iconSize, centerAnchorY = false
+            )
+            reviewRenderable?.let { rp ->
+                // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+                val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                    com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
+                try {
+                    // 弹窗图标不做裁剪（照市场购买确认弹窗，useScissor = false）
+                    PokemonIconRenderer.draw(
+                        context = context,
+                        renderable = rp,
+                        state = reviewState,
+                        x = iconX, y = iconY, size = iconSize,
+                        delta = delta,
+                        animate = useFloat,
+                        useScissor = false
+                    )
+                } catch (_: Exception) {
+                }
+            }
+
             // 完整精灵信息行（与市场购买确认弹窗同一渲染器：名字★Lv/类型/性格特性/携带物/IVs 六行/卖家/价格）
             val listing = pendingToListing(entry, pending)
             val name = pending.speciesKey?.let {
@@ -2073,8 +2154,8 @@ class BuyOrderScreen(
             EntryBadgeRenderer.drawInfoLines(
                 context, listing,
                 EntryBadgeRenderer.nameWithShinyStar(name, pending.shiny),
-                // +26：标题基线在 +14（字底约 +15），起点 +22 时名字行与标题几乎贴合，留 4px 间隙
-                centerX, dialogY + 26
+                // +62：图标占 +28~+55，留 6px 间隙后起名字行（与市场购买确认弹窗一致）
+                centerX, dialogY + 62
             )
         } else {
             // 物品行：图标 + 名称 + 数量整体居中（照交付弹窗形态行格式）；
@@ -2088,6 +2169,10 @@ class BuyOrderScreen(
             val totalW = 16 + 4 + textRenderer.getWidth(itemName) + 4 + textRenderer.getWidth(countStr)
             val startX = centerX - totalW / 2
             drawItemWithBar(context, itemStack, startX, dialogY + 28)
+            // 记下这个图标的位置（物品庆祝动画要从这里起飞）；物品图标基准 16×16
+            reviewItemIconOrigin = ItemCelebrationAnimation.Origin.ofIcon(
+                x = startX, y = dialogY + 28, size = 16
+            )
             // 物品名照物品栏悬浮第一行按稀有度着色
             context.drawTextWithShadow(textRenderer,
                 if (itemStack.isEmpty) Text.literal(itemName)
@@ -2160,6 +2245,11 @@ class BuyOrderScreen(
     private fun acceptReview() {
         val entry = reviewEntry ?: return
         val pending = entry.pending ?: return
+        // 登记庆祝动画的起飞起点 —— 就是本弹窗那个精灵图标的位置与大小（照市场购买确认弹窗）。
+        // 起点带 3 秒过期（见 PokemonCelebrationAnimation.setPendingOrigin），交付没成功也不会留脏值。
+        reviewIconOrigin?.let(PokemonCelebrationAnimation::setPendingOrigin)
+        // 物品单走物品那套（精灵 / 物品只有一个字段有值，另一边恒为 null）
+        reviewItemIconOrigin?.let(ItemCelebrationAnimation::setPendingOrigin)
         sendToServer(AcceptPendingDeliverPayload(entry.id, pending.id))
     }
 
@@ -2533,6 +2623,9 @@ class BuyOrderScreen(
         deliverCountField = null
         deliverConfirmButton = null
         reviewEntry = null
+        reviewRenderable = null
+        reviewIconOrigin = null
+        reviewItemIconOrigin = null
         reviewReasonField = null
         reviewAcceptButton = null
         reviewRejectButton = null

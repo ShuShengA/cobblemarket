@@ -162,6 +162,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private var dialogItem: SellItem? = null
     private var startingField: TextFieldWidget? = null
     private var incrementField: TextFieldWidget? = null
+
+    /** 服务端真实的最低加价默认值（`onDurations` 到达时缓存）——上架弹窗建输入框时补设占位符要用它 */
+    private var serverMinIncrement = 0
     private var countField: TextFieldWidget? = null
     private var durationIndex = 0
     private var durationButton: NineSliceButton? = null
@@ -414,10 +417,15 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         addDrawableChild(startingField)
 
         incrementField = TextFieldWidget(textRenderer, centerX - 20, dialogY + 72, 100, 16, Text.literal(""))
-        // 初始「留空=默认」；服务器配置到达后由 onDurations 换成真实默认值（玩家才能知道默认是多少）
+        // 先铺兜底文案「留空=默认」，再用已缓存的服务器值覆盖 ——
+        // ⚠ 那个包多半**比这个弹窗先到**（init 里就发了请求），onDurations 只是缓存了值，
+        //   它执行时 incrementField 还不存在，所以占位符必须在这里补设（2026-09-15 修的时序 bug）
         incrementField?.setPlaceholder(
             Text.translatable("cobblemarket.auction.increment_placeholder",
                 Text.translatable("cobblemarket.auction.increment_default")).formatted(Formatting.GRAY))
+        applyIncrementPlaceholder()
+        // 再请求一次：上架界面一直开着时配置可能被管理员改过，重开弹窗应当看到新值
+        sendToServer(com.shusheng.cobblemarket.network.RequestAuctionDurationsPayload())
         incrementField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(incrementField)
 
@@ -522,15 +530,27 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private fun formatDuration(minutes: Int): String =
         if (minutes % 60 == 0) "${minutes / 60}h" else "${minutes}m"
 
+    /**
+     * 按缓存的服务器默认值刷新最低加价输入框的占位符。
+     *
+     * 没拿到值（或配置为 0）时什么都不做，保留初始的「留空=默认」兜底文案。
+     * 单独抽出来是因为有两个调用时机：包到达时、以及上架弹窗建好输入框时（见 [openDialog]）。
+     */
+    private fun applyIncrementPlaceholder() {
+        if (serverMinIncrement <= 0) return
+        incrementField?.setPlaceholder(
+            Text.translatable("cobblemarket.auction.increment_placeholder",
+                "${com.shusheng.cobblemarket.client.formatPrice(serverMinIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GRAY))
+    }
+
     /** 服务端真实时长档位到达：更新选项与按钮显示（服务器自定义配置时按钮不再失真） */
     fun onDurations(payload: com.shusheng.cobblemarket.network.AuctionDurationsPayload) {
         if (closed) return
-        // 默认最低加价：占位符显示服务器真实配置值（原先写死「留空=默认」，玩家看不到具体数额）
-        if (payload.minIncrement > 0) {
-            incrementField?.setPlaceholder(
-                Text.translatable("cobblemarket.auction.increment_placeholder",
-                    "${com.shusheng.cobblemarket.client.formatPrice(payload.minIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GRAY))
-        }
+        // 默认最低加价：占位符显示服务器真实配置值（原先写死「留空=默认」，玩家看不到具体数额）。
+        // **先缓存再刷新** —— 这个包常在上架弹窗打开之前就到了，那时 incrementField 还是 null，
+        // 只 setPlaceholder 会静默空过（2026-09-15 修的时序 bug）
+        serverMinIncrement = payload.minIncrement
+        applyIncrementPlaceholder()
         if (payload.durations.isEmpty()) return
         durationOptions = payload.durations
         durationIndex = durationIndex.coerceIn(0, durationOptions.size - 1)
@@ -677,7 +697,12 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     private fun displayCount(): Int = if (currentTab == 0) filteredPokemon().size else items.size
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
+    private fun renderPokemonIcon(
+        context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f,
+        /** 本行是否被悬停（跟左侧大图一起走 walk）。**必须由调用方按行索引算**：
+         *  早先用 `IconRegistry.isMouseInRow` 只看纵向，鼠标跑到面板外侧、只要 y 平齐也会触发动画（2026-09-15） */
+        preview: Boolean = false
+    ) {
         val data = iconData[index] ?: return run {
             val tc = 0x88888888.toInt()
             context.fill(x, y, x + size, y + size, tc)
@@ -693,8 +718,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 x = x, y = y, size = size,
                 delta = delta,
                 animate = useFloat,
-                // 鼠标停在这一行时进预览态（跟左侧大图一起走 walk）
-                preview = IconRegistry.isMouseInRow(y, size)
+                preview = preview
             )
         } catch (_: Exception) {
         }
@@ -821,7 +845,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
                 // 预览弹窗打开时不渲染 3D（模型层在衬底之上，压暗仍会浮在弹窗上）
-                if (dialogPokemon == null && dialogItem == null) renderPokemonIcon(context, origIndex, slotX, slotY, 20, delta = delta)
+                if (dialogPokemon == null && dialogItem == null) renderPokemonIcon(context, origIndex, slotX, slotY, 20, delta = delta, preview = i == hoveredRow)
 
                 // 来源（[队]/[PC] 固定色，精灵名属性色 + 金色闪光星标，照搬 SellSelectScreen；PC 用电脑物品图标，[] 保持原色）
                 val tc = typeColor(if (p.primaryType.isNotEmpty()) p.primaryType else "cobblemon.type.normal")
@@ -909,14 +933,17 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         }
 
         // 悬停预览大图：画在本界面内容全部之后才在面板之上。
-        // 弹窗打开时行内图标不渲染 → entryInRow 找不到 → 自动不显示，不用额外判断弹窗
-        val previewRowL = width / 2 - panelWidth / 2
-        IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
-            ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
-        // 物品 tab 的大图：物品行没有注册表条目，按绝对索引从本地背包列表取
-        if (currentTab == 1 && hoveredRow >= 0) {
-            items.getOrNull(scrollOffset + hoveredRow)?.let {
-                ItemHoverPreview.render(context, it.stack, previewRowL, height)
+        // **弹窗打开时一律不画**（照精灵市场）：这时注册表里只剩弹窗自己的图标，鼠标停在弹窗上
+        // 照样能命中 entryInRow（它只按 y 匹配行范围 + x 在面板内）→ 左侧无故冒出大图（2026-09-15 实测）
+        if (dialogPokemon == null && dialogItem == null) {
+            val previewRowL = width / 2 - panelWidth / 2
+            IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
+                ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
+            // 物品 tab 的大图：物品行没有注册表条目，按绝对索引从本地背包列表取
+            if (currentTab == 1 && hoveredRow >= 0) {
+                items.getOrNull(scrollOffset + hoveredRow)?.let {
+                    ItemHoverPreview.render(context, it.stack, previewRowL, height)
+                }
             }
         }
     }

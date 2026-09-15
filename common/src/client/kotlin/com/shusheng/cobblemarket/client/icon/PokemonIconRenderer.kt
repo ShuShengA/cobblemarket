@@ -66,6 +66,9 @@ object PokemonIconRenderer {
         centerAnchorY: Boolean = false
     ) {
         IconRegistry.register(renderable, state, x, y, size)
+        // 点击叫声的战吼是主动画，播完得有人放手（FloatingState 不会自动清）。
+        // 只在这里和悬停大图那边清 —— 庆祝动画的 state 是一次性的，清了反而会打断战吼。
+        IconAnimationResolver.clearExpiredPrimaryAnimation(state)
 
         val rotation = iconRotation()
 

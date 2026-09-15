@@ -639,7 +639,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             context.matrices.pop()
 
             // 3D 精灵（弹窗打开时不渲染——模型层在衬底之上，压暗仍会浮在弹窗上）
-            if (confirmEntry == null) renderPokemonIcon(context, origIndex, leftX + 2, y + 2, iconSize, delta = delta)
+            if (confirmEntry == null) renderPokemonIcon(context, origIndex, leftX + 2, y + 2, iconSize, delta = delta, preview = di == hoveredRow)
 
             // 球种（名称左侧；弹窗打开时隐藏——物品图标无色调参数无法变暗）
             if (confirmEntry == null) {
@@ -723,10 +723,13 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         }
 
         // 悬停预览大图：画在本界面内容全部之后才在面板之上。
-        // 弹窗打开时行内图标不渲染 → entryInRow 找不到 → 自动不显示，不用额外判断弹窗
-        val previewRowL = width / 2 - panelWidth / 2
-        IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
-            ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
+        // **弹窗打开时一律不画**（照精灵市场）：这时注册表里只剩弹窗自己的图标，鼠标停在弹窗上
+        // 照样能命中 entryInRow（它只按 y 匹配行范围 + x 在面板内）→ 左侧无故冒出大图（2026-09-15 实测）
+        if (confirmEntry == null) {
+            val previewRowL = width / 2 - panelWidth / 2
+            IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
+                ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
+        }
     }
 
     private val defaultSkinTexture = Identifier.of("minecraft", "textures/entity/player/wide/steve.png")
@@ -752,7 +755,12 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         context.matrices.pop()
     }
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
+    private fun renderPokemonIcon(
+        context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f,
+        /** 本行是否被悬停（跟左侧大图一起走 walk）。**必须由调用方按行索引算**：
+         *  早先用 `IconRegistry.isMouseInRow` 只看纵向，鼠标跑到面板外侧、只要 y 平齐也会触发动画（2026-09-15） */
+        preview: Boolean = false
+    ) {
         val data = iconData[index] ?: return run {
             context.fill(x, y, x + size, y + size, 0x88888888.toInt())
         }
@@ -767,8 +775,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 x = x, y = y, size = size,
                 delta = delta,
                 animate = useFloat,
-                // 鼠标停在这一行时进预览态（跟左侧大图一起走 walk）
-                preview = IconRegistry.isMouseInRow(y, size)
+                preview = preview
             )
         } catch (_: Exception) {
         }

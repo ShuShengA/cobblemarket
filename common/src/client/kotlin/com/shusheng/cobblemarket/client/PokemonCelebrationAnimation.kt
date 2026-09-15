@@ -14,27 +14,64 @@ import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.item.ItemStack
 import net.minecraft.util.Identifier
-import net.minecraft.util.math.MathHelper
 import org.lwjgl.opengl.GL11
-import kotlin.math.PI
 
 /**
- * 获得精灵的庆祝动画（买到 / 拍到 / 求购单接受交付时由服务端下发触发，渲染在所有界面之上）：
- * 弹跳球效果——从屏幕上方落到中心（下落中放大到最大），
- * 然后以最大形态反复弹跳 3 次（高度递减），第三跳完整落回后静止淡出（约 2.8 秒，最大约 200px）。
+ * 获得精灵的庆祝动画（买到 / 拍到 / 求购单接受交付时由服务端下发触发，渲染在所有界面之上）。
+ *
+ * **时间线只有一条**：飞向屏幕中心 → 停留 → 淡出（最大约 200px）。
+ * 两种入场方式**只差起点**，后续曲线完全相同 —— 全项目统一叫这两个名字：
+ * - **图标起飞**：起点是界面里那个精灵图标（图标位置 + 按图标大小换算的起始缩放）。
+ *   精灵市场购买、求购单接受交付、以及拍卖时玩家正开着出价弹窗 —— 都走这条。
+ * - **顶部空降**：起点在屏幕上方外侧。拿不到界面图标时走这条（典型是拍卖异步结算、
+ *   中拍那一刻玩家早把出价弹窗关了），是设计的兜底。
  *
  * 触发口径与总开关都在服务端（[com.shusheng.cobblemarket.network.CelebrationNetwork]），
  * 客户端只负责按收到的包排队播放。
  */
 object PokemonCelebrationAnimation {
 
-    private const val DURATION_MS = 2800L
+    // ⚠ 总时长决定战吼吼不吼得完：最长的战吼是喷火龙的 battle_cry（3.0 秒）。
+    // 3180 → 2980（停留 1800 → 1600）会短它 0.02 秒，**战吼尾巴会被截断**；要保战吼完整就得 ≥ 3180
+    private const val DURATION_MS = 2980L
+
+    /** 起点动画（从界面图标起飞）的时间轴，单位毫秒：飞行 → 停留 → 淡出（淡出 = 总时长 − 前两段 = 400ms） */
+    private const val FLY_MS = 980f
+    private const val HOLD_MS = 1_600f
+
+    /** **顶部空降**的起点：屏幕上方外侧的纵向位置（视觉上「从天上落下来」） */
+    private const val SCRATCH_FROM_Y = 260f
+
+    /** 顶部空降的初始缩放（相对最终尺寸）。**不能是 0** —— 见 draw() 里 else 分支的注释 */
+    private const val SCRATCH_FROM_SCALE = 0.2f
+
+    /**
+     * **图标起飞**的起点：界面里那个精灵图标的**屏幕位置与缩放**。
+     *
+     * 传了它 → 图标起飞；没传 → [SCRATCH_FROM_Y] 那套顶部空降。
+     * 三个入口（市场购买 / 拍卖 / 求购确认交付）都已接入，但仍会有拿不到起点的时候——
+     * 典型是拍卖：异步结算，中拍时玩家早把出价弹窗关了 —— 那时就走顶部空降，是设计的兜底。
+     *
+     * [x] / [y] 照抄 [PokemonIconRenderer.draw] 的 `translate` 值、[scale] 照抄它的等效 profile scale ——
+     * 两端（图标态、庆祝态）各自都是已验证过的渲染方式，中间插值即可，起飞与落点都不会跳。
+     */
+    data class Origin(val x: Float, val y: Float, val scale: Float) {
+        companion object {
+            /** 从一个图标矩形换算。公式必须与 [PokemonIconRenderer.draw] 保持一致。 */
+            fun ofIcon(x: Int, y: Int, size: Int, centerAnchorY: Boolean) = Origin(
+                x = x + size / 2f,
+                y = y + if (centerAnchorY) size / 2f else 1f,
+                scale = size / 25f * 2.5f * PokemonIconRenderer.ICON_SCALE
+            )
+        }
+    }
 
     private data class Pending(
         val speciesId: String,
         val aspects: List<String>,
         val shiny: Boolean,
-        val heldItemNbt: String
+        val heldItemNbt: String,
+        val origin: Origin?
     )
 
     /** 待播队列：同一批获得多只（一次结算赢下几个拍卖）时依次播完，不互相覆盖 */
@@ -42,6 +79,8 @@ object PokemonCelebrationAnimation {
 
     private var renderable: RenderablePokemon? = null
     private var state: FloatingState? = null
+    /** 当前这只的飞行起点；null = 走旧的掉落弹跳 */
+    private var origin: Origin? = null
     private var startTime = 0L
     private var active = false
 
@@ -49,8 +88,50 @@ object PokemonCelebrationAnimation {
      *  而它是在 `applyAnimations` 里才被赋值的，刚 new 出来的 state 还没有模型。 */
     private var cryTriggered = false
 
+    /**
+     * 上一帧的真实时间戳（纳秒），用来自己算帧间隔 —— 见 [draw] 里 selfDelta 的注释。
+     * 0 = 这一只还没渲染过第一帧（[startNext] 里重置）。
+     */
+    private var lastFrameNanos = 0L
+
+    /**
+     * 单帧最多推进的等价 tick 数（1 秒 = 20 单位）。
+     *
+     * 卡顿或断点之后一帧可能隔很久，不封顶会一次性把整段动画跳完；2.0 相当于 10fps，够宽松又不失真。
+     */
+    private const val MAX_SELF_DELTA = 2f
+
+    /**
+     * 界面在关闭前登记的起飞起点（见 [Origin]）。**用后即清、且带过期**：
+     * 服务端可能最终没发庆祝包（个人开关关、余额不足、请求失败），那时起点会留在这里 ——
+     * 不加过期的话，下一次触发（哪怕是别的入口）会从上次那个早已消失的图标位置起飞。
+     */
+    private var pendingOrigin: Origin? = null
+    private var pendingOriginAt = 0L
+    private const val PENDING_ORIGIN_TTL_MS = 3_000L
+
+    /** 界面在关闭前登记起飞起点 —— 弹窗一关那个图标就不在了，坐标必须提前抓下来 */
+    fun setPendingOrigin(origin: Origin?) {
+        pendingOrigin = origin
+        pendingOriginAt = System.currentTimeMillis()
+    }
+
+    /** 取走登记的起点并清空；超过 [PENDING_ORIGIN_TTL_MS] 视为失效（返回 null → 走旧动画） */
+    private fun takePendingOrigin(): Origin? {
+        val taken = pendingOrigin ?: return null
+        pendingOrigin = null
+        return if (System.currentTimeMillis() - pendingOriginAt <= PENDING_ORIGIN_TTL_MS) taken else null
+    }
+
     /** 入队一只；空闲则立即开播，正在播则排队等前面播完 */
-    fun trigger(speciesId: String, aspects: List<String>, shiny: Boolean, source: String, heldItemNbt: String = "") {
+    fun trigger(
+        speciesId: String,
+        aspects: List<String>,
+        shiny: Boolean,
+        source: String,
+        heldItemNbt: String = "",
+        origin: Origin? = null
+    ) {
         // 个人开关按来源分流（服务端总开关是另一层：那层关了压根不发包）。
         // 未知来源（版本不匹配等）归到低频那组，宁可多播也不要静默吞掉。
         val allowed = if (source == CelebrationSource.MARKET.name)
@@ -58,7 +139,7 @@ object PokemonCelebrationAnimation {
         else
             ClientConfig.celebrationOnAuctionAndOrder
         if (!allowed) return
-        queue.addLast(Pending(speciesId, aspects, shiny, heldItemNbt))
+        queue.addLast(Pending(speciesId, aspects, shiny, heldItemNbt, origin ?: takePendingOrigin()))
         if (!active) startNext()
     }
 
@@ -78,6 +159,8 @@ object PokemonCelebrationAnimation {
             }
             state = FloatingState()
             cryTriggered = false
+            lastFrameNanos = 0L
+            origin = next.origin
             startTime = System.currentTimeMillis()
             active = true
             return
@@ -113,7 +196,9 @@ object PokemonCelebrationAnimation {
         }
         context.draw()
         RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT, MinecraftClient.IS_SYSTEM_MAC)
-        draw(context, delta)
+        // delta 参数保留只为不改动 ScreenMixin / HUD 两处的调用签名 —— 模型动画已改为按真实帧间隔自己推进
+        // （见 draw() 里 selfDelta 的注释），不再需要调用方传 tickDelta
+        draw(context)
         // 动画自身也走 immediate buffer，立刻提交，别留到帧末尾跟别人混在一起
         context.draw()
     }
@@ -122,9 +207,10 @@ object PokemonCelebrationAnimation {
         active = false
         renderable = null
         state = null
+        origin = null
     }
 
-    private fun draw(context: DrawContext, delta: Float) {
+    private fun draw(context: DrawContext) {
         val rp = renderable ?: run { startNext(); return }
         val st = state ?: run { startNext(); return }
         val elapsed = System.currentTimeMillis() - startTime
@@ -132,37 +218,55 @@ object PokemonCelebrationAnimation {
         val scaledW = client.window.scaledWidth
         val scaledH = client.window.scaledHeight
 
-        // ── 弹跳球效果：从屏幕上方落到中心（下落中放大到最大），
-        //    然后以最大形态反复弹跳几次（高度递减），结尾淡出 ──
-        val t = elapsed.toFloat() / DURATION_MS
+        // ── 模型动画（战吼 / 待机 / 走路）自己按真实时间推进，不用调用方给的 delta ──
+        // 调用方给的是 tickDelta —— 一个 tick 内的插值进度（0~1），而 FloatingState.updatePartialTicks 是
+        // **累加**它的，于是 animationSeconds 的推进速度 ≈ 帧率 ÷ 40：帧率越高动画越快；单人游戏开着界面时
+        // tick 暂停，它又几乎不推进。实测（2026-09-15）同一只 3 秒的战吼：在界面里能撑满窗口，
+        // 回到游戏世界 0.65 秒就被判「播完」清掉 —— 同一个动画两种观感。
+        // 换算成等价的 partialTicks（1 秒 = 20 单位）后，速度只跟真实时间走，与帧率、与是否暂停都无关。
+        val nowNanos = System.nanoTime()
+        val selfDelta = if (lastFrameNanos == 0L) 0f
+        else ((nowNanos - lastFrameNanos) / 1_000_000_000f * 20f).coerceAtMost(MAX_SELF_DELTA)
+        lastFrameNanos = nowNanos
+
+        // ── 时间线。**图标起飞与顶部空降共用同一套**：飞行 → 停留 → 淡出，
+        //    区别只在起点 from（下方取）──
+        val elapsedMs = elapsed.toFloat()
         fun smooth(k: Float): Float = k * k * (3f - 2f * k)
 
-        val dropEnd = 0.24f // 前 24% 时间：下落+放大
-        val bounceEnd = 0.88f // 弹跳段结束（第三跳完整落回），之后是独立淡出段
-        val offsetY: Float
-        val scaleFactor: Float
+        // 落点：translate 的是模型原点（头顶），故上移半高 100px，视觉中心才落在屏幕中心。
+        // 两端的 translate/scale 都照抄各自已验证的渲染方式，中间插值 → 起飞与落点都不跳。
+        val homeX = scaledW / 2f
+        val homeY = scaledH / 2f - 100f
+        val homeScale = 90f
+
+        val posX: Float
+        val posY: Float
+        val renderScale: Float
         val alpha: Float
-        if (t < dropEnd) {
-            // 下落：从中心上方 220px 落到中心（缓出），缩放 0→1
-            val k = smooth(t / dropEnd)
-            offsetY = -220f + 220f * k
-            scaleFactor = k
-            alpha = 1f
-        } else if (t < bounceEnd) {
-            // 弹跳：3 次，高度递减（60→40→22），抛物线（sin 曲线）
-            val bt = (t - dropEnd) / (bounceEnd - dropEnd)
-            val bouncePhase = bt * 3f
-            val hopIndex = minOf(bouncePhase.toInt(), 2)
-            val heights = floatArrayOf(60f, 40f, 22f)
-            val h = heights[hopIndex]
-            offsetY = -h * MathHelper.sin((bouncePhase % 1f) * PI.toFloat())
-            scaleFactor = 1f
+
+        // 起点：有界面图标就用它（图标起飞），没有（典型是拍卖异步结算、中拍时玩家早关了出价弹窗）
+        // 就从屏幕上方外侧飞入（顶部空降）—— 两套叫法见类注释。
+        //
+        // ⚠ 早先这两条路走的是**不同的时间线** —— 没起点时是独立的「下落 + 弹跳」，其中下落段的缩放
+        //   从 **0** 开始。scale=0 会让 drawProfilePokemon 出问题，而「登场吼一声」就写在它之后
+        //   同一个 try 里，异常被 catch 吞掉 → 表现为「吼一下立刻变回待机」（2026-09-15 实测）。
+        //   现在统一成同一套时间线，只是起点不同，这条坑就自然没了。
+        val from = origin ?: Origin(scaledW / 2f, -SCRATCH_FROM_Y, homeScale * SCRATCH_FROM_SCALE)
+        val fadeMs = DURATION_MS.toFloat() - FLY_MS - HOLD_MS
+        if (elapsedMs < FLY_MS) {
+            val k = smooth(elapsedMs / FLY_MS)
+            posX = from.x + (homeX - from.x) * k
+            posY = from.y + (homeY - from.y) * k
+            renderScale = from.scale + (homeScale - from.scale) * k
             alpha = 1f
         } else {
-            // 淡出：第三跳完整落回后静止淡出（旧版淡出与第三跳后半程重叠，视觉上像没跳完就消失）
-            offsetY = 0f
-            scaleFactor = 1f
-            alpha = 1f - (t - bounceEnd) / (1f - bounceEnd)
+            posX = homeX
+            posY = homeY
+            renderScale = homeScale
+            // 停留期间不透明，之后快速淡出
+            alpha = if (elapsedMs < FLY_MS + HOLD_MS) 1f
+            else 1f - (elapsedMs - FLY_MS - HOLD_MS) / fadeMs
         }
 
         // 与图标共用同一套解析器：白天待机 + 头跟随鼠标、晚上睡觉。
@@ -173,8 +277,8 @@ object PokemonCelebrationAnimation {
             renderable = rp,
             state = st,
             rotation = rotation,
-            centerX = scaledW / 2f,
-            centerY = scaledH / 2f - 100f + offsetY,
+            centerX = posX,
+            centerY = posY,
             mouseX = IconRegistry.mouseX,
             mouseY = IconRegistry.mouseY,
             animate = true,
@@ -183,8 +287,7 @@ object PokemonCelebrationAnimation {
 
         val matrices = context.matrices
         matrices.push()
-        // 模型从原点向下延伸（头顶在原点）：落点上移半高（100px），让视觉中心对齐屏幕中心
-        matrices.translate(scaledW / 2.0, scaledH / 2.0 - 100.0 + offsetY.toDouble(), 0.0)
+        matrices.translate(posX.toDouble(), posY.toDouble(), 0.0)
         try {
             drawProfilePokemon(
                 renderablePokemon = rp,
@@ -192,10 +295,11 @@ object PokemonCelebrationAnimation {
                 rotation = rotation,
                 poseType = anim.poseType,
                 state = st,
-                // 传 delta 让精灵播放 idle 待机动画（呼吸浮动，与队伍界面同款）——弹跳不再是僵硬的死模型
-                partialTicks = delta,
+                // 传 selfDelta（按真实帧间隔换算）让精灵播放 idle 待机动画（呼吸浮动，与队伍界面同款）——
+                // **不能传调用方给的 tickDelta**，理由见本函数开头
+                partialTicks = selfDelta,
                 // 最大约 200px；scale 参数围绕模型中心缩放，位置不会偏移
-                scale = 90f * scaleFactor,
+                scale = renderScale,
                 headYaw = anim.headYaw,
                 headPitch = anim.headPitch,
                 r = alpha,

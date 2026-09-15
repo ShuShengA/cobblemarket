@@ -460,7 +460,13 @@ object CobbleMarketClient {
         registerS2C(PokemonCelebrationPayload.ID, PokemonCelebrationPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 // 获得精灵庆祝动画：买到/拍到/求购单接受交付均走这里（拍卖场景与落槌铃声同批触发，天然同步）
-                PokemonCelebrationAnimation.trigger(payload.speciesId, payload.aspects, payload.shiny, payload.source, payload.heldItemNbt)
+                // 拍卖是**异步结算**——出价时还不知道会不会赢，所以起点只能在**包到达这一刻**看现场：
+                // 玩家正好开着出价弹窗就从那个图标起飞，否则传 null 走原本的掉落弹跳（那才是拍卖的默认路径）。
+                // 购买那条走的是另一套：弹窗关闭前用 setPendingOrigin 提前登记。
+                val origin = (MinecraftClient.getInstance().currentScreen as? AuctionScreen)?.bidDialogIconOrigin()
+                PokemonCelebrationAnimation.trigger(
+                    payload.speciesId, payload.aspects, payload.shiny, payload.source, payload.heldItemNbt, origin
+                )
             }
         }
 

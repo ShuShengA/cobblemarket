@@ -4,6 +4,8 @@ import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.iconStackOf
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.client.PokemonCelebrationAnimation
+import com.shusheng.cobblemarket.client.ItemCelebrationAnimation
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
@@ -118,6 +120,17 @@ class AuctionScreen(
     private var bidCancelButton: NineSliceButton? = null
     private var bidRenderable: RenderablePokemon? = null
     private val bidPreviewState = FloatingState()
+
+    /**
+     * 出价弹窗里那个精灵图标的屏幕位置，**渲染时记录**。
+     *
+     * 拍卖是**异步结算**的：玩家出价时还不知道会不会赢，所以这个坐标没法像购买那样提前登记，
+     * 只能在结算包到达的那一刻交给庆祝动画 —— 玩家那时没开着出价弹窗就拿不到，走原本的掉落弹跳。
+     */
+    private var bidDialogIconOrigin: PokemonCelebrationAnimation.Origin? = null
+
+    /** 出价弹窗里那个**物品**图标的屏幕位置（物品拍卖时才非 null）——物品庆祝动画的起飞起点，理由同上 */
+    private var bidDialogItemIconOrigin: ItemCelebrationAnimation.Origin? = null
 
     // 精灵图标缓存
     private data class IconData(val displayName: String, val renderable: RenderablePokemon, val state: FloatingState)
@@ -613,11 +626,28 @@ class AuctionScreen(
             "SETTLED" -> payload.entry?.let { e ->
                 // 延迟移除：保留 1.5 秒显示「结算中」+ 落槌动画，期间出价按钮不生成
                 settlingUntil[e.id] = System.currentTimeMillis() + 1500
+                // 拍卖已结束，出价弹窗正开着这一条就主动关掉 —— 否则玩家会一直停在一条
+                // 已结算的拍卖上（列表 1.5 秒后就把条目移走了，弹窗却没人关）。
+                // ⚠ **必须先登记起点再关**：中标的话庆祝包稍后才到，那时弹窗早没了、
+                //   bidDialogIconOrigin() 返回 null，动画会平白退化成「从屏幕上方掉落」。
+                //   登记走的是全局 pendingOrigin（带 3 秒过期），没中标也不会留脏值。
+                //   （物品拍卖不必管这条：那种弹窗的 bidDialogIconOrigin 恒为 null —— 它只在精灵分支里赋值，
+                //     所以这个 ?.let 直接空过，不会留下「物品图标位置」的脏起点）
+                if (bidEntry?.id == e.id) {
+                    // 精灵 / 物品各登记各的 —— 只有对应类型那个字段才有值（另一边恒为 null）。
+                    // 精灵这条走 getter：它内部按 bidRenderable 兜底（物品拍卖时恒返回 null），
+                    // 免得用到上一只精灵遗留的旧坐标。
+                    bidDialogIconOrigin()?.let(PokemonCelebrationAnimation::setPendingOrigin)
+                    bidDialogItemIconOrigin?.let(ItemCelebrationAnimation::setPendingOrigin)
+                    closeBidDialog()
+                }
             }
             "CANCELLED" -> payload.entry?.let { e ->
                 // 强制下架：立即从列表移除（不播落槌动画），settlingUntil 清理防残留
                 entries = entries.filterNot { it.id == e.id }
                 settlingUntil.remove(e.id)
+                // 同理：拍品都被下架了，开着的出价弹窗一并关掉
+                if (bidEntry?.id == e.id) closeBidDialog()
             }
         }
         rebuildFiltered()
@@ -648,8 +678,12 @@ class AuctionScreen(
 
     fun onMarketResult(payload: MarketResultPayload) {
         if (payload.success) {
-            // 出价成功：广播事件会自动刷新列表，这里只关弹窗
-            if (bidEntry != null) closeBidDialog()
+            // 出价成功：**不关弹窗** —— 竞拍是连续动作，多人互相加价时每次关窗太反直觉。
+            // 弹窗里的当前价/出价次数/领先者/倒计时都是每帧从 bidEntry 读的，
+            // 而 "BID" 广播事件会把 bidEntry 换成最新条目，所以留着就会实时刷新。
+            // 只把 bidEdited 放掉：否则输入框停在刚提交的旧金额上，再点一次必然报错；
+            // 放掉后 BID 事件会预填下一档最小加价（玩家手动改过时那套保护仍在，只是这次算「已成交」）
+            if (bidEntry != null) bidEdited = false
             // 结果同步发聊天框（与上架界面一致）
             client?.player?.sendMessage(payload.message.copy().formatted(Formatting.GREEN), false)
         } else {
@@ -747,7 +781,12 @@ class AuctionScreen(
     }
 
     /** 携带物栈（空气视为无）；缓存供行渲染每帧复用（照精灵市场） */
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
+    private fun renderPokemonIcon(
+        context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f,
+        /** 本行是否被悬停（跟左侧大图一起走 walk）。**必须由调用方按行索引算**：
+         *  早先用 `IconRegistry.isMouseInRow` 只看纵向，鼠标跑到面板外侧、只要 y 平齐也会触发动画（2026-09-15） */
+        preview: Boolean = false
+    ) {
         val data = iconData[index] ?: return
         // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
         val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
@@ -760,8 +799,7 @@ class AuctionScreen(
                 x = x, y = y, size = size,
                 delta = delta,
                 animate = useFloat,
-                // 鼠标停在这一行时进预览态（跟左侧大图一起走 walk）
-                preview = IconRegistry.isMouseInRow(y, size)
+                preview = preview
             )
         } catch (_: Exception) {
         }
@@ -798,6 +836,9 @@ class AuctionScreen(
     private fun openBidDialog(entry: AuctionEntry) {
         bidEntry = entry
         bidRenderable = null
+        // 两个起点都清掉：弹窗可能在精灵拍品 / 物品拍品之间来回换，留着另一边会登记出错误起点
+        bidDialogIconOrigin = null
+        bidDialogItemIconOrigin = null
         searchField?.visible = false
         backButton?.visible = false
         createButton?.visible = false
@@ -945,6 +986,14 @@ class AuctionScreen(
             context.matrices.scale(slotSize / 66f, slotSize / 66f, 1f)
             context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
             context.matrices.pop()
+            // 记下这个图标的位置（赢下拍卖时庆祝动画要从这里起飞）。渲染时记录 = 永远和实际画出来的一致；
+            // 拿不到 renderable 时置空，免得沿用上一只的旧坐标
+            bidDialogIconOrigin = if (bidRenderable == null) null
+            else PokemonCelebrationAnimation.Origin.ofIcon(
+                x = slotX, y = slotY, size = slotSize, centerAnchorY = false
+            )
+            // 精灵拍卖时物品起点一并置空，免得沿用上一件物品的旧坐标（对称处理）
+            bidDialogItemIconOrigin = null
             bidRenderable?.let { rp ->
                 // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
                 val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
@@ -963,8 +1012,16 @@ class AuctionScreen(
             }
         } else {
             // 物品拍卖：走完整 NBT 重建，附魔光效与自定义名称才显示得出来
-            iconStackOf(entry.species, entry.itemNbt)?.let { stack ->
-                if (!stack.isEmpty) drawItemWithBar(context, stack, slotX + 6, slotY + 6)
+            val itemStack = iconStackOf(entry.species, entry.itemNbt)
+            if (itemStack != null && !itemStack.isEmpty) {
+                drawItemWithBar(context, itemStack, slotX + 6, slotY + 6)
+                // 记下这个图标的位置（物品庆祝动画要从这里起飞）；物品图标基准 16×16
+                bidDialogItemIconOrigin = ItemCelebrationAnimation.Origin.ofIcon(
+                    x = slotX + 6, y = slotY + 6, size = 16
+                )
+            } else {
+                // 拿不到就置空，免得沿用上一件的旧坐标（与精灵那边同一处理）
+                bidDialogItemIconOrigin = null
             }
         }
 
@@ -1149,9 +1206,21 @@ class AuctionScreen(
         bidConfirmButton = null
         bidCancelButton = null
         bidRenderable = null
+        bidDialogIconOrigin = null
+        bidDialogItemIconOrigin = null
         clearChildren()
         init()
     }
+
+    /**
+     * 出价弹窗里那个精灵图标的屏幕位置，供庆祝动画当起飞起点。
+     *
+     * 弹窗没开（或这是物品拍卖）时返回 null —— 调用方据此走原本的掉落弹跳。
+     * 由 [com.shusheng.cobblemarket.client.CobbleMarketClient] 在**收到庆祝包的那一刻**调用：
+     * 拍卖异步结算，只有这样才知道玩家当时在不在看。
+     */
+    fun bidDialogIconOrigin(): PokemonCelebrationAnimation.Origin? =
+        if (bidRenderable == null) null else bidDialogIconOrigin
 
     // ── 渲染 ──
 
@@ -1285,7 +1354,7 @@ class AuctionScreen(
                 context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
                 context.matrices.pop()
                 if (iconData.containsKey(origIndex)) {
-                    renderPokemonIcon(context, origIndex, slotX, slotY, iconSize, delta = delta)
+                    renderPokemonIcon(context, origIndex, slotX, slotY, iconSize, delta = delta, preview = i == hoveredRow)
                 }
                 // 图标链 + 属性色名称 + 金色闪光星标（照搬 SellSelectScreen 风格，右侧让位价格/倒计时）
                 var sx = leftX + 26
@@ -1394,17 +1463,20 @@ class AuctionScreen(
         }
 
         // 悬停预览大图：画在本界面内容全部之后才在面板之上。
-        // 弹窗打开时行内图标不渲染 → entryInRow 找不到 → 自动不显示，不用额外判断弹窗
-        val previewRowL = width / 2 - panelWidth / 2
-        IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
-            ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
-        // 物品拍卖行的大图：物品图标不走图标注册表（那是精灵专用），从行栈缓存按**原始索引**取。
-        // ⚠ 必须走 indexedFiltered 的映射，不能用 scrollOffset + hoveredRow —— 后者是**过滤后**列表的行号，
-        // 而 rowStacks 的 key 是 entries（全量）的索引，有搜索/筛选时两者不是一回事
-        // （2026-09-12 踩过：精灵行悬停却弹出物品大图，就是索引错位取到了同位置的物品条目）
-        indexedFiltered.getOrNull(scrollOffset + hoveredRow)?.index?.let { absIdx ->
-            rowStacks[absIdx]?.itemStack?.let {
-                ItemHoverPreview.render(context, it, previewRowL, height)
+        // **弹窗打开时一律不画**（照精灵市场）：这时注册表里只剩弹窗自己的图标，鼠标停在弹窗上
+        // 照样能命中 entryInRow（它只按 y 匹配行范围 + x 在面板内）→ 左侧无故冒出大图（2026-09-15 实测）
+        if (bidEntry == null) {
+            val previewRowL = width / 2 - panelWidth / 2
+            IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + panelWidth)
+                ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
+            // 物品拍卖行的大图：物品图标不走图标注册表（那是精灵专用），从行栈缓存按**原始索引**取。
+            // ⚠ 必须走 indexedFiltered 的映射，不能用 scrollOffset + hoveredRow —— 后者是**过滤后**列表的行号，
+            // 而 rowStacks 的 key 是 entries（全量）的索引，有搜索/筛选时两者不是一回事
+            // （2026-09-12 踩过：精灵行悬停却弹出物品大图，就是索引错位取到了同位置的物品条目）
+            indexedFiltered.getOrNull(scrollOffset + hoveredRow)?.index?.let { absIdx ->
+                rowStacks[absIdx]?.itemStack?.let {
+                    ItemHoverPreview.render(context, it, previewRowL, height)
+                }
             }
         }
     }

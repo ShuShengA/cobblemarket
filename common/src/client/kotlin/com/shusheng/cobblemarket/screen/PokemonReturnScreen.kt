@@ -308,7 +308,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             context.matrices.pop()
 
             // iconData 按当前页重建，索引即行号
-            renderPokemonIcon(context, startOffset + i, iconX, iconY, iconSize, delta = delta)
+            renderPokemonIcon(context, startOffset + i, iconX, iconY, iconSize, delta = delta, preview = i == hoveredRow)
 
             val tc = typeColor(if (p.primaryType.isNotEmpty()) p.primaryType else "cobblemon.type.normal")
             // 图标链：球种 → 名字（属性色）→ 星 → 性别 → 持有物（照搬精灵市场行）
@@ -363,7 +363,12 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             ?.let { PokemonHoverPreview.render(context, it.renderable, it.state, previewRowL, height) }
     }
 
-    private fun renderPokemonIcon(context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f) {
+    private fun renderPokemonIcon(
+        context: DrawContext, index: Int, x: Int, y: Int, size: Int, delta: Float = 0f,
+        /** 本行是否被悬停（跟左侧大图一起走 walk）。**必须由调用方按行索引算**：
+         *  早先用 `IconRegistry.isMouseInRow` 只看纵向，鼠标跑到面板外侧、只要 y 平齐也会触发动画（2026-09-15） */
+        preview: Boolean = false
+    ) {
         val data = iconData[index] ?: return run {
             val tc = 0x88888888.toInt()
             context.fill(x, y, x + size, y + size, tc)
@@ -380,7 +385,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                 delta = delta,
                 animate = useFloat,
                 // 鼠标停在这一行时进预览态（跟左侧大图一起走 walk）
-                preview = IconRegistry.isMouseInRow(y, size)
+                preview = preview
             )
         } catch (_: Exception) {
         }
