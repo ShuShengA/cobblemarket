@@ -556,7 +556,7 @@ object CobbleMarketConfig {
                 "finance.cashLoanEnabled" to "现金贷开关（借呗）：玩家在喵喵银行柜台主动借款 / Cash loan switch (Jiebei-style): players borrow cash directly at the Meowth Bank counter",
                 "finance.consumerLoanEnabled" to "消费贷开关（喵喵支付）：购买精灵/物品、拍卖出价时可选择信用垫付 / Consumer loan switch (Meowth Pay): credit payment option when buying Pokémon/items or bidding in auctions",
                 "finance.loanPlans" to "分期方案数组：periods=期数（每期 7 天），feeRate=每期费率（0.005=0.5%）。UI 只显示每期费率，不写年化 / Loan plan array: periods=number of periods (7 days each), feeRate=fee per period (0.005=0.5%). The UI shows only the per-period fee, never an annualized rate",
-                "finance.creditLimit" to "额度公式系数：信用基础 = 近30天交易额×recent30Weight + 历史交易额×historyWeight（钳 min）；可用额度 = 信用基础 − 当前欠款全额（欠多少扣多少，欠款不打折），再钳 max。借贷来源的交易不计入交易额（防借→买→额度涨→再借循环）。⚠ 旧配置里的 debtWeight 已废弃（2026-09-02 起欠款改全额扣减），保留仅为兼容旧文件，改它不生效 / Credit limit weights: credit base = last-30-day volume×recent30Weight + all-time volume×historyWeight (clamped to min); available limit = credit base − full outstanding debt (no discount on debt), then clamped to max. Loan-funded trades never count toward volume (prevents borrow→buy→limit-up→borrow loops). NOTE: the legacy debtWeight in old configs is deprecated (debt has been deducted in full since 2026-09-02) and is kept only for compatibility — changing it has no effect",
+                "finance.creditLimit" to "额度公式系数：信用基础 = 近30天交易额×recent30Weight + 历史交易额×historyWeight（钳 min）；可用额度 = 信用基础 − 当前欠款全额（欠多少扣多少，欠款不打折），再钳 max。借贷来源的交易不计入交易额（防借→买→额度涨→再借循环）。 / Credit limit weights: credit base = last-30-day volume×recent30Weight + all-time volume×historyWeight (clamped to min); available limit = credit base − full outstanding debt (no discount on debt), then clamped to max. Loan-funded trades never count toward volume (prevents borrow→buy→limit-up→borrow loops)",
                 "finance.autoRepayMinBalance" to "到期自动划扣最低保留：每期到期自动从玩家市场余额全额划扣当期应还（本金+利息），最多划到余额=此值为止；划不足进入逾期流程 / Minimum balance kept during auto-repayment: on each due date the full period payment is auto-deducted from the player's market balance, stopping at this floor; any shortfall enters the overdue flow",
                 "finance.ipDebtLimit" to "同 IP 未结清欠款总和上限（防同 IP 多小号分散借款转账给主账号；OP 豁免；0=不限制）：借款/喵喵支付时，同 IP 30 天窗口内所有玩家的未结清欠款总和+本次金额超过此值则拒绝 / Cap on total outstanding debt per IP (blocks many alt accounts on one IP borrowing and funneling money to a main account; OPs exempt; 0=disabled): when borrowing or paying via Meowth Pay, the request is rejected if the combined outstanding debt of all players seen on the same IP within 30 days plus this amount exceeds the cap",
                 "finance.overdueDays" to "逾期天数三档：feeDouble=逾期该天数后市场手续费翻倍，freeze=冻结挂单/待领取（拦交易不拦取回），badDebt=坏账冲销 / Overdue day tiers: feeDouble=fee doubling after this many days overdue, freeze=freeze listings/returns (blocks trading, not withdrawals), badDebt=write-off as bad debt",
@@ -614,7 +614,6 @@ object CobbleMarketConfig {
                 "creditLimit" to mapOf(
                     "recent30Weight" to creditLimitRecent30Weight,
                     "historyWeight" to creditLimitHistoryWeight,
-                    "debtWeight" to creditLimitDebtWeight,
                     "min" to creditLimitMin,
                     "max" to creditLimitMax,
                     "cooldownHours" to creditLimitCooldownHours
