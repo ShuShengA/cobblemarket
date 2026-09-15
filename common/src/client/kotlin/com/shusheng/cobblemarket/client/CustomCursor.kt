@@ -34,21 +34,39 @@ object CustomCursor {
     private const val HOTSPOT_Y = 5f
 
     /**
+     * 我们当前是否处于「把系统光标藏起来」的状态。见 [render] 里为什么需要它。
+     */
+    private var hiddenByUs = false
+
+    /**
      * 每帧调用（由 ScreenMixin 注入在 `Screen.renderWithTooltip` 的 TAIL，即全部界面内容与
-     * 动画都画完之后）。顺便把系统光标的显隐也管了——**必须每帧都调**：
+     * 动画都画完之后）。
      *
-     * 不用「进入时隐藏、离开时恢复」的配对写法。那种写法一旦漏掉任意一条路径（崩溃、切屏、
-     * 断线回主菜单），光标就会永久藏起来；每帧按当前状态重算，任何异常路径都会在下一次渲染
-     * 自动纠正回来。
+     * **恢复光标不能替 MC 猜**（2026-09-15 修正）：早先这里是个 else 分支，每帧无条件重设成
+     * 「有界面 → 普通箭头、无界面 → 捕获锁定」。但 MC 的规则**并不是**「有界面就一定解锁」——
+     * Cobblemon 的战斗界面开着时仍要保持捕获锁定（要转视角），而 MC 只在**状态切换时**设一次 GLFW，
+     * 于是我们每帧的强设每次都赢，把光标放了出来：玩家看到「鼠标能自由移动、准心却还在跟着转」
+     * （用户实测的「鼠标和准心分离」，跟 Cobblemon 版本无关）。
+     *
+     * 现在只在**自己藏过之后**恢复一次，且恢复成 **MC 自己的锁定状态**（`mouse.isCursorLocked`），
+     * 之后完全不碰光标 —— 交还给 MC 与其它模组。
+     *
+     * 仍然保留「每帧调用」而不是「进入隐藏 / 离开恢复」的配对写法：配对写法一旦漏掉任意一条路径
+     * （崩溃、切屏、断线回主菜单），光标就会永久藏起来。这里的 [hiddenByUs] 只是个「我们动过没有」
+     * 的标记，任何异常路径回到任意界面后的第一帧就会清掉它并恢复。
      */
     fun render(context: DrawContext, mouseX: Int, mouseY: Int, screen: Screen?) {
         val client = MinecraftClient.getInstance()
         if (ClientConfig.customCursor && isMarketScreen(screen) && isWindowHovered(client)) {
+            hiddenByUs = true
             setGlfwCursor(client, GLFW.GLFW_CURSOR_HIDDEN)
             draw(context, mouseX, mouseY)
-        } else {
-            // 恢复成 MC 自己的约定：GUI 里是普通箭头，游戏内（无界面）是捕获锁定
-            setGlfwCursor(client, if (screen != null) GLFW.GLFW_CURSOR_NORMAL else GLFW.GLFW_CURSOR_DISABLED)
+        } else if (hiddenByUs) {
+            hiddenByUs = false
+            setGlfwCursor(
+                client,
+                if (client.mouse.isCursorLocked) GLFW.GLFW_CURSOR_DISABLED else GLFW.GLFW_CURSOR_NORMAL
+            )
         }
     }
 
