@@ -86,6 +86,7 @@
 - **Item deduction now counts what was actually removed**: listing, auctioning or delivering to a buy order used to count the *intended* amount — if an external mod intercepted the deduction at the data layer, a listing could be recorded while the item stayed in the inventory. It now counts what was actually removed and rolls back otherwise (theoretical boundary, never observed in practice)
 - **Item icons showed no durability bar**: items in lists and detail dialogs never showed a durability bar, so players could unknowingly pay full price for a nearly-broken tool or piece of gear — damaged items now show the vanilla durability bar, and the tooltip adds a "Durability: X / Y" line (no Shift needed)
 - **Buyer's note hidden behind the "Select variant" button in the delivery dialog**: when a buyer left a note such as "any durability is fine", the seller could not see it in the delivery dialog (the text sat underneath the button); the content below now shifts down one row when a note is present, so the note is fully visible
+- **The minimum bid increment hint on the auction listing screen never showed the server default**: the placeholder stayed at "leave blank = default" instead of showing the actual amount — the config was already fetched when the screen opened, but the field is only created when you open the listing window, so the update was always skipped (it only happened to show correctly after a window resize rebuilt the screen); it now displays correctly either way
 
 ## 1.0.1 (released)
 
