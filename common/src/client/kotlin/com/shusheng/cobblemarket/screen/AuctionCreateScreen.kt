@@ -162,6 +162,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private var dialogItem: SellItem? = null
     private var startingField: TextFieldWidget? = null
     private var incrementField: TextFieldWidget? = null
+
+    /** 服务端真实的最低加价默认值（`onDurations` 到达时缓存）——上架弹窗建输入框时补设占位符要用它 */
+    private var serverMinIncrement = 0
     private var countField: TextFieldWidget? = null
     private var durationIndex = 0
     private var durationButton: NineSliceButton? = null
@@ -411,10 +414,15 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         addDrawableChild(startingField)
 
         incrementField = TextFieldWidget(textRenderer, centerX - 20, dialogY + 72, 100, 16, Text.literal(""))
-        // 初始「留空=默认」；服务器配置到达后由 onDurations 换成真实默认值（玩家才能知道默认是多少）
+        // 先铺兜底文案「留空=默认」，再用已缓存的服务器值覆盖 ——
+        // ⚠ 那个包多半**比这个弹窗先到**（init 里就发了请求），onDurations 只是缓存了值，
+        //   它执行时 incrementField 还不存在，所以占位符必须在这里补设
         incrementField?.setPlaceholder(
             Text.translatable("cobblemarket.auction.increment_placeholder",
                 Text.translatable("cobblemarket.auction.increment_default")).formatted(Formatting.GRAY))
+        applyIncrementPlaceholder()
+        // 再请求一次：上架界面一直开着时配置可能被管理员改过，重开弹窗应当看到新值
+        sendToServer(com.shusheng.cobblemarket.network.RequestAuctionDurationsPayload())
         incrementField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(incrementField)
 
@@ -527,15 +535,27 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private fun formatDuration(minutes: Int): String =
         if (minutes % 60 == 0) "${minutes / 60}h" else "${minutes}m"
 
+    /**
+     * 按缓存的服务器默认值刷新最低加价输入框的占位符。
+     *
+     * 没拿到值（或配置为 0）时什么都不做，保留初始的「留空=默认」兜底文案。
+     * 单独抽出来是因为有两个调用时机：包到达时、以及上架弹窗建好输入框时（见 openDialog）。
+     */
+    private fun applyIncrementPlaceholder() {
+        if (serverMinIncrement <= 0) return
+        incrementField?.setPlaceholder(
+            Text.translatable("cobblemarket.auction.increment_placeholder",
+                "${com.shusheng.cobblemarket.client.formatPrice(serverMinIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GRAY))
+    }
+
     /** 服务端真实时长档位到达：更新选项与按钮显示（服务器自定义配置时按钮不再失真） */
     fun onDurations(payload: com.shusheng.cobblemarket.network.AuctionDurationsPayload) {
         if (closed) return
-        // 默认最低加价：占位符显示服务器真实配置值（原先写死「留空=默认」，玩家看不到具体数额）
-        if (payload.minIncrement > 0) {
-            incrementField?.setPlaceholder(
-                Text.translatable("cobblemarket.auction.increment_placeholder",
-                    "${com.shusheng.cobblemarket.client.formatPrice(payload.minIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GRAY))
-        }
+        // 默认最低加价：占位符显示服务器真实配置值（原先写死「留空=默认」，玩家看不到具体数额）。
+        // **先缓存再刷新** —— 这个包常在上架弹窗打开之前就到了，那时 incrementField 还是 null，
+        // 只 setPlaceholder 会静默空过
+        serverMinIncrement = payload.minIncrement
+        applyIncrementPlaceholder()
         if (payload.durations.isEmpty()) return
         durationOptions = payload.durations
         durationIndex = durationIndex.coerceIn(0, durationOptions.size - 1)
