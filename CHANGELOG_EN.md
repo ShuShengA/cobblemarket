@@ -10,8 +10,10 @@
 - **Day/night sleeping icons**: when the in-game time enters a species' rest window, its icons switch to a sleeping pose (mirroring the vanilla rest schedule — each species has its own hours and about 40% sleep at all), waking automatically once it passes
 - **Hover preview**: hovering a Pokemon row shows an enlarged walking animation of that Pokemon on the left side of the screen — the row icon and the preview are the same Pokemon with fully synchronized motion
 - **Pokemon preview switch**: a new setting to turn the hover preview off on its own (without affecting the icons themselves)
-- **Celebration upgrade**: the pop-out animation when you buy or win a Pokemon now lets out a battle cry (motion and sound), and stays in sync with the icons — idle and following your cursor by day, already asleep when it appears at night
-- **Cries on click**: clicking a Pokemon row in a list (or a Pokemon icon inside a dialog) plays that Pokemon's cry — a battle cry where the species has one, otherwise the regular cry; sleeping Pokemon and "Static" mode don't respond
+- **Celebration upgrade**: the pop-out animation when you buy or win a Pokemon now lets out a battle cry — **species that have a battle cry animation always use it**, and it stays in sync with the icons: idle and following your cursor by day, already asleep when it appears at night
+- **Cries on click**: clicking a Pokemon row in a list (or a Pokemon icon inside a dialog) plays that Pokemon's cry — **the regular cry or a battle cry at random** (only species that actually have a battle cry animation can roll one; for everyone else it is always the regular cry); sleeping Pokemon and "Static" mode don't respond
+- **Battle cries are no longer battle-only**: in vanilla these animations are visible **only the moment a Pokemon is sent out to battle** (opening send-out, switching in, transforming); clicking a Pokemon on the Summary screen, in the Pokedex or in the trade screen always plays the regular cry. Now you can hear them by clicking icons in the Market, Auction House and Buy Orders, just like the celebration animation
+- **Keeps up with Cobblemon automatically**: when the official mod adds battle cry animations to more Pokemon, this mod **displays them without needing an update**
 
 #### Item Animations
 

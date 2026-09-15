@@ -214,7 +214,15 @@ object PokemonCelebrationAnimation {
             if (!cryTriggered) {
                 cryTriggered = true
                 if (!IconAnimationResolver.isSleeping(rp)) {
-                    st.addFirstAnimation(setOf("battle_cry", "cry"))
+                    // 有战吼的物种吼战吼，其余落到 cry（为什么不能写短名见 [battleCryAnimationName]）
+                    // 候选顺序即优先级：战吼（主动画版，独占）→ 普通叫（叠加）。
+                    // ⚠ 普通叫**不能**做成主动画：官方注册成 `q.bedrock_stateful`（叠加），
+                    //   它只提供嘴/头部的关键帧、身体姿态靠姿势动画撑着；独占会让其余骨骼
+                    //   掉回 rest pose、整个模型错位（2026-09-15 实测踩到并回退）。
+                    val candidates = mutableSetOf<String>()
+                    IconAnimationResolver.battleCryName(rp)?.let(candidates::add)
+                    candidates.add("cry")
+                    st.addFirstAnimation(candidates)
                 }
             }
         } catch (_: Exception) {
