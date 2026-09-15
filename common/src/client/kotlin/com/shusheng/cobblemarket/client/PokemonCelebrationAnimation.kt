@@ -14,9 +14,7 @@ import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.item.ItemStack
 import net.minecraft.util.Identifier
-import net.minecraft.util.math.MathHelper
 import org.lwjgl.opengl.GL11
-import kotlin.math.PI
 
 /**
  * 获得精灵的庆祝动画（买到 / 拍到 / 求购单接受交付时由服务端下发触发，渲染在所有界面之上）：
@@ -28,13 +26,22 @@ import kotlin.math.PI
  */
 object PokemonCelebrationAnimation {
 
-    private const val DURATION_MS = 2800L
+    private const val FLY_MS = 700L        // 飞行段：起点 → 屏幕中心（位置与尺寸同时缓出）
+    private const val HOLD_MS = 700L       // 停留段：停在中心淡出
+    private const val DURATION_MS = FLY_MS + HOLD_MS
+
+    /** 起点缩放：起点若是界面上的小图标（弹窗 30px / 行内 20px），起飞时按这个小尺寸起步再放大。
+     *  与最大形态（scale 90 ≈ 视觉 200px 高）的换算：30/200 ≈ 0.15 → 90×0.15 ≈ 13.5，取 14f。 */
+    private const val START_SCALE = 14f
 
     private data class Pending(
         val speciesId: String,
         val aspects: List<String>,
         val shiny: Boolean,
-        val heldItemNbt: String
+        val heldItemNbt: String,
+        /** 起点屏幕坐标（界面上的精灵图标位置）；null = 无来源，走兜底起点 */
+        val startX: Int? = null,
+        val startY: Int? = null
     )
 
     /** 待播队列：同一批获得多只（一次结算赢下几个拍卖）时依次播完，不互相覆盖 */
@@ -44,13 +51,34 @@ object PokemonCelebrationAnimation {
     private var state: FloatingState? = null
     private var startTime = 0L
     private var active = false
+    /** 当前正在播的这只需从哪儿起飞（取自它自己那条 Pending，不能存全局——队列连播会串位） */
+    private var curStartX: Int? = null
+    private var curStartY: Int? = null
 
     /** 本只的战斗吼叫是否已触发。**必须在第一帧渲染之后**触发：`addFirstAnimation` 依赖 `currentModel`，
      *  而它是在 `applyAnimations` 里才被赋值的，刚 new 出来的 state 还没有模型。 */
     private var cryTriggered = false
 
     /** 入队一只；空闲则立即开播，正在播则排队等前面播完 */
-    fun trigger(speciesId: String, aspects: List<String>, shiny: Boolean, source: String, heldItemNbt: String = "") {
+    /** 点击购买时登记的起点。购买弹窗点下之后界面**立刻关闭**，等收包时界面上早已查不到
+     *  那个图标了 —— 所以要在点击那一刻先把坐标记下来。只对下一条 trigger 生效
+     *  （一次购买只对应一只精灵），用完即清。 */
+    private var pendingStartX: Int? = null
+    private var pendingStartY: Int? = null
+
+    fun setPendingStart(x: Int, y: Int) {
+        pendingStartX = x
+        pendingStartY = y
+    }
+
+    /**
+     * @param startX/startY 起飞的屏幕坐标（界面上的精灵图标位置）。传了就从那儿飞到屏幕中心；
+     *   不传（拿不到图标坐标：界面已关、翻页了、卖家没开着界面等）走兜底起点。
+     */
+    fun trigger(
+        speciesId: String, aspects: List<String>, shiny: Boolean, source: String,
+        heldItemNbt: String = "", startX: Int? = null, startY: Int? = null
+    ) {
         // 个人开关按来源分流（服务端总开关是另一层：那层关了压根不发包）。
         // 未知来源（版本不匹配等）归到低频那组，宁可多播也不要静默吞掉。
         val allowed = if (source == CelebrationSource.MARKET.name)
@@ -58,7 +86,10 @@ object PokemonCelebrationAnimation {
         else
             ClientConfig.celebrationOnAuctionAndOrder
         if (!allowed) return
-        queue.addLast(Pending(speciesId, aspects, shiny, heldItemNbt))
+        // 起点优先级：调用方直接传的（界面上的行内图标）> 点击时登记的（购买弹窗）> 兜底
+        queue.addLast(Pending(speciesId, aspects, shiny, heldItemNbt, startX ?: pendingStartX, startY ?: pendingStartY))
+        pendingStartX = null
+        pendingStartY = null
         if (!active) startNext()
     }
 
@@ -78,6 +109,8 @@ object PokemonCelebrationAnimation {
             }
             state = FloatingState()
             cryTriggered = false
+            curStartX = next.startX
+            curStartY = next.startY
             startTime = System.currentTimeMillis()
             active = true
             return
@@ -132,37 +165,33 @@ object PokemonCelebrationAnimation {
         val scaledW = client.window.scaledWidth
         val scaledH = client.window.scaledHeight
 
-        // ── 弹跳球效果：从屏幕上方落到中心（下落中放大到最大），
-        //    然后以最大形态反复弹跳几次（高度递减），结尾淡出 ──
-        val t = elapsed.toFloat() / DURATION_MS
+        // ── 起飞 + 停留：从界面上的精灵图标位置飞到屏幕中心（位置与尺寸同时缓出），
+        //    在中心停留片刻后淡出。
+        //    起点拿不到时（界面已关 / 翻页了 / 卖家没开着界面）退回兜底起点：
+        //    屏幕中心上方 320px —— 视觉上仍像原来的「从屏幕上方落下」，不会凭空出现在怪位置。
         fun smooth(k: Float): Float = k * k * (3f - 2f * k)
 
-        val dropEnd = 0.24f // 前 24% 时间：下落+放大
-        val bounceEnd = 0.88f // 弹跳段结束（第三跳完整落回），之后是独立淡出段
-        val offsetY: Float
-        val scaleFactor: Float
+        val startX = (curStartX ?: (scaledW / 2)).toFloat()
+        val startY = (curStartY ?: (scaledH / 2 - 320)).toFloat()
+        // 终点不是裸的屏幕中心：模型从原点向下延伸（头顶在原点），要再上移半高 100px，
+        // 精灵的「视觉中心」才落在屏幕正中心（原设计，勿改成 scaledH / 2f）
+        val endY = scaledH / 2f - 100f
+
+        val cx: Float
+        val cy: Float
+        val curScale: Float
         val alpha: Float
-        if (t < dropEnd) {
-            // 下落：从中心上方 220px 落到中心（缓出），缩放 0→1
-            val k = smooth(t / dropEnd)
-            offsetY = -220f + 220f * k
-            scaleFactor = k
-            alpha = 1f
-        } else if (t < bounceEnd) {
-            // 弹跳：3 次，高度递减（60→40→22），抛物线（sin 曲线）
-            val bt = (t - dropEnd) / (bounceEnd - dropEnd)
-            val bouncePhase = bt * 3f
-            val hopIndex = minOf(bouncePhase.toInt(), 2)
-            val heights = floatArrayOf(60f, 40f, 22f)
-            val h = heights[hopIndex]
-            offsetY = -h * MathHelper.sin((bouncePhase % 1f) * PI.toFloat())
-            scaleFactor = 1f
+        if (elapsed < FLY_MS) {
+            val k = smooth(elapsed.toFloat() / FLY_MS)
+            cx = startX + (scaledW / 2f - startX) * k
+            cy = startY + (endY - startY) * k
+            curScale = START_SCALE + (90f - START_SCALE) * k
             alpha = 1f
         } else {
-            // 淡出：第三跳完整落回后静止淡出（旧版淡出与第三跳后半程重叠，视觉上像没跳完就消失）
-            offsetY = 0f
-            scaleFactor = 1f
-            alpha = 1f - (t - bounceEnd) / (1f - bounceEnd)
+            cx = scaledW / 2f
+            cy = endY
+            curScale = 90f
+            alpha = 1f - (elapsed - FLY_MS).toFloat() / HOLD_MS
         }
 
         // 与图标共用同一套解析器：白天待机 + 头跟随鼠标、晚上睡觉。
@@ -174,7 +203,7 @@ object PokemonCelebrationAnimation {
             state = st,
             rotation = rotation,
             centerX = scaledW / 2f,
-            centerY = scaledH / 2f - 100f + offsetY,
+            centerY = cy,
             mouseX = IconRegistry.mouseX,
             mouseY = IconRegistry.mouseY,
             animate = true,
@@ -183,8 +212,7 @@ object PokemonCelebrationAnimation {
 
         val matrices = context.matrices
         matrices.push()
-        // 模型从原点向下延伸（头顶在原点）：落点上移半高（100px），让视觉中心对齐屏幕中心
-        matrices.translate(scaledW / 2.0, scaledH / 2.0 - 100.0 + offsetY.toDouble(), 0.0)
+        matrices.translate(cx.toDouble(), cy.toDouble(), 0.0)
         try {
             drawProfilePokemon(
                 renderablePokemon = rp,
@@ -192,10 +220,10 @@ object PokemonCelebrationAnimation {
                 rotation = rotation,
                 poseType = anim.poseType,
                 state = st,
-                // 传 delta 让精灵播放 idle 待机动画（呼吸浮动，与队伍界面同款）——弹跳不再是僵硬的死模型
+                // 传 delta 让精灵播放 idle 待机动画（呼吸浮动，与队伍界面同款）
                 partialTicks = delta,
                 // 最大约 200px；scale 参数围绕模型中心缩放，位置不会偏移
-                scale = 90f * scaleFactor,
+                scale = curScale,
                 headYaw = anim.headYaw,
                 headPitch = anim.headPitch,
                 r = alpha,

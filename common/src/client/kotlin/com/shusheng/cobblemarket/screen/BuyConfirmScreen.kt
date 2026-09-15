@@ -100,14 +100,28 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
             rebuildPlanButtons()
             payButton?.setMessage(payLabel())
         } else {
+            rememberIconStart()
             sendToServer(BuyFromMarketPayload(entry.id, selectedPlan))
             client?.setScreen(MarketScreen())
         }
     }
 
     private fun confirm() {
+        rememberIconStart()
         sendToServer(BuyFromMarketPayload(entry.id, -1))
         client?.setScreen(MarketScreen())
+    }
+
+    /**
+     * 登记庆祝动画的起点：点下之后本界面**立刻关闭**，等收包时界面上早已查不到这个 3D 图标，
+     * 所以必须在点击这一刻把它的屏幕坐标记下来（动画从图标处放大飞向屏幕中心）。
+     *
+     * ⚠ 坐标与 render 里画图标那处共用 [ICON_SIZE] / [ICON_Y] 常量，别各写一份数字 ——
+     * 「同一位置在两处各算一遍」正是上架选择界面那次错位（大图显示上一行）的成因。
+     */
+    private fun rememberIconStart() {
+        com.shusheng.cobblemarket.client.PokemonCelebrationAnimation
+            .setPendingStart(width / 2 - ICON_SIZE / 2, ICON_Y)
     }
 
     /** 方案按钮行：展开时显示（84×16 并排 4px 间隙，选中档前缀 ▶，照 LoanScreen） */
@@ -172,9 +186,9 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
             Text.translatable("cobblemarket.buy_confirm.title").formatted(Formatting.GOLD),
             centerX, 14, 0xFFFFFF)
 
-        // 3D icon
-        val iconSize = 30
-        val iconY = 26
+        // 3D icon（尺寸与位置与 rememberIconStart() 共用常量，别改成字面量）
+        val iconSize = ICON_SIZE
+        val iconY = ICON_Y
         renderable?.let { rp ->
             // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
             val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
@@ -201,4 +215,11 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
     }
 
     override fun shouldPause() = false
+
+    private companion object {
+        /** 弹窗里 3D 图标的尺寸与纵向位置（绝对屏幕 y）。
+         *  render 画图标与 rememberIconStart 登记庆祝动画起点**共用**这两个值。 */
+        const val ICON_SIZE = 30
+        const val ICON_Y = 26
+    }
 }
