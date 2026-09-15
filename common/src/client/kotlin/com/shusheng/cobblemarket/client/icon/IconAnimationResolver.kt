@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.client.icon
 import com.shusheng.cobblemarket.client.ClientRestCache
 import com.cobblemon.mod.common.client.gui.calculateHeadYawAndPitch
 import com.cobblemon.mod.common.client.render.models.blockbench.PosableState
+import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockAnimationRepository
 import com.cobblemon.mod.common.pokemon.ai.RestBehaviour
 import net.minecraft.client.MinecraftClient
 import com.cobblemon.mod.common.entity.PoseType
@@ -56,6 +57,11 @@ object IconAnimationResolver {
         animate: Boolean,
         preview: Boolean = false
     ): Result {
+        // 先清掉已播完的主动画（叫声/战吼）。**必须自己做**：`PosableState.incrementAge` 里那段过期判定
+        // 只在有 entity 时运行，而我们的图标与庆祝动画全是 `FloatingState`（`getEntity() == null`），
+        // 那条路永远不走 —— 不清理的话 primary 会一直挂住，把待机/走路动画压死，精灵卡在最后一帧。
+        clearExpiredPrimaryAnimation(state)
+
         // 静态模式：不推进动画也不跟随鼠标（与 cry 点击、睡眠一致）
         if (!animate) return DEFAULT
 
@@ -142,5 +148,59 @@ object IconAnimationResolver {
             renderable.species.resourceIdentifier.toString(),
             (dayTime % 24000L).toInt()
         )
+    }
+
+    /**
+     * 某动画的**主动画版**可解析名（`组名:动画全名:primary`），该物种没有这个动画时返回 null。
+     *
+     * ⚠ **`:primary` 后缀不能省** —— 它决定走 `addPrimaryAnimation`（独占）而非 `addActiveAnimation`（叠加）。
+     * 叠加会与姿势动画（待机 `ground_idle` / 走路 `ground_walk`）**混合**：每个骨骼取折中值，
+     * 于是战吼里「手在身体两侧」变成「手在胸前」（火焰鸡 2026-09-15 实测）。
+     * Cobblemon 自己的战吼就是主动画 —— poser json 里写的是 `q.bedrock_primary(...)`，
+     * 而 `addPrimaryAnimation` 的注释是「Sets the primary animation and **dumps any active animations**」。
+     * 带后缀后 `extractAnimation` 会包成 `PrimaryAnimation(...)`，与官方同一条路。
+     *
+     * `BedrockAnimationRepository` 的 key 是全名 `animation.<组名>.<动画名>`，组名 = 动画文件名，
+     * 而**组名不等于物种名**（阿罗拉雷丘 `raichu_alolan`、洗翠火暴兽 `typhlosion_hisuian`），
+     * 所以拿 [BedrockAnimationRepository.getAnimationOrNull] 逐个探测；探测不到返回 null，由调用方降级。
+     *
+     * ⚠ 也别退回 `"battle_cry"` 这种短名：`PosableModel.getAnimation` 的三级查找对短名全落空
+     * （① 姿势的具名动画；② `animations` 表——各模型类手动注册的稀疏表；③ 兜底的 `extractAnimation`
+     * 要求字符串形如 `组名:动画名`，没冒号时 Kotlin 的 `substringAfter` 返回原串、它判自己
+     * 「等于原字符串」直接返回 null），于是静默落到 `cry`，而 `cry` 又走模型的
+     * `CryProvider { if (it.isBattling) battle_cry else cry }` —— 我们的 FloatingState 没有 entity、
+     * `isBattling` 恒 false，拿到手的仍是普通 cry（2026-09-15 查证：此前写的 battle_cry 从未生效过）。
+     */
+    fun primaryAnimationName(renderable: RenderablePokemon, animation: String): String? {
+        val base = renderable.species.name.lowercase()
+        val groups = buildList {
+            add(base)
+            renderable.aspects.forEach { aspect ->
+                if (aspect.isNotBlank()) add("${base}_${aspect.lowercase()}")
+            }
+        }
+        return groups.firstNotNullOfOrNull { group ->
+            val full = "animation.$group.$animation"
+            if (BedrockAnimationRepository.getAnimationOrNull(group, full) != null) "$group:$full:primary" else null
+        }
+    }
+
+    /** 该物种的战吼主动画名，没有战吼时返回 null。 */
+    fun battleCryName(renderable: RenderablePokemon): String? =
+        primaryAnimationName(renderable, "battle_cry")
+
+    /**
+     * 清掉已播完的主动画。
+     *
+     * 复刻 `PosableState.incrementAge` 的过期判定（`started + duration <= animationSeconds`），
+     * **之所以必须自己写**：那段判定在 `incrementAge(entity)` 里、只在有 entity 时被调用，
+     * 而我们的图标与庆祝动画全是 `FloatingState`（`getEntity() == null`），它永远不跑 ——
+     * 不清理的话 primary 会永远挂住，待机/走路动画再也回不来（精灵卡在吼叫的最后一帧）。
+     */
+    private fun clearExpiredPrimaryAnimation(state: PosableState) {
+        val primary = state.primaryAnimation ?: return
+        if (primary.started + primary.duration <= state.animationSeconds) {
+            state.primaryAnimation = null
+        }
     }
 }
