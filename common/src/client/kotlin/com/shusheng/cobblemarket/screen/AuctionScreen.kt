@@ -132,6 +132,14 @@ class AuctionScreen(
     /** 出价弹窗里那个**物品**图标的屏幕位置（物品拍卖时才非 null）——物品庆祝动画的起飞起点，理由同上 */
     private var bidDialogItemIconOrigin: ItemCelebrationAnimation.Origin? = null
 
+    /**
+     * 打开出价弹窗时要不要自动叫一声（替玩家点一下弹窗里的精灵图标）。
+     *
+     * **不能在 [openBidDialog] 里直接播**：`addFirstAnimation` 依赖 `state.currentModel`，
+     * 而它要等 `drawProfilePokemon` 跑过才有值。所以打开时只挂标志，第一帧画完图标后再播。
+     */
+    private var bidCryPending = false
+
     // 精灵图标缓存
     private data class IconData(val displayName: String, val renderable: RenderablePokemon, val state: FloatingState)
     private val iconData = mutableMapOf<Int, IconData>()
@@ -839,6 +847,8 @@ class AuctionScreen(
         // 两个起点都清掉：弹窗可能在精灵拍品 / 物品拍品之间来回换，留着另一边会登记出错误起点
         bidDialogIconOrigin = null
         bidDialogItemIconOrigin = null
+        // 弹窗打开时自动叫一声（第一帧渲染后再播，理由见 bidCryPending）
+        bidCryPending = true
         searchField?.visible = false
         backButton?.visible = false
         createButton?.visible = false
@@ -1007,6 +1017,12 @@ class AuctionScreen(
                         delta = delta,
                         animate = useFloat
                     )
+                    // 打开出价弹窗时自动叫一声（替玩家点一下这个图标）：**必须在渲染之后** ——
+                    // addFirstAnimation 依赖 currentModel，那是 drawProfilePokemon 里才建好的
+                    if (bidCryPending) {
+                        bidCryPending = false
+                        IconCryClick.play(bidPreviewState, rp)
+                    }
                 } catch (_: Exception) {
                 }
             }

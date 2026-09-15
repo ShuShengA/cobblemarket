@@ -181,6 +181,14 @@ class BuyOrderScreen(
     /** 确认交付弹窗里那个**物品**图标的屏幕位置（物品单才非 null）——物品庆祝动画的起飞起点，理由同上 */
     private var reviewItemIconOrigin: ItemCelebrationAnimation.Origin? = null
 
+    /**
+     * 打开确认交付弹窗时要不要自动叫一声（替玩家点一下弹窗里的精灵图标）。
+     *
+     * **不能在 [openReviewDialog] 里直接播**：`addFirstAnimation` 依赖 `state.currentModel`，
+     * 而它要等 `drawProfilePokemon` 跑过才有值。所以打开时只挂标志，第一帧画完图标后再播。
+     */
+    private var reviewCryPending = false
+
     // ── 交付对话框状态 ──
     private var deliverEntry: BuyOrderEntry? = null
     // 精灵交付：所选精灵（经 SellSelectScreen 交付模式选择后回传）
@@ -1988,6 +1996,8 @@ class BuyOrderScreen(
         // 两个起点都清掉：弹窗可能在精灵单 / 物品单之间来回换，留着另一边会登记出错误起点
         reviewIconOrigin = null
         reviewItemIconOrigin = null
+        // 弹窗打开时自动叫一声（第一帧渲染后再播，理由见 reviewCryPending）
+        reviewCryPending = true
         // 物品词条行（附魔等）：打开时重建一次，弹窗渲染每帧只读；行数决定后续控件下移量；
         // BASIC/ADVANCED 双份构建（渲染按 Shift 切换；ADVANCED 打开时无 Shift 缺信息块，
         // 渲染按住 Shift 会重建）——布局按两份最大行数 + 6 行信息块余量预留（防展开溢出）
@@ -2141,6 +2151,12 @@ class BuyOrderScreen(
                         animate = useFloat,
                         useScissor = false
                     )
+                    // 打开确认交付弹窗时自动叫一声（替玩家点一下这个图标）：**必须在渲染之后** ——
+                    // addFirstAnimation 依赖 currentModel，那是 drawProfilePokemon 里才建好的
+                    if (reviewCryPending) {
+                        reviewCryPending = false
+                        IconCryClick.play(reviewState, rp)
+                    }
                 } catch (_: Exception) {
                 }
             }

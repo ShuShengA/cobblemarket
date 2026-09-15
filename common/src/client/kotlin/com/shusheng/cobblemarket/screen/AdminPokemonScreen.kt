@@ -76,6 +76,14 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private var confirmDisplayName = ""
     private val confirmState = FloatingState()
 
+    /**
+     * 打开下架确认弹窗时要不要自动叫一声（替玩家点一下弹窗里的精灵图标）。
+     *
+     * **不能在 [cancelListing] 里直接播**：`addFirstAnimation` 依赖 `state.currentModel`，
+     * 而它要等 `drawProfilePokemon` 跑过才有值。所以打开时只挂标志，第一帧画完图标后再播。
+     */
+    private var confirmCryPending = false
+
     private data class IconData(
         val displayName: String,
         val renderable: RenderablePokemon,
@@ -519,6 +527,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 confirmDisplayName = species.translatedName.string
             }
         }
+        // 弹窗打开时自动叫一声（第一帧渲染后再播，理由见 confirmCryPending）
+        confirmCryPending = true
     }
 
     private fun confirmCancel() {
@@ -958,6 +968,12 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 animate = useFloat,
                 useScissor = false
             )
+            // 打开弹窗时自动叫一声（替玩家点一下这个图标）：**必须在渲染之后** ——
+            // addFirstAnimation 依赖 currentModel，那是 drawProfilePokemon 里才建好的
+            if (confirmCryPending) {
+                confirmCryPending = false
+                IconCryClick.play(confirmState, rp)
+            }
         }
 
         // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 卖家 / 价格

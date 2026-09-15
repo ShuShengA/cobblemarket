@@ -109,6 +109,15 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
      */
     private var confirmIconOrigin: PokemonCelebrationAnimation.Origin? = null
 
+    /**
+     * 弹窗打开时要不要自动叫一声（替玩家点一下弹窗里的图标）。
+     *
+     * **不能在 [openConfirmDialog] 里直接播**：`addFirstAnimation` 依赖 `state.currentModel`，
+     * 而它要等 `drawProfilePokemon` 跑过才有值（弹窗刚打开时 state 还是空的）。
+     * 所以打开时只挂标志，等第一帧把图标画完之后再播（见 renderConfirmDialog）。
+     */
+    private var confirmCryPending = false
+
     /** 喵喵支付可用（消费贷开关）：初始读全局缓存（入口界面已拉取），避免首次打开弹窗宽度闪烁 */
     private var payAvailable = com.shusheng.cobblemarket.client.FinanceCache.consumerLoanEnabled
 
@@ -469,6 +478,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private fun openConfirmDialog(entry: ListingEntry) {
         confirmEntry = entry
         buildConfirmRenderable(entry)
+        // 弹窗打开时自动叫一声（第一帧渲染后再播，理由见 confirmCryPending）
+        confirmCryPending = true
         // 收起可能展开的筛选列表（否则列表按钮残留在遮罩下可点）
         filterListOpen = ""
         rebuildFilterList()
@@ -485,6 +496,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private fun openCancelDialog(entry: ListingEntry) {
         cancelEntry = entry
         buildConfirmRenderable(entry)
+        // 弹窗打开时自动叫一声（与购买弹窗同一套；第一帧渲染后再播，理由见 confirmCryPending）
+        confirmCryPending = true
         filterListOpen = ""
         rebuildFilterList()
     }
@@ -1557,6 +1570,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 animate = useFloat,
                 useScissor = false
             )
+            // 打开弹窗时自动叫一声（替玩家点一下这个图标）：**必须在渲染之后** ——
+            // addFirstAnimation 依赖 currentModel，那是 drawProfilePokemon 里才建好的
+            if (confirmCryPending) {
+                confirmCryPending = false
+                IconCryClick.play(confirmState, rp)
+            }
         }
 
         // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 卖家 / 价格
