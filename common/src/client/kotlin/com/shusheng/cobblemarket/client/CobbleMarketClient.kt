@@ -460,15 +460,7 @@ object CobbleMarketClient {
         registerS2C(PokemonCelebrationPayload.ID, PokemonCelebrationPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 // 获得精灵庆祝动画：买到/拍到/求购单接受交付均走这里（拍卖场景与落槌铃声同批触发，天然同步）
-                // 起点取**当前界面上这只精灵的行内图标**坐标（拍卖/求购触发时界面通常还开着，
-                // IconRegistry 每帧登记着全部行内图标）。拿不到就传 null 走兜底起点：
-                // 购买时界面已关、刚翻过页、卖家压根没开着界面 —— 这些情况都要能正常播。
-                val srcIcon = com.shusheng.cobblemarket.client.icon.IconRegistry
-                    .entryOfSpecies(payload.speciesId.substringAfter(':'))
-                PokemonCelebrationAnimation.trigger(
-                    payload.speciesId, payload.aspects, payload.shiny, payload.source, payload.heldItemNbt,
-                    srcIcon?.x, srcIcon?.y
-                )
+                PokemonCelebrationAnimation.trigger(payload.speciesId, payload.aspects, payload.shiny, payload.source, payload.heldItemNbt)
             }
         }
 
