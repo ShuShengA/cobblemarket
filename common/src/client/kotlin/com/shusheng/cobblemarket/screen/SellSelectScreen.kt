@@ -639,8 +639,11 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         val previewRowL = width / 2 - 148
         val hoveredEntry = IconRegistry.entryInRow(mouseX.toDouble(), mouseY.toDouble(), previewRowL, previewRowL + 296)
         val selectedEntry = if (hoveredEntry == null && selectedIndex >= 0) {
-            // 选中行的屏幕 y，与行渲染同一公式；滚出可视区时该位置没有图标，自然找不到
-            val selectedY = 96 + (selectedIndex - scrollOffset) * rowHeight
+            // 选中行的**图标**屏幕 y：与行渲染严格同源（行顶 = startY + n*rowHeight，图标再 +2，
+            // 见下方 iconY = y + 2）。⚠ 这里原先写死 96，而 startY 是 100，查询点落进了上一行
+            // 图标的 ±2 容差区间 → 鼠标移出行外时大图显示的是选中行的【上一行】（2026-09-15 修）。
+            // 滚出可视区时该位置没有图标，自然找不到。
+            val selectedY = startY + (selectedIndex - scrollOffset) * rowHeight + 2
             IconRegistry.entryInRow(previewRowL + 2.0, selectedY.toDouble(), previewRowL, previewRowL + 296)
         } else null
         (hoveredEntry ?: selectedEntry)?.let {
