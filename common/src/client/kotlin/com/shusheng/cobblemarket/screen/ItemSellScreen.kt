@@ -335,7 +335,9 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
                     com.shusheng.cobblemarket.network.itemsEqualForTrading(it, entry.stack)
                 }
                 ?: entry.stack
-            tooltipCacheLines = liveStack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, TooltipType.BASIC)
+            // 走统一入口（别直连 getTooltip）：受损物品才会多一行「耐久：X / Y」
+            tooltipCacheLines = com.shusheng.cobblemarket.client.ItemComponentsDisplay
+                .itemTooltip(liveStack, client?.player, TooltipType.BASIC)
             var maxWidth = 0
             tooltipCacheLines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
             tooltipCacheMaxWidth = maxWidth
