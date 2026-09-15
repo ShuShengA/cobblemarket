@@ -86,8 +86,10 @@ object PokemonCelebrationAnimation {
         else
             ClientConfig.celebrationOnAuctionAndOrder
         if (!allowed) return
-        // 起点优先级：调用方直接传的（界面上的行内图标）> 点击时登记的（购买弹窗）> 兜底
-        queue.addLast(Pending(speciesId, aspects, shiny, heldItemNbt, startX ?: pendingStartX, startY ?: pendingStartY))
+        // 起点优先级：**点击时登记的（购买弹窗）> 调用方传的（界面上的行内图标）> 兜底**。
+        // ⚠ 顺序不能反：购买后界面会切回市场，而列表里往往就有刚买的那只（同物种），
+        //   行内图标查得到 —— 若让它优先，就会从列表行图标起飞，而不是用户要的「从购买弹窗飞出」。
+        queue.addLast(Pending(speciesId, aspects, shiny, heldItemNbt, pendingStartX ?: startX, pendingStartY ?: startY))
         pendingStartX = null
         pendingStartY = null
         if (!active) startNext()
