@@ -30,6 +30,8 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
     private var rulesButton: NineSliceButton? = null
     /** 卡片管理入口（仅 OP；规则按钮下方，左端两张卡微缩图标在 render 叠加） */
     private var cardManageButton: NineSliceButton? = null
+    /** 关市时点置灰的「喵喵的帮助」按钮：fail 音 + 3 秒红字提示的截止时刻（照入口界面 financeNoticeUntil） */
+    private var loanNoticeUntil = 0L
     // 初始读全局缓存（60 秒兜底轮询写入）秒显不闪；-1 = 未拉取，响应到达后更新
     private var limit = com.shusheng.cobblemarket.client.FinanceCache.creditLimit
     private var debt = com.shusheng.cobblemarket.client.FinanceCache.creditDebt
@@ -99,12 +101,20 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
 
         // 应急贷款入口（信息组：额度/欠款两行 + 按钮组成；100×16；批次 7.5 整体上移给存款按钮腾位）
         // 关市（紧急停市）时置灰：与服务端 RequestLoanPayload 的 marketBlocked 同一口径
-        //（借款是唯一让资金流出准备金池的金融操作）。⚠ dimmed 只影响观感、**不拦点击** ——
-        // 真按下去仍会发请求，服务端会回「市场功能已关闭」，玩家依然有反馈
+        //（借款是唯一让资金流出准备金池的金融操作）。
+        // ⚠ dimmed 只压暗观感、不影响可点性（见 NineSliceButton）—— 所以**点击必须在 onPress 里
+        // 自己拦**：否则玩家一路填完借款表单、点确认才被服务端拒。拦在进入界面之前，
+        // 给 fail 音 + 3 秒红字提示（照入口界面「金融总开关关」同款；2026-09-17 与 1.2.0 同步）
         val loanBtn = NineSliceButton(
             width / 2 - 50, bgTop + 96, 100, 16,
             Text.translatable("cobblemarket.loan.title"),
-            { client?.setScreen(LoanScreen()) }
+            {
+                if (com.shusheng.cobblemarket.client.MarketStateCache.enabled) client?.setScreen(LoanScreen())
+                else {
+                    com.shusheng.cobblemarket.client.playFailSound()
+                    loanNoticeUntil = System.currentTimeMillis() + 3000
+                }
+            }
         )
         loanBtn.dimmed = !com.shusheng.cobblemarket.client.MarketStateCache.enabled
         addDrawableChild(loanBtn)
@@ -271,6 +281,16 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
                     )
                 }
             }
+        }
+        // 关市时点置灰的「喵喵的帮助」：3 秒红字提示（文案与入口界面关市提示同一口径）。
+        // 位置取背景底部居中：上排按钮到 bgTop+180 为止，两侧持有者面板在背景外（±134 起），
+        // 中间这段（约 12 字宽 = ±54）是空的
+        if (System.currentTimeMillis() < loanNoticeUntil) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.market.closed").string,
+                width / 2, bgTop + 190, 0xFF5555
+            )
         }
     }
 
