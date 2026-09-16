@@ -295,8 +295,8 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
             val who = "${row.operator} → ${row.targetName}"
             // 空字段 = 该半边无变更（服务端不再写占位符）：整段不渲染；
             // 两段都空时这行只剩「时间 + 执行者 → 目标」
-            val added = row.added.takeIf { it.isNotBlank() }?.let { "$addedLabel: $it" }.orEmpty()
-            val removed = row.removed.takeIf { it.isNotBlank() }?.let { "$removedLabel: $it" }.orEmpty()
+            val added = row.added.takeIf { it.isNotBlank() }?.let { "$addedLabel: ${nodeLabels(it)}" }.orEmpty()
+            val removed = row.removed.takeIf { it.isNotBlank() }?.let { "$removedLabel: ${nodeLabels(it)}" }.orEmpty()
             // 行内会被截断，悬停提示给完整内容
             val tooltip = buildList {
                 add("$time  $who")
@@ -333,6 +333,12 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         val t = Text.translatable(key)
         return if (t.string == key) short else t.string
     }
+
+    /** 审计记录里的节点串 → 本地化名称串（变更记录的行与悬停都走这里，
+     *  保证和权限按钮、聊天通知显示的是同一套名字，而不是 blacklist 这种内部 key）。
+     *  ⚠ 服务端写 CSV 时用**空格**分隔短名（见 PermissionFileLogger.shortNames），不是逗号。 */
+    private fun nodeLabels(raw: String): String =
+        raw.split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(", ") { nodeLabel(it) }
 
     /** 重建过滤结果与行文本缓存（搜索变化 / 数据到达 / tab 无关，统一入口） */
     private fun rebuildFiltered() {
