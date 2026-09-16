@@ -162,6 +162,13 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         val startY = maxOf(height / 2 - totalH / 2, 47 + (160 - totalH) / 2)
         btnStartY = startY
 
+        // 关市（紧急停市）：交易类入口置灰 —— 精灵/物品市场、拍卖场、求购单。
+        // dimmed 只压暗观感、**不影响可点性**（见 TextureButton/NineSliceButton），点击仍走
+        // openIfMarketEnabled 给 fail 音 + 3 秒红字提示（关市状态另有常驻红字横幅）。
+        // ⚠ 设置与交易历史**不置灰也不拦**：设置全是玩家自己客户端的观感开关，交易历史只读账本，
+        // 关市是拦交易、不是锁死整个界面（2026-09-17 与 1.2.0 同步）
+        val marketClosed = !com.shusheng.cobblemarket.client.MarketStateCache.enabled
+
         // 行 1：精灵市场按钮用小卡比兽 8 帧动画图标（100ms/帧，照皮卡丘动画帧率）
         entryButtons += addDrawableChild(TextureButton(
             leftX, startY, btnW, btnH,
@@ -170,7 +177,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             iconFrames = (0..7).map { Identifier.of("cobblemarket", "textures/gui/munchlax/munchlax_$it.png") },
             iconTexSize = 48,
             iconDisplaySize = 18
-        ))
+        ).also { it.dimmed = marketClosed })
         entryButtons += addDrawableChild(TextureButton(
             rightX, startY, btnW, btnH,
             Text.translatable("cobblemarket.entry.item"),
@@ -178,12 +185,13 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             Identifier.of("cobblemarket", "textures/gui/pokeball_icon.png"),
             iconTexSize = 48,
             iconDisplaySize = 18
-        ))
+        ).also { it.dimmed = marketClosed })
         // 行 2
+        // 交易历史：不套 openIfMarketEnabled —— 只读账本，关市期间照常可查
         entryButtons += addDrawableChild(TextureButton(
             leftX, startY + btnH + gap, btnW, btnH,
             Text.translatable("cobblemarket.entry.history"),
-            { openIfMarketEnabled { client?.setScreen(HistoryScreen()) } },
+            { client?.setScreen(HistoryScreen()) },
             Identifier.of("cobblemarket", "textures/gui/history_icon.png"),
             iconTexSize = 48,
             iconDisplaySize = 18
@@ -195,7 +203,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             Identifier.of("cobblemarket", "textures/gui/auction_gavel_left.png"),
             iconTexSize = 48,
             iconDisplaySize = 18
-        ))
+        ).also { it.dimmed = marketClosed })
         // 行 3：管理员面板居中（仅 OP），左侧放 OP 图标
         if (isAdmin) {
             entryButtons += addDrawableChild(TextureButton(
@@ -225,6 +233,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             texture = ROW_BACKGROUND_TEXTURE,
             texH = ROW_BACKGROUND_TEX_H
         )
+        // 关市置灰（同上方交易类入口：仍可点，点击给 fail 音 + 3 秒红字提示）
+        buyOrderBtn.dimmed = marketClosed
         // 纯图标按钮：悬停提示名称（无障碍与可读性）
         buyOrderBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.buy_order")))
         entryButtons += addDrawableChild(buyOrderBtn)
@@ -267,7 +277,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             centerX + 96 - cornerSize - 6, cornerY,
             cornerSize, cornerSize,
             Text.literal(""),
-            { openIfMarketEnabled { openSettingsDialog() } },
+            // 设置：不套 openIfMarketEnabled —— 里面全是玩家自己客户端的观感开关（动画/光标/HUD
+            // 位置等），与交易无关，关市不该连设置都进不去（2026-09-17 与 1.2.0 同步）
+            { openSettingsDialog() },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/settings_icon.png"),
             // 48×48 贴图缩到 18×18 显示（照求购单按钮）
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
