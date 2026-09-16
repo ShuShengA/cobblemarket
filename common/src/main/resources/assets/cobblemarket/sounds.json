@@ -86,5 +86,21 @@
         "stream": false
       }
     ]
+  },
+  "money_in": {
+    "sounds": [
+      {
+        "name": "cobblemarket:money_in",
+        "stream": false
+      }
+    ]
+  },
+  "loan_deduct": {
+    "sounds": [
+      {
+        "name": "cobblemarket:loan_deduct",
+        "stream": false
+      }
+    ]
   }
 }

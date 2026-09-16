@@ -7,6 +7,7 @@ import com.shusheng.cobblemarket.network.AuctionListDataPayload
 import com.shusheng.cobblemarket.network.AuctionSettleSoundPayload
 import com.shusheng.cobblemarket.network.PokemonCelebrationPayload
 import com.shusheng.cobblemarket.network.MarketStatePayload
+import com.shusheng.cobblemarket.network.PlaySoundPayload
 import com.shusheng.cobblemarket.network.BuyOrderEventPayload
 import com.shusheng.cobblemarket.network.BuyOrderListDataPayload
 import com.shusheng.cobblemarket.network.PlayerNameSuggestionsPayload
@@ -466,6 +467,11 @@ object CobbleMarketClient {
             }
         }
 
+        // 通用音效通道：服务端事件（金融操作的到账/扣款等）→ 客户端播一个音效
+        registerS2C(PlaySoundPayload.ID, PlaySoundPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute { playMarketSound(payload.soundId) }
+        }
+
         registerS2C(AuctionWarnSoundPayload.ID, AuctionWarnSoundPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 // 渐强警告声：1→0.4、2→0.6、3→0.8（与成交落槌 1.0 递进）
@@ -652,6 +658,22 @@ fun playFailSound() {
             SoundEvent.of(Identifier.of("cobblemarket", "fail")),
             1.0f,
             0.5f // 音量（两参重载固定 0.25 太轻，档位同 playResultSound）
+        )
+    )
+}
+
+/**
+ * 播一个模组音效（服务端事件音效走 [PlaySoundPayload]）。
+ *
+ * ⚠ 音量给 0.9，比其它反馈音的 0.5 高一档：这批素材（money_in / loan_deduct）是按
+ * 「别做音量增强」导出的，而旧素材在剪映里增强过；同样用 0.5 播，新素材明显偏轻（用户实机反馈）。
+ */
+fun playMarketSound(soundId: String) {
+    MinecraftClient.getInstance().soundManager.play(
+        PositionedSoundInstance.master(
+            SoundEvent.of(Identifier.of("cobblemarket", soundId)),
+            1.0f,
+            0.9f
         )
     )
 }

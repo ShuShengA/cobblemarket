@@ -724,6 +724,8 @@ object FinanceNetwork {
                 }
                 // 钱进钱包后立即推余额（借款不走 MarketResultPayload，客户端不会主动补拉）
                 BalanceNetwork.sendBalanceTo(player)
+                // 到账音：金融操作此前**完全没有声音反馈**（一行余额数字悄悄变了），补上
+                sendSound(player, "money_in")
                 val record = state.createLoan(
                     playerUuid = player.uuid,
                     playerName = player.name.string,
@@ -1026,6 +1028,8 @@ object FinanceNetwork {
                     ).formatted(Formatting.GREEN),
                     false
                 )
+                // 存款是「钱离开钱包」→ 用扣款音（与还款同一枚，按钱的进出分音效）
+                sendSound(player, "loan_deduct")
                 sendDepositInfo(player, state, now)
             }
         }
@@ -1070,6 +1074,8 @@ object FinanceNetwork {
                     ).formatted(Formatting.GREEN),
                     false
                 )
+                // 取款是「钱回到钱包」→ 到账音
+                sendSound(player, "money_in")
                 sendDepositInfo(player, state, now)
             }
         }
