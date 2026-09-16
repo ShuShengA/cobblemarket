@@ -27,7 +27,8 @@ object CloseAnimation {
         client.soundManager.play(
             net.minecraft.client.sound.PositionedSoundInstance.master(
                 net.minecraft.sound.SoundEvent.of(net.minecraft.util.Identifier.of("cobblemarket", "screen_close")),
-                1.0f
+                1.0f,
+                0.5f // 音量（两参重载固定 0.25 太轻，同 playResultSound）
             )
         )
     }
