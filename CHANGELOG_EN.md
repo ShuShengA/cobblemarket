@@ -144,6 +144,7 @@
 - **Long item names squeezed out the count in Auction House and admin auction rows**: an over-long name truncated the "×N" suffix along with it, hiding how many are for sale — the count now always shows in full and the name truncates on its own
 - **Item icons showed no durability bar**: items in lists and detail dialogs never showed a durability bar, so players could unknowingly pay full price for a nearly-broken tool or piece of gear — damaged items now show the vanilla durability bar, and the tooltip adds a "Durability: X / Y" line (no Shift needed)
 - **Buyer's note hidden behind the "Select variant" button in the delivery dialog**: when a buyer left a note such as "any durability is fine", the seller could not see it in the delivery dialog (the text sat underneath the button); the content below now shifts down one row when a note is present, so the note is fully visible
+- **Borrowing was still allowed while the market was closed**: the market master switch (emergency stop) only blocked trading / auctions / buy orders — the finance side was not gated, so players could still take out a loan from Meowth Bank while the market was stopped (not an OP privilege: everyone could). Loans are now refused while the market is closed and the "Emergency Loan" button inside Meowth Bank is greyed out; **deposits, withdrawals, repayments and card applications are unaffected** (none of them moves money out of the reserve pool)
 
 ## 1.0.1 (released)
 
