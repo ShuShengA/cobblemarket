@@ -277,7 +277,7 @@ class RequestPurpleCardApplyPayload : CustomPayload {
     }
 }
 
-// ── S2C：申请条件快照（6 项条件 + 费用 + 资格 + 开关状态） ──
+// ── S2C：申请条件快照（7 项条件 + 费用 + 资格 + 开关状态） ──
 
 data class ApplyConditionEntry(
     val requirement: Long,
@@ -294,7 +294,7 @@ data class ApplyConditionEntry(
 }
 
 data class PurpleCardApplyInfoPayload(
-    /** 6 项：资产/消费金额/额度/存款余额/图鉴数/无逾期（末项 requirement 0/1、current 0/1） */
+    /** 7 项：资产/消费金额/额度/存款余额/图鉴遇见数/图鉴捕捉数/无逾期（末项 requirement 0/1、current 0/1） */
     val conditions: List<ApplyConditionEntry>,
     val fee: Long,
     val eligible: Boolean,
@@ -384,7 +384,7 @@ class RequestBlackCardApplyPayload : CustomPayload {
     }
 }
 
-// ── S2C：申请条件快照（7 项：持有紫卡硬条件 + 六项门槛 + 费用 + 资格 + 开关状态） ──
+// ── S2C：申请条件快照（8 项：持有紫卡硬条件 + 七项门槛 + 费用 + 资格 + 开关状态） ──
 
 data class BlackCardApplyInfoPayload(
     /** 7 项：持有紫卡（硬条件）+ 资产/消费金额/额度/存款余额/图鉴数/无逾期 */
@@ -784,8 +784,8 @@ object FinanceNetwork {
                     return@execute
                 }
                 val cash = CurrencyHandler.getBalance(player).toLong()
-                val dex = com.shusheng.cobblemarket.finance.FinanceService.getCaughtSpeciesCount(server, player.uuid)
-                if (!state.isPurpleCardEligible(player.uuid, cash, dex, now)) {
+                val dexCounts = com.shusheng.cobblemarket.finance.FinanceService.getDexCounts(server, player.uuid)
+                if (!state.isPurpleCardEligible(player.uuid, cash, dexCounts.seen, dexCounts.caught, now)) {
                     player.sendMessage(Text.translatable("cobblemarket.card.apply_not_eligible").formatted(Formatting.RED), false)
                     return@execute
                 }
@@ -873,8 +873,8 @@ object FinanceNetwork {
                     return@execute
                 }
                 val cash = CurrencyHandler.getBalance(player).toLong()
-                val dex = com.shusheng.cobblemarket.finance.FinanceService.getCaughtSpeciesCount(server, player.uuid)
-                if (!state.isBlackCardEligible(player.uuid, cash, dex, now)) {
+                val dexCounts = com.shusheng.cobblemarket.finance.FinanceService.getDexCounts(server, player.uuid)
+                if (!state.isBlackCardEligible(player.uuid, cash, dexCounts.seen, dexCounts.caught, now)) {
                     player.sendMessage(Text.translatable("cobblemarket.card.apply_not_eligible").formatted(Formatting.RED), false)
                     return@execute
                 }
@@ -1168,7 +1168,7 @@ object FinanceNetwork {
         }
     }
 
-    /** 申请紫卡条件快照（打开界面/申请后回发）：6 项条件 + 费用 + 资格 + 开关 */
+    /** 申请紫卡条件快照（打开界面/申请后回发）：7 项条件 + 费用 + 资格 + 开关 */
     private fun sendPurpleCardApplyInfo(player: ServerPlayerEntity) {
         val server = player.server
         val state = FinanceState.get(server)
@@ -1177,7 +1177,7 @@ object FinanceNetwork {
         val volume = state.getTotalCountedVolumeOf(player.uuid)
         // 净存款（存款 − 未还欠款）：借钱充存款无法满足门槛，界面显示值即判定口径
         val deposit = state.netDepositBalance(player.uuid, now)
-        val dex = com.shusheng.cobblemarket.finance.FinanceService.getCaughtSpeciesCount(server, player.uuid)
+        val dexCounts = com.shusheng.cobblemarket.finance.FinanceService.getDexCounts(server, player.uuid)
         // 信用基础 = 无欠款公式值（勿用 creditLimitFor+debt 反推：欠款超基础时会被钳成欠款额，见 creditBaseFor 注释）
         val creditBase = state.creditBaseFor(player.uuid, now)
         val mine = state.getLoansByPlayer(player.uuid)
@@ -1189,7 +1189,8 @@ object FinanceNetwork {
             ApplyConditionEntry(CobbleMarketConfig.purpleCardApplyVolume, volume, volume >= CobbleMarketConfig.purpleCardApplyVolume),
             ApplyConditionEntry(CobbleMarketConfig.purpleCardApplyCredit, creditBase, creditBase >= CobbleMarketConfig.purpleCardApplyCredit),
             ApplyConditionEntry(CobbleMarketConfig.purpleCardApplyDeposit, deposit, deposit >= CobbleMarketConfig.purpleCardApplyDeposit),
-            ApplyConditionEntry(CobbleMarketConfig.purpleCardApplyDex, dex.toLong(), dex.toLong() >= CobbleMarketConfig.purpleCardApplyDex),
+            ApplyConditionEntry(CobbleMarketConfig.purpleCardApplySeen, dexCounts.seen.toLong(), dexCounts.seen.toLong() >= CobbleMarketConfig.purpleCardApplySeen),
+            ApplyConditionEntry(CobbleMarketConfig.purpleCardApplyDex, dexCounts.caught.toLong(), dexCounts.caught.toLong() >= CobbleMarketConfig.purpleCardApplyDex),
             ApplyConditionEntry(
                 if (CobbleMarketConfig.purpleCardApplyNoOverdue || hasBadDebt) 1L else 0L,
                 if (hasBadRecord) 0L else 1L,
@@ -1201,7 +1202,7 @@ object FinanceNetwork {
             PurpleCardApplyInfoPayload(
                 conditions = conditions,
                 fee = CobbleMarketConfig.purpleCardApplyFee,
-                eligible = state.isPurpleCardEligible(player.uuid, cash, dex, now),
+                eligible = state.isPurpleCardEligible(player.uuid, cash, dexCounts.seen, dexCounts.caught, now),
                 selfApplyEnabled = CobbleMarketConfig.purpleCardSelfApply,
                 isHolder = state.isPurpleCardHolder(player.uuid),
                 redoFee = CobbleMarketConfig.purpleCardRedoFee,
@@ -1212,7 +1213,7 @@ object FinanceNetwork {
         )
     }
 
-    /** 申请黑卡条件快照回发（7 项：持有紫卡硬条件 + 六项门槛，照紫卡口径） */
+    /** 申请黑卡条件快照回发（8 项：持有紫卡硬条件 + 七项门槛，照紫卡口径） */
     private fun sendBlackCardApplyInfo(player: ServerPlayerEntity) {
         val server = player.server
         val state = FinanceState.get(server)
@@ -1221,7 +1222,7 @@ object FinanceNetwork {
         val volume = state.getTotalCountedVolumeOf(player.uuid)
         // 净存款（存款 − 未还欠款）：借钱充存款无法满足门槛，界面显示值即判定口径
         val deposit = state.netDepositBalance(player.uuid, now)
-        val dex = com.shusheng.cobblemarket.finance.FinanceService.getCaughtSpeciesCount(server, player.uuid)
+        val dexCounts = com.shusheng.cobblemarket.finance.FinanceService.getDexCounts(server, player.uuid)
         // 信用基础 = 无欠款公式值（紫卡持有者 = 紫卡额度；勿用 creditLimitFor+debt 反推，见 creditBaseFor 注释）
         val creditBase = state.creditBaseFor(player.uuid, now)
         val mine = state.getLoansByPlayer(player.uuid)
@@ -1236,7 +1237,8 @@ object FinanceNetwork {
             ApplyConditionEntry(CobbleMarketConfig.blackCardApplyVolume, volume, volume >= CobbleMarketConfig.blackCardApplyVolume),
             ApplyConditionEntry(CobbleMarketConfig.blackCardApplyCredit, creditBase, creditBase >= CobbleMarketConfig.blackCardApplyCredit),
             ApplyConditionEntry(CobbleMarketConfig.blackCardApplyDeposit, deposit, deposit >= CobbleMarketConfig.blackCardApplyDeposit),
-            ApplyConditionEntry(CobbleMarketConfig.blackCardApplyDex, dex.toLong(), dex.toLong() >= CobbleMarketConfig.blackCardApplyDex),
+            ApplyConditionEntry(CobbleMarketConfig.blackCardApplySeen, dexCounts.seen.toLong(), dexCounts.seen.toLong() >= CobbleMarketConfig.blackCardApplySeen),
+            ApplyConditionEntry(CobbleMarketConfig.blackCardApplyDex, dexCounts.caught.toLong(), dexCounts.caught.toLong() >= CobbleMarketConfig.blackCardApplyDex),
             ApplyConditionEntry(
                 if (CobbleMarketConfig.blackCardApplyNoOverdue || hasBadDebt) 1L else 0L,
                 if (hasBadRecord) 0L else 1L,
@@ -1248,7 +1250,7 @@ object FinanceNetwork {
             BlackCardApplyInfoPayload(
                 conditions = conditions,
                 fee = CobbleMarketConfig.blackCardApplyFee,
-                eligible = state.isBlackCardEligible(player.uuid, cash, dex, now),
+                eligible = state.isBlackCardEligible(player.uuid, cash, dexCounts.seen, dexCounts.caught, now),
                 selfApplyEnabled = CobbleMarketConfig.blackCardSelfApply,
                 isHolder = state.isBlackCardHolder(player.uuid),
                 redoFee = CobbleMarketConfig.blackCardRedoFee,
