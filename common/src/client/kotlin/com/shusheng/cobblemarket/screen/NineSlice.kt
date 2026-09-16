@@ -18,7 +18,8 @@ val DIALOG_BACKGROUND_TEXTURE = Identifier.of("cobblemarket", "textures/gui/dial
 const val DIALOG_BACKGROUND_TEX_H = 40
 
 val BUTTON_TEXTURE = Identifier.of("cobblemarket", "textures/gui/button_9slice.png")
-const val BUTTON_TEX_H = 80
+/** 按钮贴图总高（三段：普通 / 悬停 / 选中）—— 手动 drawNineSlice 画按钮时要与它一致 */
+const val BUTTON_TEX_H = 120
 
 /** 弹窗全屏半透明遮罩：关闭动画进行中跳过绘制——按 E/Esc 后游戏画面立刻变亮，遮罩不随界面上缩 */
 fun drawScreenDimMask(context: DrawContext, width: Int, height: Int) {

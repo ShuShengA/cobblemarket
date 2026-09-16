@@ -155,7 +155,10 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         val leftX = centerX - panelWidth / 2
 
         val backBtn = NineSliceButton(
-            leftX + panelWidth - 50, 13, 50, 16,
+            // 右缘与背景右缘留 12px，和黑名单/封禁/管理员面板等界面完全对齐：
+            // 那些界面 panelWidth=296，写 `leftX + panelWidth - 50` 正好落在这个位置；
+            // 本界面 panelWidth=300（列表按 300 标准更宽），照抄会整体右移、离背景边缘只剩 10px
+            leftX + panelWidth - 52, 13, 50, 16,
             Text.literal(""),
             { client?.setScreen(AdminScreen()) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
@@ -420,9 +423,11 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
                     Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX)),
                     NODE_W - 8
                 ),
-                { onNodeClicked(node) }
+                { onNodeClicked(node) },
+                // 三段贴图：第三段是**选中态**（选中节点后保持高亮，鼠标移开也不消失）
+                texH = 120
             )
-            btn.pressedVisual = node in selectedNodes
+            btn.selectedVisual = node in selectedNodes
             nodeButtonByNode[node] = btn
             addDrawableChild(btn)
         }
@@ -473,7 +478,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
     /** 勾选切换：只改本地集合与按钮视觉，不发包（一个节点一个包会撞服务端写节流，中途点击被静默丢弃） */
     private fun toggleNode(node: String) {
         if (!selectedNodes.add(node)) selectedNodes.remove(node)
-        nodeButtonByNode[node]?.pressedVisual = node in selectedNodes
+        nodeButtonByNode[node]?.selectedVisual = node in selectedNodes
     }
 
     // ── 「服务器配置」二次确认（整个金融系统的参数都在这个节点下，防手滑勾中）──
@@ -732,9 +737,14 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         drawPanelDivider(context, leftX + panelWidth / 2, startY - 4)
 
         if (displayCount() == 0) {
-            context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable(if (currentTab == 0) "cobblemarket.perm.list_empty" else "cobblemarket.perm.audit_empty").formatted(Formatting.GRAY),
-                centerX, startY + 30, 0xFFFFFF)
+            // 区分「本来就没有记录」与「被搜索过滤掉了」：输入一个还没授权的名字时列表会被过滤空，
+            // 那时沿用「没有授予记录」会让玩家以为列表坏了 —— 改成告诉他下一步该点「添加」
+            // （2026-09-16 用户反馈；不带玩家名是为了避免长名字把提示顶出面板）
+            val filteredOut = currentTab == 0 && entries.isNotEmpty() &&
+                !searchField?.text?.trim().isNullOrEmpty()
+            val msg = if (filteredOut) Text.translatable("cobblemarket.perm.list_no_match")
+            else Text.translatable(if (currentTab == 0) "cobblemarket.perm.list_empty" else "cobblemarket.perm.audit_empty")
+            context.drawCenteredTextWithShadow(textRenderer, msg.formatted(Formatting.GRAY), centerX, startY + 30, 0xFFFFFF)
             return
         }
 

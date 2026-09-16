@@ -130,7 +130,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private var itemSelectButton: NineSliceButton? = null
     private var batchAddButton: NineSliceButton? = null
     private var heldAddButton: NineSliceButton? = null
-    // 手持添加模式：小手图标选中态（红底），点「添加」时提交手持物品条目
+    // 手持添加模式：小手图标切到选中态（贴图第三段），点「添加」时提交手持物品条目
     private var heldAddMode = false
     private var previewCandidate: com.shusheng.cobblemarket.client.ItemCandidate? = null
 
@@ -646,7 +646,9 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             Text.literal(""),
             { toggleHeldAdd() },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/hand.png"),
-            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            // 三段贴图：第三段是**选中态**（进入手持添加模式后保持高亮）
+            texH = 120
         )
         addDrawableChild(heldAddButton)
 
@@ -771,7 +773,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private fun exitHeldAddMode() {
         if (!heldAddMode) return
         heldAddMode = false
-        heldAddButton?.pressedVisual = false
+        heldAddButton?.selectedVisual = false
     }
 
     private fun toggleHeldAdd() {
@@ -785,7 +787,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         heldAddMode = !heldAddMode
         // 选中态 = 按下视觉（红底），与求购单手持按钮一致
         // 选中后的文字/图标由渲染时实时读主手（换手同步）；取消时留一条绿字确认
-        heldAddButton?.pressedVisual = heldAddMode
+        heldAddButton?.selectedVisual = heldAddMode
         dialogError = if (heldAddMode) null
             else Text.translatable("cobblemarket.blacklist.held_item_cancelled").string
         dialogErrorColor = 0x55FF55

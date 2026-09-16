@@ -1276,7 +1276,9 @@ class BuyOrderScreen(
             Text.literal(""),
             { toggleHeldItemMode() },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/hand.png"),
-            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            // 三段贴图：第三段是**选中态**（进入手持物品模式后保持高亮）
+            texH = 120
         )
         addDrawableChild(heldItemButton)
         updateHeldItemButton()
@@ -1320,8 +1322,8 @@ class BuyOrderScreen(
     }
 
     private fun updateHeldItemButton() {
-        // 选中态 = 按下视觉（pressedVisual 保持"按下态"渲染，见 NineSliceButton）
-        heldItemButton?.pressedVisual = heldItemMode
+        // 选中态（selectedVisual）：手持物品模式期间按钮保持第三段高亮，见 NineSliceButton
+        heldItemButton?.selectedVisual = heldItemMode
     }
 
     /** 主手物品（空手返回 null）：手持模式图标的统一数据源，实时读取保证换手后同步 */
@@ -2870,9 +2872,12 @@ class BuyOrderScreen(
         private val BUY_ORDER_PANEL_BOTTOM = Identifier.of("cobblemarket", "textures/gui/market_panel_bottom.png")
         // 精灵槽背景（行内与创建弹窗预览槽共用）
         private val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
-        // 按钮贴图（40×80 = 普通/悬停两段），求购单界面所有按钮统一使用
-        private val BUY_ORDER_BUTTON_TEXTURE = Identifier.of("cobblemarket", "textures/gui/buy_order_button.png")
-        private const val BUY_ORDER_BUTTON_TEX_H = 80
+        // 按钮贴图（40×80 = 普通/悬停两段），求购单界面所有按钮统一使用。
+        // 2026-09-16：改用全项目通用的 button_9slice —— 原先的 buy_order_button 只是同一套按钮的
+        // 另一个配色（实测差异仅约 21% 通道差、肉眼难辨），两份资源没必要，专属贴图已删
+        private val BUY_ORDER_BUTTON_TEXTURE = Identifier.of("cobblemarket", "textures/gui/button_9slice.png")
+        // 与 button_9slice 的总高一致（三段：普通 / 悬停 / 选中）
+        private const val BUY_ORDER_BUTTON_TEX_H = 120
         // 创建弹窗形态列表最大可见行数（超出滚动，照黑名单添加框）
         private const val MAX_FORM_LIST_ROWS = 8
         // 悬停面板备注换行宽度上限
