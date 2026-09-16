@@ -113,7 +113,7 @@
   "cobblemarket.perm.audit_added": "Added",
   "cobblemarket.perm.audit_removed": "Removed",
   "cobblemarket.perm.audit_remaining": "Remaining",
-  "cobblemarket.perm.audit_write_failed": "Permission changed, but writing the audit log failed (the ledger CSV may be open in Excel/WPS)",
+  "cobblemarket.perm.audit_write_failed": "Permission changed (this operation succeeded), but the audit log could not be written — the CSV may be open in Excel/WPS",
   "cobblemarket.perm.title": "Permission Management",
   "cobblemarket.perm.dialog_title": "Edit Permissions",
   "cobblemarket.perm.save": "Save",

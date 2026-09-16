@@ -271,8 +271,12 @@ object PermissionNetwork {
                 val nodes = payload.nodes.filter { it in MarketPermissions.ALL }.toSet()
                 val (added, removed) = PermissionState.get(server).setNodes(targetUuid, targetName, nodes, player.name.string)
                 // 剩余节点 = 保存后的完整集合。写失败（账本被 Excel/WPS 独占等）要告诉 OP，别静默丢审计
+                // ⚠ 提示走聊天消息，**不要**用 MarketResultPayload(false)：后者会播失败音，
+                // 可权限这时已经改成功了，玩家会以为操作失败（2026-09-16 踩到）
                 if (!PermissionFileLogger.log(player.name.string, targetName, targetUuid, added, removed, nodes)) {
-                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.perm.audit_write_failed")))
+                    player.sendMessage(
+                        Text.translatable("cobblemarket.perm.audit_write_failed").formatted(Formatting.YELLOW), false
+                    )
                 }
                 // 权限变更音：给被改动的玩家本人（在线才发；管理员给自己加权限时也会响，符合直觉）
                 if (added.isNotEmpty() || removed.isNotEmpty()) {
@@ -293,7 +297,9 @@ object PermissionNetwork {
                 PermissionState.get(server).removePlayer(payload.playerUuid)?.let {
                     // 全删了 → 剩余为空；写失败同样提示 OP
                     if (!PermissionFileLogger.log(player.name.string, it.playerName, it.playerUuid, emptySet(), it.nodes, emptySet())) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.perm.audit_write_failed")))
+                        player.sendMessage(
+                            Text.translatable("cobblemarket.perm.audit_write_failed").formatted(Formatting.YELLOW), false
+                        )
                     }
                     // 界面「删除」= 收回全部权限，同样响一声 + 通知本人
                     server.playerManager.getPlayer(it.playerUuid)?.let { p -> sendSound(p, "permission_change") }
