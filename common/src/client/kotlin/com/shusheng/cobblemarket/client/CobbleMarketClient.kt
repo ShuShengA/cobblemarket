@@ -738,8 +738,10 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
     if (client.player == null) return
     // 位置编辑界面：无视显示模式与淡出强制常亮（否则「关闭」模式下玩家看不到 HUD，无从拖动）
     val editingPos = client.currentScreen is BalanceHudPositionScreen
-    // F3 调试界面打开时不画（左上角帧率区会被 HUD 挡住）；shouldShowDebugHud 封装了「F3 开且 HUD 未隐藏」的判断
-    if (!editingPos && client.debugHud.shouldShowDebugHud()) return
+    // F3 调试界面打开时不画（左上角帧率区会被 HUD 挡住）；F1 隐藏 HUD 时也不画（原版 HUD 全没了，
+    // 只剩余额 HUD 挂在画面上很碍眼——截图/录屏时尤其明显）。shouldShowDebugHud 内含 hudHidden 判断，
+    // F1 后它会返回 false，所以 hudHidden 必须单独判一次
+    if (!editingPos && (client.debugHud.shouldShowDebugHud() || client.options.hudHidden)) return
     val text = "${hudBalanceText(client)} ${inlineCurrencyUnit()}"
     // 余额变动检测（每帧，OFF 模式也跟踪避免切回时误报）：差值驱动 +绿/-红浮字
     val rawNow = hudBalanceRaw(client)
