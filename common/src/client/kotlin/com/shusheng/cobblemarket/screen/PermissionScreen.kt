@@ -223,8 +223,9 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         // 与交易历史 / 借贷账本两个界面同一套做法（页签居中后左边正好空出来）
         val infoBtn = NineSliceButton(
             // y=18 与另外两个界面（交易历史 / 借贷账本）的 info 统一，也和返回按钮同一水平线
-            // 面板宽 300 → 左边缘 = centerX - 150，这里 +2 留边距
-            centerX - 150, 18, 16, 16,
+            // x 必须是 centerX-148（= 那两个界面的 leftX）：它们 panelWidth=296，直接用 leftX 定位；
+            // 本界面 panelWidth=300（列表按 300 标准更宽），写 leftX 会比它们靠左 2px、贴背景边缘更近
+            centerX - 148, 18, 16, 16,
             Text.literal(""),
             { },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/info.png"),
