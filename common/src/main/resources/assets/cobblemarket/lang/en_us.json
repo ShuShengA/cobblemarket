@@ -118,6 +118,7 @@
   "cobblemarket.perm.dialog_title": "Edit Permissions",
   "cobblemarket.perm.save": "Save",
   "cobblemarket.perm.add": "Add",
+  "cobblemarket.perm.clear": "Clear",
   "cobblemarket.perm.config_confirm_title": "Grant \"Server Config\" permission?",
   "cobblemarket.perm.config_confirm_l1_warn": "This node covers the server's entire config:",
   "cobblemarket.perm.config_confirm_l2_text": "fees, limits, auction rules, egg trading…",
