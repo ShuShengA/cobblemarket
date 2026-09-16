@@ -336,9 +336,9 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
 
     /** 审计记录里的节点串 → 本地化名称串（变更记录的行与悬停都走这里，
      *  保证和权限按钮、聊天通知显示的是同一套名字，而不是 blacklist 这种内部 key）。
-     *  ⚠ 服务端写 CSV 时用**空格**分隔短名（见 PermissionFileLogger.shortNames），不是逗号。 */
+     *  ⚠ 分隔符按**逗号或空格**都切：新写的 CSV 用 `, `，但历史账本里存的是空格分隔，两种都要认。 */
     private fun nodeLabels(raw: String): String =
-        raw.split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(", ") { nodeLabel(it) }
+        raw.split(Regex("[,\\s]+")).filter { it.isNotEmpty() }.joinToString(", ") { nodeLabel(it) }
 
     /** 重建过滤结果与行文本缓存（搜索变化 / 数据到达 / tab 无关，统一入口） */
     private fun rebuildFiltered() {

@@ -58,9 +58,10 @@ object PermissionFileLogger {
         }
     }
 
-    /** 节点短名，按 ALL 顺序稳定排列（与界面、命令输出一致，便于肉眼比对） */
+    /** 节点短名，按 ALL 顺序稳定排列；多节点用 `, ` 分隔（与界面、命令输出同一套写法，便于肉眼比对）。
+     *  ⚠ 含逗号的字段会被 [esc] 用引号包起来，读回时 trim('"') 还原，不影响 CSV 解析。 */
     private fun shortNames(nodes: Set<String>): String =
-        MarketPermissions.ALL.filter { it in nodes }.joinToString(" ") { it.removePrefix(MarketPermissions.PREFIX) }
+        MarketPermissions.ALL.filter { it in nodes }.joinToString(", ") { it.removePrefix(MarketPermissions.PREFIX) }
 
     private fun esc(s: String): String {
         val safe = if (s.isNotEmpty() && s[0] in DANGEROUS_PREFIXES) "'$s" else s
