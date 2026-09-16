@@ -61,6 +61,7 @@
 - **Missing space after colons in English labels**: some English labels (Type / Ball / Nature / Ability / IVs) had no space after the colon, sticking to their value; now fixed
 - **The auction countdown gavel strikes sounded like they faded out instead of building up**: the volume argument was passed as pitch (`PositionedSoundInstance.master`'s two-arg overload takes pitch and fixes volume at 0.25), so the strikes grew sharper rather than louder, which reads as getting quieter; the three strikes now ramp up properly (0.4 → 0.6 → 0.8) with the settling strike at full volume
 - **The minimum bid increment hint on the auction listing screen never showed the server default**: the placeholder stayed at "leave blank = default" instead of showing the actual amount — the config was already fetched when the screen opened, but the field is only created when you open the listing window, so the update was always skipped (it only happened to show correctly after a window resize rebuilt the screen); it now displays correctly either way
+
 ## 1.1.1 (in development, unreleased)
 
 ### Fixes
