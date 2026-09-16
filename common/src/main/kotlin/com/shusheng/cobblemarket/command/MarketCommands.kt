@@ -340,9 +340,10 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
             return 0
         }
-        val short = node.removePrefix(MarketPermissions.PREFIX)
+        // 节点名走与界面 / 聊天通知同一套词条：中文环境显示「黑名单」而不是 blacklist
+        val nodeText = Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX))
         if (!PermissionState.get(source.server).grant(target.first, target.second, node, source.name)) {
-            source.sendError(Text.translatable("cobblemarket.perm.already_holding", target.second, short))
+            source.sendError(Text.translatable("cobblemarket.perm.already_holding", target.second, nodeText))
             return 0
         }
         PermissionFileLogger.log(source.name, target.second, target.first, setOf(node), emptySet())
@@ -353,7 +354,7 @@ object MarketCommands {
             com.shusheng.cobblemarket.network.sendSound(it, "permission_change")
         }
         PermissionNetwork.notifyChanged(source.server, target.first, setOf(node), emptySet())
-        source.sendFeedback({ Text.translatable("cobblemarket.perm.granted", target.second, short).formatted(Formatting.GREEN) }, false)
+        source.sendFeedback({ Text.translatable("cobblemarket.perm.granted", target.second, nodeText).formatted(Formatting.GREEN) }, false)
         return 1
     }
 
@@ -370,9 +371,10 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
             return 0
         }
-        val short = node.removePrefix(MarketPermissions.PREFIX)
+        // 同上：节点名用本地化词条
+        val nodeText = Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX))
         if (!PermissionState.get(source.server).revoke(target.first, node)) {
-            source.sendError(Text.translatable("cobblemarket.perm.not_holding", target.second, short))
+            source.sendError(Text.translatable("cobblemarket.perm.not_holding", target.second, nodeText))
             return 0
         }
         PermissionFileLogger.log(source.name, target.second, target.first, emptySet(), setOf(node))
@@ -382,7 +384,7 @@ object MarketCommands {
             com.shusheng.cobblemarket.network.sendSound(it, "permission_change")
         }
         PermissionNetwork.notifyChanged(source.server, target.first, emptySet(), setOf(node))
-        source.sendFeedback({ Text.translatable("cobblemarket.perm.revoked", target.second, short).formatted(Formatting.GREEN) }, false)
+        source.sendFeedback({ Text.translatable("cobblemarket.perm.revoked", target.second, nodeText).formatted(Formatting.GREEN) }, false)
         return 1
     }
 
@@ -414,14 +416,16 @@ object MarketCommands {
         return nodes.size
     }
 
-    /** 一名玩家的节点行：名字金色 + 短名白色，按 ALL 顺序稳定排列（不受授予先后影响） */
-    private fun permLine(playerName: String, nodes: Set<String>): Text =
-        Text.literal("$playerName: ").formatted(Formatting.GOLD).append(
-            Text.literal(
-                MarketPermissions.ALL.filter { it in nodes }
-                    .joinToString(", ") { it.removePrefix(MarketPermissions.PREFIX) }
-            ).formatted(Formatting.WHITE)
-        )
+    /** 一名玩家的节点行：名字金色 + 本地化节点名白色，按 ALL 顺序稳定排列（不受授予先后影响） */
+    private fun permLine(playerName: String, nodes: Set<String>): Text {
+        val body = Text.literal("")
+        MarketPermissions.ALL.filter { it in nodes }.forEachIndexed { i, node ->
+            if (i > 0) body.append(Text.literal(", "))
+            body.append(Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX)))
+        }
+        return Text.literal("$playerName: ").formatted(Formatting.GOLD)
+            .append(body.formatted(Formatting.WHITE))
+    }
 
     private fun cardList(context: CommandContext<ServerCommandSource>): Int {
         val source = context.source
