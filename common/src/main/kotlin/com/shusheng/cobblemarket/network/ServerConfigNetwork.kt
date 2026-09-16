@@ -76,6 +76,7 @@ data class ServerConfigDataPayload(
     val purpleCardApplyCredit: Long,
     val purpleCardApplyDeposit: Long,
     val purpleCardApplyNoOverdue: Boolean,
+    val purpleCardApplySeen: Long,
     val purpleCardApplyDex: Long,
     val purpleCardApplyFee: Long,
     val purpleCardRedoFee: Long,
@@ -88,6 +89,7 @@ data class ServerConfigDataPayload(
     val blackCardApplyCredit: Long,
     val blackCardApplyDeposit: Long,
     val blackCardApplyNoOverdue: Boolean,
+    val blackCardApplySeen: Long,
     val blackCardApplyDex: Long,
     val blackCardApplyFee: Long,
     val blackCardRedoFee: Long,
@@ -138,6 +140,7 @@ data class ServerConfigDataPayload(
                 b.writeLong(p.purpleCardApplyCredit)
                 b.writeLong(p.purpleCardApplyDeposit)
                 b.writeBoolean(p.purpleCardApplyNoOverdue)
+                b.writeLong(p.purpleCardApplySeen)
                 b.writeLong(p.purpleCardApplyDex)
                 b.writeLong(p.purpleCardApplyFee)
                 b.writeLong(p.purpleCardRedoFee)
@@ -150,6 +153,7 @@ data class ServerConfigDataPayload(
                 b.writeLong(p.blackCardApplyCredit)
                 b.writeLong(p.blackCardApplyDeposit)
                 b.writeBoolean(p.blackCardApplyNoOverdue)
+                b.writeLong(p.blackCardApplySeen)
                 b.writeLong(p.blackCardApplyDex)
                 b.writeLong(p.blackCardApplyFee)
                 b.writeLong(p.blackCardRedoFee)
@@ -199,6 +203,7 @@ data class ServerConfigDataPayload(
                 purpleCardApplyCredit = b.readLong(),
                 purpleCardApplyDeposit = b.readLong(),
                 purpleCardApplyNoOverdue = b.readBoolean(),
+                purpleCardApplySeen = b.readLong(),
                 purpleCardApplyDex = b.readLong(),
                 purpleCardApplyFee = b.readLong(),
                 purpleCardRedoFee = b.readLong(),
@@ -211,6 +216,7 @@ data class ServerConfigDataPayload(
                 blackCardApplyCredit = b.readLong(),
                 blackCardApplyDeposit = b.readLong(),
                 blackCardApplyNoOverdue = b.readBoolean(),
+                blackCardApplySeen = b.readLong(),
                 blackCardApplyDex = b.readLong(),
                 blackCardApplyFee = b.readLong(),
                 blackCardRedoFee = b.readLong(),
@@ -268,6 +274,7 @@ data class SaveServerConfigPayload(
     val purpleCardApplyCredit: Long,
     val purpleCardApplyDeposit: Long,
     val purpleCardApplyNoOverdue: Boolean,
+    val purpleCardApplySeen: Long,
     val purpleCardApplyDex: Long,
     val purpleCardApplyFee: Long,
     val purpleCardRedoFee: Long,
@@ -280,6 +287,7 @@ data class SaveServerConfigPayload(
     val blackCardApplyCredit: Long,
     val blackCardApplyDeposit: Long,
     val blackCardApplyNoOverdue: Boolean,
+    val blackCardApplySeen: Long,
     val blackCardApplyDex: Long,
     val blackCardApplyFee: Long,
     val blackCardRedoFee: Long,
@@ -332,6 +340,7 @@ data class SaveServerConfigPayload(
                 b.writeLong(p.purpleCardApplyCredit)
                 b.writeLong(p.purpleCardApplyDeposit)
                 b.writeBoolean(p.purpleCardApplyNoOverdue)
+                b.writeLong(p.purpleCardApplySeen)
                 b.writeLong(p.purpleCardApplyDex)
                 b.writeLong(p.purpleCardApplyFee)
                 b.writeLong(p.purpleCardRedoFee)
@@ -344,6 +353,7 @@ data class SaveServerConfigPayload(
                 b.writeLong(p.blackCardApplyCredit)
                 b.writeLong(p.blackCardApplyDeposit)
                 b.writeBoolean(p.blackCardApplyNoOverdue)
+                b.writeLong(p.blackCardApplySeen)
                 b.writeLong(p.blackCardApplyDex)
                 b.writeLong(p.blackCardApplyFee)
                 b.writeLong(p.blackCardRedoFee)
@@ -393,6 +403,7 @@ data class SaveServerConfigPayload(
                 purpleCardApplyCredit = b.readLong(),
                 purpleCardApplyDeposit = b.readLong(),
                 purpleCardApplyNoOverdue = b.readBoolean(),
+                purpleCardApplySeen = b.readLong(),
                 purpleCardApplyDex = b.readLong(),
                 purpleCardApplyFee = b.readLong(),
                 purpleCardRedoFee = b.readLong(),
@@ -405,6 +416,7 @@ data class SaveServerConfigPayload(
                 blackCardApplyCredit = b.readLong(),
                 blackCardApplyDeposit = b.readLong(),
                 blackCardApplyNoOverdue = b.readBoolean(),
+                blackCardApplySeen = b.readLong(),
                 blackCardApplyDex = b.readLong(),
                 blackCardApplyFee = b.readLong(),
                 blackCardRedoFee = b.readLong(),
@@ -478,6 +490,7 @@ object ServerConfigNetwork {
         purpleCardApplyCredit = CobbleMarketConfig.purpleCardApplyCredit,
         purpleCardApplyDeposit = CobbleMarketConfig.purpleCardApplyDeposit,
         purpleCardApplyNoOverdue = CobbleMarketConfig.purpleCardApplyNoOverdue,
+        purpleCardApplySeen = CobbleMarketConfig.purpleCardApplySeen,
         purpleCardApplyDex = CobbleMarketConfig.purpleCardApplyDex,
         purpleCardApplyFee = CobbleMarketConfig.purpleCardApplyFee,
         purpleCardRedoFee = CobbleMarketConfig.purpleCardRedoFee,
@@ -490,6 +503,7 @@ object ServerConfigNetwork {
         blackCardApplyCredit = CobbleMarketConfig.blackCardApplyCredit,
         blackCardApplyDeposit = CobbleMarketConfig.blackCardApplyDeposit,
         blackCardApplyNoOverdue = CobbleMarketConfig.blackCardApplyNoOverdue,
+        blackCardApplySeen = CobbleMarketConfig.blackCardApplySeen,
         blackCardApplyDex = CobbleMarketConfig.blackCardApplyDex,
         blackCardApplyFee = CobbleMarketConfig.blackCardApplyFee,
         blackCardRedoFee = CobbleMarketConfig.blackCardRedoFee,
@@ -539,6 +553,7 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setPurpleCardApplyCredit(p.purpleCardApplyCredit)
         CobbleMarketConfig.setPurpleCardApplyDeposit(p.purpleCardApplyDeposit)
         CobbleMarketConfig.setPurpleCardApplyNoOverdue(p.purpleCardApplyNoOverdue)
+        CobbleMarketConfig.setPurpleCardApplySeen(p.purpleCardApplySeen)
         CobbleMarketConfig.setPurpleCardApplyDex(p.purpleCardApplyDex)
         CobbleMarketConfig.setPurpleCardApplyFee(p.purpleCardApplyFee)
         CobbleMarketConfig.setPurpleCardRedoFee(p.purpleCardRedoFee)
@@ -551,6 +566,7 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setBlackCardApplyCredit(p.blackCardApplyCredit)
         CobbleMarketConfig.setBlackCardApplyDeposit(p.blackCardApplyDeposit)
         CobbleMarketConfig.setBlackCardApplyNoOverdue(p.blackCardApplyNoOverdue)
+        CobbleMarketConfig.setBlackCardApplySeen(p.blackCardApplySeen)
         CobbleMarketConfig.setBlackCardApplyDex(p.blackCardApplyDex)
         CobbleMarketConfig.setBlackCardApplyFee(p.blackCardApplyFee)
         CobbleMarketConfig.setBlackCardRedoFee(p.blackCardRedoFee)

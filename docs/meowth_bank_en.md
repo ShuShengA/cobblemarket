@@ -94,14 +94,14 @@ High-limit credential items — holders get a **fixed borrowing limit** (indepen
 
 - Limit `purpleCardCreditLimit` (default 1M); server-wide cap `purpleCardCount` (default 20, 0 = unlimited)
 - How to get: the owner issues it via `/market card give <player>`; or, with self-apply enabled, players apply via the Purple Gold Card icon on the left of Meowth Bank (the application fee goes to the reserve pool)
-- Six self-apply conditions (all configurable, 0 = not required): asset (cash balance) / spending (all-time counted buying volume) / credit (credit base) / **net deposit** (demand deposit − outstanding debt, see §3) / Pokédex count / clean record
+- Seven self-apply conditions (all configurable, 0 = not required): asset (cash balance) / spending (all-time counted buying volume) / credit (credit base) / **net deposit** (demand deposit − outstanding debt, see §3) / Pokédex seen count (includes caught) / Pokédex caught count / clean record
 - Fee discount: market fees are discounted by `purpleCardFeeDiscount` (listing/auction settlement/buy-order fees, stacks with overdue doubling, off by default)
-- Card holders are exempt from the same-IP debt cap (alts can't hold cards: server-wide cap + six conditions)
+- Card holders are exempt from the same-IP debt cap (alts can't hold cards: server-wide cap + seven conditions)
 
 ### Meow·Black Gold Card
 
 - One tier above Purple: limit `blackCardCreditLimit` (default 5M); server cap `blackCardCount` (default 5)
-- Hard apply requirement: **must already hold the Purple Gold Card** + the six conditions (same shape, configurable) + the application fee
+- Hard apply requirement: **must already hold the Purple Gold Card** + the seven conditions (same shape, configurable) + the application fee
 - **Upgrade replacement**: obtaining the Black Gold Card auto-removes the Purple Gold Card qualification (no double slot); the Black Gold Card's limit and fee discount apply
 - Everything else matches the Purple Gold Card (drop-to-vanish / reissue fee / same-IP exemption)
 

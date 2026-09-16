@@ -23,11 +23,13 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
     private val dialogW = 300
     private val dialogH = 320
 
+    // 与 PurpleCardApplyInfoPayload.conditions 同序（服务端 FinanceNetwork.sendPurpleCardApplyInfo 构造）
     private val conditionKeys = listOf(
         "cobblemarket.op.scfg_apply_asset",
         "cobblemarket.op.scfg_apply_volume",
         "cobblemarket.op.scfg_apply_credit",
         "cobblemarket.op.scfg_apply_deposit",
+        "cobblemarket.op.scfg_apply_seen",
         "cobblemarket.op.scfg_apply_dex",
         "cobblemarket.op.scfg_apply_no_overdue",
     )
@@ -171,12 +173,14 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
                     // 门槛 0/关 = 不要求，该行不显示
                     if (entry.requirement <= 0) return@forEachIndexed
                     val label = Text.translatable(key).string
-                    val isBool = i == 5 // 无逾期记录项
-                    val valueText = if (isBool) {
-                        if (entry.current > 0) Text.translatable("cobblemarket.card.apply_no_record").string
+                    val isBool = key == "cobblemarket.op.scfg_apply_no_overdue" // 无逾期记录项（按 key 判定，插行不错位）
+                    // 图鉴两行是物种数不是金额，不带货币单位
+                    val isDexCount = key == "cobblemarket.op.scfg_apply_seen" || key == "cobblemarket.op.scfg_apply_dex"
+                    val valueText = when {
+                        isBool -> if (entry.current > 0) Text.translatable("cobblemarket.card.apply_no_record").string
                         else Text.translatable("cobblemarket.card.apply_has_record").string
-                    } else {
-                        "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)} ${inlineCurrencyUnit()}"
+                        isDexCount -> "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)}"
+                        else -> "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)} ${inlineCurrencyUnit()}"
                     }
                     // 行尾短符号（✓/✗ 绿红，长文案超宽改用颜色表意；完整语义在申请按钮文案）
                     val mark = if (entry.satisfied)

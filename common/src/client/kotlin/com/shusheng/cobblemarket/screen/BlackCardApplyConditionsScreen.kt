@@ -12,7 +12,7 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 
 /**
- * 自行申请黑卡条件配置界面（照紫卡条件配置界面）：六项门槛 + 申请费（0 = 不要求）。
+ * 自行申请黑卡条件配置界面（照紫卡条件配置界面）：七项门槛 + 申请费（0 = 不要求）。
  * 「持有紫卡」为硬条件不可配置，不在此界面。保存时条件字段提交编辑值、其余回填快照。
  */
 class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op.black_card_conditions")) {
@@ -27,6 +27,7 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
         NumDef("cobblemarket.op.scfg_apply_volume", true) to "applyVolume",
         NumDef("cobblemarket.op.scfg_apply_credit", true) to "applyCredit",
         NumDef("cobblemarket.op.scfg_apply_deposit", true) to "applyDeposit",
+        NumDef("cobblemarket.op.scfg_apply_seen", true) to "applySeen",
         NumDef("cobblemarket.op.scfg_apply_dex", true) to "applyDex",
         NumDef("cobblemarket.op.scfg_apply_fee", true) to "applyFee",
     )
@@ -65,6 +66,7 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
                 "applyVolume" -> "cobblemarket.op.scfg_apply_volume_tip"
                 "applyCredit" -> "cobblemarket.op.scfg_apply_credit_tip"
                 "applyDeposit" -> "cobblemarket.op.scfg_apply_deposit_tip"
+                "applySeen" -> "cobblemarket.op.scfg_apply_seen_tip"
                 "applyDex" -> "cobblemarket.op.scfg_apply_dex_tip"
                 "applyFee" -> "cobblemarket.op.scfg_apply_fee_tip"
                 else -> null
@@ -129,6 +131,7 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
         "applyVolume" -> (payload?.blackCardApplyVolume ?: 0L).toDouble()
         "applyCredit" -> (payload?.blackCardApplyCredit ?: 0L).toDouble()
         "applyDeposit" -> (payload?.blackCardApplyDeposit ?: 0L).toDouble()
+        "applySeen" -> (payload?.blackCardApplySeen ?: 0L).toDouble()
         "applyDex" -> (payload?.blackCardApplyDex ?: 0L).toDouble()
         "applyFee" -> (payload?.blackCardApplyFee ?: 0L).toDouble()
         else -> 0.0
@@ -216,6 +219,7 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
             purpleCardApplyCredit = p?.purpleCardApplyCredit ?: 0L,
             purpleCardApplyDeposit = p?.purpleCardApplyDeposit ?: 0L,
             purpleCardApplyNoOverdue = p?.purpleCardApplyNoOverdue ?: false,
+            purpleCardApplySeen = p?.purpleCardApplySeen ?: 0L,
             purpleCardApplyDex = p?.purpleCardApplyDex ?: 0L,
             purpleCardApplyFee = p?.purpleCardApplyFee ?: 0L,
             purpleCardRedoFee = p?.purpleCardRedoFee ?: 0L,
@@ -229,6 +233,7 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
             blackCardApplyCredit = longOr("applyCredit", p?.blackCardApplyCredit ?: 0L),
             blackCardApplyDeposit = longOr("applyDeposit", p?.blackCardApplyDeposit ?: 0L),
             blackCardApplyNoOverdue = localToggles["applyNoOverdue"] ?: (p?.blackCardApplyNoOverdue ?: false),
+            blackCardApplySeen = longOr("applySeen", p?.blackCardApplySeen ?: 0L),
             blackCardApplyDex = longOr("applyDex", p?.blackCardApplyDex ?: 0L),
             blackCardApplyFee = longOr("applyFee", p?.blackCardApplyFee ?: 0L),
             blackCardRedoFee = p?.blackCardRedoFee ?: 0L,

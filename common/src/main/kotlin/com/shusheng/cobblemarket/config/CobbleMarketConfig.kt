@@ -135,7 +135,10 @@ object CobbleMarketConfig {
     /** 自行申请条件：要求无逾期/坏账记录（默认关） */
     var purpleCardApplyNoOverdue: Boolean = false
         private set
-    /** 自行申请条件：图鉴收集数（已捕捉物种数）门槛（0 = 不要求） */
+    /** 自行申请条件：图鉴遇见数（SEEN 及以上，含已捕捉）门槛（0 = 不要求） */
+    var purpleCardApplySeen: Long = 0L
+        private set
+    /** 自行申请条件：图鉴捕捉数（已捕捉物种数）门槛（0 = 不要求） */
     var purpleCardApplyDex: Long = 0L
         private set
     /** 自行申请费用（申请时一次性支付，进准备金池；0 = 免费） */
@@ -172,7 +175,10 @@ object CobbleMarketConfig {
     /** 自行申请条件：要求无逾期/坏账记录（默认关） */
     var blackCardApplyNoOverdue: Boolean = false
         private set
-    /** 自行申请条件：图鉴收集数（已捕捉物种数）门槛（0 = 不要求） */
+    /** 自行申请条件：图鉴遇见数（SEEN 及以上，含已捕捉）门槛（0 = 不要求） */
+    var blackCardApplySeen: Long = 0L
+        private set
+    /** 自行申请条件：图鉴捕捉数（已捕捉物种数）门槛（0 = 不要求） */
     var blackCardApplyDex: Long = 0L
         private set
     /** 自行申请费用（申请时一次性支付，进准备金池；0 = 免费） */
@@ -283,6 +289,7 @@ object CobbleMarketConfig {
     fun setPurpleCardApplyCredit(v: Long) { purpleCardApplyCredit = v.coerceAtLeast(0L) }
     fun setPurpleCardApplyDeposit(v: Long) { purpleCardApplyDeposit = v.coerceAtLeast(0L) }
     fun setPurpleCardApplyNoOverdue(v: Boolean) { purpleCardApplyNoOverdue = v }
+    fun setPurpleCardApplySeen(v: Long) { purpleCardApplySeen = v.coerceAtLeast(0L) }
     fun setPurpleCardApplyDex(v: Long) { purpleCardApplyDex = v.coerceAtLeast(0L) }
     fun setPurpleCardApplyFee(v: Long) { purpleCardApplyFee = v.coerceAtLeast(0L) }
     fun setPurpleCardRedoFee(v: Long) { purpleCardRedoFee = v.coerceAtLeast(0L) }
@@ -295,6 +302,7 @@ object CobbleMarketConfig {
     fun setBlackCardApplyCredit(v: Long) { blackCardApplyCredit = v.coerceAtLeast(0L) }
     fun setBlackCardApplyDeposit(v: Long) { blackCardApplyDeposit = v.coerceAtLeast(0L) }
     fun setBlackCardApplyNoOverdue(v: Boolean) { blackCardApplyNoOverdue = v }
+    fun setBlackCardApplySeen(v: Long) { blackCardApplySeen = v.coerceAtLeast(0L) }
     fun setBlackCardApplyDex(v: Long) { blackCardApplyDex = v.coerceAtLeast(0L) }
     fun setBlackCardApplyFee(v: Long) { blackCardApplyFee = v.coerceAtLeast(0L) }
     fun setBlackCardRedoFee(v: Long) { blackCardRedoFee = v.coerceAtLeast(0L) }
@@ -414,6 +422,7 @@ object CobbleMarketConfig {
                     val fileApplyCredit = (finance["purpleCardApplyCredit"] as? Number)?.toLong() ?: 0L
                     val fileApplyDeposit = (finance["purpleCardApplyDeposit"] as? Number)?.toLong() ?: 0L
                     val fileApplyNoOverdue = finance["purpleCardApplyNoOverdue"] as? Boolean ?: false
+                    val fileApplySeen = (finance["purpleCardApplySeen"] as? Number)?.toLong() ?: 0L
                     val fileApplyDex = (finance["purpleCardApplyDex"] as? Number)?.toLong() ?: 0L
                     val fileApplyFee = (finance["purpleCardApplyFee"] as? Number)?.toLong() ?: 0L
                     val fileRedoFee = (finance["purpleCardRedoFee"] as? Number)?.toLong() ?: 0L
@@ -426,6 +435,7 @@ object CobbleMarketConfig {
                     val fileBlackApplyCredit = (finance["blackCardApplyCredit"] as? Number)?.toLong() ?: 0L
                     val fileBlackApplyDeposit = (finance["blackCardApplyDeposit"] as? Number)?.toLong() ?: 0L
                     val fileBlackApplyNoOverdue = finance["blackCardApplyNoOverdue"] as? Boolean ?: false
+                    val fileBlackApplySeen = (finance["blackCardApplySeen"] as? Number)?.toLong() ?: 0L
                     val fileBlackApplyDex = (finance["blackCardApplyDex"] as? Number)?.toLong() ?: 0L
                     val fileBlackApplyFee = (finance["blackCardApplyFee"] as? Number)?.toLong() ?: 0L
                     val fileBlackRedoFee = (finance["blackCardRedoFee"] as? Number)?.toLong() ?: 0L
@@ -458,6 +468,7 @@ object CobbleMarketConfig {
                     purpleCardApplyCredit = fileApplyCredit.coerceAtLeast(0L)
                     purpleCardApplyDeposit = fileApplyDeposit.coerceAtLeast(0L)
                     purpleCardApplyNoOverdue = fileApplyNoOverdue
+                    purpleCardApplySeen = fileApplySeen.coerceAtLeast(0L)
                     purpleCardApplyDex = fileApplyDex.coerceAtLeast(0L)
                     purpleCardApplyFee = fileApplyFee.coerceAtLeast(0L)
                     purpleCardRedoFee = fileRedoFee.coerceAtLeast(0L)
@@ -470,6 +481,7 @@ object CobbleMarketConfig {
                     blackCardApplyCredit = fileBlackApplyCredit.coerceAtLeast(0L)
                     blackCardApplyDeposit = fileBlackApplyDeposit.coerceAtLeast(0L)
                     blackCardApplyNoOverdue = fileBlackApplyNoOverdue
+                    blackCardApplySeen = fileBlackApplySeen.coerceAtLeast(0L)
                     blackCardApplyDex = fileBlackApplyDex.coerceAtLeast(0L)
                     blackCardApplyFee = fileBlackApplyFee.coerceAtLeast(0L)
                     blackCardRedoFee = fileBlackRedoFee.coerceAtLeast(0L)
@@ -565,25 +577,27 @@ object CobbleMarketConfig {
                 "finance.tradePairMaxTrades" to "交易对检测笔数上限：同一买卖对在窗口内成交达到此笔数后，该对后续成交不计入借款额度（防互买对刷，默认 3）/ Same-pair trade cap: once a buyer-seller pair reaches this many trades within the window, their later trades stop counting toward credit limits (anti wash-trading, default 3)",
                 "finance.purpleCardCount" to "喵·紫金卡全服发放上限（0=不限制，默认 20）。额度绑定持有者状态而非物品，复制出的卡无效 / Server-wide cap on Meow·Purple Gold Cards (0=unlimited, default 20). The limit is bound to holder state, not the item — duplicated cards are worthless",
                 "finance.purpleCardCreditLimit" to "喵·紫金卡持有者的固定借款额度（默认 100 万）/ Fixed borrowing limit for Meow·Purple Gold Card holders (default 1,000,000)",
-                "finance.purpleCardSelfApply" to "是否允许玩家自行申请喵·紫金卡（需满足下方六项门槛 + 缴纳申请费）；关闭时仅服主可用 /market card give 发放 / Allow players to self-apply for the Purple Gold Card (must pass the six conditions below and pay the fee); when off, only owners can issue via /market card give",
+                "finance.purpleCardSelfApply" to "是否允许玩家自行申请喵·紫金卡（需满足下方七项门槛 + 缴纳申请费）；关闭时仅服主可用 /market card give 发放 / Allow players to self-apply for the Purple Gold Card (must pass the seven conditions below and pay the fee); when off, only owners can issue via /market card give",
                 "finance.purpleCardApplyAsset" to "紫卡申请门槛·资产：玩家当前现金余额达到该值才可申请（0=不要求）/ Purple apply condition · assets: the player's current cash balance must reach this to apply (0=not required)",
                 "finance.purpleCardApplyVolume" to "紫卡申请门槛·消费金额：玩家历史买入成交额累计达到该值才可申请（0=不要求）/ Purple apply condition · spending: the player's all-time counted buying volume must reach this to apply (0=not required)",
                 "finance.purpleCardApplyCredit" to "紫卡申请门槛·额度：玩家信用基础（无欠款时的额度公式值）达到该值才可申请（0=不要求）/ Purple apply condition · credit: the player's credit base (limit formula value without debt) must reach this to apply (0=not required)",
                 "finance.purpleCardApplyDeposit" to "紫卡申请门槛·净存款：玩家净存款（活期存款 − 未还欠款）达到该值才可申请——借钱充存款无效（0=不要求）/ Purple apply condition · net deposit: the player's net deposit (demand deposit − outstanding debt) must reach this to apply — borrowed money can't inflate it (0=not required)",
                 "finance.purpleCardApplyNoOverdue" to "紫卡申请门槛·无逾期：true=有逾期或坏账记录的玩家不能申请 / Purple apply condition · clean record: true=players with overdue or bad-debt records cannot apply",
-                "finance.purpleCardApplyDex" to "紫卡申请门槛·图鉴：玩家图鉴已捕捉物种数达到该值才可申请（0=不要求）/ Purple apply condition · Pokédex: the player's caught-species count must reach this to apply (0=not required)",
+                "finance.purpleCardApplySeen" to "紫卡申请门槛·图鉴遇见数：玩家图鉴已遇见物种数（含已捕捉）达到该值才可申请（0=不要求）/ Purple apply condition · Pokédex encounters: the player's encountered-species count (includes caught) must reach this to apply (0=not required)",
+                "finance.purpleCardApplyDex" to "紫卡申请门槛·图鉴捕捉数：玩家图鉴已捕捉物种数达到该值才可申请（0=不要求）/ Purple apply condition · Pokédex caught: the player's caught-species count must reach this to apply (0=not required)",
                 "finance.purpleCardApplyFee" to "喵·紫金卡申请费用（申请成功时扣除，进入准备金池；0=免费）/ Purple Gold Card application fee (charged on success, goes to the reserve pool; 0=free)",
                 "finance.purpleCardRedoFee" to "补发喵·紫金卡凭证费用（持有者丢弃凭证后在喵喵银行重新领取时扣除，进入准备金池；0=免费）/ Purple Gold Card reissue fee (charged when a holder re-obtains a lost card at Meowth Bank, goes to the reserve pool; 0=free)",
                 "finance.purpleCardFeeDiscount" to "喵·紫金卡持有者的市场手续费减免比例（上架费/拍卖成交费/求购中介费全覆盖，与逾期翻倍叠加；0=无减免）/ Market fee discount ratio for Purple Gold Card holders (covers listing/auction/buy-order fees, stacks with overdue doubling; 0=no discount)",
                 "finance.blackCardCount" to "喵·黑金卡全服发放上限（0=不限制，默认 5）。申请硬条件为持有喵·紫金卡；获得黑卡自动移除紫卡资格（升级替代）/ Server-wide cap on Meow·Black Gold Cards (0=unlimited, default 5). Applying requires holding the Purple Gold Card; obtaining the Black Gold Card auto-removes the Purple Gold Card qualification (upgrade replacement)",
                 "finance.blackCardCreditLimit" to "喵·黑金卡持有者的固定借款额度（默认 500 万）/ Fixed borrowing limit for Meow·Black Gold Card holders (default 5,000,000)",
-                "finance.blackCardSelfApply" to "是否允许玩家自行申请喵·黑金卡（需持有喵·紫金卡 + 满足六项门槛 + 缴纳申请费）；关闭时仅服主可用 /market card give 发放 / Allow players to self-apply for the Black Gold Card (requires holding the Purple Gold Card + the six conditions + the fee); when off, only owners can issue via /market card give",
+                "finance.blackCardSelfApply" to "是否允许玩家自行申请喵·黑金卡（需持有喵·紫金卡 + 满足七项门槛 + 缴纳申请费）；关闭时仅服主可用 /market card give 发放 / Allow players to self-apply for the Black Gold Card (requires holding the Purple Gold Card + the seven conditions + the fee); when off, only owners can issue via /market card give",
                 "finance.blackCardApplyAsset" to "黑卡申请门槛·资产：玩家当前现金余额达到该值才可申请（0=不要求）/ Black apply condition · assets: the player's current cash balance must reach this to apply (0=not required)",
                 "finance.blackCardApplyVolume" to "黑卡申请门槛·消费金额：玩家历史买入成交额累计达到该值才可申请（0=不要求）/ Black apply condition · spending: the player's all-time counted buying volume must reach this to apply (0=not required)",
                 "finance.blackCardApplyCredit" to "黑卡申请门槛·额度：玩家信用基础（无欠款时的额度公式值）达到该值才可申请（0=不要求）/ Black apply condition · credit: the player's credit base (limit formula value without debt) must reach this to apply (0=not required)",
                 "finance.blackCardApplyDeposit" to "黑卡申请门槛·净存款：玩家净存款（活期存款 − 未还欠款）达到该值才可申请——借钱充存款无效（0=不要求）/ Black apply condition · net deposit: the player's net deposit (demand deposit − outstanding debt) must reach this to apply — borrowed money can't inflate it (0=not required)",
                 "finance.blackCardApplyNoOverdue" to "黑卡申请门槛·无逾期：true=有逾期或坏账记录的玩家不能申请 / Black apply condition · clean record: true=players with overdue or bad-debt records cannot apply",
-                "finance.blackCardApplyDex" to "黑卡申请门槛·图鉴：玩家图鉴已捕捉物种数达到该值才可申请（0=不要求）/ Black apply condition · Pokédex: the player's caught-species count must reach this to apply (0=not required)",
+                "finance.blackCardApplySeen" to "黑卡申请门槛·图鉴遇见数：玩家图鉴已遇见物种数（含已捕捉）达到该值才可申请（0=不要求）/ Black apply condition · Pokédex encounters: the player's encountered-species count (includes caught) must reach this to apply (0=not required)",
+                "finance.blackCardApplyDex" to "黑卡申请门槛·图鉴捕捉数：玩家图鉴已捕捉物种数达到该值才可申请（0=不要求）/ Black apply condition · Pokédex caught: the player's caught-species count must reach this to apply (0=not required)",
                 "finance.blackCardApplyFee" to "喵·黑金卡申请费用（申请成功时扣除，进入准备金池；0=免费）/ Black Gold Card application fee (charged on success, goes to the reserve pool; 0=free)",
                 "finance.blackCardRedoFee" to "补发喵·黑金卡凭证费用（持有者丢弃凭证后在喵喵银行重新领取时扣除，进入准备金池；0=免费）/ Black Gold Card reissue fee (charged when a holder re-obtains a lost card at Meowth Bank, goes to the reserve pool; 0=free)",
                 "finance.blackCardFeeDiscount" to "喵·黑金卡持有者的市场手续费减免比例（上架费/拍卖成交费/求购中介费全覆盖，与逾期翻倍叠加；0=无减免）/ Market fee discount ratio for Black Gold Card holders (covers listing/auction/buy-order fees, stacks with overdue doubling; 0=no discount)"
@@ -630,6 +644,7 @@ object CobbleMarketConfig {
                 "purpleCardApplyCredit" to purpleCardApplyCredit,
                 "purpleCardApplyDeposit" to purpleCardApplyDeposit,
                 "purpleCardApplyNoOverdue" to purpleCardApplyNoOverdue,
+                "purpleCardApplySeen" to purpleCardApplySeen,
                 "purpleCardApplyDex" to purpleCardApplyDex,
                 "purpleCardApplyFee" to purpleCardApplyFee,
                 "purpleCardRedoFee" to purpleCardRedoFee,
@@ -642,6 +657,7 @@ object CobbleMarketConfig {
                 "blackCardApplyCredit" to blackCardApplyCredit,
                 "blackCardApplyDeposit" to blackCardApplyDeposit,
                 "blackCardApplyNoOverdue" to blackCardApplyNoOverdue,
+                "blackCardApplySeen" to blackCardApplySeen,
                 "blackCardApplyDex" to blackCardApplyDex,
                 "blackCardApplyFee" to blackCardApplyFee,
                 "blackCardRedoFee" to blackCardRedoFee,
