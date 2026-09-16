@@ -352,7 +352,10 @@ object MarketCommands {
                 PermissionState.get(source.server).getNodes(target.first)
             )
         ) {
-            source.sendError(Text.translatable("cobblemarket.perm.audit_write_failed"))
+            // 权限已经授予/收回了，只是审计没记上：用黄色反馈而不是 sendError（红字像"操作失败"）
+            source.sendFeedback(
+                { Text.translatable("cobblemarket.perm.audit_write_failed").formatted(Formatting.YELLOW) }, false
+            )
         }
         // 在线即时生效：推新快照（离线不用管，下次登录补发）
         PermissionNetwork.refresh(source.server, target.first)
@@ -389,7 +392,10 @@ object MarketCommands {
                 PermissionState.get(source.server).getNodes(target.first)
             )
         ) {
-            source.sendError(Text.translatable("cobblemarket.perm.audit_write_failed"))
+            // 权限已经授予/收回了，只是审计没记上：用黄色反馈而不是 sendError（红字像"操作失败"）
+            source.sendFeedback(
+                { Text.translatable("cobblemarket.perm.audit_write_failed").formatted(Formatting.YELLOW) }, false
+            )
         }
         PermissionNetwork.refresh(source.server, target.first)
         // 权限变更音：同上（被收回时也响）
