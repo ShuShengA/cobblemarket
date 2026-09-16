@@ -77,12 +77,13 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private val confirmState = FloatingState()
 
     /**
-     * 打开下架确认弹窗时要不要自动叫一声（替玩家点一下弹窗里的精灵图标）。
+     * 下架确认弹窗自动叫一声的**待播时刻**（0 = 无；替玩家点一下弹窗里的精灵图标）。
      *
-     * **不能在 [cancelListing] 里直接播**：`addFirstAnimation` 依赖 `state.currentModel`，
-     * 而它要等 `drawProfilePokemon` 跑过才有值。所以打开时只挂标志，第一帧画完图标后再播。
+     * **不能在 [cancelListing] 里直接播**：一是 `addFirstAnimation` 依赖 `state.currentModel`，
+     * 它要等 `drawProfilePokemon` 跑过才有值；二是弹窗刚弹出就响，玩家还在"看这是啥"，
+     * 反应不过来声音从哪来。所以打开时只记「now + [IconCryClick.AUTO_CRY_DELAY_MS]」，渲染处到点才播。
      */
-    private var confirmCryPending = false
+    private var confirmCryAt = 0L
 
     private data class IconData(
         val displayName: String,
@@ -527,8 +528,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 confirmDisplayName = species.translatedName.string
             }
         }
-        // 弹窗打开时自动叫一声（第一帧渲染后再播，理由见 confirmCryPending）
-        confirmCryPending = true
+        // 弹窗打开时自动叫一声（渲染后延迟再播，理由见 confirmCryAt）
+        confirmCryAt = System.currentTimeMillis() + IconCryClick.AUTO_CRY_DELAY_MS
     }
 
     private fun confirmCancel() {
@@ -969,9 +970,10 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 useScissor = false
             )
             // 打开弹窗时自动叫一声（替玩家点一下这个图标）：**必须在渲染之后** ——
-            // addFirstAnimation 依赖 currentModel，那是 drawProfilePokemon 里才建好的
-            if (confirmCryPending) {
-                confirmCryPending = false
+            // addFirstAnimation 依赖 currentModel，那是 drawProfilePokemon 里才建好的；
+            // 再叠一层 AUTO_CRY_DELAY_MS 延迟，等弹窗稳定显示、玩家看清了再叫
+            if (confirmCryAt != 0L && System.currentTimeMillis() >= confirmCryAt) {
+                confirmCryAt = 0L
                 IconCryClick.play(confirmState, rp)
             }
         }
