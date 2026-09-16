@@ -141,7 +141,8 @@ object CobbleMarketClient {
                 client.soundManager.play(
                     PositionedSoundInstance.master(
                         SoundEvent.of(Identifier.of("cobblemarket", "auction_bell")),
-                        1.0f
+                        1.0f,
+                        0.5f // 音量（两参重载固定 0.25 太轻，同 playResultSound）
                     )
                 )
             }
@@ -687,7 +688,8 @@ object CobbleMarketClient {
         MinecraftClient.getInstance().soundManager.play(
             PositionedSoundInstance.master(
                 SoundEvent.of(Identifier.of("cobblemarket", "open_entry")),
-                1.0f
+                1.0f,
+                0.5f // 音量（两参重载固定 0.25 太轻，同 playResultSound）
             )
         )
     }
@@ -697,7 +699,10 @@ object CobbleMarketClient {
         MinecraftClient.getInstance().soundManager.play(
             PositionedSoundInstance.master(
                 SoundEvent.of(Identifier.of("cobblemarket", if (success) "result_success" else "result_fail")),
-                1.0f
+                1.0f,
+                // 音量必须走三参版显式给：两参重载写死 0.25（那是 MC 给 UI 按钮音的档位），反馈音太轻。
+                // 0.5 是 2026-09-16 试听后定的档位（1.0 在正常游戏音量下偏大）
+                0.5f
             )
         )
     }
@@ -708,7 +713,8 @@ fun playFailSound() {
     MinecraftClient.getInstance().soundManager.play(
         PositionedSoundInstance.master(
             SoundEvent.of(Identifier.of("cobblemarket", "fail")),
-            1.0f
+            1.0f,
+            0.5f // 音量（两参重载固定 0.25 太轻，档位同 playResultSound）
         )
     )
 }
