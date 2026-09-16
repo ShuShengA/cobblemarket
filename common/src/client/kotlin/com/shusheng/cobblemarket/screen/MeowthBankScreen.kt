@@ -98,11 +98,16 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         }
 
         // 应急贷款入口（信息组：额度/欠款两行 + 按钮组成；100×16；批次 7.5 整体上移给存款按钮腾位）
-        addDrawableChild(NineSliceButton(
+        // 关市（紧急停市）时置灰：与服务端 RequestLoanPayload 的 marketBlocked 同一口径
+        //（借款是唯一让资金流出准备金池的金融操作）。⚠ dimmed 只影响观感、**不拦点击** ——
+        // 真按下去仍会发请求，服务端会回「市场功能已关闭」，玩家依然有反馈
+        val loanBtn = NineSliceButton(
             width / 2 - 50, bgTop + 96, 100, 16,
             Text.translatable("cobblemarket.loan.title"),
             { client?.setScreen(LoanScreen()) }
-        ))
+        )
+        loanBtn.dimmed = !com.shusheng.cobblemarket.client.MarketStateCache.enabled
+        addDrawableChild(loanBtn)
 
         // 还款柜台入口（应急贷款下方 4px；100×16）→ RepayScreen
         addDrawableChild(NineSliceButton(
