@@ -16,6 +16,7 @@ import com.shusheng.cobblemarket.network.FinanceNetwork
 import com.shusheng.cobblemarket.network.ItemBlacklistNetwork
 import com.shusheng.cobblemarket.network.MarketNetwork
 import com.shusheng.cobblemarket.network.ServerConfigNetwork
+import com.shusheng.cobblemarket.network.SoundNetwork
 import com.shusheng.cobblemarket.network.PriceLimitNetwork
 import com.shusheng.cobblemarket.platform.onPlayerDisconnect
 import com.shusheng.cobblemarket.platform.onPlayerJoin
@@ -60,6 +61,7 @@ object CobbleMarket {
 		FinanceNetwork.register()
 		PermissionNetwork.register()
 		RestSyncNetwork.register()
+		SoundNetwork.register()
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()
 		TransactionHistory.register()

@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.permission
 import net.minecraft.text.Text
 import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.network.MarketResultPayload
+import com.shusheng.cobblemarket.network.sendSound
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.platform.onPlayerJoin
 import com.shusheng.cobblemarket.platform.registerC2S
@@ -242,6 +243,10 @@ object PermissionNetwork {
                 val nodes = payload.nodes.filter { it in MarketPermissions.ALL }.toSet()
                 val (added, removed) = PermissionState.get(server).setNodes(targetUuid, targetName, nodes, player.name.string)
                 PermissionFileLogger.log(player.name.string, targetName, targetUuid, added, removed)
+                // 权限变更音：给被改动的玩家本人（在线才发；管理员给自己加权限时也会响，符合直觉）
+                if (added.isNotEmpty() || removed.isNotEmpty()) {
+                    server.playerManager.getPlayer(targetUuid)?.let { sendSound(it, "permission_change") }
+                }
                 refresh(server, targetUuid)              // 目标在线则即时刷新其按钮状态
                 sendToPlayer(player, listDataOf(server)) // 回刷新后的列表
             }
@@ -255,6 +260,8 @@ object PermissionNetwork {
                 // 界面「删除」= 收回该玩家全部节点，同样记账（removed 为其原本的全部节点）
                 PermissionState.get(server).removePlayer(payload.playerUuid)?.let {
                     PermissionFileLogger.log(player.name.string, it.playerName, it.playerUuid, emptySet(), it.nodes)
+                    // 界面「删除」= 收回全部权限，同样响一声
+                    server.playerManager.getPlayer(it.playerUuid)?.let { p -> sendSound(p, "permission_change") }
                 }
                 refresh(server, payload.playerUuid)
                 sendToPlayer(player, listDataOf(server))

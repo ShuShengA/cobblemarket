@@ -152,6 +152,8 @@ object MarketCommands {
         // 登录补发市场开关状态：客户端据此把入口按钮置灰（开关是全局的，登录时必须同步一次）
         onPlayerJoin { player ->
             sendToPlayer(player, MarketStatePayload(CobbleMarketConfig.marketEnabled))
+            // 待领取概况：客户端首次打开市场入口界面时据此播「离线收益」提示音
+            com.shusheng.cobblemarket.network.sendPendingReturns(player, player.server)
         }
     }
 
@@ -346,6 +348,10 @@ object MarketCommands {
         PermissionFileLogger.log(source.name, target.second, target.first, setOf(node), emptySet())
         // 在线即时生效：推新快照（离线不用管，下次登录补发）
         PermissionNetwork.refresh(source.server, target.first)
+        // 权限变更音：给被授予的玩家本人（在线才发；服主给自己加也会响）
+        source.server.playerManager.getPlayer(target.first)?.let {
+            com.shusheng.cobblemarket.network.sendSound(it, "permission_change")
+        }
         source.sendFeedback({ Text.translatable("cobblemarket.perm.granted", target.second, short).formatted(Formatting.GREEN) }, false)
         return 1
     }
@@ -370,6 +376,10 @@ object MarketCommands {
         }
         PermissionFileLogger.log(source.name, target.second, target.first, emptySet(), setOf(node))
         PermissionNetwork.refresh(source.server, target.first)
+        // 权限变更音：同上（被收回时也响）
+        source.server.playerManager.getPlayer(target.first)?.let {
+            com.shusheng.cobblemarket.network.sendSound(it, "permission_change")
+        }
         source.sendFeedback({ Text.translatable("cobblemarket.perm.revoked", target.second, short).formatted(Formatting.GREEN) }, false)
         return 1
     }

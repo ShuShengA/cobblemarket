@@ -34,6 +34,8 @@
   "cobblemarket.hud_position.hint": "按住左键拖动，松开落位（靠近边缘或中心线会自动吸附）",
   "cobblemarket.gui.item_id_hint": "搜不到物品可尝试输入真实id（F3+H）",
   "cobblemarket.gui.component_potion": "药水",
+  "cobblemarket.market.broadcast_open": "[市场] 已恢复营业",
+  "cobblemarket.market.broadcast_close": "[市场] 已暂停营业，交易功能暂时不可用",
   "cobblemarket.market.closed": "市场功能已关闭，请联系服主",
   "cobblemarket.market.closed_banner": "⚠ 市场功能已关闭",
   "cobblemarket.market.cmd_on": "市场功能已开启",

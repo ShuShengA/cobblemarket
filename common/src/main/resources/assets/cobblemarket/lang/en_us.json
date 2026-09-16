@@ -34,6 +34,8 @@
   "cobblemarket.hud_position.hint": "Hold left-click to drag (snaps to edges/center)",
   "cobblemarket.gui.item_id_hint": "If not found, try the item's real ID (F3+H)",
   "cobblemarket.gui.component_potion": "Potion",
+  "cobblemarket.market.broadcast_open": "[Market] The market is open again",
+  "cobblemarket.market.broadcast_close": "[Market] The market is closed — trading is temporarily unavailable",
   "cobblemarket.market.closed": "The market is currently closed, contact the server owner",
   "cobblemarket.market.closed_banner": "⚠ Market closed",
   "cobblemarket.market.cmd_on": "Market enabled",
