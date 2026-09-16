@@ -653,6 +653,10 @@ object FinanceNetwork {
             if (!RequestThrottle.allow(player.uuid, "request_loan", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
+                // 市场总开关关（紧急停市）时不允许新增借贷：借款是唯一会让资金**流出**准备金池的
+                // 金融操作，停市要防的就是这个口子。存款/取款/还款/卡片申请都不拦 ——
+                // 那些要么是玩家自有资金、要么是钱流进池子，不增加服主风险（2026-09-16 与用户逐项确认）
+                if (marketBlocked(player)) return@execute
                 val state = FinanceState.get(server)
                 val now = System.currentTimeMillis()
                 // 文案区分：总开关关 = 喵喵银行没开门；现金贷关 = 喵喵的帮助暂未开放
