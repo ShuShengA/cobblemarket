@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.config.CurrencyHandler
 import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.network.BalanceNetwork
 import com.shusheng.cobblemarket.network.RepayEntry
+import com.shusheng.cobblemarket.network.sendSound
 import com.shusheng.cobblemarket.network.RepayListDataPayload
 import com.shusheng.cobblemarket.platform.sendToPlayer
 import com.shusheng.cobblemarket.util.PersistHelper
@@ -477,6 +478,9 @@ object FinanceService {
             return
         }
         state.depositReserve(total)
+        // 还款成功音：「还一期」与「提前结清」共用这一处（出错分支都在前面 return 掉了）。
+        // 钱是出去的 → 扣款音（与存款同一枚，按钱的进出分音效）
+        sendSound(player, "loan_deduct")
         if (settle) {
             state.settleLoan(loan.id, now)
             CreditFileLogger.logRepayment(

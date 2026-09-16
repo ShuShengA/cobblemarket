@@ -76,14 +76,16 @@ object CardCelebrationAnimation {
     }
 
     /** 发卡音效：紫金卡 / 黑金卡各一枚（2026-09-16 新增，此前只有动画没有声音）。
-     *  音量走三参重载显式给 0.5——两参重载会把音量写死 0.25（MC 的 UI 按钮音档位），太轻。 */
+     *  音量走三参重载显式给——两参重载会把音量写死 0.25（MC 的 UI 按钮音档位），太轻。
+     *  ⚠ 两枚素材响度不一样：**紫金卡那枚本身偏轻**（用户实机反馈），补到 0.9；黑金卡正常，保持 0.5。 */
     private fun playGrantSound(cardKind: String) {
         val soundId = if (cardKind == "black") "card_black" else "card_purple"
+        val volume = if (cardKind == "black") 0.5f else 0.9f
         MinecraftClient.getInstance().soundManager.play(
             PositionedSoundInstance.master(
                 SoundEvent.of(Identifier.of("cobblemarket", soundId)),
                 1.0f,
-                0.5f
+                volume
             )
         )
     }
