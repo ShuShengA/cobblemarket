@@ -14,6 +14,7 @@ import com.shusheng.cobblemarket.network.FinanceNetwork
 import com.shusheng.cobblemarket.network.ItemBlacklistNetwork
 import com.shusheng.cobblemarket.network.MarketNetwork
 import com.shusheng.cobblemarket.network.ServerConfigNetwork
+import com.shusheng.cobblemarket.network.SoundNetwork
 import com.shusheng.cobblemarket.network.PriceLimitNetwork
 import com.shusheng.cobblemarket.platform.onPlayerDisconnect
 import com.shusheng.cobblemarket.platform.onPlayerJoin
@@ -56,6 +57,8 @@ object CobbleMarket {
 		ServerConfigNetwork.register()
 		BalanceNetwork.register()
 		FinanceNetwork.register()
+		// 通用音效通道（服务端事件 → 让客户端播一个音效；金融操作的到账/扣款音走它）
+		SoundNetwork.register()
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()
 		TransactionHistory.register()
