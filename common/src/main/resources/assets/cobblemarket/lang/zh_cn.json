@@ -112,6 +112,8 @@
   "cobblemarket.perm.audit_empty": "暂无变更记录",
   "cobblemarket.perm.audit_added": "新增",
   "cobblemarket.perm.audit_removed": "移除",
+  "cobblemarket.perm.audit_remaining": "剩余",
+  "cobblemarket.perm.audit_write_failed": "权限已变更，但审计记录写入失败（账本文件可能正被 Excel/WPS 打开）",
   "cobblemarket.perm.title": "权限管理",
   "cobblemarket.perm.dialog_title": "编辑权限",
   "cobblemarket.perm.save": "保存",

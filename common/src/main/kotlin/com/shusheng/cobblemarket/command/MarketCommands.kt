@@ -346,7 +346,14 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.perm.already_holding", target.second, nodeText))
             return 0
         }
-        PermissionFileLogger.log(source.name, target.second, target.first, setOf(node), emptySet())
+        // 剩余节点 = 授予后的完整集合；写失败要提醒（别静默丢审计）
+        if (!PermissionFileLogger.log(
+                source.name, target.second, target.first, setOf(node), emptySet(),
+                PermissionState.get(source.server).getNodes(target.first)
+            )
+        ) {
+            source.sendError(Text.translatable("cobblemarket.perm.audit_write_failed"))
+        }
         // 在线即时生效：推新快照（离线不用管，下次登录补发）
         PermissionNetwork.refresh(source.server, target.first)
         // 权限变更音：给被授予的玩家本人（在线才发；服主给自己加也会响）
@@ -377,7 +384,13 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.perm.not_holding", target.second, nodeText))
             return 0
         }
-        PermissionFileLogger.log(source.name, target.second, target.first, emptySet(), setOf(node))
+        if (!PermissionFileLogger.log(
+                source.name, target.second, target.first, emptySet(), setOf(node),
+                PermissionState.get(source.server).getNodes(target.first)
+            )
+        ) {
+            source.sendError(Text.translatable("cobblemarket.perm.audit_write_failed"))
+        }
         PermissionNetwork.refresh(source.server, target.first)
         // 权限变更音：同上（被收回时也响）
         source.server.playerManager.getPlayer(target.first)?.let {

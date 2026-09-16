@@ -79,7 +79,15 @@ class RequestPermissionAuditPayload : CustomPayload {
 /** S2C：权限变更审计记录（新的在前；节点为短名字符串） */
 data class PermissionAuditPayload(val rows: List<Row>) : CustomPayload {
 
-    data class Row(val timestamp: Long, val operator: String, val targetName: String, val added: String, val removed: String)
+    data class Row(
+        val timestamp: Long,
+        val operator: String,
+        val targetName: String,
+        val added: String,
+        val removed: String,
+        /** 变更后该玩家剩下的全部节点（旧账本记录为空串） */
+        val remaining: String
+    )
 
     override fun getId() = ID
     companion object {
@@ -93,11 +101,22 @@ data class PermissionAuditPayload(val rows: List<Row>) : CustomPayload {
                     b.writeString(r.targetName)
                     b.writeString(r.added)
                     b.writeString(r.removed)
+                    b.writeString(r.remaining)
                 }
             },
             { b ->
                 val n = b.readInt()
-                PermissionAuditPayload(List(n) { Row(b.readLong(), b.readString(), b.readString(), b.readString(), b.readString()) })
+                // 读端一律具名传参：字段顺序写错会静默串位（见 feedback_payload_codec_order）
+                PermissionAuditPayload(List(n) {
+                    Row(
+                        timestamp = b.readLong(),
+                        operator = b.readString(),
+                        targetName = b.readString(),
+                        added = b.readString(),
+                        removed = b.readString(),
+                        remaining = b.readString()
+                    )
+                })
             }
         )
     }
@@ -209,7 +228,14 @@ object PermissionNetwork {
         registerC2S(RequestPermissionAuditPayload.ID, RequestPermissionAuditPayload.CODEC) { _, player ->
             if (!MarketPermissions.isOp(player)) return@registerC2S
             val rows = PermissionFileLogger.readRecent().map {
-                PermissionAuditPayload.Row(it.timestamp, it.operator, it.targetName, it.added, it.removed)
+                PermissionAuditPayload.Row(
+                    timestamp = it.timestamp,
+                    operator = it.operator,
+                    targetName = it.targetName,
+                    added = it.added,
+                    removed = it.removed,
+                    remaining = it.remaining
+                )
             }
             sendToPlayer(player, PermissionAuditPayload(rows))
         }
@@ -244,7 +270,10 @@ object PermissionNetwork {
                 // 只收合法节点：防客户端伪造未知节点写进表里
                 val nodes = payload.nodes.filter { it in MarketPermissions.ALL }.toSet()
                 val (added, removed) = PermissionState.get(server).setNodes(targetUuid, targetName, nodes, player.name.string)
-                PermissionFileLogger.log(player.name.string, targetName, targetUuid, added, removed)
+                // 剩余节点 = 保存后的完整集合。写失败（账本被 Excel/WPS 独占等）要告诉 OP，别静默丢审计
+                if (!PermissionFileLogger.log(player.name.string, targetName, targetUuid, added, removed, nodes)) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.perm.audit_write_failed")))
+                }
                 // 权限变更音：给被改动的玩家本人（在线才发；管理员给自己加权限时也会响，符合直觉）
                 if (added.isNotEmpty() || removed.isNotEmpty()) {
                     server.playerManager.getPlayer(targetUuid)?.let { sendSound(it, "permission_change") }
@@ -262,7 +291,10 @@ object PermissionNetwork {
             server.execute {
                 // 界面「删除」= 收回该玩家全部节点，同样记账（removed 为其原本的全部节点）
                 PermissionState.get(server).removePlayer(payload.playerUuid)?.let {
-                    PermissionFileLogger.log(player.name.string, it.playerName, it.playerUuid, emptySet(), it.nodes)
+                    // 全删了 → 剩余为空；写失败同样提示 OP
+                    if (!PermissionFileLogger.log(player.name.string, it.playerName, it.playerUuid, emptySet(), it.nodes, emptySet())) {
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.perm.audit_write_failed")))
+                    }
                     // 界面「删除」= 收回全部权限，同样响一声 + 通知本人
                     server.playerManager.getPlayer(it.playerUuid)?.let { p -> sendSound(p, "permission_change") }
                     notifyChanged(server, it.playerUuid, emptySet(), it.nodes)
