@@ -39,6 +39,7 @@
 - **Permission commands**: `/market perm grant|revoke|list` (owner-only; `list` shows every grant)
 - **Permission change log**: the permissions screen gains a "Change Log" tab — who granted or removed which node for whom, and when; the same records are written to per-day CSV ledgers (`config/cobblemarket/permissions/`, Chinese and English) for offline auditing
 - **Admin entries now grey out instead of disappearing**: entries on the Admin Panel and the entry screen always show, greyed out with a hint when you lack the permission — the layout no longer shifts with permissions
+- **Permission changes now notify the target**: when an admin node is granted or revoked the player gets a chat notice listing their full node list afterwards — no more silent changes: whoever gains a permission knows what changed, and whoever loses one knows what's gone; changes made while offline are delivered on next login
 
 #### Sound Effects
 
