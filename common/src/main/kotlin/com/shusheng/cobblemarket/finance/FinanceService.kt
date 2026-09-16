@@ -230,26 +230,39 @@ object FinanceService {
         )
     }
 
+    /** 图鉴计数结果：遇见数（SEEN 及以上，含已捕捉）与捕捉数（OWNED） */
+    data class DexCounts(val seen: Int, val caught: Int)
+
     /**
-     * 图鉴收集数（已捕捉物种数）：Cobblemon 图鉴数据，物种 knowledge 达到 OWNED = 捕捉过。
-     * 口径是「曾经拥有过」（含交易获得/孵化/入库同步）；「图鉴扫描到但没抓」只到 SEEN，不计入。
-     * 紫卡自行申请条件用；Cobblemon 未安装/数据异常返回 0（条件自然不满足）。
+     * 图鉴物种计数：遇见数 + 捕捉数（两值一次遍历取得，调用方都要）。
+     * 遇见 = knowledge 达到 SEEN 及以上 —— **含已捕捉**（与图鉴界面的 Seen 口径一致），故恒有 seen ≥ caught；
+     * 捕捉 = knowledge 达到 OWNED，口径是「曾经拥有过」（含交易获得/孵化/入库同步）。
+     * 紫卡/黑卡自行申请条件用；Cobblemon 未安装/数据异常返回 (0, 0)（条件自然不满足）。
      */
-    fun getCaughtSpeciesCount(server: MinecraftServer, uuid: UUID): Int {
+    fun getDexCounts(server: MinecraftServer, uuid: UUID): DexCounts {
         return try {
             val data = com.cobblemon.mod.common.Cobblemon.playerDataManager.get(
                 uuid, com.cobblemon.mod.common.api.storage.player.PlayerInstancedDataStoreTypes.POKEDEX
             )
-            val manager = data as? com.cobblemon.mod.common.api.pokedex.PokedexManager ?: return 0
+            val manager = data as? com.cobblemon.mod.common.api.pokedex.PokedexManager ?: return DexCounts(0, 0)
             // 按 knowledge 判定（勿用 aspects 非空：图鉴扫描/遭遇时 aspects 就写入，会把只见过的算进来；
             // Cobblemon 1.8 起旧枚举 CAUGHT 已更名 OWNED，见 FormDexRecord.CODEC 的兼容分支）。
-            // hasAtLeast 内部取各形态最高 knowledge；申请时一次性调用，开销可忽略
-            manager.speciesRecords.values.count {
-                it.hasAtLeast(com.cobblemon.mod.common.api.pokedex.PokedexEntryProgress.OWNED)
+            // hasAtLeast = getKnowledge().ordinal 比较，而 getKnowledge 取各形态最高值，
+            // 所以「已捕捉」的记录必然也满足 SEEN（遇见数天然含捕捉数）；申请时一次性调用，开销可忽略
+            var seen = 0
+            var caught = 0
+            manager.speciesRecords.values.forEach {
+                if (it.hasAtLeast(com.cobblemon.mod.common.api.pokedex.PokedexEntryProgress.OWNED)) {
+                    caught++
+                    seen++
+                } else if (it.hasAtLeast(com.cobblemon.mod.common.api.pokedex.PokedexEntryProgress.SEEN)) {
+                    seen++
+                }
             }
+            DexCounts(seen, caught)
         } catch (e: Throwable) {
             com.shusheng.cobblemarket.CobbleMarket.LOGGER.warn("Failed to read cobblemon pokedex for {}: {}", uuid, e.message)
-            0
+            DexCounts(0, 0)
         }
     }
 

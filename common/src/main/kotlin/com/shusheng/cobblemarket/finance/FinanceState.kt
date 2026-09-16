@@ -316,11 +316,11 @@ class FinanceState private constructor() : PersistentState() {
     fun getTotalCountedVolumeOf(playerUuid: UUID): Long = totalCountedVolume[playerUuid] ?: 0L
 
     /**
-     * 自行申请紫卡资格校验（三项条件全部满足；0 = 不要求）：
+     * 自行申请紫卡资格校验（各门槛全部满足；0 = 不要求）：
      * 资产 = 当前现金余额（调用方传）、消费 = 历史买入成交额累计、额度 = 信用基础（无欠款公式值）、
-     * 存款 = 净存款（活期存款 − 未还欠款，防借钱包装资产）。
+     * 存款 = 净存款（活期存款 − 未还欠款，防借钱包装资产）、图鉴 = 遇见数/捕捉数（调用方传，遇见含捕捉）。
      */
-    fun isPurpleCardEligible(playerUuid: UUID, cashBalance: Long, dexCount: Int, now: Long): Boolean {
+    fun isPurpleCardEligible(playerUuid: UUID, cashBalance: Long, seenCount: Int, dexCount: Int, now: Long): Boolean {
         if (purpleCardHolders.contains(playerUuid)) return false
         // 升级替代互斥：已持有黑卡的玩家不能再申请紫卡（先收回黑卡）
         if (blackCardHolders.contains(playerUuid)) return false
@@ -343,15 +343,16 @@ class FinanceState private constructor() : PersistentState() {
                 it.playerUuid == playerUuid && (it.status == LoanStatus.OVERDUE || it.status == LoanStatus.BAD_DEBT)
             }
         ) return false
+        if (CobbleMarketConfig.purpleCardApplySeen > 0 && seenCount < CobbleMarketConfig.purpleCardApplySeen) return false
         if (CobbleMarketConfig.purpleCardApplyDex > 0 && dexCount < CobbleMarketConfig.purpleCardApplyDex) return false
         return true
     }
 
     /**
-     * 自行申请黑卡资格校验：紫卡六项条件 + 硬条件「必须持有紫卡」（黑卡比紫卡高级）。
-     * 资产/消费/额度/存款/无逾期/图鉴门槛与紫卡同构（存款 = 净存款），用黑卡配置。
+     * 自行申请黑卡资格校验：紫卡七项条件 + 硬条件「必须持有紫卡」（黑卡比紫卡高级）。
+     * 资产/消费/额度/存款/无逾期/图鉴遇见/图鉴捕捉门槛与紫卡同构（存款 = 净存款），用黑卡配置。
      */
-    fun isBlackCardEligible(playerUuid: UUID, cashBalance: Long, dexCount: Int, now: Long): Boolean {
+    fun isBlackCardEligible(playerUuid: UUID, cashBalance: Long, seenCount: Int, dexCount: Int, now: Long): Boolean {
         if (blackCardHolders.contains(playerUuid)) return false
         // 硬条件：必须先持有紫卡
         if (!purpleCardHolders.contains(playerUuid)) return false
@@ -372,6 +373,7 @@ class FinanceState private constructor() : PersistentState() {
                 it.playerUuid == playerUuid && (it.status == LoanStatus.OVERDUE || it.status == LoanStatus.BAD_DEBT)
             }
         ) return false
+        if (CobbleMarketConfig.blackCardApplySeen > 0 && seenCount < CobbleMarketConfig.blackCardApplySeen) return false
         if (CobbleMarketConfig.blackCardApplyDex > 0 && dexCount < CobbleMarketConfig.blackCardApplyDex) return false
         return true
     }

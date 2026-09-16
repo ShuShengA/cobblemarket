@@ -15,20 +15,23 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 
 /**
- * 申请喵喵黑卡（照紫卡申请界面）：上方黑卡大图 + 逐条申请条件（7 项：持有紫卡硬条件 + 六项门槛）。
+ * 申请喵喵黑卡（照紫卡申请界面）：上方黑卡大图 + 逐条申请条件（8 项：持有紫卡硬条件 + 七项门槛）。
  * 打开时拉取条件快照；全部满足且开关开启时可点「申请」（服务端复核扣费发卡）。
  */
 class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_apply_title")) {
 
     private val dialogW = 300
-    private val dialogH = 320
+    /** 8 行条件（持有紫卡硬条件 + 七项门槛）比紫卡多一行，框相应加高 24px，否则条件区压到申请按钮 */
+    private val dialogH = 344
 
+    // 与 BlackCardApplyInfoPayload.conditions 同序（服务端 FinanceNetwork.sendBlackCardApplyInfo 构造）
     private val conditionKeys = listOf(
         "cobblemarket.card.black_need_purple",
         "cobblemarket.op.scfg_apply_asset",
         "cobblemarket.op.scfg_apply_volume",
         "cobblemarket.op.scfg_apply_credit",
         "cobblemarket.op.scfg_apply_deposit",
+        "cobblemarket.op.scfg_apply_seen",
         "cobblemarket.op.scfg_apply_dex",
         "cobblemarket.op.scfg_apply_no_overdue",
     )
@@ -167,20 +170,24 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
                 var y = dialogY + 96
                 conditionKeys.forEachIndexed { i, key ->
                     val entry = payload.conditions.getOrNull(i) ?: return@forEachIndexed
+                    // 按 key 判定（勿用下标：插行会错位）
+                    val isNeedPurple = key == "cobblemarket.card.black_need_purple"
                     // 门槛 0/关 = 不要求，该行不显示（硬条件「持有紫卡」除外，恒显示）
-                    if (i != 0 && entry.requirement <= 0) return@forEachIndexed
+                    if (!isNeedPurple && entry.requirement <= 0) return@forEachIndexed
                     val label = Text.translatable(key).string
-                    val isBool = i == 0 || i == 6 // 持有紫卡硬条件 / 无逾期记录项
-                    val valueText = if (isBool) {
-                        if (entry.current > 0) {
-                            if (i == 0) Text.translatable("cobblemarket.card.black_holds_purple").string
+                    val isBool = isNeedPurple || key == "cobblemarket.op.scfg_apply_no_overdue" // 持有紫卡硬条件 / 无逾期记录项
+                    // 图鉴两行是物种数不是金额，不带货币单位
+                    val isDexCount = key == "cobblemarket.op.scfg_apply_seen" || key == "cobblemarket.op.scfg_apply_dex"
+                    val valueText = when {
+                        isBool -> if (entry.current > 0) {
+                            if (isNeedPurple) Text.translatable("cobblemarket.card.black_holds_purple").string
                             else Text.translatable("cobblemarket.card.apply_no_record").string
                         } else {
-                            if (i == 0) Text.translatable("cobblemarket.card.black_no_purple").string
+                            if (isNeedPurple) Text.translatable("cobblemarket.card.black_no_purple").string
                             else Text.translatable("cobblemarket.card.apply_has_record").string
                         }
-                    } else {
-                        "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)} ${inlineCurrencyUnit()}"
+                        isDexCount -> "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)}"
+                        else -> "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)} ${inlineCurrencyUnit()}"
                     }
                     // 行尾短符号（✓/✗ 绿红，长文案超宽改用颜色表意；完整语义在申请按钮文案）
                     val mark = if (entry.satisfied)
