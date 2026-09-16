@@ -150,5 +150,13 @@
         "stream": false
       }
     ]
+  },
+  "money_in": {
+    "sounds": [
+      {
+        "name": "cobblemarket:money_in",
+        "stream": false
+      }
+    ]
   }
 }

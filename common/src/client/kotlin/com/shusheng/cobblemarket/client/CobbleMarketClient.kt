@@ -113,10 +113,6 @@ object CobbleMarketClient {
     private lateinit var openMarketKey: KeyBinding
     private var wasEPressed = false
 
-    /** 市场开关状态是否已同步过一次：登录首次收到 MarketStatePayload 只记状态、不播开市/停市音
-     *  （服务端登录会补发，否则一上线就听到一声"开市"） */
-    private var marketStateSynced = false
-
     /** 余额 HUD 低频兜底轮询计时（交易响应已即时刷新，这里兜住离线收益补发等） */
     private var lastBalancePollAt = 0L
     private var lastFinancePollAt = 0L
@@ -151,6 +147,13 @@ object CobbleMarketClient {
                         0.5f // 音量（两参重载固定 0.25 太轻，同 playResultSound）
                     )
                 )
+            }
+            // 「离线收益」提示音：登录推送时安排了待播时刻，到点且已进世界才响（一次上线一次）
+            if (MarketStateCache.offlineRewardAt > 0 && tickNow >= MarketStateCache.offlineRewardAt &&
+                client.player != null
+            ) {
+                MarketStateCache.offlineRewardAt = 0
+                playMarketSound("offline_reward")
             }
             while (openMarketKey.wasPressed()) {
                 playEntrySound()
@@ -489,14 +492,12 @@ object CobbleMarketClient {
 
         registerS2C(MarketStatePayload.ID, MarketStatePayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
-                // 只在开关**真正切换**时播开市/停市音：登录补发那一次不播（否则一上线就响一声）
-                val changed = marketStateSynced && MarketStateCache.enabled != payload.enabled
-                marketStateSynced = true
                 MarketStateCache.enabled = payload.enabled
                 // 管理面板打开时同步开关按钮图标（登录补发 / 他人命令切换都能跟上）；
                 // 开关按钮 2026-09-12 从入口界面移到了管理面板
                 (MinecraftClient.getInstance().currentScreen as? AdminScreen)?.updateMarketSwitchIcon()
-                if (changed) playMarketSound(if (payload.enabled) "market_open" else "market_close")
+                // 开市/停市音**不在这里播**：管理面板的开关按钮会先乐观更新 MarketStateCache，
+                // 广播回来时"状态看起来没变"，客户端判断不出刚切换过 —— 改由服务端发（toggleMarketEnabled）
             }
         }
 
@@ -505,12 +506,13 @@ object CobbleMarketClient {
             MinecraftClient.getInstance().execute { playMarketSound(payload.soundId) }
         }
 
-        // 待领取概况（登录时服务端推一次）：缓存数量并清掉「已提示」标志——
-        // 每次上线都允许再提示一次「离线收益」（由入口界面首次打开时播，见 MarketEntryScreen）
+        // 上线待办概况（登录时服务端推一次）：有东西要领就安排一声「离线收益」提示音，
+        // 延迟 2 秒等世界加载完（到点由下面的 tick 检查播，一次上线只响一次）
         registerS2C(PendingReturnsPayload.ID, PendingReturnsPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 MarketStateCache.pendingReturns = payload.count
-                MarketStateCache.offlineRewardNotified = false
+                MarketStateCache.offlineRewardAt =
+                    if (payload.count > 0 || payload.hasBalance) System.currentTimeMillis() + 2_000 else 0L
             }
         }
 
@@ -743,14 +745,20 @@ fun playFailSound() {
     )
 }
 
-/** 播一个模组音效（音量 0.5，与全项目反馈音统一档位）。
- *  服务端事件音效走 [PlaySoundPayload]，客户端本地事件（开市/停市、离线收益）直接调这里。 */
+/**
+ * 播一个模组音效。服务端事件音效走 [PlaySoundPayload]，客户端本地事件（开市/停市、离线收益）直接调这里。
+ *
+ * ⚠ 音量给 **0.9**，比其它反馈音的 0.5 高一档：这一批素材（2026-09-16 那 8 枚）是按
+ * 「别做音量增强」导出的，而旧素材（success / fail / entry / 闭窗…）在剪映里增强过；
+ * 同样用 0.5 播，新素材明显偏轻（用户实机反馈）。这是按素材响度做的补偿 ——
+ * 若以后新旧素材统一重做，这个值可以改回 0.5。
+ */
 fun playMarketSound(soundId: String) {
     MinecraftClient.getInstance().soundManager.play(
         PositionedSoundInstance.master(
             SoundEvent.of(Identifier.of("cobblemarket", soundId)),
             1.0f,
-            0.5f
+            0.9f
         )
     )
 }
