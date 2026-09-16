@@ -70,5 +70,21 @@
         "stream": false
       }
     ]
+  },
+  "card_purple": {
+    "sounds": [
+      {
+        "name": "cobblemarket:card_purple",
+        "stream": false
+      }
+    ]
+  },
+  "card_black": {
+    "sounds": [
+      {
+        "name": "cobblemarket:card_black",
+        "stream": false
+      }
+    ]
   }
 }

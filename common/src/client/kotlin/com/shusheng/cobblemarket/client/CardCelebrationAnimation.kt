@@ -1,12 +1,13 @@
 package com.shusheng.cobblemarket.client
 
-import com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon
 import com.mojang.blaze3d.systems.RenderSystem
 import com.shusheng.cobblemarket.platform.registerHudRender
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
+import net.minecraft.client.sound.PositionedSoundInstance
 import net.minecraft.item.ItemStack
 import net.minecraft.registry.Registries
+import net.minecraft.sound.SoundEvent
 import net.minecraft.util.Identifier
 import org.lwjgl.opengl.GL11
 
@@ -20,9 +21,29 @@ import org.lwjgl.opengl.GL11
  */
 object CardCelebrationAnimation {
 
-    private const val FLY_MS = 500L
-    private const val HOLD_MS = 500L
-    private const val TOTAL_MS = FLY_MS + HOLD_MS
+    /** 飞行段时长**按卡种**：黑金卡比紫金卡飞得更慢、更有分量（2026-09-16 拍板，原为统一 500） */
+    private const val PURPLE_FLY_MS = 700L
+    private const val BLACK_FLY_MS = 1000L
+
+    /** 停留段时长**按卡种**：黑金卡停得更久（2026-09-16 拍板，原为统一 500） */
+    private const val PURPLE_HOLD_MS = 600L
+    private const val BLACK_HOLD_MS = 1500L
+
+    /** 淡出段时长**按卡种**：在停留**结束之后**才开始（不占用停留时间） */
+    private const val PURPLE_FADE_MS = 600L
+    private const val BLACK_FADE_MS = 700L
+
+    /** 本次飞行的飞行段时长（按正在播的卡种取） */
+    private val flyMs: Long get() = if (kind == "black") BLACK_FLY_MS else PURPLE_FLY_MS
+
+    /** 本次的停留段时长（按正在播的卡种取） */
+    private val holdMs: Long get() = if (kind == "black") BLACK_HOLD_MS else PURPLE_HOLD_MS
+
+    /** 本次的淡出段时长（按正在播的卡种取） */
+    private val fadeMs: Long get() = if (kind == "black") BLACK_FADE_MS else PURPLE_FADE_MS
+
+    /** 本次动画总时长 = 飞行 + 停留 + 淡出 */
+    private val totalMs: Long get() = flyMs + holdMs + fadeMs
 
     private const val START_SIZE = 56f   // 申请界面图标大小
     private const val END_SIZE = 160f    // 屏幕中央最大尺寸
@@ -50,6 +71,21 @@ object CardCelebrationAnimation {
         kind = next
         startTime = System.currentTimeMillis()
         active = true
+        // 卡片起飞的那一刻响音效（队列里排着多张时，每张起飞各响一次）
+        playGrantSound(next)
+    }
+
+    /** 发卡音效：紫金卡 / 黑金卡各一枚（2026-09-16 新增，此前只有动画没有声音）。
+     *  音量走三参重载显式给 0.5——两参重载会把音量写死 0.25（MC 的 UI 按钮音档位），太轻。 */
+    private fun playGrantSound(cardKind: String) {
+        val soundId = if (cardKind == "black") "card_black" else "card_purple"
+        MinecraftClient.getInstance().soundManager.play(
+            PositionedSoundInstance.master(
+                SoundEvent.of(Identifier.of("cobblemarket", soundId)),
+                1.0f,
+                0.5f
+            )
+        )
     }
 
     private fun reset() {
@@ -70,7 +106,7 @@ object CardCelebrationAnimation {
     @JvmStatic
     fun renderOverlay(context: DrawContext) {
         if (!active) return
-        if (System.currentTimeMillis() - startTime >= TOTAL_MS) {
+        if (System.currentTimeMillis() - startTime >= totalMs) {
             startNext()
             if (!active) return
         }
@@ -107,13 +143,16 @@ object CardCelebrationAnimation {
 
         fun smooth(k: Float): Float = k * k * (3f - 2f * k)
 
-        // 飞行段：起点 → 屏幕中央（位置与尺寸都缓出）；停留段：静止淡出
+        // 三段（淡出**不占用**停留时间，在停留之后另起一段）：
+        //   飞行段 = 起点 → 屏幕中央（位置与尺寸都缓出）
+        //   停留段 = 停在中央、全亮不动
+        //   淡出段 = alpha 1 → 0
         val cx: Float
         val cy: Float
         val size: Float
         val alpha: Float
-        if (elapsed < FLY_MS) {
-            val k = smooth(elapsed.toFloat() / FLY_MS)
+        if (elapsed < flyMs) {
+            val k = smooth(elapsed.toFloat() / flyMs)
             cx = startX + (scaledW / 2f - startX) * k
             cy = startY + (scaledH / 2f - startY) * k
             size = START_SIZE + (END_SIZE - START_SIZE) * k
@@ -122,19 +161,22 @@ object CardCelebrationAnimation {
             cx = scaledW / 2f
             cy = scaledH / 2f
             size = END_SIZE
-            alpha = 1f - (elapsed - FLY_MS).toFloat() / HOLD_MS
+            val fadeElapsed = elapsed - flyMs - holdMs
+            alpha = if (fadeElapsed <= 0L) 1f
+            else (1f - fadeElapsed.toFloat() / fadeMs).coerceAtLeast(0f)
         }
 
-        // 淡出必须用全局 RenderSystem.setShaderColor：context.setShaderColor 只作用于 DrawContext 自身缓冲，
-        // 物品图标走独立渲染路径（cobblemon renderScaledGuiItemIcon）不吃那套颜色，淡出会失效
+        // 淡出走全局 RenderSystem.setShaderColor（context 那套只作用于 DrawContext 自身缓冲）。
+        // ⚠ **不能**用 Cobblemon 的 renderScaledGuiItemIcon：它内部第一件事就是把 shader 颜色复位成全白
+        //   （RenderHelper.kt:48），外面设的 alpha 会被直接覆盖 —— 表现就是「卡片不淡出、时间到直接消失」
+        //   （2026-09-16 用户实测）。改用 context.drawItem + 矩阵缩放（照物品庆祝动画 ItemCelebrationAnimation）。
+        context.matrices.push()
+        context.matrices.translate((cx - size / 2).toDouble(), (cy - size / 2).toDouble(), 0.0)
+        val iconScale = size / 16f
+        context.matrices.scale(iconScale, iconScale, 1f)
         RenderSystem.setShaderColor(alpha, alpha, alpha, alpha)
-        renderScaledGuiItemIcon(
-            itemStack = ItemStack(item),
-            x = (cx - size / 2).toDouble(),
-            y = (cy - size / 2).toDouble(),
-            scale = (size / 16.0),
-            matrixStack = context.matrices
-        )
+        context.drawItem(ItemStack(item), 0, 0)
         RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
+        context.matrices.pop()
     }
 }
