@@ -390,7 +390,11 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
      */
     private fun addBySearchName() {
         val name = searchField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: return
-        openEditDialog(PermissionListDataPayload.Entry(EMPTY_UUID, name, emptyList()))
+        // ⚠ 输入的名字**可能已经有节点**（「添加」只是"按名字找到人"，不代表这人没权限）：
+        // 直接开一个全不勾选的弹窗，一来让人以为他没权限，二来保存时会把他的原有节点**整个覆盖掉**
+        //（服务端 setNodes 收的是完整集合而非增量）。所以先在列表里按名字找，找到就用他的现有节点预填。
+        val existing = entries.firstOrNull { it.playerName.equals(name, ignoreCase = true) }
+        openEditDialog(existing ?: PermissionListDataPayload.Entry(EMPTY_UUID, name, emptyList()))
     }
 
     /**
