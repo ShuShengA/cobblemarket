@@ -152,25 +152,27 @@ data class MarketStatePayload(val enabled: Boolean) : CustomPayload {
 
 // ── S2C: 待领取概况（登录时推一次） ──
 
-/** 待领取总数（精灵 + 物品）：客户端据此在**首次打开市场入口界面**时播「离线收益」提示音
- *  （一次上线只提示一次，见客户端的 MarketStateCache.offlineRewardNotified）。
- *  待领**余额**不走这里——它在 BalanceDataPayload 里，入口界面本来就会拉。 */
-data class PendingReturnsPayload(val count: Int) : CustomPayload {
+/** 上线时的待办概况（待领取数量 + 有无待领余额）：客户端据此在**世界加载完成后**响一声
+ *  「离线收益」提示音——玩家刚上线还没打开市场，这时提醒才有意义；等他开了市场界面，
+ *  界面上本来就有「收款」「待领取」按钮和红点，再响就是多余。
+ *  一次上线只提示一次（客户端用时间戳调度，见 MarketStateCache.offlineRewardAt）。 */
+data class PendingReturnsPayload(val count: Int, val hasBalance: Boolean) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<PendingReturnsPayload>(CobbleMarket.id("pending_returns"))
         val CODEC: PacketCodec<PacketByteBuf, PendingReturnsPayload> = PacketCodec.of(
-            { p, b -> b.writeInt(p.count) },
-            { b -> PendingReturnsPayload(b.readInt()) }
+            { p, b -> b.writeInt(p.count); b.writeBoolean(p.hasBalance) },
+            { b -> PendingReturnsPayload(b.readInt(), b.readBoolean()) }
         )
     }
 }
 
-/** 推一次待领取总数给该玩家（登录时调用；精灵 + 物品合计） */
+/** 推一次上线待办概况（登录时调用；待领取 = 精灵 + 物品合计，hasBalance = 待领余额是否有钱） */
 fun sendPendingReturns(player: ServerPlayerEntity, server: net.minecraft.server.MinecraftServer) {
-    val count = MarketState.get(server).getPendingReturns(player.uuid).size +
+    val state = MarketState.get(server)
+    val count = state.getPendingReturns(player.uuid).size +
         ItemMarketState.get(server).getPendingReturns(player.uuid).size
-    sendToPlayer(player, PendingReturnsPayload(count))
+    sendToPlayer(player, PendingReturnsPayload(count, state.getPendingBalance(player.uuid) > 0))
 }
 
 // ── C2S: OP 在入口界面切换市场总开关 ──
@@ -201,6 +203,10 @@ fun toggleMarketEnabled(server: net.minecraft.server.MinecraftServer, enabled: B
     server.playerManager.playerList.forEach {
         sendToPlayer(it, MarketStatePayload(enabled))
         it.sendMessage(broadcast, false)
+        // 开市/停市音由服务端发，**不能让客户端自己判断**：管理面板的开关按钮会先乐观更新
+        // MarketStateCache（见 AdminScreen.sendMarketEnabled），广播回来时客户端看"状态没变"，
+        // 判断不出刚切换过；命令与按钮两条路径在这里统一覆盖（登录补发不走本函数，不会误响）
+        sendSound(it, if (enabled) "market_open" else "market_close")
     }
 }
 

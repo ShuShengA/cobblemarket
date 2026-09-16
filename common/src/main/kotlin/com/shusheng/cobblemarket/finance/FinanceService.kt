@@ -487,6 +487,9 @@ object FinanceService {
             return
         }
         state.depositReserve(total)
+        // 还款成功音：「还一期」与「提前结清」共用这一处（所有出错分支都在前面 return 掉了）。
+        // 钱是出去的 → 用扣款音（与自动划扣、存款同一枚；用户拍板按钱的进出分音效）
+        sendSound(player, "loan_deduct")
         if (settle) {
             state.settleLoan(loan.id, now)
             CreditFileLogger.logRepayment(

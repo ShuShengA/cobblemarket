@@ -820,16 +820,6 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             }
         }
         super.render(context, mouseX, mouseY, delta)
-        // 「离线收益」提示音：本次上线**首次**打开入口界面、且确实有东西要领时才播（一次上线只提示一次）。
-        // 待领取精灵/物品由服务端登录时推来；待领余额入口界面本来就会拉（init 里请求余额），
-        // 放在 super.render 之后是为了等掉落动画走完，别让提示音和开场动画挤在一起
-        if (!com.shusheng.cobblemarket.client.MarketStateCache.offlineRewardNotified &&
-            (com.shusheng.cobblemarket.client.MarketStateCache.pendingReturns > 0 ||
-                com.shusheng.cobblemarket.client.BalanceCache.pendingBalance > 0)
-        ) {
-            com.shusheng.cobblemarket.client.MarketStateCache.offlineRewardNotified = true
-            com.shusheng.cobblemarket.client.playMarketSound("offline_reward")
-        }
         // 弹窗打开时标题/余额已被遮罩压住，不再重绘——否则会浮在弹窗之上
         if (settingsOpen) {
             renderSettingsLabels(context)
