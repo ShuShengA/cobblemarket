@@ -85,6 +85,8 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
     private var backButton: NineSliceButton? = null
     // 给「还没在列表里」的玩家授权：列表只显示已有节点的玩家，新玩家只能靠名字新建
     private var addButton: NineSliceButton? = null
+    /** 「清空」：把搜索框还原成"还没输入名字"的状态（挨着「添加」右侧） */
+    private var clearButton: NineSliceButton? = null
     private val editButtons = mutableListOf<NineSliceButton>()
     private val removeButtons = mutableListOf<NineSliceButton>()
 
@@ -211,10 +213,20 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         addButton = addBtn
         addDrawableChild(addBtn)
 
+        // 「清空」：挨着「添加」右侧，清掉输入框里的名字（还原成"还没输入"的状态）
+        val clearBtn = NineSliceButton(
+            leftX + addBtnX + ADD_BTN_W + 4, searchRowY, ADD_BTN_W, 16,
+            Text.translatable("cobblemarket.perm.clear"),
+            { clearSearchName() }
+        )
+        clearButton = clearBtn
+        addDrawableChild(clearBtn)
+
         // 搜索框与「添加」只属于页签 1：resize 回来也要按当前页签恢复显隐
         val grantsTab = currentTab == 0
         searchField?.visible = grantsTab
         addButton?.visible = grantsTab
+        clearButton?.visible = grantsTab
 
         scrollOffset = 0
         rebuildFiltered()
@@ -272,6 +284,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         val grantsTab = tab == 0
         searchField?.visible = grantsTab
         addButton?.visible = grantsTab
+        clearButton?.visible = grantsTab
         suggestionsOpen = false
         suggestDirty = false
         lastRequestPrefix = null
@@ -406,6 +419,18 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         //（服务端 setNodes 收的是完整集合而非增量）。所以先在列表里按名字找，找到就用他的现有节点预填。
         val existing = entries.firstOrNull { it.playerName.equals(name, ignoreCase = true) }
         openEditDialog(existing ?: PermissionListDataPayload.Entry(EMPTY_UUID, name, emptyList()))
+    }
+
+    /** 「清空」：把搜索框还原成"还没输入名字"的状态（列表恢复全量、收起联想下拉） */
+    private fun clearSearchName() {
+        // 清空文本会走 setChangedListener（列表自动恢复全量）；但联想的 250ms 防抖会为"空输入"
+        // 再发一次请求，用 suppressSuggest 跳过 —— 照「点选联想填入文本」的做法
+        suggestionsOpen = false
+        lastRequestPrefix = null
+        suppressSuggest = true
+        searchField?.text = ""
+        suggestDirty = false
+        suggestionButtons.forEach { it.visible = false }
     }
 
     /**
@@ -632,6 +657,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         searchField?.visible = false
         backButton?.visible = false
         addButton?.visible = false
+        clearButton?.visible = false
         // 页签也一样：遮罩不是点击屏障，留着能在弹窗开着时把底下的列表换掉
         grantsTabButton?.visible = false
         auditTabButton?.visible = false
