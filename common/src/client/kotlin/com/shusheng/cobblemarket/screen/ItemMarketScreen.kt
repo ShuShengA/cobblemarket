@@ -798,7 +798,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             MinecraftClient.getInstance().soundManager.play(
                 PositionedSoundInstance.master(
                     SoundEvent.of(Identifier.of("cobblemarket", "fail")),
-                    1.0f
+                    1.0f,
+                    0.5f // 音量（两参重载固定 0.25 太轻，档位同 playResultSound）
                 )
             )
             return
