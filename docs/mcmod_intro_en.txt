@@ -4,22 +4,27 @@
 
 [![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-green)](https://modrinth.com/mod/fabric-api)
 [![Fabric](https://img.shields.io/badge/Loader-Fabric-orange)](https://fabricmc.net/)
+[![NeoForge](https://img.shields.io/badge/Loader-NeoForge-orange)](https://neoforged.net/)
 
 ════════════════════════════════════════
 
-CobbleMarket is a player-to-player trading market mod for Cobblemon (Fabric).
-Players can list Pokémon from their party or PC, and items from their inventory,
-for the whole server to browse, filter, and buy. It ships with a full market
-toolchain: listing fees, automatic expiry returns, seller pending balance,
-ban and blacklist moderation, and transaction history auditing.
+CobbleMarket is a player-to-player trading market mod for Cobblemon, available for
+both Fabric and NeoForge. Players can buy and sell Pokémon from their party or PC,
+and items from their inventory, through three trading channels — direct market
+listings, auctions and buy orders — backed by a full market toolkit: listing fees,
+automatic expiry returns, seller pending balance, bans and blacklist moderation,
+price limits, and transaction history auditing. An optional "Meowth Bank" finance
+system (credit loans, installments, deposits, card credentials) is also included.
 
-- Minecraft version: 1.21.1 (Fabric)
-- Requirements: Fabric API, Fabric Language Kotlin, Cobblemon ≥ 1.7.0
-- Optional: CobbleDollars / Cobblemon Economy (virtual currency), Cobblemon Smartphone (in-game app entry)
+- Minecraft version: 1.21.1 (Fabric / NeoForge)
+- Requirements: Cobblemon (1.8 or later); Fabric additionally needs Fabric API and
+  Fabric Language Kotlin, NeoForge additionally needs Kotlin for Forge
+  (Architectury is NOT required)
+- Optional: CobbleDollars / Cobblemon Economy / Impactor (virtual currency),
+  Cobblemon Smartphone (in-game app entry)
 - License: GPL-3.0
 
-This mod is currently in Beta. All features are fully functional, but unknown
-issues may exist. Test on a staging server before rolling out to production.
+For the full feature list and every change, see the bundled CHANGELOG.
 
 ⭕Screenshot: mod banner / main overview⭕
 
@@ -41,59 +46,49 @@ Three ways to open the market:
 
 2. Market Entry Screen
 
-The entry screen offers the following buttons:
+The entry screen gathers every part of the market system:
 
-- Pokemon Market: enter the Pokémon trading market
-- Item Market: enter the item trading market
-- Transaction History: view your own trade records
-- Admin Panel: OP-only (permission level ≥ 2)
+- Pokémon Market / Item Market: the two main trading channels
+- History: your own transaction records
+- Auction House / Buy Orders: separate entries in the bottom corners
+- Meowth Bank: the finance system (only usable once the server owner enables it)
+- Admin Panel: visible to players with management permission (OPs hold all
+  permissions by default)
+- Settings: your own client-side settings
 
 ⭕Screenshot: market entry screen⭕
 
 ────────────────────────────────────────
 
-3. Pokemon Market Main Screen
+3. Pokémon Market
 
-The main screen lists all active Pokémon listings across the server with
-pagination. Click "▼ Filters" to expand the full filter panel.
+The Pokémon Market is where every player browses, searches and buys Pokémon.
+Listings from the whole server are shown page by page; expand the filter panel to
+filter and sort by name, shiny, gender, type, IVs and more, or show only your own
+listings.
 
-3.1 Filter Panel
+⭕Screenshot: Pokémon market main screen (filters collapsed)⭕
+⭕Screenshot: Pokémon market main screen (filters expanded)⭕
 
-Filters can be freely combined:
+3.1 Listing Tooltip
 
-- Name search: fuzzy match on species name or ID
-- Shiny toggle: show only shiny Pokémon
-- Gender: any / male / female
-- Type: filter by type (primary or secondary)
-- IVs: exact match on each of the six IV stats (HP/Atk/Def/SpA/SpD/Spe);
-  leave blank to ignore
-- Sorting: Price ↑ / Price ↓ / Level ↑ / Level ↓ / Newest
-- Mine: only your own listings
-
-⭕Screenshot: main market screen, filter panel collapsed⭕
-⭕Screenshot: main market screen, filter panel expanded (IV fields)⭕
-
-3.2 Listing Tooltip
-
-Hover any listing to inspect the Pokémon: type, ball, nature, ability, IVs,
-held item, seller, and price.
+Hover any listing to inspect the Pokémon: type, ball, nature, ability, IVs, held
+item, seller and price.
 
 ⭕Screenshot: listing tooltip⭕
 
-3.3 Buying
+3.2 Buying
 
-Click "Buy" on a listing to open the confirmation screen showing level and
-price. On confirmation, currency is deducted and the Pokémon is added to your
-party (auto-transferred to PC if the party is full).
+Click "Buy" on a listing to open the confirmation screen; on confirmation the
+currency is deducted and the Pokémon joins your party (auto-transferred to the PC
+if the party is full).
 
-⭕Screenshot: buy confirmation screen⭕
+⭕Screenshot: purchase confirmation screen⭕
 
-3.4 Pending Balance and Expired Returns
+3.3 Pending Balance
 
-The top of the main screen shows your pending balance; click "Collect" to
-claim it. Expired listings go to the "Expired Returns" list and can be
-reclaimed at any time (if storage is full, the remainder stays and can be
-claimed later).
+Your pending balance is shown at the top of the main screen — click to collect it.
+Sale proceeds are never lost to a full inventory; see section 15, "Economy".
 
 ⭕Screenshot: pending balance bar at the top of the main screen⭕
 
@@ -103,17 +98,16 @@ claimed later).
 
 Click "Sell" on the main screen to open the selection screen:
 
-- Party Pokémon are pinned at the top (tagged [Party]); PC Pokémon load below
-  with paging (tagged [PC])
-- Search, shiny, and type filters available
+- Party Pokémon are pinned at the top; PC Pokémon load below with paging, search
+  and filters
 - Select a Pokémon, enter a price, confirm to list
-- A configurable listing fee is charged on listing (default 5%)
-- Listings expire after 14 days by default (configurable) and automatically
-  enter the return list — nothing is ever lost
-- At least one Pokémon must remain in the party
-- Active listings per player are capped by config (default: unlimited)
+- A configurable listing fee is charged on listing
+- Listings expire after a configurable number of days and automatically enter the
+  return list — nothing is ever lost
+- At least one Pokémon must remain in the party; active listings per player are
+  capped by config
 
-⭕Screenshot: sell selection screen (party + PC list)⭕
+⭕Screenshot: listing selection screen (party + PC)⭕
 ⭕Screenshot: price input screen⭕
 
 ────────────────────────────────────────
@@ -122,13 +116,13 @@ Click "Sell" on the main screen to open the selection screen:
 
 The item market mirrors the Pokémon market mechanics:
 
-- Search items by name
-- Buy any quantity: buyers choose an amount (up to the listing stock);
-  the listing stays up with the remaining stock
-- Bulk selling: one listing can hold a stack of identical items (e.g. 64
-  diamonds); buyers purchase them in batches
-- Cancel and reclaim: sellers can cancel anytime and the items return to
-  their inventory
+- Search items by name (also by item ID and full tooltip text; items with variants
+  such as enchanted books and TMs can be narrowed down to the exact variant)
+- Buy any quantity: the buyer chooses an amount and the listing stays up with the
+  remaining stock
+- Bulk selling: one listing can hold a whole stack of identical items
+- Cancel and reclaim: sellers can cancel anytime and the items return to their
+  inventory
 
 ⭕Screenshot: item market main screen⭕
 ⭕Screenshot: item listing screen (item, quantity, unit price)⭕
@@ -136,164 +130,201 @@ The item market mirrors the Pokémon market mechanics:
 
 ────────────────────────────────────────
 
-6. Expired Returns
+6. Auction House
+
+Sell Pokémon or items by competitive bidding:
+
+- The seller sets a starting price and a duration; anyone on the server can bid
+- When the countdown ends the item is settled automatically to the highest bidder
+  and the proceeds go to the seller's pending balance
+- A "Mine" tab shows the auctions you have posted; unsold or force-cancelled
+  entries are returned automatically — nothing is lost
+- Starting price, minimum bid increment and duration are configurable by the
+  server owner
+
+⭕Screenshot: auction house main screen⭕
+⭕Screenshot: bidding screen⭕
+
+────────────────────────────────────────
+
+7. Buy Orders
+
+Post what you want and let other players deliver it:
+
+- Both Pokémon and items can be requested, with an optional note describing your
+  requirements
+- The reward is frozen when the order is posted and paid to the deliverer once the
+  delivery is confirmed
+- Item orders can carry component requirements (for example, only items with a
+  specific enchantment); deliveries that do not match are refused
+- Orders can be accepted, closed or force-cancelled, and the frozen reward is
+  refunded
+
+⭕Screenshot: buy order list⭕
+⭕Screenshot: posting a buy order⭕
+
+────────────────────────────────────────
+
+8. Expired Returns
 
 Expired listings are never lost — they enter your "Expired Returns" list:
 
-- Pokémon listings: claim with one click; Pokémon return to your party
-  (or PC if full)
-- Item listings: claim with one click; items return to your inventory
-- Partial claims supported: when storage is full, claim what fits and keep
-  the remainder
-- Returns are kept for 30 days by default (configurable; 0 = forever).
-  Overdue unclaimed returns are PERMANENTLY DELETED — claim in time!
+- Pokémon listings: claim with one click; the Pokémon returns to your party (or
+  the PC if full)
+- Item listings: claim with one click; the items return to your inventory
+- Partial claims are supported: when storage is full, claim what fits and keep the
+  remainder
+- The retention period is configurable; unclaimed returns past it are PERMANENTLY
+  DELETED, so claim in time
 
-⭕Screenshot: Pokémon return screen⭕
-⭕Screenshot: item return screen⭕
+⭕Screenshot: Pokémon expired returns screen⭕
+⭕Screenshot: item expired returns screen⭕
 
 ────────────────────────────────────────
 
-7. Transaction History and Auditing
+9. Transaction History and Auditing
 
-- In-game history screen: records five event types — listed, sold, bought,
-  cancelled, returned; view your own records
-- Full history (OP only): audit every trade on the server
-- CSV logs: every transaction is appended to CSV files under
-  config/cobblemarket/history/ (both zh_cn and en_us copies); an
+- In-game history screen: listed, sold, bought, cancelled and returned events —
+  view your own records
+- Full transaction history (admins): audit every trade on the server
+- CSV ledgers: trades, auctions, buy orders and finance operations are appended to
+  CSV ledgers under config/cobblemarket/ (separate zh_cn and en_us copies); an
   "Open Folder" button jumps straight there
 
 ⭕Screenshot: transaction history screen⭕
-⭕Screenshot: CSV log file contents⭕
+⭕Screenshot: CSV ledger contents⭕
 
 ────────────────────────────────────────
 
-8. Admin Panel (OP only)
+10. Meowth Bank (optional finance system)
 
-Players with permission level ≥ 2 see the "Admin Panel" entry, containing:
+The finance system is OFF by default and must be enabled by the server owner; once
+enabled, a "Meowth Bank" entry appears on the market entry screen:
 
-- All Pokémon Listings: browse and force-cancel any player's Pokémon listing
-  (search by seller supported)
-- All Item Listings: browse and force-cancel any player's item listing
-- Ban Management: ban/unban players from trading (see section 9)
-- Full Transaction History: server-wide audit
-- Pokémon Blacklist / Item Blacklist: moderate forbidden species/items
-  (see section 10)
+- Credit loans: the available limit is computed from the player's trading history,
+  loans pay out instantly and repay in installments
+- Deposits: idle money earns daily interest, funding the reserve pool for a full
+  save-lend loop
+- Repayment counter: outstanding loans can be repaid period by period or settled
+  early
+- Overdue handling: due periods are deducted automatically; insufficient funds mark
+  the loan overdue with corresponding restrictions, lifted once it is repaid
+- Card credentials: Meow·Purple Gold Card / Meow·Black Gold Card — high-limit
+  credentials whose limit and fee discount follow the card tier
+
+Every finance parameter is edited in a dedicated "Meowth Bank Config" screen; the
+server owner guide ships with the mod.
+
+⭕Screenshot: Meowth Bank screen⭕
+⭕Screenshot: card credentials (Purple Gold Card / Black Gold Card)⭕
+
+────────────────────────────────────────
+
+11. Admin Tools
+
+The Admin Panel gathers every management feature:
+
+- All Pokémon / item listings: browse and force-cancel any player's listing (search
+  by seller supported)
+- Auction / buy order management: view all auctions and buy orders and force-cancel
+  them
+- Ban management: ban or unban players from trading. Bans restrict trading only
+  (listing, buying) and NEVER freeze assets — banned players can still cancel their
+  listings, claim returns and collect their balance
+- Pokémon / item blacklists: keep forbidden species and items out of the market.
+  Pokémon support species + IV + form combinations; items are matched down to the
+  exact variant (e.g. only one enchantment level). Changes take effect immediately,
+  including on existing listings
+- Price limits: set minimum and maximum prices for specific items
+- Server config: fees, listing caps, durations and switches, all editable in-game
+- Full transaction history: server-wide auditing
 
 ⭕Screenshot: admin panel main screen⭕
-⭕Screenshot: all Pokémon listings management screen⭕
-⭕Screenshot: all item listings management screen⭕
-
-────────────────────────────────────────
-
-9. Ban System
-
-Admins can ban players from trading via commands or the admin panel:
-
-- Command: /market ban <player> [duration] [reason]
-  Duration formats: 7d (days), 12h (hours), 30m (minutes), combinable
-  (e.g. 1d12h); no duration = permanent
-- Unban: /market unban <player>
-- Ban list: /market banlist
-- Bans only restrict trading (listing, buying); they NEVER freeze assets:
-  banned players can still cancel their listings, claim returns, and
-  collect their balance
-
+⭕Screenshot: Pokémon / item blacklist screens⭕
+⭕Screenshot: price limit screen⭕
 ⭕Screenshot: ban management screen⭕
-⭕Screenshot: ban confirmation dialog (target player, duration, reason)⭕
 
 ────────────────────────────────────────
 
-10. Blacklist System
+12. Client Settings
 
-Blacklists keep forbidden species/items out of the market. They take effect
-IMMEDIATELY — existing listings of blacklisted content can no longer be
-purchased either.
+The "Settings" button in the bottom corner of the entry screen holds your own
+client-side display switches — they affect nobody else on the server:
 
-10.1 Pokémon Blacklist
+- Balance HUD visibility and position (drag it anywhere; it snaps to screen edges
+  and center lines)
+- What happens when a claim does not fit in your inventory, and more
 
-Combined restrictions by:
-
-- Species: enter species name or ID
-- IVs: six optional IV fields; blank = ignored
-- Form: all forms / default form / specific forms (Alolan, Galarian,
-  Hisuian, Paldean, seasonal forms, etc.)
-
-⭕Screenshot: Pokémon blacklist management screen⭕
-⭕Screenshot: add Pokémon blacklist dialog (species/IV/form)⭕
-
-10.2 Item Blacklist
-
-Add items by name or ID, with fuzzy-match selection.
-
-⭕Screenshot: item blacklist management screen⭕
-⭕Screenshot: add item blacklist dialog⭕
+⭕Screenshot: client settings screen⭕
 
 ────────────────────────────────────────
 
-11. Commands
+13. Commands
 
-/market gui                           Open the market entry screen
-/market ban <player>                  Permanently ban a player from trading (OP)
-/market ban <player> <duration>       Timed ban, e.g. 7d / 12h / 30m
-/market ban <player> <duration> <reason>   Timed ban with a reason
-/market unban <player>                Unban a player
-/market banlist                       List all active bans
+/market gui                        Open the market entry screen
+/market on | /market off           Turn the whole market on / off (emergency switch)
+/market ban <player> [duration] [reason]   Ban a player from trading (duration such
+                                   as 7d / 12h / 30m, combinable; omit = permanent)
+/market unban <player>             Unban a player
+/market banlist                    List all active bans
+/market card                       Manage card credentials (give / revoke / list)
+/market loan clear                 Revoke a player's bad debts
+/market reload                     Apply config file edits without restarting
+                                   (currency settings still need a restart)
 
-────────────────────────────────────────
-
-12. Configuration
-
-Config file: config/cobblemarket.json (generated on first launch)
-
-currency.cobblemonEconomy       auto       Prefer Cobblemon Economy's currency API (auto-enabled when the mod is installed; its built-in bridge can route to CobbleDollars/Impactor — set main_currency in the cobeco config to share one balance with CobbleDollars)
-currency.cobecoCurrency         POKE      cobeco settlement currency: POKE=PokeDollars, PCO=PokeCoins (only used when cobblemonEconomy=true)
-currency.cobbledollars          auto       Use CobbleDollars currency (auto-enabled when the mod is installed; ignored when cobblemonEconomy=true)
-currency.item                   minecraft:diamond   Item currency ID (used when not using either virtual currency)
-pokemonListingFeePercent        5.0        Pokémon listing fee percentage (0 = no fee)
-itemListingFeePercent           5.0        Item listing fee percentage (0 = no fee)
-maxPokemonListingsPerPlayer     0          Max active Pokémon listings per player (0 = unlimited)
-maxItemListingsPerPlayer        0          Max active item listings per player (0 = unlimited)
-listingDurationDays             14         Days before a listing expires
-pendingReturnRetentionDays      30         Days to keep unclaimed returns; overdue returns are PERMANENTLY DELETED (0 = keep forever)
-
-⭕Screenshot: config/cobblemarket.json file contents⭕
+Admin commands are OP-only by default; type /market in game for the full usage.
 
 ────────────────────────────────────────
 
-13. Economy
+14. Configuration
 
-- Currency: diamonds by default, configurable to any item; if a virtual
-  currency mod is installed it is used automatically (priority: Cobblemon
-  Economy → CobbleDollars) with no inventory-space issues
-- Fees: charged to the seller on listing (percentage); buyers pay the
-  sticker price
-- Pending balance: sale proceeds enter the seller's pending balance and are
-  claimed manually; a full inventory never loses money — the remainder stays
-  on the ledger until there is room
+Config file: config/cobblemarket.json (generated on first launch). Most settings
+can be edited in game:
+
+- "Server Config" screen (at the bottom of the admin panel): fees, listing caps and
+  durations, return retention, auction and buy order parameters, the market master
+  switch
+- "Meowth Bank Config" screen (reached from there): every finance parameter
+
+Editing the file by hand works too; /market reload applies the changes without a
+restart.
+
+⭕Screenshot: server config screen⭕
+
+────────────────────────────────────────
+
+15. Economy
+
+- Currency: an item currency by default (a diamond unless configured otherwise);
+  with a virtual currency mod installed you can use Cobblemon Economy (Fabric
+  only), CobbleDollars or Impactor instead, with no inventory-space issues
+- Fees: charged to the seller on listing (percentage); buyers pay the sticker price
+- Pending balance: sale proceeds enter the seller's pending balance and are claimed
+  manually; a full inventory never loses money — the remainder stays on the ledger
+  until there is room
 - Offline earnings: proceeds earned while offline are announced on next login
 - Loss-proof fallbacks: any refund or change that cannot be delivered (full
-  inventory, etc.) is moved to the pending balance ledger — player money is
-  never silently destroyed
+  inventory, etc.) is moved to the pending balance ledger — player money is never
+  silently destroyed
 
 ────────────────────────────────────────
 
-14. Data Safety
+16. Data Safety
 
 Market data (listings, balances, history) is stored in
 world/data/cobblemarket*.dat. The mod has a built-in save self-healing system:
 
-- Auto-verify on startup: every launch verifies file integrity; corrupted
-  files are restored from the .bak backup automatically (only changes since
-  the last backup are lost)
-- Corrupt-file preservation: with no backup available, the damaged file is
-  kept as .dat.corrupt for manual recovery and the server starts with fresh
-  data
-- Log messages: watch for "restored from backup" (recovered) or
-  "preserved as .corrupt" (needs manual attention) in the server log
+- Auto-verify on startup: every launch verifies file integrity; corrupted files are
+  restored from the .bak backup automatically (only changes since the last backup
+  are lost)
+- Corrupt-file preservation: with no backup available, the damaged file is kept as
+  .dat.corrupt for manual recovery and the server starts with fresh data
+- Log messages: watch for "restored from backup" (recovered) or "preserved as
+  .corrupt" (needs manual attention) in the server log
 
 ────────────────────────────────────────
 
-15. FAQ
+17. FAQ
 
 Q: The buy screen says "Your party and PC are both full"?
 A: Free up party/PC space and buy again. If money was deducted, it is
@@ -304,14 +335,23 @@ A: Yes. Bans only restrict trading (listing, buying). Cancelling listings,
 claiming returns, and collecting balance are always allowed.
 
 Q: Can I buy part of an item listing?
-A: Yes. Choose a quantity; the listing remains active with the remaining
-stock.
+A: Yes. Choose a quantity; the listing remains active with the remaining stock.
+
+Q: When do auction and buy order payments go through?
+A: A buy order freezes its reward when posted and pays the deliverer as soon as
+the delivery is confirmed. An auction settles to the highest bidder when the
+countdown ends, and the proceeds go to the seller's pending balance.
+
+Q: Is the finance system on by default?
+A: No — it is off by default, and the "Meowth Bank" entry only appears once the
+server owner enables it in the config.
 
 Q: How do I prevent forbidden content on the market?
-A: Use the admin panel blacklists: the Pokémon blacklist supports
-species+IV+form combinations and the item blacklist works by item ID.
-Both take effect immediately, including on existing listings.
+A: Use the admin panel blacklists and price limits: the Pokémon blacklist supports
+species + IV + form combinations, while the item blacklist and price limits match
+down to the exact item variant. Both take effect immediately, including on
+existing listings.
 
 Q: How long are trade records kept?
-A: The last 200 records are kept in-game; CSV logs are archived by date
-under config/cobblemarket/history/ for long-term retention.
+A: Recent records are kept in game; CSV ledgers are archived by date under
+config/cobblemarket/ for long-term retention.
