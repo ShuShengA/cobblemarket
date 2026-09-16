@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1 (in development, unreleased)
+
+### Fixes
+
+- **Balance HUD was not hidden by F1**: it stayed on screen after the vanilla HUD was hidden (in the way when taking screenshots or recording); it now hides together with the vanilla HUD
+
 ## 1.1.0 (in development, unreleased)
 
 ### New Feature
