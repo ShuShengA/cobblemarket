@@ -279,6 +279,17 @@ object CobbleMarketConfig {
             dailyDepositRate = cap
         }
     }
+
+    /**
+     * 卡片申请门槛跨项校验：捕捉数门槛隐含遇见数门槛（抓到的必然遇见过），
+     * 遇见数填得比捕捉数低属自相矛盾的配置 —— 自动抬平到捕捉数。
+     * 反向不降：要求「遇见过 50 种里抓 10 种」是合法配置，不动它。
+     * 走 load/save 全量收口（勿在单 setter 里钳：那时另一项可能尚未更新）。
+     */
+    fun enforceCardApplySeenGuard() {
+        if (purpleCardApplySeen < purpleCardApplyDex) purpleCardApplySeen = purpleCardApplyDex
+        if (blackCardApplySeen < blackCardApplyDex) blackCardApplySeen = blackCardApplyDex
+    }
     fun setTradePairWindowDays(v: Long) { tradePairWindowDays = v.coerceAtLeast(1L) }
     fun setTradePairMaxTrades(v: Long) { tradePairMaxTrades = v.coerceAtLeast(1L) }
     fun setPurpleCardCount(v: Long) { purpleCardCount = v.coerceAtLeast(0L) }
@@ -518,6 +529,8 @@ object CobbleMarketConfig {
                 maxBuyOrdersPerPlayer = ((data["maxBuyOrdersPerPlayer"] as? Double)?.toInt() ?: 5).coerceAtLeast(0)
                 celebrationAnimationEnabled = data["celebrationAnimationEnabled"] as? Boolean ?: true
                 marketEnabled = data["marketEnabled"] as? Boolean ?: true
+                // 跨项校验（手工改过 config.json 也兜住）
+                enforceCardApplySeenGuard()
                 // 缺失字段补写：旧设置保留，新字段以默认值落盘（服主无需删配置）
                 if (missingKeys) {
                     CobbleMarket.LOGGER.info("Config missing fields detected; rewriting with defaults for new keys")

@@ -584,5 +584,8 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setOverdueFeeDoubleDays(p.overdueFeeDouble)
         CobbleMarketConfig.setOverdueFreezeDays(p.overdueFreeze)
         CobbleMarketConfig.setOverdueBadDebtDays(p.overdueBadDebt)
+        // 全部字段设完再跑跨项校验：遇见数门槛不得低于捕捉数门槛
+        // （保存后回发快照，配置界面的遇见输入框会随之刷新成抬平后的值）
+        CobbleMarketConfig.enforceCardApplySeenGuard()
     }
 }
