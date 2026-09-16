@@ -6,6 +6,7 @@ import com.shusheng.cobblemarket.config.CurrencyHandler
 import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.network.BalanceNetwork
 import com.shusheng.cobblemarket.network.RepayEntry
+import com.shusheng.cobblemarket.network.sendSound
 import com.shusheng.cobblemarket.network.RepayListDataPayload
 import com.shusheng.cobblemarket.platform.sendToPlayer
 import com.shusheng.cobblemarket.util.PersistHelper
@@ -130,6 +131,8 @@ object FinanceService {
                         Text.translatable("cobblemarket.repay.overdue_notice", latest.id).formatted(Formatting.RED),
                         false
                     )
+                    // 刚进入逾期：配一声警示音（下一步就是冻结市场，光有红字不够醒目）
+                    sendSound(player, "loan_overdue")
                 }
             }
         if (autoPaidTotal > 0) {
@@ -141,6 +144,8 @@ object FinanceService {
                 ).formatted(Formatting.GREEN),
                 false
             )
+            // 钱被划走了：配一声"扣款"音（玩家可能正在别的界面，余额悄悄变少会莫名其妙）
+            sendSound(player, "loan_deduct")
         }
         // 划扣/逾期标记后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
         if (dirty) PersistHelper.requestSave(server)
@@ -338,6 +343,8 @@ object FinanceService {
                         ).formatted(Formatting.YELLOW),
                         false
                     )
+                    // 还款日前提醒：配一声警示音（玩家多半没盯着聊天栏，明天就要扣款了）
+                    online[loan.playerUuid]?.let { sendSound(it, "loan_overdue") }
                 }
             }
             val days = loan.overdueDaysAt(now)

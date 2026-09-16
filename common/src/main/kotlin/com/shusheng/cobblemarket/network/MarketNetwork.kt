@@ -150,6 +150,29 @@ data class MarketStatePayload(val enabled: Boolean) : CustomPayload {
     }
 }
 
+// ── S2C: 待领取概况（登录时推一次） ──
+
+/** 待领取总数（精灵 + 物品）：客户端据此在**首次打开市场入口界面**时播「离线收益」提示音
+ *  （一次上线只提示一次，见客户端的 MarketStateCache.offlineRewardNotified）。
+ *  待领**余额**不走这里——它在 BalanceDataPayload 里，入口界面本来就会拉。 */
+data class PendingReturnsPayload(val count: Int) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<PendingReturnsPayload>(CobbleMarket.id("pending_returns"))
+        val CODEC: PacketCodec<PacketByteBuf, PendingReturnsPayload> = PacketCodec.of(
+            { p, b -> b.writeInt(p.count) },
+            { b -> PendingReturnsPayload(b.readInt()) }
+        )
+    }
+}
+
+/** 推一次待领取总数给该玩家（登录时调用；精灵 + 物品合计） */
+fun sendPendingReturns(player: ServerPlayerEntity, server: net.minecraft.server.MinecraftServer) {
+    val count = MarketState.get(server).getPendingReturns(player.uuid).size +
+        ItemMarketState.get(server).getPendingReturns(player.uuid).size
+    sendToPlayer(player, PendingReturnsPayload(count))
+}
+
 // ── C2S: OP 在入口界面切换市场总开关 ──
 
 data class SetMarketEnabledPayload(val enabled: Boolean) : CustomPayload {
@@ -170,7 +193,15 @@ private const val MAX_ITEM_IDS = 256
 
 fun toggleMarketEnabled(server: net.minecraft.server.MinecraftServer, enabled: Boolean) {
     com.shusheng.cobblemarket.config.CobbleMarketConfig.setMarketEnabled(enabled)
-    server.playerManager.playerList.forEach { sendToPlayer(it, MarketStatePayload(enabled)) }
+    // 全服播报：开市/停市音效由客户端在收到 MarketStatePayload 时自己播（见 CobbleMarketClient），
+    // 这里只发文字——两条同时到达，玩家才能把"听到的声音"和"市场关了"对上
+    val broadcast = Text.translatable(
+        if (enabled) "cobblemarket.market.broadcast_open" else "cobblemarket.market.broadcast_close"
+    ).formatted(Formatting.GOLD)
+    server.playerManager.playerList.forEach {
+        sendToPlayer(it, MarketStatePayload(enabled))
+        it.sendMessage(broadcast, false)
+    }
 }
 
 /**
@@ -1084,6 +1115,7 @@ object MarketNetwork {
 
     fun register() {
         registerS2CType(MarketStatePayload.ID, MarketStatePayload.CODEC)
+        registerS2CType(PendingReturnsPayload.ID, PendingReturnsPayload.CODEC)
         registerS2CType(MyPokemonListPayload.ID, MyPokemonListPayload.CODEC)
         registerS2CType(HistoryDataPayload.ID, HistoryDataPayload.CODEC)
         registerS2CType(OpenMarketPayload.ID, OpenMarketPayload.CODEC)
@@ -1335,6 +1367,8 @@ object MarketNetwork {
                 }
 
                 state.addPendingBalance(listing.sellerUuid, listing.price.toLong())
+                // 卖家到账音：在线才发（离线那位由上线时的「离线收益」提示兜底，见 MarketEntryScreen）
+                server.playerManager.getPlayer(listing.sellerUuid)?.let { sendSound(it, "market_sold") }
                 listing.status = ListingStatus.SOLD
                 state.markModified()
                 com.shusheng.cobblemarket.event.MarketEvents.PURCHASE.trigger(
@@ -2491,6 +2525,8 @@ object MarketNetwork {
                     )
                 }
                 MarketState.get(server).addPendingBalance(listing.sellerUuid, totalPrice.toLong())
+                // 卖家到账音：在线才发（离线那位由上线时的「离线收益」提示兜底）
+                server.playerManager.getPlayer(listing.sellerUuid)?.let { sendSound(it, "market_sold") }
                 // 金融系统成交挂钩子：物品购买成交计入买家交易额（喵喵支付标 loanFunded 不计额，防借→买循环）
                 com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
                     server, player.uuid, listing.sellerUuid, totalPrice.toLong(), System.currentTimeMillis(),

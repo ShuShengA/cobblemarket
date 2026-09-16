@@ -40,6 +40,12 @@
 - **Permission change log**: the permissions screen gains a "Change Log" tab — who granted or removed which node for whom, and when; the same records are written to per-day CSV ledgers (`config/cobblemarket/permissions/`, Chinese and English) for offline auditing
 - **Admin entries now grey out instead of disappearing**: entries on the Admin Panel and the entry screen always show, greyed out with a hint when you lack the permission — the layout no longer shifts with permissions
 
+#### Sound Effects
+
+- **Server-side event sounds**: previously only what the player started made noise (trade success/failure, buttons, card animation) while anything the server did on its own relied on chat text; now those have dedicated sounds too — **outbid**, **auto-deduct** (a loan payment taken from your balance), **overdue warning** (entering overdue / one day before a due date), **item sold** (your listing bought or your buy order delivered) and **permission change** (admin node granted or revoked) each play a sound. **Online players only**; whoever was offline gets the "offline rewards" cue when they log back in
+- **Offline rewards cue**: the first time you open a market screen after logging in, a sound plays if there are Pokémon/items waiting to be claimed or unclaimed balance to collect (once per login)
+- **Market open / close**: when the owner flips the market master switch, everyone online hears a sound and gets a chat broadcast ("The market is open again" / "The market is closed") instead of the market going dark silently until someone's trade gets blocked
+
 ### Changes
 
 - The market master switch and Server Config entries moved from the market entry screen to the bottom of the Admin Panel; OPs now stop/resume the market and edit the Server Config from there

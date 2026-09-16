@@ -1019,6 +1019,8 @@ object BuyOrderNetwork {
                 val fee = deliveryFee(server, order.buyerUuid, gross, now)
                 MarketState.get(server).addPendingBalance(order.buyerUuid, unitDiff * pending.count)
                 MarketState.get(server).addPendingBalance(pending.sellerUuid, gross - fee)
+                // 卖家到账音：交付被接受、钱进了他的待领余额；在线才发（离线由「离线收益」提示兜底）
+                server.playerManager.getPlayer(pending.sellerUuid)?.let { sendSound(it, "market_sold") }
                 // 金融系统成交挂钩子：求购交付成交计入买家（求购发起方）交易额
                 com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
                     server, order.buyerUuid, pending.sellerUuid, gross, now

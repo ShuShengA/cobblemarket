@@ -729,6 +729,8 @@ object AuctionNetwork {
                         Text.translatable("cobblemarket.auction.outbid", CurrencyHandler.goldAmount(payload.amount), auction.speciesText())
                             .formatted(Formatting.YELLOW)
                     )
+                    // 被超越的人**在线**时补一声提示音（他多半正看着别的界面，光有聊天红字容易错过）
+                    server.playerManager.getPlayer(prevBidder)?.let { sendSound(it, "auction_outbid") }
                 }
                 val now = System.currentTimeMillis()
                 // 反狙击：结束前窗口内的出价延长结束时间

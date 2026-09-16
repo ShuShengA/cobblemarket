@@ -86,5 +86,69 @@
         "stream": false
       }
     ]
+  },
+  "auction_outbid": {
+    "sounds": [
+      {
+        "name": "cobblemarket:auction_outbid",
+        "stream": false
+      }
+    ]
+  },
+  "loan_deduct": {
+    "sounds": [
+      {
+        "name": "cobblemarket:loan_deduct",
+        "stream": false
+      }
+    ]
+  },
+  "loan_overdue": {
+    "sounds": [
+      {
+        "name": "cobblemarket:loan_overdue",
+        "stream": false
+      }
+    ]
+  },
+  "market_sold": {
+    "sounds": [
+      {
+        "name": "cobblemarket:market_sold",
+        "stream": false
+      }
+    ]
+  },
+  "market_open": {
+    "sounds": [
+      {
+        "name": "cobblemarket:market_open",
+        "stream": false
+      }
+    ]
+  },
+  "market_close": {
+    "sounds": [
+      {
+        "name": "cobblemarket:market_close",
+        "stream": false
+      }
+    ]
+  },
+  "offline_reward": {
+    "sounds": [
+      {
+        "name": "cobblemarket:offline_reward",
+        "stream": false
+      }
+    ]
+  },
+  "permission_change": {
+    "sounds": [
+      {
+        "name": "cobblemarket:permission_change",
+        "stream": false
+      }
+    ]
   }
 }
