@@ -1,7 +1,9 @@
 package com.shusheng.cobblemarket.permission
 
 import net.minecraft.text.Text
+import net.minecraft.util.Formatting
 import com.shusheng.cobblemarket.market.BanState
+import com.shusheng.cobblemarket.market.OfflineMessageState
 import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.sendSound
 import com.shusheng.cobblemarket.CobbleMarket
@@ -246,6 +248,7 @@ object PermissionNetwork {
                 // 权限变更音：给被改动的玩家本人（在线才发；管理员给自己加权限时也会响，符合直觉）
                 if (added.isNotEmpty() || removed.isNotEmpty()) {
                     server.playerManager.getPlayer(targetUuid)?.let { sendSound(it, "permission_change") }
+                    notifyChanged(server, targetUuid, added, removed)
                 }
                 refresh(server, targetUuid)              // 目标在线则即时刷新其按钮状态
                 sendToPlayer(player, listDataOf(server)) // 回刷新后的列表
@@ -260,8 +263,9 @@ object PermissionNetwork {
                 // 界面「删除」= 收回该玩家全部节点，同样记账（removed 为其原本的全部节点）
                 PermissionState.get(server).removePlayer(payload.playerUuid)?.let {
                     PermissionFileLogger.log(player.name.string, it.playerName, it.playerUuid, emptySet(), it.nodes)
-                    // 界面「删除」= 收回全部权限，同样响一声
+                    // 界面「删除」= 收回全部权限，同样响一声 + 通知本人
                     server.playerManager.getPlayer(it.playerUuid)?.let { p -> sendSound(p, "permission_change") }
+                    notifyChanged(server, it.playerUuid, emptySet(), it.nodes)
                 }
                 refresh(server, payload.playerUuid)
                 sendToPlayer(player, listDataOf(server))
@@ -296,5 +300,53 @@ object PermissionNetwork {
     fun refresh(server: MinecraftServer, playerUuid: UUID) {
         val online = server.playerManager.getPlayer(playerUuid) ?: return
         sendToPlayer(online, snapshotOf(online))
+    }
+
+    /**
+     * 权限变更通知：告诉**被改动的玩家本人**他被加了/减了什么（在线直发聊天框、离线入队补发）。
+     *
+     * 之前改权限是"静默生效"——被授予/收回的人除了一行 CSV 审计之外什么都不知道，
+     * 只能自己发现某个管理入口突然能点/不能点了（2026-09-16 用户反馈）。
+     * 音效由各调用点另外发（只在线时响），这里只管文字。
+     */
+    fun notifyChanged(server: MinecraftServer, playerUuid: UUID, added: Set<String>, removed: Set<String>) {
+        if (added.isEmpty() && removed.isEmpty()) return
+        val msg = Text.literal("")
+        if (added.isNotEmpty()) {
+            msg.append(
+                Text.translatable("cobblemarket.perm.notify_granted", nodesText(added)).formatted(Formatting.GREEN)
+            )
+        }
+        if (removed.isNotEmpty()) {
+            if (added.isNotEmpty()) msg.append(Text.literal("\n"))
+            msg.append(
+                Text.translatable("cobblemarket.perm.notify_revoked", nodesText(removed)).formatted(Formatting.YELLOW)
+            )
+        }
+        // 追加「变更后的完整节点列表」：玩家一眼看到自己现在手里有什么，不用再跑一趟界面
+        val current = PermissionState.get(server).getNodes(playerUuid)
+        msg.append(Text.literal("\n"))
+        msg.append(
+            if (current.isEmpty()) Text.translatable("cobblemarket.perm.notify_none").formatted(Formatting.GRAY)
+            else Text.translatable("cobblemarket.perm.notify_current", nodesText(current)).formatted(Formatting.GRAY)
+        )
+        OfflineMessageState.notify(server, playerUuid, msg)
+    }
+
+    /**
+     * 节点名的**可翻译文本**：与权限界面按钮/列表用同一套词条（`cobblemarket.perm.node.*`），
+     * 中文环境显示「黑名单」而不是 `blacklist`。
+     *
+     * ⚠ 必须拼 **Text** 而不是字符串：离线补发的消息会序列化成 JSON 存着，
+     * 等玩家上线时**在客户端**按他自己的语言渲染（拼成字符串就锁死发送方的语言了）。
+     */
+    private fun nodesText(nodes: Set<String>): Text {
+        val t = Text.literal("")
+        // 按 MarketPermissions.ALL 的顺序输出：与界面/命令的展示顺序一致，且顺序稳定（Set 本身无序）
+        MarketPermissions.ALL.filter { it in nodes }.forEachIndexed { i, node ->
+            if (i > 0) t.append(Text.literal(", "))
+            t.append(Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX)))
+        }
+        return t
     }
 }

@@ -37,8 +37,14 @@ class NineSliceButton(
         if (tooltip != null) setTooltip(Tooltip.of(tooltip))
     }
 
-    // 开关式按钮的按下视觉：面板展开期间保持"按下态"（纹理第三段；只有两段的纹理自动退回悬停态）
-    var pressedVisual: Boolean = false
+    /**
+     * **选中态**（纹理第三段；只有两段的纹理会退回悬停态）。
+     *
+     * 注意它表示的是「持续保持」的状态，**不是鼠标按下去那一下的反馈** ——
+     * 勾选的权限节点、手持物品 / 手持添加模式、筛选面板展开期间都用它。
+     * 与悬停同时成立时选中优先（见 [renderWidget] 的 state 判断）。
+     */
+    var selectedVisual: Boolean = false
 
     /**
      * 置灰视觉（不影响 active 与点击）：渲染尾部盖半透明黑遮罩，照精灵图标压暗惯例。
@@ -49,7 +55,7 @@ class NineSliceButton(
     override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val maxState = texH / NINE_SLICE_STATE_H - 1
         val state = when {
-            pressedVisual -> 2.coerceAtMost(maxState)
+            selectedVisual -> 2.coerceAtMost(maxState)
             isHovered -> 1
             else -> 0
         }
@@ -112,6 +118,8 @@ class NineSliceButton(
 
     companion object {
         private val TEXTURE = Identifier.of("cobblemarket", "textures/gui/button_9slice.png")
-        private const val TEX_H = 80
+        // 贴图总高 = 120（三段：普通 / 悬停 / 选中）——**必须与贴图实际高度一致**：
+        // drawNineSlice 拿它做纵向坐标归一化（vOffset / texH），对不上会把按钮切成"上下各半"
+        private const val TEX_H = 120
     }
 }

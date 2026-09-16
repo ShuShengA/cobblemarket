@@ -352,6 +352,7 @@ object MarketCommands {
         source.server.playerManager.getPlayer(target.first)?.let {
             com.shusheng.cobblemarket.network.sendSound(it, "permission_change")
         }
+        PermissionNetwork.notifyChanged(source.server, target.first, setOf(node), emptySet())
         source.sendFeedback({ Text.translatable("cobblemarket.perm.granted", target.second, short).formatted(Formatting.GREEN) }, false)
         return 1
     }
@@ -380,6 +381,7 @@ object MarketCommands {
         source.server.playerManager.getPlayer(target.first)?.let {
             com.shusheng.cobblemarket.network.sendSound(it, "permission_change")
         }
+        PermissionNetwork.notifyChanged(source.server, target.first, emptySet(), setOf(node))
         source.sendFeedback({ Text.translatable("cobblemarket.perm.revoked", target.second, short).formatted(Formatting.GREEN) }, false)
         return 1
     }
