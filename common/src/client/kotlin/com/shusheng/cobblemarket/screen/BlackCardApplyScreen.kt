@@ -21,7 +21,8 @@ import net.minecraft.util.Identifier
 class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_apply_title")) {
 
     private val dialogW = 300
-    private val dialogH = 320
+    /** 条件比紫卡多一行「持有紫卡」硬条件：七项门槛全配时是 8 行，加高 24px 才不会压到申请按钮 */
+    private val dialogH = 344
 
     // 与 BlackCardApplyInfoPayload.conditions 同序（服务端 FinanceNetwork.sendBlackCardApplyInfo 构造）
     private val conditionKeys = listOf(
