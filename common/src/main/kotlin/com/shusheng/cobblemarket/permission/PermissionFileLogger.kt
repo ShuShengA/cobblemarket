@@ -112,10 +112,46 @@ object PermissionFileLogger {
             ?: emptyList()
     }
 
+    /**
+     * 按 CSV 规则切一行：**引号内的逗号不算分隔符**，`""` 是转义的双引号。
+     *
+     * ⚠ 不能用 `split(",")`：节点串本身就含逗号（`"blacklist, market"`），这类字段会被 [esc]
+     * 加引号包裹，简单切分会把引号里的逗号也切开，导致**后面所有列整体错位**
+     * （2026-09-16 踩到：变更记录显示成「新增：市场管理 / 移除：封禁 / 剩余：黑名单」——
+     * 其实是同一条节点串被切成了三段）。
+     */
+    private fun splitCsvLine(line: String): List<String> {
+        val out = mutableListOf<String>()
+        val sb = StringBuilder()
+        var inQuotes = false
+        var i = 0
+        while (i < line.length) {
+            val c = line[i]
+            when {
+                c == '"' -> {
+                    if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
+                        sb.append('"')   // "" → 一个双引号
+                        i++
+                    } else {
+                        inQuotes = !inQuotes
+                    }
+                }
+                c == ',' && !inQuotes -> {
+                    out.add(sb.toString())
+                    sb.clear()
+                }
+                else -> sb.append(c)
+            }
+            i++
+        }
+        out.add(sb.toString())
+        return out
+    }
+
     private fun parseFile(file: File, cutoff: Long): List<AuditRow> = try {
         file.useLines { lines ->
             lines.drop(1).mapNotNull { raw ->
-                val cols = raw.split(",")
+                val cols = splitCsvLine(raw)
                 if (cols.size < 6) return@mapNotNull null
                 val ts = runCatching {
                     java.time.LocalDateTime.parse(cols[0], timeFormat).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
