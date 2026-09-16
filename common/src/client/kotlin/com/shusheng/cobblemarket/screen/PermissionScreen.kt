@@ -61,7 +61,15 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
 
     // ── 变更记录（页签 2）──
     // 行文本缓存：时间格式化与词条拼接在数据到达时算一次，render 每帧只读
-    private data class AuditLine(val time: String, val who: String, val added: String, val removed: String, val tooltip: List<String>)
+    private data class AuditLine(
+        val time: String,
+        val who: String,
+        val added: String,
+        val removed: String,
+        /** 变更后该玩家剩下的全部节点（旧账本没有这一列 → 空串） */
+        val remaining: String,
+        val tooltip: List<String>
+    )
     private var auditLines = listOf<AuditLine>()
 
     // ── 主列表状态（页签 1）──
@@ -290,6 +298,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm")
         val addedLabel = Text.translatable("cobblemarket.perm.audit_added").string
         val removedLabel = Text.translatable("cobblemarket.perm.audit_removed").string
+        val remainingLabel = Text.translatable("cobblemarket.perm.audit_remaining").string
         auditLines = payload.rows.map { row ->
             val time = dateFormat.format(Date(row.timestamp))
             val who = "${row.operator} → ${row.targetName}"
@@ -297,13 +306,15 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
             // 两段都空时这行只剩「时间 + 执行者 → 目标」
             val added = row.added.takeIf { it.isNotBlank() }?.let { "$addedLabel: ${nodeLabels(it)}" }.orEmpty()
             val removed = row.removed.takeIf { it.isNotBlank() }?.let { "$removedLabel: ${nodeLabels(it)}" }.orEmpty()
+            val remaining = row.remaining.takeIf { it.isNotBlank() }?.let { "$remainingLabel: ${nodeLabels(it)}" }.orEmpty()
             // 行内会被截断，悬停提示给完整内容
             val tooltip = buildList {
                 add("$time  $who")
                 if (added.isNotEmpty()) add(added)
                 if (removed.isNotEmpty()) add(removed)
+                if (remaining.isNotEmpty()) add(remaining)
             }
-            AuditLine(time, who, added, removed, tooltip)
+            AuditLine(time, who, added, removed, remaining, tooltip)
         }
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayCount() - maxVisible()))
         rebuildRowButtons()
@@ -799,8 +810,14 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
                     cursor += textRenderer.getWidth(text) + 6
                 }
                 if (line.removed.isNotEmpty() && cursor < right) {
+                    val text = TextUtil.truncateString(line.removed, right - cursor)
+                    context.drawTextWithShadow(textRenderer, text, cursor, y + 7, 0xFF5555)
+                    cursor += textRenderer.getWidth(text) + 6
+                }
+                // 剩余节点：变更后他手里还有什么（白色，与新增/移除的绿红区分）
+                if (line.remaining.isNotEmpty() && cursor < right) {
                     context.drawTextWithShadow(textRenderer,
-                        TextUtil.truncateString(line.removed, right - cursor), cursor, y + 7, 0xFF5555)
+                        TextUtil.truncateString(line.remaining, right - cursor), cursor, y + 7, 0xFFFFFF)
                 }
             }
         }

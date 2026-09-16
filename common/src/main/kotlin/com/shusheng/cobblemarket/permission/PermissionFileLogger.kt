@@ -38,23 +38,31 @@ object PermissionFileLogger {
         targetUuid: UUID,
         added: Set<String>,
         removed: Set<String>,
+        remaining: Set<String>,
         timestamp: Long = System.currentTimeMillis()
-    ) {
-        if (added.isEmpty() && removed.isEmpty()) return
+    ): Boolean {
+        if (added.isEmpty() && removed.isEmpty()) return true
         try {
             refreshFiles(timestamp)
-            val zh = currentZh ?: return
-            val en = currentEn ?: return
+            val zh = currentZh ?: return false
+            val en = currentEn ?: return false
             val time = timeFormat.format(Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()))
             // 空的半边**留空字段**，别用 "-" 占位：esc() 会把 '-' 当 Excel 公式前缀转义成 "'-"，
             // 界面还得额外认这个形态（踩过：显示成「新增：'-」）
             val addText = if (added.isEmpty()) "" else shortNames(added)
             val remText = if (removed.isEmpty()) "" else shortNames(removed)
-            val row = listOf(time, esc(operator), esc(targetName), targetUuid.toString(), esc(addText), esc(remText)).joinToString(",")
+            val remaText = if (remaining.isEmpty()) "" else shortNames(remaining)
+            val row = listOf(
+                time, esc(operator), esc(targetName), targetUuid.toString(), esc(addText), esc(remText), esc(remaText)
+            ).joinToString(",")
             Files.writeString(zh.toPath(), row + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
             Files.writeString(en.toPath(), row + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+            return true
         } catch (e: Exception) {
+            // ⚠ 最常见的失败原因是账本被 Excel / WPS 打开着（Windows 下文件被独占），
+            // 返回 false 让调用方给 OP 一句提示 —— 否则审计静默缺失，事后查无此账
             CobbleMarket.LOGGER.warn("Failed to write permission audit log: {}", e.message)
+            return false
         }
     }
 
@@ -72,8 +80,8 @@ object PermissionFileLogger {
         val date = dateFormat.format(Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()))
         if (date == currentDate) return
         currentDate = date
-        currentZh = resolveFile(date, "zh_cn", "时间,执行者,目标玩家,目标UUID,新增节点,移除节点")
-        currentEn = resolveFile(date, "en_us", "Time,Operator,Target,Target UUID,Added,Removed")
+        currentZh = resolveFile(date, "zh_cn", "时间,执行者,目标玩家,目标UUID,新增节点,移除节点,剩余节点")
+        currentEn = resolveFile(date, "en_us", "Time,Operator,Target,Target UUID,Added,Removed,Remaining")
     }
 
     private fun resolveFile(date: String, lang: String, header: String): File {
@@ -113,7 +121,12 @@ object PermissionFileLogger {
                     java.time.LocalDateTime.parse(cols[0], timeFormat).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
                 }.getOrNull() ?: return@mapNotNull null
                 if (ts < cutoff) return@mapNotNull null
-                AuditRow(ts, cols[1].trim('"'), cols[2].trim('"'), runCatching { UUID.fromString(cols[3]) }.getOrNull() ?: UUID(0, 0), cols[4].trim('"'), cols[5].trim('"'))
+                // 第 7 列（剩余节点）是后加的：旧账本没有这一列，取不到就算空，不影响其它字段
+                AuditRow(
+                    ts, cols[1].trim('"'), cols[2].trim('"'),
+                    runCatching { UUID.fromString(cols[3]) }.getOrNull() ?: UUID(0, 0),
+                    cols[4].trim('"'), cols[5].trim('"'), cols.getOrNull(6)?.trim('"').orEmpty()
+                )
             }.toList()
         }
     } catch (e: Exception) {
@@ -129,5 +142,7 @@ data class AuditRow(
     val targetName: String,
     val targetUuid: UUID,
     val added: String,
-    val removed: String
+    val removed: String,
+    /** 变更后该玩家剩下的全部节点（旧账本没有这一列，为空串） */
+    val remaining: String
 )
