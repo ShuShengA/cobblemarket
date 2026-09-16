@@ -22,6 +22,15 @@ object IconCryClick {
     /** 连点节流：Cobblemon 自己没做，满页乱点会叠音。 */
     private const val THROTTLE_MS = 200L
 
+    /**
+     * **弹窗自动叫的延迟**（毫秒）：弹窗刚弹出时玩家还在"看这是啥"，叫早了根本反应不过来
+     * 声音是从哪来的；等弹窗稳定显示后再叫，因果才对得上（2026-09-16 用户反馈调整）。
+     *
+     * 用法：打开弹窗时记 `xxxCryAt = System.currentTimeMillis() + AUTO_CRY_DELAY_MS`，
+     * 渲染处比对 `now >= xxxCryAt` 再 [play] —— 延迟与"模型已就绪"两个条件都满足才叫。
+     */
+    const val AUTO_CRY_DELAY_MS = 300L
+
     private var lastPlayedAt = 0L
 
     /**

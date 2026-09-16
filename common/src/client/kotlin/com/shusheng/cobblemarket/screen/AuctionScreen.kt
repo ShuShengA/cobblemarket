@@ -133,12 +133,13 @@ class AuctionScreen(
     private var bidDialogItemIconOrigin: ItemCelebrationAnimation.Origin? = null
 
     /**
-     * 打开出价弹窗时要不要自动叫一声（替玩家点一下弹窗里的精灵图标）。
+     * 出价弹窗自动叫一声的**待播时刻**（0 = 无；替玩家点一下弹窗里的精灵图标）。
      *
-     * **不能在 [openBidDialog] 里直接播**：`addFirstAnimation` 依赖 `state.currentModel`，
-     * 而它要等 `drawProfilePokemon` 跑过才有值。所以打开时只挂标志，第一帧画完图标后再播。
+     * **不能在 [openBidDialog] 里直接播**：一是 `addFirstAnimation` 依赖 `state.currentModel`，
+     * 它要等 `drawProfilePokemon` 跑过才有值；二是弹窗刚弹出就响，玩家还在"看这是啥"，
+     * 反应不过来声音从哪来。所以打开时只记「now + [IconCryClick.AUTO_CRY_DELAY_MS]」，渲染处到点才播。
      */
-    private var bidCryPending = false
+    private var bidCryAt = 0L
 
     // 精灵图标缓存
     private data class IconData(val displayName: String, val renderable: RenderablePokemon, val state: FloatingState)
@@ -847,8 +848,8 @@ class AuctionScreen(
         // 两个起点都清掉：弹窗可能在精灵拍品 / 物品拍品之间来回换，留着另一边会登记出错误起点
         bidDialogIconOrigin = null
         bidDialogItemIconOrigin = null
-        // 弹窗打开时自动叫一声（第一帧渲染后再播，理由见 bidCryPending）
-        bidCryPending = true
+        // 弹窗打开时自动叫一声（渲染后延迟再播，理由见 bidCryAt）
+        bidCryAt = System.currentTimeMillis() + IconCryClick.AUTO_CRY_DELAY_MS
         searchField?.visible = false
         backButton?.visible = false
         createButton?.visible = false
@@ -1018,9 +1019,10 @@ class AuctionScreen(
                         animate = useFloat
                     )
                     // 打开出价弹窗时自动叫一声（替玩家点一下这个图标）：**必须在渲染之后** ——
-                    // addFirstAnimation 依赖 currentModel，那是 drawProfilePokemon 里才建好的
-                    if (bidCryPending) {
-                        bidCryPending = false
+                    // addFirstAnimation 依赖 currentModel，那是 drawProfilePokemon 里才建好的；
+                    // 再叠一层 AUTO_CRY_DELAY_MS 延迟，等弹窗稳定显示、玩家看清了再叫
+                    if (bidCryAt != 0L && System.currentTimeMillis() >= bidCryAt) {
+                        bidCryAt = 0L
                         IconCryClick.play(bidPreviewState, rp)
                     }
                 } catch (_: Exception) {

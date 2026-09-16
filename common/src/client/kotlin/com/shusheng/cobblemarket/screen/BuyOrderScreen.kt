@@ -182,12 +182,13 @@ class BuyOrderScreen(
     private var reviewItemIconOrigin: ItemCelebrationAnimation.Origin? = null
 
     /**
-     * 打开确认交付弹窗时要不要自动叫一声（替玩家点一下弹窗里的精灵图标）。
+     * 确认交付弹窗自动叫一声的**待播时刻**（0 = 无；替玩家点一下弹窗里的精灵图标）。
      *
-     * **不能在 [openReviewDialog] 里直接播**：`addFirstAnimation` 依赖 `state.currentModel`，
-     * 而它要等 `drawProfilePokemon` 跑过才有值。所以打开时只挂标志，第一帧画完图标后再播。
+     * **不能在 [openReviewDialog] 里直接播**：一是 `addFirstAnimation` 依赖 `state.currentModel`，
+     * 它要等 `drawProfilePokemon` 跑过才有值；二是弹窗刚弹出就响，玩家还在"看这是啥"，
+     * 反应不过来声音从哪来。所以打开时只记「now + [IconCryClick.AUTO_CRY_DELAY_MS]」，渲染处到点才播。
      */
-    private var reviewCryPending = false
+    private var reviewCryAt = 0L
 
     // ── 交付对话框状态 ──
     private var deliverEntry: BuyOrderEntry? = null
@@ -1996,8 +1997,8 @@ class BuyOrderScreen(
         // 两个起点都清掉：弹窗可能在精灵单 / 物品单之间来回换，留着另一边会登记出错误起点
         reviewIconOrigin = null
         reviewItemIconOrigin = null
-        // 弹窗打开时自动叫一声（第一帧渲染后再播，理由见 reviewCryPending）
-        reviewCryPending = true
+        // 弹窗打开时自动叫一声（渲染后延迟再播，理由见 reviewCryAt）
+        reviewCryAt = System.currentTimeMillis() + IconCryClick.AUTO_CRY_DELAY_MS
         // 物品词条行（附魔等）：打开时重建一次，弹窗渲染每帧只读；行数决定后续控件下移量；
         // BASIC/ADVANCED 双份构建（渲染按 Shift 切换；ADVANCED 打开时无 Shift 缺信息块，
         // 渲染按住 Shift 会重建）——布局按两份最大行数 + 6 行信息块余量预留（防展开溢出）
@@ -2152,9 +2153,10 @@ class BuyOrderScreen(
                         useScissor = false
                     )
                     // 打开确认交付弹窗时自动叫一声（替玩家点一下这个图标）：**必须在渲染之后** ——
-                    // addFirstAnimation 依赖 currentModel，那是 drawProfilePokemon 里才建好的
-                    if (reviewCryPending) {
-                        reviewCryPending = false
+                    // addFirstAnimation 依赖 currentModel，那是 drawProfilePokemon 里才建好的；
+                    // 再叠一层 AUTO_CRY_DELAY_MS 延迟，等弹窗稳定显示、玩家看清了再叫
+                    if (reviewCryAt != 0L && System.currentTimeMillis() >= reviewCryAt) {
+                        reviewCryAt = 0L
                         IconCryClick.play(reviewState, rp)
                     }
                 } catch (_: Exception) {
