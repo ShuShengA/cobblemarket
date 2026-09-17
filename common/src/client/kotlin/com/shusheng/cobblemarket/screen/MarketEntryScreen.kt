@@ -983,7 +983,12 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             context.matrices.translate((bgLeft - 1).toDouble(), oakBottom.toDouble(), 0.0)
             context.matrices.scale(oakK, oakK, 1f)
             context.matrices.translate(-158.0, -279.0, 0.0)
+            // ⚠ 放大要**绕气泡本体右下角 (139,151)**，不能绕图片原点：图 140×152 里本体偏右下（左上留白），
+            // 绕原点放大会让气泡往右下长 → 右下角压到大木博士头上（2026-09-17 用户报）。
+            // 绕右下角放大 = 长句时气泡向左上扩张，且「右缘压立绘 26px、底边离头顶 4px」两条锚定关系不变。
+            context.matrices.translate(139.0, 151.0, 0.0)
             context.matrices.scale(k, k, 1f)
+            context.matrices.translate(-139.0, -151.0, 0.0)
             context.drawTexture(Identifier.of("cobblemarket", "textures/gui/chat_bubble.png"), 0, 0, 0f, 0f, 140, 152, 140, 152)
             // 文字层再套字号缩放（中文 1:1，英文 0.75）
             context.matrices.scale(fontScale, fontScale, 1f)
