@@ -148,6 +148,7 @@ object BlacklistNetwork {
                     player.sendMessage(
                         net.minecraft.text.Text.translatable("cobblemarket.blacklist.not_found")
                             .formatted(net.minecraft.util.Formatting.RED), false)
+                    sendResultSound(player, false)   // 被拒也要有听觉反馈（此前只有聊天栏红字）
                     return@execute
                 }
                 // 形态列表上限（同求购单）：恶意/异常输入不随条目持久化膨胀
@@ -155,6 +156,7 @@ object BlacklistNetwork {
                     player.sendMessage(
                         net.minecraft.text.Text.translatable("cobblemarket.blacklist.not_found")
                             .formatted(net.minecraft.util.Formatting.RED), false)
+                    sendResultSound(player, false)
                     return@execute
                 }
                 val entry = PokemonBlacklistEntry(
@@ -176,6 +178,7 @@ object BlacklistNetwork {
                 state.add(entry)
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                sendResultSound(player)   // 添加成功反馈（管理操作不回结果包，只给音效）
                 val entries = PokemonBlacklistState.get(server).getAll()
                 sendToPlayer(player, PokemonBlacklistDataPayload(entries.reversed()))
             }
@@ -188,6 +191,7 @@ object BlacklistNetwork {
                 PokemonBlacklistState.get(server).remove(payload.id)
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                sendResultSound(player)   // 删除成功反馈
                 val entries = PokemonBlacklistState.get(server).getAll()
                 sendToPlayer(player, PokemonBlacklistDataPayload(entries.reversed()))
             }
