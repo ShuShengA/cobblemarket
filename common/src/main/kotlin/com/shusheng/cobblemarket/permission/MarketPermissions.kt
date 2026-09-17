@@ -47,11 +47,18 @@ object MarketPermissions {
     const val CONFIG = PREFIX + "config"
 
     /**
+     * 点券管理：**这是印发钞权的节点**（发放/回收/兑换码生成），与 [CONFIG] 同级敏感 ——
+     * 随意下放等于把服务器经济交出去。命令侧的收紧见 `docs/points_plan.md`：
+     * `give/take` 与 `code create/revoke/purge` 仅 OP，本节点只放给「查询类」用（check / 订单查看）。
+     */
+    const val POINTS = PREFIX + "points"
+
+    /**
      * 全部管理节点（快照、入口判定、`/market perm list` 与权限编辑界面的按钮都用它）。
      * **顺序 = 管理面板按钮的排列顺序**（权限编辑界面按此顺序交替分列，两列四行，方便一眼对照
      * 管理面板里按钮的位置）。改这里的顺序会同时改掉界面按钮与 list 输出的顺序。
      */
-    val ALL = listOf(MARKET, BAN, BLACKLIST, PRICE_LIMIT, AUCTION, BUY_ORDER, FINANCE, CONFIG)
+    val ALL = listOf(MARKET, BAN, BLACKLIST, PRICE_LIMIT, AUCTION, BUY_ORDER, FINANCE, CONFIG, POINTS)
 
     /**
      * 管理操作鉴权（**服务端**判定）：OP 恒真，否则查授予表。
