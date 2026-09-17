@@ -12,6 +12,7 @@ import net.minecraft.command.argument.EntityArgumentType
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.ExternalPointCode
 import com.shusheng.cobblemarket.currency.PointCodeState
 import com.shusheng.cobblemarket.currency.PointCodes
 import com.shusheng.cobblemarket.currency.PointsAuditLogger
@@ -293,8 +294,39 @@ object MarketCommands {
                 recordRedeemFailure(player.uuid, now)
                 source.sendError(Text.translatable("cobblemarket.points.redeem_invalid"))
             }
-            val code = PointCodes.normalize(raw)
             val state = PointCodeState.get(server)
+
+            // ① 先试外部签名码（服主在网站/发卡网卖的那类；secret 留空时它直接返回 null）
+            val external = ExternalPointCode.verify(
+                raw,
+                CobbleMarketConfig.pointsExternalSecret,
+                now,
+                CobbleMarketConfig.pointsExternalMaxDays
+            )
+            if (external != null) {
+                // 防重放：一个 serial 只能兑一次。**先记 serial 再加余额**（崩溃窗口最坏少一次机会）
+                if (!state.markSerialUsed(external.serial)) {
+                    invalid()
+                    return@execute
+                }
+                val after = PointsState.get(server).addBalance(player.uuid, external.amount)
+                PointsAuditLogger.log(
+                    PointsLogType.REDEEM, player.uuid, player.name.string, external.amount, after,
+                    player.name.string, "外部码 serial=${external.serial}"
+                )
+                source.sendFeedback({
+                    Text.translatable(
+                        "cobblemarket.points.redeem_ok",
+                        CurrencyService.amountText(external.amount, MarketCurrency.POINTS),
+                        CurrencyService.amountText(after, MarketCurrency.POINTS)
+                    )
+                }, false)
+                redeemFailures.remove(player.uuid)
+                return@execute
+            }
+
+            // ② 再查本地码表
+            val code = PointCodes.normalize(raw)
             val entry = code?.let { state.find(it) }
             when {
                 entry == null -> invalid()

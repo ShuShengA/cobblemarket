@@ -78,6 +78,15 @@ object CobbleMarketConfig {
      */
     var pointsEnabled: Boolean = false
         private set
+    /**
+     * 外部签名码的 HMAC 密钥（服主在网站/发卡网卖点券时用）。**留空 = 关闭外部码**，只接受本地生成的码。
+     * ⚠ 只能放在服务端（网站后端 / 服主本机），绝不能进客户端、日志或公开仓库。
+     */
+    var pointsExternalSecret: String = ""
+        private set
+    /** 外部码的有效期上限（天）：签发超出这个跨度的码一律拒绝，防"永久码"满天飞 */
+    var pointsExternalMaxDays: Int = 365
+        private set
 
     // ── 金融系统（finance 段，启动级：reload 跳过应用仅比较差异，改后需重启） ──
 
@@ -381,7 +390,7 @@ object CobbleMarketConfig {
                     "auctionMinBidIncrement", "auctionAntiSnipeSeconds", "maxAuctionsPerPlayer",
                     "eggTradingEnabled", "buyOrderFeePercent", "buyOrderExpiryDays",
                     "maxBuyOrdersPerPlayer", "marketEnabled",
-                    "shareEnabled", "pointsEnabled",
+                    "shareEnabled", "pointsEnabled", "pointsExternalSecret", "pointsExternalMaxDays",
                     "finance"
                 )
                 var missingKeys = knownKeys.any { !data.containsKey(it) }
@@ -549,6 +558,8 @@ object CobbleMarketConfig {
                 marketEnabled = data["marketEnabled"] as? Boolean ?: true
                 shareEnabled = data["shareEnabled"] as? Boolean ?: true
                 pointsEnabled = data["pointsEnabled"] as? Boolean ?: false
+                pointsExternalSecret = data["pointsExternalSecret"] as? String ?: ""
+                pointsExternalMaxDays = ((data["pointsExternalMaxDays"] as? Double)?.toInt() ?: 365).coerceAtLeast(0)
                 // 跨项校验（手工改过 config.json 也兜住）
                 enforceCardApplySeenGuard()
                 // 缺失字段补写：旧设置保留，新字段以默认值落盘（服主无需删配置）
@@ -595,6 +606,8 @@ object CobbleMarketConfig {
                 "buyOrderFeePercent" to "求购单中介费百分比：买家成交时从卖家实收中扣除（0=免中介费）/ Buy order fee percentage charged on seller's actual payment (0=no fee)",
                 "buyOrderExpiryDays" to "求购单过期天数（到期自动关闭，剩余冻结金退买家待领余额）/ Buy order expiry in days (expired orders close automatically and refund frozen money)",
                 "marketEnabled" to "市场总开关（默认开启）：紧急情况可整体关闭市场功能——所有买卖/拍卖/求购操作被拦截并提示，但待领取、余额等取回自己资产的操作仍可用。可在游戏内用 /market on|off 切换 / Master market switch (on by default): emergency kill switch for the entire market — all buy/sell/auction/buy-order operations are blocked with a notice, while claiming returns and collecting balances still work. Toggle in-game via /market on|off",
+                "pointsExternalSecret" to "外部签名码的 HMAC 密钥：服主在自己的网站 / 发卡网卖点券时，用同一个密钥签码，玩家在游戏内兑换。⚠ **留空 = 关闭外部码**（只接受 /market points code create 生成的本地码）。**必须放在服务端**（网站后端 / 服主本机），绝不能进客户端、日志或公开仓库；服务端日志只记码前缀不记全码（码 = 钱）。建议 ≥32 字符随机串 / HMAC secret for externally signed point codes: sign codes on your website / card shop with the same secret, players redeem them in game. ⚠ **Leave blank to disable external codes** (only locally generated codes work). **Server-side only** (website backend / your machine) — never ship it in a client, log, or public repo. Logs record only a code prefix, never the full code (a code is money). Recommended: 32+ random characters",
+                "pointsExternalMaxDays" to "外部码的有效期上限（天，默认 365）：签发时有效期跨度超过它的码一律拒绝，防「永久码」满天飞（永久码的 serial 必须永久保留，会让存档持续膨胀）/ Maximum validity for external codes in days (default 365): codes valid for longer are rejected, preventing \"forever codes\" (whose serials must be kept forever and would bloat the save)",
                 "pointsEnabled" to "点券总开关（默认关闭）：点券是本模组的第二货币，与主货币并行流通但**不可兑换、不可转让、不参与金融**。关闭时：玩家设置价格的界面不出现点券按钮，除点券商城外的任何地方都不能用点券交易（服主仍可在点券商城上架精灵/物品供持有点券的玩家购买）。⚠ 点券等同于充值货币，开启前请先配置发放渠道 / Points master switch (off by default): points are this mod's second currency, running alongside the primary one but **not convertible, not transferable, and outside the finance system**. When off, the points button is hidden from every price-setting screen and points cannot be used anywhere except the Points Shop (owners can still stock the Points Shop for players who already hold points). ⚠ Points are effectively a paid currency — set up a distribution channel before enabling",
                 "shareEnabled" to "玩家展示开关（默认开启）：开启后玩家可把精灵/物品展示到全服聊天（悬停看详情），每人 10 秒一次。关闭后展示按钮不再生效 / Player showcase switch (on by default): players can showcase Pokémon/items to server chat (hover for details), once per 10 seconds each. When off, the showcase button stops working",
                 "maxBuyOrdersPerPlayer" to "每个玩家同时进行的求购单数量上限，精灵与物品合计（0=不限制）。求购单列表全量下发给所有客户端，玩家较多的服务器建议保持较小值，避免全服活跃求购单总量过大导致卡顿 / Max concurrent buy orders per player, Pokémon and items combined (0=unlimited). The buy order list is broadcast in full to every client, so on crowded servers keep this small to avoid lag from too many active orders",
@@ -655,6 +668,8 @@ object CobbleMarketConfig {
             "marketEnabled" to marketEnabled,
             "shareEnabled" to shareEnabled,
             "pointsEnabled" to pointsEnabled,
+            "pointsExternalSecret" to pointsExternalSecret,
+            "pointsExternalMaxDays" to pointsExternalMaxDays,
             "finance" to mapOf(
                 "enabled" to financeEnabled,
                 "cashLoanEnabled" to cashLoanEnabled,
