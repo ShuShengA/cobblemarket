@@ -26,14 +26,24 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * 选择要上架的精灵界面；求购单交付模式（deliverOrderId 非 null）复用本界面：
- * 选择精灵后返回求购单界面继续交付流程（价格在交付弹窗输入）。
+ * 选择要上架的精灵界面。两种复用模式（都要隐藏价格框，价格不在本界面输入）：
+ * - 求购单交付模式（deliverOrderId 非 null）：选择后回求购单界面继续交付流程
+ * - 分享模式（shareMode）：选择后把这只精灵发到全服聊天
  */
-class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Screen(Text.translatable(
-    if (deliverOrderId != null) "cobblemarket.sell.deliver_title" else "cobblemarket.sell.title"
+class SellSelectScreen(
+    private val deliverOrderId: java.util.UUID? = null,
+    private val shareMode: Boolean = false
+) : Screen(Text.translatable(
+    when {
+        deliverOrderId != null -> "cobblemarket.sell.deliver_title"
+        shareMode -> "cobblemarket.share.title_pokemon"
+        else -> "cobblemarket.sell.title"
+    }
 )) {
 
     private val deliverMode = deliverOrderId != null
+    /** 价格框不参与布局：交付模式（价格在交付弹窗输入）与分享模式（不涉及价格）都是 */
+    private val noPriceField = deliverMode || shareMode
 
     private var pokemonList = listOf<PokemonPreview>()
     private var selectedIndex = -1
@@ -187,8 +197,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             tooltip = Text.translatable("cobblemarket.gui.back")
         ))
 
-        // Row 3 (y=72)：间距统一 4px，整行排满到面板右缘（lx+294），两种模式各自铺满不留空
-        //   交付：闪光30 | 公母24 | 属性58 | 特训80 | 选择84
+        // Row 3 (y=72)：间距统一 4px，整行排满到面板右缘（lx+294），各模式各自铺满不留空
+        //   交付/分享：闪光30 | 公母24 | 属性58 | 特训80 | 选择84
         //   上架：闪光30 | 公母24 | 属性58 | 价格56 | 上架44 | 特训60
         val btnY = 72
         shinyBtn = NineSliceButton(
@@ -224,18 +234,30 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         priceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addSelectableChild(priceField)
         addDrawableChild(priceField)
-        // 交付模式：价格在求购单交付弹窗输入，隐藏价格框，特训按钮顶上这个位置
-        priceField?.visible = !deliverMode
+        // 交付/分享模式：价格不在本界面输入，隐藏价格框，特训按钮顶上这个位置
+        priceField?.visible = !noPriceField
 
         sellBtn = NineSliceButton(
-            if (deliverMode) lx + 210 else lx + 186, btnY, if (deliverMode) 84 else 44, 20,
-            Text.translatable(if (deliverMode) "cobblemarket.sell.deliver_select" else "cobblemarket.sell.sell"),
-            { if (deliverMode) deliverSelected() else sellSelected() }
+            if (noPriceField) lx + 210 else lx + 186, btnY, if (noPriceField) 84 else 44, 20,
+            Text.translatable(
+                when {
+                    deliverMode -> "cobblemarket.sell.deliver_select"
+                    shareMode -> "cobblemarket.share.button"
+                    else -> "cobblemarket.sell.sell"
+                }
+            ),
+            {
+                when {
+                    deliverMode -> deliverSelected()
+                    shareMode -> shareSelected()
+                    else -> sellSelected()
+                }
+            }
         )
         addDrawableChild(sellBtn)
-        // 特训筛选（三态循环；交付模式移到价格框位置，给选择按钮让位）
+        // 特训筛选（三态循环；交付/分享模式移到价格框位置，给选择按钮让位）
         htBtn = NineSliceButton(
-            if (deliverMode) lx + 126 else lx + 234, btnY, if (deliverMode) 80 else 60, 20,
+            if (noPriceField) lx + 126 else lx + 234, btnY, if (noPriceField) 80 else 60, 20,
             htButtonText(),
             { toggleHtFilter(); rebuild() },
             if (htFilter != 0) GOLD_COLOR else 0xFFFFFF
@@ -455,6 +477,13 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         if (selectedIndex !in filtered.indices) return
         BuyOrderScreen.pendingDeliverPokemon = filtered[selectedIndex]
         client?.setScreen(BuyOrderScreen())
+    }
+
+    /** 分享模式：把所选精灵的 UUID 交给服务端（服务端自校验归属后广播全服，每人 10 秒一次） */
+    private fun shareSelected() {
+        val filtered = filteredList()
+        if (selectedIndex !in filtered.indices) return
+        sendToServer(SharePayload(ShareNetwork.KIND_POKEMON, filtered[selectedIndex].uuid.toString()))
     }
 
     private fun typeColor(tk: String) = when (tk.substringAfterLast(".").lowercase()) {
@@ -1045,6 +1074,12 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
     fun onMarketResult(payload: MarketResultPayload) {
         if (payload.success) {
             client?.player?.sendMessage(payload.message.copy().formatted(Formatting.GREEN), false)
+            // 分享成功即完成：**关掉界面回游戏**（分享的落点是聊天，玩家该直接看到聊天里的那条播报；
+            // 留在这里反而要手动按 E 退出）
+            if (shareMode) {
+                client?.setScreen(null)
+                return
+            }
             priceField?.text = ""
             selectedIndex = -1
             // 上架成功后从第一页重新拉取全量列表

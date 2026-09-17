@@ -220,6 +220,10 @@ object CobbleMarketClient {
                         client.setScreen(com.shusheng.cobblemarket.screen.AuctionScreen(initialBidAuctionId = id))
                     }
                 }
+                // "share"：分享播报的精灵/物品名上挂的指令，唯一用途是让聊天悬浮大图
+                // （ChatObjectPreview）顺着 clickEvent 认出这条消息。**点击不跳转**是需求，
+                // 所以这里刻意什么都不做——别以为是漏了实现
+                "share" -> {}
             }
         }
 

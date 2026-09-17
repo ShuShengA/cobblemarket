@@ -73,6 +73,15 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     // 金融总开关（CreditInfoPayload 拉取；喵喵银行按钮置灰依据，未拉取时默认开=乐观，服务端兜底）
     private var financeEnabled = true
     private var meowthBankBtn: NineSliceButton? = null
+
+    /** 分享按钮与它上方展开的子按钮（点击主按钮切换展开，见 [toggleShareMenu]） */
+    private var shareBtn: NineSliceButton? = null
+    private var sharePokemonBtn: NineSliceButton? = null
+    private var shareItemBtn: NineSliceButton? = null
+    private var shareMenuOpen = false
+
+    /** 展开子按钮期间被它压住、临时隐藏的按钮（收起时恢复，见 [applyShareMenu]） */
+    private val shareHiddenButtons = mutableListOf<ClickableWidget>()
     private var creditInfoLoaded = false
     // 全服累计成交额（批次 7 入口展示；仅氛围展示不参与任何计算）；
     // 初始读全局缓存（60 秒兜底轮询写入）秒显不闪，打开后仍发请求刷新
@@ -156,6 +165,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     override fun init() {
         super.init()
         entryButtons.clear()
+        // 每次重建（进界面/resize/关弹窗）都从收起状态开始：按钮是新造的，
+        // 留着上一轮的展开标记会让子按钮与主按钮高亮对不上（被隐藏的旧按钮引用也一并丢弃）
+        shareMenuOpen = false
+        shareHiddenButtons.clear()
         if (dropAnimStart < 0) dropAnimStart = System.currentTimeMillis()
         sendToServer(RequestBalancePayload())
         // 大木博士知识点：按语言加载 json，每次进入入口界面（新建实例）随机抽一句；
@@ -318,7 +331,114 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.settings")))
         entryButtons += addDrawableChild(settingsBtn)
 
+        // 分享按钮：设置按钮左边、间隔 4px（按钮间距规则）；**点击**展开上方子按钮（用户 2026-09-17 拍板，
+        // 原方案是悬停——点击能复用 NineSliceButton.selectedVisual 的选中态，还免掉悬停判定区连通的麻烦）
+        val shareX = centerX + 96 - cornerSize - 6 - 4 - cornerSize
+        val shareBtn = NineSliceButton(
+            shareX, cornerY,
+            cornerSize, cornerSize,
+            Text.literal(""),
+            { toggleShareMenu() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/share.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+            texture = ROW_BACKGROUND_TEXTURE,
+            texH = ROW_BACKGROUND_TEX_H
+        )
+        shareBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.share")))
+        this.shareBtn = shareBtn
+        entryButtons += addDrawableChild(shareBtn)
+
+        // 子按钮：**左右并排、彼此无间隙**，整组的分界线对准主按钮中心，整组紧贴主按钮上方
+        //（用户 2026-09-17 定的形态）。图标沿用两个市场入口的（小卡比兽 / 精灵球），
+        // 尺寸与主按钮一致（22×22 纯图标 + 悬停词条），不占宽度
+        val subSize = cornerSize
+        val subCenterX = shareX + cornerSize / 2
+        // y：整组落在红色分割线**上方**，与主按钮相对分割线对称
+        //（分割线在 bgBottom()-30，主按钮顶边距它 3px，子按钮底边同样距它 3px）
+        val subY = cornerY - (subSize + 6)
+        val pokemonBtn = NineSliceButton(
+            subCenterX - subSize, subY, subSize, subSize,
+            Text.literal(""),
+            { openSharePokemon() },
+            // 精灵市场入口用的是小卡比兽 8 帧动画，这里是纯图标按钮，取第 1 帧静态展示
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/munchlax/munchlax_0.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+            texture = ROW_BACKGROUND_TEXTURE,
+            texH = ROW_BACKGROUND_TEX_H
+        )
+        pokemonBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.share.pokemon")))
+        pokemonBtn.visible = false
+        this.sharePokemonBtn = pokemonBtn
+        entryButtons += addDrawableChild(pokemonBtn)
+
+        val itemBtn = NineSliceButton(
+            subCenterX, subY, subSize, subSize,
+            Text.literal(""),
+            { openShareItem() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/pokeball_icon.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+            texture = ROW_BACKGROUND_TEXTURE,
+            texH = ROW_BACKGROUND_TEX_H
+        )
+        itemBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.share.item")))
+        itemBtn.visible = false
+        this.shareItemBtn = itemBtn
+        entryButtons += addDrawableChild(itemBtn)
+
         // 市场总开关 / 服务器配置两个 OP 按钮已移到管理面板（AdminScreen 底部，2026-09-12）
+    }
+
+    // ── 分享按钮的展开 / 收起 ──
+
+    /** 点击分享按钮：切换上方子按钮的显示，主按钮同步进入选中态（持久高亮，不是按下反馈） */
+    private fun toggleShareMenu() {
+        shareMenuOpen = !shareMenuOpen
+        applyShareMenu()
+    }
+
+    private fun collapseShareMenu() {
+        if (!shareMenuOpen) return
+        shareMenuOpen = false
+        applyShareMenu()
+    }
+
+    /**
+     * 展开/收起子按钮。展开时还要把**会被子按钮压住的按钮整体隐藏**：
+     * 子按钮是浮层，只盖得住上方按钮的一部分（比如「拍卖场」三个字会露在覆盖区外），
+     * 半遮半露比干脆藏起来更难看 —— 相交即隐藏，视觉上等于被完整盖住，收起时原样恢复。
+     */
+    private fun applyShareMenu() {
+        shareBtn?.selectedVisual = shareMenuOpen
+        sharePokemonBtn?.visible = shareMenuOpen
+        shareItemBtn?.visible = shareMenuOpen
+        if (shareMenuOpen) {
+            val pokemonBtn = sharePokemonBtn ?: return
+            val itemBtn = shareItemBtn ?: return
+            val menuLeft = pokemonBtn.x
+            val menuTop = pokemonBtn.y
+            val menuRight = itemBtn.x + itemBtn.width
+            val menuBottom = pokemonBtn.y + pokemonBtn.height
+            entryButtons.forEach { btn ->
+                if (btn === shareBtn || btn === pokemonBtn || btn === itemBtn) return@forEach
+                val overlaps = btn.x < menuRight && btn.x + btn.width > menuLeft &&
+                    btn.y < menuBottom && btn.y + btn.height > menuTop
+                if (overlaps && btn.visible) {
+                    shareHiddenButtons.add(btn)
+                    btn.visible = false
+                }
+            }
+        } else {
+            shareHiddenButtons.forEach { it.visible = true }
+            shareHiddenButtons.clear()
+        }
+    }
+
+    private fun openSharePokemon() {
+        client?.setScreen(SellSelectScreen(shareMode = true))
+    }
+
+    private fun openShareItem() {
+        client?.setScreen(ItemSellScreen(shareMode = true))
     }
 
     // ── 设置弹窗（客户端个人观感开关；以后新开关统一加在这里） ──
@@ -792,6 +912,13 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                 )
             )
             return true
+        }
+        // 点主按钮/子按钮以外的地方收起展开的子按钮（点这两个按钮时交给 widget 自己的 onPress 处理）
+        if (shareMenuOpen) {
+            val overShare = shareBtn?.isMouseOver(mouseX, mouseY) == true ||
+                sharePokemonBtn?.isMouseOver(mouseX, mouseY) == true ||
+                shareItemBtn?.isMouseOver(mouseX, mouseY) == true
+            if (!overShare) collapseShareMenu()
         }
         return super.mouseClicked(mouseX, mouseY, button)
     }
