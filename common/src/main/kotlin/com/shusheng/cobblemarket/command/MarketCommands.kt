@@ -15,6 +15,12 @@ import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.ExternalPointCode
 import com.shusheng.cobblemarket.currency.PointCodeState
 import com.shusheng.cobblemarket.currency.PointCodes
+import com.shusheng.cobblemarket.currency.PointOrderNumbers
+import com.shusheng.cobblemarket.currency.PointOrderState
+import com.shusheng.cobblemarket.currency.PointOrderStatus
+import com.shusheng.cobblemarket.currency.PointShopError
+import com.shusheng.cobblemarket.currency.PointShopResult
+import com.shusheng.cobblemarket.currency.PointShopService
 import com.shusheng.cobblemarket.currency.PointsAuditLogger
 import com.shusheng.cobblemarket.currency.PointsLogType
 import com.shusheng.cobblemarket.currency.PointsState
@@ -224,6 +230,45 @@ object MarketCommands {
                                 .requires { MarketPermissions.has(it, MarketPermissions.POINTS) }
                                 .suggests(::suggestOnlinePlayerNames)
                                 .executes { ctx -> pointsCheck(ctx, StringArgumentType.getString(ctx, "name")) }
+                            )
+                        )
+                        .then(CommandManager.literal("shop")
+                            // 下单/我已支付/取消：玩家可用（正式路径走点券市场界面，命令留给后台与客服代操作）
+                            .then(CommandManager.literal("create")
+                                .then(CommandManager.argument("tier", IntegerArgumentType.integer(1))
+                                    .executes(::shopCreate)
+                                )
+                            )
+                            .then(CommandManager.literal("paid")
+                                .then(CommandManager.argument("order", StringArgumentType.word())
+                                    .executes(::shopMarkPaid)
+                                )
+                            )
+                            .then(CommandManager.literal("cancel")
+                                .then(CommandManager.argument("order", StringArgumentType.word())
+                                    .executes(::shopCancel)
+                                )
+                            )
+                            // 确认发放 = 印钞（确认即加余额）：与 give/take 同级，仅 OP、不下放节点
+                            .then(CommandManager.literal("list")
+                                .requires { it.hasPermissionLevel(2) }
+                                .executes(::shopPendingList)
+                            )
+                            .then(CommandManager.literal("confirm")
+                                .requires { it.hasPermissionLevel(2) }
+                                .then(CommandManager.argument("order", StringArgumentType.word())
+                                    .executes(::shopConfirm)
+                                )
+                            )
+                            .then(CommandManager.literal("reject")
+                                .requires { it.hasPermissionLevel(2) }
+                                .then(CommandManager.argument("order", StringArgumentType.word())
+                                    .executes(::shopReject)
+                                )
+                            )
+                            .then(CommandManager.literal("purge")
+                                .requires { it.hasPermissionLevel(2) }
+                                .executes(::shopPurge)
                             )
                         )
                     )
@@ -554,6 +599,169 @@ object MarketCommands {
         }, false)
         return 1
     }
+
+    // ── 点券：游戏内充值订单（正式路径走点券市场界面，命令用于后台与客服代操作） ──
+
+    /** 创建充值订单。档位序号对玩家从 1 开始数（配置数组从 0 开始） */
+    private fun shopCreate(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val player = source.player
+        if (player == null) {
+            source.sendError(Text.translatable("cobblemarket.points.players_only"))
+            return 0
+        }
+        val tierIndex = IntegerArgumentType.getInteger(context, "tier") - 1
+        return when (val result = PointShopService.createOrder(source.server, player.uuid, player.name.string, tierIndex)) {
+            is PointShopResult.Success -> {
+                val order = result.order
+                source.sendFeedback({
+                    Text.translatable(
+                        "cobblemarket.points.shop.created",
+                        PointOrderNumbers.format(order.orderNo),
+                        PointShopService.formatCents(order.payCents),
+                        order.points.toString()
+                    )
+                }, false)
+                1
+            }
+            is PointShopResult.Failure -> {
+                source.sendError(shopErrorText(result.error))
+                0
+            }
+        }
+    }
+
+    /** 玩家声明「我已支付」（**只是声明，不是证据** —— 发不发由服主对着账单说了算） */
+    private fun shopMarkPaid(context: CommandContext<ServerCommandSource>): Int =
+        shopPlayerAction(context) { server, player, orderNo ->
+            PointShopService.markPaid(server, player.uuid, orderNo)
+        }
+
+    /** 玩家取消自己的待支付订单 */
+    private fun shopCancel(context: CommandContext<ServerCommandSource>): Int =
+        shopPlayerAction(context) { server, player, orderNo ->
+            PointShopService.cancelOrder(server, player.uuid, orderNo)
+        }
+
+    /** 玩家侧订单操作的公共外壳：取玩家 → 归一化订单号 → 调服务 → 回显 */
+    private fun shopPlayerAction(
+        context: CommandContext<ServerCommandSource>,
+        action: (net.minecraft.server.MinecraftServer, net.minecraft.server.network.ServerPlayerEntity, String) -> PointShopResult
+    ): Int {
+        val source = context.source
+        val player = source.player
+        if (player == null) {
+            source.sendError(Text.translatable("cobblemarket.points.players_only"))
+            return 0
+        }
+        val orderNo = PointOrderNumbers.normalize(StringArgumentType.getString(context, "order"))
+        if (orderNo == null) {
+            source.sendError(Text.translatable("cobblemarket.points.shop.not_found"))
+            return 0
+        }
+        return when (val result = action(source.server, player, orderNo)) {
+            is PointShopResult.Success -> {
+                val messageKey = if (result.order.status == PointOrderStatus.PENDING_CONFIRM) {
+                    "cobblemarket.points.shop.paid_ok"
+                } else {
+                    "cobblemarket.points.shop.cancelled"
+                }
+                source.sendFeedback({
+                    Text.translatable(messageKey, PointOrderNumbers.format(result.order.orderNo))
+                }, false)
+                1
+            }
+            is PointShopResult.Failure -> {
+                source.sendError(shopErrorText(result.error))
+                0
+            }
+        }
+    }
+
+    /** 待确认订单列表（仅 OP）：玩家名 / 实付金额 / 订单号 / 已等待时长，服主照着收款账单逐笔核 */
+    private fun shopPendingList(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val list = PointOrderState.get(source.server).pendingConfirm()
+        if (list.isEmpty()) {
+            source.sendFeedback({ Text.translatable("cobblemarket.points.shop.list_empty") }, false)
+            return 1
+        }
+        source.sendFeedback({ Text.translatable("cobblemarket.points.shop.list_header", list.size) }, false)
+        val now = System.currentTimeMillis()
+        list.take(20).forEach { order ->
+            val waitedMinutes = ((now - (order.paidAt ?: order.createdAt)) / 60_000L).coerceAtLeast(0L)
+            source.sendFeedback({
+                Text.literal(
+                    "${PointOrderNumbers.format(order.orderNo)}  ${order.playerName}  " +
+                        "${PointShopService.formatCents(order.payCents)}  ${order.points}  ${waitedMinutes}m"
+                )
+            }, false)
+        }
+        return 1
+    }
+
+    /** 确认发放（仅 OP，幂等：重复确认不会二次发放） */
+    private fun shopConfirm(context: CommandContext<ServerCommandSource>): Int =
+        shopOperatorAction(context) { server, operator, orderNo ->
+            PointShopService.confirm(server, operator, orderNo)
+        }
+
+    /** 作废订单（仅 OP）：核对账单后没这笔钱、重复提交、误操作等 */
+    private fun shopReject(context: CommandContext<ServerCommandSource>): Int =
+        shopOperatorAction(context) { server, operator, orderNo ->
+            PointShopService.reject(server, operator, orderNo)
+        }
+
+    /** 服主侧订单操作的公共外壳 */
+    private fun shopOperatorAction(
+        context: CommandContext<ServerCommandSource>,
+        action: (net.minecraft.server.MinecraftServer, String, String) -> PointShopResult
+    ): Int {
+        val source = context.source
+        val orderNo = PointOrderNumbers.normalize(StringArgumentType.getString(context, "order"))
+        if (orderNo == null) {
+            source.sendError(Text.translatable("cobblemarket.points.shop.not_found"))
+            return 0
+        }
+        return when (val result = action(source.server, source.name, orderNo)) {
+            is PointShopResult.Success -> {
+                val granted = result.order.status == PointOrderStatus.GRANTED
+                source.sendFeedback({
+                    Text.translatable(
+                        if (granted) "cobblemarket.points.shop.confirmed" else "cobblemarket.points.shop.rejected_ok",
+                        PointOrderNumbers.format(result.order.orderNo),
+                        result.order.playerName
+                    )
+                }, true)
+                1
+            }
+            is PointShopResult.Failure -> {
+                source.sendError(shopErrorText(result.error))
+                0
+            }
+        }
+    }
+
+    /** 清理已完结订单（保留期内留作对账，正常由服务端定时任务自动做） */
+    private fun shopPurge(context: CommandContext<ServerCommandSource>): Int {
+        val removed = PointShopService.purgeFinished(context.source.server)
+        context.source.sendFeedback({ Text.translatable("cobblemarket.points.shop.purged", removed) }, true)
+        return 1
+    }
+
+    /** 订单状态机错误 → 玩家语言的提示 */
+    private fun shopErrorText(error: PointShopError): Text = Text.translatable(
+        when (error) {
+            PointShopError.DISABLED -> "cobblemarket.points.shop.disabled"
+            PointShopError.NO_TIER -> "cobblemarket.points.shop.no_tier"
+            PointShopError.ALREADY_ACTIVE -> "cobblemarket.points.shop.already_active"
+            PointShopError.NOT_FOUND -> "cobblemarket.points.shop.not_found"
+            PointShopError.NOT_OWNER -> "cobblemarket.points.shop.not_owner"
+            PointShopError.BAD_STATUS -> "cobblemarket.points.shop.bad_status"
+            PointShopError.EXPIRED -> "cobblemarket.points.shop.expired"
+            PointShopError.GENERATE_FAILED -> "cobblemarket.points.shop.generate_failed"
+        }
+    )
 
     private fun marketOn(context: CommandContext<ServerCommandSource>): Int = setMarketEnabled(context, true)
 

@@ -73,6 +73,7 @@ object CobbleMarket {
 		onServerStarting { server ->
 			// 清空上一世界残留的保存待办（单机切存档同进程，静态状态不得跨世界——见 PersistHelper.reset）
 			com.shusheng.cobblemarket.util.PersistHelper.reset()
+			com.shusheng.cobblemarket.currency.PointShopService.reset()
 			// 世界加载前校验 PersistentState 数据文件：损坏则从 .bak 恢复，再制作新备份
 			com.shusheng.cobblemarket.util.StateBackup.verifyAndBackup(server)
 		}
@@ -100,6 +101,8 @@ object CobbleMarket {
 			com.shusheng.cobblemarket.util.PersistHelper.tick(server)
 			// 金融系统自动划扣扫描（内部 60 秒节流，见 FinanceService）
 			com.shusheng.cobblemarket.finance.FinanceService.tick(server)
+			// 充值订单维护：超时作废 + 完结订单清理（内部 60 秒节流，见 PointShopService）
+			com.shusheng.cobblemarket.currency.PointShopService.tick(server)
 			// 喵喵紫卡/黑卡丢弃即消失扫描（0.5 秒节流，近乎立即可见消失；
 			// 非持有者背包自删走物品自身的 inventoryTick，无需服务器扫描）
 			if (++cardScanTick >= 10) {

@@ -25,6 +25,12 @@ object PointCodes {
 
     private val random = SecureRandom()
 
+    /** 值 → 字符（0-31）。充值订单号（[PointOrderNumbers]）也复用这套字符集 */
+    internal fun charAt(value: Int): Char = ALPHABET[value]
+
+    /** 字符 → 值（0-31）；不属于字符集返回 -1 */
+    internal fun valueOf(ch: Char): Int = ALPHABET.indexOf(ch)
+
     /** 生成一个新码（归一化形式：大写、无分隔符）。**碰撞由调用方查表处理并重抽** */
     fun generate(length: Int = LENGTH): String {
         val sb = StringBuilder(length)

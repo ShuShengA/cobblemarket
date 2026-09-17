@@ -13,6 +13,14 @@ import java.io.File
 /** 分期方案（每期 7 天）：期数 + 每期费率（0.005 = 0.5%） */
 data class LoanPlan(val periods: Int, val feeRate: Double)
 
+/**
+ * 游戏内充值档位。
+ *
+ * ⚠ [priceCents] 与 [points] 都用整数（分 / 个）：金额要跟服主的收款账单逐笔对上，
+ * 浮点误差（5.00 存成 4.999…）在对账场景里是致命的。
+ */
+data class ShopTier(val name: String, val priceCents: Long, val points: Long)
+
 object CobbleMarketConfig {
     private val gson = GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create()
     private val configFile: File
@@ -86,6 +94,27 @@ object CobbleMarketConfig {
         private set
     /** 外部码的有效期上限（天）：签发超出这个跨度的码一律拒绝，防"永久码"满天飞 */
     var pointsExternalMaxDays: Int = 365
+        private set
+    /**
+     * **游戏内充值开关**（默认关，需 [pointsEnabled] 同时开启）。
+     *
+     * 国内小服主普遍用个人收款码卖东西，而个人收款码**没有支付回调** —— 任何程序都无法自动
+     * 得知「谁付了多少」。本功能因此不做自动收款，只把对账成本压到最低：
+     * 游戏内下单（金额带唯一尾数 + 订单号）→ 玩家扫码付款 → 点「我已支付」→ 服主看账单确认发放。
+     */
+    var pointsShopEnabled: Boolean = false
+        private set
+    /**
+     * 收款码图片文件名（放在 `config/cobblemarket/` 下，如 `pay.png`）。
+     * **留空 = 不开放「购买点券」**（玩家仍可兑换码充值）。服务端读取后经网络下发给客户端绘制。
+     */
+    var pointsShopPayQrImage: String = ""
+        private set
+    /** 待支付订单超时（分钟，默认 15）：超时后作废并释放金额尾数，玩家可重新下单 */
+    var pointsShopOrderTimeoutMinutes: Long = 15L
+        private set
+    /** 充值档位列表（空 = 不开放「购买点券」）；非法档位在读取时被丢弃并记日志 */
+    var pointsShopTiers: List<ShopTier> = emptyList()
         private set
 
     // ── 金融系统（finance 段，启动级：reload 跳过应用仅比较差异，改后需重启） ──
@@ -246,6 +275,38 @@ object CobbleMarketConfig {
         save()
     }
 
+    /** 游戏内充值开关切换并落盘（仅服务端配置界面调用） */
+    fun setPointsShopEnabled(v: Boolean) {
+        pointsShopEnabled = v
+        save()
+    }
+
+    /**
+     * 解析一个充值档位。非法档位**直接丢弃**（返回 null）并记日志 ——
+     * 标价/点数非正数的档位等于白送点券，绝不能让它静默生效。
+     */
+    private fun parseShopTier(raw: Any?, index: Int): ShopTier? {
+        val map = raw as? Map<*, *> ?: run {
+            CobbleMarket.LOGGER.warn("Shop tier #{} is not an object; ignored", index + 1)
+            return null
+        }
+        val name = (map["name"] as? String)?.trim().orEmpty()
+        val price = (map["price"] as? Number)?.toDouble()
+        val points = (map["points"] as? Number)?.toLong()
+        if (name.isBlank() || price == null || points == null || price <= 0.0 || points <= 0L) {
+            CobbleMarket.LOGGER.warn(
+                "Shop tier #{} is invalid (name/price/points must be present and positive); ignored", index + 1
+            )
+            return null
+        }
+        val cents = Math.round(price * 100.0)
+        if (cents <= 0L) {
+            CobbleMarket.LOGGER.warn("Shop tier #{} price rounds to 0; ignored", index + 1)
+            return null
+        }
+        return ShopTier(name, cents, points)
+    }
+
     // ── 服务器配置 GUI 编辑 setter（钳制规则与 load() 一致；save() 由调用方统一执行） ──
 
     fun setPokemonListingFeePercent(v: Double) { pokemonListingFeePercent = v.coerceIn(0.0, 100.0) }
@@ -391,6 +452,7 @@ object CobbleMarketConfig {
                     "eggTradingEnabled", "buyOrderFeePercent", "buyOrderExpiryDays",
                     "maxBuyOrdersPerPlayer", "marketEnabled",
                     "shareEnabled", "pointsEnabled", "pointsExternalSecret", "pointsExternalMaxDays",
+                    "pointsShop",
                     "finance"
                 )
                 var missingKeys = knownKeys.any { !data.containsKey(it) }
@@ -560,6 +622,19 @@ object CobbleMarketConfig {
                 pointsEnabled = data["pointsEnabled"] as? Boolean ?: false
                 pointsExternalSecret = data["pointsExternalSecret"] as? String ?: ""
                 pointsExternalMaxDays = ((data["pointsExternalMaxDays"] as? Double)?.toInt() ?: 365).coerceAtLeast(0)
+                val shop = data["pointsShop"] as? Map<*, *>
+                if (shop != null) {
+                    val shopKeys = setOf("enabled", "payQrImage", "orderTimeoutMinutes", "tiers")
+                    if (shopKeys.any { !shop.containsKey(it) }) missingKeys = true
+                    pointsShopEnabled = shop["enabled"] as? Boolean ?: false
+                    pointsShopPayQrImage = (shop["payQrImage"] as? String)?.trim().orEmpty()
+                    // 超时钳 1 分钟~24 小时：0 会让订单一创建就过期，过大则尾数被长期占用
+                    pointsShopOrderTimeoutMinutes =
+                        ((shop["orderTimeoutMinutes"] as? Number)?.toLong() ?: 15L).coerceIn(1L, 1440L)
+                    pointsShopTiers = (shop["tiers"] as? List<*>)
+                        ?.mapIndexedNotNull { index, element -> parseShopTier(element, index) }
+                        ?: emptyList()
+                }
                 // 跨项校验（手工改过 config.json 也兜住）
                 enforceCardApplySeenGuard()
                 // 缺失字段补写：旧设置保留，新字段以默认值落盘（服主无需删配置）
@@ -610,6 +685,10 @@ object CobbleMarketConfig {
                 "pointsExternalMaxDays" to "外部码的有效期上限（天，默认 365）：签发时有效期跨度超过它的码一律拒绝，防「永久码」满天飞（永久码的 serial 必须永久保留，会让存档持续膨胀）/ Maximum validity for external codes in days (default 365): codes valid for longer are rejected, preventing \"forever codes\" (whose serials must be kept forever and would bloat the save)",
                 "pointsEnabled" to "点券总开关（默认关闭）：点券是本模组的第二货币，与主货币并行流通但**不可兑换、不可转让、不参与金融**。关闭时：玩家设置价格的界面不出现点券按钮，除点券商城外的任何地方都不能用点券交易（服主仍可在点券商城上架精灵/物品供持有点券的玩家购买）。⚠ 点券等同于充值货币，开启前请先配置发放渠道 / Points master switch (off by default): points are this mod's second currency, running alongside the primary one but **not convertible, not transferable, and outside the finance system**. When off, the points button is hidden from every price-setting screen and points cannot be used anywhere except the Points Shop (owners can still stock the Points Shop for players who already hold points). ⚠ Points are effectively a paid currency — set up a distribution channel before enabling",
                 "shareEnabled" to "玩家展示开关（默认开启）：开启后玩家可把精灵/物品展示到全服聊天（悬停看详情），每人 10 秒一次。关闭后展示按钮不再生效 / Player showcase switch (on by default): players can showcase Pokémon/items to server chat (hover for details), once per 10 seconds each. When off, the showcase button stops working",
+                "pointsShop.enabled" to "游戏内充值开关（默认关闭，需 pointsEnabled 同时开启）。国内小服主普遍用个人收款码，而个人收款码没有支付回调——本功能**不做自动收款**，只把对账成本压到最低：玩家在游戏内下单（实付金额带唯一尾数 + 6 位订单号）→ 扫码付款 → 点「我已支付」→ 服主对着账单点确认发放。⚠ 模组无法判断是否真的付了款，「我已支付」只是玩家的声明：**未确认一律不发放** / In-game top-up switch (off by default, requires pointsEnabled too). Personal payment QR codes have no payment callback, so this feature does NOT collect payments automatically — it only minimizes reconciliation work: the player orders in game (unique amount suffix + 6-char order number) → scans the QR → pays → taps \"I have paid\" → the owner checks the bill and confirms the grant. ⚠ The mod cannot tell whether a payment actually happened: \"I have paid\" is a claim, and nothing is granted until the owner confirms",
+                "pointsShop.payQrImage" to "收款码图片文件名（放在 config/cobblemarket/ 下，如 pay.png；PNG 格式，建议 ≤200KB）。**留空 = 不开放「购买点券」**。图片由服务端读取后下发给客户端绘制；订单号与实付金额由模组**动态绘制在图片旁**（不写进图片文件），防止玩家截图转给别人代付后认领 / Payment QR code image file name under config/cobblemarket/ (e.g. pay.png; PNG, 200KB or less recommended). **Leave blank to disable the in-game purchase entry.** The server reads it and sends it to clients for drawing; the order number and exact amount are drawn by the mod next to the image (never baked into the file), so a shared screenshot cannot be claimed by someone else",
+                "pointsShop.orderTimeoutMinutes" to "待支付订单超时分钟数（默认 15，钳 1~1440）：超时后订单作废并释放金额尾数，玩家可重新下单。⚠ 超时后有 30 分钟宽限期，期内玩家仍可提交「我已支付」（他可能已经付款、只是回来点得慢；作废是安全的失败方向，误判成已付款才危险）/ Minutes before an unpaid order expires (default 15, clamped 1–1440). Expired orders are voided and their amount suffix released so the player can order again. ⚠ A 30-minute grace period follows, during which \"I have paid\" is still accepted (the player may have paid but tapped late; voiding is the safe failure direction, wrongly granting is not)",
+                "pointsShop.tiers" to "充值档位列表：[{name=展示名, price=标价, points=发放点数}]。**实付金额 = 标价 + 唯一尾数（0.01~0.99）**，尾数由订单号派生、同一时刻的活跃订单不重复——服主在收款账单里看到 +5.37 就能一眼对上订单，不必依赖玩家备注。建议标价用整数，尾数会加在角分上。留空数组 = 不开放「购买点券」/ Top-up tiers: [{name=display name, price=list price, points=points granted}]. **Amount to pay = list price + a unique suffix (0.01–0.99)** derived from the order number, never duplicated among active orders — so +5.37 in your payment history maps straight to an order without relying on the player's note. Integer prices recommended (the suffix lands on the cents). An empty array disables the in-game purchase entry",
                 "maxBuyOrdersPerPlayer" to "每个玩家同时进行的求购单数量上限，精灵与物品合计（0=不限制）。求购单列表全量下发给所有客户端，玩家较多的服务器建议保持较小值，避免全服活跃求购单总量过大导致卡顿 / Max concurrent buy orders per player, Pokémon and items combined (0=unlimited). The buy order list is broadcast in full to every client, so on crowded servers keep this small to avoid lag from too many active orders",
                 "finance.enabled" to "金融系统总开关（默认关闭）。开启后玩家可借贷/使用喵喵支付；关闭时禁止新增借贷与信用支付，已有贷款照常运行（还款/逾期/坏账不受影响） / Master switch for the finance system (off by default). When on, players can take loans and use Meowth Pay; when off, new loans and credit payments are blocked while existing loans keep running (repayment/overdue/bad debt unaffected)",
                 "finance.cashLoanEnabled" to "现金贷开关（借呗）：玩家在喵喵银行柜台主动借款 / Cash loan switch (Jiebei-style): players borrow cash directly at the Meowth Bank counter",
@@ -670,6 +749,15 @@ object CobbleMarketConfig {
             "pointsEnabled" to pointsEnabled,
             "pointsExternalSecret" to pointsExternalSecret,
             "pointsExternalMaxDays" to pointsExternalMaxDays,
+            "pointsShop" to mapOf(
+                "enabled" to pointsShopEnabled,
+                "payQrImage" to pointsShopPayQrImage,
+                "orderTimeoutMinutes" to pointsShopOrderTimeoutMinutes,
+                // 金额按分存、落盘时还原成「元」的写法（5.5）——服主手改配置时按元写最直观
+                "tiers" to pointsShopTiers.map {
+                    mapOf("name" to it.name, "price" to it.priceCents / 100.0, "points" to it.points)
+                }
+            ),
             "finance" to mapOf(
                 "enabled" to financeEnabled,
                 "cashLoanEnabled" to cashLoanEnabled,
