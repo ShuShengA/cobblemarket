@@ -16,6 +16,7 @@ import com.shusheng.cobblemarket.network.FinanceNetwork
 import com.shusheng.cobblemarket.network.ItemBlacklistNetwork
 import com.shusheng.cobblemarket.network.MarketNetwork
 import com.shusheng.cobblemarket.network.ObjectPreviewNetwork
+import com.shusheng.cobblemarket.network.PointsNetwork
 import com.shusheng.cobblemarket.network.ServerConfigNetwork
 import com.shusheng.cobblemarket.network.ShareNetwork
 import com.shusheng.cobblemarket.network.SoundNetwork
@@ -66,6 +67,7 @@ object CobbleMarket {
 		SoundNetwork.register()
 		ObjectPreviewNetwork.register()
 		ShareNetwork.register()
+		PointsNetwork.register()
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()
 		TransactionHistory.register()

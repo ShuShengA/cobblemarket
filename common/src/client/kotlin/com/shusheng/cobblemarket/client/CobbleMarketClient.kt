@@ -13,6 +13,7 @@ import com.shusheng.cobblemarket.network.AuctionSettleSoundPayload
 import com.shusheng.cobblemarket.network.ItemCelebrationPayload
 import com.shusheng.cobblemarket.network.PokemonCelebrationPayload
 import com.shusheng.cobblemarket.network.MarketStatePayload
+import com.shusheng.cobblemarket.network.PointsStatusPayload
 import com.shusheng.cobblemarket.network.PendingReturnsPayload
 import com.shusheng.cobblemarket.network.PlaySoundPayload
 import com.shusheng.cobblemarket.network.BuyOrderEventPayload
@@ -81,6 +82,7 @@ import com.shusheng.cobblemarket.screen.ItemReturnScreen
 import com.shusheng.cobblemarket.screen.ItemSellScreen
 import com.shusheng.cobblemarket.screen.ItemVariantSelectScreen
 import com.shusheng.cobblemarket.screen.PokemonReturnScreen
+import com.shusheng.cobblemarket.screen.PointsMarketScreen
 import com.shusheng.cobblemarket.screen.PriceLimitScreen
 import com.shusheng.cobblemarket.screen.SellSelectScreen
 import com.shusheng.cobblemarket.screen.ServerConfigScreen
@@ -451,6 +453,7 @@ object CobbleMarketClient {
                     is AuctionCreateScreen -> screen.onMarketResult(payload)
                     is AdminAuctionScreen -> screen.onMarketResult(payload)
                     is BuyOrderScreen -> screen.onMarketResult(payload)
+                    is PointsMarketScreen -> screen.onMarketResult(payload)
                 }
             }
         }
@@ -513,6 +516,14 @@ object CobbleMarketClient {
                 (MinecraftClient.getInstance().currentScreen as? AdminScreen)?.updateMarketSwitchIcon()
                 // 开市/停市音**不在这里播**：管理面板的开关按钮会先乐观更新 MarketStateCache，
                 // 广播回来时"状态看起来没变"，客户端判断不出刚切换过 —— 改由服务端发（toggleMarketEnabled）
+            }
+        }
+
+        registerS2C(PointsStatusPayload.ID, PointsStatusPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                PointsStateCache.enabled = payload.enabled
+                // 界面已打开时同步按钮置灰态（登录补发 / 后续管理端切换都能跟上）
+                (MinecraftClient.getInstance().currentScreen as? MarketEntryScreen)?.updatePointsEntryState()
             }
         }
 
@@ -994,4 +1005,4 @@ internal fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean
         s is PurpleCardConfigScreen || s is PurpleCardApplyScreen || s is PurpleCardApplyConditionsScreen ||
         s is BlackCardConfigScreen || s is BlackCardApplyScreen || s is BlackCardApplyConditionsScreen || s is CardManageScreen || s is ItemVariantSelectScreen ||
         s is MeowthBankScreen || s is LoanScreen || s is LoanHistoryScreen || s is RepayScreen || s is MeowthPayScreen ||
-        s is DepositScreen || s is BalanceHudPositionScreen
+        s is DepositScreen || s is BalanceHudPositionScreen || s is PointsMarketScreen

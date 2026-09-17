@@ -12,18 +12,19 @@ import net.minecraft.command.argument.EntityArgumentType
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
-import com.shusheng.cobblemarket.currency.ExternalPointCode
 import com.shusheng.cobblemarket.currency.PointCodeState
 import com.shusheng.cobblemarket.currency.PointCodes
 import com.shusheng.cobblemarket.currency.PointOrderNumbers
 import com.shusheng.cobblemarket.currency.PointOrderState
 import com.shusheng.cobblemarket.currency.PointOrderStatus
+import com.shusheng.cobblemarket.currency.PointRedeemService
 import com.shusheng.cobblemarket.currency.PointShopError
 import com.shusheng.cobblemarket.currency.PointShopResult
 import com.shusheng.cobblemarket.currency.PointShopService
 import com.shusheng.cobblemarket.currency.PointsAuditLogger
 import com.shusheng.cobblemarket.currency.PointsLogType
 import com.shusheng.cobblemarket.currency.PointsState
+import com.shusheng.cobblemarket.currency.RedeemOutcome
 import com.shusheng.cobblemarket.finance.CreditFileLogger
 import com.shusheng.cobblemarket.finance.FinanceService
 import com.shusheng.cobblemarket.finance.FinanceState
@@ -33,7 +34,6 @@ import com.shusheng.cobblemarket.network.MarketNetwork
 import com.shusheng.cobblemarket.network.MarketStatePayload
 import com.shusheng.cobblemarket.platform.onPlayerJoin
 import com.shusheng.cobblemarket.platform.registerCommands
-import com.shusheng.cobblemarket.util.RequestThrottle
 import com.shusheng.cobblemarket.platform.sendToPlayer
 import net.minecraft.server.command.CommandManager
 import net.minecraft.server.command.ServerCommandSource
@@ -283,37 +283,11 @@ object MarketCommands {
         }
     }
 
-    // ── 兑换防爆破（内存态：防的是短时间内的暴力枚举，重启清空可接受）──
-
-    /** 玩家 → 最近失败时间戳（只留窗口内的） */
-    private val redeemFailures = java.util.concurrent.ConcurrentHashMap<java.util.UUID, MutableList<Long>>()
-
-    /** 玩家 → 锁定到期时刻 */
-    private val redeemLockedUntil = java.util.concurrent.ConcurrentHashMap<java.util.UUID, Long>()
-
-    private const val REDEEM_THROTTLE_MS = 3_000L
-    private const val REDEEM_WINDOW_MS = 10 * 60 * 1000L
-    private const val REDEEM_MAX_FAILURES = 8
-    private const val REDEEM_LOCK_MS = 10 * 60 * 1000L
-
-    /** 记一次兑换失败；窗口内失败达上限就把玩家锁一段时间 */
-    private fun recordRedeemFailure(playerUuid: java.util.UUID, now: Long) {
-        val list = redeemFailures.computeIfAbsent(playerUuid) { mutableListOf() }
-        synchronized(list) {
-            list.removeIf { now - it > REDEEM_WINDOW_MS }
-            list.add(now)
-            if (list.size >= REDEEM_MAX_FAILURES) {
-                redeemLockedUntil[playerUuid] = now + REDEEM_LOCK_MS
-                list.clear()
-            }
-        }
-    }
-
     /**
-     * 兑换点券。
+     * 兑换点券（命令入口）。
      *
-     * ⚠ 顺序铁律（方案「兑换码专项」）：**先扣次数 → 再加余额**，且两件事在同一个
-     * `server.execute{}` 内完成 —— 崩溃窗口最坏是玩家少一次机会，**绝不会凭空多拿**。
+     * 逻辑全在 [PointRedeemService]（**GUI 走同一个内核，不另写一份** —— 方案风险清单第 12 条）；
+     * 这里只负责把结果翻成命令反馈。
      */
     private fun pointsRedeem(context: CommandContext<ServerCommandSource>): Int {
         val source = context.source
@@ -322,79 +296,20 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.points.players_only"))
             return 0
         }
-        val server = source.server
-        val now = System.currentTimeMillis()
-        redeemLockedUntil[player.uuid]?.let { until ->
-            if (now < until) {
-                source.sendError(Text.translatable("cobblemarket.points.redeem_locked"))
-                return 0
-            }
-            redeemLockedUntil.remove(player.uuid)
-        }
-        if (!RequestThrottle.allow(player.uuid, "points_redeem", REDEEM_THROTTLE_MS)) return 0
-
         val raw = StringArgumentType.getString(context, "code")
-        server.execute {
-            val invalid: () -> Unit = {
-                recordRedeemFailure(player.uuid, now)
-                source.sendError(Text.translatable("cobblemarket.points.redeem_invalid"))
-            }
-            val state = PointCodeState.get(server)
-
-            // ① 先试外部签名码（服主在网站/发卡网卖的那类；secret 留空时它直接返回 null）
-            val external = ExternalPointCode.verify(
-                raw,
-                CobbleMarketConfig.pointsExternalSecret,
-                now,
-                CobbleMarketConfig.pointsExternalMaxDays
-            )
-            if (external != null) {
-                // 防重放：一个 serial 只能兑一次。**先记 serial 再加余额**（崩溃窗口最坏少一次机会）
-                if (!state.markSerialUsed(external.serial)) {
-                    invalid()
-                    return@execute
-                }
-                val after = PointsState.get(server).addBalance(player.uuid, external.amount)
-                PointsAuditLogger.log(
-                    PointsLogType.REDEEM, player.uuid, player.name.string, external.amount, after,
-                    player.name.string, "外部码 serial=${external.serial}"
-                )
-                source.sendFeedback({
+        source.server.execute {
+            when (val outcome = PointRedeemService.redeem(source.server, player, raw)) {
+                is RedeemOutcome.Success -> source.sendFeedback({
                     Text.translatable(
                         "cobblemarket.points.redeem_ok",
-                        CurrencyService.amountText(external.amount, MarketCurrency.POINTS),
-                        CurrencyService.amountText(after, MarketCurrency.POINTS)
+                        CurrencyService.amountText(outcome.amount, MarketCurrency.POINTS),
+                        CurrencyService.amountText(outcome.balanceAfter, MarketCurrency.POINTS)
                     )
                 }, false)
-                redeemFailures.remove(player.uuid)
-                return@execute
-            }
-
-            // ② 再查本地码表
-            val code = PointCodes.normalize(raw)
-            val entry = code?.let { state.find(it) }
-            when {
-                entry == null -> invalid()
-                entry.isExhausted() -> invalid()
-                entry.isExpired(now) -> invalid()
-                entry.boundPlayer != null && entry.boundPlayer != player.uuid -> invalid()
-                else -> {
-                    // 先扣次数，再加余额（顺序不能反：反了崩溃窗口会变成凭空多拿）
-                    state.recordRedemption(entry, player.uuid, player.name.string, now)
-                    val after = PointsState.get(server).addBalance(player.uuid, entry.amount)
-                    PointsAuditLogger.log(
-                        PointsLogType.REDEEM, player.uuid, player.name.string, entry.amount, after,
-                        player.name.string, "兑换码 ${PointCodes.format(entry.code)}"
-                    )
-                    source.sendFeedback({
-                        Text.translatable(
-                            "cobblemarket.points.redeem_ok",
-                            CurrencyService.amountText(entry.amount, MarketCurrency.POINTS),
-                            CurrencyService.amountText(after, MarketCurrency.POINTS)
-                        )
-                    }, false)
-                    redeemFailures.remove(player.uuid)
-                }
+                RedeemOutcome.Locked -> source.sendError(Text.translatable("cobblemarket.points.redeem_locked"))
+                RedeemOutcome.Invalid -> source.sendError(Text.translatable("cobblemarket.points.redeem_invalid"))
+                // 节流：静默丢弃（防脚本连点，不值得回一条消息）
+                RedeemOutcome.Throttled -> {}
             }
         }
         return 1
