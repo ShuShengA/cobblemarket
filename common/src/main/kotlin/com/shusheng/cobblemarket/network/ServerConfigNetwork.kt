@@ -453,6 +453,8 @@ object ServerConfigNetwork {
             server.execute {
                 applyAll(payload)
                 CobbleMarketConfig.save()
+                // 保存成功反馈音（管理操作不回 MarketResultPayload，避免刷聊天栏，只给一声结果音）
+                sendResultSound(player)
                 sendToPlayer(player, snapshot())
             }
         }
