@@ -4,6 +4,8 @@ import com.shusheng.cobblemarket.client.playFailSound
 
 import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.SellItemPayload
+import com.shusheng.cobblemarket.network.ShareNetwork
+import com.shusheng.cobblemarket.network.SharePayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
@@ -20,13 +22,21 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import com.shusheng.cobblemarket.client.drawItemWithBar
 
-class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title")) {
+/**
+ * 选择要上架的物品界面；分享模式（shareMode）复用本界面：把价格弹窗换成「直接分享」，
+ * 行按钮改文案后按一下即把该物品发到全服聊天。
+ */
+class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.translatable(
+    if (shareMode) "cobblemarket.share.title_item" else "cobblemarket.item.sell_title"
+)) {
 
     private val panelWidth = 296
     private val rowHeight = 24
 
     // name：显示名在背包扫描时构建一次，render 每帧取 stack.name 是分配热点
-    private data class SellItem(val stack: ItemStack, val count: Int, val name: String)
+    // slot：首次出现的背包主栏槽位（同类物品跨多个栈时数量合并显示，分享按这个槽位取实物——
+    //       服务端只认槽位号、自己读背包，客户端递上来的内容一律不信）
+    private data class SellItem(val stack: ItemStack, val count: Int, val name: String, val slot: Int)
 
     private var items = listOf<SellItem>()
     private val sellButtons = mutableListOf<NineSliceButton>()
@@ -52,7 +62,8 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         val backBtn = NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
             Text.literal(""),
-            { client?.setScreen(ItemMarketScreen()) },
+            // 分享模式是从入口界面进来的，返回也回入口（上架模式照旧回物品市场）
+            { client?.setScreen(if (shareMode) MarketEntryScreen() else ItemMarketScreen()) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
@@ -72,7 +83,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
                 if (idx >= 0) {
                     list[idx] = list[idx].copy(count = list[idx].count + stack.count)
                 } else {
-                    list.add(SellItem(stack.copy(), stack.count, stack.name.string))
+                    list.add(SellItem(stack.copy(), stack.count, stack.name.string, i))
                 }
             }
         }
@@ -88,8 +99,8 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
             val y = startY + i * rowHeight
             val btn = NineSliceButton(
                 leftX + panelWidth - 52, y + 4, 46, 16,
-                Text.translatable("cobblemarket.sell.sell"),
-                { openConfirmDialog(item) }
+                Text.translatable(if (shareMode) "cobblemarket.share.button" else "cobblemarket.sell.sell"),
+                { if (shareMode) shareItem(item) else openConfirmDialog(item) }
             )
             // 弹窗打开期间重建（如滚动）的行按钮同样隐藏，防止文字透过遮罩
             if (selectedItem != null) btn.visible = false
@@ -404,9 +415,19 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         return result
     }
 
+    /** 分享模式：把该物品的槽位号交给服务端（服务端按槽位读自己的背包，归属天然成立） */
+    private fun shareItem(item: SellItem) {
+        sendToServer(SharePayload(ShareNetwork.KIND_ITEM, item.slot.toString()))
+    }
+
     fun onMarketResult(payload: MarketResultPayload) {
         if (payload.success) {
             client?.player?.sendMessage(payload.message.copy().formatted(Formatting.GREEN), false)
+            // 分享成功即完成：**关掉界面回游戏**（分享的落点是聊天，玩家该直接看到聊天里的那条播报）
+            if (shareMode) {
+                client?.setScreen(null)
+                return
+            }
             loadInventory()
             rebuildSellButtons()
         } else {

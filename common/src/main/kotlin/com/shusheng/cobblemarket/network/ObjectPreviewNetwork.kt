@@ -115,6 +115,11 @@ object ObjectPreviewNetwork {
     /** 求购单播报的 kind（客户端指令是 `/cobblemarket review <id>`，用词与指令保持一致） */
     const val KIND_BUY_ORDER = "buyorder"
 
+    /** 分享播报的 kind（客户端指令是 `/cobblemarket share <id>`）。
+     *  数据取自分享广播那一刻的**快照缓存**（`ShareNetwork.getPreview`），不是「按 id 现取」——
+     *  分享的东西可能马上被交易/放生，现取会取到对不上消息内容的东西，甚至取不到 */
+    const val KIND_SHARE = "share"
+
     fun register() {
         registerS2CType(ObjectPreviewPayload.ID, ObjectPreviewPayload.CODEC)
 
@@ -128,6 +133,7 @@ object ObjectPreviewNetwork {
                 val preview = when (payload.kind) {
                     KIND_AUCTION -> AuctionState.get(server).getAuction(uuid)?.let { auctionPreview(server, it) }
                     KIND_BUY_ORDER -> BuyOrderState.get(server).getOrder(uuid)?.let { buyOrderPreview(it) }
+                    KIND_SHARE -> ShareNetwork.getPreview(uuid)
                     else -> null
                 } ?: return@execute
                 sendToPlayer(player, preview)

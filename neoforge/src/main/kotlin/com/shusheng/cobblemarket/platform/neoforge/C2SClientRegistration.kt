@@ -82,6 +82,7 @@ import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.SellFromStoragePayload
 import com.shusheng.cobblemarket.network.SellItemPayload
 import com.shusheng.cobblemarket.network.SetMarketEnabledPayload
+import com.shusheng.cobblemarket.network.SharePayload
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
 import net.minecraft.network.packet.CustomPayload
@@ -178,6 +179,7 @@ fun registerClientC2S() {
         c2s(registrar, SellFromStoragePayload.ID, SellFromStoragePayload.CODEC)
         c2s(registrar, SellItemPayload.ID, SellItemPayload.CODEC)
         c2s(registrar, SetMarketEnabledPayload.ID, SetMarketEnabledPayload.CODEC)
+        c2s(registrar, SharePayload.ID, SharePayload.CODEC)
 
         // 管理权限节点（2026-09-12 S1）：权限授予是服主专属，与其余管理权限分开
         c2s(registrar, RequestPermissionSnapshotPayload.ID, RequestPermissionSnapshotPayload.CODEC)

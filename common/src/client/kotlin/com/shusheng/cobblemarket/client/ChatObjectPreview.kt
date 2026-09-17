@@ -21,7 +21,7 @@ import java.util.UUID
 /**
  * **聊天播报的悬浮大图**（按 T 打开聊天 → 鼠标停在拍卖/求购的全服播报上）。
  *
- * 播报里的拍品名挂了客户端指令（见 `AuctionNetwork.announceAuction` / `BuyOrderNetwork`），
+ * 播报里的拍品名挂了客户端指令（见 `AuctionNetwork.announceAuction` / `BuyOrderNetwork` / `ShareNetwork`），
  * 这里就顺着那条 `clickEvent` 认出「鼠标下是哪个拍品」，再去服务端要数据（[RequestObjectPreviewPayload]）
  * 并在**右半屏的中心**画大图 —— 复用列表那套悬停大图的渲染器（居中模式）。
  *
@@ -30,7 +30,7 @@ import java.util.UUID
  * - **防扫过**：同一拍品连续悬停 [HOVER_DWELL_MS] 才算选中 —— 鼠标划过一屏聊天时不该闪一片大图
  * - **鼠标移开立刻收起**（不进淡出、不留残影），缓存保留，回头再悬停秒显
  *
- * 识别方式与具体是哪条播报无关：**只要那段聊天文字挂了 `auction` / `review` 指令就生效**
+ * 识别方式与具体是哪条播报无关：**只要那段聊天文字挂了 `auction` / `review` / `share` 指令就生效**
  * （新增播报时不必改这里）。叫声沿用 [IconCryClick]（随机普通叫/战吼、静态模式与睡觉不叫）：
  * 显示后延迟 [IconCryClick.AUTO_CRY_DELAY_MS] 才响，理由与各弹窗一致 ——
  * 大图刚出现时玩家还没反应过来声音从哪来。
@@ -303,6 +303,8 @@ object ChatObjectPreview {
         val kind = when (parts.getOrNull(0)) {
             "auction" -> ObjectPreviewNetwork.KIND_AUCTION
             "review" -> ObjectPreviewNetwork.KIND_BUY_ORDER
+            // 分享播报：名字上挂的是 `/cobblemarket share <id>`（点击无动作，见 ShareNetwork.shareMessage）
+            "share" -> ObjectPreviewNetwork.KIND_SHARE
             else -> return null
         }
         val rawId = parts.getOrNull(1) ?: return null
