@@ -410,6 +410,8 @@
   "cobblemarket.gui.tooltip_ability": "Ability:",
   "cobblemarket.gui.tooltip_ivs": "IVs:",
   "cobblemarket.gui.friendship": "Friendship: %s",
+  "cobblemarket.gui.tooltip_marks": "Marks: ",
+  "cobblemarket.gui.marks_sep": ", ",
   "cobblemarket.gui.tooltip_held": "Held: ",
   "cobblemarket.gui.tooltip_seller": "Seller: ",
   "cobblemarket.gui.tooltip_price": "Price: ",
