@@ -12,6 +12,8 @@ import net.minecraft.command.argument.EntityArgumentType
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.PointCodeState
+import com.shusheng.cobblemarket.currency.PointCodes
 import com.shusheng.cobblemarket.currency.PointsAuditLogger
 import com.shusheng.cobblemarket.currency.PointsLogType
 import com.shusheng.cobblemarket.currency.PointsState
@@ -24,6 +26,7 @@ import com.shusheng.cobblemarket.network.MarketNetwork
 import com.shusheng.cobblemarket.network.MarketStatePayload
 import com.shusheng.cobblemarket.platform.onPlayerJoin
 import com.shusheng.cobblemarket.platform.registerCommands
+import com.shusheng.cobblemarket.util.RequestThrottle
 import com.shusheng.cobblemarket.platform.sendToPlayer
 import net.minecraft.server.command.CommandManager
 import net.minecraft.server.command.ServerCommandSource
@@ -173,6 +176,45 @@ object MarketCommands {
                                 )
                             )
                         )
+                        .then(CommandManager.literal("redeem")
+                            // 兑换：**所有玩家可用、无权限节点**（码本身就是凭证）。
+                            // ⚠ 玩家侧以后优先走 GUI（命令输入会进聊天记录与服务器日志，而码 = 钱），
+                            // 命令这条路留着是为了服务器后台/客服代兑
+                            .then(CommandManager.argument("code", StringArgumentType.word())
+                                .executes(::pointsRedeem)
+                            )
+                        )
+                        .then(CommandManager.literal("code")
+                            // 生成/作废兑换码 = 印钞，仅 OP（与 give/take 同级）
+                            .requires { it.hasPermissionLevel(2) }
+                            .then(CommandManager.literal("create")
+                                .then(CommandManager.argument("amount", IntegerArgumentType.integer(1))
+                                    .then(CommandManager.argument("count", IntegerArgumentType.integer(1, 100))
+                                        .then(CommandManager.argument("uses", IntegerArgumentType.integer(1))
+                                            .then(CommandManager.argument("days", IntegerArgumentType.integer(0))
+                                                // days = 0 表示不过期（⚠ 不过期的码不能靠 serial 清理，见方案）
+                                                .executes { ctx -> pointsCodeCreate(ctx, null) }
+                                                .then(CommandManager.argument("bound", StringArgumentType.word())
+                                                    .suggests(::suggestOnlinePlayerNames)
+                                                    .executes { ctx -> pointsCodeCreate(ctx, StringArgumentType.getString(ctx, "bound")) }
+                                                )
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                            .then(CommandManager.literal("list")
+                                .executes(::pointsCodeList)
+                            )
+                            .then(CommandManager.literal("revoke")
+                                .then(CommandManager.argument("code", StringArgumentType.word())
+                                    .executes(::pointsCodeRevoke)
+                                )
+                            )
+                            .then(CommandManager.literal("purge")
+                                .executes(::pointsCodePurge)
+                            )
+                        )
                         .then(CommandManager.literal("check")
                             // 查自己：**人人可用**（只读自己的数据，没有理由要权限）
                             .executes { ctx -> pointsCheck(ctx, null) }
@@ -193,6 +235,196 @@ object MarketCommands {
             // 待领取概况：客户端首次打开市场入口界面时据此播「离线收益」提示音
             com.shusheng.cobblemarket.network.sendPendingReturns(player, player.server)
         }
+    }
+
+    // ── 兑换防爆破（内存态：防的是短时间内的暴力枚举，重启清空可接受）──
+
+    /** 玩家 → 最近失败时间戳（只留窗口内的） */
+    private val redeemFailures = java.util.concurrent.ConcurrentHashMap<java.util.UUID, MutableList<Long>>()
+
+    /** 玩家 → 锁定到期时刻 */
+    private val redeemLockedUntil = java.util.concurrent.ConcurrentHashMap<java.util.UUID, Long>()
+
+    private const val REDEEM_THROTTLE_MS = 3_000L
+    private const val REDEEM_WINDOW_MS = 10 * 60 * 1000L
+    private const val REDEEM_MAX_FAILURES = 8
+    private const val REDEEM_LOCK_MS = 10 * 60 * 1000L
+
+    /** 记一次兑换失败；窗口内失败达上限就把玩家锁一段时间 */
+    private fun recordRedeemFailure(playerUuid: java.util.UUID, now: Long) {
+        val list = redeemFailures.computeIfAbsent(playerUuid) { mutableListOf() }
+        synchronized(list) {
+            list.removeIf { now - it > REDEEM_WINDOW_MS }
+            list.add(now)
+            if (list.size >= REDEEM_MAX_FAILURES) {
+                redeemLockedUntil[playerUuid] = now + REDEEM_LOCK_MS
+                list.clear()
+            }
+        }
+    }
+
+    /**
+     * 兑换点券。
+     *
+     * ⚠ 顺序铁律（方案「兑换码专项」）：**先扣次数 → 再加余额**，且两件事在同一个
+     * `server.execute{}` 内完成 —— 崩溃窗口最坏是玩家少一次机会，**绝不会凭空多拿**。
+     */
+    private fun pointsRedeem(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val player = source.player
+        if (player == null) {
+            source.sendError(Text.translatable("cobblemarket.points.players_only"))
+            return 0
+        }
+        val server = source.server
+        val now = System.currentTimeMillis()
+        redeemLockedUntil[player.uuid]?.let { until ->
+            if (now < until) {
+                source.sendError(Text.translatable("cobblemarket.points.redeem_locked"))
+                return 0
+            }
+            redeemLockedUntil.remove(player.uuid)
+        }
+        if (!RequestThrottle.allow(player.uuid, "points_redeem", REDEEM_THROTTLE_MS)) return 0
+
+        val raw = StringArgumentType.getString(context, "code")
+        server.execute {
+            val invalid: () -> Unit = {
+                recordRedeemFailure(player.uuid, now)
+                source.sendError(Text.translatable("cobblemarket.points.redeem_invalid"))
+            }
+            val code = PointCodes.normalize(raw)
+            val state = PointCodeState.get(server)
+            val entry = code?.let { state.find(it) }
+            when {
+                entry == null -> invalid()
+                entry.isExhausted() -> invalid()
+                entry.isExpired(now) -> invalid()
+                entry.boundPlayer != null && entry.boundPlayer != player.uuid -> invalid()
+                else -> {
+                    // 先扣次数，再加余额（顺序不能反：反了崩溃窗口会变成凭空多拿）
+                    state.recordRedemption(entry, player.uuid, player.name.string, now)
+                    val after = PointsState.get(server).addBalance(player.uuid, entry.amount)
+                    PointsAuditLogger.log(
+                        PointsLogType.REDEEM, player.uuid, player.name.string, entry.amount, after,
+                        player.name.string, "兑换码 ${PointCodes.format(entry.code)}"
+                    )
+                    source.sendFeedback({
+                        Text.translatable(
+                            "cobblemarket.points.redeem_ok",
+                            CurrencyService.amountText(entry.amount, MarketCurrency.POINTS),
+                            CurrencyService.amountText(after, MarketCurrency.POINTS)
+                        )
+                    }, false)
+                    redeemFailures.remove(player.uuid)
+                }
+            }
+        }
+        return 1
+    }
+
+    /** 生成本地兑换码（仅 OP）。`days = 0` 表示不过期；`bound` 非空时只有该玩家能兑 */
+    private fun pointsCodeCreate(context: CommandContext<ServerCommandSource>, boundName: String?): Int {
+        val source = context.source
+        val server = source.server
+        val amount = IntegerArgumentType.getInteger(context, "amount").toLong()
+        val count = IntegerArgumentType.getInteger(context, "count")
+        val uses = IntegerArgumentType.getInteger(context, "uses")
+        val days = IntegerArgumentType.getInteger(context, "days")
+        if (amount <= 0 || count <= 0 || uses <= 0 || days < 0) {
+            source.sendError(Text.translatable("cobblemarket.points.invalid_amount"))
+            return 0
+        }
+        val now = System.currentTimeMillis()
+        val expiresAt = if (days <= 0) null else now + days * 24L * 60 * 60 * 1000
+        var boundUuid: java.util.UUID? = null
+        var boundNameResolved: String? = null
+        if (boundName != null) {
+            val resolved = BanState.resolvePlayer(server, boundName)
+            if (resolved == null) {
+                source.sendError(Text.translatable("cobblemarket.ban.player_not_found", boundName))
+                return 0
+            }
+            boundUuid = resolved.first
+            boundNameResolved = resolved.second
+        }
+        val state = PointCodeState.get(server)
+        val created = mutableListOf<String>()
+        repeat(count) {
+            val entry = state.create(amount, uses, expiresAt, source.name, boundUuid, boundNameResolved, now)
+            if (entry != null) created.add(entry.code)
+        }
+        if (created.isEmpty()) {
+            source.sendError(Text.translatable("cobblemarket.points.code_create_failed"))
+            return 0
+        }
+        // 生成码本身不动任何人余额（余额列写 0）：单记 CODE_CREATE 类型，不污染「发放」口径
+        created.forEach { code ->
+            PointsAuditLogger.log(
+                PointsLogType.CODE_CREATE, boundUuid ?: java.util.UUID(0, 0), boundNameResolved ?: "-",
+                amount * uses, 0, source.name,
+                "生成兑换码 ${PointCodes.format(code)}（面额 $amount × $uses 次，过期 ${if (expiresAt == null) "永不" else "见配置"}）"
+            )
+        }
+        // ≤10 张直接回显；更多只报数量（导出文件的能力在 B7 的 GUI/命令里补）
+        if (created.size <= 10) {
+            created.forEach { code ->
+                source.sendFeedback({ Text.literal(PointCodes.format(code)) }, false)
+            }
+        }
+        source.sendFeedback({
+            Text.translatable("cobblemarket.points.code_created", created.size)
+        }, true)
+        return 1
+    }
+
+    /** 列出未用尽的兑换码（仅 OP）；码本身脱敏展示，服主可另在生成时记录 */
+    private fun pointsCodeList(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val now = System.currentTimeMillis()
+        val list = PointCodeState.get(source.server).all().filter { it.isUsable(now) }
+        if (list.isEmpty()) {
+            source.sendFeedback({ Text.translatable("cobblemarket.points.code_list_empty") }, false)
+            return 1
+        }
+        source.sendFeedback({
+            Text.translatable("cobblemarket.points.code_list_header", list.size)
+        }, false)
+        list.take(20).forEach { entry ->
+            source.sendFeedback({
+                Text.literal(
+                    "${PointCodes.format(entry.code)}  ${entry.amount}  " +
+                        "${entry.remainingUses}/${entry.totalUses}" +
+                        (entry.boundPlayerName?.let { "  → $it" } ?: "")
+                )
+            }, false)
+        }
+        return 1
+    }
+
+    /** 作废一张兑换码（仅 OP） */
+    private fun pointsCodeRevoke(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val raw = StringArgumentType.getString(context, "code")
+        val code = PointCodes.normalize(raw)
+        if (code == null || !PointCodeState.get(source.server).revoke(code)) {
+            source.sendError(Text.translatable("cobblemarket.points.code_not_found"))
+            return 0
+        }
+        PointsAuditLogger.log(
+            PointsLogType.CODE_REVOKE, java.util.UUID(0, 0), "-", 0, 0, source.name,
+            "作废兑换码 ${PointCodes.format(code)}"
+        )
+        source.sendFeedback({ Text.translatable("cobblemarket.points.code_revoked") }, true)
+        return 1
+    }
+
+    /** 清理已用尽 / 已过期的码（仅 OP） */
+    private fun pointsCodePurge(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val removed = PointCodeState.get(source.server).purgeExpired(System.currentTimeMillis())
+        source.sendFeedback({ Text.translatable("cobblemarket.points.code_purged", removed) }, true)
+        return 1
     }
 
     // ── 点券：命令发放 / 回收 / 查询 ──
