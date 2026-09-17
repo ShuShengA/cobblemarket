@@ -27,6 +27,14 @@ subprojects {
 		archivesName = "cobblemarket-${project.name}"
 	}
 
+	// 产物文件名带上 MC 版本（cobblemarket-fabric-1.2.0+1.21.1.jar）：玩家在 mods 文件夹和下载页
+	// 一眼看出对应哪个 Minecraft（照 Cobblemon 本体的文件命名习惯）。
+	// ⚠ 只改**文件名**，不动 project.version —— jar 内的 mod 版本仍是纯 1.2.0，与 CHANGELOG / 官网 /
+	// GitHub tag 口径一致；`+` 后是 semver 的 build metadata，不参与版本比较，适合放文件名而非版本号。
+	tasks.withType(AbstractArchiveTask).configureEach {
+		archiveVersion.set("${project.version}+${minecraft_version}")
+	}
+
 	repositories {
 		maven {
 			name = "Modrinth"
