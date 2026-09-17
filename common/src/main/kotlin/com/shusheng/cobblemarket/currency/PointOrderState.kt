@@ -9,7 +9,7 @@ import net.minecraft.world.PersistentState
 import java.util.UUID
 
 /**
- * 充值订单状态机（方案「点券充值」）。
+ * 充值订单状态机（方案「RP 充值」）。
  *
  * ```
  * [待支付] --玩家点「我已支付」--> [待确认] --服主确认--> [已发放]
@@ -41,7 +41,7 @@ data class PointOrder(
     val baseCents: Long,
     /** **实付金额（分）= 标价 + 唯一尾数** —— 服主在收款账单里靠它一眼对上订单 */
     val payCents: Long,
-    /** 确认发放的点券数 */
+    /** 确认发放的RP 数 */
     val points: Long,
     val createdAt: Long,
     /** 待支付超时时刻；进入待确认后不再作数（玩家已付款，等服主处理，不自动作废） */
@@ -64,7 +64,7 @@ data class PointOrder(
  * **充值订单账本**（`cobblemarket_point_orders.dat`）。
  *
  * 与兑换码账本的分工：兑换码是「先有码、后有主」，订单是「先有单、后有账」 ——
- * 订单记录的是**一次待处理的收款**，服主确认后才变成点券。
+ * 订单记录的是**一次待处理的收款**，服主确认后才变成RP。
  *
  * 文件名前缀带 `cobblemarket` ⇒ 自动进 `PersistHelper` / `StateBackup` 的备份、恢复与 mtime 校验。
  */

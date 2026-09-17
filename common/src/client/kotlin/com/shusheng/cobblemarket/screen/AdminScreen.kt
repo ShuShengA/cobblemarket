@@ -420,13 +420,13 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             width / 2, btnStartY - 33, 0xFFFFFF
         )
         // 底部按钮上方的分割线：与入口界面完全同款（颜色、跨度、相对底边的间距都一致），
-        // 两界面本来就是同一张贴图，视觉上要能对齐
+        // 两界面本来就是同一张贴图，视觉上要能对齐。颜色统一走 GuiColors.DIVIDER（4 条线共用）
         context.fill(
             width / 2 - 128 + 25,
             bgBottom() - 30,
             width / 2 + 128 - 25,
             bgBottom() - 29,
-            0xFFFF5555.toInt()
+            com.shusheng.cobblemarket.client.GuiColors.DIVIDER
         )
         // 金融系统告警行（批次 7）：准备金池 + 坏账总额；准备金为负（服主负债）整行红色告警
         if (reservePool >= 0 || badDebtTotal >= 0) {

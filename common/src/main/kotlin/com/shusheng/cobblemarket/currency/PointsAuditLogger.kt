@@ -11,15 +11,15 @@ import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 /**
- * 点券变动类型（审计账本的类型列）。
+ * RP 变动类型（审计账本的类型列）。
  * GIVE/TAKE = 命令发放与回收；REDEEM = 兑换码；MARKET_* = 市场消费与收入；SHOP_CONFIRM = 充值订单确认发放。
  */
 enum class PointsLogType { GIVE, TAKE, REDEEM, MARKET_SPEND, MARKET_INCOME, SHOP_CONFIRM, CODE_CREATE, CODE_REVOKE }
 
 /**
- * **点券审计账本**（`config/cobblemarket/points/`）。
+ * **RP 审计账本**（`config/cobblemarket/points/`）。
  *
- * ⚠ 点券在商业服等同**充值货币**（玩家花真钱买的），所以**每一次变动都必须可对账** ——
+ * ⚠ RP 在商业服等同**充值货币**（玩家花真钱买的），所以**每一次变动都必须可对账** ——
  * 发放 / 回收 / 兑换 / 市场消费与收入全量落 CSV，服主能拿它跟自己的收款记录逐笔核对。
  *
  * 照 [com.shusheng.cobblemarket.finance.CreditFileLogger] 的模式：中英双份 + README + CSV 注入防护
@@ -37,7 +37,7 @@ object PointsAuditLogger {
     private var currentEn: File? = null
 
     /**
-     * 记一笔点券变动。
+     * 记一笔RP 变动。
      *
      * @param amount 本次变动量（**恒为正数**，方向由 [type] 表达）
      * @param balanceAfter 变动后的余额 —— 对账时可直接核出「是不是每一分都对得上」
@@ -106,17 +106,17 @@ object PointsAuditLogger {
             try {
                 zh.writeText(
                     """
-                    CobbleMarket 点券审计账本目录说明
+                    CobbleMarket RP 审计账本目录说明
                     ==================================
 
-                    本目录下的 CSV 是点券审计账本（每一次点券变动同步追加写盘，不受崩溃/杀进程影响，只写不改）。
+                    本目录下的 CSV 是RP 审计账本（每一次RP 变动同步追加写盘，不受崩溃/杀进程影响，只写不改）。
 
                     列：时间, 类型, 玩家, 玩家UUID, 变动量, 变动后余额, 操作者, 详情
                       类型：发放（服主命令给的）、回收（服主命令收回的）、兑换（兑换码）、
                             市场消费（买精灵/物品/拍卖/求购花掉的）、市场收入（卖出赚到的）、
                             充值发放（游戏内充值订单经服主确认后发放的）
 
-                    ⚠ 点券在商业服等同于充值货币（玩家花真钱购买），本账本是**对账依据**：
+                    ⚠ RP 在商业服等同于充值货币（玩家花真钱购买），本账本是**对账依据**：
                     服主应定期拿它和自己的收款记录核对，确认每一笔发放都有对应的收款。
 
                     变动量恒为正数，「进/出」方向看类型列；「变动后余额」可直接逐行核对。
@@ -131,10 +131,10 @@ object PointsAuditLogger {
             try {
                 en.writeText(
                     """
-                    CobbleMarket Points Audit Ledger Directory
+                    CobbleMarket RP Audit Ledger Directory
                     ===========================================
 
-                    The CSVs here are the points audit ledger (every points change is appended synchronously
+                    The CSVs here are the RP audit ledger (every RP change is appended synchronously
                     to disk, unaffected by server crashes or forced kills; append-only).
 
                     Columns: Time, Type, Player, Player UUID, Amount, Balance After, Operator, Details
@@ -142,7 +142,7 @@ object PointsAuditLogger {
                              Market spend (bought a Pokémon/item/auction/buy order), Market income (sold),
                              Shop grant (in-game purchase order confirmed by the owner)
 
-                    ⚠ On commercial servers points are effectively a paid currency. This ledger is the
+                    ⚠ On commercial servers RP is effectively a paid currency. This ledger is the
                     reconciliation source of truth: check it against your own payment records regularly
                     to make sure every grant corresponds to a payment you received.
 

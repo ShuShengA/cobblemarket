@@ -164,7 +164,7 @@ object MarketCommands {
                     )
                     .then(CommandManager.literal("points")
                         // 发放/回收 = **印钞权**：只认 OP，不下放给任何管理节点
-                        //（与 perm grant / loan clear 同级 —— 点券在商业服等同充值货币）
+                        //（与 perm grant / loan clear 同级 —— RP 在商业服等同充值货币）
                         .then(CommandManager.literal("give")
                             .requires { it.hasPermissionLevel(2) }
                             .then(CommandManager.argument("name", StringArgumentType.word())
@@ -233,7 +233,7 @@ object MarketCommands {
                             )
                         )
                         .then(CommandManager.literal("shop")
-                            // 下单/我已支付/取消：玩家可用（正式路径走点券市场界面，命令留给后台与客服代操作）
+                            // 下单/我已支付/取消：玩家可用（正式路径走RP 市场界面，命令留给后台与客服代操作）
                             .then(CommandManager.literal("create")
                                 .then(CommandManager.argument("tier", IntegerArgumentType.integer(1))
                                     .executes(::shopCreate)
@@ -284,7 +284,7 @@ object MarketCommands {
     }
 
     /**
-     * 兑换点券（命令入口）。
+     * 兑换RP（命令入口）。
      *
      * 逻辑全在 [PointRedeemService]（**GUI 走同一个内核，不另写一份** —— 方案风险清单第 12 条）；
      * 这里只负责把结果翻成命令反馈。
@@ -419,13 +419,13 @@ object MarketCommands {
         return 1
     }
 
-    // ── 点券：命令发放 / 回收 / 查询 ──
+    // ── RP：命令发放 / 回收 / 查询 ──
 
     /**
-     * 发放 / 回收点券。金额下界由命令参数 `integer(1)` 把关（**负数会让"扣款"变成"发钱"**），
+     * 发放 / 回收RP。金额下界由命令参数 `integer(1)` 把关（**负数会让"扣款"变成"发钱"**），
      * 这里再兜一层防以后改参数类型时漏掉。玩家可离线：走 [BanState.resolvePlayer]（在线优先 → userCache 兜底）。
      *
-     * 每一次变动都写审计 CSV（点券等同充值货币，必须可对账）。
+     * 每一次变动都写审计 CSV（RP 等同充值货币，必须可对账）。
      */
     private fun pointsAdjust(context: CommandContext<ServerCommandSource>, give: Boolean): Int {
         val source = context.source
@@ -480,7 +480,7 @@ object MarketCommands {
         return 1
     }
 
-    /** 查询点券余额；[name] 为 null 时查执行者自己（控制台没有"自己"，提示必须给名字） */
+    /** 查询RP 余额；[name] 为 null 时查执行者自己（控制台没有"自己"，提示必须给名字） */
     private fun pointsCheck(context: CommandContext<ServerCommandSource>, name: String?): Int {
         val source = context.source
         val server = source.server
@@ -515,7 +515,7 @@ object MarketCommands {
         return 1
     }
 
-    // ── 点券：游戏内充值订单（正式路径走点券市场界面，命令用于后台与客服代操作） ──
+    // ── RP：游戏内充值订单（正式路径走RP 市场界面，命令用于后台与客服代操作） ──
 
     /** 创建充值订单。档位序号对玩家从 1 开始数（配置数组从 0 开始） */
     private fun shopCreate(context: CommandContext<ServerCommandSource>): Int {

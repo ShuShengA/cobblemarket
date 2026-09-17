@@ -22,9 +22,9 @@ import net.minecraft.text.Text
 private const val MAX_CODE_LENGTH = 64
 
 /**
- * 点券总开关（S2C）：登录时下发一次，客户端据此决定「点券市场」入口按钮是否置灰。
+ * RP 总开关（S2C）：登录时下发一次，客户端据此决定「RP 市场」入口按钮是否置灰。
  * ⚠ 与市场总开关（[MarketStatePayload]）的区别：那个是**紧急停市**，按钮仍有用（看列表/取回资产）；
- * 点券总开关管的是「这个服不用点券」—— 界面进不去也没损失，所以按钮照喵喵银行的做法**置灰**。
+ * RP 总开关管的是「这个服不用RP」—— 界面进不去也没损失，所以按钮照喵喵银行的做法**置灰**。
  */
 data class PointsStatusPayload(val enabled: Boolean) : CustomPayload {
     override fun getId() = ID
@@ -38,7 +38,7 @@ data class PointsStatusPayload(val enabled: Boolean) : CustomPayload {
     }
 }
 
-/** 玩家在点券市场界面里兑换（命令 `/market points redeem` 是同一个内核的另一入口） */
+/** 玩家在RP 市场界面里兑换（命令 `/market points redeem` 是同一个内核的另一入口） */
 data class RedeemPointCodePayload(val code: String) : CustomPayload {
     override fun getId() = ID
 
@@ -52,7 +52,7 @@ data class RedeemPointCodePayload(val code: String) : CustomPayload {
 }
 
 /**
- * **点券网络层**（GUI 侧）。
+ * **RP 网络层**（GUI 侧）。
  *
  * 与命令侧的关系：两边**共用同一批内核**（兑换走 [PointRedeemService]，充值订单走
  * `PointShopService`），网络层只负责「收包 → 主线程 → 回包」这一层壳，
@@ -65,7 +65,7 @@ object PointsNetwork {
             val server = player.server
             // 整段在主线程：「先扣次数再加余额」不可被打断（见 PointRedeemService）
             server.execute {
-                // ⚠ 这里**不查 pointsEnabled**：总开关管的是「玩家之间用点券交易」，
+                // ⚠ 这里**不查 pointsEnabled**：总开关管的是「玩家之间用RP 交易」，
                 // 而兑换是发放路径 —— 命令侧 `/market points redeem` 同样不查，两边保持一致
                 when (val outcome = PointRedeemService.redeem(server, player, payload.code)) {
                     is RedeemOutcome.Success -> sendToPlayer(

@@ -81,13 +81,13 @@ object CobbleMarketConfig {
     var shareEnabled: Boolean = true
         private set
     /**
-     * 点券总开关（默认关：不用点券的服零感知）。关闭后玩家设置价格的界面不出现点券按钮，
-     * 除点券商城外的任何地方都不能用点券交易；但服主仍可在点券商城上架供持有点券的玩家购买。
+     * RP 总开关（默认关：不用RP 的服零感知）。关闭后玩家设置价格的界面不出现RP 按钮，
+     * 除RP 商城外的任何地方都不能用RP 交易；但服主仍可在RP 商城上架供持有RP 的玩家购买。
      */
     var pointsEnabled: Boolean = false
         private set
     /**
-     * 外部签名码的 HMAC 密钥（服主在网站/发卡网卖点券时用）。**留空 = 关闭外部码**，只接受本地生成的码。
+     * 外部签名码的 HMAC 密钥（服主在网站/发卡网卖RP 时用）。**留空 = 关闭外部码**，只接受本地生成的码。
      * ⚠ 只能放在服务端（网站后端 / 服主本机），绝不能进客户端、日志或公开仓库。
      */
     var pointsExternalSecret: String = ""
@@ -106,14 +106,14 @@ object CobbleMarketConfig {
         private set
     /**
      * 收款码图片文件名（放在 `config/cobblemarket/` 下，如 `pay.png`）。
-     * **留空 = 不开放「购买点券」**（玩家仍可兑换码充值）。服务端读取后经网络下发给客户端绘制。
+     * **留空 = 不开放「购买RP」**（玩家仍可兑换码充值）。服务端读取后经网络下发给客户端绘制。
      */
     var pointsShopPayQrImage: String = ""
         private set
     /** 待支付订单超时（分钟，默认 15）：超时后作废并释放金额尾数，玩家可重新下单 */
     var pointsShopOrderTimeoutMinutes: Long = 15L
         private set
-    /** 充值档位列表（空 = 不开放「购买点券」）；非法档位在读取时被丢弃并记日志 */
+    /** 充值档位列表（空 = 不开放「购买RP」）；非法档位在读取时被丢弃并记日志 */
     var pointsShopTiers: List<ShopTier> = emptyList()
         private set
 
@@ -269,7 +269,7 @@ object CobbleMarketConfig {
         save()
     }
 
-    /** 点券总开关切换并落盘（仅服务端配置界面调用） */
+    /** RP 总开关切换并落盘（仅服务端配置界面调用） */
     fun setPointsEnabled(v: Boolean) {
         pointsEnabled = v
         save()
@@ -283,7 +283,7 @@ object CobbleMarketConfig {
 
     /**
      * 解析一个充值档位。非法档位**直接丢弃**（返回 null）并记日志 ——
-     * 标价/点数非正数的档位等于白送点券，绝不能让它静默生效。
+     * 标价/点数非正数的档位等于白送RP，绝不能让它静默生效。
      */
     private fun parseShopTier(raw: Any?, index: Int): ShopTier? {
         val map = raw as? Map<*, *> ?: run {
@@ -681,14 +681,14 @@ object CobbleMarketConfig {
                 "buyOrderFeePercent" to "求购单中介费百分比：买家成交时从卖家实收中扣除（0=免中介费）/ Buy order fee percentage charged on seller's actual payment (0=no fee)",
                 "buyOrderExpiryDays" to "求购单过期天数（到期自动关闭，剩余冻结金退买家待领余额）/ Buy order expiry in days (expired orders close automatically and refund frozen money)",
                 "marketEnabled" to "市场总开关（默认开启）：紧急情况可整体关闭市场功能——所有买卖/拍卖/求购操作被拦截并提示，但待领取、余额等取回自己资产的操作仍可用。可在游戏内用 /market on|off 切换 / Master market switch (on by default): emergency kill switch for the entire market — all buy/sell/auction/buy-order operations are blocked with a notice, while claiming returns and collecting balances still work. Toggle in-game via /market on|off",
-                "pointsExternalSecret" to "外部签名码的 HMAC 密钥：服主在自己的网站 / 发卡网卖点券时，用同一个密钥签码，玩家在游戏内兑换。⚠ **留空 = 关闭外部码**（只接受 /market points code create 生成的本地码）。**必须放在服务端**（网站后端 / 服主本机），绝不能进客户端、日志或公开仓库；服务端日志只记码前缀不记全码（码 = 钱）。建议 ≥32 字符随机串 / HMAC secret for externally signed point codes: sign codes on your website / card shop with the same secret, players redeem them in game. ⚠ **Leave blank to disable external codes** (only locally generated codes work). **Server-side only** (website backend / your machine) — never ship it in a client, log, or public repo. Logs record only a code prefix, never the full code (a code is money). Recommended: 32+ random characters",
+                "pointsExternalSecret" to "外部签名码的 HMAC 密钥：服主在自己的网站 / 发卡网卖RP 时，用同一个密钥签码，玩家在游戏内兑换。⚠ **留空 = 关闭外部码**（只接受 /market points code create 生成的本地码）。**必须放在服务端**（网站后端 / 服主本机），绝不能进客户端、日志或公开仓库；服务端日志只记码前缀不记全码（码 = 钱）。建议 ≥32 字符随机串 / HMAC secret for externally signed RP codes: sign codes on your website / card shop with the same secret, players redeem them in game. ⚠ **Leave blank to disable external codes** (only locally generated codes work). **Server-side only** (website backend / your machine) — never ship it in a client, log, or public repo. Logs record only a code prefix, never the full code (a code is money). Recommended: 32+ random characters",
                 "pointsExternalMaxDays" to "外部码的有效期上限（天，默认 365）：签发时有效期跨度超过它的码一律拒绝，防「永久码」满天飞（永久码的 serial 必须永久保留，会让存档持续膨胀）/ Maximum validity for external codes in days (default 365): codes valid for longer are rejected, preventing \"forever codes\" (whose serials must be kept forever and would bloat the save)",
-                "pointsEnabled" to "点券总开关（默认关闭）：点券是本模组的第二货币，与主货币并行流通但**不可兑换、不可转让、不参与金融**。关闭时：玩家设置价格的界面不出现点券按钮，除点券商城外的任何地方都不能用点券交易（服主仍可在点券商城上架精灵/物品供持有点券的玩家购买）。⚠ 点券等同于充值货币，开启前请先配置发放渠道 / Points master switch (off by default): points are this mod's second currency, running alongside the primary one but **not convertible, not transferable, and outside the finance system**. When off, the points button is hidden from every price-setting screen and points cannot be used anywhere except the Points Shop (owners can still stock the Points Shop for players who already hold points). ⚠ Points are effectively a paid currency — set up a distribution channel before enabling",
+                "pointsEnabled" to "RP 总开关（默认关闭）：RP 是本模组的第二货币，与主货币并行流通但**不可兑换、不可转让、不参与金融**。关闭时：玩家设置价格的界面不出现RP 按钮，除RP 商城外的任何地方都不能用RP 交易（服主仍可在RP 商城上架精灵/物品供持有RP 的玩家购买）。⚠ RP 等同于充值货币，开启前请先配置发放渠道 / RP master switch (off by default): RP is this mod's second currency, running alongside the primary one but **not convertible, not transferable, and outside the finance system**. When off, the RP button is hidden from every price-setting screen and RP cannot be used anywhere except the RP Shop (owners can still stock the RP Shop for players who already hold RP). ⚠ RP is effectively a paid currency — set up a distribution channel before enabling",
                 "shareEnabled" to "玩家展示开关（默认开启）：开启后玩家可把精灵/物品展示到全服聊天（悬停看详情），每人 10 秒一次。关闭后展示按钮不再生效 / Player showcase switch (on by default): players can showcase Pokémon/items to server chat (hover for details), once per 10 seconds each. When off, the showcase button stops working",
                 "pointsShop.enabled" to "游戏内充值开关（默认关闭，需 pointsEnabled 同时开启）。国内小服主普遍用个人收款码，而个人收款码没有支付回调——本功能**不做自动收款**，只把对账成本压到最低：玩家在游戏内下单（实付金额带唯一尾数 + 6 位订单号）→ 扫码付款 → 点「我已支付」→ 服主对着账单点确认发放。⚠ 模组无法判断是否真的付了款，「我已支付」只是玩家的声明：**未确认一律不发放** / In-game top-up switch (off by default, requires pointsEnabled too). Personal payment QR codes have no payment callback, so this feature does NOT collect payments automatically — it only minimizes reconciliation work: the player orders in game (unique amount suffix + 6-char order number) → scans the QR → pays → taps \"I have paid\" → the owner checks the bill and confirms the grant. ⚠ The mod cannot tell whether a payment actually happened: \"I have paid\" is a claim, and nothing is granted until the owner confirms",
-                "pointsShop.payQrImage" to "收款码图片文件名（放在 config/cobblemarket/ 下，如 pay.png；PNG 格式，建议 ≤200KB）。**留空 = 不开放「购买点券」**。图片由服务端读取后下发给客户端绘制；订单号与实付金额由模组**动态绘制在图片旁**（不写进图片文件），防止玩家截图转给别人代付后认领 / Payment QR code image file name under config/cobblemarket/ (e.g. pay.png; PNG, 200KB or less recommended). **Leave blank to disable the in-game purchase entry.** The server reads it and sends it to clients for drawing; the order number and exact amount are drawn by the mod next to the image (never baked into the file), so a shared screenshot cannot be claimed by someone else",
+                "pointsShop.payQrImage" to "收款码图片文件名（放在 config/cobblemarket/ 下，如 pay.png；PNG 格式，建议 ≤200KB）。**留空 = 不开放「购买RP」**。图片由服务端读取后下发给客户端绘制；订单号与实付金额由模组**动态绘制在图片旁**（不写进图片文件），防止玩家截图转给别人代付后认领 / Payment QR code image file name under config/cobblemarket/ (e.g. pay.png; PNG, 200KB or less recommended). **Leave blank to disable the in-game purchase entry.** The server reads it and sends it to clients for drawing; the order number and exact amount are drawn by the mod next to the image (never baked into the file), so a shared screenshot cannot be claimed by someone else",
                 "pointsShop.orderTimeoutMinutes" to "待支付订单超时分钟数（默认 15，钳 1~1440）：超时后订单作废并释放金额尾数，玩家可重新下单。⚠ 超时后有 30 分钟宽限期，期内玩家仍可提交「我已支付」（他可能已经付款、只是回来点得慢；作废是安全的失败方向，误判成已付款才危险）/ Minutes before an unpaid order expires (default 15, clamped 1–1440). Expired orders are voided and their amount suffix released so the player can order again. ⚠ A 30-minute grace period follows, during which \"I have paid\" is still accepted (the player may have paid but tapped late; voiding is the safe failure direction, wrongly granting is not)",
-                "pointsShop.tiers" to "充值档位列表：[{name=展示名, price=标价, points=发放点数}]。**实付金额 = 标价 + 唯一尾数（0.01~0.99）**，尾数由订单号派生、同一时刻的活跃订单不重复——服主在收款账单里看到 +5.37 就能一眼对上订单，不必依赖玩家备注。建议标价用整数，尾数会加在角分上。留空数组 = 不开放「购买点券」/ Top-up tiers: [{name=display name, price=list price, points=points granted}]. **Amount to pay = list price + a unique suffix (0.01–0.99)** derived from the order number, never duplicated among active orders — so +5.37 in your payment history maps straight to an order without relying on the player's note. Integer prices recommended (the suffix lands on the cents). An empty array disables the in-game purchase entry",
+                "pointsShop.tiers" to "充值档位列表：[{name=展示名, price=标价, points=发放点数}]。**实付金额 = 标价 + 唯一尾数（0.01~0.99）**，尾数由订单号派生、同一时刻的活跃订单不重复——服主在收款账单里看到 +5.37 就能一眼对上订单，不必依赖玩家备注。建议标价用整数，尾数会加在角分上。留空数组 = 不开放「购买RP」/ Top-up tiers: [{name=display name, price=list price, points=points granted}]. **Amount to pay = list price + a unique suffix (0.01–0.99)** derived from the order number, never duplicated among active orders — so +5.37 in your payment history maps straight to an order without relying on the player's note. Integer prices recommended (the suffix lands on the cents). An empty array disables the in-game purchase entry",
                 "maxBuyOrdersPerPlayer" to "每个玩家同时进行的求购单数量上限，精灵与物品合计（0=不限制）。求购单列表全量下发给所有客户端，玩家较多的服务器建议保持较小值，避免全服活跃求购单总量过大导致卡顿 / Max concurrent buy orders per player, Pokémon and items combined (0=unlimited). The buy order list is broadcast in full to every client, so on crowded servers keep this small to avoid lag from too many active orders",
                 "finance.enabled" to "金融系统总开关（默认关闭）。开启后玩家可借贷/使用喵喵支付；关闭时禁止新增借贷与信用支付，已有贷款照常运行（还款/逾期/坏账不受影响） / Master switch for the finance system (off by default). When on, players can take loans and use Meowth Pay; when off, new loans and credit payments are blocked while existing loans keep running (repayment/overdue/bad debt unaffected)",
                 "finance.cashLoanEnabled" to "现金贷开关（借呗）：玩家在喵喵银行柜台主动借款 / Cash loan switch (Jiebei-style): players borrow cash directly at the Meowth Bank counter",
