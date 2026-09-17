@@ -72,6 +72,12 @@ object CobbleMarketConfig {
     /** 玩家展示开关：关闭后玩家不能把精灵/物品展示到全服聊天（运营开关，与市场总开关同类） */
     var shareEnabled: Boolean = true
         private set
+    /**
+     * 点券总开关（默认关：不用点券的服零感知）。关闭后玩家设置价格的界面不出现点券按钮，
+     * 除点券商城外的任何地方都不能用点券交易；但服主仍可在点券商城上架供持有点券的玩家购买。
+     */
+    var pointsEnabled: Boolean = false
+        private set
 
     // ── 金融系统（finance 段，启动级：reload 跳过应用仅比较差异，改后需重启） ──
 
@@ -225,6 +231,12 @@ object CobbleMarketConfig {
         save()
     }
 
+    /** 点券总开关切换并落盘（仅服务端配置界面调用） */
+    fun setPointsEnabled(v: Boolean) {
+        pointsEnabled = v
+        save()
+    }
+
     // ── 服务器配置 GUI 编辑 setter（钳制规则与 load() 一致；save() 由调用方统一执行） ──
 
     fun setPokemonListingFeePercent(v: Double) { pokemonListingFeePercent = v.coerceIn(0.0, 100.0) }
@@ -369,7 +381,7 @@ object CobbleMarketConfig {
                     "auctionMinBidIncrement", "auctionAntiSnipeSeconds", "maxAuctionsPerPlayer",
                     "eggTradingEnabled", "buyOrderFeePercent", "buyOrderExpiryDays",
                     "maxBuyOrdersPerPlayer", "marketEnabled",
-                    "shareEnabled",
+                    "shareEnabled", "pointsEnabled",
                     "finance"
                 )
                 var missingKeys = knownKeys.any { !data.containsKey(it) }
@@ -536,6 +548,7 @@ object CobbleMarketConfig {
                 maxBuyOrdersPerPlayer = ((data["maxBuyOrdersPerPlayer"] as? Double)?.toInt() ?: 5).coerceAtLeast(0)
                 marketEnabled = data["marketEnabled"] as? Boolean ?: true
                 shareEnabled = data["shareEnabled"] as? Boolean ?: true
+                pointsEnabled = data["pointsEnabled"] as? Boolean ?: false
                 // 跨项校验（手工改过 config.json 也兜住）
                 enforceCardApplySeenGuard()
                 // 缺失字段补写：旧设置保留，新字段以默认值落盘（服主无需删配置）
@@ -582,6 +595,7 @@ object CobbleMarketConfig {
                 "buyOrderFeePercent" to "求购单中介费百分比：买家成交时从卖家实收中扣除（0=免中介费）/ Buy order fee percentage charged on seller's actual payment (0=no fee)",
                 "buyOrderExpiryDays" to "求购单过期天数（到期自动关闭，剩余冻结金退买家待领余额）/ Buy order expiry in days (expired orders close automatically and refund frozen money)",
                 "marketEnabled" to "市场总开关（默认开启）：紧急情况可整体关闭市场功能——所有买卖/拍卖/求购操作被拦截并提示，但待领取、余额等取回自己资产的操作仍可用。可在游戏内用 /market on|off 切换 / Master market switch (on by default): emergency kill switch for the entire market — all buy/sell/auction/buy-order operations are blocked with a notice, while claiming returns and collecting balances still work. Toggle in-game via /market on|off",
+                "pointsEnabled" to "点券总开关（默认关闭）：点券是本模组的第二货币，与主货币并行流通但**不可兑换、不可转让、不参与金融**。关闭时：玩家设置价格的界面不出现点券按钮，除点券商城外的任何地方都不能用点券交易（服主仍可在点券商城上架精灵/物品供持有点券的玩家购买）。⚠ 点券等同于充值货币，开启前请先配置发放渠道 / Points master switch (off by default): points are this mod's second currency, running alongside the primary one but **not convertible, not transferable, and outside the finance system**. When off, the points button is hidden from every price-setting screen and points cannot be used anywhere except the Points Shop (owners can still stock the Points Shop for players who already hold points). ⚠ Points are effectively a paid currency — set up a distribution channel before enabling",
                 "shareEnabled" to "玩家展示开关（默认开启）：开启后玩家可把精灵/物品展示到全服聊天（悬停看详情），每人 10 秒一次。关闭后展示按钮不再生效 / Player showcase switch (on by default): players can showcase Pokémon/items to server chat (hover for details), once per 10 seconds each. When off, the showcase button stops working",
                 "maxBuyOrdersPerPlayer" to "每个玩家同时进行的求购单数量上限，精灵与物品合计（0=不限制）。求购单列表全量下发给所有客户端，玩家较多的服务器建议保持较小值，避免全服活跃求购单总量过大导致卡顿 / Max concurrent buy orders per player, Pokémon and items combined (0=unlimited). The buy order list is broadcast in full to every client, so on crowded servers keep this small to avoid lag from too many active orders",
                 "finance.enabled" to "金融系统总开关（默认关闭）。开启后玩家可借贷/使用喵喵支付；关闭时禁止新增借贷与信用支付，已有贷款照常运行（还款/逾期/坏账不受影响） / Master switch for the finance system (off by default). When on, players can take loans and use Meowth Pay; when off, new loans and credit payments are blocked while existing loans keep running (repayment/overdue/bad debt unaffected)",
@@ -640,6 +654,7 @@ object CobbleMarketConfig {
             "maxBuyOrdersPerPlayer" to maxBuyOrdersPerPlayer,
             "marketEnabled" to marketEnabled,
             "shareEnabled" to shareEnabled,
+            "pointsEnabled" to pointsEnabled,
             "finance" to mapOf(
                 "enabled" to financeEnabled,
                 "cashLoanEnabled" to cashLoanEnabled,

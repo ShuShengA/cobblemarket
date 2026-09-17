@@ -5,10 +5,16 @@ import com.shusheng.cobblemarket.permission.PermissionNetwork
 import com.shusheng.cobblemarket.permission.PermissionState
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.mojang.brigadier.Command
+import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
 import net.minecraft.command.argument.EntityArgumentType
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
+import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.PointsAuditLogger
+import com.shusheng.cobblemarket.currency.PointsLogType
+import com.shusheng.cobblemarket.currency.PointsState
 import com.shusheng.cobblemarket.finance.CreditFileLogger
 import com.shusheng.cobblemarket.finance.FinanceService
 import com.shusheng.cobblemarket.finance.FinanceState
@@ -146,6 +152,38 @@ object MarketCommands {
                             )
                         )
                     )
+                    .then(CommandManager.literal("points")
+                        // 发放/回收 = **印钞权**：只认 OP，不下放给任何管理节点
+                        //（与 perm grant / loan clear 同级 —— 点券在商业服等同充值货币）
+                        .then(CommandManager.literal("give")
+                            .requires { it.hasPermissionLevel(2) }
+                            .then(CommandManager.argument("name", StringArgumentType.word())
+                                .suggests(::suggestOnlinePlayerNames)
+                                .then(CommandManager.argument("amount", IntegerArgumentType.integer(1))
+                                    .executes { ctx -> pointsAdjust(ctx, give = true) }
+                                )
+                            )
+                        )
+                        .then(CommandManager.literal("take")
+                            .requires { it.hasPermissionLevel(2) }
+                            .then(CommandManager.argument("name", StringArgumentType.word())
+                                .suggests(::suggestOnlinePlayerNames)
+                                .then(CommandManager.argument("amount", IntegerArgumentType.integer(1))
+                                    .executes { ctx -> pointsAdjust(ctx, give = false) }
+                                )
+                            )
+                        )
+                        .then(CommandManager.literal("check")
+                            // 查自己：**人人可用**（只读自己的数据，没有理由要权限）
+                            .executes { ctx -> pointsCheck(ctx, null) }
+                            // 查别人：POINTS 节点（可下放给客服做核对）；控制台执行时自带此权限
+                            .then(CommandManager.argument("name", StringArgumentType.word())
+                                .requires { MarketPermissions.has(it, MarketPermissions.POINTS) }
+                                .suggests(::suggestOnlinePlayerNames)
+                                .executes { ctx -> pointsCheck(ctx, StringArgumentType.getString(ctx, "name")) }
+                            )
+                        )
+                    )
             )
         }
 
@@ -155,6 +193,102 @@ object MarketCommands {
             // 待领取概况：客户端首次打开市场入口界面时据此播「离线收益」提示音
             com.shusheng.cobblemarket.network.sendPendingReturns(player, player.server)
         }
+    }
+
+    // ── 点券：命令发放 / 回收 / 查询 ──
+
+    /**
+     * 发放 / 回收点券。金额下界由命令参数 `integer(1)` 把关（**负数会让"扣款"变成"发钱"**），
+     * 这里再兜一层防以后改参数类型时漏掉。玩家可离线：走 [BanState.resolvePlayer]（在线优先 → userCache 兜底）。
+     *
+     * 每一次变动都写审计 CSV（点券等同充值货币，必须可对账）。
+     */
+    private fun pointsAdjust(context: CommandContext<ServerCommandSource>, give: Boolean): Int {
+        val source = context.source
+        val server = source.server
+        val name = StringArgumentType.getString(context, "name")
+        val amount = IntegerArgumentType.getInteger(context, "amount").toLong()
+        if (amount <= 0) {
+            source.sendError(Text.translatable("cobblemarket.points.invalid_amount"))
+            return 0
+        }
+        val resolved = BanState.resolvePlayer(server, name)
+        if (resolved == null) {
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            return 0
+        }
+        val (uuid, playerName) = resolved
+        val state = PointsState.get(server)
+        // 操作者写命令执行者名字（控制台执行也留痕，能查出是谁发的）
+        val operator = source.name
+        if (give) {
+            val after = state.addBalance(uuid, amount)
+            PointsAuditLogger.log(PointsLogType.GIVE, uuid, playerName, amount, after, operator, "命令发放")
+            source.sendFeedback({
+                Text.translatable(
+                    "cobblemarket.points.give_ok",
+                    CurrencyService.amountText(amount, MarketCurrency.POINTS),
+                    playerName,
+                    CurrencyService.amountText(after, MarketCurrency.POINTS)
+                )
+            }, true)
+            return 1
+        }
+        if (!state.removeBalance(uuid, amount)) {
+            source.sendError(
+                Text.translatable(
+                    "cobblemarket.points.not_enough", playerName,
+                    CurrencyService.amountText(state.getBalance(uuid), MarketCurrency.POINTS)
+                )
+            )
+            return 0
+        }
+        val after = state.getBalance(uuid)
+        PointsAuditLogger.log(PointsLogType.TAKE, uuid, playerName, amount, after, operator, "命令回收")
+        source.sendFeedback({
+            Text.translatable(
+                "cobblemarket.points.take_ok",
+                playerName,
+                CurrencyService.amountText(amount, MarketCurrency.POINTS),
+                CurrencyService.amountText(after, MarketCurrency.POINTS)
+            )
+        }, true)
+        return 1
+    }
+
+    /** 查询点券余额；[name] 为 null 时查执行者自己（控制台没有"自己"，提示必须给名字） */
+    private fun pointsCheck(context: CommandContext<ServerCommandSource>, name: String?): Int {
+        val source = context.source
+        val server = source.server
+        if (name == null) {
+            val self = source.player
+            if (self == null) {
+                source.sendError(Text.translatable("cobblemarket.points.name_required"))
+                return 0
+            }
+            val balance = PointsState.get(server).getBalance(self.uuid)
+            source.sendFeedback({
+                Text.translatable(
+                    "cobblemarket.points.check_self",
+                    CurrencyService.amountText(balance, MarketCurrency.POINTS)
+                )
+            }, false)
+            return 1
+        }
+        val resolved = BanState.resolvePlayer(server, name)
+        if (resolved == null) {
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            return 0
+        }
+        val (uuid, playerName) = resolved
+        val balance = PointsState.get(server).getBalance(uuid)
+        source.sendFeedback({
+            Text.translatable(
+                "cobblemarket.points.check_other", playerName,
+                CurrencyService.amountText(balance, MarketCurrency.POINTS)
+            )
+        }, false)
+        return 1
     }
 
     private fun marketOn(context: CommandContext<ServerCommandSource>): Int = setMarketEnabled(context, true)
