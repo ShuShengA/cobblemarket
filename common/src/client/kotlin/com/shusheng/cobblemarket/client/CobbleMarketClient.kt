@@ -663,17 +663,28 @@ fun playFailSound() {
 }
 
 /**
- * 播一个模组音效（服务端事件音效走 [PlaySoundPayload]）。
+ * 「旧素材」音效（在剪映里增强过的那批）：走服务端通道时用 0.5 档，
+ * 与客户端本地直接播的 [playResultSound] / [playFailSound] / [playEntrySound] 保持同档 ——
+ * 同一枚素材（success.ogg / fail.ogg）两条通道两个音量会明显听出响度差。
+ */
+private val LEGACY_VOLUME_SOUNDS = setOf("result_success", "result_fail")
+
+/**
+ * 播一个模组音效。服务端事件音效走 [PlaySoundPayload]，客户端本地事件（开市/停市、离线收益）直接调这里。
  *
- * ⚠ 音量给 0.9，比其它反馈音的 0.5 高一档：这批素材（money_in / loan_deduct）是按
- * 「别做音量增强」导出的，而旧素材在剪映里增强过；同样用 0.5 播，新素材明显偏轻（用户实机反馈）。
+ * ⚠ 音量按**素材响度**分两档给（不是按用途）：
+ * - **0.9**：2026-09-16 那批按「别做音量增强」导出的新素材（出价被超越、划扣、逾期、卖出到账、
+ *   开/停市、离线收益、金币…）—— 同样用 0.5 播会明显偏轻（用户实机反馈）
+ * - **0.5**：[LEGACY_VOLUME_SOUNDS] 那几枚旧素材，与客户端本地播的同名音效同档
+ *
+ * 若以后新旧素材统一重做，这两档可以合并回一个值。
  */
 fun playMarketSound(soundId: String) {
     MinecraftClient.getInstance().soundManager.play(
         PositionedSoundInstance.master(
             SoundEvent.of(Identifier.of("cobblemarket", soundId)),
             1.0f,
-            0.9f
+            if (soundId in LEGACY_VOLUME_SOUNDS) 0.5f else 0.9f
         )
     )
 }
