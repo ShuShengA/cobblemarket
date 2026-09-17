@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.network.ListingEntry
@@ -92,6 +93,20 @@ object EntryBadgeRenderer {
     }
 
     /** 属性色表（2026-08-24 颜色模板；全模组精灵名/属性名显示统一用，见 [[pokemon-display-colors]]） */
+    /**
+     * **行内精灵名的颜色**：按**形态**解析主属性再取色（全模组统一口径：名字 = 主属性色）。
+     *
+     * ⚠ 不能拿基础物种的属性：阿罗拉六尾的基础物种是火系，它自己（以及大图里的模型）却是冰系 ——
+     * 用物种属性会做出「图是冰、字是火」的自相矛盾。形态解析直接复用 Cobblemon 的 `Species.getForm`，
+     * 与客户端给大图建模型时的口径一致；形态没定义主属性时 `FormData` 会自动回落到物种属性。
+     *
+     * 解析不到物种（物品条目 / 非法 ID）返回白色。
+     */
+    fun speciesTypeColor(speciesId: String, aspects: Collection<String>): Int {
+        val species = Identifier.tryParse(speciesId)?.let { PokemonSpecies.getByIdentifier(it) } ?: return 0xFFFFFF
+        return typeColor("cobblemon.type.${species.getForm(aspects.toSet()).primaryType.name.lowercase()}")
+    }
+
     fun typeColor(typeKey: String): Int = when (typeKey.substringAfterLast(".").lowercase()) {
         "normal" -> 0xAAAA99; "fire" -> 0xFF4422; "water" -> 0x3399FF
         "electric" -> 0xFFCC33; "grass" -> 0x77CC55; "ice" -> 0x66CCFF

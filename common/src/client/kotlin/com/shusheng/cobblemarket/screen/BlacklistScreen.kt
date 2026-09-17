@@ -63,9 +63,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     // 物品图标栈缓存（条目 → 解析栈）：行内每帧 tryParse + ItemStack 是分配热点，数据到达时构建；
     // 带组件快照的条目重建完整物品（真实组件渲染）
     private val itemIconStacks = mutableMapOf<ItemBlacklistEntry, ItemStack>()
-    // tooltip 文本行缓存：内容只取决于条目，悬停同一行时每帧重建是悬停掉帧主因
+    // tooltip 行缓存：内容只取决于条目，悬停同一行时每帧重建是悬停掉帧主因。
+    // 富文本行 = Text + 行色：首行精灵名要走主属性色，纯 String 带不了颜色（见 buildPokemonTooltipLines）
     private var tooltipCacheKey: Any? = null
-    private var tooltipCacheLines: List<String> = emptyList()
+    private var tooltipCacheLines: List<Pair<Text, Int>> = emptyList()
     // 物品行 tooltip 富文本缓存（Text 保留词条自带颜色，照物品市场；Shift 展开按需构建）
     private var itemTooltipCacheKey: Any? = null
     private var itemTooltipLines: List<Pair<Text, Int>> = emptyList()
@@ -1063,9 +1064,13 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         }
     }
 
+    /** 行内显示用的物种名（解析不到就退回 speciesId）：行渲染要单独给它上属性色，故单独取出 */
+    private fun pokemonEntryName(entry: PokemonBlacklistEntry): String =
+        Identifier.tryParse(entry.speciesId)?.let { PokemonSpecies.getByIdentifier(it) }
+            ?.let { com.shusheng.cobblemarket.util.SpeciesText.displayName(it) } ?: entry.speciesId
+
     private fun pokemonEntryDisplay(entry: PokemonBlacklistEntry): String {
-        val species = Identifier.tryParse(entry.speciesId)?.let { PokemonSpecies.getByIdentifier(it) }
-        val name = species?.let { com.shusheng.cobblemarket.util.SpeciesText.displayName(it) } ?: entry.speciesId
+        val name = pokemonEntryName(entry)
         val parts = mutableListOf<String>()
         if (entry.shinyFilter != PokemonBlacklistEntry.SHINY_ANY) parts.add(shinyLabel(entry.shinyFilter))
         // 形态标签：全部形态/默认形态/具体 aspect，始终显示
@@ -1176,10 +1181,17 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 context.matrices.pop()
                 // 弹窗打开时不渲染 3D（模型层在衬底之上，压暗仍会浮在弹窗上）
                 if (addField == null) renderPokemonIcon(context, origIndex, slotX, slotY, iconSize, delta = delta, preview = i == hoveredRow)
-                // 截断防止超长条目（六项个体值全填）与编辑/删除按钮重叠；完整信息在悬停 tooltip
+                // 截断防止超长条目（六项个体值全填）与编辑/删除按钮重叠；完整信息在悬停 tooltip。
+                // 精灵名单独上色（主属性色，全模组口径）：名字是行文本的前缀，拆两段画，
+                // 后半段的截断宽度相应扣掉名字宽度
+                val fullText = rowTexts[scrollOffset + i]
+                val nameText = pokemonEntryName(entry)
+                val nameWidth = textRenderer.getWidth(nameText)
+                context.drawTextWithShadow(textRenderer, nameText, leftX + 26, y + 7,
+                    EntryBadgeRenderer.speciesTypeColor(entry.speciesId, entry.aspects))
                 context.drawTextWithShadow(textRenderer,
-                    com.shusheng.cobblemarket.util.TextUtil.truncateString(rowTexts[scrollOffset + i], 170),
-                    leftX + 26, y + 7, 0xFFFFFF)
+                    com.shusheng.cobblemarket.util.TextUtil.truncateString(fullText.removePrefix(nameText), 170 - nameWidth),
+                    leftX + 26 + nameWidth, y + 7, 0xFFFFFF)
             }
             if (hoveredRow >= 0) {
                 val actualIdx = scrollOffset + hoveredRow
@@ -1196,7 +1208,18 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 if (addField == null) {
                     itemIconStacks[entry]?.let { drawItemWithBar(context, it, leftX + 4, y + 4) }
                 }
-                context.drawTextWithShadow(textRenderer, rowTexts[scrollOffset + i], leftX + 24, y + 7, 0xFFFFFF)
+                // 物品名单独上色（稀有度色，全模组口径：界面出现物品名就不许白字）：名字是行文本前缀，
+                // 拆两段画（名字带色 + 后半段白字）。
+                // 后半段的截断要扣掉名字宽：整行预算 210（见 itemEntryDisplay）是**含名字**算的，
+                // 直接拿 210 截后半段会变成「名字 + 210」，两段相加超宽压到右侧删除按钮
+                val fullText = rowTexts[scrollOffset + i]
+                val nameText = com.shusheng.cobblemarket.client.ItemCandidateResolver.displayNameOf(entry.itemId)
+                val nameWidth = textRenderer.getWidth(nameText)
+                context.drawTextWithShadow(textRenderer, nameText, leftX + 24, y + 7,
+                    com.shusheng.cobblemarket.util.TextUtil.rarityNameColor(itemIconStacks[entry]))
+                context.drawTextWithShadow(textRenderer,
+                    com.shusheng.cobblemarket.util.TextUtil.truncateString(fullText.removePrefix(nameText), 210 - nameWidth),
+                    leftX + 24 + nameWidth, y + 7, 0xFFFFFF)
             }
             if (hoveredRow >= 0) {
                 val actualIdx = scrollOffset + hoveredRow
@@ -1229,22 +1252,27 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             tooltipCacheKey = entry.id
             tooltipCacheLines = buildPokemonTooltipLines(entry)
         }
-        drawTooltip(context, tooltipCacheLines, mouseX, mouseY)
+        // 走富文本重载（物品悬停窗同款）：首行名字要单独上属性色，纯 String 版只能整行白。
+        // 行文本内容与原先逐字相同 → 宽度/行高计算不变（宽度仍按各行完整文本量）
+        drawRichTooltip(context, tooltipCacheLines, mouseX, mouseY)
     }
 
-    private fun buildPokemonTooltipLines(entry: PokemonBlacklistEntry): List<String> {
+    private fun buildPokemonTooltipLines(entry: PokemonBlacklistEntry): List<Pair<Text, Int>> {
         val species = Identifier.tryParse(entry.speciesId)?.let { PokemonSpecies.getByIdentifier(it) }
         val name = species?.let { com.shusheng.cobblemarket.util.SpeciesText.displayName(it) } ?: entry.speciesId
-        val lines = mutableListOf(name)
-        lines.add(shinyLabel(entry.shinyFilter))
-        lines.add(formLabel(entry.aspects.toSet()))
-        lines.add(htLabel(entry.htFilter))
-        if (entry.ivHp >= 0) lines.add("${StatNames.HP}: ${entry.ivHp}")
-        if (entry.ivAtk >= 0) lines.add("${StatNames.ATK}: ${entry.ivAtk}")
-        if (entry.ivDef >= 0) lines.add("${StatNames.DEF}: ${entry.ivDef}")
-        if (entry.ivSpAtk >= 0) lines.add("${StatNames.SP_ATK}: ${entry.ivSpAtk}")
-        if (entry.ivSpDef >= 0) lines.add("${StatNames.SP_DEF}: ${entry.ivSpDef}")
-        if (entry.ivSpd >= 0) lines.add("${StatNames.SPEED}: ${entry.ivSpd}")
+        // 名字行 = 主属性色（全模组口径：界面出现精灵名就不许白字）；物种解析不到时该函数返回白色
+        val lines = mutableListOf<Pair<Text, Int>>(
+            Text.literal(name) to EntryBadgeRenderer.speciesTypeColor(entry.speciesId, entry.aspects)
+        )
+        lines.add(Text.literal(shinyLabel(entry.shinyFilter)) to 0xFFFFFF)
+        lines.add(Text.literal(formLabel(entry.aspects.toSet())) to 0xFFFFFF)
+        lines.add(Text.literal(htLabel(entry.htFilter)) to 0xFFFFFF)
+        if (entry.ivHp >= 0) lines.add(Text.literal("${StatNames.HP}: ${entry.ivHp}") to 0xFFFFFF)
+        if (entry.ivAtk >= 0) lines.add(Text.literal("${StatNames.ATK}: ${entry.ivAtk}") to 0xFFFFFF)
+        if (entry.ivDef >= 0) lines.add(Text.literal("${StatNames.DEF}: ${entry.ivDef}") to 0xFFFFFF)
+        if (entry.ivSpAtk >= 0) lines.add(Text.literal("${StatNames.SP_ATK}: ${entry.ivSpAtk}") to 0xFFFFFF)
+        if (entry.ivSpDef >= 0) lines.add(Text.literal("${StatNames.SP_DEF}: ${entry.ivSpDef}") to 0xFFFFFF)
+        if (entry.ivSpd >= 0) lines.add(Text.literal("${StatNames.SPEED}: ${entry.ivSpd}") to 0xFFFFFF)
         return lines
     }
 
@@ -1274,9 +1302,20 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         val lines = mutableListOf<Pair<Text, Int>>()
         val stack = itemIconStacks[entry]
         if (stack != null) {
+            // 栈在手上时不自己拼名字：原版 getTooltip 首行就是 name 套稀有度色（1.21.1 字节码已核对），
+            // 行色参数被 Text 自带样式盖过，名字自然是稀有度色
             lines.addAll(com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(stack, client?.player, type).map { it to 0xFFFFFF })
         } else {
-            lines.add(Text.literal(itemEntryDisplay(entry)) to 0xFFFFFF)
+            // 名字段照行内口径上稀有度色、后半段白字，两段混排成**一行**（行数、宽度都不变）。
+            // 本分支＝解析不出栈的条目（物品 id 非法），rarityNameColor 取不到栈只能落白
+            val full = itemEntryDisplay(entry)
+            val name = com.shusheng.cobblemarket.client.ItemCandidateResolver.displayNameOf(entry.itemId)
+            lines.add(
+                Text.literal(name)
+                    .setStyle(net.minecraft.text.Style.EMPTY.withColor(
+                        com.shusheng.cobblemarket.util.TextUtil.rarityNameColor(stack)))
+                    .append(Text.literal(full.removePrefix(name)).formatted(Formatting.WHITE)) to 0xFFFFFF
+            )
         }
         lines.add(Text.literal(entry.itemId).formatted(Formatting.DARK_GRAY) to 0xFFFFFF)
         return lines
