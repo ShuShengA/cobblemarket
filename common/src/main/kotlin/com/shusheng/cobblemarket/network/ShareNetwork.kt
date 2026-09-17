@@ -259,6 +259,9 @@ object ShareNetwork {
                     .withClickEvent(
                         ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket share $shareId")
                     )
+                    // 下划线在这一层也设一遍：名字自己那层已经设了（精灵名还带属性色），
+                    // 但物品名只有下划线、一旦被外层样式盖掉就整个看不出来，这里兜底保证两者一致
+                    .withUnderline(true)
             }
         return Text.literal("[分享] ").formatted(Formatting.GOLD)
             .append(

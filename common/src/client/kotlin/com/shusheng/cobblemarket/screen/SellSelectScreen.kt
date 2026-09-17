@@ -42,6 +42,10 @@ class SellSelectScreen(
 )) {
 
     private val deliverMode = deliverOrderId != null
+
+    /** 是否展示模式：结果音效分发要据此换成专属音（见 CobbleMarketClient 的 MarketResultPayload 处理） */
+    fun isShareMode(): Boolean = shareMode
+
     /** 价格框不参与布局：交付模式（价格在交付弹窗输入）与分享模式（不涉及价格）都是 */
     private val noPriceField = deliverMode || shareMode
 

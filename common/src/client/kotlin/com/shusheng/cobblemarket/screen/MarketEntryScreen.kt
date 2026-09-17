@@ -80,8 +80,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var shareItemBtn: NineSliceButton? = null
     private var shareMenuOpen = false
 
-    /** 展开子按钮期间被它压住、临时隐藏的按钮（收起时恢复，见 [applyShareMenu]） */
-    private val shareHiddenButtons = mutableListOf<ClickableWidget>()
+    /** 展开子按钮期间被它压住的按钮：临时收起文字 + 在被覆盖的那块矩形里让路（见 [applyShareMenu]） */
+    private val shareCoveredButtons = mutableListOf<TextureButton>()
     private var creditInfoLoaded = false
     // 全服累计成交额（批次 7 入口展示；仅氛围展示不参与任何计算）；
     // 初始读全局缓存（60 秒兜底轮询写入）秒显不闪，打开后仍发请求刷新
@@ -166,9 +166,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         super.init()
         entryButtons.clear()
         // 每次重建（进界面/resize/关弹窗）都从收起状态开始：按钮是新造的，
-        // 留着上一轮的展开标记会让子按钮与主按钮高亮对不上（被隐藏的旧按钮引用也一并丢弃）
+        // 留着上一轮的展开标记会让子按钮与主按钮高亮对不上（被压住的旧按钮引用也一并丢弃）
         shareMenuOpen = false
-        shareHiddenButtons.clear()
+        shareCoveredButtons.clear()
         if (dropAnimStart < 0) dropAnimStart = System.currentTimeMillis()
         sendToServer(RequestBalancePayload())
         // 大木博士知识点：按语言加载 json，每次进入入口界面（新建实例）随机抽一句；
@@ -360,8 +360,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             subCenterX - subSize, subY, subSize, subSize,
             Text.literal(""),
             { openSharePokemon() },
-            // 精灵市场入口用的是小卡比兽 8 帧动画，这里是纯图标按钮，取第 1 帧静态展示
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/munchlax/munchlax_0.png"),
+            // 与精灵市场入口同一个会动的小卡比兽（8 帧，100ms/帧）
+            iconFrames = (0..7).map { Identifier.of("cobblemarket", "textures/gui/munchlax/munchlax_$it.png") },
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             texture = ROW_BACKGROUND_TEXTURE,
             texH = ROW_BACKGROUND_TEX_H
@@ -403,9 +403,13 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     }
 
     /**
-     * 展开/收起子按钮。展开时还要把**会被子按钮压住的按钮整体隐藏**：
-     * 子按钮是浮层，只盖得住上方按钮的一部分（比如「拍卖场」三个字会露在覆盖区外），
-     * 半遮半露比干脆藏起来更难看 —— 相交即隐藏，视觉上等于被完整盖住，收起时原样恢复。
+     * 展开/收起子按钮。
+     *
+     * 展开时子按钮是**浮层**：盖住下方的按钮是正常的（底图被压住看着就是被盖住了），
+     * 但它盖不满整个按钮——下方按钮的字排在按钮中上部，会**露在覆盖区外面**，半截字比没有字更难看。
+     * 所以与被压住的按钮相交时**只收起它的文字**（[TextureButton.hideText]），底图原样留着：
+     * 视觉上就是「那个按钮被浮层盖住了」，收起后文字自动回来。
+     * （2026-09-17 用户纠正：早先写的"整个按钮隐藏"太粗暴——按钮会凭空消失。）
      */
     private fun applyShareMenu() {
         shareBtn?.selectedVisual = shareMenuOpen
@@ -419,17 +423,28 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             val menuRight = itemBtn.x + itemBtn.width
             val menuBottom = pokemonBtn.y + pokemonBtn.height
             entryButtons.forEach { btn ->
-                if (btn === shareBtn || btn === pokemonBtn || btn === itemBtn) return@forEach
-                val overlaps = btn.x < menuRight && btn.x + btn.width > menuLeft &&
-                    btn.y < menuBottom && btn.y + btn.height > menuTop
-                if (overlaps && btn.visible) {
-                    shareHiddenButtons.add(btn)
-                    btn.visible = false
+                // 只有带文字的入口按钮需要收字（求购单/喵喵银行/设置那几个是纯图标按钮，没有文字可露）
+                val texBtn = btn as? TextureButton ?: return@forEach
+                // 判据是「按钮**中心**落在子按钮横向范围内」+ 纵向有重叠，不是普通矩形相交：
+                // 有管理权限的人布局多一行、背景随之上移，管理员面板按钮与子按钮在横向上只擦到
+                // 约 2px——那是视觉上没被盖住，不该动它（2026-09-17 用户实测踩到）。
+                // 真被盖住的那种（普通玩家布局下的「拍卖场」）中心稳稳落在范围内。
+                val coveredHorizontally = texBtn.x + texBtn.width / 2 in menuLeft..menuRight
+                val overlapsVertically = texBtn.y < menuBottom && texBtn.y + texBtn.height > menuTop
+                if (coveredHorizontally && overlapsVertically && texBtn.blockedArea == null) {
+                    shareCoveredButtons.add(texBtn)
+                    texBtn.hideText = true
+                    // 重叠区让给子按钮：MC 的点击分发按添加顺序，子按钮排在这个按钮后面，
+                    // 不让路的话「点子上半截」会被这个按钮接走（见 TextureButton.blockedArea）
+                    texBtn.blockedArea = intArrayOf(menuLeft, menuTop, menuRight, menuBottom)
                 }
             }
         } else {
-            shareHiddenButtons.forEach { it.visible = true }
-            shareHiddenButtons.clear()
+            shareCoveredButtons.forEach {
+                it.hideText = false
+                it.blockedArea = null
+            }
+            shareCoveredButtons.clear()
         }
     }
 

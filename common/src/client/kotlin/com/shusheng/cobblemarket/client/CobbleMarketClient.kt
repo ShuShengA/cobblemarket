@@ -421,9 +421,19 @@ object CobbleMarketClient {
             val client = MinecraftClient.getInstance()
             client.execute {
                 val screen = client.currentScreen
-                // 出价成功时不播全局成功音：点击「确认出价」时的金币声即为反馈，避免叠音
-                if (!(payload.success && screen is AuctionScreen && screen.isBidDialogOpen())) {
-                    playResultSound(payload.success)
+                // 展示到聊天框成功时播专属音（分享出去的反馈，与买卖的成功音不是一回事）；
+                // 失败仍走通用失败音。判据看界面是不是展示模式——收到包时界面还没被关掉，
+                // 关界面是在下面 onMarketResult 里做的
+                val shareSucceeded = payload.success && when (screen) {
+                    is SellSelectScreen -> screen.isShareMode()
+                    is ItemSellScreen -> screen.isShareMode()
+                    else -> false
+                }
+                when {
+                    shareSucceeded -> playMarketSound("share")
+                    // 出价成功时不播全局成功音：点击「确认出价」时的金币声即为反馈，避免叠音
+                    payload.success && screen is AuctionScreen && screen.isBidDialogOpen() -> {}
+                    else -> playResultSound(payload.success)
                 }
                 // 交易操作后余额可能变化，主动拉取一次最新余额
                 sendToServer(RequestBalancePayload())

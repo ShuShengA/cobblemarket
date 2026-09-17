@@ -33,6 +33,10 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
     private val panelWidth = 296
     private val rowHeight = 24
 
+    /** 是否展示模式：结果音效分发要据此换成专属音（见 CobbleMarketClient 的 MarketResultPayload 处理） */
+    fun isShareMode(): Boolean = shareMode
+
+
     // name：显示名在背包扫描时构建一次，render 每帧取 stack.name 是分配热点
     // slot：首次出现的背包主栏槽位（同类物品跨多个栈时数量合并显示，分享按这个槽位取实物——
     //       服务端只认槽位号、自己读背包，客户端递上来的内容一律不信）
