@@ -74,6 +74,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var financeEnabled = true
     private var meowthBankBtn: NineSliceButton? = null
 
+    // 点券关闭提示（点置灰的点券市场按钮时显示，3 秒）
+    private var pointsNoticeUntil = 0L
+    // 点券市场入口（置灰依据是 PointsStateCache.enabled，登录时服务端补发一次）
+    private var pointsMarketBtn: NineSliceButton? = null
+
     /** 分享按钮与它上方展开的子按钮（点击主按钮切换展开，见 [toggleShareMenu]） */
     private var shareBtn: NineSliceButton? = null
     private var sharePokemonBtn: NineSliceButton? = null
@@ -305,6 +310,32 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         this.meowthBankBtn = meowthBankBtn
         meowthBankBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.meowth_bank")))
         entryButtons += addDrawableChild(meowthBankBtn)
+
+        // 点券市场：喵喵银行右侧 4px（用户 2026-09-17 拍板的位置）。
+        // 总开关关闭时置灰 + 点击给 fail 音与 3 秒提示 —— 照喵喵银行按钮的做法
+        //（dimmed 只压暗观感、不影响可点性，所以点击必须在这里自己拦）。
+        val pointsBtn = NineSliceButton(
+            centerX - 38, cornerY,
+            cornerSize, cornerSize,
+            Text.literal(""),
+            {
+                if (com.shusheng.cobblemarket.client.PointsStateCache.enabled) {
+                    client?.setScreen(PointsMarketScreen())
+                } else {
+                    com.shusheng.cobblemarket.client.playFailSound()
+                    pointsNoticeUntil = System.currentTimeMillis() + 3000
+                }
+            },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/points_symbol.png"),
+            // 48×48 贴图缩到 18×18 显示（照求购单/喵喵银行按钮）
+            iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+            texture = ROW_BACKGROUND_TEXTURE,
+            texH = ROW_BACKGROUND_TEX_H
+        )
+        pointsBtn.dimmed = !com.shusheng.cobblemarket.client.PointsStateCache.enabled
+        this.pointsMarketBtn = pointsBtn
+        pointsBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.points.market.entry")))
+        entryButtons += addDrawableChild(pointsBtn)
 
         if (!creditInfoLoaded) {
             requestCreditInfo()
@@ -1168,6 +1199,14 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                 width / 2, height - 36, 0xFF5555
             )
         }
+        // 点券关闭提示（点置灰的点券市场按钮，3 秒；与上面两条同位置，极少同时出现）
+        if (System.currentTimeMillis() < pointsNoticeUntil) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.points.market.disabled").string,
+                width / 2, height - 36, 0xFF5555
+            )
+        }
         // 余额（标题下方，来自全局缓存）
         val bal = com.shusheng.cobblemarket.client.BalanceCache.balance
         if (bal.isNotEmpty()) {
@@ -1178,6 +1217,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                 width / 2, btnStartY - 26, 0xFFFFFF
             )
         }
+    }
+
+    /** 点券总开关变化时同步入口按钮的置灰态（登录补发 / 后续管理端切换，见 PointsStatusPayload） */
+    fun updatePointsEntryState() {
+        pointsMarketBtn?.dimmed = !com.shusheng.cobblemarket.client.PointsStateCache.enabled
     }
 
     override fun shouldPause() = false
