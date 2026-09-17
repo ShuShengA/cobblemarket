@@ -989,6 +989,8 @@ object FinanceNetwork {
                     ).formatted(if (removed) Formatting.GREEN else Formatting.RED),
                     false
                 )
+                // 结果反馈音（收回成功 / 该玩家本就不是持有者，各一声；管理操作不回结果包）
+                sendResultSound(player, removed)
                 sendCardHolderList(player)
             }
         }
@@ -1134,6 +1136,7 @@ object FinanceNetwork {
                             .formatted(Formatting.GREEN),
                         false
                     )
+                    sendResultSound(player)   // 撤销成功反馈（管理操作不回结果包，只给音效）
                     // 回发全服流水刷新（撤销按钮所在界面）
                     sendToPlayer(
                         player,
@@ -1144,6 +1147,7 @@ object FinanceNetwork {
                         Text.translatable("cobblemarket.repay.revoke_none").formatted(Formatting.RED),
                         false
                     )
+                    sendResultSound(player, false)   // 没有可撤销的坏账：被拒也要有听觉反馈
                 }
             }
         }
