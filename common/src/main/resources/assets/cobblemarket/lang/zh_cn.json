@@ -410,6 +410,8 @@
   "cobblemarket.gui.tooltip_ability": "特性:",
   "cobblemarket.gui.tooltip_ivs": "IVs:",
   "cobblemarket.gui.friendship": "亲密度：%s",
+  "cobblemarket.gui.tooltip_marks": "证章：",
+  "cobblemarket.gui.marks_sep": "、",
   "cobblemarket.gui.tooltip_held": "携带物：",
   "cobblemarket.gui.tooltip_seller": "卖家：",
   "cobblemarket.gui.tooltip_price": "价格：",

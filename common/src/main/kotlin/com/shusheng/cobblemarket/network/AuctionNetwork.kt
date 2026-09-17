@@ -939,7 +939,10 @@ object AuctionNetwork {
             "ballItem" to pokemon.caughtBall.name.toString(),
             "heldItemId" to (if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString()),
             "aspects" to pokemon.aspects.joinToString(","),
-            "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(",")
+            "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(","),
+            // 证章翻译 key 列表（客户端本地翻译）：聊天悬停只画得了文字，纹理路径给不出名字。
+            // 老存档没有这个键 = 空串 → 悬停里不显示证章行（只增不改，不需要迁移）
+            "markKeys" to pokemon.marks.joinToString(",") { it.name }
         )
         pokemon.secondaryType?.let { extra["secondaryType"] = "cobblemon.type.${it.name.lowercase()}" }
         return extra
@@ -1048,6 +1051,11 @@ object AuctionNetwork {
             .append(Text.translatable("cobblemarket.chat.auction_sold_announce", Text.literal(auction.currentBidderName), priceText, nameText).formatted(Formatting.BLUE))
     }
 
+    /** 聊天悬停里最多列几个证章名，其余折成「+N」。列表悬停窗那行图标能排 10 个
+     *  （`EntryBadgeRenderer.MARKS_PER_ROW`），但这里是**文字**：证章名连着排开会被原版 tooltip
+     *  自动折行，几十枚的精灵直接变成一屏竖条（2026-09-17 实测踩到）——只留开头几个收口。 */
+    private const val MARKS_SHOWN = 3
+
     /** 悬浮详情（多行彩色文字，发出时为快照）：结构仿出价弹窗左列——名字行/属性/性格/特性/携带物/IV+EV 竖排六行，
      *  尾部拍卖信息（起拍价/最低加价/结束时间）；物品版 = 数量 + 拍卖信息 */
     private fun buildAnnouncementHover(auction: AuctionListing): Text {
@@ -1118,6 +1126,20 @@ object AuctionNetwork {
                 Text.translatable("cobblemarket.gui.friendship", extra["friendship"]?.toIntOrNull() ?: 0)
                     .styled { it.withColor(0xFF99CC) }
             )
+            // 证章（亲密度下方）：与列表悬停窗、分享播报同一位置。分隔符也走词条，
+            // 客户端本地翻译（服务端语言 ≠ 客户端语言，这里拼的中文顿号在英文端会很怪）
+            val markKeys = extra["markKeys"].orEmpty().split(",").filter { it.isNotBlank() }
+            if (markKeys.isNotEmpty()) {
+                val shown = markKeys.take(MARKS_SHOWN)
+                var marksValue: net.minecraft.text.MutableText = Text.literal("")
+                shown.forEachIndexed { i, key ->
+                    if (i > 0) marksValue = marksValue.append(Text.translatable("cobblemarket.gui.marks_sep"))
+                    marksValue = marksValue.append(Text.translatable(key))
+                }
+                val rest = markKeys.size - shown.size
+                if (rest > 0) marksValue = marksValue.append(Text.literal(" +$rest"))
+                lines.add(Text.translatable("cobblemarket.gui.tooltip_marks").append(marksValue))
+            }
         } else {
             lines.add(Text.translatable("cobblemarket.auction.count").append(Text.literal("${auction.count}")))
             // 附魔词条行（原版 tooltip 同款：附魔名 + 罗马等级，AQUA 色）
