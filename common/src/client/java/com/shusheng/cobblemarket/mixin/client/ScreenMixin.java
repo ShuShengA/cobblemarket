@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.mixin.client;
 
 import com.shusheng.cobblemarket.client.CardCelebrationAnimation;
+import com.shusheng.cobblemarket.client.ChatObjectPreview;
 import com.shusheng.cobblemarket.client.CloseAnimation;
 import com.shusheng.cobblemarket.client.CobbleMarketClientKt;
 import com.shusheng.cobblemarket.client.CustomCursor;
@@ -46,6 +47,10 @@ public abstract class ScreenMixin {
         // 关闭动画矩阵恢复（与 HEAD 配对；动画中界面内容与 HUD 一起滑出）
         CloseAnimation.INSTANCE.popTransform(context);
         EnterAnimation.INSTANCE.popTransform(context);
+        // 聊天播报悬浮大图：鼠标停在拍卖/求购播报上时在右半屏中心画拍品大图。
+        // 必须放在矩阵恢复之后（它自己会清深度缓冲，夹在 push/pop 之间会把矩阵栈搅乱），
+        // 且非聊天界面内部直接收摊，不影响上面任何一层。
+        ChatObjectPreview.render(context, mouseX, mouseY);
         // 自定义光标：画在全部内容与动画之后——它是玩家自己的指向，不该跟着关闭动画一起滑出。
         // 方法内部同时负责每帧校正系统光标的显隐（非本模组界面会自动恢复）
         CustomCursor.INSTANCE.render(context, mouseX, mouseY, (Screen) (Object) this);

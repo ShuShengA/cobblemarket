@@ -29,10 +29,19 @@ object ItemHoverPreview {
      * @param stack 从挂单 NBT 重建的物品栈（**只用于取物品外观**）
      * @param panelLeft 面板左边缘 X（列表区左边），据此在左侧空白区取中
      * @param screenHeight 屏幕逻辑高度，用于纵向居中
+     * @param centerX **非空 = 居中模式**（聊天播报悬浮预览用）：直接按它当屏幕上的目标中心，
+     *                并**跳过开关判断** —— 聊天那一路不归「物品预览图」开关管（拍板：无条件生效）。
+     *                null 走列表那套（面板左侧空白区取中）
      */
-    fun render(context: DrawContext, stack: ItemStack, panelLeft: Int, screenHeight: Int) {
-        // 物品侧有自己独立的开关（「物品预览图」），与精灵侧互不影响
-        if (!ClientConfig.hoverPreviewItem) return
+    fun render(
+        context: DrawContext,
+        stack: ItemStack,
+        panelLeft: Int,
+        screenHeight: Int,
+        centerX: Float? = null
+    ) {
+        // 物品侧有自己独立的开关（「物品预览图」），与精灵侧互不影响；居中模式不受开关约束
+        if (centerX == null && !ClientConfig.hoverPreviewItem) return
 
         // flush + 清深度（照精灵版）：不先提交攒批并清掉深度，大图会被先画的 GUI 元素整片剔除
         context.draw()
@@ -40,12 +49,12 @@ object ItemHoverPreview {
 
         val s = PREVIEW_SCALE
         // 基准同样是左侧空白区的中点；物品图标自身居中，不需要精灵那边"模型偏右"的左移补偿
-        val centerX = panelLeft / 2f
+        val targetX = centerX ?: panelLeft / 2f
         val centerY = screenHeight / 2f
         val matrices = context.matrices
 
         matrices.push()
-        matrices.translate((centerX - 8f * s).toDouble(), (centerY - 8f * s).toDouble(), 0.0)
+        matrices.translate((targetX - 8f * s).toDouble(), (centerY - 8f * s).toDouble(), 0.0)
         matrices.scale(s, s, 1f)
         drawItemWithBar(context, stack, 0, 0)
         matrices.pop()

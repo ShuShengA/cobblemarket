@@ -59,6 +59,7 @@ import com.shusheng.cobblemarket.network.RequestLoanHistoryPayload
 import com.shusheng.cobblemarket.network.RequestLoanPayload
 import com.shusheng.cobblemarket.network.RequestMarketPayload
 import com.shusheng.cobblemarket.network.RequestMyPokemonPayload
+import com.shusheng.cobblemarket.network.RequestObjectPreviewPayload
 import com.shusheng.cobblemarket.network.RequestPlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.network.RequestPurpleCardApplyInfoPayload
 import com.shusheng.cobblemarket.network.RequestPurpleCardApplyPayload
@@ -154,6 +155,7 @@ fun registerClientC2S() {
         c2s(registrar, RequestLoanPayload.ID, RequestLoanPayload.CODEC)
         c2s(registrar, RequestMarketPayload.ID, RequestMarketPayload.CODEC)
         c2s(registrar, RequestMyPokemonPayload.ID, RequestMyPokemonPayload.CODEC)
+        c2s(registrar, RequestObjectPreviewPayload.ID, RequestObjectPreviewPayload.CODEC)
         c2s(registrar, RequestPlayerNameSuggestionsPayload.ID, RequestPlayerNameSuggestionsPayload.CODEC)
         c2s(registrar, RequestPurpleCardApplyInfoPayload.ID, RequestPurpleCardApplyInfoPayload.CODEC)
         c2s(registrar, RequestPurpleCardApplyPayload.ID, RequestPurpleCardApplyPayload.CODEC)

@@ -41,6 +41,7 @@ import com.shusheng.cobblemarket.network.MarketDataPayload
 import com.shusheng.cobblemarket.network.ItemReturnDataPayload
 import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.MyPokemonListPayload
+import com.shusheng.cobblemarket.network.ObjectPreviewPayload
 import com.shusheng.cobblemarket.network.OpenMarketPayload
 import com.shusheng.cobblemarket.network.PokemonBlacklistDataPayload
 import com.shusheng.cobblemarket.network.PokemonPriceLimitDataPayload
@@ -504,6 +505,11 @@ object CobbleMarketClient {
         // 通用音效通道：服务端事件（出价被超越 / 自动划扣 / 逾期 / 卖出到账 / 权限变更）→ 播一个音效
         registerS2C(PlaySoundPayload.ID, PlaySoundPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute { playMarketSound(payload.soundId) }
+        }
+
+        // 聊天播报悬浮大图的数据（客户端悬停在拍卖/求购播报上时请求，见 ChatObjectPreview）
+        registerS2C(ObjectPreviewPayload.ID, ObjectPreviewPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute { ChatObjectPreview.onData(payload) }
         }
 
         // 上线待办概况（登录时服务端推一次）：有东西要领就安排一声「离线收益」提示音，
