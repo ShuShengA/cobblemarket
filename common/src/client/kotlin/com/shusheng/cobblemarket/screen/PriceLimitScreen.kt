@@ -65,9 +65,10 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     // 物品图标栈缓存（条目 → 解析栈）：行内每帧 tryParse + ItemStack 是分配热点，数据到达时构建；
     // 带组件快照的条目重建完整物品（真实组件渲染）
     private val itemIconStacks = mutableMapOf<ItemPriceLimitEntry, ItemStack>()
-    // tooltip 文本行缓存：内容只取决于条目，悬停同一行时每帧重建是悬停掉帧主因
+    // tooltip 行缓存：内容只取决于条目，悬停同一行时每帧重建是悬停掉帧主因。
+    // 富文本行 = Text + 行色：首行精灵名要走主属性色，纯 String 带不了颜色（见 buildPokemonTooltipLines）
     private var tooltipCacheKey: Any? = null
-    private var tooltipCacheLines: List<String> = emptyList()
+    private var tooltipCacheLines: List<Pair<Text, Int>> = emptyList()
     // 物品行 tooltip 富文本缓存（Text 保留词条自带颜色，照物品市场；Shift 展开按需构建）
     private var itemTooltipCacheKey: Any? = null
     private var itemTooltipLines: List<Pair<Text, Int>> = emptyList()
@@ -1252,8 +1253,16 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                         cursor += textRenderer.getWidth("☆ ")
                     }
                 }
+                // 精灵名单独上色（主属性色，全模组口径）：名字是行文本的前缀，拆两段画。
+                // 「全部精灵」不是物种（物种留空），保持白色
+                val nameText = pokemonName(entry.speciesId)
+                val nameWidth = textRenderer.getWidth(nameText)
+                context.drawTextWithShadow(textRenderer, nameText, cursor, y + 7,
+                    if (entry.speciesId.isEmpty()) 0xFFFFFF
+                    else EntryBadgeRenderer.speciesTypeColor(entry.speciesId, entry.aspects))
+                cursor += nameWidth
                 context.drawTextWithShadow(textRenderer,
-                    com.shusheng.cobblemarket.util.TextUtil.truncateString(line, 170 - (cursor - (leftX + 26))),
+                    com.shusheng.cobblemarket.util.TextUtil.truncateString(line.removePrefix(nameText), 170 - (cursor - (leftX + 26))),
                     cursor, y + 7, 0xFFFFFF)
             }
             if (hoveredRow >= 0) {
@@ -1271,9 +1280,18 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 if (addField == null) {
                     itemIconStacks[entry]?.let { drawItemWithBar(context, it, leftX + 4, y + 4) }
                 }
+                // 物品名单独上色（稀有度色，全模组口径：界面出现物品名就不许白字）：名字是行文本前缀，
+                // 拆两段画（名字带色 + 后半段白字）。
+                // 后半段的截断要扣掉名字宽：整行预算 170 是含名字算的，不扣就变成「名字 + 170」，
+                // 两段相加超宽压到右侧编辑/删除按钮
+                val fullText = rowTexts[scrollOffset + i]
+                val nameText = itemDisplay(entry.itemId)
+                val nameWidth = textRenderer.getWidth(nameText)
+                context.drawTextWithShadow(textRenderer, nameText, leftX + 24, y + 7,
+                    com.shusheng.cobblemarket.util.TextUtil.rarityNameColor(itemIconStacks[entry]))
                 context.drawTextWithShadow(textRenderer,
-                    com.shusheng.cobblemarket.util.TextUtil.truncateString(rowTexts[scrollOffset + i], 170),
-                    leftX + 24, y + 7, 0xFFFFFF)
+                    com.shusheng.cobblemarket.util.TextUtil.truncateString(fullText.removePrefix(nameText), 170 - nameWidth),
+                    leftX + 24 + nameWidth, y + 7, 0xFFFFFF)
             }
             if (hoveredRow >= 0) {
                 val actualIdx = scrollOffset + hoveredRow
@@ -1306,16 +1324,22 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             tooltipCacheKey = entry
             tooltipCacheLines = buildPokemonTooltipLines(entry)
         }
-        drawTooltip(context, tooltipCacheLines, mouseX, mouseY)
+        // 走富文本重载（物品悬停窗同款）：首行名字要单独上属性色，纯 String 版只能整行白。
+        // 行文本内容与原先逐字相同 → 宽度/行高计算不变（宽度仍按各行完整文本量）
+        drawRichTooltip(context, tooltipCacheLines, mouseX, mouseY)
     }
 
-    private fun buildPokemonTooltipLines(entry: PokemonPriceLimitEntry): List<String> {
-        val lines = mutableListOf(pokemonName(entry.speciesId))
-        lines.add(Text.translatable("cobblemarket.price_limit.v_label").string + ": " + vLabel(entry.vCount))
-        lines.add(shinyLabel(entry.shinyFilter))
-        lines.add(formLabel(entry.aspects.toSet()))
-        lines.add(htLabel(entry.htFilter))
-        lines.add(priceText(entry.minPrice, entry.maxPrice, activeCurrencyUnit()))
+    private fun buildPokemonTooltipLines(entry: PokemonPriceLimitEntry): List<Pair<Text, Int>> {
+        // 名字行 = 主属性色（全模组口径：界面出现精灵名就不许白字）。
+        // 物种留空 = 「全部精灵」，不是物种 → 保持白字；物种解析不到时 speciesTypeColor 自己也返回白色
+        val nameColor = if (entry.speciesId.isEmpty()) 0xFFFFFF
+        else EntryBadgeRenderer.speciesTypeColor(entry.speciesId, entry.aspects)
+        val lines = mutableListOf<Pair<Text, Int>>(Text.literal(pokemonName(entry.speciesId)) to nameColor)
+        lines.add(Text.literal(Text.translatable("cobblemarket.price_limit.v_label").string + ": " + vLabel(entry.vCount)) to 0xFFFFFF)
+        lines.add(Text.literal(shinyLabel(entry.shinyFilter)) to 0xFFFFFF)
+        lines.add(Text.literal(formLabel(entry.aspects.toSet())) to 0xFFFFFF)
+        lines.add(Text.literal(htLabel(entry.htFilter)) to 0xFFFFFF)
+        lines.add(Text.literal(priceText(entry.minPrice, entry.maxPrice, activeCurrencyUnit())) to 0xFFFFFF)
         return lines
     }
 
@@ -1360,9 +1384,14 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         val lines = mutableListOf<Pair<Text, Int>>()
         val stack = itemIconStacks[entry]
         if (stack != null) {
+            // 栈在手上时不自己拼名字：原版 getTooltip 首行就是 name 套稀有度色（1.21.1 字节码已核对），
+            // 行色参数被 Text 自带样式盖过，名字自然是稀有度色
             lines.addAll(com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(stack, client?.player, type).map { it to 0xFFFFFF })
         } else {
-            lines.add(Text.literal(itemDisplay(entry.itemId)) to 0xFFFFFF)
+            // 名字行照行内口径上稀有度色（该行只有名字，没有后半段要拆）；
+            // 本分支＝解析不出栈的条目（物品 id 非法），rarityNameColor 取不到栈只能落白
+            lines.add(Text.literal(itemDisplay(entry.itemId)) to
+                com.shusheng.cobblemarket.util.TextUtil.rarityNameColor(stack))
         }
         lines.add(Text.literal(priceText(entry.minPrice, entry.maxPrice, activeCurrencyUnit())) to 0xFFFFFF)
         return lines

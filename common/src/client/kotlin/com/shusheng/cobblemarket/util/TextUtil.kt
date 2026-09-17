@@ -20,6 +20,11 @@ object TextUtil {
     // 物品显示名照物品栏悬浮第一行着色（按稀有度；名字自带样式码的物品如卡片不受影响）
     fun rarityColoredName(stack: ItemStack): Text = stack.name.copy().formatted(stack.rarity.formatting)
 
+    // 物品名颜色（= 物品栏悬浮的名字颜色，即稀有度色）；没有栈 / 没有稀有度时返回白色。
+    // 与 rarityColoredName 同一口径（原版 getTooltip 首行就是 name 套 rarity.formatting，已核对 1.21.1 字节码），
+    // 供「名字要拆成独立一段画」的场景（行内两段绘制、悬停窗两段混排）取色，Text 版取不到纯色值。
+    fun rarityNameColor(stack: ItemStack?): Int = stack?.rarity?.formatting?.colorValue ?: 0xFFFFFF
+
     // IV 显示：极限特训过（hyper trained）时显示「真实值（特训值）」，未特训只显示真实值。
     // 用于市场/拍卖/上架等界面的个体值展示，与 Cobblemon 队伍详情格式一致。
     // 括号按语言：中文全角（排版惯例），英文半角（全角括号在英文里占 16px，强制下架弹窗左列
