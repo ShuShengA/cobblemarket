@@ -14,7 +14,7 @@ import java.util.UUID
  * 点券变动类型（审计账本的类型列）。
  * GIVE/TAKE = 命令发放与回收；REDEEM = 兑换码；MARKET_* = 市场消费与收入；SHOP_CONFIRM = 充值订单确认发放。
  */
-enum class PointsLogType { GIVE, TAKE, REDEEM, MARKET_SPEND, MARKET_INCOME, SHOP_CONFIRM }
+enum class PointsLogType { GIVE, TAKE, REDEEM, MARKET_SPEND, MARKET_INCOME, SHOP_CONFIRM, CODE_CREATE, CODE_REVOKE }
 
 /**
  * **点券审计账本**（`config/cobblemarket/points/`）。
@@ -175,6 +175,9 @@ object PointsAuditLogger {
             PointsLogType.MARKET_SPEND -> if (zh) "市场消费" else "Market spend"
             PointsLogType.MARKET_INCOME -> if (zh) "市场收入" else "Market income"
             PointsLogType.SHOP_CONFIRM -> if (zh) "充值发放" else "Shop grant"
+            // 生成/作废兑换码本身**不改变任何余额**（余额列写 0），单独类型免得污染"发放"口径
+            PointsLogType.CODE_CREATE -> if (zh) "生成兑换码" else "Code created"
+            PointsLogType.CODE_REVOKE -> if (zh) "作废兑换码" else "Code revoked"
         }
         // 玩家 UUID 供程序按 UUID 对账（改名玩家也查得到）；人读账本看玩家名
         return "$time,$typeName,${csvEscape(targetName)},$targetUuid,$amount,$balanceAfter," +
