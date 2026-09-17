@@ -9,13 +9,13 @@ import net.minecraft.world.PersistentState
 import java.util.UUID
 
 /**
- * **点券余额账本**（`cobblemarket_points.dat`）。
+ * **RP 余额账本**（`cobblemarket_points.dat`）。
  *
  * 与主货币的关键差别（2026-09-15 拍板，见 `docs/points_plan.md`）：
- * - 点券交易收入**直接到账**，不走主货币那套「待领余额」—— 主货币要"待领"是因为它可能是物品
- *   （背包满了发不出去、只能记账等玩家来领），点券是模组自存的纯数字，按 UUID 入账即可、离线也能入。
+ * - RP 交易收入**直接到账**，不走主货币那套「待领余额」—— 主货币要"待领"是因为它可能是物品
+ *   （背包满了发不出去、只能记账等玩家来领），RP 是模组自存的纯数字，按 UUID 入账即可、离线也能入。
  *   好处是 `MarketState` 一行都不用改，也不存在「待领余额币种搞错 = 凭空造钱」那一整类风险。
- * - 点券**不可兑换、不可转让、完全不参与金融**（不存取款生息、不还贷、不买卡）。
+ * - RP**不可兑换、不可转让、完全不参与金融**（不存取款生息、不还贷、不买卡）。
  *
  * 文件名前缀带 `cobblemarket` ⇒ 自动进 `PersistHelper` / `StateBackup` 的备份、恢复与 mtime 校验，无需注册。
  */
@@ -28,7 +28,7 @@ class PointsState private constructor() : PersistentState() {
 
     /**
      * 加余额，返回加完后的值。
-     * 溢出钳 `Long.MAX_VALUE` 并 warn —— 点券是花真钱买的，宁可钳住也**不能回绕成负数**
+     * 溢出钳 `Long.MAX_VALUE` 并 warn —— RP 是花真钱买的，宁可钳住也**不能回绕成负数**
      * （那等于把玩家的钱变成负债）。
      */
     fun addBalance(playerUuid: UUID, amount: Long): Long {

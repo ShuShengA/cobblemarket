@@ -47,7 +47,7 @@ object MarketPermissions {
     const val CONFIG = PREFIX + "config"
 
     /**
-     * 点券管理：**这是印发钞权的节点**（发放/回收/兑换码生成），与 [CONFIG] 同级敏感 ——
+     * RP 管理：**这是印发钞权的节点**（发放/回收/兑换码生成），与 [CONFIG] 同级敏感 ——
      * 随意下放等于把服务器经济交出去。命令侧的收紧见 `docs/points_plan.md`：
      * `give/take` 与 `code create/revoke/purge` 仅 OP，本节点只放给「查询类」用（check / 订单查看）。
      */

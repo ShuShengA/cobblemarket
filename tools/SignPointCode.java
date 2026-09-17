@@ -6,7 +6,7 @@ import java.time.Instant;
 import java.util.HexFormat;
 
 /**
- * CobbleMarket 点券「外部签名码」签发器（单文件、零依赖、Java 11+）。
+ * CobbleMarket RP「外部签名码」签发器（单文件、零依赖、Java 11+）。
  *
  * 用法：
  *   java SignPointCode.java &lt;secret&gt; &lt;面额&gt; &lt;数量&gt; [有效天数] [serial十六进制]
@@ -22,7 +22,7 @@ import java.util.HexFormat;
  * 协议（20 字节 = 32 个 Crockford Base32 字符，见 docs/points_plan.md「外部签名码协议」）：
  *   [0]      version = 0x01
  *   [1..6]   serial 48bit（SecureRandom，防重放）
- *   [7..10]  amount 大端 int（点券数，必须 > 0）
+ *   [7..10]  amount 大端 int（RP 数，必须 > 0）
  *   [11..12] expiresDays 大端 ushort（自 2026-01-01 UTC 起的天数；0 = 不过期）
  *   [13]     flags = 0
  *   [14]     reserved = 0

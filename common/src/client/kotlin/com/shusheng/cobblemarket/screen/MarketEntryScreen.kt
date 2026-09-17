@@ -74,9 +74,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var financeEnabled = true
     private var meowthBankBtn: NineSliceButton? = null
 
-    // 点券关闭提示（点置灰的点券市场按钮时显示，3 秒）
+    // RP 关闭提示（点置灰的RP 市场按钮时显示，3 秒）
     private var pointsNoticeUntil = 0L
-    // 点券市场入口（置灰依据是 PointsStateCache.enabled，登录时服务端补发一次）
+    // RP 市场入口（置灰依据是 PointsStateCache.enabled，登录时服务端补发一次）
     private var pointsMarketBtn: NineSliceButton? = null
 
     /** 分享按钮与它上方展开的子按钮（点击主按钮切换展开，见 [toggleShareMenu]） */
@@ -311,7 +311,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         meowthBankBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.meowth_bank")))
         entryButtons += addDrawableChild(meowthBankBtn)
 
-        // 点券市场：喵喵银行右侧 4px（用户 2026-09-17 拍板的位置）。
+        // RP 市场：喵喵银行右侧 4px（用户 2026-09-17 拍板的位置）。
         // 总开关关闭时置灰 + 点击给 fail 音与 3 秒提示 —— 照喵喵银行按钮的做法
         //（dimmed 只压暗观感、不影响可点性，所以点击必须在这里自己拦）。
         val pointsBtn = NineSliceButton(
@@ -1058,7 +1058,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             bgBottom() - 30,
             width / 2 + 128 - 25,
             bgBottom() - 29,
-            0xFFFF5555.toInt()
+            com.shusheng.cobblemarket.client.GuiColors.DIVIDER
         )
         // 皮卡丘跑步动画：4 帧贴图循环切换；脚踩背景上沿（底 = 背景顶 + 2）
         val pikaFrame = ((System.currentTimeMillis() / PIKA_FRAME_MS) % 4).toInt()
@@ -1199,7 +1199,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                 width / 2, height - 36, 0xFF5555
             )
         }
-        // 点券关闭提示（点置灰的点券市场按钮，3 秒；与上面两条同位置，极少同时出现）
+        // RP 关闭提示（点置灰的RP 市场按钮，3 秒；与上面两条同位置，极少同时出现）
         if (System.currentTimeMillis() < pointsNoticeUntil) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
@@ -1219,7 +1219,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         }
     }
 
-    /** 点券总开关变化时同步入口按钮的置灰态（登录补发 / 后续管理端切换，见 PointsStatusPayload） */
+    /** RP 总开关变化时同步入口按钮的置灰态（登录补发 / 后续管理端切换，见 PointsStatusPayload） */
     fun updatePointsEntryState() {
         pointsMarketBtn?.dimmed = !com.shusheng.cobblemarket.client.PointsStateCache.enabled
     }
