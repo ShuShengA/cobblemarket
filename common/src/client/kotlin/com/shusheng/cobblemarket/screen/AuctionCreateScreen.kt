@@ -172,6 +172,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private var cancelButton: NineSliceButton? = null
     private var dialogRenderable: RenderablePokemon? = null
     private val dialogPreviewState = FloatingState()
+    /** 弹窗自动叫声的时刻（0 = 无）：打开时排、渲染后到点播，见 renderPokemonSlot 里的判断 */
+    private var dialogCryAt = 0L
 
     private fun getListStartY() = if (currentTab == 0) 114 else 54
     private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 48) / rowHeight)
@@ -379,6 +381,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         dialogPokemon = pokemon
         dialogItem = item
         dialogRenderable = null
+        dialogCryAt = 0L
         backButton?.visible = false
         tabButtons.forEach { it.visible = false }
         searchField?.visible = false
@@ -402,8 +405,13 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             }
         }
         // 点行 → 弹窗弹出 → 由弹窗里的精灵叫一声（用户拍板的「叫声转移」）。
-        // 弹窗的 state 是常驻的，弹窗期间照常渲染推进，所以动画和声音都能正常播出来
-        dialogRenderable?.let { IconCryClick.play(dialogPreviewState, it) }
+        // ⚠ 这里只**排一个时刻**，真正的播放在渲染之后（见 renderPokemonSlot）：
+        // `addFirstAnimation` 依赖的 `currentModel` 是 `drawProfilePokemon` 里才建好的，
+        // 打开时立刻播会空放 —— 表现为「第一次打开没声音，开过一次之后才叫」
+        // （其余 5 个界面 2026-09-16 已统一改成这个写法，这里是漏网的最后一处）
+        if (dialogRenderable != null) {
+            dialogCryAt = System.currentTimeMillis() + IconCryClick.AUTO_CRY_DELAY_MS
+        }
 
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -483,6 +491,11 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 animate = useFloat
             )
         } catch (_: Exception) {
+        }
+        // 弹窗打开后的自动叫声：**必须画完再播**（currentModel 刚建好），再叠一层延迟让玩家看清弹窗
+        if (dialogCryAt != 0L && System.currentTimeMillis() >= dialogCryAt) {
+            dialogCryAt = 0L
+            IconCryClick.play(dialogPreviewState, rp)
         }
     }
 
@@ -616,6 +629,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         confirmButton = null
         cancelButton = null
         dialogRenderable = null
+        dialogCryAt = 0L
         clearChildren()
         init()
     }

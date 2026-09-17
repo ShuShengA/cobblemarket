@@ -28,8 +28,11 @@ object IconCryClick {
      *
      * 用法：打开弹窗时记 `xxxCryAt = System.currentTimeMillis() + AUTO_CRY_DELAY_MS`，
      * 渲染处比对 `now >= xxxCryAt` 再 [play] —— 延迟与"模型已就绪"两个条件都满足才叫。
+     *
+     * 数值由用户实测定：300 → **400**（2026-09-17，弹窗里再等一点更跟得上"看清了才叫"）。
+     * 全项目共用这一个常量（6 处弹窗 + 聊天播报悬浮大图），改一处全体生效。
      */
-    const val AUTO_CRY_DELAY_MS = 300L
+    const val AUTO_CRY_DELAY_MS = 400L
 
     private var lastPlayedAt = 0L
 
