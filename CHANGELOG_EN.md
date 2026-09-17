@@ -4,12 +4,12 @@
 
 ### New Feature
 
-#### Pokemon / Item Sharing
+#### Pokemon / Item Showcase
 
-- **Share button**: a share button now sits to the left of the Settings button on the market entry screen; clicking it expands two sub-buttons, Pokemon and Item
-- **Share to server chat**: pick a Pokemon or an item and it is posted to the server chat for **everyone online to see**; hovering the shared name shows the full details — a Pokemon shows level, gender, size, type, nature, ability, ball, held item, IVs, EVs, friendship and marks, while an item shows its count and enchantments
-- **Chat hover preview**: hovering a shared message in chat shows a large image of that Pokemon or item in the right half of the screen (the same one used for auction and buy-order announcements)
-- **Rate limit and switch**: each player can share once every 10 seconds, and server owners can turn player sharing off from the server config
+- **Showcase button**: a showcase button now sits to the left of the Settings button on the market entry screen; clicking it expands two sub-buttons, Pokemon and Item
+- **Showcase to server chat**: pick a Pokemon or an item and it is posted to the server chat for **everyone online to see**; hovering the showcased name shows the full details — a Pokemon shows level, gender, size, type, nature, ability, ball, held item, IVs, EVs, friendship and marks, while an item shows its count and enchantments
+- **Chat hover preview**: hovering a showcase message in chat shows a large image of that Pokemon or item in the right half of the screen (the same one used for auction and buy-order announcements)
+- **Rate limit and switch**: each player can showcase once every 10 seconds, and server owners can turn player showcasing off from the server config
 
 ## 1.2.0 (in development, unreleased)
 

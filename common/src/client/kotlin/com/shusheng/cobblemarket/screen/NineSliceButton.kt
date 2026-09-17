@@ -22,6 +22,8 @@ class NineSliceButton(
     var iconLeft: Identifier? = null,
     // 第二图标（并排绘制，间距 1px；性别按钮不限态用 ♂♀ 双图标）
     var iconLeft2: Identifier? = null,
+    // 动画图标帧列表（每 100ms 切一帧，帧率同小卡比兽/皮卡丘入口图标）；非空时优先于 iconLeft
+    private val iconFrames: List<Identifier>? = null,
     // 图标贴图实际尺寸与缩放（6×8 性别图标用 iconTexW=6/iconTexH=8/iconScale=1.5）
     private val iconTexW: Int = 24,
     private val iconTexH: Int = 24,
@@ -61,8 +63,10 @@ class NineSliceButton(
         }
         drawNineSlice(context, texture, x, y, width, height, state, texH)
 
-        // 可选图标（可双图标并排，整体居中）
-        val leftIcon = iconLeft
+        // 可选图标（可双图标并排，整体居中）：动画帧按时间切换，没有帧才用静态 iconLeft
+        val leftIcon = iconFrames?.let { frames ->
+            frames[((System.currentTimeMillis() / 100) % frames.size).toInt()]
+        } ?: iconLeft
         if (leftIcon != null) {
             val iconW = (iconTexW * iconScale).toInt()
             val iconH = (iconTexH * iconScale).toInt()
@@ -86,8 +90,8 @@ class NineSliceButton(
         val font = MinecraftClient.getInstance().textRenderer
         val color = if (active) textColor else 0xA0A0A0
         val iconW = (iconTexW * iconScale).toInt()
-        val totalIconW = if (iconLeft != null) iconW * (if (iconLeft2 != null) 2 else 1) + (if (iconLeft2 != null) 1 else 0) else 0
-        val iconSpace = if (iconLeft != null) 5 + totalIconW + 4 else 0
+        val totalIconW = if (leftIcon != null) iconW * (if (iconLeft2 != null) 2 else 1) + (if (iconLeft2 != null) 1 else 0) else 0
+        val iconSpace = if (leftIcon != null) 5 + totalIconW + 4 else 0
         val textY = y + (height - 8) / 2
         val msgString = message.string
         // 选中标记黑点（TextUtil.selectedText 的 ● 前缀）无阴影绘制：带阴影看起来不是圆

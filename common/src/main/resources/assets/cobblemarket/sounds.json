@@ -39,6 +39,14 @@
       }
     ]
   },
+  "share": {
+    "sounds": [
+      {
+        "name": "cobblemarket:share",
+        "stream": false
+      }
+    ]
+  },
   "fail": {
     "sounds": [
       {
