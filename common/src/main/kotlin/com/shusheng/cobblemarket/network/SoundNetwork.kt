@@ -37,6 +37,20 @@ fun sendSound(player: ServerPlayerEntity, soundId: String) {
     sendToPlayer(player, PlaySoundPayload(soundId))
 }
 
+/**
+ * **管理类写操作的结果反馈音**（给操作者本人）：成功一声、被拒一声。
+ *
+ * 为什么不复用交易链路：交易操作回 `MarketResultPayload`，客户端据此播结果音**并顺带把提示打进聊天栏**；
+ * 管理操作（保存配置 / 权限 / 黑名单 / 价格限制 / 卡收回 / 撤销坏账）不想要那行聊天文字，
+ * 但同样需要「点了有没有生效」的听觉反馈 —— 此前这些保存/添加按钮点下去是**完全静默**的
+ * （只有一声 0.25 档的按钮点击音），玩家无法判断操作成没成功（2026-09-17 用户反馈）。
+ *
+ * 音量档位由客户端 [playMarketSound] 按素材统一给，`result_*` 与交易结果音同档（0.5）。
+ */
+fun sendResultSound(player: ServerPlayerEntity, success: Boolean = true) {
+    sendSound(player, if (success) "result_success" else "result_fail")
+}
+
 object SoundNetwork {
     fun register() {
         registerS2CType(PlaySoundPayload.ID, PlaySoundPayload.CODEC)

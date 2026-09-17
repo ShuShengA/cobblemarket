@@ -155,6 +155,7 @@ object ItemBlacklistNetwork {
                     player.sendMessage(
                         net.minecraft.text.Text.translatable("cobblemarket.blacklist.item_not_found")
                             .formatted(net.minecraft.util.Formatting.RED), false)
+                    sendResultSound(player, false)   // 被拒也要有听觉反馈（此前只有聊天栏红字）
                     return@execute
                 }
                 ItemBlacklistState.get(server).add(
@@ -166,6 +167,7 @@ object ItemBlacklistNetwork {
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                sendResultSound(player)   // 添加成功反馈（管理操作不回结果包，只给音效）
                 val entries = ItemBlacklistState.get(server).getAll()
                 sendToPlayer(player, ItemBlacklistDataPayload(entries.reversed()))
             }
@@ -180,6 +182,7 @@ object ItemBlacklistNetwork {
                     player.sendMessage(
                         net.minecraft.text.Text.translatable("cobblemarket.blacklist.held_item_empty")
                             .formatted(net.minecraft.util.Formatting.RED), false)
+                    sendResultSound(player, false)
                     return@execute
                 }
                 ItemBlacklistState.get(server).add(
@@ -188,6 +191,7 @@ object ItemBlacklistNetwork {
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                sendResultSound(player)   // 添加成功反馈
                 val entries = ItemBlacklistState.get(server).getAll()
                 sendToPlayer(player, ItemBlacklistDataPayload(entries.reversed()))
             }
@@ -212,6 +216,7 @@ object ItemBlacklistNetwork {
                 }
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                sendResultSound(player)   // 批量添加成功反馈
                 sendToPlayer(player, ItemBlacklistDataPayload(state.getAll().reversed()))
                 player.sendMessage(
                     net.minecraft.text.Text.translatable("cobblemarket.blacklist.added_all", added)
@@ -226,6 +231,7 @@ object ItemBlacklistNetwork {
                 ItemBlacklistState.get(server).remove(payload.itemId, payload.componentsSpec)
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                sendResultSound(player)   // 删除成功反馈
                 val entries = ItemBlacklistState.get(server).getAll()
                 sendToPlayer(player, ItemBlacklistDataPayload(entries.reversed()))
             }
@@ -240,6 +246,7 @@ object ItemBlacklistNetwork {
                 payload.entries.forEach { state.remove(it.itemId, it.componentsSpec) }
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                sendResultSound(player)   // 批量删除成功反馈
                 sendToPlayer(player, ItemBlacklistDataPayload(state.getAll().reversed()))
             }
         }

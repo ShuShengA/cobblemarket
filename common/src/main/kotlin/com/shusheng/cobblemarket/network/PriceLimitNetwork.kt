@@ -274,11 +274,13 @@ object PriceLimitNetwork {
                 if ((minPrice != null && minPrice <= 0) || (maxPrice != null && maxPrice <= 0)) {
                     player.sendMessage(
                         Text.translatable("cobblemarket.price_limit.invalid_price").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)   // 被拒也要有听觉反馈（此前只有聊天栏红字）
                     return@execute
                 }
                 if (minPrice != null && maxPrice != null && minPrice > maxPrice) {
                     player.sendMessage(
                         Text.translatable("cobblemarket.price_limit.invalid_range").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)
                     return@execute
                 }
                 // 物种留空 = 全部精灵；非空时解析为权威 ID
@@ -289,6 +291,7 @@ object PriceLimitNetwork {
                         ?: run {
                             player.sendMessage(
                                 Text.translatable("cobblemarket.blacklist.not_found").formatted(Formatting.RED), false)
+                            sendResultSound(player, false)
                             return@execute
                         }
                 }
@@ -297,6 +300,7 @@ object PriceLimitNetwork {
                 if (payload.aspects.size > PokemonBlacklistEntry.MAX_ASPECTS) {
                     player.sendMessage(
                         Text.translatable("cobblemarket.blacklist.not_found").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)
                     return@execute
                 }
                 // 编辑语义：替换原条目（改了形态/物种/V 数/闪光/特训等 key 字段时，旧条目不再残留）
@@ -309,6 +313,7 @@ object PriceLimitNetwork {
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                sendResultSound(player)   // 添加成功反馈（管理操作不回结果包，只给音效）
                 val entries = PokemonPriceLimitState.get(server).getAll()
                 sendToPlayer(player, PokemonPriceLimitDataPayload(entries.reversed()))
             }
@@ -321,6 +326,7 @@ object PriceLimitNetwork {
                 PokemonPriceLimitState.get(server).remove(payload.speciesId, payload.vCount, payload.shinyFilter, payload.aspects, payload.htFilter)
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                sendResultSound(player)   // 删除成功反馈
                 val entries = PokemonPriceLimitState.get(server).getAll()
                 sendToPlayer(player, PokemonPriceLimitDataPayload(entries.reversed()))
             }
@@ -344,17 +350,20 @@ object PriceLimitNetwork {
                 if ((minPrice != null && minPrice <= 0) || (maxPrice != null && maxPrice <= 0)) {
                     player.sendMessage(
                         Text.translatable("cobblemarket.price_limit.invalid_price").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)   // 被拒也要有听觉反馈（此前只有聊天栏红字）
                     return@execute
                 }
                 if (minPrice != null && maxPrice != null && minPrice > maxPrice) {
                     player.sendMessage(
                         Text.translatable("cobblemarket.price_limit.invalid_range").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)
                     return@execute
                 }
                 val itemId = resolveItemId(payload.itemName)
                 if (itemId == null) {
                     player.sendMessage(
                         Text.translatable("cobblemarket.blacklist.item_not_found").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)
                     return@execute
                 }
                 val state = ItemPriceLimitState.get(server)
@@ -373,6 +382,7 @@ object PriceLimitNetwork {
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                sendResultSound(player)   // 添加成功反馈（管理操作不回结果包，只给音效）
                 val entries = ItemPriceLimitState.get(server).getAll()
                 sendToPlayer(player, ItemPriceLimitDataPayload(entries.reversed()))
             }
@@ -387,17 +397,20 @@ object PriceLimitNetwork {
                 if ((minPrice != null && minPrice <= 0) || (maxPrice != null && maxPrice <= 0)) {
                     player.sendMessage(
                         Text.translatable("cobblemarket.price_limit.invalid_price").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)   // 被拒也要有听觉反馈（此前只有聊天栏红字）
                     return@execute
                 }
                 if (minPrice != null && maxPrice != null && minPrice > maxPrice) {
                     player.sendMessage(
                         Text.translatable("cobblemarket.price_limit.invalid_range").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)
                     return@execute
                 }
                 val heldStack = player.mainHandStack.copy()
                 if (heldStack.isEmpty) {
                     player.sendMessage(
                         Text.translatable("cobblemarket.price_limit.held_item_empty").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)
                     return@execute
                 }
                 val state = ItemPriceLimitState.get(server)
@@ -411,6 +424,7 @@ object PriceLimitNetwork {
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                sendResultSound(player)   // 添加成功反馈
                 val entries = ItemPriceLimitState.get(server).getAll()
                 sendToPlayer(player, ItemPriceLimitDataPayload(entries.reversed()))
             }
@@ -423,6 +437,7 @@ object PriceLimitNetwork {
                 ItemPriceLimitState.get(server).remove(payload.itemId, payload.componentsSpec)
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                sendResultSound(player)   // 删除成功反馈
                 val entries = ItemPriceLimitState.get(server).getAll()
                 sendToPlayer(player, ItemPriceLimitDataPayload(entries.reversed()))
             }

@@ -5,6 +5,7 @@ import net.minecraft.util.Formatting
 import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.market.OfflineMessageState
 import com.shusheng.cobblemarket.network.MarketResultPayload
+import com.shusheng.cobblemarket.network.sendResultSound
 import com.shusheng.cobblemarket.network.sendSound
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.platform.onPlayerJoin
@@ -283,6 +284,9 @@ object PermissionNetwork {
                     server.playerManager.getPlayer(targetUuid)?.let { sendSound(it, "permission_change") }
                     notifyChanged(server, targetUuid, added, removed)
                 }
+                // 保存成功的反馈音：给**操作者本人**（上面那声 permission_change 只发给被改的人，
+                // 管理员改别人的权限时自己此前是完全静默的，2026-09-17 补）
+                sendResultSound(player)
                 refresh(server, targetUuid)              // 目标在线则即时刷新其按钮状态
                 sendToPlayer(player, listDataOf(server)) // 回刷新后的列表
             }
@@ -304,6 +308,7 @@ object PermissionNetwork {
                     // 界面「删除」= 收回全部权限，同样响一声 + 通知本人
                     server.playerManager.getPlayer(it.playerUuid)?.let { p -> sendSound(p, "permission_change") }
                     notifyChanged(server, it.playerUuid, emptySet(), it.nodes)
+                    sendResultSound(player)   // 操作者的反馈音（该玩家本不在表里时不会走到这里）
                 }
                 refresh(server, payload.playerUuid)
                 sendToPlayer(player, listDataOf(server))
