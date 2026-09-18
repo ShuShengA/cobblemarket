@@ -73,6 +73,14 @@ object ClientConfig {
     var balanceHudMode: BalanceHudMode = BalanceHudMode.ALWAYS
         private set
 
+    /**
+     * RP 那一行自己的显示模式（同三态）。与主行**各自独立** —— 主行常显、RP 行只在变动时冒一下，
+     * 或者干脆关掉（关掉时背景框缩回一行）。⚠ 只在服务器开了 RP 时才有效
+     *（`pointsEnabled` 关着时服务端根本不下发余额，那一行不显示）
+     */
+    var pointsHudMode: BalanceHudMode = BalanceHudMode.ALWAYS
+        private set
+
     /** 精灵图标展示模式（个人设置，设置弹窗两态循环）：STATIC 静态 / FLOAT 动态（默认） */
     var iconAnimMode: IconAnimMode = IconAnimMode.FLOAT
         private set
@@ -121,6 +129,12 @@ object ClientConfig {
                 1.0 -> BalanceHudMode.ON_CHANGE
                 2.0 -> BalanceHudMode.OFF
                 else -> if (data["showBalanceHud"] as? Boolean == false) BalanceHudMode.OFF else BalanceHudMode.ALWAYS
+            }
+            // RP 行同理（无字段 = 旧版本升级 → 默认常显）
+            pointsHudMode = when (data["pointsHudMode"] as? Double) {
+                1.0 -> BalanceHudMode.ON_CHANGE
+                2.0 -> BalanceHudMode.OFF
+                else -> BalanceHudMode.ALWAYS
             }
             // 只有显式存过 0（静态）才保持静态；无字段（旧版本升级）、1（浮动）、2（已砍掉的完整动画占位）一律按新默认浮动
             iconAnimMode = if (data["iconAnimMode"] as? Double == 0.0) IconAnimMode.STATIC else IconAnimMode.FLOAT
@@ -199,6 +213,11 @@ object ClientConfig {
         save()
     }
 
+    fun setPointsHudMode(v: BalanceHudMode) {
+        pointsHudMode = v
+        save()
+    }
+
     /** 两态循环：STATIC ↔ FLOAT */
     fun cycleIconAnimMode(): IconAnimMode {
         iconAnimMode = when (iconAnimMode) {
@@ -259,6 +278,7 @@ object ClientConfig {
                         "pikachuRunLoop" to pikachuRunLoop,
                         "groudonFly" to groudonFly,
                         "balanceHudMode" to balanceHudMode.ordinal,
+                        "pointsHudMode" to pointsHudMode.ordinal,
                         "iconAnimMode" to iconAnimMode.ordinal,
                         "hoverPreview" to hoverPreview,
                         "hoverPreviewItem" to hoverPreviewItem,
