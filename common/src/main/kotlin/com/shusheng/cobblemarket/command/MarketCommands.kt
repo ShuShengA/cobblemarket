@@ -33,6 +33,7 @@ import com.shusheng.cobblemarket.finance.LoanLogType
 import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.network.MarketNetwork
 import com.shusheng.cobblemarket.network.MarketStatePayload
+import com.shusheng.cobblemarket.network.sendSound
 import com.shusheng.cobblemarket.platform.onPlayerJoin
 import com.shusheng.cobblemarket.platform.registerCommands
 import com.shusheng.cobblemarket.platform.sendToPlayer
@@ -169,7 +170,7 @@ object MarketCommands {
                         .then(CommandManager.literal("give")
                             .requires { it.hasPermissionLevel(2) }
                             .then(CommandManager.argument("name", StringArgumentType.word())
-                                .suggests(::suggestOnlinePlayerNames)
+                                .suggests(::suggestPointTargets)
                                 .then(CommandManager.argument("amount", IntegerArgumentType.integer(1))
                                     .executes { ctx -> pointsAdjust(ctx, give = true) }
                                 )
@@ -178,7 +179,7 @@ object MarketCommands {
                         .then(CommandManager.literal("take")
                             .requires { it.hasPermissionLevel(2) }
                             .then(CommandManager.argument("name", StringArgumentType.word())
-                                .suggests(::suggestOnlinePlayerNames)
+                                .suggests(::suggestPointTargets)
                                 .then(CommandManager.argument("amount", IntegerArgumentType.integer(1))
                                     .executes { ctx -> pointsAdjust(ctx, give = false) }
                                 )
@@ -437,7 +438,16 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.points.invalid_amount"))
             return 0
         }
-        val resolved = BanState.resolvePlayer(server, name)
+        // ⚠ 支持 `@s`（执行者自己）：**FTB 任务奖励写的就是 `/market points give @s N`**，
+        // 而 StringArgumentType.word() 只认玩家名，`@s` 会被当成一个叫「@s」的人 → 查无此人
+        // （2026-09-18 用户实测）。换成 EntityArgumentType.player() 倒是有选择器了，
+        // 但会丢掉「给离线玩家发」的能力（现在走 BanState.resolvePlayer，覆盖存档里登录过的所有人），
+        // 所以这里手工认最常见的那一个。
+        val resolved = if (name.equals("@s", ignoreCase = true)) {
+            source.player?.let { it.uuid to it.name.string }
+        } else {
+            BanState.resolvePlayer(server, name)
+        }
         if (resolved == null) {
             source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
             return 0
@@ -449,6 +459,23 @@ object MarketCommands {
         if (give) {
             val after = state.addBalance(uuid, amount)
             PointsAuditLogger.log(PointsLogType.GIVE, uuid, playerName, amount, after, operator, "命令发放")
+            // 到账反馈给**玩家本人**（不是执行者）：命令发放与 FTB 任务奖励都走这条路，
+            // 只回执给 OP 的话玩家那边毫无动静 —— 钱进来了得让他知道。
+            // ⚠ 离线玩家不发（没法播音），余额本身已经加上了
+            server.playerManager.getPlayer(uuid)?.let { target ->
+                sendSound(target, "points_in")
+                // 玩家自己给自己发时不重复刷屏（下面的 sendFeedback 已经回执了）
+                if (target.uuid != source.player?.uuid) {
+                    target.sendMessage(
+                        Text.translatable(
+                            "cobblemarket.points.received",
+                            CurrencyService.amountText(amount, MarketCurrency.POINTS),
+                            CurrencyService.amountText(after, MarketCurrency.POINTS)
+                        ).formatted(Formatting.GREEN),
+                        false
+                    )
+                }
+            }
             source.sendFeedback({
                 Text.translatable(
                     "cobblemarket.points.give_ok",
@@ -679,6 +706,20 @@ object MarketCommands {
         context: CommandContext<ServerCommandSource>,
         builder: com.mojang.brigadier.suggestion.SuggestionsBuilder
     ): java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> {
+        context.source.server.playerManager.playerList.forEach { builder.suggest(it.name.string) }
+        return builder.buildFuture()
+    }
+
+    /**
+     * `points give/take` 的目标联想：在线玩家名 **+ `@s`**。
+     * 单独一份而不是往 [suggestOnlinePlayerNames] 里加 —— 那个是全项目共用的，
+     * 别的命令并不认选择器，提示一个用不了的写法只会误导。
+     */
+    private fun suggestPointTargets(
+        context: CommandContext<ServerCommandSource>,
+        builder: com.mojang.brigadier.suggestion.SuggestionsBuilder
+    ): java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> {
+        builder.suggest("@s")
         context.source.server.playerManager.playerList.forEach { builder.suggest(it.name.string) }
         return builder.buildFuture()
     }

@@ -166,5 +166,13 @@
         "stream": false
       }
     ]
+  },
+  "points_in": {
+    "sounds": [
+      {
+        "name": "cobblemarket:points_in",
+        "stream": false
+      }
+    ]
   }
 }

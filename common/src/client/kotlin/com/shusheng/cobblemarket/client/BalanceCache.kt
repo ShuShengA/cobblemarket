@@ -11,4 +11,13 @@ object BalanceCache {
     var balanceRaw: Long = 0L
     /** 服务端当前货币标识（物品 ID 或虚拟货币翻译 key：Cobblemon Economy POKE=PokeDollars / Cobblemon Economy PCO=PokeCoins / CobbleDollars=CobbleDollars），余额包携带；弹窗/悬停货币名统一从这里取 */
     var currencyName: String = ""
+
+    /**
+     * RP 余额（已千分位，**不带单位** —— HUD 那行用 points_symbol 图标当单位）。
+     * **空串 = 本服没开 RP**（服务端总开关关着时就不填），HUD 那行据此整行收掉。
+     */
+    var pointsBalance: String = ""
+
+    /** RP 原始数值（HUD 变动浮字的差值对比用） */
+    var pointsRaw: Long = 0L
 }

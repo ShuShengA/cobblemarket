@@ -11,6 +11,17 @@
 - **Chat hover preview**: hovering a showcase message in chat shows a large image of that Pokemon or item in the right half of the screen (the same one used for auction and buy-order announcements)
 - **Rate limit and switch**: each player can showcase once every 10 seconds, and server owners can turn player showcasing off from the server config
 
+#### RP (second currency)
+
+- **RP runs alongside the main currency**: when listing a Pokemon or an item, or creating an auction or a buy order, you pick which currency to price it in; RP **cannot be exchanged or transferred**, and takes no part in the finance system — card fees and discounts only ever apply to the main currency
+- **In-game top-up**: server owners configure top-up tiers and a payment QR code under Server Config -> RP Market (a personal WeChat / Alipay code is enough, no merchant account needed); players pick a tier, scan the code, pay, and tap "I have paid" — the owner checks their own statement and grants the RP with one click
+- **Custom payment QRs and coupon images**: drop the images into `config/cobblemarket/qr/` and `config/cobblemarket/icons/` (PNG only, max 512KB and 2048x2048 each); a tier can have its OWN "fixed amount" QR code (made with WeChat / Alipay's set-amount feature) and its own coupon image, falling back to the defaults otherwise
+- **Order number + amount suffix**: every order gets a 6-character order number (with a check digit against typos) and a unique amount suffix (e.g. `5.37`) so the owner can match it at a glance in their payment history; note that fee-charging providers (PayPal / Stripe) reduce the amount that actually arrives, so match by **order number** there
+- **Admin "Top-up Orders"**: a new entry in the admin panel (badged while orders await confirmation) with **Pending / Finished** tabs, search by **player name or order number**, and a confirmation dialog before granting or voiding; online admins get a chat notice the moment a player submits an order
+- **"My Orders"**: players can always look up their own orders, including granted and voided history, with order number, amount, status and creation time
+- **RP balance HUD**: RP is shown on the line **below** the main balance (with green/red floating deltas when it changes); that line has its own display switch and hides itself when the server has RP turned off
+- **Audit and order ledgers**: every RP change is written to CSV under `config/cobblemarket/points/`, and top-up orders get their own ledger covering every step (created / claimed paid / granted / voided) — so even an order the owner never got around to handling is traceable from the files
+
 ## 1.2.0 (in development, unreleased)
 
 ### New Feature

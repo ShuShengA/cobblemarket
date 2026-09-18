@@ -8,6 +8,7 @@ import com.shusheng.cobblemarket.network.SavePointsConfigPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
+import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
@@ -28,6 +29,8 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
     private var pointsEnabled = false
     private var shopEnabled = false
     private var payQr = ""
+    /** 档位券图的**全局默认**文件名（空 = 用内置券图） */
+    private var defaultIcon = ""
     private var timeoutMinutes = 15L
     /** 档位金额的货币单位（空 = 不显示）—— 国外服主填 USD/$, 国内填 元 */
     private var currencyLabel = ""
@@ -37,6 +40,7 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
     // ── 控件 ──
     private val toggleButtons = mutableMapOf<String, NineSliceButton>()
     private var qrField: TextFieldWidget? = null
+    private var defaultIconField: TextFieldWidget? = null
     private var timeoutField: TextFieldWidget? = null
     private var currencyField: TextFieldWidget? = null
     private val tierEditButtons = mutableListOf<NineSliceButton>()
@@ -45,6 +49,8 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
     private var saveButton: NineSliceButton? = null
     private var cancelButton: NineSliceButton? = null
     private var backButton: NineSliceButton? = null
+    /** 左上角 info 图标（与右上角的返回按钮对称）：悬停告诉服主图片目录在哪 */
+    private var infoButton: NineSliceButton? = null
 
     // ── 档位编辑弹窗 ──
     private var editingIndex = -1
@@ -55,21 +61,72 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
     private var editError: String? = null
     /** 上一次保存的结果（true = 成功）—— 决定底部提示是绿的还是红的 */
     private var saveResultOk = true
+
+    /** 档位列表滚到第几行（档位多到放不下时才有得滚） */
+    private var scrollOffset = 0
     private var editNameField: TextFieldWidget? = null
     private var editPriceField: TextFieldWidget? = null
     private var editPointsField: TextFieldWidget? = null
     private var editQrField: TextFieldWidget? = null
+    /** 该档「RP 券」图文件名（`config/cobblemarket/icons/` 下；留空 = 用内置券图） */
+    private var editIconField: TextFieldWidget? = null
     private val editButtons = mutableListOf<NineSliceButton>()
 
     /** 输入框内容跨重建保留（resize / 弹窗开关都会重建控件） */
     private val pendingText = mutableMapOf<String, String>()
 
+    /**
+     * 程序性 setText（服务端回填 / 重建恢复）进行中 —— 此时**不写** [pendingText]。
+     *
+     * ⚠ MC 的 `TextFieldWidget.setText` **会触发 changedListener**（已核对 1.21.1 字节码：
+     * setText 末尾就是 `invokevirtual onChanged`）—— 把回填也算成「玩家编辑」的话，首次 build
+     * 写进去的是**初始值**（货币单位 `""`、超时 `15`、收款码 `""`），pendingText 就被它们占住；
+     * 而回填读的是 `pendingText[key] ?: 服务端值`，**空串不是 null、`?:` 不兜底** ⇒ 快照到了也
+     * 永远显示初始值。
+     *
+     * 2026-09-18 用户实测：货币单位「保存只能生效一次，下次进来输入框又是空的」；收款码文件名
+     * 与超时是同一个坑（超时更阴——服主配了 30 也一直显示 15，**一保存就被改回 15**）。
+     * 更严重的是「什么都不改直接保存」会把这些字段清空/覆盖回默认（全量覆盖式提交的表单，
+     * 初始值必须是「当前状态」，见 memory `feedback_form_initial_state`）。
+     */
+    private var programmaticText = false
+
+    /** 回填输入框：优先恢复玩家正在编辑的内容，否则用服务端值。程序性写入不污染 [pendingText] */
+    private fun fillField(field: TextFieldWidget?, key: String, serverValue: String) {
+        if (field == null) return
+        programmaticText = true
+        field.text = pendingText[key] ?: serverValue
+        programmaticText = false
+    }
+
     private fun dialogW() = 300
-    /** 高度要容得下：4 行固定项 +（最多约 7 个档位）+ 添加档位 + 底部双按钮 */
-    private fun dialogH() = 300
+
+    /**
+     * 弹窗高度：设计值 [DIALOG_H]，**超过屏幕就压进屏幕内**。
+     * ⚠ GUI scale 调大时逻辑分辨率很小（1080p + Auto 可能只有 480×270），定死的 320 会顶出
+     * 上下边界、连保存按钮都点不到 —— 2026-09-18 用户报的 RP 市场同类问题。
+     */
+    private fun dialogH() = minOf(DIALOG_H, height - 16)
     private fun dialogX() = width / 2 - dialogW() / 2
     private fun dialogY() = height / 2 - dialogH() / 2
     private fun listStartY() = dialogY() + 30
+
+    /** 档位列表区顶部：固定项下方 */
+    private fun tierListTop() = listStartY() + FIXED_ROWS * ROW_H + 4
+
+    /**
+     * 档位列表区底部：「添加档位」按钮上方。
+     * ⚠ 那个按钮**贴底**（在底部双按钮上方），不再跟在档位列表屁股后面 ——
+     * 列表可滚动，跟着它会被一起滚走/滚出屏幕。
+     */
+    private fun tierListBottom() =
+        dialogY() + dialogH() - BOTTOM_BUTTON_BOTTOM - BOTTOM_GAP - TIER_ADD_H - BOTTOM_GAP
+
+    /** 列表区一次能显示几行档位（至少 1 行） */
+    private fun visibleTierRows() = ((tierListBottom() - tierListTop()) / ROW_H).coerceAtLeast(1)
+
+    /** 档位多到放不下时最多能往下滚几行（0 = 不用滚） */
+    private fun maxScrollOffset() = (tiers.size - visibleTierRows()).coerceAtLeast(0)
 
     override fun init() {
         super.init()
@@ -91,6 +148,7 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
         pointsEnabled = payload.pointsEnabled
         shopEnabled = payload.shopEnabled
         payQr = payload.payQrImage
+        defaultIcon = payload.defaultIcon
         timeoutMinutes = payload.orderTimeoutMinutes
         currencyLabel = payload.currencyLabel
         tiers.clear()
@@ -100,6 +158,8 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
     }
 
     private fun rebuild() {
+        // 档位可能变少（删除/快照刷新）：把滚动位置夹回合法范围，否则会停在一片空白上
+        scrollOffset = scrollOffset.coerceIn(0, maxScrollOffset())
         clearChildren()
         toggleButtons.clear()
         tierEditButtons.clear()
@@ -124,6 +184,20 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
         )
         addDrawableChild(backButton)
 
+        // 左上角 info 图标（与右上角返回按钮对称，照「全部交易历史」那个写）：
+        // 悬停说明图片该放哪 —— 收款码 / 券图两个目录、格式与尺寸限制。
+        // 配置界面里塞不下这些字，README 又得先知道目录在哪才看得到，所以放这儿。
+        val info = NineSliceButton(
+            dx + 8, dy + 8, 16, 16,
+            Text.literal(""),
+            { },
+            iconLeft = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/info.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+        )
+        info.setTooltip(Tooltip.of(Text.translatable("cobblemarket.points.config.paths_hint")))
+        infoButton = info
+        addDrawableChild(info)
+
         var y = listStartY()
         fun addToggle(key: String, value: Boolean, onClick: () -> Unit) {
             // onPress 是 (ButtonWidget) -> Unit，包一层丢掉那个参数
@@ -140,44 +214,71 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
         qrField = TextFieldWidget(textRenderer, rightX - 130, y + 2, 152, 16, Text.literal(""))
         qrField?.setMaxLength(64)
         qrField?.setTextPredicate { it.none { c -> c == '/' || c == '\\' } }
-        qrField?.setChangedListener { pendingText["qr"] = it }
-        qrField?.text = pendingText["qr"] ?: payQr
+        // 留空是什么意思，只有 placeholder 说得清（标签栏 62px 塞不下，info 图标太远）
+        qrField?.setPlaceholder(Text.translatable("cobblemarket.points.config.qr_hint"))
+        qrField?.setChangedListener { if (!programmaticText) pendingText["qr"] = it }
+        fillField(qrField, "qr", payQr)
         addSelectableChild(qrField); addDrawableChild(qrField)
+        y += ROW_H
+
+        // 默认券图（档位「RP 券」的全局默认；放 config/cobblemarket/icons/ 下，留空 = 用内置券图）
+        defaultIconField = TextFieldWidget(textRenderer, rightX - 130, y + 2, 152, 16, Text.literal(""))
+        defaultIconField?.setMaxLength(64)
+        defaultIconField?.setTextPredicate { it.none { c -> c == '/' || c == '\\' } }
+        defaultIconField?.setPlaceholder(Text.translatable("cobblemarket.points.config.icon_hint"))
+        defaultIconField?.setChangedListener { if (!programmaticText) pendingText["defaultIcon"] = it }
+        fillField(defaultIconField, "defaultIcon", defaultIcon)
+        addSelectableChild(defaultIconField); addDrawableChild(defaultIconField)
         y += ROW_H
 
         // 待支付超时（分钟）
         timeoutField = TextFieldWidget(textRenderer, rightX - 60, y + 2, 82, 16, Text.literal(""))
         timeoutField?.setMaxLength(5)
         timeoutField?.setTextPredicate { it.all(Char::isDigit) }
-        timeoutField?.setChangedListener { pendingText["timeout"] = it }
-        timeoutField?.text = pendingText["timeout"] ?: timeoutMinutes.toString()
+        timeoutField?.setChangedListener { if (!programmaticText) pendingText["timeout"] = it }
+        fillField(timeoutField, "timeout", timeoutMinutes.toString())
         addSelectableChild(timeoutField); addDrawableChild(timeoutField)
         y += ROW_H
 
         // 货币单位（纯展示，服主自己填「元」/「USD」；留空 = 金额不带单位）
         currencyField = TextFieldWidget(textRenderer, rightX - 60, y + 2, 82, 16, Text.literal(""))
         currencyField?.setMaxLength(16)
-        currencyField?.setChangedListener { pendingText["currency"] = it }
-        currencyField?.text = pendingText["currency"] ?: currencyLabel
+        // 这个框只有 82px 宽，placeholder 得短（超了会画到框外）
+        currencyField?.setPlaceholder(Text.translatable("cobblemarket.points.config.currency_hint"))
+        currencyField?.setChangedListener { if (!programmaticText) pendingText["currency"] = it }
+        fillField(currencyField, "currency", currencyLabel)
         addSelectableChild(currencyField); addDrawableChild(currencyField)
         y += ROW_H + 4
 
-        // 档位行：名称 / 价格 / 点数 + 编辑 / 删除
+        // 档位行：名称 / 价格 / 点数 + 编辑 / 删除（放不下就滚，见 mouseScrolled）
+        val rows = visibleTierRows()
         tiers.forEachIndexed { index, tier ->
-            val rowY = y + index * ROW_H
-            addDrawableChild(
-                NineSliceButton(rightX - 54, rowY, 26, 16, Text.translatable("cobblemarket.price_limit.edit"),
-                    { openTierDialog(index) }).also { tierEditButtons += it }
+            val relRow = index - scrollOffset
+            val rowY = tierListTop() + relRow * ROW_H
+            val visible = relRow in 0 until rows
+            val edit = NineSliceButton(
+                rightX - 54, rowY, 26, 16, Text.translatable("cobblemarket.price_limit.edit"),
+                { openTierDialog(index) }
             )
-            addDrawableChild(
-                NineSliceButton(rightX, rowY, 22, 16, Text.translatable("cobblemarket.price_limit.remove"),
-                    { tiers.removeAt(index); markDirtyAndRebuild() }).also { tierDeleteButtons += it }
+            val delete = NineSliceButton(
+                rightX, rowY, 22, 16, Text.translatable("cobblemarket.price_limit.remove"),
+                { tiers.removeAt(index); markDirtyAndRebuild() }
             )
+            // 滚出列表区的行要藏起来：留着会画到别的行/按钮上，还点得到
+            edit.visible = visible
+            delete.visible = visible
+            tierEditButtons += edit
+            tierDeleteButtons += delete
+            addDrawableChild(edit)
+            addDrawableChild(delete)
         }
-        y += tiers.size * ROW_H
 
-        addTierButton = NineSliceButton(dx + 10, y, 70, 16, Text.translatable("cobblemarket.points.config.add_tier"),
-            { openTierDialog(-1) })
+        // 「添加档位」**贴底**（在底部双按钮上方），不跟档位列表走
+        addTierButton = NineSliceButton(
+            dx + 10, dialogY() + dialogH() - BOTTOM_BUTTON_BOTTOM - BOTTOM_GAP - TIER_ADD_H,
+            70, TIER_ADD_H,
+            Text.translatable("cobblemarket.points.config.add_tier"), { openTierDialog(-1) }
+        )
         addDrawableChild(addTierButton)
 
         // 底部双按钮：**照服务器配置界面那一对**（位置、尺寸、间距都一致 —— 同类型界面要能对上）
@@ -199,6 +300,59 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
         rebuild()
     }
 
+    /**
+     * 档位列表滚轮翻行（只有档位多到放不下时才有得滚）。
+     *
+     * 只挪按钮、**不重建界面** —— 重建会清掉玩家正在敲的输入框焦点（内容靠 pendingText 保得住，
+     * 但焦点与光标位置会丢，滚一下就把人家正在编辑的框踢出输入态很难受）。
+     */
+    override fun mouseScrolled(
+        mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double
+    ): Boolean {
+        if (editing || maxScrollOffset() <= 0) {
+            return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)
+        }
+        val target = (scrollOffset - verticalAmount.toInt()).coerceIn(0, maxScrollOffset())
+        if (target == scrollOffset) {
+            return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)
+        }
+        scrollOffset = target
+        applyTierScroll()
+        return true
+    }
+
+    /**
+     * 右侧滚动条：档位超出一屏才画（否则玩家根本不知道下面还有档位）。
+     *
+     * 画法与**服务器配置界面**同一套（那边就是同一个「固定项 + 可滚动列表」的结构）：
+     * 2px 宽，轨道半透明、滑块不透明，滑块高按「可见行 / 总行数」的比例。
+     */
+    private fun renderScrollbar(context: DrawContext) {
+        val maxScroll = maxScrollOffset()
+        if (maxScroll <= 0) return
+        val x = dialogX() + dialogW() - 5
+        val top = tierListTop()
+        val trackH = tierListBottom() - tierListTop()
+        val thumbH = maxOf(16, trackH * trackH / (trackH + maxScroll * ROW_H))
+        val thumbY = top + (trackH - thumbH) * scrollOffset / maxScroll
+        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
+        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
+    }
+
+    /** 按当前滚动位置重排档位行上的两个按钮（含可见性） */
+    private fun applyTierScroll() {
+        val rightX = dialogX() + dialogW() - 10 - 22
+        tierEditButtons.forEachIndexed { index, button -> placeTierRowButton(index, button, rightX - 54) }
+        tierDeleteButtons.forEachIndexed { index, button -> placeTierRowButton(index, button, rightX) }
+    }
+
+    private fun placeTierRowButton(index: Int, button: NineSliceButton, x: Int) {
+        val relRow = index - scrollOffset
+        val visible = relRow in 0 until visibleTierRows()
+        button.visible = visible
+        if (visible) button.setPosition(x, tierListTop() + relRow * ROW_H)
+    }
+
     // ── 档位编辑弹窗 ──
 
     private fun openTierDialog(index: Int) {
@@ -210,6 +364,7 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
         pendingText["tier_price"] = existing?.let { trimPrice(it.priceCents) } ?: ""
         pendingText["tier_points"] = existing?.points?.toString() ?: ""
         pendingText["tier_qr"] = existing?.qr ?: ""
+        pendingText["tier_icon"] = existing?.icon ?: ""
         // 清掉下层控件的焦点，防 E 键保护误判（照各弹窗惯例）
         focused = null
         buildEditDialog()
@@ -217,8 +372,10 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
 
     private fun buildEditDialog() {
         // **弹窗打开时下层控件全部隐藏**（全模组弹窗惯例：不隐藏的话它们会透过遮罩显形、还能被点到）
-        listOfNotNull(backButton, addTierButton, saveButton, cancelButton, qrField, timeoutField, currencyField)
-            .forEach { it.visible = false }
+        listOfNotNull(
+            backButton, infoButton, addTierButton, saveButton, cancelButton,
+            qrField, defaultIconField, timeoutField, currencyField
+        ).forEach { it.visible = false }
         toggleButtons.values.forEach { it.visible = false }
         tierEditButtons.forEach { it.visible = false }
         tierDeleteButtons.forEach { it.visible = false }
@@ -250,9 +407,19 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
         editQrField = TextFieldWidget(textRenderer, fieldX, y, EDIT_W - 78, 16, Text.literal(""))
         editQrField?.setMaxLength(64)
         editQrField?.setTextPredicate { it.none { c -> c == '/' || c == '\\' } }
+        editQrField?.setPlaceholder(Text.translatable("cobblemarket.points.config.tier_qr_hint"))
         editQrField?.setChangedListener { pendingText["tier_qr"] = it }
         editQrField?.text = pendingText["tier_qr"] ?: ""
-        addSelectableChild(editQrField); addDrawableChild(editQrField); y += ROW_H + 16 // 多留一行给错误提示
+        addSelectableChild(editQrField); addDrawableChild(editQrField); y += ROW_H
+
+        // RP 券图文件名（放 config/cobblemarket/icons/ 下；留空 = 用内置券图）
+        editIconField = TextFieldWidget(textRenderer, fieldX, y, EDIT_W - 78, 16, Text.literal(""))
+        editIconField?.setMaxLength(64)
+        editIconField?.setTextPredicate { it.none { c -> c == '/' || c == '\\' } }
+        editIconField?.setPlaceholder(Text.translatable("cobblemarket.points.config.tier_icon_hint"))
+        editIconField?.setChangedListener { pendingText["tier_icon"] = it }
+        editIconField?.text = pendingText["tier_icon"] ?: ""
+        addSelectableChild(editIconField); addDrawableChild(editIconField); y += ROW_H + 16 // 多留一行给错误提示
 
         addDrawableChild(
             NineSliceButton(dx + 22, y, 80, 16, Text.translatable("cobblemarket.op.scfg_save"), { commitTier() })
@@ -292,7 +459,8 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
             name = name,
             priceCents = (price!! * 100).roundToInt().toLong(),
             points = points!!,
-            qr = qr
+            qr = qr,
+            icon = (pendingText["tier_icon"] ?: "").trim()
         )
         if (editingIndex in tiers.indices) tiers[editingIndex] = entry else tiers += entry
         closeTierDialog()
@@ -316,6 +484,7 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
                 pointsEnabled = pointsEnabled,
                 shopEnabled = shopEnabled,
                 payQrImage = pendingText["qr"] ?: payQr,
+                defaultIcon = pendingText["defaultIcon"] ?: defaultIcon,
                 orderTimeoutMinutes = timeout,
                 tiers = tiers.toList(),
                 currencyLabel = pendingText["currency"] ?: currencyLabel
@@ -333,6 +502,13 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
     fun onMarketResult(payload: MarketResultPayload) {
         saveResultOk = payload.success
         savedToastUntil = System.currentTimeMillis() + (if (payload.success) 1500 else 4000)
+        // ⚠ 失败时**必须把详细内容发到聊天栏**：界面那行只放得下「有图片读不出来」，
+        //   究竟是哪一张、错在哪都在 message 里 —— 而上面那行提示写的就是「详见聊天栏」。
+        //   不发的话服主只能看到一个指不到任何地方的指引（2026-09-18 用户实测）。
+        //   成功时不发：界面那行绿字已经把话说完了，再发一遍是刷屏。
+        if (!payload.success) {
+            client?.player?.sendMessage(payload.message.copy().formatted(Formatting.RED), false)
+        }
     }
 
     // ── 渲染 ──
@@ -382,19 +558,30 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
         label("cobblemarket.points.config.points_enabled")
         label("cobblemarket.points.config.shop_enabled")
         label("cobblemarket.points.config.pay_qr")
+        label("cobblemarket.points.config.default_icon")
         label("cobblemarket.points.config.timeout")
         label("cobblemarket.points.config.currency_label")
         y += 4
-        // 档位行：名称 / 价格 / 点数（带 `*` = 该档配了专用收款码，文件名在编辑弹窗里看）
-        tiers.forEach { tier ->
+        // 档位行：名称 / 价格 / 点数（带 `*` = 该档配了专用收款码，文件名在编辑弹窗里看）。
+        // 按滚动位置画，滚出列表区的行不画。
+        tiers.forEachIndexed { index, tier ->
+            val relRow = index - scrollOffset
+            if (relRow !in 0 until visibleTierRows()) return@forEachIndexed
             val name = if (tier.qr.isBlank()) tier.name else tier.name + " *"
             context.drawTextWithShadow(
                 textRenderer,
                 Text.literal("$name  ${trimPrice(tier.priceCents)}  ${tier.points} RP"),
-                dx + 10, y + 5, 0xFFFFFF
+                dx + 10, tierListTop() + relRow * ROW_H + 5, 0xFFFFFF
             )
-            y += ROW_H
         }
+
+        // 档位滚动区**上下各一条分隔线**，把它和上面的固定项、下面的「添加档位」按钮分开
+        //（灰色 1px、左右各内缩 6px —— 与服务器配置界面列表里的行线同款）
+        val lineL = dx + 6
+        val lineR = dx + dialogW() - 6
+        context.fill(lineL, tierListTop() - 4, lineR, tierListTop() - 3, 0xFF555555.toInt())
+        context.fill(lineL, tierListBottom() + 2, lineR, tierListBottom() + 3, 0xFF555555.toInt())
+        renderScrollbar(context)
 
         // 保存结果提示（弹窗底部居中）：成功绿、失败红（失败也要说，别只播一声 fail 音）
         if (System.currentTimeMillis() < savedToastUntil) {
@@ -434,6 +621,7 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
         line("cobblemarket.points.config.tier_price")
         line("cobblemarket.points.config.tier_points")
         line("cobblemarket.points.config.tier_qr")
+        line("cobblemarket.points.config.tier_icon")
         // 哪个字段不合法就直说 —— 只播一声 fail 音服主根本不知道该改哪（2026-09-18 用户反馈）
         editError?.let { key ->
             context.drawCenteredTextWithShadow(
@@ -445,8 +633,8 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         // ⚠ 点击空白失焦（含输入框的界面必做）：漏了点空白退不出输入态、E 键会被输入框吃掉
         val fields = listOfNotNull(
-            qrField, timeoutField, currencyField,
-            editNameField, editPriceField, editPointsField, editQrField
+            qrField, defaultIconField, timeoutField, currencyField,
+            editNameField, editPriceField, editPointsField, editQrField, editIconField
         )
         val wasInInput = fields.any { it === focused }
         val result = super.mouseClicked(mouseX, mouseY, button)
@@ -456,9 +644,24 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
 
     private companion object {
         const val ROW_H = 20
-        /** 档位编辑弹窗尺寸（4 行输入 + 标题 + 按钮） */
+        /** 档位编辑弹窗尺寸（5 行输入 + 标题 + 按钮） */
         const val EDIT_W = 220
-        const val EDIT_H = 162
+        const val EDIT_H = 182
+
+        /** 主弹窗的设计高度；实际会被屏幕高度钳制（见 [dialogH]） */
+        const val DIALOG_H = 320
+
+        /** 档位列表上方那几行的固定项数量（总开关/充值开关/默认收款码/默认券图/超时/货币单位） */
+        const val FIXED_ROWS = 6
+
+        /** 底部双按钮的高度、以及它离弹窗底边的距离 */
+        const val BOTTOM_BUTTON_BOTTOM = 26
+
+        /** 「添加档位」按钮高度 */
+        const val TIER_ADD_H = 16
+
+        /** 相邻控件之间的最小空隙（按钮间距规则） */
+        const val BOTTOM_GAP = 6
         // 开关图标沿用服务器配置界面那一对（不再新画）
         val ON_ICON = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/switch_icon_on.png")
         val OFF_ICON = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/switch_icon_off.png")

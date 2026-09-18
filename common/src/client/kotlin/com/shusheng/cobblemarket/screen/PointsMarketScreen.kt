@@ -106,8 +106,17 @@ class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.
 
         val rowY = redeemRowY(bg)
         val fieldX = bg.x + inset
+        val buyBtnX = bg.x + bg.w - inset - BUY_ENTRY_W
+        // ⚠ 兑换行要挤下**四组**东西（输入框 / 兑换 / 双 tab / 购买），而背景是等比缩放、
+        //   控件是固定逻辑像素 —— GUI scale 调大时逻辑分辨率变小（1080p 用 Auto 时只有 640×360，
+        //   scale 更大时 480×270），背景缩了控件没缩就会挤成一团。
+        //   所以输入框宽度按**剩余空间**算，压到下限为止。
+        val tabGroupW = TAB_W * 2 + TAB_GAP
+        val rowNeed = REDEEM_BUTTON_W + ROW_GAP + tabGroupW + ROW_GAP + BUY_ENTRY_W + ROW_GAP * 2
+        val fieldW = minOf(REDEEM_FIELD_W, bg.w - 2 * inset - rowNeed).coerceAtLeast(MIN_REDEEM_FIELD_W)
+
         // 兑换码输入框（重建后恢复输入；上限按外部码带分隔符的 39 字符留余量）
-        codeField = TextFieldWidget(textRenderer, fieldX, rowY, REDEEM_FIELD_W, ROW_H, Text.literal(""))
+        codeField = TextFieldWidget(textRenderer, fieldX, rowY, fieldW, ROW_H, Text.literal(""))
         codeField?.setMaxLength(MAX_CODE_INPUT)
         codeField?.setPlaceholder(Text.translatable("cobblemarket.points.market.code_hint"))
         codeField?.setChangedListener { pendingCodeText = it }
@@ -118,7 +127,7 @@ class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.
         // 兑换按钮：输入框右侧 4px（按钮间距规则）
         addDrawableChild(
             NineSliceButton(
-                fieldX + REDEEM_FIELD_W + 4, rowY, REDEEM_BUTTON_W, ROW_H,
+                fieldX + fieldW + ROW_GAP, rowY, REDEEM_BUTTON_W, ROW_H,
                 Text.translatable("cobblemarket.points.market.redeem_button"),
                 { doRedeem() }
             )
@@ -130,7 +139,7 @@ class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.
         // 会让服主以为功能坏了）。按钮**总是建出来、靠 visible 开关**：快照到达时只改一个标志，
         // 重建整个界面会清掉玩家已经敲进兑换框的内容。
         val buyBtn = NineSliceButton(
-            bg.x + bg.w - inset - BUY_ENTRY_W, rowY,
+            buyBtnX, rowY,
             BUY_ENTRY_W, ROW_H,
             Text.translatable("cobblemarket.points.recharge.entry"),
             { client?.setScreen(PointsRechargeScreen()) }
@@ -139,8 +148,14 @@ class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.
         buyEntryButton = buyBtn
         addDrawableChild(buyBtn)
 
-        // 精灵 / 物品 tab：**居中、与兑换行同一水平线**（用户 2026-09-18 定）
-        val tabLeftX = cx - TAB_W - TAB_GAP / 2
+        // 精灵 / 物品 tab：与兑换行同一水平线，**在「兑换按钮右侧 ~ 购买按钮左侧」这段空档里居中**
+        // （用户 2026-09-18 定的是"居中"，但死盯背景正中在小分辨率下会压到左边的兑换按钮上 ——
+        //  改成居中于剩余空间后，大分辨率下位置与原来一致，小分辨率下自动让位）
+        val tabMinLeft = fieldX + fieldW + ROW_GAP + REDEEM_BUTTON_W + ROW_GAP
+        val tabMaxLeft = buyBtnX - ROW_GAP - tabGroupW
+        val tabLeftX =
+            if (tabMinLeft <= tabMaxLeft) (cx - tabGroupW / 2).coerceIn(tabMinLeft, tabMaxLeft)
+            else tabMinLeft // 极端小分辨率：紧跟兑换按钮（再挤下去就不是重叠而是看不看得见的问题了）
         pokemonTabButton = NineSliceButton(tabLeftX, rowY, TAB_W, TAB_H, Text.literal(""), { switchTab(0) })
         itemTabButton = NineSliceButton(
             tabLeftX + TAB_W + TAB_GAP, rowY, TAB_W, TAB_H, Text.literal(""), { switchTab(1) }
@@ -274,18 +289,21 @@ class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.
         val bottom = dividerBottomY(bg) - GRID_PADDING
         val availW = right - left
         val availH = bottom - top
-        // 格子 = 可用空间 ÷（行列数 + 间隔占位），宽高取小值 ⇒ 正方形且不溢出
         val byW = availW / (GRID_COLS + (GRID_COLS - 1) * GRID_GAP_RATIO)
         val byH = availH / (GRID_ROWS + (GRID_ROWS - 1) * GRID_GAP_RATIO)
-        val cell = minOf(byW, byH).toInt().coerceAtLeast(16)
+        // 格子取哪个值见 [GRID_W_ROWS_TRADE_RATIO]：大分辨率按 [GRID_ROWS] 行算（保住每页 32 格），
+        // 小分辨率按宽度铺满、行数自适应（不然格子被高度压得很小、左右白空一大片）
+        val cell = (if (byW >= byH * GRID_W_ROWS_TRADE_RATIO) byW else byH).toInt().coerceAtLeast(16)
         val gap = (cell * GRID_GAP_RATIO).toInt()
+        // 能放几行：rows × cell + (rows−1) × gap ≤ availH
+        val rows = ((availH + gap) / (cell + gap)).coerceAtLeast(1)
         val gridW = GRID_COLS * cell + (GRID_COLS - 1) * gap
-        val gridH = GRID_ROWS * cell + (GRID_ROWS - 1) * gap
+        val gridH = rows * cell + (rows - 1) * gap
         return GridLayout(
             startX = left + (availW - gridW) / 2,
             startY = top + (availH - gridH) / 2,
             cols = GRID_COLS,
-            rows = GRID_ROWS,
+            rows = rows,
             cell = cell,
             gap = gap
         )
@@ -398,10 +416,14 @@ class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.
 
         /**
          * 兑换区：输入框与按钮尺寸（输入框靠内容区左上角摆放）。
-         * ⚠ 输入框宽度压到 120 是为了给**居中的 tab 让位**：兑换行从内容区左边缘起 120+4+56=180，
-         * 居中 tab 的左边缘在背景中心往左 58 —— 两者要留出间距（1080p 下约 15px）。
+         * ⚠ 120 是**上限**，不是定值：GUI scale 调大后逻辑分辨率会小到放不下这一行，
+         * 那时按剩余空间压缩（见 init 里的 `fieldW`）。下限给 40（约 6 个字符，输入框本来就会横向滚动）。
          */
         const val REDEEM_FIELD_W = 120
+        const val MIN_REDEEM_FIELD_W = 40
+
+        /** 兑换行各控件之间的间隙（按钮间距规则：至少 4px） */
+        const val ROW_GAP = 4
 
         /**
          * 兑换按钮宽 48：够放下英文 "Redeem"（约 36px）与中文「兑换」（约 18px），
@@ -418,6 +440,17 @@ class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.
          */
         const val GRID_COLS = 8
         const val GRID_ROWS = 4
+
+        /**
+         * 「拿行数换格子大小」的门槛：**按宽度算的格子比按高度算的大出这个比例时**，
+         * 才放弃 [GRID_ROWS] 行、改成按宽度铺满 + 行数自适应。
+         *
+         * 为什么要分情况：可用区宽高比（1080p 下 2.14）比 8×4 网格的（2.06）还宽一点，
+         * 所以「按宽铺满」必然掉一行。大分辨率下那点差距只换来 4% 的格子，不值；
+         * 小分辨率（GUI scale 调大）下能换来 40% —— 480×270 时按高度算每格只有 27px，
+         * 图标小、左右还白空一大片（2026-09-18 用户实测）。
+         */
+        const val GRID_W_ROWS_TRADE_RATIO = 1.1f
 
         /**
          * 间隔 = 格子 × 该比例（不写死像素：大小窗口下观感才一致）。

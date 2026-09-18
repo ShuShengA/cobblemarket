@@ -27,6 +27,7 @@ import com.shusheng.cobblemarket.network.CancelPointOrderPayload
 import com.shusheng.cobblemarket.network.ClaimItemReturnPayload
 import com.shusheng.cobblemarket.network.ClaimPokemonReturnPayload
 import com.shusheng.cobblemarket.network.CollectBalancePayload
+import com.shusheng.cobblemarket.network.ConfirmPointOrderPayload
 import com.shusheng.cobblemarket.network.CreateItemAuctionPayload
 import com.shusheng.cobblemarket.network.CreateItemBuyOrderPayload
 import com.shusheng.cobblemarket.network.CreatePokemonAuctionPayload
@@ -40,6 +41,7 @@ import com.shusheng.cobblemarket.network.MarkPointOrderPaidPayload
 import com.shusheng.cobblemarket.network.PlaceBidPayload
 import com.shusheng.cobblemarket.network.RedeemPointCodePayload
 import com.shusheng.cobblemarket.network.RejectPendingDeliverPayload
+import com.shusheng.cobblemarket.network.RejectPointOrderPayload
 import com.shusheng.cobblemarket.network.RemoveItemBlacklistPayload
 import com.shusheng.cobblemarket.network.RemoveItemPriceLimitPayload
 import com.shusheng.cobblemarket.network.RemoveItemsBlacklistPayload
@@ -67,6 +69,7 @@ import com.shusheng.cobblemarket.network.RequestObjectPreviewPayload
 import com.shusheng.cobblemarket.network.RequestPayQrPayload
 import com.shusheng.cobblemarket.network.RequestPlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.network.RequestPointsConfigPayload
+import com.shusheng.cobblemarket.network.RequestPointOrdersPayload
 import com.shusheng.cobblemarket.network.RequestPointsShopPayload
 import com.shusheng.cobblemarket.network.RequestPurpleCardApplyInfoPayload
 import com.shusheng.cobblemarket.network.RequestPurpleCardApplyPayload
@@ -84,6 +87,7 @@ import com.shusheng.cobblemarket.network.RequestRepayListPayload
 import com.shusheng.cobblemarket.network.RequestRepayPayload
 import com.shusheng.cobblemarket.network.RequestRevokeBadDebtPayload
 import com.shusheng.cobblemarket.network.RequestServerConfigPayload
+import com.shusheng.cobblemarket.network.RequestTierIconPayload
 import com.shusheng.cobblemarket.network.RequestWithdrawPayload
 import com.shusheng.cobblemarket.network.SavePointsConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
@@ -132,6 +136,7 @@ fun registerClientC2S() {
         c2s(registrar, ClaimItemReturnPayload.ID, ClaimItemReturnPayload.CODEC)
         c2s(registrar, ClaimPokemonReturnPayload.ID, ClaimPokemonReturnPayload.CODEC)
         c2s(registrar, CollectBalancePayload.ID, CollectBalancePayload.CODEC)
+        c2s(registrar, ConfirmPointOrderPayload.ID, ConfirmPointOrderPayload.CODEC)
         c2s(registrar, CreateItemAuctionPayload.ID, CreateItemAuctionPayload.CODEC)
         c2s(registrar, CreateItemBuyOrderPayload.ID, CreateItemBuyOrderPayload.CODEC)
         c2s(registrar, CreatePokemonAuctionPayload.ID, CreatePokemonAuctionPayload.CODEC)
@@ -173,6 +178,9 @@ fun registerClientC2S() {
         c2s(registrar, RequestPlayerNameSuggestionsPayload.ID, RequestPlayerNameSuggestionsPayload.CODEC)
         c2s(registrar, RequestPointsConfigPayload.ID, RequestPointsConfigPayload.CODEC)
         c2s(registrar, RequestPointsShopPayload.ID, RequestPointsShopPayload.CODEC)
+        c2s(registrar, RejectPointOrderPayload.ID, RejectPointOrderPayload.CODEC)
+        c2s(registrar, RequestPointOrdersPayload.ID, RequestPointOrdersPayload.CODEC)
+        c2s(registrar, RequestTierIconPayload.ID, RequestTierIconPayload.CODEC)
         c2s(registrar, RequestPurpleCardApplyInfoPayload.ID, RequestPurpleCardApplyInfoPayload.CODEC)
         c2s(registrar, RequestPurpleCardApplyPayload.ID, RequestPurpleCardApplyPayload.CODEC)
         c2s(registrar, RequestPurpleCardRedoPayload.ID, RequestPurpleCardRedoPayload.CODEC)

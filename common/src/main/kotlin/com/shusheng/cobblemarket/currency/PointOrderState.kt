@@ -92,10 +92,34 @@ class PointOrderState private constructor() : PersistentState() {
     fun activeOrdersOf(playerUuid: UUID): List<PointOrder> =
         orders.values.filter { it.playerUuid == playerUuid && it.isActive() }.sortedBy { it.createdAt }
 
+    /**
+     * 某个玩家的**全部订单**（未完结 + 已完结），按创建时间**倒序**（最近的在前），最多 [limit] 笔。
+     *
+     * 玩家侧「我的订单」要能翻历史 —— 已发放 / 已作废的也得看得见。只给未完结的话，
+     * 订单一被处理就从玩家眼前消失了，他连「我什么时候充过多少」都查不到（2026-09-18 用户提出）。
+     *
+     * ⚠ 已完结订单按方案保留 90 天，条数可能不少 —— 所以**必须带上限**，
+     * 别让一个老玩家一次拉回几百条把包撑爆。
+     */
+    fun ordersOf(playerUuid: UUID, limit: Int): List<PointOrder> =
+        orders.values.filter { it.playerUuid == playerUuid }
+            .sortedByDescending { it.createdAt }
+            .take(limit)
+
     /** 待确认订单（管理端列表用），按玩家提交时间升序 —— 先提交的先处理 */
     fun pendingConfirm(): List<PointOrder> = orders.values
         .filter { it.status == PointOrderStatus.PENDING_CONFIRM }
         .sortedBy { it.paidAt ?: it.createdAt }
+
+    /**
+     * 已完结订单（已发放 + 已作废），按解决时间**倒序**（最近的在前）。
+     *
+     * 管理端对账用：方案要求已完结订单保留 90 天，服主要拿它跟收款账单逐笔对
+     * ——「这笔 5.37 我确认过没有」得能查得到。
+     */
+    fun finished(): List<PointOrder> = orders.values
+        .filter { !it.isActive() }
+        .sortedByDescending { it.resolvedAt ?: it.createdAt }
 
     /**
      * 建单。
@@ -182,7 +206,10 @@ class PointOrderState private constructor() : PersistentState() {
         val expired = orders.values.filter {
             it.status == PointOrderStatus.PENDING_PAYMENT && now - graceMs > it.expireAt
         }
-        expired.forEach { markVoid(it, PointOrderVoidReason.TIMEOUT, null, now) }
+        expired.forEach {
+            markVoid(it, PointOrderVoidReason.TIMEOUT, null, now)
+            PointOrderLogger.log(PointOrderLogType.VOID_TIMEOUT, it, "服务器（超时）")
+        }
         return expired.size
     }
 

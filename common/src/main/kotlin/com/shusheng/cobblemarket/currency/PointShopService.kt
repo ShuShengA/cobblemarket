@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.currency
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.market.OfflineMessageState
+import com.shusheng.cobblemarket.network.sendSound
 import com.shusheng.cobblemarket.util.PersistHelper
 import net.minecraft.server.MinecraftServer
 import net.minecraft.text.Text
@@ -114,6 +115,7 @@ object PointShopService {
             tailEnabled = tier.qr.isBlank(),
             now = now
         ) ?: return PointShopResult.Failure(PointShopError.GENERATE_FAILED)
+        PointOrderLogger.log(PointOrderLogType.CREATE, order, playerName, "档位 ${tier.name}")
         PersistHelper.requestSave(server)
         return PointShopResult.Success(order)
     }
@@ -130,6 +132,7 @@ object PointShopService {
         // 同 PointOrderState.voidExpired：用减法避免 expireAt 为 Long.MAX_VALUE 时加法溢出
         if (order.status == PointOrderStatus.PENDING_PAYMENT && now - PAYMENT_GRACE_MS > order.expireAt) {
             state.markVoid(order, PointOrderVoidReason.TIMEOUT, null, now)
+            PointOrderLogger.log(PointOrderLogType.VOID_TIMEOUT, order, "服务器（超时）")
             PersistHelper.requestSave(server)
             return PointShopResult.Failure(PointShopError.EXPIRED)
         }
@@ -137,8 +140,35 @@ object PointShopService {
             return PointShopResult.Failure(PointShopError.BAD_STATUS)
         }
         state.markPaid(order, now)
+        PointOrderLogger.log(PointOrderLogType.PAID, order, order.playerName)
         PersistHelper.requestSave(server)
+        notifyOperatorsNewOrder(server, order)
         return PointShopResult.Success(order)
+    }
+
+    /**
+     * 提醒**在线 OP**：有人提交了待确认的充值订单。
+     *
+     * 这是整条充值链路上**唯一必须人肉处理**的环节 —— 个人收款码没有支付回调，模组也判断不了
+     * 玩家到底付没付，所以玩家点完「我已支付」就只能等。不主动提醒的话，服主想不起来去翻列表，
+     * 玩家就一直干等（2026-09-18 用户实测：OP 侧毫无提示）。
+     *
+     * ⚠ 与「到账通知」同一个原则：**涉及钱的事必须让该知道的人知道**。管理面板那个红点是
+     * 「进来才看得到」，聊天栏这条是「不用进来也能看到」，两条都要有。
+     */
+    private fun notifyOperatorsNewOrder(server: MinecraftServer, order: PointOrder) {
+        val msg = Text.translatable(
+            "cobblemarket.points.shop.new_order",
+            order.playerName,
+            order.tierName,
+            // ⚠ 带服主自定义的货币单位（与客户端弹窗/列表里的写法一致）——
+            //   光给个数字，服主对着账单还得自己猜这是元还是美元
+            moneyLabel(order.payCents),
+            PointOrderNumbers.format(order.orderNo)
+        ).formatted(Formatting.GOLD)
+        server.playerManager.playerList
+            .filter { it.hasPermissionLevel(2) }
+            .forEach { it.sendMessage(msg, false) }
     }
 
     /** 玩家取消自己的订单（未完结的都能取消；取消不发放、不影响已发的） */
@@ -148,6 +178,7 @@ object PointShopService {
         if (order.playerUuid != playerUuid) return PointShopResult.Failure(PointShopError.NOT_OWNER)
         if (!order.isActive()) return PointShopResult.Failure(PointShopError.BAD_STATUS)
         state.markVoid(order, PointOrderVoidReason.PLAYER_CANCEL, null, System.currentTimeMillis())
+        PointOrderLogger.log(PointOrderLogType.VOID_PLAYER, order, order.playerName)
         PersistHelper.requestSave(server)
         return PointShopResult.Success(order)
     }
@@ -172,6 +203,7 @@ object PointShopService {
         }
         val now = System.currentTimeMillis()
         state.markGranted(order, operatorName, now)
+        PointOrderLogger.log(PointOrderLogType.GRANT, order, operatorName)
         PersistHelper.requestSave(server)
         val after = PointsState.get(server).addBalance(order.playerUuid, order.points)
         PointsAuditLogger.log(
@@ -179,6 +211,9 @@ object PointShopService {
             "充值发放：订单 ${order.orderNo}（档位 ${order.tierName}，实付 ${formatCents(order.payCents)}）",
             "Top-up: order ${order.orderNo} (tier ${order.tierName}, paid ${formatCents(order.payCents)})"
         )
+        // 到账音效：**只给在线玩家发** —— 离线没法播音（消息已经入队，上线还能看到）。
+        // 直接复用市场的「钱到账」音：语义一模一样（钱进来了），也省得再引入一个音效文件
+        server.playerManager.getPlayer(order.playerUuid)?.let { sendSound(it, "points_in") }
         // 到账通知：在线直接发，离线入队（玩家付了钱，必须让他知道到账了）
         OfflineMessageState.notify(
             server, order.playerUuid,
@@ -200,6 +235,7 @@ object PointShopService {
         val order = state.find(orderNo) ?: return PointShopResult.Failure(PointShopError.NOT_FOUND)
         if (!order.isActive()) return PointShopResult.Failure(PointShopError.BAD_STATUS)
         state.markVoid(order, PointOrderVoidReason.OPERATOR, operatorName, System.currentTimeMillis())
+        PointOrderLogger.log(PointOrderLogType.VOID_OPERATOR, order, operatorName)
         PersistHelper.requestSave(server)
         OfflineMessageState.notify(
             server, order.playerUuid,
@@ -243,4 +279,14 @@ object PointShopService {
      * ⚠ **不写死货币名**：档位金额是服主自己货币的展示值（元/美元/欧元都行），模组不参与结算。
      */
     fun formatCents(cents: Long): String = "${cents / 100}.${(cents % 100).toString().padStart(2, '0')}"
+
+    /**
+     * 金额 + 服主自定义的**货币单位**（`pointsShop.currencyLabel`，留空就只给数字）。
+     * 玩家侧界面（弹窗、订单列表）早就是这么写的，服务端发出去的消息也得跟上 ——
+     * 不然服主在聊天栏看到「实付 5.37」，还得自己回想这是哪国货币。
+     */
+    fun moneyLabel(cents: Long): String {
+        val label = CobbleMarketConfig.pointsShopCurrencyLabel
+        return if (label.isEmpty()) formatCents(cents) else "${formatCents(cents)} $label"
+    }
 }

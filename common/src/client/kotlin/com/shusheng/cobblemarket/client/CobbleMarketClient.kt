@@ -49,9 +49,11 @@ import com.shusheng.cobblemarket.network.ObjectPreviewPayload
 import com.shusheng.cobblemarket.network.OpenMarketPayload
 import com.shusheng.cobblemarket.network.PokemonBlacklistDataPayload
 import com.shusheng.cobblemarket.network.PokemonPriceLimitDataPayload
+import com.shusheng.cobblemarket.network.PointOrdersPayload
 import com.shusheng.cobblemarket.network.PokemonReturnDataPayload
 import com.shusheng.cobblemarket.network.RequestBalancePayload
 import com.shusheng.cobblemarket.network.ServerConfigDataPayload
+import com.shusheng.cobblemarket.network.TierIconPayload
 import com.shusheng.cobblemarket.screen.AdminAuctionScreen
 import com.shusheng.cobblemarket.screen.AdminBanScreen
 import com.shusheng.cobblemarket.screen.AuctionCreateScreen
@@ -59,6 +61,7 @@ import com.shusheng.cobblemarket.screen.AuctionScreen
 import com.shusheng.cobblemarket.screen.BlacklistScreen
 import com.shusheng.cobblemarket.screen.AdminItemScreen
 import com.shusheng.cobblemarket.screen.AdminPokemonScreen
+import com.shusheng.cobblemarket.screen.AdminPointOrdersScreen
 import com.shusheng.cobblemarket.screen.AdminScreen
 import com.shusheng.cobblemarket.screen.BalanceHudPositionScreen
 import com.shusheng.cobblemarket.screen.BuyConfirmScreen
@@ -460,6 +463,10 @@ object CobbleMarketClient {
                     is BuyOrderScreen -> screen.onMarketResult(payload)
                     is PointsMarketScreen -> screen.onMarketResult(payload)
                     is PointsConfigScreen -> screen.onMarketResult(payload)
+                    // 下单被拒（订单数达上限等）要在充值界面里说一声：只发聊天栏 + 一声失败音会被漏看
+                    is PointsRechargeScreen -> screen.onMarketResult(payload)
+                    // 确认发放 / 作废的结果：管理端界面要刷新列表（详细原因在 message 里，界面负责显示）
+                    is AdminPointOrdersScreen -> screen.onResult(payload)
                 }
             }
         }
@@ -470,6 +477,9 @@ object CobbleMarketClient {
                 BalanceCache.balanceRaw = payload.balanceRaw
                 BalanceCache.pendingBalance = payload.pendingBalance
                 BalanceCache.currencyName = payload.currencyName
+                // RP 那一行与主货币同一份快照到达，不会出现「主货币更新了、RP 还是旧的」
+                BalanceCache.pointsBalance = payload.pointsBalance
+                BalanceCache.pointsRaw = payload.pointsRaw
             }
         }
 
@@ -530,6 +540,9 @@ object CobbleMarketClient {
                 PointsStateCache.enabled = payload.enabled
                 // 界面已打开时同步按钮置灰态（登录补发 / 后续管理端切换都能跟上）
                 (MinecraftClient.getInstance().currentScreen as? MarketEntryScreen)?.updatePointsEntryState()
+                // ⚠ 总开关一变，HUD 那一行要立刻跟着显 / 隐 —— 而 RP 余额只在**余额包**里下发，
+                //   光更新 enabled 不够（开关打开时余额还是空的、关掉时又留着旧值），所以补拉一次
+                sendToServer(RequestBalancePayload())
             }
         }
 
@@ -553,6 +566,25 @@ object CobbleMarketClient {
         registerS2C(PointsConfigPayload.ID, PointsConfigPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 (MinecraftClient.getInstance().currentScreen as? PointsConfigScreen)?.onConfig(payload)
+            }
+        }
+
+        // 档位「RP 券」图（服务端读的字节 → 本地动态纹理）；**空数组 = 读不出来**（回退内置券图）。
+        // 不需要通知界面重建：充值界面的 render 每帧直接读 TierIconTextures，图到了下一帧就画上
+        registerS2C(TierIconPayload.ID, TierIconPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                TierIconTextures.accept(payload.fileName, payload.bytes)
+            }
+        }
+
+        // 管理端订单列表（仅 OP 会收到）：订单界面自己管 tab；管理面板只借它数一下
+        // 「有几笔待确认」来点入口红点 —— 两份列表共用同一个包，靠 includeFinished 区分
+        registerS2C(PointOrdersPayload.ID, PointOrdersPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                when (val screen = MinecraftClient.getInstance().currentScreen) {
+                    is AdminPointOrdersScreen -> screen.onOrders(payload)
+                    is AdminScreen -> screen.onPointOrders(payload)
+                }
             }
         }
 
@@ -908,9 +940,52 @@ fun balanceHudPixelPos(screenW: Int, screenH: Int, hudW: Int, hudH: Int): Pair<I
     return ((nx * maxX + 0.5f).toInt()).coerceIn(0, maxX) to ((ny * maxY + 0.5f).toInt()).coerceIn(0, maxY)
 }
 
-/** 余额 HUD 当前尺寸（宽随文字自适应，高固定 16）：位置编辑界面的点击判定与吸附计算用 */
-fun balanceHudSize(client: net.minecraft.client.MinecraftClient): Pair<Int, Int> =
-    (client.textRenderer.getWidth("${hudBalanceText(client)} ${inlineCurrencyUnit()}") + 10) to 16
+/** 余额 HUD 当前尺寸（宽随最长那行文字自适应，**高按显示几行**：只有主货币 = 16，带 RP = 32） */
+fun balanceHudSize(client: net.minecraft.client.MinecraftClient): Pair<Int, Int> {
+    val mainW = client.textRenderer.getWidth("${hudBalanceText(client)} ${inlineCurrencyUnit()}")
+    val hasPoints = pointsHudRowVisible()
+    val pointsW = if (hasPoints) client.textRenderer.getWidth(BalanceCache.pointsBalance) + 2 + POINTS_ROW_ICON_W else 0
+    val h = if (hasPoints) HUD_TWO_LINE_ROW_H * 2 + HUD_TEXT_DY else HUD_ROW_H
+    return (maxOf(mainW, pointsW) + 10) to h
+}
+
+/** HUD 单行时的高度（**原有值，一行时观感一字不动**） */
+private const val HUD_ROW_H = 16
+
+/**
+ * 两行时每行的高度（= 上留白 4 + 文字 8）。框高 = 这个 × 2 + 4，让**最后一行下面也留 4px**：
+ * 三处留白（上 / 两行之间 / 下）都是 4px，看着才匀。
+ *
+ * ⚠ 别为了「让两行更近」去压上下留白 —— 压到 2 的话中间那 4px 就比上下都大，
+ * 看上去**仍然是「中间空一块」**，而且文字会贴着框边（2026-09-18 用户实测踩到）。
+ * 要动就三处一起动。
+ */
+private const val HUD_TWO_LINE_ROW_H = 12
+
+/** 一行文字相对行顶的偏移（文字 8px 高，上下留一样的白） */
+/** 一行文字相对行顶的偏移：三处留白（上 / 中间 / 下）统一用这个值 */
+private const val HUD_TEXT_DY = 4
+
+/** RP 行左侧那个 points_symbol 图标的显示宽度（48×48 源图缩到 8×8，与文字同高） */
+private const val POINTS_ROW_ICON_W = 8
+
+/** RP 那一行的单位图标 */
+private val POINTS_SYMBOL_HUD = Identifier.of("cobblemarket", "textures/gui/points_symbol.png")
+
+/**
+ * RP 那一行现在该不该显示：**总开关开着**（服务端没开就压根不下发余额）**+ 服务端下发了余额**
+ * + 本行开关不是 OFF。三态里的 ON_CHANGE 由 [renderBalanceHud] 单独判（要配合 5 秒窗口与淡出）。
+ */
+private fun pointsHudRowVisible(): Boolean =
+    PointsStateCache.enabled && BalanceCache.pointsBalance.isNotEmpty() &&
+        ClientConfig.pointsHudMode != BalanceHudMode.OFF
+
+/** RP 行 ON_CHANGE 的变动检测用（与主行各自独立） */
+private var lastHudPointsText: String? = null
+private var lastPointsChangeAt = 0L
+private var lastPointsRawForDiff: Long? = null
+private var hudPointsDiff = 0L
+private var hudPointsDiffUntil = 0L
 
 /** 上次 HUD 余额文本（ON_CHANGE 模式变动检测） */
 private var lastHudBalanceText: String? = null
@@ -970,19 +1045,80 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
     // RGB 随 alpha 一起衰减（照入口动画淡出）：context.setShaderColor 同时作用于
     // drawTexture（背景贴图）与文字渲染；RenderSystem 全局色不响应 drawTexture，勿混用
     context.setShaderColor(alphaF, alphaF, alphaF, alphaF)
-    // 背景框：HUD 专属九宫格贴图（40×40），宽随文字自适应，高 16；左上角 = 归一化位置换算
+    // ── RP 行（B3）：与主行各自独立的三态 + 变动浮字，框高随之 +16 ──
+    // ⚠ 只在主行**可见**的前提下才有它 —— 方案要求「主 HUD 的行为一字不变」
+    //（主行 OFF 时整框不画，RP 行不单独活着）
+    val pointsRowEnabled = pointsHudRowVisible() && (editingPos || when (ClientConfig.pointsHudMode) {
+        BalanceHudMode.ALWAYS -> true
+        BalanceHudMode.ON_CHANGE -> {
+            val pt = BalanceCache.pointsBalance
+            if (pt != lastHudPointsText) {
+                lastHudPointsText = pt
+                lastPointsChangeAt = System.currentTimeMillis()
+            }
+            System.currentTimeMillis() - lastPointsChangeAt < 5_000
+        }
+        BalanceHudMode.OFF -> false
+    })
+    // RP 行的淡出（照主行：最后 800ms 线性渐隐）——用独立的 alpha，两条文字各隐各的
+    var pointsAlpha = 1f
+    if (pointsRowEnabled && !editingPos && ClientConfig.pointsHudMode == BalanceHudMode.ON_CHANGE) {
+        val remaining = 5_000 - (System.currentTimeMillis() - lastPointsChangeAt)
+        if (remaining < 800) pointsAlpha = (remaining / 800f).coerceIn(0f, 1f)
+    }
+    val showPointsRow = pointsRowEnabled && pointsAlpha > 0f
+
+    // 背景框：HUD 专属九宫格贴图（40×40），宽随**最长那行**自适应，高按显示几行（16 / 32）
     val textW = client.textRenderer.getWidth(text)
-    val hudW = textW + 10
-    val hudPos = balanceHudPixelPos(context.scaledWindowWidth, context.scaledWindowHeight, hudW, 16)
+    val pointsInnerW = client.textRenderer.getWidth(BalanceCache.pointsBalance)
+    val pointsTextW = pointsInnerW + 2 + POINTS_ROW_ICON_W
+    val hudW = maxOf(textW, if (showPointsRow) pointsTextW else 0) + 10
+    // 两行时每行压到 12（单行仍是 16）；文字在行内垂直居中
+    val rowH = if (showPointsRow) HUD_TWO_LINE_ROW_H else HUD_ROW_H
+    // 两行时底边再留一个文字偏移（否则最后一行文字贴着框底）
+    val hudH = if (showPointsRow) rowH * 2 + HUD_TEXT_DY else rowH
+    val textDy = HUD_TEXT_DY
+    val hudPos = balanceHudPixelPos(context.scaledWindowWidth, context.scaledWindowHeight, hudW, hudH)
     val hudX = hudPos.first
     val hudY = hudPos.second
     drawNineSlice(
         context,
         HUD_BALANCE_BG,
-        hudX, hudY, hudW, 16,
+        hudX, hudY, hudW, hudH,
         0, HUD_BALANCE_BG_TEX_H
     )
-    context.drawTextWithShadow(client.textRenderer, text, hudX + 5, hudY + 4, 0xFFAA00)
+    context.drawTextWithShadow(client.textRenderer, text, hudX + 5, hudY + textDy, 0xFFAA00)
+    if (showPointsRow) {
+        // RP 行：**数字在前、图标在后当单位**（与主行 `1000 ₽` 同一个格局）——
+        // 图标放前面的话它占着左边起始位、数字被顶到右边，两行的数字就不在一条竖线上了。
+        val rowY = hudY + rowH
+        context.setShaderColor(alphaF * pointsAlpha, alphaF * pointsAlpha, alphaF * pointsAlpha, alphaF * pointsAlpha)
+        context.drawTextWithShadow(client.textRenderer, BalanceCache.pointsBalance, hudX + 5, rowY + textDy, 0xFFAA00)
+        val iconX = hudX + 5 + client.textRenderer.getWidth(BalanceCache.pointsBalance) + 2
+        context.matrices.push()
+        context.matrices.translate(iconX.toDouble(), (rowY + textDy).toDouble(), 0.0)
+        context.matrices.scale(POINTS_ROW_ICON_W / 48f, POINTS_ROW_ICON_W / 48f, 1f)
+        context.drawTexture(POINTS_SYMBOL_HUD, 0, 0, 0f, 0f, 48, 48, 48, 48)
+        context.matrices.pop()
+        context.setShaderColor(alphaF, alphaF, alphaF, alphaF)
+        // RP 变动浮字（照主行那份）：跟在这一行右边
+        val rawPoints = BalanceCache.pointsRaw
+        if (lastPointsRawForDiff != null && rawPoints != lastPointsRawForDiff!!) {
+            hudPointsDiff = rawPoints - lastPointsRawForDiff!!
+            hudPointsDiffUntil = System.currentTimeMillis() + 2_000
+        }
+        lastPointsRawForDiff = rawPoints
+        if (hudPointsDiff != 0L && System.currentTimeMillis() < hudPointsDiffUntil) {
+            val dt = if (hudPointsDiff > 0) "+${formatBalanceLong(hudPointsDiff)}" else formatBalanceLong(hudPointsDiff).toString()
+            val dc = if (hudPointsDiff > 0) 0x55FF55 else 0xFF5555
+            val dw = client.textRenderer.getWidth(dt)
+            // ⚠ 紧跟**本行**余额数字之后，不是框右边缘 —— 框宽按最长那行算，
+            //   短行的数字离框边还差一大截，用框边会让浮字飘在半空（2026-09-18 用户指出）
+            val rx = hudX + 5 + pointsTextW + 4
+            val dx2 = if (rx + dw <= context.scaledWindowWidth) rx else (hudX - 4 - dw).coerceAtLeast(0)
+            context.drawTextWithShadow(client.textRenderer, dt, dx2, rowY + textDy, dc)
+        }
+    }
     // 余额变动浮字：+绿/-红，2 秒后消失（照 CobbleDollars 右下角的变动提示）
     if (hudDiff != 0L && System.currentTimeMillis() < hudDiffUntil) {
         val diffText = if (hudDiff > 0) "+${formatBalanceLong(hudDiff)}" else formatBalanceLong(hudDiff).toString()
@@ -991,10 +1127,12 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
         // 会把浮字整条推出屏幕。按「右侧实际放得下」判断，而不是「HUD 中心落在哪半边」：
         // 后者会把整个右半屏（含吸附到屏幕中心的 HUD）都判成左侧
         val diffW = client.textRenderer.getWidth(diffText)
-        val rightX = hudX + hudW + 4
+        // 同上：紧跟主货币那行自己的数字，而不是框右边缘（框宽现在按最长行算，加了 RP 行后
+        // 主行常常不是最长的那行）
+        val rightX = hudX + 5 + textW + 4
         val diffX = if (rightX + diffW <= context.scaledWindowWidth) rightX
         else (hudX - 4 - diffW).coerceAtLeast(0)
-        context.drawTextWithShadow(client.textRenderer, diffText, diffX, hudY + 4, diffColor)
+        context.drawTextWithShadow(client.textRenderer, diffText, diffX, hudY + textDy, diffColor)
     }
     context.setShaderColor(1f, 1f, 1f, 1f)
     context.draw()
@@ -1043,4 +1181,4 @@ internal fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean
         s is BlackCardConfigScreen || s is BlackCardApplyScreen || s is BlackCardApplyConditionsScreen || s is CardManageScreen || s is ItemVariantSelectScreen ||
         s is MeowthBankScreen || s is LoanScreen || s is LoanHistoryScreen || s is RepayScreen || s is MeowthPayScreen ||
         s is DepositScreen || s is BalanceHudPositionScreen || s is PointsMarketScreen || s is PointsRechargeScreen ||
-        s is PointsConfigScreen
+        s is PointsConfigScreen || s is AdminPointOrdersScreen

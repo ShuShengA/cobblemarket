@@ -10,7 +10,9 @@ import com.shusheng.cobblemarket.client.formatPriceShortLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.FinanceStatsPayload
+import com.shusheng.cobblemarket.network.PointOrdersPayload
 import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
+import com.shusheng.cobblemarket.network.RequestPointOrdersPayload
 import com.shusheng.cobblemarket.network.SetMarketEnabledPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.MinecraftClient
@@ -40,6 +42,9 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
 
     // 底部图标按钮（2026-09-12 从入口界面移来）：市场总开关（双态图标，仅 OP 界面本来就只有 OP 能进）
     private var marketSwitchBtn: NineSliceButton? = null
+    /** 充值订单入口（权限管理右边）：有待确认订单时在它右上角点一个红点 */
+    private var orderEntryBtn: NineSliceButton? = null
+    private var pendingOrderCount = 0
     // 停市确认弹窗（照入口界面原实现：3 秒冷静期 + 红白双色文字）
     private var marketConfirmOpen = false
     private var marketConfirmOpenedAt = 0L
@@ -51,9 +56,24 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         private const val PIKA_CYCLE_MS = 3000L
         private const val PIKA_FRAME_MS = 100L
         private const val PIKA_LOOP_MS = 8000L
+
+        /** 充值订单入口的图标 */
+        val POINT_ORDERS_ICON = Identifier.of("cobblemarket", "textures/gui/point_orders_icon.png")
+
+        /** 有待处理订单时挂在它右上角的角标（48×48 源图按 1/6 缩到 8×8，同精灵市场的红点） */
+        val POINTS_SYMBOL = Identifier.of("cobblemarket", "textures/gui/points_symbol.png")
     }
 
     /** 金融统计快照（进入管理面板时拉取）：准备金池告警行 */
+    /**
+     * 待确认充值订单数（红点用）。空列表也照收 —— 服主处理完最后一笔，红点要能灭掉。
+     * 只认 `includeFinished = false` 那份：已完结列表是订单界面自己看的，跟红点无关。
+     */
+    fun onPointOrders(payload: PointOrdersPayload) {
+        if (payload.includeFinished) return
+        pendingOrderCount = payload.orders.size
+    }
+
     fun onFinanceStats(payload: FinanceStatsPayload) {
         reservePool = payload.reservePool
         badDebtTotal = payload.badDebtTotal
@@ -238,6 +258,24 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         permissionBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.permission")))
         menuButtons += addDrawableChild(permissionBtn)
 
+        // 充值订单入口：**权限管理右边**（用户 2026-09-18：这一行当时就是给以后新功能留的位置）。
+        // 待确认订单得服主处理玩家才拿得到 RP，所以除了入口还要**红点**提醒有活要干。
+        val orderBtn = NineSliceButton(
+            centerX - 96 + 6 + iconSize + 6, iconY, iconSize, iconSize,
+            Text.literal(""),
+            { openIfOp { client?.setScreen(AdminPointOrdersScreen()) } },
+            iconLeft = POINT_ORDERS_ICON,
+            iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+            texture = ROW_BACKGROUND_TEXTURE,
+            texH = ROW_BACKGROUND_TEX_H
+        )
+        orderBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.point_orders")))
+        menuButtons += addDrawableChild(orderBtn)
+        orderEntryBtn = orderBtn
+        permRefreshers += { orderBtn.dimmed = !ClientPermissionCache.isOp() }
+        // 进来就问一次有没有待确认的（只要数量，不要列表）；结果由 onPointOrders 落进红点
+        sendToServer(RequestPointOrdersPayload(false, ""))
+
         // 底部三个图标按钮的置灰依据：总开关 / 服务器配置走节点，权限管理只限 OP
         permRefreshers += { marketSwitchBtn?.dimmed = !ClientPermissionCache.has(MarketPermissions.MARKET) }
         permRefreshers += { serverConfigBtn.dimmed = !ClientPermissionCache.has(MarketPermissions.CONFIG) }
@@ -419,6 +457,18 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             Text.translatable("cobblemarket.op.title").formatted(Formatting.GOLD, Formatting.BOLD),
             width / 2, btnStartY - 33, 0xFFFFFF
         )
+        // 有待确认的充值订单 → 入口按钮右上角挂个 RP 符号。这是**唯一必须服主亲手做**的事
+        //（个人收款码没有回调，模组判断不了玩家付没付），所以要显眼。
+        // 画法照精灵市场「待领取」按钮那个红点：translate 到按钮右上角 + 1/6 缩放（48×48 → 8×8）
+        if (pendingOrderCount > 0) {
+            orderEntryBtn?.let { btn ->
+                context.matrices.push()
+                context.matrices.translate((btn.x + btn.width - 6).toDouble(), (btn.y - 2).toDouble(), 0.0)
+                context.matrices.scale(1f / 6f, 1f / 6f, 1f)
+                context.drawTexture(POINTS_SYMBOL, 0, 0, 0f, 0f, 48, 48, 48, 48)
+                context.matrices.pop()
+            }
+        }
         // 底部按钮上方的分割线：与入口界面完全同款（颜色、跨度、相对底边的间距都一致），
         // 两界面本来就是同一张贴图，视觉上要能对齐。颜色统一走 GuiColors.DIVIDER（4 条线共用）
         context.fill(

@@ -12,6 +12,7 @@ import com.shusheng.cobblemarket.currency.PointRedeemService
 import com.shusheng.cobblemarket.currency.PointShopResult
 import com.shusheng.cobblemarket.currency.PointShopService
 import com.shusheng.cobblemarket.currency.RedeemOutcome
+import com.shusheng.cobblemarket.currency.TierIconImage
 import com.shusheng.cobblemarket.currency.pointShopErrorText
 import com.shusheng.cobblemarket.platform.onPlayerJoin
 import com.shusheng.cobblemarket.platform.registerC2S
@@ -63,9 +64,15 @@ data class RedeemPointCodePayload(val code: String) : CustomPayload {
 // ── 充值（游戏内充值档位 → 收款码 → 我已支付）──
 
 /** 充值档位（下发给客户端绘制）。金额单位是**分**，与配置、订单账本同一口径 */
-data class ShopTierInfo(val name: String, val priceCents: Long, val points: Long)
+data class ShopTierInfo(
+    val name: String,
+    val priceCents: Long,
+    val points: Long,
+    /** 该档「RP 券」图文件名（空 = 用客户端内置券图，那种情况**不走网络**） */
+    val iconFile: String = ""
+)
 
-/** 玩家当前那笔未完结订单的展示信息（状态机在服务端，这里只是给界面看的快照） */
+/** 一笔订单的展示信息（状态机在服务端，这里只是给界面看的快照）—— 玩家侧与管理端共用 */
 data class PointOrderInfo(
     val orderNo: String,
     val tierName: String,
@@ -74,7 +81,13 @@ data class PointOrderInfo(
     /** [PointOrderStatus] 的名字 */
     val status: String,
     /** 待支付超时时刻（epoch ms）；界面据此画倒计时 */
-    val expireAt: Long
+    val expireAt: Long,
+    /** 下单玩家名（**管理端要显示是谁付的**；玩家自己那份快照用不到，但仍然带上） */
+    val playerName: String = "",
+    /** 玩家点「我已支付」的时刻；未支付时 = 0（管理端按它算「已等待」） */
+    val paidAt: Long = 0L,
+    /** 下单时刻（没有 [paidAt] 时按它算「已等待」） */
+    val createdAt: Long = 0L
 )
 
 /**
@@ -96,30 +109,12 @@ data class PointsShopInfoPayload(
     companion object {
         val ID = CustomPayload.Id<PointsShopInfoPayload>(CobbleMarket.id("points_shop_info"))
 
-        private fun writeOrder(b: PacketByteBuf, o: PointOrderInfo) {
-            b.writeString(o.orderNo, MAX_ORDER_NO_LENGTH)
-            b.writeString(o.tierName, MAX_TIER_NAME_LENGTH)
-            b.writeLong(o.payCents)
-            b.writeLong(o.points)
-            b.writeString(o.status, 32)
-            b.writeLong(o.expireAt)
-        }
-
-        private fun readOrder(b: PacketByteBuf) = PointOrderInfo(
-            // ⚠ 读端一律用具名参数：字段顺序一旦对不上，具名能立刻看出来（payload 顺序铁律）
-            orderNo = b.readString(MAX_ORDER_NO_LENGTH),
-            tierName = b.readString(MAX_TIER_NAME_LENGTH),
-            payCents = b.readLong(),
-            points = b.readLong(),
-            status = b.readString(32),
-            expireAt = b.readLong()
-        )
-
         val CODEC: PacketCodec<PacketByteBuf, PointsShopInfoPayload> = PacketCodec.of(
             { p, b ->
                 b.writeInt(p.tiers.size)
                 p.tiers.forEach { t ->
                     b.writeString(t.name, MAX_TIER_NAME_LENGTH); b.writeLong(t.priceCents); b.writeLong(t.points)
+                    b.writeString(t.iconFile, MAX_FILE_NAME_LENGTH)
                 }
                 b.writeBoolean(p.hasQr)
                 b.writeString(p.currencyLabel, MAX_TIER_NAME_LENGTH)
@@ -129,7 +124,17 @@ data class PointsShopInfoPayload(
             { b ->
                 val count = b.readInt()
                 val tiers = ArrayList<ShopTierInfo>(count)
-                repeat(count) { tiers.add(ShopTierInfo(b.readString(MAX_TIER_NAME_LENGTH), b.readLong(), b.readLong())) }
+                repeat(count) {
+                    tiers.add(
+                        // ⚠ 读端一律用具名参数：字段顺序一旦对不上，具名能立刻看出来（payload 顺序铁律）
+                        ShopTierInfo(
+                            name = b.readString(MAX_TIER_NAME_LENGTH),
+                            priceCents = b.readLong(),
+                            points = b.readLong(),
+                            iconFile = b.readString(MAX_FILE_NAME_LENGTH)
+                        )
+                    )
+                }
                 val hasQr = b.readBoolean()
                 val currencyLabel = b.readString(MAX_TIER_NAME_LENGTH)
                 val orderCount = b.readInt()
@@ -190,6 +195,48 @@ data class RequestPayQrPayload(val orderNo: String) : CustomPayload {
     }
 }
 
+/**
+ * 请求某个档位的「RP 券」图（C2S）—— 客户端本地没缓存时才发。
+ *
+ * 与收款码是**两条独立的路**：收款码按**订单**请求（下单后才要，每单可能一张），
+ * 券图按**文件名**请求（进充值界面就要，多个档位可能共用同一张图）。
+ * 传文件名而不是档位序号：客户端按文件名缓存，两个档位配同一张图只传一次。
+ */
+data class RequestTierIconPayload(val fileName: String) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<RequestTierIconPayload>(CobbleMarket.id("request_tier_icon"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestTierIconPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.fileName, MAX_FILE_NAME_LENGTH) },
+            { b -> RequestTierIconPayload(b.readString(MAX_FILE_NAME_LENGTH)) }
+        )
+    }
+}
+
+/**
+ * 档位券图字节（S2C）。
+ *
+ * ⚠ **空数组 = 读不出来**（文件不存在 / 不是 PNG / 太大）：客户端据此**回退到内置券图**，
+ * 而不是留一张空白卡片 —— 与收款码「空包 = 不可用」同一个约定。
+ *
+ * ⚠ 用普通 class 而非 data class：byte[] 的 equals/hashCode 是引用比较，data class 会误导。
+ */
+class TierIconPayload(val fileName: String, val bytes: ByteArray) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<TierIconPayload>(CobbleMarket.id("tier_icon"))
+        val CODEC: PacketCodec<PacketByteBuf, TierIconPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeString(p.fileName, MAX_FILE_NAME_LENGTH)
+                b.writeByteArray(p.bytes)
+            },
+            { b -> TierIconPayload(b.readString(MAX_FILE_NAME_LENGTH), b.readByteArray()) }
+        )
+    }
+}
+
 /** 下单。档位序号从 0 开始；币种不来自客户端（订单只可能是 RP，没有可伪造的字段） */
 data class CreatePointOrderPayload(val tierIndex: Int) : CustomPayload {
     override fun getId() = ID
@@ -229,8 +276,122 @@ data class CancelPointOrderPayload(val orderNo: String) : CustomPayload {
     }
 }
 
+// ── 管理端：订单列表 / 确认发放 / 作废（**服务端只认 OP**，与命令侧同一套内核）──
+
+/**
+ * 请求订单列表（C2S，管理端）。
+ *
+ * - [includeFinished] = false 只取**待确认**的（服主要处理的）
+ * - true 取**已完结**的（已发放 + 已作废）—— 方案要求已完结订单保留 90 天供逐笔对账
+ * - [query] 非空时按订单号过滤：玩家申诉时报的就是订单号
+ */
+data class RequestPointOrdersPayload(val includeFinished: Boolean, val query: String) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<RequestPointOrdersPayload>(CobbleMarket.id("request_point_orders"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestPointOrdersPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeBoolean(p.includeFinished)
+                b.writeString(p.query, MAX_CODE_LENGTH)
+            },
+            { b -> RequestPointOrdersPayload(b.readBoolean(), b.readString(MAX_CODE_LENGTH)) }
+        )
+    }
+}
+
+/** 订单列表（S2C，管理端）。[includeFinished] 原样回显，界面据此确认收到的是自己等的那份 */
+data class PointOrdersPayload(
+    val orders: List<PointOrderInfo>,
+    val includeFinished: Boolean
+) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<PointOrdersPayload>(CobbleMarket.id("point_orders"))
+        val CODEC: PacketCodec<PacketByteBuf, PointOrdersPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeBoolean(p.includeFinished)
+                b.writeInt(p.orders.size)
+                p.orders.forEach { writeOrder(b, it) }
+            },
+            { b ->
+                val includeFinished = b.readBoolean()
+                val count = b.readInt()
+                val orders = ArrayList<PointOrderInfo>(count)
+                repeat(count) { orders.add(readOrder(b)) }
+                PointOrdersPayload(orders = orders, includeFinished = includeFinished)
+            }
+        )
+    }
+}
+
+/**
+ * 确认发放（C2S，管理端）。**服务端幂等**：只有「待确认」能发放 ——
+ * 服主重复点、界面重发、崩溃后重开列表再点，都不会二次加余额。
+ */
+data class ConfirmPointOrderPayload(val orderNo: String) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<ConfirmPointOrderPayload>(CobbleMarket.id("confirm_point_order"))
+        val CODEC: PacketCodec<PacketByteBuf, ConfirmPointOrderPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.orderNo, MAX_ORDER_NO_LENGTH) },
+            { b -> ConfirmPointOrderPayload(b.readString(MAX_ORDER_NO_LENGTH)) }
+        )
+    }
+}
+
+/** 作废订单（C2S，管理端）。已发放的**不能**走这里 —— 那要用 `points take` 单独回收并留审计 */
+data class RejectPointOrderPayload(val orderNo: String) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<RejectPointOrderPayload>(CobbleMarket.id("reject_point_order"))
+        val CODEC: PacketCodec<PacketByteBuf, RejectPointOrderPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.orderNo, MAX_ORDER_NO_LENGTH) },
+            { b -> RejectPointOrderPayload(b.readString(MAX_ORDER_NO_LENGTH)) }
+        )
+    }
+}
+
 /** 订单号长度上限（6 位 + 分隔符，留足余量）；超长在协议层直接拒绝 */
 private const val MAX_ORDER_NO_LENGTH = 16
+
+/**
+ * 「我的订单」一次最多回多少笔。已完结订单按方案保留 90 天，老玩家可能有几百条 ——
+ * 全发会把包撑爆、界面也放不下，取最近这些条足够（真要查更早的，服主侧有完整账本）。
+ */
+private const val MAX_ORDER_HISTORY = 50
+
+/**
+ * 写/读一笔订单。**顶层函数而非 companion 内的私有函数**：玩家那份快照（[PointsShopInfoPayload]）
+ * 与管理端列表（[PointOrdersPayload]）共用，两份各写一遍迟早漂移（payload 顺序铁律）。
+ */
+private fun writeOrder(b: PacketByteBuf, o: PointOrderInfo) {
+    b.writeString(o.orderNo, MAX_ORDER_NO_LENGTH)
+    b.writeString(o.tierName, MAX_TIER_NAME_LENGTH)
+    b.writeLong(o.payCents)
+    b.writeLong(o.points)
+    b.writeString(o.status, 32)
+    b.writeLong(o.expireAt)
+    b.writeString(o.playerName, MAX_TIER_NAME_LENGTH)
+    b.writeLong(o.paidAt)
+    b.writeLong(o.createdAt)
+}
+
+private fun readOrder(b: PacketByteBuf) = PointOrderInfo(
+    // ⚠ 读端一律用具名参数：字段顺序一旦对不上，具名能立刻看出来（payload 顺序铁律）
+    orderNo = b.readString(MAX_ORDER_NO_LENGTH),
+    tierName = b.readString(MAX_TIER_NAME_LENGTH),
+    payCents = b.readLong(),
+    points = b.readLong(),
+    status = b.readString(32),
+    expireAt = b.readLong(),
+    playerName = b.readString(MAX_TIER_NAME_LENGTH),
+    paidAt = b.readLong(),
+    createdAt = b.readLong()
+)
 
 // ── RP 市场配置（仅 OP；服务器配置界面里的「RP 市场」入口）──
 
@@ -240,7 +401,9 @@ data class PointsTierConfig(
     val priceCents: Long,
     val points: Long,
     /** 该档专用收款码文件名（留空 = 走全局码 + 尾数） */
-    val qr: String
+    val qr: String,
+    /** 该档「RP 券」图文件名（留空 = 用内置券图） */
+    val icon: String = ""
 )
 
 /** 进配置界面时请求一次当前值（仅 OP 会被响应） */
@@ -261,6 +424,8 @@ data class PointsConfigPayload(
     val pointsEnabled: Boolean,
     val shopEnabled: Boolean,
     val payQrImage: String,
+    /** 档位券图的**全局默认**文件名（空 = 用内置券图） */
+    val defaultIcon: String,
     val orderTimeoutMinutes: Long,
     val tiers: List<PointsTierConfig>,
     /** 档位金额的货币单位（空 = 不显示） */
@@ -275,6 +440,7 @@ data class PointsConfigPayload(
                 b.writeBoolean(p.pointsEnabled)
                 b.writeBoolean(p.shopEnabled)
                 b.writeString(p.payQrImage, MAX_FILE_NAME_LENGTH)
+                b.writeString(p.defaultIcon, MAX_FILE_NAME_LENGTH)
                 b.writeLong(p.orderTimeoutMinutes)
                 b.writeString(p.currencyLabel, MAX_TIER_NAME_LENGTH)
                 b.writeInt(p.tiers.size)
@@ -283,12 +449,14 @@ data class PointsConfigPayload(
                     b.writeLong(t.priceCents)
                     b.writeLong(t.points)
                     b.writeString(t.qr, MAX_FILE_NAME_LENGTH)
+                    b.writeString(t.icon, MAX_FILE_NAME_LENGTH)
                 }
             },
             { b ->
                 val pointsEnabled = b.readBoolean()
                 val shopEnabled = b.readBoolean()
                 val payQrImage = b.readString(MAX_FILE_NAME_LENGTH)
+                val defaultIcon = b.readString(MAX_FILE_NAME_LENGTH)
                 val timeout = b.readLong()
                 val currencyLabel = b.readString(MAX_TIER_NAME_LENGTH)
                 val count = b.readInt()
@@ -299,11 +467,21 @@ data class PointsConfigPayload(
                             name = b.readString(MAX_TIER_NAME_LENGTH),
                             priceCents = b.readLong(),
                             points = b.readLong(),
-                            qr = b.readString(MAX_FILE_NAME_LENGTH)
+                            qr = b.readString(MAX_FILE_NAME_LENGTH),
+                            icon = b.readString(MAX_FILE_NAME_LENGTH)
                         )
                     )
                 }
-                PointsConfigPayload(pointsEnabled, shopEnabled, payQrImage, timeout, tiers, currencyLabel)
+                // ⚠ 具名参数：位置参数在字段增删时会静默错位（加 defaultIcon 时就撞到过一次）
+                PointsConfigPayload(
+                    pointsEnabled = pointsEnabled,
+                    shopEnabled = shopEnabled,
+                    payQrImage = payQrImage,
+                    defaultIcon = defaultIcon,
+                    orderTimeoutMinutes = timeout,
+                    tiers = tiers,
+                    currencyLabel = currencyLabel
+                )
             }
         )
     }
@@ -314,6 +492,8 @@ data class SavePointsConfigPayload(
     val pointsEnabled: Boolean,
     val shopEnabled: Boolean,
     val payQrImage: String,
+    /** 档位券图的**全局默认**文件名（空 = 用内置券图） */
+    val defaultIcon: String,
     val orderTimeoutMinutes: Long,
     val tiers: List<PointsTierConfig>,
     /** 档位金额的货币单位（空 = 不显示） */
@@ -328,6 +508,7 @@ data class SavePointsConfigPayload(
                 b.writeBoolean(p.pointsEnabled)
                 b.writeBoolean(p.shopEnabled)
                 b.writeString(p.payQrImage, MAX_FILE_NAME_LENGTH)
+                b.writeString(p.defaultIcon, MAX_FILE_NAME_LENGTH)
                 b.writeLong(p.orderTimeoutMinutes)
                 b.writeString(p.currencyLabel, MAX_TIER_NAME_LENGTH)
                 b.writeInt(p.tiers.size)
@@ -336,12 +517,14 @@ data class SavePointsConfigPayload(
                     b.writeLong(t.priceCents)
                     b.writeLong(t.points)
                     b.writeString(t.qr, MAX_FILE_NAME_LENGTH)
+                    b.writeString(t.icon, MAX_FILE_NAME_LENGTH)
                 }
             },
             { b ->
                 val pointsEnabled = b.readBoolean()
                 val shopEnabled = b.readBoolean()
                 val payQrImage = b.readString(MAX_FILE_NAME_LENGTH)
+                val defaultIcon = b.readString(MAX_FILE_NAME_LENGTH)
                 val timeout = b.readLong()
                 val currencyLabel = b.readString(MAX_TIER_NAME_LENGTH)
                 val count = b.readInt()
@@ -352,11 +535,21 @@ data class SavePointsConfigPayload(
                             name = b.readString(MAX_TIER_NAME_LENGTH),
                             priceCents = b.readLong(),
                             points = b.readLong(),
-                            qr = b.readString(MAX_FILE_NAME_LENGTH)
+                            qr = b.readString(MAX_FILE_NAME_LENGTH),
+                            icon = b.readString(MAX_FILE_NAME_LENGTH)
                         )
                     )
                 }
-                SavePointsConfigPayload(pointsEnabled, shopEnabled, payQrImage, timeout, tiers, currencyLabel)
+                // ⚠ 具名参数（同上）
+                SavePointsConfigPayload(
+                    pointsEnabled = pointsEnabled,
+                    shopEnabled = shopEnabled,
+                    payQrImage = payQrImage,
+                    defaultIcon = defaultIcon,
+                    orderTimeoutMinutes = timeout,
+                    tiers = tiers,
+                    currencyLabel = currencyLabel
+                )
             }
         )
     }
@@ -443,12 +636,19 @@ object PointsNetwork {
                         )
                         null
                     } else {
-                        ShopTier(name = name, priceCents = tier.priceCents, points = tier.points, qr = tier.qr.trim())
+                        ShopTier(
+                            name = name,
+                            priceCents = tier.priceCents,
+                            points = tier.points,
+                            qr = tier.qr.trim(),
+                            icon = tier.icon.trim()
+                        )
                     }
                 }
                 CobbleMarketConfig.setPointsEnabled(payload.pointsEnabled)
                 CobbleMarketConfig.setPointsShopEnabled(payload.shopEnabled)
                 CobbleMarketConfig.setPointsShopPayQrImage(payload.payQrImage)
+                CobbleMarketConfig.setPointsShopDefaultIcon(payload.defaultIcon)
                 CobbleMarketConfig.setPointsShopOrderTimeoutMinutes(payload.orderTimeoutMinutes)
                 CobbleMarketConfig.setPointsShopCurrencyLabel(payload.currencyLabel)
                 CobbleMarketConfig.setPointsShopTiers(tiers)
@@ -460,14 +660,20 @@ object PointsNetwork {
                     sendToPlayer(it, PointsStatusPayload(CobbleMarketConfig.pointsEnabled))
                     sendShopInfo(server, it)
                 }
-                // **预检收款码**：读不出来的当场告诉服主是哪张 —— 否则只能等玩家下单后去翻日志
-                // （2026-09-18 用户实测：放了张 .jpg，只认 PNG 的校验把它拒了，界面却毫无提示）
+                // **预检图片**：读不出来的当场告诉服主是哪张 —— 否则只能等玩家下单后去翻日志
+                // （2026-09-18 用户实测：放了张 .jpg，只认 PNG 的校验把它拒了，界面却毫无提示）。
+                // 券图也走同一道预检：配了张读不出来的图，玩家那边只会静默回退到内置券图，
+                // 服主根本不知道自己的图没生效。
                 val badQr = mutableListOf<String>()
-                fun checkQr(name: String, what: String) {
-                    if (name.isNotBlank() && PayQrImage.load(name) == null) badQr += "$name（$what）"
+                fun checkImage(name: String, what: String, load: (String) -> ByteArray?) {
+                    if (name.isNotBlank() && load(name) == null) badQr += "$name（$what）"
                 }
-                checkQr(CobbleMarketConfig.pointsShopPayQrImage, "全局")
-                CobbleMarketConfig.pointsShopTiers.forEach { checkQr(it.qr, it.name) }
+                checkImage(CobbleMarketConfig.pointsShopPayQrImage, "全局", PayQrImage::load)
+                checkImage(CobbleMarketConfig.pointsShopDefaultIcon, "默认券图", TierIconImage::load)
+                CobbleMarketConfig.pointsShopTiers.forEach {
+                    checkImage(it.qr, it.name, PayQrImage::load)
+                    checkImage(it.icon, "${it.name} 券图", TierIconImage::load)
+                }
                 if (badQr.isNotEmpty()) {
                     sendToPlayer(
                         player,
@@ -495,6 +701,7 @@ object PointsNetwork {
 
         registerS2CType(PointsShopInfoPayload.ID, PointsShopInfoPayload.CODEC)
         registerS2CType(PayQrImagePayload.ID, PayQrImagePayload.CODEC)
+        registerS2CType(TierIconPayload.ID, TierIconPayload.CODEC)
 
         registerC2S(RequestPointsShopPayload.ID, RequestPointsShopPayload.CODEC) { _, player ->
             player.server.execute { sendShopInfo(player.server, player) }
@@ -509,6 +716,15 @@ object PointsNetwork {
                 // 而不是发失败结果（那会播一声 fail 音，玩家一头雾水，2026-09-18 实测踩到）
                 val bytes = order?.let { PayQrImage.load(it.qrFile) }
                 sendToPlayer(player, PayQrImagePayload(bytes ?: ByteArray(0)))
+            }
+        }
+
+        registerC2S(RequestTierIconPayload.ID, RequestTierIconPayload.CODEC) { payload, player ->
+            player.server.execute {
+                // 读不出来就发**空包**（客户端回退到内置券图），而不是不回 ——
+                // 不回的话客户端会一直停在「等图」状态，卡片空着
+                val bytes = TierIconImage.load(payload.fileName)
+                sendToPlayer(player, TierIconPayload(payload.fileName, bytes ?: ByteArray(0)))
             }
         }
 
@@ -578,6 +794,105 @@ object PointsNetwork {
                 }
             }
         }
+
+        // ── 管理端：订单列表 / 确认发放 / 作废（**只认 OP**）──
+        // 业务一律走 PointShopService（命令侧共用同一内核）：发放路径分叉会长出两套幂等与审计
+        registerS2CType(PointOrdersPayload.ID, PointOrdersPayload.CODEC)
+
+        registerC2S(RequestPointOrdersPayload.ID, RequestPointOrdersPayload.CODEC) { payload, player ->
+            player.server.execute {
+                if (!player.hasPermissionLevel(2)) return@execute
+                sendOrderList(player, payload.includeFinished, payload.query)
+            }
+        }
+
+        registerC2S(ConfirmPointOrderPayload.ID, ConfirmPointOrderPayload.CODEC) { payload, player ->
+            val server = player.server
+            server.execute {
+                if (!player.hasPermissionLevel(2)) return@execute
+                val orderNo = PointOrderNumbers.normalize(payload.orderNo)
+                if (orderNo == null) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.points.shop.not_found")))
+                    return@execute
+                }
+                when (val result = PointShopService.confirm(server, player.name.string, orderNo)) {
+                    is PointShopResult.Success -> sendToPlayer(
+                        player,
+                        MarketResultPayload(
+                            true,
+                            Text.translatable(
+                                "cobblemarket.points.shop.confirmed", PointOrderNumbers.format(orderNo)
+                            )
+                        )
+                    )
+
+                    is PointShopResult.Failure ->
+                        sendToPlayer(player, MarketResultPayload(false, pointShopErrorText(result.error)))
+                }
+            }
+        }
+
+        registerC2S(RejectPointOrderPayload.ID, RejectPointOrderPayload.CODEC) { payload, player ->
+            val server = player.server
+            server.execute {
+                if (!player.hasPermissionLevel(2)) return@execute
+                val orderNo = PointOrderNumbers.normalize(payload.orderNo)
+                if (orderNo == null) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.points.shop.not_found")))
+                    return@execute
+                }
+                when (val result = PointShopService.reject(server, player.name.string, orderNo)) {
+                    is PointShopResult.Success -> sendToPlayer(
+                        player,
+                        MarketResultPayload(
+                            true,
+                            Text.translatable(
+                                "cobblemarket.points.shop.voided", PointOrderNumbers.format(orderNo)
+                            )
+                        )
+                    )
+
+                    is PointShopResult.Failure ->
+                        sendToPlayer(player, MarketResultPayload(false, pointShopErrorText(result.error)))
+                }
+            }
+        }
+    }
+
+    /**
+     * 把订单列表发给请求的 OP（管理端）。
+     *
+     * - [includeFinished] = false 取待确认、true 取已完结（对账用）
+     * - [query] 非空按订单号过滤：**允许带分隔符**（玩家报的就是 `ABC-DEF` 那种写法），
+     *   但格式不对时返回空列表而不是全量 —— 搜「abc」搜出一堆无关订单比搜不到更糟
+     */
+    private fun sendOrderList(player: ServerPlayerEntity, includeFinished: Boolean, query: String) {
+        val state = PointOrderState.get(player.server)
+        val base = if (includeFinished) state.finished() else state.pendingConfirm()
+        val q = query.trim()
+        val filtered = if (q.isEmpty()) base else {
+            // **订单号精确匹配 或 玩家名模糊匹配**：服主通常记得「是谁充的」，
+            // 不记得那串 6 位号 —— 只认订单号的话找人还得先翻聊天记录（2026-09-18 用户提出）
+            val normalized = PointOrderNumbers.normalize(q)
+            base.filter {
+                (normalized != null && it.orderNo == normalized) ||
+                    it.playerName.contains(q, ignoreCase = true)
+            }
+        }
+        val orders = filtered.map {
+            PointOrderInfo(
+                orderNo = it.orderNo,
+                tierName = it.tierName,
+                payCents = it.payCents,
+                points = it.points,
+                status = it.status.name,
+                expireAt = it.expireAt,
+                playerName = it.playerName,
+                paidAt = it.paidAt ?: 0L,
+                createdAt = it.createdAt
+            )
+        }
+        sendToPlayer(player, PointOrdersPayload(orders = orders, includeFinished = includeFinished))
     }
 
     /** 把商城当前状态发给玩家：档位列表 + 有没有收款码 + 他的**全部**未完结订单 + 货币单位 */
@@ -585,9 +900,12 @@ object PointsNetwork {
         pointsEnabled = CobbleMarketConfig.pointsEnabled,
         shopEnabled = CobbleMarketConfig.pointsShopEnabled,
         payQrImage = CobbleMarketConfig.pointsShopPayQrImage,
+        defaultIcon = CobbleMarketConfig.pointsShopDefaultIcon,
         orderTimeoutMinutes = CobbleMarketConfig.pointsShopOrderTimeoutMinutes,
         tiers = CobbleMarketConfig.pointsShopTiers.map {
-            PointsTierConfig(name = it.name, priceCents = it.priceCents, points = it.points, qr = it.qr)
+            PointsTierConfig(
+                name = it.name, priceCents = it.priceCents, points = it.points, qr = it.qr, icon = it.icon
+            )
         },
         currencyLabel = CobbleMarketConfig.pointsShopCurrencyLabel
     )
@@ -598,20 +916,35 @@ object PointsNetwork {
         //   服主看到的等于"这个开关没效果"（2026-09-18 用户实测反馈）。
         //   兑换码那条路不受影响（那是另一套发放渠道）。
         val tiers = if (CobbleMarketConfig.pointsShopEnabled) {
+            // 只带**券图文件名**，不带字节：没配图的档位完全不产生网络开销，
+            // 客户端自己对没缓存的文件名发 RequestTierIconPayload 取图。
+            // ⚠ 这里**就地把全局默认券图展开**进各档（优先级：该档专用 > 全局默认）：
+            //   客户端只管「iconFile 非空就去取图」，不必知道默认图这回事 ——
+            //   配置界面回显的仍是服主填的原始值（那份快照走 PointsConfigPayload，不展开）
             CobbleMarketConfig.pointsShopTiers.map {
-                ShopTierInfo(name = it.name, priceCents = it.priceCents, points = it.points)
+                ShopTierInfo(
+                    name = it.name,
+                    priceCents = it.priceCents,
+                    points = it.points,
+                    iconFile = it.icon.ifBlank { CobbleMarketConfig.pointsShopDefaultIcon }
+                )
             }
         } else {
             emptyList()
         }
-        val orders = PointOrderState.get(server).activeOrdersOf(player.uuid).map { o ->
+        // 「我的订单」给**全部订单**（含已发放 / 已作废的历史），按创建时间倒序 ——
+        // 只给未完结的话，订单一被处理就从玩家眼前消失，他查不到自己充过什么
+        val orders = PointOrderState.get(server).ordersOf(player.uuid, MAX_ORDER_HISTORY).map { o ->
             PointOrderInfo(
                 orderNo = o.orderNo,
                 tierName = o.tierName,
                 payCents = o.payCents,
                 points = o.points,
                 status = o.status.name,
-                expireAt = o.expireAt
+                expireAt = o.expireAt,
+                playerName = o.playerName,
+                paidAt = o.paidAt ?: 0L,
+                createdAt = o.createdAt
             )
         }
         sendToPlayer(
