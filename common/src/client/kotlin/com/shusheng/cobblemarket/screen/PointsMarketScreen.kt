@@ -1,8 +1,10 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.PointsShopCache
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.RedeemPointCodePayload
+import com.shusheng.cobblemarket.network.RequestPointsShopPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
@@ -43,6 +45,12 @@ class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.
     private var totalPages = 1
     /** 鼠标所在格子索引；-1 = 不在任何格子上。悬停的格子会**放大绘制**（浮在邻居之上） */
     private var hoveredCell = -1
+
+    /** 本次进界面是否已请求过商城快照（入口按钮的显隐要等它回来） */
+    private var shopInfoRequested = false
+
+    /** 「购买 RP」入口（显隐由商城快照决定，见 [onShopInfo]） */
+    private var buyEntryButton: NineSliceButton? = null
 
     /** 背景等比缩放后的矩形（居中） */
     private data class BgRect(val x: Int, val y: Int, val w: Int, val h: Int)
@@ -89,6 +97,13 @@ class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.
         )
 
         // 兑换区：**内容区左上角**（不占中部的商品区；没有小标题，输入框本身就是说明）
+        // 商城快照（档位 / 有没有收款码）决定右上角那个入口显不显示；没请求过就请求一次
+        //（init 会被 resize 反复调用，用标志挡住重复请求）
+        if (!shopInfoRequested) {
+            sendToServer(RequestPointsShopPayload(true))
+            shopInfoRequested = true
+        }
+
         val rowY = redeemRowY(bg)
         val fieldX = bg.x + inset
         // 兑换码输入框（重建后恢复输入；上限按外部码带分隔符的 39 字符留余量）
@@ -108,6 +123,21 @@ class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.
                 { doRedeem() }
             )
         )
+
+        // 「购买 RP」入口：**与左边的兑换码输入框左右对称**（离各自一侧边框的距离都是 inset、
+        // 同一水平线）—— 用户 2026-09-18 指出原来放在标题那一行"太右上"。
+        // 只判档位、**不判收款码**：没配收款码时入口照样给，点进去弹窗里会提示缺什么（藏起来
+        // 会让服主以为功能坏了）。按钮**总是建出来、靠 visible 开关**：快照到达时只改一个标志，
+        // 重建整个界面会清掉玩家已经敲进兑换框的内容。
+        val buyBtn = NineSliceButton(
+            bg.x + bg.w - inset - BUY_ENTRY_W, rowY,
+            BUY_ENTRY_W, ROW_H,
+            Text.translatable("cobblemarket.points.recharge.entry"),
+            { client?.setScreen(PointsRechargeScreen()) }
+        )
+        buyBtn.visible = PointsShopCache.tiers.isNotEmpty()
+        buyEntryButton = buyBtn
+        addDrawableChild(buyBtn)
 
         // 精灵 / 物品 tab：**居中、与兑换行同一水平线**（用户 2026-09-18 定）
         val tabLeftX = cx - TAB_W - TAB_GAP / 2
@@ -271,6 +301,11 @@ class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.
         sendToServer(RedeemPointCodePayload(code))
     }
 
+    /** 商城快照到了：切换「购买 RP」入口的显隐（**不重建界面**，免得清掉已输入的内容） */
+    fun onShopInfo() {
+        buyEntryButton?.visible = PointsShopCache.tiers.isNotEmpty()
+    }
+
     /** 兑换结果（服务端 MarketResultPayload 到达；成功才清空输入框 —— 码已用掉，留着没用） */
     fun onMarketResult(payload: MarketResultPayload) {
         if (payload.success) {
@@ -405,6 +440,9 @@ class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.
         /** 翻页按钮尺寸（照 MarketScreen 的搬来） */
         const val PAGE_BTN_W = 80
         const val PAGE_BTN_H = 20
+
+        /** 右上角「购买 RP」入口宽度：够放下中文「购买 RP」与英文 "Buy RP" */
+        const val BUY_ENTRY_W = 72
 
         /** 红色分割线左右各避开的背景边框宽度（原图口径，用户 2026-09-18 定 78） */
         const val DIVIDER_BORDER_X = 78

@@ -59,9 +59,10 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     // 编辑只改本地状态：开关的本地值（保存时提交，快照刷新时重置）
     private val localToggles = mutableMapOf<String, Boolean>()
     private var savedToastUntil = 0L
-    // +1 = 喵喵银行配置入口行（左标签 + 右「配置」按钮）
-    private val totalRows = numDefs.size + toggleDefs.size + 1
+    // +2 = 喵喵银行配置入口行 + RP 市场配置入口行（各是一个左标签 + 右「配置」按钮）
+    private val totalRows = numDefs.size + toggleDefs.size + 2
     private var financeOpenButton: NineSliceButton? = null
+    private var pointsOpenButton: NineSliceButton? = null
 
     // ── 蛋交易二次确认弹窗（照 AdminScreen 原模板：开启有 3 秒冷静期，蛋可绕过精灵黑名单） ──
     private var eggConfirmOpen = false
@@ -180,6 +181,13 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             { client?.setScreen(FinanceConfigScreen()) }
         )
         addDrawableChild(financeOpenButton)
+        // RP 市场配置入口行（在喵喵银行下面；开关/档位/收款码都在那边改，不必碰配置文件）
+        pointsOpenButton = NineSliceButton(
+            dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16,
+            Text.translatable("cobblemarket.op.finance_open"),
+            { client?.setScreen(PointsConfigScreen()) }
+        )
+        addDrawableChild(pointsOpenButton)
         rebuildPositions()
         // 确认弹窗关闭/resize 走 clearChildren+init 重建：恢复未提交的编辑，且不重新请求快照
         // （请求会把本地编辑的开关状态冲回服务端旧值——蛋交易确认后按钮图标变回关就是这个原因）
@@ -230,6 +238,12 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         financeOpenButton?.x = dialogX + dialogW - 10 - 20 - 2 - 54
         financeOpenButton?.y = y + 4
         financeOpenButton?.visible = visible
+        // RP 市场配置入口行（紧挨着喵喵银行下面一行）
+        row++
+        val pointsY = startY + (row - scrollOffset) * rowHeight
+        pointsOpenButton?.x = dialogX + dialogW - 10 - 20 - 2 - 54
+        pointsOpenButton?.y = pointsY + 4
+        pointsOpenButton?.visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
     }
 
     // ── 快照 → 界面刷新 ──
@@ -622,6 +636,17 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             context.drawTextWithShadow(
                 textRenderer,
                 Text.translatable("cobblemarket.op.finance_entry"),
+                dialogX + 10, rowY + 7, 0xFFFFFF
+            )
+        }
+        row++
+        // RP 市场配置入口行（喵喵银行下面）
+        if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
+            val rowY = startY + (row - scrollOffset) * rowHeight
+            drawRowLine(rowY)
+            context.drawTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.points.config.entry"),
                 dialogX + 10, rowY + 7, 0xFFFFFF
             )
         }
