@@ -17,6 +17,8 @@ enum class PointShopError {
     NO_TIER,
     /** 已有未完结订单（一人同时只允许一笔） */
     ALREADY_ACTIVE,
+    /** 未完结订单太多（见 [PointShopService.MAX_ACTIVE_ORDERS]） */
+    TOO_MANY_ACTIVE,
     NOT_FOUND,
     /** 不是自己的订单 */
     NOT_OWNER,
@@ -59,6 +61,13 @@ object PointShopService {
     /** 扫描节流：超时作废与清理都不急，60 秒一次足够 */
     private const val SCAN_INTERVAL_MS = 60_000L
 
+    /**
+     * 同时允许几笔未完结订单。
+     * 取 3：够玩家"下了 5 元单又改主意想充 10 元"（2026-09-18 用户指出一笔太死），
+     * 又不至于让一个人把 99 个**金额尾数**占满（尾数是服主对账的键）。
+     */
+    private const val MAX_ACTIVE_ORDERS = 3
+
     private var lastScanAt = 0L
 
     /** 单机切换存档时复位扫描节流（静态状态不跨世界，见 PersistHelper.reset） */
@@ -89,8 +98,8 @@ object PointShopService {
         val now = System.currentTimeMillis()
         // 顺手清掉自己超时已久的旧单，免得它把玩家挡在「已有未完结订单」外面
         state.voidExpired(now, PAYMENT_GRACE_MS)
-        if (state.activeOrderOf(playerUuid) != null) {
-            return PointShopResult.Failure(PointShopError.ALREADY_ACTIVE)
+        if (state.activeOrdersOf(playerUuid).size >= MAX_ACTIVE_ORDERS) {
+            return PointShopResult.Failure(PointShopError.TOO_MANY_ACTIVE)
         }
         val order = state.create(
             playerUuid = playerUuid,
@@ -99,6 +108,10 @@ object PointShopService {
             baseCents = tier.priceCents,
             points = tier.points,
             timeoutMinutes = CobbleMarketConfig.pointsShopOrderTimeoutMinutes,
+            // 该档配了专用码就用它，否则回退到全局那张（两者都为空 = 没码可展示）
+            qrFile = tier.qr.ifBlank { CobbleMarketConfig.pointsShopPayQrImage },
+            // 专用码是"带金额"的固定码 ⇒ 金额写死，**不能加尾数**；走全局码才加尾数供服主对账
+            tailEnabled = tier.qr.isBlank(),
             now = now
         ) ?: return PointShopResult.Failure(PointShopError.GENERATE_FAILED)
         PersistHelper.requestSave(server)

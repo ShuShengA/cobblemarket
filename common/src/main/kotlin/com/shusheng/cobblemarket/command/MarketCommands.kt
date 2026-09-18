@@ -21,6 +21,7 @@ import com.shusheng.cobblemarket.currency.PointRedeemService
 import com.shusheng.cobblemarket.currency.PointShopError
 import com.shusheng.cobblemarket.currency.PointShopResult
 import com.shusheng.cobblemarket.currency.PointShopService
+import com.shusheng.cobblemarket.currency.pointShopErrorText
 import com.shusheng.cobblemarket.currency.PointsAuditLogger
 import com.shusheng.cobblemarket.currency.PointsLogType
 import com.shusheng.cobblemarket.currency.PointsState
@@ -540,7 +541,7 @@ object MarketCommands {
                 1
             }
             is PointShopResult.Failure -> {
-                source.sendError(shopErrorText(result.error))
+                source.sendError(pointShopErrorText(result.error))
                 0
             }
         }
@@ -587,7 +588,7 @@ object MarketCommands {
                 1
             }
             is PointShopResult.Failure -> {
-                source.sendError(shopErrorText(result.error))
+                source.sendError(pointShopErrorText(result.error))
                 0
             }
         }
@@ -651,7 +652,7 @@ object MarketCommands {
                 1
             }
             is PointShopResult.Failure -> {
-                source.sendError(shopErrorText(result.error))
+                source.sendError(pointShopErrorText(result.error))
                 0
             }
         }
@@ -663,20 +664,6 @@ object MarketCommands {
         context.source.sendFeedback({ Text.translatable("cobblemarket.points.shop.purged", removed) }, true)
         return 1
     }
-
-    /** 订单状态机错误 → 玩家语言的提示 */
-    private fun shopErrorText(error: PointShopError): Text = Text.translatable(
-        when (error) {
-            PointShopError.DISABLED -> "cobblemarket.points.shop.disabled"
-            PointShopError.NO_TIER -> "cobblemarket.points.shop.no_tier"
-            PointShopError.ALREADY_ACTIVE -> "cobblemarket.points.shop.already_active"
-            PointShopError.NOT_FOUND -> "cobblemarket.points.shop.not_found"
-            PointShopError.NOT_OWNER -> "cobblemarket.points.shop.not_owner"
-            PointShopError.BAD_STATUS -> "cobblemarket.points.shop.bad_status"
-            PointShopError.EXPIRED -> "cobblemarket.points.shop.expired"
-            PointShopError.GENERATE_FAILED -> "cobblemarket.points.shop.generate_failed"
-        }
-    )
 
     private fun marketOn(context: CommandContext<ServerCommandSource>): Int = setMarketEnabled(context, true)
 

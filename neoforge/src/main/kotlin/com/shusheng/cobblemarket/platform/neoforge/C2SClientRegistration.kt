@@ -23,17 +23,20 @@ import com.shusheng.cobblemarket.network.BuyItemPayload
 import com.shusheng.cobblemarket.network.CancelBuyOrderPayload
 import com.shusheng.cobblemarket.network.CancelFromMarketPayload
 import com.shusheng.cobblemarket.network.CancelItemPayload
+import com.shusheng.cobblemarket.network.CancelPointOrderPayload
 import com.shusheng.cobblemarket.network.ClaimItemReturnPayload
 import com.shusheng.cobblemarket.network.ClaimPokemonReturnPayload
 import com.shusheng.cobblemarket.network.CollectBalancePayload
 import com.shusheng.cobblemarket.network.CreateItemAuctionPayload
 import com.shusheng.cobblemarket.network.CreateItemBuyOrderPayload
 import com.shusheng.cobblemarket.network.CreatePokemonAuctionPayload
+import com.shusheng.cobblemarket.network.CreatePointOrderPayload
 import com.shusheng.cobblemarket.network.CreatePokemonBuyOrderPayload
 import com.shusheng.cobblemarket.network.DeliverItemBuyOrderPayload
 import com.shusheng.cobblemarket.network.DeliverPokemonBuyOrderPayload
 import com.shusheng.cobblemarket.network.ForceCancelAuctionPayload
 import com.shusheng.cobblemarket.network.ForceCancelBuyOrderPayload
+import com.shusheng.cobblemarket.network.MarkPointOrderPaidPayload
 import com.shusheng.cobblemarket.network.PlaceBidPayload
 import com.shusheng.cobblemarket.network.RedeemPointCodePayload
 import com.shusheng.cobblemarket.network.RejectPendingDeliverPayload
@@ -61,7 +64,10 @@ import com.shusheng.cobblemarket.network.RequestLoanPayload
 import com.shusheng.cobblemarket.network.RequestMarketPayload
 import com.shusheng.cobblemarket.network.RequestMyPokemonPayload
 import com.shusheng.cobblemarket.network.RequestObjectPreviewPayload
+import com.shusheng.cobblemarket.network.RequestPayQrPayload
 import com.shusheng.cobblemarket.network.RequestPlayerNameSuggestionsPayload
+import com.shusheng.cobblemarket.network.RequestPointsConfigPayload
+import com.shusheng.cobblemarket.network.RequestPointsShopPayload
 import com.shusheng.cobblemarket.network.RequestPurpleCardApplyInfoPayload
 import com.shusheng.cobblemarket.network.RequestPurpleCardApplyPayload
 import com.shusheng.cobblemarket.network.RequestPurpleCardRedoPayload
@@ -79,6 +85,7 @@ import com.shusheng.cobblemarket.network.RequestRepayPayload
 import com.shusheng.cobblemarket.network.RequestRevokeBadDebtPayload
 import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.RequestWithdrawPayload
+import com.shusheng.cobblemarket.network.SavePointsConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.SellFromStoragePayload
 import com.shusheng.cobblemarket.network.SellItemPayload
@@ -94,7 +101,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar
  * neoforge 网络协商要求双端注册集合完全一致（id + 流向）：
  * 任何一端缺少另一端注册的非 optional payload，连接会被拒绝（NetworkComponentNegotiator）。
  *
- * common 里 84 个 C2S payload 由服务端（各 Network.register）注册 playToServer + 业务 handler；
+ * common 里 91 个 C2S payload 由服务端（各 Network.register）注册 playToServer + 业务 handler；
  * 客户端也必须空注册同名 playToServer 类型，否则连不上 neoforge 服务器。
  * （fabric 无此机制：客户端发送前不校验本地注册，仅 neoforge 需要。）
  *
@@ -121,6 +128,7 @@ fun registerClientC2S() {
         c2s(registrar, CancelBuyOrderPayload.ID, CancelBuyOrderPayload.CODEC)
         c2s(registrar, CancelFromMarketPayload.ID, CancelFromMarketPayload.CODEC)
         c2s(registrar, CancelItemPayload.ID, CancelItemPayload.CODEC)
+        c2s(registrar, CancelPointOrderPayload.ID, CancelPointOrderPayload.CODEC)
         c2s(registrar, ClaimItemReturnPayload.ID, ClaimItemReturnPayload.CODEC)
         c2s(registrar, ClaimPokemonReturnPayload.ID, ClaimPokemonReturnPayload.CODEC)
         c2s(registrar, CollectBalancePayload.ID, CollectBalancePayload.CODEC)
@@ -128,10 +136,12 @@ fun registerClientC2S() {
         c2s(registrar, CreateItemBuyOrderPayload.ID, CreateItemBuyOrderPayload.CODEC)
         c2s(registrar, CreatePokemonAuctionPayload.ID, CreatePokemonAuctionPayload.CODEC)
         c2s(registrar, CreatePokemonBuyOrderPayload.ID, CreatePokemonBuyOrderPayload.CODEC)
+        c2s(registrar, CreatePointOrderPayload.ID, CreatePointOrderPayload.CODEC)
         c2s(registrar, DeliverItemBuyOrderPayload.ID, DeliverItemBuyOrderPayload.CODEC)
         c2s(registrar, DeliverPokemonBuyOrderPayload.ID, DeliverPokemonBuyOrderPayload.CODEC)
         c2s(registrar, ForceCancelAuctionPayload.ID, ForceCancelAuctionPayload.CODEC)
         c2s(registrar, ForceCancelBuyOrderPayload.ID, ForceCancelBuyOrderPayload.CODEC)
+        c2s(registrar, MarkPointOrderPaidPayload.ID, MarkPointOrderPaidPayload.CODEC)
         c2s(registrar, PlaceBidPayload.ID, PlaceBidPayload.CODEC)
         c2s(registrar, RedeemPointCodePayload.ID, RedeemPointCodePayload.CODEC)
         c2s(registrar, RejectPendingDeliverPayload.ID, RejectPendingDeliverPayload.CODEC)
@@ -159,7 +169,10 @@ fun registerClientC2S() {
         c2s(registrar, RequestMarketPayload.ID, RequestMarketPayload.CODEC)
         c2s(registrar, RequestMyPokemonPayload.ID, RequestMyPokemonPayload.CODEC)
         c2s(registrar, RequestObjectPreviewPayload.ID, RequestObjectPreviewPayload.CODEC)
+        c2s(registrar, RequestPayQrPayload.ID, RequestPayQrPayload.CODEC)
         c2s(registrar, RequestPlayerNameSuggestionsPayload.ID, RequestPlayerNameSuggestionsPayload.CODEC)
+        c2s(registrar, RequestPointsConfigPayload.ID, RequestPointsConfigPayload.CODEC)
+        c2s(registrar, RequestPointsShopPayload.ID, RequestPointsShopPayload.CODEC)
         c2s(registrar, RequestPurpleCardApplyInfoPayload.ID, RequestPurpleCardApplyInfoPayload.CODEC)
         c2s(registrar, RequestPurpleCardApplyPayload.ID, RequestPurpleCardApplyPayload.CODEC)
         c2s(registrar, RequestPurpleCardRedoPayload.ID, RequestPurpleCardRedoPayload.CODEC)
@@ -177,6 +190,7 @@ fun registerClientC2S() {
         c2s(registrar, RequestRevokeBadDebtPayload.ID, RequestRevokeBadDebtPayload.CODEC)
         c2s(registrar, RequestServerConfigPayload.ID, RequestServerConfigPayload.CODEC)
         c2s(registrar, RequestWithdrawPayload.ID, RequestWithdrawPayload.CODEC)
+        c2s(registrar, SavePointsConfigPayload.ID, SavePointsConfigPayload.CODEC)
         c2s(registrar, SaveServerConfigPayload.ID, SaveServerConfigPayload.CODEC)
         c2s(registrar, SellFromStoragePayload.ID, SellFromStoragePayload.CODEC)
         c2s(registrar, SellItemPayload.ID, SellItemPayload.CODEC)

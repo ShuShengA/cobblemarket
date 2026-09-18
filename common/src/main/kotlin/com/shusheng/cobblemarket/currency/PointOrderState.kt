@@ -46,6 +46,11 @@ data class PointOrder(
     val createdAt: Long,
     /** 待支付超时时刻；进入待确认后不再作数（玩家已付款，等服主处理，不自动作废） */
     val expireAt: Long,
+    /**
+     * 下单时**快照**下来的收款码文件名（空 = 这一单没有码可展示）。
+     * ⚠ 存在订单上而不是每次按档位去查 —— 服主事后改档位/换码，老订单也不会指错图。
+     */
+    val qrFile: String = "",
     var status: PointOrderStatus,
     var paidAt: Long? = null,
     var resolvedAt: Long? = null,
@@ -79,9 +84,13 @@ class PointOrderState private constructor() : PersistentState() {
 
     fun size(): Int = orders.size
 
-    /** 玩家当前**未完结**的订单（一人同时只允许一笔，见 [create] 的说明） */
-    fun activeOrderOf(playerUuid: UUID): PointOrder? =
-        orders.values.firstOrNull { it.playerUuid == playerUuid && it.isActive() }
+    /**
+     * 玩家当前**全部**未完结订单（按创建时间升序）。
+     * **可以有多笔**（2026-09-18 用户拍板：玩家想改充别的档位不该被一笔卡死），
+     * 同时存在的上限由 [com.shusheng.cobblemarket.currency.PointShopService] 把关。
+     */
+    fun activeOrdersOf(playerUuid: UUID): List<PointOrder> =
+        orders.values.filter { it.playerUuid == playerUuid && it.isActive() }.sortedBy { it.createdAt }
 
     /** 待确认订单（管理端列表用），按玩家提交时间升序 —— 先提交的先处理 */
     fun pendingConfirm(): List<PointOrder> = orders.values
@@ -104,16 +113,22 @@ class PointOrderState private constructor() : PersistentState() {
         baseCents: Long,
         points: Long,
         timeoutMinutes: Long,
+        qrFile: String,
+        /** 是否给实付金额加**唯一尾数**。⚠ 用"带金额的收款码"的档位必须传 false ——
+         *  码上的金额是写死的，加尾数玩家就付不出来了（2026-09-18 用户提出多张码时定的） */
+        tailEnabled: Boolean,
         now: Long
     ): PointOrder? {
         val usedTails = orders.values.filter { it.isActive() }.mapTo(mutableSetOf()) { it.tail() }
         for (attempt in 0 until MAX_GENERATE_ATTEMPTS) {
             val orderNo = PointOrderNumbers.generate()
             if (orderNo in orders) continue
-            val payCents = baseCents + PointOrderNumbers.tailOf(orderNo)
-            // 标价本身带角分时，加上尾数可能恰好进位到整元（尾数被抹平成 00）——换个号重来
-            if (payCents % 100L == 0L) continue
-            if ((payCents % 100L).toInt() in usedTails) continue
+            val payCents = if (tailEnabled) baseCents + PointOrderNumbers.tailOf(orderNo) else baseCents
+            if (tailEnabled) {
+                // 标价本身带角分时，加上尾数可能恰好进位到整元（尾数被抹平成 00）——换个号重来
+                if (payCents % 100L == 0L) continue
+                if ((payCents % 100L).toInt() in usedTails) continue
+            }
             val order = PointOrder(
                 orderNo = orderNo,
                 playerUuid = playerUuid,
@@ -124,6 +139,7 @@ class PointOrderState private constructor() : PersistentState() {
                 points = points,
                 createdAt = now,
                 expireAt = now + timeoutMinutes * 60_000L,
+                qrFile = qrFile,
                 status = PointOrderStatus.PENDING_PAYMENT
             )
             orders[orderNo] = order
@@ -196,6 +212,7 @@ class PointOrderState private constructor() : PersistentState() {
             c.putLong("points", order.points)
             c.putLong("createdAt", order.createdAt)
             c.putLong("expireAt", order.expireAt)
+            if (order.qrFile.isNotEmpty()) c.putString("qrFile", order.qrFile)
             c.putString("status", order.status.name)
             order.paidAt?.let { c.putLong("paidAt", it) }
             order.resolvedAt?.let { c.putLong("resolvedAt", it) }
@@ -240,6 +257,7 @@ class PointOrderState private constructor() : PersistentState() {
                                 points = c.getLong("points"),
                                 createdAt = c.getLong("createdAt"),
                                 expireAt = if (c.contains("expireAt")) c.getLong("expireAt") else Long.MAX_VALUE,
+                                qrFile = if (c.contains("qrFile")) c.getString("qrFile") else "",
                                 status = status,
                                 paidAt = if (c.contains("paidAt")) c.getLong("paidAt") else null,
                                 resolvedAt = if (c.contains("resolvedAt")) c.getLong("resolvedAt") else null,

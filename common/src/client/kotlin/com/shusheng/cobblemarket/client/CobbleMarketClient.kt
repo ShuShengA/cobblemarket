@@ -13,6 +13,9 @@ import com.shusheng.cobblemarket.network.AuctionSettleSoundPayload
 import com.shusheng.cobblemarket.network.ItemCelebrationPayload
 import com.shusheng.cobblemarket.network.PokemonCelebrationPayload
 import com.shusheng.cobblemarket.network.MarketStatePayload
+import com.shusheng.cobblemarket.network.PayQrImagePayload
+import com.shusheng.cobblemarket.network.PointsConfigPayload
+import com.shusheng.cobblemarket.network.PointsShopInfoPayload
 import com.shusheng.cobblemarket.network.PointsStatusPayload
 import com.shusheng.cobblemarket.network.PendingReturnsPayload
 import com.shusheng.cobblemarket.network.PlaySoundPayload
@@ -82,7 +85,9 @@ import com.shusheng.cobblemarket.screen.ItemReturnScreen
 import com.shusheng.cobblemarket.screen.ItemSellScreen
 import com.shusheng.cobblemarket.screen.ItemVariantSelectScreen
 import com.shusheng.cobblemarket.screen.PokemonReturnScreen
+import com.shusheng.cobblemarket.screen.PointsConfigScreen
 import com.shusheng.cobblemarket.screen.PointsMarketScreen
+import com.shusheng.cobblemarket.screen.PointsRechargeScreen
 import com.shusheng.cobblemarket.screen.PriceLimitScreen
 import com.shusheng.cobblemarket.screen.SellSelectScreen
 import com.shusheng.cobblemarket.screen.ServerConfigScreen
@@ -454,6 +459,7 @@ object CobbleMarketClient {
                     is AdminAuctionScreen -> screen.onMarketResult(payload)
                     is BuyOrderScreen -> screen.onMarketResult(payload)
                     is PointsMarketScreen -> screen.onMarketResult(payload)
+                    is PointsConfigScreen -> screen.onMarketResult(payload)
                 }
             }
         }
@@ -524,6 +530,37 @@ object CobbleMarketClient {
                 PointsStateCache.enabled = payload.enabled
                 // 界面已打开时同步按钮置灰态（登录补发 / 后续管理端切换都能跟上）
                 (MinecraftClient.getInstance().currentScreen as? MarketEntryScreen)?.updatePointsEntryState()
+            }
+        }
+
+        // 点券商城快照（档位 / 有没有收款码 / 当前订单）：**先落缓存再分发给界面** ——
+        // 包在请求时到，而弹窗要等有单才建，不缓存的话「包先到弹窗后建」会拿到空数据
+        registerS2C(PointsShopInfoPayload.ID, PointsShopInfoPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                PointsShopCache.tiers = payload.tiers
+                PointsShopCache.hasQr = payload.hasQr
+                PointsShopCache.orders = payload.orders
+                PointsShopCache.currencyLabel = payload.currencyLabel
+                PointsShopCache.loaded = true
+                when (val screen = MinecraftClient.getInstance().currentScreen) {
+                    is PointsRechargeScreen -> screen.onShopInfo()
+                    is PointsMarketScreen -> screen.onShopInfo()
+                }
+            }
+        }
+
+        // RP 市场配置快照（仅 OP 会收到）：填进配置界面的本地编辑态
+        registerS2C(PointsConfigPayload.ID, PointsConfigPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                (MinecraftClient.getInstance().currentScreen as? PointsConfigScreen)?.onConfig(payload)
+            }
+        }
+
+        // 收款码图片（服务端读的字节 → 本地动态纹理）；**空数组 = 读不出来**
+        registerS2C(PayQrImagePayload.ID, PayQrImagePayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                if (payload.bytes.isEmpty()) PayQrTexture.markUnavailable() else PayQrTexture.accept(payload.bytes)
+                (MinecraftClient.getInstance().currentScreen as? PointsRechargeScreen)?.onQrImage()
             }
         }
 
@@ -1005,4 +1042,5 @@ internal fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean
         s is PurpleCardConfigScreen || s is PurpleCardApplyScreen || s is PurpleCardApplyConditionsScreen ||
         s is BlackCardConfigScreen || s is BlackCardApplyScreen || s is BlackCardApplyConditionsScreen || s is CardManageScreen || s is ItemVariantSelectScreen ||
         s is MeowthBankScreen || s is LoanScreen || s is LoanHistoryScreen || s is RepayScreen || s is MeowthPayScreen ||
-        s is DepositScreen || s is BalanceHudPositionScreen || s is PointsMarketScreen
+        s is DepositScreen || s is BalanceHudPositionScreen || s is PointsMarketScreen || s is PointsRechargeScreen ||
+        s is PointsConfigScreen
