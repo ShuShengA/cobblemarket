@@ -1,6 +1,13 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_INLINE_SIZE
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
+import com.shusheng.cobblemarket.client.PointsStateCache
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.MarketCurrency
 
 import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.SellItemPayload
@@ -134,10 +141,28 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
         countField?.setTextPredicate { it.length <= 4 && it.all { c -> c.isDigit() } }
         addDrawableChild(countField)
 
-        priceField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 102, 160, 16, Text.literal(""))
+        // 价格框 160 → 120：右侧腾出位置给货币切换按钮（最多 9 位数字，用不到 160 那么宽）
+        priceField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 102, 120, 16, Text.literal(""))
         priceField?.setPlaceholder(Text.translatable("cobblemarket.item.sell_price"))
         priceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(priceField)
+
+        // 货币切换按钮（价格框右侧）。⚠ 服务端没开 RP 总开关、或没开「玩家间 RP 交易」时
+        // **整个按钮不创建** —— 价格区干干净净，比留个点了报错的灰按钮清楚。
+        // 图标走 points_symbol，缩到 8×8 —— 与余额 HUD 那个单位图标同图同尺寸。
+        currency = MarketCurrency.PRIMARY
+        // ⚠ 只有 RP **总开关**关着时不建；「玩家间 RP 交易」没开照样显示、只是置灰点不动
+        currencyButton = if (PointsStateCache.enabled) {
+            NineSliceButton(
+                centerX + 44, dialogY + 102, 20, 16, Text.literal(""), { onCurrencyClick() },
+                iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
+                iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat()
+            ).also {
+                it.dimmed = !PointsStateCache.marketEnabled
+                updateCurrencyButton(it)
+                addDrawableChild(it)
+            }
+        } else null
 
         addDrawableChild(NineSliceButton(
             centerX - 85, dialogY + 128, 80, 20,
@@ -217,8 +242,56 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
         val registry = client?.world?.registryManager ?: return
         val itemId = Registries.ITEM.getId(entry.stack.item).toString()
         val itemNbt = entry.stack.encode(registry, NbtCompound()) as? NbtCompound ?: NbtCompound()
-        sendToServer(SellItemPayload(itemId, itemNbt, count, price))
+        // ⚠ 提交前**再查一次实时缓存**：服主可能在弹窗开着的时候把「玩家间 RP 交易」关掉了，
+        //   那这一次必须拦下并切回主货币（服务端也会拒，这里是为了给个明确提示、而不是静默失败）
+        if (currency == MarketCurrency.POINTS && !PointsStateCache.marketEnabled) {
+            currency = MarketCurrency.PRIMARY
+            currencyButton?.let { updateCurrencyButton(it) }
+            client?.player?.sendMessage(
+                // ⚠ 提醒类消息**用红色**，和普通反馈区分开（图标自带白色，不受影响）
+                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            playFailSound()
+            return
+        }
+        sendToServer(SellItemPayload(itemId, itemNbt, count, price, currency.name))
         closeConfirmDialog()
+    }
+
+    /** 这次上架用哪个币种定价（默认主货币） */
+    private var currency = MarketCurrency.PRIMARY
+
+    /** 货币切换按钮（服务端没开 RP 相关开关时为 null = 压根没建） */
+    private var currencyButton: NineSliceButton? = null
+
+    /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
+    private fun onCurrencyClick() {
+        if (!PointsStateCache.marketEnabled) {
+            playFailSound()
+            client?.player?.sendMessage(
+                // ⚠ 提醒类消息**用红色**，和普通反馈区分开（图标自带白色，不受影响）
+                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            return
+        }
+        toggleCurrency()
+    }
+
+    /** 切主货币 ↔ RP */
+    private fun toggleCurrency() {
+        currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
+        currencyButton?.let { updateCurrencyButton(it) }
+    }
+
+    /** 刷新货币按钮外观：主货币显示 `₽` 文字，RP 显示 8×8 图标（与余额 HUD 的单位同一张图） */
+    private fun updateCurrencyButton(btn: NineSliceButton) {
+        val points = currency == MarketCurrency.POINTS
+        btn.setMessage(Text.literal(if (points) "" else "₽"))
+        btn.iconLeft = if (points) POINTS_SYMBOL_TEXTURE else null
     }
 
     private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int, sliceH: Int = 16) {

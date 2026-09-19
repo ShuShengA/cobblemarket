@@ -538,6 +538,8 @@ object CobbleMarketClient {
         registerS2C(PointsStatusPayload.ID, PointsStatusPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 PointsStateCache.enabled = payload.enabled
+                // 玩家间交易开关：上架界面的货币按钮按它显隐（那边每次 init 时读缓存，不用额外通知）
+                PointsStateCache.marketEnabled = payload.marketEnabled
                 // 界面已打开时同步按钮置灰态（登录补发 / 后续管理端切换都能跟上）
                 (MinecraftClient.getInstance().currentScreen as? MarketEntryScreen)?.updatePointsEntryState()
                 // ⚠ 总开关一变，HUD 那一行要立刻跟着显 / 隐 —— 而 RP 余额只在**余额包**里下发，

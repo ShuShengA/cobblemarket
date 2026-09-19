@@ -36,14 +36,22 @@ private const val MAX_CODE_LENGTH = 64
  * ⚠ 与市场总开关（[MarketStatePayload]）的区别：那个是**紧急停市**，按钮仍有用（看列表/取回资产）；
  * RP 总开关管的是「这个服不用RP」—— 界面进不去也没损失，所以按钮照喵喵银行的做法**置灰**。
  */
-data class PointsStatusPayload(val enabled: Boolean) : CustomPayload {
+data class PointsStatusPayload(
+    val enabled: Boolean,
+    /**
+     * **玩家间 RP 交易开关**（`pointsMarketEnabled`，默认关）。
+     * 客户端据此决定上架界面的货币切换按钮显不显示 —— 关着时玩家只能用主货币定价。
+     * 服务端上架请求里也会再拦一道（这里只是不给玩家白点）。
+     */
+    val marketEnabled: Boolean = false
+) : CustomPayload {
     override fun getId() = ID
 
     companion object {
         val ID = CustomPayload.Id<PointsStatusPayload>(CobbleMarket.id("points_status"))
         val CODEC: PacketCodec<PacketByteBuf, PointsStatusPayload> = PacketCodec.of(
-            { p, b -> b.writeBoolean(p.enabled) },
-            { b -> PointsStatusPayload(b.readBoolean()) }
+            { p, b -> b.writeBoolean(p.enabled); b.writeBoolean(p.marketEnabled) },
+            { b -> PointsStatusPayload(b.readBoolean(), b.readBoolean()) }
         )
     }
 }
@@ -429,7 +437,20 @@ data class PointsConfigPayload(
     val orderTimeoutMinutes: Long,
     val tiers: List<PointsTierConfig>,
     /** 档位金额的货币单位（空 = 不显示） */
-    val currencyLabel: String
+    val currencyLabel: String,
+    /**
+     * **玩家间 RP 交易开关**（默认关）。下发那份让配置界面显示当前状态；
+     * 保存那份让服主把它改掉（见 `CobbleMarketConfig.pointsMarketEnabled`）。
+     */
+    val pointsMarketEnabled: Boolean = false,
+    /**
+     * RP 的四个费率（%，精灵上架 / 物品上架 / 拍卖成交 / 求购中介）。
+     * 配置界面的「费率配置」二级弹窗用它填初值；「开玩家间交易」的提醒弹窗看这四个值是否全为 0。
+     */
+    val pointsPokemonFee: Double = 0.0,
+    val pointsItemFee: Double = 0.0,
+    val pointsAuctionFee: Double = 0.0,
+    val pointsBuyOrderFee: Double = 0.0
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -443,6 +464,11 @@ data class PointsConfigPayload(
                 b.writeString(p.defaultIcon, MAX_FILE_NAME_LENGTH)
                 b.writeLong(p.orderTimeoutMinutes)
                 b.writeString(p.currencyLabel, MAX_TIER_NAME_LENGTH)
+                b.writeBoolean(p.pointsMarketEnabled)
+                b.writeDouble(p.pointsPokemonFee)
+                b.writeDouble(p.pointsItemFee)
+                b.writeDouble(p.pointsAuctionFee)
+                b.writeDouble(p.pointsBuyOrderFee)
                 b.writeInt(p.tiers.size)
                 p.tiers.forEach { t ->
                     b.writeString(t.name, MAX_TIER_NAME_LENGTH)
@@ -459,6 +485,11 @@ data class PointsConfigPayload(
                 val defaultIcon = b.readString(MAX_FILE_NAME_LENGTH)
                 val timeout = b.readLong()
                 val currencyLabel = b.readString(MAX_TIER_NAME_LENGTH)
+                val pointsMarketEnabled = b.readBoolean()
+                val pointsPokemonFee = b.readDouble()
+                val pointsItemFee = b.readDouble()
+                val pointsAuctionFee = b.readDouble()
+                val pointsBuyOrderFee = b.readDouble()
                 val count = b.readInt()
                 val tiers = ArrayList<PointsTierConfig>(count)
                 repeat(count) {
@@ -480,7 +511,12 @@ data class PointsConfigPayload(
                     defaultIcon = defaultIcon,
                     orderTimeoutMinutes = timeout,
                     tiers = tiers,
-                    currencyLabel = currencyLabel
+                    currencyLabel = currencyLabel,
+                    pointsMarketEnabled = pointsMarketEnabled,
+                    pointsPokemonFee = pointsPokemonFee,
+                    pointsItemFee = pointsItemFee,
+                    pointsAuctionFee = pointsAuctionFee,
+                    pointsBuyOrderFee = pointsBuyOrderFee
                 )
             }
         )
@@ -497,7 +533,20 @@ data class SavePointsConfigPayload(
     val orderTimeoutMinutes: Long,
     val tiers: List<PointsTierConfig>,
     /** 档位金额的货币单位（空 = 不显示） */
-    val currencyLabel: String
+    val currencyLabel: String,
+    /**
+     * **玩家间 RP 交易开关**（默认关）。下发那份让配置界面显示当前状态；
+     * 保存那份让服主把它改掉（见 `CobbleMarketConfig.pointsMarketEnabled`）。
+     */
+    val pointsMarketEnabled: Boolean = false,
+    /**
+     * RP 的四个费率（%，精灵上架 / 物品上架 / 拍卖成交 / 求购中介）。
+     * 配置界面的「费率配置」二级弹窗用它填初值；「开玩家间交易」的提醒弹窗看这四个值是否全为 0。
+     */
+    val pointsPokemonFee: Double = 0.0,
+    val pointsItemFee: Double = 0.0,
+    val pointsAuctionFee: Double = 0.0,
+    val pointsBuyOrderFee: Double = 0.0
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -511,6 +560,11 @@ data class SavePointsConfigPayload(
                 b.writeString(p.defaultIcon, MAX_FILE_NAME_LENGTH)
                 b.writeLong(p.orderTimeoutMinutes)
                 b.writeString(p.currencyLabel, MAX_TIER_NAME_LENGTH)
+                b.writeBoolean(p.pointsMarketEnabled)
+                b.writeDouble(p.pointsPokemonFee)
+                b.writeDouble(p.pointsItemFee)
+                b.writeDouble(p.pointsAuctionFee)
+                b.writeDouble(p.pointsBuyOrderFee)
                 b.writeInt(p.tiers.size)
                 p.tiers.forEach { t ->
                     b.writeString(t.name, MAX_TIER_NAME_LENGTH)
@@ -527,6 +581,11 @@ data class SavePointsConfigPayload(
                 val defaultIcon = b.readString(MAX_FILE_NAME_LENGTH)
                 val timeout = b.readLong()
                 val currencyLabel = b.readString(MAX_TIER_NAME_LENGTH)
+                val pointsMarketEnabled = b.readBoolean()
+                val pointsPokemonFee = b.readDouble()
+                val pointsItemFee = b.readDouble()
+                val pointsAuctionFee = b.readDouble()
+                val pointsBuyOrderFee = b.readDouble()
                 val count = b.readInt()
                 val tiers = ArrayList<PointsTierConfig>(count)
                 repeat(count) {
@@ -548,7 +607,12 @@ data class SavePointsConfigPayload(
                     defaultIcon = defaultIcon,
                     orderTimeoutMinutes = timeout,
                     tiers = tiers,
-                    currencyLabel = currencyLabel
+                    currencyLabel = currencyLabel,
+                    pointsMarketEnabled = pointsMarketEnabled,
+                    pointsPokemonFee = pointsPokemonFee,
+                    pointsItemFee = pointsItemFee,
+                    pointsAuctionFee = pointsAuctionFee,
+                    pointsBuyOrderFee = pointsBuyOrderFee
                 )
             }
         )
@@ -646,6 +710,12 @@ object PointsNetwork {
                     }
                 }
                 CobbleMarketConfig.setPointsEnabled(payload.pointsEnabled)
+                CobbleMarketConfig.setPointsMarketEnabled(payload.pointsMarketEnabled)
+                // RP 的四个费率（%）—— setter 只改内存，统一下面 save() 落盘
+                CobbleMarketConfig.setPointsPokemonListingFeePercent(payload.pointsPokemonFee)
+                CobbleMarketConfig.setPointsItemListingFeePercent(payload.pointsItemFee)
+                CobbleMarketConfig.setPointsAuctionFeePercent(payload.pointsAuctionFee)
+                CobbleMarketConfig.setPointsBuyOrderFeePercent(payload.pointsBuyOrderFee)
                 CobbleMarketConfig.setPointsShopEnabled(payload.shopEnabled)
                 CobbleMarketConfig.setPointsShopPayQrImage(payload.payQrImage)
                 CobbleMarketConfig.setPointsShopDefaultIcon(payload.defaultIcon)
@@ -657,7 +727,12 @@ object PointsNetwork {
                 // ⚠ 总开关必须单独再发一次 PointsStatusPayload —— 客户端那个缓存只在登录时补发，
                 // 不广播的话关掉 RP 后入口按钮仍是亮的、点进去还能用（2026-09-18 用户实测踩到）
                 server.playerManager.playerList.forEach {
-                    sendToPlayer(it, PointsStatusPayload(CobbleMarketConfig.pointsEnabled))
+                    sendToPlayer(
+                        it,
+                        PointsStatusPayload(
+                            CobbleMarketConfig.pointsEnabled, CobbleMarketConfig.pointsMarketEnabled
+                        )
+                    )
                     sendShopInfo(server, it)
                 }
                 // **预检图片**：读不出来的当场告诉服主是哪张 —— 否则只能等玩家下单后去翻日志
@@ -696,7 +771,10 @@ object PointsNetwork {
 
         // 登录补发总开关：客户端据此把入口按钮置灰（照市场总开关的补发时机）
         onPlayerJoin { player ->
-            sendToPlayer(player, PointsStatusPayload(CobbleMarketConfig.pointsEnabled))
+            sendToPlayer(
+                player,
+                PointsStatusPayload(CobbleMarketConfig.pointsEnabled, CobbleMarketConfig.pointsMarketEnabled)
+            )
         }
 
         // ── 充值：档位 / 收款码 / 下单 / 我已支付 / 取消 ──
@@ -910,7 +988,12 @@ object PointsNetwork {
                 name = it.name, priceCents = it.priceCents, points = it.points, qr = it.qr, icon = it.icon
             )
         },
-        currencyLabel = CobbleMarketConfig.pointsShopCurrencyLabel
+        currencyLabel = CobbleMarketConfig.pointsShopCurrencyLabel,
+        pointsMarketEnabled = CobbleMarketConfig.pointsMarketEnabled,
+        pointsPokemonFee = CobbleMarketConfig.pointsPokemonListingFeePercent,
+        pointsItemFee = CobbleMarketConfig.pointsItemListingFeePercent,
+        pointsAuctionFee = CobbleMarketConfig.pointsAuctionFeePercent,
+        pointsBuyOrderFee = CobbleMarketConfig.pointsBuyOrderFeePercent
     )
 
     private fun sendShopInfo(server: MinecraftServer, player: ServerPlayerEntity) {

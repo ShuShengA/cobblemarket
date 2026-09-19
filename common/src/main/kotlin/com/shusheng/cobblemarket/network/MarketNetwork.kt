@@ -654,12 +654,14 @@ data class HistoryEntry(
     val price: Int,
     val buyerName: String,
     val sellerName: String,
-    val timestamp: Long
+    val timestamp: Long,
+    /** 这笔流水是什么币种（`MarketCurrency.name`）—— 界面按它决定显示 `₽` 还是 RP 图标 */
+    val currency: String = MarketCurrency.PRIMARY.name
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeString(type); buf.writeString(category); buf.writeString(species); buf.writeInt(price); buf.writeString(
             buyerName
-        ); buf.writeString(sellerName); buf.writeLong(timestamp)
+        ); buf.writeString(sellerName); buf.writeLong(timestamp); buf.writeString(currency)
     }
 
     companion object {
@@ -670,7 +672,8 @@ data class HistoryEntry(
             buf.readInt(),
             buf.readString(),
             buf.readString(),
-            buf.readLong()
+            buf.readLong(),
+            buf.readString()
         )
     }
 }
@@ -1901,18 +1904,34 @@ object MarketNetwork {
                     )
                     return@execute
                 }
-                // 服务端没开 RP 时拒绝 RP 上架（关闭后**存量** RP 挂单仍可正常成交/下架，那两条路走挂单自带币种）
-                if (currency == MarketCurrency.POINTS &&
-                    !com.shusheng.cobblemarket.config.CobbleMarketConfig.pointsEnabled
-                ) {
-                    sendToPlayer(
-                        player,
-                        MarketResultPayload(
-                            false,
-                            Text.translatable("cobblemarket.network.points_disabled", CurrencyService.pointsIcon())
+                // RP 上架的两道闸（关闭后**存量** RP 挂单仍可正常成交/下架，那两条路走挂单自带币种）：
+                // ① RP 总开关没开 → 整个 RP 不可用；② 玩家间 RP 交易没开 → 玩家不能拿 RP 换别人的东西
+                if (currency == MarketCurrency.POINTS) {
+                    val pointsCfg = com.shusheng.cobblemarket.config.CobbleMarketConfig
+                    if (!pointsCfg.pointsEnabled) {
+                        sendToPlayer(
+                            player,
+                            MarketResultPayload(
+                                false,
+                                Text.translatable(
+                                    "cobblemarket.network.points_disabled", CurrencyService.pointsIcon()
+                                )
+                            )
                         )
-                    )
-                    return@execute
+                        return@execute
+                    }
+                    if (!pointsCfg.pointsMarketEnabled) {
+                        sendToPlayer(
+                            player,
+                            MarketResultPayload(
+                                false,
+                                Text.translatable(
+                                    "cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon()
+                                )
+                            )
+                        )
+                        return@execute
+                    }
                 }
 
                 // 队伍至少要留一只精灵
@@ -2041,15 +2060,18 @@ object MarketNetwork {
 
                 // 副作用阶段：扣手续费 → 移除精灵 → 挂单入库
                 // Listing fee check
-                val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.pokemonListingFeePercent
+                // 费率按**这一单的币种**选：RP 有自己的费率（默认 0 = 免，见配置项注释）
+                val feePercent = if (currency == MarketCurrency.POINTS)
+                    com.shusheng.cobblemarket.config.CobbleMarketConfig.pointsPokemonListingFeePercent
+                else com.shusheng.cobblemarket.config.CobbleMarketConfig.pokemonListingFeePercent
                 // toLong 先提升：Int×Int 在价格×费率超过 21.5 亿时环绕溢出（fee 可算成负/0，逃税或凭空生钱）；
                 // 逾期制裁：上架者逾期 ≥7 天 → 手续费翻倍
+                // ⚠ **卡片折扣与逾期翻倍只跟主货币有关**（方案「四条铁律」第 4 条）：RP 即使把
+                //   费率配成非 0，也不吃折扣、不翻倍 —— 打折等于让 RP 白嫖黑金卡权益，翻倍则是
+                //   把主货币的逾期制裁套到 RP 头上。费率本身由 points*ListingFeePercent 配置。
                 val feeBase = Math.ceil(payload.price.toLong() * feePercent / 100.0).toLong()
                     .coerceAtMost(Int.MAX_VALUE.toLong())
                 val fee = if (feePercent > 0) {
-                    // ⚠ **卡片折扣与逾期翻倍只跟主货币有关**（方案「四条铁律」第 4 条）：
-                    //   RP 手续费既不打折也不翻倍 —— 打折等于让 RP 白嫖黑金卡权益，
-                    //   翻倍则是把主货币的逾期制裁套到 RP 头上，两头都不对
                     if (currency == MarketCurrency.PRIMARY) {
                         com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
                             com.shusheng.cobblemarket.finance.FinanceState.get(server),
@@ -2171,17 +2193,33 @@ object MarketNetwork {
                     )
                     return@execute
                 }
-                if (currency == MarketCurrency.POINTS &&
-                    !com.shusheng.cobblemarket.config.CobbleMarketConfig.pointsEnabled
-                ) {
-                    sendToPlayer(
-                        player,
-                        MarketResultPayload(
-                            false,
-                            Text.translatable("cobblemarket.network.points_disabled", CurrencyService.pointsIcon())
+                // RP 上架的两道闸（理由同精灵上架）
+                if (currency == MarketCurrency.POINTS) {
+                    val pointsCfg = com.shusheng.cobblemarket.config.CobbleMarketConfig
+                    if (!pointsCfg.pointsEnabled) {
+                        sendToPlayer(
+                            player,
+                            MarketResultPayload(
+                                false,
+                                Text.translatable(
+                                    "cobblemarket.network.points_disabled", CurrencyService.pointsIcon()
+                                )
+                            )
                         )
-                    )
-                    return@execute
+                        return@execute
+                    }
+                    if (!pointsCfg.pointsMarketEnabled) {
+                        sendToPlayer(
+                            player,
+                            MarketResultPayload(
+                                false,
+                                Text.translatable(
+                                    "cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon()
+                                )
+                            )
+                        )
+                        return@execute
+                    }
                 }
 
                 // 重建目标物品，以服务端重建的物品为准（不信任客户端 itemId/itemNbt 的一致性）
@@ -2330,12 +2368,15 @@ object MarketNetwork {
                 player.inventory.markDirty()
 
                 // 手续费（基于总价）；失败时退还已扣物品并中止；逾期制裁：上架者逾期 ≥7 天 → 翻倍
-                val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.itemListingFeePercent
+                // 费率按**这一单的币种**选（同精灵上架）
+                val feePercent = if (currency == MarketCurrency.POINTS)
+                    com.shusheng.cobblemarket.config.CobbleMarketConfig.pointsItemListingFeePercent
+                else com.shusheng.cobblemarket.config.CobbleMarketConfig.itemListingFeePercent
                 val totalPrice = payload.price.toLong() * payload.count
+                // ⚠ 卡片折扣与逾期翻倍只跟主货币有关（理由见精灵上架那段），RP 不吃
                 val feeBase = Math.ceil(totalPrice * feePercent / 100.0).toLong()
                     .coerceAtMost(Int.MAX_VALUE.toLong())
                 val fee = if (feePercent > 0) {
-                    // ⚠ 卡片折扣与逾期翻倍**只跟主货币有关**（方案「四条铁律」第 4 条），RP 两头都不吃
                     if (currency == MarketCurrency.PRIMARY) {
                         com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
                             com.shusheng.cobblemarket.finance.FinanceState.get(server),
@@ -2917,7 +2958,10 @@ object MarketNetwork {
                             (r.buyerUuid == null && r.buyerName == player.name.string) ||
                             (r.sellerUuid == com.shusheng.cobblemarket.event.LEGACY_RECORD_UUID && r.buyerName == player.name.string))
                     ) "BUY" else r.type.name
-                    HistoryEntry(t, r.category.name, r.species, r.price, r.buyerName, r.sellerName, r.timestamp)
+                    HistoryEntry(
+                        t, r.category.name, r.species, r.price, r.buyerName, r.sellerName, r.timestamp,
+                        r.currency.name
+                    )
                 }
                 sendToPlayer(player, HistoryDataPayload(entries))
             }

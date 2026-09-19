@@ -1,5 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.network.HistoryDataPayload
 import com.shusheng.cobblemarket.network.HistoryEntry
 import com.shusheng.cobblemarket.network.RequestHistoryPayload
@@ -147,10 +149,20 @@ class HistoryScreen(private val showAll: Boolean = false) :
             val middle = if (showAll) "$seller$buyer $speciesText" else "$speciesText"
             context.drawTextWithShadow(textRenderer, middle, x, y + 4, 0xFFFFFF)
             x += textRenderer.getWidth(middle) + 6
-            val pricePart = "| ${com.shusheng.cobblemarket.client.formatPrice(e.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
-            context.drawTextWithShadow(textRenderer, pricePart, x, y + 4, 0xFFAA00)
+            // 单位按**这一笔自己的币种**来：主货币 `₽`、RP 用图标（与全项目同一个口径）
+            val priceText: Text =
+                if (MarketCurrency.fromStored(e.currency) == MarketCurrency.POINTS) {
+                    Text.literal("| ${com.shusheng.cobblemarket.client.formatPrice(e.price)} ")
+                        .append(CurrencyService.pointsIcon())
+                } else {
+                    Text.literal(
+                        "| ${com.shusheng.cobblemarket.client.formatPrice(e.price)} " +
+                            com.shusheng.cobblemarket.client.inlineCurrencyUnit()
+                    )
+                }
+            context.drawTextWithShadow(textRenderer, priceText, x, y + 4, 0xFFAA00)
             if (!showAll && buyer.isNotEmpty()) {
-                x += textRenderer.getWidth(pricePart) + 6
+                x += textRenderer.getWidth(priceText) + 6
                 context.drawTextWithShadow(textRenderer, buyer.trimStart(), x, y + 4, 0xFFFFFF)
             }
         }

@@ -4,12 +4,21 @@ import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
+import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_INLINE_SIZE
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
+import com.shusheng.cobblemarket.client.PointsStateCache
+import com.shusheng.cobblemarket.client.SELL_ICON_SRC
+import com.shusheng.cobblemarket.client.SELL_ICON_TEXTURE
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.network.*
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
@@ -241,24 +250,47 @@ class SellSelectScreen(
         // 交付/分享模式：价格不在本界面输入，隐藏价格框，特训按钮顶上这个位置
         priceField?.visible = !noPriceField
 
+        // 上架按钮改成**纯图标**（sell.png，8×8）后窄到 16px，腾出的位置正好给货币切换按钮 ——
+        // 「价格 126~182 │ 货币 186~206 │ 上架 210~226 │ 特训 234~」48px 排满。
+        // 交付/分享模式没有价格框、也就没有货币按钮，照旧用文字按钮与原位置。
         sellBtn = NineSliceButton(
-            if (noPriceField) lx + 210 else lx + 186, btnY, if (noPriceField) 84 else 44, 20,
-            Text.translatable(
-                when {
-                    deliverMode -> "cobblemarket.sell.deliver_select"
-                    shareMode -> "cobblemarket.share.button"
-                    else -> "cobblemarket.sell.sell"
-                }
-            ),
+            lx + 210, btnY,
+            if (noPriceField) 84 else 20, 20,
+            if (noPriceField) {
+                Text.translatable(
+                    if (deliverMode) "cobblemarket.sell.deliver_select" else "cobblemarket.share.button"
+                )
+            } else Text.literal(""),
             {
                 when {
                     deliverMode -> deliverSelected()
                     shareMode -> shareSelected()
                     else -> sellSelected()
                 }
-            }
+            },
+            iconLeft = if (noPriceField) null else SELL_ICON_TEXTURE,
+            iconTexW = SELL_ICON_SRC, iconTexH = SELL_ICON_SRC,
+            iconScale = CURRENCY_BUTTON_ICON_SIZE / SELL_ICON_SRC.toFloat()
         )
         addDrawableChild(sellBtn)
+
+        // 货币切换按钮（价格框与上架按钮之间）。⚠ 服务端没开 RP 总开关、或没开「玩家间 RP 交易」
+        // 时**整个按钮不创建** —— 价格区干干净净，比留个点了报错的灰按钮清楚。
+        currency = MarketCurrency.PRIMARY
+        // ⚠ 只有 **RP 总开关**关着时才不建（那时整个 RP 系统停摆，没有 RP 可言）；
+        //   「玩家间 RP 交易」没开**照样显示** —— 空一块更难看 —— 只是置灰点不动。
+        currencyButton = if (!noPriceField && PointsStateCache.enabled) {
+            NineSliceButton(
+                lx + 186, btnY, 20, 20, Text.literal(""), { onCurrencyClick() },
+                iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
+                iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat()
+            ).also {
+                // dimmed = 置灰但**保留可点击性**，点了给失败音 + 提示，比一个"死了"的按钮好懂
+                it.dimmed = !PointsStateCache.marketEnabled
+                updateCurrencyButton(it)
+                addDrawableChild(it)
+            }
+        } else null
         // 特训筛选（三态循环；交付/分享模式移到价格框位置，给选择按钮让位）
         htBtn = NineSliceButton(
             if (noPriceField) lx + 126 else lx + 234, btnY, if (noPriceField) 80 else 60, 20,
@@ -472,7 +504,56 @@ class SellSelectScreen(
             return
         }
         if (price <= 0) { playFailSound(); return }
-        sendToServer(SellFromStoragePayload(filtered[selectedIndex].uuid, price))
+        // ⚠ 提交前**再查一次实时缓存**（不是界面打开时的快照）：服主可能在界面开着时把
+        //   「玩家间 RP 交易」关掉，那这一次必须拦下并切回主货币 —— 服务端也会拒，
+        //   这里是为了给个明确提示，而不是让玩家对着一笔静默失败的挂单发懵
+        if (currency == MarketCurrency.POINTS && !PointsStateCache.marketEnabled) {
+            currency = MarketCurrency.PRIMARY
+            currencyButton?.let { updateCurrencyButton(it) }
+            client?.player?.sendMessage(
+                // ⚠ 提醒类消息**用红色**，和普通反馈区分开（图标自带白色，不受影响）
+                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            playFailSound()
+            return
+        }
+        sendToServer(SellFromStoragePayload(filtered[selectedIndex].uuid, price, currency.name))
+    }
+
+    /** 这次上架用哪个币种定价（默认主货币）；交付/分享模式没有价格框，用不到它 */
+    private var currency = MarketCurrency.PRIMARY
+
+    /** 货币切换按钮（服务端没开 RP 相关开关、或交付/分享模式下为 null = 压根没建） */
+    private var currencyButton: NineSliceButton? = null
+
+    /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
+    private fun onCurrencyClick() {
+        if (!PointsStateCache.marketEnabled) {
+            playFailSound()
+            client?.player?.sendMessage(
+                // ⚠ 提醒类消息**用红色**，和普通反馈区分开（图标自带白色，不受影响）
+                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            return
+        }
+        toggleCurrency()
+    }
+
+    /** 切主货币 ↔ RP */
+    private fun toggleCurrency() {
+        currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
+        currencyButton?.let { updateCurrencyButton(it) }
+    }
+
+    /** 刷新货币按钮外观：主货币显示 `₽`，RP 显示 8×8 图标（与余额 HUD 的单位同一张图） */
+    private fun updateCurrencyButton(btn: NineSliceButton) {
+        val points = currency == MarketCurrency.POINTS
+        btn.setMessage(Text.literal(if (points) "" else "₽"))
+        btn.iconLeft = if (points) POINTS_SYMBOL_TEXTURE else null
     }
 
     /** 交付模式：把所选精灵回传求购单界面（静态暂存），返回继续交付流程 */

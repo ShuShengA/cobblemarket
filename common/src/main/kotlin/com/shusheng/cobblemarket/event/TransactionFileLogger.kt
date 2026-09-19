@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.event
 
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.platform.configDir
 import java.io.File
 import java.nio.file.Files
@@ -147,7 +148,9 @@ object TransactionFileLogger {
         // 卖家/买家 UUID 供程序回读按 UUID 匹配（改名玩家也查得到）；人读账本看名字列
         val sellerUuid = record.sellerUuid.toString()
         val buyerUuid = record.buyerUuid?.toString() ?: ""
-        return "$time,$type,$category,$seller,$buyer,$sellerUuid,$buyerUuid,$species,${record.price},${record.fee},${csvEscape(record.detail)}"
+        // ⚠ 币种列加在**末尾**：老 CSV 没有这一列，读的时候按「缺列 = 主货币」容错
+        return "$time,$type,$category,$seller,$buyer,$sellerUuid,$buyerUuid,$species," +
+            "${record.price},${record.fee},${csvEscape(record.detail)},${record.currency.name}"
     }
 
     private fun typeName(type: TransactionType, lang: String): String = when (type) {
@@ -261,7 +264,9 @@ object TransactionFileLogger {
                         species = species,
                         price = price,
                         fee = 0,
-                        detail = ""
+                        detail = "",
+                        // 币种在**第 12 列（末尾）**：老 CSV 没这一列 ⇒ getOrNull 给 null ⇒ fromStored 落主货币
+                        currency = MarketCurrency.fromStored(fields.getOrNull(11))
                     ))
                 }
             } catch (e: Exception) {

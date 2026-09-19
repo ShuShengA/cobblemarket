@@ -30,6 +30,127 @@ class PointsConfigScreen : Screen(
 
     // ── 本地编辑态（保存时一次性提交；快照回来时覆盖） ──
     private var pointsEnabled = false
+
+    /** 玩家间 RP 交易开关（默认关）；控制上架界面的货币切换按钮显不显示 */
+    private var pointsMarketEnabled = false
+
+    /** RP 的四个费率（%，服务端下发）：「费率配置」二级弹窗填初值，提醒弹窗看它们是否全 0 */
+    private var pointsPokemonFee = 0.0
+    private var pointsItemFee = 0.0
+    private var pointsAuctionFee = 0.0
+    private var pointsBuyOrderFee = 0.0
+
+
+    /** 上面那个提醒弹窗开着没有 */
+    private var feeWarn = false
+
+    /** 提醒弹窗的按钮（只在它开着时创建） */
+    private val feeWarnButtons = mutableListOf<NineSliceButton>()
+
+    /** 费率配置二级弹窗开着没有 */
+    private var feeDialog = false
+
+    /** 主弹窗那一行的「配置」入口按钮 */
+    private var feeCfgButton: NineSliceButton? = null
+
+    /** 费率弹窗的四个输入框与两个按钮（只在它开着时创建） */
+    private val feeFields = mutableListOf<TextFieldWidget>()
+    private val feeDialogButtons = mutableListOf<NineSliceButton>()
+
+    /** 四个费率里有没有非 0 的（提醒弹窗与界面显示共用） */
+    private fun anyFee() =
+        pointsPokemonFee > 0.0 || pointsItemFee > 0.0 || pointsAuctionFee > 0.0 || pointsBuyOrderFee > 0.0
+
+    /** 开费率弹窗：**先重建再建自己的控件**（顺序同 [openFeeWarn]，反了会被 rebuild 清掉） */
+    private fun openFeeDialog() {
+        feeDialog = true
+        feeFields.clear()
+        feeDialogButtons.clear()
+        rebuild()
+        listOfNotNull(
+            backButton, infoButton, addTierButton, saveButton, cancelButton,
+            qrField, defaultIconField, timeoutField, currencyField, feeCfgButton
+        ).forEach { it.visible = false }
+        toggleButtons.values.forEach { it.visible = false }
+        tierEditButtons.forEach { it.visible = false }
+        tierDeleteButtons.forEach { it.visible = false }
+
+        val dx = editDialogX()
+        val initial = listOf(pointsPokemonFee, pointsItemFee, pointsAuctionFee, pointsBuyOrderFee)
+        // 坐标照**服务器配置界面**那套：输入框 + 右侧 ↺ 重置按钮（间隙 2px）。
+        // ⚠ 行 y 与 renderFeeDialog 里画标签的 y **必须同源**（那边是第一行的 y + 4），
+        //   否则标签和输入框会错开半行（2026-09-19 用户实测）
+        listOf(
+            "cobblemarket.points.config.fee_pokemon",
+            "cobblemarket.points.config.fee_item",
+            "cobblemarket.points.config.fee_auction",
+            "cobblemarket.points.config.fee_buyorder"
+        ).forEachIndexed { i, _ ->
+            val y = editDialogY() + 30 + i * ROW_H
+            val f = TextFieldWidget(textRenderer, dx + 138, y, 54, 16, Text.literal(""))
+            f.setMaxLength(6)
+            // 只收数字与一个小数点（费率是百分数，允许 2.5 这种）
+            f.setTextPredicate { s -> s.count { it == '.' } <= 1 && s.all { it.isDigit() || it == '.' } }
+            f.text = if (initial[i] > 0.0) initial[i].toString() else "0"
+            addSelectableChild(f); addDrawableChild(f); feeFields += f
+            // ↺ 重置：**只填回默认值 0，不提交**（照服务器配置界面 2026-09-05 拍板的两条）
+            addDrawableChild(
+                NineSliceButton(dx + 194, y, 20, 16, Text.literal("↺"), { f.text = "0" })
+                    .also { feeDialogButtons += it }
+            )
+        }
+        val closeY = editDialogY() + EDIT_H - 26
+        addDrawableChild(
+            NineSliceButton(dx + 22, closeY, 80, 16,
+                Text.translatable("cobblemarket.op.scfg_save"), { commitFeeDialog() })
+                .also { feeDialogButtons += it }
+        )
+        addDrawableChild(
+            NineSliceButton(dx + EDIT_W - 102, closeY, 80, 16,
+                Text.translatable("cobblemarket.op.scfg_cancel"), { closeFeeDialog() })
+                .also { feeDialogButtons += it }
+        )
+    }
+
+    private fun closeFeeDialog() {
+        feeDialog = false
+        markDirtyAndRebuild()
+    }
+
+    /** 保存四个费率：非法/超范围一律钳到 [0,100]（与配置层的 coerceIn 同一口径） */
+    private fun commitFeeDialog() {
+        val v = feeFields.map { it.text.toDoubleOrNull()?.coerceIn(0.0, 100.0) ?: 0.0 }
+        while (v.size < 4) return  // 防御：四个框没建全就不提交
+        pointsPokemonFee = v[0]; pointsItemFee = v[1]; pointsAuctionFee = v[2]; pointsBuyOrderFee = v[3]
+        feeDialog = false
+        // ⚠ 必须**重建**：只把 feeDialog 置 false 只是不再画弹窗，刚才建的输入框/重置/保存按钮
+        //   还留在 children 里 —— 它们会直接浮在主界面上（2026-09-19 用户实测）
+        markDirtyAndRebuild()
+        save()
+    }
+
+    /** 费率弹窗的内容（面板由 [renderBackground] 画好） */
+    private fun renderFeeDialog(context: DrawContext) {
+        val dx = editDialogX()
+        val cx = width / 2
+        context.drawCenteredTextWithShadow(
+            textRenderer,
+            Text.translatable("cobblemarket.points.config.fee_title").formatted(Formatting.GOLD),
+            cx, editDialogY() + 14, 0xFFFFFF
+        )
+        // ⚠ 标签的 y 必须与 openFeeDialog 里输入框的 y **同一套坐标**（那边第 i 行 = +30+i*ROW_H），
+        //   这里写 +34 是让 8px 高的文字正好垂直居中于 16px 的输入框 —— 两边对不上就会错开半行
+        var y = editDialogY() + 34
+        for (key in listOf(
+            "cobblemarket.points.config.fee_pokemon",
+            "cobblemarket.points.config.fee_item",
+            "cobblemarket.points.config.fee_auction",
+            "cobblemarket.points.config.fee_buyorder"
+        )) {
+            context.drawTextWithShadow(textRenderer, Text.translatable(key), dx + 10, y, 0xFFFFFF)
+            y += ROW_H
+        }
+    }
     private var shopEnabled = false
     private var payQr = ""
     /** 档位券图的**全局默认**文件名（空 = 用内置券图） */
@@ -163,6 +284,11 @@ class PointsConfigScreen : Screen(
     /** 服务端快照到了：填本地态并重建（**不覆盖已有未保存编辑**由 loaded 标志保证） */
     fun onConfig(payload: PointsConfigPayload) {
         pointsEnabled = payload.pointsEnabled
+        pointsMarketEnabled = payload.pointsMarketEnabled
+        pointsPokemonFee = payload.pointsPokemonFee
+        pointsItemFee = payload.pointsItemFee
+        pointsAuctionFee = payload.pointsAuctionFee
+        pointsBuyOrderFee = payload.pointsBuyOrderFee
         shopEnabled = payload.shopEnabled
         payQr = payload.payQrImage
         defaultIcon = payload.defaultIcon
@@ -225,6 +351,14 @@ class PointsConfigScreen : Screen(
             y += ROW_H
         }
         addToggle("points", pointsEnabled) { pointsEnabled = !pointsEnabled; markDirtyAndRebuild() }
+        addToggle("points_market", pointsMarketEnabled) { onPointsMarketToggle() }
+        // RP 四个费率的入口：右侧一个「配置」按钮开二级弹窗 —— 四个费率直接摊在主弹窗里放不下
+        feeCfgButton = NineSliceButton(
+            rightX - 18, y, 40, 18,
+            Text.translatable("cobblemarket.points.config.fee_cfg_btn"), { openFeeDialog() }
+        )
+        addDrawableChild(feeCfgButton)
+        y += ROW_H
         addToggle("shop", shopEnabled) { shopEnabled = !shopEnabled; markDirtyAndRebuild() }
 
         // 收款码文件名（全局码；每个档位还可以在编辑弹窗里配自己的）
@@ -290,10 +424,16 @@ class PointsConfigScreen : Screen(
             addDrawableChild(delete)
         }
 
-        // 「添加档位」**贴底**（在底部双按钮上方），不跟档位列表走
+        // 「添加档位」的位置：
+        // - 档位**满一屏** → 贴底（在底部双按钮上方）：列表可滚动，跟着列表会被滚走
+        // - 档位**不满一屏** → 贴着档位区下方。⚠ 这半边是 2026-09-19 补的：档位区做了自适应
+        //   收缩之后，如果按钮还钉在底部，那块空白只是从「档位下方」搬到「按钮上方」，
+        //   看着还是空一大截（用户实测）
+        val tierAddY =
+            if (tierListBottom() < tierAreaMax()) tierListBottom() + BOTTOM_GAP
+            else dialogY() + dialogH() - BOTTOM_BUTTON_BOTTOM - BOTTOM_GAP - TIER_ADD_H
         addTierButton = NineSliceButton(
-            dx + 10, dialogY() + dialogH() - BOTTOM_BUTTON_BOTTOM - BOTTOM_GAP - TIER_ADD_H,
-            70, TIER_ADD_H,
+            dx + 10, tierAddY, 70, TIER_ADD_H,
             Text.translatable("cobblemarket.points.config.add_tier"), { openTierDialog(-1) }
         )
         addDrawableChild(addTierButton)
@@ -315,6 +455,61 @@ class PointsConfigScreen : Screen(
 
     private fun markDirtyAndRebuild() {
         rebuild()
+    }
+
+    /**
+     * 点「玩家间交易」开关。
+     *
+     * ⚠ **只在「要打开」且 RP 费率非 0 时**先弹一次提醒：这个组合意味着玩家上架会被
+     * 从余额里抽成，而 RP 若是真钱充值的，那抽的就是真钱。默认费率是 0，所以正常服
+     * 一辈子见不到这个弹窗；只有**自己配过非 0 费率的服**才会被拦一下 ——
+     * 那种服多半是早先把 RP 当纯游戏币配的，后来改成充值货币时想不起配置文件里还有个费率。
+     */
+    private fun onPointsMarketToggle() {
+        if (!pointsMarketEnabled && anyFee()) {
+            openFeeWarn()
+            return
+        }
+        pointsMarketEnabled = !pointsMarketEnabled
+        markDirtyAndRebuild()
+    }
+
+    /** 开提醒弹窗：**先重建**（清掉旧控件）**再建自己的两个按钮**，顺序不能反 */
+    private fun openFeeWarn() {
+        feeWarn = true
+        feeWarnButtons.clear()
+        rebuild()
+        // **弹窗打开时下层控件全部隐藏**（全模组弹窗惯例：不隐藏的话它们会透过遮罩显形、还能被点到）。
+        // ⚠ 顺序不能反：必须放在 rebuild() **之后** —— rebuild 会把下层控件重新建出来且 visible=true
+        // ⚠ 这是一份**手写列表**：界面新增控件时三处都要追（这里、openFeeDialog、mouseClicked 的失焦名单）
+        listOfNotNull(
+            backButton, infoButton, addTierButton, saveButton, cancelButton,
+            qrField, defaultIconField, timeoutField, currencyField, feeCfgButton
+        ).forEach { it.visible = false }
+        toggleButtons.values.forEach { it.visible = false }
+        tierEditButtons.forEach { it.visible = false }
+        tierDeleteButtons.forEach { it.visible = false }
+        val cx = width / 2
+        val by = editDialogY() + EDIT_H - 26
+        addDrawableChild(
+            NineSliceButton(
+                cx - 84, by, 80, 16,
+                Text.translatable("cobblemarket.points.config.fee_warn_proceed"), { closeFeeWarn(true) }
+            ).also { feeWarnButtons += it }
+        )
+        addDrawableChild(
+            NineSliceButton(
+                cx + 4, by, 80, 16,
+                Text.translatable("cobblemarket.op.scfg_cancel"), { closeFeeWarn(false) }
+            ).also { feeWarnButtons += it }
+        )
+    }
+
+    /** 提醒弹窗：仍然开启（放行）/ 回去改（关弹窗、开关保持不动） */
+    private fun closeFeeWarn(proceed: Boolean) {
+        feeWarn = false
+        if (proceed) pointsMarketEnabled = true
+        markDirtyAndRebuild()
     }
 
     /**
@@ -504,7 +699,12 @@ class PointsConfigScreen : Screen(
                 defaultIcon = pendingText["defaultIcon"] ?: defaultIcon,
                 orderTimeoutMinutes = timeout,
                 tiers = tiers.toList(),
-                currencyLabel = pendingText["currency"] ?: currencyLabel
+                currencyLabel = pendingText["currency"] ?: currencyLabel,
+                pointsMarketEnabled = pointsMarketEnabled,
+                pointsPokemonFee = pointsPokemonFee,
+                pointsItemFee = pointsItemFee,
+                pointsAuctionFee = pointsAuctionFee,
+                pointsBuyOrderFee = pointsBuyOrderFee
             )
         )
     }
@@ -537,12 +737,44 @@ class PointsConfigScreen : Screen(
             DIALOG_BACKGROUND_TEX_H
         )
         // 档位编辑弹窗的背景必须画在**控件之前**（放在 render 里会盖住它自己的输入框）
-        if (editing) {
+        if (editing || feeWarn || feeDialog) {
             drawNineSlice(
                 context, DIALOG_BACKGROUND_TEXTURE,
                 editDialogX(), editDialogY(), EDIT_W, EDIT_H, 0, DIALOG_BACKGROUND_TEX_H
             )
         }
+    }
+
+    /**
+     * 费率提醒弹窗的内容（面板与遮罩已由 [renderBackground] 画好）。
+     * 三行正文**手动拆行**而不是靠自动换行 —— 弹窗宽度固定，长句必须自己断在标点处。
+     */
+    private fun renderFeeWarn(context: DrawContext) {
+        val cx = width / 2
+        val top = editDialogY()
+        context.drawCenteredTextWithShadow(
+            textRenderer,
+            Text.translatable("cobblemarket.points.config.fee_warn_title").formatted(Formatting.GOLD),
+            cx, top + 16, 0xFFFFFF
+        )
+        // ⚠ 正文里的货币单位一律用**图标**：RP 只是内部代号，玩家侧界面不该出现这两个字母
+        var y = top + 42
+        for (key in listOf(
+            "cobblemarket.points.config.fee_warn_body1",
+            "cobblemarket.points.config.fee_warn_body2"
+        )) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable(key, CurrencyService.pointsIcon()),
+                cx, y, 0xFFFFFF
+            )
+            y += 13
+        }
+        context.drawCenteredTextWithShadow(
+            textRenderer,
+            Text.translatable("cobblemarket.points.config.fee_warn_body3"),
+            cx, y, 0xFFFFFF
+        )
     }
 
     // 档位编辑弹窗：**屏幕居中**（照全模组弹窗惯例）。
@@ -557,6 +789,14 @@ class PointsConfigScreen : Screen(
         // 看起来就是"下层文字透到弹窗上"（2026-09-18 用户实测）。
         if (editing) {
             renderEditDialog(context)
+            return
+        }
+        if (feeWarn) {
+            renderFeeWarn(context)
+            return
+        }
+        if (feeDialog) {
+            renderFeeDialog(context)
             return
         }
         val dx = dialogX()
@@ -576,6 +816,8 @@ class PointsConfigScreen : Screen(
             y += ROW_H
         }
         label("cobblemarket.points.config.points_enabled", CurrencyService.pointsIcon())
+        label("cobblemarket.points.config.points_market", CurrencyService.pointsIcon())
+        label("cobblemarket.points.config.points_fee", CurrencyService.pointsIcon())
         label("cobblemarket.points.config.shop_enabled")
         label("cobblemarket.points.config.pay_qr")
         label("cobblemarket.points.config.default_icon")
@@ -667,10 +909,12 @@ class PointsConfigScreen : Screen(
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         // ⚠ 点击空白失焦（含输入框的界面必做）：漏了点空白退不出输入态、E 键会被输入框吃掉
+        // ⚠ **新增输入框务必加进这个列表** —— 它是一份手写的白名单，漏了就不参与失焦
+        //   （费率弹窗那四个就是这么漏过一次，2026-09-19 用户实测）
         val fields = listOfNotNull(
             qrField, defaultIconField, timeoutField, currencyField,
             editNameField, editPriceField, editPointsField, editQrField, editIconField
-        )
+        ) + feeFields
         val wasInInput = fields.any { it === focused }
         val result = super.mouseClicked(mouseX, mouseY, button)
         if (wasInInput && fields.none { it.isMouseOver(mouseX, mouseY) }) focused = null
@@ -690,15 +934,16 @@ class PointsConfigScreen : Screen(
          * ```
          * 档位区高 = DIALOG_H − BOTTOM_BUTTON_BOTTOM − 2×BOTTOM_GAP − TIER_ADD_H
          *                    − (30 + FIXED_ROWS×ROW_H + 4)
-         *          = DIALOG_H − 208
+         *          = DIALOG_H − 54 − (30 + FIXED_ROWS×20 + 4)
          * ```
-         * 320 时算得 112px —— 5 行（每行 20）之外**还多 12px**，第 5 档和下面那条分割线
-         * 之间空一截。328 正好 120px = 6 行、一个像素不剩（2026-09-19 用户拍板）。
+         * FIXED_ROWS=6 时是 `DIALOG_H − 208`，328 正好 120px = 6 行；
+         * **加「玩家间交易」开关后 FIXED_ROWS → 7**，公式变成 `DIALOG_H − 228`，
+         * 于是 DIALOG_H 同步 +20 → 348，仍是 120px = 6 行、一个像素不剩。
          */
-        const val DIALOG_H = 328
+        const val DIALOG_H = 368
 
         /** 档位列表上方那几行的固定项数量（总开关/充值开关/默认收款码/默认券图/超时/货币单位） */
-        const val FIXED_ROWS = 6
+        const val FIXED_ROWS = 8
 
         /** 底部双按钮的高度、以及它离弹窗底边的距离 */
         const val BOTTOM_BUTTON_BOTTOM = 26

@@ -210,7 +210,10 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     }
 
     fun onResult(payload: MarketResultPayload) {
-        client?.player?.sendMessage(payload.message, false)
+        // 与其它界面同一惯例：成功绿、失败红（这处原来没上色）
+        client?.player?.sendMessage(
+            payload.message.copy().formatted(if (payload.success) Formatting.GREEN else Formatting.RED), false
+        )
         sendToServer(RequestBanListPayload())
     }
 
