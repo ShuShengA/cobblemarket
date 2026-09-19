@@ -42,8 +42,8 @@ object PayQrImage {
           reaches you will NOT equal what the player sent, so the amount alone cannot
           be matched. Use the ORDER NUMBER instead, and tell players to
           put it in the payment note (the popup shows it prominently for that reason).
-        - A tier may have its OWN QR image ("fixed amount" codes, e.g. made with
-          WeChat/Alipay's "set amount" feature): that tier then charges the list price
+        - A tier may have its OWN QR image ("fixed amount" codes, e.g. made with your
+          payment app's "set amount" feature): that tier then charges the list price
           exactly. Tiers without one fall back to the global image, and are charged the
           list price too.
         - Files are read on demand (no restart needed); replacing an image takes effect
