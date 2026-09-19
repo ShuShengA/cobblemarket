@@ -493,12 +493,49 @@ class BuyOrderScreen(
         searchField?.text = savedSearch
 
         // 不重置 scrollOffset：交付弹窗关闭/resize 重建时保留浏览位置（switchTab 才显式归零）
-        sendToServer(RequestBuyOrderListPayload(currency.name))
+        requestBuyOrderList()
         rebuildDisplayList()
+    }
+
+    // ── 列表请求（节流排队） ──
+
+    /** 最近一次列表请求的发送时刻；补发节奏对齐服务端节流窗口并留 100ms 余量 */
+    private var lastListRequestAt = 0L
+
+    /**
+     * 有请求在排队（本轮节流窗口内被推迟）。
+     *
+     * ⚠ 服务端对 `buy_order_list` 有 500ms 节流，**超频的请求是静默丢弃的**（不回错误）。
+     * 而币种切换是「本地先按新币种过滤（旧行立刻消失）+ 再向服务端要新币种的全量列表」，
+     * 一旦这次请求被丢弃，本地过滤留下的就是**空列表** —— 表现为「飞快连点两次货币按钮，
+     * 列表就空了」。所以窗口内的请求必须排队，由 [tick] 补发（照 MarketScreen 的成熟做法）。
+     */
+    private var pendingListRequest = false
+
+    /** 列表请求统一入口：窗口允许立即发，否则排队等 tick 补发 */
+    private fun requestBuyOrderList() {
+        if (System.currentTimeMillis() - lastListRequestAt >= LIST_REQUEST_INTERVAL_MS) {
+            lastListRequestAt = System.currentTimeMillis()
+            pendingListRequest = false
+            sendToServer(RequestBuyOrderListPayload(currency.name))
+        } else {
+            pendingListRequest = true
+        }
+    }
+
+    override fun tick() {
+        super.tick()
+        // 补发排队中的列表请求：发的是**当时的** currency，所以连点会自动合并到最终选择的那一种
+        if (pendingListRequest && System.currentTimeMillis() - lastListRequestAt >= LIST_REQUEST_INTERVAL_MS) {
+            lastListRequestAt = System.currentTimeMillis()
+            pendingListRequest = false
+            sendToServer(RequestBuyOrderListPayload(currency.name))
+        }
     }
 
     /** 点货币按钮：列表是**查看**用途，不拦开关（买家要能切过去关掉存量 RP 单取回冻结金） */
     private fun onCurrencyClick() {
+        // ⚠ 连点两次时第二次必然落在上一次的节流窗口内（500ms），走排队入口才不会丢掉这次请求
         currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
         currencyButton?.let { updateCurrencyButton(it, currency == MarketCurrency.POINTS) }
         // 本地先按新币种过一遍（旧币种条目立刻消失），回到顶部，再向服务端要新币种的全量列表。
@@ -507,7 +544,7 @@ class BuyOrderScreen(
         scrollOffset = 0
         hoveredRow = -1
         rebuildRowButtons()
-        sendToServer(RequestBuyOrderListPayload(currency.name))
+        requestBuyOrderList()
     }
 
     /** 刷新货币按钮外观：主货币显示 `₽`，RP 显示图标（与市场/拍卖/上架界面同一套口径）。
@@ -3098,6 +3135,10 @@ class BuyOrderScreen(
         private const val MAX_NATURE_LIST_ROWS = 6
         // 物品匹配列表最大可见行数
         private const val MAX_ITEM_LIST_ROWS = 6
+
+        // 列表请求的最小间隔：服务端 `buy_order_list` 节流窗口 500ms + 100ms 余量
+        // （窗口同宽时网络抖动会让请求恰好落进服务端窗口被静默丢弃，照 MarketScreen 的取值口径）
+        private const val LIST_REQUEST_INTERVAL_MS = 600L
 
         // 交付流程跨界面传递（SellSelectScreen 交付模式 → 新建的 BuyOrderScreen）：
         // 界面切换时实例销毁，静态暂存订单 id 与所选精灵/物品形态
