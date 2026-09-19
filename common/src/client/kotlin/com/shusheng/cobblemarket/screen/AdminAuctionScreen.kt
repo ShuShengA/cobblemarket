@@ -274,7 +274,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         addDrawableChild(searchField)
         searchField?.text = savedSearch
 
-        sendToServer(RequestAuctionListPayload())
+        sendToServer(RequestAuctionListPayload(com.shusheng.cobblemarket.currency.MarketCurrency.PRIMARY.name))
         rebuildFiltered()
     }
 
@@ -318,7 +318,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
     fun onMarketResult(payload: MarketResultPayload) {
         client?.player?.sendMessage(payload.message.copy().formatted(if (payload.success) Formatting.GREEN else Formatting.RED), false)
         if (payload.success) {
-            sendToServer(RequestAuctionListPayload())
+            sendToServer(RequestAuctionListPayload(com.shusheng.cobblemarket.currency.MarketCurrency.PRIMARY.name))
         }
     }
 
@@ -480,7 +480,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         // 结算中条目排除（已结算完毕，重拉会全量替换、截断动画）
         if (entries.any { it.endsAt <= pollNow && it.id !in settlingUntil } && pollNow - lastSettlePoll > 1000) {
             lastSettlePoll = pollNow
-            sendToServer(RequestAuctionListPayload())
+            sendToServer(RequestAuctionListPayload(com.shusheng.cobblemarket.currency.MarketCurrency.PRIMARY.name))
         }
 
         val centerX = width / 2

@@ -242,6 +242,53 @@ fun marketBlocked(player: net.minecraft.server.network.ServerPlayerEntity): Bool
     return true
 }
 
+/**
+ * **创建类请求的币种校验**（上架精灵 / 上架物品 / 创建拍卖 / 创建求购单共用）。
+ *
+ * 两件事：① 币种值非法 → 直接拒；② 是 RP → 再过两道闸（RP 总开关 / 玩家间 RP 交易）。
+ * **返回 null 表示已经拒绝并发过提示**，调用方直接 `return@execute`。
+ *
+ * ⚠ 只能用 `fromRequest` 严格解析：拿容错版（fromStored）会把伪造的垃圾值静默当成主货币放行。
+ * ⚠ 只拦**创建**：关闭开关后**存量** RP 挂单/拍卖/订单的成交与下架照常（那几条路走对象自带币种）。
+ */
+fun validateCreateCurrency(
+    player: net.minecraft.server.network.ServerPlayerEntity,
+    raw: String
+): com.shusheng.cobblemarket.currency.MarketCurrency? {
+    val currency = com.shusheng.cobblemarket.currency.MarketCurrency.fromRequest(raw)
+    if (currency == null) {
+        sendToPlayer(
+            player,
+            MarketResultPayload(false, Text.translatable("cobblemarket.network.invalid_currency"))
+        )
+        return null
+    }
+    if (currency == com.shusheng.cobblemarket.currency.MarketCurrency.POINTS) {
+        val cfg = com.shusheng.cobblemarket.config.CobbleMarketConfig
+        if (!cfg.pointsEnabled) {
+            sendToPlayer(
+                player,
+                MarketResultPayload(
+                    false,
+                    Text.translatable("cobblemarket.network.points_disabled", CurrencyService.pointsIcon())
+                )
+            )
+            return null
+        }
+        if (!cfg.pointsMarketEnabled) {
+            sendToPlayer(
+                player,
+                MarketResultPayload(
+                    false,
+                    Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
+                )
+            )
+            return null
+        }
+    }
+    return currency
+}
+
 // ── C2S: Request market data ──
 
 data class RequestMarketPayload(

@@ -599,7 +599,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         val item = dialogItem
         if (pokemon != null) {
             createInFlight = true
-            sendToServer(CreatePokemonAuctionPayload(pokemon.uuid, starting, increment, durationIndexToSend))
+            sendToServer(CreatePokemonAuctionPayload(pokemon.uuid, starting, increment, durationIndexToSend, com.shusheng.cobblemarket.currency.MarketCurrency.PRIMARY.name))
         } else if (item != null) {
             val count = countField?.text?.toIntOrNull() ?: run {
                 playFailSound()
@@ -613,7 +613,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             val itemId = Registries.ITEM.getId(item.stack.item).toString()
             val itemNbt = item.stack.encode(registry, NbtCompound()) as? NbtCompound ?: NbtCompound()
             createInFlight = true
-            sendToServer(CreateItemAuctionPayload(itemId, itemNbt, count, starting, increment, durationIndexToSend))
+            sendToServer(CreateItemAuctionPayload(itemId, itemNbt, count, starting, increment, durationIndexToSend, com.shusheng.cobblemarket.currency.MarketCurrency.PRIMARY.name))
         }
         // 不立即关闭：等 onMarketResult 响应（成功跳转拍卖场，失败保留弹窗供改价重试）
     }

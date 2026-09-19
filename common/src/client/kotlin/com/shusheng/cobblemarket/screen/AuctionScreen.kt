@@ -359,7 +359,7 @@ class AuctionScreen(
         applyFilterVisibility()
 
         // 不重置 scrollOffset：出价弹窗关闭/resize 重建时保留浏览位置（switchTab 才显式归零）
-        sendToServer(RequestAuctionListPayload())
+        sendToServer(RequestAuctionListPayload(com.shusheng.cobblemarket.currency.MarketCurrency.PRIMARY.name))
         rebuildFiltered()
     }
 
@@ -1340,7 +1340,7 @@ class AuctionScreen(
         // 结算中的条目排除（已结算完毕，重拉会全量替换、截断落槌动画）
         if (entries.any { it.endsAt <= pollNow && it.id !in settlingUntil } && pollNow - lastSettlePoll > 1000) {
             lastSettlePoll = pollNow
-            sendToServer(RequestAuctionListPayload())
+            sendToServer(RequestAuctionListPayload(com.shusheng.cobblemarket.currency.MarketCurrency.PRIMARY.name))
         }
 
         // 上分隔线若落在展开列表的覆盖范围内则不画（它也在 children 之后，画了会刺穿列表）；

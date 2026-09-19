@@ -6,6 +6,8 @@ import com.cobblemon.mod.common.Cobblemon
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.config.CurrencyHandler
+import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.event.TransactionCategory
 import com.shusheng.cobblemarket.event.TransactionHistory
 import com.shusheng.cobblemarket.event.TransactionRecord
@@ -62,7 +64,14 @@ data class AuctionEntry(
     /** 创建时间：客户端「最新在上」排序用 */
     val createdAt: Long,
     /** 物品拍卖的组件 NBT（附魔/名称等词条显示用；精灵拍卖为 null）。通常几百字节，可接受 */
-    val itemNbt: NbtCompound?
+    val itemNbt: NbtCompound?,
+    /**
+     * 这场拍卖的币种（枚举名，服务端权威值）。
+     *
+     * ⚠ 与市场列表同理：**币种是拍卖自己的属性**，客户端显示金额单位一律读它，
+     * 别读界面上的「当前币种」状态 —— 漏一处就会把 RP 拍卖标成 ₽。
+     */
+    val currency: String
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(id)
@@ -84,6 +93,7 @@ data class AuctionEntry(
         buf.writeInt(bidCount)
         buf.writeLong(endsAt)
         buf.writeLong(createdAt)
+        buf.writeString(currency)
         buf.writeBoolean(itemNbt != null)
         itemNbt?.let { PacketCodecs.NBT_COMPOUND.encode(buf, it) }
     }
@@ -107,6 +117,7 @@ data class AuctionEntry(
             bidCount = buf.readInt(),
             endsAt = buf.readLong(),
             createdAt = buf.readLong(),
+            currency = buf.readString(),
             itemNbt = if (buf.readBoolean()) PacketCodecs.NBT_COMPOUND.decode(buf) else null
         )
     }
@@ -134,7 +145,8 @@ fun auctionToEntry(a: AuctionListing): AuctionEntry = AuctionEntry(
     bidCount = a.bids.size,
     endsAt = a.endsAt,
     createdAt = a.createdAt,
-    itemNbt = if (a.type == AuctionType.ITEM) a.itemNbt else null
+    itemNbt = if (a.type == AuctionType.ITEM) a.itemNbt else null,
+    currency = a.currency.name
 )
 
 // ── C2S：OP 强制下架拍卖 ──
@@ -207,13 +219,20 @@ data class AuctionDurationsPayload(val durations: List<Int>, val minIncrement: I
 
 // ── C2S：请求拍卖列表 ──
 
-class RequestAuctionListPayload : CustomPayload {
+data class RequestAuctionListPayload(
+    /**
+     * 查询币种 —— **原始字符串，不在这里解析**（理由同市场：解码处容错会把伪造值
+     * 静默当成主货币，必须留给 handler 用 `MarketCurrency.fromRequest` 严格校验）。
+     * 展示层过滤，只决定「看哪一半拍卖」，客户端可传。
+     */
+    val currency: String
+) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<RequestAuctionListPayload>(CobbleMarket.id("request_auction_list"))
         val CODEC: PacketCodec<PacketByteBuf, RequestAuctionListPayload> = PacketCodec.of(
-            { _, b -> b.writeInt(0) },
-            { b -> b.readInt(); RequestAuctionListPayload() }
+            { p, b -> b.writeString(p.currency) },
+            { b -> RequestAuctionListPayload(b.readString()) }
         )
     }
 }
@@ -224,14 +243,24 @@ data class CreatePokemonAuctionPayload(
     val pokemonUuid: UUID,
     val startingPrice: Int,
     val minIncrement: Int,     // <= 0 = 用服务器默认
-    val durationIndex: Int
+    val durationIndex: Int,
+    /** 计价币种 —— **原始字符串，在这里不解析**（理由同市场：留给 handler 用 fromRequest 严格校验） */
+    val currency: String
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<CreatePokemonAuctionPayload>(CobbleMarket.id("create_pokemon_auction"))
         val CODEC: PacketCodec<PacketByteBuf, CreatePokemonAuctionPayload> = PacketCodec.of(
-            { p, b -> b.writeUuid(p.pokemonUuid); b.writeInt(p.startingPrice); b.writeInt(p.minIncrement); b.writeInt(p.durationIndex) },
-            { b -> CreatePokemonAuctionPayload(b.readUuid(), b.readInt(), b.readInt(), b.readInt()) }
+            { p, b ->
+                b.writeUuid(p.pokemonUuid); b.writeInt(p.startingPrice); b.writeInt(p.minIncrement)
+                b.writeInt(p.durationIndex); b.writeString(p.currency)
+            },
+            { b ->
+                CreatePokemonAuctionPayload(
+                    pokemonUuid = b.readUuid(), startingPrice = b.readInt(), minIncrement = b.readInt(),
+                    durationIndex = b.readInt(), currency = b.readString()
+                )
+            }
         )
     }
 }
@@ -244,7 +273,9 @@ data class CreateItemAuctionPayload(
     val count: Int,
     val startingPrice: Int,
     val minIncrement: Int,
-    val durationIndex: Int
+    val durationIndex: Int,
+    /** 计价币种 —— **原始字符串，在这里不解析**（理由同市场：留给 handler 用 fromRequest 严格校验） */
+    val currency: String
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -257,11 +288,13 @@ data class CreateItemAuctionPayload(
                 b.writeInt(p.startingPrice)
                 b.writeInt(p.minIncrement)
                 b.writeInt(p.durationIndex)
+                b.writeString(p.currency)
             },
             { b ->
                 CreateItemAuctionPayload(
-                    b.readString(), PacketCodecs.NBT_COMPOUND.decode(b),
-                    b.readInt(), b.readInt(), b.readInt(), b.readInt()
+                    itemId = b.readString(), itemNbt = PacketCodecs.NBT_COMPOUND.decode(b),
+                    count = b.readInt(), startingPrice = b.readInt(), minIncrement = b.readInt(),
+                    durationIndex = b.readInt(), currency = b.readString()
                 )
             }
         )
@@ -355,12 +388,21 @@ object AuctionNetwork {
             settleAndBroadcast(server)
         }
 
-        registerC2S(RequestAuctionListPayload.ID, RequestAuctionListPayload.CODEC) { _, player ->
+        registerC2S(RequestAuctionListPayload.ID, RequestAuctionListPayload.CODEC) { payload, player ->
             if (!RequestThrottle.allow(player.uuid, "auction_list", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 settleAndBroadcast(server)
-                sendToPlayer(player, auctionListPayload(server))
+                // 币种（展示层过滤）：非法值直接拒，不能拿 fromStored 容错
+                val currency = MarketCurrency.fromRequest(payload.currency)
+                if (currency == null) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.network.invalid_currency"))
+                    )
+                    return@execute
+                }
+                sendToPlayer(player, auctionListPayload(server, currency))
             }
         }
 
@@ -370,6 +412,8 @@ object AuctionNetwork {
             server.execute {
                 if (banBlocked(server, player)) return@execute
                 if (marketBlocked(player)) return@execute
+                // 币种（创建类请求）：非法值拒绝 + RP 两道闸；非空即通过
+                val currency = validateCreateCurrency(player, payload.currency) ?: return@execute
                 if (!checkStartingPrice(player, payload.startingPrice)) return@execute
                 val durationMs = resolveDurationMs(player, payload.durationIndex) ?: return@execute
 
@@ -407,14 +451,17 @@ object AuctionNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.held_item_blocked")))
                     return@execute
                 }
-                // 价格限制：起拍价视为上架价格校验（形态照黑名单语义）+ 携带物规则合并
-                val pokemonBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
-                    .getPriceBounds(pokemon)
-                val itemBounds = if (heldItemId != null)
-                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
-                        .getPriceBounds(heldItem, player.serverWorld.registryManager)
-                else null
-                val bounds = com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
+                // 价格限制：起拍价视为上架价格校验（形态照黑名单语义）+ 携带物规则合并。
+                // ⚠ 限价表是**主货币口径**，RP 拍卖整块跳过（拿主货币的上下限去套 RP 价只会误伤，与市场侧同）
+                val bounds = if (currency == MarketCurrency.PRIMARY) {
+                    val pokemonBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
+                        .getPriceBounds(pokemon)
+                    val itemBounds = if (heldItemId != null)
+                        com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
+                            .getPriceBounds(heldItem, player.serverWorld.registryManager)
+                    else null
+                    com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
+                } else null
                 if (bounds != null) {
                     // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
                     if (bounds.isEmptyRange) {
@@ -472,7 +519,8 @@ object AuctionNetwork {
                     createdAt = now,
                     endsAt = now + durationMs,
                     status = com.shusheng.cobblemarket.market.AuctionStatus.ACTIVE,
-                    returnedAt = null
+                    returnedAt = null,
+                    currency = currency
                 )
 
                 // 副作用阶段：移除精灵 → 入库
@@ -502,6 +550,8 @@ object AuctionNetwork {
             server.execute {
                 if (banBlocked(server, player)) return@execute
                 if (marketBlocked(player)) return@execute
+                // 币种（创建类请求）：非法值拒绝 + RP 两道闸
+                val currency = validateCreateCurrency(player, payload.currency) ?: return@execute
                 if (!checkStartingPrice(player, payload.startingPrice)) return@execute
                 val durationMs = resolveDurationMs(player, payload.durationIndex) ?: return@execute
                 if (payload.count <= 0) {
@@ -530,8 +580,11 @@ object AuctionNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.item_blocked")))
                     return@execute
                 }
-                val itemBounds = com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
-                    .getPriceBounds(targetStack, player.serverWorld.registryManager)
+                // ⚠ 限价表是**主货币口径**，RP 拍卖整块跳过（与精灵侧、市场侧同一处理）
+                val itemBounds = if (currency == MarketCurrency.PRIMARY)
+                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
+                        .getPriceBounds(targetStack, player.serverWorld.registryManager)
+                else null
                 if (itemBounds != null) {
                     // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
                     if (itemBounds.isEmptyRange) {
@@ -635,7 +688,8 @@ object AuctionNetwork {
                     createdAt = now,
                     endsAt = now + durationMs,
                     status = com.shusheng.cobblemarket.market.AuctionStatus.ACTIVE,
-                    returnedAt = null
+                    returnedAt = null,
+                    currency = currency
                 )
                 AuctionState.get(server).addAuction(auction)
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
@@ -717,16 +771,19 @@ object AuctionNetwork {
                 val prevBidder = auction.currentBidderUuid
                 val selfRebid = prevBidder == player.uuid && auction.currentPrice > 0
                 val deductAmount = if (selfRebid) payload.amount - auction.currentPrice else payload.amount
-                if (!CurrencyHandler.remove(player, deductAmount)) {
+                // ⚠ 扣款按**拍卖自己的币种**（绝不读请求）：RP 拍卖冻结的是 RP，不是主货币
+                if (!CurrencyService.remove(player, auction.currency, deductAmount.toLong())) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.not_enough")))
                     return@execute
                 }
                 if (prevBidder != null && auction.currentPrice > 0 && !selfRebid) {
-                    MarketState.get(server).addPendingBalance(prevBidder, auction.currentPrice.toLong())
+                    // 退款与扣款**同币种**（同取自拍卖对象）：主货币进待领余额账本、
+                    // RP 直接到账 —— 被超越的人可能离线，creditSeller 两条路都覆盖
+                    CurrencyService.creditSeller(server, prevBidder, auction.currency, auction.currentPrice.toLong())
                     // 出价者离线则入队补发
                     com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                         server, prevBidder,
-                        Text.translatable("cobblemarket.auction.outbid", CurrencyHandler.goldAmount(payload.amount), auction.speciesText())
+                        Text.translatable("cobblemarket.auction.outbid", CurrencyService.amountText(payload.amount, auction.currency), auction.speciesText())
                             .formatted(Formatting.YELLOW)
                     )
                     // 被超越的人**在线**时补一声提示音（他多半正看着别的界面，光有聊天红字容易错过）
@@ -845,29 +902,18 @@ object AuctionNetwork {
             }
             // 聊天通知：卖家（成交/流拍）+ 赢家（离线则入队补发）
             if (auction.status == com.shusheng.cobblemarket.market.AuctionStatus.SOLD) {
-                // 手续费同结算公式重算（含逾期翻倍）：卖家到手 = 成交价 - 手续费，消息里一并说明避免疑问
-                val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.auctionFeePercent
-                val baseFee = if (feePercent > 0)
-                    // toLong 先提升：与结算同公式，防 Int×Int 环绕溢出（消息与扣费保持一致）
-                    Math.ceil(auction.currentPrice.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
-                else 0L
-                val fee = com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
-                    com.shusheng.cobblemarket.finance.FinanceState.get(server),
-                    auction.sellerUuid,
-                    com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
-                        com.shusheng.cobblemarket.finance.FinanceState.get(server), auction.sellerUuid, System.currentTimeMillis(), baseFee
-                    )
-                ).toInt()
+                // 手续费走**唯一入口**（与结算实扣同源）：卖家到手 = 成交价 - 手续费，
+                // 消息里一并说明避免疑问；各算各的迟早与实扣对不上
+                val fee = com.shusheng.cobblemarket.market.auctionFeeOf(server, auction, System.currentTimeMillis())
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, auction.sellerUuid,
-                    // 聊天消息货币名走 CurrencyHandler.currencyText()（translatable 随模式翻译）
+                    // 金额 + 单位按**拍卖自己的币种**（主货币 ₽ / RP 图标）
                     Text.translatable(
                         "cobblemarket.auction.settled_seller",
                         auction.speciesText(),
-                        CurrencyHandler.goldAmount(auction.currentPrice.toLong()),
-                        CurrencyHandler.goldCurrencyText(),
-                        CurrencyHandler.goldAmount((auction.currentPrice - fee).toLong()),
-                        CurrencyHandler.goldAmount(fee.toLong())
+                        CurrencyService.amountText(auction.currentPrice.toLong(), auction.currency),
+                        CurrencyService.amountText((auction.currentPrice - fee).toLong(), auction.currency),
+                        CurrencyService.amountText(fee.toLong(), auction.currency)
                     ).formatted(Formatting.GOLD)
                 )
                 auction.currentBidderUuid?.let { winnerUuid ->
@@ -906,8 +952,14 @@ object AuctionNetwork {
         }
     }
 
-    private fun auctionListPayload(server: MinecraftServer): AuctionListDataPayload =
-        AuctionListDataPayload(AuctionState.get(server).getActiveAuctions().map { auctionToEntry(it) })
+    private fun auctionListPayload(server: MinecraftServer, currency: MarketCurrency): AuctionListDataPayload =
+        AuctionListDataPayload(
+            AuctionState.get(server).getActiveAuctions()
+                // 币种是拍卖自己的属性：一次只发一种 —— 两种币的价格不可比，混在一起
+                // 排序（当前价）与比价就都失去意义
+                .filter { it.currency == currency }
+                .map { auctionToEntry(it) }
+        )
 
     // 照搬 MarketNetwork.buildListingExtra（保持展示字段一致）
     private fun buildAuctionExtra(
@@ -987,9 +1039,8 @@ object AuctionNetwork {
                     .withHoverEvent(HoverEvent(HoverEvent.Action.SHOW_TEXT, buildAnnouncementHover(auction)))
             }
         // 金额与货币名恒金（聊天颜色模板）；主体蓝（2026-08-30 拍板），名字属性色/按钮/金额子样式优先于父级蓝
-        val priceText = Text.literal("")
-            .append(CurrencyHandler.goldAmount(auction.startingPrice))
-            .append(CurrencyHandler.goldCurrencyText())
+        // 金额 + 单位按**拍卖自己的币种**（主货币 ₽ / RP 图标，唯一落点在 CurrencyService.amountText）
+        val priceText = CurrencyService.amountText(auction.startingPrice, auction.currency)
         val msg = Text.literal("[拍卖] ").formatted(Formatting.GOLD)
             .append(Text.translatable("cobblemarket.chat.auction_announce", Text.literal(auction.sellerName), clickableName, priceText).formatted(Formatting.BLUE))
         server.playerManager.playerList.forEach { it.sendMessage(msg) }
@@ -1018,18 +1069,9 @@ object AuctionNetwork {
             RecordDetail.pokemon(auction.extraData, auction.level, auction.shiny)
         else
             RecordDetail.item(auction.itemNbt, auction.count)
-        // 账本 fee 与实际扣费一致（含逾期翻倍，付款方=卖家）
-        val fee = if (type == TransactionType.PURCHASE && CobbleMarketConfig.auctionFeePercent > 0)
-            com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
-                com.shusheng.cobblemarket.finance.FinanceState.get(server),
-                auction.sellerUuid,
-                com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
-                    com.shusheng.cobblemarket.finance.FinanceState.get(server), auction.sellerUuid,
-                    System.currentTimeMillis(),
-                    Math.ceil(auction.currentPrice.toLong() * CobbleMarketConfig.auctionFeePercent / 100.0).toLong()
-                        .coerceAtMost(Int.MAX_VALUE.toLong())
-                )
-            ).toInt()
+        // 账本 fee 与实际扣费一致：走**唯一入口**（含按拍卖币种选费率、逾期翻倍、卡片折扣）
+        val fee = if (type == TransactionType.PURCHASE)
+            com.shusheng.cobblemarket.market.auctionFeeOf(server, auction, System.currentTimeMillis())
         else 0
         TransactionHistory.get(server).addRecord(TransactionRecord(
             timestamp = System.currentTimeMillis(),
@@ -1042,6 +1084,7 @@ object AuctionNetwork {
             species = if (auction.type == AuctionType.POKEMON) (auction.extraData["speciesKey"] ?: auction.species) else auction.species,
             price = if (type == TransactionType.PURCHASE) auction.currentPrice else auction.startingPrice,
             fee = fee,
+            currency = auction.currency,
             detail = if (reason != null) "$detailBase|reason=$reason" else detailBase
         ))
     }
@@ -1058,9 +1101,8 @@ object AuctionNetwork {
         } else {
             Text.literal("").append(auction.speciesText())
         }
-        val priceText = Text.literal("")
-            .append(CurrencyHandler.goldAmount(auction.currentPrice))
-            .append(CurrencyHandler.goldCurrencyText())
+        // 金额 + 单位按**拍卖自己的币种**（成交播报同样不能写死主货币）
+        val priceText = CurrencyService.amountText(auction.currentPrice, auction.currency)
         return Text.literal("[拍卖] ").formatted(Formatting.GOLD)
             .append(Text.translatable("cobblemarket.chat.auction_sold_announce", Text.literal(auction.currentBidderName), priceText, nameText).formatted(Formatting.BLUE))
     }
@@ -1162,11 +1204,11 @@ object AuctionNetwork {
         // 价格两行：标签 + 「: 」+ 金色千分位金额 + 金色货币名（与出价界面/管理端同款，原先漏了冒号、加价是裸数字）
         lines.add(
             Text.translatable("cobblemarket.auction.starting_price").append(": ").append(
-                Text.literal("").append(CurrencyHandler.goldAmount(auction.startingPrice)).append(CurrencyHandler.goldCurrencyText()))
+                CurrencyService.amountText(auction.startingPrice, auction.currency))
         )
         lines.add(
             Text.translatable("cobblemarket.auction.min_increment").append(": ").append(
-                Text.literal("").append(CurrencyHandler.goldAmount(auction.minIncrement)).append(CurrencyHandler.goldCurrencyText()))
+                CurrencyService.amountText(auction.minIncrement, auction.currency))
         )
         val minutesLeft = ((auction.endsAt - System.currentTimeMillis()) / 60_000).coerceAtLeast(1)
         lines.add(Text.translatable("cobblemarket.auction.ends").append(Text.translatable("cobblemarket.chat.ends_minutes", minutesLeft)))

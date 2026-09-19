@@ -458,7 +458,7 @@
   "cobblemarket.auction.price_limit.above_max": "起拍价高于最高限制（%s）",
   "cobblemarket.auction.price_limit.held_below_min": "起拍价低于最低限制（%s，含携带物）",
   "cobblemarket.auction.price_limit.held_above_max": "起拍价高于最高限制（%s，含携带物）",
-  "cobblemarket.auction.settled_seller": "你的拍卖已成交：%1$s，成交价 %2$s %3$s，到账 %4$s %3$s（手续费 %5$s %3$s）",
+  "cobblemarket.auction.settled_seller": "你的拍卖已成交：%1$s，成交价 %2$s，到账 %3$s（手续费 %4$s）",
   "cobblemarket.auction.settled_unsold": "你的拍卖已流拍：%s，物品已退回待领取",
   "cobblemarket.auction.settled_winner": "你赢得了拍卖：%s，物品已进待领取",
   "cobblemarket.auction.price_total_hint": "起拍价为整组物品的总价",

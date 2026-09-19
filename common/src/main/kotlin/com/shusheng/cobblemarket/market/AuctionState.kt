@@ -228,24 +228,21 @@ class AuctionState private constructor() : PersistentState() {
                 return@forEach
             }
             if (sold) {
-                val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.auctionFeePercent
-                val baseFee = if (feePercent > 0)
-                    // toLong 先提升：Int×Int 在价格×费率超过 21.5 亿时环绕溢出（fee 可算成负/0，逃税或凭空生钱）
-                    Math.ceil(auction.currentPrice.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
-                else 0L
-                // 逾期制裁：卖家（付款方）逾期 ≥7 天 → 手续费翻倍；紫卡持有者按配置减免
-                val fee = com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
-                    com.shusheng.cobblemarket.finance.FinanceState.get(server),
-                    auction.sellerUuid,
-                    com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
-                        com.shusheng.cobblemarket.finance.FinanceState.get(server), auction.sellerUuid, currentTime, baseFee
-                    )
-                ).toInt()
-                MarketState.get(server).addPendingBalance(auction.sellerUuid, (auction.currentPrice - fee).toLong())
-                // 金融系统成交挂钩子：拍卖成交计入赢家（买入方）交易额；赢家可能离线，IP/OP 判定在 recordTrade 内按在线状态取
-                com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
-                    server, winnerUuid, auction.sellerUuid, auction.currentPrice.toLong(), currentTime
+                // 手续费走**唯一入口**（按拍卖自己的币种选费率；卡片折扣/逾期翻倍只对主货币生效）
+                val fee = auctionFeeOf(server, auction, currentTime)
+                // 卖家入账：主货币进待领余额账本、RP **直接到账** —— 卖家可能离线，
+                // creditSeller 两条路都覆盖（RP 不进待领，方案「RP 收入直接到账」）
+                com.shusheng.cobblemarket.currency.CurrencyService.creditSeller(
+                    server, auction.sellerUuid, auction.currency, (auction.currentPrice - fee).toLong()
                 )
+                // 金融系统成交挂钩子：拍卖成交计入赢家（买入方）交易额；赢家可能离线，IP/OP 判定在 recordTrade 内按在线状态取。
+                // ⚠ **RP 拍卖不调** —— recordTrade 喂着紫卡/黑卡门槛与贷款额度公式，
+                //   让 RP 来回刷交易量等于白送资格（方案「统计隔离」）
+                if (auction.currency == MarketCurrency.PRIMARY) {
+                    com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
+                        server, winnerUuid, auction.sellerUuid, auction.currentPrice.toLong(), currentTime
+                    )
+                }
                 try {
                     com.shusheng.cobblemarket.event.TransactionHistory.get(server).addRecord(
                         com.shusheng.cobblemarket.event.TransactionRecord(
@@ -263,6 +260,7 @@ class AuctionState private constructor() : PersistentState() {
                             species = auction.extraData["speciesKey"] ?: auction.species,
                             price = auction.currentPrice,
                             fee = fee,
+                            currency = auction.currency,
                             detail = if (auction.type == AuctionType.POKEMON)
                                 com.shusheng.cobblemarket.util.RecordDetail.pokemon(auction.extraData, auction.level, auction.shiny)
                             else
@@ -297,7 +295,10 @@ class AuctionState private constructor() : PersistentState() {
             return false
         }
         if (bidder != null && bidAmount > 0) {
-            MarketState.get(server).addPendingBalance(bidder, bidAmount.toLong())
+            // 退还出价：与扣款**同币种**（取自拍卖对象）—— 主货币进待领余额账本、RP 直接到账
+            com.shusheng.cobblemarket.currency.CurrencyService.creditSeller(
+                server, bidder, auction.currency, bidAmount.toLong()
+            )
         }
         auction.returnedAt = System.currentTimeMillis()
         auctions.remove(auction.id)
@@ -381,4 +382,33 @@ class AuctionState private constructor() : PersistentState() {
         fun get(server: MinecraftServer): AuctionState =
             server.overworld.persistentStateManager.getOrCreate(TYPE, "${CobbleMarket.MOD_ID}_auctions")
     }
+}
+
+/**
+ * **拍卖成交手续费（唯一计算入口）**：按拍卖**自己的币种**选费率，再叠逾期翻倍 / 卡片折扣。
+ *
+ * ⚠ 结算实扣、结算通知消息、CSV 账本三处都走它 —— 各算各的迟早对不上，
+ * 而「消息里写的手续费」与「实际扣的」不一致是最伤信任的一类 bug。
+ *
+ * ⚠ **卡片折扣与逾期翻倍只对主货币生效**（方案：RP 的手续费与折扣只跟主货币有关，
+ * RP 不参与金融）。RP 用独立的 `pointsAuctionFeePercent`（默认 0 = 免）。
+ */
+fun auctionFeeOf(server: MinecraftServer, auction: AuctionListing, now: Long): Int {
+    val isPoints = auction.currency == MarketCurrency.POINTS
+    val feePercent = if (isPoints)
+        com.shusheng.cobblemarket.config.CobbleMarketConfig.pointsAuctionFeePercent
+    else
+        com.shusheng.cobblemarket.config.CobbleMarketConfig.auctionFeePercent
+    if (feePercent <= 0) return 0
+    // toLong 先提升：Int×Int 在 价格×费率 超过 21.5 亿时环绕溢出（fee 会算成负/0，逃税或凭空生钱）
+    val base = Math.ceil(auction.currentPrice.toLong() * feePercent / 100.0).toLong()
+        .coerceAtMost(Int.MAX_VALUE.toLong())
+    if (isPoints) return base.toInt()
+    return com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
+        com.shusheng.cobblemarket.finance.FinanceState.get(server),
+        auction.sellerUuid,
+        com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+            com.shusheng.cobblemarket.finance.FinanceState.get(server), auction.sellerUuid, now, base
+        )
+    ).toInt()
 }
