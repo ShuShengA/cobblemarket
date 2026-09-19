@@ -10,6 +10,7 @@ import com.shusheng.cobblemarket.client.unitGap
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.PointOrderNumbers
 import com.shusheng.cobblemarket.currency.PointOrderStatus
+import com.shusheng.cobblemarket.currency.PointOrderVoidReason
 import com.shusheng.cobblemarket.currency.PointShopService
 import com.shusheng.cobblemarket.network.CancelPointOrderPayload
 import com.shusheng.cobblemarket.network.CreatePointOrderPayload
@@ -95,7 +96,7 @@ class PointsRechargeScreen : Screen(
      */
     private val requestedIcons = mutableSetOf<String>()
 
-    /** 档位卡滚到第几行（0 = 顶部）；只有档位超过 [MAX_VISIBLE_ROWS] 行时才有得滚 */
+    /** 档位卡滚到第几行（0 = 顶部）；只有档位行数超过「装得下的行数」时才有得滚（见 [maxScrollRow]） */
     private var scrollRow = 0
 
     /**
@@ -114,8 +115,11 @@ class PointsRechargeScreen : Screen(
      */
     private var ordersBeforeCreate: Set<String>? = null
 
-    /** 下单被拒等提示（成功走收款码弹窗，不在这里说）；null = 没有提示要显示 */
+    /** 结果提示（下单被拒 / 取消成功 / 已支付已提交…）；null = 没有提示要显示 */
     private var resultText: Text? = null
+
+    /** 上面那条提示是成功还是失败（决定颜色：成功绿 / 失败红） */
+    private var resultOk = false
     private var resultToastUntil = 0L
 
     override fun init() {
@@ -145,7 +149,7 @@ class PointsRechargeScreen : Screen(
     }
 
     /**
-     * 档位卡滚轮翻行（只有档位超过 [MAX_VISIBLE_ROWS] 行时才有得滚）。
+     * 档位卡滚轮翻行（只有档位行数超过「装得下的行数」时才有得滚，见 [maxScrollRow]）。
      *
      * 只挪按钮位置、**不重建界面** —— 重建会把玩家正在敲的兑换码输入框内容与焦点搅乱。
      */
@@ -179,7 +183,7 @@ class PointsRechargeScreen : Screen(
     }
 
     /**
-     * 右侧滚动条：档位超过一屏（[MAX_VISIBLE_ROWS] 行）才画 —— 否则玩家不知道下面还有档位。
+     * 右侧滚动条：有装不下的档位行才画 —— 否则玩家不知道下面还有档位。
      *
      * 画法与服务器配置界面 / RP 市场配置界面同一套（2px 宽、半透明轨道 + 不透明滑块）。
      * 位置：**两条红线之间、档位卡区右侧那条缝里** —— 卡片区右边缘取 `inset`，
@@ -192,8 +196,8 @@ class PointsRechargeScreen : Screen(
         val x = bg.x + bg.w - inset + 3
         val top = tierAreaTop(bg)
         val trackH = (tierAreaBottom(bg) - tierAreaTop(bg)).coerceAtLeast(1)
-        // 这里是**按行**滚动：滑块高直接按「可见行 / 总行数」算
-        val thumbH = maxOf(16, trackH * MAX_VISIBLE_ROWS / tierRows())
+        // 这里是**按行**滚动：滑块高直接按「装得下的行数 / 总行数」算
+        val thumbH = maxOf(16, trackH * fittedTierRows(tierCardW(bg)) / tierRows())
         val thumbY = top + (trackH - thumbH) * scrollRow / maxScroll
         context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
         context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
@@ -203,8 +207,9 @@ class PointsRechargeScreen : Screen(
     private fun applyTierScroll() {
         val bg = PointsMarketBackground.rect(width, height)
         val cardW = tierCardW(bg)
-        val areaTop = tierAreaTop(bg)
-        val areaBottom = tierAreaBottom(bg)
+        // 同上面的 scissor：按钮也裁到**红线上**（半露的那截不能糊在分割线外侧）
+        val areaTop = dividerTopY(bg)
+        val areaBottom = dividerBottomY(bg)
         tierButtons.forEachIndexed { index, button ->
             val visible = isRowVisible(index / TIER_COLS, cardW)
             button.visible = visible
@@ -238,13 +243,17 @@ class PointsRechargeScreen : Screen(
     }
 
     /**
-     * 下单被拒等结果（服务端只发结算结果的失败包）：清掉待认领标志并**显示在界面里**。
-     * 光靠聊天栏那一行 + 一声失败音容易被漏看，玩家看到的就是「点了没反应」。
+     * 下单 / 取消 / 我已支付的结果：清掉待认领标志并**显示在界面里**。
+     * 光靠聊天栏那一行 + 一声提示音容易被漏看，玩家看到的就是「点了没反应」。
+     *
+     * ⚠ **成功也必须显示**（2026-09-19 用户实测）：原来这里 `if (payload.success) return`，
+     * 于是点了「取消订单」之后界面上什么都没有 —— 虽然服务端真的作废了，玩家却以为没生效
+     * （服务端那句「订单 XXX 已取消」也没发给界面）。
      */
     fun onMarketResult(payload: MarketResultPayload) {
         ordersBeforeCreate = null
-        if (payload.success) return
         resultText = payload.message
+        resultOk = payload.success
         resultToastUntil = System.currentTimeMillis() + 4000
     }
 
@@ -482,10 +491,12 @@ class PointsRechargeScreen : Screen(
         // 弹窗打开时下层文字一律不画（遮罩在它们下面，照画会浮到弹窗上）
         if (viewingOrderNo != null) {
             PointsShopCache.orders.firstOrNull { it.orderNo == viewingOrderNo }?.let { renderQrDialog(context, it) }
+            renderResultToast(context, bg)
             return
         }
         if (orderListOpen) {
             renderOrdersDialog(context)
+            renderResultToast(context, bg)
             return
         }
 
@@ -496,15 +507,8 @@ class PointsRechargeScreen : Screen(
             centerX, bg.y + texPx(TITLE_TOP), 0xFFFFFF
         )
 
-        // 下单被拒等提示：放在返回按钮上方（弹窗打开时上面已经 return，不会重叠）
-        if (System.currentTimeMillis() < resultToastUntil) {
-            resultText?.let {
-                context.drawCenteredTextWithShadow(
-                    textRenderer, it, centerX,
-                    bg.y + bg.h - texPx(BACK_BOTTOM) - BACK_H - 20, 0xFF5555
-                )
-            }
-        }
+        // 结果提示：放在返回按钮上方（弹窗打开时那边是空的，不会重叠）
+        renderResultToast(context, bg)
 
         // 上下两条红色分割线：**夹出中间的档位卡区**（与 RP 市场界面「兑换行 / 红线下是商品区」
         // 同一种结构；跨度避开背景边框，2026-09-18 用户定）。
@@ -541,7 +545,11 @@ class PointsRechargeScreen : Screen(
         //   所以缓动期间**半露**的那两行会被整行画出来 —— 券图上下露出边界看着就是「残影」
         //   （2026-09-19 用户实测）。scissor 要夹住整个 forEach，但**别包住上面那个 return**
         //   （tiers 为空时提前返回，包进去就没机会 disableScissor 了）。
-        context.enableScissor(0, tierAreaTop(bg), width, tierAreaBottom(bg))
+        // ⚠ 裁剪边界取**两条红分割线**本身，而不是 [tierAreaTop]/[tierAreaBottom]（那两个各内缩了
+        //   TIERS_PADDING）—— 卡片装不下时最后一行会被裁，裁口必须**正好落在红线上**；
+        //   取内缩后的区域会在红线前留 6px 的缝，看着就是「第二行悬在红线上面一截」
+        //   （2026-09-19 用户实测截图）。
+        context.enableScissor(0, dividerTopY(bg), width, dividerBottomY(bg))
         tiers.forEachIndexed { index, tier ->
             if (!isRowVisible(index / TIER_COLS, cardW)) return@forEachIndexed
             val (x, y) = tierCardPos(bg, index, cardW)
@@ -616,7 +624,7 @@ class PointsRechargeScreen : Screen(
             context.drawTextWithShadow(
                 textRenderer,
                 Text.literal(statusLine(order)),
-                dx + COL_STATUS_X, textY, 0xFFFFFF
+                dx + COL_STATUS_X, textY, statusColor(order)
             )
             // 订单号也分段展示（`ABC-DEF`，与收款码弹窗同一种写法）
             context.drawTextWithShadow(
@@ -639,15 +647,75 @@ class PointsRechargeScreen : Screen(
      * （仍接受「我已支付」30 分钟，见 `PointShopService.PAYMENT_GRACE_MS`），
      * `0:00` 会让人以为这单已经废了 —— 2026-09-18 用户就是照 `0:00` 理解成「该消失了」的。
      */
-    private fun statusLine(order: PointOrderInfo): String = when (statusOf(order)) {
-        PointOrderStatus.PENDING_PAYMENT -> {
-            val unpaid = Text.translatable("cobblemarket.points.recharge.status_unpaid").string
-            if (isOverdue(order)) "$unpaid ${Text.translatable("cobblemarket.points.recharge.status_overdue").string}"
-            else "$unpaid ${countdownText(order.expireAt)}"
+    private fun statusLine(order: PointOrderInfo): String {
+        // 作废的要说清是哪种（见 voidKey）—— 原来这里落到 else 给了个**空字符串**，
+        // 玩家看到的就是「一行没有状态的订单」，自然以为取消没生效（2026-09-19 用户实测）
+        voidKey(order, dialog = false)?.let { return Text.translatable(it).string }
+        return when (statusOf(order)) {
+            PointOrderStatus.PENDING_PAYMENT -> {
+                val unpaid = Text.translatable("cobblemarket.points.recharge.status_unpaid").string
+                if (isOverdue(order)) "$unpaid ${Text.translatable("cobblemarket.points.recharge.status_overdue").string}"
+                else "$unpaid ${countdownText(order.expireAt)}"
+            }
+            PointOrderStatus.PENDING_CONFIRM ->
+                Text.translatable("cobblemarket.points.recharge.status_confirm").string
+            // 已发放以前也是空的 —— 玩家查历史时同样看不出这单成没成
+            PointOrderStatus.GRANTED ->
+                Text.translatable("cobblemarket.points.recharge.status_granted").string
+            else -> ""
         }
-        PointOrderStatus.PENDING_CONFIRM ->
-            Text.translatable("cobblemarket.points.recharge.status_confirm").string
-        else -> ""
+    }
+
+    /** 状态列的文字颜色：到账=绿、作废=灰（全项目「已失效」都是这个灰），其余白 */
+    private fun statusColor(order: PointOrderInfo): Int = when (statusOf(order)) {
+        PointOrderStatus.GRANTED -> 0x55FF55
+        PointOrderStatus.VOID -> 0x888888
+        else -> 0xFFFFFF
+    }
+
+    /**
+     * 这单**作废了吗**：作废则返回该显示的词条键，没作废返回 null。
+     * [dialog] = false 取**列表用的短词条**，true 取弹窗里的整句。
+     *
+     * ⚠ 列表与弹窗**共用这一张表**：同一件事两处说法不一致，玩家会当成两回事。
+     * ⚠ 词条键写成**字面量**，别用前缀拼接 —— 满项目扫死词条时，拼出来的键会被判成没人用。
+     * ⚠ 认不出原因（老订单没记 / 将来新增）只说「已作废」，**不猜**是哪一种。
+     */
+    private fun voidKey(order: PointOrderInfo, dialog: Boolean): String? {
+        if (statusOf(order) != PointOrderStatus.VOID) return null
+        return when (runCatching { PointOrderVoidReason.valueOf(order.voidReason) }.getOrNull()) {
+            PointOrderVoidReason.PLAYER_CANCEL ->
+                if (dialog) "cobblemarket.points.recharge.dialog_void_cancel"
+                else "cobblemarket.points.recharge.status_void_cancel"
+
+            PointOrderVoidReason.TIMEOUT ->
+                if (dialog) "cobblemarket.points.recharge.dialog_void_timeout"
+                else "cobblemarket.points.recharge.status_void_timeout"
+
+            PointOrderVoidReason.OPERATOR ->
+                if (dialog) "cobblemarket.points.recharge.dialog_void_operator"
+                else "cobblemarket.points.recharge.status_void_operator"
+
+            null ->
+                if (dialog) "cobblemarket.points.recharge.dialog_void"
+                else "cobblemarket.points.recharge.status_void"
+        }
+    }
+
+    /**
+     * 结果提示（下单被拒 / 取消成功 / 已支付已提交 …）：返回按钮上方一行，4 秒后消失。
+     *
+     * ⚠ **三个分支都要调**（主界面 / 收款码弹窗 / 订单列表弹窗）—— 取消订单就发生在收款码弹窗里，
+     * 只画在主界面的话那声「已取消」玩家根本看不见。
+     */
+    private fun renderResultToast(context: DrawContext, bg: PointsMarketBackground.Rect) {
+        if (System.currentTimeMillis() >= resultToastUntil) return
+        val text = resultText ?: return
+        context.drawCenteredTextWithShadow(
+            textRenderer, text, bg.x + bg.w / 2,
+            bg.y + bg.h - texPx(BACK_BOTTOM) - BACK_H - 20,
+            if (resultOk) 0x55FF55 else 0xFF5555
+        )
     }
 
     /** 支付倒计时已归零（但还在宽限期内，服务端仍接受「我已支付」） */
@@ -726,9 +794,14 @@ class PointsRechargeScreen : Screen(
         } else {
             // 待确认没有收款码，同样从 [DIALOG_CONTENT_TOP] 起画
             y = dy + DIALOG_CONTENT_TOP
+            // ⚠ 这一段原来只写了「待确认」一种情况，而 `else` 把**作废**也兜进来了 ——
+            //   玩家点了「取消订单」之后弹窗反倒显示「等待管理员确认」，像是订单还活着
+            //   （2026-09-19 用户实测）。作废的必须说清是哪种，红色（同本弹窗的「收款码不可用」）。
+            val voidKey = voidKey(order, dialog = true)
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.points.recharge.waiting_confirm").formatted(Formatting.GOLD),
+                Text.translatable(voidKey ?: "cobblemarket.points.recharge.waiting_confirm")
+                    .formatted(if (voidKey != null) Formatting.RED else Formatting.GOLD),
                 centerX, y, 0xFFFFFF
             )
             y += 16
@@ -743,7 +816,7 @@ class PointsRechargeScreen : Screen(
             y += 12
             // ⚠ 这里**不是**「请支付」：玩家已经点过「我已支付」了（哪怕只是声明），
             // 再让人「请支付」自相矛盾。显示的是这一单的金额 —— 也就是服主对着收款账单
-            // 核对的那笔数（含唯一尾数），2026-09-18 用户看到「已提交…请支付 5.00」时问过。
+            // 核对的那笔数，2026-09-18 用户看到「已提交…请支付 5.00」时问过。
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.translatable("cobblemarket.points.recharge.order_amount", moneyText(order.payCents))
@@ -796,19 +869,7 @@ class PointsRechargeScreen : Screen(
     private fun tierCardW(bg: PointsMarketBackground.Rect): Int {
         val inset = PointsMarketBackground.borderInset(width, height)
         val byW = (bg.w - 2 * inset - (TIER_COLS - 1) * TIER_CARD_GAP) / TIER_COLS
-
-        val tiers = PointsShopCache.tiers
-        if (tiers.isEmpty()) return byW.coerceAtLeast(MIN_CARD_W)
-        // 尺寸按**可见行数**算（不是总行数）：档位再多也不把卡片挤小，多出来的行用滚轮翻
-        val rows = minOf((tiers.size + TIER_COLS - 1) / TIER_COLS, MAX_VISIBLE_ROWS)
-        // 总高 = rows × (图标高 + 卡内固定) + (rows−1) × 行间距 ≤ 可用高
-        //   图标高 = w × 160/256 ⇒ 解出 w 的上限
-        val usable = (tierAreaBottom(bg) - tierAreaTop(bg)) -
-            rows * (TIER_ICON_V_GAP + TIER_BTN_H) - (rows - 1) * TIER_CARD_GAP
-        val byH = if (usable <= 0) MIN_CARD_W
-        else (usable.toFloat() * TIER_ICON_TEX_W / (rows * TIER_ICON_TEX_H.toFloat())).toInt()
-
-        return minOf(byW, byH).coerceAtLeast(MIN_CARD_W)
+        return byW.coerceAtLeast(MIN_CARD_W)
     }
 
     /** 图标高度：按 256×160 的原图比例算，换图不变形 */
@@ -829,8 +890,25 @@ class PointsRechargeScreen : Screen(
         val inset = PointsMarketBackground.borderInset(width, height)
         val col = index % TIER_COLS
         val row = index / TIER_COLS
-        return (bg.x + inset + col * (cardW + TIER_CARD_GAP)) to
+        return (bg.x + inset + col * tierColStride(bg, cardW)) to
             (tierAreaTop(bg) + (row * tierRowStride(cardW) - scrollPx).toInt())
+    }
+
+    /**
+     * 相邻两列的横向步长：**把 [TIER_COLS] 张卡在内容区里均匀铺开**。
+     *
+     * ⚠ 卡片宽度取的是「宽 / 高两个约束里小的那个」（见 [tierCardW]）—— 小分辨率下**高度**会是
+     *   那个约束，卡片变窄，而按 `cardW + 卡间距` 排的话第 4 张的右边缘离内容区右边缘还差一大截，
+     *   看上去就是「所有卡片连带按钮、点数全缩在左边」（2026-09-19 用户实测）。
+     *   改成按内容区宽度均分：首列贴左、末列贴右，卡片小时自动拉开间距。
+     *   ⚠ 宽度是约束时两者**恰好相等**（`contentW − cardW = 3×(cardW + GAP)`），所以正常分辨率下
+     *   位置与原来一模一样。
+     */
+    private fun tierColStride(bg: PointsMarketBackground.Rect, cardW: Int): Int {
+        val inset = PointsMarketBackground.borderInset(width, height)
+        val contentW = bg.w - 2 * inset
+        val spread = (contentW - cardW) / (TIER_COLS - 1)
+        return maxOf(cardW + TIER_CARD_GAP, spread)
     }
 
     /**
@@ -848,7 +926,23 @@ class PointsRechargeScreen : Screen(
     private fun tierRows(): Int = (PointsShopCache.tiers.size + TIER_COLS - 1) / TIER_COLS
 
     /** 最多能往下滚几行（0 = 不用滚） */
-    private fun maxScrollRow(): Int = (tierRows() - MAX_VISIBLE_ROWS).coerceAtLeast(0)
+    /**
+     * 档位区一次能**完整**显示几行（至少 1 行）。
+     *
+     * ⚠ 卡片大小**不再随行数变**（见 [tierCardW]）：装不下就滚，所以这里是「实际装得下几行」，
+     *   而不是一个写死的上限 —— GUI scale 调成自动时可能只装得下 1 行，其余靠滚轮翻。
+     */
+    private fun fittedTierRows(cardW: Int): Int {
+        val bg = PointsMarketBackground.rect(width, height)
+        val areaH = tierAreaBottom(bg) - tierAreaTop(bg)
+        return ((areaH + TIER_CARD_GAP) / tierRowStride(cardW)).coerceAtLeast(1)
+    }
+
+    /** 最多能往下滚几行（0 = 不用滚）。取当前卡片尺寸下装不下的那些行 */
+    private fun maxScrollRow(): Int {
+        val cardW = tierCardW(PointsMarketBackground.rect(width, height))
+        return (tierRows() - fittedTierRows(cardW)).coerceAtLeast(0)
+    }
 
     /**
      * 这一行现在可见吗（滚出可见区的行要藏起来：按钮不能留在屏幕上，画也不能画）。
@@ -876,12 +970,6 @@ class PointsRechargeScreen : Screen(
         const val TIER_CARD_GAP = 12
         const val TIER_BTN_H = 16
         const val MIN_CARD_W = 48
-
-        /**
-         * 档位卡最多同时显示几行，超出的用**滚轮**翻。
-         * 卡片尺寸按这个行数算（不是按总行数），所以档位再多也不会把卡片挤成一团。
-         */
-        const val MAX_VISIBLE_ROWS = 2
 
         /** 订单弹窗最多同时显示几行；订单现在含历史（最多回 50 笔），超出的滚轮翻 */
         const val MAX_VISIBLE_ORDER_ROWS = 8

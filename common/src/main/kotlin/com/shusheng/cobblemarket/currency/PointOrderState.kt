@@ -39,7 +39,10 @@ data class PointOrder(
     val tierName: String,
     /** 档位标价（分）—— 只作展示与对账参照，实付看 [payCents] */
     val baseCents: Long,
-    /** **实付金额（分）= 标价 + 唯一尾数** —— 服主在收款账单里靠它一眼对上订单 */
+    /**
+     * **实付金额（分）** —— 下单那一刻的档位标价快照，服主事后改档位不影响老订单。
+     * 玩家就按这个数付（与档位卡上的标价一致，没有任何额外加项）。
+     */
     val payCents: Long,
     /** 确认发放的RP 数 */
     val points: Long,
@@ -57,12 +60,9 @@ data class PointOrder(
     var operatorName: String? = null,
     var voidReason: PointOrderVoidReason? = null
 ) {
-    /** 未完结（占着金额尾数）：待支付 + 待确认 */
+    /** 未完结：待支付 + 待确认 */
     fun isActive(): Boolean =
         status == PointOrderStatus.PENDING_PAYMENT || status == PointOrderStatus.PENDING_CONFIRM
-
-    /** 金额尾数（1-99 分）—— 唯一化的那个键 */
-    fun tail(): Int = (payCents % 100).toInt()
 }
 
 /**
@@ -124,11 +124,9 @@ class PointOrderState private constructor() : PersistentState() {
     /**
      * 建单。
      *
-     * **订单号与金额尾数都要唯一**：订单号查全表（保留期内不可重复，否则申诉时对不上），
-     * 尾数查**活跃订单**（两个待处理的单金额一模一样，服主就无法一眼区分谁是谁了）。
+     * **订单号唯一**：查全表（保留期内不可重复，否则申诉时对不上）。
      *
-     * 返回 null = 连续重抽超限（99 个尾数被活跃订单占满时才会发生；一人同时只允许一单，
-     * 实际要 99 个玩家同时挂着待处理订单才可能撞上）。
+     * 返回 null = 连续重抽超限（订单号空间 3300 万，实际撞不上，纯属防死循环的兜底）。
      */
     fun create(
         playerUuid: UUID,
@@ -138,28 +136,19 @@ class PointOrderState private constructor() : PersistentState() {
         points: Long,
         timeoutMinutes: Long,
         qrFile: String,
-        /** 是否给实付金额加**唯一尾数**。⚠ 用"带金额的收款码"的档位必须传 false ——
-         *  码上的金额是写死的，加尾数玩家就付不出来了（2026-09-18 用户提出多张码时定的） */
-        tailEnabled: Boolean,
         now: Long
     ): PointOrder? {
-        val usedTails = orders.values.filter { it.isActive() }.mapTo(mutableSetOf()) { it.tail() }
         for (attempt in 0 until MAX_GENERATE_ATTEMPTS) {
             val orderNo = PointOrderNumbers.generate()
             if (orderNo in orders) continue
-            val payCents = if (tailEnabled) baseCents + PointOrderNumbers.tailOf(orderNo) else baseCents
-            if (tailEnabled) {
-                // 标价本身带角分时，加上尾数可能恰好进位到整元（尾数被抹平成 00）——换个号重来
-                if (payCents % 100L == 0L) continue
-                if ((payCents % 100L).toInt() in usedTails) continue
-            }
             val order = PointOrder(
                 orderNo = orderNo,
                 playerUuid = playerUuid,
                 playerName = playerName,
                 tierName = tierName,
                 baseCents = baseCents,
-                payCents = payCents,
+                // 实付 = 标价，一分不加（玩家看到多少就付多少）
+                payCents = baseCents,
                 points = points,
                 createdAt = now,
                 expireAt = now + timeoutMinutes * 60_000L,

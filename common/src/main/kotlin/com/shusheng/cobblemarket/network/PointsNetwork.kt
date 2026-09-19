@@ -15,6 +15,7 @@ import com.shusheng.cobblemarket.currency.PointOrderNumbers
 import com.shusheng.cobblemarket.currency.PointsAuditLogger
 import com.shusheng.cobblemarket.currency.PointsLogType
 import com.shusheng.cobblemarket.currency.PointOrderState
+import com.shusheng.cobblemarket.currency.PointRecordState
 import com.shusheng.cobblemarket.currency.PointRedeemService
 import com.shusheng.cobblemarket.currency.PointShopResult
 import com.shusheng.cobblemarket.currency.PointShopService
@@ -104,7 +105,9 @@ data class PointOrderInfo(
     /** 玩家点「我已支付」的时刻；未支付时 = 0（管理端按它算「已等待」） */
     val paidAt: Long = 0L,
     /** 下单时刻（没有 [paidAt] 时按它算「已等待」） */
-    val createdAt: Long = 0L
+    val createdAt: Long = 0L,
+    /** 作废原因（[PointOrderVoidReason] 的名字；**空串 = 没作废**）—— 玩家侧据此说清是取消的、超时的还是被作废的 */
+    val voidReason: String = ""
 )
 
 /**
@@ -375,6 +378,9 @@ data class RejectPointOrderPayload(val orderNo: String) : CustomPayload {
 /** 订单号长度上限（6 位 + 分隔符，留足余量）；超长在协议层直接拒绝 */
 private const val MAX_ORDER_NO_LENGTH = 16
 
+/** 订单**状态 / 作废原因**这类枚举名的长度上限（都是服务端自己写的枚举名，防伪造客户端塞超长串） */
+private const val MAX_STATUS_LENGTH = 32
+
 /**
  * 「我的订单」一次最多回多少笔。已完结订单按方案保留 90 天，老玩家可能有几百条 ——
  * 全发会把包撑爆、界面也放不下，取最近这些条足够（真要查更早的，服主侧有完整账本）。
@@ -390,11 +396,12 @@ private fun writeOrder(b: PacketByteBuf, o: PointOrderInfo) {
     b.writeString(o.tierName, MAX_TIER_NAME_LENGTH)
     b.writeLong(o.payCents)
     b.writeLong(o.points)
-    b.writeString(o.status, 32)
+    b.writeString(o.status, MAX_STATUS_LENGTH)
     b.writeLong(o.expireAt)
     b.writeString(o.playerName, MAX_TIER_NAME_LENGTH)
     b.writeLong(o.paidAt)
     b.writeLong(o.createdAt)
+    b.writeString(o.voidReason, MAX_STATUS_LENGTH)
 }
 
 private fun readOrder(b: PacketByteBuf) = PointOrderInfo(
@@ -403,11 +410,12 @@ private fun readOrder(b: PacketByteBuf) = PointOrderInfo(
     tierName = b.readString(MAX_TIER_NAME_LENGTH),
     payCents = b.readLong(),
     points = b.readLong(),
-    status = b.readString(32),
+    status = b.readString(MAX_STATUS_LENGTH),
     expireAt = b.readLong(),
     playerName = b.readString(MAX_TIER_NAME_LENGTH),
     paidAt = b.readLong(),
-    createdAt = b.readLong()
+    createdAt = b.readLong(),
+    voidReason = b.readString(MAX_STATUS_LENGTH)
 )
 
 // ── RP 市场配置（仅 OP；服务器配置界面里的「RP 市场」入口）──
@@ -417,7 +425,7 @@ data class PointsTierConfig(
     val name: String,
     val priceCents: Long,
     val points: Long,
-    /** 该档专用收款码文件名（留空 = 走全局码 + 尾数） */
+    /** 该档专用收款码文件名（留空 = 走全局收款码） */
     val qr: String,
     /** 该档「RP 券」图文件名（留空 = 用内置券图） */
     val icon: String = ""
@@ -798,6 +806,54 @@ data class RevokePointCodePayload(val code: String) : CustomPayload {
     }
 }
 
+// ── C2S：玩家侧「我的兑换记录」（只回自己的那几条）──
+
+/**
+ * 请求**自己的**兑换记录。
+ *
+ * ⚠ 与兑换码管理的 [RequestPointCodesPayload] 不同，这个**不设权限门槛** ——
+ * 看的是自己的记录，任何玩家都能查；也查不到别人的（请求里没有任何参数，
+ * 服务端按发包玩家的 uuid 取，想伪造也没地方填）。
+ */
+class RequestPointRecordsPayload : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<RequestPointRecordsPayload>(CobbleMarket.id("request_point_records"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestPointRecordsPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestPointRecordsPayload() }
+        )
+    }
+}
+
+/** 一条兑换记录（界面用）：面额 + 到账后余额 + 时间 */
+data class PointRecordInfo(val amount: Long, val balanceAfter: Long, val at: Long) {
+    fun write(buf: PacketByteBuf) {
+        buf.writeLong(amount)
+        buf.writeLong(balanceAfter)
+        buf.writeLong(at)
+    }
+
+    companion object {
+        fun read(buf: PacketByteBuf) =
+            PointRecordInfo(amount = buf.readLong(), balanceAfter = buf.readLong(), at = buf.readLong())
+    }
+}
+
+/** 兑换记录列表（**最新在前**，服务端已排好序） */
+data class PointRecordsPayload(val entries: List<PointRecordInfo>) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<PointRecordsPayload>(CobbleMarket.id("point_records"))
+        val CODEC: PacketCodec<PacketByteBuf, PointRecordsPayload> = PacketCodec.of(
+            { p, b -> b.writeVarInt(p.entries.size); p.entries.forEach { it.write(b) } },
+            { b -> PointRecordsPayload((0 until b.readVarInt()).map { PointRecordInfo.read(b) }) }
+        )
+    }
+}
+
 /**
  * **RP 网络层**（GUI 侧）。
  *
@@ -847,6 +903,9 @@ object PointsNetwork {
         // 兑换码管理（生成结果 / 列表）：漏注册客户端会收不到（静默无反应）
         registerS2CType(PointCodesCreatedPayload.ID, PointCodesCreatedPayload.CODEC)
         registerS2CType(PointCodesPayload.ID, PointCodesPayload.CODEC)
+        // 玩家侧「我的兑换记录」：⚠ 漏了这行**直接崩客户端启动**（Fabric 的 registerS2C 要求
+        // 该 payload 类型已注册，`ClientBridgeKtImpl.registerS2C` 会抛 IllegalArgumentException）
+        registerS2CType(PointRecordsPayload.ID, PointRecordsPayload.CODEC)
 
         // ── RP 市场配置（服务器配置界面的「RP 市场」入口；⚠ 仅 OP，不下放任何节点）──
 
@@ -1262,6 +1321,20 @@ object PointsNetwork {
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.points.code_revoked")))
             }
         }
+
+        registerC2S(RequestPointRecordsPayload.ID, RequestPointRecordsPayload.CODEC) { _, player ->
+            // ⚠ 不查权限（看的是自己的记录），但**节流照旧**：列表请求一律走排队发，
+            //   服务端超频时直接丢弃、不回包（客户端那边有排队补发 + 缓存兜底）
+            if (!RequestThrottle.allow(player.uuid, "request_point_records", RequestThrottle.READ_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            val server = player.server
+            server.execute {
+                val entries = PointRecordState.get(server).recent(player.uuid)
+                    .map { PointRecordInfo(amount = it.amount, balanceAfter = it.balanceAfter, at = it.at) }
+                sendToPlayer(player, PointRecordsPayload(entries))
+            }
+        }
     }
 
     /**
@@ -1294,7 +1367,8 @@ object PointsNetwork {
                 expireAt = it.expireAt,
                 playerName = it.playerName,
                 paidAt = it.paidAt ?: 0L,
-                createdAt = it.createdAt
+                createdAt = it.createdAt,
+                voidReason = it.voidReason?.name ?: ""
             )
         }
         sendToPlayer(player, PointOrdersPayload(orders = orders, includeFinished = includeFinished))
@@ -1354,7 +1428,8 @@ object PointsNetwork {
                 expireAt = o.expireAt,
                 playerName = o.playerName,
                 paidAt = o.paidAt ?: 0L,
-                createdAt = o.createdAt
+                createdAt = o.createdAt,
+                voidReason = o.voidReason?.name ?: ""
             )
         }
         sendToPlayer(

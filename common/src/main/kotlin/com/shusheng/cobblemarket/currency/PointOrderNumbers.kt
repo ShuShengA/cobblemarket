@@ -50,20 +50,6 @@ object PointOrderNumbers {
         return checksum(digits.copyOf(PAYLOAD_LENGTH)) == digits[PAYLOAD_LENGTH]
     }
 
-    /**
-     * 由订单号派生**金额尾数**（1-99 分）。
-     *
-     * 尾数与订单号绑定 ⇒ 服主在收款账单里看到 `+5.37` 就能直接对上是哪一单，
-     * 不必依赖玩家备注（玩家基本不备注）。活跃订单的尾数由账本查重保证不重复。
-     */
-    fun tailOf(orderNo: String): Int {
-        var value = 0L
-        for (i in 0 until PAYLOAD_LENGTH) {
-            value = value * BASE + PointCodes.valueOf(orderNo[i]).coerceAtLeast(0)
-        }
-        return (value % 99 + 1).toInt()
-    }
-
     /** 按 3 位一组加连字符展示（`ABC-DEF`），念给客服听时不容易串行 */
     fun format(orderNo: String): String = orderNo.chunked(3).joinToString("-")
 
