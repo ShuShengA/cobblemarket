@@ -46,8 +46,13 @@ data class MarketListing(
 ) {
     fun isActive(): Boolean = status == ListingStatus.ACTIVE
 
+    /** 通知消息用的展示名：名字带主属性色（闪光★由调用方按场景追加），见 [com.shusheng.cobblemarket.util.TypeTextColors.speciesName] */
     fun speciesText(): net.minecraft.text.Text =
-        net.minecraft.text.Text.translatable(extraData["speciesKey"] ?: "cobblemon.species.${species.lowercase()}.name")
+        com.shusheng.cobblemarket.util.TypeTextColors.speciesName(
+            net.minecraft.text.Text.translatable(extraData["speciesKey"] ?: "cobblemon.species.${species.lowercase()}.name"),
+            extraData["primaryType"],
+            false
+        )
 
     fun toNbt(): NbtCompound = NbtCompound().apply {
         putUuid("id", id)

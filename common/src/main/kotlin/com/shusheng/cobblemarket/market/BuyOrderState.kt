@@ -172,10 +172,9 @@ data class BuyOrder(
         if (type == BuyOrderType.POKEMON) {
             net.minecraft.text.Text.translatable(speciesKey ?: "cobblemarket.buy_order.any_pokemon")
         } else {
-            val id = net.minecraft.util.Identifier.tryParse(itemId)
-            val item = id?.let { net.minecraft.registry.Registries.ITEM.getOrEmpty(it).orElse(null) }
-            if (item != null) net.minecraft.text.Text.translatable(item.translationKey)
-            else net.minecraft.text.Text.literal(itemId)
+            // 物品名走稀有度色（= 物品栏悬停的名字颜色）；求购单只有 itemId、没有完整栈
+            com.shusheng.cobblemarket.util.ItemNameText.rarityColoredNameById(itemId)
+                ?: net.minecraft.text.Text.literal(itemId)
         }
 
     fun toNbt(): NbtCompound = NbtCompound().apply {

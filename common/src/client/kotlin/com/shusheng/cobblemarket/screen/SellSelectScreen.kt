@@ -1003,8 +1003,9 @@ class SellSelectScreen(
 
             // 行列表：null = 分割线；证章行在 marksLine 索引处画图标
             val lines = mutableListOf<Pair<Text?, Int>>()
-            lines.add(EntryBadgeRenderer.nameWithShinyStar(speciesDisplay(p), p.shiny)
-                .copy().append(Text.literal("  Lv.${p.level}")) to typeColor(p.primaryType))
+            lines.add(EntryBadgeRenderer.nameWithLevelLine(
+                EntryBadgeRenderer.nameWithShinyStar(speciesDisplay(p), p.shiny),
+                p.primaryType, p.level) to 0xFFFFFF)
             lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string).append(EntryBadgeRenderer.typeLine(p.primaryType, p.secondaryType)) to 0xFFFFFF)
             lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(EntryBadgeRenderer.natureText(p.natureBase, p.nature))

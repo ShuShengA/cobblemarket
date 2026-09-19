@@ -117,22 +117,43 @@ object EntryBadgeRenderer {
         else -> 0xFFFFFF
     }
 
-    /** 类型行属性名分段着色：主属性名主色、「+ 副属性名」副色（标签文字由调用方拼接，默认白） */
+    /** 类型行属性名分段着色：主属性名主色、「+ 副属性名」副色（标签文字由调用方拼接，默认白）。
+     *
+     *  ⚠ 三段必须**平级**挂在空节点下 —— MC 的 `Text.visit` 把父节点合并后的样式传给每个
+     *  append 进来的段落（`Style.withParent`：自己没设色就取父的），旧写法
+     *  `主属性名.append(" + ")` 会让分隔符继承主属性色（2026-09-19 实测踩到）。 */
     fun typeLine(primaryType: String, secondaryType: String): Text {
-        val primary = Text.translatable(primaryType)
-            .setStyle(net.minecraft.text.Style.EMPTY.withColor(typeColor(primaryType)))
-        return if (secondaryType.isNotEmpty()) {
-            primary.append(Text.literal(" + ")).append(
+        val line = Text.literal("")
+        line.append(
+            Text.translatable(primaryType)
+                .setStyle(net.minecraft.text.Style.EMPTY.withColor(typeColor(primaryType)))
+        )
+        if (secondaryType.isNotEmpty()) {
+            line.append(Text.literal(" + "))
+            line.append(
                 Text.translatable(secondaryType)
                     .setStyle(net.minecraft.text.Style.EMPTY.withColor(typeColor(secondaryType)))
             )
-        } else primary
+        }
+        return line
     }
 
     /** 名称 + 金色闪光星标（★），非闪光不追加；Text 内嵌样式在绘制时按段渲染 */
     fun nameWithShinyStar(name: String, shiny: Boolean): Text =
         if (shiny) Text.literal(name).append(Text.literal(" ★").formatted(Formatting.GOLD))
         else Text.literal(name)
+
+    /**
+     * 「名字★Lv」行：名字本体带主属性色、Lv 段跟行色（白）。**所有界面/悬停窗的第一行统一走此函数**。
+     *
+     *  ⚠ 两段必须**平级**：MC 的 `Text.visit` 把父节点合并后的样式传给每个 append 进来的段落，
+     *  旧写法 `名字.append("  Lv.x")` 配合整行行色 = 属性色，会让 Lv 一起变成属性色
+     *  （2026-09-19 用户报「小火龙 Lv.1 连 Lv 都是红的」）。调用方行色一律传 `0xFFFFFF`。
+     */
+    fun nameWithLevelLine(displayName: Text, primaryType: String, level: Int): Text =
+        Text.literal("")
+            .append(displayName.copy().styled { it.withColor(typeColor(primaryType)) })
+            .append(Text.literal("  ${Text.translatable("cobblemarket.gui.lv").string}$level"))
 
     /**
      * 性格显示文本（照 Cobblemon 薄荷约定）：
@@ -230,8 +251,8 @@ object EntryBadgeRenderer {
 
         // 行列表：null = 分割线（1px 灰线）；证章行 = 图标行（marksLine 索引处画图标）
         val lines = mutableListOf<Pair<Text?, Int>>()
-        // 名字行 = 主属性色；Lv 段由渲染行统一着色
-        lines.add(displayName.copy().append(Text.literal("  ${Text.translatable("cobblemarket.gui.lv").string}${entry.level}")) to typeColor(entry.primaryType))
+        // 名字行：名字本体主属性色、Lv 段白（统一走 nameWithLevelLine，别再在这里自己拼）
+        lines.add(nameWithLevelLine(displayName, entry.primaryType, entry.level) to 0xFFFFFF)
         // 类型行：标签默认白 + 属性名分段着色（主属性主色/副属性副色）
         lines.add(
             Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
