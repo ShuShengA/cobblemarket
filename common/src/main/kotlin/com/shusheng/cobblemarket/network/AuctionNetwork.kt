@@ -73,6 +73,10 @@ data class AuctionEntry(
      */
     val currency: String
 ) {
+    /** 这场拍卖是不是 RP 计价 —— **渲染货币单位就读它**（构造时解析一次，行渲染每帧不再 parse） */
+    val isPoints: Boolean = com.shusheng.cobblemarket.currency.MarketCurrency
+        .fromStored(currency) == com.shusheng.cobblemarket.currency.MarketCurrency.POINTS
+
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(id)
         buf.writeString(type)

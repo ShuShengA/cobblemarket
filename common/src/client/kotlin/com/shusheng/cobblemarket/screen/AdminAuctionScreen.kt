@@ -5,6 +5,13 @@ import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.iconStackOf
+import com.shusheng.cobblemarket.client.PointsStateCache
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
+import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
+import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
@@ -51,6 +58,37 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
     private var searchField: net.minecraft.client.gui.widget.TextFieldWidget? = null
     private var backButton: NineSliceButton? = null
 
+    /** 列表在查哪个币种（货币切换按钮控制）—— **只决定查什么**：显示单位一律读条目自己的 [AuctionEntry.isPoints] */
+    private var currency = MarketCurrency.PRIMARY
+
+    /** 货币切换按钮（RP 总开关关着时为 null = 压根没建） */
+    private var currencyButton: NineSliceButton? = null
+
+    /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
+    private fun onCurrencyClick() {
+        if (!PointsStateCache.marketEnabled) {
+            com.shusheng.cobblemarket.client.playFailSound()
+            client?.player?.sendMessage(
+                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            return
+        }
+        currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
+        currencyButton?.let { updateCurrencyButton(it) }
+        // 本地先按新币种过一遍（旧币种条目立刻消失），再向服务端要新币种的全量列表
+        rebuildFiltered()
+        sendToServer(RequestAuctionListPayload(currency.name))
+    }
+
+    /** 刷新货币按钮外观：主货币显示 `₽`，RP 显示图标（与市场/上架界面同一套口径） */
+    private fun updateCurrencyButton(btn: NineSliceButton) {
+        val points = currency == MarketCurrency.POINTS
+        btn.setMessage(Text.literal(if (points) "" else "₽"))
+        btn.iconLeft = if (points) POINTS_SYMBOL_TEXTURE else null
+    }
+
     // 到期结算轮询（照搬拍卖场）：存在到期未结算条目时周期重拉，触发服务端结算
     private var lastSettlePoll = 0L
 
@@ -91,7 +129,10 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
     /** 数据/搜索变化时重建过滤缓存（render 每帧只读） */
     private fun rebuildFiltered() {
         val query = searchField?.text?.trim()?.takeIf { it.isNotEmpty() }
-        filteredCache = if (query == null) entries else entries.filter {
+        // 币种先行：服务端列表已按币种过滤，但**增量事件（NEW/BID/SETTLED）是全币种广播**的，
+        // 不在这里再筛一道，别的币种的拍卖就会飘进当前列表
+        val byCurrency = entries.filter { it.isPoints == (currency == MarketCurrency.POINTS) }
+        filteredCache = if (query == null) byCurrency else byCurrency.filter {
             displayName(it).contains(query, ignoreCase = true) || it.sellerName.contains(query, ignoreCase = true) ||
                 // 物品条目走搜索索引（名称/tooltip/TM 招式精确匹配，见 ItemSearchIndex）
                 (it.type == "ITEM" && com.shusheng.cobblemarket.client.ItemSearchIndex.entryMatches(it.species, it.itemNbt, query))
@@ -131,19 +172,25 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         return if (t == entry.species) (entry.extraData["speciesName"] ?: entry.species) else t
     }
 
-    /** 价格文本：金额+单位金色；无出价时「起拍」前缀白色（2026-08-24 拍板：文字默认色） */
+    /** 价格文本：金额+单位金色；无出价时「起拍」前缀白色（2026-08-24 拍板：文字默认色）。
+     *  单位按**这场拍卖自己的币种**（主货币 ₽ / RP 图标），走统一入口 `amountWithUnit` */
     private fun displayPriceText(entry: AuctionEntry): Text {
         val price = if (entry.currentPrice > 0) entry.currentPrice else entry.startingPrice
-        val priceT = Text.literal(com.shusheng.cobblemarket.client.formatPrice(price) + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)
+        val priceT = com.shusheng.cobblemarket.client.amountWithUnit(
+            com.shusheng.cobblemarket.client.formatPrice(price), entry.isPoints, "", inline = true
+        ).formatted(Formatting.GOLD)
         return if (entry.currentPrice > 0) priceT
         else Text.translatable("cobblemarket.auction.from").append(priceT)
     }
 
     /** 行内价格（缩写、无「起拍」前缀，与物品市场/求购单行内一致）：悬停与出价弹窗仍走 [displayPriceText] 千分位 */
-    private fun displayPriceCompactText(entry: AuctionEntry): Text {
-        val price = if (entry.currentPrice > 0) entry.currentPrice else entry.startingPrice
-        return Text.literal(com.shusheng.cobblemarket.client.formatPriceShort(price) + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)
-    }
+    private fun displayPriceCompactText(entry: AuctionEntry): Text =
+        com.shusheng.cobblemarket.client.amountWithUnit(
+            com.shusheng.cobblemarket.client.formatPriceShort(
+                if (entry.currentPrice > 0) entry.currentPrice else entry.startingPrice
+            ),
+            entry.isPoints, "", inline = true
+        ).formatted(Formatting.GOLD)
 
     private fun formatRemaining(endsAt: Long): String {
         val ms = endsAt - System.currentTimeMillis()
@@ -262,6 +309,20 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
         backButton = backBtn
+
+        // 货币切换按钮（返回按钮左侧 4px）：看哪个币种的拍卖（与玩家端同一个位置、同一套逻辑）
+        currencyButton = if (PointsStateCache.enabled) {
+            NineSliceButton(
+                leftX + panelWidth - 74, 13, 20, 16, Text.literal(""), { onCurrencyClick() },
+                iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
+                iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
+                tooltip = Text.translatable("cobblemarket.gui.currency_switch", inlineCurrencyUnit(), CurrencyService.pointsIcon())
+            ).also {
+                it.dimmed = !PointsStateCache.marketEnabled
+                updateCurrencyButton(it)
+                addDrawableChild(it)
+            }
+        } else null
         addDrawableChild(backBtn)
 
         val savedSearch = searchField?.text ?: ""
@@ -274,7 +335,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         addDrawableChild(searchField)
         searchField?.text = savedSearch
 
-        sendToServer(RequestAuctionListPayload(com.shusheng.cobblemarket.currency.MarketCurrency.PRIMARY.name))
+        sendToServer(RequestAuctionListPayload(currency.name))
         rebuildFiltered()
     }
 
@@ -318,7 +379,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
     fun onMarketResult(payload: MarketResultPayload) {
         client?.player?.sendMessage(payload.message.copy().formatted(if (payload.success) Formatting.GREEN else Formatting.RED), false)
         if (payload.success) {
-            sendToServer(RequestAuctionListPayload(com.shusheng.cobblemarket.currency.MarketCurrency.PRIMARY.name))
+            sendToServer(RequestAuctionListPayload(currency.name))
         }
     }
 
@@ -480,7 +541,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         // 结算中条目排除（已结算完毕，重拉会全量替换、截断动画）
         if (entries.any { it.endsAt <= pollNow && it.id !in settlingUntil } && pollNow - lastSettlePoll > 1000) {
             lastSettlePoll = pollNow
-            sendToServer(RequestAuctionListPayload(com.shusheng.cobblemarket.currency.MarketCurrency.PRIMARY.name))
+            sendToServer(RequestAuctionListPayload(currency.name))
         }
 
         val centerX = width / 2
@@ -970,9 +1031,13 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         auctionLine(Text.translatable("cobblemarket.auction.current_price").append(": ").append(
             displayPriceText(entry)))
         auctionLine(Text.translatable("cobblemarket.auction.starting_price").append(": ").append(
-            Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GOLD)))
+            com.shusheng.cobblemarket.client.amountWithUnit(
+                com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice), entry.isPoints, "", inline = true
+            ).formatted(Formatting.GOLD)))
         auctionLine(Text.translatable("cobblemarket.auction.min_increment").append(": ").append(
-            Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GOLD)))
+            com.shusheng.cobblemarket.client.amountWithUnit(
+                com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement), entry.isPoints, "", inline = true
+            ).formatted(Formatting.GOLD)))
         auctionLine("${Text.translatable("cobblemarket.auction.ends").string}: ${formatRemaining(entry.endsAt)}", 0xAAAAAA)
         auctionLine("${Text.translatable("cobblemarket.auction.bids_count").string}: ${entry.bidCount}", 0xAAAAAA)
         if (entry.currentBidderName.isNotEmpty()) {

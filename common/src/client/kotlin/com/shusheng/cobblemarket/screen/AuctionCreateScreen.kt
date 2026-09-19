@@ -2,6 +2,13 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.client.PointsStateCache
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
+import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
+import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.CurrencyService
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
@@ -168,6 +175,12 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private var countField: TextFieldWidget? = null
     private var durationIndex = 0
     private var durationButton: NineSliceButton? = null
+
+    /** 这场拍卖收哪种币（每次开弹窗重置为主货币）；按钮没建时（RP 总开关关）恒为主货币 */
+    private var currency = MarketCurrency.PRIMARY
+
+    /** 货币切换按钮（起拍价输入框右侧）：RP 总开关关着时为 null = 压根没建 */
+    private var currencyButton: NineSliceButton? = null
     private var confirmButton: NineSliceButton? = null
     private var cancelButton: NineSliceButton? = null
     private var dialogRenderable: RenderablePokemon? = null
@@ -377,6 +390,29 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     // ── 拍卖设置弹窗 ──
 
+    /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
+    private fun onCurrencyClick() {
+        if (!PointsStateCache.marketEnabled) {
+            playFailSound()
+            client?.player?.sendMessage(
+                // ⚠ 提醒类消息用红色，和普通反馈区分开（图标自带白色，不受影响）
+                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            return
+        }
+        currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
+        currencyButton?.let { updateCurrencyButton(it) }
+    }
+
+    /** 刷新货币按钮外观：主货币显示 `₽`，RP 显示图标（与市场/上架界面同一套口径） */
+    private fun updateCurrencyButton(btn: NineSliceButton) {
+        val points = currency == MarketCurrency.POINTS
+        btn.setMessage(Text.literal(if (points) "" else "₽"))
+        btn.iconLeft = if (points) POINTS_SYMBOL_TEXTURE else null
+    }
+
     private fun openDialog(pokemon: PokemonPreview?, item: SellItem?) {
         dialogPokemon = pokemon
         dialogItem = item
@@ -423,6 +459,23 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         startingField?.setPlaceholder(Text.translatable("cobblemarket.auction.starting_placeholder").formatted(Formatting.GRAY))
         startingField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(startingField)
+
+        // 货币切换按钮（起拍价输入框右侧 4px）：与市场/上架界面同一个按钮、同一套三层拦截。
+        // ⚠ RP 总开关关着 → **整个按钮不建**（那时 RP 系统停摆，留个点不动的灰按钮更难看）；
+        //   「玩家间 RP 交易」没开 → 建但置灰，点了给失败音 + 红字提示
+        currency = MarketCurrency.PRIMARY
+        currencyButton = if (PointsStateCache.enabled) {
+            NineSliceButton(
+                centerX + 84, dialogY + 52, 20, 16, Text.literal(""), { onCurrencyClick() },
+                iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
+                iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
+                tooltip = Text.translatable("cobblemarket.gui.currency_switch", inlineCurrencyUnit(), CurrencyService.pointsIcon())
+            ).also {
+                it.dimmed = !PointsStateCache.marketEnabled
+                updateCurrencyButton(it)
+                addDrawableChild(it)
+            }
+        } else null
 
         incrementField = TextFieldWidget(textRenderer, centerX - 20, dialogY + 72, 100, 16, Text.literal(""))
         // 先铺兜底文案「留空=默认」，再用已缓存的服务器值覆盖 ——
@@ -597,9 +650,23 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         val durationIndexToSend = durationIndex
         val pokemon = dialogPokemon
         val item = dialogItem
+        // ⚠ 提交前**再查一次实时缓存**（不是开弹窗时的快照）：服主可能在弹窗开着时把
+        //   「玩家间 RP 交易」关掉，那这一次必须拦下并切回主货币 —— 服务端也会拒，
+        //   这里是为了给个明确提示，而不是让玩家对着一笔静默失败的拍卖发懵
+        if (currency == MarketCurrency.POINTS && !PointsStateCache.marketEnabled) {
+            currency = MarketCurrency.PRIMARY
+            currencyButton?.let { updateCurrencyButton(it) }
+            client?.player?.sendMessage(
+                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            playFailSound()
+            return
+        }
         if (pokemon != null) {
             createInFlight = true
-            sendToServer(CreatePokemonAuctionPayload(pokemon.uuid, starting, increment, durationIndexToSend, com.shusheng.cobblemarket.currency.MarketCurrency.PRIMARY.name))
+            sendToServer(CreatePokemonAuctionPayload(pokemon.uuid, starting, increment, durationIndexToSend, currency.name))
         } else if (item != null) {
             val count = countField?.text?.toIntOrNull() ?: run {
                 playFailSound()
@@ -613,7 +680,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             val itemId = Registries.ITEM.getId(item.stack.item).toString()
             val itemNbt = item.stack.encode(registry, NbtCompound()) as? NbtCompound ?: NbtCompound()
             createInFlight = true
-            sendToServer(CreateItemAuctionPayload(itemId, itemNbt, count, starting, increment, durationIndexToSend, com.shusheng.cobblemarket.currency.MarketCurrency.PRIMARY.name))
+            sendToServer(CreateItemAuctionPayload(itemId, itemNbt, count, starting, increment, durationIndexToSend, currency.name))
         }
         // 不立即关闭：等 onMarketResult 响应（成功跳转拍卖场，失败保留弹窗供改价重试）
     }
@@ -626,6 +693,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         countField = null
         durationIndex = 0
         durationButton = null
+        currencyButton = null
         confirmButton = null
         cancelButton = null
         dialogRenderable = null
