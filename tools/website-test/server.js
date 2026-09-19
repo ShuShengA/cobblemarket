@@ -136,7 +136,7 @@ const PAGE = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>CobbleMarket RP 充值（测试站）</title>
+<title>CobbleMarket RP 充值</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 560px; margin: 48px auto; padding: 0 16px; color: #222; }
   h1 { font-size: 20px; }
@@ -151,12 +151,9 @@ const PAGE = `<!DOCTYPE html>
 </style>
 </head>
 <body>
-<h1>CobbleMarket RP 充值 —— 测试站</h1>
-<p class="warn">⚠ 这是**测试用**页面：点「我已支付」不会真的扣钱，直接就把兑换码发给你。
-真正上线要自己接支付渠道、记账、防刷。</p>
+<h1>CobbleMarket RP 充值</h1>
 <div id="tiers"></div>
 <div id="result"></div>
-<p class="hint">拿到码后进游戏 → RP 市场 → 兑换框粘贴 → 点「兑换」。</p>
 <script>
 const tiers = ${JSON.stringify(TIERS)};
 const box = document.getElementById('tiers');
@@ -178,7 +175,7 @@ for (const t of tiers) {
       });
       const data = await res.json();
       result.innerHTML = res.ok
-        ? '<p>兑换码（点一下自动全选）：</p><code onclick="getSelection().selectAllChildren(this)">' + data.code + '</code>'
+        ? '<p>兑换码：</p><code onclick="getSelection().selectAllChildren(this)">' + data.code + '</code>'
         : '<p style="color:#c62828">签发失败：' + data.error + '</p>';
     } catch (e) {
       result.innerHTML = '<p style="color:#c62828">请求失败：' + e + '</p>';
@@ -232,7 +229,7 @@ function start(port, secret) {
     res.end('not found');
   });
   server.listen(port, () => {
-    console.log(`测试站已启动：http://localhost:${port}`);
+    console.log(`站点已启动：http://localhost:${port}`);
     console.log(`有效期 ${DEFAULT_VALID_DAYS} 天；secret 长度 ${secret.length}（务必与游戏服务端配的一致）`);
   });
 }
