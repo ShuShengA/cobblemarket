@@ -19,7 +19,7 @@ enum class PointsLogType { GIVE, TAKE, REDEEM, MARKET_SPEND, MARKET_INCOME, SHOP
 /**
  * **RP 审计账本**（`config/cobblemarket/points/`）。
  *
- * ⚠ RP 在商业服等同**充值货币**（玩家花真钱买的），所以**每一次变动都必须可对账** ——
+ * ⚠ RP 的来源由服主决定（可能是玩家花真钱买的、也可能是当奖励发的），两种都**必须可对账** ——
  * 发放 / 回收 / 兑换 / 市场消费与收入全量落 CSV，服主能拿它跟自己的收款记录逐笔核对。
  *
  * 照 [com.shusheng.cobblemarket.finance.CreditFileLogger] 的模式：中英双份 + README + CSV 注入防护
@@ -116,8 +116,8 @@ object PointsAuditLogger {
                             市场消费（买精灵/物品/拍卖/求购花掉的）、市场收入（卖出赚到的）、
                             充值发放（游戏内充值订单经服主确认后发放的）
 
-                    ⚠ RP 在商业服等同于充值货币（玩家花真钱购买），本账本是**对账依据**：
-                    服主应定期拿它和自己的收款记录核对，确认每一笔发放都有对应的收款。
+                    ⚠ RP 的获取途径由服主决定（当奖励发、当充值货币卖，或两者并用），本账本是**对账依据**：
+                    若你用充值发放 RP，应定期拿它和自己的收款记录核对，确认每一笔发放都有对应的收款。
 
                     变动量恒为正数，「进/出」方向看类型列；「变动后余额」可直接逐行核对。
                     """.trimIndent()
@@ -142,9 +142,9 @@ object PointsAuditLogger {
                              Market spend (bought a Pokémon/item/auction/buy order), Market income (sold),
                              Shop grant (in-game purchase order confirmed by the owner)
 
-                    ⚠ On commercial servers RP is effectively a paid currency. This ledger is the
-                    reconciliation source of truth: check it against your own payment records regularly
-                    to make sure every grant corresponds to a payment you received.
+                    ⚠ Where RP comes from is up to you (handed out as a reward, sold as a top-up, or both).
+                    This ledger is the reconciliation source of truth: if you sell RP, check it against your
+                    own payment records regularly to make sure every grant corresponds to a payment you received.
 
                     Amount is always positive; the direction is in the type column. "Balance After" lets
                     you verify row by row.

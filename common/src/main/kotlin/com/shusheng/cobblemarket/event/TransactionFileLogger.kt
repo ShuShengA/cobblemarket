@@ -75,7 +75,7 @@ object TransactionFileLogger {
 
                     字段：时间, 类型, 分类, 卖家, 买家, 卖家UUID, 买家UUID, 精灵/物品, 价格, 手续费, 详情, 币种
 
-                    币种：PRIMARY = 主货币，POINTS = RP（充值货币）。价格列的数值要与币种一起看——
+                    币种：PRIMARY = 主货币，POINTS = RP（高级货币）。价格列的数值要与币种一起看——
                     1 RP 与 1 主货币不等值，两种币的账目不能直接相加。老账本没有这一列，按主货币读。
 
                     类型：上架（市场/拍卖挂单）、求购（求购单发布，发起者占卖家列）、
@@ -115,7 +115,7 @@ object TransactionFileLogger {
 
                     Columns: Time, Type, Category, Seller, Buyer, Seller UUID, Buyer UUID, Species/Item, Price, Fee, Details, Currency
 
-                    Currency: PRIMARY = main currency, POINTS = RP (the top-up currency). Always read the Price
+                    Currency: PRIMARY = main currency, POINTS = RP (the premium currency). Always read the Price
                     column together with it — 1 RP and 1 main currency are not of equal value, so totals across
                     the two currencies must not be added up. Older ledgers lack this column; read them as main currency.
 
