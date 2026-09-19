@@ -37,6 +37,7 @@ import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
+import net.minecraft.client.gui.widget.ClickableWidget
 import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
@@ -1242,6 +1243,9 @@ class BuyOrderScreen(
         createTab = 0
         // 币种跟着「当前在看哪种币」——看 RP 单时点发布，默认就发 RP 单（单位对不上会差好几个数量级）
         createCurrency = currency
+        // 表单滚动位置也归零（上次的滚动量留着的话，一打开就停在中间）
+        createScroll = 0
+        createScrollHidden.clear()
         createShinyFilter = PokemonBlacklistEntry.SHINY_ANY
         createHtFilter = PokemonBlacklistEntry.HT_ANY
         previewSpecies = null
@@ -1360,7 +1364,7 @@ class BuyOrderScreen(
         } else null
 
         createConfirmButton = NineSliceButton(
-            centerX - 85, dialogY + confirmY(), 80, 20,
+            centerX - 85, dialogY + createDialogH() - createButtonInset(), 80, 20,
             Text.translatable("cobblemarket.buy_order.create_confirm"),
             { confirmCreate() },
             texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -1368,25 +1372,115 @@ class BuyOrderScreen(
         )
         addDrawableChild(createConfirmButton)
         createCancelButton = NineSliceButton(
-            centerX + 5, dialogY + confirmY(), 80, 20,
+            centerX + 5, dialogY + createDialogH() - createButtonInset(), 80, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeDialogs() },
             texture = BUY_ORDER_BUTTON_TEXTURE,
             texH = BUY_ORDER_BUTTON_TEX_H
         )
         addDrawableChild(createCancelButton)
+        // 建完统一按当前滚动位置摆一遍（弹窗装得下时与上面写的坐标完全一致）
+        layoutCreateForm()
     }
 
-    private fun createDialogY(): Int = if (createTab == 0) height / 2 - 138 else height / 2 - 98
+    /** 创建弹窗表单的**滚动量**（px）：弹窗装得下时恒为 0 —— 布局与改动前完全一致 */
+    private var createScroll = 0
 
-    private fun confirmY(): Int = if (createTab == 0) 230 else 160
+    /** 被**滚动**藏起来的控件（与「状态隐藏」区分开：滚回来要恢复；见 [layoutCreateForm]） */
+    private val createScrollHidden = mutableSetOf<ClickableWidget>()
+
+    /** 创建弹窗的设计高度（精灵 276 / 物品 196 —— 表单本来就按这两套坐标写的） */
+    private fun createDesignH(): Int = if (createTab == 0) 276 else 196
+
+    /**
+     * 创建弹窗高度：设计值，**但不超过屏幕**。
+     *
+     * ⚠ 2026-09-19 用户报（1.2.0 起就有）：GUI scale 设成自动时逻辑高只有两百多，
+     *   写死的 276 会顶出屏幕、上下都被吞。照「服务器配置界面」那套：**钳到屏幕 + 内容可滚**。
+     *   ⚠ 表单行距 18、输入框高 16 —— 已经压无可压，所以只能靠滚动，不能靠缩。
+     */
+    private fun createDialogH(): Int = minOf(createDesignH(), height - 8)
+
+    private fun createDialogY(): Int = height / 2 - createDialogH() / 2
+
+    /** 确认/取消按钮相对**弹窗底**的内缩（设计值 276−230 / 196−160）—— 按钮钉在弹窗底部，永远够得到 */
+    private fun createButtonInset(): Int = createDesignH() - (if (createTab == 0) 230 else 160)
+
+    /** 表单可视区 = 标题/tab 之下 [CREATE_FORM_TOP] 起，到按钮上方 6px 止 */
+    private fun createViewTop(dialogY: Int): Int = dialogY + CREATE_FORM_TOP
+
+    private fun createViewBottom(dialogY: Int): Int = dialogY + createDialogH() - createButtonInset() - 6
+
+    /** 表单内容总高（设计坐标，从表单顶算）——精灵最后一行是备注（194+16），物品是 126+16 */
+    private fun createContentH(): Int = if (createTab == 0) 166 else 98
+
+    private fun createMaxScroll(): Int =
+        maxOf(0, createContentH() - (createViewBottom(createDialogY()) - createViewTop(createDialogY())))
+
+    /**
+     * 创建弹窗**表单**里的纵向坐标：设计偏移 → 屏幕 y（含滚动量）。
+     * ⚠ 表单控件一律走它，别在别处再写一遍 `dialogY + N` —— 滚动后就对不上了。
+     *   （弹窗框、标题不滚，用 `createDialogY() + N`；确认/取消钉在弹窗底，用 [createButtonInset]）
+     */
+    private fun createY(designOffset: Int): Int = createDialogY() + designOffset - createScroll
+
+    /**
+     * 按当前滚动量重排创建弹窗**表单控件**（只改 y，x 不动）。
+     *
+     * ⚠ 这里写的偏移就是两个 builder 里的**设计坐标**（48 / 66 / 84 / …）——**加控件时两处都要加**，
+     *   否则新控件不会跟着滚（也就意味着弹窗被压矮时它会留在原地/跑出弹窗）。
+     * ⚠ 可见性只处理「滚出可视区」这一种，而且**只恢复自己藏起来的那批**（[createScrollHidden]）：
+     *   这些控件另有状态可见性（形态列表展开时隐藏 HT 与个体值等），一律覆盖会把它们弄乱。
+     */
+    private fun layoutCreateForm() {
+        createScroll = createScroll.coerceIn(0, createMaxScroll())
+        val dialogY = createDialogY()
+        val viewTop = createViewTop(dialogY)
+        val viewBottom = createViewBottom(dialogY)
+
+        fun place(w: ClickableWidget?, designOffset: Int) {
+            if (w == null) return
+            val y = dialogY + designOffset - createScroll
+            w.y = y
+            val fits = y >= viewTop && y + w.height <= viewBottom
+            if (fits) {
+                if (createScrollHidden.remove(w)) w.visible = true
+            } else {
+                if (w.visible) createScrollHidden += w
+                w.visible = false
+            }
+        }
+
+        if (createTab == 0) {
+            place(createShinyButton, 48)
+            place(createSpeciesField, 48)
+            place(speciesPrevButton, 48)
+            place(speciesNextButton, 48)
+            place(createFormButton, 66)
+            place(createHtButton, 84)
+            createIvFields.forEachIndexed { i, f -> place(f, 102 + (i / 3) * 18) }
+            place(createAbilityButton, 138)
+            place(createNatureButton, 156)
+            place(createMinPriceField, 174)
+            place(createMaxPriceField, 174)
+            place(createNoteField, 194)
+        } else {
+            place(heldItemButton, 48)
+            place(createItemField, 48)
+            place(itemSelectButton, 66)
+            place(createCountField, 84)
+            place(createMinPriceField, 106)
+            place(createMaxPriceField, 106)
+            place(createNoteField, 126)
+        }
+    }
 
     private fun buildPokemonCreateWidgets(dialogY: Int) {
         val centerX = width / 2
 
         // 闪光三态按钮（物种输入框左侧，照黑名单添加框）
         createShinyButton = NineSliceButton(
-            centerX - 104, dialogY + 48, 20, 16,
+            centerX - 104, createY(48), 20, 16,
             Text.literal(""),
             { cycleCreateShiny() },
             texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -1396,7 +1490,7 @@ class BuyOrderScreen(
         updateCreateShinyButton()
 
         // 位置照黑名单添加弹窗（centerX-80 宽 140，与精灵槽 centerX+66 间距 6px）
-        createSpeciesField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 48, 140, 16, Text.literal(""))
+        createSpeciesField = TextFieldWidget(textRenderer, centerX - 80, createY(48), 140, 16, Text.literal(""))
         createSpeciesField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_species").formatted(Formatting.GRAY))
         createSpeciesField?.setChangedListener { updatePokemonPreview(it) }
         addDrawableChild(createSpeciesField)
@@ -1404,14 +1498,14 @@ class BuyOrderScreen(
         // 候选切换箭头（预览槽位右侧，与槽位垂直居中）：候选 ≥2 才显示，切换预览图与形态/特性选项。
         // 这个对话框宽 280（黑名单/限价是 220），右侧腾得出 44px 放两枚箭头
         speciesPrevButton = NineSliceButton(
-            centerX + 96, dialogY + 48, 18, 16, Text.literal(""),
+            centerX + 96, createY(48), 18, 16, Text.literal(""),
             { cycleSpecies(-1) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.species_prev")
         ).also { it.visible = false; addDrawableChild(it) }
         speciesNextButton = NineSliceButton(
-            centerX + 118, dialogY + 48, 18, 16, Text.literal(""),
+            centerX + 118, createY(48), 18, 16, Text.literal(""),
             { cycleSpecies(1) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
@@ -1420,7 +1514,7 @@ class BuyOrderScreen(
 
         // 形态选择按钮：只有解析出多形态物种时显示，点击展开/收起形态列表
         createFormButton = NineSliceButton(
-            centerX - 82, dialogY + 66, 148, 14,
+            centerX - 82, createY(66), 148, 14,
             Text.literal(""),
             { toggleFormList() },
             texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -1431,7 +1525,7 @@ class BuyOrderScreen(
 
         // 特训三态按钮
         createHtButton = NineSliceButton(
-            centerX - 82, dialogY + 84, 148, 14,
+            centerX - 82, createY(84), 148, 14,
             Text.literal(""),
             { cycleCreateHt() },
             texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -1446,7 +1540,7 @@ class BuyOrderScreen(
             val col = i % 3
             val row = i / 3
             val field = TextFieldWidget(
-                textRenderer, centerX - 75 + col * 52, dialogY + 102 + row * 18, 46, 16, Text.literal("")
+                textRenderer, centerX - 75 + col * 52, createY(102) + row * 18, 46, 16, Text.literal("")
             )
             field.setPlaceholder(Text.literal(ivPlaceholders[i]))
             field.setTextPredicate { it.length <= 2 && it.all { c -> c.isDigit() } }
@@ -1456,7 +1550,7 @@ class BuyOrderScreen(
 
         // 特性按钮：物种解析后列出其可用特性点选（留空/未解析 = 不限）
         createAbilityButton = NineSliceButton(
-            centerX - 82, dialogY + 138, 148, 14,
+            centerX - 82, createY(138), 148, 14,
             Text.literal(""),
             { toggleAbilityList() },
             texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -1467,7 +1561,7 @@ class BuyOrderScreen(
 
         // 性格按钮：25 种性格固定列表点选
         createNatureButton = NineSliceButton(
-            centerX - 82, dialogY + 156, 148, 14,
+            centerX - 82, createY(156), 148, 14,
             Text.literal(""),
             { toggleNatureList() },
             texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -1477,17 +1571,17 @@ class BuyOrderScreen(
         updateNatureButton()
 
         // 单价区间（并排，placeholder 短不溢出）
-        createMinPriceField = TextFieldWidget(textRenderer, centerX - 75, dialogY + 174, 74, 16, Text.literal(""))
+        createMinPriceField = TextFieldWidget(textRenderer, centerX - 75, createY(174), 74, 16, Text.literal(""))
         createMinPriceField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_min_price").formatted(Formatting.GRAY))
         createMinPriceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(createMinPriceField)
-        createMaxPriceField = TextFieldWidget(textRenderer, centerX + 3, dialogY + 174, 74, 16, Text.literal(""))
+        createMaxPriceField = TextFieldWidget(textRenderer, centerX + 3, createY(174), 74, 16, Text.literal(""))
         createMaxPriceField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_max_price").formatted(Formatting.GRAY))
         createMaxPriceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(createMaxPriceField)
 
         // 备注（额外需求提醒卖家，选填）
-        createNoteField = TextFieldWidget(textRenderer, centerX - 74, dialogY + 194, 148, 16, Text.literal(""))
+        createNoteField = TextFieldWidget(textRenderer, centerX - 74, createY(194), 148, 16, Text.literal(""))
         createNoteField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_note").formatted(Formatting.GRAY))
         createNoteField?.setMaxLength(100)
         addDrawableChild(createNoteField)
@@ -1502,7 +1596,7 @@ class BuyOrderScreen(
         // 使用手持物品（组件粒度）：搜索框左侧小手图标按钮，按下态 = 手持模式；
         // 服务端读主手物品提取组件快照作为求购要求
         heldItemButton = NineSliceButton(
-            centerX - 106, dialogY + 48, 16, 16,
+            centerX - 106, createY(48), 16, 16,
             Text.literal(""),
             { toggleHeldItemMode() },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/hand.png"),
@@ -1513,14 +1607,14 @@ class BuyOrderScreen(
         addDrawableChild(heldItemButton)
         updateHeldItemButton()
 
-        createItemField = TextFieldWidget(textRenderer, centerX - 82, dialogY + 48, 148, 16, Text.literal(""))
+        createItemField = TextFieldWidget(textRenderer, centerX - 82, createY(48), 148, 16, Text.literal(""))
         createItemField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_item").formatted(Formatting.GRAY))
         createItemField?.setChangedListener { updateItemPreview(it) }
         addDrawableChild(createItemField)
 
         // 物品选择按钮：模糊匹配列表点选（照黑名单物品对话框）
         itemSelectButton = NineSliceButton(
-            centerX - 82, dialogY + 66, 148, 14,
+            centerX - 82, createY(66), 148, 14,
             Text.literal(""),
             { toggleItemList() },
             texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -1529,23 +1623,23 @@ class BuyOrderScreen(
         itemSelectButton?.visible = false
         addDrawableChild(itemSelectButton)
 
-        createCountField = TextFieldWidget(textRenderer, centerX - 82, dialogY + 84, 148, 16, Text.literal(""))
+        createCountField = TextFieldWidget(textRenderer, centerX - 82, createY(84), 148, 16, Text.literal(""))
         createCountField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_count").formatted(Formatting.GRAY))
         createCountField?.setTextPredicate { it.length <= 4 && it.all { c -> c.isDigit() } }
         addDrawableChild(createCountField)
 
         // min/max/备注与上方搜索框左右缘完全对齐（搜索框 centerX-82 宽 148）
-        createMinPriceField = TextFieldWidget(textRenderer, centerX - 82, dialogY + 106, 72, 16, Text.literal(""))
+        createMinPriceField = TextFieldWidget(textRenderer, centerX - 82, createY(106), 72, 16, Text.literal(""))
         createMinPriceField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_min_price").formatted(Formatting.GRAY))
         createMinPriceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(createMinPriceField)
-        createMaxPriceField = TextFieldWidget(textRenderer, centerX - 6, dialogY + 106, 72, 16, Text.literal(""))
+        createMaxPriceField = TextFieldWidget(textRenderer, centerX - 6, createY(106), 72, 16, Text.literal(""))
         createMaxPriceField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_max_price").formatted(Formatting.GRAY))
         createMaxPriceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(createMaxPriceField)
 
         // 备注（额外需求提醒卖家，选填）
-        createNoteField = TextFieldWidget(textRenderer, centerX - 82, dialogY + 126, 148, 16, Text.literal(""))
+        createNoteField = TextFieldWidget(textRenderer, centerX - 82, createY(126), 148, 16, Text.literal(""))
         createNoteField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_note").formatted(Formatting.GRAY))
         createNoteField?.setMaxLength(100)
         addDrawableChild(createNoteField)
@@ -1611,7 +1705,7 @@ class BuyOrderScreen(
     private fun renderCreateDialogBackground(context: DrawContext, delta: Float) {
         val centerX = width / 2
         val dialogW = 280
-        val dialogH = if (createTab == 0) 276 else 196
+        val dialogH = createDialogH()   // 设计高度按屏幕钳制（见 createDialogH）
         val dialogX = centerX - dialogW / 2
         val dialogY = createDialogY()
 
@@ -1627,7 +1721,7 @@ class BuyOrderScreen(
             // 精灵预览槽（右侧）
             val slotSize = 28
             val slotX = centerX + 66
-            val slotY = dialogY + 42
+            val slotY = createY(42)
             context.matrices.push()
             context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
             context.matrices.scale(slotSize / 66f, slotSize / 66f, 1f)
@@ -1654,7 +1748,7 @@ class BuyOrderScreen(
                 context.drawCenteredTextWithShadow(
                     textRenderer,
                     Text.literal("${speciesIndex + 1}/${speciesCandidates.size}").formatted(Formatting.GRAY),
-                    centerX + 116, dialogY + 68, 0xFFFFFF
+                    centerX + 116, createY(68), 0xFFFFFF
                 )
             }
             // 冻结提示：发布时冻结 maxPrice × 1（性格列表展开时隐藏——提示在列表覆盖区内）
@@ -1668,19 +1762,19 @@ class BuyOrderScreen(
                             com.shusheng.cobblemarket.client.formatPriceLong((createMaxPriceField?.text?.toIntOrNull() ?: 0).toLong()),
                             createCurrency == MarketCurrency.POINTS, "", inline = true
                         ).formatted(Formatting.GOLD)),
-                    centerX, dialogY + 214, 0xFFFFFF)
+                    centerX, createY(214), 0xFFFFFF)
             }
         } else {
             // 物品预览图标（右侧）：手持模式显示主手物品（文字+图标双重提醒），否则优先显示点选项
             val heldPreview = if (heldItemMode) heldPreviewStack() else null
             if (heldPreview != null) {
-                drawItemWithBar(context, heldPreview, centerX + 72, dialogY + 48)
+                drawItemWithBar(context, heldPreview, centerX + 72, createY(48))
             } else {
                 val preview = matchedItems.getOrNull(selectedItemIndex) ?: matchedItems.firstOrNull()
                 preview?.let { candidate ->
                     com.shusheng.cobblemarket.client.ItemComponentsDisplay
                         .iconStack(candidate.itemId, candidate.componentsSpec)
-                        ?.let { stack -> if (!stack.isEmpty) drawItemWithBar(context, stack, centerX + 72, dialogY + 48) }
+                        ?.let { stack -> if (!stack.isEmpty) drawItemWithBar(context, stack, centerX + 72, createY(48)) }
                 }
             }
             // 冻结提示：发布时冻结 maxPrice × 件数（物品匹配列表展开时隐藏——提示在列表覆盖区内）
@@ -1695,7 +1789,7 @@ class BuyOrderScreen(
                             com.shusheng.cobblemarket.client.formatPriceLong(maxPrice.toLong() * count),
                             createCurrency == MarketCurrency.POINTS, "", inline = true
                         ).formatted(Formatting.GOLD)),
-                    centerX, dialogY + 146, 0xFFFFFF)
+                    centerX, createY(146), 0xFFFFFF)
             }
         }
     }
@@ -1987,7 +2081,7 @@ class BuyOrderScreen(
             // 数据包自创的超长 aspect 名截断，防止溢出按钮
             val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(opt.label, 124)
             val btn = NineSliceButton(
-                centerX - 82, dialogY + 82 + i * 14, 148, 14,
+                centerX - 82, createY(82 + i * 14), 148, 14,
                 if (idx == formIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
                 { selectForm(idx) },
                 texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -2009,7 +2103,7 @@ class BuyOrderScreen(
         val anyLabel = Text.translatable("cobblemarket.buy_order.any").string
         // 第一行固定：不限（abilityIndex = -1）
         val anyBtn = NineSliceButton(
-            centerX - 82, dialogY + 140, 148, 14,
+            centerX - 82, createY(140), 148, 14,
             if (abilityIndex == -1) com.shusheng.cobblemarket.util.TextUtil.selectedText(anyLabel) else Text.literal(anyLabel),
             {
                 abilityIndex = -1
@@ -2024,7 +2118,7 @@ class BuyOrderScreen(
         addDrawableChild(anyBtn)
         abilityOptions.forEachIndexed { i, (_, label) ->
             val btn = NineSliceButton(
-                centerX - 82, dialogY + 154 + i * 14, 148, 14,
+                centerX - 82, createY(154 + i * 14), 148, 14,
                 if (i == abilityIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(
                     com.shusheng.cobblemarket.util.TextUtil.truncateString(label, 124)
                 ) else Text.literal(com.shusheng.cobblemarket.util.TextUtil.truncateString(label, 124)),
@@ -2053,7 +2147,7 @@ class BuyOrderScreen(
         val anyLabel = Text.translatable("cobblemarket.buy_order.any").string
         // 第一行固定：不限（natureIndex = -1，不参与滚动）
         val anyBtn = NineSliceButton(
-            centerX - 82, dialogY + 158, 148, 14,
+            centerX - 82, createY(158), 148, 14,
             if (natureIndex == -1) com.shusheng.cobblemarket.util.TextUtil.selectedText(anyLabel) else Text.literal(anyLabel),
             {
                 natureIndex = -1
@@ -2069,7 +2163,7 @@ class BuyOrderScreen(
         natureOptions.drop(natureListScroll).take(MAX_NATURE_LIST_ROWS).forEachIndexed { i, (_, label) ->
             val idx = natureListScroll + i
             val btn = NineSliceButton(
-                centerX - 82, dialogY + 172 + i * 14, 148, 14,
+                centerX - 82, createY(172 + i * 14), 148, 14,
                 if (idx == natureIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
                 {
                     natureIndex = idx
@@ -2175,7 +2269,7 @@ class BuyOrderScreen(
             val idx = itemListScroll + i
             val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(candidate.displayName, 124)
             val btn = NineSliceButton(
-                centerX - 82, dialogY + 66 + i * 14, 148, 14,
+                centerX - 82, createY(66 + i * 14), 148, 14,
                 if (idx == selectedItemIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
                 { selectItem(idx) },
                 texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -3003,6 +3097,19 @@ class BuyOrderScreen(
             rebuildItemList()
             return true
         }
+        // 创建弹窗打开时：滚轮翻**表单**（只有弹窗被屏幕压矮、内容装不下才有得滚）
+        // ⚠ 放在三个列表分支之后：列表展开时滚轮先给列表（那是原本的行为）
+        if (createTabButtons.isNotEmpty()) {
+            val maxScroll = createMaxScroll()
+            if (maxScroll > 0) {
+                val target = (createScroll - verticalAmount.toInt() * 14).coerceIn(0, maxScroll)
+                if (target != createScroll) {
+                    createScroll = target
+                    layoutCreateForm()
+                }
+                return true
+            }
+        }
         val entry = deliverEntry
         if (entry == null && createTabButtons.isEmpty()) {
             scrollOffset = (scrollOffset - verticalAmount.toInt()).coerceIn(0, maxOf(0, displayCount() - getMaxVisibleRows()))
@@ -3144,6 +3251,8 @@ class BuyOrderScreen(
         private const val BUY_ORDER_BUTTON_TEX_H = 120
         // 创建弹窗形态列表最大可见行数（超出滚动，照黑名单添加框）
         private const val MAX_FORM_LIST_ROWS = 8
+        /** 创建弹窗表单可视区的顶（相对弹窗顶）：标题与 tab 之下留一点，第一行控件在 48 */
+        private const val CREATE_FORM_TOP = 44
         // 悬停面板备注换行宽度上限
         private const val MAX_TOOLTIP_W = 260
         // 性格列表最大可见行数（25 种滚动浏览，弹窗高度受限）
