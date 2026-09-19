@@ -871,8 +871,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 Identifier.tryParse(entry.heldItemId)?.let { Registries.ITEM.get(it) != Registries.ITEM.get(Identifier.of("minecraft", "air")) } == true
 
             val lines = mutableListOf<Pair<Text?, Int>>()
-            lines.add(EntryBadgeRenderer.nameWithShinyStar(iconData[origIndex]?.displayName ?: entry.species, entry.shiny)
-                .copy().append(Text.literal("  ${Text.translatable("cobblemarket.gui.lv").string}${entry.level}")) to typeColor(entry.primaryType))
+            lines.add(EntryBadgeRenderer.nameWithLevelLine(
+                EntryBadgeRenderer.nameWithShinyStar(iconData[origIndex]?.displayName ?: entry.species, entry.shiny),
+                entry.primaryType, entry.level) to w)
             lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string).append(EntryBadgeRenderer.typeLine(entry.primaryType, entry.secondaryType)) to w)
             lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(EntryBadgeRenderer.natureText(entry.natureBase, entry.nature))

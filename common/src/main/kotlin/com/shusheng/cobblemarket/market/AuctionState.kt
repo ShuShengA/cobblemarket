@@ -67,15 +67,17 @@ data class AuctionListing(
 ) {
     fun isActive(): Boolean = status == AuctionStatus.ACTIVE
 
-    /** 通知消息用的展示名：精灵 = 翻译 key、物品 = 物品翻译 key（均客户端语言渲染） */
+    /** 通知消息 / 悬停窗用的展示名：精灵 = 主属性色名字、物品 = 稀有度色名字（均客户端语言渲染）。
+     *  闪光★与下划线由调用方按场景追加（全服播报带★、通知不带），本函数只管名字本体。 */
     fun speciesText(): net.minecraft.text.Text =
         if (type == AuctionType.POKEMON) {
-            net.minecraft.text.Text.translatable(extraData["speciesKey"] ?: "cobblemon.species.${species.lowercase()}.name")
+            val plain = net.minecraft.text.Text.translatable(
+                extraData["speciesKey"] ?: "cobblemon.species.${species.lowercase()}.name"
+            )
+            com.shusheng.cobblemarket.util.TypeTextColors.speciesName(plain, extraData["primaryType"], false)
         } else {
-            val id = net.minecraft.util.Identifier.tryParse(species)
-            val item = id?.let { net.minecraft.registry.Registries.ITEM.getOrEmpty(it).orElse(null) }
-            if (item != null) net.minecraft.text.Text.translatable(item.translationKey)
-            else net.minecraft.text.Text.literal(species)
+            com.shusheng.cobblemarket.util.ItemNameText.rarityColoredNameById(species)
+                ?: net.minecraft.text.Text.literal(species)
         }
 
     fun toNbt(): NbtCompound = NbtCompound().apply {

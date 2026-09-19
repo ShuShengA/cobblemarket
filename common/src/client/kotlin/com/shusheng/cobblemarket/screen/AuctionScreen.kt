@@ -1688,8 +1688,9 @@ class AuctionScreen(
                 if (secondaryType.isNotEmpty()) " + ${Text.translatable(secondaryType).string}" else ""
 
             val staticLines = mutableListOf<Pair<Text?, Int>>()
-            staticLines.add(EntryBadgeRenderer.nameWithShinyStar(displayName(entry), entry.shiny)
-                .copy().append(Text.literal("  Lv.${entry.level}")) to typeColor(primaryType))
+            staticLines.add(EntryBadgeRenderer.nameWithLevelLine(
+                EntryBadgeRenderer.nameWithShinyStar(displayName(entry), entry.shiny),
+                primaryType, entry.level) to 0xFFFFFF)
             staticLines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
                 .append(EntryBadgeRenderer.typeLine(primaryType, secondaryType)) to 0xFFFFFF)
             staticLines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
