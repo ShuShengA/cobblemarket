@@ -20,9 +20,11 @@ data class LoanPlan(val periods: Int, val feeRate: Double)
  * 浮点误差（5.00 存成 4.999…）在对账场景里是致命的。
  *
  * [qr] = 该档**专用**的收款码文件名（可空，放在 `config/cobblemarket/qr/` 下）：
- * - **留空** → 走全局 [CobbleMarketConfig.pointsShopPayQrImage]，实付 = 标价 + **唯一尾数**（服主一眼对上账单）
- * - **配了** → 用这张码、实付就是标价（微信/支付宝的"设置金额"码金额写死，加不了尾数），
- *   对账靠订单号/时间。⚠ 此时**档位标价必须与码上金额一致**，否则玩家付的钱对不上订单
+ * - **留空** → 走全局 [CobbleMarketConfig.pointsShopPayQrImage]
+ * - **配了** → 用这张码（微信/支付宝的"设置金额"码）。⚠ 此时**档位标价必须与码上金额一致**，
+ *   否则玩家付的钱对不上订单
+ *
+ * 两种情况下玩家看到的实付金额都是**档位标价本身**，没有任何额外加项。
  */
 data class ShopTier(
     val name: String,
@@ -147,7 +149,7 @@ object CobbleMarketConfig {
      *
      * 国内小服主普遍用个人收款码卖东西，而个人收款码**没有支付回调** —— 任何程序都无法自动
      * 得知「谁付了多少」。本功能因此不做自动收款，只把对账成本压到最低：
-     * 游戏内下单（金额带唯一尾数 + 订单号）→ 玩家扫码付款 → 点「我已支付」→ 服主看账单确认发放。
+     * 游戏内下单（带订单号、金额就是标价）→ 玩家扫码付款 → 点「我已支付」→ 服主看账单确认发放。
      */
     var pointsShopEnabled: Boolean = false
         private set
@@ -165,7 +167,7 @@ object CobbleMarketConfig {
      */
     var pointsShopDefaultIcon: String = ""
         private set
-    /** 待支付订单超时（分钟，默认 15）：超时后作废并释放金额尾数，玩家可重新下单 */
+    /** 待支付订单超时（分钟，默认 15）：超时后作废，玩家可重新下单 */
     var pointsShopOrderTimeoutMinutes: Long = 15L
         private set
     /** 充值档位列表（空 = 不开放「购买RP」）；非法档位在读取时被丢弃并记日志 */
@@ -748,7 +750,7 @@ object CobbleMarketConfig {
                     pointsShopEnabled = shop["enabled"] as? Boolean ?: false
                     pointsShopPayQrImage = (shop["payQrImage"] as? String)?.trim().orEmpty()
                     pointsShopDefaultIcon = (shop["defaultIcon"] as? String)?.trim().orEmpty()
-                    // 超时钳 1 分钟~24 小时：0 会让订单一创建就过期，过大则尾数被长期占用
+                    // 超时钳 1 分钟~24 小时：0 会让订单一创建就过期，过大则废单长期挂在玩家列表里
                     pointsShopOrderTimeoutMinutes =
                         ((shop["orderTimeoutMinutes"] as? Number)?.toLong() ?: 15L).coerceIn(1L, 1440L)
                     pointsShopTiers = (shop["tiers"] as? List<*>)
@@ -810,11 +812,11 @@ object CobbleMarketConfig {
                 "pointsExternalMaxDays" to "外部码的有效期上限（天，默认 365）：签发时有效期跨度超过它的码一律拒绝，防「永久码」满天飞（永久码的 serial 必须永久保留，会让存档持续膨胀）/ Maximum validity for external codes in days (default 365): codes valid for longer are rejected, preventing \"forever codes\" (whose serials must be kept forever and would bloat the save)",
                 "pointsEnabled" to "RP 总开关（默认关闭）：RP 是本模组的第二货币，与主货币并行流通但**不可兑换、不可转让、不参与金融**。关闭时：玩家设置价格的界面不出现RP 按钮，除RP 商城外的任何地方都不能用RP 交易（服主仍可在RP 商城上架精灵/物品供持有RP 的玩家购买）。⚠ RP 等同于充值货币，开启前请先配置发放渠道 / RP master switch (off by default): RP is this mod's second currency, running alongside the primary one but **not convertible, not transferable, and outside the finance system**. When off, the RP button is hidden from every price-setting screen and RP cannot be used anywhere except the RP Shop (owners can still stock the RP Shop for players who already hold RP). ⚠ RP is effectively a paid currency — set up a distribution channel before enabling",
                 "shareEnabled" to "玩家展示开关（默认开启）：开启后玩家可把精灵/物品展示到全服聊天（悬停看详情），每人 10 秒一次。关闭后展示按钮不再生效 / Player showcase switch (on by default): players can showcase Pokémon/items to server chat (hover for details), once per 10 seconds each. When off, the showcase button stops working",
-                "pointsShop.enabled" to "游戏内充值开关（默认关闭，需 pointsEnabled 同时开启）。国内小服主普遍用个人收款码，而个人收款码没有支付回调——本功能**不做自动收款**，只把对账成本压到最低：玩家在游戏内下单（实付金额带唯一尾数 + 6 位订单号）→ 扫码付款 → 点「我已支付」→ 服主对着账单点确认发放。⚠ 模组无法判断是否真的付了款，「我已支付」只是玩家的声明：**未确认一律不发放** / In-game top-up switch (off by default, requires pointsEnabled too). Personal payment QR codes have no payment callback, so this feature does NOT collect payments automatically — it only minimizes reconciliation work: the player orders in game (unique amount suffix + 6-char order number) → scans the QR → pays → taps \"I have paid\" → the owner checks the bill and confirms the grant. ⚠ The mod cannot tell whether a payment actually happened: \"I have paid\" is a claim, and nothing is granted until the owner confirms",
-                "pointsShop.payQrImage" to "收款码图片文件名（放在 config/cobblemarket/qr/ 下，如 pay.png；PNG 格式，单张 ≤512KB、像素 ≤2048×2048，收款码本身是正方形、512×512 左右就够）。**留空 = 走全局默认**。图片由服务端读取后下发给客户端绘制；订单号与实付金额由模组**动态绘制在图片旁**（不写进图片文件），防止玩家截图转给别人代付后认领。⚠ 每个档位还能在「RP 市场配置」界面里配**自己的**收款码（微信/支付宝的『设置金额』码），配了的那一档实付金额就是标价、不带尾数 / Payment QR image file name under config/cobblemarket/qr/ (e.g. pay.png; PNG, 512KB max and 2048x2048 pixels max — a payment QR is square, 512x512 is plenty). **Leave blank to fall back to the global default.** The server reads it and sends it to clients for drawing; the order number and exact amount are drawn by the mod next to the image (never baked into the file), so a shared screenshot cannot be claimed by someone else. ⚠ Each tier can also have its OWN QR image (set it in the in-game RP Market config screen) — a \"fixed amount\" code from WeChat/Alipay; tiers with their own QR charge the list price exactly, with no unique suffix",
+                "pointsShop.enabled" to "游戏内充值开关（默认关闭，需 pointsEnabled 同时开启）。国内小服主普遍用个人收款码，而个人收款码没有支付回调——本功能**不做自动收款**，只把对账成本压到最低：玩家在游戏内下单（实付金额就是档位标价 + 6 位订单号）→ 扫码付款 → 点「我已支付」→ 服主对着账单点确认发放。⚠ 模组无法判断是否真的付了款，「我已支付」只是玩家的声明：**未确认一律不发放** / In-game top-up switch (off by default, requires pointsEnabled too). Personal payment QR codes have no payment callback, so this feature does NOT collect payments automatically — it only minimizes reconciliation work: the player orders in game (paying the list price, with a 6-char order number) → scans the QR → pays → taps \"I have paid\" → the owner checks the bill and confirms the grant. ⚠ The mod cannot tell whether a payment actually happened: \"I have paid\" is a claim, and nothing is granted until the owner confirms",
+                "pointsShop.payQrImage" to "收款码图片文件名（放在 config/cobblemarket/qr/ 下，如 pay.png；PNG 格式，单张 ≤512KB、像素 ≤2048×2048，收款码本身是正方形、512×512 左右就够）。**留空 = 走全局默认**。图片由服务端读取后下发给客户端绘制；订单号与实付金额由模组**动态绘制在图片旁**（不写进图片文件），防止玩家截图转给别人代付后认领。⚠ 每个档位还能在「RP 市场配置」界面里配**自己的**收款码（微信/支付宝的『设置金额』码），配了的那一档用那张码，实付金额同样是标价 / Payment QR image file name under config/cobblemarket/qr/ (e.g. pay.png; PNG, 512KB max and 2048x2048 pixels max — a payment QR is square, 512x512 is plenty). **Leave blank to fall back to the global default.** The server reads it and sends it to clients for drawing; the order number and exact amount are drawn by the mod next to the image (never baked into the file), so a shared screenshot cannot be claimed by someone else. ⚠ Each tier can also have its OWN QR image (set it in the in-game RP Market config screen) — a \"fixed amount\" code from WeChat/Alipay; that tier then use its own code, still charging the list price",
                 "pointsShop.defaultIcon" to "档位「RP 券」的**全局默认**图文件名（放在 config/cobblemarket/icons/ 下，如 coupon.png；PNG 格式，单张 ≤512KB、像素 ≤2048×2048，建议 256×160 或它的整数倍 512×320）。填了它，所有没单独配券图的档位都用这张；留空 = 用模组内置券图。**每个档位还能配自己的**（见 tiers 的 icon）。图片由服务端读取后下发给客户端绘制，什么宽高比都行（卡片按原图比例缩放，不会变形）/ **Global default** RP coupon image file name under config/cobblemarket/icons/ (e.g. coupon.png; PNG, 512KB max and 2048x2048 pixels max — 256x160 or a multiple such as 512x320 recommended). Every tier without its OWN coupon image uses this one; leave blank to use the mod's built-in coupon image. **Each tier can also have its own** (see the icon field of tiers). The server reads it and sends it to clients; any aspect ratio works (the card scales the image to fit without distortion)",
-                "pointsShop.orderTimeoutMinutes" to "待支付订单超时分钟数（默认 15，钳 1~1440）：超时后订单作废并释放金额尾数，玩家可重新下单。⚠ 超时后有 30 分钟宽限期，期内玩家仍可提交「我已支付」（他可能已经付款、只是回来点得慢；作废是安全的失败方向，误判成已付款才危险）/ Minutes before an unpaid order expires (default 15, clamped 1–1440). Expired orders are voided and their amount suffix released so the player can order again. ⚠ A 30-minute grace period follows, during which \"I have paid\" is still accepted (the player may have paid but tapped late; voiding is the safe failure direction, wrongly granting is not)",
-                "pointsShop.tiers" to "充值档位列表：[{name=展示名, price=标价, points=发放点数, qr=该档收款码文件名(可留空), icon=该档RP券图文件名(可留空，放在 config/cobblemarket/icons/ 下，留空则用内置券图)}]。**实付金额 = 标价 + 唯一尾数（0.01~0.99）**，尾数由订单号派生、同一时刻的活跃订单不重复——服主在收款账单里看到 +5.37 就能一眼对上订单，不必依赖玩家备注。建议标价用整数，尾数会加在角分上。留空数组 = 不开放「购买RP」/ Top-up tiers: [{name=display name, price=list price, points=points granted, qr=this tier's own QR file name (optional), icon=this tier's RP coupon image file name (optional; put it under config/cobblemarket/icons/, blank = built-in coupon image)}]. **Amount to pay = list price + a unique suffix (0.01–0.99)** derived from the order number, never duplicated among active orders — so +5.37 in your payment history maps straight to an order without relying on the player's note. Integer prices recommended (the suffix lands on the cents). An empty array disables the in-game purchase entry",
+                "pointsShop.orderTimeoutMinutes" to "待支付订单超时分钟数（默认 15，钳 1~1440）：超时后订单作废，玩家可重新下单。⚠ 超时后有 30 分钟宽限期，期内玩家仍可提交「我已支付」（他可能已经付款、只是回来点得慢；作废是安全的失败方向，误判成已付款才危险）/ Minutes before an unpaid order expires (default 15, clamped 1–1440). Expired orders are voided so the player can order again. ⚠ A 30-minute grace period follows, during which \"I have paid\" is still accepted (the player may have paid but tapped late; voiding is the safe failure direction, wrongly granting is not)",
+                "pointsShop.tiers" to "充值档位列表：[{name=展示名, price=标价, points=发放点数, qr=该档收款码文件名(可留空), icon=该档RP券图文件名(可留空，放在 config/cobblemarket/icons/ 下，留空则用内置券图)}]。**实付金额 = 档位标价**——玩家在界面上看到多少就付多少，模组不加任何钱。留空数组 = 不开放「购买RP」/ Top-up tiers: [{name=display name, price=list price, points=points granted, qr=this tier's own QR file name (optional), icon=this tier's RP coupon image file name (optional; put it under config/cobblemarket/icons/, blank = built-in coupon image)}]. **Amount to pay = the list price** — the player pays exactly what the screen shows; the mod adds nothing. An empty array disables the in-game purchase entry",
                 "maxBuyOrdersPerPlayer" to "每个玩家同时进行的求购单数量上限，精灵与物品合计（0=不限制）。求购单列表全量下发给所有客户端，玩家较多的服务器建议保持较小值，避免全服活跃求购单总量过大导致卡顿 / Max concurrent buy orders per player, Pokémon and items combined (0=unlimited). The buy order list is broadcast in full to every client, so on crowded servers keep this small to avoid lag from too many active orders",
                 "finance.enabled" to "金融系统总开关（默认关闭）。开启后玩家可借贷/使用喵喵支付；关闭时禁止新增借贷与信用支付，已有贷款照常运行（还款/逾期/坏账不受影响） / Master switch for the finance system (off by default). When on, players can take loans and use Meowth Pay; when off, new loans and credit payments are blocked while existing loans keep running (repayment/overdue/bad debt unaffected)",
                 "finance.cashLoanEnabled" to "现金贷开关（借呗）：玩家在喵喵银行柜台主动借款 / Cash loan switch (Jiebei-style): players borrow cash directly at the Meowth Bank counter",
@@ -948,6 +950,12 @@ object CobbleMarketConfig {
                 )
             )
         )
+        // ⚠ 落盘前先留一份上一版：这个文件是**整体重写**的（没有迁移分支），
+        //   一旦有哪条路径带着空/默认状态写进来，服主辛苦配的档位、收款码、货币单位就一次性没了 ——
+        //   2026-09-19 用户实测踩到（档位 + 货币单位被清空，无从追回）。有 .bak 至少能捞回来。
+        runCatching {
+            if (configFile.exists()) configFile.copyTo(File(configFile.parentFile, configFile.name + ".bak"), overwrite = true)
+        }.onFailure { CobbleMarket.LOGGER.warn("Failed to back up config before save: {}", it.message) }
         configFile.writeText(gson.toJson(data))
     }
 

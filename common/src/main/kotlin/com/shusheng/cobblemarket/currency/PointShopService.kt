@@ -27,7 +27,7 @@ enum class PointShopError {
     BAD_STATUS,
     /** 待支付已超时太久 */
     EXPIRED,
-    /** 订单号/尾数连续重抽超限（活跃订单占满 99 个尾数，实际不可能） */
+    /** 订单号连续重抽超限（订单号空间 3300 万，实际不可能） */
     GENERATE_FAILED
 }
 
@@ -65,7 +65,7 @@ object PointShopService {
     /**
      * 同时允许几笔未完结订单。
      * 取 3：够玩家"下了 5 元单又改主意想充 10 元"（2026-09-18 用户指出一笔太死），
-     * 又不至于让一个人把 99 个**金额尾数**占满（尾数是服主对账的键）。
+     * 又不至于让一个人连点开出一长串挂在自己的订单列表里。
      */
     private const val MAX_ACTIVE_ORDERS = 3
 
@@ -78,12 +78,7 @@ object PointShopService {
 
     // ── 玩家侧 ──
 
-    /**
-     * 创建订单（一人同时只允许一笔未完结订单）。
-     *
-     * 限制的原因有二：金额尾数只有 99 个（活跃订单不重复，是服主核对账单的键），
-     * 以及防「一个人连点下单把尾数占满」。
-     */
+    /** 创建订单（一人最多同时 [MAX_ACTIVE_ORDERS] 笔未完结订单，理由见该常量） */
     fun createOrder(
         server: MinecraftServer,
         playerUuid: UUID,
@@ -111,8 +106,6 @@ object PointShopService {
             timeoutMinutes = CobbleMarketConfig.pointsShopOrderTimeoutMinutes,
             // 该档配了专用码就用它，否则回退到全局那张（两者都为空 = 没码可展示）
             qrFile = tier.qr.ifBlank { CobbleMarketConfig.pointsShopPayQrImage },
-            // 专用码是"带金额"的固定码 ⇒ 金额写死，**不能加尾数**；走全局码才加尾数供服主对账
-            tailEnabled = tier.qr.isBlank(),
             now = now
         ) ?: return PointShopResult.Failure(PointShopError.GENERATE_FAILED)
         PointOrderLogger.log(PointOrderLogType.CREATE, order, playerName, "档位 ${tier.name}")

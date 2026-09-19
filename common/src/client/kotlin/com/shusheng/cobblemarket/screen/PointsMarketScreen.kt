@@ -77,8 +77,10 @@ class PointsMarketScreen : Screen(
     fun layoutRecordButton() {
         val btn = recordButton ?: return
         val showBuy = PointsShopCache.tiers.isNotEmpty()
-        val rightEdgeX = bgRect().x + bgRect().w - borderInset() - BUY_ENTRY_W
-        btn.x = if (showBuy) rightEdgeX - ROW_GAP - BUY_ENTRY_W else rightEdgeX
+        // 「购买 RP」左缘；不显示购买入口时，记录按钮**顶上它的位置**（各自按自己的宽度贴右缘）
+        val rightEdgeX = bgRect().x + bgRect().w - borderInset()
+        btn.x = if (showBuy) rightEdgeX - BUY_ENTRY_W - ROW_GAP - RECORD_ENTRY_W
+        else rightEdgeX - RECORD_ENTRY_W
     }
 
     private fun bgScale(): Float {
@@ -138,14 +140,25 @@ class PointsMarketScreen : Screen(
         //   scale 更大时 480×270），背景缩了控件没缩就会挤成一团。
         //   所以输入框宽度按**剩余空间**算，压到下限为止。
         val tabGroupW = TAB_W * 2 + TAB_GAP
-        val rowNeed = REDEEM_BUTTON_W + ROW_GAP + tabGroupW + ROW_GAP + BUY_ENTRY_W +
+        val rowNeed = REDEEM_BUTTON_W + ROW_GAP + tabGroupW + ROW_GAP + RECORD_ENTRY_W +
             ROW_GAP + BUY_ENTRY_W + ROW_GAP * 2
         val fieldW = minOf(REDEEM_FIELD_W, bg.w - 2 * inset - rowNeed).coerceAtLeast(MIN_REDEEM_FIELD_W)
 
         // 兑换码输入框（重建后恢复输入；上限按外部码带分隔符的 39 字符留余量）
         codeField = TextFieldWidget(textRenderer, fieldX, rowY, fieldW, ROW_H, Text.literal(""))
         codeField?.setMaxLength(MAX_CODE_INPUT)
-        codeField?.setPlaceholder(Text.translatable("cobblemarket.points.market.code_hint"))
+        // ⚠ 占位提示**按输入框实际宽度挑**：原版画 placeholder **不做截断也不裁剪**，
+        //   GUI scale 自动那一档输入框只有 24px 宽，长的「输入兑换码」会一路画到右边的
+        //   「兑换」按钮上（2026-09-19 用户实测）。两条都放不下就干脆不显示 —— 那种宽度下
+        //   任何字样都会溢出去（按钮本身就说明了这里是干什么的）。
+        codeField?.setPlaceholder(
+            listOf(
+                "cobblemarket.points.market.code_hint",
+                "cobblemarket.points.market.code_hint_short"
+            ).asSequence()
+                .map { Text.translatable(it) }
+                .firstOrNull { textRenderer.getWidth(it) <= fieldW - 8 }   // 8 = 左右各 4px 内边距
+        )
         codeField?.setChangedListener { pendingCodeText = it }
         codeField?.text = pendingCodeText
         addSelectableChild(codeField)
@@ -179,7 +192,7 @@ class PointsMarketScreen : Screen(
         // （没配档位）**顶上它的位置**。与购买入口同理**总是建出来、只改 x/visible** ——
         // 重建界面会清掉玩家已经敲进兑换框的内容。
         val recordBtn = NineSliceButton(
-            buyBtnX, rowY, BUY_ENTRY_W, ROW_H,
+            buyBtnX - ROW_GAP - RECORD_ENTRY_W, rowY, RECORD_ENTRY_W, ROW_H,
             Text.translatable("cobblemarket.points.market.record_entry"),
             { client?.setScreen(PointsRecordScreen()) }
         )
@@ -191,11 +204,14 @@ class PointsMarketScreen : Screen(
         // （用户 2026-09-18 定的是"居中"，但死盯背景正中在小分辨率下会压到左边的兑换按钮上 ——
         //  改成居中于剩余空间后，大分辨率下位置与原来一致，小分辨率下自动让位）
         val tabMinLeft = fieldX + fieldW + ROW_GAP + REDEEM_BUTTON_W + ROW_GAP
-        // 右边界要给**两个**按钮让位（购买 RP + 它左侧的兑换记录）——记录按钮与购买入口同宽
-        val tabMaxLeft = buyBtnX - ROW_GAP - BUY_ENTRY_W - ROW_GAP - tabGroupW
+        // 右边界要给**两个**按钮让位（购买 RP + 它左侧的兑换记录），各自按自己的宽度算
+        val tabMaxLeft = buyBtnX - ROW_GAP - RECORD_ENTRY_W - ROW_GAP - tabGroupW
         val tabLeftX =
             if (tabMinLeft <= tabMaxLeft) (cx - tabGroupW / 2).coerceIn(tabMinLeft, tabMaxLeft)
-            else tabMinLeft // 极端小分辨率：紧跟兑换按钮（再挤下去就不是重叠而是看不看得见的问题了）
+            // 兜底：极端小分辨率下这一行真的挤不下（按钮都已按文字宽度收到最小），
+            // 只能让 tab 紧跟兑换按钮 —— 此时它会压到「兑换记录」上，属于「看得见但挤」，
+            // 再往下就是字都看不清了，不如保持这个下限。
+            else tabMinLeft
         pokemonTabButton = NineSliceButton(tabLeftX, rowY, TAB_W, TAB_H, Text.literal(""), { switchTab(0) })
         itemTabButton = NineSliceButton(
             tabLeftX + TAB_W + TAB_GAP, rowY, TAB_W, TAB_H, Text.literal(""), { switchTab(1) }
@@ -492,7 +508,13 @@ class PointsMarketScreen : Screen(
          * 那时按剩余空间压缩（见 init 里的 `fieldW`）。下限给 40（约 6 个字符，输入框本来就会横向滚动）。
          */
         const val REDEEM_FIELD_W = 120
-        const val MIN_REDEEM_FIELD_W = 40
+
+        /**
+         * 兑换框的**下限宽度**。GUI scale 自动（逻辑宽只有 400 出头）时，这一行剩下的空间就是它 ——
+         * 从 40 收到 24：那一档本来就只看得见三四个字符（输入框自己会横向滚动），
+         * 但少了这 16px，档位 tab 就会顶到「兑换记录」上（用户实测的重叠就是这么来的）。
+         */
+        const val MIN_REDEEM_FIELD_W = 24
 
         /** 兑换行各控件之间的间隙（按钮间距规则：至少 4px） */
         const val ROW_GAP = 4
@@ -546,8 +568,20 @@ class PointsMarketScreen : Screen(
         const val PAGE_BTN_W = 80
         const val PAGE_BTN_H = 20
 
-        /** 右上角「购买 RP」入口宽度：够放下中文「购买 RP」与英文 "Buy RP" */
-        const val BUY_ENTRY_W = 72
+        /**
+         * 右上角「购买 RP」入口宽度。
+         *
+         * ⚠ 2026-09-19 用户实测：**72 太宽**（文字只占 30~35px，两边全是空白），
+         * GUI scale 调成自动时这一行挤不下，档位 tab 被兜底逻辑顶到「兑换记录」上（重叠）。
+         * 收到 44：中文「购买 ▣」约 30px、英文 "Buy ▣" 约 35px，两边各留 4~7px。
+         */
+        const val BUY_ENTRY_W = 44
+
+        /**
+         * 「兑换记录」入口宽度（**与购买入口不同宽**）：英文 "History" 约 42px / 中文「兑换记录」36px，
+         * 留 5~8px 内边距 → 52（原来跟着购买入口吃 72，白占 20px）。
+         */
+        const val RECORD_ENTRY_W = 52
 
         /** 红色分割线左右各避开的背景边框宽度（原图口径，用户 2026-09-18 定 78） */
         const val DIVIDER_BORDER_X = 78

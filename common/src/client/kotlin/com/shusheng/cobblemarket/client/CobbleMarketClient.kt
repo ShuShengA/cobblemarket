@@ -18,6 +18,7 @@ import com.shusheng.cobblemarket.network.MarketStatePayload
 import com.shusheng.cobblemarket.network.PayQrImagePayload
 import com.shusheng.cobblemarket.network.PointCodesCreatedPayload
 import com.shusheng.cobblemarket.network.PointCodesPayload
+import com.shusheng.cobblemarket.network.PointRecordsPayload
 import com.shusheng.cobblemarket.network.PointsConfigPayload
 import com.shusheng.cobblemarket.network.PointsShopInfoPayload
 import com.shusheng.cobblemarket.network.PointsStatusPayload
@@ -597,6 +598,16 @@ object CobbleMarketClient {
         registerS2C(PointCodesPayload.ID, PointCodesPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 (MinecraftClient.getInstance().currentScreen as? PointsCodeScreen)?.onPointCodes(payload)
+            }
+        }
+
+        // 我的兑换记录（玩家侧）：**先落缓存再分发给界面** —— 同上面点券商城快照，
+        // 包到的时候界面可能还没建出来（返回再进 / resize 重建），不缓存就白跑一趟
+        registerS2C(PointRecordsPayload.ID, PointRecordsPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                PointsRecordCache.entries = payload.entries
+                PointsRecordCache.loaded = true
+                (MinecraftClient.getInstance().currentScreen as? PointsRecordScreen)?.onRecords()
             }
         }
 

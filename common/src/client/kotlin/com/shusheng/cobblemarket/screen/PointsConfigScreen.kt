@@ -8,6 +8,7 @@ import com.shusheng.cobblemarket.network.RequestPointsConfigPayload
 import com.shusheng.cobblemarket.network.SavePointsConfigPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
+import net.minecraft.client.gui.widget.ClickableWidget
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.client.gui.widget.TextFieldWidget
@@ -183,8 +184,11 @@ class PointsConfigScreen : Screen(
     /** 上一次保存的结果（true = 成功）—— 决定底部提示是绿的还是红的 */
     private var saveResultOk = true
 
-    /** 档位列表滚到第几行（档位多到放不下时才有得滚） */
-    private var scrollOffset = 0
+    /** 上一次保存被挡下了（快照还没加载完）—— 底部提示改说这一条 */
+    private var saveBlocked = false
+
+    /** 内容区滚到第**几行**（行号，不是像素；见上面「内容区与整块滚动」那段） */
+    private var scrollRow = 0
     private var editNameField: TextFieldWidget? = null
     private var editPriceField: TextFieldWidget? = null
     private var editPointsField: TextFieldWidget? = null
@@ -241,14 +245,16 @@ class PointsConfigScreen : Screen(
     /**
      * 档位行上两个按钮的布局（相对 [rightX]）。
      *
-     * ⚠ **必须两处共用**：`buildEditDialog` 建按钮时用一次，`applyTierScroll` 滚动重摆时用一次。
-     * 之前两处各写各的 —— 改了建的那处、滚动那处还是旧值，结果「一滚动按钮就集体右移超出背景」
-     * （用户实测）。宽度按**英文** "Edit"/"Remove" 留，别照中文两个字缩。
+     * ⚠ **只有 [layoutRows] 一处用**（建控件的地方不摆位置，见那里的注释）。
+     * 宽度按**英文** "Edit"/"Remove" 留，别照中文两个字缩 —— 英文 "Remove" 要 36px 左右。
      */
     private val TIER_EDIT_DX = -60
     private val TIER_EDIT_W = 32
     private val TIER_DELETE_DX = -24
     private val TIER_DELETE_W = 46
+
+    /** 有弹窗开着吗（档位编辑 / 费率提醒 / 费率编辑）—— 滚动与行可见性都要看它 */
+    private fun anyDialogOpen() = editing || feeWarn || feeDialog
 
     private fun hideMainControls() {
         listOfNotNull(
@@ -261,38 +267,66 @@ class PointsConfigScreen : Screen(
         tierDeleteButtons.forEach { it.visible = false }
     }
     private fun dialogY() = height / 2 - dialogH() / 2
-    private fun listStartY() = dialogY() + 30
+    private fun listStartY() = dialogY() + 26
 
-    /** 档位列表区顶部：固定项下方 */
-    private fun tierListTop() = listStartY() + FIXED_ROWS * ROW_H + 4
+    // ── 内容区（8 行设置项 + N 行档位）与整块滚动 ──
+    //
+    // 照**服务器配置界面**那一套：整块内容**按行滚动**，装不下的行直接藏起来（不画、也点不到）。
+    //
+    // ⚠ 2026-09-19 用户实测：原来是「8 行设置项固定 + 档位区自己滚」——GUI scale 调成自动后
+    //   逻辑高度只剩 ~240，弹窗被压矮而设置项不让位，直接压到档位区与底部按钮上（元素全乱）。
+    //   并成一份滚动之后，任何 GUI 尺寸下都不会重叠（设置项装不下就滚，跟服务器配置界面一致）。
+
+    /** 内容区（可滚动部分）的顶边 */
+    private fun contentTop() = listStartY()
+
+    /** 内容区可视高度：从内容顶到「添加档位 / 兑换码」那一行上方（底部两行是钉死的，不参与滚动） */
+    private fun viewportH() =
+        (dialogY() + dialogH() - BOTTOM_BUTTON_BOTTOM - BOTTOM_GAP - TIER_ADD_H - BOTTOM_GAP) - listStartY()
+
+    /** 内容总行数：8 行设置项 + N 行档位 */
+    private fun contentRowCount() = FIXED_ROWS + tiers.size
+
+    /** 第 [row] 行的高（设置项 [ROW_H] / 档位行 [TIER_ROW_H]） */
+    private fun rowHeightOf(row: Int) = if (row < FIXED_ROWS) ROW_H else TIER_ROW_H
 
     /**
-     * 档位列表区的**可用上限**（底边）= 「添加档位」按钮上方。
-     * ⚠ 那个按钮**贴底**（在底部双按钮上方），不跟档位列表走 ——
-     * 列表可滚动，跟着它会被一起滚走/滚出屏幕。
+     * 第 [row] 行在**内容坐标**里的顶边。
+     * 设置项与档位行之间留 [TIER_SECTION_H]，那条分割线就画在这段缝里。
      */
-    private fun tierAreaMax() =
-        dialogY() + dialogH() - BOTTOM_BUTTON_BOTTOM - BOTTOM_GAP - TIER_ADD_H - BOTTOM_GAP
-
-    /** 列表区一次**最多**能显示几行档位（至少 1 行）。按可用上限算，与下面的收缩无关 */
-    private fun visibleTierRows() = ((tierAreaMax() - tierListTop()) / ROW_H).coerceAtLeast(1)
+    private fun rowTop(row: Int): Int =
+        if (row < FIXED_ROWS) row * ROW_H
+        else FIXED_ROWS * ROW_H + TIER_SECTION_H + (row - FIXED_ROWS) * TIER_ROW_H
 
     /**
-     * 档位列表区**实际**底边 = 可用上限 与「刚好装下现有档位」取小 ——
-     * 下面那条分割线（画在它 +2 处）就跟着走。
-     *
-     * ⚠ 档位不满一屏时区域必须收缩：固定用可用上限的话，底下永远吊着一条空档，
-     * **档位越少越显眼**（2026-09-19 用户报：5 个档位、第 5 行和分割线之间空一大截）。
-     * 档位超出一屏时两者相等（= 可用上限），滚动照旧。
+     * 最多能滚到第几行：从末行往上累加，累到超过可视高就停 ——
+     * 这样滚到底时**最后一行贴着可视区底边**，不会滚出一片空白。
      */
-    private fun tierListBottom(): Int =
-        minOf(
-            tierAreaMax(),
-            tierListTop() + minOf(tiers.size, visibleTierRows()).coerceAtLeast(1) * ROW_H
-        )
+    private fun maxScrollRow(): Int {
+        var h = 0
+        var row = contentRowCount()
+        while (row > 0) {
+            val prev = row - 1
+            val add = rowHeightOf(prev) + (if (prev == FIXED_ROWS) TIER_SECTION_H else 0)
+            if (h + add > viewportH()) break
+            h += add
+            row = prev
+        }
+        // 极端小屏（一行都装不下）时别让 scrollRow 跑到内容之外 —— 那会一行都画不出来
+        return row.coerceIn(0, (contentRowCount() - 1).coerceAtLeast(0))
+    }
 
-    /** 档位多到放不下时最多能往下滚几行（0 = 不用滚） */
-    private fun maxScrollOffset() = (tiers.size - visibleTierRows()).coerceAtLeast(0)
+    /** 第 [row] 行的屏幕 y */
+    private fun rowY(row: Int) = contentTop() + rowTop(row) - rowTop(scrollRow)
+
+    /**
+     * 这一行**整行**装得下吗。
+     * ⚠ 露半截的行一律不画也不给点 —— 否则那半截会糊到下面钉死的按钮上（就是「元素都乱了」的样子）。
+     */
+    private fun rowFits(row: Int): Boolean {
+        val y = rowTop(row) - rowTop(scrollRow)
+        return y >= 0 && y + rowHeightOf(row) <= viewportH()
+    }
 
     override fun init() {
         super.init()
@@ -330,11 +364,10 @@ class PointsConfigScreen : Screen(
 
     private fun rebuild() {
         // 档位可能变少（删除/快照刷新）：把滚动位置夹回合法范围，否则会停在一片空白上
-        scrollOffset = scrollOffset.coerceIn(0, maxScrollOffset())
+        scrollRow = scrollRow.coerceIn(0, maxScrollRow())
         clearChildren()
         toggleButtons.clear()
-        tierEditButtons.clear()
-        tierDeleteButtons.clear()
+        // 两个档位行按钮名单由 buildMain() 自己清（只有一个入口，见那里的注释）
         editing = false
         buildMain()
     }
@@ -342,6 +375,13 @@ class PointsConfigScreen : Screen(
     // ── 主界面 ──
 
     private fun buildMain() {
+        // ⚠ **每次重建都必须清这两个名单**：原版 resize 会 `clearChildren()` 清掉屏幕上的控件，
+        //   但**不会清我们这份名单** —— 不清就翻倍（旧按钮引用还留在里面），而 [layoutRows]
+        //   是**按名单下标**算行号的：新建的按钮会被排到旧按钮占掉的错误行上（用户实测「滚动后错位」）。
+        //   ⚠ 放在这里而不是 `init()` / `rebuild()` 各自清：重建入口只有这一个，以后再加路径不会漏。
+        //   （`toggleButtons` 是 Map、按 key 覆盖写，不用清）
+        tierEditButtons.clear()
+        tierDeleteButtons.clear()
         val dx = dialogX()
         val dy = dialogY()
         val rightX = dx + dialogW() - 10 - 22
@@ -369,28 +409,28 @@ class PointsConfigScreen : Screen(
         infoButton = info
         addDrawableChild(info)
 
-        var y = listStartY()
+        // ── 内容区：8 行设置项 + N 行档位 ──
+        // ⚠ 这里**只建控件**（给个占位坐标），真正的 x / y / visible 一律由 [layoutRows] 按行号摆 ——
+        //   建的写一套坐标、摆的另写一套，就是「一滚动位置就错」的根源（今天已经踩过）。
         fun addToggle(key: String, value: Boolean, onClick: () -> Unit) {
             // onPress 是 (ButtonWidget) -> Unit，包一层丢掉那个参数
-            val btn = NineSliceButton(rightX, y, 22, 18, Text.literal(""), { onClick() })
+            val btn = NineSliceButton(rightX, listStartY(), 22, 18, Text.literal(""), { onClick() })
             btn.iconLeft = if (value) ON_ICON else OFF_ICON
             toggleButtons[key] = btn
             addDrawableChild(btn)
-            y += ROW_H
         }
         addToggle("points", pointsEnabled) { pointsEnabled = !pointsEnabled; markDirtyAndRebuild() }
         addToggle("points_market", pointsMarketEnabled) { onPointsMarketToggle() }
         // RP 四个费率的入口：右侧一个「配置」按钮开二级弹窗 —— 四个费率直接摊在主弹窗里放不下
         feeCfgButton = NineSliceButton(
-            rightX - 18, y, 40, 18,
+            rightX - 18, listStartY(), 40, 18,
             Text.translatable("cobblemarket.points.config.fee_cfg_btn"), { openFeeDialog() }
         )
         addDrawableChild(feeCfgButton)
-        y += ROW_H
         addToggle("shop", shopEnabled) { shopEnabled = !shopEnabled; markDirtyAndRebuild() }
 
         // 收款码文件名（全局码；每个档位还可以在编辑弹窗里配自己的）
-        qrField = TextFieldWidget(textRenderer, rightX - 130, y + 2, 152, 16, Text.literal(""))
+        qrField = TextFieldWidget(textRenderer, rightX - 130, listStartY(), 152, 16, Text.literal(""))
         qrField?.setMaxLength(64)
         qrField?.setTextPredicate { it.none { c -> c == '/' || c == '\\' } }
         // 留空是什么意思，只有 placeholder 说得清（标签栏 62px 塞不下，info 图标太远）
@@ -398,83 +438,74 @@ class PointsConfigScreen : Screen(
         qrField?.setChangedListener { if (!programmaticText) pendingText["qr"] = it }
         fillField(qrField, "qr", payQr)
         addSelectableChild(qrField); addDrawableChild(qrField)
-        y += ROW_H
 
         // 默认券图（档位「RP 券」的全局默认；放 config/cobblemarket/icons/ 下，留空 = 用内置券图）
-        defaultIconField = TextFieldWidget(textRenderer, rightX - 130, y + 2, 152, 16, Text.literal(""))
+        defaultIconField = TextFieldWidget(textRenderer, rightX - 130, listStartY(), 152, 16, Text.literal(""))
         defaultIconField?.setMaxLength(64)
         defaultIconField?.setTextPredicate { it.none { c -> c == '/' || c == '\\' } }
         defaultIconField?.setPlaceholder(Text.translatable("cobblemarket.points.config.icon_hint"))
         defaultIconField?.setChangedListener { if (!programmaticText) pendingText["defaultIcon"] = it }
         fillField(defaultIconField, "defaultIcon", defaultIcon)
         addSelectableChild(defaultIconField); addDrawableChild(defaultIconField)
-        y += ROW_H
 
         // 待支付超时（分钟）
-        timeoutField = TextFieldWidget(textRenderer, rightX - 60, y + 2, 82, 16, Text.literal(""))
+        timeoutField = TextFieldWidget(textRenderer, rightX - 60, listStartY(), 82, 16, Text.literal(""))
         timeoutField?.setMaxLength(5)
         timeoutField?.setTextPredicate { it.all(Char::isDigit) }
         timeoutField?.setChangedListener { if (!programmaticText) pendingText["timeout"] = it }
         fillField(timeoutField, "timeout", timeoutMinutes.toString())
         addSelectableChild(timeoutField); addDrawableChild(timeoutField)
-        y += ROW_H
 
         // 货币单位（纯展示，服主自己填「元」/「USD」；留空 = 金额不带单位）
-        currencyField = TextFieldWidget(textRenderer, rightX - 60, y + 2, 82, 16, Text.literal(""))
+        currencyField = TextFieldWidget(textRenderer, rightX - 60, listStartY(), 82, 16, Text.literal(""))
         currencyField?.setMaxLength(16)
         // 这个框只有 82px 宽，placeholder 得短（超了会画到框外）
         currencyField?.setPlaceholder(Text.translatable("cobblemarket.points.config.currency_hint"))
         currencyField?.setChangedListener { if (!programmaticText) pendingText["currency"] = it }
         fillField(currencyField, "currency", currencyLabel)
         addSelectableChild(currencyField); addDrawableChild(currencyField)
-        y += ROW_H + 4
 
-        // 档位行：名称 / 价格 / 点数 + 编辑 / 删除（放不下就滚，见 mouseScrolled）
-        val rows = visibleTierRows()
+        // 档位行：名称 / 价格 / 点数 + 编辑 / 删除（每档一行，行号 = FIXED_ROWS + 下标）
         tiers.forEachIndexed { index, tier ->
-            val relRow = index - scrollOffset
-            val rowY = tierListTop() + relRow * ROW_H
-            val visible = relRow in 0 until rows
             // 宽度按**英文**留：原来的 Edit 26 / Remove 22 是照中文两个字定的，
             // 英文 "Remove" 要 36px 左右，22px 的按钮直接溢出（用户 2026-09-19 实测）。
             // 两个按钮**相邻**（间距 4，原来空了 28）、整体右缘不变（只左移 6px，不挤左边的列）
             val edit = NineSliceButton(
-                rightX + TIER_EDIT_DX, rowY, TIER_EDIT_W, 16, Text.translatable("cobblemarket.price_limit.edit"),
+                rightX + TIER_EDIT_DX, listStartY(), TIER_EDIT_W, TIER_BTN_H,
+                Text.translatable("cobblemarket.price_limit.edit"),
                 { openTierDialog(index) }
             )
             val delete = NineSliceButton(
-                rightX + TIER_DELETE_DX, rowY, TIER_DELETE_W, 16, Text.translatable("cobblemarket.price_limit.remove"),
+                rightX + TIER_DELETE_DX, listStartY(), TIER_DELETE_W, TIER_BTN_H,
+                Text.translatable("cobblemarket.price_limit.remove"),
                 { tiers.removeAt(index); markDirtyAndRebuild() }
             )
-            // 滚出列表区的行要藏起来：留着会画到别的行/按钮上，还点得到
-            edit.visible = visible
-            delete.visible = visible
             tierEditButtons += edit
             tierDeleteButtons += delete
             addDrawableChild(edit)
             addDrawableChild(delete)
         }
+        // 建完统一按当前滚动位置摆一遍（含可见性）
+        layoutRows()
 
-        // 「添加档位」的位置：
-        // - 档位**满一屏** → 贴底（在底部双按钮上方）：列表可滚动，跟着列表会被滚走
-        // - 档位**不满一屏** → 贴着档位区下方。⚠ 这半边是 2026-09-19 补的：档位区做了自适应
-        //   收缩之后，如果按钮还钉在底部，那块空白只是从「档位下方」搬到「按钮上方」，
-        //   看着还是空一大截（用户实测）
-        val tierAddY =
-            if (tierListBottom() < tierAreaMax()) tierListBottom() + BOTTOM_GAP
-            else dialogY() + dialogH() - BOTTOM_BUTTON_BOTTOM - BOTTOM_GAP - TIER_ADD_H
-        // 兑换码管理入口：与「添加档位」**同一行右对齐**（对称）——不新增行、不挤压档位列表
-        codeScreenButton = NineSliceButton(
-            dx + dialogW() - 10 - 70, tierAddY, 70, TIER_ADD_H,
-            Text.translatable("cobblemarket.points.config.code_entry"), { client?.setScreen(PointsCodeScreen()) }
-        )
-        addDrawableChild(codeScreenButton)
-
+        // 「添加档位 / 兑换码」：**紧贴在保存取消那一行的上面**（用户 2026-09-19 定）。
+        //
+        // ⚠ 这里原来还有个「档位不满一屏就上浮贴住列表」的分支 —— 那是当天早些时候为
+        //   反过来的问题加的，结果把空隙搬到了这一行与保存取消之间（用户看到的正是那截空隙）。
+        //   现在**一律钉死在保存取消正上方**，两行之间只留 [BOTTOM_GAP]。
+        val tierAddY = dialogY() + dialogH() - BOTTOM_BUTTON_BOTTOM - BOTTOM_GAP - TIER_ADD_H
         addTierButton = NineSliceButton(
             dx + 10, tierAddY, 70, TIER_ADD_H,
             Text.translatable("cobblemarket.points.config.add_tier"), { openTierDialog(-1) }
         )
         addDrawableChild(addTierButton)
+
+        // 兑换码管理入口：与「添加档位」同一行、右对齐（对称）
+        codeScreenButton = NineSliceButton(
+            dx + dialogW() - 10 - 70, tierAddY, 70, TIER_ADD_H,
+            Text.translatable("cobblemarket.points.config.code_entry"), { client?.setScreen(PointsCodeScreen()) }
+        )
+        addDrawableChild(codeScreenButton)
 
         // 底部双按钮：**照服务器配置界面那一对**（位置、尺寸、间距都一致 —— 同类型界面要能对上）
         saveButton = NineSliceButton(
@@ -482,6 +513,8 @@ class PointsConfigScreen : Screen(
             Text.translatable("cobblemarket.op.scfg_save"),
             { save() }
         )
+        // 快照没到就置灰（点了仍会给提示，见 save()）—— 这时候保存会把配置清空
+        saveButton?.dimmed = !loaded
         addDrawableChild(saveButton)
         cancelButton = NineSliceButton(
             width / 2 + 2, dialogY() + dialogH() - 26, 60, 20,
@@ -553,53 +586,69 @@ class PointsConfigScreen : Screen(
     override fun mouseScrolled(
         mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double
     ): Boolean {
-        if (editing || maxScrollOffset() <= 0) {
+        if (anyDialogOpen() || maxScrollRow() <= 0) {
             return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)
         }
-        val target = (scrollOffset - verticalAmount.toInt()).coerceIn(0, maxScrollOffset())
-        if (target == scrollOffset) {
+        val target = (scrollRow - verticalAmount.toInt()).coerceIn(0, maxScrollRow())
+        if (target == scrollRow) {
             return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)
         }
-        scrollOffset = target
-        applyTierScroll()
+        scrollRow = target
+        layoutRows()
         return true
     }
 
     /**
-     * 右侧滚动条：档位超出一屏才画（否则玩家根本不知道下面还有档位）。
-     *
-     * 画法与**服务器配置界面**同一套（那边就是同一个「固定项 + 可滚动列表」的结构）：
-     * 2px 宽，轨道半透明、滑块不透明，滑块高按「可见行 / 总行数」的比例。
+     * 右侧滚动条：内容装不下才画（2px 宽，轨道半透明、滑块不透明 —— 与服务器配置界面同一套）。
+     * 轨道 = 内容可视区；滑块高按「可视高 / 内容总高」的比例。
      */
     private fun renderScrollbar(context: DrawContext) {
-        val maxScroll = maxScrollOffset()
+        val maxScroll = maxScrollRow()
         if (maxScroll <= 0) return
         val x = dialogX() + dialogW() - 5
-        val top = tierListTop()
-        val trackH = tierListBottom() - tierListTop()
-        val thumbH = maxOf(16, trackH * trackH / (trackH + maxScroll * ROW_H))
-        val thumbY = top + (trackH - thumbH) * scrollOffset / maxScroll
+        val top = contentTop()
+        val trackH = viewportH()
+        val hidden = rowTop(contentRowCount()) - viewportH()
+        val thumbH = maxOf(16, trackH * trackH / (trackH + hidden))
+        val thumbY = top + (trackH - thumbH) * scrollRow / maxScroll
         context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
         context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
     }
 
-    /** 按当前滚动位置重排档位行上的两个按钮（含可见性） */
-    private fun applyTierScroll() {
+    /**
+     * 按当前 [scrollRow] 摆放**所有内容行**的控件（8 行设置项 + N 行档位）。
+     *
+     * ⚠ `visible` 必须叠加 [anyDialogOpen]：弹窗开着时任何重建（滚动 / resize）都不能把下层控件
+     *   改回可见（照服务器配置界面 `!eggConfirmOpen &&` 的写法）。
+     * ⚠ 行号 → 控件的对应关系是**唯一一份**：建控件的地方（[buildMain]）不自己算坐标，
+     *   行文字与标签（render）也走 [rowY] / [rowFits] —— 三处共用同一套行坐标。
+     */
+    private fun layoutRows() {
+        scrollRow = scrollRow.coerceIn(0, maxScrollRow())
         val rightX = dialogX() + dialogW() - 10 - 22
-        // ⚠ 走与 buildEditDialog 同一组常量（两处各写各的就会「滚动后按钮跳位」）
-        tierEditButtons.forEachIndexed { index, button ->
-            placeTierRowButton(index, button, rightX + TIER_EDIT_DX)
-        }
-        tierDeleteButtons.forEachIndexed { index, button ->
-            placeTierRowButton(index, button, rightX + TIER_DELETE_DX)
-        }
-    }
 
-    private fun placeTierRowButton(index: Int, button: NineSliceButton, x: Int) {
-        val relRow = index - scrollOffset
-        val visible = relRow in 0 until visibleTierRows()
-        button.visible = visible
-        if (visible) button.setPosition(x, tierListTop() + relRow * ROW_H)
+        fun place(row: Int, widget: ClickableWidget?, x: Int, yOff: Int) {
+            if (widget == null) return
+            val fits = rowFits(row) && !anyDialogOpen()
+            widget.visible = fits
+            if (fits) widget.setPosition(x, rowY(row) + yOff)
+        }
+        // 设置项 8 行（行号见 ROW_* 常量；与 render 里的标签顺序一一对应）
+        place(ROW_POINTS, toggleButtons["points"], rightX, 0)
+        place(ROW_POINTS_MARKET, toggleButtons["points_market"], rightX, 0)
+        place(ROW_FEE, feeCfgButton, rightX - 18, 0)
+        place(ROW_SHOP, toggleButtons["shop"], rightX, 0)
+        place(ROW_QR, qrField, rightX - 130, 2)
+        place(ROW_ICON, defaultIconField, rightX - 130, 2)
+        place(ROW_TIMEOUT, timeoutField, rightX - 60, 2)
+        place(ROW_CURRENCY, currencyField, rightX - 60, 2)
+        // 档位行：行号 = FIXED_ROWS + 下标（按钮比行矮，垂直居中 → +2）
+        tierEditButtons.forEachIndexed { index, btn ->
+            place(FIXED_ROWS + index, btn, rightX + TIER_EDIT_DX, (TIER_ROW_H - TIER_BTN_H) / 2)
+        }
+        tierDeleteButtons.forEachIndexed { index, btn ->
+            place(FIXED_ROWS + index, btn, rightX + TIER_DELETE_DX, (TIER_ROW_H - TIER_BTN_H) / 2)
+        }
     }
 
     // ── 档位编辑弹窗 ──
@@ -722,6 +771,15 @@ class PointsConfigScreen : Screen(
 
     /** 保存：提交后**留在界面**并显示 1.5 秒提示（照服务器配置界面；直接关掉会让服主以为没保存） */
     private fun save() {
+        // ⚠ **服务端快照还没到就绝不保存**：保存是**全量覆盖**，而这时本地态还是空的 ——
+        //   一按下去档位、收款码、券图、货币单位会被整体清空写进配置，且无法追回。
+        //   2026-09-19 用户实测踩到（档位就是这么没的：配置文件里变成 "tiers": []）。
+        if (!loaded) {
+            saveBlocked = true
+            savedToastUntil = System.currentTimeMillis() + 3000
+            return
+        }
+        saveBlocked = false
         val timeout = (pendingText["timeout"] ?: timeoutMinutes.toString()).toLongOrNull()?.coerceIn(1L, 1440L) ?: 15L
         sendToServer(
             SavePointsConfigPayload(
@@ -840,27 +898,30 @@ class PointsConfigScreen : Screen(
             centerX, dialogY() + 14, 0xFFFFFF
         )
 
-        var y = listStartY()
-        /** 配置项标签；[arg] 填词条里的那个 `%s`（图标类词条传 `CurrencyService.pointsIcon()`） */
-        fun label(key: String, arg: Text? = null) {
-            val text = if (arg == null) Text.translatable(key) else Text.translatable(key, arg)
-            context.drawTextWithShadow(textRenderer, text, dx + 10, y + 7, 0xFFFFFF)
-            y += ROW_H
+        // 设置项标签：**行号与 layoutRows 里的 ROW_* 一一对应**（前 3 行是 RP 相关，标签带 RP 图标）。
+        // 装不下的行一律不画（跟控件同一套可见性判据）。
+        val settingLabels = listOf(
+            ROW_POINTS to "cobblemarket.points.config.points_enabled",
+            ROW_POINTS_MARKET to "cobblemarket.points.config.points_market",
+            ROW_FEE to "cobblemarket.points.config.points_fee",
+            ROW_SHOP to "cobblemarket.points.config.shop_enabled",
+            ROW_QR to "cobblemarket.points.config.pay_qr",
+            ROW_ICON to "cobblemarket.points.config.default_icon",
+            ROW_TIMEOUT to "cobblemarket.points.config.timeout",
+            ROW_CURRENCY to "cobblemarket.points.config.currency_label"
+        )
+        settingLabels.forEach { (row, key) ->
+            if (!rowFits(row)) return@forEach
+            val text =
+                if (row <= ROW_FEE) Text.translatable(key, CurrencyService.pointsIcon())
+                else Text.translatable(key)
+            context.drawTextWithShadow(textRenderer, text, dx + 10, rowY(row) + 7, 0xFFFFFF)
         }
-        label("cobblemarket.points.config.points_enabled", CurrencyService.pointsIcon())
-        label("cobblemarket.points.config.points_market", CurrencyService.pointsIcon())
-        label("cobblemarket.points.config.points_fee", CurrencyService.pointsIcon())
-        label("cobblemarket.points.config.shop_enabled")
-        label("cobblemarket.points.config.pay_qr")
-        label("cobblemarket.points.config.default_icon")
-        label("cobblemarket.points.config.timeout")
-        label("cobblemarket.points.config.currency_label")
-        y += 4
         // 档位行：名称 / 价格 / 点数（带 `*` = 该档配了专用收款码，文件名在编辑弹窗里看）。
-        // 按滚动位置画，滚出列表区的行不画。
+        // 行号 = FIXED_ROWS + 下标；装不下的行不画。
         tiers.forEachIndexed { index, tier ->
-            val relRow = index - scrollOffset
-            if (relRow !in 0 until visibleTierRows()) return@forEachIndexed
+            val row = FIXED_ROWS + index
+            if (!rowFits(row)) return@forEachIndexed
             // 配了专用收款码的档位挂个 [码] 标记（走词条，英文服显示 [QR]）。
             // ⚠ 原来这里是个裸 `*`，没有任何解释 —— 服主自己都看不出它是什么意思（2026-09-19 用户问的）
             val name = if (tier.qr.isBlank()) tier.name
@@ -877,7 +938,7 @@ class PointsConfigScreen : Screen(
                     // ⚠ 别整行都用 drawTextWithShadow 的白 —— 那样名字和数字糊成一片
                     .append(Text.literal("${tier.points} ").formatted(Formatting.GOLD))
                     .append(CurrencyService.pointsIcon()),
-                dx + 10, tierListTop() + relRow * ROW_H + 5, 0xFFFFFF
+                dx + 10, rowY(row) + (TIER_ROW_H - 8) / 2, 0xFFFFFF
             )
         }
 
@@ -885,26 +946,32 @@ class PointsConfigScreen : Screen(
         //（灰色 1px、左右各内缩 6px —— 与服务器配置界面列表里的行线同款）
         val lineL = dx + 6
         val lineR = dx + dialogW() - 6
-        context.fill(lineL, tierListTop() - 4, lineR, tierListTop() - 3, 0xFF555555.toInt())
-        context.fill(lineL, tierListBottom() + 2, lineR, tierListBottom() + 3, 0xFF555555.toInt())
+        // 分割线 ①：设置项与档位行之间那条 —— **跟着内容滚**（它就画在两段之间的缝里），
+        // 滚出可视区就不画（否则会糊到底部钉死的按钮上）。
+        val sectionLineY = rowY(FIXED_ROWS) - TIER_SECTION_H
+        if (sectionLineY >= contentTop() && sectionLineY < contentTop() + viewportH()) {
+            context.fill(lineL, sectionLineY, lineR, sectionLineY + 1, 0xFF555555.toInt())
+        }
+        // 分割线 ②：内容区与底部两行按钮之间的那条 —— **钉死在可视区底边**，不跟内容滚
+        val bottomLineY = contentTop() + viewportH()
+        context.fill(lineL, bottomLineY, lineR, bottomLineY + 1, 0xFF555555.toInt())
         renderScrollbar(context)
 
-        // 保存结果提示（弹窗底部居中）：成功绿、失败红（失败也要说，别只播一声 fail 音）
+        // 保存结果提示（弹窗底部居中）：成功绿、失败红（失败也要说，别只播一声 fail 音）；
+        // 「配置还没加载完就点保存」单独一条红字。
+        // ⚠ 位置：**内容区底边上方 10px**（那段是底部两行按钮区，放不下字）——
+        //   2026-09-19 收紧底部留白后，原来那个 `dialogH − 38` 正好压在「添加档位」按钮上。
         if (System.currentTimeMillis() < savedToastUntil) {
-            if (saveResultOk) {
-                context.drawCenteredTextWithShadow(
-                    textRenderer,
+            val y = dialogY() + dialogH() - BOTTOM_BUTTON_BOTTOM - BOTTOM_GAP - TIER_ADD_H - BOTTOM_GAP - 10
+            val text = when {
+                saveBlocked -> Text.translatable("cobblemarket.points.config.not_loaded").formatted(Formatting.RED)
+                saveResultOk ->
                     Text.translatable("cobblemarket.points.config.saved", CurrencyService.pointsIcon())
-                        .formatted(Formatting.GREEN),
-                    centerX, dialogY() + dialogH() - 38, 0xFFFFFF
-                )
-            } else {
-                context.drawCenteredTextWithShadow(
-                    textRenderer,
-                    Text.translatable("cobblemarket.points.config.qr_problem_short").formatted(Formatting.RED),
-                    centerX, dialogY() + dialogH() - 38, 0xFFFFFF
-                )
+                        .formatted(Formatting.GREEN)
+
+                else -> Text.translatable("cobblemarket.points.config.qr_problem_short").formatted(Formatting.RED)
             }
+            context.drawCenteredTextWithShadow(textRenderer, text, centerX, y, 0xFFFFFF)
         }
     }
 
@@ -955,6 +1022,19 @@ class PointsConfigScreen : Screen(
 
     private companion object {
         const val ROW_H = 20
+
+        /**
+         * **档位行高**（比固定项的 [ROW_H] 矮 2px）。
+         *
+         * 2026-09-19 用户要求「档位区多显示一行」：弹窗高度已经被屏幕钳死、没得加，所以只能
+         * ①把各处留白收紧（见 [DIALOG_H] 的算式）②把档位行从 20 收到 18 ——
+         * 两者合起来正好凑够一整行（用户实测的屏幕上 3 行 → 4 行）。
+         * 档位行里只有 8px 文字 + [TIER_BTN_H] 高的按钮，18px 装得下。
+         */
+        const val TIER_ROW_H = 18
+
+        /** 档位行里两个按钮（编辑 / 删除）的高 —— `TIER_ROW_H − TIER_BTN_H = 4`，刚好满足按钮间距规则 */
+        const val TIER_BTN_H = 14
         /** 档位编辑弹窗尺寸（5 行输入 + 标题 + 按钮） */
         const val EDIT_W = 220
         const val EDIT_H = 182
@@ -962,29 +1042,56 @@ class PointsConfigScreen : Screen(
         /**
          * 主弹窗的设计高度；实际会被屏幕高度钳制（见 [dialogH]）。
          *
-         * ⚠ **改它之前先重算档位区高度**，否则会空出一条或挤掉一行：
+         * ⚠ **改它之前先重算内容可视区高度**，否则会白空一条或挤掉一行：
          * ```
-         * 档位区高 = DIALOG_H − BOTTOM_BUTTON_BOTTOM − 2×BOTTOM_GAP − TIER_ADD_H
-         *                    − (30 + FIXED_ROWS×ROW_H + 4)
-         *          = DIALOG_H − 54 − (30 + FIXED_ROWS×20 + 4)
+         * 可视区高 = DIALOG_H − (BOTTOM_BUTTON_BOTTOM + GAP + TIER_ADD_H + GAP)   ← 底部两行（钉死）
+         *                    − 26                                                ← 标题区
+         *          = DIALOG_H − 48 − 26 = DIALOG_H − 74
+         *          = 368 − 74 = 294px
          * ```
-         * FIXED_ROWS=6 时是 `DIALOG_H − 208`，328 正好 120px = 6 行；
-         * **加「玩家间交易」开关后 FIXED_ROWS → 7**，公式变成 `DIALOG_H − 228`，
-         * 于是 DIALOG_H 同步 +20 → 348，仍是 120px = 6 行、一个像素不剩。
+         * 可视区里依次排：8 行设置项（8×20=160）+ [TIER_SECTION_H] + N 行档位（N×[TIER_ROW_H]）。
+         * 弹窗没被钳短时 294 − 162 = 132 ÷ 18 = **7 行档位**同时可见；用户屏幕钳到 308 时
+         * `234 − 162 = 72 ÷ 18 = 4 行`（改这个式子的任何一项都可能让它掉回 3 行）。
+         * ⚠ **FIXED_ROWS 每 +1（加一行设置项）就少 20px**，加设置项前先按上式算一遍。
+         * ⚠ 内容装不下**不会重叠**：装不下的行直接藏起来、可滚动（2026-09-19 改成整块滚动）。
          */
         const val DIALOG_H = 368
 
-        /** 档位列表上方那几行的固定项数量（总开关/充值开关/默认收款码/默认券图/超时/货币单位） */
-        const val FIXED_ROWS = 8
+        /**
+         * 设置项各行的**行号**（0 起）—— **唯一一份**：
+         * [layoutRows] 按它摆控件、render 按它画标签，加/删设置项时改这里 + 那一处列表即可。
+         */
+        const val ROW_POINTS = 0
+        const val ROW_POINTS_MARKET = 1
+        const val ROW_FEE = 2
+        const val ROW_SHOP = 3
+        const val ROW_QR = 4
+        const val ROW_ICON = 5
+        const val ROW_TIMEOUT = 6
+        const val ROW_CURRENCY = 7
 
-        /** 底部双按钮的高度、以及它离弹窗底边的距离 */
-        const val BOTTOM_BUTTON_BOTTOM = 26
+        /** 设置项占的行数（总开关 / 玩家间交易 / 费率配置 / 充值开关 / 收款码 / 券图 / 超时 / 货币单位） */
+        const val FIXED_ROWS = ROW_CURRENCY + 1
+
+        /**
+         * 设置项与档位行之间留的缝（那条 1px 分割线画在这段缝里）。
+         *
+         * ⚠ **只能给 2**：这段缝是**内容**的一部分，给多了就会把可视区里的一整行档位挤掉
+         *   （用户屏幕上 4 行 → 3 行只差 2px），要加宽得同步加大 [DIALOG_H]。
+         */
+        const val TIER_SECTION_H = 2
+
+        /** 底部双按钮的高度、以及它离弹窗底边的距离（24 = 按钮 20 + 下边距 4） */
+        const val BOTTOM_BUTTON_BOTTOM = 24
 
         /** 「添加档位」按钮高度 */
         const val TIER_ADD_H = 16
 
-        /** 相邻控件之间的最小空隙（按钮间距规则） */
-        const val BOTTOM_GAP = 6
+        /**
+         * 相邻控件之间的最小空隙（按钮间距规则是 4，这里就取 4 —— 留白每多 1px 都可能少一行档位）；
+         * 底部区一共用两次：内容可视区底边「↔ 添加档位」与「添加档位 ↔ 底部双按钮」（见 [viewportH]）。
+         */
+        const val BOTTOM_GAP = 4
         // 开关图标沿用服务器配置界面那一对（不再新画）
         val ON_ICON = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/switch_icon_on.png")
         val OFF_ICON = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/switch_icon_off.png")

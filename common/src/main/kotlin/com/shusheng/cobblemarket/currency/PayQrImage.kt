@@ -39,13 +39,13 @@ object PayQrImage {
           statement. The mod shows the order number and the exact amount right next to
           the QR, and never bakes them into the image.
         - ⚠ IF YOUR PROVIDER CHARGES A FEE (PayPal, Stripe, ...): the sum that actually
-          reaches you will NOT equal what the player sent, so the unique amount suffix
-          is useless for matching. Use the ORDER NUMBER instead, and tell players to
+          reaches you will NOT equal what the player sent, so the amount alone cannot
+          be matched. Use the ORDER NUMBER instead, and tell players to
           put it in the payment note (the popup shows it prominently for that reason).
         - A tier may have its OWN QR image ("fixed amount" codes, e.g. made with
           WeChat/Alipay's "set amount" feature): that tier then charges the list price
-          exactly. Tiers without one fall back to the global image and get a unique
-          amount suffix so you can match the bill.
+          exactly. Tiers without one fall back to the global image, and are charged the
+          list price too.
         - Files are read on demand (no restart needed); replacing an image takes effect
           for the next order opened.
 
@@ -58,10 +58,10 @@ object PayQrImage {
         - 收款码本身是正方形，512×512 左右就够。弹窗里最大只画 208×110 像素，
           宽扁的图会被缩得很小、容易扫不出来。
         - 档位可以配自己的收款码（微信/支付宝的「设置金额」码），
-          该档实付金额就等于码上的金额；没配专用码的档位走全局码、会加唯一尾数便于对账。
+          该档实付金额就等于码上的金额；没配专用码的档位走全局码，实付同样是档位标价。
         - 读图是按需的（改图不用重启），换了图对下一笔新订单生效。
         - ⚠ 用**收手续费**的渠道（PayPal / Stripe 等）时到账金额会少于玩家付的，
-          唯一尾数对不上，此时请改用**订单号**核对（弹窗里订单号是显眼展示的，
+          此时请改用**订单号**核对（弹窗里订单号是显眼展示的，
           提醒玩家把它填进付款备注）。
     """.trimIndent()
 

@@ -43,6 +43,7 @@ import com.shusheng.cobblemarket.network.CreatePointCodesPayload
 import com.shusheng.cobblemarket.network.RedeemPointCodePayload
 import com.shusheng.cobblemarket.network.PurgePointCodesPayload
 import com.shusheng.cobblemarket.network.RequestPointCodesPayload
+import com.shusheng.cobblemarket.network.RequestPointRecordsPayload
 import com.shusheng.cobblemarket.network.RevokePointCodePayload
 import com.shusheng.cobblemarket.network.RejectPendingDeliverPayload
 import com.shusheng.cobblemarket.network.RejectPointOrderPayload
@@ -109,7 +110,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar
  * neoforge 网络协商要求双端注册集合完全一致（id + 流向）：
  * 任何一端缺少另一端注册的非 optional payload，连接会被拒绝（NetworkComponentNegotiator）。
  *
- * common 里 91 个 C2S payload 由服务端（各 Network.register）注册 playToServer + 业务 handler；
+ * common 里的 C2S payload 由服务端（各 Network.register）注册 playToServer + 业务 handler；
  * 客户端也必须空注册同名 playToServer 类型，否则连不上 neoforge 服务器。
  * （fabric 无此机制：客户端发送前不校验本地注册，仅 neoforge 需要。）
  *
@@ -153,11 +154,12 @@ fun registerClientC2S() {
         c2s(registrar, MarkPointOrderPaidPayload.ID, MarkPointOrderPaidPayload.CODEC)
         c2s(registrar, PlaceBidPayload.ID, PlaceBidPayload.CODEC)
         c2s(registrar, RedeemPointCodePayload.ID, RedeemPointCodePayload.CODEC)
-        // ⚠ 兑换码管理三个包：NeoForge 必须在这里登记，漏了会在协商阶段直接断连（方案风险清单第 5 条）
+        // ⚠ 兑换码管理四个包 + 玩家侧记录包：NeoForge 必须在这里登记，漏了会在协商阶段直接断连（方案风险清单第 5 条）
         c2s(registrar, CreatePointCodesPayload.ID, CreatePointCodesPayload.CODEC)
         c2s(registrar, PurgePointCodesPayload.ID, PurgePointCodesPayload.CODEC)
         c2s(registrar, RequestPointCodesPayload.ID, RequestPointCodesPayload.CODEC)
         c2s(registrar, RevokePointCodePayload.ID, RevokePointCodePayload.CODEC)
+        c2s(registrar, RequestPointRecordsPayload.ID, RequestPointRecordsPayload.CODEC)
         c2s(registrar, RejectPendingDeliverPayload.ID, RejectPendingDeliverPayload.CODEC)
         c2s(registrar, RemoveItemBlacklistPayload.ID, RemoveItemBlacklistPayload.CODEC)
         c2s(registrar, RemoveItemPriceLimitPayload.ID, RemoveItemPriceLimitPayload.CODEC)

@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.currency
 
+import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.util.RequestThrottle
 import net.minecraft.server.MinecraftServer
@@ -81,6 +82,7 @@ object PointRedeemService {
                 PointsLogType.REDEEM, player.uuid, player.name.string, external.amount, after,
                 player.name.string, "外部码 serial=${external.serial}"
             )
+            remember(server, player, external.amount, after, now)
             failures.remove(player.uuid)
             return RedeemOutcome.Success(external.amount, after)
         }
@@ -100,8 +102,31 @@ object PointRedeemService {
             PointsLogType.REDEEM, player.uuid, player.name.string, entry.amount, after,
             player.name.string, "兑换码 ${PointCodes.format(entry.code)}"
         )
+        remember(server, player, entry.amount, after, now)
         failures.remove(player.uuid)
         return RedeemOutcome.Success(entry.amount, after)
+    }
+
+    /**
+     * 记一条**玩家维度**的兑换记录（「我的兑换记录」界面的数据源）。
+     *
+     * ⚠ 两条成功分支都要调（本地码 / 外部码）—— 外部码不进码表，漏了它就是「玩家在网站买的码
+     * 兑完查不到记录」。
+     * ⚠ 必须在「扣次数 → 加余额」**之后**：这条只是显示用的副本，写不进去最坏少显示一条，
+     * 绝不能让它的异常冒出去（钱已经动完了，抛异常等于玩家看到失败、其实已经到账）。
+     */
+    private fun remember(
+        server: MinecraftServer,
+        player: ServerPlayerEntity,
+        amount: Long,
+        balanceAfter: Long,
+        now: Long
+    ) {
+        try {
+            PointRecordState.get(server).append(player.uuid, PointRecord(amount, balanceAfter, now))
+        } catch (e: Exception) {
+            CobbleMarket.LOGGER.warn("Failed to append point record: {}", e.message)
+        }
     }
 
     private fun invalid(playerUuid: UUID, now: Long): RedeemOutcome {
