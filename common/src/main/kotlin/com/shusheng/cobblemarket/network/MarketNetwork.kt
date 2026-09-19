@@ -1409,7 +1409,8 @@ object MarketNetwork {
                         if (meowth)
                             Text.translatable(
                                 "cobblemarket.buy_confirm.paid_by_meowth",
-                                listing.speciesText(),
+                                // 闪光带金★：与卖家侧「你的 ★ xxx 已卖出」写法一致（2026-09-19 用户拍板）
+                                com.shusheng.cobblemarket.util.TypeTextColors.withShinyStar(listing.speciesText(), listing.shiny),
                                 com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(listing.price),
                                 com.shusheng.cobblemarket.config.CurrencyHandler.goldCurrencyText(),
                                 com.shusheng.cobblemarket.config.CobbleMarketConfig.loanPlans.getOrNull(payload.planIndex)?.periods ?: 1
@@ -1417,7 +1418,8 @@ object MarketNetwork {
                         else
                             Text.translatable(
                                 "cobblemarket.network.bought",
-                                listing.speciesText(),
+                                // 闪光带金★：与卖家侧「你的 ★ xxx 已卖出」写法一致（2026-09-19 用户拍板）
+                                com.shusheng.cobblemarket.util.TypeTextColors.withShinyStar(listing.speciesText(), listing.shiny),
                                 com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(listing.price),
                                 com.shusheng.cobblemarket.config.CurrencyHandler.goldCurrencyText()
                             )
@@ -1434,7 +1436,8 @@ object MarketNetwork {
                 CelebrationNetwork.sendFromEntry(player, listing.species, listing.shiny, listing.extraData, CelebrationSource.MARKET)
 
                 // 卖家离线则入队补发。主体绿（与「上架成功 / 买入成功」同一配色），名字带主属性色
-                // 与闪光金★ —— 富文本拼接：名字自己带样式，不会被外层绿盖掉
+                // 与闪光金★ —— 富文本拼接：名字自己带样式，不会被外层绿盖掉。
+                // ⚠ 买家侧「你购买了 xxx」**同样带 ★**：同一只精灵在买卖两侧写法一致（2026-09-19 用户拍板）
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, listing.sellerUuid,
                     Text.translatable(
