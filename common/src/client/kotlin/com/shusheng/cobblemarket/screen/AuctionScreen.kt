@@ -971,6 +971,9 @@ class AuctionScreen(
         searchField?.visible = false
         backButton?.visible = false
         createButton?.visible = false
+        // ⚠ 货币按钮也在这份名单里：弹窗打开时下层控件必须全部不可交互，
+        //   漏一个就会「弹窗盖着、下面的按钮还能点」（用户实测报过）
+        currencyButton?.visible = false
         tabButtons.forEach { it.visible = false }
         rulesButton?.visible = false
         htButton?.visible = false
