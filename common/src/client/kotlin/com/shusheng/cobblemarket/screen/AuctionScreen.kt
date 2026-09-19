@@ -68,6 +68,19 @@ class AuctionScreen(
 
     /** 货币切换按钮（RP 总开关关着时为 null = 压根没建） */
     private var currencyButton: NineSliceButton? = null
+
+    /** 最近一次列表请求的发送时刻；补发节奏对齐服务端节流窗口并留 100ms 余量 */
+    private var lastListRequestAt = 0L
+
+    /**
+     * 有列表请求在排队（本轮节流窗口内被推迟）。
+     *
+     * ⚠ 服务端对 `auction_list` 有 500ms 节流，**超频的请求是静默丢弃的**（不回错误）。
+     * 币种切换是「本地先按新币种过滤（旧行立刻消失）+ 再向服务端要新币种的全量列表」，
+     * 一旦请求被丢弃，本地过滤留下的就是**空列表**（飞快连点两次货币按钮就中招）。
+     * 所以窗口内的请求必须排队、由 [tick] 补发（照 MarketScreen 的成熟做法）。
+     */
+    private var pendingListRequest = false
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练（仅精灵 tab）
     private var htFilter = 0
     private var htButton: NineSliceButton? = null
@@ -272,15 +285,37 @@ class AuctionScreen(
         context.matrices.pop()
     }
 
+    /** 列表请求统一入口：窗口允许立即发，否则排队等 tick 补发 */
+    private fun requestAuctionList() {
+        if (System.currentTimeMillis() - lastListRequestAt >= LIST_REQUEST_INTERVAL_MS) {
+            lastListRequestAt = System.currentTimeMillis()
+            pendingListRequest = false
+            sendToServer(RequestAuctionListPayload(currency.name))
+        } else {
+            pendingListRequest = true
+        }
+    }
+
+    override fun tick() {
+        super.tick()
+        // 补发排队中的列表请求：发的是**当时的** currency，连点会自动合并到最终选择的那一种
+        if (pendingListRequest && System.currentTimeMillis() - lastListRequestAt >= LIST_REQUEST_INTERVAL_MS) {
+            lastListRequestAt = System.currentTimeMillis()
+            pendingListRequest = false
+            sendToServer(RequestAuctionListPayload(currency.name))
+        }
+    }
+
     /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
     private fun onCurrencyClick() {
         // ⚠ 不拦开关：卖家要能切过去下架自己的存量 RP 挂单
         currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
         currencyButton?.let { updateCurrencyButton(it) }
-        // 本地先按新币种过一遍（旧币种条目立刻消失），再向服务端要新币种的全量列表
+        // 本地先按新币种过一遍（旧币种条目立刻消失），再向服务端要新币种的全量列表。
+        // ⚠ 连点两次时第二次必然落在上一次的节流窗口内（500ms），必须走排队入口
         rebuildFiltered()
         rebuildBidButtons()
-        sendToServer(RequestAuctionListPayload(currency.name))
+        requestAuctionList()
     }
 
     /** 刷新货币按钮外观：主货币显示 `₽`，RP 显示图标（与市场/上架界面同一套口径） */
@@ -411,7 +446,7 @@ class AuctionScreen(
         applyFilterVisibility()
 
         // 不重置 scrollOffset：出价弹窗关闭/resize 重建时保留浏览位置（switchTab 才显式归零）
-        sendToServer(RequestAuctionListPayload(currency.name))
+        requestAuctionList()
         rebuildFiltered()
     }
 
@@ -1399,7 +1434,8 @@ class AuctionScreen(
         // 结算中的条目排除（已结算完毕，重拉会全量替换、截断落槌动画）
         if (entries.any { it.endsAt <= pollNow && it.id !in settlingUntil } && pollNow - lastSettlePoll > 1000) {
             lastSettlePoll = pollNow
-            sendToServer(RequestAuctionListPayload(currency.name))
+            // 走统一入口：万一撞上玩家的币种切换窗口，这次请求排队等 tick 补发，不会被静默丢弃
+            requestAuctionList()
         }
 
         // 上分隔线若落在展开列表的覆盖范围内则不画（它也在 children 之后，画了会刺穿列表）；
@@ -1905,5 +1941,9 @@ class AuctionScreen(
         val HAMMER_TEX_LEFT = Identifier.of("cobblemarket", "textures/gui/auction_gavel_left.png")
         val HAMMER_TEX_LEFT_NO = Identifier.of("cobblemarket", "textures/gui/auction_gavel_left_no.png")
         const val MAX_FILTER_LIST_ROWS = 8
+
+        // 列表请求的最小间隔：服务端 `auction_list` 节流窗口 500ms + 100ms 余量
+        // （窗口同宽时网络抖动会让请求恰好落进服务端窗口被静默丢弃，照 MarketScreen 的取值口径）
+        const val LIST_REQUEST_INTERVAL_MS = 600L
     }
 }
