@@ -458,7 +458,7 @@
   "cobblemarket.auction.price_limit.above_max": "Starting price above the maximum limit (%s)",
   "cobblemarket.auction.price_limit.held_below_min": "Starting price below the minimum limit (%s, including held item)",
   "cobblemarket.auction.price_limit.held_above_max": "Starting price above the maximum limit (%s, including held item)",
-  "cobblemarket.auction.settled_seller": "Your auction sold: %1$s for %2$s %3$s, you received %4$s %3$s (fee %5$s %3$s)",
+  "cobblemarket.auction.settled_seller": "Your auction sold: %1$s for %2$s, you received %3$s (fee %4$s)",
   "cobblemarket.auction.settled_unsold": "Your auction ended unsold: %s, item returned to your pending claims",
   "cobblemarket.auction.settled_winner": "You won the auction: %s, item sent to your pending claims",
   "cobblemarket.auction.price_total_hint": "The starting price is for the whole stack",
