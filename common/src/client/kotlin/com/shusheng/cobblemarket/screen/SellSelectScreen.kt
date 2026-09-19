@@ -244,7 +244,9 @@ class SellSelectScreen(
         )
         addDrawableChild(typeBtn)
 
-        priceField = TextFieldWidget(textRenderer, lx + 190, btnY, 56, 18, Text.literal(""))
+        // y 用 btnY+1 而不是 btnY：输入框高 18、同行按钮高 20，顶边对齐会让框整体偏上 1px。
+        // 本项目同类元素一律**垂直中心对齐**（见各弹窗的输入框 ↔ 精灵槽那套坐标）
+        priceField = TextFieldWidget(textRenderer, lx + 190, btnY + 1, 56, 18, Text.literal(""))
         priceField?.setPlaceholder(Text.translatable("cobblemarket.sell.price_placeholder"))
         priceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addSelectableChild(priceField)
