@@ -21,6 +21,7 @@
 - **"My Orders"**: players can always look up their own orders, including granted and voided history, with order number, amount, status and creation time
 - **RP balance HUD**: RP is shown on the line **below** the main balance (with green/red floating deltas when it changes); that line has its own display switch and hides itself when the server has RP turned off
 - **Audit and order ledgers**: every RP change is written to CSV under `config/cobblemarket/points/`, and top-up orders get their own ledger covering every step (created / claimed paid / granted / voided) — so even an order the owner never got around to handling is traceable from the files
+- **RP is always shown as an icon**: chat messages, command feedback, screen titles, buttons and tooltips all use the icon, so **the text "RP" never appears in the UI**; titles get a larger version. All of them share the balance HUD's image — swap that image and every one changes with it
 
 ## 1.2.0 (in development, unreleased)
 

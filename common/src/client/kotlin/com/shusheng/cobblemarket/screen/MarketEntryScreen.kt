@@ -10,7 +10,9 @@ import com.shusheng.cobblemarket.client.BalanceHudMode
 import com.shusheng.cobblemarket.client.IconAnimMode
 import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.client.OakTips
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
 import com.shusheng.cobblemarket.client.requestCreditInfo
+import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.FinanceStatsPayload
 import com.shusheng.cobblemarket.network.RequestBalancePayload
@@ -326,7 +328,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                     pointsNoticeUntil = System.currentTimeMillis() + 3000
                 }
             },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/points_symbol.png"),
+            iconLeft = POINTS_SYMBOL_TEXTURE,
             // 48×48 贴图缩到 18×18 显示（照求购单/喵喵银行按钮）
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             texture = ROW_BACKGROUND_TEXTURE,
@@ -334,7 +336,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         )
         pointsBtn.dimmed = !com.shusheng.cobblemarket.client.PointsStateCache.enabled
         this.pointsMarketBtn = pointsBtn
-        pointsBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.points.market.entry")))
+        pointsBtn.setTooltip(
+            net.minecraft.client.gui.tooltip.Tooltip.of(
+                Text.translatable("cobblemarket.points.market.entry", CurrencyService.pointsIcon())
+            )
+        )
         entryButtons += addDrawableChild(pointsBtn)
 
         if (!creditInfoLoaded) {
@@ -1203,7 +1209,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         if (System.currentTimeMillis() < pointsNoticeUntil) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.points.market.disabled").string,
+                Text.translatable("cobblemarket.points.market.disabled", CurrencyService.pointsIcon()),
                 width / 2, height - 36, 0xFF5555
             )
         }

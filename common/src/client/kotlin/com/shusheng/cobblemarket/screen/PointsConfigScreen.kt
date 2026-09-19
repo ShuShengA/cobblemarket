@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.PointsConfigPayload
 import com.shusheng.cobblemarket.network.PointsTierConfig
@@ -23,7 +24,9 @@ import kotlin.math.roundToInt
  * ⚠ 权限只认 **OP**（`hasPermissionLevel(2)`），不下放任何权限节点 ——
  * 与"RP 市场上架全交给 OP"同一口径（服务端也会再校验一次）。
  */
-class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.title")) {
+class PointsConfigScreen : Screen(
+    Text.translatable("cobblemarket.points.config.title", CurrencyService.pointsTitleIcon())
+) {
 
     // ── 本地编辑态（保存时一次性提交；快照回来时覆盖） ──
     private var pointsEnabled = false
@@ -103,7 +106,7 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
 
     /**
      * 弹窗高度：设计值 [DIALOG_H]，**超过屏幕就压进屏幕内**。
-     * ⚠ GUI scale 调大时逻辑分辨率很小（1080p + Auto 可能只有 480×270），定死的 320 会顶出
+     * ⚠ GUI scale 调大时逻辑分辨率很小（1080p + Auto 可能只有 480×270），定死的高度会顶出
      * 上下边界、连保存按钮都点不到 —— 2026-09-18 用户报的 RP 市场同类问题。
      */
     private fun dialogH() = minOf(DIALOG_H, height - 16)
@@ -115,15 +118,29 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
     private fun tierListTop() = listStartY() + FIXED_ROWS * ROW_H + 4
 
     /**
-     * 档位列表区底部：「添加档位」按钮上方。
-     * ⚠ 那个按钮**贴底**（在底部双按钮上方），不再跟在档位列表屁股后面 ——
+     * 档位列表区的**可用上限**（底边）= 「添加档位」按钮上方。
+     * ⚠ 那个按钮**贴底**（在底部双按钮上方），不跟档位列表走 ——
      * 列表可滚动，跟着它会被一起滚走/滚出屏幕。
      */
-    private fun tierListBottom() =
+    private fun tierAreaMax() =
         dialogY() + dialogH() - BOTTOM_BUTTON_BOTTOM - BOTTOM_GAP - TIER_ADD_H - BOTTOM_GAP
 
-    /** 列表区一次能显示几行档位（至少 1 行） */
-    private fun visibleTierRows() = ((tierListBottom() - tierListTop()) / ROW_H).coerceAtLeast(1)
+    /** 列表区一次**最多**能显示几行档位（至少 1 行）。按可用上限算，与下面的收缩无关 */
+    private fun visibleTierRows() = ((tierAreaMax() - tierListTop()) / ROW_H).coerceAtLeast(1)
+
+    /**
+     * 档位列表区**实际**底边 = 可用上限 与「刚好装下现有档位」取小 ——
+     * 下面那条分割线（画在它 +2 处）就跟着走。
+     *
+     * ⚠ 档位不满一屏时区域必须收缩：固定用可用上限的话，底下永远吊着一条空档，
+     * **档位越少越显眼**（2026-09-19 用户报：5 个档位、第 5 行和分割线之间空一大截）。
+     * 档位超出一屏时两者相等（= 可用上限），滚动照旧。
+     */
+    private fun tierListBottom(): Int =
+        minOf(
+            tierAreaMax(),
+            tierListTop() + minOf(tiers.size, visibleTierRows()).coerceAtLeast(1) * ROW_H
+        )
 
     /** 档位多到放不下时最多能往下滚几行（0 = 不用滚） */
     private fun maxScrollOffset() = (tiers.size - visibleTierRows()).coerceAtLeast(0)
@@ -546,16 +563,19 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
         val centerX = width / 2
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.points.config.title").formatted(Formatting.GOLD),
+            Text.translatable("cobblemarket.points.config.title", CurrencyService.pointsTitleIcon())
+                .formatted(Formatting.GOLD),
             centerX, dialogY() + 14, 0xFFFFFF
         )
 
         var y = listStartY()
-        fun label(key: String) {
-            context.drawTextWithShadow(textRenderer, Text.translatable(key), dx + 10, y + 7, 0xFFFFFF)
+        /** 配置项标签；[arg] 填词条里的那个 `%s`（图标类词条传 `CurrencyService.pointsIcon()`） */
+        fun label(key: String, arg: Text? = null) {
+            val text = if (arg == null) Text.translatable(key) else Text.translatable(key, arg)
+            context.drawTextWithShadow(textRenderer, text, dx + 10, y + 7, 0xFFFFFF)
             y += ROW_H
         }
-        label("cobblemarket.points.config.points_enabled")
+        label("cobblemarket.points.config.points_enabled", CurrencyService.pointsIcon())
         label("cobblemarket.points.config.shop_enabled")
         label("cobblemarket.points.config.pay_qr")
         label("cobblemarket.points.config.default_icon")
@@ -567,10 +587,22 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
         tiers.forEachIndexed { index, tier ->
             val relRow = index - scrollOffset
             if (relRow !in 0 until visibleTierRows()) return@forEachIndexed
-            val name = if (tier.qr.isBlank()) tier.name else tier.name + " *"
+            // 配了专用收款码的档位挂个 [码] 标记（走词条，英文服显示 [QR]）。
+            // ⚠ 原来这里是个裸 `*`，没有任何解释 —— 服主自己都看不出它是什么意思（2026-09-19 用户问的）
+            val name = if (tier.qr.isBlank()) tier.name
+            else tier.name + " " + Text.translatable("cobblemarket.points.config.tier_qr_mark").string
+            // 价格要带**服主自己填的货币单位**（上面那个输入框；留空就只给数字）——
+            // 与充值界面、订单列表同一个口径，漏了的话这里只剩一个裸数字「5」，
+            // 和后面那个点数「500」连在一起看，根本分不清哪个是钱、哪个是 RP。
+            val price = if (currencyLabel.isBlank()) trimPrice(tier.priceCents)
+            else "${trimPrice(tier.priceCents)} $currencyLabel"
             context.drawTextWithShadow(
                 textRenderer,
-                Text.literal("$name  ${trimPrice(tier.priceCents)}  ${tier.points} RP"),
+                Text.literal("$name  $price  ")
+                    // 点数（发多少 RP）走金额配色：数字金色 + 图标原色。
+                    // ⚠ 别整行都用 drawTextWithShadow 的白 —— 那样名字和数字糊成一片
+                    .append(Text.literal("${tier.points} ").formatted(Formatting.GOLD))
+                    .append(CurrencyService.pointsIcon()),
                 dx + 10, tierListTop() + relRow * ROW_H + 5, 0xFFFFFF
             )
         }
@@ -588,7 +620,8 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
             if (saveResultOk) {
                 context.drawCenteredTextWithShadow(
                     textRenderer,
-                    Text.translatable("cobblemarket.points.config.saved").formatted(Formatting.GREEN),
+                    Text.translatable("cobblemarket.points.config.saved", CurrencyService.pointsIcon())
+                        .formatted(Formatting.GREEN),
                     centerX, dialogY() + dialogH() - 38, 0xFFFFFF
                 )
             } else {
@@ -613,15 +646,17 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
             dx + EDIT_W / 2, y, 0xFFFFFF
         )
         y += 16
-        fun line(key: String) {
-            context.drawTextWithShadow(textRenderer, Text.translatable(key), dx + 8, y + 5, 0xFFFFFF)
+        /** 档位编辑弹窗里的行；[arg] 同上 */
+        fun line(key: String, arg: Text? = null) {
+            val text = if (arg == null) Text.translatable(key) else Text.translatable(key, arg)
+            context.drawTextWithShadow(textRenderer, text, dx + 8, y + 5, 0xFFFFFF)
             y += ROW_H
         }
         line("cobblemarket.points.config.tier_name")
         line("cobblemarket.points.config.tier_price")
         line("cobblemarket.points.config.tier_points")
         line("cobblemarket.points.config.tier_qr")
-        line("cobblemarket.points.config.tier_icon")
+        line("cobblemarket.points.config.tier_icon", CurrencyService.pointsIcon())
         // 哪个字段不合法就直说 —— 只播一声 fail 音服主根本不知道该改哪（2026-09-18 用户反馈）
         editError?.let { key ->
             context.drawCenteredTextWithShadow(
@@ -648,8 +683,19 @@ class PointsConfigScreen : Screen(Text.translatable("cobblemarket.points.config.
         const val EDIT_W = 220
         const val EDIT_H = 182
 
-        /** 主弹窗的设计高度；实际会被屏幕高度钳制（见 [dialogH]） */
-        const val DIALOG_H = 320
+        /**
+         * 主弹窗的设计高度；实际会被屏幕高度钳制（见 [dialogH]）。
+         *
+         * ⚠ **改它之前先重算档位区高度**，否则会空出一条或挤掉一行：
+         * ```
+         * 档位区高 = DIALOG_H − BOTTOM_BUTTON_BOTTOM − 2×BOTTOM_GAP − TIER_ADD_H
+         *                    − (30 + FIXED_ROWS×ROW_H + 4)
+         *          = DIALOG_H − 208
+         * ```
+         * 320 时算得 112px —— 5 行（每行 20）之外**还多 12px**，第 5 档和下面那条分割线
+         * 之间空一截。328 正好 120px = 6 行、一个像素不剩（2026-09-19 用户拍板）。
+         */
+        const val DIALOG_H = 328
 
         /** 档位列表上方那几行的固定项数量（总开关/充值开关/默认收款码/默认券图/超时/货币单位） */
         const val FIXED_ROWS = 6

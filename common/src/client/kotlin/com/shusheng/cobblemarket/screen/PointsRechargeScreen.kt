@@ -1,9 +1,13 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.GuiColors
+import com.shusheng.cobblemarket.client.POINTS_ICON_TEXTURE
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_INLINE_SIZE
 import com.shusheng.cobblemarket.client.PayQrTexture
 import com.shusheng.cobblemarket.client.PointsShopCache
 import com.shusheng.cobblemarket.client.TierIconTextures
+import com.shusheng.cobblemarket.client.unitGap
+import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.PointOrderNumbers
 import com.shusheng.cobblemarket.currency.PointOrderStatus
 import com.shusheng.cobblemarket.currency.PointShopService
@@ -39,7 +43,9 @@ import kotlin.math.roundToInt
  * 控件由 `super.render()` 绘制，面板若放在 `render()` 里会**盖住弹窗自己的按钮**
  * （2026-09-18 修：原来收款码弹窗的面板就画在 render 里，三个按钮全被压住）。
  */
-class PointsRechargeScreen : Screen(Text.translatable("cobblemarket.points.recharge.title")) {
+class PointsRechargeScreen : Screen(
+    Text.translatable("cobblemarket.points.recharge.title", CurrencyService.pointsTitleIcon())
+) {
 
     private val tierButtons = mutableListOf<NineSliceButton>()
     private val orderButtons = mutableListOf<NineSliceButton>()
@@ -197,9 +203,15 @@ class PointsRechargeScreen : Screen(Text.translatable("cobblemarket.points.recha
     private fun applyTierScroll() {
         val bg = PointsMarketBackground.rect(width, height)
         val cardW = tierCardW(bg)
+        val areaTop = tierAreaTop(bg)
+        val areaBottom = tierAreaBottom(bg)
         tierButtons.forEachIndexed { index, button ->
             val visible = isRowVisible(index / TIER_COLS, cardW)
             button.visible = visible
+            // ⚠ 半露在档位区外的按钮要**裁到区内**：券图那层有外层的 scissor 兜着，
+            //   但控件是 super.render() 统一画的、吃不到那个 scissor —— 不裁的话滚出去的
+            //   半截按钮会糊在上下分割线上（2026-09-19 用户实测）
+            button.clipRect = if (visible) intArrayOf(0, areaTop, width, areaBottom) else null
             if (visible) {
                 val (x, y) = tierCardPos(bg, index, cardW)
                 button.setPosition(x, y + tierIconH(cardW) + TIER_ICON_V_GAP)
@@ -325,6 +337,10 @@ class PointsRechargeScreen : Screen(Text.translatable("cobblemarket.points.recha
             tierButtons += button
             addDrawableChild(button)
         }
+        // 建好后立刻按当前滚动位置刷一次**位置 + 裁剪矩形**（上面循环里只设了 visible）。
+        // ⚠ 必须补这一次：缓动只在滚动时跑（[stepTierScroll] 一停下就 return），
+        //   界面刚打开、还没滚过时没人调 [applyTierScroll]，clipRect 就一直是 null = 不裁剪。
+        applyTierScroll()
     }
 
     // ── 订单列表弹窗 ──
@@ -470,7 +486,8 @@ class PointsRechargeScreen : Screen(Text.translatable("cobblemarket.points.recha
 
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.points.recharge.title").formatted(Formatting.GOLD),
+            Text.translatable("cobblemarket.points.recharge.title", CurrencyService.pointsTitleIcon())
+                .formatted(Formatting.GOLD),
             centerX, bg.y + texPx(TITLE_TOP), 0xFFFFFF
         )
 
@@ -515,6 +532,11 @@ class PointsRechargeScreen : Screen(Text.translatable("cobblemarket.points.recha
         // 券图显示框：用**内置图的比例**定死（`tierCardPos` 排版也按它）——
         // 服主换什么比例的图都不会把档位卡的布局顶歪
         val boxH = tierIconH(cardW)
+        // ⚠ 滚动时**必须裁剪**到档位区：`isRowVisible` 判的是「和本区有重叠」，
+        //   所以缓动期间**半露**的那两行会被整行画出来 —— 券图上下露出边界看着就是「残影」
+        //   （2026-09-19 用户实测）。scissor 要夹住整个 forEach，但**别包住上面那个 return**
+        //   （tiers 为空时提前返回，包进去就没机会 disableScissor 了）。
+        context.enableScissor(0, tierAreaTop(bg), width, tierAreaBottom(bg))
         tiers.forEachIndexed { index, tier ->
             if (!isRowVisible(index / TIER_COLS, cardW)) return@forEachIndexed
             val (x, y) = tierCardPos(bg, index, cardW)
@@ -535,19 +557,26 @@ class PointsRechargeScreen : Screen(Text.translatable("cobblemarket.points.recha
             context.matrices.scale(scale, scale, 1f)
             context.drawTexture(custom?.id ?: TIER_ICON, 0, 0, 0f, 0f, texW, texH, texW, texH)
             context.matrices.pop()
-            // 「N RP」并到按钮那一行：画在按钮右侧剩下的区域里，与按钮垂直居中。
+            // 「N + RP 图标」并到按钮那一行：画在按钮右侧剩下的区域里，与按钮垂直居中。
             // ⚠ 小分辨率（GUI scale 调大）下这块区域可能只有二三十像素，文字必须**截断** ——
             //   否则居中后会往两边溢出，正好盖到左边的金额按钮上。
+            //   截断只针对数字：末尾那个图标宽度是固定值，得先留出来再算数字的可用宽度。
             val btnW = tierBtnW(cardW)
             val pointsW = cardW - btnW
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.literal(fitText("${tier.points} RP", pointsW)).formatted(Formatting.GOLD),
+                Text.literal(
+                    fitText(
+                        "${tier.points}",
+                        (pointsW - POINTS_SYMBOL_INLINE_SIZE - unitGap(textRenderer)).coerceAtLeast(0)
+                    )
+                ).formatted(Formatting.GOLD).append(" ").append(CurrencyService.pointsIcon()),
                 x + btnW + pointsW / 2,
                 y + boxH + TIER_ICON_V_GAP + (TIER_BTN_H - 8) / 2,
                 0xFFFFFF
             )
         }
+        context.disableScissor()
     }
 
     /**
@@ -867,7 +896,7 @@ class PointsRechargeScreen : Screen(Text.translatable("cobblemarket.points.recha
         const val TIER_BTN_W_RATIO = 0.5f
 
         /** 「RP 券」图：**服主可用资源包替换**换掉这套样式 */
-        val TIER_ICON = Identifier.of("cobblemarket", "textures/gui/points_icon.png")
+        val TIER_ICON = POINTS_ICON_TEXTURE
         const val TIER_ICON_TEX_W = 256
         const val TIER_ICON_TEX_H = 160
 

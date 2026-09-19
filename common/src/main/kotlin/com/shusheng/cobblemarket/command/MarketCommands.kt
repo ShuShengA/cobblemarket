@@ -562,7 +562,7 @@ object MarketCommands {
                         "cobblemarket.points.shop.created",
                         PointOrderNumbers.format(order.orderNo),
                         PointShopService.formatCents(order.payCents),
-                        order.points.toString()
+                        CurrencyService.amountText(order.points, MarketCurrency.POINTS)
                     )
                 }, false)
                 1

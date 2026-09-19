@@ -685,7 +685,10 @@ object PointsNetwork {
                 } else {
                     sendToPlayer(
                         player,
-                        MarketResultPayload(true, Text.translatable("cobblemarket.points.config.saved"))
+                        MarketResultPayload(
+                            true,
+                            Text.translatable("cobblemarket.points.config.saved", CurrencyService.pointsIcon())
+                        )
                     )
                 }
             }
