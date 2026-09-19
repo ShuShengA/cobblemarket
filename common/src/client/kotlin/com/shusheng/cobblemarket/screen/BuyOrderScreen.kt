@@ -121,6 +121,17 @@ class BuyOrderScreen(
     private var formListOpen = false
     private var formListScroll = 0
     private val formListButtons = mutableListOf<NineSliceButton>()
+    /**
+     * 物种候选 + 当前选中下标（**多候选时预览槽位右侧出现左右箭头切换**）。
+     *
+     * 中文物种名互为子串的情形很多（「鬼斯」是「鬼斯通」的前缀），解析必须**精确优先**、
+     * 其余候选交回玩家挑 —— 只取第一个会把玩家输入的名字静默换成别的物种，而这是在发求购单，
+     * 发错物种的求购单会被别有用心的玩家拿去交付。候选顺序由 `SpeciesText.candidatesByNameOrId` 保证。
+     */
+    private var speciesCandidates = listOf<com.cobblemon.mod.common.pokemon.Species>()
+    private var speciesIndex = 0
+    private var speciesPrevButton: NineSliceButton? = null
+    private var speciesNextButton: NineSliceButton? = null
     // 特性/性格选择（-1 = 不限；选项由物种解析重建，性格为全表固定 25 种）
     private var abilityOptions = listOf<Pair<String, String>>() // (翻译 key, 显示名)
     private var abilityIndex = -1
@@ -1069,6 +1080,11 @@ class BuyOrderScreen(
         createTabButtons.clear()
         createConfirmButton?.let { remove(it) }
         createCancelButton?.let { remove(it) }
+        // 候选箭头也在重建之列：重建后可见性要按当前候选数（和页签）恢复
+        speciesPrevButton?.let { remove(it) }
+        speciesNextButton?.let { remove(it) }
+        speciesPrevButton = null
+        speciesNextButton = null
         itemSelectButton?.let { remove(it) }
         heldItemButton?.let { remove(it) }
         heldItemButton = null
@@ -1144,6 +1160,23 @@ class BuyOrderScreen(
         createSpeciesField?.setChangedListener { updatePokemonPreview(it) }
         addDrawableChild(createSpeciesField)
 
+        // 候选切换箭头（预览槽位右侧，与槽位垂直居中）：候选 ≥2 才显示，切换预览图与形态/特性选项。
+        // 这个对话框宽 280（黑名单/限价是 220），右侧腾得出 44px 放两枚箭头
+        speciesPrevButton = NineSliceButton(
+            centerX + 96, dialogY + 48, 18, 16, Text.literal(""),
+            { cycleSpecies(-1) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.prev")
+        ).also { it.visible = false; addDrawableChild(it) }
+        speciesNextButton = NineSliceButton(
+            centerX + 118, dialogY + 48, 18, 16, Text.literal(""),
+            { cycleSpecies(1) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.next")
+        ).also { it.visible = false; addDrawableChild(it) }
+
         // 形态选择按钮：只有解析出多形态物种时显示，点击展开/收起形态列表
         createFormButton = NineSliceButton(
             centerX - 82, dialogY + 66, 148, 14,
@@ -1217,6 +1250,9 @@ class BuyOrderScreen(
         createNoteField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.create_note").formatted(Formatting.GRAY))
         createNoteField?.setMaxLength(100)
         addDrawableChild(createNoteField)
+
+        // 控件重建后恢复候选箭头的可见性（换页签/窗口缩放都会走到这儿）
+        updateSpeciesArrows()
     }
 
     private fun buildItemCreateWidgets(dialogY: Int) {
@@ -1378,6 +1414,14 @@ class BuyOrderScreen(
                     matrices.pop()
                 }
             }
+            // 候选计数（1/3）：让玩家知道有几个可切、现在是第几个
+            if (speciesCandidates.size > 1) {
+                context.drawCenteredTextWithShadow(
+                    textRenderer,
+                    Text.literal("${speciesIndex + 1}/${speciesCandidates.size}").formatted(Formatting.GRAY),
+                    centerX + 116, dialogY + 68, 0xFFFFFF
+                )
+            }
             // 冻结提示：发布时冻结 maxPrice × 1（性格列表展开时隐藏——提示在列表覆盖区内）
             // 文字默认色，金额+单位金色（2026-08-24 拍板）
             if (!natureListOpen) {
@@ -1528,6 +1572,32 @@ class BuyOrderScreen(
     // ── 创建对话框：物种解析预览（照黑名单添加框） ──
 
     private fun updatePokemonPreview(text: String) {
+        // 解析出**全部**候选（精确优先已由 candidatesByNameOrId 保证），默认选第一个：
+        // 输入完整名字（鬼斯）直接就是它；输入片段（鬼）时用预览槽位下方的箭头在旁边挑
+        speciesCandidates = com.shusheng.cobblemarket.util.SpeciesText.candidatesByNameOrId(text)
+        speciesIndex = 0
+        applySpecies(speciesCandidates.firstOrNull())
+        updateSpeciesArrows()
+        refreshListVisibility()
+    }
+
+    /** 左右箭头切换候选（循环）；切换后预览图、形态与特性选项一起刷新 */
+    private fun cycleSpecies(delta: Int) {
+        if (speciesCandidates.size <= 1) return
+        speciesIndex = (speciesIndex + delta + speciesCandidates.size) % speciesCandidates.size
+        applySpecies(speciesCandidates[speciesIndex])
+        updateSpeciesArrows()
+    }
+
+    /** 箭头只在精灵页签、且候选 ≥2 时出现（唯一候选没什么可切的；物品页签没有物种可切） */
+    private fun updateSpeciesArrows() {
+        val multi = createTab == 0 && speciesCandidates.size > 1
+        speciesPrevButton?.visible = multi
+        speciesNextButton?.visible = multi
+    }
+
+    /** 应用选中的物种：重建预览模型、形态与特性选项（输入变化与箭头切换共用） */
+    private fun applySpecies(species: com.cobblemon.mod.common.pokemon.Species?) {
         previewRenderable = null
         previewSpecies = null
         formOptions = listOf()
@@ -1536,21 +1606,6 @@ class BuyOrderScreen(
         abilityListOpen = false
         natureListOpen = false
         rebuildFormList()
-        val trimmed = text.trim()
-        if (trimmed.isEmpty()) {
-            createFormButton?.visible = false
-            abilityOptions = listOf()
-            abilityIndex = -1
-            updateAbilityButton()
-            refreshListVisibility()
-            return
-        }
-        val species = if (trimmed.contains(":")) {
-            Identifier.tryParse(trimmed)?.let { PokemonSpecies.getByIdentifier(it) }
-        } else {
-            val byName = try { PokemonSpecies.getByName(trimmed) } catch (_: Exception) { null }
-            byName ?: resolveByChineseName(trimmed)
-        }
         if (species != null) {
             previewSpecies = species
             // 特性选项：物种可用特性（含隐藏），template.name 拼翻译 key（与服务端 ability.name 语义一致）
@@ -1589,19 +1644,7 @@ class BuyOrderScreen(
         refreshListVisibility()
     }
 
-    private fun resolveByChineseName(text: String): com.cobblemon.mod.common.pokemon.Species? {
-        val trimmed = text.trim()
-        val lower = trimmed.lowercase().replace(" ", "_")
-        val all = PokemonSpecies.implemented
-        all.firstOrNull { s ->
-            s.showdownId() == lower || s.name == lower
-        }?.let { return it }
-        all.firstOrNull { s ->
-            val translated = s.translatedName.string
-            translated == trimmed || translated.contains(trimmed)
-        }?.let { return it }
-        return null
-    }
+    // 物种名解析统一走 SpeciesText.candidatesByNameOrId（精确优先 + 返回全部候选，见 updatePokemonPreview）
 
     /** 按当前形态选择 + 闪光选择重建预览模型：仅闪光时叠加 shiny aspect 渲染闪光形态 */
     private fun refreshPreviewModel() {
@@ -2543,6 +2586,10 @@ class BuyOrderScreen(
         for (i in 0..5) createIvFields[i] = null
         createShinyButton = null
         createHtButton = null
+        speciesCandidates = listOf()
+        speciesIndex = 0
+        speciesPrevButton = null
+        speciesNextButton = null
         createFormButton = null
         createAbilityButton = null
         createNatureButton = null

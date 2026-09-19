@@ -971,10 +971,16 @@ fun isEggItem(itemId: String): Boolean {
 fun localizeSpeciesQuery(raw: String): String {
     val q = raw.trim()
     if (q.isEmpty() || q.all { it.code < 128 }) return q
-    com.cobblemon.mod.common.api.pokemon.PokemonSpecies.implemented
-        .firstOrNull { it.translatedName.string.contains(q) }
-        ?.let { return it.resourceIdentifier.path }
-    return q
+    // ⚠ 必须返回**全部**候选（`|` 连接），不能只取第一个：中文物种名互为子串的情形很多
+    //   （「鬼斯」是「鬼斯通」的前缀、小火龙/火恐龙/喷火龙、伊布一家…），只取一个的话
+    //   玩家搜「鬼斯」出来的可能是鬼斯通 —— 命中谁取决于物种表的遍历顺序，玩家看来就是随机的。
+    //   服务端按 `|` 拆开做「任一命中」。
+    //   全 ASCII 输入直接透传（英文名/资源 id 搜索照旧）；一个都没命中时也透传原文，
+    //   服务端还有按物种名包含匹配兜底。
+    val ids = com.cobblemon.mod.common.api.pokemon.PokemonSpecies.implemented
+        .filter { it.translatedName.string.contains(q) }
+        .map { it.resourceIdentifier.path }
+    return if (ids.isEmpty()) q else ids.joinToString("|")
 }
 
 /** 客户端语言物品名搜索 → 匹配的物品 id 集合（服务端语言与客户端不同时靠 id 传递过滤；含 id 路径匹配，英文查询同样覆盖） */
