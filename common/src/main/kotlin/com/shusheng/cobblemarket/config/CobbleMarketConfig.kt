@@ -877,6 +877,8 @@ object CobbleMarketConfig {
             "marketEnabled" to marketEnabled,
             "shareEnabled" to shareEnabled,
             "pointsEnabled" to pointsEnabled,
+            // ⚠ 落盘这一行曾经漏过：读取端有、写入端没有 → 开关当次有效、重启就落回默认 false
+            "pointsMarketEnabled" to pointsMarketEnabled,
             "pointsExternalSecret" to pointsExternalSecret,
             "pointsExternalMaxDays" to pointsExternalMaxDays,
             "pointsShop" to mapOf(
