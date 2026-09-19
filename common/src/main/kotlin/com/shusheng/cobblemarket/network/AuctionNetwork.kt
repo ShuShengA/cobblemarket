@@ -1023,8 +1023,12 @@ object AuctionNetwork {
 
     // ── 拍卖创建全服聊天播报 ──
 
-    /** 全服播报新拍品：拍品名带 hover 详情 + 点击直达出价弹窗（客户端指令 /cobblemarket auction <id>）。
-     *  名字下划线 + 金色 [点击出价] 按钮提示可点（玩家不会想到裸名字能点击）。 */
+    /** 全服播报新拍品：拍品名带 hover 详情 + 点击直达出价弹窗（客户端指令 /cobblemarket auction <id> <币种>）。
+     *  名字下划线 + 金色 [点击出价] 按钮提示可点（玩家不会想到裸名字能点击）。
+     *
+     *  ⚠ 命令末尾**必须带上这场拍卖的币种**：界面一次只查一种货币，不带币种的话客户端只能先查主货币、
+     *  找不到再换另一种（多一轮往返 + 等节流窗口），运气差就直接静默无反应。带币种则一次命中。
+     *  客户端对多出来的这一段是容错的（悬停预览只取前两段，见 ChatObjectPreview）。 */
     private fun announceAuction(server: MinecraftServer, auction: AuctionListing) {
         // 拍品名：精灵 = 翻译名 + 属性色 + 下划线（闪光前缀金★）；物品 = 物品翻译名 + 下划线
         // styled/append 只在 MutableText 上，speciesText 返回 Text，先包一层 literal 再上样式
@@ -1042,7 +1046,7 @@ object AuctionNetwork {
         val bidLabel = Text.translatable("cobblemarket.chat.bid_button").formatted(Formatting.GOLD, Formatting.UNDERLINE)
         val clickableName = Text.literal("").append(nameText).append(Text.literal(" ")).append(bidLabel)
             .styled {
-                it.withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket auction ${auction.id}"))
+                it.withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket auction ${auction.id} ${auction.currency.name}"))
                     .withHoverEvent(HoverEvent(HoverEvent.Action.SHOW_TEXT, buildAnnouncementHover(auction)))
             }
         // 金额与货币名恒金（聊天颜色模板）；主体蓝（2026-08-30 拍板），名字属性色/按钮/金额子样式优先于父级蓝

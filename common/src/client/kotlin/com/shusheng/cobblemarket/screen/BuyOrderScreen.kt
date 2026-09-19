@@ -67,7 +67,14 @@ class BuyOrderScreen(
     /** 管理员模式（管理面板「所有求购」入口）：无 tab/发布按钮，行按钮改为「下架」，点行弹强制下架确认 */
     private val adminMode: Boolean = false,
     /** 聊天通知点击直达：打开界面后列表到达时自动弹出该单的确认交付弹窗（找不到则静默等待下次刷新） */
-    private val initialReviewOrderId: java.util.UUID? = null
+    private val initialReviewOrderId: java.util.UUID? = null,
+    /**
+     * 聊天通知里**顺带带来的币种**（服务端写入命令第三段）。
+     *
+     * 界面一次只看一种货币，有了它就一次请求命中；没有的话（老格式通知）只能先查主货币、
+     * 发现没这一单再换另一种重查 —— 多一轮往返 + 等节流窗口，实测反馈「弹窗慢半拍」。
+     */
+    private val initialCurrency: MarketCurrency? = null
 ) : Screen(Text.translatable("cobblemarket.buy_order.title")) {
 
     // 防串扰：界面关闭后到达的响应丢弃（照 SellSelectScreen）
@@ -82,7 +89,9 @@ class BuyOrderScreen(
      * 列表在查哪个币种（货币切换按钮控制）—— **只决定查什么，不参与渲染**：
      * 显示单位一律读订单自己的 [BuyOrderEntry.isPoints]，否则任何一处漏改就会把 RP 求购单标成 ₽。
      */
-    private var currency = consumeReturnCurrency()
+    // 通知带了币种就用它（一次命中）；否则用交付流程跨界面暂存的；都没有则主货币。
+    // ⚠ 写成「先消费再覆盖」：consumeReturnCurrency() 有副作用（清空静态暂存），短路求值会跳过它
+    private var currency = consumeReturnCurrency().let { initialCurrency ?: it }
 
     /** 货币切换按钮（RP 总开关关着时 = null，压根没建；照市场/拍卖场） */
     private var currencyButton: NineSliceButton? = null
@@ -650,6 +659,12 @@ class BuyOrderScreen(
             return
         }
         if (!allowSwitch) return
+        // 通知带了币种（正常情况）→ 那是服务端的权威值，没必要再换着找：找不到就是这单已经结束了。
+        // 直接放弃，省掉一轮请求，也免得列表当着玩家的面从一种币跳回另一种
+        if (initialCurrency != null) {
+            pendingReviewLocate = null
+            return
+        }
         if (!reviewLocateSwitched) {
             reviewLocateSwitched = true
             onCurrencyClick()
