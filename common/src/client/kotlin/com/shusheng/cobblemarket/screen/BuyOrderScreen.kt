@@ -1167,14 +1167,14 @@ class BuyOrderScreen(
             { cycleSpecies(-1) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
-            tooltip = Text.translatable("cobblemarket.gui.prev")
+            tooltip = Text.translatable("cobblemarket.gui.species_prev")
         ).also { it.visible = false; addDrawableChild(it) }
         speciesNextButton = NineSliceButton(
             centerX + 118, dialogY + 48, 18, 16, Text.literal(""),
             { cycleSpecies(1) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
-            tooltip = Text.translatable("cobblemarket.gui.next")
+            tooltip = Text.translatable("cobblemarket.gui.species_next")
         ).also { it.visible = false; addDrawableChild(it) }
 
         // 形态选择按钮：只有解析出多形态物种时显示，点击展开/收起形态列表
