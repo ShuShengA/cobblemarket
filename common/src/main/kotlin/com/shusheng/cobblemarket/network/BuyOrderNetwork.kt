@@ -5,6 +5,8 @@ import com.cobblemon.mod.common.Cobblemon
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.config.CurrencyHandler
+import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.event.TransactionCategory
 import com.shusheng.cobblemarket.event.TransactionHistory
@@ -110,8 +112,19 @@ data class BuyOrderEntry(
     val note: String,          // 买家备注（额外需求，可为空）
     val createdAt: Long,
     val expiresAt: Long,
-    val pending: BuyOrderPendingEntry? // 待确认交付（锁定策略下最多 1 条）
+    val pending: BuyOrderPendingEntry?, // 待确认交付（锁定策略下最多 1 条）
+    /**
+     * 这一单的币种（枚举名，**服务端权威值**）。
+     *
+     * ⚠ 与市场/拍卖同理：**币种是订单自己的属性**，客户端显示金额单位一律读它，
+     * 别读界面上的「当前币种」状态 —— 漏一处就会把 RP 求购单的价格标成 ₽。
+     * 客户端另外在构造时解析出 `isPoints`（见 BuyOrderScreen），行渲染每帧不再 parse。
+     */
+    val currency: String
 ) {
+    /** 这一单是不是 RP 计价 —— **渲染货币单位就读它**（构造时解析一次，行渲染每帧不再 parse，照 AuctionEntry） */
+    val isPoints: Boolean = MarketCurrency.fromStored(currency) == MarketCurrency.POINTS
+
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(id)
         buf.writeString(type)
@@ -142,6 +155,7 @@ data class BuyOrderEntry(
         buf.writeLong(expiresAt)
         buf.writeBoolean(pending != null)
         pending?.let { it.write(buf) }
+        buf.writeString(currency)
     }
 
     companion object {
@@ -168,7 +182,8 @@ data class BuyOrderEntry(
             note = buf.readString(),
             createdAt = buf.readLong(),
             expiresAt = buf.readLong(),
-            pending = if (buf.readBoolean()) BuyOrderPendingEntry.read(buf) else null
+            pending = if (buf.readBoolean()) BuyOrderPendingEntry.read(buf) else null,
+            currency = buf.readString()
         )
     }
 }
@@ -208,18 +223,20 @@ fun buyOrderToEntry(o: BuyOrder): BuyOrderEntry = BuyOrderEntry(
             count = p.count,
             itemNbt = p.itemNbt
         )
-    }
+    },
+    currency = o.currency.name
 )
 
-// ── C2S：请求求购单列表 ──
+// ── C2S：请求求购单列表（币种必选：列表一次只看一种货币，照拍卖场） ──
 
-class RequestBuyOrderListPayload : CustomPayload {
+/** [currency] 用 **String 不解析**：严格校验留在 handler（`MarketCurrency.fromRequest`） */
+class RequestBuyOrderListPayload(val currency: String) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<RequestBuyOrderListPayload>(CobbleMarket.id("request_buy_order_list"))
         val CODEC: PacketCodec<PacketByteBuf, RequestBuyOrderListPayload> = PacketCodec.of(
-            { _, b -> b.writeInt(0) },
-            { b -> b.readInt(); RequestBuyOrderListPayload() }
+            { p, b -> b.writeString(p.currency) },
+            { b -> RequestBuyOrderListPayload(b.readString()) }
         )
     }
 }
@@ -263,7 +280,9 @@ data class CreatePokemonBuyOrderPayload(
     val natureKey: String,     // 空串 = 不限
     val minPrice: Int,
     val maxPrice: Int,
-    val note: String           // 买家备注（可为空）
+    val note: String,          // 买家备注（可为空）
+    /** 这一单收哪种钱（枚举名）。**币种只在创建时来自客户端**，校验后写进订单对象，此后一律读对象 */
+    val currency: String
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -277,15 +296,17 @@ data class CreatePokemonBuyOrderPayload(
                 b.writeString(p.abilityKey); b.writeString(p.natureKey)
                 b.writeInt(p.minPrice); b.writeInt(p.maxPrice)
                 b.writeString(p.note)
+                b.writeString(p.currency)
             },
             { b ->
                 CreatePokemonBuyOrderPayload(
-                    b.readString(), b.readInt(), b.readInt(),
-                    b.readInt(), b.readInt(), b.readInt(),
-                    b.readInt(), b.readInt(), b.readInt(),
-                    (0 until b.readVarInt()).map { b.readString() },
-                    b.readString(), b.readString(),
-                    b.readInt(), b.readInt(), b.readString()
+                    speciesId = b.readString(), shinyFilter = b.readInt(), htFilter = b.readInt(),
+                    ivHp = b.readInt(), ivAtk = b.readInt(), ivDef = b.readInt(),
+                    ivSpAtk = b.readInt(), ivSpDef = b.readInt(), ivSpd = b.readInt(),
+                    aspects = (0 until b.readVarInt()).map { b.readString() },
+                    abilityKey = b.readString(), natureKey = b.readString(),
+                    minPrice = b.readInt(), maxPrice = b.readInt(), note = b.readString(),
+                    currency = b.readString()
                 )
             }
         )
@@ -303,6 +324,8 @@ data class CreateItemBuyOrderPayload(
     val useHeldItem: Boolean,  // true = 用手持物品（含组件快照）作为求购要求
     // 搜索路径选中的具体变体组件快照（如「招式学习器 · 打鼾」）；手持路径为 null（服务端读主手）
     val componentsSpec: net.minecraft.nbt.NbtCompound? = null,
+    /** 这一单收哪种钱（枚举名）。语义同 [CreatePokemonBuyOrderPayload.currency] */
+    val currency: String
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -313,6 +336,7 @@ data class CreateItemBuyOrderPayload(
                 b.writeString(p.note)
                 b.writeBoolean(p.useHeldItem)
                 b.writeNbt(p.componentsSpec)
+                b.writeString(p.currency)
             },
             { b -> CreateItemBuyOrderPayload(
                 itemId = b.readString(),
@@ -322,6 +346,7 @@ data class CreateItemBuyOrderPayload(
                 note = b.readString(),
                 useHeldItem = b.readBoolean(),
                 componentsSpec = b.readNbt(),
+                currency = b.readString(),
             ) }
         )
     }
@@ -443,14 +468,22 @@ object BuyOrderNetwork {
             settleExpiredAndBroadcast(server)
         }
 
-        registerC2S(RequestBuyOrderListPayload.ID, RequestBuyOrderListPayload.CODEC) { _, player ->
+        registerC2S(RequestBuyOrderListPayload.ID, RequestBuyOrderListPayload.CODEC) { payload, player ->
             if (!RequestThrottle.allow(player.uuid, "buy_order_list", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
+            // 币种严格校验：拿容错版会把伪造的垃圾值静默当成主货币（等于放行），见 MarketCurrency 注释
+            val currency = MarketCurrency.fromRequest(payload.currency)
+            if (currency == null) {
+                sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.invalid_currency")))
+                return@registerC2S
+            }
+            // ⚠ 查询类**不拦开关**（展示层过滤碰不到钱货）：关掉「玩家间 RP 交易」后存量 RP 求购单
+            //   仍要能被看见 —— 买家要能关单取回冻结金、卖家要能看到还有人在收、自己的货被退回后能取回
             val server = player.server
             server.execute {
                 settleExpiredAndBroadcast(server)
                 sendToPlayer(
                     player,
-                    BuyOrderListDataPayload(BuyOrderState.get(server).getOpenOrders().map { buyOrderToEntry(it) })
+                    BuyOrderListDataPayload(BuyOrderState.get(server).getOpenOrders(currency).map { buyOrderToEntry(it) })
                 )
             }
         }
@@ -461,6 +494,8 @@ object BuyOrderNetwork {
             server.execute {
                 if (banBlocked(server, player)) return@execute
                 if (marketBlocked(player)) return@execute
+                // 币种校验（非法拒 / RP 过两道闸）：创建是**币种唯一的来源**，此后一律读订单对象
+                val currency = validateCreateCurrency(player, payload.currency) ?: return@execute
                 if (!checkPrices(player, payload.minPrice, payload.maxPrice)) return@execute
                 if (!checkOrderLimit(server, player)) return@execute
                 // 形态列表上限：恶意客户端可发海量 aspects 随订单持久化 + 全服广播（正常客户端一个物种形态最多几十个）
@@ -479,8 +514,8 @@ object BuyOrderNetwork {
                     }
                     speciesKey = resolvedSpeciesKey(resolved) ?: return@execute
                 }
-                // 冻结金 = maxPrice × 1（精灵固定 1 只），扣款失败即余额不足
-                if (!CurrencyHandler.remove(player, payload.maxPrice)) {
+                // 冻结金 = maxPrice × 1（精灵固定 1 只），扣款失败即余额不足（按这一单的币种扣）
+                if (!CurrencyService.remove(player, currency, payload.maxPrice.toLong())) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.not_enough")))
                     return@execute
                 }
@@ -514,7 +549,8 @@ object BuyOrderNetwork {
                     createdAt = now,
                     expiresAt = now + CobbleMarketConfig.buyOrderExpiryDays * 24L * 60 * 60 * 1000,
                     status = BuyOrderStatus.OPEN,
-                    returnedAt = null
+                    returnedAt = null,
+                    currency = currency
                 )
                 BuyOrderState.get(server).addOrder(order)
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
@@ -531,6 +567,7 @@ object BuyOrderNetwork {
             server.execute {
                 if (banBlocked(server, player)) return@execute
                 if (marketBlocked(player)) return@execute
+                val currency = validateCreateCurrency(player, payload.currency) ?: return@execute
                 if (!checkPrices(player, payload.minPrice, payload.maxPrice)) return@execute
                 if (!checkOrderLimit(server, player)) return@execute
                 // 手持物品模式：用手持物品（含组件快照）作为求购要求；否则用输入框的 itemId
@@ -554,13 +591,14 @@ object BuyOrderNetwork {
                     itemIdentifier.toString(), payload.componentsSpec, player.serverWorld.registryManager
                 )
                 val totalCount = payload.totalCount.coerceAtLeast(1)
-                // 冻结金上限钳制：CurrencyHandler.remove 为 Int 扣款，超限拒绝（防溢出吞钱）
+                // 冻结金上限钳制：主货币后端是 Int 口径、RP 是 Long，但两种币都不接受这个量级的冻结
+                // （正常订单远到不了，超过一律拒绝，防溢出吞钱）
                 val frozen = payload.maxPrice.toLong() * totalCount
                 if (frozen > Int.MAX_VALUE) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.too_large")))
                     return@execute
                 }
-                if (!CurrencyHandler.remove(player, frozen.toInt())) {
+                if (!CurrencyService.remove(player, currency, frozen)) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.not_enough")))
                     return@execute
                 }
@@ -589,7 +627,8 @@ object BuyOrderNetwork {
                     createdAt = now,
                     expiresAt = now + CobbleMarketConfig.buyOrderExpiryDays * 24L * 60 * 60 * 1000,
                     status = BuyOrderStatus.OPEN,
-                    returnedAt = null
+                    returnedAt = null,
+                    currency = currency
                 )
                 BuyOrderState.get(server).addOrder(order)
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
@@ -623,7 +662,8 @@ object BuyOrderNetwork {
                 }
                 sendToPlayer(
                     player,
-                    MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.closed", CurrencyHandler.goldAmount(refund), CurrencyHandler.goldCurrencyText()))
+                    // 退款金额按**订单自己的币种**（关掉「玩家间 RP 交易」后关单照常，退款也要显示成 RP）
+                    MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.closed", CurrencyService.amountText(refund, order.currency)))
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
@@ -694,6 +734,9 @@ object BuyOrderNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.cannot_deliver_own")))
                     return@execute
                 }
+                // RP 单交付 = 玩家之间用 RP 换东西，过买家侧同一道闸（关掉「玩家间 RP 交易」后，
+                // 存量 RP 单不能再交付；关单退款、被退回后取回货物不受影响 —— 那是收回自己的资产）
+                if (pointsGateBlocked(player, order.currency)) return@execute
                 // 已有待确认交付时锁定新交付（买家确认/拒绝后才解锁）
                 if (order.pendingDeliveries.isNotEmpty()) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.pending_locked")))
@@ -741,13 +784,16 @@ object BuyOrderNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.held_item_blocked")))
                     return@execute
                 }
-                val pokemonBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
-                    .getPriceBounds(pokemon)
-                val itemBounds = if (heldItemId != null)
-                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
-                        .getPriceBounds(heldItem, player.serverWorld.registryManager)
-                else null
-                val bounds = com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
+                // ⚠ 限价表是**主货币口径**，RP 单整块跳过（拿主货币的上下限去套 RP 价只会误伤，与市场/拍卖同）
+                val bounds = if (order.currency == MarketCurrency.PRIMARY) {
+                    val pokemonBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
+                        .getPriceBounds(pokemon)
+                    val itemBounds = if (heldItemId != null)
+                        com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
+                            .getPriceBounds(heldItem, player.serverWorld.registryManager)
+                    else null
+                    com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
+                } else null
                 if (bounds != null) {
                     // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
                     if (bounds.isEmptyRange) {
@@ -832,6 +878,8 @@ object BuyOrderNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.cannot_deliver_own")))
                     return@execute
                 }
+                // RP 单交付过买家侧同一道闸（理由同精灵交付 handler）
+                if (pointsGateBlocked(player, order.currency)) return@execute
                 // 已有待确认交付时锁定新交付（买家确认/拒绝后才解锁）
                 if (order.pendingDeliveries.isNotEmpty()) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.pending_locked")))
@@ -879,8 +927,11 @@ object BuyOrderNetwork {
                     return@execute
                 }
                 // 物品价格限制是单价语义：交付单价直接对照 bounds
-                val itemBounds = com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
-                    .getPriceBounds(referenceStack, player.serverWorld.registryManager)
+                // ⚠ 限价表是**主货币口径**，RP 单整块跳过（理由同精灵交付）
+                val itemBounds = if (order.currency == MarketCurrency.PRIMARY)
+                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
+                        .getPriceBounds(referenceStack, player.serverWorld.registryManager)
+                else null
                 if (itemBounds != null) {
                     // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
                     if (itemBounds.isEmptyRange) {
@@ -1001,6 +1052,9 @@ object BuyOrderNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.cmd.not_your_listing")))
                     return@execute
                 }
+                // 接受 = 冻结金结算给卖家（RP 从买家流向卖家），过买家侧同一道闸。
+                // 关掉开关后货仍悬空在订单里，等订单过期会自动退回卖家 —— 不会丢货，也不会有新的 RP 转移
+                if (pointsGateBlocked(player, order.currency)) return@execute
                 val pending = order.pendingDeliveries.firstOrNull { it.id == payload.deliveryId }
                 if (pending == null) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.not_found")))
@@ -1016,15 +1070,21 @@ object BuyOrderNetwork {
                 // 资金结算：买家冻结金按实际价扣（差价退待领），卖家收实际价-中介费
                 val unitDiff = (order.maxPrice - pending.price).toLong()
                 val gross = pending.price.toLong() * pending.count
-                val fee = deliveryFee(server, order.buyerUuid, gross, now)
-                MarketState.get(server).addPendingBalance(order.buyerUuid, unitDiff * pending.count)
-                MarketState.get(server).addPendingBalance(pending.sellerUuid, gross - fee)
+                val fee = deliveryFee(server, order.buyerUuid, gross, now, order.currency)
+                // 差价退买家、货款给卖家：主货币进待领余额、RP **直接到账**（见 CurrencyService.creditSeller）。
+                // ⚠ RP 不进待领账本 —— 「收款」按钮与角标只统计主货币，这正是「RP 收入直接到账」的落点
+                CurrencyService.creditSeller(server, order.buyerUuid, order.currency, unitDiff * pending.count)
+                CurrencyService.creditSeller(server, pending.sellerUuid, order.currency, gross - fee)
                 // 卖家到账音：交付被接受、钱进了他的待领余额；在线才发（离线由「离线收益」提示兜底）
                 server.playerManager.getPlayer(pending.sellerUuid)?.let { sendSound(it, "market_sold") }
                 // 金融系统成交挂钩子：求购交付成交计入买家（求购发起方）交易额
-                com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
-                    server, order.buyerUuid, pending.sellerUuid, gross, now
-                )
+                // ⚠ **RP 单不调** —— recordTrade 喂着紫卡/黑卡申请门槛与贷款额度公式，
+                //   让 RP 来回刷交易量等于白送资格（方案「统计隔离」）
+                if (order.currency == MarketCurrency.PRIMARY) {
+                    com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
+                        server, order.buyerUuid, pending.sellerUuid, gross, now
+                    )
+                }
                 order.pendingDeliveries.remove(pending)
                 order.remainingCount -= pending.count
                 val category = if (order.type == BuyOrderType.POKEMON)
@@ -1052,6 +1112,7 @@ object BuyOrderNetwork {
                             else order.itemId,
                             price = gross.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                             fee = fee.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                            currency = order.currency,
                             detail = if (order.type == BuyOrderType.POKEMON)
                                 com.shusheng.cobblemarket.util.RecordDetail.pokemon(pending.extraData, pending.level, pending.shiny)
                             else
@@ -1074,8 +1135,11 @@ object BuyOrderNetwork {
                     }
                 }
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, pending.sellerUuid,
-                    // 到账金额 + 手续费一并提示：买家付的是 gross，卖家到手 gross-fee，不说清会产生疑问
-                    Text.translatable("cobblemarket.buy_order.accepted_seller", order.requirementText(), CurrencyHandler.goldAmount(gross - fee), CurrencyHandler.goldCurrencyText(), CurrencyHandler.goldAmount(fee), CurrencyHandler.goldCurrencyText()).formatted(Formatting.GREEN))
+                    // 到账金额 + 手续费一并提示：买家付的是 gross，卖家到手 gross-fee，不说清会产生疑问。
+                    // 金额单位取**订单自己的币种**（RP 单显示 RP 图标，卖家才知道到账的是哪种钱）
+                    Text.translatable("cobblemarket.buy_order.accepted_seller", order.requirementText(),
+                        CurrencyService.amountText(gross - fee, order.currency),
+                        CurrencyService.amountText(fee, order.currency)).formatted(Formatting.GREEN))
                 broadcastEvent(server, if (order.isOpen()) "UPDATED" else "CLOSED", buyOrderToEntry(order))
             }
         }
@@ -1150,12 +1214,28 @@ object BuyOrderNetwork {
         }
     }
 
-    /** 中介费：成交总额 × 费率，向上取整（照拍卖成交费算法；买家逾期 ≥7 天翻倍） */
-    private fun deliveryFee(server: MinecraftServer, payerUuid: java.util.UUID, gross: Long, now: Long): Long {
-        val feePercent = CobbleMarketConfig.buyOrderFeePercent
-        val base = if (feePercent > 0)
-            Math.ceil(gross * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
-        else 0L
+    /**
+     * 中介费：成交总额 × 费率，向上取整（照拍卖成交费算法，**按订单币种选费率**）。
+     *
+     * ⚠ RP 单只按 `pointsBuyOrderFeePercent` 收，**卡片折扣与逾期翻倍一概不参与** ——
+     * 那两样都是金融系统的东西（持卡等级、贷款逾期），只跟主货币有关，混进来等于拿主货币的
+     * 金融身份去影响 RP 费率（同 CurrencyService.supportsFeeDiscount 的口径）。
+     *
+     * [payerUuid] 是**买家**：逾期翻倍看的是买家的金融状态（照原实现），钱仍从卖家所得里扣。
+     */
+    private fun deliveryFee(
+        server: MinecraftServer,
+        payerUuid: java.util.UUID,
+        gross: Long,
+        now: Long,
+        currency: MarketCurrency
+    ): Long {
+        val isPoints = currency == MarketCurrency.POINTS
+        val feePercent = if (isPoints) CobbleMarketConfig.pointsBuyOrderFeePercent
+        else CobbleMarketConfig.buyOrderFeePercent
+        if (feePercent <= 0) return 0L
+        val base = Math.ceil(gross * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
+        if (isPoints) return base
         return com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
             com.shusheng.cobblemarket.finance.FinanceState.get(server),
             payerUuid,
@@ -1279,6 +1359,7 @@ object BuyOrderNetwork {
             species = if (order.type == BuyOrderType.POKEMON) (order.speciesKey ?: "any") else order.itemId,
             price = order.maxPrice,
             fee = 0,
+            currency = order.currency,
             detail = reason ?: ""
         ))
     }

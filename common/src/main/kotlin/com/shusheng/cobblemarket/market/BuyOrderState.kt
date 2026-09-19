@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.market
 import com.cobblemon.mod.common.api.pokemon.stats.Stats
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
+import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.nbt.NbtList
@@ -265,8 +266,14 @@ class BuyOrderState private constructor() : PersistentState() {
 
     fun getOrder(id: UUID): BuyOrder? = orders[id]
 
-    fun getOpenOrders(): List<BuyOrder> =
-        orders.values.filter { it.isOpen() }.sortedByDescending { it.createdAt }
+    /**
+     * 某一币种的全部在售求购单（列表界面一次只看一种货币，照拍卖场）。
+     *
+     * ⚠ 管理员那边也走这里 —— 管理端列表同样按币种过滤，与玩家端共用同一套过滤逻辑，
+     * 改一处两边生效（方案「界面完全一致」）。
+     */
+    fun getOpenOrders(currency: MarketCurrency): List<BuyOrder> =
+        orders.values.filter { it.isOpen() && it.currency == currency }.sortedByDescending { it.createdAt }
 
     fun countOpenByBuyer(buyerUuid: UUID): Int =
         orders.values.count { it.buyerUuid == buyerUuid && it.isOpen() }
@@ -301,7 +308,9 @@ class BuyOrderState private constructor() : PersistentState() {
                         createdAt = pending.deliveredAt,
                         expiresAt = System.currentTimeMillis() + retentionMs,
                         status = status,
-                        extraData = pending.extraData
+                        extraData = pending.extraData,
+                        // ⚠ 币种必须从**订单**带下来：否则玩家在待取回里看到的是主货币（RP 单标成 ₽）
+                        currency = order.currency
                     )
                     MarketState.get(server).addPendingReturn(ownerUuid, listing)
                 }
@@ -316,7 +325,9 @@ class BuyOrderState private constructor() : PersistentState() {
                         price = pending.price,
                         createdAt = pending.deliveredAt,
                         expiresAt = System.currentTimeMillis() + retentionMs,
-                        status = status
+                        status = status,
+                        // 币种从订单带下来（理由同精灵分支）
+                        currency = order.currency
                     )
                     ItemMarketState.get(server).addPendingReturn(ownerUuid, listing)
                 }
@@ -348,7 +359,8 @@ class BuyOrderState private constructor() : PersistentState() {
             order.pendingDeliveries.clear()
             order.status = BuyOrderStatus.CLOSED
             order.returnedAt = currentTime
-            MarketState.get(server).addPendingBalance(order.buyerUuid, order.frozenRemaining())
+            // 退冻结金给买家：主货币进待领余额、RP **直接到账**（照结算的 creditSeller 口径，见 CurrencyService）
+            CurrencyService.creditSeller(server, order.buyerUuid, order.currency, order.frozenRemaining())
             orders.remove(order.id)
             closed.add(order)
         }
@@ -369,7 +381,8 @@ class BuyOrderState private constructor() : PersistentState() {
         order.pendingDeliveries.clear()
         order.status = BuyOrderStatus.CLOSED
         order.returnedAt = System.currentTimeMillis()
-        MarketState.get(server).addPendingBalance(order.buyerUuid, order.frozenRemaining())
+        // 退冻结金给买家（币种从订单读，理由同上）
+        CurrencyService.creditSeller(server, order.buyerUuid, order.currency, order.frozenRemaining())
         orders.remove(order.id)
         markDirty()
         return true
