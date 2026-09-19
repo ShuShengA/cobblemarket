@@ -617,19 +617,19 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val key = typeOptions.getOrElse(typeFilterIndex) { "" }
         val label = if (key.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable("cobblemon.type.$key")
-        return Text.translatable("cobblemarket.gui.type").append(": ").append(label)
+        return Text.translatable("cobblemarket.gui.type").append(label)
     }
 
     private fun abilityButtonText(): Text {
         val label = if (abilityFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable(abilityFilter)
-        return Text.translatable("cobblemarket.buy_order.ability_label").append(": ").append(label)
+        return Text.translatable("cobblemarket.buy_order.ability_label").append(label)
     }
 
     private fun natureButtonText(): Text {
         val label = if (natureFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable(natureFilter)
-        return Text.translatable("cobblemarket.buy_order.nature_label").append(": ").append(label)
+        return Text.translatable("cobblemarket.buy_order.nature_label").append(label)
     }
 
     /** 25 种性格（翻译 key, 显示名），与求购单创建一致 */

@@ -406,7 +406,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             Text.translatable("cobblemarket.gui.tooltip_seller").append(entry.sellerName),
             centerX, dialogY + 66, 0xFFFFFF)
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.item.sell_count").append(": ").append("×${entry.count}"),
+            Text.translatable("cobblemarket.item.sell_count_label").append("×${entry.count}"),
             centerX, dialogY + 80, 0xFFFFFF)
         // 下架确认弹窗的价格：单位走统一入口，币种取这条挂单自己的
         context.drawCenteredTextWithShadow(textRenderer,
