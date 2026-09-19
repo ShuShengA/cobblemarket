@@ -571,6 +571,7 @@
   "cobblemarket.gui.collect": "收款",
   "cobblemarket.gui.returns": "待领取",
   "cobblemarket.gui.back": "返回",
+  "cobblemarket.gui.currency_switch": "切换货币：%s / %s",
   "cobblemarket.gui.pending_balance": "待收款： %s",
   "cobblemarket.gui.balance": "余额： %s",
   "cobblemarket.gui.mine": "我的",

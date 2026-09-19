@@ -4,6 +4,13 @@ import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.heldIconStack
+import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.client.PointsStateCache
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
+import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
+import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
@@ -33,6 +40,13 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private var listings = listOf<ListingEntry>()
     private var currentPage = 1
     private var totalPages = 1
+
+    /** 列表在查哪个币种（货币切换按钮控制）—— **只决定查什么，不参与渲染**：
+     *  显示单位一律读挂单自己的 [ListingEntry.isPoints]，否则任何一处漏改就会把 RP 商品标成 ₽ */
+    private var currency = MarketCurrency.PRIMARY
+
+    /** 货币切换按钮（RP 总开关关着时 = null，压根没建） */
+    private var currencyButton: NineSliceButton? = null
     // 搜索防抖（照精灵市场）：250ms 静默后统一发请求，避免连续输入被服务端节流丢包
     private var searchDirty = false
     private var lastSearchEdit = 0L
@@ -130,6 +144,21 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         ))
+
+        // 货币切换按钮（返回按钮左侧 4px）：看哪个币种的挂单（与玩家端同一个位置、同一套逻辑）
+        currencyButton = if (PointsStateCache.enabled) {
+            NineSliceButton(
+                leftX + panelWidth - 74, 13, 20, 16,
+                Text.literal(""), { onCurrencyClick() },
+                iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
+                iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
+                tooltip = Text.translatable("cobblemarket.gui.currency_switch", com.shusheng.cobblemarket.client.inlineCurrencyUnit(), CurrencyService.pointsIcon())
+            ).also {
+                it.dimmed = !PointsStateCache.marketEnabled
+                updateCurrencyButton(it)
+                addDrawableChild(it)
+            }
+        } else null
 
         // 物种搜索框 + 折叠
         val savedSearch = searchField?.text ?: ""
@@ -452,6 +481,36 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         return changed
     }
 
+    /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
+    private fun onCurrencyClick() {
+        if (!PointsStateCache.marketEnabled) {
+            playFailSound()
+            client?.player?.sendMessage(
+                // ⚠ 提醒类消息用红色，和普通反馈区分开（图标自带白色，不受影响）
+                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            return
+        }
+        toggleCurrency()
+    }
+
+    /** 切主货币 ↔ RP：整屏换成另一半挂单，**必须重置页码**（原页码在新币种下多半是空的） */
+    private fun toggleCurrency() {
+        currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
+        currencyButton?.let { updateCurrencyButton(it) }
+        currentPage = 1
+        refreshData()
+    }
+
+    /** 刷新货币按钮外观：主货币显示 `₽`，RP 显示图标（与玩家端/上架界面同一套口径） */
+    private fun updateCurrencyButton(btn: NineSliceButton) {
+        val points = currency == MarketCurrency.POINTS
+        btn.setMessage(Text.literal(if (points) "" else "₽"))
+        btn.iconLeft = if (points) POINTS_SYMBOL_TEXTURE else null
+    }
+
     private fun refreshData() {
         lastListRequestAt = System.currentTimeMillis()
         sendToServer(
@@ -476,7 +535,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 ivOpSpd = ivOps[5],
                 pageSize = getMaxVisibleRows(),
                 mineOnly = showMineOnly,
-                htFilter = htFilter
+                htFilter = htFilter,
+                currency = currency.name
             )
         )
     }
@@ -717,7 +777,11 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             context.drawText(textRenderer, levelText, leftX + 169, y + 7, 0x000000, false)
 
             // 价格右对齐到取消按钮左缘（行内缩写，同精灵市场；悬停窗仍为完整千分位）
-            val priceText = "${com.shusheng.cobblemarket.client.formatPriceShort(entry.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
+            // 单位走统一入口，币种取**这条挂单自己的**（行内用恒定 ₽ 写法）
+            val priceText = com.shusheng.cobblemarket.client.amountWithUnit(
+                com.shusheng.cobblemarket.client.formatPriceShort(entry.price),
+                entry.isPoints, entry.currencyName, inline = true
+            )
             val btnLeft = leftX + panelWidth - 42
             context.drawTextWithShadow(textRenderer, priceText, btnLeft - textRenderer.getWidth(priceText) - 4, y + 7, 0xFFAA00)
         }
@@ -847,7 +911,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             }
             lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)) to w)
             lines.add(Text.translatable("cobblemarket.gui.tooltip_price").append(
-                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)) to w)
+                com.shusheng.cobblemarket.client.amountWithUnit(
+                    com.shusheng.cobblemarket.client.formatPrice(entry.price), entry.isPoints, entry.currencyName
+                ).formatted(Formatting.GOLD)) to w)
 
             var maxWidth = 0
             lines.forEach { it.first?.let { t -> maxWidth = maxOf(maxWidth, textRenderer.getWidth(t)) } }

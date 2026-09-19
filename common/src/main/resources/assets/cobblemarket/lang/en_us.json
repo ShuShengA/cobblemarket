@@ -571,6 +571,7 @@
   "cobblemarket.gui.collect": "Receive",
   "cobblemarket.gui.returns": "Claims",
   "cobblemarket.gui.back": "Back",
+  "cobblemarket.gui.currency_switch": "Switch currency: %s / %s",
   "cobblemarket.gui.pending_balance": "Pending payment: %s",
   "cobblemarket.gui.balance": "Balance: %s",
   "cobblemarket.gui.mine": "Mine",

@@ -22,6 +22,13 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.PokemonCelebrationAnimation
+import com.shusheng.cobblemarket.client.PointsStateCache
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
+import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
+import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
@@ -38,6 +45,13 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var listings = listOf<ListingEntry>()
     private var currentPage = 1
     private var totalPages = 1
+
+    /** 列表在查哪个币种（货币切换按钮控制）—— **只决定查什么，不参与渲染**：
+     *  显示单位一律读挂单自己的 [ListingEntry.isPoints]，否则任何一处漏改就会把 RP 商品标成 ₽ */
+    private var currency = MarketCurrency.PRIMARY
+
+    /** 货币切换按钮（RP 总开关关着时 = null，压根没建；照上架界面） */
+    private var currencyButton: NineSliceButton? = null
 
     private var searchField: TextFieldWidget? = null
     // 搜索防抖状态：tick 里检查，停止输入 250ms 后才发请求
@@ -257,6 +271,24 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         ))
+
+        // 货币切换按钮（返回按钮左侧 4px）：切换**看哪个币种的商品**。
+        // ⚠ 与上架界面同一个按钮、同一套逻辑，玩家学一次就够：
+        //   ① RP 总开关关着 → 整个按钮不建（那时 RP 系统停摆，留个点不动的灰按钮更难看）；
+        //   ② 「玩家间 RP 交易」没开 → 建但置灰，点了给失败音 + 红字提示。
+        currencyButton = if (PointsStateCache.enabled) {
+            NineSliceButton(
+                leftX + panelWidth - 74, 13, 20, 16,
+                Text.literal(""), { onCurrencyClick() },
+                iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
+                iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
+                tooltip = Text.translatable("cobblemarket.gui.currency_switch", com.shusheng.cobblemarket.client.inlineCurrencyUnit(), CurrencyService.pointsIcon())
+            ).also {
+                it.dimmed = !PointsStateCache.marketEnabled
+                updateCurrencyButton(it)
+                addDrawableChild(it)
+            }
+        } else null
 
         // Filter controls only when expanded
         if (filterExpanded) {
@@ -894,6 +926,45 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         }
     }
 
+    /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
+    private fun onCurrencyClick() {
+        if (!PointsStateCache.marketEnabled) {
+            playFailSound()
+            client?.player?.sendMessage(
+                // ⚠ 提醒类消息用红色，和普通反馈区分开（图标自带白色，不受影响）
+                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            return
+        }
+        toggleCurrency()
+    }
+
+    /** 切主货币 ↔ RP：整屏换成另一半商品，**必须重置页码**（原页码在新币种下多半是空的） */
+    private fun toggleCurrency() {
+        currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
+        currencyButton?.let { updateCurrencyButton(it) }
+        currentPage = 1
+        // 走筛选变更那条节流/排队通道：直接发会撞上服务端 250ms 节流被静默丢弃，列表不刷新
+        requestFilterRefresh()
+    }
+
+    /** 刷新货币按钮外观：主货币显示 `₽`，RP 显示图标（与上架界面同一套口径） */
+    private fun updateCurrencyButton(btn: NineSliceButton) {
+        val points = currency == MarketCurrency.POINTS
+        btn.setMessage(Text.literal(if (points) "" else "₽"))
+        btn.iconLeft = if (points) POINTS_SYMBOL_TEXTURE else null
+    }
+
+    /**
+     * 喵喵支付入口是否出现：消费贷开着 **且这单是主货币的**（看挂单自己的币种）。
+     *
+     * ⚠ RP 挂单一律不给喵喵（方案硬要求）：准备金池垫付的是主货币，等于跨币种兑换。
+     * 服务端也会拒（词条 `no_meowth_for_points`），这里只是不让玩家白点一下。
+     */
+    private fun meowthAvailable(entry: ListingEntry?) = entry != null && payAvailable && !entry.isPoints
+
     private fun updatePageButtons() {
         prevButton?.active = currentPage > 1
         nextButton?.active = currentPage < totalPages
@@ -1042,7 +1113,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 ivOpSpd = ivOps[5],
                 pageSize = getMaxVisibleRows(),
                 mineOnly = showMineOnly,
-                htFilter = htFilter
+                htFilter = htFilter,
+                currency = currency.name
             )
         )
     }
@@ -1285,7 +1357,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             context.drawText(textRenderer, levelText, leftX + 169, y + 7, 0x000000, false)
 
             // Price（行内缩写，同拍卖场/物品市场；悬停窗仍为完整千分位。右对齐到按钮左缘：价格再长也只向左延伸，不会遮按钮）
-            val priceText = "${com.shusheng.cobblemarket.client.formatPriceShort(entry.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
+            // 单位走统一入口，币种取**这条挂单自己的**（行内用恒定 ₽ 写法）
+            val priceText = com.shusheng.cobblemarket.client.amountWithUnit(
+                com.shusheng.cobblemarket.client.formatPriceShort(entry.price),
+                entry.isPoints, entry.currencyName, inline = true
+            )
             val btnLeft = leftX + panelWidth - 42
             context.drawTextWithShadow(textRenderer, priceText, btnLeft - textRenderer.getWidth(priceText) - 4, y + 7, 0xFFAA00)
         }
@@ -1520,7 +1596,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val entry = confirmEntry ?: cancelEntry ?: return
         val centerX = width / 2
         // 喵喵支付可用时加宽 280 容纳三枚按钮；不可用回退原宽度 220（两枚）
-        val dialogW = if (payAvailable) 280 else 220
+        val dialogW = if (meowthAvailable(entry)) 280 else 220
         val dialogH = confirmDialogHeight(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -1589,7 +1665,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val btnW = 80
         val btnH = 20
         val btnY = dialogY + dialogH - 30
-        val threeButtons = cancelEntry == null && payAvailable
+        val threeButtons = cancelEntry == null && meowthAvailable(entry)
         val confirmX = if (threeButtons) centerX - btnW - 44 else centerX - btnW - 5
         val payX3 = centerX - 40
         val cancelX = if (threeButtons) centerX + 44 else centerX + 5
@@ -1620,7 +1696,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val dialogH = confirmOrCancel?.let { confirmDialogHeight(it) } ?: 250
         val dialogY = height / 2 - dialogH / 2
         // 中间喵喵支付按钮（购买确认弹窗且消费贷开）：点击进独立 MeowthPayScreen
-        if (cancelEntry == null && payAvailable) {
+        if (cancelEntry == null && meowthAvailable(confirmOrCancel)) {
             val btnY = dialogY + dialogH - 30
             val payX = centerX - 40
             if (mx in payX..(payX + 80) && my in btnY..(btnY + 20)) {
@@ -1632,7 +1708,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val btnW = 80
         val btnH = 20
         val btnY = dialogY + dialogH - 30
-        val threeButtons = cancelEntry == null && payAvailable
+        val threeButtons = cancelEntry == null && meowthAvailable(confirmOrCancel)
         val confirmX = if (threeButtons) centerX - btnW - 44 else centerX - btnW - 5
         val cancelX = if (threeButtons) centerX + 44 else centerX + 5
         if (mx in confirmX..(confirmX + btnW) && my in btnY..(btnY + btnH)) {
@@ -1748,8 +1824,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 lines.add(null to 0)
             }
             lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)) to w)
+            // 悬停窗的价格**用完整千分位**（行内是缩写）；单位走统一入口，币种取这条挂单自己的
             lines.add(Text.translatable("cobblemarket.gui.tooltip_price").append(
-                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)) to w)
+                com.shusheng.cobblemarket.client.amountWithUnit(
+                    com.shusheng.cobblemarket.client.formatPrice(entry.price), entry.isPoints, entry.currencyName
+                ).formatted(Formatting.GOLD)) to w)
 
             var maxWidth = 0
             lines.forEach { if (it.first != null) maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }

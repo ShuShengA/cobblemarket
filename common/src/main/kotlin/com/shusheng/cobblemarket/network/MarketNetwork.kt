@@ -70,8 +70,25 @@ data class ListingEntry(
     /** 拥有的证章 id 列表（外观展示用，证章不影响能力；上架时快照） */
     val marks: List<String> = emptyList(),
     /** 体型分类（XS/S/M/L/XL/ALPHA），空串 = 无信息（旧数据） */
-    val sizeCategory: String = ""
+    val sizeCategory: String = "",
+    /**
+     * 这条挂单的币种（枚举名，服务端权威值）。
+     *
+     * ⚠ **币种是挂单自己的属性，不是"这一屏"的属性** —— 界面显示价格单位必须读它，
+     * 别读界面上的什么"当前币种"状态：那样任何一处漏改就会把 RP 商品标成主货币
+     *（购买弹窗、悬停窗、待领取列表都是公开渲染工具，漏一处就是误导玩家）。
+     * 客户端解析走 `MarketCurrency.fromStored`（服务端发的，容错即可，别用 fromRequest）。
+     *
+     * **故意不给默认值**：服务端哪一处漏填就编译不过，好过静默当成主货币。
+     */
+    val currency: String
 ) {
+    /**
+     * 这条挂单是不是 RP 计价 —— **渲染货币单位就读它**。
+     * 构造时解析一次（行渲染每帧都判断，别每帧重新 parse 字符串）。
+     */
+    val isPoints: Boolean = MarketCurrency.fromStored(currency) == MarketCurrency.POINTS
+
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(id)
         buf.writeUuid(sellerUuid)
@@ -102,6 +119,7 @@ data class ListingEntry(
         buf.writeVarInt(aspects.size); aspects.forEach { buf.writeString(it) }
         buf.writeVarInt(marks.size); marks.forEach { buf.writeString(it) }
         buf.writeString(sizeCategory)
+        buf.writeString(currency)
     }
 
     companion object {
@@ -134,7 +152,8 @@ data class ListingEntry(
             currencyName = buf.readString(),
             aspects = (0 until buf.readVarInt()).map { buf.readString() },
             marks = (0 until buf.readVarInt()).map { buf.readString() },
-            sizeCategory = buf.readString()
+            sizeCategory = buf.readString(),
+            currency = buf.readString()
         )
     }
 }
@@ -253,7 +272,15 @@ data class RequestMarketPayload(
     val pageSize: Int,
     val mineOnly: Boolean,
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
-    val htFilter: Int
+    val htFilter: Int,
+    /**
+     * 查询币种 —— **原始字符串，在这里不解析**（理由同 [SellFromStoragePayload.currency]：
+     * 解码处容错会把伪造值静默当成主货币，必须留给 handler 用 `fromRequest` 严格校验）。
+     *
+     * 与上架类 payload 的区别：这是**展示层过滤**，只决定"看哪一半商品" —— 客户端传任意
+     * 合法币种都无害（伪造它最多看到另一类商品的列表，碰不到钱货，见 `docs/points_plan.md` 安全设计）。
+     */
+    val currency: String
 ) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
@@ -286,6 +313,7 @@ data class RequestMarketPayload(
                 b.writeInt(p.pageSize)
                 b.writeBoolean(p.mineOnly)
                 b.writeInt(p.htFilter)
+                b.writeString(p.currency)
             },
             // 读端用具名参数，读写字段顺序必须一致
             { b ->
@@ -314,7 +342,8 @@ data class RequestMarketPayload(
                     ivOpSpd = b.readInt(),
                     pageSize = b.readInt(),
                     mineOnly = b.readBoolean(),
-                    htFilter = b.readInt()
+                    htFilter = b.readInt(),
+                    currency = b.readString()
                 )
             }
         )
@@ -345,7 +374,9 @@ data class AdminRequestPokemonPayload(
     val pageSize: Int,
     val mineOnly: Boolean,
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
-    val htFilter: Int
+    val htFilter: Int,
+    /** 查询币种（原始字符串，不在这里解析；理由同 [RequestMarketPayload.currency]） */
+    val currency: String
 ) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
@@ -373,6 +404,7 @@ data class AdminRequestPokemonPayload(
                 b.writeInt(p.pageSize)
                 b.writeBoolean(p.mineOnly)
                 b.writeInt(p.htFilter)
+                b.writeString(p.currency)
             },
             // 读端用具名参数，读写字段顺序必须一致
             { b ->
@@ -396,7 +428,8 @@ data class AdminRequestPokemonPayload(
                     ivOpSpd = b.readInt(),
                     pageSize = b.readInt(),
                     mineOnly = b.readBoolean(),
-                    htFilter = b.readInt()
+                    htFilter = b.readInt(),
+                    currency = b.readString()
                 )
             }
         )
@@ -781,7 +814,9 @@ data class RequestItemMarketPayload(
     /** 查询命中的招式 ID 集合（TM 搜索机制：条目 NBT 组件招式名精确过滤，见 ItemSearchIndex） */
     val tmMoves: List<String>,
     /** 查询命中的附魔 ID 集合（附魔书搜索的精确过滤，见 ItemSearchIndex） */
-    val enchants: List<String>
+    val enchants: List<String>,
+    /** 查询币种（原始字符串，不在这里解析；理由同 [RequestMarketPayload.currency]） */
+    val currency: String
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -793,13 +828,20 @@ data class RequestItemMarketPayload(
                 b.writeVarInt(p.itemIds.size); p.itemIds.forEach { b.writeString(it) }
                 b.writeVarInt(p.tmMoves.size); p.tmMoves.forEach { b.writeString(it) }
                 b.writeVarInt(p.enchants.size); p.enchants.forEach { b.writeString(it) }
+                b.writeString(p.currency)
             },
+            // 读端用具名参数，读写字段顺序必须一致
             { b ->
                 RequestItemMarketPayload(
-                    b.readString(), b.readInt(), b.readBoolean(), b.readInt(), b.readString(),
-                    (0 until b.readVarInt()).map { b.readString() },
-                    (0 until b.readVarInt()).map { b.readString() },
-                    (0 until b.readVarInt()).map { b.readString() }
+                    sortMode = b.readString(),
+                    page = b.readInt(),
+                    mineOnly = b.readBoolean(),
+                    pageSize = b.readInt(),
+                    query = b.readString(),
+                    itemIds = (0 until b.readVarInt()).map { b.readString() },
+                    tmMoves = (0 until b.readVarInt()).map { b.readString() },
+                    enchants = (0 until b.readVarInt()).map { b.readString() },
+                    currency = b.readString()
                 )
             }
         )
@@ -857,7 +899,9 @@ data class AdminRequestItemPayload(
     val sortMode: String,
     val page: Int,
     val pageSize: Int,
-    val mineOnly: Boolean
+    val mineOnly: Boolean,
+    /** 查询币种（原始字符串，不在这里解析；理由同 [RequestMarketPayload.currency]） */
+    val currency: String
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -872,8 +916,23 @@ data class AdminRequestItemPayload(
                 b.writeString(p.sortMode); b.writeInt(p.page); b.writeInt(p.pageSize); b.writeBoolean(
                 p.mineOnly
             )
+                b.writeString(p.currency)
             },
-            { b -> AdminRequestItemPayload(b.readString(), b.readString(), (0 until b.readVarInt()).map { b.readString() }, (0 until b.readVarInt()).map { b.readString() }, (0 until b.readVarInt()).map { b.readString() }, b.readString(), b.readInt(), b.readInt(), b.readBoolean()) }
+            // 读端用具名参数，读写字段顺序必须一致
+            { b ->
+                AdminRequestItemPayload(
+                    sellerFilter = b.readString(),
+                    itemFilter = b.readString(),
+                    itemIds = (0 until b.readVarInt()).map { b.readString() },
+                    tmMoves = (0 until b.readVarInt()).map { b.readString() },
+                    enchants = (0 until b.readVarInt()).map { b.readString() },
+                    sortMode = b.readString(),
+                    page = b.readInt(),
+                    pageSize = b.readInt(),
+                    mineOnly = b.readBoolean(),
+                    currency = b.readString()
+                )
+            }
         )
     }
 }
@@ -1179,7 +1238,18 @@ object MarketNetwork {
                 state.expireOldListings(System.currentTimeMillis())
 
                 val sortMode = parseSortMode(payload.sortMode)
+                // 币种（**展示层过滤**）—— 非法值直接拒绝，不能拿 fromStored 容错
+                //（那等于把伪造值静默当成主货币）；合法值一律放行，它只决定看哪一半商品
+                val currency = MarketCurrency.fromRequest(payload.currency)
+                if (currency == null) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.network.invalid_currency"))
+                    )
+                    return@execute
+                }
                 val results = state.search(
+                    currency = currency,
                     species = payload.speciesFilter.ifBlank { null },
                     shiny = if (payload.shinyOnly) true else null,
                     minLevel = if (payload.minLevel > 0) payload.minLevel else null,
@@ -1258,7 +1328,8 @@ object MarketNetwork {
                             currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
                             aspects = parseAspects(detail),
                             marks = parseMarks(detail),
-                            sizeCategory = PokemonSize.fromNbt(listing.pokemonNbt)
+                            sizeCategory = PokemonSize.fromNbt(listing.pokemonNbt),
+                            currency = currency.name
                         )
                     }
                 }
@@ -1570,7 +1641,17 @@ object MarketNetwork {
                 state.expireOldListings(System.currentTimeMillis())
 
                 val sortMode = parseSortMode(payload.sortMode)
+                // 币种（展示层过滤）：非法值直接拒绝，理由同 RequestMarketPayload
+                val currency = MarketCurrency.fromRequest(payload.currency)
+                if (currency == null) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.network.invalid_currency"))
+                    )
+                    return@execute
+                }
                 val results = state.search(
+                    currency = currency,
                     species = payload.speciesFilter.ifBlank { null },
                     shiny = if (payload.shinyOnly) true else null,
                     sortBy = sortMode,
@@ -1644,7 +1725,8 @@ object MarketNetwork {
                             currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
                             aspects = parseAspects(detail),
                             marks = parseMarks(detail),
-                            sizeCategory = PokemonSize.fromNbt(listing.pokemonNbt)
+                            sizeCategory = PokemonSize.fromNbt(listing.pokemonNbt),
+                            currency = currency.name
                         )
                     }
                 }
@@ -1698,7 +1780,17 @@ object MarketNetwork {
                 state.expireOldListings(System.currentTimeMillis())
 
                 val sortMode = parseSortMode(payload.sortMode)
+                // 币种（展示层过滤）：非法值直接拒绝，理由同 RequestMarketPayload
+                val currency = MarketCurrency.fromRequest(payload.currency)
+                if (currency == null) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.network.invalid_currency"))
+                    )
+                    return@execute
+                }
                 val results = state.search(
+                    currency = currency,
                     sortBy = sortMode,
                     sellerUuid = if (payload.mineOnly) player.uuid else null,
                     sellerName = payload.sellerFilter.ifBlank { null }
@@ -1726,7 +1818,8 @@ object MarketNetwork {
                             itemNbt = listing.itemNbt,
                             count = listing.count,
                             price = listing.price,
-                            currencyName = CurrencyHandler.getCurrencyId()
+                            currencyName = CurrencyHandler.getCurrencyId(),
+                            currency = currency.name
                         )
                     }
                 }
@@ -2468,7 +2561,17 @@ object MarketNetwork {
                 state.expireOldListings(System.currentTimeMillis())
 
                 val sortMode = parseSortMode(payload.sortMode)
+                // 币种（展示层过滤）：非法值直接拒绝，理由同 RequestMarketPayload
+                val currency = MarketCurrency.fromRequest(payload.currency)
+                if (currency == null) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.network.invalid_currency"))
+                    )
+                    return@execute
+                }
                 val results = state.search(
+                    currency = currency,
                     sortBy = sortMode,
                     sellerUuid = if (payload.mineOnly) player.uuid else null
                 ).let { list ->
@@ -2495,7 +2598,8 @@ object MarketNetwork {
                             itemNbt = listing.itemNbt,
                             count = listing.count,
                             price = listing.price,
-                            currencyName = CurrencyHandler.getCurrencyId()
+                            currencyName = CurrencyHandler.getCurrencyId(),
+                            currency = currency.name
                         )
                     }
                 }
@@ -3042,7 +3146,9 @@ object MarketNetwork {
                         itemNbt = listing.itemNbt,
                         count = listing.count,
                         price = listing.price,
-                        currencyName = CurrencyHandler.getCurrencyId()
+                        currencyName = CurrencyHandler.getCurrencyId(),
+                        // 待领取里显示的是**这条挂单原本的币种**（可能就是 RP），不能按当前主货币渲染
+                        currency = listing.currency.name
                     )
                 }
                 sendToPlayer(player, ItemReturnDataPayload(entries, totalPages, clampedPage))

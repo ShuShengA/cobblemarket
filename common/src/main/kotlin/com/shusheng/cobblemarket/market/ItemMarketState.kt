@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.market
 
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.network.itemsEqualForTrading
 import net.minecraft.item.ItemStack
 import net.minecraft.nbt.NbtCompound
@@ -38,8 +39,18 @@ class ItemMarketState private constructor() : PersistentState() {
     fun countActiveBySeller(sellerUuid: UUID): Int =
         listings.values.count { it.sellerUuid == sellerUuid && it.isActive() }
 
-    fun search(sortBy: SortMode = SortMode.NEWEST, sellerUuid: UUID? = null, sellerName: String? = null): List<ItemListing> {
-        var results = getActiveListings()
+    fun search(
+        /**
+         * 币种过滤（**必选**，理由同 `MarketState.search`）：主货币与 RP 的价格不可比，
+         * 混在一起排序会失去意义。列表按币种切换，这里一次只查一种。
+         */
+        currency: MarketCurrency = MarketCurrency.PRIMARY,
+        sortBy: SortMode = SortMode.NEWEST,
+        sellerUuid: UUID? = null,
+        sellerName: String? = null
+    ): List<ItemListing> {
+        // 先按币种砍一半，后面的筛选/排序都只在同币种内做
+        var results = getActiveListings().filter { it.currency == currency }
         sellerUuid?.let { u -> results = results.filter { it.sellerUuid == u } }
         sellerName?.let { s -> results = results.filter { it.sellerName.contains(s, ignoreCase = true) } }
         return when (sortBy) {

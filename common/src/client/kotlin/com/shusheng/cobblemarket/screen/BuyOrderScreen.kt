@@ -2258,7 +2258,9 @@ class BuyOrderScreen(
             heldItemId = d["heldItemId"] ?: "",
             currencyName = "",
             aspects = (d["aspects"] ?: "").split(",").filter { it.isNotEmpty() },
-            marks = (d["marks"] ?: "").split(",").filter { it.isNotEmpty() }
+            marks = (d["marks"] ?: "").split(",").filter { it.isNotEmpty() },
+            // 求购单的币种要等 B6 才做（现在只有主货币）；这里给主货币，B6 改读 pending 自己的币种
+            currency = com.shusheng.cobblemarket.currency.MarketCurrency.PRIMARY.name
         )
     }
 

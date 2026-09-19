@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.client
 
 import net.minecraft.registry.Registries
+import net.minecraft.text.MutableText
 import net.minecraft.text.Text
 import net.minecraft.util.Identifier
 
@@ -36,3 +37,24 @@ fun activeCurrencyUnit(): String {
     val raw = BalanceCache.currencyName
     return if (raw.isEmpty()) "₽" else displayCurrency(raw)
 }
+
+/**
+ * **一条挂单/订单的价格该怎么显示** —— 金额 + **这条单自己的币种**单位。
+ *
+ * ⚠ 凡是显示某条挂单价格的地方都走它，别各写各的 `if (isPoints)`：
+ * 币种是**挂单自己的属性**（`ListingEntry.isPoints` / `ItemEntry.isPoints`），
+ * 各写各的迟早漏一处，而漏的那处会把 RP 价格标成 ₽ —— 玩家照着错单位看价，属于误导。
+ * 已经漏过的两个地方就是教训：购买确认弹窗（`EntryBadgeRenderer`）、待领取物品悬停窗。
+ *
+ * [amount] 传格式化好的金额串（行内缩写用 `formatPriceShort`、悬停窗 `formatPrice`、
+ * 弹窗总额 `formatPriceLong`），这里只管拼单位。
+ *
+ * [inline] 区分主货币那一侧的单位写法（2026-08-27 拍板）：行内简写恒用 `₽`，
+ * 悬停窗与弹窗用完整货币名（物品货币时是物品名）。RP 一侧两种都一样，走图标。
+ *
+ * ⚠ 返回 **MutableText 不是 Text**：`Text.formatted(...)` 只挂在 MutableText 上，
+ * 调用方几乎都要 `.formatted(Formatting.GOLD)`，声明成只读的 Text 会满屏编译错误。
+ */
+fun amountWithUnit(amount: String, isPoints: Boolean, currencyName: String, inline: Boolean = false): MutableText =
+    if (isPoints) Text.literal("$amount ").append(com.shusheng.cobblemarket.currency.CurrencyService.pointsIcon())
+    else Text.literal("$amount ${if (inline) inlineCurrencyUnit() else displayCurrency(currencyName)}")
