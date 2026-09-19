@@ -276,19 +276,18 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // ⚠ 与上架界面同一个按钮、同一套逻辑，玩家学一次就够：
         //   ① RP 总开关关着 → 整个按钮不建（那时 RP 系统停摆，留个点不动的灰按钮更难看）；
         //   ② 「玩家间 RP 交易」没开 → 建但置灰，点了给失败音 + 红字提示。
-        currencyButton = if (PointsStateCache.enabled) {
-            NineSliceButton(
+        // ⚠ 玩家端**也不受开关约束**：卖家要能看到并下架自己的存量 RP 挂单。
+        //   买 / 出价仍由服务端拦（pointsGateBlocked）—— 真正的权限在付款那一步，不在能不能看
+        currencyButton = NineSliceButton(
                 leftX + panelWidth - 74, 13, 20, 16,
                 Text.literal(""), { onCurrencyClick() },
                 iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
                 iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
                 tooltip = Text.translatable("cobblemarket.gui.currency_switch", com.shusheng.cobblemarket.client.inlineCurrencyUnit(), CurrencyService.pointsIcon())
-            ).also {
-                it.dimmed = !PointsStateCache.marketEnabled
-                updateCurrencyButton(it)
-                addDrawableChild(it)
-            }
-        } else null
+        ).also {
+            updateCurrencyButton(it)
+            addDrawableChild(it)
+        }
 
         // Filter controls only when expanded
         if (filterExpanded) {
@@ -927,16 +926,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
     private fun onCurrencyClick() {
-        if (!PointsStateCache.marketEnabled) {
-            playFailSound()
-            client?.player?.sendMessage(
-                // ⚠ 提醒类消息用红色，和普通反馈区分开（图标自带白色，不受影响）
-                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
-                    .formatted(Formatting.RED),
-                false
-            )
-            return
-        }
+        // ⚠ 不拦开关：卖家要能切过去下架自己的存量 RP 挂单
         toggleCurrency()
     }
 
