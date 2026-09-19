@@ -706,7 +706,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     private fun vButtonText() = Text.literal(
         com.shusheng.cobblemarket.util.TextUtil.truncateString(
-            "${Text.translatable("cobblemarket.price_limit.v_label").string}: ${vLabel(vOptions[vIndex])}",
+            "${Text.translatable("cobblemarket.price_limit.v_label").string}${vLabel(vOptions[vIndex])}",
             62
         )
     )
@@ -771,7 +771,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     private fun formButtonText() = Text.literal(
         com.shusheng.cobblemarket.util.TextUtil.truncateString(
-            "${Text.translatable("cobblemarket.blacklist.form").string}: ${formOptions.getOrNull(formIndex)?.label ?: ""}",
+            "${Text.translatable("cobblemarket.blacklist.form").string}${formOptions.getOrNull(formIndex)?.label ?: ""}",
             62
         )
     )
@@ -837,7 +837,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             else ""
         itemSelectButton?.setMessage(Text.literal(
             com.shusheng.cobblemarket.util.TextUtil.truncateString(
-                "${Text.translatable("cobblemarket.blacklist.item_label").string}: $label",
+                "${Text.translatable("cobblemarket.blacklist.item_label").string}$label",
                 132
             )
         ))
@@ -1384,7 +1384,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         val nameColor = if (entry.speciesId.isEmpty()) 0xFFFFFF
         else EntryBadgeRenderer.speciesTypeColor(entry.speciesId, entry.aspects)
         val lines = mutableListOf<Pair<Text, Int>>(Text.literal(pokemonName(entry.speciesId)) to nameColor)
-        lines.add(Text.literal(Text.translatable("cobblemarket.price_limit.v_label").string + ": " + vLabel(entry.vCount)) to 0xFFFFFF)
+        lines.add(Text.literal(Text.translatable("cobblemarket.price_limit.v_label").string + vLabel(entry.vCount)) to 0xFFFFFF)
         lines.add(Text.literal(shinyLabel(entry.shinyFilter)) to 0xFFFFFF)
         lines.add(Text.literal(formLabel(entry.aspects.toSet())) to 0xFFFFFF)
         lines.add(Text.literal(htLabel(entry.htFilter)) to 0xFFFFFF)

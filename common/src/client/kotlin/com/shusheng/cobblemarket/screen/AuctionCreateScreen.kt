@@ -625,7 +625,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     private fun updateDurationButton() {
         durationButton?.setMessage(Text.literal(
-            "${Text.translatable("cobblemarket.auction.duration").string}: ${formatDuration(durationOptions[durationIndex])}"
+            "${Text.translatable("cobblemarket.auction.duration_label").string}${formatDuration(durationOptions[durationIndex])}"
         ))
     }
 

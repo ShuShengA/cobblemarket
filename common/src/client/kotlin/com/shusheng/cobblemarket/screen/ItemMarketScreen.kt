@@ -939,7 +939,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             centerX - 80, dialogY + 62, 0xAAAAAA)
         // 总价单位同样取这条挂单自己的币种（RP 挂单不会出现喵喵行，弹窗高度已随之收缩）
         context.drawTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.item.buy_total").append(": ").append(
+            Text.translatable("cobblemarket.item.buy_total").append(
                 com.shusheng.cobblemarket.client.amountWithUnit(
                     com.shusheng.cobblemarket.client.formatPriceLong(buyTotal()), entry.isPoints, entry.currencyName
                 ).formatted(Formatting.GOLD)),
