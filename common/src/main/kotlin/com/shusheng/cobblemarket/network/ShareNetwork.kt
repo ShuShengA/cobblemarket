@@ -219,8 +219,11 @@ object ShareNetwork {
             )
         )
 
-        val nameText = Text.literal("").append(Text.translatable(stack.item.translationKey))
-            .styled { it.withUnderline(true) }
+        // 物品名走稀有度色（= 物品栏悬停的名字颜色，含自定义名），再套下划线
+        val nameText = Text.literal("").append(
+            com.shusheng.cobblemarket.util.ItemNameText.rarityColoredName(stack)
+                ?: Text.translatable(stack.item.translationKey)
+        ).styled { it.withUnderline(true) }
         return shareMessage(
             player = player,
             shareId = shareId,
@@ -314,7 +317,10 @@ object ShareNetwork {
         // 携带物：玩家在队伍详情里设成「隐藏」的不显示（与挂单/大图同一口径）
         val held = pokemon.heldItem()
         if (!held.isEmpty && pokemon.heldItemVisible) {
-            lines.add(Text.translatable("cobblemarket.gui.tooltip_held").append(Text.translatable(held.item.translationKey)))
+            // 携带物名走稀有度色（与物品栏悬停一致）
+            lines.add(Text.translatable("cobblemarket.gui.tooltip_held").append(
+                com.shusheng.cobblemarket.util.ItemNameText.rarityColoredName(held)
+                    ?: Text.translatable(held.item.translationKey)))
         }
         // IV/EV 六行：行色按属性色系、EV 恒红（与出价弹窗、拍卖播报完全一致）
         lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs"))
