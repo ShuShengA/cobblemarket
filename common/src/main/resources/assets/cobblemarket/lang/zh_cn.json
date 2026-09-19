@@ -381,6 +381,8 @@
   "cobblemarket.gui.sort": "排序: %s",
   "cobblemarket.gui.prev": "< 上一页",
   "cobblemarket.gui.next": "下一页 >",
+  "cobblemarket.gui.species_prev": "上一个匹配的精灵",
+  "cobblemarket.gui.species_next": "下一个匹配的精灵",
   "cobblemarket.gui.buy": "购买",
   "cobblemarket.gui.reset": "重置",
   "cobblemarket.gui.filter_ht_any": "特训：不限",

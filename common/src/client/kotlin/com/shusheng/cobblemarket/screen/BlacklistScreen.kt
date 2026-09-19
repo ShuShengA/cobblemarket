@@ -317,21 +317,22 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         addDrawableChild(shinyButton)
         updateShinyButton()
 
-        // 候选切换箭头（预览槽位正下方）：候选 ≥2 才显示，切换预览图与形态选项。
-        // 位置选槽位下方是因为槽位右侧到对话框边框只剩 16px、放不下两枚箭头
+        // 候选切换箭头（**对齐到预览槽位正下方**）：候选 ≥2 才显示，切换预览图与形态选项。
+        // 槽位是 centerX+66 起、28 宽 → 中心 centerX+80，两枚 18 宽按钮按它左右排开（组中心 +82）；
+        // 左缘 +62 与形态按钮（到 +60）留 2px，右缘 +102 距对话框边框 8px 不进边框
         speciesPrevButton = NineSliceButton(
-            centerX + 66, dialogY + 54, 20, 16, Text.literal(""),
+            centerX + 62, dialogY + 54, 18, 16, Text.literal(""),
             { cycleSpecies(-1) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
-            tooltip = Text.translatable("cobblemarket.gui.prev")
+            tooltip = Text.translatable("cobblemarket.gui.species_prev")
         ).also { it.visible = false; addDrawableChild(it) }
         speciesNextButton = NineSliceButton(
-            centerX + 90, dialogY + 54, 20, 16, Text.literal(""),
+            centerX + 84, dialogY + 54, 18, 16, Text.literal(""),
             { cycleSpecies(1) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
-            tooltip = Text.translatable("cobblemarket.gui.next")
+            tooltip = Text.translatable("cobblemarket.gui.species_next")
         ).also { it.visible = false; addDrawableChild(it) }
 
         // 形态选择按钮：只有解析出多形态物种时显示，点击展开/收起形态列表
@@ -444,12 +445,12 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             }
         }
 
-        // 候选计数（1/3）：让玩家知道有几个可切、现在是第几个
+        // 候选计数（1/3）：让玩家知道有几个可切、现在是第几个（居中于两枚箭头之下）
         if (speciesCandidates.size > 1) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.literal("${speciesIndex + 1}/${speciesCandidates.size}").formatted(Formatting.GRAY),
-                centerX + 88, dialogY + 72, 0xFFFFFF
+                centerX + 82, dialogY + 72, 0xFFFFFF
             )
         }
     }

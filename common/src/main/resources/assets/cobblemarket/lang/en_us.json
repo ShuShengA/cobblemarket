@@ -381,6 +381,8 @@
   "cobblemarket.gui.sort": "Sort: %s",
   "cobblemarket.gui.prev": "< Prev",
   "cobblemarket.gui.next": "Next >",
+  "cobblemarket.gui.species_prev": "Previous matching Pokémon",
+  "cobblemarket.gui.species_next": "Next matching Pokémon",
   "cobblemarket.gui.buy": "Buy",
   "cobblemarket.gui.reset": "Reset",
   "cobblemarket.gui.filter_ht_any": "HT: Any",
