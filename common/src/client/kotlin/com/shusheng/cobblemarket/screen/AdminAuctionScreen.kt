@@ -145,20 +145,6 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         return Text.literal(com.shusheng.cobblemarket.client.formatPriceShort(price) + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)
     }
 
-    private fun formatRemaining(endsAt: Long): String {
-        val ms = endsAt - System.currentTimeMillis()
-        if (ms <= 0) return Text.translatable("cobblemarket.auction.ending").string
-        val totalSec = ms / 1000
-        val totalMin = totalSec / 60
-        if (totalMin < 1) return "${totalSec}s"
-        if (totalMin < 3) return "${totalMin}m${totalSec % 60}s"
-        if (totalMin < 60) return "${totalMin}m"
-        val h = totalMin / 60
-        val m = totalMin % 60
-        if (h < 24) return "${h}h${m}m"
-        return "${h / 24}d${h % 24}h"
-    }
-
     private fun typeColor(tk: String) = when (tk.substringAfterLast(".").lowercase()) {
         "normal" -> 0xAAAA99; "fire" -> 0xFF4422; "water" -> 0x3399FF
         "electric" -> 0xFFCC33; "grass" -> 0x77CC55; "ice" -> 0x66CCFF
@@ -594,7 +580,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             // 结束倒计时 + 卖家头像：头像位置与拍卖场一致（leftX+149，各行对齐）；
             // 名字区最坏到 141px（名字截断 46px + 星 + 性别 + 携带物 + 体型徽章，起点 leftX+40），
             // 149 再留 8px 余量。倒计时紧跟其右，价格区异常宽时整块左移兜底
-            val remaining = formatRemaining(entry.endsAt)
+            val remaining = com.shusheng.cobblemarket.util.RemainingTime.text(entry.endsAt, "cobblemarket.auction.ending")
             val remainingColor = if (entry.endsAt - System.currentTimeMillis() < 5 * 60 * 1000) 0xFF6666 else 0xAAAAAA
             val remW = textRenderer.getWidth(remaining)
             val avatarX = leftX + 149
@@ -700,14 +686,17 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         val lines = tooltipCacheStaticLines.toMutableList()
         // 分割线：上方精灵信息，下方拍卖信息
         lines.add(null to 0xFFFFFF)
-        lines.add(Text.literal("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}") to 0xFFFFFF)
-        val priceLine = Text.translatable("cobblemarket.auction.current_price").append(": ").append(displayPriceText(entry))
+        lines.add(Text.translatable("cobblemarket.auction.seller").append(entry.sellerName) to 0xFFFFFF)
+        val priceLine = Text.translatable("cobblemarket.auction.current_price").append(displayPriceText(entry))
         lines.add((if (entry.bidCount > 0)
             priceLine.append(Text.literal("  ×${entry.bidCount}").formatted(Formatting.GRAY))
         else priceLine) to 0xFFFFFF)
-        lines.add(Text.literal("${Text.translatable("cobblemarket.auction.ends").string}: ${formatRemaining(entry.endsAt)}") to 0xFFFFFF)
+        lines.add(
+            Text.translatable("cobblemarket.auction.ends").append(
+                com.shusheng.cobblemarket.util.RemainingTime.text(entry.endsAt, "cobblemarket.auction.ending")
+            ) to 0xFFFFFF)
         if (entry.currentBidderName.isNotEmpty()) {
-            lines.add(Text.literal("${Text.translatable("cobblemarket.auction.leader").string}: ${entry.currentBidderName}") to 0xFFDD66)
+            lines.add(Text.translatable("cobblemarket.auction.leader").append(entry.currentBidderName) to 0xFFDD66)
         }
 
         var mw = tooltipCacheMaxWidth
@@ -766,20 +755,23 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             itemTooltipCacheKey = entry.id
             val staticLines = mutableListOf<Pair<Text, Int>>()
             staticLines.add(Text.literal(displayName(entry)) to 0xFFFFFF)
-            staticLines.add(Text.literal("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}") to 0xFFFFFF)
+            staticLines.add(Text.translatable("cobblemarket.auction.seller").append(entry.sellerName) to 0xFFFFFF)
             var mw = 0
             staticLines.forEach { mw = maxOf(mw, textRenderer.getWidth(it.first)) }
             itemTooltipCacheLines = staticLines
             itemTooltipCacheMaxWidth = mw
         }
         val lines = itemTooltipCacheLines.toMutableList()
-        val priceLine = Text.translatable("cobblemarket.auction.current_price").append(": ").append(displayPriceText(entry))
+        val priceLine = Text.translatable("cobblemarket.auction.current_price").append(displayPriceText(entry))
         lines.add((if (entry.bidCount > 0)
             priceLine.append(Text.literal("  ×${entry.bidCount}").formatted(Formatting.GRAY))
         else priceLine) to 0xFFFFFF)
-        lines.add(Text.literal("${Text.translatable("cobblemarket.auction.ends").string}: ${formatRemaining(entry.endsAt)}") to 0xFFFFFF)
+        lines.add(
+            Text.translatable("cobblemarket.auction.ends").append(
+                com.shusheng.cobblemarket.util.RemainingTime.text(entry.endsAt, "cobblemarket.auction.ending")
+            ) to 0xFFFFFF)
         if (entry.currentBidderName.isNotEmpty()) {
-            lines.add(Text.literal("${Text.translatable("cobblemarket.auction.leader").string}: ${entry.currentBidderName}") to 0xFFDD66)
+            lines.add(Text.translatable("cobblemarket.auction.leader").append(entry.currentBidderName) to 0xFFDD66)
         }
 
         var maxWidth = itemTooltipCacheMaxWidth
@@ -966,18 +958,21 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             context.drawTextWithShadow(textRenderer, text, auctionX, ay, color)
             ay += 10
         }
-        auctionLine("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}")
+        auctionLine(Text.translatable("cobblemarket.auction.seller").append(entry.sellerName))
         // 价格三行：标签默认色，金额段蓝色（2026-08-24 拍板）
-        auctionLine(Text.translatable("cobblemarket.auction.current_price").append(": ").append(
+        auctionLine(Text.translatable("cobblemarket.auction.current_price").append(
             displayPriceText(entry)))
-        auctionLine(Text.translatable("cobblemarket.auction.starting_price").append(": ").append(
+        auctionLine(Text.translatable("cobblemarket.auction.starting_price_label").append(
             Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GOLD)))
-        auctionLine(Text.translatable("cobblemarket.auction.min_increment").append(": ").append(
+        auctionLine(Text.translatable("cobblemarket.auction.min_increment_label").append(
             Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GOLD)))
-        auctionLine("${Text.translatable("cobblemarket.auction.ends").string}: ${formatRemaining(entry.endsAt)}", 0xAAAAAA)
-        auctionLine("${Text.translatable("cobblemarket.auction.bids_count").string}: ${entry.bidCount}", 0xAAAAAA)
+        auctionLine(
+            Text.translatable("cobblemarket.auction.ends").append(
+                com.shusheng.cobblemarket.util.RemainingTime.text(entry.endsAt, "cobblemarket.auction.ending")
+            ), 0xAAAAAA)
+        auctionLine(Text.translatable("cobblemarket.auction.bids_count").append("${entry.bidCount}"), 0xAAAAAA)
         if (entry.currentBidderName.isNotEmpty()) {
-            auctionLine("${Text.translatable("cobblemarket.auction.leader").string}: ${entry.currentBidderName}", 0xFFDD66)
+            auctionLine(Text.translatable("cobblemarket.auction.leader").append(entry.currentBidderName), 0xFFDD66)
         }
         // 提示两排放按钮上方居中，避开左右两列信息
         // 灰字与按钮组中心对齐（按钮右移 10px 后中心在 centerX+10）

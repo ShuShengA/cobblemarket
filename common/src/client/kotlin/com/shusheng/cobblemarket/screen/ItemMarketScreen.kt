@@ -876,7 +876,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             Text.translatable("cobblemarket.item.buy_count").string + "（" + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}）",
             centerX - 80, dialogY + 62, 0xAAAAAA)
         context.drawTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.item.buy_total").append(": ").append(
+            Text.translatable("cobblemarket.item.buy_total").append(
                 Text.literal(com.shusheng.cobblemarket.client.formatPriceLong(buyTotal()) + " " + com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)).formatted(Formatting.GOLD)),
             centerX - 80, dialogY + 92, 0xFFFFFF)
     }

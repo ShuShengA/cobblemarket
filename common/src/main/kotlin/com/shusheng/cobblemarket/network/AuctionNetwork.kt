@@ -1147,17 +1147,19 @@ object AuctionNetwork {
             // 附魔词条行（原版 tooltip 同款：附魔名 + 罗马等级，AQUA 色）
             lines.addAll(enchantmentLines(auction))
         }
-        // 价格两行：标签 + 「: 」+ 金色千分位金额 + 金色货币名（与出价界面/管理端同款，原先漏了冒号、加价是裸数字）
+        // 价格两行：标签 + 金色千分位金额 + 金色货币名（与出价界面/管理端同款）
         lines.add(
-            Text.translatable("cobblemarket.auction.starting_price").append(": ").append(
+            Text.translatable("cobblemarket.auction.starting_price_label").append(
                 Text.literal("").append(CurrencyHandler.goldAmount(auction.startingPrice)).append(CurrencyHandler.goldCurrencyText()))
         )
         lines.add(
-            Text.translatable("cobblemarket.auction.min_increment").append(": ").append(
+            Text.translatable("cobblemarket.auction.min_increment_label").append(
                 Text.literal("").append(CurrencyHandler.goldAmount(auction.minIncrement)).append(CurrencyHandler.goldCurrencyText()))
         )
-        val minutesLeft = ((auction.endsAt - System.currentTimeMillis()) / 60_000).coerceAtLeast(1)
-        lines.add(Text.translatable("cobblemarket.auction.ends").append(Text.translatable("cobblemarket.chat.ends_minutes", minutesLeft)))
+        // 结束时间与拍卖场界面**同一口径**（此前这里自成一派：「结束时间719分钟」，既没冒号格式也不同）。
+        // ⚠ 这是发消息那一刻的快照，不是实时值 —— 挂单后续被反狙击延长也不会刷新
+        lines.add(Text.translatable("cobblemarket.auction.ends").append(
+            com.shusheng.cobblemarket.util.RemainingTime.text(auction.endsAt, "cobblemarket.auction.ending")))
         var hover: net.minecraft.text.MutableText = Text.literal("")
         lines.forEachIndexed { i, line ->
             hover = hover.append(line)

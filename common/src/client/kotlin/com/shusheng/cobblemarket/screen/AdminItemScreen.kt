@@ -355,7 +355,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             Text.translatable("cobblemarket.gui.tooltip_seller").append(entry.sellerName),
             centerX, dialogY + 66, 0xFFFFFF)
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.item.sell_count").append(": ").append("×${entry.count}"),
+            Text.translatable("cobblemarket.item.sell_count_label").append("×${entry.count}"),
             centerX, dialogY + 80, 0xFFFFFF)
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.gui.tooltip_price").append(

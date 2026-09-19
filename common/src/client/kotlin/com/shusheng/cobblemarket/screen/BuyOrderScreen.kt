@@ -322,21 +322,6 @@ class BuyOrderScreen(
         return if (t == key) key else t
     }
 
-    private fun formatRemaining(endsAt: Long): String {
-        val ms = endsAt - System.currentTimeMillis()
-        if (ms <= 0) return Text.translatable("cobblemarket.buy_order.ending").string
-        val totalSec = ms / 1000
-        val totalMin = totalSec / 60
-        if (totalMin < 1) return "${totalSec}s"
-        if (totalMin < 60) return "${totalMin}m"
-        val h = totalMin / 60
-        val m = totalMin % 60
-        if (h < 24) return "${h}h${m}m"
-        val d = h / 24
-        val hh = h % 24
-        return "${d}d${hh}h"
-    }
-
     // 行内价格区间用缩写（与物品市场网格同款 k/M/B）；完整价格见悬停面板
     private fun priceRangeText(entry: BuyOrderEntry): String =
         "${com.shusheng.cobblemarket.client.formatPriceShort(entry.minPrice)}~" +
@@ -825,7 +810,9 @@ class BuyOrderScreen(
 
             // 买家头像 + 剩余时间（左移，给右侧数量+价格区间让位，避免与长价格重合）
             drawSellerAvatar(context, entry.buyerUuid, entry.buyerName, rowL + 96, y + 4, 16)
-            val remaining = formatRemaining(entry.expiresAt)
+            // 求购单没有反狙击延长，不需要秒级精度
+            val remaining = com.shusheng.cobblemarket.util.RemainingTime.text(
+                entry.expiresAt, "cobblemarket.buy_order.ending", secondPrecision = false)
             val remainingColor = if (entry.expiresAt - System.currentTimeMillis() < 5 * 60 * 1000) 0xFF6666 else 0xAAAAAA
             context.drawTextWithShadow(textRenderer, remaining, rowL + 116, y + 7, remainingColor)
             if (entry.pending != null) {
@@ -1006,7 +993,10 @@ class BuyOrderScreen(
         } else {
             lines.addAll(staticLines)
         }
-        lines.add(Text.translatable("cobblemarket.buy_order.tooltip_expires").append(Text.literal(formatRemaining(entry.expiresAt))).asOrderedText() to 0xFFFFFF)
+        lines.add(Text.translatable("cobblemarket.buy_order.tooltip_expires").append(
+            com.shusheng.cobblemarket.util.RemainingTime.text(
+                entry.expiresAt, "cobblemarket.buy_order.ending", secondPrecision = false)
+        ).asOrderedText() to 0xFFFFFF)
 
         var maxWidth = tooltipCacheMaxWidth
         if (quantityLine >= 0) {
@@ -1819,7 +1809,7 @@ class BuyOrderScreen(
 
     private fun formButtonText() = Text.literal(
         com.shusheng.cobblemarket.util.TextUtil.truncateString(
-            "${Text.translatable("cobblemarket.blacklist.form").string}: ${formOptions.getOrNull(formIndex)?.label ?: ""}",
+            "${Text.translatable("cobblemarket.blacklist.form").string}${formOptions.getOrNull(formIndex)?.label ?: ""}",
             132
         )
     )
@@ -1837,7 +1827,7 @@ class BuyOrderScreen(
     private fun abilityButtonText(): String {
         val sel = abilityOptions.getOrNull(abilityIndex)?.second
         val label = sel ?: Text.translatable("cobblemarket.buy_order.any").string
-        return "${Text.translatable("cobblemarket.buy_order.ability_label").string}: ${com.shusheng.cobblemarket.util.TextUtil.truncateString(label, 90)}"
+        return "${Text.translatable("cobblemarket.buy_order.ability_label").string}${com.shusheng.cobblemarket.util.TextUtil.truncateString(label, 90)}"
     }
 
     private fun updateAbilityButton() {
@@ -1847,7 +1837,7 @@ class BuyOrderScreen(
     private fun natureButtonText(): String {
         val sel = natureOptions.getOrNull(natureIndex)?.second
         val label = sel ?: Text.translatable("cobblemarket.buy_order.any").string
-        return "${Text.translatable("cobblemarket.buy_order.nature_label").string}: $label"
+        return "${Text.translatable("cobblemarket.buy_order.nature_label").string}$label"
     }
 
     private fun updateNatureButton() {
@@ -2046,7 +2036,7 @@ class BuyOrderScreen(
             else ""
         itemSelectButton?.setMessage(Text.literal(
             com.shusheng.cobblemarket.util.TextUtil.truncateString(
-                "${Text.translatable("cobblemarket.buy_order.item_label").string}: $label",
+                "${Text.translatable("cobblemarket.buy_order.item_label").string}$label",
                 132
             )
         ))
@@ -2660,7 +2650,7 @@ class BuyOrderScreen(
     private fun updateDeliverVariantButton() {
         val v = deliverVariant
         val label = if (v != null) {
-            "${Text.translatable("cobblemarket.buy_order.variant_select").string}: ${com.shusheng.cobblemarket.util.TextUtil.truncateString(v.name.string, 46)}"
+            "${Text.translatable("cobblemarket.buy_order.variant_select_label").string}${com.shusheng.cobblemarket.util.TextUtil.truncateString(v.name.string, 46)}"
         } else {
             Text.translatable("cobblemarket.buy_order.variant_select").string
         }
@@ -2677,7 +2667,7 @@ class BuyOrderScreen(
     private fun updateDeliverSelectButton() {
         val p = deliverSelectedPokemon
         val label = if (p != null) {
-            "${Text.translatable("cobblemarket.buy_order.select_pokemon").string}: ${com.shusheng.cobblemarket.util.TextUtil.truncateString(speciesDisplay(p), 60)}"
+            "${Text.translatable("cobblemarket.buy_order.select_pokemon_label").string}${com.shusheng.cobblemarket.util.TextUtil.truncateString(speciesDisplay(p), 60)}"
         } else {
             Text.translatable("cobblemarket.buy_order.select_pokemon").string
         }

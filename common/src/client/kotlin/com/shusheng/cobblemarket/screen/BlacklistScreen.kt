@@ -617,7 +617,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
     private fun formButtonText() = Text.literal(
         com.shusheng.cobblemarket.util.TextUtil.truncateString(
-            "${Text.translatable("cobblemarket.blacklist.form").string}: ${formOptions.getOrNull(formIndex)?.label ?: ""}",
+            "${Text.translatable("cobblemarket.blacklist.form").string}${formOptions.getOrNull(formIndex)?.label ?: ""}",
             132
         )
     )
@@ -869,7 +869,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             else ""
         itemSelectButton?.setMessage(Text.literal(
             com.shusheng.cobblemarket.util.TextUtil.truncateString(
-                "${Text.translatable("cobblemarket.blacklist.item_label").string}: $label",
+                "${Text.translatable("cobblemarket.blacklist.item_label").string}$label",
                 132
             )
         ))
