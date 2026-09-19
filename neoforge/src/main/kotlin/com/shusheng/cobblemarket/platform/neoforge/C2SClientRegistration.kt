@@ -39,7 +39,11 @@ import com.shusheng.cobblemarket.network.ForceCancelAuctionPayload
 import com.shusheng.cobblemarket.network.ForceCancelBuyOrderPayload
 import com.shusheng.cobblemarket.network.MarkPointOrderPaidPayload
 import com.shusheng.cobblemarket.network.PlaceBidPayload
+import com.shusheng.cobblemarket.network.CreatePointCodesPayload
 import com.shusheng.cobblemarket.network.RedeemPointCodePayload
+import com.shusheng.cobblemarket.network.PurgePointCodesPayload
+import com.shusheng.cobblemarket.network.RequestPointCodesPayload
+import com.shusheng.cobblemarket.network.RevokePointCodePayload
 import com.shusheng.cobblemarket.network.RejectPendingDeliverPayload
 import com.shusheng.cobblemarket.network.RejectPointOrderPayload
 import com.shusheng.cobblemarket.network.RemoveItemBlacklistPayload
@@ -149,6 +153,11 @@ fun registerClientC2S() {
         c2s(registrar, MarkPointOrderPaidPayload.ID, MarkPointOrderPaidPayload.CODEC)
         c2s(registrar, PlaceBidPayload.ID, PlaceBidPayload.CODEC)
         c2s(registrar, RedeemPointCodePayload.ID, RedeemPointCodePayload.CODEC)
+        // ⚠ 兑换码管理三个包：NeoForge 必须在这里登记，漏了会在协商阶段直接断连（方案风险清单第 5 条）
+        c2s(registrar, CreatePointCodesPayload.ID, CreatePointCodesPayload.CODEC)
+        c2s(registrar, PurgePointCodesPayload.ID, PurgePointCodesPayload.CODEC)
+        c2s(registrar, RequestPointCodesPayload.ID, RequestPointCodesPayload.CODEC)
+        c2s(registrar, RevokePointCodePayload.ID, RevokePointCodePayload.CODEC)
         c2s(registrar, RejectPendingDeliverPayload.ID, RejectPendingDeliverPayload.CODEC)
         c2s(registrar, RemoveItemBlacklistPayload.ID, RemoveItemBlacklistPayload.CODEC)
         c2s(registrar, RemoveItemPriceLimitPayload.ID, RemoveItemPriceLimitPayload.CODEC)

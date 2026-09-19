@@ -2,11 +2,18 @@ package com.shusheng.cobblemarket.network
 
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
+import com.shusheng.cobblemarket.market.BanState
+import com.shusheng.cobblemarket.permission.MarketPermissions
+import com.shusheng.cobblemarket.util.RequestThrottle
 import com.shusheng.cobblemarket.config.ShopTier
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.PayQrImage
+import com.shusheng.cobblemarket.currency.PointCodeState
+import com.shusheng.cobblemarket.currency.PointCodes
 import com.shusheng.cobblemarket.currency.PointOrderNumbers
+import com.shusheng.cobblemarket.currency.PointsAuditLogger
+import com.shusheng.cobblemarket.currency.PointsLogType
 import com.shusheng.cobblemarket.currency.PointOrderState
 import com.shusheng.cobblemarket.currency.PointRedeemService
 import com.shusheng.cobblemarket.currency.PointShopResult
@@ -18,12 +25,14 @@ import com.shusheng.cobblemarket.platform.onPlayerJoin
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
+import com.shusheng.cobblemarket.util.PersistHelper
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
 import net.minecraft.network.packet.CustomPayload
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.text.Text
+import java.io.File
 
 /**
  * 兑换码输入上限：外部码 32 位按 4 位分组后是 39 字符（32 + 7 个连字符），这里留一倍余量。
@@ -625,6 +634,170 @@ private const val MAX_TIER_NAME_LENGTH = 32
 /** 文件名长度上限 */
 private const val MAX_FILE_NAME_LENGTH = 128
 
+// ── C2S：兑换码管理（生成 / 列表 / 作废）—— 与 `/market points code …` 命令同一批内核 ──
+
+/** 生成请求：字段与命令 `code create <amount> <count> <uses> [days] [bound]` 一一对应 */
+data class CreatePointCodesPayload(
+    val amount: Long,
+    val count: Int,
+    val uses: Int,
+    /** 有效期（天）；≤0 = 永久 */
+    val days: Int,
+    /** 空串 = 不绑定；填了则解析成玩家，解析不到即拒绝 */
+    val boundName: String
+) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<CreatePointCodesPayload>(CobbleMarket.id("create_point_codes"))
+        val CODEC: PacketCodec<PacketByteBuf, CreatePointCodesPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeLong(p.amount); b.writeVarInt(p.count); b.writeVarInt(p.uses)
+                b.writeVarInt(p.days); b.writeString(p.boundName)
+            },
+            { b ->
+                CreatePointCodesPayload(
+                    b.readLong(), b.readVarInt(), b.readVarInt(), b.readVarInt(), b.readString()
+                )
+            }
+        )
+    }
+}
+
+/**
+ * 生成结果。**≤10 张直接回显全部码，>10 张写文件只回路径** —— 方案定的规矩：
+ * 码 = 钱，一大串糊在界面里既看不清、也容易被截图外传。
+ */
+data class PointCodesCreatedPayload(
+    val success: Boolean,
+    /** 直接回显的码（空 = 走文件） */
+    val codes: List<String>,
+    /** 写入的文件路径（空 = 直接回显） */
+    val filePath: String,
+    val message: Text
+) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<PointCodesCreatedPayload>(CobbleMarket.id("point_codes_created"))
+        val CODEC: PacketCodec<PacketByteBuf, PointCodesCreatedPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeBoolean(p.success)
+                b.writeVarInt(p.codes.size); p.codes.forEach { b.writeString(it) }
+                b.writeString(p.filePath)
+                net.minecraft.text.TextCodecs.PACKET_CODEC.encode(b, p.message)
+            },
+            { b ->
+                PointCodesCreatedPayload(
+                    b.readBoolean(),
+                    (0 until b.readVarInt()).map { b.readString() },
+                    b.readString(),
+                    net.minecraft.text.TextCodecs.PACKET_CODEC.decode(b)
+                )
+            }
+        )
+    }
+}
+
+/**
+ * 列表请求。
+ *
+ * ⚠ 列表**含已用完/已过期的码**（由界面标状态）——命令版 `code list` 只列可用的，
+ * 界面需要更全：服主得看得见"哪些已经兑完了"，否则会以为码丢了。
+ */
+class RequestPointCodesPayload : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<RequestPointCodesPayload>(CobbleMarket.id("request_point_codes"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestPointCodesPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestPointCodesPayload() }
+        )
+    }
+}
+
+/**
+ * 一条码（列表用）。
+ *
+ * ⚠ `code` 是**完整码**：行内只显示前缀防截图外泄，但每行旁边的**复制按钮要用完整码** ——
+ * 所以完整值必须下发（管理员本来就有权限，且不发就没法复制）。
+ */
+data class PointCodeInfo(
+    val code: String,
+    val amount: Long,
+    val remainingUses: Int,
+    val totalUses: Int,
+    /** 0 = 永久 */
+    val expiresAt: Long,
+    /** 空 = 不绑定 */
+    val boundName: String,
+    val createdBy: String,
+    val createdAt: Long
+) {
+    fun write(buf: PacketByteBuf) {
+        buf.writeString(code)
+        buf.writeLong(amount)
+        buf.writeVarInt(remainingUses)
+        buf.writeVarInt(totalUses)
+        buf.writeLong(expiresAt)
+        buf.writeString(boundName)
+        buf.writeString(createdBy)
+        buf.writeLong(createdAt)
+    }
+
+    companion object {
+        fun read(buf: PacketByteBuf) = PointCodeInfo(
+            code = buf.readString(),
+            amount = buf.readLong(),
+            remainingUses = buf.readVarInt(),
+            totalUses = buf.readVarInt(),
+            expiresAt = buf.readLong(),
+            boundName = buf.readString(),
+            createdBy = buf.readString(),
+            createdAt = buf.readLong()
+        )
+    }
+}
+
+data class PointCodesPayload(val entries: List<PointCodeInfo>) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<PointCodesPayload>(CobbleMarket.id("point_codes"))
+        val CODEC: PacketCodec<PacketByteBuf, PointCodesPayload> = PacketCodec.of(
+            { p, b -> b.writeVarInt(p.entries.size); p.entries.forEach { it.write(b) } },
+            { b -> PointCodesPayload((0 until b.readVarInt()).map { PointCodeInfo.read(b) }) }
+        )
+    }
+}
+
+/** 一键清理**已失效**的码（用完 / 过期；还能兑的一张都不动）。不可逆，客户端有二次确认 */
+class PurgePointCodesPayload : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<PurgePointCodesPayload>(CobbleMarket.id("purge_point_codes"))
+        val CODEC: PacketCodec<PacketByteBuf, PurgePointCodesPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); PurgePointCodesPayload() }
+        )
+    }
+}
+
+/** 作废一张码（不可逆，客户端有二次确认） */
+data class RevokePointCodePayload(val code: String) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<RevokePointCodePayload>(CobbleMarket.id("revoke_point_code"))
+        val CODEC: PacketCodec<PacketByteBuf, RevokePointCodePayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.code) },
+            { b -> RevokePointCodePayload(b.readString()) }
+        )
+    }
+}
+
 /**
  * **RP 网络层**（GUI 侧）。
  *
@@ -671,6 +844,9 @@ object PointsNetwork {
         }
 
         registerS2CType(PointsStatusPayload.ID, PointsStatusPayload.CODEC)
+        // 兑换码管理（生成结果 / 列表）：漏注册客户端会收不到（静默无反应）
+        registerS2CType(PointCodesCreatedPayload.ID, PointCodesCreatedPayload.CODEC)
+        registerS2CType(PointCodesPayload.ID, PointCodesPayload.CODEC)
 
         // ── RP 市场配置（服务器配置界面的「RP 市场」入口；⚠ 仅 OP，不下放任何节点）──
 
@@ -938,6 +1114,154 @@ object PointsNetwork {
                 }
             }
         }
+        // ── 兑换码管理（生成 / 列表 / 作废）──
+        // 与命令侧共用 PointCodeState，不另写一套发放逻辑（方案风险清单第 12 条）。
+        // 权限用 POINTS 节点（能印钞的节点，与命令的 OP 要求同级敏感）。
+
+        registerC2S(CreatePointCodesPayload.ID, CreatePointCodesPayload.CODEC) { payload, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS)) return@registerC2S
+            if (!RequestThrottle.allow(player.uuid, "create_point_codes", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute {
+                // 服务端是权威：界面也钳，但伪造客户端可能直接发包
+                val count = payload.count.coerceIn(1, MAX_CODE_BATCH)
+                if (payload.amount <= 0 || payload.uses <= 0 || payload.days < 0) {
+                    sendToPlayer(player, PointCodesCreatedPayload(false, emptyList(), "", Text.translatable("cobblemarket.points.invalid_amount")))
+                    return@execute
+                }
+                val now = System.currentTimeMillis()
+                val expiresAt = if (payload.days <= 0) null else now + payload.days * 24L * 60 * 60 * 1000
+                // 绑定玩家：与命令同一条解析路径（离线也能绑定，名字唯一即可）
+                var boundUuid: java.util.UUID? = null
+                var boundNameResolved: String? = null
+                val boundRaw = payload.boundName.trim()
+                if (boundRaw.isNotEmpty()) {
+                    val resolved = BanState.resolvePlayer(server, boundRaw)
+                    if (resolved == null) {
+                        sendToPlayer(player, PointCodesCreatedPayload(false, emptyList(), "", Text.translatable("cobblemarket.ban.player_not_found", boundRaw)))
+                        return@execute
+                    }
+                    boundUuid = resolved.first
+                    boundNameResolved = resolved.second
+                }
+                val state = PointCodeState.get(server)
+                val created = mutableListOf<String>()
+                repeat(count) {
+                    state.create(payload.amount, payload.uses, expiresAt, player.name.string, boundUuid, boundNameResolved, now)
+                        ?.let { created.add(it.code) }
+                }
+                if (created.isEmpty()) {
+                    sendToPlayer(player, PointCodesCreatedPayload(false, emptyList(), "", Text.translatable("cobblemarket.points.code_create_failed")))
+                    return@execute
+                }
+                // 生成码不动任何人的余额（余额列写 0）：单记 CODE_CREATE，不污染「发放」口径（照命令侧）
+                created.forEach { code ->
+                    try {
+                        PointsAuditLogger.log(
+                            PointsLogType.CODE_CREATE, boundUuid ?: java.util.UUID(0, 0), boundNameResolved ?: "-",
+                            payload.amount * payload.uses, 0, player.name.string,
+                            "生成兑换码 ${PointCodes.format(code)}（面额 ${payload.amount} × ${payload.uses} 次）"
+                        )
+                    } catch (e: Exception) {
+                        CobbleMarket.LOGGER.warn("Failed to audit point code create: {}", e.message)
+                    }
+                }
+                PersistHelper.requestSave(server)
+                val sizeMsg = Text.translatable("cobblemarket.points.code_created", created.size)
+                // ≤10 张直接回显；更多写文件只回路径（码 = 钱，一串糊在界面里看不清也易外传）
+                if (created.size <= INLINE_CODE_LIMIT) {
+                    sendToPlayer(player, PointCodesCreatedPayload(true, created, "", sizeMsg))
+                } else {
+                    val path = writeCodesFile(created, payload.amount, payload.uses, expiresAt, boundNameResolved)
+                    sendToPlayer(
+                        player,
+                        PointCodesCreatedPayload(
+                            true, emptyList(), path ?: "",
+                            if (path == null) Text.translatable("cobblemarket.points.code_file_failed") else sizeMsg
+                        )
+                    )
+                }
+            }
+        }
+
+        registerC2S(RequestPointCodesPayload.ID, RequestPointCodesPayload.CODEC) { _, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS)) return@registerC2S
+            if (!RequestThrottle.allow(player.uuid, "request_point_codes", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute {
+                // 全量下发（含用完/过期的，界面标状态），按创建时间倒序：最新的在最上面
+                val entries = PointCodeState.get(server).all()
+                    .sortedByDescending { it.createdAt }
+                    .map {
+                        PointCodeInfo(
+                            code = it.code,
+                            amount = it.amount,
+                            remainingUses = it.remainingUses,
+                            totalUses = it.totalUses,
+                            expiresAt = it.expiresAt ?: 0L,
+                            boundName = it.boundPlayerName ?: "",
+                            createdBy = it.createdBy,
+                            createdAt = it.createdAt
+                        )
+                    }
+                sendToPlayer(player, PointCodesPayload(entries))
+            }
+        }
+
+        registerC2S(PurgePointCodesPayload.ID, PurgePointCodesPayload.CODEC) { _, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS)) return@registerC2S
+            if (!RequestThrottle.allow(player.uuid, "purge_point_codes", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val state = PointCodeState.get(server)
+                val now = System.currentTimeMillis()
+                // 只删**已经不能再用**的（用完 / 过期）—— 还能兑的一张都不动
+                val dead = state.all().filter { !it.isUsable(now) }
+                dead.forEach { state.revoke(it.code) }
+                if (dead.isEmpty()) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.points.code.purge_none")))
+                    return@execute
+                }
+                PersistHelper.requestSave(server)
+                try {
+                    // 批量操作记**一条汇总**（逐条写会把审计刷爆）
+                    PointsAuditLogger.log(
+                        PointsLogType.CODE_REVOKE, java.util.UUID(0, 0), "-", 0, 0, player.name.string,
+                        "清理已失效兑换码 ${dead.size} 张"
+                    )
+                } catch (e: Exception) {
+                    CobbleMarket.LOGGER.warn("Failed to audit point code purge: {}", e.message)
+                }
+                sendToPlayer(
+                    player,
+                    MarketResultPayload(true, Text.translatable("cobblemarket.points.code.purged", dead.size))
+                )
+            }
+        }
+
+        registerC2S(RevokePointCodePayload.ID, RevokePointCodePayload.CODEC) { payload, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS)) return@registerC2S
+            if (!RequestThrottle.allow(player.uuid, "revoke_point_code", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            val server = player.server
+            server.execute {
+                // 容错：玩家/界面传来的可能带连字符与大小写差异，先归一化（与兑换同一条路径）
+                val code = PointCodes.normalize(payload.code)
+                if (code == null || !PointCodeState.get(server).revoke(code)) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.points.code_revoke_failed")))
+                    return@execute
+                }
+                PersistHelper.requestSave(server)
+                try {
+                    PointsAuditLogger.log(
+                        PointsLogType.CODE_REVOKE, java.util.UUID(0, 0), "-", 0, 0, player.name.string,
+                        "作废兑换码 ${PointCodes.format(code)}"
+                    )
+                } catch (e: Exception) {
+                    CobbleMarket.LOGGER.warn("Failed to audit point code revoke: {}", e.message)
+                }
+                sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.points.code_revoked")))
+            }
+        }
     }
 
     /**
@@ -1042,5 +1366,44 @@ object PointsNetwork {
                 currencyLabel = CobbleMarketConfig.pointsShopCurrencyLabel
             )
         )
+
+    }
+
+    /** 直接回显的码数量上限：超过就写文件（方案规矩） */
+    private const val INLINE_CODE_LIMIT = 10
+
+    /** 一次生成的张数上限（与命令 `integer(1, 100)` 对齐） */
+    private const val MAX_CODE_BATCH = 100
+
+    /**
+     * 把生成的一批码写成 CSV 并返回**可读的绝对路径**；写失败返回 null（调用方给出提示）。
+     *
+     * 带 UTF-8 BOM：服主多半用 Excel 打开（照 [com.shusheng.cobblemarket.event.TransactionFileLogger] 的惯例）。
+     */
+    private fun writeCodesFile(
+        codes: List<String>,
+        amount: Long,
+        uses: Int,
+        expiresAt: Long?,
+        boundName: String?
+    ): String? = try {
+        val dir = com.shusheng.cobblemarket.platform.configDir().resolve("cobblemarket/points").toFile()
+        dir.mkdirs()
+        val stamp = java.time.LocalDateTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+        val file = File(dir, "codes_$stamp.csv")
+        val expires = if (expiresAt == null) "永久" else java.time.Instant.ofEpochMilli(expiresAt)
+            .atZone(java.time.ZoneId.systemDefault())
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+        file.writeText(
+            "﻿码,面额,次数,有效期,绑定玩家\n" +
+                codes.joinToString("\n") {
+                    "${PointCodes.format(it)},$amount,$uses,$expires,${boundName ?: ""}"
+                } + "\n"
+        )
+        file.absolutePath
+    } catch (e: Exception) {
+        CobbleMarket.LOGGER.warn("Failed to write point codes file: {}", e.message)
+        null
     }
 }

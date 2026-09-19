@@ -67,13 +67,7 @@ class PointsConfigScreen : Screen(
         feeFields.clear()
         feeDialogButtons.clear()
         rebuild()
-        listOfNotNull(
-            backButton, infoButton, addTierButton, saveButton, cancelButton,
-            qrField, defaultIconField, timeoutField, currencyField, feeCfgButton
-        ).forEach { it.visible = false }
-        toggleButtons.values.forEach { it.visible = false }
-        tierEditButtons.forEach { it.visible = false }
-        tierDeleteButtons.forEach { it.visible = false }
+        hideMainControls()
 
         val dx = editDialogX()
         val initial = listOf(pointsPokemonFee, pointsItemFee, pointsAuctionFee, pointsBuyOrderFee)
@@ -170,6 +164,9 @@ class PointsConfigScreen : Screen(
     private val tierEditButtons = mutableListOf<NineSliceButton>()
     private val tierDeleteButtons = mutableListOf<NineSliceButton>()
     private var addTierButton: NineSliceButton? = null
+
+    /** 「兑换码」入口：与「添加档位」同一行右对齐 */
+    private var codeScreenButton: NineSliceButton? = null
     private var saveButton: NineSliceButton? = null
     private var cancelButton: NineSliceButton? = null
     private var backButton: NineSliceButton? = null
@@ -232,6 +229,37 @@ class PointsConfigScreen : Screen(
      */
     private fun dialogH() = minOf(DIALOG_H, height - 16)
     private fun dialogX() = width / 2 - dialogW() / 2
+
+    /**
+     * 弹窗打开时隐藏主界面**全部**控件。
+     *
+     * ⚠ **新增常驻控件必须加进这里**（`codeScreenButton` 就是这么漏的）——
+     * 这个界面原来手写了**三份一模一样的名单**（费率提醒 / 费率编辑 / 档位编辑），
+     * 加「兑换码」入口时三份都没追上，弹窗盖着按钮还是能点（用户实测）。
+     * 恢复不用管：关闭弹窗走 `clearChildren() + init()` 全量重建。
+     */
+    /**
+     * 档位行上两个按钮的布局（相对 [rightX]）。
+     *
+     * ⚠ **必须两处共用**：`buildEditDialog` 建按钮时用一次，`applyTierScroll` 滚动重摆时用一次。
+     * 之前两处各写各的 —— 改了建的那处、滚动那处还是旧值，结果「一滚动按钮就集体右移超出背景」
+     * （用户实测）。宽度按**英文** "Edit"/"Remove" 留，别照中文两个字缩。
+     */
+    private val TIER_EDIT_DX = -60
+    private val TIER_EDIT_W = 32
+    private val TIER_DELETE_DX = -24
+    private val TIER_DELETE_W = 46
+
+    private fun hideMainControls() {
+        listOfNotNull(
+            backButton, infoButton, addTierButton, saveButton, cancelButton,
+            qrField, defaultIconField, timeoutField, currencyField, feeCfgButton,
+            codeScreenButton
+        ).forEach { it.visible = false }
+        toggleButtons.values.forEach { it.visible = false }
+        tierEditButtons.forEach { it.visible = false }
+        tierDeleteButtons.forEach { it.visible = false }
+    }
     private fun dialogY() = height / 2 - dialogH() / 2
     private fun listStartY() = dialogY() + 30
 
@@ -407,12 +435,15 @@ class PointsConfigScreen : Screen(
             val relRow = index - scrollOffset
             val rowY = tierListTop() + relRow * ROW_H
             val visible = relRow in 0 until rows
+            // 宽度按**英文**留：原来的 Edit 26 / Remove 22 是照中文两个字定的，
+            // 英文 "Remove" 要 36px 左右，22px 的按钮直接溢出（用户 2026-09-19 实测）。
+            // 两个按钮**相邻**（间距 4，原来空了 28）、整体右缘不变（只左移 6px，不挤左边的列）
             val edit = NineSliceButton(
-                rightX - 54, rowY, 26, 16, Text.translatable("cobblemarket.price_limit.edit"),
+                rightX + TIER_EDIT_DX, rowY, TIER_EDIT_W, 16, Text.translatable("cobblemarket.price_limit.edit"),
                 { openTierDialog(index) }
             )
             val delete = NineSliceButton(
-                rightX, rowY, 22, 16, Text.translatable("cobblemarket.price_limit.remove"),
+                rightX + TIER_DELETE_DX, rowY, TIER_DELETE_W, 16, Text.translatable("cobblemarket.price_limit.remove"),
                 { tiers.removeAt(index); markDirtyAndRebuild() }
             )
             // 滚出列表区的行要藏起来：留着会画到别的行/按钮上，还点得到
@@ -432,6 +463,13 @@ class PointsConfigScreen : Screen(
         val tierAddY =
             if (tierListBottom() < tierAreaMax()) tierListBottom() + BOTTOM_GAP
             else dialogY() + dialogH() - BOTTOM_BUTTON_BOTTOM - BOTTOM_GAP - TIER_ADD_H
+        // 兑换码管理入口：与「添加档位」**同一行右对齐**（对称）——不新增行、不挤压档位列表
+        codeScreenButton = NineSliceButton(
+            dx + dialogW() - 10 - 70, tierAddY, 70, TIER_ADD_H,
+            Text.translatable("cobblemarket.points.config.code_entry"), { client?.setScreen(PointsCodeScreen()) }
+        )
+        addDrawableChild(codeScreenButton)
+
         addTierButton = NineSliceButton(
             dx + 10, tierAddY, 70, TIER_ADD_H,
             Text.translatable("cobblemarket.points.config.add_tier"), { openTierDialog(-1) }
@@ -482,13 +520,7 @@ class PointsConfigScreen : Screen(
         // **弹窗打开时下层控件全部隐藏**（全模组弹窗惯例：不隐藏的话它们会透过遮罩显形、还能被点到）。
         // ⚠ 顺序不能反：必须放在 rebuild() **之后** —— rebuild 会把下层控件重新建出来且 visible=true
         // ⚠ 这是一份**手写列表**：界面新增控件时三处都要追（这里、openFeeDialog、mouseClicked 的失焦名单）
-        listOfNotNull(
-            backButton, infoButton, addTierButton, saveButton, cancelButton,
-            qrField, defaultIconField, timeoutField, currencyField, feeCfgButton
-        ).forEach { it.visible = false }
-        toggleButtons.values.forEach { it.visible = false }
-        tierEditButtons.forEach { it.visible = false }
-        tierDeleteButtons.forEach { it.visible = false }
+        hideMainControls()
         val cx = width / 2
         val by = editDialogY() + EDIT_H - 26
         addDrawableChild(
@@ -554,8 +586,13 @@ class PointsConfigScreen : Screen(
     /** 按当前滚动位置重排档位行上的两个按钮（含可见性） */
     private fun applyTierScroll() {
         val rightX = dialogX() + dialogW() - 10 - 22
-        tierEditButtons.forEachIndexed { index, button -> placeTierRowButton(index, button, rightX - 54) }
-        tierDeleteButtons.forEachIndexed { index, button -> placeTierRowButton(index, button, rightX) }
+        // ⚠ 走与 buildEditDialog 同一组常量（两处各写各的就会「滚动后按钮跳位」）
+        tierEditButtons.forEachIndexed { index, button ->
+            placeTierRowButton(index, button, rightX + TIER_EDIT_DX)
+        }
+        tierDeleteButtons.forEachIndexed { index, button ->
+            placeTierRowButton(index, button, rightX + TIER_DELETE_DX)
+        }
     }
 
     private fun placeTierRowButton(index: Int, button: NineSliceButton, x: Int) {
@@ -583,14 +620,9 @@ class PointsConfigScreen : Screen(
     }
 
     private fun buildEditDialog() {
-        // **弹窗打开时下层控件全部隐藏**（全模组弹窗惯例：不隐藏的话它们会透过遮罩显形、还能被点到）
-        listOfNotNull(
-            backButton, infoButton, addTierButton, saveButton, cancelButton,
-            qrField, defaultIconField, timeoutField, currencyField
-        ).forEach { it.visible = false }
-        toggleButtons.values.forEach { it.visible = false }
-        tierEditButtons.forEach { it.visible = false }
-        tierDeleteButtons.forEach { it.visible = false }
+        // 弹窗打开时下层控件全部隐藏（走统一入口，见 hideMainControls 的注释：
+        // 这里原来是手写的第三份名单，且**漏了 feeCfgButton** —— 用户实测「费率配置按钮透过来」）
+        hideMainControls()
 
         val dx = editDialogX()
         val fieldX = dx + 70
