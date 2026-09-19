@@ -210,7 +210,8 @@ class SellSelectScreen(
             tooltip = Text.translatable("cobblemarket.gui.back")
         ))
 
-        // Row 3 (y=72)：间距统一 4px，整行排满到面板右缘（lx+294），各模式各自铺满不留空
+        // Row 3 (y=72)：间距统一 4px，整行排满到**内容区右缘（lx+296）** —— 与右上角返回按钮的
+        // 右缘竖直对齐（精灵市场的行内按钮同样排到 296），各模式各自铺满不留空
         //   交付/分享：闪光30 | 公母24 | 属性58 | 特训80 | 选择84
         //   上架：闪光30 | 公母24 | 属性58 | 特训60 | 价格56 | 货币20(紧贴价格框) | 上架24
         //         （特训紧跟在属性后面、价格框之前；货币按钮**贴着**价格框 —— 视觉上像
@@ -255,11 +256,11 @@ class SellSelectScreen(
         priceField?.visible = !noPriceField
 
         // 上架按钮改成**纯图标**（sell.png，8×8）后很窄，腾出的位置给了货币切换按钮 ——
-        // 「特训 126~186 │ 价格 190~246 │ 货币 246~266（贴着价格框）│ 上架 270~294」。
-        // 交付/分享模式没有价格框、也就没有货币按钮，照旧用文字按钮与原位置（210 起、84 宽）
+        // 「特训 126~186 │ 价格 190~246 │ 货币 246~266（贴着价格框）│ 上架 270~296」。
+        // 交付/分享模式没有价格框、也就没有货币按钮，照旧用文字按钮与原位置（210 起、86 宽）
         sellBtn = NineSliceButton(
             if (noPriceField) lx + 210 else lx + 270, btnY,
-            if (noPriceField) 84 else 24, 20,
+            if (noPriceField) 86 else 26, 20,
             if (noPriceField) {
                 Text.translatable(
                     if (deliverMode) "cobblemarket.sell.deliver_select" else "cobblemarket.share.button"
