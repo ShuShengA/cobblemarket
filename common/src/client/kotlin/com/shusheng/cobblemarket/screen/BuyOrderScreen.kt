@@ -42,11 +42,20 @@ import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
 import net.minecraft.item.tooltip.TooltipType
 import net.minecraft.registry.Registries
+import net.minecraft.text.MutableText
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import java.util.UUID
 import com.shusheng.cobblemarket.client.drawItemWithBar
+import com.shusheng.cobblemarket.client.PointsStateCache
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
+import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
+import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.client.amountWithUnit
+import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.MarketCurrency
 
 /**
  * 求购单：玩家发布"我要买"订单（精灵/物品+单价区间），全服可见；
@@ -68,6 +77,16 @@ class BuyOrderScreen(
     private val rowHeight = 24
 
     private var currentTab = initialTab.coerceIn(0, 1) // 0 = 全部, 1 = 我的
+
+    /**
+     * 列表在查哪个币种（货币切换按钮控制）—— **只决定查什么，不参与渲染**：
+     * 显示单位一律读订单自己的 [BuyOrderEntry.isPoints]，否则任何一处漏改就会把 RP 求购单标成 ₽。
+     */
+    private var currency = consumeReturnCurrency()
+
+    /** 货币切换按钮（RP 总开关关着时 = null，压根没建；照市场/拍卖场） */
+    private var currencyButton: NineSliceButton? = null
+
     private var entries = listOf<BuyOrderEntry>()
     // 过滤结果缓存：数据/搜索变化时重建，render 每帧只读（避免每帧全量 filter+sort）
     private var displayCache = listOf<BuyOrderEntry>()
@@ -100,6 +119,18 @@ class BuyOrderScreen(
 
     // ── 创建对话框状态 ──
     private var createTab = 0 // 0 = 精灵, 1 = 物品
+
+    /**
+     * 这一单收哪种钱。**与列表的 [currency] 是两个独立状态** —— 共用一个字段会让「在弹窗里改币种」
+     * 顺手把背后的列表也切走（视觉上很突兀）。只在**打开弹窗时**继承当前视图的币种：
+     * 看着 RP 单点发布，默认就发 RP 单（单位看错会让价格量级差好几个数量级）。
+     *
+     * ⚠ 请求里发的是 `createCurrency.name`，服务端校验后才写进订单对象，此后一律读对象。
+     */
+    private var createCurrency = MarketCurrency.PRIMARY
+
+    /** 创建对话框里的货币切换按钮（RP 总开关关着时 = null，压根不建） */
+    private var createCurrencyButton: NineSliceButton? = null
     private var createSpeciesField: TextFieldWidget? = null
     private var createMinPriceField: TextFieldWidget? = null
     private var createMaxPriceField: TextFieldWidget? = null
@@ -160,6 +191,9 @@ class BuyOrderScreen(
     private var reviewEntry: BuyOrderEntry? = null
     /** 待定位的求购单（聊天点击直达）：列表数据每次更新后尝试打开确认交付弹窗，成功即清除 */
     private var pendingReviewLocate: java.util.UUID? = initialReviewOrderId
+
+    /** 直达定位是否已经试过「换到另一种币种再找」——防止找不到时来回切币种 */
+    private var reviewLocateSwitched = false
     /** 确认交付弹窗物品词条行（附魔/名称等，打开时从 itemNbt 重建一次；去首行物品名）与额外行数（布局下移用） */
     private var reviewItemTooltipLines: List<Text> = emptyList()
     /** Shift 展开的高级词条（弹窗打开时双份构建，渲染按 Shift 状态切换） */
@@ -336,10 +370,18 @@ class BuyOrderScreen(
         return "${d}d${hh}h"
     }
 
-    // 行内价格区间用缩写（与物品市场网格同款 k/M/B）；完整价格见悬停面板
-    private fun priceRangeText(entry: BuyOrderEntry): String =
+    /**
+     * 行内价格区间用缩写（与物品市场网格同款 k/M/B）；完整价格见悬停面板。
+     *
+     * 单位按**订单自己的币种**（`entry.isPoints`），走统一入口 `amountWithUnit` —— 别各写各的
+     * `if (isPoints)`，漏一处就会把 RP 求购单标成 ₽。返回 MutableText 而不是 String：
+     * RP 单位是**字体字形**，转成 String 再拼接会把字体丢掉（图标变豆腐块），只能用 Text 拼。
+     */
+    private fun priceRangeText(entry: BuyOrderEntry): MutableText = amountWithUnit(
         "${com.shusheng.cobblemarket.client.formatPriceShort(entry.minPrice)}~" +
-        "${com.shusheng.cobblemarket.client.formatPriceShort(entry.maxPrice)}${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
+            com.shusheng.cobblemarket.client.formatPriceShort(entry.maxPrice),
+        entry.isPoints, "", inline = true
+    )
 
     // 精灵单固定 1 只，不显示数量（空串 = 无数量段）
     private fun countText(entry: BuyOrderEntry): String =
@@ -380,6 +422,25 @@ class BuyOrderScreen(
             texH = BUY_ORDER_BUTTON_TEX_H
         )
         addDrawableChild(backButton)
+
+        // 货币切换按钮（返回按钮左侧 4px）：切换**看哪个币种的求购单**。
+        // ⚠ 与市场/拍卖场同一个按钮、同一套逻辑，只是本界面的返回按钮右缘内缩了 12px，
+        //   所以跟着它取 panelWidth-86（那四处是 -74）—— 对齐的是返回按钮，不是绝对值。
+        // ⚠ RP 总开关关着 → 整个按钮不建（那时 RP 系统停摆，留个点不动的灰按钮更难看）。
+        //   玩家端**不受「玩家间 RP 交易」开关约束**：买家要能看到并关掉自己的存量 RP 求购单
+        //   （取回冻结金）、卖家要能看到自己的货被退回；交付 / 接受仍由服务端拦（pointsGateBlocked）
+        currencyButton = if (PointsStateCache.enabled) {
+            NineSliceButton(
+                leftX + panelWidth - 86, 13, 20, 16,
+                Text.literal(""), { onCurrencyClick() },
+                iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
+                iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
+                tooltip = Text.translatable("cobblemarket.gui.currency_switch", inlineCurrencyUnit(), CurrencyService.pointsIcon())
+            ).also {
+                updateCurrencyButton(it, currency == MarketCurrency.POINTS)
+                addDrawableChild(it)
+            }
+        } else null
 
         // 管理员模式：无 tab、无发布按钮，只有列表 + 下架
         if (!adminMode) {
@@ -432,8 +493,44 @@ class BuyOrderScreen(
         searchField?.text = savedSearch
 
         // 不重置 scrollOffset：交付弹窗关闭/resize 重建时保留浏览位置（switchTab 才显式归零）
-        sendToServer(RequestBuyOrderListPayload())
+        sendToServer(RequestBuyOrderListPayload(currency.name))
         rebuildDisplayList()
+    }
+
+    /** 点货币按钮：列表是**查看**用途，不拦开关（买家要能切过去关掉存量 RP 单取回冻结金） */
+    private fun onCurrencyClick() {
+        currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
+        currencyButton?.let { updateCurrencyButton(it, currency == MarketCurrency.POINTS) }
+        // 本地先按新币种过一遍（旧币种条目立刻消失），回到顶部，再向服务端要新币种的全量列表。
+        // ⚠ 本界面没有分页，「重置页码」对应的就是滚动位置归零
+        rebuildDisplayList()
+        scrollOffset = 0
+        hoveredRow = -1
+        rebuildRowButtons()
+        sendToServer(RequestBuyOrderListPayload(currency.name))
+    }
+
+    /** 刷新货币按钮外观：主货币显示 `₽`，RP 显示图标（与市场/拍卖/上架界面同一套口径）。
+     *  列表按钮与创建对话框按钮共用（[points] 由各自的币种状态传入） */
+    private fun updateCurrencyButton(btn: NineSliceButton, points: Boolean) {
+        btn.setMessage(Text.literal(if (points) "" else "₽"))
+        btn.iconLeft = if (points) POINTS_SYMBOL_TEXTURE else null
+    }
+
+    /** 点创建对话框的货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（**创建是拦截点**，与上架/拍卖创建一致） */
+    private fun onCreateCurrencyClick() {
+        if (!PointsStateCache.marketEnabled) {
+            playFailSound()
+            client?.player?.sendMessage(
+                // ⚠ 提醒类消息用红色，和普通反馈区分开（图标自带白色，不受影响）
+                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            return
+        }
+        createCurrency = if (createCurrency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
+        createCurrencyButton?.let { updateCurrencyButton(it, createCurrency == MarketCurrency.POINTS) }
     }
 
     private fun updateTabButtons() {
@@ -462,7 +559,7 @@ class BuyOrderScreen(
         cacheIcons()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayCount() - getMaxVisibleRows()))
         rebuildRowButtons()
-        tryLocateInitialReview()
+        tryLocateInitialReview(allowSwitch = true)
         // 交付流程回传：从精灵选择界面返回后恢复交付弹窗并带入所选精灵
         val orderId = pendingDeliverOrderId ?: return
         pendingDeliverOrderId = null
@@ -501,13 +598,26 @@ class BuyOrderScreen(
         tryLocateInitialReview()
     }
 
-    /** 聊天点击直达：列表数据就绪后定位求购单并弹其确认交付弹窗 */
-    private fun tryLocateInitialReview() {
-        pendingReviewLocate?.let { id ->
-            entries.find { it.id == id }?.let { e ->
-                pendingReviewLocate = null
-                openReviewDialog(e)
-            }
+    /**
+     * 聊天点击直达：列表数据就绪后定位求购单并弹其确认交付弹窗。
+     *
+     * [allowSwitch] 只在**服务端全量列表**到达时为 true：当前币种里没有 → 那张单多半在另一种币种
+     * （直达时界面默认看主货币），换过去再找一次，仍然没有就放弃（单已结束 / 被强制下架）。
+     * 增量事件不能触发切换与放弃 —— 等待另一个币种列表的途中飘进来一条事件就会把定位搅黄。
+     */
+    private fun tryLocateInitialReview(allowSwitch: Boolean = false) {
+        val id = pendingReviewLocate ?: return
+        entries.find { it.id == id }?.let { e ->
+            pendingReviewLocate = null
+            openReviewDialog(e)
+            return
+        }
+        if (!allowSwitch) return
+        if (!reviewLocateSwitched) {
+            reviewLocateSwitched = true
+            onCurrencyClick()
+        } else {
+            pendingReviewLocate = null
         }
     }
 
@@ -540,6 +650,9 @@ class BuyOrderScreen(
     private fun rebuildDisplayList() {
         val query = searchField?.text?.trim()?.takeIf { it.isNotEmpty() }
         displayCache = entries.filter { entry ->
+            // 币种先行：服务端列表已按币种过滤，但**增量事件（NEW/UPDATED/CLOSED）是全币种广播**的，
+            // 不在这里再筛一道，别的币种的求购单就会飘进当前列表（照拍卖场）
+            if (entry.isPoints != (currency == MarketCurrency.POINTS)) return@filter false
             // 管理员模式显示全部（无「我的」过滤）
             if (adminMode || currentTab == 0) true else isMine(entry)
         }.filter { entry ->
@@ -613,6 +726,7 @@ class BuyOrderScreen(
         // 隐藏下层控件（弹窗打开期间不可交互；closeForceCancelDialog 的 init 重建会恢复）
         searchField?.visible = false
         backButton?.visible = false
+        currencyButton?.visible = false
         rowButtons.forEach { it.visible = false }
         val centerX = width / 2
         val dialogY = height / 2 - 85
@@ -837,7 +951,9 @@ class BuyOrderScreen(
             // 待确认时隐藏（锁定期展示无意义，由「待确认」标记取代，避免与标记文字重合）
             if (entry.pending == null) {
                 val countStr = countText(entry)
-                val rightText = if (countStr.isEmpty()) priceRangeText(entry) else "$countStr  ${priceRangeText(entry)}"
+                // ⚠ 必须用 Text 拼、不能用字符串模板：RP 单位是字体字形，转 String 会把字体丢掉（图标变豆腐块）
+                val rightText: MutableText = if (countStr.isEmpty()) priceRangeText(entry)
+                    else Text.literal("$countStr  ").append(priceRangeText(entry))
                 // 管理员模式无行按钮，价格区间贴右缘；普通模式给行按钮留位
                 val btnLeft = if (adminMode) rowL + rowW() - 4 else rowL + rowW() - 50
                 context.drawTextWithShadow(textRenderer, rightText, btnLeft - 4 - textRenderer.getWidth(rightText), y + 7, 0xFFAA00)
@@ -972,7 +1088,11 @@ class BuyOrderScreen(
             if (entry.type == "ITEM") quantityLine = lines.size
             // 价格区间：标签默认色，金额段蓝色（2026-08-24 拍板）
             lines.add(Text.translatable("cobblemarket.buy_order.tooltip_price").append(
-                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.minPrice)}~${com.shusheng.cobblemarket.client.formatPrice(entry.maxPrice)}${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GOLD)
+                // 单位按**订单自己的币种**（悬停窗的价与行内同一口径，标错单位就是误导）
+                amountWithUnit(
+                    "${com.shusheng.cobblemarket.client.formatPrice(entry.minPrice)}~${com.shusheng.cobblemarket.client.formatPrice(entry.maxPrice)}",
+                    entry.isPoints, "", inline = true
+                ).formatted(Formatting.GOLD)
             ).asOrderedText() to w)
             // 买家留言区块：分割线夹多行内容（照拍卖规则面板样式），无备注不显示
             if (entry.note.isNotEmpty()) {
@@ -1068,6 +1188,8 @@ class BuyOrderScreen(
     private fun openCreateDialog() {
         // 重置对话框字段（每次打开都是新表单）
         createTab = 0
+        // 币种跟着「当前在看哪种币」——看 RP 单时点发布，默认就发 RP 单（单位对不上会差好几个数量级）
+        createCurrency = currency
         createShinyFilter = PokemonBlacklistEntry.SHINY_ANY
         createHtFilter = PokemonBlacklistEntry.HT_ANY
         previewSpecies = null
@@ -1091,6 +1213,7 @@ class BuyOrderScreen(
         backButton?.visible = false
         createButton?.visible = false
         searchField?.visible = false
+        currencyButton?.visible = false
         tabButtons.forEach { it.visible = false }
         rowButtons.forEach { it.visible = false }
 
@@ -1127,6 +1250,7 @@ class BuyOrderScreen(
         createTabButtons.clear()
         createConfirmButton?.let { remove(it) }
         createCancelButton?.let { remove(it) }
+        createCurrencyButton?.let { remove(it) }
         // 候选箭头也在重建之列：重建后可见性要按当前候选数（和页签）恢复
         speciesPrevButton?.let { remove(it) }
         speciesNextButton?.let { remove(it) }
@@ -1164,6 +1288,24 @@ class BuyOrderScreen(
         }
 
         if (createTab == 0) buildPokemonCreateWidgets(dialogY) else buildItemCreateWidgets(dialogY)
+
+        // 货币切换按钮（价格输入框右侧 4px）：与市场/上架/拍卖创建界面同一个按钮、同一套三层拦截。
+        // ⚠ 两个 tab 的价格框位置不同（精灵 tab 的价格行比物品 tab 靠右），按钮跟着各自的价格框右缘走
+        createCurrencyButton = if (PointsStateCache.enabled) {
+            val bx = if (createTab == 0) centerX + 81 else centerX + 70
+            val by = dialogY + (if (createTab == 0) 174 else 106)
+            NineSliceButton(
+                bx, by, 20, 16, Text.literal(""), { onCreateCurrencyClick() },
+                iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
+                iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
+                tooltip = Text.translatable("cobblemarket.gui.currency_switch", inlineCurrencyUnit(), CurrencyService.pointsIcon())
+            ).also {
+                // dimmed = 置灰但**保留可点击性**，点了给失败音 + 提示，比一个"死了"的按钮好懂
+                it.dimmed = !PointsStateCache.marketEnabled
+                updateCurrencyButton(it, createCurrency == MarketCurrency.POINTS)
+                addDrawableChild(it)
+            }
+        } else null
 
         createConfirmButton = NineSliceButton(
             centerX - 85, dialogY + confirmY(), 80, 20,
@@ -1467,9 +1609,13 @@ class BuyOrderScreen(
             // 文字默认色，金额+单位金色（2026-08-24 拍板）
             if (!natureListOpen) {
                 context.drawCenteredTextWithShadow(textRenderer,
+                    // 冻结金额 + 单位合成一个 amountText（单位取创建对话框里选的 createCurrency，
+                    // 词条也随之从 `%d %s` 合并成单个 `%s`，与全项目口径一致）
                     Text.translatable("cobblemarket.buy_order.frozen_hint",
-                        Text.literal(com.shusheng.cobblemarket.client.formatPriceLong((createMaxPriceField?.text?.toIntOrNull() ?: 0).toLong())).formatted(Formatting.GOLD),
-                        Text.literal(com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+                        amountWithUnit(
+                            com.shusheng.cobblemarket.client.formatPriceLong((createMaxPriceField?.text?.toIntOrNull() ?: 0).toLong()),
+                            createCurrency == MarketCurrency.POINTS, "", inline = true
+                        ).formatted(Formatting.GOLD)),
                     centerX, dialogY + 214, 0xFFFFFF)
             }
         } else {
@@ -1491,9 +1637,12 @@ class BuyOrderScreen(
                 val maxPrice = createMaxPriceField?.text?.toIntOrNull() ?: 0
                 val count = createCountField?.text?.toIntOrNull() ?: 0
                 context.drawCenteredTextWithShadow(textRenderer,
+                    // 冻结金额 + 单位合成一个 amountText（单位取 createCurrency，同精灵 tab）
                     Text.translatable("cobblemarket.buy_order.frozen_hint",
-                        Text.literal(com.shusheng.cobblemarket.client.formatPriceLong(maxPrice.toLong() * count)).formatted(Formatting.GOLD),
-                        Text.literal(com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+                        amountWithUnit(
+                            com.shusheng.cobblemarket.client.formatPriceLong(maxPrice.toLong() * count),
+                            createCurrency == MarketCurrency.POINTS, "", inline = true
+                        ).formatted(Formatting.GOLD)),
                     centerX, dialogY + 146, 0xFFFFFF)
             }
         }
@@ -1529,7 +1678,8 @@ class BuyOrderScreen(
                 natureKey = natureOptions.getOrNull(natureIndex)?.first ?: "",
                 minPrice = minPrice,
                 maxPrice = maxPrice,
-                note = createNoteField?.text?.trim().orEmpty()
+                note = createNoteField?.text?.trim().orEmpty(),
+                currency = createCurrency.name
             ))
         } else {
             val count = createCountField?.text?.toIntOrNull() ?: 0
@@ -1540,7 +1690,7 @@ class BuyOrderScreen(
             }
             if (heldItemMode) {
                 // 手持模式：itemId 由服务端读主手决定（含组件快照），客户端只传模式标志
-                sendToServer(CreateItemBuyOrderPayload("", count, minPrice, maxPrice, createNoteField?.text?.trim().orEmpty(), true))
+                sendToServer(CreateItemBuyOrderPayload("", count, minPrice, maxPrice, createNoteField?.text?.trim().orEmpty(), true, currency = createCurrency.name))
             } else {
                 // 优先发送点选项；未点选时取自动匹配首个；无匹配则报错
                 val candidate = matchedItems.getOrNull(selectedItemIndex)
@@ -1559,6 +1709,7 @@ class BuyOrderScreen(
                     note = createNoteField?.text?.trim().orEmpty(),
                     useHeldItem = false,
                     componentsSpec = candidate.componentsSpec,
+                    currency = createCurrency.name,
                 ))
             }
         }
@@ -2072,6 +2223,7 @@ class BuyOrderScreen(
         backButton?.visible = false
         createButton?.visible = false
         searchField?.visible = false
+        currencyButton?.visible = false
         tabButtons.forEach { it.visible = false }
         rowButtons.forEach { it.visible = false }
 
@@ -2259,11 +2411,12 @@ class BuyOrderScreen(
                 centerX, baseY + 10, 0xFFFFFF)
             context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("cobblemarket.buy_order.review_price").append(
-                    Text.literal(com.shusheng.cobblemarket.client.formatPrice(pending.price) + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+                    // 单价按**订单自己的币种**（这是买家验收时看到的价，标错单位就是误导）
+                    amountWithUnit(com.shusheng.cobblemarket.client.formatPrice(pending.price), entry.isPoints, "", inline = true).formatted(Formatting.GOLD)),
                 centerX, baseY + 20, 0xFFFFFF)
             context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("cobblemarket.buy_order.review_total").append(
-                    Text.literal(com.shusheng.cobblemarket.client.formatPriceLong(pending.price.toLong() * pending.count) + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+                    amountWithUnit(com.shusheng.cobblemarket.client.formatPriceLong(pending.price.toLong() * pending.count), entry.isPoints, "", inline = true).formatted(Formatting.GOLD)),
                 centerX, baseY + 30, 0xFFFFFF)
         }
         // 拒绝原因输入框占据原说明行位置（placeholder 已说明用途）
@@ -2302,8 +2455,8 @@ class BuyOrderScreen(
             currencyName = "",
             aspects = (d["aspects"] ?: "").split(",").filter { it.isNotEmpty() },
             marks = (d["marks"] ?: "").split(",").filter { it.isNotEmpty() },
-            // 求购单的币种要等 B6 才做（现在只有主货币）；这里给主货币，B6 改读 pending 自己的币种
-            currency = com.shusheng.cobblemarket.currency.MarketCurrency.PRIMARY.name
+            // 币种跟着**订单**走（pending 挂在订单上，自己没有币种字段）
+            currency = entry.currency
         )
     }
 
@@ -2332,6 +2485,7 @@ class BuyOrderScreen(
         backButton?.visible = false
         createButton?.visible = false
         searchField?.visible = false
+        currencyButton?.visible = false
         tabButtons.forEach { it.visible = false }
         rowButtons.forEach { it.visible = false }
 
@@ -2394,6 +2548,7 @@ class BuyOrderScreen(
                 {
                     val e = deliverEntry ?: return@NineSliceButton
                     pendingDeliverOrderId = e.id
+                    stashReturnCurrency(currency)   // 理由同 openDeliverSelect
                     client?.setScreen(ItemVariantSelectScreen(e.id, e.itemId))
                 },
                 texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -2464,9 +2619,10 @@ class BuyOrderScreen(
         // 订单摘要：名称默认色，价格区间金色（2026-08-24 拍板；区间是单价区间，标注「单价」防误读）
         context.drawCenteredTextWithShadow(textRenderer,
             Text.literal("${entryName(entry)}  ").append(
-                Text.literal(
-                    Text.translatable("cobblemarket.buy_order.price_range_prefix").string + priceRangeText(entry)
-                ).formatted(Formatting.GOLD)),
+                // ⚠ 前缀与价格同样用 Text 拼接（`.string +` 会丢掉 RP 图标的字体）
+                Text.translatable("cobblemarket.buy_order.price_range_prefix")
+                    .append(priceRangeText(entry)).formatted(Formatting.GOLD)
+            ),
             centerX, dialogY + 27, 0xFFFFFF)
 
         // 买家留言（有备注时显示，灰色截断；卖家交付前须知）
@@ -2558,6 +2714,7 @@ class BuyOrderScreen(
     private fun openDeliverSelect() {
         val entry = deliverEntry ?: return
         pendingDeliverOrderId = entry.id
+        stashReturnCurrency(currency)   // 选完精灵回来是新建实例，币种要带回去（否则 RP 单从列表消失）
         client?.setScreen(SellSelectScreen(entry.id))
     }
 
@@ -2714,6 +2871,7 @@ class BuyOrderScreen(
         createNatureButton = null
         createConfirmButton = null
         createCancelButton = null
+        createCurrencyButton = null
         createTabButtons.clear()
         formListButtons.clear()
         abilityListButtons.clear()
@@ -2812,6 +2970,8 @@ class BuyOrderScreen(
         val abilityIndex: Int,
         val natureIndex: Int,
         val selectedItemIndex: Int,
+        /** 玩家在弹窗里选的币种：不存下来的话 resize 重建会回落到列表币种（选择被静默改掉） */
+        val currency: MarketCurrency,
         val texts: Map<String, String>
     )
 
@@ -2826,13 +2986,16 @@ class BuyOrderScreen(
         for (i in 0..5) createIvFields[i]?.let { texts["iv$i"] = it.text }
         return CreateDialogSnapshot(
             createTab, createShinyFilter, createHtFilter,
-            formIndex, abilityIndex, natureIndex, selectedItemIndex, texts
+            formIndex, abilityIndex, natureIndex, selectedItemIndex, createCurrency, texts
         )
     }
 
     private fun restoreCreateDialog(snapshot: CreateDialogSnapshot) {
         openCreateDialog()
         createTab = snapshot.tab
+        // 币种必须在 rebuild 之前恢复：openCreateDialog 会把它重置成「当前列表币种」，
+        // 而按钮外观是在 rebuild 里按 createCurrency 建的
+        createCurrency = snapshot.currency
         rebuildCreateDialogWidgets()
         createShinyFilter = snapshot.shinyFilter
         createHtFilter = snapshot.htFilter
@@ -2941,5 +3104,23 @@ class BuyOrderScreen(
         var pendingDeliverOrderId: UUID? = null
         var pendingDeliverPokemon: PokemonPreview? = null
         var pendingDeliverVariant: ItemStack? = null
+
+        /**
+         * 交付流程往返时暂存的**列表币种**（同理 [pendingDeliverOrderId]）。
+         *
+         * 精灵选择 / 物品形态选择界面回来时是 `BuyOrderScreen()` **新建实例**（成员变量归零）：
+         * 不暂存的话，卖家在 RP 视图下点交付、选完货回来就被踢回主货币列表 ——
+         * 他刚在交付的那张 RP 单直接消失，得手动再切回去。
+         */
+        private var pendingReturnCurrency: MarketCurrency? = null
+
+        /** 跳去选择界面前调用（见 [openDeliverSelect] 与交付弹窗的形态按钮） */
+        fun stashReturnCurrency(currency: MarketCurrency) {
+            pendingReturnCurrency = currency
+        }
+
+        /** 构造时**一次性消费**：其它入口（市场入口 / 聊天直达）拿到的仍是主货币 */
+        private fun consumeReturnCurrency(): MarketCurrency =
+            (pendingReturnCurrency ?: MarketCurrency.PRIMARY).also { pendingReturnCurrency = null }
     }
 }
