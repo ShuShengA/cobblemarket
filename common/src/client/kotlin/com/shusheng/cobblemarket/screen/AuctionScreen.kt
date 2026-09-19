@@ -55,7 +55,14 @@ import com.shusheng.cobblemarket.client.drawItemWithBar
 class AuctionScreen(
     private val initialTab: Int = 0,
     /** 聊天播报点击直达：打开界面后列表到达时自动弹出该拍品的出价弹窗（找不到则静默等待下次刷新） */
-    private val initialBidAuctionId: java.util.UUID? = null
+    private val initialBidAuctionId: java.util.UUID? = null,
+    /**
+     * 聊天播报里**顺带带来的币种**（服务端写入命令第三段）。
+     *
+     * 界面一次只看一种货币：没有它时 RP 拍卖的播报**永远弹不出出价弹窗**（列表里根本没有那一条），
+     * 这也是实测反馈「点聊天框出价没反应」的原因；有了它一次请求命中，与主货币一样快。
+     */
+    private val initialCurrency: MarketCurrency? = null
 ) : Screen(Text.translatable("cobblemarket.auction.title")) {
 
     private val panelWidth = 296
@@ -63,8 +70,9 @@ class AuctionScreen(
 
     private var currentTab = initialTab.coerceIn(0, 2) // 0 = 精灵, 1 = 物品, 2 = 我的
 
-    /** 列表在查哪个币种（货币切换按钮控制）—— **只决定查什么**：显示单位一律读条目自己的 [AuctionEntry.isPoints] */
-    private var currency = MarketCurrency.PRIMARY
+    /** 列表在查哪个币种（货币切换按钮控制）—— **只决定查什么**：显示单位一律读条目自己的 [AuctionEntry.isPoints]。
+     *  聊天播报带来的币种优先（一次命中），否则主货币 */
+    private var currency = initialCurrency ?: MarketCurrency.PRIMARY
 
     /** 货币切换按钮（RP 总开关关着时为 null = 压根没建） */
     private var currencyButton: NineSliceButton? = null
@@ -125,6 +133,9 @@ class AuctionScreen(
     private var bidEntry: AuctionEntry? = null
     /** 待定位的拍品（聊天点击直达）：列表数据每次更新后尝试打开出价弹窗，成功即清除 */
     private var pendingBidLocate: java.util.UUID? = initialBidAuctionId
+
+    /** 直达定位是否已经试过「换到另一种币种再找」——防止找不到时来回切币种 */
+    private var bidLocateSwitched = false
     /** 出价弹窗物品词条行（附魔/名称等，弹窗打开时从 itemNbt 重建一次；去首行物品名——弹窗已显示） */
     private var bidItemTooltipLines: List<Text> = emptyList()
     /** Shift 展开的高级词条（弹窗打开时双份构建，渲染按 Shift 状态切换，照背包悬停） */
@@ -684,17 +695,35 @@ class AuctionScreen(
         cacheIcons()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayCount() - getMaxVisibleRows()))
         rebuildBidButtons()
-        tryLocateInitialBid()
+        tryLocateInitialBid(allowSwitch = true)
     }
 
-    /** 聊天点击直达：列表数据就绪后定位拍品并弹其出价弹窗；
-     *  自己发布的拍品不弹（与界面内行为一致：卖家行不生成出价按钮） */
-    private fun tryLocateInitialBid() {
-        pendingBidLocate?.let { id ->
-            entries.find { it.id == id }?.let { e ->
-                pendingBidLocate = null
-                if (!isMine(e)) openBidDialog(e)
-            }
+    /**
+     * 聊天点击直达：列表数据就绪后定位拍品并弹其出价弹窗；
+     * 自己发布的拍品不弹（与界面内行为一致：卖家行不生成出价按钮）。
+     *
+     * [allowSwitch] 只在**服务端全量列表**到达时为 true：通知里带了币种（正常情况）一次就命中；
+     * 万一没带或对不上，就换另一种币种再找一次，仍然没有才放弃 —— 否则 RP 拍卖点了毫无反应。
+     * 增量事件不能触发切换与放弃（等待另一种币种列表的途中飘进来一条事件就会把定位搅黄）。
+     */
+    private fun tryLocateInitialBid(allowSwitch: Boolean = false) {
+        val id = pendingBidLocate ?: return
+        entries.find { it.id == id }?.let { e ->
+            pendingBidLocate = null
+            if (!isMine(e)) openBidDialog(e)
+            return
+        }
+        if (!allowSwitch) return
+        // 播报带了币种（正常情况）→ 服务端权威值，不再换着找：找不到就是这场拍卖已经结束了
+        if (initialCurrency != null) {
+            pendingBidLocate = null
+            return
+        }
+        if (!bidLocateSwitched) {
+            bidLocateSwitched = true
+            onCurrencyClick()
+        } else {
+            pendingBidLocate = null
         }
     }
 

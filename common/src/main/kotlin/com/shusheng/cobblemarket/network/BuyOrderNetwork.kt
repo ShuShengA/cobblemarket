@@ -1365,12 +1365,16 @@ object BuyOrderNetwork {
     }
 
     /** 求购单待确认通知（绿，聊天颜色模板）+ 金色下划线 [查看待交付] 按钮：
-     *  点击走客户端指令 /cobblemarket review <orderId>，打开界面直达确认交付弹窗（看货后再决定接受/拒绝） */
+     *  点击走客户端指令 /cobblemarket review <orderId> <币种>，打开界面直达确认交付弹窗（看货后再决定接受/拒绝）。
+     *
+     *  ⚠ 命令末尾**必须带上这一单的币种**：求购单界面一次只看一种货币，不带币种时客户端只能先查主货币、
+     *  发现没有这一单再换另一种重查（多一轮往返 + 等节流窗口，实测反馈「弹窗慢半拍」）。带币种一次命中。
+     *  客户端对多出来的这一段是容错的（悬停预览只取前两段，见 ChatObjectPreview）。 */
     private fun pendingReviewNotice(order: com.shusheng.cobblemarket.market.BuyOrder): Text {
         val button = Text.translatable("cobblemarket.chat.review_button").styled {
             it.withColor(Formatting.GOLD)
                 .withUnderline(true)
-                .withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket review ${order.id}"))
+                .withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket review ${order.id} ${order.currency.name}"))
         }
         // 需求里的**物种名按主属性色**（全模组统一口径，同拍卖播报）：
         // 下面整行 `.formatted(GREEN)` 会把名字一起染绿，而**子样式优先于父级** —— 显式给名字上色即可。

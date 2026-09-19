@@ -217,17 +217,30 @@ object CobbleMarketClient {
         registerClientCommand("cobblemarket") { args ->
             val client = MinecraftClient.getInstance()
             val parts = args.trim().split(" ")
+            // 第三段是**这条单自己的币种**（服务端生成通知时写入）：两个界面一次只看一种货币，
+            // 带上它就能一次请求命中；没有这一段（老格式 / 手动输入）传 null，由界面的
+            // 「找不到就换另一种币种再找」兜底。用严格版解析：垃圾值 = null = 走兜底，不能静默当主货币
+            val currency = parts.getOrNull(2)
+                ?.let { com.shusheng.cobblemarket.currency.MarketCurrency.fromRequest(it) }
             when (parts.getOrNull(0)) {
                 "review" -> parts.getOrNull(1)?.let { uuidStr ->
                     runCatching { java.util.UUID.fromString(uuidStr) }.getOrNull()?.let { id ->
                         EnterAnimation.start()
-                        client.setScreen(com.shusheng.cobblemarket.screen.BuyOrderScreen(initialReviewOrderId = id))
+                        client.setScreen(
+                            com.shusheng.cobblemarket.screen.BuyOrderScreen(
+                                initialReviewOrderId = id, initialCurrency = currency
+                            )
+                        )
                     }
                 }
                 "auction" -> parts.getOrNull(1)?.let { uuidStr ->
                     runCatching { java.util.UUID.fromString(uuidStr) }.getOrNull()?.let { id ->
                         EnterAnimation.start()
-                        client.setScreen(com.shusheng.cobblemarket.screen.AuctionScreen(initialBidAuctionId = id))
+                        client.setScreen(
+                            com.shusheng.cobblemarket.screen.AuctionScreen(
+                                initialBidAuctionId = id, initialCurrency = currency
+                            )
+                        )
                     }
                 }
                 // "share"：分享播报的精灵/物品名上挂的指令，唯一用途是让聊天悬浮大图
