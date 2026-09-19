@@ -148,19 +148,18 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         addDrawableChild(backButton)
 
         // 货币切换按钮（返回按钮左侧 4px）：看哪个币种的商品（与精灵市场同一个位置、同一套逻辑）
-        currencyButton = if (PointsStateCache.enabled) {
-            NineSliceButton(
+        // ⚠ 玩家端**也不受开关约束**：卖家要能看到并下架自己的存量 RP 挂单。
+        //   买 / 出价仍由服务端拦（pointsGateBlocked）—— 真正的权限在付款那一步，不在能不能看
+        currencyButton = NineSliceButton(
                 leftX + panelWidth - 74, 13, 20, 16,
                 Text.literal(""), { onCurrencyClick() },
                 iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
                 iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
                 tooltip = Text.translatable("cobblemarket.gui.currency_switch", com.shusheng.cobblemarket.client.inlineCurrencyUnit(), CurrencyService.pointsIcon())
-            ).also {
-                it.dimmed = !PointsStateCache.marketEnabled
-                updateCurrencyButton(it)
-                addDrawableChild(it)
-            }
-        } else null
+        ).also {
+            updateCurrencyButton(it)
+            addDrawableChild(it)
+        }
 
         // 搜索框
         val savedSearch = searchField?.text ?: ""
@@ -357,16 +356,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
     private fun onCurrencyClick() {
-        if (!PointsStateCache.marketEnabled) {
-            playFailSound()
-            client?.player?.sendMessage(
-                // ⚠ 提醒类消息用红色，和普通反馈区分开（图标自带白色，不受影响）
-                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
-                    .formatted(Formatting.RED),
-                false
-            )
-            return
-        }
+        // ⚠ 不拦开关：卖家要能切过去下架自己的存量 RP 挂单
         toggleCurrency()
     }
 

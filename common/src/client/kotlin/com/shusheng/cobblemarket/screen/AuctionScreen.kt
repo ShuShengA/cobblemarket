@@ -274,16 +274,7 @@ class AuctionScreen(
 
     /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
     private fun onCurrencyClick() {
-        if (!PointsStateCache.marketEnabled) {
-            playFailSound()
-            client?.player?.sendMessage(
-                // ⚠ 提醒类消息用红色，和普通反馈区分开（图标自带白色，不受影响）
-                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
-                    .formatted(Formatting.RED),
-                false
-            )
-            return
-        }
+        // ⚠ 不拦开关：卖家要能切过去下架自己的存量 RP 挂单
         currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
         currencyButton?.let { updateCurrencyButton(it) }
         // 本地先按新币种过一遍（旧币种条目立刻消失），再向服务端要新币种的全量列表
@@ -319,18 +310,17 @@ class AuctionScreen(
         // 货币切换按钮（返回按钮左侧 4px）：看哪个币种的拍卖（与市场/上架界面同一个按钮、同一套三段拦截）。
         // 服务端列表按币种过滤，切币种要重发请求；另外增量事件是**全币种广播**的，
         // 所以本地过滤（rebuildFiltered）里还要再按币种筛一道，否则别的币种的拍卖会飘进来
-        currencyButton = if (PointsStateCache.enabled) {
-            NineSliceButton(
+        // ⚠ 玩家端**也不受开关约束**：卖家要能看到并下架自己的存量 RP 挂单。
+        //   买 / 出价仍由服务端拦（pointsGateBlocked）—— 真正的权限在付款那一步，不在能不能看
+        currencyButton = NineSliceButton(
                 leftX + panelWidth - 74, 13, 20, 16, Text.literal(""), { onCurrencyClick() },
                 iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
                 iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
                 tooltip = Text.translatable("cobblemarket.gui.currency_switch", inlineCurrencyUnit(), CurrencyService.pointsIcon())
-            ).also {
-                it.dimmed = !PointsStateCache.marketEnabled
-                updateCurrencyButton(it)
-                addDrawableChild(it)
-            }
-        } else null
+        ).also {
+            updateCurrencyButton(it)
+            addDrawableChild(it)
+        }
 
         // tab 按钮 + 规则按钮：显示顺序 我的 | 精灵 | 物品 | 规则，四个按钮整体水平居中
         val tabW = 62
