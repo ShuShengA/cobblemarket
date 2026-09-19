@@ -571,10 +571,10 @@ class PointsCodeScreen : Screen(Text.translatable("cobblemarket.points.code.titl
             return
         }
 
-        // 分割线（公共 300px 灰线）：位置照**有顶部操作行的**同背景界面 ——
-        // `topRowY + 操作行高 16 + GAP + 2`（充值订单就是这个式子）。⚠ 别用封禁的 `listStartY - 4`：
-        // 那个界面没有操作行，式子不通用。首行 68 − 分割线 62 = 6px，与订单界面一致。
-        drawPanelDivider(context, leftX() + panelWidth / 2, TOP_ROW_Y + 16 + GAP + 2)
+        // 分割线（公共 300px 灰线）：紧跟在顶部操作行下方 **4px** —— 与精灵市场「分割线紧贴
+        // 上一行 4px」同一口径（2026-09-19 用户拍板统一间距；此前这里是 6px，自成一档）。
+        // ⚠ 别用封禁的 `listStartY - 4`：那个界面没有操作行，式子不通用
+        drawPanelDivider(context, leftX() + panelWidth / 2, TOP_ROW_Y + 16 + GAP)
 
         if (entries.isEmpty()) {
             context.drawCenteredTextWithShadow(

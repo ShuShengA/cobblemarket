@@ -165,7 +165,8 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
     private val topRowY = 40
 
     /** 顶部行下方那条分割线：与列表首行的间距 */
-    private val dividerY = topRowY + 16 + GAP + 2
+    /** 分割线紧跟在顶部操作行下方 **4px**（与精灵市场同一口径；2026-09-19 统一间距，此前是 6px） */
+    private val dividerY = topRowY + 16 + GAP
 
     private fun switchTab(finished: Boolean) {
         if (showFinished == finished) return
