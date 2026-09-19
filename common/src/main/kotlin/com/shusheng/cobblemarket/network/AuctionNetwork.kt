@@ -727,7 +727,8 @@ object AuctionNetwork {
                     // 出价者离线则入队补发
                     com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                         server, prevBidder,
-                        Text.translatable("cobblemarket.auction.outbid", CurrencyHandler.goldAmount(payload.amount), auction.speciesText())
+                        Text.translatable("cobblemarket.auction.outbid", CurrencyHandler.goldAmount(payload.amount),
+                            TypeTextColors.withShinyStar(auction.speciesText(), auction.shiny))
                             .formatted(Formatting.YELLOW)
                     )
                     // 被超越的人**在线**时补一声提示音（他多半正看着别的界面，光有聊天红字容易错过）
@@ -772,13 +773,15 @@ object AuctionNetwork {
                 // 通知卖家与出价者（离线则入队补发），广播 SETTLED 让全服列表同步移除
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, auction.sellerUuid,
-                    Text.translatable("cobblemarket.auction.force_cancelled_seller", auction.speciesText())
+                    Text.translatable("cobblemarket.auction.force_cancelled_seller",
+                        TypeTextColors.withShinyStar(auction.speciesText(), auction.shiny))
                         .formatted(Formatting.RED)
                 )
                 if (bidder != null && bidAmount > 0) {
                     com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                         server, bidder,
-                        Text.translatable("cobblemarket.auction.force_cancelled_bidder", auction.speciesText())
+                        Text.translatable("cobblemarket.auction.force_cancelled_bidder",
+                            TypeTextColors.withShinyStar(auction.speciesText(), auction.shiny))
                             .formatted(Formatting.RED)
                     )
                 }
@@ -864,7 +867,7 @@ object AuctionNetwork {
                     // 聊天消息货币名走 CurrencyHandler.currencyText()（translatable 随模式翻译）
                     Text.translatable(
                         "cobblemarket.auction.settled_seller",
-                        auction.speciesText(),
+                        TypeTextColors.withShinyStar(auction.speciesText(), auction.shiny),
                         CurrencyHandler.goldAmount(auction.currentPrice.toLong()),
                         CurrencyHandler.goldCurrencyText(),
                         CurrencyHandler.goldAmount((auction.currentPrice - fee).toLong()),
@@ -874,7 +877,8 @@ object AuctionNetwork {
                 auction.currentBidderUuid?.let { winnerUuid ->
                     com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                         server, winnerUuid,
-                        Text.translatable("cobblemarket.auction.settled_winner", auction.speciesText())
+                        Text.translatable("cobblemarket.auction.settled_winner",
+                            TypeTextColors.withShinyStar(auction.speciesText(), auction.shiny))
                             .formatted(Formatting.GOLD)
                     )
                     // 赢家庆祝动画（在线者）：与落槌铃声同批发送，天然同步
@@ -893,7 +897,8 @@ object AuctionNetwork {
             } else {
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, auction.sellerUuid,
-                    Text.translatable("cobblemarket.auction.settled_unsold", auction.speciesText())
+                    Text.translatable("cobblemarket.auction.settled_unsold",
+                        TypeTextColors.withShinyStar(auction.speciesText(), auction.shiny))
                         .formatted(Formatting.YELLOW)
                 )
                 recordAuction(server, auction, TransactionType.CANCEL, "unsold")

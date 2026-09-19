@@ -594,7 +594,25 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         }
     }
 
+    /**
+     * 下架确认弹窗是**模态**的：打开时把下层控件全部藏掉。
+     *
+     * ⚠ 必须 `visible = false` 而不是「不画就行」—— 原版 `ClickableWidget` 只要 visible 就照常
+     * 检测 hover 并弹自己的 tooltip，弹出按钮的位置正好压住某个下层按钮时，鼠标停在弹窗按钮上
+     * 弹出的却是下层那条提示（2026-09-19 用户实测，精灵市场先报的，本界面同一套结构一并修）。
+     */
+    private fun updateControlVisibility() {
+        val open = confirmEntry != null
+        listOf(
+            searchField, sellerField, htButton, sortButton, resetButton,
+            mineButton, filterToggleButton, prevButton, nextButton,
+            hpField, atkField, defField, spaField, spdField, speField
+        ).forEach { it?.visible = !open }
+        if (::shinyButton.isInitialized) shinyButton.visible = !open
+    }
+
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        updateControlVisibility()
         super.render(context, mouseX, mouseY, delta)
 
         if (syncIvFromFields()) {
