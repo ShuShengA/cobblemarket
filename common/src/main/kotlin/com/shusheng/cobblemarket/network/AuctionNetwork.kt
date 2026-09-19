@@ -38,6 +38,7 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import java.util.UUID
 import com.shusheng.cobblemarket.util.RecordDetail
+import com.shusheng.cobblemarket.util.ItemNameText
 import com.shusheng.cobblemarket.util.TypeTextColors
 
 // ── DTO：精简拍卖条目（不含 NBT/出价明细，客户端列表用） ──
@@ -967,19 +968,12 @@ object AuctionNetwork {
     /** 全服播报新拍品：拍品名带 hover 详情 + 点击直达出价弹窗（客户端指令 /cobblemarket auction <id>）。
      *  名字下划线 + 金色 [点击出价] 按钮提示可点（玩家不会想到裸名字能点击）。 */
     private fun announceAuction(server: MinecraftServer, auction: AuctionListing) {
-        // 拍品名：精灵 = 翻译名 + 属性色 + 下划线（闪光前缀金★）；物品 = 物品翻译名 + 下划线
+        // 拍品名：名字本体 + 下划线（颜色由 speciesText 自带：精灵属性色 / 物品稀有度色）；闪光再加前置金★
         // styled/append 只在 MutableText 上，speciesText 返回 Text，先包一层 literal 再上样式
-        val baseName: Text = if (auction.type == AuctionType.POKEMON) {
-            Text.literal("").append(auction.speciesText()).styled {
-                it.withColor(TypeTextColors.color(auction.extraData["primaryType"] ?: "cobblemon.type.normal"))
-                    .withUnderline(true)
-            }
-        } else {
-            Text.literal("").append(auction.speciesText()).styled { it.withUnderline(true) }
-        }
-        val nameText = if (auction.type == AuctionType.POKEMON && auction.shiny) {
-            Text.literal("").append(Text.literal("★ ").formatted(Formatting.GOLD)).append(baseName)
-        } else Text.literal("").append(baseName)
+        // 名字本体已带色（精灵 = 主属性色、物品 = 稀有度色，统一在 AuctionListing.speciesText 里），
+        // 这里只套下划线；闪光由 withShinyStar 补前置金★
+        val baseName: Text = Text.literal("").append(auction.speciesText()).styled { it.withUnderline(true) }
+        val nameText = TypeTextColors.withShinyStar(baseName, auction.type == AuctionType.POKEMON && auction.shiny)
         val bidLabel = Text.translatable("cobblemarket.chat.bid_button").formatted(Formatting.GOLD, Formatting.UNDERLINE)
         val clickableName = Text.literal("").append(nameText).append(Text.literal(" ")).append(bidLabel)
             .styled {
@@ -1049,15 +1043,10 @@ object AuctionNetwork {
     /** 成交全服播报：金 [拍卖] 标签 + 蓝主体 + 属性色名字（闪光带金★）+ 金金额——金币符号恒金铁律；
      *  名字不带点击（拍品已结束），纯展示 */
     private fun settlementAnnouncement(auction: AuctionListing): Text {
-        val nameText = if (auction.type == AuctionType.POKEMON) {
-            val colored = Text.literal("").append(auction.speciesText()).styled {
-                it.withColor(TypeTextColors.color(auction.extraData["primaryType"] ?: "cobblemon.type.normal"))
-            }
-            if (auction.shiny) Text.literal("").append(Text.literal("★ ").formatted(Formatting.GOLD)).append(colored)
-            else colored
-        } else {
-            Text.literal("").append(auction.speciesText())
-        }
+        // 名字本体已带色（见 AuctionListing.speciesText），闪光补前置金★
+        val nameText = TypeTextColors.withShinyStar(
+            auction.speciesText(), auction.type == AuctionType.POKEMON && auction.shiny
+        )
         val priceText = Text.literal("")
             .append(CurrencyHandler.goldAmount(auction.currentPrice))
             .append(CurrencyHandler.goldCurrencyText())
@@ -1111,11 +1100,10 @@ object AuctionNetwork {
             extra["ability"]?.takeIf { it.isNotEmpty() }?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_ability").append(Text.translatable(it))) }
             extra["ball"]?.takeIf { it.isNotEmpty() }?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_ball").append(Text.translatable(it))) }
             // 携带物（有则一行）
-            val heldItemId = extra["heldItemId"].orEmpty()
-            val heldKey = heldItemId.takeIf { it.isNotEmpty() }?.let { Identifier.tryParse(it) }?.let {
-                if (it == Identifier.of("minecraft", "air")) null else Registries.ITEM.get(it).translationKey
-            }
-            heldKey?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_held").append(Text.translatable(it))) }
+            // 携带物名走稀有度色（与物品栏悬停一致）；extra 里只有 id 没有完整栈，用默认栈取稀有度
+            extra["heldItemId"].orEmpty().takeIf { it.isNotEmpty() }
+                ?.let { ItemNameText.rarityColoredNameById(it) }
+                ?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_held").append(it)) }
             // IV 段：标签 + 六行竖排（仿出价弹窗左列：stat:IV  EV:N，行色按属性色系，EV 红；聊天 16 色近似弹窗 ARGB）
             lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs"))
             val hp = Text.literal(StatNames.HP)

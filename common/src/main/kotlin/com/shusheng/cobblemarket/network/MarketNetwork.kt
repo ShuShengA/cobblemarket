@@ -1433,10 +1433,14 @@ object MarketNetwork {
                 // 买家庆祝动画：精灵已进队伍，所有权转移完成
                 CelebrationNetwork.sendFromEntry(player, listing.species, listing.shiny, listing.extraData, CelebrationSource.MARKET)
 
-                // 卖家离线则入队补发
+                // 卖家离线则入队补发。主体绿（与「上架成功 / 买入成功」同一配色），名字带主属性色
+                // 与闪光金★ —— 富文本拼接：名字自己带样式，不会被外层绿盖掉
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, listing.sellerUuid,
-                    Text.translatable("cobblemarket.network.sold", listing.speciesText())
+                    Text.translatable(
+                        "cobblemarket.network.sold",
+                        com.shusheng.cobblemarket.util.TypeTextColors.withShinyStar(listing.speciesText(), listing.shiny)
+                    ).formatted(Formatting.GREEN)
                 )
 
                 // 精灵已进买家队伍，挂单生命周期终结，立即删除避免存档膨胀
@@ -1720,9 +1724,11 @@ object MarketNetwork {
                         detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
                     )
                 )
-                // 物品名传翻译 Text（客户端按玩家语言渲染），与精灵下架的 speciesText() 一致，不能传裸 itemId
-                val itemName = Identifier.tryParse(listing.itemId)
-                    ?.let { Registries.ITEM.get(it).name }
+                // 物品名传翻译 Text（客户端按玩家语言渲染），与精灵下架的 speciesText() 一致，不能传裸 itemId；
+                // 颜色走稀有度色（= 物品栏悬停的名字颜色）
+                val itemName = com.shusheng.cobblemarket.util.ItemNameText
+                    .rarityColoredNameOfNbt(server.registryManager, listing.itemNbt)
+                    ?: com.shusheng.cobblemarket.util.ItemNameText.rarityColoredNameById(listing.itemId)
                     ?: Text.literal(listing.itemId)
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, listing.sellerUuid,
@@ -2286,7 +2292,8 @@ object MarketNetwork {
                     Text.translatable(
                         "cobblemarket.item.listed_fee",
                         payload.count,
-                        targetStack.item.name,
+                        com.shusheng.cobblemarket.util.ItemNameText.rarityColoredName(targetStack)
+                            ?: targetStack.item.name,
                         CurrencyHandler.goldAmount(payload.price),
                         CurrencyHandler.goldCurrencyText(),
                         CurrencyHandler.goldAmount(fee),
@@ -2296,7 +2303,8 @@ object MarketNetwork {
                     Text.translatable(
                         "cobblemarket.item.listed",
                         payload.count,
-                        targetStack.item.name,
+                        com.shusheng.cobblemarket.util.ItemNameText.rarityColoredName(targetStack)
+                            ?: targetStack.item.name,
                         CurrencyHandler.goldAmount(payload.price),
                         CurrencyHandler.goldCurrencyText()
                     )
@@ -2575,8 +2583,11 @@ object MarketNetwork {
 
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
-                val boughtItemName = Identifier.tryParse(listing.itemId)
-                    ?.let { Registries.ITEM.get(it).name }
+                // 物品名走稀有度色（= 物品栏悬停的名字颜色）。优先用完整栈重建：
+                // 能带上自定义名与组件带来的稀有度；重建不出才退回裸 itemId
+                val boughtItemName = com.shusheng.cobblemarket.util.ItemNameText
+                    .rarityColoredNameOfNbt(server.registryManager, listing.itemNbt)
+                    ?: com.shusheng.cobblemarket.util.ItemNameText.rarityColoredNameById(listing.itemId)
                     ?: Text.literal(listing.itemId)
                 sendToPlayer(
                     player,
@@ -2608,12 +2619,15 @@ object MarketNetwork {
                     )
                 }
 
-                val soldItemName = Identifier.tryParse(listing.itemId)?.let { Registries.ITEM.get(it).name }
+                // 物品名走稀有度色；主体绿 —— 与精灵版「已卖出」同一配色
+                val soldItemName = com.shusheng.cobblemarket.util.ItemNameText
+                    .rarityColoredNameOfNbt(server.registryManager, listing.itemNbt)
+                    ?: com.shusheng.cobblemarket.util.ItemNameText.rarityColoredNameById(listing.itemId)
                     ?: Text.literal(listing.itemId)
                 // 卖家离线则入队补发
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, listing.sellerUuid,
-                    Text.translatable("cobblemarket.network.sold", soldItemName)
+                    Text.translatable("cobblemarket.network.sold", soldItemName).formatted(Formatting.GREEN)
                 )
             }
         }
