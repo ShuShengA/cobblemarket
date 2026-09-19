@@ -416,16 +416,19 @@ class PointsMarketScreen : Screen(
         context.drawTexture(BACKGROUND, 0, 0, 0f, 0f, TEX_W, TEX_H, TEX_W, TEX_H)
         context.matrices.pop()
 
-        // 兑换结果提示：水平居中、落在「返回按钮」与背景底边之间（用户 2026-09-19 指定）。
+        // 兑换结果提示：水平居中、落在**返回按钮底边与背景底边之间**那段空隙的中点
+        // （用户 2026-09-19 指定）。此前画的是**背景正中** —— 压着界面内容很难看，
+        // 注释写着「返回按钮与背景底边之间」但代码没落实，这次补上。
         // ⚠ 传**原来的 Text**，别转成 String 再拼 —— 结果里带 RP 图标字形（字体挂在 Text 样式上），
         //   一转 String 图标就变成方块（本项目反复踩过的坑）
         resultMsg?.let { msg ->
             if (System.currentTimeMillis() < resultUntil) {
-                val scale = bgScale()
+                // 返回按钮底边 = bg 底边往上 BACK_BOTTOM（原图口径），这段空隙的中心再上移半行字高
+                val slotCenterY = bg.y + bg.h - texPx(BACK_BOTTOM) / 2
                 context.drawCenteredTextWithShadow(
                     textRenderer, msg,
-                    bg.x + (TEX_W * scale).roundToInt() / 2,
-                    bg.y + (TEX_H * scale).roundToInt() / 2,
+                    bg.x + bg.w / 2,
+                    slotCenterY - 4,
                     resultColor
                 )
             }
