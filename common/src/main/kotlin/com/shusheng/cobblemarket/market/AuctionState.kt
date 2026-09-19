@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.market
 
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.nbt.NbtList
 import net.minecraft.registry.RegistryWrapper
@@ -54,7 +55,15 @@ data class AuctionListing(
     // 反狙击延长会修改结束时间，故为 var
     var endsAt: Long,
     var status: AuctionStatus,
-    var returnedAt: Long?
+    var returnedAt: Long?,
+    /**
+     * 这一场用什么币种结算。**追加在末尾并给默认值** ⇒ 旧档读不到这个键就是主货币。
+     *
+     * ⚠ 币种只在**创建**那一刻定下来，此后出价 / 退款 / 结算 / 手续费**一律从本对象读**
+     * （方案「三条硬要求」第 1、3 条）；`AuctionState.returnToOwner()` 把拍品退回挂单时
+     * **必须把币种带下去**，否则玩家在待取回里看到的是主货币。
+     */
+    val currency: MarketCurrency = MarketCurrency.PRIMARY
 ) {
     fun isActive(): Boolean = status == AuctionStatus.ACTIVE
 
@@ -102,6 +111,7 @@ data class AuctionListing(
         putLong("endsAt", endsAt)
         putString("status", status.name)
         returnedAt?.let { putLong("returnedAt", it) }
+        putString("currency", currency.name)
     }
 
     companion object {
@@ -140,7 +150,9 @@ data class AuctionListing(
                 createdAt = nbt.getLong("createdAt"),
                 endsAt = nbt.getLong("endsAt"),
                 status = AuctionStatus.valueOf(nbt.getString("status")),
-                returnedAt = if (nbt.contains("returnedAt")) nbt.getLong("returnedAt") else null
+                returnedAt = if (nbt.contains("returnedAt")) nbt.getLong("returnedAt") else null,
+                // 旧档没这个键（getString 给空串）/ 值是垃圾 ⇒ fromStored 一律落主货币，不抛不 warn
+                currency = MarketCurrency.fromStored(nbt.getString("currency"))
             )
         }
     }

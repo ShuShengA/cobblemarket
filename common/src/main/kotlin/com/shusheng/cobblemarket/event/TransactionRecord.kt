@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.event
 
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import net.minecraft.nbt.NbtCompound
 import java.util.UUID
 
@@ -25,7 +26,12 @@ data class TransactionRecord(
     val price: Int,
     val fee: Int,
     // CSV「详情」列：精灵完整数值/物品 NBT 文本化（com.shusheng.cobblemarket.util.RecordDetail 构建；旧记录为空串）
-    val detail: String = ""
+    val detail: String = "",
+    /**
+     * 这笔流水是什么币种的（CSV 多一列）。**追加在末尾并给默认值** ⇒ 旧记录读不到就是主货币。
+     * ⚠ 交易历史界面与 CSV 都按它显示单位；漏了会让 RP 流水看起来像主货币流水。
+     */
+    val currency: MarketCurrency = MarketCurrency.PRIMARY
 ) {
     fun toNbt(): NbtCompound = NbtCompound().apply {
         putLong("timestamp", timestamp)
@@ -39,6 +45,7 @@ data class TransactionRecord(
         putInt("price", price)
         putInt("fee", fee)
         putString("detail", detail)
+        putString("currency", currency.name)
     }
 
     companion object {
@@ -53,7 +60,9 @@ data class TransactionRecord(
             species = nbt.getString("species"),
             price = nbt.getInt("price"),
             fee = nbt.getInt("fee"),
-            detail = if (nbt.contains("detail")) nbt.getString("detail") else ""
+            detail = if (nbt.contains("detail")) nbt.getString("detail") else "",
+            // 旧记录没这个键（getString 给空串）/ 值是垃圾 ⇒ fromStored 一律落主货币，不抛不 warn
+            currency = MarketCurrency.fromStored(nbt.getString("currency"))
         )
     }
 }

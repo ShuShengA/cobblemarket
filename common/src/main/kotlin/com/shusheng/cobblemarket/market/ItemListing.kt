@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.market
 
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import net.minecraft.nbt.NbtCompound
 import java.util.UUID
 
@@ -15,7 +16,14 @@ data class ItemListing(
     val expiresAt: Long,
     var status: ListingStatus,
     /** 进入待领取退回列表的时间戳；null = 从未进入（旧存档兼容） */
-    var returnedAt: Long? = null
+    var returnedAt: Long? = null,
+    /**
+     * 这一单用什么币种结算。**追加在末尾并给默认值** ⇒ 旧档读不到这个键就是主货币。
+     *
+     * ⚠ 币种只在**创建**那一刻定下来，此后扣款 / 退款 / 发货 / 入账 / 手续费**一律从本对象读**
+     * （方案「三条硬要求」第 1、3 条）—— 别再去 payload 或 `CurrencyHandler` 现取。
+     */
+    val currency: MarketCurrency = MarketCurrency.PRIMARY
 ) {
     fun isActive(): Boolean = status == ListingStatus.ACTIVE
 
@@ -31,6 +39,7 @@ data class ItemListing(
         putLong("expiresAt", expiresAt)
         putString("status", status.name)
         returnedAt?.let { putLong("returnedAt", it) }
+        putString("currency", currency.name)
     }
 
     companion object {
@@ -45,7 +54,9 @@ data class ItemListing(
             createdAt = nbt.getLong("createdAt"),
             expiresAt = nbt.getLong("expiresAt"),
             status = ListingStatus.valueOf(nbt.getString("status")),
-            returnedAt = if (nbt.contains("returnedAt")) nbt.getLong("returnedAt") else null
+            returnedAt = if (nbt.contains("returnedAt")) nbt.getLong("returnedAt") else null,
+            // 旧档没这个键（getString 给空串）/ 值是垃圾 ⇒ fromStored 一律落主货币，不抛不 warn
+            currency = MarketCurrency.fromStored(nbt.getString("currency"))
         )
     }
 }
