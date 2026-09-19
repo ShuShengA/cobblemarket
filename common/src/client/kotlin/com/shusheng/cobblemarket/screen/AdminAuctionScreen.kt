@@ -382,6 +382,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         // 隐藏下层控件（弹窗打开期间不可交互；closeCancelDialog 的 init 重建会恢复）
         searchField?.visible = false
         backButton?.visible = false
+        // ⚠ 货币按钮同样要隐藏：本界面在 mouseClicked 里是 `return super.mouseClicked(...)`，
+        //   没被隐藏的控件照常响应点击 —— 漏一个就是「弹窗盖着、下面还能点」
+        currencyButton?.visible = false
         if (entry.type == "POKEMON") {
             val id = Identifier.tryParse(entry.extraData["speciesId"] ?: "")
             val species = id?.let { PokemonSpecies.getByIdentifier(it) }
