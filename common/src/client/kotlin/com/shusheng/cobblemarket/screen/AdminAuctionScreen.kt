@@ -66,15 +66,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
 
     /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
     private fun onCurrencyClick() {
-        if (!PointsStateCache.marketEnabled) {
-            com.shusheng.cobblemarket.client.playFailSound()
-            client?.player?.sendMessage(
-                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
-                    .formatted(Formatting.RED),
-                false
-            )
-            return
-        }
+        // ⚠ 管理端**不拦开关**：管理员要能查看并下架存量的 RP 挂单
         currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
         currencyButton?.let { updateCurrencyButton(it) }
         // 本地先按新币种过一遍（旧币种条目立刻消失），再向服务端要新币种的全量列表
@@ -311,18 +303,17 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         backButton = backBtn
 
         // 货币切换按钮（返回按钮左侧 4px）：看哪个币种的拍卖（与玩家端同一个位置、同一套逻辑）
-        currencyButton = if (PointsStateCache.enabled) {
-            NineSliceButton(
+        // ⚠ **管理端不受 RP 开关约束**：开关管的是「玩家之间能不能用 RP 交易」，
+        //   而不是管理员的查看/下架权限 —— 关掉后存量 RP 挂单仍要能被管理（否则永远下架不了）
+        currencyButton = NineSliceButton(
                 leftX + panelWidth - 74, 13, 20, 16, Text.literal(""), { onCurrencyClick() },
                 iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
                 iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
                 tooltip = Text.translatable("cobblemarket.gui.currency_switch", inlineCurrencyUnit(), CurrencyService.pointsIcon())
-            ).also {
-                it.dimmed = !PointsStateCache.marketEnabled
-                updateCurrencyButton(it)
-                addDrawableChild(it)
-            }
-        } else null
+        ).also {
+            updateCurrencyButton(it)
+            addDrawableChild(it)
+        }
         addDrawableChild(backBtn)
 
         val savedSearch = searchField?.text ?: ""
