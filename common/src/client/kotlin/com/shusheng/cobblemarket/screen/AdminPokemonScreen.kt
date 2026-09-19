@@ -604,11 +604,19 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private fun updateControlVisibility() {
         val open = confirmEntry != null
         listOf(
-            searchField, sellerField, htButton, sortButton, resetButton,
-            mineButton, filterToggleButton, prevButton, nextButton,
+            searchField, sellerField, htButton,
             hpField, atkField, defField, spaField, spdField, speField
         ).forEach { it?.visible = !open }
+        // ⚠ 下面这些是 lateinit **且只在筛选展开时才创建**（`if (filterExpanded)` 分支里），
+        //   筛选没展开时它们压根不存在 —— 直接读会抛 UninitializedPropertyAccessException
+        //   （2026-09-19 精灵市场一打开就崩，同源问题，这里一并按同一规矩写）
         if (::shinyButton.isInitialized) shinyButton.visible = !open
+        if (::sortButton.isInitialized) sortButton.visible = !open
+        if (::resetButton.isInitialized) resetButton.visible = !open
+        if (::mineButton.isInitialized) mineButton.visible = !open
+        if (::filterToggleButton.isInitialized) filterToggleButton.visible = !open
+        if (::prevButton.isInitialized) prevButton.visible = !open
+        if (::nextButton.isInitialized) nextButton.visible = !open
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
