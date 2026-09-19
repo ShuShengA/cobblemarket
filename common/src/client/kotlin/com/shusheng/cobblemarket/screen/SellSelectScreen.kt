@@ -212,7 +212,8 @@ class SellSelectScreen(
 
         // Row 3 (y=72)：间距统一 4px，整行排满到面板右缘（lx+294），各模式各自铺满不留空
         //   交付/分享：闪光30 | 公母24 | 属性58 | 特训80 | 选择84
-        //   上架：闪光30 | 公母24 | 属性58 | 价格56 | 上架44 | 特训60
+        //   上架：闪光30 | 公母24 | 属性58 | 特训60 | 价格56 | 货币20 | 上架20
+        //         （特训紧跟在属性后面、价格框之前 —— 2026-09-19 用户要求）
         val btnY = 72
         shinyBtn = NineSliceButton(
             lx + 2, btnY, 30, 20,
@@ -242,7 +243,7 @@ class SellSelectScreen(
         )
         addDrawableChild(typeBtn)
 
-        priceField = TextFieldWidget(textRenderer, lx + 126, btnY, 56, 18, Text.literal(""))
+        priceField = TextFieldWidget(textRenderer, lx + 190, btnY, 56, 18, Text.literal(""))
         priceField?.setPlaceholder(Text.translatable("cobblemarket.sell.price_placeholder"))
         priceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addSelectableChild(priceField)
@@ -251,10 +252,10 @@ class SellSelectScreen(
         priceField?.visible = !noPriceField
 
         // 上架按钮改成**纯图标**（sell.png，8×8）后窄到 16px，腾出的位置正好给货币切换按钮 ——
-        // 「价格 126~182 │ 货币 186~206 │ 上架 210~226 │ 特训 234~」48px 排满。
+        // 「特训 126~186 │ 价格 190~246 │ 货币 250~270 │ 上架 274~294」48px 排满。
         // 交付/分享模式没有价格框、也就没有货币按钮，照旧用文字按钮与原位置。
         sellBtn = NineSliceButton(
-            lx + 210, btnY,
+            lx + 274, btnY,
             if (noPriceField) 84 else 20, 20,
             if (noPriceField) {
                 Text.translatable(
@@ -281,7 +282,7 @@ class SellSelectScreen(
         //   「玩家间 RP 交易」没开**照样显示** —— 空一块更难看 —— 只是置灰点不动。
         currencyButton = if (!noPriceField && PointsStateCache.enabled) {
             NineSliceButton(
-                lx + 186, btnY, 20, 20, Text.literal(""), { onCurrencyClick() },
+                lx + 250, btnY, 20, 20, Text.literal(""), { onCurrencyClick() },
                 iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
                 iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat()
             ).also {
@@ -291,9 +292,10 @@ class SellSelectScreen(
                 addDrawableChild(it)
             }
         } else null
-        // 特训筛选（三态循环；交付/分享模式移到价格框位置，给选择按钮让位）
+        // 特训筛选（三态循环）：两种模式都紧跟在属性按钮后面 —— 上架模式后面才是价格框。
+        // 宽度两种模式不同（交付/分享没有价格框与货币按钮，可以铺到 80），位置一样
         htBtn = NineSliceButton(
-            if (noPriceField) lx + 126 else lx + 234, btnY, if (noPriceField) 80 else 60, 20,
+            lx + 126, btnY, if (noPriceField) 80 else 60, 20,
             htButtonText(),
             { toggleHtFilter(); rebuild() },
             if (htFilter != 0) GOLD_COLOR else 0xFFFFFF
