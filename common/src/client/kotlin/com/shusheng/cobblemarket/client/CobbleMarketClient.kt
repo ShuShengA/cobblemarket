@@ -4,6 +4,8 @@ import com.shusheng.cobblemarket.network.SpeciesRestPayload
 import com.shusheng.cobblemarket.permission.PermissionAuditPayload
 import com.shusheng.cobblemarket.permission.PermissionListDataPayload
 import com.shusheng.cobblemarket.screen.PermissionScreen
+import com.shusheng.cobblemarket.screen.PointsCodeScreen
+import com.shusheng.cobblemarket.screen.PointsRecordScreen
 import com.shusheng.cobblemarket.permission.PermissionSnapshotPayload
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.network.AuctionDurationsPayload
@@ -14,6 +16,8 @@ import com.shusheng.cobblemarket.network.ItemCelebrationPayload
 import com.shusheng.cobblemarket.network.PokemonCelebrationPayload
 import com.shusheng.cobblemarket.network.MarketStatePayload
 import com.shusheng.cobblemarket.network.PayQrImagePayload
+import com.shusheng.cobblemarket.network.PointCodesCreatedPayload
+import com.shusheng.cobblemarket.network.PointCodesPayload
 import com.shusheng.cobblemarket.network.PointsConfigPayload
 import com.shusheng.cobblemarket.network.PointsShopInfoPayload
 import com.shusheng.cobblemarket.network.PointsStatusPayload
@@ -476,6 +480,7 @@ object CobbleMarketClient {
                     is BuyOrderScreen -> screen.onMarketResult(payload)
                     is PointsMarketScreen -> screen.onMarketResult(payload)
                     is PointsConfigScreen -> screen.onMarketResult(payload)
+                    is PointsCodeScreen -> screen.onMarketResult(payload)
                     // 下单被拒（订单数达上限等）要在充值界面里说一声：只发聊天栏 + 一声失败音会被漏看
                     is PointsRechargeScreen -> screen.onMarketResult(payload)
                     // 确认发放 / 作废的结果：管理端界面要刷新列表（详细原因在 message 里，界面负责显示）
@@ -581,6 +586,17 @@ object CobbleMarketClient {
         registerS2C(PointsConfigPayload.ID, PointsConfigPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 (MinecraftClient.getInstance().currentScreen as? PointsConfigScreen)?.onConfig(payload)
+            }
+        }
+        // 兑换码管理：生成结果与列表（照上面按「当前界面是不是它」分发）
+        registerS2C(PointCodesCreatedPayload.ID, PointCodesCreatedPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                (MinecraftClient.getInstance().currentScreen as? PointsCodeScreen)?.onPointCodesCreated(payload)
+            }
+        }
+        registerS2C(PointCodesPayload.ID, PointCodesPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                (MinecraftClient.getInstance().currentScreen as? PointsCodeScreen)?.onPointCodes(payload)
             }
         }
 
@@ -738,6 +754,9 @@ object CobbleMarketClient {
                     screen.onNameSuggestions(payload)
                 } else if (screen is PermissionScreen) {
                     // 权限管理界面也用同一套服务端玩家名联想（服务端那处权限已放宽到「任一管理权限」）
+                    screen.onNameSuggestions(payload)
+                } else if (screen is PointsCodeScreen) {
+                    // 兑换码管理：生成弹窗的「绑定玩家」输入框（同样含离线玩家）
                     screen.onNameSuggestions(payload)
                 }
             }
@@ -1186,4 +1205,4 @@ internal fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean
         s is BlackCardConfigScreen || s is BlackCardApplyScreen || s is BlackCardApplyConditionsScreen || s is CardManageScreen || s is ItemVariantSelectScreen ||
         s is MeowthBankScreen || s is LoanScreen || s is LoanHistoryScreen || s is RepayScreen || s is MeowthPayScreen ||
         s is DepositScreen || s is BalanceHudPositionScreen || s is PointsMarketScreen || s is PointsRechargeScreen ||
-        s is PointsConfigScreen || s is AdminPointOrdersScreen
+        s is PointsConfigScreen || s is AdminPointOrdersScreen || s is PointsCodeScreen || s is PointsRecordScreen

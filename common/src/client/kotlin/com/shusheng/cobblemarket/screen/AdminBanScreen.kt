@@ -21,7 +21,8 @@ import net.minecraft.util.Identifier
 
 class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
 
-    private val panelWidth = 300
+    // 296：**以黑名单界面为统一基准**（同背景的列表界面一律 296）
+    private val panelWidth = 296
     private val rowHeight = 22
     private val listStartY = 68
 

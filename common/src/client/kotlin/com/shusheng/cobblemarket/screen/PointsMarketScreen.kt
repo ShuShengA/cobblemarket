@@ -58,6 +58,29 @@ class PointsMarketScreen : Screen(
     /** 背景等比缩放后的矩形（居中） */
     private data class BgRect(val x: Int, val y: Int, val w: Int, val h: Int)
 
+    /** 兑换结果提示（界面内、5 秒）：Text 原样保存，见 [onMarketResult] 的注释 */
+    private var resultMsg: Text? = null
+    private var resultColor = 0x55FF55
+    private var resultUntil = 0L
+
+    /** 「兑换记录」入口（见 init 的注释：位置随「购买 RP」是否可见而变，永不重建界面） */
+    private var recordButton: NineSliceButton? = null
+
+    /**
+     * 摆放「兑换记录」按钮：
+     * - 「购买 RP」可见 → 贴在它**左侧**
+     * - 不可见（没配档位）→ **顶上它的位置**
+     *
+     * ⚠ 用 `bgRect()` 现算而不是缓存 init 里的局部量：档位快照到达时只调这个函数，
+     * 不能重建界面（会清掉兑换框里已输入的内容）。
+     */
+    fun layoutRecordButton() {
+        val btn = recordButton ?: return
+        val showBuy = PointsShopCache.tiers.isNotEmpty()
+        val rightEdgeX = bgRect().x + bgRect().w - borderInset() - BUY_ENTRY_W
+        btn.x = if (showBuy) rightEdgeX - ROW_GAP - BUY_ENTRY_W else rightEdgeX
+    }
+
     private fun bgScale(): Float {
         val availW = width * (1f - MARGIN_RATIO * 2f)
         val availH = height * (1f - MARGIN_RATIO * 2f)
@@ -115,7 +138,8 @@ class PointsMarketScreen : Screen(
         //   scale 更大时 480×270），背景缩了控件没缩就会挤成一团。
         //   所以输入框宽度按**剩余空间**算，压到下限为止。
         val tabGroupW = TAB_W * 2 + TAB_GAP
-        val rowNeed = REDEEM_BUTTON_W + ROW_GAP + tabGroupW + ROW_GAP + BUY_ENTRY_W + ROW_GAP * 2
+        val rowNeed = REDEEM_BUTTON_W + ROW_GAP + tabGroupW + ROW_GAP + BUY_ENTRY_W +
+            ROW_GAP + BUY_ENTRY_W + ROW_GAP * 2
         val fieldW = minOf(REDEEM_FIELD_W, bg.w - 2 * inset - rowNeed).coerceAtLeast(MIN_REDEEM_FIELD_W)
 
         // 兑换码输入框（重建后恢复输入；上限按外部码带分隔符的 39 字符留余量）
@@ -151,11 +175,24 @@ class PointsMarketScreen : Screen(
         buyEntryButton = buyBtn
         addDrawableChild(buyBtn)
 
+        // 「兑换记录」按钮（用户 2026-09-19 定）：**放在「购买 RP」左侧**；购买入口不可见时
+        // （没配档位）**顶上它的位置**。与购买入口同理**总是建出来、只改 x/visible** ——
+        // 重建界面会清掉玩家已经敲进兑换框的内容。
+        val recordBtn = NineSliceButton(
+            buyBtnX, rowY, BUY_ENTRY_W, ROW_H,
+            Text.translatable("cobblemarket.points.market.record_entry"),
+            { client?.setScreen(PointsRecordScreen()) }
+        )
+        recordButton = recordBtn
+        addDrawableChild(recordBtn)
+        layoutRecordButton()
+
         // 精灵 / 物品 tab：与兑换行同一水平线，**在「兑换按钮右侧 ~ 购买按钮左侧」这段空档里居中**
         // （用户 2026-09-18 定的是"居中"，但死盯背景正中在小分辨率下会压到左边的兑换按钮上 ——
         //  改成居中于剩余空间后，大分辨率下位置与原来一致，小分辨率下自动让位）
         val tabMinLeft = fieldX + fieldW + ROW_GAP + REDEEM_BUTTON_W + ROW_GAP
-        val tabMaxLeft = buyBtnX - ROW_GAP - tabGroupW
+        // 右边界要给**两个**按钮让位（购买 RP + 它左侧的兑换记录）——记录按钮与购买入口同宽
+        val tabMaxLeft = buyBtnX - ROW_GAP - BUY_ENTRY_W - ROW_GAP - tabGroupW
         val tabLeftX =
             if (tabMinLeft <= tabMaxLeft) (cx - tabGroupW / 2).coerceIn(tabMinLeft, tabMaxLeft)
             else tabMinLeft // 极端小分辨率：紧跟兑换按钮（再挤下去就不是重叠而是看不看得见的问题了）
@@ -325,14 +362,30 @@ class PointsMarketScreen : Screen(
     /** 商城快照到了：切换「购买 RP」入口的显隐（**不重建界面**，免得清掉已输入的内容） */
     fun onShopInfo() {
         buyEntryButton?.visible = PointsShopCache.tiers.isNotEmpty()
+        // 购买入口的可见性变了 → 记录按钮跟着换位置（**不重建界面**，见 layoutRecordButton）
+        layoutRecordButton()
     }
 
-    /** 兑换结果（服务端 MarketResultPayload 到达；成功才清空输入框 —— 码已用掉，留着没用） */
+    /**
+     * 兑换结果（服务端 MarketResultPayload 到达；成功才清空输入框 —— 码已用掉，留着没用）。
+     *
+     * ⚠ **成功与失败都要给出可见反馈**：此前只清空输入框 / 什么都不做，玩家输完码只听到一声音效，
+     * 根本不知道兑换成没成、错在哪（2026-09-19 用户实测）。服务端的 message 里本来就写清了原因
+     * （成功给了多少 / 码无效 / 冷却中），照其他界面发到聊天栏即可。
+     */
     fun onMarketResult(payload: MarketResultPayload) {
         if (payload.success) {
             codeField?.text = ""
             pendingCodeText = ""
         }
+        // 界面内提示（5 秒）：玩家正盯着兑换框，只发聊天栏容易被界面挡着漏看
+        resultMsg = payload.message
+        resultColor = if (payload.success) 0x55FF55 else 0xFF6666
+        resultUntil = System.currentTimeMillis() + 5000
+        client?.player?.sendMessage(
+            payload.message.copy().formatted(if (payload.success) Formatting.GREEN else Formatting.RED),
+            false
+        )
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -346,6 +399,21 @@ class PointsMarketScreen : Screen(
         context.matrices.scale(bgScale(), bgScale(), 1f)
         context.drawTexture(BACKGROUND, 0, 0, 0f, 0f, TEX_W, TEX_H, TEX_W, TEX_H)
         context.matrices.pop()
+
+        // 兑换结果提示：水平居中、落在「返回按钮」与背景底边之间（用户 2026-09-19 指定）。
+        // ⚠ 传**原来的 Text**，别转成 String 再拼 —— 结果里带 RP 图标字形（字体挂在 Text 样式上），
+        //   一转 String 图标就变成方块（本项目反复踩过的坑）
+        resultMsg?.let { msg ->
+            if (System.currentTimeMillis() < resultUntil) {
+                val scale = bgScale()
+                context.drawCenteredTextWithShadow(
+                    textRenderer, msg,
+                    bg.x + (TEX_W * scale).roundToInt() / 2,
+                    bg.y + (TEX_H * scale).roundToInt() / 2,
+                    resultColor
+                )
+            }
+        }
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {

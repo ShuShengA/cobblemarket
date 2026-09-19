@@ -43,7 +43,8 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
      * 列表行宽。**面板本身是 320**（`drawPanelSlice` 里贴图 640 宽 × scale(0.5)，宽度钉死，
      * 改不了），行比面板窄一点、居中放在框内 —— 与交易历史 / 黑名单同一套。
      */
-    private val panelWidth = 300
+    // 296：**以黑名单界面为统一基准**（同背景的列表界面一律 296；原先 300 会让返回按钮距右背景差 2px）
+    private val panelWidth = 296
     private val rowHeight = 22
 
     /** 列表首行的 y：分割线下方留一点空隙 */
@@ -72,7 +73,8 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
     private val colStatus = 214
     /** 下单时间（`MM-dd HH:mm`）—— 两个 tab 都要，与「我的订单」同一种格式 */
     private val colTime = 154
-    private val colHandle = 254
+    // 随 panelWidth 收窄同步减 4：保持「处理」按钮距行右缘 12px（照黑名单口径）
+    private val colHandle = 250
     // 已完结没有行按钮，右边空出来的地方给「发了多少 RP」
     // 已完结：玩家名 / 金额 / 订单号 / **下单时间** / 结果（发放的写 +N RP、作废的写状态 —— 并成一列）
     private val colFinishedTime = 154

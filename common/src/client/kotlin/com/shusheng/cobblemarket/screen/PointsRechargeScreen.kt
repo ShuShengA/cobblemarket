@@ -354,9 +354,13 @@ class PointsRechargeScreen : Screen(
         val dy = ordersDialogY()
         val viewBtnX = dx + ORDERS_DIALOG_W - DIALOG_PAD - ORDER_VIEW_BTN_W
 
+        // ⚠ **每笔订单都要建按钮**（不可见的用 visible 隐藏），**不能"跳过不可见的"**：
+        //   跳过后 `orderButtons` 的下标就与 `PointsShopCache.orders` 的下标脱节，
+        //   而 `applyOrderScroll` 是按「orderButtons 下标 − orderScroll」算行位置的 ——
+        //   一滚动就全乱：按钮带着**错的订单**、还摆在**错的位置**（用户实测「滚动后点击就错位」）。
+        //   不滚动时两边恰好重合，所以"第一条没问题"、越往下越错。
         PointsShopCache.orders.forEachIndexed { index, order ->
             val rel = index - orderScroll
-            if (rel !in 0 until visibleOrderRows()) return@forEachIndexed
             val rowY = dy + ORDERS_DIALOG_HEADER_H + rel * ORDER_ROW_H
             val button = NineSliceButton(
                 viewBtnX, rowY + (ORDER_ROW_H - ORDER_VIEW_BTN_H) / 2,
@@ -364,6 +368,7 @@ class PointsRechargeScreen : Screen(
                 Text.translatable("cobblemarket.points.recharge.view_order"),
                 { viewingOrderNo = order.orderNo; qrRequestedFor = null; rebuild() }
             )
+            button.visible = rel in 0 until visibleOrderRows()
             orderButtons += button
             addDrawableChild(button)
         }

@@ -51,7 +51,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
 
         // Back button (top-right)
         addDrawableChild(NineSliceButton(
-            leftX + panelWidth - 50, 18, 50, 16,
+            leftX + panelWidth - 50, 13, 50, 16,
             Text.literal(""),
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
