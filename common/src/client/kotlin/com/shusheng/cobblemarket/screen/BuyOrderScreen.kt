@@ -1217,8 +1217,9 @@ class BuyOrderScreen(
 
     private fun createViewBottom(dialogY: Int): Int = dialogY + createDialogH() - createButtonInset() - 6
 
-    /** 表单内容总高（设计坐标，从表单顶算）——精灵最后一行是备注（194+16），物品是 126+16 */
-    private fun createContentH(): Int = if (createTab == 0) 166 else 98
+    /** 表单内容总高（设计坐标，从表单顶算）：精灵算到「冻结提示」（214+8），物品算到 146+8 ——
+     *  ⚠ 提示也在内容里：不算进来的话，弹窗被压矮时它永远滚不进可视区（等于消失） */
+    private fun createContentH(): Int = if (createTab == 0) 178 else 110
 
     private fun createMaxScroll(): Int =
         maxOf(0, createContentH() - (createViewBottom(createDialogY()) - createViewTop(createDialogY())))
@@ -1229,6 +1230,19 @@ class BuyOrderScreen(
      *   （弹窗框、标题不滚，用 `createDialogY() + N`；确认/取消钉在弹窗底，用 [createButtonInset]）
      */
     private fun createY(designOffset: Int): Int = createDialogY() + designOffset - createScroll
+
+    /**
+     * 表单里**画出来的东西**（精灵预览图 / 候选计数 / 冻结提示）现在该不该画。
+     *
+     * ⚠ 它们不是控件，[layoutCreateForm] 的可见性管不到 —— 漏了就会出现「输入框滚走了、
+     *   右边的精灵占位图和 1/3 还留在原地」，或者「冻结提示画到弹窗外面去」
+     *   （2026-09-19 用户实测）。判据与控件**完全一致**（用同一行的设计坐标），这样同进同出。
+     */
+    private fun createFormVisible(designOffset: Int, h: Int = 16): Boolean {
+        val dialogY = createDialogY()
+        val y = dialogY + designOffset - createScroll
+        return y >= createViewTop(dialogY) && y + h <= createViewBottom(dialogY)
+    }
 
     /**
      * 按当前滚动量重排创建弹窗**表单控件**（只改 y，x 不动）。
@@ -1523,34 +1537,38 @@ class BuyOrderScreen(
             Text.translatable("cobblemarket.buy_order.create_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
 
+        // ⚠ 下面这些**绘制**都要过 createFormVisible：它们不是控件，滚动裁决管不到，
+        //   漏一处就会出现「输入框滚走了、精灵图/1/3/冻结提示还留在原地或画到弹窗外面」。
         if (createTab == 0) {
-            // 精灵预览槽（右侧）
-            val slotSize = 28
-            val slotX = centerX + 66
-            val slotY = createY(42)
-            context.matrices.push()
-            context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
-            context.matrices.scale(slotSize / 66f, slotSize / 66f, 1f)
-            context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
-            context.matrices.pop()
-            previewRenderable?.let { rp ->
-                // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
-                val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
-                    com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
-                try {
-                    PokemonIconRenderer.draw(
-                        context = context,
-                        renderable = rp,
-                        state = previewState,
-                        x = slotX, y = slotY, size = slotSize,
-                        delta = delta,
-                        animate = useFloat
-                    )
-                } catch (_: Exception) {
+            // 精灵预览槽（右侧）：**与物种输入框同进同出**（同一行的设计坐标；滚走了整块不画）
+            if (createFormVisible(48)) {
+                val slotSize = 28
+                val slotX = centerX + 66
+                val slotY = createY(42)
+                context.matrices.push()
+                context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
+                context.matrices.scale(slotSize / 66f, slotSize / 66f, 1f)
+                context.drawTexture(POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f, 66, 66, 66, 66)
+                context.matrices.pop()
+                previewRenderable?.let { rp ->
+                    // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+                    val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                        com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
+                    try {
+                        PokemonIconRenderer.draw(
+                            context = context,
+                            renderable = rp,
+                            state = previewState,
+                            x = slotX, y = slotY, size = slotSize,
+                            delta = delta,
+                            animate = useFloat
+                        )
+                    } catch (_: Exception) {
+                    }
                 }
             }
-            // 候选计数（1/3）：让玩家知道有几个可切、现在是第几个
-            if (speciesCandidates.size > 1) {
+            // 候选计数（1/3）：让玩家知道有几个可切、现在是第几个（**与形态行同进同出**）
+            if (speciesCandidates.size > 1 && createFormVisible(66, 14)) {
                 context.drawCenteredTextWithShadow(
                     textRenderer,
                     Text.literal("${speciesIndex + 1}/${speciesCandidates.size}").formatted(Formatting.GRAY),
@@ -1559,7 +1577,7 @@ class BuyOrderScreen(
             }
             // 冻结提示：发布时冻结 maxPrice × 1（性格列表展开时隐藏——提示在列表覆盖区内）
             // 文字默认色，金额+单位金色（2026-08-24 拍板）
-            if (!natureListOpen) {
+            if (!natureListOpen && createFormVisible(214, 8)) {
                 context.drawCenteredTextWithShadow(textRenderer,
                     Text.translatable("cobblemarket.buy_order.frozen_hint",
                         Text.literal(com.shusheng.cobblemarket.client.formatPriceLong((createMaxPriceField?.text?.toIntOrNull() ?: 0).toLong())).formatted(Formatting.GOLD),
@@ -1568,20 +1586,23 @@ class BuyOrderScreen(
             }
         } else {
             // 物品预览图标（右侧）：手持模式显示主手物品（文字+图标双重提醒），否则优先显示点选项
-            val heldPreview = if (heldItemMode) heldPreviewStack() else null
-            if (heldPreview != null) {
-                drawItemWithBar(context, heldPreview, centerX + 72, createY(48))
-            } else {
-                val preview = matchedItems.getOrNull(selectedItemIndex) ?: matchedItems.firstOrNull()
-                preview?.let { candidate ->
-                    com.shusheng.cobblemarket.client.ItemComponentsDisplay
-                        .iconStack(candidate.itemId, candidate.componentsSpec)
-                        ?.let { stack -> if (!stack.isEmpty) drawItemWithBar(context, stack, centerX + 72, createY(48)) }
+            // **与物品输入框同进同出**（同一行的设计坐标；滚走了整块不画）
+            if (createFormVisible(48)) {
+                val heldPreview = if (heldItemMode) heldPreviewStack() else null
+                if (heldPreview != null) {
+                    drawItemWithBar(context, heldPreview, centerX + 72, createY(48))
+                } else {
+                    val preview = matchedItems.getOrNull(selectedItemIndex) ?: matchedItems.firstOrNull()
+                    preview?.let { candidate ->
+                        com.shusheng.cobblemarket.client.ItemComponentsDisplay
+                            .iconStack(candidate.itemId, candidate.componentsSpec)
+                            ?.let { stack -> if (!stack.isEmpty) drawItemWithBar(context, stack, centerX + 72, createY(48)) }
+                    }
                 }
             }
             // 冻结提示：发布时冻结 maxPrice × 件数（物品匹配列表展开时隐藏——提示在列表覆盖区内）
             // 文字默认色，金额+单位金色（2026-08-24 拍板）
-            if (!itemListOpen) {
+            if (!itemListOpen && createFormVisible(146, 8)) {
                 val maxPrice = createMaxPriceField?.text?.toIntOrNull() ?: 0
                 val count = createCountField?.text?.toIntOrNull() ?: 0
                 context.drawCenteredTextWithShadow(textRenderer,
