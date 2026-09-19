@@ -166,7 +166,7 @@ object MarketCommands {
                     )
                     .then(CommandManager.literal("points")
                         // 发放/回收 = **印钞权**：只认 OP，不下放给任何管理节点
-                        //（与 perm grant / loan clear 同级 —— RP 在商业服等同充值货币）
+                        //（与 perm grant / loan clear 同级 —— RP 在商业服常被当作充值货币）
                         .then(CommandManager.literal("give")
                             .requires { it.hasPermissionLevel(2) }
                             .then(CommandManager.argument("name", StringArgumentType.word())
@@ -427,7 +427,7 @@ object MarketCommands {
      * 发放 / 回收RP。金额下界由命令参数 `integer(1)` 把关（**负数会让"扣款"变成"发钱"**），
      * 这里再兜一层防以后改参数类型时漏掉。玩家可离线：走 [BanState.resolvePlayer]（在线优先 → userCache 兜底）。
      *
-     * 每一次变动都写审计 CSV（RP 等同充值货币，必须可对账）。
+     * 每一次变动都写审计 CSV（RP 的来源由服主决定，可能是真钱买的，必须可对账）。
      */
     private fun pointsAdjust(context: CommandContext<ServerCommandSource>, give: Boolean): Int {
         val source = context.source
