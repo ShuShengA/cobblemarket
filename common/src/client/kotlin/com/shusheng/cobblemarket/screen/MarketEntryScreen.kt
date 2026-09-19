@@ -585,7 +585,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
         // done 固定在底部，不参与滚动
         addDrawableChild(NineSliceButton(
-            centerX - 28, settingsDialogY() + SETTINGS_DONE_Y, 56, 20,
+            centerX - 28, settingsDialogY() + settingsDialogH() - SETTINGS_DONE_INSET, 56, 20,
             Text.translatable("cobblemarket.settings.done"),
             { closeSettingsDialog() }
         ))
@@ -748,7 +748,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         val dialogY = settingsDialogY()
 
         drawScreenDimMask(context, width, height)
-        drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, DIALOG_W, DIALOG_H, 0, DIALOG_BACKGROUND_TEX_H)
+        drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, DIALOG_W, settingsDialogH(), 0, DIALOG_BACKGROUND_TEX_H)
         context.drawCenteredTextWithShadow(
             textRenderer,
             Text.translatable("cobblemarket.settings.title").formatted(Formatting.GOLD),
@@ -762,7 +762,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         for (i in 1 until settingsRows.size) {
             if (!settingsRows[i].newGroup) continue
             val lineY = settingsRowY(i) - 2
-            if (lineY <= dialogY + SETTINGS_LINE_TOP + 1 || lineY > dialogY + SETTINGS_VIEW_BOTTOM) continue
+            if (lineY <= dialogY + SETTINGS_LINE_TOP + 1 || lineY > dialogY + settingsViewBottomRel()) continue
             context.fill(lineX1, lineY, lineX2, lineY + 1, 0xFF555555.toInt())
         }
         renderSettingsScrollbar(context)
@@ -783,7 +783,26 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     // ── 设置弹窗布局（行数据驱动：y / 可见性 / 分隔线 / 滚动共用同一套算法） ──
 
-    private fun settingsDialogY(): Int = bgBottom() - 87 - DIALOG_H / 2 // 弹窗中心与背景中心对齐（背景中心 = bgBottom - 87）
+    /**
+     * 设置弹窗高度：设计值 [DIALOG_H]，**但不超过屏幕**。
+     *
+     * ⚠ 2026-09-19 用户报（**1.2.0 起就有**）：GUI scale 调成自动时逻辑高只有两百多，
+     *   写死的 324 直接顶出屏幕、上下都被吞。黄金模板是**服务器配置界面**那一套：
+     *   `min(设计高, 屏幕高 − 8)` + 居中 + 内容可滚动（本弹窗本来就能滚，见 [settingsMaxScroll]）。
+     */
+    private fun settingsDialogH(): Int = minOf(DIALOG_H, height - 8)
+
+    /**
+     * 设置弹窗顶边：默认与**背景中心**对齐（背景中心 = `bgBottom − 87`，位置与原来一致），
+     * 再**钳进屏幕内** —— 弹窗被屏幕压矮时，中心对齐算出来的位置本身就可能越界。
+     */
+    private fun settingsDialogY(): Int {
+        val h = settingsDialogH()
+        return (bgBottom() - 87 - h / 2).coerceIn(4, (height - 4 - h).coerceAtLeast(4))
+    }
+
+    /** 内容可视区底（相对弹窗顶）：done 之上 [SETTINGS_VIEW_BOTTOM_INSET] —— 原来写死 287，弹窗矮了就得出界 */
+    private fun settingsViewBottomRel(): Int = settingsDialogH() - SETTINGS_VIEW_BOTTOM_INSET
 
     /** 登记一个设置行：x 固定；y 与可见性由 [layoutSettingsRows] 按滚动偏移统一给 */
     private fun addSettingsRow(button: NineSliceButton, x: Int, label: Text, newGroup: Boolean = true) {
@@ -811,7 +830,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private fun settingsRowVisible(index: Int): Boolean {
         val dialogY = settingsDialogY()
         val y = settingsRowY(index)
-        return y >= dialogY + SETTINGS_ROWS_TOP && y + settingsRowHeight(index) <= dialogY + SETTINGS_VIEW_BOTTOM
+        return y >= dialogY + SETTINGS_ROWS_TOP && y + settingsRowHeight(index) <= dialogY + settingsViewBottomRel()
     }
 
     /** 按当前滚动偏移摆放所有行（打开弹窗 / 滚轮 / resize 后调用）；标题行没有控件，只由标签渲染跟随 */
@@ -827,7 +846,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private fun settingsMaxScroll(): Int {
         if (settingsRows.isEmpty()) return 0
         val contentH = (settingsRows.size - 1) * SETTINGS_ROW_STEP + 22
-        return maxOf(0, contentH - (SETTINGS_VIEW_BOTTOM - SETTINGS_ROWS_TOP))
+        return maxOf(0, contentH - (settingsViewBottomRel() - SETTINGS_ROWS_TOP))
     }
 
     /** 右侧滚动条：只有内容超出一屏才画（否则玩家不知道下面还有东西） */
@@ -837,7 +856,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         val dialogY = settingsDialogY()
         val x = width / 2 + DIALOG_W / 2 - 5
         val top = dialogY + SETTINGS_ROWS_TOP
-        val trackH = SETTINGS_VIEW_BOTTOM - SETTINGS_ROWS_TOP
+        val trackH = settingsViewBottomRel() - SETTINGS_ROWS_TOP
         val thumbH = maxOf(16, trackH * trackH / (trackH + maxScroll))
         val thumbY = top + (trackH - thumbH) * settingsScroll / maxScroll
         context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
@@ -851,7 +870,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             val dialogX = width / 2 - DIALOG_W / 2
             val dialogY = settingsDialogY()
             val inside = mouseX >= dialogX && mouseX <= dialogX + DIALOG_W &&
-                mouseY >= dialogY && mouseY <= dialogY + DIALOG_H
+                mouseY >= dialogY && mouseY <= dialogY + settingsDialogH()
             if (maxScroll > 0 && inside) {
                 settingsScroll = (settingsScroll - (verticalAmount * SETTINGS_ROW_STEP).roundToInt()).coerceIn(0, maxScroll)
                 layoutSettingsRows()
@@ -1020,7 +1039,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                 context.drawCenteredTextWithShadow(
                     textRenderer,
                     settingsToastText,
-                    width / 2, settingsDialogY() + DIALOG_H + 6, 0xFFFFFF
+                    width / 2, settingsDialogY() + settingsDialogH() + 6, 0xFFFFFF
                 )
             }
             return
@@ -1238,10 +1257,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 设置弹窗内容区（相对弹窗顶）：行步进 26 = 控件高 22 + 间隙 4。
         // 内容超过一屏靠滚动显示（整行进出，见 settingsRowVisible）；done 固定在底部不参与滚动
         private const val SETTINGS_ROWS_TOP = 30      // 第一行控件顶 = 内容可视区顶
-        private const val SETTINGS_VIEW_BOTTOM = 287  // 内容可视区底（done 之上）
+        private const val SETTINGS_VIEW_BOTTOM_INSET = 37   // 内容可视区底 = 弹窗底往上 37px（done 之上）
         private const val SETTINGS_ROW_STEP = 26
         private const val SETTINGS_LINE_TOP = 27      // 标题下的分隔线（固定，不参与滚动）
-        private const val SETTINGS_DONE_Y = 291
+        private const val SETTINGS_DONE_INSET = 33         // done 按钮顶 = 弹窗底往上 33px
         // 入口掉落动画三段：下落 → 落地停留 → 淡出（淡出期间入口界面从图下透出，慢慢显现）
         private const val DROP_DURATION_MS = 100L
         private const val HOLD_DURATION_MS = 100L
