@@ -22,6 +22,10 @@
 - **RP balance HUD**: RP is shown on the line **below** the main balance (with green/red floating deltas when it changes); that line has its own display switch and hides itself when the server has RP turned off
 - **Audit and order ledgers**: every RP change is written to CSV under `config/cobblemarket/points/`, and top-up orders get their own ledger covering every step (created / claimed paid / granted / voided) — so even an order the owner never got around to handling is traceable from the files
 - **RP is always shown as an icon**: chat messages, command feedback, screen titles, buttons and tooltips all use the icon, so **the text "RP" never appears in the UI**; titles get a larger version. All of them share the balance HUD's image — swap that image and every one changes with it
+- **Pick the currency when listing**: the Pokemon and item listing screens now have a currency toggle next to the price box (main currency <-> RP icon); the listing fee is charged in the same currency, with RP fee rates configured separately by the owner (free by default)
+- **Player-to-player RP trading switch**: a second valve on top of the RP master switch, off by default; while it is off the currency buttons in the listing and market screens are **greyed out** (clicking explains why) and the server refuses RP listings outright; with the RP master switch off those buttons are not shown at all
+- **Markets are viewed one currency at a time**: the Pokemon and item markets (including both admin market screens) get a currency button to the left of Back, switching between main-currency and RP listings — prices in the two currencies are not comparable, so mixing them would break price sorting and filtering; switching returns you to page one
+- **RP listings cannot be financed**: RP is bought with real money while the main currency is a market currency, so the two are not of equal value — the Meowth instalment entry is **hidden** for RP purchases (and the server refuses them anyway)
 
 ## 1.2.0 (in development, unreleased)
 

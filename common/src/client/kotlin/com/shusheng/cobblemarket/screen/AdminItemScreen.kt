@@ -22,6 +22,13 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import java.util.UUID
 import com.shusheng.cobblemarket.client.drawItemWithBar
+import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.client.PointsStateCache
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
+import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
+import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.CurrencyService
 
 class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
 
@@ -32,6 +39,13 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     private var entries = listOf<ItemEntry>()
     private var currentPage = 1
     private var totalPages = 1
+
+    /** 列表在查哪个币种（货币切换按钮控制）—— **只决定查什么，不参与渲染**：
+     *  显示单位一律读挂单自己的 [ItemEntry.isPoints]，否则任何一处漏改就会把 RP 商品标成 ₽ */
+    private var currency = MarketCurrency.PRIMARY
+
+    /** 货币切换按钮（RP 总开关关着时 = null，压根没建） */
+    private var currencyButton: NineSliceButton? = null
     // 搜索防抖（照精灵市场）：250ms 静默后统一发请求，避免连续输入被服务端节流丢包
     private var searchDirty = false
     private var lastSearchEdit = 0L
@@ -133,6 +147,21 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         )
         addDrawableChild(backButton)
 
+        // 货币切换按钮（返回按钮左侧 4px）：看哪个币种的挂单（与玩家端同一个位置、同一套逻辑）
+        currencyButton = if (PointsStateCache.enabled) {
+            NineSliceButton(
+                leftX + panelWidth - 74, 13, 20, 16,
+                Text.literal(""), { onCurrencyClick() },
+                iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
+                iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
+                tooltip = Text.translatable("cobblemarket.gui.currency_switch", com.shusheng.cobblemarket.client.inlineCurrencyUnit(), CurrencyService.pointsIcon())
+            ).also {
+                it.dimmed = !PointsStateCache.marketEnabled
+                updateCurrencyButton(it)
+                addDrawableChild(it)
+            }
+        } else null
+
         val savedSearch = searchField?.text ?: ""
         val savedSeller = sellerField?.text ?: ""
         searchField = TextFieldWidget(textRenderer, leftX + 2, 44, 132, 16, Text.translatable("cobblemarket.item.search"))
@@ -201,6 +230,36 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         refreshData()
     }
 
+    /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
+    private fun onCurrencyClick() {
+        if (!PointsStateCache.marketEnabled) {
+            playFailSound()
+            client?.player?.sendMessage(
+                // ⚠ 提醒类消息用红色，和普通反馈区分开（图标自带白色，不受影响）
+                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            return
+        }
+        toggleCurrency()
+    }
+
+    /** 切主货币 ↔ RP：整屏换成另一半挂单，**必须重置页码**（原页码在新币种下多半是空的） */
+    private fun toggleCurrency() {
+        currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
+        currencyButton?.let { updateCurrencyButton(it) }
+        currentPage = 1
+        refreshData()
+    }
+
+    /** 刷新货币按钮外观：主货币显示 `₽`，RP 显示图标（与玩家端/上架界面同一套口径） */
+    private fun updateCurrencyButton(btn: NineSliceButton) {
+        val points = currency == MarketCurrency.POINTS
+        btn.setMessage(Text.literal(if (points) "" else "₽"))
+        btn.iconLeft = if (points) POINTS_SYMBOL_TEXTURE else null
+    }
+
     private fun refreshData() {
         lastListRequestAt = System.currentTimeMillis()
         val query = searchField?.text?.trim() ?: ""
@@ -214,7 +273,8 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
                 sortMode = sortMode,
                 page = currentPage,
                 pageSize = columns() * rows(),
-                mineOnly = showMineOnly
+                mineOnly = showMineOnly,
+                currency = currency.name
             )
         )
     }
@@ -267,6 +327,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         cancelEntry = entry
         // 弹窗打开时隐藏主界面全部控件：widget 文字画在遮罩（addDrawable）之上，visible=false 才能防穿透
         backButton?.visible = false
+        currencyButton?.visible = false
         searchField?.visible = false
         sellerField?.visible = false
         sortButton?.visible = false
@@ -357,9 +418,12 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.sell_count").append(": ").append("×${entry.count}"),
             centerX, dialogY + 80, 0xFFFFFF)
+        // 下架确认弹窗的价格：单位走统一入口，币种取这条挂单自己的
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.gui.tooltip_price").append(
-                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)
+                com.shusheng.cobblemarket.client.amountWithUnit(
+                    com.shusheng.cobblemarket.client.formatPrice(entry.price), entry.isPoints, entry.currencyName
+                ).formatted(Formatting.GOLD)
             ),
             centerX, dialogY + 94, 0xFFFFFF)
 
@@ -457,8 +521,12 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             val countText = "×${entry.count}"
             context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 2, 0xFFFFFF, false)
 
-            // 价格过长时用缩写（与物品市场界面一致），完整价格见 tooltip
-            val priceText = "${com.shusheng.cobblemarket.client.formatPriceShort(entry.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
+            // 价格过长时用缩写（与物品市场界面一致），完整价格见 tooltip；
+            // 单位走统一入口，币种取**这条挂单自己的**（行内用恒定 ₽ 写法）
+            val priceText = com.shusheng.cobblemarket.client.amountWithUnit(
+                com.shusheng.cobblemarket.client.formatPriceShort(entry.price),
+                entry.isPoints, entry.currencyName, inline = true
+            )
             context.drawText(textRenderer, priceText, x + 3, y + slotSize - 10, 0xFFAA00, false)
         }
 
@@ -486,9 +554,11 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             lines.add(Text.literal(entry.itemId) to 0xFFFFFF)
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(entry.sellerName) to 0xFFFFFF)
-        // 价格行：标签默认色，金额段蓝色（2026-08-24 拍板）
+        // 价格行：标签默认色，金额段蓝色（2026-08-24 拍板）；单位走统一入口，币种取这条挂单自己的
         lines.add(Text.translatable("cobblemarket.item.tooltip_price").append(
-            Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)
+            com.shusheng.cobblemarket.client.amountWithUnit(
+                com.shusheng.cobblemarket.client.formatPrice(entry.price), entry.isPoints, entry.currencyName
+            ).formatted(Formatting.GOLD)
         ) to 0xFFFFFF)
         lines.add(Text.literal("×${entry.count}") to 0xFFFFFF)
 

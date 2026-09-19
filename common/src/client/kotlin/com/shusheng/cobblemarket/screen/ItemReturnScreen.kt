@@ -311,9 +311,12 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
             lines.add(Text.literal(entry.itemId) to 0xFFFFFF)
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(entry.sellerName) to 0xFFFFFF)
-        // 价格行：标签默认色，金额段蓝色（2026-08-24 拍板）
+        // 价格行：标签默认色，金额段蓝色（2026-08-24 拍板）；
+        // 单位走统一入口，币种取**这条挂单自己的**（待领取里可能就是 RP 单）
         lines.add(Text.translatable("cobblemarket.item.tooltip_price").append(
-            Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)
+            com.shusheng.cobblemarket.client.amountWithUnit(
+                com.shusheng.cobblemarket.client.formatPrice(entry.price), entry.isPoints, entry.currencyName
+            ).formatted(Formatting.GOLD)
         ) to 0xFFFFFF)
         lines.add(Text.literal("×${entry.count}") to 0xFFFFFF)
 

@@ -271,9 +271,14 @@ object EntryBadgeRenderer {
         lines.add(
             Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)) to 0xFFFFFF
         )
+        // 价格行：单位走统一入口，币种取**这条挂单自己的**。
+        // ⚠ 这里曾经漏过 —— 购买确认弹窗（精灵）与待交付弹窗都走本函数，
+        //   漏了就会把 RP 价格标成 ₽
         lines.add(
             Text.translatable("cobblemarket.gui.tooltip_price").append(
-                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)) to 0xFFFFFF
+                com.shusheng.cobblemarket.client.amountWithUnit(
+                    com.shusheng.cobblemarket.client.formatPrice(entry.price), entry.isPoints, entry.currencyName
+                ).formatted(Formatting.GOLD)) to 0xFFFFFF
         )
 
         var y = startY
