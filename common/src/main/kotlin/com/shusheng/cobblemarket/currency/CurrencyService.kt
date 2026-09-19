@@ -121,6 +121,30 @@ object CurrencyService {
         Text.literal("").append(CurrencyHandler.goldAmount(amount))
             .append(" ").append(unitText(currency))
 
+    /**
+     * **卖家侧入账** —— 分两条路（方案「RP 收入直接到账」）：
+     * - 主货币：进**待领余额**（`MarketState.addPendingBalance`），背包满或玩家离线都不会丢
+     * - RP：直接进 `PointsState`（纯数字、离线也能入），**不进待领账本**
+     *
+     * ⚠ 卖家**离线也会走到这里**（拍卖到期结算、求购过期等），所以参数是 uuid 不是 player。
+     * ⚠ 也正因为分了两路，「收款」按钮与角标只统计主货币是**对**的 —— RP 早就到账了，
+     * 不该在待领里再出现一次。
+     */
+    fun creditSeller(
+        server: net.minecraft.server.MinecraftServer,
+        playerUuid: java.util.UUID,
+        currency: MarketCurrency,
+        amount: Long
+    ) {
+        if (amount <= 0) return
+        when (currency) {
+            MarketCurrency.PRIMARY ->
+                com.shusheng.cobblemarket.market.MarketState.get(server).addPendingBalance(playerUuid, amount)
+
+            MarketCurrency.POINTS -> PointsState.get(server).addBalance(playerUuid, amount)
+        }
+    }
+
     /** RP 不接喵喵支付：准备金池垫付的是主货币，等于跨币种兑换，违反「不可兑换」 */
     fun supportsMeowthPay(currency: MarketCurrency): Boolean = currency == MarketCurrency.PRIMARY
 

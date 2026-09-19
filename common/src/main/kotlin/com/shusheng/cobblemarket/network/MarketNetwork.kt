@@ -13,6 +13,8 @@ import com.shusheng.cobblemarket.market.ItemMarketState
 import com.shusheng.cobblemarket.market.ListingStatus
 import com.shusheng.cobblemarket.market.MarketListing
 import com.shusheng.cobblemarket.market.MarketState
+import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
@@ -699,21 +701,48 @@ data class HistoryDataPayload(val entries: List<HistoryEntry>) : CustomPayload {
 
 // ── C2S: Sell from storage ──
 
-data class SellFromStoragePayload(val pokemonUuid: UUID, val price: Int) : CustomPayload {
+data class SellFromStoragePayload(
+    val pokemonUuid: UUID,
+    val price: Int,
+    /**
+     * 上架币种 —— **原始字符串，在这里不解析**。
+     *
+     * ⚠ 类型必须是 String 而不是 [MarketCurrency]：codec 解码时没有「拒绝」这个选项，
+     * 若在解码处就 `fromStored` 容错，伪造的垃圾值会被**静默当成主货币**（等于放行）。
+     * 服务端 handler 用 `MarketCurrency.fromRequest` 严格校验，非法直接拒绝请求。
+     *
+     * 默认值只为客户端构造方便，服务端**不认**这个默认。
+     */
+    val currency: String = MarketCurrency.PRIMARY.name
+) : CustomPayload {
     override fun getId() = ID
 
     companion object {
         val ID = CustomPayload.Id<SellFromStoragePayload>(CobbleMarket.id("sell_from_storage"))
         val CODEC: PacketCodec<PacketByteBuf, SellFromStoragePayload> = PacketCodec.of(
-            { p, b -> b.writeUuid(p.pokemonUuid); b.writeInt(p.price) },
-            { b -> SellFromStoragePayload(b.readUuid(), b.readInt()) }
+            { p, b -> b.writeUuid(p.pokemonUuid); b.writeInt(p.price); b.writeString(p.currency) },
+            { b ->
+                val uuid = b.readUuid()
+                val price = b.readInt()
+                SellFromStoragePayload(uuid, price, b.readString())
+            }
         )
     }
 }
 
 // ── C2S: Sell item ──
 
-data class SellItemPayload(val itemId: String, val itemNbt: NbtCompound, val count: Int, val price: Int) :
+data class SellItemPayload(
+    val itemId: String,
+    val itemNbt: NbtCompound,
+    val count: Int,
+    val price: Int,
+    /**
+     * 上架币种 —— **原始字符串，在这里不解析**（理由同 [SellFromStoragePayload.currency]：
+     * 解码处容错会把伪造值静默放行，必须留给 handler 用 `fromRequest` 严格校验）。
+     */
+    val currency: String = MarketCurrency.PRIMARY.name
+) :
     CustomPayload {
     override fun getId() = ID
 
@@ -724,9 +753,15 @@ data class SellItemPayload(val itemId: String, val itemNbt: NbtCompound, val cou
                 b.writeString(p.itemId); PacketCodecs.NBT_COMPOUND.encode(
                 b,
                 p.itemNbt
-            ); b.writeInt(p.count); b.writeInt(p.price)
+            ); b.writeInt(p.count); b.writeInt(p.price); b.writeString(p.currency)
             },
-            { b -> SellItemPayload(b.readString(), PacketCodecs.NBT_COMPOUND.decode(b), b.readInt(), b.readInt()) }
+            { b ->
+                val itemId = b.readString()
+                val itemNbt = PacketCodecs.NBT_COMPOUND.decode(b)
+                val count = b.readInt()
+                val price = b.readInt()
+                SellItemPayload(itemId, itemNbt, count, price, b.readString())
+            }
         )
     }
 }
@@ -1304,6 +1339,20 @@ object MarketNetwork {
                 }
                 // 喵喵支付（消费贷）：信用校验 + 准备金垫付；否则现金扣款
                 val meowth = payload.planIndex >= 0
+                // ⚠ **RP 挂单不接受喵喵支付**：准备金池垫付的是主货币，等于跨币种兑换，违反「不可兑换」
+                //   （方案「另三处必须特殊处理」）。客户端购买弹窗也会藏掉喵喵入口，这里是服务端兜底。
+                if (meowth && listing.currency != MarketCurrency.PRIMARY) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(
+                            false,
+                            Text.translatable(
+                                "cobblemarket.network.no_meowth_for_points", CurrencyService.pointsIcon()
+                            )
+                        )
+                    )
+                    return@execute
+                }
                 if (meowth) {
                     val payErr = com.shusheng.cobblemarket.finance.FinanceService.meowthCheck(
                         player, listing.price.toLong(), payload.planIndex, System.currentTimeMillis()
@@ -1313,15 +1362,14 @@ object MarketNetwork {
                         return@execute
                     }
                     com.shusheng.cobblemarket.finance.FinanceState.get(server).withdrawReserve(listing.price.toLong())
-                } else if (!removeCurrency(player, listing.price)) {
+                } else if (!CurrencyService.remove(player, listing.currency, listing.price.toLong())) {
                     sendToPlayer(
                         player,
                         MarketResultPayload(
                             false,
                             Text.translatable(
                                 "cobblemarket.network.need_diamonds",
-                                com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(listing.price),
-                                com.shusheng.cobblemarket.config.CurrencyHandler.goldCurrencyText()
+                                CurrencyService.amountText(listing.price, listing.currency)
                             )
                         )
                     )
@@ -1347,7 +1395,8 @@ object MarketNetwork {
                         // 信用支付失败回池（贷款未创建，无需撤销）
                         com.shusheng.cobblemarket.finance.FinanceState.get(server).depositReserve(listing.price.toLong())
                     } else {
-                        val refunded = giveCurrency(player, listing.price)
+                        // ⚠ 退款与扣款**同币种**（都取自挂单对象）：扣的是 RP 就不能退成主货币
+                        val refunded = CurrencyService.give(player, listing.currency, listing.price.toLong())
                         if (refunded < listing.price.toLong()) {
                             // 退款未全部到账（背包满）：差额转入待领余额兜底，避免买家钱被吞
                             state.addPendingBalance(player.uuid, listing.price.toLong() - refunded)
@@ -1372,7 +1421,8 @@ object MarketNetwork {
                     )
                 }
 
-                state.addPendingBalance(listing.sellerUuid, listing.price.toLong())
+                // 卖家入账：主货币进待领余额、RP 直接到账（见 CurrencyService.creditSeller）
+                CurrencyService.creditSeller(server, listing.sellerUuid, listing.currency, listing.price.toLong())
                 // 卖家到账音：在线才发（离线那位由上线时的「离线收益」提示兜底，见 MarketEntryScreen）
                 server.playerManager.getPlayer(listing.sellerUuid)?.let { sendSound(it, "market_sold") }
                 listing.status = ListingStatus.SOLD
@@ -1388,11 +1438,15 @@ object MarketNetwork {
                 )
 
                 // 金融系统成交挂钩子：买家成交计入其交易额（额度公式数据源；防刷三层在 recordTrade 内成交时快照判定；
-                // 喵喵支付成交标 loanFunded → 不计入交易额，防借→买→额度涨→再借循环）
-                com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
-                    server, player.uuid, listing.sellerUuid, listing.price.toLong(), System.currentTimeMillis(),
-                    loanFunded = meowth
-                )
+                // 喵喵支付成交标 loanFunded → 不计入交易额，防借→买→额度涨→再借循环）。
+                // ⚠ **RP 交易整块跳过**（方案「统计隔离」）：totalCountedVolume 喂着紫卡/黑卡申请门槛与
+                //   贷款额度公式，让 RP 来回刷交易量等于白嫖卡片资格和更高额度；RP 留痕走交易历史（带币种）
+                if (listing.currency == MarketCurrency.PRIMARY) {
+                    com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
+                        server, player.uuid, listing.sellerUuid, listing.price.toLong(), System.currentTimeMillis(),
+                        loanFunded = meowth
+                    )
+                }
 
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
@@ -1404,16 +1458,14 @@ object MarketNetwork {
                             Text.translatable(
                                 "cobblemarket.buy_confirm.paid_by_meowth",
                                 listing.speciesText(),
-                                com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(listing.price),
-                                com.shusheng.cobblemarket.config.CurrencyHandler.goldCurrencyText(),
+                                CurrencyService.amountText(listing.price, listing.currency),
                                 com.shusheng.cobblemarket.config.CobbleMarketConfig.loanPlans.getOrNull(payload.planIndex)?.periods ?: 1
                             )
                         else
                             Text.translatable(
                                 "cobblemarket.network.bought",
                                 listing.speciesText(),
-                                com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(listing.price),
-                                com.shusheng.cobblemarket.config.CurrencyHandler.goldCurrencyText()
+                                CurrencyService.amountText(listing.price, listing.currency)
                             )
                     )
                 )
@@ -1711,7 +1763,8 @@ object MarketNetwork {
                         species = listing.itemId,
                         price = listing.price,
                         fee = 0,
-                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count),
+                        currency = listing.currency
                     )
                 )
                 // 物品名传翻译 Text（客户端按玩家语言渲染），与精灵下架的 speciesText() 一致，不能传裸 itemId
@@ -1838,6 +1891,30 @@ object MarketNetwork {
                     )
                     return@execute
                 }
+                // ⚠ 币种来自**创建类请求**，必须严格校验：非法值直接拒绝。
+                //   这里**不能**用 fromStored 容错 —— 那等于把伪造的币种静默当成主货币放行。
+                val currency = MarketCurrency.fromRequest(payload.currency)
+                if (currency == null) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.network.invalid_currency"))
+                    )
+                    return@execute
+                }
+                // 服务端没开 RP 时拒绝 RP 上架（关闭后**存量** RP 挂单仍可正常成交/下架，那两条路走挂单自带币种）
+                if (currency == MarketCurrency.POINTS &&
+                    !com.shusheng.cobblemarket.config.CobbleMarketConfig.pointsEnabled
+                ) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(
+                            false,
+                            Text.translatable("cobblemarket.network.points_disabled", CurrencyService.pointsIcon())
+                        )
+                    )
+                    return@execute
+                }
+
                 // 队伍至少要留一只精灵
                 if (fromParty && party.occupied() <= 1) {
                     sendToPlayer(
@@ -1871,14 +1948,17 @@ object MarketNetwork {
                     )
                     return@execute
                 }
-                // 价格限制检查：精灵规则（物种可空=全部精灵、V 档可空=不限、形态照黑名单语义）+ 携带物规则合并
-                val pokemonBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
-                    .getPriceBounds(pokemon)
-                val itemBounds = if (heldItemId != null)
-                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
-                        .getPriceBounds(heldItem, player.serverWorld.registryManager)
-                else null
-                val priceBounds = com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
+                // 价格限制检查：精灵规则（物种可空=全部精灵、V 档可空=不限、形态照黑名单语义）+ 携带物规则合并。
+                // ⚠ **RP 挂单整块跳过**：限价表是**主货币口径**，拿主货币的上下限去套 RP 价只会误伤（方案已拍板）
+                val priceBounds = if (currency != MarketCurrency.PRIMARY) null else {
+                    val pokemonBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
+                        .getPriceBounds(pokemon)
+                    val itemBounds = if (heldItemId != null)
+                        com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
+                            .getPriceBounds(heldItem, player.serverWorld.registryManager)
+                    else null
+                    com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
+                }
                 if (priceBounds != null) {
                     // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
                     if (priceBounds.isEmptyRange) {
@@ -1955,7 +2035,8 @@ object MarketNetwork {
                     createdAt = now,
                     expiresAt = now + com.shusheng.cobblemarket.config.CobbleMarketConfig.listingDurationDays * 24L * 60 * 60 * 1000,
                     status = ListingStatus.ACTIVE,
-                    extraData = extra
+                    extraData = extra,
+                    currency = currency
                 )
 
                 // 副作用阶段：扣手续费 → 移除精灵 → 挂单入库
@@ -1963,21 +2044,29 @@ object MarketNetwork {
                 val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.pokemonListingFeePercent
                 // toLong 先提升：Int×Int 在价格×费率超过 21.5 亿时环绕溢出（fee 可算成负/0，逃税或凭空生钱）；
                 // 逾期制裁：上架者逾期 ≥7 天 → 手续费翻倍
-                val fee = if (feePercent > 0)
-                    com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
-                        com.shusheng.cobblemarket.finance.FinanceState.get(server),
-                        player.uuid,
-                        com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
-                            com.shusheng.cobblemarket.finance.FinanceState.get(server), player.uuid, now,
-                            Math.ceil(payload.price.toLong() * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
-                        )
-                    ).toInt()
-                else 0
-                if (fee > 0 && !CurrencyHandler.remove(player, fee)) {
+                val feeBase = Math.ceil(payload.price.toLong() * feePercent / 100.0).toLong()
+                    .coerceAtMost(Int.MAX_VALUE.toLong())
+                val fee = if (feePercent > 0) {
+                    // ⚠ **卡片折扣与逾期翻倍只跟主货币有关**（方案「四条铁律」第 4 条）：
+                    //   RP 手续费既不打折也不翻倍 —— 打折等于让 RP 白嫖黑金卡权益，
+                    //   翻倍则是把主货币的逾期制裁套到 RP 头上，两头都不对
+                    if (currency == MarketCurrency.PRIMARY) {
+                        com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
+                            com.shusheng.cobblemarket.finance.FinanceState.get(server),
+                            player.uuid,
+                            com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+                                com.shusheng.cobblemarket.finance.FinanceState.get(server), player.uuid, now, feeBase
+                            )
+                        ).toInt()
+                    } else {
+                        feeBase.toInt()
+                    }
+                } else 0
+                if (fee > 0 && !CurrencyService.remove(player, currency, fee.toLong())) {
                     sendToPlayer(
                         player, MarketResultPayload(
                             false,
-                            Text.translatable("cobblemarket.cmd.need_fee", CurrencyHandler.goldAmount(fee), CurrencyHandler.goldCurrencyText())
+                            Text.translatable("cobblemarket.cmd.need_fee", CurrencyService.amountText(fee, currency))
                         )
                     )
                     return@execute
@@ -1993,8 +2082,10 @@ object MarketNetwork {
                 if (!removed) {
                     // 精灵未实际移除：退还手续费并中止，避免同一精灵同时存在于存储和挂单
                     if (fee > 0) {
-                        val refunded = giveCurrency(player, fee)
+                        // ⚠ 退款**必须与扣款同币种**（都取自挂单对象）—— 扣的是 RP 就不能退成主货币
+                        val refunded = CurrencyService.give(player, currency, fee.toLong())
                         if (refunded < fee.toLong()) {
+                            // 只有主货币的物品后端会「少发」（背包满）；RP 是纯数字，必定全额到账
                             MarketState.get(server).addPendingBalance(player.uuid, fee.toLong() - refunded)
                             CobbleMarket.LOGGER.error(
                                 "Partial fee refund for seller {} after failed pokemon removal; {} moved to pending balance",
@@ -2018,23 +2109,21 @@ object MarketNetwork {
                     )
                 )
 
+                // 金额 + 单位合成一个 amountText（词条里也从 `%d %s` 合并成了单个 `%s`）
                 val listedMsg: Text = if (fee > 0)
                     Text.translatable(
                         "cobblemarket.cmd.listed_fee",
                         pokemon.species.translatedName,
                         pokemon.level,
-                        CurrencyHandler.goldAmount(payload.price),
-                        CurrencyHandler.goldCurrencyText(),
-                        CurrencyHandler.goldAmount(fee),
-                        CurrencyHandler.goldCurrencyText()
+                        CurrencyService.amountText(payload.price, currency),
+                        CurrencyService.amountText(fee, currency)
                     )
                 else
                     Text.translatable(
                         "cobblemarket.cmd.listed",
                         pokemon.species.translatedName,
                         pokemon.level,
-                        CurrencyHandler.goldAmount(payload.price),
-                        CurrencyHandler.goldCurrencyText()
+                        CurrencyService.amountText(payload.price, currency)
                     )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
@@ -2073,6 +2162,28 @@ object MarketNetwork {
                     return@execute
                 }
 
+                // ⚠ 币种来自**创建类请求**，必须严格校验：非法值直接拒绝（不能用 fromStored 容错）
+                val currency = MarketCurrency.fromRequest(payload.currency)
+                if (currency == null) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.network.invalid_currency"))
+                    )
+                    return@execute
+                }
+                if (currency == MarketCurrency.POINTS &&
+                    !com.shusheng.cobblemarket.config.CobbleMarketConfig.pointsEnabled
+                ) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(
+                            false,
+                            Text.translatable("cobblemarket.network.points_disabled", CurrencyService.pointsIcon())
+                        )
+                    )
+                    return@execute
+                }
+
                 // 重建目标物品，以服务端重建的物品为准（不信任客户端 itemId/itemNbt 的一致性）
                 val diagId = net.minecraft.util.Identifier.tryParse(payload.itemId)
                 val diagItem = diagId?.let { Registries.ITEM.getOrEmpty(it).orElse(null) }
@@ -2106,9 +2217,11 @@ object MarketNetwork {
                     return@execute
                 }
 
-                // 价格限制检查
-                val itemPriceBounds = com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
-                    .getPriceBounds(targetStack, player.serverWorld.registryManager)
+                // 价格限制检查。
+                // ⚠ **RP 挂单整块跳过**：限价表是**主货币口径**，拿主货币的上下限去套 RP 价只会误伤（方案已拍板）
+                val itemPriceBounds = if (currency != MarketCurrency.PRIMARY) null else
+                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
+                        .getPriceBounds(targetStack, player.serverWorld.registryManager)
                 if (itemPriceBounds != null) {
                     // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
                     if (itemPriceBounds.isEmptyRange) {
@@ -2219,22 +2332,29 @@ object MarketNetwork {
                 // 手续费（基于总价）；失败时退还已扣物品并中止；逾期制裁：上架者逾期 ≥7 天 → 翻倍
                 val feePercent = com.shusheng.cobblemarket.config.CobbleMarketConfig.itemListingFeePercent
                 val totalPrice = payload.price.toLong() * payload.count
-                val fee = if (feePercent > 0)
-                    com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
-                        com.shusheng.cobblemarket.finance.FinanceState.get(server),
-                        player.uuid,
-                        com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
-                            com.shusheng.cobblemarket.finance.FinanceState.get(server), player.uuid, System.currentTimeMillis(),
-                            Math.ceil(totalPrice * feePercent / 100.0).toLong().coerceAtMost(Int.MAX_VALUE.toLong())
-                        )
-                    ).toInt()
-                else 0
-                if (fee > 0 && !CurrencyHandler.remove(player, fee)) {
+                val feeBase = Math.ceil(totalPrice * feePercent / 100.0).toLong()
+                    .coerceAtMost(Int.MAX_VALUE.toLong())
+                val fee = if (feePercent > 0) {
+                    // ⚠ 卡片折扣与逾期翻倍**只跟主货币有关**（方案「四条铁律」第 4 条），RP 两头都不吃
+                    if (currency == MarketCurrency.PRIMARY) {
+                        com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
+                            com.shusheng.cobblemarket.finance.FinanceState.get(server),
+                            player.uuid,
+                            com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+                                com.shusheng.cobblemarket.finance.FinanceState.get(server), player.uuid, System.currentTimeMillis(),
+                                feeBase
+                            )
+                        ).toInt()
+                    } else {
+                        feeBase.toInt()
+                    }
+                } else 0
+                if (fee > 0 && !CurrencyService.remove(player, currency, fee.toLong())) {
                     giveBackItem(targetStack.copyWithCount(payload.count), player)
                     sendToPlayer(
                         player, MarketResultPayload(
                             false,
-                            Text.translatable("cobblemarket.cmd.need_fee", CurrencyHandler.goldAmount(fee), CurrencyHandler.goldCurrencyText())
+                            Text.translatable("cobblemarket.cmd.need_fee", CurrencyService.amountText(fee, currency))
                         )
                     )
                     return@execute
@@ -2254,7 +2374,8 @@ object MarketNetwork {
                     price = payload.price,
                     createdAt = now,
                     expiresAt = now + com.shusheng.cobblemarket.config.CobbleMarketConfig.listingDurationDays * 24L * 60 * 60 * 1000,
-                    status = ListingStatus.ACTIVE
+                    status = ListingStatus.ACTIVE,
+                    currency = currency
                 )
 
                 val state = ItemMarketState.get(server)
@@ -2272,7 +2393,8 @@ object MarketNetwork {
                         species = payload.itemId,
                         price = payload.price,
                         fee = fee,
-                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count),
+                        currency = currency
                     )
                 )
 
@@ -2281,18 +2403,15 @@ object MarketNetwork {
                         "cobblemarket.item.listed_fee",
                         payload.count,
                         targetStack.item.name,
-                        CurrencyHandler.goldAmount(payload.price),
-                        CurrencyHandler.goldCurrencyText(),
-                        CurrencyHandler.goldAmount(fee),
-                        CurrencyHandler.goldCurrencyText()
+                        CurrencyService.amountText(payload.price, currency),
+                        CurrencyService.amountText(fee, currency)
                     )
                 else
                     Text.translatable(
                         "cobblemarket.item.listed",
                         payload.count,
                         targetStack.item.name,
-                        CurrencyHandler.goldAmount(payload.price),
-                        CurrencyHandler.goldCurrencyText()
+                        CurrencyService.amountText(payload.price, currency)
                     )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
@@ -2459,6 +2578,20 @@ object MarketNetwork {
                 val totalPrice = totalPriceLong.toInt()
                 // 喵喵支付（消费贷）：信用校验 + 准备金垫付；否则现金扣款
                 val meowth = payload.planIndex >= 0
+                // ⚠ **RP 挂单不接受喵喵支付**：准备金池垫付的是主货币，等于跨币种兑换，违反「不可兑换」
+                //   （方案「另三处必须特殊处理」）。客户端购买弹窗也会藏掉喵喵入口，这里是服务端兜底。
+                if (meowth && listing.currency != MarketCurrency.PRIMARY) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(
+                            false,
+                            Text.translatable(
+                                "cobblemarket.network.no_meowth_for_points", CurrencyService.pointsIcon()
+                            )
+                        )
+                    )
+                    return@execute
+                }
                 if (meowth) {
                     val payErr = com.shusheng.cobblemarket.finance.FinanceService.meowthCheck(
                         player, totalPriceLong, payload.planIndex, System.currentTimeMillis()
@@ -2468,15 +2601,14 @@ object MarketNetwork {
                         return@execute
                     }
                     com.shusheng.cobblemarket.finance.FinanceState.get(server).withdrawReserve(totalPriceLong)
-                } else if (!CurrencyHandler.remove(player, totalPrice)) {
+                } else if (!CurrencyService.remove(player, listing.currency, totalPriceLong)) {
                     sendToPlayer(
                         player,
                         MarketResultPayload(
                             false,
                             Text.translatable(
                                 "cobblemarket.network.need_diamonds",
-                                CurrencyHandler.goldAmount(totalPrice),
-                                CurrencyHandler.goldCurrencyText()
+                                CurrencyService.amountText(totalPrice, listing.currency)
                             )
                         )
                     )
@@ -2506,7 +2638,8 @@ object MarketNetwork {
                         // 信用支付失败回池（贷款未创建，无需撤销）
                         com.shusheng.cobblemarket.finance.FinanceState.get(server).depositReserve(totalPriceLong)
                     } else {
-                        val refunded = CurrencyHandler.give(player, totalPrice.toLong())
+                        // ⚠ 退款与扣款**同币种**（都取自挂单对象）：扣的是 RP 就不能退成主货币
+                        val refunded = CurrencyService.give(player, listing.currency, totalPrice.toLong())
                         if (refunded < totalPrice.toLong()) {
                             // 退款未全部到账（背包满）：差额转入待领余额兜底，避免买家钱被吞
                             MarketState.get(server).addPendingBalance(player.uuid, totalPrice.toLong() - refunded)
@@ -2530,14 +2663,18 @@ object MarketNetwork {
                         com.shusheng.cobblemarket.finance.LoanSource.ITEM_BUY, System.currentTimeMillis()
                     )
                 }
-                MarketState.get(server).addPendingBalance(listing.sellerUuid, totalPrice.toLong())
+                // 卖家入账：主货币进待领余额、RP 直接到账（见 CurrencyService.creditSeller）
+                CurrencyService.creditSeller(server, listing.sellerUuid, listing.currency, totalPrice.toLong())
                 // 卖家到账音：在线才发（离线那位由上线时的「离线收益」提示兜底）
                 server.playerManager.getPlayer(listing.sellerUuid)?.let { sendSound(it, "market_sold") }
-                // 金融系统成交挂钩子：物品购买成交计入买家交易额（喵喵支付标 loanFunded 不计额，防借→买循环）
-                com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
-                    server, player.uuid, listing.sellerUuid, totalPrice.toLong(), System.currentTimeMillis(),
-                    loanFunded = meowth
-                )
+                // 金融系统成交挂钩子：物品购买成交计入买家交易额（喵喵支付标 loanFunded 不计额，防借→买循环）。
+                // ⚠ **RP 交易整块跳过**（方案「统计隔离」）：让 RP 来回刷交易量 = 白嫖卡片资格与更高额度
+                if (listing.currency == MarketCurrency.PRIMARY) {
+                    com.shusheng.cobblemarket.finance.FinanceState.get(server).recordTrade(
+                        server, player.uuid, listing.sellerUuid, totalPrice.toLong(), System.currentTimeMillis(),
+                        loanFunded = meowth
+                    )
+                }
                 listing.count -= count
                 if (listing.count <= 0) {
                     listing.status = ListingStatus.SOLD
@@ -2559,7 +2696,8 @@ object MarketNetwork {
                         species = listing.itemId,
                         price = totalPrice,
                         fee = 0,
-                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count),
+                        currency = listing.currency
                     )
                 )
 
@@ -2581,8 +2719,7 @@ object MarketNetwork {
                                 "cobblemarket.buy_confirm.paid_by_meowth_item",
                                 count,
                                 boughtItemName,
-                                CurrencyHandler.goldAmount(totalPrice),
-                                CurrencyHandler.goldCurrencyText(),
+                                CurrencyService.amountText(totalPrice, listing.currency),
                                 com.shusheng.cobblemarket.config.CobbleMarketConfig.loanPlans.getOrNull(payload.planIndex)?.periods ?: 1
                             )
                         else
@@ -2590,8 +2727,7 @@ object MarketNetwork {
                                 "cobblemarket.item.bought",
                                 count,
                                 boughtItemName,
-                                CurrencyHandler.goldAmount(totalPrice),
-                                CurrencyHandler.goldCurrencyText()
+                                CurrencyService.amountText(totalPrice, listing.currency)
                             )
                     )
                 )
@@ -2697,7 +2833,8 @@ object MarketNetwork {
                         species = listing.itemId,
                         price = listing.price,
                         fee = 0,
-                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count),
+                        currency = listing.currency
                     )
                 )
 

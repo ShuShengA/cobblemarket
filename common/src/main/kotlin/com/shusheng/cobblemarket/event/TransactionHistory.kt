@@ -75,7 +75,8 @@ class TransactionHistory private constructor() : PersistentState() {
                     species = e.listing.extraData["speciesKey"] ?: "cobblemon.species.${e.listing.species.lowercase()}.name",
                     price = e.listing.price,
                     fee = e.fee,
-                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny)
+                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny),
+                    currency = e.listing.currency
                 ))
             }
             MarketEvents.PURCHASE.subscribe { e ->
@@ -90,7 +91,8 @@ class TransactionHistory private constructor() : PersistentState() {
                     species = e.listing.extraData["speciesKey"] ?: "cobblemon.species.${e.listing.species.lowercase()}.name",
                     price = e.price,
                     fee = 0,
-                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny)
+                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny),
+                    currency = e.listing.currency
                 ))
             }
             MarketEvents.CANCEL.subscribe { e ->
@@ -105,7 +107,8 @@ class TransactionHistory private constructor() : PersistentState() {
                     species = e.listing.extraData["speciesKey"] ?: "cobblemon.species.${e.listing.species.lowercase()}.name",
                     price = e.listing.price,
                     fee = 0,
-                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny)
+                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny),
+                    currency = e.listing.currency
                 ))
             }
             MarketEvents.RETURN.subscribe { e ->
@@ -120,7 +123,8 @@ class TransactionHistory private constructor() : PersistentState() {
                     species = e.listing.extraData["speciesKey"] ?: "cobblemon.species.${e.listing.species.lowercase()}.name",
                     price = e.listing.price,
                     fee = 0,
-                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny)
+                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny),
+                    currency = e.listing.currency
                 ))
             }
         }

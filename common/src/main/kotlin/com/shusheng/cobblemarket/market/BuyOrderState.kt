@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.market
 import com.cobblemon.mod.common.api.pokemon.stats.Stats
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.nbt.NbtList
 import net.minecraft.registry.RegistryWrapper
@@ -116,7 +117,15 @@ data class BuyOrder(
     var status: BuyOrderStatus,
     var returnedAt: Long?,
     // 待确认交付（货悬空于订单内；锁定策略下同时最多 1 条）
-    val pendingDeliveries: MutableList<PendingDelivery> = mutableListOf()
+    val pendingDeliveries: MutableList<PendingDelivery> = mutableListOf(),
+    /**
+     * 这一单用什么币种结算。**追加在末尾并给默认值** ⇒ 旧档读不到这个键就是主货币。
+     *
+     * ⚠ 币种只在**创建**那一刻定下来，此后冻结 / 退款 / 交付结算 / 中介费**一律从本对象读**
+     * （方案「三条硬要求」第 1、3 条）；`BuyOrderState.returnPending()` 把货退回挂单时
+     * **必须把币种带下去**，否则玩家在待取回里看到的是主货币。
+     */
+    val currency: MarketCurrency = MarketCurrency.PRIMARY
 ) {
     fun isOpen(): Boolean = status == BuyOrderStatus.OPEN
 
@@ -202,6 +211,7 @@ data class BuyOrder(
         val pendingList = NbtList()
         pendingDeliveries.forEach { pendingList.add(it.toNbt()) }
         put("pendingDeliveries", pendingList)
+        putString("currency", currency.name)
     }
 
     companion object {
@@ -237,7 +247,9 @@ data class BuyOrder(
             returnedAt = if (nbt.contains("returnedAt")) nbt.getLong("returnedAt") else null,
             pendingDeliveries = nbt.getList("pendingDeliveries", NbtList.COMPOUND_TYPE.toInt())
                 .map { PendingDelivery.fromNbt(it as NbtCompound) }
-                .toMutableList()
+                .toMutableList(),
+            // 旧档没这个键（getString 给空串）/ 值是垃圾 ⇒ fromStored 一律落主货币，不抛不 warn
+            currency = MarketCurrency.fromStored(nbt.getString("currency"))
         )
     }
 }
