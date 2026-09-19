@@ -671,17 +671,19 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         if (::mineButton.isInitialized) mineButton.visible = !hidden
         if (::resetButton.isInitialized) resetButton.visible = !hidden
         buyButtons.forEach { it.visible = !hidden }
-        // 面板顶部/底部的常驻按钮只在弹窗（整屏模态）时收掉 —— 筛选面板盖不到它们
-        if (!::prevButton.isInitialized) return
-        prevButton.visible = !dialogOpen
-        nextButton.visible = !dialogOpen
-        filterToggleButton.visible = !dialogOpen
+        // 面板顶部/底部的常驻按钮只在弹窗（整屏模态）时收掉 —— 筛选面板盖不到它们。
+        // ⚠ 一律走 isInitialized：这里面好几个是 lateinit **且只在筛选展开时才创建**
+        //   （`if (filterExpanded)` 分支里），筛选没展开时它们压根不存在，直接读会抛
+        //   UninitializedPropertyAccessException —— 2026-09-19 用户一打开精灵市场就崩
+        if (::prevButton.isInitialized) prevButton.visible = !dialogOpen
+        if (::nextButton.isInitialized) nextButton.visible = !dialogOpen
+        if (::filterToggleButton.isInitialized) filterToggleButton.visible = !dialogOpen
         currencyButton?.visible = !dialogOpen
         searchField?.visible = !dialogOpen
-        genderButton.visible = !dialogOpen
-        typeButton.visible = !dialogOpen
-        abilityButton.visible = !dialogOpen
-        natureButton.visible = !dialogOpen
+        if (::genderButton.isInitialized) genderButton.visible = !dialogOpen
+        if (::typeButton.isInitialized) typeButton.visible = !dialogOpen
+        if (::abilityButton.isInitialized) abilityButton.visible = !dialogOpen
+        if (::natureButton.isInitialized) natureButton.visible = !dialogOpen
     }
 
     private fun rebuildFilterList() {
