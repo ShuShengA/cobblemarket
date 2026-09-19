@@ -478,9 +478,8 @@ class AuctionScreen(
                 Identifier.tryParse(trimmed)?.let { PokemonSpecies.getByIdentifier(it) }
             } else {
                 val byName = try { PokemonSpecies.getByName(trimmed) } catch (_: Exception) { null }
-                byName ?: PokemonSpecies.implemented.firstOrNull {
-                    it.translatedName.string == trimmed || it.translatedName.string.contains(trimmed)
-                }
+                // 精确优先：中文名互为子串时别让「鬼斯」被「鬼斯通」截胡（见 SpeciesText）
+                byName ?: com.shusheng.cobblemarket.util.SpeciesText.candidatesByNameOrId(trimmed).firstOrNull()
             }
         }
         abilityOptions = species?.abilities?.map { pa ->

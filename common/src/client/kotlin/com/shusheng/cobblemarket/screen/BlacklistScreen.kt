@@ -102,6 +102,17 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     // 形态按钮点击展开列表（每行一个选项，可滚动），点选后收起。
     private data class FormOption(val label: String, val aspects: Set<String>)
     private var previewSpecies: Species? = null
+    /**
+     * 物种候选 + 当前选中下标（**多候选时预览槽位下方出现左右箭头切换**）。
+     *
+     * 中文物种名互为子串的情形很多（「鬼斯」是「鬼斯通」的前缀），解析必须**精确优先**、
+     * 其余候选交回玩家挑 —— 只取第一个会把玩家输入的名字静默换成别的物种，而这是在配黑名单，
+     * 配错物种玩家极难察觉。候选顺序由 `SpeciesText.candidatesByNameOrId` 保证（精确的排最前）。
+     */
+    private var speciesCandidates = listOf<Species>()
+    private var speciesIndex = 0
+    private var speciesPrevButton: NineSliceButton? = null
+    private var speciesNextButton: NineSliceButton? = null
     private var formOptions = listOf<FormOption>()
     private var formIndex = 0
     private var formButton: NineSliceButton? = null
@@ -306,6 +317,23 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         addDrawableChild(shinyButton)
         updateShinyButton()
 
+        // 候选切换箭头（预览槽位正下方）：候选 ≥2 才显示，切换预览图与形态选项。
+        // 位置选槽位下方是因为槽位右侧到对话框边框只剩 16px、放不下两枚箭头
+        speciesPrevButton = NineSliceButton(
+            centerX + 66, dialogY + 54, 20, 16, Text.literal(""),
+            { cycleSpecies(-1) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.prev")
+        ).also { it.visible = false; addDrawableChild(it) }
+        speciesNextButton = NineSliceButton(
+            centerX + 90, dialogY + 54, 20, 16, Text.literal(""),
+            { cycleSpecies(1) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.next")
+        ).also { it.visible = false; addDrawableChild(it) }
+
         // 形态选择按钮：只有解析出多形态物种时显示，点击展开/收起形态列表
         formButton = NineSliceButton(centerX - 80, dialogY + 48, 140, 14, Text.literal(""), { toggleFormList() })
         formButton?.visible = false
@@ -415,6 +443,15 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 matrices.pop()
             }
         }
+
+        // 候选计数（1/3）：让玩家知道有几个可切、现在是第几个
+        if (speciesCandidates.size > 1) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.literal("${speciesIndex + 1}/${speciesCandidates.size}").formatted(Formatting.GRAY),
+                centerX + 88, dialogY + 72, 0xFFFFFF
+            )
+        }
     }
 
     private fun confirmPokemonAdd() {
@@ -497,23 +534,37 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     // ── 精灵：物种解析预览（照搬原精灵黑名单） ──
 
     private fun updatePokemonPreview(text: String) {
+        // 解析出**全部**候选（精确优先已由 candidatesByNameOrId 保证），默认选第一个：
+        // 输入完整名字（鬼斯）直接就是它；输入片段（鬼）时用预览槽位下方的箭头在旁边挑
+        speciesCandidates = com.shusheng.cobblemarket.util.SpeciesText.candidatesByNameOrId(text)
+        speciesIndex = 0
+        applySpecies(speciesCandidates.firstOrNull())
+        updateSpeciesArrows()
+    }
+
+    /** 左右箭头切换候选（循环）；切换后预览图与形态选项一起刷新 */
+    private fun cycleSpecies(delta: Int) {
+        if (speciesCandidates.size <= 1) return
+        speciesIndex = (speciesIndex + delta + speciesCandidates.size) % speciesCandidates.size
+        applySpecies(speciesCandidates[speciesIndex])
+        updateSpeciesArrows()
+    }
+
+    /** 箭头只在候选 ≥2 时出现（唯一候选没什么可切的） */
+    private fun updateSpeciesArrows() {
+        val multi = speciesCandidates.size > 1
+        speciesPrevButton?.visible = multi
+        speciesNextButton?.visible = multi
+    }
+
+    /** 应用选中的物种：重建预览模型与形态选项（输入变化与箭头切换共用） */
+    private fun applySpecies(species: Species?) {
         previewRenderable = null
         previewSpecies = null
         formOptions = listOf()
         formIndex = 0
         formListOpen = false
         rebuildFormList()
-        val trimmed = text.trim()
-        if (trimmed.isEmpty()) {
-            formButton?.visible = false
-            return
-        }
-        val species = if (trimmed.contains(":")) {
-            Identifier.tryParse(trimmed)?.let { PokemonSpecies.getByIdentifier(it) }
-        } else {
-            val byName = try { PokemonSpecies.getByName(trimmed) } catch (_: Exception) { null }
-            byName ?: resolveByChineseName(trimmed)
-        }
         if (species != null) {
             previewSpecies = species
             // 形态选项语义（与服务端匹配）：
@@ -618,13 +669,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         }
     }
 
-    private fun resolveByChineseName(name: String): Species? {
-        return try {
-            PokemonSpecies.implemented.firstOrNull { it.translatedName.string == name || it.translatedName.string.contains(name) }
-        } catch (_: Exception) {
-            null
-        }
-    }
+    // 物种名解析统一走 SpeciesText.candidatesByNameOrId（精确优先 + 返回全部候选，见 updatePokemonPreview）
 
     // ── 物品对话框 ──
 
@@ -875,6 +920,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         editingEntry = null
         previewRenderable = null
         previewSpecies = null
+        speciesCandidates = listOf()
+        speciesIndex = 0
+        speciesPrevButton = null
+        speciesNextButton = null
         formOptions = listOf()
         formIndex = 0
         formButton = null

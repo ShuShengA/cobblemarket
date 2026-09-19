@@ -57,9 +57,18 @@ class MarketState private constructor() : PersistentState() {
         htFilter: Int = 0
     ): List<MarketListing> {
         var results = getActiveListings()
-        species?.let { s -> results = results.filter {
-            it.species.contains(s, ignoreCase = true) || (it.extraData["speciesName"]?.contains(s, ignoreCase = true) == true)
-        } }
+        // 搜索词可能带多个候选 id（客户端把中文词展开成「所有名字含该词的物种」，用 | 连接）：
+        // 拆开做「任一命中」—— 中文名互为子串时（鬼斯 / 鬼斯通）输短的必须两个都出得来
+        species?.let { s ->
+            val tokens = s.split('|').filter { it.isNotEmpty() }
+            results = results.filter { listing ->
+                val storedName = listing.extraData["speciesName"]
+                tokens.any { t ->
+                    listing.species.contains(t, ignoreCase = true) ||
+                        (storedName?.contains(t, ignoreCase = true) == true)
+                }
+            }
+        }
         shiny?.let { s -> results = results.filter { it.shiny == s } }
         minLevel?.let { l -> results = results.filter { it.level >= l } }
         maxLevel?.let { l -> results = results.filter { it.level <= l } }

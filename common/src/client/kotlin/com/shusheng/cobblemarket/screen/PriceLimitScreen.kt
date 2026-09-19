@@ -103,6 +103,17 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private var previewRenderable: RenderablePokemon? = null
     private val previewState = FloatingState()
     private var previewSpecies: Species? = null
+    /**
+     * 物种候选 + 当前选中下标（**多候选时预览槽位下方出现左右箭头切换**）。
+     *
+     * 中文物种名互为子串的情形很多（「鬼斯」是「鬼斯通」的前缀），解析必须**精确优先**、
+     * 其余候选交回玩家挑 —— 只取第一个会把玩家输入的名字静默换成别的物种，而这是在配限价规则，
+     * 配错物种玩家极难察觉。候选顺序由 `SpeciesText.candidatesByNameOrId` 保证（精确的排最前）。
+     */
+    private var speciesCandidates = listOf<Species>()
+    private var speciesIndex = 0
+    private var speciesPrevButton: NineSliceButton? = null
+    private var speciesNextButton: NineSliceButton? = null
     // 闪光三态（与黑名单一致的循环按钮）：不限 → 闪光 → 非闪光 → 不限
     private var shinyFilter = PokemonPriceLimitEntry.SHINY_ANY
     private var shinyButton: NineSliceButton? = null
@@ -303,6 +314,22 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
         // 闪光三态循环按钮：物种输入框左侧
         shinyButton = NineSliceButton(centerX - 101, dialogY + 30, 20, 16, Text.literal(""), { cycleShiny() })
+        // 候选切换箭头（预览槽位正下方）：候选 ≥2 才显示，切换预览图与形态选项。
+        // 位置选槽位下方是因为槽位右侧到对话框边框只剩 16px、放不下两枚箭头
+        speciesPrevButton = NineSliceButton(
+            centerX + 66, dialogY + 54, 20, 16, Text.literal(""),
+            { cycleSpecies(-1) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.prev")
+        ).also { it.visible = false; addDrawableChild(it) }
+        speciesNextButton = NineSliceButton(
+            centerX + 90, dialogY + 54, 20, 16, Text.literal(""),
+            { cycleSpecies(1) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.next")
+        ).also { it.visible = false; addDrawableChild(it) }
         addDrawableChild(shinyButton)
         updateShinyButton()
 
@@ -458,6 +485,15 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 matrices.pop()
             }
         }
+
+        // 候选计数（1/3）：让玩家知道有几个可切、现在是第几个
+        if (speciesCandidates.size > 1) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.literal("${speciesIndex + 1}/${speciesCandidates.size}").formatted(Formatting.GRAY),
+                centerX + 88, dialogY + 72, 0xFFFFFF
+            )
+        }
     }
 
     private fun openItemDialog(entry: ItemPriceLimitEntry?) {
@@ -579,23 +615,37 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     private fun updatePreview(text: String) {
         dialogError = null
+        // 解析出**全部**候选（精确优先已由 candidatesByNameOrId 保证），默认选第一个：
+        // 输入完整名字（鬼斯）直接就是它；输入片段（鬼）时用预览槽位下方的箭头在旁边挑
+        speciesCandidates = com.shusheng.cobblemarket.util.SpeciesText.candidatesByNameOrId(text)
+        speciesIndex = 0
+        applySpecies(speciesCandidates.firstOrNull())
+        updateSpeciesArrows()
+    }
+
+    /** 左右箭头切换候选（循环）；切换后预览图与形态选项一起刷新 */
+    private fun cycleSpecies(delta: Int) {
+        if (speciesCandidates.size <= 1) return
+        speciesIndex = (speciesIndex + delta + speciesCandidates.size) % speciesCandidates.size
+        applySpecies(speciesCandidates[speciesIndex])
+        updateSpeciesArrows()
+    }
+
+    /** 箭头只在候选 ≥2 时出现（唯一候选没什么可切的） */
+    private fun updateSpeciesArrows() {
+        val multi = speciesCandidates.size > 1
+        speciesPrevButton?.visible = multi
+        speciesNextButton?.visible = multi
+    }
+
+    /** 应用选中的物种：重建预览模型与形态选项（输入变化与箭头切换共用） */
+    private fun applySpecies(species: Species?) {
         previewRenderable = null
         previewSpecies = null
         formOptions = listOf()
         formIndex = 0
         formListOpen = false
         rebuildFormList()
-        val trimmed = text.trim()
-        if (trimmed.isEmpty()) {
-            formButton?.visible = false
-            return
-        }
-        val species = if (trimmed.contains(":")) {
-            Identifier.tryParse(trimmed)?.let { PokemonSpecies.getByIdentifier(it) }
-        } else {
-            val byName = try { PokemonSpecies.getByName(trimmed) } catch (_: Exception) { null }
-            byName ?: resolveByChineseName(trimmed)
-        }
         if (species != null) {
             previewSpecies = species
             // 形态选项语义（与服务端匹配）：
@@ -637,13 +687,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         previewRenderable = RenderablePokemon(species, aspects, ItemStack.EMPTY)
     }
 
-    private fun resolveByChineseName(name: String): Species? {
-        return try {
-            PokemonSpecies.implemented.firstOrNull { it.translatedName.string == name || it.translatedName.string.contains(name) }
-        } catch (_: Exception) {
-            null
-        }
-    }
+    // 物种名解析统一走 SpeciesText.candidatesByNameOrId（精确优先 + 返回全部候选，见 updatePreview）
 
     /** 物品输入变更：重建匹配列表（照搬物品黑名单） */
     private fun updateItemPreview(text: String) {
@@ -947,6 +991,10 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         editingItem = null
         previewRenderable = null
         previewSpecies = null
+        speciesCandidates = listOf()
+        speciesIndex = 0
+        speciesPrevButton = null
+        speciesNextButton = null
         shinyFilter = PokemonPriceLimitEntry.SHINY_ANY
         shinyButton = null
         vIndex = 0
