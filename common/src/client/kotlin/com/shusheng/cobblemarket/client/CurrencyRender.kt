@@ -34,12 +34,29 @@ val POINTS_ICON_TEXTURE: Identifier = Identifier.of("cobblemarket", "textures/gu
 const val POINTS_SYMBOL_SRC = 48
 
 /**
+ * 「上架」按钮的图标（`sell.png`，同样 48×48 源图）。
+ * 上架按钮用它替掉原来的「上架」二字后能窄一大截，腾出的位置正好够放货币切换按钮。
+ */
+val SELL_ICON_TEXTURE: Identifier = Identifier.of("cobblemarket", "textures/gui/sell.png")
+
+/** [SELL_ICON_TEXTURE] 的源图边长 */
+const val SELL_ICON_SRC = 48
+
+/**
  * 行内货币单位的显示边长（**8×8，与 8px 的文字行高齐平**）。
  *
  * 聊天里那个字形也是这个尺寸（`font/points.json` 的 `height: 8`）—— 两处必须一致，
  * 否则同一句话在聊天里和 HUD 上的图标大小对不上。
  */
 const val POINTS_SYMBOL_INLINE_SIZE = 8
+
+/**
+ * **按钮**里那枚图标的显示边长。
+ *
+ * 比行内单位（8）大一圈：按钮有 20px 的高度撑着，图标还按 8 画的话四周空一大圈，
+ * 看着就是「按钮挺大、图挺小」（2026-09-19 用户指出的）。行内单位仍走 [POINTS_SYMBOL_INLINE_SIZE]。
+ */
+const val CURRENCY_BUTTON_ICON_SIZE = 12
 
 /**
  * 画行内货币符号（余额 HUD 的 RP 行、列表行、悬停窗都走它）。

@@ -61,6 +61,30 @@ object CobbleMarketConfig {
         private set
     var itemListingFeePercent: Double = 5.0
         private set
+    /**
+     * **RP** 精灵 / 物品上架的费率（默认 **0** = 免手续费）。
+     *
+     * 为什么默认与主货币不同：RP 在多数服上是**真钱充值的单向货币**，扣它在玩家眼里就是
+     * 「服主连手续费都收真钱」，为几 RP 惹这种纠纷不值，所以默认免。
+     * 但 RP 不一定是充值货币（服主也可能当纯游戏币发），那种服就该有这个回收手段 ——
+     * 所以做成**可配置**，而不是在代码里写死免收（2026-09-19 用户拍板）。
+     */
+    var pointsPokemonListingFeePercent: Double = 0.0
+        private set
+
+    /** 见 [pointsPokemonListingFeePercent] */
+    var pointsItemListingFeePercent: Double = 0.0
+        private set
+    /**
+     * **RP** 的拍卖成交费率（默认 **0** = 免），理由同 [pointsPokemonListingFeePercent]。
+     * ⚠ 拍卖与求购要到 B5/B6 才实现，这两个配置项**先备着** —— 到那时直接用，配置层不用再动。
+     */
+    var pointsAuctionFeePercent: Double = 0.0
+        private set
+
+    /** 见 [pointsAuctionFeePercent] */
+    var pointsBuyOrderFeePercent: Double = 0.0
+        private set
     var maxPokemonListingsPerPlayer: Int = 0
         private set
     var maxItemListingsPerPlayer: Int = 0
@@ -97,6 +121,17 @@ object CobbleMarketConfig {
      * 除RP 商城外的任何地方都不能用RP 交易；但服主仍可在RP 商城上架供持有RP 的玩家购买。
      */
     var pointsEnabled: Boolean = false
+        private set
+    /**
+     * **玩家间 RP 交易开关**（默认关，需 [pointsEnabled] 同时开启）。
+     *
+     * RP 在设定上「不可转让」，而玩家 A 挂 RP 单、玩家 B 买下，本质就是把 RP 从 B 转到 A ——
+     * 这是那条设定在市场上唯一的后门。默认**关**：服主若只把 RP 当充值货币用、不想要
+     * 玩家之间拿 RP 换东西（那等于绕开主货币做金钱交易），什么都不用配；想让 RP 真正流通再打开。
+     *
+     * ⚠ 关掉只禁**玩家之间**：充值、RP 商城（服主自己卖的东西）、余额显示全不受影响。
+     */
+    var pointsMarketEnabled: Boolean = false
         private set
     /**
      * 外部签名码的 HMAC 密钥（服主在网站/发卡网卖RP 时用）。**留空 = 关闭外部码**，只接受本地生成的码。
@@ -302,6 +337,12 @@ object CobbleMarketConfig {
         save()
     }
 
+    /** 玩家间 RP 交易开关切换并落盘（仅服务端配置界面调用） */
+    fun setPointsMarketEnabled(v: Boolean) {
+        pointsMarketEnabled = v
+        save()
+    }
+
     /** 游戏内充值开关切换并落盘（仅服务端配置界面调用） */
     fun setPointsShopEnabled(v: Boolean) {
         pointsShopEnabled = v
@@ -366,6 +407,14 @@ object CobbleMarketConfig {
 
     fun setPokemonListingFeePercent(v: Double) { pokemonListingFeePercent = v.coerceIn(0.0, 100.0) }
     fun setItemListingFeePercent(v: Double) { itemListingFeePercent = v.coerceIn(0.0, 100.0) }
+
+    fun setPointsPokemonListingFeePercent(v: Double) { pointsPokemonListingFeePercent = v.coerceIn(0.0, 100.0) }
+
+    fun setPointsItemListingFeePercent(v: Double) { pointsItemListingFeePercent = v.coerceIn(0.0, 100.0) }
+
+    fun setPointsAuctionFeePercent(v: Double) { pointsAuctionFeePercent = v.coerceIn(0.0, 100.0) }
+
+    fun setPointsBuyOrderFeePercent(v: Double) { pointsBuyOrderFeePercent = v.coerceIn(0.0, 100.0) }
     fun setMaxPokemonListingsPerPlayer(v: Int) { maxPokemonListingsPerPlayer = v.coerceAtLeast(0) }
     fun setMaxItemListingsPerPlayer(v: Int) { maxItemListingsPerPlayer = v.coerceAtLeast(0) }
     fun setListingDurationDays(v: Int) { listingDurationDays = v.coerceAtLeast(1) }
@@ -501,12 +550,15 @@ object CobbleMarketConfig {
                 // 读取完成后 save() 把缺失字段补写进文件——服主升级后打开配置即可见全部新字段
                 val knownKeys = setOf(
                     "currency", "pokemonListingFeePercent", "itemListingFeePercent",
+                    "pointsPokemonListingFeePercent", "pointsItemListingFeePercent",
+                    "pointsAuctionFeePercent", "pointsBuyOrderFeePercent",
                     "maxPokemonListingsPerPlayer", "maxItemListingsPerPlayer", "listingDurationDays",
                     "pendingReturnRetentionDays", "auctionFeePercent", "auctionDurationOptions",
                     "auctionMinBidIncrement", "auctionAntiSnipeSeconds", "maxAuctionsPerPlayer",
                     "eggTradingEnabled", "buyOrderFeePercent", "buyOrderExpiryDays",
                     "maxBuyOrdersPerPlayer", "marketEnabled",
-                    "shareEnabled", "pointsEnabled", "pointsExternalSecret", "pointsExternalMaxDays",
+                    "shareEnabled", "pointsEnabled", "pointsMarketEnabled",
+                    "pointsExternalSecret", "pointsExternalMaxDays",
                     "pointsShop",
                     "finance"
                 )
@@ -652,6 +704,15 @@ object CobbleMarketConfig {
                 // 手续费钳制 0~100：超过 100% 会让卖家账本变负数（抵消后续所有收入）
                 pokemonListingFeePercent = ((data["pokemonListingFeePercent"] as? Double) ?: legacyFee ?: 5.0).coerceIn(0.0, 100.0)
                 itemListingFeePercent = ((data["itemListingFeePercent"] as? Double) ?: legacyFee ?: 5.0).coerceIn(0.0, 100.0)
+                // RP 费率：缺失按 0（免）—— 老配置升级上来不会突然开始扣 RP
+                pointsPokemonListingFeePercent =
+                    ((data["pointsPokemonListingFeePercent"] as? Double) ?: 0.0).coerceIn(0.0, 100.0)
+                pointsItemListingFeePercent =
+                    ((data["pointsItemListingFeePercent"] as? Double) ?: 0.0).coerceIn(0.0, 100.0)
+                pointsAuctionFeePercent =
+                    ((data["pointsAuctionFeePercent"] as? Double) ?: 0.0).coerceIn(0.0, 100.0)
+                pointsBuyOrderFeePercent =
+                    ((data["pointsBuyOrderFeePercent"] as? Double) ?: 0.0).coerceIn(0.0, 100.0)
                 maxPokemonListingsPerPlayer = (data["maxPokemonListingsPerPlayer"] as? Double)?.toInt() ?: 0
                 maxItemListingsPerPlayer = (data["maxItemListingsPerPlayer"] as? Double)?.toInt() ?: 0
                 val rawDuration = (data["listingDurationDays"] as? Double)?.toInt()
@@ -675,6 +736,8 @@ object CobbleMarketConfig {
                 marketEnabled = data["marketEnabled"] as? Boolean ?: true
                 shareEnabled = data["shareEnabled"] as? Boolean ?: true
                 pointsEnabled = data["pointsEnabled"] as? Boolean ?: false
+                // 缺失按 false（保守）：老配置升级上来时玩家间 RP 交易一律先关着
+                pointsMarketEnabled = data["pointsMarketEnabled"] as? Boolean ?: false
                 pointsExternalSecret = data["pointsExternalSecret"] as? String ?: ""
                 pointsExternalMaxDays = ((data["pointsExternalMaxDays"] as? Double)?.toInt() ?: 365).coerceAtLeast(0)
                 val shop = data["pointsShop"] as? Map<*, *>
@@ -726,6 +789,10 @@ object CobbleMarketConfig {
                 "currency.item" to "货币物品 ID（cobbledollars / cobblemonEconomy / impactor 均为 false 时生效）/ Currency item ID (used when cobbledollars, cobblemonEconomy and impactor are all false)",
                 "pokemonListingFeePercent" to "精灵市场上架手续费百分比（0=免手续费）/ Pokémon listing fee percentage (0=no fee)",
                 "itemListingFeePercent" to "物品市场上架手续费百分比（0=免手续费）/ Item listing fee percentage (0=no fee)",
+                "pointsPokemonListingFeePercent" to "RP 精灵市场上架手续费百分比（默认 0=免手续费）。RP 若是真钱充值的货币建议保持 0——扣它等于回收玩家花真钱买的东西 / RP Pokémon listing fee percentage (default 0 = no fee). Keep it 0 if RP is bought with real money",
+                "pointsItemListingFeePercent" to "RP 物品市场上架手续费百分比（默认 0=免手续费），同上 / RP item listing fee percentage (default 0 = no fee), see above",
+                "pointsAuctionFeePercent" to "RP 拍卖成交手续费百分比（默认 0=免手续费），同上 / RP auction fee percentage (default 0 = no fee), see above",
+                "pointsBuyOrderFeePercent" to "RP 求购中介费百分比（默认 0=免手续费），同上 / RP buy-order fee percentage (default 0 = no fee), see above",
                 "maxPokemonListingsPerPlayer" to "每个玩家同时活跃的精灵上架数量上限（0=不限制）/ Max active Pokémon listings per player (0=unlimited)",
                 "maxItemListingsPerPlayer" to "每个玩家同时活跃的物品上架数量上限（0=不限制）/ Max active item listings per player (0=unlimited)",
                 "listingDurationDays" to "上架过期天数 / Listing duration in days",
@@ -790,6 +857,10 @@ object CobbleMarketConfig {
             "currency" to mapOf("cobbledollars" to cobbledollars, "cobblemonEconomy" to cobblemonEconomy, "cobecoCurrency" to cobecoCurrency, "impactor" to impactor, "item" to currencyItem),
             "pokemonListingFeePercent" to pokemonListingFeePercent,
             "itemListingFeePercent" to itemListingFeePercent,
+            "pointsPokemonListingFeePercent" to pointsPokemonListingFeePercent,
+            "pointsItemListingFeePercent" to pointsItemListingFeePercent,
+            "pointsAuctionFeePercent" to pointsAuctionFeePercent,
+            "pointsBuyOrderFeePercent" to pointsBuyOrderFeePercent,
             "maxPokemonListingsPerPlayer" to maxPokemonListingsPerPlayer,
             "maxItemListingsPerPlayer" to maxItemListingsPerPlayer,
             "listingDurationDays" to listingDurationDays,

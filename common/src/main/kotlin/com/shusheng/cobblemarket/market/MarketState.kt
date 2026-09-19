@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.market
 
 import com.cobblemon.mod.common.Cobblemon
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.nbt.NbtList
 import net.minecraft.registry.RegistryWrapper
@@ -36,6 +37,11 @@ class MarketState private constructor() : PersistentState() {
         listings.values.filter { it.sellerUuid == sellerUuid }
 
     fun search(
+        /**
+         * 币种过滤（**必选**，不是可选）：主货币与 RP 的价格不可比，混在一起排序与价格区间筛选
+         * 会**双双失去意义**（方案风险清单第 8 条 + 「tab 不能后补」）。列表按币种分 tab，这里一次只查一种。
+         */
+        currency: MarketCurrency = MarketCurrency.PRIMARY,
         species: String? = null,
         shiny: Boolean? = null,
         minLevel: Int? = null,
@@ -56,7 +62,8 @@ class MarketState private constructor() : PersistentState() {
         // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
         htFilter: Int = 0
     ): List<MarketListing> {
-        var results = getActiveListings()
+        // 先按币种砍一半，后面的筛选/排序都只在同币种内做
+        var results = getActiveListings().filter { it.currency == currency }
         species?.let { s -> results = results.filter {
             it.species.contains(s, ignoreCase = true) || (it.extraData["speciesName"]?.contains(s, ignoreCase = true) == true)
         } }
