@@ -436,7 +436,25 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         drawPanelSlice(context, bot, panelLeft, panelBottom - sliceH)
     }
 
+    /**
+     * 购买 / 下架弹窗是**模态**的：打开时把下层控件全部藏掉。
+     *
+     * ⚠ 必须 `visible = false` 而不是「不画就行」—— 原版 `ClickableWidget` 只要 visible 就照常
+     * 检测 hover 并弹自己的 tooltip（`active = false` 拦不住），于是「弹窗按钮的位置正好压在某个
+     * 下层按钮上」时，鼠标停在弹窗按钮上却弹出下层那条提示
+     * （2026-09-19 用户实测，精灵市场先报的，本界面同一套结构一并修）。
+     */
+    private fun updateControlVisibility() {
+        val open = selectedEntry != null || cancelEntry != null
+        listOf(
+            currencyButton, searchField, collectButton, returnsButton, backButton,
+            sellAddButton, sortButton, mineButton, prevButton, nextButton
+        ).forEach { it?.visible = !open }
+    }
+
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // 模态层（弹窗）打开时收掉下层控件 —— 不收的话鼠标停在弹窗按钮上会弹下层按钮的 tooltip
+        updateControlVisibility()
         // 悬停格的物品大图：画在面板之下（面板在 renderBackground 里画，会自然盖住溢出到面板上的部分）。
         // 用**上一帧**的 hoveredSlot——本帧的悬停判定要到 super.render 之后才算出，差一帧肉眼无感。
         // 弹窗打开时不出（与精灵版同一规则）。

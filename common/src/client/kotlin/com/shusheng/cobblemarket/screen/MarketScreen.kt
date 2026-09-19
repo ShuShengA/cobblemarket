@@ -647,21 +647,48 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         rebuildFilterList()
     }
 
+    /**
+     * 筛选面板与确认弹窗都是**模态**的：打开时把会被盖住的下层控件全部藏掉。
+     *
+     * ⚠ **必须 `visible = false`，不是「不画就行」** —— 原版 `ClickableWidget` 只要 visible
+     * 就照常检测 hover 并弹自己的 tooltip（`active = false` 拦不住），于是「弹窗按钮的位置正好
+     * 压在某个下层按钮上」时，鼠标停在弹窗按钮上却弹出下层那条提示
+     * （2026-09-19 用户实测：精灵市场的购买弹窗里「确认购买」压住「上一页」，弹出的就是上一页的提示）。
+     *
+     * 每帧在 [render] 里调一次，开关弹窗的两头不必各自记着恢复。
+     */
+    private fun updateControlVisibility() {
+        val dialogOpen = confirmEntry != null || cancelEntry != null
+        // 筛选展开时隐藏被覆盖的控件（IV 两行 + 底行按钮 + 行按钮，列表从 y=86 起最多 8 行）；
+        // 行按钮必须 visible=false：列表按钮背景贴图中间区域半透明，下层行按钮文字会透出
+        val hidden = dialogOpen || filterListOpen.isNotEmpty()
+        listOf(hpField, atkField, defField, spaField, spdField, speField).forEach { it?.visible = !hidden }
+        // IV 三态比较按钮（= / ≥ / ≤）随输入框一起隐藏，否则会从展开列表里透出
+        ivOpButtons.values.forEach { it.visible = !hidden }
+        if (::shinyButton.isInitialized) shinyButton.visible = !hidden
+        if (::sortButton.isInitialized) sortButton.visible = !hidden
+        htButton?.visible = !hidden
+        if (::mineButton.isInitialized) mineButton.visible = !hidden
+        if (::resetButton.isInitialized) resetButton.visible = !hidden
+        buyButtons.forEach { it.visible = !hidden }
+        // 面板顶部/底部的常驻按钮只在弹窗（整屏模态）时收掉 —— 筛选面板盖不到它们
+        if (!::prevButton.isInitialized) return
+        prevButton.visible = !dialogOpen
+        nextButton.visible = !dialogOpen
+        filterToggleButton.visible = !dialogOpen
+        currencyButton?.visible = !dialogOpen
+        searchField?.visible = !dialogOpen
+        genderButton.visible = !dialogOpen
+        typeButton.visible = !dialogOpen
+        abilityButton.visible = !dialogOpen
+        natureButton.visible = !dialogOpen
+    }
+
     private fun rebuildFilterList() {
         filterOptionButtons.forEach { remove(it) }
         filterOptionButtons.clear()
+        updateControlVisibility()
         val open = filterListOpen.isNotEmpty()
-        // 展开时隐藏被覆盖的控件（IV 两行 + 底行按钮 + 行按钮，列表从 y=86 起最多 8 行）；
-        // 行按钮必须 visible=false：列表按钮背景贴图中间区域半透明，下层行按钮文字会透出
-        listOf(hpField, atkField, defField, spaField, spdField, speField).forEach { it?.visible = !open }
-        // IV 三态比较按钮（= / ≥ / ≤）随输入框一起隐藏，否则会从展开列表里透出
-        ivOpButtons.values.forEach { it.visible = !open }
-        if (::shinyButton.isInitialized) shinyButton.visible = !open
-        if (::sortButton.isInitialized) sortButton.visible = !open
-        htButton?.visible = !open
-        if (::mineButton.isInitialized) mineButton.visible = !open
-        if (::resetButton.isInitialized) resetButton.visible = !open
-        buyButtons.forEach { it.visible = !open }
         if (!open) return
         val options: List<Pair<String, String>> = when (filterListOpen) {
             "type" -> listOf("" to "") + typeOptions.filter { it.isNotEmpty() }.map { it to "cobblemon.type.$it" }
@@ -1250,6 +1277,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
         // 确认弹窗打开时行内图标不渲染（物品/精灵模型图标走独立渲染层，z 平移盖不住，会刺穿遮罩）
         val dialogOpen = confirmEntry != null || cancelEntry != null
+        // 模态层打开时下层控件的显隐（含弹窗 —— 不收掉的话鼠标停在弹窗按钮上会弹下层按钮的 tooltip）
+        updateControlVisibility()
         displayList.take(visibleRows).forEachIndexed { di, (origIndex, entry) ->
             val y = startY + di * rowHeight
 
