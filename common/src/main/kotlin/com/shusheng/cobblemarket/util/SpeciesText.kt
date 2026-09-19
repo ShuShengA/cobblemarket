@@ -43,11 +43,16 @@ object SpeciesText {
         }
         val lower = trimmed.lowercase().replace(" ", "_")
         val all: List<Species> = com.cobblemon.mod.common.api.pokemon.PokemonSpecies.implemented
+        // ①/② **精确命中就到此为止**：输入「鬼斯」/`mew` 就是那一个，不该再把「鬼斯通」/`Mewtwo`
+        //   一起列成候选 —— 玩家打的完整名字本身就是"确定"，多列一个反而要他再点一次箭头
+        all.firstOrNull { s -> s.showdownId() == lower || s.name == lower }?.let { return listOf(it) }
+        all.firstOrNull { s -> s.translatedName.string == trimmed }?.let { return listOf(it) }
+        // ③ 没精确命中（输入的是片段：`char` / 「鬼」）→ 列出全部模糊候选，交给玩家用箭头挑。
+        //    ⚠ 必须 ignoreCase：英文物种名首字母大写，小写输入 `char` 用区分大小写的 contains
+        //    一条都匹配不到（`"Charmander".contains("char")` 是 false）
         val out = LinkedHashMap<String, Species>()
-        fun add(s: Species) { out.putIfAbsent(s.resourceIdentifier.toString(), s) }
-        all.firstOrNull { s -> s.showdownId() == lower || s.name == lower }?.let { add(it) }
-        all.filter { s -> s.translatedName.string == trimmed }.forEach { add(it) }
-        all.filter { s -> s.translatedName.string.contains(trimmed) }.forEach { add(it) }
+        all.filter { s -> s.translatedName.string.contains(trimmed, ignoreCase = true) }
+            .forEach { out.putIfAbsent(it.resourceIdentifier.toString(), it) }
         return out.values.toList()
     }
 
@@ -61,11 +66,12 @@ object SpeciesText {
             s.showdownId() == lower || s.name == lower
         }?.let { return it.resourceIdentifier.toString() }
         // ⚠ 服务端兜底路径：客户端解析失败时才会走到这儿（正常情况传的是 id，上面就返回了）。
-        //   **精确优先**：先找显示名完全等于输入的，再退到包含 —— 别让「鬼斯」被「鬼斯通」截胡
+        //   **精确优先**：先找显示名完全等于输入的，再退到包含 —— 别让「鬼斯」被「鬼斯通」截胡。
+        //   模糊那层要 ignoreCase（英文首字母大写，小写输入匹配不到）
         all.firstOrNull { s -> s.translatedName.string == trimmed }
             ?.let { return it.resourceIdentifier.toString() }
         all.firstOrNull { s ->
-            s.translatedName.string.contains(trimmed)
+            s.translatedName.string.contains(trimmed, ignoreCase = true)
         }?.let { return it.resourceIdentifier.toString() }
         return null
     }
