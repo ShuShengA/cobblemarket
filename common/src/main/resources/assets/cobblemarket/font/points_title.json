@@ -1,0 +1,11 @@
+{
+  "providers": [
+    {
+      "type": "bitmap",
+      "file": "cobblemarket:gui/points_symbol.png",
+      "height": 18,
+      "ascent": 10,
+      "chars": ["\uE001"]
+    }
+  ]
+}

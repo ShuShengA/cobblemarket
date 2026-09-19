@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.PointsShopCache
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.RedeemPointCodePayload
 import com.shusheng.cobblemarket.network.RequestPointsShopPayload
@@ -28,7 +29,9 @@ import kotlin.math.roundToInt
  * 背景渲染（方案 2026-09-17 拍板）：`points_market_background.png` **等比缩放 + 居中 + 四周留 4%**。
  * ⚠ **不用九宫格**：四条边的中段都有红色装饰条，九宫格拉伸会把它们拉长变形（越宽的屏拉得越长）。
  */
-class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.title")) {
+class PointsMarketScreen : Screen(
+    Text.translatable("cobblemarket.points.market.title", CurrencyService.pointsTitleIcon())
+) {
 
     private var codeField: TextFieldWidget? = null
     /** 输入框内容：界面 resize 会重建控件，靠它把玩家已经敲进去的码恢复回来 */
@@ -141,7 +144,7 @@ class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.
         val buyBtn = NineSliceButton(
             buyBtnX, rowY,
             BUY_ENTRY_W, ROW_H,
-            Text.translatable("cobblemarket.points.recharge.entry"),
+            Text.translatable("cobblemarket.points.recharge.entry", CurrencyService.pointsIcon()),
             { client?.setScreen(PointsRechargeScreen()) }
         )
         buyBtn.visible = PointsShopCache.tiers.isNotEmpty()
@@ -352,7 +355,8 @@ class PointsMarketScreen : Screen(Text.translatable("cobblemarket.points.market.
         // 直接把行色写成金色是错的，那样整行都是金的、与全模组颜色模板不符）
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.points.market.title").formatted(Formatting.GOLD),
+            Text.translatable("cobblemarket.points.market.title", CurrencyService.pointsTitleIcon())
+                .formatted(Formatting.GOLD),
             bg.x + bg.w / 2, bg.y + texPx(TITLE_TOP), 0xFFFFFF
         )
         // 两条红色分割线：**夹出中间的商品区**（服主上架的精灵/物品放这里）。

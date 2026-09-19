@@ -50,7 +50,14 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     private var lastRequestPrefix: String? = null
     private val suggestionButtons = mutableListOf<NineSliceButton>()
 
-    private fun maxVisible() = maxOf(0, (height - listStartY - 16) / rowHeight)
+    /**
+     * 可见行数：从列表顶到**面板内容底边**（`height-48`）能放几行。
+     *
+     * ⚠ 那个 48 是面板底段贴图（16px 高，占 `height-48` ~ `height-32`）的上沿，内容不能压上去。
+     * 早先这里写的是 16，等于允许列表画到 `height-16` —— 条目一多最后一行就溢到面板外
+     * （2026-09-19 与充值订单界面一并修正，两者面板结构相同；口径同交易历史界面）。
+     */
+    private fun maxVisible() = maxOf(0, (height - listStartY - 48) / rowHeight)
 
     private companion object {
         const val MAX_SUGGESTION_ROWS = 8

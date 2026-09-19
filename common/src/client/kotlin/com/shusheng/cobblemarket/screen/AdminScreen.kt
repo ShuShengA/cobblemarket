@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.client.ClientPermissionCache
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.client.MarketStateCache
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
 import com.shusheng.cobblemarket.client.activeCurrencyUnit
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.formatPriceShortLong
@@ -61,7 +62,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         val POINT_ORDERS_ICON = Identifier.of("cobblemarket", "textures/gui/point_orders_icon.png")
 
         /** 有待处理订单时挂在它右上角的角标（48×48 源图按 1/6 缩到 8×8，同精灵市场的红点） */
-        val POINTS_SYMBOL = Identifier.of("cobblemarket", "textures/gui/points_symbol.png")
+        val POINTS_SYMBOL = POINTS_SYMBOL_TEXTURE
     }
 
     /** 金融统计快照（进入管理面板时拉取）：准备金池告警行 */

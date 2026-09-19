@@ -54,7 +54,21 @@ class NineSliceButton(
      */
     var dimmed: Boolean = false
 
+    /**
+     * 可选：把**绘制与点击**都裁到这个矩形内 `[x1, y1, x2, y2]`（滚动列表里的按钮用）。
+     * `null` = 不裁（绝大多数按钮用不到）。
+     *
+     * ⚠ 为什么得由**控件自己**裁：滚动列表里那些半露在可视区外的按钮，是 `super.render()`
+     * 统一绘制的 —— 那时候外层 `enableScissor` 早就关了，外层裁不到它们。
+     * 不裁的话，滚出去的那半截会糊在列表外的分割线上（2026-09-19 用户实测）。
+     */
+    var clipRect: IntArray? = null
+
     override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // ⚠ 本方法**不许提前 return** —— 提前返回就漏掉下面的 disableScissor，
+        //   会把整个界面后续的绘制全裁掉
+        val clip = clipRect
+        if (clip != null) context.enableScissor(clip[0], clip[1], clip[2], clip[3])
         val maxState = texH / NINE_SLICE_STATE_H - 1
         val state = when {
             selectedVisual -> 2.coerceAtMost(maxState)
@@ -109,6 +123,17 @@ class NineSliceButton(
         if (dimmed) {
             context.fill(x, y, x + width, y + height, 0x66000000)
         }
+        if (clip != null) context.disableScissor()
+    }
+
+    /**
+     * 被裁掉的区域**不可点** —— 露在列表区外的那半截只是视觉上被切了，
+     * 若还留着点击区，玩家点到看得见的部分反而有反应，更莫名其妙。
+     */
+    override fun isMouseOver(mouseX: Double, mouseY: Double): Boolean {
+        if (!super.isMouseOver(mouseX, mouseY)) return false
+        val clip = clipRect ?: return true
+        return mouseX >= clip[0] && mouseX < clip[2] && mouseY >= clip[1] && mouseY < clip[3]
     }
 
     override fun playDownSound(soundManager: SoundManager) {

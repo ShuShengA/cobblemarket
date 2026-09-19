@@ -2,6 +2,8 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.GuiColors
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.PointOrderNumbers
 import com.shusheng.cobblemarket.currency.PointOrderStatus
 import com.shusheng.cobblemarket.currency.PointShopService
@@ -47,6 +49,15 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
     /** 列表首行的 y：分割线下方留一点空隙 */
     private val listStartY = 68
 
+    /** 面板底边距屏幕底的距离（`height - 它` 就是整块面板的下沿） */
+    private val PANEL_BOTTOM_INSET = 32
+
+    /**
+     * 面板**内容区**的下沿：底段贴图有 16px 高（占 `height-48` ~ `height-32`），内容不能压上去。
+     * 可见行数与底部滚动数字都按它算 —— 与交易历史界面同一个口径（那边也用 48）。
+     */
+    private val CONTENT_BOTTOM_INSET = 48
+
     /** 相邻控件之间的最小空隙（按钮间距规则） */
     private val GAP = 4
 
@@ -90,7 +101,14 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
 
     private fun leftX() = width / 2 - panelWidth / 2
 
-    private fun maxVisible() = maxOf(1, (height - listStartY - 8) / rowHeight)
+    /**
+     * 可见行数 = 从列表顶到**面板底边**能放几行。
+     *
+     * ⚠ 必须按**面板底边**算，不能按屏幕底 —— 按屏幕底算会多出小半行，
+     * 订单一多最后那行就画到面板外面去了（2026-09-19 用户实测）。
+     * 口径与交易历史界面一致（那边是 `height - 48 - startY`，48 就是它的面板底边距）。
+     */
+    private fun maxVisible() = maxOf(1, (height - CONTENT_BOTTOM_INSET - listStartY) / rowHeight)
 
     override fun init() {
         super.init()
@@ -216,22 +234,23 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
         if (!open) return
         rowButtons.forEach { it.visible = false }
         val dx = width / 2 - 160
-        val dy = height / 2 - 60
+        val dy = height / 2 - 68
         dialogButtons += addDrawableChild(
             NineSliceButton(
-                dx + 16, dy + 92, 90, 20,
-                Text.translatable("cobblemarket.points.admin.do_grant"), { doConfirm(grant = true) }
+                dx + 16, dy + 108, 90, 20,
+                Text.translatable("cobblemarket.points.admin.do_grant", CurrencyService.pointsIcon()),
+                { doConfirm(grant = true) }
             )
         )
         dialogButtons += addDrawableChild(
             NineSliceButton(
-                dx + 115, dy + 92, 90, 20,
+                dx + 115, dy + 108, 90, 20,
                 Text.translatable("cobblemarket.points.admin.do_void"), { doConfirm(grant = false) }
             )
         )
         dialogButtons += addDrawableChild(
             NineSliceButton(
-                dx + 214, dy + 92, 90, 20,
+                dx + 214, dy + 108, 90, 20,
                 Text.translatable("cobblemarket.buy_confirm.cancel"), { closeDialog() }
             )
         )
@@ -336,7 +355,7 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
         //   这是「确认弹窗黄金模板」的画法（AdminAuctionScreen.openCancelDialog 那套）。
         val panelLeft = width / 2 - 160
         val panelTop = 2
-        val panelBottom = height - 32
+        val panelBottom = height - PANEL_BOTTOM_INSET
         val sliceH = 16
         drawPanelSlice(context, PANEL_TOP, panelLeft, panelTop)
         var y = panelTop + sliceH
@@ -358,7 +377,7 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
             drawScreenDimMask(context, width, height)
             drawNineSlice(
                 context, DIALOG_BACKGROUND_TEXTURE,
-                width / 2 - 160, height / 2 - 60, 320, 124, 0, DIALOG_BACKGROUND_TEX_H
+                width / 2 - 160, height / 2 - 68, 320, 140, 0, DIALOG_BACKGROUND_TEX_H
             )
         }
     }
@@ -444,13 +463,18 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
                     textRenderer, Text.literal(orderTimeText(order.createdAt)),
                     leftX + colFinishedTime, ty, 0xAAAAAA
                 )
-                // 结果并成一列：发放的写 +N RP（绿），作废的写状态（灰）—— 一眼分得开
+                // 结果并成一列：发放的写 +N，作废的写状态（灰）—— 一眼分得开。
+                // 金额走 amountText（千分位 + 空格 + 图标）；「+」沿用这一列的绿色，
+                // 金额与图标自带金色/原色 —— 别在图省事自己拼 "N RP"（2026-09-19 漏过一次）
+                val resultText: Text = if (granted) {
+                    Text.literal("+").append(
+                        CurrencyService.amountText(order.points, MarketCurrency.POINTS)
+                    )
+                } else {
+                    Text.translatable(statusKey)
+                }
                 context.drawTextWithShadow(
-                    textRenderer,
-                    Text.literal(
-                        if (granted) "+${order.points} RP"
-                        else Text.translatable(statusKey).string
-                    ),
+                    textRenderer, resultText,
                     leftX + colFinishedResult, ty, if (granted) 0x55FF55 else 0xAAAAAA
                 )
             } else {
@@ -473,11 +497,20 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
                 centerX, listStartY + 20, 0xAAAAAA
             )
         }
+
+        // 滚动数字（照交易历史界面）：只在装不下时才出现，画在面板内容区的最底部
+        if (orders.size > maxVisible()) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                "${scrollOffset + 1}-${minOf(scrollOffset + maxVisible(), orders.size)} / ${orders.size}",
+                centerX, height - 49, 0x888888
+            )
+        }
     }
 
     private fun renderDialog(context: DrawContext, order: PointOrderInfo) {
         val dx = width / 2 - 160
-        val dy = height / 2 - 60
+        val dy = height / 2 - 68
         val centerX = width / 2
         context.drawCenteredTextWithShadow(
             textRenderer,
@@ -507,7 +540,8 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
         context.drawTextWithShadow(
             textRenderer,
             Text.translatable(
-                "cobblemarket.points.admin.d_grant", texOf(order), order.points.toString()
+                "cobblemarket.points.admin.d_grant", texOf(order),
+                CurrencyService.amountText(order.points, MarketCurrency.POINTS)
             ).formatted(Formatting.GOLD),
             dx + 16, dy + 94, 0xFFFFFF
         )

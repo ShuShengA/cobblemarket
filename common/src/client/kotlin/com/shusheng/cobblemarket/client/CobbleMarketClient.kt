@@ -944,33 +944,28 @@ fun balanceHudPixelPos(screenW: Int, screenH: Int, hudW: Int, hudH: Int): Pair<I
 fun balanceHudSize(client: net.minecraft.client.MinecraftClient): Pair<Int, Int> {
     val mainW = client.textRenderer.getWidth("${hudBalanceText(client)} ${inlineCurrencyUnit()}")
     val hasPoints = pointsHudRowVisible()
-    val pointsW = if (hasPoints) client.textRenderer.getWidth(BalanceCache.pointsBalance) + 2 + POINTS_ROW_ICON_W else 0
-    val h = if (hasPoints) HUD_TWO_LINE_ROW_H * 2 + HUD_TEXT_DY else HUD_ROW_H
+    val pointsW = if (hasPoints) client.textRenderer.getWidth(BalanceCache.pointsBalance) + unitGap(client.textRenderer) + POINTS_SYMBOL_INLINE_SIZE else 0
+    val h = if (hasPoints) HUD_TWO_LINE_H else HUD_ROW_H
     return (maxOf(mainW, pointsW) + 10) to h
 }
 
 /** HUD 单行时的高度（**原有值，一行时观感一字不动**） */
 private const val HUD_ROW_H = 16
 
-/**
- * 两行时每行的高度（= 上留白 4 + 文字 8）。框高 = 这个 × 2 + 4，让**最后一行下面也留 4px**：
- * 三处留白（上 / 两行之间 / 下）都是 4px，看着才匀。
- *
- * ⚠ 别为了「让两行更近」去压上下留白 —— 压到 2 的话中间那 4px 就比上下都大，
- * 看上去**仍然是「中间空一块」**，而且文字会贴着框边（2026-09-18 用户实测踩到）。
- * 要动就三处一起动。
- */
-private const val HUD_TWO_LINE_ROW_H = 12
-
-/** 一行文字相对行顶的偏移（文字 8px 高，上下留一样的白） */
-/** 一行文字相对行顶的偏移：三处留白（上 / 中间 / 下）统一用这个值 */
+/** 文字相对框顶的偏移（文字 8px 高）。两行时它同时是**上留白**和**下留白** */
 private const val HUD_TEXT_DY = 4
 
-/** RP 行左侧那个 points_symbol 图标的显示宽度（48×48 源图缩到 8×8，与文字同高） */
-private const val POINTS_ROW_ICON_W = 8
+/** 两行时**两行文字之间**那道缝。上下留白走 [HUD_TEXT_DY]，这个只管中间 */
+private const val HUD_TWO_LINE_GAP = 2
 
-/** RP 那一行的单位图标 */
-private val POINTS_SYMBOL_HUD = Identifier.of("cobblemarket", "textures/gui/points_symbol.png")
+/**
+ * 两行时的框高 = 上留白 + 文字 8 + 行间缝 + 文字 8 + 下留白。
+ *
+ * ⚠ **三处留白必须各自独立**：早先按「每行高 × 2 + 4」推框高，底部留白被绑死成
+ * 「行高 − 8」，和行间距联动 —— 想只压两行中间那道缝根本压不动，改了也看不出变化
+ * （2026-09-19 用户指出的就是这里）。要调就调上面三个量，别再合成一个。
+ */
+private const val HUD_TWO_LINE_H = HUD_TEXT_DY * 2 + 8 * 2 + HUD_TWO_LINE_GAP
 
 /**
  * RP 那一行现在该不该显示：**总开关开着**（服务端没开就压根不下发余额）**+ 服务端下发了余额**
@@ -1071,12 +1066,10 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
     // 背景框：HUD 专属九宫格贴图（40×40），宽随**最长那行**自适应，高按显示几行（16 / 32）
     val textW = client.textRenderer.getWidth(text)
     val pointsInnerW = client.textRenderer.getWidth(BalanceCache.pointsBalance)
-    val pointsTextW = pointsInnerW + 2 + POINTS_ROW_ICON_W
+    val pointsTextW = pointsInnerW + unitGap(client.textRenderer) + POINTS_SYMBOL_INLINE_SIZE
     val hudW = maxOf(textW, if (showPointsRow) pointsTextW else 0) + 10
-    // 两行时每行压到 12（单行仍是 16）；文字在行内垂直居中
-    val rowH = if (showPointsRow) HUD_TWO_LINE_ROW_H else HUD_ROW_H
-    // 两行时底边再留一个文字偏移（否则最后一行文字贴着框底）
-    val hudH = if (showPointsRow) rowH * 2 + HUD_TEXT_DY else rowH
+    // 框高：单行 16；两行 = 上留白 + 文字 + 行间缝 + 文字 + 下留白（三处各自独立，见 HUD_TWO_LINE_H）
+    val hudH = if (showPointsRow) HUD_TWO_LINE_H else HUD_ROW_H
     val textDy = HUD_TEXT_DY
     val hudPos = balanceHudPixelPos(context.scaledWindowWidth, context.scaledWindowHeight, hudW, hudH)
     val hudX = hudPos.first
@@ -1091,15 +1084,12 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
     if (showPointsRow) {
         // RP 行：**数字在前、图标在后当单位**（与主行 `1000 ₽` 同一个格局）——
         // 图标放前面的话它占着左边起始位、数字被顶到右边，两行的数字就不在一条竖线上了。
-        val rowY = hudY + rowH
+        // RP 行文字的 y：第一行文字底（hudY + textDy + 8）+ 行间缝
+        val pointsRowY = hudY + textDy + 8 + HUD_TWO_LINE_GAP
         context.setShaderColor(alphaF * pointsAlpha, alphaF * pointsAlpha, alphaF * pointsAlpha, alphaF * pointsAlpha)
-        context.drawTextWithShadow(client.textRenderer, BalanceCache.pointsBalance, hudX + 5, rowY + textDy, 0xFFAA00)
-        val iconX = hudX + 5 + client.textRenderer.getWidth(BalanceCache.pointsBalance) + 2
-        context.matrices.push()
-        context.matrices.translate(iconX.toDouble(), (rowY + textDy).toDouble(), 0.0)
-        context.matrices.scale(POINTS_ROW_ICON_W / 48f, POINTS_ROW_ICON_W / 48f, 1f)
-        context.drawTexture(POINTS_SYMBOL_HUD, 0, 0, 0f, 0f, 48, 48, 48, 48)
-        context.matrices.pop()
+        context.drawTextWithShadow(client.textRenderer, BalanceCache.pointsBalance, hudX + 5, pointsRowY, 0xFFAA00)
+        val iconX = hudX + 5 + client.textRenderer.getWidth(BalanceCache.pointsBalance) + unitGap(client.textRenderer)
+        drawPointsSymbol(context, iconX, pointsRowY, POINTS_SYMBOL_INLINE_SIZE)
         context.setShaderColor(alphaF, alphaF, alphaF, alphaF)
         // RP 变动浮字（照主行那份）：跟在这一行右边
         val rawPoints = BalanceCache.pointsRaw
@@ -1109,19 +1099,19 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
         }
         lastPointsRawForDiff = rawPoints
         if (hudPointsDiff != 0L && System.currentTimeMillis() < hudPointsDiffUntil) {
-            val dt = if (hudPointsDiff > 0) "+${formatBalanceLong(hudPointsDiff)}" else formatBalanceLong(hudPointsDiff).toString()
+            val dt = if (hudPointsDiff > 0) "+${formatBalanceLong(hudPointsDiff)}" else formatBalanceLong(hudPointsDiff)
             val dc = if (hudPointsDiff > 0) 0x55FF55 else 0xFF5555
             val dw = client.textRenderer.getWidth(dt)
             // ⚠ 紧跟**本行**余额数字之后，不是框右边缘 —— 框宽按最长那行算，
             //   短行的数字离框边还差一大截，用框边会让浮字飘在半空（2026-09-18 用户指出）
             val rx = hudX + 5 + pointsTextW + 4
             val dx2 = if (rx + dw <= context.scaledWindowWidth) rx else (hudX - 4 - dw).coerceAtLeast(0)
-            context.drawTextWithShadow(client.textRenderer, dt, dx2, rowY + textDy, dc)
+            context.drawTextWithShadow(client.textRenderer, dt, dx2, pointsRowY, dc)
         }
     }
     // 余额变动浮字：+绿/-红，2 秒后消失（照 CobbleDollars 右下角的变动提示）
     if (hudDiff != 0L && System.currentTimeMillis() < hudDiffUntil) {
-        val diffText = if (hudDiff > 0) "+${formatBalanceLong(hudDiff)}" else formatBalanceLong(hudDiff).toString()
+        val diffText = if (hudDiff > 0) "+${formatBalanceLong(hudDiff)}" else formatBalanceLong(hudDiff)
         val diffColor = if (hudDiff > 0) 0x55FF55 else 0xFF5555
         // 默认画在 HUD 右侧；右侧放不下（HUD 贴右边缘）才改画左侧——否则紧贴右边缘的 HUD
         // 会把浮字整条推出屏幕。按「右侧实际放得下」判断，而不是「HUD 中心落在哪半边」：

@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.ServerConfigDataPayload
@@ -646,7 +647,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             drawRowLine(rowY)
             context.drawTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.points.config.entry"),
+                Text.translatable("cobblemarket.points.config.entry", CurrencyService.pointsIcon()),
                 dialogX + 10, rowY + 7, 0xFFFFFF
             )
         }

@@ -219,7 +219,7 @@ object PointShopService {
             server, order.playerUuid,
             Text.translatable(
                 "cobblemarket.points.shop.granted",
-                order.points.toString(),
+                CurrencyService.amountText(order.points, MarketCurrency.POINTS),
                 PointOrderNumbers.format(order.orderNo)
             ).formatted(Formatting.GREEN)
         )

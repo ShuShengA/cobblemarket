@@ -3,7 +3,7 @@ package com.shusheng.cobblemarket.currency
 import com.shusheng.cobblemarket.config.CurrencyHandler
 import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.text.Text
-import net.minecraft.util.Formatting
+import net.minecraft.util.Identifier
 import java.math.BigInteger
 
 /**
@@ -61,21 +61,65 @@ object CurrencyService {
     }
 
     /**
-     * 货币单位文本（跟在金额后面）。**两种货币都金色**：虚拟货币统一金色是既定规则
-     * （`₽` 的 goldCurrencyText 也是金色），单位掉色会让整串金额看着"不金"。
+     * 货币单位文本（跟在金额后面）。主货币金色（`₽` 的 goldCurrencyText 就是金色）。
      *
-     * RP 现在用 **`RP`**（照 PokéMMO 的写法，两个 ASCII 字母，任何字体都画得出来）。
-     * ⚠ **B3 会把RP 这行换成RP 图标字形**（font glyph，见方案「图标渲染」路径 A）——
-     * 届时只改这里一处，所有调用方（命令反馈、聊天消息、界面）自动跟着变。
+     * RP 走 **`points_symbol.png` 图标字形**（font glyph，方案「图标渲染」路径 A）——
+     * 这里是唯一的落点：命令反馈、聊天消息、界面全都经 [unitText] / [amountText] 取单位，
+     * 改这一处全项目跟着变，没有第二处要改。
      */
     fun unitText(currency: MarketCurrency): Text = when (currency) {
         MarketCurrency.PRIMARY -> CurrencyHandler.goldCurrencyText()
-        MarketCurrency.POINTS -> Text.literal("RP").formatted(Formatting.GOLD)
+        MarketCurrency.POINTS -> pointsIcon()
     }
 
-    /** 「金额 + 单位」一体（金额金色）：聊天消息与命令反馈统一用它拼 */
+    /**
+     * RP 图标（行内货币单位，8×8，与文字行高齐平）。
+     *
+     * **必须单独设白色**：MC 会用文字颜色**乘算**字形，不设白的话彩色图会被金额行的金色染成金色调。
+     *
+     * ⚠ **降级开关就是这个函数体** —— 图标出问题时（服主换的图不合格、字体没加载上等）
+     * 换成 `Text.literal("RP").formatted(Formatting.GOLD)` 即可全项目退回文字形态：
+     * 所有调用方都经 [unitText] 取单位，没有别的地方要动。
+     */
+    fun pointsIcon(): Text = Text.literal(POINTS_GLYPH)
+        .styled { it.withFont(POINTS_FONT).withColor(0xFFFFFF) }
+
+    /**
+     * RP 图标的字形字符 **U+E000**（私用区首字符）。
+     *
+     * ⚠ 必须写成转义形式（反斜杠 + uE000）—— 别直接嵌那个不可见字符本身，
+     * 编辑器/工具链会悄悄吃掉它、变成空串，而且**不报错**，只表现为聊天里少个图标。
+     */
+    private const val POINTS_GLYPH = "\uE000"
+
+    /** 字形所在字体：`assets/cobblemarket/font/points.json`，它的 bitmap 指向 `textures/gui/points_symbol.png` */
+    private val POINTS_FONT = Identifier.of("cobblemarket", "points")
+
+    /**
+     * 同一个图标、**标题尺寸（18×18）**：给界面上的大标题用（余额 HUD 那种行内单位仍走 [pointsIcon]）。
+     *
+     * 为什么要另开一个字形、而不是把行内那个放大：**字形尺寸在字体 json 里是写死的**，
+     * 渲染时缩放不了单个字形 —— 想让标题上的图标大，只能再注册一个 `height: 18` 的字形。
+     * 两张字体 json 指同一个 `points_symbol.png`，所以服主换图时两处一起变，不会分叉。
+     */
+    fun pointsTitleIcon(): Text = Text.literal(POINTS_TITLE_GLYPH)
+        .styled { it.withFont(POINTS_TITLE_FONT).withColor(0xFFFFFF) }
+
+    /** 标题字形的字符 **U+E001**（⚠ 转义写法，理由同 [POINTS_GLYPH]） */
+    private const val POINTS_TITLE_GLYPH = "\uE001"
+
+    /** 标题字形所在字体：`assets/cobblemarket/font/points_title.json`（同图，height 18 / ascent 10） */
+    private val POINTS_TITLE_FONT = Identifier.of("cobblemarket", "points_title")
+
+    /**
+     * 「金额 + 单位」一体（金额金色，**中间带一个空格**）：聊天消息与命令反馈统一用它拼。
+     *
+     * ⚠ 空格在**这里**拼，别让调用方自己加 —— 调用点几十处，漏一个就是「1,000▣」贴着，
+     * 而且图标比 `₽` 更容易"糊"在数字上，没有空格看不出边界。
+     */
     fun amountText(amount: Any, currency: MarketCurrency): Text =
-        Text.literal("").append(CurrencyHandler.goldAmount(amount)).append(unitText(currency))
+        Text.literal("").append(CurrencyHandler.goldAmount(amount))
+            .append(" ").append(unitText(currency))
 
     /** RP 不接喵喵支付：准备金池垫付的是主货币，等于跨币种兑换，违反「不可兑换」 */
     fun supportsMeowthPay(currency: MarketCurrency): Boolean = currency == MarketCurrency.PRIMARY
