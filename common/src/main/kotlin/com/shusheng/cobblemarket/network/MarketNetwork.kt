@@ -263,30 +263,48 @@ fun validateCreateCurrency(
         )
         return null
     }
-    if (currency == com.shusheng.cobblemarket.currency.MarketCurrency.POINTS) {
-        val cfg = com.shusheng.cobblemarket.config.CobbleMarketConfig
-        if (!cfg.pointsEnabled) {
-            sendToPlayer(
-                player,
-                MarketResultPayload(
-                    false,
-                    Text.translatable("cobblemarket.network.points_disabled", CurrencyService.pointsIcon())
-                )
-            )
-            return null
-        }
-        if (!cfg.pointsMarketEnabled) {
-            sendToPlayer(
-                player,
-                MarketResultPayload(
-                    false,
-                    Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
-                )
-            )
-            return null
-        }
-    }
+    if (pointsGateBlocked(player, currency)) return null
     return currency
+}
+
+/**
+ * **RP 的两道闸**（创建侧与买家侧共用）：币种不是 RP 直接放行；是 RP 就查
+ * 「RP 总开关」与「玩家间 RP 交易」。返回 true = **已拒绝并发过提示**，调用方直接 `return@execute`。
+ *
+ * ⚠ **买家侧同样要过这道闸**（直购 / 拍卖出价 / 求购交付）：配置里 `pointsMarketEnabled`
+ * 的注释写得很明白 ——「玩家 A 挂 RP 单、玩家 B 买下，本质就是把 RP 从 B 转到 A，
+ * 这是那条『不可转让』设定在市场上唯一的后门」。只拦创建不拦成交 = 后门照开。
+ *
+ * ⚠ 只拦**买家付 RP 出去**；卖家侧的退款 / 入账 / 下架 / 领取不受影响（那是收回自己的资产，
+ * 关掉开关后存量 RP 挂单与拍卖仍能下架取回，不会变成死单）。
+ */
+fun pointsGateBlocked(
+    player: net.minecraft.server.network.ServerPlayerEntity,
+    currency: com.shusheng.cobblemarket.currency.MarketCurrency
+): Boolean {
+    if (currency != com.shusheng.cobblemarket.currency.MarketCurrency.POINTS) return false
+    val cfg = com.shusheng.cobblemarket.config.CobbleMarketConfig
+    if (!cfg.pointsEnabled) {
+        sendToPlayer(
+            player,
+            MarketResultPayload(
+                false,
+                Text.translatable("cobblemarket.network.points_disabled", CurrencyService.pointsIcon())
+            )
+        )
+        return true
+    }
+    if (!cfg.pointsMarketEnabled) {
+        sendToPlayer(
+            player,
+            MarketResultPayload(
+                false,
+                Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
+            )
+        )
+        return true
+    }
+    return false
 }
 
 // ── C2S: Request market data ──
@@ -1464,6 +1482,9 @@ object MarketNetwork {
                     )
                     return@execute
                 }
+                // ⚠ **买家侧币种闸**：买 RP 挂单 = 把 RP 从买家转到卖家，正是「玩家间 RP 交易」
+                //   开关要拦的那条后门（只拦创建不拦成交 = 后门照开）
+                if (pointsGateBlocked(player, listing.currency)) return@execute
                 // 喵喵支付（消费贷）：信用校验 + 准备金垫付；否则现金扣款
                 val meowth = payload.planIndex >= 0
                 // ⚠ **RP 挂单不接受喵喵支付**：准备金池垫付的是主货币，等于跨币种兑换，违反「不可兑换」
@@ -2050,7 +2071,8 @@ object MarketNetwork {
                     )
                     return@execute
                 }
-                // RP 上架的两道闸（关闭后**存量** RP 挂单仍可正常成交/下架，那两条路走挂单自带币种）：
+                // RP 上架的两道闸 —— 关闭后**存量** RP 挂单仍能**下架**取回（那条路走挂单自带币种，
+                // 不会变成死单）；但**成交**另算：买家侧（直购/出价）同样要过闸，见 pointsGateBlocked：
                 // ① RP 总开关没开 → 整个 RP 不可用；② 玩家间 RP 交易没开 → 玩家不能拿 RP 换别人的东西
                 if (currency == MarketCurrency.POINTS) {
                     val pointsCfg = com.shusheng.cobblemarket.config.CobbleMarketConfig
@@ -2774,6 +2796,9 @@ object MarketNetwork {
                     return@execute
                 }
                 val totalPrice = totalPriceLong.toInt()
+                // ⚠ **买家侧币种闸**：买 RP 挂单 = 把 RP 从买家转到卖家，正是「玩家间 RP 交易」
+                //   开关要拦的那条后门（只拦创建不拦成交 = 后门照开）
+                if (pointsGateBlocked(player, listing.currency)) return@execute
                 // 喵喵支付（消费贷）：信用校验 + 准备金垫付；否则现金扣款
                 val meowth = payload.planIndex >= 0
                 // ⚠ **RP 挂单不接受喵喵支付**：准备金池垫付的是主货币，等于跨币种兑换，违反「不可兑换」

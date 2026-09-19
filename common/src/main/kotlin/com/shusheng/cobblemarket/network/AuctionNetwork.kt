@@ -772,6 +772,9 @@ object AuctionNetwork {
                 // - 自己连续加价：只净扣差价（旧款即自己当前持有的出价，无需进出待领余额）
                 // - 他人出价：全额扣款，前出价者退款进待领余额并通知
                 //   （outbid 通知的"当前价"用新出价金额，currentPrice 在下方才更新）
+                // ⚠ **买家侧币种闸**：出价买 RP 拍卖 = 把 RP 从买家转到卖家，正是「玩家间 RP 交易」
+                //   开关要拦的那条后门。跟市场直购同一道闸（只拦创建不拦成交 = 后门照开）
+                if (pointsGateBlocked(player, auction.currency)) return@execute
                 val prevBidder = auction.currentBidderUuid
                 val selfRebid = prevBidder == player.uuid && auction.currentPrice > 0
                 val deductAmount = if (selfRebid) payload.amount - auction.currentPrice else payload.amount
