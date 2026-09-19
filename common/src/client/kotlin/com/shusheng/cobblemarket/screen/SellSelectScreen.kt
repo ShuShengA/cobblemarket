@@ -212,8 +212,9 @@ class SellSelectScreen(
 
         // Row 3 (y=72)：间距统一 4px，整行排满到面板右缘（lx+294），各模式各自铺满不留空
         //   交付/分享：闪光30 | 公母24 | 属性58 | 特训80 | 选择84
-        //   上架：闪光30 | 公母24 | 属性58 | 特训60 | 价格56 | 货币20 | 上架20
-        //         （特训紧跟在属性后面、价格框之前 —— 2026-09-19 用户要求）
+        //   上架：闪光30 | 公母24 | 属性58 | 特训60 | 价格56 | 货币20(紧贴价格框) | 上架24
+        //         （特训紧跟在属性后面、价格框之前；货币按钮**贴着**价格框 —— 视觉上像
+        //          「数字紧跟货币符号」，省下的 4px 拿去给上架按钮增宽。均 2026-09-19 用户要求）
         val btnY = 72
         shinyBtn = NineSliceButton(
             lx + 2, btnY, 30, 20,
@@ -251,12 +252,12 @@ class SellSelectScreen(
         // 交付/分享模式：价格不在本界面输入，隐藏价格框，特训按钮顶上这个位置
         priceField?.visible = !noPriceField
 
-        // 上架按钮改成**纯图标**（sell.png，8×8）后窄到 16px，腾出的位置正好给货币切换按钮 ——
-        // 「特训 126~186 │ 价格 190~246 │ 货币 250~270 │ 上架 274~294」48px 排满。
-        // 交付/分享模式没有价格框、也就没有货币按钮，照旧用文字按钮与原位置。
+        // 上架按钮改成**纯图标**（sell.png，8×8）后很窄，腾出的位置给了货币切换按钮 ——
+        // 「特训 126~186 │ 价格 190~246 │ 货币 246~266（贴着价格框）│ 上架 270~294」。
+        // 交付/分享模式没有价格框、也就没有货币按钮，照旧用文字按钮与原位置（210 起、84 宽）
         sellBtn = NineSliceButton(
-            lx + 274, btnY,
-            if (noPriceField) 84 else 20, 20,
+            if (noPriceField) lx + 210 else lx + 270, btnY,
+            if (noPriceField) 84 else 24, 20,
             if (noPriceField) {
                 Text.translatable(
                     if (deliverMode) "cobblemarket.sell.deliver_select" else "cobblemarket.share.button"
@@ -282,7 +283,8 @@ class SellSelectScreen(
         //   「玩家间 RP 交易」没开**照样显示** —— 空一块更难看 —— 只是置灰点不动。
         currencyButton = if (!noPriceField && PointsStateCache.enabled) {
             NineSliceButton(
-                lx + 250, btnY, 20, 20, Text.literal(""), { onCurrencyClick() },
+                // 紧贴价格框右缘（无 4px 间隙）：看起来就像价格数字后面直接跟着货币符号
+                lx + 246, btnY, 20, 20, Text.literal(""), { onCurrencyClick() },
                 iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
                 iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat()
             ).also {
