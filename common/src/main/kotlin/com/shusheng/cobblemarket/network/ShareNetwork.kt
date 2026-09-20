@@ -339,6 +339,10 @@ object ShareNetwork {
             Text.translatable("cobblemarket.gui.friendship", pokemon.friendship)
                 .styled { it.withColor(0xFF99CC) }
         )
+        // 技能（亲密度下方）：两行、一行两个 —— 与悬停窗**同源**（[MoveText.rows]，词条由客户端本地翻译）。
+        // ⚠ 聊天悬停是纯文本、画不了分割线，所以只补两行技能；空行跳过，免得工具提示里多出空档
+        com.shusheng.cobblemarket.util.MoveText.rows(com.shusheng.cobblemarket.util.MoveText.of(pokemon))
+            .forEach { row -> if (row.string.isNotEmpty()) lines.add(row) }
         if (pokemon.marks.isNotEmpty()) {
             val shown = pokemon.marks.take(MARKS_SHOWN).map { it.getName().string }
             val rest = pokemon.marks.size - shown.size

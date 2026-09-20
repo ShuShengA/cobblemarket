@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.client.PointsStateCache
@@ -1034,6 +1035,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private var tooltipCacheKey: java.util.UUID? = null
     private var tooltipCacheLines: List<Pair<Text?, Int>> = emptyList()
     private var tooltipCacheHeldLine = -1
+    private var tooltipCacheMovesLine = -1
     private var tooltipCacheMarksLine = -1
     private var tooltipCacheMarksRows = 0
     private var tooltipCacheMaxWidth = 0
@@ -1079,13 +1081,18 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             lines.add(Text.literal("  $hp: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsHp, p.htHp)}").append(Text.literal("  EV: ${p.evsHp}").formatted(Formatting.RED)) to 0x66FF66); lines.add(Text.literal("  $atk: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsAtk, p.htAtk)}").append(Text.literal("  EV: ${p.evsAtk}").formatted(Formatting.RED)) to 0xFF6666)
             lines.add(Text.literal("  $def: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsDef, p.htDef)}").append(Text.literal("  EV: ${p.evsDef}").formatted(Formatting.RED)) to 0xFFCC66); lines.add(Text.literal("  $spa: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpAtk, p.htSpAtk)}").append(Text.literal("  EV: ${p.evsSpAtk}").formatted(Formatting.RED)) to 0x6699FF)
             lines.add(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpDef, p.htSpDef)}").append(Text.literal("  EV: ${p.evsSpDef}").formatted(Formatting.RED)) to 0x66FF99); lines.add(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpd, p.htSpd)}").append(Text.literal("  EV: ${p.evsSpd}").formatted(Formatting.RED)) to 0xFF99FF); lines.add(Text.translatable("cobblemarket.gui.friendship", p.friendship) to 0xFF99CC)
-            // 证章区块（拥有的全部证章，纯外观）：亲密度下方两条分割线夹图标（每行 MARKS_PER_ROW 个；服务端直接传纹理路径）
+            // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：分割线 + 两行技能 + 分割线，整块在 drawMovesBlockLeft 里画
+            var movesLine = -1
+            if (MoveText.hasAny(p.moves)) {
+                movesLine = lines.size
+                lines.add(null to 0)
+            }
+            // 证章区块（拥有的全部证章，纯外观）：技能块下方，图标行 + 下分割线（与技能块共用上分割线）
             var marksLine = -1
             var marksRows = 0
             val markTextures = p.marks.mapNotNull { Identifier.tryParse(it) }
             if (markTextures.isNotEmpty()) {
                 marksRows = if (markTextures.size > EntryBadgeRenderer.MARKS_PER_ROW) 2 else 1
-                lines.add(null to 0)
                 marksLine = lines.size
                 lines.add(null to 0)
                 lines.add(null to 0)
@@ -1098,27 +1105,34 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 mw = maxOf(mw, textRenderer.getWidth(lines[heldItemLine].first) + 14)
             }
             if (marksRows > 0) mw = maxOf(mw, minOf(EntryBadgeRenderer.MARKS_PER_ROW, markTextures.size) * 12)
+            mw = maxOf(mw, EntryBadgeRenderer.movesBlockWidth(p.moves))
             tooltipCacheLines = lines
             tooltipCacheHeldLine = heldItemLine
+            tooltipCacheMovesLine = movesLine
             tooltipCacheMarksLine = marksLine
             tooltipCacheMarksRows = marksRows
             tooltipCacheMaxWidth = mw
         }
         val lines = tooltipCacheLines
         val heldItemLine = tooltipCacheHeldLine
+        val movesLine = tooltipCacheMovesLine
         val marksLine = tooltipCacheMarksLine
         val marksRows = tooltipCacheMarksRows
         val mw = tooltipCacheMaxWidth
         val pad = 4
         val tx = minOf(mx + 12, width - mw - 12)
-        val th = lines.size * 10 + pad + (marksRows - 1).coerceAtLeast(0) * 12
+        val th = lines.size * 10 + pad + (marksRows - 1).coerceAtLeast(0) * 12 +
+            EntryBadgeRenderer.movesBlockExtra(p.moves)
         val ty = if (my - th - 4 <= 0) minOf(my + 12, height - th) else my - th - 4
 
         context.matrices.push(); context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - pad, ty - pad, mw + 2 * pad, th + pad, bgState, ROW_BACKGROUND_TEX_H)
         var rowY = ty
         lines.forEachIndexed { i, (line, color) ->
-            if (line == null && i == marksLine) {
+            if (line == null && i == movesLine) {
+                // 技能块：分割线 + 两行技能 + 分割线（左对齐版，分割线撑满提示框全宽）
+                rowY += EntryBadgeRenderer.drawMovesBlockLeft(context, p.moves, tx, mw, rowY)
+            } else if (line == null && i == marksLine) {
                 // 证章图标行：第一行最多 MARKS_PER_ROW 个；超出的部分第二行显示「+N」
                 val textures = p.marks.mapNotNull { Identifier.tryParse(it) }
                 textures.take(EntryBadgeRenderer.MARKS_PER_ROW).forEachIndexed { idx, texture ->

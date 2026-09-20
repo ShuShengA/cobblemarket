@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.util.StatNames
+import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
@@ -39,7 +40,6 @@ import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.ClickableWidget
 import net.minecraft.client.gui.widget.TextFieldWidget
-import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
 import net.minecraft.item.tooltip.TooltipType
 import net.minecraft.registry.Registries
@@ -83,6 +83,12 @@ class BuyOrderScreen(
 
     private val panelWidth = 296
     private val rowHeight = 24
+
+    // ── 行按钮几何（建按钮与悬停窗避让共用一处定义）──
+    private val rowBtnInset = 50
+    private val rowBtnW = 44
+    private val rowBtnH = 16
+    private val rowBtnDy = 4
 
     private var currentTab = initialTab.coerceIn(0, 1) // 0 = 全部, 1 = 我的
 
@@ -199,6 +205,11 @@ class BuyOrderScreen(
 
     // ── 买家确认弹窗状态（处理待确认交付） ──
     private var reviewEntry: BuyOrderEntry? = null
+
+    /** 审核弹窗信息区滚动偏移（2026-09-20）：精灵单弹窗按屏幕钳制后靠滚轮看超出部分 */
+    private var reviewScroll = 0
+    private val reviewContentTop = 62
+    private val reviewBottomH = 72
     /** 待定位的求购单（聊天点击直达）：列表数据每次更新后尝试打开确认交付弹窗，成功即清除 */
     private var pendingReviewLocate: java.util.UUID? = initialReviewOrderId
 
@@ -266,6 +277,14 @@ class BuyOrderScreen(
     private fun rowLeftX() = width / 2 - panelWidth / 2 + PANEL_BORDER_X
     private fun rowW() = panelWidth - 2 * PANEL_BORDER_X
 
+    /**
+     * 第 [row] 行那个按钮（交付 / 处理交付 / ✕ 下架）的矩形 —— **与 `rebuildRowButtons` 同源**
+     * （建按钮和悬停窗避让共用这一处定义，别各写一份）。
+     */
+    private fun rowButtonRect(row: Int) = TooltipPlacement.Rect(
+        rowLeftX() + rowW() - rowBtnInset, getListStartY() + row * rowHeight + rowBtnDy, rowBtnW, rowBtnH
+    )
+
     // 行首图标/行显示数据缓存（数据到达时构建，render 每帧只读）：
     // name/nameColor/itemStack 此前每行每帧解析（物种查找只为属性色），是行渲染分配热点
     private data class IconData(
@@ -290,7 +309,7 @@ class BuyOrderScreen(
         entries.forEachIndexed { index, entry ->
             // 行内截断长度与行渲染一致（物品 56 / 精灵 54）
             val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(
-                entryName(entry), if (entry.type == "ITEM") 56 else 54)
+                entryNameRaw(entry), if (entry.type == "ITEM") 56 else 54)
             if (entry.type == "ITEM") {
                 iconData[index] = IconData(
                     name = name, renderable = null, state = FloatingState(), nameColor = 0xFFFFFF,
@@ -351,7 +370,13 @@ class BuyOrderScreen(
 
     // ── 文本工具 ──
 
-    private fun entryName(entry: BuyOrderEntry): String {
+    /**
+     * **纯字符串版（无颜色）** —— 只给「搜索匹配 / 量文字宽度 / 按钮文字」这类**不直接把名字画出去**的场合用。
+     *
+     * ⚠ 要**画名字**请用 [entryNameText]（带属性色）；拿这个去画就是**白字** ——
+     * 2026-09-20 用户实测发现求购单的悬停窗 / 强制下架弹窗正是因为直接画了它而漏色，故改名以标明区别。
+     */
+    private fun entryNameRaw(entry: BuyOrderEntry): String {
         if (entry.type == "ITEM") {
             val id = Identifier.tryParse(entry.itemId) ?: return entry.itemId
             val item = Registries.ITEM.get(id)
@@ -364,6 +389,16 @@ class BuyOrderScreen(
         val t = Text.translatable(key).string
         return if (t == key) key else t
     }
+
+    /**
+     * [entryNameRaw] 的**带色版**：精灵名按**属性色**（与市场/黑名单同口径，走 [EntryBadgeRenderer.speciesTypeColor]）。
+     * ⚠ 凡是要**画出去**的地方都用这个 —— 纯 String 版是白色，2026-09-20 用户实测发现悬停窗/强制下架弹窗漏了。
+     * 物品单与「任意精灵」保持白色（物品名走稀有度色是另一套，行内已单独处理）。
+     */
+    private fun entryNameText(entry: BuyOrderEntry): Text =
+        Text.literal(entryNameRaw(entry)).styled {
+            it.withColor(EntryBadgeRenderer.speciesTypeColor(entry.speciesId.orEmpty(), entry.aspects))
+        }
 
     /**
      * 行内价格区间用缩写（与物品市场网格同款 k/M/B）；完整价格见悬停面板。
@@ -695,7 +730,7 @@ class BuyOrderScreen(
             if (adminMode || currentTab == 0) true else isMine(entry)
         }.filter { entry ->
             // 搜索：物种名/物品名/买家名（本地过滤，照拍卖场模式）
-            query == null || entryName(entry).contains(query, ignoreCase = true) ||
+            query == null || entryNameRaw(entry).contains(query, ignoreCase = true) ||
                 entry.buyerName.contains(query, ignoreCase = true) ||
                 // 物品单走搜索索引：带组件要求的订单按组件精确（搜「锋利」只出锋利V 订单、搜「打鼾」只出打鼾 TM 订单），
                 // 无组件订单仅物品文本命中（搜「锋利」不再带出所有附魔书订单）
@@ -725,7 +760,7 @@ class BuyOrderScreen(
             val hasPending = entry.pending != null
             // 行按钮语义：我的+待确认=处理交付；我的=关闭（下架，统一红 ✕）；他人+待确认=待确认（锁定）；他人=交付
             val btn = NineSliceButton(
-                rowLeftX() + rowW() - 50, y + 4, 44, 16,
+                rowLeftX() + rowW() - rowBtnInset, y + rowBtnDy, rowBtnW, rowBtnH,
                 if (mine && !hasPending) Text.literal("✕").formatted(Formatting.RED)
                 else Text.translatable(when {
                     mine && hasPending -> "cobblemarket.buy_order.review"
@@ -761,13 +796,14 @@ class BuyOrderScreen(
 
     private fun openForceCancelDialog(entry: BuyOrderEntry) {
         forceCancelEntry = entry
+        forceScroll = 0
         // 隐藏下层控件（弹窗打开期间不可交互；closeForceCancelDialog 的 init 重建会恢复）
         searchField?.visible = false
         backButton?.visible = false
         currencyButton?.visible = false
         rowButtons.forEach { it.visible = false }
         val centerX = width / 2
-        val dialogY = height / 2 - 85
+        val btnY = forceButtonY(entry)
 
         // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染）
         addDrawable(object : Drawable {
@@ -777,7 +813,7 @@ class BuyOrderScreen(
         })
 
         forceCancelConfirmButton = NineSliceButton(
-            centerX - 60, dialogY + 148, 56, 20,
+            centerX - 60, btnY, 56, 20,
             Text.translatable("cobblemarket.buy_order.force_cancel"),
             { confirmForceCancel() },
             texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -785,7 +821,7 @@ class BuyOrderScreen(
         )
         addDrawableChild(forceCancelConfirmButton)
         forceCancelCancelButton = NineSliceButton(
-            centerX + 4, dialogY + 148, 56, 20,
+            centerX + 4, btnY, 56, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeForceCancelDialog() },
             texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -809,11 +845,11 @@ class BuyOrderScreen(
     }
 
     private fun handleForceCancelDialogClick(mx: Int, my: Int) {
+        val entry = forceCancelEntry ?: return
         val centerX = width / 2
-        val dialogY = height / 2 - 85
         val btnW = 56
         val btnH = 20
-        val btnY = dialogY + 148
+        val btnY = forceButtonY(entry)
         val confirmX = centerX - 60
         val cancelX = centerX + 4
         if (mx in confirmX..(confirmX + btnW) && my in btnY..(btnY + btnH)) {
@@ -823,13 +859,71 @@ class BuyOrderScreen(
         }
     }
 
+    /** 「数量」动态行（物品单：剩余/总数）—— 悬停窗与强制下架弹窗共用 */
+    private fun quantityLineOf(entry: BuyOrderEntry): Pair<net.minecraft.text.OrderedText?, Int> {
+        val qty = if (entry.remainingCount < entry.totalCount)
+            "${entry.remainingCount}/${entry.totalCount}" else entry.totalCount.toString()
+        return Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_quantity").string} $qty")
+            .asOrderedText() to 0xFFFFFF
+    }
+
+    /** 「到期」动态行 —— 悬停窗与强制下架弹窗共用 */
+    private fun expiresLineOf(entry: BuyOrderEntry): Pair<net.minecraft.text.OrderedText?, Int> =
+        Text.translatable("cobblemarket.buy_order.tooltip_expires").append(
+            com.shusheng.cobblemarket.util.RemainingTime.text(
+                entry.expiresAt, "cobblemarket.buy_order.ending", secondPrecision = false)
+        ).asOrderedText() to 0xFFFFFF
+
+    /**
+     * 强制下架弹窗要显示的**完整信息行** = [requirementStaticLines] + 数量（物品单）+ 到期，
+     * 与行悬停窗内容一致。弹窗只在打开时看，直接全量构建（不像悬停窗那样把静态行缓存起来）。
+     */
+    private fun requirementDialogLines(entry: BuyOrderEntry): List<Pair<net.minecraft.text.OrderedText?, Int>> {
+        val (static, qtyAt) = requirementStaticLines(entry, forceContentW())
+        val out = ArrayList<Pair<net.minecraft.text.OrderedText?, Int>>(static.size + 2)
+        if (qtyAt >= 0) {
+            out.addAll(static.subList(0, qtyAt))
+            out.add(quantityLineOf(entry))
+            out.addAll(static.subList(qtyAt, static.size))
+        } else {
+            out.addAll(static)
+        }
+        out.add(expiresLineOf(entry))
+        return out
+    }
+
+    // ── 强制下架弹窗几何（2026-09-20：加信息区后必须钳制高度，照其余弹窗那套）──
+    /** 信息区顶（标题 14 / 名称 34 → 信息行自此起） */
+    private val forceInfoTop = 50
+    private val forcePad = 10
+    private val forceDialogW = 220
+    private var forceScroll = 0
+
+    private fun forceContentW() = forceDialogW - 2 * forcePad
+    /** 底部区高：提示 2 行（待确认交付时 3 行）+ 与信息区/按钮的间隔 + 按钮 20 + 底边距 */
+    private fun forceFooterH(entry: BuyOrderEntry): Int = 78 + if (entry.pending != null) 10 else 0
+
+    private fun forceDesignH(entry: BuyOrderEntry): Int =
+        forceInfoTop + requirementDialogLines(entry).size * 10 + forceFooterH(entry)
+
+    /** 弹窗实际高度：**按屏幕钳制**（信息行多时设计高度会顶出屏幕），超出部分靠滚轮看 */
+    private fun forceDialogH(entry: BuyOrderEntry): Int = minOf(forceDesignH(entry), height - 8)
+    private fun forceDialogY(entry: BuyOrderEntry): Int = height / 2 - forceDialogH(entry) / 2
+    private fun forceViewTop(entry: BuyOrderEntry): Int = forceDialogY(entry) + forceInfoTop
+    private fun forceViewBottom(entry: BuyOrderEntry): Int = forceDialogY(entry) + forceDialogH(entry) - forceFooterH(entry)
+    private fun forceMaxScroll(entry: BuyOrderEntry): Int =
+        maxOf(0, requirementDialogLines(entry).size * 10 - (forceViewBottom(entry) - forceViewTop(entry)))
+
+    /** 按钮 Y（钉弹窗底）—— 建控件与命中判定共用这一处 */
+    private fun forceButtonY(entry: BuyOrderEntry): Int = forceDialogY(entry) + forceDialogH(entry) - 30
+
     private fun renderForceCancelBackground(context: DrawContext) {
         val entry = forceCancelEntry ?: return
         val centerX = width / 2
-        val dialogW = 220
-        val dialogH = 190
+        val dialogW = forceDialogW
+        val dialogH = forceDialogH(entry)
         val dialogX = centerX - dialogW / 2
-        val dialogY = height / 2 - dialogH / 2
+        val dialogY = forceDialogY(entry)
 
         drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
@@ -837,19 +931,46 @@ class BuyOrderScreen(
             Text.translatable("cobblemarket.buy_order.force_cancel_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
         context.drawCenteredTextWithShadow(textRenderer,
-            entryName(entry),
+            entryNameText(entry),
             centerX, dialogY + 34, 0xFFFFFF)
-        context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.buy_order.force_cancel_hint1").formatted(Formatting.GRAY),
-            centerX, dialogY + 62, 0xFFFFFF)
-        context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.buy_order.force_cancel_hint2").formatted(Formatting.GRAY),
-            centerX, dialogY + 78, 0xFFFFFF)
-        if (entry.pending != null) {
-            context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.buy_order.force_cancel_hint3").formatted(Formatting.RED),
-                centerX, dialogY + 98, 0xFFFFFF)
+
+        // 完整需求信息（与行悬停窗同一份构造）：左对齐、超出可视区时**可滚动**（scissor 裁剪）
+        val infoLines = requirementDialogLines(entry)
+        forceScroll = forceScroll.coerceIn(0, forceMaxScroll(entry))
+        val viewTop = forceViewTop(entry)
+        val viewBottom = forceViewBottom(entry)
+        val infoX = dialogX + forcePad
+        val contentW = forceContentW()
+        context.enableScissor(dialogX, viewTop, dialogX + dialogW, viewBottom)
+        infoLines.forEachIndexed { i, (line, color) ->
+            val rowY = viewTop + i * 10 - forceScroll
+            if (line == null) {
+                context.fill(infoX, rowY + 4, infoX + contentW, rowY + 5, 0xFF555555.toInt())
+            } else {
+                context.drawTextWithShadow(textRenderer, line, infoX, rowY, color)
+            }
         }
+        context.disableScissor()
+
+        // 提示（2 行；有待确认交付时多 1 行红字）—— 钉在按钮上方，从下往上排
+        val hints = buildList {
+            add(Text.translatable("cobblemarket.buy_order.force_cancel_hint1").formatted(Formatting.GRAY))
+            add(Text.translatable("cobblemarket.buy_order.force_cancel_hint2").formatted(Formatting.GRAY))
+            if (entry.pending != null) {
+                add(Text.translatable("cobblemarket.buy_order.force_cancel_hint3").formatted(Formatting.RED))
+            }
+        }
+        val lastHintY = forceButtonY(entry) - 14
+        hints.forEachIndexed { i, hint ->
+            context.drawCenteredTextWithShadow(
+                textRenderer, hint, centerX, lastHintY - (hints.size - 1 - i) * 10, 0xFFFFFF
+            )
+        }
+
+        // 按钮位置每帧同步（弹窗高度随内容/屏幕变，按钮必须跟着走）
+        val btnY = forceButtonY(entry)
+        forceCancelConfirmButton?.y = btnY
+        forceCancelCancelButton?.y = btnY
     }
 
     // ── 渲染 ──
@@ -961,10 +1082,10 @@ class BuyOrderScreen(
                     com.shusheng.cobblemarket.util.TextUtil.truncateText(
                         com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), 56)
                 } else {
-                    Text.literal(rowData?.name ?: com.shusheng.cobblemarket.util.TextUtil.truncateString(entryName(entry), 56))
+                    Text.literal(rowData?.name ?: com.shusheng.cobblemarket.util.TextUtil.truncateString(entryNameRaw(entry), 56))
                 }
             } else {
-                Text.literal(rowData?.name ?: com.shusheng.cobblemarket.util.TextUtil.truncateString(entryName(entry), 54))
+                Text.literal(rowData?.name ?: com.shusheng.cobblemarket.util.TextUtil.truncateString(entryNameRaw(entry), 54))
             }
             context.drawTextWithShadow(textRenderer, name, rowL + 26, y + 7, nameColor)
             var sx = rowL + 26 + textRenderer.getWidth(name)
@@ -1070,87 +1191,108 @@ class BuyOrderScreen(
     }
 
     // 悬停信息面板：照精灵市场 tooltip 结构（自绘九宫格面板 + 固定行高，信息同市场列表）
+    /**
+     * 求购单的**静态信息行**：名字 / 条件 / 性格特性 / 形态 / IV 要求 / 单价区间 / 备注 / 买家。
+     *
+     * ⚠ **行悬停窗与「强制下架」弹窗共用这一份**（2026-09-20 用户要求两处信息一致）——
+     * 以后加信息行只改这里，别在弹窗里另写一份。
+     *
+     * @param wrapW 备注的换行宽度：悬停窗按 [MAX_TOOLTIP_W]，弹窗窄、按自己的内容宽传
+     * @return first = 行列表（`null` = 分割线行）；second = 「数量行」的插入位置（-1 = 该单不显示数量）
+     */
+    private fun requirementStaticLines(entry: BuyOrderEntry, wrapW: Int):
+        Pair<MutableList<Pair<net.minecraft.text.OrderedText?, Int>>, Int> {
+        val w = 0xFFFFFF
+        val ivColors = intArrayOf(0x66FF66, 0xFF6666, 0xFFCC66, 0x6699FF, 0x66FF99, 0xFF99FF)
+
+        val lines = mutableListOf<Pair<net.minecraft.text.OrderedText?, Int>>() // null = 分割线行
+        lines.add(entryNameText(entry).asOrderedText() to w)
+        if (entry.type == "POKEMON") {
+            // 条件行：闪光用星星图标（★ 金 = 仅闪，☆ 灰 = 仅非闪，不限不显示）+ 特训
+            // （filter_ht_any 自带「特训：」前缀，不能叠加 tooltip_ht 标签；此处统一用不带前缀的三态文案）
+            val htLabel = when (entry.htFilter) {
+                PokemonBlacklistEntry.HT_ONLY -> Text.translatable("cobblemarket.gui.filter_ht_on").string
+                PokemonBlacklistEntry.HT_NONE -> Text.translatable("cobblemarket.gui.filter_ht_off").string
+                else -> Text.translatable("cobblemarket.buy_order.any").string
+            }
+            val condLine = Text.literal("")
+            // ⚠ 那两格间隔**只在真有 ★/☆ 时才拼**：无条件拼会让「不限闪光」的行凭空缩进两个空格，
+            // 整张悬停窗都是左对齐，那一行就显得既没居中也没对齐（2026-09-20 用户指出）
+            val hasShinyMark = entry.shinyFilter == PokemonBlacklistEntry.SHINY_YES ||
+                entry.shinyFilter == PokemonBlacklistEntry.SHINY_NO
+            when (entry.shinyFilter) {
+                PokemonBlacklistEntry.SHINY_YES -> condLine.append(Text.literal("★").formatted(Formatting.GOLD))
+                PokemonBlacklistEntry.SHINY_NO -> condLine.append(Text.literal("☆").formatted(Formatting.GRAY))
+            }
+            if (hasShinyMark) condLine.append(Text.literal("  "))
+            condLine.append(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_ht").string} $htLabel"))
+            lines.add(condLine.asOrderedText() to w)
+            // 性格 + 特性（照精灵市场同排格式，通用 key 自带冒号）
+            val natureTxt = entry.natureKey?.let { Text.translatable(it).string } ?: Text.translatable("cobblemarket.buy_order.any").string
+            val abilityTxt = entry.abilityKey?.let { Text.translatable(it).string } ?: Text.translatable("cobblemarket.buy_order.any").string
+            lines.add(Text.literal(
+                "${Text.translatable("cobblemarket.gui.tooltip_nature").string}$natureTxt  " +
+                "${Text.translatable("cobblemarket.gui.tooltip_ability").string}$abilityTxt"
+            ).asOrderedText() to w)
+            // 形态（有限定时）
+            if (entry.aspects.isNotEmpty() && PokemonBlacklistEntry.ALL_FORMS !in entry.aspects) {
+                val formLabel = if (entry.aspects.isEmpty()) Text.translatable("cobblemarket.blacklist.form_default").string
+                    else entry.aspects.joinToString("/") { aspectLabel(it) }
+                lines.add(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_form").string} $formLabel").asOrderedText() to w)
+            }
+            // IV 要求（照精灵市场六行彩色；-1 = 不限显示 —）
+            val hp = StatNames.HP
+            val atk = StatNames.ATK
+            val def = StatNames.DEF
+            val spa = StatNames.SP_ATK
+            val spd = StatNames.SP_DEF
+            val spe = StatNames.SPEED
+            lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs").asOrderedText() to w)
+            fun ivReq(v: Int) = if (v < 0) "—" else v.toString()
+            lines.add(Text.literal("  $hp: ${ivReq(entry.ivHp)}").asOrderedText() to ivColors[0])
+            lines.add(Text.literal("  $atk: ${ivReq(entry.ivAtk)}").asOrderedText() to ivColors[1])
+            lines.add(Text.literal("  $def: ${ivReq(entry.ivDef)}").asOrderedText() to ivColors[2])
+            lines.add(Text.literal("  $spa: ${ivReq(entry.ivSpAtk)}").asOrderedText() to ivColors[3])
+            lines.add(Text.literal("  $spd: ${ivReq(entry.ivSpDef)}").asOrderedText() to ivColors[4])
+            lines.add(Text.literal("  $spe: ${ivReq(entry.ivSpd)}").asOrderedText() to ivColors[5])
+        }
+        // 数量行是动态行（交付期间剩余量会变），只记录插入点（价格行之前，与原顺序一致）
+        var quantityLine = -1
+        if (entry.type == "ITEM") quantityLine = lines.size
+        // 价格区间：标签默认色，金额段蓝色（2026-08-24 拍板）
+        lines.add(Text.translatable("cobblemarket.buy_order.tooltip_price").append(
+            // ⚠ 单位按**订单自己的币种**（1.3.0 口径）：悬停窗与强制下架弹窗共用这一行，标错单位就是误导
+            amountWithUnit(
+                "${com.shusheng.cobblemarket.client.formatPrice(entry.minPrice)}~${com.shusheng.cobblemarket.client.formatPrice(entry.maxPrice)}",
+                entry.isPoints, "", inline = true
+            ).formatted(Formatting.GOLD)
+        ).asOrderedText() to w)
+        // 买家留言区块：分割线夹多行内容（照拍卖规则面板样式），无备注不显示
+        if (entry.note.isNotEmpty()) {
+            lines.add(null to w)
+            val noteLabel = Text.literal(Text.translatable("cobblemarket.buy_order.tooltip_note").string)
+                .append(Text.literal(entry.note))
+            textRenderer.wrapLines(noteLabel, wrapW).forEach { lines.add(it to 0xFFDD99) }
+            lines.add(null to w)
+        }
+        // 买家：纯文字行默认色
+        lines.add(Text.translatable("cobblemarket.buy_order.tooltip_buyer").append(Text.literal(entry.buyerName)).asOrderedText() to w)
+        return lines to quantityLine
+    }
+
     private fun renderTooltip(context: DrawContext, entry: BuyOrderEntry, mouseX: Int, mouseY: Int) {
         // 静态行缓存：内容只取决于条目（见 tooltipCacheKey 字段注释），悬停目标变化时才重建
         if (tooltipCacheKey != entry.id) {
             tooltipCacheKey = entry.id
-            val w = 0xFFFFFF
-            val ivColors = intArrayOf(0x66FF66, 0xFF6666, 0xFFCC66, 0x6699FF, 0x66FF99, 0xFF99FF)
-
-            val lines = mutableListOf<Pair<net.minecraft.text.OrderedText?, Int>>() // null = 分割线行
-            lines.add(Text.literal(entryName(entry)).asOrderedText() to w)
-            if (entry.type == "POKEMON") {
-                // 条件行：闪光用星星图标（★ 金 = 仅闪，☆ 灰 = 仅非闪，不限不显示）+ 特训
-                // （filter_ht_any 自带「特训：」前缀，不能叠加 tooltip_ht 标签；此处统一用不带前缀的三态文案）
-                val htLabel = when (entry.htFilter) {
-                    PokemonBlacklistEntry.HT_ONLY -> Text.translatable("cobblemarket.gui.filter_ht_on").string
-                    PokemonBlacklistEntry.HT_NONE -> Text.translatable("cobblemarket.gui.filter_ht_off").string
-                    else -> Text.translatable("cobblemarket.buy_order.any").string
-                }
-                val condLine = Text.literal("")
-                when (entry.shinyFilter) {
-                    PokemonBlacklistEntry.SHINY_YES -> condLine.append(Text.literal("★").formatted(Formatting.GOLD))
-                    PokemonBlacklistEntry.SHINY_NO -> condLine.append(Text.literal("☆").formatted(Formatting.GRAY))
-                }
-                condLine.append(Text.literal("  ${Text.translatable("cobblemarket.buy_order.tooltip_ht").string} $htLabel"))
-                lines.add(condLine.asOrderedText() to w)
-                // 性格 + 特性（照精灵市场同排格式，通用 key 自带冒号）
-                val natureTxt = entry.natureKey?.let { Text.translatable(it).string } ?: Text.translatable("cobblemarket.buy_order.any").string
-                val abilityTxt = entry.abilityKey?.let { Text.translatable(it).string } ?: Text.translatable("cobblemarket.buy_order.any").string
-                lines.add(Text.literal(
-                    "${Text.translatable("cobblemarket.gui.tooltip_nature").string}$natureTxt  " +
-                    "${Text.translatable("cobblemarket.gui.tooltip_ability").string}$abilityTxt"
-                ).asOrderedText() to w)
-                // 形态（有限定时）
-                if (entry.aspects.isNotEmpty() && PokemonBlacklistEntry.ALL_FORMS !in entry.aspects) {
-                    val formLabel = if (entry.aspects.isEmpty()) Text.translatable("cobblemarket.blacklist.form_default").string
-                        else entry.aspects.joinToString("/") { aspectLabel(it) }
-                    lines.add(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_form").string} $formLabel").asOrderedText() to w)
-                }
-                // IV 要求（照精灵市场六行彩色；-1 = 不限显示 —）
-                val hp = StatNames.HP
-                val atk = StatNames.ATK
-                val def = StatNames.DEF
-                val spa = StatNames.SP_ATK
-                val spd = StatNames.SP_DEF
-                val spe = StatNames.SPEED
-                lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs").asOrderedText() to w)
-                fun ivReq(v: Int) = if (v < 0) "—" else v.toString()
-                lines.add(Text.literal("  $hp: ${ivReq(entry.ivHp)}").asOrderedText() to ivColors[0])
-                lines.add(Text.literal("  $atk: ${ivReq(entry.ivAtk)}").asOrderedText() to ivColors[1])
-                lines.add(Text.literal("  $def: ${ivReq(entry.ivDef)}").asOrderedText() to ivColors[2])
-                lines.add(Text.literal("  $spa: ${ivReq(entry.ivSpAtk)}").asOrderedText() to ivColors[3])
-                lines.add(Text.literal("  $spd: ${ivReq(entry.ivSpDef)}").asOrderedText() to ivColors[4])
-                lines.add(Text.literal("  $spe: ${ivReq(entry.ivSpd)}").asOrderedText() to ivColors[5])
+            // 信息行的构造抽到 requirementStaticLines（**强制下架弹窗共用同一份**，见该函数注释）
+            val built = requirementStaticLines(entry, MAX_TOOLTIP_W)
+            tooltipCacheLines = built.first
+            tooltipCacheQuantityLine = built.second
+            tooltipCacheMaxWidth = built.first.fold(0) { acc, (line, _) ->
+                if (line == null) acc else maxOf(acc, textRenderer.getWidth(line))
             }
-            // 数量行是动态行（交付期间剩余量会变），只记录插入点（价格行之前，与原顺序一致）
-            var quantityLine = -1
-            if (entry.type == "ITEM") quantityLine = lines.size
-            // 价格区间：标签默认色，金额段蓝色（2026-08-24 拍板）
-            lines.add(Text.translatable("cobblemarket.buy_order.tooltip_price").append(
-                // 单位按**订单自己的币种**（悬停窗的价与行内同一口径，标错单位就是误导）
-                amountWithUnit(
-                    "${com.shusheng.cobblemarket.client.formatPrice(entry.minPrice)}~${com.shusheng.cobblemarket.client.formatPrice(entry.maxPrice)}",
-                    entry.isPoints, "", inline = true
-                ).formatted(Formatting.GOLD)
-            ).asOrderedText() to w)
-            // 买家留言区块：分割线夹多行内容（照拍卖规则面板样式），无备注不显示
-            if (entry.note.isNotEmpty()) {
-                lines.add(null to w)
-                val noteLabel = Text.literal(Text.translatable("cobblemarket.buy_order.tooltip_note").string)
-                    .append(Text.literal(entry.note))
-                textRenderer.wrapLines(noteLabel, MAX_TOOLTIP_W).forEach { lines.add(it to 0xFFDD99) }
-                lines.add(null to w)
-            }
-            // 买家：纯文字行默认色
-            lines.add(Text.translatable("cobblemarket.buy_order.tooltip_buyer").append(Text.literal(entry.buyerName)).asOrderedText() to w)
-            // 到期行为动态行，不缓存
+            // 构造在 requirementStaticLines（含 1.3.0 的 RP 币种口径），见该函数
 
-            var maxWidth = 0
-            lines.forEach { (line, _) -> line?.let { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) } }
-            tooltipCacheLines = lines
-            tooltipCacheQuantityLine = quantityLine
-            tooltipCacheMaxWidth = maxWidth
         }
         // 动态行（数量 + 到期倒计时）每帧构建
         val staticLines = tooltipCacheLines
@@ -1158,17 +1300,12 @@ class BuyOrderScreen(
         val lines = ArrayList<Pair<net.minecraft.text.OrderedText?, Int>>(staticLines.size + 2)
         if (quantityLine >= 0) {
             lines.addAll(staticLines.subList(0, quantityLine))
-            val qty = if (entry.remainingCount < entry.totalCount)
-                "${entry.remainingCount}/${entry.totalCount}" else entry.totalCount.toString()
-            lines.add(Text.literal("${Text.translatable("cobblemarket.buy_order.tooltip_quantity").string} $qty").asOrderedText() to 0xFFFFFF)
+            lines.add(quantityLineOf(entry))
             lines.addAll(staticLines.subList(quantityLine, staticLines.size))
         } else {
             lines.addAll(staticLines)
         }
-        lines.add(Text.translatable("cobblemarket.buy_order.tooltip_expires").append(
-            com.shusheng.cobblemarket.util.RemainingTime.text(
-                entry.expiresAt, "cobblemarket.buy_order.ending", secondPrecision = false)
-        ).asOrderedText() to 0xFFFFFF)
+        lines.add(expiresLineOf(entry))
 
         var maxWidth = tooltipCacheMaxWidth
         if (quantityLine >= 0) {
@@ -1177,10 +1314,15 @@ class BuyOrderScreen(
         lines.last().first?.let { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
 
         val padding = 4
-        val tx = minOf(mouseX + 12, width - maxWidth - 12)
         val tooltipHeight = lines.size * 10 + padding
-        val tyAbove = mouseY - tooltipHeight - 4
-        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
+        // 悬停窗**不许把本行的按钮盖掉一半以上**（交付 / 处理交付 / ✕ 下架）。
+        // 矩形按行号算几何（与 rebuildRowButtons 同源）；**管理端模式没有行按钮** → 不避让
+        val (tx, ty) = TooltipPlacement.place(
+            mouseX = mouseX, mouseY = mouseY,
+            textW = maxWidth, textH = tooltipHeight, pad = padding,
+            screenW = width, screenH = height,
+            avoid = if (adminMode) null else rowButtonRect(hoveredRow)
+        )
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
@@ -2322,9 +2464,10 @@ class BuyOrderScreen(
             val infoRows = 13 +
                 (if (listing?.ball?.isNotEmpty() == true) 1 else 0) +
                 (if (listing != null && EntryBadgeRenderer.hasHeldItemLine(listing)) 1 else 0)
-            val marksH = if (listing != null) EntryBadgeRenderer.marksBlockHeight(listing.marks) else 0
+            val marksH = if (listing != null) EntryBadgeRenderer.marksBlockHeight(listing.marks, listing.moves) else 0
+            val movesH = if (listing != null) EntryBadgeRenderer.movesBlockHeight(listing.moves) else 0
             // 顶部 62 = 标题 + 28 高的图标（占 +28~+56）+ 6px 间隙，名字行才起在 +62（照市场购买确认弹窗）
-            62 + infoRows * 10 + marksH + 72
+            62 + infoRows * 10 + movesH + marksH + 72
         }
 
     /**
@@ -2344,8 +2487,26 @@ class BuyOrderScreen(
         reviewRenderable = RenderablePokemon(species, aspects, heldIconStack(pending.extraData) ?: ItemStack.EMPTY)
     }
 
+    /**
+     * 审核弹窗**实际**高度：精灵单**按屏幕钳制**（信息行多时设计高度能顶出屏幕——技能块 / 两行证章 /
+     * 球种 / 携带物齐全时约 358，而自动 GUI 尺寸在 1080p 下逻辑高只有 270）；物品单保持原样（词条行数自限）。
+     */
+    private fun reviewDialogH(entry: BuyOrderEntry, itemExtra: Int): Int =
+        if (entry.type == "POKEMON") minOf(reviewDialogHeight(entry, itemExtra), height - 8)
+        else reviewDialogHeight(entry, itemExtra)
+
+    private fun reviewViewH(entry: BuyOrderEntry, itemExtra: Int): Int =
+        (reviewDialogH(entry, itemExtra) - reviewContentTop - reviewBottomH).coerceAtLeast(1)
+
+    private fun reviewContentH(entry: BuyOrderEntry, itemExtra: Int): Int =
+        reviewDialogHeight(entry, itemExtra) - reviewContentTop - reviewBottomH
+
+    private fun reviewMaxScroll(entry: BuyOrderEntry, itemExtra: Int): Int =
+        maxOf(0, reviewContentH(entry, itemExtra) - reviewViewH(entry, itemExtra))
+
     private fun openReviewDialog(entry: BuyOrderEntry) {
         reviewEntry = entry
+        reviewScroll = 0
         buildReviewRenderable(entry)
         // 两个起点都清掉：弹窗可能在精灵单 / 物品单之间来回换，留着另一边会登记出错误起点
         reviewIconOrigin = null
@@ -2391,7 +2552,7 @@ class BuyOrderScreen(
         })
 
         val centerX = width / 2
-        val dialogH = reviewDialogHeight(entry, reviewItemExtraRows)
+        val dialogH = reviewDialogH(entry, reviewItemExtraRows)
         val dialogY = height / 2 - dialogH / 2
         // 精灵单：输入框/按钮相对弹窗底部锚定（弹窗高度随信息区内容变，底部间距固定）
         val btnY = if (entry.type == "POKEMON") dialogY + dialogH - 40 else dialogY + 67 + reviewItemExtraRows * 10
@@ -2456,7 +2617,7 @@ class BuyOrderScreen(
         }
         // 精灵单：完整信息行（照市场确认弹窗），弹窗更高；物品单：词条行数决定弹窗高度（Shift 展开动态伸缩）
         // 物品单 149：词条区（+44 起，行距 10 与物品市场一致）+ 卖家/出价/总价竖排三行 + 输入框 + 按钮，底部留白 18
-        val dialogH = reviewDialogHeight(entry, itemExtra)
+        val dialogH = reviewDialogH(entry, itemExtra)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
         // 物品分支控件位置每帧同步（Shift 展开/收起时布局动态伸缩，不挤压不空档）
@@ -2523,12 +2684,18 @@ class BuyOrderScreen(
                 val t = Text.translatable(it).string
                 if (t == it) pending.extraData["speciesName"] ?: it else t
             } ?: "?"
+            // 弹窗被屏幕压矮时**信息区可滚动**（scissor 裁剪 + 起始 y 减偏移）
+            reviewScroll = reviewScroll.coerceIn(0, reviewMaxScroll(entry, itemExtra))
+            val viewTop = dialogY + reviewContentTop
+            val viewBottom = dialogY + dialogH - reviewBottomH
+            context.enableScissor(dialogX, viewTop, dialogX + dialogW, viewBottom)
             EntryBadgeRenderer.drawInfoLines(
                 context, listing,
                 EntryBadgeRenderer.nameWithShinyStar(name, pending.shiny),
                 // +62：图标占 +28~+55，留 6px 间隙后起名字行（与市场购买确认弹窗一致）
-                centerX, dialogY + 62
+                centerX, viewTop - reviewScroll, dividerW = dialogW - 20
             )
+            context.disableScissor()
         } else {
             // 物品行：图标 + 名称 + 数量整体居中（照交付弹窗形态行格式）；
             // 垂直在标题（+14）与卖家行（+58）中间：物品行中心 ≈ 36 → 图标 y=28、文字基线 y=32
@@ -2613,7 +2780,8 @@ class BuyOrderScreen(
             aspects = (d["aspects"] ?: "").split(",").filter { it.isNotEmpty() },
             marks = (d["marks"] ?: "").split(",").filter { it.isNotEmpty() },
             // 币种跟着**订单**走（pending 挂在订单上，自己没有币种字段）
-            currency = entry.currency
+            currency = entry.currency,
+            moves = d["moves"].orEmpty()
         )
     }
 
@@ -2775,7 +2943,7 @@ class BuyOrderScreen(
 
         // 订单摘要：名称默认色，价格区间金色（2026-08-24 拍板；区间是单价区间，标注「单价」防误读）
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.literal("${entryName(entry)}  ").append(
+            Text.empty().append(entryNameText(entry)).append(Text.literal("  ")).append(
                 // ⚠ 前缀与价格同样用 Text 拼接（`.string +` 会丢掉 RP 图标的字体）
                 Text.translatable("cobblemarket.buy_order.price_range_prefix")
                     .append(priceRangeText(entry)).formatted(Formatting.GOLD)
@@ -3087,6 +3255,24 @@ class BuyOrderScreen(
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+        // 强制下架弹窗开着时：滚轮只滚弹窗信息区（弹窗被屏幕压矮时用）
+        val forceEntry = forceCancelEntry
+        if (forceEntry != null) {
+            val maxScroll = forceMaxScroll(forceEntry)
+            if (maxScroll > 0) {
+                forceScroll = (forceScroll - verticalAmount.toInt() * 10).coerceIn(0, maxScroll)
+            }
+            return true
+        }
+        // 审核弹窗（精灵单）开着时：滚轮只滚弹窗信息区（弹窗被屏幕压矮时用）
+        val reviewing = reviewEntry
+        if (reviewing != null && reviewing.type == "POKEMON") {
+            val maxScroll = reviewMaxScroll(reviewing, reviewItemExtraRows)
+            if (maxScroll > 0) {
+                reviewScroll = (reviewScroll - verticalAmount.toInt() * 10).coerceIn(0, maxScroll)
+            }
+            return true
+        }
         // 创建弹窗：形态列表展开时滚动列表
         if (formListOpen && formOptions.size > MAX_FORM_LIST_ROWS) {
             formListScroll = (formListScroll - verticalAmount.toInt())

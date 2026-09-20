@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.client.POINTS_SYMBOL_INLINE_SIZE
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
 import com.shusheng.cobblemarket.client.PointsStateCache
+import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
@@ -43,6 +44,17 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
     /** 是否展示模式：结果音效分发要据此换成专属音（见 CobbleMarketClient 的 MarketResultPayload 处理） */
     fun isShareMode(): Boolean = shareMode
 
+    // ── 行按钮几何（**建按钮与悬停窗避让共用一处定义**，别各写一份）──
+    private val rowBtnInset = 52
+    private val rowBtnW = 46
+    private val rowBtnH = 16
+    private val rowBtnDy = 4
+
+    /** 第 [row] 行的出售按钮矩形 —— 与 `rebuildSellButtons` 同源 */
+    private fun sellButtonRect(row: Int) = TooltipPlacement.Rect(
+        width / 2 - panelWidth / 2 + panelWidth - rowBtnInset,
+        getListStartY() + row * rowHeight + rowBtnDy, rowBtnW, rowBtnH
+    )
 
     // name：显示名在背包扫描时构建一次，render 每帧取 stack.name 是分配热点
     // slot：首次出现的背包主栏槽位（同类物品跨多个栈时数量合并显示，分享按这个槽位取实物——
@@ -109,7 +121,7 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
         items.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, item ->
             val y = startY + i * rowHeight
             val btn = NineSliceButton(
-                leftX + panelWidth - 52, y + 4, 46, 16,
+                leftX + panelWidth - rowBtnInset, y + rowBtnDy, rowBtnW, rowBtnH,
                 Text.translatable(if (shareMode) "cobblemarket.share.button" else "cobblemarket.sell.sell"),
                 { if (shareMode) shareItem(item) else openConfirmDialog(item) }
             )
@@ -457,10 +469,13 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
         }
 
         val padding = 4
-        val tx = minOf(mouseX + 12, width - maxWidth - 12)
         val tooltipHeight = lines.size * 10 + padding
-        val tyAbove = mouseY - tooltipHeight - 4
-        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
+        // 悬停窗**不许把本行的出售按钮盖掉一半以上**：矩形按行号算几何（与 rebuildSellButtons 同源）
+        val (tx, ty) = TooltipPlacement.place(
+            mouseX = mouseX, mouseY = mouseY,
+            textW = maxWidth, textH = tooltipHeight, pad = padding,
+            screenW = width, screenH = height, avoid = sellButtonRect(hoveredRow)
+        )
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
