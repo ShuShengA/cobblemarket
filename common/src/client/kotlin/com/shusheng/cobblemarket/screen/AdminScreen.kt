@@ -64,9 +64,10 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
     override fun init() {
         super.init()
         val centerX = width / 2
-        // 87 → 110：英文菜单项最长 "All Listed Pokémon"（约 95px），87 的按钮放不下、此前只能缩短词条。
-        // 背景贴图 256 宽（centerX ± 128）、左右各约 10px 装饰边框 → 可用约 236；两列 110×2+2 = 222，两侧各余 17px
-        val btnW = 110
+        // 87 → 102：英文菜单项最长 "All Listed Pokémon"（约 95px），87 的按钮放不下、此前只能缩短词条。
+        // ⚠ 上限 102 由**底部分割线**定死：红线 = centerX ± 103（宽 206），按钮组不得超过它
+        //   （2026-09-21 用户报：110 时组宽 222，比红线宽 16px、视觉上压到了装饰边框）
+        val btnW = 102
         val btnH = 20
         val gap = 6
         val colGap = 2
