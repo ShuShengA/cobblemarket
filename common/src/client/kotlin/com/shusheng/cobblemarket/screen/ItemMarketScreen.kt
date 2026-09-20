@@ -402,22 +402,34 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             Text.translatable("cobblemarket.item.title").formatted(Formatting.GOLD),
             centerX, 14, 0xFFFFFF)
 
-        // 余额 + 待收款：文字标签默认色，金额蓝/绿（2026-08-24 拍板）；页码右对齐，长数字互不干扰
+        // Page indicator（右对齐）—— 先算出来，余额行才知道自己还剩多少可用宽
+        val pageText = Text.translatable("cobblemarket.gui.page", currentPage, totalPages).formatted(Formatting.GRAY)
+        val pageW = textRenderer.getWidth(pageText)
+
+        // 余额 + 待收款：文字标签默认色，金额蓝/绿（2026-08-24 拍板）。⚠ 与精灵市场同一套三级降级：
+        // 两段都没有宽度防护时，金额一长就压住页码（2026-09-21 用户报：两个界面显示不一致）。
+        // 可用宽 = 面板宽 − 页码宽 − 左右留白；待收款为 0 整段不显示 → 金额换缩写 → 截断兜底
+        val balUnit = com.shusheng.cobblemarket.client.inlineCurrencyUnit()
+        val avail = panelWidth - 10 - pageW
         val balText: Text? = com.shusheng.cobblemarket.client.BalanceCache.balance.takeIf { it.isNotEmpty() }?.let {
-            Text.translatable("cobblemarket.gui.balance",
-                Text.literal(it + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD))
+            Text.translatable("cobblemarket.gui.balance", Text.literal("$it $balUnit").formatted(Formatting.GOLD))
         }
         val balW = balText?.let { textRenderer.getWidth(it) + 4 } ?: 0
-        if (balText != null) context.drawTextWithShadow(textRenderer, balText, leftX, 31, 0xFFFFFF)
-        context.drawTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.gui.pending_balance",
-                Text.literal(com.shusheng.cobblemarket.client.formatBalanceLong(pendingBalance) + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GREEN)),
-            leftX + balW, 31, 0xFFFFFF)
+        fun pendingLine(amount: String): Text = Text.translatable("cobblemarket.gui.pending_balance",
+            Text.literal("$amount $balUnit").formatted(Formatting.GREEN))
+        val pendingFull: Text? = if (pendingBalance > 0)
+            pendingLine(com.shusheng.cobblemarket.client.formatBalanceLong(pendingBalance)) else null
+        val pendingText: Text? = pendingFull?.takeIf { balW + textRenderer.getWidth(it) <= avail }
+            ?: pendingFull?.let { pendingLine(com.shusheng.cobblemarket.client.formatPriceShortLong(pendingBalance)) }
 
-        val pageText = Text.translatable("cobblemarket.gui.page", currentPage, totalPages).formatted(Formatting.GRAY)
-        context.drawTextWithShadow(textRenderer,
-            pageText,
-            leftX + panelWidth - 4 - textRenderer.getWidth(pageText), 32, 0xFFFFFF)
+        if (balText != null) context.drawTextWithShadow(textRenderer, balText, leftX, 31, 0xFFFFFF)
+        pendingText?.let {
+            context.drawTextWithShadow(
+                textRenderer,
+                com.shusheng.cobblemarket.util.TextUtil.truncateStyled(it, avail - balW), leftX + balW, 31, 0xFFFFFF
+            )
+        }
+        context.drawTextWithShadow(textRenderer, pageText, leftX + panelWidth - 4 - pageW, 32, 0xFFFFFF)
 
         if (entries.isEmpty()) {
             context.drawCenteredTextWithShadow(textRenderer,
