@@ -25,7 +25,7 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
     //   （2026-09-21 用户报；同批「按屏幕钳制」改动里 LoanScreen 也有同款问题）
     private val dialogW = minOf(360, width - 40).coerceAtLeast(300)
     /** 条件比紫卡多一行「持有紫卡」硬条件：七项门槛全配时是 8 行，加高 24px 才不会压到申请按钮 */
-    private val dialogH = 344
+    private val dialogH = 330
 
     // 与 BlackCardApplyInfoPayload.conditions 同序（服务端 FinanceNetwork.sendBlackCardApplyInfo 构造）
     private val conditionKeys = listOf(
@@ -65,8 +65,8 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
         applyButton = NineSliceButton(
             // 宽 170：按钮文案随状态变，最长的两种是 apply_closed（英文 156px）与
             // apply_not_eligible（108px）—— 原来 100 宽会把文字挤出去（2026-09-21 用户报）
-            // ⚠ y 保留本分支的 dialogH-44：1.1.1 还没做「底部留白 24→10」那次调整（那是 1.2.0 的 ca1d629）
-            width / 2 - 85, dialogY + dialogH - 44, 170, 20,
+            // y = dialogH-30（底部留白 10px），与上面的 dialogH 成对
+            width / 2 - 85, dialogY + dialogH - 30, 170, 20,
             Text.translatable("cobblemarket.card.apply_btn"),
             {
                 // 置灰态（资格不符/未开放/快照未到）：点击播 fail 音效提示，不发请求（照入口喵喵银行按钮 dimmed 模式）

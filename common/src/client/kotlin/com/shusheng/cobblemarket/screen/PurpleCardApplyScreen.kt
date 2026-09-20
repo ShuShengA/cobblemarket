@@ -24,7 +24,8 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
     // 需求明显大于 200 —— 窄屏下弹窗缩到 200 时标题和右列全挤出去
     //   （2026-09-21 用户报；同批「按屏幕钳制」改动里 LoanScreen 也有同款问题）
     private val dialogW = minOf(360, width - 40).coerceAtLeast(300)
-    private val dialogH = 320
+    /** 底部留白 10px（ca1d629 从 320 矮到 306）—— 与按钮的 dialogH-30 是一对，改一个必须改另一个 */
+    private val dialogH = 306
 
     // 与 PurpleCardApplyInfoPayload.conditions 同序（服务端 FinanceNetwork.sendPurpleCardApplyInfo 构造）
     private val conditionKeys = listOf(
@@ -63,8 +64,8 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
         applyButton = NineSliceButton(
             // 宽 170：按钮文案随状态变，最长的两种是 apply_closed（英文 156px）与
             // apply_not_eligible（108px）—— 原来 100 宽会把文字挤出去（2026-09-21 用户报）
-            // ⚠ y 保留本分支的 dialogH-44：1.1.1 还没做「底部留白 24→10」那次调整（那是 1.2.0 的 ca1d629）
-            width / 2 - 85, dialogY + dialogH - 44, 170, 20,
+            // y = dialogH-30（底部留白 10px），与上面的 dialogH 成对
+            width / 2 - 85, dialogY + dialogH - 30, 170, 20,
             Text.translatable("cobblemarket.card.apply_btn"),
             {
                 // 置灰态（资格不符/未开放/快照未到）：点击播 fail 音效提示，不发请求（照入口喵喵银行按钮 dimmed 模式）
