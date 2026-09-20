@@ -20,7 +20,7 @@ import net.minecraft.util.Identifier
  */
 class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_apply_title")) {
 
-    private val dialogW = 300
+    private val dialogW = minOf(360, width - 40).coerceAtLeast(200)
     /** 条件比紫卡多一行「持有紫卡」硬条件：七项门槛全配时是 8 行，加高 24px 才不会压到申请按钮 */
     private val dialogH = 344
 

@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.network.ListingEntry
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.item.ItemStack
@@ -368,10 +369,14 @@ object EntryBadgeRenderer {
         return 12
     }
 
-    // 居中绘制信息行，返回下一行的 y
+    /**
+     * 居中绘制信息行，返回下一行的 y。
+     * [dividerW] = 证章分割线宽度；[maxWidth] = 容器可用内容宽（弹窗宽度减去左右内边距，从布局反算，别写死）——
+     * 超宽的行按保留分段样式的方式截断。默认 Int.MAX_VALUE = 不截断（无边框的整页界面用）。
+     */
     fun drawInfoLines(
         context: DrawContext, entry: ListingEntry, displayName: Text,
-        centerX: Int, startY: Int, dividerW: Int
+        centerX: Int, startY: Int, dividerW: Int, maxWidth: Int = Int.MAX_VALUE
     ): Int {
         val font = MinecraftClient.getInstance().textRenderer
         val hp = StatNames.HP
@@ -407,12 +412,12 @@ object EntryBadgeRenderer {
             lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to 0xFFFFFF)
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to 0xFFFFFF)
-        lines.add(Text.literal("  $hp: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsHp, entry.htHp)}").append(Text.literal("  EV: ${entry.evsHp}").formatted(Formatting.RED)) to 0x66FF66)
-        lines.add(Text.literal("  $atk: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsAtk, entry.htAtk)}").append(Text.literal("  EV: ${entry.evsAtk}").formatted(Formatting.RED)) to 0xFF6666)
-        lines.add(Text.literal("  $def: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsDef, entry.htDef)}").append(Text.literal("  EV: ${entry.evsDef}").formatted(Formatting.RED)) to 0xFFCC66)
-        lines.add(Text.literal("  $spa: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpAtk, entry.htSpAtk)}").append(Text.literal("  EV: ${entry.evsSpAtk}").formatted(Formatting.RED)) to 0x6699FF)
-        lines.add(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("  EV: ${entry.evsSpDef}").formatted(Formatting.RED)) to 0x66FF99)
-        lines.add(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("  EV: ${entry.evsSpd}").formatted(Formatting.RED)) to 0xFF99FF)
+        lines.add(Text.literal("  $hp: ${TextUtil.ivText(entry.ivsHp, entry.htHp)}").append(Text.literal("  EV: ${entry.evsHp}").formatted(Formatting.RED)) to 0x66FF66)
+        lines.add(Text.literal("  $atk: ${TextUtil.ivText(entry.ivsAtk, entry.htAtk)}").append(Text.literal("  EV: ${entry.evsAtk}").formatted(Formatting.RED)) to 0xFF6666)
+        lines.add(Text.literal("  $def: ${TextUtil.ivText(entry.ivsDef, entry.htDef)}").append(Text.literal("  EV: ${entry.evsDef}").formatted(Formatting.RED)) to 0xFFCC66)
+        lines.add(Text.literal("  $spa: ${TextUtil.ivText(entry.ivsSpAtk, entry.htSpAtk)}").append(Text.literal("  EV: ${entry.evsSpAtk}").formatted(Formatting.RED)) to 0x6699FF)
+        lines.add(Text.literal("  $spd: ${TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("  EV: ${entry.evsSpDef}").formatted(Formatting.RED)) to 0x66FF99)
+        lines.add(Text.literal("  $spe: ${TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("  EV: ${entry.evsSpd}").formatted(Formatting.RED)) to 0xFF99FF)
         lines.add(Text.translatable("cobblemarket.gui.friendship", entry.friendship) to 0xFF99CC)
         // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：亲密度下方「分割线 + 两行技能 + 分割线」，
         // 整块由 drawMovesBlock 画（此处只占一个坑位）。证章块与它**共用下面那条分割线**，自己不再带前导分割线。
@@ -470,10 +475,11 @@ object EntryBadgeRenderer {
                     y += DIVIDER_H
                 }
                 i == heldItemLine -> {
-                    // 携带物行：文字 + 物品图标整体居中
-                    val textW = font.getWidth(line)
+                    // 携带物行：文字 + 物品图标整体居中（图标占 14px，文字按去掉图标后的宽度截断）
+                    val heldText = TextUtil.truncateStyled(line, maxWidth - 14)
+                    val textW = font.getWidth(heldText)
                     val x = centerX - (textW + 14) / 2
-                    context.drawTextWithShadow(font, line, x, y, color)
+                    context.drawTextWithShadow(font, heldText, x, y, color)
                     heldIconStack(entry.heldItemId, entry.heldItemNbt)?.let { heldStack ->
                         com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                             itemStack = heldStack,
@@ -483,14 +489,19 @@ object EntryBadgeRenderer {
                     y += 10
                 }
                 i == 0 -> {
-                    // 第一行（名字★Lv）走公共名字行函数（带公母图标 + 体型字母）
-                    drawNameLine(context, line, entry.gender, centerX, y, color, entry.sizeCategory)
+                    // 第一行（名字★Lv）走公共名字行函数（带公母图标 + 体型字母）：
+                    // 尾部图标不参与文本宽度，截断预算里先扣掉（居中总宽 = 名字 + 尾部 + 6）
+                    val tail = nameTailWidth(entry.gender, entry.sizeCategory)
+                    val nameBudget = if (tail == 0) maxWidth else maxWidth - tail - 6
+                    drawNameLine(context, TextUtil.truncateStyled(line, nameBudget), entry.gender, centerX, y, color, entry.sizeCategory)
                     y += 10
                 }
                 else -> {
                     // 用"算好 x 再左对齐"的方式画（视觉上仍是居中）：drawCenteredTextWithShadow
-                    // 在这套字体下会让行首汉字比后面的字高一点点，出价界面用 drawTextWithShadow 就正常
-                    context.drawTextWithShadow(font, line, centerX - font.getWidth(line) / 2, y, color)
+                    // 在这套字体下会让行首汉字比后面的字高一点点，出价界面用 drawTextWithShadow 就正常。
+                    // 超宽行按可用宽截断（保留分段着色），避免画出弹窗
+                    val drawn = TextUtil.truncateStyled(line, maxWidth)
+                    context.drawTextWithShadow(font, drawn, centerX - font.getWidth(drawn) / 2, y, color)
                     y += 10
                 }
             }

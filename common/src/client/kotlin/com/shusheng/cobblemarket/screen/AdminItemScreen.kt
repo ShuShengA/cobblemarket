@@ -329,7 +329,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     private fun renderCancelDialogBackground(context: DrawContext, mouseX: Int, mouseY: Int) {
         val entry = cancelEntry ?: return
         val centerX = width / 2
-        val dialogW = 220
+        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         val dialogH = 170
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2

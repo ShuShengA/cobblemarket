@@ -9,6 +9,7 @@ import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.network.*
 import com.shusheng.cobblemarket.screen.SellSelectScreen
 import com.shusheng.cobblemarket.platform.sendToServer
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.tooltip.Tooltip
@@ -95,6 +96,10 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var hoveredRow = -1
     private val panelWidth = 296
     private val iconSize = 20
+
+    /** 筛选按钮宽度（三枚并排：32 起 60 / 96 起 96 / 196 起 96，铺满整行到面板右缘），文字截断按此反算 */
+    private val filterTypeW = 60
+    private val filterValueW = 96
 
     private var confirmEntry: ListingEntry? = null
 
@@ -295,7 +300,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         addDrawableChild(genderButton)
 
         typeButton = NineSliceButton(
-            leftX + 32, 66, 60, 20,
+            leftX + 32, 66, filterTypeW, 20,
             typeButtonText(),
             { toggleFilterList("type") },
             if (typeFilter.isNotEmpty()) typeColor("cobblemon.type.$typeFilter") else 0xFFFFFF
@@ -303,7 +308,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         addDrawableChild(typeButton)
 
         abilityButton = NineSliceButton(
-            leftX + 96, 66, 96, 20,
+            leftX + 96, 66, filterValueW, 20,
             abilityButtonText(),
             { toggleFilterList("ability") },
             if (abilityFilter.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
@@ -311,7 +316,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         addDrawableChild(abilityButton)
 
         natureButton = NineSliceButton(
-            leftX + 196, 66, 96, 20,
+            leftX + 196, 66, filterValueW, 20,
             natureButtonText(),
             { toggleFilterList("nature") },
             if (natureFilter.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
@@ -611,19 +616,29 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val key = typeOptions.getOrElse(typeFilterIndex) { "" }
         val label = if (key.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable("cobblemon.type.$key")
-        return Text.translatable("cobblemarket.gui.type").append(label)
+        return filterButtonText("cobblemarket.gui.type", label, filterTypeW)
     }
 
     private fun abilityButtonText(): Text {
         val label = if (abilityFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable(abilityFilter)
-        return Text.translatable("cobblemarket.buy_order.ability_label").append(label)
+        return filterButtonText("cobblemarket.buy_order.ability_label", label, filterValueW)
     }
 
     private fun natureButtonText(): Text {
         val label = if (natureFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable(natureFilter)
-        return Text.translatable("cobblemarket.buy_order.nature_label").append(label)
+        return filterButtonText("cobblemarket.buy_order.nature_label", label, filterValueW)
+    }
+
+    /**
+     * 筛选按钮文字 =「标签 值」（标签词条自带「: 」，见 lang —— 这里不再补，避免两个冒号）。
+     * 三枚按钮并排铺满整行（右缘贴面板边）、加宽不了，故值超宽时按按钮宽度截断（两侧各留 4px）——
+     * 属性名 / 特性名 / 性格名都能是长词
+     */
+    private fun filterButtonText(labelKey: String, value: Text, buttonW: Int): Text {
+        val prefix = Text.translatable(labelKey)
+        return prefix.append(Text.literal(TextUtil.truncateString(value.string, buttonW - 8 - textRenderer.getWidth(prefix))))
     }
 
     /** 25 种性格（翻译 key, 显示名），与求购单创建一致 */
@@ -699,10 +714,10 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             val btn = NineSliceButton(
                 leftX + 4, 86 + i * 14, 288, 14,
                 if (isFilterSelected(filterListOpen, key, idx))
-                    com.shusheng.cobblemarket.util.TextUtil.selectedText(
-                        com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)
+                    TextUtil.selectedText(
+                        TextUtil.truncateString(display, 260)
                     )
-                else Text.literal(com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)),
+                else Text.literal(TextUtil.truncateString(display, 260)),
                 { selectFilterOption(filterListOpen, key, idx) },
                 // 属性选项文字用对应属性色
                 if (filterListOpen == "type" && key.isNotEmpty()) typeColor("cobblemon.type.$key") else 0xFFFFFF
@@ -1204,25 +1219,36 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             centerX, 14, 0xFFFFFF
         )
 
-        // 余额 + 待收款：文字标签默认色，金额蓝/绿（2026-08-24 拍板）；余额来自全局缓存，交易操作后自动刷新
+        // Page indicator（右对齐）—— 先算出来，余额行才知道自己还剩多少可用宽
+        val pageText = Text.translatable("cobblemarket.gui.page", currentPage, totalPages).formatted(Formatting.GRAY)
+        val pageW = textRenderer.getWidth(pageText)
+
+        // 余额 + 待收款：文字标签默认色，金额蓝/绿（2026-08-24 拍板）；余额来自全局缓存，交易操作后自动刷新。
+        // ⚠ 两段都没有任何宽度防护：金额一长就压住页码、再长画出面板（296 的面板装不下大额）。
+        // 可用宽 = 面板宽 − 页码宽 − 左右留白（从布局反算，别写死）；超宽时按三级降级：
+        // 待收款为 0 整段不显示 → 金额换缩写（999,999,999 → 1.0B）→ 截断兜底
+        val balUnit = com.shusheng.cobblemarket.client.inlineCurrencyUnit()
+        val avail = panelWidth - 10 - pageW
         val balText: Text? = com.shusheng.cobblemarket.client.BalanceCache.balance.takeIf { it.isNotEmpty() }?.let {
-            Text.translatable("cobblemarket.gui.balance",
-                Text.literal(it + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD))
+            Text.translatable("cobblemarket.gui.balance", Text.literal("$it $balUnit").formatted(Formatting.GOLD))
         }
         val balW = balText?.let { textRenderer.getWidth(it) + 4 } ?: 0
-        if (balText != null) context.drawTextWithShadow(textRenderer, balText, leftX, 31, 0xFFFFFF)
-        context.drawTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.gui.pending_balance",
-                Text.literal(com.shusheng.cobblemarket.client.formatBalanceLong(pendingBalance) + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GREEN)),
-            leftX + balW, 31, 0xFFFFFF)
+        fun pendingLine(amount: String): Text = Text.translatable("cobblemarket.gui.pending_balance",
+            Text.literal("$amount $balUnit").formatted(Formatting.GREEN))
+        // 待收款为 0 时不占位：没有待领的东西就整段不显示
+        val pendingFull: Text? = if (pendingBalance > 0)
+            pendingLine(com.shusheng.cobblemarket.client.formatBalanceLong(pendingBalance)) else null
+        val pendingText: Text? = pendingFull?.takeIf { balW + textRenderer.getWidth(it) <= avail }
+            ?: pendingFull?.let { pendingLine(com.shusheng.cobblemarket.client.formatPriceShortLong(pendingBalance)) }
 
-        // Page indicator（右对齐：左侧放余额行，长数字互不干扰）
-        val pageText = Text.translatable("cobblemarket.gui.page", currentPage, totalPages).formatted(Formatting.GRAY)
-        context.drawTextWithShadow(
-            textRenderer,
-            pageText,
-            leftX + panelWidth - 4 - textRenderer.getWidth(pageText), 32, 0xFFFFFF
-        )
+        if (balText != null) context.drawTextWithShadow(textRenderer, balText, leftX, 31, 0xFFFFFF)
+        pendingText?.let {
+            context.drawTextWithShadow(
+                textRenderer,
+                TextUtil.truncateStyled(it, avail - balW), leftX + balW, 31, 0xFFFFFF
+            )
+        }
+        context.drawTextWithShadow(textRenderer, pageText, leftX + panelWidth - 4 - pageW, 32, 0xFFFFFF)
 
         val dividerY = getListStartY() - 4
         val startY = getListStartY()
@@ -1293,7 +1319,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             // Species name (translated) + 金色闪光星标（★，拆段绘制）；
             // 名字带阴影：行背景偏灰，暗色属性名（幽灵/恶等）无阴影看不清
             // 名字截断 54px ≈ 6 个汉字（超出带「…」）：名字后图标链固定 55px，与头像 149 仍留余量
-            val displayName = com.shusheng.cobblemarket.util.TextUtil.truncateString(
+            val displayName = TextUtil.truncateString(
                 iconData[origIndex]?.displayName ?: entry.species, 54)
             context.drawTextWithShadow(textRenderer, displayName, leftX + 40, y + 7, typeColor(entry.primaryType))
             var nameWidth = textRenderer.getWidth(displayName)
@@ -1601,7 +1627,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val entry = confirmEntry ?: cancelEntry ?: return
         val centerX = width / 2
         // 喵喵支付可用时加宽 280 容纳三枚按钮；不可用回退原宽度 220（两枚）
-        val dialogW = if (payAvailable) 280 else 220
+        val dialogW = if (payAvailable) minOf(340, width - 40).coerceAtLeast(200) else minOf(300, width - 40).coerceAtLeast(200)
         val dialogH = confirmDialogH(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -1670,7 +1696,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val viewBottom = dialogY + dialogH - confirmBottomH
         context.enableScissor(dialogX, viewTop, dialogX + dialogW, viewBottom)
         EntryBadgeRenderer.drawInfoLines(
-            context, entry, name, centerX, viewTop - confirmScroll, dividerW = dialogW - 20
+            context, entry, name, centerX, viewTop - confirmScroll, dividerW = dialogW - 20, maxWidth = dialogW - 24
         )
         context.disableScissor()
 

@@ -1005,7 +1005,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private fun renderConfirmDialog(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val entry = confirmEntry ?: return
         val centerX = width / 2
-        val dialogW = 220
+        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         val dialogH = confirmDialogH(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -1062,7 +1062,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         context.enableScissor(dialogX, viewTop, dialogX + dialogW, viewBottom)
         EntryBadgeRenderer.drawInfoLines(
             context, entry, EntryBadgeRenderer.nameWithShinyStar(confirmDisplayName, entry.shiny),
-            centerX, viewTop - confirmScroll, dividerW = dialogW - 20
+            centerX, viewTop - confirmScroll, dividerW = dialogW - 20, maxWidth = dialogW - 24
         )
         context.disableScissor()
 
