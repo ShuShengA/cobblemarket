@@ -50,6 +50,15 @@ object TooltipPlacement {
         w, h
     )
 
+    /**
+     * 不加钳制就完全放得下吗 —— 见 [place] 里「先挑放得下的」那段。
+     * ⚠ 不能省掉这一步：直接钳制会把「光标上方放不下」悄悄变成「贴屏幕顶」，
+     * 于是右上候选永远被判为可用、悬停窗**钉死在顶部不跟鼠标**（2026-09-20 用户实测：求购单的
+     * 悬停窗最高十几行，最明显；矮的界面看不出来）。
+     */
+    private fun Rect.fitsOnScreen(screenW: Int, screenH: Int): Boolean =
+        x >= 0 && y >= 0 && x + w <= screenW && y + h <= screenH
+
     /** 悬停窗**文字区**左上角（背景 = 文字区四周各留 pad） */
     data class Pos(val x: Int, val y: Int)
 
@@ -72,12 +81,17 @@ object TooltipPlacement {
         val bgXLeft = mouseX - GAP - pad - textW
         val bgYAbove = mouseY - ABOVE_EXTRA - pad - textH
         val bgYBelow = mouseY + GAP - pad
-        val candidates = listOf(
+        val raw = listOf(
             Rect(bgXRight, bgYAbove, w, h), // 右上
             Rect(bgXRight, bgYBelow, w, h), // 右下
             Rect(bgXLeft, bgYAbove, w, h),  // 左上
             Rect(bgXLeft, bgYBelow, w, h)   // 左下
-        ).map { it.clampedInto(screenW, screenH) }
+        )
+        // ⚠ **先挑「不用钳制就放得下」的**：否则「上方放不下」会被钳成「贴屏幕顶」，
+        // 悬停窗就钉在顶部不跟鼠标了（原行为是「上方放不下 → 翻到光标下方」）。
+        // 四个都放不下（悬停窗比屏幕还高/宽）才退回钳制版，保证不会整块跑到屏幕外。
+        val candidates = raw.filter { it.fitsOnScreen(screenW, screenH) }
+            .ifEmpty { raw.map { it.clampedInto(screenW, screenH) } }
 
         val bg = avoid?.let { a ->
             candidates.firstOrNull { !it.coversTooMuch(a) } ?: candidates.minByOrNull { it.overlapArea(a) }!!
