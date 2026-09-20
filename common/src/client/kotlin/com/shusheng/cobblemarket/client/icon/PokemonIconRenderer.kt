@@ -50,6 +50,9 @@ object PokemonIconRenderer {
      * @param animate       是否播放动画，即原先各调用点手里的 `useFloat`
      * @param preview       是否处于预览态（该行正被悬停 / 是大图本身）：切走路姿势
      * @param useScissor    是否裁剪到图标外扩 4px；三个「裸渲染」处（两个弹窗预览 + 整屏确认页）传 false
+     * @param clip          自定义裁剪框 `[left, top, right, bottom]`（**屏幕坐标**）：非空时**整个覆盖**
+     *                      [useScissor] 的默认外扩。给「允许长出去」的大图用 —— 槽位只有那么大，
+     *                      而高的（伽勒尔椰蛋树）／宽的精灵塞不下（`PointsMarketScreen.editPreviewClip`）
      * @param centerAnchorY 纵向锚点取矩形中心而非 +1px；原先只有整屏确认页这样写
      */
     fun draw(
@@ -63,6 +66,7 @@ object PokemonIconRenderer {
         animate: Boolean,
         preview: Boolean = false,
         useScissor: Boolean = true,
+        clip: IntArray? = null,
         centerAnchorY: Boolean = false
     ) {
         IconRegistry.register(renderable, state, x, y, size)
@@ -87,10 +91,13 @@ object PokemonIconRenderer {
         )
 
         val matrices = context.matrices
+        // 裁剪框：自定义的优先，否则按 useScissor 走全项目统一的「图标外扩 4px」。
+        // ⚠ 收在一个变量里 → 开/关永远是配对的，不会出现「开了没关」（NineSliceButton 那边踩过）
+        val scissor = clip ?: if (useScissor) intArrayOf(x - 4, y - 4, x + size + 4, y + size + 4) else null
         matrices.push()
         try {
-            if (useScissor) {
-                context.enableScissor(x - 4, y - 4, x + size + 4, y + size + 4)
+            if (scissor != null) {
+                context.enableScissor(scissor[0], scissor[1], scissor[2], scissor[3])
             }
             matrices.translate(x + size / 2.0, y + if (centerAnchorY) size / 2.0 else 1.0, 0.0)
             matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
@@ -108,7 +115,7 @@ object PokemonIconRenderer {
             // 携带物：与 drawProfilePokemon 成对（它不画这个），详见 drawHeldItem 注释
             drawHeldItem(context, renderable.heldItem, state, matrices)
         } finally {
-            if (useScissor) {
+            if (scissor != null) {
                 context.disableScissor()
             }
             matrices.pop()

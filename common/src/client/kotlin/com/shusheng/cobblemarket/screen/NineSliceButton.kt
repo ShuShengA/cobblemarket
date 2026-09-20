@@ -7,6 +7,7 @@ import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.client.gui.widget.ButtonWidget
 import net.minecraft.client.sound.PositionedSoundInstance
 import net.minecraft.client.sound.SoundManager
+import net.minecraft.item.ItemStack
 import net.minecraft.sound.SoundEvent
 import net.minecraft.text.Text
 import net.minecraft.util.Identifier
@@ -20,6 +21,17 @@ class NineSliceButton(
     var clickSound: Identifier? = Identifier.of("cobblemarket", "button_click"),
     // 可选图标（默认 24×24 纹理按 iconScale 缩放居中；纯图标按钮传空 message；性别按钮运行时切换用 var）
     var iconLeft: Identifier? = null,
+    /**
+     * 可选**物品**图标（携带物 / 球种这种"值本身就是物品"的字段）：渲染成 16×16。
+     * 与 [iconLeft] **共用同一套排版**（占左侧图标位、文字跟在右边，整组居中）——
+     * 它是"图标的另一种来源"，不是替代整个按钮。运行时可直接赋值切换。
+     */
+    var iconStack: ItemStack? = null,
+    /**
+     * 图标排在**文字之后**（「携带物：[图标]」这种「标签 + 值」的排法）。
+     * 默认 false = 图标在前 —— 项目里既有的按钮都是纯图标或图标在前，别动它们。
+     */
+    private val iconAfterText: Boolean = false,
     // 第二图标（并排绘制，间距 1px；性别按钮不限态用 ♂♀ 双图标）
     var iconLeft2: Identifier? = null,
     // 动画图标帧列表（每 100ms 切一帧，帧率同小卡比兽/皮卡丘入口图标）；非空时优先于 iconLeft
@@ -77,15 +89,38 @@ class NineSliceButton(
         }
         drawNineSlice(context, texture, x, y, width, height, state, texH)
 
-        // 可选图标（可双图标并排，整体居中）：动画帧按时间切换，没有帧才用静态 iconLeft
+        // 图标与文字是**并排**的（「携带物：[图标]」这种「标签 + 图标」，不是整格只有一个图标）：
+        // **物品图标**（iconStack）与**贴图图标**（iconLeft）共用同一套排版 —— 都占左侧图标位、
+        // 按钮文字跟在右边。物品图标只是"图标的另一种来源"，不是替代整个按钮。
+        val stackIcon = iconStack?.takeIf { !it.isEmpty }
         val leftIcon = iconFrames?.let { frames ->
             frames[((System.currentTimeMillis() / 100) % frames.size).toInt()]
         } ?: iconLeft
-        if (leftIcon != null) {
-            val iconW = (iconTexW * iconScale).toInt()
-            val iconH = (iconTexH * iconScale).toInt()
-            val totalW = iconW * (if (iconLeft2 != null) 2 else 1) + (if (iconLeft2 != null) 1 else 0)
-            val startX = x + (width - totalW) / 2
+        val iconW = if (stackIcon != null) 16 else (iconTexW * iconScale).toInt()
+        val iconH = if (stackIcon != null) 16 else (iconTexH * iconScale).toInt()
+        val iconCount = if (stackIcon != null) 1 else if (iconLeft2 != null) 2 else 1
+        val totalIconW = if (stackIcon != null || leftIcon != null) iconW * iconCount + (iconCount - 1) else 0
+
+        // ⚠ 图标 + 文字要**作为一整组**居中：原来图标独立居中、文字又避开图标居中，
+        //   两者并存时**必然重合**（2026-09-20 用户实测「图标和『携带物：』叠在一起」）。
+        //   纯图标按钮（没有文字）仍按原来的"图标居中"，既有界面不受影响。
+        val font = MinecraftClient.getInstance().textRenderer
+        val msgText = message.string
+        val hasText = msgText.isNotEmpty()
+        val grouped = (stackIcon != null || leftIcon != null) && hasText
+        val textW = font.getWidth(message)
+        val groupW = if (grouped) totalIconW + ICON_TEXT_GAP + textW else totalIconW
+        val groupX = x + (width - groupW) / 2
+        // 图标可以排在文字**之后**（「携带物：[图标]」这种标签+值的排法，见 iconAfterText）
+        val iconX = if (iconAfterText && grouped) groupX + textW + ICON_TEXT_GAP else groupX
+
+        if (stackIcon != null) {
+            context.matrices.push()
+            context.matrices.translate(iconX.toDouble(), (y + (height - iconH) / 2).toDouble(), 0.0)
+            context.drawItem(stackIcon, 0, 0)
+            context.matrices.pop()
+        } else if (leftIcon != null) {
+            val startX = iconX
             val startY = y + (height - iconH) / 2
             fun drawIcon(id: Identifier, ix: Int) {
                 context.matrices.push()
@@ -101,22 +136,22 @@ class NineSliceButton(
             iconLeft2?.let { drawIcon(it, startX + iconW + 1) }
         }
 
-        val font = MinecraftClient.getInstance().textRenderer
         val color = if (active) textColor else 0xA0A0A0
-        val iconW = (iconTexW * iconScale).toInt()
-        val totalIconW = if (leftIcon != null) iconW * (if (iconLeft2 != null) 2 else 1) + (if (iconLeft2 != null) 1 else 0) else 0
-        val iconSpace = if (leftIcon != null) 5 + totalIconW + 4 else 0
         val textY = y + (height - 8) / 2
-        val msgString = message.string
+        val msgString = msgText
+        // 有图标时文字紧跟在图标右边（整组已居中）；没图标就整行居中，与原来一致
+        val textBaseX =
+            if (grouped) (if (iconAfterText) groupX else groupX + totalIconW + ICON_TEXT_GAP)
+            else x + (width - textW) / 2
         // 选中标记黑点（TextUtil.selectedText 的 ● 前缀）无阴影绘制：带阴影看起来不是圆
         if (msgString.startsWith("● ")) {
             val dotW = font.getWidth("●")
             val labelW = font.getWidth(msgString.substring(2))
-            val textX = x + iconSpace + (width - iconSpace - (dotW + 2 + labelW)) / 2
+            val textX = if (grouped) textBaseX else x + (width - (dotW + 2 + labelW)) / 2
             context.drawText(font, "●", textX, textY, 0x000000, false)
             context.drawTextWithShadow(font, msgString.substring(2), textX + dotW + 2, textY, color)
         } else {
-            val textX = x + iconSpace + (width - iconSpace - font.getWidth(message)) / 2
+            val textX = textBaseX
             context.drawTextWithShadow(font, message, textX, textY, color)
         }
         // 置灰遮罩（视觉置灰但保留可点击性，见 dimmed 注释）
@@ -152,3 +187,6 @@ class NineSliceButton(
         private const val TEX_H = 120
     }
 }
+
+/** 按钮里「图标 + 文字」并排时的间距（两者作为一整组居中，见 renderWidget） */
+private const val ICON_TEXT_GAP = 4

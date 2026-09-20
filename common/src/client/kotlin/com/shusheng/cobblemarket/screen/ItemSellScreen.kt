@@ -388,7 +388,9 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
         val startY = getListStartY()
         items.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, item ->
             val y = startY + i * rowHeight
-            drawItemWithBar(context, item.stack, leftX + 2, y + 2)
+            // ⚠ 图标要**垂直居中于行**：原来写死 +2，行高 24 下上留 2、下留 6，看着就是"偏上"
+            //   （`drawItem` 的 y 是图标**左上角**，不是底部 —— 2026-09-20 用户实测指出）
+            drawItemWithBar(context, item.stack, leftX + 2, y + (rowHeight - 16) / 2)
             // 行名照物品栏悬浮第一行按稀有度着色（组件明细看悬停词条，行内不重复显示）
             val nameText = com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(item.stack)
             context.drawTextWithShadow(textRenderer,

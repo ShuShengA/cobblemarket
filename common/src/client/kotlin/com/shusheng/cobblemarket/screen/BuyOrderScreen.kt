@@ -1069,7 +1069,8 @@ class BuyOrderScreen(
                     context.drawCenteredTextWithShadow(textRenderer, "?", slotX + iconSize / 2, slotY + 6, 0xAAAAAA)
                 }
             } else if (!anyDialogOpen) {
-                rowData?.itemStack?.let { drawItemWithBar(context, it, slotX + 2, slotY) }
+                // ⚠ 同上：物品图标按行高居中，别跟精灵槽共用 slotY（那个是行顶 +2）
+                rowData?.itemStack?.let { drawItemWithBar(context, it, slotX + 2, y + (rowHeight - 16) / 2) }
             }
 
             // 名称（属性色，照精灵市场）+ 条件徽章（★/☆/HT）；物品行名照物品栏悬浮按稀有度着色。
@@ -2117,7 +2118,9 @@ class BuyOrderScreen(
                 seen.add(emptySet())
                 opts.add(FormOption(Text.translatable("cobblemarket.blacklist.form_default").string, emptySet()))
             }
-            species.forms.forEach { f ->
+            // 超极巨化形态**不在候选里**（battleOnly 形态，超极巨化由 gmaxFactor 表达，玩家也拿不到）——
+            // 判据与滤法统一在 SpeciesText.selectableForms，别再各写一份
+            com.shusheng.cobblemarket.util.SpeciesText.selectableForms(species).forEach { f ->
                 val a = f.aspects.toSet()
                 if (seen.add(a)) opts.add(FormOption(formLabel(a), a))
             }

@@ -18,6 +18,7 @@ import com.shusheng.cobblemarket.network.MarketStatePayload
 import com.shusheng.cobblemarket.network.PayQrImagePayload
 import com.shusheng.cobblemarket.network.PointCodesCreatedPayload
 import com.shusheng.cobblemarket.network.PointCodesPayload
+import com.shusheng.cobblemarket.network.PointMarketItemsPayload
 import com.shusheng.cobblemarket.network.PointRecordsPayload
 import com.shusheng.cobblemarket.network.PointsConfigPayload
 import com.shusheng.cobblemarket.network.PointsShopInfoPayload
@@ -580,6 +581,14 @@ object CobbleMarketClient {
                     is PointsRechargeScreen -> screen.onShopInfo()
                     is PointsMarketScreen -> screen.onShopInfo()
                 }
+            }
+        }
+
+        // RP 商城（商品区）快照：**先落缓存**（同上面点券商城快照的理由）——
+        // 界面每帧直接读 PointMarketCache，包一到下一帧就画出来，不需要通知重建
+        registerS2C(PointMarketItemsPayload.ID, PointMarketItemsPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                PointMarketCache.accept(payload)
             }
         }
 

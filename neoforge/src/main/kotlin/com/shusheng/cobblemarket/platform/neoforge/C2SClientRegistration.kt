@@ -50,6 +50,7 @@ import com.shusheng.cobblemarket.network.RejectPointOrderPayload
 import com.shusheng.cobblemarket.network.RemoveItemBlacklistPayload
 import com.shusheng.cobblemarket.network.RemoveItemPriceLimitPayload
 import com.shusheng.cobblemarket.network.RemoveItemsBlacklistPayload
+import com.shusheng.cobblemarket.network.RemovePointMarketEntryPayload
 import com.shusheng.cobblemarket.network.RemovePokemonBlacklistPayload
 import com.shusheng.cobblemarket.network.RemovePokemonPriceLimitPayload
 import com.shusheng.cobblemarket.network.RequestAuctionDurationsPayload
@@ -73,6 +74,7 @@ import com.shusheng.cobblemarket.network.RequestMyPokemonPayload
 import com.shusheng.cobblemarket.network.RequestObjectPreviewPayload
 import com.shusheng.cobblemarket.network.RequestPayQrPayload
 import com.shusheng.cobblemarket.network.RequestPlayerNameSuggestionsPayload
+import com.shusheng.cobblemarket.network.RequestPointMarketPayload
 import com.shusheng.cobblemarket.network.RequestPointsConfigPayload
 import com.shusheng.cobblemarket.network.RequestPointOrdersPayload
 import com.shusheng.cobblemarket.network.RequestPointsShopPayload
@@ -94,6 +96,7 @@ import com.shusheng.cobblemarket.network.RequestRevokeBadDebtPayload
 import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.RequestTierIconPayload
 import com.shusheng.cobblemarket.network.RequestWithdrawPayload
+import com.shusheng.cobblemarket.network.SavePointMarketEntryPayload
 import com.shusheng.cobblemarket.network.SavePointsConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.SellFromStoragePayload
@@ -160,6 +163,10 @@ fun registerClientC2S() {
         c2s(registrar, RequestPointCodesPayload.ID, RequestPointCodesPayload.CODEC)
         c2s(registrar, RevokePointCodePayload.ID, RevokePointCodePayload.CODEC)
         c2s(registrar, RequestPointRecordsPayload.ID, RequestPointRecordsPayload.CODEC)
+        // RP 商城（商品区）三个包：同上，漏登记会在协商阶段直接断连
+        c2s(registrar, RequestPointMarketPayload.ID, RequestPointMarketPayload.CODEC)
+        c2s(registrar, SavePointMarketEntryPayload.ID, SavePointMarketEntryPayload.CODEC)
+        c2s(registrar, RemovePointMarketEntryPayload.ID, RemovePointMarketEntryPayload.CODEC)
         c2s(registrar, RejectPendingDeliverPayload.ID, RejectPendingDeliverPayload.CODEC)
         c2s(registrar, RemoveItemBlacklistPayload.ID, RemoveItemBlacklistPayload.CODEC)
         c2s(registrar, RemoveItemPriceLimitPayload.ID, RemoveItemPriceLimitPayload.CODEC)
