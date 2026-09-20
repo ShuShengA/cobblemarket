@@ -511,12 +511,13 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             val countText = "×${entry.count}"
             context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 2, 0xFFFFFF, false)
 
-            // 价格过长时用缩写（与物品市场界面一致），完整价格见 tooltip；
-            // 单位走统一入口，币种取**这条挂单自己的**（行内用恒定 ₽ 写法）
-            val priceText = com.shusheng.cobblemarket.client.amountWithUnit(
+            // 价格过长时用缩写（与物品市场界面一致），完整价格见悬停提示；单位走统一入口，币种取这条挂单自己的
+            val priceTextRaw = com.shusheng.cobblemarket.client.amountWithUnit(
                 com.shusheng.cobblemarket.client.formatPriceShort(entry.price),
                 entry.isPoints, entry.currencyName, inline = true
             )
+            // 格子很窄：超宽就截断（钱数优先于单位），别让它画出格子框
+            val priceText = com.shusheng.cobblemarket.util.TextUtil.truncateString(priceTextRaw.string, slotSize - 6)
             context.drawText(textRenderer, priceText, x + 3, y + slotSize - 10, 0xFFAA00, false)
         }
 
