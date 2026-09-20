@@ -999,25 +999,39 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             } else {
                 textRenderer.wrapLines(Text.literal(tip), wrapW)
             }
-            val k = maxOf(1f, tipLines.size * 9f / 64f)
             val bgLeft = width / 2 - 128
             // 气泡随立绘一起整体缩放（oakK），锚点与立绘相同（立绘底边+右缘）；
             // 设计偏移：气泡图原点距锚点 (-158, -279)（= 原 bubbleX/bubbleY 相对 bgLeft-1 / oakBottom）
             val oakBottom = bgBottom() - 5
+            // 气泡容量：文字区 63px 高、行高 9 → 原图放得下 7 行；行数超出就把**气泡**放大 k 倍。
+            // ⚠ 文字必须**不跟着放大**（下面用 1/k 抵消）—— 两者同比例放大等于没放大，
+            //    多出来的行照样画出气泡（2026-09-21 用户实测截图）。
+            // k 上限：气泡底边固定在 oakBottom−128，放大后顶边还要往上走 108k，别顶出屏幕上沿
+            val maxK = ((oakBottom - 132f) / 108f).coerceAtLeast(1f)
+            val k = (tipLines.size / 7f).coerceIn(1f, maxK)
+            // 放大后能装下的行数（k 被上限截住时，多余的行不画）
+            val maxLines = (7f * k).toInt().coerceIn(1, tipLines.size)
             val oakK = oakScaleFactor()
             context.matrices.push()
             context.matrices.translate((bgLeft - 1).toDouble(), oakBottom.toDouble(), 0.0)
             context.matrices.scale(oakK, oakK, 1f)
             context.matrices.translate(-158.0, -279.0, 0.0)
+            // ⚠ 放大要**绕气泡本体右下角 (139,151)**，不能绕图片原点：图 140×152 里本体偏右下（左上留白），
+            // 绕原点放大会让气泡往右下长 → 右下角压到大木博士头上（2026-09-17 用户报）
+            context.matrices.translate(139.0, 151.0, 0.0)
             context.matrices.scale(k, k, 1f)
+            context.matrices.translate(-139.0, -151.0, 0.0)
             context.drawTexture(Identifier.of("cobblemarket", "textures/gui/chat_bubble.png"), 0, 0, 0f, 0f, 140, 152, 140, 152)
+            // 抵消气泡的放大：文字回到 1:1 字号 —— 只是气泡变大、能装更多行
+            context.matrices.scale(1f / k, 1f / k, 1f)
             // 文字层再套字号缩放（中文 1:1，英文 0.75）
             context.matrices.scale(fontScale, fontScale, 1f)
-            val tx = (13 / fontScale).roundToInt()
-            var ty = (58 / fontScale).roundToInt()
+            // 文字区左上角 (13,58) 换算到**放大后**的位置
+            val tx = (13 * k / fontScale).roundToInt()
+            var ty = (58 * k / fontScale).roundToInt()
             val lineH = (9 / fontScale).roundToInt()
             val indent = if (isZh) (TIP_INDENT_PX / fontScale).roundToInt() else 0
-            tipLines.forEachIndexed { index, line ->
+            tipLines.take(maxLines).forEachIndexed { index, line ->
                 // 中文首行缩进 2 个汉字宽，其余行顶格；英文全部顶格
                 context.drawText(textRenderer, line, if (index == 0) tx + indent else tx, ty, 0xFF333333.toInt(), false)
                 ty += lineH
