@@ -880,7 +880,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                     com.shusheng.cobblemarket.client.formatPriceShortLong(totalVolume),
                     inlineCurrencyUnit()
                 ),
-                width / 2, btnStartY - 37, 0x55FFFF
+                width / 2, btnStartY - 29, 0x55FFFF
             )
             val lineW = textRenderer.getWidth(
                 Text.translatable(
@@ -889,7 +889,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                     inlineCurrencyUnit()
                 )
             )
-            if (mouseY in (btnStartY - 37)..(btnStartY - 28) && Math.abs(mouseX - width / 2) <= lineW / 2) {
+            if (mouseY in (btnStartY - 29)..(btnStartY - 20) && Math.abs(mouseX - width / 2) <= lineW / 2) {
                 renderAmountTooltip(
                     context, mouseX, mouseY,
                     "${com.shusheng.cobblemarket.client.formatPriceLong(totalVolume)} ${activeCurrencyUnit()}"
@@ -1062,7 +1062,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                 textRenderer,
                 Text.translatable("cobblemarket.gui.balance",
                     Text.literal(bal + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
-                width / 2, btnStartY - 26, 0xFFFFFF
+                width / 2, btnStartY - 18, 0xFFFFFF
             )
         }
     }
