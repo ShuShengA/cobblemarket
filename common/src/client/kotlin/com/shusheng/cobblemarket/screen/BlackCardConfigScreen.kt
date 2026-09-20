@@ -11,6 +11,7 @@ import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.text.Text
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.util.Formatting
 
 /**
@@ -353,7 +354,10 @@ class BlackCardConfigScreen : Screen(Text.translatable("cobblemarket.op.black_ca
                 val labelColor = if (System.currentTimeMillis() < (adjustedUntil[key] ?: 0L)) 0xFFFF55 else 0xFFFFFF
                 context.drawTextWithShadow(
                     textRenderer,
-                    Text.translatable(def.labelKey),
+                    // ⚠ 标签**必须截到输入框左缘之前**：原先直接画、没有任何宽度限制，英文长标签
+                    //   会一路压到输入框上、把里面的默认值盖住（2026-09-20 用户实测截图）。
+                    //   可用宽度从 dialogW 反算 —— 与输入框位置（`dialogX + dialogW - 86`）同一口径
+                    TextUtil.truncateString(Text.translatable(def.labelKey).string, dialogW - 100),
                     dialogX + 10, rowY + 7, labelColor
                 )
             }
