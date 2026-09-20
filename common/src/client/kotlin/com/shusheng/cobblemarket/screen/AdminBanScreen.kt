@@ -10,6 +10,7 @@ import com.shusheng.cobblemarket.network.PlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.network.RequestBanListPayload
 import com.shusheng.cobblemarket.network.RequestPlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.platform.sendToServer
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
@@ -155,7 +156,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
 
     private fun renderBanDialogBackground(context: DrawContext) {
         val centerX = width / 2
-        val dialogW = 240
+        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         val dialogH = 150
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -263,8 +264,13 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
                 Text.translatable("cobblemarket.ban.permanent")
             else
                 Text.literal(entry.durationDisplay)
+            // 行文字画到「解封按钮左侧留 4px 空隙」为止：按钮起于 panelWidth-60、宽 56，
+            // 文字起于 +4 → 可用 = panelWidth - 60 - 4 - 4。金融封禁的原因词条很长，不截会压到按钮上
             context.drawTextWithShadow(textRenderer,
-                Text.literal("${entry.playerName}  ·  ").append(com.shusheng.cobblemarket.market.BanState.reasonText(entry.bannedBy)).append("  ·  ").append(durationText),
+                TextUtil.truncateText(
+                    Text.literal("${entry.playerName}  ·  ").append(com.shusheng.cobblemarket.market.BanState.reasonText(entry.bannedBy)).append("  ·  ").append(durationText),
+                    panelWidth - 68
+                ),
                 leftX + 4, y + 5, 0xFFFFFF)
         }
 

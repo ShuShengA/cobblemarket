@@ -24,7 +24,7 @@ import kotlin.math.roundToLong
  */
 class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
 
-    private val dialogW = 280
+    private val dialogW = minOf(340, width - 40).coerceAtLeast(200)
     private val dialogH = 200
 
     // 初始读全局缓存（60 秒兜底轮询写入）秒显不闪；-1 = 未拉取，响应到达后更新

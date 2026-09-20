@@ -387,21 +387,21 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsGroudonFlyButton?.let { b -> b.x = switchX; b.y = dialogY + 160; addDrawableChild(b) }
         // 三态循环文字按钮（一直/变动/关闭），点击循环切换
         settingsBalanceHudButton = NineSliceButton(
-            centerX + 40, dialogY + 187, 46, 20,
+            centerX + 50, dialogY + 187, 54, 20,
             Text.translatable(balanceHudModeKey()),
             { cycleBalanceHud() }
         )
         addDrawableChild(settingsBalanceHudButton)
         // 余额 HUD 位置：进拖动编辑界面（自定义 → 拖动落位 → 确定）
         settingsBalanceHudPosButton = NineSliceButton(
-            centerX + 40, dialogY + 213, 46, 20,
+            centerX + 50, dialogY + 213, 54, 20,
             Text.translatable("cobblemarket.settings.balance_hud_position_custom"),
             { openBalanceHudPosEditor() }
         )
         addDrawableChild(settingsBalanceHudPosButton)
         // 精灵图标展示模式两态循环（静态/动态），同 balanceHud 模板
         settingsIconAnimButton = NineSliceButton(
-            centerX + 40, dialogY + 239, 46, 20,
+            centerX + 50, dialogY + 239, 54, 20,
             Text.translatable(iconAnimModeKey()),
             { cycleIconAnim() }
         )
@@ -538,8 +538,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         )
         // 开关项分割线：标题下 + 每两行之间（行按钮 y=30/56/82/108/134/160/187/213/239、行高 22 → 线在 27/54/80/106/132/158/184/237）；
         // 187 与 213 两行同属余额 HUD 设置，中间不画线
-        val lineX1 = centerX - 88
-        val lineX2 = centerX + 88
+        val lineX1 = centerX - 108
+        val lineX2 = centerX + 108
         for (lineY in intArrayOf(27, 54, 80, 106, 132, 158, 184, 237)) {
             context.fill(lineX1, dialogY + lineY, lineX2, dialogY + lineY + 1, 0xFF555555.toInt())
         }
@@ -552,47 +552,47 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         context.drawTextWithShadow(
             textRenderer,
             toggleText("cobblemarket.settings.animation_market", ClientConfig.celebrationOnMarketBuy),
-            centerX - 80, dialogY + 37, 0xFFFFFF
+            centerX - 100, dialogY + 37, 0xFFFFFF
         )
         context.drawTextWithShadow(
             textRenderer,
             toggleText("cobblemarket.settings.animation_auction", ClientConfig.celebrationOnAuctionAndOrder),
-            centerX - 80, dialogY + 63, 0xFFFFFF
+            centerX - 100, dialogY + 63, 0xFFFFFF
         )
         context.drawTextWithShadow(
             textRenderer,
             toggleText("cobblemarket.settings.drop_overflow", ClientConfig.dropOverflowOnClaim),
-            centerX - 80, dialogY + 89, 0xFFFFFF
+            centerX - 100, dialogY + 89, 0xFFFFFF
         )
         context.drawTextWithShadow(
             textRenderer,
             toggleText("cobblemarket.settings.animation_entry", ClientConfig.marketAnimation),
-            centerX - 80, dialogY + 115, 0xFFFFFF
+            centerX - 100, dialogY + 115, 0xFFFFFF
         )
         context.drawTextWithShadow(
             textRenderer,
             toggleText("cobblemarket.settings.pikachu_loop", ClientConfig.pikachuRunLoop),
-            centerX - 80, dialogY + 141, 0xFFFFFF
+            centerX - 100, dialogY + 141, 0xFFFFFF
         )
         context.drawTextWithShadow(
             textRenderer,
             toggleText("cobblemarket.settings.groudon_fly", ClientConfig.groudonFly),
-            centerX - 80, dialogY + 167, 0xFFFFFF
+            centerX - 100, dialogY + 167, 0xFFFFFF
         )
         context.drawTextWithShadow(
             textRenderer,
             Text.translatable("cobblemarket.settings.balance_hud"),
-            centerX - 80, dialogY + 193, 0xFFFFFF
+            centerX - 100, dialogY + 193, 0xFFFFFF
         )
         context.drawTextWithShadow(
             textRenderer,
             Text.translatable("cobblemarket.settings.balance_hud_position"),
-            centerX - 80, dialogY + 219, 0xFFFFFF
+            centerX - 100, dialogY + 219, 0xFFFFFF
         )
         context.drawTextWithShadow(
             textRenderer,
             Text.translatable("cobblemarket.settings.icon_anim"),
-            centerX - 80, dialogY + 245, 0xFFFFFF
+            centerX - 100, dialogY + 245, 0xFFFFFF
         )
     }
 
@@ -661,7 +661,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     private fun renderMarketConfirmBackground(context: DrawContext) {
         val centerX = width / 2
-        val dialogW = 280
+        val dialogW = minOf(340, width - 40).coerceAtLeast(200)
         val dialogH = 150
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -1062,7 +1062,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     override fun shouldPause() = false
 
     companion object {
-        private const val DIALOG_W = 200
+        private const val DIALOG_W = 240
         private const val DIALOG_H = 298
         // 入口掉落动画三段：下落 → 落地停留 → 淡出（淡出期间入口界面从图下透出，慢慢显现）
         private const val DROP_DURATION_MS = 100L

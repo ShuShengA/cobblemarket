@@ -741,7 +741,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private fun renderCancelDialogBackground(context: DrawContext, mouseX: Int, mouseY: Int) {
         val entry = cancelEntry ?: return
         val centerX = width / 2
-        val dialogW = 220
+        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         val dialogH = 170
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -818,7 +818,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private fun renderBuyDialogBackground(context: DrawContext) {
         val entry = selectedEntry ?: return
         val centerX = width / 2
-        val dialogW = 220
+        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         // 弹窗高度随消费贷开关收缩：210（含喵喵支付行）/ 170（原尺寸）
         val dialogH = buyDialogH()
         val dialogX = centerX - dialogW / 2

@@ -17,7 +17,9 @@ import net.minecraft.util.Formatting
  */
 class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op.black_card_conditions")) {
 
-    private val dialogW = 260
+    // 放宽到 360：文字可用宽 = 宽 − 100（≈260px），放得下英文原文（最长约 221px）；
+    // 窗口过小时收进屏幕内，此时标签回落到 truncateString 兜底
+    private val dialogW: Int get() = minOf(360, (width - 40).coerceAtLeast(200))
     private val rowHeight = 24
 
     private data class NumDef(val labelKey: String, val isInt: Boolean)

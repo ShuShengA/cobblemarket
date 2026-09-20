@@ -139,7 +139,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
     private fun renderDialogBackground(context: DrawContext) {
         val entry = selectedItem ?: return
         val centerX = width / 2
-        val dialogW = 220
+        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         val dialogH = 170
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2

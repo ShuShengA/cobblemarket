@@ -17,6 +17,31 @@ object TextUtil {
 
     fun truncateText(t: Text, maxWidth: Int): Text = Text.literal(truncateString(t.string, maxWidth)).setStyle(t.style)
 
+    // 保留分段样式的截断（富文本版 truncateString）：
+    // truncateText 会把整串压成一段 —— 类型行的属性色、IV 行的 EV 红、闪光星标的金都会丢。
+    // 这里按 visit 出来的样式段逐段累计宽度，超预算的段裁掉，各段颜色原样保留。
+    fun truncateStyled(t: Text, maxWidth: Int): Text {
+        val font = MinecraftClient.getInstance().textRenderer
+        if (font.getWidth(t) <= maxWidth) return t
+        val budget = maxWidth - font.getWidth("…")
+        val out = Text.empty()
+        var used = 0
+        var full = false
+        t.visit({ style, s ->
+            if (!full && s.isNotEmpty()) {
+                var cut = s
+                while (cut.isNotEmpty() && used + font.getWidth(cut) > budget) cut = cut.dropLast(1)
+                if (cut.isNotEmpty()) {
+                    out.append(Text.literal(cut).setStyle(style))
+                    used += font.getWidth(cut)
+                }
+                if (cut.length < s.length) full = true
+            }
+            java.util.Optional.empty<Unit>()
+        }, net.minecraft.text.Style.EMPTY)
+        return out.append(Text.literal("…"))
+    }
+
     // 物品显示名照物品栏悬浮第一行着色（按稀有度；名字自带样式码的物品如卡片不受影响）
     fun rarityColoredName(stack: ItemStack): Text = stack.name.copy().formatted(stack.rarity.formatting)
 

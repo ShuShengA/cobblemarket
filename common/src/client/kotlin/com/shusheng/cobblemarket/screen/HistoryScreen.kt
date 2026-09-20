@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.network.HistoryEntry
 import com.shusheng.cobblemarket.network.RequestHistoryPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import com.shusheng.cobblemarket.platform.configDir
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.util.Util
 import net.minecraft.client.gui.screen.Screen
@@ -137,14 +138,22 @@ class HistoryScreen(private val showAll: Boolean = false) :
             val typeLabel = "[$typeText]"
             context.drawTextWithShadow(textRenderer, typeLabel, x, y + 4, typeColor(e.type))
             x += textRenderer.getWidth(typeLabel) + 6
-            val middle = if (showAll) "$seller$buyer $speciesText" else "$speciesText"
+            // 行尾（价格 / 买家）先按实际宽度占位，中间段按剩余像素截断 ——
+            // 无翻译的物品 id 会原样显示成超长 key，不截断会把整行画出面板
+            val pricePart = "| ${com.shusheng.cobblemarket.client.formatPrice(e.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
+            val buyerPart = if (!showAll && buyer.isNotEmpty()) buyer.trimStart() else ""
+            var tailWidth = textRenderer.getWidth(pricePart) + 6
+            if (buyerPart.isNotEmpty()) tailWidth += textRenderer.getWidth(buyerPart) + 6
+            val middle = TextUtil.truncateString(
+                if (showAll) "$seller$buyer $speciesText" else speciesText,
+                width / 2 + panelHalf - 5 - tailWidth - x
+            )
             context.drawTextWithShadow(textRenderer, middle, x, y + 4, 0xFFFFFF)
             x += textRenderer.getWidth(middle) + 6
-            val pricePart = "| ${com.shusheng.cobblemarket.client.formatPrice(e.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
             context.drawTextWithShadow(textRenderer, pricePart, x, y + 4, 0xFFAA00)
-            if (!showAll && buyer.isNotEmpty()) {
+            if (buyerPart.isNotEmpty()) {
                 x += textRenderer.getWidth(pricePart) + 6
-                context.drawTextWithShadow(textRenderer, buyer.trimStart(), x, y + 4, 0xFFFFFF)
+                context.drawTextWithShadow(textRenderer, buyerPart, x, y + 4, 0xFFFFFF)
             }
         }
 

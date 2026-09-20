@@ -910,7 +910,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private fun renderConfirmDialog(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val entry = confirmEntry ?: return
         val centerX = width / 2
-        val dialogW = 220
+        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         val dialogH = confirmDialogHeight(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -955,7 +955,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 卖家 / 价格
         EntryBadgeRenderer.drawInfoLines(
             context, entry, EntryBadgeRenderer.nameWithShinyStar(confirmDisplayName, entry.shiny),
-            centerX, dialogY + 60
+            centerX, dialogY + 60, dialogW - 24
         )
 
         // 确认 / 取消按钮
