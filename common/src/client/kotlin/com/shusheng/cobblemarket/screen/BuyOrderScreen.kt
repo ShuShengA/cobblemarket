@@ -1914,6 +1914,9 @@ class BuyOrderScreen(
                             createCurrency == MarketCurrency.POINTS, "", inline = true
                         ).formatted(Formatting.GOLD)),
                     centerX, createY(214), 0xFFFFFF)
+                context.drawCenteredTextWithShadow(textRenderer,
+                    Text.translatable("cobblemarket.buy_order.frozen_hint_note"),
+                    centerX, createY(214) + 10, 0xFFFFFF)
             }
         } else {
             // 物品预览图标（右侧）：手持模式显示主手物品（文字+图标双重提醒），否则优先显示点选项
@@ -1944,6 +1947,9 @@ class BuyOrderScreen(
                             createCurrency == MarketCurrency.POINTS, "", inline = true
                         ).formatted(Formatting.GOLD)),
                     centerX, createY(146), 0xFFFFFF)
+                context.drawCenteredTextWithShadow(textRenderer,
+                    Text.translatable("cobblemarket.buy_order.frozen_hint_note"),
+                    centerX, createY(146) + 10, 0xFFFFFF)
             }
         }
     }
