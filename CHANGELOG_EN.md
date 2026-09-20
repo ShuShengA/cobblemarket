@@ -89,7 +89,7 @@
 - **Typing a Chinese Pokemon name in the blacklist / price limit / buy order screens picked the wrong Pokemon**: those three screens designate a single Pokemon by name, and typing "鬼斯" actually selected "鬼斯通" (same root cause) — so a blacklist entry, a price rule or a buy order silently ended up on a different Pokemon. Now **an exact name match wins**, and when several match, **left/right arrows** appear next to the preview so you can flip through them (with a "current / total" counter); whichever is shown is the one that gets used
 - **Balance HUD was not hidden by F1**: it stayed on screen after the vanilla HUD was hidden (in the way when taking screenshots or recording); it now hides together with the vanilla HUD
 
-## 1.1.0 (in development, unreleased)
+## 1.1.0 (released)
 
 ### New Feature
 
