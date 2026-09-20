@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.ServerConfigDataPayload
 import com.shusheng.cobblemarket.platform.sendToServer
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
@@ -603,7 +604,9 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 // 行间分割线（照设置弹窗：每行上方一条）
                 drawRowLine(rowY)
                 context.drawTextWithShadow(textRenderer,
-                    Text.translatable(def.labelKey),
+                    // ⚠ 标签**必须截到输入框左缘之前**（`dialogX + dialogW - 86`）：原先直接画、
+                    //   没有宽度限制，英文长标签会压到输入框上、把默认值盖住（2026-09-20 用户实测）
+                    TextUtil.truncateString(Text.translatable(def.labelKey).string, dialogW - 100),
                     dialogX + 10, rowY + 7, 0xFFFFFF)
             }
             row++
