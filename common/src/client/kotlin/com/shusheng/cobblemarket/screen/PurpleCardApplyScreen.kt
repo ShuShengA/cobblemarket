@@ -20,7 +20,7 @@ import net.minecraft.util.Identifier
  */
 class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_title")) {
 
-    private val dialogW = 300
+    private val dialogW = minOf(360, width - 40).coerceAtLeast(200)
     private val dialogH = 320
 
     // 与 PurpleCardApplyInfoPayload.conditions 同序（服务端 FinanceNetwork.sendPurpleCardApplyInfo 构造）
