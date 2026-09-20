@@ -22,7 +22,7 @@ import net.minecraft.util.Formatting
  */
 class DepositScreen : Screen(Text.translatable("cobblemarket.deposit.title")) {
 
-    private val dialogW = 280
+    private val dialogW = minOf(340, width - 40).coerceAtLeast(200)
     private val dialogH = 170
 
     private var balance = 0L

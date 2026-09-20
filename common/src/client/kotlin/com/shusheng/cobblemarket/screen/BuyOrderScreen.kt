@@ -896,7 +896,7 @@ class BuyOrderScreen(
     /** 信息区顶（标题 14 / 名称 34 → 信息行自此起） */
     private val forceInfoTop = 50
     private val forcePad = 10
-    private val forceDialogW = 220
+    private val forceDialogW: Int get() = minOf(300, width - 40).coerceAtLeast(200)
     private var forceScroll = 0
 
     private fun forceContentW() = forceDialogW - 2 * forcePad
@@ -1851,7 +1851,7 @@ class BuyOrderScreen(
 
     private fun renderCreateDialogBackground(context: DrawContext, delta: Float) {
         val centerX = width / 2
-        val dialogW = 280
+        val dialogW = minOf(340, width - 40).coerceAtLeast(200)
         val dialogH = createDialogH()   // 设计高度按屏幕钳制（见 createDialogH）
         val dialogX = centerX - dialogW / 2
         val dialogY = createDialogY()
@@ -2597,7 +2597,7 @@ class BuyOrderScreen(
         val entry = reviewEntry ?: return
         val pending = entry.pending ?: return
         val centerX = width / 2
-        val dialogW = 280
+        val dialogW = minOf(340, width - 40).coerceAtLeast(200)
         // 物品词条选择（先于布局）：Shift 完整词条 / Ctrl 调试信息按需构建（Fabric tooltip 信息块只在构建时按键按住才生成）
         var itemLines: List<Text>? = null
         var itemExtra = 0
@@ -2696,7 +2696,7 @@ class BuyOrderScreen(
                 context, listing,
                 EntryBadgeRenderer.nameWithShinyStar(name, pending.shiny),
                 // +62：图标占 +28~+55，留 6px 间隙后起名字行（与市场购买确认弹窗一致）
-                centerX, viewTop - reviewScroll, dividerW = dialogW - 20
+                centerX, viewTop - reviewScroll, dividerW = dialogW - 20, maxWidth = dialogW - 24
             )
             context.disableScissor()
         } else {
@@ -2929,7 +2929,7 @@ class BuyOrderScreen(
     private fun renderDeliverDialogBackground(context: DrawContext) {
         val entry = deliverEntry ?: return
         val centerX = width / 2
-        val dialogW = 280
+        val dialogW = minOf(340, width - 40).coerceAtLeast(200)
         // 有买家留言时弹窗加高一行，与控件下移量一致（否则底部按钮会贴边）
         val noteShift = deliverNoteShift()
         val dialogH = (if (entry.type == "POKEMON") 150 else 152) + noteShift

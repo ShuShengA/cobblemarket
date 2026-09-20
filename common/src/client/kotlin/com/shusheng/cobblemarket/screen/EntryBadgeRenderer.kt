@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.network.ListingEntry
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.item.ItemStack
@@ -388,7 +389,7 @@ object EntryBadgeRenderer {
 
     fun drawInfoLines(
         context: DrawContext, entry: ListingEntry, displayName: Text,
-        centerX: Int, startY: Int, dividerW: Int
+        centerX: Int, startY: Int, dividerW: Int, maxWidth: Int = Int.MAX_VALUE
     ): Int {
         val font = MinecraftClient.getInstance().textRenderer
         val hp = StatNames.HP
@@ -492,10 +493,11 @@ object EntryBadgeRenderer {
                     y += DIVIDER_H
                 }
                 i == heldItemLine -> {
-                    // 携带物行：文字 + 物品图标整体居中
-                    val textW = font.getWidth(line)
+                    // 携带物行：文字 + 物品图标整体居中（图标占 14px，文字按去掉图标后的宽度截断）
+                    val heldText = TextUtil.truncateStyled(line, maxWidth - 14)
+                    val textW = font.getWidth(heldText)
                     val x = centerX - (textW + 14) / 2
-                    context.drawTextWithShadow(font, line, x, y, color)
+                    context.drawTextWithShadow(font, heldText, x, y, color)
                     heldIconStack(entry.heldItemId, entry.heldItemNbt)?.let { heldStack ->
                         com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                             itemStack = heldStack,
@@ -505,14 +507,18 @@ object EntryBadgeRenderer {
                     y += 10
                 }
                 i == 0 -> {
-                    // 第一行（名字★Lv）走公共名字行函数（带公母图标 + 体型字母）
-                    drawNameLine(context, line, entry.gender, centerX, y, color, entry.sizeCategory)
+                    // 第一行（名字★Lv）走公共名字行函数（带公母图标 + 体型字母）：
+                    // 尾部图标不参与文本宽度，截断预算里先扣掉（居中总宽 = 名字 + 尾部 + 6）
+                    val tail = nameTailWidth(entry.gender, entry.sizeCategory)
+                    val nameBudget = if (tail == 0) maxWidth else maxWidth - tail - 6
+                    drawNameLine(context, TextUtil.truncateStyled(line, nameBudget), entry.gender, centerX, y, color, entry.sizeCategory)
                     y += 10
                 }
                 else -> {
                     // 用"算好 x 再左对齐"的方式画（视觉上仍是居中）：drawCenteredTextWithShadow
                     // 在这套字体下会让行首汉字比后面的字高一点点，出价界面用 drawTextWithShadow 就正常
-                    context.drawTextWithShadow(font, line, centerX - font.getWidth(line) / 2, y, color)
+                    val drawn = TextUtil.truncateStyled(line, maxWidth)
+                    context.drawTextWithShadow(font, drawn, centerX - font.getWidth(drawn) / 2, y, color)
                     y += 10
                 }
             }

@@ -513,7 +513,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 行格式：左侧标签文字（统一左列 centerX-80）+ 右侧控件（开关图标 22×22 走 switchX、文字按钮 46×20 走 textBtnX，两者右缘都对齐 centerX+86）。
         // 新增设置项只需在这里按顺序加一行，y / 分隔线 / 标签位置都从行序推出（超过一屏时可滚动，见 layoutSettingsRows）
         val switchX = centerX + 64 // 右列 x：弹窗右缘(centerX+100) 留 14px 边距
-        val textBtnX = centerX + 40
+        val textBtnX = centerX + 32
         settingsRows.clear()
 
         // 精灵庆祝动画：沿用旧字段——老配置里把它关掉的玩家，精灵侧原样保持关闭
@@ -526,7 +526,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         addSettingsRow(auctionBtn, switchX, toggleText("cobblemarket.settings.animation_auction", ClientConfig.celebrationOnAuctionAndOrder), newGroup = false)
         // 图标展示模式（两态循环：静态/动态，同 balanceHud 模板）与预览图也归精灵组
         val iconAnimBtn = NineSliceButton(
-            0, 0, 46, 20,
+            0, 0, 54, 20,
             Text.translatable(iconAnimModeKey()),
             { cycleIconAnim() }
         )
@@ -563,7 +563,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
         // 余额 HUD 两项同组（之间不画分隔线）；三态循环文字按钮（一直/变动/关闭），点击循环切换
         val balanceHudBtn = NineSliceButton(
-            0, 0, 46, 20,
+            0, 0, 54, 20,
             Text.translatable(balanceHudModeKey()),
             { cycleBalanceHud() }
         )
@@ -571,7 +571,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         addSettingsRow(balanceHudBtn, textBtnX, Text.translatable("cobblemarket.settings.balance_hud"))
         // 余额 HUD 位置：进拖动编辑界面（自定义 → 拖动落位 → 确定）
         val balanceHudPosBtn = NineSliceButton(
-            0, 0, 46, 20,
+            0, 0, 54, 20,
             Text.translatable("cobblemarket.settings.balance_hud_position_custom"),
             { openBalanceHudPosEditor() }
         )
@@ -756,8 +756,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         )
         // 分隔线：标题下一条固定；其余画在「新组首行」上方 2px（跟着行一起滚，被推出可视区就不画）。
         // 同组的连续行之间不画线（余额 HUD 两项、精灵图标两项各属一组）
-        val lineX1 = centerX - 88
-        val lineX2 = centerX + 88
+        val lineX1 = centerX - 108
+        val lineX2 = centerX + 108
         context.fill(lineX1, dialogY + SETTINGS_LINE_TOP, lineX2, dialogY + SETTINGS_LINE_TOP + 1, 0xFF555555.toInt())
         for (i in 1 until settingsRows.size) {
             if (!settingsRows[i].newGroup) continue
@@ -776,7 +776,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             context.drawTextWithShadow(
                 textRenderer,
                 row.label,
-                centerX - 80, settingsRowY(i) + settingsRowHeight(i) / 2 - 4, 0xFFFFFF
+                centerX - 100, settingsRowY(i) + settingsRowHeight(i) / 2 - 4, 0xFFFFFF
             )
         }
     }
@@ -1252,7 +1252,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     override fun shouldPause() = false
 
     companion object {
-        private const val DIALOG_W = 200
+        private const val DIALOG_W = 240
         private const val DIALOG_H = 324
         // 设置弹窗内容区（相对弹窗顶）：行步进 26 = 控件高 22 + 间隙 4。
         // 内容超过一屏靠滚动显示（整行进出，见 settingsRowVisible）；done 固定在底部不参与滚动

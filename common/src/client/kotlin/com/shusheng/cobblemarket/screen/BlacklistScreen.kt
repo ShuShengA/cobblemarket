@@ -422,7 +422,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
     private fun renderPokemonDialogBackground(context: DrawContext, delta: Float) {
         val centerX = width / 2
-        val dialogW = 220
+        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         val dialogH = 180
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -766,7 +766,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
     private fun renderItemDialogBackground(context: DrawContext) {
         val centerX = width / 2
-        val dialogW = 220
+        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         val dialogH = 142
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
