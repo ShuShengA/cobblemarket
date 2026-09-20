@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.shusheng.cobblemarket.network.MarketResultPayload
@@ -24,6 +25,18 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
 
     private val panelWidth = 296
     private val rowHeight = 24
+
+    // ── 行按钮几何（**建按钮与悬停窗避让共用一处定义**，别各写一份）──
+    private val rowBtnInset = 52
+    private val rowBtnW = 46
+    private val rowBtnH = 16
+    private val rowBtnDy = 4
+
+    /** 第 [row] 行的出售按钮矩形 —— 与 `rebuildSellButtons` 同源 */
+    private fun sellButtonRect(row: Int) = TooltipPlacement.Rect(
+        width / 2 - panelWidth / 2 + panelWidth - rowBtnInset,
+        getListStartY() + row * rowHeight + rowBtnDy, rowBtnW, rowBtnH
+    )
 
     // name：显示名在背包扫描时构建一次，render 每帧取 stack.name 是分配热点
     private data class SellItem(val stack: ItemStack, val count: Int, val name: String)
@@ -87,7 +100,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         items.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, item ->
             val y = startY + i * rowHeight
             val btn = NineSliceButton(
-                leftX + panelWidth - 52, y + 4, 46, 16,
+                leftX + panelWidth - rowBtnInset, y + rowBtnDy, rowBtnW, rowBtnH,
                 Text.translatable("cobblemarket.sell.sell"),
                 { openConfirmDialog(item) }
             )
@@ -369,10 +382,13 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
         }
 
         val padding = 4
-        val tx = minOf(mouseX + 12, width - maxWidth - 12)
         val tooltipHeight = lines.size * 10 + padding
-        val tyAbove = mouseY - tooltipHeight - 4
-        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
+        // 悬停窗**不许把本行的出售按钮盖掉一半以上**：矩形按行号算几何（与 rebuildSellButtons 同源）
+        val (tx, ty) = TooltipPlacement.place(
+            mouseX = mouseX, mouseY = mouseY,
+            textW = maxWidth, textH = tooltipHeight, pad = padding,
+            screenW = width, screenH = height, avoid = sellButtonRect(hoveredRow)
+        )
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)

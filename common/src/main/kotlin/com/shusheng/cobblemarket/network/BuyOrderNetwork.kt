@@ -204,7 +204,10 @@ fun buyOrderToEntry(o: BuyOrder): BuyOrderEntry = BuyOrderEntry(
             speciesKey = p.extraData["speciesKey"],
             level = p.level,
             shiny = p.shiny,
-            extraData = p.extraData,
+            // 待交付的精灵同理：旧数据没有 moves 快照时从 NBT 现读
+            extraData = p.extraData + (
+                "moves" to com.shusheng.cobblemarket.util.MoveText.resolve(p.extraData["moves"], p.pokemonNbt)
+                ),
             count = p.count,
             itemNbt = p.itemNbt
         )
@@ -1246,7 +1249,9 @@ object BuyOrderNetwork {
             "heldItemId" to if (!pokemon.heldItemVisible || heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString(),
             "heldItemNbt" to if (pokemon.heldItemVisible) encodeHeldItemNbt(heldItemStack, registryManager) else "",
             "aspects" to pokemon.aspects.joinToString(","),
-            "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(",")
+            "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(","),
+            // 技能槽快照（4 个槽用「,」连接、空槽空串）：悬停窗技能块用，见 MoveText
+            "moves" to com.shusheng.cobblemarket.util.MoveText.of(pokemon)
         )
         pokemon.secondaryType?.let { extra["secondaryType"] = "cobblemon.type.${it.name.lowercase()}" }
         return extra

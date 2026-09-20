@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.util.StatNames
+import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
@@ -47,6 +48,26 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private val rowHeight = 24
     private val MAX_FORM_LIST_ROWS = 8
     private val MAX_ITEM_LIST_ROWS = 8
+
+    // ── 行按钮几何（**建按钮与悬停窗避让共用一处定义**，别各写一份）──
+    private val rowEditBtnInset = 98
+    private val rowRemoveBtnInset = 50
+    private val rowBtnW = 44
+    private val rowBtnH = 16
+    private val rowBtnDy = 4
+
+    /** 第 [row] 行「编辑 + 删除」两枚按钮的**并集**矩形 —— 与 `rebuildRemoveButtons` 同源 */
+    private fun rowButtonsRect(row: Int) = TooltipPlacement.Rect(
+        width / 2 - panelWidth / 2 + panelWidth - rowEditBtnInset,
+        getListStartY() + row * rowHeight + rowBtnDy,
+        rowEditBtnInset - rowRemoveBtnInset + rowBtnW, rowBtnH
+    )
+
+    /** 第 [row] 行删除按钮矩形（物品 tab 只有这一枚）—— 与 `rebuildRemoveButtons` 同源 */
+    private fun removeButtonRect(row: Int) = TooltipPlacement.Rect(
+        width / 2 - panelWidth / 2 + panelWidth - rowRemoveBtnInset,
+        getListStartY() + row * rowHeight + rowBtnDy, rowBtnW, rowBtnH
+    )
 
     // ── 主列表状态 ──
     private var currentTab = 0 // 0 = 精灵, 1 = 物品
@@ -1083,7 +1104,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             filteredPokemon().drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
                 val y = startY + i * rowHeight
                 val editBtn = NineSliceButton(
-                    leftX + panelWidth - 98, y + 4, 44, 16,
+                    leftX + panelWidth - rowEditBtnInset, y + rowBtnDy, rowBtnW, rowBtnH,
                     Text.translatable("cobblemarket.price_limit.edit"),
                     { openPokemonDialog(entry) }
                 )
@@ -1091,7 +1112,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 editButtons.add(editBtn)
                 addDrawableChild(editBtn)
                 val btn = NineSliceButton(
-                    leftX + panelWidth - 50, y + 4, 44, 16,
+                    leftX + panelWidth - rowRemoveBtnInset, y + rowBtnDy, rowBtnW, rowBtnH,
                     Text.translatable("cobblemarket.blacklist.remove"),
                     { sendToServer(RemovePokemonBlacklistPayload(entry.id)) }
                 )
@@ -1103,7 +1124,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             filteredItems().drop(scrollOffset).take(getMaxVisibleRows()).forEachIndexed { i, entry ->
                 val y = startY + i * rowHeight
                 val btn = NineSliceButton(
-                    leftX + panelWidth - 50, y + 4, 44, 16,
+                    leftX + panelWidth - rowRemoveBtnInset, y + rowBtnDy, rowBtnW, rowBtnH,
                     Text.translatable("cobblemarket.blacklist.remove"),
                     { sendToServer(RemoveItemBlacklistPayload(entry.itemId, entry.componentsSpec)) }
                 )
@@ -1304,7 +1325,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         }
         // 走富文本重载（物品悬停窗同款）：首行名字要单独上属性色，纯 String 版只能整行白。
         // 行文本内容与原先逐字相同 → 宽度/行高计算不变（宽度仍按各行完整文本量）
-        drawRichTooltip(context, tooltipCacheLines, mouseX, mouseY)
+        drawRichTooltip(context, tooltipCacheLines, mouseX, mouseY, rowButtonsRect(hoveredRow))
     }
 
     private fun buildPokemonTooltipLines(entry: PokemonBlacklistEntry): List<Pair<Text, Int>> {
@@ -1345,7 +1366,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             itemTooltipAdvancedType = null
             null
         }
-        drawRichTooltip(context, advanced ?: itemTooltipLines, mouseX, mouseY)
+        drawRichTooltip(context, advanced ?: itemTooltipLines, mouseX, mouseY, removeButtonRect(hoveredRow))
     }
 
     private fun buildItemTooltipLines(entry: ItemBlacklistEntry, type: TooltipType): List<Pair<Text, Int>> {
@@ -1371,16 +1392,20 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         return lines
     }
 
-    /** 富文本行 tooltip 渲染（照物品市场：Text 自带颜色样式优先于行色参数） */
-    private fun drawRichTooltip(context: DrawContext, lines: List<Pair<Text, Int>>, mouseX: Int, mouseY: Int) {
+    /** 富文本行 tooltip 渲染（照物品市场：Text 自带颜色样式优先于行色参数）；
+     *  [avoid] 为本行按钮矩形（按行号算几何，见 rowButtonsRect/removeButtonRect），传 null = 不避让 */
+    private fun drawRichTooltip(context: DrawContext, lines: List<Pair<Text, Int>>, mouseX: Int, mouseY: Int, avoid: TooltipPlacement.Rect? = null) {
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
 
         val padding = 4
-        val tx = minOf(mouseX + 12, width - maxWidth - 12)
         val tooltipHeight = lines.size * 10 + padding
-        val tyAbove = mouseY - tooltipHeight - 4
-        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
+        // 悬停窗**不许把本行的行按钮盖掉一半以上**：矩形按行号算几何（与 rebuildRemoveButtons 同源）
+        val (tx, ty) = TooltipPlacement.place(
+            mouseX = mouseX, mouseY = mouseY,
+            textW = maxWidth, textH = tooltipHeight, pad = padding,
+            screenW = width, screenH = height, avoid = avoid
+        )
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)

@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
@@ -22,6 +23,7 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.PokemonCelebrationAnimation
+import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
@@ -95,6 +97,26 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private val iconSize = 20
 
     private var confirmEntry: ListingEntry? = null
+
+    // ── 行按钮几何（**创建按钮与悬停窗避让共用一处定义**，别各写一份）──
+    private val rowBtnInset = 42
+    private val rowBtnW = 38
+    private val rowBtnH = 16
+    private val rowBtnDy = 4
+    private val rowH = 24
+
+    /** 第 [row] 行那个按钮（购买 / ✕）的矩形 —— 与 `rebuildBuyButtons` 同源 */
+    private fun rowButtonRect(row: Int) =
+        TooltipPlacement.Rect(width / 2 - panelWidth / 2 + panelWidth - rowBtnInset, getListStartY() + row * rowH + rowBtnDy, rowBtnW, rowBtnH)
+
+    /**
+     * 确认/下架弹窗信息区的滚动偏移（2026-09-20）：弹窗高度按屏幕钳制后，
+     * 内容超出的部分靠滚轮看（照求购单创建弹窗那套）。打开弹窗时归零。
+     */
+    private var confirmScroll = 0
+    /** 信息区设计顶（标题/图标之下起名字行）与底部按钮区高度 */
+    private val confirmContentTop = 62
+    private val confirmBottomH = 34
     private var cancelEntry: ListingEntry? = null
     private var confirmRenderable: RenderablePokemon? = null
     private var confirmDisplayName = ""
@@ -142,6 +164,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var tooltipCacheKey: UUID? = null
     private var tooltipCacheLines: List<Pair<Text?, Int>> = emptyList()
     private var tooltipCacheHeldLine = -1
+    private var tooltipCacheMovesLine = -1
     private var tooltipCacheMarksLine = -1
     private var tooltipCacheMarksRows = 0
     private var tooltipCacheMaxWidth = 0
@@ -457,7 +480,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 ButtonWidget.PressAction { openCancelDialog(entry) }
             else
                 ButtonWidget.PressAction { openConfirmDialog(entry) }
-            val btn = NineSliceButton(leftX + panelWidth - 42, y + 4, 38, 16, label, action)
+            val btn = NineSliceButton(leftX + panelWidth - rowBtnInset, y + rowBtnDy, rowBtnW, rowBtnH, label, action)
             buyButtons.add(btn)
             addDrawableChild(btn)
         }
@@ -478,6 +501,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     private fun openConfirmDialog(entry: ListingEntry) {
         confirmEntry = entry
+        confirmScroll = 0
         buildConfirmRenderable(entry)
         // 弹窗打开时自动叫一声（渲染后延迟再播，理由见 confirmCryAt）
         confirmCryAt = System.currentTimeMillis() + IconCryClick.AUTO_CRY_DELAY_MS
@@ -496,6 +520,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     private fun openCancelDialog(entry: ListingEntry) {
         cancelEntry = entry
+        confirmScroll = 0
         buildConfirmRenderable(entry)
         // 弹窗打开时自动叫一声（与购买弹窗同一套；渲染后延迟再播，理由见 confirmCryAt）
         confirmCryAt = System.currentTimeMillis() + IconCryClick.AUTO_CRY_DELAY_MS
@@ -809,6 +834,15 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+        // 确认/下架弹窗开着时：滚轮只滚弹窗信息区（弹窗被屏幕压矮时用），别把滚动漏给下层列表
+        val dialogEntry = confirmEntry ?: cancelEntry
+        if (dialogEntry != null) {
+            val maxScroll = confirmMaxScroll(dialogEntry)
+            if (maxScroll > 0) {
+                confirmScroll = (confirmScroll - verticalAmount.toInt() * 10).coerceIn(0, maxScroll)
+            }
+            return true
+        }
         // 筛选展开列表滚动
         if (filterListOpen.isNotEmpty()) {
             val total = when (filterListOpen) {
@@ -1542,15 +1576,33 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val infoRows = 13 +
             (if (entry.ball.isNotEmpty()) 1 else 0) +
             (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0)
-        return 62 + infoRows * 10 + EntryBadgeRenderer.marksBlockHeight(entry.marks) + 34
+        return 62 + infoRows * 10 +
+            EntryBadgeRenderer.movesBlockHeight(entry.moves) +
+            EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves) + 34
     }
+
+    /**
+     * 弹窗实际高度：**按屏幕钳制**（照求购单创建弹窗）—— 信息行多（技能块 / 两行证章 / 球种 / 携带物）
+     * 时设计高度能到 320+，而自动 GUI 尺寸在 1080p 下逻辑高只有 270，不钳制会顶出屏幕。
+     */
+    private fun confirmDialogH(entry: ListingEntry): Int = minOf(confirmDialogHeight(entry), height - 8)
+
+    /** 信息区可视高（弹窗高 − 顶部标题/图标 − 底部按钮区） */
+    private fun confirmViewH(entry: ListingEntry): Int =
+        (confirmDialogH(entry) - confirmContentTop - confirmBottomH).coerceAtLeast(1)
+
+    /** 信息区内容高（设计值） */
+    private fun confirmContentH(entry: ListingEntry): Int = confirmDialogHeight(entry) - confirmContentTop - confirmBottomH
+
+    private fun confirmMaxScroll(entry: ListingEntry): Int =
+        maxOf(0, confirmContentH(entry) - confirmViewH(entry))
 
     private fun renderConfirmDialog(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val entry = confirmEntry ?: cancelEntry ?: return
         val centerX = width / 2
         // 喵喵支付可用时加宽 280 容纳三枚按钮；不可用回退原宽度 220（两枚）
         val dialogW = if (payAvailable) 280 else 220
-        val dialogH = confirmDialogHeight(entry)
+        val dialogH = confirmDialogH(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
@@ -1609,10 +1661,18 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             }
         }
 
-        // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 卖家 / 价格
+        // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 技能 / 证章 / 卖家 / 价格
+        // 弹窗被屏幕压矮时**信息区可滚动**：只画可视区（scissor 裁剪），起始 y 减去滚动偏移
         val name = EntryBadgeRenderer.nameWithShinyStar(
             if (confirmDisplayName.isNotEmpty()) confirmDisplayName else entry.species, entry.shiny)
-        EntryBadgeRenderer.drawInfoLines(context, entry, name, centerX, dialogY + 62)
+        confirmScroll = confirmScroll.coerceIn(0, confirmMaxScroll(entry))
+        val viewTop = dialogY + confirmContentTop
+        val viewBottom = dialogY + dialogH - confirmBottomH
+        context.enableScissor(dialogX, viewTop, dialogX + dialogW, viewBottom)
+        EntryBadgeRenderer.drawInfoLines(
+            context, entry, name, centerX, viewTop - confirmScroll, dividerW = dialogW - 20
+        )
+        context.disableScissor()
 
         // 按钮行（btnY = 弹窗底 -30；购买且喵喵支付可用：三枚并排；否则两枚）
         val btnW = 80
@@ -1646,7 +1706,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private fun handleConfirmDialogClick(mx: Int, my: Int) {
         val centerX = width / 2
         val confirmOrCancel = confirmEntry ?: cancelEntry
-        val dialogH = confirmOrCancel?.let { confirmDialogHeight(it) } ?: 250
+        val dialogH = confirmOrCancel?.let { confirmDialogH(it) } ?: 250
         val dialogY = height / 2 - dialogH / 2
         // 中间喵喵支付按钮（购买确认弹窗且消费贷开）：点击进独立 MeowthPayScreen
         if (cancelEntry == null && payAvailable) {
@@ -1765,14 +1825,19 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             lines.add(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("  EV: ${entry.evsSpDef}").formatted(Formatting.RED)) to ivColors[4])
             lines.add(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("  EV: ${entry.evsSpd}").formatted(Formatting.RED)) to ivColors[5])
             lines.add(Text.translatable("cobblemarket.gui.friendship", entry.friendship) to 0xFF99CC)
-            // 证章区块（拥有的全部证章，纯外观）：亲密度下方两条分割线夹图标（每行 MARKS_PER_ROW 个）
+            // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：分割线 + 两行技能 + 分割线，整块在 drawMovesBlockLeft 里画
+            var movesLine = -1
+            if (MoveText.hasAny(entry.moves)) {
+                movesLine = lines.size
+                lines.add(null to 0)
+            }
+            // 证章区块（拥有的全部证章，纯外观）：技能块下方，图标行 + 下分割线（与技能块共用上分割线）
             // 服务端直接传纹理路径（不依赖客户端 Marks 注册表解析）
             var marksLine = -1
             var marksRows = 0
             val markTextures = entry.marks.mapNotNull { Identifier.tryParse(it) }
             if (markTextures.isNotEmpty()) {
                 marksRows = if (markTextures.size > EntryBadgeRenderer.MARKS_PER_ROW) 2 else 1
-                lines.add(null to 0)
                 marksLine = lines.size
                 lines.add(null to 0)
                 lines.add(null to 0)
@@ -1790,30 +1855,42 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             }
             // 证章行宽（每行 MARKS_PER_ROW 个 12px 格）
             if (marksRows > 0) maxWidth = maxOf(maxWidth, minOf(EntryBadgeRenderer.MARKS_PER_ROW, entry.marks.size) * 12)
+            maxWidth = maxOf(maxWidth, EntryBadgeRenderer.movesBlockWidth(entry.moves))
             tooltipCacheLines = lines
             tooltipCacheHeldLine = heldItemLine
+            tooltipCacheMovesLine = movesLine
             tooltipCacheMarksLine = marksLine
             tooltipCacheMarksRows = marksRows
             tooltipCacheMaxWidth = maxWidth
         }
         val lines = tooltipCacheLines
         val heldItemLine = tooltipCacheHeldLine
+        val movesLine = tooltipCacheMovesLine
         val marksLine = tooltipCacheMarksLine
         val marksRows = tooltipCacheMarksRows
         val maxWidth = tooltipCacheMaxWidth
 
         val padding = 4
-        val tx = minOf(mouseX + 12, width - maxWidth - 12)
-        val tooltipHeight = lines.size * 10 + padding + (marksRows - 1).coerceAtLeast(0) * 12
-        val tyAbove = mouseY - tooltipHeight - 4
-        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
+        val tooltipHeight = lines.size * 10 + padding + (marksRows - 1).coerceAtLeast(0) * 12 +
+            EntryBadgeRenderer.movesBlockExtra(entry.moves)
+        // 悬停窗**不许把本行的按钮（购买 / ✕）整个盖住**：自动 GUI 尺寸下逻辑屏宽小，靠右缘一挤就压在按钮上。
+        // 矩形**按行号算几何**（`rowButtonRect`，与建按钮同源）—— 不去查按钮列表，免得受列表构建时序/下标影响
+        val avoid = rowButtonRect(hoveredRow)
+        val (tx, ty) = TooltipPlacement.place(
+            mouseX = mouseX, mouseY = mouseY,
+            textW = maxWidth, textH = tooltipHeight, pad = padding,
+            screenW = width, screenH = height, avoid = avoid
+        )
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, tooltipHeight + padding, 1, ROW_BACKGROUND_TEX_H)
         var rowY = ty
         lines.forEachIndexed { i, (line, color) ->
-            if (line == null && i == marksLine) {
+            if (line == null && i == movesLine) {
+                // 技能块：分割线 + 两行技能 + 分割线（左对齐版，分割线撑满提示框全宽）
+                rowY += EntryBadgeRenderer.drawMovesBlockLeft(context, entry.moves, tx, maxWidth, rowY)
+            } else if (line == null && i == marksLine) {
                 // 证章图标行：第一行最多 MARKS_PER_ROW 个；超出的部分第二行显示「+N」
                 val textures = entry.marks.mapNotNull { Identifier.tryParse(it) }
                 textures.take(EntryBadgeRenderer.MARKS_PER_ROW).forEachIndexed { idx, texture ->

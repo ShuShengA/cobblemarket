@@ -1,8 +1,10 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
@@ -72,6 +74,24 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private val iconSize = 20
 
     private var confirmEntry: ListingEntry? = null
+
+    /** 确认弹窗信息区滚动偏移（2026-09-20）：弹窗按屏幕钳制后靠滚轮看超出部分（照求购单创建弹窗） */
+    private var confirmScroll = 0
+    private val confirmContentTop = 60
+    private val confirmBottomH = 32
+
+    // ── 行按钮几何（**建按钮与悬停窗避让共用一处定义**，别各写一份）──
+    private val rowBtnInset = 42
+    private val rowBtnW = 38
+    private val rowBtnH = 16
+    private val rowBtnDy = 4
+    private val rowH = 24
+
+    /** 第 [row] 行的 ✕（下架）按钮矩形 —— 与 `rebuildCancelButtons` 同源 */
+    private fun cancelButtonRect(row: Int) = TooltipPlacement.Rect(
+        width / 2 - panelWidth / 2 + panelWidth - rowBtnInset,
+        getListStartY() + row * rowH + rowBtnDy, rowBtnW, rowBtnH
+    )
     private var confirmRenderable: RenderablePokemon? = null
     private var confirmDisplayName = ""
     private val confirmState = FloatingState()
@@ -306,7 +326,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         val rowHeight = 24
         displayedListings().take(getMaxVisibleRows()).forEachIndexed { di, (_, entry) ->
             val y = startY + di * rowHeight
-            val btn = NineSliceButton(leftX + panelWidth - 42, y + 4, 38, 16, Text.literal("✕").formatted(Formatting.RED), ButtonWidget.PressAction { cancelListing(entry) })
+            val btn = NineSliceButton(leftX + panelWidth - rowBtnInset, y + rowBtnDy, rowBtnW, rowBtnH, Text.literal("✕").formatted(Formatting.RED), ButtonWidget.PressAction { cancelListing(entry) })
             cancelButtons.add(btn)
             addDrawableChild(btn)
         }
@@ -515,6 +535,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private fun cancelListing(entry: ListingEntry?) {
         val e = entry ?: return
         confirmEntry = e
+        confirmScroll = 0
         confirmRenderable = null
         confirmDisplayName = e.species
         val id = Identifier.tryParse(e.speciesId)
@@ -823,6 +844,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private var tooltipCacheLines: List<Pair<Text?, Int>> = emptyList()
     private var tooltipCacheHeldLine = -1
     private var tooltipCacheMaxWidth = 0
+    private var tooltipCacheMovesLine = -1
     private var tooltipCacheMarksLine = -1
 
     private fun renderTooltip(context: DrawContext, entry: ListingEntry, origIndex: Int, mouseX: Int, mouseY: Int) {
@@ -864,10 +886,15 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             lines.add(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("  EV: ${entry.evsSpDef}").formatted(Formatting.RED)) to ivColors[4])
             lines.add(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("  EV: ${entry.evsSpd}").formatted(Formatting.RED)) to ivColors[5])
             lines.add(Text.translatable("cobblemarket.gui.friendship", entry.friendship) to 0xFF99CC)
-            // 证章区块：亲密度下方两条分割线夹证章图标（照市场悬停 tooltip）
+            // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：分割线 + 两行技能 + 分割线
+            var movesLine = -1
+            if (MoveText.hasAny(entry.moves)) {
+                movesLine = lines.size
+                lines.add(null to 0)
+            }
+            // 证章区块：技能块下方，图标行 + 下分割线（与技能块共用上分割线；照市场悬停 tooltip）
             var marksLine = -1
             if (entry.marks.isNotEmpty()) {
-                lines.add(null to 0)
                 marksLine = lines.size
                 lines.add(null to 0)
                 lines.add(null to 0)
@@ -885,30 +912,40 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             }
             // 证章行宽（每行 MARKS_PER_ROW 个 12px 格）
             if (marksLine >= 0) maxWidth = maxOf(maxWidth, minOf(EntryBadgeRenderer.MARKS_PER_ROW, entry.marks.size) * 12)
+            maxWidth = maxOf(maxWidth, EntryBadgeRenderer.movesBlockWidth(entry.moves))
             tooltipCacheLines = lines
             tooltipCacheHeldLine = heldItemLine
             tooltipCacheMaxWidth = maxWidth
+            tooltipCacheMovesLine = movesLine
             tooltipCacheMarksLine = marksLine
         }
         val lines = tooltipCacheLines
         val heldItemLine = tooltipCacheHeldLine
         val maxWidth = tooltipCacheMaxWidth
+        val movesLine = tooltipCacheMovesLine
         val marksLine = tooltipCacheMarksLine
 
         val padding = 4
-        val tx = minOf(mouseX + 12, width - maxWidth - 12)
         // 证章超过一行时第二行「+N」额外占 12px
         val marksExtra = if (marksLine >= 0 && entry.marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0
-        val tooltipHeight = lines.size * 10 + padding + marksExtra
-        val tyAbove = mouseY - tooltipHeight - 4
-        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
+        val tooltipHeight = lines.size * 10 + padding + marksExtra + EntryBadgeRenderer.movesBlockExtra(entry.moves)
+        // 悬停窗**不许把本行的 ✕（下架）按钮盖掉一半以上**：本界面整屏都是下架按钮，被盖住就没法操作。
+        // 矩形按行号算几何（与 rebuildCancelButtons 同源），不去查按钮列表
+        val (tx, ty) = TooltipPlacement.place(
+            mouseX = mouseX, mouseY = mouseY,
+            textW = maxWidth, textH = tooltipHeight, pad = padding,
+            screenW = width, screenH = height, avoid = cancelButtonRect(hoveredRow)
+        )
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
-        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding + marksExtra, 1, ROW_BACKGROUND_TEX_H)
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, tooltipHeight + padding, 1, ROW_BACKGROUND_TEX_H)
         var rowY = ty
         lines.forEachIndexed { i, (line, color) ->
-            if (line == null && i == marksLine) {
+            if (line == null && i == movesLine) {
+                // 技能块：分割线 + 两行技能 + 分割线（左对齐版，分割线撑满提示框全宽）
+                rowY += EntryBadgeRenderer.drawMovesBlockLeft(context, entry.moves, tx, maxWidth, rowY)
+            } else if (line == null && i == marksLine) {
                 // 证章图标行：左对齐排（照市场悬停；超过 6 个第二行左对齐显示「+N」）
                 rowY += EntryBadgeRenderer.drawMarksRow(context, entry.marks, tx, rowY)
             } else if (line == null) {
@@ -950,14 +987,26 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         val infoRows = 13 +
             (if (entry.ball.isNotEmpty()) 1 else 0) +
             (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0)
-        return 60 + infoRows * 10 + EntryBadgeRenderer.marksBlockHeight(entry.marks) + 32
+        return 60 + infoRows * 10 +
+            EntryBadgeRenderer.movesBlockHeight(entry.moves) +
+            EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves) + 32
     }
+
+    /** 弹窗实际高度：**按屏幕钳制**（信息行多时设计高度会顶出屏幕，见求购单创建弹窗那套） */
+    private fun confirmDialogH(entry: ListingEntry): Int = minOf(confirmDialogHeight(entry), height - 8)
+
+    private fun confirmViewH(entry: ListingEntry): Int =
+        (confirmDialogH(entry) - confirmContentTop - confirmBottomH).coerceAtLeast(1)
+
+    private fun confirmContentH(entry: ListingEntry): Int = confirmDialogHeight(entry) - confirmContentTop - confirmBottomH
+
+    private fun confirmMaxScroll(entry: ListingEntry): Int = maxOf(0, confirmContentH(entry) - confirmViewH(entry))
 
     private fun renderConfirmDialog(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val entry = confirmEntry ?: return
         val centerX = width / 2
         val dialogW = 220
-        val dialogH = confirmDialogHeight(entry)
+        val dialogH = confirmDialogH(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
@@ -1005,11 +1054,17 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             }
         }
 
-        // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 卖家 / 价格
+        // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 技能 / 证章 / 卖家 / 价格
+        // 弹窗被屏幕压矮时**信息区可滚动**（scissor 裁剪 + 起始 y 减偏移）
+        confirmScroll = confirmScroll.coerceIn(0, confirmMaxScroll(entry))
+        val viewTop = dialogY + confirmContentTop
+        val viewBottom = dialogY + dialogH - confirmBottomH
+        context.enableScissor(dialogX, viewTop, dialogX + dialogW, viewBottom)
         EntryBadgeRenderer.drawInfoLines(
             context, entry, EntryBadgeRenderer.nameWithShinyStar(confirmDisplayName, entry.shiny),
-            centerX, dialogY + 60
+            centerX, viewTop - confirmScroll, dividerW = dialogW - 20
         )
+        context.disableScissor()
 
         // 确认 / 取消按钮
         val btnY = dialogY + dialogH - 28
@@ -1025,7 +1080,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
 
     private fun handleConfirmDialogClick(mx: Int, my: Int) {
         val centerX = width / 2
-        val dialogH = confirmEntry?.let { confirmDialogHeight(it) } ?: 240
+        val dialogH = confirmEntry?.let { confirmDialogH(it) } ?: 240
         val dialogY = height / 2 - dialogH / 2
         val btnY = dialogY + dialogH - 28
         val btnW = 80
@@ -1060,6 +1115,17 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         spaField?.isMouseOver(mouseX, mouseY) == true ||
         spdField?.isMouseOver(mouseX, mouseY) == true ||
         speField?.isMouseOver(mouseX, mouseY) == true
+
+    /** 确认弹窗开着时：滚轮只滚弹窗信息区（弹窗被屏幕压矮时用） */
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+        val entry = confirmEntry
+            ?: return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)
+        val maxScroll = confirmMaxScroll(entry)
+        if (maxScroll > 0) {
+            confirmScroll = (confirmScroll - verticalAmount.toInt() * 10).coerceIn(0, maxScroll)
+        }
+        return true
+    }
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         // 图标点击叫声：弹窗图标精确命中；**弹窗打开时不做整行触发** —— 整行判定只看 y，

@@ -124,8 +124,11 @@ fun auctionToEntry(a: AuctionListing): AuctionEntry = AuctionEntry(
     shiny = a.shiny,
     count = a.count,
     // 体型分类：精灵拍卖才有；物品拍卖保持原样。旧拍卖从存档 NBT 现算，无需重新上架
+    // 技能同款处理：**旧拍卖没有 moves 快照时从 NBT 现读**（升级上来的服不用重新上架）
     extraData = if (a.type == AuctionType.POKEMON) {
-        a.extraData + ("size" to PokemonSize.fromNbt(a.pokemonNbt))
+        a.extraData +
+            ("size" to PokemonSize.fromNbt(a.pokemonNbt)) +
+            ("moves" to com.shusheng.cobblemarket.util.MoveText.resolve(a.extraData["moves"], a.pokemonNbt))
     } else a.extraData,
     startingPrice = a.startingPrice,
     minIncrement = a.minIncrement,
@@ -962,7 +965,9 @@ object AuctionNetwork {
             "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(","),
             // 证章翻译 key 列表（客户端本地翻译）：聊天悬停只画得了文字，纹理路径给不出名字。
             // 老存档没有这个键 = 空串 → 悬停里不显示证章行（只增不改，不需要迁移）
-            "markKeys" to pokemon.marks.joinToString(",") { it.name }
+            "markKeys" to pokemon.marks.joinToString(",") { it.name },
+            // 技能槽快照（4 个槽用「,」连接、空槽空串）：悬停窗技能块用，见 MoveText
+            "moves" to com.shusheng.cobblemarket.util.MoveText.of(pokemon)
         )
         pokemon.secondaryType?.let { extra["secondaryType"] = "cobblemon.type.${it.name.lowercase()}" }
         return extra
@@ -1133,7 +1138,13 @@ object AuctionNetwork {
                 Text.translatable("cobblemarket.gui.friendship", extra["friendship"]?.toIntOrNull() ?: 0)
                     .styled { it.withColor(0xFF99CC) }
             )
-            // 证章（亲密度下方）：与列表悬停窗、分享播报同一位置。分隔符也走词条，
+            // 技能（亲密度下方）：两行、一行两个 —— 与悬停窗**同源**（MoveText.rows，词条由客户端本地翻译）。
+            // ⚠ 聊天悬停是纯文本、画不了分割线，所以这里只补两行技能（本 hover 其余段落也都没有分割线）；
+            // 空行直接跳过，免得聊天工具提示里多出空档
+            com.shusheng.cobblemarket.util.MoveText
+                .rows(com.shusheng.cobblemarket.util.MoveText.resolve(extra["moves"], auction.pokemonNbt))
+                .forEach { row -> if (row.string.isNotEmpty()) lines.add(row) }
+            // 证章（技能块下方）：与列表悬停窗、分享播报同一位置。分隔符也走词条，
             // 客户端本地翻译（服务端语言 ≠ 客户端语言，这里拼的中文顿号在英文端会很怪）
             val markKeys = extra["markKeys"].orEmpty().split(",").filter { it.isNotBlank() }
             if (markKeys.isNotEmpty()) {

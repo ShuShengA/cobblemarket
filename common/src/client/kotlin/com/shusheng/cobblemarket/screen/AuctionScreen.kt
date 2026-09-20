@@ -1,10 +1,12 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.iconStackOf
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.client.PokemonCelebrationAnimation
+import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.ItemCelebrationAnimation
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
@@ -87,6 +89,13 @@ class AuctionScreen(
     private val tabButtons = mutableListOf<NineSliceButton>()
     private val bidButtons = mutableListOf<NineSliceButton>()
 
+    /**
+     * 显示行号 → 该行出价按钮矩形（悬停窗避让用）。
+     * ⚠ **不能用 `bidButtons` 的下标**：构建时会跳过自己的拍卖与结算中的条目，
+     * 下标与显示行号会脱节（踩过的坑）。这里按行号记，天然对齐。
+     */
+    private val bidButtonRects = mutableMapOf<Int, TooltipPlacement.Rect>()
+
     // 操作结果提示（服务端 MarketResult 到达后短暂显示）
     private var resultMsg: String? = null
     private var resultUntil = 0L
@@ -158,6 +167,7 @@ class AuctionScreen(
     private var tooltipCacheHeldLine = -1
     private var tooltipCacheMaxWidth = 0
     /** 证章图标行在静态行列表中的索引（-1 = 无证章） */
+    private var tooltipCacheMovesLine = -1
     private var tooltipCacheMarksLine = -1
 
     // 物品悬停缓存（同 tooltipCacheKey 模式；行类型无 null 分割线，单独一组字段）
@@ -801,6 +811,7 @@ class AuctionScreen(
     private fun rebuildBidButtons() {
         bidButtons.forEach { remove(it) }
         bidButtons.clear()
+        bidButtonRects.clear()
         // 筛选展开列表/出价弹窗打开时行按钮保持隐藏：事件触发的重建会把新按钮
         // 追加到 children 末尾，浮在列表按钮/遮罩之上刺穿
         if (filterListOpen.isNotEmpty() || bidEntry != null) return
@@ -818,6 +829,7 @@ class AuctionScreen(
             )
             btn.visible = bidEntry == null
             bidButtons.add(btn)
+            bidButtonRects[i] = TooltipPlacement.Rect(btn.x, btn.y, btn.width, btn.height)
             addDrawableChild(btn)
         }
     }
@@ -854,10 +866,13 @@ class AuctionScreen(
             // 基线 190 只够 12 行，超出部分向上取整成整行（含底部 10px 余量）。
             // 加新信息行（如技能）时只改这里的 12。
             val marks = entry.extraData["marks"].orEmpty().split(",").filter { it.isNotEmpty() }
+            val moves = entry.extraData["moves"].orEmpty()
             val infoRows = 12 +
                 (if (entry.extraData["ball"].orEmpty().isNotEmpty()) 1 else 0) +
                 (if (EntryBadgeRenderer.hasHeldItemLine(entry.extraData["heldItemId"].orEmpty())) 1 else 0)
-            val leftH = 56 + infoRows * 10 + EntryBadgeRenderer.marksBlockHeight(marks)
+            val leftH = 56 + infoRows * 10 +
+                EntryBadgeRenderer.movesBlockHeight(moves) +
+                EntryBadgeRenderer.marksBlockHeight(marks, moves)
             bidDialogExtraRows = ((leftH + 10 - 190 + 9) / 10).coerceAtLeast(0)
             bidDialogW = 280
             val id = Identifier.tryParse(entry.extraData["speciesId"] ?: "")
@@ -1110,12 +1125,20 @@ class AuctionScreen(
             infoLineText(Text.literal("  $hp: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsHp"]?.toIntOrNull() ?: 0, htExtra(extra, "htHp"))}").append(Text.literal("  EV: ${extra["evsHp"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0x66FF66); infoLineText(Text.literal("  $atk: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htAtk"))}").append(Text.literal("  EV: ${extra["evsAtk"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0xFF6666)
             infoLineText(Text.literal("  $def: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htDef"))}").append(Text.literal("  EV: ${extra["evsDef"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0xFFCC66); infoLineText(Text.literal("  $spa: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpAtk"))}").append(Text.literal("  EV: ${extra["evsSpAtk"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0x6699FF)
             infoLineText(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpDef"))}").append(Text.literal("  EV: ${extra["evsSpDef"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0x66FF99); infoLineText(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpd"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpd"))}").append(Text.literal("  EV: ${extra["evsSpd"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0xFF99FF); infoLineText(Text.translatable("cobblemarket.gui.friendship", extra["friendship"]?.toIntOrNull() ?: 0), 0xFF99CC)
-            // 证章区块：上下分割线夹证章图标行（左对齐，每行 MARKS_PER_ROW 个，照悬停 tooltip）
+            // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：分割线 + 两行技能 + 分割线
+            val movesRaw = extra["moves"].orEmpty()
+            val rowW = dialogW - 156
+            if (MoveText.hasAny(movesRaw)) {
+                iy += EntryBadgeRenderer.drawMovesBlockLeft(context, movesRaw, infoX, rowW, iy)
+            }
+            // 证章区块：技能块下方，图标行 + 下分割线（左对齐，每行 MARKS_PER_ROW 个，照悬停 tooltip）
+            // 没有技能块（旧数据）时自己补回上分割线
             val marks = extra["marks"].orEmpty().split(",").filter { it.isNotEmpty() }
             if (marks.isNotEmpty()) {
-                val rowW = dialogW - 156
-                context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF555555.toInt())
-                iy += 10
+                if (!MoveText.hasAny(movesRaw)) {
+                    context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF555555.toInt())
+                    iy += 10
+                }
                 iy += EntryBadgeRenderer.drawMarksRow(context, marks, infoX, iy)
                 context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF555555.toInt())
                 iy += 10
@@ -1572,10 +1595,15 @@ class AuctionScreen(
             staticLines.add(Text.literal("  $def: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htDef"))}").append(Text.literal("  EV: ${extra["evsDef"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)) to 0xFFCC66); staticLines.add(Text.literal("  $spa: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpAtk"))}").append(Text.literal("  EV: ${extra["evsSpAtk"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)) to 0x6699FF)
             staticLines.add(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpDef"))}").append(Text.literal("  EV: ${extra["evsSpDef"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)) to 0x66FF99); staticLines.add(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpd"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpd"))}").append(Text.literal("  EV: ${extra["evsSpd"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)) to 0xFF99FF); staticLines.add(Text.translatable("cobblemarket.gui.friendship", extra["friendship"]?.toIntOrNull() ?: 0) to 0xFF99CC)
 
-            // 证章区块：亲密度下方分割线 + 证章图标行（下方那条分割线由拍卖信息前的分割线充当）
+            // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：分割线 + 两行技能 + 分割线
+            var movesLine = -1
+            if (MoveText.hasAny(extra["moves"].orEmpty())) {
+                movesLine = staticLines.size
+                staticLines.add(null to 0)
+            }
+            // 证章区块：技能块下方，只有图标行（下方那条分割线由拍卖信息前的分割线充当）
             var marksLine = -1
             if (extra["marks"].orEmpty().isNotEmpty()) {
-                staticLines.add(null to 0)
                 marksLine = staticLines.size
                 staticLines.add(null to 0)
             }
@@ -1589,9 +1617,11 @@ class AuctionScreen(
             if (marksLine >= 0) {
                 mw = maxOf(mw, minOf(EntryBadgeRenderer.MARKS_PER_ROW, extra["marks"].orEmpty().split(",").count { it.isNotEmpty() }) * 12)
             }
+            mw = maxOf(mw, EntryBadgeRenderer.movesBlockWidth(extra["moves"].orEmpty()))
             tooltipCacheStaticLines = staticLines
             tooltipCacheHeldLine = heldItemLine
             tooltipCacheMaxWidth = mw
+            tooltipCacheMovesLine = movesLine
             tooltipCacheMarksLine = marksLine
         }
         // 动态行（当前价/倒计时/领先者随出价与时间变化）每帧构建
@@ -1619,20 +1649,29 @@ class AuctionScreen(
             lines[i].first?.let { t -> mw = maxOf(mw, textRenderer.getWidth(t)) }
         }
         val heldItemLine = tooltipCacheHeldLine
+        val movesLine = tooltipCacheMovesLine
         val marksLine = tooltipCacheMarksLine
         val marks = if (marksLine >= 0) entry.extraData["marks"].orEmpty().split(",").filter { it.isNotEmpty() } else emptyList()
+        val movesRaw = entry.extraData["moves"].orEmpty()
         val pad = 4
-        val tx = minOf(mouseX + 12, width - mw - 12)
         // 证章超过一行时第二行「+N」额外占 12px
         val marksExtra = if (marksLine >= 0 && marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0
-        val th = lines.size * 10 + pad + marksExtra
-        val ty = if (mouseY - th - 4 <= 0) minOf(mouseY + 12, height - th) else mouseY - th - 4
+        val th = lines.size * 10 + pad + marksExtra + EntryBadgeRenderer.movesBlockExtra(movesRaw)
+        // 悬停窗**不许把本行的出价按钮整个盖住**（自动 GUI 尺寸下会被屏幕右缘挤到按钮上）
+        val (tx, ty) = TooltipPlacement.place(
+            mouseX = mouseX, mouseY = mouseY,
+            textW = mw, textH = th, pad = pad,
+            screenW = width, screenH = height, avoid = bidButtonRects[hoveredRow]
+        )
 
         context.matrices.push(); context.matrices.translate(0.0, 0.0, 400.0)
-        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - pad, ty - pad, mw + 2 * pad, lines.size * 10 + 2 * pad + marksExtra, 1, ROW_BACKGROUND_TEX_H)
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - pad, ty - pad, mw + 2 * pad, th + pad, 1, ROW_BACKGROUND_TEX_H)
         var rowY = ty
         lines.forEachIndexed { i, (line, color) ->
-            if (line == null && i == marksLine) {
+            if (line == null && i == movesLine) {
+                // 技能块：分割线 + 两行技能 + 分割线（左对齐版，分割线撑满提示框全宽）
+                rowY += EntryBadgeRenderer.drawMovesBlockLeft(context, movesRaw, tx, mw, rowY)
+            } else if (line == null && i == marksLine) {
                 // 证章图标行：左对齐排（照市场悬停；超过 6 个第二行左对齐显示「+N」）
                 rowY += EntryBadgeRenderer.drawMarksRow(context, marks, tx, rowY)
             } else if (line == null) {
@@ -1714,10 +1753,13 @@ class AuctionScreen(
         }
 
         val padding = 4
-        val tx = minOf(mouseX + 12, width - maxWidth - 12)
         val tooltipHeight = lines.size * 10 + padding
-        val tyAbove = mouseY - tooltipHeight - 4
-        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
+        // 物品行同样有「出价」按钮 → 一样不许把本行按钮盖住一半以上（与精灵行同源，见 bidButtonRects）
+        val (tx, ty) = TooltipPlacement.place(
+            mouseX = mouseX, mouseY = mouseY,
+            textW = maxWidth, textH = tooltipHeight, pad = padding,
+            screenW = width, screenH = height, avoid = bidButtonRects[hoveredRow]
+        )
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)

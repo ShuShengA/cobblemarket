@@ -33,6 +33,11 @@
 
 - **Custom mouse cursor**: the pointer becomes the mod's own icon while you are in the market's screens, and switches back to the system cursor when you leave; can be turned off in Settings
 
+#### Pokemon Info Display
+
+- **Moves shown in trading screens**: the tooltips of the Pokemon market / auction house / Buy Orders, the purchase and bid dialogs, the admin lists and dialogs, the Pokemon pickers when listing or creating an auction, and auction announcement hovers in chat now all show the Pokemon's four moves (two fixed rows, two per row, each name **coloured by its type**) — you no longer have to buy it to find out what it can do
+  - Moves are snapshotted **when the listing / auction is created** (like the name, IVs and marks); **listings made before this version show them too** — when the snapshot is missing the moves are read from the Pokemon data already stored in the listing, so **no re-listing is needed**
+
 #### Admin Permission Nodes
 
 - **Admin duties can be delegated**: the owner can hand a single admin duty to a player without granting OP — 8 nodes by domain (blacklist / price limits / bans / market admin / finance / auctions / Buy Orders / Server Config); OPs keep everything with zero setup
@@ -71,6 +76,9 @@
 - **Hovering a button under a dialog still showed that button's tooltip**: in the Pokemon market's buy confirmation dialog, resting the cursor on Confirm showed the "Previous page" tooltip of the button underneath (the two happen to overlap); the dialog only skipped *drawing* the content below and never made those controls invisible, and a vanilla widget's tooltip only checks `visible` — it does not care whether it is covered. The item market and the admin Pokemon list have the same structure and are fixed too (clicking was always blocked, so only the tooltip leaked)
 - **Auction end time in a chat hover did not match the screens**: hovering an auction announcement in chat showed the remaining time as a bare minute count with no colon, while the Auction House showed "Ends: 11h58m" — two different formats for the same thing; both now read the same way (which also collapsed four separate copies of that formatter, already drifted apart, into one)
 - **Label colons were half-width in Chinese**: labels such as "Seller: xxx", "Form: xxx" and "Current: xxx" in the Auction House, Admin Panel, Buy Orders, blacklist and price-limit screens used the half-width ": " in both languages; Chinese now uses the full-width "：" while English keeps ": "
+
+- **Hover tooltips could cover the row's action button**: with the GUI scale on "Auto" the logical screen is narrower, so the right edge pushes the tooltip back toward the middle and it lands on that row's Buy / Remove (✕) / Bid button — the cursor sits on the button while the tooltip hides it, leaving you to click from memory; tooltips now move to a position that does not cover the button (Pokemon market, both Auction House row types, admin panel, Buy Orders)
+- **The Buy Order "force delist" dialog showed nothing but a name**: an admin deciding whether to force-delist an order could not see what that order actually asks for (conditions, nature/ability, IV requirements, price range, note…); it now shows exactly the same details as the row tooltip, and clamps to the screen with wheel scrolling when too tall
 
 ## 1.1.1 (in development, unreleased)
 

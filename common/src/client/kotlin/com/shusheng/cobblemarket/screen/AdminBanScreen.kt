@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.AdminBanPayload
 import com.shusheng.cobblemarket.network.AdminUnbanPayload
@@ -24,6 +25,18 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     private val panelWidth = 300
     private val rowHeight = 22
     private val listStartY = 68
+
+    // ── 行按钮几何（**建按钮与悬停窗避让共用一处定义**，别各写一份）──
+    private val rowBtnInset = 60
+    private val rowBtnW = 56
+    private val rowBtnH = 16
+    private val rowBtnDy = 3
+
+    /** 第 [row] 行的解封按钮矩形 —— 与 `rebuildUnbanButtons` 同源 */
+    private fun unbanButtonRect(row: Int) = TooltipPlacement.Rect(
+        width / 2 - panelWidth / 2 + panelWidth - rowBtnInset,
+        listStartY + row * rowHeight + rowBtnDy, rowBtnW, rowBtnH
+    )
 
     private var nameField: TextFieldWidget? = null
     private var durationField: TextFieldWidget? = null
@@ -217,7 +230,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         bans.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, entry ->
             val y = listStartY + i * rowHeight
             val btn = NineSliceButton(
-                leftX + panelWidth - 60, y + 3, 56, 16,
+                leftX + panelWidth - rowBtnInset, y + rowBtnDy, rowBtnW, rowBtnH,
                 Text.translatable("cobblemarket.ban.unban"),
                 { doUnban(entry) }
             )
@@ -351,10 +364,13 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
 
         val padding = 4
-        val tx = minOf(mouseX + 12, width - maxWidth - 12)
         val tooltipHeight = lines.size * 10 + padding
-        val tyAbove = mouseY - tooltipHeight - 4
-        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
+        // 悬停窗**不许把本行的解封按钮盖掉一半以上**：矩形按行号算几何（与 rebuildUnbanButtons 同源）
+        val (tx, ty) = TooltipPlacement.place(
+            mouseX = mouseX, mouseY = mouseY,
+            textW = maxWidth, textH = tooltipHeight, pad = padding,
+            screenW = width, screenH = height, avoid = unbanButtonRect(hoveredRow)
+        )
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)

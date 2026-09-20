@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import net.minecraft.registry.Registries
@@ -397,6 +398,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
     private var tooltipCacheHeldLine = -1
     private var tooltipCacheMaxWidth = 0
     /** 证章图标行索引（-1 = 无证章） */
+    private var tooltipCacheMovesLine = -1
     private var tooltipCacheMarksLine = -1
 
     private fun renderTooltip(context: DrawContext, p: PokemonPreview, index: Int, mx: Int, my: Int) {
@@ -433,10 +435,15 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             lines.add(Text.literal("  $def: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsDef, p.htDef)}").append(Text.literal("  EV: ${p.evsDef}").formatted(Formatting.RED)) to 0xFFCC66); lines.add(Text.literal("  $spa: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpAtk, p.htSpAtk)}").append(Text.literal("  EV: ${p.evsSpAtk}").formatted(Formatting.RED)) to 0x6699FF)
             lines.add(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpDef, p.htSpDef)}").append(Text.literal("  EV: ${p.evsSpDef}").formatted(Formatting.RED)) to 0x66FF99); lines.add(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(p.ivsSpd, p.htSpd)}").append(Text.literal("  EV: ${p.evsSpd}").formatted(Formatting.RED)) to 0xFF99FF); lines.add(Text.translatable("cobblemarket.gui.friendship", p.friendship) to 0xFF99CC)
 
-            // 证章区块：亲密度下方两条分割线夹证章图标（照市场悬停 tooltip）
+            // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：分割线 + 两行技能 + 分割线
+            var movesLine = -1
+            if (MoveText.hasAny(p.moves)) {
+                movesLine = lines.size
+                lines.add(null to 0)
+            }
+            // 证章区块：技能块下方，图标行 + 下分割线（与技能块共用上分割线；照市场悬停 tooltip）
             var marksLine = -1
             if (p.marks.isNotEmpty()) {
-                lines.add(null to 0)
                 marksLine = lines.size
                 lines.add(null to 0)
                 lines.add(null to 0)
@@ -449,13 +456,16 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             }
             // 证章行宽（每行 MARKS_PER_ROW 个 12px 格）
             if (marksLine >= 0) mw = maxOf(mw, minOf(EntryBadgeRenderer.MARKS_PER_ROW, p.marks.size) * 12)
+            mw = maxOf(mw, EntryBadgeRenderer.movesBlockWidth(p.moves))
             tooltipCacheLines = lines
             tooltipCacheHeldLine = heldItemLine
             tooltipCacheMaxWidth = mw
+            tooltipCacheMovesLine = movesLine
             tooltipCacheMarksLine = marksLine
         }
         val lines = tooltipCacheLines
         val heldItemLine = tooltipCacheHeldLine
+        val movesLine = tooltipCacheMovesLine
         val marksLine = tooltipCacheMarksLine
         val mw = tooltipCacheMaxWidth
 
@@ -463,14 +473,17 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
         val tx = minOf(mx + 12, width - mw - 12)
         // 证章超过一行时第二行「+N」额外占 12px
         val marksExtra = if (marksLine >= 0 && p.marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0
-        val th = lines.size * 10 + pad + marksExtra
+        val th = lines.size * 10 + pad + marksExtra + EntryBadgeRenderer.movesBlockExtra(p.moves)
         val ty = if (my - th - 4 <= 0) minOf(my + 12, height - th) else my - th - 4
 
         context.matrices.push(); context.matrices.translate(0.0, 0.0, 400.0)
-        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - pad, ty - pad, mw + 2 * pad, lines.size * 10 + 2 * pad + marksExtra, 1, ROW_BACKGROUND_TEX_H)
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - pad, ty - pad, mw + 2 * pad, th + pad, 1, ROW_BACKGROUND_TEX_H)
         var rowY = ty
         lines.forEachIndexed { i, (line, color) ->
-            if (line == null && i == marksLine) {
+            if (line == null && i == movesLine) {
+                // 技能块：分割线 + 两行技能 + 分割线（左对齐版，分割线撑满提示框全宽）
+                rowY += EntryBadgeRenderer.drawMovesBlockLeft(context, p.moves, tx, mw, rowY)
+            } else if (line == null && i == marksLine) {
                 // 证章图标行：左对齐排（照市场悬停；超过 6 个第二行左对齐显示「+N」）
                 rowY += EntryBadgeRenderer.drawMarksRow(context, p.marks, tx, rowY)
             } else if (line == null) {
