@@ -1879,7 +1879,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
                 .append(Text.translatable(entry.ability)) to w)
             if (entry.ball.isNotEmpty()) {
-                lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_ball").string}${Text.translatable(entry.ball).string}") to w)
+                // 球名带稀有度色（与物品栏一致），别念裸词条、更别转 String 再拼
+                lines.add(EntryBadgeRenderer.ballLine(entry.ball, entry.ballItem) to w)
             }
             var heldItemLine = -1
             if (hasHeldItem) {

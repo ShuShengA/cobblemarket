@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.util
 
+import com.cobblemon.mod.common.pokemon.FormData
 import com.cobblemon.mod.common.pokemon.Species
 import net.minecraft.text.Text
 import net.minecraft.util.Identifier
@@ -14,6 +15,38 @@ object SpeciesText {
     }
 
     fun translated(species: Species): Text = Text.translatable(translationKey(species))
+
+    /**
+     * aspect 的显示名：走本模组翻译表（`cobblemarket.aspect.<名>`），未收录的显示原文。
+     *
+     * ⚠ 只用于**显示**；aspect 本身的匹配与存储一律用原始名（翻译表增删不影响已有数据）。
+     * 黑名单的形态按钮与商城窗口的形态选项共用这一份（各写一遍必然漂移）。
+     */
+    fun aspectLabel(aspect: String): String {
+        val key = "cobblemarket.aspect.$aspect"
+        val t = Text.translatable(key).string
+        return if (t == key) aspect else t
+    }
+
+    /** 超极巨化形态的 aspect 名 —— Cobblemon 数据里 gmax 形态的 aspects 就是 `["gmax"]` */
+    const val GMAX_ASPECT = "gmax"
+
+    /**
+     * 该物种**可选的形态**（给各界面的形态按钮做候选）：**滤掉超极巨化形态**。
+     *
+     * 为什么滤（2026-09-20 用户拍板）：
+     * - `gmax` 形态在 Cobblemon 数据里标着 `battleOnly`（**只在战斗中套用**）。超极巨化本该由精灵的
+     *   `gmaxFactor` 表达 —— RP 商城编辑窗那枚「超极巨化」按钮走的就是它
+     * - 让人在形态里选它，会做出一只**常驻**超极巨化外观、战斗里反而**不能**超极巨化的精灵（正好拧了）
+     * - 玩家正常拿不到这种精灵 ⇒ 黑名单 / 价格限制里列它没有意义
+     *
+     * ⚠ 判据只能用 aspects 里的 `gmax`：Cobblemon 的 `FormData` **没读** species json 的
+     *   `battleOnly` 字段（`PokemonSpecies.kt` 里只有一个 `// ToDo battleOnly`），那个标记读不到。
+     * ⚠ **只给界面候选用**：服务端那几处 `formAspectUnion`（默认形态判定）仍要走**全量** forms ——
+     *   那是匹配逻辑不是候选表，滤了会动到判定语义。
+     */
+    fun selectableForms(species: Species?): List<FormData> =
+        species?.forms.orEmpty().filter { GMAX_ASPECT !in it.aspects }
 
     // 客户端显示名：数据包物种未配语言文件时翻译返回 key 原文，fallback 到物种显示名（如 "Foo"）
     fun displayName(species: Species): String {

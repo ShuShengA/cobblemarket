@@ -601,7 +601,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 }
             } else {
                 rowStacks[origIndex]?.itemStack?.let {
-                    drawItemWithBar(context, it, slotX + 2, slotY)
+                    // ⚠ 物品图标 16 高、精灵槽 20 高，两者不能共用 slotY（行顶 +2）——
+                    //   物品图标得自己按行高居中，否则上留 2 下留 6 看着偏上（同 ItemSellScreen）
+                    drawItemWithBar(context, it, slotX + 2, y + (rowHeight - 16) / 2)
                 }
                 // 数量宽度先扣出来再截断名字（照拍卖场）：整串一起截断会先吃掉「×N」
                 val countSuffix = " ×${entry.count}"

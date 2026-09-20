@@ -677,7 +677,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 seen.add(emptySet())
                 opts.add(FormOption(Text.translatable("cobblemarket.blacklist.form_default").string, emptySet()))
             }
-            species.forms.forEach { f ->
+            // 超极巨化形态**不在候选里**（battleOnly 形态，超极巨化由 gmaxFactor 表达，玩家也拿不到）——
+            // 判据与滤法统一在 SpeciesText.selectableForms，别再各写一份
+            com.shusheng.cobblemarket.util.SpeciesText.selectableForms(species).forEach { f ->
                 val a = f.aspects.toSet()
                 if (seen.add(a)) opts.add(FormOption(formLabel(a), a))
             }

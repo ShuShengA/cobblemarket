@@ -601,7 +601,9 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 seen.add(emptySet())
                 opts.add(FormOption(Text.translatable("cobblemarket.blacklist.form_default").string, emptySet()))
             }
-            species.forms.forEach { f ->
+            // 超极巨化形态**不在候选里**（battleOnly 形态，超极巨化由 gmaxFactor 表达，玩家也拿不到）——
+            // 判据与滤法统一在 SpeciesText.selectableForms，别再各写一份
+            com.shusheng.cobblemarket.util.SpeciesText.selectableForms(species).forEach { f ->
                 val a = f.aspects.toSet()
                 if (seen.add(a)) opts.add(FormOption(formLabel(a), a))
             }
@@ -624,11 +626,9 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         previewRenderable = RenderablePokemon(species, aspects, ItemStack.EMPTY)
     }
 
-    // aspect 显示名：走本模组翻译表，未收录的 aspect 显示原文
-    private fun aspectLabel(aspect: String): String {
-        val t = Text.translatable("cobblemarket.aspect.$aspect")
-        return if (t.string == "cobblemarket.aspect.$aspect") aspect else t.string
-    }
+    // aspect 显示名走共享工具（商城窗口的形态选项也用同一份，见 SpeciesText.aspectLabel）
+    private fun aspectLabel(aspect: String): String =
+        com.shusheng.cobblemarket.util.SpeciesText.aspectLabel(aspect)
 
     private fun formLabel(aspects: Set<String>): String = when {
         PokemonBlacklistEntry.ALL_FORMS in aspects -> Text.translatable("cobblemarket.blacklist.form_all").string

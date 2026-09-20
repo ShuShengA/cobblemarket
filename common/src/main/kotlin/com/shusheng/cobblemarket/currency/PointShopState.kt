@@ -55,6 +55,15 @@ data class ShopPokemonSpec(
     val species: String,
     /** 形态（含 `shiny`）；空 = 默认形态 */
     val aspects: List<String> = emptyList(),
+    /**
+     * **概率闪光**（0f~1f，0 = 不闪）—— 用户 2026-09-20 口述的第二种闪光玩法。
+     *
+     * 与 [aspects] 里的固定 `shiny` **互斥**，两者各管一种服主设置：
+     * - **固定闪光** ⇒ `aspects` 含 `shiny`，本项恒 0
+     * - **概率闪光** ⇒ 本项 > 0，`aspects` **不含** `shiny` —— 正因如此，预览才渲染**默认（非闪光）形态**，
+     *   悬停窗也好标出「闪光 x%」
+     */
+    val shinyChance: Float = 0f,
     val level: Int? = null,
     val gender: String? = null,
     val nature: String? = null,
@@ -77,7 +86,12 @@ data class ShopPokemonSpec(
     val heldItemVisible: Boolean = true,
     /** 是否可交易（false = 玩家拿到后不能转手，服主做活动奖品时用得上） */
     val tradeable: Boolean = true,
-    /** 六项个体值（HP/攻/防/特攻/特防/速）；**null = 随机**（此时看 [minPerfectIvs]） */
+    /**
+     * 六项个体值（HP/攻/防/特攻/特防/速），有值时**恒为 6 项**；**null = 整组随机**（此时看 [minPerfectIvs]）。
+     *
+     * 有值时，每项 **`-1` = 该项没填**（生成时单独掷）—— 与黑名单 `ivHp >= 0` 同口径，
+     * 服主可以只钉死两项、其余随机。⚠ 读档时长度不是 6 的一律当 null（坏数据不参与生成）。
+     */
     val ivs: List<Int>? = null,
     /** 随机时的保底：至少几项是 31（0 = 不保底）。[ivs] 有具体值时本项无意义 */
     val minPerfectIvs: Int = 0,
@@ -86,18 +100,38 @@ data class ShopPokemonSpec(
     val evs: List<Int>? = null,
     val friendship: Int? = null,
     val nickname: String? = null,
-    /** 携带物：物品组件规格串（物品栈 NBT 的表示法，与其余界面的组件串同口径） */
+    /**
+     * 携带物：**完整物品栈 NBT 的 SNBT 串**（形如 `{id:"minecraft:diamond_sword",count:1,...}`）。
+     * 与挂单的 `ListingEntry.heldItemNbt` 同一口径 —— 客户端据此重建图标，
+     * 不带组件就丢附魔光效 / 自定义名（[[project_held_item_component]] 那坑）。
+     */
     val heldItemSpec: String? = null,
     val marks: List<String> = emptyList(),
-    val moves: List<String> = emptyList()
+    /**
+     * 四个技能槽（**技能名，空槽是空串**），形如 `thunderbolt,quickattack,,` ——
+     * 与挂单 / 拍卖 / 精灵 extraData 用的是**同一套逗号串**（见 `util/MoveText`），
+     * 客户端解析、悬停窗渲染、服务端写回全都走它，不另立格式。
+     *
+     * ⚠ 必须是**槽位串**而不是"会的招列表"：服主要能看到自己设的是第几个槽，
+     * 空串 = 该槽没设（生成时随机补）。
+     */
+    val moves: String = ""
 )
 
-/** 物品商品的规格。买了**照规格生成**，不消耗服主背包 */
+/**
+ * 物品商品的规格。买了**照规格生成**，不消耗服主背包。
+ *
+ * ⚠ **没有"一次给几个"**：买多少由玩家在购买窗里自己填（2026-09-20 用户拍板），
+ * 价格按「单价 × 数量」当场算，所以规格里只需要「是什么物品」。
+ */
 data class ShopItemSpec(
     val itemId: String,
-    val count: Int = 1,
-    /** 物品组件规格串（附魔等）；null = 无组件。与主市场组件粒度同一套表示法 */
-    val componentsSpec: String? = null
+    /**
+     * 物品组件快照（附魔等）；null = 无组件。
+     * ⚠ 与黑名单 / 价格限制 / 求购单**同一个类型、同一套白名单组件**
+     * （见 `market/ItemRuleComponents`）—— 生成物品时按它重建组件，不是 SNBT 串。
+     */
+    val componentsSpec: NbtCompound? = null
 )
 
 /**
@@ -176,6 +210,7 @@ class PointShopState private constructor() : PersistentState() {
                 val pc = NbtCompound()
                 pc.putString("species", p.species)
                 putStringList(pc, "aspects", p.aspects)
+                if (p.shinyChance > 0f) pc.putFloat("shinyChance", p.shinyChance)
                 p.level?.let { pc.putInt("level", it) }
                 p.gender?.let { pc.putString("gender", it) }
                 p.nature?.let { pc.putString("nature", it) }
@@ -195,14 +230,14 @@ class PointShopState private constructor() : PersistentState() {
                 p.nickname?.let { pc.putString("nickname", it) }
                 p.heldItemSpec?.let { pc.putString("heldItemSpec", it) }
                 if (p.marks.isNotEmpty()) putStringList(pc, "marks", p.marks)
-                if (p.moves.isNotEmpty()) putStringList(pc, "moves", p.moves)
+                if (p.moves.isNotEmpty()) pc.putString("moves", p.moves)
                 c.put("pokemon", pc)
             }
             entry.item?.let { i ->
                 val ic = NbtCompound()
                 ic.putString("itemId", i.itemId)
-                ic.putInt("count", i.count)
-                i.componentsSpec?.let { ic.putString("componentsSpec", it) }
+                // 空快照不写（读回来是 null = 无组件，与黑名单同口径）
+                i.componentsSpec?.takeIf { !it.isEmpty }?.let { ic.put("components", it) }
                 c.put("item", ic)
             }
             list.add(c)
@@ -235,6 +270,8 @@ class PointShopState private constructor() : PersistentState() {
                                 if (species.isBlank()) null else ShopPokemonSpec(
                                     species = species,
                                     aspects = readStringList(pc, "aspects"),
+                                    shinyChance = if (pc.contains("shinyChance"))
+                                        pc.getFloat("shinyChance").coerceIn(0f, 1f) else 0f,
                                     level = if (pc.contains("level")) pc.getInt("level") else null,
                                     gender = if (pc.contains("gender")) pc.getString("gender") else null,
                                     nature = if (pc.contains("nature")) pc.getString("nature") else null,
@@ -247,14 +284,16 @@ class PointShopState private constructor() : PersistentState() {
                                     dmaxLevel = if (pc.contains("dmaxLevel")) pc.getInt("dmaxLevel") else 0,
                                     heldItemVisible = if (pc.contains("heldItemVisible")) pc.getBoolean("heldItemVisible") else true,
                                     tradeable = if (pc.contains("tradeable")) pc.getBoolean("tradeable") else true,
-                                    ivs = if (pc.contains("ivs")) pc.getIntArray("ivs").toList() else null,
+                                    // 长度不是 6 的当"整组随机"：坏数组不参与生成（铁律：读取容错）
+                                    ivs = if (pc.contains("ivs"))
+                                        pc.getIntArray("ivs").toList().takeIf { it.size == 6 } else null,
                                     minPerfectIvs = if (pc.contains("minPerfectIvs")) pc.getInt("minPerfectIvs") else 0,
                                     evs = if (pc.contains("evs")) pc.getIntArray("evs").toList() else null,
                                     friendship = if (pc.contains("friendship")) pc.getInt("friendship") else null,
                                     nickname = if (pc.contains("nickname")) pc.getString("nickname") else null,
                                     heldItemSpec = if (pc.contains("heldItemSpec")) pc.getString("heldItemSpec") else null,
                                     marks = readStringList(pc, "marks"),
-                                    moves = readStringList(pc, "moves")
+                                    moves = if (pc.contains("moves")) pc.getString("moves") else ""
                                 )
                             } else null
                             val item = if (c.contains("item")) {
@@ -262,8 +301,7 @@ class PointShopState private constructor() : PersistentState() {
                                 val itemId = ic.getString("itemId")
                                 if (itemId.isBlank()) null else ShopItemSpec(
                                     itemId = itemId,
-                                    count = if (ic.contains("count")) ic.getInt("count").coerceAtLeast(1) else 1,
-                                    componentsSpec = if (ic.contains("componentsSpec")) ic.getString("componentsSpec") else null
+                                    componentsSpec = if (ic.contains("components")) ic.getCompound("components") else null
                                 )
                             } else null
                             // 规格与种类对不上（如 kind=pokemon 却没有精灵规格）→ 丢弃

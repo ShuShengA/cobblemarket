@@ -1217,7 +1217,8 @@ class AuctionScreen(
             infoLine("${Text.translatable("cobblemarket.gui.tooltip_ability").string}${Text.translatable(extra["ability"] ?: "").string}")
             // 球种（特性行下，与其他界面顺序统一；自定义球玩家需要文字说明——行内小图标认不出）
             extra["ball"]?.takeIf { it.isNotEmpty() }?.let {
-                infoLine("${Text.translatable("cobblemarket.gui.tooltip_ball").string}${Text.translatable(it).string}")
+                // 球名带稀有度色（与物品栏一致），走 Text 版而不是 String 拼
+                infoLineText(EntryBadgeRenderer.ballLine(it, extra["ballItem"].orEmpty()))
             }
             val heldItemId = extra["heldItemId"].orEmpty()
             val hasHeldItem = heldItemId.isNotEmpty() &&
@@ -1552,7 +1553,9 @@ class AuctionScreen(
                 }
             } else {
                 rowStacks[origIndex]?.itemStack?.let {
-                    drawItemWithBar(context, it, slotX + 2, slotY)
+                    // ⚠ 物品图标 16 高、精灵槽 20 高，别共用 slotY（行顶 +2）——
+                    //   物品图标按行高自己居中，否则上留 2 下留 6 看着偏上（2026-09-20 用户实测）
+                    drawItemWithBar(context, it, slotX + 2, y + (rowHeight - 16) / 2)
                 }
                 // 数量宽度先扣出来再截断名字：整串一起截断会先吃掉「×N」，模组长名物品看不到卖多少个
                 val countSuffix = " ×${entry.count}"
@@ -1707,7 +1710,7 @@ class AuctionScreen(
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
                 .append(Text.translatable(extra["ability"] ?: "")) to 0xFFFFFF)
             extra["ball"]?.takeIf { it.isNotEmpty() }?.let {
-                staticLines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_ball").string}${Text.translatable(it).string}") to 0xFFFFFF)
+                staticLines.add(EntryBadgeRenderer.ballLine(it, extra["ballItem"].orEmpty()) to 0xFFFFFF)
             }
             val heldItemId = extra["heldItemId"].orEmpty()
             val hasHeldItem = heldItemId.isNotEmpty() &&

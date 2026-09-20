@@ -27,6 +27,32 @@ fun drawScreenDimMask(context: DrawContext, width: Int, height: Int) {
     context.fill(0, 0, width, height, 0xC0000000.toInt())
 }
 
+val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
+
+/** 槽位贴图是 66×66 的方图 */
+const val POKEMON_SLOT_TEX_SIZE = 66
+
+/**
+ * 精灵图标的**槽背景**（66×66 的方图缩放到 [size]，左上角对齐）。
+ *
+ * 列表行 / 弹窗预览 / 商城格子里的精灵图标都该垫这一张 —— 模型直接浮在格子上会显得没有底座。
+ *
+ * ⚠ 缩放必须走 matrices：`drawTexture` 的 width/height 是**采样区域**，直接传缩放后的尺寸
+ * 只会把原图左上角那一块抽出来放大（项目里踩过的 `reference-gui-drawtexture-scale`）。
+ */
+fun drawPokemonSlot(context: DrawContext, x: Int, y: Int, size: Int) {
+    val scale = size / POKEMON_SLOT_TEX_SIZE.toFloat()
+    context.matrices.push()
+    context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
+    context.matrices.scale(scale, scale, 1f)
+    context.drawTexture(
+        POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f,
+        POKEMON_SLOT_TEX_SIZE, POKEMON_SLOT_TEX_SIZE,
+        POKEMON_SLOT_TEX_SIZE, POKEMON_SLOT_TEX_SIZE
+    )
+    context.matrices.pop()
+}
+
 fun drawNineSlice(
     context: DrawContext,
     texture: Identifier,
