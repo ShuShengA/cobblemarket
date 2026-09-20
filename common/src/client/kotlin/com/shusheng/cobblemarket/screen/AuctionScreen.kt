@@ -1320,13 +1320,14 @@ class AuctionScreen(
             Text.translatable("cobblemarket.auction.title").formatted(Formatting.GOLD),
             centerX, 20, 0xFFFFFF)
 
-        // 余额（左上角，来自全局缓存）
+        // 余额：**另起一行**（标题 y=20 居中、余额 y=33 左对齐）—— 与标题同一行时，余额一长就压到标题上（2026-09-21 用户报）。
+        // 排版与市场界面一致（那边标题 y=14 / 余额 y=31），下面到 tab 行（y=50/y=70）还有余量
         val balText = com.shusheng.cobblemarket.client.BalanceCache.balance
         if (balText.isNotEmpty()) {
             context.drawTextWithShadow(textRenderer,
                 Text.translatable("cobblemarket.gui.balance",
                     Text.literal(balText + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
-                leftX + 4, 20, 0xFFFFFF)
+                leftX + 4, 33, 0xFFFFFF)
         }
 
         // 操作结果提示
