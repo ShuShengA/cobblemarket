@@ -21,7 +21,7 @@ import net.minecraft.util.Identifier
 class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_title")) {
 
     private val dialogW = minOf(360, width - 40).coerceAtLeast(200)
-    private val dialogH = 320
+    private val dialogH = 306
 
     // 与 PurpleCardApplyInfoPayload.conditions 同序（服务端 FinanceNetwork.sendPurpleCardApplyInfo 构造）
     private val conditionKeys = listOf(
@@ -58,7 +58,7 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
 
         // 底部按钮（居中；持有者=补发紫卡，非持有者=申请，资格/开关不符时置灰文案区分）
         applyButton = NineSliceButton(
-            width / 2 - 50, dialogY + dialogH - 44, 100, 20,
+            width / 2 - 50, dialogY + dialogH - 30, 100, 20,
             Text.translatable("cobblemarket.card.apply_btn"),
             {
                 // 置灰态（资格不符/未开放/快照未到）：点击播 fail 音效提示，不发请求（照入口喵喵银行按钮 dimmed 模式）
