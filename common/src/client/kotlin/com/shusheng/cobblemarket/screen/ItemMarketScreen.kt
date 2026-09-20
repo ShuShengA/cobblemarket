@@ -566,11 +566,12 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             val countText = "×${entry.count}"
             context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 2, 0xFFFFFF, false)
 
-            // 单位走统一入口，币种取**这条挂单自己的**（行内用恒定 ₽ 写法）
-            val priceText = com.shusheng.cobblemarket.client.amountWithUnit(
+            // 单位走统一入口，币种取这条挂单自己的；格子很窄，超宽就截断（钱数优先于单位）
+            val priceTextRaw = com.shusheng.cobblemarket.client.amountWithUnit(
                 com.shusheng.cobblemarket.client.formatPriceShort(entry.price),
                 entry.isPoints, entry.currencyName, inline = true
             )
+            val priceText = com.shusheng.cobblemarket.util.TextUtil.truncateString(priceTextRaw.string, slotSize - 6)
             context.drawText(textRenderer, priceText, x + 3, y + slotSize - 10, 0xFFAA00, false)
         }
 
