@@ -796,7 +796,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
     private fun renderCancelDialogBackground(context: DrawContext, delta: Float) {
         val entry = cancelEntry ?: return
         val centerX = width / 2
-        val dialogW = 280
+        val dialogW = minOf(340, width - 40).coerceAtLeast(200)
         val dialogH = cancelDialogHeight(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2

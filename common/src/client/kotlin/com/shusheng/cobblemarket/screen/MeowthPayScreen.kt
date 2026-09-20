@@ -26,7 +26,7 @@ class MeowthPayScreen(
     private val onBack: () -> Unit
 ) : Screen(Text.translatable("cobblemarket.meowth_pay.title")) {
 
-    private val dialogW = 280
+    private val dialogW = minOf(340, width - 40).coerceAtLeast(200)
     private val dialogH = 170
 
     private var plans = listOf<Pair<Int, Double>>()

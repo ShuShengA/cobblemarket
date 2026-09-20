@@ -211,7 +211,7 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
     private fun renderRevokeDialog(context: DrawContext) {
         val entry = revokeEntry ?: return
         val centerX = width / 2
-        val dialogW = 280
+        val dialogW = minOf(380, width - 40).coerceAtLeast(200)
         val dialogH = 160
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -231,9 +231,15 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
             "cobblemarket.loan_history.revoke_l3_text" to 0xFFFFFF,
             "cobblemarket.loan_history.revoke_l4_warn" to 0xFF5555
         )
+        // 可用宽从布局反算（左右各留 12），别写死；玩家名是唯一变长段，
+        // 先按剩余宽度截名字保住尾部后果文案，再整行截断兜底
+        val avail = dialogW - 24
         var ty = dialogY + 36
         lines.forEach { (key, color) ->
-            val text = Text.translatable(key, entry.playerName).string
+            val fixed = Text.translatable(key, "").string
+            val nameBudget = (avail - textRenderer.getWidth(fixed)).coerceAtLeast(0)
+            val name = TextUtil.truncateString(entry.playerName, nameBudget)
+            val text = TextUtil.truncateString(Text.translatable(key, name).string, avail)
             if (text.isEmpty()) return@forEach
             context.drawTextWithShadow(textRenderer, text, dialogX + 12, ty, color)
             ty += 10

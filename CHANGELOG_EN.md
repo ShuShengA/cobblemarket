@@ -4,6 +4,7 @@
 
 ### Fixes
 
+- **Text overflowing its control in a few screens in English mode** (with "Force Unicode Font" off, some English text drew past its button or dialog border; the Chinese UI is unaffected). This went unnoticed because the option is on by default in the development environment; every issue found so far has been fixed
 - **Chinese search missed Pokemon**: in the Pokemon market and the admin Pokemon list, typing Chinese could only ever find one of the Pokemon whose name contains that text — searching "鬼斯" found only "鬼斯通" (and vice versa, whichever came first internally, so it looked random), and the other could never be found at all. Now **everything whose name contains the text shows up**. English and pinyin search are unaffected
 - **Typing a Chinese Pokemon name in the blacklist / price limit / buy order screens picked the wrong Pokemon**: those three screens designate a single Pokemon by name, and typing "鬼斯" actually selected "鬼斯通" (same root cause) — so a blacklist entry, a price rule or a buy order silently ended up on a different Pokemon. Now **an exact name match wins**, and when several match, **left/right arrows** appear next to the preview so you can flip through them (with a "current / total" counter); whichever is shown is the one that gets used
 - **Balance HUD was not hidden by F1**: it stayed on screen after the vanilla HUD was hidden (in the way when taking screenshots or recording); it now hides together with the vanilla HUD

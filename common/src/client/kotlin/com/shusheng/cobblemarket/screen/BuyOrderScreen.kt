@@ -649,7 +649,7 @@ class BuyOrderScreen(
     private fun renderForceCancelBackground(context: DrawContext) {
         val entry = forceCancelEntry ?: return
         val centerX = width / 2
-        val dialogW = 220
+        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         val dialogH = 190
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -1367,7 +1367,7 @@ class BuyOrderScreen(
 
     private fun renderCreateDialogBackground(context: DrawContext, delta: Float) {
         val centerX = width / 2
-        val dialogW = 280
+        val dialogW = minOf(340, width - 40).coerceAtLeast(200)
         val dialogH = if (createTab == 0) 276 else 196
         val dialogX = centerX - dialogW / 2
         val dialogY = createDialogY()
@@ -2059,7 +2059,7 @@ class BuyOrderScreen(
         val entry = reviewEntry ?: return
         val pending = entry.pending ?: return
         val centerX = width / 2
-        val dialogW = 280
+        val dialogW = minOf(340, width - 40).coerceAtLeast(200)
         // 物品词条选择（先于布局）：Shift 完整词条 / Ctrl 调试信息按需构建（Fabric tooltip 信息块只在构建时按键按住才生成）
         var itemLines: List<Text>? = null
         var itemExtra = 0
@@ -2113,7 +2113,7 @@ class BuyOrderScreen(
                 context, listing,
                 EntryBadgeRenderer.nameWithShinyStar(name, pending.shiny),
                 // +26：标题基线在 +14（字底约 +15），起点 +22 时名字行与标题几乎贴合，留 4px 间隙
-                centerX, dialogY + 26
+                centerX, dialogY + 26, dialogW - 24
             )
         } else {
             // 物品行：图标 + 名称 + 数量整体居中（照交付弹窗形态行格式）；
@@ -2330,7 +2330,7 @@ class BuyOrderScreen(
     private fun renderDeliverDialogBackground(context: DrawContext) {
         val entry = deliverEntry ?: return
         val centerX = width / 2
-        val dialogW = 280
+        val dialogW = minOf(340, width - 40).coerceAtLeast(200)
         // 有买家留言时弹窗加高一行，与控件下移量一致（否则底部按钮会贴边）
         val noteShift = deliverNoteShift()
         val dialogH = (if (entry.type == "POKEMON") 150 else 152) + noteShift

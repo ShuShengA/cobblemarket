@@ -8,6 +8,7 @@ import com.shusheng.cobblemarket.network.CardHolderBoardPayload
 import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestCardHolderBoardPayload
 import com.shusheng.cobblemarket.platform.sendToServer
+import com.shusheng.cobblemarket.util.TextUtil
 import com.mojang.authlib.GameProfile
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
@@ -25,6 +26,35 @@ import java.util.UUID
  * 进入界面时拉取额度信息（RequestCreditInfoPayload）。
  */
 class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.title")) {
+
+    private companion object {
+        /**
+         * 卡片与持有者面板的宽度（面板宽度就是照上方卡片定的，二者恒等）。
+         * 卡片是 16px 图标按 scale 放大 → scale = CARD_W / 16。
+         * ⚠ 上限 128：面板贴在背景外侧、只能往屏幕中心加宽，再加宽会越过左下「借款历史」按钮
+         *   （按钮左缘 = width/2 − 102，面板右缘 = width/2 − (CARD_OUTER − CARD_W)）。
+         */
+        const val CARD_W = 128
+
+        /** 卡片/面板「外缘」距屏幕中心的距离：紫卡左缘 −CARD_OUTER、黑卡右缘 +CARD_OUTER（加宽只往中心扩） */
+        const val CARD_OUTER = 238
+
+        /** 卡片顶边相对背景顶的偏移 */
+        const val CARD_TOP = 2
+
+        /** 面板顶边相对背景顶的偏移：卡片底（CARD_TOP + CARD_W）往上压 18px，让开卡片贴图的透明边距 */
+        const val PANEL_TOP = CARD_TOP + CARD_W - 18
+
+        /** 面板高度（标题区 29 + 5 行 × 20 + 底部余量 4） */
+        const val PANEL_H = 133
+
+        /**
+         * 卡片「可见内容」的上下边界（相对卡片顶）：贴图 256px 的内容 y∈[46,208]，上下各约 18% 是透明边距，
+         * 点击区域按可见内容收窄。按 CARD_W 等比换算（104px 时为 [16,88]，128px 时为 [20,108]）。
+         */
+        const val CARD_SHOW_TOP = 20
+        const val CARD_SHOW_BOTTOM = 108
+    }
 
     private var backButton: NineSliceButton? = null
     private var rulesButton: NineSliceButton? = null
@@ -220,10 +250,11 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             net.minecraft.util.Identifier.of("cobblemarket", "meowth_purple_card")
         )
         if (cardItem != net.minecraft.registry.Registries.ITEM.get(net.minecraft.util.Identifier.of("minecraft", "air"))) {
-            // 显示尺寸 = 16 × scale ≈ 104px；移出背景并留 6px 空隙：卡右缘 = 背景左缘 − 6 → x = −238
-            // 垂直位置：卡底部对齐背景（213 高）垂直中间 → cardY = bgTop + 106 − 104
-            val scale = 6.5
-            val cardX = width / 2 - 238
+            // 显示尺寸 = 16 × scale = 128px（与下方持有者面板同宽，面板宽度就是照卡片定的）；
+            // 移出背景并留 6px 空隙：卡右缘 = 背景左缘 − 6 → x = −238（外缘不动，只往中心扩）
+            // ⚠ 上限 128：再加宽面板会越过左下「借款历史」按钮（按钮左缘 = width/2 − 102）
+            val scale = CARD_W / 16.0
+            val cardX = width / 2 - CARD_OUTER
             val cardY = bgTop + 2
             com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                 itemStack = net.minecraft.item.ItemStack(cardItem),
@@ -236,8 +267,9 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             net.minecraft.util.Identifier.of("cobblemarket", "meowth_black_card")
         )
         if (blackCardItem != net.minecraft.registry.Registries.ITEM.get(net.minecraft.util.Identifier.of("minecraft", "air"))) {
-            val scale = 6.5
-            val cardX = width / 2 + 134
+            // 与紫卡对称：卡右缘保持 +238 不动 → 左缘 = 238 − 128 = +110
+            val scale = CARD_W / 16.0
+            val cardX = width / 2 + CARD_OUTER - CARD_W
             val cardY = bgTop + 2
             com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                 itemStack = net.minecraft.item.ItemStack(blackCardItem),
@@ -246,10 +278,11 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             )
         }
 
-        // 两张卡下方的持有者面板（所有人可见；面板从 bgTop+88 起，底 212 在背景 213 内）
-        renderHolderBoard(context, width / 2 - 238, "cobblemarket.card.board_purple_title", 0xFF55FF,
+        // 两张卡下方的持有者面板（所有人可见）：左右边缘与上方卡片对齐（同 x、同宽 128），
+        // 纵向跟着卡片长高下移 24px —— 与卡片保持原有的 18px 重叠（让出卡片贴图的透明边距）
+        renderHolderBoard(context, width / 2 - CARD_OUTER, "cobblemarket.card.board_purple_title", 0xFF55FF,
             purpleBoardEntries, purpleBoardMax, purpleBoardOffset)
-        renderHolderBoard(context, width / 2 + 134, "cobblemarket.card.board_black_title", 0x555555,
+        renderHolderBoard(context, width / 2 + CARD_OUTER - CARD_W, "cobblemarket.card.board_black_title", 0x555555,
             blackBoardEntries, blackBoardMax, blackBoardOffset)
 
         // 规则按钮悬停面板（照拍卖场规则面板：自绘 + 悬停位置自适应）
@@ -283,14 +316,14 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             }
         }
         // 关市时点置灰的「喵喵的帮助」：3 秒红字提示（文案与入口界面关市提示同一口径）。
-        // 位置取背景底部居中：上排按钮到 bgTop+180 为止，两侧持有者面板在背景外（±134 起），
-        // 中间这段（约 12 字宽 = ±54）是空的
+        // 位置取背景底部居中，只有两侧持有者面板之间这条缝是空的 → 完整句子放不下一行，
+        // 故按缝隙宽折行居中（词条不动，入口界面那边空间够、仍是单行显示）
         if (System.currentTimeMillis() < loanNoticeUntil) {
-            context.drawCenteredTextWithShadow(
-                textRenderer,
-                Text.translatable("cobblemarket.market.closed").string,
-                width / 2, bgTop + 190, 0xFF5555
-            )
+            val gapW = (CARD_OUTER - CARD_W) * 2 - 12   // 两侧面板内缘之间，再各留 6px 安全边距
+            textRenderer.wrapLines(Text.literal(Text.translatable("cobblemarket.market.closed").string), gapW)
+                .forEachIndexed { i, line ->
+                    context.drawCenteredTextWithShadow(textRenderer, line, width / 2, bgTop + 186 + i * 10, 0xFF5555)
+                }
         }
     }
 
@@ -375,17 +408,17 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val result = super.mouseClicked(mouseX, mouseY, button)
         if (button != 0) return result
-        // 左侧紫卡点击 → 申请紫卡弹窗（区域与渲染一致：x -238 宽 104、y bgTop+2 高 104）
-        // 上下收窄：贴图 256px 内容 y∈[46,208]，上下各约 18% 透明——104px 渲染区内内容约占 [19,85]，留余量取 [16,88]
-        val cardX = width / 2 - 238
-        val cardY = bgTop() + 2
-        if (mouseX >= cardX && mouseX < cardX + 104 && mouseY >= cardY + 16 && mouseY < cardY + 88) {
+        // 左侧紫卡点击 → 申请紫卡弹窗（区域与渲染恒等：x −CARD_OUTER、宽 CARD_W、顶 bgTop+CARD_TOP）
+        // 上下按可见内容收窄（贴图上下各约 18% 透明），收窄量见 CARD_SHOW_TOP / CARD_SHOW_BOTTOM
+        val cardX = width / 2 - CARD_OUTER
+        val cardY = bgTop() + CARD_TOP
+        if (mouseX >= cardX && mouseX < cardX + CARD_W && mouseY >= cardY + CARD_SHOW_TOP && mouseY < cardY + CARD_SHOW_BOTTOM) {
             client?.setScreen(PurpleCardApplyScreen())
             return true
         }
-        // 右侧黑卡点击 → 申请黑卡弹窗（与紫卡对称：x +134 宽 104，上下收窄同紫卡）
-        val blackCardX = width / 2 + 134
-        if (mouseX >= blackCardX && mouseX < blackCardX + 104 && mouseY >= cardY + 16 && mouseY < cardY + 88) {
+        // 右侧黑卡点击 → 申请黑卡弹窗（与紫卡左右对称：x = +CARD_OUTER − CARD_W，收窄同理）
+        val blackCardX = width / 2 + CARD_OUTER - CARD_W
+        if (mouseX >= blackCardX && mouseX < blackCardX + CARD_W && mouseY >= cardY + CARD_SHOW_TOP && mouseY < cardY + CARD_SHOW_BOTTOM) {
             client?.setScreen(BlackCardApplyScreen())
             return true
         }
@@ -405,11 +438,13 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         max: Long,
         offset: Int
     ) {
-        val panelY = bgTop() + 88
-        val panelW = 104
+        // 纵向 +112（原 +88）：上方卡片加高 24px 后同步下移，保持与卡片的相对位置不变
+        // 宽度 128（原 104）：与上方卡片同宽；上限 128 —— 再加宽会越过左下「借款历史」按钮
+        val panelY = bgTop() + PANEL_TOP
+        val panelW = CARD_W
         // 标题拆两行（卡名 + 计数）：英文全名太长一行放不下；
         // 面板顶在卡片可见内容下方（不遮卡片），标题整体下移避开面板顶部边框；标题区 29 + 5 行 × 20 + 底部余量 4 = 133
-        val panelH = 133
+        val panelH = PANEL_H
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, panelX, panelY, panelW, panelH, 0, DIALOG_BACKGROUND_TEX_H)
         // 第一行卡名（英文全名超宽时格式码安全截断：§ 码不计宽、不拆码，截断处补 …）；第二行计数
         val nameText = Text.translatable(titleKey)
@@ -426,9 +461,13 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         val rowHeight = 20
         val startY = panelY + 29
         if (entries.isEmpty()) {
+            // 空态文案同样要按面板宽截断：英文 "No card holders yet"（约 114px）曾比 104 的面板还宽，
+            // 居中绘制 ⇒ 两侧各露出一截（2026-09-20 用户实测截图，扫描报告没抓到）
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.card.manage_empty").formatted(Formatting.GRAY),
+                Text.literal(
+                    TextUtil.truncateString(Text.translatable("cobblemarket.card.manage_empty").string, panelW - 12)
+                ).formatted(Formatting.GRAY),
                 panelX + panelW / 2, startY + 8, 0xFFFFFF
             )
             return
@@ -436,8 +475,10 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         entries.drop(offset).take(boardVisibleRows()).forEachIndexed { i, e ->
             val y = startY + i * rowHeight
             context.fill(panelX + 4, y, panelX + panelW - 4, y + 1, 0xFF555555.toInt())
-            // 名字与头像都行内垂直居中（9px 字考虑基线取 y+6）；名字右移 2、头像左移 2，向中间靠拢
-            context.drawTextWithShadow(textRenderer, Text.literal(truncateName(e.name, 72)), panelX + 6, y + 6, 0xFFFFFF)
+            // 名字与头像都行内垂直居中（9px 字考虑基线取 y+6）；名字右移 2、头像左移 2，向中间靠拢。
+            // 名字截断阈值从 panelW 反算（左内边距 6 + 名字右间隙 4 + 头像区 22），面板加宽时自动跟着走 ——
+            // 原先写死 72 是照旧面板 104 算的，面板加宽到 128 后没跟着调、名字被白白提前截掉 24px
+            context.drawTextWithShadow(textRenderer, Text.literal(truncateName(e.name, panelW - 32)), panelX + 6, y + 6, 0xFFFFFF)
             // 头像 16px 在行高 20 内上下各 2px 居中（上下分割线正中）
             drawAvatar(context, e.uuid, e.name, panelX + panelW - 4 - 16 - 2, y + 2, 16)
         }
@@ -490,15 +531,15 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
-        val panelY = bgTop() + 88
-        fun inPanel(panelX: Int) = mouseX >= panelX && mouseX < panelX + 104 && mouseY >= panelY && mouseY < panelY + 133
+        val panelY = bgTop() + PANEL_TOP
+        fun inPanel(panelX: Int) = mouseX >= panelX && mouseX < panelX + CARD_W && mouseY >= panelY && mouseY < panelY + PANEL_H
         when {
-            inPanel(width / 2 - 238) && purpleBoardEntries.size > boardVisibleRows() -> {
+            inPanel(width / 2 - CARD_OUTER) && purpleBoardEntries.size > boardVisibleRows() -> {
                 purpleBoardOffset = (purpleBoardOffset - verticalAmount.toInt())
                     .coerceIn(0, purpleBoardEntries.size - boardVisibleRows())
                 return true
             }
-            inPanel(width / 2 + 134) && blackBoardEntries.size > boardVisibleRows() -> {
+            inPanel(width / 2 + CARD_OUTER - CARD_W) && blackBoardEntries.size > boardVisibleRows() -> {
                 blackBoardOffset = (blackBoardOffset - verticalAmount.toInt())
                     .coerceIn(0, blackBoardEntries.size - boardVisibleRows())
                 return true

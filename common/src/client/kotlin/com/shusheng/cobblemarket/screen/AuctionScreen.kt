@@ -14,6 +14,7 @@ import com.shusheng.cobblemarket.network.PlaceBidPayload
 import com.shusheng.cobblemarket.network.RequestAuctionListPayload
 import com.shusheng.cobblemarket.network.RequestBalancePayload
 import com.shusheng.cobblemarket.platform.sendToServer
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.sound.PositionedSoundInstance
 import net.minecraft.sound.SoundEvent
@@ -45,6 +46,10 @@ class AuctionScreen(
 
     private val panelWidth = 296
     private val rowHeight = 24
+
+    /** 筛选按钮宽度（三枚并排：32 起 60 / 96 起 96 / 196 起 96，铺满整行到面板右缘），文字截断按此反算 */
+    private val filterTypeW = 60
+    private val filterValueW = 96
 
     private var currentTab = initialTab.coerceIn(0, 2) // 0 = 精灵, 1 = 物品, 2 = 我的
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练（仅精灵 tab）
@@ -306,21 +311,21 @@ class AuctionScreen(
         updateGenderButton()
         addDrawableChild(genderButton)
         typeButton = NineSliceButton(
-            leftX + 32, 68, 60, 20,
+            leftX + 32, 68, filterTypeW, 20,
             typeButtonText(),
             { toggleFilterList("type") },
             if (typeFilter.isNotEmpty()) typeColor("cobblemon.type.$typeFilter") else 0xFFFFFF
         )
         addDrawableChild(typeButton)
         abilityButton = NineSliceButton(
-            leftX + 96, 68, 96, 20,
+            leftX + 96, 68, filterValueW, 20,
             abilityButtonText(),
             { toggleFilterList("ability") },
             if (abilityFilter.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
         )
         addDrawableChild(abilityButton)
         natureButton = NineSliceButton(
-            leftX + 196, 68, 96, 20,
+            leftX + 196, 68, filterValueW, 20,
             natureButtonText(),
             { toggleFilterList("nature") },
             if (natureFilter.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
@@ -365,19 +370,28 @@ class AuctionScreen(
     private fun typeButtonText(): Text {
         val label = if (typeFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable("cobblemon.type.$typeFilter")
-        return Text.translatable("cobblemarket.gui.type").append(": ").append(label)
+        return filterButtonText("cobblemarket.gui.type", label, filterTypeW)
     }
 
     private fun abilityButtonText(): Text {
         val label = if (abilityFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable(abilityFilter)
-        return Text.translatable("cobblemarket.buy_order.ability_label").append(": ").append(label)
+        return filterButtonText("cobblemarket.buy_order.ability_label", label, filterValueW)
     }
 
     private fun natureButtonText(): Text {
         val label = if (natureFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable(natureFilter)
-        return Text.translatable("cobblemarket.buy_order.nature_label").append(": ").append(label)
+        return filterButtonText("cobblemarket.buy_order.nature_label", label, filterValueW)
+    }
+
+    /**
+     * 筛选按钮文字 =「标签: 值」。三枚按钮并排铺满整行（右缘贴面板边），加宽不了，
+     * 故值超宽时按按钮宽度截断（两侧各留 4px）—— 属性名/特性名/性格名都能是长词，中文「属性: 超能力」也已吃光边距。
+     */
+    private fun filterButtonText(labelKey: String, value: Text, buttonW: Int): Text {
+        val prefix = Text.translatable(labelKey).append(": ")
+        return prefix.append(Text.literal(TextUtil.truncateString(value.string, buttonW - 8 - textRenderer.getWidth(prefix))))
     }
 
     private val typeOptions = listOf("normal","fire","water","electric","grass","ice","fighting","poison","ground","flying",

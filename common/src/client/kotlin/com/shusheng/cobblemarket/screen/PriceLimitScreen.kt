@@ -48,6 +48,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private val MAX_ITEM_LIST_ROWS = 8
     private val MAX_FORM_LIST_ROWS = 8
 
+    /** V 档 / 形态两个并排选择按钮的宽度；文字截断阈值按此反算（= 宽 − 8，两侧各留 4px） */
+    private val selectBtnW = 68
+
     // ── 主列表状态 ──
     private var currentTab = 0 // 0 = 精灵, 1 = 物品
     private var pokemonEntries = listOf<PokemonPriceLimitEntry>()
@@ -334,12 +337,12 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         addDrawableChild(shinyButton)
         updateShinyButton()
 
-        vButton = NineSliceButton(centerX - 80, dialogY + 48, 68, 14, Text.literal(""), { toggleVList() })
+        vButton = NineSliceButton(centerX - 80, dialogY + 48, selectBtnW, 14, Text.literal(""), { toggleVList() })
         vButton?.visible = false
         addDrawableChild(vButton)
 
         // 形态选择按钮：与 V 数按钮并排各占 68px（中间留 4px 空隙），只有解析出多形态物种时显示
-        formButton = NineSliceButton(centerX - 8, dialogY + 48, 68, 14, Text.literal(""), { toggleFormList() })
+        formButton = NineSliceButton(centerX - 8, dialogY + 48, selectBtnW, 14, Text.literal(""), { toggleFormList() })
         formButton?.visible = false
         addDrawableChild(formButton)
 
@@ -425,7 +428,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     private fun renderPokemonDialogBackground(context: DrawContext, delta: Float) {
         val centerX = width / 2
-        val dialogW = 220
+        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         val dialogH = 150
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -561,7 +564,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     private fun renderItemDialogBackground(context: DrawContext) {
         val centerX = width / 2
-        val dialogW = 220
+        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         val dialogH = 142
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -710,7 +713,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private fun vButtonText() = Text.literal(
         com.shusheng.cobblemarket.util.TextUtil.truncateString(
             "${Text.translatable("cobblemarket.price_limit.v_label").string}: ${vLabel(vOptions[vIndex])}",
-            62
+            selectBtnW - 8
         )
     )
 
@@ -775,7 +778,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private fun formButtonText() = Text.literal(
         com.shusheng.cobblemarket.util.TextUtil.truncateString(
             "${Text.translatable("cobblemarket.blacklist.form").string}: ${formOptions.getOrNull(formIndex)?.label ?: ""}",
-            62
+            selectBtnW - 8
         )
     )
 

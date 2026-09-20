@@ -21,7 +21,9 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
     /** 贷款方案默认文本（与 CobbleMarketConfig.loanPlans 默认值一致，重置按钮用） */
     private val defaultLoanPlansText = "3:0.005,6:0.008,12:0.012"
 
-    private val dialogW = 260
+    // 放宽到 360：文字可用宽 = 宽 − 100（≈260px），放得下英文原文（最长约 221px）；
+    // 窗口过小时收进屏幕内，此时标签回落到 truncateString 兜底
+    private val dialogW: Int get() = minOf(360, (width - 40).coerceAtLeast(200))
     private val rowHeight = 24
 
     private data class NumDef(val labelKey: String, val isInt: Boolean)
