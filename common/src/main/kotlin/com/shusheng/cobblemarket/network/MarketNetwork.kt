@@ -81,7 +81,12 @@ data class ListingEntry(
      *
      * **故意不给默认值**：服务端哪一处漏填就编译不过，好过静默当成主货币。
      */
-    val currency: String
+    val currency: String,
+    /**
+     * 技能槽快照：**4 个槽用「,」连接、空槽是空串**（形如 `thunderbolt,quickattack,,`），
+     * 见 [com.shusheng.cobblemarket.util.MoveText]。旧数据 = 空串 ⇒ 悬停窗技能块整块不画。
+     */
+    val moves: String = ""
 ) {
     /**
      * 这条挂单是不是 RP 计价 —— **渲染货币单位就读它**。
@@ -119,7 +124,9 @@ data class ListingEntry(
         buf.writeVarInt(aspects.size); aspects.forEach { buf.writeString(it) }
         buf.writeVarInt(marks.size); marks.forEach { buf.writeString(it) }
         buf.writeString(sizeCategory)
+        // ⚠ 字段顺序必须与 read 一致：sizeCategory → currency → moves
         buf.writeString(currency)
+        buf.writeString(moves)
     }
 
     companion object {
@@ -153,7 +160,8 @@ data class ListingEntry(
             aspects = (0 until buf.readVarInt()).map { buf.readString() },
             marks = (0 until buf.readVarInt()).map { buf.readString() },
             sizeCategory = buf.readString(),
-            currency = buf.readString()
+            currency = buf.readString(),
+            moves = buf.readString()
         )
     }
 }
@@ -646,7 +654,9 @@ data class PokemonPreview(
     /** 拥有的证章纹理路径列表（外观展示；服务端直接传纹理，客户端不依赖 Marks 注册表） */
     val marks: List<String> = emptyList(),
     /** 体型分类（XS/S/M/L/XL/ALPHA），空串 = 无信息 */
-    val sizeCategory: String = ""
+    val sizeCategory: String = "",
+    /** 技能槽快照（4 槽用「,」连接、空槽空串）；旧数据 = 空串 ⇒ 悬停窗技能块不画。见 [com.shusheng.cobblemarket.util.MoveText] */
+    val moves: String = ""
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(uuid); buf.writeString(species); buf.writeString(speciesId); buf.writeString(speciesName)
@@ -664,6 +674,7 @@ data class PokemonPreview(
         buf.writeInt(friendship)
         buf.writeVarInt(marks.size); marks.forEach { buf.writeString(it) }
         buf.writeString(sizeCategory)
+        buf.writeString(moves)
     }
 
     companion object {
@@ -680,7 +691,8 @@ data class PokemonPreview(
             buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
             buf.readInt(),
             (0 until buf.readVarInt()).map { buf.readString() },
-            buf.readString()
+            buf.readString(),
+            buf.readString()   // moves：与 write 端严格同序（write 在 sizeCategory 之后）
         )
     }
 }
@@ -1400,7 +1412,8 @@ object MarketNetwork {
                             aspects = parseAspects(detail),
                             marks = parseMarks(detail),
                             sizeCategory = PokemonSize.fromNbt(listing.pokemonNbt),
-                            currency = currency.name
+                            currency = currency.name,
+                            moves = com.shusheng.cobblemarket.util.MoveText.resolve(detail["moves"], listing.pokemonNbt)
                         )
                     }
                 }
@@ -1807,7 +1820,8 @@ object MarketNetwork {
                             aspects = parseAspects(detail),
                             marks = parseMarks(detail),
                             sizeCategory = PokemonSize.fromNbt(listing.pokemonNbt),
-                            currency = currency.name
+                            currency = currency.name,
+                            moves = com.shusheng.cobblemarket.util.MoveText.resolve(detail["moves"], listing.pokemonNbt)
                         )
                     }
                 }
@@ -3326,7 +3340,9 @@ object MarketNetwork {
             "heldItemNbt" to if (pokemon.heldItemVisible) encodeHeldItemNbt(heldItemStack, registryManager) else "",
             // 精灵形态（性别/地区等），客户端渲染 3D 图标用；逗号分隔，aspect 名不含逗号
             "aspects" to pokemon.aspects.joinToString(","),
-            "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(",")
+            "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(","),
+            // 技能槽快照（4 个槽用「,」连接、空槽空串）：悬停窗技能块用，见 MoveText
+            "moves" to com.shusheng.cobblemarket.util.MoveText.of(pokemon)
         )
         pokemon.secondaryType?.let { extra["secondaryType"] = "cobblemon.type.${it.name.lowercase()}" }
         return extra
@@ -3382,7 +3398,9 @@ object MarketNetwork {
             evsSpd = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED] ?: 0,
             friendship = pokemon.friendship,
             marks = pokemon.marks.map { it.texture.toString() },
-            sizeCategory = PokemonSize.from(pokemon)
+            sizeCategory = PokemonSize.from(pokemon),
+            // 技能槽快照（4 槽、空槽空串）：悬停窗技能块用，见 MoveText
+            moves = com.shusheng.cobblemarket.util.MoveText.of(pokemon)
         )
 
     fun openScreen(player: ServerPlayerEntity) {

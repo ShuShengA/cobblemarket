@@ -28,6 +28,12 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
     private var plans = listOf<Pair<Int, Double>>()
     private var selectedPlan = 0
     private var payModeOpen = false
+
+    /** 信息区滚动偏移（2026-09-20）：内容比可视区高时靠滚轮看（照求购单创建弹窗那套） */
+    private var infoScroll = 0
+    /** 信息区顶（标题 14 + 图标 26+30 + 8）与底部按钮区高度 */
+    private val infoTop = 64
+    private val infoBottomH = 58
     /** 第一行按钮 y（init 按信息区高度算好，分期方案行跟随其上移） */
     private var buttonRow1Y = 0
     private val planButtons = mutableListOf<TextureButton>()
@@ -53,16 +59,13 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
         val btnW = 100
         val btnH = 22
         val gap = 10
-        // 按钮位置按信息区实际内容算：内容短时贴底（height - 58），内容长（证章/球种/携带物）时整体下移，
-        // 不再与价格行重叠。信息区起始 y = 26 + 30 + 8，13 基础行 + 球种/携带物行 + 证章区块。
-        // 加新信息行（如技能）时只改这里的 13。
-        val infoRows = 13 +
-            (if (entry.ball.isNotEmpty()) 1 else 0) +
-            (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0)
-        val contentBottom = 64 + infoRows * 10 + EntryBadgeRenderer.marksBlockHeight(entry.marks)
-        val row1Y = maxOf(height - 58, contentBottom + 10)
+        // 按钮**永远贴底**（height − 58）：内容再长也不再被往下推（原先是 maxOf(height-58, 内容底+10)，
+        // 内容一长按钮就被推出屏幕外点不到）。放不下的信息行改由**信息区滚动**看，见 render 里的 scissor。
+        // 信息区起始 y = 26 + 30 + 8 = 64（13 基础行 + 球种/携带物行 + 技能块 + 证章区块）。
+        val row1Y = height - infoBottomH
         val row2Y = row1Y + 24
         buttonRow1Y = row1Y
+        infoScroll = 0
 
         addDrawableChild(TextureButton(
             centerX - btnW - gap / 2, row1Y, btnW, btnH,
@@ -194,10 +197,39 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
 
         val infoY = iconY + iconSize + 8
 
-        // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 卖家 / 价格
+        // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 技能 / 证章 / 卖家 / 价格
+        // 内容比可视区高时**可滚动**（scissor 裁剪 + 起始 y 减偏移），按钮始终贴底够得着
         val name = EntryBadgeRenderer.nameWithShinyStar(
             if (displayName.isNotEmpty()) displayName else entry.species, entry.shiny)
-        EntryBadgeRenderer.drawInfoLines(context, entry, name, centerX, infoY)
+        val viewTop = infoTop
+        val viewBottom = height - infoBottomH - 8
+        infoScroll = infoScroll.coerceIn(0, infoMaxScroll())
+        context.enableScissor(0, viewTop, width, viewBottom)
+        // 分割线宽 = 本界面内容栏宽（260，见 startX = width/2 - 130）减去左右各 10
+        EntryBadgeRenderer.drawInfoLines(context, entry, name, centerX, infoY - infoScroll, dividerW = 240)
+        context.disableScissor()
+    }
+
+    /** 信息区内容高（设计值，与 init 里那套算法同源） */
+    private fun infoContentH(): Int {
+        val infoRows = 13 +
+            (if (entry.ball.isNotEmpty()) 1 else 0) +
+            (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0)
+        return infoRows * 10 +
+            EntryBadgeRenderer.movesBlockHeight(entry.moves) +
+            EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves)
+    }
+
+    private fun infoMaxScroll(): Int =
+        maxOf(0, infoContentH() - (height - infoBottomH - 8 - infoTop))
+
+    /** 信息区滚动（内容比可视区高时） */
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+        val maxScroll = infoMaxScroll()
+        if (maxScroll > 0) {
+            infoScroll = (infoScroll - verticalAmount.toInt() * 10).coerceIn(0, maxScroll)
+        }
+        return true
     }
 
     override fun shouldPause() = false

@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
+import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.network.ListingEntry
@@ -24,12 +25,67 @@ object EntryBadgeRenderer {
      */
     const val MARKS_PER_ROW = 10
 
+    /** 分割线占高（1px 灰线 + 上下留白） */
+    private const val DIVIDER_H = 10
+
+    /** 技能块内容行高（与其他信息行同高） */
+    private const val MOVE_ROW_H = 10
+
+    /** 技能块总高：上分割线 + 两行 + 下分割线 */
+    private const val MOVES_BLOCK_H = DIVIDER_H + MOVE_ROW_H * 2 + DIVIDER_H
+
     /**
-     * 证章区块高度：上下分割线各 10 + 图标行（drawMarksRow 返回 12 或 24），即一行 32、两行 44，无证章为 0。
-     * 各弹窗按内容算高度时引用（改证章排布只改这里，不会与渲染分叉）。
+     * 技能块（弹窗那版）的整块宽度：取 132 与悬停窗最宽的信息行（价格/性格特性行约 130~140）同量级，
+     * 不会把框撑宽。两列各占一半（减去 [MOVE_COL_GAP]）。
      */
-    fun marksBlockHeight(marks: List<String>): Int =
-        if (marks.isEmpty()) 0 else if (marks.size > MARKS_PER_ROW) 44 else 32
+    private const val MOVES_MAX_W = 132
+
+    /** 技能块两列之间的间隔：名字长时两列不贴上 */
+    private const val MOVE_COL_GAP = 16
+
+    /**
+     * 技能块高度：**上分割线 + 两行 + 下分割线**，固定 40；无技能数据（旧挂单）为 0、整块不画。
+     *
+     * ⚠ 技能块**总是画**（Cobblemon 里不存在没技能的精灵）—— 证章块因此**不再自带那条前导分割线**，
+     * 与技能块的下分割线共用一条（见 [marksBlockHeight]）。
+     */
+    fun movesBlockHeight(raw: String?): Int = if (MoveText.hasAny(raw)) MOVES_BLOCK_H else 0
+
+    /**
+     * 技能块在「行列表」模型里的**额外高度**：行列表把它算作 1 行（10px），实际占 [MOVES_BLOCK_H]，
+     * 所以按 `lines.size * 10` 估算高度的那些界面要再加这个差值（= 30）。无技能为 0。
+     */
+    fun movesBlockExtra(raw: String?): Int {
+        val h = movesBlockHeight(raw)
+        return if (h > 0) h - MOVE_ROW_H else 0
+    }
+
+    /**
+     * 技能块的最小行宽（各弹窗按内容算提示框宽度时用；无技能为 0）：
+     * 取「两列名字相加 + 列间隔」的最大值 —— 比它窄就会挤到。
+     */
+    fun movesBlockWidth(raw: String?): Int {
+        if (!MoveText.hasAny(raw)) return 0
+        val font = MinecraftClient.getInstance().textRenderer
+        return MoveText.rowsOfIds(raw).maxOf { (a, b) ->
+            val wa = if (a.isEmpty()) 0 else font.getWidth(MoveText.name(a))
+            val wb = if (b.isEmpty()) 0 else font.getWidth(MoveText.name(b))
+            wa + wb + if (wa > 0 && wb > 0) MOVE_COL_GAP else 0
+        }
+    }
+
+    /**
+     * 证章区块高度：图标行（drawMarksRow 返回 12 或 24）+ 下分割线；**有技能块时与它共用上分割线**。
+     *
+     * ⚠ [movesRaw] **故意不给默认值**：加技能块时 6 个弹窗的高度公式都要显式跟着改，
+     * 留默认值会「编译通过但高度差 10」静默错位 —— 让编译器当检查清单。
+     */
+    fun marksBlockHeight(marks: List<String>, movesRaw: String?): Int {
+        if (marks.isEmpty()) return 0
+        val icons = if (marks.size > MARKS_PER_ROW) 24 else 12
+        // 没有技能块（旧数据）时自己补回那条前导分割线，画面不至于秃
+        return icons + DIVIDER_H + if (MoveText.hasAny(movesRaw)) 0 else DIVIDER_H
+    }
 
     /**
      * 是否显示携带物行（空 id 或解析成 air 为 false），与 drawInfoLines 内判定同源，
@@ -221,6 +277,81 @@ object EntryBadgeRenderer {
      * 服务端直接传纹理路径（不依赖客户端 Marks 注册表解析）。返回该区块占用的高度（12 或 24）。
      * 拍卖 / 管理端拍卖 / 待归还 / 管理端精灵悬停共用（照市场悬停 tooltip 的排法）。
      */
+    /** 分割线：1px 灰线，**宽度按所在弹窗的内容栏宽**（照出价界面「撑满自己那一栏」的画法，别用固定值） */
+    fun drawDivider(context: DrawContext, centerX: Int, y: Int, width: Int) {
+        context.fill(centerX - width / 2, y + 4, centerX + width / 2, y + 5, 0xFF555555.toInt())
+    }
+
+    /**
+     * 画技能块（**上分割线 + 两行 + 下分割线**），返回占用高度；无技能数据返回 0 且**什么都不画**。
+     *
+     * 两行文本由 [MoveText.rows] 产出（与聊天悬停**同源**）：固定两行、一行两个技能名，空槽留白。
+     * 整行宽于 [MOVES_MAX_W] 时**整行等比缩小**（不截断 —— 截断了就不知道是什么招了）。
+     * 居中用「算好 x 再 drawTextWithShadow」：`drawCenteredTextWithShadow` 会让行首汉字高一点。
+     */
+    fun drawMovesBlock(context: DrawContext, raw: String?, centerX: Int, startY: Int, dividerW: Int): Int {
+        if (!MoveText.hasAny(raw)) return 0
+        var y = startY
+        drawDivider(context, centerX, y, dividerW)
+        y += DIVIDER_H
+        // 两列网格整块宽 MOVES_MAX_W、居中于 centerX
+        y += drawMoveGrid(context, raw, leftX = centerX - MOVES_MAX_W / 2, width = MOVES_MAX_W, startY = y)
+        drawDivider(context, centerX, y, dividerW)
+        y += DIVIDER_H
+        return y - startY
+    }
+
+    /**
+     * **贴提示框版**技能块 —— 给行悬停窗那一族用（分割线撑满提示框全宽，
+     * 内容与 [drawMovesBlock] 相同、只是宽度跟着提示框走）。
+     * 返回占用高度；无技能数据返回 0 且什么都不画。
+     */
+    fun drawMovesBlockLeft(context: DrawContext, raw: String?, leftX: Int, width: Int, startY: Int): Int {
+        if (!MoveText.hasAny(raw)) return 0
+        var y = startY
+        context.fill(leftX, y + 4, leftX + width, y + 5, 0xFF555555.toInt())
+        y += DIVIDER_H
+        y += drawMoveGrid(context, raw, leftX = leftX, width = width, startY = y)
+        context.fill(leftX, y + 4, leftX + width, y + 5, 0xFF555555.toInt())
+        y += DIVIDER_H
+        return y - startY
+    }
+
+    /**
+     * **两列网格**排版：左列在左半区居中、右列在右半区居中 —— 四个技能、或名字长短不一时两行也能对齐。
+     * （2026-09-20 用户实测反馈：原先「整行排 + 固定空格间隔」长短不一会排得很乱。）
+     * 返回占用高度。
+     */
+    private fun drawMoveGrid(context: DrawContext, raw: String?, leftX: Int, width: Int, startY: Int): Int {
+        val rows = MoveText.rowsOfIds(raw)
+        val colW = ((width - MOVE_COL_GAP) / 2).coerceAtLeast(1)
+        rows.forEachIndexed { i, (a, b) ->
+            val y = startY + i * MOVE_ROW_H
+            drawMoveInColumn(context, a, leftX, colW, y)
+            drawMoveInColumn(context, b, leftX + colW + MOVE_COL_GAP, colW, y)
+        }
+        return rows.size * MOVE_ROW_H
+    }
+
+    /** 一个技能名在 [colLeft, colLeft+colW] 这一列里**居中**画；宽过列宽就**只缩这一列**（不截断）。空槽不画 */
+    private fun drawMoveInColumn(context: DrawContext, id: String, colLeft: Int, colW: Int, y: Int) {
+        if (id.isEmpty()) return
+        val font = MinecraftClient.getInstance().textRenderer
+        val text = MoveText.name(id)
+        val w = font.getWidth(text)
+        if (w <= colW) {
+            // 算好 x 再左对齐画（drawCenteredTextWithShadow 会让行首汉字高一点）
+            context.drawTextWithShadow(font, text, colLeft + (colW - w) / 2, y, 0xFFFFFF)
+            return
+        }
+        val scale = colW.toFloat() / w
+        context.matrices.push()
+        context.matrices.translate(colLeft.toDouble(), y.toDouble(), 0.0)
+        context.matrices.scale(scale, scale, 1f)
+        context.drawTextWithShadow(font, text, 0, 0, 0xFFFFFF)
+        context.matrices.pop()
+    }
+
     fun drawMarksRow(context: DrawContext, marks: List<String>, leftX: Int, y: Int): Int {
         val textures = marks.mapNotNull { Identifier.tryParse(it) }
         if (textures.isEmpty()) return 0
@@ -238,7 +369,10 @@ object EntryBadgeRenderer {
     }
 
     // 居中绘制信息行，返回下一行的 y
-    fun drawInfoLines(context: DrawContext, entry: ListingEntry, displayName: Text, centerX: Int, startY: Int): Int {
+    fun drawInfoLines(
+        context: DrawContext, entry: ListingEntry, displayName: Text,
+        centerX: Int, startY: Int, dividerW: Int
+    ): Int {
         val font = MinecraftClient.getInstance().textRenderer
         val hp = StatNames.HP
         val atk = StatNames.ATK
@@ -280,11 +414,18 @@ object EntryBadgeRenderer {
         lines.add(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("  EV: ${entry.evsSpDef}").formatted(Formatting.RED)) to 0x66FF99)
         lines.add(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("  EV: ${entry.evsSpd}").formatted(Formatting.RED)) to 0xFF99FF)
         lines.add(Text.translatable("cobblemarket.gui.friendship", entry.friendship) to 0xFF99CC)
-        // 证章区块（证章不影响能力，纯外观展示）：亲密度下方两条分割线夹证章图标（每行 MARKS_PER_ROW 个）
+        // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：亲密度下方「分割线 + 两行技能 + 分割线」，
+        // 整块由 drawMovesBlock 画（此处只占一个坑位）。证章块与它**共用下面那条分割线**，自己不再带前导分割线。
+        // 无技能数据（旧挂单）= 整块不画。
+        var movesLine = -1
+        if (MoveText.hasAny(entry.moves)) {
+            movesLine = lines.size
+            lines.add(null to 0)
+        }
+        // 证章区块（证章不影响能力，纯外观展示）：技能块下方，图标行 + 下分割线（每行 MARKS_PER_ROW 个）
         // 服务端直接传纹理路径（不依赖客户端 Marks 注册表解析）
         var marksLine = -1
         if (entry.marks.isNotEmpty()) {
-            lines.add(null to 0)
             marksLine = lines.size
             lines.add(null to 0)
             lines.add(null to 0)
@@ -307,6 +448,10 @@ object EntryBadgeRenderer {
         while (i < lines.size) {
             val (line, color) = lines[i]
             when {
+                i == movesLine -> {
+                    // 技能块：上分割线 + 两行技能 + 下分割线（整块自画，返回值即占用高度）
+                    y += drawMovesBlock(context, entry.moves, centerX, y, dividerW)
+                }
                 line == null && i == marksLine -> {
                     // 证章图标行：第一行最多 MARKS_PER_ROW 个居中；超出的部分第二行居中显示「+N」（不再画图标防挤占面板）
                     val textures = entry.marks.mapNotNull { Identifier.tryParse(it) }
@@ -325,10 +470,9 @@ object EntryBadgeRenderer {
                     }
                 }
                 line == null -> {
-                    // 分割线：1px 灰线，固定 6 格宽（不随证章数量变化）
-                    val rowW = 68
-                    context.fill(centerX - rowW / 2, y + 4, centerX + rowW / 2, y + 5, 0xFF555555.toInt())
-                    y += 10
+                    // 分割线：1px 灰线，宽度随弹窗内容栏（与技能块同款，见 drawDivider）
+                    drawDivider(context, centerX, y, dividerW)
+                    y += DIVIDER_H
                 }
                 i == heldItemLine -> {
                     // 携带物行：文字 + 物品图标整体居中
