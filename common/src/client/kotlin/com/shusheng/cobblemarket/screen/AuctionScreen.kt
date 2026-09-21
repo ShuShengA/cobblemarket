@@ -1320,14 +1320,23 @@ class AuctionScreen(
             Text.translatable("cobblemarket.auction.title").formatted(Formatting.GOLD),
             centerX, 20, 0xFFFFFF)
 
-        // 余额：**另起一行**（标题 y=20 居中、余额 y=33 左对齐）—— 与标题同一行时，余额一长就压到标题上（2026-09-21 用户报）。
-        // 排版与市场界面一致（那边标题 y=14 / 余额 y=31），下面到 tab 行（y=50/y=70）还有余量
-        val balText = com.shusheng.cobblemarket.client.BalanceCache.balance
-        if (balText.isNotEmpty()) {
+        // 余额（左上角，与标题同一行）—— 标题居中在 y=20、tab 在 y=32、搜索框在 y=50，中间塞不下第三行，
+        // 所以这一行是唯一位置。⚠ 与标题同行 ⇒ 余额一长就压上去（2026-09-21 用户报「和 tab 行重合」，
+        // 更早还报过压标题）；故按可用宽降级：放不下先换 k/M/B 缩写、再截断兜底
+        val balRaw = com.shusheng.cobblemarket.client.BalanceCache.balance
+        if (balRaw.isNotEmpty()) {
+            val titleW = textRenderer.getWidth(
+                Text.translatable("cobblemarket.auction.title").formatted(Formatting.GOLD))
+            val avail = centerX - titleW / 2 - 6 - (leftX + 4)
+            val balUnit = com.shusheng.cobblemarket.client.inlineCurrencyUnit()
+            fun balLine(amount: String) = Text.translatable("cobblemarket.gui.balance",
+                Text.literal("$amount $balUnit").formatted(Formatting.GOLD))
+            val balFull = balLine(balRaw)
+            val balShown = if (textRenderer.getWidth(balFull) <= avail) balFull
+                else balLine(com.shusheng.cobblemarket.client.formatPriceShortLong(
+                    com.shusheng.cobblemarket.client.BalanceCache.balanceRaw))
             context.drawTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.gui.balance",
-                    Text.literal(balText + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
-                leftX + 4, 33, 0xFFFFFF)
+                com.shusheng.cobblemarket.util.TextUtil.truncateStyled(balShown, avail), leftX + 4, 20, 0xFFFFFF)
         }
 
         // 操作结果提示
