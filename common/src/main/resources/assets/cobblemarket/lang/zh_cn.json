@@ -773,6 +773,7 @@
   "cobblemarket.buy_order.pending_buyer": "你的求购单（%s）有新的交付待确认",
   "cobblemarket.chat.review_button": "[查看待交付]",
   "cobblemarket.chat.bid_button": "[点击出价]",
+  "cobblemarket.chat.auction_tag": "[拍卖]",
   "cobblemarket.chat.auction_announce": "%s 上架了 %s，起拍价 %s",
   "cobblemarket.chat.auction_sold_announce": "%s 以 %s 拍得 %s",
   "cobblemarket.buy_order.pending_locked": "该求购单已有待确认交付，请稍后再试",
