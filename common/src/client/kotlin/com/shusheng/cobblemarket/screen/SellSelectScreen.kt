@@ -246,9 +246,10 @@ class SellSelectScreen(
         )
         addDrawableChild(typeBtn)
 
-        // y 用 btnY+1 而不是 btnY：输入框高 18、同行按钮高 20，顶边对齐会让框整体偏上 1px。
-        // 本项目同类元素一律**垂直中心对齐**（见各弹窗的输入框 ↔ 精灵槽那套坐标）
-        priceField = TextFieldWidget(textRenderer, lx + 190, btnY + 1, 56, 18, Text.literal(""))
+        // 高度 20 = 同行按钮高度，**顶底齐平**：文字 y 与按钮同一算式，背景框也与按钮重合
+        //（比原来 y+1 的中心对齐更彻底，中心对齐的结论仍然成立）。
+        // ⚠ 与 1.2.0 同款写法；但 x 与宽度不同（那边没有货币切换按钮，价格框吃满到上架按钮左缘）
+        priceField = TextFieldWidget(textRenderer, lx + 190, btnY, 56, 20, Text.literal(""))
         priceField?.setPlaceholder(Text.translatable("cobblemarket.sell.price_placeholder"))
         priceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addSelectableChild(priceField)
