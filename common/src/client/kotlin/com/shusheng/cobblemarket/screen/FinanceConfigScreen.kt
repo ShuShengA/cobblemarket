@@ -69,10 +69,12 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
     private var cardOpenButton: NineSliceButton? = null
     private var blackCardOpenButton: NineSliceButton? = null
 
-    private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 44)
+    private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 55)
     private fun dialogY() = height / 2 - dialogH() / 2
     private fun listStartY() = dialogY() + 30
-    private fun listAreaH() = dialogH() - 30 - 34
+    /** 内容区高度：底边停在提示行上方 3px。底部三道自底向上 —— 按钮 -30、提示行 -42、内容底 -45，各留 3px
+     *  ⚠ 改这三处任意一处，都要同步改 dialogH() 的底部预留，否则弹窗高度与内容区对不上 */
+    private fun listAreaH() = dialogH() - 30 - 45
     private fun getMaxVisibleRows() = maxOf(0, listAreaH() / rowHeight)
 
     override fun init() {
@@ -456,7 +458,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.translatable("cobblemarket.op.scfg_saved").formatted(Formatting.GREEN),
-                centerX, dialogY() + dialogH() - 38, 0xFFFFFF
+                centerX, dialogY() + dialogH() - 42, 0xFFFFFF
             )
         } else if (System.currentTimeMillis() < (adjustedUntil["depositRate"] ?: 0L)) {
             // 日利率钳制说明（8 秒后回落灰 hint）：服主看到「重置后保存又变 0」时知道是贷款方案护栏干的
@@ -464,13 +466,13 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.translatable("cobblemarket.op.scfg_deposit_clamped", clampedText).formatted(Formatting.YELLOW),
-                centerX, dialogY() + dialogH() - 38, 0xFFFFFF
+                centerX, dialogY() + dialogH() - 42, 0xFFFFFF
             )
         } else {
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.translatable("cobblemarket.op.scfg_hint").formatted(Formatting.GRAY),
-                centerX, dialogY() + dialogH() - 38, 0xFFFFFF
+                centerX, dialogY() + dialogH() - 42, 0xFFFFFF
             )
         }
     }
