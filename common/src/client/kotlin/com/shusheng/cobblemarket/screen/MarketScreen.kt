@@ -1628,6 +1628,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val centerX = width / 2
         // 喵喵支付可用时加宽 280 容纳三枚按钮；不可用回退原宽度 220（两枚）
         val dialogW = maxOf(if (payAvailable) 340 else 300, EntryBadgeRenderer.measureInfoLines(entry, EntryBadgeRenderer.nameWithShinyStar(if (confirmDisplayName.isNotEmpty()) confirmDisplayName else entry.species, entry.shiny)) + 40).coerceAtMost(width - 20)
+            // ⚠ 下限 280：喵喵支付三按钮固定占 248（±124），上限钳制不能把它吃掉
+            .coerceAtLeast(280)
         val dialogH = confirmDialogH(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
