@@ -166,13 +166,13 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         }
         // 底部双按钮：保存（提交全部 + 服务端落盘，等价改文件后 /market reload）、取消（放弃修改关闭）
         saveButton = NineSliceButton(
-            width / 2 - 62, dialogY() + dialogH() - 26, 60, 20,
+            width / 2 - 62, dialogY() + dialogH() - 30, 60, 20,
             Text.translatable("cobblemarket.op.scfg_save"),
             { save() }
         )
         addDrawableChild(saveButton)
         cancelButton = NineSliceButton(
-            width / 2 + 2, dialogY() + dialogH() - 26, 60, 20,
+            width / 2 + 2, dialogY() + dialogH() - 30, 60, 20,
             Text.translatable("cobblemarket.op.scfg_cancel"),
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) }
         )
