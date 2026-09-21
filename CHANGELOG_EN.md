@@ -83,7 +83,7 @@
 
 #### Admin Permission Nodes
 
-- **Admin duties can be delegated**: the owner can hand a single admin duty to a player without granting OP — 8 nodes by domain (blacklist / price limits / bans / market admin / finance / auctions / Buy Orders / Server Config); OPs keep everything with zero setup. A delegate without OP now sees the "Admin Panel" button on the entry screen; inside the panel the entries they hold can be opened, while the rest stay visible but greyed out with a hint
+- **Admin duties can be delegated**: the owner can hand a single admin duty to a player without granting OP — 8 nodes by domain (blacklist / price limits / bans / market admin / finance / auctions / Buy Orders / Server Config); OPs keep everything with zero setup. Delegated players without OP now see the "Admin Panel" button on the entry screen; inside the panel, the entries they hold can be opened while the rest are greyed out and cannot be entered
 - **Permissions screen**: a new entry at the bottom-left of the Admin Panel (OP only) — search a player, tick the nodes, save, and it applies immediately; online players need no relog
 - **Permission commands**: `/market perm grant|revoke|list` (owner-only; `list` shows every grant)
 - **Permission change log**: the permissions screen gains a "Change Log" tab — who granted or removed which node for whom, and when; the same records are written to per-day CSV ledgers (`config/cobblemarket/permissions/`, Chinese and English) for offline auditing
