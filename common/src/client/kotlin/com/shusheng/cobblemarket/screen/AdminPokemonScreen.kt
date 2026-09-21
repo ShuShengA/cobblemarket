@@ -1062,7 +1062,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         context.enableScissor(dialogX, viewTop, dialogX + dialogW, viewBottom)
         EntryBadgeRenderer.drawInfoLines(
             context, entry, EntryBadgeRenderer.nameWithShinyStar(confirmDisplayName, entry.shiny),
-            centerX, viewTop - confirmScroll, dividerW = dialogW - 20, maxWidth = dialogW - 24
+            centerX, viewTop - confirmScroll, dividerW = dialogW - 156, maxWidth = dialogW - 24
         )
         context.disableScissor()
 
