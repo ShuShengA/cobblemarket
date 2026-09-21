@@ -26,7 +26,8 @@ class MeowthPayScreen(
     private val onBack: () -> Unit
 ) : Screen(Text.translatable("cobblemarket.meowth_pay.title")) {
 
-    private val dialogW = minOf(340, width - 40).coerceAtLeast(200)
+    // 下限 280 = 三期按钮硬需求（10 + 3×84 + 2×4 + 10）；1.1.0 是写死 280，本轮改成钳制时下限随手写了 200
+    private val dialogW = minOf(340, width - 40).coerceAtLeast(280)
     private val dialogH = 170
 
     private var plans = listOf<Pair<Int, Double>>()
