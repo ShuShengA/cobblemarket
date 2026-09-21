@@ -293,11 +293,11 @@ object EntryBadgeRenderer {
     fun drawMovesBlock(context: DrawContext, raw: String?, centerX: Int, startY: Int, dividerW: Int): Int {
         if (!MoveText.hasAny(raw)) return 0
         var y = startY
-        drawDivider(context, centerX, y, dividerW)
+        drawDivider(context, centerX, y, MOVES_MAX_W)
         y += DIVIDER_H
         // 两列网格整块宽 MOVES_MAX_W、居中于 centerX
         y += drawMoveGrid(context, raw, leftX = centerX - MOVES_MAX_W / 2, width = MOVES_MAX_W, startY = y)
-        drawDivider(context, centerX, y, dividerW)
+        drawDivider(context, centerX, y, MOVES_MAX_W)
         y += DIVIDER_H
         return y - startY
     }
@@ -310,10 +310,10 @@ object EntryBadgeRenderer {
     fun drawMovesBlockLeft(context: DrawContext, raw: String?, leftX: Int, width: Int, startY: Int): Int {
         if (!MoveText.hasAny(raw)) return 0
         var y = startY
-        context.fill(leftX, y + 4, leftX + width, y + 5, 0xFF555555.toInt())
+        context.fill(leftX, y + 4, leftX + minOf(width, MOVES_MAX_W), y + 5, 0xFF555555.toInt())
         y += DIVIDER_H
         y += drawMoveGrid(context, raw, leftX = leftX, width = width, startY = y)
-        context.fill(leftX, y + 4, leftX + width, y + 5, 0xFF555555.toInt())
+        context.fill(leftX, y + 4, leftX + minOf(width, MOVES_MAX_W), y + 5, 0xFF555555.toInt())
         y += DIVIDER_H
         return y - startY
     }
@@ -514,7 +514,7 @@ object EntryBadgeRenderer {
                 }
                 line == null -> {
                     // 分割线：1px 灰线，宽度随弹窗内容栏（与技能块同款，见 drawDivider）
-                    drawDivider(context, centerX, y, dividerW)
+                    drawDivider(context, centerX, y, MOVES_MAX_W)
                     y += DIVIDER_H
                 }
                 i == heldItemLine -> {
