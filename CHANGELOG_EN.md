@@ -84,6 +84,7 @@
 - **Icon-only buttons had no tooltip**: the "list / create auction / add" buttons with nothing but an icon (Pokémon market, item market, Auction House, blacklist, price limits) gave no hint on hover, leaving players to guess — the listing entry especially; they now all show a text tooltip. Three hand-drawn tooltips (buy-order, blacklist, price limits) that looked different from the rest were also switched to the standard one
 - **The button label overflowed on the Meow·Purple Gold Card / Black Gold Card apply screens**: "Self-application is closed" is too long for the 100px-wide button it sat on, so the text spilled outside it; the button is now wider and every state's label fits
 - **The bottom hint sat on top of the Save / Cancel buttons on Server Config and its five sibling screens**: "Click Save to apply changes, Cancel to discard them" was glued to the buttons; the content area, the hint and the buttons are now three separate rows, with the dialog slightly taller
+- **Five config screens scrolled but gave no sign of it**: the finance config, the Purple / Black Gold Card configs and the two card-condition screens could only be scrolled with the wheel, with nothing on screen to say so (of the six sibling screens only Server Config had a scrollbar); they now all have one
 
 ## 1.1.1 (in development, unreleased)
 
