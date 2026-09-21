@@ -49,17 +49,10 @@
 
 #### Pokemon Icon Animations
 
-The icons use **Cobblemon's own underlying animations** (the models and motions ship with it), choreographed by this mod — put to far more use than in Cobblemon's own screens.
+The icons use **Cobblemon's own underlying animations** (the models and motions ship with it), choreographed by this mod — scheduled where they fit and put to far more use than in Cobblemon's own screens, waiting for you to find them in game.
 
-- **Head follows the cursor**: Pokemon icons in list rows turn their head to look at your cursor (matching **Cobblemon's** Summary screen), and turn back to centre after the cursor sits still for a while; icons set to "Static" don't follow at all
-- **Day/night sleeping icons**: when the in-game time enters a species' rest window, its icons switch to a sleeping pose (mirroring the rest schedule of **wild Pokemon in Cobblemon** — each species has its own hours and about 40% sleep at all), waking automatically once it passes
-- **Hover preview**: hovering a Pokemon row shows an enlarged walking animation of that Pokemon on the left side of the screen — the row icon and the preview are the same Pokemon with fully synchronized motion
 - **Pokemon preview switch**: a new setting to turn the hover preview off on its own (without affecting the icons themselves)
-- **Celebration upgrade**: the pop-out animation when you buy or win a Pokemon now lets out a battle cry — **species that have a battle cry animation always use it**, and it stays in sync with the icons: idle and following your cursor by day, already asleep when it appears at night
-- **Cries on click**: clicking a Pokemon row in a list (or a Pokemon icon inside a dialog) plays that Pokemon's cry — **the regular cry or a battle cry at random** (only species that actually have a battle cry animation can roll one; for everyone else it is always the regular cry); **opening the buy / bid / delivery-confirmation / unlisting dialog also makes the Pokemon icon inside it cry once**; sleeping Pokemon and "Static" mode don't respond
-- **Battle cries are no longer battle-only**: in **Cobblemon** these animations are visible **only the moment a Pokemon is sent out to battle** (opening send-out, switching in, transforming); clicking a Pokemon in Cobblemon's own Summary screen, Pokedex or trade screen always plays the regular cry. Now you can hear them by clicking icons in the Market, Auction House and Buy Orders, just like the celebration animation
 - **Keeps up with Cobblemon automatically**: when the official mod adds battle cry animations to more Pokemon, this mod **displays them without needing an update**
-- **Chat announcement hover preview**: hovering the item name in an auction or buy-order chat announcement (the buy order's "View pending delivery" button works too) shows a large image of that Pokemon or item in the right half of the screen, and a Pokemon lets out a cry (regular cry or battle cry, picked at random) before carrying on with its animation
 - **Known issue: some Pokemon play a swimming animation on hover under Cobblemon 1.8.1**: starting with the official 1.8.1, pose conditions for Pokemon evaluate differently than in 1.8.0, so some Pokemon (Charizard and Pikachu, for example) show a water-swimming motion in their icons and hover preview. It is not yet clear whether this is an intended change on Cobblemon's side, so we are not working around it for now
 
 #### Item Animations
