@@ -475,6 +475,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
                 centerX, dialogY() + dialogH() - 42, 0xFFFFFF
             )
         }
+        renderScrollbar(context)
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
@@ -497,6 +498,20 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
     override fun resize(client: MinecraftClient, width: Int, height: Int) {
         super.resize(client, width, height)
         rebuildPositions()
+    }
+
+    /** 右侧滚动条（照 ServerConfigScreen 同款）：**行数超出一屏才画**，否则玩家不知道下面还有东西 */
+    private fun renderScrollbar(context: DrawContext) {
+        val maxScroll = maxOf(0, totalRows - getMaxVisibleRows())
+        if (maxScroll <= 0) return
+        val x = width / 2 + dialogW / 2 - 5
+        val top = listStartY()
+        val trackH = listAreaH()
+        // 滑块高按「可视 / 内容总高」比例；scrollOffset 单位是行，× rowHeight 换算成像素才与 trackH 同量纲
+        val thumbH = maxOf(16, trackH * trackH / (trackH + maxScroll * rowHeight))
+        val thumbY = top + (trackH - thumbH) * scrollOffset / maxScroll
+        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
+        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
     }
 
     override fun shouldPause() = false
