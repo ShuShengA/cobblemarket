@@ -220,7 +220,10 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         )
         addDrawableChild(typeBtn)
 
-        priceField = TextFieldWidget(textRenderer, lx + 126, btnY, 56, 18, Text.literal(""))
+        // 价格框宽度**吃满到「上架按钮」左缘**（126+78=204，见下面 sellBtn 的 lx+204），中间不留缝。
+        // ⚠ 别照抄 1.3.0 的 56 宽 —— 那边价格框和上架按钮之间还夹着一个**货币切换按钮**，
+        //   本分支（1.2.0）没有它，照抄会空出 22px（2026-09-21 用户报）
+        priceField = TextFieldWidget(textRenderer, lx + 126, btnY, 78, 18, Text.literal(""))
         priceField?.setPlaceholder(Text.translatable("cobblemarket.sell.price_placeholder"))
         priceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addSelectableChild(priceField)
@@ -235,7 +238,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             if (deliverMode) Text.translatable("cobblemarket.sell.deliver_select") else Text.literal(""),
             { if (deliverMode) deliverSelected() else sellSelected() },
             iconLeft = if (deliverMode) null else Identifier.of("cobblemarket", "textures/gui/sell.png"),
-            iconTexW = 48, iconTexH = 48, iconScale = 12 / 48f
+            iconTexW = 48, iconTexH = 48, iconScale = 12 / 48f,
+            // 普通模式是纯图标（sell.png），要给悬停提示；交付模式本身就是文字按钮，不需要
+            tooltip = if (deliverMode) null else Text.translatable("cobblemarket.sell.sell")
         )
         addDrawableChild(sellBtn)
         // 特训筛选（三态循环；交付模式移到价格框位置，给选择按钮让位）
