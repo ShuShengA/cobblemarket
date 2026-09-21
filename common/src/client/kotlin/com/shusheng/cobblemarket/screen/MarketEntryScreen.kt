@@ -877,10 +877,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                 textRenderer,
                 Text.translatable(
                     "cobblemarket.entry.total_volume",
-                    com.shusheng.cobblemarket.client.formatPriceShortLong(totalVolume),
-                    inlineCurrencyUnit()
+                    Text.literal(com.shusheng.cobblemarket.client.formatPriceShortLong(totalVolume)).formatted(Formatting.GOLD),
+                    Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)
                 ),
-                width / 2, btnStartY - 29, 0x55FFFF
+                width / 2, btnStartY - 29, 0xFFFFFF
             )
             val lineW = textRenderer.getWidth(
                 Text.translatable(
