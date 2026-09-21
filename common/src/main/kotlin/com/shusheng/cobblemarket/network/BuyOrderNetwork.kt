@@ -110,7 +110,10 @@ data class BuyOrderEntry(
     val note: String,          // 买家备注（额外需求，可为空）
     val createdAt: Long,
     val expiresAt: Long,
-    val pending: BuyOrderPendingEntry? // 待确认交付（锁定策略下最多 1 条）
+    val pending: BuyOrderPendingEntry?, // 待确认交付（锁定策略下最多 1 条）
+    // 属性（1.2.0 末尾追加 + 默认值）：强制下架弹窗要显示「类型：」；来源是物种，不是买家的需求条件
+    val primaryType: String = "",
+    val secondaryType: String = ""
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(id)
@@ -142,6 +145,8 @@ data class BuyOrderEntry(
         buf.writeLong(expiresAt)
         buf.writeBoolean(pending != null)
         pending?.let { it.write(buf) }
+        buf.writeString(primaryType)
+        buf.writeString(secondaryType)
     }
 
     companion object {
@@ -168,9 +173,19 @@ data class BuyOrderEntry(
             note = buf.readString(),
             createdAt = buf.readLong(),
             expiresAt = buf.readLong(),
-            pending = if (buf.readBoolean()) BuyOrderPendingEntry.read(buf) else null
+            pending = if (buf.readBoolean()) BuyOrderPendingEntry.read(buf) else null,
+            primaryType = buf.readString(),
+            secondaryType = buf.readString()
         )
     }
+}
+
+/** 物种的属性 key（`cobblemon.type.xxx`）；解析失败 / 无副属性返回空串 */
+private fun buyOrderTypeKey(speciesId: String?, primary: Boolean): String {
+    val id = speciesId?.let { net.minecraft.util.Identifier.tryParse(it) } ?: return ""
+    val sp = com.cobblemon.mod.common.api.pokemon.PokemonSpecies.getByIdentifier(id) ?: return ""
+    val t = if (primary) sp.primaryType else (sp.secondaryType ?: return "")
+    return "cobblemon.type.${t.name.lowercase()}"
 }
 
 fun buyOrderToEntry(o: BuyOrder): BuyOrderEntry = BuyOrderEntry(
@@ -179,6 +194,8 @@ fun buyOrderToEntry(o: BuyOrder): BuyOrderEntry = BuyOrderEntry(
     buyerUuid = o.buyerUuid,
     buyerName = o.buyerName,
     speciesId = o.speciesId,
+    primaryType = buyOrderTypeKey(o.speciesId, true),
+    secondaryType = buyOrderTypeKey(o.speciesId, false),
     speciesKey = o.speciesKey,
     shinyFilter = o.shinyFilter,
     htFilter = o.htFilter,
