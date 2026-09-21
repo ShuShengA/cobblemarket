@@ -48,10 +48,12 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
     private var savedToastUntil = 0L
     private val totalRows = numDefs.size + toggleDefs.size
 
-    private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 44)
+    private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 55)
     private fun dialogY() = height / 2 - dialogH() / 2
     private fun listStartY() = dialogY() + 30
-    private fun listAreaH() = dialogH() - 30 - 34
+    /** 内容区高度：底边停在提示行上方 3px。底部三道自底向上 —— 按钮 -30、提示行 -42、内容底 -45，各留 3px
+     *  ⚠ 改这三处任意一处，都要同步改 dialogH() 的底部预留，否则弹窗高度与内容区对不上 */
+    private fun listAreaH() = dialogH() - 30 - 45
     private fun getMaxVisibleRows() = maxOf(0, listAreaH() / rowHeight)
 
     override fun init() {
@@ -324,13 +326,13 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.translatable("cobblemarket.op.scfg_saved").formatted(Formatting.GREEN),
-                centerX, dialogY() + dialogH() - 38, 0xFFFFFF
+                centerX, dialogY() + dialogH() - 42, 0xFFFFFF
             )
         } else {
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.translatable("cobblemarket.op.scfg_hint").formatted(Formatting.GRAY),
-                centerX, dialogY() + dialogH() - 38, 0xFFFFFF
+                centerX, dialogY() + dialogH() - 42, 0xFFFFFF
             )
         }
     }
