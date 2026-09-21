@@ -1721,7 +1721,7 @@ class AuctionScreen(
             mouseX = mouseX, mouseY = mouseY,
             textW = mw, textH = th, pad = pad,
             screenW = width, screenH = height, avoid = bidButtonRects[hoveredRow]
-        )
+        ) ?: return
 
         context.matrices.push(); context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - pad, ty - pad, mw + 2 * pad, th + pad, 1, ROW_BACKGROUND_TEX_H)
@@ -1818,7 +1818,7 @@ class AuctionScreen(
             mouseX = mouseX, mouseY = mouseY,
             textW = maxWidth, textH = tooltipHeight, pad = padding,
             screenW = width, screenH = height, avoid = bidButtonRects[hoveredRow]
-        )
+        ) ?: return
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
