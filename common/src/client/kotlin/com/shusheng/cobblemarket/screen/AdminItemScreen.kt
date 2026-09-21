@@ -508,8 +508,10 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
                 drawItemWithBar(context, stack, x + (slotSize - 16) / 2, y + (slotSize - 16) / 2)
             }
 
+            // 数量：右上角、右对齐。y+3（原 y+4）—— 再低就跟物品图标顶部贴死了
+            // ⚠ 与物品市场（ItemMarketScreen）同一处画法，改一处要改另一处
             val countText = "×${entry.count}"
-            context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 4, 0xFFFFFF, false)
+            context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 3, 0xFFFFFF, false)
 
             // 价格过长时用缩写（与物品市场界面一致），完整价格见悬停提示；单位走统一入口，币种取这条挂单自己的
             val priceTextRaw = com.shusheng.cobblemarket.client.amountWithUnit(
