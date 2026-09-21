@@ -374,6 +374,31 @@ object EntryBadgeRenderer {
      * [dividerW] = 证章分割线宽度；[maxWidth] = 容器可用内容宽（弹窗宽度减去左右内边距，从布局反算，别写死）——
      * 超宽的行按保留分段样式的方式截断。默认 Int.MAX_VALUE = 不截断（无边框的整页界面用）。
      */
+    /**
+     * 信息行最宽值（像素）——**只量不画**，供弹窗按内容动态定宽（照出价弹窗 / 物品市场那套机制：
+     * `dialogW = clamp(max(最小宽, 实测 + 边距), 屏幕宽)`），别再让长精灵名/特性名去撞右列。
+     *
+     * ⚠ 量的是**会随数据变长**的行：名字★Lv（精灵名）/ 类型 / 性格+特性（特性名）/ 卖家（玩家名）/ 价格。
+     *    固定行（IV 六行、亲密度、球种）宽度基本不变，由调用方的最小宽度兜住。
+     * ⚠ **改 drawInfoLines 的行列表时，这里要一起改**（两处的行必须对应，否则量出来和画出来的不一致）。
+     */
+    fun measureInfoLines(entry: ListingEntry, displayName: Text): Int {
+        val font = MinecraftClient.getInstance().textRenderer
+        val texts = listOf(
+            nameWithLevelLine(displayName, entry.primaryType, entry.level),
+            Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
+                .append(typeLine(entry.primaryType, entry.secondaryType)),
+            Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
+                .append(natureText(entry.natureBase, entry.nature))
+                .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
+                .append(Text.translatable(entry.ability)),
+            Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)),
+            Text.translatable("cobblemarket.gui.tooltip_price").append(
+                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}"))
+        )
+        return texts.maxOf { font.getWidth(it) }
+    }
+
     fun drawInfoLines(
         context: DrawContext, entry: ListingEntry, displayName: Text,
         centerX: Int, startY: Int, dividerW: Int, maxWidth: Int = Int.MAX_VALUE
