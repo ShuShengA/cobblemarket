@@ -22,7 +22,12 @@ import net.minecraft.util.Formatting
  */
 class DepositScreen : Screen(Text.translatable("cobblemarket.deposit.title")) {
 
-    private val dialogW = minOf(340, width - 40).coerceAtLeast(200)
+    // 下限 280（= 1.1.0 的固定宽度）：金额输入框（dialogX+130，宽 130）与取款按钮（dialogX+134，宽 126）
+    // 都是**绝对偏移**摆的、不随弹窗缩，右缘到 260 —— 下限 200 时窄屏下会溢出 60px
+    //   （2026-09-21 用户报；同批「按屏幕钳制」改动引入）
+    // ⚠ 判断某界面下限够不够，看的是**内部元素实际画到哪**，不是"1.1.0 用过多少宽"——
+    //   配置类界面（紫金卡/黑金卡/服务器配置）的元素全走 dialogX+dialogW-N，自适应用不着抬下限
+    private val dialogW = minOf(340, width - 40).coerceAtLeast(280)
     private val dialogH = 170
 
     private var balance = 0L
