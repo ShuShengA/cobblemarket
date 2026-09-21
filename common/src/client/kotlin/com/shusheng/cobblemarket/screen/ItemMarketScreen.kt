@@ -509,7 +509,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             }
 
             val countText = "×${entry.count}"
-            context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 2, 0xFFFFFF, false)
+            context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 4, 0xFFFFFF, false)
 
             val priceText = com.shusheng.cobblemarket.util.TextUtil.truncateString("${com.shusheng.cobblemarket.client.formatPriceShort(entry.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}", slotSize - 6)
             context.drawText(textRenderer, priceText, x + 3, y + slotSize - 10, 0xFFAA00, false)
