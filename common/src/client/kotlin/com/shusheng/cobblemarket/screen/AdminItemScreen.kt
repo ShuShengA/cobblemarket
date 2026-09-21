@@ -509,7 +509,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             }
 
             val countText = "×${entry.count}"
-            context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 2, 0xFFFFFF, false)
+            context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 4, 0xFFFFFF, false)
 
             // 价格过长时用缩写（与物品市场界面一致），完整价格见悬停提示；单位走统一入口，币种取这条挂单自己的
             val priceTextRaw = com.shusheng.cobblemarket.client.amountWithUnit(
