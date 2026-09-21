@@ -191,6 +191,9 @@ class BuyOrderScreen(
     /** 确认交付弹窗里的精灵模型（打开弹窗时按 pending 重建一次；物品单/物种解析失败为 null） */
     private var reviewRenderable: RenderablePokemon? = null
     private val reviewState = FloatingState()
+    /** 强制下架弹窗的精灵图标（标题正下方；2026-09-21 用户要求补上） */
+    private var forceRenderable: RenderablePokemon? = null
+    private val forceState = FloatingState()
 
     /**
      * 确认交付弹窗里那个精灵图标的屏幕位置，**渲染时记录**。
@@ -630,6 +633,7 @@ class BuyOrderScreen(
     // ── 管理员强制下架确认弹窗（照 AdminAuctionScreen 下架弹窗模板） ──
 
     private fun openForceCancelDialog(entry: BuyOrderEntry) {
+        buildForceRenderable(entry)
         forceCancelEntry = entry
         forceScroll = 0
         // 隐藏下层控件（弹窗打开期间不可交互；closeForceCancelDialog 的 init 重建会恢复）
@@ -642,7 +646,7 @@ class BuyOrderScreen(
         // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染）
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-                renderForceCancelBackground(context)
+                renderForceCancelBackground(context, delta)
             }
         })
 
@@ -727,8 +731,11 @@ class BuyOrderScreen(
     }
 
     // ── 强制下架弹窗几何（2026-09-20：加信息区后必须钳制高度，照其余弹窗那套）──
-    /** 信息区顶（标题 14 / 名称 34 → 信息行自此起） */
-    private val forceInfoTop = 50
+    /** 精灵图标顶（标题正下方，28px） */
+    private val forceIconTop = 26
+    private val forceIconSize = 28
+    /** 信息区顶：图标(26~54) + 名称行(60) 之下 */
+    private val forceInfoTop = 74
     private val forcePad = 10
     private val forceDialogW: Int get() = minOf(300, width - 40).coerceAtLeast(200)
     private var forceScroll = 0
@@ -738,7 +745,9 @@ class BuyOrderScreen(
     private fun forceFooterH(entry: BuyOrderEntry): Int = 78 + if (entry.pending != null) 10 else 0
 
     private fun forceDesignH(entry: BuyOrderEntry): Int =
-        forceInfoTop + requirementDialogLines(entry).size * 10 + forceFooterH(entry)
+        // ⚠ 这里用字面量 50（改动前的 forceInfoTop）而非 forceInfoTop：图标插到标题下后信息区起点下移了，
+        // 但弹窗**总高度必须保持不变**（2026-09-21 用户明确），所以把这段高度倒推回去
+        50 + requirementDialogLines(entry).size * 10 + forceFooterH(entry)
 
     /** 弹窗实际高度：**按屏幕钳制**（信息行多时设计高度会顶出屏幕），超出部分靠滚轮看 */
     private fun forceDialogH(entry: BuyOrderEntry): Int = minOf(forceDesignH(entry), height - 8)
@@ -751,7 +760,7 @@ class BuyOrderScreen(
     /** 按钮 Y（钉弹窗底）—— 建控件与命中判定共用这一处 */
     private fun forceButtonY(entry: BuyOrderEntry): Int = forceDialogY(entry) + forceDialogH(entry) - 30
 
-    private fun renderForceCancelBackground(context: DrawContext) {
+    private fun renderForceCancelBackground(context: DrawContext, delta: Float) {
         val entry = forceCancelEntry ?: return
         val centerX = width / 2
         val dialogW = forceDialogW
@@ -764,9 +773,29 @@ class BuyOrderScreen(
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.buy_order.force_cancel_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
+        // 精灵图标（标题正下方，2026-09-21 补）：非精灵单 / 任意精灵单不画
+        forceRenderable?.let { rp ->
+            val iconX = centerX - forceIconSize / 2
+            val iconY = dialogY + forceIconTop
+            context.matrices.push()
+            context.matrices.translate(iconX.toDouble(), iconY.toDouble(), 0.0)
+            context.matrices.scale(forceIconSize / 66f, forceIconSize / 66f, 1f)
+            context.drawTexture(
+                net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png"),
+                0, 0, 0f, 0f, 66, 66, 66, 66
+            )
+            context.matrices.pop()
+            PokemonIconRenderer.draw(
+                context = context, renderable = rp, state = forceState,
+                x = iconX, y = iconY, size = forceIconSize, delta = delta,
+                animate = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                    com.shusheng.cobblemarket.client.IconAnimMode.FLOAT,
+                useScissor = false
+            )
+        }
         context.drawCenteredTextWithShadow(textRenderer,
             entryNameText(entry),
-            centerX, dialogY + 34, 0xFFFFFF)
+            centerX, dialogY + 60, 0xFFFFFF)
 
         // 完整需求信息（与行悬停窗同一份构造）：左对齐、超出可视区时**可滚动**（scissor 裁剪）
         val infoLines = requirementDialogLines(entry)
@@ -2287,6 +2316,18 @@ class BuyOrderScreen(
      * speciesId / aspects 都取自 pending.extraData —— 就是卖家交付来的那一只，形态与实物一致；
      * 闪光再兜底叠加（shiny 是独立字段）。携带物一并带上，弹窗里的精灵也拿东西。
      */
+    /**
+     * 强制下架弹窗的精灵图标模型（标题正下方）。
+     * 非精灵单、或「任意精灵」单（speciesId 为空）不画；aspects 用挂单自己的（性别/地区形态），
+     * 与审核弹窗同一口径 —— 别再自己加 shiny。
+     */
+    private fun buildForceRenderable(entry: BuyOrderEntry) {
+        forceRenderable = entry.speciesId
+            ?.let { net.minecraft.util.Identifier.tryParse(it) }
+            ?.let { com.cobblemon.mod.common.api.pokemon.PokemonSpecies.getByIdentifier(it) }
+            ?.let { RenderablePokemon(it, entry.aspects.toMutableSet(), ItemStack.EMPTY) }
+    }
+
     private fun buildReviewRenderable(entry: BuyOrderEntry) {
         val pending = entry.pending
         if (entry.type != "POKEMON" || pending == null) { reviewRenderable = null; return }
