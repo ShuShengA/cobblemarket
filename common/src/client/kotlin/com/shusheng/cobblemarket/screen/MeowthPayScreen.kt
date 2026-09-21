@@ -26,7 +26,9 @@ class MeowthPayScreen(
     private val onBack: () -> Unit
 ) : Screen(Text.translatable("cobblemarket.meowth_pay.title")) {
 
-    private val dialogW = minOf(340, width - 40).coerceAtLeast(200)
+    // 下限 280 = 三期按钮的硬需求（10 左边距 + 3×84 + 2×4 间隙 + 10 右边距）；
+    // ⚠ 别再压到 200：按钮是固定宽、不随弹窗缩，弹窗一窄第三期就冲出背景（2026-09-21 用户报）
+    private val dialogW = minOf(340, width - 40).coerceAtLeast(280)
     private val dialogH = 170
 
     private var plans = listOf<Pair<Int, Double>>()
