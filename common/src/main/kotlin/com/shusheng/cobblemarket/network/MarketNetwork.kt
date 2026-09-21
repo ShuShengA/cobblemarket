@@ -663,23 +663,27 @@ data class HistoryEntry(
     val price: Int,
     val buyerName: String,
     val sellerName: String,
-    val timestamp: Long
+    val timestamp: Long,
+    /** 精灵名上色用（`cobblemon.type.fire` 这种 key，形态感知）：物品记录与旧记录为空串 */
+    val primaryType: String = ""
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeString(type); buf.writeString(category); buf.writeString(species); buf.writeInt(price); buf.writeString(
             buyerName
-        ); buf.writeString(sellerName); buf.writeLong(timestamp)
+        ); buf.writeString(sellerName); buf.writeLong(timestamp); buf.writeString(primaryType)
     }
 
     companion object {
+        // ⚠ 读端一律具名：位置参数一旦与 write 顺序错开就会静默错位（字段都是 String/Int，不会报类型错）
         fun read(buf: PacketByteBuf) = HistoryEntry(
-            buf.readString(),
-            buf.readString(),
-            buf.readString(),
-            buf.readInt(),
-            buf.readString(),
-            buf.readString(),
-            buf.readLong()
+            type = buf.readString(),
+            category = buf.readString(),
+            species = buf.readString(),
+            price = buf.readInt(),
+            buyerName = buf.readString(),
+            sellerName = buf.readString(),
+            timestamp = buf.readLong(),
+            primaryType = buf.readString()
         )
     }
 }
@@ -2816,7 +2820,7 @@ object MarketNetwork {
                             (r.buyerUuid == null && r.buyerName == player.name.string) ||
                             (r.sellerUuid == com.shusheng.cobblemarket.event.LEGACY_RECORD_UUID && r.buyerName == player.name.string))
                     ) "BUY" else r.type.name
-                    HistoryEntry(t, r.category.name, r.species, r.price, r.buyerName, r.sellerName, r.timestamp)
+                    HistoryEntry(t, r.category.name, r.species, r.price, r.buyerName, r.sellerName, r.timestamp, r.primaryType)
                 }
                 sendToPlayer(player, HistoryDataPayload(entries))
             }
