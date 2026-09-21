@@ -122,16 +122,21 @@ class DepositScreen : Screen(Text.translatable("cobblemarket.deposit.title")) {
             Text.translatable("cobblemarket.deposit.title").formatted(Formatting.GOLD),
             width / 2, dialogY + 14, 0xFFFFFF
         )
-        // 余额 / 累计利息（价格+货币名蓝色）
+        // 余额 / 累计利息：**真金白银**（能取出来花）→ 数字与单位金色、标签白
+        // 蓝色只留给服务器给的虚拟授信与债务（口径：「这个数字能不能花」）
         context.drawTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.deposit.balance_line", formatPriceLong(balance), inlineCurrencyUnit()),
-            dialogX + 12, dialogY + 40, 0x55FFFF
+            Text.translatable("cobblemarket.deposit.balance_line",
+                Text.literal(formatPriceLong(balance)).formatted(Formatting.GOLD),
+                Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+            dialogX + 12, dialogY + 40, 0xFFFFFF
         )
         context.drawTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.deposit.interest_line", formatPriceLong(interest), inlineCurrencyUnit()),
-            dialogX + 12, dialogY + 58, 0x55FFFF
+            Text.translatable("cobblemarket.deposit.interest_line",
+                Text.literal(formatPriceLong(interest)).formatted(Formatting.GOLD),
+                Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)),
+            dialogX + 12, dialogY + 58, 0xFFFFFF
         )
         // 日利率（0.0001 → 0.01%）
         val ratePercent = String.format("%.2f%%", rate * 100)
