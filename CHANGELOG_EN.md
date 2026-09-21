@@ -6,7 +6,7 @@
 
 #### Pokemon Icon Animations
 
-The icons use **Cobblemon's own underlying animations** (the models and motions ship with it); this mod drives them — deciding when to play what, and in which pose.
+The icons use **Cobblemon's own underlying animations** (the models and motions ship with it); the choreography is this mod's own — when to look at your cursor, when to sleep, which cry a click plays — and it puts those animations to far more use than Cobblemon's own screens do.
 
 - **Head follows the cursor**: Pokemon icons in list rows turn their head to look at your cursor (matching the Summary screen), and turn back to centre after the cursor sits still for a while; icons set to "Static" don't follow at all
 - **Day/night sleeping icons**: when the in-game time enters a species' rest window, its icons switch to a sleeping pose (mirroring **Cobblemon's** rest schedule — each species has its own hours and about 40% sleep at all), waking automatically once it passes
