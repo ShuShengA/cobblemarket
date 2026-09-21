@@ -191,7 +191,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         // Row 3 (y=72)：间距统一 4px，整行排到**内容区右缘（lx+296）** —— 与右上角返回按钮的右缘
         // 竖直对齐（1.3.0 同款；原来是 294、差 2px）。两种模式各自铺满不留空：
         //   交付：闪光30 | 公母24 | 属性58 | 特训80 | 选择86
-        //   上架：闪光30 | 公母24 | 属性58 | 价格78 | 上架28 | 特训60
+        //   上架：闪光30 | 公母24 | 属性58 | 价格74 | 上架28 | 特训60
         val btnY = 72
         shinyBtn = NineSliceButton(
             lx + 2, btnY, 30, 20,
@@ -221,12 +221,13 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         )
         addDrawableChild(typeBtn)
 
-        // 价格框宽度**吃满到「上架按钮」左缘**（126+78=204，见下面 sellBtn 的 lx+204），中间不留缝。
-        // ⚠ 别照抄 1.3.0 的 56 宽 —— 那边价格框和上架按钮之间还夹着一个**货币切换按钮**，
-        //   本分支（1.2.0）没有它，照抄会空出 22px（2026-09-21 用户报）
+        // 价格框宽度 74：右缘 200，与「上架按钮」（lx+204）**留 4px 标准间隙**。
+        // ⚠ 别做成紧贴 —— 1.3.0 紧贴的是**货币切换按钮**（语义 = 货币符号紧跟数字），上架按钮没有
+        //   这个语义，紧贴看着像两个控件粘在一起（2026-09-21 用户报）；
+        //   也别照抄 1.3.0 的 56 宽（那边中间夹着货币按钮，本分支没有，照抄会空出 22px）
         // ⚠ 高度 20 = 同行按钮高度，**必须一致**：原版输入框文字 y = y+(h-8)/2，与 NineSliceButton
         //   同一算式；h=18 时文字比按钮高 1px、底边短 2px，整行看着输入框偏上（2026-09-21 用户报）
-        priceField = TextFieldWidget(textRenderer, lx + 126, btnY, 78, 20, Text.literal(""))
+        priceField = TextFieldWidget(textRenderer, lx + 126, btnY, 74, 20, Text.literal(""))
         priceField?.setPlaceholder(Text.translatable("cobblemarket.sell.price_placeholder"))
         priceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addSelectableChild(priceField)
