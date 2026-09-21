@@ -4,9 +4,7 @@
 
 ### New Feature
 
-#### Pokemon Icon Animations
-
-Built on **Cobblemon's** own underlying animations.
+#### Pokemon Icon Animations (built on Cobblemon's own underlying animations)
 
 - **Pokemon preview switch**: a new setting to turn the hover preview off on its own (without affecting the icons themselves)
 - **Keeps up with Cobblemon automatically**: when the official mod adds battle cry animations to more Pokemon, this mod **displays them without needing an update**
