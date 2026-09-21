@@ -1326,7 +1326,8 @@ class BuyOrderScreen(
     private val createScrollHidden = mutableSetOf<ClickableWidget>()
 
     /** 创建弹窗的设计高度（精灵 276 / 物品 196 —— 表单本来就按这两套坐标写的） */
-    private fun createDesignH(): Int = if (createTab == 0) 276 else 196
+    // +10（276→286 / 196→206）+ createButtonInset 同步 +10：给「冻结提示」拆成两行后腾一行
+    private fun createDesignH(): Int = if (createTab == 0) 286 else 206
 
     /**
      * 创建弹窗高度：设计值，**但不超过屏幕**。
@@ -1340,7 +1341,7 @@ class BuyOrderScreen(
     private fun createDialogY(): Int = height / 2 - createDialogH() / 2
 
     /** 确认/取消按钮相对**弹窗底**的内缩（设计值 276−230 / 196−160）—— 按钮钉在弹窗底部，永远够得到 */
-    private fun createButtonInset(): Int = createDesignH() - (if (createTab == 0) 230 else 160)
+    private fun createButtonInset(): Int = createDesignH() - (if (createTab == 0) 240 else 170)
 
     /** 表单可视区 = 标题/tab 之下 [CREATE_FORM_TOP] 起，到按钮上方 6px 止 */
     private fun createViewTop(dialogY: Int): Int = dialogY + CREATE_FORM_TOP
