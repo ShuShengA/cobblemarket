@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.PlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.network.RequestPlayerNameSuggestionsPayload
@@ -857,29 +858,51 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         // 悬停行提示：行内文本会被截断，这里给完整内容
         if (hoveredRow >= 0) {
             val actualIdx = scrollOffset + hoveredRow
+            // 行内「编辑 / 删除」按钮：鼠标落在它们上面时**整个不画悬停窗** —— 玩家那时正要点击、
+            // 不需要详情；且悬停窗就算压住按钮，鼠标移过去也会立刻消失，不可能挡住点击
+            // （2026-09-21 立的规矩，见 docs/gui_pitfalls.md 的「悬停窗」一节）
+            val avoid = rowButtonsRect(hoveredRow)
             if (currentTab == 0) {
                 if (actualIdx in filtered.indices) {
                     val entry = filtered[actualIdx]
                     renderTooltip(context, listOf(
                         entry.playerName,
                         if (entry.nodes.isEmpty()) "-" else entry.nodes.joinToString(", ") { nodeLabel(it) }
-                    ), mouseX, mouseY)
+                    ), mouseX, mouseY, avoid)
                 }
             } else if (actualIdx in auditLines.indices) {
-                renderTooltip(context, auditLines[actualIdx].tooltip, mouseX, mouseY)
+                renderTooltip(context, auditLines[actualIdx].tooltip, mouseX, mouseY, avoid)
             }
         }
     }
 
-    private fun renderTooltip(context: DrawContext, lines: List<String>, mouseX: Int, mouseY: Int) {
+    /**
+     * 本行「编辑 / 删除」两个按钮的**合并矩形**（几何与 [rebuildRowButtons] 同源）；
+     * 变更记录 tab 没有行内按钮 → 返回 null（不避让）。
+     */
+    private fun rowButtonsRect(row: Int): TooltipPlacement.Rect? {
+        if (currentTab != 0) return null
+        val leftX = width / 2 - panelWidth / 2
+        val y = listStartY() + row * rowHeight
+        return TooltipPlacement.Rect(leftX + editBtnX, y + 3, removeBtnX + 44 - editBtnX, 16)
+    }
+
+    /**
+     * 悬停窗（位置走全站统一的 [TooltipPlacement]）：首行金色、其余白色。
+     *
+     * @param avoid 本行操作按钮的矩形；**鼠标落在里面就整个不画**（[TooltipPlacement.place] 返回 null 直接退出）
+     */
+    private fun renderTooltip(context: DrawContext, lines: List<String>, mouseX: Int, mouseY: Int, avoid: TooltipPlacement.Rect? = null) {
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
 
         val padding = 4
-        val tx = minOf(mouseX + 12, width - maxWidth - 12).coerceAtLeast(4)
         val tooltipHeight = lines.size * 10 + padding
-        val tyAbove = mouseY - tooltipHeight - 4
-        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
+        val (tx, ty) = TooltipPlacement.place(
+            mouseX = mouseX, mouseY = mouseY,
+            textW = maxWidth, textH = tooltipHeight, pad = padding,
+            screenW = width, screenH = height, avoid = avoid
+        ) ?: return
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
