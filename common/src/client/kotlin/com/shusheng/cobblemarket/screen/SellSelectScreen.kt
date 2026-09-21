@@ -223,7 +223,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         // 价格框宽度**吃满到「上架按钮」左缘**（126+78=204，见下面 sellBtn 的 lx+204），中间不留缝。
         // ⚠ 别照抄 1.3.0 的 56 宽 —— 那边价格框和上架按钮之间还夹着一个**货币切换按钮**，
         //   本分支（1.2.0）没有它，照抄会空出 22px（2026-09-21 用户报）
-        priceField = TextFieldWidget(textRenderer, lx + 126, btnY, 78, 18, Text.literal(""))
+        // ⚠ 高度 20 = 同行按钮高度，**必须一致**：原版输入框文字 y = y+(h-8)/2，与 NineSliceButton
+        //   同一算式；h=18 时文字比按钮高 1px、底边短 2px，整行看着输入框偏上（2026-09-21 用户报）
+        priceField = TextFieldWidget(textRenderer, lx + 126, btnY, 78, 20, Text.literal(""))
         priceField?.setPlaceholder(Text.translatable("cobblemarket.sell.price_placeholder"))
         priceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addSelectableChild(priceField)
