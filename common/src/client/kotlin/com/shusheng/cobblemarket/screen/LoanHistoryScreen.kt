@@ -100,14 +100,20 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
         tabButtons.add(infoBtn)
         addDrawableChild(infoBtn)
 
-        // 双 tab 居中：两个 50 宽 + 4 间隙 = 104，从中心两侧排开
+        // 双 tab 居中（两个等宽 + 4 间隙）：**宽度按实测最宽文案定** —— 选中态会多个「● 」前缀、
+        // 英文又比中文长，写死 50 时英文选中态「● Bad Debt」会直接溢出按钮（2026-09-21 用户报，
+        // 中文下看着刚好）。左右各留 8px 给九宫格边框。
+        val tabW = maxOf(
+            textRenderer.getWidth("● " + Text.translatable("cobblemarket.loan_history.tab_all").string),
+            textRenderer.getWidth("● " + Text.translatable("cobblemarket.loan_history.tab_bad_debt").string)
+        ) + 16
         val btn1 = NineSliceButton(
-            width / 2 - 52, tabY, 50, 14,
+            width / 2 - tabW - 2, tabY, tabW, 14,
             Text.literal((if (!showBadDebtOnly) "● " else "") + Text.translatable("cobblemarket.loan_history.tab_all").string),
             { switchTab(false) }
         )
         val btn2 = NineSliceButton(
-            width / 2 + 2, tabY, 50, 14,
+            width / 2 + 2, tabY, tabW, 14,
             Text.literal((if (showBadDebtOnly) "● " else "") + Text.translatable("cobblemarket.loan_history.tab_bad_debt").string),
             { switchTab(true) }
         )
