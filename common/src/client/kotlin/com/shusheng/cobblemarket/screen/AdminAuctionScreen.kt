@@ -834,7 +834,17 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
     private fun renderCancelDialogBackground(context: DrawContext, delta: Float) {
         val entry = cancelEntry ?: return
         val centerX = width / 2
-        val dialogW = minOf(340, width - 40).coerceAtLeast(200)
+        // 右列（竞拍信息）实测最宽：金额随拍品变化（100,000,000 这类），不量的话会长出弹窗右边框
+        val rightW = listOf(
+            Text.translatable("cobblemarket.auction.seller").append(entry.sellerName),
+            Text.translatable("cobblemarket.auction.current_price").append(displayPriceText(entry)),
+            Text.translatable("cobblemarket.auction.starting_price_label").append(
+                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}")),
+            Text.translatable("cobblemarket.auction.min_increment_label").append(
+                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"))
+        ).maxOf { textRenderer.getWidth(it) }
+        // 左列固定 140（infoX+10 ~ auctionX），右列 rightW + 20 右边距
+        val dialogW = maxOf(340, 180 + rightW).coerceAtMost(width - 20)
         val dialogH = cancelDialogHeight(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -973,7 +983,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         }
 
         // ── 右列：竞拍信息 ──
-        val auctionX = dialogX + 150
+        val auctionX = dialogX + dialogW - (rightW + 20)
         var ay = dialogY + 28
         fun auctionLine(text: String, color: Int = 0xFFFFFF) {
             context.drawTextWithShadow(textRenderer, text, auctionX, ay, color)
