@@ -58,6 +58,7 @@
 - The market master switch and Server Config entries moved from the market entry screen to the bottom of the Admin Panel; OPs now stop/resume the market and edit the Server Config from there
 - Removed the Cobblemon Economy incompatibility warning: version 0.0.18 of that mod has adapted to Cobblemon 1.8 (it no longer references the renamed Pokédex field), so enabling the currency no longer logs the "will crash" warning at startup; the config comments and website docs were updated to match
 - The four history lists (Trade History, All Trade History, Loan History, All Loan History) now highlight the row under the cursor and show a popup with that row's full details (time, type or status, buyer/seller, Pokemon or item name, amount) — long player names, Pokemon names and amounts that had to be truncated inside the row can now be read in full by hovering
+- Trade history now shows Pokemon names in their **primary-type colour** and item names in their **rarity colour** (the same helpers the market lists use), with amounts in gold; the ledger CSV gains a "Primary Type" column (form-aware — Alolan Vulpix records Ice) to drive the colouring
 
 ### Fixes
 
@@ -90,6 +91,7 @@
 - **The hover panel jumped from side to side as the mouse moved down the list**: each row flipped it from left to right at the same height, and the next row flipped it back; the "don't cover the row button" check followed the cursor, so a dozen pixels of vertical movement inside one row reversed the decision. The panel is now simply **not drawn while the cursor sits on a row button** (that is the moment you are about to click, not read), which removes the avoidance logic entirely and with it the jumping
 - **With the card credit set to a billion, the currency unit touched the dialog border**: the credit line on the Meow·Purple Gold Card / Black Gold Card apply screens overflowed on narrower windows; the dialog is now wider
 - **A trade history row ran past the panel edge when both the price and the buyer name were long**: the two right-hand segments were positioned by adding on to the end of the middle segment, so a long buyer name plus a large price pushed them past the panel's right border (and squeezed the middle segment down to a single "…"); the segments are now positioned from the right edge instead, with an over-long buyer name truncated (its full text is in the hover popup)
+- **Pokemon names read back from the ledger showed as raw species ids**: the ledger stores a species id (such as `pikachu`) and the reader never restored the translation key, so the list displayed "pikachu"; it is restored now and the localised name shows correctly
 
 ## 1.1.1 (in development, unreleased)
 
