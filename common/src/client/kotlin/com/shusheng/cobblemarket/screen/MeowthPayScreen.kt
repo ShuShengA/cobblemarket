@@ -240,10 +240,10 @@ class MeowthPayScreen(
             textRenderer,
             Text.translatable(
                 "cobblemarket.loan.confirm_total",
-                formatPriceLong(amount + estInterest(periods, feeRate)),
-                inlineCurrencyUnit()
+                Text.literal(formatPriceLong(amount + estInterest(periods, feeRate))).formatted(Formatting.GOLD),
+                Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)
             ),
-            lineX, ly, 0x55FFFF
+            lineX, ly, 0xFFFFFF
         )
     }
 

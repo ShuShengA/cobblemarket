@@ -252,9 +252,10 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
             textRenderer,
             Text.translatable(
                 "cobblemarket.loan.confirm_total",
-                formatPriceLong(confirmAmount + estInterest), inlineCurrencyUnit()
+                Text.literal(formatPriceLong(confirmAmount + estInterest)).formatted(Formatting.GOLD),
+                Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)
             ),
-            lineX, ly, 0x55FFFF
+            lineX, ly, 0xFFFFFF
         )
     }
 
