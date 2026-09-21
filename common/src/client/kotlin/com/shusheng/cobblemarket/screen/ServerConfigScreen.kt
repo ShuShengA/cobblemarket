@@ -80,10 +80,12 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     }
 
     // 弹窗几何：标题区 30 + 行区（滚动）+ 底部提示/done 区 34，总高不超过屏幕
-    private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 34)
+    private fun dialogH() = minOf(height - 8, 30 + totalRows * rowHeight + 45)
     private fun dialogY() = height / 2 - dialogH() / 2
     private fun listStartY() = dialogY() + 30
-    private fun listAreaH() = dialogH() - 30 - 34
+    /** 内容区高度：底边停在提示行上方 3px。底部三道自底向上 —— 按钮 -30、提示行 -42、内容底 -45，各留 3px
+     *  ⚠ 改这三处任意一处，都要同步改 dialogH() 的底部预留，否则弹窗高度与内容区对不上 */
+    private fun listAreaH() = dialogH() - 30 - 45
     private fun getMaxVisibleRows() = maxOf(0, listAreaH() / rowHeight)
 
     companion object {
@@ -632,11 +634,11 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         if (System.currentTimeMillis() < savedToastUntil) {
             context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("cobblemarket.op.scfg_saved").formatted(Formatting.GREEN),
-                centerX, dialogY() + dialogH() - 38, 0xFFFFFF)
+                centerX, dialogY() + dialogH() - 42, 0xFFFFFF)
         } else {
             context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("cobblemarket.op.scfg_hint").formatted(Formatting.GRAY),
-                centerX, dialogY() + dialogH() - 38, 0xFFFFFF)
+                centerX, dialogY() + dialogH() - 42, 0xFFFFFF)
         }
         renderScrollbar(context)
     }
