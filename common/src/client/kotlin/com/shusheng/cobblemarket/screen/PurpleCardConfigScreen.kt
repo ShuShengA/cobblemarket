@@ -91,6 +91,9 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
                 {
                     // 只填回默认值不提交：点下方「保存」统一生效（2026-09-05 拍板，重置按钮一律不自动保存）
                     numFields[key]?.text = snapshotText(key, null)
+                    // ⚠ 设完值要把光标挪回开头：光标默认停在**末尾**，而框窄、只围绕光标显示一段，
+                    //   长值（如拍卖档位 "720,1440,…"）就会只露出尾巴，看着像"配置被改过"（2026-09-22 用户报）
+                    numFields[key]?.setCursor(0, false)
                 }
             )
             resetButtons[key] = resetBtn
@@ -140,7 +143,7 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
         // 确认弹窗关闭走 clearChildren+init 重建：恢复未提交的编辑，且不重新请求快照
         // （请求会把本地编辑的开关状态冲回服务端旧值——确认后按钮图标变回关就是这个原因）
         if (savedFieldTexts != null) {
-            savedFieldTexts!!.forEach { (key, text) -> numFields[key]?.text = text }
+            savedFieldTexts!!.forEach { (key, text) -> numFields[key]?.text = text; numFields[key]?.setCursor(0, false) }
             savedToggles?.let { saved -> localToggles.clear(); localToggles.putAll(saved) }
             toggleDefs.forEach { (_, key) -> toggleButtons[key]?.iconLeft = toggleIconFor(key, null) }
             savedFieldTexts = null
@@ -199,6 +202,7 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
             val field = numFields[key] ?: return@forEach
             if (focused !== field) {
                 field.text = snapshotText(key, payload)
+                field.setCursor(0, false)   // 光标回开头，长值才不会只显示尾巴
             }
         }
         toggleDefs.forEach { (_, key) ->
