@@ -387,7 +387,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
             mouseX = mouseX, mouseY = mouseY,
             textW = maxWidth, textH = tooltipHeight, pad = padding,
             screenW = width, screenH = height, avoid = unbanButtonRect(hoveredRow)
-        )
+        ) ?: return
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
