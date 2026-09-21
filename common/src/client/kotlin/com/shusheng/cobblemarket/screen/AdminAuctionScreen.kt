@@ -344,16 +344,17 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             }
         })
 
-        // 按钮右移 10px（-60→-50、+4→+14）：给左列信息区（王冠 IV 行等长文字）腾空间，
+        // 按钮宽 80（原 56 放不下英文「Force Cancel」≈72px）；**左缘保持 -50 不动**（往左会压左列），
+        // 整体往右长：-50/+34，间距 4px。原注：-60 会压左列信息区（王冠 IV 行等长文字），
         // 英文下左列行宽更大，原位置会压到按钮；右列竞拍信息在 y 28~100 不冲突
         cancelConfirmButton = NineSliceButton(
-            centerX - 50, dialogY + dialogH - 30, 56, 20,
+            centerX - 50, dialogY + dialogH - 30, 80, 20,
             Text.translatable("cobblemarket.auction.force_cancel"),
             { confirmCancel() }
         )
         addDrawableChild(cancelConfirmButton)
         cancelCancelButton = NineSliceButton(
-            centerX + 14, dialogY + dialogH - 30, 56, 20,
+            centerX + 34, dialogY + dialogH - 30, 80, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeCancelDialog() }
         )
@@ -1013,10 +1014,10 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         // 灰字与按钮组中心对齐（按钮右移 10px 后中心在 centerX+10）
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.auction.force_cancel_confirm_1").formatted(Formatting.GRAY),
-            centerX + 10, dialogY + dialogH - 54, 0xFFFFFF)
+            centerX + 32, dialogY + dialogH - 54, 0xFFFFFF)
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.auction.force_cancel_confirm_2").formatted(Formatting.GRAY),
-            centerX + 10, dialogY + dialogH - 44, 0xFFFFFF)
+            centerX + 32, dialogY + dialogH - 44, 0xFFFFFF)
     }
 
     // ── 交互 ──
