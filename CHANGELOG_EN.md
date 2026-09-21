@@ -6,7 +6,7 @@
 
 #### Pokemon Icon Animations
 
-The icons use **Cobblemon's own underlying animations** (the models and motions ship with it), choreographed by this mod — scheduled where they fit and put to far more use than in Cobblemon's own screens, waiting for you to find them in game.
+The icons use **Cobblemon's own underlying animations** — and in the market's lists they do a good deal more than they ever do in Cobblemon's own screens. See for yourself in game.
 
 - **Pokemon preview switch**: a new setting to turn the hover preview off on its own (without affecting the icons themselves)
 - **Keeps up with Cobblemon automatically**: when the official mod adds battle cry animations to more Pokemon, this mod **displays them without needing an update**
