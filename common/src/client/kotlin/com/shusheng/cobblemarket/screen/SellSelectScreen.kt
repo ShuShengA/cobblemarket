@@ -243,7 +243,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             if (deliverMode) Text.translatable("cobblemarket.sell.deliver_select") else Text.literal(""),
             { if (deliverMode) deliverSelected() else sellSelected() },
             iconLeft = if (deliverMode) null else Identifier.of("cobblemarket", "textures/gui/sell.png"),
-            iconTexW = 48, iconTexH = 48, iconScale = 12 / 48f,
+            // 图标 16×16：按钮高 20 减上下各 2px（同市场那批图标按钮的惯例）。贴图 48×48 纵向自带
+            // 约 12px 透明留白，画出来红块 ≈16×11.7；还想更醒目可加大（20 即撑满按钮高度）
+            iconTexW = 48, iconTexH = 48, iconScale = 16 / 48f,
             // 普通模式是纯图标（sell.png），要给悬停提示；交付模式本身就是文字按钮，不需要
             tooltip = if (deliverMode) null else Text.translatable("cobblemarket.sell.sell")
         )
