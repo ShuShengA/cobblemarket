@@ -25,7 +25,10 @@ data class TransactionRecord(
     val price: Int,
     val fee: Int,
     // CSV「详情」列：精灵完整数值/物品 NBT 文本化（com.shusheng.cobblemarket.util.RecordDetail 构建；旧记录为空串）
-    val detail: String = ""
+    val detail: String = "",
+    // CSV「主属性」列：精灵名上色用（`cobblemon.type.fire` 这种 key，**形态感知** —— 挂单时取的
+    // pokemon.primaryType）。物品记录为空串；旧记录也读不到 → 落空串，界面按无色处理（只增不改）
+    val primaryType: String = ""
 ) {
     fun toNbt(): NbtCompound = NbtCompound().apply {
         putLong("timestamp", timestamp)
@@ -39,6 +42,7 @@ data class TransactionRecord(
         putInt("price", price)
         putInt("fee", fee)
         putString("detail", detail)
+        putString("primaryType", primaryType)
     }
 
     companion object {
@@ -53,7 +57,8 @@ data class TransactionRecord(
             species = nbt.getString("species"),
             price = nbt.getInt("price"),
             fee = nbt.getInt("fee"),
-            detail = if (nbt.contains("detail")) nbt.getString("detail") else ""
+            detail = if (nbt.contains("detail")) nbt.getString("detail") else "",
+            primaryType = if (nbt.contains("primaryType")) nbt.getString("primaryType") else ""
         )
     }
 }

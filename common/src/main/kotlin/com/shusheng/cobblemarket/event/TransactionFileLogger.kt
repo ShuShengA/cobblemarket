@@ -26,8 +26,8 @@ object TransactionFileLogger {
             val date = dateFormat.format(instant)
             if (date != currentDate) {
                 currentDate = date
-                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,卖家UUID,买家UUID,精灵/物品,价格,手续费,详情")
-                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Seller UUID,Buyer UUID,Pokemon/Item,Price,Fee,Details")
+                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,卖家UUID,买家UUID,精灵/物品,价格,手续费,详情,主属性")
+                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Seller UUID,Buyer UUID,Pokemon/Item,Price,Fee,Details,Primary Type")
             }
             val zhFile = currentZhFile ?: return
             val enFile = currentEnFile ?: return
@@ -70,7 +70,10 @@ object TransactionFileLogger {
 
                     本目录下的 CSV 是交易账本（每笔交易同步写盘，不受服务器崩溃/杀进程影响）。
 
-                    字段：时间, 类型, 分类, 卖家, 买家, 精灵/物品, 价格, 手续费, 详情
+                    字段：时间, 类型, 分类, 卖家, 买家, 卖家UUID, 买家UUID, 精灵/物品, 价格, 手续费, 详情, 主属性
+
+                    （精灵/物品列：精灵存物种 id、物品存物品 id；主属性列是精灵名在界面上的着色依据，
+                      形态感知 —— 阿罗拉六尾记的是冰系；物品记录与旧记录该列为空）
 
                     类型：上架（市场/拍卖挂单）、求购（求购单发布，发起者占卖家列）、
                           卖出（市场/拍卖成交、求购单交付成交）、下架（主动关闭/过期/流拍/管理员强制，详情列 reason 区分）、
@@ -107,7 +110,10 @@ object TransactionFileLogger {
                     The CSVs in this directory are the transaction ledger (each trade is written
                     synchronously to disk, unaffected by server crashes or forced kills).
 
-                    Columns: Time, Type, Category, Seller, Buyer, Species/Item, Price, Fee, Details
+                    Columns: Time, Type, Category, Seller, Buyer, Seller UUID, Buyer UUID, Species/Item, Price, Fee, Details, Primary Type
+
+                    (Species/Item holds a species id for Pokemon and an item id for items; Primary Type is what the
+                     UI colours a Pokemon name by — form-aware (Alolan Vulpix reads as Ice); empty for items and old rows)
 
                     Types: Listed (market/auction listing), Order (buy order placed; the buyer fills the seller column),
                            Sold (market/auction sale, buy order delivery accepted),
@@ -147,7 +153,7 @@ object TransactionFileLogger {
         // 卖家/买家 UUID 供程序回读按 UUID 匹配（改名玩家也查得到）；人读账本看名字列
         val sellerUuid = record.sellerUuid.toString()
         val buyerUuid = record.buyerUuid?.toString() ?: ""
-        return "$time,$type,$category,$seller,$buyer,$sellerUuid,$buyerUuid,$species,${record.price},${record.fee},${csvEscape(record.detail)}"
+        return "$time,$type,$category,$seller,$buyer,$sellerUuid,$buyerUuid,$species,${record.price},${record.fee},${csvEscape(record.detail)},${csvEscape(record.primaryType)}"
     }
 
     private fun typeName(type: TransactionType, lang: String): String = when (type) {
@@ -236,8 +242,15 @@ object TransactionFileLogger {
                     val buyer = fields[4].removePrefix("'")
                     val sellerUuid = if (hasUuid) runCatching { java.util.UUID.fromString(fields[5]) }.getOrNull() else null
                     val buyerUuid = if (hasUuid) fields[6].takeIf { it.isNotEmpty() }?.let { runCatching { java.util.UUID.fromString(it) }.getOrNull() } else null
-                    val species = fields[if (hasUuid) 7 else 5].removePrefix("'")
+                    // ⚠ CSV 里精灵存的是**物种 id**（buildCsvLine 的 speciesDisplay 剥掉了
+                    //   "*.species." 前缀与 ".name" 后缀），要补回翻译 key 才能在界面上显示本地化名字
+                    //   —— 不补的话历史列表里会显示成「pikachu」（物品存的就是物品 id，原样）
+                    val speciesRaw = fields[if (hasUuid) 7 else 5].removePrefix("'")
+                    val species = if (fields[2] == "ITEM" || speciesRaw.contains(".species.")) speciesRaw
+                    else "cobblemon.species.$speciesRaw.name"
                     val price = fields[if (hasUuid) 8 else 6].toIntOrNull() ?: return@forEachLine
+                    // 主属性列（末尾新增）：老文件没有这一列 → 空串，界面按无色处理（只增不改）
+                    val primaryType = if (fields.size > 11) fields[11].removePrefix("'") else ""
                     if (playerUuid != null) {
                         // UUID 匹配优先（新行）；旧行无 UUID 回退名字匹配
                         val uuidMatch = sellerUuid == playerUuid || buyerUuid == playerUuid
@@ -261,7 +274,8 @@ object TransactionFileLogger {
                         species = species,
                         price = price,
                         fee = 0,
-                        detail = ""
+                        detail = "",
+                        primaryType = primaryType
                     ))
                 }
             } catch (e: Exception) {
