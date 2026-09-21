@@ -120,7 +120,10 @@ data class BuyOrderEntry(
      * 别读界面上的「当前币种」状态 —— 漏一处就会把 RP 求购单的价格标成 ₽。
      * 客户端另外在构造时解析出 `isPoints`（见 BuyOrderScreen），行渲染每帧不再 parse。
      */
-    val currency: String
+    val currency: String,
+    // 属性（1.2.0 末尾追加 + 默认值）：强制下架弹窗要显示「类型：」；来源是物种，不是买家的需求条件
+    val primaryType: String = "",
+    val secondaryType: String = ""
 ) {
     /** 这一单是不是 RP 计价 —— **渲染货币单位就读它**（构造时解析一次，行渲染每帧不再 parse，照 AuctionEntry） */
     val isPoints: Boolean = MarketCurrency.fromStored(currency) == MarketCurrency.POINTS
@@ -156,6 +159,8 @@ data class BuyOrderEntry(
         buf.writeBoolean(pending != null)
         pending?.let { it.write(buf) }
         buf.writeString(currency)
+        buf.writeString(primaryType)
+        buf.writeString(secondaryType)
     }
 
     companion object {
@@ -183,9 +188,19 @@ data class BuyOrderEntry(
             createdAt = buf.readLong(),
             expiresAt = buf.readLong(),
             pending = if (buf.readBoolean()) BuyOrderPendingEntry.read(buf) else null,
-            currency = buf.readString()
+            currency = buf.readString(),
+            primaryType = buf.readString(),
+            secondaryType = buf.readString()
         )
     }
+}
+
+/** 物种的属性 key（`cobblemon.type.xxx`）；解析失败 / 无副属性返回空串 */
+private fun buyOrderTypeKey(speciesId: String?, primary: Boolean): String {
+    val id = speciesId?.let { net.minecraft.util.Identifier.tryParse(it) } ?: return ""
+    val sp = com.cobblemon.mod.common.api.pokemon.PokemonSpecies.getByIdentifier(id) ?: return ""
+    val t = if (primary) sp.primaryType else (sp.secondaryType ?: return "")
+    return "cobblemon.type.${t.name.lowercase()}"
 }
 
 fun buyOrderToEntry(o: BuyOrder): BuyOrderEntry = BuyOrderEntry(
@@ -194,6 +209,8 @@ fun buyOrderToEntry(o: BuyOrder): BuyOrderEntry = BuyOrderEntry(
     buyerUuid = o.buyerUuid,
     buyerName = o.buyerName,
     speciesId = o.speciesId,
+    primaryType = buyOrderTypeKey(o.speciesId, true),
+    secondaryType = buyOrderTypeKey(o.speciesId, false),
     speciesKey = o.speciesKey,
     shinyFilter = o.shinyFilter,
     htFilter = o.htFilter,
@@ -285,7 +302,7 @@ data class CreatePokemonBuyOrderPayload(
     val maxPrice: Int,
     val note: String,          // 买家备注（可为空）
     /** 这一单收哪种钱（枚举名）。**币种只在创建时来自客户端**，校验后写进订单对象，此后一律读对象 */
-    val currency: String
+    val currency: String,
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -328,7 +345,7 @@ data class CreateItemBuyOrderPayload(
     // 搜索路径选中的具体变体组件快照（如「招式学习器 · 打鼾」）；手持路径为 null（服务端读主手）
     val componentsSpec: net.minecraft.nbt.NbtCompound? = null,
     /** 这一单收哪种钱（枚举名）。语义同 [CreatePokemonBuyOrderPayload.currency] */
-    val currency: String
+    val currency: String,
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
