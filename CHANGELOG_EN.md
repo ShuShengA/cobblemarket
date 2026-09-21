@@ -51,7 +51,7 @@
 
 The icons use **Cobblemon's own underlying animations** (the models and motions ship with it), choreographed by this mod — put to far more use than in Cobblemon's own screens.
 
-- **Head follows the cursor**: Pokemon icons in list rows turn their head to look at your cursor (matching the Summary screen), and turn back to centre after the cursor sits still for a while; icons set to "Static" don't follow at all
+- **Head follows the cursor**: Pokemon icons in list rows turn their head to look at your cursor (matching **Cobblemon's** Summary screen), and turn back to centre after the cursor sits still for a while; icons set to "Static" don't follow at all
 - **Day/night sleeping icons**: when the in-game time enters a species' rest window, its icons switch to a sleeping pose (mirroring **Cobblemon's** rest schedule — each species has its own hours and about 40% sleep at all), waking automatically once it passes
 - **Hover preview**: hovering a Pokemon row shows an enlarged walking animation of that Pokemon on the left side of the screen — the row icon and the preview are the same Pokemon with fully synchronized motion
 - **Pokemon preview switch**: a new setting to turn the hover preview off on its own (without affecting the icons themselves)
