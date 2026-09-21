@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.ServerConfigDataPayload
 import com.shusheng.cobblemarket.platform.sendToServer
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
@@ -83,7 +84,12 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         val startY = listStartY()
         numDefs.forEach { (def, key) ->
             val isPlans = key == "loanPlans"
-            val field = TextFieldWidget(textRenderer, dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16, Text.literal(""))
+            // 输入框右缘钉死贴 ↺ 按钮左缘（间隙 2px），宽度一律**往左长**（见 ConfigFieldLayout）
+            val fieldW = ConfigFieldLayout.configFieldWidth(textRenderer, dialogW, key, def.labelKey)
+            val field = TextFieldWidget(
+                textRenderer, ConfigFieldLayout.configFieldRight(dialogX, dialogW) - fieldW,
+                startY, fieldW, 16, Text.literal("")
+            )
             field.setTextPredicate { text ->
                 when {
                     isPlans -> text.all { it.isDigit() || it == ':' || it == '.' || it == ',' }
@@ -351,11 +357,13 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         val dialogX = width / 2 - dialogW / 2
         val startY = listStartY()
         var row = 0
-        fun placeNumField(key: String) {
+        fun placeNumField(def: NumDef, key: String) {
             val y = startY + (row - scrollOffset) * rowHeight
             val field = numFields[key] ?: return
             val visible = row in scrollOffset until scrollOffset + getMaxVisibleRows()
-            field.x = dialogX + dialogW - 10 - 20 - 2 - 54
+            // ⚠ x 与宽度必须和 init 用同一套算法：只改一处会让右缘戳出弹窗（2026-09-22 踩过）
+            field.x = ConfigFieldLayout.configFieldX(textRenderer, dialogX, dialogW, key, def.labelKey)
+            field.setWidth(ConfigFieldLayout.configFieldWidth(textRenderer, dialogW, key, def.labelKey))
             field.y = y + 4
             field.visible = visible
             val resetBtn = resetButtons[key]
@@ -372,7 +380,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             btn.visible = row in scrollOffset until scrollOffset + getMaxVisibleRows()
             row++
         }
-        numDefs.forEach { (_, key) -> placeNumField(key) }
+        numDefs.forEach { (def, key) -> placeNumField(def, key) }
         toggleDefs.forEach { (_, key) -> placeToggle(key) }
         // 喵喵紫卡配置入口行（列表末尾）
         val y = startY + (row - scrollOffset) * rowHeight
@@ -416,7 +424,10 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
                 val labelColor = if (System.currentTimeMillis() < (adjustedUntil[key] ?: 0L)) 0xFFFF55 else 0xFFFFFF
                 context.drawTextWithShadow(
                     textRenderer,
-                    Text.translatable(def.labelKey),
+                    TextUtil.truncateStyled(
+                        Text.translatable(def.labelKey),
+                        ConfigFieldLayout.configLabelWidth(textRenderer, dialogW, key, def.labelKey)
+                    ),
                     dialogX + 10, rowY + 7, labelColor
                 )
             }
