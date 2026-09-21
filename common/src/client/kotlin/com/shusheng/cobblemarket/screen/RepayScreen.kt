@@ -294,10 +294,10 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
             textRenderer,
             Text.translatable(
                 "cobblemarket.repay.dialog_settle_total",
-                formatPriceLong(entry.settleTotal),
-                inlineCurrencyUnit()
+                Text.literal(formatPriceLong(entry.settleTotal)).formatted(Formatting.GOLD),
+                Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)
             ),
-            lineX, ly, 0x55FFFF
+            lineX, ly, 0xFFFFFF
         )
         ly += 18
         context.drawTextWithShadow(
