@@ -707,7 +707,7 @@
   "cobblemarket.loan_history.revoke_l4_warn": "This cannot be undone — confirm the consequences",
   "cobblemarket.loan_history.revoke_yes": "Revoke",
   "cobblemarket.loan_history.revoke_yes_countdown": "Revoke (%s s)",
-  "cobblemarket.entry.total_volume": "Server-wide total volume: %s %s",
+  "cobblemarket.entry.total_volume": "Market total volume: %s %s",
   "cobblemarket.op.reserve_line": "Reserve pool: %s %s",
   "cobblemarket.op.bad_debt_line": "Total bad debt: %s %s",
   "cobblemarket.buy_order.tab_all": "All Orders",

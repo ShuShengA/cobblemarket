@@ -708,7 +708,7 @@
   "cobblemarket.loan_history.revoke_l4_warn": "操作不可逆，请确认后果",
   "cobblemarket.loan_history.revoke_yes": "确认撤销",
   "cobblemarket.loan_history.revoke_yes_countdown": "确认撤销（%s 秒）",
-  "cobblemarket.entry.total_volume": "全服累计成交额：%s %s",
+  "cobblemarket.entry.total_volume": "市场累计成交额：%s %s",
   "cobblemarket.op.reserve_line": "准备金池：%s %s",
   "cobblemarket.op.bad_debt_line": "坏账总额：%s %s",
   "cobblemarket.buy_order.tab_all": "全部求购",
