@@ -188,9 +188,10 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             tooltip = Text.translatable("cobblemarket.gui.back")
         ))
 
-        // Row 3 (y=72)：间距统一 4px，整行排满到面板右缘（lx+294），两种模式各自铺满不留空
-        //   交付：闪光30 | 公母24 | 属性58 | 特训80 | 选择84
-        //   上架：闪光30 | 公母24 | 属性58 | 价格56 | 上架44 | 特训60
+        // Row 3 (y=72)：间距统一 4px，整行排到**内容区右缘（lx+296）** —— 与右上角返回按钮的右缘
+        // 竖直对齐（1.3.0 同款；原来是 294、差 2px）。两种模式各自铺满不留空：
+        //   交付：闪光30 | 公母24 | 属性58 | 特训80 | 选择86
+        //   上架：闪光30 | 公母24 | 属性58 | 价格78 | 上架28 | 特训60
         val btnY = 72
         shinyBtn = NineSliceButton(
             lx + 2, btnY, 30, 20,
@@ -233,10 +234,11 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         // 交付模式：价格在求购单交付弹窗输入，隐藏价格框，特训按钮顶上这个位置
         priceField?.visible = !deliverMode
 
-        // 上架按钮：普通模式用图标（sell.png）替掉「上架」二字，按钮能窄一大截；
-        // 交付模式仍是文字。⚠ 右缘保持不动（186+44=230 → 204+26=230），与右边「特训筛选」的 4px 间隙不变
+        // 上架按钮：普通模式用图标（sell.png）替掉「上架」二字，按钮能窄一大截；交付模式仍是文字。
+        // ⚠ 宽度里含「把整行右缘顶到 296」的那 2px —— 普通 26→28（204+28=232，接 4px 间隙后的特训）、
+        //   交付 84→86（210+86=296），两种模式的右缘都与返回按钮齐平
         sellBtn = NineSliceButton(
-            if (deliverMode) lx + 210 else lx + 204, btnY, if (deliverMode) 84 else 26, 20,
+            if (deliverMode) lx + 210 else lx + 204, btnY, if (deliverMode) 86 else 28, 20,
             if (deliverMode) Text.translatable("cobblemarket.sell.deliver_select") else Text.literal(""),
             { if (deliverMode) deliverSelected() else sellSelected() },
             iconLeft = if (deliverMode) null else Identifier.of("cobblemarket", "textures/gui/sell.png"),
@@ -246,8 +248,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         )
         addDrawableChild(sellBtn)
         // 特训筛选（三态循环；交付模式移到价格框位置，给选择按钮让位）
+        // 普通模式 234→236 是跟着加宽后的上架按钮走的（保持 4px 间隙），右缘同时落到 296
         htBtn = NineSliceButton(
-            if (deliverMode) lx + 126 else lx + 234, btnY, if (deliverMode) 80 else 60, 20,
+            if (deliverMode) lx + 126 else lx + 236, btnY, if (deliverMode) 80 else 60, 20,
             htButtonText(),
             { toggleHtFilter(); rebuild() },
             if (htFilter != 0) GOLD_COLOR else 0xFFFFFF
