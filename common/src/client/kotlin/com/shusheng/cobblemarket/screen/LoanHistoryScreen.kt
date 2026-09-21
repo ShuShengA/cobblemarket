@@ -361,7 +361,8 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
             x += textRenderer.getWidth(statusLabel) + 6
             val middle = middleTextOf(e)
             // 剩余本金右对齐行尾（照列表界面惯例），中间部分按实际可用像素截断（truncateString 单位为像素）
-            val pricePart = priceTextOf(e)
+            // 「| 」分隔符在**这里**加：priceTextOf 只给纯文案，悬停窗独立成行时不要它
+            val pricePart = "| " + priceTextOf(e)
             val priceX = leftX + panelWidth - 5 - rightReserved - textRenderer.getWidth(pricePart)
             val middleMax = priceX - 6 - x
             context.drawTextWithShadow(textRenderer, TextUtil.truncateString(middle, middleMax), x, y + 8, 0xFFFFFF)
@@ -409,9 +410,13 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
         return "$owner${formatPriceLong(e.principal)} ${inlineCurrencyUnit()}·$periodsText($source)$ipPart"
     }
 
-    /** 行尾剩余本金文案（右对齐那一段） */
+    /**
+     * 剩余本金文案。
+     * ⚠ **不带「| 」** —— 那是**行内**的分隔符（行尾紧跟在中段后面才需要），由行渲染自己加；
+     * 悬停窗里它独立成一行，带上就变成「| 8,000 ₽」这种莫名其妙的前缀（2026-09-21 用户报）。
+     */
     private fun priceTextOf(e: LoanHistoryEntry): String =
-        "| ${formatPriceLong(e.remaining)} ${inlineCurrencyUnit()}"
+        "${formatPriceLong(e.remaining)} ${inlineCurrencyUnit()}"
 
     /**
      * 悬停窗（位置走全站统一的 [TooltipPlacement]）：自动躲开屏幕边缘。
