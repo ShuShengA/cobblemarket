@@ -992,7 +992,7 @@ class AuctionScreen(
                 Text.translatable("cobblemarket.auction.min_increment").append(": ").append(
                     Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"))
             ).maxOf { textRenderer.getWidth(it) }
-            (maxOf(320, nameW + 150, rightW + 150)).coerceAtMost(width - 20)
+            (maxOf(320, nameW + 150, rightW + 190)).coerceAtMost(width - 20)
         } else (maxOf(320, maxLineW + 170)).coerceAtMost(width - 20)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
