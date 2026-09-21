@@ -59,6 +59,18 @@ const val POINTS_SYMBOL_INLINE_SIZE = 8
 const val CURRENCY_BUTTON_ICON_SIZE = 12
 
 /**
+ * **上架按钮**里 [SELL_ICON_TEXTURE] 的显示边长。
+ *
+ * ⚠ **不跟 [CURRENCY_BUTTON_ICON_SIZE] 共用** —— 两张源图的透明留白差得多：
+ * [POINTS_SYMBOL_TEXTURE] 内容几乎铺满 48×48，而 `sell.png` 纵向只占 35px（上 6 下 7 全透明），
+ * 同样按 12 画出来，红块只有 **12×8.75**，比旁边那枚货币符号明显小一圈（2026-09-21 用户指出）。
+ *
+ * 16 = 按钮高 20 减上下各 2px（同市场那批图标按钮的惯例）→ 红块 ≈**16×11.7**，
+ * 与货币符号（11.5×12）视觉齐平。再大就撑出 20 高的按钮了。
+ */
+const val SELL_BUTTON_ICON_SIZE = 16
+
+/**
  * 画行内货币符号（余额 HUD 的 RP 行、列表行、悬停窗都走它）。
  *
  * ⚠ **缩放必须走 matrices**：`drawTexture` 的 width/height 是**从源图采样的区域尺寸**，
