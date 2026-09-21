@@ -1475,7 +1475,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val entry = confirmEntry ?: cancelEntry ?: return
         val centerX = width / 2
         // 喵喵支付可用时加宽 280 容纳三枚按钮；不可用回退原宽度 220（两枚）
-        val dialogW = if (payAvailable) minOf(340, width - 40).coerceAtLeast(200) else minOf(300, width - 40).coerceAtLeast(200)
+        val dialogW = if (payAvailable) minOf(340, width - 40).coerceAtLeast(280) else minOf(300, width - 40).coerceAtLeast(240)
         val dialogH = confirmDialogHeight(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
