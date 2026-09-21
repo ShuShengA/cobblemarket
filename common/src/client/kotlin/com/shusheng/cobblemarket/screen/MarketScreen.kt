@@ -228,7 +228,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val leftX = centerX - panelWidth / 2
 
         // Row 1 (y=32): Search text field (full width)
-        searchField = TextFieldWidget(textRenderer, leftX + 2, 44, panelWidth - 4 - 52 - 20, 16, Text.translatable("cobblemarket.gui.search"))
+        // 宽度 = 面板 − 4（左右边距）− 50（小手）− 2 − 2（两侧间隔）− 50（筛选展开）；
+        // 小手与筛选同宽后搜索框相应缩短（2026-09-21 用户拍板：再长的精灵名也用不到这么长）
+        searchField = TextFieldWidget(textRenderer, leftX + 2, 44, panelWidth - 108, 16, Text.translatable("cobblemarket.gui.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.gui.search_placeholder").formatted(Formatting.GRAY))
         // 防抖：停止输入 250ms 后才发请求。连续编辑时只发最终态，
         // 避免中间态请求与最终态请求挤在服务端 250ms 节流窗口内，最终态被静默丢弃导致列表不刷新。
@@ -255,12 +257,16 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         }
         addDrawableChild(filterToggleButton)
 
-        // Sell button (right of search, left of filter toggle)
+        // Sell button (right of search, left of filter toggle)：宽 50 与右侧「筛选展开」对齐
+        // （2026-09-21 用户拍板；腾出的宽度来自搜索框，见上面 searchField 的宽度算式）
+        // ⚠ 纯图标按钮**一律要给悬停提示**（同排的筛选按钮就有）—— 小手图标不给提示的话，
+        //   玩家根本不知道去哪儿上架精灵（2026-09-21 用户报）
         addDrawableChild(NineSliceButton(
-            leftX + panelWidth - 72, 44, 18, 16,
+            leftX + panelWidth - 104, 44, 50, 16,
             Text.literal(""), { openSellScreen() },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
-            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.gui.sell_pokemon")
         ))
 
         // Collect balance button (top-left)

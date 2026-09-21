@@ -81,6 +81,7 @@
 - **The Buy Order "force delist" dialog showed nothing but a name**: an admin deciding whether to force-delist an order could not see what that order actually asks for (conditions, nature/ability, IV requirements, price range, note…); it now shows exactly the same details as the row tooltip, and clamps to the screen with wheel scrolling when too tall
 - **The Meowth Pay dialog gave no sign of your available credit**: you could not tell whether the instalments would fit your limit until you confirmed and the server rejected it; the dialog now shows "Available credit" centred under the title, **turned red when it falls short of the amount**
 - **Pokémon names were plain white in the Meowth Pay dialog**: the name lost its type colour and a shiny Pokémon's ★ was missing (that line was rendered as plain text); it now matches the Pokémon names elsewhere, and the amount and currency unit to the right of the name are gold
+- **Icon-only buttons had no tooltip**: the "list / create auction / add" buttons with nothing but an icon (Pokémon market, item market, Auction House, blacklist, price limits) gave no hint on hover, leaving players to guess — the listing entry especially; they now all show a text tooltip. Three hand-drawn tooltips (buy-order, blacklist, price limits) that looked different from the rest were also switched to the standard one
 
 ## 1.1.1 (in development, unreleased)
 
