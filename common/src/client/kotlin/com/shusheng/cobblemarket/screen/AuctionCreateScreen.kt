@@ -239,15 +239,15 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 addSelectableChild(f); addDrawableChild(f)
                 return f
             }
-            hpF = mkIv(leftX + 2, "HP"); atkF = mkIv(leftX + 49, "ATK"); defF = mkIv(leftX + 96, "DEF")
-            spaF = mkIv(leftX + 143, "SpA"); spdF = mkIv(leftX + 190, "SpD"); speF = mkIv(leftX + 237, "Spd")
+            hpF = mkIv(leftX + 2, "HP"); atkF = mkIv(leftX + 51, "ATK"); defF = mkIv(leftX + 100, "DEF")
+            spaF = mkIv(leftX + 149, "SpA"); spdF = mkIv(leftX + 198, "SpD"); speF = mkIv(leftX + 247, "Spd")
 
             // 三态比较按钮（= / ≥ / ≤ 循环，默认 = 与旧行为一致；非默认金色高亮；贴自己框成组）
             ivOpButtons.clear()
             for (i in 0..5) {
-                val bx = leftX + 2 + i * 47 + 29
+                val bx = leftX + 2 + i * 49 + 29
                 val btn = NineSliceButton(
-                    bx, 70, 14, 16,
+                    bx, 70, 16, 16,
                     Text.literal(if (ivOps[i] == 1) "≥" else if (ivOps[i] == 2) "≤" else "="),
                     {
                         ivOps[i] = (ivOps[i] + 1) % 3
