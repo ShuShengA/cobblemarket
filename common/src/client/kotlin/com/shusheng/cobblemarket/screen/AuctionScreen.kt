@@ -1105,7 +1105,14 @@ class AuctionScreen(
         // 物品分支早有同样机制（按最长行算）。2026-09-21 用户报：精灵名一长就压到右列拍卖信息上
         val dialogW = if (entry.type == "POKEMON") {
             val nameW = textRenderer.getWidth(displayName(entry)) + 60
-            (maxOf(320, nameW + 150)).coerceAtMost(width - 20)
+            // 右列（拍卖信息）实测最宽：金额随挂单变化（100,000,000 这类），不量的话会顶出弹窗右边框
+            val rightW = listOf(
+                "${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}",
+                "${Text.translatable("cobblemarket.auction.current_price").string}: ${com.shusheng.cobblemarket.client.formatPrice(entry.currentPrice)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}",
+                "${Text.translatable("cobblemarket.auction.starting_price").string}: ${com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}",
+                "${Text.translatable("cobblemarket.auction.min_increment").string}: ${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
+            ).maxOf { textRenderer.getWidth(it) }
+            (maxOf(320, nameW + 150, rightW + 150)).coerceAtMost(width - 20)
         } else (maxOf(320, maxLineW + 170)).coerceAtMost(width - 20)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
