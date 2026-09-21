@@ -128,6 +128,8 @@
 - **The button label overflowed on the Meow·Purple Gold Card / Black Gold Card apply screens**: "Self-application is closed" is too long for the 100px-wide button it sat on, so the text spilled outside it; the button is now wider and every state's label fits
 - **The bottom hint sat on top of the Save / Cancel buttons on Server Config and its five sibling screens**: "Click Save to apply changes, Cancel to discard them" was glued to the buttons; the content area, the hint and the buttons are now three separate rows, with the dialog slightly taller
 - **Five config screens scrolled but gave no sign of it**: the finance config, the Purple / Black Gold Card configs and the two card-condition screens could only be scrolled with the wheel, with nothing on screen to say so (of the six sibling screens only Server Config had a scrollbar); they now all have one
+- **The hover panel jumped from side to side as the mouse moved down the list**: each row flipped it from left to right at the same height, and the next row flipped it back; the "don't cover the row button" check followed the cursor, so a dozen pixels of vertical movement inside one row reversed the decision. The panel is now simply **not drawn while the cursor sits on a row button** (that is the moment you are about to click, not read), which removes the avoidance logic entirely and with it the jumping
+- **With the card credit set to a billion, the currency unit touched the dialog border**: the credit line on the Meow·Purple Gold Card / Black Gold Card apply screens overflowed on narrower windows; the dialog is now wider
 
 ## 1.1.1 (in development, unreleased)
 
