@@ -27,10 +27,10 @@ object TransactionFileLogger {
             val date = dateFormat.format(instant)
             if (date != currentDate) {
                 currentDate = date
-                // ⚠ 表头必须与 buildCsvLine 的列一一对应（含**末尾的币种列**）：
-                //   漏了币种会让表头 11 列、数据 12 列，Excel 里整行错位
-                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,卖家UUID,买家UUID,精灵/物品,价格,手续费,详情,币种")
-                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Seller UUID,Buyer UUID,Pokemon/Item,Price,Fee,Details,Currency")
+                // ⚠ 表头必须与 buildCsvLine 的列一一对应（含**末尾的币种列与主属性列**）：
+                //   漏了会让表头少列、数据多列，Excel 里整行错位
+                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,卖家UUID,买家UUID,精灵/物品,价格,手续费,详情,币种,主属性")
+                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Seller UUID,Buyer UUID,Pokemon/Item,Price,Fee,Details,Currency,Primary Type")
             }
             val zhFile = currentZhFile ?: return
             val enFile = currentEnFile ?: return
@@ -73,10 +73,13 @@ object TransactionFileLogger {
 
                     本目录下的 CSV 是交易账本（每笔交易同步写盘，不受服务器崩溃/杀进程影响）。
 
-                    字段：时间, 类型, 分类, 卖家, 买家, 卖家UUID, 买家UUID, 精灵/物品, 价格, 手续费, 详情, 币种
+                    字段：时间, 类型, 分类, 卖家, 买家, 卖家UUID, 买家UUID, 精灵/物品, 价格, 手续费, 详情, 币种, 主属性
 
                     币种：PRIMARY = 主货币，POINTS = RP（高级货币）。价格列的数值要与币种一起看——
                     1 RP 与 1 主货币不等值，两种币的账目不能直接相加。老账本没有这一列，按主货币读。
+
+                    主属性：精灵名在界面上的着色依据（形态感知 —— 阿罗拉六尾记的是冰系）；
+                    物品记录与老账本该列为空。精灵/物品列本身：精灵存物种 id、物品存物品 id。
 
                     类型：上架（市场/拍卖挂单）、求购（求购单发布，发起者占卖家列）、
                           卖出（市场/拍卖成交、求购单交付成交）、下架（主动关闭/过期/流拍/管理员强制，详情列 reason 区分）、
@@ -113,11 +116,15 @@ object TransactionFileLogger {
                     The CSVs in this directory are the transaction ledger (each trade is written
                     synchronously to disk, unaffected by server crashes or forced kills).
 
-                    Columns: Time, Type, Category, Seller, Buyer, Seller UUID, Buyer UUID, Species/Item, Price, Fee, Details, Currency
+                    Columns: Time, Type, Category, Seller, Buyer, Seller UUID, Buyer UUID, Species/Item, Price, Fee, Details, Currency, Primary Type
 
                     Currency: PRIMARY = main currency, POINTS = RP (the premium currency). Always read the Price
                     column together with it — 1 RP and 1 main currency are not of equal value, so totals across
                     the two currencies must not be added up. Older ledgers lack this column; read them as main currency.
+
+                    Primary Type: what the UI colours a Pokemon name by — form-aware (Alolan Vulpix reads as Ice);
+                    empty for items and older ledger rows. The Species/Item column holds a species id for Pokemon
+                    and an item id for items.
 
                     Types: Listed (market/auction listing), Order (buy order placed; the buyer fills the seller column),
                            Sold (market/auction sale, buy order delivery accepted),
@@ -157,9 +164,9 @@ object TransactionFileLogger {
         // 卖家/买家 UUID 供程序回读按 UUID 匹配（改名玩家也查得到）；人读账本看名字列
         val sellerUuid = record.sellerUuid.toString()
         val buyerUuid = record.buyerUuid?.toString() ?: ""
-        // ⚠ 币种列加在**末尾**：老 CSV 没有这一列，读的时候按「缺列 = 主货币」容错
+        // ⚠ 币种与主属性列都加在**末尾**：老 CSV 没有这两列，读的时候按「缺列 = 主货币 / 无色」容错
         return "$time,$type,$category,$seller,$buyer,$sellerUuid,$buyerUuid,$species," +
-            "${record.price},${record.fee},${csvEscape(record.detail)},${record.currency.name}"
+            "${record.price},${record.fee},${csvEscape(record.detail)},${record.currency.name},${csvEscape(record.primaryType)}"
     }
 
     private fun typeName(type: TransactionType, lang: String): String = when (type) {
@@ -248,8 +255,15 @@ object TransactionFileLogger {
                     val buyer = fields[4].removePrefix("'")
                     val sellerUuid = if (hasUuid) runCatching { java.util.UUID.fromString(fields[5]) }.getOrNull() else null
                     val buyerUuid = if (hasUuid) fields[6].takeIf { it.isNotEmpty() }?.let { runCatching { java.util.UUID.fromString(it) }.getOrNull() } else null
-                    val species = fields[if (hasUuid) 7 else 5].removePrefix("'")
+                    // ⚠ CSV 里精灵存的是**物种 id**（buildCsvLine 的 speciesDisplay 剥掉了
+                    //   "*.species." 前缀与 ".name" 后缀），要补回翻译 key 才能在界面上显示本地化名字
+                    //   —— 不补的话历史列表里会显示成「pikachu」（物品存的就是物品 id，原样）
+                    val speciesRaw = fields[if (hasUuid) 7 else 5].removePrefix("'")
+                    val species = if (fields[2] == "ITEM" || speciesRaw.contains(".species.")) speciesRaw
+                    else "cobblemon.species.$speciesRaw.name"
                     val price = fields[if (hasUuid) 8 else 6].toIntOrNull() ?: return@forEachLine
+                    // 主属性列（第 13 列，末尾）：老文件没有这一列 → 空串，界面按无色处理（只增不改）
+                    val primaryType = if (fields.size > 12) fields[12].removePrefix("'") else ""
                     if (playerUuid != null) {
                         // UUID 匹配优先（新行）；旧行无 UUID 回退名字匹配
                         val uuidMatch = sellerUuid == playerUuid || buyerUuid == playerUuid
@@ -274,8 +288,9 @@ object TransactionFileLogger {
                         price = price,
                         fee = 0,
                         detail = "",
-                        // 币种在**第 12 列（末尾）**：老 CSV 没这一列 ⇒ getOrNull 给 null ⇒ fromStored 落主货币
-                        currency = MarketCurrency.fromStored(fields.getOrNull(11))
+                        // 币种在第 12 列、主属性在第 13 列（都在末尾）：老 CSV 没这两列 ⇒ 落主货币 / 空串
+                        currency = MarketCurrency.fromStored(fields.getOrNull(11)),
+                        primaryType = primaryType
                     ))
                 }
             } catch (e: Exception) {

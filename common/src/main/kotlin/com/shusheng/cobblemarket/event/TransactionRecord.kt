@@ -31,7 +31,10 @@ data class TransactionRecord(
      * 这笔流水是什么币种的（CSV 多一列）。**追加在末尾并给默认值** ⇒ 旧记录读不到就是主货币。
      * ⚠ 交易历史界面与 CSV 都按它显示单位；漏了会让 RP 流水看起来像主货币流水。
      */
-    val currency: MarketCurrency = MarketCurrency.PRIMARY
+    val currency: MarketCurrency = MarketCurrency.PRIMARY,
+    // CSV「主属性」列：精灵名上色用（`cobblemon.type.fire` 这种 key，**形态感知** —— 挂单时取的
+    // pokemon.primaryType）。物品记录为空串；旧记录也读不到 → 落空串，界面按无色处理（只增不改）
+    val primaryType: String = ""
 ) {
     fun toNbt(): NbtCompound = NbtCompound().apply {
         putLong("timestamp", timestamp)
@@ -46,6 +49,7 @@ data class TransactionRecord(
         putInt("fee", fee)
         putString("detail", detail)
         putString("currency", currency.name)
+        putString("primaryType", primaryType)
     }
 
     companion object {
@@ -62,7 +66,8 @@ data class TransactionRecord(
             fee = nbt.getInt("fee"),
             detail = if (nbt.contains("detail")) nbt.getString("detail") else "",
             // 旧记录没这个键（getString 给空串）/ 值是垃圾 ⇒ fromStored 一律落主货币，不抛不 warn
-            currency = MarketCurrency.fromStored(nbt.getString("currency"))
+            currency = MarketCurrency.fromStored(nbt.getString("currency")),
+            primaryType = if (nbt.contains("primaryType")) nbt.getString("primaryType") else ""
         )
     }
 }

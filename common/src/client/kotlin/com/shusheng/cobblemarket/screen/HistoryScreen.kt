@@ -7,14 +7,15 @@ import com.shusheng.cobblemarket.network.HistoryEntry
 import com.shusheng.cobblemarket.network.RequestHistoryPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import com.shusheng.cobblemarket.platform.configDir
+import com.shusheng.cobblemarket.util.ItemNameText
 import com.shusheng.cobblemarket.util.TextUtil
+import com.shusheng.cobblemarket.util.TypeTextColors
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.util.Util
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.ButtonWidget
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
-import net.minecraft.registry.Registries
 import net.minecraft.util.Identifier
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -144,7 +145,6 @@ class HistoryScreen(private val showAll: Boolean = false) :
             drawNineSlice(context, ROW_BACKGROUND_TEXTURE, listLeft, y, panelWidth, rowHeight, if (i == hoveredRow) 1 else 0, ROW_BACKGROUND_TEX_H)
             val time = dateFormat.format(Date(e.timestamp))
             val typeLabel = "[${typeTextOf(e)}]"
-            val speciesText = speciesTextOf(e)
             val seller = if (e.sellerName.isNotEmpty()) e.sellerName else "?"
             val buyer = if (e.buyerName.isNotEmpty()) " → ${e.buyerName}" else ""
 
@@ -177,10 +177,14 @@ class HistoryScreen(private val showAll: Boolean = false) :
                 buyerPart, (priceX - 6 - cx - MIDDLE_MIN_W - 6).coerceAtLeast(0)
             )
             val buyerX = priceX - (if (buyerShown.isNotEmpty()) textRenderer.getWidth(buyerShown) + 6 else 0)
-            // 中间段按实际可用像素截断（truncateString 单位为像素）——
-            // 无翻译的物品 id 会原样显示成超长 key，不截断会把整行画出面板
-            val middle = TextUtil.truncateString(
-                if (showAll) "$seller$buyer $speciesText" else speciesText,
+            // 中间段：内容色（精灵名=属性色 / 物品名=稀有度色）**显式写在段自己身上**，陪衬的
+            // 卖家→买家不设色、吃行色白 —— 各段平级 append，别让带色的段污染整行（颜色铁律）
+            // 截断走 truncateStyled（保留分段样式），预算按像素算
+            val middle = TextUtil.truncateStyled(
+                Text.literal("").apply {
+                    if (showAll) append(Text.literal("$seller$buyer "))
+                    append(speciesNameText(e))
+                },
                 (if (buyerShown.isNotEmpty()) buyerX else priceX) - 6 - cx
             )
             context.drawTextWithShadow(textRenderer, middle, cx, y + 4, 0xFFFFFF)
@@ -196,12 +200,13 @@ class HistoryScreen(private val showAll: Boolean = false) :
             val seller = if (e.sellerName.isNotEmpty()) e.sellerName else "?"
             val buyer = if (e.buyerName.isNotEmpty()) " → ${e.buyerName}" else ""
             val fullTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date(e.timestamp))
-            renderTooltip(context, buildList {
-                add(speciesTextOf(e))
-                add("[${typeTextOf(e)}] $fullTime")
-                add("$seller$buyer")
-                add("${com.shusheng.cobblemarket.client.formatPrice(e.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}")
-            }, mouseX, mouseY)
+            renderTooltip(context, listOf(
+                speciesNameText(e),                                                          // 属性色 / 稀有度色
+                Text.literal("[${typeTextOf(e)}] $fullTime"),
+                Text.literal("$seller$buyer"),
+                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(e.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}")
+                    .formatted(Formatting.GOLD)                                              // 金额金
+            ), mouseX, mouseY)
         }
 
         // Scroll indicator
@@ -225,16 +230,26 @@ class HistoryScreen(private val showAll: Boolean = false) :
     private fun typeTextOf(e: HistoryEntry): String =
         Text.translatable("cobblemarket.history.type.${e.type}").string
 
-    /** 精灵 / 物品显示名（行内与悬停窗共用）：物品走注册表名，精灵走词条 */
-    private fun speciesTextOf(e: HistoryEntry): String = if (e.category == "ITEM") {
-        val id = Identifier.tryParse(e.species)
-        if (id != null) Registries.ITEM.get(id).name.string else e.species
+    /**
+     * 精灵名带**主属性色** / 物品名带**稀有度色**（颜色铁律；行内与悬停窗共用同一个入口）。
+     *
+     * 精灵走 [TypeTextColors.speciesName]（与聊天播报同一个函数），物品走
+     * [ItemNameText.rarityColoredNameById] —— 历史数据里只有物种/物品 id，正好是这两个入口要的。
+     * 拿不到颜色时（老记录没有主属性列、物品 id 解析不出）退回无色，由调用方的行色兜底。
+     */
+    private fun speciesNameText(e: HistoryEntry): Text = if (e.category == "ITEM") {
+        ItemNameText.rarityColoredNameById(e.species) ?: Text.literal(e.species)
     } else {
-        Text.translatable(e.species).string
+        TypeTextColors.speciesName(Text.translatable(e.species), e.primaryType.ifEmpty { null }, false)
     }
 
-    /** 悬停窗（照权限管理界面的 renderTooltip）：首行金色、其余白色，位置自动躲开屏幕边缘 */
-    private fun renderTooltip(context: DrawContext, lines: List<String>, mouseX: Int, mouseY: Int) {
+    /**
+     * 悬停窗（照权限管理界面那套）：位置自动躲开屏幕边缘。
+     *
+     * ⚠ 行色固定白 —— 具体颜色一律由各行的 [Text] 自带（金额金、精灵名属性色…），
+     * 别在这里按行号上色（那会把自带颜色的段也染掉）。
+     */
+    private fun renderTooltip(context: DrawContext, lines: List<Text>, mouseX: Int, mouseY: Int) {
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
 
@@ -248,7 +263,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
         lines.forEachIndexed { i, line ->
-            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, if (i == 0) GOLD_COLOR else 0xFFFFFF)
+            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, 0xFFFFFF)
         }
         context.matrices.pop()
     }

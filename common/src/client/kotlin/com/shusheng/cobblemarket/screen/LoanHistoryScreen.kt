@@ -366,11 +366,14 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
             val e = visibleEntries[hoveredRow]
             val fullTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date(e.timestamp))
             val statusText = Text.translatable("cobblemarket.loan_history.status.${e.status}").string
-            renderTooltip(context, buildList {
-                add("[$statusText] $fullTime")
-                add(middleTextOf(e))
-                add(priceTextOf(e))
-            }, mouseX, mouseY)
+            // 颜色与行内一一对应：状态用状态色、时间灰、主体白、剩余本金走账本蓝（0x55FFFF）
+            renderTooltip(context, listOf(
+                Text.literal("")
+                    .append(Text.literal("[$statusText]").styled { it.withColor(statusColor(e.status)) })
+                    .append(Text.literal(" $fullTime").styled { it.withColor(0x888888) }),
+                Text.literal(middleTextOf(e)),
+                Text.literal(priceTextOf(e)).styled { it.withColor(0x55FFFF) }
+            ), mouseX, mouseY)
         }
 
         // Scroll indicator
@@ -396,8 +399,13 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
     private fun priceTextOf(e: LoanHistoryEntry): String =
         "| ${formatPriceLong(e.remaining)} ${inlineCurrencyUnit()}"
 
-    /** 悬停窗（照权限管理界面的 renderTooltip）：首行金色、其余白色，位置自动躲开屏幕边缘 */
-    private fun renderTooltip(context: DrawContext, lines: List<String>, mouseX: Int, mouseY: Int) {
+    /**
+     * 悬停窗（照权限管理界面那套）：位置自动躲开屏幕边缘。
+     *
+     * ⚠ 行色固定白 —— 颜色一律由各行的 [Text] 自带（状态色、时间灰、账本蓝…），
+     * 别在这里按行号上色（那会把自带颜色的段也染掉）。
+     */
+    private fun renderTooltip(context: DrawContext, lines: List<Text>, mouseX: Int, mouseY: Int) {
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
 
@@ -411,7 +419,7 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
         lines.forEachIndexed { i, line ->
-            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, if (i == 0) GOLD_COLOR else 0xFFFFFF)
+            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, 0xFFFFFF)
         }
         context.matrices.pop()
     }

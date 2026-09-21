@@ -76,7 +76,9 @@ class TransactionHistory private constructor() : PersistentState() {
                     price = e.listing.price,
                     fee = e.fee,
                     detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny),
-                    currency = e.listing.currency
+                    currency = e.listing.currency,
+                    // 精灵名上色用（形态感知的主属性，挂单时与 speciesKey 一起快照的）
+                    primaryType = e.listing.extraData["primaryType"] ?: ""
                 ))
             }
             MarketEvents.PURCHASE.subscribe { e ->
@@ -92,7 +94,9 @@ class TransactionHistory private constructor() : PersistentState() {
                     price = e.price,
                     fee = 0,
                     detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny),
-                    currency = e.listing.currency
+                    currency = e.listing.currency,
+                    // 精灵名上色用（形态感知的主属性，挂单时与 speciesKey 一起快照的）
+                    primaryType = e.listing.extraData["primaryType"] ?: ""
                 ))
             }
             MarketEvents.CANCEL.subscribe { e ->
@@ -108,7 +112,9 @@ class TransactionHistory private constructor() : PersistentState() {
                     price = e.listing.price,
                     fee = 0,
                     detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny),
-                    currency = e.listing.currency
+                    currency = e.listing.currency,
+                    // 精灵名上色用（形态感知的主属性，挂单时与 speciesKey 一起快照的）
+                    primaryType = e.listing.extraData["primaryType"] ?: ""
                 ))
             }
             MarketEvents.RETURN.subscribe { e ->
@@ -124,7 +130,9 @@ class TransactionHistory private constructor() : PersistentState() {
                     price = e.listing.price,
                     fee = 0,
                     detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny),
-                    currency = e.listing.currency
+                    currency = e.listing.currency,
+                    // 精灵名上色用（形态感知的主属性，挂单时与 speciesKey 一起快照的）
+                    primaryType = e.listing.extraData["primaryType"] ?: ""
                 ))
             }
         }
