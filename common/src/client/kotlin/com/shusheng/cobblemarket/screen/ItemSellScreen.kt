@@ -388,7 +388,7 @@ class ItemSellScreen : Screen(Text.translatable("cobblemarket.item.sell_title"))
             mouseX = mouseX, mouseY = mouseY,
             textW = maxWidth, textH = tooltipHeight, pad = padding,
             screenW = width, screenH = height, avoid = sellButtonRect(hoveredRow)
-        )
+        ) ?: return
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)

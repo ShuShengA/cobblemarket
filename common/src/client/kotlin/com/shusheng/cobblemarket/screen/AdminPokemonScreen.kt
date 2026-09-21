@@ -935,7 +935,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             mouseX = mouseX, mouseY = mouseY,
             textW = maxWidth, textH = tooltipHeight, pad = padding,
             screenW = width, screenH = height, avoid = cancelButtonRect(hoveredRow)
-        )
+        ) ?: return
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
