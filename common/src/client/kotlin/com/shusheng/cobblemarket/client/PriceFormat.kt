@@ -43,10 +43,19 @@ private fun oneDecimal(v: Double): String {
 /**
  * Long 版价格缩写（管理面板大额告警行用）：4 位以内原样显示，更大用 k/M/B（截断 1 位小数）。
  * 完整数字见悬停 tooltip（formatPriceLong）。
+ *
+ * ⚠ **负数要先取符号再缩写**：原来直接把 `price` 丢进 `when`，而 `price < 10_000` 会把**所有负数**
+ * 都兜住 → 原样铺开。准备金池为负（服主负债告警）正是负数的典型场景：负债越大显示越长，
+ * 且与下一行坏账的正数缩写风格对不上（2026-09-21 用户报）。
+ * `Long.MIN_VALUE` 取绝对值仍是它自己，单独特判（现实中取不到，防呆）。
  */
-fun formatPriceShortLong(price: Long): String = when {
-    price < 10_000 -> price.toString()
-    price < 1_000_000 -> "${oneDecimal(price / 1000.0)}k"
-    price < 1_000_000_000 -> "${oneDecimal(price / 1_000_000.0)}M"
-    else -> "${oneDecimal(price / 1_000_000_000.0)}B"
+fun formatPriceShortLong(price: Long): String {
+    val sign = if (price < 0) "-" else ""
+    val v = if (price == Long.MIN_VALUE) Long.MAX_VALUE else kotlin.math.abs(price)
+    return sign + when {
+        v < 10_000 -> v.toString()
+        v < 1_000_000 -> "${oneDecimal(v / 1000.0)}k"
+        v < 1_000_000_000 -> "${oneDecimal(v / 1_000_000.0)}M"
+        else -> "${oneDecimal(v / 1_000_000_000.0)}B"
+    }
 }
