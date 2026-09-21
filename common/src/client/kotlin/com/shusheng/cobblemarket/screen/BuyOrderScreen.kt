@@ -2556,7 +2556,7 @@ class BuyOrderScreen(
                 context, listing,
                 EntryBadgeRenderer.nameWithShinyStar(name, pending.shiny),
                 // +62：图标占 +28~+55，留 6px 间隙后起名字行（与市场购买确认弹窗一致）
-                centerX, viewTop - reviewScroll, dividerW = dialogW - 20, maxWidth = dialogW - 24
+                centerX, viewTop - reviewScroll, dividerW = dialogW - 156, maxWidth = dialogW - 24
             )
             context.disableScissor()
         } else {

@@ -1696,7 +1696,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val viewBottom = dialogY + dialogH - confirmBottomH
         context.enableScissor(dialogX, viewTop, dialogX + dialogW, viewBottom)
         EntryBadgeRenderer.drawInfoLines(
-            context, entry, name, centerX, viewTop - confirmScroll, dividerW = dialogW - 20, maxWidth = dialogW - 24
+            context, entry, name, centerX, viewTop - confirmScroll, dividerW = dialogW - 156, maxWidth = dialogW - 24
         )
         context.disableScissor()
 
