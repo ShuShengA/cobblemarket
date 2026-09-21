@@ -352,6 +352,19 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
         context.matrices.pop()
     }
 
+    /** 右侧滚动条（照同族界面，与六个配置界面同款）：**行数超出一屏才画**，否则玩家不知道下面还有东西 */
+    private fun renderScrollbar(context: DrawContext) {
+        val maxScroll = maxOf(0, orders.size - maxVisible())
+        if (maxScroll <= 0) return
+        val x = leftX() + panelWidth - 5
+        val top = listStartY
+        val trackH = height - CONTENT_BOTTOM_INSET - listStartY
+        val thumbH = maxOf(16, trackH * trackH / (trackH + maxScroll * rowHeight))
+        val thumbY = top + (trackH - thumbH) * scrollOffset / maxScroll
+        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
+        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
+    }
+
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         // ⚠ 下层**照画**（面板 + 行 + 文字），弹窗时靠遮罩把它压暗 ——
         //   而不是「弹窗时不画」。不画的话背景会整个消失，只剩控件浮在那儿（2026-09-18 用户实测）。
@@ -509,6 +522,7 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
                 centerX, height - 49, 0x888888
             )
         }
+        renderScrollbar(context)
     }
 
     private fun renderDialog(context: DrawContext, order: PointOrderInfo) {

@@ -507,6 +507,19 @@ class PointsCodeScreen : Screen(Text.translatable("cobblemarket.points.code.titl
         context.matrices.pop()
     }
 
+    /** 右侧滚动条（照同族界面，与六个配置界面同款）：**行数超出一屏才画**，否则玩家不知道下面还有东西 */
+    private fun renderScrollbar(context: DrawContext) {
+        val maxScroll = maxOf(0, entries.size - maxVisible())
+        if (maxScroll <= 0) return
+        val x = leftX() + panelWidth - 5
+        val top = listStartY
+        val trackH = height - CONTENT_BOTTOM_INSET - listStartY
+        val thumbH = maxOf(16, trackH * trackH / (trackH + maxScroll * rowHeight))
+        val thumbY = top + (trackH - thumbH) * scrollOffset / maxScroll
+        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
+        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
+    }
+
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         // ⚠ 面板是 **320 宽**（`drawPanelSlice` 内部按 640×0.5 画），而行是 300 宽 —— 两侧各留 10px
         //   给贴图边框。把 panelLeft 写成 `leftX()`（= 行左缘）会让面板整体左移 10px、行顶在边框上，
@@ -641,6 +654,7 @@ class PointsCodeScreen : Screen(Text.translatable("cobblemarket.points.code.titl
                 context.drawCenteredTextWithShadow(textRenderer, msg, cx, height - 62, 0x55FF55)
             }
         }
+        renderScrollbar(context)
     }
 
     /** 弹窗的文字层（画在控件与遮罩之上）：生成表单的标签与结果、作废确认的正文 */
