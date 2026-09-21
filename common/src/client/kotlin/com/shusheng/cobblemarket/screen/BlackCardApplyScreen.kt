@@ -23,7 +23,10 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
     // 下限 300（= 1.1.0 的固定宽度）：标题约 210px、右列权益行从 centerX+36 起算且自身约 112px，
     // 需求明显大于 200 —— 窄屏下弹窗缩到 200 时标题和右列全挤出去
     //   （2026-09-21 用户报；同批「按屏幕钳制」改动里 LoanScreen 也有同款问题）
-    private val dialogW = minOf(360, width - 40).coerceAtLeast(300)
+    // 上限 380 / 下限 360：额度最大可设到**十亿**（"1,000,000,000" 13 字符 ≈ 78px），
+    // 右列从 centerX+36 起算 → "Credit: 1,000,000,000 ₽" 约需 138px；原来的 300 下限只给 114px，
+    // 十亿时货币单位会压到弹窗右边框上（2026-09-21 用户报），360 才够（144px）
+    private val dialogW = minOf(380, width - 40).coerceAtLeast(360)
     /** 条件比紫卡多一行「持有紫卡」硬条件：七项门槛全配时是 8 行，加高 24px 才不会压到申请按钮 */
     private val dialogH = 330
 
