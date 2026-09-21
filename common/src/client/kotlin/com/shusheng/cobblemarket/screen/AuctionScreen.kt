@@ -910,7 +910,7 @@ class AuctionScreen(
             // 宽度初始只按 BASIC 行宽（未按 Shift 的初始状态不撑宽；渲染帧按当前 Shift 状态动态覆盖）
             var maxLineW = 0
             bidItemTooltipLines.forEach { maxLineW = maxOf(maxLineW, textRenderer.getWidth(it)) }
-            bidDialogW = (maxOf(280, maxLineW + 170)).coerceAtMost(width - 20)
+            bidDialogW = (maxOf(320, maxLineW + 170)).coerceAtMost(width - 20)
         }
         val dialogY = height / 2 - (190 + bidDialogExtraRows * 10) / 2
 
@@ -983,8 +983,8 @@ class AuctionScreen(
         // 物品分支早有同样机制（按最长行算）。2026-09-21 用户报：精灵名一长就压到右列拍卖信息上
         val dialogW = if (entry.type == "POKEMON") {
             val nameW = textRenderer.getWidth(displayName(entry)) + 60
-            (maxOf(280, nameW + 150)).coerceAtMost(width - 20)
-        } else (maxOf(280, maxLineW + 170)).coerceAtMost(width - 20)
+            (maxOf(320, nameW + 150)).coerceAtMost(width - 20)
+        } else (maxOf(320, maxLineW + 170)).coerceAtMost(width - 20)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
         if (entry.type != "POKEMON") {
