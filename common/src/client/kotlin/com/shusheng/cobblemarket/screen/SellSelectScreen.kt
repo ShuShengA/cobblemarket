@@ -154,18 +154,18 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             addSelectableChild(f); addDrawableChild(f)
             return f
         }
-        hpF = mkIv(lx + 2, "HP"); atkF = mkIv(lx + 49, "ATK"); defF = mkIv(lx + 96, "DEF")
-        spaF = mkIv(lx + 143, "SpA"); spdF = mkIv(lx + 190, "SpD"); speF = mkIv(lx + 237, "Spd")
+        hpF = mkIv(lx + 2, "HP"); atkF = mkIv(lx + 51, "ATK"); defF = mkIv(lx + 100, "DEF")
+        spaF = mkIv(lx + 149, "SpA"); spdF = mkIv(lx + 198, "SpD"); speF = mkIv(lx + 247, "Spd")
         val ivFields = arrayOf(hpF, atkF, defF, spaF, spdF, speF)
         savedIv.forEachIndexed { i, t -> ivFields[i]?.text = t }
 
         // 三态比较按钮（= / ≥ / ≤ 循环，默认 = 与旧行为一致；非默认金色高亮）
         ivOpButtons.clear()
         for (i in 0..5) {
-            // 框 28 宽 + 1px 间隙贴自己框；按钮 14 宽后到下一框（间隔 47）留 4px——视觉上与自己的框成组
-            val bx = lx + 2 + i * 47 + 29
+            // 框 28 宽 + 1px 间隙贴自己框；按钮 16 宽后到下一框（步进 49）留 4px
+            val bx = lx + 2 + i * 49 + 29
             val btn = NineSliceButton(
-                bx, 50, 14, 16,
+                bx, 50, 16, 16,
                 Text.literal(if (ivOps[i] == 1) "≥" else if (ivOps[i] == 2) "≤" else "="),
                 {
                     ivOps[i] = (ivOps[i] + 1) % 3
