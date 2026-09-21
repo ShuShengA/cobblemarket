@@ -488,6 +488,32 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             // 头像 16px 在行高 20 内上下各 2px 居中（上下分割线正中）
             drawAvatar(context, e.uuid, e.name, panelX + panelW - 4 - 16 - 2, y + 2, 16)
         }
+        renderBoardScrollbar(context, panelX, panelW, startY, entries.size, offset)
+    }
+
+    /**
+     * 面板右侧滚动条（样式照入口界面设置弹窗的 [MarketEntryScreen.renderSettingsScrollbar]）：
+     * **只有行数超出一屏才画** —— 否则玩家不知道下面还有东西。
+     * ⚠ 放在 `panelW-5`（宽 2）：头像右缘在 `panelW-6`，正好让开不挡；轨道/滑块都走半透明白。
+     */
+    private fun renderBoardScrollbar(
+        context: DrawContext,
+        panelX: Int,
+        panelW: Int,
+        top: Int,
+        total: Int,
+        offset: Int
+    ) {
+        val visible = boardVisibleRows()
+        val maxScroll = total - visible
+        if (maxScroll <= 0) return
+        val rowHeight = 20
+        val trackH = visible * rowHeight
+        val thumbH = maxOf(16, trackH * visible / total)
+        val thumbY = top + (trackH - thumbH) * offset / maxScroll
+        val x = panelX + panelW - 5
+        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
+        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
     }
 
     private fun truncateName(name: String, maxWidth: Int): String {
