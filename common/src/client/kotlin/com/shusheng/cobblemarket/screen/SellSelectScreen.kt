@@ -228,10 +228,14 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         // 交付模式：价格在求购单交付弹窗输入，隐藏价格框，特训按钮顶上这个位置
         priceField?.visible = !deliverMode
 
+        // 上架按钮：普通模式用图标（sell.png）替掉「上架」二字，按钮能窄一大截；
+        // 交付模式仍是文字。⚠ 右缘保持不动（186+44=230 → 204+26=230），与右边「特训筛选」的 4px 间隙不变
         sellBtn = NineSliceButton(
-            if (deliverMode) lx + 210 else lx + 186, btnY, if (deliverMode) 84 else 44, 20,
-            Text.translatable(if (deliverMode) "cobblemarket.sell.deliver_select" else "cobblemarket.sell.sell"),
-            { if (deliverMode) deliverSelected() else sellSelected() }
+            if (deliverMode) lx + 210 else lx + 204, btnY, if (deliverMode) 84 else 26, 20,
+            if (deliverMode) Text.translatable("cobblemarket.sell.deliver_select") else Text.literal(""),
+            { if (deliverMode) deliverSelected() else sellSelected() },
+            iconLeft = if (deliverMode) null else Identifier.of("cobblemarket", "textures/gui/sell.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 12 / 48f
         )
         addDrawableChild(sellBtn)
         // 特训筛选（三态循环；交付模式移到价格框位置，给选择按钮让位）
