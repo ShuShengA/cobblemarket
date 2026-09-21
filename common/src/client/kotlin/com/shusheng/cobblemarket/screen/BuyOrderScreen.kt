@@ -742,12 +742,14 @@ class BuyOrderScreen(
 
     private fun forceContentW() = forceDialogW - 2 * forcePad
     /** 底部区高：提示 2 行（待确认交付时 3 行）+ 与信息区/按钮的间隔 + 按钮 20 + 底边距 */
-    private fun forceFooterH(entry: BuyOrderEntry): Int = 78 + if (entry.pending != null) 10 else 0
+    // 54（原 78，-24）：信息区下移 24px 给精灵图标腾位后，可视区底同步下移，
+    // 可视高度因此恢复原值（总高不变、内容不再被截断）；提示与按钮钉在底部，不受本值影响
+    private fun forceFooterH(entry: BuyOrderEntry): Int = 54 + if (entry.pending != null) 10 else 0
 
     private fun forceDesignH(entry: BuyOrderEntry): Int =
-        // ⚠ 这里用字面量 50（改动前的 forceInfoTop）而非 forceInfoTop：图标插到标题下后信息区起点下移了，
-        // 但弹窗**总高度必须保持不变**（2026-09-21 用户明确），所以把这段高度倒推回去
-        50 + requirementDialogLines(entry).size * 10 + forceFooterH(entry)
+        // ⚠ 信息区下移 24px 给图标腾位，footer 同步 -24 —— 两头相抵：
+        // 弹窗总高不变、可视高度也不变（2026-09-21 用户明确「无需增高」）
+        forceInfoTop + requirementDialogLines(entry).size * 10 + forceFooterH(entry)
 
     /** 弹窗实际高度：**按屏幕钳制**（信息行多时设计高度会顶出屏幕），超出部分靠滚轮看 */
     private fun forceDialogH(entry: BuyOrderEntry): Int = minOf(forceDesignH(entry), height - 8)
