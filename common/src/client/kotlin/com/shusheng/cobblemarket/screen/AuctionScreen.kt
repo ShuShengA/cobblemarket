@@ -1109,16 +1109,14 @@ class AuctionScreen(
         } else (maxOf(320, maxLineW + 170)).coerceAtMost(width - 20)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
-        if (entry.type != "POKEMON") {
-            bidField?.y = dialogY + 106 + extra * 10
-            bidConfirmButton?.y = dialogY + 132 + extra * 10
-            bidCancelButton?.y = dialogY + 132 + extra * 10
-            // x 相对弹窗右缘锚定：弹窗随词条行宽变宽时输入框/按钮随右列一起右移，不被宽行压住
-            val rightAnchor = dialogX + dialogW - 130
-            bidField?.x = rightAnchor
-            bidConfirmButton?.x = rightAnchor
-            bidCancelButton?.x = rightAnchor + 62
-        }
+        bidField?.y = dialogY + 106 + extra * 10
+        bidConfirmButton?.y = dialogY + 132 + extra * 10
+        bidCancelButton?.y = dialogY + 132 + extra * 10
+        // x 相对弹窗右缘锚定：弹窗随词条行宽变宽时输入框/按钮随右列一起右移，不被宽行压住
+        val rightAnchor = dialogX + dialogW - 130
+        bidField?.x = rightAnchor
+        bidConfirmButton?.x = rightAnchor
+        bidCancelButton?.x = rightAnchor + 62
 
         drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
@@ -1270,7 +1268,9 @@ class AuctionScreen(
             infoLineText(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpDef"))}").append(Text.literal("  EV: ${extra["evsSpDef"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0x66FF99); infoLineText(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpd"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpd"))}").append(Text.literal("  EV: ${extra["evsSpd"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0xFF99FF); infoLineText(Text.translatable("cobblemarket.gui.friendship", extra["friendship"]?.toIntOrNull() ?: 0), 0xFF99CC)
             // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：分割线 + 两行技能 + 分割线
             val movesRaw = extra["moves"].orEmpty()
-            val rowW = dialogW - 156
+            // ⚠ 固定：左列宽度**不随弹窗加宽**（加宽的部分给右列）——
+            // 写成 dialogW − 156 的话，技能块和上下两条分割线会跟着弹窗一起变长
+            val rowW = 124
             if (MoveText.hasAny(movesRaw)) {
                 iy += EntryBadgeRenderer.drawMovesBlockLeft(context, movesRaw, infoX, rowW, iy)
             }
@@ -1329,7 +1329,7 @@ class AuctionScreen(
         // x 取「确认出价 / 取消」按钮组的中心而非弹窗中心：精灵模式左列证章图标行横向可到弹窗中线附近，
         // 居中于弹窗会压在证章行上；y 跟随弹窗变高偏移（同输入框/按钮），否则会飘到输入框上
         if (bidErrorText != null && System.currentTimeMillis() < bidErrorUntil) {
-            val errorX = if (entry.type == "POKEMON") centerX + 66 else dialogX + dialogW - 71
+            val errorX = if (entry.type == "POKEMON") dialogX + dialogW - 74 else dialogX + dialogW - 71
             context.drawCenteredTextWithShadow(textRenderer, bidErrorText, errorX, dialogY + 158 + extra * 10, 0xFFFFFF)
         }
     }
