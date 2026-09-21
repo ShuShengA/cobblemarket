@@ -31,13 +31,13 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         /**
          * 卡片与持有者面板的宽度（面板宽度就是照上方卡片定的，二者恒等）。
          * 卡片是 16px 图标按 scale 放大 → scale = CARD_W / 16。
-         * ⚠ 上限 128：面板贴在背景外侧、只能往屏幕中心加宽，再加宽会越过左下「借款历史」按钮
-         *   （按钮左缘 = width/2 − 102，面板右缘 = width/2 − (CARD_OUTER − CARD_W)）。
+         * ⚠ 放大只能**往外扩**（背景外侧才有空间）：往中心扩会盖住背景，2026-09-21 用户报
+         *   卡片「内缘」= ±(CARD_OUTER − CARD_W)，必须落在背景（±128）之外。
          */
         const val CARD_W = 128
 
         /** 卡片/面板「外缘」距屏幕中心的距离：紫卡左缘 −CARD_OUTER、黑卡右缘 +CARD_OUTER（加宽只往中心扩） */
-        const val CARD_OUTER = 238
+        const val CARD_OUTER = 262
 
         /** 卡片顶边相对背景顶的偏移 */
         const val CARD_TOP = 2
