@@ -990,11 +990,11 @@ class AuctionScreen(
         bidField?.y = dialogY + 106 + extra * 10
         bidConfirmButton?.y = dialogY + 132 + extra * 10
         bidCancelButton?.y = dialogY + 132 + extra * 10
-        // x 相对弹窗右缘锚定：弹窗随词条行宽变宽时输入框/按钮随右列一起右移，不被宽行压住
-        val rightAnchor = dialogX + dialogW - 130
-        bidField?.x = rightAnchor
-        bidConfirmButton?.x = rightAnchor
-        bidCancelButton?.x = rightAnchor + 62
+        // x 相对弹窗右缘锚定：输入框与按钮**分别**锚定（按钮两个各 70 宽、间距 4px，改动按钮宽时这里要一起改）
+        bidField?.x = dialogX + dialogW - 130
+        val btnX = dialogX + dialogW - 150   // 取消按钮右缘距弹窗边框留 6px
+        bidConfirmButton?.x = btnX
+        bidCancelButton?.x = btnX + 74
 
         drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
@@ -1202,7 +1202,7 @@ class AuctionScreen(
         // x 取「确认出价 / 取消」按钮组的中心而非弹窗中心：精灵模式左列证章图标行横向可到弹窗中线附近，
         // 居中于弹窗会压在证章行上；y 跟随弹窗变高偏移（同输入框/按钮），否则会飘到输入框上
         if (bidErrorText != null && System.currentTimeMillis() < bidErrorUntil) {
-            val errorX = if (entry.type == "POKEMON") dialogX + dialogW - 74 else dialogX + dialogW - 71
+            val errorX = if (entry.type == "POKEMON") dialogX + dialogW - 78 else dialogX + dialogW - 71
             context.drawCenteredTextWithShadow(textRenderer, bidErrorText, errorX, dialogY + 158 + extra * 10, 0xFFFFFF)
         }
     }
