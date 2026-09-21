@@ -1032,7 +1032,7 @@ class AuctionScreen(
             // 宽度初始只按 BASIC 行宽（未按 Shift 的初始状态不撑宽；渲染帧按当前 Shift 状态动态覆盖）
             var maxLineW = 0
             bidItemTooltipLines.forEach { maxLineW = maxOf(maxLineW, textRenderer.getWidth(it)) }
-            bidDialogW = (maxOf(320, maxLineW + 170)).coerceAtMost(width - 20)
+            bidDialogW = (maxOf(290, maxLineW + 170)).coerceAtMost(width - 20)
         }
         val dialogY = height / 2 - (190 + bidDialogExtraRows * 10) / 2
 
@@ -1105,8 +1105,8 @@ class AuctionScreen(
         // 物品分支早有同样机制（按最长行算）。2026-09-21 用户报：精灵名一长就压到右列拍卖信息上
         val dialogW = if (entry.type == "POKEMON") {
             val nameW = textRenderer.getWidth(displayName(entry)) + 60
-            (maxOf(320, nameW + 150)).coerceAtMost(width - 20)
-        } else (maxOf(320, maxLineW + 170)).coerceAtMost(width - 20)
+            (maxOf(290, nameW + 150)).coerceAtMost(width - 20)
+        } else (maxOf(290, maxLineW + 170)).coerceAtMost(width - 20)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
         bidField?.y = dialogY + 106 + extra * 10
@@ -1294,7 +1294,7 @@ class AuctionScreen(
         }
 
         // ── 右列：竞拍信息 ──
-        val auctionX = dialogX + dialogW - 120
+        val auctionX = dialogX + dialogW - 140   // 右列左缘距弹窗右缘 140：给金额留 30px 余量（原来改成 -120 会让长金额顶出边框）
         var ay = dialogY + 28
         fun auctionLine(text: String, color: Int = 0xFFFFFF) {
             context.drawTextWithShadow(textRenderer, text, auctionX, ay, color)
