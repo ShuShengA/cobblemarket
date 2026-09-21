@@ -936,14 +936,14 @@ class AuctionScreen(
 
         // 音效由 confirmBid 按校验结果播放（失败 fail.ogg / 成功 auction_bid 金币音效）
         bidConfirmButton = NineSliceButton(
-            centerX - 6, dialogY + 132 + bidDialogExtraRows * 10, 70, 20,
+            centerX - 10, dialogY + 132 + bidDialogExtraRows * 10, 70, 20,
             Text.translatable("cobblemarket.auction.confirm_bid"),
             { confirmBid() },
             clickSound = null
         )
         addDrawableChild(bidConfirmButton)
         bidCancelButton = NineSliceButton(
-            centerX + 68, dialogY + 132 + bidDialogExtraRows * 10, 70, 20,
+            centerX + 64, dialogY + 132 + bidDialogExtraRows * 10, 70, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeBidDialog() }
         )
