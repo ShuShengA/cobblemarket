@@ -24,7 +24,10 @@ import kotlin.math.roundToLong
  */
 class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
 
-    private val dialogW = minOf(340, width - 40).coerceAtLeast(200)
+    // 下限 280 = 三期按钮的硬需求（10 左边距 + 3×84 + 2×4 间隙 + 10 右边距；输入框右缘也在 260 内）。
+    // ⚠ 别再压到 200：按钮和输入框都是固定宽、不随弹窗缩，弹窗一窄第三期和输入框就冲出背景
+    //   （喵喵支付是同款，2026-09-21 用户报这里漏改了）
+    private val dialogW = minOf(340, width - 40).coerceAtLeast(280)
     private val dialogH = 200
 
     // 初始读全局缓存（60 秒兜底轮询写入）秒显不闪；-1 = 未拉取，响应到达后更新
