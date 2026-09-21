@@ -6,6 +6,7 @@ import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.ServerConfigDataPayload
 import com.shusheng.cobblemarket.platform.sendToServer
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
@@ -115,9 +116,13 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         val dialogX = width / 2 - dialogW / 2
         val startY = listStartY()
         numDefs.forEach { (def, key) ->
-            // 输入框与重置按钮不重叠：输入框右缘=228、按钮 230~250（间隙 2px）
+            // 输入框右缘钉死贴 ↺ 按钮左缘（间隙 2px），宽度一律**往左长**（见 ConfigFieldLayout）
             val isDurations = key == "auctionDurations"
-            val field = TextFieldWidget(textRenderer, dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16, Text.literal(""))
+            val fieldW = ConfigFieldLayout.configFieldWidth(textRenderer, dialogW, key, def.labelKey)
+            val field = TextFieldWidget(
+                textRenderer, ConfigFieldLayout.configFieldRight(dialogX, dialogW) - fieldW,
+                startY, fieldW, 16, Text.literal("")
+            )
             field.setTextPredicate { text ->
                 when {
                     isDurations -> text.all { it.isDigit() || it == ',' }
@@ -216,11 +221,13 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         var row = 0
         // visible 必须叠加 !eggConfirmOpen：确认弹窗打开时任何重建（滚动/resize）都不能把下层控件改回可见
         // 行顺序：原数字配置 → 原开关 → 金融数字 → 金融开关（金融区块整体排在列表尾部）
-        fun placeNumField(key: String) {
+        fun placeNumField(def: NumDef, key: String) {
             val y = startY + (row - scrollOffset) * rowHeight
             val field = numFields[key] ?: return
             val visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
-            field.x = dialogX + dialogW - 10 - 20 - 2 - 54
+            // ⚠ x 与宽度必须和 init 用同一套算法：只改一处会让右缘戳出弹窗（2026-09-22 踩过）
+            field.x = ConfigFieldLayout.configFieldX(textRenderer, dialogX, dialogW, key, def.labelKey)
+            field.setWidth(ConfigFieldLayout.configFieldWidth(textRenderer, dialogW, key, def.labelKey))
             field.y = y + 4
             field.visible = visible
             val resetBtn = resetButtons[key]
@@ -237,7 +244,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             btn.visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
             row++
         }
-        numDefs.forEach { (_, key) -> placeNumField(key) }
+        numDefs.forEach { (def, key) -> placeNumField(def, key) }
         toggleDefs.forEach { (_, key) -> placeToggle(key) }
         // 喵喵银行配置入口行（列表末尾：标签「喵喵银行」+ 右侧「配置」按钮）
         val y = startY + (row - scrollOffset) * rowHeight
@@ -616,13 +623,16 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         fun drawRowLine(rowY: Int) {
             context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
         }
-        fun drawNumRow(def: NumDef) {
+        fun drawNumRow(def: NumDef, key: String) {
             if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
                 val rowY = startY + (row - scrollOffset) * rowHeight
                 // 行间分割线（照设置弹窗：每行上方一条）
                 drawRowLine(rowY)
                 context.drawTextWithShadow(textRenderer,
-                    Text.translatable(def.labelKey),
+                    TextUtil.truncateStyled(
+                        Text.translatable(def.labelKey),
+                        ConfigFieldLayout.configLabelWidth(textRenderer, dialogW, key, def.labelKey)
+                    ),
                     dialogX + 10, rowY + 7, 0xFFFFFF)
             }
             row++
@@ -637,7 +647,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             }
             row++
         }
-        numDefs.forEach { (def, _) -> drawNumRow(def) }
+        numDefs.forEach { (def, key) -> drawNumRow(def, key) }
         toggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
         // 喵喵银行配置入口行（列表末尾）
         if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
