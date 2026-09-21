@@ -565,9 +565,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     /** 打开喵喵支付独立界面（MeowthPayScreen）：确认回调发喵喵支付购买请求 */
     private fun openMeowthPay() {
         val entry = confirmEntry ?: return
+        // 名字带主属性色（与购买确认弹窗同口径，取 entry.primaryType —— 服务端已按形态填好）：
+        // 给名字段着色即可，闪光★的 GOLD 是子段显式样式、不会被父段覆盖
         val descName = EntryBadgeRenderer.nameWithShinyStar(
             if (confirmDisplayName.isNotEmpty()) confirmDisplayName else entry.species, entry.shiny
-        )
+        ).copy().styled { it.withColor(EntryBadgeRenderer.typeColor(entry.primaryType)) }
         client?.setScreen(MeowthPayScreen(
             itemDesc = descName,
             amount = entry.price.toLong(),

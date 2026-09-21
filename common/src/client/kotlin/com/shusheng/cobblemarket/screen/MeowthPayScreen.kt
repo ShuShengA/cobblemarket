@@ -29,11 +29,16 @@ class MeowthPayScreen(
     // 下限 280 = 三期按钮的硬需求（10 左边距 + 3×84 + 2×4 间隙 + 10 右边距）；
     // ⚠ 别再压到 200：按钮是固定宽、不随弹窗缩，弹窗一窄第三期就冲出背景（2026-09-21 用户报）
     private val dialogW = minOf(340, width - 40).coerceAtLeast(280)
-    private val dialogH = 170
+    // 148 = 最下面一行（Confirm Pay 底边 122+16=138）+ 底部留白 10px（CLAUDE.md 的弹窗约定）。
+    // ⚠ 原来写的 170 让底部空了 40px（2026-09-21 用户报）；高度与行位**成对**改，别只动一边
+    private val dialogH = 148
 
     private var plans = listOf<Pair<Int, Double>>()
     private var selectedPlan = 0
     private var infoLoaded = false
+
+    /** 可用额度（进界面时经 requestCreditInfo 拉取，响应到达即刷新；未到达前按 0 显示，与 LoanScreen 同口径） */
+    private var limit = 0L
 
     private val planButtons = mutableListOf<NineSliceButton>()
     private var backButton: NineSliceButton? = null
@@ -64,7 +69,7 @@ class MeowthPayScreen(
 
         // 确认支付（点开黄金模板确认弹窗）
         payButton = NineSliceButton(
-            dialogX + 90, dialogY + 114, 100, 16,
+            dialogX + 90, dialogY + 122, 100, 16,
             Text.translatable("cobblemarket.meowth_pay.confirm_btn"),
             { openConfirmDialog() }
         )
@@ -82,7 +87,7 @@ class MeowthPayScreen(
         val btnW = 84
         plans.forEachIndexed { i, (periods, fee) ->
             val btn = NineSliceButton(
-                dialogX + 10 + i * (btnW + 4), dialogY + 72, btnW, 16,
+                dialogX + 10 + i * (btnW + 4), dialogY + 80, btnW, 16,
                 Text.literal(planLabel(periods, fee, i == selectedPlan)),
                 {
                     selectedPlan = i
@@ -117,6 +122,7 @@ class MeowthPayScreen(
 
     /** 分期方案快照（打开时拉取） */
     fun onCreditInfo(payload: CreditInfoPayload) {
+        limit = payload.limit
         val parsed = payload.plans.split(',')
             .mapNotNull { part ->
                 val seg = part.trim().split(':')
@@ -271,16 +277,35 @@ class MeowthPayScreen(
             Text.translatable("cobblemarket.meowth_pay.title").formatted(Formatting.GOLD),
             width / 2, dialogY + 14, 0xFFFFFF
         )
-        // 商品行：名称 + 金额（价格+货币名照全模组规矩用蓝色；长名截断）
+        // 商品行：名称 + 金额。⚠ 两条规矩：
+        // ① **金额与单位金色**（真实金额用金；蓝色只留给服务器给的虚拟额度，见下面的额度行）；
+        // ② 必须走富文本参数，别用 itemDesc.string 拼 —— 那是纯文本，会把精灵名的样式整个丢掉
+        //    （闪光精灵的金★就长在名字里），长名截断改用 truncateStyled（保样式）
         context.drawTextWithShadow(
             textRenderer,
             Text.translatable(
                 "cobblemarket.meowth_pay.item_line",
-                com.shusheng.cobblemarket.util.TextUtil.truncateString(itemDesc.string, 120),
-                formatPriceLong(amount),
-                inlineCurrencyUnit()
+                com.shusheng.cobblemarket.util.TextUtil.truncateStyled(itemDesc, 120),
+                Text.literal("${formatPriceLong(amount)} ${inlineCurrencyUnit()}").formatted(Formatting.GOLD)
             ),
-            dialogX + 12, dialogY + 40, 0xFFFFFF
+            dialogX + 12, dialogY + 58, 0xFFFFFF
+        )
+        // 可用额度：**居中紧贴标题**（用户 2026-09-21 拍板）—— 与标题同属「头部状态区」，
+        // 商品/方案/估算才是左对齐的交易信息。蓝色同 LoanScreen 的额度行，
+        // **不足本次支付金额时标红**（玩家一眼看出买不起，不用点确认才被服务端拒）。
+        // ⚠ 混排行别用 drawCenteredTextWithShadow —— 它会让行首汉字比同行的数字高一点点，
+        //   改成「算好 x 再左对齐画」，观感同样居中（见 docs/gui_pitfalls.md）
+        // ⚠ 额度由 requestCreditInfo 异步拉取、未到达前按 0 显示（与 LoanScreen 同口径）
+        val limitLine = Text.translatable(
+            "cobblemarket.meowth_pay.limit_line",
+            formatPriceLong(limit.coerceAtLeast(0)),
+            inlineCurrencyUnit()
+        )
+        context.drawTextWithShadow(
+            textRenderer,
+            limitLine,
+            width / 2 - textRenderer.getWidth(limitLine) / 2, dialogY + 36,
+            if (limit < amount) 0xFF5555 else 0x55FFFF
         )
         // 动态估算行：随选中方案刷新（玩家能看到每期/总计该还多少）
         val (periods, feeRate) = plans.getOrNull(selectedPlan) ?: (0 to 0.0)
@@ -293,7 +318,7 @@ class MeowthPayScreen(
                     formatPriceLong(amount + estInterest(periods, feeRate)),
                     inlineCurrencyUnit()
                 ),
-                dialogX + 12, dialogY + 96, 0x888888
+                dialogX + 12, dialogY + 104, 0x888888
             )
         }
     }

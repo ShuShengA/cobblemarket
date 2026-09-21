@@ -79,6 +79,8 @@
 
 - **Hover tooltips could cover the row's action button**: with the GUI scale on "Auto" the logical screen is narrower, so the right edge pushes the tooltip back toward the middle and it lands on that row's Buy / Remove (✕) / Bid button — the cursor sits on the button while the tooltip hides it, leaving you to click from memory; tooltips now move to a position that does not cover the button (Pokemon market, both Auction House row types, admin panel, Buy Orders)
 - **The Buy Order "force delist" dialog showed nothing but a name**: an admin deciding whether to force-delist an order could not see what that order actually asks for (conditions, nature/ability, IV requirements, price range, note…); it now shows exactly the same details as the row tooltip, and clamps to the screen with wheel scrolling when too tall
+- **The Meowth Pay dialog gave no sign of your available credit**: you could not tell whether the instalments would fit your limit until you confirmed and the server rejected it; the dialog now shows "Available credit" centred under the title, **turned red when it falls short of the amount**
+- **Pokémon names were plain white in the Meowth Pay dialog**: the name lost its type colour and a shiny Pokémon's ★ was missing (that line was rendered as plain text); it now matches the Pokémon names elsewhere, and the amount and currency unit to the right of the name are gold
 
 ## 1.1.1 (in development, unreleased)
 
@@ -122,6 +124,7 @@
 - **Purple Gold Card holder fee discount**: owners can configure a market fee discount for Purple Gold Card holders (covers listing / auction settlement / buy-order fees, stacks with overdue doubling, off by default) — holding the card makes trading cheaper
 - **Purple Gold Card reissue fee**: reissuing a Purple Gold Card now costs a configurable fee (free by default), which goes to the reserve pool; the application screen shows the reissue fee for holders
 - **Net-deposit card requirement**: the Purple Gold Card / Black Gold Card "deposit balance" requirement is now judged by net deposit (demand deposit − outstanding debt), so borrowed money can't inflate deposits to qualify; the application screen shows the net value
+- **Card-apply Pokédex threshold auto-levelling**: when the configured "Pokédex seen" requirement is lower than the "caught" one, it is raised to match, so the two conditions can never contradict each other
 - **Card grant animation and sound**: obtaining a Meowth Purple Gold Card / Black Gold Card now plays a dedicated sound as the card flies from the application screen to the centre of the screen (one per card, the black card's is longer); the two cards have their own pacing — the purple card flies 0.7s, holds 0.6s, then fades out over 0.6s, while the black card flies 1s, holds 1.5s and fades over 0.7s — slower and more ceremonial
 
 #### Others
@@ -138,7 +141,6 @@
 
 ### Changes
 
-- Card apply Pokédex thresholds: the seen count is auto-raised to the caught count when set lower (prevents self-contradictory configs)
 - Selected buttons and labels de-texted
 - Item names in item list rows now use rarity colors (matching the inventory tooltip)
 - Auction list rows (Auction House and Admin Panel) now show abbreviated prices (e.g. 1.2k / 3.5M, consistent with the Item Market and Buy Orders; hover tooltips and bid dialogs still show full amounts with thousands separators), and the "From" prefix is dropped from the row; the seller avatar now sits at a fixed position (aligned across rows, matching the Pokémon Market) with the countdown right after it, so Pokémon names and size badges no longer get squeezed
