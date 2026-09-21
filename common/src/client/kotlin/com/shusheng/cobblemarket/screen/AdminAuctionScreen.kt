@@ -962,7 +962,10 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             infoLineText(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpDef"))}").append(Text.literal("  EV: ${extra["evsSpDef"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0x66FF99); infoLineText(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpd"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpd"))}").append(Text.literal("  EV: ${extra["evsSpd"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0xFF99FF); infoLineText(Text.translatable("cobblemarket.gui.friendship", extra["friendship"]?.toIntOrNull() ?: 0), 0xFF99CC)
             // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：分割线 + 两行技能 + 分割线
             val movesRaw = extra["moves"].orEmpty()
-            val rowW = dialogW - 156
+            // ⚠ 与技术块/证章的分割线口径对齐（市场确认弹窗、管理端审核弹窗都是 dialogW − 20）：
+            // infoX 已经是 dialogX + 10，所以右边正好也留 10px，分割线居中且与弹窗边距一致。
+            // 原先写 dialogW − 156（左列宽）—— 长度和别处对不上，右边空一大片。
+            val rowW = dialogW - 20
             if (MoveText.hasAny(movesRaw)) {
                 iy += EntryBadgeRenderer.drawMovesBlockLeft(context, movesRaw, infoX, rowW, iy)
             }
