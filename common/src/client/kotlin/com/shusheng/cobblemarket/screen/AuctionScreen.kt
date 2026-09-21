@@ -979,7 +979,12 @@ class AuctionScreen(
         val dialogH = 190 + extra * 10
         var maxLineW = 0
         itemLines?.forEach { maxLineW = maxOf(maxLineW, textRenderer.getWidth(it)) }
-        val dialogW = if (entry.type == "POKEMON") 280 else (maxOf(280, maxLineW + 170)).coerceAtMost(width - 20)
+        // 精灵：左列信息随名字长度变化（名字 + Lv/公母/体型后缀 ≈60），按实测算宽；右列固定 ≈150。
+        // 物品分支早有同样机制（按最长行算）。2026-09-21 用户报：精灵名一长就压到右列拍卖信息上
+        val dialogW = if (entry.type == "POKEMON") {
+            val nameW = textRenderer.getWidth(displayName(entry)) + 60
+            (maxOf(280, nameW + 150)).coerceAtMost(width - 20)
+        } else (maxOf(280, maxLineW + 170)).coerceAtMost(width - 20)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
         if (entry.type != "POKEMON") {
@@ -1166,7 +1171,7 @@ class AuctionScreen(
         }
 
         // ── 右列：竞拍信息 ──
-        val auctionX = dialogX + dialogW - 140
+        val auctionX = dialogX + dialogW - 120
         var ay = dialogY + 28
         fun auctionLine(text: String, color: Int = 0xFFFFFF) {
             context.drawTextWithShadow(textRenderer, text, auctionX, ay, color)
