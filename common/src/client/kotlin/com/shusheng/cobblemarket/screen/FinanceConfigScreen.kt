@@ -137,13 +137,13 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             addDrawableChild(btn)
         }
         saveButton = NineSliceButton(
-            width / 2 - 62, dialogY() + dialogH() - 26, 60, 20,
+            width / 2 - 62, dialogY() + dialogH() - 30, 60, 20,
             Text.translatable("cobblemarket.op.scfg_save"),
             { save() }
         )
         addDrawableChild(saveButton)
         cancelButton = NineSliceButton(
-            width / 2 + 2, dialogY() + dialogH() - 26, 60, 20,
+            width / 2 + 2, dialogY() + dialogH() - 30, 60, 20,
             Text.translatable("cobblemarket.op.scfg_cancel"),
             { client?.setScreen(ServerConfigScreen()) }
         )
