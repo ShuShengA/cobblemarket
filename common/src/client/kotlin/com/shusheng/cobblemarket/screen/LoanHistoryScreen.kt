@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.ClientPermissionCache
+import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
@@ -366,6 +367,13 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
             val e = visibleEntries[hoveredRow]
             val fullTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date(e.timestamp))
             val statusText = Text.translatable("cobblemarket.loan_history.status.${e.status}").string
+            // 撤销按钮（仅 OP 全服流水的坏账行）：**鼠标落在它上面时整个不画悬停窗** ——
+            // 玩家那时正要点击、不需要详情；且悬停窗就算压住按钮，鼠标移过去也会立刻消失，
+            // 所以不可能出现「想点却被挡住」（与精灵市场行按钮同一套处理）。
+            // ⚠ 几何必须与 rebuildRowButtons 里建按钮的算式同源，否则会出现「在按钮上却不消失」
+            val revokeRect = if (showAll && ClientPermissionCache.isOp() && e.status == "BAD_DEBT")
+                TooltipPlacement.Rect(width / 2 - panelWidth / 2 + panelWidth - 48, startY + hoveredRow * rowHeight + 4, 44, 16)
+            else null
             // 颜色与行内一一对应：状态用状态色、时间灰、主体白、剩余本金走账本蓝（0x55FFFF）
             renderTooltip(context, listOf(
                 Text.literal("")
@@ -373,7 +381,7 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
                     .append(Text.literal(" $fullTime").styled { it.withColor(0x888888) }),
                 Text.literal(middleTextOf(e)),
                 Text.literal(priceTextOf(e)).styled { it.withColor(0x55FFFF) }
-            ), mouseX, mouseY)
+            ), mouseX, mouseY, revokeRect)
         }
 
         // Scroll indicator
@@ -400,20 +408,24 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
         "| ${formatPriceLong(e.remaining)} ${inlineCurrencyUnit()}"
 
     /**
-     * 悬停窗（照权限管理界面那套）：位置自动躲开屏幕边缘。
+     * 悬停窗（位置走全站统一的 [TooltipPlacement]）：自动躲开屏幕边缘。
      *
      * ⚠ 行色固定白 —— 颜色一律由各行的 [Text] 自带（状态色、时间灰、账本蓝…），
      * 别在这里按行号上色（那会把自带颜色的段也染掉）。
+     *
+     * @param avoid 本行操作按钮的矩形；**鼠标落在里面就整个不画**（返回 null 直接退出）
      */
-    private fun renderTooltip(context: DrawContext, lines: List<Text>, mouseX: Int, mouseY: Int) {
+    private fun renderTooltip(context: DrawContext, lines: List<Text>, mouseX: Int, mouseY: Int, avoid: TooltipPlacement.Rect? = null) {
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
 
         val padding = 4
-        val tx = minOf(mouseX + 12, width - maxWidth - 12).coerceAtLeast(4)
         val tooltipHeight = lines.size * 10 + padding
-        val tyAbove = mouseY - tooltipHeight - 4
-        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
+        val (tx, ty) = TooltipPlacement.place(
+            mouseX = mouseX, mouseY = mouseY,
+            textW = maxWidth, textH = tooltipHeight, pad = padding,
+            screenW = width, screenH = height, avoid = avoid
+        ) ?: return
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
