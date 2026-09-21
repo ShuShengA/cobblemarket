@@ -1,18 +1,19 @@
 package com.shusheng.cobblemarket.client
 
 /**
- * 悬停窗位置计算 —— **避免盖住本行的操作按钮**（2026-09-20 用户实测反馈后新增）。
+ * 悬停窗位置计算 —— 挑一个不会挡住鼠标的角落。
  *
- * 背景：悬停窗一直贴在光标右下 / 右上，而**自动 GUI 尺寸**下逻辑屏宽很小（1080p 只有 480、2K 更小），
- * 靠屏幕右缘一挤就被推回中间，正好压在「购买 / 出价」这类**行按钮**上 ——
- * 鼠标明明停在按钮上，却被悬停窗挡住（只能凭记忆点）。
+ * ⚠ **鼠标落在本行按钮上时整个不画**（[place] 返回 null）：玩家那时正准备点击、不需要详情。
+ * 这一条同时让「避让行按钮」这件事**根本不必存在** —— 悬停窗就算盖住了按钮，
+ * 玩家把鼠标移过去它也会立刻消失，所以不可能出现「想点却被挡」。
  *
- * 规则：按「右上 → 右下 → 左上 → 左下」依次尝试，挑第一个**没有把本行按钮盖掉一半以上**的位置；
- * 四个都盖太多（极窄屏 / 悬停窗特别宽）时挑**交叠面积最小**的那个 —— 保证悬停窗不会因此不显示。
- * 所有候选都会先钳制进屏幕内（与既有行为一致）。
+ * 历史（别走回头路）：2026-09-20 曾用「按顺序挑第一个没盖住按钮的候选」来避让，但候选的 y
+ * 跟着鼠标走 —— 同一行内鼠标上下移动十几像素就会让判定翻转、换到另一个方向，
+ * 于是从上往下扫列表时悬停窗一左一右地闪（2026-09-21 用户报）。
+ * 改成「鼠标在按钮上就不画」后避让整套删掉，抖动也随之消失。
  *
- * ⚠ 阈值取「一半」的由来见 [Rect.coversTooMuch] 的注释：太松（只看是否完全覆盖）挡不住宽悬停窗，
- * 太严（一点不许重叠）会把悬停窗推到很别扭的位置。
+ * 候选顺序固定为 **右上 → 右下 → 左上 → 左下**，取第一个**完整放得下屏幕**的；
+ * 四个都放不下（悬停窗比屏幕还大）才退回各自钳制后的版本，保证不会整块跑到屏幕外。
  */
 object TooltipPlacement {
 
@@ -24,22 +25,9 @@ object TooltipPlacement {
 
     data class Rect(val x: Int, val y: Int, val w: Int, val h: Int) {
 
-        /**
-         * 是否**盖住 [o] 一半以上**（阈值见 [MAX_COVER_RATIO]）。
-         *
-         * 判据演进（2026-09-20 用户两轮反馈定稿）：
-         * ① 「完全盖住才换位置」太松 —— **悬停窗很宽时**（性格/特性那行字多）会把按钮盖掉九成，
-         *    按钮明明还在但基本看不见，用户实测照样算「被盖住」；
-         * ② 「一点都不许重叠」太严 —— 尺寸 3 下悬停窗压住按钮一角本来就是常态，且不影响点击。
-         */
-        fun coversTooMuch(o: Rect): Boolean = overlapArea(o) * 2 >= o.w.toLong() * o.h
-
-        /** 交叠面积（不相交为 0）—— 四个候选都盖太多时挑最小的那个用 */
-        fun overlapArea(o: Rect): Long {
-            val ow = minOf(x + w, o.x + o.w) - maxOf(x, o.x)
-            val oh = minOf(y + h, o.y + o.h) - maxOf(y, o.y)
-            return if (ow <= 0 || oh <= 0) 0L else ow.toLong() * oh
-        }
+        /** 点是否落在矩形内（左闭右开，与 MC 的命中判定口径一致） */
+        fun contains(mx: Int, my: Int): Boolean =
+            mx >= x && mx < x + w && my >= y && my < y + h
 
     }
 
@@ -65,14 +53,19 @@ object TooltipPlacement {
     /**
      * @param mouseX/mouseY 光标位置
      * @param textW/textH 悬停窗文字区尺寸（背景比它四周各多 [pad]）
-     * @param avoid 本行按钮矩形（**「完全覆盖」判定用，所以别外扩**）；**null = 不避让**
+     * @param avoid **本行按钮矩形**；鼠标落在里面就返回 null（不画）；传 null = 该行没有按钮、
+     *        是「点击整行互动」的那种（求购单的部分 tab 等），悬停窗照常显示
+     * @return 文字区左上角；**null = 这一帧不该画**（鼠标正停在行按钮上）
      */
     fun place(
         mouseX: Int, mouseY: Int,
         textW: Int, textH: Int, pad: Int,
         screenW: Int, screenH: Int,
         avoid: Rect? = null
-    ): Pos {
+    ): Pos? {
+        // 鼠标在本行按钮上：不画（玩家准备点了；也正因此不需要再避让按钮）
+        if (avoid != null && avoid.contains(mouseX, mouseY)) return null
+
         val w = textW + 2 * pad
         val h = textH + pad
         // 背景矩形（文字区四周各留 pad）：右上/右下贴光标右侧，左上/左下贴光标左侧 ——
@@ -89,13 +82,9 @@ object TooltipPlacement {
         )
         // ⚠ **先挑「不用钳制就放得下」的**：否则「上方放不下」会被钳成「贴屏幕顶」，
         // 悬停窗就钉在顶部不跟鼠标了（原行为是「上方放不下 → 翻到光标下方」）。
-        // 四个都放不下（悬停窗比屏幕还高/宽）才退回钳制版，保证不会整块跑到屏幕外。
         val candidates = raw.filter { it.fitsOnScreen(screenW, screenH) }
             .ifEmpty { raw.map { it.clampedInto(screenW, screenH) } }
-
-        val bg = avoid?.let { a ->
-            candidates.firstOrNull { !it.coversTooMuch(a) } ?: candidates.minByOrNull { it.overlapArea(a) }!!
-        } ?: candidates.first()
+        val bg = candidates.first()
 
         // 背景左上角 →（加回 pad）文字区左上角
         return Pos(bg.x + pad, bg.y + pad)

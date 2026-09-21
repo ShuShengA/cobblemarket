@@ -1916,7 +1916,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             mouseX = mouseX, mouseY = mouseY,
             textW = maxWidth, textH = tooltipHeight, pad = padding,
             screenW = width, screenH = height, avoid = avoid
-        )
+        ) ?: return
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
