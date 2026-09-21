@@ -936,14 +936,14 @@ class AuctionScreen(
 
         // 音效由 confirmBid 按校验结果播放（失败 fail.ogg / 成功 auction_bid 金币音效）
         bidConfirmButton = NineSliceButton(
-            centerX + 10, dialogY + 132 + bidDialogExtraRows * 10, 56, 20,
+            centerX + 2, dialogY + 132 + bidDialogExtraRows * 10, 70, 20,
             Text.translatable("cobblemarket.auction.confirm_bid"),
             { confirmBid() },
             clickSound = null
         )
         addDrawableChild(bidConfirmButton)
         bidCancelButton = NineSliceButton(
-            centerX + 74, dialogY + 132 + bidDialogExtraRows * 10, 56, 20,
+            centerX + 76, dialogY + 132 + bidDialogExtraRows * 10, 56, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeBidDialog() }
         )
@@ -1197,7 +1197,7 @@ class AuctionScreen(
         // x 取「确认出价 / 取消」按钮组的中心而非弹窗中心：精灵模式左列证章图标行横向可到弹窗中线附近，
         // 居中于弹窗会压在证章行上；y 跟随弹窗变高偏移（同输入框/按钮），否则会飘到输入框上
         if (bidErrorText != null && System.currentTimeMillis() < bidErrorUntil) {
-            val errorX = if (entry.type == "POKEMON") centerX + 70 else dialogX + dialogW - 71
+            val errorX = if (entry.type == "POKEMON") centerX + 67 else dialogX + dialogW - 71
             context.drawCenteredTextWithShadow(textRenderer, bidErrorText, errorX, dialogY + 158 + extra * 10, 0xFFFFFF)
         }
     }
