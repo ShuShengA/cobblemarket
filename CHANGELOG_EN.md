@@ -99,6 +99,7 @@
 ### Changes
 
 - The market master switch and Server Config entries moved from the market entry screen to the bottom of the Admin Panel; OPs now stop/resume the market and edit the Server Config from there
+- Removed the Cobblemon Economy incompatibility warning: version 0.0.18 of that mod has adapted to Cobblemon 1.8 (it no longer references the renamed Pokédex field), so enabling the currency no longer logs the "will crash" warning at startup; the config comments and website docs were updated to match
 
 ### Fixes
 
