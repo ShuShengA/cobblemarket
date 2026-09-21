@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.ServerConfigDataPayload
 import com.shusheng.cobblemarket.platform.sendToServer
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
@@ -74,7 +75,12 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
         val dialogX = width / 2 - dialogW / 2
         val startY = listStartY()
         numDefs.forEach { (def, key) ->
-            val field = TextFieldWidget(textRenderer, dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16, Text.literal(""))
+            // 输入框右缘钉死贴 ↺ 按钮左缘（间隙 2px），宽度一律**往左长**（见 ConfigFieldLayout）
+            val fieldW = ConfigFieldLayout.configFieldWidth(textRenderer, dialogW, key, def.labelKey)
+            val field = TextFieldWidget(
+                textRenderer, ConfigFieldLayout.configFieldRight(dialogX, dialogW) - fieldW,
+                startY, fieldW, 16, Text.literal("")
+            )
             field.setTextPredicate { text -> if (def.isInt) text.all { it.isDigit() } else text.all { it.isDigit() || it == '.' } }
             field.setMaxLength(10)
             if (key == "cardFeeDiscount") {
@@ -295,12 +301,14 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
         val dialogX = width / 2 - dialogW / 2
         val startY = listStartY()
         var row = 0
-        numDefs.forEach { (_, key) ->
+        numDefs.forEach { (def, key) ->
             val y = startY + (row - scrollOffset) * rowHeight
             val field = numFields[key] ?: return@forEach
             // visible 必须叠加 !selfApplyConfirmOpen：确认弹窗打开时任何重建（滚动/resize）都不能把下层控件改回可见
             val visible = !selfApplyConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
-            field.x = dialogX + dialogW - 10 - 20 - 2 - 54
+            // ⚠ x 与宽度必须和 init 用同一套算法：只改一处会让右缘戳出弹窗（2026-09-22 踩过）
+            field.x = ConfigFieldLayout.configFieldX(textRenderer, dialogX, dialogW, key, def.labelKey)
+            field.setWidth(ConfigFieldLayout.configFieldWidth(textRenderer, dialogW, key, def.labelKey))
             field.y = y + 4
             field.visible = visible
             resetButtons[key]?.x = dialogX + dialogW - 10 - 20
@@ -360,7 +368,10 @@ class PurpleCardConfigScreen : Screen(Text.translatable("cobblemarket.op.card_co
                 val labelColor = if (System.currentTimeMillis() < (adjustedUntil[key] ?: 0L)) 0xFFFF55 else 0xFFFFFF
                 context.drawTextWithShadow(
                     textRenderer,
-                    Text.translatable(def.labelKey),
+                    TextUtil.truncateStyled(
+                        Text.translatable(def.labelKey),
+                        ConfigFieldLayout.configLabelWidth(textRenderer, dialogW, key, def.labelKey)
+                    ),
                     dialogX + 10, rowY + 7, labelColor
                 )
             }

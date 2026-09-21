@@ -120,6 +120,7 @@
 - **A trade history row ran past the panel edge when both the price and the buyer name were long**: the two right-hand segments were positioned by adding on to the end of the middle segment, so a long buyer name plus a large price pushed them past the panel's right border (and squeezed the middle segment down to a single "…"); the segments are now positioned from the right edge instead, with an over-long buyer name truncated (its full text is in the hover popup)
 - **Pokemon names read back from the ledger showed as raw species ids**: the ledger stores a species id (such as `pikachu`) and the reader never restored the translation key, so the list displayed "pikachu"; it is restored now and the localised name shows correctly
 - **The "All / Bad Debt" buttons on Loan History overflowed in English**: switching to the Bad Debt tab adds a "●" selection marker, and "Bad Debt" is longer than the Chinese label, so the old fixed width could not hold it; the buttons now measure their own text
+- **The input fields on all six config screens (Server Config and its five sibling screens) were too narrow**: long values such as the auction duration tiers (`720,1440,2880,4320`) or the loan plan list showed only their first few characters, which made them easy to misread while checking or editing; the fields are now wider — long-value fields fit the whole value on screen, and plain numeric fields hold a 10-digit amount
 
 ## 1.1.1 (in development, unreleased)
 
