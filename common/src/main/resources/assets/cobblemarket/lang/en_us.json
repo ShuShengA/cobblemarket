@@ -772,6 +772,7 @@
   "cobblemarket.buy_order.pending_buyer": "New delivery awaiting your review (%s)",
   "cobblemarket.chat.review_button": "[Review]",
   "cobblemarket.chat.bid_button": "[Click to bid]",
+  "cobblemarket.chat.auction_tag": "[Auction]",
   "cobblemarket.chat.auction_announce": "%s listed %s, starting at %s",
   "cobblemarket.chat.auction_sold_announce": "%1$s won %3$s with a bid of %2$s",
   "cobblemarket.buy_order.pending_locked": "This order has a pending delivery; try again later",

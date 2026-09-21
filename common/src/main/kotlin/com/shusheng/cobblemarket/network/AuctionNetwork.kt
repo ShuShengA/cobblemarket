@@ -994,7 +994,10 @@ object AuctionNetwork {
         val priceText = Text.literal("")
             .append(CurrencyHandler.goldAmount(auction.startingPrice))
             .append(CurrencyHandler.goldCurrencyText())
-        val msg = Text.literal("[拍卖] ").formatted(Formatting.GOLD)
+        // ⚠ 标签必须走词条：服务端拼的 Text 在客户端渲染时才翻译，硬编码中文会在英文端露出来
+        //   （中括号与尾空格：词条含中括号（与 [点击出价] 等惯例一致），空格由这里补）
+        val msg = Text.translatable("cobblemarket.chat.auction_tag").formatted(Formatting.GOLD)
+            .append(Text.literal(" "))
             .append(Text.translatable("cobblemarket.chat.auction_announce", Text.literal(auction.sellerName), clickableName, priceText).formatted(Formatting.BLUE))
         server.playerManager.playerList.forEach { it.sendMessage(msg) }
     }
@@ -1060,7 +1063,8 @@ object AuctionNetwork {
         val priceText = Text.literal("")
             .append(CurrencyHandler.goldAmount(auction.currentPrice))
             .append(CurrencyHandler.goldCurrencyText())
-        return Text.literal("[拍卖] ").formatted(Formatting.GOLD)
+        return Text.translatable("cobblemarket.chat.auction_tag").formatted(Formatting.GOLD)
+            .append(Text.literal(" "))
             .append(Text.translatable("cobblemarket.chat.auction_sold_announce", Text.literal(auction.currentBidderName), priceText, nameText).formatted(Formatting.BLUE))
     }
 
