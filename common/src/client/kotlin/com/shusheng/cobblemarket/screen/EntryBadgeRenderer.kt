@@ -303,17 +303,21 @@ object EntryBadgeRenderer {
     }
 
     /**
-     * **贴提示框版**技能块 —— 给行悬停窗那一族用（分割线撑满提示框全宽，
+     * **贴提示框版**技能块 —— 给行悬停窗那一族用（分割线**撑满提示框内容宽**，
      * 内容与 [drawMovesBlock] 相同、只是宽度跟着提示框走）。
      * 返回占用高度；无技能数据返回 0 且什么都不画。
+     *
+     * ⚠ **两条分割线必须走 `width`，不能卡 [MOVES_MAX_W]**：下面的网格本来就按 `width` 排，
+     *   线一卡就变成「技能名铺满整行、分割线只剩中间一小截」（2026-09-21 用户报）。
+     *   [MOVES_MAX_W] 只管 [drawMovesBlock]（弹窗里那块居中的窄网格），别把两者统一到同一个常量。
      */
     fun drawMovesBlockLeft(context: DrawContext, raw: String?, leftX: Int, width: Int, startY: Int): Int {
         if (!MoveText.hasAny(raw)) return 0
         var y = startY
-        context.fill(leftX, y + 4, leftX + minOf(width, MOVES_MAX_W), y + 5, 0xFF555555.toInt())
+        context.fill(leftX, y + 4, leftX + width, y + 5, 0xFF555555.toInt())
         y += DIVIDER_H
         y += drawMoveGrid(context, raw, leftX = leftX, width = width, startY = y)
-        context.fill(leftX, y + 4, leftX + minOf(width, MOVES_MAX_W), y + 5, 0xFF555555.toInt())
+        context.fill(leftX, y + 4, leftX + width, y + 5, 0xFF555555.toInt())
         y += DIVIDER_H
         return y - startY
     }
