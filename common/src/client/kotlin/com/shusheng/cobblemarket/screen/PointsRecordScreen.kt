@@ -101,6 +101,19 @@ class PointsRecordScreen : Screen(Text.translatable("cobblemarket.points.record.
         context.matrices.pop()
     }
 
+    /** 右侧滚动条（照同族界面，与六个配置界面同款）：**行数超出一屏才画**，否则玩家不知道下面还有东西 */
+    private fun renderScrollbar(context: DrawContext) {
+        val maxScroll = maxOf(0, entries.size - maxVisible())
+        if (maxScroll <= 0) return
+        val x = leftX() + panelWidth - 5
+        val top = listStartY
+        val trackH = height - CONTENT_BOTTOM_INSET - listStartY
+        val thumbH = maxOf(16, trackH * trackH / (trackH + maxScroll * rowHeight))
+        val thumbY = top + (trackH - thumbH) * scrollOffset / maxScroll
+        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
+        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
+    }
+
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         // 面板 320 宽（drawPanelSlice 内部按 640×0.5 画），行 296 宽（两侧各留 12px 边框）——
         // 口径与兑换码管理 / 充值订单一致，别写成 leftX()（那样面板会左移 10px、行顶在边框上）
@@ -201,6 +214,7 @@ class PointsRecordScreen : Screen(Text.translatable("cobblemarket.points.record.
                 )
             }
         }
+        renderScrollbar(context)
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
