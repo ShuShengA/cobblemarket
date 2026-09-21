@@ -513,7 +513,7 @@ object EntryBadgeRenderer {
                     }
                 }
                 line == null -> {
-                    // 分割线：1px 灰线，宽度随弹窗内容栏（与技能块同款，见 drawDivider）
+                    // 分割线：1px 灰线，宽度与技能块统一走 MOVES_MAX_W（三条线一样长）
                     drawDivider(context, centerX, y, MOVES_MAX_W)
                     y += DIVIDER_H
                 }
