@@ -995,7 +995,7 @@ class AuctionScreen(
             ).maxOf { textRenderer.getWidth(it) }
             // 左列(nameW) + 右列(rightW + 30：右边距 10、与左列间隙 20) —— 右列宽跟着实测走，
             // 不能再写成「距右缘固定 k」：那样弹窗加宽时右列跟着右移，可用宽永远不变
-            (maxOf(320, nameW + rightW + 40)).coerceAtMost(width - 20)
+            (maxOf(320, nameW + rightW + 30)).coerceAtMost(width - 20)
         } else (maxOf(320, maxLineW + 170)).coerceAtMost(width - 20)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -1183,7 +1183,7 @@ class AuctionScreen(
         }
 
         // ── 右列：竞拍信息 ──
-        val auctionX = dialogX + dialogW - (if (entry.type == "POKEMON") rightW + 30 else 140)
+        val auctionX = dialogX + dialogW - (if (entry.type == "POKEMON") rightW + 20 else 140)
         var ay = dialogY + 28
         fun auctionLine(text: String, color: Int = 0xFFFFFF) {
             context.drawTextWithShadow(textRenderer, text, auctionX, ay, color)
