@@ -174,12 +174,15 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         addDrawableChild(searchField)
         searchField?.text = savedSearch
 
-        // 上架按钮（choose 图标）
+        // 上架按钮（choose 图标）：宽 50，与「我的」对调宽度（2026-09-21 用户拍板：
+        // 「我的」只是个图标、用不到 50 宽，腾给小手更好点）
         sellAddButton = NineSliceButton(
-            leftX + 136, 44, 18, 16,
+            leftX + 136, 44, 50, 16,
             Text.literal(""), { openItemSellScreen() },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
-            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            // 纯图标按钮一律给悬停提示（同排搜索框右侧，没提示玩家不知道小手是干什么的）
+            tooltip = Text.translatable("cobblemarket.gui.sell_item")
         )
         addDrawableChild(sellAddButton)
 
@@ -192,8 +195,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         addDrawableChild(sortButton)
 
         // 我的（personal/personal_click 双图标：关 = 全部，开 = 仅我的；悬停词条随状态）
+        // 宽度与左边的小手对调（50 → 18）：里面只有图标，窄一点够用，让给小手更好点
         mineButton = NineSliceButton(
-            leftX + 156, 44, 50, 16,
+            leftX + 188, 44, 18, 16,
             Text.literal(""),
             { toggleMineOnly() },
             iconLeft = Identifier.of("cobblemarket",
@@ -563,8 +567,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
                 drawItemWithBar(context, stack, x + (slotSize - 16) / 2, y + (slotSize - 16) / 2)
             }
 
+            // 数量：右上角、右对齐。y+3（原 y+4）—— 再低就跟物品图标顶部贴死了（2026-09-21 用户报）
             val countText = "×${entry.count}"
-            context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 4, 0xFFFFFF, false)
+            context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 3, 0xFFFFFF, false)
 
             // 单位走统一入口，币种取这条挂单自己的；格子很窄，超宽就截断（钱数优先于单位）
             val priceTextRaw = com.shusheng.cobblemarket.client.amountWithUnit(

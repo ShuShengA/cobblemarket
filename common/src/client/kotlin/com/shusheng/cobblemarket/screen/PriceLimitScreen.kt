@@ -231,11 +231,14 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         addDrawableChild(searchField)
         searchField?.text = savedSearch
 
+        // 宽 50（2026-09-21 用户拍板，与其他界面统一）；x 由 relayoutSearchRow() 按右侧按钮可见性重排
         val addBtn = NineSliceButton(
-            leftX + panelWidth - 84, 62, 18, 16,
+            leftX + panelWidth - 114, 62, 50, 16,
             Text.literal(""), { openAddDialog() },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
-            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            // 纯图标按钮一律给悬停提示（同排搜索框右侧，没提示玩家不知道小手是干什么的）
+            tooltip = Text.translatable("cobblemarket.gui.limit_add")
         )
         addButton = addBtn
         addDrawableChild(addBtn)
@@ -281,7 +284,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private fun relayoutSearchRow() {
         val leftX = width / 2 - panelWidth / 2
         val rightVisible = htFilterButton?.visible == true
-        val addX = if (rightVisible) leftX + panelWidth - 84 else leftX + panelWidth - 20
+        // 添加按钮宽 50（见构造处）：特训筛选（60 宽）可见时它排在左边、间距 4px，
+        // 否则自己贴右（右缘保持 panelWidth-2）。⚠ 这里只改 x，**宽度是在构造处定的**，两边要一起改
+        val addX = if (rightVisible) leftX + panelWidth - 60 - 4 - 50 else leftX + panelWidth - 52
         addButton?.x = addX
         searchField?.setWidth(addX - 4 - (leftX + 2))
     }
@@ -521,10 +526,6 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
                 renderItemDialogBackground(context)
-                // 手持添加按钮悬停提示（小手图标，功能说明见词条）
-                heldAddButton?.takeIf { it.isHovered }?.let {
-                    drawTooltip(context, listOf(Text.translatable("cobblemarket.blacklist.add_held_item").string), mouseX, mouseY)
-                }
             }
         })
 
@@ -537,7 +538,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             iconLeft = Identifier.of("cobblemarket", "textures/gui/hand.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             // 三段贴图：第三段是**选中态**（进入手持添加模式后保持高亮）
-            texH = 120
+            texH = 120,
+            // 悬停提示走**原生 tooltip**（原先是自己在 render 里手绘一个，样式与别处不一致）
+            tooltip = Text.translatable("cobblemarket.blacklist.add_held_item")
         )
         addDrawableChild(heldAddButton)
 
@@ -1486,25 +1489,6 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
         lines.forEachIndexed { i, (line, color) ->
             context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
-        }
-        context.matrices.pop()
-    }
-
-    private fun drawTooltip(context: DrawContext, lines: List<String>, mouseX: Int, mouseY: Int) {
-        var maxWidth = 0
-        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
-
-        val padding = 4
-        val tx = minOf(mouseX + 12, width - maxWidth - 12)
-        val tooltipHeight = lines.size * 10 + padding
-        val tyAbove = mouseY - tooltipHeight - 4
-        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
-
-        context.matrices.push()
-        context.matrices.translate(0.0, 0.0, 400.0)
-        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
-        lines.forEachIndexed { i, line ->
-            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, 0xFFFFFF)
         }
         context.matrices.pop()
     }

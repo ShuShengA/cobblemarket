@@ -499,9 +499,11 @@ class BuyOrderScreen(
             }
             updateTabButtons()
 
-            // 发布求购按钮（tab 行右侧，右缘离面板右缘 12px，与返回按钮同列对齐）
+            // 发布求购按钮：**挪到搜索框那一行**（原在 tab 行右侧，2026-09-21 用户拍板 ——
+            // 搜索框本来占满整行、用不了这么长，让给它正好）。
+            // 宽 50、高 16（与搜索框齐平）；右缘 = rowLeftX()+rowW()，与原来的"离面板右缘 12px"一致
             val createBtn = NineSliceButton(
-                leftX + panelWidth - 12 - 28, 32, 28, 14,
+                rowLeftX() + rowW() - 50, 48, 50, 16,
                 Text.literal(""),
                 { openCreateDialog() },
                 iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
@@ -514,9 +516,9 @@ class BuyOrderScreen(
             addDrawableChild(createBtn)
         }
 
-        // 搜索框（y=48；与行区域同宽，避开背景左右边框；本地过滤——列表全量下发，照拍卖场模式）
+        // 搜索框（y=48；与行区域同宽、右侧让出 50+2 给发布按钮；本地过滤——列表全量下发，照拍卖场模式）
         val savedSearch = searchField?.text ?: ""
-        searchField = TextFieldWidget(textRenderer, rowLeftX(), 48, rowW(), 16, Text.translatable("cobblemarket.gui.search"))
+        searchField = TextFieldWidget(textRenderer, rowLeftX(), 48, rowW() - 52, 16, Text.translatable("cobblemarket.gui.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.search").formatted(Formatting.GRAY))
         // 本地过滤无网络请求，无需防抖；搜索变化重置滚动并重建行按钮
         searchField?.setChangedListener {
@@ -1459,10 +1461,6 @@ class BuyOrderScreen(
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
                 renderCreateDialogBackground(context, delta)
-                // 手持物品按钮悬停提示（小手图标，功能说明见词条）
-                heldItemButton?.takeIf { it.isHovered }?.let {
-                    drawSimpleTooltip(context, listOf(Text.translatable("cobblemarket.buy_order.use_held_item").string), mouseX, mouseY)
-                }
             }
         })
 
@@ -1800,7 +1798,9 @@ class BuyOrderScreen(
             iconLeft = Identifier.of("cobblemarket", "textures/gui/hand.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             // 三段贴图：第三段是**选中态**（进入手持物品模式后保持高亮）
-            texH = 120
+            texH = 120,
+            // 悬停提示走**原生 tooltip**（原先是自己在 render 里手绘一个，样式与别处不一致）
+            tooltip = Text.translatable("cobblemarket.buy_order.use_held_item")
         )
         addDrawableChild(heldItemButton)
         updateHeldItemButton()
@@ -1881,25 +1881,6 @@ class BuyOrderScreen(
     }
 
     /** 简版悬停提示（纯文字行）：发布对话框小手图标按钮用（行 tooltip 见 renderRowTooltip） */
-    private fun drawSimpleTooltip(context: DrawContext, lines: List<String>, mouseX: Int, mouseY: Int) {
-        var maxWidth = 0
-        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
-
-        val padding = 4
-        val tx = minOf(mouseX + 12, width - maxWidth - 12)
-        val tooltipHeight = lines.size * 10 + padding
-        val tyAbove = mouseY - tooltipHeight - 4
-        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
-
-        context.matrices.push()
-        context.matrices.translate(0.0, 0.0, 400.0)
-        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
-        lines.forEachIndexed { i, line ->
-            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, 0xFFFFFF)
-        }
-        context.matrices.pop()
-    }
-
     private fun renderCreateDialogBackground(context: DrawContext, delta: Float) {
         val centerX = width / 2
         val dialogW = minOf(340, width - 40).coerceAtLeast(200)
