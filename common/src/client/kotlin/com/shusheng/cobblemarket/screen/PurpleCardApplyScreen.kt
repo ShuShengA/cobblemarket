@@ -63,7 +63,9 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
 
         // 底部按钮（居中；持有者=补发紫卡，非持有者=申请，资格/开关不符时置灰文案区分）
         applyButton = NineSliceButton(
-            width / 2 - 50, dialogY + dialogH - 30, 100, 20,
+            // 宽 170：按钮文案随状态变，最长的两种是 apply_closed（英文 156px）与
+            // apply_not_eligible（108px）—— 原来 100 宽会把文字挤出去（2026-09-21 用户报）
+            width / 2 - 85, dialogY + dialogH - 30, 170, 20,
             Text.translatable("cobblemarket.card.apply_btn"),
             {
                 // 置灰态（资格不符/未开放/快照未到）：点击播 fail 音效提示，不发请求（照入口喵喵银行按钮 dimmed 模式）
