@@ -296,18 +296,24 @@ class AuctionScreen(
         addDrawableChild(rulesBtn)
 
         val savedSearch = searchField?.text ?: ""
-        searchField = TextFieldWidget(textRenderer, leftX + 2, 50, panelWidth - 4 - 52 - 20, 16, Text.translatable("cobblemarket.gui.search"))
+        // 宽度随 tab 变（见 searchRowCompact）：精灵 tab 要给「特训筛选」让位，其余 tab 不必缩
+        searchField = TextFieldWidget(textRenderer, leftX + 2, 50,
+            if (searchRowCompact()) panelWidth - 108 else panelWidth - 76, 16, Text.translatable("cobblemarket.gui.search"))
         updateSearchPlaceholder()
         searchField?.setChangedListener { updateAbilityOptions(it); rebuildFiltered(); rebuildBidButtons() }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
         searchField?.text = savedSearch
 
+        // 宽 50；**位置随 tab 变**（见 searchRowCompact）——精灵 tab 与「特训筛选」对齐，
+        // 其余 tab 右手边没有按钮，只往右加宽、搜索框保持原宽
         val createBtn = NineSliceButton(
-            leftX + panelWidth - 72, 50, 18, 16,
+            leftX + panelWidth - (if (searchRowCompact()) 104 else 72), 50, 50, 16,
             Text.literal(""), { client?.setScreen(AuctionCreateScreen(currentTab)) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
-            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            // 纯图标按钮一律给悬停提示（同排搜索框右侧，没提示玩家不知道小手是干什么的）
+            tooltip = Text.translatable("cobblemarket.gui.create_auction")
         )
         createButton = createBtn
         // 「我的」tab 是自己的挂单列表，没有上架入口
@@ -544,6 +550,14 @@ class AuctionScreen(
         }
     }
 
+    /**
+     * 搜索框与上架小手的横向摆法**随 tab 变**（2026-09-21 用户拍板）：
+     *  · 精灵 tab（0）：一行三个控件，右手边还有「特训筛选」—— 小手与它同宽（50）、搜索框相应缩短；
+     *  · 物品 / 我的 tab：右手边没有按钮 —— 搜索框保持原宽，小手只往右加宽（右边空着无所谓）。
+     *  ⚠ init 与 switchTab **两处都要调**（同 updateSearchPlaceholder 的规矩，漏一处就会错位）。
+     */
+    private fun searchRowCompact() = currentTab == 0
+
     private fun switchTab(tab: Int) {
         currentTab = tab
         searchField?.text = ""
@@ -556,6 +570,9 @@ class AuctionScreen(
         htButton?.visible = currentTab == 0
         // 「我的」tab 没有上架入口
         createButton?.visible = currentTab != 2
+        // 搜索框宽度与小手位置随 tab 重摆（精灵 tab 要腾位给「特训筛选」，见 searchRowCompact）
+        searchField?.setWidth(if (searchRowCompact()) panelWidth - 108 else panelWidth - 76)
+        createButton?.setX(width / 2 - panelWidth / 2 + panelWidth - (if (searchRowCompact()) 104 else 72))
         applyFilterVisibility()
         rebuildFiltered()
         rebuildBidButtons()
