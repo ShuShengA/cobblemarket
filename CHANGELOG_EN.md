@@ -9,6 +9,7 @@
 - **Typing a Chinese Pokemon name in the blacklist / price limit / buy order screens picked the wrong Pokemon**: those three screens designate a single Pokemon by name, and typing "鬼斯" actually selected "鬼斯通" (same root cause) — so a blacklist entry, a price rule or a buy order silently ended up on a different Pokemon. Now **an exact name match wins**, and when several match, **left/right arrows** appear next to the preview so you can flip through them (with a "current / total" counter); whichever is shown is the one that gets used
 - **Balance HUD was not hidden by F1**: it stayed on screen after the vanilla HUD was hidden (in the way when taking screenshots or recording); it now hides together with the vanilla HUD
 - **Marks were missing from the auction announcement hover in chat**: every Pokemon detail panel shows marks, yet hovering an auction announcement in chat showed none — the same Pokemon read differently in the two places. Now it matches the rest (same position as elsewhere: below friendship, with anything past the first three folded into "+N")
+- **The button label overflowed on the Meow·Purple Gold Card / Black Gold Card apply screens**: "Self-application is closed" is too long for the 100px-wide button it sat on, so the text spilled outside it; the button is now wider and every state's label fits
 
 ## 1.1.0 (released)
 
