@@ -31,6 +31,8 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
 
     private val panelWidth = 296
     private var entries = listOf<LoanHistoryEntry>()
+    /** 鼠标当前悬停的行（-1 = 无）：行悬停态与悬停窗共用（renderBackground 里算，render 里用） */
+    private var hoveredRow = -1
     private var loaded = false
     private var scrollOffset = 0
     private val rowButtons = mutableListOf<NineSliceButton>()
@@ -288,9 +290,16 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
         val startY = 48
         val rowHeight = 24
         val maxVisible = maxOf(3, (height - 48 - startY) / rowHeight)
-        repeat(minOf(maxVisible, maxOf(0, displayEntries().size - scrollOffset))) { i ->
+        // 悬停行：鼠标落在列表区域内才算（判据同权限管理界面：先框内、再除以行高）
+        val shownCount = minOf(maxVisible, maxOf(0, displayEntries().size - scrollOffset))
+        hoveredRow = -1
+        if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY until (startY + shownCount * rowHeight)) {
+            val row = (mouseY - startY) / rowHeight
+            if (row in 0 until shownCount) hoveredRow = row
+        }
+        repeat(shownCount) { i ->
             val rowY = startY + i * rowHeight
-            drawNineSlice(context, ROW_BACKGROUND_TEXTURE, leftX, rowY, panelWidth, rowHeight, 0, ROW_BACKGROUND_TEX_H)
+            drawNineSlice(context, ROW_BACKGROUND_TEXTURE, leftX, rowY, panelWidth, rowHeight, if (i == hoveredRow) 1 else 0, ROW_BACKGROUND_TEX_H)
         }
     }
 
@@ -343,17 +352,25 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
             val statusLabel = "[$statusText]"
             context.drawTextWithShadow(textRenderer, statusLabel, x, y + 8, statusColor(e.status))
             x += textRenderer.getWidth(statusLabel) + 6
-            val owner = if (showAll) "${e.playerName} " else ""
-            val source = Text.translatable("cobblemarket.loan_history.source.${e.source}").string
-            val periodsText = Text.translatable("cobblemarket.loan_history.periods", e.periodsPaid, e.periodsTotal).string
-            val ipPart = if (showAll && e.ip.isNotEmpty()) " IP:${e.ip}" else ""
-            val middle = "$owner${formatPriceLong(e.principal)} ${inlineCurrencyUnit()}·$periodsText($source)$ipPart"
+            val middle = middleTextOf(e)
             // 剩余本金右对齐行尾（照列表界面惯例），中间部分按实际可用像素截断（truncateString 单位为像素）
-            val pricePart = "| ${formatPriceLong(e.remaining)} ${inlineCurrencyUnit()}"
+            val pricePart = priceTextOf(e)
             val priceX = leftX + panelWidth - 5 - rightReserved - textRenderer.getWidth(pricePart)
             val middleMax = priceX - 6 - x
             context.drawTextWithShadow(textRenderer, TextUtil.truncateString(middle, middleMax), x, y + 8, 0xFFFFFF)
             context.drawTextWithShadow(textRenderer, pricePart, priceX, y + 8, 0x55FFFF)
+        }
+
+        // 悬停行完整信息：行内中段会被截断（玩家名 / 来源 / IP 都可能看不全），这里给完整的
+        if (hoveredRow in visibleEntries.indices) {
+            val e = visibleEntries[hoveredRow]
+            val fullTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date(e.timestamp))
+            val statusText = Text.translatable("cobblemarket.loan_history.status.${e.status}").string
+            renderTooltip(context, buildList {
+                add("[$statusText] $fullTime")
+                add(middleTextOf(e))
+                add(priceTextOf(e))
+            }, mouseX, mouseY)
         }
 
         // Scroll indicator
@@ -364,6 +381,39 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
                 width / 2, height - 49, 0x888888
             )
         }
+    }
+
+    /** 行内中段文案（全部历史带玩家名与 IP）：本金 ₽·期数（来源）—— 行渲染与悬停窗共用 */
+    private fun middleTextOf(e: LoanHistoryEntry): String {
+        val owner = if (showAll) "${e.playerName} " else ""
+        val source = Text.translatable("cobblemarket.loan_history.source.${e.source}").string
+        val periodsText = Text.translatable("cobblemarket.loan_history.periods", e.periodsPaid, e.periodsTotal).string
+        val ipPart = if (showAll && e.ip.isNotEmpty()) " IP:${e.ip}" else ""
+        return "$owner${formatPriceLong(e.principal)} ${inlineCurrencyUnit()}·$periodsText($source)$ipPart"
+    }
+
+    /** 行尾剩余本金文案（右对齐那一段） */
+    private fun priceTextOf(e: LoanHistoryEntry): String =
+        "| ${formatPriceLong(e.remaining)} ${inlineCurrencyUnit()}"
+
+    /** 悬停窗（照权限管理界面的 renderTooltip）：首行金色、其余白色，位置自动躲开屏幕边缘 */
+    private fun renderTooltip(context: DrawContext, lines: List<String>, mouseX: Int, mouseY: Int) {
+        var maxWidth = 0
+        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
+
+        val padding = 4
+        val tx = minOf(mouseX + 12, width - maxWidth - 12).coerceAtLeast(4)
+        val tooltipHeight = lines.size * 10 + padding
+        val tyAbove = mouseY - tooltipHeight - 4
+        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
+
+        context.matrices.push()
+        context.matrices.translate(0.0, 0.0, 400.0)
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
+        lines.forEachIndexed { i, line ->
+            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, if (i == 0) GOLD_COLOR else 0xFFFFFF)
+        }
+        context.matrices.pop()
     }
 
     private fun statusColor(status: String): Int = when (status) {
