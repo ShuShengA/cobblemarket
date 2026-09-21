@@ -1056,7 +1056,10 @@ object AuctionNetwork {
         // 金额与货币名恒金（聊天颜色模板）；主体蓝（2026-08-30 拍板），名字属性色/按钮/金额子样式优先于父级蓝
         // 金额 + 单位按**拍卖自己的币种**（主货币 ₽ / RP 图标，唯一落点在 CurrencyService.amountText）
         val priceText = CurrencyService.amountText(auction.startingPrice, auction.currency)
-        val msg = Text.literal("[拍卖] ").formatted(Formatting.GOLD)
+        // ⚠ 标签必须走词条：服务端拼的 Text 在客户端渲染时才翻译，硬编码中文会在英文端露出来
+        //   （中括号与尾空格：词条含中括号（与 [点击出价] 等惯例一致），空格由这里补）
+        val msg = Text.translatable("cobblemarket.chat.auction_tag").formatted(Formatting.GOLD)
+            .append(Text.literal(" "))
             .append(Text.translatable("cobblemarket.chat.auction_announce", Text.literal(auction.sellerName), clickableName, priceText).formatted(Formatting.BLUE))
         server.playerManager.playerList.forEach { it.sendMessage(msg) }
     }
@@ -1113,7 +1116,8 @@ object AuctionNetwork {
         )
         // 金额 + 单位按**拍卖自己的币种**（成交播报同样不能写死主货币）
         val priceText = CurrencyService.amountText(auction.currentPrice, auction.currency)
-        return Text.literal("[拍卖] ").formatted(Formatting.GOLD)
+        return Text.translatable("cobblemarket.chat.auction_tag").formatted(Formatting.GOLD)
+            .append(Text.literal(" "))
             .append(Text.translatable("cobblemarket.chat.auction_sold_announce", Text.literal(auction.currentBidderName), priceText, nameText).formatted(Formatting.BLUE))
     }
 
