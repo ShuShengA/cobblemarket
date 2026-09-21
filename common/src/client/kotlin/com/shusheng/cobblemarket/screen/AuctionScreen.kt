@@ -981,10 +981,11 @@ class AuctionScreen(
         itemLines?.forEach { maxLineW = maxOf(maxLineW, textRenderer.getWidth(it)) }
         // 精灵：左列信息随名字长度变化（名字 + Lv/公母/体型后缀 ≈60），按实测算宽；右列固定 ≈150。
         // 物品分支早有同样机制（按最长行算）。2026-09-21 用户报：精灵名一长就压到右列拍卖信息上
+        var rightW = 0
         val dialogW = if (entry.type == "POKEMON") {
             val nameW = textRenderer.getWidth(displayName(entry)) + 60
             // 右列（拍卖信息）实测最宽：金额随挂单变化（100,000,000 这类），不量的话会顶出弹窗右边框
-            val rightW = listOf(
+            rightW = listOf(
                 Text.literal("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}"),
                 Text.translatable("cobblemarket.auction.current_price").append(": ").append(displayPriceText(entry)),
                 Text.translatable("cobblemarket.auction.starting_price").append(": ").append(
@@ -992,7 +993,9 @@ class AuctionScreen(
                 Text.translatable("cobblemarket.auction.min_increment").append(": ").append(
                     Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"))
             ).maxOf { textRenderer.getWidth(it) }
-            (maxOf(320, nameW + 150, rightW + 190)).coerceAtMost(width - 20)
+            // 左列(nameW) + 右列(rightW + 30：右边距 10、与左列间隙 20) —— 右列宽跟着实测走，
+            // 不能再写成「距右缘固定 k」：那样弹窗加宽时右列跟着右移，可用宽永远不变
+            (maxOf(320, nameW + rightW + 40)).coerceAtMost(width - 20)
         } else (maxOf(320, maxLineW + 170)).coerceAtMost(width - 20)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
@@ -1180,7 +1183,7 @@ class AuctionScreen(
         }
 
         // ── 右列：竞拍信息 ──
-        val auctionX = dialogX + dialogW - 140   // 右列左缘距弹窗右缘 140：给金额留 30px 余量（原来改成 -120 会让长金额顶出边框）
+        val auctionX = dialogX + dialogW - (if (entry.type == "POKEMON") rightW + 30 else 140)
         var ay = dialogY + 28
         fun auctionLine(text: String, color: Int = 0xFFFFFF) {
             context.drawTextWithShadow(textRenderer, text, auctionX, ay, color)
