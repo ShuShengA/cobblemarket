@@ -194,6 +194,10 @@ class BuyOrderScreen(
     /** 强制下架弹窗的精灵图标（标题正下方；2026-09-21 用户要求补上） */
     private var forceRenderable: RenderablePokemon? = null
     private val forceState = FloatingState()
+    /** 弹窗打开时自动叫一声的**待播时刻**（0 = 无）。照市场确认弹窗：不能打开就播 ——
+     *  `addFirstAnimation` 依赖 `state.currentModel`，要等 drawProfilePokemon 跑过才有值；
+     *  且刚弹出就响玩家反应不过来。所以记「now + AUTO_CRY_DELAY_MS」，渲染处到点才播。*/
+    private var forceCryAt = 0L
 
     /**
      * 确认交付弹窗里那个精灵图标的屏幕位置，**渲染时记录**。
@@ -634,6 +638,7 @@ class BuyOrderScreen(
 
     private fun openForceCancelDialog(entry: BuyOrderEntry) {
         buildForceRenderable(entry)
+        forceCryAt = System.currentTimeMillis() + com.shusheng.cobblemarket.client.icon.IconCryClick.AUTO_CRY_DELAY_MS
         forceCancelEntry = entry
         forceScroll = 0
         // 隐藏下层控件（弹窗打开期间不可交互；closeForceCancelDialog 的 init 重建会恢复）
@@ -794,6 +799,11 @@ class BuyOrderScreen(
                     com.shusheng.cobblemarket.client.IconAnimMode.FLOAT,
                 useScissor = false
             )
+            // 铁律：含精灵图标的弹窗打开要自动叫一声（到点且模型已就绪才播）
+            if (forceCryAt != 0L && System.currentTimeMillis() >= forceCryAt) {
+                forceCryAt = 0L
+                com.shusheng.cobblemarket.client.icon.IconCryClick.play(forceState, rp)
+            }
         }
         context.drawCenteredTextWithShadow(textRenderer,
             entryNameText(entry),
