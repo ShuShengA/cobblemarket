@@ -140,6 +140,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                         "auctionDurations" -> "720,1440,2880,4320"
                         else -> snapshotText(key, null)
                     }
+                    // 同上：光标回开头，长值才不会只显示尾巴
+                    numFields[key]?.setCursor(0, false)
                 }
             )
             resetButtons[key] = resetBtn
@@ -197,7 +199,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         // 确认弹窗关闭/resize 走 clearChildren+init 重建：恢复未提交的编辑，且不重新请求快照
         // （请求会把本地编辑的开关状态冲回服务端旧值——蛋交易确认后按钮图标变回关就是这个原因）
         if (savedFieldTexts != null) {
-            savedFieldTexts!!.forEach { (key, text) -> numFields[key]?.text = text }
+            savedFieldTexts!!.forEach { (key, text) -> numFields[key]?.text = text; numFields[key]?.setCursor(0, false) }
             savedToggles?.let { saved -> localToggles.clear(); localToggles.putAll(saved) }
             toggleDefs.forEach { (_, key) -> toggleButtons[key]?.iconLeft = toggleIconFor(key, null) }
             savedFieldTexts = null
@@ -263,6 +265,9 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                     "loanPlans" -> payload.loanPlans
                     else -> snapshotText(key, payload)
                 }
+                // ⚠ 设完值要把光标挪回开头：光标默认停在**末尾**，而框窄、只围绕光标显示一段，
+                //   长值（拍卖档位 "720,1440,…"）就会只露出尾巴，看着像"配置被改了"（2026-09-22 用户报）
+                field.setCursor(0, false)
             }
         }
         // 服务端快照到达：本地开关状态重置（保存回发 / 打开时首次填充）

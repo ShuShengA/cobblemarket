@@ -87,6 +87,9 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
                 {
                     // 只填回默认值不提交：点下方「保存」统一生效（2026-09-05 拍板，重置按钮一律不自动保存）
                     numFields[key]?.text = snapshotText(key, null)
+                    // ⚠ 设完值要把光标挪回开头：光标默认停在**末尾**，而框窄、只围绕光标显示一段，
+                    //   长值（如拍卖档位 "720,1440,…"）就会只露出尾巴，看着像"配置被改过"（2026-09-22 用户报）
+                    numFields[key]?.setCursor(0, false)
                 }
             )
             resetButtons[key] = resetBtn
@@ -173,6 +176,7 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
             val field = numFields[key] ?: return@forEach
             if (focused !== field) {
                 field.text = snapshotText(key, payload)
+                field.setCursor(0, false)   // 光标回开头，长值才不会只显示尾巴
             }
         }
         toggleDefs.forEach { (_, key) ->
