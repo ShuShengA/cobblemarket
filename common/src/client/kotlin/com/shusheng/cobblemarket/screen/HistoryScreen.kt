@@ -24,6 +24,8 @@ class HistoryScreen(private val showAll: Boolean = false) :
     private var entries = listOf<HistoryEntry>()
     private var loaded = false
     private var scrollOffset = 0
+    /** 鼠标当前悬停的行（-1 = 无）：行悬停态与悬停窗共用，每帧在 render 里重算 */
+    private var hoveredRow = -1
 
     override fun init() {
         super.init()
@@ -125,43 +127,69 @@ class HistoryScreen(private val showAll: Boolean = false) :
         }
 
         val visibleEntries = entries.drop(scrollOffset).take(maxVisible)
+
+        // 悬停行：鼠标落在列表区域内才算（判据同权限管理界面：先框内、再除以行高）
+        val listLeft = width / 2 - panelHalf
+        hoveredRow = -1
+        if (mouseX in listLeft..(listLeft + panelWidth) &&
+            mouseY in startY until (startY + visibleEntries.size * rowHeight)) {
+            val row = (mouseY - startY) / rowHeight
+            if (row in visibleEntries.indices) hoveredRow = row
+        }
+
         visibleEntries.forEachIndexed { i, e ->
             val y = startY + i * rowHeight
-            drawNineSlice(context, ROW_BACKGROUND_TEXTURE, width / 2 - panelHalf, y, panelWidth, rowHeight, 0, ROW_BACKGROUND_TEX_H)
-            val typeText = Text.translatable("cobblemarket.history.type.${e.type}").string
+            drawNineSlice(context, ROW_BACKGROUND_TEXTURE, listLeft, y, panelWidth, rowHeight, if (i == hoveredRow) 1 else 0, ROW_BACKGROUND_TEX_H)
             val time = dateFormat.format(Date(e.timestamp))
-            val speciesText = if (e.category == "ITEM") {
-                val id = Identifier.tryParse(e.species)
-                if (id != null) Registries.ITEM.get(id).name.string else e.species
-            } else {
-                Text.translatable(e.species).string
-            }
+            val typeLabel = "[${typeTextOf(e)}]"
+            val speciesText = speciesTextOf(e)
             val seller = if (e.sellerName.isNotEmpty()) e.sellerName else "?"
             val buyer = if (e.buyerName.isNotEmpty()) " → ${e.buyerName}" else ""
 
-            var x = width / 2 - panelHalf + 5
+            val x = listLeft + 5
             context.drawTextWithShadow(textRenderer, time, x, y + 4, 0x888888)
-            x += textRenderer.getWidth(time) + 6
-            val typeLabel = "[$typeText]"
-            context.drawTextWithShadow(textRenderer, typeLabel, x, y + 4, typeColor(e.type))
-            x += textRenderer.getWidth(typeLabel) + 6
-            // 行尾（价格 / 买家）先按实际宽度占位，中间段按剩余像素截断 ——
-            // 无翻译的物品 id 会原样显示成超长 key，不截断会把整行画出面板
+            var cx = x + textRenderer.getWidth(time) + 6
+            context.drawTextWithShadow(textRenderer, typeLabel, cx, y + 4, typeColor(e.type))
+            cx += textRenderer.getWidth(typeLabel) + 6
+
+            // 行尾（价格 / 买家名）**从右缘反推定位**（照贷款历史界面的惯例）。
+            // ⚠ 别写成「中间段之后再累加」—— 那样「价格 + 买家名」合计超宽时（长名字 + 大额），
+            //   尾段会被一路推出面板右缘、中间段被挤成只剩一个「…」（2026-09-21 修）
             val pricePart = "| ${com.shusheng.cobblemarket.client.formatPrice(e.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
             val buyerPart = if (!showAll && buyer.isNotEmpty()) buyer.trimStart() else ""
-            var tailWidth = textRenderer.getWidth(pricePart) + 6
-            if (buyerPart.isNotEmpty()) tailWidth += textRenderer.getWidth(buyerPart) + 6
+            val right = width / 2 + panelHalf - 5
+            val priceX = right - textRenderer.getWidth(pricePart)
+            // 买家名夹在「中间段最小宽度」与价格之间，放不下就截断（完整名字见悬停窗）——
+            // 不截的话，长名字 + 大额价格会把中间段挤成空、两段文字叠在一起
+            val buyerShown = if (buyerPart.isEmpty()) buyerPart else TextUtil.truncateString(
+                buyerPart, (priceX - 6 - cx - MIDDLE_MIN_W - 6).coerceAtLeast(0)
+            )
+            val buyerX = priceX - (if (buyerShown.isNotEmpty()) textRenderer.getWidth(buyerShown) + 6 else 0)
+            // 中间段按实际可用像素截断（truncateString 单位为像素）——
+            // 无翻译的物品 id 会原样显示成超长 key，不截断会把整行画出面板
             val middle = TextUtil.truncateString(
                 if (showAll) "$seller$buyer $speciesText" else speciesText,
-                width / 2 + panelHalf - 5 - tailWidth - x
+                (if (buyerShown.isNotEmpty()) buyerX else priceX) - 6 - cx
             )
-            context.drawTextWithShadow(textRenderer, middle, x, y + 4, 0xFFFFFF)
-            x += textRenderer.getWidth(middle) + 6
-            context.drawTextWithShadow(textRenderer, pricePart, x, y + 4, 0xFFAA00)
-            if (buyerPart.isNotEmpty()) {
-                x += textRenderer.getWidth(pricePart) + 6
-                context.drawTextWithShadow(textRenderer, buyerPart, x, y + 4, 0xFFFFFF)
+            context.drawTextWithShadow(textRenderer, middle, cx, y + 4, 0xFFFFFF)
+            context.drawTextWithShadow(textRenderer, pricePart, priceX, y + 4, 0xFFAA00)
+            if (buyerShown.isNotEmpty()) {
+                context.drawTextWithShadow(textRenderer, buyerShown, buyerX, y + 4, 0xFFFFFF)
             }
+        }
+
+        // 悬停行完整信息：行内的时间/类型/名字/价格都可能被截断或压缩，这里给全的
+        if (hoveredRow >= 0) {
+            val e = visibleEntries[hoveredRow]
+            val seller = if (e.sellerName.isNotEmpty()) e.sellerName else "?"
+            val buyer = if (e.buyerName.isNotEmpty()) " → ${e.buyerName}" else ""
+            val fullTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date(e.timestamp))
+            renderTooltip(context, buildList {
+                add(speciesTextOf(e))
+                add("[${typeTextOf(e)}] $fullTime")
+                add("$seller$buyer")
+                add("${com.shusheng.cobblemarket.client.formatPrice(e.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}")
+            }, mouseX, mouseY)
         }
 
         // Scroll indicator
@@ -179,6 +207,43 @@ class HistoryScreen(private val showAll: Boolean = false) :
         "CANCEL" -> 0xAAAAAA
         "RETURN" -> 0x55AAFF
         else -> 0xFFFFFF
+    }
+
+    /** 类型标签文案（行内与悬停窗共用） */
+    private fun typeTextOf(e: HistoryEntry): String =
+        Text.translatable("cobblemarket.history.type.${e.type}").string
+
+    /** 精灵 / 物品显示名（行内与悬停窗共用）：物品走注册表名，精灵走词条 */
+    private fun speciesTextOf(e: HistoryEntry): String = if (e.category == "ITEM") {
+        val id = Identifier.tryParse(e.species)
+        if (id != null) Registries.ITEM.get(id).name.string else e.species
+    } else {
+        Text.translatable(e.species).string
+    }
+
+    /** 悬停窗（照权限管理界面的 renderTooltip）：首行金色、其余白色，位置自动躲开屏幕边缘 */
+    private fun renderTooltip(context: DrawContext, lines: List<String>, mouseX: Int, mouseY: Int) {
+        var maxWidth = 0
+        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
+
+        val padding = 4
+        val tx = minOf(mouseX + 12, width - maxWidth - 12).coerceAtLeast(4)
+        val tooltipHeight = lines.size * 10 + padding
+        val tyAbove = mouseY - tooltipHeight - 4
+        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove
+
+        context.matrices.push()
+        context.matrices.translate(0.0, 0.0, 400.0)
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
+        lines.forEachIndexed { i, line ->
+            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, if (i == 0) GOLD_COLOR else 0xFFFFFF)
+        }
+        context.matrices.pop()
+    }
+
+    private companion object {
+        /** 中间段至少保留的像素宽（约 4 个汉字）：不够时优先截行尾的买家名，保精灵名 */
+        const val MIDDLE_MIN_W = 40
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
