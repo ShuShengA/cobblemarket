@@ -942,12 +942,13 @@ class BuyOrderScreen(
         val infoX = dialogX + forcePad
         val contentW = forceContentW()
         context.enableScissor(dialogX, viewTop, dialogX + dialogW, viewBottom)
-        infoLines.forEachIndexed { i, (line, color) ->
+        // 第一行是精灵名（标题下已居中显示过一次）→ 跳过，避免同一名字画两遍
+        infoLines.drop(1).forEachIndexed { i, (line, color) ->
             val rowY = viewTop + i * 10 - forceScroll
             if (line == null) {
-                context.fill(infoX, rowY + 4, infoX + contentW, rowY + 5, 0xFF555555.toInt())
+                context.fill(centerX - contentW / 2, rowY + 4, centerX + contentW / 2, rowY + 5, 0xFF555555.toInt())
             } else {
-                context.drawTextWithShadow(textRenderer, line, infoX, rowY, color)
+                context.drawCenteredTextWithShadow(textRenderer, line, centerX, rowY, color)
             }
         }
         context.disableScissor()
@@ -1208,6 +1209,14 @@ class BuyOrderScreen(
 
         val lines = mutableListOf<Pair<net.minecraft.text.OrderedText?, Int>>() // null = 分割线行
         lines.add(entryNameText(entry).asOrderedText() to w)
+        // 属性行（1.2.0）：主属性主色 + 副属性副色，与市场/悬停窗同一口径
+        if (entry.primaryType.isNotEmpty()) {
+            lines.add(
+                Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
+                    .append(EntryBadgeRenderer.typeLine(entry.primaryType, entry.secondaryType))
+                    .asOrderedText() to w
+            )
+        }
         if (entry.type == "POKEMON") {
             // 条件行：闪光用星星图标（★ 金 = 仅闪，☆ 灰 = 仅非闪，不限不显示）+ 特训
             // （filter_ht_any 自带「特训：」前缀，不能叠加 tooltip_ht 标签；此处统一用不带前缀的三态文案）
