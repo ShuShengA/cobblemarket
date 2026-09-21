@@ -40,11 +40,10 @@
 
 #### Admin Permission Nodes
 
-- **Admin duties can be delegated**: the owner can hand a single admin duty to a player without granting OP — 8 nodes by domain (blacklist / price limits / bans / market admin / finance / auctions / Buy Orders / Server Config); OPs keep everything with zero setup
+- **Admin duties can be delegated**: the owner can hand a single admin duty to a player without granting OP — 8 nodes by domain (blacklist / price limits / bans / market admin / finance / auctions / Buy Orders / Server Config); OPs keep everything with zero setup; when a delegate opens the panel, entries they lack still show up, greyed out with a hint, so the layout never shifts with the permissions they hold
 - **Permissions screen**: a new entry at the bottom-left of the Admin Panel (OP only) — search a player, tick the nodes, save, and it applies immediately; online players need no relog
 - **Permission commands**: `/market perm grant|revoke|list` (owner-only; `list` shows every grant)
 - **Permission change log**: the permissions screen gains a "Change Log" tab — who granted or removed which node for whom, and when; the same records are written to per-day CSV ledgers (`config/cobblemarket/permissions/`, Chinese and English) for offline auditing
-- **Admin Panel entries now grey out instead of disappearing**: the blacklist / price limits / bans / market admin / Server Config entries inside the panel always show, greyed out with a hint when you lack the permission, so the panel layout no longer shifts with permissions (the "Admin Panel" button on the entry screen is unaffected — it is still shown or hidden by whether you hold any permission)
 - **Permission changes now notify the target**: when an admin node is granted or revoked the player gets a chat notice listing their full node list afterwards — no more silent changes: whoever gains a permission knows what changed, and whoever loses one knows what's gone; changes made while offline are delivered on next login
 
 #### Sound Effects
