@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.ServerConfigDataPayload
 import com.shusheng.cobblemarket.platform.sendToServer
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
@@ -61,7 +62,12 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
         val dialogX = width / 2 - dialogW / 2
         val startY = listStartY()
         numDefs.forEach { (def, key) ->
-            val field = TextFieldWidget(textRenderer, dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16, Text.literal(""))
+            // 输入框右缘钉死贴 ↺ 按钮左缘（间隙 2px），宽度一律**往左长**（见 ConfigFieldLayout）
+            val fieldW = ConfigFieldLayout.configFieldWidth(textRenderer, dialogW, key, def.labelKey)
+            val field = TextFieldWidget(
+                textRenderer, ConfigFieldLayout.configFieldRight(dialogX, dialogW) - fieldW,
+                startY, fieldW, 16, Text.literal("")
+            )
             field.setTextPredicate { text -> if (def.isInt) text.all { it.isDigit() } else text.all { it.isDigit() || it == '.' } }
             field.setMaxLength(10)
             // 口径解释（服主向）
@@ -258,11 +264,13 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
         val dialogX = width / 2 - dialogW / 2
         val startY = listStartY()
         var row = 0
-        numDefs.forEach { (_, key) ->
+        numDefs.forEach { (def, key) ->
             val y = startY + (row - scrollOffset) * rowHeight
             val field = numFields[key] ?: return@forEach
             val visible = row in scrollOffset until scrollOffset + getMaxVisibleRows()
-            field.x = dialogX + dialogW - 10 - 20 - 2 - 54
+            // ⚠ x 与宽度必须和 init 用同一套算法：只改一处会让右缘戳出弹窗（2026-09-22 踩过）
+            field.x = ConfigFieldLayout.configFieldX(textRenderer, dialogX, dialogW, key, def.labelKey)
+            field.setWidth(ConfigFieldLayout.configFieldWidth(textRenderer, dialogW, key, def.labelKey))
             field.y = y + 4
             field.visible = visible
             resetButtons[key]?.x = dialogX + dialogW - 10 - 20
@@ -300,13 +308,16 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
         fun drawRowLine(rowY: Int) {
             context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
         }
-        fun drawNumRow(def: NumDef) {
+        fun drawNumRow(def: NumDef, key: String) {
             if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
                 val rowY = startY + (row - scrollOffset) * rowHeight
                 drawRowLine(rowY)
                 context.drawTextWithShadow(
                     textRenderer,
-                    Text.translatable(def.labelKey),
+                    TextUtil.truncateStyled(
+                        Text.translatable(def.labelKey),
+                        ConfigFieldLayout.configLabelWidth(textRenderer, dialogW, key, def.labelKey)
+                    ),
                     dialogX + 10, rowY + 7, 0xFFFFFF
                 )
             }
@@ -324,7 +335,7 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
             }
             row++
         }
-        numDefs.forEach { (def, _) -> drawNumRow(def) }
+        numDefs.forEach { (def, key) -> drawNumRow(def, key) }
         toggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
         if (System.currentTimeMillis() < savedToastUntil) {
             context.drawCenteredTextWithShadow(
