@@ -141,7 +141,8 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
                 centerX, dialogY + 110, 0xFFFFFF
             )
         } else {
-            // 卡权益（图标右侧，持有者/申请者都显示）：额度（金额用全模组价格蓝 0x55FFFF，完整千分位）+ 手续费减免（0 = 无）
+            // 卡权益（图标右侧，持有者/申请者都显示）：额度（**服务器给的虚拟授信 → 蓝 0x55FFFF**，完整千分位）+ 手续费减免（0 = 无）
+            // ⚠ 蓝色只给额度/债务这类"不能花的账本数字"；真实金额（价格、余额、要付的钱）一律金色——见「能不能花」判据
             val rightsX = centerX + 36
             context.drawTextWithShadow(
                 textRenderer,
