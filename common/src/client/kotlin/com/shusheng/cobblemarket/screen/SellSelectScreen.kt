@@ -10,6 +10,7 @@ import com.shusheng.cobblemarket.client.POINTS_SYMBOL_INLINE_SIZE
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
 import com.shusheng.cobblemarket.client.PointsStateCache
+import com.shusheng.cobblemarket.client.SELL_BUTTON_ICON_SIZE
 import com.shusheng.cobblemarket.client.SELL_ICON_SRC
 import com.shusheng.cobblemarket.client.SELL_ICON_TEXTURE
 import com.shusheng.cobblemarket.client.heldIconStack
@@ -277,7 +278,7 @@ class SellSelectScreen(
             },
             iconLeft = if (noPriceField) null else SELL_ICON_TEXTURE,
             iconTexW = SELL_ICON_SRC, iconTexH = SELL_ICON_SRC,
-            iconScale = CURRENCY_BUTTON_ICON_SIZE / SELL_ICON_SRC.toFloat(),
+            iconScale = SELL_BUTTON_ICON_SIZE / SELL_ICON_SRC.toFloat(),
             // 纯图标时给悬停提示（有文字的那两种模式不需要）—— 1.2.0 上对应 deliverMode，这里对应 noPriceField
             tooltip = if (noPriceField) null else Text.translatable("cobblemarket.sell.sell")
         )
