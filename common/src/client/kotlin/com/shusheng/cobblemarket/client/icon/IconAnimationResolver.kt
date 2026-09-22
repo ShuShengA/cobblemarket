@@ -1,13 +1,24 @@
 package com.shusheng.cobblemarket.client.icon
 
 import com.shusheng.cobblemarket.client.ClientRestCache
+import com.shusheng.cobblemarket.client.CobbleMarketClient
 import com.cobblemon.mod.common.client.gui.calculateHeadYawAndPitch
+import com.cobblemon.mod.common.client.render.models.blockbench.PosableModel
 import com.cobblemon.mod.common.client.render.models.blockbench.PosableState
+import com.cobblemon.mod.common.client.render.models.blockbench.animation.ActiveAnimation
+import com.cobblemon.mod.common.client.render.models.blockbench.animation.PrimaryAnimation
+import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockAnimation
 import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockAnimationRepository
+import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockPoseAnimation
+import com.cobblemon.mod.common.client.render.models.blockbench.pose.Pose
+import com.cobblemon.mod.common.client.render.models.blockbench.repository.RenderContext
+import com.cobblemon.mod.common.client.render.models.blockbench.wavefunction.WaveFunction
+import com.cobblemon.mod.common.client.render.models.blockbench.wavefunction.sineFunction
 import com.cobblemon.mod.common.pokemon.ai.RestBehaviour
 import net.minecraft.client.MinecraftClient
 import com.cobblemon.mod.common.entity.PoseType
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
+import net.minecraft.entity.Entity
 import org.joml.Quaternionf
 
 /**
@@ -60,9 +71,13 @@ object IconAnimationResolver {
         // 静态模式：不推进动画也不跟随鼠标（与 cry 点击、睡眠一致）
         if (!animate) return DEFAULT
 
-        // 姿势优先级：睡眠时段（且该物种有睡眠姿态）> 预览态走路 > 待机。
+        // 姿势优先级：战吼中 > 睡眠时段（且该物种有睡眠姿态）> 预览态走路 > 待机。
         // 睡眠优先于预览，正是「白天 walk / 晚上 sleep」；晚上又没有 sleep 姿态的物种继续走 walk。
         val poseType = when {
+            // ⚠ 战吼期间强制待机姿势：点击图标时鼠标**必然停在那一行上** → 行内图标正处于悬停预览态
+            //   → 不拦就会切到走路姿势、战吼与走路动画混在一起（2026-09-22 日志实测 `pose=walking`），
+            //   既看不出战吼、身体姿态也不是待机那个。primary 播完框架会自动清空，姿势随之恢复。
+            state.primaryAnimation != null -> PoseType.PROFILE
             isSleeping(renderable) && hasSleepPose(state) -> PoseType.SLEEP
             preview -> walkPoseOrProfile(state)
             else -> PoseType.PROFILE
@@ -146,27 +161,19 @@ object IconAnimationResolver {
     }
 
     /**
-     * 某动画的**主动画版**可解析名（`组名:动画全名:primary`），该物种没有这个动画时返回 null。
-     *
-     * ⚠ **`:primary` 后缀不能省** —— 它决定走 `addPrimaryAnimation`（独占）而非 `addActiveAnimation`（叠加）。
-     * 叠加会与姿势动画（待机 `ground_idle` / 走路 `ground_walk`）**混合**：每个骨骼取折中值，
-     * 于是战吼里「手在身体两侧」变成「手在胸前」（火焰鸡 2026-09-15 实测）。
-     * Cobblemon 自己的战吼就是主动画 —— poser json 里写的是 `q.bedrock_primary(...)`，
-     * 而 `addPrimaryAnimation` 的注释是「Sets the primary animation and **dumps any active animations**」。
-     * 带后缀后 `extractAnimation` 会包成 `PrimaryAnimation(...)`，与官方同一条路。
+     * 该物种的**动画组名**（组名不等于物种名：阿罗拉雷丘 `raichu_alolan`、洗翠火暴兽 `typhlosion_hisuian`），
+     * 没有这个动画时返回 null，由调用方降级。
      *
      * `BedrockAnimationRepository` 的 key 是全名 `animation.<组名>.<动画名>`，组名 = 动画文件名，
-     * 而**组名不等于物种名**（阿罗拉雷丘 `raichu_alolan`、洗翠火暴兽 `typhlosion_hisuian`），
-     * 所以拿 [BedrockAnimationRepository.getAnimationOrNull] 逐个探测；探测不到返回 null，由调用方降级。
+     * 形态（aspects）拼在物种名后面，所以按「物种名 → 物种名_形态」逐个探测。
      *
-     * ⚠ 也别退回 `"battle_cry"` 这种短名：`PosableModel.getAnimation` 的三级查找对短名全落空
+     * ⚠ **别退回 `"battle_cry"` 这种短名**：`PosableModel.getAnimation` 的三级查找对短名全落空
      * （① 姿势的具名动画；② `animations` 表——各模型类手动注册的稀疏表；③ 兜底的 `extractAnimation`
-     * 要求字符串形如 `组名:动画名`，没冒号时 Kotlin 的 `substringAfter` 返回原串、它判自己
-     * 「等于原字符串」直接返回 null），于是静默落到 `cry`，而 `cry` 又走模型的
-     * `CryProvider { if (it.isBattling) battle_cry else cry }` —— 我们的 FloatingState 没有 entity、
+     * 要求字符串形如 `组名:动画名`），于是静默落到 `cry` —— 而 `cry` 走模型的
+     * `CryProvider { if (it.isBattling) battle_cry else cry }`，我们的 FloatingState 没有 entity、
      * `isBattling` 恒 false，拿到手的仍是普通 cry（2026-09-15 查证：此前写的 battle_cry 从未生效过）。
      */
-    fun primaryAnimationName(renderable: RenderablePokemon, animation: String): String? {
+    fun animationGroup(renderable: RenderablePokemon, animation: String): String? {
         val base = renderable.species.name.lowercase()
         val groups = buildList {
             add(base)
@@ -174,33 +181,243 @@ object IconAnimationResolver {
                 if (aspect.isNotBlank()) add("${base}_${aspect.lowercase()}")
             }
         }
-        return groups.firstNotNullOfOrNull { group ->
-            val full = "animation.$group.$animation"
-            if (BedrockAnimationRepository.getAnimationOrNull(group, full) != null) "$group:$full:primary" else null
+        return groups.firstOrNull { group ->
+            BedrockAnimationRepository.getAnimationOrNull(group, "animation.$group.$animation") != null
         }
     }
 
-    /** 该物种的战吼主动画名，没有战吼时返回 null。 */
-    fun battleCryName(renderable: RenderablePokemon): String? =
-        primaryAnimationName(renderable, "battle_cry")
+    /** 入场/收尾的过渡时长读不到 `transformTicks` 时的兜底（秒）。 */
+    private const val DEFAULT_TRANSITION_SECONDS = 0.5f
 
     /**
-     * 清掉已播完的主动画（点击叫声的战吼）。
+     * 播放该物种的战吼；没有战吼（或模型还没建好）返回 false，由调用方降级到普通叫。
      *
-     * 复刻 `PosableState.incrementAge` 的过期判定（`started + duration <= animationSeconds`），
-     * **之所以必须自己写**：那段判定在 `incrementAge(entity)` 里、只在有 entity 时被调用，
-     * 而图标是 `FloatingState`（`getEntity() == null`），它永远不跑 ——
-     * 不清理的话 primary 会一直挂住，待机/走路动画再也回不来（精灵卡在吼叫的最后一帧）。
+     * 播的是 [PoseWithBattleCry]（把当前姿势的 idle 与战吼合成一条）并用 primary 独占 ——
+     * 为什么非这样不可见该类的说明（单纯叠加会被姿势动画盖掉、单纯 primary 又会让姿势归零）。
      *
-     * ⚠ **只有长期存在的 state 需要它**（图标、悬停大图），所以由那两个调用方各自调。
-     * **庆祝动画不要调**：它的 state 是一次性的，而且提前放手会把战吼拦腰打断
-     * （2026-09-15 实测症状：「落下时是战吼，立刻被截断成普通待机动画」）。
-     * 这段以前挂在 [resolve] 里，等于把三种调用者一起管了 —— 已挪出。
+     * ⚠ **战吼是「战斗姿势专属」的**：poser 里 `battle_cry` 只注册在战斗姿势的
+     * `namedAnimations.cry` 下（暴鲤龙/化石翼龙在 `battle-standing`），官方**从不在待机姿势下播它**。
+     * 想复刻那个上下文得切到 `battle-standing`，但它的 `condition` 是 `isBattle = true`，
+     * 我们的 FloatingState 没有 entity、条件不成立 —— `setPoseToFirstSuitable` 永远挑不到它
+     * （2026-09-22 查证：`getFirstSuitablePose` 按 `poseTypes + isSuitable(condition)` 逐个筛，
+     * 挑不到就 fallback 到第一个姿势）。合成动画正是对这个缺口的补偿。
+     *
+     * ⚠ 调用方必须**先渲染过一帧**：`currentModel` 是 `drawProfilePokemon` 里才建好的。
      */
-    fun clearExpiredPrimaryAnimation(state: PosableState) {
-        val primary = state.primaryAnimation ?: return
-        if (primary.started + primary.duration <= state.animationSeconds) {
-            state.primaryAnimation = null
+    fun playBattleCry(state: PosableState, renderable: RenderablePokemon): Boolean {
+        val group = animationGroup(renderable, "battle_cry")
+        val model = state.currentModel
+        CobbleMarketClient.LOGGER.info(
+            "[battleCry] group=$group model=${model != null} pose=${state.currentPose} " +
+                "active=${state.activeAnimations.size} " +
+                "primary=${state.primaryAnimation != null} poseIntensity=${state.poseIntensity}"
+        )
+        if (group == null || model == null) return false
+        val cry = BedrockAnimationRepository.getAnimationOrNull(group, "animation.$group.battle_cry")
+            ?: return false
+        // 用 primary 播「战吼 → 维持战斗姿态」两段式动画（见 PoseWithBattleCry 的说明）：
+        // 独占是必须的 —— 否则框架后跑的姿势动画会再累加一份、把战吼淹掉。
+        val anim = PoseWithBattleCry(
+            cry = cry,
+            transitionSeconds = battlePoseTransformSeconds(model) ?: DEFAULT_TRANSITION_SECONDS,
+            selfContained = cryIsSelfContained(model, cry)
+        )
+        state.addPrimaryAnimation(
+            PrimaryAnimation(
+                animation = anim,
+                excludedLabels = emptySet(),
+                curve = { t -> anim.intensityAt(t) }
+            )
+        )
+        return true
+    }
+}
+
+/**
+ * 「战吼 → 维持战斗姿态」两段式动画（用户 2026-09-22 提的设计，见下）。
+ *
+ * ## 为什么不能简单地把两条动画叠一起
+ *
+ * `BedrockAnimation.run` 写骨骼是**累加**的（`part.xRot += ...`），不是覆盖 ——
+ * 所以「姿态 + 战吼」同时跑等于**两份旋转相加**：走路的手臂位置叠上抬手的战吼动作，
+ * 手就跑到胸前去了（2026-09-22 实测）。火焰鸡此前「完全还原」恰恰是因为那时
+ * 姿势被压到 0、**只有战吼一条在累加**。
+ *
+ * ## 野外那一下是什么样
+ *
+ * 野外战吼时 cry 是 primary，姿势动画的强度同样被压到 0 —— 也就是说**那 1.5 秒里
+ * 并没有"战斗姿态"，只有 rest + battle_cry**；战斗姿态是**战吼之后**姿势强度恢复时的事。
+ *
+ * ## 所以分两段
+ *
+ * ```
+ * 0 ~ cry 时长          只累加战吼       → 与野外那一下一致（干净、不掺走路姿势）
+ * cry 时长 ~ +[HOLD_SECONDS]  只累加战斗 idle → 「维持战斗姿态」（用户要的那 3 秒）
+ * ```
+ *
+ * 整段作为 primary 存在（独占），末段由 [battleCryCurve] 缓出、把控制权交还框架的姿势动画。
+ */
+/** Cobblemon 自己姿势过渡用的曲线（`PoseTransitionAnimation` 的默认值），原样照搬，观感才对得上。 */
+private val TRANSITION_CURVE: WaveFunction =
+    sineFunction(amplitude = 0.5F, period = 2F, phaseShift = 0.5F, verticalShift = 0.5F)
+
+/** 该模型的「战斗姿势」（名字以 `battle-` 开头、排除睡眠那几个）；没有则 null。 */
+private fun battlePoseOf(model: PosableModel): Pose? =
+    model.poses.entries
+        .firstOrNull { it.key.startsWith("battle-") && !it.key.contains("sleep") }
+        ?.value
+
+/**
+ * 该物种战斗姿势的**过渡时长**（秒），读不到返回 null。
+ *
+ * 来源是 poser 里的 `transformTicks`（单位 tick）—— Cobblemon 的 `moveToPose` 就是用它决定
+ * 姿势切换过渡多长的。**照读而不是写死**：官方以后给某个物种补上或调长这个字段时，
+ * 我们这边要自动跟上、不用改代码（用户 2026-09-22 提）。
+ */
+private fun battlePoseTransformSeconds(model: PosableModel): Float? =
+    battlePoseOf(model)?.transformTicks?.takeIf { it > 0 }?.let { it / 20f }
+
+/**
+ * 这条战吼**自带完整姿态**没有 —— 判据是「战吼动的骨骼数 vs 该模型战斗 idle 动的骨骼数」。
+ *
+ * 2026-09-22 实测三个物种，分界极干净（战吼 vs idle）：
+ * - 火焰鸡 **65 vs 54**（战吼比 idle 动的还多）→ 自带完整姿态 → 战吼段**不能**补 idle
+ * - 化石翼龙 19 vs 121、暴鲤龙 11 vs 61 → 只动了零头 → 身体没东西撑 → **必须**补 idle
+ *
+ * ⚠ 用**相对比例**而不是绝对骨骼数、也不列精灵名单：官方改动画、出新精灵都自动跟上。
+ * ⚠ 化石翼龙是必须这么判的反例 —— 它战吼含 `torso`（旧判据「含躯干就算自带」会放它过去），
+ *   但**没动翅膀分段** `wing_ground_left1~4`，那些骨骼回 rest pose、翅膀就成直片了。
+ */
+private fun cryIsSelfContained(model: PosableModel, cry: BedrockAnimation): Boolean {
+    val idle = battlePoseOf(model)
+        ?.animations
+        ?.filterIsInstance<BedrockPoseAnimation>()
+        ?.firstOrNull()
+        ?.animation
+        ?: return true // 拿不到 idle 就无从比较，按自带处理（至少不会叠加污染）
+    return cry.boneTimelines.size >= idle.boneTimelines.size * 0.5f
+}
+
+private class PoseWithBattleCry(
+    private val cry: BedrockAnimation,
+    /** 入场/收尾的过渡时长（秒），见 [battlePoseTransformSeconds]；读不到时由调用方给兜底值。 */
+    private val transitionSeconds: Float,
+    /** 战吼是否自带完整姿态（见 [cryIsSelfContained]）：自带 ⇒ 战吼段不补 idle。 */
+    private val selfContained: Boolean
+) : ActiveAnimation {
+
+    /** 「维持战斗姿态」的时长（秒）。用户 2026-09-22 要求 3~5 秒，取 3.5。 */
+    private val holdSeconds = 3.5f
+
+    /**
+     * 战吼本身的时长（秒），之后才进维持段。
+     *
+     * ⚠ **优先保证战吼完整播完** —— 所以取该精灵自己的动画长度（`animationLength`），
+     * 不是写死的常量：各精灵战吼长短不一，写死会把长的那批腰斩（用户 2026-09-22 提醒）。
+     *
+     * ⚠ 少数动画的 `animationLength` 会是 `0` 或 `-1`（未定义），那时退回保守值，
+     * 免得整个战吼段被跳过、只剩维持段。
+     */
+    private val crySeconds = cry.animationLength.toFloat().takeIf { it > 0f } ?: 2f
+
+    override val isTransition = false
+    override val duration = crySeconds + holdSeconds
+    override val enduresPrimaryAnimations = false
+
+    private var startedSeconds = -1f
+
+    override fun start(state: PosableState) {
+        startedSeconds = state.animationSeconds
+    }
+
+    /**
+     * 战吼进行到 [t]（0~1）时的 primary 强度：**两端缓动、中间满强度**。
+     *
+     * 两端都走 Cobblemon 自己的姿势过渡曲线（[TRANSITION_CURVE]，缓入缓出），不是线性 ——
+     * 线性降权看起来就是"被匀速拖慢"，官方那条才是自然的手感（2026-09-22 用户报「慢动作」后查证）。
+     * 这里 primary 强度与姿势动画的强度互补（`1 - 它`），两端因此都是"一边淡出一边淡入"的插值，
+     * 与官方的 `PoseTransitionAnimation` 同构。
+     */
+    fun intensityAt(t: Float): Float {
+        val elapsed = t * duration
+        val fade = transitionSeconds.coerceAtMost(duration / 2f) // 防两端重叠
+        // ① 入场：0 → 1 缓入。**必须做** —— 否则点图标那一刻姿势动画瞬间归零、
+        //    战吼"啪"一下跳出来，看着像硬切（用户 2026-09-22：「主动触发叫声时没有过渡」）。
+        if (elapsed < fade) return TRANSITION_CURVE((elapsed / fade).coerceIn(0f, 1f))
+        // ② 收尾：1 → 0 缓出，把控制权交还框架的姿势动画
+        val fadeStart = duration - fade
+        if (elapsed > fadeStart) {
+            return 1f - TRANSITION_CURVE(((elapsed - fadeStart) / fade).coerceIn(0f, 1f))
         }
+        return 1f
+    }
+
+    override fun run(
+        context: RenderContext,
+        model: PosableModel,
+        state: PosableState,
+        limbSwing: Float,
+        limbSwingAmount: Float,
+        ageInTicks: Float,
+        headYaw: Float,
+        headPitch: Float,
+        intensity: Float
+    ): Boolean {
+        val elapsed = state.animationSeconds - startedSeconds
+        return if (elapsed < crySeconds) {
+            // ① 战吼段：只动末端骨骼的战吼要先补一份战斗 idle，否则身体没东西撑、掉回 rest pose。
+            //    自带躯干的（火焰鸡那类）反而**不能**补 —— 累加会把两份旋转加起来（手跑到胸前）。
+            if (!selfContained) {
+                battleStanceIdle(model)
+                    ?.run(model, state, state.animationSeconds, limbSwing, limbSwingAmount, ageInTicks, intensity)
+            }
+            cry.run(model, state, elapsed, limbSwing, limbSwingAmount, ageInTicks, intensity)
+        } else {
+            // ② 维持段：只跑战斗 idle，撑住"战斗姿态"
+            // ⚠ 强度必须跟着 [intensity] 走，**不能写死 1f**：收尾缓出时框架的待机/走路 idle
+            //   正从 0 渐渐恢复，这边若仍满强度，两条 idle 会同时满强度**累加**、姿势互相打架 ——
+            //   观感就是「从战斗姿态切回待机的过程变成了慢动作」（2026-09-22 用户报）。
+            //   跟着 intensity 走才是一进一出：战斗 idle 淡出、待机 idle 淡入。
+            battleStanceIdle(model)
+                ?.run(model, state, state.animationSeconds, limbSwing, limbSwingAmount, ageInTicks, intensity)
+            elapsed < duration
+        }
+    }
+
+    /**
+     * 「战斗姿态」那条 idle：取名字以 `battle-` 开头的姿势的 idle 动画
+     * （暴鲤龙/化石翼龙/火焰鸡都是 `battle-standing`；水面空中的精灵另有 `battle-*` 变体）。
+     *
+     * ⚠ **每帧现取而不是构造时取死**：点击那一刻鼠标还停在行上、姿势是 `walking`，
+     * 那时取到的是 `ground_walk`，会把走路姿势焊进整段战吼（2026-09-22 日志实测 `idle=ground_walk`）。
+     */
+    private fun battleStanceIdle(model: PosableModel): BedrockAnimation? =
+        battlePoseOf(model)
+            ?.animations
+            ?.filterIsInstance<BedrockPoseAnimation>()
+            ?.firstOrNull()
+            ?.animation
+
+    /**
+     * 转发战吼的音效与粒子关键帧（吼声、火焰鸡脚底那簇火）。
+     *
+     * ⚠ **必须自己转发**：Cobblemon 的 `PrimaryAnimation` **没有 override `applyEffects`**
+     * （接口里是空实现），所以凡是走 primary 的动画，音效一律不播 —— 这正是
+     * 「有些动画的音效丢了」的原因（丢的就是战吼那条，姿势动画的照常）。
+     *
+     * ⚠ **还要换算成动画内的时间**：`BedrockAnimation.applyEffects` 拿
+     * `effect.seconds in previousSeconds..newSeconds` 判定，而这里收到的时间轴是 `state` 的
+     * 全局秒数，不减掉起始时刻就永远对不上关键帧。
+     */
+    override fun applyEffects(entity: Entity?, state: PosableState, previousSeconds: Float, newSeconds: Float) {
+        if (startedSeconds < 0f) return
+        val prev = previousSeconds - startedSeconds
+        val next = newSeconds - startedSeconds
+        // ⚠ **两段都要判**：只判 next<0 的话，进入维持段后区间会被夹成 [大, crySeconds]、
+        //   即 prev > next —— 而 BedrockAnimation 对「prev > next」走的是**跨循环**分支
+        //   （`it.seconds >= prev || it.seconds <= next`），几乎命中所有关键帧 ⇒ **每帧重播全部音效**，
+        //   听感就是声音卡死一样的噪音（2026-09-22 实测踩到）。
+        if (next < 0f || prev >= crySeconds) return
+        cry.applyEffects(entity, state, prev.coerceAtLeast(0f), next.coerceAtMost(crySeconds))
     }
 }
