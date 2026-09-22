@@ -318,15 +318,13 @@ object PokemonCelebrationAnimation {
             if (!cryTriggered) {
                 cryTriggered = true
                 if (!IconAnimationResolver.isSleeping(rp)) {
-                    // 有战吼的物种吼战吼，其余落到 cry（为什么不能写短名见 [battleCryAnimationName]）
-                    // 候选顺序即优先级：战吼（主动画版，独占）→ 普通叫（叠加）。
-                    // ⚠ 普通叫**不能**做成主动画：官方注册成 `q.bedrock_stateful`（叠加），
-                    //   它只提供嘴/头部的关键帧、身体姿态靠姿势动画撑着；独占会让其余骨骼
-                    //   掉回 rest pose、整个模型错位（2026-09-15 实测踩到并回退）。
-                    val candidates = mutableSetOf<String>()
-                    IconAnimationResolver.battleCryName(rp)?.let(candidates::add)
-                    candidates.add("cry")
-                    st.addFirstAnimation(candidates)
+                    // 有战吼的物种吼战吼，其余落到 cry。
+                    // ⚠ 两条都**必须叠加**、不能做成主动画（`:primary`）：那会把姿势的基础待机动画
+                    //   一并 dump 掉、模型掉回 rest pose —— 暴鲤龙整个立起来、化石翼龙翅膀变直纸片
+                    //   （2026-09-15 普通叫踩过，2026-09-22 战吼又踩一次，见 playBattleCry 的注释）。
+                    if (!IconAnimationResolver.playBattleCry(st, rp)) {
+                        st.addFirstAnimation(setOf("cry"))
+                    }
                 }
             }
         } catch (_: Exception) {
