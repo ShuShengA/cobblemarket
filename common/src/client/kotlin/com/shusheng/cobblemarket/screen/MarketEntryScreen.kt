@@ -248,7 +248,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             iconTexSize = 48,
             iconDisplaySize = 18
         ).also { it.dimmed = marketClosed })
-        // 行 3：管理员面板入口——纯图标按钮居中、悬停显示名称。
+        // 行 3：管理面板入口——纯图标按钮居中、悬停显示名称。
         // 2026-09-12：原文字「仅OP」是权限说明而非功能名（语义不对），去掉文字只留图标。
         // 宽度别压太窄：button.png 是胶囊形（两端半圆），TextureButton 整图缩放会把半圆横向压扁，
         // 22 宽时圆角只有 1.65×10 的竖尖角、非常难看；66 宽（圆角约 5×10）观感已接近缩窄前
