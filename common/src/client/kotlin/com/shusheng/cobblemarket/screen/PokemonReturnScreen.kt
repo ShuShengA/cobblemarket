@@ -10,6 +10,7 @@ import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
+import com.shusheng.cobblemarket.client.icon.PokemonIconData
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.network.ClaimPokemonReturnPayload
 import com.shusheng.cobblemarket.network.MarketResultPayload
@@ -40,14 +41,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
     private var nextButton: NineSliceButton? = null
     private var claimButton: NineSliceButton? = null
 
-    private data class IconData(
-        val renderable: RenderablePokemon,
-        val state: FloatingState,
-        // 球种/携带物栈随图标缓存：render 每帧 new ItemStack 是分配热点，构建一次复用
-        val ballStack: ItemStack?,
-        val heldStack: ItemStack?
-    )
-    private val iconData = mutableMapOf<Int, IconData>()
+    private val iconData = mutableMapOf<Int, PokemonIconData>()
 
     private fun getListStartY() = 48
     private fun maxVisible() = maxOf(0, (height - getListStartY() - 72) / rowHeight)
@@ -128,9 +122,9 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             if (p.shiny) aspects.add("shiny")
             // 携带物同时喂给模型（Cobblemon 会渲染在手上/嘴上）与行内小图标
             val held = heldIconStack(p.heldItemId, p.heldItemNbt)
-            iconData[i] = IconData(
-                RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
-                FloatingState(),
+            iconData[i] = PokemonIconData(
+                renderable = RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
+                state = FloatingState(),
                 ballStack = Identifier.tryParse(p.ball.removePrefix("item.").replaceFirst(".", ":"))?.let { ItemStack(Registries.ITEM.get(it)) },
                 heldStack = held
             )
