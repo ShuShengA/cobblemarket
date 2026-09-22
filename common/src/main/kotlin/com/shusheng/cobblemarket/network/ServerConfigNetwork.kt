@@ -436,14 +436,16 @@ object ServerConfigNetwork {
         // 服务端 S2C 类型注册：neoforge 协商要求双端集合一致，缺了会直接断连
         registerS2CType(ServerConfigDataPayload.ID, ServerConfigDataPayload.CODEC)
 
+        // ⚠ 服务器配置是**服主专属**（2026-09-23 改制）：OP 能给自己分配节点，若这里认 OP 或认节点，
+        // 整套权限体系就是纸糊的 —— 只有服主能改「服主的经济参数」
         registerC2S(RequestServerConfigPayload.ID, RequestServerConfigPayload.CODEC) { _, player ->
-            if (!MarketPermissions.has(player, MarketPermissions.CONFIG)) return@registerC2S
+            if (!MarketPermissions.isServerOwner(player)) return@registerC2S
             val server = player.server
             server.execute { sendToPlayer(player, snapshot()) }
         }
 
         registerC2S(SaveServerConfigPayload.ID, SaveServerConfigPayload.CODEC) { payload, player ->
-            if (!MarketPermissions.has(player, MarketPermissions.CONFIG)) return@registerC2S
+            if (!MarketPermissions.isServerOwner(player)) return@registerC2S
             val server = player.server
             server.execute {
                 applyAll(payload)

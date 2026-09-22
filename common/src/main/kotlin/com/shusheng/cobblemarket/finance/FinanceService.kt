@@ -189,7 +189,7 @@ object FinanceService {
         }
         val ip = com.shusheng.cobblemarket.platform.getPlayerIp(player)
         // 紫/黑卡持有者豁免：卡额度远高于默认 IP 上限，且小号不可能持卡（全服限量+门槛），卡本身就是强信任凭证
-        if (CobbleMarketConfig.ipDebtLimit > 0 && ip != null && !MarketPermissions.isOp(player)
+        if (CobbleMarketConfig.ipDebtLimit > 0 && ip != null && !MarketPermissions.isServerOwner(player)
             && !state.isPurpleCardHolder(player.uuid) && !state.isBlackCardHolder(player.uuid)
         ) {
             val ipDebt = state.debtByIp(ip, now)
@@ -440,10 +440,10 @@ object FinanceService {
         }
     }
 
-    /** 在线 OP 广播（坏账告警） */
+    /** 在线服主广播（坏账告警）—— 只发给服主：改事件只有他能处置 */
     private fun notifyOps(server: MinecraftServer, text: Text) {
         server.playerManager.playerList.forEach { p ->
-            if (MarketPermissions.isOp(p)) p.sendMessage(text, false)
+            if (MarketPermissions.isServerOwner(p)) p.sendMessage(text, false)
         }
     }
 

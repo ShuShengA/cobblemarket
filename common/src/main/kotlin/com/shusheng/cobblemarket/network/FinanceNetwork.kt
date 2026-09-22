@@ -702,10 +702,10 @@ object FinanceNetwork {
                     )
                     return@execute
                 }
-                // 同 IP 聚合欠款上限：防同 IP 多小号分散借款转给主账号（OP 豁免；0=不限制）；
+                // 同 IP 聚合欠款上限：防同 IP 多小号分散借款转给主账号（服主豁免；0=不限制）；
                 // 紫/黑卡持有者豁免：卡额度远高于默认 IP 上限，且小号不可能持卡（全服限量+门槛），卡本身就是强信任凭证
                 val ip = getPlayerIp(player)
-                if (CobbleMarketConfig.ipDebtLimit > 0 && ip != null && !MarketPermissions.isOp(player)
+                if (CobbleMarketConfig.ipDebtLimit > 0 && ip != null && !MarketPermissions.isServerOwner(player)
                     && !state.isPurpleCardHolder(player.uuid) && !state.isBlackCardHolder(player.uuid)
                 ) {
                     val ipDebt = state.debtByIp(ip, now)
@@ -1112,12 +1112,12 @@ object FinanceNetwork {
             }
         }
 
-        // ── 撤销玩家全部坏账（仅 OP；与 /market loan clear 命令双入口） ──
+        // ── 撤销玩家全部坏账（仅服主；与 /market loan clear 命令双入口） ──
         registerC2S(RequestRevokeBadDebtPayload.ID, RequestRevokeBadDebtPayload.CODEC) { payload, player ->
             if (!RequestThrottle.allow(player.uuid, "request_revoke_bad_debt", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
-                if (!MarketPermissions.isOp(player)) return@execute   // 撤销坏账只限 OP：服主干预手段，不随管理节点授予
+                if (!MarketPermissions.isServerOwner(player)) return@execute   // 撤销坏账只限服主：干预手段，不随管理节点授予
                 val state = FinanceState.get(server)
                 val removed = state.clearBadDebts(payload.playerUuid)
                 if (removed.isNotEmpty()) {

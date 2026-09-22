@@ -89,6 +89,16 @@ object CobbleMarket {
 			TransactionHistory.historyRef = TransactionHistory.get(server)
 			// 金融系统状态预热（照 TransactionHistory 模式；批次 3 起实际读写）
 			com.shusheng.cobblemarket.finance.FinanceState.get(server)
+			// 服主名单为空 = 谁都进不去「服务器配置」与「权限管理」（安全默认）。升级后老服主
+			// 会发现入口点不动了，这里在启动日志里提醒一次怎么配（兜底三件套之一，方案见 docs/permission_nodes_plan.md）
+			if (com.shusheng.cobblemarket.config.CobbleMarketConfig.serverOwners.isEmpty()) {
+				LOGGER.warn(
+					"CobbleMarket: no server owner configured — nobody can edit the market config or grant admin permissions. " +
+						"• Dedicated server: run \"/market owner add <player>\" in the server console. " +
+						"• Single-player / LAN (no console): put the UUID into the \"serverOwners\" array of config/cobblemarket.json " +
+						"— find it in usercache.json, or run /data get entity @s UUID in game — then restart or run /market reload."
+				)
+			}
 		}
 		onServerStopped { server ->
 			// 正常关服保存完成后，用最新数据刷新备份

@@ -116,11 +116,21 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         if (ClientPermissionCache.has(node)) open() else denyFeedback()
     }
 
-    /** 只限 OP 的按钮（权限管理）：同样常驻 + 置灰 + 点击提示。
-     *  提示词与节点类按钮分开 —— 权限管理不给任何节点，说「仅 OP」比「你没有这项管理权限」准确 */
-    private fun openIfOp(open: () -> Unit) {
-        if (ClientPermissionCache.isOp()) open() else denyFeedback("cobblemarket.perm.op_only")
+    /** 只限**服主**的按钮（权限管理 / 服务器配置）：同样常驻 + 置灰 + 点击提示。
+     *  提示词与节点类按钮分开 —— 这两个不给任何节点（想放权就把对方加进服主名单），
+     *  说「仅服主」比「你没有这项管理权限」准确 */
+    private fun openIfOwner(open: () -> Unit) {
+        if (ClientPermissionCache.isServerOwner()) open() else denyFeedback("cobblemarket.perm.owner_only")
     }
+
+    /**
+     * 是不是**真 OP**（原版权限等级）—— **只给 RP 充值订单那套用**（它有意未跟改制，
+     * 服务端仍是裸 `hasPermissionLevel(2)`，客户端读原版同步过来的等级才与服务端口径一致）。
+     *
+     * ⚠ **别拿它做市场管理的任何判定** —— 市场管理一律看 `ClientPermissionCache`
+     * （服主制：不认 OP，见 docs/permission_nodes_plan.md）。等 RP 市场完工后再决定这套怎么收口。
+     */
+    private fun isRealOp(): Boolean = client?.player?.hasPermissionLevel(2) == true
 
     private fun denyFeedback(key: String = "cobblemarket.perm.no_permission") {
         playFailSound()
@@ -238,36 +248,47 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         val serverConfigBtn = NineSliceButton(
             centerX + 90 - iconSize, iconY, iconSize, iconSize,
             Text.literal(""),
-            { openIfPermitted(MarketPermissions.CONFIG) { client?.setScreen(ServerConfigScreen()) } },
+            { openIfOwner { client?.setScreen(ServerConfigScreen()) } },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/server_config_icon.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             texture = ROW_BACKGROUND_TEXTURE,
             texH = ROW_BACKGROUND_TEX_H
         )
-        serverConfigBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.server_config")))
+        // 服主专属：悬停第二行**教怎么把自己加进服主名单** —— OP 进得来面板、点不动这两个按钮，
+        // 这句提示就是他的出路（与启动日志的提醒配套，方案⑦）
+        serverConfigBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(
+            Text.translatable("cobblemarket.op.server_config")
+                .append(Text.literal("\n"))
+                .append(Text.translatable("cobblemarket.perm.owner_only_hint"))
+        ))
         menuButtons += addDrawableChild(serverConfigBtn)
 
         // 权限管理入口（左下角）：左边缘与入口界面「求购单」按钮对齐（入口：centerX - 96 + 6）。
-        // 权限节点功能（docs/permission_nodes_plan.md）S1 的界面入口：图标与位置先定下来，
-        // 点击暂未接界面（S1 实装时把 action 接上权限管理界面）
+        // 只限服主：权限授予直接决定「谁管哪块」，下放给任何节点都能自我提权
         val permissionBtn = NineSliceButton(
             centerX - 96 + 6, iconY, iconSize, iconSize,
             Text.literal(""),
-            { openIfOp { client?.setScreen(PermissionScreen()) } },
+            { openIfOwner { client?.setScreen(PermissionScreen()) } },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/permission.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             texture = ROW_BACKGROUND_TEXTURE,
             texH = ROW_BACKGROUND_TEX_H
         )
-        permissionBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.permission")))
+        permissionBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(
+            Text.translatable("cobblemarket.op.permission")
+                .append(Text.literal("\n"))
+                .append(Text.translatable("cobblemarket.perm.owner_only_hint"))
+        ))
         menuButtons += addDrawableChild(permissionBtn)
 
         // 充值订单入口：**权限管理右边**（用户 2026-09-18：这一行当时就是给以后新功能留的位置）。
         // 待确认订单得服主处理玩家才拿得到 RP，所以除了入口还要**红点**提醒有活要干。
+        // ⚠ 这套**有意没跟着改服主制**（RP 市场还没做完，见 docs/permission_nodes_plan.md 的「RP 一律不动」）：
+        //   服务端那边仍是裸 hasPermissionLevel(2)，所以客户端也读原版同步过来的权限等级，两边口径才一致
         val orderBtn = NineSliceButton(
             centerX - 96 + 6 + iconSize + 6, iconY, iconSize, iconSize,
             Text.literal(""),
-            { openIfOp { client?.setScreen(AdminPointOrdersScreen()) } },
+            { if (isRealOp()) client?.setScreen(AdminPointOrdersScreen()) else denyFeedback() },
             iconLeft = POINT_ORDERS_ICON,
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             texture = ROW_BACKGROUND_TEXTURE,
@@ -276,14 +297,14 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         orderBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.point_orders")))
         menuButtons += addDrawableChild(orderBtn)
         orderEntryBtn = orderBtn
-        permRefreshers += { orderBtn.dimmed = !ClientPermissionCache.isOp() }
+        permRefreshers += { orderBtn.dimmed = !isRealOp() }
         // 进来就问一次有没有待确认的（只要数量，不要列表）；结果由 onPointOrders 落进红点
         sendToServer(RequestPointOrdersPayload(false, ""))
 
-        // 底部三个图标按钮的置灰依据：总开关 / 服务器配置走节点，权限管理只限 OP
+        // 底部三个图标按钮的置灰依据：总开关走 MARKET 节点，服务器配置与权限管理**只限服主**
         permRefreshers += { marketSwitchBtn?.dimmed = !ClientPermissionCache.has(MarketPermissions.MARKET) }
-        permRefreshers += { serverConfigBtn.dimmed = !ClientPermissionCache.has(MarketPermissions.CONFIG) }
-        permRefreshers += { permissionBtn.dimmed = !ClientPermissionCache.isOp() }
+        permRefreshers += { serverConfigBtn.dimmed = !ClientPermissionCache.isServerOwner() }
+        permRefreshers += { permissionBtn.dimmed = !ClientPermissionCache.isServerOwner() }
         refreshPermissionState()
 
         // resize 重建按钮后 visible 全是 true，停市确认弹窗开着时需恢复隐藏（老坑，照入口界面）
