@@ -22,6 +22,7 @@ import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.ItemHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
+import com.shusheng.cobblemarket.client.icon.PokemonIconData
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.network.AuctionEntry
@@ -193,8 +194,7 @@ class AuctionScreen(
     private var bidCryAt = 0L
 
     // 精灵图标缓存
-    private data class IconData(val displayName: String, val renderable: RenderablePokemon, val state: FloatingState)
-    private val iconData = mutableMapOf<Int, IconData>()
+    private val iconData = mutableMapOf<Int, PokemonIconData>()
     private val iconSize = 20
 
     // 行内物品栈缓存（球种/持有物/物品拍卖图标）：render 每帧 new ItemStack 是分配热点，数据到达时构建一次。
@@ -928,7 +928,7 @@ class AuctionScreen(
             val species = PokemonSpecies.getByIdentifier(id) ?: return@forEachIndexed
             val aspects = (entry.extraData["aspects"] ?: "").split(",").filter { it.isNotEmpty() }.toMutableSet()
             if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
-            iconData[index] = IconData(displayName(entry), RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY), FloatingState())
+            iconData[index] = PokemonIconData(displayName(entry), RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY), FloatingState())
         }
     }
 

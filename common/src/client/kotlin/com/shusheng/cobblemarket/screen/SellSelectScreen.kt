@@ -17,6 +17,7 @@ import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
+import com.shusheng.cobblemarket.client.icon.PokemonIconData
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.currency.CurrencyService
@@ -102,14 +103,7 @@ class SellSelectScreen(
     private var htBtn: NineSliceButton? = null
 
     // 3D icon cache
-    private data class IconData(
-        val renderable: RenderablePokemon,
-        val state: FloatingState,
-        // 球种/携带物栈随图标缓存：render 每帧 new ItemStack 是分配热点，构建一次复用
-        val ballStack: ItemStack?,
-        val heldStack: ItemStack?
-    )
-    private val iconData = mutableMapOf<Int, IconData>()
+    private val iconData = mutableMapOf<Int, PokemonIconData>()
 
     // 物种显示名缓存：species 字段是翻译 key，客户端本地翻译（随客户端语言），搜索与渲染共用。
     // 翻译缺失（数据包物种未配语言文件）时返回 key 原文，fallback 到资源名；缓存随界面实例销毁，
@@ -134,9 +128,9 @@ class SellSelectScreen(
             if (p.shiny && "shiny" !in aspects) aspects.add("shiny")
             // 携带物同时喂给模型（Cobblemon 会渲染在手上/嘴上）与行内小图标
             val held = heldIconStack(p.heldItemId, p.heldItemNbt)
-            iconData[i] = IconData(
-                RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
-                FloatingState(),
+            iconData[i] = PokemonIconData(
+                renderable = RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
+                state = FloatingState(),
                 ballStack = buildBallStack(p.ball),
                 heldStack = held
             )

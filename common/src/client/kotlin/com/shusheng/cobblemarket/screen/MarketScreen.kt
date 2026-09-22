@@ -35,6 +35,7 @@ import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
+import com.shusheng.cobblemarket.client.icon.PokemonIconData
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.mojang.authlib.GameProfile
 import java.util.UUID
@@ -169,15 +170,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     )
 
     // Cached renderables per listing index
-    private data class IconData(
-        val displayName: String,
-        val renderable: RenderablePokemon,
-        val state: FloatingState,
-        // 球种/携带物栈随图标缓存：render 每帧 new ItemStack 是分配热点，构建一次复用
-        val ballStack: ItemStack?,
-        val heldStack: ItemStack?
-    )
-    private val iconData = mutableMapOf<Int, IconData>()
+    private val iconData = mutableMapOf<Int, PokemonIconData>()
 
     // tooltip 内容缓存：内容只取决于条目，悬停同一行时每帧重建全部文本行是悬停掉帧主因
     private var tooltipCacheKey: UUID? = null
@@ -200,7 +193,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             val displayName = com.shusheng.cobblemarket.util.SpeciesText.displayName(species)
             // 携带物同时喂给模型（Cobblemon 会渲染在手上/嘴上）与行内小图标
             val held = heldIconStack(entry.heldItemId, entry.heldItemNbt)
-            iconData[index] = IconData(
+            iconData[index] = PokemonIconData(
                 displayName,
                 RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
                 FloatingState(),
