@@ -123,15 +123,6 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         if (ClientPermissionCache.isServerOwner()) open() else denyFeedback("cobblemarket.perm.owner_only")
     }
 
-    /**
-     * 是不是**真 OP**（原版权限等级）—— **只给 RP 充值订单那套用**（它有意未跟改制，
-     * 服务端仍是裸 `hasPermissionLevel(2)`，客户端读原版同步过来的等级才与服务端口径一致）。
-     *
-     * ⚠ **别拿它做市场管理的任何判定** —— 市场管理一律看 `ClientPermissionCache`
-     * （服主制：不认 OP，见 docs/permission_nodes_plan.md）。等 RP 市场完工后再决定这套怎么收口。
-     */
-    private fun isRealOp(): Boolean = client?.player?.hasPermissionLevel(2) == true
-
     private fun denyFeedback(key: String = "cobblemarket.perm.no_permission") {
         playFailSound()
         client?.player?.sendMessage(Text.translatable(key).formatted(Formatting.RED), true)
@@ -283,12 +274,12 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
 
         // 充值订单入口：**权限管理右边**（用户 2026-09-18：这一行当时就是给以后新功能留的位置）。
         // 待确认订单得服主处理玩家才拿得到 RP，所以除了入口还要**红点**提醒有活要干。
-        // ⚠ 这套**有意没跟着改服主制**（RP 市场还没做完，见 docs/permission_nodes_plan.md 的「RP 一律不动」）：
-        //   服务端那边仍是裸 hasPermissionLevel(2)，所以客户端也读原版同步过来的权限等级，两边口径才一致
+        // ⚠ 入口只认**服主**：钱打进的是服主自己的收款码，只有他能对着账单核对 —— 与服务端
+        //   （PointsNetwork 的三个管理包 + `/market points shop` 的管理子命令）保持同一口径
         val orderBtn = NineSliceButton(
             centerX - 96 + 6 + iconSize + 6, iconY, iconSize, iconSize,
             Text.literal(""),
-            { if (isRealOp()) client?.setScreen(AdminPointOrdersScreen()) else denyFeedback() },
+            { openIfOwner { client?.setScreen(AdminPointOrdersScreen()) } },
             iconLeft = POINT_ORDERS_ICON,
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             texture = ROW_BACKGROUND_TEXTURE,
@@ -297,7 +288,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         orderBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.point_orders")))
         menuButtons += addDrawableChild(orderBtn)
         orderEntryBtn = orderBtn
-        permRefreshers += { orderBtn.dimmed = !isRealOp() }
+        permRefreshers += { orderBtn.dimmed = !ClientPermissionCache.isServerOwner() }
         // 进来就问一次有没有待确认的（只要数量，不要列表）；结果由 onPointOrders 落进红点
         sendToServer(RequestPointOrdersPayload(false, ""))
 

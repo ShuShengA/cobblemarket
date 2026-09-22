@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.currency
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.market.OfflineMessageState
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.network.sendSound
 import com.shusheng.cobblemarket.util.PersistHelper
 import net.minecraft.server.MinecraftServer
@@ -135,7 +136,7 @@ object PointShopService {
         state.markPaid(order, now)
         PointOrderLogger.log(PointOrderLogType.PAID, order, order.playerName)
         PersistHelper.requestSave(server)
-        notifyOperatorsNewOrder(server, order)
+        notifyOwnersNewOrder(server, order)
         return PointShopResult.Success(order)
     }
 
@@ -149,7 +150,7 @@ object PointShopService {
      * ⚠ 与「到账通知」同一个原则：**涉及钱的事必须让该知道的人知道**。管理面板那个红点是
      * 「进来才看得到」，聊天栏这条是「不用进来也能看到」，两条都要有。
      */
-    private fun notifyOperatorsNewOrder(server: MinecraftServer, order: PointOrder) {
+    private fun notifyOwnersNewOrder(server: MinecraftServer, order: PointOrder) {
         val msg = Text.translatable(
             "cobblemarket.points.shop.new_order",
             order.playerName,
@@ -159,8 +160,10 @@ object PointShopService {
             moneyLabel(order.payCents),
             PointOrderNumbers.format(order.orderNo)
         ).formatted(Formatting.GOLD)
+        // 只发给**服主**：订单最终只有他能处理（核对收款码账单再确认发放），
+        // 发给普通 OP 等于通知一个做不了事的人（2026-09-23 服主制改制，见 docs/permission_nodes_plan.md）
         server.playerManager.playerList
-            .filter { it.hasPermissionLevel(2) }
+            .filter { MarketPermissions.isServerOwner(it) }
             .forEach { it.sendMessage(msg, false) }
     }
 

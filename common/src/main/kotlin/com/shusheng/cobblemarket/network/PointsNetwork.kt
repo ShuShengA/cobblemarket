@@ -1115,9 +1115,12 @@ object PointsNetwork {
         // 业务一律走 PointShopService（命令侧共用同一内核）：发放路径分叉会长出两套幂等与审计
         registerS2CType(PointOrdersPayload.ID, PointOrdersPayload.CODEC)
 
+        // ⚠ 下面三个 = 充值订单的**管理侧**（查看待确认 / 确认到账 / 作废），只认**服主**：
+        //   钱打进的是服主自己的收款码，只有他能对着账单核对（docs/permission_nodes_plan.md 的服主制）。
+        //   玩家侧的下单 / 我已支付 / 取消**不在此列**（那三个谁都能用，无需鉴权）
         registerC2S(RequestPointOrdersPayload.ID, RequestPointOrdersPayload.CODEC) { payload, player ->
             player.server.execute {
-                if (!player.hasPermissionLevel(2)) return@execute
+                if (!MarketPermissions.isServerOwner(player)) return@execute
                 sendOrderList(player, payload.includeFinished, payload.query)
             }
         }
@@ -1125,7 +1128,7 @@ object PointsNetwork {
         registerC2S(ConfirmPointOrderPayload.ID, ConfirmPointOrderPayload.CODEC) { payload, player ->
             val server = player.server
             server.execute {
-                if (!player.hasPermissionLevel(2)) return@execute
+                if (!MarketPermissions.isServerOwner(player)) return@execute
                 val orderNo = PointOrderNumbers.normalize(payload.orderNo)
                 if (orderNo == null) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.points.shop.not_found")))
@@ -1151,7 +1154,7 @@ object PointsNetwork {
         registerC2S(RejectPointOrderPayload.ID, RejectPointOrderPayload.CODEC) { payload, player ->
             val server = player.server
             server.execute {
-                if (!player.hasPermissionLevel(2)) return@execute
+                if (!MarketPermissions.isServerOwner(player)) return@execute
                 val orderNo = PointOrderNumbers.normalize(payload.orderNo)
                 if (orderNo == null) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.points.shop.not_found")))
