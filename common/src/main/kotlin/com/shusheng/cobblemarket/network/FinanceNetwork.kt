@@ -961,6 +961,8 @@ object FinanceNetwork {
 
         // ── 持有者面板数据（所有玩家；进入喵喵银行时拉取） ──
         registerC2S(RequestCardHolderBoardPayload.ID, RequestCardHolderBoardPayload.CODEC) { _, player ->
+            // 只读、但每次都会重建持卡人名单并**全体广播**，照其它只读请求补节流（防高频请求砸服务器）
+            if (!RequestThrottle.allow(player.uuid, "card_holder_board", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute { sendToPlayer(player, buildCardHolderBoard(server)) }
         }

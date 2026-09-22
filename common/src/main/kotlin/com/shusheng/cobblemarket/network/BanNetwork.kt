@@ -135,8 +135,10 @@ object BanNetwork {
         registerS2CType(PlayerNameSuggestionsPayload.ID, PlayerNameSuggestionsPayload.CODEC)
 
         registerC2S(RequestPlayerNameSuggestionsPayload.ID, RequestPlayerNameSuggestionsPayload.CODEC) { payload, player ->
-            // 任一管理权限都能用（封禁界面要 BAN；权限管理界面是 OP 专属界面，同样走这里拿玩家名联想）
-            if (!MarketPermissions.canManage(player)) return@registerC2S
+            // 只有「封禁界面」与「权限管理界面」需要玩家名联想：前者要 BAN 节点，后者是 OP 专属界面（OP 恒真）。
+            // ⚠ 别放开成 canManage —— 那会让只拿到黑名单/价格限制等节点的玩家也能拉到**全服玩家名（含离线）**，
+            //   而他们的界面根本用不到这个联想（2026-09-22 审计发现）
+            if (!MarketPermissions.has(player, MarketPermissions.BAN)) return@registerC2S
             val server = player.server
             server.execute {
                 val names = LinkedHashSet<String>()
