@@ -7,6 +7,8 @@ import com.shusheng.cobblemarket.permission.RemovePlayerPermissionsPayload
 import com.shusheng.cobblemarket.permission.RequestPermissionAuditPayload
 import com.shusheng.cobblemarket.network.RequestSpeciesRestPayload
 import com.shusheng.cobblemarket.network.AcceptPendingDeliverPayload
+import com.shusheng.cobblemarket.network.AddHeldItemBlacklistPayload
+import com.shusheng.cobblemarket.network.AddHeldItemPriceLimitPayload
 import com.shusheng.cobblemarket.network.AddItemBlacklistPayload
 import com.shusheng.cobblemarket.network.AddItemPriceLimitPayload
 import com.shusheng.cobblemarket.network.AddItemsBlacklistPayload
@@ -124,6 +126,8 @@ fun registerClientC2S() {
     NeoForgePlatform.modEventBus().addListener(RegisterPayloadHandlersEvent::class.java) { event ->
         val registrar = event.registrar(PAYLOAD_VERSION)
         c2s(registrar, AcceptPendingDeliverPayload.ID, AcceptPendingDeliverPayload.CODEC)
+        c2s(registrar, AddHeldItemBlacklistPayload.ID, AddHeldItemBlacklistPayload.CODEC)
+        c2s(registrar, AddHeldItemPriceLimitPayload.ID, AddHeldItemPriceLimitPayload.CODEC)
         c2s(registrar, AddItemBlacklistPayload.ID, AddItemBlacklistPayload.CODEC)
         c2s(registrar, AddItemPriceLimitPayload.ID, AddItemPriceLimitPayload.CODEC)
         c2s(registrar, AddItemsBlacklistPayload.ID, AddItemsBlacklistPayload.CODEC)
