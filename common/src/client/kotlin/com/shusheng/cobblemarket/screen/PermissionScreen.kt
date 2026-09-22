@@ -150,7 +150,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         val leftX = centerX - panelWidth / 2
 
         val backBtn = NineSliceButton(
-            // 右缘与背景右缘留 12px，和黑名单/封禁/管理员面板等界面完全对齐：
+            // 右缘与背景右缘留 12px，和黑名单/封禁/管理面板等界面完全对齐：
             // 那些界面 panelWidth=296，写 `leftX + panelWidth - 50` 正好落在这个位置；
             // 本界面 panelWidth=300（列表按 300 标准更宽），照抄会整体右移、离背景边缘只剩 10px
             leftX + panelWidth - 52, 13, 50, 16,
