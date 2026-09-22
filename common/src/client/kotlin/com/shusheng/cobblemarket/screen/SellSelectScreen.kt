@@ -85,6 +85,14 @@ class SellSelectScreen(
     // IV 比较方式：0 = 等于（默认），1 = 大于等于，2 = 小于等于
     private val ivOps = IntArray(6)
     private val ivOpButtons = mutableMapOf<Int, NineSliceButton>()
+
+    /**
+     * 列表起始 y。⚠ **渲染 / 点击命中 / 滚动上限三处都用它**，别再写死数字 ——
+     * 2026-09-22 实测：滚动上限那处写死过 `96`，与这里的 `100` 差 4px，在特定屏幕高度下
+     * 算出的可视行数相差 1 ⇒ **滚轮允许的最大偏移比渲染时少 1** ⇒ 最后一行永远滚不到。
+     * （同款坑此前在「选中行图标 y」那处也犯过一次并被修，见 `selectedY` 附近的注释。）
+     */
+    private val listStartY = 100
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
     private var htFilter = 0
     private var hpF: TextFieldWidget? = null; private var atkF: TextFieldWidget? = null; private var defF: TextFieldWidget? = null
@@ -626,7 +634,7 @@ class SellSelectScreen(
         val lx = width / 2 - 148
         val panelW = 296
         val iconSize = 20
-        val startY = 100
+        val startY = listStartY
         // 顶部分割线：列表起始上方 4px（与其他列表界面一致；此前这屏漏画了）
         drawPanelDivider(context, lx + 148, startY - 4)
         // IV 输入变化时重建过滤缓存（原 filteredList 每次调用都先 syncIvFields，缓存后在此统一检测）
@@ -1151,7 +1159,7 @@ class SellSelectScreen(
         if (syncIvFields()) rebuildFiltered()
         val filtered = filteredList()
         val lx = width / 2 - 148
-        val startY = 100
+        val startY = listStartY
         val maxVisible = maxOf(0, (height - startY - 48) / rowHeight)
         if (mx in lx.toDouble()..(lx + 296).toDouble() && my >= startY) {
             val row = ((my - startY) / rowHeight).toInt() + scrollOffset
@@ -1171,7 +1179,9 @@ class SellSelectScreen(
         }
         if (syncIvFields()) rebuildFiltered()
         val filtered = filteredList()
-        val maxVisible = maxOf(0, (height - 96 - 48) / rowHeight)
+        // ⚠ 用 [listStartY]，别写死数字 —— 这里原先写死 96（渲染处是 100），差 4px
+        //    在特定屏幕高度下算出的可视行数不同 ⇒ 滚动上限比渲染时少 1 ⇒ 最后一行滚不到
+        val maxVisible = maxOf(0, (height - listStartY - 48) / rowHeight)
         scrollOffset = (scrollOffset - v.toInt()).coerceIn(0, maxOf(0, filtered.size - maxVisible))
         return true
     }

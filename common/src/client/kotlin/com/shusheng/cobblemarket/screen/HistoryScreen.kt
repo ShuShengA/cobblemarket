@@ -275,6 +275,10 @@ class HistoryScreen(private val showAll: Boolean = false) :
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         val rowHeight = 18
+        // ⚠ 第一个 48 = **列表起始 y**（与渲染处 `val startY = 48` 同源），第二个 = 底部预留。
+        //    2026-09-22 排查"滚动后最后一行看不见"时确认：这里与渲染处算式**一致**（都是 height-96），
+        //    所以没出问题 —— 但两处都是**写死的**，改 startY 时必须一起改。
+        //    （SellSelectScreen 就是在同款坑上栽的：滚轮写死 96、渲染用 startY=100，差 4px 就少一行）
         val maxVisible = maxOf(3, (height - 48 - 48) / rowHeight)
         scrollOffset = (scrollOffset - verticalAmount.toInt()).coerceIn(0, maxOf(0, entries.size - maxVisible))
         return true
