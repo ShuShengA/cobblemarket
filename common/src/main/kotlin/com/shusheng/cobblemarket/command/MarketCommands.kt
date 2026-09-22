@@ -260,24 +260,29 @@ object MarketCommands {
                                 )
                             )
                             // 确认发放 = 印钞（确认即加余额）：与 give/take 同级，仅 OP、不下放节点
+                            // ⚠ 下面四个 = **管理侧**（核对收款、发放、作废、清理），只认**服主**：
+                            //   钱打进的是服主自己的收款码，只有他能对着账单核对 —— 让看不到账单的人
+                            //   点「确认到账」本身就不成立（docs/permission_nodes_plan.md 的服主制）。
+                            //   requires 里带上 OP 只为让游戏内 OP 敲得进来、看到「仅服主可管理」的红字；
+                            //   真正的鉴权在各执行函数首行（denyNonOwner）
                             .then(CommandManager.literal("list")
-                                .requires { it.hasPermissionLevel(2) }
+                                .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
                                 .executes(::shopPendingList)
                             )
                             .then(CommandManager.literal("confirm")
-                                .requires { it.hasPermissionLevel(2) }
+                                .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
                                 .then(CommandManager.argument("order", StringArgumentType.word())
                                     .executes(::shopConfirm)
                                 )
                             )
                             .then(CommandManager.literal("reject")
-                                .requires { it.hasPermissionLevel(2) }
+                                .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
                                 .then(CommandManager.argument("order", StringArgumentType.word())
                                     .executes(::shopReject)
                                 )
                             )
                             .then(CommandManager.literal("purge")
-                                .requires { it.hasPermissionLevel(2) }
+                                .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
                                 .executes(::shopPurge)
                             )
                         )
@@ -652,8 +657,9 @@ object MarketCommands {
         }
     }
 
-    /** 待确认订单列表（仅 OP）：玩家名 / 实付金额 / 订单号 / 已等待时长，服主照着收款账单逐笔核 */
+    /** 待确认订单列表（仅服主）：玩家名 / 实付金额 / 订单号 / 已等待时长，照着收款账单逐笔核 */
     private fun shopPendingList(context: CommandContext<ServerCommandSource>): Int {
+        if (denyNonOwner(context)) return 0
         val source = context.source
         val list = PointOrderState.get(source.server).pendingConfirm()
         if (list.isEmpty()) {
@@ -674,23 +680,24 @@ object MarketCommands {
         return 1
     }
 
-    /** 确认发放（仅 OP，幂等：重复确认不会二次发放） */
+    /** 确认发放（仅服主，幂等：重复确认不会二次发放） */
     private fun shopConfirm(context: CommandContext<ServerCommandSource>): Int =
         shopOperatorAction(context) { server, operator, orderNo ->
             PointShopService.confirm(server, operator, orderNo)
         }
 
-    /** 作废订单（仅 OP）：核对账单后没这笔钱、重复提交、误操作等 */
+    /** 作废订单（仅服主）：核对账单后没这笔钱、重复提交、误操作等 */
     private fun shopReject(context: CommandContext<ServerCommandSource>): Int =
         shopOperatorAction(context) { server, operator, orderNo ->
             PointShopService.reject(server, operator, orderNo)
         }
 
-    /** 服主侧订单操作的公共外壳 */
+    /** 服主侧订单操作的公共外壳（鉴权在这里，两个入口都走它） */
     private fun shopOperatorAction(
         context: CommandContext<ServerCommandSource>,
         action: (net.minecraft.server.MinecraftServer, String, String) -> PointShopResult
     ): Int {
+        if (denyNonOwner(context)) return 0
         val source = context.source
         val orderNo = PointOrderNumbers.normalize(StringArgumentType.getString(context, "order"))
         if (orderNo == null) {
@@ -716,8 +723,9 @@ object MarketCommands {
         }
     }
 
-    /** 清理已完结订单（保留期内留作对账，正常由服务端定时任务自动做） */
+    /** 清理已完结订单（仅服主；保留期内留作对账，正常由服务端定时任务自动做） */
     private fun shopPurge(context: CommandContext<ServerCommandSource>): Int {
+        if (denyNonOwner(context)) return 0
         val removed = PointShopService.purgeFinished(context.source.server)
         context.source.sendFeedback({ Text.translatable("cobblemarket.points.shop.purged", removed) }, true)
         return 1
