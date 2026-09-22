@@ -25,7 +25,7 @@ class MeowthBlackCardItem : Item(Settings().maxCount(1).fireproof()) {
         if (entity !is ServerPlayerEntity) return
         // 非持有者（OP 豁免：服主测试/管理不受限）背包里的卡自删——凭证只属于持有者
         val player = entity as ServerPlayerEntity
-        if (MarketPermissions.isOp(player)) return
+        if (MarketPermissions.isServerOwner(player)) return
         val state = FinanceState.get(player.server)
         if (state.isBlackCardHolder(player.uuid)) return
         stack.setCount(0)

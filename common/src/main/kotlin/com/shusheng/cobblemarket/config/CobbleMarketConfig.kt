@@ -9,6 +9,7 @@ import net.minecraft.item.Item
 import net.minecraft.registry.Registries
 import net.minecraft.util.Identifier
 import java.io.File
+import java.util.UUID
 
 /** 分期方案（每期 7 天）：期数 + 每期费率（0.005 = 0.5%） */
 data class LoanPlan(val periods: Int, val feeRate: Double)
@@ -69,6 +70,35 @@ object CobbleMarketConfig {
         private set
     var marketEnabled: Boolean = true
         private set
+
+    // ── 服主名单（唯一恒真的超级权限，方案见 docs/permission_nodes_plan.md） ──
+
+    /**
+     * 服主名单：**只存 UUID**（不收游戏名 —— 改名即失效、且存在重名抢注）。
+     * - 服主 = 拥有全部管理节点 + 独享「服务器配置」与「权限管理」两个界面
+     * - **`OP` 不等于服主**：OP 可被任何 OP 传递（`/op`），而本名单只能从服务器控制台改
+     * - **空名单 = 谁都没有管理权限**（默认安全，勿改成「空名单则 OP 可用」，那等于没收紧）
+     */
+    var serverOwners: List<UUID> = emptyList()
+        private set
+
+    fun isServerOwner(uuid: UUID): Boolean = uuid in serverOwners
+
+    /** 加入服主名单（已在名单里返回 false）。改完立即落盘，无需重启或 reload */
+    fun addServerOwner(uuid: UUID): Boolean {
+        if (uuid in serverOwners) return false
+        serverOwners = serverOwners + uuid
+        save()
+        return true
+    }
+
+    /** 移出服主名单（本来不在返回 false）⚠ 允许移除最后一名服主：那之后谁都进不去，只能手编配置文件救回 */
+    fun removeServerOwner(uuid: UUID): Boolean {
+        if (uuid !in serverOwners) return false
+        serverOwners = serverOwners - uuid
+        save()
+        return true
+    }
 
     // ── 金融系统（finance 段，启动级：reload 跳过应用仅比较差异，改后需重启） ──
 
@@ -360,6 +390,7 @@ object CobbleMarketConfig {
                     "auctionMinBidIncrement", "auctionAntiSnipeSeconds", "maxAuctionsPerPlayer",
                     "eggTradingEnabled", "buyOrderFeePercent", "buyOrderExpiryDays",
                     "maxBuyOrdersPerPlayer", "marketEnabled",
+                    "serverOwners",
                     "finance"
                 )
                 var missingKeys = knownKeys.any { !data.containsKey(it) }
@@ -521,6 +552,17 @@ object CobbleMarketConfig {
                 buyOrderExpiryDays = (rawBuyOrderExpiry ?: 3).coerceAtLeast(1)
                 maxBuyOrdersPerPlayer = ((data["maxBuyOrdersPerPlayer"] as? Double)?.toInt() ?: 5).coerceAtLeast(0)
                 marketEnabled = data["marketEnabled"] as? Boolean ?: true
+                // 服主名单：容错解析 —— 单条写错只跳过该条并记日志，不让整份配置读取失败
+                serverOwners = (data["serverOwners"] as? List<*>)
+                    ?.mapNotNull { raw ->
+                        val s = raw?.toString() ?: return@mapNotNull null
+                        try {
+                            UUID.fromString(s.trim())
+                        } catch (_: IllegalArgumentException) {
+                            CobbleMarket.LOGGER.warn("Config serverOwners contains an invalid UUID, ignored: {}", s)
+                            null
+                        }
+                    } ?: emptyList()
                 // 跨项校验（手工改过 config.json 也兜住）
                 enforceCardApplySeenGuard()
                 // 缺失字段补写：旧设置保留，新字段以默认值落盘（服主无需删配置）
@@ -568,6 +610,7 @@ object CobbleMarketConfig {
                 "buyOrderExpiryDays" to "求购单过期天数（到期自动关闭，剩余冻结金退买家待领余额）/ Buy order expiry in days (expired orders close automatically and refund frozen money)",
                 "marketEnabled" to "市场总开关（默认开启）：紧急情况可整体关闭市场功能——所有买卖/拍卖/求购操作被拦截并提示，但待领取、余额等取回自己资产的操作仍可用。可在游戏内用 /market on|off 切换 / Master market switch (on by default): emergency kill switch for the entire market — all buy/sell/auction/buy-order operations are blocked with a notice, while claiming returns and collecting balances still work. Toggle in-game via /market on|off",
                 "maxBuyOrdersPerPlayer" to "每个玩家同时进行的求购单数量上限，精灵与物品合计（0=不限制）。求购单列表全量下发给所有客户端，玩家较多的服务器建议保持较小值，避免全服活跃求购单总量过大导致卡顿 / Max concurrent buy orders per player, Pokémon and items combined (0=unlimited). The buy order list is broadcast in full to every client, so on crowded servers keep this small to avoid lag from too many active orders",
+                "serverOwners" to "服主名单（UUID 数组）：**服主是唯一拥有全部管理权限的人，且只有服主能改服务器配置、给他人分配管理权限**。添加方式二选一：① **专用服务器** —— 在服务器控制台执行 /market owner add <玩家名>（控制台会自动把名字转成 UUID），/market owner remove <玩家名> 移除、/market owner list 查看；② **单机 / 局域网**（集成服务器没有控制台）—— 直接把这个数组填上 UUID：UUID 见 usercache.json 里的「玩家名 → UUID」对照表（在服务器运行目录下，单机即 .minecraft/usercache.json，版本隔离的看对应版本目录），或游戏内用 /data get entity @s UUID 查；改完重启、或在游戏内执行 /market reload 生效。留着空数组 = 谁都没有管理权限（安全默认）。⚠ OP 不等于服主：OP 可以被任何 OP 用 /op 传递下去，所以市场里不认 OP，只认这份名单 —— 想放权就把对方 UUID 加进来 / Server owner list (UUID array): owners are the only people with all admin permissions, and only owners can edit the server config or grant admin permissions to others. Two ways to add an owner: (1) Dedicated server — run /market owner add <player> in the server console (names are resolved to UUIDs for you); /market owner remove <player> and /market owner list do the rest. (2) Single-player / LAN (the integrated server has no console) — put the UUID straight into this array; find it in usercache.json (the player-name → UUID table in the server run directory, i.e. .minecraft/usercache.json, or the matching version folder with isolation), or run /data get entity @s UUID in game; then restart or run /market reload. An empty array means nobody has admin access (secure default). ⚠ OP ≠ owner: OP can be handed out by any OP via /op, so the market ignores OP level and trusts only this list — to delegate, add that person's UUID here",
                 "finance.enabled" to "金融系统总开关（默认关闭）。开启后玩家可借贷/使用喵喵支付；关闭时禁止新增借贷与信用支付，已有贷款照常运行（还款/逾期/坏账不受影响） / Master switch for the finance system (off by default). When on, players can take loans and use Meowth Pay; when off, new loans and credit payments are blocked while existing loans keep running (repayment/overdue/bad debt unaffected)",
                 "finance.cashLoanEnabled" to "现金贷开关（借呗）：玩家在喵喵银行柜台主动借款 / Cash loan switch (Jiebei-style): players borrow cash directly at the Meowth Bank counter",
                 "finance.consumerLoanEnabled" to "消费贷开关（喵喵支付）：购买精灵/物品、拍卖出价时可选择信用垫付 / Consumer loan switch (Meowth Pay): credit payment option when buying Pokémon/items or bidding in auctions",
@@ -623,6 +666,7 @@ object CobbleMarketConfig {
             "buyOrderExpiryDays" to buyOrderExpiryDays,
             "maxBuyOrdersPerPlayer" to maxBuyOrdersPerPlayer,
             "marketEnabled" to marketEnabled,
+            "serverOwners" to serverOwners.map { it.toString() },
             "finance" to mapOf(
                 "enabled" to financeEnabled,
                 "cashLoanEnabled" to cashLoanEnabled,

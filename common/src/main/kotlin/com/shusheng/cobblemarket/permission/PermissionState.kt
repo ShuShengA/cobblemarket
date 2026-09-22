@@ -24,8 +24,8 @@ data class PermissionGrant(
  * 管理权限授予表（docs/permission_nodes_plan.md S1）。
  *
  * 与黑名单/封禁名单同构：新建 PersistentState，**不放 config** —— 权限是运行期数据。
- * **OP 不写入此表**：`MarketPermissions.has` 里 OP 恒真，表只记「服主显式授予的额外权限」，
- * 所以收回 OP 的节点不会影响他（也收不掉）。
+ * **服主不写入此表**：`MarketPermissions.has` 里服主恒真，表只记「服主授予他人的额外权限」，
+ * 所以收回某人的节点不会波及服主（也收不掉）。OP 与节点无关，同样不在此表。
  */
 class PermissionState private constructor() : PersistentState() {
 
