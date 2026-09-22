@@ -65,13 +65,7 @@ object CloseAnimation {
         context.matrices.translate(cx.toDouble(), (cy - p * h).toDouble(), 0.0)
         context.matrices.scale(1f - p, 1f - p, 1f)
         context.matrices.translate((-cx).toDouble(), (-cy).toDouble(), 0.0)
-        if (!diagLogged) {
-            diagLogged = true
-            println("[CobbleMarket-CloseAnim] pushTransform, p=$p, screen=${screen.javaClass.simpleName}, h=$h")
-        }
     }
-
-    private var diagLogged = false
 
     /** TAIL 注入：恢复矩阵（与 pushTransform 配对；动画状态在一帧内不变，配对安全） */
     fun popTransform(context: DrawContext) {
