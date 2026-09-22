@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.finance.CardNames
 import com.shusheng.cobblemarket.network.PurpleCardApplyInfoPayload
 import com.shusheng.cobblemarket.network.RequestPurpleCardApplyInfoPayload
 import com.shusheng.cobblemarket.network.RequestPurpleCardApplyPayload
@@ -95,7 +96,7 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
         applyButton?.dimmed = !canApply
         if (isHolder) {
             // 持有者：按钮变「补发紫卡」（凭证丢失随时补）
-            applyButton?.message = Text.translatable("cobblemarket.card.redo_button")
+            applyButton?.message = CardNames.label("cobblemarket.card.redo_button")
             return
         }
         applyButton?.message = Text.translatable(
@@ -123,7 +124,9 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
         val dialogY = height / 2 - dialogH / 2
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.card.apply_title").formatted(Formatting.GOLD, Formatting.BOLD),
+            // 卡名走 CardNames 而非整条词条：词条是静态文本，颜色不会流动
+            Text.translatable("cobblemarket.card.apply_prefix").append(CardNames.volt())
+                .formatted(Formatting.GOLD, Formatting.BOLD),
             centerX, dialogY + 14, 0xFFFFFF
         )
 
@@ -140,6 +143,12 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
                 scale = size / 16.0,
                 matrixStack = context.matrices
             )
+            // 悬停显示与物品栏一致的「卡名 + 说明」
+            if (mouseX in (centerX - size / 2)..(centerX + size / 2) &&
+                mouseY in (dialogY + 30)..(dialogY + 30 + size)
+            ) {
+                context.drawTooltip(textRenderer, CardNames.voltTooltip(), mouseX, mouseY)
+            }
         }
 
         // 条件行（照交付精灵条件样式：标签 + 门槛/当前值 + ✓/✗ 绿红）
@@ -183,7 +192,7 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
                     val entry = payload.conditions.getOrNull(i) ?: return@forEachIndexed
                     // 门槛 0/关 = 不要求，该行不显示
                     if (entry.requirement <= 0) return@forEachIndexed
-                    val label = Text.translatable(key).string
+                    val label = CardNames.labelString(key)
                     val isBool = key == "cobblemarket.op.scfg_apply_no_overdue" // 无逾期记录项（按 key 判定，插行不错位）
                     // 图鉴两行是物种数不是金额，不带货币单位
                     val isDexCount = key == "cobblemarket.op.scfg_apply_seen" || key == "cobblemarket.op.scfg_apply_dex"

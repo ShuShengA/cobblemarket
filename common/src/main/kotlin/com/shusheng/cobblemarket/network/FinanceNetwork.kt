@@ -303,7 +303,7 @@ data class PurpleCardApplyInfoPayload(
     val isHolder: Boolean,
     /** 补发凭证费用（持有者界面显示补发费用行） */
     val redoFee: Long,
-    /** 已持有黑金卡（升级替代）：紫卡申请按钮显示「已升级」而非「条件未满足」 */
+    /** 已持有金轮卡（升级替代）：紫卡申请按钮显示「已升级」而非「条件未满足」 */
     val holdsBlackCard: Boolean,
     /** 卡的借款额度（界面权益展示） */
     val creditLimit: Long,

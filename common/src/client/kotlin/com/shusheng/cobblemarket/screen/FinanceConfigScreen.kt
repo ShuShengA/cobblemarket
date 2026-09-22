@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.finance.CardNames
 import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.ServerConfigDataPayload
@@ -414,7 +415,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
         val startY = listStartY()
         var row = 0
         fun drawRowLine(rowY: Int) {
-            context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
+            context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF888888.toInt())
         }
         fun drawNumRow(def: NumDef, key: String) {
             if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
@@ -425,7 +426,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
                 context.drawTextWithShadow(
                     textRenderer,
                     TextUtil.truncateStyled(
-                        Text.translatable(def.labelKey),
+                        CardNames.label(def.labelKey),
                         ConfigFieldLayout.configLabelWidth(textRenderer, dialogW, key, def.labelKey)
                     ),
                     dialogX + 10, rowY + 7, labelColor
@@ -439,7 +440,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
                 drawRowLine(rowY)
                 context.drawTextWithShadow(
                     textRenderer,
-                    Text.translatable(labelKey),
+                    CardNames.label(labelKey),
                     dialogX + 10, rowY + 7, 0xFFFFFF
                 )
             }
@@ -453,7 +454,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             drawRowLine(rowY)
             context.drawTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.op.card_entry"),
+                CardNames.label("cobblemarket.op.card_entry"),
                 dialogX + 10, rowY + 7, 0xFFFFFF
             )
         }
@@ -464,7 +465,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             drawRowLine(rowY)
             context.drawTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.op.black_card_entry"),
+                CardNames.label("cobblemarket.op.black_card_entry"),
                 dialogX + 10, rowY + 7, 0xFFFFFF
             )
         }

@@ -13,5 +13,5 @@ import net.minecraft.client.gui.DrawContext
  * 要调长度只改这里。
  */
 fun drawPanelDivider(context: DrawContext, centerX: Int, y: Int) {
-    context.fill(centerX - 150, y, centerX + 150, y + 1, 0xFF555555.toInt())
+    context.fill(centerX - 150, y, centerX + 150, y + 1, 0xFF888888.toInt())
 }
