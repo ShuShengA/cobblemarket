@@ -38,32 +38,42 @@ class RequestPermissionSnapshotPayload : CustomPayload {
     }
 }
 
-/** S2C：我的权限节点快照（登录时 + 授予/收回时推送） */
+/** S2C：我的权限节点快照（登录时 + 授予/收回/服主名单变更时推送） */
 data class PermissionSnapshotPayload(
     val nodes: List<String>,
-    /** 是否真 OP —— **必须由服务端明说**：客户端曾用「节点数量 == 总数」反推，
-     *  结果被授予全部节点的普通玩家被误判成 OP（能用只认 OP 的权限管理入口）。 */
-    val op: Boolean
+    /** 是不是**服主** —— **必须由服务端明说**：客户端曾用「节点数量 == 总数」反推，
+     *  结果被授予全部节点的普通玩家被误判成有特权（能用只认服主的权限管理入口）。 */
+    val owner: Boolean,
+    /**
+     * 能不能进管理面板（**服务端算好**：OP 或 服主 或有任一节点）。
+     * ⚠ 同样必须服务端下发：**OP 的 `nodes` 是空的**（他没被授予任何节点），客户端若照旧用
+     * `nodes.isNotEmpty()` 自己算，OP 就看不到管理面板入口了 —— 而入口保留给 OP 是有意的
+     * （他因此才看得到「权限管理/服务器配置」两个置灰按钮与它们的悬停教学）。
+     * ⚠ 字段顺序（boolean → list → boolean）是跨端协议，改语义可以、别动顺序
+     */
+    val canManage: Boolean
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<PermissionSnapshotPayload>(CobbleMarket.id("permission_snapshot"))
         val CODEC: PacketCodec<PacketByteBuf, PermissionSnapshotPayload> = PacketCodec.of(
             { p, b ->
-                b.writeBoolean(p.op)
+                b.writeBoolean(p.owner)
                 b.writeInt(p.nodes.size)
                 p.nodes.forEach { b.writeString(it) }
+                b.writeBoolean(p.canManage)
             },
             { b ->
-                val op = b.readBoolean()
+                val owner = b.readBoolean()
                 val size = b.readInt()
-                PermissionSnapshotPayload(List(size) { b.readString() }, op)
+                val nodes = List(size) { b.readString() }
+                PermissionSnapshotPayload(nodes, owner, b.readBoolean())
             }
         )
     }
 }
 
-// ── 权限管理界面（仅 OP）的协议 ──
+// ── 权限管理界面（仅服主）的协议 ──
 
 /** C2S：请求权限变更审计（界面「变更记录」页签） */
 class RequestPermissionAuditPayload : CustomPayload {
@@ -227,7 +237,7 @@ object PermissionNetwork {
 
         registerS2CType(PermissionAuditPayload.ID, PermissionAuditPayload.CODEC)
         registerC2S(RequestPermissionAuditPayload.ID, RequestPermissionAuditPayload.CODEC) { _, player ->
-            if (!MarketPermissions.isOp(player)) return@registerC2S
+            if (!MarketPermissions.isServerOwner(player)) return@registerC2S
             val rows = PermissionFileLogger.readRecent().map {
                 PermissionAuditPayload.Row(
                     timestamp = it.timestamp,
@@ -241,15 +251,15 @@ object PermissionNetwork {
             sendToPlayer(player, PermissionAuditPayload(rows))
         }
 
-        // ── 权限管理界面：**仅 OP**（权限授予是服主专属，不下放给任何管理节点，否则能自我提权）──
+        // ── 权限管理界面：**仅服主**（权限授予是服主专属，不下放给任何管理节点，否则能自我提权）──
 
         registerC2S(RequestPermissionListPayload.ID, RequestPermissionListPayload.CODEC) { _, player ->
-            if (!MarketPermissions.isOp(player)) return@registerC2S
+            if (!MarketPermissions.isServerOwner(player)) return@registerC2S
             sendToPlayer(player, listDataOf(player.server))
         }
 
         registerC2S(SavePlayerPermissionsPayload.ID, SavePlayerPermissionsPayload.CODEC) { payload, player ->
-            if (!MarketPermissions.isOp(player)) return@registerC2S
+            if (!MarketPermissions.isServerOwner(player)) return@registerC2S
             if (!RequestThrottle.allow(player.uuid, "save_player_permissions", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
@@ -293,7 +303,7 @@ object PermissionNetwork {
         }
 
         registerC2S(RemovePlayerPermissionsPayload.ID, RemovePlayerPermissionsPayload.CODEC) { payload, player ->
-            if (!MarketPermissions.isOp(player)) return@registerC2S
+            if (!MarketPermissions.isServerOwner(player)) return@registerC2S
             if (!RequestThrottle.allow(player.uuid, "remove_player_permissions", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
@@ -328,14 +338,17 @@ object PermissionNetwork {
             }
         )
 
-    /** 该玩家的快照：OP 直接给全部节点（客户端据此点亮所有管理按钮），否则只给授予表里命中的。
-     *  `op` 字段单独携带 —— 被授予全部节点的普通玩家节点数也是 8，客户端不能靠数量反推。 */
+    /** 该玩家的快照：**服主**直接给全部节点（客户端据此点亮所有管理按钮），否则只给授予表里命中的。
+     *  `owner` 字段单独携带 —— 被授予全部节点的普通玩家节点数也是 7，客户端不能靠数量反推；
+     *  `canManage` 也由服务端算（OP 的 nodes 是空的，客户端算不出「OP 能进面板」）。
+     *  普通 OP 拿到的是**空节点列表**：管理面板里每个按钮都置灰 —— 这正是要的（OP ≠ 管理员）。 */
     fun snapshotOf(player: ServerPlayerEntity): PermissionSnapshotPayload {
-        val op = MarketPermissions.isOp(player)
+        val owner = MarketPermissions.isServerOwner(player)
         return PermissionSnapshotPayload(
-            if (op) MarketPermissions.ALL
+            if (owner) MarketPermissions.ALL
             else MarketPermissions.ALL.filter { it in PermissionState.get(player.server).getNodes(player.uuid) },
-            op
+            owner,
+            MarketPermissions.canManage(player)
         )
     }
 
