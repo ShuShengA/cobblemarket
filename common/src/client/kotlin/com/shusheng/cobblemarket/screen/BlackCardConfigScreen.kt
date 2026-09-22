@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.finance.CardNames
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
@@ -18,7 +19,7 @@ import net.minecraft.util.Formatting
  * 喵喵黑卡配置界面（照紫卡配置界面）：黑卡相关配置集中编辑。
  * 保存时黑卡字段提交编辑值、其余字段回填服务端快照原值（照 FinanceConfigScreen 模式）。
  */
-class BlackCardConfigScreen : Screen(Text.translatable("cobblemarket.op.black_card_config")) {
+class BlackCardConfigScreen : Screen(CardNames.label("cobblemarket.op.black_card_config")) {
 
     // 放宽到 360：文字可用宽 = 宽 − 100（≈260px），放得下英文原文（最长约 221px）；
     // 窗口过小时收进屏幕内，此时标签回落到 truncateString 兜底
@@ -85,7 +86,7 @@ class BlackCardConfigScreen : Screen(Text.translatable("cobblemarket.op.black_ca
             field.setMaxLength(10)
             if (key == "blackFeeDiscount") {
                 field.setTooltip(
-                    net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.scfg_black_card_fee_discount_tip"))
+                    net.minecraft.client.gui.tooltip.Tooltip.of(CardNames.label("cobblemarket.op.scfg_black_card_fee_discount_tip"))
                 )
             }
             numFields[key] = field
@@ -352,13 +353,13 @@ class BlackCardConfigScreen : Screen(Text.translatable("cobblemarket.op.black_ca
         val dialogX = width / 2 - dialogW / 2
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.op.black_card_config").formatted(Formatting.GOLD, Formatting.BOLD),
+            CardNames.label("cobblemarket.op.black_card_config").formatted(Formatting.GOLD, Formatting.BOLD),
             centerX, dialogY() + 10, 0xFFFFFF
         )
         val startY = listStartY()
         var row = 0
         fun drawRowLine(rowY: Int) {
-            context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
+            context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF888888.toInt())
         }
         fun drawNumRow(def: NumDef, key: String) {
             if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
@@ -369,7 +370,7 @@ class BlackCardConfigScreen : Screen(Text.translatable("cobblemarket.op.black_ca
                 context.drawTextWithShadow(
                     textRenderer,
                     TextUtil.truncateStyled(
-                        Text.translatable(def.labelKey),
+                        CardNames.label(def.labelKey),
                         ConfigFieldLayout.configLabelWidth(textRenderer, dialogW, key, def.labelKey)
                     ),
                     dialogX + 10, rowY + 7, labelColor
@@ -382,7 +383,7 @@ class BlackCardConfigScreen : Screen(Text.translatable("cobblemarket.op.black_ca
                 val rowY = startY + (row - scrollOffset) * rowHeight
                 drawRowLine(rowY)
                 // 文案含 | 时拆两行渲染（英文长句超宽；单行 y+7，两行 y+3/y+13）
-                val lines = Text.translatable(labelKey).string.split("|")
+                val lines = CardNames.labelString(labelKey).split("|")
                 if (lines.size > 1) {
                     lines.take(2).forEachIndexed { i, l ->
                         context.drawTextWithShadow(textRenderer, l, dialogX + 10, rowY + 3 + i * 10, 0xFFFFFF)
@@ -404,7 +405,7 @@ class BlackCardConfigScreen : Screen(Text.translatable("cobblemarket.op.black_ca
             drawRowLine(condRowY)
             context.drawTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.op.black_card_conditions_entry"),
+                CardNames.label("cobblemarket.op.black_card_conditions_entry"),
                 dialogX + 10, condRowY + 7, 0xFFFFFF
             )
         }

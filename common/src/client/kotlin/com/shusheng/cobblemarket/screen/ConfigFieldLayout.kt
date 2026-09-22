@@ -1,11 +1,11 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.finance.CardNames
 import net.minecraft.client.font.TextRenderer
-import net.minecraft.text.Text
 
 /**
  * 配置弹窗里「标签 + 输入框 + ↺ 重置按钮」这一行的横向布局，六个配置界面共用
- * （服务器 / 金融 / 紫金卡 / 黑金卡 / 两张卡的申请条件）。
+ * （服务器 / 金融 / 紫电卡 / 金轮卡 / 两张卡的申请条件）。
  *
  * 这一行自右向左排：弹窗右内缘 10px → ↺ 按钮 20px → 间隙 2px → **输入框** → 间隙 8px → 标签。
  *
@@ -36,9 +36,15 @@ object ConfigFieldLayout {
     /** 输入框右缘 = ↺ 按钮左缘再退 2px。**固定不动**，加宽只往左长 */
     fun configFieldRight(dialogX: Int, dialogW: Int) = dialogX + dialogW - 10 - 20 - 2
 
-    /** 本行扣掉标签后还剩多少给输入框（10 右内缘 + 20 按钮 + 2 间隙 + 10 标签起点 + 8 标签右间隙） */
+    /**
+     * 本行扣掉标签后还剩多少给输入框（10 右内缘 + 20 按钮 + 2 间隙 + 10 标签起点 + 8 标签右间隙）。
+     *
+     * ⚠ 标签必须经 [CardNames.label] 展开再测 —— 卡名类标签的词条里是 `%1$s` 占位，
+     * 直接 `Text.translatable` 量到的是占位符的宽度（约 24px），比卡名实际宽度（约 54px）小一大截，
+     * 输入框会按错宽度算、压到标签上。
+     */
     private fun availableWidth(textRenderer: TextRenderer, dialogW: Int, labelKey: String): Int =
-        dialogW - 10 - 20 - 2 - 10 - 8 - textRenderer.getWidth(Text.translatable(labelKey))
+        dialogW - 10 - 20 - 2 - 10 - 8 - textRenderer.getWidth(CardNames.label(labelKey))
 
     /** 该行输入框的宽度：普通数字项 [MIN_W]~[NARROW_W]；长文本项最宽 [WIDE_W]，两者都不挤标签 */
     fun configFieldWidth(textRenderer: TextRenderer, dialogW: Int, key: String, labelKey: String): Int {

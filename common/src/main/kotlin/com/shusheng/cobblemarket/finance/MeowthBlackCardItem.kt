@@ -5,6 +5,7 @@ import net.minecraft.entity.Entity
 import net.minecraft.entity.ItemEntity
 import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
+import net.minecraft.item.tooltip.TooltipType
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.text.Text
@@ -31,6 +32,21 @@ class MeowthBlackCardItem : Item(Settings().maxCount(1).fireproof()) {
         player.sendMessage(
             Text.translatable("cobblemarket.card.black_not_holder_removed").formatted(Formatting.RED),
             false
+        )
+    }
+
+    /** 物品名走彩色渲染（18 属性色逐字循环），见 [CardNames] */
+    override fun getName(stack: ItemStack): Text = CardNames.genesis()
+
+    /** 物品栏悬停的介绍行（风味文本）：呼应卡面那只金色阿尔宙斯 */
+    override fun appendTooltip(
+        stack: ItemStack,
+        context: Item.TooltipContext,
+        tooltip: MutableList<Text>,
+        type: TooltipType,
+    ) {
+        tooltip.add(
+            Text.translatable("item.cobblemarket.meowth_black_card.desc").formatted(Formatting.YELLOW)
         )
     }
 

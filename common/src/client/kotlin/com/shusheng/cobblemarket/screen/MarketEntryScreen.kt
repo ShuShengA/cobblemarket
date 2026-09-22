@@ -758,12 +758,12 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 同组的连续行之间不画线（余额 HUD 两项、精灵图标两项各属一组）
         val lineX1 = centerX - 108
         val lineX2 = centerX + 108
-        context.fill(lineX1, dialogY + SETTINGS_LINE_TOP, lineX2, dialogY + SETTINGS_LINE_TOP + 1, 0xFF555555.toInt())
+        context.fill(lineX1, dialogY + SETTINGS_LINE_TOP, lineX2, dialogY + SETTINGS_LINE_TOP + 1, 0xFF888888.toInt())
         for (i in 1 until settingsRows.size) {
             if (!settingsRows[i].newGroup) continue
             val lineY = settingsRowY(i) - 2
             if (lineY <= dialogY + SETTINGS_LINE_TOP + 1 || lineY > dialogY + settingsViewBottomRel()) continue
-            context.fill(lineX1, lineY, lineX2, lineY + 1, 0xFF555555.toInt())
+            context.fill(lineX1, lineY, lineX2, lineY + 1, 0xFF888888.toInt())
         }
         renderSettingsScrollbar(context)
     }

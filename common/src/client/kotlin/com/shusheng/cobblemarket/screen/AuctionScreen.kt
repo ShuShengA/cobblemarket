@@ -1308,11 +1308,11 @@ class AuctionScreen(
             val marks = extra["marks"].orEmpty().split(",").filter { it.isNotEmpty() }
             if (marks.isNotEmpty()) {
                 if (!MoveText.hasAny(movesRaw)) {
-                    context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF555555.toInt())
+                    context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF888888.toInt())
                     iy += 10
                 }
                 iy += EntryBadgeRenderer.drawMarksRow(context, marks, infoX, iy)
-                context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF555555.toInt())
+                context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF888888.toInt())
                 iy += 10
             }
         } else {
@@ -1430,22 +1430,8 @@ class AuctionScreen(
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         IconRegistry.beginFrame(mouseX, mouseY)
-        val panelLeft = width / 2 - 160
-        val panelTop = 2
-        val panelBottom = height - 32
-        val sliceH = 16
-
-        val top = Identifier.of("cobblemarket", "textures/gui/market_panel_auction_house_top.png")
-        val mid = Identifier.of("cobblemarket", "textures/gui/market_panel_middle.png")
-        val bot = Identifier.of("cobblemarket", "textures/gui/market_panel_bottom.png")
-
-        drawPanelSlice(context, top, panelLeft, panelTop)
-        var y = panelTop + sliceH
-        while (y < panelBottom - sliceH) {
-            drawPanelSlice(context, mid, panelLeft, y, minOf(sliceH, panelBottom - sliceH - y))
-            y += sliceH
-        }
-        drawPanelSlice(context, bot, panelLeft, panelBottom - sliceH)
+        // 顶部身份位放拍卖锤图标（复用界面内已有的 48x48 图标，见 MarketPanelBackground）
+        MarketPanelBackground.draw(context, width, height, HAMMER_TEX_LEFT)
 
         val leftX = width / 2 - panelWidth / 2
         val startY = getListStartY()
@@ -1477,28 +1463,12 @@ class AuctionScreen(
         val centerX = width / 2
         val leftX = centerX - panelWidth / 2
 
-        context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.auction.title").formatted(Formatting.GOLD),
-            centerX, 20, 0xFFFFFF)
+        val titleText = Text.translatable("cobblemarket.auction.title").formatted(Formatting.GOLD)
+        context.drawCenteredTextWithShadow(textRenderer, titleText, centerX, 20, 0xFFFFFF)
 
         // 余额（左上角，与标题同一行）—— 标题居中在 y=20、tab 在 y=32、搜索框在 y=50，中间塞不下第三行，
-        // 所以这一行是唯一位置。⚠ 与标题同行 ⇒ 余额一长就压上去（2026-09-21 用户报「和 tab 行重合」，
-        // 更早还报过压标题）；故按可用宽降级：放不下先换 k/M/B 缩写、再截断兜底
-        val balRaw = com.shusheng.cobblemarket.client.BalanceCache.balance
-        if (balRaw.isNotEmpty()) {
-            val titleW = textRenderer.getWidth(
-                Text.translatable("cobblemarket.auction.title").formatted(Formatting.GOLD))
-            val avail = centerX - titleW / 2 - 6 - (leftX + 4)
-            val balUnit = com.shusheng.cobblemarket.client.inlineCurrencyUnit()
-            fun balLine(amount: String) = Text.translatable("cobblemarket.gui.balance",
-                Text.literal("$amount $balUnit").formatted(Formatting.GOLD))
-            val balFull = balLine(balRaw)
-            val balShown = if (textRenderer.getWidth(balFull) <= avail) balFull
-                else balLine(com.shusheng.cobblemarket.client.formatPriceShortLong(
-                    com.shusheng.cobblemarket.client.BalanceCache.balanceRaw))
-            context.drawTextWithShadow(textRenderer,
-                com.shusheng.cobblemarket.util.TextUtil.truncateStyled(balShown, avail), leftX + 4, 20, 0xFFFFFF)
-        }
+        // 所以这一行是唯一位置；余额一长就压上去，降级规则见 drawHeaderBalance
+        drawHeaderBalance(context, textRenderer, centerX, leftX + 4, textRenderer.getWidth(titleText))
 
         // 操作结果提示
         if (resultMsg != null) {
@@ -1722,7 +1692,7 @@ class AuctionScreen(
         rules.forEachIndexed { ri, ruleLines ->
             if (ri > 0) {
                 // 分割线画在当前 y（与上一条文字底留 2px 间隙），随后推进 dividerH
-                context.fill(tx + pad, y, tx + panelW - pad, y + 1, 0xFF555555.toInt())
+                context.fill(tx + pad, y, tx + panelW - pad, y + 1, 0xFF888888.toInt())
                 y += dividerH
             }
             ruleLines.forEach { line ->
@@ -1866,7 +1836,7 @@ class AuctionScreen(
             } else if (line == null) {
                 // 分割线：1px 灰线，撑满提示框全宽（与信息区分隔线一致，不随证章数量变化）
                 val rowW = mw
-                context.fill(tx, rowY + 4, tx + rowW, rowY + 5, 0xFF555555.toInt())
+                context.fill(tx, rowY + 4, tx + rowW, rowY + 5, 0xFF888888.toInt())
                 rowY += 10
             } else if (i == heldItemLine) {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
@@ -1991,14 +1961,6 @@ class AuctionScreen(
         }
         staticLines.add(Text.translatable("cobblemarket.auction.seller").append(entry.sellerName) to 0xFFFFFF)
         return staticLines
-    }
-
-    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int, sliceH: Int = 16) {
-        context.matrices.push()
-        context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(0.5f, 0.5f * sliceH / 16f, 1f)
-        context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
-        context.matrices.pop()
     }
 
     // ── 交互 ──
