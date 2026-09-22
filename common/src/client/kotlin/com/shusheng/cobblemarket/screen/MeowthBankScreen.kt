@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.requestCreditInfo
+import com.shusheng.cobblemarket.finance.CardNames
 import com.shusheng.cobblemarket.network.CardHolderBoardEntry
 import com.shusheng.cobblemarket.network.CardHolderBoardPayload
 import com.shusheng.cobblemarket.network.CreditInfoPayload
@@ -267,6 +268,10 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
                 x = cardX.toDouble(), y = cardY.toDouble(), scale = scale.toDouble(),
                 matrixStack = context.matrices
             )
+            // 悬停显示与物品栏一致的「卡名 + 说明」——卡片是直绘的，没有 ItemStack 的 tooltip 机制
+            if (mouseX in cardX..(cardX + CARD_W) && mouseY in cardY..(cardY + CARD_W)) {
+                context.drawTooltip(textRenderer, CardNames.voltTooltip(), mouseX, mouseY)
+            }
         }
         // 右侧黑卡展示（与紫卡对称：卡左缘 = 背景右缘 + 6 空隙 → x = width/2 + 134；点击打开申请黑卡弹窗）
         val blackCardItem = net.minecraft.registry.Registries.ITEM.get(
@@ -282,13 +287,17 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
                 x = cardX.toDouble(), y = cardY.toDouble(), scale = scale.toDouble(),
                 matrixStack = context.matrices
             )
+            // 悬停显示与物品栏一致的「卡名 + 说明」
+            if (mouseX in cardX..(cardX + CARD_W) && mouseY in cardY..(cardY + CARD_W)) {
+                context.drawTooltip(textRenderer, CardNames.genesisTooltip(), mouseX, mouseY)
+            }
         }
 
         // 两张卡下方的持有者面板（所有人可见）：左右边缘与上方卡片对齐（同 x、同宽 128），
         // 纵向跟着卡片长高下移 24px —— 与卡片保持原有的 18px 重叠（让出卡片贴图的透明边距）
-        renderHolderBoard(context, width / 2 - CARD_OUTER, "cobblemarket.card.board_purple_title", 0xFF55FF,
+        renderHolderBoard(context, width / 2 - CARD_OUTER, CardNames.volt(), 0xFF55FF,
             purpleBoardEntries, purpleBoardMax, purpleBoardOffset)
-        renderHolderBoard(context, width / 2 + CARD_OUTER - CARD_W, "cobblemarket.card.board_black_title", 0x555555,
+        renderHolderBoard(context, width / 2 + CARD_OUTER - CARD_W, CardNames.genesis(), 0x555555,
             blackBoardEntries, blackBoardMax, blackBoardOffset)
 
         // 规则按钮悬停面板（照拍卖场规则面板：自绘 + 悬停位置自适应）
@@ -360,7 +369,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         var y = ty + pad
         rules.forEachIndexed { ri, (warn, _) ->
             if (ri > 0) {
-                context.fill(tx + pad, y, tx + panelW - pad, y + 1, 0xFF555555.toInt())
+                context.fill(tx + pad, y, tx + panelW - pad, y + 1, 0xFF888888.toInt())
                 y += dividerH
             }
             val warnW = textRenderer.getWidth(warn)
@@ -438,7 +447,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
     private fun renderHolderBoard(
         context: DrawContext,
         panelX: Int,
-        titleKey: String,
+        title: Text,
         titleColor: Int,
         entries: List<CardHolderBoardEntry>,
         max: Long,
@@ -452,11 +461,11 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         // 面板顶在卡片可见内容下方（不遮卡片），标题整体下移避开面板顶部边框；标题区 29 + 5 行 × 20 + 底部余量 4 = 133
         val panelH = PANEL_H
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, panelX, panelY, panelW, panelH, 0, DIALOG_BACKGROUND_TEX_H)
-        // 第一行卡名（英文全名超宽时格式码安全截断：§ 码不计宽、不拆码，截断处补 …）；第二行计数
-        val nameText = Text.translatable(titleKey)
+        // 第一行卡名（超宽时截断；走 truncateStyled 而非取 .string 重建 —— 卡名是逐字 RGB 上色的，
+        // 取字符串会把每个字的颜色一起丢掉）；第二行计数
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.literal(truncateFormatted(nameText.string, panelW - 12)),
+            TextUtil.truncateStyled(title, panelW - 12),
             panelX + panelW / 2, panelY + 7, titleColor
         )
         context.drawCenteredTextWithShadow(
@@ -480,7 +489,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         }
         entries.drop(offset).take(boardVisibleRows()).forEachIndexed { i, e ->
             val y = startY + i * rowHeight
-            context.fill(panelX + 4, y, panelX + panelW - 4, y + 1, 0xFF555555.toInt())
+            context.fill(panelX + 4, y, panelX + panelW - 4, y + 1, 0xFF888888.toInt())
             // 名字与头像都行内垂直居中（9px 字考虑基线取 y+6）；名字右移 2、头像左移 2，向中间靠拢。
             // 名字截断阈值从 panelW 反算（左内边距 6 + 名字右间隙 4 + 头像区 22），面板加宽时自动跟着走 ——
             // 原先写死 72 是照旧面板 104 算的，面板加宽到 128 后没跟着调、名字被白白提前截掉 24px
@@ -521,25 +530,6 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         var cut = name.length
         while (cut > 1 && textRenderer.getWidth(name.substring(0, cut) + "…") > maxWidth) cut--
         return name.substring(0, cut) + "…"
-    }
-
-    /** 带格式码文本截断（§ 码不计宽、不拆码；超宽时截断处补 …，保留已读入的颜色码） */
-    private fun truncateFormatted(text: String, maxWidth: Int): String {
-        var width = 0
-        var cut = 0
-        var i = 0
-        while (i < text.length) {
-            if (text[i] == '§' && i + 1 < text.length) {
-                i += 2
-                cut = i
-                continue
-            }
-            width += textRenderer.getWidth(text[i].toString())
-            if (width > maxWidth) break
-            i++
-            cut = i
-        }
-        return if (cut >= text.length) text else text.substring(0, cut) + "…"
     }
 
     // ── 皮肤头像（照 AdminAuctionScreen 模板：在线走列表条目纹理，离线走 skinProvider，失败 steve 兜底；按 UUID 缓存） ──

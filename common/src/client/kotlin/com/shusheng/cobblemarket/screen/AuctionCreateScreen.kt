@@ -803,22 +803,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         IconRegistry.beginFrame(mouseX, mouseY)
-        val panelLeft = width / 2 - 160
-        val panelTop = 2
-        val panelBottom = height - 32
-        val sliceH = 16
-
-        val top = Identifier.of("cobblemarket", "textures/gui/market_panel_auction_house_top.png")
-        val mid = Identifier.of("cobblemarket", "textures/gui/market_panel_middle.png")
-        val bot = Identifier.of("cobblemarket", "textures/gui/market_panel_bottom.png")
-
-        drawPanelSlice(context, top, panelLeft, panelTop)
-        var y = panelTop + sliceH
-        while (y < panelBottom - sliceH) {
-            drawPanelSlice(context, mid, panelLeft, y, minOf(sliceH, panelBottom - sliceH - y))
-            y += sliceH
-        }
-        drawPanelSlice(context, bot, panelLeft, panelBottom - sliceH)
+        // 顶部身份位放拍卖锤图标（复用界面内已有的 48x48 图标，见 MarketPanelBackground）
+        MarketPanelBackground.draw(context, width, height, HAMMER_TEX_LEFT)
 
         // IV 输入变化时重建过滤缓存（原 filteredPokemon 每次调用都先 syncIvFields，缓存后在此统一检测；
         // renderBackground 每帧先于 render 运行，检测一次即可覆盖本帧全部读缓存点）
@@ -861,18 +847,11 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         val centerX = width / 2
         val leftX = centerX - panelWidth / 2
 
-        context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.auction.create_title").formatted(Formatting.GOLD),
-            centerX, 20, 0xFFFFFF)
+        val titleText = Text.translatable("cobblemarket.auction.create_title").formatted(Formatting.GOLD)
+        context.drawCenteredTextWithShadow(textRenderer, titleText, centerX, 20, 0xFFFFFF)
 
-        // 余额（左上角，来自全局缓存）
-        val balText = com.shusheng.cobblemarket.client.BalanceCache.balance
-        if (balText.isNotEmpty()) {
-            context.drawTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.gui.balance",
-                    Text.literal(balText + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
-                leftX + 4, 20, 0xFFFFFF)
-        }
+        // 余额（左上角，来自全局缓存）；与标题同行，余额一长就压上去，降级规则见 drawHeaderBalance
+        drawHeaderBalance(context, textRenderer, centerX, leftX + 4, textRenderer.getWidth(titleText))
 
         val startY = getListStartY()
         drawPanelDivider(context, leftX + panelWidth / 2, startY - 2)
@@ -1144,7 +1123,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             } else if (line == null) {
                 // 分割线：1px 灰线，撑满提示框全宽（与信息区分隔线一致，不随证章数量变化）
                 val rowW = mw
-                context.fill(tx, rowY + 4, tx + rowW, rowY + 5, 0xFF555555.toInt())
+                context.fill(tx, rowY + 4, tx + rowW, rowY + 5, 0xFF888888.toInt())
                 rowY += 10
             } else if (i == heldItemLine) {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
@@ -1211,14 +1190,6 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     private fun buildItemTooltipLines(item: SellItem, type: net.minecraft.item.tooltip.TooltipType): List<Pair<Text, Int>> =
         com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(item.stack, client?.player, type).map { it to 0xFFFFFF }
-
-    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int, sliceH: Int = 16) {
-        context.matrices.push()
-        context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(0.5f, 0.5f * sliceH / 16f, 1f)
-        context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
-        context.matrices.pop()
-    }
 
     // ── 交互 ──
 
@@ -1304,5 +1275,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
         val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
+
+        /** 顶部身份位的拍卖锤图标（48x48，与拍卖场界面同一枚） */
+        val HAMMER_TEX_LEFT = Identifier.of("cobblemarket", "textures/gui/auction_gavel_left.png")
     }
 }

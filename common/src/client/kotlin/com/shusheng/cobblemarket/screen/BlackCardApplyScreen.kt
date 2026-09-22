@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.finance.CardNames
 import com.shusheng.cobblemarket.network.BlackCardApplyInfoPayload
 import com.shusheng.cobblemarket.network.RequestBlackCardApplyInfoPayload
 import com.shusheng.cobblemarket.network.RequestBlackCardApplyPayload
@@ -95,7 +96,7 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
         applyButton?.dimmed = !canApply
         if (isHolder) {
             // 持有者：按钮变「补发黑卡」（凭证丢失随时补）
-            applyButton?.message = Text.translatable("cobblemarket.card.black_redo_button")
+            applyButton?.message = CardNames.label("cobblemarket.card.black_redo_button")
             return
         }
         applyButton?.message = Text.translatable(
@@ -121,7 +122,9 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
         val dialogY = height / 2 - dialogH / 2
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.card.black_apply_title").formatted(Formatting.GOLD, Formatting.BOLD),
+            // 卡名走 CardNames 而非整条词条：词条是静态文本，颜色不会流动
+            Text.translatable("cobblemarket.card.apply_prefix").append(CardNames.genesis())
+                .formatted(Formatting.GOLD, Formatting.BOLD),
             centerX, dialogY + 14, 0xFFFFFF
         )
 
@@ -138,6 +141,12 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
                 scale = size / 16.0,
                 matrixStack = context.matrices
             )
+            // 悬停显示与物品栏一致的「卡名 + 说明」
+            if (mouseX in (centerX - size / 2)..(centerX + size / 2) &&
+                mouseY in (dialogY + 30)..(dialogY + 30 + size)
+            ) {
+                context.drawTooltip(textRenderer, CardNames.genesisTooltip(), mouseX, mouseY)
+            }
         }
 
         // 条件行（照交付精灵条件样式：标签 + 门槛/当前值 + ✓/✗ 绿红）
@@ -183,16 +192,16 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
                     val isNeedPurple = key == "cobblemarket.card.black_need_purple"
                     // 门槛 0/关 = 不要求，该行不显示（硬条件「持有紫卡」除外，恒显示）
                     if (!isNeedPurple && entry.requirement <= 0) return@forEachIndexed
-                    val label = Text.translatable(key).string
+                    val label = CardNames.labelString(key)
                     val isBool = isNeedPurple || key == "cobblemarket.op.scfg_apply_no_overdue" // 持有紫卡硬条件 / 无逾期记录项
                     // 图鉴两行是物种数不是金额，不带货币单位
                     val isDexCount = key == "cobblemarket.op.scfg_apply_seen" || key == "cobblemarket.op.scfg_apply_dex"
                     val valueText = when {
                         isBool -> if (entry.current > 0) {
-                            if (isNeedPurple) Text.translatable("cobblemarket.card.black_holds_purple").string
+                            if (isNeedPurple) CardNames.labelString("cobblemarket.card.black_holds_purple")
                             else Text.translatable("cobblemarket.card.apply_no_record").string
                         } else {
-                            if (isNeedPurple) Text.translatable("cobblemarket.card.black_no_purple").string
+                            if (isNeedPurple) CardNames.labelString("cobblemarket.card.black_no_purple")
                             else Text.translatable("cobblemarket.card.apply_has_record").string
                         }
                         isDexCount -> "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)}"

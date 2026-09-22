@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.finance.CardNames
 import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.ServerConfigDataPayload
@@ -16,7 +17,7 @@ import net.minecraft.util.Formatting
  * 自行申请黑卡条件配置界面（照紫卡条件配置界面）：七项门槛 + 申请费（0 = 不要求）。
  * 「持有紫卡」为硬条件不可配置，不在此界面。保存时条件字段提交编辑值、其余回填快照。
  */
-class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op.black_card_conditions")) {
+class BlackCardApplyConditionsScreen : Screen(CardNames.label("cobblemarket.op.black_card_conditions")) {
 
     // 放宽到 360：文字可用宽 = 宽 − 100（≈260px），放得下英文原文（最长约 221px）；
     // 窗口过小时收进屏幕内，此时标签回落到 truncateString 兜底
@@ -300,13 +301,13 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
         val dialogX = width / 2 - dialogW / 2
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.op.black_card_conditions").formatted(Formatting.GOLD, Formatting.BOLD),
+            CardNames.label("cobblemarket.op.black_card_conditions").formatted(Formatting.GOLD, Formatting.BOLD),
             centerX, dialogY() + 10, 0xFFFFFF
         )
         val startY = listStartY()
         var row = 0
         fun drawRowLine(rowY: Int) {
-            context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
+            context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF888888.toInt())
         }
         fun drawNumRow(def: NumDef, key: String) {
             if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
@@ -315,7 +316,7 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
                 context.drawTextWithShadow(
                     textRenderer,
                     TextUtil.truncateStyled(
-                        Text.translatable(def.labelKey),
+                        CardNames.label(def.labelKey),
                         ConfigFieldLayout.configLabelWidth(textRenderer, dialogW, key, def.labelKey)
                     ),
                     dialogX + 10, rowY + 7, 0xFFFFFF
@@ -329,7 +330,7 @@ class BlackCardApplyConditionsScreen : Screen(Text.translatable("cobblemarket.op
                 drawRowLine(rowY)
                 context.drawTextWithShadow(
                     textRenderer,
-                    Text.translatable(labelKey),
+                    CardNames.label(labelKey),
                     dialogX + 10, rowY + 7, 0xFFFFFF
                 )
             }

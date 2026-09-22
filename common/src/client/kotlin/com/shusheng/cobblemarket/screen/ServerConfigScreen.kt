@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.finance.CardNames
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.network.RequestServerConfigPayload
@@ -621,7 +622,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         var row = 0
         // 行顺序与 rebuildPositions 一致：原数字 → 原开关 → 金融数字 → 金融开关
         fun drawRowLine(rowY: Int) {
-            context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF555555.toInt())
+            context.fill(dialogX + 6, rowY, dialogX + dialogW - 6, rowY + 1, 0xFF888888.toInt())
         }
         fun drawNumRow(def: NumDef, key: String) {
             if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
@@ -630,7 +631,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 drawRowLine(rowY)
                 context.drawTextWithShadow(textRenderer,
                     TextUtil.truncateStyled(
-                        Text.translatable(def.labelKey),
+                        CardNames.label(def.labelKey),
                         ConfigFieldLayout.configLabelWidth(textRenderer, dialogW, key, def.labelKey)
                     ),
                     dialogX + 10, rowY + 7, 0xFFFFFF)
@@ -642,7 +643,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 val rowY = startY + (row - scrollOffset) * rowHeight
                 drawRowLine(rowY)
                 context.drawTextWithShadow(textRenderer,
-                    Text.translatable(labelKey),
+                    CardNames.label(labelKey),
                     dialogX + 10, rowY + 7, 0xFFFFFF)
             }
             row++

@@ -88,7 +88,7 @@ data class ItemCelebrationPayload(
     }
 }
 
-// ── S2C：发卡动画（紫金卡/黑金卡首次获得或补发）：卡片从申请界面图标位置放大飞到屏幕中央 ──
+// ── S2C：发卡动画（紫电卡/金轮卡首次获得或补发）：卡片从申请界面图标位置放大飞到屏幕中央 ──
 
 data class CardCelebrationPayload(
     val kind: String   // "purple" / "black"
@@ -145,7 +145,7 @@ object CelebrationNetwork {
     }
 
     /**
-     * 发卡动画（紫金卡/黑金卡首次获得或补发）：卡片从申请界面图标位置放大飞到屏幕中央，
+     * 发卡动画（紫电卡/金轮卡首次获得或补发）：卡片从申请界面图标位置放大飞到屏幕中央，
      * 像真的在发卡（客户端卡片放大动画，起点由申请界面点击时登记）。
      */
     fun sendCard(player: ServerPlayerEntity, kind: String) {
