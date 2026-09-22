@@ -501,9 +501,9 @@ class FinanceState private constructor() : PersistentState() {
         list.removeAll { now - it.at > pairWindowMs }
         val pairCount = list.count { it.counterpartyUuid == sellerUuid }
         val hasOpenLoan = loans.values.any { it.playerUuid == buyerUuid && it.status != LoanStatus.CLOSED }
-        val buyerOp = MarketPermissions.isOp(buyer)
+        val buyerIsOwner = MarketPermissions.isServerOwner(buyer)
         val buyerIp = latestIpOf(buyerUuid, now)
-        val sameIp = !buyerOp && buyerIp != null && buyerIp == latestIpOf(sellerUuid, now)
+        val sameIp = !buyerIsOwner && buyerIp != null && buyerIp == latestIpOf(sellerUuid, now)
         val counted = when {
             loanFunded || hasOpenLoan -> 0L
             pairCount >= CobbleMarketConfig.tradePairMaxTrades -> 0L

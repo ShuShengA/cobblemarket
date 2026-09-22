@@ -138,12 +138,12 @@ object PersistHelper {
         }
     }
 
-    /** 保存失败告警：日志 error + 给在线 OP 发显眼提示 */
+    /** 保存失败告警：日志 error + 给在线服主发显眼提示 */
     private fun alertSaveFailed(server: MinecraftServer) {
         CobbleMarket.LOGGER.error("CobbleMarket state save failed or was skipped (mtime unchanged after {} verification attempts)", verifyAttempts)
         val msg = net.minecraft.text.Text.translatable("cobblemarket.persist.save_failed").formatted(Formatting.RED)
         server.playerManager.playerList
-            .filter { MarketPermissions.isOp(it) }
+            .filter { MarketPermissions.isServerOwner(it) }
             .forEach { it.sendMessage(msg, false) }
     }
 
