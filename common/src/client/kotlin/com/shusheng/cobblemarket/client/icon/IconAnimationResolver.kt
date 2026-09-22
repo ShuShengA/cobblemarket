@@ -1,11 +1,11 @@
 package com.shusheng.cobblemarket.client.icon
 
 import com.shusheng.cobblemarket.client.ClientRestCache
-import com.shusheng.cobblemarket.client.CobbleMarketClient
 import com.cobblemon.mod.common.client.gui.calculateHeadYawAndPitch
 import com.cobblemon.mod.common.client.render.models.blockbench.PosableModel
 import com.cobblemon.mod.common.client.render.models.blockbench.PosableState
 import com.cobblemon.mod.common.client.render.models.blockbench.animation.ActiveAnimation
+import com.cobblemon.mod.common.client.render.models.blockbench.animation.PoseTransitionAnimation
 import com.cobblemon.mod.common.client.render.models.blockbench.animation.PrimaryAnimation
 import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockAnimation
 import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockAnimationRepository
@@ -73,15 +73,24 @@ object IconAnimationResolver {
 
         // 姿势优先级：战吼中 > 睡眠时段（且该物种有睡眠姿态）> 预览态走路 > 待机。
         // 睡眠优先于预览，正是「白天 walk / 晚上 sleep」；晚上又没有 sleep 姿态的物种继续走 walk。
+        // ⚠ **只有战吼（非过渡的 primary）才强制待机姿势** —— 姿势过渡**本身也是 primary**，
+        //   但它期间必须让 poseType 保持**目标姿势**：否则 `drawProfilePokemon` 里的
+        //   `setPoseToFirstSuitable` 会把 `currentPose` 切回待机，过渡一结束又判定"该睡"、再播一次
+        //   ⇒ **1 秒一轮的死循环**（2026-09-22 实测「所有动画播一秒就重置」就是这么来的；
+        //   悬停走路 WALK ⇄ PROFILE 同理）。
+        val battleCryRunning = state.primaryAnimation?.let { !it.animation.isTransition } == true
         val poseType = when {
             // ⚠ 战吼期间强制待机姿势：点击图标时鼠标**必然停在那一行上** → 行内图标正处于悬停预览态
             //   → 不拦就会切到走路姿势、战吼与走路动画混在一起（2026-09-22 日志实测 `pose=walking`），
             //   既看不出战吼、身体姿态也不是待机那个。primary 播完框架会自动清空，姿势随之恢复。
-            state.primaryAnimation != null -> PoseType.PROFILE
+            battleCryRunning -> PoseType.PROFILE
             isSleeping(renderable) && hasSleepPose(state) -> PoseType.SLEEP
             preview -> walkPoseOrProfile(state)
             else -> PoseType.PROFILE
         }
+
+        // 姿势要变就播一次过渡（待机 ↔ 睡眠这类），别瞬切。详见 [ensurePoseTransition] 的注释。
+        ensurePoseTransition(state, poseType)
 
         // 睡觉时头不跟随鼠标（用户拍板）。姿势的实际切换由 drawProfilePokemon 内部的
         // setPoseToFirstSuitable(poseType) 完成 —— 别在这里自己 setPose，会被那句覆盖（踩过）。
@@ -108,6 +117,64 @@ object IconAnimationResolver {
         // —— 若在这里自己 setPose，紧接着就会被那句覆盖掉（踩过一次）。
         return Result(poseType, yaw, pitch)
     }
+
+    /**
+     * 姿势要变时播一次过渡（待机 ↔ 睡眠这类），而不是瞬切。
+     *
+     * ⚠ **为什么现在能做、当年却判"做不了"**（2026-09-22 推翻了 2026-09-11 的结论）：
+     * 当年卡在「`drawProfilePokemon` 每帧无条件 `setPoseToFirstSuitable`，过渡期间 `currentPose`
+     * 会被切走」。但那其实**无害** —— primary 在跑时 `poseIntensity = 0`，`currentPose` 那条姿势的
+     * 动画强度归零、**不参与画面**；而 `PoseTransitionAnimation` 是**自足**的（先 `model.setDefault()`，
+     * 再自己把前后两个姿势按互补强度应用上去），压根不读 `currentPose`。**不需要 mixin。**
+     *
+     * ⚠ **必须在 `drawProfilePokemon` 之前调** —— `resolve()` 正好在那之前：此时 `currentPose`
+     * 还是**上一帧的旧姿势**，正好当过渡起点；`drawProfilePokemon` 随后把 `currentPose` 切成新的
+     * （强度 0、无害）。过渡播完 primary 自动清空，新姿势自然生效。
+     *
+     * 自洽性：过渡期间 `primaryAnimation != null` ⇒ 不会重复播；播完 `currentPose` 已是新姿势
+     * ⇒ 判据不成立 ⇒ 也不会再播。
+     */
+    private fun ensurePoseTransition(state: PosableState, poseType: PoseType) {
+        // ① 先清掉**已经播完**的过渡。
+        //   ⚠ **必须自己清**：`PoseTransitionAnimation.run` 的返回值是 `ratio <= 1F`，
+        //   而它上面有 `min(..., 1F)` ⇒ **恒为 true**，框架永远等不到它返回 false，
+        //   primary 会一直挂着、`poseIntensity` 恒为 0 ⇒ **所有姿势动画都不生效**。
+        //   症状（2026-09-22 实测踩到）：精灵晚上睡下后**白天醒不过来**，重开界面新建 state 才恢复。
+        //   官方的 `moveToPose` 是靠另设 `afterAction` 收尾清 primary 的；我们不走那条路，自己清更可控。
+        val running = state.primaryAnimation
+        if (running != null && running.animation.isTransition &&
+            running.started + running.duration <= state.animationSeconds
+        ) {
+            state.primaryAnimation = null
+            state.poseIntensity = 1F
+        }
+
+        val model = state.currentModel ?: return
+        // 首次渲染时 currentPose 为 null —— 没有旧姿势可插值，交给 drawProfilePokemon 直接切（从无到有）
+        val current = state.currentPose?.let { model.poses[it] } ?: return
+        // 已经有东西在跑（战吼、上一次过渡）就不打断
+        if (state.primaryAnimation != null) return
+        val target = model.getFirstSuitablePose(state, poseType)
+        if (target.poseName == current.poseName) return
+        state.addPrimaryAnimation(
+            PrimaryAnimation(
+                animation = PoseTransitionAnimation(
+                    beforePose = current,
+                    afterPose = target,
+                    durationTicks = poseTransitionTicks(current, target)
+                ),
+                excludedLabels = emptySet(),
+                curve = { 1f }
+            )
+        )
+    }
+
+    /**
+     * 姿势过渡时长（tick）：官方 `moveToPose` 取的是「目标的 `transformToTicks` ?: 源的 `transformTicks`」，
+     * 照抄 —— 读 poser 而不是写死，官方调了我们自动跟上。
+     */
+    private fun poseTransitionTicks(from: Pose, to: Pose): Int =
+        (to.transformToTicks ?: from.transformTicks).takeIf { it > 0 } ?: 10
 
     /**
      * 预览态用的姿势：模型注册了 MOVING_POSES 的姿势就返回 [PoseType.WALK]，否则退回 PROFILE。
@@ -207,11 +274,6 @@ object IconAnimationResolver {
     fun playBattleCry(state: PosableState, renderable: RenderablePokemon): Boolean {
         val group = animationGroup(renderable, "battle_cry")
         val model = state.currentModel
-        CobbleMarketClient.LOGGER.info(
-            "[battleCry] group=$group model=${model != null} pose=${state.currentPose} " +
-                "active=${state.activeAnimations.size} " +
-                "primary=${state.primaryAnimation != null} poseIntensity=${state.poseIntensity}"
-        )
         if (group == null || model == null) return false
         val cry = BedrockAnimationRepository.getAnimationOrNull(group, "animation.$group.battle_cry")
             ?: return false
@@ -261,11 +323,25 @@ object IconAnimationResolver {
 private val TRANSITION_CURVE: WaveFunction =
     sineFunction(amplitude = 0.5F, period = 2F, phaseShift = 0.5F, verticalShift = 0.5F)
 
-/** 该模型的「战斗姿势」（名字以 `battle-` 开头、排除睡眠那几个）；没有则 null。 */
+/**
+ * 该模型的「战斗姿势」；没有则 null。
+ *
+ * ⚠ **优先精确取 `battle-standing`**（陆地站立的战斗姿势），两条弯路都别再走：
+ * - **不能按前缀 `firstOrNull` 取**：1.8.1 把 `poses` 的 map 换成了无序的 `HashMap`，
+ *   喷火龙的 `battle-standing` / `battle-flying` 谁在前是随机的 —— 用户实测战吼后"变成飞行"。
+ * - **也不能按"当前姿势的介质"去配**（站立→standing、飞行→flying）：点击图标时鼠标必然停在
+ *   那一行上、当前姿势是**悬停的走路态**，喷火龙那里是飞行 ⇒ 又会配成 `battle-flying`（同样实测点破）。
+ *
+ * 本来就飞行 / 水生的物种**没有** `battle-standing` ⇒ 落到兜底；兜底按**名字排序**，
+ * 保证结果稳定、不再依赖 Map 顺序。
+ */
 private fun battlePoseOf(model: PosableModel): Pose? =
-    model.poses.entries
-        .firstOrNull { it.key.startsWith("battle-") && !it.key.contains("sleep") }
-        ?.value
+    model.poses["battle-standing"]
+        ?: model.poses.keys
+            .filter { it.startsWith("battle-") && !it.contains("sleep") }
+            .sorted()
+            .firstOrNull()
+            ?.let { model.poses[it] }
 
 /**
  * 该物种战斗姿势的**过渡时长**（秒），读不到返回 null。
@@ -308,6 +384,16 @@ private class PoseWithBattleCry(
 
     /** 「维持战斗姿态」的时长（秒）。用户 2026-09-22 要求 3~5 秒，取 3.5。 */
     private val holdSeconds = 3.5f
+
+    /**
+     * 「战吼段 → 维持段」交界处的交叉淡化时长（秒）。
+     *
+     * ⚠ 两段跑的是**两套不同的动画**（战吼 / 战斗 idle），交界处若硬换，骨骼会在那一刻
+     * 突然换一套、看着像"切换"（用户 2026-09-22 报「战吼连接战斗姿态之间有切换感」，
+     * 而两头是平顺的 —— 因为只有两头做了缓动，段与段之间没做）。
+     * 淡化期间战吼渐出、战斗 idle 渐入，权重互补，接缝就没了。
+     */
+    private val crossoverSeconds = 0.4f
 
     /**
      * 战吼本身的时长（秒），之后才进维持段。
@@ -364,14 +450,18 @@ private class PoseWithBattleCry(
         intensity: Float
     ): Boolean {
         val elapsed = state.animationSeconds - startedSeconds
+        // 交界处的交叉权重：战吼段末尾 [crossoverSeconds] 内由 0 升到 1（进维持段后恒为 1）。
+        // 战吼强度取 `1 - 它`、战斗 idle 取`它`，两者互补 ⇒ 接缝处不会"换一套骨骼"。
+        val cross = crossoverSeconds.coerceAtMost(crySeconds / 2f)
+        val crossT = ((elapsed - (crySeconds - cross)) / cross).coerceIn(0f, 1f)
         return if (elapsed < crySeconds) {
             // ① 战吼段：只动末端骨骼的战吼要先补一份战斗 idle，否则身体没东西撑、掉回 rest pose。
-            //    自带躯干的（火焰鸡那类）反而**不能**补 —— 累加会把两份旋转加起来（手跑到胸前）。
-            if (!selfContained) {
-                battleStanceIdle(model)
-                    ?.run(model, state, state.animationSeconds, limbSwing, limbSwingAmount, ageInTicks, intensity)
-            }
-            cry.run(model, state, elapsed, limbSwing, limbSwingAmount, ageInTicks, intensity)
+            //    自带躯干的（火焰鸡那类）**不补** —— 累加会把两份旋转加起来（手跑到胸前）；
+            //    但它们在这里靠交叉淡化把战斗 idle **渐入**（`crossT` 从 0 开始），同样接得上。
+            val idleWeight = if (selfContained) crossT else 1f
+            battleStanceIdle(model)
+                ?.run(model, state, state.animationSeconds, limbSwing, limbSwingAmount, ageInTicks, intensity * idleWeight)
+            cry.run(model, state, elapsed, limbSwing, limbSwingAmount, ageInTicks, intensity * (1f - crossT))
         } else {
             // ② 维持段：只跑战斗 idle，撑住"战斗姿态"
             // ⚠ 强度必须跟着 [intensity] 走，**不能写死 1f**：收尾缓出时框架的待机/走路 idle
