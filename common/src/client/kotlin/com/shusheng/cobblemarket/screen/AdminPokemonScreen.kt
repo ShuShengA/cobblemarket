@@ -16,6 +16,7 @@ import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
+import com.shusheng.cobblemarket.client.icon.PokemonIconData
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.network.AdminCancelPokemonPayload
@@ -119,15 +120,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
      */
     private var confirmCryAt = 0L
 
-    private data class IconData(
-        val displayName: String,
-        val renderable: RenderablePokemon,
-        val state: FloatingState,
-        // 球种/携带物栈随图标缓存：render 每帧 new ItemStack 是分配热点，构建一次复用
-        val ballStack: ItemStack?,
-        val heldStack: ItemStack?
-    )
-    private val iconData = mutableMapOf<Int, IconData>()
+    private val iconData = mutableMapOf<Int, PokemonIconData>()
 
     private fun cacheIcons() {
         iconData.clear()
@@ -139,7 +132,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
             // 携带物同时喂给模型（Cobblemon 会渲染在手上/嘴上）与行内小图标
             val held = heldIconStack(entry.heldItemId, entry.heldItemNbt)
-            iconData[index] = IconData(
+            iconData[index] = PokemonIconData(
                 species.translatedName.string,
                 RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
                 FloatingState(),

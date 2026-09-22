@@ -18,6 +18,7 @@ import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.icon.ItemHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
+import com.shusheng.cobblemarket.client.icon.PokemonIconData
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.network.CreateItemAuctionPayload
@@ -95,14 +96,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         typeFilter = allTypes[typeIdx].second
     }
 
-    private data class IconData(
-        val renderable: RenderablePokemon,
-        val state: FloatingState,
-        // 球种/携带物栈随图标缓存：render 每帧 new ItemStack 是分配热点，构建一次复用
-        val ballStack: ItemStack?,
-        val heldStack: ItemStack?
-    )
-    private val iconData = mutableMapOf<Int, IconData>()
+    private val iconData = mutableMapOf<Int, PokemonIconData>()
 
     private val speciesNameCache = mutableMapOf<String, String>()
     private fun speciesDisplay(p: PokemonPreview): String =
@@ -121,9 +115,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             if (p.shiny && "shiny" !in aspects) aspects.add("shiny")
             // 携带物同时喂给模型（Cobblemon 会渲染在手上/嘴上）与行内小图标
             val held = heldIconStack(p.heldItemId, p.heldItemNbt)
-            iconData[i] = IconData(
-                RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
-                FloatingState(),
+            iconData[i] = PokemonIconData(
+                renderable = RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
+                state = FloatingState(),
                 ballStack = buildBallStack(p.ball),
                 heldStack = held
             )

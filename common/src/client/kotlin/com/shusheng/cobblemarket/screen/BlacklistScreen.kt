@@ -9,6 +9,7 @@ import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
+import com.shusheng.cobblemarket.client.icon.PokemonIconData
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.cobblemon.mod.common.pokemon.Species
@@ -167,8 +168,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private var heldAddMode = false
     private var previewCandidate: com.shusheng.cobblemarket.client.ItemCandidate? = null
 
-    private data class IconData(val displayName: String, val renderable: RenderablePokemon, val state: FloatingState)
-    private val iconData = mutableMapOf<Int, IconData>()
+    private val iconData = mutableMapOf<Int, PokemonIconData>()
     private val iconSize = 20
 
     private fun getListStartY() = 86
@@ -1021,7 +1021,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             // 仅闪光条目叠加 shiny aspect 渲染闪光配色（与对话框预览 refreshPreviewModel 一致）
             val aspects = entry.aspects.toMutableSet()
             if (entry.shinyFilter == PokemonBlacklistEntry.SHINY_YES) aspects.add("shiny")
-            iconData[index] = IconData(com.shusheng.cobblemarket.util.SpeciesText.displayName(species), RenderablePokemon(species, aspects, ItemStack.EMPTY), FloatingState())
+            iconData[index] = PokemonIconData(com.shusheng.cobblemarket.util.SpeciesText.displayName(species), RenderablePokemon(species, aspects, ItemStack.EMPTY), FloatingState())
         }
     }
 
