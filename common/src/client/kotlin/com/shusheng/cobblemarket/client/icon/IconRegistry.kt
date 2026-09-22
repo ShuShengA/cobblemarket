@@ -34,9 +34,36 @@ object IconRegistry {
     var mouseY: Int = 0
         private set
 
-    /** 开始一帧的登记：清空上一帧的图标，并记下本帧鼠标位置。 */
+    /**
+     * 「正被大图预览」的 state —— 让**行内小图自动与大图保持同一意图**（都切走路姿势）。
+     *
+     * ⚠ **为什么要它**：同一个 `PosableState` 若被两个调用点用**不同的 `preview`** 渲染，
+     * 两者会每帧把 `currentPose` 掰向自己、**姿势过渡被反复触发**（2026-09-22 实测：
+     * 日志里过渡的重复周期**正好等于过渡时长**）。`SellSelectScreen` 的选中行就是这种结构
+     * —— 大图常驻，而鼠标已经不在那一行上（大图要 WALK、小图要 PROFILE）。
+     * 有了它，**任何界面只要用了大图，小图就自动跟上**，不必每个界面各自写对。
+     */
+    private val previewingStates = mutableSetOf<PosableState>()
+    private var lastPreviewingStates: Set<PosableState> = emptySet()
+
+    /**
+     * 大图渲染时登记：这个 state 正在被预览。
+     *
+     * ⚠ 对 [isPreviewing] **下一帧**才可见 —— 大图渲染在小图**之后**，同帧内小图读不到本帧的标记。
+     * 差一帧对姿势过渡完全无感（过渡本身就是渐变的）。
+     */
+    fun markPreviewing(state: PosableState) {
+        previewingStates += state
+    }
+
+    /** 该 state 是否正被大图预览（读的是**上一帧**的登记，见 [markPreviewing]）。 */
+    fun isPreviewing(state: PosableState): Boolean = state in lastPreviewingStates
+
+    /** 开始一帧的登记：清空上一帧的图标、轮转预览标记，并记下本帧鼠标位置。 */
     fun beginFrame(mouseX: Int, mouseY: Int) {
         entries.clear()
+        lastPreviewingStates = previewingStates.toSet()
+        previewingStates.clear()
         this.mouseX = mouseX
         this.mouseY = mouseY
     }

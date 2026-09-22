@@ -682,7 +682,15 @@ class SellSelectScreen(
             context.matrices.pop()
             val iconX = lx + 2
             val iconY = y + 2
-            renderPokemonIcon(context, origIdx, iconX, iconY, iconSize, delta = delta, preview = i == hovered)
+            // ⚠ **选中行也要 preview**：本界面的选中行**大图常驻**（见下方 `hoveredEntry ?: selectedEntry`），
+            //   小图不跟着走的话，同一个 state 会被两个调用点用不同意图掰、姿势过渡反复触发
+            //   （2026-09-22 实测，详见 `PokemonIconRenderer.draw` 里 `isPreviewing` 那段注释）。
+            //   这里显式写出来是为了**当帧立即生效**；通用兜底（`IconRegistry.markPreviewing`）
+            //   要下一帧才起作用 —— 两者都留着，一处管"意图"、一处管"防忘"。
+            renderPokemonIcon(
+                context, origIdx, iconX, iconY, iconSize, delta = delta,
+                preview = i == hovered || i == selectedIndex
+            )
 
             // Species（[队]/[PC] 固定色，精灵名属性色 + 金色闪光星标拆段绘制；PC 用电脑物品图标，[] 保持原色）
             val tc = typeColor(if (e.primaryType.isNotEmpty()) e.primaryType else "cobblemon.type.normal")

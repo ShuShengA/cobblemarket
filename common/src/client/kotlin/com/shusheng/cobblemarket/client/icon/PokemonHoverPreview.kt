@@ -52,6 +52,9 @@ object PokemonHoverPreview {
     ) {
         // 设置里「精灵预览图」关掉时不显示（默认开）；居中模式不受开关约束
         if (centerX == null && !com.shusheng.cobblemarket.client.ClientConfig.hoverPreview) return
+        // 登记「这个 state 正在被大图预览」⇒ 行内小图下一帧会自动跟着切走路姿势。
+        // ⚠ 别省：同一个 state 被两处用不同 preview 渲染会让姿势过渡反复触发（见该函数的注释）。
+        IconRegistry.markPreviewing(state)
 
         // 基准是左侧空白区的中点（面板左缘与屏幕左缘之间），再减去模型自身的偏右量。
         // 注意别加"模型半宽"之类的下限兜底：面板偏窄时那会把模型从中心一路拽到右边去。
