@@ -823,7 +823,7 @@ class BuyOrderScreen(
         infoLines.drop(1).forEachIndexed { i, (line, color) ->
             val rowY = viewTop + i * 10 - forceScroll
             if (line == null) {
-                context.fill(centerX - contentW / 2, rowY + 4, centerX + contentW / 2, rowY + 5, 0xFF555555.toInt())
+                context.fill(centerX - contentW / 2, rowY + 4, centerX + contentW / 2, rowY + 5, 0xFF888888.toInt())
             } else {
                 context.drawCenteredTextWithShadow(textRenderer, line, centerX, rowY, color)
             }
@@ -855,22 +855,9 @@ class BuyOrderScreen(
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         IconRegistry.beginFrame(mouseX, mouseY)
-        val panelLeft = width / 2 - panelWidth / 2
-        val panelTop = 2
-        val panelBottom = height - 32
-        val sliceH = 16
-
-        drawSlice(context, BUY_ORDER_PANEL_TOP, panelLeft, panelTop)
-        var y = panelTop + sliceH
-        // 整段 middle，末段按剩余高度拉伸（防止压进 bottom 区域）
-        while (y + sliceH <= panelBottom - sliceH) {
-            drawSlice(context, BUY_ORDER_PANEL_MIDDLE, panelLeft, y)
-            y += sliceH
-        }
-        if (y < panelBottom - sliceH) {
-            drawSliceStretched(context, BUY_ORDER_PANEL_MIDDLE, panelLeft, y, panelBottom - sliceH - y)
-        }
-        drawSlice(context, BUY_ORDER_PANEL_BOTTOM, panelLeft, panelBottom - sliceH)
+        // 顶部身份位放求购单图标（复用界面内已有的 48x48 图标，见 MarketPanelBackground）。
+        // ⚠ 本界面面板宽 296 是特例（常例 320），行与控件已按 PANEL_BORDER_X 补偿，别顺手改成 320
+        MarketPanelBackground.draw(context, width, height, BUY_ORDER_ICON, panelWidth)
 
         val startY = getListStartY()
         val visibleRows = getMaxVisibleRows()
@@ -901,21 +888,16 @@ class BuyOrderScreen(
         val centerX = width / 2
         val leftX = centerX - panelWidth / 2
 
-        context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable(if (adminMode) "cobblemarket.op.buy_order" else "cobblemarket.buy_order.title").formatted(Formatting.GOLD),
-            centerX, 20, 0xFFFFFF)
+        val titleText = Text.translatable(
+            if (adminMode) "cobblemarket.op.buy_order" else "cobblemarket.buy_order.title").formatted(Formatting.GOLD)
+        context.drawCenteredTextWithShadow(textRenderer, titleText, centerX, 20, 0xFFFFFF)
 
-        // 余额（左上角，避开背景左边框，来自全局缓存）
-        val balText = com.shusheng.cobblemarket.client.BalanceCache.balance
-        if (balText.isNotEmpty()) {
-            context.drawTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.gui.balance",
-                    Text.literal(balText + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
-                leftX + PANEL_BORDER_X + 2, 20, 0xFFFFFF)
-        }
+        // 余额（左上角，避开背景左边框，来自全局缓存）；与标题同行，余额一长就压上去，
+        // 降级规则见 drawHeaderBalance（本界面标题在管理模式下属另一词条，长度不同，故现算）
+        drawHeaderBalance(context, textRenderer, centerX, leftX + PANEL_BORDER_X + 2, textRenderer.getWidth(titleText))
 
         // 分隔线缩进到行区域（不压背景左右边框）
-        context.fill(rowL, startY - 2, rowL + rowW(), startY - 1, 0xFF555555.toInt())
+        context.fill(rowL, startY - 2, rowL + rowW(), startY - 1, 0xFF888888.toInt())
 
         val displayList = displayList()
 
@@ -1009,25 +991,6 @@ class BuyOrderScreen(
                 "${scrollOffset + 1}-${minOf(scrollOffset + getMaxVisibleRows(), displayCount())} / ${displayCount()}",
                 centerX, height - 49, 0x888888)
         }
-    }
-
-    // 320×32 纹理：整图（含左右边框）横向拉伸至面板宽、纵向 0.5 缩为 16 逻辑高。
-    // 只画局部再拉伸会导致右边框丢失，按钮看起来超出背景
-    private fun drawSlice(context: DrawContext, texture: Identifier, x: Int, y: Int) {
-        // 贴图 640×32：x 方向按面板宽/640 缩放，采样整张（320 旧贴图时是 /320 采样 320 宽）
-        context.matrices.push()
-        context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(panelWidth / 640f, 0.5f, 1f)
-        context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
-        context.matrices.pop()
-    }
-
-    private fun drawSliceStretched(context: DrawContext, texture: Identifier, x: Int, y: Int, h: Int) {
-        context.matrices.push()
-        context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(panelWidth / 640f, h / 32f, 1f)
-        context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
-        context.matrices.pop()
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -1208,7 +1171,7 @@ class BuyOrderScreen(
         lines.forEachIndexed { i, (line, color) ->
             if (line == null) {
                 // 分割线（照拍卖规则面板：1px 灰线，行内居中）
-                context.fill(tx, ty + i * 10 + 4, tx + maxWidth, ty + i * 10 + 5, 0xFF555555.toInt())
+                context.fill(tx, ty + i * 10 + 4, tx + maxWidth, ty + i * 10 + 5, 0xFF888888.toInt())
             } else {
                 context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
             }
@@ -3265,10 +3228,9 @@ class BuyOrderScreen(
         // 内容区左右内缩：求购单专属面板纹理的边框视觉宽约 10~12px，8px 会盖住边框装饰（行/分割线/按钮统一 12）
         private const val PANEL_BORDER_X = 12
         private const val PANEL_BORDER_Y = 17
-        private val BUY_ORDER_PANEL_TOP = Identifier.of("cobblemarket", "textures/gui/buy_order_panel_top.png")
-        // 中间/底部与精灵市场共用（贴图内容一致，顶部专用）
-        private val BUY_ORDER_PANEL_MIDDLE = Identifier.of("cobblemarket", "textures/gui/market_panel_middle.png")
-        private val BUY_ORDER_PANEL_BOTTOM = Identifier.of("cobblemarket", "textures/gui/market_panel_bottom.png")
+        // 顶部身份位图标（48x48，与入场界面求购单入口按钮同一枚）。
+        // 顶部背景已并入通用三张拼接，不再有求购单专属的 buy_order_panel_top.png
+        private val BUY_ORDER_ICON = Identifier.of("cobblemarket", "textures/gui/buy_order_icon.png")
         // 精灵槽背景（行内与创建弹窗预览槽共用）
         private val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
         // 按钮贴图（40×80 = 普通/悬停两段），求购单界面所有按钮统一使用。
