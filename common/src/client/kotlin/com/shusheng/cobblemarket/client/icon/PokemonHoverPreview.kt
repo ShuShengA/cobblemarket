@@ -52,8 +52,6 @@ object PokemonHoverPreview {
     ) {
         // 设置里「精灵预览图」关掉时不显示（默认开）；居中模式不受开关约束
         if (centerX == null && !com.shusheng.cobblemarket.client.ClientConfig.hoverPreview) return
-        // 大图与行内图标共用同一个 state，播放完毕的主动画由这里兜底放手（详见该方法的注释）
-        IconAnimationResolver.clearExpiredPrimaryAnimation(state)
 
         // 基准是左侧空白区的中点（面板左缘与屏幕左缘之间），再减去模型自身的偏右量。
         // 注意别加"模型半宽"之类的下限兜底：面板偏窄时那会把模型从中心一路拽到右边去。

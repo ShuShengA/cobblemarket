@@ -8,10 +8,11 @@ import kotlin.random.Random
  * 点击精灵图标时播放叫声（普通 `cry` 与战吼 `battle_cry` **随机**二选一），各个界面共用。
  *
  * **动作与声音都不用分别写代码**：
- * - 动画：**随机**在普通叫与战吼之间二选一。**战吼**取主动画版（独占，否则会和走路动画
- *   混合成四不像，见 [IconAnimationResolver.primaryAnimationName]）；**普通叫保持叠加** ——
- *   官方就把它注册成叠加，它只提供嘴/头部的关键帧、身体靠姿势动画撑着，独占会让模型错位。
- *   114 个物种有战吼，将来 Cobblemon 补上更多时这边不用改代码就自动生效
+ * - 动画：**随机**在普通叫与战吼之间二选一，两者都是**叠加**（战吼见
+ *   [IconAnimationResolver.playBattleCry]，与官方 cry 同一个 `BedrockActiveAnimation` 类型）。
+ *   ⚠ **都别改成主动画版（`:primary`）**：它会把姿势的基础待机动画一并 dump 掉、模型掉回 rest pose
+ *   （2026-09-15 普通叫踩过、2026-09-22 战吼又踩一次）。114 个物种有战吼，
+ *   将来 Cobblemon 补上更多时这边不用改代码就自动生效
  * - 声音：`FloatingState` 没有 entity，Cobblemon 的 `BedrockSoundKeyframe` 会走
  *   `SimpleSoundInstance.forUI(...)` 自动播出来
  *
@@ -55,17 +56,14 @@ object IconCryClick {
         // 先清掉正在播的，避免连点叠加动画（节流之外的兜底）
         state.activeAnimations.clear()
         // 普通叫与战吼**随机**二选一（用户拍板：每次点击都吼太单调）。
-        // ⚠ 只有**战吼**走主动画版（独占）—— 它是"发力"动作，叠加会和走路/待机动画混合成四不像。
-        //   普通叫**必须保持叠加**：官方就是这么注册的（火焰鸡 poser 顶层 animations 里
-        //   `"cry": "q.bedrock_stateful(...)"`，而招式类是 `q.bedrock_primary(...)`），
-        //   它只提供嘴/头部的关键帧，身体姿态靠姿势动画撑着；强行独占会让其余骨骼掉回
-        //   rest pose —— 整个模型错位（2026-09-15 实测踩到并回退）。
-        val candidates = mutableListOf<String>()
-        if (Random.nextBoolean()) {
-            IconAnimationResolver.primaryAnimationName(renderable, "battle_cry")?.let(candidates::add)
-        }
-        candidates.add("cry")
-        state.addFirstAnimation(candidates.toSet())
+        // ⚠ 战吼**不能**再用主动画版（`:primary`）：那会把姿势的基础待机动画一并 dump 掉、
+        //   模型掉回 rest pose —— 暴鲤龙整个立起来、化石翼龙 4 段翅膀变直纸片（2026-09-22 用户报）。
+        //   现在走 [IconAnimationResolver.playBattleCry]（官方同款叠加对象）。
+        if (Random.nextBoolean() && IconAnimationResolver.playBattleCry(state, renderable)) return
+        // 没随机到战吼 / 该物种没战吼 / 模型还没建好 → 普通叫。
+        // 它同样必须**叠加**（官方注册的就是 `q.bedrock_stateful`）：只提供嘴/头部的关键帧，
+        // 身体姿态靠姿势动画撑着，独占会让其余骨骼掉回 rest pose（2026-09-15 实测踩到并回退）。
+        state.addFirstAnimation(setOf("cry"))
     }
 
     /** 命中检测：返回鼠标位置下的图标（精确到图标矩形），没有则 null。 */
