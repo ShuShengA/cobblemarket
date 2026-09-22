@@ -143,7 +143,7 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
         if (revokeEntry != null) return
         // ⚠ 必须与行渲染里的 hasRevoke 判定**完全一致**：不一致就会出现「按钮建出来了、
         // 金额却没为它让位」的完全重叠（2026-09-12 踩过，只有有金融管理节点的普通玩家触发）
-        if (!showAll || !ClientPermissionCache.isOp()) return
+        if (!showAll || !ClientPermissionCache.isServerOwner()) return
         val leftX = width / 2 - panelWidth / 2
         val rowHeight = 24
         val startY = 48
@@ -327,8 +327,8 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
             val statusText = Text.translatable("cobblemarket.loan_history.status.${e.status}").string
 
             val leftX = width / 2 - panelHalf
-            // 撤销按钮占最右 48px（仅 OP 全服流水的坏账行）
-            val hasRevoke = showAll && e.status == "BAD_DEBT" && ClientPermissionCache.isOp()
+            // 撤销按钮占最右 48px（仅服主的全服流水坏账行）
+            val hasRevoke = showAll && e.status == "BAD_DEBT" && ClientPermissionCache.isServerOwner()
             val rightReserved = if (hasRevoke) 48 else 0
             var x = leftX + 5
             context.drawTextWithShadow(textRenderer, time, x, y + 8, 0x888888)
@@ -351,11 +351,11 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
             val e = visibleEntries[hoveredRow]
             val fullTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date(e.timestamp))
             val statusText = Text.translatable("cobblemarket.loan_history.status.${e.status}").string
-            // 撤销按钮（仅 OP 全服流水的坏账行）：**鼠标落在它上面时整个不画悬停窗** ——
+            // 撤销按钮（仅服主的全服流水坏账行）：**鼠标落在它上面时整个不画悬停窗** ——
             // 玩家那时正要点击、不需要详情；且悬停窗就算压住按钮，鼠标移过去也会立刻消失，
             // 所以不可能出现「想点却被挡住」（与精灵市场行按钮同一套处理）。
             // ⚠ 几何必须与 rebuildRowButtons 里建按钮的算式同源，否则会出现「在按钮上却不消失」
-            val revokeRect = if (showAll && ClientPermissionCache.isOp() && e.status == "BAD_DEBT")
+            val revokeRect = if (showAll && ClientPermissionCache.isServerOwner() && e.status == "BAD_DEBT")
                 TooltipPlacement.Rect(width / 2 - panelWidth / 2 + panelWidth - 48, startY + hoveredRow * rowHeight + 4, 44, 16)
             else null
             // 颜色与行内一一对应：状态用状态色、时间灰、主体白、剩余本金走账本蓝（0x55FFFF）

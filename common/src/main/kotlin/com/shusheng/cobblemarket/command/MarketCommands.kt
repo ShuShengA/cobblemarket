@@ -19,10 +19,12 @@ import com.shusheng.cobblemarket.network.MarketStatePayload
 import com.shusheng.cobblemarket.platform.onPlayerJoin
 import com.shusheng.cobblemarket.platform.registerCommands
 import com.shusheng.cobblemarket.platform.sendToPlayer
+import net.minecraft.server.MinecraftServer
 import net.minecraft.server.command.CommandManager
 import net.minecraft.server.command.ServerCommandSource
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
+import java.util.UUID
 
 object MarketCommands {
 
@@ -66,11 +68,15 @@ object MarketCommands {
                         .executes(::marketOff)
                     )
                     .then(CommandManager.literal("reload")
-                        .requires { MarketPermissions.has(it, MarketPermissions.CONFIG) }
+                        // ⚠ **保持 OP 可用**（2026-09-23 服主制改制时有意保留）：它只是只读重载、
+                        // 不改任何东西，而服主手编完 config/cobblemarket.json 得靠它生效 ——
+                        // 收紧成服主专属等于把「手编配置」这条自救路径堵死
+                        .requires { it.hasPermissionLevel(2) }
                         .executes(::reloadConfig)
                     )
                     .then(CommandManager.literal("loan")
-                        .requires { it.hasPermissionLevel(2) }   // 撤销坏账只限 OP（服主干预，不随管理节点授予）
+                        // 撤销坏账只限服主（干预手段，不随管理节点授予）
+                        .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
                         .then(CommandManager.literal("clear")
                             .then(CommandManager.argument("player", StringArgumentType.word())
                                 .suggests(::suggestOnlinePlayerNames)
@@ -117,9 +123,11 @@ object MarketCommands {
                         )
                     )
                     .then(CommandManager.literal("perm")
-                        // 权限授予是**服主专属**：只认 OP，不下放给任何管理节点 ——
-                        // 否则持有 config 节点的人能给自己加满全部节点（提权）
-                        .requires { it.hasPermissionLevel(2) }
+                        // 权限授予是**服主专属**：不下放给任何管理节点 ——
+                        // 否则持有任一节点的人能给自己加满全部节点（提权）。
+                        // ⚠ requires 里带上 OP 是为了让游戏内 OP 敲得进来、看到「仅服主可执行」的红字提示；
+                        //   真正的鉴权在每个执行函数首行（denyNonOwner），别把这行当成放行
+                        .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
                         .then(CommandManager.literal("grant")
                             .then(CommandManager.argument("player", StringArgumentType.word())
                                 .suggests(::suggestOnlinePlayerNames)
@@ -144,6 +152,29 @@ object MarketCommands {
                                 .suggests(::suggestOnlinePlayerNames)
                                 .executes { ctx -> permList(ctx, StringArgumentType.getString(ctx, "player")) }
                             )
+                        )
+                    )
+                    .then(CommandManager.literal("owner")
+                        // 服主名单是整套权限的**根**：只认服务器控制台 ——
+                        // 游戏内 OP 敲会看到「仅限服务器控制台执行」（requires 放它们进来只为给提示，
+                        // 真正的鉴权是各执行函数首行的 isConsole 判定）；
+                        // ⚠ **绝不能改成 entity == null 判控制台**：命令方块的 entity 也是 null，
+                        //   那样 OP 在游戏里放个命令方块写 /market owner add 自己 就把自己加成服主了
+                        .requires { MarketPermissions.isConsole(it) || it.hasPermissionLevel(2) }
+                        .then(CommandManager.literal("add")
+                            .then(CommandManager.argument("player", StringArgumentType.word())
+                                .suggests(::suggestOnlinePlayerNames)
+                                .executes(::ownerAdd)
+                            )
+                        )
+                        .then(CommandManager.literal("remove")
+                            .then(CommandManager.argument("player", StringArgumentType.word())
+                                .suggests(::suggestOnlinePlayerNames)
+                                .executes(::ownerRemove)
+                            )
+                        )
+                        .then(CommandManager.literal("list")
+                            .executes(::ownerList)
                         )
                     )
             )
@@ -328,6 +359,7 @@ object MarketCommands {
     }
 
     private fun permGrant(context: CommandContext<ServerCommandSource>): Int {
+        if (denyNonOwner(context)) return 0
         val source = context.source
         val node = resolveNode(StringArgumentType.getString(context, "node"))
         if (node == null) {
@@ -369,6 +401,7 @@ object MarketCommands {
     }
 
     private fun permRevoke(context: CommandContext<ServerCommandSource>): Int {
+        if (denyNonOwner(context)) return 0
         val source = context.source
         val node = resolveNode(StringArgumentType.getString(context, "node"))
         if (node == null) {
@@ -409,6 +442,7 @@ object MarketCommands {
 
     /** 无参 = 列全部授予记录；带玩家名 = 列该玩家的节点 */
     private fun permList(context: CommandContext<ServerCommandSource>, nameArg: String?): Int {
+        if (denyNonOwner(context)) return 0
         val source = context.source
         val state = PermissionState.get(source.server)
         if (nameArg == null) {
@@ -433,6 +467,130 @@ object MarketCommands {
         }
         source.sendFeedback({ permLine(target.second, nodes) }, false)
         return nodes.size
+    }
+
+    // ── /market owner：服主名单（整套权限的根，只认服务器控制台） ──
+
+    /**
+     * 服主专属命令的统一守卫：非服主（含游戏内 OP、RCON、命令方块）给红字提示并中止。
+     * 用法：`if (denyNonOwner(context)) return 0`。
+     * ⚠ requires 里放 OP 进来只为给这句提示，**真正的鉴权在这里**
+     */
+    private fun denyNonOwner(context: CommandContext<ServerCommandSource>): Boolean {
+        if (MarketPermissions.isServerOwner(context.source)) return false
+        context.source.sendError(Text.translatable("cobblemarket.perm.owner_only"))
+        return true
+    }
+
+    /** 控制台专属命令的守卫（/market owner）：游戏内 OP 与 RCON 都拒，只有真控制台过 */
+    private fun denyNonConsole(context: CommandContext<ServerCommandSource>): Boolean {
+        if (MarketPermissions.isConsole(context.source)) return false
+        context.source.sendError(Text.translatable("cobblemarket.owner.console_only"))
+        return true
+    }
+
+    /**
+     * 解析服主参数：**先按 UUID 试**（服主可直接贴 UUID —— 要加的人可能从没上线过、
+     * userCache 里查不到），再按名字查（在线 → userCache）。都查不到返回 null。
+     */
+    private fun resolveOwnerArg(server: MinecraftServer, raw: String): Pair<UUID, String>? {
+        val trimmed = raw.trim()
+        val byUuid = try {
+            UUID.fromString(trimmed)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+        if (byUuid != null) {
+            val name = server.playerManager.getPlayer(byUuid)?.name?.string
+                ?: server.userCache?.getByUuid(byUuid)?.orElse(null)?.name
+            return byUuid to (name ?: byUuid.toString())
+        }
+        return BanState.resolvePlayer(server, trimmed)
+    }
+
+    /** `/market owner add <玩家名|UUID>`：加入服主名单（立即生效并落盘，无需重启或 reload） */
+    private fun ownerAdd(context: CommandContext<ServerCommandSource>): Int {
+        if (denyNonConsole(context)) return 0
+        val source = context.source
+        val server = source.server
+        val raw = StringArgumentType.getString(context, "player")
+        val target = resolveOwnerArg(server, raw)
+        if (target == null) {
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", raw))
+            return 0
+        }
+        if (!CobbleMarketConfig.addServerOwner(target.first)) {
+            source.sendError(Text.translatable("cobblemarket.owner.already", target.second))
+            return 0
+        }
+        // 在线即时生效：重推快照，他立刻拿到服主身份与全部管理节点
+        PermissionNetwork.refresh(server, target.first)
+        source.sendFeedback(
+            { Text.translatable("cobblemarket.owner.added", target.second, target.first.toString()).formatted(Formatting.GREEN) },
+            true
+        )
+        return 1
+    }
+
+    /** `/market owner remove <玩家名|UUID>`：移出服主名单 */
+    private fun ownerRemove(context: CommandContext<ServerCommandSource>): Int {
+        if (denyNonConsole(context)) return 0
+        val source = context.source
+        val server = source.server
+        val raw = StringArgumentType.getString(context, "player")
+        val target = resolveOwnerArg(server, raw)
+        if (target == null) {
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", raw))
+            return 0
+        }
+        if (!CobbleMarketConfig.removeServerOwner(target.first)) {
+            source.sendError(Text.translatable("cobblemarket.owner.not_owner", target.second))
+            return 0
+        }
+        PermissionNetwork.refresh(server, target.first)
+        source.sendFeedback(
+            { Text.translatable("cobblemarket.owner.removed", target.second).formatted(Formatting.GREEN) },
+            true
+        )
+        // 移除的是最后一名服主：现在谁都管不了市场了，必须显眼提醒（只能手编配置或从控制台加回来）
+        if (CobbleMarketConfig.serverOwners.isEmpty()) {
+            source.sendFeedback(
+                { Text.translatable("cobblemarket.owner.last_removed_warn").formatted(Formatting.RED) },
+                false
+            )
+        }
+        return 1
+    }
+
+    /** `/market owner list`：列出服主名单（名字查不到时只显示 UUID） */
+    private fun ownerList(context: CommandContext<ServerCommandSource>): Int {
+        if (denyNonConsole(context)) return 0
+        val source = context.source
+        val server = source.server
+        val owners = CobbleMarketConfig.serverOwners
+        if (owners.isEmpty()) {
+            source.sendFeedback(
+                { Text.translatable("cobblemarket.owner.list_empty").formatted(Formatting.YELLOW) },
+                false
+            )
+            return 1
+        }
+        source.sendFeedback(
+            { Text.translatable("cobblemarket.owner.list_header", owners.size).formatted(Formatting.GOLD) },
+            false
+        )
+        owners.forEach { uuid ->
+            val name = server.playerManager.getPlayer(uuid)?.name?.string
+                ?: server.userCache?.getByUuid(uuid)?.orElse(null)?.name
+            source.sendFeedback(
+                {
+                    if (name != null) Text.literal(" - $name").append(Text.literal(" ($uuid)").formatted(Formatting.GRAY))
+                    else Text.literal(" - $uuid")
+                },
+                false
+            )
+        }
+        return owners.size
     }
 
     /** 一名玩家的节点行：名字金色 + 本地化节点名白色，按 ALL 顺序稳定排列（不受授予先后影响） */
@@ -480,6 +638,7 @@ object MarketCommands {
 
     /** /market loan clear <玩家>：撤销该玩家全部坏账（批次 7 服主干预，与全服流水界面撤销按钮双入口） */
     private fun loanClear(context: CommandContext<ServerCommandSource>): Int {
+        if (denyNonOwner(context)) return 0
         val source = context.source
         val server = source.server
         val name = StringArgumentType.getString(context, "player")

@@ -1,7 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.TooltipPlacement
-import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.PlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.network.RequestPlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.permission.MarketPermissions
@@ -98,16 +97,9 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
     private val selectedNodes = mutableSetOf<String>()
     // 节点 → 按钮：勾选态要回头刷按钮视觉，按索引找易错位，用映射直取
     private val nodeButtonByNode = mutableMapOf<String, NineSliceButton>()
-    // 编辑层的保存/取消：二次确认弹窗盖上来时要把整层控件藏掉（节点按钮的 y 区域与确认键重叠，
-    // 留着会按添加顺序拦掉确认点击），所以得留引用
+    // 编辑层的保存/取消：关闭弹窗时要清引用（resize 会重入 init 重建）
     private var saveButton: NineSliceButton? = null
     private var cancelButton: NineSliceButton? = null
-
-    // ── 「服务器配置」二次确认层（照 ServerConfigScreen 蛋交易那套：3 秒冷静期）──
-    // true = 确认弹窗盖在编辑弹窗之上；此时编辑层控件 visible=false，只留它的背景被遮罩压暗
-    private var configConfirmOpen = false
-    private var configConfirmOpenedAt = 0L
-    private var configConfirmButton: NineSliceButton? = null
 
     // ── 搜索框联想（照搬 AdminBanScreen：服务端返回存档所有登录过的玩家名，含离线）──
     private var suggestions = listOf<String>()
@@ -143,14 +135,6 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         const val NODE_ROW_H = 20                    // 按钮 16 高 + 4px 上下间隙
         const val NODE_GRID_Y = 40                   // 首行相对弹窗顶部
         const val DIALOG_BTN_Y = 124                 // 保存/取消行（20 高，底部余 6px）
-
-        // 「服务器配置」二次确认弹窗：正文 4 行（红白交替）+ 冷静期确认键
-        const val CONFIRM_W = 280
-        const val CONFIRM_H = 130
-        const val CONFIRM_TEXT_Y = 34                // 正文首行相对弹窗顶部
-        const val CONFIRM_LINE_H = 11                // 行距（正文 9px 高 + 2px 空隙）
-        const val CONFIRM_BTN_Y = 98                 // 按钮行（20 高，底部余 12px）
-        const val CONFIRM_COOLDOWN_MS = 3000L
     }
 
     override fun init() {
@@ -458,7 +442,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
             }
         })
 
-        // 8 个节点两列 × 四行，点一下切换勾选；勾选态 = 按下视觉（红底），
+        // 节点两列多行，点一下切换勾选；勾选态 = 按下视觉（红底），
         // 与黑名单/求购单的「手持物品」按钮同一机制
         nodeButtonByNode.clear()
         MarketPermissions.ALL.forEachIndexed { idx, node ->
@@ -471,7 +455,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
                     Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX)),
                     NODE_W - 8
                 ),
-                { onNodeClicked(node) },
+                { toggleNode(node) },
                 // 三段贴图：第三段是**选中态**（选中节点后保持高亮，鼠标移开也不消失）
                 texH = 120
             )
@@ -494,19 +478,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         addDrawableChild(cancelButton)
     }
 
-    /** 藏掉编辑层全部控件（二次确认弹窗盖上来时用，见 saveButton 注释）；恢复走整层重建 */
-    private fun hideEditLayer() {
-        nodeButtonByNode.values.forEach { it.visible = false }
-        saveButton?.visible = false
-        cancelButton?.visible = false
-    }
-
     private fun renderEditDialogBackground(context: DrawContext) {
-        // 二次确认层盖上来时这一层整段不画：标题是 render 里直接绘制的文字（不是控件），
-        // 遮罩盖不住它（文字与 fill 不在同一层，后画的文字仍会浮在遮罩上），
-        // 只能整层跳过 —— 遮罩与弹窗底由确认层自己画，视觉上没有缺失
-        if (configConfirmOpen) return
-
         val centerX = width / 2
         val dialogX = centerX - DIALOG_W / 2
         val dialogY = height / 2 - DIALOG_H / 2
@@ -529,108 +501,6 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         nodeButtonByNode[node]?.selectedVisual = node in selectedNodes
     }
 
-    // ── 「服务器配置」二次确认（整个金融系统的参数都在这个节点下，防手滑勾中）──
-
-    private fun onNodeClicked(node: String) {
-        // 未选中 → 授予方向，走 3 秒冷静期确认；已选中 → 收回方向，直接切换（收回不需要冷静）
-        if (node == MarketPermissions.CONFIG && node !in selectedNodes) openConfigConfirm()
-        else toggleNode(node)
-    }
-
-    private fun openConfigConfirm() {
-        configConfirmOpen = true
-        configConfirmOpenedAt = System.currentTimeMillis()
-        // 下层编辑弹窗整层控件藏掉：节点按钮与确认键 y 区域重叠，留着会按添加顺序拦掉确认点击
-        hideEditLayer()
-
-        // 弹窗背景（含遮罩）画在按钮之下：Drawable 在 children 之前渲染，后添加才能盖住编辑层
-        addDrawable(object : Drawable {
-            override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-                renderConfigConfirmBackground(context)
-            }
-        })
-
-        val centerX = width / 2
-        val dialogY = height / 2 - CONFIRM_H / 2
-        configConfirmButton = NineSliceButton(
-            centerX - 85, dialogY + CONFIRM_BTN_Y, 80, 20,
-            Text.translatable("cobblemarket.perm.confirm_yes"),
-            { confirmConfigNode() }
-        )
-        addDrawableChild(configConfirmButton)
-        addDrawableChild(NineSliceButton(
-            centerX + 5, dialogY + CONFIRM_BTN_Y, 80, 20,
-            Text.translatable("cobblemarket.buy_confirm.cancel"),
-            { closeConfigConfirm() }
-        ))
-    }
-
-    private fun renderConfigConfirmBackground(context: DrawContext) {
-        val centerX = width / 2
-        val dialogX = centerX - CONFIRM_W / 2
-        val dialogY = height / 2 - CONFIRM_H / 2
-
-        drawScreenDimMask(context, width, height)
-        drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, CONFIRM_W, CONFIRM_H, 0, DIALOG_BACKGROUND_TEX_H)
-        context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.perm.config_confirm_title").formatted(Formatting.GOLD),
-            centerX, dialogY + 14, 0xFFFFFF)
-    }
-
-    /** 正文 4 行逐行渲染：红=警告、白=普通（照 ServerConfigScreen 的蛋交易确认正文） */
-    private fun renderConfigConfirmText(context: DrawContext) {
-        val centerX = width / 2
-        val dialogY = height / 2 - CONFIRM_H / 2
-        val lines = listOf(
-            "cobblemarket.perm.config_confirm_l1_warn" to 0xFF5555,
-            "cobblemarket.perm.config_confirm_l2_text" to 0xFFFFFF,
-            "cobblemarket.perm.config_confirm_l3_warn" to 0xFF5555,
-            "cobblemarket.perm.config_confirm_l4_text" to 0xFFFFFF
-        )
-        var ty = dialogY + CONFIRM_TEXT_Y
-        lines.forEach { (key, color) ->
-            val text = Text.translatable(key).string
-            // 空行跳过：中英行数/断行不同也不会把整块文字顶下去
-            if (text.isEmpty()) return@forEach
-            context.drawCenteredTextWithShadow(textRenderer, text, centerX, ty, color)
-            ty += CONFIRM_LINE_H
-        }
-    }
-
-    /** 冷静期：3 秒内确认键置灰（dimmed = 仍可点，点了只播 fail）并显示剩余秒数 */
-    private fun updateConfigConfirmButton() {
-        val cooldownLeft = (CONFIRM_COOLDOWN_MS / 1000L - (System.currentTimeMillis() - configConfirmOpenedAt) / 1000L).toInt()
-        val canConfirm = cooldownLeft <= 0
-        configConfirmButton?.dimmed = !canConfirm
-        configConfirmButton?.message = if (canConfirm)
-            Text.translatable("cobblemarket.perm.confirm_yes")
-        else
-            Text.translatable("cobblemarket.perm.confirm_yes_countdown", cooldownLeft)
-    }
-
-    private fun confirmConfigNode() {
-        // 冷静期内点击：置灰按钮仍可点，播 fail 音效提示，不执行
-        if (System.currentTimeMillis() - configConfirmOpenedAt < CONFIRM_COOLDOWN_MS) {
-            playFailSound()
-            return
-        }
-        // 只改本地勾选（保存仍由编辑弹窗的「保存」统一发全量包），关掉确认层回到编辑弹窗
-        selectedNodes.add(MarketPermissions.CONFIG)
-        closeConfigConfirm()
-    }
-
-    private fun closeConfigConfirm() {
-        val entry = editingEntry
-        val selected = selectedNodes.toSet()
-        configConfirmOpen = false
-        configConfirmButton = null
-        // 照项目惯例 clearChildren + init 重建，再把编辑弹窗搭回来：
-        // 勾选用重建前的快照恢复（含刚确认的「服务器配置」红底），不回退成 entry.nodes
-        clearChildren()
-        init()
-        if (entry != null) openEditDialog(entry, selected)
-    }
-
     private fun confirmSave() {
         val entry = editingEntry ?: return
         // 一次发完整节点集合（服务端算差集）：按 ALL 顺序稳定排列，与列表显示顺序一致
@@ -648,8 +518,6 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         nodeButtonByNode.clear()
         saveButton = null
         cancelButton = null
-        configConfirmOpen = false
-        configConfirmButton = null
         clearChildren()
         init()
     }
@@ -742,13 +610,6 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         super.render(context, mouseX, mouseY, delta)
-
-        // 二次确认层最靠上：正文与冷静期倒计时画在编辑弹窗之上（编辑层控件此刻已 visible=false）
-        if (configConfirmOpen) {
-            renderConfigConfirmText(context)
-            updateConfigConfirmButton()
-            return
-        }
 
         // 弹窗打开时下半部分由弹窗自己画（列表文字会刺穿遮罩）
         if (editingEntry != null) return
@@ -901,8 +762,6 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
     // ── 交互 ──
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
-        // 二次确认弹窗打开时不滚动下层列表（重建行按钮会把下层控件又改回可见）
-        if (configConfirmOpen) return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)
         // 联想列表滚动
         if (suggestionsOpen) {
             if (suggestions.size > MAX_SUGGESTION_ROWS) {
@@ -948,13 +807,8 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         // 未保存的勾选从 selectedNodes 快照恢复，不请求快照也不回退成旧数据
         val entry = editingEntry
         val selected = selectedNodes.toSet()
-        val confirmWasOpen = configConfirmOpen
         super.resize(client, width, height)
-        if (entry != null) {
-            openEditDialog(entry, selected)
-            // 二次确认层照原样盖回去（冷静期重新计时，与 ServerConfigScreen 的 resize 行为一致）
-            if (confirmWasOpen) openConfigConfirm()
-        }
+        if (entry != null) openEditDialog(entry, selected)
     }
 
     override fun shouldPause() = false
