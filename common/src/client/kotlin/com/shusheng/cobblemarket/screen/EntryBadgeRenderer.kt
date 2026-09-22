@@ -280,7 +280,7 @@ object EntryBadgeRenderer {
      */
     /** 分割线：1px 灰线，**宽度按所在弹窗的内容栏宽**（照出价界面「撑满自己那一栏」的画法，别用固定值） */
     fun drawDivider(context: DrawContext, centerX: Int, y: Int, width: Int) {
-        context.fill(centerX - width / 2, y + 4, centerX + width / 2, y + 5, 0xFF555555.toInt())
+        context.fill(centerX - width / 2, y + 4, centerX + width / 2, y + 5, 0xFF888888.toInt())
     }
 
     /**
@@ -314,10 +314,10 @@ object EntryBadgeRenderer {
     fun drawMovesBlockLeft(context: DrawContext, raw: String?, leftX: Int, width: Int, startY: Int): Int {
         if (!MoveText.hasAny(raw)) return 0
         var y = startY
-        context.fill(leftX, y + 4, leftX + width, y + 5, 0xFF555555.toInt())
+        context.fill(leftX, y + 4, leftX + width, y + 5, 0xFF888888.toInt())
         y += DIVIDER_H
         y += drawMoveGrid(context, raw, leftX = leftX, width = width, startY = y)
-        context.fill(leftX, y + 4, leftX + width, y + 5, 0xFF555555.toInt())
+        context.fill(leftX, y + 4, leftX + width, y + 5, 0xFF888888.toInt())
         y += DIVIDER_H
         return y - startY
     }

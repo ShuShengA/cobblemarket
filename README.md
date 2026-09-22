@@ -53,7 +53,7 @@ For the full feature list, see the [CHANGELOG](CHANGELOG_EN.md).
 | `/market gui` | Open the market entry screen |
 | `/market on` \| `/market off` | Turn the whole market on / off (emergency master switch) |
 | `/market ban` \| `unban` \| `banlist` | Ban a player from trading (`<player> [duration] [reason]`, e.g. `7d`, `12h`, `30m`), lift a ban, list active bans |
-| `/market card` | Manage Meow·Purple Gold Card / Meow·Black Gold Card (`give` / `revoke` / `list`) |
+| `/market card` | Manage Meowth·Volt Card / Meowth·Genesis Card (`give` / `revoke` / `list`) |
 | `/market perm` | Manage admin permission nodes (`grant` / `revoke` / `list`) |
 | `/market loan clear` | Revoke a player's bad debts |
 | `/market reload` | Apply config file edits without restarting (currency settings still need a restart) |
@@ -64,7 +64,7 @@ Admin commands work for OPs, or for players granted the matching permission node
 | `/market gui` | 打开市场入口界面 |
 | `/market on` \| `/market off` | 开启 / 关闭整个市场（紧急总开关）|
 | `/market ban` \| `unban` \| `banlist` | 封禁玩家交易（`<玩家> [时长] [理由]`，如 `7d`、`12h`、`30m`）、解封、列出生效中的封禁 |
-| `/market card` | 管理喵·紫金卡 / 喵·黑金卡（`give` / `revoke` / `list`）|
+| `/market card` | 管理喵·紫电卡 / 喵·金轮卡（`give` / `revoke` / `list`）|
 | `/market perm` | 管理权限节点（`grant` / `revoke` / `list`）|
 | `/market loan clear` | 撤销某玩家的坏账 |
 | `/market reload` | 应用配置文件的修改、免重启（货币配置仍需重启）|

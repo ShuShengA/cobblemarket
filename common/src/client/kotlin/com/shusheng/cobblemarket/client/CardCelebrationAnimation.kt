@@ -12,7 +12,7 @@ import net.minecraft.util.Identifier
 import org.lwjgl.opengl.GL11
 
 /**
- * 发卡动画（紫金卡/黑金卡首次获得或补发）：卡片从申请界面的卡片图标位置出发，
+ * 发卡动画（紫电卡/金轮卡首次获得或补发）：卡片从申请界面的卡片图标位置出发，
  * 放大并缓动飞到屏幕中央（像真的在发卡），停留片刻后淡出。
  *
  * 起点：申请/补发按钮点击时由申请界面调用 setPendingStart 登记图标中心坐标；
@@ -21,11 +21,11 @@ import org.lwjgl.opengl.GL11
  */
 object CardCelebrationAnimation {
 
-    /** 飞行段时长**按卡种**：黑金卡比紫金卡飞得更慢、更有分量（2026-09-16 拍板，原为统一 500） */
+    /** 飞行段时长**按卡种**：金轮卡比紫电卡飞得更慢、更有分量（2026-09-16 拍板，原为统一 500） */
     private const val PURPLE_FLY_MS = 700L
     private const val BLACK_FLY_MS = 1000L
 
-    /** 停留段时长**按卡种**：黑金卡停得更久（2026-09-16 拍板，原为统一 500） */
+    /** 停留段时长**按卡种**：金轮卡停得更久（2026-09-16 拍板，原为统一 500） */
     private const val PURPLE_HOLD_MS = 600L
     private const val BLACK_HOLD_MS = 1500L
 
@@ -75,10 +75,10 @@ object CardCelebrationAnimation {
         playGrantSound(next)
     }
 
-    /** 发卡音效：紫金卡 / 黑金卡各一枚（2026-09-16 新增，此前只有动画没有声音）。
+    /** 发卡音效：紫电卡 / 金轮卡各一枚（2026-09-16 新增，此前只有动画没有声音）。
      *  音量走三参重载显式给——两参重载会把音量写死 0.25（MC 的 UI 按钮音档位），太轻。
-     *  ⚠ 两枚素材响度不一样：**紫金卡那枚本身偏轻**（用户实机反馈），补到 0.9；
-     *    黑金卡听着正常，保持 0.5。以后重做素材时这两个值可以统一回 0.5。 */
+     *  ⚠ 两枚素材响度不一样：**紫电卡那枚本身偏轻**（用户实机反馈），补到 0.9；
+     *    金轮卡听着正常，保持 0.5。以后重做素材时这两个值可以统一回 0.5。 */
     private fun playGrantSound(cardKind: String) {
         val soundId = if (cardKind == "black") "card_black" else "card_purple"
         val volume = if (cardKind == "black") 0.5f else 0.9f

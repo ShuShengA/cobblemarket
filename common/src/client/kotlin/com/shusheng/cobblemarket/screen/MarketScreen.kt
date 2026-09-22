@@ -1124,33 +1124,10 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         )
     }
 
-    private fun drawPanelSlice(context: DrawContext, texture: Identifier, x: Int, y: Int, sliceH: Int = 16) {
-        context.matrices.push()
-        context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(0.5f, 0.5f * sliceH / 16f, 1f)
-        context.drawTexture(texture, 0, 0, 0f, 0f, 640, 32, 640, 32)
-        context.matrices.pop()
-    }
-
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         IconRegistry.beginFrame(mouseX, mouseY)
         val centerX = width / 2
-        val panelLeft = centerX - 160
-        val panelTop = 2
-        val panelBottom = height - 32
-        val sliceH = 16
-
-        val top = Identifier.of("cobblemarket", "textures/gui/market_panel_top.png")
-        val mid = Identifier.of("cobblemarket", "textures/gui/market_panel_middle.png")
-        val bot = Identifier.of("cobblemarket", "textures/gui/market_panel_bottom.png")
-
-        drawPanelSlice(context, top, panelLeft, panelTop)
-        var y = panelTop + sliceH
-        while (y < panelBottom - sliceH) {
-            drawPanelSlice(context, mid, panelLeft, y, minOf(sliceH, panelBottom - sliceH - y))
-            y += sliceH
-        }
-        drawPanelSlice(context, bot, panelLeft, panelBottom - sliceH)
+        MarketPanelBackground.draw(context, width, height)
 
         // 列表行背景（先于按钮渲染，避免覆盖按钮）
         val leftX = centerX - panelWidth / 2
@@ -1937,7 +1914,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             } else if (line == null) {
                 // 分割线：1px 灰线，撑满提示框全宽（与信息区分隔线一致，不随证章数量变化）
                 val rowW = maxWidth
-                context.fill(tx, rowY + 4, tx + rowW, rowY + 5, 0xFF555555.toInt())
+                context.fill(tx, rowY + 4, tx + rowW, rowY + 5, 0xFF888888.toInt())
                 rowY += 10
             } else if (i == heldItemLine) {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
