@@ -34,7 +34,10 @@ object MarketPermissions {
     /** 管理端下架精灵与物品 + 市场总开关（紧急停市/恢复） */
     const val MARKET = PREFIX + "market"
 
-    /** 金融管理：卡片管理、全服借贷流水、撤销坏账 */
+    /**
+     * 金融管理：卡片管理、全服借贷流水。
+     * ⚠ **撤销坏账不在此列** —— 那是服主干预手段，只认 OP（`isOp`），2026-09-12 用户明确纠正过
+     */
     const val FINANCE = PREFIX + "finance"
 
     /** 强制取消拍卖 */
