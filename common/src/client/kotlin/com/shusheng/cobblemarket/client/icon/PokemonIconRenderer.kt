@@ -80,7 +80,11 @@ object PokemonIconRenderer {
             animate = animate,
             // 「精灵预览图」关掉时行内也不进预览态 —— 否则大图不显示、行里却自顾自走起来。
             // 大图那一路是直接调解析器的（preview = true 恒成立），由 PokemonHoverPreview 自己把关开关
-            preview = preview && com.shusheng.cobblemarket.client.ClientConfig.hoverPreview
+            // ⚠ 也要把「正被大图预览」算进去：**同一个 state 不能被两个调用点用不同的 preview 掰**
+            //   —— 大图要 WALK、小图要 PROFILE 的话，姿势过渡会被反复触发（2026-09-22 实测，
+            //   典型是 SellSelectScreen 的选中行大图常驻）。读的是**上一帧**的登记（见 markPreviewing）。
+            preview = (preview || IconRegistry.isPreviewing(state)) &&
+                com.shusheng.cobblemarket.client.ClientConfig.hoverPreview
         )
 
         val matrices = context.matrices
