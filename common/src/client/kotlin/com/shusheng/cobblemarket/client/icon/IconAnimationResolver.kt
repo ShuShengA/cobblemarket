@@ -10,6 +10,7 @@ import com.cobblemon.mod.common.client.render.models.blockbench.animation.PoseTr
 import com.cobblemon.mod.common.client.render.models.blockbench.animation.PrimaryAnimation
 import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockAnimation
 import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockAnimationRepository
+import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockKeyFrameBoneValue
 import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockPoseAnimation
 import com.cobblemon.mod.common.client.render.models.blockbench.pose.Pose
 import com.cobblemon.mod.common.client.render.models.blockbench.repository.RenderContext
@@ -281,7 +282,7 @@ object IconAnimationResolver {
         // 用 primary 播「战吼 → 维持战斗姿态」两段式动画（见 PoseWithBattleCry 的说明）：
         // 独占是必须的 —— 否则框架后跑的姿势动画会再累加一份、把战吼淹掉。
         val selfContained = cryIsSelfContained(model, cry)
-        logBattleCryDiagnostics(renderable, model, group, cry, selfContained)
+        logBattleCryDiagnostics(renderable, model, state, group, cry, selfContained)
         val anim = PoseWithBattleCry(
             cry = cry,
             transitionSeconds = battlePoseTransformSeconds(model) ?: DEFAULT_TRANSITION_SECONDS,
@@ -361,7 +362,8 @@ private fun String.isBattlePoseName(): Boolean {
  * 这条日志是给**开发排查**用的，不是给服主看的。
  *
  * 排查「某只精灵战吼不对」时把它改成 `true`：每个物种**首次点击**打一行，
- * 含 `species` / `pose` / `cryBones` / `idleBones` / `coverage` / `selfContained` ——
+ * 含 `species` / `pose` / `cryBones` / `idleBones` / `coverage` / `selfContained` /
+ * `idleLen`（补跑 idle 的循环长度）/ `globalT`（全局动画秒数）/ `idleT`（取模后的实际传入时间）——
  * 对照 `docs/icon_animation.md`「战吼出问题时的排查」那张症状表即可定位该往哪边调。
  */
 private const val BATTLE_CRY_DIAG = false
@@ -372,6 +374,7 @@ private val battleCryDiagLogged = mutableSetOf<String>()
 private fun logBattleCryDiagnostics(
     renderable: RenderablePokemon,
     model: PosableModel,
+    state: PosableState,
     group: String,
     cry: BedrockAnimation,
     selfContained: Boolean
@@ -379,16 +382,27 @@ private fun logBattleCryDiagnostics(
     if (!BATTLE_CRY_DIAG) return
     if (!battleCryDiagLogged.add(renderable.species.name)) return
     val pose = battlePoseOf(model)
-    val idle = pose?.animations?.filterIsInstance<BedrockPoseAnimation>()?.firstOrNull()?.animation
+    val idles = pose?.animations?.filterIsInstance<BedrockPoseAnimation>()?.map { it.animation } ?: emptyList()
+    val idleBones = idles.flatMap { it.boneTimelines.keys }.toSet()
+    // idleAnims / idleBones：姿势里到底跑了几条 idle、合计覆盖多少骨骼 ——
+    // 只取第一条的旧写法在火岩鼠上取到了只管 2 根骨骼的装饰动画 `fire_idle`（见 [battleStanceIdles]）。
+    // idleLen / globalT / idleT：针对「战吼期间身体冻成模型原始姿势」的问题（见 [loopedSeconds]），
+    // 取**骨骼最多的那条**当主 idle；idleT 是取模后真正拿去取关键帧的时间，应落在 [0, idleLen)。
+    val mainIdle = idles.maxByOrNull { it.boneTimelines.size }
     CobbleMarket.LOGGER.info(
-        "[icon-anim] battle cry: species={} group={} pose={} cryBones={} idleBones={} coverage={} selfContained={}",
+        "[icon-anim] battle cry: species={} group={} pose={} cryBones={} idleAnims={} idleBones={} coverage={} selfContained={} " +
+            "idleLen={} globalT={} idleT={}",
         renderable.species.name,
         group,
         pose?.poseName ?: "(none)",
         cry.boneTimelines.size,
-        idle?.boneTimelines?.size ?: 0,
+        idles.size,
+        idleBones.size,
         battleCryCoverage(model, cry)?.let { "%.2f".format(it) } ?: "(n/a)",
-        selfContained
+        selfContained,
+        mainIdle?.let { "%.2f".format(loopLengthOf(it)) } ?: "(n/a)",
+        "%.1f".format(state.animationSeconds),
+        mainIdle?.let { "%.2f".format(loopedSeconds(it, state)) } ?: "(n/a)"
     )
 }
 
@@ -466,21 +480,40 @@ private const val SELF_CONTAINED_COVERAGE = 0.8f
 private const val ALWAYS_LAYER_BATTLE_CRY = false
 
 /**
- * 这条战吼覆盖了战斗 idle 多少比例的骨骼（集合覆盖率）；拿不到 idle 返回 null。
+ * 「战斗姿态」这个姿势里**所有**的 bedrock 动画 —— 框架跑姿势动画时是**全跑**的，我们照做。
  *
- * ⚠ 是**集合**口径（`cry` 的骨骼里有几成出现在 `idle` 的骨骼里），不是数量比 ——
- * 见 [SELF_CONTAINED_COVERAGE] 里铁骨土人的反例。
+ * ⚠⚠ **不能只取第一条**（原来的 `firstOrNull()`，2026-09-23 火岩鼠暴露的坑）：
+ * 一个姿势的 `animations` 是「头部跟随 + 若干 bedrock 动画」的列表，而**装饰性动画可能排主 idle 前面**。
+ * 火岩鼠的 `battle_idle` 姿势 = `[singleBoneLook, fire_idle(2 骨骼), battle_idle(20 骨骼)]` ——
+ * 过滤掉 look 后取第一条拿到的是 **`fire_idle`**（只管背后那簇火），**身体和四条腿全程没人驱动** ⇒
+ * 战吼时掉回模型原始姿势（前腿竖直、后腿水平伸直，用户 2026-09-23 报）；而且覆盖率按那 2 根骨骼算
+ * 得到 1.00 ⇒ 被误判成「自带完整姿态」⇒ 连补 idle 都省了。
+ * ⇒ 一律**全跑**（`singleBoneLook` 不是 [BedrockPoseAnimation]，自然被过滤掉；头部跟随图标另有实现）。
+ * 未迁移物种里只有火岩鼠（含洗翠形态）踩中；烈焰马（伽勒尔）也挂了 `hair`，但它排在 `battle_idle` 后面，恰好没事。
+ *
+ * ⚠ **每帧现取而不是构造时取死**：点击那一刻鼠标还停在行上、姿势是 `walking`，
+ * 那时取到的是 `ground_walk`，会把走路姿势焊进整段战吼（2026-09-22 日志实测 `idle=ground_walk`）。
  */
-private fun battleCryCoverage(model: PosableModel, cry: BedrockAnimation): Float? {
-    val idle = battlePoseOf(model)
+private fun battleStanceIdles(model: PosableModel): List<BedrockAnimation> =
+    battlePoseOf(model)
         ?.animations
         ?.filterIsInstance<BedrockPoseAnimation>()
-        ?.firstOrNull()
-        ?.animation
-        ?: return null
-    if (idle.boneTimelines.isEmpty()) return null
-    val covered = cry.boneTimelines.keys.count { idle.boneTimelines.containsKey(it) }
-    return covered.toFloat() / idle.boneTimelines.size
+        ?.map { it.animation }
+        ?: emptyList()
+
+/**
+ * 这条战吼覆盖了战斗 idle 多少比例的骨骼（集合覆盖率）；拿不到 idle 返回 null。
+ *
+ * ⚠ 是**集合**口径（`cry` 的骨骼里有几成出现在 idle 的骨骼里），不是数量比 ——
+ * 见 [SELF_CONTAINED_COVERAGE] 里铁骨土人的反例。
+ * ⚠ 分母用姿势里**所有** idle 动画的骨骼**并集**（不是某一条的骨骼数）—— 与 [battleStanceIdles]
+ * 全跑的语义对齐，否则像火岩鼠那样"第一条只管 2 根骨骼"会把覆盖率虚高成 1.00。
+ */
+private fun battleCryCoverage(model: PosableModel, cry: BedrockAnimation): Float? {
+    val idleBones = battleStanceIdles(model).flatMap { it.boneTimelines.keys }.toSet()
+    if (idleBones.isEmpty()) return null
+    val covered = cry.boneTimelines.keys.count { it in idleBones }
+    return covered.toFloat() / idleBones.size
 }
 
 /**
@@ -498,6 +531,52 @@ private fun cryIsSelfContained(model: PosableModel, cry: BedrockAnimation): Bool
     if (ALWAYS_LAYER_BATTLE_CRY) return false
     val coverage = battleCryCoverage(model, cry) ?: return true
     return coverage >= SELF_CONTAINED_COVERAGE
+}
+
+/**
+ * 动画的循环长度（秒）：优先取它自己声明的 `animation_length`，**没声明就用关键帧的最大时间兜底**；
+ * 两者都拿不到返回 0。
+ *
+ * ⚠ 结果按动画对象缓存（[java.util.IdentityHashMap]）：每帧重算一遍是白费功夫，而动画对象来自
+ * 资源仓库、长期存活，用它当 key 不会积压。
+ */
+private val animationLoopLengths = java.util.IdentityHashMap<BedrockAnimation, Float>()
+
+private fun loopLengthOf(animation: BedrockAnimation): Float =
+    animationLoopLengths.getOrPut(animation) {
+        val declared = animation.animationLength.toFloat()
+        if (declared > 0f) {
+            declared
+        } else {
+            animation.boneTimelines.values
+                .flatMap { listOf(it.position, it.rotation, it.scale) }
+                .filterIsInstance<BedrockKeyFrameBoneValue>()
+                .maxOfOrNull { if (it.isEmpty()) 0f else it.lastKey().toFloat() }
+                ?: 0f
+        }
+    }
+
+/**
+ * 补跑的 idle 该用哪个时间点：把全局动画秒数**折算到该动画自己的循环内**。
+ *
+ * ⚠ 直接把 `state.animationSeconds` 传进去会让 idle「冻住」—— 框架 `BedrockPoseAnimation.setupAnim`
+ * 就是这么传的，但那只对有 `animation_length` 的动画成立：
+ * - `BedrockAnimationAdapter`：`animationLength = json["animation_length"] ?: -1.0`、
+ *   `shouldLoop = animationLength > 0 && loop` ⇒ **没写 animation_length 的动画 shouldLoop 恒为 false**
+ *   （**1.8.0 与 1.8.2 两版实测一致**：96 个有战吼的物种里 **59 个的 idle 没写**，而它们的 `loop` 都是 true；
+ *   上面这条链条的四段实现在两版里逐字相同）
+ * - `BedrockAnimation.run()`：shouldLoop 为 false 时既不取模、`animationLength > 0` 也不成立 ⇒ 时间原样用
+ * - 关键帧查找（`BedrockKeyFrameBoneValue.resolve`）超出末尾时**停在最后一帧**
+ * ⇒ 精灵在屏幕上待满一个循环后 idle 就冻结在最后一帧，而**这些动画的最后一帧多数是归零帧**
+ *   （脱壳忍者 100%、黑眼鳄 94%、火岩鼠 70% 的骨骼都是 0）⇒ 战吼期间身体掉回模型原始姿势
+ *   （火岩鼠四条腿全归零：前腿竖直、后腿水平伸直 —— 用户 2026-09-23 报）。
+ *
+ * ⚠ **这是通法，不含任何物种名单**：长度从动画数据里算（声明值 → 关键帧最大时间兜底），
+ * 官方加新精灵 / 改动画都自动跟上；本来就带 `animation_length` 的物种框架已自行取模，这里再取模结果相同。
+ */
+private fun loopedSeconds(animation: BedrockAnimation, state: PosableState): Float {
+    val length = loopLengthOf(animation)
+    return if (length > 0f) state.animationSeconds % length else state.animationSeconds
 }
 
 private class PoseWithBattleCry(
@@ -585,8 +664,11 @@ private class PoseWithBattleCry(
             //    自带躯干的（火焰鸡那类）**不补** —— 累加会把两份旋转加起来（手跑到胸前）；
             //    但它们在这里靠交叉淡化把战斗 idle **渐入**（`crossT` 从 0 开始），同样接得上。
             val idleWeight = if (selfContained) crossT else 1f
-            battleStanceIdle(model)
-                ?.run(model, state, state.animationSeconds, limbSwing, limbSwingAmount, ageInTicks, intensity * idleWeight)
+            // 姿势里的 idle 动画**全跑**（见 [battleStanceIdles]）；时间按各自的循环长度取模
+            // （见 [loopedSeconds]）——直接传全局秒数会让缺 animation_length 的那条冻在最后一帧
+            for (idle in battleStanceIdles(model)) {
+                idle.run(model, state, loopedSeconds(idle, state), limbSwing, limbSwingAmount, ageInTicks, intensity * idleWeight)
+            }
             cry.run(model, state, elapsed, limbSwing, limbSwingAmount, ageInTicks, intensity * (1f - crossT))
         } else {
             // ② 维持段：只跑战斗 idle，撑住"战斗姿态"
@@ -594,25 +676,12 @@ private class PoseWithBattleCry(
             //   正从 0 渐渐恢复，这边若仍满强度，两条 idle 会同时满强度**累加**、姿势互相打架 ——
             //   观感就是「从战斗姿态切回待机的过程变成了慢动作」（2026-09-22 用户报）。
             //   跟着 intensity 走才是一进一出：战斗 idle 淡出、待机 idle 淡入。
-            battleStanceIdle(model)
-                ?.run(model, state, state.animationSeconds, limbSwing, limbSwingAmount, ageInTicks, intensity)
+            for (idle in battleStanceIdles(model)) {
+                idle.run(model, state, loopedSeconds(idle, state), limbSwing, limbSwingAmount, ageInTicks, intensity)
+            }
             elapsed < duration
         }
     }
-
-    /**
-     * 「战斗姿态」那条 idle：取名字以 `battle-` 开头的姿势的 idle 动画
-     * （暴鲤龙/化石翼龙/火焰鸡都是 `battle-standing`；水面空中的精灵另有 `battle-*` 变体）。
-     *
-     * ⚠ **每帧现取而不是构造时取死**：点击那一刻鼠标还停在行上、姿势是 `walking`，
-     * 那时取到的是 `ground_walk`，会把走路姿势焊进整段战吼（2026-09-22 日志实测 `idle=ground_walk`）。
-     */
-    private fun battleStanceIdle(model: PosableModel): BedrockAnimation? =
-        battlePoseOf(model)
-            ?.animations
-            ?.filterIsInstance<BedrockPoseAnimation>()
-            ?.firstOrNull()
-            ?.animation
 
     /**
      * 转发战吼的音效与粒子关键帧（吼声、火焰鸡脚底那簇火）。
