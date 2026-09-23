@@ -128,7 +128,7 @@
   "cobblemarket.perm.node.finance": "金融管理",
   "cobblemarket.perm.node.auction": "拍卖管理",
   "cobblemarket.perm.node.buyorder": "求购管理",
-  "cobblemarket.owner.console_only": "仅限服务器控制台执行（游戏内 OP 也不行）。单机 / 局域网没有控制台，请改 config/cobblemarket.json 的 serverOwners —— 改完在游戏内执行 /market reload 即可生效",
+  "cobblemarket.owner.console_only": "仅限服务器控制台执行（游戏内 OP 也不行）。单机 / 局域网没有控制台，请改 config/cobblemarket.json 的 serverOwners —— 改完重进存档即可（开了作弊的话，在游戏内执行 /market reload 就能免重进）",
   "cobblemarket.owner.added": "已将 %1$s 加入服主名单（UUID %2$s）",
   "cobblemarket.owner.already": "%1$s 已经是服主了",
   "cobblemarket.owner.removed": "已将 %1$s 移出服主名单",
