@@ -47,7 +47,7 @@
 
 ### Fixes
 
-- **Some Pokémon had the wrong battle-cry animation**: their body would lock into the wrong pose — Gurdurr could not lift its girder (the arm stayed at its side), Blaziken's hand drifted in front of its body, and Archaludon grew two straight rods under its feet. A battle cry has to layer on top of the **battle stance**, but for some Pokémon we could not find that stance at all (Cobblemon is migrating Pokémon poses from code into data files and both naming styles are in use — we only recognised one of them), so the cry ended up layered onto the idle stance instead. Both naming styles are now supported, and whether a cry brings its own full pose is decided per Pokémon
+- **Some Pokémon had the wrong battle-cry animation**: their body would lock into the wrong pose — Gurdurr could not lift its girder (the arm stayed at its side). A battle cry has to layer on top of the **battle stance**, but for some Pokémon we could not find that stance at all (Cobblemon is migrating Pokémon poses from code into data files and both naming styles are in use — we only recognised one of them), so the cry ended up layered onto the idle stance instead. Both naming styles are now supported, and whether a cry brings its own full pose is decided per Pokémon
 - **Pokémon listing screen: the bottom of the list wasted a full row**: the gap between the last row and the "x-y / n" counter underneath was wide enough for one more row; it now matches the **item** listing screen
 
 ### Changes
