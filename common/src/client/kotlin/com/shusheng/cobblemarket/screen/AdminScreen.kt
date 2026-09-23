@@ -209,8 +209,6 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             iconLeft = marketSwitchIcon(),
             // 48×48 贴图缩到 18×18 显示（按钮 22×22 留 2px 边距，源图高分辨率保持锐利）
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-            texture = ROW_BACKGROUND_TEXTURE,
-            texH = ROW_BACKGROUND_TEX_H
         )
         marketSwitchBtn?.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.market_switch")))
         menuButtons += addDrawableChild(marketSwitchBtn!!)
@@ -221,8 +219,6 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             { openIfOwner { client?.setScreen(ServerConfigScreen()) } },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/server_config_icon.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-            texture = ROW_BACKGROUND_TEXTURE,
-            texH = ROW_BACKGROUND_TEX_H
         )
         // 服主专属：悬停第二行**教怎么把自己加进服主名单** —— OP 进得来面板、点不动这两个按钮，
         // 这句提示就是他的出路（与启动日志的提醒配套，方案⑦）
@@ -241,8 +237,6 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             { openIfOwner { client?.setScreen(PermissionScreen()) } },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/permission.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-            texture = ROW_BACKGROUND_TEXTURE,
-            texH = ROW_BACKGROUND_TEX_H
         )
         permissionBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(
             Text.translatable("cobblemarket.op.permission")
