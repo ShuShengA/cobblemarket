@@ -377,12 +377,13 @@ private fun logBattleCryDiagnostics(
     val pose = battlePoseOf(model)
     val idle = pose?.animations?.filterIsInstance<BedrockPoseAnimation>()?.firstOrNull()?.animation
     CobbleMarket.LOGGER.info(
-        "[icon-anim] battle cry: species={} group={} pose={} cryBones={} idleBones={} selfContained={}",
+        "[icon-anim] battle cry: species={} group={} pose={} cryBones={} idleBones={} coverage={} selfContained={}",
         renderable.species.name,
         group,
         pose?.poseName ?: "(none)",
         cry.boneTimelines.size,
         idle?.boneTimelines?.size ?: 0,
+        battleCryCoverage(model, cry)?.let { "%.2f".format(it) } ?: "(n/a)",
         selfContained
     )
 }
@@ -419,24 +420,52 @@ private fun battlePoseTransformSeconds(model: PosableModel): Float? =
     battlePoseOf(model)?.transformTicks?.takeIf { it > 0 }?.let { it / 20f }
 
 /**
- * 这条战吼**自带完整姿态**没有 —— 判据是「战吼动的骨骼数 vs 该模型战斗 idle 动的骨骼数」。
+ * 「战吼自带完整姿态」的判据阈值：战吼要覆盖战斗 idle 多少**比例**的骨骼才算自带。
  *
- * 2026-09-22 实测三个物种，分界极干净（战吼 vs idle）：
- * - 火焰鸡 **65 vs 54**（战吼比 idle 动的还多）→ 自带完整姿态 → 战吼段**不能**补 idle
- * - 化石翼龙 19 vs 121、暴鲤龙 11 vs 61 → 只动了零头 → 身体没东西撑 → **必须**补 idle
+ * ⚠ 2026-09-23 从「骨骼**数量**比 ≥ 0.5」改成「集合**覆盖**率 ≥ 0.9」，原因是数量比会放过
+ * "骨骼数够多、但动的全是增量"的那种战吼 —— **铁骨土人就是这个反例**：`battle_cry` 32 骨骼
+ * vs `battle_idle` 52，数量比 0.62 过了老阈值被判"自带"，可它动的 `arm_right` 只有 -17.5°，
+ * 而 idle 里是 -187° —— 不补 idle 的话这些增量全作用在 rest pose 上，**手臂停在身侧、钢材举不起来**
+ * （用户 2026-09-23 实测发现）。
  *
- * ⚠ 用**相对比例**而不是绝对骨骼数、也不列精灵名单：官方改动画、出新精灵都自动跟上。
- * ⚠ 化石翼龙是必须这么判的反例 —— 它战吼含 `torso`（旧判据「含躯干就算自带」会放它过去），
- *   但**没动翅膀分段** `wing_ground_left1~4`，那些骨骼回 rest pose、翅膀就成直片了。
+ * 集合覆盖率能抓住这一点：它问的是「战斗 idle 动的那些骨骼，战吼**是否都动了**」，
+ * 漏掉任何一根都意味着那根停在 rest pose（化石翼龙缺 `wing_ground_left1~4` 就是同一类问题）。
+ *
+ * 全量扫描（2026-09-23）：已迁移物种里 88% 的覆盖率 ≥ 0.9，分界比数量比干净。
  */
-private fun cryIsSelfContained(model: PosableModel, cry: BedrockAnimation): Boolean {
+private const val SELF_CONTAINED_COVERAGE = 0.9f
+
+/**
+ * 这条战吼覆盖了战斗 idle 多少比例的骨骼（集合覆盖率）；拿不到 idle 返回 null。
+ *
+ * ⚠ 是**集合**口径（`cry` 的骨骼里有几成出现在 `idle` 的骨骼里），不是数量比 ——
+ * 见 [SELF_CONTAINED_COVERAGE] 里铁骨土人的反例。
+ */
+private fun battleCryCoverage(model: PosableModel, cry: BedrockAnimation): Float? {
     val idle = battlePoseOf(model)
         ?.animations
         ?.filterIsInstance<BedrockPoseAnimation>()
         ?.firstOrNull()
         ?.animation
-        ?: return true // 拿不到 idle 就无从比较，按自带处理（至少不会叠加污染）
-    return cry.boneTimelines.size >= idle.boneTimelines.size * 0.5f
+        ?: return null
+    if (idle.boneTimelines.isEmpty()) return null
+    val covered = cry.boneTimelines.keys.count { idle.boneTimelines.containsKey(it) }
+    return covered.toFloat() / idle.boneTimelines.size
+}
+
+/**
+ * 这条战吼**自带完整姿态**没有。
+ *
+ * ⚠ 判据是 [battleCryCoverage]（集合覆盖率 ≥ [SELF_CONTAINED_COVERAGE]）：
+ * - 自带（火焰鸡那类）→ 战吼段**不补** idle，补了反而两份旋转累加（手跑到胸前）
+ * - 不自带（化石翼龙、暴鲤龙、**铁骨土人**那类）→ 必须补，否则身体没东西撑、掉回 rest pose
+ *
+ * ⚠ 用**相对比例**而不是绝对骨骼数、也不列精灵名单：官方改动画、出新精灵都自动跟上。
+ * ⚠ 拿不到战斗 idle 时按"自带"处理 —— 无从比较，而且至少不会叠加污染。
+ */
+private fun cryIsSelfContained(model: PosableModel, cry: BedrockAnimation): Boolean {
+    val coverage = battleCryCoverage(model, cry) ?: return true
+    return coverage >= SELF_CONTAINED_COVERAGE
 }
 
 private class PoseWithBattleCry(
