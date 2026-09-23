@@ -121,8 +121,6 @@ class BlackCardConfigScreen : Screen(CardNames.label("cobblemarket.op.black_card
                 },
                 iconLeft = toggleIcon(key),
                 iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-                texture = ROW_BACKGROUND_TEXTURE,
-                texH = ROW_BACKGROUND_TEX_H
             )
             toggleButtons[key] = btn
             addDrawableChild(btn)
