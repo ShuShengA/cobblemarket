@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.client.icon
 
+import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.client.ClientRestCache
 import com.cobblemon.mod.common.client.gui.calculateHeadYawAndPitch
 import com.cobblemon.mod.common.client.render.models.blockbench.PosableModel
@@ -279,10 +280,12 @@ object IconAnimationResolver {
             ?: return false
         // 用 primary 播「战吼 → 维持战斗姿态」两段式动画（见 PoseWithBattleCry 的说明）：
         // 独占是必须的 —— 否则框架后跑的姿势动画会再累加一份、把战吼淹掉。
+        val selfContained = cryIsSelfContained(model, cry)
+        logBattleCryDiagnostics(renderable, model, group, cry, selfContained)
         val anim = PoseWithBattleCry(
             cry = cry,
             transitionSeconds = battlePoseTransformSeconds(model) ?: DEFAULT_TRANSITION_SECONDS,
-            selfContained = cryIsSelfContained(model, cry)
+            selfContained = selfContained
         )
         state.addPrimaryAnimation(
             PrimaryAnimation(
@@ -324,21 +327,83 @@ private val TRANSITION_CURVE: WaveFunction =
     sineFunction(amplitude = 0.5F, period = 2F, phaseShift = 0.5F, verticalShift = 0.5F)
 
 /**
+ * 是不是「战斗姿势」的名字（见 [battlePoseOf] 的说明）。
+ *
+ * ⚠ **必须规范化后判，不能认死某一种写法**：Cobblemon 1.8.1 正在把精灵姿势从
+ * Kotlin 硬编码迁到 poser JSON，**两套命名同时在用**，而且同一套里的各物种也不统一 ——
+ * 2026-09-23 全量扫描的实际分布：
+ *
+ * | 写法 | 用它的物种数 |
+ * |---|---|
+ * | `battle_idle` | 93 |
+ * | `battleidle` | 19 |
+ * | `battlestanding` | 3 |
+ * | `battle_standing` | 2 |
+ * | `battle-standing` | 只出现在**已迁移**物种的 poser JSON 里 |
+ *
+ * 只认连字符那版 ⇒ **271 个还没迁移的物种全部找不到战斗姿势**（铁骨土人就是这么中招的：
+ * 它的姿势叫 `battleidle`、战吼又是"叠加式"的，于是战斗 idle 补不上、手臂停在身侧）。
+ *
+ * ⇒ 判据 = **去掉 `-` `_` 并转小写后含 `battle`**：官方再改命名、迁移到哪一步都自动跟上。
+ * ⚠ 排除 `sleep`（`battlesleep` 是睡觉姿势，不是战斗姿势）。
+ * ⚠ 水面变体（`water_battle_idle` / `surface_battle_idle`）也会命中 —— 靠下面的**名字排序**
+ *   把它们排到 `battle_*` 之后（`w` / `s` > `b`），陆地物种仍优先拿到陆地战斗姿势。
+ */
+private fun String.isBattlePoseName(): Boolean {
+    val n = lowercase().replace("-", "").replace("_", "")
+    return "battle" in n && "sleep" !in n
+}
+
+/**
+ * ⚠ **临时诊断日志**（2026-09-23 加，查「战吼动画不对」）—— 每个物种**只打一次**。
+ *
+ * 为什么需要：战斗姿势的查找 + 「战吼是否自带姿态」的判定此前**一直在静默降级**
+ * （`battlePoseOf` 取不到 ⇒ `?: return true` 一律按"自带"处理），跑起来与正常情况看不出差别，
+ * 只有画面不对才知道 —— 而画面只能一个物种一个物种地点过去看（铁骨土人就是这么被发现的）。
+ *
+ * 这条把几个关键量摊开：取到的是哪个战斗姿势、它的 idle 有多少骨骼、最终判定是什么。
+ * 对照实测清单逐个点一遍即可确认效果。**确认完可以删掉**（或降成 debug 级）。
+ */
+private val battleCryDiagLogged = mutableSetOf<String>()
+
+private fun logBattleCryDiagnostics(
+    renderable: RenderablePokemon,
+    model: PosableModel,
+    group: String,
+    cry: BedrockAnimation,
+    selfContained: Boolean
+) {
+    if (!battleCryDiagLogged.add(renderable.species.name)) return
+    val pose = battlePoseOf(model)
+    val idle = pose?.animations?.filterIsInstance<BedrockPoseAnimation>()?.firstOrNull()?.animation
+    CobbleMarket.LOGGER.info(
+        "[icon-anim] battle cry: species={} group={} pose={} cryBones={} idleBones={} selfContained={}",
+        renderable.species.name,
+        group,
+        pose?.poseName ?: "(none)",
+        cry.boneTimelines.size,
+        idle?.boneTimelines?.size ?: 0,
+        selfContained
+    )
+}
+
+/**
  * 该模型的「战斗姿势」；没有则 null。
  *
- * ⚠ **优先精确取 `battle-standing`**（陆地站立的战斗姿势），两条弯路都别再走：
+ * ⚠ **优先精确取 `battle-standing`**（已迁移物种的规范名，陆地站立的战斗姿势），两条弯路都别再走：
  * - **不能按前缀 `firstOrNull` 取**：1.8.1 把 `poses` 的 map 换成了无序的 `HashMap`，
  *   喷火龙的 `battle-standing` / `battle-flying` 谁在前是随机的 —— 用户实测战吼后"变成飞行"。
  * - **也不能按"当前姿势的介质"去配**（站立→standing、飞行→flying）：点击图标时鼠标必然停在
  *   那一行上、当前姿势是**悬停的走路态**，喷火龙那里是飞行 ⇒ 又会配成 `battle-flying`（同样实测点破）。
  *
- * 本来就飞行 / 水生的物种**没有** `battle-standing` ⇒ 落到兜底；兜底按**名字排序**，
+ * 本来就飞行 / 水生的物种、以及**还没迁移到 poser JSON** 的那批（战斗姿势叫 `battle_idle`
+ * 等其他写法，见 [isBattlePoseName]）⇒ 落到兜底；兜底按**名字排序**，
  * 保证结果稳定、不再依赖 Map 顺序。
  */
 private fun battlePoseOf(model: PosableModel): Pose? =
     model.poses["battle-standing"]
         ?: model.poses.keys
-            .filter { it.startsWith("battle-") && !it.contains("sleep") }
+            .filter { it.isBattlePoseName() }
             .sorted()
             .firstOrNull()
             ?.let { model.poses[it] }
