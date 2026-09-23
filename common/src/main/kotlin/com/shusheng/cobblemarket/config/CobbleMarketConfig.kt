@@ -840,8 +840,31 @@ object CobbleMarketConfig {
                     save()
                 }
             } catch (e: Exception) {
-                CobbleMarket.LOGGER.warn("Failed to load config: ${e.message}")
-                save()
+                // ⚠⚠ **这里绝不能 save()**（2026-09-23 修）——
+                //   那会拿内存里的**默认值**把服主的配置文件**整个覆盖掉**：他手写时少一个引号
+                //   （或多一个逗号、用了中文引号）就足以让整份 JSON 解析失败，于是配置全丢、
+                //   **无法恢复**，而全过程只有一条容易被刷过去的 warn。
+                //   ⚠ 1.2.0 起我们**主动引导服主手编配置**（单机 / 局域网没有控制台，只能手编），
+                //   这条路径越顺，踩中这个雷的人就越多 —— 所以必须堵。
+                //   改为：**不碰原文件**（坏的也留着，他才能看见哪里写错了），另存一份 `.broken` 留档，
+                //   用 **error 级**说清怎么回事。这次服务器以默认配置运行 —— 那也比把他的手写配置抹掉强。
+                val broken = File(configFile.parentFile, configFile.name + ".broken")
+                try {
+                    configFile.copyTo(broken, overwrite = true)
+                    CobbleMarket.LOGGER.error(
+                        "CobbleMarket: failed to read config/cobblemarket.json — {}. " +
+                            "The file was NOT overwritten; a copy is saved as {}. " +
+                            "Fix the JSON and restart (a missing quote or a stray comma is the usual cause). " +
+                            "The server is running with DEFAULT settings until then.",
+                        e.message, broken.name
+                    )
+                } catch (io: Exception) {
+                    CobbleMarket.LOGGER.error(
+                        "CobbleMarket: failed to read config/cobblemarket.json — {}. " +
+                            "The file was NOT overwritten. (Also failed to write the .broken copy: {})",
+                        e.message, io.message
+                    )
+                }
             }
         }
         if (!skipCurrency) CurrencyHandler.load(this)
