@@ -94,7 +94,7 @@ object CobbleMarket {
 						"        \"serverOwners\": [\"6b8d9b8a-9580-4f8c-b72d-220328d4aea3\"]\n" +
 						"    (each entry needs its quotes; several owners are separated by commas)\n" +
 						"    Get your UUID from usercache.json, or run /data get entity @s UUID in game — that form is accepted too.\n" +
-						"    Then restart or run /market reload."
+						"    Then reload the world (or run /market reload in game if you have cheats on)."
 				)
 			} else {
 				LOGGER.info("CobbleMarket: {} server owner(s) loaded from config", owners.size)
