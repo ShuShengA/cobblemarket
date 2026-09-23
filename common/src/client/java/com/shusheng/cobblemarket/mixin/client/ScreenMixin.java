@@ -38,8 +38,9 @@ public abstract class ScreenMixin {
     private void cobblemarket$renderCelebrationOverlay(DrawContext context, int mouseX, int mouseY, float deltaTicks, CallbackInfo ci) {
         PokemonCelebrationAnimation.renderOverlay(context, deltaTicks);
         CardCelebrationAnimation.INSTANCE.renderOverlay(context);
-        // 余额 HUD：界面（含弹窗遮罩）画完后补画，保证竞价/购买弹窗打开时余额不被压暗
-        CobbleMarketClientKt.renderBalanceHud(context);
+        // 余额 HUD（顶层，onTop=true）：界面（含弹窗遮罩）画完后补画，保证竞价/购买弹窗打开时余额不被压暗。
+        // ⚠ 这条路径只在**本模组界面**画；原版界面那种「在下面淡淡透出来」的效果由 HUD 层那条路径负责
+        CobbleMarketClientKt.renderBalanceHud(context, true);
         // 关闭动画矩阵恢复（与 HEAD 配对；动画中界面内容与 HUD 一起滑出）
         CloseAnimation.INSTANCE.popTransform(context);
         EnterAnimation.INSTANCE.popTransform(context);
