@@ -68,6 +68,7 @@
 
 ### Fixes
 
+- **One wrong character in the config file used to wipe the whole config**: editing `config/cobblemarket.json` by hand and missing a quote (or leaving a stray comma, or using full-width quotes) made the file fail to parse — and the mod then **overwrote it with defaults**, resetting every fee, limit and finance parameter you had tuned, with **no way to get them back** and only an easily-missed note in the log. It now **leaves your file untouched** (however broken, it stays there so you can see what is wrong), saves a `.broken` copy for reference, and logs a loud error explaining the cause
 - **List area going blank while a filter dropdown is open**: opening the type/ability/nature filter in the Pokemon market, the Auction House or the sell-select screen made every listing row disappear; only the rows actually covered by the dropdown are now skipped, and rows below it render as usual
 - **Enchanted and renamed items rendered incorrectly in the Auction House and its Admin Panel**: enchanted books appeared as plain books and renamed items showed their default name in those views; they now render from the item's full data (both list rows and detail dialogs)
 - **Held item icons ignored enchantments and custom names**: when a Pokemon's held item was enchanted or renamed, its icon in lists and detail views showed the plain item; the icons now render from the item's full data (Auction House, Buy Orders, sell-select and Admin Panels)
