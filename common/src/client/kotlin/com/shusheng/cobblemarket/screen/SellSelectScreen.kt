@@ -197,11 +197,16 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             tooltip = Text.translatable("cobblemarket.gui.back")
         ))
 
-        // Row 3 (y=72)：间距统一 4px，整行排到**内容区右缘（lx+296）** —— 与右上角返回按钮的右缘
+        // Row 3 (y=68)：间距统一 4px，整行排到**内容区右缘（lx+296）** —— 与右上角返回按钮的右缘
         // 竖直对齐（1.3.0 同款；原来是 294、差 2px）。两种模式各自铺满不留空：
         //   交付：闪光30 | 公母24 | 属性58 | 特训80 | 选择86
         //   上架：闪光30 | 公母24 | 属性58 | 价格74 | 上架28 | 特训60
-        val btnY = 72
+        //
+        // ⚠ **72 → 68**（2026-09-23）：这一行原来是 72、底边到 92，而**分割线固定在「列表起点 − 4」**；
+        //   列表起点从 100 改到 96 之后分割线落到了 92 ⇒ **两条正好重合、按钮像贴在分割线上**。
+        //   上移 4px 后底边 88，与分割线留出 4px；代价是与上面 IV 输入框行（底边 66）之间从 6px 缩到 2px，
+        //   是用户认可的方向（"上移一点、和输入框的间距缩一点"）。
+        val btnY = 68
         shinyBtn = NineSliceButton(
             lx + 2, btnY, 30, 20,
             Text.literal(if (shinyOnly) "★" else "☆"),
