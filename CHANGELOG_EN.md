@@ -52,7 +52,6 @@
 
 ### Changes
 
-- **Buttons now use the button background**: the entry screen's Buy Orders / Meowth Bank / Settings, the admin panel's Permissions / Market switch / Server Config, and every toggle inside the Server Config screens used to draw the **list-row** background (darker); they now use the button background — they are buttons, after all
 
 ## 1.2.0 (in development, unreleased)
 
