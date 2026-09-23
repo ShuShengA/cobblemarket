@@ -355,15 +355,18 @@ private fun String.isBattlePoseName(): Boolean {
 }
 
 /**
- * ⚠ **临时诊断日志**（2026-09-23 加，查「战吼动画不对」）—— 每个物种**只打一次**。
+ * 战吼诊断日志的开关（**默认关**，用户 2026-09-23 要求）。
  *
- * 为什么需要：战斗姿势的查找 + 「战吼是否自带姿态」的判定此前**一直在静默降级**
- * （`battlePoseOf` 取不到 ⇒ `?: return true` 一律按"自带"处理），跑起来与正常情况看不出差别，
- * 只有画面不对才知道 —— 而画面只能一个物种一个物种地点过去看（铁骨土人就是这么被发现的）。
+ * ⚠ 默认关的理由：**服主看到满屏 `[icon-anim]` 会有疑问**（"这是什么？是不是出问题了？"）——
+ * 这条日志是给**开发排查**用的，不是给服主看的。
  *
- * 这条把几个关键量摊开：取到的是哪个战斗姿势、它的 idle 有多少骨骼、最终判定是什么。
- * 对照实测清单逐个点一遍即可确认效果。**确认完可以删掉**（或降成 debug 级）。
+ * 排查「某只精灵战吼不对」时把它改成 `true`：每个物种**首次点击**打一行，
+ * 含 `species` / `pose` / `cryBones` / `idleBones` / `coverage` / `selfContained` ——
+ * 对照 `docs/icon_animation.md`「战吼出问题时的排查」那张症状表即可定位该往哪边调。
  */
+private const val BATTLE_CRY_DIAG = false
+
+/** 诊断日志去重：每个物种只打一次（开关打开时才有意义）。 */
 private val battleCryDiagLogged = mutableSetOf<String>()
 
 private fun logBattleCryDiagnostics(
@@ -373,6 +376,7 @@ private fun logBattleCryDiagnostics(
     cry: BedrockAnimation,
     selfContained: Boolean
 ) {
+    if (!BATTLE_CRY_DIAG) return
     if (!battleCryDiagLogged.add(renderable.species.name)) return
     val pose = battlePoseOf(model)
     val idle = pose?.animations?.filterIsInstance<BedrockPoseAnimation>()?.firstOrNull()?.animation
