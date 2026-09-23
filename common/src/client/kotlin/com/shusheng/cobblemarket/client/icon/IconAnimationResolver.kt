@@ -431,9 +431,13 @@ private fun battlePoseTransformSeconds(model: PosableModel): Float? =
  * 集合覆盖率能抓住这一点：它问的是「战斗 idle 动的那些骨骼，战吼**是否都动了**」，
  * 漏掉任何一根都意味着那根停在 rest pose（化石翼龙缺 `wing_ground_left1~4` 就是同一类问题）。
  *
- * 全量扫描（2026-09-23）：已迁移物种里 88% 的覆盖率 ≥ 0.9，分界比数量比干净。
+ * ⚠ **阈值 0.8 是实测校准出来的**（2026-09-23，用户逐个点过去看）：
+ * 需要叠加的（**铁骨土人 0.60**，实测修好 ✅）与不该叠加的（**火焰鸡 0.96**、**巨锻匠 1.00**
+ * —— 试"永远叠加"时一个手偏中间、一个锤子斜着立起来还站在空气上 ❌）之间，
+ * 数据分界落在 **0.71 ~ 0.89**，取中点 0.8。
+ * ⚠ 别再用"永远叠加"一刀切 —— 试过了，上面两个物种当场就坏（[ALWAYS_LAYER_BATTLE_CRY] 那次实验）。
  */
-private const val SELF_CONTAINED_COVERAGE = 0.9f
+private const val SELF_CONTAINED_COVERAGE = 0.8f
 
 /**
  * ⚠ **实验开关**（2026-09-23，用户提议）：战吼**永远叠加**在战斗 idle 上，不再判断"要不要补"。
@@ -447,10 +451,15 @@ private const val SELF_CONTAINED_COVERAGE = 0.9f
  * 自动选到战斗姿势，而我们的图标是**无实体的假精灵** ⇒ 框架永远选 `standing` ⇒ 只能自己在
  * primary 里把战斗 idle 应用上去。这个开关就是"自己模拟官方"的开关。
  *
- * `true` = 永远叠加（新方案，**默认**）；`false` = 回到按覆盖率判断（旧方案，一行可回滚）。
- * ⚠ 待验证：火焰鸡那类"`battle_cry` 骨骼特别多"的战吼叠加后会不会变成两份叠加（手跑到胸前）。
+ * ⚠ **2026-09-23 实测结论：这条一刀切是错的，已回滚为 `false`。**
+ * - 铁骨土人（覆盖率 0.60）叠加后**修好了** ✅
+ * - 但 **火焰鸡（0.96）手偏中间、巨锻匠（1.00）锤子斜着立起来、精灵站在空气上** ❌
+ *   —— 典型的"两份旋转相加"（巨锻匠的锤子转了近两倍角度，位置自然就飘了）
+ *
+ * ⇒ 两种战吼**确实并存**，判据必须留着：`true` = 永远叠加（实验用）；
+ * `false` = 按 [SELF_CONTAINED_COVERAGE] 判断（**当前**）。
  */
-private const val ALWAYS_LAYER_BATTLE_CRY = true
+private const val ALWAYS_LAYER_BATTLE_CRY = false
 
 /**
  * 这条战吼覆盖了战斗 idle 多少比例的骨骼（集合覆盖率）；拿不到 idle 返回 null。
