@@ -742,7 +742,7 @@ private fun tickCreditInfoRetry(client: MinecraftClient, now: Long) {
  * 新增界面要支持 E 键关闭 = 在这里补一行（别把白名单散回 tick 里）。
  * 输入框聚焦时 E 不生效（打字保护在调用侧判断）。
  */
-/** 余额 HUD：金额 + 货币符号（金色，金额规范色）；位置可配（设置 → 余额HUD位置设置 → 自定义拖动）；常驻所有界面（渲染在最顶层，弹窗打开时也可见——竞价/购买时玩家能看到剩余余额）；开关关闭、未进世界时不画。
+/** 余额 HUD：金额 + 货币符号（金色，金额规范色）；位置可配（设置 → 余额HUD位置设置 → 自定义拖动）；只在本模组界面上常驻（无界面时照常；渲染在最顶层，弹窗打开时也可见——竞价/购买时玩家能看到剩余余额）；开关关闭、未进世界时不画。
  *  公开顶层函数：HudRenderCallback（无界面）与 ScreenMixin（界面之上）两处调用。 */
 
 /** 位置编辑中的实时归一化坐标（位置编辑界面打开时非 null；渲染优先于配置值，实现拖动时 HUD 跟随） */
@@ -781,6 +781,10 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
     // 只剩余额 HUD 挂在画面上很碍眼——截图/录屏时尤其明显）。shouldShowDebugHud 内含 hudHidden 判断，
     // F1 后它会返回 false，所以 hudHidden 必须单独判一次
     if (!editingPos && (client.debugHud.shouldShowDebugHud() || client.options.hudHidden)) return
+    // 有界面但不是本模组界面时不画：余额 HUD 是靠 ScreenMixin 补画在界面之上的（竞价/购买弹窗里
+    // 能看到余额），但原版 ESC 菜单 / 设置 / 背包与其他模组的界面不该被它盖住。判据与自定义光标
+    // 共用同一份界面白名单（新增本模组界面记得补进 isMarketScreen，否则这个界面看不到余额 HUD）
+    if (!editingPos && client.currentScreen?.let { !isMarketScreen(it) } == true) return
     val text = "${hudBalanceText(client)} ${inlineCurrencyUnit()}"
     // 余额变动检测（每帧，OFF 模式也跟踪避免切回时误报）：差值驱动 +绿/-红浮字
     val rawNow = hudBalanceRaw(client)
