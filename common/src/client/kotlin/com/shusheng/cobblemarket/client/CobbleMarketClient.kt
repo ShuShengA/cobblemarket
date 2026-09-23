@@ -183,7 +183,9 @@ object CobbleMarketClient {
             tickCreditInfoRetry(client, tickNow)
         }
         registerHudRender { context, _ ->
-            renderBalanceHud(context)
+            // HUD 层（onTop=false，画在界面之前）：本模组界面时函数内部会跳过（顶层那份负责，避免重影），
+            // 原版 / 其他模组界面则照画 —— 被界面的半透明遮罩压暗，即「背包 / ESC 菜单里淡淡透出来」
+            renderBalanceHud(context, onTop = false)
         }
 
         // 聊天可点击按钮的落地路径（点击 = RUN_COMMAND 本地执行，不经过聊天栏回显、不发服务端）：
@@ -772,7 +774,18 @@ private var lastBalanceRaw: Long? = null
 private var hudDiff = 0L
 private var hudDiffUntil = 0L
 
-fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
+/**
+ * 余额 HUD 的绘制。
+ *
+ * @param onTop 本帧从**哪条路径**来 —— 两条路径分工互补，缺一就会重影、或者该显示的不显示：
+ * - `true` = 界面**之上**（`ScreenMixin.renderWithTooltip` 的 TAIL）：**只在本模组界面**画 ——
+ *   竞价 / 购买弹窗里要清清楚楚看到余额
+ * - `false` = **HUD 层**（`registerHudRender`，在界面**之前**画）：本模组界面时**跳过**（上面那份会画，
+ *   两份叠一起是重影），**其余界面照画** ⇒ 被界面的半透明遮罩**自然压暗** ——
+ *   这正是「打开背包 / ESC 菜单时，余额 HUD 在下面淡淡地透出来」的效果（用户 2026-09-23 要求），
+ *   不用自己做暗色滤镜
+ */
+fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext, onTop: Boolean) {
     val client = MinecraftClient.getInstance()
     if (client.player == null) return
     // 位置编辑界面：无视显示模式与淡出强制常亮（否则「关闭」模式下玩家看不到 HUD，无从拖动）
@@ -781,10 +794,20 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext) {
     // 只剩余额 HUD 挂在画面上很碍眼——截图/录屏时尤其明显）。shouldShowDebugHud 内含 hudHidden 判断，
     // F1 后它会返回 false，所以 hudHidden 必须单独判一次
     if (!editingPos && (client.debugHud.shouldShowDebugHud() || client.options.hudHidden)) return
-    // 有界面但不是本模组界面时不画：余额 HUD 是靠 ScreenMixin 补画在界面之上的（竞价/购买弹窗里
-    // 能看到余额），但原版 ESC 菜单 / 设置 / 背包与其他模组的界面不该被它盖住。判据与自定义光标
-    // 共用同一份界面白名单（新增本模组界面记得补进 isMarketScreen，否则这个界面看不到余额 HUD）
-    if (!editingPos && client.currentScreen?.let { !isMarketScreen(it) } == true) return
+    // 两条路径的分工见上面的 KDoc。判据与自定义光标共用同一份界面白名单
+    //（新增本模组界面记得补进 isMarketScreen，否则那个界面看不到余额 HUD）。
+    // ⚠ 位置编辑界面本身也在白名单里，所以它天然走「顶层画、HUD 层跳过」，不会重影
+    val screen = client.currentScreen
+    val marketScreen = screen != null && isMarketScreen(screen)
+    // 「淡淡透出来」只对**原版界面**（背包 / ESC 菜单 / 设置 / 聊天）生效 ——
+    // 其他模组的界面（Cobblemon PC、JEI 等）不显示，这是用户 2026-09-23 定的范围
+    val vanillaScreen = screen != null && screen.javaClass.name.startsWith("net.minecraft.")
+    if (onTop) {
+        if (!marketScreen) return          // 顶层：只在本模组界面画
+    } else {
+        if (marketScreen) return           // HUD 层：本模组界面跳过（顶层那份会画，避免重影）
+        if (screen != null && !vanillaScreen) return
+    }
     val text = "${hudBalanceText(client)} ${inlineCurrencyUnit()}"
     // 余额变动检测（每帧，OFF 模式也跟踪避免切回时误报）：差值驱动 +绿/-红浮字
     val rawNow = hudBalanceRaw(client)
