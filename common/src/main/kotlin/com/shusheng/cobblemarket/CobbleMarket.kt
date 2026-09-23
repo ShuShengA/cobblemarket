@@ -80,13 +80,24 @@ object CobbleMarket {
 			com.shusheng.cobblemarket.finance.FinanceState.get(server)
 			// 服主名单为空 = 谁都进不去「服务器配置」与「权限管理」（安全默认）。升级后老服主
 			// 会发现入口点不动了，这里在启动日志里提醒一次怎么配（兜底三件套之一，方案见 docs/permission_nodes_plan.md）
-			if (com.shusheng.cobblemarket.config.CobbleMarketConfig.serverOwners.isEmpty()) {
+			//
+			// ⚠ **非空时也要回显一行**（2026-09-23 加）：配置里那几个 UUID 是手写的字符串数组，
+			//   写错了（缺引号 / 填了游戏名 / 格式不对）此前是**静默失效**的 —— 服主只会觉得
+			//   "这功能怎么没反应"，根本不知道自己配错了。打印一行「已加载 N 名服主」，
+			//   他重启后一眼就能确认成没成。
+			val owners = com.shusheng.cobblemarket.config.CobbleMarketConfig.serverOwners
+			if (owners.isEmpty()) {
 				LOGGER.warn(
-					"CobbleMarket: no server owner configured — nobody can edit the market config or grant admin permissions. " +
-						"• Dedicated server: run \"/market owner add <player>\" in the server console. " +
-						"• Single-player / LAN (no console): put the UUID into the \"serverOwners\" array of config/cobblemarket.json " +
-						"— find it in usercache.json, or run /data get entity @s UUID in game — then restart or run /market reload."
+					"CobbleMarket: no server owner configured — nobody can edit the market config or grant admin permissions.\n" +
+						"  • Dedicated server: run \"/market owner add <player>\" in the server console.\n" +
+						"  • Single-player / LAN (no console): edit config/cobblemarket.json and put your UUID in the array, like this —\n" +
+						"        \"serverOwners\": [\"6b8d9b8a-9580-4f8c-b72d-220328d4aea3\"]\n" +
+						"    (each entry needs its quotes; several owners are separated by commas)\n" +
+						"    Get your UUID from usercache.json, or run /data get entity @s UUID in game — that form is accepted too.\n" +
+						"    Then restart or run /market reload."
 				)
+			} else {
+				LOGGER.info("CobbleMarket: {} server owner(s) loaded from config", owners.size)
 			}
 		}
 		onServerStopped { server ->
