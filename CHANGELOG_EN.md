@@ -43,6 +43,17 @@
 
 - **"Gigantamax" is no longer listed as a form option**: the form buttons in Blacklist / Price Limits / Buy Orders no longer offer it — Gmax is a **battle-only** form that players cannot normally obtain, so the entry only ever produced rules that could **never match**. Gigantamax is expressed by its own toggle (in the RP shop editor) or by in-game mechanics, not as a form
 
+## 1.2.1 (in development, unreleased)
+
+### Fixes
+
+- **Some Pokémon had the wrong battle-cry animation**: their body would lock into the wrong pose — Gurdurr could not lift its girder (the arm stayed at its side), Blaziken's hand drifted in front of its body, and Archaludon grew two straight rods under its feet. A battle cry has to layer on top of the **battle stance**, but for some Pokémon we could not find that stance at all (Cobblemon is migrating Pokémon poses from code into data files and both naming styles are in use — we only recognised one of them), so the cry ended up layered onto the idle stance instead. Both naming styles are now supported, and whether a cry brings its own full pose is decided per Pokémon
+- **Pokémon listing screen: the bottom of the list wasted a full row**: the gap between the last row and the "x-y / n" counter underneath was wide enough for one more row; it now matches the **item** listing screen
+
+### Changes
+
+- **Buttons now use the button background**: the entry screen's Buy Orders / Meowth Bank / Settings, the admin panel's Permissions / Market switch / Server Config, and every toggle inside the Server Config screens used to draw the **list-row** background (darker); they now use the button background — they are buttons, after all
+
 ## 1.2.0 (in development, unreleased)
 
 ### New Feature
