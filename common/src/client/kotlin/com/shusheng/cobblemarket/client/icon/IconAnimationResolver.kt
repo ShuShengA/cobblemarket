@@ -436,6 +436,23 @@ private fun battlePoseTransformSeconds(model: PosableModel): Float? =
 private const val SELF_CONTAINED_COVERAGE = 0.9f
 
 /**
+ * ⚠ **实验开关**（2026-09-23，用户提议）：战吼**永远叠加**在战斗 idle 上，不再判断"要不要补"。
+ *
+ * 依据是官方的做法：**官方播战吼从不独占、也从不判断** —— `PokemonClientDelegate.cry()` 里
+ * 拿到的 `cryAnimation` 若不是 `PrimaryAnimation` 就走 `activeAnimations.add(...)`，也就是
+ * **叠加在当前（战斗）姿势之上**。既然官方永远叠加，我们也永远叠加，就**不需要再猜**
+ * （那套 [SELF_CONTAINED_COVERAGE] 判据是"我们把精灵弄成待机姿势、又想独占播战吼"才需要补的窟窿）。
+ *
+ * ⚠ 之所以不能整条照搬官方：官方靠 `PosableState.isBattling`（扩展属性，只能从真实体取）让框架
+ * 自动选到战斗姿势，而我们的图标是**无实体的假精灵** ⇒ 框架永远选 `standing` ⇒ 只能自己在
+ * primary 里把战斗 idle 应用上去。这个开关就是"自己模拟官方"的开关。
+ *
+ * `true` = 永远叠加（新方案，**默认**）；`false` = 回到按覆盖率判断（旧方案，一行可回滚）。
+ * ⚠ 待验证：火焰鸡那类"`battle_cry` 骨骼特别多"的战吼叠加后会不会变成两份叠加（手跑到胸前）。
+ */
+private const val ALWAYS_LAYER_BATTLE_CRY = true
+
+/**
  * 这条战吼覆盖了战斗 idle 多少比例的骨骼（集合覆盖率）；拿不到 idle 返回 null。
  *
  * ⚠ 是**集合**口径（`cry` 的骨骼里有几成出现在 `idle` 的骨骼里），不是数量比 ——
@@ -464,6 +481,8 @@ private fun battleCryCoverage(model: PosableModel, cry: BedrockAnimation): Float
  * ⚠ 拿不到战斗 idle 时按"自带"处理 —— 无从比较，而且至少不会叠加污染。
  */
 private fun cryIsSelfContained(model: PosableModel, cry: BedrockAnimation): Boolean {
+    // 实验：永远叠加（见 [ALWAYS_LAYER_BATTLE_CRY]）—— 复刻官方"从不判断、永远叠加"的做法
+    if (ALWAYS_LAYER_BATTLE_CRY) return false
     val coverage = battleCryCoverage(model, cry) ?: return true
     return coverage >= SELF_CONTAINED_COVERAGE
 }
