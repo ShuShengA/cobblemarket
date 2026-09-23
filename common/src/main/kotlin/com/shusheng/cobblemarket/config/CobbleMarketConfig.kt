@@ -211,6 +211,42 @@ object CobbleMarketConfig {
         return true
     }
 
+    /**
+     * 解析名单里的一个条目，**认两种写法**（2026-09-23 用户实测后加）：
+     *
+     * 1. **标准 UUID 字符串**：`6b8d9b8a-9580-4f8c-b72d-220328d4aea3`
+     * 2. **NBT 的整数数组** —— 也就是游戏内 `/data get entity @s UUID` 打出来的那种：
+     *    `[I; 1804442506, -1786753140, -1221778941, 685026979]`
+     *
+     * ⚠ 加第 2 种的理由：**服主照说明敲那条命令、复制到的就是这个格式**，直接粘进配置本该能用
+     * （两者是同一个 128 位值的两种写法，不是两套标识）。此前只认字符串 ⇒ 服主粘进去静默失效、
+     * 只会觉得"这功能怎么没反应" —— 说明不到位就是使用门槛，直接劝退一部分服主。
+     *
+     * ⚠ 那几个数是**有符号 32 位**：负数必须先用 `and 0xFFFFFFFFL` 无符号扩展再拼，
+     *   否则会算出一个"看着像 UUID 但不是本人"的值 —— 那比直接报错糟得多。
+     *
+     * 解析不出来返回 null，由调用方**跳过 + 记日志**，绝不猜。
+     */
+    private fun parseServerOwnerEntry(raw: Any?): UUID? {
+        val s = raw?.toString()?.trim() ?: return null
+        // ① 标准字符串
+        try {
+            return UUID.fromString(s)
+        } catch (_: IllegalArgumentException) {
+            // 落下去试 ②
+        }
+        // ② [I; a, b, c, d]（NBT 整数数组）
+        if (!s.startsWith("[I;") || !s.endsWith("]")) return null
+        val parts = s.removePrefix("[I;").removeSuffix("]").split(',')
+        if (parts.size != 4) return null
+        val ints = parts.map { it.trim().toLongOrNull() ?: return null }
+        // 越界（超出 32 位有符号范围）⇒ 不是合法的 NBT 整数 ⇒ 不猜
+        if (ints.any { it < Int.MIN_VALUE.toLong() || it > Int.MAX_VALUE.toLong() }) return null
+        val mostSig = (ints[0] shl 32) or (ints[1] and 0xFFFFFFFFL)
+        val leastSig = (ints[2] shl 32) or (ints[3] and 0xFFFFFFFFL)
+        return UUID(mostSig, leastSig)
+    }
+
     // ── 金融系统（finance 段，启动级：reload 跳过应用仅比较差异，改后需重启） ──
 
     /** 金融系统总开关（默认关闭：借贷影响经济安全，不主动打开） */
@@ -788,14 +824,14 @@ object CobbleMarketConfig {
                 // 服主名单：容错解析 —— 单条写错只跳过该条并记日志，不让整份配置读取失败
                 serverOwners = (data["serverOwners"] as? List<*>)
                     ?.mapNotNull { raw ->
-                        val s = raw?.toString() ?: return@mapNotNull null
-                        try {
-                            UUID.fromString(s.trim())
-                        } catch (_: IllegalArgumentException) {
-                            CobbleMarket.LOGGER.warn("Config serverOwners contains an invalid UUID, ignored: {}", s)
-                            null
+                        val uuid = parseServerOwnerEntry(raw)
+                        if (uuid == null) {
+                            CobbleMarket.LOGGER.warn("Config serverOwners: cannot parse entry, ignored: {}", raw)
                         }
-                    } ?: emptyList()
+                        uuid
+                    }
+                    ?.distinct()   // 同一玩家可能被写成两种格式（标准字符串 / [I; …]），去重
+                    ?: emptyList()
                 // 跨项校验（手工改过 config.json 也兜住）
                 enforceCardApplySeenGuard()
                 // 缺失字段补写：旧设置保留，新字段以默认值落盘（服主无需删配置）
@@ -856,7 +892,7 @@ object CobbleMarketConfig {
                 "pointsShop.orderTimeoutMinutes" to "待支付订单超时分钟数（默认 15，钳 1~1440）：超时后订单作废，玩家可重新下单。⚠ 超时后有 30 分钟宽限期，期内玩家仍可提交「我已支付」（他可能已经付款、只是回来点得慢；作废是安全的失败方向，误判成已付款才危险）/ Minutes before an unpaid order expires (default 15, clamped 1–1440). Expired orders are voided so the player can order again. ⚠ A 30-minute grace period follows, during which \"I have paid\" is still accepted (the player may have paid but tapped late; voiding is the safe failure direction, wrongly granting is not)",
                 "pointsShop.tiers" to "充值档位列表：[{name=展示名, price=标价, points=发放点数, qr=该档收款码文件名(可留空), icon=该档RP券图文件名(可留空，放在 config/cobblemarket/icons/ 下，留空则用内置券图)}]。**实付金额 = 档位标价**——玩家在界面上看到多少就付多少，模组不加任何钱。留空数组 = 不开放「购买RP」/ Top-up tiers: [{name=display name, price=list price, points=points granted, qr=this tier's own QR file name (optional), icon=this tier's RP coupon image file name (optional; put it under config/cobblemarket/icons/, blank = built-in coupon image)}]. **Amount to pay = the list price** — the player pays exactly what the screen shows; the mod adds nothing. An empty array disables the in-game purchase entry",
                 "maxBuyOrdersPerPlayer" to "每个玩家同时进行的求购单数量上限，精灵与物品合计（0=不限制）。求购单列表全量下发给所有客户端，玩家较多的服务器建议保持较小值，避免全服活跃求购单总量过大导致卡顿 / Max concurrent buy orders per player, Pokémon and items combined (0=unlimited). The buy order list is broadcast in full to every client, so on crowded servers keep this small to avoid lag from too many active orders",
-                "serverOwners" to "服主名单（UUID 数组）：**服主是唯一拥有全部管理权限的人，且只有服主能改服务器配置、给他人分配管理权限**。添加方式二选一：① **专用服务器** —— 在服务器控制台执行 /market owner add <玩家名>（控制台会自动把名字转成 UUID），/market owner remove <玩家名> 移除、/market owner list 查看；② **单机 / 局域网**（集成服务器没有控制台）—— 直接把这个数组填上 UUID：UUID 见 usercache.json 里的「玩家名 → UUID」对照表（在服务器运行目录下，单机即 .minecraft/usercache.json，版本隔离的看对应版本目录），或游戏内用 /data get entity @s UUID 查；改完重启、或在游戏内执行 /market reload 生效。留着空数组 = 谁都没有管理权限（安全默认）。⚠ OP 不等于服主：OP 可以被任何 OP 用 /op 传递下去，所以市场里不认 OP，只认这份名单 —— 想放权就把对方 UUID 加进来 / Server owner list (UUID array): owners are the only people with all admin permissions, and only owners can edit the server config or grant admin permissions to others. Two ways to add an owner: (1) Dedicated server — run /market owner add <player> in the server console (names are resolved to UUIDs for you); /market owner remove <player> and /market owner list do the rest. (2) Single-player / LAN (the integrated server has no console) — put the UUID straight into this array; find it in usercache.json (the player-name → UUID table in the server run directory, i.e. .minecraft/usercache.json, or the matching version folder with isolation), or run /data get entity @s UUID in game; then restart or run /market reload. An empty array means nobody has admin access (secure default). ⚠ OP ≠ owner: OP can be handed out by any OP via /op, so the market ignores OP level and trusts only this list — to delegate, add that person's UUID here",
+                "serverOwners" to "服主名单（UUID 数组）：**服主是唯一拥有全部管理权限的人，且只有服主能改服务器配置、给他人分配管理权限**。\n【怎么填】每条是一个字符串：用**英文双引号**包住、多条之间用逗号分隔。照抄下面任一写法（把 UUID 换成你自己的）—— 一个服主： [\"6b8d9b8a-9580-4f8c-b72d-220328d4aea3\"]；两个服主： [\"6b8d9b8a-9580-4f8c-b72d-220328d4aea3\", \"0ac1558a-9580-4f8c-b72d-220328d4aea3\"]。\n⚠ 双引号不能省 —— 少了任何一个，整份配置文件都读不了（不是只有这一条失效）。\n【UUID 从哪来】两种都认，挑顺手的——① 查上一级目录 usercache.json 里的「玩家名 → UUID」对照表（在服务器运行目录下，单机即 .minecraft/usercache.json，版本隔离的看对应版本目录）；② 游戏内执行 /data get entity @s UUID，把打出来的整串（形如 [I; 1804442506, -1786753140, -1221778941, 685026979]）直接粘进来。\n⚠ **别往里填游戏名**，那不会生效。\n【什么时候要手填】单机 / 局域网没有服务器控制台，只能这样加；专用服务器更方便 —— 在控制台执行 /market owner add <玩家名>（会自动把名字转成 UUID），remove 移除、list 查看。\n【改完怎么生效】重启，或在游戏内执行 /market reload；⚠ 生效与否看启动日志 —— 会打印「已加载几名服主」。\n留着空数组 = 谁都没有管理权限（安全默认）。⚠ OP 不等于服主：OP 可以被任何 OP 用 /op 传递下去，所以市场里不认 OP，只认这份名单 —— 想放权就把对方 UUID 加进来 / Server owner list (UUID array): owners are the only people with all admin permissions, and only owners can edit the server config or grant admin permissions to others.\nHOW TO FILL IT IN — each entry is a string: wrap it in DOUBLE QUOTES and separate multiple entries with commas. One owner: [\"6b8d9b8a-9580-4f8c-b72d-220328d4aea3\"]; two owners: [\"6b8d9b8a-9580-4f8c-b72d-220328d4aea3\", \"0ac1558a-9580-4f8c-b72d-220328d4aea3\"].\n⚠ A single missing quote makes the whole config file unreadable (not just that one entry).\nWHERE TO GET THE UUID — both forms work: (1) usercache.json has a player-name to UUID table (in the server run directory; .minecraft/usercache.json for single-player, or the matching version folder when using version isolation); (2) run /data get entity @s UUID in game and paste the whole thing — it looks like [I; 1804442506, -1786753140, -1221778941, 685026979] and this mod accepts that form too.\n⚠ A player name will not work; it must be the UUID.\nWHEN TO EDIT BY HAND — single-player / LAN has no server console, so this is the only way in; on a dedicated server it is easier to run /market owner add <player> in the console (remove and list do the rest).\nAFTER EDITING — restart, or run /market reload in game; ⚠ check the startup log to confirm, it prints how many owners were loaded.\nAn empty array means nobody has admin access (secure default). ⚠ OP is not the owner: any OP can pass OP on with /op, so the market trusts this list rather than OP — to delegate, add their UUID here",
                 "finance.enabled" to "金融系统总开关（默认关闭）。开启后玩家可借贷/使用喵喵支付；关闭时禁止新增借贷与信用支付，已有贷款照常运行（还款/逾期/坏账不受影响） / Master switch for the finance system (off by default). When on, players can take loans and use Meowth Pay; when off, new loans and credit payments are blocked while existing loans keep running (repayment/overdue/bad debt unaffected)",
                 "finance.cashLoanEnabled" to "现金贷开关（借呗）：玩家在喵喵银行柜台主动借款 / Cash loan switch (Jiebei-style): players borrow cash directly at the Meowth Bank counter",
                 "finance.consumerLoanEnabled" to "消费贷开关（喵喵支付）：购买精灵/物品、拍卖出价时可选择信用垫付 / Consumer loan switch (Meowth Pay): credit payment option when buying Pokémon/items or bidding in auctions",
