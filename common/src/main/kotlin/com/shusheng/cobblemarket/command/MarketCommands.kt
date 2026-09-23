@@ -1239,6 +1239,13 @@ object MarketCommands {
         if (CobbleMarketConfig.marketEnabled != oldEnabled) {
             com.shusheng.cobblemarket.network.toggleMarketEnabled(server, CobbleMarketConfig.marketEnabled)
         }
+        // ⚠⚠ **服主名单是配置项，reload 后必须重推权限快照**（2026-09-23 用户实测踩到）——
+        //   只 reload 的话：**服务端**立刻按新名单判定，但**客户端**的 ClientPermissionCache
+        //   还拿着登录时那份旧的（不是服主、节点为空）⇒ 界面入口照旧点不动，
+        //   玩家会以为"改了配置没生效"，只能**退出存档重进**才有反应。
+        //   ⚠ 单机 / 局域网正是靠这条路径把自己加进名单的（没有控制台），踩中的人不会少。
+        //   改配置可能影响任何人（名单/节点都可能变），所以**给全部在线玩家重推**。
+        server.playerManager.playerList.forEach { PermissionNetwork.refresh(server, it.uuid) }
         source.sendFeedback({
             Text.translatable("cobblemarket.market.cmd_reload").formatted(Formatting.GREEN)
                 .append(

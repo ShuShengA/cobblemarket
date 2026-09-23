@@ -407,7 +407,7 @@
   "cobblemarket.perm.node.finance": "Finance",
   "cobblemarket.perm.node.auction": "Auctions",
   "cobblemarket.perm.node.buyorder": "Buy Orders",
-  "cobblemarket.owner.console_only": "This command can only be run from the server console (in-game OPs cannot either). Single-player / LAN has no console — edit serverOwners in config/cobblemarket.json instead, then run /market reload in game",
+  "cobblemarket.owner.console_only": "This command can only be run from the server console (in-game OPs cannot either). Single-player / LAN has no console — edit serverOwners in config/cobblemarket.json instead, then reload the world (with cheats on, /market reload in game saves you the reload)",
   "cobblemarket.owner.added": "Added %1$s to the server owner list (UUID %2$s)",
   "cobblemarket.owner.already": "%1$s is already a server owner",
   "cobblemarket.owner.removed": "Removed %1$s from the server owner list",
