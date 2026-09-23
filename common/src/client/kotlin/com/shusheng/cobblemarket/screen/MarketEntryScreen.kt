@@ -279,8 +279,6 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             iconLeft = Identifier.of("cobblemarket", "textures/gui/buy_order_icon.png"),
             // 48×48 贴图缩到 18×18 显示（按钮 22×22 留 2px 边距，源图高分辨率保持锐利，照市场总开关按钮）
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-            texture = ROW_BACKGROUND_TEXTURE,
-            texH = ROW_BACKGROUND_TEX_H
         )
         // 关市置灰（同上方交易类入口：仍可点，点击给 fail 音 + 3 秒红字提示）
         buyOrderBtn.dimmed = marketClosed
@@ -305,8 +303,6 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             iconLeft = Identifier.of("cobblemarket", "textures/gui/meowth_bank_icon.png"),
             // 48×48 贴图缩到 18×18 显示（照求购单按钮）
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-            texture = ROW_BACKGROUND_TEXTURE,
-            texH = ROW_BACKGROUND_TEX_H
         )
         meowthBankBtn.dimmed = !financeEnabled
         this.meowthBankBtn = meowthBankBtn
@@ -362,8 +358,6 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             iconLeft = Identifier.of("cobblemarket", "textures/gui/settings_icon.png"),
             // 48×48 贴图缩到 18×18 显示（照求购单按钮）
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-            texture = ROW_BACKGROUND_TEXTURE,
-            texH = ROW_BACKGROUND_TEX_H
         )
         settingsBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.settings")))
         entryButtons += addDrawableChild(settingsBtn)
@@ -631,8 +625,6 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             { action() },
             iconLeft = switchIconFor(initialOn),
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-            texture = ROW_BACKGROUND_TEXTURE,
-            texH = ROW_BACKGROUND_TEX_H
         )
         return b
     }
