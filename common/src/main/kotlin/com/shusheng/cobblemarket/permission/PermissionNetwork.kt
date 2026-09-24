@@ -51,7 +51,15 @@ data class PermissionSnapshotPayload(
      * （他因此才看得到「权限管理/服务器配置」两个置灰按钮与它们的悬停教学）。
      * ⚠ 字段顺序（boolean → list → boolean）是跨端协议，改语义可以、别动顺序
      */
-    val canManage: Boolean
+    val canManage: Boolean,
+    /**
+     * **服主名单是空的**（2026-09-24 追加）—— 管理面板界面据此在背景下方提示
+     * 「尚未配置服主，管理功能不可用（见启动日志）」。
+     * ⚠ 与 [canManage] 是两回事：名单空时 **OP 仍然进得来**（`canManage` 对 OP 恒真），
+     *   进来看到一片置灰 —— 这行提示就是告诉他"为什么全灰、怎么解决"。
+     *   名单空 = 谁都没有管理权限，是本模组的有意默认（安全默认，见 `serverOwners` 的设计）
+     */
+    val ownerListEmpty: Boolean = false
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -62,12 +70,13 @@ data class PermissionSnapshotPayload(
                 b.writeInt(p.nodes.size)
                 p.nodes.forEach { b.writeString(it) }
                 b.writeBoolean(p.canManage)
+                b.writeBoolean(p.ownerListEmpty)
             },
             { b ->
                 val owner = b.readBoolean()
                 val size = b.readInt()
                 val nodes = List(size) { b.readString() }
-                PermissionSnapshotPayload(nodes, owner, b.readBoolean())
+                PermissionSnapshotPayload(nodes, owner, b.readBoolean(), b.readBoolean())
             }
         )
     }
@@ -348,7 +357,9 @@ object PermissionNetwork {
             if (owner) MarketPermissions.ALL
             else MarketPermissions.ALL.filter { it in PermissionState.get(player.server).getNodes(player.uuid) },
             owner,
-            MarketPermissions.canManage(player)
+            MarketPermissions.canManage(player),
+            // 名单为空 → 管理面板背景下方提示「尚未配置服主」（客户端据此画那行字）
+            com.shusheng.cobblemarket.config.CobbleMarketConfig.serverOwners.isEmpty()
         )
     }
 
