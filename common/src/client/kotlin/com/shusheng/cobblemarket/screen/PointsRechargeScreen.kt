@@ -954,6 +954,8 @@ class PointsRechargeScreen : Screen(
         return top + tierCardH(cardW) > tierAreaTop(bg) && top < tierAreaBottom(bg)
     }
 
+    override fun shouldPause() = false
+
     private companion object {
         const val TITLE_TOP = 28
         const val BACK_BOTTOM = 75
