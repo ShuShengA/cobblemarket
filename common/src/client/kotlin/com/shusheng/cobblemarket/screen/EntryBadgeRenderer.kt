@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
+import com.shusheng.cobblemarket.util.ItemNameText
 import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.heldIconStack
@@ -375,23 +376,6 @@ object EntryBadgeRenderer {
 
     // 居中绘制信息行，返回下一行的 y
     /**
-     * 球种行：标签 + 球名。
-     *
-     * ⚠ 球名必须走**稀有度色**（[ItemNameText]）—— 大师球在物品栏里是紫的（EPIC），
-     * 直接念词条出来是白字；而且**别转成 String 再拼**，那一步会把样式丢干净
-     * （2026-09-20 用户实测：同一只精灵，物品栏紫、悬停窗白）。
-     * 标签不设色（吃行色）、球名自己带色，两者平级 append —— 别让带色的当父节点。
-     */
-    fun ballLine(ballKey: String, ballItemId: String): Text {
-        val name = ballItemId.takeIf { it.isNotEmpty() }
-            ?.let { com.shusheng.cobblemarket.util.ItemNameText.rarityColoredNameById(it) }
-            ?: Text.translatable(ballKey)
-        return Text.literal("")
-            .append(Text.translatable("cobblemarket.gui.tooltip_ball"))
-            .append(name)
-    }
-
-    /**
      * 信息行最宽值（像素）——**只量不画**，供弹窗按内容动态定宽（照出价弹窗 / 物品市场那套机制：
      * dialogW = clamp(max(最小宽, 实测 + 边距), 屏幕宽)），别让长精灵名/特性名去撞右列。
      *
@@ -446,7 +430,7 @@ object EntryBadgeRenderer {
                 .append(Text.translatable(entry.ability)) to 0xFFFFFF
         )
         if (entry.ball.isNotEmpty()) {
-            lines.add(ballLine(entry.ball, entry.ballItem) to 0xFFFFFF)
+            lines.add(ItemNameText.ballLine(entry.ball, entry.ballItem) to 0xFFFFFF)
         }
         var heldItemLine = -1
         if (hasHeldItem) {

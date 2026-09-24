@@ -47,4 +47,23 @@ object ItemNameText {
         if (item == net.minecraft.item.Items.AIR) return null
         return Text.translatable(item.translationKey).styled { it.withColor(rarityColor(item.defaultStack)) }
     }
+
+    /**
+     * **球种行**：「球种：」标签 + 球名（**按稀有度色** —— 大师球在物品栏里是紫的（EPIC），
+     * 直接念词条出来是白字）。**三处共用这一个**：精灵悬停窗 / 拍卖播报的聊天悬停 / 展示到聊天。
+     *
+     * ⚠ **各写一份就会出「同一只精灵，悬停窗里球名是紫的、聊天里是白的」** ——
+     * 2026-09-20 用户实测过一次（当时只修了悬停窗那条路），2026-09-25 又发现拍卖播报与
+     * 展示这两条路没跟上，所以这次收到这里来，别再各拼各的。
+     *
+     * ⚠ 标签不设色（吃行色）、球名自带色，两者**平级 append** —— 别让带色的当父节点
+     *（见 CLAUDE.md 的界面文字约定）。
+     *
+     * @param ballKey    球名的**词条 key**（`item.<ns>.<path>`）；id 解析不出来时用它兜底
+     * @param ballItemId 球的 **item id**（`<ns>:<path>`），拿它取稀有度色
+     */
+    fun ballLine(ballKey: String, ballItemId: String): Text =
+        Text.literal("")
+            .append(Text.translatable("cobblemarket.gui.tooltip_ball"))
+            .append(rarityColoredNameById(ballItemId) ?: Text.translatable(ballKey))
 }

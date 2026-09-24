@@ -7,6 +7,7 @@ import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.sendToPlayer
+import com.shusheng.cobblemarket.util.ItemNameText
 import com.shusheng.cobblemarket.util.PokemonSize
 import com.shusheng.cobblemarket.util.RecordDetail
 import com.shusheng.cobblemarket.util.RequestThrottle
@@ -313,7 +314,14 @@ object ShareNetwork {
         )
         lines.add(Text.translatable("cobblemarket.gui.tooltip_nature").append(Text.translatable("cobblemon.nature.${pokemon.effectiveNature.name.path}")))
         lines.add(Text.translatable("cobblemarket.gui.tooltip_ability").append(Text.translatable("cobblemon.ability.${pokemon.ability.name}")))
-        lines.add(Text.translatable("cobblemarket.gui.tooltip_ball").append(Text.translatable("item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}")))
+        // 球名走**稀有度色**（与悬停窗 / 物品栏一致）—— 2026-09-25 用户报展示的聊天悬停没跟上。
+        // ⚠ 别退回「拼词条 key 再念出来」：那一步出来是白字（同拍卖播报那条路的坑）
+        lines.add(
+            ItemNameText.ballLine(
+                "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
+                pokemon.caughtBall.name.toString()
+            )
+        )
         // 携带物：玩家在队伍详情里设成「隐藏」的不显示（与挂单/大图同一口径）
         val held = pokemon.heldItem()
         if (!held.isEmpty && pokemon.heldItemVisible) {

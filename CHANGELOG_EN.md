@@ -43,6 +43,7 @@
 
 ### Fixes
 
+- **Auction announcements and showcases showed the ball name in white when hovered in chat**: for the same Pokemon the ball name is coloured by rarity (a Master Ball is purple) in the bid dialog and in the market / auction tooltips, but the two chat paths were plain white — they now all match
 - **Permission screen: hovering a change-log row gave an all-white tooltip**: in the list, "added" is green and "removed" is red, but the full detail shown on hover came out entirely white — so you could not tell at a glance which nodes that change had added or taken away. The tooltip now matches the row segment by segment (time grey, actor gold, added green, removed red)
 - **Opening certain RP screens in single-player paused the whole world**: five screens — Top-up Orders, RP Market, RP Market config, RP top-up, and the balance HUD position editor — were missing the "do not pause single-player" declaration, so opening them in a single-player save froze time, crops and furnaces, just like pressing ESC. They now behave like the other screens. Only affects **single-player saves**: on a dedicated server, nothing a client opens affects the server
 - **"Gigantamax" is no longer listed as a form option**: the form buttons in Blacklist / Price Limits / Buy Orders no longer offer it — Gmax is a **battle-only** form that players cannot normally obtain, so the entry only ever produced rules that could **never match**. Gigantamax is expressed by its own toggle (in the RP shop editor) or by in-game mechanics, not as a form

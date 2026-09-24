@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.util.ItemNameText
 import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.FilterPanelAnimation
@@ -1604,7 +1605,7 @@ class AuctionScreen(
             // 球种（特性行下，与其他界面顺序统一；自定义球玩家需要文字说明——行内小图标认不出）
             extra["ball"]?.takeIf { it.isNotEmpty() }?.let {
                 // 球名带稀有度色（与物品栏一致），走 Text 版而不是 String 拼
-                infoLineText(EntryBadgeRenderer.ballLine(it, extra["ballItem"].orEmpty()))
+                infoLineText(ItemNameText.ballLine(it, extra["ballItem"].orEmpty()))
             }
             val heldItemId = extra["heldItemId"].orEmpty()
             val hasHeldItem = heldItemId.isNotEmpty() &&
@@ -2119,7 +2120,7 @@ class AuctionScreen(
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
                 .append(Text.translatable(extra["ability"] ?: "")) to 0xFFFFFF)
             extra["ball"]?.takeIf { it.isNotEmpty() }?.let {
-                staticLines.add(EntryBadgeRenderer.ballLine(it, extra["ballItem"].orEmpty()) to 0xFFFFFF)
+                staticLines.add(ItemNameText.ballLine(it, extra["ballItem"].orEmpty()) to 0xFFFFFF)
             }
             val heldItemId = extra["heldItemId"].orEmpty()
             val hasHeldItem = heldItemId.isNotEmpty() &&
