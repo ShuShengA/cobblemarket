@@ -23,11 +23,19 @@ object ClientPermissionCache {
     /** 能不能进管理面板 —— **也由服务端算好下发**（OP 的 nodes 是空的，本地推不出来） */
     private var canManageFlag: Boolean = false
 
-    fun update(list: List<String>, isServerOwner: Boolean, canManage: Boolean) {
+    /** **服主名单是空的**（服务端下发）：管理面板据此在背景下方提示「尚未配置服主」。
+     *  ⚠ 与 [canManage] 无关：名单空时 OP 照样能进面板（看到一片置灰），这行字是给他解释的 */
+    private var ownerListEmptyFlag: Boolean = false
+
+    fun update(list: List<String>, isServerOwner: Boolean, canManage: Boolean, ownerListEmpty: Boolean) {
         nodes = list.toSet()
         owner = isServerOwner
         canManageFlag = canManage
+        ownerListEmptyFlag = ownerListEmpty
     }
+
+    /** 服主名单是否为空（管理面板的提示用） */
+    fun isOwnerListEmpty(): Boolean = ownerListEmptyFlag
 
     fun has(node: String): Boolean = node in nodes
 
@@ -42,5 +50,6 @@ object ClientPermissionCache {
         nodes = emptySet()
         owner = false
         canManageFlag = false
+        ownerListEmptyFlag = false
     }
 }
