@@ -37,7 +37,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     private var lastSearchEdit = 0L
 
     private var searchField: TextFieldWidget? = null
-    private var sellerField: TextFieldWidget? = null
+    // （原「玩家搜索框」字段：2026-09-24 与主搜索框合并成一个，见 init 里的说明）
     private var sortMode = "NEWEST"
     private var showMineOnly = false
 
@@ -59,7 +59,8 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
 
     private fun columns() = (panelWidth + gap) / (slotSize + gap)
     // 84→88：卖家搜索框底边(80)与顶部分割线(80)贴死，网格起始下移 4px 留出间隙
-    private fun getGridStartY() = 88
+    // 玩家搜索框删掉后（2026-09-24 合并进主搜索框）这一行让了出来：分割线画在 64、网格从 68 起
+    private fun getGridStartY() = 68
     // 底部预留 72px（照精灵市场：按钮 20 + 底部分割线 4 + 面板底边框 16 + 间距），
     // 保证窗口高度为任意值时翻页按钮都不会遮住面板底部边框
     private fun rows() = maxOf(0, (height - getGridStartY() - 72) / (slotSize + gap))
@@ -134,7 +135,8 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         addDrawableChild(backButton)
 
         val savedSearch = searchField?.text ?: ""
-        val savedSeller = sellerField?.text ?: ""
+        // 搜索框 = **物品名 + 卖家名**（2026-09-24 合并：原来是两个框，服务端分别过滤；
+        // 现在一个框同时匹配两者，与拍卖场 / 市场界面同一语义）
         searchField = TextFieldWidget(textRenderer, leftX + 2, 44, 132, 16, Text.translatable("cobblemarket.item.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.item.search").formatted(Formatting.GRAY))
         // 服务端搜索：文字变化只标记 dirty，tick 防抖后回到第一页重新拉取（与精灵市场一致）
@@ -165,15 +167,8 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         )
         addDrawableChild(mineButton)
 
-        sellerField = TextFieldWidget(textRenderer, leftX + 2, 64, panelWidth - 4, 16, Text.translatable("cobblemarket.op.seller_search"))
-        sellerField?.setPlaceholder(Text.translatable("cobblemarket.op.seller_search").formatted(Formatting.GRAY))
-        sellerField?.setChangedListener { _ ->
-            currentPage = 1
-            refreshData()
-        }
-        addSelectableChild(sellerField)
-        addDrawableChild(sellerField)
-        sellerField?.text = savedSeller
+        // （原先这里还有一个「玩家搜索框」：2026-09-24 与上面的搜索框合并成一个 ——
+        //   一个框同时搜物品名与卖家名，服务端按 OR 匹配）
 
         // 分页（照精灵市场：底部分割线在网格最后一行下方 4px 对称，按钮在其与背景底边之间居中偏上 5px）
         val gridBottom = getGridStartY() + rows() * (slotSize + gap)
@@ -206,7 +201,9 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         val query = searchField?.text?.trim() ?: ""
         sendToServer(
             AdminRequestItemPayload(
-                sellerFilter = sellerField?.text?.trim() ?: "",
+                // 卖家名不再单独发：服务端拿上面的 itemFilter 同时匹配物品名与卖家名（OR）
+                // （字段保留但恒为空串，免得动 payload 的序列化顺序）
+                sellerFilter = "",
                 itemFilter = query,
                 itemIds = com.shusheng.cobblemarket.client.ItemSearchIndex.itemIdsMatchingStrict(query),
                 tmMoves = com.shusheng.cobblemarket.client.ItemSearchIndex.tmMovesMatching(query).toList(),
@@ -268,7 +265,6 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         // 弹窗打开时隐藏主界面全部控件：widget 文字画在遮罩（addDrawable）之上，visible=false 才能防穿透
         backButton?.visible = false
         searchField?.visible = false
-        sellerField?.visible = false
         sortButton?.visible = false
         mineButton?.visible = false
         prevButton?.visible = false
@@ -489,11 +485,10 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         context.matrices.pop()
     }
 
-    private fun isInputFieldFocused() = focused?.let { f -> f === searchField || f === sellerField } ?: false
+    private fun isInputFieldFocused() = focused?.let { f -> f === searchField } ?: false
 
     private fun isMouseOverAnyInput(mouseX: Double, mouseY: Double): Boolean =
-        searchField?.isMouseOver(mouseX, mouseY) == true ||
-        sellerField?.isMouseOver(mouseX, mouseY) == true
+        searchField?.isMouseOver(mouseX, mouseY) == true
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (cancelEntry != null) {
