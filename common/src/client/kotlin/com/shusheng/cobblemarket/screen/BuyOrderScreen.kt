@@ -466,18 +466,19 @@ class BuyOrderScreen(
         // ⚠ RP 总开关关着 → 整个按钮不建（那时 RP 系统停摆，留个点不动的灰按钮更难看）。
         //   玩家端**不受「玩家间 RP 交易」开关约束**：买家要能看到并关掉自己的存量 RP 求购单
         //   （取回冻结金）、卖家要能看到自己的货被退回；交付 / 接受仍由服务端拦（pointsGateBlocked）
-        currencyButton = if (PointsStateCache.enabled) {
-            NineSliceButton(
-                leftX + panelWidth - 86, 13, 20, 16,
-                Text.literal(""), { onCurrencyClick() },
-                iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
-                iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
-                tooltip = Text.translatable("cobblemarket.gui.currency_switch", inlineCurrencyUnit(), CurrencyService.pointsIcon())
-            ).also {
-                updateCurrencyButton(it, currency == MarketCurrency.POINTS)
-                addDrawableChild(it)
-            }
-        } else null
+        // ⚠ **总开关关着也建、且不置灰**（与精灵市场 / 拍卖场 / 管理端顶栏那几处一致）：
+        //   这是**查看**用的按钮，按 RP 开关的边界设计「查看一律放行」—— 买家要能看到并取回
+        //   自己的存量 RP 求购单。原先总开关关时整个不建，用户 2026-09-24 统一成「建、不置灰」
+        currencyButton = NineSliceButton(
+            leftX + panelWidth - 86, 13, 20, 16,
+            Text.literal(""), { onCurrencyClick() },
+            iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
+            iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
+            tooltip = Text.translatable("cobblemarket.gui.currency_switch", inlineCurrencyUnit(), CurrencyService.pointsIcon())
+        ).also {
+            updateCurrencyButton(it, currency == MarketCurrency.POINTS)
+            addDrawableChild(it)
+        }
 
         // 管理员模式：无 tab、无发布按钮，只有列表 + 下架
         if (!adminMode) {
@@ -595,6 +596,16 @@ class BuyOrderScreen(
 
     /** 点创建对话框的货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（**创建是拦截点**，与上架/拍卖创建一致） */
     private fun onCreateCurrencyClick() {
+        // ⚠ 总开关关着时按钮只是置灰、仍可点：先给「未开启 RP」的提示（两个词条对应两种"不能用"，别混用）
+        if (!PointsStateCache.enabled) {
+            playFailSound()
+            client?.player?.sendMessage(
+                Text.translatable("cobblemarket.network.points_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            return
+        }
         if (!PointsStateCache.marketEnabled) {
             playFailSound()
             client?.player?.sendMessage(
@@ -1491,7 +1502,9 @@ class BuyOrderScreen(
 
         // 货币切换按钮（价格输入框右侧 4px）：与市场/上架/拍卖创建界面同一个按钮、同一套三层拦截。
         // ⚠ 两个 tab 的价格框位置不同（精灵 tab 的价格行比物品 tab 靠右），按钮跟着各自的价格框右缘走
-        createCurrencyButton = if (PointsStateCache.enabled) {
+        // ⚠ **总开关关着时也建**（只是置灰）：按钮的位置是排好的，凭空消失会空出一块
+        //   （用户 2026-09-24 定：创建类界面的货币按钮统一「建 + 置灰」）
+        createCurrencyButton = run {
             val bx = if (createTab == 0) centerX + 81 else centerX + 70
             val by = dialogY + (if (createTab == 0) 174 else 106)
             NineSliceButton(
@@ -1500,12 +1513,13 @@ class BuyOrderScreen(
                 iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
                 tooltip = Text.translatable("cobblemarket.gui.currency_switch", inlineCurrencyUnit(), CurrencyService.pointsIcon())
             ).also {
-                // dimmed = 置灰但**保留可点击性**，点了给失败音 + 提示，比一个"死了"的按钮好懂
-                it.dimmed = !PointsStateCache.marketEnabled
+                // dimmed = 置灰但**保留可点击性**，点了给失败音 + 提示，比一个"死了"的按钮好懂。
+                // 两种"不能用"都置灰：RP 总开关关 / 玩家间 RP 交易没开
+                it.dimmed = !PointsStateCache.enabled || !PointsStateCache.marketEnabled
                 updateCurrencyButton(it, createCurrency == MarketCurrency.POINTS)
                 addDrawableChild(it)
             }
-        } else null
+        }
 
         createConfirmButton = NineSliceButton(
             centerX - 85, dialogY + createDialogH() - createButtonInset(), 80, 20,

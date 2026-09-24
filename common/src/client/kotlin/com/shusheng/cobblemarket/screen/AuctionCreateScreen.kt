@@ -805,6 +805,16 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
     private fun onCurrencyClick() {
+        // ⚠ 总开关关着时按钮只是置灰、仍可点：先给「未开启 RP」的提示（两个词条对应两种"不能用"，别混用）
+        if (!PointsStateCache.enabled) {
+            playFailSound()
+            client?.player?.sendMessage(
+                Text.translatable("cobblemarket.network.points_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            return
+        }
         if (!PointsStateCache.marketEnabled) {
             playFailSound()
             client?.player?.sendMessage(
@@ -872,18 +882,19 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         // ⚠ RP 总开关关着 → **整个按钮不建**（那时 RP 系统停摆，留个点不动的灰按钮更难看）；
         //   「玩家间 RP 交易」没开 → 建但置灰，点了给失败音 + 红字提示
         currency = MarketCurrency.PRIMARY
-        currencyButton = if (PointsStateCache.enabled) {
-            NineSliceButton(
-                centerX + 84, dialogY + 52, 20, 16, Text.literal(""), { onCurrencyClick() },
-                iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
-                iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
-                tooltip = Text.translatable("cobblemarket.gui.currency_switch", inlineCurrencyUnit(), CurrencyService.pointsIcon())
-            ).also {
-                it.dimmed = !PointsStateCache.marketEnabled
-                updateCurrencyButton(it)
-                addDrawableChild(it)
-            }
-        } else null
+        // ⚠ **总开关关着时也建**（只是置灰）：按钮的位置是排好的，凭空消失会空出一块。
+        //   （用户 2026-09-24 定：创建类界面的货币按钮统一「建 + 置灰」。查看类界面本来就放行、不置灰）
+        currencyButton = NineSliceButton(
+            centerX + 84, dialogY + 52, 20, 16, Text.literal(""), { onCurrencyClick() },
+            iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
+            iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
+            tooltip = Text.translatable("cobblemarket.gui.currency_switch", inlineCurrencyUnit(), CurrencyService.pointsIcon())
+        ).also {
+            // 两种"不能用"都置灰：RP 总开关关 / 玩家间 RP 交易没开
+            it.dimmed = !PointsStateCache.enabled || !PointsStateCache.marketEnabled
+            updateCurrencyButton(it)
+            addDrawableChild(it)
+        }
 
         incrementField = TextFieldWidget(textRenderer, centerX - 20, dialogY + 72, 100, 16, Text.literal(""))
         // 先铺兜底文案「留空=默认」，再用已缓存的服务器值覆盖 ——

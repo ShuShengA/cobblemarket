@@ -164,17 +164,18 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
         // 图标走 points_symbol，缩到 8×8 —— 与余额 HUD 那个单位图标同图同尺寸。
         currency = MarketCurrency.PRIMARY
         // ⚠ 只有 RP **总开关**关着时不建；「玩家间 RP 交易」没开照样显示、只是置灰点不动
-        currencyButton = if (PointsStateCache.enabled) {
-            NineSliceButton(
-                centerX + 44, dialogY + 102, 20, 16, Text.literal(""), { onCurrencyClick() },
-                iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
-                iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat()
-            ).also {
-                it.dimmed = !PointsStateCache.marketEnabled
-                updateCurrencyButton(it)
-                addDrawableChild(it)
-            }
-        } else null
+        // ⚠ **总开关关着时也建**（只是置灰）：按钮的位置是排好的，凭空消失会空出一块。
+        //   （用户 2026-09-24 定：创建类界面的货币按钮统一「建 + 置灰」）
+        currencyButton = NineSliceButton(
+            centerX + 44, dialogY + 102, 20, 16, Text.literal(""), { onCurrencyClick() },
+            iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
+            iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat()
+        ).also {
+            // 两种"不能用"都置灰：RP 总开关关 / 玩家间 RP 交易没开
+            it.dimmed = !PointsStateCache.enabled || !PointsStateCache.marketEnabled
+            updateCurrencyButton(it)
+            addDrawableChild(it)
+        }
 
         addDrawableChild(NineSliceButton(
             centerX - 85, dialogY + 128, 80, 20,
@@ -280,6 +281,16 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
 
     /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
     private fun onCurrencyClick() {
+        // ⚠ 总开关关着时按钮只是置灰、仍可点：先给「未开启 RP」的提示（两个词条对应两种"不能用"，别混用）
+        if (!PointsStateCache.enabled) {
+            playFailSound()
+            client?.player?.sendMessage(
+                Text.translatable("cobblemarket.network.points_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            return
+        }
         if (!PointsStateCache.marketEnabled) {
             playFailSound()
             client?.player?.sendMessage(
