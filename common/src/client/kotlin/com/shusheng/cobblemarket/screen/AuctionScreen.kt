@@ -1118,6 +1118,12 @@ class AuctionScreen(
     // ── 图标缓存 ──
 
     private fun cacheIcons() {
+        // ⚠ 按**拍卖 id** 复用已有的动画状态（照精灵市场 `MarketScreen.cacheIcons`）：
+        //   `FloatingState` 里存着动画进度与头部跟随的跨帧平滑值，整体丢掉重建会让图标从头播一遍。
+        //   ⚠ 拍卖场的「筛选 ↺ 重置」走的是 `clearChildren() + init()` **整界面重建**，重建后重新拉
+        //   列表 → 又进这里 —— 不按 id 复用就是「点一次重置、整列表动画重来一遍」
+        //   （2026-09-25 用户报；精灵市场早已修好，这里是漏网之鱼）
+        val oldStates = iconData.values.mapNotNull { d -> d.listingId?.let { it to d.state } }.toMap()
         iconData.clear()
         rowStacks.clear()
         entries.forEachIndexed { index, entry ->
@@ -1140,7 +1146,13 @@ class AuctionScreen(
             val species = PokemonSpecies.getByIdentifier(id) ?: return@forEachIndexed
             val aspects = (entry.extraData["aspects"] ?: "").split(",").filter { it.isNotEmpty() }.toMutableSet()
             if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
-            iconData[index] = PokemonIconData(displayName(entry), RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY), FloatingState())
+            iconData[index] = PokemonIconData(
+                displayName(entry),
+                RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
+                // 同一场拍卖（id 相同）沿用旧的动画状态，只有新出现的拍卖才起一份新的
+                oldStates[entry.id] ?: FloatingState(),
+                listingId = entry.id
+            )
         }
     }
 
