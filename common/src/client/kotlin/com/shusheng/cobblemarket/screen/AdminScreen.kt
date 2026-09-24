@@ -168,7 +168,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         addPermButton(
             rightX, startY + btnH + gap, btnW, btnH,
             Text.translatable("cobblemarket.entry.all_history"),
-            MarketPermissions.MARKET
+            MarketPermissions.HISTORY
         ) { client?.setScreen(HistoryScreen(true)) }
         // 行 3：黑名单（左）+ 价格限制（右）
         addPermButton(
