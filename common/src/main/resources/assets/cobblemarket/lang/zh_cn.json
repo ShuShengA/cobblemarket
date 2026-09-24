@@ -247,7 +247,7 @@
   "cobblemarket.points.admin.d_time": "下单时间：%s",
   "cobblemarket.points.admin.d_grant": "核对账单：实付 %s → 发放 %s",
   "cobblemarket.points.received": "你收到了 %s（当前余额 %s）",
-  "cobblemarket.points.shop.new_order": "【充值订单】%s 提交了 %s，实付 %s（订单号 %s）—— 请到管理面板 → 充值订单核对账单",
+  "cobblemarket.points.shop.new_order": "【充值订单】%s 提交了 %s，声称已付 %s（订单号 %s）—— 请到管理面板 → 充值订单核对账单",
   "cobblemarket.points.shop.confirmed": "已确认并发放订单 %s",
   "cobblemarket.points.shop.voided": "已作废订单 %s",
   "cobblemarket.op.point_orders": "充值订单",

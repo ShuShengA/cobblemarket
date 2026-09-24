@@ -247,7 +247,7 @@
   "cobblemarket.points.admin.d_time": "Placed: %s",
   "cobblemarket.points.admin.d_grant": "Check the bill: paid %s -> grant %s",
   "cobblemarket.points.received": "You received %s (balance %s)",
-  "cobblemarket.points.shop.new_order": "[Top-up] %s submitted %s, paid %s (order %s) - check your bill in Admin Panel -> Top-up Orders",
+  "cobblemarket.points.shop.new_order": "[Top-up] %s submitted %s, claims to have paid %s (order %s) - check your bill in Admin Panel -> Top-up Orders",
   "cobblemarket.points.shop.confirmed": "Order %s confirmed and granted",
   "cobblemarket.points.shop.voided": "Order %s voided",
   "cobblemarket.op.point_orders": "Top-up orders",
