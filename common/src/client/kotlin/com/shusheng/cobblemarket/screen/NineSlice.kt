@@ -21,6 +21,18 @@ val BUTTON_TEXTURE = Identifier.of("cobblemarket", "textures/gui/button_9slice.p
 /** 按钮贴图总高（三段：普通 / 悬停 / 选中）—— 手动 drawNineSlice 画按钮时要与它一致 */
 const val BUTTON_TEX_H = 120
 
+/**
+ * **入口 / 菜单类按钮**的专用贴图：与 [BUTTON_TEXTURE] 同款，但**只有「默认 + 悬停」两段**
+ * （比它少一段 40px 的选中态 —— 这类按钮也不需要选中态）。
+ * `NineSliceButton` 按 `texH / NINE_SLICE_STATE_H - 1` 算出最大态，两段贴图会自动把选中态退回悬停态。
+ *
+ * 用途（2026-09-24 用户定）：市场入口的**求购单 / 喵喵银行 / 设置**，管理面板的**权限管理 / 市场开关 /
+ * 服务器配置**，以及分享按钮 —— 让这类"入口型"按钮与列表行里的操作按钮在视觉上分开。
+ */
+val BUTTON_TEXTURE_S = Identifier.of("cobblemarket", "textures/gui/button_9slice_s.png")
+/** [BUTTON_TEXTURE_S] 的总高（两段） */
+const val BUTTON_TEX_H_S = 80
+
 /** 弹窗全屏半透明遮罩：关闭动画进行中跳过绘制——按 E/Esc 后游戏画面立刻变亮，遮罩不随界面上缩 */
 fun drawScreenDimMask(context: DrawContext, width: Int, height: Int) {
     if (CloseAnimation.isActive()) return
