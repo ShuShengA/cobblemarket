@@ -68,7 +68,12 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         val removed: String,
         /** 变更后该玩家剩下的全部节点（旧账本没有这一列 → 空串） */
         val remaining: String,
-        val tooltip: List<String>
+        /**
+         * 悬停窗内容：**逐段带色，与行内那五段一一对应**
+         *（灰时间 / 金执行者→目标 / 绿新增 / 红移除 / 白剩余）——
+         * ⚠ 2026-09-25 用户报：原先这里是一串纯文本，悬停窗整屏白字，与行内的绿红对不上
+         */
+        val tooltip: List<Text>
     )
     private var auditLines = listOf<AuditLine>()
 
@@ -127,6 +132,14 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         const val ADD_BTN_W = 44                     // 「添加」与行内「编辑/删除」同宽，视觉成列
         /** 全 0 UUID = 「按名字新建/解析」：服务端收到它时用 playerName 查玩家，客户端不查 UUID */
         val EMPTY_UUID: UUID = UUID(0L, 0L)
+
+        /**
+         * 变更记录各段的颜色 —— **行内渲染与悬停窗共用这一组**，改一处必须两处一起想
+         *（这正是 2026-09-25 那个「行内绿红、悬停窗全白」的根因：两处各写各的）。
+         */
+        const val AUDIT_TIME_COLOR = 0x888888
+        const val AUDIT_ADDED_COLOR = 0x55FF55
+        const val AUDIT_REMOVED_COLOR = 0xFF5555
 
         const val DIALOG_W = 220
         /** 高度按**最多 5 行节点**留（`MarketPermissions.ALL` 到 9~10 个时）：节点区最底
@@ -310,11 +323,18 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
             val removed = row.removed.takeIf { it.isNotBlank() }?.let { "$removedLabel: ${nodeLabels(it)}" }.orEmpty()
             val remaining = row.remaining.takeIf { it.isNotBlank() }?.let { "$remainingLabel: ${nodeLabels(it)}" }.orEmpty()
             // 行内会被截断，悬停提示给完整内容
+            // 行内会被截断，悬停提示给完整内容 —— **逐段带色，与行内一一对应**。
+            // ⚠ 第一行「时间 + 执行者→目标」在行内是**灰 + 金两段**，这里也用两个 append 保住这个区分，
+            //   别图省事拼成一个字符串（那就又变成单色了）
             val tooltip = buildList {
-                add("$time  $who")
-                if (added.isNotEmpty()) add(added)
-                if (removed.isNotEmpty()) add(removed)
-                if (remaining.isNotEmpty()) add(remaining)
+                add(
+                    Text.literal("")
+                        .append(Text.literal(time).styled { it.withColor(AUDIT_TIME_COLOR) })
+                        .append(Text.literal("  $who").styled { it.withColor(GOLD_COLOR) })
+                )
+                if (added.isNotEmpty()) add(Text.literal(added).styled { it.withColor(AUDIT_ADDED_COLOR) })
+                if (removed.isNotEmpty()) add(Text.literal(removed).styled { it.withColor(AUDIT_REMOVED_COLOR) })
+                if (remaining.isNotEmpty()) add(Text.literal(remaining))
             }
             AuditLine(time, who, added, removed, remaining, tooltip)
         }
@@ -682,19 +702,19 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
             auditLines.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, line ->
                 val y = startY + i * rowHeight
                 var cursor = leftX + 6
-                context.drawTextWithShadow(textRenderer, line.time, cursor, y + 7, 0x888888)
+                context.drawTextWithShadow(textRenderer, line.time, cursor, y + 7, AUDIT_TIME_COLOR)
                 cursor += textRenderer.getWidth(line.time) + 6
                 val who = TextUtil.truncateString(line.who, (right - cursor - 40).coerceAtLeast(0))
                 context.drawTextWithShadow(textRenderer, who, cursor, y + 7, GOLD_COLOR)
                 cursor += textRenderer.getWidth(who) + 6
                 if (line.added.isNotEmpty() && cursor < right) {
                     val text = TextUtil.truncateString(line.added, right - cursor)
-                    context.drawTextWithShadow(textRenderer, text, cursor, y + 7, 0x55FF55)
+                    context.drawTextWithShadow(textRenderer, text, cursor, y + 7, AUDIT_ADDED_COLOR)
                     cursor += textRenderer.getWidth(text) + 6
                 }
                 if (line.removed.isNotEmpty() && cursor < right) {
                     val text = TextUtil.truncateString(line.removed, right - cursor)
-                    context.drawTextWithShadow(textRenderer, text, cursor, y + 7, 0xFF5555)
+                    context.drawTextWithShadow(textRenderer, text, cursor, y + 7, AUDIT_REMOVED_COLOR)
                     cursor += textRenderer.getWidth(text) + 6
                 }
                 // 剩余节点：变更后他手里还有什么（白色，与新增/移除的绿红区分）
@@ -722,8 +742,9 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
                 if (actualIdx in filtered.indices) {
                     val entry = filtered[actualIdx]
                     renderTooltip(context, listOf(
-                        entry.playerName,
-                        if (entry.nodes.isEmpty()) "-" else entry.nodes.joinToString(", ") { nodeLabel(it) }
+                        // 玩家名当标题：颜色自带（原先靠 renderTooltip 内部「第一行强制金色」）
+                        Text.literal(entry.playerName).styled { it.withColor(GOLD_COLOR) },
+                        Text.literal(if (entry.nodes.isEmpty()) "-" else entry.nodes.joinToString(", ") { nodeLabel(it) })
                     ), mouseX, mouseY, avoid)
                 }
             } else if (actualIdx in auditLines.indices) {
@@ -748,7 +769,12 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
      *
      * @param avoid 本行操作按钮的矩形；**鼠标落在里面就整个不画**（[TooltipPlacement.place] 返回 null 直接退出）
      */
-    private fun renderTooltip(context: DrawContext, lines: List<String>, mouseX: Int, mouseY: Int, avoid: TooltipPlacement.Rect? = null) {
+    /**
+     * 悬停窗：**每行的颜色由调用方写在自己的 `Text` 上**，这里只兜一个白色底
+     *（原先「第一行强制金色」是给页签 1 的玩家名当标题用的 —— 改成自带色后由调用方显式指定，
+     * 别在这里写死：页签 2 的第一行是「灰时间 + 金执行者」，不是单色标题）。
+     */
+    private fun renderTooltip(context: DrawContext, lines: List<Text>, mouseX: Int, mouseY: Int, avoid: TooltipPlacement.Rect? = null) {
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
 
@@ -764,7 +790,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
         lines.forEachIndexed { i, line ->
-            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, if (i == 0) GOLD_COLOR else 0xFFFFFF)
+            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, 0xFFFFFF)
         }
         context.matrices.pop()
     }
