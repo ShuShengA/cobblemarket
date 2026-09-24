@@ -168,7 +168,6 @@ class PointsConfigScreen : Screen(
     private var addTierButton: NineSliceButton? = null
 
     /** 「兑换码」入口：与「添加档位」同一行右对齐 */
-    private var codeScreenButton: NineSliceButton? = null
     private var saveButton: NineSliceButton? = null
     private var cancelButton: NineSliceButton? = null
     private var backButton: NineSliceButton? = null
@@ -238,9 +237,9 @@ class PointsConfigScreen : Screen(
     /**
      * 弹窗打开时隐藏主界面**全部**控件。
      *
-     * ⚠ **新增常驻控件必须加进这里**（`codeScreenButton` 就是这么漏的）——
-     * 这个界面原来手写了**三份一模一样的名单**（费率提醒 / 费率编辑 / 档位编辑），
-     * 加「兑换码」入口时三份都没追上，弹窗盖着按钮还是能点（用户实测）。
+     * ⚠ **新增常驻控件必须加进这里**（这个界面的「兑换码」入口就是这么漏的 —— 用户实测：
+     * 弹窗盖着按钮还是能点。那个入口 2026-09-25 已挪去管理面板，教训留着）。
+     * 这个界面原来手写了**三份一模一样的名单**（费率提醒 / 费率编辑 / 档位编辑），三份都没追上。
      * 恢复不用管：关闭弹窗走 `clearChildren() + init()` 全量重建。
      */
     /**
@@ -260,8 +259,7 @@ class PointsConfigScreen : Screen(
     private fun hideMainControls() {
         listOfNotNull(
             backButton, infoButton, addTierButton, saveButton, cancelButton,
-            qrField, defaultIconField, timeoutField, currencyField, feeCfgButton,
-            codeScreenButton
+            qrField, defaultIconField, timeoutField, currencyField, feeCfgButton
         ).forEach { it.visible = false }
         toggleButtons.values.forEach { it.visible = false }
         tierEditButtons.forEach { it.visible = false }
@@ -501,12 +499,9 @@ class PointsConfigScreen : Screen(
         )
         addDrawableChild(addTierButton)
 
-        // 兑换码管理入口：与「添加档位」同一行、右对齐（对称）
-        codeScreenButton = NineSliceButton(
-            dx + dialogW() - 10 - 70, tierAddY, 70, TIER_ADD_H,
-            Text.translatable("cobblemarket.points.config.code_entry"), { client?.setScreen(PointsCodeScreen()) }
-        )
-        addDrawableChild(codeScreenButton)
+        // ⚠ 兑换码管理入口**已挪走**（2026-09-25 用户拍板 → 管理面板的图标按钮行，判 `points.code` 节点）：
+        //   原先放在这里时，只有服主进得来本界面 ⇒ 被授予节点的普通管理员在界面上**没有落点**，只有命令能用。
+        //   挪走后 `PointsCodeScreen` 的返回按钮也改回管理面板，别再从这里入口（见该文件 init）。
 
         // 底部双按钮：**照服务器配置界面那一对**（位置、尺寸、间距都一致 —— 同类型界面要能对上）
         saveButton = NineSliceButton(
@@ -1020,6 +1015,8 @@ class PointsConfigScreen : Screen(
         if (wasInInput && fields.none { it.isMouseOver(mouseX, mouseY) }) focused = null
         return result
     }
+
+    override fun shouldPause() = false
 
     private companion object {
         const val ROW_H = 20

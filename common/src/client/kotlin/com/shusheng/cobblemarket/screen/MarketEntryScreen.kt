@@ -276,11 +276,18 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             ))
         }
 
-        // 背景底部两角的独立小按钮（纯图标 + row_background 风格，悬停显示名称）：
-        // 左下求购单（OP 与非 OP 同位置）、右下设置
+        // 背景底部红线下的独立小按钮（纯图标，悬停显示名称）：**固定槽位制** ——
+        // 槽位坐标与 `AdminScreen` **完全一致**（两界面切换时同一颗按钮不该左右跳）：
+        //   左三槽由「中心槽左缘 − 3 个步长」倒推、右端槽贴红线右端，槽间 8px。
+        // ⚠ 本界面**中心槽留空**（没有市场开关那样的中心按钮）—— 以后放「市场 ID 卡」
+        //   （看自己的余额 / 图鉴收集度）就放这个位置：**其余的槽一个都不用动**，这正是固定槽位制的意义。
         val cornerSize = 22
         val cornerY = bgBottom() - cornerSize - 5
-        val buyOrderX = centerX - 96 + 6
+        val iconStep = cornerSize + 8                 // 槽位步长 = 按钮 + 8px 空隙
+        val centerSlotX = centerX - cornerSize / 2    // 中心槽左缘（本界面空着，只用于定位）
+        val leftGroupX = centerSlotX - iconStep * 3   // 左侧第一槽
+        val rightGroupRight = centerX + DIVIDER_HALF  // 右侧槽的右缘（红线右端）
+        val buyOrderX = leftGroupX
         val buyOrderY = cornerY
         val buyOrderBtn = NineSliceButton(
             buyOrderX, buyOrderY,
@@ -299,10 +306,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         buyOrderBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.buy_order")))
         entryButtons += addDrawableChild(buyOrderBtn)
 
-        // 喵喵银行（金融系统入口）：求购单右侧，所有玩家可见；与求购单间隙 4px（同总开关→服务器配置间隙）
+        // 喵喵银行（金融系统入口）：求购单右侧、左组第二颗，所有玩家可见；组内空隙 8px
         // 不套 openIfMarketEnabled：关市期间看账/还款照常可用，界面内「新增借贷」按钮再按开关禁用（只拦新交易不卡资产）
         val meowthBankBtn = NineSliceButton(
-            centerX - 64, cornerY,
+            leftGroupX + iconStep, cornerY,
             cornerSize, cornerSize,
             Text.literal(""),
             {
@@ -324,11 +331,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         meowthBankBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.meowth_bank")))
         entryButtons += addDrawableChild(meowthBankBtn)
 
-        // RP 市场：喵喵银行右侧 4px（用户 2026-09-17 拍板的位置）。
+        // RP 市场：喵喵银行右侧、左组第三颗（位置 2026-09-17 拍板，2026-09-25 随整行按红线重排）。
         // 总开关关闭时置灰 + 点击给 fail 音与 3 秒提示 —— 照喵喵银行按钮的做法
         //（dimmed 只压暗观感、不影响可点性，所以点击必须在这里自己拦）。
         val pointsBtn = NineSliceButton(
-            centerX - 38, cornerY,
+            leftGroupX + iconStep * 2, cornerY,
             cornerSize, cornerSize,
             Text.literal(""),
             {
@@ -342,8 +349,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             iconLeft = POINTS_SYMBOL_TEXTURE,
             // 48×48 贴图缩到 18×18 显示（照求购单/喵喵银行按钮）
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-            texture = ROW_BACKGROUND_TEXTURE,
-            texH = ROW_BACKGROUND_TEX_H
+            // 入口型按钮专用底色 —— ⚠ **别再改回 `ROW_BACKGROUND_TEXTURE`**：那是**列表行**的底色。
+            // 这一排其余四颗（求购单 / 喵喵银行 / 设置 / 分享）用的都是 `BUTTON_TEXTURE_S`，
+            // 只有这颗是孤例（用户 2026-09-25 指出；管理面板的「充值订单」按钮是同一个错，同批修掉）
+            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
         )
         pointsBtn.dimmed = !com.shusheng.cobblemarket.client.PointsStateCache.enabled
         this.pointsMarketBtn = pointsBtn
@@ -364,7 +373,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         }
 
         val settingsBtn = NineSliceButton(
-            centerX + 96 - cornerSize - 6, cornerY,
+            rightGroupRight - cornerSize, cornerY,
             cornerSize, cornerSize,
             Text.literal(""),
             // 设置：不套 openIfMarketEnabled —— 里面全是玩家自己客户端的观感开关（动画/光标/HUD
@@ -379,9 +388,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.settings")))
         entryButtons += addDrawableChild(settingsBtn)
 
-        // 分享按钮：设置按钮左边、间隔 4px（按钮间距规则）；**点击**展开上方子按钮（用户 2026-09-17 拍板，
+        // 分享按钮：设置按钮左边、右组第二颗（组内空隙 8px）；**点击**展开上方子按钮（用户 2026-09-17 拍板，
         // 原方案是悬停——点击能复用 NineSliceButton.selectedVisual 的选中态，还免掉悬停判定区连通的麻烦）
-        val shareX = centerX + 96 - cornerSize - 6 - 4 - cornerSize
+        val shareX = rightGroupRight - cornerSize - iconStep
         val shareBtn = NineSliceButton(
             shareX, cornerY,
             cornerSize, cornerSize,
@@ -1088,9 +1097,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 放在「仅OP行底边」与「小按钮顶边」的正中间：小按钮 top=bgBottom()-27、行3底=bgBottom()-32，
         // 两者相差 5px → 分割线 = bgBottom()-30（上下间隙各 2px）
         context.fill(
-            width / 2 - 128 + 25,
+            width / 2 - DIVIDER_HALF,
             bgBottom() - 30,
-            width / 2 + 128 - 25,
+            width / 2 + DIVIDER_HALF,
             bgBottom() - 29,
             com.shusheng.cobblemarket.client.GuiColors.DIVIDER
         )
@@ -1280,6 +1289,15 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     override fun shouldPause() = false
 
     companion object {
+        /**
+         * 底部**红色分割线**的半宽（= 背景半宽 128 − 两端各避开的 25px）。
+         *
+         * ⚠ **它与管理面板的 `AdminScreen.DIVIDER_HALF` 是同一根线、同一个值** ——
+         * 两个界面的图标按钮行都以这根线的左右端为边界（2026-09-25 用户要求统一布局）。
+         * **改一个必须改另一个**，否则两界面切换时底部按钮会错位（背景本来就是同一张贴图）。
+         */
+        private const val DIVIDER_HALF = 103
+
         private const val DIALOG_W = 240
         private const val DIALOG_H = 324
         // 设置弹窗内容区（相对弹窗顶）：行步进 26 = 控件高 22 + 间隙 4。
