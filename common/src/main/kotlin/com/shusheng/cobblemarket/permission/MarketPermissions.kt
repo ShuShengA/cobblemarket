@@ -38,7 +38,7 @@ object MarketPermissions {
     /** 封禁 / 解封 / 封禁名单 */
     const val BAN = PREFIX + "ban"
 
-    /** 管理端下架精灵与物品 + 市场总开关（紧急停市/恢复） */
+    /** 挂单管理：管理端查看/下架任意玩家的精灵与物品 + 查看全部交易历史（总开关已拆出，见 [MARKET_SWITCH]） */
     const val MARKET = PREFIX + "market"
 
     /**
@@ -54,14 +54,27 @@ object MarketPermissions {
     const val BUY_ORDER = PREFIX + "buyorder"
 
     /**
+     * 市场开关：紧急停市 / 恢复（**影响全服的核按钮**）。
+     *
+     * ⚠ **2026-09-24 从 [MARKET] 里拆出来**（用户提的）：原先总开关与「下架挂单」共用一个节点，
+     * 等于「想找人帮忙看挂单，就得把停市权一起给他」—— 两者份量差一个数量级
+     * （撤一个违规挂单 vs 全服经济停摆）。拆开后想合并的人**同时勾两个**即可，组合自由。
+     */
+    const val MARKET_SWITCH = PREFIX + "marketswitch"
+
+    /**
      * 全部管理节点（快照、入口判定、`/market perm list` 与权限编辑界面的按钮都用它）。
-     * **顺序 = 管理面板按钮的排列顺序**（权限编辑界面按此顺序交替分列，两列四行，方便一眼对照
-     * 管理面板里按钮的位置）。改这里的顺序会同时改掉界面按钮与 list 输出的顺序。
+     * **顺序 = 权限编辑弹窗里按钮的排列顺序**（按此顺序交替分列，两列四行）。
+     *
+     * ⚠ 前 7 个与**管理面板的功能按钮**一一对应（方便一眼对照面板里按钮的位置）；
+     * [MARKET_SWITCH] 是 2026-09-24 拆出的第 8 个，在管理面板里对应的是**底部那颗图标按钮**
+     * （不是 `addPermButton` 那批），排在最末 = 弹窗第 4 行右列（金融管理右边）。
+     * 改这里的顺序会同时改掉界面按钮与 list 输出的顺序。
      *
      * ⚠ 原 `CONFIG`（服务器配置）节点已于 2026-09-23 删除：服务器配置改为**服主专属**，
      * 不再作为可授予的节点 —— 想放权就把对方 UUID 加进 `serverOwners`。
      */
-    val ALL = listOf(MARKET, BAN, BLACKLIST, PRICE_LIMIT, AUCTION, BUY_ORDER, FINANCE)
+    val ALL = listOf(MARKET, BAN, BLACKLIST, PRICE_LIMIT, AUCTION, BUY_ORDER, FINANCE, MARKET_SWITCH)
 
     /**
      * 是不是服主（**唯一恒真的超级权限**）：UUID 在配置的 `serverOwners` 名单里。
