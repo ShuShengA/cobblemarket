@@ -247,19 +247,6 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         spdField = createIvField(fx, 240, "SpD"); addIvOpButton(fx + 88, 240, 4); addIvResetButton(fx + 132, 240, 4)
         speField = createIvField(fx, 262, "Spd"); addIvOpButton(fx + 88, 262, 5); addIvResetButton(fx + 132, 262, 5)
 
-        // 登记面板内控件：记下基准 y，滚动时按它重定位（见 filterPanelControls 的说明）
-        filterPanelControls.clear()
-        // ⚠ 性别/属性/特性/性格是可空类型，用 listOfNotNull 过滤；排序是 ButtonWidget（非空）单独加
-        listOfNotNull(
-            shinyButton, genderButton, typeButton, abilityButton, natureButton,
-            htButton, mineButton, resetButton
-        ).forEach { filterPanelControls += it to it.y }
-        filterPanelControls += sortButton to sortButton.y
-        listOfNotNull(hpField, atkField, defField, spaField, spdField, speField)
-            .forEach { filterPanelControls += it to it.y }
-        ivOpButtons.values.forEach { filterPanelControls += it to it.y }
-        ivResetButtons.forEach { filterPanelControls += it to it.y }
-
         // 第一行：★闪光(30) + ♂性别(24) + 排序（尺寸与顺序照精灵市场）
         shinyButton = NineSliceButton(
             fx, 20, 30, 20,
@@ -344,6 +331,22 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             tooltip = Text.translatable("cobblemarket.gui.reset")
         )
         addDrawableChild(resetButton)
+
+        // 登记面板内控件：记下基准 y，滚动时按它重定位（见 filterPanelControls 的说明）
+        // ⚠ **必须放在所有面板控件创建完之后** —— 这里读的是 `shinyButton` 等 lateinit，
+        //   摆到前面会在 init 里直接抛 UninitializedPropertyAccessException
+        //   （2026-09-24 崩溃：点「所有已上架精灵」一进界面就崩）
+        filterPanelControls.clear()
+        // ⚠ 性别/属性/特性/性格是可空类型，用 listOfNotNull 过滤；排序是 ButtonWidget（非空）单独加
+        listOfNotNull(
+            shinyButton, genderButton, typeButton, abilityButton, natureButton,
+            htButton, mineButton, resetButton
+        ).forEach { filterPanelControls += it to it.y }
+        filterPanelControls += sortButton to sortButton.y
+        listOfNotNull(hpField, atkField, defField, spaField, spdField, speField)
+            .forEach { filterPanelControls += it to it.y }
+        ivOpButtons.values.forEach { filterPanelControls += it to it.y }
+        ivResetButtons.forEach { filterPanelControls += it to it.y }
 
         // 分页（照精灵市场：底部分割线在最后一行下方 4px 对称，按钮在其与背景底边之间居中偏上 5px；
         // 列表行数由 getMaxVisibleRows 预留 72 保证按钮不压最后一行）
