@@ -257,7 +257,8 @@ class SellSelectScreen(
             lx + 64, btnY, 58, 20,
             if (typeFilter.isEmpty()) Text.translatable("cobblemarket.sell.type") else Text.translatable(typeFilter),
             { toggleTypeList() },
-            if (typeFilter.isEmpty()) 0xFFFFFF else typeColor(typeFilter)
+            // 未选中 = 灰色（不过滤）；选中 = 属性色。与精灵市场 / 拍卖场的筛选按钮同一口径（2026-09-23）
+            if (typeFilter.isEmpty()) UNSET_FILTER_COLOR else typeColor(typeFilter)
         )
         addDrawableChild(typeBtn)
 
@@ -1158,7 +1159,10 @@ class SellSelectScreen(
         val lx = width / 2 - 148
         val startY = listStartY
         val maxVisible = maxOf(0, (height - startY - 48) / rowHeight)
-        if (mx in lx.toDouble()..(lx + 296).toDouble() && my >= startY) {
+        // ⚠ 属性展开列表打开时不许命中下层行：列表浮层盖在行上面，点属性会连带选中下层的行
+        //   （渲染 / 悬停 / 滚轮三处都判了 typeListOpen，**点击这里原先漏了** —— 2026-09-23 用户实测：
+        //    展开后随便点一个属性，筛选结果里的某只精灵就被选中了）
+        if (!typeListOpen && mx in lx.toDouble()..(lx + 296).toDouble() && my >= startY) {
             val row = ((my - startY) / rowHeight).toInt() + scrollOffset
             if (row in filtered.indices) { selectedIndex = row; return true }
         }
@@ -1210,6 +1214,12 @@ class SellSelectScreen(
     companion object {
         private var nextRequestId = 0
         const val MAX_TYPE_LIST_ROWS = 8
+        /** 筛选按钮「未选中」的文字色：灰色 = 该项不过滤（与精灵市场 / 拍卖场同一口径，2026-09-23） */
+        /**
+         * 筛选按钮「未选中」的文字色：**白色**（与 MarketScreen / AuctionScreen 同一口径）。
+         * ⚠ 一度是 0xAAAAAA（灰色），用户不认可；2026-09-23 三个界面一起改回白色。
+         */
+        const val UNSET_FILTER_COLOR = 0xFFFFFF
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
         val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
