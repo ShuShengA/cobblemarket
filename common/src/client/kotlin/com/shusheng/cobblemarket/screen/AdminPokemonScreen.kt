@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.TooltipPlacement
+import com.shusheng.cobblemarket.client.FilterPanelAnimation
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
@@ -44,6 +45,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private var shinyOnly = false
     private var showMineOnly = false
     private var filterExpanded = false
+    /** 面板开关动画（展开时从「筛选」按钮放大长出来、收起缩回）。⚠ 必须与 [filterExpanded] 成对用 */
+    private val filterAnim = FilterPanelAnimation()
     private var sortMode = "NEWEST"
     private val ivExact = IntArray(6) { -1 }
     // IV 比较方式：0 = 等于（默认），1 = 大于等于，2 = 小于等于
@@ -674,6 +677,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
      */
     private fun toggleFilters() {
         filterExpanded = !filterExpanded
+        filterAnim.start(filterExpanded)
         updateFilterToggleVisual()
         updateControlVisibility()
     }
@@ -903,13 +907,27 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         // 这样主面板里所有控件坐标一个都不用动
         MarketPanelBackground.draw(context, width, height)
         // 右侧筛选面板（面板展开、且没有确认弹窗时）：高度由内容定（224），不跟主面板铺到屏幕底边
-        if (filterExpanded && confirmEntry == null) {
-            MarketPanelBackground.draw(
-                context, width, height,
-                panelWidth = MarketPanelBackground.filterWidth(width),
-                leftOverride = MarketPanelBackground.filterLeft(width),
-                heightOverride = filterPanelHeight(),
-            )
+        // ⚠ 展开中、或收起动画还没播完都要画（后者要从目标位置缩回按钮），照精灵市场
+        if (confirmEntry == null && (filterExpanded || filterAnim.isActive())) {
+            val fl = MarketPanelBackground.filterLeft(width)
+            val fw = MarketPanelBackground.filterWidth(width)
+            val ph = filterPanelHeight()
+            val panelCx = fl + fw / 2f
+            val panelCy = 2f + ph / 2f
+            // 动画锚点 = 「筛选」按钮中心；按钮还没建时退化成"原地不动"（照精灵市场）
+            val btnCx = if (::filterToggleButton.isInitialized) filterToggleButton.x + filterToggleButton.width / 2f else panelCx
+            val btnCy = if (::filterToggleButton.isInitialized) filterToggleButton.y + filterToggleButton.height / 2f else panelCy
+            val animating = filterAnim.applyTransform(context, btnCx, btnCy, panelCx, panelCy)
+            // ⚠ 收起动画的最后一帧（applyTransform 返回 false）不能画；展开状态必须照画
+            if (filterExpanded || animating) {
+                MarketPanelBackground.draw(
+                    context, width, height,
+                    panelWidth = fw,
+                    leftOverride = fl,
+                    heightOverride = ph,
+                )
+                if (animating) filterAnim.restore(context)
+            }
         }
 
         val leftX = centerX - panelWidth / 2
@@ -946,7 +964,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
      */
     private fun updateControlVisibility() {
         val dialogOpen = confirmEntry != null
-        val panelOn = filterExpanded && !dialogOpen
+        // ⚠ 动画进行中整块藏起来（面板内是 MC 控件，塞不进矩阵、不会跟着缩放），照精灵市场
+        val animHidden = filterAnim.isActive()
+        val panelOn = filterExpanded && !dialogOpen && !animHidden
         // 展开列表的浮层：盖住谁就藏谁（读控件自己的 y，不维护第二份坐标表）
         val covered = filterListOpen.isNotEmpty() && filterListBottomY > filterListTopY
         fun coveredAt(y: Int?) = covered && y != null && y >= filterListTopY && y < filterListBottomY
