@@ -26,6 +26,7 @@ import com.shusheng.cobblemarket.market.MarketState
 import com.shusheng.cobblemarket.market.PokemonBlacklistEntry
 import com.shusheng.cobblemarket.market.PokemonBlacklistState
 import com.shusheng.cobblemarket.util.RequestThrottle
+import com.shusheng.cobblemarket.util.TypeTextColors
 import com.shusheng.cobblemarket.platform.onServerTickEnd
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
@@ -40,6 +41,7 @@ import net.minecraft.network.packet.CustomPayload
 import net.minecraft.registry.Registries
 import net.minecraft.server.MinecraftServer
 import net.minecraft.text.ClickEvent
+import net.minecraft.text.HoverEvent
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import java.util.UUID
@@ -851,6 +853,9 @@ object BuyOrderNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.listing_failed")))
                     return@execute
                 }
+                // 快照算一次、两处用：存进交付记录 + 给买家那条通知的悬停详情用
+                //（2026-09-25：通知原先只挂了点击，悬停一个字都没有）
+                val deliveryExtra = buildDeliveryExtra(pokemon, heldItem, player.serverWorld.registryManager)
                 order.pendingDeliveries.add(
                     PendingDelivery(
                         id = UUID.randomUUID(),
@@ -861,7 +866,7 @@ object BuyOrderNetwork {
                         species = pokemon.species.name,
                         level = pokemon.level,
                         shiny = pokemon.shiny,
-                        extraData = buildDeliveryExtra(pokemon, heldItem, player.serverWorld.registryManager),
+                        extraData = deliveryExtra,
                         itemNbt = null,
                         count = 1,
                         deliveredAt = now
@@ -872,7 +877,7 @@ object BuyOrderNetwork {
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.delivered_pending")))
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, order.buyerUuid,
-                    pendingReviewNotice(order))
+                    pendingReviewNotice(order, deliveryExtra))
                 broadcastEvent(server, "UPDATED", buyOrderToEntry(order))
             }
         }
@@ -1386,17 +1391,117 @@ object BuyOrderNetwork {
         ))
     }
 
+    /**
+     * 交付精灵的**悬停详情**（多行彩色文字）—— 对标拍卖播报的 `AuctionNetwork.buildAnnouncementHover`。
+     *
+     * ⚠ **两边的 extra 字段不同，不能直接复用那支函数**：交付快照有 `ht*`（特训）与 `marks`，
+     * 没有 `evs*` / `friendship` / `markKeys` —— 硬套会画出一堆 0 和空行。
+     *
+     * ⚠ 球名必须走**稀有度色**（大师球在物品栏里是紫的，直接念词条 key 出来是白字）——
+     * 与悬停窗、拍卖播报同一口径（2026-09-25 用户报「聊天悬停球种没做颜色」那次一并收的）。
+     *
+     * 物品交付（`extraData` 是空 map）只给一行物品名：买家看名字就够，
+     * 具体数值进界面看 —— 那条路本来就通向确认交付弹窗。
+     */
+    private fun buildDeliveryHover(
+        order: com.shusheng.cobblemarket.market.BuyOrder,
+        extra: Map<String, String>?
+    ): Text? {
+        val lines = mutableListOf<Text>()
+        if (extra.isNullOrEmpty()) {
+            if (order.itemId.isEmpty()) return null
+            com.shusheng.cobblemarket.util.ItemNameText.rarityColoredNameById(order.itemId)?.let { lines.add(it) }
+            return joinHoverLines(lines)
+        }
+        // 属性行（主 + 副）：属性名按属性色 —— 与拍卖播报 / 出价弹窗同一口径
+        extra["primaryType"]?.takeIf { it.isNotEmpty() }?.let { primary ->
+            lines.add(
+                Text.translatable("cobblemarket.gui.tooltip_type").append(
+                    Text.translatable(primary).styled { s -> s.withColor(TypeTextColors.color(primary)) }
+                ).append(
+                    extra["secondaryType"]?.takeIf { it.isNotEmpty() }?.let { secondary ->
+                        Text.literal(" + ").append(
+                            Text.translatable(secondary).styled { s -> s.withColor(TypeTextColors.color(secondary)) }
+                        )
+                    } ?: Text.literal("")
+                )
+            )
+        }
+        // 性格 / 特性 / 球种
+        extra["nature"]?.takeIf { it.isNotEmpty() }
+            ?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_nature").append(Text.translatable(it))) }
+        extra["ability"]?.takeIf { it.isNotEmpty() }
+            ?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_ability").append(Text.translatable(it))) }
+        extra["ball"]?.takeIf { it.isNotEmpty() }
+            ?.let { lines.add(com.shusheng.cobblemarket.util.ItemNameText.ballLine(it, extra["ballItem"].orEmpty())) }
+        // 携带物（稀有度色，与物品栏悬停一致）
+        extra["heldItemId"].orEmpty().takeIf { it.isNotEmpty() }
+            ?.let { com.shusheng.cobblemarket.util.ItemNameText.rarityColoredNameById(it) }
+            ?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_held").append(it)) }
+        // IV 六行：交付快照**没有 EV**，所以只画「stat:IV」那半段（拍卖播报那边是 IV + EV）；
+        // 特训过的补一个绿色的 +N，否则买家看不出这只被特训过
+        lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs"))
+        val stats = listOf(
+            Triple("HP", "ivsHp", "htHp") to Formatting.GREEN,
+            Triple("Atk", "ivsAtk", "htAtk") to Formatting.RED,
+            Triple("Def", "ivsDef", "htDef") to Formatting.GOLD,
+            Triple("SpA", "ivsSpAtk", "htSpAtk") to Formatting.BLUE,
+            Triple("SpD", "ivsSpDef", "htSpDef") to Formatting.GREEN,
+            Triple("Spe", "ivsSpd", "htSpd") to Formatting.LIGHT_PURPLE
+        )
+        stats.forEach { (keys, color) ->
+            val (label, ivKey, htKey) = keys
+            var line = Text.literal("  ").append(Text.literal(label))
+                .append(Text.literal(": ${extra[ivKey]?.toIntOrNull() ?: 0}"))
+                .formatted(color)
+            val ht = extra[htKey]?.toIntOrNull() ?: -1
+            if (ht > 0) {
+                line = line.append(
+                    Text.literal(" (+$ht)").styled { s -> s.withColor(0x55FF55) }
+                )
+            }
+            lines.add(line)
+        }
+        // 技能（两行、一行两个）—— 与悬停窗**同源**（MoveText.rows，词条由客户端本地翻译）；
+        // 交付快照一定有 moves，`resolve` 的第二个参数（NBT 兜底）传 null 即可
+        com.shusheng.cobblemarket.util.MoveText
+            .rows(com.shusheng.cobblemarket.util.MoveText.resolve(extra["moves"], null))
+            .forEach { row -> if (row.string.isNotEmpty()) lines.add(row) }
+        return joinHoverLines(lines)
+    }
+
+    /** 悬停详情多行合并：段间插 `\n`（原版 tooltip 按行渲染） */
+    private fun joinHoverLines(lines: List<Text>): Text? {
+        if (lines.isEmpty()) return null
+        var result: net.minecraft.text.MutableText = Text.literal("")
+        lines.forEachIndexed { i, line ->
+            if (i > 0) result = result.append(Text.literal("\n"))
+            result = result.append(line)
+        }
+        return result
+    }
+
     /** 求购单待确认通知（绿，聊天颜色模板）+ 金色下划线 [查看待交付] 按钮：
      *  点击走客户端指令 /cobblemarket review <orderId> <币种>，打开界面直达确认交付弹窗（看货后再决定接受/拒绝）。
      *
      *  ⚠ 命令末尾**必须带上这一单的币种**：求购单界面一次只看一种货币，不带币种时客户端只能先查主货币、
      *  发现没有这一单再换另一种重查（多一轮往返 + 等节流窗口，实测反馈「弹窗慢半拍」）。带币种一次命中。
-     *  客户端对多出来的这一段是容错的（悬停预览只取前两段，见 ChatObjectPreview）。 */
-    private fun pendingReviewNotice(order: com.shusheng.cobblemarket.market.BuyOrder): Text {
+     *  客户端对多出来的这一段是容错的（悬停预览只取前两段，见 ChatObjectPreview）。
+     *
+     *  ⚠ **悬停也要给详情**（2026-09-25 用户报）：原先这条通知**只挂了点击**，悬停一个字都没有 ——
+     *  买家在聊天里看不出卖家交的是什么（拍卖播报的悬停早就有完整详情，两边不一致）。
+     *  交付那一刻的精灵快照就在手上（`buildDeliveryExtra` 的返回值），直接挂上去即可。 */
+    private fun pendingReviewNotice(
+        order: com.shusheng.cobblemarket.market.BuyOrder,
+        deliveryExtra: Map<String, String>? = null
+    ): Text {
+        val hover = buildDeliveryHover(order, deliveryExtra)
         val button = Text.translatable("cobblemarket.chat.review_button").styled {
-            it.withColor(Formatting.GOLD)
+            var style = it.withColor(Formatting.GOLD)
                 .withUnderline(true)
                 .withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket review ${order.id} ${order.currency.name}"))
+            if (hover != null) style = style.withHoverEvent(HoverEvent(HoverEvent.Action.SHOW_TEXT, hover))
+            style
         }
         // 需求里的**物种名按主属性色**（全模组统一口径，同拍卖播报）：
         // 下面整行 `.formatted(GREEN)` 会把名字一起染绿，而**子样式优先于父级** —— 显式给名字上色即可。
