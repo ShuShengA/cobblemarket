@@ -72,7 +72,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private lateinit var sortButton: ButtonWidget
     private lateinit var resetButton: ButtonWidget
     private lateinit var mineButton: NineSliceButton
-    private lateinit var filterToggleButton: ButtonWidget
+    /** NineSliceButton（不是 ButtonWidget）：开关要像精灵市场那样随展开状态换图标 */
+    private lateinit var filterToggleButton: NineSliceButton
     private lateinit var prevButton: ButtonWidget
     private lateinit var nextButton: ButtonWidget
     private val cancelButtons = mutableListOf<ButtonWidget>()
@@ -87,6 +88,13 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private var hoveredRow = -1
     private val panelWidth = 296
     private val iconSize = 20
+
+    /**
+     * 右侧筛选面板的**内容高度**（由内容定，不跟随主面板铺到屏幕底边，照精灵市场）。
+     * 最后一行的 `Spd` 输入框在 y=196、高 16（底 212），加 12 底部余量 ⇒ 224。
+     * ⚠ 面板里再加一行时记得同步改这里。
+     */
+    private val FILTER_PANEL_HEIGHT = 224
 
     private var confirmEntry: ListingEntry? = null
 
@@ -191,14 +199,11 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             leftX + panelWidth - 52, 44, 50, 16,
             Text.literal(""),
             { toggleFilters() },
-            iconLeft = Identifier.of("cobblemarket",
-                if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f
-        ).also {
-            it.setTooltip(Tooltip.of(Text.translatable(
-                if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand")))
-        }
+        )
         addDrawableChild(filterToggleButton)
+        // 图标 / 选中态 / 悬停提示统一由 updateFilterToggleVisual 设 —— 构造参数里再写一份就等于两处各写一遍
+        updateFilterToggleVisual()
 
         // 玩家搜索框（专属，始终显示）
         sellerField = TextFieldWidget(textRenderer, leftX + 2, 64, panelWidth - 4, 16, Text.translatable("cobblemarket.op.seller_search"))
@@ -211,65 +216,69 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         addDrawableChild(sellerField)
         sellerField?.text = savedSeller
 
-        if (filterExpanded) {
-            hpField = createIvField(leftX + 4, 88, "HP")
-            atkField = createIvField(leftX + 100, 88, "ATK")
-            defField = createIvField(leftX + 196, 88, "DEF")
+        // ── 右侧筛选面板内的控件：**常驻创建**，开关只切可见性 ──
+        // 原先这一整块包在 `if (filterExpanded)` 里，开关走 clearChildren+init 整界面重建，两个后果：
+        // ① 重建清空 iconData 里的**跨帧动画状态**（正在睡觉的精灵会突然站起来一下再睡回去）；
+        // ② 展开时列表起点 88→164，**吞掉 3 行**。搬进独立面板后这两件事一起消失（照精灵市场）。
+        val fx = MarketPanelBackground.filterLeft(width) + 4
+        val fw = MarketPanelBackground.filterWidth(width) - 8
 
-            spaField = createIvField(leftX + 4, 112, "SpA")
-            spdField = createIvField(leftX + 100, 112, "SpD")
-            speField = createIvField(leftX + 196, 112, "Spd")
+        // IV 六项：面板内**竖排**（输入框 84 + 三态 40），行距 22 —— 与精灵市场同数值、同顺序
+        ivOpButtons.clear()
+        hpField  = createIvField(fx,  86, "HP");  addIvOpButton(fx + 88,  86, 0)
+        atkField = createIvField(fx, 108, "ATK"); addIvOpButton(fx + 88, 108, 1)
+        defField = createIvField(fx, 130, "DEF"); addIvOpButton(fx + 88, 130, 2)
+        spaField = createIvField(fx, 152, "SpA"); addIvOpButton(fx + 88, 152, 3)
+        spdField = createIvField(fx, 174, "SpD"); addIvOpButton(fx + 88, 174, 4)
+        speField = createIvField(fx, 196, "Spd"); addIvOpButton(fx + 88, 196, 5)
 
-            // 三态比较按钮（= / ≥ / ≤ 循环，默认 = 与旧行为一致；非默认金色高亮）
-            ivOpButtons.clear()
-            listOf(0 to (leftX + 4), 1 to (leftX + 100), 2 to (leftX + 196)).forEach { (i, bx) ->
-                addIvOpButton(bx + 69, 88, i)
-                addIvOpButton(bx + 69, 112, i + 3)
-            }
+        // 第一行：★闪光(30) + 排序（跟在它右边，与精灵市场同款）
+        shinyButton = NineSliceButton(
+            fx, 20, 30, 20,
+            Text.literal(if (shinyOnly) "★" else "☆"),
+            { toggleShiny() },
+            // resize 重建时保持当前状态的颜色
+            if (shinyOnly) GOLD_COLOR else 0xFFFFFF
+        )
+        addDrawableChild(shinyButton)
 
-            shinyButton = NineSliceButton(
-                leftX + 4, 136, 30, 20,
-                Text.literal(if (shinyOnly) "★" else "☆"),
-                { toggleShiny() },
-                // resize 重建时保持当前状态的颜色
-                if (shinyOnly) GOLD_COLOR else 0xFFFFFF
-            )
-            addDrawableChild(shinyButton)
+        sortButton = NineSliceButton(
+            fx + 34, 20, fw - 34, 20,
+            Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay())),
+            { cycleSort() }
+        )
+        addDrawableChild(sortButton)
 
-            sortButton = NineSliceButton(
-                leftX + 36, 136, 90, 20,
-                Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay())),
-                { cycleSort() }
-            )
-            addDrawableChild(sortButton)
+        htButton = NineSliceButton(
+            fx, 42, fw, 20,
+            htButtonText(),
+            { toggleHtFilter() },
+            if (htFilter != 0) GOLD_COLOR else 0xFFFFFF
+        )
+        addDrawableChild(htButton)
 
-            htButton = NineSliceButton(
-                leftX + 128, 136, 62, 20,
-                htButtonText(),
-                { toggleHtFilter() },
-                if (htFilter != 0) GOLD_COLOR else 0xFFFFFF
-            )
-            addDrawableChild(htButton)
+        // 我的（personal/personal_click 双图标：关 = 全部，开 = 仅我的；悬停词条随状态）
+        // 与「重置」同一行：我的占左边、重置是右边那枚窄符号按钮（照精灵市场）
+        mineButton = NineSliceButton(
+            fx, 64, fw - 24, 20,
+            Text.literal(""),
+            { toggleMineOnly() },
+            iconLeft = Identifier.of("cobblemarket",
+                if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
+        )
+        addDrawableChild(mineButton)
 
-            // 我的（personal/personal_click 双图标：关 = 全部，开 = 仅我的；悬停词条随状态）
-            mineButton = NineSliceButton(
-                leftX + 192, 136, 50, 20,
-                Text.literal(""),
-                { toggleMineOnly() },
-                iconLeft = Identifier.of("cobblemarket",
-                    if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png"),
-                iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
-                tooltip = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
-            )
-            addDrawableChild(mineButton)
-
-            resetButton = NineSliceButton(
-                leftX + 244, 136, 52, 20,
-                Text.translatable("cobblemarket.gui.reset"),
-                { resetFilters() }
-            )
-            addDrawableChild(resetButton)
-        }
+        // 重置：改用**符号** ↺（同精灵市场 / 配置界面输入框右侧那枚）——
+        // 面板只有 152 宽，文字「重置」/`Reset` 占地方，符号 + 悬停提示足够（纯图标按钮的惯例）
+        resetButton = NineSliceButton(
+            fx + fw - 20, 64, 20, 20,
+            Text.literal("↺"),
+            { resetFilters() },
+            tooltip = Text.translatable("cobblemarket.gui.reset")
+        )
+        addDrawableChild(resetButton)
 
         // 分页（照精灵市场：底部分割线在最后一行下方 4px 对称，按钮在其与背景底边之间居中偏上 5px；
         // 列表行数由 getMaxVisibleRows 预留 72 保证按钮不压最后一行）
@@ -302,7 +311,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     /** IV 三态比较按钮：= → ≥ → ≤ 循环；切换立即重发筛选请求（过滤条件变了） */
     private fun addIvOpButton(x: Int, y: Int, index: Int) {
         val btn = NineSliceButton(
-            x, y, 20, 16,
+            // 宽 20 → 40（与精灵市场一致）：搬进面板后右侧有余量，三态符号（= / ≥ / ≤）宽一点更好点
+            x, y, 40, 16,
             Text.literal(if (ivOps[index] == 1) "≥" else if (ivOps[index] == 2) "≤" else "="),
             {
                 ivOps[index] = (ivOps[index] + 1) % 3
@@ -324,7 +334,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     }
 
     private fun createIvField(x: Int, y: Int, placeholder: String): TextFieldWidget {
-        val field = TextFieldWidget(textRenderer, x, y, 68, 16, Text.literal(""))
+        // 宽 68 → 84：搬进右侧面板后竖排、右侧有余量，与精灵市场的输入框同宽（2026-09-24）
+        val field = TextFieldWidget(textRenderer, x, y, 84, 16, Text.literal(""))
         field.setPlaceholder(Text.literal(placeholder))
         field.setTextPredicate { it.length <= 2 && it.all { c -> c.isDigit() } }
         addSelectableChild(field)
@@ -332,10 +343,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         return field
     }
 
-    // 84→88：卖家搜索框底边(80)与顶部分割线(80)贴死，列表起始下移 4px 留出间隙
-    // 展开时用 164 而非 160：闪光/排序按钮排在 y=136、高 20（底边 156），而顶部分割线画在 listStartY-4，
-    // 160 的话分割线正好压在按钮底边上（收起时不建这些按钮所以看不出问题）
-    private fun getListStartY() = if (filterExpanded) 164 else 88
+    // 84→88：卖家搜索框底边(80)与顶部分割线(80)贴死，列表起始下移 4px 留出间隙。
+    // ⚠ 筛选控件搬进右侧面板后（2026-09-24）起点**恒定 88** —— 原先展开时顶到 164、吞掉 3 行
+    private fun getListStartY() = 88
     // 预留 72 = 分页按钮高 20 + 4 空隙 + 底部边框切片 16 + 背景底边下空隙（照精灵市场：按钮不压背景底部边框）
     private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 72) / 24)
 
@@ -400,11 +410,28 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         refreshData()
     }
 
+    /**
+     * 「筛选」开关：**只切面板可见性，不重建界面**。
+     *
+     * ⚠ 原先这里是 `clearChildren() + init()` 整界面重建 —— 重建会把 [iconData] 里精灵图标的
+     *   **跨帧动画状态**一起清掉，玩家看到的就是「点一下筛选，正在睡觉的精灵突然站起来一下再睡回去」
+     *   （精灵市场同一个坑，2026-09-23 实测）。
+     */
     private fun toggleFilters() {
         filterExpanded = !filterExpanded
-        clearChildren()
-        init()
-        rebuildCancelButtons()
+        updateFilterToggleVisual()
+        updateControlVisibility()
+    }
+
+    /** 开关按钮的外观（图标 / 悬停提示）随 [filterExpanded] 更新 —— 不重建就得手动更一次 */
+    private fun updateFilterToggleVisual() {
+        if (!::filterToggleButton.isInitialized) return
+        filterToggleButton.iconLeft = Identifier.of("cobblemarket",
+            if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png")
+        // 面板展开期间按钮保持**选中态**（按钮背景第三态）：一眼看出面板开着还是关着（照精灵市场）
+        filterToggleButton.selectedVisual = filterExpanded
+        filterToggleButton.setTooltip(Tooltip.of(Text.translatable(
+            if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand")))
     }
 
     private fun resetFilters() {
@@ -615,7 +642,18 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         IconRegistry.beginFrame(mouseX, mouseY)
         val centerX = width / 2
+        // 主面板**保持居中不动**（不传 leftOverride）—— 筛选面板占用它右侧本来就空着的区域，
+        // 这样主面板里所有控件坐标一个都不用动
         MarketPanelBackground.draw(context, width, height)
+        // 右侧筛选面板（面板展开、且没有确认弹窗时）：高度由内容定（224），不跟主面板铺到屏幕底边
+        if (filterExpanded && confirmEntry == null) {
+            MarketPanelBackground.draw(
+                context, width, height,
+                panelWidth = MarketPanelBackground.filterWidth(width),
+                leftOverride = MarketPanelBackground.filterLeft(width),
+                heightOverride = FILTER_PANEL_HEIGHT,
+            )
+        }
 
         val leftX = centerX - panelWidth / 2
         val startY = getListStartY()
@@ -642,22 +680,32 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
      * 检测 hover 并弹自己的 tooltip，弹出按钮的位置正好压住某个下层按钮时，鼠标停在弹窗按钮上
      * 弹出的却是下层那条提示（2026-09-19 用户实测，精灵市场先报的，本界面同一套结构一并修）。
      */
+    /**
+     * 主面板与筛选面板的可见性，每帧在 [render] 开头调一次（两头的开关状态不必各自记着恢复）。
+     *
+     * ⚠ 面板内的控件现在是**常驻创建**的（2026-09-24 搬进右侧面板），判据只剩两件事：
+     *   面板开着没有（[filterExpanded]）、确认弹窗开着没有（弹窗是模态，下层一律 `visible = false` ——
+     *   只"不画"不行：原版 `ClickableWidget` 只要 visible 就照常响应点击与悬停、还会弹自己的 tooltip）。
+     */
     private fun updateControlVisibility() {
-        val open = confirmEntry != null
-        listOf(
-            currencyButton, searchField, sellerField, htButton,
-            hpField, atkField, defField, spaField, spdField, speField
-        ).forEach { it?.visible = !open }
-        // ⚠ 下面这些是 lateinit **且只在筛选展开时才创建**（`if (filterExpanded)` 分支里），
-        //   筛选没展开时它们压根不存在 —— 直接读会抛 UninitializedPropertyAccessException
-        //   （2026-09-19 精灵市场一打开就崩，同源问题，这里一并按同一规矩写）
-        if (::shinyButton.isInitialized) shinyButton.visible = !open
-        if (::sortButton.isInitialized) sortButton.visible = !open
-        if (::resetButton.isInitialized) resetButton.visible = !open
-        if (::mineButton.isInitialized) mineButton.visible = !open
-        if (::filterToggleButton.isInitialized) filterToggleButton.visible = !open
-        if (::prevButton.isInitialized) prevButton.visible = !open
-        if (::nextButton.isInitialized) nextButton.visible = !open
+        val dialogOpen = confirmEntry != null
+        val panelOn = filterExpanded && !dialogOpen
+        // 主面板：两个搜索框与货币切换按钮常显（只跟弹窗走）
+        searchField?.visible = !dialogOpen
+        sellerField?.visible = !dialogOpen
+        currencyButton?.visible = !dialogOpen
+        // 右侧筛选面板：面板收起 / 弹窗打开时整块藏掉
+        listOf(hpField, atkField, defField, spaField, spdField, speField).forEach { it?.visible = panelOn }
+        if (::shinyButton.isInitialized) shinyButton.visible = panelOn
+        if (::sortButton.isInitialized) sortButton.visible = panelOn
+        if (::resetButton.isInitialized) resetButton.visible = panelOn
+        if (::mineButton.isInitialized) mineButton.visible = panelOn
+        htButton?.visible = panelOn
+        ivOpButtons.values.forEach { it.visible = panelOn }
+        // 其余主面板控件
+        if (::filterToggleButton.isInitialized) filterToggleButton.visible = !dialogOpen
+        if (::prevButton.isInitialized) prevButton.visible = !dialogOpen
+        if (::nextButton.isInitialized) nextButton.visible = !dialogOpen
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
