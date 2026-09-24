@@ -57,7 +57,12 @@ class HistoryScreen(private val showAll: Boolean = false) :
         addDrawableChild(NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
             Text.literal(""),
-            { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
+            { client?.setScreen(
+                // 「全部交易历史」是从**管理面板**进来的二级页，返回要回上一级（原先一律回市场入口，
+                // 点返回直接跳回了入口 —— 2026-09-24 用户实测报的）。
+                // 「交易历史」（showAll=false）才是从市场入口那排按钮进的，回入口
+                if (showAll) AdminScreen() else MarketEntryScreen(skipDropAnim = true)
+            ) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
