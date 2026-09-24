@@ -1043,13 +1043,19 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         }
         // 市场关闭：常驻红字横幅 + 点击入口时的 3 秒提示（OP 同样显示——服主也需要直观看到当前状态）
         if (!com.shusheng.cobblemarket.client.MarketStateCache.enabled) {
-            // ⚠ 画在**背景底边紧下方**（2026-09-24 用户报：原先画在 `btnStartY - 14`，那正是背景
-            //   内容区顶边 —— 玩家把余额 HUD 拖到那里就会和它重合）。贴到背景外沿之后，
-            //   HUD 不管拖到哪都不会撞上
+            // ⚠ 画在**背景贴图之外、紧贴贴图下沿**（2026-09-24 二次修正）。
+            //   ⚠⚠ `bgBottom()` 是**逻辑底边**，**贴图底边 = `bgBottom() + 20`** —— 贴图 213 高，
+            //   逻辑区 160 的上方多 33、下方多 20。所以 `bgBottom() + 2` 仍在**贴图内**距底边 18px，
+            //   第一版就栽在这个名字上（注释写「贴图底边紧下方」，实现却是逻辑底边）。
+            //   要出贴图：从 `bgBottom() + 20` 起算。
+            //   原先画在 `btnStartY - 14`（背景内容区顶边），玩家把余额 HUD 拖到那里就会重合；
+            //   贴到贴图外沿之后 HUD 不管拖到哪都不会撞上。
+            //   `coerceAtMost` 兜底：逻辑高度不足时背景上移挤压（如 854x480 + GUI scale 2，
+            //   贴图下方只剩 ~20px），不夹住会超出屏幕底被裁掉
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.translatable("cobblemarket.market.closed_banner").string,
-                width / 2, bgBottom() + 2, 0xFF5555
+                width / 2, (bgBottom() + 22).coerceAtMost(height - 11), 0xFF5555
             )
             if (System.currentTimeMillis() < closedNoticeUntil) {
                 context.drawCenteredTextWithShadow(

@@ -448,16 +448,22 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         MarketPermissions.ALL.forEachIndexed { idx, node ->
             val col = idx % 2
             val row = idx / 2
+            val short = node.removePrefix(MarketPermissions.PREFIX)
             val btn = NineSliceButton(
                 dialogX + DIALOG_MARGIN + col * (NODE_W + 8), dialogY + NODE_GRID_Y + row * NODE_ROW_H, NODE_W, 16,
                 // 词条长度不受控（新语言/新节点都可能更长），按按钮内宽截断防溢出
-                TextUtil.truncateText(
-                    Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX)),
-                    NODE_W - 8
-                ),
+                TextUtil.truncateText(Text.translatable("cobblemarket.perm.node.$short"), NODE_W - 8),
                 { toggleNode(node) },
                 // 三段贴图：第三段是**选中态**（选中节点后保持高亮，鼠标移开也不消失）
                 texH = 120
+            )
+            // 悬停说明「给了这个节点，对方能干什么」—— 服主授权时唯一的依据就是这行字，
+            // 光看节点名根本猜不出边界在哪（「挂单管理」还管着全部交易历史）。
+            // 与管理面板里对应功能按钮用同一套词条
+            btn.setTooltip(
+                net.minecraft.client.gui.tooltip.Tooltip.of(
+                    Text.translatable("cobblemarket.perm.node.$short.desc")
+                )
             )
             btn.selectedVisual = node in selectedNodes
             nodeButtonByNode[node] = btn

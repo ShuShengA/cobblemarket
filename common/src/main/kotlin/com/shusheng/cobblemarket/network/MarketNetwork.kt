@@ -2821,9 +2821,10 @@ object MarketNetwork {
             }
         }
 
-        // 入口界面的市场总开关按钮（OP）：写配置 + 全员广播，与命令同逻辑
+        // 管理面板底部的市场总开关按钮：写配置 + 全员广播，与命令同逻辑。
+        // ⚠ 2026-09-24 起改判 **MARKET_SWITCH**（原先跟 MARKET 走，等于下架权限附赠停市权）
         registerC2S(SetMarketEnabledPayload.ID, SetMarketEnabledPayload.CODEC) { payload, player ->
-            if (!MarketPermissions.has(player, MarketPermissions.MARKET)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.MARKET_SWITCH)) return@registerC2S
             val server = player.server
             server.execute { toggleMarketEnabled(server, payload.enabled) }
         }

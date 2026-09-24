@@ -59,12 +59,14 @@ object MarketCommands {
                         .requires { MarketPermissions.has(it, MarketPermissions.BAN) }
                         .executes(::banList)
                     )
+                    // ⚠ 2026-09-24 起 on/off 判 MARKET_SWITCH（与面板里那颗按钮同一节点）：
+                    //   下架挂单与紧急停市是两码事，不该绑在同一个节点上
                     .then(CommandManager.literal("on")
-                        .requires { MarketPermissions.has(it, MarketPermissions.MARKET) }
+                        .requires { MarketPermissions.has(it, MarketPermissions.MARKET_SWITCH) }
                         .executes(::marketOn)
                     )
                     .then(CommandManager.literal("off")
-                        .requires { MarketPermissions.has(it, MarketPermissions.MARKET) }
+                        .requires { MarketPermissions.has(it, MarketPermissions.MARKET_SWITCH) }
                         .executes(::marketOff)
                     )
                     .then(CommandManager.literal("reload")
