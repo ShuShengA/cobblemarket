@@ -29,5 +29,15 @@ data class PokemonIconData(
     val renderable: RenderablePokemon,
     val state: FloatingState = FloatingState(),
     val ballStack: ItemStack? = null,
-    val heldStack: ItemStack? = null
+    val heldStack: ItemStack? = null,
+    /**
+     * 这条数据对应的**挂单 id**（有稳定 id 的界面传它，用于重建时复用 [state]）。
+     *
+     * ⚠ 为什么需要：筛选 / 排序 / 翻页都会让列表重新构建，若一律 `clear()` + 全新建，
+     *   每条的 [state]（动画进度 + 头部跟随的跨帧平滑值）都会归零 —— 表现就是
+     *   「点一下筛选类按钮，精灵的头转回去再立刻转回来、动画还顿两下」。
+     *   按 id 复用即可让同一只精灵的动画跨帧延续。
+     * 不传（null）= 不参与复用，行为与改造前一致。
+     */
+    val listingId: java.util.UUID? = null
 )
