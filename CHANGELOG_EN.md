@@ -99,6 +99,7 @@
 
 ### Changes
 
+- **Entry and menu buttons got their own background**: the market entry screen's Buy Orders / Meowth Bank / Settings, the admin panel's Permissions / Market switch / Server Config (and the Share button) now use a separate button texture — visually distinct from the action buttons inside list rows, so an entry point reads as an entry point at a glance. These buttons have **no selected state** (and do not need one), so the texture only carries the default and hover frames
 - **Filter controls moved into a panel on the right**: in the Pokémon Market, the Auction House and the admin "All Listed Pokémon" screen the filter controls used to sit in a row above the list — opening the type / ability / nature dropdown pushed the list start down by several rows, and the dropdown itself covered the rows beneath it. They now live in a **dedicated panel to the right of the list** (toggled by the "Filter" button at the right end of the search row, collapsed by default), so the list start never moves and the four workarounds written for that overlay are gone entirely (the Pokémon tab also fits one more row per page)
   - The available filters were levelled up at the same time: shiny / gender / type / ability / nature / hyper-trained / six IV fields (each with its own ↺ reset) plus a reset-all. The Auction House gained IV filters; sell-select and create-auction gained ability and nature (the admin screen also gained gender / type / ability / nature)
   - The panel animates: it grows out of the "Filter" button when opening and shrinks back into it when closing
@@ -116,6 +117,7 @@
 
 ### Fixes
 
+- **"All Trade History" sent you back to the market entry screen**: it is a second-level screen opened from the **Admin Panel**, but its Back button went to the market entry — throwing you out of the admin panel entirely. It now returns to the previous level (the Admin Panel). Lists opened from the entry screen (such as Trade History) are unaffected
 - **Counter word for Pokémon (Chinese)**: the pending-collection message read "已领取 3 个精灵" using the generic counter 个; it now uses 只, and the "listing limit reached" message splits into separate Pokémon / item wordings instead of sharing one
 - **One wrong character in the config file used to wipe the whole config**: editing `config/cobblemarket.json` by hand and missing a quote (or leaving a stray comma, or using full-width quotes) made the file fail to parse — and the mod then **overwrote it with defaults**, resetting every fee, limit and finance parameter you had tuned, with **no way to get them back** and only an easily-missed note in the log. It now **leaves your file untouched** (however broken, it stays there so you can see what is wrong), saves a `.broken` copy for reference, and logs a loud error explaining the cause
 - **List area going blank while a filter dropdown is open**: opening the type/ability/nature filter in the Pokemon market, the Auction House or the sell-select screen made every listing row disappear; only the rows actually covered by the dropdown are now skipped, and rows below it render as usual
