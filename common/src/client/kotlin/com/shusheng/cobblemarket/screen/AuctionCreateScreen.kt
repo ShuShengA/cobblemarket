@@ -52,6 +52,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private var backButton: NineSliceButton? = null
     private val tabButtons = mutableListOf<NineSliceButton>()
     private var shinyButton: NineSliceButton? = null
+    private var genderButton: NineSliceButton? = null
     private var typeButton: NineSliceButton? = null
     private var resetButton: NineSliceButton? = null
 
@@ -68,6 +69,14 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private var shinyOnly = false
     private var typeFilter = ""
     private var typeIdx = 0
+    /** 公母筛选（照上架选择界面）：""=不限 / MALE / FEMALE */
+    private var genderFilter = ""
+    // 属性展开列表（照上架选择界面：不限+19 属性、属性色、限高滚动、展开时隐藏被盖住的行）
+    private var typeListOpen = false
+    private var typeListScroll = 0
+    /** 展开列表的实际底边 y（每行 14、从 [TYPE_LIST_TOP] 起）。被它盖住的行不渲染 —— 反正看不见，画了反而刺穿列表 */
+    private var typeListBottomY = 0
+    private val typeOptionButtons = mutableListOf<NineSliceButton>()
     private val ivExact = IntArray(6) { -1 }
     // IV 比较方式：0 = 等于（默认），1 = 大于等于，2 = 小于等于
     private val ivOps = IntArray(6)
@@ -84,9 +93,66 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private val allTypes = listOf("" to "") + listOf("normal","fire","water","electric","grass","ice","fighting","poison","ground","flying",
         "psychic","bug","rock","ghost","dragon","dark","steel","fairy").map { it to "cobblemon.type.$it" }
 
-    private fun cycleType() {
-        typeIdx = (typeIdx + 1) % allTypes.size
-        typeFilter = allTypes[typeIdx].second
+    // ── 属性展开列表（照上架选择界面：不限+19 属性、属性色、限高滚动、展开时隐藏被盖住的行） ──
+
+    private fun toggleTypeList() {
+        typeListOpen = !typeListOpen
+        typeListScroll = 0
+        rebuildTypeList()
+    }
+
+    private fun rebuildTypeList() {
+        // 先撤掉旧的选项按钮：展开/收起来回切、以及界面重建（clearChildren）后都要从干净状态重建
+        typeOptionButtons.forEach { remove(it) }
+        typeOptionButtons.clear()
+        if (!typeListOpen) {
+            typeListBottomY = 0
+            return
+        }
+        val leftX = width / 2 - panelWidth / 2
+        allTypes.drop(typeListScroll).take(MAX_TYPE_LIST_ROWS).forEachIndexed { i, (_, key) ->
+            val display = if (key.isEmpty()) Text.translatable("cobblemarket.gui.filter_any").string
+                else Text.translatable(key).string
+            val btn = NineSliceButton(
+                leftX + 2, TYPE_LIST_TOP + i * TYPE_LIST_ROW_H, panelWidth - 4, TYPE_LIST_ROW_H,
+                if (key.isNotEmpty() && key == typeFilter)
+                    com.shusheng.cobblemarket.util.TextUtil.selectedText(
+                        com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)
+                    )
+                else Text.literal(com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)),
+                { selectType(key) },
+                if (key.isNotEmpty()) typeColor(key) else 0xFFFFFF
+            )
+            typeOptionButtons.add(btn)
+            addDrawableChild(btn)
+        }
+        // 记下展开列表的实际底边，供行渲染判断哪些行被它盖住（按实际选项数与滚动偏移算，不写死行数）
+        typeListBottomY = TYPE_LIST_TOP + minOf(allTypes.size - typeListScroll, MAX_TYPE_LIST_ROWS) * TYPE_LIST_ROW_H
+    }
+
+    private fun selectType(key: String) {
+        typeFilter = key
+        typeIdx = allTypes.indexOfFirst { it.second == key }.coerceAtLeast(0)
+        typeButton?.setMessage(if (key.isEmpty()) Text.translatable("cobblemarket.sell.type") else Text.translatable(key))
+        typeButton?.textColor = if (key.isEmpty()) 0xFFFFFF else typeColor(key)
+        typeListOpen = false
+        rebuildTypeList()
+        rebuild()
+    }
+
+    private fun updateGenderButton() {
+        genderButton?.iconLeft = if (genderFilter == "FEMALE") GENDER_ICON_FEMALE else GENDER_ICON_MALE
+        // 不限态显示双图标（♂♀），单态只显示一个
+        genderButton?.iconLeft2 = if (genderFilter.isEmpty()) GENDER_ICON_FEMALE else null
+    }
+
+    private fun cycleGender() {
+        genderFilter = when (genderFilter) {
+            "" -> "MALE"
+            "MALE" -> "FEMALE"
+            else -> ""
+        }
+        rebuild()
     }
 
     private val iconData = mutableMapOf<Int, PokemonIconData>()
@@ -241,25 +307,37 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 addDrawableChild(btn)
             }
 
-            // Row 3 (y=90): 闪光 + 类型筛选（照搬 SellSelectScreen，无价格/卖出按钮）
+            // Row 3 (y=90): 闪光 | 公母 | 属性 | 特训 | 重置 —— 五件套，宽度与 4px 间距照上架选择界面
             val btnY = 90
+            // 闪光：只有 ★/☆（照上架选择界面；原先是带文字的 62 宽按钮 —— 一个五角星不需要那么宽）
             shinyButton = NineSliceButton(
-                leftX + 2, btnY, 62, 20,
-                Text.translatable(if (shinyOnly) "cobblemarket.gui.shiny_on" else "cobblemarket.gui.shiny_off"),
+                leftX + 2, btnY, 30, 20,
+                Text.literal(if (shinyOnly) "★" else "☆"),
                 { shinyOnly = !shinyOnly; rebuild() },
                 // 开 = 金色 ★，关 = 白色 ☆（与其他界面闪光按钮一致）
                 if (shinyOnly) GOLD_COLOR else 0xFFFFFF
             )
             addDrawableChild(shinyButton)
+            // 公母（照上架选择界面：不限态 ♂♀ 双图标，循环 不限→仅公→仅母）
+            genderButton = NineSliceButton(
+                leftX + 36, btnY, 24, 20,
+                Text.literal(""),
+                { cycleGender() },
+                iconTexW = 6, iconTexH = 8, iconScale = 1.5f
+            )
+            updateGenderButton()
+            addDrawableChild(genderButton)
+            // 属性：展开选择（照上架选择界面：属性色文字 + 浮层列表；原先点一下切下一个属性）
             typeButton = NineSliceButton(
-                leftX + 66, btnY, 58, 20,
+                leftX + 64, btnY, 58, 20,
                 if (typeFilter.isEmpty()) Text.translatable("cobblemarket.sell.type") else Text.translatable(typeFilter),
-                { cycleType(); rebuild() }
+                { toggleTypeList() },
+                if (typeFilter.isEmpty()) 0xFFFFFF else typeColor(typeFilter)
             )
             addDrawableChild(typeButton)
             // 特训筛选（三态循环）
             htButton = NineSliceButton(
-                leftX + 128, btnY, 62, 20,
+                leftX + 126, btnY, 62, 20,
                 htButtonText(),
                 { toggleHtFilter(); rebuild() },
                 if (htFilter != 0) GOLD_COLOR else 0xFFFFFF
@@ -294,6 +372,11 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         currentTab = tab
         scrollOffset = 0
         hoveredRow = -1
+        // 切 tab 前收起属性展开列表：浮层按钮会被 clearChildren 清掉，状态若留着，
+        // 行渲染会继续按残留的 typeListBottomY 跳过（列表却已经不在了）
+        typeListOpen = false
+        typeListScroll = 0
+        typeListBottomY = 0
         clearChildren()
         init()
     }
@@ -320,6 +403,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             hpF?.text ?: "", atkF?.text ?: "", defF?.text ?: "",
             spaF?.text ?: "", spdF?.text ?: "", speF?.text ?: ""
         )
+        // 同上：展开列表的选项按钮会被 clearChildren 清掉，状态必须一起收
+        typeListOpen = false
+        typeListBottomY = 0
         clearChildren()
         init()
         if (keepInputs) {
@@ -334,6 +420,10 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         shinyOnly = false
         typeFilter = ""
         typeIdx = 0
+        genderFilter = ""
+        typeListOpen = false
+        typeListScroll = 0
+        typeListBottomY = 0
         ivExact.fill(-1)
         for (i in 0..5) ivOps[i] = 0
         htFilter = 0
@@ -646,6 +736,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             val q = searchField?.text?.trim()?.takeIf { it.isNotEmpty() }
             (q == null || speciesDisplay(p).contains(q, ignoreCase = true) || p.speciesName.contains(q, ignoreCase = true)) &&
             (!shinyOnly || p.shiny) &&
+            (genderFilter.isEmpty() || p.gender == genderFilter) &&
             (typeFilter.isEmpty() || p.primaryType == typeFilter || p.secondaryType == typeFilter) &&
             // IV 按有效值匹配：特训项用特训值，未特训用真实值（原生 31 与训练 31 都命中）
             (ivExact[0] < 0 || ivMatch(ivOps[0], if (p.htHp >= 0) p.htHp else p.ivsHp, ivExact[0])) &&
@@ -748,10 +839,13 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         val listAreaBottom = startY + visibleRows * rowHeight
         val count = displayCount()
 
-        // 弹窗打开时不再绘制行背景/悬停行（下层列表对弹窗不可见）
+        // 弹窗打开时不再绘制行背景/悬停行（下层列表对弹窗不可见）；
+        // ⚠ 属性展开列表打开时同理：被浮层盖住的行**既不算悬停、也不画背景**（画了会刺穿浮层）。
+        //   hoveredRow 归 -1 还有一层作用 —— mouseClicked 的行命中判定读的就是它，
+        //   所以展开时点属性行不会连带选中下层精灵（上架选择界面原先漏了这层，2026-09-23 用户实测）
         if (dialogPokemon == null && dialogItem == null) {
             hoveredRow = -1
-            if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom) {
+            if (!typeListOpen && mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom) {
                 val row = (mouseY - startY) / rowHeight
                 val shownCount = minOf(visibleRows, count - scrollOffset)
                 if (row in 0 until shownCount) hoveredRow = row
@@ -759,6 +853,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
             repeat(minOf(visibleRows, maxOf(0, count - scrollOffset))) { di ->
                 val rowY = startY + di * rowHeight
+                if (typeListOpen && rowY < typeListBottomY) return@repeat
                 val rowState = if (di == hoveredRow) 1 else 0
                 drawNineSlice(context, ROW_BACKGROUND_TEXTURE, leftX, rowY, panelWidth, rowHeight, rowState, ROW_BACKGROUND_TEX_H)
             }
@@ -1127,6 +1222,14 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         if (dialogPokemon != null || dialogItem != null) return false
+        // 属性展开列表滚动（照上架选择界面）：展开时滚的是列表本身，不是下层的行
+        if (typeListOpen) {
+            if (allTypes.size > MAX_TYPE_LIST_ROWS) {
+                typeListScroll = (typeListScroll - verticalAmount.toInt()).coerceIn(0, allTypes.size - MAX_TYPE_LIST_ROWS)
+                rebuildTypeList()
+            }
+            return true
+        }
         scrollOffset = (scrollOffset - verticalAmount.toInt()).coerceIn(0, maxOf(0, displayCount() - getMaxVisibleRows()))
         return true
     }
@@ -1204,6 +1307,11 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     companion object {
         private var auctionRequestId = 0
+        /** 属性展开列表最多显示几行（超出用滚轮翻，照上架选择界面） */
+        const val MAX_TYPE_LIST_ROWS = 8
+        /** 属性展开列表的浮层起点：Row3 按钮行底边 110 + 8（与上架选择界面的 88+8=96 同款） */
+        private const val TYPE_LIST_TOP = 118
+        private const val TYPE_LIST_ROW_H = 14
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
         val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
