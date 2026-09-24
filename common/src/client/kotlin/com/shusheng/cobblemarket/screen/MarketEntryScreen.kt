@@ -378,8 +378,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             { toggleShareMenu() },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/share.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-            texture = ROW_BACKGROUND_TEXTURE,
-            texH = ROW_BACKGROUND_TEX_H
+            // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
+            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
         )
         shareBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.share")))
         this.shareBtn = shareBtn
@@ -400,8 +400,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             // 与精灵市场入口同一个会动的小卡比兽（8 帧，100ms/帧）
             iconFrames = (0..7).map { Identifier.of("cobblemarket", "textures/gui/munchlax/munchlax_$it.png") },
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-            texture = ROW_BACKGROUND_TEXTURE,
-            texH = ROW_BACKGROUND_TEX_H
+            // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
+            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
         )
         pokemonBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.share.pokemon")))
         pokemonBtn.visible = false
@@ -414,8 +414,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             { openShareItem() },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/pokeball_icon.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-            texture = ROW_BACKGROUND_TEXTURE,
-            texH = ROW_BACKGROUND_TEX_H
+            // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
+            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
         )
         itemBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.share.item")))
         itemBtn.visible = false
