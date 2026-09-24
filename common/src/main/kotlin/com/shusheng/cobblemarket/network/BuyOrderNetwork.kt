@@ -856,22 +856,21 @@ object BuyOrderNetwork {
                 // 快照算一次、两处用：存进交付记录 + 给买家那条通知的悬停详情用
                 //（2026-09-25：通知原先只挂了点击，悬停一个字都没有）
                 val deliveryExtra = buildDeliveryExtra(pokemon, heldItem, player.serverWorld.registryManager)
-                order.pendingDeliveries.add(
-                    PendingDelivery(
-                        id = UUID.randomUUID(),
-                        sellerUuid = player.uuid,
-                        sellerName = player.name.string,
-                        price = payload.price,
-                        pokemonNbt = nbt,
-                        species = pokemon.species.name,
-                        level = pokemon.level,
-                        shiny = pokemon.shiny,
-                        extraData = deliveryExtra,
-                        itemNbt = null,
-                        count = 1,
-                        deliveredAt = now
-                    )
+                val delivery = PendingDelivery(
+                    id = UUID.randomUUID(),
+                    sellerUuid = player.uuid,
+                    sellerName = player.name.string,
+                    price = payload.price,
+                    pokemonNbt = nbt,
+                    species = pokemon.species.name,
+                    level = pokemon.level,
+                    shiny = pokemon.shiny,
+                    extraData = deliveryExtra,
+                    itemNbt = null,
+                    count = 1,
+                    deliveredAt = now
                 )
+                order.pendingDeliveries.add(delivery)
                 state.markModified()
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
@@ -1030,22 +1029,21 @@ object BuyOrderNetwork {
                 val now = System.currentTimeMillis()
 
                 // 构建待确认交付挂入订单（货悬空，买家确认时结算）
-                order.pendingDeliveries.add(
-                    PendingDelivery(
-                        id = UUID.randomUUID(),
-                        sellerUuid = player.uuid,
-                        sellerName = player.name.string,
-                        price = payload.price,
-                        pokemonNbt = null,
-                        species = "",
-                        level = 0,
-                        shiny = false,
-                        extraData = emptyMap(),
-                        itemNbt = listingNbt,
-                        count = payload.count,
-                        deliveredAt = now
-                    )
+                val delivery = PendingDelivery(
+                    id = UUID.randomUUID(),
+                    sellerUuid = player.uuid,
+                    sellerName = player.name.string,
+                    price = payload.price,
+                    pokemonNbt = null,
+                    species = "",
+                    level = 0,
+                    shiny = false,
+                    extraData = emptyMap(),
+                    itemNbt = listingNbt,
+                    count = payload.count,
+                    deliveredAt = now
                 )
+                order.pendingDeliveries.add(delivery)
                 state.markModified()
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
