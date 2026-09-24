@@ -55,7 +55,6 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private var lastSearchEdit = 0L
 
     private var searchField: TextFieldWidget? = null
-    private var sellerField: TextFieldWidget? = null
     private var shinyOnly = false
     private var showMineOnly = false
     private var filterExpanded = false
@@ -170,6 +169,11 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private val iconData = mutableMapOf<Int, PokemonIconData>()
 
     private fun cacheIcons() {
+        // ⚠ 按**挂单 id** 复用已有的动画状态，别整体丢掉重建：
+        //   FloatingState 里存着动画进度与头部跟随的跨帧平滑值，清掉会让图标从头播一遍 ——
+        //   用户 2026-09-24 实测：点一下搜索框（会重新拉列表）行里精灵的动画就重置了。
+        //   刷新只改变列表的**子集与顺序**，同一个挂单的图标状态应当跨帧延续（照精灵市场）
+        val oldStates = iconData.values.mapNotNull { d -> d.listingId?.let { it to d.state } }.toMap()
         iconData.clear()
         listings.forEachIndexed { index, entry ->
             val id = Identifier.tryParse(entry.speciesId) ?: return@forEachIndexed
@@ -182,9 +186,11 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             iconData[index] = PokemonIconData(
                 species.translatedName.string,
                 RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
-                FloatingState(),
+                // 同一个挂单（id 相同）沿用旧的动画状态，只有新出现的挂单才起一份新的
+                oldStates[entry.id] ?: FloatingState(),
                 ballStack = Identifier.tryParse(entry.ballItem)?.let { ItemStack(Registries.ITEM.get(it)) },
-                heldStack = held
+                heldStack = held,
+                listingId = entry.id
             )
         }
     }
@@ -221,7 +227,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
 
         // 物种搜索框 + 折叠
         val savedSearch = searchField?.text ?: ""
-        val savedSeller = sellerField?.text ?: ""
+        // 搜索框 = **物种名 + 卖家名**（2026-09-24 合并：原来是两个框，服务端分别过滤；
+        // 现在一个框同时匹配两者，与拍卖场 / 精灵市场 / 物品市场同一语义）
         searchField = TextFieldWidget(textRenderer, leftX + 2, 44, panelWidth - 4 - 52, 16, Text.translatable("cobblemarket.gui.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.gui.search_placeholder").formatted(Formatting.GRAY))
         // 服务端搜索：文字变化只标记 dirty，tick 防抖后回到第一页重新拉取（与精灵市场一致）
@@ -246,16 +253,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         // 图标 / 选中态 / 悬停提示统一由 updateFilterToggleVisual 设 —— 构造参数里再写一份就等于两处各写一遍
         updateFilterToggleVisual()
 
-        // 玩家搜索框（专属，始终显示）
-        sellerField = TextFieldWidget(textRenderer, leftX + 2, 64, panelWidth - 4, 16, Text.translatable("cobblemarket.op.seller_search"))
-        sellerField?.setPlaceholder(Text.translatable("cobblemarket.op.seller_search").formatted(Formatting.GRAY))
-        sellerField?.setChangedListener { _ ->
-            currentPage = 1
-            refreshData()
-        }
-        addSelectableChild(sellerField)
-        addDrawableChild(sellerField)
-        sellerField?.text = savedSeller
+        // （原先这里还有一个「玩家搜索框」：2026-09-24 与上面的搜索框合并成一个 ——
+        //   一个框同时搜物种名与卖家名，服务端按 OR 匹配）
 
         // ── 右侧筛选面板内的控件：**常驻创建**，开关只切可见性 ──
         // 原先这一整块包在 `if (filterExpanded)` 里，开关走 clearChildren+init 整界面重建，两个后果：
@@ -627,7 +626,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
 
     // 84→88：卖家搜索框底边(80)与顶部分割线(80)贴死，列表起始下移 4px 留出间隙。
     // ⚠ 筛选控件搬进右侧面板后（2026-09-24）起点**恒定 88** —— 原先展开时顶到 164、吞掉 3 行
-    private fun getListStartY() = 88
+    // 玩家搜索框删掉后（2026-09-24 合并进上面那个搜索框）这一行让了出来：分割线画在 64、
+    // 列表从 68 起 —— 比原来的 88 多显示约一行
+    private fun getListStartY() = 68
     // 预留 72 = 分页按钮高 20 + 4 空隙 + 底部边框切片 16 + 背景底边下空隙（照精灵市场：按钮不压背景底部边框）
     private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 72) / 24)
 
@@ -718,7 +719,6 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
 
     private fun resetFilters() {
         searchField?.text = ""
-        sellerField?.text = ""
         shinyOnly = false
         showMineOnly = false
         htFilter = 0
@@ -847,7 +847,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             AdminRequestPokemonPayload(
                 // 中文物种名在客户端转成资源路径 id（照精灵市场），服务端只存英文资源名
                 speciesFilter = com.shusheng.cobblemarket.network.localizeSpeciesQuery(searchField?.text?.trim().orEmpty()),
-                sellerFilter = sellerField?.text?.trim() ?: "",
+                // 卖家名不再单独发：服务端拿上面的 speciesFilter 同时匹配物种名与卖家名（OR）
+                // （字段保留但恒为空串，免得动 payload 的序列化顺序）
+                sellerFilter = "",
                 shinyOnly = shinyOnly,
                 sortMode = sortMode,
                 page = currentPage,
@@ -1001,9 +1003,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         fun showPanel(w: NineSliceButton?) {
             if (w != null) w.visible = panelOn && !coveredAt(w.y)
         }
-        // 主面板：两个搜索框与货币切换按钮常显（只跟弹窗走）
+        // 主面板：搜索框与货币切换按钮常显（只跟弹窗走）
         searchField?.visible = !dialogOpen
-        sellerField?.visible = !dialogOpen
         currencyButton?.visible = !dialogOpen
         // 右侧筛选面板：面板收起 / 弹窗打开时整块藏掉
         listOf(hpField, atkField, defField, spaField, spdField, speField).forEachIndexed { i, f ->
@@ -1505,12 +1506,11 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     }
 
     private fun isInputFieldFocused() = focused?.let { f ->
-        f === searchField || f === sellerField || f === hpField || f === atkField || f === defField || f === spaField || f === spdField || f === speField
+        f === searchField || f === hpField || f === atkField || f === defField || f === spaField || f === spdField || f === speField
     } ?: false
 
     private fun isMouseOverAnyInput(mouseX: Double, mouseY: Double): Boolean =
         searchField?.isMouseOver(mouseX, mouseY) == true ||
-        sellerField?.isMouseOver(mouseX, mouseY) == true ||
         hpField?.isMouseOver(mouseX, mouseY) == true ||
         atkField?.isMouseOver(mouseX, mouseY) == true ||
         defField?.isMouseOver(mouseX, mouseY) == true ||
