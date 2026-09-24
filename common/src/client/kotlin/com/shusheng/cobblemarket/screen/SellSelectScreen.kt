@@ -895,6 +895,10 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // ⚠ **每帧**重算面板控件的显隐（照精灵市场与 `AdminPokemonScreen`）：面板开合走的是**动画**，
+        //   而动画播完那一刻**没有任何事件回调** —— 只在 toggle / 滚轮里算的话，
+        //   展开动画结束后控件会永远停在「动画期间藏起来」的状态（2026-09-25 用户报）
+        applyFilterVisibility()
         // 固拉多第七步（精灵市场背景下层水平右飞）画在 super.render 之前：
         // super.render 内部先调 renderBackground 画市场面板背景，精灵先画会被面板自然盖住
         renderGroudonFly(context, true)
