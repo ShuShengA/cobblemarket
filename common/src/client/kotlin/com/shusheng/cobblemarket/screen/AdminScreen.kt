@@ -105,16 +105,19 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
     private val permRefreshers = mutableListOf<() -> Unit>()
 
     /** 管理按钮：按权限节点置灰。**常驻不隐藏** —— 布局永远不变，无权限的点击给提示（用户 2026-09-12 拍板） */
-    private fun addPermButton(x: Int, y: Int, w: Int, h: Int, text: Text, node: String, open: () -> Unit): TextureButton {
+    private fun addPermButton(
+        x: Int, y: Int, w: Int, h: Int, text: Text, node: String,
+        // 按钮**专属**的悬停说明；不传则退回节点说明（`perm.node.<短名>.desc`）。
+        // ⚠ **一个节点管多个按钮时必须传**（如 MARKET 管着精灵 / 物品两个入口）：节点说明回答的是
+        //   「这个权限能干什么」，按钮说明回答的是「点这个入口进去能干什么」—— 在精灵按钮上写
+        //   「精灵 / 物品」会让服主以为点进去两样都能看到（2026-09-25 用户报）。
+        //   权限编辑弹窗里按**节点**列，那边用节点说明才对，两个界面不是同一件事
+        tooltipKey: String? = null,
+        open: () -> Unit
+    ): TextureButton {
         val btn = addMenuButton(x, y, w, h, text, { openIfPermitted(node, open) })
-        // 悬停说明这个权限能干什么（与权限编辑弹窗里的节点按钮同一套词条）。
-        // ⚠ 同一节点可能对应多个按钮（MARKET 就管着精灵 / 物品 / 全部历史 / 总开关），
-        //   此时几个按钮显示同一句话 —— 那正是「它们同属一个节点」的真实反映，别按按钮名各写各的
-        btn.setTooltip(
-            net.minecraft.client.gui.tooltip.Tooltip.of(
-                Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX) + ".desc")
-            )
-        )
+        val key = tooltipKey ?: ("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX) + ".desc")
+        btn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable(key)))
         permRefreshers += { btn.dimmed = !ClientPermissionCache.has(node) }
         return btn
     }
@@ -173,12 +176,14 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         addPermButton(
             leftX, startY, btnW, btnH,
             Text.translatable("cobblemarket.op.pokemon"),
-            MarketPermissions.MARKET
+            MarketPermissions.MARKET,
+            "cobblemarket.perm.panel.pokemon"        // 只进精灵管理 → 用按钮专属说明（见 addPermButton 的 ⚠）
         ) { client?.setScreen(AdminPokemonScreen()) }
         addPermButton(
             rightX, startY, btnW, btnH,
             Text.translatable("cobblemarket.op.item"),
-            MarketPermissions.MARKET
+            MarketPermissions.MARKET,
+            "cobblemarket.perm.panel.item"
         ) { client?.setScreen(AdminItemScreen()) }
         // 行 2
         addPermButton(
