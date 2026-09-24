@@ -38,7 +38,7 @@ object MarketPermissions {
     /** 封禁 / 解封 / 封禁名单 */
     const val BAN = PREFIX + "ban"
 
-    /** 挂单管理：管理端查看/下架任意玩家的精灵与物品 + 查看全部交易历史（总开关已拆出，见 [MARKET_SWITCH]） */
+    /** 挂单管理：管理端查看 / 下架任意玩家的精灵与物品（总开关见 [MARKET_SWITCH]、全服历史见 [HISTORY]） */
     const val MARKET = PREFIX + "market"
 
     /**
@@ -63,6 +63,15 @@ object MarketPermissions {
     const val MARKET_SWITCH = PREFIX + "marketswitch"
 
     /**
+     * 交易历史：查看**全服所有人**的交易记录（谁买了什么、花了多少、什么时候）。
+     *
+     * ⚠ **2026-09-24 从 [MARKET] 里拆出来**（用户提的），理由与 [MARKET_SWITCH] 不同 ——
+     * 这是**只读**权限，但成交记录是**非公开**信息（挂单全服可见、账本不是）：
+     * 「找人帮忙下架违规挂单」不等于该让他看到全服每个人的经济行为。读与写该分开。
+     */
+    const val HISTORY = PREFIX + "history"
+
+    /**
      * RP 管理：**这是印发钞权的节点**（发放/回收/兑换码生成），与 [CONFIG] 同级敏感 ——
      * 随意下放等于把服务器经济交出去。命令侧的收紧见 `docs/points_plan.md`：
      * `give/take` 与 `code create/revoke/purge` 仅 OP，本节点只放给「查询类」用（check / 订单查看）。
@@ -74,14 +83,14 @@ object MarketPermissions {
      * **顺序 = 权限编辑弹窗里按钮的排列顺序**（按此顺序交替分列，每行两个）。
      *
      * ⚠ 前 7 个与**管理面板的功能按钮**一一对应（方便一眼对照面板里按钮的位置）；
-     * [MARKET_SWITCH] 是 2026-09-24 拆出的第 8 个，在管理面板里对应的是**底部那颗图标按钮**
-     * （不是 `addPermButton` 那批），排在金融管理右边；[POINTS] 是本线的 RP 节点，排在最末。
+     * [MARKET_SWITCH]（面板底部那颗图标按钮）与 [HISTORY]（面板里的「全部交易历史」按钮）
+     * 是 2026-09-24 从 [MARKET] 拆出的第 8、9 个；[POINTS] 是本线的 RP 节点，排在最末。
      * 改这里的顺序会同时改掉界面按钮与 list 输出的顺序。
      *
      * ⚠ 原 `CONFIG`（服务器配置）节点已于 2026-09-23 删除：服务器配置改为**服主专属**，
      * 不再作为可授予的节点 —— 想放权就把对方 UUID 加进 `serverOwners`。
      */
-    val ALL = listOf(MARKET, BAN, BLACKLIST, PRICE_LIMIT, AUCTION, BUY_ORDER, FINANCE, MARKET_SWITCH, POINTS)
+    val ALL = listOf(MARKET, BAN, BLACKLIST, PRICE_LIMIT, AUCTION, BUY_ORDER, FINANCE, MARKET_SWITCH, HISTORY, POINTS)
 
     /**
      * 是不是服主（**唯一恒真的超级权限**）：UUID 在配置的 `serverOwners` 名单里。

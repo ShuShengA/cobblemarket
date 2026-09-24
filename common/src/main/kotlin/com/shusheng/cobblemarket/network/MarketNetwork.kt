@@ -3189,7 +3189,8 @@ object MarketNetwork {
             val server = player.server
             server.execute {
                 val history = com.shusheng.cobblemarket.event.TransactionHistory.get(server)
-                val isAdmin = MarketPermissions.has(player, MarketPermissions.MARKET)
+                // ⚠ 2026-09-24 起改判 HISTORY（原先跟 MARKET 走）：能下架挂单 ≠ 该看全服账本
+                val isAdmin = MarketPermissions.has(player, MarketPermissions.HISTORY)
                 val all = payload.all && isAdmin
                 // 数据源：最近 14 天 CSV 账本 + 内存记录兜底合并去重（键用 CSV 秒级时间）——
                 // 内存上限（全服 200 条）外的个人历史从 CSV 回读，不再被其他玩家的交易挤空
