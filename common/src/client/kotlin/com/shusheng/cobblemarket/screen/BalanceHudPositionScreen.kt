@@ -158,6 +158,8 @@ class BalanceHudPositionScreen : Screen(Text.translatable("cobblemarket.hud_posi
         }
     }
 
+    override fun shouldPause() = false
+
     companion object {
         /** 吸附触发距离（逻辑像素）：距目标线不超过这个值就吸过去 */
         private const val SNAP_DISTANCE = 8

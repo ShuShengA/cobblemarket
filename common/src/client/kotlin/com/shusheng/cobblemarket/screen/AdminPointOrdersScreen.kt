@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.GuiColors
+import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
@@ -14,6 +15,7 @@ import com.shusheng.cobblemarket.network.PointOrdersPayload
 import com.shusheng.cobblemarket.network.RejectPointOrderPayload
 import com.shusheng.cobblemarket.network.RequestPointOrdersPayload
 import com.shusheng.cobblemarket.platform.sendToServer
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.TextFieldWidget
@@ -65,20 +67,28 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
     /** 列表分割线半长：`market_panel` 那套贴图的界面**一律 300px**（±150） */
     private val DIVIDER_HALF = 150
 
-    // 列相对 leftX 的偏移。⚠ 320 的面板放不下「玩家名/档位/金额/订单号/状态/等待/两个按钮」，
-    // 砍掉档位列（弹窗里会显示）并把两个操作收成一个「处理」按钮，才塞得下
-    private val colName = 6
-    private val colMoney = 64
-    private val colOrder = 110
-    private val colStatus = 214
+    // 列相对 leftX 的偏移。⚠ 296 的行宽里要放五列，**每列都按最宽文案算过**
+    //（英文 6px/字符、中文 9px/字符，见 CLAUDE.md「按最宽文案定宽」）：
+    //   玩家名 ≤16 字符 = 96px ⇒ 只能**截断**（完整名字看悬停窗）
+    //   金额 `formatCents` + 货币单位，约 60px（"999.99 CNY"）
+    //   订单号固定 7 字符 = 42px；下单时间 "09-19 18:23" = 60px；「处理」按钮 46px
+    // ⚠ 2026-09-25 重排（用户报「金额压玩家名、按钮压行边框」）：此前各列都没算过宽度。
+    private val colName = 8
+    private val colMoney = 68
+    private val colOrder = 132
     /** 下单时间（`MM-dd HH:mm`）—— 两个 tab 都要，与「我的订单」同一种格式 */
-    private val colTime = 154
-    // 随 panelWidth 收窄同步减 4：保持「处理」按钮距行右缘 12px（照黑名单口径）
-    private val colHandle = 250
+    private val colTime = 178
+    // ⚠ **待确认 tab 没有「状态」列**：那个 tab 的订单全部来自服务端 `pendingConfirm()`，
+    //   每行都写着同样的「待确认」= 零信息量（已完结的在另一个 tab）。2026-09-25 砍掉它，
+    //   把宽度让给上面四列；状态信息仍在**悬停窗**里给出（万一将来这个 tab 混进别的状态）
+    /** 「处理」按钮左边界：右缘 = 296 − 8 = 288，距行右边界 8px（原先是 0，会压住行背景边框） */
+    private val colHandle = 242
     // 已完结没有行按钮，右边空出来的地方给「发了多少 RP」
     // 已完结：玩家名 / 金额 / 订单号 / **下单时间** / 结果（发放的写 +N RP、作废的写状态 —— 并成一列）
-    private val colFinishedTime = 154
-    private val colFinishedResult = 226
+    // ⚠ 时间列与待确认 tab **左右对齐**（2026-09-18 用户要求）⇒ 用同一个 `colTime`
+    private val colFinishedTime = 178
+    // 结果列接着时间列排（178 + 60 + 4）—— 这个 tab 没有「处理」按钮，右边全是它的
+    private val colFinishedResult = 242
 
     /** true = 看已完结（已发放/已作废），false = 看待确认 */
     private var showFinished = false
@@ -413,7 +423,19 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
         }
     }
 
+    override fun shouldPause() = false
+
     private companion object {
+        /**
+         * 列表行各段的颜色 —— **行内渲染与悬停窗共用这一组**，改一处必须两处一起想。
+         * ⚠ 两处各写各的正是「行内绿红、悬停窗全白」那类坑（2026-09-25 权限管理的变更记录
+         * 刚栽过一次，见 `docs/gui_pitfalls.md`）—— 别在悬停窗里另写一套色值。
+         */
+        const val COLOR_NAME = 0xFFFFFF        // 玩家名
+        const val COLOR_KEY = 0xFFAA00         // 金额 / 订单号：核对账单的两条键（金）
+        const val COLOR_MUTED = 0xAAAAAA       // 下单时间 / 已完结里的作废
+        const val COLOR_GRANTED = 0x55FF55     // 已发放的「+N」
+
         val PANEL_TOP = Identifier.of("cobblemarket", "textures/gui/market_panel_top.png")
         val PANEL_MID = Identifier.of("cobblemarket", "textures/gui/market_panel_middle.png")
         val PANEL_BOT = Identifier.of("cobblemarket", "textures/gui/market_panel_bottom.png")
@@ -452,22 +474,23 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
             if (rel !in 0 until visible) return@forEachIndexed
             val y = listStartY + rel * rowHeight
             val ty = y + 7
-            // 前三列两个 tab 共用（换 tab 时不会跳）
-            context.drawTextWithShadow(textRenderer, Text.literal(order.playerName), leftX + colName, ty, 0xFFFFFF)
+            // 前三列两个 tab 共用（换 tab 时不会跳）。
+            // ⚠ 玩家名**必须截断**：最长 16 字符 = 96px，而列宽只有 colMoney − colName = 56px，
+            //   不截断会直接压到金额上（2026-09-25 用户报的）。完整名字看悬停窗
+            context.drawTextWithShadow(
+                textRenderer,
+                TextUtil.truncateString(order.playerName, colMoney - colName - 4),
+                leftX + colName, ty, COLOR_NAME
+            )
             // 金额与订单号是**核对账单的两条键**，用金色标出来
             context.drawTextWithShadow(
-                textRenderer, Text.literal(texOf(order)).formatted(Formatting.GOLD), leftX + colMoney, ty, 0xFFFFFF
+                textRenderer, Text.literal(texOf(order)).formatted(Formatting.GOLD), leftX + colMoney, ty, COLOR_KEY
             )
             context.drawTextWithShadow(
                 textRenderer, Text.literal(PointOrderNumbers.format(order.orderNo)).formatted(Formatting.GOLD),
-                leftX + colOrder, ty, 0xFFFFFF
+                leftX + colOrder, ty, COLOR_KEY
             )
-            val statusKey = when (statusOf(order)) {
-                PointOrderStatus.PENDING_CONFIRM -> "cobblemarket.points.admin.st_waiting"
-                PointOrderStatus.GRANTED -> "cobblemarket.points.admin.st_granted"
-                PointOrderStatus.VOID -> "cobblemarket.points.admin.st_void"
-                else -> "cobblemarket.points.admin.st_unpaid"
-            }
+            val statusKey = statusKeyOf(order)
             // ⚠ 后两列**按 tab 分叉**：
             //   待确认要的是「等了多久」（服主据此判断这单压了多长时间）；
             //   已完结要的是「发了多少 RP」—— 已完结订单的等待时长只会随时间一直涨（那是
@@ -477,7 +500,7 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
                 // 下单时间（`MM-dd HH:mm`）—— 处理完之后只剩相对时间就看不出「这是哪天充的」了
                 context.drawTextWithShadow(
                     textRenderer, Text.literal(orderTimeText(order.createdAt)),
-                    leftX + colFinishedTime, ty, 0xAAAAAA
+                    leftX + colFinishedTime, ty, COLOR_MUTED
                 )
                 // 结果并成一列：发放的写 +N，作废的写状态（灰）—— 一眼分得开。
                 // 金额走 amountText（千分位 + 空格 + 图标）；「+」沿用这一列的绿色，
@@ -491,15 +514,13 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
                 }
                 context.drawTextWithShadow(
                     textRenderer, resultText,
-                    leftX + colFinishedResult, ty, if (granted) 0x55FF55 else 0xAAAAAA
+                    leftX + colFinishedResult, ty, if (granted) COLOR_GRANTED else COLOR_MUTED
                 )
             } else {
+                // ⚠ 本 tab **不画状态列**：这里的订单全部来自服务端 `pendingConfirm()`，
+                //   每行都写「待确认」= 零信息量（见列定义处的注释）。状态改到**悬停窗**里给
                 context.drawTextWithShadow(
-                    textRenderer, Text.translatable(statusKey), leftX + colStatus, ty,
-                    if (statusOf(order) == PointOrderStatus.PENDING_CONFIRM) 0xFFAA00 else 0xAAAAAA
-                )
-                context.drawTextWithShadow(
-                    textRenderer, Text.literal(orderTimeText(order.createdAt)), leftX + colTime, ty, 0xAAAAAA
+                    textRenderer, Text.literal(orderTimeText(order.createdAt)), leftX + colTime, ty, COLOR_MUTED
                 )
             }
         }
@@ -523,6 +544,84 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
             )
         }
         renderScrollbar(context)
+
+        // 悬停行提示：行内会被截断（玩家名按列宽截、金额带单位时也可能长），完整内容看这里。
+        // ⚠ 鼠标落在行尾「处理」按钮上时**整个不画** —— 玩家那时正要点击，悬停窗反而是干扰
+        //（2026-09-21 立的规矩，见 `docs/gui_pitfalls.md` 的悬停窗一节）
+        if (hoveredRow >= 0) {
+            val idx = scrollOffset + hoveredRow
+            if (idx in orders.indices) {
+                renderTooltip(context, tooltipLines(orders[idx]), mouseX, mouseY, rowButtonRect(hoveredRow))
+            }
+        }
+    }
+
+    /** 状态词条 key —— 行内与悬停窗**共用同一套判定**，别各写一份 */
+    private fun statusKeyOf(order: PointOrderInfo): String = when (statusOf(order)) {
+        PointOrderStatus.PENDING_CONFIRM -> "cobblemarket.points.admin.st_waiting"
+        PointOrderStatus.GRANTED -> "cobblemarket.points.admin.st_granted"
+        PointOrderStatus.VOID -> "cobblemarket.points.admin.st_void"
+        else -> "cobblemarket.points.admin.st_unpaid"
+    }
+
+    /**
+     * 悬停窗内容：**逐段带色，与行内一一对应**（同一组 `COLOR_*` 常量）。
+     *
+     * ⚠ **别在这里另写一套色值** —— 「行内一个色、悬停窗另一个色」是反复踩的坑
+     *（2026-09-25 权限管理的变更记录刚栽过一次，见 `docs/gui_pitfalls.md`）。
+     * 行内**没有**的「状态」也在这里给出（待确认那个 tab 的状态列已被砍掉）。
+     */
+    private fun tooltipLines(order: PointOrderInfo): List<Text> = buildList {
+        add(Text.literal(order.playerName).styled { it.withColor(COLOR_NAME) })
+        add(Text.literal(texOf(order)).styled { it.withColor(COLOR_KEY) })
+        add(Text.literal(PointOrderNumbers.format(order.orderNo)).styled { it.withColor(COLOR_KEY) })
+        add(Text.literal(orderTimeText(order.createdAt)).styled { it.withColor(COLOR_MUTED) })
+        if (showFinished && statusOf(order) == PointOrderStatus.GRANTED) {
+            // 「+」沿用行内那抹绿，金额与图标自带色 —— 与行内的 resultText 同款
+            add(
+                Text.literal("+").styled { it.withColor(COLOR_GRANTED) }
+                    .append(CurrencyService.amountText(order.points, MarketCurrency.POINTS))
+            )
+        } else {
+            add(Text.translatable(statusKeyOf(order)).styled { it.withColor(COLOR_KEY) })
+        }
+    }
+
+    /** 行内「处理」按钮的矩形（供悬停窗避让，**与建按钮的判定同源**）；已完结行没有按钮 ⇒ null */
+    private fun rowButtonRect(row: Int): TooltipPlacement.Rect? {
+        if (showFinished) return null
+        val order = orders.getOrNull(scrollOffset + row) ?: return null
+        if (statusOf(order) != PointOrderStatus.PENDING_CONFIRM) return null
+        return TooltipPlacement.Rect(leftX() + colHandle, listStartY + row * rowHeight + 3, 46, 16)
+    }
+
+    /**
+     * 悬停窗：**每行的颜色由调用方写在自己的 `Text` 上**，这里只兜一个白色底。
+     * 走 [TooltipPlacement] 是为了 `avoid`（鼠标落在行尾按钮上时整个不画）。
+     */
+    private fun renderTooltip(
+        context: DrawContext, lines: List<Text>, mouseX: Int, mouseY: Int, avoid: TooltipPlacement.Rect? = null
+    ) {
+        var maxWidth = 0
+        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
+
+        val padding = 4
+        val (tx, ty) = TooltipPlacement.place(
+            mouseX = mouseX, mouseY = mouseY,
+            textW = maxWidth, textH = lines.size * 10 + padding, pad = padding,
+            screenW = width, screenH = height, avoid = avoid
+        ) ?: return
+
+        context.matrices.push()
+        context.matrices.translate(0.0, 0.0, 400.0)
+        drawNineSlice(
+            context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding,
+            maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H
+        )
+        lines.forEachIndexed { i, line ->
+            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, 0xFFFFFF)
+        }
+        context.matrices.pop()
     }
 
     private fun renderDialog(context: DrawContext, order: PointOrderInfo) {

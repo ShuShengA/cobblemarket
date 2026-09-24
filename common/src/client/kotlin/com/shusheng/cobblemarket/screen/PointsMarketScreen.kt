@@ -3027,6 +3027,8 @@ class PointsMarketScreen : Screen(
         )
     }.getOrNull()
 
+    override fun shouldPause() = false
+
     private companion object {
         val BACKGROUND = Identifier.of("cobblemarket", "textures/gui/points_market_background.png")
         const val TEX_W = 1280
