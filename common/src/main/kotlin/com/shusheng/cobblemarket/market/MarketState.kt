@@ -72,7 +72,11 @@ class MarketState private constructor() : PersistentState() {
                 val storedName = listing.extraData["speciesName"]
                 tokens.any { t ->
                     listing.species.contains(t, ignoreCase = true) ||
-                        (storedName?.contains(t, ignoreCase = true) == true)
+                        (storedName?.contains(t, ignoreCase = true) == true) ||
+                        // 同一个搜索框也匹配**卖家名**（2026-09-24 与管理端的两个搜索框合并）——
+                        // 与拍卖场的客户端过滤同一语义。卖家名不随语言变化，中文查询要靠客户端
+                        // 把原文一并拼进 tokens（见 localizeSpeciesQuery）
+                        listing.sellerName.contains(t, ignoreCase = true)
                 }
             }
         }
