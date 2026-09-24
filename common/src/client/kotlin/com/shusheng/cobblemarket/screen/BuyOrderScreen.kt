@@ -2172,21 +2172,26 @@ class BuyOrderScreen(
         refreshPreviewModel()
     }
 
-    /** 特性按钮文本：不限 / 所选特性显示名 */
+    /**
+     * 特性按钮文本：**未选中** = 只有标签「特性」，**选中** = 只有值（不加「特性：」前缀）。
+     * ⚠ 与精灵市场 / 拍卖场的筛选按钮同一口径（用户 2026-09-23 定）：本按钮在弹窗里、宽度够，
+     *   改口径是为了**三个界面一致** —— 那边是因为按钮窄才去掉前缀的，留着这边带前缀会出现两种观感。
+     */
     private fun abilityButtonText(): String {
         val sel = abilityOptions.getOrNull(abilityIndex)?.second
-        val label = sel ?: Text.translatable("cobblemarket.buy_order.any").string
-        return "${Text.translatable("cobblemarket.buy_order.ability_label").string}${com.shusheng.cobblemarket.util.TextUtil.truncateString(label, 90)}"
+        if (sel != null) return com.shusheng.cobblemarket.util.TextUtil.truncateString(sel, 140)
+        return Text.translatable("cobblemarket.buy_order.ability_label").string
     }
 
     private fun updateAbilityButton() {
         createAbilityButton?.setMessage(Text.literal(abilityButtonText()))
     }
 
+    /** 性格按钮文本：口径同 [abilityButtonText]（未选中 = 标签，选中 = 值） */
     private fun natureButtonText(): String {
         val sel = natureOptions.getOrNull(natureIndex)?.second
-        val label = sel ?: Text.translatable("cobblemarket.buy_order.any").string
-        return "${Text.translatable("cobblemarket.buy_order.nature_label").string}$label"
+        if (sel != null) return sel
+        return Text.translatable("cobblemarket.buy_order.nature_label").string
     }
 
     private fun updateNatureButton() {

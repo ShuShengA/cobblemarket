@@ -72,9 +72,23 @@ class AuctionScreen(
     private val panelWidth = 296
     private val rowHeight = 24
 
-    /** 筛选按钮宽度（三枚并排：32 起 60 / 96 起 96 / 196 起 96，铺满整行到面板右缘），文字截断按此反算 */
-    private val filterTypeW = 60
-    private val filterValueW = 96
+    /** 筛选按钮「未选中」的文字色：灰色 = 该项不过滤（区别于选中后的属性色 / 金色，一眼分得清） */
+    /**
+     * 筛选按钮「未选中」的文字色：**白色**。
+     * ⚠ 一度用过 0xAAAAAA（灰色，想表达"不过滤"），用户看了不认可；2026-09-23 三个界面一起改回白色。
+     *   与选中态的区分靠**前景色本身**：选中 = 属性色 / 金色。
+     */
+    private val UNSET_FILTER_COLOR = 0xFFFFFF
+
+    /**
+     * 筛选按钮宽度，文字截断按此反算。
+     * ⚠ 按**未选中态**定（2026-09-23 从 96 收到 64）：未选中只显示标签「特性」，
+     *   英文最长的标签是 `Ability`（42px）、`Nature`（36px）⇒ 64 足够；选中后只显示值、只会更短。
+     *   省下的空间给本行**腾出「闪光 + 重置」两个按钮**（用户 2026-09-23 要求）：
+     *   `4 + 24(公母) + 4 + 64 + 4 + 64 + 4 + 64 = 232`，剩 60 ⇒ 闪光 24 + 间隙 4 + 重置 24 = 52 ✓
+     */
+    private val filterTypeW = 64
+    private val filterValueW = 64
 
     private var currentTab = initialTab.coerceIn(0, 2) // 0 = 精灵, 1 = 物品, 2 = 我的
 
@@ -111,6 +125,8 @@ class AuctionScreen(
     private var typeFilter = ""
     private var abilityFilter = ""
     private var natureFilter = ""
+    /** 闪光筛选（照精灵市场那一枚）：筛选行最右的 ★/☆ */
+    private var shinyOnly = false
     private var filterListOpen = "" // ""/type/ability/nature；互斥展开
     /** 筛选展开列表的实际底边 y（每行 14、从 88 起）。被它盖住的行不渲染——反正看不见，画了反而刺穿列表 */
     private var filterListBottomY = 0
@@ -121,6 +137,8 @@ class AuctionScreen(
     private var typeButton: NineSliceButton? = null
     private var abilityButton: NineSliceButton? = null
     private var natureButton: NineSliceButton? = null
+    private var shinyButton: NineSliceButton? = null
+    private var resetButton: NineSliceButton? = null
     private var hoveredRow = -1
     private var scrollOffset = 0
     private var backButton: NineSliceButton? = null
@@ -428,7 +446,7 @@ class AuctionScreen(
         htButton?.visible = currentTab == 0
         addDrawableChild(htButton)
 
-        // 筛选行（y=68）：性别图标 | 属性 | 特性 | 性格（仅精灵 tab；照市场筛选区）
+        // 筛选行（y=68）：性别图标 | 属性 | 特性 | 性格 | 闪光 | 重置（仅精灵 tab；照市场筛选区）
         genderButton = NineSliceButton(
             leftX + 4, 68, 24, 20,
             Text.literal(""),
@@ -441,23 +459,40 @@ class AuctionScreen(
             leftX + 32, 68, filterTypeW, 20,
             typeButtonText(),
             { toggleFilterList("type") },
-            if (typeFilter.isNotEmpty()) typeColor("cobblemon.type.$typeFilter") else 0xFFFFFF
+            if (typeFilter.isNotEmpty()) typeColor("cobblemon.type.$typeFilter") else UNSET_FILTER_COLOR
         )
         addDrawableChild(typeButton)
         abilityButton = NineSliceButton(
-            leftX + 96, 68, filterValueW, 20,
+            leftX + 100, 68, filterValueW, 20,
             abilityButtonText(),
             { toggleFilterList("ability") },
-            if (abilityFilter.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
+            if (abilityFilter.isNotEmpty()) GOLD_COLOR else UNSET_FILTER_COLOR
         )
         addDrawableChild(abilityButton)
         natureButton = NineSliceButton(
-            leftX + 196, 68, filterValueW, 20,
+            leftX + 168, 68, filterValueW, 20,
             natureButtonText(),
             { toggleFilterList("nature") },
-            if (natureFilter.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
+            if (natureFilter.isNotEmpty()) GOLD_COLOR else UNSET_FILTER_COLOR
         )
         addDrawableChild(natureButton)
+        // 闪光：只有 ★/☆（照精灵市场；开 = 金色 ★，关 = 白色 ☆）
+        shinyButton = NineSliceButton(
+            leftX + 236, 68, 24, 20,
+            Text.literal(if (shinyOnly) "★" else "☆"),
+            { toggleShiny() },
+            if (shinyOnly) GOLD_COLOR else 0xFFFFFF
+        )
+        addDrawableChild(shinyButton)
+        // 重置：↺ 图标（24 宽放不下「重置」/`Reset` 的文字，用与配置界面同款的 ↺ 字符）。
+        // 纯图标按钮必须给悬停提示，否则玩家不知道这个圈圈是干什么的
+        resetButton = NineSliceButton(
+            leftX + 264, 68, 24, 20,
+            Text.literal("↺"),
+            { resetFilters() },
+            tooltip = Text.translatable("cobblemarket.gui.reset")
+        )
+        addDrawableChild(resetButton)
         applyFilterVisibility()
 
         // 不重置 scrollOffset：出价弹窗关闭/resize 重建时保留浏览位置（switchTab 才显式归零）
@@ -473,6 +508,9 @@ class AuctionScreen(
         typeButton?.visible = visible
         abilityButton?.visible = visible
         natureButton?.visible = visible
+        // 闪光与重置只对精灵 tab 有意义（物品列表没有闪光，重置也只清精灵筛选）
+        shinyButton?.visible = visible
+        resetButton?.visible = visible
     }
 
     private fun updateGenderButton() {
@@ -494,32 +532,72 @@ class AuctionScreen(
         rebuildBidButtons()
     }
 
-    private fun typeButtonText(): Text {
-        val label = if (typeFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
-            else Text.translatable("cobblemon.type.$typeFilter")
-        return filterButtonText("cobblemarket.gui.type", label, filterTypeW)
-    }
-
-    private fun abilityButtonText(): Text {
-        val label = if (abilityFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
-            else Text.translatable(abilityFilter)
-        return filterButtonText("cobblemarket.buy_order.ability_label", label, filterValueW)
-    }
-
-    private fun natureButtonText(): Text {
-        val label = if (natureFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
-            else Text.translatable(natureFilter)
-        return filterButtonText("cobblemarket.buy_order.nature_label", label, filterValueW)
+    private fun toggleShiny() {
+        shinyOnly = !shinyOnly
+        shinyButton?.setMessage(Text.literal(if (shinyOnly) "★" else "☆"))
+        shinyButton?.textColor = if (shinyOnly) GOLD_COLOR else 0xFFFFFF
+        rebuildFiltered()
+        scrollOffset = 0
+        hoveredRow = -1
+        rebuildBidButtons()
     }
 
     /**
-     * 筛选按钮文字 =「标签 值」（标签词条自带「: 」，见 lang —— 这里不再补，避免两个冒号）。
-     * 三枚按钮并排铺满整行（右缘贴面板边）、加宽不了，故值超宽时按按钮宽度截断（两侧各留 4px）——
-     * 属性名 / 特性名 / 性格名都能是长词，中文「属性: 超能力」也已吃光边距
+     * 重置全部筛选（筛选行右端的 ↺ 按钮）。
+     *
+     * ⚠ 走**整界面重建**而不是逐个 `setMessage` / `textColor`：五个筛选控件（公母 / 属性 / 特性 / 性格 /
+     *   闪光 / 特训）的文字、颜色、图标状态各不相同，逐个还原太容易漏；重建一次全都回初始态
+     *   （与创建拍卖界面的 [AuctionCreateScreen.resetFilters] 同一做法）。
+     * ⚠ 不清搜索框：重置的是**筛选条件**，搜索词是玩家自己敲的、保留更符合预期。
      */
-    private fun filterButtonText(labelKey: String, value: Text, buttonW: Int): Text {
-        val prefix = Text.translatable(labelKey)
-        return prefix.append(Text.literal(TextUtil.truncateString(value.string, buttonW - 8 - textRenderer.getWidth(prefix))))
+    private fun resetFilters() {
+        shinyOnly = false
+        genderFilter = ""
+        typeFilter = ""
+        abilityFilter = ""
+        natureFilter = ""
+        htFilter = 0
+        filterListOpen = ""
+        filterListScroll = 0
+        scrollOffset = 0
+        hoveredRow = -1
+        clearChildren()
+        init()
+    }
+
+    private fun typeButtonText(): Text {
+        val any = typeFilter.isEmpty()
+        val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
+            else Text.translatable("cobblemon.type.$typeFilter")
+        return filterButtonText("cobblemarket.gui.type", label, filterTypeW, any)
+    }
+
+    private fun abilityButtonText(): Text {
+        val any = abilityFilter.isEmpty()
+        val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
+            else Text.translatable(abilityFilter)
+        return filterButtonText("cobblemarket.buy_order.ability_label", label, filterValueW, any)
+    }
+
+    private fun natureButtonText(): Text {
+        val any = natureFilter.isEmpty()
+        val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
+            else Text.translatable(natureFilter)
+        return filterButtonText("cobblemarket.buy_order.nature_label", label, filterValueW, any)
+    }
+
+    /**
+     * 筛选按钮文字：**未选中** = 只显示标签「特性」，**选中** = 只显示值「静电」（用户 2026-09-23 定）。
+     *
+     * ⚠ 两种状态都**不拼「任意」、也不拼前缀**：三枚按钮并排铺满整行、加宽不了，「特性：任意」
+     *   这截前缀白占宽度（这也是本次能把按钮从 96 收到 64、给本行腾出「闪光 + 重置」的前提）。
+     *   未选中态靠**灰色**表示"不过滤"（[UNSET_FILTER_COLOR]），选中态用该项自己的颜色，一眼分得清。
+     * ⚠ 值超宽时按按钮宽度截断（两侧各留 4px）。**不需要悬停提示**：展开列表里的选项按钮是整行的宽，
+     *   玩家展开时就能看到完整名字、选之前已经知道是什么（用户 2026-09-23 定）。
+     */
+    private fun filterButtonText(labelKey: String, value: Text, buttonW: Int, isAny: Boolean): Text {
+        val text = if (isAny) Text.translatable(labelKey) else value
+        return Text.literal(TextUtil.truncateString(text.string, buttonW - 8))
     }
 
     private val typeOptions = listOf("normal","fire","water","electric","grass","ice","fighting","poison","ground","flying",
@@ -877,9 +955,10 @@ class AuctionScreen(
                 if (htFilter == 1 && !hasHt) return@filter false
                 if (htFilter == 2 && hasHt) return@filter false
             }
-            // 筛选（仅精灵 tab 生效）：性别/属性/特性/性格（生效性格，不分薄荷）
+            // 筛选（仅精灵 tab 生效）：闪光/性别/属性/特性/性格（生效性格，不分薄荷）
             if (entry.type == "POKEMON") {
                 val d = entry.extraData
+                if (shinyOnly && !entry.shiny) return@filter false
                 if (genderFilter.isNotEmpty() && d["gender"] != genderFilter) return@filter false
                 if (typeFilter.isNotEmpty()) {
                     val primary = d["primaryType"] ?: ""
