@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.ClientPermissionCache
 import com.shusheng.cobblemarket.permission.MarketPermissions
+import com.shusheng.cobblemarket.permission.RequestPermissionSnapshotPayload
 import com.shusheng.cobblemarket.client.activeCurrencyUnit
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 
@@ -158,6 +159,12 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         entryButtons.clear()
         if (dropAnimStart < 0) dropAnimStart = System.currentTimeMillis()
         sendToServer(RequestBalancePayload())
+        // ⚠ 每次打开入口界面**主动要一次权限快照**（2026-09-24 用户实测补的）：
+        //   `/op <玩家>` 是**原版命令**，模组感知不到、不会重推快照；而登录时那一次推送
+        //   可能早于"被 OP"⇒ `canManage` 停在旧值，管理面板按钮不出现
+        //   （表现为「给了 OP 也不显示，非要服主再给个节点才行」）。
+        //   服务端有节流保护，请求被丢也无害（下次打开界面再要一次）
+        sendToServer(RequestPermissionSnapshotPayload())
         // 大木博士知识点：按语言加载 json，每次进入入口界面（新建实例）随机抽一句；
         // 从子界面返回入口也是新建实例，同样换句；resize 重建走 init 但成员已缓存，不换句
         client?.let { OakTips.load(it.resourceManager, it.options.language) }
