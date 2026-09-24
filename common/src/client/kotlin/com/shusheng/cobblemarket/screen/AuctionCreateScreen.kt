@@ -26,6 +26,7 @@ import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
+import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.item.ItemStack
 import net.minecraft.nbt.NbtCompound
@@ -54,6 +55,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private var shinyButton: NineSliceButton? = null
     private var genderButton: NineSliceButton? = null
     private var typeButton: NineSliceButton? = null
+    private var abilityButton: NineSliceButton? = null
+    private var natureButton: NineSliceButton? = null
     private var resetButton: NineSliceButton? = null
 
     // ── 精灵 tab（照搬 SellSelectScreen） ──
@@ -69,75 +72,235 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private var shinyOnly = false
     private var typeFilter = ""
     private var typeIdx = 0
+    /** 特性筛选（翻译 key，精确匹配）；选项跟着搜索框里的物种走，见 [updateAbilityOptions] */
+    private var abilityFilter = ""
+    private var abilityOptions = listOf<Pair<String, String>>()
+    /** 性格筛选（翻译 key，按**生效**性格匹配，薄荷后为薄荷性格） */
+    private var natureFilter = ""
     /** 公母筛选（照上架选择界面）：""=不限 / MALE / FEMALE */
     private var genderFilter = ""
-    // 属性展开列表（照上架选择界面：不限+19 属性、属性色、限高滚动、展开时隐藏被盖住的行）
-    private var typeListOpen = false
-    private var typeListScroll = 0
-    /** 展开列表的实际底边 y（每行 14、从 [TYPE_LIST_TOP] 起）。被它盖住的行不渲染 —— 反正看不见，画了反而刺穿列表 */
-    private var typeListBottomY = 0
-    private val typeOptionButtons = mutableListOf<NineSliceButton>()
+    // 面板内的展开列表（照精灵市场：不限 + 19 属性 / 特性 / 性格，限高滚动、盖住谁藏谁）
+    /** 当前展开的是哪一个："" / "type" / "ability" / "nature"（互斥展开） */
+    private var filterListOpen = ""
+    private var filterListScroll = 0
+    /** 展开列表的实际底边 y（每行 14，从被点按钮的正下方起）。面板里被它盖住的按钮要 `visible = false` */
+    private var filterListBottomY = 0
+    private val filterOptionButtons = mutableListOf<NineSliceButton>()
     private val ivExact = IntArray(6) { -1 }
     // IV 比较方式：0 = 等于（默认），1 = 大于等于，2 = 小于等于
     private val ivOps = IntArray(6)
     private val ivOpButtons = mutableMapOf<Int, NineSliceButton>()
+    /** 每个 IV 输入框右侧的单框重置 ↺（只清这一项，不必去点总重置把六项全清掉） */
+    private val ivResetButtons = mutableListOf<NineSliceButton>()
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
     private var htFilter = 0
 
     // [PC] 图标：Cobblemon 电脑物品栈（lazy 缓存，避免每帧查注册表）
     private val pcItemStack: ItemStack by lazy { ItemStack(Registries.ITEM.get(Identifier.of("cobblemon", "pc"))) }
     private var htButton: NineSliceButton? = null
+    private var filterToggleButton: NineSliceButton? = null
+
+    /**
+     * 右侧筛选面板是否展开（「筛选」按钮开关，**默认收起**，照精灵市场）。
+     * ⚠ 开关**只切可见性、不重建界面**：重建会清空 [iconData] 里精灵图标的跨帧动画状态
+     *   —— 表现就是「点一下筛选，正在睡觉的精灵突然站起来一下再睡回去」（精灵市场踩过的坑）。
+     */
+    private var filterExpanded = false
+    /** 面板内展开列表的顶/底边（垫不透明底、隐藏被它盖住的面板按钮，都读这两个值） */
+    private var filterListTopY = 0
+
+    /** 面板内滚动偏移（内容比面板高时才有用，见 [filterPanelHeight]） */
+    private var filterPanelScroll = 0
+
+    /**
+     * 面板内控件的「基准 y」（= 未滚动时的位置）。
+     * 滚动要改控件的 `y`，还得能还原 —— 所以创建时统一登记一次，滚动只做 `base - scroll`。
+     * ⚠ 别再另抄一份坐标常量表：那正是"三处各写一遍、改一处漏两处"的老毛病（照精灵市场）。
+     */
+    private val filterPanelControls =
+        mutableListOf<Pair<net.minecraft.client.gui.widget.ClickableWidget, Int>>()
+
+    /**
+     * 右侧筛选面板的**内容高度**（由内容定，不跟随主面板铺到屏幕底边，照精灵市场）。
+     *
+     * 布局：闪光+性别+↺ 一行 → 属性 / 特性 / 性格 / 特训 各一行 → IV 六行（每行 22）。
+     * 最后一行 `Spd` 输入框在 y=240、高 16（底 256），加 12 底部余量 ⇒ 268。
+     * ⚠ 面板里再加一行时记得同步改这里。
+     */
+    private val FILTER_PANEL_HEIGHT = 268
+
+    /**
+     * 面板的**实际高度** = 内容高度与屏幕可用高度的较小值。
+     *
+     * ⚠ GUI 缩放设「自动」时逻辑屏高会变小（1080p + 缩放 4 只有 270），写死 268 会让面板戳出屏幕、
+     *   底部的 IV 输入框看不见 —— 超出部分靠**面板内滚动**看（照精灵市场）。
+     */
+    private fun filterPanelHeight() = minOf(FILTER_PANEL_HEIGHT, height - 34)
     private var hpF: TextFieldWidget? = null; private var atkF: TextFieldWidget? = null; private var defF: TextFieldWidget? = null
     private var spaF: TextFieldWidget? = null; private var spdF: TextFieldWidget? = null; private var speF: TextFieldWidget? = null
+
+    /** 筛选按钮「未选中」的文字色：**白色**（与精灵市场 / 拍卖场 / 上架选择同一口径，2026-09-24） */
+    private val UNSET_FILTER_COLOR = 0xFFFFFF
 
     private val allTypes = listOf("" to "") + listOf("normal","fire","water","electric","grass","ice","fighting","poison","ground","flying",
         "psychic","bug","rock","ghost","dragon","dark","steel","fairy").map { it to "cobblemon.type.$it" }
 
-    // ── 属性展开列表（照上架选择界面：不限+19 属性、属性色、限高滚动、展开时隐藏被盖住的行） ──
+    // ── 展开列表（照精灵市场：不限 + 选项、限高滚动、点选后收起） ──
 
-    private fun toggleTypeList() {
-        typeListOpen = !typeListOpen
-        typeListScroll = 0
-        rebuildTypeList()
+    private fun toggleFilterList(kind: String) {
+        filterListOpen = if (filterListOpen == kind) "" else kind
+        filterListScroll = 0
+        rebuildFilterList()
     }
 
-    private fun rebuildTypeList() {
+    /** 当前展开列表的选项：属性 / 特性（跟搜索框里的物种走）/ 性格 */
+    private fun filterListOptions(): List<Pair<String, String>> = when (filterListOpen) {
+        "type" -> allTypes
+        "ability" -> listOf("" to "") + abilityOptions
+        "nature" -> listOf("" to "") + natureOptions
+        else -> emptyList()
+    }
+
+    /** 当前展开列表是被哪枚按钮点开的 —— 浮层贴在它正下方（位置只在这里算一次，别人别重写一遍） */
+    private fun filterListSourceButton(): NineSliceButton? = when (filterListOpen) {
+        "type" -> typeButton
+        "ability" -> abilityButton
+        "nature" -> natureButton
+        else -> null
+    }
+
+    private fun rebuildFilterList() {
         // 先撤掉旧的选项按钮：展开/收起来回切、以及界面重建（clearChildren）后都要从干净状态重建
-        typeOptionButtons.forEach { remove(it) }
-        typeOptionButtons.clear()
-        if (!typeListOpen) {
-            typeListBottomY = 0
+        filterOptionButtons.forEach { remove(it) }
+        filterOptionButtons.clear()
+        if (filterListOpen.isEmpty()) {
+            // 收起：浮层范围归零，被盖住的按钮立刻回来
+            filterListTopY = 0
+            filterListBottomY = 0
+            applyFilterVisibility()
             return
         }
-        val leftX = width / 2 - panelWidth / 2
-        allTypes.drop(typeListScroll).take(MAX_TYPE_LIST_ROWS).forEachIndexed { i, (_, key) ->
+        // 浮层画在**被点按钮的正下方**（会盖住它下面那几个按钮，收起就回来）——
+        // 右侧面板里只有筛选控件、没有列表行，所以"盖住几个按钮"远比原来"盖住列表行"可接受
+        // （原来那套「被盖住的行不渲染 / 不算悬停 / 隐藏下层控件 / 点击排除」的补丁因此整个删掉）。
+        // ⚠ 读控件自己的 `y`，不再维护第二份坐标表
+        val sourceBtn = filterListSourceButton() ?: return
+        val fx = MarketPanelBackground.filterLeft(width) + 4
+        val fw = MarketPanelBackground.filterWidth(width) - 8
+        val listTop = sourceBtn.y + 22
+        // 面板底边往下就没地方了，自动限制行数（小屏 / GUI 缩放自动档）
+        val maxRows = minOf(MAX_FILTER_LIST_ROWS, maxOf(1, (height - 32 - listTop) / FILTER_LIST_ROW_H))
+        val options = filterListOptions()
+        filterListTopY = listTop
+        filterListBottomY = listTop + minOf(options.size - filterListScroll, maxRows) * FILTER_LIST_ROW_H
+        options.drop(filterListScroll).take(maxRows).forEachIndexed { i, (key, label) ->
             val display = if (key.isEmpty()) Text.translatable("cobblemarket.gui.filter_any").string
-                else Text.translatable(key).string
+                else Text.translatable(label).string.let { t -> if (t == label) label else t }
             val btn = NineSliceButton(
-                leftX + 2, TYPE_LIST_TOP + i * TYPE_LIST_ROW_H, panelWidth - 4, TYPE_LIST_ROW_H,
-                if (key.isNotEmpty() && key == typeFilter)
+                fx, listTop + i * FILTER_LIST_ROW_H, fw, FILTER_LIST_ROW_H,
+                if (key.isNotEmpty() && isFilterSelected(filterListOpen, key))
                     com.shusheng.cobblemarket.util.TextUtil.selectedText(
                         com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)
                     )
                 else Text.literal(com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)),
-                { selectType(key) },
-                if (key.isNotEmpty()) typeColor(key) else 0xFFFFFF
+                { selectFilterOption(filterListOpen, key) },
+                // 选项文字：属性用对应属性色，特性 / 性格保持白色
+                if (filterListOpen == "type" && key.isNotEmpty()) typeColor(key) else 0xFFFFFF
             )
-            typeOptionButtons.add(btn)
+            filterOptionButtons.add(btn)
             addDrawableChild(btn)
         }
-        // 记下展开列表的实际底边，供行渲染判断哪些行被它盖住（按实际选项数与滚动偏移算，不写死行数）
-        typeListBottomY = TYPE_LIST_TOP + minOf(allTypes.size - typeListScroll, MAX_TYPE_LIST_ROWS) * TYPE_LIST_ROW_H
+        // 浮层铺好后，被它盖住的面板按钮藏起来（读各自的 y，见 applyFilterVisibility）
+        applyFilterVisibility()
     }
 
-    private fun selectType(key: String) {
-        typeFilter = key
-        typeIdx = allTypes.indexOfFirst { it.second == key }.coerceAtLeast(0)
-        typeButton?.setMessage(if (key.isEmpty()) Text.translatable("cobblemarket.sell.type") else Text.translatable(key))
-        typeButton?.textColor = if (key.isEmpty()) 0xFFFFFF else typeColor(key)
-        typeListOpen = false
-        rebuildTypeList()
-        rebuild()
+    private fun isFilterSelected(kind: String, key: String): Boolean = when (kind) {
+        "type" -> key.isNotEmpty() && key == typeFilter
+        "ability" -> key.isNotEmpty() && key == abilityFilter
+        "nature" -> key.isNotEmpty() && key == natureFilter
+        else -> false
+    }
+
+    private fun selectFilterOption(kind: String, key: String) {
+        when (kind) {
+            "type" -> {
+                typeFilter = key
+                typeIdx = allTypes.indexOfFirst { it.second == key }.coerceAtLeast(0)
+                typeButton?.setMessage(typeButtonText())
+                typeButton?.textColor = if (key.isEmpty()) UNSET_FILTER_COLOR else typeColor(key)
+            }
+            "ability" -> {
+                abilityFilter = key
+                abilityButton?.setMessage(abilityButtonText())
+                abilityButton?.textColor = if (key.isEmpty()) UNSET_FILTER_COLOR else GOLD_COLOR
+            }
+            "nature" -> {
+                natureFilter = key
+                natureButton?.setMessage(natureButtonText())
+                natureButton?.textColor = if (key.isEmpty()) UNSET_FILTER_COLOR else GOLD_COLOR
+            }
+        }
+        filterListOpen = ""
+        rebuildFilterList()
+        // 筛选变化只重建过滤缓存 + 回到顶部，**不重建界面**（重建会清空精灵图标的跨帧动画状态）
+        rebuildFiltered()
+        scrollOffset = 0
+    }
+
+    // ── 筛选按钮文字（「标签 + 值」，与精灵市场同一口径） ──
+
+    private fun filterPanelBtnW() = MarketPanelBackground.filterWidth(width) - 8
+
+    private fun typeButtonText(): Text = filterButtonText("cobblemarket.gui.type",
+        if (typeFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any") else Text.translatable(typeFilter))
+
+    private fun abilityButtonText(): Text = filterButtonText("cobblemarket.buy_order.ability_label",
+        if (abilityFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any") else Text.translatable(abilityFilter))
+
+    private fun natureButtonText(): Text = filterButtonText("cobblemarket.buy_order.nature_label",
+        if (natureFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any") else Text.translatable(natureFilter))
+
+    /**
+     * 筛选按钮文字 =「标签 + 值」（「特性：静电」/「特性：任意」）—— **与精灵市场同一口径**。
+     * ⚠ 值超宽时按按钮宽截断（两侧各留 4px）。
+     */
+    private fun filterButtonText(labelKey: String, value: Text): Text {
+        val prefix = Text.translatable(labelKey)
+        return prefix.append(Text.literal(com.shusheng.cobblemarket.util.TextUtil.truncateString(
+            value.string, filterPanelBtnW() - 8 - textRenderer.getWidth(prefix))))
+    }
+
+    /** 25 种性格（翻译 key, 显示名），与精灵市场 / 求购单一致 */
+    private val natureOptions: List<Pair<String, String>> by lazy {
+        com.cobblemon.mod.common.api.pokemon.Natures.all().map { n ->
+            val key = "cobblemon.nature.${n.name.path}"
+            val t = Text.translatable(key).string
+            key to (if (t == key) n.displayName else t)
+        }
+    }
+
+    /** 搜索框物种解析 → 特性筛选选项；物种变化时重置失效选择（照精灵市场） */
+    private fun updateAbilityOptions(text: String) {
+        val trimmed = text.trim()
+        val species = if (trimmed.isEmpty()) null else {
+            if (trimmed.contains(":")) {
+                Identifier.tryParse(trimmed)?.let { PokemonSpecies.getByIdentifier(it) }
+            } else {
+                val byName = try { PokemonSpecies.getByName(trimmed) } catch (_: Exception) { null }
+                // 精确优先：中文名互为子串时别让「鬼斯」被「鬼斯通」截胡（见 SpeciesText）
+                byName ?: com.shusheng.cobblemarket.util.SpeciesText.candidatesByNameOrId(trimmed).firstOrNull()
+            }
+        }
+        abilityOptions = species?.abilities?.map { pa ->
+            val key = "cobblemon.ability.${pa.template.name}"
+            val t = Text.translatable(key).string
+            key to (if (t == key) pa.template.displayName else t)
+        } ?: emptyList()
+        if (abilityFilter.isNotEmpty() && abilityOptions.none { it.first == abilityFilter }) {
+            abilityFilter = ""
+            abilityButton?.setMessage(abilityButtonText())
+            abilityButton?.textColor = UNSET_FILTER_COLOR
+        }
     }
 
     private fun updateGenderButton() {
@@ -152,7 +315,10 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             "MALE" -> "FEMALE"
             else -> ""
         }
-        rebuild()
+        // 原来靠 `rebuild()` 重建按钮来刷新图标；现在筛选不重建界面，得手动更一次
+        updateGenderButton()
+        rebuildFiltered()
+        scrollOffset = 0
     }
 
     private val iconData = mutableMapOf<Int, PokemonIconData>()
@@ -236,7 +402,10 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     /** 弹窗自动叫声的时刻（0 = 无）：打开时排、渲染后到点播，见 renderPokemonSlot 里的判断 */
     private var dialogCryAt = 0L
 
-    private fun getListStartY() = if (currentTab == 0) 114 else 54
+    // 精灵 tab：搜索框那一行（y=50、高 20、底 70）⇒ 分割线 74、列表 78
+    //   （筛选控件搬进右侧面板前是 114 —— 主面板上压着 IV 行 + 筛选按钮行两排）
+    // 物品 tab 没有搜索框也没有筛选，tab 行下面直接接列表
+    private fun getListStartY() = if (currentTab == 0) 78 else 54
     private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 48) / rowHeight)
 
     override fun init() {
@@ -270,85 +439,123 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         updateTabButtons()
 
         if (currentTab == 0) {
-            // Row 1: Search (full width)
-            searchField = TextFieldWidget(textRenderer, leftX + 2, 50, panelWidth - 4, 16, Text.translatable("cobblemarket.sell.search"))
+            // Row 1 (y=50)：搜索框 + 行右端的「筛选」开关（开关右边那块筛选面板）。
+            // 搜索框高 20 = 同行按钮高（原版输入框文字 y = y+(h-8)/2 与 NineSliceButton 同一算式，
+            // 矮一截会看着偏上、发细）
+            searchField = TextFieldWidget(textRenderer, leftX + 2, 50, panelWidth - 58, 20, Text.translatable("cobblemarket.sell.search"))
             searchField?.setPlaceholder(Text.translatable("cobblemarket.sell.search"))
             // 搜索变化时重建过滤缓存（render 每帧只读，见 rebuildFiltered 注释）
-            searchField?.setChangedListener { rebuildFiltered() }
+            searchField?.setChangedListener { updateAbilityOptions(it); rebuildFiltered() }
             addSelectableChild(searchField)
             addDrawableChild(searchField)
 
-            // Row 2 (y=70): IV fields（照搬 SellSelectScreen）
-            fun mkIv(x: Int, ph: String): TextFieldWidget {
-                val f = TextFieldWidget(textRenderer, x, 70, 28, 16, Text.literal(""))
-                f.setPlaceholder(Text.literal(ph))
-                f.setTextPredicate { it.length <= 2 && it.all { c -> c.isDigit() } }
-                addSelectableChild(f); addDrawableChild(f)
-                return f
-            }
-            hpF = mkIv(leftX + 2, "HP"); atkF = mkIv(leftX + 51, "ATK"); defF = mkIv(leftX + 100, "DEF")
-            spaF = mkIv(leftX + 149, "SpA"); spdF = mkIv(leftX + 198, "SpD"); speF = mkIv(leftX + 247, "Spd")
+            val filterToggle = NineSliceButton(
+                leftX + panelWidth - 52, 50, 50, 20,
+                Text.literal(""),
+                { toggleFilters() },
+                iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+            )
+            filterToggleButton = filterToggle
+            addDrawableChild(filterToggle)
+            updateFilterToggleVisual()
 
-            // 三态比较按钮（= / ≥ / ≤ 循环，默认 = 与旧行为一致；非默认金色高亮；贴自己框成组）
-            ivOpButtons.clear()
-            for (i in 0..5) {
-                val bx = leftX + 2 + i * 49 + 29
-                val btn = NineSliceButton(
-                    bx, 70, 16, 16,
-                    Text.literal(if (ivOps[i] == 1) "≥" else if (ivOps[i] == 2) "≤" else "="),
-                    {
-                        ivOps[i] = (ivOps[i] + 1) % 3
-                        syncIvOpButtons()
-                        rebuildFiltered()
-                    },
-                    textColor = if (ivOps[i] != 0) GOLD_COLOR else 0xFFFFFF
-                )
-                ivOpButtons[i] = btn
-                addDrawableChild(btn)
-            }
+            // ── 右侧筛选面板内的控件：**常驻创建**，开关只切可见性（别用 `if (filterExpanded)` 包起来
+            //    —— 那会让开关走"重建界面"的老路，而重建会清空精灵图标的跨帧动画状态）──
+            // 搬过来的理由与精灵市场一样：原先它们在主面板 y=70/y=90 两排，属性点开是**浮层**、
+            // 盖住下面的列表行 ⇒ 要维护四类补丁。现在浮层只盖同一块面板里的几个按钮，补丁整个删掉；
+            // 精灵 tab 的列表起点也从 114 回到 78。
+            val fx = MarketPanelBackground.filterLeft(width) + 4
+            val fw = MarketPanelBackground.filterWidth(width) - 8
 
-            // Row 3 (y=90): 闪光 | 公母 | 属性 | 特训 | 重置 —— 五件套，宽度与 4px 间距照上架选择界面
-            val btnY = 90
-            // 闪光：只有 ★/☆（照上架选择界面；原先是带文字的 62 宽按钮 —— 一个五角星不需要那么宽）
+            // 第一行：★闪光(30) + ♂公母(24) + ↺重置（贴面板右端）—— 与精灵市场同尺寸、同顺序
+            // （精灵市场那一行是「闪光 | 性别 | 排序」，本界面没有排序，把 ↺ 补在空出来的右端）
             shinyButton = NineSliceButton(
-                leftX + 2, btnY, 30, 20,
+                fx, 20, 30, 20,
                 Text.literal(if (shinyOnly) "★" else "☆"),
-                { shinyOnly = !shinyOnly; rebuild() },
+                { toggleShiny() },
                 // 开 = 金色 ★，关 = 白色 ☆（与其他界面闪光按钮一致）
-                if (shinyOnly) GOLD_COLOR else 0xFFFFFF
+                if (shinyOnly) GOLD_COLOR else UNSET_FILTER_COLOR
             )
             addDrawableChild(shinyButton)
             // 公母（照上架选择界面：不限态 ♂♀ 双图标，循环 不限→仅公→仅母）
             genderButton = NineSliceButton(
-                leftX + 36, btnY, 24, 20,
+                fx + 34, 20, 24, 20,
                 Text.literal(""),
                 { cycleGender() },
                 iconTexW = 6, iconTexH = 8, iconScale = 1.5f
             )
             updateGenderButton()
             addDrawableChild(genderButton)
-            // 属性：展开选择（照上架选择界面：属性色文字 + 浮层列表；原先点一下切下一个属性）
-            typeButton = NineSliceButton(
-                leftX + 64, btnY, 58, 20,
-                if (typeFilter.isEmpty()) Text.translatable("cobblemarket.sell.type") else Text.translatable(typeFilter),
-                { toggleTypeList() },
-                if (typeFilter.isEmpty()) 0xFFFFFF else typeColor(typeFilter)
-            )
-            addDrawableChild(typeButton)
-            // 特训筛选（三态循环）
-            htButton = NineSliceButton(
-                leftX + 126, btnY, 62, 20,
-                htButtonText(),
-                { toggleHtFilter(); rebuild() },
-                if (htFilter != 0) GOLD_COLOR else 0xFFFFFF
-            )
-            addDrawableChild(htButton)
+            // 重置：↺ **符号**（与精灵市场 / 管理端 / 上架选择同一个观感；纯图标按钮给悬停提示）
             resetButton = NineSliceButton(
-                leftX + 244, btnY, 48, 20,
-                Text.translatable("cobblemarket.gui.reset"),
-                { resetFilters() }
+                fx + fw - 20, 20, 20, 20,
+                Text.literal("↺"),
+                { resetFilters() },
+                tooltip = Text.translatable("cobblemarket.gui.reset")
             )
             addDrawableChild(resetButton)
+
+            // 属性 / 特性 / 性格 / 特训：各占整行，展开浮层贴在各自按钮的正下方
+            typeButton = NineSliceButton(
+                fx, 42, fw, 20,
+                typeButtonText(),
+                { toggleFilterList("type") },
+                if (typeFilter.isEmpty()) UNSET_FILTER_COLOR else typeColor(typeFilter)
+            )
+            addDrawableChild(typeButton)
+            // 特性：选项跟着搜索框里的物种走（见 updateAbilityOptions）
+            abilityButton = NineSliceButton(
+                fx, 64, fw, 20,
+                abilityButtonText(),
+                { toggleFilterList("ability") },
+                if (abilityFilter.isEmpty()) UNSET_FILTER_COLOR else GOLD_COLOR
+            )
+            addDrawableChild(abilityButton)
+            // 性格：25 种，按**生效**性格匹配（薄荷后为薄荷性格）
+            natureButton = NineSliceButton(
+                fx, 86, fw, 20,
+                natureButtonText(),
+                { toggleFilterList("nature") },
+                if (natureFilter.isEmpty()) UNSET_FILTER_COLOR else GOLD_COLOR
+            )
+            addDrawableChild(natureButton)
+            // 特训筛选（三态循环）
+            htButton = NineSliceButton(
+                fx, 108, fw, 20,
+                htButtonText(),
+                { toggleHtFilter() },
+                if (htFilter != 0) GOLD_COLOR else UNSET_FILTER_COLOR
+            )
+            addDrawableChild(htButton)
+
+            // IV 六项：面板内**竖排**，每行 = [输入框 84] [三态 40] [单框重置 ↺ 20]，
+            // 行距 22 —— 与精灵市场同数值、同顺序（84 + 4 + 40 + 4 + 20 = 152 正好占满面板内容宽）
+            fun mkIv(x: Int, y: Int, ph: String): TextFieldWidget {
+                val f = TextFieldWidget(textRenderer, x, y, 84, 16, Text.literal(""))
+                f.setPlaceholder(Text.literal(ph))
+                f.setTextPredicate { it.length <= 2 && it.all { c -> c.isDigit() } }
+                addSelectableChild(f); addDrawableChild(f)
+                return f
+            }
+            ivOpButtons.clear()
+            ivResetButtons.clear()
+            hpF  = mkIv(fx, 130, "HP");  addIvOpButton(fx + 88, 130, 0); addIvResetButton(fx + 132, 130, 0)
+            atkF = mkIv(fx, 152, "ATK"); addIvOpButton(fx + 88, 152, 1); addIvResetButton(fx + 132, 152, 1)
+            defF = mkIv(fx, 174, "DEF"); addIvOpButton(fx + 88, 174, 2); addIvResetButton(fx + 132, 174, 2)
+            spaF = mkIv(fx, 196, "SpA"); addIvOpButton(fx + 88, 196, 3); addIvResetButton(fx + 132, 196, 3)
+            spdF = mkIv(fx, 218, "SpD"); addIvOpButton(fx + 88, 218, 4); addIvResetButton(fx + 132, 218, 4)
+            speF = mkIv(fx, 240, "Spd"); addIvOpButton(fx + 88, 240, 5); addIvResetButton(fx + 132, 240, 5)
+
+            // 登记面板内控件：记下基准 y，滚动时按它重定位（见 filterPanelControls 的说明）
+            filterPanelControls.clear()
+            listOfNotNull(
+                shinyButton, genderButton, resetButton, typeButton, abilityButton,
+                natureButton, htButton, hpF, atkF, defF, spaF, spdF, speF
+            ).forEach { filterPanelControls += it to it.y }
+            ivOpButtons.values.forEach { filterPanelControls += it to it.y }
+            ivResetButtons.forEach { filterPanelControls += it to it.y }
+            // 建完先刷一遍位置与可见性：面板收起时它们必须立刻藏起来
+            applyFilterVisibility()
 
             if (!loaded) {
                 sendToServer(RequestMyPokemonPayload(0, requestId))
@@ -358,6 +565,118 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         } else {
             loadInventory()
         }
+    }
+
+    /** IV 单框重置 ↺：只清这一项的输入框与值（不必去点整行重置把六项全清掉），照精灵市场 */
+    private fun addIvResetButton(x: Int, y: Int, index: Int) {
+        val btn = NineSliceButton(
+            x, y, 20, 16,
+            Text.literal("↺"),
+            {
+                ivExact[index] = -1
+                ivOps[index] = 0
+                listOf(hpF, atkF, defF, spaF, spdF, speF)[index]?.text = ""
+                syncIvOpButtons()
+                rebuildFiltered()
+                scrollOffset = 0
+            },
+            tooltip = Text.translatable("cobblemarket.gui.reset")
+        )
+        ivResetButtons += btn
+        addDrawableChild(btn)
+    }
+
+    /** IV 三态比较按钮：= → ≥ → ≤ 循环（默认 = 与旧行为一致；非默认金色高亮） */
+    private fun addIvOpButton(x: Int, y: Int, index: Int) {
+        val btn = NineSliceButton(
+            // 宽 16 → 40（与精灵市场一致）：搬进面板后右侧有余量，三态符号宽一点更好点
+            x, y, 40, 16,
+            Text.literal(if (ivOps[index] == 1) "≥" else if (ivOps[index] == 2) "≤" else "="),
+            {
+                ivOps[index] = (ivOps[index] + 1) % 3
+                syncIvOpButtons()
+                rebuildFiltered()
+            },
+            textColor = if (ivOps[index] != 0) GOLD_COLOR else 0xFFFFFF
+        )
+        ivOpButtons[index] = btn
+        addDrawableChild(btn)
+    }
+
+    /** 闪光筛选：开 = 金色 ★，关 = 白色 ☆ */
+    private fun toggleShiny() {
+        shinyOnly = !shinyOnly
+        shinyButton?.setMessage(Text.literal(if (shinyOnly) "★" else "☆"))
+        shinyButton?.textColor = if (shinyOnly) GOLD_COLOR else UNSET_FILTER_COLOR
+        rebuildFiltered()
+        scrollOffset = 0
+    }
+
+    // ── 右侧筛选面板（照精灵市场：主面板保持居中，面板贴在它右缘外） ──
+
+    /**
+     * 面板内控件的可见性：**面板开着**才显示。
+     *
+     * ⚠ 被展开列表盖住的按钮必须 `visible = false`，**不能只靠"垫一块不透明底"**：
+     *   原版 `ClickableWidget` 只要 `visible` 就照常响应点击 / 悬停 / 弹自己的 tooltip
+     *   （`active = false` 拦不住），浮层下面的按钮会连点带悬停一起生效。
+     *   判据一律**读控件自己的 `y`**，不维护第二份坐标表。
+     */
+    private fun applyFilterVisibility() {
+        // 拍卖设置弹窗是模态：打开时面板整块藏掉（原来 openDialog 里逐个列了要藏的控件，
+        // 那份名单**漏了公母按钮**；现在统一走这里，不会再漏）
+        val dialogOpen = dialogPokemon != null || dialogItem != null
+        val covered = filterListOpen.isNotEmpty() && filterListBottomY > filterListTopY
+        /** 某个 `y` 是否落在展开浮层的覆盖范围内 */
+        fun coveredAt(y: Int?) = covered && y != null && y >= filterListTopY && y < filterListBottomY
+        fun show(w: NineSliceButton?) {
+            if (w != null) w.visible = filterExpanded && !dialogOpen && !coveredAt(w.y)
+        }
+        show(shinyButton)
+        show(genderButton)
+        show(resetButton)
+        show(typeButton)
+        show(abilityButton)
+        show(natureButton)
+        show(htButton)
+        listOf(hpF, atkF, defF, spaF, spdF, speF).forEachIndexed { i, f ->
+            val vis = filterExpanded && !dialogOpen && !coveredAt(ivOpButtons[i]?.y)
+            f?.visible = vis
+            ivOpButtons[i]?.visible = vis
+            ivResetButtons.getOrNull(i)?.visible = vis
+        }
+        filterToggleButton?.visible = !dialogOpen
+        // 面板内滚动：按登记的基准 y 重定位，滚出面板范围的控件藏起来（滚轮改了 filterPanelScroll
+        // 之后调本函数重排）。⚠ 放在最后 —— 它会覆盖上面 show() 设的 visible
+        val panelTop = 4
+        val panelBottom = 2 + filterPanelHeight()
+        filterPanelControls.forEach { (w, baseY) ->
+            w.y = baseY - filterPanelScroll
+            if (w.y < panelTop || w.y + w.height > panelBottom) w.visible = false
+        }
+    }
+
+    /** 「筛选」开关：**只切面板可见性，不重建界面**（重建会清空精灵图标的跨帧动画状态） */
+    private fun toggleFilters() {
+        filterExpanded = !filterExpanded
+        if (!filterExpanded) {
+            // 收起时顺手把展开列表收掉：浮层按钮会被隐藏弄成"状态与控件不一致"
+            filterListOpen = ""
+            filterListScroll = 0
+        }
+        updateFilterToggleVisual()
+        rebuildFilterList()
+        applyFilterVisibility()
+    }
+
+    /** 开关按钮的外观（图标 / 选中态 / 悬停提示）随 [filterExpanded] 更新 —— 不重建就得手动更一次 */
+    private fun updateFilterToggleVisual() {
+        val b = filterToggleButton ?: return
+        b.iconLeft = Identifier.of("cobblemarket",
+            if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png")
+        b.selectedVisual = filterExpanded
+        b.setTooltip(Tooltip.of(Text.translatable(
+            if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand")))
     }
 
     private fun updateTabButtons() {
@@ -373,10 +692,11 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         scrollOffset = 0
         hoveredRow = -1
         // 切 tab 前收起属性展开列表：浮层按钮会被 clearChildren 清掉，状态若留着，
-        // 行渲染会继续按残留的 typeListBottomY 跳过（列表却已经不在了）
-        typeListOpen = false
-        typeListScroll = 0
-        typeListBottomY = 0
+        // applyFilterVisibility 会继续按残留的范围隐藏面板按钮（浮层却已经不在了）
+        filterListOpen = ""
+        filterListScroll = 0
+        filterListTopY = 0
+        filterListBottomY = 0
         clearChildren()
         init()
     }
@@ -395,40 +715,48 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         }
     }
 
-    private fun rebuild(keepInputs: Boolean = true) {
-        // 闪光/属性/特训/tab 切换的重建会清空搜索词与 IV 输入：默认保存恢复；
-        // 重置按钮走 rebuild(keepInputs = false) 显式清空
-        val savedSearch = searchField?.text ?: ""
-        val savedIv = arrayOf(
-            hpF?.text ?: "", atkF?.text ?: "", defF?.text ?: "",
-            spaF?.text ?: "", spdF?.text ?: "", speF?.text ?: ""
-        )
-        // 同上：展开列表的选项按钮会被 clearChildren 清掉，状态必须一起收
-        typeListOpen = false
-        typeListBottomY = 0
-        clearChildren()
-        init()
-        if (keepInputs) {
-            searchField?.text = savedSearch
-            val fields = arrayOf(hpF, atkF, defF, spaF, spdF, speF)
-            savedIv.forEachIndexed { i, t -> fields[i]?.text = t }
-        }
-    }
+    // （原 `rebuild(keepInputs)` = clearChildren + init + 恢复输入，2026-09-24 删除：筛选控件搬进右侧
+    //   面板后它就没有调用点了 —— 筛选变化一律改成 rebuildFiltered()，不再推倒重建界面。
+    //   ⚠ switchTab 仍走它自己的 clearChildren + init：切 tab 后列表整体换掉，本就该重建）
 
-    // 重置全部筛选条件（输入框由 rebuild(keepInputs=false) 显式清空）
+    /**
+     * 重置全部筛选条件（面板右端那枚）。**不重建界面**，逐个还原各控件的文字与颜色
+     * —— 走重建的话会把精灵图标的跨帧动画一起清掉（与"开关面板"同一个坑）。
+     * ⚠ 不清搜索框：重置的是**筛选条件**，搜索词是玩家自己敲的、保留更符合预期（同拍卖场）。
+     */
     private fun resetFilters() {
         shinyOnly = false
+        shinyButton?.setMessage(Text.literal("☆"))
+        shinyButton?.textColor = UNSET_FILTER_COLOR
+        genderFilter = ""
+        updateGenderButton()
         typeFilter = ""
         typeIdx = 0
-        genderFilter = ""
-        typeListOpen = false
-        typeListScroll = 0
-        typeListBottomY = 0
+        typeButton?.setMessage(typeButtonText())
+        typeButton?.textColor = UNSET_FILTER_COLOR
+        abilityFilter = ""
+        abilityButton?.setMessage(abilityButtonText())
+        abilityButton?.textColor = UNSET_FILTER_COLOR
+        natureFilter = ""
+        natureButton?.setMessage(natureButtonText())
+        natureButton?.textColor = UNSET_FILTER_COLOR
+        htFilter = 0
+        htButton?.setMessage(htButtonText())
+        htButton?.textColor = UNSET_FILTER_COLOR
+        filterListOpen = ""
+        filterListScroll = 0
+        filterListTopY = 0
+        filterListBottomY = 0
+        filterPanelScroll = 0
         ivExact.fill(-1)
         for (i in 0..5) ivOps[i] = 0
-        htFilter = 0
+        syncIvOpButtons()
+        arrayOf(hpF, atkF, defF, spaF, spdF, speF).forEach { it?.text = "" }
         scrollOffset = 0
-        rebuild(keepInputs = false)
+        hoveredRow = -1
+        rebuildFilterList()
+        rebuildFiltered()
+        applyFilterVisibility()
     }
 
     fun onPokemonList(payload: MyPokemonListPayload) {
@@ -470,13 +798,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         backButton?.visible = false
         tabButtons.forEach { it.visible = false }
         searchField?.visible = false
-        hpF?.visible = false; atkF?.visible = false; defF?.visible = false
-        spaF?.visible = false; spdF?.visible = false; speF?.visible = false
-        ivOpButtons.values.forEach { it.visible = false }
-        shinyButton?.visible = false
-        typeButton?.visible = false
-        htButton?.visible = false
-        resetButton?.visible = false
+        // 筛选面板里的控件与「筛选」开关一并藏掉（统一走 applyFilterVisibility，别在这儿列名单）
+        applyFilterVisibility()
         val centerX = width / 2
         val dialogY = height / 2 - (if (item != null) 180 else 150) / 2
 
@@ -738,6 +1061,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             (!shinyOnly || p.shiny) &&
             (genderFilter.isEmpty() || p.gender == genderFilter) &&
             (typeFilter.isEmpty() || p.primaryType == typeFilter || p.secondaryType == typeFilter) &&
+            // 特性精确匹配（翻译 key）；性格按**生效**性格匹配（薄荷改成该性格也算），照精灵市场
+            (abilityFilter.isEmpty() || p.ability == abilityFilter) &&
+            (natureFilter.isEmpty() || p.nature == natureFilter) &&
             // IV 按有效值匹配：特训项用特训值，未特训用真实值（原生 31 与训练 31 都命中）
             (ivExact[0] < 0 || ivMatch(ivOps[0], if (p.htHp >= 0) p.htHp else p.ivsHp, ivExact[0])) &&
             (ivExact[1] < 0 || ivMatch(ivOps[1], if (p.htAtk >= 0) p.htAtk else p.ivsAtk, ivExact[1])) &&
@@ -768,6 +1094,11 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             2 -> 1
             else -> 0
         }
+        // 原来靠调用方 `rebuild()` 刷新按钮文字；现在筛选不重建界面，得手动更一次
+        htButton?.setMessage(htButtonText())
+        htButton?.textColor = if (htFilter != 0) GOLD_COLOR else UNSET_FILTER_COLOR
+        rebuildFiltered()
+        scrollOffset = 0
     }
 
     /** IV 输入框 → ivExact 同步；返回是否有变化（变化时调用方重建过滤缓存） */
@@ -828,6 +1159,26 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         IconRegistry.beginFrame(mouseX, mouseY)
         // 顶部身份位放拍卖锤图标（复用界面内已有的 48x48 图标，见 MarketPanelBackground）
         MarketPanelBackground.draw(context, width, height, HAMMER_TEX_LEFT)
+        // 右侧筛选面板（精灵 tab、面板展开、无弹窗时）：**主面板保持居中不动**，
+        // 筛选面板占用它右侧本来就空着的区域。高度由内容定（246），不跟主面板铺到屏幕底边
+        if (currentTab == 0 && filterExpanded && dialogPokemon == null && dialogItem == null) {
+            MarketPanelBackground.draw(
+                context, width, height,
+                panelWidth = MarketPanelBackground.filterWidth(width),
+                leftOverride = MarketPanelBackground.filterLeft(width),
+                heightOverride = filterPanelHeight(),
+            )
+        }
+        // 展开列表的**不透明底块**：列表行的按钮背景中间是半透明的，不垫底的话它下面那几个
+        // 筛选按钮会透上来（照精灵市场：面板里靠"藏被盖住的按钮 + 垫底"两件事一起解决）
+        if (filterListOpen.isNotEmpty() && filterListBottomY > filterListTopY) {
+            val fl = MarketPanelBackground.filterLeft(width)
+            context.fill(
+                fl + 2, filterListTopY - 1,
+                fl + MarketPanelBackground.filterWidth(width) - 2, filterListBottomY,
+                0xF0101010.toInt()
+            )
+        }
 
         // IV 输入变化时重建过滤缓存（原 filteredPokemon 每次调用都先 syncIvFields，缓存后在此统一检测；
         // renderBackground 每帧先于 render 运行，检测一次即可覆盖本帧全部读缓存点）
@@ -839,13 +1190,12 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         val listAreaBottom = startY + visibleRows * rowHeight
         val count = displayCount()
 
-        // 弹窗打开时不再绘制行背景/悬停行（下层列表对弹窗不可见）；
-        // ⚠ 属性展开列表打开时同理：被浮层盖住的行**既不算悬停、也不画背景**（画了会刺穿浮层）。
-        //   hoveredRow 归 -1 还有一层作用 —— mouseClicked 的行命中判定读的就是它，
-        //   所以展开时点属性行不会连带选中下层精灵（上架选择界面原先漏了这层，2026-09-23 用户实测）
+        // 弹窗打开时不再绘制行背景/悬停行（下层列表对弹窗不可见）。
+        // ⚠ 属性浮层已搬进右侧面板、盖不到列表 ⇒ 悬停判定与逐行渲染的遮挡判断全部取消
+        //   （原先那套：浮层展开时不算悬停、被盖住的行不画背景）
         if (dialogPokemon == null && dialogItem == null) {
             hoveredRow = -1
-            if (!typeListOpen && mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom) {
+            if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom) {
                 val row = (mouseY - startY) / rowHeight
                 val shownCount = minOf(visibleRows, count - scrollOffset)
                 if (row in 0 until shownCount) hoveredRow = row
@@ -853,7 +1203,6 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
             repeat(minOf(visibleRows, maxOf(0, count - scrollOffset))) { di ->
                 val rowY = startY + di * rowHeight
-                if (typeListOpen && rowY < typeListBottomY) return@repeat
                 val rowState = if (di == hoveredRow) 1 else 0
                 drawNineSlice(context, ROW_BACKGROUND_TEXTURE, leftX, rowY, panelWidth, rowHeight, rowState, ROW_BACKGROUND_TEX_H)
             }
@@ -881,7 +1230,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         drawHeaderBalance(context, textRenderer, centerX, leftX + 4, textRenderer.getWidth(titleText))
 
         val startY = getListStartY()
-        drawPanelDivider(context, leftX + panelWidth / 2, startY - 2)
+        // 分割线在列表起点上方 **4px**（⚠ 别用 -2：那样它离行背景只有 2px，看着"紧贴精灵行"；
+        // 上架选择 / 精灵市场 / 管理端都是 4px —— 2026-09-24 用户比对两个界面后指出）
+        drawPanelDivider(context, leftX + panelWidth / 2, startY - 4)
 
         if (currentTab == 0) {
             if (!loaded) {
@@ -1222,12 +1573,27 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         if (dialogPokemon != null || dialogItem != null) return false
-        // 属性展开列表滚动（照上架选择界面）：展开时滚的是列表本身，不是下层的行
-        if (typeListOpen) {
-            if (allTypes.size > MAX_TYPE_LIST_ROWS) {
-                typeListScroll = (typeListScroll - verticalAmount.toInt()).coerceIn(0, allTypes.size - MAX_TYPE_LIST_ROWS)
-                rebuildTypeList()
+        // 展开列表滚动：展开时滚的是浮层本身，不是下面的列表
+        if (filterListOpen.isNotEmpty()) {
+            // ⚠ 上限必须与 rebuildFilterList 里的 maxRows 同一算法（小屏时实际显示行数会少于 8），
+            //   否则能滚到"浮层里根本没显示"的偏移量
+            val listTop = (filterListSourceButton()?.y ?: 0) + 22
+            val maxRows = minOf(MAX_FILTER_LIST_ROWS, maxOf(1, (height - 32 - listTop) / FILTER_LIST_ROW_H))
+            val total = filterListOptions().size
+            if (total > maxRows) {
+                filterListScroll = (filterListScroll - verticalAmount.toInt()).coerceIn(0, total - maxRows)
+                rebuildFilterList()
             }
+            return true
+        }
+        // 面板内滚动（内容比面板高时才有用）：鼠标落在面板上才滚，否则滚的是下面的列表
+        if (filterExpanded && filterPanelHeight() < FILTER_PANEL_HEIGHT &&
+            mouseX >= MarketPanelBackground.filterLeft(width) &&
+            mouseX < MarketPanelBackground.filterLeft(width) + MarketPanelBackground.filterWidth(width)
+        ) {
+            filterPanelScroll = (filterPanelScroll - verticalAmount.toInt() * 10)
+                .coerceIn(0, FILTER_PANEL_HEIGHT - filterPanelHeight())
+            applyFilterVisibility()
             return true
         }
         scrollOffset = (scrollOffset - verticalAmount.toInt()).coerceIn(0, maxOf(0, displayCount() - getMaxVisibleRows()))
@@ -1307,11 +1673,10 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     companion object {
         private var auctionRequestId = 0
-        /** 属性展开列表最多显示几行（超出用滚轮翻，照上架选择界面） */
-        const val MAX_TYPE_LIST_ROWS = 8
-        /** 属性展开列表的浮层起点：Row3 按钮行底边 110 + 8（与上架选择界面的 88+8=96 同款） */
-        private const val TYPE_LIST_TOP = 118
-        private const val TYPE_LIST_ROW_H = 14
+        /** 展开列表最多显示几行（超出用滚轮翻，照精灵市场） */
+        const val MAX_FILTER_LIST_ROWS = 8
+        // ⚠ 浮层起点不再是常量：改成「被点按钮自己的 y + 22」，读控件、不维护第二份坐标表
+        private const val FILTER_LIST_ROW_H = 14
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
         val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
