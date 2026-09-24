@@ -449,7 +449,16 @@ data class AdminRequestPokemonPayload(
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
     val htFilter: Int,
     /** 查询币种（原始字符串，不在这里解析；理由同 [RequestMarketPayload.currency]） */
-    val currency: String
+    val currency: String,
+    // ── 以下四项 2026-09-24 追加（管理端筛选面板照精灵市场补齐）：空串 = 不限 ──
+    /** 性别：""/MALE/FEMALE */
+    val genderFilter: String = "",
+    /** 属性（资源名如 `fire`）：主属性或副属性任一命中即算 */
+    val typeFilter: String = "",
+    /** 特性（翻译 key，精确匹配） */
+    val abilityFilter: String = "",
+    /** 性格（翻译 key，按**生效**性格匹配，薄荷后为薄荷性格） */
+    val natureFilter: String = ""
 ) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
@@ -478,6 +487,10 @@ data class AdminRequestPokemonPayload(
                 b.writeBoolean(p.mineOnly)
                 b.writeInt(p.htFilter)
                 b.writeString(p.currency)
+                b.writeString(p.genderFilter)
+                b.writeString(p.typeFilter)
+                b.writeString(p.abilityFilter)
+                b.writeString(p.natureFilter)
             },
             // 读端用具名参数，读写字段顺序必须一致
             { b ->
@@ -502,7 +515,11 @@ data class AdminRequestPokemonPayload(
                     pageSize = b.readInt(),
                     mineOnly = b.readBoolean(),
                     htFilter = b.readInt(),
-                    currency = b.readString()
+                    currency = b.readString(),
+                    genderFilter = b.readString(),
+                    typeFilter = b.readString(),
+                    abilityFilter = b.readString(),
+                    natureFilter = b.readString()
                 )
             }
         )
@@ -1771,7 +1788,12 @@ object MarketNetwork {
                     },
                     sellerUuid = if (payload.mineOnly) player.uuid else null,
                     sellerName = payload.sellerFilter.ifBlank { null },
-                    htFilter = payload.htFilter
+                    htFilter = payload.htFilter,
+                    // 2026-09-24 追加：性别 / 属性 / 特性 / 性格（照精灵市场补齐筛选面板）
+                    gender = payload.genderFilter.ifBlank { null },
+                    typeFilter = payload.typeFilter.ifBlank { null },
+                    ability = payload.abilityFilter.ifBlank { null },
+                    nature = payload.natureFilter.ifBlank { null }
                 )
 
                 val pageSize = payload.pageSize.coerceIn(1, 30)
