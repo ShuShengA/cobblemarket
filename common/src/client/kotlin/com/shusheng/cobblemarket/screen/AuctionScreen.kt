@@ -1708,6 +1708,11 @@ class AuctionScreen(
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // ⚠ **每帧**重算面板控件的显隐（照精灵市场与 `AdminPokemonScreen`）：面板开合走的是**动画**，
+        //   而动画播完那一刻**没有任何事件回调** —— 只在 toggle / 滚轮 / 弹窗开关里算的话，
+        //   展开动画结束后控件会永远停在「动画期间藏起来」的状态（用户 2026-09-25 报：展开后界面是空的）。
+        //   必须放在 super.render 之前：下面有 `bidEntry != null` 的提前 return，放后面会漏
+        applyFilterVisibility()
         super.render(context, mouseX, mouseY, delta)
 
         if (bidEntry != null) {
