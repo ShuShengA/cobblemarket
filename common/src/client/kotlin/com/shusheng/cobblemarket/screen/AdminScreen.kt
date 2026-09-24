@@ -107,6 +107,14 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
     /** 管理按钮：按权限节点置灰。**常驻不隐藏** —— 布局永远不变，无权限的点击给提示（用户 2026-09-12 拍板） */
     private fun addPermButton(x: Int, y: Int, w: Int, h: Int, text: Text, node: String, open: () -> Unit): TextureButton {
         val btn = addMenuButton(x, y, w, h, text, { openIfPermitted(node, open) })
+        // 悬停说明这个权限能干什么（与权限编辑弹窗里的节点按钮同一套词条）。
+        // ⚠ 同一节点可能对应多个按钮（MARKET 就管着精灵 / 物品 / 全部历史 / 总开关），
+        //   此时几个按钮显示同一句话 —— 那正是「它们同属一个节点」的真实反映，别按按钮名各写各的
+        btn.setTooltip(
+            net.minecraft.client.gui.tooltip.Tooltip.of(
+                Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX) + ".desc")
+            )
+        )
         permRefreshers += { btn.dimmed = !ClientPermissionCache.has(node) }
         return btn
     }
@@ -226,14 +234,20 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         marketSwitchBtn = NineSliceButton(
             centerX - iconSize / 2, iconY, iconSize, iconSize,
             Text.literal(""),
-            { openIfPermitted(MarketPermissions.MARKET) { toggleMarketEnabled() } },
+            { openIfPermitted(MarketPermissions.MARKET_SWITCH) { toggleMarketEnabled() } },
             iconLeft = marketSwitchIcon(),
             // 48×48 贴图缩到 18×18 显示（按钮 22×22 留 2px 边距，源图高分辨率保持锐利）
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
         )
-        marketSwitchBtn?.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.market_switch")))
+        // 悬停补一行「需要哪个节点」—— 与右边两颗服主专属按钮的「怎么加入名单」同一思路：
+        // OP 进得来面板、看得见这颗按钮，但没节点时它是灰的，得让他知道该找谁要（2026-09-24 拆节点后补）
+        marketSwitchBtn?.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(
+            Text.translatable("cobblemarket.entry.market_switch")
+                .append(Text.literal("\n"))
+                .append(Text.translatable("cobblemarket.perm.need_node", Text.translatable("cobblemarket.perm.node.marketswitch")))
+        ))
         menuButtons += addDrawableChild(marketSwitchBtn!!)
 
         val serverConfigBtn = NineSliceButton(
@@ -293,7 +307,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         sendToServer(RequestPointOrdersPayload(false, ""))
 
         // 底部三个图标按钮的置灰依据：总开关走 MARKET 节点，服务器配置与权限管理**只限服主**
-        permRefreshers += { marketSwitchBtn?.dimmed = !ClientPermissionCache.has(MarketPermissions.MARKET) }
+        permRefreshers += { marketSwitchBtn?.dimmed = !ClientPermissionCache.has(MarketPermissions.MARKET_SWITCH) }
         permRefreshers += { serverConfigBtn.dimmed = !ClientPermissionCache.isServerOwner() }
         permRefreshers += { permissionBtn.dimmed = !ClientPermissionCache.isServerOwner() }
         refreshPermissionState()
@@ -485,15 +499,17 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
                 context.matrices.pop()
             }
         }
-        // 服主名单为空（2026-09-24 用户要求）：背景下方紧贴一行提示（位置与入口界面的关市提醒同款）。
-        // ⚠ 文案落在**「功能不可用」**而不是「不能使用管理面板」—— 这行字画在面板内部，
-        //   而 OP 本来就进得来（看到一片置灰），说"用不了面板"自相矛盾。
-        //   它要回答的是 OP 此刻的疑问：为什么全灰？怎么解决？（添加方法见启动日志）
+        // 服主名单为空（2026-09-24 用户要求）：背景贴图**外**紧贴下沿一行提示（位置与入口界面的关市提醒同款）。
+        // ⚠⚠ 位置同入口界面：`bgBottom()` 是**逻辑底边**，**贴图底边 = `bgBottom() + 20`**
+        //   （两界面同一张贴图、`bgBottom()` 同义），所以"贴图外"要从 `+20` 起算。
+        //   `coerceAtMost` 兜底同入口界面：屏幕太矮时不夹住会超出屏幕底被裁掉
+        // ⚠ 文案落在**「功能不可用」**而不是「不能使用管理面板」—— OP 本来就进得来（看到一片置灰），
+        //   说"用不了面板"自相矛盾。它要回答的是 OP 此刻的疑问：为什么全灰？怎么解决？（添加方法见启动日志）
         if (ClientPermissionCache.isOwnerListEmpty()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.translatable("cobblemarket.perm.no_owner_hint").string,
-                width / 2, bgBottom() + 2, 0xFF5555
+                width / 2, (bgBottom() + 22).coerceAtMost(height - 11), 0xFF5555
             )
         }
         // 底部按钮上方的分割线：与入口界面完全同款（颜色、跨度、相对底边的间距都一致），
