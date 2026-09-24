@@ -294,20 +294,21 @@ class SellSelectScreen(
         )
         addDrawableChild(sellBtn)
 
-        // 货币切换按钮（价格框与上架按钮之间）。⚠ 服务端没开 RP 总开关、或没开「玩家间 RP 交易」
-        // 时**整个按钮不创建** —— 价格区干干净净，比留个点了报错的灰按钮清楚。
+        // 货币切换按钮（价格框与上架按钮之间）。
+        // ⚠ **RP 总开关关着时也要建**（只是置灰），**不能整个不创建** —— 这一行的位置是排好的
+        //   （搜索框 / 价格框 / 货币 / 上架 / 筛选），按钮凭空消失会空出一块（用户 2026-09-24 报：
+        //   「没开启总开关这里就缺一个位置，不好看」）。点它给失败音 + 红字提示，与另一种情况一致。
         currency = MarketCurrency.PRIMARY
-        // ⚠ 只有 **RP 总开关**关着时才不建（那时整个 RP 系统停摆，没有 RP 可言）；
-        //   「玩家间 RP 交易」没开**照样显示** —— 空一块更难看 —— 只是置灰点不动。
-        currencyButton = if (!noPriceField && PointsStateCache.enabled) {
+        currencyButton = if (!noPriceField) {
             NineSliceButton(
                 // 紧贴价格框右缘（无 4px 间隙）：看起来就像价格数字后面直接跟着货币符号
                 lx + 190, 44, 20, 20, Text.literal(""), { onCurrencyClick() },
                 iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
                 iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat()
             ).also {
-                // dimmed = 置灰但**保留可点击性**，点了给失败音 + 提示，比一个"死了"的按钮好懂
-                it.dimmed = !PointsStateCache.marketEnabled
+                // dimmed = 置灰但**保留可点击性**，点了给失败音 + 提示，比一个"死了"的按钮好懂。
+                // 两种"不能用"都置灰：RP 总开关关 / 玩家间 RP 交易没开
+                it.dimmed = !PointsStateCache.enabled || !PointsStateCache.marketEnabled
                 updateCurrencyButton(it)
                 addDrawableChild(it)
             }
@@ -913,10 +914,21 @@ class SellSelectScreen(
 
     /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
     private fun onCurrencyClick() {
-        if (!PointsStateCache.marketEnabled) {
+        // ⚠ 总开关关着时按钮只是置灰、仍可点：先给「未开启 RP」的提示
+        //   （两个词条对应两种"不能用"，别混用）
+        if (!PointsStateCache.enabled) {
             playFailSound()
             client?.player?.sendMessage(
                 // ⚠ 提醒类消息**用红色**，和普通反馈区分开（图标自带白色，不受影响）
+                Text.translatable("cobblemarket.network.points_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            return
+        }
+        if (!PointsStateCache.marketEnabled) {
+            playFailSound()
+            client?.player?.sendMessage(
                 Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
                     .formatted(Formatting.RED),
                 false
