@@ -485,6 +485,17 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
                 context.matrices.pop()
             }
         }
+        // 服主名单为空（2026-09-24 用户要求）：背景下方紧贴一行提示（位置与入口界面的关市提醒同款）。
+        // ⚠ 文案落在**「功能不可用」**而不是「不能使用管理面板」—— 这行字画在面板内部，
+        //   而 OP 本来就进得来（看到一片置灰），说"用不了面板"自相矛盾。
+        //   它要回答的是 OP 此刻的疑问：为什么全灰？怎么解决？（添加方法见启动日志）
+        if (ClientPermissionCache.isOwnerListEmpty()) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.perm.no_owner_hint").string,
+                width / 2, bgBottom() + 2, 0xFF5555
+            )
+        }
         // 底部按钮上方的分割线：与入口界面完全同款（颜色、跨度、相对底边的间距都一致），
         // 两界面本来就是同一张贴图，视觉上要能对齐。颜色统一走 GuiColors.DIVIDER（4 条线共用）
         context.fill(

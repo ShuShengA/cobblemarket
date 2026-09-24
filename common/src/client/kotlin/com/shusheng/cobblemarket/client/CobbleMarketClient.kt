@@ -672,7 +672,7 @@ object CobbleMarketClient {
         // 我的权限节点快照（登录 + 授予/收回/服主名单变更时推送）：客户端据此决定管理入口与各按钮的可用状态
         registerS2C(PermissionSnapshotPayload.ID, PermissionSnapshotPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
-                ClientPermissionCache.update(payload.nodes, payload.owner, payload.canManage)
+                ClientPermissionCache.update(payload.nodes, payload.owner, payload.canManage, payload.ownerListEmpty)
                 // 界面正开着时即时重算置灰（被授予/收回的玩家不用重开界面）
                 (MinecraftClient.getInstance().currentScreen as? AdminScreen)?.refreshPermissionState()
                 (MinecraftClient.getInstance().currentScreen as? MarketEntryScreen)?.refreshPermissionState()

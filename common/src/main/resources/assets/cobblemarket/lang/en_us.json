@@ -386,6 +386,7 @@
   "cobblemarket.perm.list_empty_player": "%s has no admin permissions",
   "cobblemarket.perm.no_permission": "You do not have this admin permission",
   "cobblemarket.perm.owner_only": "Reserved for the server owner",
+  "cobblemarket.perm.no_owner_hint": "Server owner not set — admins disabled (see log)",
   "cobblemarket.perm.owner_only_hint": "Server owner only. To join the owner list: run /market owner add <your name> in the server console, or — for single-player / LAN — edit serverOwners in config/cobblemarket.json",
   "cobblemarket.perm.folder_path": "Permission change log (CSV) is stored at: %s",
   "cobblemarket.perm.tab_grants": "Grants",
