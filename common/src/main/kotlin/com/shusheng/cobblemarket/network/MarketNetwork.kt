@@ -1059,7 +1059,10 @@ fun localizeSpeciesQuery(raw: String): String {
     val ids = com.cobblemon.mod.common.api.pokemon.PokemonSpecies.implemented
         .filter { it.translatedName.string.contains(q) }
         .map { it.resourceIdentifier.path }
-    return if (ids.isEmpty()) q else ids.joinToString("|")
+    // ⚠ **原文必须一并带上**：服务端还要拿这些 token 匹配**卖家名**（同一个搜索框既搜精灵也搜玩家），
+    //   而玩家名不随语言变化 —— 中文查询经这里转成物种 id（`eevee`）之后，就再也匹配不上
+    //   一个叫「伊布」的玩家了。全 ASCII 的查询在前面已直接透传，不受影响
+    return if (ids.isEmpty()) q else (ids + q).joinToString("|")
 }
 
 /** 客户端语言物品名搜索 → 匹配的物品 id 集合（服务端语言与客户端不同时靠 id 传递过滤；含 id 路径匹配，英文查询同样覆盖） */
@@ -1702,7 +1705,12 @@ object MarketNetwork {
                 ).let { list ->
                     val query = payload.itemFilter.trim()
                     if (query.isEmpty()) list
-                    else list.filter { matchesItemQuery(it.itemId, it.itemNbt, payload.itemIds.take(MAX_ITEM_IDS).toSet(), payload.tmMoves.toSet(), payload.enchants.toSet(), server.overworld.registryManager) }
+                    // 同一个搜索框也匹配**卖家名**（2026-09-24 与管理端的两个搜索框合并），
+                    // 与拍卖场的客户端过滤同一语义
+                    else list.filter {
+                        it.sellerName.contains(query, ignoreCase = true) ||
+                            matchesItemQuery(it.itemId, it.itemNbt, payload.itemIds.take(MAX_ITEM_IDS).toSet(), payload.tmMoves.toSet(), payload.enchants.toSet(), server.overworld.registryManager)
+                    }
                 }
 
                 // 上限 84（12 行）：网格页容量随窗口，上限低于容量会导致末行空槽+多余分页；
@@ -2370,7 +2378,11 @@ object MarketNetwork {
                 ).let { list ->
                     val query = payload.query.trim()
                     if (query.isEmpty()) list
-                    else list.filter { matchesItemQuery(it.itemId, it.itemNbt, payload.itemIds.take(MAX_ITEM_IDS).toSet(), payload.tmMoves.toSet(), payload.enchants.toSet(), server.overworld.registryManager) }
+                    // 同一个搜索框也匹配**卖家名**（2026-09-24，与精灵市场 / 拍卖场同一口径）
+                    else list.filter {
+                        it.sellerName.contains(query, ignoreCase = true) ||
+                            matchesItemQuery(it.itemId, it.itemNbt, payload.itemIds.take(MAX_ITEM_IDS).toSet(), payload.tmMoves.toSet(), payload.enchants.toSet(), server.overworld.registryManager)
+                    }
                 }
 
                 // 上限 84（12 行）：网格页容量随窗口，上限低于容量会导致末行空槽+多余分页；
