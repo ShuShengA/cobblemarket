@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
+import com.shusheng.cobblemarket.client.FilterPanelAnimation
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
@@ -115,6 +116,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
      *   —— 表现就是「点一下筛选，正在睡觉的精灵突然站起来一下再睡回去」（精灵市场踩过的坑）。
      */
     private var filterExpanded = false
+    /** 面板开关动画（展开时从「筛选」按钮放大长出来、收起缩回）。⚠ 必须与 [filterExpanded] 成对用 */
+    private val filterAnim = FilterPanelAnimation()
     /** 面板内展开列表的顶/底边（垫不透明底、隐藏被它盖住的面板按钮，都读这两个值） */
     private var filterListTopY = 0
 
@@ -663,11 +666,13 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
      *   判据一律**读控件自己的 `y`**，不维护第二份坐标表。
      */
     private fun applyFilterVisibility() {
+        // ⚠ 动画进行中整块藏起来（面板内是 MC 控件，塞不进矩阵、不会跟着缩放），照精灵市场
+        val animHidden = filterAnim.isActive()
         val covered = filterListOpen.isNotEmpty() && filterListBottomY > filterListTopY
         /** 某个 `y` 是否落在展开浮层的覆盖范围内（读控件自己的 y，不维护第二份坐标表） */
         fun coveredAt(y: Int?) = covered && y != null && y >= filterListTopY && y < filterListBottomY
         fun show(w: NineSliceButton?) {
-            if (w != null) w.visible = filterExpanded && !coveredAt(w.y)
+            if (w != null) w.visible = filterExpanded && !coveredAt(w.y) && !animHidden
         }
         show(shinyBtn)
         show(genderBtn)
@@ -677,7 +682,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         show(natureBtn)
         show(htBtn)
         listOf(hpF, atkF, defF, spaF, spdF, speF).forEachIndexed { i, f ->
-            val vis = filterExpanded && !coveredAt(ivOpButtons[i]?.y)
+            val vis = filterExpanded && !coveredAt(ivOpButtons[i]?.y) && !animHidden
             f?.visible = vis
             ivOpButtons[i]?.visible = vis
             ivResetButtons.getOrNull(i)?.visible = vis
@@ -736,6 +741,7 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
     /** 「筛选」开关：**只切面板可见性，不重建界面**（重建会清空精灵图标的跨帧动画状态） */
     private fun toggleFilters() {
         filterExpanded = !filterExpanded
+        filterAnim.start(filterExpanded)
         if (!filterExpanded) {
             // 收起时顺手把展开列表收掉：浮层按钮会被隐藏弄成"状态与控件不一致"
             filterListOpen = ""
@@ -861,13 +867,27 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         // 这样主面板里所有控件的坐标一个都不用动
         MarketPanelBackground.draw(context, width, height)
         // 右侧筛选面板（面板展开时）：高度由内容定（224），不跟主面板铺到屏幕底边
-        if (filterExpanded) {
-            MarketPanelBackground.draw(
-                context, width, height,
-                panelWidth = MarketPanelBackground.filterWidth(width),
-                leftOverride = MarketPanelBackground.filterLeft(width),
-                heightOverride = filterPanelHeight(),
-            )
+        // ⚠ 展开中、或收起动画还没播完都要画（后者要从目标位置缩回按钮），照精灵市场
+        if (filterExpanded || filterAnim.isActive()) {
+            val fl = MarketPanelBackground.filterLeft(width)
+            val fw = MarketPanelBackground.filterWidth(width)
+            val ph = filterPanelHeight()
+            val panelCx = fl + fw / 2f
+            val panelCy = 2f + ph / 2f
+            // 动画锚点 = 「筛选」按钮中心；按钮还没建时退化成"原地不动"（照精灵市场）
+            val btnCx = filterToggleButton?.let { it.x + it.width / 2f } ?: panelCx
+            val btnCy = filterToggleButton?.let { it.y + it.height / 2f } ?: panelCy
+            val animating = filterAnim.applyTransform(context, btnCx, btnCy, panelCx, panelCy)
+            // ⚠ 收起动画的最后一帧（applyTransform 返回 false）不能画；展开状态必须照画
+            if (filterExpanded || animating) {
+                MarketPanelBackground.draw(
+                    context, width, height,
+                    panelWidth = fw,
+                    leftOverride = fl,
+                    heightOverride = ph,
+                )
+                if (animating) filterAnim.restore(context)
+            }
         }
         // 展开列表的**不透明底块**：列表行的按钮背景中间是半透明的，不垫底的话它下面那几个
         // 筛选按钮会透上来（照精灵市场：面板里靠"藏被盖住的按钮 + 垫底"两件事一起解决）
