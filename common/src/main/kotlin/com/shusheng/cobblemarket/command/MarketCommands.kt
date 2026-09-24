@@ -175,10 +175,16 @@ object MarketCommands {
                         )
                     )
                     .then(CommandManager.literal("points")
-                        // 发放/回收 = **印钞权**：只认 OP，不下放给任何管理节点
-                        //（与 perm grant / loan clear 同级 —— RP 在商业服常被当作充值货币）
+                        // 发放/回收 = **印钞权**：**仅服主**（无凭证的即时直发/回收，属服主干预手段，
+                        // 同「撤销坏账」），不下放给任何管理节点。
+                        // ⚠ 2026-09-25 从 OP 收紧为服主：原先任何 OP 都能凭空造钱 —— 违反「OP = 普通玩家」
+                        //   （`/op` 可被传递，认 OP 等于给发钞权开后门）
+                        // ⚠ requires 里带 OP 只为让游戏内 OP 敲得进来、看到「仅服主可执行」的红字，
+                        //   **真正的鉴权在 pointsAdjust 首行（denyNonOwner）**
+                        // ⚠ FTB 任务奖励走的就是这两条命令（见 pointsAdjust 的 `@s` 说明）：
+                        //   以**控制台身份**执行照常可用（控制台 = 服主）；以命令方块身份会被拒
                         .then(CommandManager.literal("give")
-                            .requires { it.hasPermissionLevel(2) }
+                            .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
                             .then(CommandManager.argument("name", StringArgumentType.word())
                                 .suggests(::suggestPointTargets)
                                 .then(CommandManager.argument("amount", IntegerArgumentType.integer(1))
@@ -187,7 +193,7 @@ object MarketCommands {
                             )
                         )
                         .then(CommandManager.literal("take")
-                            .requires { it.hasPermissionLevel(2) }
+                            .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
                             .then(CommandManager.argument("name", StringArgumentType.word())
                                 .suggests(::suggestPointTargets)
                                 .then(CommandManager.argument("amount", IntegerArgumentType.integer(1))
@@ -204,8 +210,10 @@ object MarketCommands {
                             )
                         )
                         .then(CommandManager.literal("code")
-                            // 生成/作废兑换码 = 印钞，仅 OP（与 give/take 同级）
-                            .requires { it.hasPermissionLevel(2) }
+                            // 生成/作废兑换码 = 印钞，判 **points.code 节点**（2026-09-25 从 OP 改判）——
+                            // 与 give/take 不同：兑换码是**有凭证**的发放（码本身就是凭据、可审计、可限定
+                            // 次数与有效期），适合下放给负责发码的客服；give/take 才是无凭证直发
+                            .requires { MarketPermissions.has(it, MarketPermissions.POINTS_CODE) }
                             .then(CommandManager.literal("create")
                                 .then(CommandManager.argument("amount", IntegerArgumentType.integer(1))
                                     .then(CommandManager.argument("count", IntegerArgumentType.integer(1, 100))
@@ -237,9 +245,9 @@ object MarketCommands {
                         .then(CommandManager.literal("check")
                             // 查自己：**人人可用**（只读自己的数据，没有理由要权限）
                             .executes { ctx -> pointsCheck(ctx, null) }
-                            // 查别人：POINTS 节点（可下放给客服做核对）；控制台执行时自带此权限
+                            // 查别人：points.check 节点（可下放给客服做核对）；控制台执行时自带此权限
                             .then(CommandManager.argument("name", StringArgumentType.word())
-                                .requires { MarketPermissions.has(it, MarketPermissions.POINTS) }
+                                .requires { MarketPermissions.has(it, MarketPermissions.POINTS_CHECK) }
                                 .suggests(::suggestOnlinePlayerNames)
                                 .executes { ctx -> pointsCheck(ctx, StringArgumentType.getString(ctx, "name")) }
                             )
@@ -261,30 +269,30 @@ object MarketCommands {
                                     .executes(::shopCancel)
                                 )
                             )
-                            // 确认发放 = 印钞（确认即加余额）：与 give/take 同级，仅 OP、不下放节点
-                            // ⚠ 下面四个 = **管理侧**（核对收款、发放、作废、清理），只认**服主**：
-                            //   钱打进的是服主自己的收款码，只有他能对着账单核对 —— 让看不到账单的人
-                            //   点「确认到账」本身就不成立（docs/permission_nodes_plan.md 的服主制）。
-                            //   requires 里带上 OP 只为让游戏内 OP 敲得进来、看到「仅服主可管理」的红字；
-                            //   真正的鉴权在各执行函数首行（denyNonOwner）
+                            // ⚠ 下面四个 = 充值订单的**管理侧**（核对收款、发放、作废、清理），
+                            //   判 **points.order 节点**（2026-09-25 从「仅服主」改判为可授予，用户拍板）。
+                            //   ⚠ **确认 = 加余额**（发钞权）：授予前先确认对方真的**看得到收款账单**，
+                            //   否则「确认到账」这个动作本身不成立（docs/permission_nodes_plan.md ⑩）。
+                            //   ⚠ 界面的充值订单管理端判**同一个节点**，两处必须一起改。
+                            //   `has()` 不认 OP 且**控制台自带此权限**，所以不需要再套 denyNonOwner
                             .then(CommandManager.literal("list")
-                                .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
+                                .requires { MarketPermissions.has(it, MarketPermissions.POINTS_ORDER) }
                                 .executes(::shopPendingList)
                             )
                             .then(CommandManager.literal("confirm")
-                                .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
+                                .requires { MarketPermissions.has(it, MarketPermissions.POINTS_ORDER) }
                                 .then(CommandManager.argument("order", StringArgumentType.word())
                                     .executes(::shopConfirm)
                                 )
                             )
                             .then(CommandManager.literal("reject")
-                                .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
+                                .requires { MarketPermissions.has(it, MarketPermissions.POINTS_ORDER) }
                                 .then(CommandManager.argument("order", StringArgumentType.word())
                                     .executes(::shopReject)
                                 )
                             )
                             .then(CommandManager.literal("purge")
-                                .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
+                                .requires { MarketPermissions.has(it, MarketPermissions.POINTS_ORDER) }
                                 .executes(::shopPurge)
                             )
                         )
@@ -462,12 +470,20 @@ object MarketCommands {
     // ── RP：命令发放 / 回收 / 查询 ──
 
     /**
-     * 发放 / 回收RP。金额下界由命令参数 `integer(1)` 把关（**负数会让"扣款"变成"发钱"**），
+     * 发放 / 回收RP（**仅服主**：无凭证的即时直发/回收，属服主干预手段，同「撤销坏账」）。
+     * ⚠ 命令树的 `requires` 带 OP 只为让游戏内 OP 敲得进来看到红字，**真鉴权是下面首行**。
+     *
+     * 金额下界由命令参数 `integer(1)` 把关（**负数会让"扣款"变成"发钱"**），
      * 这里再兜一层防以后改参数类型时漏掉。玩家可离线：走 [BanState.resolvePlayer]（在线优先 → userCache 兜底）。
      *
      * 每一次变动都写审计 CSV（RP 的来源由服主决定，可能是真钱买的，必须可对账）。
+     *
+     * ⚠ **FTB 任务奖励**走的就是这条命令（见下方 `@s` 分支）：以**控制台身份**执行时
+     *   操作者即控制台（= 服主），照常可用；以**命令方块**身份执行会被 `denyNonOwner` 拒 ——
+     *   这是既有安全设计（命令方块不能提权），别为它开口子。
      */
     private fun pointsAdjust(context: CommandContext<ServerCommandSource>, give: Boolean): Int {
+        if (denyNonOwner(context)) return 0
         val source = context.source
         val server = source.server
         val name = StringArgumentType.getString(context, "name")
@@ -659,9 +675,8 @@ object MarketCommands {
         }
     }
 
-    /** 待确认订单列表（仅服主）：玩家名 / 实付金额 / 订单号 / 已等待时长，照着收款账单逐笔核 */
+    /** 待确认订单列表（判 `points.order`）：玩家名 / 实付金额 / 订单号 / 已等待时长，照着收款账单逐笔核 */
     private fun shopPendingList(context: CommandContext<ServerCommandSource>): Int {
-        if (denyNonOwner(context)) return 0
         val source = context.source
         val list = PointOrderState.get(source.server).pendingConfirm()
         if (list.isEmpty()) {
@@ -682,24 +697,23 @@ object MarketCommands {
         return 1
     }
 
-    /** 确认发放（仅服主，幂等：重复确认不会二次发放） */
+    /** 确认发放（判 `points.order`，幂等：重复确认不会二次发放） */
     private fun shopConfirm(context: CommandContext<ServerCommandSource>): Int =
         shopOperatorAction(context) { server, operator, orderNo ->
             PointShopService.confirm(server, operator, orderNo)
         }
 
-    /** 作废订单（仅服主）：核对账单后没这笔钱、重复提交、误操作等 */
+    /** 作废订单（判 `points.order`）：核对账单后没这笔钱、重复提交、误操作等 */
     private fun shopReject(context: CommandContext<ServerCommandSource>): Int =
         shopOperatorAction(context) { server, operator, orderNo ->
             PointShopService.reject(server, operator, orderNo)
         }
 
-    /** 服主侧订单操作的公共外壳（鉴权在这里，两个入口都走它） */
+    /** 订单操作的公共外壳（鉴权在命令树的 `requires` 里，两个入口都走它） */
     private fun shopOperatorAction(
         context: CommandContext<ServerCommandSource>,
         action: (net.minecraft.server.MinecraftServer, String, String) -> PointShopResult
     ): Int {
-        if (denyNonOwner(context)) return 0
         val source = context.source
         val orderNo = PointOrderNumbers.normalize(StringArgumentType.getString(context, "order"))
         if (orderNo == null) {
@@ -725,9 +739,8 @@ object MarketCommands {
         }
     }
 
-    /** 清理已完结订单（仅服主；保留期内留作对账，正常由服务端定时任务自动做） */
+    /** 清理已完结订单（判 `points.order`；保留期内留作对账，正常由服务端定时任务自动做） */
     private fun shopPurge(context: CommandContext<ServerCommandSource>): Int {
-        if (denyNonOwner(context)) return 0
         val removed = PointShopService.purgeFinished(context.source.server)
         context.source.sendFeedback({ Text.translatable("cobblemarket.points.shop.purged", removed) }, true)
         return 1

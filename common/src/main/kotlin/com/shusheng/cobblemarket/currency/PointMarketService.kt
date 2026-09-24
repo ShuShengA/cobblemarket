@@ -4,6 +4,7 @@ import com.cobblemon.mod.common.api.moves.Moves
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.market.ItemRuleComponents
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.PersistHelper
 import com.shusheng.cobblemarket.util.SpeciesText
@@ -19,7 +20,7 @@ import net.minecraft.util.Identifier
  * 混在一个枚举里两边都得写用不上的分支。
  */
 enum class PointMarketError {
-    /** 不是 OP —— 商城**不下放任何权限节点**（同 `points give` 的印钞权口径，见方案「权限」） */
+    /** 没有 `points.shop` 节点（服主恒真）—— 2026-09-25 起由节点判定，不再认 OP */
     NO_PERMISSION,
     /** 格子序号越界（负数 / 超出允许的页数） */
     BAD_INDEX,
@@ -49,9 +50,10 @@ enum class PointMarketError {
  * 两者只共用 [PointsState] 的余额与 [PointsAuditLogger] 的审计。
  *
  * 铁律（对照 `docs/points_plan.md` 的「安全设计」）：
- * - **信任边界**：规格只在**创建**时来自客户端（OP 上架），此后一切操作只读服务端对象
+ * - **信任边界**：规格只在**创建**时来自客户端（持节点者上架），此后一切操作只读服务端对象
  * - **创建类请求非法即拒绝**：与读档的「容错跳过」语义**相反**，这里绝不"尽量修正后存进去"
- * - **只有 OP 能改**：判据是 `hasPermissionLevel(2)`，与权限系统无关、不下放节点
+ * - **改写判 `points.shop` 节点**（2026-09-25 从 OP 改判，见 `docs/permission_nodes_plan.md` ⑩）：
+ *   商品规格由持节点者填，等于**发给玩家的东西**的质量把关权 —— 该由服主决定交给谁
  */
 object PointMarketService {
 
@@ -102,7 +104,7 @@ object PointMarketService {
     /** 把任意页号收进合法范围（客户端翻页参数不可信） */
     fun clampPage(page: Int): Int = page.coerceIn(0, MAX_INDEX / PointShopState.POINTS_SHOP_PAGE_SIZE)
 
-    // ── 写（仅 OP）──
+    // ── 写（判 `points.shop` 节点）──
 
     /**
      * 上架 / 编辑一格。**编辑就是覆盖**（同一格写新值），也正因此界面回填必须完整 ——
@@ -111,7 +113,7 @@ object PointMarketService {
      * @return null = 成功；否则是拒绝原因（调用方翻成提示语）
      */
     fun save(server: MinecraftServer, player: ServerPlayerEntity, index: Int, entry: ShopEntry): PointMarketError? {
-        if (!player.hasPermissionLevel(2)) return PointMarketError.NO_PERMISSION
+        if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return PointMarketError.NO_PERMISSION
         if (index < 0 || index > MAX_INDEX) return PointMarketError.BAD_INDEX
         val normalized = normalize(entry, server) ?: return reject(entry)
         PointShopState.get(server).put(index, normalized)
@@ -126,7 +128,7 @@ object PointMarketService {
 
     /** 下架（清空一格）；返回 null = 成功 */
     fun remove(server: MinecraftServer, player: ServerPlayerEntity, index: Int): PointMarketError? {
-        if (!player.hasPermissionLevel(2)) return PointMarketError.NO_PERMISSION
+        if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return PointMarketError.NO_PERMISSION
         if (index < 0 || index > MAX_INDEX) return PointMarketError.BAD_INDEX
         if (!PointShopState.get(server).remove(index)) return PointMarketError.NOT_FOUND
         PersistHelper.requestSave(server)

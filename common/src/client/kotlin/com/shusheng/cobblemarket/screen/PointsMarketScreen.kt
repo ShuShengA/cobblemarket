@@ -6,6 +6,7 @@ import com.cobblemon.mod.common.client.settings.ServerSettings
 import com.cobblemon.mod.common.pokemon.PokemonSizeCategory
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.cobblemon.mod.common.pokemon.Species
+import com.shusheng.cobblemarket.client.ClientPermissionCache
 import com.shusheng.cobblemarket.client.PointMarketCache
 import com.shusheng.cobblemarket.client.PointsShopCache
 import com.shusheng.cobblemarket.client.formatPriceShortLong
@@ -22,6 +23,7 @@ import com.shusheng.cobblemarket.currency.ShopItemSpec
 import com.shusheng.cobblemarket.currency.ShopPokemonSpec
 import com.shusheng.cobblemarket.market.ItemRuleComponents
 import com.shusheng.cobblemarket.network.MarketResultPayload
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.network.RedeemPointCodePayload
 import com.shusheng.cobblemarket.network.RemovePointMarketEntryPayload
 import com.shusheng.cobblemarket.network.RequestPointMarketPayload
@@ -78,7 +80,7 @@ class PointsMarketScreen : Screen(
     /** 鼠标所在格子索引；-1 = 不在任何格子上。悬停的格子会**放大绘制**（浮在邻居之上） */
     private var hoveredCell = -1
 
-    // ── OP 添加 / 编辑窗口（2026-09-20 用户口述；**只有 OP 能开**，见 [isOperator]）──
+    // ── 商城格子 添加 / 编辑窗口（2026-09-20 用户口述；**判 points.shop 节点**，见 [canEditShop]）──
 
     /** 正在编辑的格子**全局序号**（跨页递增，不是页内下标）；-1 = 窗口没开 */
     private var editSlot = -1
@@ -488,10 +490,10 @@ class PointsMarketScreen : Screen(
         if (wasInInput && codeField?.isMouseOver(mouseX, mouseY) != true) {
             focused = null
         }
-        // 点格子：**只有 OP 有反应**（普通玩家点有内容的格子该开购买窗，那一块还没做）
+        // 点格子：**只有持 `points.shop` 节点的人有反应**（普通玩家点有内容的格子该开购买窗，那一块还没做）
         if (!result && button == 0) {
             val cell = cellAt(mouseX, mouseY, gridLayout(bgRect()))
-            if (cell >= 0 && isOperator()) {
+            if (cell >= 0 && canEditShop()) {
                 openEditDialog(globalSlot(cell))
                 return true
             }
@@ -689,8 +691,16 @@ class PointsMarketScreen : Screen(
 
     // ── OP 添加 / 编辑窗口 ──
 
-    /** 商城上下架**只认 OP**（不下放任何权限节点，同 `points give` 的印钞权口径） */
-    private fun isOperator(): Boolean = client?.player?.hasPermissionLevel(2) == true
+    /**
+     * 商城上下架判 **`points.shop` 节点**（2026-09-25 从 OP 改判，服主恒真）。
+     *
+     * ⚠ 读**服务端下发的快照**（[ClientPermissionCache]）而**不是** `MarketPermissions.has` ——
+     * 后者是服务端判定，客户端玩家没有 server 实例、永远返回 false。
+     * ⚠ 这是**显隐判定**，服务端在 `PointMarketService.save/remove` 里另有同判据的真鉴权 ——
+     * 改这里要一起改，别只改一边。
+     */
+    private fun canEditShop(): Boolean =
+        ClientPermissionCache.isServerOwner() || ClientPermissionCache.has(MarketPermissions.POINTS_SHOP)
 
     /** 鼠标落在哪个格子上（**页内下标**）；-1 = 不在任何格子上 */
     private fun cellAt(mouseX: Double, mouseY: Double, layout: GridLayout): Int {
@@ -978,11 +988,11 @@ class PointsMarketScreen : Screen(
     private fun isPokemonSlot(): Boolean = currentTab == 0
 
     /**
-     * 点格子：OP 点空格 = 添加、点有内容的格 = 编辑。
+     * 点格子：持 `points.shop` 节点者点空格 = 添加、点有内容的格 = 编辑。
      * 普通玩家点有内容的格 = 购买窗口（**尚未实现**）；点空格无反应。
      */
     private fun openEditDialog(slot: Int) {
-        if (!isOperator()) return
+        if (!canEditShop()) return
         // 格子是**自绘**的，不走 NineSliceButton 那套内置点击音 —— 不在这里补一下，
         // 点格子的手感就是"没反应"（用户 2026-09-20 报「网格内的交互都没音效」）
         playMarketSound("button_click")

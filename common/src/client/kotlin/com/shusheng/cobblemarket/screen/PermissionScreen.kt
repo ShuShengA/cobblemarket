@@ -129,16 +129,31 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         val EMPTY_UUID: UUID = UUID(0L, 0L)
 
         const val DIALOG_W = 220
-        /** 高度按**最多 5 行节点**留（`MarketPermissions.ALL` 到 9~10 个时）：节点区最底
-         *  = 40 + 4*20 + 16 = 136，按钮顶 144（间隙 8px，与 4 行时一致），底部余 174-164 = 10px。
-         *  ⚠ 2026-09-24：加第 9 个节点时（1.3.0 是 `POINTS`、1.2.1 是拆出的交易历史），
-         *  原 150 高 + 按钮在 124 会把第 5 行**压掉 12px** —— 这里是同步加高的，别再调回去 */
-        const val DIALOG_H = 174
         const val DIALOG_MARGIN = 12                 // 弹窗内容左右留白
         const val NODE_W = 94                        // 两列各 94，中间 8px 间隙 = 220 - 2*12
         const val NODE_ROW_H = 20                    // 按钮 16 高 + 4px 上下间隙
         const val NODE_GRID_Y = 40                   // 首行相对弹窗顶部
-        const val DIALOG_BTN_Y = 144                 // 保存/取消行（20 高，底部余 10px = 弹窗按钮距边框的统一值）
+
+        /**
+         * ⚠ **弹窗高度必须跟着节点数算，别写死**（2026-09-25 改）：写死过一次，加节点时
+         * 忘了同步就会把最后一行**压到保存按钮上**（`ALL` 到 9 个时踩过）。
+         * 两列排布 ⇒ 行数 = 节点数 / 2 向上取整，奇数个时末行只放左边一个。
+         *
+         * | 线 | 节点数 | 行数 | DIALOG_BTN_Y | DIALOG_H |
+         * |---|---|---|---|---|
+         * | 1.2.0 / 1.2.1 | 9 | 5 | 144 | 174 |
+         * | 1.3.0 | 13 | 7 | 184 | 214 |
+         *
+         * ⚠ 214 已接近小窗（GUI 缩放「自动」时逻辑屏可能只有 270 高）的可用上限 ——
+         * 再加节点就得改**分组 / 分页**，不能再靠长高解决。
+         */
+        val NODE_ROWS = (MarketPermissions.ALL.size + 1) / 2
+
+        /** 保存/取消行的顶边：末行按钮底 + 8px（比行间 4px 宽，把节点区与操作区分开） */
+        val DIALOG_BTN_Y = NODE_GRID_Y + (NODE_ROWS - 1) * NODE_ROW_H + 16 + 8
+
+        /** 弹窗高 = 按钮行 20 + 底部余 10px（弹窗按钮距边框的统一值，见 CLAUDE.md） */
+        val DIALOG_H = DIALOG_BTN_Y + 20 + 10
     }
 
     override fun init() {
