@@ -58,6 +58,15 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         private const val PIKA_FRAME_MS = 100L
         private const val PIKA_LOOP_MS = 8000L
 
+        /**
+         * 底部**红色分割线**的半宽（= 背景半宽 128 − 两端各避开的 25px）。
+         *
+         * ⚠ **它与入口界面的 `MarketEntryScreen.DIVIDER_HALF` 是同一根线、同一个值** ——
+         * 两个界面的图标按钮行都以这根线的左右端为边界（2026-09-25 用户要求统一布局）。
+         * **改一个必须改另一个**，否则两界面切换时底部按钮会错位（背景本来就是同一张贴图）。
+         */
+        private const val DIVIDER_HALF = 103
+
         /** 充值订单入口的图标 */
         val POINT_ORDERS_ICON = Identifier.of("cobblemarket", "textures/gui/point_orders_icon.png")
 
@@ -218,24 +227,39 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             Text.translatable("cobblemarket.op.buy_order"),
             MarketPermissions.BUY_ORDER
         ) { client?.setScreen(BuyOrderScreen(adminMode = true)) }
-        // 返回：右上角，**右边缘与入口界面「设置」按钮的右边缘对齐**（入口：centerX + 96 - 22 - 6 + 22）
+        // 返回：右上角，**右边缘与入口界面「设置」按钮的右边缘对齐**
+        //（两者 2026-09-25 起都贴红线右端 = `centerX + DIVIDER_HALF`，入口那边也是这么算的）。
         // 且**只向右固定、往左扩宽**（宽度改大时右边缘不动）。纵向**底边与标题底边平齐**
         // （-40+16 = 标题的 -33+9，再往下会压住「准备金池」那行金额）。
         // 宽度 44：同 TextureButton 的胶囊形圆角问题（24 宽时两端圆角只有 1.8×8 的尖角），
-        // 再宽会贴到居中的标题（标题右缘约 centerX + 22，留 4px 间隙时上限约 64）
+        // 再宽会贴到居中的标题（标题右缘约 centerX + 22，留 4px 间隙时**宽度上限 = 103 − 26 = 77**）
         addMenuButton(
-            centerX + 90 - 44, btnStartY - 40, 44, 16,
+            centerX + DIVIDER_HALF - 44, btnStartY - 40, 44, 16,
             Text.literal(""),
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
             iconTexSize = 48, iconDisplaySize = 12,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
-        // 底部图标按钮（2026-09-12 从入口界面移来）：市场总开关居中，服务器配置贴近右边缘
-        // ——右边缘与左下角权限按钮左边缘左右对称（centerX ± 90，2026-09-12 用户要求）。
+        // 底部图标按钮（2026-09-12 从入口界面移来）：市场总开关居中，最左 / 最右两颗贴**底部分割线**两端。
+        // ⚠ 2026-09-25 用户重新定边界：以红线（centerX ± 103，绘制见 render 末尾）为准 ——
+        //   权限管理**左移**贴左端、服务器配置**右移**贴右端，其余按钮在左侧**成组**（组内 6px）。
+        //   ⚠ 原先的两条约定就此作废：① 权限管理「与入口界面求购单按钮对齐」（centerX - 96 + 6）、
+        //   ② 服务器配置与它「± 90 左右对称」。
         // 纵向在背景底部（红色分割线下方）。不占菜单按钮行，按钮区/背景/分割线布局不动
         val iconSize = 22
         val iconY = bgBottom() - iconSize - 5
+        val iconRowHalf = DIVIDER_HALF               // 红线半宽（companion 里那个，与入口界面共用一根线）
+        // 左侧三颗（权限管理 / 充值订单 / 兑换码）与**居中的**市场开关之间**空隙完全相等**（各 8px）。
+        // ⚠ 由市场开关左缘**倒推**，不从红线左端正推 —— 正推时区间 92px 减 3 个按钮余 26px，
+        //   除不尽（8.67/段），必然出现一处偏大。倒推的代价是**权限管理比红线左端收进 2px**
+        //   （92 − 3×30 = 2）—— 用户 2026-09-25 拍板：宁可端点差 2px，也不要空隙不均。
+        // ⚠ **右侧「市场开关 → 服务器配置」必然是大空隙（70px）**：左边 3 颗、右边 1 颗，
+        //   「全行等距 + 市场开关居中 + 两端贴齐红线」三者数学上不可兼得
+        //   （全行等距会是每段 24px，那时市场开关落在 +35、不再居中）。用户要的是后两者。
+        val iconGap = 8                              // 左侧三处空隙，完全相等
+        val iconStep = iconSize + iconGap
+        val iconLeftX = (centerX - iconSize / 2) - iconStep * 3
         marketSwitchBtn = NineSliceButton(
             centerX - iconSize / 2, iconY, iconSize, iconSize,
             Text.literal(""),
@@ -256,7 +280,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         menuButtons += addDrawableChild(marketSwitchBtn!!)
 
         val serverConfigBtn = NineSliceButton(
-            centerX + 90 - iconSize, iconY, iconSize, iconSize,
+            centerX + iconRowHalf - iconSize, iconY, iconSize, iconSize,
             Text.literal(""),
             { openIfOwner { client?.setScreen(ServerConfigScreen()) } },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/server_config_icon.png"),
@@ -273,10 +297,10 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         ))
         menuButtons += addDrawableChild(serverConfigBtn)
 
-        // 权限管理入口（左下角）：左边缘与入口界面「求购单」按钮对齐（入口：centerX - 96 + 6）。
+        // 权限管理入口（这一行最左）：左缘贴**底部分割线**左端。
         // 只限服主：权限授予直接决定「谁管哪块」，下放给任何节点都能自我提权
         val permissionBtn = NineSliceButton(
-            centerX - 96 + 6, iconY, iconSize, iconSize,
+            iconLeftX, iconY, iconSize, iconSize,
             Text.literal(""),
             { openIfOwner { client?.setScreen(PermissionScreen()) } },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/permission.png"),
@@ -298,22 +322,60 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         //   两处必须一起改，否则会出现「服务端放行、界面却看不到入口」的半成品
         // ⚠ 授予前先确认对方看得到收款账单：**确认到账 = 加余额**（发钞权）
         val orderBtn = NineSliceButton(
-            centerX - 96 + 6 + iconSize + 6, iconY, iconSize, iconSize,
+            iconLeftX + iconStep, iconY, iconSize, iconSize,
             Text.literal(""),
             { openIfPermitted(MarketPermissions.POINTS_ORDER) { client?.setScreen(AdminPointOrdersScreen()) } },
             iconLeft = POINT_ORDERS_ICON,
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
-            texture = ROW_BACKGROUND_TEXTURE,
-            texH = ROW_BACKGROUND_TEX_H
+            // 入口型按钮专用底色 —— ⚠ **别再改回 `ROW_BACKGROUND_TEXTURE`**：那是**列表行**的底色，
+            // 同排其余四颗用的都是 `BUTTON_TEXTURE_S`，混用会让这颗看起来像一行数据（用户 2026-09-25 指出）
+            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
         )
-        orderBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.point_orders")))
+        // 悬停补一行「需要哪个节点」—— 与市场开关同一套写法：OP 进得来面板、但没节点时它是灰的，
+        // 得让他知道该找谁要（2026-09-25 改判节点后补，原先只认服主时不需要）
+        orderBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(
+            Text.translatable("cobblemarket.op.point_orders")
+                .append(Text.literal("\n"))
+                .append(
+                    Text.translatable(
+                        "cobblemarket.perm.need_node",
+                        Text.translatable("cobblemarket.perm.node.points.order")
+                    )
+                )
+        ))
         menuButtons += addDrawableChild(orderBtn)
         orderEntryBtn = orderBtn
         permRefreshers += { orderBtn.dimmed = !ClientPermissionCache.has(MarketPermissions.POINTS_ORDER) }
         // 进来就问一次有没有待确认的（只要数量，不要列表）；结果由 onPointOrders 落进红点
         sendToServer(RequestPointOrdersPayload(false, ""))
 
-        // 底部三个图标按钮的置灰依据：总开关走 MARKET 节点，服务器配置与权限管理**只限服主**
+        // 兑换码入口：**充值订单右边** —— 2026-09-25 用户拍板从「服务器配置 → RP 市场」里挪出来，
+        // 因为那个界面只有服主进得去，持 `points.code` 节点的人在界面上根本没有落点（只有命令能用）。
+        // ⚠ 判 **`points.code` 节点**：**生成兑换码 = 印钞**，且这个界面会列出码前缀、能复制完整码 ——
+        //   授予前先想清楚给谁（详见 docs/permission_nodes_plan.md ⑩ 的遗留段）
+        val codeBtn = NineSliceButton(
+            iconLeftX + iconStep * 2, iconY, iconSize, iconSize,
+            Text.literal(""),
+            { openIfPermitted(MarketPermissions.POINTS_CODE) { client?.setScreen(PointsCodeScreen()) } },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/redeem_code_icon.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
+        )
+        codeBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(
+            Text.translatable("cobblemarket.op.redeem_codes")
+                .append(Text.literal("\n"))
+                .append(
+                    Text.translatable(
+                        "cobblemarket.perm.need_node",
+                        Text.translatable("cobblemarket.perm.node.points.code")
+                    )
+                )
+        ))
+        menuButtons += addDrawableChild(codeBtn)
+        permRefreshers += { codeBtn.dimmed = !ClientPermissionCache.has(MarketPermissions.POINTS_CODE) }
+
+        // 底部图标按钮的置灰依据：市场开关 / 充值订单 / 兑换码各走自己的节点（**都不认 OP**），
+        // 服务器配置与权限管理**只限服主**
         permRefreshers += { marketSwitchBtn?.dimmed = !ClientPermissionCache.has(MarketPermissions.MARKET_SWITCH) }
         permRefreshers += { serverConfigBtn.dimmed = !ClientPermissionCache.isServerOwner() }
         permRefreshers += { permissionBtn.dimmed = !ClientPermissionCache.isServerOwner() }
@@ -522,9 +584,9 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         // 底部按钮上方的分割线：与入口界面完全同款（颜色、跨度、相对底边的间距都一致），
         // 两界面本来就是同一张贴图，视觉上要能对齐。颜色统一走 GuiColors.DIVIDER（4 条线共用）
         context.fill(
-            width / 2 - 128 + 25,
+            width / 2 - DIVIDER_HALF,
             bgBottom() - 30,
-            width / 2 + 128 - 25,
+            width / 2 + DIVIDER_HALF,
             bgBottom() - 29,
             com.shusheng.cobblemarket.client.GuiColors.DIVIDER
         )
