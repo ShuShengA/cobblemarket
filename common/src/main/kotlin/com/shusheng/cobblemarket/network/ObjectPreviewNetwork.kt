@@ -7,6 +7,7 @@ import com.shusheng.cobblemarket.market.AuctionType
 import com.shusheng.cobblemarket.market.BuyOrder
 import com.shusheng.cobblemarket.market.BuyOrderState
 import com.shusheng.cobblemarket.market.BuyOrderType
+import com.shusheng.cobblemarket.market.PendingDelivery
 import com.shusheng.cobblemarket.market.PokemonBlacklistEntry
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
@@ -132,7 +133,13 @@ object ObjectPreviewNetwork {
                 // 查不到（已结算/已关闭/条目损坏）就静默不发：聊天里那条播报已经过期，客户端没有可展示的东西
                 val preview = when (payload.kind) {
                     KIND_AUCTION -> AuctionState.get(server).getAuction(uuid)?.let { auctionPreview(server, it) }
-                    KIND_BUY_ORDER -> BuyOrderState.get(server).getOrder(uuid)?.let { buyOrderPreview(it) }
+                    // 求购单：**有待交付时画卖家交来的那只实物**（带了什么携带物、什么形态、是不是闪光，
+                    // 只能以实体为准）；没有才退回买家的需求 —— 悬停大图的语义是「看货」，
+                    // 用需求画等于要买家凭想象判断（2026-09-25 用户指出）
+                    KIND_BUY_ORDER -> BuyOrderState.get(server).getOrder(uuid)?.let { order ->
+                        order.pendingDeliveries.lastOrNull()?.let { deliveryPreview(it) }
+                            ?: buyOrderPreview(order)
+                    }
                     KIND_SHARE -> ShareNetwork.getPreview(uuid)
                     else -> null
                 } ?: return@execute
@@ -198,6 +205,48 @@ object ObjectPreviewNetwork {
         }
 
     /** 求购单：**是"需求"不是实精灵/实物**，只能按需求字段画一只「长这样的」——物种/形态/闪光而已 */
+    /**
+     * **待交付的实物**预览（「查看待交付」悬停时的大图）。
+     *
+     * ⚠ 与 [buyOrderPreview] 的区别：这支画的是**卖家交来的那一只**，不是买家的需求 ——
+     * 携带物、形态、闪光都以实体为准（2026-09-25 用户指出：用需求画会误导买家）。
+     *
+     * 锁定策略下待交付**最多一条**（`BuyOrderPendingEntry.pending` 的注释），调用方取那一条即可；
+     * 买家拒绝后列表清空 ⇒ 悬停历史通知时将退回需求预览（或买家那条单已经没了）。
+     */
+    private fun deliveryPreview(delivery: PendingDelivery): ObjectPreviewPayload? {
+        if (delivery.itemNbt != null) {
+            // 物品交付：整栈 NBT（与拍卖同一条重建路径）
+            return ObjectPreviewPayload(
+                id = delivery.id.toString(),
+                isPokemon = false,
+                speciesId = "",
+                aspects = emptyList(),
+                shiny = false,
+                heldItemNbt = null,
+                itemId = "",
+                itemNbt = delivery.itemNbt,
+                itemComponentsSpec = null,
+                count = delivery.count
+            )
+        }
+        // 精灵交付：物种与形态走交付快照（一定有），闪光从记录里取（快照不含）
+        val extra = delivery.extraData
+        val speciesId = extra["speciesId"] ?: return null
+        return ObjectPreviewPayload(
+            id = delivery.id.toString(),
+            isPokemon = true,
+            speciesId = speciesId,
+            aspects = extra["aspects"].orEmpty().split(",").filter { it.isNotBlank() },
+            shiny = delivery.shiny,
+            heldItemNbt = null,
+            itemId = "",
+            itemNbt = null,
+            itemComponentsSpec = null,
+            count = 1
+        )
+    }
+
     private fun buyOrderPreview(order: BuyOrder): ObjectPreviewPayload? =
         if (order.type == BuyOrderType.POKEMON) {
             // 「任意精灵」没有具体物种可画，静默不发（客户端拿不到数据就不显示大图）
