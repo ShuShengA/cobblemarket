@@ -292,13 +292,15 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         menuButtons += addDrawableChild(permissionBtn)
 
         // 充值订单入口：**权限管理右边**（用户 2026-09-18：这一行当时就是给以后新功能留的位置）。
-        // 待确认订单得服主处理玩家才拿得到 RP，所以除了入口还要**红点**提醒有活要干。
-        // ⚠ 入口只认**服主**：钱打进的是服主自己的收款码，只有他能对着账单核对 —— 与服务端
-        //   （PointsNetwork 的三个管理包 + `/market points shop` 的管理子命令）保持同一口径
+        // 待确认订单得有人处理玩家才拿得到 RP，所以除了入口还要**红点**提醒有活要干。
+        // ⚠ 入口判 **`points.order` 节点**（2026-09-25 从「仅服主」改判为用户拍板的可授予）：
+        //   与服务端（PointsNetwork 的三个管理包 + `/market points shop` 的管理子命令）**同一判据** ——
+        //   两处必须一起改，否则会出现「服务端放行、界面却看不到入口」的半成品
+        // ⚠ 授予前先确认对方看得到收款账单：**确认到账 = 加余额**（发钞权）
         val orderBtn = NineSliceButton(
             centerX - 96 + 6 + iconSize + 6, iconY, iconSize, iconSize,
             Text.literal(""),
-            { openIfOwner { client?.setScreen(AdminPointOrdersScreen()) } },
+            { openIfPermitted(MarketPermissions.POINTS_ORDER) { client?.setScreen(AdminPointOrdersScreen()) } },
             iconLeft = POINT_ORDERS_ICON,
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             texture = ROW_BACKGROUND_TEXTURE,
@@ -307,7 +309,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         orderBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.op.point_orders")))
         menuButtons += addDrawableChild(orderBtn)
         orderEntryBtn = orderBtn
-        permRefreshers += { orderBtn.dimmed = !ClientPermissionCache.isServerOwner() }
+        permRefreshers += { orderBtn.dimmed = !ClientPermissionCache.has(MarketPermissions.POINTS_ORDER) }
         // 进来就问一次有没有待确认的（只要数量，不要列表）；结果由 onPointOrders 落进红点
         sendToServer(RequestPointOrdersPayload(false, ""))
 

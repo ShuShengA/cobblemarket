@@ -72,11 +72,41 @@ object MarketPermissions {
     const val HISTORY = PREFIX + "history"
 
     /**
-     * RP 管理：**这是印发钞权的节点**（发放/回收/兑换码生成），与 [CONFIG] 同级敏感 ——
-     * 随意下放等于把服务器经济交出去。命令侧的收紧见 `docs/points_plan.md`：
-     * `give/take` 与 `code create/revoke/purge` 仅 OP，本节点只放给「查询类」用（check / 订单查看）。
+     * 查余额：查看**任何人**的 RP 余额（查自己不需要节点 —— 自己的数据自己看）。
+     * 纯只读，可放心给客服做核对。
      */
-    const val POINTS = PREFIX + "points"
+    const val POINTS_CHECK = PREFIX + "points.check"
+
+    /**
+     * 兑换码：生成 / 列表 / 作废 / 清理。
+     *
+     * ⚠ **这是印发钞权的节点之一** —— 生成兑换码等于凭空造钱，与 [POINTS_ORDER] 同级敏感，
+     * 随意下放等于把服务器经济交出去。命令侧 `/market points code` 同判此节点（不再认 OP）。
+     */
+    const val POINTS_CODE = PREFIX + "points.code"
+
+    /**
+     * 充值订单：列表 / 确认发放 / 作废。
+     *
+     * ⚠ **确认订单 = 加余额**（玩家扫码付款后由管理员核对账单放行），所以同属发钞权 ——
+     * 授予前先确认对方**看得到收款账单**，否则「确认到账」这个动作本身不成立。
+     *
+     * ⚠ **2026-09-25 从「仅服主」改判为可授予节点**（用户拍板）：服主可把核对工作交出去。
+     *   命令行的 `points shop list/confirm/reject/purge` 与界面 **同判此节点** ——
+     *   两处指向同一批订单，判据必须一致，否则「界面能确认、命令敲不进去」。
+     */
+    const val POINTS_ORDER = PREFIX + "points.order"
+
+    /**
+     * RP 商城：上架 / 编辑 / 下架**用 RP 购买的商品**（服务端内核 `PointMarketService`）。
+     *
+     * ⚠ 与 [POINTS_ORDER] 那条「买 RP」的充值线是**两码事**（两条线只共用余额与审计）：
+     * 本节点管的是「玩家花 RP 能换到什么」—— 商品规格（精灵 NBT、价格、库存）全由持有人填，
+     * 等于**发给玩家的东西**的质量把关权。
+     *
+     * ⚠ 2026-09-25 从 OP 改判为节点（原先判 `hasPermissionLevel(2)`）。
+     */
+    const val POINTS_SHOP = PREFIX + "points.shop"
 
     /**
      * 全部管理节点（快照、入口判定、`/market perm list` 与权限编辑界面的按钮都用它）。
@@ -88,13 +118,20 @@ object MarketPermissions {
      *   8 个按钮（MARKET 占 2 个）、这里 10 个节点，本来就对不齐，对齐的价值不如语义相邻。
      *   [MARKET_SWITCH] 在面板里对应**底部那颗图标按钮**、[HISTORY] 对应**「全部交易历史」按钮**，
      *   但它们在弹窗里的落点由本列表顺序决定，别再假设「位置 = 面板按钮位置」。
-     * [POINTS] 是本线（1.3.0）的 RP 节点，排在最末（与上面那批语义无关）。
+     * 末尾四个是本线（1.3.0）的 RP 节点，同样两两成行：
+     *   查余额｜兑换码 / 充值订单｜RP 商城（**先只读后写**，与上面那批同一习惯）。
      * 改这里的顺序会同时改掉界面按钮与 list 输出的顺序。
+     *
+     * ⚠ **加 / 删节点时权限弹窗的高度会跟着变**：`PermissionScreen` 的高度由本列表长度推导
+     *   （两列、每行 2 个），别再手写死高度。13 个 = 7 行 = 214 高。
      *
      * ⚠ 原 `CONFIG`（服务器配置）节点已于 2026-09-23 删除：服务器配置改为**服主专属**，
      * 不再作为可授予的节点 —— 想放权就把对方 UUID 加进 `serverOwners`。
      */
-    val ALL = listOf(MARKET, HISTORY, BAN, BLACKLIST, PRICE_LIMIT, AUCTION, BUY_ORDER, FINANCE, MARKET_SWITCH, POINTS)
+    val ALL = listOf(
+        MARKET, HISTORY, BAN, BLACKLIST, PRICE_LIMIT, AUCTION, BUY_ORDER, FINANCE, MARKET_SWITCH,
+        POINTS_CHECK, POINTS_CODE, POINTS_ORDER, POINTS_SHOP
+    )
 
     /**
      * 是不是服主（**唯一恒真的超级权限**）：UUID 在配置的 `serverOwners` 名单里。

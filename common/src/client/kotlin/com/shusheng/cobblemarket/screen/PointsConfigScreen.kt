@@ -17,13 +17,14 @@ import net.minecraft.util.Formatting
 import kotlin.math.roundToInt
 
 /**
- * **RP 市场配置**（服务器配置界面 → 「RP 市场」入口；仅 OP）。
+ * **RP 市场配置**（服务器配置界面 → 「RP 市场」入口；**仅服主**）。
  *
  * 宗旨（用户 2026-09-18）：**除了服务器货币必须改配置文件，其余都要能在界面里改** ——
  * 开关、档位、收款码、超时全都在这儿，保存即生效、不用重启、不用碰 json。
  *
- * ⚠ 权限只认 **OP**（`hasPermissionLevel(2)`），不下放任何权限节点 ——
- * 与"RP 市场上架全交给 OP"同一口径（服务端也会再校验一次）。
+ * ⚠ 权限**只认服主**，不下放任何权限节点 —— 与界面入口（服务器配置只服主进得去）同口径。
+ * 服务端另有一道 `isServerOwner` 校验（`PointsNetwork` 的两个配置包）：
+ * 配置里装着**外部签名码密钥**，只靠界面把关挡不住直接发包的 OP（2026-09-25 修正）。
  */
 class PointsConfigScreen : Screen(
     Text.translatable("cobblemarket.points.config.title", CurrencyService.pointsTitleIcon())

@@ -296,7 +296,7 @@ data class CancelPointOrderPayload(val orderNo: String) : CustomPayload {
     }
 }
 
-// ── 管理端：订单列表 / 确认发放 / 作废（**服务端只认 OP**，与命令侧同一套内核）──
+// ── 管理端：订单列表 / 确认发放 / 作废（**服务端判 POINTS_ORDER 节点**，与命令侧同一套内核）──
 
 /**
  * 请求订单列表（C2S，管理端）。
@@ -418,7 +418,7 @@ private fun readOrder(b: PacketByteBuf) = PointOrderInfo(
     voidReason = b.readString(MAX_STATUS_LENGTH)
 )
 
-// ── RP 市场配置（仅 OP；服务器配置界面里的「RP 市场」入口）──
+// ── RP 市场配置（**仅服主**；服务器配置界面里的「RP 市场」入口）──
 
 /** 一个档位的可编辑形态（配置界面用；金额是**分**，与账本同口径） */
 data class PointsTierConfig(
@@ -431,7 +431,7 @@ data class PointsTierConfig(
     val icon: String = ""
 )
 
-/** 进配置界面时请求一次当前值（仅 OP 会被响应） */
+/** 进配置界面时请求一次当前值（**仅服主**会被响应） */
 data class RequestPointsConfigPayload(val dummy: Boolean) : CustomPayload {
     override fun getId() = ID
 
@@ -540,7 +540,13 @@ data class PointsConfigPayload(
     }
 }
 
-/** 保存 RP 市场配置（C2S）。⚠ 服务端只认 OP（`hasPermissionLevel(2)`），不下放权限节点 */
+/**
+ * 保存 RP 市场配置（C2S）。
+ *
+ * ⚠ 服务端**只认服主**（`isServerOwner`）：配置里装着**外部签名码密钥**，拿到它就能凭空签发兑换码 ——
+ * 界面上这个入口确实只在「服务器配置」里、只有服主进得去，**但那只挡得住 UI**：
+ * 原先判 OP 时，任何 OP 直接发包就能改（2026-09-25 修正）。
+ */
 data class SavePointsConfigPayload(
     val pointsEnabled: Boolean,
     val shopEnabled: Boolean,
@@ -907,13 +913,15 @@ object PointsNetwork {
         // 该 payload 类型已注册，`ClientBridgeKtImpl.registerS2C` 会抛 IllegalArgumentException）
         registerS2CType(PointRecordsPayload.ID, PointRecordsPayload.CODEC)
 
-        // ── RP 市场配置（服务器配置界面的「RP 市场」入口；⚠ 仅 OP，不下放任何节点）──
+        // ── RP 市场配置（服务器配置界面的「RP 市场」入口；⚠ **只认服主**，不下放任何节点）──
+        //   原先判 OP：那是「界面上只有服主进得去」被误当成了服务端的把关 ——
+        //   任何 OP 绕过界面直接发包就能改，而配置里有外部签名码密钥（能凭空签发兑换码）
 
         registerS2CType(PointsConfigPayload.ID, PointsConfigPayload.CODEC)
 
         registerC2S(RequestPointsConfigPayload.ID, RequestPointsConfigPayload.CODEC) { _, player ->
             player.server.execute {
-                if (!player.hasPermissionLevel(2)) return@execute
+                if (!MarketPermissions.isServerOwner(player)) return@execute
                 sendToPlayer(player, buildConfigPayload())
             }
         }
@@ -921,7 +929,7 @@ object PointsNetwork {
         registerC2S(SavePointsConfigPayload.ID, SavePointsConfigPayload.CODEC) { payload, player ->
             val server = player.server
             server.execute {
-                if (!player.hasPermissionLevel(2)) return@execute
+                if (!MarketPermissions.isServerOwner(player)) return@execute
                 if (!CobbleMarketConfig.pointsEnabled && payload.pointsEnabled) {
                     CobbleMarket.LOGGER.info("RP enabled by {}", player.name.string)
                 }
@@ -1111,16 +1119,19 @@ object PointsNetwork {
             }
         }
 
-        // ── 管理端：订单列表 / 确认发放 / 作废（**只认 OP**）──
+        // ── 管理端：订单列表 / 确认发放 / 作废（**判 POINTS_ORDER 节点**）──
         // 业务一律走 PointShopService（命令侧共用同一内核）：发放路径分叉会长出两套幂等与审计
         registerS2CType(PointOrdersPayload.ID, PointOrdersPayload.CODEC)
 
-        // ⚠ 下面三个 = 充值订单的**管理侧**（查看待确认 / 确认到账 / 作废），只认**服主**：
-        //   钱打进的是服主自己的收款码，只有他能对着账单核对（docs/permission_nodes_plan.md 的服主制）。
+        // ⚠ 下面三个 = 充值订单的**管理侧**（查看待确认 / 确认到账 / 作废），判 **POINTS_ORDER 节点**：
+        //   2026-09-25 从「仅服主」改判为可授予（用户拍板）—— 服主可把核对工作交给别人。
+        //   ⚠ **确认 = 加余额**（发钞权），授予前先确认对方真的**看得到收款账单**，
+        //   否则「确认到账」这个动作本身不成立（docs/permission_nodes_plan.md ⑩）。
+        //   ⚠ 命令行的 `points shop list/confirm/reject/purge` 判**同一个节点**，改这里要一起改。
         //   玩家侧的下单 / 我已支付 / 取消**不在此列**（那三个谁都能用，无需鉴权）
         registerC2S(RequestPointOrdersPayload.ID, RequestPointOrdersPayload.CODEC) { payload, player ->
             player.server.execute {
-                if (!MarketPermissions.isServerOwner(player)) return@execute
+                if (!MarketPermissions.has(player, MarketPermissions.POINTS_ORDER)) return@execute
                 sendOrderList(player, payload.includeFinished, payload.query)
             }
         }
@@ -1128,7 +1139,7 @@ object PointsNetwork {
         registerC2S(ConfirmPointOrderPayload.ID, ConfirmPointOrderPayload.CODEC) { payload, player ->
             val server = player.server
             server.execute {
-                if (!MarketPermissions.isServerOwner(player)) return@execute
+                if (!MarketPermissions.has(player, MarketPermissions.POINTS_ORDER)) return@execute
                 val orderNo = PointOrderNumbers.normalize(payload.orderNo)
                 if (orderNo == null) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.points.shop.not_found")))
@@ -1154,7 +1165,7 @@ object PointsNetwork {
         registerC2S(RejectPointOrderPayload.ID, RejectPointOrderPayload.CODEC) { payload, player ->
             val server = player.server
             server.execute {
-                if (!MarketPermissions.isServerOwner(player)) return@execute
+                if (!MarketPermissions.has(player, MarketPermissions.POINTS_ORDER)) return@execute
                 val orderNo = PointOrderNumbers.normalize(payload.orderNo)
                 if (orderNo == null) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.points.shop.not_found")))
@@ -1181,7 +1192,7 @@ object PointsNetwork {
         // 权限用 POINTS 节点（能印钞的节点，与命令的 OP 要求同级敏感）。
 
         registerC2S(CreatePointCodesPayload.ID, CreatePointCodesPayload.CODEC) { payload, player ->
-            if (!MarketPermissions.has(player, MarketPermissions.POINTS)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_CODE)) return@registerC2S
             if (!RequestThrottle.allow(player.uuid, "create_point_codes", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
@@ -1247,7 +1258,7 @@ object PointsNetwork {
         }
 
         registerC2S(RequestPointCodesPayload.ID, RequestPointCodesPayload.CODEC) { _, player ->
-            if (!MarketPermissions.has(player, MarketPermissions.POINTS)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_CODE)) return@registerC2S
             if (!RequestThrottle.allow(player.uuid, "request_point_codes", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
@@ -1271,7 +1282,7 @@ object PointsNetwork {
         }
 
         registerC2S(PurgePointCodesPayload.ID, PurgePointCodesPayload.CODEC) { _, player ->
-            if (!MarketPermissions.has(player, MarketPermissions.POINTS)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_CODE)) return@registerC2S
             if (!RequestThrottle.allow(player.uuid, "purge_point_codes", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
@@ -1302,7 +1313,7 @@ object PointsNetwork {
         }
 
         registerC2S(RevokePointCodePayload.ID, RevokePointCodePayload.CODEC) { payload, player ->
-            if (!MarketPermissions.has(player, MarketPermissions.POINTS)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_CODE)) return@registerC2S
             if (!RequestThrottle.allow(player.uuid, "revoke_point_code", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
