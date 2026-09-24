@@ -82,15 +82,19 @@ object MarketPermissions {
      * 全部管理节点（快照、入口判定、`/market perm list` 与权限编辑界面的按钮都用它）。
      * **顺序 = 权限编辑弹窗里按钮的排列顺序**（按此顺序交替分列，每行两个）。
      *
-     * ⚠ 前 7 个与**管理面板的功能按钮**一一对应（方便一眼对照面板里按钮的位置）；
-     * [MARKET_SWITCH]（面板底部那颗图标按钮）与 [HISTORY]（面板里的「全部交易历史」按钮）
-     * 是 2026-09-24 从 [MARKET] 拆出的第 8、9 个；[POINTS] 是本线的 RP 节点，排在最末。
+     * ⚠ **2026-09-25 用户重排：按语义配对两两成行** ——
+     *   挂单管理｜交易历史 / 封禁｜黑名单 / 价格限制｜拍卖管理 / 求购管理｜金融管理 / 市场开关。
+     *   ⚠ 原先那条「前 7 个与**管理面板功能按钮**一一对应」的约定**就此作废**：面板里是
+     *   8 个按钮（MARKET 占 2 个）、这里 10 个节点，本来就对不齐，对齐的价值不如语义相邻。
+     *   [MARKET_SWITCH] 在面板里对应**底部那颗图标按钮**、[HISTORY] 对应**「全部交易历史」按钮**，
+     *   但它们在弹窗里的落点由本列表顺序决定，别再假设「位置 = 面板按钮位置」。
+     * [POINTS] 是本线（1.3.0）的 RP 节点，排在最末（与上面那批语义无关）。
      * 改这里的顺序会同时改掉界面按钮与 list 输出的顺序。
      *
      * ⚠ 原 `CONFIG`（服务器配置）节点已于 2026-09-23 删除：服务器配置改为**服主专属**，
      * 不再作为可授予的节点 —— 想放权就把对方 UUID 加进 `serverOwners`。
      */
-    val ALL = listOf(MARKET, BAN, BLACKLIST, PRICE_LIMIT, AUCTION, BUY_ORDER, FINANCE, MARKET_SWITCH, HISTORY, POINTS)
+    val ALL = listOf(MARKET, HISTORY, BAN, BLACKLIST, PRICE_LIMIT, AUCTION, BUY_ORDER, FINANCE, MARKET_SWITCH, POINTS)
 
     /**
      * 是不是服主（**唯一恒真的超级权限**）：UUID 在配置的 `serverOwners` 名单里。

@@ -379,7 +379,7 @@
   "cobblemarket.perm.already_holding": "%s already holds the node: %s",
   "cobblemarket.perm.revoked": "Revoked the node from %s: %s",
   "cobblemarket.perm.not_holding": "%s does not hold the node: %s",
-  "cobblemarket.perm.unknown_node": "Unknown permission node (available: blacklist / pricelimit / ban / market / finance / auction / buyorder)",
+  "cobblemarket.perm.unknown_node": "Unknown permission node (available: market / history / ban / blacklist / pricelimit / auction / buyorder / finance / marketswitch)",
   "cobblemarket.perm.list_title": "Permission grants (%s players):",
   "cobblemarket.perm.list_no_match": "No match — click \"Add\" to create it",
   "cobblemarket.perm.list_empty": "No permission grants yet",
