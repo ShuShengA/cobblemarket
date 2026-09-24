@@ -196,6 +196,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
         // 管理面板入口：**有管理权限才显示**（没权限的玩家跟从前一样只有两行，入口按权限增减行）
         val canManage = ClientPermissionCache.canManage()
+        // ⚠ **必须把这次画出来的状态记进 `lastCanManage`**：`refreshPermissionState()` 靠它判断
+        //   「翻转了没有、要不要重建」。不记的话它初值恒为 null，判据 `lastCanManage != null && ...`
+        //   永远为 false ⇒ **界面开着时被授权不会重建**，管理面板按钮一直不出现（2026-09-24 用户实测）
+        lastCanManage = canManage
         val rowCount = if (canManage) 3 else 2
         // 行 1-2 用 gap 间隙；行 3 与行 2 保持 4px 间隙，不随 gap 增大下移（与分割线/开关按钮上下间隙对称各 2px）
         // ⚠ `- if (canManage) (gap - 5) else 0` 的 if 是**整体分支**（有权限时只减 3）。
