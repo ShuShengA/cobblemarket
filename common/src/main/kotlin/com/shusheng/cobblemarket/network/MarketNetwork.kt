@@ -1967,7 +1967,7 @@ object MarketNetwork {
                         player,
                         MarketResultPayload(
                             false,
-                            Text.translatable("cobblemarket.cmd.max_listings", maxPokemonListings)
+                            Text.translatable("cobblemarket.cmd.max_listings_pokemon", maxPokemonListings)
                         )
                     )
                     return@execute
@@ -2213,7 +2213,7 @@ object MarketNetwork {
                 ) {
                     sendToPlayer(
                         player,
-                        MarketResultPayload(false, Text.translatable("cobblemarket.cmd.max_listings", maxItemListings))
+                        MarketResultPayload(false, Text.translatable("cobblemarket.cmd.max_listings_item", maxItemListings))
                     )
                     return@execute
                 }
