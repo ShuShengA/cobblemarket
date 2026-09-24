@@ -259,6 +259,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             iconLeft = Identifier.of("cobblemarket", "textures/gui/buy_order_icon.png"),
             // 48×48 贴图缩到 18×18 显示（按钮 22×22 留 2px 边距，源图高分辨率保持锐利，照市场总开关按钮）
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+            // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
+            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
         )
         // 关市置灰（同上方交易类入口：仍可点，点击给 fail 音 + 3 秒红字提示）
         buyOrderBtn.dimmed = marketClosed
@@ -283,6 +285,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             iconLeft = Identifier.of("cobblemarket", "textures/gui/meowth_bank_icon.png"),
             // 48×48 贴图缩到 18×18 显示（照求购单按钮）
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+            // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
+            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
         )
         meowthBankBtn.dimmed = !financeEnabled
         this.meowthBankBtn = meowthBankBtn
@@ -308,6 +312,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             iconLeft = Identifier.of("cobblemarket", "textures/gui/settings_icon.png"),
             // 48×48 贴图缩到 18×18 显示（照求购单按钮）
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+            // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
+            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
         )
         settingsBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.settings")))
         entryButtons += addDrawableChild(settingsBtn)
@@ -1026,10 +1032,13 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         }
         // 市场关闭：常驻红字横幅 + 点击入口时的 3 秒提示（OP 同样显示——服主也需要直观看到当前状态）
         if (!com.shusheng.cobblemarket.client.MarketStateCache.enabled) {
+            // ⚠ 画在**背景底边紧下方**（2026-09-24 用户报：原先画在 `btnStartY - 14`，那正是背景
+            //   内容区顶边 —— 玩家把余额 HUD 拖到那里就会和它重合）。贴到背景外沿之后，
+            //   HUD 不管拖到哪都不会撞上
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.translatable("cobblemarket.market.closed_banner").string,
-                width / 2, btnStartY - 14, 0xFF5555
+                width / 2, bgBottom() + 2, 0xFF5555
             )
             if (System.currentTimeMillis() < closedNoticeUntil) {
                 context.drawCenteredTextWithShadow(
