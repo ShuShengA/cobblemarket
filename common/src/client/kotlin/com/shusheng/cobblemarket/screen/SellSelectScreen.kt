@@ -233,7 +233,9 @@ class SellSelectScreen(
         //  矮一截就会看着偏上、发细，用户原话「这个搜索框看起来很细」）
         // y 30 → 44（用户次日反馈「和上方返回按钮空隙太小」）：返回按钮底边 29，30 只有 1px 间隙；
         // 44 是精灵市场 / 管理端同一位置（间隙 15px），三个界面对齐
-        searchField = TextFieldWidget(textRenderer, lx + 2, 44, 130, 20, Text.translatable("cobblemarket.sell.search"))
+        // ⚠ 搜索框宽度是这一行的**余量**：1.3.0 中间多了货币切换按钮，挤出来的空间从搜索框扣
+        //   （价格框 74 与 1.2.x 一致、**不缩** —— 用户 2026-09-24 明确要求）
+        searchField = TextFieldWidget(textRenderer, lx + 2, 44, 112, 20, Text.translatable("cobblemarket.sell.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.sell.search"))
         // 搜索/筛选变化时重建过滤缓存（render 每帧只读，见 rebuildFiltered 注释）
         searchField?.setChangedListener { updateAbilityOptions(it); rebuildFiltered() }
@@ -253,13 +255,14 @@ class SellSelectScreen(
 
         // 价格框：与搜索框**同一行**（2026-09-24 用户定：搜索框缩短，价格框等挪到它右边）。
         // 整行从内容区左缘排到右缘 lx+296：
-        //   上架：搜索框 2~130 | 价格 134~190 | 货币 190~210(紧贴价格框) | 上架 214~240 | 筛选 246~296
-        //   交付/分享：搜索框 2~130 |            选择 134~242                | 筛选 246~296
-        // ⚠ **价格框宽度 56 不缩**（用户明确要求：这一行挤了就缩搜索框，别动价格框）
+        //   上架：搜索框 2~114 | 价格 118~192 | 货币 192~212(紧贴价格框) | 上架 216~242 | 筛选 246~296
+        //   交付/分享：搜索框 2~114 |              选择 118~242              | 筛选 246~296
+        // ⚠ **价格框宽度 74（与 1.2.x 一致）、不缩** —— 用户 2026-09-24 明确要求：
+        //   1.3.0 这一行更挤（多了货币切换按钮），挤出来的空间**从搜索框扣**，别动价格框
         // ⚠ 紧贴货币按钮（无 4px 间隙）：看起来就像价格数字后面直接跟着货币符号（2026-09-19 用户要求）
         // ⚠ 高度一律 20（搜索框也一样）：原版输入框文字 y = y+(h-8)/2 与 NineSliceButton 同一算式，
         //   h 不一致会出现「输入框比按钮高 1px、底边短 2px」的错位（2026-09-21 用户报过）
-        priceField = TextFieldWidget(textRenderer, lx + 134, 44, 56, 20, Text.literal(""))
+        priceField = TextFieldWidget(textRenderer, lx + 118, 44, 74, 20, Text.literal(""))
         priceField?.setPlaceholder(Text.translatable("cobblemarket.sell.price_placeholder"))
         priceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addSelectableChild(priceField)
@@ -269,11 +272,11 @@ class SellSelectScreen(
         priceField?.visible = !noPriceField
 
         // 上架按钮改成**纯图标**（sell.png，8×8）后很窄，腾出的位置给了货币切换按钮 ——
-        // 「搜索 2~130 │ 价格 134~190 │ 货币 190~210（贴着价格框）│ 上架 214~240 │ 筛选 246~296」。
-        // 交付/分享模式没有价格框、也就没有货币按钮，用文字按钮占满这一格（134 起、108 宽）
+        // 「搜索 2~114 │ 价格 118~192 │ 货币 192~212（贴着价格框）│ 上架 216~242 │ 筛选 246~296」。
+        // 交付/分享模式没有价格框、也就没有货币按钮，用文字按钮占满这一格（118 起、124 宽）
         sellBtn = NineSliceButton(
-            if (noPriceField) lx + 134 else lx + 214, 44,
-            if (noPriceField) 108 else 26, 20,
+            if (noPriceField) lx + 118 else lx + 216, 44,
+            if (noPriceField) 124 else 26, 20,
             if (noPriceField) {
                 Text.translatable(
                     if (deliverMode) "cobblemarket.sell.deliver_select" else "cobblemarket.share.button"
@@ -302,7 +305,7 @@ class SellSelectScreen(
         currencyButton = if (!noPriceField) {
             NineSliceButton(
                 // 紧贴价格框右缘（无 4px 间隙）：看起来就像价格数字后面直接跟着货币符号
-                lx + 190, 44, 20, 20, Text.literal(""), { onCurrencyClick() },
+                lx + 192, 44, 20, 20, Text.literal(""), { onCurrencyClick() },
                 iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
                 iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat()
             ).also {
