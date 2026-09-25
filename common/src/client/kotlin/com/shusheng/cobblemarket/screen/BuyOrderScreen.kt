@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.TooltipPlacement
+import com.shusheng.cobblemarket.client.playButtonClickSound
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
@@ -3265,6 +3266,9 @@ class BuyOrderScreen(
                 val list = displayList()
                 val actualIdx = scrollOffset + row
                 if (actualIdx in list.indices) {
+                    // 行是**自绘**的（不走 NineSliceButton），点击音得自己播 ——
+                    // 缺了它，管理员点行弹「下架确认」时整片界面只有这一处没声音
+                    playButtonClickSound()
                     openForceCancelDialog(list[actualIdx])
                     return true
                 }
