@@ -14,6 +14,7 @@ import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animatio
 import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockPoseAnimation
 import com.cobblemon.mod.common.client.render.models.blockbench.pose.Pose
 import com.cobblemon.mod.common.client.render.models.blockbench.repository.RenderContext
+import com.cobblemon.mod.common.client.render.models.blockbench.repository.VaryingModelRepository
 import com.cobblemon.mod.common.client.render.models.blockbench.wavefunction.WaveFunction
 import com.cobblemon.mod.common.client.render.models.blockbench.wavefunction.sineFunction
 import com.cobblemon.mod.common.pokemon.ai.RestBehaviour
@@ -86,8 +87,8 @@ object IconAnimationResolver {
             //   → 不拦就会切到走路姿势、战吼与走路动画混在一起（2026-09-22 日志实测 `pose=walking`），
             //   既看不出战吼、身体姿态也不是待机那个。primary 播完框架会自动清空，姿势随之恢复。
             battleCryRunning -> PoseType.PROFILE
-            isSleeping(renderable) && hasSleepPose(state) -> PoseType.SLEEP
-            preview -> walkPoseOrProfile(state)
+            isSleeping(renderable) && hasSleepPose(renderable, state) -> PoseType.SLEEP
+            preview -> walkPoseOrProfile(renderable, state)
             else -> PoseType.PROFILE
         }
 
@@ -185,13 +186,38 @@ object IconAnimationResolver {
      * `poses.values.first()`，模型会莫名抽一下（已查证其实现）。所以先自己确认有走路姿势。
      * 姿势名也不写死——走路姿势按介质不同（ground_walk / air_fly / water_swim），由模型自己挑。
      */
-    private fun walkPoseOrProfile(state: PosableState): PoseType {
-        val model = state.currentModel ?: return PoseType.PROFILE
+    private fun walkPoseOrProfile(renderable: RenderablePokemon, state: PosableState): PoseType {
+        val model = modelFor(renderable, state) ?: return PoseType.PROFILE
         val hasWalk = model.poses.values.any { pose ->
             pose.poseTypes.any { it in PoseType.MOVING_POSES } && pose.isSuitable(state)
         }
         return if (hasWalk) PoseType.WALK else PoseType.PROFILE
     }
+
+    /**
+     * 取这个图标当前的模型：**优先用已经建好的** `currentModel`（O(1)），首帧还没有时**自己按物种取一个**。
+     *
+     * ⚠ **为什么非这样不可**：`currentModel` 是**第一次 `drawProfilePokemon` 内部**才建的
+     * （`PokemonGuiUtils` 里那句 `state.currentModel = model`），而那一句拿到的 `poseType`
+     * 又是我们先算好传进去的 ⇒ **首帧必然拿不到模型**。于是「该不该睡」「有没有走路姿势」
+     * 这两个判断首帧双双落空、退回 PROFILE（待机），要到**第二帧**才判对；此时若要切
+     * 睡眠 / 走路，[ensurePoseTransition] 就会补一段**待机 → 睡眠**的过渡动画。
+     * 表现：「**晚上打开界面 / 翻页，精灵先站着、再慢慢躺下**」（2026-09-25 用户报）。
+     *
+     * ⚠ **别指望在过渡那一层拦**：首帧本来就判不出该睡，过渡只是把「迟一帧」放大成了
+     * 一段看得见的动画 —— 拦过渡等于把瞬切放行，第 1 帧那一下还在。
+     *
+     * 取法与 `drawProfilePokemon` 内部**完全一致**（就是它建模型用的那句），
+     * `species` 也照它那样从 `renderablePokemon.species.resourceIdentifier` 取。
+     * ⚠ `getPoser` 只是**取**、不会写 `state.currentModel`（写它的是 `drawProfilePokemon`），
+     * 所以这里调用没有副作用；取过之后 `drawProfilePokemon` 那句拿到的是同一个实例。
+     */
+    private fun modelFor(renderable: RenderablePokemon, state: PosableState): PosableModel? =
+        state.currentModel ?: runCatching {
+            // 包一层：`getPoser` 内部走脱 `variations[fallback]!!`，取不到会抛 ——
+            // 那种情况下退回老行为（判不出、走 PROFILE），别让一个图标带崩整个界面
+            VaryingModelRepository.getPoser(renderable.species.resourceIdentifier, state)
+        }.getOrNull()
 
     /**
      * 该模型有没有可用的睡眠姿态。
@@ -204,8 +230,8 @@ object IconAnimationResolver {
      * 战斗版 / 悬空版）。`FloatingState.getEntity() == null` 让 `isUnderWater` / `isInWater` / `isBattling`
      * 恒为 false，水中版与战斗版的条件自然不通过，落到陆地/野外版 —— 所以不用自己按 poseName 挑。
      */
-    private fun hasSleepPose(state: PosableState): Boolean {
-        val model = state.currentModel ?: return false
+    private fun hasSleepPose(renderable: RenderablePokemon, state: PosableState): Boolean {
+        val model = modelFor(renderable, state) ?: return false
         return model.poses.values.any { pose ->
             PoseType.SLEEP in pose.poseTypes && pose.isSuitable(state)
         }
