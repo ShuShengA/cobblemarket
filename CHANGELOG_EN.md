@@ -10,7 +10,6 @@
 - **Balance HUD was not hidden by F1**: it stayed on screen after the vanilla HUD was hidden (in the way when taking screenshots or recording); it now hides together with the vanilla HUD
 - **Balance HUD sat on top of vanilla screens**: it covered the pause menu, options and inventory. It now **drops below those screens** (still faintly visible), while **this mod's own screens keep it on top**
 - **Marks were missing from the auction announcement hover in chat**: every Pokemon detail panel shows marks, yet this one place showed none — the same Pokemon read differently in two places. It now matches the rest
-- **The button label overflowed on the Meow·Purple Gold Card / Black Gold Card apply screens**: "Self-application is closed" is too long for the button it sat on. The button is now wider and every state's label fits
 
 ## 1.1.0 (released)
 
