@@ -131,6 +131,7 @@
   "cobblemarket.points.store.short.skill": "技能",
   "cobblemarket.points.store.short.carry": "携带物",
   "cobblemarket.points.store.short.item": "物品",
+  "cobblemarket.points.store.pick_held": "取手持物品作为商品",
   "cobblemarket.points.store.short.marks": "证章",
   "cobblemarket.points.store.field.shiny": "闪光：%s",
   "cobblemarket.points.store.shiny_chance_suffix": "：%s",
