@@ -40,5 +40,3 @@ replay_*.log
 *.jfr
 libs/
 
-# AI 工具的项目配置（个人环境，不该进仓库）
-.claude/
