@@ -183,6 +183,7 @@
   "cobblemarket.points.store.err.not_enough_points": "Not enough %s",
   "cobblemarket.points.store.err.no_space": "Not enough space, clear your inventory or PC first",
   "cobblemarket.points.store.err.generate_failed": "This item's data is invalid and cannot be purchased",
+  "cobblemarket.points.store.err.stale_entry": "This item was just edited, please reopen the buy screen",
   "cobblemarket.points.store.hint.price_required": "Please enter a price",
   "cobblemarket.points.store.hint.species_required": "Please pick a species first",
 

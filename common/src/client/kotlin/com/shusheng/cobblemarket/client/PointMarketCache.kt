@@ -53,4 +53,5 @@ object PointMarketCache {
         totalPages = 1
         loaded = false
     }
+
 }

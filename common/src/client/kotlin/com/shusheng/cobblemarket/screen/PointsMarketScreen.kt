@@ -96,6 +96,12 @@ class PointsMarketScreen : Screen(
     /** 购买窗开着的格子**全局序号**；-1 = 没开。⚠ 与 [editSlot] **互斥**（同时只开一个窗口） */
     private var buySlot = -1
 
+    /**
+     * 打开购买窗时那一条的 **id**（见 [ShopEntry.entryId]）。
+     * 点购买时带回服务端比对；也用来判断"这格有没有被换过内容"（见 [checkBuySlotStillValid]）。
+     */
+    private var buySlotEntryId = ""
+
     /** 购买数量。**只对物品格有意义** —— 精灵格恒按 1 算（买几次就请求几次，服务端同样口径） */
     private var buyCount = 1
     private var buyCountField: TextFieldWidget? = null
@@ -680,6 +686,8 @@ class PointsMarketScreen : Screen(
      */
     override fun tick() {
         super.tick()
+        // ① 服主刚改了 / 下架了正在看的这一格 → 关窗 + 提示（见 checkBuySlotStillValid）
+        checkBuySlotStillValid()
         if (dialogOpen()) return
         val wantPage = currentPage - 1
         if (PointMarketCache.loaded && PointMarketCache.page == wantPage) return
@@ -1141,6 +1149,27 @@ class PointsMarketScreen : Screen(
     // 不会出现「买了个不知道是什么的东西」（用户 2026-09-25 拍板）。
 
     /**
+     * ① **服主保存 / 下架了这一格 → 关掉开着的购买窗并提示**（用户 2026-09-25 定的方案）。
+     *
+     * 判据是**条目 id**：打开窗时记下当时的 entryId，快照一到就比对 —— 对不上就是被换过内容
+     *（换了精灵 / 改了价 / 整格下架）。
+     *
+     * ⚠ 这只是**体验**，不是安全边界：广播跑一个来回有延迟，玩家完全可能已经点下了确认。
+     *   那种情况由服务端 `PointMarketService.buy` 的版本校验兜底拒绝（分文不扣）—— 两层配合才完整。
+     *   把这条写在 `tick` 里而不是收到包时，是为了不依赖"包到达"这个时机（界面每 tick 自己看一眼）。
+     */
+    private fun checkBuySlotStillValid() {
+        if (buySlot < 0) return
+        val entry = PointMarketCache.slots[buySlot]
+        if (entry != null && entry.entryId == buySlotEntryId) return
+        // 内容变了 / 整格没了：关窗 + 界面内红字（复用兑换结果那条提示的位置）
+        closeBuyDialog()
+        resultMsg = Text.translatable("cobblemarket.points.store.err.stale_entry")
+        resultColor = 0xFF6666
+        resultUntil = System.currentTimeMillis() + STALE_MSG_MS
+    }
+
+    /**
      * 点格子的音效 —— 格子是**自绘**的、不走 [NineSliceButton] 那条路，所以得自己播。
      *
      * ⚠ **必须与按钮同档**：按钮那边用 `PositionedSoundInstance.master(sound, pitch)`，
@@ -1163,6 +1192,8 @@ class PointsMarketScreen : Screen(
         playCellClickSound()
         buySlot = slot
         buyCount = 1
+        // 记下这一条的 id：购买时带回服务端比对，也用来判断它有没有被换过内容
+        buySlotEntryId = PointMarketCache.slots[slot]?.entryId.orEmpty()
         buyHintMsg = null
         // ⚠ 购买窗**不滚动**（只读文本自己画，没有控件要挪），但 [editRowY] 会减去这个偏移 ——
         //   编辑窗滚过之后再开购买窗，整片字段会跟着上移错位，所以这里必须清零
@@ -1179,6 +1210,7 @@ class PointsMarketScreen : Screen(
      */
     private fun closeBuyDialog() {
         buySlot = -1
+        buySlotEntryId = ""
         buyCount = 1
         buyHintMsg = null
         buyCountField = null
@@ -1262,7 +1294,8 @@ class PointsMarketScreen : Screen(
         buyItemIconOrigin?.let(com.shusheng.cobblemarket.client.ItemCelebrationAnimation::setPendingOrigin)
 
         // ⚠ kind 取 [currentKind]：窗口开着时主控件已隐藏、切不了 tab，所以它 == 打开窗口时那个 tab
-        sendToServer(BuyPointMarketEntryPayload(buySlot, count, currentKind()))
+        // ⚠ 带上**玩家看到的那一条**的 id：服务端比对，对不上就拒绝（防按改后的内容 / 价格成交）
+        sendToServer(BuyPointMarketEntryPayload(buySlot, count, currentKind(), buySlotEntryId))
         closeBuyDialog()
     }
 
@@ -3908,6 +3941,9 @@ class PointsMarketScreen : Screen(
 
         /** 「数量不合法」红字的显示时长 */
         const val BUY_HINT_MS = 2500L
+
+        /** 「商品刚被编辑过」那条界面内提示的显示时长（比兑换结果短一点，它只是告知） */
+        const val STALE_MSG_MS = 4000L
 
         /**
          * 六项个体值 / 努力值的属性缩写。

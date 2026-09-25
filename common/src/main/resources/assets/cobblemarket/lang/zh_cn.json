@@ -183,6 +183,7 @@
   "cobblemarket.points.store.err.not_enough_points": "%s 余额不足",
   "cobblemarket.points.store.err.no_space": "收件空间不足，请先清理背包或 PC",
   "cobblemarket.points.store.err.generate_failed": "商品数据异常，暂时无法购买",
+  "cobblemarket.points.store.err.stale_entry": "这件商品刚被改动过，请重新打开购买界面",
   "cobblemarket.points.store.hint.price_required": "请填写价格",
   "cobblemarket.points.store.hint.species_required": "请先选择物种",
 

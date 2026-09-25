@@ -11,6 +11,7 @@ import com.shusheng.cobblemarket.currency.PointShopState
 import com.shusheng.cobblemarket.currency.ShopEntry
 import com.shusheng.cobblemarket.currency.ShopItemSpec
 import com.shusheng.cobblemarket.currency.ShopPokemonSpec
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
@@ -167,7 +168,16 @@ data class RemovePointMarketEntryPayload(val index: Int, val kind: String) : Cus
  * ⚠ [count] **只对物品格有意义** —— 精灵格买一次就是一只，服务端不读这个值
  *（见 [PointMarketService.buy]），数量和金额都以服务端为准，客户端说了不算。
  */
-data class BuyPointMarketEntryPayload(val index: Int, val count: Int, val kind: String) : CustomPayload {
+data class BuyPointMarketEntryPayload(
+    val index: Int,
+    val count: Int,
+    val kind: String,
+    /**
+     * 玩家**看到的那一条**的 id（打开购买窗时从快照记下）。
+     * 服务端比对：对不上说明这格在玩家看它之后**换过内容** —— **拒绝成交、分文不扣**。
+     */
+    val entryId: String
+) : CustomPayload {
     override fun getId() = ID
 
     companion object {
@@ -177,11 +187,15 @@ data class BuyPointMarketEntryPayload(val index: Int, val count: Int, val kind: 
                 b.writeInt(p.index)
                 b.writeInt(p.count)
                 b.writeString(p.kind, MAX_TEXT_LENGTH)
+                b.writeString(p.entryId, MAX_TEXT_LENGTH)
             },
             // ⚠ 读端用具名参数：字段顺序一旦对不上，具名能立刻看出来（payload 顺序铁律）
             { b ->
                 BuyPointMarketEntryPayload(
-                    index = b.readInt(), count = b.readInt(), kind = b.readString(MAX_TEXT_LENGTH)
+                    index = b.readInt(),
+                    count = b.readInt(),
+                    kind = b.readString(MAX_TEXT_LENGTH),
+                    entryId = b.readString(MAX_TEXT_LENGTH)
                 )
             }
         )
@@ -201,6 +215,9 @@ private fun writeEntry(b: PacketByteBuf, e: ShopEntry) {
     val item = e.item
     b.writeBoolean(item != null)
     item?.let { writeItemSpec(b, it) }
+    // 条目 id：客户端打开购买窗时记下、点购买时带回来，服务端比对（见 ShopEntry.entryId）。
+    // ⚠ 加在**末尾**、读写顺序保持一致（payload 顺序铁律）
+    b.writeString(e.entryId, MAX_TEXT_LENGTH)
 }
 
 private fun readEntry(b: PacketByteBuf) = ShopEntry(
@@ -209,7 +226,8 @@ private fun readEntry(b: PacketByteBuf) = ShopEntry(
     price = b.readLong(),
     stock = b.readInt(),
     pokemon = if (b.readBoolean()) readPokemonSpec(b) else null,
-    item = if (b.readBoolean()) readItemSpec(b) else null
+    item = if (b.readBoolean()) readItemSpec(b) else null,
+    entryId = b.readString(MAX_TEXT_LENGTH)
 )
 
 private fun writePokemonSpec(b: PacketByteBuf, s: ShopPokemonSpec) {
@@ -331,6 +349,7 @@ fun pointMarketErrorText(error: PointMarketError): Text = Text.translatable(
         PointMarketError.NOT_ENOUGH_POINTS -> "cobblemarket.points.store.err.not_enough_points"
         PointMarketError.NO_SPACE -> "cobblemarket.points.store.err.no_space"
         PointMarketError.GENERATE_FAILED -> "cobblemarket.points.store.err.generate_failed"
+        PointMarketError.STALE_ENTRY -> "cobblemarket.points.store.err.stale_entry"
     },
     // 统一传货币图标：含 %s 的词条（如「%s 余额不足」）用它，不含的多余参数会被忽略
     CurrencyService.pointsIcon()
@@ -423,7 +442,7 @@ object PointMarketNetwork {
             server.execute {
                 when (
                     val result = PointMarketService.buy(
-                        server, player, payload.kind, payload.index, payload.count
+                        server, player, payload.kind, payload.index, payload.count, payload.entryId
                     )
                 ) {
                     is PointMarketBuyResult.Failure -> {
