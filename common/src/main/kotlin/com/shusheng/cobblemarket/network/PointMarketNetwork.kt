@@ -255,7 +255,7 @@ data class RequestShopSnapshotsPayload(val unused: Boolean = false) : CustomPayl
     }
 }
 
-/** 存一条快照（同名覆盖）；返回的列表由服务端回发 */
+/** 存一条快照（**重名由服务端自动加序号**，不覆盖）；存完服务端回发最新列表 */
 data class SaveShopSnapshotPayload(val name: String, val entry: ShopEntry) : CustomPayload {
     override fun getId() = ID
 
@@ -537,7 +537,9 @@ object PointMarketNetwork {
                 // ⚠ 规格**原样存**（不做 normalize）：服主存的是"配方"，真正把关在**上架那一刻**
                 //   （PointMarketService.save 会全量校验）—— 这里再校一遍只会让"存快照"变成一个有
                 //   各种拒绝理由的操作。退回读档时的容错语义：坏数据读回来是 null、跳过并 warn
-                if (!PointShopSnapshotState.get(server).put(name, payload.entry)) {
+                // 重名**不覆盖**、自动加序号（服主的同一只精灵可能配好几套，见 PointShopSnapshotState.add）
+                val savedName = PointShopSnapshotState.get(server).add(name, payload.entry)
+                if (savedName == null) {
                     player.sendMessage(
                         Text.translatable(
                             "cobblemarket.points.store.snapshot_full", PointShopSnapshotState.MAX_SNAPSHOTS
@@ -545,6 +547,14 @@ object PointMarketNetwork {
                         false
                     )
                     return@execute
+                }
+                if (savedName != name) {
+                    // 撞名并存成了别的名字 —— **必须告诉他**，否则他在列表里找不到刚存的那条
+                    player.sendMessage(
+                        Text.translatable("cobblemarket.points.store.snapshot_renamed", savedName)
+                            .formatted(Formatting.YELLOW),
+                        false
+                    )
                 }
                 PersistHelper.requestSave(server)
                 // 回发最新列表（界面不用自己猜存到哪了）

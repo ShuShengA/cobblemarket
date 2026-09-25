@@ -189,6 +189,7 @@
   "cobblemarket.points.store.err.generate_failed": "商品数据异常，暂时无法购买",
   "cobblemarket.points.store.err.stale_entry": "这件商品刚被改动过，请重新打开购买界面",
   "cobblemarket.points.store.snapshot_full": "快照已满（最多 %s 条），请先删掉几条",
+  "cobblemarket.points.store.snapshot_renamed": "已有同名快照，已另存为「%s」",
   "cobblemarket.points.store.snapshot_button": "快照",
   "cobblemarket.points.store.snapshot_save": "保存当前配置",
   "cobblemarket.points.store.snapshot_loading": "读取中…",

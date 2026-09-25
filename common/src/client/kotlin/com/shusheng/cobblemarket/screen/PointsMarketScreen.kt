@@ -255,7 +255,7 @@ class PointsMarketScreen : Screen(
     }
 
     /**
-     * 把当前草稿存成快照（名字取输入框；**同名即覆盖** —— 服务端那边定的语义）。
+     * 把当前草稿存成快照（名字取输入框；**重名由服务端自动加序号**，绝不覆盖 —— 见 `PointShopSnapshotState.add`）。
      * ⚠ 存的是**当前草稿**：价格 / 库存缺了会被 [buildShopEntry] 挡下（快照里也要带这两项）。
      */
     private fun saveCurrentAsSnapshot() {

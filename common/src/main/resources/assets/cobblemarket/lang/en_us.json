@@ -189,6 +189,7 @@
   "cobblemarket.points.store.err.generate_failed": "This item's data is invalid and cannot be purchased",
   "cobblemarket.points.store.err.stale_entry": "This item was just edited, please reopen the buy screen",
   "cobblemarket.points.store.snapshot_full": "Snapshot list is full (%s max), delete some first",
+  "cobblemarket.points.store.snapshot_renamed": "Name already used, saved as \"%s\"",
   "cobblemarket.points.store.snapshot_button": "Snapshots",
   "cobblemarket.points.store.snapshot_save": "Save Current",
   "cobblemarket.points.store.snapshot_loading": "Loading...",

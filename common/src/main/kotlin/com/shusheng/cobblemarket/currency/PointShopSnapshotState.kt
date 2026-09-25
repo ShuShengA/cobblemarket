@@ -18,12 +18,13 @@ import net.minecraft.world.PersistentState
  *
  * ⚠ **存在服务端**（跟着世界走）：换客户端还在，持 `points.shop` 节点的人都能用。
  * ⚠ 上限 [MAX_SNAPSHOTS]：满了拒绝新存并提示先删旧的，防存档无界膨胀。
+ * ⚠ **重名不覆盖**，自动加 `(2)`、`(3)` 序号 —— 同一只精灵配两套数据是常事，见 [add]。
  * ⚠ 存档结构与格子那套**共用** [writeShopEntryBody] / [readShopEntryBody]（见 PointShopState.kt），
  *   别再写第二份序列化。
  */
 class PointShopSnapshotState private constructor() : PersistentState() {
 
-    /** 一条快照：名字（**唯一**，重名即覆盖）+ 整份规格（含价格与库存） */
+    /** 一条快照：名字（**在库里唯一** —— 重名时 [add] 会自动加序号）+ 整份规格（含价格与库存） */
     data class Snapshot(val name: String, val entry: ShopEntry)
 
     /** 保序：按存的先后排，服主找起来有规律 */
@@ -34,20 +35,36 @@ class PointShopSnapshotState private constructor() : PersistentState() {
     fun find(name: String): Snapshot? = snapshots.firstOrNull { it.name == name }
 
     /**
-     * 存一条。**同名覆盖**（服主改完再存一次，不该变成两条）。
-     * 返回 false = 已经满 [MAX_SNAPSHOTS] 条、且这次又不是覆盖。
+     * 加一条快照。**重名会自动加序号**（`名字 (2)`、`名字 (3)`…），**绝不覆盖**。
+     *
+     * ⚠ 原先定的是"同名覆盖"，2026-09-25 被用户指出不对：服主完全可能给**同一只精灵配好几套**
+     *（闪光 / 不闪、不同技能组），而**自动名几乎必然撞**（同物种同等级生成的名字一模一样）——
+     * 静默覆盖会让他丢掉前面那套、还不知道。
+     *
+     * @return **实际存下来的名字**（可能带序号）；null = 已经满 [MAX_SNAPSHOTS] 条
      */
-    fun put(name: String, entry: ShopEntry): Boolean {
-        val idx = snapshots.indexOfFirst { it.name == name }
-        if (idx >= 0) {
-            snapshots[idx] = Snapshot(name, entry)
-            markDirty()
-            return true
-        }
-        if (snapshots.size >= MAX_SNAPSHOTS) return false
-        snapshots.add(Snapshot(name, entry))
+    fun add(name: String, entry: ShopEntry): String? {
+        if (snapshots.size >= MAX_SNAPSHOTS) return null
+        val finalName = uniqueName(name)
+        snapshots.add(Snapshot(finalName, entry))
         markDirty()
-        return true
+        return finalName
+    }
+
+    /**
+     * 取一个没被占用的名字：原名可用就用原名，否则依次试 `名字 (2)`、`名字 (3)`…
+     *
+     * ⚠ 后缀也算进长度上限里（[MAX_NAME_LENGTH]），别让名字越加越长。
+     * ⚠ 循环有**硬上限**：列表最多 [MAX_SNAPSHOTS] 条，试不出就说明真满了（调用方已挡过一次）。
+     */
+    private fun uniqueName(base: String): String {
+        if (find(base) == null) return base
+        val trimmed = base.take(MAX_NAME_LENGTH - 6)
+        for (n in 2..MAX_SNAPSHOTS + 1) {
+            val candidate = "$trimmed ($n)"
+            if (find(candidate) == null) return candidate
+        }
+        return "$trimmed (${MAX_SNAPSHOTS + 2})"
     }
 
     /** 删一条；返回是否真删掉了 */
