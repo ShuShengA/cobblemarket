@@ -144,24 +144,33 @@ data class ShopItemSpec(
  */
 class PointShopState private constructor() : PersistentState() {
 
-    /** 格子序号 → 商品。空格子不存（省存档空间），序号本身即位置 */
-    private val slots = mutableMapOf<Int, ShopEntry>()
+    /**
+     * **种类 → (格子序号 → 商品)**。
+     *
+     * ⚠ 精灵与物品**各占一套独立的编号**（2026-09-25 用户拍板把 tab 变成真过滤）——
+     * 「精灵 tab 的第 5 格」与「物品 tab 的第 5 格」是**两个不同的位置**。
+     * 空格子不存（省存档空间），序号本身即位置。
+     */
+    private val slots = mutableMapOf<String, MutableMap<Int, ShopEntry>>()
 
-    fun find(index: Int): ShopEntry? = slots[index]
+    private fun slotsOf(kind: String): MutableMap<Int, ShopEntry> = slots.getOrPut(kind) { mutableMapOf() }
 
-    fun all(): Map<Int, ShopEntry> = slots
+    fun find(kind: String, index: Int): ShopEntry? = slots[kind]?.get(index)
 
-    fun size(): Int = slots.size
+    /** 某个种类下的全部已上架格子（序号 → 商品） */
+    fun all(kind: String): Map<Int, ShopEntry> = slots[kind] ?: emptyMap()
 
-    /** 上架 / 覆盖某格 */
-    fun put(index: Int, entry: ShopEntry) {
-        slots[index] = entry
+    fun size(kind: String): Int = slots[kind]?.size ?: 0
+
+    /** 上架 / 覆盖某格（[kind] 由 [ShopEntry.kind] 决定，调用方已校验过两者一致） */
+    fun put(kind: String, index: Int, entry: ShopEntry) {
+        slotsOf(kind)[index] = entry
         markDirty()
     }
 
     /** 清空某格（服主"删除这个格子里的内容"）；返回是否真的删掉了 */
-    fun remove(index: Int): Boolean {
-        if (slots.remove(index) == null) return false
+    fun remove(kind: String, index: Int): Boolean {
+        if (slots[kind]?.remove(index) == null) return false
         markDirty()
         return true
     }
@@ -173,36 +182,42 @@ class PointShopState private constructor() : PersistentState() {
      * ⚠ 与扣款同一事务内调用：**先扣库存再加货/扣钱**，崩溃窗口最坏是少卖一份（可补），
      * 反过来则会超卖 —— 玩家付了钱却拿不到货，或者拿了货没付钱。
      */
-    fun consume(index: Int, amount: Int = 1): Boolean {
+    fun consume(kind: String, index: Int, amount: Int = 1): Boolean {
         if (amount <= 0) return false
-        val entry = slots[index] ?: return false
+        val bucket = slots[kind] ?: return false
+        val entry = bucket[index] ?: return false
         if (entry.stock == ShopEntry.UNLIMITED) return true
         if (entry.stock < amount) return false
-        slots[index] = entry.copy(stock = entry.stock - amount)
+        bucket[index] = entry.copy(stock = entry.stock - amount)
         markDirty()
         return true
     }
 
     /** 补货 / 改库存。`amount < 0` = 改成无限量 */
-    fun setStock(index: Int, amount: Int): Boolean {
-        val entry = slots[index] ?: return false
-        slots[index] = entry.copy(stock = amount)
+    fun setStock(kind: String, index: Int, amount: Int): Boolean {
+        val bucket = slots[kind] ?: return false
+        val entry = bucket[index] ?: return false
+        bucket[index] = entry.copy(stock = amount)
         markDirty()
         return true
     }
 
     /**
-     * 页数：按**最大已填序号**算，至少 1 页（一件没上架也有一页空位等着服主填）。
+     * 某个种类的页数：按**该种类下最大已填序号**算，至少 1 页
+     *（一件没上架也有一页空位等着服主填）。
      * 例：填了 0~31 → 2 页（第 2 页全空，供继续添加）；填了 0~32 → 仍是 2 页。
      */
-    fun pageCount(): Int {
-        val maxIndex = slots.keys.maxOrNull() ?: return 1
+    fun pageCount(kind: String): Int {
+        val maxIndex = slots[kind]?.keys?.maxOrNull() ?: return 1
         return maxIndex / POINTS_SHOP_PAGE_SIZE + 1
     }
 
     override fun writeNbt(nbt: NbtCompound, registryLookup: RegistryWrapper.WrapperLookup): NbtCompound {
         val list = NbtList()
-        slots.forEach { (index, entry) ->
+        // ⚠ **两层遍历**（2026-09-25 起精灵与物品各占一套独立的格子编号）：
+        //   外壳是种类、里面才是 (序号 → 商品) —— 直接 `slots.forEach { (index, entry) }`
+        //   解构出来的 `index` 其实是 kind（编译期就会报类型错，这里记一笔免得再犯）
+        slots.values.flatMap { it.entries }.forEach { (index, entry) ->
             val c = NbtCompound()
             c.putInt("index", index)
             c.putString("kind", entry.kind)
@@ -317,7 +332,8 @@ class PointShopState private constructor() : PersistentState() {
                             }
                             val index = c.getInt("index")
                             if (index < 0) return@forEach
-                            slots[index] = ShopEntry(
+                            // ⚠ 按 kind 分组：精灵与物品各占一套独立的格子编号（2026-09-25 起）
+                            slots.getOrPut(kind) { mutableMapOf() }[index] = ShopEntry(
                                 kind = kind,
                                 price = c.getLong("price").coerceAtLeast(0L),
                                 stock = if (c.contains("stock")) c.getInt("stock") else ShopEntry.UNLIMITED,

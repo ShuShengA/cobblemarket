@@ -140,17 +140,17 @@ object PointMarketService {
      * 某一页**已上架**的格子（序号升序）。空格子本来就不进表（数据层如此），
      * 所以返回值可能远少于 32 项 —— 界面照旧画满 32 个格子，空位由界面补。
      */
-    fun pageEntries(server: MinecraftServer, page: Int): List<Pair<Int, ShopEntry>> {
+    fun pageEntries(server: MinecraftServer, page: Int, kind: String): List<Pair<Int, ShopEntry>> {
         val from = page * PointShopState.POINTS_SHOP_PAGE_SIZE
         val to = from + PointShopState.POINTS_SHOP_PAGE_SIZE
-        return PointShopState.get(server).all()
+        return PointShopState.get(server).all(kind)
             .filterKeys { it in from until to }
             .toSortedMap()
             .map { it.key to it.value }
     }
 
-    /** 总页数（至少 1 页：一件没上架也留一页空位等着服主填） */
-    fun pageCount(server: MinecraftServer): Int = PointShopState.get(server).pageCount()
+    /** 某个种类的总页数（至少 1 页：一件没上架也留一页空位等着服主填） */
+    fun pageCount(server: MinecraftServer, kind: String): Int = PointShopState.get(server).pageCount(kind)
 
     /** 把任意页号收进合法范围（客户端翻页参数不可信） */
     fun clampPage(page: Int): Int = page.coerceIn(0, MAX_INDEX / PointShopState.POINTS_SHOP_PAGE_SIZE)
@@ -167,7 +167,9 @@ object PointMarketService {
         if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return PointMarketError.NO_PERMISSION
         if (index < 0 || index > MAX_INDEX) return PointMarketError.BAD_INDEX
         val normalized = normalize(entry, server) ?: return reject(entry)
-        PointShopState.get(server).put(index, normalized)
+        // ⚠ kind 取自**规范化后的 entry**：精灵与物品各占一套独立的格子编号（2026-09-25 起，
+        //   tab 变成真过滤），同一个 index 在两个 tab 下是两个不同的位置
+        PointShopState.get(server).put(normalized.kind, index, normalized)
         // 交易品变更强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
         PersistHelper.requestSave(server)
         CobbleMarket.LOGGER.info(
@@ -177,11 +179,14 @@ object PointMarketService {
         return null
     }
 
-    /** 下架（清空一格）；返回 null = 成功 */
-    fun remove(server: MinecraftServer, player: ServerPlayerEntity, index: Int): PointMarketError? {
+    /** 下架（清空一格）；返回 null = 成功。⚠ 要指明 [kind] —— 同一序号在两个 tab 下是两个格子 */
+    fun remove(
+        server: MinecraftServer, player: ServerPlayerEntity, kind: String, index: Int
+    ): PointMarketError? {
         if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return PointMarketError.NO_PERMISSION
+        if (kind != ShopEntry.KIND_POKEMON && kind != ShopEntry.KIND_ITEM) return PointMarketError.BAD_KIND
         if (index < 0 || index > MAX_INDEX) return PointMarketError.BAD_INDEX
-        if (!PointShopState.get(server).remove(index)) return PointMarketError.NOT_FOUND
+        if (!PointShopState.get(server).remove(kind, index)) return PointMarketError.NOT_FOUND
         PersistHelper.requestSave(server)
         CobbleMarket.LOGGER.info("Point shop slot {} removed by {}", index, player.name.string)
         return null
@@ -209,10 +214,15 @@ object PointMarketService {
      *              不把这个自由度留给客户端；物品格才是玩家在购买窗填的那个数
      * @return [PointMarketBuyResult.Success]（含造出来的实物，供发庆祝动画）/ [PointMarketBuyResult.Failure]
      */
-    fun buy(server: MinecraftServer, player: ServerPlayerEntity, index: Int, count: Int): PointMarketBuyResult {
+    fun buy(
+        server: MinecraftServer, player: ServerPlayerEntity, kind: String, index: Int, count: Int
+    ): PointMarketBuyResult {
+        if (kind != ShopEntry.KIND_POKEMON && kind != ShopEntry.KIND_ITEM) {
+            return PointMarketBuyResult.Failure(PointMarketError.BAD_KIND)
+        }
         if (index < 0 || index > MAX_INDEX) return PointMarketBuyResult.Failure(PointMarketError.BAD_INDEX)
         val state = PointShopState.get(server)
-        val entry = state.find(index) ?: return PointMarketBuyResult.Failure(PointMarketError.NOT_FOUND)
+        val entry = state.find(kind, index) ?: return PointMarketBuyResult.Failure(PointMarketError.NOT_FOUND)
 
         val amount = if (entry.kind == ShopEntry.KIND_POKEMON) 1 else count
         if (amount < 1 || amount > MAX_BUY_COUNT) return PointMarketBuyResult.Failure(PointMarketError.BAD_COUNT)
@@ -259,9 +269,9 @@ object PointMarketService {
         }
 
         // ── 扣库存 → 扣钱 → 交付：失败逐级回滚 ──
-        if (!state.consume(index, amount)) return PointMarketBuyResult.Failure(PointMarketError.SOLD_OUT)
+        if (!state.consume(kind, index, amount)) return PointMarketBuyResult.Failure(PointMarketError.SOLD_OUT)
         if (!points.removeBalance(player.uuid, total)) {
-            state.setStock(index, entry.stock) // 回滚库存（entry 是扣减前的快照）
+            state.setStock(kind, index, entry.stock) // 回滚库存（entry 是扣减前的快照）
             return PointMarketBuyResult.Failure(PointMarketError.NOT_ENOUGH_POINTS)
         }
 
@@ -275,7 +285,7 @@ object PointMarketService {
             // 预检过了还失败 = 极小概率（背包在两步之间被别的东西占了）——
             // 钱和库存都退回去。宁可这单不成，也不能让玩家吃亏
             points.addBalance(player.uuid, total)
-            state.setStock(index, entry.stock)
+            state.setStock(kind, index, entry.stock)
             CobbleMarket.LOGGER.warn(
                 "Point shop: delivery failed for {} on slot {}, rolled back", player.name.string, index
             )
