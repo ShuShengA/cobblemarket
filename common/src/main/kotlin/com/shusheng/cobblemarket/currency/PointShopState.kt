@@ -29,7 +29,22 @@ data class ShopEntry(
     /** 剩余数量；**-1 = 无限量**（默认），0 = 已售罄 */
     val stock: Int = UNLIMITED,
     val pokemon: ShopPokemonSpec? = null,
-    val item: ShopItemSpec? = null
+    val item: ShopItemSpec? = null,
+
+    /**
+     * **条目唯一标识**：服务端**每次保存都换一个新的**（新上架 / 编辑 / 下架后重新上架，全都算）。
+     * 玩家买走一件**不会**动它（库存变化不是内容变化）。
+     *
+     * 用途：玩家打开购买窗时记下当时那个 id、点购买时带回来，服务端**扣钱之前**比对 ——
+     * 对不上就说明这一格在玩家看它之后**换过内容**（换了精灵 / 改了价），此时必须拒绝：
+     * 玩家以为买的是他看到的那个，按改后的内容或价格成交等于骗人。
+     * 详见 [PointMarketService.buy]（那里有竞态窗口的完整说明）。
+     *
+     * ⚠ **不能用自增版本号**：下架再重新上架会从 0 重来，玩家手里旧的 0 与新的 0 正好撞上、
+     *   校验就漏了（2026-09-25 复盘时发现的）。UUID 不会撞。
+     * ⚠ 放在**参数表末尾**并给默认值 —— 存档铁律：加字段只增不改，旧档读不到就落空串。
+     */
+    val entryId: String = ""
 ) {
     fun isSoldOut(): Boolean = stock == 0
 
@@ -223,6 +238,8 @@ class PointShopState private constructor() : PersistentState() {
             c.putString("kind", entry.kind)
             c.putLong("price", entry.price)
             c.putInt("stock", entry.stock)
+            // 空串不写（老数据 / 读不到就落空串时省空间）；读端缺字段落空串
+            if (entry.entryId.isNotEmpty()) c.putString("entryId", entry.entryId)
             entry.pokemon?.let { p ->
                 val pc = NbtCompound()
                 pc.putString("species", p.species)
@@ -338,7 +355,8 @@ class PointShopState private constructor() : PersistentState() {
                                 price = c.getLong("price").coerceAtLeast(0L),
                                 stock = if (c.contains("stock")) c.getInt("stock") else ShopEntry.UNLIMITED,
                                 pokemon = pokemon,
-                                item = item
+                                item = item,
+                                entryId = if (c.contains("entryId")) c.getString("entryId") else ""
                             )
                         } catch (e: Exception) {
                             CobbleMarket.LOGGER.warn("Skipping corrupted shop entry: {}", e.message)

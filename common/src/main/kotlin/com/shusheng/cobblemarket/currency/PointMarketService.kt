@@ -58,7 +58,15 @@ enum class PointMarketError {
     /** **收件空间不足**（队伍和 PC 都满 / 背包放不下）—— 下单前就拒绝，绝不丢玩家东西 */
     NO_SPACE,
     /** 按规格造不出来（物种/物品已被删、存档数据损坏）—— 此时**分文未扣** */
-    GENERATE_FAILED
+    GENERATE_FAILED,
+
+    /**
+     * **这一格在玩家看它之后被服主改过**（内容版本号对不上）—— 拒绝成交、**分文未扣**。
+     *
+     * 玩家看到的可能是旧精灵 / 旧价格，按新的成交等于骗人；这一条是"付钱前一刻的强制检查"，
+     * 光靠界面上关窗拦不住（广播有网络延迟，见 [PointMarketService.buy] 的竞态说明）。
+     */
+    STALE_ENTRY
 }
 
 /**
@@ -167,14 +175,19 @@ object PointMarketService {
         if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return PointMarketError.NO_PERMISSION
         if (index < 0 || index > MAX_INDEX) return PointMarketError.BAD_INDEX
         val normalized = normalize(entry, server) ?: return reject(entry)
+        val state = PointShopState.get(server)
+        // ⚠ **每次保存都换一个全新的 id**（绝不信客户端传的）：语义上等于"旧的作废、换了一个新的"，
+        //   玩家手里那份随之失效 —— 他再点购买会被 [buy] 拒绝，而不是按改后的内容 / 价格成交。
+        //   ⚠ 用 UUID 而不是自增版本号：下架后重新上架会从 0 重来，与玩家手里旧的 0 撞上就漏了。
+        val replaced = normalized.copy(entryId = java.util.UUID.randomUUID().toString())
         // ⚠ kind 取自**规范化后的 entry**：精灵与物品各占一套独立的格子编号（2026-09-25 起，
         //   tab 变成真过滤），同一个 index 在两个 tab 下是两个不同的位置
-        PointShopState.get(server).put(normalized.kind, index, normalized)
+        state.put(replaced.kind, index, replaced)
         // 交易品变更强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
         PersistHelper.requestSave(server)
         CobbleMarket.LOGGER.info(
-            "Point shop slot {} set by {} (kind={}, price={}, stock={})",
-            index, player.name.string, normalized.kind, normalized.price, normalized.stock
+            "Point shop slot {} set by {} (kind={}, price={}, stock={}, id={})",
+            index, player.name.string, replaced.kind, replaced.price, replaced.stock, replaced.entryId
         )
         return null
     }
@@ -215,7 +228,12 @@ object PointMarketService {
      * @return [PointMarketBuyResult.Success]（含造出来的实物，供发庆祝动画）/ [PointMarketBuyResult.Failure]
      */
     fun buy(
-        server: MinecraftServer, player: ServerPlayerEntity, kind: String, index: Int, count: Int
+        server: MinecraftServer,
+        player: ServerPlayerEntity,
+        kind: String,
+        index: Int,
+        count: Int,
+        expectedEntryId: String
     ): PointMarketBuyResult {
         if (kind != ShopEntry.KIND_POKEMON && kind != ShopEntry.KIND_ITEM) {
             return PointMarketBuyResult.Failure(PointMarketError.BAD_KIND)
@@ -223,6 +241,14 @@ object PointMarketService {
         if (index < 0 || index > MAX_INDEX) return PointMarketBuyResult.Failure(PointMarketError.BAD_INDEX)
         val state = PointShopState.get(server)
         val entry = state.find(kind, index) ?: return PointMarketBuyResult.Failure(PointMarketError.NOT_FOUND)
+
+        // ⚠ **付钱前一刻的强制检查**，必须紧跟在取到 entry 之后、早于算价 ——
+        //   条目 id 对不上就说明这一格在玩家看它之后**换过内容**（换了精灵 / 改了价 / 下架重上），
+        //   按新的成交等于骗人。此时直接拒绝，**分文未扣**。
+        //   ⚠ 这条**不能靠界面关窗替代**：广播有网络延迟（服务端发的"已变更"要跑一个来回才到客户端），
+        //   玩家完全可能在收到之前就点了确认。服务端是单线程的，两个包必然一先一后 ——
+        //   「保存先到」那种顺序就是靠这一行挡在扣钱之前的（「购买先到」则按旧内容成交，也没问题）。
+        if (expectedEntryId != entry.entryId) return PointMarketBuyResult.Failure(PointMarketError.STALE_ENTRY)
 
         val amount = if (entry.kind == ShopEntry.KIND_POKEMON) 1 else count
         if (amount < 1 || amount > MAX_BUY_COUNT) return PointMarketBuyResult.Failure(PointMarketError.BAD_COUNT)
