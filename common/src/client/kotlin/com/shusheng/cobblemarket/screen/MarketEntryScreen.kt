@@ -77,9 +77,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var financeEnabled = true
     private var meowthBankBtn: NineSliceButton? = null
 
-    // RP 关闭提示（点置灰的RP 市场按钮时显示，3 秒）
+    // RP 关闭提示（点置灰的RP 商城按钮时显示，3 秒）
     private var pointsNoticeUntil = 0L
-    // RP 市场入口（置灰依据是 PointsStateCache.enabled，登录时服务端补发一次）
+    // RP 商城入口（置灰依据是 PointsStateCache.enabled，登录时服务端补发一次）
     private var pointsMarketBtn: NineSliceButton? = null
 
     /** 分享按钮与它上方展开的子按钮（点击主按钮切换展开，见 [toggleShareMenu]） */
@@ -331,7 +331,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         meowthBankBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.meowth_bank")))
         entryButtons += addDrawableChild(meowthBankBtn)
 
-        // RP 市场：喵喵银行右侧、左组第三颗（位置 2026-09-17 拍板，2026-09-25 随整行按红线重排）。
+        // RP 商城：喵喵银行右侧、左组第三颗（位置 2026-09-17 拍板，2026-09-25 随整行按红线重排）。
         // 总开关关闭时置灰 + 点击给 fail 音与 3 秒提示 —— 照喵喵银行按钮的做法
         //（dimmed 只压暗观感、不影响可点性，所以点击必须在这里自己拦）。
         val pointsBtn = NineSliceButton(
@@ -1261,7 +1261,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                 width / 2, height - 36, 0xFF5555
             )
         }
-        // RP 关闭提示（点置灰的RP 市场按钮，3 秒；与上面两条同位置，极少同时出现）
+        // RP 关闭提示（点置灰的RP 商城按钮，3 秒；与上面两条同位置，极少同时出现）
         if (System.currentTimeMillis() < pointsNoticeUntil) {
             context.drawCenteredTextWithShadow(
                 textRenderer,

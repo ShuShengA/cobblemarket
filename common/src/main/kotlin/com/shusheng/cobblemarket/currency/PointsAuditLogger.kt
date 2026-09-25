@@ -12,9 +12,10 @@ import java.util.UUID
 
 /**
  * RP 变动类型（审计账本的类型列）。
- * GIVE/TAKE = 命令发放与回收；REDEEM = 兑换码；MARKET_* = 市场消费与收入；SHOP_CONFIRM = 充值订单确认发放。
+ * GIVE/TAKE = 命令发放与回收；REDEEM = 兑换码；MARKET_* = **玩家间交易**的消费与收入；
+ * STORE_BUY = **RP 商城购买**（RP 直接销毁，没有对应的收入方）；SHOP_CONFIRM = 充值订单确认发放。
  */
-enum class PointsLogType { GIVE, TAKE, REDEEM, MARKET_SPEND, MARKET_INCOME, SHOP_CONFIRM, CODE_CREATE, CODE_REVOKE }
+enum class PointsLogType { GIVE, TAKE, REDEEM, MARKET_SPEND, MARKET_INCOME, STORE_BUY, SHOP_CONFIRM, CODE_CREATE, CODE_REVOKE }
 
 /**
  * **RP 审计账本**（`config/cobblemarket/points/`）。
@@ -174,6 +175,7 @@ object PointsAuditLogger {
             PointsLogType.REDEEM -> if (zh) "兑换" else "Redeem"
             PointsLogType.MARKET_SPEND -> if (zh) "市场消费" else "Market spend"
             PointsLogType.MARKET_INCOME -> if (zh) "市场收入" else "Market income"
+            PointsLogType.STORE_BUY -> if (zh) "商城消费" else "Store purchase"
             PointsLogType.SHOP_CONFIRM -> if (zh) "充值发放" else "Shop grant"
             // 生成/作废兑换码本身**不改变任何余额**（余额列写 0），单独类型免得污染"发放"口径
             PointsLogType.CODE_CREATE -> if (zh) "生成兑换码" else "Code created"

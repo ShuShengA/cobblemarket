@@ -48,7 +48,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * **RP 市场**：两级结构里的中间层（入口界面 → 本界面 → 充值界面）。
+ * **RP 商城**：两级结构里的中间层（入口界面 → 本界面 → 充值界面）。
  *
  * 本层放两样东西：
  * - **兑换RP**（常驻）：输入 / 粘贴兑换码 —— 国内外网站、发卡网、活动码、补偿码都走这条
@@ -717,7 +717,7 @@ class PointsMarketScreen : Screen(
         (currentPage - 1) * PointShopState.POINTS_SHOP_PAGE_SIZE + pageCellIndex
 
     /**
-     * 窗口宽度：**跟着 RP 市场背景的宽度**（用户 2026-09-20 要的「和背景一样大」）。
+     * 窗口宽度：**跟着 RP 商城背景的宽度**（用户 2026-09-20 要的「和背景一样大」）。
      *
      * ⚠ 只有宽度跟着背景，高度不能 —— 自动 GUI 下逻辑屏才 270 高、背景本身也才 248，
      * 照背景做反而更矮。所以是**宽着排**：宽一点就多排一列，行数自然掉下来（12 行 → 7~8 行）。
@@ -3196,7 +3196,7 @@ class PointsMarketScreen : Screen(
         const val EDIT_DIALOG_H = 262
 
         /**
-         * 窗口宽度的上下限：宽度**跟着 RP 市场背景走**（见 [editDialogW]），
+         * 窗口宽度的上下限：宽度**跟着 RP 商城背景走**（见 [editDialogW]），
          * 只在这两头收一下 —— 大屏上别摊太宽，小屏上别窄到字都放不下。
          */
         const val EDIT_DIALOG_MAX_W = 560

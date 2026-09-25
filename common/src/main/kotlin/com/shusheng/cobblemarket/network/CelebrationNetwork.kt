@@ -16,11 +16,12 @@ import java.util.UUID
 // ── S2C：获得精灵庆祝动画（仅定向发给获得者）：屏幕中央播放该精灵的弹跳动画 ──
 
 /**
- * 动画来源。这里按**真实来源**分三个值，而不是按客户端开关分组——
- * 客户端目前把 AUCTION 与 BUY_ORDER 映射到同一个开关（都是低频、都带仪式感），
- * 将来若要拆成三个独立开关，只改客户端映射即可，不用动网络协议。
+ * 动画来源。这里按**真实来源**分值，而不是按客户端开关分组——
+ * 客户端目前把 MARKET 与 STORE（RP 商城）映射到「市场直购」开关、
+ * AUCTION 与 BUY_ORDER 映射到「拍卖/求购」开关，
+ * 将来若要拆成独立开关，只改客户端映射即可，不用动网络协议。
  */
-enum class CelebrationSource { MARKET, AUCTION, BUY_ORDER }
+enum class CelebrationSource { MARKET, AUCTION, BUY_ORDER, STORE }
 
 data class PokemonCelebrationPayload(
     val speciesId: String,     // 物种资源 ID

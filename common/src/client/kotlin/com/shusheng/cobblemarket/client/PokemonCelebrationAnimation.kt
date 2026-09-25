@@ -133,8 +133,9 @@ object PokemonCelebrationAnimation {
         origin: Origin? = null
     ) {
         // 个人开关按来源分流（服务端总开关是另一层：那层关了压根不发包）。
+        // ⚠ 主市场与 **RP 商城**同组（都是"在市场上直接买"，2026-09-25 拍板）。
         // 未知来源（版本不匹配等）归到低频那组，宁可多播也不要静默吞掉。
-        val allowed = if (source == CelebrationSource.MARKET.name)
+        val allowed = if (source == CelebrationSource.MARKET.name || source == CelebrationSource.STORE.name)
             ClientConfig.celebrationOnMarketBuy
         else
             ClientConfig.celebrationOnAuctionAndOrder

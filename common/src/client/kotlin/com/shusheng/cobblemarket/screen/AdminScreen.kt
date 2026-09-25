@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.ClientPermissionCache
+import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.client.MarketStateCache
@@ -339,7 +340,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
                 .append(
                     Text.translatable(
                         "cobblemarket.perm.need_node",
-                        Text.translatable("cobblemarket.perm.node.points.order")
+                        Text.translatable("cobblemarket.perm.node.points.order", CurrencyService.pointsIcon())
                     )
                 )
         ))
@@ -349,7 +350,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         // 进来就问一次有没有待确认的（只要数量，不要列表）；结果由 onPointOrders 落进红点
         sendToServer(RequestPointOrdersPayload(false, ""))
 
-        // 兑换码入口：**充值订单右边** —— 2026-09-25 用户拍板从「服务器配置 → RP 市场」里挪出来，
+        // 兑换码入口：**充值订单右边** —— 2026-09-25 用户拍板从「服务器配置 → RP 配置」里挪出来，
         // 因为那个界面只有服主进得去，持 `points.code` 节点的人在界面上根本没有落点（只有命令能用）。
         // ⚠ 判 **`points.code` 节点**：**生成兑换码 = 印钞**，且这个界面会列出码前缀、能复制完整码 ——
         //   授予前先想清楚给谁（详见 docs/permission_nodes_plan.md ⑩ 的遗留段）
@@ -367,7 +368,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
                 .append(
                     Text.translatable(
                         "cobblemarket.perm.need_node",
-                        Text.translatable("cobblemarket.perm.node.points.code")
+                        Text.translatable("cobblemarket.perm.node.points.code", CurrencyService.pointsIcon())
                     )
                 )
         ))

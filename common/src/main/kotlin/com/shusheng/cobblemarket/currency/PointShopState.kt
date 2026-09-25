@@ -167,16 +167,18 @@ class PointShopState private constructor() : PersistentState() {
     }
 
     /**
-     * 卖出一份：库存 -1；无限量不动。返回 false = **已售罄**（调用方必须拒绝交易）。
+     * 卖出 [amount] 份：库存 -amount；无限量不动。
+     * 返回 false = **售罄或库存不足**（调用方必须拒绝交易，且此时**一分钱都不能扣**）。
      *
-     * ⚠ 与扣款同一事务内调用：先扣库存再加货/扣钱，崩溃窗口最坏是少卖一份（可补），
-     * 反过来则会超卖。
+     * ⚠ 与扣款同一事务内调用：**先扣库存再加货/扣钱**，崩溃窗口最坏是少卖一份（可补），
+     * 反过来则会超卖 —— 玩家付了钱却拿不到货，或者拿了货没付钱。
      */
-    fun consume(index: Int): Boolean {
+    fun consume(index: Int, amount: Int = 1): Boolean {
+        if (amount <= 0) return false
         val entry = slots[index] ?: return false
         if (entry.stock == ShopEntry.UNLIMITED) return true
-        if (entry.stock <= 0) return false
-        slots[index] = entry.copy(stock = entry.stock - 1)
+        if (entry.stock < amount) return false
+        slots[index] = entry.copy(stock = entry.stock - amount)
         markDirty()
         return true
     }

@@ -22,6 +22,7 @@ import com.shusheng.cobblemarket.network.AdminRequestPokemonPayload
 import com.shusheng.cobblemarket.network.AdminUnbanPayload
 import com.shusheng.cobblemarket.network.BuyFromMarketPayload
 import com.shusheng.cobblemarket.network.BuyItemPayload
+import com.shusheng.cobblemarket.network.BuyPointMarketEntryPayload
 import com.shusheng.cobblemarket.network.CancelBuyOrderPayload
 import com.shusheng.cobblemarket.network.CancelFromMarketPayload
 import com.shusheng.cobblemarket.network.CancelItemPayload
@@ -167,10 +168,11 @@ fun registerClientC2S() {
         c2s(registrar, RequestPointCodesPayload.ID, RequestPointCodesPayload.CODEC)
         c2s(registrar, RevokePointCodePayload.ID, RevokePointCodePayload.CODEC)
         c2s(registrar, RequestPointRecordsPayload.ID, RequestPointRecordsPayload.CODEC)
-        // RP 商城（商品区）三个包：同上，漏登记会在协商阶段直接断连
+        // RP 商城（商品区）四个包：同上，漏登记会在协商阶段直接断连
         c2s(registrar, RequestPointMarketPayload.ID, RequestPointMarketPayload.CODEC)
         c2s(registrar, SavePointMarketEntryPayload.ID, SavePointMarketEntryPayload.CODEC)
         c2s(registrar, RemovePointMarketEntryPayload.ID, RemovePointMarketEntryPayload.CODEC)
+        c2s(registrar, BuyPointMarketEntryPayload.ID, BuyPointMarketEntryPayload.CODEC)
         c2s(registrar, RejectPendingDeliverPayload.ID, RejectPendingDeliverPayload.CODEC)
         c2s(registrar, RemoveItemBlacklistPayload.ID, RemoveItemBlacklistPayload.CODEC)
         c2s(registrar, RemoveItemPriceLimitPayload.ID, RemoveItemPriceLimitPayload.CODEC)

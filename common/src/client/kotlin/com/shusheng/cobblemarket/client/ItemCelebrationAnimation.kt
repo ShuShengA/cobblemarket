@@ -117,8 +117,9 @@ object ItemCelebrationAnimation {
     /** 入队一件；空闲则立即开播，正在播则排队等前面播完 */
     fun trigger(itemNbt: NbtCompound, count: Int, source: String) {
         // 个人开关按来源分流，走的是**物品那一组**（设置弹窗「物品」标题下），与精灵侧各自独立。
+        // ⚠ 主市场与 **RP 商城**同组（都是"在市场上直接买"，2026-09-25 拍板）。
         // 未知来源归到低频那组，宁可多播也不要静默吞掉。
-        val allowed = if (source == CelebrationSource.MARKET.name)
+        val allowed = if (source == CelebrationSource.MARKET.name || source == CelebrationSource.STORE.name)
             ClientConfig.celebrationItemOnMarketBuy
         else
             ClientConfig.celebrationItemOnAuctionAndOrder

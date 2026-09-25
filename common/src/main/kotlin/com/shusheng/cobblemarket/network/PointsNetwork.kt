@@ -42,7 +42,7 @@ import java.io.File
 private const val MAX_CODE_LENGTH = 64
 
 /**
- * RP 总开关（S2C）：登录时下发一次，客户端据此决定「RP 市场」入口按钮是否置灰。
+ * RP 总开关（S2C）：登录时下发一次，客户端据此决定「RP 商城」入口按钮是否置灰。
  * ⚠ 与市场总开关（[MarketStatePayload]）的区别：那个是**紧急停市**，按钮仍有用（看列表/取回资产）；
  * RP 总开关管的是「这个服不用RP」—— 界面进不去也没损失，所以按钮照喵喵银行的做法**置灰**。
  */
@@ -66,7 +66,7 @@ data class PointsStatusPayload(
     }
 }
 
-/** 玩家在RP 市场界面里兑换（命令 `/market points redeem` 是同一个内核的另一入口） */
+/** 玩家在RP 商城界面里兑换（命令 `/market points redeem` 是同一个内核的另一入口） */
 data class RedeemPointCodePayload(val code: String) : CustomPayload {
     override fun getId() = ID
 
@@ -418,7 +418,7 @@ private fun readOrder(b: PacketByteBuf) = PointOrderInfo(
     voidReason = b.readString(MAX_STATUS_LENGTH)
 )
 
-// ── RP 市场配置（**仅服主**；服务器配置界面里的「RP 市场」入口）──
+// ── RP 配置（**仅服主**；服务器配置界面里的「RP 商城」入口）──
 
 /** 一个档位的可编辑形态（配置界面用；金额是**分**，与账本同口径） */
 data class PointsTierConfig(
@@ -444,7 +444,7 @@ data class RequestPointsConfigPayload(val dummy: Boolean) : CustomPayload {
     }
 }
 
-/** 当前 RP 市场配置快照（S2C，仅发给 OP） */
+/** 当前 RP 配置快照（S2C，仅发给 OP） */
 data class PointsConfigPayload(
     val pointsEnabled: Boolean,
     val shopEnabled: Boolean,
@@ -541,7 +541,7 @@ data class PointsConfigPayload(
 }
 
 /**
- * 保存 RP 市场配置（C2S）。
+ * 保存 RP 配置（C2S）。
  *
  * ⚠ 服务端**只认服主**（`isServerOwner`）：配置里装着**外部签名码密钥**，拿到它就能凭空签发兑换码 ——
  * 界面上这个入口确实只在「服务器配置」里、只有服主进得去，**但那只挡得住 UI**：
@@ -913,7 +913,7 @@ object PointsNetwork {
         // 该 payload 类型已注册，`ClientBridgeKtImpl.registerS2C` 会抛 IllegalArgumentException）
         registerS2CType(PointRecordsPayload.ID, PointRecordsPayload.CODEC)
 
-        // ── RP 市场配置（服务器配置界面的「RP 市场」入口；⚠ **只认服主**，不下放任何节点）──
+        // ── RP 配置（服务器配置界面的「RP 商城」入口；⚠ **只认服主**，不下放任何节点）──
         //   原先判 OP：那是「界面上只有服主进得去」被误当成了服务端的把关 ——
         //   任何 OP 绕过界面直接发包就能改，而配置里有外部签名码密钥（能凭空签发兑换码）
 

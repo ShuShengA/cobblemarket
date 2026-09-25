@@ -26,7 +26,7 @@ object PayQrImage {
         =========================================
 
         Put YOUR payment QR image HERE (plain file name, no path), then fill in that
-        file name in game: Admin Panel -> Server Config -> RP Market.
+        file name in game: Admin Panel -> Server Config -> RP Shop.
 
         ANY payment method that gives you a QR code works: PayPal, Cash App, Venmo,
         Ko-fi, Buy Me a Coffee, a bank transfer QR, WeChat / Alipay, ...
@@ -52,7 +52,7 @@ object PayQrImage {
         收款码目录
         ==========
         把微信/支付宝的收款码 PNG 放在这里（只写文件名，不带路径），
-        然后在游戏里填：管理面板 -> 服务器配置 -> RP 市场。
+        然后在游戏里填：管理面板 -> 服务器配置 -> RP 配置。
 
         - 只认 PNG，单张不超过 512KB、像素不超过 2048×2048。
         - 收款码本身是正方形，512×512 左右就够。弹窗里最大只画 208×110 像素，

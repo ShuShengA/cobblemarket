@@ -160,7 +160,7 @@ class PointsCodeScreen : Screen(Text.translatable("cobblemarket.points.code.titl
         // TODO(发布 1.3.0 前)：infoButton.setTooltip(...) 写清外部签名码怎么用 + 官网链接
         addDrawableChild(infoButton)
 
-        // 返回**回管理面板**（不是 RP 配置界面）：2026-09-25 入口从「服务器配置 → RP 市场」挪到了
+        // 返回**回管理面板**（不是 RP 配置界面）：2026-09-25 入口从「服务器配置 → RP 配置」挪到了
         // 管理面板的图标按钮行 —— 入口换地方，返回就得跟着换，否则「进去点返回」会跳到一个
         // 持节点者根本进不去的界面（同类坑：全部交易历史的返回按钮曾经一跳回到市场入口）
         backButton = NineSliceButton(

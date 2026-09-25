@@ -185,7 +185,7 @@ class PointsRechargeScreen : Screen(
     /**
      * 右侧滚动条：有装不下的档位行才画 —— 否则玩家不知道下面还有档位。
      *
-     * 画法与服务器配置界面 / RP 市场配置界面同一套（2px 宽、半透明轨道 + 不透明滑块）。
+     * 画法与服务器配置界面 / RP 配置界面同一套（2px 宽、半透明轨道 + 不透明滑块）。
      * 位置：**两条红线之间、档位卡区右侧那条缝里** —— 卡片区右边缘取 `inset`，
      * 而红线右端到 `texPx(78)`，前者更靠内，中间正好腾出十几像素。
      */
@@ -303,7 +303,7 @@ class PointsRechargeScreen : Screen(
         addDrawableChild(backButton)
 
         // 「查看订单」：**内容区右上角**，有未完结订单时才显示。
-        // ⚠ 位置与 RP 市场界面的「购买 RP」按钮同一规则（内容区顶 + ROW_TOP_OFFSET）：
+        // ⚠ 位置与 RP 商城界面的「购买 RP」按钮同一规则（内容区顶 + ROW_TOP_OFFSET）：
         // 原来跟标题对齐（texPx(TITLE_TOP)），而标题本来就在背景图顶部那条装饰边框里
         // （边框厚 90 原图口径 ≈ 1080p 下 124px，标题只在 28 处）⇒ 按钮压在边框装饰条上（2026-09-18 用户报）。
         val ordersBtn = NineSliceButton(
@@ -510,7 +510,7 @@ class PointsRechargeScreen : Screen(
         // 结果提示：放在返回按钮上方（弹窗打开时那边是空的，不会重叠）
         renderResultToast(context, bg)
 
-        // 上下两条红色分割线：**夹出中间的档位卡区**（与 RP 市场界面「兑换行 / 红线下是商品区」
+        // 上下两条红色分割线：**夹出中间的档位卡区**（与 RP 商城界面「兑换行 / 红线下是商品区」
         // 同一种结构；跨度避开背景边框，2026-09-18 用户定）。
         // 档位卡的排版与滚动范围都取这两条线之间的区域 —— 卡片不会画到线外。
         val lineLeft = bg.x + texPx(DIVIDER_BORDER_X) - DIVIDER_EXTEND
@@ -850,7 +850,7 @@ class PointsRechargeScreen : Screen(
 
     /**
      * 档位卡区的上边界 = 上分割线下方 [TIERS_PADDING]（= 首行卡片的顶边）。
-     * 与 RP 市场界面「红线下才是内容区」同构。
+     * 与 RP 商城界面「红线下才是内容区」同构。
      */
     private fun tierAreaTop(bg: PointsMarketBackground.Rect): Int = dividerTopY(bg) + TIERS_PADDING
 
@@ -859,7 +859,7 @@ class PointsRechargeScreen : Screen(
         dividerBottomY(bg) - TIERS_PADDING
 
     /**
-     * 档位卡宽度：**宽与高同时约束，取小的那个**（照 RP 市场界面商品网格的算法）。
+     * 档位卡宽度：**宽与高同时约束，取小的那个**（照 RP 商城界面商品网格的算法）。
      *
      * ⚠ 只按宽度算（`可用宽 ÷ 3`）是不够的：卡片高度是由宽度推出来的（图标按内置图的
      * 256:160 比例），所以档位排到**第二行**时总高是硬撑出来的，撑不下就顶到返回按钮上
@@ -998,23 +998,23 @@ class PointsRechargeScreen : Screen(
         /**
          * 贴内容区顶的控件（「查看订单」）再下移的量：**逻辑像素**。
          * ⚠ 必须配 `borderInset()` 用：标题在 28（原图口径）而边框厚 90，跟着标题走就压到
-         * 背景图顶部那条装饰边框上了（2026-09-18 用户报）。与 RP 市场界面的「购买 RP」按钮同一规则。
+         * 背景图顶部那条装饰边框上了（2026-09-18 用户报）。与 RP 商城界面的「购买 RP」按钮同一规则。
          */
         const val ROW_TOP_OFFSET = 3
 
         /** 内容区右上角「查看订单」按钮宽度 */
         const val ORDERS_W = 68
 
-        /** 红色分割线左右各避开的背景边框宽度（**原图口径**，与 RP 市场界面同一个值） */
+        /** 红色分割线左右各避开的背景边框宽度（**原图口径**，与 RP 商城界面同一个值） */
         const val DIVIDER_BORDER_X = 78
 
-        /** 在「避开边框」的基础上左右各再延长的量：**逻辑像素**（与 RP 市场界面同一个值） */
+        /** 在「避开边框」的基础上左右各再延长的量：**逻辑像素**（与 RP 商城界面同一个值） */
         const val DIVIDER_EXTEND = 2
 
         /** 分割线与相邻控件（内容区顶那一行）的空隙：**逻辑像素** */
         const val DIVIDER_GAP = 6
 
-        /** 档位卡区与上下两条分割线的间距（照 RP 市场界面商品区与分割线的间距） */
+        /** 档位卡区与上下两条分割线的间距（照 RP 商城界面商品区与分割线的间距） */
         const val TIERS_PADDING = 6
 
         const val ORDER_DIALOG_W = 232
