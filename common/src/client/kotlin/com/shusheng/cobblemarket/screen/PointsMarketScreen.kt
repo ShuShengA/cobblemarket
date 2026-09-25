@@ -862,10 +862,14 @@ class PointsMarketScreen : Screen(
         // 快照弹窗开着：事件只给它（列表行是自绘的，命中判定自己来）
         if (snapshotDialog) {
             val focusWasInput = snapshotNameField != null && focused === snapshotNameField
-            super.mouseClicked(mouseX, mouseY, button)
+            val result = super.mouseClicked(mouseX, mouseY, button)
             // ⚠ 点输入框之外要**手动失焦**，否则 E 键被输入框吃掉、Esc 也关不掉窗口（项目老坑）
             if (focusWasInput && snapshotNameField?.isMouseOver(mouseX, mouseY) != true) focused = null
-            if (!focusWasInput && button == 0 && hoveredSnapshot >= 0) {
+            // ⚠ 必须判 `!result`（控件没吃掉这次点击）—— 同下面选项列表那处。
+            //   `hoveredSnapshot` 是**上一帧 render** 记下的：鼠标刚从列表行移到名字框、下一帧还没跑，
+            //   它仍是旧值 ≥ 0 —— 不判 result 的话这次点输入框会被当成「点了那一行」，
+            //   直接 applySnapshot 把弹窗关了、草稿也被覆盖（2026-09-25 用户报「有时点不进输入态」）
+            if (!result && !focusWasInput && button == 0 && hoveredSnapshot >= 0) {
                 PointMarketCache.snapshots.getOrNull(hoveredSnapshot)?.let { snapshot ->
                     val rowLeft = editDialogX() + EDIT_PAD
                     val rowW = editDialogW() - EDIT_PAD * 2
@@ -2800,7 +2804,11 @@ class PointsMarketScreen : Screen(
 
     /** 箭头只在候选 ≥2 **且没展开选项列表**时出现（唯一候选没什么可切的；列表展开时它会是干扰） */
     private fun updateEditSpeciesArrows() {
-        val multi = editSpeciesCandidates.size > 1 && optionListKind == null
+        // ⚠ 候选箭头**也是叠层控件**（它们压在展开的列表上）—— 判据必须与 [updateEditControlsVisibility]
+        //   的 `covered` 一致：**快照弹窗同样是叠层**。原来只判 `optionListKind == null`，
+        //   于是快照弹窗一开、只要之前搜过物种（候选 > 1），这两枚箭头就冒出来压在**名字输入框**上，
+        //   点输入框被它截胡 —— 表现成「有时能点、有时点不进输入态」（2026-09-25 用户报）
+        val multi = editSpeciesCandidates.size > 1 && optionListKind == null && !snapshotDialog
         editSpeciesPrev?.visible = multi
         editSpeciesNext?.visible = multi
     }
@@ -3133,18 +3141,22 @@ class PointsMarketScreen : Screen(
         // 候选箭头同理：它们也压在列表上（用户实测：选形态时两枚箭头跑到列表界面里了）
         updateEditSpeciesArrows()
 
-        // ⚠ **兜底**：选项列表展开时，凡是从 [editWidgetBase] 起建出来、又不在上面那份清单里的控件，
+        // ⚠ **兜底**：叠层打开时，凡是从 [editWidgetBase] 起建出来、又不在上面那份清单里的控件，
         //   一律隐藏 —— 逐个列名字隐藏必然有漏（上一条注释就是踩过的坑）。
-        //   列表自己的控件（搜索框 / 返回）不在兜底范围内，它们本来就该显示。
-        //   ⚠ 快照弹窗的控件**也不该被它扫到**（它们叠在最上面、本来就该显示）—— 所以只判列表展开。
-        if (optionListKind != null) {
-            val listOwn = buildSet<net.minecraft.client.gui.widget.ClickableWidget> {
+        //   列表自己的控件（搜索框 / 返回）与**快照弹窗自己的控件**不在兜底范围内，它们本来就该显示。
+        //   ⚠ 2026-09-25：这里原来只判 `optionListKind != null` —— **快照弹窗整个不吃兜底**，
+        //     于是任何「漏判叠层」的控件都会在快照弹窗里冒出来（箭头的漏判就是这么显形的）。
+        //     改判 `covered`，两处叠层一起兜。
+        if (covered) {
+            val own = buildSet<net.minecraft.client.gui.widget.ClickableWidget> {
                 optionSearchField?.let { add(it) }
                 addAll(optionListButtons)
+                snapshotNameField?.let { add(it) }
+                addAll(snapshotButtons)
             }
             children().drop(editWidgetBase)
                 .filterIsInstance<net.minecraft.client.gui.widget.ClickableWidget>()
-                .filter { it !in listOwn }
+                .filter { it !in own }
                 .forEach { it.visible = false }
         }
     }
