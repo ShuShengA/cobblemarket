@@ -100,6 +100,7 @@ import com.shusheng.cobblemarket.network.RequestServerConfigPayload
 import com.shusheng.cobblemarket.network.RequestTierIconPayload
 import com.shusheng.cobblemarket.network.RequestWithdrawPayload
 import com.shusheng.cobblemarket.network.SavePointMarketEntryPayload
+import com.shusheng.cobblemarket.network.UpdatePointMarketStockPayload
 import com.shusheng.cobblemarket.network.SavePointsConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.SellFromStoragePayload
@@ -175,6 +176,7 @@ fun registerClientC2S() {
         c2s(registrar, RequestPointMarketPayload.ID, RequestPointMarketPayload.CODEC)
         c2s(registrar, SavePointMarketEntryPayload.ID, SavePointMarketEntryPayload.CODEC)
         c2s(registrar, RemovePointMarketEntryPayload.ID, RemovePointMarketEntryPayload.CODEC)
+        c2s(registrar, UpdatePointMarketStockPayload.ID, UpdatePointMarketStockPayload.CODEC)
         c2s(registrar, BuyPointMarketEntryPayload.ID, BuyPointMarketEntryPayload.CODEC)
         // 配方快照的三个（请求列表 / 存 / 删）
         c2s(registrar, RequestShopSnapshotsPayload.ID, RequestShopSnapshotsPayload.CODEC)

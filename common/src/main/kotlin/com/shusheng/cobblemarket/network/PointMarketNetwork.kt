@@ -149,6 +149,30 @@ data class SavePointMarketEntryPayload(val index: Int, val entry: ShopEntry) : C
 }
 
 /** OP 下架一格（清空该格）。⚠ 要带 [kind] —— 同一序号在精灵 / 物品两个 tab 下是两个格子 */
+/** 补货：只改这一格的**库存**（`-1` = 不限量），别的什么都不动 */
+data class UpdatePointMarketStockPayload(val index: Int, val kind: String, val stock: Int) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<UpdatePointMarketStockPayload>(CobbleMarket.id("update_point_market_stock"))
+        // ⚠ 读写**顺序必须一一对应**（payload 顺序铁律）；读端用具名参数，错位时一眼看得出来
+        val CODEC: PacketCodec<PacketByteBuf, UpdatePointMarketStockPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeInt(p.index)
+                b.writeString(p.kind, MAX_TEXT_LENGTH)
+                b.writeInt(p.stock)
+            },
+            { b ->
+                UpdatePointMarketStockPayload(
+                    index = b.readInt(),
+                    kind = b.readString(MAX_TEXT_LENGTH),
+                    stock = b.readInt()
+                )
+            }
+        )
+    }
+}
+
 data class RemovePointMarketEntryPayload(val index: Int, val kind: String) : CustomPayload {
     override fun getId() = ID
 
@@ -486,6 +510,30 @@ object PointMarketNetwork {
                     // 结果音效同别处：成功 / 失败各一声。⚠ 这两个包**不发 MarketResultPayload**
                     //   （回执是聊天栏文字 + 快照），所以那条统一播音效的路走不到这儿 ——
                     //   不补的话服主点保存只有按钮的 click 声，成没成全靠看聊天栏（用户 2026-09-20 报）
+                    sendSound(player, "result_success")
+                } else {
+                    player.sendMessage(pointMarketErrorText(error).copy().formatted(Formatting.RED), false)
+                    sendSound(player, "result_fail")
+                }
+            }
+        }
+
+        // 补货：只改库存（⚠ 服务端刻意**不动 entryId** —— 补货不是"换内容"，见 PointMarketService.updateStock）
+        registerC2S(UpdatePointMarketStockPayload.ID, UpdatePointMarketStockPayload.CODEC) { payload, player ->
+            if (!RequestThrottle.allow(player.uuid, "point_market_stock", RequestThrottle.WRITE_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            val server = player.server
+            server.execute {
+                val error = PointMarketService.updateStock(server, player, payload.kind, payload.index, payload.stock)
+                if (error == null) {
+                    player.sendMessage(
+                        Text.translatable("cobblemarket.points.store.stock_updated", payload.index + 1)
+                            .formatted(Formatting.GREEN),
+                        false
+                    )
+                    // 广播：别的玩家（以及服主自己）正开着的界面都要跟着刷新库存
+                    broadcastSnapshot(server)
                     sendSound(player, "result_success")
                 } else {
                     player.sendMessage(pointMarketErrorText(error).copy().formatted(Formatting.RED), false)

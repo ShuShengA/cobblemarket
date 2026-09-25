@@ -192,6 +192,30 @@ object PointMarketService {
         return null
     }
 
+    /**
+     * **补货：只改库存**（`-1` = 不限量）；返回 null = 成功。
+     *
+     * ⚠ **刻意不动 `entryId`**：编辑功能取消后，售罄的格子留在界面上就是为了让服主补货
+     *（原话见 [PointShopState.setStock] 的用途）。补货只是"又进了几件"，**不是换了商品** ——
+     * 换 id 会让所有开着的界面弹「这件商品刚被改动过」，把正常的补货说成内容变更。
+     * ⚠ 也**不走 [save]**：那一版每次都会换新 id（防按改后内容成交，见它的注释），语义正好相反。
+     */
+    fun updateStock(
+        server: MinecraftServer, player: ServerPlayerEntity, kind: String, index: Int, stock: Int
+    ): PointMarketError? {
+        if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return PointMarketError.NO_PERMISSION
+        if (kind != ShopEntry.KIND_POKEMON && kind != ShopEntry.KIND_ITEM) return PointMarketError.BAD_KIND
+        if (index < 0 || index > MAX_INDEX) return PointMarketError.BAD_INDEX
+        // 入库前归一：负数一律按「不限量」算（界面留空传的就是它），别把 -5 这种写进存档
+        val normalized = if (stock < 0) ShopEntry.UNLIMITED else stock
+        if (!PointShopState.get(server).setStock(kind, index, normalized)) return PointMarketError.NOT_FOUND
+        PersistHelper.requestSave(server)
+        CobbleMarket.LOGGER.info(
+            "Point shop slot {} stock set to {} by {}", index, normalized, player.name.string
+        )
+        return null
+    }
+
     /** 下架（清空一格）；返回 null = 成功。⚠ 要指明 [kind] —— 同一序号在两个 tab 下是两个格子 */
     fun remove(
         server: MinecraftServer, player: ServerPlayerEntity, kind: String, index: Int

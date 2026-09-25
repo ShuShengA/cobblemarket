@@ -97,6 +97,8 @@
 
   "cobblemarket.points.store.saved": "已上架到第 %s 格",
   "cobblemarket.points.store.removed": "已清空第 %s 格",
+  "cobblemarket.points.store.stock_updated": "第 %s 格库存已更新",
+  "cobblemarket.points.store.buy_stock_label": "剩余：",
   "cobblemarket.points.store.bought": "购买成功：%s ×%s，花费 %s",
   "cobblemarket.points.store.buy_title": "购买",
   "cobblemarket.points.store.buy_item_title": "购买物品",
@@ -128,6 +130,7 @@
   "cobblemarket.points.store.short.tera": "太晶属性",
   "cobblemarket.points.store.short.skill": "技能",
   "cobblemarket.points.store.short.carry": "携带物",
+  "cobblemarket.points.store.short.item": "物品",
   "cobblemarket.points.store.short.marks": "证章",
   "cobblemarket.points.store.field.shiny": "闪光：%s",
   "cobblemarket.points.store.shiny_chance_suffix": "：%s",
