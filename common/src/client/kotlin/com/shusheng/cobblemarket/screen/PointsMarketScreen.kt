@@ -13,6 +13,7 @@ import com.shusheng.cobblemarket.client.formatPriceShortLong
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
+import com.shusheng.cobblemarket.client.playButtonClickSound
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.client.playMarketSound
 import com.shusheng.cobblemarket.currency.CurrencyService
@@ -311,7 +312,8 @@ class PointsMarketScreen : Screen(
         // 值都落在控件上，必须重建才看得到；走 init 那条路（它认得 editSlot，会把窗口建回来）
         clearChildren()
         init()
-        playMarketSound("button_click")
+        // 点击音不在这里播 —— 它属于**点击事件**（点行填充、点「×」删除都要出声），
+        // 统一由 mouseClicked 的快照分支播一次，见那里
     }
 
     /**
@@ -871,6 +873,11 @@ class PointsMarketScreen : Screen(
             //   直接 applySnapshot 把弹窗关了、草稿也被覆盖（2026-09-25 用户报「有时点不进输入态」）
             if (!result && !focusWasInput && button == 0 && hoveredSnapshot >= 0) {
                 PointMarketCache.snapshots.getOrNull(hoveredSnapshot)?.let { snapshot ->
+                    // 快照行是**自绘**的（不走 NineSliceButton），点击音得自己播。
+                    // 放在这里而不是 [applySnapshot] 里：**点「×」删除也要出声**，那条路不进 applySnapshot。
+                    // ⚠ 必须用 playButtonClickSound（与按钮同档 0.25）—— 原先这里走的是 playMarketSound，
+                    //   那是**服务端事件音效**、按素材响度给 0.9，响了 3.6 倍（2026-09-25 用户报）
+                    playButtonClickSound()
                     val rowLeft = editDialogX() + EDIT_PAD
                     val rowW = editDialogW() - EDIT_PAD * 2
                     // 点右侧那个「×」区 = 删；点行别处 = 填充当前草稿
@@ -918,6 +925,10 @@ class PointsMarketScreen : Screen(
         val i = hoveredOptionRow(mouseX, mouseY)
         if (i < 0) return false
         optionListItems.getOrNull(optionListScroll + i)?.let { item ->
+            // 选项行是**自绘**的（不走 NineSliceButton），点击音得自己播 ——
+            // 缺了它，在性格 / 特性 / 太晶属性这些**展开式列表**里选东西会没有任何声音
+            //（2026-09-25 用户报）。⚠ 单选、多选两种情况都要，所以放在分支之前
+            playButtonClickSound()
             // 多选（证章）只切勾选、不关列表；单选选完就走
             if (optionListMultiSelect) toggleMultiOption(item.value) else selectOption(item.value)
         }
@@ -1407,7 +1418,7 @@ class PointsMarketScreen : Screen(
         if (!canEditShop()) return
         // 格子是**自绘**的，不走 NineSliceButton 那套内置点击音 —— 不在这里补一下，
         // 点格子的手感就是"没反应"（用户 2026-09-20 报「网格内的交互都没音效」）
-        playCellClickSound()
+        playButtonClickSound()
         editSlot = slot
         // ⚠ 这里**只处理"添加"**（只有空网格会走到这，见 mouseClicked）：`editOriginal` 恒为 null。
         //   服主点有内容的格子走的是 [openBuyDialog] 的 admin 模式（只读 + 下架），不再有"编辑"——
@@ -1496,22 +1507,6 @@ class PointsMarketScreen : Screen(
     }
 
     /**
-     * 点格子的音效 —— 格子是**自绘**的、不走 [NineSliceButton] 那条路，所以得自己播。
-     *
-     * ⚠ **必须与按钮同档**：按钮那边用 `PositionedSoundInstance.master(sound, pitch)`，
-     * 走的是**默认音量 0.25**；而 [playMarketSound] 是给**服务端事件音效**按素材响度分档的
-     * （0.9 / 0.5），拿它播点击音会响三倍多 —— 2026-09-25 用户实测报「所有按钮就这一个音量最大」。
-     */
-    private fun playCellClickSound() {
-        client?.soundManager?.play(
-            net.minecraft.client.sound.PositionedSoundInstance.master(
-                net.minecraft.sound.SoundEvent.of(net.minecraft.util.Identifier.of("cobblemarket", "button_click")),
-                1.0f
-            )
-        )
-    }
-
-    /**
      * 打开购买窗。[slot] 必须是**有内容的**格子（调用方 [mouseClicked] 已判过，这里再兜一道）。
      *
      * [admin] = true 打开的是服主的**只读查看窗**（同一套内容，换按钮见 [buyDialogAdmin]）。
@@ -1519,7 +1514,7 @@ class PointsMarketScreen : Screen(
     private fun openBuyDialog(slot: Int, admin: Boolean = false) {
         if (PointMarketCache.slots[slot] == null) return
         // 格子是自绘的、不走 NineSliceButton 内置点击音 —— 不补手感就是"点了没反应"（同 openEditDialog）
-        playCellClickSound()
+        playButtonClickSound()
         buySlot = slot
         buyDialogAdmin = admin
         buyCount = 1
@@ -1754,7 +1749,11 @@ class PointsMarketScreen : Screen(
             if (key == KEY_MARKS && spec.marks.isNotEmpty() && overBuyField(mouseX, mouseY, row, col)) {
                 marksTooltipAt = editColX(col) to (editRowY(row) + EDIT_ROW_H + 2)
             }
-            drawBuyField(context, editColX(col), editRowY(row), editColW(), buyFieldLine(key, spec))
+            drawBuyField(
+                context, editColX(col), editRowY(row), editColW(), buyFieldLine(key, spec),
+                // 头目那行的标签是**徽章贴图**（与编辑窗按钮、列表行同一张），得单独画；其余字段没有
+                badge = if (key == KEY_ALPHA) "alpha" else null
+            )
         }
         // 六项个体值 / 努力值：一行六个（与编辑窗同一行、同一列序）。
         // ⚠ **每项自己的颜色**，取的是市场悬停窗 / 列表行那张色表（用户 2026-09-25 要求照它来）；
@@ -1939,11 +1938,26 @@ class PointsMarketScreen : Screen(
     /**
      * 一行只读字段（**标签冒号写在词条里**，这里只负责截断与摆放）。
      * [color] 是**行色** —— 默认白，个体值 / 努力值那几行按项给色（见 [STAT_ROW_COLORS]）。
+     * [badge] = **行首徽章**（体型名，只有头目那行传 `"alpha"`）：徽章是**贴图**、插不进 [line] 这个
+     *   Text 里，所以单独画一个行首图，后面的文字**往右让位**、可用宽度相应收窄。
      */
-    private fun drawBuyField(context: DrawContext, x: Int, y: Int, w: Int, line: Text, color: Int = 0xFFFFFF) {
+    private fun drawBuyField(
+        context: DrawContext, x: Int, y: Int, w: Int, line: Text,
+        color: Int = 0xFFFFFF,
+        badge: String? = null
+    ) {
+        var textX = x
+        var textW = w
+        if (badge != null) {
+            // 行首徽章**复用列表行那一套**（[EntryBadgeRenderer.drawSizeBadgeIcon]：同一张 37×16 的图、
+            // 同样 0.5 缩放，还带返回宽度）—— 别在这儿自己 blit：贴图缩放要走 matrices，是踩过的坑
+            val badgeW = EntryBadgeRenderer.drawSizeBadgeIcon(context, badge, textX, y + (EDIT_ROW_H - 8) / 2)
+            textX += badgeW + 2
+            textW -= badgeW + 2
+        }
         // ⚠ 截断用 truncateStyled：truncateText 会把 Text 压成一段、丢掉图标字形的字体样式
         context.drawTextWithShadow(
-            textRenderer, TextUtil.truncateStyled(line, w), x, y + (EDIT_ROW_H - 8) / 2, color
+            textRenderer, TextUtil.truncateStyled(line, textW), textX, y + (EDIT_ROW_H - 8) / 2, color
         )
     }
 
@@ -2589,15 +2603,16 @@ class PointsMarketScreen : Screen(
                     addDrawableChild(btn)
                 }
 
-                // 头目也单独建：要用 37×16 的 alpha 徽章（与列表行里那张同一张图）
+                // 头目也单独建：要用 alpha 徽章（与列表行里那张同一张图）
                 key == KEY_ALPHA -> {
                     val btn = NineSliceButton(
                         editColX(editColOf(key)), editRowY(editRowOf(key)),
                         editColW(), EDIT_ROW_H, Text.literal(""),
                         { onFieldClick(key) },
-                        iconTexW = 37, iconTexH = 16, iconScale = 0.5f,
-                        iconAfterText = true
-                        // 不加悬停提示：按钮上已有「头目：」+ 徽章，多一层是噪音（2026-09-20 用户指出）
+                        iconTexW = ALPHA_BADGE_TEX_W, iconTexH = ALPHA_BADGE_TEX_H,
+                        iconScale = ALPHA_BADGE_SCALE
+                        // 徽章在**前**当标签（`iconAfterText` 保持默认 false）、值写「：是 / ：否」——
+                        // 2026-09-25 用户改的口径，理由见 refreshAlphaButton
                     )
                     editButtons[key] = btn
                     addDrawableChild(btn)
@@ -2831,6 +2846,12 @@ class PointsMarketScreen : Screen(
         val species = editSpecies ?: run { editPreview = null; return }
         val aspects = editAspects.toMutableSet()
         if (isShinyAlways()) aspects.add("shiny")
+        // ⚠ **头目 → aspect**：Cobblemon 的 `ALPHA_ASPECT` provider 会在 `isAlpha` 为真时提供 `"alpha"`，
+        //   而它同时驱动**红眼**。预览走的就是同一套 `drawProfilePokemon`（购买庆祝动画里那只精灵
+        //   就是这么红的，它的 aspects 来自服务端生成的完整精灵）；只有预览是从 `editAspects` 现建的、
+        //   不带这个 ⇒ 手动补上（2026-09-25 用户报「头目按钮切换时大图眼睛不变红」）。
+        //   ⚠ 别写到 `editAspects` 里：那是**形态**字段，头目由数据层的 `alpha` 表达（同性别那套做法）。
+        if (editAlpha) aspects.add("alpha")
         // ⚠ **性别 → 形态**：公母长相不同的物种（爱管侍那类）靠 aspects 里的 male / female 区分，
         //   选了性别就叠上去，预览图才会跟着变（2026-09-20 用户要求的"反向生效"）。
         //   ⚠ **不写回 `editAspects`** —— 数据层的 `gender` 字段已经表达了性别，
@@ -3750,17 +3771,19 @@ class PointsMarketScreen : Screen(
     private fun yesNoLabel(value: Boolean): String = valueText(if (value) "yes" else "no")
 
     /**
-     * 头目按钮：**图标化**（用列表行里那张 alpha 徽章）—— 是就显示徽章，否留空（靠 tooltip 说明）。
-     * 这是项目 1.1.x 起的去文字化方向：能上图标就别写「头目：是」。
+     * 头目按钮：**徽章当标签、值写「是 / 否」**（用户 2026-09-25 改的口径）。
+     *
+     * ⚠ 这**推翻了**原先的「去文字化」做法（`头目：` 文字 + 徽章 + 靠**选中态**表示「是」）——
+     *   选中态得盯着按钮才知道是不是头目，不如把值直接写出来。
+     *   现在与超极巨化 / 可否再交易 / 携带物可见那三个按钮是**同一套写法**，只多了个行首徽章。
      */
     private fun refreshAlphaButton() {
         val btn = editButtons[KEY_ALPHA] ?: return
-        // 「头目：图标」—— 徽章**一直在**（别做成没有就空白，那样看不出这格是干什么的），
-        // 靠按钮的**选中态**表示「是」（selectedVisual 走贴图第三段）
-        // 标签词条里 `%s` 填空串 = 只留「头目：」（值由图标 + 选中态表达）
-        btn.setMessage(Text.translatable("cobblemarket.points.store.field.alpha", ""))
+        // 词条只有「：%s」—— 冒号写在词条里（项目文案约定），标签那个位置留给行首的徽章
+        btn.setMessage(Text.translatable("cobblemarket.points.store.field.alpha", yesNoText(editAlpha)))
         btn.iconLeft = ALPHA_BADGE_ICON
-        btn.selectedVisual = editAlpha
+        // 值已由文字表达，不再需要选中态（2026-09-25 用户拍板）
+        btn.selectedVisual = false
     }
 
     /**
@@ -4563,6 +4586,16 @@ class PointsMarketScreen : Screen(
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
         val ALPHA_BADGE_ICON = Identifier.of("cobblemon", "textures/gui/summary/icon_size_alpha.png")
+
+        /**
+         * 头目徽章的**原始尺寸与显示缩放** —— 编辑窗按钮与购买窗只读行**共用这一份**，别各写一遍
+         * （写了就会漂移，本项目"同一样东西写两遍"的坑踩过多次）。
+         * ⚠ 缩放必须走 `matrices`：`drawTexture` 的 width/height 是**源图采样区域**，
+         *   直接传缩放后的尺寸只会画出左上角一角（项目踩过的坑，同 `NineSliceButton` 的画法）。
+         */
+        const val ALPHA_BADGE_TEX_W = 37
+        const val ALPHA_BADGE_TEX_H = 16
+        const val ALPHA_BADGE_SCALE = 0.5f
 
         /** 性别档位（0 = 随机；值直接用 Cobblemon 的枚举名） */
         val GENDER_VALUES = listOf("", "MALE", "FEMALE", "GENDERLESS")

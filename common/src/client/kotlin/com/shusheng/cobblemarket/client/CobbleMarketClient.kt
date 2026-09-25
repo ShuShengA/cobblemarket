@@ -936,6 +936,27 @@ fun playMarketSound(soundId: String) {
     )
 }
 
+/**
+ * **本地按钮点击**音效 —— 给**自绘元素**用（不走 `NineSliceButton` 的格子 / 列表行 / 选项行）。
+ *
+ * ⚠ 必须与 `NineSliceButton` 内置的点击音**同档**：那个走
+ * `PositionedSoundInstance.master(sound, pitch)`，音量是**默认的 0.25**。
+ * 而 [playMarketSound] 是按**素材响度**分档的（0.9 / 0.5）、供**服务端事件音效**使用 ——
+ * 拿它播点击音会**响三倍多**。
+ *
+ * ⚠ **这个坑 2026-09-25 连踩两次**：先是点商品格子（用户报「所有按钮就这一个音量最大」），
+ * 接着是点快照行（用户报「按钮点击声很大」）—— 两次都是把点击音喂给了 [playMarketSound]。
+ * ⇒ **凡自绘元素要播点击音，一律调这个函数，别碰 playMarketSound。**
+ */
+fun playButtonClickSound() {
+    MinecraftClient.getInstance().soundManager.play(
+        PositionedSoundInstance.master(
+            SoundEvent.of(Identifier.of("cobblemarket", "button_click")),
+            1.0f
+        )
+    )
+}
+
 // ── 额度快照请求：未响应自动重试 ──
 
 /** 重发间隔：大于服务端 500ms 限流窗口，保证重发必定被受理 */
