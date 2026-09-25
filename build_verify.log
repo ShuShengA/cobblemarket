@@ -1,0 +1,23 @@
+
+> Configure project :
+Architect Plugin: 3.4.164
+Architectury Loom: 1.11.458
+
+> Task :common:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :fabric:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :fabric:processResources UP-TO-DATE
+> Task :common:compileKotlin UP-TO-DATE
+> Task :common:compileJava NO-SOURCE
+> Task :common:processResources UP-TO-DATE
+> Task :common:classes UP-TO-DATE
+> Task :common:processClientResources UP-TO-DATE
+> Task :common:compileClientKotlin
+> Task :common:compileClientJava UP-TO-DATE
+> Task :common:jar
+> Task :fabric:compileKotlin
+> Task :fabric:compileJava NO-SOURCE
+> Task :fabric:classes UP-TO-DATE
+> Task :fabric:compileClientKotlin
+
+BUILD SUCCESSFUL in 6s
+9 actionable tasks: 4 executed, 5 up-to-date
