@@ -172,9 +172,19 @@ class PointsMarketScreen : Screen(
     private fun snapshotRowY(index: Int): Int =
         snapshotSaveRowY() + EDIT_ROW_H + 10 + (index - snapshotScroll) * SNAPSHOT_ROW_H
 
-    /** 列表一屏能放几条 */
+    /**
+     * 列表一屏能放几条。
+     *
+     * ⚠ 底部必须**先扣掉 [SNAPSHOT_MORE_RESERVE]**（「还有 N 条」那行灰字占的高度）——
+     *   行数 = 可用高度 / 行高 取整，余数不够时最后一行就压到灰字上（2026-09-25 用户报：
+     *   「和当前显示的最后一条重合一部分」）。只把灰字往下挪治不了本 —— 换个窗口高度，余数一变又重合。
+     *
+     *   扣 12 之后，最后一行的**文字**底部距灰字顶部恒 ≥ 4px：行高 16、字高 8，行内上下各留 4px 白边，
+     *   所以余数 ≥ 12 时行数**不变**（那时本来也不重叠），余数 < 12 时才少放一行 —— 正是会重叠的那半情况。
+     */
     private fun snapshotVisibleRows(): Int =
-        ((snapshotCloseRowY() - (snapshotSaveRowY() + EDIT_ROW_H + 10)) / SNAPSHOT_ROW_H).coerceAtLeast(1)
+        ((snapshotCloseRowY() - (snapshotSaveRowY() + EDIT_ROW_H + 10) - SNAPSHOT_MORE_RESERVE) / SNAPSHOT_ROW_H)
+            .coerceAtLeast(1)
 
     /** 列表最大可滚到第几条（不够一屏时为 0） */
     private fun snapshotMaxScroll(): Int =
@@ -216,22 +226,29 @@ class PointsMarketScreen : Screen(
         snapshotDialog = false
         snapshotScroll = 0
         hoveredSnapshot = -1
-        snapshotNameField = null
-        snapshotButtons.clear()
-        if (snapshotWidgetBase in 0 until children().size) {
-            children().drop(snapshotWidgetBase).toList().forEach { remove(it) }
-        }
-        snapshotWidgetBase = children().size
+        clearSnapshotWidgets()
         updateEditControlsVisibility()
+    }
+
+    /**
+     * 卸掉弹窗自己那批控件（名字框 / 保存 / 关闭）；列表行是**自绘**的，不用管。
+     *
+     * ⚠ 用**显式列表**清，别用「记下 children 下标、往后 `drop`」那一套（[editWidgetBase] 的写法）：
+     *   下标在窗口 resize 重建时会失效 —— [buildEditDialog] 会把 `editWidgetBase` 之后的控件
+     *   （快照这批也在其中）整个卸掉重建成新的，旧下标这时指向的是**新添加窗的控件**，再 drop 就把它们删了。
+     *   ⚠ 旧的写法 2026-09-25 已实打实踩过一次：初值写成 0，**首次**建弹窗 `drop(0)` 把添加窗控件全删光 ——
+     *   弹窗盖着时看不出来，一关就「界面元素全没了」（用户报）。
+     */
+    private fun clearSnapshotWidgets() {
+        snapshotButtons.forEach { remove(it) }
+        snapshotButtons.clear()
+        snapshotNameField?.let { remove(it) }
+        snapshotNameField = null
     }
 
     /** 建弹窗的控件（名字框 / 保存 / 关闭）；列表行是**自绘**的，见 [renderSnapshotDialog] */
     private fun rebuildSnapshotDialog() {
-        if (snapshotWidgetBase in 0 until children().size) {
-            children().drop(snapshotWidgetBase).toList().forEach { remove(it) }
-        }
-        snapshotWidgetBase = children().size
-        snapshotButtons.clear()
+        clearSnapshotWidgets()
 
         val y = snapshotSaveRowY()
         snapshotNameField = TextFieldWidget(
@@ -261,10 +278,21 @@ class PointsMarketScreen : Screen(
     private fun saveCurrentAsSnapshot() {
         val name = snapshotDraftName.trim()
         if (name.isEmpty()) {
-            playFailSound()
+            failSubmit("snapshot_name_required")
             return
         }
-        val entry = buildShopEntry() ?: run { playFailSound(); return }
+        // ⚠ **逐项挡、走 [failSubmit]**：`buildShopEntry` 只回 null、不区分缺哪一项，
+        //   之前这里三处都只 `playFailSound()` —— 服主点保存只有一声闷响，不知道哪儿没填
+        //   （2026-09-25 用户报）。顺序与 [submitEdit] 一致：价格 → 物种 / 物品
+        val price = editPriceField?.text?.trim()?.toLongOrNull()
+        if (price == null || price < 0) {
+            failSubmit("price_required")
+            return
+        }
+        val entry = buildShopEntry() ?: run {
+            if (isPokemonSlot()) failSubmit("species_required") else failSubmit("item_required")
+            return
+        }
         sendToServer(SaveShopSnapshotPayload(name.take(PointShopSnapshotState.MAX_NAME_LENGTH), entry))
     }
 
@@ -397,8 +425,6 @@ class PointsMarketScreen : Screen(
     /** 列表里鼠标悬停在哪一条（-1 = 没有）；自绘行要高亮，得自己记 */
     private var hoveredSnapshot = -1
 
-    /** 弹窗那批控件的起始下标（重开时从这里往后清，同 [editWidgetBase]） */
-    private var snapshotWidgetBase = 0
     private var editConfirmButton: NineSliceButton? = null
     private var editCancelButton: NineSliceButton? = null
     private var editRemoveButton: NineSliceButton? = null
@@ -1453,9 +1479,14 @@ class PointsMarketScreen : Screen(
         if (buySlot < 0) return
         val entry = PointMarketCache.slots[buySlot]
         if (entry != null && entry.entryId == buySlotEntryId) return
-        // 内容变了 / 整格没了：关窗 + 界面内红字（复用兑换结果那条提示的位置）
+        // 内容变了 / 整格没了：关窗 + 界面内红字（复用兑换结果那条提示的位置）。
+        // ⚠ 两种情况**文案必须分开**（用户 2026-09-25 报）：整格没了是**下架** ——
+        //   笼统说「刚被改动过」，玩家会以为是自己看花了眼、跑去重开界面找那件商品
         closeBuyDialog()
-        resultMsg = Text.translatable("cobblemarket.points.store.err.stale_entry")
+        resultMsg = Text.translatable(
+            if (entry == null) "cobblemarket.points.store.err.slot_removed"
+            else "cobblemarket.points.store.err.stale_entry"
+        )
         resultColor = 0xFF6666
         resultUntil = System.currentTimeMillis() + STALE_MSG_MS
     }
@@ -2209,7 +2240,7 @@ class PointsMarketScreen : Screen(
         }
         val entry = buildShopEntry() ?: run {
             // 走到这儿只可能是物种 / 物品没选（价格上面挡过了）
-            if (isPokemonSlot()) failSubmit("species_required") else playFailSound()
+            if (isPokemonSlot()) failSubmit("species_required") else failSubmit("item_required")
             return
         }
         sendToServer(SavePointMarketEntryPayload(editSlot, entry))
@@ -3439,13 +3470,9 @@ class PointsMarketScreen : Screen(
 
         // 提交失败提示：画在**标题右侧那片空位**（标题居中、到右缘还空着一大片，用户 2026-09-20 指出）——
         // 右端对齐到该行可用空间的右缘：编辑时避开右上角的「下架」按钮，新建时就直接是内容右缘。
-        // ⚠ 跟着标题一起画在**列表展开之前**（展开选项列表时也得看得见，那时玩家往往正要去改）
-        // 快照弹窗**叠在添加窗之上**（与展开的选项列表互斥，两者都是"盖住下面的窗口"）
-        if (snapshotDialog) {
-            renderSnapshotDialog(context, mouseX, mouseY)
-            return
-        }
-
+        // ⚠ 跟着标题一起画在**列表展开之前、快照弹窗之前**（两处都得看得见：展开列表时玩家往往正要去改，
+        //   快照弹窗里点「保存当前配置」失败更要看得到原因）—— 那两处都会 `return` 掉后面的绘制，
+        //   排在它们后面就等于**只在添加窗下才显示**（2026-09-25 修快照提示时发现）
         editHintMsg?.let { hint ->
             if (System.currentTimeMillis() < editHintUntil) {
                 val rightLimit =
@@ -3454,6 +3481,14 @@ class PointsMarketScreen : Screen(
                     textRenderer, hint, rightLimit - textRenderer.getWidth(hint), y + 10, 0xFF6666
                 )
             }
+        }
+
+        // 快照弹窗**叠在添加窗之上**（与展开的选项列表互斥，两者都是"盖住下面的窗口"）。
+        // ⚠ **必须排在提示之后**：它 `return` 掉就不再往下画了 ——
+        //   排前面的话，快照弹窗里点「保存当前配置」失败的提示永远看不见（2026-09-25 用户报）
+        if (snapshotDialog) {
+            renderSnapshotDialog(context, mouseX, mouseY)
+            return
         }
 
         if (listKind != null) {
@@ -4038,7 +4073,8 @@ class PointsMarketScreen : Screen(
         )
 
         // 库存角标：**只有限量格才画**（不限量是默认玩法，画个 ∞ 只是碍眼）；
-        // 售罄时变红 0，格子**保留**（服主可以补货或换内容）。同样贴当前格子的右上角内边框
+        // 售罄时变红 0，格子**保留**（服主可以补货或换内容）。贴当前格子的右上角内边框，
+        // **上距 = 右距**（同一个常量，见 [STOCK_BADGE_INSET]）
         if (entry.stock != ShopEntry.UNLIMITED) {
             // `×N` 与**物品市场的库存角标同一套写法**（`ItemMarketScreen` 那句 `"×${entry.count}"`）——
             // 光画一个数字，得像物品市场那样看过才知道它是什么（用户 2026-09-25 指出该照它来）
@@ -4047,7 +4083,7 @@ class PointsMarketScreen : Screen(
                 textRenderer, Text.literal(badge),
                 // ⚠ **右对齐**：这是右上角的角标，`drawTextWithShadow` 却是左对齐 ——
                 //   按内边距当起点的话，数字会从那儿往右长，两位数就顶出格子（2026-09-25 用户实测）
-                x + size + grow - STOCK_BADGE_INSET - textRenderer.getWidth(badge), y - grow + 3,
+                x + size + grow - STOCK_BADGE_INSET - textRenderer.getWidth(badge), y - grow + STOCK_BADGE_INSET,
                 if (entry.isSoldOut()) 0xFF5555 else 0xFFFFFF
             )
         }
@@ -4216,8 +4252,14 @@ class PointsMarketScreen : Screen(
         /** 图标最小边长（再小就看不清了，宁可挤一点也不缩没） */
         const val MIN_ICON_SIZE = 8
 
-        /** 库存角标离格子右边缘的距离 */
-        const val STOCK_BADGE_INSET = 9
+        /**
+         * 库存角标距格子**右上角那两条边**的距离（右距 = 上距，共用这一个值）。
+         *
+         * 判据（用户 2026-09-25 定）：角标到格子上边框的距离，与到右边框的距离**要一样**。
+         * ⚠ 参考物品市场（`ItemMarketScreen` 的 `x + slotSize - 2 - 宽, y + 3`）时**别只抄它的 2** ——
+         *   那边格子小、上距本就取 3；本界面按「先下移 1px 避开格子上边框」定 4，右边距跟着取同一个值。
+         */
+        const val STOCK_BADGE_INSET = 4
 
         /** 网格与上下两条分割线的间距（逻辑像素） */
         const val GRID_PADDING = 6
@@ -4389,6 +4431,14 @@ class PointsMarketScreen : Screen(
 
         /** 快照列表每行的高度 */
         const val SNAPSHOT_ROW_H = 16
+
+        /**
+         * 快照列表底部给「还有 N 条（滚轮上下翻）」那行灰字**预留**的高度。
+         * 灰字固定画在 `snapshotCloseRowY() - 12`（它自身 8px 高，距底部按钮行 4px，
+         * 合按钮间距那条约 4px 空隙），这 12px 就是它占的地 ——
+         * 不留出来最后一条就压在它身上，见 [snapshotVisibleRows]。
+         */
+        const val SNAPSHOT_MORE_RESERVE = 12
 
         /**
          * 六项个体值 / 努力值的属性缩写。
