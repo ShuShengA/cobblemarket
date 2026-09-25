@@ -25,7 +25,12 @@ import com.shusheng.cobblemarket.market.ItemRuleComponents
 import com.shusheng.cobblemarket.network.BuyPointMarketEntryPayload
 import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.permission.MarketPermissions
+import com.shusheng.cobblemarket.currency.PointShopSnapshotState
+import com.shusheng.cobblemarket.network.DeleteShopSnapshotPayload
 import com.shusheng.cobblemarket.network.RedeemPointCodePayload
+import com.shusheng.cobblemarket.network.RequestShopSnapshotsPayload
+import com.shusheng.cobblemarket.network.SaveShopSnapshotPayload
+import com.shusheng.cobblemarket.network.ShopSnapshotInfo
 import com.shusheng.cobblemarket.network.RemovePointMarketEntryPayload
 import com.shusheng.cobblemarket.network.RequestPointMarketPayload
 import com.shusheng.cobblemarket.network.RequestPointsShopPayload
@@ -97,6 +102,18 @@ class PointsMarketScreen : Screen(
     private var buySlot = -1
 
     /**
+     * 这个窗是**服主的**（只读查看）还是**玩家的**（购买）？
+     *
+     * 两者**共用同一套渲染**（内容完全一样），只有底部按钮与标题不同：
+     * - 玩家：标题「购买」、底部「购买 + 取消」
+     * - 服主：标题「查看」、底部「关闭」+ 右上角「下架」
+     *
+     * 2026-09-25 用户拍板：服主**不再能编辑已有格子** —— 点有内容的格子只看与下架，
+     * 想改就走「下架 → 重新添加」（配上快照，不用重填字段）。
+     */
+    private var buyDialogAdmin = false
+
+    /**
      * 打开购买窗时那一条的 **id**（见 [ShopEntry.entryId]）。
      * 点购买时带回服务端比对；也用来判断"这格有没有被换过内容"（见 [checkBuySlotStillValid]）。
      */
@@ -138,6 +155,203 @@ class PointsMarketScreen : Screen(
     private var editHintMsg: Text? = null
     private var editHintUntil = 0L
 
+    // ── 配方快照弹窗：位置与开关 ──
+    //
+    // ⚠ 位置函数**渲染与命中判定共用**（各算一份必然错位，本项目反复踩过）
+
+    /** 「保存当前配置」那一行的 y：与添加窗的物种搜索框同一行（标题下面第一条） */
+    private fun snapshotSaveRowY(): Int = editDialogY() + EDIT_SPECIES_Y
+
+    /** 底部「关闭」那排的 y：与添加窗的按钮行对齐 */
+    private fun snapshotCloseRowY(): Int = editButtonRowY()
+
+    /** 名字输入框的宽度（窗口宽减去「保存」按钮与内边距） */
+    private fun snapshotNameFieldW(): Int = editDialogW() - EDIT_PAD * 2 - SNAPSHOT_SAVE_BTN_W - 6
+
+    /** 列表第 [index] 条的 y（已算进滚动；渲染与命中判定共用） */
+    private fun snapshotRowY(index: Int): Int =
+        snapshotSaveRowY() + EDIT_ROW_H + 10 + (index - snapshotScroll) * SNAPSHOT_ROW_H
+
+    /** 列表一屏能放几条 */
+    private fun snapshotVisibleRows(): Int =
+        ((snapshotCloseRowY() - (snapshotSaveRowY() + EDIT_ROW_H + 10)) / SNAPSHOT_ROW_H).coerceAtLeast(1)
+
+    /** 列表最大可滚到第几条（不够一屏时为 0） */
+    private fun snapshotMaxScroll(): Int =
+        (PointMarketCache.snapshots.size - snapshotVisibleRows()).coerceAtLeast(0)
+
+    /** 每一行右侧那个「×」删除区的宽度 */
+    private fun snapshotDeleteW(): Int = 14
+
+    /** 快照的**默认名字**（用户 2026-09-25 定：默认自动生成、可手改） */
+    private fun defaultSnapshotName(): String = if (isPokemonSlot()) {
+        val species = editSpecies ?: return ""
+        val lv = editLevelText.trim().toIntOrNull() ?: 1
+        val shiny = (editShinyText.trim().toFloatOrNull() ?: 0f) > 0f
+        SpeciesText.translated(species).string + " Lv.$lv" + if (shiny) " ★" else ""
+    } else {
+        if (editItemId.isEmpty()) "" else itemDisplayName(editItemId)
+    }
+
+    /**
+     * 打开快照弹窗。
+     *
+     * ⚠ 它**叠在添加窗之上**：打开时把添加窗那批控件隐藏掉（同 [openOptionList] 的做法），
+     *   关掉再恢复 —— 两批控件同时留在 children 里会互相拦截点击（列表永远点不到，本项目踩过）。
+     */
+    private fun openSnapshotDialog() {
+        snapshotDialog = true
+        snapshotScroll = 0
+        hoveredSnapshot = -1
+        // 预填自动名（服主想改就当场改）
+        snapshotDraftName = defaultSnapshotName()
+        // 拉一次最新列表：**别的持节点的人可能刚存过**，本地缓存不一定新
+        sendToServer(RequestShopSnapshotsPayload())
+        updateEditControlsVisibility()
+        rebuildSnapshotDialog()
+    }
+
+    /** 关弹窗：卸掉它自己那批控件 + 把添加窗的控件恢复回来 */
+    private fun closeSnapshotDialog() {
+        snapshotDialog = false
+        snapshotScroll = 0
+        hoveredSnapshot = -1
+        snapshotNameField = null
+        snapshotButtons.clear()
+        if (snapshotWidgetBase in 0 until children().size) {
+            children().drop(snapshotWidgetBase).toList().forEach { remove(it) }
+        }
+        snapshotWidgetBase = children().size
+        updateEditControlsVisibility()
+    }
+
+    /** 建弹窗的控件（名字框 / 保存 / 关闭）；列表行是**自绘**的，见 [renderSnapshotDialog] */
+    private fun rebuildSnapshotDialog() {
+        if (snapshotWidgetBase in 0 until children().size) {
+            children().drop(snapshotWidgetBase).toList().forEach { remove(it) }
+        }
+        snapshotWidgetBase = children().size
+        snapshotButtons.clear()
+
+        val y = snapshotSaveRowY()
+        snapshotNameField = TextFieldWidget(
+            textRenderer, editDialogX() + EDIT_PAD, y, snapshotNameFieldW(), EDIT_ROW_H, Text.literal("")
+        ).also {
+            it.setMaxLength(PointShopSnapshotState.MAX_NAME_LENGTH)
+            it.text = snapshotDraftName
+            it.setChangedListener { t -> snapshotDraftName = t }
+            addSelectableChild(it)
+            addDrawableChild(it)
+        }
+        snapshotButtons += NineSliceButton(
+            editDialogX() + EDIT_PAD + snapshotNameFieldW() + 6, y, SNAPSHOT_SAVE_BTN_W, EDIT_ROW_H,
+            Text.translatable("cobblemarket.points.store.snapshot_save"), { saveCurrentAsSnapshot() }
+        ).also { addDrawableChild(it) }
+        snapshotButtons += NineSliceButton(
+            editDialogX() + editDialogW() - EDIT_PAD - EDIT_BUTTON_W, snapshotCloseRowY(),
+            EDIT_BUTTON_W, EDIT_BUTTON_H,
+            Text.translatable("cobblemarket.points.store.buy_close"), { closeSnapshotDialog() }
+        ).also { addDrawableChild(it) }
+    }
+
+    /**
+     * 把当前草稿存成快照（名字取输入框；**同名即覆盖** —— 服务端那边定的语义）。
+     * ⚠ 存的是**当前草稿**：价格 / 库存缺了会被 [buildShopEntry] 挡下（快照里也要带这两项）。
+     */
+    private fun saveCurrentAsSnapshot() {
+        val name = snapshotDraftName.trim()
+        if (name.isEmpty()) {
+            playFailSound()
+            return
+        }
+        val entry = buildShopEntry() ?: run { playFailSound(); return }
+        sendToServer(SaveShopSnapshotPayload(name.take(PointShopSnapshotState.MAX_NAME_LENGTH), entry))
+    }
+
+    /**
+     * 用某条快照**填充当前草稿**（服主再改想改的那几项，然后照常添加）。
+     *
+     * ⚠ 走 [fillDraft] —— 它本来就是"把一份完整规格填进草稿"，与当年"编辑已有格子"用的是同一套。
+     *   填完**要重建控件**（值都在控件上，不重建就还是空的）。
+     * ⚠ 同时把 `editOriginal` 设成快照那份：`buildPokemonSpec` 基于它 `copy()`，
+     *   界面**没接的高级项**（EV / 昵称 / 证章 / 极巨化等级…）才不会被抹掉。
+     */
+    private fun applySnapshot(snapshot: ShopSnapshotInfo) {
+        editOriginal = snapshot.entry
+        fillDraft(snapshot.entry)
+        closeSnapshotDialog()
+        // 值都落在控件上，必须重建才看得到；走 init 那条路（它认得 editSlot，会把窗口建回来）
+        clearChildren()
+        init()
+        playMarketSound("button_click")
+    }
+
+    /**
+     * 快照弹窗的内容（背景由 [renderEditDialogBackground] 画好了）。
+     * 上一栏是「名字框 + 保存当前配置」，下面列已有的快照 —— 行**自绘**（要悬停高亮 + 右侧「×」）。
+     */
+    private fun renderSnapshotDialog(context: DrawContext, mouseX: Int, mouseY: Int) {
+        val centerX = editDialogX() + editDialogW() / 2
+        val listTop = snapshotSaveRowY() + EDIT_ROW_H + 10
+        val snapshots = PointMarketCache.snapshots
+        if (!PointMarketCache.snapshotsLoaded) {
+            context.drawCenteredTextWithShadow(
+                textRenderer, Text.translatable("cobblemarket.points.store.snapshot_loading"),
+                centerX, listTop + 6, 0x888888
+            )
+            return
+        }
+        if (snapshots.isEmpty()) {
+            context.drawCenteredTextWithShadow(
+                textRenderer, Text.translatable("cobblemarket.points.store.snapshot_empty"),
+                centerX, listTop + 6, 0x888888
+            )
+            return
+        }
+        // 先扫一遍命中（下面画的时候要用），每帧重算
+        hoveredSnapshot = -1
+        val rowLeft = editDialogX() + EDIT_PAD
+        val rowW = editDialogW() - EDIT_PAD * 2
+        val rows = snapshotVisibleRows()
+        val last = minOf(snapshots.size, snapshotScroll + rows)
+        for (i in snapshotScroll until last) {
+            val y = snapshotRowY(i)
+            if (mouseX >= rowLeft && mouseX < rowLeft + rowW && mouseY >= y && mouseY < y + SNAPSHOT_ROW_H) {
+                hoveredSnapshot = i
+            }
+        }
+        for (i in snapshotScroll until last) {
+            val snapshot = snapshots[i]
+            val y = snapshotRowY(i)
+            val hovered = i == hoveredSnapshot
+            if (hovered) context.fill(rowLeft, y, rowLeft + rowW, y + SNAPSHOT_ROW_H, 0x40FFFFFF)
+            // 名字（截断；右边给「×」留位置）
+            context.drawTextWithShadow(
+                textRenderer,
+                TextUtil.truncateStyled(Text.literal(snapshot.name), rowW - snapshotDeleteW() - 4),
+                rowLeft + 2, y + (SNAPSHOT_ROW_H - 8) / 2, 0xFFFFFF
+            )
+            // 「×」只在悬停那一行画（平时整屏都是叉太吵）
+            if (hovered) {
+                context.drawCenteredTextWithShadow(
+                    textRenderer, Text.literal("×"),
+                    rowLeft + rowW - snapshotDeleteW() / 2, y + (SNAPSHOT_ROW_H - 8) / 2, 0xFF8888
+                )
+            }
+        }
+        // 还有没显示完的：底下给个灰字提示（也提示能滚）
+        if (snapshotMaxScroll() > 0) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable(
+                    "cobblemarket.points.store.snapshot_more",
+                    (snapshots.size - snapshotScroll - rows).coerceAtLeast(0)
+                ),
+                centerX, snapshotCloseRowY() - 12, 0x888888
+            )
+        }
+    }
+
     /**
      * 该格原本的完整内容（新增时为 null）。
      *
@@ -157,6 +371,34 @@ class PointsMarketScreen : Screen(
 
     /** 清空搜索框（搜索框右侧第一枚，用户 2026-09-20 加）；与两枚箭头一起藏，见 [updateEditControlsVisibility] */
     private var editSpeciesClear: NineSliceButton? = null
+
+    /** 添加窗右上角那枚「快照」（关窗时随其余控件一起清） */
+    private var editSnapshotButton: NineSliceButton? = null
+
+    // ── 配方快照弹窗（服主用；点添加窗右上角那枚「快照」开）──
+    //
+    // 为什么要有它（2026-09-25 用户定）：服主不再能编辑已有格子，改内容走「下架 → 重新添加」——
+    // 没有快照就得把二十来个字段重配一遍。有了它，「重新添加」=「选快照 → 改想改的 → 添加」。
+    // 弹窗**合成一个**（用户拍板）：上面一栏「保存当前配置」（预填自动名、可改），下面列出已有的。
+
+    /** 快照弹窗开着没 */
+    private var snapshotDialog = false
+
+    /** 「保存当前配置」那个名字框的内容（重建时靠它恢复 —— 同 [editPriceText] 那套） */
+    private var snapshotDraftName = ""
+    private var snapshotNameField: TextFieldWidget? = null
+
+    /** 弹窗里的按钮（关窗时统一清） */
+    private val snapshotButtons = mutableListOf<NineSliceButton>()
+
+    /** 列表滚到第几条（超过一屏才有效果） */
+    private var snapshotScroll = 0
+
+    /** 列表里鼠标悬停在哪一条（-1 = 没有）；自绘行要高亮，得自己记 */
+    private var hoveredSnapshot = -1
+
+    /** 弹窗那批控件的起始下标（重开时从这里往后清，同 [editWidgetBase]） */
+    private var snapshotWidgetBase = 0
     private var editConfirmButton: NineSliceButton? = null
     private var editCancelButton: NineSliceButton? = null
     private var editRemoveButton: NineSliceButton? = null
@@ -521,6 +763,13 @@ class PointsMarketScreen : Screen(
             hideMainControls()
             buildBuyDialog()
         }
+        // 快照弹窗同理。⚠ **必须排在 [buildEditDialog] 之后**：那一句会把 `editWidgetBase`
+        // 之后建的控件全部卸掉，快照那批也在其中 —— 顺序反了就白建一场
+        if (editSlot >= 0 && snapshotDialog) {
+            rebuildSnapshotDialog()
+            // 再藏一次编辑窗那批：buildEditDialog 把它们建出来时是可见的
+            updateEditControlsVisibility()
+        }
     }
 
     // ── 位置（**全部走逻辑像素**）──
@@ -564,12 +813,17 @@ class PointsMarketScreen : Screen(
             val cell = cellAt(mouseX, mouseY, gridLayout(bgRect()))
             if (cell >= 0) {
                 val slot = globalSlot(cell)
-                if (canEditShop()) {
+                val occupied = PointMarketCache.slots[slot] != null
+                val admin = canEditShop()
+                // 服主点**空格子** → 添加窗（配置新商品）
+                if (admin && !occupied) {
                     openEditDialog(slot)
                     return true
                 }
-                if (PointMarketCache.slots[slot] != null) {
-                    openBuyDialog(slot)
+                // 有内容的格子：服主进**只读查看**（多了下架），其他人进**购买**
+                // ⚠ 服主**不再能编辑已有格子**（2026-09-25 用户拍板）—— 想改就走「下架 → 重新添加」
+                if (occupied) {
+                    openBuyDialog(slot, admin = admin)
                     return true
                 }
             }
@@ -579,6 +833,27 @@ class PointsMarketScreen : Screen(
 
     /** 窗口内的点击：控件优先 → 列表行 → 点空白失焦 → 点预览图叫一声 */
     private fun handleEditDialogClick(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        // 快照弹窗开着：事件只给它（列表行是自绘的，命中判定自己来）
+        if (snapshotDialog) {
+            val focusWasInput = snapshotNameField != null && focused === snapshotNameField
+            super.mouseClicked(mouseX, mouseY, button)
+            // ⚠ 点输入框之外要**手动失焦**，否则 E 键被输入框吃掉、Esc 也关不掉窗口（项目老坑）
+            if (focusWasInput && snapshotNameField?.isMouseOver(mouseX, mouseY) != true) focused = null
+            if (!focusWasInput && button == 0 && hoveredSnapshot >= 0) {
+                PointMarketCache.snapshots.getOrNull(hoveredSnapshot)?.let { snapshot ->
+                    val rowLeft = editDialogX() + EDIT_PAD
+                    val rowW = editDialogW() - EDIT_PAD * 2
+                    // 点右侧那个「×」区 = 删；点行别处 = 填充当前草稿
+                    if (mouseX >= rowLeft + rowW - snapshotDeleteW()) {
+                        sendToServer(DeleteShopSnapshotPayload(snapshot.name))
+                    } else {
+                        applySnapshot(snapshot)
+                    }
+                }
+            }
+            return true
+        }
+
         val focusWasInput = isEditInputFocused()
         val result = super.mouseClicked(mouseX, mouseY, button)
         // 展开的列表：行是**自绘**的（要画物品图标），命中判定得自己来
@@ -622,6 +897,14 @@ class PointsMarketScreen : Screen(
     override fun mouseScrolled(
         mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double
     ): Boolean {
+        // 快照列表：滚轮翻（最多 64 条，一屏放不下）
+        if (snapshotDialog) {
+            val max = snapshotMaxScroll()
+            if (max > 0) {
+                snapshotScroll = (snapshotScroll - verticalAmount.toInt()).coerceIn(0, max)
+            }
+            return true
+        }
         // 展开的选项列表：滚轮翻页（技能列表可能几百项）
         if (optionListKind != null) {
             val max = (optionListItems.size - optionListRows()).coerceAtLeast(0)
@@ -641,7 +924,12 @@ class PointsMarketScreen : Screen(
         // Esc：窗口开着就**先收窗口**（列表展开时先收列表），别一按就退出整个界面
         if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
             if (editSlot >= 0) {
-                if (optionListKind != null) closeOptionList() else closeEditDialog()
+                // 从"最上面那层"开始收：快照弹窗 → 展开的选项列表 → 编辑窗本身
+                when {
+                    snapshotDialog -> closeSnapshotDialog()
+                    optionListKind != null -> closeOptionList()
+                    else -> closeEditDialog()
+                }
                 return true
             }
             if (buySlot >= 0) {
@@ -1091,9 +1379,12 @@ class PointsMarketScreen : Screen(
         // 点格子的手感就是"没反应"（用户 2026-09-20 报「网格内的交互都没音效」）
         playCellClickSound()
         editSlot = slot
-        editOriginal = PointMarketCache.slots[slot]
+        // ⚠ 这里**只处理"添加"**（只有空网格会走到这，见 mouseClicked）：`editOriginal` 恒为 null。
+        //   服主点有内容的格子走的是 [openBuyDialog] 的 admin 模式（只读 + 下架），不再有"编辑"——
+        //   用户 2026-09-25 拍板，想改内容就走「下架 → 重新添加」。
+        //   `editOriginal` 这个字段留着给**快照回填**用（那时它装的是快照那份规格）。
+        editOriginal = null
         resetDraft()
-        editOriginal?.let { fillDraft(it) }
         hideMainControls()
         buildEditDialog()
         // 开窗自动叫一声（延迟到渲染之后再播，见 IconCryClick）
@@ -1185,12 +1476,17 @@ class PointsMarketScreen : Screen(
         )
     }
 
-    /** 打开购买窗。[slot] 必须是**有内容的**格子（调用方 [mouseClicked] 已判过，这里再兜一道） */
-    private fun openBuyDialog(slot: Int) {
+    /**
+     * 打开购买窗。[slot] 必须是**有内容的**格子（调用方 [mouseClicked] 已判过，这里再兜一道）。
+     *
+     * [admin] = true 打开的是服主的**只读查看窗**（同一套内容，换按钮见 [buyDialogAdmin]）。
+     */
+    private fun openBuyDialog(slot: Int, admin: Boolean = false) {
         if (PointMarketCache.slots[slot] == null) return
         // 格子是自绘的、不走 NineSliceButton 内置点击音 —— 不补手感就是"点了没反应"（同 openEditDialog）
         playCellClickSound()
         buySlot = slot
+        buyDialogAdmin = admin
         buyCount = 1
         // 记下这一条的 id：购买时带回服务端比对，也用来判断它有没有被换过内容
         buySlotEntryId = PointMarketCache.slots[slot]?.entryId.orEmpty()
@@ -1210,6 +1506,7 @@ class PointsMarketScreen : Screen(
      */
     private fun closeBuyDialog() {
         buySlot = -1
+        buyDialogAdmin = false
         buySlotEntryId = ""
         buyCount = 1
         buyHintMsg = null
@@ -1250,6 +1547,20 @@ class PointsMarketScreen : Screen(
         }
 
         val rowY = editButtonRowY()
+        if (buyDialogAdmin) {
+            // 服主的只读窗：底部只有一枚「关闭」（贴右缘，与玩家那两个按钮的右缘对齐）。
+            // 页面内容与玩家的购买窗**完全一样**，区别就是这排按钮 + 右上角那枚「下架」
+            //（位置沿用原编辑窗那枚，用户 2026-09-25 拍板）
+            buyCancelButton = NineSliceButton(
+                editDialogX() + editDialogW() - EDIT_PAD - BUY_BTN_W, rowY, BUY_BTN_W, 16,
+                Text.translatable("cobblemarket.points.store.buy_close"), { closeBuyDialog() }
+            ).also { addDrawableChild(it) }
+            buyConfirmButton = NineSliceButton(
+                editRowRightX() - EDIT_REMOVE_W, editRemoveY(), EDIT_REMOVE_W, EDIT_ROW_H,
+                Text.translatable("cobblemarket.points.store.remove"), { removeFromBuyDialog() }
+            ).also { addDrawableChild(it) }
+            return
+        }
         buyConfirmButton = NineSliceButton(
             editDialogX() + editDialogW() - EDIT_PAD - BUY_BTN_W * 2 - BUTTON_GAP, rowY, BUY_BTN_W, 16,
             Text.translatable("cobblemarket.points.store.buy_confirm"), { confirmBuy() }
@@ -1258,6 +1569,19 @@ class PointsMarketScreen : Screen(
             editDialogX() + editDialogW() - EDIT_PAD - BUY_BTN_W, rowY, BUY_BTN_W, 16,
             Text.translatable("cobblemarket.points.store.buy_cancel"), { closeBuyDialog() }
         ).also { addDrawableChild(it) }
+    }
+
+    /**
+     * 服主在只读窗里点「下架」：清空这一格。
+     *
+     * 与原编辑窗那枚「下架」同一个包、同一套语义 —— 只是操作对象换成了 [buySlot]（那枚已随
+     * 「服主不再能编辑已有格子」一并删除，现在这里是**唯一**的下架入口）。
+     * ⚠ 没有二次确认，与编辑窗那枚**保持一致**（别只给一边加，两边行为会分叉）。
+     */
+    private fun removeFromBuyDialog() {
+        if (buySlot < 0) return
+        sendToServer(RemovePointMarketEntryPayload(buySlot, currentKind()))
+        closeBuyDialog()
     }
 
     /** 窗口内的点击：控件优先 → 点空白失焦。窗口开着时事件**一律吃掉**，不让它漏到下层 */
@@ -1312,8 +1636,14 @@ class PointsMarketScreen : Screen(
         context.drawCenteredTextWithShadow(
             textRenderer,
             Text.translatable(
-                if (entry.kind == ShopEntry.KIND_POKEMON) "cobblemarket.points.store.buy_title"
-                else "cobblemarket.points.store.buy_item_title"
+                when {
+                    // 服主的只读窗：内容与买家的购买窗一模一样，只是标题与按钮不同
+                    buyDialogAdmin && entry.kind == ShopEntry.KIND_POKEMON ->
+                        "cobblemarket.points.store.view_title"
+                    buyDialogAdmin -> "cobblemarket.points.store.view_item_title"
+                    entry.kind == ShopEntry.KIND_POKEMON -> "cobblemarket.points.store.buy_title"
+                    else -> "cobblemarket.points.store.buy_item_title"
+                }
             ).formatted(Formatting.GOLD),
             x + editDialogW() / 2, y + 10, 0xFFFFFF
         )
@@ -1764,10 +2094,14 @@ class PointsMarketScreen : Screen(
     }
 
     /**
-     * 编辑模式回填：把该格已存的**完整规格**填进草稿。
+     * 把一份**完整规格**填进草稿 —— 供**快照回填**用（服主选了一个快照，界面自动配好）。
      *
      * ⚠ 一个字段都不能漏 —— 漏了的字段在提交时会被默认值覆盖，
-     * 「什么都不改直接保存 = 什么都不变」就破了（全量覆盖式表单的铁律）。
+     * 「什么都不改直接确认 = 什么都不变」就破了（全量覆盖式表单的铁律）。
+     *
+     * ⚠ 它**曾经是「编辑已有格子」的回填**（2026-09-25 之前，`openEditDialog` 把该格已存的
+     * 规格填进来）。服主不再能编辑已有格子之后，唯一的用途就是**快照**了。
+     * ⚠ **当前还没有调用点**（快照功能未做）—— 别因为"没人调"就把它删了。
      */
     private fun fillDraft(entry: ShopEntry) {
         entry.item?.let { item ->
@@ -1844,35 +2178,39 @@ class PointsMarketScreen : Screen(
     }
 
     /** 提交：把草稿拼成 [ShopEntry] 发给服务端（服务端还会全量校验一遍） */
+    /**
+     * 当前草稿 → [ShopEntry]；返回 null = 还没配全（价格非法 / 物种没选 / 物品没选）。
+     *
+     * [submitEdit]（上架）与「保存为快照」**共用这一份** —— 两处各拼一份的话，
+     * 以后加字段必然漏一处（本项目"同一样东西写两遍"的坑已经踩过很多次）。
+     */
+    private fun buildShopEntry(): ShopEntry? {
+        val price = editPriceField?.text?.trim()?.toLongOrNull() ?: return null
+        if (price < 0) return null
+        val stockText = editStockField?.text?.trim().orEmpty()
+        // 留空 = 不限量（-1）；填 0 没意义（上架即售罄），服务端也会拒
+        val stock = if (stockText.isEmpty()) ShopEntry.UNLIMITED else stockText.toIntOrNull() ?: return null
+        return if (isPokemonSlot()) {
+            val spec = buildPokemonSpec() ?: return null
+            ShopEntry(ShopEntry.KIND_POKEMON, price, stock, pokemon = spec)
+        } else {
+            if (editItemId.isEmpty()) return null
+            ShopEntry(ShopEntry.KIND_ITEM, price, stock, item = ShopItemSpec(editItemId, editItemComponents))
+        }
+    }
+
     private fun submitEdit() {
-        val priceText = editPriceField?.text?.trim().orEmpty()
-        val price = priceText.toLongOrNull()
+        // 价格单独再挡一道：只有它能给出"请填写价格"这条**具体**提示
+        //（[buildShopEntry] 只回 null，不区分是哪一项缺）
+        val price = editPriceField?.text?.trim()?.toLongOrNull()
         if (price == null || price < 0) {
             failSubmit("price_required")
             return
         }
-        val stockText = editStockField?.text?.trim().orEmpty()
-        // 留空 = 不限量（-1）；填 0 没意义（上架即售罄），服务端也会拒
-        val stock = if (stockText.isEmpty()) ShopEntry.UNLIMITED else stockText.toIntOrNull() ?: run {
-            playFailSound()
+        val entry = buildShopEntry() ?: run {
+            // 走到这儿只可能是物种 / 物品没选（价格上面挡过了）
+            if (isPokemonSlot()) failSubmit("species_required") else playFailSound()
             return
-        }
-        val entry = if (isPokemonSlot()) {
-            val spec = buildPokemonSpec() ?: run {
-                // 拼不出规格只有一种情况：物种没解析出来（见 buildPokemonSpec 的首行）
-                failSubmit("species_required")
-                return
-            }
-            ShopEntry(ShopEntry.KIND_POKEMON, price, stock, pokemon = spec)
-        } else {
-            if (editItemId.isEmpty()) {
-                playFailSound()
-                return
-            }
-            ShopEntry(
-                ShopEntry.KIND_ITEM, price, stock,
-                item = ShopItemSpec(editItemId, editItemComponents)
-            )
         }
         sendToServer(SavePointMarketEntryPayload(editSlot, entry))
         closeEditDialog()
@@ -2024,17 +2362,15 @@ class PointsMarketScreen : Screen(
         )
         addDrawableChild(editCancelButton)
 
-        // 下架（只在编辑已有内容时出现）：右上角，右缘**与最右列字段按钮对齐**。
-        // ⚠ 不能按「窗口右缘 − 内边距」算 —— 列宽是整数除法（余数丢掉），两种算法能差几个像素，
-        //   看着就是"没对齐"（2026-09-20 用户指出）。
-        if (editOriginal != null) {
-            editRemoveButton = NineSliceButton(
-                editRowRightX() - EDIT_REMOVE_W, editRemoveY(),
-                EDIT_REMOVE_W, EDIT_ROW_H,
-                Text.translatable("cobblemarket.points.store.remove"), { confirmRemoveSlot() }
-            )
-            addDrawableChild(editRemoveButton)
-        }
+        // **快照**：右上角那枚 —— 位置**就是原来「下架」的那个**（`editRemoveY()` 这名字是那时候留下的，
+        // 它算的是"距顶 = 距右"那条对角线上，与具体是哪枚按钮无关）。
+        // 用户 2026-09-25 拍板：服主不再能编辑已有格子，右上角这一格改放快照。
+        // 原「下架」后来搬到服主的只读查看窗里了，见 [removeFromBuyDialog]。
+        editSnapshotButton = NineSliceButton(
+            editRowRightX() - EDIT_SNAPSHOT_W, editRemoveY(),
+            EDIT_SNAPSHOT_W, EDIT_ROW_H,
+            Text.translatable("cobblemarket.points.store.snapshot_button"), { openSnapshotDialog() }
+        ).also { addDrawableChild(it) }
 
         refreshEditLabels()
         applyEditScroll()
@@ -2657,12 +2993,9 @@ class PointsMarketScreen : Screen(
         refreshEditLabels()
     }
 
-    private fun confirmRemoveSlot() {
-        if (editSlot < 0) return
-        // kind 同 [currentKind]（窗口开着时切不了 tab）
-        sendToServer(RemovePointMarketEntryPayload(editSlot, currentKind()))
-        closeEditDialog()
-    }
+    // ⚠ 原先这里有个 `confirmRemoveSlot()`（清空 [editSlot]）—— 2026-09-25 服主不再能编辑已有格子后
+    //   它变成了死代码（唯一的调用点是编辑窗里那枚「下架」，而那枚按钮已经删了），故一并删掉。
+    //   下架的入口现在只有服主查看窗里的那枚，见 [removeFromBuyDialog]。
 
     // ── 窗口：展开式选项列表（形态 / 性格 / 特性 / 球 / 太晶 / 技能 共用）──
 
@@ -2745,29 +3078,35 @@ class PointsMarketScreen : Screen(
      * 各写一遍必然漏 —— 展开完列表恢复时会把滚出视野的按钮也一起显示出来。
      */
     private fun updateEditControlsVisibility() {
-        val open = optionListKind != null
-        editSpeciesField?.visible = !open
-        editPriceField?.visible = !open
-        editStockField?.visible = !open
+        // ⚠ 判据是「**有没有东西叠在编辑窗上面**」，不是「选项列表展开了没」——
+        //   快照弹窗也是叠层（它盖在添加窗上），只判 optionListKind 的话，
+        //   快照弹窗一开编辑窗那批控件就全冒出来了、黑压压压在新弹窗底下。
+        val covered = optionListKind != null || snapshotDialog
+        editSpeciesField?.visible = !covered
+        editPriceField?.visible = !covered
+        editStockField?.visible = !covered
         // 滚动区里的输入框：按各自行号的可见性来（见 [scrollableFields]）
         scrollableFields().forEach { (field, key) ->
-            field?.visible = !open && editRowVisible(editRowOf(key))
+            field?.visible = !covered && editRowVisible(editRowOf(key))
         }
-        editConfirmButton?.visible = !open
-        editCancelButton?.visible = !open
-        editRemoveButton?.visible = !open
-        // 清空按钮：跟 open 走就行（**不跟候选数量走** —— 那是箭头的事，清空随时都能点）
-        editSpeciesClear?.visible = !open
-        editButtons.forEach { (key, btn) -> btn.visible = !open && editRowVisible(editRowOf(key)) }
-        // 列表的搜索框：**列表展开时才在**，显式跟着 open 走（别指望它默认 true 一直有效）
-        optionSearchField?.visible = open
+        editConfirmButton?.visible = !covered
+        editCancelButton?.visible = !covered
+        editRemoveButton?.visible = !covered
+        // 右上角那枚「快照」同理（它也是编辑窗的控件，别忘在清单外）
+        editSnapshotButton?.visible = !covered
+        // 清空按钮：跟 covered 走就行（**不跟候选数量走** —— 那是箭头的事，清空随时都能点）
+        editSpeciesClear?.visible = !covered
+        editButtons.forEach { (key, btn) -> btn.visible = !covered && editRowVisible(editRowOf(key)) }
+        // 列表的搜索框：**只在列表展开时在**（快照弹窗不算），显式跟着它走（别指望它默认 true 一直有效）
+        optionSearchField?.visible = optionListKind != null
         // 候选箭头同理：它们也压在列表上（用户实测：选形态时两枚箭头跑到列表界面里了）
         updateEditSpeciesArrows()
 
-        // ⚠ **兜底**：弹窗期间，凡是从 [editWidgetBase] 起建出来、又不在上面那份清单里的控件，
+        // ⚠ **兜底**：选项列表展开时，凡是从 [editWidgetBase] 起建出来、又不在上面那份清单里的控件，
         //   一律隐藏 —— 逐个列名字隐藏必然有漏（上一条注释就是踩过的坑）。
         //   列表自己的控件（搜索框 / 返回）不在兜底范围内，它们本来就该显示。
-        if (open) {
+        //   ⚠ 快照弹窗的控件**也不该被它扫到**（它们叠在最上面、本来就该显示）—— 所以只判列表展开。
+        if (optionListKind != null) {
             val listOwn = buildSet<net.minecraft.client.gui.widget.ClickableWidget> {
                 optionSearchField?.let { add(it) }
                 addAll(optionListButtons)
@@ -3073,9 +3412,11 @@ class PointsMarketScreen : Screen(
             context, DIALOG_BACKGROUND_TEXTURE, x, y, editDialogW(), editDialogHeight(), 0, DIALOG_BACKGROUND_TEX_H
         )
 
-        // 标题：列表展开时换成「选择 XX」（同一个位置只有一个标题，不叠字）
+        // 标题：快照弹窗 / 展开的选项列表各自换标题（同一个位置只有一个标题，不叠字）
         val listKind = optionListKind
-        val title = if (listKind != null) {
+        val title = if (snapshotDialog) {
+            Text.translatable("cobblemarket.points.store.snapshot_button")
+        } else if (listKind != null) {
             Text.translatable(
                 "cobblemarket.points.store.pick",
                 Text.translatable(optionListShortKey(listKind)).string
@@ -3099,6 +3440,12 @@ class PointsMarketScreen : Screen(
         // 提交失败提示：画在**标题右侧那片空位**（标题居中、到右缘还空着一大片，用户 2026-09-20 指出）——
         // 右端对齐到该行可用空间的右缘：编辑时避开右上角的「下架」按钮，新建时就直接是内容右缘。
         // ⚠ 跟着标题一起画在**列表展开之前**（展开选项列表时也得看得见，那时玩家往往正要去改）
+        // 快照弹窗**叠在添加窗之上**（与展开的选项列表互斥，两者都是"盖住下面的窗口"）
+        if (snapshotDialog) {
+            renderSnapshotDialog(context, mouseX, mouseY)
+            return
+        }
+
         editHintMsg?.let { hint ->
             if (System.currentTimeMillis() < editHintUntil) {
                 val rightLimit =
@@ -4030,6 +4377,18 @@ class PointsMarketScreen : Screen(
 
         /** 证章悬停窗的内边距 */
         const val MARK_TIP_PAD = 5
+
+        /**
+         * 添加窗右上角「快照」按钮的宽度。
+         * 中文「快照」36px、英文 `Snapshots` 54px —— 取宽的再加边距（项目一贯的"按最宽文案定宽"）。
+         */
+        const val EDIT_SNAPSHOT_W = 62
+
+        /** 快照弹窗里「保存当前配置」按钮的宽度（中文 54px、英文 `Save Current` 72px，取宽的） */
+        const val SNAPSHOT_SAVE_BTN_W = 80
+
+        /** 快照列表每行的高度 */
+        const val SNAPSHOT_ROW_H = 16
 
         /**
          * 六项个体值 / 努力值的属性缩写。

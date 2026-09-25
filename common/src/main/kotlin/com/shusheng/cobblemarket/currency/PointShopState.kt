@@ -234,46 +234,9 @@ class PointShopState private constructor() : PersistentState() {
         //   解构出来的 `index` 其实是 kind（编译期就会报类型错，这里记一笔免得再犯）
         slots.values.flatMap { it.entries }.forEach { (index, entry) ->
             val c = NbtCompound()
+            // 序号是**这一层**的事（快照库没有格子序号），规格本体走共享函数
             c.putInt("index", index)
-            c.putString("kind", entry.kind)
-            c.putLong("price", entry.price)
-            c.putInt("stock", entry.stock)
-            // 空串不写（老数据 / 读不到就落空串时省空间）；读端缺字段落空串
-            if (entry.entryId.isNotEmpty()) c.putString("entryId", entry.entryId)
-            entry.pokemon?.let { p ->
-                val pc = NbtCompound()
-                pc.putString("species", p.species)
-                putStringList(pc, "aspects", p.aspects)
-                if (p.shinyChance > 0f) pc.putFloat("shinyChance", p.shinyChance)
-                p.level?.let { pc.putInt("level", it) }
-                p.gender?.let { pc.putString("gender", it) }
-                p.nature?.let { pc.putString("nature", it) }
-                p.ability?.let { pc.putString("ability", it) }
-                p.ball?.let { pc.putString("ball", it) }
-                p.scale?.let { pc.putFloat("scale", it) }
-                if (p.alpha) pc.putBoolean("alpha", true)
-                p.teraType?.let { pc.putString("teraType", it) }
-                if (p.gmaxFactor) pc.putBoolean("gmaxFactor", true)
-                if (p.dmaxLevel > 0) pc.putInt("dmaxLevel", p.dmaxLevel)
-                if (!p.heldItemVisible) pc.putBoolean("heldItemVisible", false)
-                if (!p.tradeable) pc.putBoolean("tradeable", false)
-                p.ivs?.let { pc.putIntArray("ivs", it) }
-                pc.putInt("minPerfectIvs", p.minPerfectIvs)
-                p.evs?.let { pc.putIntArray("evs", it) }
-                p.friendship?.let { pc.putInt("friendship", it) }
-                p.nickname?.let { pc.putString("nickname", it) }
-                p.heldItemSpec?.let { pc.putString("heldItemSpec", it) }
-                if (p.marks.isNotEmpty()) putStringList(pc, "marks", p.marks)
-                if (p.moves.isNotEmpty()) pc.putString("moves", p.moves)
-                c.put("pokemon", pc)
-            }
-            entry.item?.let { i ->
-                val ic = NbtCompound()
-                ic.putString("itemId", i.itemId)
-                // 空快照不写（读回来是 null = 无组件，与黑名单同口径）
-                i.componentsSpec?.takeIf { !it.isEmpty }?.let { ic.put("components", it) }
-                c.put("item", ic)
-            }
+            writeShopEntryBody(c, entry)
             list.add(c)
         }
         nbt.put("slots", list)
@@ -292,72 +255,12 @@ class PointShopState private constructor() : PersistentState() {
                     nbt.getList("slots", NbtList.COMPOUND_TYPE.toInt()).forEach { element ->
                         try {
                             val c = element as NbtCompound
-                            val kind = c.getString("kind")
-                            // 认不出的种类整条丢弃：宁少一件商品，也不让坏数据变成"空白格子"
-                            if (kind != ShopEntry.KIND_POKEMON && kind != ShopEntry.KIND_ITEM) {
-                                CobbleMarket.LOGGER.warn("Skipping shop entry with unknown kind: {}", kind)
-                                return@forEach
-                            }
-                            val pokemon = if (c.contains("pokemon")) {
-                                val pc = c.getCompound("pokemon")
-                                val species = pc.getString("species")
-                                if (species.isBlank()) null else ShopPokemonSpec(
-                                    species = species,
-                                    aspects = readStringList(pc, "aspects"),
-                                    shinyChance = if (pc.contains("shinyChance"))
-                                        pc.getFloat("shinyChance").coerceIn(0f, 1f) else 0f,
-                                    level = if (pc.contains("level")) pc.getInt("level") else null,
-                                    gender = if (pc.contains("gender")) pc.getString("gender") else null,
-                                    nature = if (pc.contains("nature")) pc.getString("nature") else null,
-                                    ability = if (pc.contains("ability")) pc.getString("ability") else null,
-                                    ball = if (pc.contains("ball")) pc.getString("ball") else null,
-                                    scale = if (pc.contains("scale")) pc.getFloat("scale") else null,
-                                    alpha = pc.getBoolean("alpha"),
-                                    teraType = if (pc.contains("teraType")) pc.getString("teraType") else null,
-                                    gmaxFactor = pc.getBoolean("gmaxFactor"),
-                                    dmaxLevel = if (pc.contains("dmaxLevel")) pc.getInt("dmaxLevel") else 0,
-                                    heldItemVisible = if (pc.contains("heldItemVisible")) pc.getBoolean("heldItemVisible") else true,
-                                    tradeable = if (pc.contains("tradeable")) pc.getBoolean("tradeable") else true,
-                                    // 长度不是 6 的当"整组随机"：坏数组不参与生成（铁律：读取容错）
-                                    ivs = if (pc.contains("ivs"))
-                                        pc.getIntArray("ivs").toList().takeIf { it.size == 6 } else null,
-                                    minPerfectIvs = if (pc.contains("minPerfectIvs")) pc.getInt("minPerfectIvs") else 0,
-                                    evs = if (pc.contains("evs")) pc.getIntArray("evs").toList() else null,
-                                    friendship = if (pc.contains("friendship")) pc.getInt("friendship") else null,
-                                    nickname = if (pc.contains("nickname")) pc.getString("nickname") else null,
-                                    heldItemSpec = if (pc.contains("heldItemSpec")) pc.getString("heldItemSpec") else null,
-                                    marks = readStringList(pc, "marks"),
-                                    moves = if (pc.contains("moves")) pc.getString("moves") else ""
-                                )
-                            } else null
-                            val item = if (c.contains("item")) {
-                                val ic = c.getCompound("item")
-                                val itemId = ic.getString("itemId")
-                                if (itemId.isBlank()) null else ShopItemSpec(
-                                    itemId = itemId,
-                                    componentsSpec = if (ic.contains("components")) ic.getCompound("components") else null
-                                )
-                            } else null
-                            // 规格与种类对不上（如 kind=pokemon 却没有精灵规格）→ 丢弃
-                            if (kind == ShopEntry.KIND_POKEMON && pokemon == null) {
-                                CobbleMarket.LOGGER.warn("Skipping shop pokemon entry #{} without a valid spec", c.getInt("index"))
-                                return@forEach
-                            }
-                            if (kind == ShopEntry.KIND_ITEM && item == null) {
-                                CobbleMarket.LOGGER.warn("Skipping shop item entry #{} without a valid spec", c.getInt("index"))
-                                return@forEach
-                            }
                             val index = c.getInt("index")
                             if (index < 0) return@forEach
+                            // 规格本体走共享函数（与快照库同一份）；它返回 null = 这条坏了或种类对不上
+                            val entry = readShopEntryBody(c) ?: return@forEach
                             // ⚠ 按 kind 分组：精灵与物品各占一套独立的格子编号（2026-09-25 起）
-                            slots.getOrPut(kind) { mutableMapOf() }[index] = ShopEntry(
-                                kind = kind,
-                                price = c.getLong("price").coerceAtLeast(0L),
-                                stock = if (c.contains("stock")) c.getInt("stock") else ShopEntry.UNLIMITED,
-                                pokemon = pokemon,
-                                item = item,
-                                entryId = if (c.contains("entryId")) c.getString("entryId") else ""
-                            )
+                            slots.getOrPut(entry.kind) { mutableMapOf() }[index] = entry
                         } catch (e: Exception) {
                             CobbleMarket.LOGGER.warn("Skipping corrupted shop entry: {}", e.message)
                         }
@@ -370,6 +273,128 @@ class PointShopState private constructor() : PersistentState() {
         fun get(server: MinecraftServer): PointShopState =
             server.overworld.persistentStateManager.getOrCreate(TYPE, "${CobbleMarket.MOD_ID}_point_shop")
     }
+}
+
+// ── 商品规格的 NBT 读写（**格子存档与快照库共用**）──
+//
+// 抽出来是因为两处存的是**同一套结构**（[PointShopState] 的格子、[PointShopSnapshotState] 的快照）——
+// 各写一份序列化，加字段时漏一处就会静默丢数据（本项目反复踩过这类"两处各写一遍"的坑）。
+// ⚠ **不含格子序号**：序号是格子存档那一层的事，快照库里没有这概念。
+
+/** 把一个商品的规格写进 [c]（调用方自己写它那一层特有的字段，如格子序号） */
+internal fun writeShopEntryBody(c: NbtCompound, entry: ShopEntry) {
+    c.putString("kind", entry.kind)
+    c.putLong("price", entry.price)
+    c.putInt("stock", entry.stock)
+    // 空串不写（老数据 / 读不到就落空串时省空间）；读端缺字段落空串
+    if (entry.entryId.isNotEmpty()) c.putString("entryId", entry.entryId)
+    entry.pokemon?.let { p ->
+        val pc = NbtCompound()
+        pc.putString("species", p.species)
+        putStringList(pc, "aspects", p.aspects)
+        if (p.shinyChance > 0f) pc.putFloat("shinyChance", p.shinyChance)
+        p.level?.let { pc.putInt("level", it) }
+        p.gender?.let { pc.putString("gender", it) }
+        p.nature?.let { pc.putString("nature", it) }
+        p.ability?.let { pc.putString("ability", it) }
+        p.ball?.let { pc.putString("ball", it) }
+        p.scale?.let { pc.putFloat("scale", it) }
+        if (p.alpha) pc.putBoolean("alpha", true)
+        p.teraType?.let { pc.putString("teraType", it) }
+        if (p.gmaxFactor) pc.putBoolean("gmaxFactor", true)
+        if (p.dmaxLevel > 0) pc.putInt("dmaxLevel", p.dmaxLevel)
+        if (!p.heldItemVisible) pc.putBoolean("heldItemVisible", false)
+        if (!p.tradeable) pc.putBoolean("tradeable", false)
+        p.ivs?.let { pc.putIntArray("ivs", it) }
+        pc.putInt("minPerfectIvs", p.minPerfectIvs)
+        p.evs?.let { pc.putIntArray("evs", it) }
+        p.friendship?.let { pc.putInt("friendship", it) }
+        p.nickname?.let { pc.putString("nickname", it) }
+        p.heldItemSpec?.let { pc.putString("heldItemSpec", it) }
+        if (p.marks.isNotEmpty()) putStringList(pc, "marks", p.marks)
+        if (p.moves.isNotEmpty()) pc.putString("moves", p.moves)
+        c.put("pokemon", pc)
+    }
+    entry.item?.let { i ->
+        val ic = NbtCompound()
+        ic.putString("itemId", i.itemId)
+        // 空快照不写（读回来是 null = 无组件，与黑名单同口径）
+        i.componentsSpec?.takeIf { !it.isEmpty }?.let { ic.put("components", it) }
+        c.put("item", ic)
+    }
+}
+
+/**
+ * 从 [c] 读出一个商品；返回 null = 这条坏了 / 种类对不上 ——
+ * 调用方记 warn 后**跳过这一条**，绝不整体抛异常（CLAUDE.md 的存档铁律）。
+ *
+ * ⚠ 与 [writeShopEntryBody] 是**一对**，改一边必须改另一边。
+ */
+internal fun readShopEntryBody(c: NbtCompound): ShopEntry? {
+    val kind = c.getString("kind")
+    // 认不出的种类整条丢弃：宁少一件商品，也不让坏数据变成"空白格子"
+    if (kind != ShopEntry.KIND_POKEMON && kind != ShopEntry.KIND_ITEM) {
+        CobbleMarket.LOGGER.warn("Skipping shop entry with unknown kind: {}", kind)
+        return null
+    }
+    val pokemon = if (c.contains("pokemon")) {
+        val pc = c.getCompound("pokemon")
+        val species = pc.getString("species")
+        if (species.isBlank()) null else ShopPokemonSpec(
+            species = species,
+            aspects = readStringList(pc, "aspects"),
+            shinyChance = if (pc.contains("shinyChance"))
+                pc.getFloat("shinyChance").coerceIn(0f, 1f) else 0f,
+            level = if (pc.contains("level")) pc.getInt("level") else null,
+            gender = if (pc.contains("gender")) pc.getString("gender") else null,
+            nature = if (pc.contains("nature")) pc.getString("nature") else null,
+            ability = if (pc.contains("ability")) pc.getString("ability") else null,
+            ball = if (pc.contains("ball")) pc.getString("ball") else null,
+            scale = if (pc.contains("scale")) pc.getFloat("scale") else null,
+            alpha = pc.getBoolean("alpha"),
+            teraType = if (pc.contains("teraType")) pc.getString("teraType") else null,
+            gmaxFactor = pc.getBoolean("gmaxFactor"),
+            dmaxLevel = if (pc.contains("dmaxLevel")) pc.getInt("dmaxLevel") else 0,
+            heldItemVisible = if (pc.contains("heldItemVisible")) pc.getBoolean("heldItemVisible") else true,
+            tradeable = if (pc.contains("tradeable")) pc.getBoolean("tradeable") else true,
+            // 长度不是 6 的当"整组随机"：坏数组不参与生成（铁律：读取容错）
+            ivs = if (pc.contains("ivs"))
+                pc.getIntArray("ivs").toList().takeIf { it.size == 6 } else null,
+            minPerfectIvs = if (pc.contains("minPerfectIvs")) pc.getInt("minPerfectIvs") else 0,
+            evs = if (pc.contains("evs")) pc.getIntArray("evs").toList() else null,
+            friendship = if (pc.contains("friendship")) pc.getInt("friendship") else null,
+            nickname = if (pc.contains("nickname")) pc.getString("nickname") else null,
+            heldItemSpec = if (pc.contains("heldItemSpec")) pc.getString("heldItemSpec") else null,
+            marks = readStringList(pc, "marks"),
+            moves = if (pc.contains("moves")) pc.getString("moves") else ""
+        )
+    } else null
+    val item = if (c.contains("item")) {
+        val ic = c.getCompound("item")
+        val itemId = ic.getString("itemId")
+        if (itemId.isBlank()) null else ShopItemSpec(
+            itemId = itemId,
+            componentsSpec = if (ic.contains("components")) ic.getCompound("components") else null
+        )
+    } else null
+    // 规格与种类对不上（如 kind=pokemon 却没有精灵规格）→ 丢弃
+    //（warn 里不再带格子序号：快照库没有这个概念，序号由格子那边自己补）
+    if (kind == ShopEntry.KIND_POKEMON && pokemon == null) {
+        CobbleMarket.LOGGER.warn("Skipping shop pokemon entry without a valid spec")
+        return null
+    }
+    if (kind == ShopEntry.KIND_ITEM && item == null) {
+        CobbleMarket.LOGGER.warn("Skipping shop item entry without a valid spec")
+        return null
+    }
+    return ShopEntry(
+        kind = kind,
+        price = c.getLong("price").coerceAtLeast(0L),
+        stock = if (c.contains("stock")) c.getInt("stock") else ShopEntry.UNLIMITED,
+        pokemon = pokemon,
+        item = item,
+        entryId = if (c.contains("entryId")) c.getString("entryId") else ""
+    )
 }
 
 // ── NBT 字符串列表辅助（1.21 的 NbtCompound 没有 putStringList / getStringList）──

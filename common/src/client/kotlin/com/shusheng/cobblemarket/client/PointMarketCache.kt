@@ -54,4 +54,19 @@ object PointMarketCache {
         loaded = false
     }
 
+    // ── 配方快照（服主用；只有持 `points.shop` 的人会收到）──
+
+    /** 快照列表（服务端下发；存 / 删之后服务端会回发最新的一份） */
+    var snapshots: List<com.shusheng.cobblemarket.network.ShopSnapshotInfo> = emptyList()
+        private set
+
+    /** 收到过至少一次列表（区分「还没拉到」与「拉到了但是空的」） */
+    var snapshotsLoaded: Boolean = false
+        private set
+
+    fun acceptSnapshots(payload: com.shusheng.cobblemarket.network.ShopSnapshotsPayload) {
+        snapshots = payload.snapshots
+        snapshotsLoaded = true
+    }
+
 }
