@@ -1112,7 +1112,15 @@ object AuctionNetwork {
             // 性格（薄荷生效值） / 特性 / 球种
             extra["nature"]?.takeIf { it.isNotEmpty() }?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_nature").append(Text.translatable(it))) }
             extra["ability"]?.takeIf { it.isNotEmpty() }?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_ability").append(Text.translatable(it))) }
-            extra["ball"]?.takeIf { it.isNotEmpty() }?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_ball").append(Text.translatable(it))) }
+            // 球名走**稀有度色**（大师球在物品栏里是紫的，直接念词条出来是白字）——
+            // 与悬停窗 / 待交付的悬停同一口径（2026-09-25 用户报：聊天悬停这条没跟上）
+            extra["ball"]?.takeIf { it.isNotEmpty() }?.let { ballKey ->
+                lines.add(
+                    Text.translatable("cobblemarket.gui.tooltip_ball").append(
+                        ItemNameText.rarityColoredNameById(extra["ballItem"].orEmpty()) ?: Text.translatable(ballKey)
+                    )
+                )
+            }
             // 携带物（有则一行）
             // 携带物名走稀有度色（与物品栏悬停一致）；extra 里只有 id 没有完整栈，用默认栈取稀有度
             extra["heldItemId"].orEmpty().takeIf { it.isNotEmpty() }
