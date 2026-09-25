@@ -47,5 +47,3 @@ libs/
 # 编译验证日志
 build_verify.log
 
-# AI 工具的项目配置（个人环境，不该进仓库）
-.claude/
