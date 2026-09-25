@@ -11,6 +11,7 @@ import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
 import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.client.playButtonClickSound
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.client.icon.IconCryClick
@@ -1091,6 +1092,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             val filtered = filteredEntries()
             val idx = scrollOffset + hoveredRow
             if (idx in filtered.indices) {
+                // 行是**自绘**的（不走 NineSliceButton），点击音得自己播 ——
+                // 缺了它，点行弹「取消拍卖确认」时只有这一处没声音
+                playButtonClickSound()
                 openCancelDialog(filtered[idx])
                 return true
             }
