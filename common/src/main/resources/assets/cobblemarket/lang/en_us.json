@@ -108,7 +108,7 @@
   "cobblemarket.points.store.buy_total": "Total: %s",
   "cobblemarket.points.store.field.level": "Level: %s",
   "cobblemarket.points.store.field.friendship": "Friendship: %s",
-  "cobblemarket.points.store.field.friendship_label": "Friend",
+  "cobblemarket.points.store.field.friendship_label": "Friendship",
   "cobblemarket.points.store.value.shiny_chance": "Shiny chance: %s",
 
   "cobblemarket.points.store.add_title": "Add Pokémon",
@@ -150,7 +150,8 @@
   "cobblemarket.points.store.field.marks": "Marks: %s",
   "cobblemarket.points.store.field.friendship_hint": "Friendship (max 255)",
   "cobblemarket.points.store.iv_hint": "%s≤31",
-  "cobblemarket.points.store.ev_hint": "%s≤252",
+  "cobblemarket.points.store.ev_hint": "EV %s≤252",
+  "cobblemarket.points.store.ev_hint_short": "%s≤252",
   "cobblemarket.points.store.field.skill": "Move %s: %s",
   "cobblemarket.points.store.field.level_hint": "Level",
   "cobblemarket.points.store.field.price": "Price",

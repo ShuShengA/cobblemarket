@@ -1321,7 +1321,7 @@ class PointsMarketScreen : Screen(
         if (entry.kind == ShopEntry.KIND_POKEMON) {
             entry.pokemon?.let { renderBuyNameLines(context, it) }
             renderBuyPreview(context, entry, delta)
-            entry.pokemon?.let { renderBuyPokemonFields(context, it) }
+            entry.pokemon?.let { renderBuyPokemonFields(context, it, mouseX, mouseY) }
         } else {
             renderBuyItemFields(context, entry)
         }
@@ -1376,11 +1376,19 @@ class PointsMarketScreen : Screen(
      * 精灵字段：**照搬编辑窗的位置**（同一张 [editFieldOrder] 表、同一套坐标函数），画成只读文本。
      * 值一律取自 **[ShopPokemonSpec]**（服务端下发的规格），**不读界面草稿** —— 两个窗口不共用草稿。
      */
-    private fun renderBuyPokemonFields(context: DrawContext, spec: ShopPokemonSpec) {
+    private fun renderBuyPokemonFields(
+        context: DrawContext, spec: ShopPokemonSpec, mouseX: Int, mouseY: Int
+    ) {
+        // 证章行的悬停窗落点（在字段循环里判定、**全部画完之后**才画，才浮得在字段上面）
+        var marksTooltipAt: Pair<Int, Int>? = null
         for (key in editFieldOrder()) {
             if (key == FIELD_BREAK) continue
             val (row, col) = posOf(key)
             if (!editRowVisible(row)) continue
+            // 「证章」那一行：悬停弹小窗把**全部**证章图标排出来（见 renderMarksTooltip）
+            if (key == KEY_MARKS && spec.marks.isNotEmpty() && overBuyField(mouseX, mouseY, row, col)) {
+                marksTooltipAt = editColX(col) to (editRowY(row) + EDIT_ROW_H + 2)
+            }
             drawBuyField(context, editColX(col), editRowY(row), editColW(), buyFieldLine(key, spec))
         }
         // 六项个体值 / 努力值：一行六个（与编辑窗同一行、同一列序）。
@@ -1405,6 +1413,52 @@ class PointsMarketScreen : Screen(
             for (i in 0 until MoveText.SLOTS) {
                 drawBuyField(context, editColX(1 + i), editRowY(skillRow()), editColW(), skillLine(skills, i))
             }
+        }
+
+        // 悬停窗**最后画**（浮在上面）
+        marksTooltipAt?.let { (tx, ty) -> renderMarksTooltip(context, spec, tx, ty) }
+    }
+
+    /** 鼠标在不在这一个字段格子里（悬停判定用 —— 与绘制共用 [editColX] / [editRowY] 那套坐标） */
+    private fun overBuyField(mouseX: Int, mouseY: Int, row: Int, col: Int): Boolean {
+        val x = editColX(col)
+        val y = editRowY(row)
+        return mouseX >= x && mouseX < x + editColW() && mouseY >= y && mouseY < y + EDIT_ROW_H
+    }
+
+    /**
+     * 购买窗「证章」那一行悬停时的小窗：把**全部**证章图标排出来（每行
+     * [EntryBadgeRenderer.MARKS_PER_ROW] 个，多了换行）。
+     *
+     * ⚠ 与市场行悬停的区别**就在这里**：那边走 `EntryBadgeRenderer.drawMarksRow`，
+     * **有意**只画一行、多出来的显示成「+N」—— **那是设计，不是缺陷**：行悬停窗里空间有限，
+     * 证章铺开会把名字 / 属性 / IV 那些信息挤没（用户 2026-09-25 专门澄清过）。
+     * ⚠ **别去"修"那一边**：它跟本条是不同的取舍。
+     * 购买窗这一行**专门给它做了悬停窗**（不跟别的东西抢位置），所以才**全画出来**。
+     *
+     * ⚠ 图标尺寸与间距（12px 一格、8×8 图标）与 `drawMarksRow` 同口径，两边看着才是一套。
+     */
+    private fun renderMarksTooltip(context: DrawContext, spec: ShopPokemonSpec, x: Int, y: Int) {
+        val textures = spec.marks.mapNotNull { Identifier.tryParse(it) }
+        if (textures.isEmpty()) return
+        val perRow = EntryBadgeRenderer.MARKS_PER_ROW
+        val rows = (textures.size + perRow - 1) / perRow
+        val pad = MARK_TIP_PAD
+        val w = minOf(textures.size, perRow) * MARK_CELL + pad * 2
+        val h = rows * MARK_CELL + pad * 2
+        // 落到屏幕外就往回钳（弹窗本身贴屏幕边时，悬停窗不能跑出去）
+        val tipX = x.coerceIn(2, (width - w - 2).coerceAtLeast(2))
+        val tipY = y.coerceIn(2, (height - h - 2).coerceAtLeast(2))
+        drawNineSlice(
+            context, DIALOG_BACKGROUND_TEXTURE, tipX, tipY, w, h, 0, DIALOG_BACKGROUND_TEX_H
+        )
+        textures.forEachIndexed { idx, texture ->
+            com.cobblemon.mod.common.api.gui.blitk(
+                matrixStack = context.matrices, texture = texture,
+                x = tipX + pad + (idx % perRow) * MARK_CELL,
+                y = tipY + pad + (idx / perRow) * MARK_CELL,
+                width = 8, height = 8
+            )
         }
     }
 
@@ -2137,8 +2191,15 @@ class PointsMarketScreen : Screen(
                     //   （2026-09-20 用户问「六个框都填 252 怎么办」）。所以这里跨框一起算着拦
                     f.setTextPredicate(intInputIn(0..252) { v -> evSumExcept(i) + v <= EV_TOTAL_MAX })
                     // 加前缀区分两组 —— 项名缩写两组是一样的，不看前缀分不出哪组是哪组。
-                    // 上限 252 也写进占位符里（同个体值那组，用户 2026-09-20）
-                    f.setPlaceholder(Text.translatable("cobblemarket.points.store.ev_hint", STAT_LABELS[i]))
+                    // 上限 252 也写进占位符里（同个体值那组，用户 2026-09-20）。
+                    // ⚠ 带前缀那版**放不下就不用**：列宽跟着窗口走，GUI scale 大时一列只剩 39px，
+                    //   `EV SpA≤252` 会顶出输入框（用户 2026-09-25 报过这个症状）。
+                    //   按**量出来的宽度**选版本，别靠估（估错过一次了）
+                    val evHintFull = Text.translatable("cobblemarket.points.store.ev_hint", STAT_LABELS[i])
+                    f.setPlaceholder(
+                        if (textRenderer.getWidth(evHintFull) <= editFieldW(key)) evHintFull
+                        else Text.translatable("cobblemarket.points.store.ev_hint_short", STAT_LABELS[i])
+                    )
                     f.setChangedListener { t -> editEvText = editEvText.toMutableList().also { it[i] = t } }
                     f.text = editEvText.getOrElse(i) { "" }
                     editEvFields.add(f)
@@ -2238,11 +2299,19 @@ class PointsMarketScreen : Screen(
     /**
      * 「亲密度」标签的宽度（输入框让位量与标签绘制**共用这一个数**，别各算一份）。
      *
-     * ⚠ 它是**最宽的那一版**：英文 `Friend` 比中文「亲密度」宽，字段列本身就只有几十像素，
-     * 标签每宽一点输入框就窄一点 —— 所以英文刻意用短词而不是 `Friendship`。
+     * ⚠ **放不下就返回 0** = 不画标签、输入框恢复全宽。字段列宽是跟着窗口变的：
+     * 常见窗口（`editDialogW` 取到上限 560）一列 **82px**，够放英文 `Friendship`(60px) + 3 位数输入框；
+     * 但 GUI scale 调大后窗口被钳到 300，一列只剩 **39px** —— 那时硬画标签会把输入框挤没，
+     * 不如退回"没有标签"（占位符「亲密度（最大255）」本来就在，只是默认填了 50 看不见）。
+     * 判据是**让出标签后还剩多少**，见 [MIN_FRIENDSHIP_INPUT_W]。
      */
-    private fun friendshipLabelW(): Int =
-        textRenderer.getWidth(Text.translatable("cobblemarket.points.store.field.friendship_label"))
+    private fun friendshipLabelW(): Int {
+        val w = textRenderer.getWidth(Text.translatable("cobblemarket.points.store.field.friendship_label"))
+        return if (editColW() - w >= MIN_FRIENDSHIP_INPUT_W) w else 0
+    }
+
+    /** 亲密度要不要画标签（宽度不够时退回不画，见 [friendshipLabelW]） */
+    private fun showFriendshipLabel(): Boolean = friendshipLabelW() > 0
 
     /**
      * 该字段输入框在**列内**的左缩进（目前只有等级那格有前缀）。
@@ -3056,6 +3125,8 @@ class PointsMarketScreen : Screen(
                 KEY_LEVEL to LEVEL_LABEL_KEY,
                 KEY_FRIENDSHIP to "cobblemarket.points.store.field.friendship_label"
             )) {
+                // 亲密度在小窗口里放不下标签 —— 那时输入框用的是全宽，这里就不能画（见 friendshipLabelW）
+                if (key == KEY_FRIENDSHIP && !showFriendshipLabel()) continue
                 val row = editRowOf(key)
                 if (editRowVisible(row)) {
                     context.drawTextWithShadow(
@@ -3622,7 +3693,9 @@ class PointsMarketScreen : Screen(
         // 库存角标：**只有限量格才画**（不限量是默认玩法，画个 ∞ 只是碍眼）；
         // 售罄时变红 0，格子**保留**（服主可以补货或换内容）。同样贴当前格子的右上角内边框
         if (entry.stock != ShopEntry.UNLIMITED) {
-            val badge = entry.stock.toString()
+            // `×N` 与**物品市场的库存角标同一套写法**（`ItemMarketScreen` 那句 `"×${entry.count}"`）——
+            // 光画一个数字，得像物品市场那样看过才知道它是什么（用户 2026-09-25 指出该照它来）
+            val badge = "×${entry.stock}"
             context.drawTextWithShadow(
                 textRenderer, Text.literal(badge),
                 // ⚠ **右对齐**：这是右上角的角标，`drawTextWithShadow` 却是左对齐 ——
@@ -3944,6 +4017,19 @@ class PointsMarketScreen : Screen(
 
         /** 「商品刚被编辑过」那条界面内提示的显示时长（比兑换结果短一点，它只是告知） */
         const val STALE_MSG_MS = 4000L
+
+        /**
+         * 亲密度输入框让出标签后**至少**要留这么宽。
+         * 亲密度最大 255 = **3 位数**，3 字符 × 6px = 18px，再留 2px 余量 ⇒ 20。
+         * 不够就干脆不画标签（见 [friendshipLabelW]）—— 硬画会把输入框挤得放不下数字。
+         */
+        const val MIN_FRIENDSHIP_INPUT_W = 20
+
+        /** 证章悬停窗：每个图标占的格子边长（与 `EntryBadgeRenderer.drawMarksRow` 的 12px 同口径） */
+        const val MARK_CELL = 12
+
+        /** 证章悬停窗的内边距 */
+        const val MARK_TIP_PAD = 5
 
         /**
          * 六项个体值 / 努力值的属性缩写。
