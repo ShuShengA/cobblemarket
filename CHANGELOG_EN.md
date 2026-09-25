@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 (in development, unreleased)
+## 1.1.0 (released)
 
 ### New Feature
 
