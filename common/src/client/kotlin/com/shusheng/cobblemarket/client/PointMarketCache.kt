@@ -26,6 +26,15 @@ object PointMarketCache {
     var totalPages: Int = 1
         private set
 
+    /**
+     * 这份快照属于哪个 tab（[ShopEntry.KIND_POKEMON] / [ShopEntry.KIND_ITEM]）。
+     *
+     * ⚠ 精灵与物品**各占一套独立的格子编号**（2026-09-25 起），所以切 tab 必须**清缓存再请求** ——
+     * 否则新快照到达前，界面会拿上一个 tab 的数据去画（格子序号还恰好对得上，看着像"没切过去"）。
+     */
+    var kind: String = ShopEntry.KIND_POKEMON
+        private set
+
     /** 收到过至少一次快照（区分「还没拉到」与「拉到了但这一页是空的」） */
     var loaded: Boolean = false
         private set
@@ -34,6 +43,7 @@ object PointMarketCache {
         slots = payload.slots.associate { it.index to it.entry }
         page = payload.page
         totalPages = payload.totalPages
+        kind = payload.kind
         loaded = true
     }
 

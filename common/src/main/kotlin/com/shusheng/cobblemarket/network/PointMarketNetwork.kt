@@ -74,6 +74,8 @@ data class PointMarketSlotInfo(val index: Int, val entry: ShopEntry)
 data class PointMarketItemsPayload(
     val page: Int,
     val totalPages: Int,
+    /** 这份快照属于哪个 tab（[ShopEntry.KIND_POKEMON] / [ShopEntry.KIND_ITEM]） */
+    val kind: String,
     val slots: List<PointMarketSlotInfo>
 ) : CustomPayload {
     override fun getId() = ID
@@ -84,6 +86,7 @@ data class PointMarketItemsPayload(
             { p, b ->
                 b.writeInt(p.page)
                 b.writeInt(p.totalPages)
+                b.writeString(p.kind, MAX_TEXT_LENGTH)
                 b.writeInt(p.slots.size)
                 p.slots.forEach { slot ->
                     b.writeInt(slot.index)
@@ -93,6 +96,7 @@ data class PointMarketItemsPayload(
             { b ->
                 val page = b.readInt()
                 val totalPages = b.readInt()
+                val kind = b.readString(MAX_TEXT_LENGTH)
                 val count = b.readInt()
                 if (count < 0 || count > MAX_SLOTS_PER_PAGE) {
                     throw IllegalArgumentException("point market slot count out of range: $count")
@@ -100,6 +104,7 @@ data class PointMarketItemsPayload(
                 PointMarketItemsPayload(
                     page = page,
                     totalPages = totalPages,
+                    kind = kind,
                     slots = List(count) { PointMarketSlotInfo(b.readInt(), readEntry(b)) }
                 )
             }
@@ -107,15 +112,19 @@ data class PointMarketItemsPayload(
     }
 }
 
-/** 请求某一页的商城快照（进界面 / 翻页时发） */
-data class RequestPointMarketPayload(val page: Int) : CustomPayload {
+/** 请求某一页某个 tab 的商城快照（进界面 / 翻页 / 切 tab 时发） */
+data class RequestPointMarketPayload(val page: Int, val kind: String) : CustomPayload {
     override fun getId() = ID
 
     companion object {
         val ID = CustomPayload.Id<RequestPointMarketPayload>(CobbleMarket.id("request_point_market"))
         val CODEC: PacketCodec<PacketByteBuf, RequestPointMarketPayload> = PacketCodec.of(
-            { p, b -> b.writeInt(p.page) },
-            { b -> RequestPointMarketPayload(b.readInt()) }
+            { p, b ->
+                b.writeInt(p.page)
+                b.writeString(p.kind, MAX_TEXT_LENGTH)
+            },
+            // ⚠ 读端用具名参数：字段顺序一旦对不上立刻看出来（payload 顺序铁律）
+            { b -> RequestPointMarketPayload(page = b.readInt(), kind = b.readString(MAX_TEXT_LENGTH)) }
         )
     }
 }
@@ -136,15 +145,18 @@ data class SavePointMarketEntryPayload(val index: Int, val entry: ShopEntry) : C
     }
 }
 
-/** OP 下架一格（清空该格） */
-data class RemovePointMarketEntryPayload(val index: Int) : CustomPayload {
+/** OP 下架一格（清空该格）。⚠ 要带 [kind] —— 同一序号在精灵 / 物品两个 tab 下是两个格子 */
+data class RemovePointMarketEntryPayload(val index: Int, val kind: String) : CustomPayload {
     override fun getId() = ID
 
     companion object {
         val ID = CustomPayload.Id<RemovePointMarketEntryPayload>(CobbleMarket.id("remove_point_market_entry"))
         val CODEC: PacketCodec<PacketByteBuf, RemovePointMarketEntryPayload> = PacketCodec.of(
-            { p, b -> b.writeInt(p.index) },
-            { b -> RemovePointMarketEntryPayload(b.readInt()) }
+            { p, b ->
+                b.writeInt(p.index)
+                b.writeString(p.kind, MAX_TEXT_LENGTH)
+            },
+            { b -> RemovePointMarketEntryPayload(index = b.readInt(), kind = b.readString(MAX_TEXT_LENGTH)) }
         )
     }
 }
@@ -155,7 +167,7 @@ data class RemovePointMarketEntryPayload(val index: Int) : CustomPayload {
  * ⚠ [count] **只对物品格有意义** —— 精灵格买一次就是一只，服务端不读这个值
  *（见 [PointMarketService.buy]），数量和金额都以服务端为准，客户端说了不算。
  */
-data class BuyPointMarketEntryPayload(val index: Int, val count: Int) : CustomPayload {
+data class BuyPointMarketEntryPayload(val index: Int, val count: Int, val kind: String) : CustomPayload {
     override fun getId() = ID
 
     companion object {
@@ -164,9 +176,14 @@ data class BuyPointMarketEntryPayload(val index: Int, val count: Int) : CustomPa
             { p, b ->
                 b.writeInt(p.index)
                 b.writeInt(p.count)
+                b.writeString(p.kind, MAX_TEXT_LENGTH)
             },
             // ⚠ 读端用具名参数：字段顺序一旦对不上，具名能立刻看出来（payload 顺序铁律）
-            { b -> BuyPointMarketEntryPayload(index = b.readInt(), count = b.readInt()) }
+            { b ->
+                BuyPointMarketEntryPayload(
+                    index = b.readInt(), count = b.readInt(), kind = b.readString(MAX_TEXT_LENGTH)
+                )
+            }
         )
     }
 }
@@ -321,6 +338,16 @@ fun pointMarketErrorText(error: PointMarketError): Text = Text.translatable(
 
 object PointMarketNetwork {
 
+    /**
+     * 每个玩家**最后请求过的 (页, tab)**。
+     *
+     * 广播快照时按**各自在看的那一份**发 —— 统一发"操作者那一页"会把别人跳到他没在看的一页去，
+     * tab 不同更是会串（精灵 tab 收到物品快照）。
+     * 判据是「请求过」：服务端**不知道谁的界面开着**（自定义 Screen 不上报给服务端），
+     * 但请求过就说明他的界面在用这份数据；一次没请求过的玩家一个包都不发。
+     */
+    private val lastRequested = mutableMapOf<java.util.UUID, Pair<Int, String>>()
+
     fun register() {
         registerS2CType(PointMarketItemsPayload.ID, PointMarketItemsPayload.CODEC)
 
@@ -330,7 +357,9 @@ object PointMarketNetwork {
                 return@registerC2S
             }
             val server = player.server
-            server.execute { sendToPlayer(player, buildSnapshot(server, payload.page)) }
+            // 记下他在看哪一页、哪个 tab —— 之后别人买 / 上架 / 下架时按这个给他推新快照
+            lastRequested[player.uuid] = PointMarketService.clampPage(payload.page) to payload.kind
+            server.execute { sendToPlayer(player, buildSnapshot(server, payload.page, payload.kind)) }
         }
 
         // 上架 / 编辑：服务端全量校验后才入库，成功后**回发该格所在页**让 OP 的界面立刻刷新
@@ -347,7 +376,8 @@ object PointMarketNetwork {
                             .formatted(Formatting.GREEN),
                         false
                     )
-                    sendToPlayer(player, buildSnapshot(server, pageOf(payload.index)))
+                    // **广播**而不是只回发给自己：别的玩家可能也开着商城，上架 / 改价他们得跟着变
+                    broadcastSnapshot(server)
                     // 结果音效同别处：成功 / 失败各一声。⚠ 这两个包**不发 MarketResultPayload**
                     //   （回执是聊天栏文字 + 快照），所以那条统一播音效的路走不到这儿 ——
                     //   不补的话服主点保存只有按钮的 click 声，成没成全靠看聊天栏（用户 2026-09-20 报）
@@ -365,14 +395,15 @@ object PointMarketNetwork {
             }
             val server = player.server
             server.execute {
-                val error = PointMarketService.remove(server, player, payload.index)
+                val error = PointMarketService.remove(server, player, payload.kind, payload.index)
                 if (error == null) {
                     player.sendMessage(
                         Text.translatable("cobblemarket.points.store.removed", payload.index + 1)
                             .formatted(Formatting.GREEN),
                         false
                     )
-                    sendToPlayer(player, buildSnapshot(server, pageOf(payload.index)))
+                    // 广播（同 save：下架也会让别人的界面过期）
+                    broadcastSnapshot(server)
                     // 下架的结果音效（同上，这两个包不走 MarketResultPayload）
                     sendSound(player, "result_success")
                 } else {
@@ -390,23 +421,29 @@ object PointMarketNetwork {
             }
             val server = player.server
             server.execute {
-                when (val result = PointMarketService.buy(server, player, payload.index, payload.count)) {
+                when (
+                    val result = PointMarketService.buy(
+                        server, player, payload.kind, payload.index, payload.count
+                    )
+                ) {
                     is PointMarketBuyResult.Failure -> {
                         player.sendMessage(
                             pointMarketErrorText(result.error).copy().formatted(Formatting.RED), false
                         )
                         sendSound(player, "result_fail")
+                        // 失败也回发**他自己**那一页：库存以服务端为准 —— 别人刚买走最后一件时，
+                        // 这边还停在旧数字上，不刷新就会一直「看着有货、点下去却说售罄」
+                        sendToPlayer(player, buildSnapshot(server, pageOf(payload.index), payload.kind))
                     }
 
                     is PointMarketBuyResult.Success -> {
-                        player.sendMessage(boughtText(server, payload.index, result), false)
+                        player.sendMessage(boughtText(server, payload.kind, payload.index, result), false)
                         sendSound(player, "result_success")
-                        sendPurchaseCelebration(server, player, payload.index, result)
+                        sendPurchaseCelebration(server, player, payload.kind, payload.index, result)
+                        // 买走一件会改库存 —— **广播**给所有在看商城的人（服主那边那格也要跟着减）
+                        broadcastSnapshot(server)
                     }
                 }
-                // **成不成都要回发那一页**：库存以服务端为准 —— 别人刚买走最后一件时，
-                // 这边还停在旧数字上，不刷新就会一直「看着有货、点下去却说售罄」
-                sendToPlayer(player, buildSnapshot(server, pageOf(payload.index)))
             }
         }
     }
@@ -421,11 +458,12 @@ object PointMarketNetwork {
      */
     private fun boughtText(
         server: MinecraftServer,
+        kind: String,
         index: Int,
         result: PointMarketBuyResult.Success
     ): Text {
         // 买完再读一次即可：库存变了，但 kind 与规格不会因为一次购买而变
-        val entry = PointShopState.get(server).find(index) ?: return Text.empty()
+        val entry = PointShopState.get(server).find(kind, index) ?: return Text.empty()
         return Text.translatable(
             "cobblemarket.points.store.bought",
             goodsName(entry),
@@ -444,6 +482,7 @@ object PointMarketNetwork {
     private fun sendPurchaseCelebration(
         server: MinecraftServer,
         player: ServerPlayerEntity,
+        kind: String,
         index: Int,
         result: PointMarketBuyResult.Success
     ) {
@@ -455,7 +494,7 @@ object PointMarketNetwork {
                 shiny = pokemon.shiny,
                 source = CelebrationSource.STORE,
                 // 携带物只在带组件时才非空（与挂单 / 拍卖 / 求购同口径）
-                heldItemNbt = PointShopState.get(server).find(index)?.pokemon?.heldItemSpec.orEmpty()
+                heldItemNbt = PointShopState.get(server).find(kind, index)?.pokemon?.heldItemSpec.orEmpty()
             )
             return
         }
@@ -487,13 +526,37 @@ object PointMarketNetwork {
             ?: Text.literal(entry.item?.itemId.orEmpty())
     }
 
-    /** 组装某一页的快照（页号收进合法范围 —— 客户端翻页参数不可信） */
-    private fun buildSnapshot(server: MinecraftServer, page: Int): PointMarketItemsPayload {
+    /**
+     * 把最新的商城快照推给**所有正在看商城的玩家**（按各自的页）。
+     *
+     * 为什么需要：买走一件、上架、下架都会改库存或内容，而**别的玩家**可能正开着这个界面 ——
+     * 只回发给操作者的话，他们那边会一直停在旧值。2026-09-25 用户实测报的就是这个：
+     * 「玩家买走一只后，服主界面上那格的数量不变」「服主改完内容，玩家点开还是旧的」。
+     *
+     * ⚠ 服务端不知道谁的界面开着，所以判据是「他请求过商城快照」（见 [lastRequestedPage]）——
+     * 宁可少发（没来看过的不发），也别给全服每个人塞包。
+     */
+    private fun broadcastSnapshot(server: MinecraftServer) {
+        val online = server.playerManager.playerList
+        // 顺手清掉已离线的记录：长期开着的服务器上，这个 map 会随着来过的玩家越攒越大
+        val onlineIds = online.mapTo(HashSet()) { it.uuid }
+        lastRequested.keys.retainAll(onlineIds)
+        online.forEach { target ->
+            // 按**他自己**在看的那一页 + 那个 tab 发（页与 tab 都可能和别人不同）
+            val (page, kind) = lastRequested[target.uuid] ?: return@forEach
+            sendToPlayer(target, buildSnapshot(server, page, kind))
+        }
+    }
+
+    /** 组装某一页某个 tab 的快照（页号收进合法范围 —— 客户端翻页参数不可信） */
+    private fun buildSnapshot(server: MinecraftServer, page: Int, kind: String): PointMarketItemsPayload {
         val safePage = PointMarketService.clampPage(page)
+        val safeKind = if (kind == ShopEntry.KIND_ITEM) ShopEntry.KIND_ITEM else ShopEntry.KIND_POKEMON
         return PointMarketItemsPayload(
             page = safePage,
-            totalPages = PointMarketService.pageCount(server),
-            slots = PointMarketService.pageEntries(server, safePage)
+            totalPages = PointMarketService.pageCount(server, safeKind),
+            kind = safeKind,
+            slots = PointMarketService.pageEntries(server, safePage, safeKind)
                 .map { (index, entry) -> PointMarketSlotInfo(index, entry) }
         )
     }
