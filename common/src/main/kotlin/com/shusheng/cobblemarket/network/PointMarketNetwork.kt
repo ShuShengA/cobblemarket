@@ -451,6 +451,10 @@ object PointMarketNetwork {
 
     fun register() {
         registerS2CType(PointMarketItemsPayload.ID, PointMarketItemsPayload.CODEC)
+        // ⚠ S2C 是**两步**注册：类型在这里注册（两端各一次），客户端 `registerS2C` 只挂 handler。
+        //   漏了这一行 → 客户端启动即崩：fabric 的客户端 registerS2C **忽略 codec 参数**，
+        //   类型只能靠这里；而 neoforge 那边自带 playToClient，漏了也不显形（踩坑记录见 CLAUDE.md）
+        registerS2CType(ShopSnapshotsPayload.ID, ShopSnapshotsPayload.CODEC)
 
         // 请求某一页：进界面与翻页都走它（节流与其余列表请求同档）
         registerC2S(RequestPointMarketPayload.ID, RequestPointMarketPayload.CODEC) { payload, player ->
