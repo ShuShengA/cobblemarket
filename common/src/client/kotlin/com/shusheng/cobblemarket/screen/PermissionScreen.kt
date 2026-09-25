@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.network.PlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.network.RequestPlayerNameSuggestionsPayload
+import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.permission.PermissionAuditPayload
 import com.shusheng.cobblemarket.permission.PermissionListDataPayload
@@ -489,8 +490,13 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
             val short = node.removePrefix(MarketPermissions.PREFIX)
             val btn = NineSliceButton(
                 dialogX + DIALOG_MARGIN + col * (NODE_W + 8), dialogY + NODE_GRID_Y + row * NODE_ROW_H, NODE_W, 16,
-                // 词条长度不受控（新语言/新节点都可能更长），按按钮内宽截断防溢出
-                TextUtil.truncateText(Text.translatable("cobblemarket.perm.node.$short"), NODE_W - 8),
+                // 词条长度不受控（新语言/新节点都可能更长），按按钮内宽截断防溢出。
+                // ⚠ 必须用 truncateStyled 而不是 truncateText：后者会把 Text 压成一段、
+                //   丢掉图标子片段的字体样式（货币单位是**字形**，压平就变方块）
+                TextUtil.truncateStyled(
+                    Text.translatable("cobblemarket.perm.node.$short", CurrencyService.pointsIcon()),
+                    NODE_W - 8
+                ),
                 { toggleNode(node) },
                 // 三段贴图：第三段是**选中态**（选中节点后保持高亮，鼠标移开也不消失）
                 texH = 120
@@ -500,7 +506,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
             // 与管理面板里对应功能按钮用同一套词条
             btn.setTooltip(
                 net.minecraft.client.gui.tooltip.Tooltip.of(
-                    Text.translatable("cobblemarket.perm.node.$short.desc")
+                    Text.translatable("cobblemarket.perm.node.$short.desc", CurrencyService.pointsIcon())
                 )
             )
             btn.selectedVisual = node in selectedNodes

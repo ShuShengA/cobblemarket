@@ -17,7 +17,7 @@ import net.minecraft.util.Formatting
 import kotlin.math.roundToInt
 
 /**
- * **RP 市场配置**（服务器配置界面 → 「RP 市场」入口；**仅服主**）。
+ * **RP 配置**（服务器配置界面 → 「RP 配置」入口；**仅服主**）。
  *
  * 宗旨（用户 2026-09-18）：**除了服务器货币必须改配置文件，其余都要能在界面里改** ——
  * 开关、档位、收款码、超时全都在这儿，保存即生效、不用重启、不用碰 json。
@@ -229,7 +229,7 @@ class PointsConfigScreen : Screen(
     /**
      * 弹窗高度：设计值 [DIALOG_H]，**超过屏幕就压进屏幕内**。
      * ⚠ GUI scale 调大时逻辑分辨率很小（1080p + Auto 可能只有 480×270），定死的高度会顶出
-     * 上下边界、连保存按钮都点不到 —— 2026-09-18 用户报的 RP 市场同类问题。
+     * 上下边界、连保存按钮都点不到 —— 2026-09-18 用户报的 RP 商城同类问题。
      */
     private fun dialogH() = minOf(DIALOG_H, height - 16)
     private fun dialogX() = width / 2 - dialogW() / 2

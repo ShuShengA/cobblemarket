@@ -64,7 +64,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     // 编辑只改本地状态：开关的本地值（保存时提交，快照刷新时重置）
     private val localToggles = mutableMapOf<String, Boolean>()
     private var savedToastUntil = 0L
-    // +2 = 喵喵银行配置入口行 + RP 市场配置入口行（各是一个左标签 + 右「配置」按钮）
+    // +2 = 喵喵银行配置入口行 + RP 配置入口行（各是一个左标签 + 右「配置」按钮）
     private val totalRows = numDefs.size + toggleDefs.size + 2
     private var financeOpenButton: NineSliceButton? = null
     private var pointsOpenButton: NineSliceButton? = null
@@ -192,7 +192,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             { client?.setScreen(FinanceConfigScreen()) }
         )
         addDrawableChild(financeOpenButton)
-        // RP 市场配置入口行（在喵喵银行下面；开关/档位/收款码都在那边改，不必碰配置文件）
+        // RP 配置入口行（在喵喵银行下面；开关/档位/收款码都在那边改，不必碰配置文件）
         pointsOpenButton = NineSliceButton(
             dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16,
             Text.translatable("cobblemarket.op.finance_open"),
@@ -251,7 +251,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         financeOpenButton?.x = dialogX + dialogW - 10 - 20 - 2 - 54
         financeOpenButton?.y = y + 4
         financeOpenButton?.visible = visible
-        // RP 市场配置入口行（紧挨着喵喵银行下面一行）
+        // RP 配置入口行（紧挨着喵喵银行下面一行）
         row++
         val pointsY = startY + (row - scrollOffset) * rowHeight
         pointsOpenButton?.x = dialogX + dialogW - 10 - 20 - 2 - 54
@@ -659,7 +659,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             )
         }
         row++
-        // RP 市场配置入口行（喵喵银行下面）
+        // RP 配置入口行（喵喵银行下面）
         if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
             val rowY = startY + (row - scrollOffset) * rowHeight
             drawRowLine(rowY)

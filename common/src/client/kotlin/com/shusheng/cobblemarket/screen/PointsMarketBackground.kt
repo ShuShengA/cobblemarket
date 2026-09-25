@@ -6,7 +6,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * 点券系列界面（**RP 市场 / 购买 RP**）共用的背景与几何换算 —— 两个界面共用同一张背景图
+ * 点券系列界面（**RP 商城 / 购买 RP**）共用的背景与几何换算 —— 两个界面共用同一张背景图
  * （方案拍板），绘制与换算写两份必然漂移。
  *
  * 背景渲染：`points_market_background.png` **等比缩放 + 居中 + 四周留 4%**。

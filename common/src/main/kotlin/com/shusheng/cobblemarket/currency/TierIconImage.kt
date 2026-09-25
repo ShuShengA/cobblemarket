@@ -25,7 +25,7 @@ object TierIconImage {
         ===============================
 
         Put your RP coupon images HERE (plain file name, no path), then fill the file name
-        for each tier in game: Admin Panel -> Server Config -> RP Market -> edit a tier.
+        for each tier in game: Admin Panel -> Server Config -> RP Shop -> edit a tier.
 
         - PNG only. Max 512KB and max 2048x2048 pixels per image.
         - Recommended size: 256x160 (the built-in coupon's ratio) or a multiple of it
@@ -38,7 +38,7 @@ object TierIconImage {
         RP 券图目录
         ==========
         把档位的「RP 券」图放在这里（只写文件名，不带路径），
-        然后在游戏里填：管理面板 -> 服务器配置 -> RP 市场
+        然后在游戏里填：管理面板 -> 服务器配置 -> RP 配置
         （主界面的「默认券图」一行管全部档位；单档还可以在「编辑档位」里各配一张）。
 
         - 只认 PNG，单张不超过 512KB、像素不超过 2048×2048。

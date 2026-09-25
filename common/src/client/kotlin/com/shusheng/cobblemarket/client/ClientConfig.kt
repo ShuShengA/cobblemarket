@@ -252,9 +252,9 @@ object ClientConfig {
                 gson.toJson(
                     mapOf(
                         "_comments" to mapOf(
-                            "celebrationOnMarketBuy" to "市场直接购买精灵时是否播放庆祝动画（个人设置，可在市场入口界面右下角的设置里改）/ Whether to play the celebration animation when buying a Pokémon directly from the market (personal setting, editable via the gear button on the market entry screen)",
+                            "celebrationOnMarketBuy" to "市场直接购买精灵时是否播放庆祝动画（含 RP 商城；个人设置，可在市场入口界面右下角的设置里改）/ Whether to play the celebration animation when buying a Pokémon directly from the market (including the RP shop; personal setting, editable via the gear button on the market entry screen)",
                             "celebrationOnAuctionAndOrder" to "拍卖成交、求购单接受交付时是否播放庆祝动画（个人设置，同上）/ Whether to play the celebration animation when winning an auction or accepting a buy order delivery (personal setting, same place)",
-                            "celebrationItemOnMarketBuy" to "市场上直接购买物品时是否播放庆祝动画（个人设置，与精灵侧各自独立，同上）/ Whether to play the celebration animation when buying an item directly from the market (personal setting, independent from the Pokemon side, same place)",
+                            "celebrationItemOnMarketBuy" to "市场上直接购买物品时是否播放庆祝动画（含 RP 商城；个人设置，与精灵侧各自独立，同上）/ Whether to play the celebration animation when buying an item directly from the market (including the RP shop; personal setting, independent from the Pokemon side, same place)",
                             "celebrationItemOnAuctionAndOrder" to "拍卖成交、求购单接受交付（物品）时是否播放庆祝动画（个人设置，同上）/ Whether to play the celebration animation when winning an auction or accepting a buy order delivery (items) (personal setting, same place)",
                             "dropOverflowOnClaim" to "领取待领取物品时，装不下的部分掉落在地（可能消失或被他人捡走，风险自负）/ When claiming item returns, drop the parts that don't fit into the inventory onto the ground (they may despawn or be picked up by others — at your own risk)",
                             "marketAnimation" to "市场动画总开关：控制进入市场动画（入口掉落）与关闭市场动画（界面整体上滑出屏）（个人设置，可在市场入口界面右下角的设置里改）/ Master switch for market animations: controls the entry animation (drop onto the entry screen) and the close animation (screen slides up and out) (personal setting, editable via the gear button on the market entry screen)",

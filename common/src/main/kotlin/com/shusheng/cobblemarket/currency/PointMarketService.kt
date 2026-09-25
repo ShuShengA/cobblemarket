@@ -1,13 +1,16 @@
 package com.shusheng.cobblemarket.currency
 
+import com.cobblemon.mod.common.Cobblemon
 import com.cobblemon.mod.common.api.moves.Moves
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
+import com.cobblemon.mod.common.pokemon.Pokemon
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.market.ItemRuleComponents
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.PersistHelper
 import com.shusheng.cobblemarket.util.SpeciesText
+import net.minecraft.item.ItemStack
 import net.minecraft.registry.Registries
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.network.ServerPlayerEntity
@@ -40,7 +43,46 @@ enum class PointMarketError {
     BAD_NUMBER,
 
     /** 六项努力值**总和**超限（各项单独看都合法，加起来过了有效的 508） */
-    BAD_EV_TOTAL
+    BAD_EV_TOTAL,
+
+    // ── 购买侧（2026-09-25 新增）──
+
+    /** 购买数量不合法（≤0 或超防呆上限） */
+    BAD_COUNT,
+    /** 这一格**已售罄**（库存 0；格子本身还在） */
+    SOLD_OUT,
+    /** 库存不够买这么多 */
+    STOCK_NOT_ENOUGH,
+    /** RP 余额不足 */
+    NOT_ENOUGH_POINTS,
+    /** **收件空间不足**（队伍和 PC 都满 / 背包放不下）—— 下单前就拒绝，绝不丢玩家东西 */
+    NO_SPACE,
+    /** 按规格造不出来（物种/物品已被删、存档数据损坏）—— 此时**分文未扣** */
+    GENERATE_FAILED
+}
+
+/**
+ * **一次购买的结果**。
+ *
+ * 为什么不只返回个错误码：买成功后要发**庆祝动画**，而它需要**实际造出来的那件东西** ——
+ * 概率闪光只有掷完才知道闪没闪，拿规格去猜就会把"买到闪光"报成不闪。
+ */
+sealed interface PointMarketBuyResult {
+
+    /**
+     * @param pokemon 买精灵时是**实际造出来的那只**（庆祝动画要用它的形态与闪光）；买物品时为 null
+     * @param items 买物品时是**按 maxCount 拆好的若干栈**；买精灵时为空
+     * @param count 成交数量（精灵格恒 1）
+     * @param total 实际扣掉的 RP（回执显示用）
+     */
+    data class Success(
+        val pokemon: Pokemon?,
+        val items: List<ItemStack>,
+        val count: Int,
+        val total: Long
+    ) : PointMarketBuyResult
+
+    data class Failure(val error: PointMarketError) : PointMarketBuyResult
 }
 
 /**
@@ -82,6 +124,15 @@ object PointMarketService {
     private const val MAX_EV_TOTAL = 508
     private const val MIN_LEVEL = 1
     private const val MAX_LEVEL = 100
+
+    /**
+     * 单次购买的数量上限（36 格 × 64 = 2304）。
+     * 不是产品限制而是**防呆**：再多也必然放不下，先拦下来比让客户端填个天文数字更有意义。
+     */
+    private const val MAX_BUY_COUNT = 2304
+
+    /** 主背包格数 —— 判收件空间只看它（副手当额外余量，宁可判严） */
+    private const val MAIN_INVENTORY_SIZE = 36
 
     // ── 读 ──
 
@@ -134,6 +185,193 @@ object PointMarketService {
         PersistHelper.requestSave(server)
         CobbleMarket.LOGGER.info("Point shop slot {} removed by {}", index, player.name.string)
         return null
+    }
+
+    // ── 买（玩家侧；**不判权限** —— 谁有 RP 谁能买）──
+
+    /**
+     * **玩家用 RP 买一格商品** —— 商城唯一"花钱"的入口。
+     *
+     * 事务顺序（**每一步都不能颠倒**）：
+     * 1. 全部校验：格子 / 数量 / 库存 / 余额 / **收件空间**
+     * 2. **先把货造出来**（[PointMarketFactory] 是纯对象构造，失败时什么都还没动）
+     * 3. 扣库存 → 扣钱 → 交付
+     * 4. 中途任何一步失败 → **回滚前面的步骤**，绝不出现"扣了钱没拿到货"
+     *
+     * ⚠ **崩溃窗口**：[PointShopState.consume] 的注释定了「**先扣库存再扣钱**」——
+     * 最坏是少卖一份（服主补货即可），反过来则会超卖。
+     * ⚠ **扣掉的 RP 直接销毁**（不进任何人的账）：商城由服主单方面经营、没有收款方，
+     * 与「RP 手续费销毁」同一口径（见 `docs/points_plan.md`）。
+     * ⚠ 本函数**不碰** `FinanceState.recordTrade` —— 那会污染紫卡/黑卡门槛与贷款额度。
+     * ⚠ **总开关关闭时这里照常可用**：商城是唯一还能用 RP 的地方（不判 `pointsEnabled`）。
+     *
+     * @param count 购买数量。**精灵格恒按 1 算**（买一次就是一只，数量由请求几次表达）——
+     *              不把这个自由度留给客户端；物品格才是玩家在购买窗填的那个数
+     * @return [PointMarketBuyResult.Success]（含造出来的实物，供发庆祝动画）/ [PointMarketBuyResult.Failure]
+     */
+    fun buy(server: MinecraftServer, player: ServerPlayerEntity, index: Int, count: Int): PointMarketBuyResult {
+        if (index < 0 || index > MAX_INDEX) return PointMarketBuyResult.Failure(PointMarketError.BAD_INDEX)
+        val state = PointShopState.get(server)
+        val entry = state.find(index) ?: return PointMarketBuyResult.Failure(PointMarketError.NOT_FOUND)
+
+        val amount = if (entry.kind == ShopEntry.KIND_POKEMON) 1 else count
+        if (amount < 1 || amount > MAX_BUY_COUNT) return PointMarketBuyResult.Failure(PointMarketError.BAD_COUNT)
+
+        // 库存：0 = 已售罄（格子还留着）；-1 = 无限量
+        if (entry.stock == 0) return PointMarketBuyResult.Failure(PointMarketError.SOLD_OUT)
+        if (entry.stock > 0 && amount > entry.stock) {
+            return PointMarketBuyResult.Failure(PointMarketError.STOCK_NOT_ENOUGH)
+        }
+
+        // 总价 —— 防溢出：溢成负数就等于白送（price 是服主填的 Long，没有上限）
+        if (entry.price > Long.MAX_VALUE / amount) {
+            return PointMarketBuyResult.Failure(PointMarketError.BAD_NUMBER)
+        }
+        val total = entry.price * amount
+
+        val points = PointsState.get(server)
+        if (points.getBalance(player.uuid) < total) {
+            return PointMarketBuyResult.Failure(PointMarketError.NOT_ENOUGH_POINTS)
+        }
+
+        // ── 造货：在此之前什么都没碰；造不出来 = 数据坏了 → 整笔拒绝 ──
+        val pokemon = if (entry.kind == ShopEntry.KIND_POKEMON) {
+            val spec = entry.pokemon ?: return PointMarketBuyResult.Failure(PointMarketError.BAD_SPEC)
+            PointMarketFactory.createPokemon(spec, player)
+                ?: return PointMarketBuyResult.Failure(PointMarketError.GENERATE_FAILED)
+        } else {
+            null
+        }
+        val items = if (entry.kind == ShopEntry.KIND_ITEM) {
+            val spec = entry.item ?: return PointMarketBuyResult.Failure(PointMarketError.BAD_SPEC)
+            PointMarketFactory.createItems(spec, amount, server.registryManager)
+                ?: return PointMarketBuyResult.Failure(PointMarketError.GENERATE_FAILED)
+        } else {
+            emptyList()
+        }
+
+        // ── 收件空间：**必须在扣款之前**（用户 2026-09-20 拍板：宁可拒绝，绝不丢玩家东西）──
+        if (pokemon != null && !hasPokemonSpace(player)) {
+            return PointMarketBuyResult.Failure(PointMarketError.NO_SPACE)
+        }
+        if (items.isNotEmpty() && !hasItemSpace(player, items)) {
+            return PointMarketBuyResult.Failure(PointMarketError.NO_SPACE)
+        }
+
+        // ── 扣库存 → 扣钱 → 交付：失败逐级回滚 ──
+        if (!state.consume(index, amount)) return PointMarketBuyResult.Failure(PointMarketError.SOLD_OUT)
+        if (!points.removeBalance(player.uuid, total)) {
+            state.setStock(index, entry.stock) // 回滚库存（entry 是扣减前的快照）
+            return PointMarketBuyResult.Failure(PointMarketError.NOT_ENOUGH_POINTS)
+        }
+
+        val delivered = if (pokemon != null) {
+            // Party.add 在队伍满时会自动转入 PC，返回 false = 两边都满
+            runCatching { Cobblemon.storage.getParty(player).add(pokemon) }.getOrDefault(false)
+        } else {
+            deliverItems(player, items)
+        }
+        if (!delivered) {
+            // 预检过了还失败 = 极小概率（背包在两步之间被别的东西占了）——
+            // 钱和库存都退回去。宁可这单不成，也不能让玩家吃亏
+            points.addBalance(player.uuid, total)
+            state.setStock(index, entry.stock)
+            CobbleMarket.LOGGER.warn(
+                "Point shop: delivery failed for {} on slot {}, rolled back", player.name.string, index
+            )
+            return PointMarketBuyResult.Failure(PointMarketError.NO_SPACE)
+        }
+
+        // ── 记账 + 落盘 ──
+        // 明细写**商品是什么**（不是"第几格"）：服主对账时格子序号毫无意义
+        val goods = when (entry.kind) {
+            ShopEntry.KIND_POKEMON -> entry.pokemon?.species.orEmpty()
+            else -> entry.item?.itemId.orEmpty()
+        }
+        PointsAuditLogger.log(
+            PointsLogType.STORE_BUY,
+            player.uuid,
+            player.name.string,
+            total,
+            points.getBalance(player.uuid),
+            player.name.string,
+            "商城购买：$goods ×$amount（第 ${index + 1} 格）",
+            "Store purchase: $goods x$amount (slot ${index + 1})"
+        )
+        PersistHelper.requestSave(server)
+        CobbleMarket.LOGGER.info(
+            "Point shop: {} bought slot {} x{} for {} RP", player.name.string, index, amount, total
+        )
+        // 把造出来的实物一并交出去：调用方要拿它发庆祝动画（概率闪光只有此刻才确定）
+        return PointMarketBuyResult.Success(pokemon = pokemon, items = items, count = amount, total = total)
+    }
+
+    /** 队伍或 PC 还有空位吗（`add` 会自动溢出到 PC，所以两边都满才是真放不下） */
+    private fun hasPokemonSpace(player: ServerPlayerEntity): Boolean {
+        val storage = Cobblemon.storage
+        if (storage.getParty(player).getFirstAvailablePosition() != null) return true
+        return storage.getPC(player).getFirstAvailablePosition() != null
+    }
+
+    /**
+     * 背包放得下这些栈吗。
+     *
+     * 只算主背包 [MAIN_INVENTORY_SIZE] 格（`insertStack` 还会往副手放 ⇒ 实际容量只多不少，
+     * 也就是这里**宁可判严**）；空槽按该物品的 `maxCount` 算，同类堆叠算它的剩余空间。
+     */
+    private fun hasItemSpace(player: ServerPlayerEntity, stacks: List<ItemStack>): Boolean {
+        val sample = stacks.firstOrNull() ?: return true
+        val max = sample.maxCount.coerceAtLeast(1)
+        var capacity = 0L
+        val inventory = player.inventory
+        for (slot in 0 until MAIN_INVENTORY_SIZE) {
+            val existing = inventory.getStack(slot)
+            when {
+                existing.isEmpty -> capacity += max
+                ItemStack.areItemsAndComponentsEqual(existing, sample) -> capacity += (max - existing.count)
+            }
+        }
+        return capacity >= stacks.sumOf { it.count.toLong() }
+    }
+
+    /**
+     * 把货塞进背包；返回 false = 没全塞下（调用方负责回滚钱与库存）。
+     *
+     * ⚠ `insertStack` **部分放入也返回 true**，靠返回值判断不出来 —— 必须看传入栈的剩余量
+     *（同 `CurrencyHandler.give` 的写法）。
+     * ⚠ 万一中途失败（预检过了还失败属极小概率）：**已塞进去的照数取回**，
+     * 保证「要么全成、要么全退」，不让玩家白得半份货。
+     */
+    private fun deliverItems(player: ServerPlayerEntity, stacks: List<ItemStack>): Boolean {
+        val inserted = ArrayList<ItemStack>()
+        for (stack in stacks) {
+            val before = stack.count
+            player.inventory.insertStack(stack)
+            val put = before - stack.count
+            if (put > 0) inserted.add(stack.copy().apply { count = put })
+            if (!stack.isEmpty) {
+                takeBackItems(player, inserted)
+                return false
+            }
+        }
+        return true
+    }
+
+    /** 交付失败时把已进背包的那部分取回来（按物品 + 组件匹配，不碰别的东西） */
+    private fun takeBackItems(player: ServerPlayerEntity, inserted: List<ItemStack>) {
+        val inventory = player.inventory
+        inserted.forEach { wanted ->
+            var left = wanted.count
+            for (slot in 0 until MAIN_INVENTORY_SIZE) {
+                if (left <= 0) break
+                val existing = inventory.getStack(slot)
+                if (existing.isEmpty || !ItemStack.areItemsAndComponentsEqual(existing, wanted)) continue
+                val take = minOf(left, existing.count)
+                existing.decrement(take)
+                if (existing.isEmpty) inventory.setStack(slot, ItemStack.EMPTY)
+                left -= take
+            }
+        }
     }
 
     // ── 校验 / 规范化 ──

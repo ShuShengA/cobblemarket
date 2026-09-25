@@ -594,7 +594,7 @@ object CobbleMarketClient {
             }
         }
 
-        // RP 市场配置快照（仅 OP 会收到）：填进配置界面的本地编辑态
+        // RP 配置快照（仅服主会收到）：填进配置界面的本地编辑态
         registerS2C(PointsConfigPayload.ID, PointsConfigPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 (MinecraftClient.getInstance().currentScreen as? PointsConfigScreen)?.onConfig(payload)

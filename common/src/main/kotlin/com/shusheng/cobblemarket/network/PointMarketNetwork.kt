@@ -1,6 +1,10 @@
 package com.shusheng.cobblemarket.network
 
+import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.PointMarketBuyResult
 import com.shusheng.cobblemarket.currency.PointMarketError
 import com.shusheng.cobblemarket.currency.PointMarketService
 import com.shusheng.cobblemarket.currency.PointShopState
@@ -10,13 +14,19 @@ import com.shusheng.cobblemarket.currency.ShopPokemonSpec
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
+import com.shusheng.cobblemarket.util.ItemNameText
 import com.shusheng.cobblemarket.util.RequestThrottle
+import com.shusheng.cobblemarket.util.SpeciesText
+import com.shusheng.cobblemarket.util.TypeTextColors
+import net.minecraft.nbt.NbtCompound
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
 import net.minecraft.network.packet.CustomPayload
 import net.minecraft.server.MinecraftServer
+import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
+import net.minecraft.util.Identifier
 
 /**
  * **RP 商城（商品区）的网络层** —— 快照下发 + OP 的上架 / 编辑 / 下架。
@@ -135,6 +145,28 @@ data class RemovePointMarketEntryPayload(val index: Int) : CustomPayload {
         val CODEC: PacketCodec<PacketByteBuf, RemovePointMarketEntryPayload> = PacketCodec.of(
             { p, b -> b.writeInt(p.index) },
             { b -> RemovePointMarketEntryPayload(b.readInt()) }
+        )
+    }
+}
+
+/**
+ * **玩家用 RP 买一格商品**（商城唯一"花钱"的包）。
+ *
+ * ⚠ [count] **只对物品格有意义** —— 精灵格买一次就是一只，服务端不读这个值
+ *（见 [PointMarketService.buy]），数量和金额都以服务端为准，客户端说了不算。
+ */
+data class BuyPointMarketEntryPayload(val index: Int, val count: Int) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<BuyPointMarketEntryPayload>(CobbleMarket.id("buy_point_market_entry"))
+        val CODEC: PacketCodec<PacketByteBuf, BuyPointMarketEntryPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeInt(p.index)
+                b.writeInt(p.count)
+            },
+            // ⚠ 读端用具名参数：字段顺序一旦对不上，具名能立刻看出来（payload 顺序铁律）
+            { b -> BuyPointMarketEntryPayload(index = b.readInt(), count = b.readInt()) }
         )
     }
 }
@@ -276,7 +308,15 @@ fun pointMarketErrorText(error: PointMarketError): Text = Text.translatable(
         PointMarketError.BAD_ITEM -> "cobblemarket.points.store.err.bad_item"
         PointMarketError.BAD_NUMBER -> "cobblemarket.points.store.err.bad_number"
         PointMarketError.BAD_EV_TOTAL -> "cobblemarket.points.store.err.bad_ev_total"
-    }
+        PointMarketError.BAD_COUNT -> "cobblemarket.points.store.err.bad_count"
+        PointMarketError.SOLD_OUT -> "cobblemarket.points.store.err.sold_out"
+        PointMarketError.STOCK_NOT_ENOUGH -> "cobblemarket.points.store.err.stock_not_enough"
+        PointMarketError.NOT_ENOUGH_POINTS -> "cobblemarket.points.store.err.not_enough_points"
+        PointMarketError.NO_SPACE -> "cobblemarket.points.store.err.no_space"
+        PointMarketError.GENERATE_FAILED -> "cobblemarket.points.store.err.generate_failed"
+    },
+    // 统一传货币图标：含 %s 的词条（如「%s 余额不足」）用它，不含的多余参数会被忽略
+    CurrencyService.pointsIcon()
 )
 
 object PointMarketNetwork {
@@ -341,6 +381,110 @@ object PointMarketNetwork {
                 }
             }
         }
+
+        // 购买：玩家侧唯一"花钱"的入口（**不判权限** —— 谁有 RP 谁能买）。
+        // 库存 / 余额 / 收件空间全在服务端校验，客户端只是发起请求
+        registerC2S(BuyPointMarketEntryPayload.ID, BuyPointMarketEntryPayload.CODEC) { payload, player ->
+            if (!RequestThrottle.allow(player.uuid, "point_market_buy", RequestThrottle.WRITE_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            val server = player.server
+            server.execute {
+                when (val result = PointMarketService.buy(server, player, payload.index, payload.count)) {
+                    is PointMarketBuyResult.Failure -> {
+                        player.sendMessage(
+                            pointMarketErrorText(result.error).copy().formatted(Formatting.RED), false
+                        )
+                        sendSound(player, "result_fail")
+                    }
+
+                    is PointMarketBuyResult.Success -> {
+                        player.sendMessage(boughtText(server, payload.index, result), false)
+                        sendSound(player, "result_success")
+                        sendPurchaseCelebration(server, player, payload.index, result)
+                    }
+                }
+                // **成不成都要回发那一页**：库存以服务端为准 —— 别人刚买走最后一件时，
+                // 这边还停在旧数字上，不刷新就会一直「看着有货、点下去却说售罄」
+                sendToPlayer(player, buildSnapshot(server, pageOf(payload.index)))
+            }
+        }
+    }
+
+    /**
+     * 购买成功的回执：**买的是什么 × 几份、花了多少 RP**。
+     *
+     * ⚠ 数量与金额都取 [PointMarketBuyResult.Success] 里的**实际成交值**、不重算 ——
+     * 精灵格恒 1 份、金额以服务端真正扣掉的为准，回执不能报出与实际不符的数字。
+     * ⚠ 金额走 [CurrencyService.amountText] —— RP 的单位是**字体图标**，
+     * 用字符串模板一拼就变成方块（项目踩过）。
+     */
+    private fun boughtText(
+        server: MinecraftServer,
+        index: Int,
+        result: PointMarketBuyResult.Success
+    ): Text {
+        // 买完再读一次即可：库存变了，但 kind 与规格不会因为一次购买而变
+        val entry = PointShopState.get(server).find(index) ?: return Text.empty()
+        return Text.translatable(
+            "cobblemarket.points.store.bought",
+            goodsName(entry),
+            result.count,
+            CurrencyService.amountText(result.total, MarketCurrency.POINTS)
+        ).formatted(Formatting.GREEN)
+    }
+
+    /**
+     * 购买成功的**庆祝动画** —— 与主市场 / 拍卖 / 求购同一套（所有权首次转到该玩家名下时播一次）。
+     *
+     * ⚠ 用**实际造出来的实物**而不是商品规格：概率闪光只有掷完才知道闪没闪，
+     * 拿规格去猜会把"买到闪光"报成不闪。
+     * ⚠ 动画起点由**客户端购买窗**在关窗前登记（同主市场那套）；没有登记就从顶部空降。
+     */
+    private fun sendPurchaseCelebration(
+        server: MinecraftServer,
+        player: ServerPlayerEntity,
+        index: Int,
+        result: PointMarketBuyResult.Success
+    ) {
+        result.pokemon?.let { pokemon ->
+            CelebrationNetwork.send(
+                player,
+                speciesId = pokemon.species.resourceIdentifier.toString(),
+                aspects = pokemon.aspects.toList(),
+                shiny = pokemon.shiny,
+                source = CelebrationSource.STORE,
+                // 携带物只在带组件时才非空（与挂单 / 拍卖 / 求购同口径）
+                heldItemNbt = PointShopState.get(server).find(index)?.pokemon?.heldItemSpec.orEmpty()
+            )
+            return
+        }
+        val stack = result.items.firstOrNull() ?: return
+        val nbt = stack.encode(player.serverWorld.registryManager) as? NbtCompound ?: return
+        CelebrationNetwork.sendItem(player, nbt, result.count, CelebrationSource.STORE)
+    }
+
+    /** 商品名（带色）：精灵照**主属性**色 + 闪光星标、物品照**稀有度**色 —— 与聊天消息、悬停窗同一套口径 */
+    private fun goodsName(entry: ShopEntry): Text = when (entry.kind) {
+        ShopEntry.KIND_POKEMON -> {
+            val spec = entry.pokemon
+            val species = spec?.species?.let { Identifier.tryParse(it) }?.let { PokemonSpecies.getByIdentifier(it) }
+            if (species == null) {
+                Text.literal(spec?.species.orEmpty())
+            } else {
+                // 主属性取**默认形态**的：商品可能带形态（如地区形态属性会变），
+                // 但为此在回执里重跑一遍形态推导不值当，颜色只是陪衬
+                val typeKey = species.standardForm.types.firstOrNull()?.name?.lowercase()
+                TypeTextColors.speciesName(
+                    SpeciesText.translated(species),
+                    typeKey?.let { "cobblemon.type.$it" },
+                    "shiny" in (spec.aspects)
+                )
+            }
+        }
+
+        else -> ItemNameText.rarityColoredNameById(entry.item?.itemId.orEmpty())
+            ?: Text.literal(entry.item?.itemId.orEmpty())
     }
 
     /** 组装某一页的快照（页号收进合法范围 —— 客户端翻页参数不可信） */

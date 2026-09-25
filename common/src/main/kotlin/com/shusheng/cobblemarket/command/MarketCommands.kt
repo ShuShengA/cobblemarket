@@ -253,7 +253,7 @@ object MarketCommands {
                             )
                         )
                         .then(CommandManager.literal("shop")
-                            // 下单/我已支付/取消：玩家可用（正式路径走RP 市场界面，命令留给后台与客服代操作）
+                            // 下单/我已支付/取消：玩家可用（正式路径走RP 商城界面，命令留给后台与客服代操作）
                             .then(CommandManager.literal("create")
                                 .then(CommandManager.argument("tier", IntegerArgumentType.integer(1))
                                     .executes(::shopCreate)
@@ -597,7 +597,7 @@ object MarketCommands {
         return 1
     }
 
-    // ── RP：游戏内充值订单（正式路径走RP 市场界面，命令用于后台与客服代操作） ──
+    // ── RP：游戏内充值订单（正式路径走RP 商城界面，命令用于后台与客服代操作） ──
 
     /** 创建充值订单。档位序号对玩家从 1 开始数（配置数组从 0 开始） */
     private fun shopCreate(context: CommandContext<ServerCommandSource>): Int {
@@ -944,8 +944,12 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
             return 0
         }
-        // 节点名走与界面 / 聊天通知同一套词条：中文环境显示「黑名单」而不是 blacklist
-        val nodeText = Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX))
+        // 节点名走与界面 / 聊天通知同一套词条：中文环境显示「黑名单」而不是 blacklist。
+        // ⚠ 统一传货币图标：含 %s 的词条（如「%s商城」）用它，不含的多余参数会被忽略
+        val nodeText = Text.translatable(
+            "cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX),
+            CurrencyService.pointsIcon()
+        )
         if (!PermissionState.get(source.server).grant(target.first, target.second, node, source.name)) {
             source.sendError(Text.translatable("cobblemarket.perm.already_holding", target.second, nodeText))
             return 0
