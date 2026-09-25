@@ -188,6 +188,7 @@
   "cobblemarket.points.store.err.no_space": "收件空间不足，请先清理背包或 PC",
   "cobblemarket.points.store.err.generate_failed": "商品数据异常，暂时无法购买",
   "cobblemarket.points.store.err.stale_entry": "这件商品刚被改动过，请重新打开购买界面",
+  "cobblemarket.points.store.err.slot_removed": "这件商品已被下架",
   "cobblemarket.points.store.snapshot_full": "快照已满（最多 %s 条），请先删掉几条",
   "cobblemarket.points.store.snapshot_renamed": "已有同名快照，已另存为「%s」",
   "cobblemarket.points.store.snapshot_button": "快照",
@@ -197,6 +198,8 @@
   "cobblemarket.points.store.snapshot_more": "还有 %s 条（滚轮上下翻）",
   "cobblemarket.points.store.hint.price_required": "请填写价格",
   "cobblemarket.points.store.hint.species_required": "请先选择物种",
+  "cobblemarket.points.store.hint.item_required": "请先选择物品",
+  "cobblemarket.points.store.hint.snapshot_name_required": "请填写快照名",
 
   "cobblemarket.points.recharge.title": "购买 %s",
   "cobblemarket.points.recharge.entry": "购买 %s",

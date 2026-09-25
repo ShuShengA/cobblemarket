@@ -188,6 +188,7 @@
   "cobblemarket.points.store.err.no_space": "Not enough space, clear your inventory or PC first",
   "cobblemarket.points.store.err.generate_failed": "This item's data is invalid and cannot be purchased",
   "cobblemarket.points.store.err.stale_entry": "This item was just edited, please reopen the buy screen",
+  "cobblemarket.points.store.err.slot_removed": "This item has been taken down",
   "cobblemarket.points.store.snapshot_full": "Snapshot list is full (%s max), delete some first",
   "cobblemarket.points.store.snapshot_renamed": "Name already used, saved as \"%s\"",
   "cobblemarket.points.store.snapshot_button": "Snapshots",
@@ -197,6 +198,8 @@
   "cobblemarket.points.store.snapshot_more": "%s more (scroll)",
   "cobblemarket.points.store.hint.price_required": "Please enter a price",
   "cobblemarket.points.store.hint.species_required": "Please pick a species first",
+  "cobblemarket.points.store.hint.item_required": "Please pick an item first",
+  "cobblemarket.points.store.hint.snapshot_name_required": "Please enter a name",
 
   "cobblemarket.points.recharge.title": "Buy %s",
   "cobblemarket.points.recharge.entry": "Buy %s",
