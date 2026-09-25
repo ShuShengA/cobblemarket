@@ -3270,10 +3270,13 @@ class PointsMarketScreen : Screen(
 
     /** 列表上方的搜索框（列表展开期间才有，关列表时一并移除） */
     private fun buildOptionSearchField() {
+        // ⚠ 商品物品那档，搜索框**左侧**要让出小手按钮的位置（见函数末尾）——
+        //   x 与宽度都跟着让，别让两者叠上
+        val heldW = if (optionListKind == OPT_ITEM) OPTION_HELD_BTN_W + 4 else 0
         val field = TextFieldWidget(
             textRenderer,
-            editDialogX() + EDIT_PAD, editDialogY() + OPTION_SEARCH_Y,
-            editDialogW() - EDIT_PAD * 2, OPTION_SEARCH_H,
+            editDialogX() + EDIT_PAD + heldW, editDialogY() + OPTION_SEARCH_Y,
+            editDialogW() - EDIT_PAD * 2 - heldW, OPTION_SEARCH_H,
             Text.literal("")
         )
         // 复用全项目统一的搜索框占位词条（黑名单、市场那些列表都是它）
@@ -3288,6 +3291,43 @@ class PointsMarketScreen : Screen(
         optionSearchField = field
         addSelectableChild(field)
         addDrawableChild(field)
+
+        // 小手按钮：**只有商品物品那档有**，点一下取主手那件当商品 ——
+        // 与黑名单搜索框左侧那枚同一个做法（图标、尺寸都一样），只是那边要先选模式、这边点完直接填。
+        // ⚠ 挂进 [optionListButtons]：关列表时随它一起卸掉，不用再维护一个字段
+        if (optionListKind == OPT_ITEM) {
+            val held = NineSliceButton(
+                editDialogX() + EDIT_PAD, editDialogY() + OPTION_SEARCH_Y,
+                OPTION_HELD_BTN_W, OPTION_SEARCH_H,
+                Text.literal(""),
+                { pickHeldItemAsShopEntry() },
+                iconLeft = Identifier.of("cobblemarket", "textures/gui/hand.png"),
+                iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+                tooltip = Text.translatable("cobblemarket.points.store.pick_held")
+            )
+            addDrawableChild(held)
+            optionListButtons.add(held)
+        }
+    }
+
+    /**
+     * 小手按钮：取**主手那件**当商品（组件一起提取）。
+     *
+     * ⚠ 走 [ItemRuleComponents.extractSpec] —— 与列表里选中一条候选**同一套提取**
+     *（见 [selectOption] 的 `OPT_ITEM` 分支），两条路径的组件口径才不会分叉。
+     */
+    private fun pickHeldItemAsShopEntry() {
+        val stack = client?.player?.mainHandStack ?: return
+        if (stack.isEmpty) {
+            playFailSound()
+            return
+        }
+        val lookup = client?.world?.registryManager ?: return
+        editItemId = Registries.ITEM.getId(stack.item).toString()
+        editItemName = stack.name.string
+        editItemComponents = ItemRuleComponents.extractSpec(stack, lookup)
+        // 选完关列表（它结尾会刷新标签，不用自己再刷一次）
+        closeOptionList()
     }
 
     /**
@@ -3457,9 +3497,7 @@ class PointsMarketScreen : Screen(
                         editItemId = Registries.ITEM.getId(stack.item).toString()
                         editItemName = stack.name.string
                         editItemComponents = ItemRuleComponents.extractSpec(stack, lookup)
-                        // ⚠ 必须自己刷：`selectOption` 结尾只关列表，**不统一刷新标签** ——
-                        //   不刷的话按钮上还写着上一个物品（原来那条「从主手取」也是自己刷的）
-                        refreshEditLabels()
+                        // ⚠ 不用自己刷标签：`selectOption` 结尾的 [closeOptionList] 会统一刷
                     }
                 }
             }
@@ -4829,6 +4867,9 @@ class PointsMarketScreen : Screen(
 
         /** 物品格「卖什么物品」—— **搜索式**，与 [OPT_CARRY] 同一套机制（见 [buildItemCandidates]） */
         const val OPT_ITEM = "item"
+
+        /** 商品物品那档，搜索框**左侧**那枚小手按钮的宽度（黑名单同款：16×16，贴在搜索框左边） */
+        const val OPTION_HELD_BTN_W = 16
 
         /** 商品候选一次最多列几条（搜索词太泛时防刷屏 + 防拖慢渲染，同 [MAX_CARRY_CANDIDATES]） */
         const val MAX_ITEM_CANDIDATES = 200
