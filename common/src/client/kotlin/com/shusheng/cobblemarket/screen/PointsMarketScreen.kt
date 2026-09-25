@@ -15,7 +15,6 @@ import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.client.playButtonClickSound
 import com.shusheng.cobblemarket.client.playFailSound
-import com.shusheng.cobblemarket.client.playMarketSound
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.PointShopState
@@ -92,7 +91,7 @@ class PointsMarketScreen : Screen(
     /** 正在编辑的格子**全局序号**（跨页递增，不是页内下标）；-1 = 窗口没开 */
     private var editSlot = -1
 
-    // ── 商城格子 购买窗口（2026-09-25；**普通玩家点有内容的格子**，见 [openBuyDialog]）──
+    // ── 商城格子 购买窗口（2026-09-25；**任何人点有内容的格子**都是它，见 [openBuyDialog]）──
     //
     // 布局照「OP 添加/编辑精灵窗」那一套（用户 2026-09-25 拍板），但**只读** ——
     // 同样的字段、同样的位置（共用 [posOf] / [editColX] 等坐标函数），只是控件换成文本。
@@ -103,16 +102,19 @@ class PointsMarketScreen : Screen(
     private var buySlot = -1
 
     /**
-     * 这个窗是**服主的**（只读查看）还是**玩家的**（购买）？
+     * 这个窗**能不能下架这一格**（= 点它的人能不能管商城）。
      *
-     * 两者**共用同一套渲染**（内容完全一样），只有底部按钮与标题不同：
-     * - 玩家：标题「购买」、底部「购买 + 取消」
-     * - 服主：标题「查看」、底部「关闭」+ 右上角「下架」
+     * ⚠ **不是「服主专属」**：判定走 [canEditShop] —— **服主 或 持 `points.shop` 节点的人**都算
+     *（项目服主制，**不认 OP**）。服务端 `PointMarketService.remove` 同样只判这个节点。
      *
-     * 2026-09-25 用户拍板：服主**不再能编辑已有格子** —— 点有内容的格子只看与下架，
-     * 想改就走「下架 → 重新添加」（配上快照，不用重填字段）。
+     * ⚠ 窗口本身**不分身份**：所有人看到的都是购买窗（标题「购买」、底部「购买 + 取消」），
+     * 能管的人只是**右上角多一枚「下架」**。2026-09-25 用户定：不必单独做一个只读查看窗
+     * ——「不再能编辑已有格子」之后，改内容走「下架 → 重新添加」（配快照免重填字段）。
      */
-    private var buyDialogAdmin = false
+    private var buyCanRemove = false
+
+    /** 购买窗**右上角**那枚「下架」（只有能管这一格的人才建，见 [buildBuyDialog]） */
+    private var buyRemoveButton: NineSliceButton? = null
 
     /**
      * 打开购买窗时那一条的 **id**（见 [ShopEntry.entryId]）。
@@ -306,7 +308,7 @@ class PointsMarketScreen : Screen(
      *   界面**没接的高级项**（EV / 昵称 / 证章 / 极巨化等级…）才不会被抹掉。
      */
     private fun applySnapshot(snapshot: ShopSnapshotInfo) {
-        editOriginal = snapshot.entry
+        editSpecBase = snapshot.entry
         fillDraft(snapshot.entry)
         closeSnapshotDialog()
         // 值都落在控件上，必须重建才看得到；走 init 那条路（它认得 editSlot，会把窗口建回来）
@@ -389,7 +391,7 @@ class PointsMarketScreen : Screen(
      * （EV / 亲密度 / 昵称 / 证章 / 极巨化等级 / 物品组件…）必须原样保留，
      * 否则「什么都不改直接保存」会把这些悄悄抹掉（全量覆盖式表单的铁律，本项目有前科）。
      */
-    private var editOriginal: ShopEntry? = null
+    private var editSpecBase: ShopEntry? = null
 
     // 窗口控件引用（关闭时清空；resize 后靠它们恢复草稿）
     private var editSpeciesField: TextFieldWidget? = null
@@ -407,7 +409,7 @@ class PointsMarketScreen : Screen(
 
     // ── 配方快照弹窗（服主用；点添加窗右上角那枚「快照」开）──
     //
-    // 为什么要有它（2026-09-25 用户定）：服主不再能编辑已有格子，改内容走「下架 → 重新添加」——
+    // 为什么要有它（2026-09-25 用户定）：不再能编辑已有格子，改内容走「下架 → 重新添加」——
     // 没有快照就得把二十来个字段重配一遍。有了它，「重新添加」=「选快照 → 改想改的 → 添加」。
     // 弹窗**合成一个**（用户拍板）：上面一栏「保存当前配置」（预填自动名、可改），下面列出已有的。
 
@@ -843,15 +845,15 @@ class PointsMarketScreen : Screen(
                 val slot = globalSlot(cell)
                 val occupied = PointMarketCache.slots[slot] != null
                 val admin = canEditShop()
-                // 服主点**空格子** → 添加窗（配置新商品）
+                // 能管商城的人（[canEditShop] = 服主 或 持 `points.shop` 节点）点**空格子** → 添加窗
                 if (admin && !occupied) {
                     openEditDialog(slot)
                     return true
                 }
-                // 有内容的格子：服主进**只读查看**（多了下架），其他人进**购买**
-                // ⚠ 服主**不再能编辑已有格子**（2026-09-25 用户拍板）—— 想改就走「下架 → 重新添加」
+                // 有内容的格子：**所有人都进购买窗**，能管的人只是右上角多一枚「下架」
+                // ⚠ 谁都不能编辑已有格子（2026-09-25 用户拍板）—— 想改就走「下架 → 重新添加」
                 if (occupied) {
-                    openBuyDialog(slot, admin = admin)
+                    openBuyDialog(slot, canRemove = admin)
                     return true
                 }
             }
@@ -1015,7 +1017,7 @@ class PointsMarketScreen : Screen(
      */
     override fun tick() {
         super.tick()
-        // ① 服主刚改了 / 下架了正在看的这一格 → 关窗 + 提示（见 checkBuySlotStillValid）
+        // ① 有人刚改了 / 下架了正在看的这一格 → 关窗 + 提示（见 checkBuySlotStillValid）
         checkBuySlotStillValid()
         if (dialogOpen()) return
         val wantPage = currentPage - 1
@@ -1421,10 +1423,10 @@ class PointsMarketScreen : Screen(
         playButtonClickSound()
         editSlot = slot
         // ⚠ 这里**只处理"添加"**（只有空网格会走到这，见 mouseClicked）：`editOriginal` 恒为 null。
-        //   服主点有内容的格子走的是 [openBuyDialog] 的 admin 模式（只读 + 下架），不再有"编辑"——
+        //   点有内容的格子走的是 [openBuyDialog]（购买窗 + 右上角多一枚「下架」），不再有"编辑"——
         //   用户 2026-09-25 拍板，想改内容就走「下架 → 重新添加」。
         //   `editOriginal` 这个字段留着给**快照回填**用（那时它装的是快照那份规格）。
-        editOriginal = null
+        editSpecBase = null
         resetDraft()
         hideMainControls()
         buildEditDialog()
@@ -1440,7 +1442,7 @@ class PointsMarketScreen : Screen(
      */
     private fun closeEditDialog() {
         editSlot = -1
-        editOriginal = null
+        editSpecBase = null
         editHintMsg = null
         editSpeciesField = null
         editLevelField = null
@@ -1481,7 +1483,7 @@ class PointsMarketScreen : Screen(
     // 不会出现「买了个不知道是什么的东西」（用户 2026-09-25 拍板）。
 
     /**
-     * ① **服主保存 / 下架了这一格 → 关掉开着的购买窗并提示**（用户 2026-09-25 定的方案）。
+     * ① **有人保存 / 下架了这一格 → 关掉开着的购买窗并提示**（用户 2026-09-25 定的方案）。
      *
      * 判据是**条目 id**：打开窗时记下当时的 entryId，快照一到就比对 —— 对不上就是被换过内容
      *（换了精灵 / 改了价 / 整格下架）。
@@ -1509,14 +1511,16 @@ class PointsMarketScreen : Screen(
     /**
      * 打开购买窗。[slot] 必须是**有内容的**格子（调用方 [mouseClicked] 已判过，这里再兜一道）。
      *
-     * [admin] = true 打开的是服主的**只读查看窗**（同一套内容，换按钮见 [buyDialogAdmin]）。
+     * [canRemove] = true（持 `points.shop` 节点 / 服主）时，窗口**右上角多一枚「下架」**；
+     * 其余内容与按钮和买家**完全一样** —— 服主自己也走这个窗买东西，**没有单独的只读查看窗**
+     *（2026-09-25 用户定：不必为服主单做一个窗）。
      */
-    private fun openBuyDialog(slot: Int, admin: Boolean = false) {
+    private fun openBuyDialog(slot: Int, canRemove: Boolean = false) {
         if (PointMarketCache.slots[slot] == null) return
         // 格子是自绘的、不走 NineSliceButton 内置点击音 —— 不补手感就是"点了没反应"（同 openEditDialog）
         playButtonClickSound()
         buySlot = slot
-        buyDialogAdmin = admin
+        buyCanRemove = canRemove
         buyCount = 1
         // 记下这一条的 id：购买时带回服务端比对，也用来判断它有没有被换过内容
         buySlotEntryId = PointMarketCache.slots[slot]?.entryId.orEmpty()
@@ -1536,13 +1540,14 @@ class PointsMarketScreen : Screen(
      */
     private fun closeBuyDialog() {
         buySlot = -1
-        buyDialogAdmin = false
+        buyCanRemove = false
         buySlotEntryId = ""
         buyCount = 1
         buyHintMsg = null
         buyCountField = null
         buyConfirmButton = null
         buyCancelButton = null
+        buyRemoveButton = null
         buyWidgetBase = 0
         clearChildren()
         init()
@@ -1577,19 +1582,15 @@ class PointsMarketScreen : Screen(
         }
 
         val rowY = editButtonRowY()
-        if (buyDialogAdmin) {
-            // 服主的只读窗：底部只有一枚「关闭」（贴右缘，与玩家那两个按钮的右缘对齐）。
-            // 页面内容与玩家的购买窗**完全一样**，区别就是这排按钮 + 右上角那枚「下架」
-            //（位置沿用原编辑窗那枚，用户 2026-09-25 拍板）
-            buyCancelButton = NineSliceButton(
-                editDialogX() + editDialogW() - EDIT_PAD - BUY_BTN_W, rowY, BUY_BTN_W, 16,
-                Text.translatable("cobblemarket.points.store.buy_close"), { closeBuyDialog() }
-            ).also { addDrawableChild(it) }
-            buyConfirmButton = NineSliceButton(
+        // 右上角那枚「下架」：**只有能管这一格的人**（持 `points.shop` 节点，服主恒真）才建。
+        // ⚠ 它与买家的「购买 / 取消」**并存**，不再是二选一 —— 能管的人自己也能买
+        //   （2026-09-25 用户定：不必单独做一个只读查看窗，就用购买窗，多的只是这枚按钮）。
+        //   位置沿用原编辑窗那枚（右上角，见 [editRemoveY]）。
+        if (buyCanRemove) {
+            buyRemoveButton = NineSliceButton(
                 editRowRightX() - EDIT_REMOVE_W, editRemoveY(), EDIT_REMOVE_W, EDIT_ROW_H,
                 Text.translatable("cobblemarket.points.store.remove"), { removeFromBuyDialog() }
             ).also { addDrawableChild(it) }
-            return
         }
         buyConfirmButton = NineSliceButton(
             editDialogX() + editDialogW() - EDIT_PAD - BUY_BTN_W * 2 - BUTTON_GAP, rowY, BUY_BTN_W, 16,
@@ -1602,10 +1603,13 @@ class PointsMarketScreen : Screen(
     }
 
     /**
-     * 服主在只读窗里点「下架」：清空这一格。
+     * 在购买窗右上角点「下架」：清空这一格。
+     *
+     * ⚠ **不是服主专属**：能点的人 = [canEditShop]（**服主 或 持 `points.shop` 节点的人**，
+     *   不认 OP），服务端 `PointMarketService.remove` 同样只判这个节点。
      *
      * 与原编辑窗那枚「下架」同一个包、同一套语义 —— 只是操作对象换成了 [buySlot]（那枚已随
-     * 「服主不再能编辑已有格子」一并删除，现在这里是**唯一**的下架入口）。
+     * 「不再能编辑已有格子」一并删除，现在这里是**唯一**的下架入口）。
      * ⚠ 没有二次确认，与编辑窗那枚**保持一致**（别只给一边加，两边行为会分叉）。
      */
     private fun removeFromBuyDialog() {
@@ -1665,15 +1669,11 @@ class PointsMarketScreen : Screen(
         )
         context.drawCenteredTextWithShadow(
             textRenderer,
+            // 标题**不分身份**：能管这一格的人（持 `points.shop` 节点 / 服主）进的也是购买窗，
+            // 只是右上角多一枚「下架」—— 「查看」那套标题随只读窗一并去掉（2026-09-25 用户定）
             Text.translatable(
-                when {
-                    // 服主的只读窗：内容与买家的购买窗一模一样，只是标题与按钮不同
-                    buyDialogAdmin && entry.kind == ShopEntry.KIND_POKEMON ->
-                        "cobblemarket.points.store.view_title"
-                    buyDialogAdmin -> "cobblemarket.points.store.view_item_title"
-                    entry.kind == ShopEntry.KIND_POKEMON -> "cobblemarket.points.store.buy_title"
-                    else -> "cobblemarket.points.store.buy_item_title"
-                }
+                if (entry.kind == ShopEntry.KIND_POKEMON) "cobblemarket.points.store.buy_title"
+                else "cobblemarket.points.store.buy_item_title"
             ).formatted(Formatting.GOLD),
             x + editDialogW() / 2, y + 10, 0xFFFFFF
         )
@@ -1739,7 +1739,9 @@ class PointsMarketScreen : Screen(
     private fun renderBuyPokemonFields(
         context: DrawContext, spec: ShopPokemonSpec, mouseX: Int, mouseY: Int
     ) {
-        // 证章行的悬停窗落点（在字段循环里判定、**全部画完之后**才画，才浮得在字段上面）
+        // 证章行的悬停窗落点（在字段循环里判定、**全部画完之后**才画，才浮得在字段上面）。
+        // ⚠ 存的是**鼠标位置**，不是那一行的坐标 —— 具体落点由 [renderMarksTooltip] 按
+        //   「鼠标上方优先」算，与界面里其它悬停窗**同一套**（照 [HistoryScreen] 的 `renderTooltip`）
         var marksTooltipAt: Pair<Int, Int>? = null
         for (key in editFieldOrder()) {
             if (key == FIELD_BREAK) continue
@@ -1747,7 +1749,7 @@ class PointsMarketScreen : Screen(
             if (!editRowVisible(row)) continue
             // 「证章」那一行：悬停弹小窗把**全部**证章图标排出来（见 renderMarksTooltip）
             if (key == KEY_MARKS && spec.marks.isNotEmpty() && overBuyField(mouseX, mouseY, row, col)) {
-                marksTooltipAt = editColX(col) to (editRowY(row) + EDIT_ROW_H + 2)
+                marksTooltipAt = mouseX to mouseY
             }
             drawBuyField(
                 context, editColX(col), editRowY(row), editColW(), buyFieldLine(key, spec),
@@ -1802,28 +1804,40 @@ class PointsMarketScreen : Screen(
      *
      * ⚠ 图标尺寸与间距（12px 一格、8×8 图标）与 `drawMarksRow` 同口径，两边看着才是一套。
      */
-    private fun renderMarksTooltip(context: DrawContext, spec: ShopPokemonSpec, x: Int, y: Int) {
-        val textures = spec.marks.mapNotNull { Identifier.tryParse(it) }
+    private fun renderMarksTooltip(context: DrawContext, spec: ShopPokemonSpec, mouseX: Int, mouseY: Int) {
+        // 同购买窗那一行：**头目自动带的那个也要列出来**（服主设了头目就该看到头目之证）
+        // ⚠ 取的是 **`Mark.texture`**，不是证章的 id —— 这是两个字段：id 形如 `cobblemon:mark_alpha`
+        //   （数据文件的 key），贴图在数据文件里另给。原先直接把 id 当贴图传给 blitk，
+        //   等于去加载一张不存在的图（2026-09-25 顺手修）
+        val textures = effectiveMarksOf(spec.marks, spec.alpha).mapNotNull { id ->
+            Identifier.tryParse(id)?.let { com.cobblemon.mod.common.api.mark.Marks.getByIdentifier(it) }?.texture
+        }
         if (textures.isEmpty()) return
         val perRow = EntryBadgeRenderer.MARKS_PER_ROW
         val rows = (textures.size + perRow - 1) / perRow
         val pad = MARK_TIP_PAD
         val w = minOf(textures.size, perRow) * MARK_CELL + pad * 2
         val h = rows * MARK_CELL + pad * 2
-        // 落到屏幕外就往回钳（弹窗本身贴屏幕边时，悬停窗不能跑出去）
-        val tipX = x.coerceIn(2, (width - w - 2).coerceAtLeast(2))
-        val tipY = y.coerceIn(2, (height - h - 2).coerceAtLeast(2))
-        drawNineSlice(
-            context, DIALOG_BACKGROUND_TEXTURE, tipX, tipY, w, h, 0, DIALOG_BACKGROUND_TEX_H
-        )
+        // 落点与界面里其它行悬停窗**同一套**（照 [HistoryScreen.renderTooltip]）：
+        // 水平鼠标右移 12、**优先放在鼠标上方 4px**（顶不下才翻到下方），再钳进屏幕。
+        // ⚠ 别自己另发明一套 —— 所有悬停窗必须长在同一个位置（2026-09-25 用户指出）
+        val tx = minOf(mouseX + 12, width - w - 12).coerceAtLeast(4)
+        val tyAbove = mouseY - h - 4
+        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - h) else tyAbove
+        // ⚠ **必须抬 Z**：不抬的话下层那些字段文字会从悬停窗上透出来
+        //   （同 HistoryScreen 那句 `translate(0, 0, 400)`）
+        context.matrices.push()
+        context.matrices.translate(0.0, 0.0, 400.0)
+        drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, tx, ty, w, h, 0, DIALOG_BACKGROUND_TEX_H)
         textures.forEachIndexed { idx, texture ->
             com.cobblemon.mod.common.api.gui.blitk(
                 matrixStack = context.matrices, texture = texture,
-                x = tipX + pad + (idx % perRow) * MARK_CELL,
-                y = tipY + pad + (idx / perRow) * MARK_CELL,
+                x = tx + pad + (idx % perRow) * MARK_CELL,
+                y = ty + pad + (idx / perRow) * MARK_CELL,
                 width = 8, height = 8
             )
         }
+        context.matrices.pop()
     }
 
     /**
@@ -2028,10 +2042,16 @@ class PointsMarketScreen : Screen(
                 "cobblemarket.points.store.field.friendship",
                 spec.friendship?.toString() ?: Text.translatable("cobblemarket.points.store.value.default")
             )
-            KEY_MARKS -> Text.translatable(
-                "cobblemarket.points.store.field.marks",
-                if (spec.marks.isEmpty()) none else Text.literal(spec.marks.size.toString())
-            )
+            // 证章数要把**头目自动带的那个**算进去（见 [effectiveMarksOf]）——
+            // 只数 spec.marks 的话，服主没勾证章时这里显示 0，而实际生成出来的精灵带着头目之证
+            //（2026-09-25 用户报）
+            KEY_MARKS -> {
+                val marks = effectiveMarksOf(spec.marks, spec.alpha)
+                Text.translatable(
+                    "cobblemarket.points.store.field.marks",
+                    if (marks.isEmpty()) none else Text.literal(marks.size.toString())
+                )
+            }
             KEY_MIN_IVS -> Text.translatable(
                 "cobblemarket.points.store.field.min_ivs",
                 if (spec.ivs != null || spec.minPerfectIvs <= 0) Text.translatable("cobblemarket.points.store.value.any")
@@ -2062,10 +2082,17 @@ class PointsMarketScreen : Screen(
         return Text.literal("${STAT_ABBR[index]}: ${if (value < 0) "-" else value.toString()}")
     }
 
-    /** 六项努力值的一格：`HP: 0`（`null` 与 0 都是"不加"） */
+    /**
+     * 六项努力值的一格：`EV：0`（`null` 与 0 都是"不加"）。
+     *
+     * ⚠ 必须与上方**个体值**行区分开：那行是 `HP: 31`（项名 + 值），这行原来长得一模一样，
+     *   两行叠在一起玩家分不清哪行是努力值（2026-09-25 用户报）。
+     *   现在统一写成 `EV：值`，靠**列对齐**与上方的项一一对应。
+     * ⚠ 冒号走词条：中文全角「：」、英文半角「: 」（项目文案约定，别在代码里拼 `": "`）。
+     */
     private fun evLine(spec: ShopPokemonSpec, index: Int): Text {
         val value = spec.evs?.getOrNull(index) ?: 0
-        return Text.literal("${STAT_ABBR[index]}: $value")
+        return Text.translatable("cobblemarket.points.store.value.ev", value.toString())
     }
 
     /** 技能槽一格：`1 十万伏特`，空槽显示「空」 —— 生成时会从可学技能里随机补（见 PointMarketFactory） */
@@ -2272,7 +2299,7 @@ class PointsMarketScreen : Screen(
      * 原样保留，否则编辑一次就被抹平。
      */
     private fun buildPokemonSpec(): ShopPokemonSpec? {
-        val base = editOriginal?.pokemon
+        val base = editSpecBase?.pokemon
         val speciesId = editSpecies?.resourceIdentifier?.toString() ?: base?.species ?: return null
         // 闪光两态互斥：固定闪光写进 aspects、概率闪光写进 shinyChance（数据层注释有写）。
         // 输入框填的是**百分数**，到 100% 就按必闪处理
@@ -2306,7 +2333,9 @@ class PointsMarketScreen : Screen(
             evs = if (evs.any { it > 0 }) evs else null,
             friendship = editFriendshipText.trim().toIntOrNull()?.coerceIn(0, 255),
             heldItemVisible = editHeldVisible,
-            marks = editMarks,
+            // ⚠ 带上**头目自动那个**：服务端生成时 Cobblemon 自己也会加一遍（Set 去重、无害），
+            //   但数据层要存它 —— 存档读回来、购买窗显示的数才对得上
+            marks = effectiveMarks(),
             moves = editMoves
         )
     }
@@ -2373,7 +2402,7 @@ class PointsMarketScreen : Screen(
         editPriceField?.setTextPredicate { s -> s.length <= 12 && s.all { it.isDigit() } }
         editPriceField?.setChangedListener { editPriceText = it }
         editPriceField?.text = editPriceText.ifEmpty {
-            editOriginal?.price?.takeIf { it > 0L }?.toString().orEmpty()
+            editSpecBase?.price?.takeIf { it > 0L }?.toString().orEmpty()
         }
         addSelectableChild(editPriceField)
         addDrawableChild(editPriceField)
@@ -2387,15 +2416,16 @@ class PointsMarketScreen : Screen(
         editStockField?.setChangedListener { editStockText = it }
         // 回填：不限量 → 留空（「不改 = 什么都不变」）
         editStockField?.text = editStockText.ifEmpty {
-            editOriginal?.stock?.takeIf { it != ShopEntry.UNLIMITED }?.toString().orEmpty()
+            editSpecBase?.stock?.takeIf { it != ShopEntry.UNLIMITED }?.toString().orEmpty()
         }
         addSelectableChild(editStockField)
         addDrawableChild(editStockField)
 
-        // 底部按钮行：保存/添加 + 取消（居中并排，间距 8）
+        // 底部按钮行：添加 + 取消（居中并排，间距 8）。
+        // ⚠ 恒为「添加」—— 编辑态 2026-09-25 已取消，快照回填也只是填进新增的草稿，
+        //   所以**别按 editSpecBase 判**（那是 copy 基底，回填后非 null，会错显成「保存」）
         val btnY = editButtonRowY()
-        val confirmText = if (editOriginal != null) "cobblemarket.points.store.save"
-        else "cobblemarket.points.store.add"
+        val confirmText = "cobblemarket.points.store.add"
         val contentW = editDialogW() - EDIT_PAD * 2
         editConfirmButton = NineSliceButton(
             x + EDIT_PAD + (contentW - EDIT_BUTTON_W * 2 - 8) / 2,
@@ -2414,7 +2444,7 @@ class PointsMarketScreen : Screen(
         // **快照**：右上角那枚 —— 位置**就是原来「下架」的那个**（`editRemoveY()` 这名字是那时候留下的，
         // 它算的是"距顶 = 距右"那条对角线上，与具体是哪枚按钮无关）。
         // 用户 2026-09-25 拍板：服主不再能编辑已有格子，右上角这一格改放快照。
-        // 原「下架」后来搬到服主的只读查看窗里了，见 [removeFromBuyDialog]。
+        // 那枚「下架」后来搬到了**购买窗的右上角**（能管商城的人才看得见），见 [removeFromBuyDialog]。
         editSnapshotButton = NineSliceButton(
             editRowRightX() - EDIT_SNAPSHOT_W, editRemoveY(),
             EDIT_SNAPSHOT_W, EDIT_ROW_H,
@@ -2472,7 +2502,7 @@ class PointsMarketScreen : Screen(
         //   直接取第一个会把中文名互为子串的物种静默换掉（「鬼斯」/「鬼斯通」）
         field.setChangedListener { text -> editSpeciesText = text; updateEditSpecies(text) }
         field.text = editSpeciesText.ifEmpty {
-            editSpecies?.resourceIdentifier?.toString() ?: editOriginal?.pokemon?.species.orEmpty()
+            editSpecies?.resourceIdentifier?.toString() ?: editSpecBase?.pokemon?.species.orEmpty()
         }
         editSpeciesField = field
         addSelectableChild(field)
@@ -2536,7 +2566,7 @@ class PointsMarketScreen : Screen(
                     editLevelField?.setPlaceholder(Text.translatable("cobblemarket.points.store.field.level_hint"))
                     editLevelField?.setChangedListener { editLevelText = it }
                     editLevelField?.text = editLevelText.ifEmpty {
-                        editOriginal?.pokemon?.level?.toString().orEmpty()
+                        editSpecBase?.pokemon?.level?.toString().orEmpty()
                     }
                 }
 
@@ -3055,7 +3085,7 @@ class PointsMarketScreen : Screen(
 
     // ⚠ 原先这里有个 `confirmRemoveSlot()`（清空 [editSlot]）—— 2026-09-25 服主不再能编辑已有格子后
     //   它变成了死代码（唯一的调用点是编辑窗里那枚「下架」，而那枚按钮已经删了），故一并删掉。
-    //   下架的入口现在只有服主查看窗里的那枚，见 [removeFromBuyDialog]。
+    //   下架的入口现在只有**购买窗右上角那枚**（能管商城的人才看得见），见 [removeFromBuyDialog]。
 
     // ── 窗口：展开式选项列表（形态 / 性格 / 特性 / 球 / 太晶 / 技能 共用）──
 
@@ -3245,9 +3275,17 @@ class PointsMarketScreen : Screen(
 
     /** 某行是不是「当前选中」：多选列表看已挂的证章，单选列表比当前值 */
     private fun isOptionSelected(value: String): Boolean =
-        if (optionListMultiSelect) value in editMarks else value == currentOptionValue()
+        if (optionListMultiSelect) {
+            // 头目之证的勾选态**跟着头目开关走**（不由服主在这里勾），见 [effectiveMarksOf]
+            if (value == ALPHA_MARK_ID) editAlpha else value in editMarks
+        } else {
+            value == currentOptionValue()
+        }
 
     private fun toggleMultiOption(value: String) {
+        // **头目之证不归这里切**：它跟着头目开关走，勾掉也没用（Cobblemon 生成时照样带）——
+        // 让它可点反而是误导，所以点了不响应，要改就去动头目那个按钮
+        if (value == ALPHA_MARK_ID) return
         editMarks = if (value in editMarks) editMarks - value else editMarks + value
         refreshEditLabels()
         // 不关列表、也不用重建控件：行是自绘的，下一帧就带上新的勾选状态
@@ -3389,8 +3427,18 @@ class PointsMarketScreen : Screen(
             //   服主选完想撤掉就没处点了（2026-09-20 用户指出）
             else -> buildList {
                 add(OptionItem("", Text.translatable("cobblemarket.points.store.value.none").string))
+                // ⚠ **排除其它槽位已选的技能**（本槽自己的保留，否则自己都选不上）——
+                //   与 Cobblemon 队伍详情一致：同一只精灵同一个技能只能占一个槽
+                //   （2026-09-25 用户报：现在四个槽能全选同一个技能）。
+                //   ⚠ 这与上面那条「不受**这只已学过什么**的限制」**不冲突**：那条说的是
+                //     不限于它当前会的招（仍然解锁全部可学技能），这条说的是**四个槽之间**别撞车。
+                val thisSlot = kind.removePrefix(OPT_SKILL).toIntOrNull()
+                val takenByOthers = MoveText.slotIds(editMoves)
+                    .filterIndexed { i, id -> i != thisSlot && id.isNotEmpty() }
+                    .toSet()
                 addAll(
                     species?.moves?.getAllLegalMoves().orEmpty()
+                        .filter { it.name !in takenByOthers }
                         .map { OptionItem(it.name, it.displayName.string, labelText = MoveText.name(it.name)) }
                         .sortedBy { it.label }
                 )
@@ -3486,15 +3534,15 @@ class PointsMarketScreen : Screen(
                 Text.translatable(optionListShortKey(listKind)).string
             )
         } else {
-            // 精灵 / 物品两种窗口的标题分开（物品格子点开时写「添加精灵」就驴唇不对马嘴了）
+            // 精灵 / 物品两种窗口的标题分开（物品格子点开时写「添加精灵」就驴唇不对马嘴了）。
+            // ⚠ 这个窗口**只有「添加」一种形态**：编辑已有格子 2026-09-25 已取消（要改走「下架 → 重新添加」），
+            //   快照回填也只是把一份规格填进**新增**的草稿。
+            //   ⚠ **别拿 `editSpecBase` 判**：它装的是 copy 基底，快照回填后就非 null 了 ——
+            //     按它判会让标题错显成「编辑精灵」（2026-09-25 用户报）
             val pokemon = isPokemonSlot()
             Text.translatable(
-                when {
-                    editOriginal == null && pokemon -> "cobblemarket.points.store.add_title"
-                    editOriginal == null -> "cobblemarket.points.store.add_item_title"
-                    pokemon -> "cobblemarket.points.store.edit_title"
-                    else -> "cobblemarket.points.store.edit_item_title"
-                }
+                if (pokemon) "cobblemarket.points.store.add_title"
+                else "cobblemarket.points.store.add_item_title"
             )
         }
         context.drawCenteredTextWithShadow(
@@ -3765,7 +3813,9 @@ class PointsMarketScreen : Screen(
      * 建列表时与每次改选 / 清空后都要走它 —— 见 [optionClearButton] 的注释。
      */
     private fun refreshOptionClearButton() {
-        optionClearButton?.active = editMarks.isNotEmpty()
+        // 「清空」只清**服主勾的那些** —— 头目之证不归它管（清了也还在），
+        // 所以判据要排掉它，否则只剩头目之证时按钮还是亮的、点了却什么都没变
+        optionClearButton?.active = editMarks.any { it != ALPHA_MARK_ID }
     }
 
     private fun yesNoLabel(value: Boolean): String = valueText(if (value) "yes" else "no")
@@ -3887,8 +3937,24 @@ class PointsMarketScreen : Screen(
     private fun heldLabel(): String = if (editHeldItem == null) valueText("none") else editHeldItemName
 
     /** 证章：按钮上只说挂了几个（名字长、还能挂多个，具体是哪些进列表看） */
+    /**
+     * **实际会生成到精灵上的证章** = 记着的那份 + **头目自动带的头目之证**。
+     *
+     * ⚠ 头目之证不由我们决定：Cobblemon 的 `Pokemon.isAlpha` setter 里会
+     * `exchangeMark(mark_alpha, true)` —— 服主在证章列表里勾没勾都一样会带上。
+     * 所以界面上必须把它算进去，否则「明明设了头目、证章却显示 0 个」（2026-09-25 用户报）。
+     *
+     * ⚠ 先**过滤掉**再加：`marks` 里可能本来就残留这个 id（编辑旧挂单 / 早期存的数据），
+     *   不过滤会重复计数（显示 2 个）。
+     */
+    private fun effectiveMarksOf(marks: List<String>, alpha: Boolean): List<String> =
+        marks.filterNot { it == ALPHA_MARK_ID } + if (alpha) listOf(ALPHA_MARK_ID) else emptyList()
+
+    /** 编辑窗当前草稿实际会带的证章（见 [effectiveMarksOf]） */
+    private fun effectiveMarks(): List<String> = effectiveMarksOf(editMarks, editAlpha)
+
     private fun marksLabel(): String =
-        if (editMarks.isEmpty()) valueText("none") else editMarks.size.toString()
+        effectiveMarks().size.let { if (it == 0) valueText("none") else it.toString() }
 
     private fun doRedeem() {
         val code = codeField?.text?.trim().orEmpty()
@@ -4567,6 +4633,12 @@ class PointsMarketScreen : Screen(
         const val KEY_HELD_VISIBLE = "held_visible"
         const val KEY_MARKS = "marks"
         const val KEY_SKILL = "skill"
+
+        /**
+         * Cobblemon 的**头目之证** id —— `Pokemon.isAlpha` 的 setter 里会自动 `exchangeMark` 它，
+         * 所以服主在证章列表里勾没勾，只要精灵是头目就一定会带。见 [effectiveMarksOf]。
+         */
+        const val ALPHA_MARK_ID = "cobblemon:mark_alpha"
 
         /** 物品窗口的「卖什么物品」按钮（精灵窗口没有这一项） */
         const val KEY_ITEM = "item"
