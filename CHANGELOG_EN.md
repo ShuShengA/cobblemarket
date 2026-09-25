@@ -158,7 +158,7 @@
 - **The last Pokémon was never reachable at the bottom of the sell-select list**: with 41 Pokémon the list stopped at #40 (the counter read "29-40/41") and the last one could only be found through the search box. The visible-row count was computed twice with two formulas that differed by 4 pixels, which under some window sizes or GUI scales rounded to one row fewer — so it looked like "changing the GUI scale fixes it". Both now use the same formula
 - **A long balance overlapped the title**: in the Auction House, Buy Orders and the auction-create screen the balance in the top-left corner grew long enough at billion scale to overlap the centred title (Buy Orders hit it sooner since its panel is narrower); it now falls back to a short form such as `12.3M` when it does not fit, and only truncates as a last resort
 
-## 1.1.1 (in development, unreleased)
+## 1.1.1 (released)
 
 ### Fixes
 
