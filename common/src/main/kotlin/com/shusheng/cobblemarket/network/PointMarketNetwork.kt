@@ -7,6 +7,7 @@ import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.PointMarketBuyResult
 import com.shusheng.cobblemarket.currency.PointMarketError
 import com.shusheng.cobblemarket.currency.PointMarketService
+import com.shusheng.cobblemarket.currency.PointShopSnapshotState
 import com.shusheng.cobblemarket.currency.PointShopState
 import com.shusheng.cobblemarket.currency.ShopEntry
 import com.shusheng.cobblemarket.currency.ShopItemSpec
@@ -16,6 +17,7 @@ import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
 import com.shusheng.cobblemarket.util.ItemNameText
+import com.shusheng.cobblemarket.util.PersistHelper
 import com.shusheng.cobblemarket.util.RequestThrottle
 import com.shusheng.cobblemarket.util.SpeciesText
 import com.shusheng.cobblemarket.util.TypeTextColors
@@ -198,6 +200,86 @@ data class BuyPointMarketEntryPayload(
                     entryId = b.readString(MAX_TEXT_LENGTH)
                 )
             }
+        )
+    }
+}
+
+// ── 配方快照（服主用：把配好的规格存下来复用）──
+//
+// 与"商品"是两回事：商品在格子里（有位置、有库存），快照是**配方库**（没有位置，随时取用）。
+// 四个包：请求列表 / 下发列表 / 存一条 / 删一条。⚠ 全都判 `points.shop` 节点。
+
+/** 一条快照：名字 + 整份规格 */
+data class ShopSnapshotInfo(val name: String, val entry: ShopEntry)
+
+/** 快照列表（S2C，只发给请求过的人） */
+data class ShopSnapshotsPayload(val snapshots: List<ShopSnapshotInfo>) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        /** 一包最多几条（与数据层的上限同值，防伪造客户端塞超长列表） */
+        const val MAX_PER_PACKET = 64
+
+        val ID = CustomPayload.Id<ShopSnapshotsPayload>(CobbleMarket.id("shop_snapshots"))
+        val CODEC: PacketCodec<PacketByteBuf, ShopSnapshotsPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeInt(p.snapshots.size)
+                p.snapshots.forEach { s ->
+                    b.writeString(s.name, MAX_TEXT_LENGTH)
+                    writeEntry(b, s.entry)
+                }
+            },
+            { b ->
+                val n = b.readInt()
+                if (n < 0 || n > MAX_PER_PACKET) {
+                    throw IllegalArgumentException("shop snapshot count out of range: $n")
+                }
+                ShopSnapshotsPayload(
+                    List(n) { ShopSnapshotInfo(b.readString(MAX_TEXT_LENGTH), readEntry(b)) }
+                )
+            }
+        )
+    }
+}
+
+/** 请求快照列表（进添加窗时发） */
+data class RequestShopSnapshotsPayload(val unused: Boolean = false) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<RequestShopSnapshotsPayload>(CobbleMarket.id("request_shop_snapshots"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestShopSnapshotsPayload> = PacketCodec.of(
+            { _, _ -> },
+            { RequestShopSnapshotsPayload() }
+        )
+    }
+}
+
+/** 存一条快照（同名覆盖）；返回的列表由服务端回发 */
+data class SaveShopSnapshotPayload(val name: String, val entry: ShopEntry) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<SaveShopSnapshotPayload>(CobbleMarket.id("save_shop_snapshot"))
+        val CODEC: PacketCodec<PacketByteBuf, SaveShopSnapshotPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeString(p.name, MAX_TEXT_LENGTH)
+                writeEntry(b, p.entry)
+            },
+            { b -> SaveShopSnapshotPayload(name = b.readString(MAX_TEXT_LENGTH), entry = readEntry(b)) }
+        )
+    }
+}
+
+/** 删一条快照 */
+data class DeleteShopSnapshotPayload(val name: String) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<DeleteShopSnapshotPayload>(CobbleMarket.id("delete_shop_snapshot"))
+        val CODEC: PacketCodec<PacketByteBuf, DeleteShopSnapshotPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.name, MAX_TEXT_LENGTH) },
+            { b -> DeleteShopSnapshotPayload(b.readString(MAX_TEXT_LENGTH)) }
         )
     }
 }
@@ -432,6 +514,57 @@ object PointMarketNetwork {
             }
         }
 
+        // ── 配方快照：全判 `points.shop`（与上架同一档 —— 那是"发给玩家的东西"的把关权）──
+
+        registerC2S(RequestShopSnapshotsPayload.ID, RequestShopSnapshotsPayload.CODEC) { _, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
+            if (!RequestThrottle.allow(player.uuid, "shop_snapshot_list", RequestThrottle.READ_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            val server = player.server
+            server.execute { sendToPlayer(player, buildSnapshots(server)) }
+        }
+
+        registerC2S(SaveShopSnapshotPayload.ID, SaveShopSnapshotPayload.CODEC) { payload, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
+            if (!RequestThrottle.allow(player.uuid, "shop_snapshot_save", RequestThrottle.WRITE_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            val server = player.server
+            server.execute {
+                val name = payload.name.trim().take(PointShopSnapshotState.MAX_NAME_LENGTH)
+                if (name.isEmpty()) return@execute
+                // ⚠ 规格**原样存**（不做 normalize）：服主存的是"配方"，真正把关在**上架那一刻**
+                //   （PointMarketService.save 会全量校验）—— 这里再校一遍只会让"存快照"变成一个有
+                //   各种拒绝理由的操作。退回读档时的容错语义：坏数据读回来是 null、跳过并 warn
+                if (!PointShopSnapshotState.get(server).put(name, payload.entry)) {
+                    player.sendMessage(
+                        Text.translatable(
+                            "cobblemarket.points.store.snapshot_full", PointShopSnapshotState.MAX_SNAPSHOTS
+                        ).formatted(Formatting.RED),
+                        false
+                    )
+                    return@execute
+                }
+                PersistHelper.requestSave(server)
+                // 回发最新列表（界面不用自己猜存到哪了）
+                sendToPlayer(player, buildSnapshots(server))
+            }
+        }
+
+        registerC2S(DeleteShopSnapshotPayload.ID, DeleteShopSnapshotPayload.CODEC) { payload, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
+            if (!RequestThrottle.allow(player.uuid, "shop_snapshot_delete", RequestThrottle.WRITE_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            val server = player.server
+            server.execute {
+                PointShopSnapshotState.get(server).remove(payload.name)
+                PersistHelper.requestSave(server)
+                sendToPlayer(player, buildSnapshots(server))
+            }
+        }
+
         // 购买：玩家侧唯一"花钱"的入口（**不判权限** —— 谁有 RP 谁能买）。
         // 库存 / 余额 / 收件空间全在服务端校验，客户端只是发起请求
         registerC2S(BuyPointMarketEntryPayload.ID, BuyPointMarketEntryPayload.CODEC) { payload, player ->
@@ -566,6 +699,12 @@ object PointMarketNetwork {
             sendToPlayer(target, buildSnapshot(server, page, kind))
         }
     }
+
+    /** 组装配方快照列表（只发给请求过的人 / 刚操作过的人，不做广播 —— 它是服主的私人配方库） */
+    private fun buildSnapshots(server: MinecraftServer): ShopSnapshotsPayload =
+        ShopSnapshotsPayload(
+            PointShopSnapshotState.get(server).all().map { ShopSnapshotInfo(it.name, it.entry) }
+        )
 
     /** 组装某一页某个 tab 的快照（页号收进合法范围 —— 客户端翻页参数不可信） */
     private fun buildSnapshot(server: MinecraftServer, page: Int, kind: String): PointMarketItemsPayload {

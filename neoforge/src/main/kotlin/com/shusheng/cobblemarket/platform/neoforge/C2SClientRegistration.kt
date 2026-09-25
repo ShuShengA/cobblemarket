@@ -104,6 +104,9 @@ import com.shusheng.cobblemarket.network.SavePointsConfigPayload
 import com.shusheng.cobblemarket.network.SaveServerConfigPayload
 import com.shusheng.cobblemarket.network.SellFromStoragePayload
 import com.shusheng.cobblemarket.network.SellItemPayload
+import com.shusheng.cobblemarket.network.DeleteShopSnapshotPayload
+import com.shusheng.cobblemarket.network.RequestShopSnapshotsPayload
+import com.shusheng.cobblemarket.network.SaveShopSnapshotPayload
 import com.shusheng.cobblemarket.network.SetMarketEnabledPayload
 import com.shusheng.cobblemarket.network.SharePayload
 import net.minecraft.network.PacketByteBuf
@@ -173,6 +176,10 @@ fun registerClientC2S() {
         c2s(registrar, SavePointMarketEntryPayload.ID, SavePointMarketEntryPayload.CODEC)
         c2s(registrar, RemovePointMarketEntryPayload.ID, RemovePointMarketEntryPayload.CODEC)
         c2s(registrar, BuyPointMarketEntryPayload.ID, BuyPointMarketEntryPayload.CODEC)
+        // 配方快照的三个（请求列表 / 存 / 删）
+        c2s(registrar, RequestShopSnapshotsPayload.ID, RequestShopSnapshotsPayload.CODEC)
+        c2s(registrar, SaveShopSnapshotPayload.ID, SaveShopSnapshotPayload.CODEC)
+        c2s(registrar, DeleteShopSnapshotPayload.ID, DeleteShopSnapshotPayload.CODEC)
         c2s(registrar, RejectPendingDeliverPayload.ID, RejectPendingDeliverPayload.CODEC)
         c2s(registrar, RemoveItemBlacklistPayload.ID, RemoveItemBlacklistPayload.CODEC)
         c2s(registrar, RemoveItemPriceLimitPayload.ID, RemoveItemPriceLimitPayload.CODEC)
