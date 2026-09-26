@@ -12,6 +12,7 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import java.util.UUID
+import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.drawItemWithBar
 
 /**
@@ -183,9 +184,14 @@ class ItemVariantSelectScreen(
 
     /** 悬停 tooltip：照原版背包悬停按键语义（Shift 完整词条 / Ctrl+F3+H 调试信息） */
     private fun renderVariantTooltip(context: DrawContext, v: Variant, mouseX: Int, mouseY: Int) {
-        val lines = com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(v.sample, client?.player,
-            com.shusheng.cobblemarket.client.ItemComponentsDisplay.tooltipTypeForHover())
-            .map { it to 0xFFFFFF }
+        // 行数按屏幕高钳制：Shift / Ctrl 展开后可能几十行（见 [clampTooltipRows]）
+        val lines = clampTooltipRows(
+            com.shusheng.cobblemarket.client.ItemComponentsDisplay.itemTooltip(
+                v.sample, client?.player,
+                com.shusheng.cobblemarket.client.ItemComponentsDisplay.tooltipTypeForHover()
+            ).map { it to 0xFFFFFF },
+            height
+        ) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA }
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
 

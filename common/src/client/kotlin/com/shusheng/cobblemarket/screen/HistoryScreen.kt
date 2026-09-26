@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.network.HistoryDataPayload
 import com.shusheng.cobblemarket.network.HistoryEntry
 import com.shusheng.cobblemarket.network.RequestHistoryPayload
@@ -234,7 +235,9 @@ class HistoryScreen(private val showAll: Boolean = false) :
      * ⚠ 行色固定白 —— 具体颜色一律由各行的 [Text] 自带（金额金、精灵名属性色…），
      * 别在这里按行号上色（那会把自带颜色的段也染掉）。
      */
-    private fun renderTooltip(context: DrawContext, lines: List<Text>, mouseX: Int, mouseY: Int) {
+    private fun renderTooltip(context: DrawContext, lines0: List<Text>, mouseX: Int, mouseY: Int) {
+        // 行数按屏幕高钳制（内容比屏幕高时末行换成「…（还有 N 行）」）—— 见 [clampTooltipRows]
+        val lines = clampTooltipRows(lines0, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) }
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
 

@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
+import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.FilterPanelAnimation
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.heldIconStackForModel
@@ -2076,6 +2077,9 @@ class AuctionScreen(
         val pad = 4
         // 证章超过一行时第二行「+N」额外占 12px
         val marksExtra = if (marksLine >= 0 && marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0
+        // 行数按屏幕高钳制（叠上技能块 / 证章后仍可能超屏）—— 见 [clampTooltipRows]
+        clampTooltipRows(lines, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA }
+            .let { if (it !== lines) { lines.clear(); lines.addAll(it) } }
         val th = lines.size * 10 + pad + marksExtra + EntryBadgeRenderer.movesBlockExtra(movesRaw)
         // 悬停窗**不许把本行的出价按钮整个盖住**（自动 GUI 尺寸下会被屏幕右缘挤到按钮上）
         val (tx, ty) = TooltipPlacement.place(
@@ -2181,6 +2185,9 @@ class AuctionScreen(
             maxWidth = maxOf(maxWidth, textRenderer.getWidth(lines[i].first))
         }
 
+        // 行数按屏幕高钳制（Shift / Ctrl 展开可能几十行）—— 见 [clampTooltipRows]
+        clampTooltipRows(lines, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA }
+            .let { if (it !== lines) { lines.clear(); lines.addAll(it) } }
         val padding = 4
         val tooltipHeight = lines.size * 10 + padding
         // 物品行同样有「出价」按钮 → 一样不许把本行按钮盖住一半以上（与精灵行同源，见 bidButtonRects）

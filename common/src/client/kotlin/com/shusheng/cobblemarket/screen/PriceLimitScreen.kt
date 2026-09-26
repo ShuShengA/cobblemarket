@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.activeCurrencyUnit
 import com.shusheng.cobblemarket.client.formatPrice
@@ -1455,7 +1456,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     /** 富文本行 tooltip 渲染（照物品市场：Text 自带颜色样式优先于行色参数）；
      *  [avoid] 为本行按钮矩形（按行号算几何，见 rowButtonsRect），传 null = 不避让 */
-    private fun drawRichTooltip(context: DrawContext, lines: List<Pair<Text, Int>>, mouseX: Int, mouseY: Int, avoid: TooltipPlacement.Rect? = null) {
+    private fun drawRichTooltip(context: DrawContext, lines0: List<Pair<Text, Int>>, mouseX: Int, mouseY: Int, avoid: TooltipPlacement.Rect? = null) {
+        // 行数按屏幕高钳制（Shift / Ctrl 展开可能几十行）—— 见 [clampTooltipRows]
+        val lines = clampTooltipRows(lines0, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA }
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
 
