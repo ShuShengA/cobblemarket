@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.client.requestCreditInfo
@@ -2178,7 +2179,10 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             tooltipCacheMarksRows = marksRows
             tooltipCacheMaxWidth = maxWidth
         }
-        val lines = tooltipCacheLines
+        // 行数按屏幕高钳制（叠上技能块 / 证章后仍可能超屏）—— 见 [clampTooltipRows]
+        val lines = clampTooltipRows(tooltipCacheLines, height) { n ->
+            Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA
+        }
         val heldItemLine = tooltipCacheHeldLine
         val movesLine = tooltipCacheMovesLine
         val marksLine = tooltipCacheMarksLine
