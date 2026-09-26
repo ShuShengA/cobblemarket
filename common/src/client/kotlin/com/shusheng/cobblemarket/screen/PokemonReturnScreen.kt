@@ -7,6 +7,7 @@ import net.minecraft.registry.Registries
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.client.heldIconStack
+import com.shusheng.cobblemarket.client.heldIconStackForModel
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
@@ -123,7 +124,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             // 携带物同时喂给模型（Cobblemon 会渲染在手上/嘴上）与行内小图标
             val held = heldIconStack(p.heldItemId, p.heldItemNbt)
             iconData[i] = PokemonIconData(
-                renderable = RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
+                renderable = RenderablePokemon(species, aspects, heldIconStackForModel(p.heldItemVisible, p.heldItemId, p.heldItemNbt)),
                 state = FloatingState(),
                 ballStack = Identifier.tryParse(p.ball.removePrefix("item.").replaceFirst(".", ":"))?.let { ItemStack(Registries.ITEM.get(it)) },
                 heldStack = held
@@ -464,13 +465,20 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                 rowY += 10
             } else if (i == heldItemLine) {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
+                val heldIconX = tx + textRenderer.getWidth(line) + 2
                 iconData[index]?.heldStack?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                         itemStack = heldStack,
-                        x = tx + textRenderer.getWidth(line) + 2.0,
+                        x = heldIconX.toDouble(),
                         y = rowY + 0.0,
                         scale = 0.6,
                         matrixStack = context.matrices
+                    )
+                }
+                // 玩家把携带物设成「隐藏」时注明一句（模型上不显示它，而信息行照常列出）—— 用户 2026-09-26
+                if (!p.heldItemVisible) {
+                    context.drawTextWithShadow(
+                        textRenderer, Text.translatable("cobblemarket.gui.held_hidden"), heldIconX + 12, rowY, 0xAAAAAA
                     )
                 }
                 rowY += 10

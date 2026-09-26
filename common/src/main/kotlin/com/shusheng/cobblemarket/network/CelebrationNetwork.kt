@@ -30,7 +30,12 @@ data class PokemonCelebrationPayload(
     val source: String,        // CelebrationSource.name
     /** 携带物完整 NBT（SNBT，仅带组件时非空）。客户端重建模型时喂给 RenderablePokemon——
      *  Cobblemon 会把手/嘴上的物品渲染出来，不传的话动画里的精灵是空手的 */
-    val heldItemNbt: String = ""
+    val heldItemNbt: String = "",
+    /**
+     * 携带物在**精灵模型上是否渲染** —— 庆祝动画里的精灵同样是模型，隐藏时手上不拿东西
+     *（用户 2026-09-26 拍板：隐藏只管模型，其余地方照常显示）。缺省 true = 显示
+     */
+    val heldItemVisible: Boolean = true
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -42,6 +47,7 @@ data class PokemonCelebrationPayload(
                 b.writeBoolean(p.shiny)
                 b.writeString(p.source)
                 b.writeString(p.heldItemNbt)
+                b.writeBoolean(p.heldItemVisible)
             },
             { b ->
                 PokemonCelebrationPayload(
@@ -49,7 +55,8 @@ data class PokemonCelebrationPayload(
                     aspects = (0 until b.readVarInt()).map { b.readString() },
                     shiny = b.readBoolean(),
                     source = b.readString(),
-                    heldItemNbt = b.readString()
+                    heldItemNbt = b.readString(),
+                    heldItemVisible = b.readBoolean()
                 )
             }
         )
@@ -127,9 +134,10 @@ object CelebrationNetwork {
         aspects: List<String>,
         shiny: Boolean,
         source: CelebrationSource,
-        heldItemNbt: String = ""
+        heldItemNbt: String = "",
+        heldItemVisible: Boolean = true
     ) {
-        sendToPlayer(player, PokemonCelebrationPayload(speciesId, aspects, shiny, source.name, heldItemNbt))
+        sendToPlayer(player, PokemonCelebrationPayload(speciesId, aspects, shiny, source.name, heldItemNbt, heldItemVisible))
     }
 
     /**
@@ -166,7 +174,9 @@ object CelebrationNetwork {
             shiny = shiny,
             source = source,
             // 携带物一并下发：三个触发点的 extraData 都带着这个键（拍卖/求购/市场挂单同款口径）
-            heldItemNbt = extraData["heldItemNbt"].orEmpty()
+            heldItemNbt = extraData["heldItemNbt"].orEmpty(),
+            // 「模型手里拿不拿」：缺这个键（旧挂单 / 旧服务端）= 显示
+            heldItemVisible = extraData["heldItemVisible"] != "false"
         )
     }
 

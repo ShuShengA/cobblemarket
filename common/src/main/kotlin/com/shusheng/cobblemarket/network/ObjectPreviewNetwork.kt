@@ -67,7 +67,12 @@ data class ObjectPreviewPayload(
     val itemId: String,
     val itemNbt: NbtCompound?,            // 拍卖物品：整栈 NBT
     val itemComponentsSpec: NbtCompound?, // 求购物品：组件快照
-    val count: Int
+    val count: Int,
+    /**
+     * 携带物在**精灵模型上是否渲染**（`Pokemon.heldItemVisible`，玩家可在 Cobblemon 队伍详情里关掉）。
+     * ⚠ 只管大图里的**精灵模型手里** —— 携带物 NBT 照常下发、信息照常显示（用户 2026-09-26 拍板）
+     */
+    val heldItemVisible: Boolean = true
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -88,6 +93,7 @@ data class ObjectPreviewPayload(
                 b.writeBoolean(p.itemComponentsSpec != null)
                 p.itemComponentsSpec?.let { PacketCodecs.NBT_COMPOUND.encode(b, it) }
                 b.writeInt(p.count)
+                b.writeBoolean(p.heldItemVisible)
             },
             { b ->
                 // 具名参数：这段读序与上面的写序一一对应，错位了会静默读出垃圾数据
@@ -101,7 +107,8 @@ data class ObjectPreviewPayload(
                     itemId = b.readString(),
                     itemNbt = if (b.readBoolean()) PacketCodecs.NBT_COMPOUND.decode(b) else null,
                     itemComponentsSpec = if (b.readBoolean()) PacketCodecs.NBT_COMPOUND.decode(b) else null,
-                    count = b.readInt()
+                    count = b.readInt(),
+                    heldItemVisible = b.readBoolean()
                 )
             }
         )
@@ -167,8 +174,9 @@ object ObjectPreviewNetwork {
                     speciesId = pokemon.species.resourceIdentifier.toString(),
                     aspects = pokemon.aspects.toList(),
                     shiny = pokemon.shiny,
-                    // 携带物设成「隐藏」的一律不下发（与挂单 extraData 同一口径，见 buildAuctionExtra）
-                    heldItemNbt = if (pokemon.heldItemVisible) encodeStack(pokemon.heldItem(), server) else null,
+                    // 携带物**总是**下发（大图要如实显示它带了什么）；「模型手里拿不拿」由 heldItemVisible 带下去
+                    heldItemNbt = encodeStack(pokemon.heldItem(), server),
+                    heldItemVisible = pokemon.heldItemVisible,
                     itemId = "",
                     itemNbt = null,
                     itemComponentsSpec = null,
