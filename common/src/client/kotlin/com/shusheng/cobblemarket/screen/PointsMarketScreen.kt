@@ -4239,7 +4239,13 @@ class PointsMarketScreen : Screen(
         val left = editDialogX() + EDIT_PAD
         val maxWidth = slotX - EDIT_ITEM_INFO_GAP - left
         if (maxWidth <= 0) return
-        val shown = lines.take((slotSize / EDIT_ITEM_INFO_LINE_H).coerceAtLeast(1))
+        // 超出大图高度时截断，**末行注明还有几行** —— 否则 Shift 展开后被截掉多少玩家不知道
+        //（同一套口径：词条见 [com.shusheng.cobblemarket.client.clampTooltipRows]）
+        val maxRows = (slotSize / EDIT_ITEM_INFO_LINE_H).coerceAtLeast(1)
+        val shown = if (lines.size > maxRows) {
+            lines.take(maxRows - 1) +
+                (Text.translatable("cobblemarket.gui.tooltip_more", lines.size - maxRows + 1) to 0xAAAAAA)
+        } else lines
         // 垂直方向**与大图居中对齐**（整列文字居中在大图那一格的高度里）
         var y = slotY + (slotSize - shown.size * EDIT_ITEM_INFO_LINE_H) / 2
         shown.forEach { (line, color) ->

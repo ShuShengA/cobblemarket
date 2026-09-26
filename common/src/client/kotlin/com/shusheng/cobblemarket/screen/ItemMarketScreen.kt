@@ -841,11 +841,18 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     private fun renderCancelDialogBackground(context: DrawContext, mouseX: Int, mouseY: Int) {
         val entry = cancelEntry ?: return
-        val centerX = width / 2
-        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
-        val dialogH = 170
-        val dialogX = centerX - dialogW / 2
-        val dialogY = height / 2 - dialogH / 2
+        val registry = client?.world?.registryManager
+        val stack = registry?.let { ItemStack.fromNbtOrEmpty(it, entry.itemNbt) }
+        // ── 尺寸全部交给 [DialogGeometry]（样板写法：宽度取最宽的那项、高度取内容底）──
+        // 内容宽：物品名 / 提示行 / 按钮行（两枚 80 按钮 + 中间 10px）三者取最大
+        val contentW = maxOf(
+            stack?.let { textRenderer.getWidth(com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(it)) } ?: 0,
+            textRenderer.getWidth(Text.translatable("cobblemarket.item.cancel_hint", entry.count)),
+            170
+        )
+        // 内容高：图标（y+26、16 高）→ 物品名（y+46）→ 提示（y+66），底 ≈ 76
+        val g = DialogGeometry.of(width, height, contentW = contentW, contentNeeded = 76)
+        val centerX = g.x + g.w / 2
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 100.0)
@@ -854,27 +861,23 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 200.0)
-        drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
-        context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.item.cancel_title").formatted(Formatting.GOLD),
-            centerX, dialogY + 14, 0xFFFFFF)
+        drawDialogFrame(context, g, Text.translatable("cobblemarket.item.cancel_title"), textRenderer)
 
-        val registry = client?.world?.registryManager
-        if (registry != null) {
-            val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
-            drawItemWithBar(context, stack, centerX - 8, dialogY + 26)
+        if (stack != null) {
+            drawItemWithBar(context, stack, centerX - 8, g.y + 26)
             // 物品名照物品栏悬浮第一行按稀有度着色
             context.drawCenteredTextWithShadow(textRenderer,
-                com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), centerX, dialogY + 46, 0xFFFFFF)
+                com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), centerX, g.y + 46, 0xFFFFFF)
         }
 
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.cancel_hint", entry.count).formatted(Formatting.GRAY),
-            centerX, dialogY + 66, 0xFFFFFF)
+            centerX, g.y + 66, 0xFFFFFF)
 
         val btnW = 80
         val btnH = 20
-        val btnY = dialogY + 128
+        // 按钮**钉在几何助手算好的底部位置**（内容再长也推不走）
+        val btnY = g.buttonY
         val confirmX = centerX - 85
         val cancelX = centerX + 5
         val confirmHover = mouseX in confirmX..(confirmX + btnW) && mouseY in btnY..(btnY + btnH)
