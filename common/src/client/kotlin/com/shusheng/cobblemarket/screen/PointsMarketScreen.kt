@@ -1272,17 +1272,18 @@ class PointsMarketScreen : Screen(
      */
     private fun editFieldOrder(): List<String> = buildList {
         // 闪光拆成一格按钮 + 一格概率框（挨着，视觉上是一组）
-        // **左 3 格**的 18 个字段，每行 3 个（右边 3 格留给预览图与个体/努力值输入框）。
-        // 顺序就是用户 2026-09-20 定的那张表。
+        // **左 3 格**的 19 个字段，每行 3 个（右边 3 格留给预览图与个体/努力值输入框）。
+        // 顺序是用户 2026-09-20 定的那张表，2026-09-26 补入「极巨等级」后按"成组同排"重排过一次。
         listOf(
             KEY_SHINY, KEY_SHINY_CHANCE, KEY_FORM,
             KEY_LEVEL, KEY_GENDER, KEY_ABILITY,
             KEY_NATURE, KEY_BALL, KEY_SIZE,
-            // 极巨等级**紧挨超极巨化**（这两个是一组：能不能极巨化 / 能不能超极巨化），
-            // 太晶与它后面的字段整体顺延一格（用户 2026-09-26 定的排法）
+            // 排法（用户 2026-09-26 定）：**成组的尽量同一行** ——
+            //   极巨等级紧挨超极巨化（能不能极巨化 / 能不能超极巨化）；
+            //   携带物 + 携带物可见 同排（一个是带什么、一个是模型上露不露，本就一对）
             KEY_ALPHA, KEY_GMAX, KEY_DMAX,
-            KEY_TERA, KEY_TRADEABLE, KEY_HELD,
-            KEY_HELD_VISIBLE, KEY_FRIENDSHIP, KEY_MARKS,
+            KEY_TERA, KEY_TRADEABLE, KEY_FRIENDSHIP,
+            KEY_HELD, KEY_HELD_VISIBLE, KEY_MARKS,
             KEY_MIN_IVS
         ).forEachIndexed { i, key ->
             add(key)
