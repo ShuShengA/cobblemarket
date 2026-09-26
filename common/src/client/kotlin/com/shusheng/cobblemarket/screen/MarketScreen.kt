@@ -2116,7 +2116,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             lines.add(EntryBadgeRenderer.nameWithLevelLine(
                 EntryBadgeRenderer.nameWithShinyStar(iconData[listings.indexOf(entry)]?.displayName ?: entry.species, entry.shiny),
                 entry.primaryType, entry.level) to w)
-            lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string).append(EntryBadgeRenderer.typeLine(entry.primaryType, entry.secondaryType)) to w)
+            lines.add(com.shusheng.cobblemarket.util.TypeTextColors.typeLineWithTera(
+                entry.primaryType, entry.secondaryType, entry.teraType) to w)
             lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(EntryBadgeRenderer.natureText(entry.natureBase, entry.nature))
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))

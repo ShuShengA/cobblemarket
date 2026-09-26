@@ -1235,6 +1235,9 @@ class BuyOrderScreen(
         // 属性行（1.2.0）：主属性主色 + 副属性副色，与市场/悬停窗同一口径
         if (entry.primaryType.isNotEmpty()) {
             lines.add(
+                // ⚠ **不加太晶**：这里是**买家的需求**（求购单指定物种 / IV / 特性……），不是交来的实物 ——
+                //   求购单本来就不指定太晶（太晶是每只精灵自己的属性），画出来只会误导。
+                //   卖家交来的那只是什么太晶，见「查看待交付」弹窗（走 [EntryBadgeRenderer.drawInfoLines]）
                 Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
                     .append(EntryBadgeRenderer.typeLine(entry.primaryType, entry.secondaryType))
                     .asOrderedText() to w

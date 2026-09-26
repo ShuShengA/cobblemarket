@@ -433,10 +433,9 @@ object EntryBadgeRenderer {
             font.getWidth(nameWithLevelLine(displayName, entry.primaryType, entry.level)) +
                 (if (tail > 0) tail + 6 else 0)
         )
-        m(
-            Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
-                .append(typeLine(entry.primaryType, entry.secondaryType))
-        )
+        // ⚠ 与 [drawInfoLines] 那行走**同一个组装入口**（含太晶那段）——
+        //   两处行必须对应，否则量出来和画出来的不一致
+        m(TypeTextColors.typeLineWithTera(entry.primaryType, entry.secondaryType, entry.teraType))
         m(
             Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(natureText(entry.natureBase, entry.nature))
@@ -492,10 +491,10 @@ object EntryBadgeRenderer {
         val lines = mutableListOf<Pair<Text?, Int>>()
         // 名字行：名字本体主属性色、Lv 段白（统一走 nameWithLevelLine，别再在这里自己拼）
         lines.add(nameWithLevelLine(displayName, entry.primaryType, entry.level) to 0xFFFFFF)
-        // 类型行：标签默认白 + 属性名分段着色（主属性主色/副属性副色）
+        // 类型行（**含太晶**）：走共用组装入口 —— 全项目这一行只有一份定义
+        //（太晶那段稍不留神就漏一处，它在七个地方各有过一份拷贝）
         lines.add(
-            Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
-                .append(typeLine(entry.primaryType, entry.secondaryType)) to 0xFFFFFF
+            TypeTextColors.typeLineWithTera(entry.primaryType, entry.secondaryType, entry.teraType) to 0xFFFFFF
         )
         lines.add(
             Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
