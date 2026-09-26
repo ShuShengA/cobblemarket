@@ -144,6 +144,8 @@
   "cobblemarket.points.store.field.alpha": "：%s",
   "cobblemarket.points.store.field.tera": "太晶：%s",
   "cobblemarket.points.store.field.gmax": "超极巨化：%s",
+  "cobblemarket.points.store.field.dmax": "极巨等级：%s",
+  "cobblemarket.points.store.field.dmax_hint": "极巨等级",
   "cobblemarket.points.store.field.tradeable": "可交易：%s",
   "cobblemarket.points.store.field.held": "携带物：%s",
   "cobblemarket.points.store.field.min_ivs": "保底V数：%s",
