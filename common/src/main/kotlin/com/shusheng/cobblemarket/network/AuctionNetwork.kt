@@ -956,11 +956,13 @@ object AuctionNetwork {
             "gender" to pokemon.gender.name,
             "ball" to "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
             "ballItem" to pokemon.caughtBall.name.toString(),
-            // 携带物：玩家在 Cobblemon 队伍详情里把携带物设成「隐藏」时（heldItemVisible）一律不下发，
-            // 否则图标/动画里显示着东西、与实际不符。判据与 Cobblemon 自己的一致（Pokemon.asRenderablePokemon）。
+            // 携带物：**总是**下发 —— 行信息 / 弹窗 / 图标 / 大图都要如实显示它带了什么。
+            // 「精灵模型手里拿不拿」是另一回事，由 heldItemVisible 单独下发、客户端渲染模型时读
+            //（用户 2026-09-26 拍板：隐藏只管模型；此前隐藏就整个不下发，交易信息凭空少一行）
             // heldItemNbt 仅在带组件时非空，客户端据此重建图标，否则只按 ID 建会丢附魔光效与自定义名
-            "heldItemId" to if (!pokemon.heldItemVisible || heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString(),
-            "heldItemNbt" to if (pokemon.heldItemVisible) encodeHeldItemNbt(heldItemStack, registryManager) else "",
+            "heldItemId" to if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString(),
+            "heldItemNbt" to encodeHeldItemNbt(heldItemStack, registryManager),
+            "heldItemVisible" to pokemon.heldItemVisible.toString(),
             "aspects" to pokemon.aspects.joinToString(","),
             "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(","),
             // 证章翻译 key 列表（客户端本地翻译）：聊天悬停只画得了文字，纹理路径给不出名字。
@@ -1125,7 +1127,15 @@ object AuctionNetwork {
             // 携带物名走稀有度色（与物品栏悬停一致）；extra 里只有 id 没有完整栈，用默认栈取稀有度
             extra["heldItemId"].orEmpty().takeIf { it.isNotEmpty() }
                 ?.let { ItemNameText.rarityColoredNameById(it) }
-                ?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_held").append(it)) }
+                ?.let {
+                    val line = Text.translatable("cobblemarket.gui.tooltip_held").append(it)
+                    // 玩家把携带物设成「隐藏」时注明一句：模型上不显示它、而这里照常列出，
+                    // 否则玩家会以为「明明带了东西却没显示」是数据错了（用户 2026-09-26）
+                    if (extra["heldItemVisible"] == "false") {
+                        line.append(Text.translatable("cobblemarket.gui.held_hidden").formatted(Formatting.GRAY))
+                    }
+                    lines.add(line)
+                }
             // IV 段：标签 + 六行竖排（仿出价弹窗左列：stat:IV  EV:N，行色按属性色系，EV 红；聊天 16 色近似弹窗 ARGB）
             lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs"))
             val hp = Text.literal(StatNames.HP)
