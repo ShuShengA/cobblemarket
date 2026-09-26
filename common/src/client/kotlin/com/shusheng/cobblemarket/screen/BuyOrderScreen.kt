@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.util.StatNames
+import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.playButtonClickSound
 import com.shusheng.cobblemarket.client.playFailSound
@@ -1339,6 +1340,11 @@ class BuyOrderScreen(
         }
         lines.add(expiresLineOf(entry))
 
+        // 行数按屏幕高钳制（叠上技能块 / 证章后仍可能超屏）—— 见 [clampTooltipRows]
+        // ⚠ 这里的行是 OrderedText（悬停窗直接画它），不是 Text —— overflow 要跟着转
+        clampTooltipRows(lines, height) { n ->
+            Text.translatable("cobblemarket.gui.tooltip_more", n).asOrderedText() to 0xAAAAAA
+        }.let { if (it !== lines) { lines.clear(); lines.addAll(it) } }
         var maxWidth = tooltipCacheMaxWidth
         if (quantityLine >= 0) {
             lines[quantityLine].first?.let { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }

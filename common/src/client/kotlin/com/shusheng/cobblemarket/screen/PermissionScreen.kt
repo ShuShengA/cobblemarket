@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.network.PlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.network.RequestPlayerNameSuggestionsPayload
@@ -794,7 +795,9 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
      *（原先「第一行强制金色」是给页签 1 的玩家名当标题用的 —— 改成自带色后由调用方显式指定，
      * 别在这里写死：页签 2 的第一行是「灰时间 + 金执行者」，不是单色标题）。
      */
-    private fun renderTooltip(context: DrawContext, lines: List<Text>, mouseX: Int, mouseY: Int, avoid: TooltipPlacement.Rect? = null) {
+    private fun renderTooltip(context: DrawContext, lines0: List<Text>, mouseX: Int, mouseY: Int, avoid: TooltipPlacement.Rect? = null) {
+        // 行数按屏幕高钳制（变更记录里的节点列表可能很长）—— 见 [clampTooltipRows]
+        val lines = clampTooltipRows(lines0, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) }
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
 

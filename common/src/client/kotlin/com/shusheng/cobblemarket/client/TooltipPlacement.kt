@@ -15,6 +15,29 @@ package com.shusheng.cobblemarket.client
  * 候选顺序固定为 **右上 → 右下 → 左上 → 左下**，取第一个**完整放得下屏幕**的；
  * 四个都放不下（悬停窗比屏幕还大）才退回各自钳制后的版本，保证不会整块跑到屏幕外。
  */
+/**
+ * 悬停窗**行数钳制** —— 内容比屏幕高时只画放得下的那些行，末行换成「…（还有 N 行）」。
+ *
+ * ⚠ **各界面原先各写一份** `if (tyAbove <= 0) minOf(mouseY + 12, height - tooltipHeight) else tyAbove`，
+ *   而行数一多 `height - tooltipHeight` 就是**负数** ⇒ 悬停窗**顶部被切到屏幕外**（且总高超过屏幕时
+ *   放上放下都放不下）—— 2026-09-26 用户报的隐患。`[TooltipPlacement.place]` 那一族虽会把**位置**
+ *   钳进屏幕、不会跑到屏幕外，但内容超高时同样显示不全，所以两边都要接这个。
+ *   （典型触发：按住 Shift 展开完整词条，或 Ctrl 展开调试信息；几十行的模组物品一条就中招。）
+ *
+ * @param rows 原始行（类型由调用方定：`Text` / `Pair<Text, Int>` / …）
+ * @param screenH 屏幕逻辑高（各界面传 `height`）
+ * @param rowH 行高，默认 10（与各处一致）
+ * @param overflow 末行构造——给「还有几行」，由调用方按自己的行类型造（这样不用为类型写泛型约束）
+ */
+fun <T> clampTooltipRows(rows: List<T>, screenH: Int, rowH: Int = 10, overflow: (Int) -> T): List<T> {
+    // 悬停窗总高 = 行数 × 行高 + 上下边框（各处 pad = 4，合计 8）；再留 8px，避免贴死屏幕上下缘
+    val maxRows = ((screenH - 16) / rowH).coerceAtLeast(1)
+    if (rows.size <= maxRows) return rows
+    // 末行让给提示本身，所以实际显示 maxRows - 1 行
+    val kept = maxRows - 1
+    return rows.take(kept) + overflow(rows.size - kept)
+}
+
 object TooltipPlacement {
 
     /** 光标与悬停窗之间的间隔 */

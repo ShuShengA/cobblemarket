@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.client.POINTS_SYMBOL_INLINE_SIZE
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
 import com.shusheng.cobblemarket.client.PointsStateCache
+import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.currency.CurrencyService
@@ -458,6 +459,8 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
             tooltipAdvancedType = null
         }
 
+        // 行数按屏幕高钳制（Shift / Ctrl 展开可能几十行）—— 见 [clampTooltipRows]
+        lines = clampTooltipRows(lines, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) }
         val padding = 4
         val tooltipHeight = lines.size * 10 + padding
         // 悬停窗**不许把本行的出售按钮盖掉一半以上**：矩形按行号算几何（与 rebuildSellButtons 同源）

@@ -21,6 +21,7 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import java.util.UUID
+import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.drawItemWithBar
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.client.PointsStateCache
@@ -528,6 +529,9 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         ) to 0xFFFFFF)
         lines.add(Text.literal("×${entry.count}") to 0xFFFFFF)
 
+        // 行数按屏幕高钳制（Shift / Ctrl 展开可能几十行）—— 见 [clampTooltipRows]
+        clampTooltipRows(lines, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA }
+            .let { if (it !== lines) { lines.clear(); lines.addAll(it) } }
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
 
