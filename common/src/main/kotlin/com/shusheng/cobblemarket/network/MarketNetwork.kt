@@ -698,12 +698,22 @@ data class HistoryEntry(
     val sellerName: String,
     val timestamp: Long,
     /** 精灵名上色用（`cobblemon.type.fire` 这种 key，形态感知）：物品记录与旧记录为空串 */
-    val primaryType: String = ""
+    val primaryType: String = "",
+    /**
+     * **物品名上色用**：稀有度枚举名（`COMMON`/`UNCOMMON`/`RARE`/`EPIC`）。
+     *
+     * 物品没有 `primaryType` 那样的现成字段 —— 界面只有 itemId 时只能拿 `defaultStack` 取默认栈的
+     * 稀有度，「附魔把稀有度顶上去」那一档就丢了（物品栏里是黄的、历史里是白的，用户 2026-09-26 报）。
+     * 服务端在产生记录时（手上还有 nbt）算好，随记录一起存。
+     * ⚠ **末尾追加 + 默认值**：精灵记录与旧记录为空串 → 界面退回按 itemId 取色（行为不变）。
+     */
+    val itemRarity: String = ""
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeString(type); buf.writeString(category); buf.writeString(species); buf.writeInt(price); buf.writeString(
             buyerName
         ); buf.writeString(sellerName); buf.writeLong(timestamp); buf.writeString(primaryType)
+        buf.writeString(itemRarity)
     }
 
     companion object {
@@ -716,7 +726,8 @@ data class HistoryEntry(
             buyerName = buf.readString(),
             sellerName = buf.readString(),
             timestamp = buf.readLong(),
-            primaryType = buf.readString()
+            primaryType = buf.readString(),
+            itemRarity = buf.readString()
         )
     }
 }
@@ -2875,7 +2886,13 @@ object MarketNetwork {
                             (r.buyerUuid == null && r.buyerName == player.name.string) ||
                             (r.sellerUuid == com.shusheng.cobblemarket.event.LEGACY_RECORD_UUID && r.buyerName == player.name.string))
                     ) "BUY" else r.type.name
-                    HistoryEntry(t, r.category.name, r.species, r.price, r.buyerName, r.sellerName, r.timestamp, r.primaryType)
+                    HistoryEntry(
+                        t, r.category.name, r.species, r.price, r.buyerName, r.sellerName, r.timestamp,
+                        r.primaryType,
+                        // 物品名上色用：稀有度**就存在详情列里**（产生记录时手上还有 nbt，见 RecordDetail.item）
+                        // ⇒ 这里只提取那段短字符串发下去，不把整个详情列塞进 payload
+                        com.shusheng.cobblemarket.util.RecordDetail.rarityFromDetail(r.detail)
+                    )
                 }
                 sendToPlayer(player, HistoryDataPayload(entries))
             }
