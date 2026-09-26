@@ -467,6 +467,7 @@
   "cobblemarket.gui.lv": "Lv.",
   "cobblemarket.gui.no_listings": "暂无上架。",
   "cobblemarket.gui.tooltip_type": "属性：",
+  "cobblemarket.gui.tooltip_tera": "（太晶：%s）",
   "cobblemarket.gui.tooltip_ball": "球种：",
   "cobblemarket.gui.tooltip_nature": "性格：",
   "cobblemarket.gui.tooltip_ability": "特性：",

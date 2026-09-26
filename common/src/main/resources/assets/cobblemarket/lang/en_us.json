@@ -467,6 +467,7 @@
   "cobblemarket.gui.lv": "Lv.",
   "cobblemarket.gui.no_listings": "No listings found.",
   "cobblemarket.gui.tooltip_type": "Type: ",
+  "cobblemarket.gui.tooltip_tera": " (Tera: %s)",
   "cobblemarket.gui.tooltip_ball": "Ball: ",
   "cobblemarket.gui.tooltip_nature": "Nature: ",
   "cobblemarket.gui.tooltip_ability": "Ability: ",
