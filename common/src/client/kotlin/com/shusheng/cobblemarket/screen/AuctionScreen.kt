@@ -1872,7 +1872,7 @@ class AuctionScreen(
             // 名字区最坏到 141px（名字截断 46px + 星 + 性别 + 携带物 + 体型徽章，起点 leftX+40），
             // 149 再留 8px 余量。倒计时紧跟其右，价格区异常宽时整块左移兜底
             val remaining = com.shusheng.cobblemarket.util.RemainingTime.text(entry.endsAt, "cobblemarket.auction.ending")
-            val remainingColor = if (entry.endsAt - System.currentTimeMillis() < 5 * 60 * 1000) 0xFF6666 else 0xAAAAAA
+            val remainingColor = com.shusheng.cobblemarket.util.RemainingTime.color(entry.endsAt)
             val remW = textRenderer.getWidth(remaining)
             val avatarX = leftX + 149
             val shift = maxOf(0, avatarX + 20 + remW - (priceX - 16 - 6))
@@ -2044,9 +2044,11 @@ class AuctionScreen(
             priceLine.append(Text.literal("  ×${entry.bidCount}").formatted(Formatting.GRAY))
         else priceLine) to 0xFFFFFF)
         lines.add(
+            // ⚠ 颜色与行内**同源**（RemainingTime.color）：行里不足 5 分钟是红色告警，
+            //   悬停窗原来固定白 ⇒ 最该显眼的那一行反而没提示（用户 2026-09-26 报）
             Text.translatable("cobblemarket.auction.ends").append(
                 com.shusheng.cobblemarket.util.RemainingTime.text(entry.endsAt, "cobblemarket.auction.ending")
-            ) to 0xFFFFFF)
+            ) to com.shusheng.cobblemarket.util.RemainingTime.color(entry.endsAt))
         if (entry.currentBidderName.isNotEmpty()) {
             lines.add(Text.translatable("cobblemarket.auction.leader").append(entry.currentBidderName) to 0xFFDD66)
         }
@@ -2148,9 +2150,11 @@ class AuctionScreen(
             priceLine.append(Text.literal("  ×${entry.bidCount}").formatted(Formatting.GRAY))
         else priceLine) to 0xFFFFFF)
         lines.add(
+            // ⚠ 颜色与行内**同源**（RemainingTime.color）：行里不足 5 分钟是红色告警，
+            //   悬停窗原来固定白 ⇒ 最该显眼的那一行反而没提示（用户 2026-09-26 报）
             Text.translatable("cobblemarket.auction.ends").append(
                 com.shusheng.cobblemarket.util.RemainingTime.text(entry.endsAt, "cobblemarket.auction.ending")
-            ) to 0xFFFFFF)
+            ) to com.shusheng.cobblemarket.util.RemainingTime.color(entry.endsAt))
         if (entry.currentBidderName.isNotEmpty()) {
             lines.add(Text.translatable("cobblemarket.auction.leader").append(entry.currentBidderName) to 0xFFDD66)
         }
