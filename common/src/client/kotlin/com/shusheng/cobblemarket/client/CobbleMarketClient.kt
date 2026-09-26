@@ -1212,9 +1212,13 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext, onTop: Boole
             val dt = if (hudPointsDiff > 0) "+${formatBalanceLong(hudPointsDiff)}" else formatBalanceLong(hudPointsDiff)
             val dc = if (hudPointsDiff > 0) 0x55FF55 else 0xFF5555
             val dw = client.textRenderer.getWidth(dt)
-            // ⚠ 紧跟**本行**余额数字之后，不是框右边缘 —— 框宽按最长那行算，
-            //   短行的数字离框边还差一大截，用框边会让浮字飘在半空（2026-09-18 用户指出）
-            val rx = hudX + 5 + pointsTextW + 4
+            // ⚠ 贴**框右缘之外**（2026-09-26 用户报：用 RP 购买时那条红字落在背景框**里面**）。
+            //   框宽按两行里**最长**的那行算（见上面 hudW），而从"本行数字右缘"起画的话，
+            //   短行（通常是 RP 行）的浮字必然落在框内 —— 用 RP 购买时变的正是 RP 行。
+            //   ⚠ 2026-09-18 那条「贴框边会让浮字飘在半空」是针对**当时只有一行**说的：
+            //     那时框宽 = 该行宽度，贴框边就等于紧跟数字；加了 RP 行之后这个前提不成立了。
+            //     统一贴框右缘还有个好处：两行的浮字对齐在同一条竖线上。
+            val rx = hudX + hudW + 4
             val dx2 = if (rx + dw <= context.scaledWindowWidth) rx else (hudX - 4 - dw).coerceAtLeast(0)
             context.drawTextWithShadow(client.textRenderer, dt, dx2, pointsRowY, dc)
         }
@@ -1227,9 +1231,9 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext, onTop: Boole
         // 会把浮字整条推出屏幕。按「右侧实际放得下」判断，而不是「HUD 中心落在哪半边」：
         // 后者会把整个右半屏（含吸附到屏幕中心的 HUD）都判成左侧
         val diffW = client.textRenderer.getWidth(diffText)
-        // 同上：紧跟主货币那行自己的数字，而不是框右边缘（框宽现在按最长行算，加了 RP 行后
-        // 主行常常不是最长的那行）
-        val rightX = hudX + 5 + textW + 4
+        // 同上：贴**框右缘之外**（理由见上面 RP 行那处）—— 主行不是最长行时（RP 比主货币长），
+        // 从"本行数字右缘"起画同样会落进框里
+        val rightX = hudX + hudW + 4
         val diffX = if (rightX + diffW <= context.scaledWindowWidth) rightX
         else (hudX - 4 - diffW).coerceAtLeast(0)
         context.drawTextWithShadow(client.textRenderer, diffText, diffX, hudY + textDy, diffColor)

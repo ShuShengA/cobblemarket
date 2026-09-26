@@ -7,8 +7,10 @@ import com.cobblemon.mod.common.pokemon.PokemonSizeCategory
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.cobblemon.mod.common.pokemon.Species
 import com.shusheng.cobblemarket.client.ClientPermissionCache
+import com.shusheng.cobblemarket.client.ItemComponentsDisplay
 import com.shusheng.cobblemarket.client.PointMarketCache
 import com.shusheng.cobblemarket.client.PointsShopCache
+import com.shusheng.cobblemarket.client.drawItemWithBar
 import com.shusheng.cobblemarket.client.formatPriceShortLong
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
@@ -46,6 +48,7 @@ import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.item.ItemStack
+import net.minecraft.item.tooltip.TooltipType
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.registry.Registries
 import net.minecraft.text.Text
@@ -152,7 +155,15 @@ class PointsMarketScreen : Screen(
     private var buyCryAt = 0L
 
     /** 预览用的精灵图标状态（购买窗自己一份，别与编辑窗共用 —— 两个窗口不会同时开，但共用会串味） */
-    private val buyPreviewState = FloatingState()
+    /**
+     * 购买窗预览的姿态状态。
+     *
+     * ⚠ **换精灵时必须整个换新**（见 [openBuyDialog]）：`PokemonIconRenderer` 会把当前模型 /
+     *   动画 locator 写进 state，复用同一个就会把**上一只的动作**带过来 ——
+     *   用户 2026-09-26 实测：「动画刚开始播就退出界面、立刻点另一只 ⇒ 新那只模仿旧那只的动作」。
+     *   叫声没串是因为它走的是 `renderable` 参数，动作走 state。
+     */
+    private var buyPreviewState = FloatingState()
 
     /**
      * 预览图标的屏幕位置 —— **渲染时记录**（见 [renderBuyPreview]），关窗时拿去当庆祝动画的起点。
@@ -458,7 +469,8 @@ class PointsMarketScreen : Screen(
     private var editSpeciesCandidates = listOf<Species>()
     private var editSpeciesIndex = 0
     private var editPreview: RenderablePokemon? = null
-    private val editPreviewState = FloatingState()
+    /** 编辑窗预览的姿态状态 —— ⚠ 换物种时要整个换新，见 [applyEditSpecies]（与 [buyPreviewState] 同一个坑） */
+    private var editPreviewState = FloatingState()
 
     // ── 窗口草稿（字段与 ShopPokemonSpec 一一对应；提交时整份拼成 ShopEntry）──
 
@@ -509,9 +521,52 @@ class PointsMarketScreen : Screen(
     private var editMarks = emptyList<String>()
 
     // 物品窗口选中的物品（id + 组件快照 + 显示名；显示名只是给人看的，不进存档）
+    // ⚠ 一律走 [setEditItem] 赋值，别直接改这三个 —— 大图的缓存靠它刷新
     private var editItemId = ""
     private var editItemName = ""
     private var editItemComponents: NbtCompound? = null
+
+    /**
+     * 右侧那张**物品大图**要画的栈（从上面三个字段重建好的，见 [setEditItem]）。
+     *
+     * ⚠ 必须缓存：重建要反序列化组件快照（[rebuildItemStack]），**每帧现算**等于给每个渲染帧
+     * 白加一次物品反序列化 —— 商城格子、购买窗那边都是缓存着画的。
+     */
+    private var editItemPreviewStack: ItemStack? = null
+
+    /**
+     * 大图**左侧**那列词条的缓存 —— 见 [itemInfoLines]。
+     *
+     * 键是「栈 + 展开档位」：栈换了（选了别的物品）或 Shift / Ctrl 状态变了才重建；
+     * **两个都要比** —— 只比栈的话，按住 Shift 永远不会展开（档位变了栈没变）。
+     */
+    private var itemInfoCacheStack: ItemStack? = null
+    private var itemInfoCacheType: TooltipType? = null
+    private var itemInfoCacheLines: List<Pair<Text, Int>> = emptyList()
+
+    /**
+     * 物品窗的**物品搜索框** —— 用户 2026-09-26 定：**直接长在界面上**，不再是「物品：无」按钮点开列表。
+     * 输入即展开候选列表（照添加精灵窗的物种搜索框那个形态）。
+     */
+    private var editItemSearchField: TextFieldWidget? = null
+
+    /** 物品搜索框里的词（resize 重建时恢复输入用，同 [editSpeciesText] 那套） */
+    private var editItemSearchText = ""
+
+    /**
+     * 物品窗「取手持物品」那枚小手 —— 常驻在**搜索框左侧**（用户 2026-09-26 点名要那个位置观感）。
+     * ⚠ 它必须进 [updateEditControlsVisibility] 的**白名单**：列表展开时别的控件全藏，
+     *   唯独搜索框与它得留着（藏了就点不到、也搜不了）。
+     */
+    private var editItemHeldButton: NineSliceButton? = null
+
+    /**
+     * 程序性设搜索框文本时置位 —— 挡掉 changedListener。
+     *
+     * 选中一条候选后要把框里的词换成**那件物品的名字**，而 `TextFieldWidget.text =` 会同步触发
+     * 监听器 ⇒ 不挡的话这次"回填"又被当成用户在打字，列表立刻弹回来（选中即重开，死循环观感）。
+     */
+    private var editItemSearchSyncing = false
 
     /** 四个技能槽的逗号串（空槽是空串，见 [MoveText]） */
     private var editMoves = ""
@@ -798,6 +853,12 @@ class PointsMarketScreen : Screen(
         //   窗口开着就按草稿重建一份，别让它凭空消失、主控件又冒回来
         if (editSlot >= 0) {
             hideMainControls()
+            // ⚠ **基线归位**（2026-09-26 修）：resize 刚把 children 整个清空过，而 `editWidgetBase`
+            //   还停在上一次建编辑窗时的数值 —— [buildEditDialog] 开头正是拿它判断"要不要清理旧控件"，
+            //   这一轮主控件数只要比上次多，`drop(editWidgetBase)` 就会**误删刚建出来的那一个**
+            //   （表现成某个主按钮凭空消失）。归到"当前已有控件数"后那个判断自然为假
+            //   （`size in 0 until size`），清理分支只在真该清的时候（[openEditDialog] 那条路）才走
+            editWidgetBase = children().size
             buildEditDialog()
         }
         // 购买窗同理 —— 不重建的话 resize 后它凭空消失、主控件又冒回来
@@ -813,6 +874,15 @@ class PointsMarketScreen : Screen(
             rebuildSnapshotDialog()
             // 再藏一次编辑窗那批：buildEditDialog 把它们建出来时是可见的
             updateEditControlsVisibility()
+        }
+        // 展开的选项列表**同属这一类漏网**（2026-09-26 修）：它的「返回」/「清空」按钮与那条搜索框
+        // 都不是 [buildEditDialog] 建的 ⇒ resize 清空 children 后不会自己回来。
+        // 而**候选行是自绘的**、照常画 ⇒ 表现是「列表还在，但底下那枚「返回」没了」，只能按 Esc 退。
+        // ⚠ 必须排在 [buildEditDialog] 之后（同上面快照弹窗那条）：那一句会卸掉 `editWidgetBase`
+        //   之后建的控件，排在前面等于白建一场
+        if (editSlot >= 0 && optionListKind != null) {
+            buildOptionSearchField()
+            rebuildOptionList()
         }
     }
 
@@ -912,8 +982,10 @@ class PointsMarketScreen : Screen(
         // 展开的列表：行是**自绘**的（要画物品图标），命中判定得自己来
         if (optionListKind != null) {
             // ⚠ 搜索框**优先**：点在它上面就直接放行，不再往列表行上判 ——
-            //   列表行的命中只看坐标，压在搜索框底下的那行会被误伤（点到输入框却选中了行）
+            //   列表行的命中只看坐标，压在搜索框底下的那行会被误伤（点到输入框却选中了行）。
+            //   物品窗那条搜索框**常驻在界面上**（见 [buildItemFields]），同样要放行
             if (optionSearchField?.isMouseOver(mouseX, mouseY) == true) return true
+            if (editItemSearchField?.isMouseOver(mouseX, mouseY) == true) return true
             if (!result && button == 0) clickOptionRow(mouseX, mouseY)
             focused = null
             return true
@@ -997,9 +1069,16 @@ class PointsMarketScreen : Screen(
         return super.keyPressed(keyCode, scanCode, modifiers)
     }
 
-    /** 窗口里**全部**输入框（固定区三个 + 滚动区那一串）—— 失焦判定两处共用，别各列一份 */
+    /**
+     * 窗口里**全部**输入框（固定区那几个 + 滚动区那一串）—— 失焦判定两处共用，别各列一份。
+     *
+     * ⚠ **物品窗的搜索框在这份清单里**（它也是固定区的一个输入框）：漏了它，
+     *   `isOverEditInput` 就认不出它 ⇒ 焦点在搜索框上时**点搜索框自己**会被判成"点了别处"而失焦
+     *   （想点进去挪光标，结果每次都掉出来）。
+     */
     private fun allEditFields(): List<TextFieldWidget?> =
-        listOf(editSpeciesField, editPriceField, editStockField) + scrollableFields().map { it.first }
+        listOf(editSpeciesField, editItemSearchField, editPriceField, editStockField) +
+            scrollableFields().map { it.first }
 
     private fun isEditInputFocused(): Boolean = allEditFields().any { it != null && focused === it }
 
@@ -1310,6 +1389,32 @@ class PointsMarketScreen : Screen(
      */
     private fun editRowRightX(): Int = editColX(editCols() - 1) + editColW()
 
+    // ── 两处「按最宽文案加宽」（用户 2026-09-26）────────────────────────
+    //
+    // ⚠ 字段列宽 [editColW]（82px）是**按中文**定的，英文那边放不下、被截断：
+    //   ·「Shiny: Chance 50%」= 102px ⇒ 购买窗的闪光行截成「Shiny: Chance …」
+    //   ·「Move 1: Sword Dance」= 114px ⇒ 技能按钮截成「Sword…」
+    //   这两处各自有横向余量（闪光那行右边空着一格、技能行左右各空一格），所以**就地加宽** ——
+    //   整张网格的列宽动不得，那会牵动建控件 / 滚动重摆 / 命中判定 / 悬停窗四五处。
+
+    /** 技能槽按钮的宽度：4 个**平分整行**（原来只占中间 4 格，左右各空一格） */
+    private fun skillButtonW(): Int =
+        (editRowRightX() - editColX(0) - EDIT_COL_GAP * (MoveText.SLOTS - 1)) / MoveText.SLOTS
+
+    /** 第 [slot] 个技能按钮的左缘 */
+    private fun skillButtonX(slot: Int): Int = editColX(0) + slot * (skillButtonW() + EDIT_COL_GAP)
+
+    /**
+     * 字段按钮的左缘 / 宽度 —— **建控件（[editFieldButton]）与滚动重摆（[applyEditScroll]）必须共用**。
+     * 技能槽占满整行、其余走列网格；各算一份的话一滚动技能按钮就跳回中间那 4 格（本项目的老坑）。
+     */
+    private fun fieldButtonX(key: String): Int =
+        if (key.startsWith(KEY_SKILL)) skillButtonX(key.removePrefix(KEY_SKILL).toIntOrNull() ?: 0)
+        else editColX(editColOf(key))
+
+    private fun fieldButtonW(key: String): Int =
+        if (key.startsWith(KEY_SKILL)) skillButtonW() else editColW()
+
     /**
      * 「下架」按钮的**顶边**：让它**距顶 = 距右**（用户 2026-09-20 定）。
      *
@@ -1395,9 +1500,17 @@ class PointsMarketScreen : Screen(
     private fun editScrollViewHeight(): Int =
         (editDialogHeight() - EDIT_ROWS_TOP - EDIT_BOTTOM_BLOCK).coerceAtLeast(EDIT_ROW_STEP)
 
-    /** 滚动上限（物品窗口没有字段网格，行数为 0，自然就不出现滚动空间） */
-    private fun editMaxScroll(): Int =
-        (editRowCount() * EDIT_ROW_STEP - editScrollViewHeight()).coerceAtLeast(0)
+    /**
+     * 滚动上限。
+     *
+     * ⚠ **物品窗恒为 0**：它没有字段网格，而右侧那张物品大图的 Y 落在 [editRowY] 上
+     * （见 [editPreviewY]）⇒ 留着滚动空间等于让大图能被滚出窗口。
+     * 原先只靠"算出来恰好 ≤ 0"兜着（矮屏被钳制时就不成立了），这里显式钉死。
+     */
+    private fun editMaxScroll(): Int {
+        if (!isPokemonSlot()) return 0
+        return (editRowCount() * EDIT_ROW_STEP - editScrollViewHeight()).coerceAtLeast(0)
+    }
 
     /** 第 [row] 行（两列字段）的顶边 —— **建控件与渲染共用这一个**，滚动偏移也在这里生效 */
     private fun editRowY(row: Int): Int =
@@ -1415,7 +1528,17 @@ class PointsMarketScreen : Screen(
      * ⚠ 建控件（[buildEditDialog]）与画标签（[renderEditDialogBackground]）**两处都走这里**，
      *   各算一份必然错开（本项目连踩多次的老坑）。
      */
-    private fun editPriceGroupW(): Int = editColW() * 2 + EDIT_COL_GAP
+    /**
+     * 价格 / 库存**单格**的宽度 —— 取 **1.5 个字段列**。
+     *
+     * ⚠ 用户 2026-09-26 报：原来按 1 列算，输入框只剩 `editColW - EDIT_LABEL_W`（82-32 ≈ 50px），
+     *   **一次放不下价格的最大位数**（12 位 ≈ 72px，输入框会横向滚动、看不见填了几位）。
+     *   两格各让出半列 ⇒ 输入框有 91px（15 位），整组仍是"2 格 + 1 间隔"的格局，
+     *   [editPriceGroupX] 的居中算法不用动。
+     */
+    private fun editPriceColW(): Int = editColW() * 3 / 2
+
+    private fun editPriceGroupW(): Int = editPriceColW() * 2 + EDIT_COL_GAP
 
     private fun editPriceGroupX(): Int =
         editDialogX() + EDIT_PAD + (editDialogW() - EDIT_PAD * 2 - editPriceGroupW()) / 2
@@ -1472,6 +1595,9 @@ class PointsMarketScreen : Screen(
         editSpeciesPrev = null
         editSpeciesNext = null
         editSpeciesClear = null
+        editItemSearchField = null
+        editItemHeldButton = null
+        editItemSearchSyncing = false
         editConfirmButton = null
         editRemoveButton = null
         editButtons.clear()
@@ -1548,6 +1674,9 @@ class PointsMarketScreen : Screen(
         // ⚠ 购买窗**不滚动**（只读文本自己画，没有控件要挪），但 [editRowY] 会减去这个偏移 ——
         //   编辑窗滚过之后再开购买窗，整片字段会跟着上移错位，所以这里必须清零
         editContentScroll = 0
+        // ⚠ **整个换新**：上一只的模型 / 动画 locator 记在 state 里，不换的话新那只会上演**上一只的动画**
+        //   （用户 2026-09-26：动画刚开播就退出、立刻点另一只 ⇒ 新那只模仿旧那只的动作）
+        buyPreviewState = FloatingState()
         hideMainControls()
         buildBuyDialog()
         // 开窗自动叫一声（延迟到渲染之后再播，见 IconCryClick）
@@ -1860,7 +1989,13 @@ class PointsMarketScreen : Screen(
             drawBuyField(
                 context, editColX(col), editRowY(row), editColW(), buyFieldLine(key, spec),
                 // 头目那行的标签是**徽章贴图**（与编辑窗按钮、列表行同一张），得单独画；其余字段没有
-                badge = if (key == KEY_ALPHA) "alpha" else null
+                badge = if (key == KEY_ALPHA) "alpha" else null,
+                // 球种 / 携带物画**物品图标**（携带物关掉可见性时不画，与商城格子同一个口径）
+                icon = when (key) {
+                    KEY_HELD -> if (spec.heldItemVisible) stackOfSpec(spec.heldItemSpec) else ItemStack.EMPTY
+                    KEY_BALL -> spec.ball?.let { itemStackOf(it) }
+                    else -> null
+                }
             )
         }
         // 六项个体值 / 努力值：一行六个（与编辑窗同一行、同一列序）。
@@ -1879,7 +2014,9 @@ class PointsMarketScreen : Screen(
                 )
             }
         }
-        // 四个技能槽：居中一行（与编辑窗同一行）
+        // 四个技能槽：**居中一行**（与编辑窗同一行，但**宽度不跟编辑窗走**）——
+        // 编辑窗那 4 个是按钮，占满整行是为了放下长技能名（`Move 1: Sword Dance`）；
+        // 这里只是文字，居中更好看（用户 2026-09-26 定）。
         if (editRowVisible(skillRow())) {
             val skills = MoveText.slotIds(spec.moves)
             for (i in 0 until MoveText.SLOTS) {
@@ -1976,24 +2113,22 @@ class PointsMarketScreen : Screen(
         )
     }
 
-    /** 物品格：名称 + 组件数（物品的可展示信息本来就少，剩下的靠底下的物品图标） */
+    /** 物品格：右侧大图 + 大图**左侧**那一列词条（物品名 + 附魔 / 招式 / 自定义名 / 耐久） */
     private fun renderBuyItemFields(context: DrawContext, entry: ShopEntry) {
         val spec = entry.item ?: return
-        // 物品名画在与精灵「名字行」**同一个位置**（就是编辑窗那条物种搜索框）——
-        // 两种格子点开后的"第一眼信息"落在同一处，看着才是一套
-        drawBuyField(
-            context,
-            editDialogX() + EDIT_PAD,
-            editDialogY() + EDIT_SPECIES_Y,
-            editDialogW() - EDIT_PAD * 2,
-            itemLine(spec)
-        )
+        // ⚠ 原来这里还画了一行「物品：xxx」（占着左上角那条物种搜索框的位置）——
+        //   自从大图左侧上了**词条列**（第一行就是物品名），它就纯属重复了（用户 2026-09-26 指出）。
+        //   精灵格那边仍保留名字行：它的名字带着属性色 + 闪光星标 + Lv，词条列里没有这些。
         // 物品图标（大图）：画在右侧预览区同一位置，玩家能看清附魔/改名的样子
         val icon = cellIcon(buySlot, entry).stack ?: return
         val slotSize = editPreviewSize()
         val slotX = editPreviewSlotX()
         val slotY = editPreviewSlotY()
-        drawPokemonSlot(context, slotX, slotY, slotSize)
+        // ⚠ **不画 [drawPokemonSlot]** —— 与添加物品窗同一个口径（见 [renderEditItemPreviewSlot]）：
+        //   那是给精灵站的底座（影子 + 地面），物品是 16×16 贴图放大、自己就是个方块，垫一层只显得脏
+        // 大图**左侧**那列词条：**与添加物品窗共用同一个** [renderItemInfoLines]
+        // （两个窗口不会同时开，所以那份词条缓存也是共用的，不必各存一份）
+        renderItemInfoLines(context, icon, slotX, slotY, slotSize)
         // 记下位置（买下时庆祝动画从这里起飞）—— 渲染时记录，与实际画出来的必然一致
         buyItemIconOrigin = com.shusheng.cobblemarket.client.ItemCelebrationAnimation.Origin.ofIcon(
             x = slotX, y = slotY, size = slotSize
@@ -2003,35 +2138,37 @@ class PointsMarketScreen : Screen(
         context.matrices.push()
         context.matrices.translate((slotX + slotSize / 2f).toDouble(), (slotY + slotSize / 2f).toDouble(), 0.0)
         context.matrices.scale(scale, scale, 1f)
-        context.drawItem(icon, -8, -8)
+        // ⚠ 走 [drawItemWithBar]（本项目画物品图标的**唯一入口**）：它顺带画耐久条，
+        //   条在缩放矩阵下会跟着等比放大（庆祝动画 / 悬停大图都是这么做的）
+        drawItemWithBar(context, icon, -8, -8)
         context.matrices.pop()
     }
 
     /**
      * 底部一行：单价 / 剩余 / 数量（物品格）/ 总价。
      *
-     * ⚠ **四项等分整个窗口宽度**，不按上面那 6 列摆 —— 字段网格的列宽是给「标签 + 短值」用的，
+     * ⚠ **不按上面那 6 列摆** —— 字段网格的列宽是给「标签 + 短值」用的，
      * 而这一行每项都带一个**金额 + 图标**（`单价：▣9,999`），按列宽摆必然溢出。
+     * ⚠ 横向位置是**四等分**（见 [buyColW]），位置一律走 [buyStockLabelX] / [buyCountLabelX]，
+     * **别在这儿另算一份**。
      */
     private fun renderBuyPriceRow(context: DrawContext, entry: ShopEntry) {
         val y = editPriceRowY() + (EDIT_ROW_H - 8) / 2
-        val slotW = (editDialogW() - EDIT_PAD * 2) / 4
-        val x0 = editDialogX() + EDIT_PAD
         context.drawTextWithShadow(
             textRenderer,
             Text.translatable(
                 "cobblemarket.points.store.buy_price",
                 CurrencyService.amountText(entry.price, MarketCurrency.POINTS)
             ),
-            x0, y, 0xFFFFFF
+            buyRowLeft(), y, 0xFFFFFF
         )
-        // 「剩余」那一列：**能管这一格的人**在这儿是个可编辑的输入框（见 [buildBuyDialog]），
+        // 「剩余」那一格：**能管这一格的人**在这儿是个可编辑的输入框（见 [buildBuyDialog]），
         // 所以只画标签、值交给控件；普通玩家仍是不可编辑的「剩余：N」
         if (buyCanRemove) {
             context.drawTextWithShadow(
                 textRenderer,
                 Text.translatable("cobblemarket.points.store.buy_stock_label"),
-                x0 + slotW, y, 0xFFFFFF
+                buyStockLabelX(), y, 0xFFFFFF
             )
         } else {
             context.drawTextWithShadow(
@@ -2041,44 +2178,74 @@ class PointsMarketScreen : Screen(
                     if (entry.stock == ShopEntry.UNLIMITED) Text.translatable("cobblemarket.points.store.value.unlimited")
                     else Text.literal(entry.stock.toString())
                 ),
-                x0 + slotW, y, 0xFFFFFF
+                buyStockLabelX(), y, 0xFFFFFF
             )
         }
         // 数量 / 总价：**只有物品格有**（精灵格买一次就是一只，显示总价只是把单价重复一遍）
         if (entry.kind != ShopEntry.KIND_POKEMON) {
+            // ⚠ 标签位置与建控件（[buyCountX]）**同源**，别在这儿再算一遍第 3 格起点
             context.drawTextWithShadow(
-                textRenderer, Text.translatable("cobblemarket.points.store.buy_count"), x0 + slotW * 2, y, 0xFFFFFF
+                textRenderer, Text.translatable("cobblemarket.points.store.buy_count"), buyCountLabelX(), y, 0xFFFFFF
             )
             val total = entry.price * buyCount.coerceAtLeast(1)
-            context.drawTextWithShadow(
-                textRenderer,
-                Text.translatable(
-                    "cobblemarket.points.store.buy_total",
-                    CurrencyService.amountText(total, MarketCurrency.POINTS)
-                ),
-                x0 + slotW * 3, y, 0xFFFFFF
+            // 「总价」**就在这一行**（用户 2026-09-26 澄清：不是新起一行），只是水平位置
+            //   **居中于购买 / 取消那一对按钮**，而不是居中于窗口 —— 这一行是四项等分铺满的，
+            //   居中于窗口会直接压在「剩余 / 数量」那两格上（第一版就是这么错的重叠）。
+            // ⚠ 这是混排行（汉字 + 金额 + 货币图标），别用 drawCenteredTextWithShadow
+            //   —— 它会让行首汉字高一点（项目踩过的坑），算好 x 再画。
+            val totalText = Text.translatable(
+                "cobblemarket.points.store.buy_total",
+                CurrencyService.amountText(total, MarketCurrency.POINTS)
             )
+            val btnLeft = editDialogX() + editDialogW() - EDIT_PAD - BUY_BTN_W * 2 - BUTTON_GAP
+            val btnCenter = btnLeft + (BUY_BTN_W * 2 + BUTTON_GAP) / 2
+            // 居中之后**再往右顶到「数量」输入框之后**：金额特别长时居中的结果会压到那个框上，
+            // 宁可让它超出窗口右缘（金额极大时的既有风险），也不能盖住别人家的控件
+            val totalX = (btnCenter - textRenderer.getWidth(totalText) / 2)
+                .coerceAtLeast(buyCountX() + BUY_COUNT_W + 4)
+            context.drawTextWithShadow(textRenderer, totalText, totalX, y, 0xFFFFFF)
         }
     }
 
+    // ── 购买窗底部那一行的横向位置（**四等分**）──
+    //
+    // ⚠ 用户 2026-09-26 定：**单价 / 剩余 / 数量 这三个的位置不许动** ——
+    //   中间试过一版"单价吃剩余、另两格按最宽内容给足"，位置一乱他一眼就看出来了（截图比对）。
+    //   所以这里一律回到等分：第 1 格单价、第 2 格剩余、第 3 格数量（总价已搬到按钮上方自成一行）。
+
+    /** 底部一行的格宽（四等分；总价搬走之后第 4 格空着） */
+    private fun buyColW(): Int = (editDialogW() - EDIT_PAD * 2) / 4
+
+    private fun buyRowLeft(): Int = editDialogX() + EDIT_PAD
+
+    /** 「剩余」标签（或只读值）的左缘 = 第 2 格 */
+    private fun buyStockLabelX(): Int = buyRowLeft() + buyColW()
+
     /**
-     * 库存框的 x：「剩余：」标签的**右缘**（那一列从「剩余：」标签之后开始）。
+     * 库存框的 x：「剩余：」标签的**右缘**（那一格从标签之后开始）。
      * ⚠ 渲染（[renderBuyPriceRow]）与建控件（[buildBuyDialog]）**共用这个函数** ——
      *   各算一份必然错位（本项目反复踩过）。
      */
     private fun buyStockFieldX(): Int =
-        editDialogX() + EDIT_PAD + (editDialogW() - EDIT_PAD * 2) / 4 +
-            textRenderer.getWidth(Text.translatable("cobblemarket.points.store.buy_stock_label"))
+        buyStockLabelX() + textRenderer.getWidth(Text.translatable("cobblemarket.points.store.buy_stock_label"))
 
-    /** 库存框宽度：那一列**扣掉标签之后**剩下的宽度，别顶到下一列的「数量」上 */
+    /** 库存框宽度：那一格**扣掉标签之后**剩下的宽度，别顶到下一格的「数量」上 */
     private fun buyStockFieldW(): Int =
-        ((editDialogW() - EDIT_PAD * 2) / 4 -
-            textRenderer.getWidth(Text.translatable("cobblemarket.points.store.buy_stock_label")) - 4)
+        (buyColW() - textRenderer.getWidth(Text.translatable("cobblemarket.points.store.buy_stock_label")) - 4)
             .coerceAtLeast(16)
 
-    /** 数量输入框的 x：「数量：」标签之后（与 [renderBuyPriceRow] 的第 3 格同一套算法，别各算一份） */
+    /** 「数量：」标签的左缘 —— 接在「剩余」那格之后，再让开 [BUY_COUNT_LABEL_GAP] 别贴死左边的框 */
+    private fun buyCountLabelX(): Int = buyRowLeft() + buyColW() * 2 + BUY_COUNT_LABEL_GAP
+
+    /**
+     * 数量输入框的 x：紧贴「数量：」标签之后 —— **用标签的实际宽度**，不是 [EDIT_LABEL_W]。
+     *
+     * ⚠ `EDIT_LABEL_W` 是编辑窗「价格 / 库存」那对标签的宽度（32，按最长的英文 `Stock` 留的），
+     *   与「数量：」无关；照它偏移会让标签右缘到输入框之间空出一大截（用户 2026-09-26 报：
+     *   「数量」离自己的输入框太远）。渲染（[renderBuyPriceRow]）与建控件（[buildBuyDialog]）共用这一个。
+     */
     private fun buyCountX(): Int =
-        editDialogX() + EDIT_PAD + (editDialogW() - EDIT_PAD * 2) / 4 * 2 + EDIT_LABEL_W
+        buyCountLabelX() + textRenderer.getWidth(Text.translatable("cobblemarket.points.store.buy_count")) + 4
 
     /**
      * 一行只读字段（**标签冒号写在词条里**，这里只负责截断与摆放）。
@@ -2089,7 +2256,8 @@ class PointsMarketScreen : Screen(
     private fun drawBuyField(
         context: DrawContext, x: Int, y: Int, w: Int, line: Text,
         color: Int = 0xFFFFFF,
-        badge: String? = null
+        badge: String? = null,
+        icon: ItemStack? = null
     ) {
         var textX = x
         var textW = w
@@ -2101,9 +2269,16 @@ class PointsMarketScreen : Screen(
             textW -= badgeW + 2
         }
         // ⚠ 截断用 truncateStyled：truncateText 会把 Text 压成一段、丢掉图标字形的字体样式
-        context.drawTextWithShadow(
-            textRenderer, TextUtil.truncateStyled(line, textW), textX, y + (EDIT_ROW_H - 8) / 2, color
-        )
+        val text = TextUtil.truncateStyled(line, textW)
+        context.drawTextWithShadow(textRenderer, text, textX, y + (EDIT_ROW_H - 8) / 2, color)
+        // [icon] = **行尾物品图标**（携带物 / 球种用）：这两个字段的值是物品，画名字会放不下
+        //（「附魔金苹果」这类长名，一格只有 82px）—— 与编辑窗按钮上那个图标同一套画法
+        if (icon != null && !icon.isEmpty) {
+            drawItemWithBar(
+                context, icon,
+                textX + textRenderer.getWidth(text) + 2, y + (EDIT_ROW_H - 16) / 2
+            )
+        }
     }
 
     /** 一个字段的只读文本；返回空文本 = 这项不显示 */
@@ -2112,17 +2287,11 @@ class PointsMarketScreen : Screen(
         val default = Text.translatable("cobblemarket.points.store.value.default")
         val none = Text.translatable("cobblemarket.points.store.value.none")
         return when (key) {
-            KEY_SHINY -> Text.translatable(
-                "cobblemarket.points.store.field.shiny",
-                when {
-                    "shiny" in spec.aspects -> Text.translatable("cobblemarket.points.store.value.shiny")
-                    // 概率带百分号（用户 2026-09-25 报：原来只显示「按概率出50」，没有 %）
-                    spec.shinyChance > 0f -> Text.translatable(
-                        "cobblemarket.points.store.value.shiny_chance",
-                        Text.literal("${formatChance(spec.shinyChance * 100f)}%")
-                    )
-                    else -> Text.translatable("cobblemarket.points.store.value.no_shiny")
-                }
+            // 星标写法与编辑窗的闪光按钮**同一套**（见 [shinyStarText]）—— 用户 2026-09-26：
+            // 原来写「闪光：按概率 50%」，英文 102px 放不进一格、被截断
+            KEY_SHINY -> shinyStarText(
+                always = "shiny" in spec.aspects,
+                chancePercent = spec.shinyChance.takeIf { it > 0f }?.let { formatChance(it * 100f) }
             )
             // 闪光概率那格在编辑窗是个输入框，只读窗没有可显示的独立信息（并在闪光里了）
             KEY_SHINY_CHANCE -> Text.empty()
@@ -2143,9 +2312,16 @@ class PointsMarketScreen : Screen(
                     else -> random
                 }
             )
-            KEY_ABILITY -> fieldOf("ability", spec.ability, OPT_ABILITY, random)
+            // ⚠ 特性**不能走 [fieldOf]**：那条路是"查本界面的候选表"，而特性候选表是按
+            //   **编辑窗草稿物种**的特性池建的（见 [buildOptionItems] 的 `OPT_ABILITY`）——
+            //   购买窗里 `editSpecies` 是空的 ⇒ 查不到 ⇒ 回退成**原始英文 id**
+            //（用户 2026-09-26 报：中文界面里显示「特性：blaze」）。
+            //   这里按 id 直接取特性自己的显示名，与物种无关（与 [PointMarketFactory.applyAbility] 同一个入口）。
+            KEY_ABILITY -> abilityText(spec.ability)
             KEY_NATURE -> fieldOf("nature", spec.nature, OPT_NATURE, random)
-            KEY_BALL -> fieldOf("ball", spec.ball, OPT_BALL, random)
+            // 球种 / 携带物：值**不画名字**，交给 [drawBuyField] 的 icon 参数画物品图标
+            //（用户 2026-09-26：「附魔金苹果」这类长名一格放不下）—— 与编辑窗按钮上那个图标同一个口径
+            KEY_BALL -> Text.translatable("cobblemarket.points.store.field.ball", "")
             KEY_SIZE -> Text.translatable(
                 "cobblemarket.points.store.field.size",
                 sizeIndexOf(spec.scale)?.let { PokemonSizeCategory.entries.getOrNull(it - 1)?.name } ?: random.string
@@ -2162,10 +2338,7 @@ class PointsMarketScreen : Screen(
             KEY_TRADEABLE -> Text.translatable(
                 "cobblemarket.points.store.field.tradeable", yesNoText(spec.tradeable)
             )
-            KEY_HELD -> Text.translatable(
-                "cobblemarket.points.store.field.held",
-                spec.heldItemSpec?.let { heldItemLabel(it) }?.let { Text.literal(it) } ?: none
-            )
+            KEY_HELD -> Text.translatable("cobblemarket.points.store.field.held", "")
             KEY_HELD_VISIBLE -> Text.translatable(
                 "cobblemarket.points.store.field.held_visible", yesNoText(spec.heldItemVisible)
             )
@@ -2193,6 +2366,25 @@ class PointsMarketScreen : Screen(
     }
 
     /** 下拉类字段（特性 / 性格 / 球种）：走编辑窗同一张候选表翻显示名，查不到就显示原值 */
+    /**
+     * 特性名（**按 id 直接取**，不依赖物种 —— 见 [buyFieldLine] 的 `KEY_ABILITY`）。
+     *
+     * `ability.displayName` 是个**词条 key**（编辑器候选表那边就是 `Text.translatable(它)` 用的），
+     * 所以这里照同一个口径翻译；id 取不到特性时原样显示 id，绝不空着。
+     */
+    private fun abilityText(id: String?): Text {
+        if (id.isNullOrEmpty()) {
+            return Text.translatable(
+                "cobblemarket.points.store.field.ability",
+                Text.translatable("cobblemarket.points.store.value.random")
+            )
+        }
+        val name = com.cobblemon.mod.common.api.abilities.Abilities.get(id)
+            ?.let { Text.translatable(it.displayName) }
+            ?: Text.literal(id)
+        return Text.translatable("cobblemarket.points.store.field.ability", name)
+    }
+
     private fun fieldOf(key: String, value: String?, kind: String, fallback: Text): Text {
         if (value.isNullOrEmpty()) return Text.translatable("cobblemarket.points.store.field.$key", fallback)
         return Text.translatable(
@@ -2236,13 +2428,8 @@ class PointsMarketScreen : Screen(
         )
     }
 
-    /** 物品格的那一行：物品名（**带稀有度色**，与物品栏悬停 / 主市场列表同一套） */
-    private fun itemLine(spec: ShopItemSpec): Text =
-        Text.translatable(
-            "cobblemarket.points.store.field.item",
-            com.shusheng.cobblemarket.util.ItemNameText.rarityColoredNameById(spec.itemId)
-                ?: Text.literal(itemDisplayName(spec.itemId))
-        )
+    // ⚠ 原先这里有个 `itemLine(spec)`（购买窗左上角那行「物品：xxx」）—— 2026-09-26 用户点名删掉：
+    //   自从大图左侧上了词条列（第一行就是物品名），那行就纯属重复了。
 
     /** 物品 id → 本地化名（取物品自己的翻译键）；查不到就原样显示 id，**绝不空着** */
     private fun itemDisplayName(itemId: String): String =
@@ -2278,9 +2465,10 @@ class PointsMarketScreen : Screen(
         editHeldItemName = ""
         editMinIvs = 0
         editMoves = ""
-        editItemId = ""
-        editItemName = ""
-        editItemComponents = null
+        // 走统一入口：顺手把右侧大图那枚栈也清掉（见 [setEditItem]）
+        setEditItem("", "", null)
+        // 搜索框里的词也要清（同 [editSpeciesText] 那条注释：漏清就成了"点第二个格子还留着上一次的内容"）
+        editItemSearchText = ""
         editIvText = List(STAT_COUNT) { "" }
         editEvText = List(STAT_COUNT) { "" }
         editFriendshipText = DEFAULT_FRIENDSHIP.toString()
@@ -2312,11 +2500,13 @@ class PointsMarketScreen : Screen(
      */
     private fun fillDraft(entry: ShopEntry) {
         entry.item?.let { item ->
-            editItemId = item.itemId
-            editItemComponents = item.componentsSpec
-            editItemName = Registries.ITEM.getOrEmpty(Identifier.tryParse(item.itemId))
-                .map { Text.translatable(it.translationKey).string }
-                .orElse(item.itemId)
+            setEditItem(
+                item.itemId,
+                Registries.ITEM.getOrEmpty(Identifier.tryParse(item.itemId))
+                    .map { Text.translatable(it.translationKey).string }
+                    .orElse(item.itemId),
+                item.componentsSpec
+            )
             return
         }
         val spec = entry.pokemon ?: return
@@ -2522,13 +2712,13 @@ class PointsMarketScreen : Screen(
             }
         })
 
-        if (isPokemonSlot()) buildPokemonFields(x, y) else buildItemFields()
+        if (isPokemonSlot()) buildPokemonFields(x, y) else buildItemFields(y)
 
         // 价格 / 库存（两种窗口都有；**钉在窗口底部**，不随内容滚动）
         val priceY = editPriceRowY()
         editPriceField = TextFieldWidget(
             textRenderer, editPriceGroupX() + EDIT_LABEL_W, priceY,
-            editColW() - EDIT_LABEL_W, EDIT_ROW_H, Text.literal("")
+            editPriceColW() - EDIT_LABEL_W, EDIT_ROW_H, Text.literal("")
         )
         editPriceField?.setTextPredicate { s -> s.length <= 12 && s.all { it.isDigit() } }
         editPriceField?.setChangedListener { editPriceText = it }
@@ -2539,8 +2729,8 @@ class PointsMarketScreen : Screen(
         addDrawableChild(editPriceField)
 
         editStockField = TextFieldWidget(
-            textRenderer, editPriceGroupX() + editColW() + EDIT_COL_GAP + EDIT_LABEL_W, priceY,
-            editColW() - EDIT_LABEL_W, EDIT_ROW_H, Text.literal("")
+            textRenderer, editPriceGroupX() + editPriceColW() + EDIT_COL_GAP + EDIT_LABEL_W, priceY,
+            editPriceColW() - EDIT_LABEL_W, EDIT_ROW_H, Text.literal("")
         )
         editStockField?.setTextPredicate { s -> s.length <= 9 && s.all { it.isDigit() } }
         editStockField?.setPlaceholder(Text.translatable("cobblemarket.points.store.value.unlimited"))
@@ -2612,7 +2802,9 @@ class PointsMarketScreen : Screen(
     private fun applyEditScroll() {
         editContentScroll = editContentScroll.coerceIn(0, editMaxScroll())
         editButtons.forEach { (key, btn) ->
-            btn.x = editColX(editColOf(key))
+            // ⚠ 技能槽**不走列网格**（4 个平分整行）—— 位置必须与 [editFieldButton] 同源，
+            //   各算一份的话一滚动技能按钮就跳回中间那 4 格（本项目"建与重摆两处"的老坑）
+            btn.x = fieldButtonX(key)
             btn.y = editRowY(editRowOf(key))
         }
         // 滚动区里的所有输入框跟着行一起移动（闪光 / 等级 / 亲密度 / 六项个体 / 六项努力）
@@ -2802,26 +2994,101 @@ class PointsMarketScreen : Screen(
     }
 
     /**
-     * 物品窗口的字段：只有「卖什么物品」一项 —— **取服主手里拿着的那件**（连组件一起记下来，
-     * 附魔 / 自定义名都跟着走），比再做一个物品搜索列表直接得多。想换就拿着新的点一次。
+     * 记下物品窗选中的物品 —— **唯一入口**（列表选中、小手取主手、草稿重置都走它）。
+     *
+     * 顺手把 [editItemPreviewStack] 重建好：大图渲染是每帧跑的，不能让它自己去反序列化。
      */
-    private fun buildItemFields() {
-        // 物品窗口不走字段顺序表（那张表是精灵的），就一格，位置固定 —— KEY_ITEM 查不到行号时
-        // editRowOf/editColOf 返回 0，滚动重算也落在同一格上
-        val btn = NineSliceButton(
-            editColX(0), editRowY(0), editColW(), EDIT_ROW_H,
-            // 点开**搜索列表**（照携带物那套搜索式）—— 原先是从主手取物品，
-            // 用户 2026-09-26 定：直接用搜索框，任意物品都能选（含创造模式物品）
-            Text.literal(""), { openOptionList(OPT_ITEM) }
+    private fun setEditItem(id: String, name: String, components: NbtCompound?) {
+        editItemId = id
+        editItemName = name
+        editItemComponents = components
+        editItemPreviewStack =
+            if (id.isEmpty()) null else rebuildItemStack(ShopItemSpec(id, components))
+    }
+
+    /** 物品搜索框的左缘：让开窗口内边距 + 小手按钮（用户 2026-09-26 要「小手贴搜索框左边」） */
+    private fun editItemSearchX(): Int = editDialogX() + EDIT_PAD + OPTION_HELD_BTN_W + 4
+
+    /**
+     * 物品搜索框的**右缘**与精灵窗那条物种搜索框对齐（[editSpeciesFieldRightX]）——
+     * 只因为左边让出了小手才窄 20px，"两种窗口第一眼是同一个界面"的观感不变。
+     */
+    private fun editItemSearchW(): Int = editSpeciesFieldRightX() - editItemSearchX()
+
+    /**
+     * 物品窗口的字段 = **一个物品搜索框**（用户 2026-09-26 定）。
+     *
+     * 原先是一格「物品：无」按钮，点它才弹搜索列表 —— 用户指出多此一举：
+     * 「直接在这个界面添加物品不就行了」⇒ 搜索框**直接长在界面上**，输入即出候选
+     * （照添加精灵窗的物种搜索框那个形态）。小手按钮留在**搜索框左侧**。
+     *
+     * ⚠ 物品窗不走字段顺序表（那张表是精灵的），所以坐标自己算 —— 垂直位置用 [EDIT_SPECIES_Y]，
+     *   与精灵窗搜索框**同一条水平线**。
+     */
+    private fun buildItemFields(y: Int) {
+        val searchY = y + EDIT_SPECIES_Y
+        val field = TextFieldWidget(
+            textRenderer, editItemSearchX(), searchY, editItemSearchW(), EDIT_ROW_H, Text.literal("")
         )
-        editButtons[KEY_ITEM] = btn
-        addDrawableChild(btn)
+        // 复用全项目统一的搜索框占位词条（黑名单、市场那些列表都是它）
+        field.setPlaceholder(Text.translatable("cobblemarket.gui.search"))
+        field.setMaxLength(48)
+        field.setChangedListener { text ->
+            if (editItemSearchSyncing) return@setChangedListener
+            editItemSearchText = text
+            updateItemSearch(text)
+        }
+        // ⚠ 初值赋值也会触发监听器 —— 不挡的话**开窗/重建就会把列表弹出来**（那时草稿里已有上次选的物品）
+        editItemSearchSyncing = true
+        field.text = editItemSearchText.ifEmpty { editItemName }
+        editItemSearchSyncing = false
+        editItemSearchField = field
+        addSelectableChild(field)
+        addDrawableChild(field)
+
+        // 小手：点一下取主手那件当商品（组件一起提取）—— 与列表里选中一条候选**同一套提取**，
+        // 见 [pickHeldItemAsShopEntry]。图标 / 尺寸与黑名单搜索框那枚一模一样
+        val held = NineSliceButton(
+            editDialogX() + EDIT_PAD, searchY, OPTION_HELD_BTN_W, EDIT_ROW_H,
+            Text.literal(""),
+            { pickHeldItemAsShopEntry() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/hand.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.points.store.pick_held")
+        )
+        editItemHeldButton = held
+        addDrawableChild(held)
+    }
+
+    /**
+     * 物品搜索框变化 → 候选列表的**开合与重建**（唯一入口）。
+     *
+     * 与精灵窗「输入即重解析候选」同一个思路，区别是物品没有"精确优先"那套 ——
+     * 候选本身就是 [buildItemCandidates] 按搜索词现算的（与携带物、黑名单同一个搜索入口）。
+     *
+     * ⚠ **清空 = 收起列表**（不是"列出全部物品"）：一屏几百件物品没有意义，与携带物一致。
+     */
+    private fun updateItemSearch(text: String) {
+        val q = text.trim()
+        if (q.isEmpty()) {
+            if (optionListKind == OPT_ITEM) closeOptionList()
+            return
+        }
+        val wasOpen = optionListKind == OPT_ITEM
+        // ⚠ 这里**不能用 [openOptionList]**：它会把 optionSearchText 清零再筛，等于每次输入都落回空候选
+        optionListKind = OPT_ITEM
+        optionListMultiSelect = false
+        optionSearchText = q
+        applyOptionFilter()
+        // 搜索框常驻在界面上，物品档没有"列表自带的那条搜索框"可建（见 [buildOptionSearchField]）
+        if (!wasOpen) buildOptionSearchField()
+        rebuildOptionList()
     }
 
     /** 建一个窗口字段按钮（位置按字段 key 现算 —— 列数随窗口宽度变，不能记死坐标） */
     private fun editFieldButton(key: String, onClick: () -> Unit) {
         val btn = NineSliceButton(
-            editColX(editColOf(key)), editRowY(editRowOf(key)), editColW(), EDIT_ROW_H,
+            fieldButtonX(key), editRowY(editRowOf(key)), fieldButtonW(key), EDIT_ROW_H,
             Text.literal(""), { onClick() }
         )
         editButtons[key] = btn
@@ -2983,6 +3250,9 @@ class PointsMarketScreen : Screen(
     }
 
     private fun applyEditSpecies(species: Species?) {
+        // ⚠ 物种**真的换了**才重置预览状态（同一个 state 里留着上一只的模型 / 动作，会串味）——
+        //   本函数**每敲一个键都会调**（见 [updateEditSpecies]），无条件重置会让动画一直在原地打转
+        if (editSpecies !== species) editPreviewState = FloatingState()
         editSpecies = species
         // 换了物种，原来的性别 / 超极巨化 / 形态 / 特性 / 技能可能就不合法了（喷火龙 → 小磁怪）
         // → 各自收进合法范围
@@ -3220,7 +3490,9 @@ class PointsMarketScreen : Screen(
     private fun openOptionList(kind: String) {
         optionListAll = buildOptionItems(kind)
         // 携带物 / 商品物品一进来就是空的（搜索式，见 buildCarryItems / buildItemCandidates），
-        // 不能当成"这个字段没有候选"
+        // 不能当成"这个字段没有候选"。
+        // ⚠ 商品物品**已经不再从这里进来了**（搜索框常驻在界面上，见 [updateItemSearch]）——
+        //   这一支留着当兜底：真调进来也是"空列表 + 边打边搜"，不会被误判成"这个字段没候选"而响失败音
         if (optionListAll.isEmpty() && kind != OPT_CARRY && kind != OPT_ITEM) {
             playFailSound()
             return
@@ -3268,15 +3540,19 @@ class PointsMarketScreen : Screen(
         optionListScroll = 0
     }
 
-    /** 列表上方的搜索框（列表展开期间才有，关列表时一并移除） */
+    /**
+     * 列表上方的搜索框（列表展开期间才有，关列表时一并移除）。
+     *
+     * ⚠ **商品物品那档已经不用它了**（2026-09-26）：物品窗的搜索框**常驻在界面上**
+     * （见 [buildItemFields]），列表跟着它走。这里再建一个就成了"列表自带的那条"，
+     * 两条搜索框并存、各自开着不同的词 —— 那正是上一版做歪的地方。
+     */
     private fun buildOptionSearchField() {
-        // ⚠ 商品物品那档，搜索框**左侧**要让出小手按钮的位置（见函数末尾）——
-        //   x 与宽度都跟着让，别让两者叠上
-        val heldW = if (optionListKind == OPT_ITEM) OPTION_HELD_BTN_W + 4 else 0
+        if (optionListKind == OPT_ITEM) return
         val field = TextFieldWidget(
             textRenderer,
-            editDialogX() + EDIT_PAD + heldW, editDialogY() + OPTION_SEARCH_Y,
-            editDialogW() - EDIT_PAD * 2 - heldW, OPTION_SEARCH_H,
+            editDialogX() + EDIT_PAD, editDialogY() + OPTION_SEARCH_Y,
+            editDialogW() - EDIT_PAD * 2, OPTION_SEARCH_H,
             Text.literal("")
         )
         // 复用全项目统一的搜索框占位词条（黑名单、市场那些列表都是它）
@@ -3291,23 +3567,6 @@ class PointsMarketScreen : Screen(
         optionSearchField = field
         addSelectableChild(field)
         addDrawableChild(field)
-
-        // 小手按钮：**只有商品物品那档有**，点一下取主手那件当商品 ——
-        // 与黑名单搜索框左侧那枚同一个做法（图标、尺寸都一样），只是那边要先选模式、这边点完直接填。
-        // ⚠ 挂进 [optionListButtons]：关列表时随它一起卸掉，不用再维护一个字段
-        if (optionListKind == OPT_ITEM) {
-            val held = NineSliceButton(
-                editDialogX() + EDIT_PAD, editDialogY() + OPTION_SEARCH_Y,
-                OPTION_HELD_BTN_W, OPTION_SEARCH_H,
-                Text.literal(""),
-                { pickHeldItemAsShopEntry() },
-                iconLeft = Identifier.of("cobblemarket", "textures/gui/hand.png"),
-                iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
-                tooltip = Text.translatable("cobblemarket.points.store.pick_held")
-            )
-            addDrawableChild(held)
-            optionListButtons.add(held)
-        }
     }
 
     /**
@@ -3323,11 +3582,35 @@ class PointsMarketScreen : Screen(
             return
         }
         val lookup = client?.world?.registryManager ?: return
-        editItemId = Registries.ITEM.getId(stack.item).toString()
-        editItemName = stack.name.string
-        editItemComponents = ItemRuleComponents.extractSpec(stack, lookup)
+        setEditItem(
+            Registries.ITEM.getId(stack.item).toString(),
+            stack.name.string,
+            // ⚠ includeDamage = true：**卖的是实物**，磨损得跟着走 —— 默认那套是给黑名单 / 价格限制
+            //   那种"规则条目"用的（那边磨损是噪音）。漏了它，一把快坏的镐子上架后买家拿到满耐久
+            ItemRuleComponents.extractSpec(stack, lookup, includeDamage = true)
+        )
+        // 名字回填进搜索框（否则框里还是上一次搜的词，看着像"没选上"）
+        setItemSearchText(editItemName)
         // 选完关列表（它结尾会刷新标签，不用自己再刷一次）
         closeOptionList()
+    }
+
+    /**
+     * 把选中的物品名**回填进搜索框**，且**不触发** [updateItemSearch]。
+     *
+     * 选完一条候选后，框里留着用户打的搜索词（比如「钻石」）会让人不确定到底选了哪件 ——
+     * 换成那件物品的完整名字，与右侧那张大图互为印证。
+     *
+     * ⚠ 直接 `field.text =` 会**同步触发** changedListener ⇒ 这次回填被当成"又在打字"、列表立刻弹回来
+     * （选中即重开）。所以拿 [editItemSearchSyncing] 挡一道。
+     */
+    private fun setItemSearchText(text: String) {
+        editItemSearchText = text
+        val f = editItemSearchField ?: return
+        if (f.text == text) return
+        editItemSearchSyncing = true
+        f.text = text
+        editItemSearchSyncing = false
     }
 
     /**
@@ -3356,6 +3639,10 @@ class PointsMarketScreen : Screen(
         editButtons.forEach { (key, btn) -> btn.visible = !covered && editRowVisible(editRowOf(key)) }
         // 列表的搜索框：**只在列表展开时在**（快照弹窗不算），显式跟着它走（别指望它默认 true 一直有效）
         optionSearchField?.visible = optionListKind != null
+        // ⚠ **物品窗那对是常驻的**：列表展开时别的控件全藏，唯独它俩得留着 ——
+        //   搜索框就是列表的驱动（藏起来就没法接着打字），小手与它并排、一起留着
+        editItemSearchField?.visible = true
+        editItemHeldButton?.visible = true
         // 候选箭头同理：它们也压在列表上（用户实测：选形态时两枚箭头跑到列表界面里了）
         updateEditSpeciesArrows()
 
@@ -3368,6 +3655,10 @@ class PointsMarketScreen : Screen(
         if (covered) {
             val own = buildSet<net.minecraft.client.gui.widget.ClickableWidget> {
                 optionSearchField?.let { add(it) }
+                // 物品窗常驻的搜索框 + 小手：**必须在白名单里**，否则被这条兜底一起藏掉 ——
+                // 表现是"列表一展开，搜索框就没了、小手也点不到"（兜底本来就专治这种漏判）
+                editItemSearchField?.let { add(it) }
+                editItemHeldButton?.let { add(it) }
                 addAll(optionListButtons)
                 snapshotNameField?.let { add(it) }
                 addAll(snapshotButtons)
@@ -3492,13 +3783,20 @@ class PointsMarketScreen : Screen(
             OPT_ITEM -> {
                 // 候选自带重建好的物品栈（见 [buildItemCandidates]）—— 与「从主手取」用**同一套提取**
                 //（[ItemRuleComponents.extractSpec]），两条路径的组件口径才不会分叉
-                optionListItems.firstOrNull { it.value == value }?.stack?.let { stack ->
-                    client?.world?.registryManager?.let { lookup ->
-                        editItemId = Registries.ITEM.getId(stack.item).toString()
-                        editItemName = stack.name.string
-                        editItemComponents = ItemRuleComponents.extractSpec(stack, lookup)
-                        // ⚠ 不用自己刷标签：`selectOption` 结尾的 [closeOptionList] 会统一刷
-                    }
+                optionListItems.firstOrNull { it.value == value }?.let { opt ->
+                    val stack = opt.stack ?: return@let
+                    val lookup = client?.world?.registryManager ?: return@let
+                    setEditItem(
+                        Registries.ITEM.getId(stack.item).toString(),
+                        // ⚠ 名字取**候选的 label**（= `displayName`），不是栈名 —— 变体候选
+                        //   （招式学习器 / 附魔书）在栈里只有「招式学习器」四个字，
+                        //   回填进搜索框就看不出选的到底是哪个招式 / 哪条附魔了
+                        opt.label,
+                        // 同上：实物语义，磨损跟着商品走
+                        ItemRuleComponents.extractSpec(stack, lookup, includeDamage = true)
+                    )
+                    setItemSearchText(editItemName)
+                    // ⚠ 不用自己刷标签：`selectOption` 结尾的 [closeOptionList] 会统一刷
                 }
             }
 
@@ -3606,7 +3904,8 @@ class PointsMarketScreen : Screen(
             // ⚠ 第一项是「无」= **清空该槽**（生成时这一槽随机补招）—— 内置选招屏没有这个动作，
             //   服主选完想撤掉就没处点了（2026-09-20 用户指出）
             // 商品物品：**搜索式**（同携带物）—— 一进来是空列表，内容由 [buildItemCandidates]
-            // 跟着搜索词重建；别让它落到下面的技能分支去（那会列出一堆技能当物品候选）
+            // 跟着搜索词重建；别让它落到下面的技能分支去（那会列出一堆技能当物品候选）。
+            // ⚠ 物品窗现在不走这里（见 [updateItemSearch]），留着同样是为了不落到技能分支那个兜底
             OPT_ITEM -> emptyList()
 
             else -> buildList {
@@ -3653,8 +3952,9 @@ class PointsMarketScreen : Screen(
                         value = snbt,
                         label = c.displayName,
                         stack = stack.copyWithCount(1),
-                        // 物品名带**稀有度色**（附魔金、稀有品紫…），与物品栏里一致
-                        labelText = ItemNameText.rarityColoredName(stack) ?: Text.literal(c.displayName)
+                        // 物品名带**稀有度色**（附魔金、稀有品紫…）——但名字要取**候选的**，
+                        // 变体候选（招式学习器 / 附魔书）在栈里是看不出是哪一个的，见 [candidateLabelText]
+                        labelText = candidateLabelText(c, stack)
                     )
                 )
             }
@@ -3684,10 +3984,31 @@ class PointsMarketScreen : Screen(
                     label = c.displayName,
                     stack = stack.copyWithCount(1),
                     // 物品名带**稀有度色**（附魔金、稀有品紫…），与物品栏里一致
-                    labelText = ItemNameText.rarityColoredName(stack) ?: Text.literal(c.displayName)
+                    // 同上：名字取**候选的**（变体候选在栈里看不出是哪一个），见 [candidateLabelText]
+                    labelText = candidateLabelText(c, stack)
                 )
             }
             .distinctBy { it.value }
+    }
+
+    /**
+     * 候选行的显示名 —— **用候选自带的 [com.shusheng.cobblemarket.client.ItemCandidate.displayName]，
+     * 不是重建出来的栈的名字**。
+     *
+     * ⚠ 两者在**变体候选**上不一样：栈里只叫「招式学习器」「附魔书」，变体后缀（`· 打鼾` / `· 锋利 V`）
+     *   只写在 displayName 里。拿栈名去画 ⇒ 一屏候选全都同名，玩家分不出选的是哪个
+     *   （2026-09-26 用户实测：搜「打鼾」出来一排「招式学习器」、搜「锋利」一排「附魔书」）。
+     *   黑名单 / 求购单 / 价格限制三处的候选行一直是拿 `displayName` 显示的，这里当初漏了这条。
+     *
+     * 名字与栈名**一致**时才走 [ItemNameText.rarityColoredName]（那种情况能顺带带上自定义名的样式）；
+     * 不一致就用候选名 + 栈的**稀有度色**（颜色口径仍与物品栏悬停一致）。
+     */
+    private fun candidateLabelText(
+        c: com.shusheng.cobblemarket.client.ItemCandidate, stack: ItemStack
+    ): Text {
+        val stackName = ItemNameText.rarityColoredName(stack)
+        if (stackName != null && stackName.string == c.displayName) return stackName
+        return Text.literal(c.displayName).styled { it.withColor(ItemNameText.rarityColor(stack)) }
     }
 
     /** 候选 → 物品栈（带组件快照的按快照重建；解析不出来返回 null，这一条就跳过） */
@@ -3791,7 +4112,9 @@ class PointsMarketScreen : Screen(
             return
         }
 
-        if (isPokemonSlot()) renderEditPreviewSlot(context, x, y, delta)
+        // 右侧那张大图：精灵是 3D 模型（可浮动、点一下会叫），物品是 16×16 图标放大 ——
+        // **位置同一套坐标**（用户 2026-09-26：「右侧是物品大图，和添加精灵界面图标位置一样」）
+        if (isPokemonSlot()) renderEditPreviewSlot(context, x, y, delta) else renderEditItemPreviewSlot(context)
 
         // 输入框前面的**前缀标签**（用户 2026-09-20 要的「数字正好接上」）——
         // ⚠ 它们跟字段网格一样在**滚动区**里：位置与显隐都得跟着那一行走，写死坐标一滚就露馅
@@ -3821,7 +4144,7 @@ class PointsMarketScreen : Screen(
         )
         context.drawTextWithShadow(
             textRenderer, Text.translatable("cobblemarket.points.store.field.stock"),
-            editPriceGroupX() + editColW() + EDIT_COL_GAP, labelY, 0xFFFFFF
+            editPriceGroupX() + editPriceColW() + EDIT_COL_GAP, labelY, 0xFFFFFF
         )
     }
 
@@ -3870,6 +4193,90 @@ class PointsMarketScreen : Screen(
     }
 
     /**
+     * 物品预览槽：**与精灵窗同一套坐标**（[editPreviewSlotX] / [editPreviewSlotY] / [editPreviewSize]）
+     * —— 用户 2026-09-26 要的就是「右侧是物品大图，和添加精灵界面图标位置一样」。
+     *
+     * 图标来自**当前草稿**（`editItemId` + 组件快照），走 [rebuildItemStack] 那条重建路
+     * （与商城格子、购买窗同一套口径），16×16 缩放到占满槽位 —— 附魔光效、改名都看得清。
+     *
+     * ⚠ 物品**没有**叫声 / 浮动那一套（它是 2D 贴图，不是 3D 模型）——
+     *   所以这里不登记动画起点、也不播 [IconCryClick]，与精灵窗的差别就在这。
+     */
+    private fun renderEditItemPreviewSlot(context: DrawContext) {
+        val slotSize = editPreviewSize()
+        val slotX = editPreviewSlotX()
+        val slotY = editPreviewSlotY()
+        // ⚠ **不画 [drawPokemonSlot] 那层占位背景**（用户 2026-09-26 实测指出）：
+        //   那是给精灵站的底座（影子 + 地面），物品是 16×16 贴图放大、自己就是个方块，
+        //   底下垫一层只显得脏。精灵窗照旧（那边确实需要）。
+        // 还没选物品 = 这一块**什么都不画**（连空槽都没有）；栈是选物品时缓存好的（[setEditItem]），
+        // 别在这里现重建，那是每帧一次的反序列化
+        val stack = editItemPreviewStack?.takeIf { !it.isEmpty } ?: return
+        // 大图**左侧**那列说明文字先画（两者不重叠，先后无所谓，按从左到右的顺序读着顺）
+        renderItemInfoLines(context, stack, slotX, slotY, slotSize)
+        val scale = slotSize / 16f
+        context.matrices.push()
+        context.matrices.translate((slotX + slotSize / 2f).toDouble(), (slotY + slotSize / 2f).toDouble(), 0.0)
+        context.matrices.scale(scale, scale, 1f)
+        // 同上：统一走 [drawItemWithBar]，耐久条跟着放大
+        drawItemWithBar(context, stack, -8, -8)
+        context.matrices.pop()
+    }
+
+    /**
+     * 物品大图**左侧**那列词条（用户 2026-09-26 要的）。
+     *
+     * ⚠ **添加物品窗与购买窗共用这一个**（用户点名：这两个窗口是**并行关系**，元素必须一致）——
+     *   两边布局本来就是同一套坐标（见 [renderEditItemPreviewSlot] / [renderBuyItemFields]），
+     *   而且两个窗口不会同时开着，所以 [itemInfoCacheLines] 那份缓存也共用一份就够。
+     *
+     * 内容与别处**同一套**：[ItemComponentsDisplay.itemTooltip] —— 物品名 + 附魔 / 招式 / 自定义名 / 耐久，
+     * 按住 **Shift / Ctrl** 展开更多（走 [ItemComponentsDisplay.tooltipTypeForHover]，物品市场、拍卖创建
+     * 那几个界面都是这个口径）。**差别只在位置**：别处这套词条是跟着鼠标弹出来的，这里常驻画在大图左边。
+     *
+     * ⚠ 行数按大图那一列的高度**截断** —— Shift 展开后能有十几行，漫到下面的价格行上就没法看了。
+     */
+    private fun renderItemInfoLines(
+        context: DrawContext, stack: ItemStack, slotX: Int, slotY: Int, slotSize: Int
+    ) {
+        val lines = itemInfoLines(stack)
+        if (lines.isEmpty()) return
+        // 左缘**与上面那条搜索框对齐**（都从 [EDIT_PAD] 起）—— 物品窗左侧 3 列是空的（没有字段网格），
+        // 整条正好当信息栏用。
+        // ⚠ 别从 [editSpeciesRightX] 起：那里到大图只剩 **73px**（一列 82px 的宽度），
+        //   英文物品名一长就截得只剩几个字母；从内边距起有 340 多像素。
+        val left = editDialogX() + EDIT_PAD
+        val maxWidth = slotX - EDIT_ITEM_INFO_GAP - left
+        if (maxWidth <= 0) return
+        val shown = lines.take((slotSize / EDIT_ITEM_INFO_LINE_H).coerceAtLeast(1))
+        // 垂直方向**与大图居中对齐**（整列文字居中在大图那一格的高度里）
+        var y = slotY + (slotSize - shown.size * EDIT_ITEM_INFO_LINE_H) / 2
+        shown.forEach { (line, color) ->
+            // 超宽的截到列宽内 —— 走保留分段样式的版本，别把物品名的稀有度色洗成白的
+            val text = if (textRenderer.getWidth(line) > maxWidth) TextUtil.truncateStyled(line, maxWidth) else line
+            context.drawTextWithShadow(textRenderer, text, left, y, color)
+            y += EDIT_ITEM_INFO_LINE_H
+        }
+    }
+
+    /**
+     * 词条行的构建 + 缓存 —— **必须缓存**：构建要遍历物品的组件（附魔 / 招式 / 自定义名），
+     * 而渲染是每帧一次（照 `AuctionCreateScreen.renderItemTooltip` 那个缓存的写法）。
+     *
+     * ⚠ 缓存键是「栈 **+ 展开档位**」两个都要比：只比栈的话，按住 Shift 永远不会展开
+     *   （档位变了、栈没变），松开也一样。
+     */
+    private fun itemInfoLines(stack: ItemStack): List<Pair<Text, Int>> {
+        val type = if (ItemComponentsDisplay.hoverExpanded()) ItemComponentsDisplay.tooltipTypeForHover()
+        else TooltipType.BASIC
+        if (stack === itemInfoCacheStack && type == itemInfoCacheType) return itemInfoCacheLines
+        itemInfoCacheStack = stack
+        itemInfoCacheType = type
+        itemInfoCacheLines = ItemComponentsDisplay.itemTooltip(stack, client?.player, type).map { it to 0xFFFFFF }
+        return itemInfoCacheLines
+    }
+
+    /**
      * 展开列表的行 —— **自绘**（不用 NineSliceButton）：行首要画物品图标（球种、携带物），
      * 而按钮只支持贴图 id 的图标，球是物品、得走物品渲染。
      */
@@ -3901,7 +4308,9 @@ class PointsMarketScreen : Screen(
             val iconY = r.y + (OPTION_ROW_H - OPTION_ROW_ICON_W) / 2
             val stack = opt.stack
             if (stack != null) {
-                context.drawItem(stack, r.x + 1, iconY)
+                // 候选行也是物品图标 —— 同样走 [drawItemWithBar]（缺了它，搜出来的快坏的镐子
+                // 看着跟满耐久一样，正是「看不到耐久就可能高价买到快报废的工具」那个坑）
+                drawItemWithBar(context, stack, r.x + 1, iconY)
             } else opt.iconTexture?.let { tex ->
                 // 贴图图标（证章）：原图 32×32，缩到行内高 —— 缩放走 matrices，别直接传目标尺寸
                 context.matrices.push()
@@ -3997,10 +4406,8 @@ class PointsMarketScreen : Screen(
         applyIvInputLock()
         editButtons[KEY_HELD_VISIBLE]?.setMessage(label("held_visible", yesNoLabel(editHeldVisible)))
         editButtons[KEY_MARKS]?.setMessage(label("marks", marksLabel()))
-        // 物品窗口只有这一项（精灵窗口没有这个按钮，`?.` 天然跳过）
-        editButtons[KEY_ITEM]?.setMessage(
-            label("item", if (editItemId.isEmpty()) valueText("none") else editItemName)
-        )
+        // ⚠ 物品窗口那格「物品：无」按钮**已删**（2026-09-26 改成界面上直接一个搜索框，见 [buildItemFields]）——
+        //   所以这里不再有 KEY_ITEM 那一项
 
         // 四个技能槽：显示该槽已有的技能名（走 MoveText 的属性色），空槽显示「空」
         val skillIds = MoveText.slotIds(editMoves)
@@ -4065,25 +4472,35 @@ class PointsMarketScreen : Screen(
      *
      * ⚠ 分段**平级挂在空 Text 下**：金色绝不能当父节点，否则冒号与百分比跟着变金（项目文案铁律）。
      */
+    /**
+     * 闪光的**星标写法** —— 编辑窗的闪光按钮与购买窗的只读行**共用这一个**。
+     *
+     * 不闪 = 灰星、必闪 = 金星、按概率 = 金星 + 百分比。
+     *
+     * ⚠ 用户 2026-09-26 定：购买窗原来写「闪光：按概率 50%」（英文 `Shiny: Chance 50%` = 102px），
+     *   而一格只有 82px，被截成「Shiny: Chance …」。改成星标后中英文都只占 20~80px，
+     *   连"跨两格"都不用 —— 星标本来就是项目里通用的闪光标记（见 `EntryBadgeRenderer.nameWithShinyStar`）。
+     * ⚠ 冒号走 [shiny_chance_suffix] 词条（中文全角 / 英文半角加空格），别在代码里拼。
+     *
+     * @param chancePercent 概率的**百分比文本**（已格式化、不含 `%`）；[always] 为真或它为 null 时不显示
+     */
+    private fun shinyStarText(always: Boolean, chancePercent: String?): Text {
+        val hasShiny = always || chancePercent != null
+        val star = Text.literal(SHINY_STAR).formatted(if (hasShiny) Formatting.GOLD else Formatting.DARK_GRAY)
+        if (!hasShiny || always) return star
+        return Text.literal("")
+            .append(star)
+            .append(Text.translatable("cobblemarket.points.store.shiny_chance_suffix", "$chancePercent%"))
+    }
+
     private fun refreshShinyButton() {
         val btn = editButtons[KEY_SHINY] ?: return
         val raw = editShinyText.trim()
         val percent = raw.toFloatOrNull()
         val always = percent != null && percent >= 100f
-        // 「不闪」= 没填或填 0（0% 闪光就是不闪，别画成金色）
+        // 「不闪」= 没填或填 0（0% 闪光就是不闪，别画成金色）—— 判据收在 [shinyStarText] 里
         val hasShiny = percent != null && percent > 0f
-        val star = Text.literal(SHINY_STAR)
-            .formatted(if (hasShiny) Formatting.GOLD else Formatting.DARK_GRAY)
-        btn.setMessage(
-            // 概率：金色星 + 冒号 + 百分比。冒号走词条 —— 中文全角 / 英文半角加空格（项目文案约定）
-            if (hasShiny && !always) {
-                Text.literal("")
-                    .append(star)
-                    .append(Text.translatable("cobblemarket.points.store.shiny_chance_suffix", "$raw%"))
-            } else {
-                star
-            }
-        )
+        btn.setMessage(shinyStarText(always, if (hasShiny && !always) raw else null))
     }
 
     private fun formLabel(): String =
@@ -4364,7 +4781,8 @@ class PointsMarketScreen : Screen(
                 // 中心与精灵图标**同一个**（iconX/iconY 已经按当前格子算过，别再拿正常格子算一遍）
                 context.matrices.translate((iconX + iconSize / 2f).toDouble(), (iconY + iconSize / 2f).toDouble(), 0.0)
                 context.matrices.scale(scale, scale, 1f)
-                context.drawItem(stack, -8, -8)
+                // 商城格子里的物品图标同样带耐久条 —— 买家在格子上就该看出快坏了
+                drawItemWithBar(context, stack, -8, -8)
                 context.matrices.pop()
             }
         }
@@ -4780,6 +5198,9 @@ class PointsMarketScreen : Screen(
         /** 「标签 + 输入框」的列内布局（价格 / 库存那两格） */
         const val EDIT_LABEL_W = 32
 
+        /** 购买窗「数量：」标签距第 3 格起点的空隙 —— 别贴死左边那个库存输入框（用户 2026-09-26） */
+        const val BUY_COUNT_LABEL_GAP = 8
+
         /** 预览大图裁剪框离弹窗边（上 / 右）留的空隙，见 [editPreviewClip] */
         const val PREVIEW_CLIP_MARGIN = 2
 
@@ -4853,8 +5274,6 @@ class PointsMarketScreen : Screen(
          */
         const val ALPHA_MARK_ID = "cobblemon:mark_alpha"
 
-        /** 物品窗口的「卖什么物品」按钮（精灵窗口没有这一项） */
-        const val KEY_ITEM = "item"
 
         // 展开式选项列表的种类（技能带槽位后缀，如 "skill0"）
         const val OPT_FORM = "form"
@@ -4865,11 +5284,20 @@ class PointsMarketScreen : Screen(
         const val OPT_CARRY = "carry"
         const val OPT_MARKS = "marks"
 
-        /** 物品格「卖什么物品」—— **搜索式**，与 [OPT_CARRY] 同一套机制（见 [buildItemCandidates]） */
+        /**
+         * 物品窗的**物品候选列表** —— **搜索式**，与 [OPT_CARRY] 同一套机制（见 [buildItemCandidates]）。
+         * ⚠ 触发方式已改：不再是"点按钮弹列表"，而是界面上那条搜索框**边打边搜**（见 [updateItemSearch]）
+         */
         const val OPT_ITEM = "item"
 
-        /** 商品物品那档，搜索框**左侧**那枚小手按钮的宽度（黑名单同款：16×16，贴在搜索框左边） */
+        /** 物品窗搜索框**左侧**那枚小手按钮的宽度（黑名单同款：16×16，贴在搜索框左边） */
         const val OPTION_HELD_BTN_W = 16
+
+        /** 物品大图**左侧**那列词条与大图 / 左侧分栏之间留的空隙 */
+        const val EDIT_ITEM_INFO_GAP = 6
+
+        /** 词条行高 —— 与其余界面的悬停词条同档（10px），别各写一份 */
+        const val EDIT_ITEM_INFO_LINE_H = 10
 
         /** 商品候选一次最多列几条（搜索词太泛时防刷屏 + 防拖慢渲染，同 [MAX_CARRY_CANDIDATES]） */
         const val MAX_ITEM_CANDIDATES = 200
