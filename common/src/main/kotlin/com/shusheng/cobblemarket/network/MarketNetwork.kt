@@ -94,11 +94,11 @@ data class ListingEntry(
      */
     val heldItemVisible: Boolean = true,
     /**
-     * 太晶属性翻译 key（`cobblemon.type.xxx`）—— **空串 = 没有**（不显示）。
+     * 太晶属性翻译 key（`cobblemon.type.xxx`）—— **空串 = 没有**（不显示，例如老挂单）。
      *
-     * 只有当精灵的 `teraType` **≠ 主属性**时服务端才下发：官方 `Pokemon.teraType` 的默认值
-     * 就是主属性，不加这个判断的话每只精灵都会多一行「太晶：火」这种零信息量的废话。
-     * 装了太晶附属模组、玩家真设过时才有值（附属模组只能写官方那个字段，故天然兼容）。
+     * 服务端**常驻下发**（官方 `Pokemon.teraType`，默认值就是主属性）。
+     * ⚠ 曾经写成「只在 ≠ 主属性时才下发」，被用户否掉了：那等于把它定义成**附属模组专属功能**，
+     *   而**玩家不一定知道这只精灵的主属性是哪个**（异兽、形态变化尤其）—— 太晶本身就该写明。
      */
     val teraType: String = ""
 ) {
@@ -699,11 +699,11 @@ data class PokemonPreview(
      */
     val heldItemVisible: Boolean = true,
     /**
-     * 太晶属性翻译 key（`cobblemon.type.xxx`）—— **空串 = 没有**（不显示）。
+     * 太晶属性翻译 key（`cobblemon.type.xxx`）—— **空串 = 没有**（不显示，例如老挂单）。
      *
-     * 只有当精灵的 `teraType` **≠ 主属性**时服务端才下发：官方 `Pokemon.teraType` 的默认值
-     * 就是主属性，不加这个判断的话每只精灵都会多一行「太晶：火」这种零信息量的废话。
-     * 装了太晶附属模组、玩家真设过时才有值（附属模组只能写官方那个字段，故天然兼容）。
+     * 服务端**常驻下发**（官方 `Pokemon.teraType`，默认值就是主属性）。
+     * ⚠ 曾经写成「只在 ≠ 主属性时才下发」，被用户否掉了：那等于把它定义成**附属模组专属功能**，
+     *   而**玩家不一定知道这只精灵的主属性是哪个**（异兽、形态变化尤其）—— 太晶本身就该写明。
      */
     val teraType: String = ""
 ) {
@@ -3392,14 +3392,13 @@ object MarketNetwork {
             "speciesName" to pokemon.species.translatedName.string,
             "speciesKey" to com.shusheng.cobblemarket.util.SpeciesText.translationKey(pokemon.species),
             "primaryType" to "cobblemon.type.${pokemon.primaryType.name.lowercase()}",
-            // 太晶属性（Cobblemon **官方字段** `Pokemon.teraType`，默认值 = 主属性）：
-            // ⚠ **只在 ≠ 主属性时**才下发 —— 不加这个判断的话，每只精灵都会多一行
-            //   「太晶：火」这种零信息量的废话（悬停窗本来就很挤）。
-            // 空串 = 没有（客户端不显示）。装了太晶附属模组、玩家真设过时这里才有值；
-            // 附属模组只能写官方这个字段，所以我们读它 = **天然兼容所有附属模组**，不需要特判
-            "teraType" to pokemon.teraType.id.path
-                .takeIf { it != pokemon.primaryType.name.lowercase() }
-                ?.let { "cobblemon.type.$it" }.orEmpty(),
+            // 太晶属性（Cobblemon **官方字段** `Pokemon.teraType`）—— **常驻下发**。
+            //
+            // ⚠ 曾经写成「只在 ≠ 主属性时才下发」，被用户否掉了：那等于把它定义成**附属模组专属功能**
+            //   （没装模组的玩家界面一模一样），而**玩家不一定知道这只精灵的主属性是哪个**
+            //   （异兽、形态变化尤其），太晶本身就该是写明的一项，不该由「跟主属性比一比」决定给不给看。
+            // 附属模组只能写官方这个字段 ⇒ 我们读它 = 天然兼容，不需要特判。
+            "teraType" to "cobblemon.type.${pokemon.teraType.id.path}",
             "ivsHp" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP].toString(),
             "ivsAtk" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK].toString(),
             "ivsDef" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.DEFENCE].toString(),
