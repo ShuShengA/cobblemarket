@@ -274,7 +274,12 @@ object TransactionFileLogger {
                         species = species,
                         price = price,
                         fee = 0,
-                        detail = "",
+                        // 详情列读回来（**只为了里面的 rarity= 段** —— 历史界面物品名上色用，
+                        // 见 RecordDetail.rarityFromDetail）。⚠ 它**不会**被发进 payload：
+                        // 服务端只提取那一个短字符串，包不会因此变大。
+                        // 索引：新格式（含 UUID 列）第 10 列、旧格式第 8 列 —— 老 CSV 里本就没有
+                        // rarity 段 ⇒ 提取到空串 ⇒ 界面按 itemId 取色（与改动前一致）
+                        detail = fields.getOrNull(if (hasUuid) 10 else 8)?.removePrefix("'").orEmpty(),
                         primaryType = primaryType
                     ))
                 }

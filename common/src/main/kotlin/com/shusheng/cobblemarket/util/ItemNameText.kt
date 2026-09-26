@@ -41,10 +41,22 @@ object ItemNameText {
     /**
      * 只有 itemId、拿不到完整栈时的兜底：用物品默认栈取稀有度。
      * id 非法 / 解析不出物品时返回 null，由调用方兜底（通常是 `Text.literal(itemId)` 原样显示）。
+     *
+     * @param rarity **记录里存的稀有度枚举名**（`COMMON`/`UNCOMMON`/`RARE`/`EPIC`，可为空串）。
+     *   给了就用它，否则退回默认栈的稀有度。
+     *   ⚠ 为什么需要它：默认栈取不到「**附魔把稀有度顶上去**」那一档 —— 下界合金剑默认 COMMON，
+     *   附了魔在物品栏里是黄的（UNCOMMON），只拿 id 去猜就永远显示白
+     *（用户 2026-09-26 报「交易历史里物品名还是白色」）。
+     *   ⚠ 默认值 `""` ⇒ **现有调用点一行都不用改**，行为不变。
      */
-    fun rarityColoredNameById(itemId: String): Text? {
+    fun rarityColoredNameById(itemId: String, rarity: String = ""): Text? {
         val item = Identifier.tryParse(itemId)?.let { Registries.ITEM.get(it) } ?: return null
         if (item == net.minecraft.item.Items.AIR) return null
-        return Text.translatable(item.translationKey).styled { it.withColor(rarityColor(item.defaultStack)) }
+        val color = rarity.takeIf { it.isNotEmpty() }
+            // 枚举容错：值非法就当没有（旧存档 / 手改过的 CSV 都可能给出垃圾值），绝不抛
+            ?.let { runCatching { net.minecraft.util.Rarity.valueOf(it) }.getOrNull() }
+            ?.formatting?.colorValue
+            ?: rarityColor(item.defaultStack)
+        return Text.translatable(item.translationKey).styled { it.withColor(color) }
     }
 }
