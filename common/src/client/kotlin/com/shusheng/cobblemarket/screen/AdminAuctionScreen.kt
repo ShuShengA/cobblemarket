@@ -532,9 +532,12 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 }
                 // 数量宽度先扣出来再截断名字（照拍卖场）：整串一起截断会先吃掉「×N」
                 val countSuffix = " ×${entry.count}"
-                val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(
-                    displayName(entry), 100 - textRenderer.getWidth(countSuffix)) + countSuffix
+                // ⚠ 名字走**稀有度色**、` ×N` 保持白 —— 两段分别画（照拍卖场，那里也是这么修的）
+                val name = com.shusheng.cobblemarket.util.TextUtil.truncateStyled(
+                    EntryBadgeRenderer.auctionNameText(entry), 100 - textRenderer.getWidth(countSuffix))
                 context.drawTextWithShadow(textRenderer, name, leftX + 28, y + 7, 0xFFFFFF)
+                context.drawTextWithShadow(
+                    textRenderer, countSuffix, leftX + 28 + textRenderer.getWidth(name), y + 7, 0xFFFFFF)
             }
 
             // 当前价（行内缩写）+ 出价次数（灰，拆段）：货币单位紧跟 ×次数，中间不留空格
@@ -761,7 +764,8 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         if (itemTooltipCacheKey != entry.id) {
             itemTooltipCacheKey = entry.id
             val staticLines = mutableListOf<Pair<Text, Int>>()
-            staticLines.add(Text.literal(displayName(entry)) to 0xFFFFFF)
+            // 物品名走**稀有度色**（原先 `Text.literal(String)` ⇒ 白字）—— 见 [EntryBadgeRenderer.auctionNameText]
+            staticLines.add(EntryBadgeRenderer.auctionNameText(entry) to 0xFFFFFF)
             staticLines.add(Text.translatable("cobblemarket.auction.seller").append(entry.sellerName) to 0xFFFFFF)
             var mw = 0
             staticLines.forEach { mw = maxOf(mw, textRenderer.getWidth(it.first)) }
@@ -985,7 +989,8 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 iy += 10
             }
         } else {
-            infoLine(displayName(entry))
+            // 物品名走**稀有度色** —— `displayName()` 返回 String，直接画必然白字（2026-09-26 用户报）
+            infoLineText(EntryBadgeRenderer.auctionNameText(entry))
             infoLine("×${entry.count}")
         }
 

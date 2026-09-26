@@ -701,7 +701,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             playFailSound()
             return
         }
-        val itemName = Identifier.tryParse(entry.itemId)?.let { Registries.ITEM.get(it).name }
+        // 物品名走**稀有度色** —— `Registries.ITEM.get(id).name` 不带稀有度样式，
+        // 而它会被 append 进 MeowthPayScreen 的 `itemDesc` 一路画出去（2026-09-26 用户报的白字源头之一）
+        val itemName = com.shusheng.cobblemarket.util.ItemNameText.rarityColoredNameById(entry.itemId)
             ?: Text.literal(entry.itemId)
         client?.setScreen(MeowthPayScreen(
             itemDesc = Text.literal("$count×").append(itemName),

@@ -345,7 +345,13 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
 
         entryStacks[entry.id]?.let { stack ->
             drawItemWithBar(context, stack, centerX - 8, dialogY + 26)
-            context.drawCenteredTextWithShadow(textRenderer, stack.name, centerX, dialogY + 46, 0xFFFFFF)
+            // 物品名走**稀有度色**：`stack.name` 是不带稀有度格式的原始名 ⇒ 白字
+            //（同屏的其它弹窗（物品市场 / 物品待领取）都已用 rarityColoredName，只有这里漏了）
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                com.shusheng.cobblemarket.util.ItemNameText.rarityColoredName(stack) ?: stack.name,
+                centerX, dialogY + 46, 0xFFFFFF
+            )
         }
 
         context.drawCenteredTextWithShadow(textRenderer,

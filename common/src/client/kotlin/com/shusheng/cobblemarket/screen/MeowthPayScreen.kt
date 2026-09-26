@@ -207,10 +207,13 @@ class MeowthPayScreen(
         val lineX = dialogX + 12
         var ly = dialogY + 42
         // 商品名按可用宽度截断（长名不溢出弹窗）
+        // ⚠ 走 `truncateStyled`（保留分段样式）—— `.string` 一转，精灵的属性色 / 金★ 全被洗成白字
+        //   （2026-09-26 用户报「其他地方我懒得一个一个找了」；本文件主界面那条早就用了 truncateStyled
+        //   并在注释里点过这个坑，**确认弹窗这条漏改了**）
         val itemLine = Text.translatable("cobblemarket.meowth_pay.confirm_item").append(itemDesc)
         context.drawTextWithShadow(
             textRenderer,
-            com.shusheng.cobblemarket.util.TextUtil.truncateString(itemLine.string, dW - 24),
+            com.shusheng.cobblemarket.util.TextUtil.truncateStyled(itemLine, dW - 24),
             lineX, ly, 0xFFFFFF
         )
         ly += 18

@@ -160,7 +160,14 @@ data class BuyOrder(
     /** 通知消息用的展示名：精灵 = 物种翻译 key（客户端语言渲染）或「任意精灵」key；物品 = 物品翻译 key */
     fun requirementText(): net.minecraft.text.Text =
         if (type == BuyOrderType.POKEMON) {
-            net.minecraft.text.Text.translatable(speciesKey ?: "cobblemarket.buy_order.any_pokemon")
+            // 精灵名走**主属性色**，与下面物品分支的稀有度色对称 ——
+            // 此前精灵分支无色，5 条通知（强制下架 / 交付到账 / 被拒收×2 / 到期）里的名字全是白字，
+            // 而同一个函数的物品分支却有颜色（2026-09-26 用户报「其他地方懒得一个一个找了」）
+            com.shusheng.cobblemarket.util.TypeTextColors.speciesName(
+                net.minecraft.text.Text.translatable(speciesKey ?: "cobblemarket.buy_order.any_pokemon"),
+                com.shusheng.cobblemarket.util.TypeTextColors.typeKeyOf(speciesId, true).ifEmpty { null },
+                false
+            )
         } else {
             // 物品名走稀有度色（= 物品栏悬停的名字颜色）；求购单只有 itemId、没有完整栈
             com.shusheng.cobblemarket.util.ItemNameText.rarityColoredNameById(itemId)
