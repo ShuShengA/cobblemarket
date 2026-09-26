@@ -14,6 +14,25 @@ import net.minecraft.text.Text
  */
 object RemainingTime {
 
+    /** 「即将到期」的告警窗口：剩余不足 5 分钟就变红 */
+    private const val WARN_WINDOW_MS = 5 * 60 * 1000L
+
+    /** 剩余不足 [WARN_WINDOW_MS] 时的告警色 */
+    const val URGENT_COLOR = 0xFF6666
+
+    /** 还没到告警窗口时的常规色 */
+    const val NORMAL_COLOR = 0xAAAAAA
+
+    /**
+     * 剩余时间的**显示色** —— 列表行内与悬停窗**必须共用这一个**。
+     *
+     * ⚠ 此前这套配色在 `AuctionScreen` / `AdminAuctionScreen` / `BuyOrderScreen` 的**行内**各写了一遍，
+     *   而这三处的**悬停窗压根没上色**（整行白）：行里是最醒目的红色告警，悬停窗里却白得毫无提示
+     *（用户 2026-09-26 报「行内是彩色、悬浮窗是白色」）。同 [text]，也收到这里来。
+     */
+    fun color(endsAt: Long, now: Long = System.currentTimeMillis()): Int =
+        if (endsAt - now < WARN_WINDOW_MS) URGENT_COLOR else NORMAL_COLOR
+
     /**
      * @param endsAt 结束时刻（毫秒时间戳）
      * @param endedKey 已结束时的词条 key（拍卖与求购单各有一句，按玩家语言渲染）

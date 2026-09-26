@@ -718,7 +718,9 @@ class BuyOrderScreen(
         Text.translatable("cobblemarket.buy_order.tooltip_expires").append(
             com.shusheng.cobblemarket.util.RemainingTime.text(
                 entry.expiresAt, "cobblemarket.buy_order.ending", secondPrecision = false)
-        ).asOrderedText() to 0xFFFFFF
+        // ⚠ 与行内同源（见 [com.shusheng.cobblemarket.util.RemainingTime.color]）：
+        //   原来固定白 ⇒ 快到期时行里红了、悬停窗还是白的（用户 2026-09-26 报）
+        ).asOrderedText() to com.shusheng.cobblemarket.util.RemainingTime.color(entry.expiresAt)
 
     /**
      * 强制下架弹窗要显示的**完整信息行** = [requirementStaticLines] + 数量（物品单）+ 到期，
@@ -961,7 +963,7 @@ class BuyOrderScreen(
             // 求购单没有反狙击延长，不需要秒级精度
             val remaining = com.shusheng.cobblemarket.util.RemainingTime.text(
                 entry.expiresAt, "cobblemarket.buy_order.ending", secondPrecision = false)
-            val remainingColor = if (entry.expiresAt - System.currentTimeMillis() < 5 * 60 * 1000) 0xFF6666 else 0xAAAAAA
+            val remainingColor = com.shusheng.cobblemarket.util.RemainingTime.color(entry.expiresAt)
             context.drawTextWithShadow(textRenderer, remaining, rowL + 116, y + 7, remainingColor)
             if (entry.pending != null) {
                 context.drawTextWithShadow(textRenderer,
