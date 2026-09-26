@@ -180,9 +180,10 @@ object ShareNetwork {
                 speciesId = pokemon.species.resourceIdentifier.toString(),
                 aspects = pokemon.aspects.toList(),
                 shiny = pokemon.shiny,
-                heldItemNbt = if (pokemon.heldItemVisible) {
-                    encodeStack(pokemon.heldItem(), player.serverWorld.registryManager)
-                } else null,
+                // 携带物**总是**下发（大图要如实显示它带了什么）；
+                // 「模型手里拿不拿」由 heldItemVisible 带下去（用户 2026-09-26 拍板：隐藏只管模型）
+                heldItemNbt = encodeStack(pokemon.heldItem(), player.serverWorld.registryManager),
+                heldItemVisible = pokemon.heldItemVisible,
                 itemId = "",
                 itemNbt = null,
                 itemComponentsSpec = null,
@@ -322,13 +323,18 @@ object ShareNetwork {
                 pokemon.caughtBall.name.toString()
             )
         )
-        // 携带物：玩家在队伍详情里设成「隐藏」的不显示（与挂单/大图同一口径）
+        // 携带物：**总是**列出（含设成「隐藏」的）；隐藏时注明一句 —— 模型上不显示它、
+        // 而这里照常显示，不注明的话玩家会以为「明明带了东西却没显示」是数据错了（用户 2026-09-26）
         val held = pokemon.heldItem()
-        if (!held.isEmpty && pokemon.heldItemVisible) {
+        if (!held.isEmpty) {
             // 携带物名走稀有度色（与物品栏悬停一致）
-            lines.add(Text.translatable("cobblemarket.gui.tooltip_held").append(
+            val heldLine = Text.translatable("cobblemarket.gui.tooltip_held").append(
                 com.shusheng.cobblemarket.util.ItemNameText.rarityColoredName(held)
-                    ?: Text.translatable(held.item.translationKey)))
+                    ?: Text.translatable(held.item.translationKey))
+            if (!pokemon.heldItemVisible) {
+                heldLine.append(Text.translatable("cobblemarket.gui.held_hidden").formatted(Formatting.GRAY))
+            }
+            lines.add(heldLine)
         }
         // IV/EV 六行：行色按属性色系、EV 恒红（与出价弹窗、拍卖播报完全一致）
         lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs"))
