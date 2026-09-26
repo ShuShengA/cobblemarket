@@ -914,14 +914,20 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         if (entry.type == "POKEMON") {
             val extra = entry.extraData
             val primaryType = extra["primaryType"] ?: ""
-            val tc = typeColor(if (primaryType.isNotEmpty()) primaryType else "cobblemon.type.normal")
-            context.drawTextWithShadow(textRenderer, displayName(entry), infoX, iy, tc)
-            var cx = infoX + textRenderer.getWidth(displayName(entry))
-            if (entry.shiny) {
-                context.drawText(textRenderer, "★", cx + 2, iy, GOLD_COLOR, false)
-                cx += 2 + textRenderer.getWidth("★")
-            }
-            context.drawText(textRenderer, "  Lv.${entry.level}", cx + 2, iy, 0xFFFFFF, false)
+            // 名字★Lv 行走全项目统一入口（名字本体主属性色、★ 金、Lv 吃行色白）——
+            // 原来这里是手写的三段（名字 / ★ / Lv 各画一次），★ 前导 2px、Lv 前导 2px+两个空格，
+            // 与别处的「一个空格 + 两个空格」对不上，★ 也漏了阴影。
+            context.drawTextWithShadow(
+                textRenderer,
+                EntryBadgeRenderer.nameWithLevelLine(
+                    EntryBadgeRenderer.nameWithShinyStar(displayName(entry), entry.shiny),
+                    // primaryType 为空时原代码退到普通系色，改走统一入口后要把这个 fallback 显式带上
+                    // （`typeColor("")` 会落 else → 纯白，颜色就变了）
+                    if (primaryType.isNotEmpty()) primaryType else "cobblemon.type.normal",
+                    entry.level
+                ),
+                infoX, iy, 0xFFFFFF
+            )
             iy += 10
             val secondaryType = extra["secondaryType"] ?: ""
             val typeText = (if (primaryType.isNotEmpty()) Text.translatable(primaryType).string else "-") +
