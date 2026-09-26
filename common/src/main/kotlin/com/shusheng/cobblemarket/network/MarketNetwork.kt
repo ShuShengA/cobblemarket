@@ -3491,6 +3491,13 @@ object MarketNetwork {
             ball = "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
             primaryType = "cobblemon.type.${pokemon.primaryType.name.lowercase()}",
             secondaryType = pokemon.secondaryType?.let { "cobblemon.type.${it.name.lowercase()}" } ?: "",
+            // ⚠ **这一行曾经漏了**（2026-09-26 用户实测抓到）：`write` / `read` 早就有 `teraType`，
+            //   但构造时没传 ⇒ 一直用默认值空串 ⇒ **所有「选自己的精灵」的界面（上架选择 /
+            //   拍卖上架选择 / 求购单交付）永远不显示太晶**。
+            //   而精灵市场那边显示的是**挂单的 extraData**（那条路填了值）⇒ 表现成「只有上架过的
+            //   精灵才显示太晶」，看着像"旧数据没有"。
+            //   口径与挂单那条完全一致（`MarketNetwork` 写 extraData 处），别各写各的。
+            teraType = "cobblemon.type.${pokemon.teraType.id.path}",
             source = source,
             slot = slot,
             // 携带物：**总是**下发（行信息 / 弹窗 / 图标都要如实显示它带了什么）；
