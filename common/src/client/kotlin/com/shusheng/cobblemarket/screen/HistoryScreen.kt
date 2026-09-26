@@ -184,7 +184,12 @@ class HistoryScreen(private val showAll: Boolean = false) :
             val fullTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date(e.timestamp))
             renderTooltip(context, listOf(
                 speciesNameText(e),                                                          // 属性色 / 稀有度色
-                Text.literal("[${typeTextOf(e)}] $fullTime"),
+                // ⚠ 类型**带颜色**、时间灰 —— 与行内是同一套配色（`LoanHistoryScreen` 也是这么写的）。
+                //   原先是一句 `"[类型] 时间"`，两段都没设色 ⇒ 悬停窗整行白、跟行里对不上
+                //（用户 2026-09-26 报：行里是彩色、悬浮窗是白色）。⚠ 两段平级 append，别让带色的当父节点
+                Text.literal("")
+                    .append(Text.literal("[${typeTextOf(e)}]").styled { it.withColor(typeColor(e.type)) })
+                    .append(Text.literal(" $fullTime").styled { it.withColor(0x888888) }),
                 Text.literal("$seller$buyer"),
                 Text.literal("${com.shusheng.cobblemarket.client.formatPrice(e.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}")
                     .formatted(Formatting.GOLD)                                              // 金额金

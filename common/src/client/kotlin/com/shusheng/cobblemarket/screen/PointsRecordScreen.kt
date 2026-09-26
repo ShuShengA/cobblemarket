@@ -196,19 +196,29 @@ class PointsRecordScreen : Screen(Text.translatable("cobblemarket.points.record.
                 val full = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
                 context.drawTooltip(
                     textRenderer,
+                    // ⚠ 值要**与行内同色**（原来三行都裸白，而行里时间是灰、金额是金，对不上）——
+                    //   按项目文案铁律拆成**两段平级 append**：标签不设色（吃行色白）、值自带色。
+                    //   ⚠ 别图省事整行 `.styled`：那会把标签也染上色
+                    //   ⚠ 余额那行行内本来就是白，所以值也不设色（保持两处一致）
                     listOf(
-                        Text.translatable(
-                            "cobblemarket.points.record.tip_time",
-                            Instant.ofEpochMilli(e.at).atZone(ZoneId.systemDefault()).format(full)
-                        ),
-                        Text.translatable(
-                            "cobblemarket.points.record.tip_amount",
-                            CurrencyService.amountText(e.amount, MarketCurrency.POINTS)
-                        ),
-                        Text.translatable(
-                            "cobblemarket.points.record.tip_balance",
-                            CurrencyService.amountText(e.balanceAfter, MarketCurrency.POINTS)
-                        )
+                        Text.literal("")
+                            .append(Text.translatable("cobblemarket.points.record.tip_time"))
+                            .append(
+                                Text.literal(Instant.ofEpochMilli(e.at).atZone(ZoneId.systemDefault()).format(full))
+                                    .styled { it.withColor(0xAAAAAA) }
+                            ),
+                        Text.literal("")
+                            .append(Text.translatable("cobblemarket.points.record.tip_amount"))
+                            .append(
+                                // ⚠ `amountText` 的**编译期类型**是 Text（不可变），拿不到 `styled` ——
+                                //   套一层 `Text.literal("").append(...)` 拿到 MutableText，再染色
+                                Text.literal("")
+                                    .append(CurrencyService.amountText(e.amount, MarketCurrency.POINTS))
+                                    .styled { it.withColor(0xFFAA00) }
+                            ),
+                        Text.literal("")
+                            .append(Text.translatable("cobblemarket.points.record.tip_balance"))
+                            .append(CurrencyService.amountText(e.balanceAfter, MarketCurrency.POINTS))
                     ),
                     mouseX, mouseY
                 )
