@@ -33,11 +33,11 @@ object PokemonCelebrationAnimation {
 
     // ⚠ 总时长决定战吼吼不吼得完：最长的战吼是喷火龙的 battle_cry（3.0 秒）。
     // 3180 → 2980（停留 1800 → 1600）会短它 0.02 秒，**战吼尾巴会被截断**；要保战吼完整就得 ≥ 3180
-    private const val DURATION_MS = 2980L
+    private const val DURATION_MS = 3980L
 
     /** 起点动画（从界面图标起飞）的时间轴，单位毫秒：飞行 → 停留 → 淡出（淡出 = 总时长 − 前两段 = 400ms） */
     private const val FLY_MS = 980f
-    private const val HOLD_MS = 1_600f
+    private const val HOLD_MS = 2_600f
 
     /** **顶部空降**的起点：屏幕上方外侧的纵向位置（视觉上「从天上落下来」） */
     private const val SCRATCH_FROM_Y = 260f

@@ -8,6 +8,7 @@ import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
@@ -123,7 +124,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     // ── 对话框状态（精灵） ──
     private var editingPokemon: PokemonPriceLimitEntry? = null
     private var previewRenderable: RenderablePokemon? = null
-    private val previewState = FloatingState()
+    private val previewState = PreviewStateHolder()
     private var previewSpecies: Species? = null
     /**
      * 物种候选 + 当前选中下标（**多候选时预览槽位下方出现左右箭头切换**）。
@@ -496,7 +497,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 PokemonIconRenderer.draw(
                     context = context,
                     renderable = rp,
-                    state = previewState,
+                    state = previewState.stateFor(rp),
                     x = slotX, y = slotY, size = slotSize,
                     delta = delta,
                     animate = useFloat

@@ -9,6 +9,7 @@
 - **Pokémon listing screen: the bottom of the list wasted a full row**: the gap between the last row and the "x-y / n" counter underneath was wide enough for one more row; it now matches the **item** listing screen
 - **Opening the balance HUD position editor in single-player paused the whole world**: opening it in a single-player save froze time, crops and furnaces, just like pressing ESC. It now behaves like the other screens. Only affects **single-player saves**; dedicated servers are unaffected
 - **At night, icons stood up before lying down when a screen opened**: during a species' rest hours the icon is supposed to already be asleep, yet it began from the idle pose and transitioned over — noticeable on every page flip and screen switch. This is now fixed, so the icon is already asleep as the screen opens
+- **A Pokémon previewed right after another one performed the previous Pokémon's animation**: open a preview, leave the moment its animation starts, then open another one — the new Pokémon strikes the **previous one's pose** (the cry, oddly, is its own). It takes quick hands to hit, and it affects every screen with a preview: market, auctions, buy orders. This is now fixed
 
 ## 1.2.0 (in development, unreleased)
 

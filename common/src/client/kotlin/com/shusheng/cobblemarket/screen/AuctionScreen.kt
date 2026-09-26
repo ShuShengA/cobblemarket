@@ -12,6 +12,7 @@ import com.shusheng.cobblemarket.client.ItemCelebrationAnimation
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.ItemHoverPreview
@@ -191,7 +192,7 @@ class AuctionScreen(
     private var bidErrorUntil = 0L
     private var bidCancelButton: NineSliceButton? = null
     private var bidRenderable: RenderablePokemon? = null
-    private val bidPreviewState = FloatingState()
+    private val bidPreviewState = PreviewStateHolder()
 
     /**
      * 出价弹窗里那个精灵图标的屏幕位置，**渲染时记录**。
@@ -1396,7 +1397,7 @@ class AuctionScreen(
                     PokemonIconRenderer.draw(
                         context = context,
                         renderable = rp,
-                        state = bidPreviewState,
+                        state = bidPreviewState.stateFor(rp),
                         x = slotX, y = slotY, size = slotSize,
                         delta = delta,
                         animate = useFloat
@@ -1406,7 +1407,7 @@ class AuctionScreen(
                     // 再叠一层 AUTO_CRY_DELAY_MS 延迟，等弹窗稳定显示、玩家看清了再叫
                     if (bidCryAt != 0L && System.currentTimeMillis() >= bidCryAt) {
                         bidCryAt = 0L
-                        IconCryClick.play(bidPreviewState, rp)
+                        IconCryClick.play(bidPreviewState.stateFor(rp), rp)
                     }
                 } catch (_: Exception) {
                 }
