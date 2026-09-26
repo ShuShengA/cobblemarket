@@ -98,7 +98,17 @@ object PointMarketFactory {
             Gender.entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
                 ?.let { pokemon.gender = it }
         }
-        spec.nature?.let { id -> Natures.getNature(id)?.let { pokemon.nature = it } }
+        // ⚠ **不能把完整 id 直接喂给 `Natures.getNature(String)`**：它内部会**无条件**先
+        //   `cobblemonResource(它)` 补一次命名空间 ⇒ 传 `cobblemon:adamant` 会拼成
+        //   `cobblemon:cobblemon:adamant`，**构造 Identifier 时直接抛**（那个 `?:` 兜的是 null，
+        //   兜不住异常）。2026-09-26 用户实测：**只要给商品配了具体性格，买这一格就毫无反应**
+        //   （异常一路抛到 `server.execute` 被吞掉，界面关了、钱没扣、连红字都没有）。
+        //   这里两种存法都吃：**先按裸名**（它期望的格式）查，查不到再按完整 id 走 Identifier 重载。
+        spec.nature?.let { id ->
+            val nature = Natures.getNature(id.substringAfter(':'))
+                ?: Identifier.tryParse(id)?.let { Natures.getNature(it) }
+            nature?.let { pokemon.nature = it }
+        }
         spec.ability?.let { id -> applyAbility(pokemon, id) }
         spec.ball?.let { id ->
             Identifier.tryParse(id)?.let { PokeBalls.getPokeBall(it) }?.let { pokemon.caughtBall = it }

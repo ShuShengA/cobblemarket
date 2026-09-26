@@ -297,7 +297,15 @@ object PointMarketService {
         // ── 造货：在此之前什么都没碰；造不出来 = 数据坏了 → 整笔拒绝 ──
         val pokemon = if (entry.kind == ShopEntry.KIND_POKEMON) {
             val spec = entry.pokemon ?: return PointMarketBuyResult.Failure(PointMarketError.BAD_SPEC)
-            PointMarketFactory.createPokemon(spec, player)
+            // ⚠ **造货全程必须兜住异常**：它排在扣款之前，异常抛出去 = 整笔购买**静默死掉**
+            //   （`server.execute` 把异常吞了 → 界面关了、钱没扣、连红字都没有）。
+            //   2026-09-26「配了具体性格就买不了」就是这么被埋了半天的 —— 见 [PointMarketFactory.createPokemon]。
+            //   兜住之后至少会变成一条**具体原因**的失败提示 + 服务端 warn。
+            runCatching { PointMarketFactory.createPokemon(spec, player) }
+                .onFailure {
+                    CobbleMarket.LOGGER.warn("Point shop: createPokemon failed for {}: {}", spec.species, it)
+                }
+                .getOrNull()
                 ?: return PointMarketBuyResult.Failure(PointMarketError.GENERATE_FAILED)
         } else {
             null
@@ -324,6 +332,14 @@ object PointMarketService {
             state.setStock(kind, index, entry.stock) // 回滚库存（entry 是扣减前的快照）
             return PointMarketBuyResult.Failure(PointMarketError.NOT_ENOUGH_POINTS)
         }
+
+        // ⚠ **交付之前先留一份副本**：`deliverItems` 里的 `insertStack` 是"转移"语义 ——
+        //   栈塞进背包后**原对象就空了**（它自己就是用 `stack.isEmpty` 判断塞没塞完的）。
+        //   而调用方还要拿这些实物去发庆祝动画（见 [PointMarketBuyResult.Success] 的 `items`），
+        //   之前直接把它们交出去 ⇒ 拿到手的全是**空栈** ⇒ `ItemStack.encode` 对空栈抛异常 ⇒
+        //   动画静默消失（2026-09-26 服务端日志抓到的 `Cannot encode empty ItemStack`）。
+        //   与 memory 里"参考栈必须 copy，活引用会被扣空"是同一个坑。
+        val deliveredItems = items.map { it.copy() }
 
         val delivered = if (pokemon != null) {
             // Party.add 在队伍满时会自动转入 PC，返回 false = 两边都满
@@ -362,8 +378,11 @@ object PointMarketService {
         CobbleMarket.LOGGER.info(
             "Point shop: {} bought slot {} x{} for {} RP", player.name.string, index, amount, total
         )
-        // 把造出来的实物一并交出去：调用方要拿它发庆祝动画（概率闪光只有此刻才确定）
-        return PointMarketBuyResult.Success(pokemon = pokemon, items = items, count = amount, total = total)
+        // 把造出来的实物一并交出去：调用方要拿它发庆祝动画（概率闪光只有此刻才确定）。
+        // ⚠ 交的是**交付前留的副本**，不是 `items` 本身（那边已经被交付消耗成空栈了，见上）
+        return PointMarketBuyResult.Success(
+            pokemon = pokemon, items = deliveredItems, count = amount, total = total
+        )
     }
 
     /** 队伍或 PC 还有空位吗（`add` 会自动溢出到 PC，所以两边都满才是真放不下） */
@@ -494,13 +513,18 @@ object PointMarketService {
 
     /**
      * 物品规格：物品 id 必须存在；组件快照走 [ItemRuleComponents.sanitizeSpec] 重建一遍，
-     * **白名单外的组件一律丢弃**（与黑名单/限价同一套语义）—— 客户端塞什么组件进来都不算数，
-     * 服务端重建出来的才算。
+     * **白名单外的组件一律丢弃** —— 客户端塞什么组件进来都不算数，服务端重建出来的才算。
+     *
+     * ⚠ `includeDamage = true`：商城卖的是**实物**，磨损要跟着商品走（默认那套是给黑名单 /
+     *   价格限制那种"规则条目"用的，那边磨损是噪音）。**漏了它，客户端把耐久传上来也会被这道
+     *   重建吃掉** —— 表现是商品图标的耐久条永远不显示、快坏的装备卖出去变成满耐久。
      */
     private fun normalizeItem(spec: ShopItemSpec, server: MinecraftServer): ShopItemSpec? {
         val identifier = Identifier.tryParse(spec.itemId) ?: return null
         if (Registries.ITEM.getOrEmpty(identifier).isEmpty) return null
-        val sanitized = ItemRuleComponents.sanitizeSpec(spec.itemId, spec.componentsSpec, server.registryManager)
+        val sanitized = ItemRuleComponents.sanitizeSpec(
+            spec.itemId, spec.componentsSpec, server.registryManager, includeDamage = true
+        )
         return spec.copy(componentsSpec = sanitized)
     }
 

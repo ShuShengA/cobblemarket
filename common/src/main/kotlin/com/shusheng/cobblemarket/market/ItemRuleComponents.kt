@@ -23,8 +23,16 @@ import net.minecraft.registry.RegistryWrapper
  */
 object ItemRuleComponents {
 
-    /** 白名单组件 ID：贸易相关；忽略 damage/repair_cost/max_stack_size 等噪音组件
-     * （服主 give 的物品磨损为 0，若存进去会变成「要求磨损=0」的怪语义） */
+    /** 白名单组件 ID：贸易相关；忽略 repair_cost/max_stack_size 等噪音组件
+     * （服主 give 的物品磨损为 0，若存进去会变成「要求磨损=0」的怪语义）。
+     *
+     * ⚠ **`damage` 不在这个白名单里** —— 它是**按调用方语义**决定要不要的：
+     *   规则条目（黑名单 / 价格限制 / 求购单）不要它（正是上面那条"磨损=0 怪语义"）；
+     *   而**卖实物**的调用方（RP 商城的商品）**必须要**，见 [extractSpec] 的 `includeDamage`。
+     *
+     * ⚠ 2026-09-26 之前商城也走默认的"不要"，于是**上架物品的耐久根本没存**：一把快坏的镐子
+     *   卖出去，买家拿到的是**满耐久**（等于凭空修复，玩家能刷）；表面症状则是"物品图标的
+     *   耐久条永远不显示"（用户实测报上来的）。 */
     private val WHITELIST_IDS: Set<String> by lazy {
         setOf(
             Registries.DATA_COMPONENT_TYPE.getId(DataComponentTypes.STORED_ENCHANTMENTS).toString(),
@@ -35,6 +43,11 @@ object ItemRuleComponents {
         )
     }
 
+    /** `minecraft:damage` 的组件 id —— 只给 [extractSpec] 的 `includeDamage` 用（见 [WHITELIST_IDS] 的注释） */
+    private val DAMAGE_ID: String by lazy {
+        Registries.DATA_COMPONENT_TYPE.getId(DataComponentTypes.DAMAGE).toString()
+    }
+
     private val ENCHANTMENT_IDS: Set<String> by lazy {
         setOf(
             Registries.DATA_COMPONENT_TYPE.getId(DataComponentTypes.STORED_ENCHANTMENTS).toString(),
@@ -42,8 +55,18 @@ object ItemRuleComponents {
         )
     }
 
-    /** 从手持物品提取白名单组件快照；无白名单组件返回 null（= 所有变体条目） */
-    fun extractSpec(stack: ItemStack, registryLookup: RegistryWrapper.WrapperLookup): NbtCompound? {
+    /**
+     * 从手持物品提取白名单组件快照；无白名单组件返回 null（= 所有变体条目）。
+     *
+     * @param includeDamage **卖实物**的调用方传 `true`（RP 商城的商品物品）—— 让磨损跟着商品走，
+     *   否则快坏的装备卖出去会变成满耐久（凭空修复）。规则条目保持默认 `false`，
+     *   理由见 [WHITELIST_IDS] 的注释。
+     */
+    fun extractSpec(
+        stack: ItemStack,
+        registryLookup: RegistryWrapper.WrapperLookup,
+        includeDamage: Boolean = false
+    ): NbtCompound? {
         if (stack.isEmpty) return null
         val components = (stack.encode(registryLookup) as? NbtCompound)?.getCompound("components")
             ?: return null
@@ -51,12 +74,19 @@ object ItemRuleComponents {
         WHITELIST_IDS.forEach { key ->
             if (components.contains(key)) out.put(key, components.get(key)!!)
         }
+        // 磨损按调用方语义决定收不收（见 includeDamage）。满耐久没有 damage 组件，`contains` 天然跳过
+        if (includeDamage && components.contains(DAMAGE_ID)) out.put(DAMAGE_ID, components.get(DAMAGE_ID)!!)
         return out.takeIf { !it.isEmpty }
     }
 
     /** 服务端侧：从「itemId + 客户端传来的组件快照」重建物品并重新提取白名单组件。
      * 用于搜索路径添加变体条目（客户端构造快照，服务端不盲信——重建失败或非白名单组件一律丢弃）；失败返回 null */
-    fun sanitizeSpec(itemId: String, raw: NbtCompound?, registryLookup: RegistryWrapper.WrapperLookup): NbtCompound? {
+    fun sanitizeSpec(
+        itemId: String,
+        raw: NbtCompound?,
+        registryLookup: RegistryWrapper.WrapperLookup,
+        includeDamage: Boolean = false
+    ): NbtCompound? {
         if (raw == null || raw.isEmpty) return null
         val stack = try {
             ItemStack.fromNbtOrEmpty(registryLookup, NbtCompound().apply {
@@ -67,7 +97,9 @@ object ItemRuleComponents {
         } catch (_: Throwable) {
             return null
         }
-        return extractSpec(stack, registryLookup)
+        // ⚠ `includeDamage` 必须**透传**：服务端这道重建会把白名单外的组件丢掉，
+        //   不透传的话客户端传上来的磨损还是会被吃掉（那边改了这边不改 = 白改）
+        return extractSpec(stack, registryLookup, includeDamage)
     }
 
     /** 条目组件要求的「具体程度」：附魔按个数计（锋利V+抢夺III=2 比 锋利V=1 更具体），其它组件各计 1；无组件=0。
