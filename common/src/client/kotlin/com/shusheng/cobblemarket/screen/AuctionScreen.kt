@@ -1583,14 +1583,17 @@ class AuctionScreen(
                 val gi = if (gender == "MALE") GENDER_ICON_MALE else GENDER_ICON_FEMALE
                 com.cobblemon.mod.common.api.gui.blitk(
                     matrixStack = context.matrices, texture = gi,
-                    x = cx + 2, y = iy, width = 6, height = 8
+                    x = cx + EntryBadgeRenderer.NAME_TAIL_GAP, y = iy, width = 6, height = 8
                 )
-                genderW = 2 + 6
+                genderW = EntryBadgeRenderer.NAME_TAIL_GAP + 6
             }
             // 体型徽章（紧跟公母图标，留 3px 空隙）
             val sizeBadge = extra["size"].orEmpty()
             if (sizeBadge.isNotEmpty()) {
-                EntryBadgeRenderer.drawSizeBadgeIcon(context, sizeBadge, cx + genderW + if (genderW > 0) 3 else 2, iy)
+                EntryBadgeRenderer.drawSizeBadgeIcon(
+                    context, sizeBadge,
+                    cx + genderW + if (genderW > 0) 3 else EntryBadgeRenderer.NAME_TAIL_GAP, iy
+                )
             }
             iy += 10
             val secondaryType = extra["secondaryType"] ?: ""
@@ -1954,7 +1957,7 @@ class AuctionScreen(
                     context.drawText(textRenderer, "★", sx + 2, y + 7, GOLD_COLOR, false)
                     sx += 2 + textRenderer.getWidth("★")
                 }
-                sx += 2
+                sx += EntryBadgeRenderer.NAME_TAIL_GAP
                 val gender = entry.extraData["gender"]
                 if (gender == "MALE" || gender == "FEMALE") {
                     val gi = if (gender == "MALE") GENDER_ICON_MALE else GENDER_ICON_FEMALE
