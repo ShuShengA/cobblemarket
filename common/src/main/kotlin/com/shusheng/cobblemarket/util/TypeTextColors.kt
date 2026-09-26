@@ -22,6 +22,45 @@ object TypeTextColors {
     )
 
     /**
+     * **属性行**的完整组装 —— `属性：主 [+ 副] [（太晶：x）]`，界面与服务端聊天**共用这一份**。
+     *
+     * ⚠ 别各拼各的：这一行在**七处**各有一份拷贝（拍卖 / 管理端拍卖的悬停窗与弹窗、求购单悬停窗、
+     *   服务端的拍卖播报与求购交付悬停），太晶那段稍不留神就漏一处。2026-09-26 收口到这里。
+     *
+     * @param teraType 太晶属性翻译 key；**空串 = 没有**（整段不画）——
+     *   官方 `Pokemon.teraType` 默认就是主属性，服务端只在 **≠ 主属性** 时才下发，
+     *   所以「没装太晶附属模组」的玩家看到的东西与以前完全一样
+     */
+    fun typeLineWithTera(primaryType: String, secondaryType: String, teraType: String): Text {
+        val line = Text.literal(
+            net.minecraft.text.Text.translatable("cobblemarket.gui.tooltip_type").string
+        ).append(typeLineOf(primaryType, secondaryType))
+        if (teraType.isNotEmpty()) {
+            line.append(
+                net.minecraft.text.Text.translatable(
+                    "cobblemarket.gui.tooltip_tera",
+                    net.minecraft.text.Text.translatable(teraType).styled { it.withColor(color(teraType)) }
+                )
+            )
+        }
+        return line
+    }
+
+    /**
+     * 主 + 副属性的分段着色（「主 + 副」，各段自己的色）。
+     * ⚠ 三段**平级**挂在空节点下 —— 带色的段不能当父节点（MC 会把父节点样式传给每段 append）。
+     */
+    private fun typeLineOf(primaryType: String, secondaryType: String): Text {
+        val line = Text.literal("")
+        line.append(Text.translatable(primaryType).styled { it.withColor(color(primaryType)) })
+        if (secondaryType.isNotEmpty()) {
+            line.append(Text.literal(" + "))
+            line.append(Text.translatable(secondaryType).styled { it.withColor(color(secondaryType)) })
+        }
+        return line
+    }
+
+    /**
      * 物种资源 id → 属性翻译 key（`cobblemon.type.xxx`）；[primary] = false 时取副属性。
      * 解析不出 / 该物种没有对应属性时返回**空串**（调用方按"没有这条"处理）。
      *

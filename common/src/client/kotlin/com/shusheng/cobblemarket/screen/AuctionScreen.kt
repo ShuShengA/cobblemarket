@@ -1596,8 +1596,9 @@ class AuctionScreen(
             val secondaryType = extra["secondaryType"] ?: ""
             val typeText = (if (primaryType.isNotEmpty()) Text.translatable(primaryType).string else "-") +
                 if (secondaryType.isNotEmpty()) " + ${Text.translatable(secondaryType).string}" else ""
-            infoLineText(Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
-                .append(EntryBadgeRenderer.typeLine(primaryType, secondaryType)))
+            // 属性行（**含太晶**）：共用同一个组装入口
+            infoLineText(com.shusheng.cobblemarket.util.TypeTextColors.typeLineWithTera(
+                primaryType, secondaryType, extra["teraType"].orEmpty()))
             // 性格（薄荷约定：原生斜体+括号生效）
             context.drawTextWithShadow(textRenderer,
                 Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
@@ -2128,8 +2129,11 @@ class AuctionScreen(
             staticLines.add(EntryBadgeRenderer.nameWithLevelLine(
                 EntryBadgeRenderer.nameWithShinyStar(displayName(entry), entry.shiny),
                 primaryType, entry.level) to 0xFFFFFF)
-            staticLines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
-                .append(EntryBadgeRenderer.typeLine(primaryType, secondaryType)) to 0xFFFFFF)
+            // 属性行（**含太晶**）：与其余各处共用同一个组装入口，别再各拼各的
+            staticLines.add(
+                com.shusheng.cobblemarket.util.TypeTextColors.typeLineWithTera(
+                    primaryType, secondaryType, extra["teraType"].orEmpty()
+                ) to 0xFFFFFF)
             staticLines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(EntryBadgeRenderer.natureText(extra["natureBase"] ?: "", extra["nature"] ?: ""))
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))

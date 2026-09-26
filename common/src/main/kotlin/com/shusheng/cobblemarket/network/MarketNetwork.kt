@@ -92,7 +92,15 @@ data class ListingEntry(
      * ⚠ 只管**模型手里**：行信息 / 弹窗 / 图标 / 大图一律照常显示（用户 2026-09-26 拍板——
      *   隐藏是「不渲染在模型上」，不是「没带东西」，交易信息不该跟着消失）。旧数据没有这一位 = true
      */
-    val heldItemVisible: Boolean = true
+    val heldItemVisible: Boolean = true,
+    /**
+     * 太晶属性翻译 key（`cobblemon.type.xxx`）—— **空串 = 没有**（不显示）。
+     *
+     * 只有当精灵的 `teraType` **≠ 主属性**时服务端才下发：官方 `Pokemon.teraType` 的默认值
+     * 就是主属性，不加这个判断的话每只精灵都会多一行「太晶：火」这种零信息量的废话。
+     * 装了太晶附属模组、玩家真设过时才有值（附属模组只能写官方那个字段，故天然兼容）。
+     */
+    val teraType: String = ""
 ) {
     /**
      * 这条挂单是不是 RP 计价 —— **渲染货币单位就读它**。
@@ -134,6 +142,7 @@ data class ListingEntry(
         buf.writeString(currency)
         buf.writeString(moves)
         buf.writeBoolean(heldItemVisible)
+        buf.writeString(teraType)
     }
 
     companion object {
@@ -169,7 +178,8 @@ data class ListingEntry(
             sizeCategory = buf.readString(),
             currency = buf.readString(),
             moves = buf.readString(),
-            heldItemVisible = buf.readBoolean()
+            heldItemVisible = buf.readBoolean(),
+            teraType = buf.readString()
         )
     }
 }
@@ -687,7 +697,15 @@ data class PokemonPreview(
      * ⚠ 只管**模型手里**：行信息 / 弹窗 / 图标 / 大图一律照常显示（用户 2026-09-26 拍板——
      *   隐藏是「不渲染在模型上」，不是「没带东西」，交易信息不该跟着消失）。旧数据没有这一位 = true
      */
-    val heldItemVisible: Boolean = true
+    val heldItemVisible: Boolean = true,
+    /**
+     * 太晶属性翻译 key（`cobblemon.type.xxx`）—— **空串 = 没有**（不显示）。
+     *
+     * 只有当精灵的 `teraType` **≠ 主属性**时服务端才下发：官方 `Pokemon.teraType` 的默认值
+     * 就是主属性，不加这个判断的话每只精灵都会多一行「太晶：火」这种零信息量的废话。
+     * 装了太晶附属模组、玩家真设过时才有值（附属模组只能写官方那个字段，故天然兼容）。
+     */
+    val teraType: String = ""
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(uuid); buf.writeString(species); buf.writeString(speciesId); buf.writeString(speciesName)
@@ -707,6 +725,7 @@ data class PokemonPreview(
         buf.writeString(sizeCategory)
         buf.writeString(moves)
         buf.writeBoolean(heldItemVisible)
+        buf.writeString(teraType)
     }
 
     companion object {
@@ -725,7 +744,8 @@ data class PokemonPreview(
             (0 until buf.readVarInt()).map { buf.readString() },
             buf.readString(),
             buf.readString(),   // moves：与 write 端严格同序（write 在 sizeCategory 之后）
-            buf.readBoolean()   // heldItemVisible：与 write 端严格同序（write 在 moves 之后）
+            buf.readBoolean(),   // heldItemVisible：与 write 端严格同序（write 在 moves 之后）
+            buf.readString()     // teraType：与 write 端同序（write 在 heldItemVisible 之后）
         )
     }
 }
@@ -1450,6 +1470,8 @@ object MarketNetwork {
                             heldItemNbt = detail["heldItemNbt"] ?: "",
                             // 「模型手里拿不拿」：缺这一位（旧挂单 / 旧服务端）= 显示，与字段默认值一致
                             heldItemVisible = detail["heldItemVisible"] != "false",
+                            // 太晶属性：**空串 = 不显示**（服务端只在 ≠ 主属性时才写这个键）
+                            teraType = detail["teraType"] ?: "",
                             currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
                             aspects = parseAspects(detail),
                             marks = parseMarks(detail),
@@ -1865,6 +1887,8 @@ object MarketNetwork {
                             heldItemNbt = detail["heldItemNbt"] ?: "",
                             // 「模型手里拿不拿」：缺这一位（旧挂单 / 旧服务端）= 显示，与字段默认值一致
                             heldItemVisible = detail["heldItemVisible"] != "false",
+                            // 太晶属性：**空串 = 不显示**（服务端只在 ≠ 主属性时才写这个键）
+                            teraType = detail["teraType"] ?: "",
                             currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
                             aspects = parseAspects(detail),
                             marks = parseMarks(detail),
@@ -3368,6 +3392,14 @@ object MarketNetwork {
             "speciesName" to pokemon.species.translatedName.string,
             "speciesKey" to com.shusheng.cobblemarket.util.SpeciesText.translationKey(pokemon.species),
             "primaryType" to "cobblemon.type.${pokemon.primaryType.name.lowercase()}",
+            // 太晶属性（Cobblemon **官方字段** `Pokemon.teraType`，默认值 = 主属性）：
+            // ⚠ **只在 ≠ 主属性时**才下发 —— 不加这个判断的话，每只精灵都会多一行
+            //   「太晶：火」这种零信息量的废话（悬停窗本来就很挤）。
+            // 空串 = 没有（客户端不显示）。装了太晶附属模组、玩家真设过时这里才有值；
+            // 附属模组只能写官方这个字段，所以我们读它 = **天然兼容所有附属模组**，不需要特判
+            "teraType" to pokemon.teraType.id.path
+                .takeIf { it != pokemon.primaryType.name.lowercase() }
+                ?.let { "cobblemon.type.$it" }.orEmpty(),
             "ivsHp" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP].toString(),
             "ivsAtk" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK].toString(),
             "ivsDef" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.DEFENCE].toString(),
