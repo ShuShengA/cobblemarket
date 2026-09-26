@@ -415,7 +415,7 @@ object AuctionNetwork {
         }
 
         registerC2S(CreatePokemonAuctionPayload.ID, CreatePokemonAuctionPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "create_pokemon_auction", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "create_pokemon_auction", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
@@ -553,7 +553,7 @@ object AuctionNetwork {
         }
 
         registerC2S(CreateItemAuctionPayload.ID, CreateItemAuctionPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "create_item_auction", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "create_item_auction", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
@@ -710,7 +710,7 @@ object AuctionNetwork {
         }
 
         registerC2S(PlaceBidPayload.ID, PlaceBidPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "auction_bid", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "auction_bid", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
@@ -820,7 +820,7 @@ object AuctionNetwork {
         }
 
         registerC2S(ForceCancelAuctionPayload.ID, ForceCancelAuctionPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "force_cancel_auction", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "force_cancel_auction", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             if (!MarketPermissions.has(player, MarketPermissions.AUCTION)) return@registerC2S
             val server = player.server
             server.execute {

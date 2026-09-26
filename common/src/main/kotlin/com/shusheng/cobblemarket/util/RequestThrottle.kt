@@ -1,5 +1,9 @@
 package com.shusheng.cobblemarket.util
 
+import com.shusheng.cobblemarket.network.sendSound
+import net.minecraft.server.network.ServerPlayerEntity
+import net.minecraft.text.Text
+import net.minecraft.util.Formatting
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -39,6 +43,23 @@ object RequestThrottle {
                 // 竞争失败：值已被改，重试读取
             }
         }
+    }
+
+    /**
+     * 节流判定，**命中时给玩家一条提示 + 失败音**。
+     *
+     * ⚠ **静默丢弃会让玩家以为界面坏了**：2026-09-26 用户报「点购买后界面关了、没有任何反应」，
+     *   查下来其中一条路径就是撞了这个冷却 —— 包被丢掉、玩家端**一点反馈都没有**。
+     *   ⇒ **玩家主动点击触发的操作（写操作）一律走这个**；只读的列表请求仍用 [allow]
+     *   （那边客户端有补发机制，被拒是常态，提示反而成了噪音）。
+     *
+     * 提示走**动作栏**（`overlay = true`）不刷聊天栏 —— 手快连点时不该糊满一屏。
+     */
+    fun allowNotify(player: ServerPlayerEntity, key: String, minIntervalMs: Long): Boolean {
+        if (allow(player.uuid, key, minIntervalMs)) return true
+        player.sendMessage(Text.translatable("cobblemarket.gui.too_fast").formatted(Formatting.RED), true)
+        sendSound(player, "result_fail")
+        return false
     }
 
     fun onDisconnect(playerUuid: UUID) {

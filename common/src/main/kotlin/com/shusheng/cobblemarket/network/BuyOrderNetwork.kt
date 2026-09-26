@@ -511,7 +511,7 @@ object BuyOrderNetwork {
         }
 
         registerC2S(CreatePokemonBuyOrderPayload.ID, CreatePokemonBuyOrderPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "create_pokemon_buy_order", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "create_pokemon_buy_order", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
@@ -584,7 +584,7 @@ object BuyOrderNetwork {
         }
 
         registerC2S(CreateItemBuyOrderPayload.ID, CreateItemBuyOrderPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "create_item_buy_order", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "create_item_buy_order", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
@@ -662,7 +662,7 @@ object BuyOrderNetwork {
         }
 
         registerC2S(CancelBuyOrderPayload.ID, CancelBuyOrderPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "cancel_buy_order", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "cancel_buy_order", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 // 封禁只拦交易；关闭求购单是取回自己的冻结金，允许（照取消挂单语义）
@@ -695,7 +695,7 @@ object BuyOrderNetwork {
         }
 
         registerC2S(ForceCancelBuyOrderPayload.ID, ForceCancelBuyOrderPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "force_cancel_buy_order", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "force_cancel_buy_order", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             if (!MarketPermissions.has(player, MarketPermissions.BUY_ORDER)) return@registerC2S
             val server = player.server
             server.execute {
@@ -735,7 +735,7 @@ object BuyOrderNetwork {
         }
 
         registerC2S(DeliverPokemonBuyOrderPayload.ID, DeliverPokemonBuyOrderPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "deliver_pokemon_buy_order", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "deliver_pokemon_buy_order", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
@@ -882,7 +882,7 @@ object BuyOrderNetwork {
         }
 
         registerC2S(DeliverItemBuyOrderPayload.ID, DeliverItemBuyOrderPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "deliver_item_buy_order", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "deliver_item_buy_order", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
@@ -1058,7 +1058,7 @@ object BuyOrderNetwork {
         }
 
         registerC2S(AcceptPendingDeliverPayload.ID, AcceptPendingDeliverPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "accept_pending_deliver", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "accept_pending_deliver", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 // 接受 = 交易行为，封禁拦截
@@ -1168,7 +1168,7 @@ object BuyOrderNetwork {
         }
 
         registerC2S(RejectPendingDeliverPayload.ID, RejectPendingDeliverPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "reject_pending_deliver", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "reject_pending_deliver", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 // 拒绝 = 货退回卖家，不涉及买家资产变动，封禁不拦（照取消挂单语义）

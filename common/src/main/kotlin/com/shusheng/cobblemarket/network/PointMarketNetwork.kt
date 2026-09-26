@@ -493,7 +493,7 @@ object PointMarketNetwork {
 
         // 上架 / 编辑：服务端全量校验后才入库，成功后**回发该格所在页**让 OP 的界面立刻刷新
         registerC2S(SavePointMarketEntryPayload.ID, SavePointMarketEntryPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "point_market_save", RequestThrottle.WRITE_INTERVAL_MS)) {
+            if (!RequestThrottle.allowNotify(player, "point_market_save", RequestThrottle.WRITE_INTERVAL_MS)) {
                 return@registerC2S
             }
             val server = player.server
@@ -520,7 +520,7 @@ object PointMarketNetwork {
 
         // 补货：只改库存（⚠ 服务端刻意**不动 entryId** —— 补货不是"换内容"，见 PointMarketService.updateStock）
         registerC2S(UpdatePointMarketStockPayload.ID, UpdatePointMarketStockPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "point_market_stock", RequestThrottle.WRITE_INTERVAL_MS)) {
+            if (!RequestThrottle.allowNotify(player, "point_market_stock", RequestThrottle.WRITE_INTERVAL_MS)) {
                 return@registerC2S
             }
             val server = player.server
@@ -543,7 +543,7 @@ object PointMarketNetwork {
         }
 
         registerC2S(RemovePointMarketEntryPayload.ID, RemovePointMarketEntryPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "point_market_remove", RequestThrottle.WRITE_INTERVAL_MS)) {
+            if (!RequestThrottle.allowNotify(player, "point_market_remove", RequestThrottle.WRITE_INTERVAL_MS)) {
                 return@registerC2S
             }
             val server = player.server
@@ -579,7 +579,7 @@ object PointMarketNetwork {
 
         registerC2S(SaveShopSnapshotPayload.ID, SaveShopSnapshotPayload.CODEC) { payload, player ->
             if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
-            if (!RequestThrottle.allow(player.uuid, "shop_snapshot_save", RequestThrottle.WRITE_INTERVAL_MS)) {
+            if (!RequestThrottle.allowNotify(player, "shop_snapshot_save", RequestThrottle.WRITE_INTERVAL_MS)) {
                 return@registerC2S
             }
             val server = player.server
@@ -616,7 +616,7 @@ object PointMarketNetwork {
 
         registerC2S(DeleteShopSnapshotPayload.ID, DeleteShopSnapshotPayload.CODEC) { payload, player ->
             if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
-            if (!RequestThrottle.allow(player.uuid, "shop_snapshot_delete", RequestThrottle.WRITE_INTERVAL_MS)) {
+            if (!RequestThrottle.allowNotify(player, "shop_snapshot_delete", RequestThrottle.WRITE_INTERVAL_MS)) {
                 return@registerC2S
             }
             val server = player.server
@@ -630,7 +630,7 @@ object PointMarketNetwork {
         // 购买：玩家侧唯一"花钱"的入口（**不判权限** —— 谁有 RP 谁能买）。
         // 库存 / 余额 / 收件空间全在服务端校验，客户端只是发起请求
         registerC2S(BuyPointMarketEntryPayload.ID, BuyPointMarketEntryPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "point_market_buy", RequestThrottle.WRITE_INTERVAL_MS)) {
+            if (!RequestThrottle.allowNotify(player, "point_market_buy", RequestThrottle.WRITE_INTERVAL_MS)) {
                 return@registerC2S
             }
             val server = player.server
@@ -712,8 +712,21 @@ object PointMarketNetwork {
             )
             return
         }
-        val stack = result.items.firstOrNull() ?: return
-        val nbt = stack.encode(player.serverWorld.registryManager) as? NbtCompound ?: return
+        // ⚠ **临时诊断日志**（2026-09-26 排「RP 商城买物品没有庆祝动画」，查到根因后删）——
+        //   两边服务端（主市场 / RP 商城）在这之前完全对称，只有 nbt 的来源不同，所以要看清它走到哪一步
+        // ⚠ 空栈要**显式挡掉**：`ItemStack.encode` 对空栈会抛 `IllegalStateException
+        //   (Cannot encode empty ItemStack)`，而这里抛出去会被 `server.execute` 吞掉 ——
+        //   表现就是"购买成功、聊天有提示、**就是没动画**"（2026-09-26 服务端日志抓到的就是这个）。
+        val stack = result.items.firstOrNull()?.takeIf { !it.isEmpty } ?: run {
+            CobbleMarket.LOGGER.warn("[庆祝] RP商城买物品：没有可用的实物栈，不发包")
+            return
+        }
+        // ⚠ 同理：encode 本身也可能抛，一律兜住（这里只影响动画，绝不该连累购买流程）
+        val nbt = runCatching { stack.encode(player.serverWorld.registryManager) as? NbtCompound }
+            .getOrNull() ?: run {
+            CobbleMarket.LOGGER.warn("[庆祝] RP商城买物品：encode 失败，不发包")
+            return
+        }
         CelebrationNetwork.sendItem(player, nbt, result.count, CelebrationSource.STORE)
     }
 

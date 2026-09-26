@@ -269,7 +269,7 @@ object PermissionNetwork {
 
         registerC2S(SavePlayerPermissionsPayload.ID, SavePlayerPermissionsPayload.CODEC) { payload, player ->
             if (!MarketPermissions.isServerOwner(player)) return@registerC2S
-            if (!RequestThrottle.allow(player.uuid, "save_player_permissions", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "save_player_permissions", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 // UUID 全 0 = 界面「添加」一个还没有任何权限的玩家：按名字解析（在线玩家 → userCache）
@@ -313,7 +313,7 @@ object PermissionNetwork {
 
         registerC2S(RemovePlayerPermissionsPayload.ID, RemovePlayerPermissionsPayload.CODEC) { payload, player ->
             if (!MarketPermissions.isServerOwner(player)) return@registerC2S
-            if (!RequestThrottle.allow(player.uuid, "remove_player_permissions", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "remove_player_permissions", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 // 界面「删除」= 收回该玩家全部节点，同样记账（removed 为其原本的全部节点）

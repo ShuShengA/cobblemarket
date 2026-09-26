@@ -651,7 +651,7 @@ object FinanceNetwork {
         // ── 应急贷款借款 ──
         registerC2S(RequestLoanPayload.ID, RequestLoanPayload.CODEC) { payload, player ->
             // 与写操作一致的节流：防高频轰炸（照其他写请求的 REPEAT_WRITE 间隔）
-            if (!RequestThrottle.allow(player.uuid, "request_loan", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "request_loan", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 // 市场总开关关（紧急停市）时不允许新增借贷：借款是唯一会让资金**流出**准备金池的
@@ -780,7 +780,7 @@ object FinanceNetwork {
 
         // ── 申请紫卡（复核资格 + 扣费 + 发卡） ──
         registerC2S(RequestPurpleCardApplyPayload.ID, RequestPurpleCardApplyPayload.CODEC) { _, player ->
-            if (!RequestThrottle.allow(player.uuid, "request_purple_card_apply", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "request_purple_card_apply", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = FinanceState.get(server)
@@ -828,7 +828,7 @@ object FinanceNetwork {
 
         // ── 补发喵喵紫卡凭证（持有者从喵喵银行重新领取；补发费进准备金池） ──
         registerC2S(RequestPurpleCardRedoPayload.ID, RequestPurpleCardRedoPayload.CODEC) { _, player ->
-            if (!RequestThrottle.allow(player.uuid, "request_purple_card_redo", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "request_purple_card_redo", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = FinanceState.get(server)
@@ -869,7 +869,7 @@ object FinanceNetwork {
 
         // ── 申请黑卡（复核资格 + 扣费 + 发卡；硬条件=持有紫卡在 isBlackCardEligible 内） ──
         registerC2S(RequestBlackCardApplyPayload.ID, RequestBlackCardApplyPayload.CODEC) { _, player ->
-            if (!RequestThrottle.allow(player.uuid, "request_black_card_apply", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "request_black_card_apply", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = FinanceState.get(server)
@@ -921,7 +921,7 @@ object FinanceNetwork {
 
         // ── 补发喵喵黑卡凭证（持有者从喵喵银行重新领取；补发费进准备金池） ──
         registerC2S(RequestBlackCardRedoPayload.ID, RequestBlackCardRedoPayload.CODEC) { _, player ->
-            if (!RequestThrottle.allow(player.uuid, "request_black_card_redo", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "request_black_card_redo", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = FinanceState.get(server)
@@ -969,7 +969,7 @@ object FinanceNetwork {
 
         // ── 卡片管理（金融管理节点）：界面内收回（直接执行，无二次确认；收回后回发新列表） ──
         registerC2S(RequestCardRevokePayload.ID, RequestCardRevokePayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "request_card_revoke", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "request_card_revoke", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
             val server = player.server
             server.execute {
@@ -1000,7 +1000,7 @@ object FinanceNetwork {
 
         // ── 活期存款（总开关只拦存款，取款永远开放——钱是玩家的不能卡） ──
         registerC2S(RequestDepositPayload.ID, RequestDepositPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "request_deposit", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "request_deposit", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = FinanceState.get(server)
@@ -1044,7 +1044,7 @@ object FinanceNetwork {
         }
 
         registerC2S(RequestWithdrawPayload.ID, RequestWithdrawPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "request_withdraw", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "request_withdraw", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = FinanceState.get(server)
@@ -1114,7 +1114,7 @@ object FinanceNetwork {
 
         // ── 撤销玩家全部坏账（仅服主；与 /market loan clear 命令双入口） ──
         registerC2S(RequestRevokeBadDebtPayload.ID, RequestRevokeBadDebtPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "request_revoke_bad_debt", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "request_revoke_bad_debt", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 if (!MarketPermissions.isServerOwner(player)) return@execute   // 撤销坏账只限服主：干预手段，不随管理节点授予
@@ -1163,7 +1163,7 @@ object FinanceNetwork {
 
         // ── 还款执行（还一期 / 提前结清；金额服务端实算） ──
         registerC2S(RequestRepayPayload.ID, RequestRepayPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "request_repay", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "request_repay", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute { com.shusheng.cobblemarket.finance.FinanceService.executeRepay(player, payload.loanId, payload.settle) }
         }

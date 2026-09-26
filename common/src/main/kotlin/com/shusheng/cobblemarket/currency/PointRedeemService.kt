@@ -63,7 +63,9 @@ object PointRedeemService {
     fun redeem(server: MinecraftServer, player: ServerPlayerEntity, rawCode: String): RedeemOutcome {
         val now = System.currentTimeMillis()
         if (lockedUntil(player.uuid, now) != null) return RedeemOutcome.Locked
-        if (!RequestThrottle.allow(player.uuid, "points_redeem", THROTTLE_MS)) return RedeemOutcome.Throttled
+        // ⚠ 走 allowNotify：两处调用方拿到 Throttled 都是 `-> {}`（静默），
+        //    不在这里出声的话，兑换被冷却挡掉时玩家什么都看不到（与 [[RequestThrottle.allowNotify]] 同因）
+        if (!RequestThrottle.allowNotify(player, "points_redeem", THROTTLE_MS)) return RedeemOutcome.Throttled
 
         val state = PointCodeState.get(server)
 
