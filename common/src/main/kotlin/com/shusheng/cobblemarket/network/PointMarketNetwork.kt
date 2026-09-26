@@ -708,7 +708,10 @@ object PointMarketNetwork {
                 shiny = pokemon.shiny,
                 source = CelebrationSource.STORE,
                 // 携带物只在带组件时才非空（与挂单 / 拍卖 / 求购同口径）
-                heldItemNbt = PointShopState.get(server).find(kind, index)?.pokemon?.heldItemSpec.orEmpty()
+                heldItemNbt = PointShopState.get(server).find(kind, index)?.pokemon?.heldItemSpec.orEmpty(),
+                // 「模型手里拿不拿」：取**实际造出来这只**的可见性（它由 PointMarketFactory 从商品规格拷来），
+                // 与购买窗右侧那个图标同源 —— 漏了这行动画里的精灵会又把手里的东西显示出来（用户 2026-09-26 报）
+                heldItemVisible = pokemon.heldItemVisible
             )
             return
         }
