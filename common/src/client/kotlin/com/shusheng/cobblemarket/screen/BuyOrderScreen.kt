@@ -2633,7 +2633,7 @@ class BuyOrderScreen(
         val entry = reviewEntry ?: return
         val pending = entry.pending ?: return
         val centerX = width / 2
-        val dialogW = minOf(340, width - 40).coerceAtLeast(200)
+        // ⚠ 弹窗宽度**按内容算**，要等下面的 itemLines / 信息行构造好才能量 → 见 dialogH 之前
         // 物品词条选择（先于布局）：Shift 完整词条 / Ctrl 调试信息按需构建（Fabric tooltip 信息块只在构建时按键按住才生成）
         var itemLines: List<Text>? = null
         var itemExtra = 0
@@ -2657,6 +2657,25 @@ class BuyOrderScreen(
         // 精灵单：完整信息行（照市场确认弹窗），弹窗更高；物品单：词条行数决定弹窗高度（Shift 展开动态伸缩）
         // 物品单 149：词条区（+44 起，行距 10 与物品市场一致）+ 卖家/出价/总价竖排三行 + 输入框 + 按钮，底部留白 18
         val dialogH = reviewDialogH(entry, itemExtra)
+        // 精灵单的完整信息行先构造好（**定宽要按它量**）：与市场购买确认弹窗同一渲染器
+        val listing = if (entry.type == "POKEMON") pendingToListing(entry, pending) else null
+        val listingName = if (entry.type == "POKEMON") {
+            pending.speciesKey?.let {
+                val t = Text.translatable(it).string
+                if (t == it) pending.extraData["speciesName"] ?: it else t
+            } ?: "?"
+        } else ""
+        // 宽度**按内容算**（照市场确认弹窗）：精灵单量完整信息行、物品单量词条行 ——
+        // 原先写死 340，而内容居中、实际最宽也就 200 上下，两侧各白留 70（用户 2026-09-26 报）。
+        // 硬下限 = 拒绝原因输入框 240（±120，位置不动）；各留 12px 边距。
+        val contentW = if (listing != null) {
+            EntryBadgeRenderer.measureInfoLines(
+                listing, EntryBadgeRenderer.nameWithShinyStar(listingName, pending.shiny)
+            )
+        } else {
+            itemLines?.maxOfOrNull { textRenderer.getWidth(it) } ?: 0
+        }
+        val dialogW = (maxOf(contentW, 240) + 24).coerceAtMost(width - 40).coerceAtLeast(200)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
         // 物品分支控件位置每帧同步（Shift 展开/收起时布局动态伸缩，不挤压不空档）
@@ -2718,19 +2737,16 @@ class BuyOrderScreen(
             }
 
             // 完整精灵信息行（与市场购买确认弹窗同一渲染器：名字★Lv/类型/性格特性/携带物/IVs 六行/卖家/价格）
-            val listing = pendingToListing(entry, pending)
-            val name = pending.speciesKey?.let {
-                val t = Text.translatable(it).string
-                if (t == it) pending.extraData["speciesName"] ?: it else t
-            } ?: "?"
+            // ⚠ listing / listingName 在**函数开头（定宽之前）**已构造好 —— 弹窗宽度就是按它量的，这里复用
+            val listingEntry = listing ?: return
             // 弹窗被屏幕压矮时**信息区可滚动**（scissor 裁剪 + 起始 y 减偏移）
             reviewScroll = reviewScroll.coerceIn(0, reviewMaxScroll(entry, itemExtra))
             val viewTop = dialogY + reviewContentTop
             val viewBottom = dialogY + dialogH - reviewBottomH
             context.enableScissor(dialogX, viewTop, dialogX + dialogW, viewBottom)
             EntryBadgeRenderer.drawInfoLines(
-                context, listing,
-                EntryBadgeRenderer.nameWithShinyStar(name, pending.shiny),
+                context, listingEntry,
+                EntryBadgeRenderer.nameWithShinyStar(listingName, pending.shiny),
                 // +62：图标占 +28~+55，留 6px 间隙后起名字行（与市场购买确认弹窗一致）
                 centerX, viewTop - reviewScroll, dividerW = dialogW - 156, maxWidth = dialogW - 24
             )

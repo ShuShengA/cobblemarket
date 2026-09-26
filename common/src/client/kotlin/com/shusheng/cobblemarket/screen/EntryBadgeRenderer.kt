@@ -376,28 +376,75 @@ object EntryBadgeRenderer {
 
     // 居中绘制信息行，返回下一行的 y
     /**
-     * 信息行最宽值（像素）——**只量不画**，供弹窗按内容动态定宽（照出价弹窗 / 物品市场那套机制：
-     * dialogW = clamp(max(最小宽, 实测 + 边距), 屏幕宽)），别让长精灵名/特性名去撞右列。
+     * 信息行最宽值（像素）——**只量不画**，供弹窗按内容动态定宽（照出价弹窗那套机制：
+     * `dialogW = clamp(max(内容实测, 固定控件所需) + 边距, 屏幕宽)`）。
      *
-     * ⚠ 量的是**会随数据变长**的行：名字★Lv（精灵名）/ 类型 / 性格+特性（特性名）/ 卖家（玩家名）/ 价格。
-     *    固定行（IV 六行、亲密度、球种）宽度基本不变，由调用方的最小宽度兜住。
-     * ⚠ **改 drawInfoLines 的行列表时这里要一起改**（两处行必须对应，否则量出来和画出来的不一致）。
+     * ⚠ **必须覆盖 [drawInfoLines] 画的每一行** —— 弹窗按这个值收窄后，哪一行没量到，
+     *    哪一行就会被 `drawInfoLines` 的 `maxWidth` 截断（用户明确反对截断文案）。
+     *    2026-09-26 补全：此前只量 5 行（名字/类型/性格特性/卖家/价格），靠调用方 300px 的大下限
+     *    兜住球种、携带物、IV 六行、亲密度、技能块、证章行；弹窗改按内容定宽后**兜不住了**。
+     * ⚠ **改 [drawInfoLines] 的行列表时这里要一起改**（两处行必须对应）。
      */
     fun measureInfoLines(entry: ListingEntry, displayName: Text): Int {
         val font = MinecraftClient.getInstance().textRenderer
-        val texts = listOf(
-            nameWithLevelLine(displayName, entry.primaryType, entry.level),
+        val hp = StatNames.HP
+        val atk = StatNames.ATK
+        val def = StatNames.DEF
+        val spa = StatNames.SP_ATK
+        val spd = StatNames.SP_DEF
+        val spe = StatNames.SPEED
+        var maxW = 0
+
+        fun m(text: Text) {
+            maxW = maxOf(maxW, font.getWidth(text))
+        }
+
+        // 名字行：尾部图标（性别/体型）不含在文本宽里，但占位与 drawInfoLines 的截断预算同口径（尾宽 + 6）
+        val tail = nameTailWidth(entry.gender, entry.sizeCategory)
+        maxW = maxOf(
+            maxW,
+            font.getWidth(nameWithLevelLine(displayName, entry.primaryType, entry.level)) +
+                (if (tail > 0) tail + 6 else 0)
+        )
+        m(
             Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string)
-                .append(typeLine(entry.primaryType, entry.secondaryType)),
+                .append(typeLine(entry.primaryType, entry.secondaryType))
+        )
+        m(
             Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(natureText(entry.natureBase, entry.nature))
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
-                .append(Text.translatable(entry.ability)),
-            Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)),
-            Text.translatable("cobblemarket.gui.tooltip_price").append(
-                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}"))
+                .append(Text.translatable(entry.ability))
         )
-        return texts.maxOf { font.getWidth(it) }
+        if (entry.ball.isNotEmpty()) m(ItemNameText.ballLine(entry.ball, entry.ballItem))
+        // 携带物行：文字右侧跟一枚物品图标（drawInfoLines 里图标顶在文字后面，另占 14px）
+        if (hasHeldItemLine(entry)) {
+            maxW = maxOf(maxW, font.getWidth(Text.translatable("cobblemarket.gui.tooltip_held")) + 14)
+        }
+        m(Text.translatable("cobblemarket.gui.tooltip_ivs"))
+        // IV 六行（与 drawInfoLines 同构造：文本宽只取决于内容，颜色不影响，这里不为着色再写一遍）
+        fun ivLine(stat: String, iv: Int, ht: Int, ev: Int): Text =
+            Text.literal("  $stat: ${com.shusheng.cobblemarket.util.TextUtil.ivText(iv, ht)}")
+                .append(Text.literal("  EV: $ev").formatted(Formatting.RED))
+        m(ivLine(hp, entry.ivsHp, entry.htHp, entry.evsHp))
+        m(ivLine(atk, entry.ivsAtk, entry.htAtk, entry.evsAtk))
+        m(ivLine(def, entry.ivsDef, entry.htDef, entry.evsDef))
+        m(ivLine(spa, entry.ivsSpAtk, entry.htSpAtk, entry.evsSpAtk))
+        m(ivLine(spd, entry.ivsSpDef, entry.htSpDef, entry.evsSpDef))
+        m(ivLine(spe, entry.ivsSpd, entry.htSpd, entry.evsSpd))
+        m(Text.translatable("cobblemarket.gui.friendship", entry.friendship))
+        // 技能块与证章行是**固定宽的块**（两列网格 / 图标行），不随文本变化，按各自的常量量
+        if (MoveText.hasAny(entry.moves)) maxW = maxOf(maxW, MOVES_MAX_W)
+        if (entry.marks.isNotEmpty()) maxW = maxOf(maxW, minOf(MARKS_PER_ROW, entry.marks.size) * 12 - 4)
+        m(Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)))
+        m(
+            Text.translatable("cobblemarket.gui.tooltip_price").append(
+                com.shusheng.cobblemarket.client.amountWithUnit(
+                    com.shusheng.cobblemarket.client.formatPrice(entry.price), entry.isPoints, entry.currencyName
+                ).formatted(Formatting.GOLD)
+            )
+        )
+        return maxW
     }
 
     fun drawInfoLines(
