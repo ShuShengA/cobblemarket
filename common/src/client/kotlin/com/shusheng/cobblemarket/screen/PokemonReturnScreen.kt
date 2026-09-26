@@ -301,7 +301,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                 context.drawText(textRenderer, "★", sx + 2, y + 7, GOLD_COLOR, false)
                 sx += 2 + textRenderer.getWidth("★")
             }
-            sx += 2
+            sx += EntryBadgeRenderer.NAME_TAIL_GAP
             if (p.gender == "MALE" || p.gender == "FEMALE") {
                 val gi = if (p.gender == "MALE") GENDER_ICON_MALE else GENDER_ICON_FEMALE
                 com.cobblemon.mod.common.api.gui.blitk(matrixStack = context.matrices, texture = gi, x = sx, y = y + 7, width = 6, height = 8)

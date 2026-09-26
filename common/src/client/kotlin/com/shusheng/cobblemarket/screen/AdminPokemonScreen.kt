@@ -1095,7 +1095,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             var iconOffset = 0
             if (entry.gender == "MALE" || entry.gender == "FEMALE") {
                 val genderIcon = if (entry.gender == "MALE") GENDER_ICON_MALE else GENDER_ICON_FEMALE
-                val genderX = leftX + 40 + nameWidth + 2
+                val genderX = leftX + 40 + nameWidth + EntryBadgeRenderer.NAME_TAIL_GAP
                 com.cobblemon.mod.common.api.gui.blitk(
                     matrixStack = context.matrices,
                     texture = genderIcon,
@@ -1110,7 +1110,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 iconData[origIndex]?.heldStack?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                         itemStack = heldStack,
-                        x = leftX + 40 + nameWidth + 2 + iconOffset + 0.0,
+                        x = leftX + 40 + nameWidth + EntryBadgeRenderer.NAME_TAIL_GAP + iconOffset + 0.0,
                         y = y + 6.0,
                         scale = 0.6,
                         matrixStack = context.matrices
@@ -1122,7 +1122,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             if (entry.sizeCategory.isNotEmpty()) {
                 if (iconOffset > 0) iconOffset += 3
                 iconOffset += EntryBadgeRenderer.drawSizeBadgeIcon(
-                    context, entry.sizeCategory, leftX + 40 + nameWidth + 2 + iconOffset, y + 7)
+                    context, entry.sizeCategory,
+                    leftX + 40 + nameWidth + EntryBadgeRenderer.NAME_TAIL_GAP + iconOffset, y + 7
+                )
             }
 
             // 头像位置与精灵市场/拍卖场一致（leftX+149：名字区最坏到 149px——6 字名 + 星 + 性别 + 携带物 + 体型徽章）

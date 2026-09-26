@@ -507,7 +507,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                     context.drawText(textRenderer, "★", sx + 2, y + 7, GOLD_COLOR, false)
                     sx += 2 + textRenderer.getWidth("★")
                 }
-                sx += 2
+                sx += EntryBadgeRenderer.NAME_TAIL_GAP
                 val gender = entry.extraData["gender"]
                 if (gender == "MALE" || gender == "FEMALE") {
                     val gi = if (gender == "MALE") GENDER_ICON_MALE else GENDER_ICON_FEMALE
