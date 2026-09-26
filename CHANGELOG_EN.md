@@ -4,7 +4,7 @@
 
 ### New Feature
 
-- **Tera type shown in Pokemon info**: if you run a Tera add-on and have set a Tera type on a Pokemon, **the type line** now ends with "(Tera: Electric)" — in the market, auctions, buy orders, the listing picker, pending returns and the chat hover popups. ⚠ **Without such a mod the UI is exactly as before** — Cobblemon's Tera defaults to the Pokemon's own primary type, so it is only ever shown when it actually differs (no configuration needed)
+- **Tera type shown in Pokemon info**: **the type line** now lists the Pokemon's Tera type (e.g. "(Tera: Electric)") — in the market, auctions, buy orders, the listing picker, pending returns and the chat hover popups
 
 ### Fixes
 
