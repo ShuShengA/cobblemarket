@@ -1241,6 +1241,11 @@ object BuyOrderNetwork {
             "speciesName" to pokemon.species.translatedName.string,
             "speciesKey" to com.shusheng.cobblemarket.util.SpeciesText.translationKey(pokemon.species),
             "primaryType" to "cobblemon.type.${pokemon.primaryType.name.lowercase()}",
+            // 太晶属性（官方字段 `Pokemon.teraType`，**默认 = 主属性**）：只在 ≠ 主属性时才下发，
+            // 空串 = 不显示（理由与口径见 MarketNetwork.buildListingExtra 的同名键）
+            "teraType" to pokemon.teraType.id.path
+                .takeIf { it != pokemon.primaryType.name.lowercase() }
+                ?.let { "cobblemon.type.$it" }.orEmpty(),
             "ivsHp" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP].toString(),
             "ivsAtk" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK].toString(),
             "ivsDef" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.DEFENCE].toString(),
@@ -1337,6 +1342,15 @@ object BuyOrderNetwork {
                     extra["secondaryType"]?.takeIf { it.isNotEmpty() }?.let { secondary ->
                         Text.literal(" + ").append(
                             Text.translatable(secondary).styled { s -> s.withColor(TypeTextColors.color(secondary)) }
+                        )
+                    } ?: Text.literal("")
+                ).append(
+                    // 太晶属性：官方 `Pokemon.teraType` 默认 = 主属性 ⇒ 只在 ≠ 主属性时才有值，
+                    // 空串 = 整段不画（口径同拍卖播报）
+                    extra["teraType"].orEmpty().takeIf { it.isNotEmpty() }?.let { tera ->
+                        Text.translatable(
+                            "cobblemarket.gui.tooltip_tera",
+                            Text.translatable(tera).styled { s -> s.withColor(TypeTextColors.color(tera)) }
                         )
                     } ?: Text.literal("")
                 )

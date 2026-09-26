@@ -2,6 +2,10 @@
 
 ## 1.2.1 (in development, unreleased)
 
+### New Feature
+
+- **Tera type shown in Pokemon info**: if you run a Tera add-on and have set a Tera type on a Pokemon, **the type line** now ends with "(Tera: Electric)" — in the market, auctions, buy orders, the listing picker, pending returns and the chat hover popups. ⚠ **Without such a mod the UI is exactly as before** — Cobblemon's Tera defaults to the Pokemon's own primary type, so it is only ever shown when it actually differs (no configuration needed)
+
 ### Fixes
 
 - **Some Pokémon had the wrong battle-cry animation**: their body would lock into the wrong pose — Gurdurr could not lift its girder (the arm stayed at its side). This is now fixed

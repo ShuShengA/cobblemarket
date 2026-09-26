@@ -1307,7 +1307,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             lines.add(EntryBadgeRenderer.nameWithLevelLine(
                 EntryBadgeRenderer.nameWithShinyStar(speciesDisplay(p), p.shiny),
                 p.primaryType, p.level) to 0xFFFFFF)
-            lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_type").string).append(EntryBadgeRenderer.typeLine(p.primaryType, p.secondaryType)) to 0xFFFFFF)
+            lines.add(com.shusheng.cobblemarket.util.TypeTextColors.typeLineWithTera(
+                p.primaryType, p.secondaryType, p.teraType) to 0xFFFFFF)
             lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(EntryBadgeRenderer.natureText(p.natureBase, p.nature))
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
