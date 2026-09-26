@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.network.*
@@ -193,7 +194,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var cancelEntry: ListingEntry? = null
     private var confirmRenderable: RenderablePokemon? = null
     private var confirmDisplayName = ""
-    private val confirmState = FloatingState()
+    private val confirmState = PreviewStateHolder()
 
     /**
      * 确认弹窗里那个精灵图标的屏幕位置，**渲染时记录**。
@@ -1949,7 +1950,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             PokemonIconRenderer.draw(
                 context = context,
                 renderable = rp,
-                state = confirmState,
+                state = confirmState.stateFor(rp),
                 x = iconX, y = iconY, size = iconSize,
                 delta = delta,
                 animate = useFloat,
@@ -1960,7 +1961,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             // 再叠一层 AUTO_CRY_DELAY_MS 延迟，等弹窗稳定显示、玩家看清了再叫
             if (confirmCryAt != 0L && System.currentTimeMillis() >= confirmCryAt) {
                 confirmCryAt = 0L
-                IconCryClick.play(confirmState, rp)
+                IconCryClick.play(confirmState.stateFor(rp), rp)
             }
         }
 

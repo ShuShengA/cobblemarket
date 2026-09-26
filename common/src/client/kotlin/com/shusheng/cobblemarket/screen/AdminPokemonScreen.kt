@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.FilterPanelAnimation
 import com.shusheng.cobblemarket.client.heldIconStack
@@ -158,7 +159,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     )
     private var confirmRenderable: RenderablePokemon? = null
     private var confirmDisplayName = ""
-    private val confirmState = FloatingState()
+    private val confirmState = PreviewStateHolder()
 
     /**
      * 下架确认弹窗自动叫一声的**待播时刻**（0 = 无；替玩家点一下弹窗里的精灵图标）。
@@ -1462,7 +1463,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             PokemonIconRenderer.draw(
                 context = context,
                 renderable = rp,
-                state = confirmState,
+                state = confirmState.stateFor(rp),
                 x = iconX, y = iconY, size = iconSize,
                 delta = delta,
                 animate = useFloat,
@@ -1473,7 +1474,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             // 再叠一层 AUTO_CRY_DELAY_MS 延迟，等弹窗稳定显示、玩家看清了再叫
             if (confirmCryAt != 0L && System.currentTimeMillis() >= confirmCryAt) {
                 confirmCryAt = 0L
-                IconCryClick.play(confirmState, rp)
+                IconCryClick.play(confirmState.stateFor(rp), rp)
             }
         }
 

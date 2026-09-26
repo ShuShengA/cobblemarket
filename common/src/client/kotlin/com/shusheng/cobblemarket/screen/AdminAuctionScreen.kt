@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.iconStackOf
 import com.shusheng.cobblemarket.client.PointsStateCache
@@ -101,7 +102,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
     }
 
     private var cancelRenderable: RenderablePokemon? = null
-    private val cancelPreviewState = FloatingState()
+    private val cancelPreviewState = PreviewStateHolder()
 
     /**
      * 强制下架弹窗自动叫一声的**待播时刻**（0 = 无；替玩家点一下弹窗里的精灵图标）。
@@ -910,7 +911,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                     PokemonIconRenderer.draw(
                         context = context,
                         renderable = rp,
-                        state = cancelPreviewState,
+                        state = cancelPreviewState.stateFor(rp),
                         x = slotX, y = slotY, size = slotSize,
                         delta = delta,
                         animate = useFloat
@@ -920,7 +921,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                     // 再叠一层 AUTO_CRY_DELAY_MS 延迟，等弹窗稳定显示、玩家看清了再叫
                     if (cancelCryAt != 0L && System.currentTimeMillis() >= cancelCryAt) {
                         cancelCryAt = 0L
-                        IconCryClick.play(cancelPreviewState, rp)
+                        IconCryClick.play(cancelPreviewState.stateFor(rp), rp)
                     }
                 } catch (_: Exception) {
                 }
