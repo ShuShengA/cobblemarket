@@ -325,7 +325,7 @@
 
 ## 1.0.0-beta.5 (released)
 
-### New Feature: Cobblemon Utility+ Support (Hyper Training)
+### New Feature: Hyper Training Display
 
 - Hyper-trained IVs now display correctly: market, Auction House, listing and pending-claim screens show "real value (trained value)", e.g. 12（31） — the same format as the party details screen
 - New hyper-training filter (3-state cycle: Any / No HT / HT Only): available on the Pokémon market, the admin all-listings page, the Auction House Pokémon tab and both listing screens
