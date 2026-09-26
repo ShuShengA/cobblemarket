@@ -197,13 +197,9 @@ data class BuyOrderEntry(
     }
 }
 
-/** 物种的属性 key（`cobblemon.type.xxx`）；解析失败 / 无副属性返回空串 */
-private fun buyOrderTypeKey(speciesId: String?, primary: Boolean): String {
-    val id = speciesId?.let { net.minecraft.util.Identifier.tryParse(it) } ?: return ""
-    val sp = com.cobblemon.mod.common.api.pokemon.PokemonSpecies.getByIdentifier(id) ?: return ""
-    val t = if (primary) sp.primaryType else (sp.secondaryType ?: return "")
-    return "cobblemon.type.${t.name.lowercase()}"
-}
+// ⚠ 物种属性 key 的解析已提到 [com.shusheng.cobblemarket.util.TypeTextColors.typeKeyOf] **共用**：
+//   求购单的聊天通知（`BuyOrderState.requirementText()`）也要用它给精灵名上色，
+//   留第二份就又回到「同一个东西两处各写一遍、改一处漏一处」的老路（2026-09-26 收口）。
 
 fun buyOrderToEntry(o: BuyOrder): BuyOrderEntry = BuyOrderEntry(
     id = o.id,
@@ -211,8 +207,8 @@ fun buyOrderToEntry(o: BuyOrder): BuyOrderEntry = BuyOrderEntry(
     buyerUuid = o.buyerUuid,
     buyerName = o.buyerName,
     speciesId = o.speciesId,
-    primaryType = buyOrderTypeKey(o.speciesId, true),
-    secondaryType = buyOrderTypeKey(o.speciesId, false),
+    primaryType = com.shusheng.cobblemarket.util.TypeTextColors.typeKeyOf(o.speciesId, true),
+    secondaryType = com.shusheng.cobblemarket.util.TypeTextColors.typeKeyOf(o.speciesId, false),
     speciesKey = o.speciesKey,
     shinyFilter = o.shinyFilter,
     htFilter = o.htFilter,

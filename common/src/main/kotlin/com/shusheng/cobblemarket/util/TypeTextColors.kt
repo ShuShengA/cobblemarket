@@ -22,6 +22,21 @@ object TypeTextColors {
     )
 
     /**
+     * 物种资源 id → 属性翻译 key（`cobblemon.type.xxx`）；[primary] = false 时取副属性。
+     * 解析不出 / 该物种没有对应属性时返回**空串**（调用方按"没有这条"处理）。
+     *
+     * ⚠ 这段解析此前只存在于 `BuyOrderNetwork`（文件级 private），于是 `BuyOrderState.requirementText()`
+     *   想给精灵名上色时**拿不到主属性** —— 它的**物品分支有**稀有度色、**精灵分支却一直是白字**
+     *   （同一个函数两条分支口径不一致），5 条聊天通知跟着一起白。2026-09-26 提到这里共用。
+     */
+    fun typeKeyOf(speciesId: String?, primary: Boolean): String {
+        val id = speciesId?.let { net.minecraft.util.Identifier.tryParse(it) } ?: return ""
+        val sp = com.cobblemon.mod.common.api.pokemon.PokemonSpecies.getByIdentifier(id) ?: return ""
+        val t = if (primary) sp.primaryType else (sp.secondaryType ?: return "")
+        return "cobblemon.type.${t.name.lowercase()}"
+    }
+
+    /**
      * 精灵名的聊天展示文本：名字本体带主属性色，闪光再加前置金★。
      *
      * 服务端凡是「聊天消息里出现精灵名」都走这里（拍卖上架/成交播报、售出通知、分享……），

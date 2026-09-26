@@ -3053,7 +3053,8 @@ class BuyOrderScreen(
             val multiVariant = variantGroups(entry.itemId).size > 1
             if (variant != null && !multiVariant) {
                 // 名称完全显示（不截断——物品名本身不长，弹窗内空间足够）
-                val name = variant.name.string
+                // 名字走**稀有度色**（`variant.name.string` 会洗掉样式）；数量段保持灰
+                val name = com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(variant) ?: variant.name
                 val countStr = "×${variant.count}"
                 // 整体居中：图标 16 + 间距 4 + 名称 + 间距 4 + 数量
                 val totalW = 16 + 4 + textRenderer.getWidth(name) + 4 + textRenderer.getWidth(countStr)
