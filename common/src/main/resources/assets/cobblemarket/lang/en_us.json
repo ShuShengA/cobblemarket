@@ -144,6 +144,8 @@
   "cobblemarket.points.store.field.alpha": ": %s",
   "cobblemarket.points.store.field.tera": "Tera: %s",
   "cobblemarket.points.store.field.gmax": "Gmax: %s",
+  "cobblemarket.points.store.field.dmax": "Dmax Level: %s",
+  "cobblemarket.points.store.field.dmax_hint": "Dmax Level",
   "cobblemarket.points.store.field.tradeable": "Tradeable: %s",
   "cobblemarket.points.store.field.held": "Held item: %s",
   "cobblemarket.points.store.field.min_ivs": "Min IVs: %s",

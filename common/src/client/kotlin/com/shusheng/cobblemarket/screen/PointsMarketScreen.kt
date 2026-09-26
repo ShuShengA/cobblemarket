@@ -327,7 +327,7 @@ class PointsMarketScreen : Screen(
      * ⚠ 走 [fillDraft] —— 它本来就是"把一份完整规格填进草稿"，与当年"编辑已有格子"用的是同一套。
      *   填完**要重建控件**（值都在控件上，不重建就还是空的）。
      * ⚠ 同时把 `editOriginal` 设成快照那份：`buildPokemonSpec` 基于它 `copy()`，
-     *   界面**没接的高级项**（EV / 昵称 / 证章 / 极巨化等级…）才不会被抹掉。
+     *   界面**没接的项**（只剩昵称了 —— EV / 证章 / 极巨等级后来都补上了控件）才不会被抹掉。
      */
     private fun applySnapshot(snapshot: ShopSnapshotInfo) {
         editSpecBase = snapshot.entry
@@ -410,7 +410,7 @@ class PointsMarketScreen : Screen(
      * 该格原本的完整内容（新增时为 null）。
      *
      * ⚠ 提交时**基于它 `copy()`**，只覆盖窗口接了的字段 —— 界面没接的高级项
-     * （EV / 亲密度 / 昵称 / 证章 / 极巨化等级 / 物品组件…）必须原样保留，
+     * （EV / 亲密度 / 昵称 / 证章 / 极巨等级 / 物品组件…）必须原样保留，
      * 否则「什么都不改直接保存」会把这些悄悄抹掉（全量覆盖式表单的铁律，本项目有前科）。
      */
     private var editSpecBase: ShopEntry? = null
@@ -418,6 +418,8 @@ class PointsMarketScreen : Screen(
     // 窗口控件引用（关闭时清空；resize 后靠它们恢复草稿）
     private var editSpeciesField: TextFieldWidget? = null
     private var editLevelField: TextFieldWidget? = null
+    /** 极巨等级输入框（0 ~ 服主配的 `maxDynamaxLevel`）——「所有精灵都能极巨化」那一项 */
+    private var editDmaxField: TextFieldWidget? = null
     private var editPriceField: TextFieldWidget? = null
     private var editStockField: TextFieldWidget? = null
     private var editSpeciesPrev: NineSliceButton? = null
@@ -644,6 +646,7 @@ class PointsMarketScreen : Screen(
     // 输入框原文：resize 会重建控件，不留下这几份就会清空（占位符那种小字丢得最明显）
     private var editSpeciesText = ""
     private var editLevelText = ""
+    private var editDmaxText = ""
     private var editPriceText = ""
     private var editStockText = ""
 
@@ -1275,9 +1278,12 @@ class PointsMarketScreen : Screen(
             KEY_SHINY, KEY_SHINY_CHANCE, KEY_FORM,
             KEY_LEVEL, KEY_GENDER, KEY_ABILITY,
             KEY_NATURE, KEY_BALL, KEY_SIZE,
-            KEY_ALPHA, KEY_GMAX, KEY_TERA,
-            KEY_TRADEABLE, KEY_HELD, KEY_HELD_VISIBLE,
-            KEY_FRIENDSHIP, KEY_MARKS, KEY_MIN_IVS
+            // 极巨等级**紧挨超极巨化**（这两个是一组：能不能极巨化 / 能不能超极巨化），
+            // 太晶与它后面的字段整体顺延一格（用户 2026-09-26 定的排法）
+            KEY_ALPHA, KEY_GMAX, KEY_DMAX,
+            KEY_TERA, KEY_TRADEABLE, KEY_HELD,
+            KEY_HELD_VISIBLE, KEY_FRIENDSHIP, KEY_MARKS,
+            KEY_MIN_IVS
         ).forEachIndexed { i, key ->
             add(key)
             if (i % 3 == 2) add(FIELD_BREAK)   // 一行满了就换行，右 3 格留空
@@ -1586,6 +1592,7 @@ class PointsMarketScreen : Screen(
         editHintMsg = null
         editSpeciesField = null
         editLevelField = null
+        editDmaxField = null
         editShinyField = null
         editPriceField = null
         editStockField = null
@@ -2352,6 +2359,8 @@ class PointsMarketScreen : Screen(
             )
             // 等级：服主留空 = 生成 1 级（与官方 PokemonProperties 同口径，见 PointMarketFactory）
             KEY_LEVEL -> Text.translatable("cobblemarket.points.store.field.level", (spec.level ?: 1).toString())
+            // 极巨等级：**所有**精灵都能极巨化，所以不受物种约束，照实显示（0 也照实写）
+            KEY_DMAX -> Text.translatable("cobblemarket.points.store.field.dmax", spec.dmaxLevel.toString())
             // 性别 / 体型：**值段留空**、实际值由 [drawBuyField] 的 `valueIcon` 画贴图
             //（与下面球种同一个口径）。⚠ 判据共用 [fieldValueIcon] —— 两边各判各的会各显一遍
             KEY_GENDER -> Text.translatable(
@@ -2534,6 +2543,8 @@ class PointsMarketScreen : Screen(
         // 等级 / 亲密度是**预填默认值**（用户 2026-09-20 定）：新建就是 Lv.1 / 亲密度 50，
         // 而不是空着（空 = 生成时随机掷）。清掉照样能回到随机，这里只是给个起点
         editLevelText = DEFAULT_LEVEL.toString()
+        // 极巨等级默认 0（= 无）——与等级不同，这不是"给个起点"，0 就是 Cobblemon 的默认值
+        editDmaxText = "0"
         editPriceText = ""
         editStockText = ""
         editSpecies = null
@@ -2594,6 +2605,8 @@ class PointsMarketScreen : Screen(
         //   只在 `editLevelText` 为空时才生效，预填之后它不再为空，不覆盖的话编辑任何一条已有商品
         //   都会显示成 Lv.1（数据没错、只是显示骗人，但保存下去就成了 1 级）
         editLevelText = spec.level?.toString().orEmpty()
+        // ⚠ 同等级：必须**显式覆盖**（输入框的 ifEmpty 兜底只在空时生效，预填后不再为空）
+        editDmaxText = spec.dmaxLevel.toString()
         editHeldVisible = spec.heldItemVisible
         editMarks = spec.marks
         // 物种：解析出来才能显示预览与形态/特性候选
@@ -2692,6 +2705,8 @@ class PointsMarketScreen : Screen(
             aspects = aspects,
             shinyChance = if (always) 0f else chance,
             level = editLevelField?.text?.trim()?.toIntOrNull(),
+            // 极巨等级（0 = 无）。Cobblemon 官方字段，生成精灵时写进去；上限由服务端 coerceIn
+            dmaxLevel = editDmaxField?.text?.trim()?.toIntOrNull() ?: 0,
             gender = GENDER_VALUES.getOrNull(editGender)?.takeIf { it.isNotEmpty() },
             nature = editNature.ifEmpty { null },
             ability = editAbility.ifEmpty { null },
@@ -2842,6 +2857,7 @@ class PointsMarketScreen : Screen(
     private fun scrollableFields(): List<Pair<TextFieldWidget?, String>> = buildList {
         add(editShinyField to KEY_SHINY_CHANCE)
         add(editLevelField to KEY_LEVEL)
+        add(editDmaxField to KEY_DMAX)
         add(editFriendshipField to KEY_FRIENDSHIP)
         editIvFields.forEachIndexed { i, f -> add(f to "$KEY_IV$i") }
         editEvFields.forEachIndexed { i, f -> add(f to "$KEY_EV$i") }
@@ -2949,6 +2965,20 @@ class PointsMarketScreen : Screen(
                     editLevelField?.setChangedListener { editLevelText = it }
                     editLevelField?.text = editLevelText.ifEmpty {
                         editSpecBase?.pokemon?.level?.toString().orEmpty()
+                    }
+                }
+
+                // 极巨等级：数字输入框（**不受物种约束** —— 所有精灵都能极巨化，与超极巨化那格不同）
+                key == KEY_DMAX -> {
+                    editDmaxField = newEditField(key)
+                    // 上限用 Cobblemon 的**硬约束** 0..10（`@IntConstraint`），不读 `Cobblemon.config` ——
+                    // 那是**服务端**配置，客户端读到的未必是服务端的值；超上限时服务端自己会 coerceIn
+                    editDmaxField?.setTextPredicate(intInputIn(0..10))
+                    // 占位符不带冒号（表单 label 才带），与等级同款
+                    editDmaxField?.setPlaceholder(Text.translatable("cobblemarket.points.store.field.dmax_hint"))
+                    editDmaxField?.setChangedListener { editDmaxText = it }
+                    editDmaxField?.text = editDmaxText.ifEmpty {
+                        editSpecBase?.pokemon?.dmaxLevel?.toString().orEmpty()
                     }
                 }
 
@@ -5120,7 +5150,10 @@ class PointsMarketScreen : Screen(
          * 巧合但正好：自动 GUI（1080p）逻辑屏高 270 ⇒ `270 − 8 = 262`，
          * 所以**大屏小屏现在完全一致**（以前是小屏被钳到 262 才是理想布局）。
          */
-        const val EDIT_DIALOG_H = 262
+        // ⚠ 2026-09-26：字段表加了「极巨等级」⇒ 多一行 ⇒ 这里必须 +EDIT_ROW_STEP(19)。
+        //   高度与底部块（价格行 / 按钮行，都基于 editDialogHeight() − EDIT_BOTTOM_BLOCK）是**成对**的：
+        //   只加字段不改这里，中间内容会整体下移 19px 而底部不动，挤在一起。
+        const val EDIT_DIALOG_H = 281
 
         /**
          * 窗口宽度的上下限：宽度**跟着 RP 商城背景走**（见 [editDialogW]），
@@ -5412,6 +5445,15 @@ class PointsMarketScreen : Screen(
 
         /** 两个输入框字段（在顺序表里有位置，但控件是输入框不是按钮） */
         const val KEY_LEVEL = "level"
+
+        /**
+         * 极巨等级（Cobblemon 官方 `Pokemon.dmaxLevel`，0 ~ `Cobblemon.config.maxDynamaxLevel`）。
+         *
+         * ⚠ 与 [KEY_GMAX]（超极巨化）**是两件事**，别混：
+         * - **极巨化**：**所有**精灵都能，强度由等级决定 ⇒ **不受物种约束**
+         * - **超极巨化**：只有特定物种能（`Species.canGmax()`）⇒ 那个按钮受物种约束
+         */
+        const val KEY_DMAX = "dmax"
 
         /**
          * 等级那一格的「Lv.」前缀词条 —— **与全项目等级行同一个**（`Lv.25` 那个写法，
