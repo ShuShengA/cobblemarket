@@ -138,7 +138,17 @@ class HistoryScreen(private val showAll: Boolean = false) :
             // ⚠ 别写成「中间段之后再累加」—— 那样「价格 + 买家名」合计超宽时（长名字 + 大额），
             //   尾段会被一路推出面板右缘、中间段被挤成只剩一个「…」（2026-09-21 修）
             val pricePart = "| ${com.shusheng.cobblemarket.client.formatPrice(e.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
-            val buyerPart = if (!showAll && buyer.isNotEmpty()) buyer.trimStart() else ""
+            // 个人界面右侧那一段（管理端不用它 —— 那里两个名字都写在中间段里）。
+            // **箭头表示物品的去向、自己省略不写**（这页本来就是看自己的）：
+            //   卖出 →「→ 买家名」（东西给了他）；买入 →「卖家名 →」（东西是他给我的）。
+            // 原先买入也走「→ 自己」—— 在一页全是自己的记录里，这等于没信息（用户 2026-09-26 报）。
+            // ⚠ 判据用 type == "BUY"：服务端只对**买家本人**发这个值，卖出发的是 PURCHASE（见 RequestHistoryPayload 处理）
+            val buyerPart = when {
+                showAll -> ""
+                e.type == "BUY" -> "${if (e.sellerName.isNotEmpty()) e.sellerName else "?"} →"
+                e.buyerName.isNotEmpty() -> "→ ${e.buyerName}"
+                else -> ""
+            }
             val right = width / 2 + panelHalf - 5
             val priceX = right - textRenderer.getWidth(pricePart)
             // 买家名夹在「中间段最小宽度」与价格之间，放不下就截断（完整名字见悬停窗）——
