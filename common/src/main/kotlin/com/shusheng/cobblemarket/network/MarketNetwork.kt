@@ -1802,7 +1802,7 @@ object MarketNetwork {
                         species = listing.itemId,
                         price = listing.price,
                         fee = 0,
-                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count, server.registryManager),
                     )
                 )
                 // 物品名传翻译 Text（客户端按玩家语言渲染），与精灵下架的 speciesText() 一致，不能传裸 itemId；
@@ -2365,7 +2365,7 @@ object MarketNetwork {
                         species = payload.itemId,
                         price = payload.price,
                         fee = fee,
-                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count, server.registryManager),
                     )
                 )
 
@@ -2658,7 +2658,7 @@ object MarketNetwork {
                         species = listing.itemId,
                         price = totalPrice,
                         fee = 0,
-                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count, server.registryManager),
                     )
                 )
 
@@ -2802,7 +2802,7 @@ object MarketNetwork {
                         species = listing.itemId,
                         price = listing.price,
                         fee = 0,
-                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count, server.registryManager),
                     )
                 )
 
