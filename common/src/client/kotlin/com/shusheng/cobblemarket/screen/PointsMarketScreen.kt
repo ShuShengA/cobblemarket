@@ -15,6 +15,7 @@ import com.shusheng.cobblemarket.client.formatPriceShortLong
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
+import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.playButtonClickSound
 import com.shusheng.cobblemarket.network.UpdatePointMarketStockPayload
 import com.shusheng.cobblemarket.client.playFailSound
@@ -156,14 +157,10 @@ class PointsMarketScreen : Screen(
 
     /** 预览用的精灵图标状态（购买窗自己一份，别与编辑窗共用 —— 两个窗口不会同时开，但共用会串味） */
     /**
-     * 购买窗预览的姿态状态。
-     *
-     * ⚠ **换精灵时必须整个换新**（见 [openBuyDialog]）：`PokemonIconRenderer` 会把当前模型 /
-     *   动画 locator 写进 state，复用同一个就会把**上一只的动作**带过来 ——
-     *   用户 2026-09-26 实测：「动画刚开始播就退出界面、立刻点另一只 ⇒ 新那只模仿旧那只的动作」。
-     *   叫声没串是因为它走的是 `renderable` 参数，动作走 state。
+     * 购买窗预览的姿态状态 —— 走 [PreviewStateHolder]：**renderable 换了就整个换新**，
+     * 否则会把上一只的模型 / 动作带过来（用户 2026-09-26 实测「新那只模仿旧那只的动作」）。
      */
-    private var buyPreviewState = FloatingState()
+    private val buyPreviewState = PreviewStateHolder()
 
     /**
      * 预览图标的屏幕位置 —— **渲染时记录**（见 [renderBuyPreview]），关窗时拿去当庆祝动画的起点。
@@ -469,8 +466,8 @@ class PointsMarketScreen : Screen(
     private var editSpeciesCandidates = listOf<Species>()
     private var editSpeciesIndex = 0
     private var editPreview: RenderablePokemon? = null
-    /** 编辑窗预览的姿态状态 —— ⚠ 换物种时要整个换新，见 [applyEditSpecies]（与 [buyPreviewState] 同一个坑） */
-    private var editPreviewState = FloatingState()
+    /** 编辑窗预览的姿态状态 —— 同 [buyPreviewState]，换物种时由 holder 自动换新 */
+    private val editPreviewState = PreviewStateHolder()
 
     // ── 窗口草稿（字段与 ShopPokemonSpec 一一对应；提交时整份拼成 ShopEntry）──
 
@@ -994,7 +991,7 @@ class PointsMarketScreen : Screen(
         if (focusWasInput && !isOverEditInput(mouseX, mouseY)) focused = null
         // 点预览槽 = 点精灵图标（既有标配：点一下就随机叫一声）
         if (button == 0 && isPokemonSlot() && overEditPreview(mouseX, mouseY)) {
-            editPreview?.let { IconCryClick.play(editPreviewState, it) }
+            editPreview?.let { IconCryClick.play(editPreviewState.stateFor(it), it) }
         }
         return result
     }
@@ -1674,9 +1671,6 @@ class PointsMarketScreen : Screen(
         // ⚠ 购买窗**不滚动**（只读文本自己画，没有控件要挪），但 [editRowY] 会减去这个偏移 ——
         //   编辑窗滚过之后再开购买窗，整片字段会跟着上移错位，所以这里必须清零
         editContentScroll = 0
-        // ⚠ **整个换新**：上一只的模型 / 动画 locator 记在 state 里，不换的话新那只会上演**上一只的动画**
-        //   （用户 2026-09-26：动画刚开播就退出、立刻点另一只 ⇒ 新那只模仿旧那只的动作）
-        buyPreviewState = FloatingState()
         hideMainControls()
         buildBuyDialog()
         // 开窗自动叫一声（延迟到渲染之后再播，见 IconCryClick）
@@ -1808,7 +1802,7 @@ class PointsMarketScreen : Screen(
             PointMarketCache.slots[buySlot]
                 ?.takeIf { it.kind == ShopEntry.KIND_POKEMON && overBuyPreview(mouseX, mouseY) }
                 ?.let { entry ->
-                    cellIcon(buySlot, entry).renderable?.let { IconCryClick.play(buyPreviewState, it) }
+                    cellIcon(buySlot, entry).renderable?.let { IconCryClick.play(buyPreviewState.stateFor(it), it) }
                 }
         }
         return true
@@ -1952,7 +1946,7 @@ class PointsMarketScreen : Screen(
             PokemonIconRenderer.draw(
                 context = context,
                 renderable = renderable,
-                state = buyPreviewState,
+                state = buyPreviewState.stateFor(renderable),
                 x = slotX, y = slotY, size = slotSize,
                 delta = delta,
                 animate = useFloat,
@@ -1961,7 +1955,7 @@ class PointsMarketScreen : Screen(
             // 开窗后自动叫一声：**必须在渲染之后**（addFirstAnimation 依赖 draw 里建好的模型）
             if (buyCryAt != 0L && System.currentTimeMillis() >= buyCryAt) {
                 buyCryAt = 0L
-                IconCryClick.play(buyPreviewState, renderable)
+                IconCryClick.play(buyPreviewState.stateFor(renderable), renderable)
             }
         } catch (_: Exception) {
         }
@@ -3250,9 +3244,6 @@ class PointsMarketScreen : Screen(
     }
 
     private fun applyEditSpecies(species: Species?) {
-        // ⚠ 物种**真的换了**才重置预览状态（同一个 state 里留着上一只的模型 / 动作，会串味）——
-        //   本函数**每敲一个键都会调**（见 [updateEditSpecies]），无条件重置会让动画一直在原地打转
-        if (editSpecies !== species) editPreviewState = FloatingState()
         editSpecies = species
         // 换了物种，原来的性别 / 超极巨化 / 形态 / 特性 / 技能可能就不合法了（喷火龙 → 小磁怪）
         // → 各自收进合法范围
@@ -4164,7 +4155,7 @@ class PointsMarketScreen : Screen(
                 PokemonIconRenderer.draw(
                     context = context,
                     renderable = renderable,
-                    state = editPreviewState,
+                    state = editPreviewState.stateFor(renderable),
                     x = slotX, y = slotY, size = slotSize,
                     delta = delta,
                     animate = useFloat,
@@ -4175,7 +4166,7 @@ class PointsMarketScreen : Screen(
                 // currentModel，那是 draw 里才建好的（照其他弹窗的写法）
                 if (editCryAt != 0L && System.currentTimeMillis() >= editCryAt) {
                     editCryAt = 0L
-                    IconCryClick.play(editPreviewState, renderable)
+                    IconCryClick.play(editPreviewState.stateFor(renderable), renderable)
                 }
             } catch (_: Exception) {
             }
