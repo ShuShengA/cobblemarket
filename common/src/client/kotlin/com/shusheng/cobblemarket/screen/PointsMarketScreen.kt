@@ -1984,6 +1984,8 @@ class PointsMarketScreen : Screen(
                 context, editColX(col), editRowY(row), editColW(), buyFieldLine(key, spec),
                 // 头目那行的标签是**徽章贴图**（与编辑窗按钮、列表行同一张），得单独画；其余字段没有
                 badge = if (key == KEY_ALPHA) "alpha" else null,
+                // 性别 / 体型画**值图标**（无性别 / 随机体型时为 null，那时照常显示文字值）
+                valueIcon = fieldValueIcon(key, spec),
                 // 球种 / 携带物画**物品图标**（携带物关掉可见性时不画，与商城格子同一个口径）
                 icon = when (key) {
                     KEY_HELD -> if (spec.heldItemVisible) stackOfSpec(spec.heldItemSpec) else ItemStack.EMPTY
@@ -2083,15 +2085,19 @@ class PointsMarketScreen : Screen(
      * ⚠ 这两行是购买窗**最要紧的信息**，而编辑窗里物种是个搜索框、不在 [editFieldOrder] 里 ——
      * 照搬字段表会把它整条漏掉（2026-09-25 用户实测指出）。
      * 走与全项目悬停窗**同一个入口**（[EntryBadgeRenderer.nameWithLevelLine] / [typeLine]）：
-     * 名字带主属性色 + 闪光星标、属性名分段着色，Lv 与「+」这些陪衬文字不设色。
+     * 名字带主属性色、属性名分段着色，Lv 与「+」这些陪衬文字不设色。
+     * ⚠ 与悬停窗不同的是：这里名字后面**不挂闪光星标** —— 闪光由下面第一格字段表达（见下方注释）。
      */
     private fun renderBuyNameLines(context: DrawContext, spec: ShopPokemonSpec) {
         val species = Identifier.tryParse(spec.species)?.let { PokemonSpecies.getByIdentifier(it) } ?: return
         val primary = "cobblemon.type.${species.primaryType.name.lowercase()}"
         val secondary = species.secondaryType?.let { "cobblemon.type.${it.name.lowercase()}" }.orEmpty()
         val y = editDialogY() + EDIT_SPECIES_Y + (EDIT_ROW_H - 8) / 2
+        // ⚠ **名字后面不挂闪光星标**：闪光信息在下面第一格字段里已经有了（[shinyStarText]：
+        //   必闪 = 金 ★、按概率 = ★ + 百分比、不闪 = 深灰 ★），名字后面再挂一个
+        //   就是同一件事显示两遍（用户 2026-09-26 报「第二行又显示了一个闪光符号」）。
         val nameLine = EntryBadgeRenderer.nameWithLevelLine(
-            EntryBadgeRenderer.nameWithShinyStar(SpeciesText.translated(species).string, "shiny" in spec.aspects),
+            Text.literal(SpeciesText.translated(species).string),
             primary,
             // 等级留空 = 生成 1 级（与 PointMarketFactory 同口径）
             spec.level ?: 1
@@ -2112,7 +2118,7 @@ class PointsMarketScreen : Screen(
         val spec = entry.item ?: return
         // ⚠ 原来这里还画了一行「物品：xxx」（占着左上角那条物种搜索框的位置）——
         //   自从大图左侧上了**词条列**（第一行就是物品名），它就纯属重复了（用户 2026-09-26 指出）。
-        //   精灵格那边仍保留名字行：它的名字带着属性色 + 闪光星标 + Lv，词条列里没有这些。
+        //   精灵格那边仍保留名字行：它的名字带着属性色 + Lv，词条列里没有这些。
         // 物品图标（大图）：画在右侧预览区同一位置，玩家能看清附魔/改名的样子
         val icon = cellIcon(buySlot, entry).stack ?: return
         val slotSize = editPreviewSize()
@@ -2242,15 +2248,30 @@ class PointsMarketScreen : Screen(
         buyCountLabelX() + textRenderer.getWidth(Text.translatable("cobblemarket.points.store.buy_count")) + 4
 
     /**
+     * 字段行的**值图标** —— 值不用文字而用贴图表达时走它（性别 / 体型）。
+     * ⚠ 两种图标**尺寸不一样**，所以用 sealed 分开，别拿一个字符串猜是哪一种。
+     */
+    private sealed interface FieldValueIcon {
+        /** 公母图标（Cobblemon PC 贴图，6×8 —— 与编辑窗那个性别按钮同源）。⚠ **无性别没有对应图标**，那时走文字 */
+        data class Gender(val male: Boolean) : FieldValueIcon
+        /** 体型徽章（37×16 按 0.5 → 18.5×8，与列表行、头目那行同一张）。随机 / 未设时走文字 */
+        data class Size(val badge: String) : FieldValueIcon
+    }
+
+    /**
      * 一行只读字段（**标签冒号写在词条里**，这里只负责截断与摆放）。
      * [color] 是**行色** —— 默认白，个体值 / 努力值那几行按项给色（见 [STAT_ROW_COLORS]）。
      * [badge] = **行首徽章**（体型名，只有头目那行传 `"alpha"`）：徽章是**贴图**、插不进 [line] 这个
      *   Text 里，所以单独画一个行首图，后面的文字**往右让位**、可用宽度相应收窄。
+     * [valueIcon] = **行内值图标**（性别 / 体型）：值同样是贴图，画在标签文本之后
+     *   （用户 2026-09-26：「性别：这里用性别图标，不要用雄性雌性；体型也用图标」）。
+     *   ⚠ 调用方要**同时**让 [line] 的值段留空（判据见 [fieldValueIcon]），否则文字和图标会各显一遍。
      */
     private fun drawBuyField(
         context: DrawContext, x: Int, y: Int, w: Int, line: Text,
         color: Int = 0xFFFFFF,
         badge: String? = null,
+        valueIcon: FieldValueIcon? = null,
         icon: ItemStack? = null
     ) {
         var textX = x
@@ -2265,6 +2286,20 @@ class PointsMarketScreen : Screen(
         // ⚠ 截断用 truncateStyled：truncateText 会把 Text 压成一段、丢掉图标字形的字体样式
         val text = TextUtil.truncateStyled(line, textW)
         context.drawTextWithShadow(textRenderer, text, textX, y + (EDIT_ROW_H - 8) / 2, color)
+        // [valueIcon] = **行内值图标**（性别 / 体型）：紧跟在标签文本之后（值段已由调用方留空）
+        if (valueIcon != null) {
+            val vy = y + (EDIT_ROW_H - 8) / 2
+            val vx = textX + textRenderer.getWidth(text) + 2
+            when (valueIcon) {
+                is FieldValueIcon.Gender -> com.cobblemon.mod.common.api.gui.blitk(
+                    matrixStack = context.matrices,
+                    texture = if (valueIcon.male) GENDER_ICON_MALE else GENDER_ICON_FEMALE,
+                    x = vx, y = vy, width = 6, height = 8
+                )
+                is FieldValueIcon.Size ->
+                    EntryBadgeRenderer.drawSizeBadgeIcon(context, valueIcon.badge, vx, vy)
+            }
+        }
         // [icon] = **行尾物品图标**（携带物 / 球种用）：这两个字段的值是物品，画名字会放不下
         //（「附魔金苹果」这类长名，一格只有 82px）—— 与编辑窗按钮上那个图标同一套画法
         if (icon != null && !icon.isEmpty) {
@@ -2273,6 +2308,26 @@ class PointsMarketScreen : Screen(
                 textX + textRenderer.getWidth(text) + 2, y + (EDIT_ROW_H - 16) / 2
             )
         }
+    }
+
+    /**
+     * 这一格的**值能不能用图标表达** —— 能就返回图标，不能（无性别 / 随机体型）返回 null 走文字。
+     *
+     * ⚠ **判据只有这一个**：渲染（[drawBuyField] 的 `valueIcon`）与取文本（[buyFieldLine] 把值段留空）
+     *   都调它。两边各判各的，必然出现「图标和文字各显一遍」或「什么都没有」。
+     */
+    private fun fieldValueIcon(key: String, spec: ShopPokemonSpec): FieldValueIcon? = when (key) {
+        KEY_GENDER -> when (spec.gender?.uppercase()) {
+            "MALE" -> FieldValueIcon.Gender(true)
+            "FEMALE" -> FieldValueIcon.Gender(false)
+            // 无性别在游戏里就没有对应图标（Cobblemon 只给了 ♂ / ♀ 两张 pc 贴图）→ 退回文字
+            else -> null
+        }
+        // 0 = 随机 / 未设（编辑窗的「不指定」）
+        KEY_SIZE -> sizeIndexOf(spec.scale).takeIf { it > 0 }
+            ?.let { PokemonSizeCategory.entries.getOrNull(it - 1) }
+            ?.let { FieldValueIcon.Size(it.name) }
+        else -> null
     }
 
     /** 一个字段的只读文本；返回空文本 = 这项不显示 */
@@ -2297,9 +2352,12 @@ class PointsMarketScreen : Screen(
             )
             // 等级：服主留空 = 生成 1 级（与官方 PokemonProperties 同口径，见 PointMarketFactory）
             KEY_LEVEL -> Text.translatable("cobblemarket.points.store.field.level", (spec.level ?: 1).toString())
+            // 性别 / 体型：**值段留空**、实际值由 [drawBuyField] 的 `valueIcon` 画贴图
+            //（与下面球种同一个口径）。⚠ 判据共用 [fieldValueIcon] —— 两边各判各的会各显一遍
             KEY_GENDER -> Text.translatable(
                 "cobblemarket.points.store.field.gender",
-                when (spec.gender?.uppercase()) {
+                if (fieldValueIcon(KEY_GENDER, spec) != null) ""
+                else when (spec.gender?.uppercase()) {
                     "MALE" -> Text.translatable("cobblemarket.aspect.male")
                     "FEMALE" -> Text.translatable("cobblemarket.aspect.female")
                     "GENDERLESS" -> Text.translatable("cobblemarket.points.store.value.genderless")
@@ -2316,9 +2374,11 @@ class PointsMarketScreen : Screen(
             // 球种 / 携带物：值**不画名字**，交给 [drawBuyField] 的 icon 参数画物品图标
             //（用户 2026-09-26：「附魔金苹果」这类长名一格放不下）—— 与编辑窗按钮上那个图标同一个口径
             KEY_BALL -> Text.translatable("cobblemarket.points.store.field.ball", "")
+            // 同上：有体型徽章时值段留空（判据共用 [fieldValueIcon]）
             KEY_SIZE -> Text.translatable(
                 "cobblemarket.points.store.field.size",
-                sizeIndexOf(spec.scale)?.let { PokemonSizeCategory.entries.getOrNull(it - 1)?.name } ?: random.string
+                if (fieldValueIcon(KEY_SIZE, spec) != null) ""
+                else PokemonSizeCategory.entries.getOrNull(sizeIndexOf(spec.scale) - 1)?.name ?: random.string
             )
             KEY_ALPHA -> Text.translatable(
                 "cobblemarket.points.store.field.alpha",
