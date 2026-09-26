@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
+import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
@@ -1581,7 +1582,11 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             itemTooltipAdvancedType = null
             null
         }
-        val lines = advanced ?: itemTooltipLines
+        // 行数按屏幕高钳制：Shift / Ctrl 展开后可能几十行，画不下时末行换成「…（还有 N 行）」——
+        // 否则 `height - tooltipHeight` 变负、悬停窗顶部被切到屏幕外（2026-09-26 用户报隐患）
+        val lines = clampTooltipRows(advanced ?: itemTooltipLines, height) { n ->
+            Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA
+        }
 
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }

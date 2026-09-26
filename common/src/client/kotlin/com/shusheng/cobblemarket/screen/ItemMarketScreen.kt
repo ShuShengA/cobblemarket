@@ -32,6 +32,7 @@ import net.minecraft.util.Identifier
 import java.util.UUID
 import com.shusheng.cobblemarket.client.drawItemWithBar
 import com.shusheng.cobblemarket.client.ItemCelebrationAnimation
+import com.shusheng.cobblemarket.client.clampTooltipRows
 
 class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
@@ -522,7 +523,11 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             tooltipAdvancedType = null
             null
         }
-        val lines = advanced ?: tooltipCacheLines
+        // 行数按屏幕高钳制：Shift / Ctrl 展开后可能几十行，画不下时末行换成「…（还有 N 行）」——
+        // 否则 `height - tooltipHeight` 变负、悬停窗顶部被切到屏幕外（2026-09-26 用户报隐患）
+        val lines = clampTooltipRows(advanced ?: tooltipCacheLines, height) { n ->
+            Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA
+        }
 
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }

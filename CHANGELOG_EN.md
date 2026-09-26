@@ -11,6 +11,8 @@
 - **At night, icons stood up before lying down when a screen opened**: during a species' rest hours the icon is supposed to already be asleep, yet it began from the idle pose and transitioned over — noticeable on every page flip and screen switch. This is now fixed, so the icon is already asleep as the screen opens
 - **A Pokémon previewed right after another one performed the previous Pokémon's animation**: open a preview, leave the moment its animation starts, then open another one — the new Pokémon strikes the **previous one's pose** (the cry, oddly, is its own). It takes quick hands to hit, and it affects every screen with a preview: market, auctions, buy orders. This is now fixed
 
+- **A tooltip with many lines had its top cut off screen**: holding Shift to read an item's full tooltip (or modded items that simply have many lines, or Ctrl for debug info with F3+H on) let the popup grow taller than the screen, hiding everything above it — the item name included. It is now cut to fit the screen, with a grey "… (N more rows)" line at the end instead of silently disappearing
+
 ## 1.2.0 (in development, unreleased)
 
 ### New Feature

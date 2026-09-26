@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.heldIconStackForModel
@@ -690,6 +691,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             lines.add(Text.translatable("cobblemarket.auction.leader").append(entry.currentBidderName) to 0xFFDD66)
         }
 
+        // 行数按屏幕高钳制（精灵信息本身可控，但叠上技能块 / 证章后仍可能超屏）—— 见 [clampTooltipRows]
+        clampTooltipRows(lines, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA }
+            .let { if (it !== lines) { lines.clear(); lines.addAll(it) } }
         var mw = tooltipCacheMaxWidth
         for (i in tooltipCacheStaticLines.size until lines.size) {
             lines[i].first?.let { t -> mw = maxOf(mw, textRenderer.getWidth(t)) }
@@ -778,6 +782,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             lines.add(Text.translatable("cobblemarket.auction.leader").append(entry.currentBidderName) to 0xFFDD66)
         }
 
+        // 行数按屏幕高钳制（Shift / Ctrl 展开可能几十行）—— 见 [clampTooltipRows]
+        clampTooltipRows(lines, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA }
+            .let { if (it !== lines) { lines.clear(); lines.addAll(it) } }
         var maxWidth = itemTooltipCacheMaxWidth
         for (i in itemTooltipCacheLines.size until lines.size) {
             maxWidth = maxOf(maxWidth, textRenderer.getWidth(lines[i].first))

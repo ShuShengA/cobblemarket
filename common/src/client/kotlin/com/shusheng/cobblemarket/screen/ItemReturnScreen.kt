@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.network.ClaimItemReturnPayload
 import com.shusheng.cobblemarket.network.ItemEntry
@@ -294,6 +295,9 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
         ) to 0xFFFFFF)
         lines.add(Text.literal("×${entry.count}") to 0xFFFFFF)
 
+        // 行数按屏幕高钳制（Shift / Ctrl 展开可能几十行）—— 见 [clampTooltipRows]
+        clampTooltipRows(lines, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA }
+            .let { if (it !== lines) { lines.clear(); lines.addAll(it) } }
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
 
