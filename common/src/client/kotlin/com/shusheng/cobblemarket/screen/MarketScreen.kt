@@ -1900,11 +1900,17 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private fun renderConfirmDialog(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val entry = confirmEntry ?: cancelEntry ?: return
         val centerX = width / 2
-        // 喵喵支付可用时加宽 280 容纳三枚按钮；不可用回退原宽度 220（两枚）
-        // 宽度：喵喵支付可用时 280 容纳三枚按钮（1.3.0 起的判定带币种，RP 挂单不给喵喵入口）
-        val dialogW = maxOf(if (meowthAvailable(entry)) 340 else 300, EntryBadgeRenderer.measureInfoLines(entry, EntryBadgeRenderer.nameWithShinyStar(if (confirmDisplayName.isNotEmpty()) confirmDisplayName else entry.species, entry.shiny))).coerceAtMost(width - 20)
-            // ⚠ 下限 280：喵喵支付三按钮固定占 248（±124），上限钳制不能把它吃掉
-            .coerceAtLeast(280)
+        val confirmName = EntryBadgeRenderer.nameWithShinyStar(
+            if (confirmDisplayName.isNotEmpty()) confirmDisplayName else entry.species, entry.shiny)
+        // 宽度**按内容算**（照出价弹窗）：信息行居中，弹窗贴合内容即可 —— 原先写死 300/340，
+        // 内容才 ~170 宽，两侧各白留 65+（用户 2026-09-26 报「左右都有没必要的空间」）。
+        // 下限由按钮行撑出：喵喵支付三枚并排共 248（±124，1.3.0 起的判定带币种、RP 挂单不给入口），
+        // 无喵喵时两枚共 170（±85）；各留 12px 边距（与 drawInfoLines 的 maxWidth = dialogW − 24 同口径）。
+        val btnRowW = if (meowthAvailable(entry)) 248 else 170
+        val dialogW = (maxOf(EntryBadgeRenderer.measureInfoLines(entry, confirmName), btnRowW) + 24)
+            .coerceAtMost(width - 20)
+            // ⚠ 下限：按钮行本身不能被屏幕钳制吃掉（否则三枚按钮会戳出弹窗外）
+            .coerceAtLeast(btnRowW + 24)
         // 高度：**按屏幕钳制**（信息行多时设计高度会顶出屏幕，超出部分靠滚轮看）
         val dialogH = confirmDialogH(entry)
         val dialogX = centerX - dialogW / 2
@@ -1967,8 +1973,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
         // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 技能 / 证章 / 卖家 / 价格
         // 弹窗被屏幕压矮时**信息区可滚动**：只画可视区（scissor 裁剪），起始 y 减去滚动偏移
-        val name = EntryBadgeRenderer.nameWithShinyStar(
-            if (confirmDisplayName.isNotEmpty()) confirmDisplayName else entry.species, entry.shiny)
+        // 与函数开头定宽用的是同一个名字文本（confirmName），别在这儿再拼一遍
+        val name = confirmName
         confirmScroll = confirmScroll.coerceIn(0, confirmMaxScroll(entry))
         val viewTop = dialogY + confirmContentTop
         val viewBottom = dialogY + dialogH - confirmBottomH

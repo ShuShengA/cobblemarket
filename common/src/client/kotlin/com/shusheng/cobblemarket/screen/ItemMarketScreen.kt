@@ -917,7 +917,28 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private fun renderBuyDialogBackground(context: DrawContext) {
         val entry = selectedEntry ?: return
         val centerX = width / 2
-        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
+        // 物品栈先建：图标与物品名都用它渲染，下面的内容测宽也要用（别建两次）
+        val registry = client?.world?.registryManager
+        val dialogStack = registry?.let { ItemStack.fromNbtOrEmpty(it, entry.itemNbt) }
+        // 宽度**按内容算**：图标 / 物品名 / 按钮都居中在 ±85 内，而两行文字与输入框
+        // 左对齐于 centerX − 80（位置保持不动，用户 2026-09-26 拍板）⇒ 左半区固定要 85，
+        // 右半区取「文字行宽 − 80」与 85 的较大者；各留 12px 边距。
+        // 原先写死 300，内容才 ~170 宽，两侧各白留 65。
+        val countLabelW = textRenderer.getWidth(
+            Text.translatable("cobblemarket.item.buy_count").string + "（" +
+                Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}）"
+        )
+        val totalLabelW = textRenderer.getWidth(
+            Text.translatable("cobblemarket.item.buy_total").append(
+                com.shusheng.cobblemarket.client.amountWithUnit(
+                    com.shusheng.cobblemarket.client.formatPriceLong(buyTotal()), entry.isPoints, entry.currencyName
+                )
+            )
+        )
+        val itemNameW = dialogStack?.takeIf { !it.isEmpty }
+            ?.let { textRenderer.getWidth(com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(it)) } ?: 0
+        val halfW = maxOf(85, countLabelW - 80, totalLabelW - 80, itemNameW / 2)
+        val dialogW = (halfW * 2 + 24).coerceAtMost(width - 40).coerceAtLeast(200)
         // 弹窗高度随消费贷开关收缩：210（含喵喵支付行）/ 170（原尺寸）
         val dialogH = buyDialogH(entry)
         val dialogX = centerX - dialogW / 2
@@ -934,17 +955,15 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             context.drawCenteredTextWithShadow(textRenderer, buyErrorText, centerX, dialogY + (if (meowthAvailable(entry)) 128 else 108), 0xFFFFFF)
         }
 
-        val registry = client?.world?.registryManager
-        if (registry != null) {
-            val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
-            drawItemWithBar(context, stack, centerX - 8, dialogY + 26)
+        if (registry != null && dialogStack != null) {
+            drawItemWithBar(context, dialogStack, centerX - 8, dialogY + 26)
             // 记下这个图标的位置（物品庆祝动画要从这里起飞）；物品图标基准 16×16
             buyDialogIconOrigin = ItemCelebrationAnimation.Origin.ofIcon(
                 x = centerX - 8, y = dialogY + 26, size = 16
             )
             // 物品名照物品栏悬浮第一行按稀有度着色
             context.drawCenteredTextWithShadow(textRenderer,
-                com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), centerX, dialogY + 46, 0xFFFFFF)
+                com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(dialogStack), centerX, dialogY + 46, 0xFFFFFF)
         }
 
         context.drawTextWithShadow(textRenderer,
