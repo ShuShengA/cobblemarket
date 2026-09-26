@@ -1266,7 +1266,11 @@ object MarketNetwork {
                 val pageEntries = if (results.isEmpty()) emptyList() else {
                     val start = (clampedPage - 1) * pageSize
                     results.drop(start).take(pageSize).map { listing ->
-                        val detail = listing.extraData
+                        // 太晶：**老挂单没有这项快照**（那时还没快照它）⇒ 从挂单自带的完整 NBT 现读。
+                        // 与 `size` / `moves` 同一个套路（见 auctionToEntry 的注释），玩家不用重新上架
+                        val detail = listing.extraData + ("teraType" to
+                            com.shusheng.cobblemarket.util.PokemonTera.resolve(
+                                listing.extraData["teraType"], listing.pokemonNbt))
                         ListingEntry(
                             id = listing.id,
                             sellerUuid = listing.sellerUuid,
@@ -1652,7 +1656,11 @@ object MarketNetwork {
                 val pageEntries = if (results.isEmpty()) emptyList() else {
                     val start = (clampedPage - 1) * pageSize
                     results.drop(start).take(pageSize).map { listing ->
-                        val detail = listing.extraData
+                        // 太晶：**老挂单没有这项快照**（那时还没快照它）⇒ 从挂单自带的完整 NBT 现读。
+                        // 与 `size` / `moves` 同一个套路（见 auctionToEntry 的注释），玩家不用重新上架
+                        val detail = listing.extraData + ("teraType" to
+                            com.shusheng.cobblemarket.util.PokemonTera.resolve(
+                                listing.extraData["teraType"], listing.pokemonNbt))
                         ListingEntry(
                             id = listing.id,
                             sellerUuid = listing.sellerUuid,

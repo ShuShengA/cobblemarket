@@ -128,7 +128,11 @@ fun auctionToEntry(a: AuctionListing): AuctionEntry = AuctionEntry(
     extraData = if (a.type == AuctionType.POKEMON) {
         a.extraData +
             ("size" to PokemonSize.fromNbt(a.pokemonNbt)) +
-            ("moves" to com.shusheng.cobblemarket.util.MoveText.resolve(a.extraData["moves"], a.pokemonNbt))
+            ("moves" to com.shusheng.cobblemarket.util.MoveText.resolve(a.extraData["moves"], a.pokemonNbt)) +
+            // 太晶同款：老拍卖没有这项快照（太晶显示是后加的）⇒ 从精灵 NBT 现读，
+            // 服主升级后不用让玩家把拍卖挨个重新上架
+            ("teraType" to com.shusheng.cobblemarket.util.PokemonTera.resolve(
+                a.extraData["teraType"], a.pokemonNbt))
     } else a.extraData,
     startingPrice = a.startingPrice,
     minIncrement = a.minIncrement,
