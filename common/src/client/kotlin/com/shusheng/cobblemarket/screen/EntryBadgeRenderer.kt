@@ -140,6 +140,18 @@ object EntryBadgeRenderer {
     /** 名字后面多个徽章之间的空隙 */
     private const val BADGE_GAP = 3
 
+    /**
+     * **名字（含 ★Lv）→ 尾部第一个元素**（性别图标 / 体型徽章）之间的空隙。
+     *
+     * ⚠ 原来各处写的是 **2**（`cx + 2` / `sx += 2` / `nameWidth + 2`，散在 9 处手写拷贝里）——
+     * 2px 再扣掉字形自带的 1px 右内距几乎贴住，而同一行「名字 → Lv」是两个空格（默认字体 8px），
+     * 前松后紧，看着就是挤在一起（用户 2026-09-26 在精灵市场悬停窗提出）。
+     *
+     * ⚠ **公开常量**：列表行是各界面**手写**排版的（不走 [drawNameLineLeft]），
+     * 它们必须引用这里，别再各写各的 2 —— 改间距只改这一个数。
+     */
+    const val NAME_TAIL_GAP = 5
+
     /** 体型徽章纹理表（预建，避免每帧重复构造 Identifier） */
     private val SIZE_BADGE_TEXTURES: Map<String, Identifier> =
         listOf("xs", "s", "m", "l", "xl", "alpha")
@@ -172,8 +184,8 @@ object EntryBadgeRenderer {
     /** 名字行尾部（公母 + 体型徽章）占用宽度，供居中排版 */
     private fun nameTailWidth(gender: String, size: String): Int {
         var w = 0
-        if (gender == "MALE" || gender == "FEMALE") w += 2 + 6
-        if (size.isNotEmpty()) w += (if (w > 0) BADGE_GAP else 2) + SIZE_ICON_W
+        if (gender == "MALE" || gender == "FEMALE") w += NAME_TAIL_GAP + 6
+        if (size.isNotEmpty()) w += (if (w > 0) BADGE_GAP else NAME_TAIL_GAP) + SIZE_ICON_W
         return w
     }
 
@@ -274,12 +286,12 @@ object EntryBadgeRenderer {
                 Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
             com.cobblemon.mod.common.api.gui.blitk(
                 matrixStack = context.matrices, texture = gi,
-                x = cx + 2, y = y, width = 6, height = 8
+                x = cx + NAME_TAIL_GAP, y = y, width = 6, height = 8
             )
-            cx += 2 + 6
+            cx += NAME_TAIL_GAP + 6
         }
         if (size.isNotEmpty()) {
-            cx += if (cx > x + nameW) BADGE_GAP else 2
+            cx += if (cx > x + nameW) BADGE_GAP else NAME_TAIL_GAP
             drawSizeBadgeIcon(context, size, cx, y)
         }
     }
