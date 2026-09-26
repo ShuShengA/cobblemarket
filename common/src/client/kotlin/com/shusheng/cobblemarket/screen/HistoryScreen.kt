@@ -236,7 +236,9 @@ class HistoryScreen(private val showAll: Boolean = false) :
      * 拿不到颜色时（老记录没有主属性列、物品 id 解析不出）退回无色，由调用方的行色兜底。
      */
     private fun speciesNameText(e: HistoryEntry): Text = if (e.category == "ITEM") {
-        ItemNameText.rarityColoredNameById(e.species) ?: Text.literal(e.species)
+        // 稀有度优先用记录里存的那个（服务端产生记录时算好的，**含附魔提升那一档**）；
+        // 旧记录没有它 ⇒ 退回按 itemId 取默认栈的稀有度（改动前的老行为）
+        ItemNameText.rarityColoredNameById(e.species, e.itemRarity) ?: Text.literal(e.species)
     } else {
         TypeTextColors.speciesName(Text.translatable(e.species), e.primaryType.ifEmpty { null }, false)
     }
