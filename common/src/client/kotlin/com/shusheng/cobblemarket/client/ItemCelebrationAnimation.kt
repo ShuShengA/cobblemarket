@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.client
 
 import com.mojang.blaze3d.systems.RenderSystem
+import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.network.CelebrationSource
 import com.shusheng.cobblemarket.platform.registerHudRender
 import net.minecraft.client.MinecraftClient
@@ -132,15 +133,25 @@ object ItemCelebrationAnimation {
     /** 取队首开播；重建失败的（物品已删 / ID 无效等）跳过换下一件，队列空则回到空闲 */
     private fun startNext() {
         // 物品栈要靠注册表重建，没有世界就没有注册表——直接收摊（正常流程下服务端不会在此时发包）
-        val registryManager = MinecraftClient.getInstance().world?.registryManager ?: run { reset(); return }
+        val registryManager = MinecraftClient.getInstance().world?.registryManager ?: run {
+            // ⚠ 保留这条 warn（不是临时日志）：走到这里 = 队列整个作废，动画**静默不播** ——
+            //   正是 2026-09-26 那次「买了没动画」最难查的原因，留个出声的点
+            CobbleMarket.LOGGER.warn("[庆祝] 物品庆祝：没有注册表（world 为空），整队列作废")
+            reset(); return
+        }
         while (true) {
             val next = queue.removeFirstOrNull() ?: run { reset(); return }
             val built = try {
                 ItemStack.fromNbtOrEmpty(registryManager, next.itemNbt)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                CobbleMarket.LOGGER.warn("[庆祝] 物品庆祝：栈重建抛异常，跳过这一件 —— {}", e.message)
                 continue
             }
-            if (built.isEmpty) continue
+            if (built.isEmpty) {
+                // ⚠ 同样保留：包到了但 NBT 重建不出物品 → 静默跳过 → 表现就是"没动画"
+                CobbleMarket.LOGGER.warn("[庆祝] 物品庆祝：栈重建为空，跳过这一件 —— nbt={}", next.itemNbt)
+                continue
+            }
             // 挂单 NBT 里存的是上架总量，到手数量以包里单独传的为准
             built.count = next.count.coerceAtLeast(1)
             stack = built
