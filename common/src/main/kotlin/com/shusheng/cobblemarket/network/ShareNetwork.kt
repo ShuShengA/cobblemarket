@@ -312,17 +312,15 @@ object ShareNetwork {
                     )
                 } ?: Text.literal("")
             ).append(
-                // 太晶属性（官方 `Pokemon.teraType`，**默认 = 主属性** ⇒ 只在 ≠ 主属性时才画；
-                // 展示这条是**直接读精灵对象**，连快照都不用）
-                pokemon.teraType.id.path
-                    .takeIf { it != pokemon.primaryType.name.lowercase() }
-                    ?.let { tera ->
-                        val key = "cobblemon.type.$tera"
-                        Text.translatable(
-                            "cobblemarket.gui.tooltip_tera",
-                            Text.translatable(key).styled { s -> s.withColor(TypeTextColors.color(key)) }
-                        )
-                    } ?: Text.literal("")
+                // 太晶属性（官方 `Pokemon.teraType`）：**常驻显示** —— 展示这条**直接读精灵对象**，连快照都不用。
+                // ⚠ 别写回「只在 ≠ 主属性时才画」：那条被用户否过（理由见 MarketNetwork.buildListingExtra 的同名键）
+                run {
+                    val key = "cobblemon.type.${pokemon.teraType.id.path}"
+                    Text.translatable(
+                        "cobblemarket.gui.tooltip_tera",
+                        Text.translatable(key).styled { s -> s.withColor(TypeTextColors.color(key)) }
+                    )
+                }
             )
         )
         lines.add(Text.translatable("cobblemarket.gui.tooltip_nature").append(Text.translatable("cobblemon.nature.${pokemon.effectiveNature.name.path}")))
