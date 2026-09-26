@@ -620,8 +620,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         selectedEntry = entry
         setMainControlsVisible(false)
         val centerX = width / 2
-        // 弹窗高度随消费贷开关收缩（210/170），dialogY 与 renderBuyDialogBackground 同公式
-        val dialogY = height / 2 - buyDialogH() / 2
+        // 位置一律读 [buyDialogLayout]（与渲染同源 —— 别再各算一遍，那正是「建与重摆两处各写一遍」的老毛病）
+        val L = buyDialogLayout()
 
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -629,22 +629,27 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             }
         })
 
-        buyCountField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 72, 100, 16, Text.literal(""))
+        buyCountField = TextFieldWidget(textRenderer, centerX - 80, L.fieldY, 100, 16, Text.literal(""))
         buyCountField?.setPlaceholder(Text.translatable("cobblemarket.item.buy_count"))
         buyCountField?.setTextPredicate { it.length <= 4 && it.all { c -> c.isDigit() } }
         // 重新输入时清除校验失败提示
         buyCountField?.setChangedListener { buyErrorText = null }
         addDrawableChild(buyCountField)
 
-        // 按钮行 y 随弹窗高度收缩：210 高 → y+140；170 高 → y+128
-        val btnRowY = dialogY + (if (payAvailable) 140 else 128)
+        // 三按钮**并排**（照精灵购买弹窗）：喵喵支付放**中间**，不再另起一行 ——
+        // 弹窗宽 300，三枚 80 按钮 + 4px 间隙 = 248，放得下（用户 2026-09-26 报「为什么不放中间」）
+        val btnW = 80
+        val threeButtons = payAvailable
+        val confirmX = if (threeButtons) centerX - btnW - 44 else centerX - btnW - 5
+        val payX = centerX - 40
+        val cancelX = if (threeButtons) centerX + 44 else centerX + 5
         addDrawableChild(NineSliceButton(
-            centerX - 85, btnRowY, 80, 20,
+            confirmX, L.buttonY, btnW, 20,
             Text.translatable("cobblemarket.gui.buy"),
             { confirmBuy() }
         ))
         addDrawableChild(NineSliceButton(
-            centerX + 5, btnRowY, 80, 20,
+            cancelX, L.buttonY, btnW, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeBuyDialog() }
         ))
@@ -652,7 +657,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         // 喵喵支付入口（点击进独立 MeowthPayScreen 选方案）；消费贷关时不显示
         if (payAvailable) {
             buyPayButton = NineSliceButton(
-                centerX - 85, dialogY + 164, 80, 20,
+                payX, L.buttonY, btnW, 20,
                 Text.translatable("cobblemarket.buy_confirm.meowth_pay"),
                 { openMeowthPay() }
             )
@@ -663,8 +668,55 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         requestCreditInfo()
     }
 
-    /** 购买弹窗高度：消费贷开 210（含喵喵支付行）/ 关 170（原尺寸） */
-    private fun buyDialogH(): Int = if (payAvailable) 210 else 170
+    /** 词条行数上限（与「查看待交付」同一口径）—— 再多也只显示这么多，免得弹窗比屏幕还高 */
+    private val MAX_INFO_ROWS = 12
+
+    /**
+     * 购买弹窗里要显示的词条行。
+     *
+     * ⚠ **只取 BASIC、不跟随 Shift 展开**：跟着展开的话一按键弹窗就长高，
+     *   违反 CLAUDE.md 那条「弹窗高度开出来就固定」。
+     */
+    private fun buyInfoLines(): List<Text> {
+        val rm = client?.world?.registryManager ?: return emptyList()
+        val stack = selectedEntry?.let { ItemStack.fromNbtOrEmpty(rm, it.itemNbt) } ?: return emptyList()
+        return com.shusheng.cobblemarket.client.ItemComponentsDisplay
+            .itemTooltip(stack, client?.player, TooltipType.BASIC)
+    }
+
+    /**
+     * 实际显示的词条行数：同时受 [MAX_INFO_ROWS] 与**屏幕高**约束
+     *（GUI 缩放设「自动」时逻辑屏高可能只有 270，弹窗固定占掉 140，剩下的才轮到词条）。
+     */
+    private fun infoRows(): Int {
+        val byScreen = ((height - 140 - 20) / 10).coerceAtLeast(0)
+        return buyInfoLines().size.coerceAtMost(minOf(MAX_INFO_ROWS, byScreen))
+    }
+
+    /**
+     * 购买弹窗的**唯一布局来源** —— 渲染与建控件都读它，别在两处各写一遍 y。
+     *
+     * 布局：标题 / 图标 / 物品名占到头 62 → 词条 N 行 → 数量标签 → 输入框 16 → 总价 → 按钮 20 → 底部 10。
+     * ⚠ 此前高度**写死 170/210**，而内容只排到 92 ⇒ 总价与按钮之间白空 36~48px
+     *   （用户 2026-09-26 报「总价这一行和按钮这一行离得那么远干嘛呢」）。
+     */
+    private data class BuyLayout(
+        val dialogY: Int, val infoTop: Int, val labelY: Int,
+        val fieldY: Int, val totalY: Int, val buttonY: Int
+    )
+
+    private fun buyDialogLayout(): BuyLayout {
+        val dialogY = height / 2 - buyDialogH() / 2
+        val infoTop = dialogY + 62
+        val labelY = infoTop + infoRows() * 10 + 6
+        val fieldY = labelY + 10
+        val totalY = fieldY + 22
+        val buttonY = totalY + 10
+        return BuyLayout(dialogY, infoTop, labelY, fieldY, totalY, buttonY)
+    }
+
+    /** 购买弹窗高度：**按内容算**（= 按钮底 + 距边框 10px） */
+    private fun buyDialogH(): Int = 140 + infoRows() * 10
 
     /** 消费贷开关快照（打开购买弹窗时拉取）：状态变化时重建弹窗控件（含输入恢复）+ 回写缓存 */
     fun onCreditInfo(payload: CreditInfoPayload) {
@@ -862,10 +914,10 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         val entry = selectedEntry ?: return
         val centerX = width / 2
         val dialogW = minOf(300, width - 40).coerceAtLeast(200)
-        // 弹窗高度随消费贷开关收缩：210（含喵喵支付行）/ 170（原尺寸）
+        val L = buyDialogLayout()
         val dialogH = buyDialogH()
         val dialogX = centerX - dialogW / 2
-        val dialogY = height / 2 - dialogH / 2
+        val dialogY = L.dialogY
 
         drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
@@ -873,9 +925,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             Text.translatable("cobblemarket.item.buy_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
 
-        // 购买数量校验失败提示（按钮上方红字，2 秒后消失；y 随弹窗高度收缩）
+        // 购买数量校验失败提示（数量标签上方，2 秒后消失）
         if (buyErrorText != null && System.currentTimeMillis() < buyErrorUntil) {
-            context.drawCenteredTextWithShadow(textRenderer, buyErrorText, centerX, dialogY + (if (payAvailable) 128 else 108), 0xFFFFFF)
+            context.drawCenteredTextWithShadow(textRenderer, buyErrorText, centerX, L.labelY - 10, 0xFFFFFF)
         }
 
         val registry = client?.world?.registryManager
@@ -891,13 +943,18 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
                 com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(stack), centerX, dialogY + 46, 0xFFFFFF)
         }
 
+        // 物品词条（与其余所有界面一致；居中排在物品名下方）—— 只列 BASIC，见 [buyInfoLines]
+        buyInfoLines().take(MAX_INFO_ROWS).forEachIndexed { i, line ->
+            context.drawCenteredTextWithShadow(textRenderer, line, centerX, L.infoTop + i * 10, 0xFFFFFF)
+        }
+
         context.drawTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.buy_count").string + "（" + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}）",
-            centerX - 80, dialogY + 62, 0xAAAAAA)
+            centerX - 80, L.labelY, 0xAAAAAA)
         context.drawTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.buy_total").append(
                 Text.literal(com.shusheng.cobblemarket.client.formatPriceLong(buyTotal()) + " " + com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)).formatted(Formatting.GOLD)),
-            centerX - 80, dialogY + 92, 0xFFFFFF)
+            centerX - 80, L.totalY, 0xFFFFFF)
     }
 
     fun onMarketResult(payload: MarketResultPayload) {
