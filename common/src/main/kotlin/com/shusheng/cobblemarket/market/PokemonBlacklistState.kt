@@ -26,7 +26,7 @@ data class PokemonBlacklistEntry(
     val aspects: List<String> = emptyList(),
     // 闪光限定：-1 = 不限（旧数据缺省值），0 = 仅非闪光，1 = 仅闪光
     val shinyFilter: Int = SHINY_ANY,
-    // 特训限定（配合 Cobblemon Utility+ 等模组的 hyper training）：
+    // 特训限定（读官方 Pokemon 的 hyperTrainedIVs 字段；设置特训的内容由附属模组提供）：
     //   0 = 不限（旧数据缺省值），1 = 仅特训，2 = 不含特训
     val htFilter: Int = HT_ANY
 ) {

@@ -50,7 +50,7 @@ data class PokemonPriceLimitEntry(
     //   []          = 默认形态（精灵不含该物种任何已声明的 form aspect）
     //   [x, y, ...] = 仅匹配包含所有这些 aspect 的精灵
     val aspects: List<String> = listOf(ALL_FORMS),
-    // 特训限定（配合 Cobblemon Utility+ 等模组的 hyper training）：
+    // 特训限定（读官方 Pokemon 的 hyperTrainedIVs 字段；设置特训的内容由附属模组提供）：
     //   0 = 不限（旧数据读入时缺省为此值，保持旧的不分特训语义）
     //   1 = 仅特训（精灵至少有一项特训值）
     //   2 = 不含特训（精灵无任何特训值）
