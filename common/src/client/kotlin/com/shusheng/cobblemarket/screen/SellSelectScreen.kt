@@ -1127,7 +1127,7 @@ class SellSelectScreen(
                 context.drawText(textRenderer, "★", sx + 2, y + 7, GOLD_COLOR, false)
                 sx += 2 + textRenderer.getWidth("★")
             }
-            sx += 2
+            sx += EntryBadgeRenderer.NAME_TAIL_GAP
 
             // Gender icon（紧跟名字）
             if (e.gender == "MALE" || e.gender == "FEMALE") {

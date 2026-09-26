@@ -1607,7 +1607,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                     Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
                 else
                     Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
-                val genderX = leftX + 40 + nameWidth + 2
+                val genderX = leftX + 40 + nameWidth + EntryBadgeRenderer.NAME_TAIL_GAP
                 com.cobblemon.mod.common.api.gui.blitk(
                     matrixStack = context.matrices,
                     texture = genderIcon,
@@ -1623,7 +1623,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 iconData[origIndex]?.heldStack?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                         itemStack = heldStack,
-                        x = leftX + 40 + nameWidth + 2 + iconOffset + 0.0,
+                        x = leftX + 40 + nameWidth + EntryBadgeRenderer.NAME_TAIL_GAP + iconOffset + 0.0,
                         y = y + 6.0,
                         scale = 0.6,
                         matrixStack = context.matrices
@@ -1635,7 +1635,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             if (entry.sizeCategory.isNotEmpty()) {
                 if (iconOffset > 0) iconOffset += 3
                 iconOffset += EntryBadgeRenderer.drawSizeBadgeIcon(
-                    context, entry.sizeCategory, leftX + 40 + nameWidth + 2 + iconOffset, y + 7)
+                    context, entry.sizeCategory,
+                    leftX + 40 + nameWidth + EntryBadgeRenderer.NAME_TAIL_GAP + iconOffset, y + 7
+                )
             }
 
             // Seller avatar（名字区最坏到 149px——6 字名 + 星 + 性别 + 携带物 + 体型徽章，此处再留 8px）
