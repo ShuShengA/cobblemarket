@@ -73,7 +73,13 @@ data class ListingEntry(
      * 技能槽快照：**4 个槽用「,」连接、空槽是空串**（形如 `thunderbolt,quickattack,,`），
      * 见 [com.shusheng.cobblemarket.util.MoveText]。旧数据 = 空串 ⇒ 悬停窗技能块整块不画。
      */
-    val moves: String = ""
+    val moves: String = "",
+    /**
+     * 携带物在**精灵模型上是否渲染**（`Pokemon.heldItemVisible`，玩家可在 Cobblemon 队伍详情里关掉它）。
+     * ⚠ 只管**模型手里**：行信息 / 弹窗 / 图标 / 大图一律照常显示（用户 2026-09-26 拍板——
+     *   隐藏是「不渲染在模型上」，不是「没带东西」，交易信息不该跟着消失）。旧数据没有这一位 = true
+     */
+    val heldItemVisible: Boolean = true
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(id)
@@ -106,6 +112,7 @@ data class ListingEntry(
         buf.writeVarInt(marks.size); marks.forEach { buf.writeString(it) }
         buf.writeString(sizeCategory)
         buf.writeString(moves)
+        buf.writeBoolean(heldItemVisible)
     }
 
     companion object {
@@ -139,7 +146,8 @@ data class ListingEntry(
             aspects = (0 until buf.readVarInt()).map { buf.readString() },
             marks = (0 until buf.readVarInt()).map { buf.readString() },
             sizeCategory = buf.readString(),
-            moves = buf.readString()
+            moves = buf.readString(),
+            heldItemVisible = buf.readBoolean()
         )
     }
 }
@@ -572,7 +580,13 @@ data class PokemonPreview(
     /** 体型分类（XS/S/M/L/XL/ALPHA），空串 = 无信息 */
     val sizeCategory: String = "",
     /** 技能槽快照（4 槽用「,」连接、空槽空串）；旧数据 = 空串 ⇒ 悬停窗技能块不画。见 [com.shusheng.cobblemarket.util.MoveText] */
-    val moves: String = ""
+    val moves: String = "",
+    /**
+     * 携带物在**精灵模型上是否渲染**（`Pokemon.heldItemVisible`，玩家可在 Cobblemon 队伍详情里关掉它）。
+     * ⚠ 只管**模型手里**：行信息 / 弹窗 / 图标 / 大图一律照常显示（用户 2026-09-26 拍板——
+     *   隐藏是「不渲染在模型上」，不是「没带东西」，交易信息不该跟着消失）。旧数据没有这一位 = true
+     */
+    val heldItemVisible: Boolean = true
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(uuid); buf.writeString(species); buf.writeString(speciesId); buf.writeString(speciesName)
@@ -591,6 +605,7 @@ data class PokemonPreview(
         buf.writeVarInt(marks.size); marks.forEach { buf.writeString(it) }
         buf.writeString(sizeCategory)
         buf.writeString(moves)
+        buf.writeBoolean(heldItemVisible)
     }
 
     companion object {
@@ -608,7 +623,8 @@ data class PokemonPreview(
             buf.readInt(),
             (0 until buf.readVarInt()).map { buf.readString() },
             buf.readString(),
-            buf.readString()   // moves：与 write 端严格同序（write 在 sizeCategory 之后）
+            buf.readString(),   // moves：与 write 端严格同序（write 在 sizeCategory 之后）
+            buf.readBoolean()   // heldItemVisible：与 write 端严格同序（write 在 moves 之后）
         )
     }
 }
@@ -1258,6 +1274,8 @@ object MarketNetwork {
                             ballItem = detail["ballItem"] ?: "cobblemon:poke_ball",
                             heldItemId = detail["heldItemId"] ?: "",
                             heldItemNbt = detail["heldItemNbt"] ?: "",
+                            // 「模型手里拿不拿」：缺这一位（旧挂单 / 旧服务端）= 显示，与字段默认值一致
+                            heldItemVisible = detail["heldItemVisible"] != "false",
                             currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
                             aspects = parseAspects(detail),
                             marks = parseMarks(detail),
@@ -1640,6 +1658,8 @@ object MarketNetwork {
                             ballItem = detail["ballItem"] ?: "cobblemon:poke_ball",
                             heldItemId = detail["heldItemId"] ?: "",
                             heldItemNbt = detail["heldItemNbt"] ?: "",
+                            // 「模型手里拿不拿」：缺这一位（旧挂单 / 旧服务端）= 显示，与字段默认值一致
+                            heldItemVisible = detail["heldItemVisible"] != "false",
                             currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
                             aspects = parseAspects(detail),
                             marks = parseMarks(detail),
@@ -3014,10 +3034,12 @@ object MarketNetwork {
             "gender" to pokemon.gender.name,
             "ball" to "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
             "ballItem" to pokemon.caughtBall.name.toString(),
-            // 携带物：玩家在 Cobblemon 队伍详情里把携带物设成「隐藏」时（heldItemVisible）一律不下发，
-            // 否则图标/动画里显示着东西、与实际不符。判据与 Cobblemon 自己的一致（Pokemon.asRenderablePokemon）
-            "heldItemId" to if (!pokemon.heldItemVisible || heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString(),
-            "heldItemNbt" to if (pokemon.heldItemVisible) encodeHeldItemNbt(heldItemStack, registryManager) else "",
+            // 携带物：**总是**下发 —— 行信息 / 弹窗 / 图标 / 大图都要如实显示它带了什么。
+            // 「精灵模型手里拿不拿」是另一回事，由 heldItemVisible 单独下发、客户端渲染模型时读
+            //（用户 2026-09-26 拍板：隐藏只管模型；此前隐藏就整个不下发，交易信息凭空少一行）
+            "heldItemId" to if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString(),
+            "heldItemNbt" to encodeHeldItemNbt(heldItemStack, registryManager),
+            "heldItemVisible" to pokemon.heldItemVisible.toString(),
             // 精灵形态（性别/地区等），客户端渲染 3D 图标用；逗号分隔，aspect 名不含逗号
             "aspects" to pokemon.aspects.joinToString(","),
             "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(","),
@@ -3066,9 +3088,11 @@ object MarketNetwork {
             secondaryType = pokemon.secondaryType?.let { "cobblemon.type.${it.name.lowercase()}" } ?: "",
             source = source,
             slot = slot,
-            // 携带物：与拍卖/求购同口径——隐藏（heldItemVisible = false）时不下发，判据与 Cobblemon 一致
-            heldItemId = if (!pokemon.heldItemVisible || pokemon.heldItem().isEmpty) "" else Registries.ITEM.getId(pokemon.heldItem().item).toString(),
-            heldItemNbt = if (pokemon.heldItemVisible) encodeHeldItemNbt(pokemon.heldItem(), registryManager) else "",
+            // 携带物：**总是**下发（行信息 / 弹窗 / 图标都要如实显示它带了什么）；
+            // 「模型手里拿不拿」由 heldItemVisible 单独带下去，客户端渲染模型时读
+            heldItemId = if (pokemon.heldItem().isEmpty) "" else Registries.ITEM.getId(pokemon.heldItem().item).toString(),
+            heldItemNbt = encodeHeldItemNbt(pokemon.heldItem(), registryManager),
+            heldItemVisible = pokemon.heldItemVisible,
             aspects = pokemon.aspects.toList(),
             evsHp = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP] ?: 0,
             evsAtk = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK] ?: 0,
