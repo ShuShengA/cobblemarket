@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
@@ -22,7 +23,7 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
 
     private var renderable: RenderablePokemon? = null
     private var displayName = ""
-    private val state = FloatingState()
+    private val state = PreviewStateHolder()
 
     // ── 喵喵支付（消费贷，批次 4）：底部两行按钮 + 展开三档方案 ──
     private var plans = listOf<Pair<Int, Double>>()
@@ -186,7 +187,7 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
             PokemonIconRenderer.draw(
                 context = context,
                 renderable = rp,
-                state = state,
+                state = state.stateFor(rp),
                 x = centerX - iconSize / 2, y = iconY, size = iconSize,
                 delta = delta,
                 animate = useFloat,
