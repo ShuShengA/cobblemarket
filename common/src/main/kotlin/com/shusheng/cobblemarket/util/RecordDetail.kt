@@ -57,7 +57,7 @@ object RecordDetail {
         return levels.keys.associateWith { levels.getInt(it) }
     }
 
-    fun item(itemNbt: NbtCompound?, count: Int?): String {
+    fun item(itemNbt: NbtCompound?, count: Int?, registries: net.minecraft.registry.DynamicRegistryManager): String {
         val parts = mutableListOf<String>()
         if (count != null) parts.add("count=$count")
         // 附魔摘要（可读，英文 key 形式与 ivs/nature 字段风格一致）；NBT 全文仍保留（精确复刻）
@@ -67,7 +67,7 @@ object RecordDetail {
         // 稀有度（**历史界面的物品名上色用**，2026-09-26 加）：界面那边只有 itemId，
         // 拿 `defaultStack` 取不到「附魔把稀有度顶上去」那一档（下界合金剑默认 COMMON、
         // 附了魔在物品栏里是黄的 → 历史里永远显示白）。这里手上还有 nbt，就地算好带上。
-        rarityOf(itemNbt, ench)?.let { parts.add("rarity=$it") }
+        rarityOf(registries, itemNbt)?.let { parts.add("rarity=$it") }
         return parts.joinToString("|")
     }
 
@@ -79,26 +79,25 @@ object RecordDetail {
         detail.split("|").firstOrNull { it.startsWith("rarity=") }?.removePrefix("rarity=").orEmpty()
 
     /**
-     * 这件物品的**稀有度枚举名**，取不到返回 null（整段省略）。
+     * 这件物品的**稀有度枚举名**（`RARE` 这种），取不到返回 null（整段省略）。
      *
-     * 口径照原版 `ItemStack.getRarity()`：物品自身的稀有度，**若为 COMMON 且带附魔则升为 UNCOMMON**
-     *（原版就是这么算的 —— 所以「物品栏里是黄的、历史里是白的」才会对不上）。
+     * ⚠ **重建完整栈、直接读 `stack.rarity`** —— 这与项目里那个唯一入口
+     * [com.shusheng.cobblemarket.util.ItemNameText.rarityColor]（`stack.rarity.formatting.colorValue`）
+     * **同一个来源**，物品市场 / 购买弹窗 / 球种行全都是这么取色的。
      *
-     * ⚠ **只用静态注册表 + NBT，不需要 registries** ⇒ [item] 的 8 个调用点一行都不用改
-     *（这是个有意的取舍：另开 CSV 列要动 8 个产生点 + 读写两端，收益一样）。
+     * ⚠⚠ **我在这里栽过一次，两次都错在同一个念头**（2026-09-26 用户实测连抓两条）：
+     * 第一版为了"不动 8 个调用点"，**放着现成入口不用**、改去手推稀有度规则 ⇒ 结果照了**旧版** MC 的
+     * 「COMMON + 附魔 → UNCOMMON」，把附魔的下界合金剑算成**黄**（实际是青 RARE）。
+     * 用户原话：「我们模组别的地方处处都有显示物品稀有度颜色名的代码，你偏偏自己又去翻源码」。
+     * **判据**：凡是「游戏里已经存在的一个值」，先 grep 项目里有没有现成入口 ——
+     * **有就复用，别自己算**；实在要自己算，才去抄反编译源码。
      */
-    private fun rarityOf(itemNbt: NbtCompound?, ench: Map<String, Int>): String? {
+    private fun rarityOf(registries: net.minecraft.registry.DynamicRegistryManager, itemNbt: NbtCompound?): String? {
         return try {
-            val id = itemNbt?.getString("id")?.takeIf { it.isNotEmpty() } ?: return null
-            val item = net.minecraft.util.Identifier.tryParse(id)
-                ?.let { net.minecraft.registry.Registries.ITEM.get(it) }
+            val stack = itemNbt?.let { net.minecraft.item.ItemStack.fromNbtOrEmpty(registries, it) }
                 ?: return null
-            if (item == net.minecraft.item.Items.AIR) return null
-            // 稀有度从**默认栈**上取（`Item.rarity` 在 1.21.1 不是能直接摸的成员 —— 编译报 unresolved；
-            // 与 `ItemNameText.rarityColor` 同一个取法，那处是验证过的）
-            val base = item.defaultStack.rarity
-            (if (base == net.minecraft.util.Rarity.COMMON && ench.isNotEmpty())
-                net.minecraft.util.Rarity.UNCOMMON else base).name
+            if (stack.isEmpty) return null
+            stack.rarity.name
         } catch (e: Exception) {
             null
         }
