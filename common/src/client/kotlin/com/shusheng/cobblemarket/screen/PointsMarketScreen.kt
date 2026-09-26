@@ -2128,7 +2128,9 @@ class PointsMarketScreen : Screen(
         //   那是给精灵站的底座（影子 + 地面），物品是 16×16 贴图放大、自己就是个方块，垫一层只显得脏
         // 大图**左侧**那列词条：**与添加物品窗共用同一个** [renderItemInfoLines]
         // （两个窗口不会同时开，所以那份词条缓存也是共用的，不必各存一份）
-        renderItemInfoLines(context, icon, slotX, slotY, slotSize)
+        // ⚠ 这里传 `center = true`：购买窗左侧**没有搜索框**，左贴边会与大图之间空出一大片
+        //（用户 2026-09-26 报）—— 添加物品窗那边要保持与搜索框左对齐，所以只有购买窗居中
+        renderItemInfoLines(context, icon, slotX, slotY, slotSize, center = true)
         // 记下位置（买下时庆祝动画从这里起飞）—— 渲染时记录，与实际画出来的必然一致
         buyItemIconOrigin = com.shusheng.cobblemarket.client.ItemCelebrationAnimation.Origin.ofIcon(
             x = slotX, y = slotY, size = slotSize
@@ -4288,7 +4290,8 @@ class PointsMarketScreen : Screen(
      * ⚠ 行数按大图那一列的高度**截断** —— Shift 展开后能有十几行，漫到下面的价格行上就没法看了。
      */
     private fun renderItemInfoLines(
-        context: DrawContext, stack: ItemStack, slotX: Int, slotY: Int, slotSize: Int
+        context: DrawContext, stack: ItemStack, slotX: Int, slotY: Int, slotSize: Int,
+        center: Boolean = false
     ) {
         val lines = itemInfoLines(stack)
         if (lines.isEmpty()) return
@@ -4306,12 +4309,19 @@ class PointsMarketScreen : Screen(
             lines.take(maxRows - 1) +
                 (Text.translatable("cobblemarket.gui.tooltip_more", lines.size - maxRows + 1) to 0xAAAAAA)
         } else lines
+        // 超宽的先截到列宽内 —— 走保留分段样式的版本，别把物品名的稀有度色洗成白的
+        val texts = shown.map { (line, color) ->
+            (if (textRenderer.getWidth(line) > maxWidth) TextUtil.truncateStyled(line, maxWidth) else line) to color
+        }
+        // [center] = **整列在这条空档里居中**：购买窗左侧没有搜索框，左贴边会与大图之间空出一大片
+        //（用户 2026-09-26 报）⇒ 按**最宽那一行**算列宽、整列居中，各行仍左对齐（逐行各自居中
+        //   会让长短行参差，反而不整齐）。
+        // ⚠ 添加物品窗**不居中**（[center] 默认 false）：那一列要与它上面的搜索框左对齐，是有意为之。
+        val colX = if (center) left + (maxWidth - texts.maxOf { textRenderer.getWidth(it.first) }) / 2 else left
         // 垂直方向**与大图居中对齐**（整列文字居中在大图那一格的高度里）
         var y = slotY + (slotSize - shown.size * EDIT_ITEM_INFO_LINE_H) / 2
-        shown.forEach { (line, color) ->
-            // 超宽的截到列宽内 —— 走保留分段样式的版本，别把物品名的稀有度色洗成白的
-            val text = if (textRenderer.getWidth(line) > maxWidth) TextUtil.truncateStyled(line, maxWidth) else line
-            context.drawTextWithShadow(textRenderer, text, left, y, color)
+        texts.forEach { (text, color) ->
+            context.drawTextWithShadow(textRenderer, text, colX, y, color)
             y += EDIT_ITEM_INFO_LINE_H
         }
     }
