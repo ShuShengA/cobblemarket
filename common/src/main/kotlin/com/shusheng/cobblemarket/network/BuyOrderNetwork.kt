@@ -1321,11 +1321,9 @@ object BuyOrderNetwork {
             "speciesName" to pokemon.species.translatedName.string,
             "speciesKey" to com.shusheng.cobblemarket.util.SpeciesText.translationKey(pokemon.species),
             "primaryType" to "cobblemon.type.${pokemon.primaryType.name.lowercase()}",
-            // 太晶属性（官方字段 `Pokemon.teraType`，**默认 = 主属性**）：只在 ≠ 主属性时才下发，
-            // 空串 = 不显示（理由与口径见 MarketNetwork.buildListingExtra 的同名键）
-            "teraType" to pokemon.teraType.id.path
-                .takeIf { it != pokemon.primaryType.name.lowercase() }
-                ?.let { "cobblemon.type.$it" }.orEmpty(),
+            // 太晶属性（官方字段 `Pokemon.teraType`）：**常驻下发** —— 理由见 MarketNetwork.buildListingExtra
+            // 的同名键（别写回「只在 ≠ 主属性时才下发」，那条被用户否过）
+            "teraType" to "cobblemon.type.${pokemon.teraType.id.path}",
             "ivsHp" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP].toString(),
             "ivsAtk" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK].toString(),
             "ivsDef" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.DEFENCE].toString(),
