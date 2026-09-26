@@ -1029,19 +1029,10 @@ object AuctionNetwork {
         val detailBase = if (auction.type == AuctionType.POKEMON)
             RecordDetail.pokemon(auction.extraData, auction.level, auction.shiny)
         else
-            RecordDetail.item(auction.itemNbt, auction.count)
-        // 账本 fee 与实际扣费一致（含逾期翻倍，付款方=卖家）
-        val fee = if (type == TransactionType.PURCHASE && CobbleMarketConfig.auctionFeePercent > 0)
-            com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
-                com.shusheng.cobblemarket.finance.FinanceState.get(server),
-                auction.sellerUuid,
-                com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
-                    com.shusheng.cobblemarket.finance.FinanceState.get(server), auction.sellerUuid,
-                    System.currentTimeMillis(),
-                    Math.ceil(auction.currentPrice.toLong() * CobbleMarketConfig.auctionFeePercent / 100.0).toLong()
-                        .coerceAtMost(Int.MAX_VALUE.toLong())
-                )
-            ).toInt()
+            RecordDetail.item(auction.itemNbt, auction.count, server.registryManager)
+        // 账本 fee 与实际扣费一致：走**唯一入口**（含按拍卖币种选费率、逾期翻倍、卡片折扣）
+        val fee = if (type == TransactionType.PURCHASE)
+            com.shusheng.cobblemarket.market.auctionFeeOf(server, auction, System.currentTimeMillis())
         else 0
         TransactionHistory.get(server).addRecord(TransactionRecord(
             timestamp = System.currentTimeMillis(),

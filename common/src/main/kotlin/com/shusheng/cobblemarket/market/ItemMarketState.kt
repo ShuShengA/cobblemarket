@@ -195,7 +195,7 @@ class ItemMarketState private constructor() : PersistentState() {
                     species = listing.itemId,
                     price = listing.price,
                     fee = 0,
-                    detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count)
+                    detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count, player.server.registryManager),
                 )
             )
         } catch (e: Exception) {
