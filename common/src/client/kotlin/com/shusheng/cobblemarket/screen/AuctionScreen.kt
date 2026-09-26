@@ -1666,7 +1666,8 @@ class AuctionScreen(
                 iy += 10
             }
         } else {
-            infoLine(displayName(entry))
+            // 物品名走**稀有度色** —— `displayName()` 返回 String，直接画必然白字（2026-09-26 用户报）
+            infoLineText(EntryBadgeRenderer.auctionNameText(entry))
             infoLine("×${entry.count}")
             // 物品词条（附魔/名称等，原版 tooltip 去首行物品名；列表已在函数头按 Shift 状态选好）
             itemLines?.forEach { infoLineText(it, 0xFFFFFF) }
@@ -1979,9 +1980,13 @@ class AuctionScreen(
                 }
                 // 数量宽度先扣出来再截断名字：整串一起截断会先吃掉「×N」，模组长名物品看不到卖多少个
                 val countSuffix = " ×${entry.count}"
-                val name = com.shusheng.cobblemarket.util.TextUtil.truncateString(
-                    displayName(entry), 100 - textRenderer.getWidth(countSuffix)) + countSuffix
+                // ⚠ 名字走**稀有度色**、` ×N` 保持白 —— 两段分别画。
+                //   别再把名字转成 String（那正是它一直是白字的原因），截断走 truncateStyled 保留分段样式
+                val name = com.shusheng.cobblemarket.util.TextUtil.truncateStyled(
+                    EntryBadgeRenderer.auctionNameText(entry), 100 - textRenderer.getWidth(countSuffix))
                 context.drawTextWithShadow(textRenderer, name, leftX + 28, y + 7, 0xFFFFFF)
+                context.drawTextWithShadow(
+                    textRenderer, countSuffix, leftX + 28 + textRenderer.getWidth(name), y + 7, 0xFFFFFF)
             }
 
             // 当前价（行内缩写）+ 出价次数（灰，拆段）：货币单位紧跟 ×次数，中间不留空格
@@ -2354,7 +2359,8 @@ class AuctionScreen(
     /** 物品悬停静态行构建（名称 + 物品词条 + 卖家）；type 区分 BASIC/ADVANCED（Shift 展开） */
     private fun buildItemStaticLines(entry: AuctionEntry, type: TooltipType): List<Pair<Text, Int>> {
         val staticLines = mutableListOf<Pair<Text, Int>>()
-        staticLines.add(Text.literal(displayName(entry)) to 0xFFFFFF)
+        // 物品名走**稀有度色**（原先 `Text.literal(String)` ⇒ 白字）—— 见 [EntryBadgeRenderer.auctionNameText]
+        staticLines.add(EntryBadgeRenderer.auctionNameText(entry) to 0xFFFFFF)
         // 物品词条（附魔/名称等；原版 tooltip 去首行物品名，与名称行去重）
         entry.itemNbt?.let { nbt ->
             client?.world?.registryManager?.let { rm ->
