@@ -25,6 +25,7 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import com.shusheng.cobblemarket.client.heldIconStack
+import com.shusheng.cobblemarket.client.heldIconStackForModel
 import com.shusheng.cobblemarket.client.PokemonCelebrationAnimation
 import com.shusheng.cobblemarket.client.FilterPanelAnimation
 import com.shusheng.cobblemarket.client.PointsStateCache
@@ -258,7 +259,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             val held = heldIconStack(entry.heldItemId, entry.heldItemNbt)
             iconData[index] = PokemonIconData(
                 displayName,
-                RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
+                RenderablePokemon(species, aspects, heldIconStackForModel(entry.heldItemVisible, entry.heldItemId, entry.heldItemNbt)),
                 // 同一个挂单（id 相同）沿用旧的动画状态，只有新出现的挂单才起一份新的
                 oldStates[entry.id] ?: FloatingState(),
                 listingId = entry.id,
@@ -655,7 +656,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val aspects = entry.aspects.toMutableSet()
         if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
         // 携带物一并带上：确认弹窗里的精灵也要拿东西（详情弹窗渲染时由 drawHeldItem 画出来）
-        confirmRenderable = RenderablePokemon(species, aspects, heldIconStack(entry.heldItemId, entry.heldItemNbt) ?: ItemStack.EMPTY)
+        confirmRenderable = RenderablePokemon(species, aspects, heldIconStackForModel(entry.heldItemVisible, entry.heldItemId, entry.heldItemNbt))
         confirmDisplayName = com.shusheng.cobblemarket.util.SpeciesText.displayName(species)
     }
 
@@ -2226,13 +2227,20 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 rowY += 10
             } else if (i == heldItemLine) {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
+                val heldIconX = tx + textRenderer.getWidth(line) + 2
                 heldIconStack(entry.heldItemId, entry.heldItemNbt)?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                         itemStack = heldStack,
-                        x = tx + textRenderer.getWidth(line) + 2.0,
+                        x = heldIconX.toDouble(),
                         y = rowY + 0.0,
                         scale = 0.6,
                         matrixStack = context.matrices
+                    )
+                }
+                // 玩家把携带物设成「隐藏」时注明一句（模型上不显示它，而信息行照常列出）—— 用户 2026-09-26
+                if (!entry.heldItemVisible) {
+                    context.drawTextWithShadow(
+                        textRenderer, Text.translatable("cobblemarket.gui.held_hidden"), heldIconX + 12, rowY, 0xAAAAAA
                     )
                 }
                 rowY += 10

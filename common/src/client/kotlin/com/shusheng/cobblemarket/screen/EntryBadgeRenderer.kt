@@ -554,9 +554,13 @@ object EntryBadgeRenderer {
                 }
                 i == heldItemLine -> {
                     // 携带物行：文字 + 物品图标整体居中（图标占 14px，文字按去掉图标后的宽度截断）
-                    val heldText = TextUtil.truncateStyled(line, maxWidth - 14)
+                    // 玩家在 Cobblemon 里把携带物设成「隐藏」时补一句灰字：模型上不显示它、而信息行照常列出，
+                    // 不注明的话玩家会以为「明明带了东西却没显示」是数据错了（用户 2026-09-26）
+                    val hiddenNote = if (!entry.heldItemVisible) Text.translatable("cobblemarket.gui.held_hidden") else null
+                    val noteW = hiddenNote?.let { font.getWidth(it) } ?: 0
+                    val heldText = TextUtil.truncateStyled(line, (maxWidth - 14 - noteW).coerceAtLeast(0))
                     val textW = font.getWidth(heldText)
-                    val x = centerX - (textW + 14) / 2
+                    val x = centerX - (textW + 14 + noteW) / 2
                     context.drawTextWithShadow(font, heldText, x, y, color)
                     heldIconStack(entry.heldItemId, entry.heldItemNbt)?.let { heldStack ->
                         com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
@@ -564,6 +568,7 @@ object EntryBadgeRenderer {
                             x = (x + textW + 2).toDouble(), y = y.toDouble(), scale = 0.6, matrixStack = context.matrices
                         )
                     }
+                    hiddenNote?.let { context.drawTextWithShadow(font, it, x + textW + 14, y, 0xAAAAAA) }
                     y += 10
                 }
                 i == 0 -> {

@@ -73,6 +73,8 @@ object PokemonCelebrationAnimation {
         val aspects: List<String>,
         val shiny: Boolean,
         val heldItemNbt: String,
+        /** 携带物在模型上是否渲染（玩家可在 Cobblemon 里设隐藏）；false = 动画里的精灵空手 */
+        val heldItemVisible: Boolean,
         val origin: Origin?
     )
 
@@ -132,6 +134,7 @@ object PokemonCelebrationAnimation {
         shiny: Boolean,
         source: String,
         heldItemNbt: String = "",
+        heldItemVisible: Boolean = true,
         origin: Origin? = null
     ) {
         // 个人开关按来源分流（服务端总开关是另一层：那层关了压根不发包）。
@@ -142,7 +145,7 @@ object PokemonCelebrationAnimation {
         else
             ClientConfig.celebrationOnAuctionAndOrder
         if (!allowed) return
-        queue.addLast(Pending(speciesId, aspects, shiny, heldItemNbt, origin ?: takePendingOrigin()))
+        queue.addLast(Pending(speciesId, aspects, shiny, heldItemNbt, heldItemVisible, origin ?: takePendingOrigin()))
         if (!active) startNext()
     }
 
@@ -156,7 +159,7 @@ object PokemonCelebrationAnimation {
             if (next.shiny) renderAspects.add("shiny")
             renderable = try {
                 // 携带物一并喂给模型：Cobblemon 会把它渲染在手上/嘴上，不传则动画里的精灵是空手的
-                RenderablePokemon(species, renderAspects, heldIconStack("", next.heldItemNbt) ?: ItemStack.EMPTY)
+                RenderablePokemon(species, renderAspects, heldIconStackForModel(next.heldItemVisible, "", next.heldItemNbt))
             } catch (_: Exception) {
                 continue
             }

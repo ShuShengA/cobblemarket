@@ -158,7 +158,8 @@ object ChatObjectPreview {
             val held = payload.heldItemNbt?.let { ItemStack.fromNbtOrEmpty(registryManager, it) } ?: ItemStack.EMPTY
             Entry(
                 isPokemon = true,
-                renderable = RenderablePokemon(species, aspects, held),
+                // 大图里的**模型**：玩家设了「隐藏」就不拿东西（别的界面同理，用户 2026-09-26 拍板）
+                renderable = RenderablePokemon(species, aspects, if (payload.heldItemVisible) held else ItemStack.EMPTY),
                 state = FloatingState(),
                 stack = null,
                 at = now

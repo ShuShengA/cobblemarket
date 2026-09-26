@@ -1344,10 +1344,12 @@ object BuyOrderNetwork {
             "gender" to pokemon.gender.name,
             "ball" to "item.${pokemon.caughtBall.name.namespace}.${pokemon.caughtBall.name.path}",
             "ballItem" to pokemon.caughtBall.name.toString(),
-            // 携带物：玩家在 Cobblemon 队伍详情里把携带物设成「隐藏」时（heldItemVisible）一律不下发，
-            // 否则图标/动画里显示着东西、与实际不符。判据与 Cobblemon 自己的一致（Pokemon.asRenderablePokemon）
-            "heldItemId" to if (!pokemon.heldItemVisible || heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString(),
-            "heldItemNbt" to if (pokemon.heldItemVisible) encodeHeldItemNbt(heldItemStack, registryManager) else "",
+            // 携带物：**总是**下发 —— 行信息 / 弹窗 / 图标 / 大图都要如实显示它带了什么。
+            // 「精灵模型手里拿不拿」是另一回事，由 heldItemVisible 单独下发、客户端渲染模型时读
+            //（用户 2026-09-26 拍板：隐藏只管模型；此前隐藏就整个不下发，交易信息凭空少一行）
+            "heldItemId" to if (heldItemStack.isEmpty) "" else Registries.ITEM.getId(heldItemStack.item).toString(),
+            "heldItemNbt" to encodeHeldItemNbt(heldItemStack, registryManager),
+            "heldItemVisible" to pokemon.heldItemVisible.toString(),
             "aspects" to pokemon.aspects.joinToString(","),
             "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(","),
             // 技能槽快照（4 个槽用「,」连接、空槽空串）：悬停窗技能块用，见 MoveText
@@ -1435,7 +1437,14 @@ object BuyOrderNetwork {
         // 携带物（稀有度色，与物品栏悬停一致）
         extra["heldItemId"].orEmpty().takeIf { it.isNotEmpty() }
             ?.let { com.shusheng.cobblemarket.util.ItemNameText.rarityColoredNameById(it) }
-            ?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_held").append(it)) }
+            ?.let {
+                val line = Text.translatable("cobblemarket.gui.tooltip_held").append(it)
+                // 玩家把携带物设成「隐藏」时注明一句：模型上不显示它、而这里照常列出（用户 2026-09-26）
+                if (extra["heldItemVisible"] == "false") {
+                    line.append(Text.translatable("cobblemarket.gui.held_hidden").formatted(Formatting.GRAY))
+                }
+                lines.add(line)
+            }
         // IV 六行：交付快照**没有 EV**，所以只画「stat:IV」那半段（拍卖播报那边是 IV + EV）；
         // 特训过的补一个绿色的 +N，否则买家看不出这只被特训过
         lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs"))
