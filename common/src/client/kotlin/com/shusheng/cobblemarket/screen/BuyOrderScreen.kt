@@ -7,6 +7,7 @@ import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.ItemHoverPreview
@@ -170,7 +171,7 @@ class BuyOrderScreen(
     // 精灵预览（物种解析 → 形态选项 → 3D 模型）
     private var previewSpecies: com.cobblemon.mod.common.pokemon.Species? = null
     private var previewRenderable: RenderablePokemon? = null
-    private val previewState = FloatingState()
+    private val previewState = PreviewStateHolder()
     private var formOptions = listOf<FormOption>()
     private var formIndex = 0
     private var formListOpen = false
@@ -234,10 +235,10 @@ class BuyOrderScreen(
     private var reviewCancelButton: NineSliceButton? = null
     /** 确认交付弹窗里的精灵模型（打开弹窗时按 pending 重建一次；物品单/物种解析失败为 null） */
     private var reviewRenderable: RenderablePokemon? = null
-    private val reviewState = FloatingState()
+    private val reviewState = PreviewStateHolder()
     /** 强制下架弹窗的精灵图标（标题正下方；2026-09-21 用户要求补上） */
     private var forceRenderable: RenderablePokemon? = null
-    private val forceState = FloatingState()
+    private val forceState = PreviewStateHolder()
     /** 弹窗打开时自动叫一声的**待播时刻**（0 = 无）。照市场确认弹窗：不能打开就播 ——
      *  `addFirstAnimation` 依赖 `state.currentModel`，要等 drawProfilePokemon 跑过才有值；
      *  且刚弹出就响玩家反应不过来。所以记「now + AUTO_CRY_DELAY_MS」，渲染处到点才播。*/
@@ -973,7 +974,7 @@ class BuyOrderScreen(
             )
             context.matrices.pop()
             PokemonIconRenderer.draw(
-                context = context, renderable = rp, state = forceState,
+                context = context, renderable = rp, state = forceState.stateFor(rp),
                 x = iconX, y = iconY, size = forceIconSize, delta = delta,
                 animate = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
                     com.shusheng.cobblemarket.client.IconAnimMode.FLOAT,
@@ -982,7 +983,7 @@ class BuyOrderScreen(
             // 铁律：含精灵图标的弹窗打开要自动叫一声（到点且模型已就绪才播）
             if (forceCryAt != 0L && System.currentTimeMillis() >= forceCryAt) {
                 forceCryAt = 0L
-                com.shusheng.cobblemarket.client.icon.IconCryClick.play(forceState, rp)
+                com.shusheng.cobblemarket.client.icon.IconCryClick.play(forceState.stateFor(rp), rp)
             }
         }
         context.drawCenteredTextWithShadow(textRenderer,
@@ -1895,7 +1896,7 @@ class BuyOrderScreen(
                         PokemonIconRenderer.draw(
                             context = context,
                             renderable = rp,
-                            state = previewState,
+                            state = previewState.stateFor(rp),
                             x = slotX, y = slotY, size = slotSize,
                             delta = delta,
                             animate = useFloat
@@ -2697,7 +2698,7 @@ class BuyOrderScreen(
                     PokemonIconRenderer.draw(
                         context = context,
                         renderable = rp,
-                        state = reviewState,
+                        state = reviewState.stateFor(rp),
                         x = iconX, y = iconY, size = iconSize,
                         delta = delta,
                         animate = useFloat,
@@ -2708,7 +2709,7 @@ class BuyOrderScreen(
                     // 再叠一层 AUTO_CRY_DELAY_MS 延迟，等弹窗稳定显示、玩家看清了再叫
                     if (reviewCryAt != 0L && System.currentTimeMillis() >= reviewCryAt) {
                         reviewCryAt = 0L
-                        IconCryClick.play(reviewState, rp)
+                        IconCryClick.play(reviewState.stateFor(rp), rp)
                     }
                 } catch (_: Exception) {
                 }

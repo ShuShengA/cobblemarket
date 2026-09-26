@@ -13,6 +13,7 @@ import com.shusheng.cobblemarket.currency.CurrencyService
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.FilterPanelAnimation
@@ -414,7 +415,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private var confirmButton: NineSliceButton? = null
     private var cancelButton: NineSliceButton? = null
     private var dialogRenderable: RenderablePokemon? = null
-    private val dialogPreviewState = FloatingState()
+    private val dialogPreviewState = PreviewStateHolder()
     /** 弹窗自动叫声的时刻（0 = 无）：打开时排、渲染后到点播，见 renderPokemonSlot 里的判断 */
     private var dialogCryAt = 0L
 
@@ -963,7 +964,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             PokemonIconRenderer.draw(
                 context = context,
                 renderable = rp,
-                state = dialogPreviewState,
+                state = dialogPreviewState.stateFor(rp),
                 x = slotX, y = slotY, size = slotSize,
                 delta = delta,
                 animate = useFloat
@@ -973,7 +974,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         // 弹窗打开后的自动叫声：**必须画完再播**（currentModel 刚建好），再叠一层延迟让玩家看清弹窗
         if (dialogCryAt != 0L && System.currentTimeMillis() >= dialogCryAt) {
             dialogCryAt = 0L
-            IconCryClick.play(dialogPreviewState, rp)
+            IconCryClick.play(dialogPreviewState.stateFor(rp), rp)
         }
     }
 

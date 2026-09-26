@@ -6,6 +6,7 @@ import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
@@ -123,7 +124,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private var ivSpDefField: TextFieldWidget? = null
     private var ivSpdField: TextFieldWidget? = null
     private var previewRenderable: RenderablePokemon? = null
-    private val previewState = FloatingState()
+    private val previewState = PreviewStateHolder()
     // 添加对话框的形态选择：全部形态 + 物种的各个 form；aspects 为空 = 封禁所有形态。
     // 形态按钮点击展开列表（每行一个选项，可滚动），点选后收起。
     private data class FormOption(val label: String, val aspects: Set<String>)
@@ -458,7 +459,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 PokemonIconRenderer.draw(
                     context = context,
                     renderable = rp,
-                    state = previewState,
+                    state = previewState.stateFor(rp),
                     x = slotX, y = slotY, size = slotSize,
                     delta = delta,
                     animate = useFloat
