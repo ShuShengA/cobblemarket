@@ -1444,16 +1444,18 @@ class AuctionScreen(
         if (entry.type == "POKEMON") {
             val extra = entry.extraData
             val primaryType = extra["primaryType"] ?: ""
-            val tc = typeColor(if (primaryType.isNotEmpty()) primaryType else "cobblemon.type.normal")
-            // 名字（属性色）+ 金色闪光星 + 等级 + 公母图标
-            context.drawTextWithShadow(textRenderer, displayName(entry), infoX, iy, tc)
-            var cx = infoX + textRenderer.getWidth(displayName(entry))
-            if (entry.shiny) {
-                context.drawText(textRenderer, "★", cx + 2, iy, GOLD_COLOR, false)
-                cx += 2 + textRenderer.getWidth("★")
-            }
-            context.drawText(textRenderer, "  Lv.${entry.level}", cx + 2, iy, 0xFFFFFF, false)
-            cx += 2 + textRenderer.getWidth("  Lv.${entry.level}")
+            // 名字★Lv 行走全项目统一入口（与别处一致：★ 前导一个空格、Lv 前导两个空格，都带阴影）——
+            // 原来这里是手写的三段（名字 / ★ / Lv 各画一次），间距与别处对不上
+            val nameLine = EntryBadgeRenderer.nameWithLevelLine(
+                EntryBadgeRenderer.nameWithShinyStar(displayName(entry), entry.shiny),
+                // primaryType 为空时原代码退到普通系色，走统一入口要把这个 fallback 显式带上
+                // （`typeColor("")` 会落 else → 纯白，颜色就变了）
+                if (primaryType.isNotEmpty()) primaryType else "cobblemon.type.normal",
+                entry.level
+            )
+            context.drawTextWithShadow(textRenderer, nameLine, infoX, iy, 0xFFFFFF)
+            // 后面的公母 / 体型图标接在**画出来的**名字行宽度之后（原来是三段各自累加）
+            var cx = infoX + textRenderer.getWidth(nameLine)
             val gender = extra["gender"]
             var genderW = 0
             if (gender == "MALE" || gender == "FEMALE") {
