@@ -1193,7 +1193,7 @@ object PointsNetwork {
 
         registerC2S(CreatePointCodesPayload.ID, CreatePointCodesPayload.CODEC) { payload, player ->
             if (!MarketPermissions.has(player, MarketPermissions.POINTS_CODE)) return@registerC2S
-            if (!RequestThrottle.allow(player.uuid, "create_point_codes", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "create_point_codes", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 // 服务端是权威：界面也钳，但伪造客户端可能直接发包
@@ -1283,7 +1283,7 @@ object PointsNetwork {
 
         registerC2S(PurgePointCodesPayload.ID, PurgePointCodesPayload.CODEC) { _, player ->
             if (!MarketPermissions.has(player, MarketPermissions.POINTS_CODE)) return@registerC2S
-            if (!RequestThrottle.allow(player.uuid, "purge_point_codes", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "purge_point_codes", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = PointCodeState.get(server)
@@ -1314,7 +1314,7 @@ object PointsNetwork {
 
         registerC2S(RevokePointCodePayload.ID, RevokePointCodePayload.CODEC) { payload, player ->
             if (!MarketPermissions.has(player, MarketPermissions.POINTS_CODE)) return@registerC2S
-            if (!RequestThrottle.allow(player.uuid, "revoke_point_code", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "revoke_point_code", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 // 容错：玩家/界面传来的可能带连字符与大小写差异，先归一化（与兑换同一条路径）

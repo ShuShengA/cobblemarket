@@ -1456,7 +1456,7 @@ object MarketNetwork {
         }
 
         registerC2S(BuyFromMarketPayload.ID, BuyFromMarketPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "buy_pokemon", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "buy_pokemon", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val banCheckTime = System.currentTimeMillis()
@@ -1683,7 +1683,7 @@ object MarketNetwork {
         }
 
         registerC2S(CancelFromMarketPayload.ID, CancelFromMarketPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "cancel_pokemon", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "cancel_pokemon", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 // 封禁只禁止交易；取消挂单是取回自己的资产，允许
@@ -2064,7 +2064,7 @@ object MarketNetwork {
         }
 
         registerC2S(SellFromStoragePayload.ID, SellFromStoragePayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "sell_from_storage", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "sell_from_storage", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val banCheckTime = System.currentTimeMillis()
@@ -2379,7 +2379,7 @@ object MarketNetwork {
         }
 
         registerC2S(SellItemPayload.ID, SellItemPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "sell_item", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "sell_item", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val banCheckTime = System.currentTimeMillis()
@@ -2756,7 +2756,7 @@ object MarketNetwork {
         }
 
         registerC2S(BuyItemPayload.ID, BuyItemPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "buy_item", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "buy_item", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val banCheckTime = System.currentTimeMillis()
@@ -3041,7 +3041,7 @@ object MarketNetwork {
         }
 
         registerC2S(CancelItemPayload.ID, CancelItemPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "cancel_item", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "cancel_item", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 // 封禁只禁止交易；取消挂单是取回自己的资产，允许
@@ -3143,7 +3143,7 @@ object MarketNetwork {
         }
 
         registerC2S(CollectBalancePayload.ID, CollectBalancePayload.CODEC) { _, player ->
-            if (!RequestThrottle.allow(player.uuid, "collect_balance", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "collect_balance", RequestThrottle.WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = MarketState.get(server)
@@ -3251,7 +3251,7 @@ object MarketNetwork {
         }
 
         registerC2S(ClaimPokemonReturnPayload.ID, ClaimPokemonReturnPayload.CODEC) { _, player ->
-            if (!RequestThrottle.allow(player.uuid, "claim_pokemon_return", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "claim_pokemon_return", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 // 对战中不可领取：精灵进队会被战斗切换面板切出参战（凭空补员），战斗结束后再领
@@ -3305,7 +3305,7 @@ object MarketNetwork {
         }
 
         registerC2S(ClaimItemReturnPayload.ID, ClaimItemReturnPayload.CODEC) { payload, player ->
-            if (!RequestThrottle.allow(player.uuid, "claim_item_return", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "claim_item_return", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val state = ItemMarketState.get(server)
