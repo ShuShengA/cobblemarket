@@ -675,8 +675,14 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private fun buyInfoLines(): List<Text> {
         val rm = client?.world?.registryManager ?: return emptyList()
         val stack = selectedEntry?.let { ItemStack.fromNbtOrEmpty(rm, it.itemNbt) } ?: return emptyList()
+        // ⚠ **丢掉词条第一行** —— `itemTooltip` 的第一行就是物品名，而弹窗已经在图标下方
+        //   单独画了一行（[renderBuyDialogBackground]，按稀有度着色）。不丢就是同一个名字显示两遍
+        //   （用户 2026-09-26 报「同时存在两个物品名」）。
+        //   丢词条这行而不是丢弹窗那行：物品名留在图标正下方、**内容位置一点不动**
+        //   （用户 2026-09-26 拍板过「只改宽度别动内容位置」）。
         return com.shusheng.cobblemarket.client.ItemComponentsDisplay
             .itemTooltip(stack, client?.player, TooltipType.BASIC)
+            .drop(1)
     }
 
     /**
