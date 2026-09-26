@@ -1135,7 +1135,7 @@ object BuyOrderNetwork {
                             detail = if (order.type == BuyOrderType.POKEMON)
                                 com.shusheng.cobblemarket.util.RecordDetail.pokemon(pending.extraData, pending.level, pending.shiny)
                             else
-                                com.shusheng.cobblemarket.util.RecordDetail.item(pending.itemNbt, pending.count)
+                                com.shusheng.cobblemarket.util.RecordDetail.item(pending.itemNbt, pending.count, server.registryManager)
                         )
                     )
                 } catch (e: Exception) {
