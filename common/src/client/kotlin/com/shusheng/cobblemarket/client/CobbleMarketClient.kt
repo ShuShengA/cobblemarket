@@ -481,7 +481,8 @@ object CobbleMarketClient {
                 // 购买那条走的是另一套：弹窗关闭前用 setPendingOrigin 提前登记。
                 val origin = (MinecraftClient.getInstance().currentScreen as? AuctionScreen)?.bidDialogIconOrigin()
                 PokemonCelebrationAnimation.trigger(
-                    payload.speciesId, payload.aspects, payload.shiny, payload.source, payload.heldItemNbt, origin
+                    payload.speciesId, payload.aspects, payload.shiny, payload.source, payload.heldItemNbt,
+                    payload.heldItemVisible, origin
                 )
             }
         }

@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.heldIconStack
+import com.shusheng.cobblemarket.client.heldIconStackForModel
 import com.shusheng.cobblemarket.client.iconStackOf
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
@@ -203,7 +204,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             val species = PokemonSpecies.getByIdentifier(id) ?: return@forEachIndexed
             val aspects = (entry.extraData["aspects"] ?: "").split(",").filter { it.isNotEmpty() }.toMutableSet()
             if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
-            iconData[i] = PokemonIconData(displayName(entry), RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY), FloatingState())
+            iconData[i] = PokemonIconData(displayName(entry), RenderablePokemon(species, aspects, heldIconStackForModel(entry.extraData)), FloatingState())
         }
     }
 
@@ -324,7 +325,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             if (species != null) {
                 val aspects = (entry.extraData["aspects"] ?: "").split(",").filter { it.isNotEmpty() }.toMutableSet()
                 if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
-                cancelRenderable = RenderablePokemon(species, aspects, heldIconStack(entry.extraData) ?: ItemStack.EMPTY)
+                cancelRenderable = RenderablePokemon(species, aspects, heldIconStackForModel(entry.extraData))
             }
         }
         // 点行 → 弹窗弹出 → 由弹窗里的精灵叫一声（用户拍板的「叫声转移」）。
@@ -720,13 +721,20 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 rowY += 10
             } else if (i == heldItemLine) {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
+                val heldIconX = tx + textRenderer.getWidth(line) + 2
                 heldIconStack(entry.extraData)?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                         itemStack = heldStack,
-                        x = tx + textRenderer.getWidth(line) + 2.0,
+                        x = heldIconX.toDouble(),
                         y = rowY + 0.0,
                         scale = 0.6,
                         matrixStack = context.matrices
+                    )
+                }
+                // 玩家把携带物设成「隐藏」时注明一句（模型上不显示它，而信息行照常列出）—— 用户 2026-09-26
+                if (entry.extraData["heldItemVisible"] == "false") {
+                    context.drawTextWithShadow(
+                        textRenderer, Text.translatable("cobblemarket.gui.held_hidden"), heldIconX + 12, rowY, 0xAAAAAA
                     )
                 }
                 rowY += 10
@@ -918,13 +926,20 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 val heldLabel = Text.translatable("cobblemarket.gui.tooltip_held").string
                 val heldY = iy
                 infoLine(heldLabel)
+                val heldIconX = infoX + textRenderer.getWidth(heldLabel) + 2
                 heldIconStack(heldItemId, extra["heldItemNbt"])?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                         itemStack = heldStack,
-                        x = infoX + textRenderer.getWidth(heldLabel) + 2.0,
+                        x = heldIconX.toDouble(),
                         y = heldY + 0.0,
                         scale = 0.6,
                         matrixStack = context.matrices
+                    )
+                }
+                // 玩家把携带物设成「隐藏」时注明一句（模型上不显示它，而信息行照常列出）—— 用户 2026-09-26
+                if (extra["heldItemVisible"] == "false") {
+                    context.drawTextWithShadow(
+                        textRenderer, Text.translatable("cobblemarket.gui.held_hidden"), heldIconX + 12, heldY, 0xAAAAAA
                     )
                 }
             }

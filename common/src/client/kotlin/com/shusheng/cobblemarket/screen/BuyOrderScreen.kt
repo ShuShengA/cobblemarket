@@ -14,6 +14,7 @@ import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.client.PokemonCelebrationAnimation
 import com.shusheng.cobblemarket.client.ItemCelebrationAnimation
 import com.shusheng.cobblemarket.client.heldIconStack
+import com.shusheng.cobblemarket.client.heldIconStackForModel
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.market.PokemonBlacklistEntry
 import com.shusheng.cobblemarket.network.AcceptPendingDeliverPayload
@@ -2297,7 +2298,7 @@ class BuyOrderScreen(
         if (species == null) { reviewRenderable = null; return }
         val aspects = (pending.extraData["aspects"] ?: "").split(",").filter { it.isNotEmpty() }.toMutableSet()
         if (pending.shiny && "shiny" !in aspects) aspects.add("shiny")
-        reviewRenderable = RenderablePokemon(species, aspects, heldIconStack(pending.extraData) ?: ItemStack.EMPTY)
+        reviewRenderable = RenderablePokemon(species, aspects, heldIconStackForModel(pending.extraData))
     }
 
     /**

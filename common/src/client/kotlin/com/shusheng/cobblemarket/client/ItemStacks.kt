@@ -36,6 +36,20 @@ fun iconStackOf(itemId: String, itemNbt: NbtCompound?): ItemStack? {
 fun heldIconStack(extra: Map<String, String>): ItemStack? =
     heldIconStack(extra["heldItemId"].orEmpty(), extra["heldItemNbt"])
 
+/**
+ * **模型专用**的携带物栈：玩家在 Cobblemon 队伍详情里把携带物设成「隐藏」（`heldItemVisible` = false）时
+ * 返回空栈 —— 模型手里就不拿东西。
+ *
+ * ⚠ **只给渲染精灵模型用**（各处 `RenderablePokemon(...)` 的第三个参数 + 庆祝动画）。
+ *   行信息 / 弹窗 / 行内小图标 / 悬停大图一律照常走 [heldIconStack]（用户 2026-09-26 拍板：
+ *   隐藏是「不渲染在模型上」、不是「没带东西」，交易信息不该跟着一起消失）。
+ */
+fun heldIconStackForModel(extra: Map<String, String>): ItemStack =
+    if (extra["heldItemVisible"] == "false") ItemStack.EMPTY else heldIconStack(extra) ?: ItemStack.EMPTY
+
+fun heldIconStackForModel(visible: Boolean, heldItemId: String, heldItemNbt: String?): ItemStack =
+    if (!visible) ItemStack.EMPTY else heldIconStack(heldItemId, heldItemNbt) ?: ItemStack.EMPTY
+
 fun heldIconStack(heldItemId: String, heldItemNbt: String?): ItemStack? {
     heldItemNbt?.takeIf { it.isNotEmpty() }?.let { snbt ->
         runCatching { StringNbtReader.parse(snbt) }.getOrNull()?.let { nbt ->

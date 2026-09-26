@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.FilterPanelAnimation
 import com.shusheng.cobblemarket.client.heldIconStack
+import com.shusheng.cobblemarket.client.heldIconStackForModel
 import com.shusheng.cobblemarket.client.iconStackOf
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.client.PokemonCelebrationAnimation
@@ -1148,7 +1149,7 @@ class AuctionScreen(
             if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
             iconData[index] = PokemonIconData(
                 displayName(entry),
-                RenderablePokemon(species, aspects, held ?: ItemStack.EMPTY),
+                RenderablePokemon(species, aspects, heldIconStackForModel(entry.extraData)),
                 // 同一场拍卖（id 相同）沿用旧的动画状态，只有新出现的拍卖才起一份新的
                 oldStates[entry.id] ?: FloatingState(),
                 listingId = entry.id
@@ -1251,7 +1252,7 @@ class AuctionScreen(
             if (species != null) {
                 val aspects = (entry.extraData["aspects"] ?: "").split(",").filter { it.isNotEmpty() }.toMutableSet()
                 if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
-                bidRenderable = RenderablePokemon(species, aspects, heldIconStack(entry.extraData) ?: ItemStack.EMPTY)
+                bidRenderable = RenderablePokemon(species, aspects, heldIconStackForModel(entry.extraData))
             }
         } else {
             // 物品词条行（附魔等）：打开时构建 BASIC + ADVANCED 双份（供布局估算；ADVANCED 此刻无 Shift，
@@ -1491,13 +1492,20 @@ class AuctionScreen(
                 val heldLabel = Text.translatable("cobblemarket.gui.tooltip_held").string
                 val heldY = iy
                 infoLine(heldLabel)
+                val heldIconX = infoX + textRenderer.getWidth(heldLabel) + 2
                 heldIconStack(heldItemId, extra["heldItemNbt"])?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                         itemStack = heldStack,
-                        x = infoX + textRenderer.getWidth(heldLabel) + 2.0,
+                        x = heldIconX.toDouble(),
                         y = heldY + 0.0,
                         scale = 0.6,
                         matrixStack = context.matrices
+                    )
+                }
+                // 玩家把携带物设成「隐藏」时注明一句（模型上不显示它，而信息行照常列出）—— 用户 2026-09-26
+                if (extra["heldItemVisible"] == "false") {
+                    context.drawTextWithShadow(
+                        textRenderer, Text.translatable("cobblemarket.gui.held_hidden"), heldIconX + 12, heldY, 0xAAAAAA
                     )
                 }
             }
@@ -2090,13 +2098,20 @@ class AuctionScreen(
                 rowY += 10
             } else if (i == heldItemLine) {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
+                val heldIconX = tx + textRenderer.getWidth(line) + 2
                 heldIconStack(entry.extraData)?.let { heldStack ->
                     com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
                         itemStack = heldStack,
-                        x = tx + textRenderer.getWidth(line) + 2.0,
+                        x = heldIconX.toDouble(),
                         y = rowY + 0.0,
                         scale = 0.6,
                         matrixStack = context.matrices
+                    )
+                }
+                // 玩家把携带物设成「隐藏」时注明一句（模型上不显示它，而信息行照常列出）—— 用户 2026-09-26
+                if (entry.extraData["heldItemVisible"] == "false") {
+                    context.drawTextWithShadow(
+                        textRenderer, Text.translatable("cobblemarket.gui.held_hidden"), heldIconX + 12, rowY, 0xAAAAAA
                     )
                 }
                 rowY += 10
