@@ -2043,7 +2043,7 @@ object MarketNetwork {
                         species = listing.itemId,
                         price = listing.price,
                         fee = 0,
-                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count),
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count, server.registryManager),
                         currency = listing.currency
                     )
                 )
@@ -2714,7 +2714,7 @@ object MarketNetwork {
                         species = payload.itemId,
                         price = payload.price,
                         fee = fee,
-                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count),
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count, server.registryManager),
                         currency = currency
                     )
                 )
@@ -3037,7 +3037,7 @@ object MarketNetwork {
                         species = listing.itemId,
                         price = totalPrice,
                         fee = 0,
-                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count),
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count, server.registryManager),
                         currency = listing.currency
                     )
                 )
@@ -3180,7 +3180,7 @@ object MarketNetwork {
                         species = listing.itemId,
                         price = listing.price,
                         fee = 0,
-                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count),
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count, server.registryManager),
                         currency = listing.currency
                     )
                 )

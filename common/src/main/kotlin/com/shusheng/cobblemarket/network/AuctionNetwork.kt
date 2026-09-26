@@ -1091,7 +1091,7 @@ object AuctionNetwork {
         val detailBase = if (auction.type == AuctionType.POKEMON)
             RecordDetail.pokemon(auction.extraData, auction.level, auction.shiny)
         else
-            RecordDetail.item(auction.itemNbt, auction.count)
+            RecordDetail.item(auction.itemNbt, auction.count, server.registryManager)
         // 账本 fee 与实际扣费一致：走**唯一入口**（含按拍卖币种选费率、逾期翻倍、卡片折扣）
         val fee = if (type == TransactionType.PURCHASE)
             com.shusheng.cobblemarket.market.auctionFeeOf(server, auction, System.currentTimeMillis())
