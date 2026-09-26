@@ -744,8 +744,14 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private fun buyInfoLines(entry: ItemEntry?): List<Text> {
         val rm = client?.world?.registryManager ?: return emptyList()
         val stack = entry?.let { ItemStack.fromNbtOrEmpty(rm, it.itemNbt) } ?: return emptyList()
+        // ⚠ **丢掉词条第一行** —— `itemTooltip` 的第一行就是物品名，而弹窗已经在图标下方
+        //   单独画了一行（[renderBuyDialogBackground]，按稀有度着色）。不丢就是同一个名字显示两遍
+        //   （用户 2026-09-26 报「同时存在两个物品名」）。
+        //   丢词条这行而不是丢弹窗那行：物品名留在图标正下方、**内容位置一点不动**
+        //   （用户 2026-09-26 拍板过「只改宽度别动内容位置」）。
         return com.shusheng.cobblemarket.client.ItemComponentsDisplay
             .itemTooltip(stack, client?.player, TooltipType.BASIC)
+            .drop(1)
     }
 
     /**
@@ -1000,8 +1006,16 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         )
         val itemNameW = dialogStack?.takeIf { !it.isEmpty }
             ?.let { textRenderer.getWidth(com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(it)) } ?: 0
-        val halfW = maxOf(85, countLabelW - 80, totalLabelW - 80, itemNameW / 2)
-        val dialogW = (halfW * 2 + 24).coerceAtMost(width - 40).coerceAtLeast(200)
+        // 按钮行也要算进来（三枚 80 并排 = 跨度 248，见 [openBuyDialog]）：漏了它，弹窗只按文字
+        // 算到 ~194 宽，三个按钮就戳出左右边框（用户 2026-09-26 报「底部三个按钮超出左右弹窗」）。
+        // 两按钮时跨度 170 ⇒ 半宽 85，与原先那个固定下限同值，行为不变。
+        val buttonsHalfW = if (meowthAvailable(entry)) 124 else 85
+        val halfW = maxOf(buttonsHalfW, countLabelW - 80, totalLabelW - 80, itemNameW / 2)
+        val dialogW = (halfW * 2 + 24)
+            .coerceAtMost(width - 40)
+            // ⚠ 下限：按钮行本身**不能被屏幕钳制吃掉**，否则小窗口下三枚按钮又戳出弹窗
+            //（照精灵市场购买弹窗那一套，见 [MarketScreen] 的 `btnRowW`）
+            .coerceAtLeast(maxOf(200, buttonsHalfW * 2 + 24))
         // 高度：**按内容算**（词条行数决定）—— 与宽度一样不再写死。见 [buyDialogLayout]
         val L = buyDialogLayout(entry)
         val dialogH = buyDialogH(entry)
