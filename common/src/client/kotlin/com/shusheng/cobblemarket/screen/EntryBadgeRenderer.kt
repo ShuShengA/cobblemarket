@@ -5,6 +5,9 @@ import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.network.ListingEntry
+import com.shusheng.cobblemarket.network.AuctionEntry
+import com.shusheng.cobblemarket.util.ItemNameText
+import com.shusheng.cobblemarket.util.TypeTextColors
 import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
@@ -99,6 +102,31 @@ object EntryBadgeRenderer {
 
     /** ListingEntry 版携带物行判定（取 heldItemId 字段） */
     fun hasHeldItemLine(entry: ListingEntry): Boolean = hasHeldItemLine(entry.heldItemId)
+
+    /**
+     * 拍卖条目的**带色名字** —— 精灵按**形态主属性色**、物品按**稀有度色**。
+     *
+     * ⚠ **各处一律走它，别再各拼各的**：拍卖场与管理端拍卖的**物品分支**当年是照精灵分支抄的，
+     *   精灵那边有现成的 `typeColor(primaryType)`，物品就直接落成了白字 —— 行内、悬停窗首行、
+     *   两个弹窗的信息行四处都漏（2026-09-26 用户报「拍卖场物品行的名字还是白色」，并指出
+     *   「其他地方我懒得一个一个找了」）。
+     *
+     * 物品优先用**完整栈 NBT** 重建（附魔 / 自定义名跟着走，与物品市场同一口径），
+     * 重建不出再按 id 取稀有度，最后才退到裸 id。
+     */
+    fun auctionNameText(entry: AuctionEntry): Text {
+        if (entry.type == "ITEM") {
+            val rm = MinecraftClient.getInstance().world?.registryManager
+            return rm?.let { ItemNameText.rarityColoredNameOfNbt(it, entry.itemNbt) }
+                ?: ItemNameText.rarityColoredNameById(entry.species)
+                ?: Text.literal(entry.species)
+        }
+        return TypeTextColors.speciesName(
+            Text.translatable(entry.species),
+            entry.extraData["primaryType"]?.takeIf { it.isNotEmpty() },
+            entry.shiny
+        )
+    }
 
     /**
      * 体型徽章（Cobblemon 详情页同款图标）：原图 37×16，按 0.5 缩放显示成 18.5×8，与公母图标齐高。
