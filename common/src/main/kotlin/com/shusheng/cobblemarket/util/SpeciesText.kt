@@ -131,13 +131,18 @@ object SpeciesText {
             val groups = featureGroupsFor(species)
             if (groups.isNotEmpty()) out[species.resourceIdentifier.toString()] = groups
         }
-        // 一条日志：这张表是**服务端独有**的数据（客户端那份 registry 是空的），算空了没人看得出来
-        com.shusheng.cobblemarket.CobbleMarket.LOGGER.info(
-            "[RP商城] 变体候选表：{} 个物种有候选，共 {} 个维度 / {} 项",
-            out.size,
-            out.values.sumOf { it.size },
-            out.values.sumOf { g -> g.sumOf { it.aspects.size } }
-        )
+        // 一条日志证明"服务端算得出候选"（这张表是**服务端独有**的数据，客户端那份 registry 是空的，
+        // 算空了没人看得出来）—— ⚠ **只打一次**：它 RP 商城 / 黑名单 / 价格限制都会调，
+        // 每次请求都打会把服务器窗口刷满（2026-09-28 用户报）。⚠ 前缀别写某个界面名，三处都在用
+        if (!loggedOnce) {
+            loggedOnce = true
+            com.shusheng.cobblemarket.CobbleMarket.LOGGER.info(
+                "[变体候选] 服务端算出：{} 个物种有候选，共 {} 个维度 / {} 项",
+                out.size,
+                out.values.sumOf { it.size },
+                out.values.sumOf { g -> g.sumOf { it.aspects.size } }
+            )
+        }
         return out
     }
 
@@ -158,6 +163,10 @@ object SpeciesText {
      *   地区形态归**形态按钮**管，变体这边整类跳过
      */
     private val EXCLUDED_FEATURES = setOf("mega_evolution", "dynamax_form", "region_bias")
+
+    /** [allFeatureAspects] 那条日志只打一次的标志 */
+    @Volatile
+    private var loggedOnce = false
 
     /**
      * 单个物种的 feature 候选，**按 feature 分好组**（[allFeatureAspects] 的逐条实现）。

@@ -28,6 +28,9 @@ fun PokemonPriceLimitEntry.write(buf: PacketByteBuf) {
     buf.writeBoolean(minPrice != null); minPrice?.let { buf.writeInt(it) }
     buf.writeBoolean(maxPrice != null); maxPrice?.let { buf.writeInt(it) }
     buf.writeInt(htFilter)
+    // ⚠ **别漏**：条目有**两套**序列化 —— 存档那套（PokemonPriceLimitState 里）和**下发客户端**这套。
+    //   只改一处的话，存档里明明存上了、界面却永远显示空（同黑名单，2026-09-28 排到的）
+    buf.writeVarInt(variantAspects.size); variantAspects.forEach { buf.writeString(it) }
 }
 
 fun readPokemonPriceLimitEntry(buf: PacketByteBuf) = PokemonPriceLimitEntry(
@@ -37,7 +40,9 @@ fun readPokemonPriceLimitEntry(buf: PacketByteBuf) = PokemonPriceLimitEntry(
     aspects = (0 until buf.readVarInt()).map { buf.readString() },
     minPrice = if (buf.readBoolean()) buf.readInt() else null,
     maxPrice = if (buf.readBoolean()) buf.readInt() else null,
-    htFilter = buf.readInt()
+    htFilter = buf.readInt(),
+    // ⚠ 读端顺序必须与上面 `write` **一一对应**
+    variantAspects = (0 until buf.readVarInt()).map { buf.readString() }
 )
 
 fun ItemPriceLimitEntry.write(buf: PacketByteBuf) {

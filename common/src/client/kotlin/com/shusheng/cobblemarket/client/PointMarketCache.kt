@@ -107,9 +107,10 @@ object PointMarketCache {
         featureAspectsLoaded = true
         featureAspectsVersion++
         // 一条日志确认整条链路（客户端自己算不出来，只能靠服务端发）：
-        // 表为空 / 数字异常时，一眼看出是服务端没算出来还是包没到
+        // 表为空 / 数字异常时，一眼看出是服务端没算出来还是包没到。
+        // ⚠ 前缀别写某个界面名 —— RP 商城 / 黑名单 / 价格限制都会收到这个包
         com.shusheng.cobblemarket.CobbleMarket.LOGGER.info(
-            "[RP商城] 收到变体候选表：{} 个物种，共 {} 个维度 / {} 项",
+            "[变体候选] 客户端收到：{} 个物种，共 {} 个维度 / {} 项",
             featureAspects.size,
             featureAspects.values.sumOf { it.size },
             featureAspects.values.sumOf { g -> g.sumOf { it.aspects.size } }
