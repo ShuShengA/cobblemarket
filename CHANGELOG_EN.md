@@ -59,6 +59,7 @@
 
 ### Fixes
 
+- **Nature and Ability sat too close together**: both render in white with only 8px between them, so the line could read as one run of text (e.g. "Nature: Relaxed  Ability: Synchronize"). The gap is now wider and consistent across every Pokemon info screen
 - **Ball names rendered as white text in the UI**: a ball that is purple in the inventory (e.g. Master Ball) showed as plain white text in the Pokemon hover windows. Ball names now use the **rarity colour** on every Pokemon info screen, and the screens that were **not showing the ball line at all** (listing picker, auction creation picker, pending returns, admin) now show it
 - **Some Pokémon had the wrong battle-cry animation**: their body would lock into the wrong pose — Gurdurr could not lift its girder (the arm stayed at its side). This is now fixed
 - **The body froze during a battle cry, with limbs snapping back to their default pose**: while a battle cry played the idle motion froze — **Quilava** showed it worst, with all four legs falling back to the model's default pose (front legs straight down, hind legs straight back). This is now fixed, and the body keeps moving through the cry
