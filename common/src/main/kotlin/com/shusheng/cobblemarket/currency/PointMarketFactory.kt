@@ -15,6 +15,7 @@ import com.cobblemon.mod.common.pokemon.Pokemon
 import com.cobblemon.mod.common.pokemon.stat.CobblemonStatProvider
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.util.MoveText
+import com.shusheng.cobblemarket.util.SpeciesText
 import net.minecraft.item.ItemStack
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.nbt.StringNbtReader
@@ -70,6 +71,22 @@ object PointMarketFactory {
             Pokemon().also { it.species = species }
         } catch (e: Exception) {
             CobbleMarket.LOGGER.warn("Shop: cannot build pokemon of species {}: {}", spec.species, e.message)
+            return null
+        }
+
+        // ⚠ **变体（species feature）必须在这儿落定**：上面设 species 时 Cobblemon **已经给每个
+        //   feature 掷过默认值了**（`default = random` 的维度当场随机 —— 阿柏怪的花纹、晃晃斑的斑纹
+        //   都是这样），服主在「变体」里选定的值要**覆盖回去**。
+        //   拖到下面设 `forcedAspects` 那步不行：那只管 aspect，而 aspect 是**从 feature 派生**的，
+        //   feature 那边留着随机值 ⇒ aspects 里两个值打架（见 [SpeciesText.applyFeatureAspects]）。
+        //   失败就整体作废 —— 与"造不出来不扣款"同一个口径，绝不发一只跟规格不符的精灵出去
+        val featureError = runCatching {
+            SpeciesText.applyFeatureAspects(pokemon, species, spec.aspects)
+        }.exceptionOrNull()
+        if (featureError != null) {
+            CobbleMarket.LOGGER.warn(
+                "Shop: cannot apply feature aspects for {}: {}", spec.species, featureError.message
+            )
             return null
         }
 

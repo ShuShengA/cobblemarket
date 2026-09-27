@@ -52,7 +52,15 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private val panelWidth = 296
     private val rowHeight = 24
     private val MAX_ITEM_LIST_ROWS = 8
-    private val MAX_FORM_LIST_ROWS = 8
+
+    /**
+     * 展开列表的**起始行**（相对 dialogY）—— 接着搜索框下面排，把上面那几行按钮整个占掉。
+     * ⚠ 「新开了个界面」与「原地把按钮藏起来」的唯一区别就在这个起点（2026-09-27 用户指出）。
+     */
+    private val LIST_TOP = 48
+
+    /** 列表最多几行：从 [LIST_TOP] 到底部按钮上方能排几行（(154-48)/16 = 6.6） */
+    private val MAX_FORM_LIST_ROWS = 6
 
     // ── 行按钮几何（**建按钮与悬停窗避让共用一处定义**，别各写一份）──
     private val rowEditBtnInset = 98
@@ -111,6 +119,218 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     // 对话框规则特训维度两态：不限（默认）↔ 不含特训
     private var ruleHtFilter = PokemonPriceLimitEntry.HT_ANY
     private var ruleHtButton: NineSliceButton? = null
+
+    // ── 「全部」开关 + 「变体」列表（2026-09-27 与黑名单同一套三档：全部 / 形态 / 变体）──
+    /** 「全部」勾上 = 形态与变体一起限（下面两个按钮置灰、先前选的也不参与判定） */
+    // ⚠ **默认勾选**（用户 2026-09-27 定）：什么都不动直接提交时，限的应该是这只精灵的
+    //   **全部形态与变体**（老行为就是全封形态，加了变体维度后要连它一起）
+    private var allForms = true
+    private var allFormsButton: NineSliceButton? = null
+    private var variantButton: NineSliceButton? = null
+    private var variantListOpen = false
+    private var variantListScroll = 0
+    private val variantOptionButtons = mutableListOf<NineSliceButton>()
+    /** 已勾选的变体 aspect（**多选**：限价的是"哪些要限"） */
+    private var selectedVariants = setOf<String>()
+
+    private fun currentVariantGroups(): List<com.shusheng.cobblemarket.util.FeatureCandidates> =
+        previewSpecies?.resourceIdentifier?.toString()
+            ?.let { com.shusheng.cobblemarket.client.PointMarketCache.featureAspects[it] }.orEmpty()
+
+    /**
+     * 该物种**可以列出来**的变体（扁平）—— 走共用过滤器（去掉已在形态里的、去掉该物种没模型的）。
+     * ⚠ 列表渲染与滚轮上限**都用这一个**。
+     */
+    private fun currentVariantAspects(): List<String> =
+        com.shusheng.cobblemarket.client.VariantCandidates.aspectList(previewSpecies, currentVariantGroups())
+
+    /** 「全部」：勾上 = 形态与变体一起限（下面两个按钮置灰、先选的也不参与判定） */
+    private fun toggleAllForms() {
+        allForms = !allForms
+        updateAllFormsButton()
+        formButton?.dimmed = allForms
+        variantButton?.dimmed = allForms
+        if (allForms) {
+            formListOpen = false
+            vListOpen = false
+            variantListOpen = false
+        }
+        updateVariantButton()
+    }
+
+    /** ⚠ 选中态设在这里（唯一落点）—— toggle 与编辑预填都走它，分散设迟早漏一处 */
+    private fun updateAllFormsButton() {
+        allFormsButton?.setMessage(Text.translatable("cobblemarket.blacklist.all"))
+        allFormsButton?.selectedVisual = allForms
+        // 两个子按钮的置灰也收在这儿：创建时默认就是勾选的，那时也得灰着
+        formButton?.dimmed = allForms
+        variantButton?.dimmed = allForms
+    }
+
+    private fun updateVariantButton() {
+        variantButton?.dimmed = allForms
+        // 一个没勾写「不限」而不是「0 项」—— "0 项"看着像这儿没东西可选（同黑名单）
+        variantButton?.setMessage(
+            if (selectedVariants.isEmpty()) Text.translatable("cobblemarket.blacklist.variant")
+            else Text.translatable("cobblemarket.blacklist.variant_count", selectedVariants.size.toString())
+        )
+        // ⚠ **悬停窗挂在这枚按钮上**：按钮只有数量，具体选了哪几个得悬停看（同 RP 商城那枚「变体」按钮）
+        variantButton?.setTooltip(
+            if (selectedVariants.isEmpty()) null
+            else net.minecraft.client.gui.tooltip.Tooltip.of(
+                Text.literal(
+                    selectedVariants.joinToString("\n") {
+                        com.shusheng.cobblemarket.util.SpeciesText.featureValueLabel(it)
+                    }
+                )
+            )
+        )
+    }
+
+    private fun toggleVariantList() {
+        // 同上：勾着「全部」时点了给声失败音
+        if (allForms) return playFailSound()
+        variantListOpen = !variantListOpen
+        variantListScroll = 0
+        if (variantListOpen) {
+            // 候选只能服务端给；打开时问一次（服务端有节流兜底）
+            sendToServer(com.shusheng.cobblemarket.network.RequestSpeciesFeatureAspectsPayload())
+            // 三个列表**互斥**（同时开着会互相压、点击也打架）
+            formListOpen = false
+            vListOpen = false
+        }
+        // ⚠ 顺序：先让另外两套把控件恢复成可见，再让本套按自己的状态重新隐藏
+        rebuildVList()
+        rebuildFormList()
+        rebuildVariantList()
+    }
+
+    /**
+     * 展开的变体列表：**多选**（限价的是"哪些要限"，同一维度可以勾好几个）。
+     * ⚠ 展开时隐藏被它盖住的控件 —— 同 [rebuildFormList] 的理由，不隐藏会透出来、还会拦点击。
+     */
+    /** 上次建列表时用的候选表版本（见 [PointMarketCache.featureAspectsVersion]） */
+    private var variantAspectsSeen = -1
+
+    /** 列表展开时底部那枚「返回」—— 列表顶到 [LIST_TOP] 之后，触发它的按钮会被藏起来，得有退路 */
+    private var listBackButton: NineSliceButton? = null
+
+    /** 关掉当前展开的列表（「返回」按钮用）—— 三个列表一起收，反正同时只可能开一个 */
+    private fun closeAnyList() {
+        vListOpen = false
+        formListOpen = false
+        variantListOpen = false
+        rebuildVList()
+        rebuildFormList()
+        rebuildVariantList()
+    }
+
+    /**
+     * 候选表**异步**回来（打开列表时才请求）⇒ 到了就重建一次（不重建会停在空列表上，
+     * 同黑名单那边，用户 2026-09-27 实测报的）
+     */
+    override fun tick() {
+        super.tick()
+        val version = com.shusheng.cobblemarket.client.PointMarketCache.featureAspectsVersion
+        if (variantListOpen && variantAspectsSeen != version) {
+            variantAspectsSeen = version
+            rebuildVariantList()
+        }
+    }
+
+    /**
+     * 变体列表的**滚动条**（候选装不下时才有）。
+     *
+     * ⚠ 列表行是**控件**，滚动条没法跟着走 ⇒ 只能自绘，且要画在主 `render` 里（背景层会被控件盖住）。
+     * ⚠ 判据用 [currentVariantRows]（标题行也占一行），与列表渲染同一口径。
+     */
+    private fun renderVariantScrollbar(context: DrawContext) {
+        if (!variantListOpen) return
+        val total = currentVariantRows().size
+        if (total <= MAX_FORM_LIST_ROWS) return
+        val centerX = width / 2
+        val top = height / 2 - 92 + LIST_TOP
+        val trackH = MAX_FORM_LIST_ROWS * 16
+        val barX = centerX + 62
+        context.fill(barX, top, barX + 1, top + trackH, 0x40FFFFFF)
+        val thumbH = (trackH * MAX_FORM_LIST_ROWS / total).coerceAtLeast(6)
+        val maxScroll = (total - MAX_FORM_LIST_ROWS).coerceAtLeast(1)
+        val thumbY = top + (trackH - thumbH) * variantListScroll / maxScroll
+        context.fill(barX - 1, thumbY, barX + 2, thumbY + thumbH, 0xFFFFFFFF.toInt())
+    }
+
+    private fun rebuildVariantList() {
+        variantOptionButtons.forEach { remove(it) }
+        variantOptionButtons.clear()
+        addConfirmButton?.visible = !variantListOpen
+        addCancelButton?.visible = !variantListOpen
+        listBackButton?.visible = vListOpen || formListOpen || variantListOpen
+        ruleHtButton?.visible = !variantListOpen
+        minField?.visible = !variantListOpen
+        maxField?.visible = !variantListOpen
+        allFormsButton?.visible = !variantListOpen
+        formButton?.visible = !variantListOpen
+        vButton?.visible = !variantListOpen
+        // ⚠ 变体按钮**自己**也要隐藏（它在 dialogY+66，正是列表起排的那一行）
+        variantButton?.visible = !variantListOpen
+        if (!variantListOpen) return
+        val centerX = width / 2
+        val dialogY = height / 2 - 92
+        val rows = currentVariantRows()
+        rows.drop(variantListScroll).take(MAX_FORM_LIST_ROWS).forEachIndexed { i, row ->
+            val isHeader = row.second == null
+            val label = if (isHeader) {
+                // 分节标题：**置灰的按钮**当占位（这儿的列表是控件，画不了不可点的自绘行）
+                "── ${com.shusheng.cobblemarket.util.SpeciesText.featureGroupLabel(row.first)} ──"
+            } else {
+                com.shusheng.cobblemarket.util.TextUtil.truncateString(
+                    com.shusheng.cobblemarket.util.SpeciesText.featureValueLabel(row.second!!), 124
+                )
+            }
+            val btn = NineSliceButton(
+                centerX - 80, dialogY + LIST_TOP + i * 16, 140, 14,
+                Text.literal(label),
+                { if (!isHeader) toggleVariant(row.second!!) },
+                // ⚠ `texH = 120` = **三段贴图**，第三段是选中态
+                texH = 120
+                // ⚠ **列表行不加悬停**：文字就在眼前；该做悬停的是上面那枚「变体」按钮 —— 见 [updateVariantButton]
+            )
+            // **选中态**（用按钮高亮，不要 ● 前缀）
+            btn.selectedVisual = !isHeader && row.second in selectedVariants
+            btn.active = !isHeader
+            variantOptionButtons.add(btn)
+            addDrawableChild(btn)
+        }
+    }
+
+    /**
+     * 变体列表要画的**每一行**（`维度名 → 值`，值为 null = 该维度的标题行）。
+     * ⚠ 列表渲染与滚轮上限**都用这一个**。
+     */
+    private fun currentVariantRows(): List<Pair<String, String?>> {
+        val rows = mutableListOf<Pair<String, String?>>()
+        com.shusheng.cobblemarket.client.VariantCandidates
+            .filteredGroups(previewSpecies, currentVariantGroups())
+            .forEach { g ->
+                rows.add(g.key to null)
+                g.aspects.forEach { a -> rows.add(g.key to a) }
+            }
+        return rows
+    }
+
+    /**
+     * 勾选一个变体（**不关列表**）。
+     *
+     * ⚠ **组内单选、组间共存**（用户 2026-09-27 定，与 RP 商城的变体列表同一套语义）——
+     *   同一维度只能选一个（点另一个换掉它），不同维度可共存。
+     */
+    private fun toggleVariant(aspect: String) {
+        // **多选**（用户 2026-09-27 确认）：限价是"哪些要限"，同一维度可以勾好几个
+        selectedVariants = if (aspect in selectedVariants) selectedVariants - aspect
+        else selectedVariants + aspect
+        rebuildVariantList()
+        updateVariantButton()
+    }
 
     // ── 对话框公共状态 ──
     private var addField: TextFieldWidget? = null
@@ -326,8 +546,11 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         editingPokemon = entry
         editingItem = null
         hideMainControls()
+        // ⚠ 「全部」**每次开窗都重置成默认勾选**（它是字段，编辑过"只按形态"的规则后会带着 false）
+        allForms = true
         val centerX = width / 2
-        val dialogY = height / 2 - 75
+        // ⚠ 与渲染那边的 `dialogH = 184` **成对**：92 = 184 / 2
+        val dialogY = height / 2 - 92
 
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -367,28 +590,59 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         addDrawableChild(vButton)
 
         // 形态选择按钮：与 V 数按钮并排各占 68px（中间留 4px 空隙），只有解析出多形态物种时显示
-        formButton = NineSliceButton(centerX - 8, dialogY + 48, selectBtnW, 14, Text.literal(""), { toggleFormList() })
-        formButton?.visible = false
+        // ⚠ 创建时就把文案设上 —— 原来给的是空的 `Text.literal("")`，没搜精灵时它是个**空壳按钮**
+        //   （同黑名单，用户 2026-09-27 报过）
+        formButton = NineSliceButton(
+            centerX - 8, dialogY + 48, selectBtnW, 14, formButtonText(), { toggleFormList() }
+        )
+
+        // 「全部」开关 + 「变体」按钮（2026-09-27 用户定，与黑名单同一套三档：全部 / 形态 / 变体）——
+        // ⚠ 价格限制这边第一行是**两个并排**（V数 + 形态），所以另开一行放这两个、也并排
+        // `texH = 120` = 三段贴图，第三段是**选中态**（用户要的是勾上高亮，不是文字在是/否之间切）
+        allFormsButton = NineSliceButton(
+            centerX - 80, dialogY + 66, selectBtnW, 14, Text.translatable("cobblemarket.blacklist.all"),
+            { toggleAllForms() }, texH = 120
+        )
+        addDrawableChild(allFormsButton)
+        updateAllFormsButton()
+        variantButton = NineSliceButton(
+            centerX - 8, dialogY + 66, selectBtnW, 14, Text.literal(""), { toggleVariantList() }
+        )
+        addDrawableChild(variantButton)
+        updateVariantButton()
+        // ⚠ **再刷一次「全部」**：上面那次调它时形态/变体按钮还没建出来，置灰设不上
+        updateAllFormsButton()
+        // ⚠ 形态按钮**一直在**（与黑名单同一口径，2026-09-27 用户定）——
+        //   与「V数 / 形态」同行的 V 数按钮、下一行的「全部 / 变体」一样，不许因为"还没搜精灵"就缺
+        //   （老代码是搜出精灵才放出来，那正是用户反复指出的问题）
+        formButton?.visible = true
         addDrawableChild(formButton)
 
         // 特训限定按钮（两态：不限 ↔ 不含特训），V/形态按钮下方留 4px 空隙
-        ruleHtButton = NineSliceButton(centerX - 80, dialogY + 66, 140, 14, ruleHtButtonText(), { toggleRuleHtFilter() })
+        // 上面多了「全部 / 变体」一行，这里连同下面整体下移 18
+        ruleHtButton = NineSliceButton(centerX - 80, dialogY + 84, 140, 14, ruleHtButtonText(), { toggleRuleHtFilter() })
         addDrawableChild(ruleHtButton)
 
-        minField = createPriceField(centerX - 48, dialogY + 84, "cobblemarket.price_limit.min_placeholder")
-        maxField = createPriceField(centerX + 2, dialogY + 84, "cobblemarket.price_limit.max_placeholder")
+        minField = createPriceField(centerX - 48, dialogY + 102, "cobblemarket.price_limit.min_placeholder")
+        maxField = createPriceField(centerX + 2, dialogY + 102, "cobblemarket.price_limit.max_placeholder")
 
         addConfirmButton = NineSliceButton(
-            centerX - 85, dialogY + 104, 80, 20,
+            centerX - 85, dialogY + 154, 80, 20,
             Text.translatable("cobblemarket.blacklist.add"),
             { confirmPokemonAdd() }
         )
         addDrawableChild(addConfirmButton)
         addCancelButton = NineSliceButton(
-            centerX + 5, dialogY + 104, 80, 20,
+            centerX + 5, dialogY + 154, 80, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeDialog() }
         )
+        // ⚠ 列表展开时的**退路**（2026-09-27 用户指出）：列表顶到 [LIST_TOP] 后触发它的按钮被藏起来，
+        //   「再点一次关掉」那条路没了 ⇒ 展开后出不去。沿用「添加/取消」那行的位置（列表展开时它们本来就藏着）
+        listBackButton = NineSliceButton(
+            centerX - 40, dialogY + 154, 80, 20,
+            Text.translatable("cobblemarket.gui.back"), { closeAnyList() }
+        ).also { it.visible = false; addDrawableChild(it) }
         addDrawableChild(addCancelButton)
 
         // 编辑模式预填：物种 ID 经 text setter 触发 updatePreview 解析出模型与形态选项
@@ -410,6 +664,15 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             ruleHtButton?.setMessage(ruleHtButtonText())
             entry.minPrice?.let { minField?.text = it.toString() }
             entry.maxPrice?.let { maxField?.text = it.toString() }
+            // 「全部」开关：数据层就是"形态全封 + 变体全封"，两个键都为 `*` 才算勾上
+            allForms = PokemonPriceLimitEntry.ALL_FORMS in entry.aspects &&
+                PokemonPriceLimitEntry.ALL_VARIANTS in entry.variantAspects
+            updateAllFormsButton()
+            formButton?.dimmed = allForms
+            variantButton?.dimmed = allForms
+            // 变体：**原样回填**（多选）—— 不回填的话一提交就把它清空了
+            selectedVariants = entry.variantAspects.toSet()
+            updateVariantButton()
         }
     }
 
@@ -454,7 +717,11 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private fun renderPokemonDialogBackground(context: DrawContext, delta: Float) {
         val centerX = width / 2
         val dialogW = minOf(300, width - 40).coerceAtLeast(200)
-        val dialogH = 150
+        // ⚠ 150 → 168（多了「全部 / 变体」一行）→ 152（收掉底部空白）→ **184**：
+        //   列表改成从 [LIST_TOP] 起排之后要放下 6 行（48 + 6*16 = 144），
+        //   再给底部按钮行留位置（154 + 20 + 10 = 184）。
+        //   **必须与建控件那边的 `height / 2 - 92` 成对改**
+        val dialogH = 184
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
@@ -469,10 +736,13 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             context.drawCenteredTextWithShadow(textRenderer, it, centerX, dialogY + dialogH + 8, 0xFF5555)
         }
 
-        if (!vListOpen && !formListOpen) {
+        // ⚠ **三个列表任意一个开着都要跳过** —— 这行是**渲染的文字**（不是控件），
+        //   隐藏名单管不到它，只能在这儿判（2026-09-27 用户报：展开变体后它透过来）
+        // ⚠ 位置也得跟着弹窗加高走：152 → 184 之后按钮在 154，原来那个 128 会压上去
+        if (!vListOpen && !formListOpen && !variantListOpen) {
             context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("cobblemarket.price_limit.hint"),
-                centerX, dialogY + 128, 0xAAAAAA)
+                centerX, dialogY + 132, 0xAAAAAA)
         }
 
         // 精灵预览槽位（dialogY+24 与黑名单一致：槽位 28 高与输入框 16 高垂直中心对齐）
@@ -673,8 +943,14 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             //   ["*"] = 全部形态（显式全选）
             //   []    = 默认形态（标准形态无 aspect 声明且物种有 forms 时提供）
             //   [x..] = 各 form 的 aspects
-            val seen = mutableSetOf<Set<String>>(setOf(PokemonPriceLimitEntry.ALL_FORMS))
-            val opts = mutableListOf(FormOption(Text.translatable("cobblemarket.blacklist.form_all").string, setOf(PokemonPriceLimitEntry.ALL_FORMS)))
+            // ⚠ **「不限」也要在候选里**（同黑名单）：它表示"形态不参与判定、只看变体"，
+            //   是「只按变体限价」那一档的形态侧 —— 服务端 [PokemonPriceLimitEntry.ANY_FORMS] 早就支持了
+            val formAny = setOf(PokemonPriceLimitEntry.ANY_FORMS)
+            val seen = mutableSetOf(formAny, setOf(PokemonPriceLimitEntry.ALL_FORMS))
+            val opts = mutableListOf(
+                FormOption(Text.translatable("cobblemarket.blacklist.form_any").string, formAny),
+                FormOption(Text.translatable("cobblemarket.blacklist.form_all").string, setOf(PokemonPriceLimitEntry.ALL_FORMS))
+            )
             val standardAspects = species.standardForm.aspects.toSet()
             if (standardAspects.isNotEmpty()) {
                 // 标准形态自带 aspect（爱管侍雄性 = ["male"]）：作为独立选项
@@ -694,10 +970,13 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             formOptions = opts
             formIndex = 0
             refreshPreviewModel()
-            formButton?.visible = formOptions.size > 1
+            // ⚠ **解析出物种就显示**（2026-09-27 用户定，与黑名单同一口径）——
+            //   原来判 `size > 1`，单形态物种永远不显示、那一行空着
+            formButton?.visible = true
             formButton?.setMessage(formButtonText())
         } else {
-            formButton?.visible = false
+            // 物种没解析出来**也照常显示**（同上）
+            formButton?.visible = true
         }
     }
 
@@ -705,7 +984,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private fun refreshPreviewModel() {
         val species = previewSpecies ?: run { previewRenderable = null; return }
         val aspects = formOptions.getOrNull(formIndex)?.aspects
-            ?.filter { it != PokemonPriceLimitEntry.ALL_FORMS }?.toMutableSet() ?: mutableSetOf()
+            // ⚠ 「全部形态」和「不限」都不是合法 aspect（是判据里的哨兵值），预览时都要滤掉
+            ?.filter { it != PokemonPriceLimitEntry.ALL_FORMS && it != PokemonPriceLimitEntry.ANY_FORMS }
+            ?.toMutableSet() ?: mutableSetOf()
         if (shinyFilter == PokemonPriceLimitEntry.SHINY_YES) aspects.add("shiny")
         previewRenderable = RenderablePokemon(species, aspects, ItemStack.EMPTY)
     }
@@ -737,6 +1018,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     )
 
     private fun toggleVList() {
+        // ⚠ 「全部」勾着时给声失败音 —— 按钮是 `dimmed`（还点得动），不出声玩家会以为界面卡了
+        if (allForms) return playFailSound()
         // V 档列表与形态列表互斥展开
         formListOpen = false
         rebuildFormList()
@@ -756,22 +1039,28 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private fun rebuildVList() {
         vOptionButtons.forEach { remove(it) }
         vOptionButtons.clear()
-        // 收起时只在形态选项已解析（物种已指定）时恢复形态按钮；空物种时保持隐藏（与 updatePreview 一致）
-        // 形态按钮与 V 数按钮并排（dialogY+48 行），V 列表从 dialogY+62 起在其下方，不覆盖不隐藏
-        formButton?.visible = formOptions.size > 1
-        // V 档列表展开时覆盖特训按钮位置（dialogY+62 起），隐藏避免点击拦截
+        // ⚠ 列表现在从 [LIST_TOP]（= 原来「V数 / 形态」那一行）起排，所以**这两个按钮自己也要隐藏**，
+        //   不然它们会浮在列表上（2026-09-27 用户指出：这是"原地展开"观感的来源）
+        formButton?.visible = !vListOpen
+        vButton?.visible = !vListOpen
         ruleHtButton?.visible = !vListOpen
         minField?.visible = !vListOpen
         maxField?.visible = !vListOpen
+        // ⚠ 新加的两个按钮也要隐藏 —— 漏了会透到列表下面（黑名单那边就是这么被抓的）
+        allFormsButton?.visible = !vListOpen
+        variantButton?.visible = !vListOpen
         addConfirmButton?.visible = !vListOpen
         addCancelButton?.visible = !vListOpen
+        // 任一列表开着就显示「返回」（三个列表共用一枚，判据写全 —— 重建任一列表都会重设它）
+        listBackButton?.visible = vListOpen || formListOpen || variantListOpen
         if (!vListOpen) return
         val centerX = width / 2
-        val dialogY = height / 2 - 75
+        // ⚠ 同 [openPokemonDialog]：弹窗高度变了（150→168），列表落点跟着走
+        val dialogY = height / 2 - 92
         vOptions.forEachIndexed { idx, v ->
             val label = vLabel(v)
             val btn = NineSliceButton(
-                centerX - 80, dialogY + 62 + idx * 16, 140, 14,
+                centerX - 80, dialogY + LIST_TOP + idx * 16, 140, 14,
                 if (idx == vIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
                 { selectV(idx) }
             )
@@ -794,14 +1083,21 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         else -> aspects.joinToString("/") { aspectLabel(it) }
     }
 
-    private fun formButtonText() = Text.literal(
-        com.shusheng.cobblemarket.util.TextUtil.truncateString(
-            "${Text.translatable("cobblemarket.blacklist.form").string}${formOptions.getOrNull(formIndex)?.label ?: ""}",
-            selectBtnW - 8
+    /** ⚠ 物种没解析出来时也要有字（「形态：不限」）—— 这按钮一直显示，空壳看着就是坏了 */
+    private fun formButtonText(): Text {
+        val form = formOptions.getOrNull(formIndex)
+            ?: return Text.translatable("cobblemarket.blacklist.form_any")
+        return Text.literal(
+            com.shusheng.cobblemarket.util.TextUtil.truncateString(
+                "${Text.translatable("cobblemarket.blacklist.form").string}${form.label}",
+                selectBtnW - 8
+            )
         )
-    )
+    }
 
     private fun toggleFormList() {
+        // 同上：勾着「全部」时点了给声失败音
+        if (allForms) return playFailSound()
         // 形态列表与 V 档列表互斥展开
         vListOpen = false
         rebuildVList()
@@ -830,17 +1126,25 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         ruleHtButton?.visible = !formListOpen
         minField?.visible = !formListOpen
         maxField?.visible = !formListOpen
+        // ⚠ 同上：新加的两个按钮必须一起隐藏
+        allFormsButton?.visible = !formListOpen
+        variantButton?.visible = !formListOpen
+        // ⚠ 列表从 [LIST_TOP]（原来「V数 / 形态」那行）起排 ⇒ 这两个按钮自己也要隐藏
+        formButton?.visible = !formListOpen
+        vButton?.visible = !formListOpen
         addConfirmButton?.visible = !formListOpen
         addCancelButton?.visible = !formListOpen
+        listBackButton?.visible = vListOpen || formListOpen || variantListOpen
         if (!formListOpen) return
         val centerX = width / 2
-        val dialogY = height / 2 - 75
+        // ⚠ 同上：弹窗高度 150→168
+        val dialogY = height / 2 - 92
         formOptions.drop(formListScroll).take(MAX_FORM_LIST_ROWS).forEachIndexed { i, opt ->
             val idx = formListScroll + i
             // 数据包自创的超长 aspect 名截断，防止溢出按钮
             val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(opt.label, 124)
             val btn = NineSliceButton(
-                centerX - 80, dialogY + 62 + i * 16, 140, 14,
+                centerX - 80, dialogY + LIST_TOP + i * 16, 140, 14,
                 if (idx == formIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
                 { selectForm(idx) }
             )
@@ -940,10 +1244,16 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             shinyFilter = shinyFilter,
             minPrice = prices.first,
             maxPrice = prices.second,
-            aspects = formOptions.getOrNull(formIndex)?.aspects?.toList() ?: listOf(PokemonPriceLimitEntry.ALL_FORMS),
+            // ⚠ 「全部」开关在**数据层没有自己的字段** —— 它就是"形态全封 + 变体全封"：
+            //   勾上时直接写两个 `*`（下面两个按钮已置灰、值不参与判定）
+            aspects = if (allForms) listOf(PokemonPriceLimitEntry.ALL_FORMS)
+            else formOptions.getOrNull(formIndex)?.aspects?.toList() ?: listOf(PokemonPriceLimitEntry.ALL_FORMS),
             // 编辑模式带原条目：服务端先删旧再插新（改了形态等字段也不会残留旧条目）
             original = editingPokemon,
-            htFilter = ruleHtFilter
+            htFilter = ruleHtFilter,
+            // 变体（多选）；「全部」勾上时写 `*` = 任意变体都限
+            variantAspects = if (allForms) listOf(PokemonPriceLimitEntry.ALL_VARIANTS)
+            else selectedVariants.toList()
         ))
         closeDialog()
     }
@@ -1191,7 +1501,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 val delBtn = NineSliceButton(
                     leftX + panelWidth - rowRemoveBtnInset, y + rowBtnDy, rowBtnW, rowBtnH,
                     Text.translatable("cobblemarket.price_limit.remove"),
-                    { sendToServer(RemovePokemonPriceLimitPayload(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter)) }
+                    { sendToServer(RemovePokemonPriceLimitPayload(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter, entry.variantAspects)) }
                 )
                 delBtn.visible = addField == null
                 removeButtons.add(delBtn)
@@ -1250,6 +1560,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         super.render(context, mouseX, mouseY, delta)
 
         if (addField != null) {
+            renderVariantScrollbar(context)
             return
         }
 
@@ -1486,6 +1797,15 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         // 形态列表展开且超过可见行数时，滚轮滚动形态列表（照黑名单）
+        // 变体列表同理（候选可能几十个 —— 阿柏怪光花纹就 22 个）
+        // ⚠ 按**行**算（标题行也占一行），与 [rebuildVariantList] 同一口径
+        val variantRows = currentVariantRows().size
+        if (variantListOpen && variantRows > MAX_FORM_LIST_ROWS) {
+            variantListScroll = (variantListScroll - verticalAmount.toInt())
+                .coerceIn(0, variantRows - MAX_FORM_LIST_ROWS)
+            rebuildVariantList()
+            return true
+        }
         if (formListOpen && formOptions.size > MAX_FORM_LIST_ROWS) {
             formListScroll = (formListScroll - verticalAmount.toInt())
                 .coerceIn(0, formOptions.size - MAX_FORM_LIST_ROWS)

@@ -54,10 +54,20 @@ data class PokemonPriceLimitEntry(
     //   0 = 不限（旧数据读入时缺省为此值，保持旧的不分特训语义）
     //   1 = 仅特训（精灵至少有一项特训值）
     //   2 = 不含特训（精灵无任何特训值）
-    val htFilter: Int = HT_ANY
+    val htFilter: Int = HT_ANY,
+    // 变体限定（species feature：花纹 / 饰品 / 帽子…）—— 与黑名单**同一套语义**：
+    //   []          = 不限变体（旧数据缺省值）
+    //   ["*"]       = 全部变体（精灵带任意变体就命中）
+    //   [x, y, ...] = 命中所勾的任一个
+    // ⚠ 追加末尾 + 默认值：旧档读不到自动落空表 = 不限，不损坏存档
+    val variantAspects: List<String> = emptyList()
 ) {
     companion object {
         const val ALL_FORMS = "*" // 与 PokemonBlacklistEntry.ALL_FORMS 同值同语义
+        /** 形态**不限**（形态不参与判定，只按变体限价）—— 与黑名单同值同语义 */
+        const val ANY_FORMS = "**"
+        /** **全部变体**：精灵带任意变体 aspect 就命中 */
+        const val ALL_VARIANTS = "*"
         const val SHINY_ANY = -1
         const val SHINY_NO = 0
         const val SHINY_YES = 1
@@ -66,37 +76,48 @@ data class PokemonPriceLimitEntry(
         const val HT_NONE = 2
     }
 
-    fun matches(targetSpeciesId: String, targetVCount: Int, targetShiny: Boolean, targetAspects: Set<String>, formAspectUnion: Set<String>, targetHasHt: Boolean): Boolean {
+    fun matches(targetSpeciesId: String, targetVCount: Int, targetShiny: Boolean, targetAspects: Set<String>, formAspectUnion: Set<String>, variantAspectUnion: Set<String>, targetHasHt: Boolean): Boolean {
         if (speciesId.isNotEmpty() && speciesId != targetSpeciesId) return false
         if (vCount >= 0 && vCount != targetVCount) return false
         if (shinyFilter != SHINY_ANY && targetShiny != (shinyFilter == SHINY_YES)) return false
         if (htFilter != HT_ANY && targetHasHt != (htFilter == HT_ONLY)) return false
-        if (ALL_FORMS in aspects) return true
-        if (aspects.isEmpty()) {
+        // ⚠ **形态与变体是两个独立维度、都要满足** —— 别提前 return，那会把另一半吃掉
+        //   （黑名单那边原来就是这么写的，2026-09-27 改掉）
+        val formsMatch = when {
+            ANY_FORMS in aspects -> true
+            ALL_FORMS in aspects -> true
             // 默认形态：精灵不能携带该物种任何 form aspect（shiny 等非 form aspect 不影响）
-            return formAspectUnion.none { it in targetAspects }
+            aspects.isEmpty() -> formAspectUnion.none { it in targetAspects }
+            // 形态子集匹配：条目限定的 aspect 必须全部出现在精灵上
+            else -> targetAspects.containsAll(aspects)
         }
-        // 形态子集匹配：条目限定的 aspect 必须全部出现在精灵上
-        return targetAspects.containsAll(aspects)
+        if (!formsMatch) return false
+        return when {
+            variantAspects.isEmpty() -> true
+            ALL_VARIANTS in variantAspects -> targetAspects.any { it in variantAspectUnion }
+            else -> variantAspects.any { it in targetAspects }
+        }
     }
 }
 
 class PokemonPriceLimitState private constructor() : PersistentState() {
 
-    private data class EntryKey(val speciesId: String, val vCount: Int, val shinyFilter: Int, val aspects: List<String>, val htFilter: Int)
+    // ⚠ 变体也进 key：它和形态一样是**判据的一部分**，不进的话"同一物种同一形态、只有变体不同"
+    //   的两条规则会互相覆盖
+    private data class EntryKey(val speciesId: String, val vCount: Int, val shinyFilter: Int, val aspects: List<String>, val htFilter: Int, val variantAspects: List<String>)
 
     private val entries = mutableMapOf<EntryKey, PokemonPriceLimitEntry>()
 
     fun add(entry: PokemonPriceLimitEntry) {
         // 先删后插：同物品价格限制一致的语义——已存在 key 的 put 不移动位置，重复添加会留在旧位置
-        val key = EntryKey(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter)
+        val key = EntryKey(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter, entry.variantAspects)
         entries.remove(key)
         entries[key] = entry
         markDirty()
     }
 
-    fun remove(speciesId: String, vCount: Int, shinyFilter: Int, aspects: List<String>, htFilter: Int): Boolean {
-        val removed = entries.remove(EntryKey(speciesId, vCount, shinyFilter, aspects, htFilter)) != null
+    fun remove(speciesId: String, vCount: Int, shinyFilter: Int, aspects: List<String>, htFilter: Int, variantAspects: List<String>): Boolean {
+        val removed = entries.remove(EntryKey(speciesId, vCount, shinyFilter, aspects, htFilter, variantAspects)) != null
         if (removed) markDirty()
         return removed
     }
@@ -115,7 +136,10 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
         // 特训判定：六项特训值（hyper trained，值域 0~31）任一存在即"有特训"
         val targetHasHt = pokemon.ivs.hyperTrainedIVs.values.any { it >= 0 }
         val matched = entries.values.filter {
-            it.matches(speciesId, vCountOf(pokemon), pokemon.shiny, pokemon.aspects, formAspectUnion, targetHasHt)
+            it.matches(
+                speciesId, vCountOf(pokemon), pokemon.shiny, pokemon.aspects, formAspectUnion,
+                com.shusheng.cobblemarket.util.SpeciesText.variantAspectsOf(species), targetHasHt
+            )
         }
         if (matched.isEmpty()) return null
         return PriceBounds(
@@ -135,6 +159,10 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
             val aspectList = NbtList()
             e.aspects.forEach { aspectList.add(NbtString.of(it)) }
             c.put("aspects", aspectList)
+            // 变体同理：**总是写**（空表也写）；新键 ⇒ 旧档读不到自动落空表 = 不限变体，无需迁移分支
+            val variantList = NbtList()
+            e.variantAspects.forEach { variantList.add(NbtString.of(it)) }
+            c.put("variantAspects", variantList)
             c.putInt("htFilter", e.htFilter)
             c.putBoolean("hasMin", e.minPrice != null)
             e.minPrice?.let { c.putInt("minPrice", it) }
@@ -180,9 +208,14 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
                                 else
                                     listOf(PokemonPriceLimitEntry.ALL_FORMS),
                                 // 旧格式无 htFilter 字段 → 不限特训，保持旧的不分特训语义
-                                htFilter = if (c.contains("htFilter")) c.getInt("htFilter") else PokemonPriceLimitEntry.HT_ANY
+                                htFilter = if (c.contains("htFilter")) c.getInt("htFilter") else PokemonPriceLimitEntry.HT_ANY,
+                                // 旧格式无 variantAspects 键 → 空表 = **不限变体**（正是旧条目的语义：
+                                // 那时候压根没有变体这个维度）⇒ 不需要迁移分支
+                                variantAspects = if (c.contains("variantAspects"))
+                                    c.getList("variantAspects", NbtList.STRING_TYPE.toInt()).map { it.asString() }
+                                else emptyList()
                             )
-                            entries[EntryKey(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter)] = entry
+                            entries[EntryKey(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter, entry.variantAspects)] = entry
                         } catch (e: Exception) {
                             CobbleMarket.LOGGER.warn("Skipping corrupted pokemon price limit entry: {}", e.message)
                         }

@@ -1,9 +1,28 @@
 package com.shusheng.cobblemarket.util
 
 import com.cobblemon.mod.common.pokemon.FormData
+import com.cobblemon.mod.common.pokemon.Pokemon
 import com.cobblemon.mod.common.pokemon.Species
+import com.cobblemon.mod.common.util.substitute
 import net.minecraft.text.Text
 import net.minecraft.util.Identifier
+
+/**
+ * **一个 feature 维度**的候选（RP 商城编辑窗那枚「变体」按钮的列表按它分节）。
+ *
+ * @param key 注册名（下划线形式，如 `snake_pattern`）—— 客户端拿它当**互斥判据**：
+ *   同一 `key` 下的选项互相顶替，不同 `key` 之间可以共存
+ * @param default 数据 json 里的 `default`。**这一项决定「不指定」的名字**：
+ *   `random` ⇒ 不指定就是随机掷一个（阿柏怪的花纹、晃晃斑的斑纹都是）；落在 [aspects] 里 ⇒
+ *   不指定等于固定选它；其它（`none` 之类）⇒ 不指定就是不设置该 feature。
+ *   ⚠ 空串 = 数据没写 default，按"其它"处理
+ * @param aspects 该维度的全部候选 aspect 串（已滤掉 gmax、已去重）
+ */
+data class FeatureCandidates(
+    val key: String,
+    val default: String,
+    val aspects: List<String>
+)
 
 object SpeciesText {
     fun translationKey(species: Species): String {
@@ -32,6 +51,19 @@ object SpeciesText {
     const val GMAX_ASPECT = "gmax"
 
     /**
+     * **极巨化形态的全部 aspect**（超极巨化 + 无极汰那的 `eternamax`）。
+     *
+     * 来源：`species_features/dynamax_form.json` 的 `choices` —— 就是 `["gmax", "eternamax"]`。
+     * ⚠ 客户端拿不到那份候选本身（choice 型不同步，见 [allFeatureAspects]），只能按值列在这儿；
+     *   Cobblemon 将来加了第三种极巨化形态，这里要跟着补。
+     *
+     * ⚠ **只按 `gmax` 一个值滤是不够的**：无极汰那的 form 写的是 `eternamax`，会漏过去 ——
+     *   而它标着 `restricted`、玩家根本拿不到，让人在**黑名单 / 价格限制**里禁它毫无意义
+     *   （2026-09-27 用户指出；同一个坑在「变体」那边也踩过一次，那次漏的是候选、这次漏的是 forms）。
+     */
+    private val DYNAMAX_ASPECTS = setOf(GMAX_ASPECT, "eternamax")
+
+    /**
      * 该物种**可选的形态**（给各界面的形态按钮做候选）：**滤掉超极巨化形态**。
      *
      * 为什么滤（2026-09-20 用户拍板）：
@@ -46,28 +78,24 @@ object SpeciesText {
      *   那是匹配逻辑不是候选表，滤了会动到判定语义。
      */
     fun selectableForms(species: Species?): List<FormData> =
-        species?.forms.orEmpty().filter { GMAX_ASPECT !in it.aspects }
+        species?.forms.orEmpty().filter { form -> form.aspects.none { it in DYNAMAX_ASPECTS } }
 
     /**
-     * **形态按钮的完整候选**（RP 商城编辑窗用）= 可选的 forms **+ 该物种的 species feature**，
-     * 返回 `aspect 串 → 显示名`。
+     * **形态按钮的候选**（RP 商城编辑窗用）= 该物种各个 form 的 aspects，返回 `aspect 串 → 显示名`。
      *
-     * ⚠⚠ **为什么必须带上 features**：Cobblemon 原版的「选择形态」界面**就是把两者合起来列**的 ——
-     *   喷火龙的 `mega_x` / `mega_y`（来自 `mega_evolution`）、皮卡丘的 `partner-cap`
-     *   （来自 `league_cap`）、阿柏怪的 `snake-pattern-*` **全是 feature，不是 form**；
-     *   只列 `species.forms` 会少一大截（2026-09-27 用户对照原版截图发现：
-     *   我们只有「默认 / 阿罗拉」，原版还有 `partner-cap` 和 mega）。
+     * ⚠ **形态按钮只管 forms**（2026-09-27 用户拍板）：species feature（花纹 / 帽子 / 颜色…）
+     *   **不进这里**——它们是另一套控件的事。把 feature 混进来会同时坏两件事：
+     *   ① 极巨化之类的**战斗形态**被带回来（用户实测截图抓到 `eternamax`）；
+     *   ② `mega` 这种"全物种共用候选里只对该物种无意义"的死选项也混进来。
+     *   ⇒ feature 候选走**独立的按钮**，两者互不影响。
      *
-     * ⚠ **feature 的显示名直接用 aspect 原文**（`partner-cap`、`mega_x`）—— 与**原版一致**：
-     *   Cobblemon 自己的形态列表也是这么显示的，别自作主张去翻词条（翻了反而与游戏里对不上）。
-     *
-     * ⚠ **按 aspect 串去重**：同一个差异可能两种写法都有，撞了**以 form 为准**（它有本地化名）。
+     * ⚠ 显示名走本模组的形态词条（`cobblemarket.aspect.<名>`），未收录回落原文。
+     * ⚠ **按 aspect 串去重**：同一个差异可能两种写法都有。
      */
     fun selectableFormAspects(species: Species?): List<Pair<String, String>> {
         if (species == null) return emptyList()
         val out = mutableListOf<Pair<String, String>>()   // aspect 串 → 显示名
         val seen = mutableSetOf<String>()
-        // ① form（显示名走本模组的形态词条，照旧）
         selectableForms(species).forEach { form ->
             val aspects = form.aspects
             if (aspects.isEmpty()) return@forEach
@@ -76,33 +104,207 @@ object SpeciesText {
                 out += value to aspects.joinToString("/") { aspectLabel(it) }
             }
         }
-        // ② species feature（choice 型的才有"可选值"这一说；显示名用 aspect 原文）
-        // ⚠⚠ **不能用 `getFeaturesFor()`**：它内部走 `getFeature()`，而那个是 **code 优先**
-        //   （`getCodeFeature(name) ?: getResourceFeature(name)`）。Cobblemon 给 `snake_pattern`
-        //   这类**同时注册了代码版**（`IntSpeciesFeatureProvider`，数值型、没有候选值）⇒ 拿到手根本
-        //   没法枚举（2026-09-27 日志实测：arbok → `IntSpeciesFeatureProvider`、out=0，界面上只剩「默认」）。
-        //   真正带 22 个花纹选项的是 **json 那份**（`species_features/*.json` 的 `"type": "choice"`）
-        //   ⇒ 必须走 **`getResourceFeature()` 只查 json 那份**。
-        val featureNames = species.features +
+        return out
+    }
+
+    /**
+     * **服务端**：全部物种的 choice 型 feature 候选（`物种资源 id → aspect 串列表`），
+     * 供 [selectableFormAspects] 的 `featureAspects` 参数使用（见那里的长注释）。
+     *
+     * ⚠⚠ **只能在服务端调**：客户端 `resourceFeatures` 是空表（choice 型不同步），
+     *   在客户端调必然得到空表 —— 那不是 bug，别去"修"。
+     *
+     * ⚠ **这里要走 `getResourceFeature()`（只查 json 那份），不能用 `getFeaturesFor()`**：
+     *   后者内部走 `getFeature()`，而那个是 **code 优先**（`getCodeFeature(name) ?: getResourceFeature(name)`）。
+     *   Cobblemon 给 `snake_pattern` 这类**同时注册了代码版**（`IntSpeciesFeatureProvider`，数值型、
+     *   没有候选值）⇒ 拿到手根本没法枚举（2026-09-27 实测：arbok → `IntSpeciesFeatureProvider`、out=0）。
+     *   真正带 22 个花纹选项的是 **json 那份**（`species_features/` 里那些 json 的 `"type": "choice"`）。
+     *   ⚠ 写这个路径时**别带通配符**：斜杠紧跟星号在 KDoc 里会开启**嵌套块注释**（Kotlin 支持嵌套），
+     *   把后面的注释结束符全吞掉，报的是「Unclosed comment」而看不出真正原因（2026-09-27 踩过）。
+     *
+     * ⚠ 候选**已滤掉 `gmax`**（与 [selectableForms] 同一口径）：`dynamax_form` 这个 feature 的候选
+     *   正好就是 `gmax` / `eternamax`，超极巨化该由精灵的 `gmaxFactor` 表达 —— 理由见 [selectableForms]。
+     */
+    fun allFeatureAspects(): Map<String, List<FeatureCandidates>> {
+        val out = LinkedHashMap<String, List<FeatureCandidates>>()
+        com.cobblemon.mod.common.api.pokemon.PokemonSpecies.implemented.forEach { species ->
+            val groups = featureGroupsFor(species)
+            if (groups.isNotEmpty()) out[species.resourceIdentifier.toString()] = groups
+        }
+        // 一条日志：这张表是**服务端独有**的数据（客户端那份 registry 是空的），算空了没人看得出来
+        com.shusheng.cobblemarket.CobbleMarket.LOGGER.info(
+            "[RP商城] 变体候选表：{} 个物种有候选，共 {} 个维度 / {} 项",
+            out.size,
+            out.values.sumOf { it.size },
+            out.values.sumOf { g -> g.sumOf { it.aspects.size } }
+        )
+        return out
+    }
+
+    /**
+     * **整类不列候选的 feature**（按注册键，下划线形式）—— 2026-09-27 用户实测后拍板。
+     *
+     * - `mega_evolution`：Mega 形态**已经由 forms 提供**（妙蛙花 / 耿鬼 / 胡地的 forms 里就是
+     *   `mega`，喷火龙 / 超梦是 `mega_x` / `mega_y`）。而这个 feature 的候选是**全 mega 物种共用**
+     *   的三个值 —— 列出来的话，喷火龙的列表里会多一个 `mega`（**该物种没有对应外观的死选项**，
+     *   选了毫无变化），用户实测当场问"这个 mega 又代表什么"
+     * - `dynamax_form`：极巨化/超极巨化形态，由编辑窗那枚**「超极巨化」按钮**（`gmaxFactor`）表达 ——
+     *   与 [selectableForms] 滤掉 `gmax` 形态是**同一条规定**。它的候选是 `gmax` + `eternamax`，
+     *   只按 aspect 值滤 `gmax` 会漏掉 `eternamax`（2026-09-27 用户截图实测抓到，等于把
+     *   当初"极巨化不进形态列表"的规定推翻了一半）⇒ **只能整类跳过，不能按值滤**
+     * - `region_bias`：**地区形态的 aspect 就是它** —— 卡拉卡拉 / 皮卡丘那些的形态 json 里写的就是
+     *   `"aspects": ["region-bias-alola"]`（labels 标着 `alolan_form`）⇒ 形态按钮里的「阿罗拉」和
+     *   变体里的「阿罗拉趋异」**是同一个东西**，两边都能选、配哪边都一样（用户 2026-09-27 发现）。
+     *   地区形态归**形态按钮**管，变体这边整类跳过
+     */
+    private val EXCLUDED_FEATURES = setOf("mega_evolution", "dynamax_form", "region_bias")
+
+    /**
+     * 单个物种的 feature 候选，**按 feature 分好组**（[allFeatureAspects] 的逐条实现）。
+     *
+     * ⚠ 分组是必须的：客户端要"点 mega_y 只换掉 mega_x、不碰花纹"就必须知道**哪些 aspect
+     *   属于同一个维度** —— 扁平列表做不到这件事。同时把数据里的 `default` 一并带回去，
+     *   界面才能把「不指定」那一项写对名字（`random` → 「随机」）。见 [FeatureCandidates]。
+     */
+    /**
+     * 该物种身上**能枚举候选的** feature provider（choice / weighted_choice 两类）。
+     *
+     * ⚠ **两处共用**（列候选、把服主选的值落成 feature）—— 别各写一份查找逻辑，
+     *   那种"过滤条件改一处漏一处"的坑本项目栽过太多次。
+     */
+    private fun choiceProvidersFor(
+        species: Species
+    ): List<com.cobblemon.mod.common.api.pokemon.feature.AbstractChoiceSpeciesFeatureProvider<*>> {
+        val names = species.features +
             com.cobblemon.mod.common.api.pokemon.feature.SpeciesFeatureAssignments.getFeatures(species)
-        featureNames.distinct()
+        return names.distinct()
+            // ⚠ **按注册键整类跳过**（见 [EXCLUDED_FEATURES]）—— 注意物种 json 里可能写成连字符形式
+            .filter { it.replace('-', '_') !in EXCLUDED_FEATURES }
             .mapNotNull { raw ->
                 // ⚠⚠ **两种写法都要试**：`arbok.json` 里写的是 `"features": ["snake-pattern"]`（**连字符**），
                 //   而 `species_features/snake_pattern.json` 注册的键是 `"keys": ["snake_pattern"]`（**下划线**）——
-                //   拿原样去查必然落空（2026-09-27 日志实测：out=0，界面上只剩「默认」）。
-                //   两个都试一遍，谁有算谁（转换只是兜底，不能反过来漏掉本来就叫连字符的）。
+                //   拿原样去查必然落空。两个都试一遍，谁有算谁
+                //   （转换只是兜底，不能反过来漏掉本来就叫连字符的）。
                 com.cobblemon.mod.common.api.pokemon.feature.SpeciesFeatures.getResourceFeature(raw)
                     ?: com.cobblemon.mod.common.api.pokemon.feature.SpeciesFeatures
                         .getResourceFeature(raw.replace('-', '_'))
             }
             .filterIsInstance<com.cobblemon.mod.common.api.pokemon.feature.AbstractChoiceSpeciesFeatureProvider<*>>()
-            .forEach { provider ->
-                provider.getAllAspects().let { it as? List<*> }.orEmpty().forEach { raw ->
-                    val value = raw as? String ?: return@forEach
-                    if (value.isNotEmpty() && seen.add(value)) out += value to value
-                }
+    }
+
+    /**
+     * **把服主选定的变体落成 `pokemon.features` 的值**（服务端造精灵时调）。
+     *
+     * ⚠⚠ **为什么不能只塞 `forcedAspects`**：aspect 是**从 feature 派生**出来的
+     *   （`AbstractChoiceSpeciesFeatureProvider.provide(pokemon)`：feature 值 → aspect），而设 species 时
+     *   Cobblemon 已经给每个 feature 掷过默认值了 —— `Pokemon.species` 的 setter 会跑
+     *   `getFeaturesFor(species).mapNotNull { it.invoke(this) }`，`default = random` 的维度**当场随机**。
+     *   只强制 aspect 的话 feature 那边仍留着随机值 ⇒ `updateAspects()` 得到的集合里
+     *   **随机值与服主选的值同时挂着**、互相打架，服主选的未必生效。⇒ 必须改 feature 本身。
+     *
+     * @param selected 规格里的 aspects（服主在「变体」里选的；**形态的 aspect 混在里面不会命中
+     *   任何 provider 的候选**，自然被忽略）
+     * @return 落成的 feature 个数（只为排障看日志）
+     */
+    fun applyFeatureAspects(pokemon: Pokemon, species: Species, selected: Collection<String>): Int {
+        if (selected.isEmpty()) return 0
+        var applied = 0
+        choiceProvidersFor(species).forEach { provider ->
+            val choices = when (val c = provider.choices) {
+                is List<*> -> c.filterIsInstance<String>()
+                is Map<*, *> -> c.keys.filterIsInstance<String>()
+                else -> emptyList()
             }
-        return out
+            // 反推：哪个候选值套进 `aspectFormat` 之后，正好是服主选的那个 aspect
+            val hit = choices.firstOrNull { choice ->
+                provider.aspectFormat.substitute("choice", choice) in selected
+            } ?: return@forEach
+            val name = provider.keys.firstOrNull() ?: return@forEach
+            // 同 `SpeciesFeatureUpdatePacket.set` 的写法：先摘同名的、再加新的
+            pokemon.features.removeIf { it.name == name }
+            pokemon.features.add(
+                com.cobblemon.mod.common.api.pokemon.feature.StringSpeciesFeature(name, hit)
+            )
+            applied++
+        }
+        return applied
+    }
+
+    /**
+     * **变体候选值的显示名**：优先用 Cobblemon 官方的形态词条
+     * （`cobblemon.ui.pokedex.info.form.<aspect>` —— 图鉴里显示这个形态叫什么就用它），
+     * 没有的把 aspect 末段当物品再查一次（`cosmetic_item-rage_candy_bar` → 愤怒馒头），
+     * 都查不到才回落 aspect 原文。
+     *
+     * ⚠ 官方那套**不全**（实测 795 条里不含花纹 `snake-pattern-*`、饰品 `cosmetic-item-*`、
+     *   `mega_x` 这些）⇒ 只能"有就用、没有往下落"。
+     * ⚠ 好处不止好看：**语言自动跟着走**，而且 Cobblemon 将来补了词条我们自动受益。
+     * ⚠ 物品要试**两个命名空间**：Cobblemon 自己的（`cobblemon:rage_candy_bar`）和
+     *   原版的（`minecraft:leather_helmet`、`compass`），只查前者会让后者落空。
+     *
+     * ⚠ 放在这里（而不是界面里）是因为 **RP 商城和黑名单都要用** —— 各写一份必然漂移。
+     */
+    /**
+     * **变体维度的名字**（分节标题）= feature 注册名的词条（`cobblemarket.feature.<键>`）。
+     *
+     * ⚠ 未收录就**回落显示键本身**（`snake_pattern`）—— 模组 / 数据包自己加的 feature 我们
+     *   不可能预先翻译，显示原文总比空白强。
+     * ⚠ 放在这里是因为 **RP 商城 / 黑名单 / 价格限制三处都要用**。
+     */
+    fun featureGroupLabel(key: String): String {
+        val k = "cobblemarket.feature.$key"
+        val t = Text.translatable(k).string
+        return if (t == k) key else t
+    }
+
+    fun featureValueLabel(aspect: String): String {
+        val k = "cobblemon.ui.pokedex.info.form.$aspect"
+        val t = Text.translatable(k).string
+        if (t != k) return t
+        val itemName = runCatching {
+            val short = aspect.substringAfterLast('-')
+            listOf("cobblemon", "minecraft").firstNotNullOfOrNull { ns ->
+                Identifier.tryParse("$ns:$short")
+                    ?.let { net.minecraft.registry.Registries.ITEM.getOrEmpty(it).orElse(null) }
+                    ?.defaultStack?.name?.string
+                    ?.takeIf { it.isNotEmpty() }
+            }
+        }.getOrNull()
+        return itemName ?: aspect
+    }
+
+    /**
+     * 该物种**全部变体候选**的 aspect 集合（扁平）。
+     *
+     * 用途：**黑名单 / 价格限制的服务端匹配** —— 要判断"精灵身上带的哪些 aspect 属于变体"，
+     * 用来和条目里勾的变体比对。⚠ 与 [allFeatureAspects]（给界面列候选用）不同，
+     * 这个**只算一个物种**，可以在每次交易匹配时现算。
+     */
+    fun variantAspectsOf(species: Species): Set<String> =
+        featureGroupsFor(species).flatMap { it.aspects }.toSet()
+
+    private fun featureGroupsFor(species: Species): List<FeatureCandidates> {
+        return choiceProvidersFor(species)
+            .mapNotNull { provider ->
+                // ⚠ 两种 choice provider 的 `getAllAspects()` 返回类型不同：普通 choice 是 `List<String>`、
+                //   **weighted_choice 是 `Map<String, Int>`**（权重表）—— 只接 List 会把后者整类漏掉
+                val aspects = when (val all = provider.getAllAspects()) {
+                    is Map<*, *> -> all.keys.filterIsInstance<String>()
+                    is List<*> -> all.filterIsInstance<String>()
+                    else -> emptyList()
+                }.filter { it.isNotEmpty() && it !in DYNAMAX_ASPECTS }.distinct()
+                // 整组都被滤空（例如只剩 gmax）就不列这个维度 —— 空标题没有意义
+                if (aspects.isEmpty()) return@mapNotNull null
+                FeatureCandidates(
+                    // 分组键取注册名（下划线形式）：界面拿它当标题、客户端拿它判断"哪些项互斥"
+                    key = provider.keys.firstOrNull().orEmpty(),
+                    // ⚠ `default` 可能是 null（数据没写）⇒ 统一成空串，客户端按"其它"处理（显示「默认」）
+                    default = provider.default.orEmpty(),
+                    aspects = aspects
+                )
+            }
+            // 同一物种可能两种写法都命中同一个 provider（连字符/下划线），按分组键去重
+            .distinctBy { it.key }
     }
 
     // 客户端显示名：数据包物种未配语言文件时翻译返回 key 原文，fallback 到物种显示名（如 "Foo"）

@@ -68,7 +68,10 @@ data class AddPokemonBlacklistPayload(
     // 特训限定：0 = 不限，1 = 仅特训，2 = 不含特训
     val htFilter: Int,
     // 编辑语义：非空 = 替换原条目（先删旧再插新），null = 新增
-    val originalId: UUID?
+    val originalId: UUID?,
+    // 变体限定（species feature：花纹 / 饰品 / 帽子…）—— **多选**：封禁勾中的任一个。
+    // ⚠ 加在**末尾**、读写顺序一一对应（payload 顺序铁律）
+    val variantAspects: List<String>
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -82,7 +85,9 @@ data class AddPokemonBlacklistPayload(
                 b.writeInt(p.shinyFilter)
                 b.writeInt(p.htFilter)
                 b.writeBoolean(p.originalId != null); p.originalId?.let { b.writeUuid(it) }
+                b.writeVarInt(p.variantAspects.size); p.variantAspects.forEach { b.writeString(it) }
             },
+            // ⚠ 读端字段顺序必须与写端**一一对应**（payload 顺序铁律）
             { b ->
                 AddPokemonBlacklistPayload(
                     b.readString(),
@@ -91,7 +96,8 @@ data class AddPokemonBlacklistPayload(
                     (0 until b.readVarInt()).map { b.readString() },
                     b.readInt(),
                     b.readInt(),
-                    if (b.readBoolean()) b.readUuid() else null
+                    if (b.readBoolean()) b.readUuid() else null,
+                    (0 until b.readVarInt()).map { b.readString() }
                 )
             }
         )
@@ -151,6 +157,14 @@ object BlacklistNetwork {
                     sendResultSound(player, false)   // 被拒也要有听觉反馈（此前只有聊天栏红字）
                     return@execute
                 }
+                // 变体列表上限：同上，恶意客户端塞海量 aspect 会随条目持久化并全服广播
+                if (payload.variantAspects.size > PokemonBlacklistEntry.MAX_ASPECTS) {
+                    player.sendMessage(
+                        net.minecraft.text.Text.translatable("cobblemarket.blacklist.not_found")
+                            .formatted(net.minecraft.util.Formatting.RED), false)
+                    sendResultSound(player, false)
+                    return@execute
+                }
                 // 形态列表上限（同求购单）：恶意/异常输入不随条目持久化膨胀
                 if (payload.aspects.size > PokemonBlacklistEntry.MAX_ASPECTS) {
                     player.sendMessage(
@@ -170,7 +184,8 @@ object BlacklistNetwork {
                     ivSpd = payload.ivSpd,
                     aspects = payload.aspects,
                     shinyFilter = payload.shinyFilter.coerceIn(PokemonBlacklistEntry.SHINY_ANY, PokemonBlacklistEntry.SHINY_YES),
-                    htFilter = payload.htFilter.coerceIn(PokemonBlacklistEntry.HT_ANY, PokemonBlacklistEntry.HT_NONE)
+                    htFilter = payload.htFilter.coerceIn(PokemonBlacklistEntry.HT_ANY, PokemonBlacklistEntry.HT_NONE),
+                    variantAspects = payload.variantAspects
                 )
                 val state = PokemonBlacklistState.get(server)
                 // 编辑语义：替换原条目（改了形态/IV/闪光/特训等字段时，旧条目不再残留）
