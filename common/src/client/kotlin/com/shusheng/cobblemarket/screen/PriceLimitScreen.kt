@@ -178,11 +178,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         variantButton?.setTooltip(
             if (selectedVariants.isEmpty()) null
             else net.minecraft.client.gui.tooltip.Tooltip.of(
-                Text.literal(
-                    selectedVariants.joinToString("\n") {
-                        com.shusheng.cobblemarket.util.SpeciesText.featureValueLabel(it)
-                    }
-                )
+                // ⚠ **带维度名**；⚠⚠ 候选表没打开过列表就没有 ⇒ 走 [variantLinesOf] 的退化路径
+                //   （查不到维度名就只显示值），不然整段空白
+                Text.literal(variantLinesOf(selectedVariants.toList()).joinToString("\n"))
             )
         )
     }
@@ -212,8 +210,16 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     /** 上次建列表时用的候选表版本（见 [PointMarketCache.featureAspectsVersion]） */
     private var variantAspectsSeen = -1
 
-    /** 列表展开时底部那枚「返回」—— 列表顶到 [LIST_TOP] 之后，触发它的按钮会被藏起来，得有退路 */
+    /** 列表展开时底部那两枚：左「清空」（一键取消所有变体选择）右「返回」 */
     private var listBackButton: NineSliceButton? = null
+    private var listClearButton: NineSliceButton? = null
+
+    /** 清空**所有变体选择** —— 只清变体，形态那些归形态按钮管，不动它 */
+    private fun clearSelectedVariants() {
+        selectedVariants = emptySet()
+        rebuildVariantList()
+        updateVariantButton()
+    }
 
     /** 关掉当前展开的列表（「返回」按钮用）—— 三个列表一起收，反正同时只可能开一个 */
     private fun closeAnyList() {
@@ -265,6 +271,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         addConfirmButton?.visible = !variantListOpen
         addCancelButton?.visible = !variantListOpen
         listBackButton?.visible = vListOpen || formListOpen || variantListOpen
+        // 「清空」只在**变体列表**开着时显示（另外两个列表没有"多选"这回事）
+        listClearButton?.visible = variantListOpen
         ruleHtButton?.visible = !variantListOpen
         minField?.visible = !variantListOpen
         maxField?.visible = !variantListOpen
@@ -546,8 +554,11 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         editingPokemon = entry
         editingItem = null
         hideMainControls()
-        // ⚠ 「全部」**每次开窗都重置成默认勾选**（它是字段，编辑过"只按形态"的规则后会带着 false）
+        // ⚠ **每次开窗都要重置**（都是字段，不重置会把上一条的状态带过来）：
+        //   `allForms`（编辑过"只按形态"后会带 false）+ `selectedVariants`（新建时不进编辑块，
+        //   不清的话上一只选的变体还挂着 —— 2026-09-28 用户实测）
         allForms = true
+        selectedVariants = emptySet()
         val centerX = width / 2
         // ⚠ 与渲染那边的 `dialogH = 184` **成对**：92 = 184 / 2
         val dialogY = height / 2 - 92
@@ -639,8 +650,13 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         )
         // ⚠ 列表展开时的**退路**（2026-09-27 用户指出）：列表顶到 [LIST_TOP] 后触发它的按钮被藏起来，
         //   「再点一次关掉」那条路没了 ⇒ 展开后出不去。沿用「添加/取消」那行的位置（列表展开时它们本来就藏着）
+        // 两枚并排占「添加/取消」那两个位置（列表展开时它们本来就藏着）：**左「清空」右「返回」**
+        listClearButton = NineSliceButton(
+            centerX - 85, dialogY + 154, 80, 20,
+            Text.translatable("cobblemarket.points.store.clear"), { clearSelectedVariants() }
+        ).also { it.visible = false; addDrawableChild(it) }
         listBackButton = NineSliceButton(
-            centerX - 40, dialogY + 154, 80, 20,
+            centerX + 5, dialogY + 154, 80, 20,
             Text.translatable("cobblemarket.gui.back"), { closeAnyList() }
         ).also { it.visible = false; addDrawableChild(it) }
         addDrawableChild(addCancelButton)
@@ -973,6 +989,14 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             // ⚠ **解析出物种就显示**（2026-09-27 用户定，与黑名单同一口径）——
             //   原来判 `size > 1`，单形态物种永远不显示、那一行空着
             formButton?.visible = true
+            // ⚠ **换物种要把不属于它的变体清掉**（同黑名单，2026-09-28 用户报）
+            // ⚠ 候选表**没到**时不能清（那时"合法值"是空的，会把选中的全清光）
+            if (com.shusheng.cobblemarket.client.PointMarketCache.featureAspectsLoaded) {
+                val valid = com.shusheng.cobblemarket.client.VariantCandidates
+                    .aspectList(species, currentVariantGroups()).toSet()
+                selectedVariants = selectedVariants intersect valid
+                updateVariantButton()
+            }
             formButton?.setMessage(formButtonText())
         } else {
             // 物种没解析出来**也照常显示**（同上）
@@ -1053,6 +1077,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         addCancelButton?.visible = !vListOpen
         // 任一列表开着就显示「返回」（三个列表共用一枚，判据写全 —— 重建任一列表都会重设它）
         listBackButton?.visible = vListOpen || formListOpen || variantListOpen
+        // 「清空」只在**变体列表**开着时显示（另外两个列表没有"多选"这回事）
+        listClearButton?.visible = variantListOpen
         if (!vListOpen) return
         val centerX = width / 2
         // ⚠ 同 [openPokemonDialog]：弹窗高度变了（150→168），列表落点跟着走
@@ -1077,10 +1103,51 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         return if (t.string == "cobblemarket.aspect.$aspect") aspect else t.string
     }
 
+    /**
+     * 形态的**裸值**（选项列表与按钮拼接用）。
+     * ⚠ **哨兵值必须先判**：`*`（全部）和 `**`（不限）都不是物种 aspect，落到 `else` 会原样打出机器串。
+     * ⚠ 行首标签与悬停窗要用**带前缀**的 [formTextOf]，两边要求不同。
+     */
     private fun formLabel(aspects: Set<String>): String = when {
+        PokemonPriceLimitEntry.ANY_FORMS in aspects -> Text.translatable("cobblemarket.blacklist.form_any").string
         PokemonPriceLimitEntry.ALL_FORMS in aspects -> Text.translatable("cobblemarket.blacklist.form_all").string
         aspects.isEmpty() -> Text.translatable("cobblemarket.blacklist.form_default").string
         else -> aspects.joinToString("/") { aspectLabel(it) }
+    }
+
+    /** 行首标签与悬停窗里的形态文字 —— **带「形态：」前缀**（光一个「不限」看不出是什么不限） */
+    private fun formTextOf(aspects: Set<String>): String =
+        Text.translatable("cobblemarket.blacklist.form").string + formLabel(aspects)
+
+    /**
+     * **行首标签**里的变体文字（带「变体：」前缀，横向 `/` 连）；**一个没勾返回 null**。
+     * ⚠ 词条用 `variant_label`（「变体：%s」）**不是** `variant_count`（「变体：N 项」）——
+     *   后者是给按钮显示数量的，拼在值后面会多出一个「项」。
+     */
+    private fun variantTextOf(variantAspects: List<String>): String? =
+        variantAspects.takeIf { it.isNotEmpty() }
+            ?.joinToString("/") { com.shusheng.cobblemarket.util.SpeciesText.featureValueLabel(it) }
+            ?.let { Text.translatable("cobblemarket.blacklist.variant_label", it).string }
+
+    /**
+     * **悬停窗**里的变体行 —— **每个变体单独一行**，带维度名。
+     * ⚠ 悬停窗不能横着排（晃晃斑 5 个就连成一条横跨屏幕的长串）；带维度名是因为官方词条并不全
+     *（`face-spots-1` 那种没名字，只显示原文就不知道属于哪一维）。
+     */
+    private fun variantLinesOf(variantAspects: List<String>): List<String> {
+        if (variantAspects.isEmpty()) return emptyList()
+        val picked = variantAspects.toSet()
+        val withGroup = currentVariantGroups().flatMap { g ->
+            g.aspects.filter { it in picked }.map {
+                "${com.shusheng.cobblemarket.util.SpeciesText.featureGroupLabel(g.key)}：" +
+                    com.shusheng.cobblemarket.util.SpeciesText.featureValueLabel(it)
+            }
+        }
+        // ⚠⚠ **候选表没到时要退化**：维度名只能从候选表查，而它**只有打开过变体列表才请求得到** ——
+        //   主界面直接悬停列表行时它是空的 ⇒ `.flatMap` 出来是空 ⇒ 整行消失（2026-09-28 用户报）。
+        return withGroup.ifEmpty {
+            variantAspects.map { com.shusheng.cobblemarket.util.SpeciesText.featureValueLabel(it) }
+        }
     }
 
     /** ⚠ 物种没解析出来时也要有字（「形态：不限」）—— 这按钮一直显示，空壳看着就是坏了 */
@@ -1135,6 +1202,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         addConfirmButton?.visible = !formListOpen
         addCancelButton?.visible = !formListOpen
         listBackButton?.visible = vListOpen || formListOpen || variantListOpen
+        // 「清空」只在**变体列表**开着时显示（另外两个列表没有"多选"这回事）
+        listClearButton?.visible = variantListOpen
         if (!formListOpen) return
         val centerX = width / 2
         // ⚠ 同上：弹窗高度 150→168
@@ -1322,6 +1391,17 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         dialogError = null
         editingPokemon = null
         editingItem = null
+        // ⚠ 变体那套的字段**也在这里清**（原本的做法就是"关窗统一重置"）—— 漏了的话，关窗时列表
+        //   还开着，下次开窗控件已重建、`variantOptionButtons` 却指着旧控件
+        allForms = true
+        allFormsButton = null
+        selectedVariants = emptySet()
+        variantButton = null
+        variantListOpen = false
+        variantListScroll = 0
+        variantOptionButtons.clear()
+        listBackButton = null
+        listClearButton = null
         previewRenderable = null
         previewSpecies = null
         speciesCandidates = listOf()
@@ -1445,7 +1525,16 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         filteredPokemonCache = filteredPokemonIndexed.map { it.value }
         pokemonRowTexts = filteredPokemonCache.map { entry ->
             val vText = if (entry.vCount >= 0) " · ${entry.vCount}V" else ""
-            "${pokemonName(entry.speciesId)}$vText · ${formLabel(entry.aspects.toSet())} · ${priceText(entry.minPrice, entry.maxPrice, inlineCurrencyUnit())}"
+            buildString {
+                append(pokemonName(entry.speciesId))
+                append(vText)
+                append(" · ")
+                append(formTextOf(entry.aspects.toSet()))
+                // 变体：勾了才加（2026-09-28 用户报"选了变体不显示"）
+                variantTextOf(entry.variantAspects)?.let { append(" · ").append(it) }
+                append(" · ")
+                append(priceText(entry.minPrice, entry.maxPrice, inlineCurrencyUnit()))
+            }
         }
         // 搜索索引匹配（itemId + 名称 + tooltip 文本 + TM 招式，见 ItemSearchIndex；原版创造模式同款语义）
         // 条目级精确过滤：带组件条目按组件精确（搜「打鼾」只出打鼾 TM 条目），无组件条目仅物品文本命中
@@ -1706,8 +1795,16 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         else EntryBadgeRenderer.speciesTypeColor(entry.speciesId, entry.aspects)
         val lines = mutableListOf<Pair<Text, Int>>(Text.literal(pokemonName(entry.speciesId)) to nameColor)
         lines.add(Text.literal(Text.translatable("cobblemarket.price_limit.v_label").string + vLabel(entry.vCount)) to 0xFFFFFF)
-        lines.add(Text.literal(shinyLabel(entry.shinyFilter)) to 0xFFFFFF)
-        lines.add(Text.literal(formLabel(entry.aspects.toSet())) to 0xFFFFFF)
+        // ⚠ 带「闪光：」前缀（同黑名单）—— 悬停窗里是无条件列出来的，光一个「不限」看不出是什么
+        lines.add(
+            Text.literal(
+                Text.translatable("cobblemarket.blacklist.shiny").string + shinyLabel(entry.shinyFilter)
+            ) to 0xFFFFFF
+        )
+        lines.add(Text.literal(formTextOf(entry.aspects.toSet())) to 0xFFFFFF)
+        // 变体：勾了才加（同列表行，用同一个函数保证口径一致）
+        // 变体：**每个单独一行**（横向排会横跨整个屏幕，同黑名单）
+        variantLinesOf(entry.variantAspects).forEach { lines.add(Text.literal(it) to 0xFFFFFF) }
         lines.add(Text.literal(htLabel(entry.htFilter)) to 0xFFFFFF)
         lines.add(Text.literal(priceText(entry.minPrice, entry.maxPrice, activeCurrencyUnit())) to 0xFFFFFF)
         return lines

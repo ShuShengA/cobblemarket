@@ -212,8 +212,16 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     /** 上次建列表时用的候选表版本（见 [PointMarketCache.featureAspectsVersion]） */
     private var variantAspectsSeen = -1
 
-    /** 列表展开时底部那枚「返回」（见 [openPokemonDialog] 里那段注释） */
+    /** 列表展开时底部那两枚（见 [openPokemonDialog] 里那段注释）：左「清空」右「返回」 */
     private var listBackButton: NineSliceButton? = null
+    private var listClearButton: NineSliceButton? = null
+
+    /** 清空**所有变体选择**（列表底部那枚）—— 只清变体，形态那些归形态按钮管，不动它 */
+    private fun clearSelectedVariants() {
+        selectedVariants = emptySet()
+        rebuildVariantList()
+        updateVariantButton()
+    }
 
     /** 关掉当前展开的列表（「返回」按钮用）—— 两个列表一起收，反正同时只可能开一个 */
     private fun closeAnyList() {
@@ -275,6 +283,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         // ⚠ 变体按钮**自己**也要隐藏（它在 dialogY+84，列表从 66 排下来，正好压住它）
         variantButton?.visible = !variantListOpen
         listBackButton?.visible = formListOpen || variantListOpen
+        listClearButton?.visible = variantListOpen
         if (!variantListOpen) return
         val centerX = width / 2
         val dialogY = height / 2 - 97
@@ -332,7 +341,9 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         selectedVariants = if (aspect in selectedVariants) selectedVariants - aspect
         else selectedVariants + aspect
         rebuildVariantList()
-        variantButton?.setMessage(variantButtonText())
+        // ⚠ **必须走 [updateVariantButton]**（不是只 `setMessage`）—— 悬停窗也在那个函数里设，
+        //   只更新文字的话，勾完之后悬停上去**没有小窗**（2026-09-28 用户实测报的）
+        updateVariantButton()
     }
     private val formOptionButtons = mutableListOf<NineSliceButton>()
     private var addConfirmButton: NineSliceButton? = null
@@ -518,9 +529,12 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private fun openPokemonDialog(entry: PokemonBlacklistEntry?) {
         editingEntry = entry
         hideMainControls()
-        // ⚠ 「全部」**每次开窗都要重置成默认勾选**：它是字段，编辑过一条"只封形态"的规则之后
-        //   会带着 false 留到下一次新建（用户 2026-09-27 定：默认就该是全封）
+        // ⚠ **每次开窗都要重置**（它们都是字段，不重置会把上一条的状态带过来）：
+        //   - `allForms`：编辑过"只封形态"的规则后会带着 false（默认该是全封）
+        //   - `selectedVariants`：新建时**压根不进** `if (entry != null)` 那个块 ⇒ 不清的话
+        //     上一只精灵选的变体会留着，按钮直接显示「变体：N 项」（2026-09-28 用户实测）
         allForms = true
+        selectedVariants = emptySet()
         val centerX = width / 2
         // ⚠ 与渲染那边的 `dialogH = 194` **成对**：97 = 194 / 2
         val dialogY = height / 2 - 97
@@ -619,8 +633,14 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         //   按钮就被藏起来了（不藏会被列表压住），于是「再点一次关掉」这条老路没了 ——
         //   展开后**出不去**。RP 商城那边是列表底部一枚「返回」，这里沿用「添加/取消」那行的位置
         //   （那两个按钮在列表展开时本来就藏着，位置正好空着）。
+        // 两枚并排占「添加/取消」那两个位置（它们在列表展开时本来就藏着）：
+        // **左「清空」右「返回」** —— 同 RP 商城列表底部那两枚
+        listClearButton = NineSliceButton(
+            centerX - 85, dialogY + 164, 80, 20,
+            Text.translatable("cobblemarket.points.store.clear"), { clearSelectedVariants() }
+        ).also { it.visible = false; addDrawableChild(it) }
         listBackButton = NineSliceButton(
-            centerX - 40, dialogY + 164, 80, 20,
+            centerX + 5, dialogY + 164, 80, 20,
             Text.translatable("cobblemarket.gui.back"), { closeAnyList() }
         ).also { it.visible = false; addDrawableChild(it) }
 
@@ -747,6 +767,13 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             variantAspects = if (allForms) listOf(PokemonBlacklistEntry.ALL_VARIANTS)
             else selectedVariants.toList()
         ))
+        // ⚠ 临时诊断（2026-09-28 排「选了变体、存下来却是空」）：看清提交那一刻到底是什么。
+        //   客户端日志**你本机就能看**，服务端那边还有一条对应的（收到时打）——两条一对比就知道断在哪
+        com.shusheng.cobblemarket.CobbleMarket.LOGGER.info(
+            "[黑名单] 提交：allForms={} selectedVariants={} 发出 variantAspects={}",
+            allForms, selectedVariants,
+            if (allForms) listOf(PokemonBlacklistEntry.ALL_VARIANTS) else selectedVariants.toList()
+        )
         closeDialog()
     }
 
@@ -765,6 +792,14 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         PokemonBlacklistEntry.SHINY_NO -> Text.translatable("cobblemarket.gui.shiny_no").string
         else -> Text.translatable("cobblemarket.gui.shiny_any").string
     }
+
+    /**
+     * **行首标签与悬停窗**里的闪光文字 —— 带「闪光：」前缀。
+     * ⚠ [shinyLabel] 用的是通用词条（别处也在用），所以前缀在**调用处**拼，别去改那个函数
+     *（2026-09-28 用户指出：悬停窗里光一个「不限」，不知道是什么不限）。
+     */
+    private fun shinyTextOf(state: Int): String =
+        Text.translatable("cobblemarket.blacklist.shiny").string + shinyLabel(state)
 
     private fun alphaLabel(state: Int): String = ""
 
@@ -876,6 +911,16 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             //   现在只看"搜出精灵了没有"，与形态个数无关
             formButton?.visible = true
             formButton?.setMessage(formButtonText())
+            // ⚠ **换物种要把不属于它的变体清掉**（2026-09-28 用户报：皮卡丘选了变体、改成别的精灵后
+            //   变体按钮还挂着两个）。判据是"还在不在该物种的候选里" —— RP 商城那边的
+            //   `normalizeAspects` 做的是同一件事。
+            // ⚠ 候选表**没到**时不能清（那时候选是空的，会把选中的全清光）—— 同 RP 商城的 `featureAspectsLoaded`
+            if (com.shusheng.cobblemarket.client.PointMarketCache.featureAspectsLoaded) {
+                val valid = com.shusheng.cobblemarket.client.VariantCandidates
+                    .aspectList(species, currentVariantGroups()).toSet()
+                selectedVariants = selectedVariants intersect valid
+                updateVariantButton()
+            }
         } else {
             // 物种没解析出来**也照常显示**（同上，与「全部」「变体」一致）
             formButton?.visible = true
@@ -898,10 +943,62 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private fun aspectLabel(aspect: String): String =
         com.shusheng.cobblemarket.util.SpeciesText.aspectLabel(aspect)
 
+    /**
+     * 形态的文字（行首标签与悬停窗共用）。
+     *
+     * ⚠ **哨兵值必须先判**：`*`（全部）和 `**`（不限）都不是物种的 aspect，落到 `else`
+     *   会原样打出 `**` 这种机器串（2026-09-28 用户实测：行首显示成「皮卡丘（**）」）。
+     */
     private fun formLabel(aspects: Set<String>): String = when {
+        PokemonBlacklistEntry.ANY_FORMS in aspects -> Text.translatable("cobblemarket.blacklist.form_any").string
         PokemonBlacklistEntry.ALL_FORMS in aspects -> Text.translatable("cobblemarket.blacklist.form_all").string
         aspects.isEmpty() -> Text.translatable("cobblemarket.blacklist.form_default").string
         else -> aspects.joinToString("/") { aspectLabel(it) }
+    }
+
+    /**
+     * **行首标签与悬停窗**里的形态文字 —— **带「形态：」前缀**。
+     *
+     * ⚠ 光一个「不限」看不出是"什么"不限（用户 2026-09-28 指出）；而[formLabel]返回的是**裸值**，
+     *   因为按钮和选项列表那边**自己会拼前缀**，两边要求不同，别合成一个。
+     */
+    private fun formTextOf(aspects: Set<String>): String =
+        Text.translatable("cobblemarket.blacklist.form").string + formLabel(aspects)
+
+    /**
+     * **行首标签**里的变体文字（带「变体：」前缀）—— 横向用 `/` 连，**一个没勾返回 null**。
+     *
+     * ⚠ 词条用 `variant_label`（「变体：%s」）**不是** `variant_count`（「变体：N 项」）——
+     *   后者是给**按钮**显示数量的，拼在值后面会多出一个「项」（2026-09-28 用户实测）。
+     */
+    private fun variantTextOf(variantAspects: List<String>): String? =
+        variantAspects.takeIf { it.isNotEmpty() }
+            ?.joinToString("/") { com.shusheng.cobblemarket.util.SpeciesText.featureValueLabel(it) }
+            ?.let { Text.translatable("cobblemarket.blacklist.variant_label", it).string }
+
+    /**
+     * **悬停窗**里的变体行 —— **每个变体单独一行**，带维度名（`花纹：face-spots-1`）。
+     *
+     * ⚠ 悬停窗**不能横着排**：晃晃斑 5 个变体连起来能横跨整个屏幕（2026-09-28 用户截图）。
+     * ⚠ 带维度名是因为官方词条并不全（`face-spots-1` 那种官方压根没名字，只能显示原文），
+     *   光看原文不知道它属于哪一维。
+     */
+    private fun variantLinesOf(variantAspects: List<String>): List<String> {
+        if (variantAspects.isEmpty()) return emptyList()
+        val picked = variantAspects.toSet()
+        val withGroup = currentVariantGroups().flatMap { g ->
+            g.aspects.filter { it in picked }.map {
+                "${com.shusheng.cobblemarket.util.SpeciesText.featureGroupLabel(g.key)}：" +
+                    com.shusheng.cobblemarket.util.SpeciesText.featureValueLabel(it)
+            }
+        }
+        // ⚠⚠ **候选表没到时要退化**（2026-09-28 用户报"悬停窗里变体直接不见了"）：
+        //   维度名只能从候选表里查，而候选表**只有打开过变体列表才请求得到** ——
+        //   在主界面直接悬停列表行时它是空的，`.flatMap` 出来就是空 ⇒ 整行消失。
+        //   查不到维度名就只显示值，总比整行不见强。
+        return withGroup.ifEmpty {
+            variantAspects.map { com.shusheng.cobblemarket.util.SpeciesText.featureValueLabel(it) }
+        }
     }
 
     /**
@@ -957,11 +1054,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         variantButton?.setTooltip(
             if (selectedVariants.isEmpty()) null
             else net.minecraft.client.gui.tooltip.Tooltip.of(
-                Text.literal(
-                    selectedVariants.joinToString("\n") {
-                        com.shusheng.cobblemarket.util.SpeciesText.featureValueLabel(it)
-                    }
-                )
+                // ⚠ **带维度名**（照 RP 商城那枚按钮的悬停窗）：光一串值看不出哪属于哪一维。
+                // ⚠⚠ 候选表**没打开过列表就没有** ⇒ 必须**退化**成只显示值，
+                //    否则 `.flatMap` 出来是空、tooltip 整段空白（同 [variantLinesOf]，2026-09-28）
+                Text.literal(variantLinesOf(selectedVariants.toList()).joinToString("\n"))
             )
         )
     }
@@ -1035,8 +1131,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         //   （原来它在 48 行、列表从 62 起，压不到它，所以老代码没这一句）。
         //   2026-09-27 用户实测：展开后「形态：全部形态」还浮在列表上
         formButton?.visible = !formListOpen
-        // 列表开着就显示「返回」（两个列表共用一枚，判据写全 —— 重建任一列表都会重设它）
+        // 列表开着就显示底部两枚（共用，判据写全 —— 重建任一列表都会重设它们）
         listBackButton?.visible = formListOpen || variantListOpen
+        // 「清空」只在**变体列表**开着时显示（形态列表没有"多选"这回事，清空无从谈起）
+        listClearButton?.visible = variantListOpen
         if (!formListOpen) return
         val centerX = width / 2
         // ⚠ 同 [openAddDialog]：弹窗高度变了（180→216），列表的落点也得跟着走
@@ -1316,6 +1414,17 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         formListOpen = false
         formListScroll = 0
         formOptionButtons.clear()
+        // ⚠ 变体那套的字段**也在这里清**（原本的做法就是"关窗统一重置"）—— 漏了的话，
+        //   关窗时列表还开着，下次开窗控件已重建、`variantOptionButtons` 却指着旧控件
+        allForms = true
+        allFormsButton = null
+        selectedVariants = emptySet()
+        variantButton = null
+        variantListOpen = false
+        variantListScroll = 0
+        variantOptionButtons.clear()
+        listBackButton = null
+        listClearButton = null
         shinyFilter = PokemonBlacklistEntry.SHINY_ANY
         shinyButton = null
         ruleHtFilter = PokemonBlacklistEntry.HT_ANY
@@ -1510,8 +1619,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         val name = pokemonEntryName(entry)
         val parts = mutableListOf<String>()
         if (entry.shinyFilter != PokemonBlacklistEntry.SHINY_ANY) parts.add(shinyLabel(entry.shinyFilter))
-        // 形态标签：全部形态/默认形态/具体 aspect，始终显示
-        parts.add(formLabel(entry.aspects.toSet()))
+        // 形态标签：全部/默认/不限/具体 aspect，始终显示（带「形态：」前缀）
+        parts.add(formTextOf(entry.aspects.toSet()))
+        // 变体：勾了才加（多选用 `/` 连）—— 2026-09-28 用户报"选了变体不显示"
+        variantTextOf(entry.variantAspects)?.let { parts.add(it) }
         if (entry.ivHp >= 0) parts.add("HP${entry.ivHp}")
         if (entry.ivAtk >= 0) parts.add("${StatNames.ATK}${entry.ivAtk}")
         if (entry.ivDef >= 0) parts.add("${StatNames.DEF}${entry.ivDef}")
@@ -1687,8 +1798,11 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         val lines = mutableListOf<Pair<Text, Int>>(
             Text.literal(name) to EntryBadgeRenderer.speciesTypeColor(entry.speciesId, entry.aspects)
         )
-        lines.add(Text.literal(shinyLabel(entry.shinyFilter)) to 0xFFFFFF)
-        lines.add(Text.literal(formLabel(entry.aspects.toSet())) to 0xFFFFFF)
+        // ⚠ 带「闪光：」前缀 —— 悬停窗里是**无条件**列出来的，光一个「不限」看不出是什么
+        lines.add(Text.literal(shinyTextOf(entry.shinyFilter)) to 0xFFFFFF)
+        lines.add(Text.literal(formTextOf(entry.aspects.toSet())) to 0xFFFFFF)
+        // 变体：**每个单独一行**（横向排会横跨整个屏幕，晃晃斑 5 个就已经溢出了）
+        variantLinesOf(entry.variantAspects).forEach { lines.add(Text.literal(it) to 0xFFFFFF) }
         lines.add(Text.literal(htLabel(entry.htFilter)) to 0xFFFFFF)
         if (entry.ivHp >= 0) lines.add(Text.literal("${StatNames.HP}: ${entry.ivHp}") to 0xFFFFFF)
         if (entry.ivAtk >= 0) lines.add(Text.literal("${StatNames.ATK}: ${entry.ivAtk}") to 0xFFFFFF)

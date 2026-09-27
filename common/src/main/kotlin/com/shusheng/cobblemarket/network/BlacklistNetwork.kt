@@ -24,6 +24,9 @@ fun PokemonBlacklistEntry.write(buf: PacketByteBuf) {
     buf.writeVarInt(aspects.size); aspects.forEach { buf.writeString(it) }
     buf.writeInt(shinyFilter)
     buf.writeInt(htFilter)
+    // ⚠ **别漏**：条目有**两套**序列化 —— 存档那套（PokemonBlacklistState 里）和**下发客户端**这套。
+    //   加字段只改一处的话，存档里明明存上了、界面却永远显示空（2026-09-28 排了半天就是这个）
+    buf.writeVarInt(variantAspects.size); variantAspects.forEach { buf.writeString(it) }
 }
 
 fun readBlacklistEntry(buf: PacketByteBuf): PokemonBlacklistEntry = PokemonBlacklistEntry(
@@ -35,9 +38,11 @@ fun readBlacklistEntry(buf: PacketByteBuf): PokemonBlacklistEntry = PokemonBlack
     ivSpAtk = buf.readInt(),
     ivSpDef = buf.readInt(),
     ivSpd = buf.readInt(),
+    // ⚠ 读端顺序必须与上面 `write` **一一对应**
     aspects = (0 until buf.readVarInt()).map { buf.readString() },
     shinyFilter = buf.readInt(),
-    htFilter = buf.readInt()
+    htFilter = buf.readInt(),
+    variantAspects = (0 until buf.readVarInt()).map { buf.readString() }
 )
 
 // ── C2S: 请求黑名单 ──
@@ -186,6 +191,12 @@ object BlacklistNetwork {
                     shinyFilter = payload.shinyFilter.coerceIn(PokemonBlacklistEntry.SHINY_ANY, PokemonBlacklistEntry.SHINY_YES),
                     htFilter = payload.htFilter.coerceIn(PokemonBlacklistEntry.HT_ANY, PokemonBlacklistEntry.HT_NONE),
                     variantAspects = payload.variantAspects
+                )
+                // ⚠ 临时诊断（2026-09-28）：与客户端那条对应 —— 服务端收到的和客户端发出的对不上，
+                //   说明**两端不同版**（payload 字段在本端被忽略）；都对就是后面读写/回填的问题
+                com.shusheng.cobblemarket.CobbleMarket.LOGGER.info(
+                    "[黑名单] 服务端收到：species={} aspects={} variantAspects={}",
+                    speciesId, payload.aspects, payload.variantAspects
                 )
                 val state = PokemonBlacklistState.get(server)
                 // 编辑语义：替换原条目（改了形态/IV/闪光/特训等字段时，旧条目不再残留）
