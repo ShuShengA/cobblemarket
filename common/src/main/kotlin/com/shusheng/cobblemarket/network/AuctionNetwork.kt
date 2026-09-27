@@ -113,7 +113,7 @@ data class AuctionEntry(
     }
 }
 
-fun auctionToEntry(a: AuctionListing): AuctionEntry = AuctionEntry(
+fun auctionToEntry(a: AuctionListing, server: MinecraftServer): AuctionEntry = AuctionEntry(
     id = a.id,
     type = a.type.name,
     sellerUuid = a.sellerUuid,
@@ -126,13 +126,18 @@ fun auctionToEntry(a: AuctionListing): AuctionEntry = AuctionEntry(
     // 体型分类：精灵拍卖才有；物品拍卖保持原样。旧拍卖从存档 NBT 现算，无需重新上架
     // 技能同款处理：**旧拍卖没有 moves 快照时从 NBT 现读**（升级上来的服不用重新上架）
     extraData = if (a.type == AuctionType.POKEMON) {
+        // 极巨化 / 初始训练家：与太晶同款，**从拍卖自带的完整 NBT 现读**（老拍卖也显示）
+        val dyn = com.shusheng.cobblemarket.util.PokemonDynamax.fromNbt(a.pokemonNbt)
         a.extraData +
             ("size" to PokemonSize.fromNbt(a.pokemonNbt)) +
             ("moves" to com.shusheng.cobblemarket.util.MoveText.resolve(a.extraData["moves"], a.pokemonNbt)) +
             // 太晶同款：老拍卖没有这项快照（太晶显示是后加的）⇒ 从精灵 NBT 现读，
             // 服主升级后不用让玩家把拍卖挨个重新上架
             ("teraType" to com.shusheng.cobblemarket.util.PokemonTera.resolve(
-                a.extraData["teraType"], a.pokemonNbt))
+                a.extraData["teraType"], a.pokemonNbt)) +
+            ("gmaxFactor" to dyn.gmaxFactor.toString()) +
+            ("dmaxLevel" to dyn.dmaxLevel.toString()) +
+            ("ot" to com.shusheng.cobblemarket.util.PokemonOT.fromNbt(a.pokemonNbt, server))
     } else a.extraData,
     startingPrice = a.startingPrice,
     minIncrement = a.minIncrement,
@@ -498,7 +503,7 @@ object AuctionNetwork {
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.auction.created")))
-                broadcastEvent(server, "NEW", auctionToEntry(auction))
+                broadcastEvent(server, "NEW", auctionToEntry(auction, server))
                 announceAuction(server, auction)
                 recordAuction(server, auction, TransactionType.ADD)
             }
@@ -649,7 +654,7 @@ object AuctionNetwork {
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.auction.created")))
-                broadcastEvent(server, "NEW", auctionToEntry(auction))
+                broadcastEvent(server, "NEW", auctionToEntry(auction, server))
                 announceAuction(server, auction)
                 recordAuction(server, auction, TransactionType.ADD)
             }
@@ -755,7 +760,7 @@ object AuctionNetwork {
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.auction.bid_placed")))
-                broadcastEvent(server, "BID", auctionToEntry(auction))
+                broadcastEvent(server, "BID", auctionToEntry(auction, server))
             }
         }
 
@@ -793,7 +798,7 @@ object AuctionNetwork {
                     )
                 }
                 // 强制下架用 CANCELLED 事件：客户端立即移除，不播 1.5 秒落槌动画（管理操作要干脆）
-                broadcastEvent(server, "CANCELLED", auctionToEntry(auction))
+                broadcastEvent(server, "CANCELLED", auctionToEntry(auction, server))
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.auction.force_cancelled")))
@@ -844,7 +849,7 @@ object AuctionNetwork {
             com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
         }
         settled.forEach { auction ->
-            broadcastEvent(server, "SETTLED", auctionToEntry(auction))
+            broadcastEvent(server, "SETTLED", auctionToEntry(auction, server))
             // 成交落槌：定向发给卖家/赢家/所有出价参与者（在线的），无关玩家不打扰
             val related = mutableSetOf(auction.sellerUuid)
             auction.currentBidderUuid?.let { related.add(it) }
@@ -920,7 +925,7 @@ object AuctionNetwork {
     }
 
     private fun auctionListPayload(server: MinecraftServer): AuctionListDataPayload =
-        AuctionListDataPayload(AuctionState.get(server).getActiveAuctions().map { auctionToEntry(it) })
+        AuctionListDataPayload(AuctionState.get(server).getActiveAuctions().map { auctionToEntry(it, server) })
 
     // 照搬 MarketNetwork.buildListingExtra（保持展示字段一致）
     private fun buildAuctionExtra(
@@ -997,7 +1002,7 @@ object AuctionNetwork {
         val clickableName = Text.literal("").append(nameText).append(Text.literal(" ")).append(bidLabel)
             .styled {
                 it.withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket auction ${auction.id}"))
-                    .withHoverEvent(HoverEvent(HoverEvent.Action.SHOW_TEXT, buildAnnouncementHover(auction)))
+                    .withHoverEvent(HoverEvent(HoverEvent.Action.SHOW_TEXT, buildAnnouncementHover(auction, server)))
             }
         // 金额与货币名恒金（聊天颜色模板）；主体蓝（2026-08-30 拍板），名字属性色/按钮/金额子样式优先于父级蓝
         val priceText = Text.literal("")
@@ -1086,10 +1091,14 @@ object AuctionNetwork {
 
     /** 悬浮详情（多行彩色文字，发出时为快照）：结构仿出价弹窗左列——名字行/属性/性格/特性/携带物/IV+EV 竖排六行，
      *  尾部拍卖信息（起拍价/最低加价/结束时间）；物品版 = 数量 + 拍卖信息 */
-    private fun buildAnnouncementHover(auction: AuctionListing): Text {
+    private fun buildAnnouncementHover(auction: AuctionListing, server: MinecraftServer): Text {
         val lines = mutableListOf<Text>()
         if (auction.type == AuctionType.POKEMON) {
             val extra = auction.extraData
+            // ⚠ 这里的 extra 是**挂单快照**（`auction.extraData`），不是 `auctionToEntry` 组装的那份
+            //   ⇒ 极巨/OT 拿不到那份 Map，只能**同样从拍卖自带的完整 NBT 现读**（老拍卖也显示）
+            val dyn = com.shusheng.cobblemarket.util.PokemonDynamax.fromNbt(auction.pokemonNbt)
+            val otName = com.shusheng.cobblemarket.util.PokemonOT.fromNbt(auction.pokemonNbt, server)
             // 名字行：Lv + 性别 + 体型字母（名字本身在消息正文，这里补数值；聊天悬浮窗画不了纹理，体型用字母）
             val genderText = when (extra["gender"]) {
                 "MALE" -> Text.translatable("cobblemarket.aspect.male")
@@ -1129,6 +1138,9 @@ object AuctionNetwork {
                     } ?: Text.literal("")
                 )
             )
+            // 极巨行：属性行下面、有才显示（与各处界面走同一个组装入口）
+            com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(dyn.gmaxFactor, dyn.dmaxLevel)
+                ?.let { lines.add(it) }
             // 性格（薄荷生效值） / 特性 / 球种
             extra["nature"]?.takeIf { it.isNotEmpty() }?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_nature").append(Text.translatable(it))) }
             extra["ability"]?.takeIf { it.isNotEmpty() }?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_ability").append(Text.translatable(it))) }
@@ -1178,6 +1190,9 @@ object AuctionNetwork {
                 Text.translatable("cobblemarket.gui.friendship", extra["friendship"]?.toIntOrNull() ?: 0)
                     .styled { it.withColor(0xFF99CC) }
             )
+            // 初始训练家：亲密度下面（与各处界面同位置）
+            com.shusheng.cobblemarket.util.PokemonExtraLines.originalTrainer(otName)
+                ?.let { lines.add(it) }
             // 技能（亲密度下方）：两行、一行两个 —— 与悬停窗**同源**（MoveText.rows，词条由客户端本地翻译）。
             // ⚠ 聊天悬停是纯文本、画不了分割线，所以这里只补两行技能（本 hover 其余段落也都没有分割线）；
             // 空行直接跳过，免得聊天工具提示里多出空档

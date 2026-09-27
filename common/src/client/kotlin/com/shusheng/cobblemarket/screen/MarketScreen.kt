@@ -2044,12 +2044,16 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 entry.primaryType, entry.level) to w)
             lines.add(com.shusheng.cobblemarket.util.TypeTextColors.typeLineWithTera(
                 entry.primaryType, entry.secondaryType, entry.teraType) to w)
+            // 极巨行：属性行下面、有才显示（与市场侧走同一个组装入口）
+            com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(entry.gmaxFactor, entry.dmaxLevel)
+                ?.let { lines.add(it to w) }
             lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(EntryBadgeRenderer.natureText(entry.natureBase, entry.nature))
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
                 .append(Text.translatable(entry.ability)) to w)
             if (entry.ball.isNotEmpty()) {
-                lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_ball").string}${Text.translatable(entry.ball).string}") to w)
+                // 球名走**稀有度色**（大师球在物品栏里是紫的）—— 共用入口 ItemNameText.ballLine
+                lines.add(com.shusheng.cobblemarket.util.ItemNameText.ballLine(entry.ball, entry.ballItem) to w)
             }
             var heldItemLine = -1
             if (hasHeldItem) {
@@ -2064,6 +2068,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             lines.add(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("  EV: ${entry.evsSpDef}").formatted(Formatting.RED)) to ivColors[4])
             lines.add(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("  EV: ${entry.evsSpd}").formatted(Formatting.RED)) to ivColors[5])
             lines.add(Text.translatable("cobblemarket.gui.friendship", entry.friendship) to 0xFF99CC)
+            // 初始训练家行：亲密度下面（与市场侧同位置；没有则整行不占位）
+            com.shusheng.cobblemarket.util.PokemonExtraLines.originalTrainer(entry.originalTrainer)
+                ?.let { lines.add(it to 0xFFFFFF) }
             // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：分割线 + 两行技能 + 分割线，整块在 drawMovesBlockLeft 里画
             var movesLine = -1
             if (MoveText.hasAny(entry.moves)) {

@@ -186,7 +186,7 @@ data class BuyOrderEntry(
 //   求购单的聊天通知（`BuyOrderState.requirementText()`）也要用它给精灵名上色，
 //   留第二份就又回到「同一个东西两处各写一遍、改一处漏一处」的老路（2026-09-26 收口）。
 
-fun buyOrderToEntry(o: BuyOrder): BuyOrderEntry = BuyOrderEntry(
+fun buyOrderToEntry(o: BuyOrder, server: MinecraftServer): BuyOrderEntry = BuyOrderEntry(
     id = o.id,
     type = o.type.name,
     buyerUuid = o.buyerUuid,
@@ -212,6 +212,8 @@ fun buyOrderToEntry(o: BuyOrder): BuyOrderEntry = BuyOrderEntry(
     createdAt = o.createdAt,
     expiresAt = o.expiresAt,
     pending = o.pendingDeliveries.firstOrNull()?.let { p ->
+        // 极巨化 / 初始训练家：与太晶 / moves 同款，从待交付精灵自带的完整 NBT 现读
+        val dyn = com.shusheng.cobblemarket.util.PokemonDynamax.fromNbt(p.pokemonNbt)
         BuyOrderPendingEntry(
             id = p.id,
             sellerName = p.sellerName,
@@ -222,7 +224,10 @@ fun buyOrderToEntry(o: BuyOrder): BuyOrderEntry = BuyOrderEntry(
             // 待交付的精灵同理：旧数据没有 moves 快照时从 NBT 现读
             extraData = p.extraData + (
                 "moves" to com.shusheng.cobblemarket.util.MoveText.resolve(p.extraData["moves"], p.pokemonNbt)
-                ),
+                ) +
+                ("gmaxFactor" to dyn.gmaxFactor.toString()) +
+                ("dmaxLevel" to dyn.dmaxLevel.toString()) +
+                ("ot" to com.shusheng.cobblemarket.util.PokemonOT.fromNbt(p.pokemonNbt, server)),
             count = p.count,
             itemNbt = p.itemNbt
         )
@@ -468,7 +473,7 @@ object BuyOrderNetwork {
                 settleExpiredAndBroadcast(server)
                 sendToPlayer(
                     player,
-                    BuyOrderListDataPayload(BuyOrderState.get(server).getOpenOrders().map { buyOrderToEntry(it) })
+                    BuyOrderListDataPayload(BuyOrderState.get(server).getOpenOrders().map { buyOrderToEntry(it, server) })
                 )
             }
         }
@@ -538,7 +543,7 @@ object BuyOrderNetwork {
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.created")))
-                broadcastEvent(server, "NEW", buyOrderToEntry(order))
+                broadcastEvent(server, "NEW", buyOrderToEntry(order, server))
                 recordOrder(server, order, TransactionType.ORDER)
             }
         }
@@ -613,7 +618,7 @@ object BuyOrderNetwork {
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.created")))
-                broadcastEvent(server, "NEW", buyOrderToEntry(order))
+                broadcastEvent(server, "NEW", buyOrderToEntry(order, server))
                 recordOrder(server, order, TransactionType.ORDER)
             }
         }
@@ -645,7 +650,7 @@ object BuyOrderNetwork {
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
-                broadcastEvent(server, "CLOSED", buyOrderToEntry(order))
+                broadcastEvent(server, "CLOSED", buyOrderToEntry(order, server))
                 recordOrder(server, order, TransactionType.CANCEL, "user")
             }
         }
@@ -685,7 +690,7 @@ object BuyOrderNetwork {
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
-                broadcastEvent(server, "CLOSED", buyOrderToEntry(order))
+                broadcastEvent(server, "CLOSED", buyOrderToEntry(order, server))
                 recordOrder(server, order, TransactionType.CANCEL, "admin")
             }
         }
@@ -805,7 +810,7 @@ object BuyOrderNetwork {
                 }
                 // 快照算一次、两处用：存进交付记录 + 给买家那条通知的悬停详情用
                 //（2026-09-25：通知原先只挂了点击，悬停一个字都没有）
-                val deliveryExtra = buildDeliveryExtra(pokemon, heldItem, player.serverWorld.registryManager)
+                val deliveryExtra = buildDeliveryExtra(pokemon, heldItem, player.serverWorld.registryManager, player.server)
                 val delivery = PendingDelivery(
                     id = UUID.randomUUID(),
                     sellerUuid = player.uuid,
@@ -827,7 +832,7 @@ object BuyOrderNetwork {
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.delivered_pending")))
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, order.buyerUuid,
                     pendingReviewNotice(order, deliveryExtra))
-                broadcastEvent(server, "UPDATED", buyOrderToEntry(order))
+                broadcastEvent(server, "UPDATED", buyOrderToEntry(order, server))
             }
         }
 
@@ -998,7 +1003,7 @@ object BuyOrderNetwork {
                 )
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, order.buyerUuid,
                     pendingReviewNotice(order))
-                broadcastEvent(server, "UPDATED", buyOrderToEntry(order))
+                broadcastEvent(server, "UPDATED", buyOrderToEntry(order, server))
             }
         }
 
@@ -1095,7 +1100,7 @@ object BuyOrderNetwork {
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, pending.sellerUuid,
                     // 到账金额 + 手续费一并提示：买家付的是 gross，卖家到手 gross-fee，不说清会产生疑问
                     Text.translatable("cobblemarket.buy_order.accepted_seller", order.requirementText(), CurrencyHandler.goldAmount(gross - fee), CurrencyHandler.goldCurrencyText(), CurrencyHandler.goldAmount(fee), CurrencyHandler.goldCurrencyText()).formatted(Formatting.GREEN))
-                broadcastEvent(server, if (order.isOpen()) "UPDATED" else "CLOSED", buyOrderToEntry(order))
+                broadcastEvent(server, if (order.isOpen()) "UPDATED" else "CLOSED", buyOrderToEntry(order, server))
             }
         }
 
@@ -1141,7 +1146,7 @@ object BuyOrderNetwork {
                         Text.translatable("cobblemarket.buy_order.rejected_seller",
                             order.buyerName, order.requirementText()).formatted(Formatting.YELLOW)
                 )
-                broadcastEvent(server, "UPDATED", buyOrderToEntry(order))
+                broadcastEvent(server, "UPDATED", buyOrderToEntry(order, server))
             }
         }
     }
@@ -1156,7 +1161,7 @@ object BuyOrderNetwork {
             com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
         }
         closed.forEach { order ->
-            broadcastEvent(server, "CLOSED", buyOrderToEntry(order))
+            broadcastEvent(server, "CLOSED", buyOrderToEntry(order, server))
             com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, order.buyerUuid,
                 Text.translatable("cobblemarket.buy_order.expired", order.requirementText()).formatted(Formatting.YELLOW))
             recordOrder(server, order, TransactionType.CANCEL, "expired")
@@ -1233,7 +1238,9 @@ object BuyOrderNetwork {
     private fun buildDeliveryExtra(
         pokemon: com.cobblemon.mod.common.pokemon.Pokemon,
         heldItemStack: ItemStack,
-        registryManager: net.minecraft.registry.RegistryWrapper.WrapperLookup
+        registryManager: net.minecraft.registry.RegistryWrapper.WrapperLookup,
+        // 初始训练家要把玩家 UUID 解析成名字（`PokemonOT`），故需要 server
+        server: MinecraftServer
     ): Map<String, String> {
         val htIvs = pokemon.ivs.hyperTrainedIVs // 极限特训值表（-1 = 未特训）
         val extra = mutableMapOf(
@@ -1270,9 +1277,17 @@ object BuyOrderNetwork {
             "heldItemNbt" to encodeHeldItemNbt(heldItemStack, registryManager),
             "heldItemVisible" to pokemon.heldItemVisible.toString(),
             "aspects" to pokemon.aspects.joinToString(","),
+            // 体型分类（XS/S/M/L/XL/ALPHA）：待交付弹窗名字右侧那个徽章用。
+            // ⚠ 键名 `size` 与拍卖侧（`auctionToEntry`）保持一致，两处客户端读的也是同一个键
+            "size" to com.shusheng.cobblemarket.util.PokemonSize.from(pokemon),
             "marks" to pokemon.marks.map { it.texture.toString() }.joinToString(","),
             // 技能槽快照（4 个槽用「,」连接、空槽空串）：悬停窗技能块用，见 MoveText
-            "moves" to com.shusheng.cobblemarket.util.MoveText.of(pokemon)
+            "moves" to com.shusheng.cobblemarket.util.MoveText.of(pokemon),
+            // 极巨化 / 初始训练家：交付的是**活精灵**，直接从 Pokemon 取。这份快照同时喂给
+            // 「交付通知的悬停」（buildDeliveryHover）与「待交付弹窗」（pendingToListing）—— 两处都要显示
+            "gmaxFactor" to pokemon.gmaxFactor.toString(),
+            "dmaxLevel" to pokemon.dmaxLevel.toString(),
+            "ot" to com.shusheng.cobblemarket.util.PokemonOT.from(pokemon, server)
         )
         pokemon.secondaryType?.let { extra["secondaryType"] = "cobblemon.type.${it.name.lowercase()}" }
         return extra
@@ -1354,6 +1369,14 @@ object BuyOrderNetwork {
                 )
             )
         }
+        // 极巨行：属性行下面、有才显示（与各处界面走同一个组装入口）
+        com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(
+            extra["gmaxFactor"] == "true", extra["dmaxLevel"]?.toIntOrNull() ?: 0
+        )?.let { lines.add(it) }
+        // 初始训练家：⚠ 这条悬停**没有亲密度行**（交付快照不含 friendship）⇒ OT 贴着极巨行放；
+        // 其余界面（有亲密度的）都是"亲密度下面" —— 位置差异是刻意的，别无脑对齐
+        com.shusheng.cobblemarket.util.PokemonExtraLines.originalTrainer(extra["ot"].orEmpty())
+            ?.let { lines.add(it) }
         // 性格 / 特性 / 球种
         extra["nature"]?.takeIf { it.isNotEmpty() }
             ?.let { lines.add(Text.translatable("cobblemarket.gui.tooltip_nature").append(Text.translatable(it))) }
