@@ -2841,12 +2841,25 @@ class BuyOrderScreen(
             ball = d["ball"] ?: "",
             ballItem = d["ballItem"] ?: "",
             heldItemId = d["heldItemId"] ?: "",
+            // ⚠ 这三个与太晶同批漏接（2026-09-27 补齐）：服务端 `buildDeliveryExtra` 一直有写，
+            //   这里此前没读 ⇒ 待交付弹窗里 携带物图标丢附魔光效 / 隐藏了也不注明 / 名字旁没有体型徽章
+            heldItemNbt = d["heldItemNbt"] ?: "",
+            // 「模型手里拿不拿」：缺这一位（旧数据）= 显示，与字段默认值一致
+            heldItemVisible = d["heldItemVisible"] != "false",
+            sizeCategory = d["size"] ?: "",
             currencyName = "",
             aspects = (d["aspects"] ?: "").split(",").filter { it.isNotEmpty() },
             marks = (d["marks"] ?: "").split(",").filter { it.isNotEmpty() },
             // 币种跟着**订单**走（pending 挂在订单上，自己没有币种字段）
             currency = entry.currency,
-            moves = d["moves"].orEmpty()
+            moves = d["moves"].orEmpty(),
+            // 太晶：服务端 `buildDeliveryExtra` 一直有写这个键，但这里**此前没读** ⇒
+            // 「查看待交付」弹窗从来显示不出太晶（同批字段漏接，2026-09-27 补齐）
+            teraType = d["teraType"].orEmpty(),
+            // 极巨化 / 初始训练家：值由服务端组装 pending 时写进 extraData（见 buyOrderToEntry）
+            gmaxFactor = d["gmaxFactor"] == "true",
+            dmaxLevel = i("dmaxLevel"),
+            originalTrainer = d["ot"].orEmpty()
         )
     }
 

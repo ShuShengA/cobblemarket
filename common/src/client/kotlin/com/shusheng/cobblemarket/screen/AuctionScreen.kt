@@ -1604,6 +1604,10 @@ class AuctionScreen(
             // 属性行（**含太晶**）：共用同一个组装入口
             infoLineText(com.shusheng.cobblemarket.util.TypeTextColors.typeLineWithTera(
                 primaryType, secondaryType, extra["teraType"].orEmpty()))
+            // 极巨行：属性行下面、有才显示（与市场侧走同一个组装入口；没有则整行不占位）
+            com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(
+                extra["gmaxFactor"] == "true", extra["dmaxLevel"]?.toIntOrNull() ?: 0
+            )?.let { infoLineText(it) }
             // 性格（薄荷约定：原生斜体+括号生效）
             context.drawTextWithShadow(textRenderer,
                 Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
@@ -1651,6 +1655,9 @@ class AuctionScreen(
             infoLineText(Text.literal("  $hp: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsHp"]?.toIntOrNull() ?: 0, htExtra(extra, "htHp"))}").append(Text.literal("  EV: ${extra["evsHp"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0x66FF66); infoLineText(Text.literal("  $atk: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htAtk"))}").append(Text.literal("  EV: ${extra["evsAtk"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0xFF6666)
             infoLineText(Text.literal("  $def: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htDef"))}").append(Text.literal("  EV: ${extra["evsDef"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0xFFCC66); infoLineText(Text.literal("  $spa: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpAtk"))}").append(Text.literal("  EV: ${extra["evsSpAtk"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0x6699FF)
             infoLineText(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpDef"))}").append(Text.literal("  EV: ${extra["evsSpDef"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0x66FF99); infoLineText(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpd"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpd"))}").append(Text.literal("  EV: ${extra["evsSpd"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)), 0xFF99FF); infoLineText(Text.translatable("cobblemarket.gui.friendship", extra["friendship"]?.toIntOrNull() ?: 0), 0xFF99CC)
+            // 初始训练家行：亲密度下面（与市场侧同位置；没有则整行不占位）
+            com.shusheng.cobblemarket.util.PokemonExtraLines.originalTrainer(extra["ot"].orEmpty())
+                ?.let { infoLineText(it) }
             // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：分割线 + 两行技能 + 分割线
             val movesRaw = extra["moves"].orEmpty()
             // ⚠ 固定：左列宽度**不随弹窗加宽**（加宽的部分给右列）——
@@ -2139,6 +2146,10 @@ class AuctionScreen(
                 com.shusheng.cobblemarket.util.TypeTextColors.typeLineWithTera(
                     primaryType, secondaryType, extra["teraType"].orEmpty()
                 ) to 0xFFFFFF)
+            // 极巨行：属性行下面、有才显示（与市场侧走同一个组装入口）
+            com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(
+                extra["gmaxFactor"] == "true", extra["dmaxLevel"]?.toIntOrNull() ?: 0
+            )?.let { staticLines.add(it to 0xFFFFFF) }
             staticLines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(EntryBadgeRenderer.natureText(extra["natureBase"] ?: "", extra["nature"] ?: ""))
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
@@ -2158,6 +2169,9 @@ class AuctionScreen(
             staticLines.add(Text.literal("  $hp: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsHp"]?.toIntOrNull() ?: 0, htExtra(extra, "htHp"))}").append(Text.literal("  EV: ${extra["evsHp"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)) to 0x66FF66); staticLines.add(Text.literal("  $atk: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htAtk"))}").append(Text.literal("  EV: ${extra["evsAtk"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)) to 0xFF6666)
             staticLines.add(Text.literal("  $def: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htDef"))}").append(Text.literal("  EV: ${extra["evsDef"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)) to 0xFFCC66); staticLines.add(Text.literal("  $spa: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpAtk"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpAtk"))}").append(Text.literal("  EV: ${extra["evsSpAtk"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)) to 0x6699FF)
             staticLines.add(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpDef"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpDef"))}").append(Text.literal("  EV: ${extra["evsSpDef"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)) to 0x66FF99); staticLines.add(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(extra["ivsSpd"]?.toIntOrNull() ?: 0, htExtra(extra, "htSpd"))}").append(Text.literal("  EV: ${extra["evsSpd"]?.toIntOrNull() ?: 0}").formatted(Formatting.RED)) to 0xFF99FF); staticLines.add(Text.translatable("cobblemarket.gui.friendship", extra["friendship"]?.toIntOrNull() ?: 0) to 0xFF99CC)
+            // 初始训练家行：亲密度下面（与市场侧同位置）
+            com.shusheng.cobblemarket.util.PokemonExtraLines.originalTrainer(extra["ot"].orEmpty())
+                ?.let { staticLines.add(it to 0xFFFFFF) }
 
             // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：分割线 + 两行技能 + 分割线
             var movesLine = -1
