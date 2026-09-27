@@ -1431,15 +1431,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
      * 加新信息行（如技能）时只改这里的 13，按钮位置自动跟随。
      */
     private fun confirmDialogHeight(entry: ListingEntry): Int {
-        // 极巨行 / 初始训练家行：有才显示，**高度要跟着加**（见 PokemonExtraLines）——
-        // ⚠ 2026-09-27 加这两行时漏了这里（AdminAuctionScreen 的强制下架弹窗同样漏了）
-        val hasDynamax = entry.gmaxFactor || entry.dmaxLevel > 0
-        val hasOriginalTrainer = entry.originalTrainer.isNotEmpty()
-        val infoRows = 13 +
-            (if (hasDynamax) 1 else 0) +
-            (if (hasOriginalTrainer) 1 else 0) +
-            (if (entry.ball.isNotEmpty()) 1 else 0) +
-            (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0)
+        // 「有才显示」的行数走**共用入口**（别在这自己加，加行时漏改的就是它）
+        val infoRows = 13 + EntryBadgeRenderer.optionalRowCount(entry)
         return 60 + infoRows * 10 +
             EntryBadgeRenderer.movesBlockHeight(entry.moves) +
             EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves) + 32

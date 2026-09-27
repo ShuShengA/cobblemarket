@@ -214,12 +214,8 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
 
     /** 信息区内容高（设计值，与 init 里那套算法同源） */
     private fun infoContentH(): Int {
-        // 极巨行 / 初始训练家行：有才显示（见 PokemonExtraLines），行数要跟着加
-        val infoRows = 13 +
-            (if (entry.gmaxFactor || entry.dmaxLevel > 0) 1 else 0) +
-            (if (entry.originalTrainer.isNotEmpty()) 1 else 0) +
-            (if (entry.ball.isNotEmpty()) 1 else 0) +
-            (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0)
+        // 「有才显示」的行数走**共用入口**（别在这自己加，加行时漏改的就是它）
+        val infoRows = 13 + EntryBadgeRenderer.optionalRowCount(entry)
         return infoRows * 10 +
             EntryBadgeRenderer.movesBlockHeight(entry.moves) +
             EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves)
