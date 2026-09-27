@@ -842,7 +842,14 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
     private fun cancelDialogHeight(entry: AuctionEntry): Int {
         val marks = entry.extraData["marks"].orEmpty().split(",").filter { it.isNotEmpty() }
         val moves = entry.extraData["moves"].orEmpty()
+        // 极巨行 / 初始训练家行：两者都是「有才显示」（见 PokemonExtraLines），**高度要跟着加** ——
+        // ⚠ 2026-09-27 加这两行时漏了这里，用户实测看到「技能块压到下面的确认文字上」
+        val hasDynamax = entry.extraData["gmaxFactor"] == "true" ||
+            (entry.extraData["dmaxLevel"]?.toIntOrNull() ?: 0) > 0
+        val hasOriginalTrainer = entry.extraData["ot"].orEmpty().isNotEmpty()
         val infoRows = 12 +
+            (if (hasDynamax) 1 else 0) +
+            (if (hasOriginalTrainer) 1 else 0) +
             (if (entry.extraData["ball"].orEmpty().isNotEmpty()) 1 else 0) +
             (if (EntryBadgeRenderer.hasHeldItemLine(entry.extraData["heldItemId"].orEmpty())) 1 else 0)
         return 56 + infoRows * 10 +

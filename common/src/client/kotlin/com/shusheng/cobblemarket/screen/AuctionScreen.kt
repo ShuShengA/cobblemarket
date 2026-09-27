@@ -1241,7 +1241,12 @@ class AuctionScreen(
             // 加新信息行（如技能）时只改这里的 12。
             val marks = entry.extraData["marks"].orEmpty().split(",").filter { it.isNotEmpty() }
             val moves = entry.extraData["moves"].orEmpty()
+            // ⚠ **极巨行 / 初始训练家行也是「有才显示」的行**，不在这 12 行里 —— 加行时别只改 12
+            //   （2026-09-27 加这两行时漏了这里与管理端的两处，用户实测看到技能块压到确认文字上）
             val infoRows = 12 +
+                (if (entry.extraData["gmaxFactor"] == "true" ||
+                        (entry.extraData["dmaxLevel"]?.toIntOrNull() ?: 0) > 0) 1 else 0) +
+                (if (entry.extraData["ot"].orEmpty().isNotEmpty()) 1 else 0) +
                 (if (entry.extraData["ball"].orEmpty().isNotEmpty()) 1 else 0) +
                 (if (EntryBadgeRenderer.hasHeldItemLine(entry.extraData["heldItemId"].orEmpty())) 1 else 0)
             val leftH = 56 + infoRows * 10 +
