@@ -460,20 +460,37 @@ object EntryBadgeRenderer {
         context.matrices.pop()
     }
 
-    fun drawMarksRow(context: DrawContext, marks: List<String>, leftX: Int, y: Int, availableWidth: Int): Int {
+    /**
+     * 证章图标行。
+     *
+     * @param centered **整行是否在 [availableWidth] 里居中** ——
+     *   行悬停窗传 `true`：分割线撑满可用宽，而证章数不一定占满（改跟随宽度后会空出右边），
+     *   左对齐就显偏左（用户 2026-09-27 实测报出）；
+     *   两列弹窗传 `false`：左列本来就是左对齐的一列，居中反而跟上面的文字 / 技能块不齐。
+     *   ⚠ **故意不给默认值**：新调用点必须显式选一种（跟项目里 `movesRaw` 那个手法一致，
+     *   留默认值会「编译通过但看着偏」静默出错）。
+     */
+    fun drawMarksRow(
+        context: DrawContext, marks: List<String>, leftX: Int, y: Int,
+        availableWidth: Int, centered: Boolean
+    ): Int {
         val textures = marks.mapNotNull { Identifier.tryParse(it) }
         if (textures.isEmpty()) return 0
         // 一行放几个**跟着可用宽走**（见 [marksPerRow]）—— 能放几个放几个，放不下的进「+N」
         val perRow = marksPerRow(availableWidth)
+        val shown = minOf(perRow, textures.size)
+        // 图标整体占宽：最后一个图标后面没有那 12px 间隙 ⇒ 减 4
+        val rowWidth = shown * 12 - 4
+        val startX = if (centered) leftX + (availableWidth - rowWidth) / 2 else leftX
         textures.take(perRow).forEachIndexed { idx, texture ->
             com.cobblemon.mod.common.api.gui.blitk(
                 matrixStack = context.matrices, texture = texture,
-                x = leftX + idx * 12, y = y, width = 8, height = 8
+                x = startX + idx * 12, y = y, width = 8, height = 8
             )
         }
         if (textures.size > perRow) {
-            val shown = minOf(perRow, textures.size)
-            context.drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer, "+${textures.size - perRow}", leftX + shown * 6, y + 12, 0xAAAAAA)
+            // 「+N」居中在**图标行**下方（与图标同基准）
+            context.drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer, "+${textures.size - perRow}", startX + rowWidth / 2, y + 12, 0xAAAAAA)
             return 24
         }
         return 12
