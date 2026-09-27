@@ -87,7 +87,19 @@ class PointsMarketScreen : Screen(
     private var nextButton: NineSliceButton? = null
     private var currentPage = 1
     /** 总页数：**服务端快照说了算**（按最大已填格子序号算，本地不自己推） */
-    private val totalPages: Int get() = PointMarketCache.totalPages
+    /**
+     * 总页数 = 服务端快照的页数（**只按已上架内容算**）+ **有编辑权限时多一页**。
+     *
+     * ⚠ 为什么要按权限补一页：服务端按固定的 `POINTS_SHOP_PAGE_SIZE=32` 算页，而客户端
+     *   **一页可见几格随分辨率变**（大屏 8×4=32、矮屏按宽度铺满只有 8×3=24）——
+     *   矮屏玩家把看得见的 24 格全填满，序号也才到 23，服务端算出来仍是 1 页，
+     *   「下一页」点不动、第 25 格起又看不见 ⇒ **填不满 → 翻不了 → 更看不见** 的死锁
+     *   （2026-09-27 用户实测：8×3 全满仍翻不动）。
+     *   **有编辑权限的人**得能翻到空页去放货 ⇒ 给他补一页；**普通玩家**不该看到空页 ⇒ 不补。
+     *   ⚠ 只能在这补：服务端快照是**广播**的，它没法按人算。
+     */
+    private val totalPages: Int
+        get() = PointMarketCache.totalPages + if (canEditShop()) 1 else 0
     /** 鼠标所在格子索引；-1 = 不在任何格子上。悬停的格子会**放大绘制**（浮在邻居之上） */
     private var hoveredCell = -1
 
@@ -1970,7 +1982,12 @@ class PointsMarketScreen : Screen(
     private fun removeFromBuyDialog() {
         if (buySlot < 0) return
         sendToServer(RemovePointMarketEntryPayload(buySlot, currentKind()))
-        closeBuyDialog()
+        // ⚠ **不播收回动画**（`animate = false`）：与「购买成功」同一个道理 ——
+        //   服务端收到请求后会**立刻广播新快照**（几十毫秒），而收回动画要 200ms；
+        //   快照到达时弹窗还开着 ⇒ 界面按"弹窗开着"的状态处理刷新，下架后整个商城显示为空，
+        //   必须重开界面才恢复（2026-09-27 用户实测）。下架本来就会立刻改格子内容，
+        //   让界面尽早回到常规态比播完动画更要紧。
+        closeBuyDialog(animate = false)
     }
 
     /** 窗口内的点击：控件优先 → 点空白失焦。窗口开着时事件**一律吃掉**，不让它漏到下层 */
@@ -3773,7 +3790,20 @@ class PointsMarketScreen : Screen(
      * 不隐藏的话点击会被它们拦截、列表永远点不到（黑名单那儿踩过）。
      */
     private fun openOptionList(kind: String) {
-        optionListAll = buildOptionItems(kind)
+        // ⚠⚠ **每个「可选字段」都得能回到「随机」**（2026-09-27 用户实测：特性 / 性格 / 太晶
+        //   选中一个值之后就再也回不去了 —— 候选里压根没有"随机"这一项）。
+        //   形态不用管：它的候选本来就带「默认」（`OptionItem("")`）。
+        //   值给**空串** = 该字段的默认态（服务端按空 = 随机生成）。
+        // ⚠ 球种**不加**：它表达的是"造出来的精灵装哪个球"，没有"随机球"这个语义
+        //   （用户点名的也只有特性 / 性格 / 太晶三项）。
+        optionListAll = buildOptionItems(kind).let { base ->
+            val needRandom = kind == OPT_NATURE || kind == OPT_ABILITY || kind == OPT_TERA
+            if (needRandom) {
+                listOf(
+                    OptionItem("", Text.translatable("cobblemarket.points.store.value.random").string)
+                ) + base
+            } else base
+        }
         // 携带物 / 商品物品一进来就是空的（搜索式，见 buildCarryItems / buildItemCandidates），
         // 不能当成"这个字段没有候选"。
         // ⚠ 商品物品**已经不再从这里进来了**（搜索框常驻在界面上，见 [updateItemSearch]）——
@@ -4112,18 +4142,13 @@ class PointsMarketScreen : Screen(
                 )
                 // 超极巨化形态**不在候选里**：它是 battleOnly 形态，超极巨化由这枚窗口的
                 // 「超极巨化」按钮（gmaxFactor）表达，见 SpeciesText.selectableForms
-                SpeciesText.selectableForms(species).forEach { form ->
-                    val aspects = form.aspects
-                    if (aspects.isNotEmpty()) {
-                        opts.add(
-                            OptionItem(
-                                aspects.joinToString(","),
-                                aspects.joinToString("/") { SpeciesText.aspectLabel(it) }
-                            )
-                        )
-                    }
+                // ⚠ 候选**同时含 forms 与 species feature** —— 喷火龙的 `mega_x/y`、皮卡丘的
+                //   `partner-cap`、阿柏怪的花纹全在 feature 那边，只列 forms 会少一大截
+                //   （2026-09-27 用户对照 Cobblemon 原版发现）。见 [SpeciesText.selectableFormAspects]
+                SpeciesText.selectableFormAspects(species).forEach { (value, label) ->
+                    opts.add(OptionItem(value, label))
                 }
-                opts.distinctBy { it.value }
+                opts
             }
 
             // 性格：显示名走 Cobblemon 自己的词条（照市场筛选面板的写法）
@@ -4223,10 +4248,12 @@ class PointsMarketScreen : Screen(
      */
     private fun buildCarryItems(query: String): List<OptionItem> {
         val q = query.trim()
-        if (q.isEmpty()) return emptyList()
-        val opts = mutableListOf(
-            OptionItem("", Text.translatable("cobblemarket.points.store.value.none").string)
-        )
+        val none = OptionItem("", Text.translatable("cobblemarket.points.store.value.none").string)
+        // ⚠ **空搜索时也要给「无」**：否则一打开列表就是空的，连"清掉携带物"的入口都没有 ——
+        //   选中过一件之后就永远回不到随机了（2026-09-27 用户实测）。
+        //   只放这一项：候选要按搜索词现查，空词查出来的是整个物品表，那不是列表该干的事。
+        if (q.isEmpty()) return listOf(none)
+        val opts = mutableListOf(none)
         com.shusheng.cobblemarket.client.ItemCandidateResolver.resolve(q)
             .take(MAX_CARRY_CANDIDATES)
             .forEach { c ->
@@ -4677,34 +4704,90 @@ class PointsMarketScreen : Screen(
      * 中英标点不同（项目约定，见 CLAUDE.md 的界面文案约定）。
      */
     private fun refreshEditLabels() {
-        // 三列下按钮很窄，值（物品名 / 技能名）可能很长 —— 统一截断，别让它溢出按钮外
-        fun label(key: String, value: String, width: Int = editColW()): Text =
-            Text.translatable(
+        // 三列下按钮很窄，值（物品名 / 技能名）可能很长 —— 统一截断，别让它溢出按钮外。
+        // ⚠⚠ **必须把标签前缀的宽也扣掉**：原来只按 `width - 8` 截「值」，总宽成了
+        //   「前缀 + (width-8)」⇒ 超出按钮；而文字是**居中**画的 ⇒ 超出部分**向两侧**溢出
+        //   （左侧尤其明显，2026-09-27 用户实测：中文直接溢出左边界、英文右侧省略号）
+        fun label(key: String, value: String, width: Int = editColW()): Text {
+            val head = Text.translatable("cobblemarket.points.store.field.$key", "").string
+            val room = (width - 8 - textRenderer.getWidth(head)).coerceAtLeast(12)
+            return Text.translatable(
                 "cobblemarket.points.store.field.$key",
-                TextUtil.truncateString(value, width - 8)
+                TextUtil.truncateString(value, room)
             )
+        }
+
+        /**
+         * **长英文标签**的三个字段（可交易 / 携带物 / 携带可见）走这条：
+         * 按钮用 `_short` 词条（`Trade:` / `Item:` / `Shown:`），**完整文案挂悬停** ——
+         * 英文原标签（`Tradeable: Yes` ≈84px、`Held shown: Yes` ≈96px）在 82px 的格子里放不下，
+         * 截断后只剩 `Tradeable: Y...` 那种谁也看不懂的样子（2026-09-27 用户实测）。
+         * ⚠ 中文两版词条**内容相同**（中文本来就短）—— 统一走这条只是为了中英一套代码。
+         */
+        fun shortField(key: String, value: String) {
+            val btn = editButtons[key] ?: return
+            val head = Text.translatable("cobblemarket.points.store.field.${key}_short", "").string
+            val room = (editColW() - 8 - textRenderer.getWidth(head)).coerceAtLeast(12)
+            btn.setMessage(
+                Text.translatable(
+                    "cobblemarket.points.store.field.${key}_short",
+                    TextUtil.truncateString(value, room)
+                )
+            )
+            btn.setTooltip(
+                net.minecraft.client.gui.tooltip.Tooltip.of(
+                    Text.translatable("cobblemarket.points.store.field.$key", value)
+                )
+            )
+        }
+
+        /**
+         * 长值字段（形态 / 特性）：**选中后丢掉前缀**，整格留给值 —— 前缀白吃约 50px，
+         * 而这两个字段的值天然比别的长（`Ability: Lightning Rod` 光值就 127px，格子才 82px）。
+         * 完整文案（带前缀）挂到悬停上；⚠ 没选时仍走 [label]（光一个「默认」看不出是哪个字段）。
+         */
+        fun longValueButton(key: String, selected: Boolean, value: String) {
+            val btn = editButtons[key] ?: return
+            if (!selected) {
+                btn.setMessage(label(key, value))
+                btn.setTooltip(null)
+                return
+            }
+            btn.setMessage(Text.literal(TextUtil.truncateString(value, editColW() - 8)))
+            btn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(label(key, value, editColW() * 3)))
+        }
 
         refreshShinyButton()
-        editButtons[KEY_FORM]?.setMessage(label("form", formLabel()))
+        longValueButton(KEY_FORM, editAspects.isNotEmpty(), formLabel())
         refreshGenderButton()
         editButtons[KEY_NATURE]?.setMessage(label("nature", natureLabel()))
-        editButtons[KEY_ABILITY]?.setMessage(label("ability", abilityLabel()))
+        longValueButton(KEY_ABILITY, editAbility.isNotEmpty(), abilityLabel())
         editButtons[KEY_BALL]?.setMessage(label("ball", ballLabel()))
         editButtons[KEY_SIZE]?.setMessage(label("size", sizeLabel()))
         refreshAlphaButton()
         // ⚠ 太晶的值要**带属性色**：不能走 label() 那条只收 String 的通道（一转 String 颜色就没了），
         //   直接拼 Text —— 与选项列表、悬停窗的技能块同一张色表（2026-09-20 用户实测：按钮上还是白字）
-        editButtons[KEY_TERA]?.setMessage(
-            Text.translatable("cobblemarket.points.store.field.tera", teraText())
-        )
+        // ⚠⚠ 但**同样要截断**：这条以前连截断都没有 ⇒ 英文「Tera: Fighting」≈84px 就溢出了按钮
+        //   （2026-09-27 用户让顺手查，实测成立）。用 truncateStyled 保住属性色，
+        //   前缀宽照 label() 的口径一起扣（文字是居中的，不扣就往两侧溢出）
+        editButtons[KEY_TERA]?.let { btn ->
+            val head = Text.translatable("cobblemarket.points.store.field.tera", "").string
+            val room = (editColW() - 8 - textRenderer.getWidth(head)).coerceAtLeast(12)
+            btn.setMessage(
+                Text.translatable(
+                    "cobblemarket.points.store.field.tera",
+                    TextUtil.truncateStyled(teraText(), room)
+                )
+            )
+        }
         editButtons[KEY_GMAX]?.setMessage(label("gmax", yesNoLabel(editGmax)))
         // 这个物种没有超极巨化形态 → 同性别按钮：**整个按钮置灰**（`dimmed` 盖黑遮罩，
         // 就是入口界面喵喵银行关闭时那个做法；`active = false` 只是文字变暗，不够）
         editButtons[KEY_GMAX]?.dimmed = !speciesCanGmax()
-        editButtons[KEY_TRADEABLE]?.setMessage(label("tradeable", yesNoLabel(editTradeable)))
+        shortField(KEY_TRADEABLE, yesNoLabel(editTradeable))
         // 携带物 / 球种：**标签 + 物品图标**（「携带物：[图标]」）——
         // 标签只留字段名不带值（值由图标表达，这才是去文字化的本意）；没设时只有标签
-        editButtons[KEY_HELD]?.setMessage(label("held", ""))
+        shortField(KEY_HELD, "")
         editButtons[KEY_HELD]?.iconStack = stackOfSpec(editHeldItem).takeIf { !it.isEmpty }
         editButtons[KEY_BALL]?.setMessage(label("ball", ""))
         editButtons[KEY_BALL]?.iconStack = itemStackOf(editBall)
@@ -4713,7 +4796,7 @@ class PointsMarketScreen : Screen(
         // 六项填了 → 保底按钮置灰点不动；保底 > 0 → 六项输入框整个锁住。两个方向都在这里统一落地
         editButtons[KEY_MIN_IVS]?.dimmed = hasIvInput()
         applyIvInputLock()
-        editButtons[KEY_HELD_VISIBLE]?.setMessage(label("held_visible", yesNoLabel(editHeldVisible)))
+        shortField(KEY_HELD_VISIBLE, yesNoLabel(editHeldVisible))
         editButtons[KEY_MARKS]?.setMessage(label("marks", marksLabel()))
         // ⚠ 物品窗口那格「物品：无」按钮**已删**（2026-09-26 改成界面上直接一个搜索框，见 [buildItemFields]）——
         //   所以这里不再有 KEY_ITEM 那一项
@@ -4980,6 +5063,11 @@ class PointsMarketScreen : Screen(
         //   的注释），不清空会逐帧累积、点到别处的图标。
         //   全项目其余 11 个界面都在 render 开头调它，本界面当初漏了。
         IconRegistry.beginFrame(mouseX, mouseY)
+        // 翻页按钮的可用态：第一页 →「上一页」置灰、最后一页 →「下一页」置灰（照精灵市场的做法）。
+        // ⚠ 放在 render 里而不是建控件时：`totalPages` 来自**服务端快照**，会随每次广播变，
+        //   建控件时那份早就过期了（2026-09-27 用户报「第一页时上一页该是暗的」）
+        prevButton?.active = currentPage > 1
+        nextButton?.active = currentPage < totalPages
         // 展开动画期间把窗口控件藏起来（它们是 MC 控件、由 super.render 统一画，塞不进插值矩形）；
         // 播完这一帧会自动放回去（见 updateDialogAnimControls）
         if (dialogOpen()) updateDialogAnimControls()

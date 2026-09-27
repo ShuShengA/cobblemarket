@@ -44,7 +44,15 @@ data class ShopEntry(
      *   校验就漏了（2026-09-25 复盘时发现的）。UUID 不会撞。
      * ⚠ 放在**参数表末尾**并给默认值 —— 存档铁律：加字段只增不改，旧档读不到就落空串。
      */
-    val entryId: String = ""
+    val entryId: String = "",
+    /**
+     * **上架者**（服主那一侧）—— 只给交易账本的「卖家」列用，不参与任何业务判定。
+     *
+     * ⚠ 末尾追加 + 默认值：**存档铁律（只增不改）** —— 旧档读不到就是空串，
+     *   写盘后旧版本照样能读（多一个字段而已）。空串 = 这条在加字段之前就挂着。
+     */
+    val creatorUuid: String = "",
+    val creatorName: String = ""
 ) {
     fun isSoldOut(): Boolean = stock == 0
 
@@ -224,6 +232,11 @@ class PointShopState private constructor() : PersistentState() {
      */
     fun pageCount(kind: String): Int {
         val maxIndex = slots[kind]?.keys?.maxOrNull() ?: return 1
+        // ⚠ **只按内容算**（"已填最大序号在第几页"）——**不给空页**。
+        //   客户端那边对**有编辑权限的人**再多显示一页（见 `PointsMarketScreen.totalPages`）：
+        //   他得能翻到空页去放货；普通玩家看到空页没意义，翻过去只能对着空白发呆
+        //   （2026-09-27 用户定的口径）。
+        //   ⚠ 服务端**没法**按人算：快照是**广播**给所有人的，只能客户端按自己的权限补。
         return maxIndex / POINTS_SHOP_PAGE_SIZE + 1
     }
 
@@ -288,6 +301,9 @@ internal fun writeShopEntryBody(c: NbtCompound, entry: ShopEntry) {
     c.putInt("stock", entry.stock)
     // 空串不写（老数据 / 读不到就落空串时省空间）；读端缺字段落空串
     if (entry.entryId.isNotEmpty()) c.putString("entryId", entry.entryId)
+    // 上架者（账本「卖家」列用）。空 = 老条目，省略整个键（与 entryId 同风格）
+    if (entry.creatorUuid.isNotEmpty()) c.putString("creatorUuid", entry.creatorUuid)
+    if (entry.creatorName.isNotEmpty()) c.putString("creatorName", entry.creatorName)
     entry.pokemon?.let { p ->
         val pc = NbtCompound()
         pc.putString("species", p.species)
@@ -393,7 +409,10 @@ internal fun readShopEntryBody(c: NbtCompound): ShopEntry? {
         stock = if (c.contains("stock")) c.getInt("stock") else ShopEntry.UNLIMITED,
         pokemon = pokemon,
         item = item,
-        entryId = if (c.contains("entryId")) c.getString("entryId") else ""
+        entryId = if (c.contains("entryId")) c.getString("entryId") else "",
+        // ⚠ 缺字段一律落空串（旧档没有这两个键）—— 存档铁律：读取容错，不抛异常
+        creatorUuid = if (c.contains("creatorUuid")) c.getString("creatorUuid") else "",
+        creatorName = if (c.contains("creatorName")) c.getString("creatorName") else ""
     )
 }
 

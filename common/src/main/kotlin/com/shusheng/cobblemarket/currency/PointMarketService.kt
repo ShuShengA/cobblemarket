@@ -1,5 +1,9 @@
 package com.shusheng.cobblemarket.currency
 
+import com.shusheng.cobblemarket.event.TransactionCategory
+import com.shusheng.cobblemarket.event.TransactionHistory
+import com.shusheng.cobblemarket.event.TransactionRecord
+import com.shusheng.cobblemarket.event.TransactionType
 import com.cobblemon.mod.common.Cobblemon
 import com.cobblemon.mod.common.api.moves.Moves
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
@@ -179,7 +183,12 @@ object PointMarketService {
         // ⚠ **每次保存都换一个全新的 id**（绝不信客户端传的）：语义上等于"旧的作废、换了一个新的"，
         //   玩家手里那份随之失效 —— 他再点购买会被 [buy] 拒绝，而不是按改后的内容 / 价格成交。
         //   ⚠ 用 UUID 而不是自增版本号：下架后重新上架会从 0 重来，与玩家手里旧的 0 撞上就漏了。
-        val replaced = normalized.copy(entryId = java.util.UUID.randomUUID().toString())
+        val replaced = normalized.copy(
+            entryId = java.util.UUID.randomUUID().toString(),
+            // 上架者（只给交易账本的「卖家」列用）—— 记**本次操作者**：格子被接管改放时以最后一次为准
+            creatorUuid = player.uuid.toString(),
+            creatorName = player.name.string
+        )
         // ⚠ kind 取自**规范化后的 entry**：精灵与物品各占一套独立的格子编号（2026-09-25 起，
         //   tab 变成真过滤），同一个 index 在两个 tab 下是两个不同的位置
         state.put(replaced.kind, index, replaced)
@@ -188,6 +197,30 @@ object PointMarketService {
         CobbleMarket.LOGGER.info(
             "Point shop slot {} set by {} (kind={}, price={}, stock={}, id={})",
             index, player.name.string, replaced.kind, replaced.price, replaced.stock, replaced.entryId
+        )
+        // 交易账本留痕：上架（与市场 / 拍卖同口径）。
+        // ⚠ **币种是 RP**、**不计入交易量**（额度/卡片资格只看主货币，见 AuctionState 的「统计隔离」）——
+        //   记账本只是为了可追溯，本函数**不碰** FinanceState 的任何计数。
+        // ⚠ detail 列留空：RP 商城卖的是**配方**（规格），不是现成的精灵/物品，没有 NBT 可重建
+        //   （RecordDetail 那套用不上）。物种/物品 id 已经落在「精灵/物品」列里了。
+        TransactionHistory.get(server).addRecord(
+            TransactionRecord(
+                timestamp = System.currentTimeMillis(),
+                type = TransactionType.ADD,
+                category = if (replaced.kind == ShopEntry.KIND_POKEMON) TransactionCategory.POKEMON
+                else TransactionCategory.ITEM,
+                sellerUuid = player.uuid,
+                sellerName = player.name.string,
+                buyerUuid = null,
+                buyerName = "",
+                species = replaced.pokemon?.species ?: replaced.item?.itemId.orEmpty(),
+                // ⚠ 账本的 price 是 Int，而 RP 价是 Long ⇒ 钳制转换（RP 价实际远达不到上限）
+                price = replaced.price.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                fee = 0,
+                detail = "",
+                currency = MarketCurrency.POINTS,
+                primaryType = ""
+            )
         )
         return null
     }
@@ -223,9 +256,32 @@ object PointMarketService {
         if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return PointMarketError.NO_PERMISSION
         if (kind != ShopEntry.KIND_POKEMON && kind != ShopEntry.KIND_ITEM) return PointMarketError.BAD_KIND
         if (index < 0 || index > MAX_INDEX) return PointMarketError.BAD_INDEX
+        // ⚠ **先取再删**：remove 会把条目从表里拿掉，之后就读不到价格 / 物种 —— 账本那条就记不全了
+        val removed = PointShopState.get(server).find(kind, index)
         if (!PointShopState.get(server).remove(kind, index)) return PointMarketError.NOT_FOUND
         PersistHelper.requestSave(server)
         CobbleMarket.LOGGER.info("Point shop slot {} removed by {}", index, player.name.string)
+        // 交易账本留痕：下架（与市场 / 拍卖同口径；币种 RP、**不计入交易量**）
+        if (removed != null) {
+            TransactionHistory.get(server).addRecord(
+                TransactionRecord(
+                    timestamp = System.currentTimeMillis(),
+                    type = TransactionType.CANCEL,
+                    category = if (kind == ShopEntry.KIND_POKEMON) TransactionCategory.POKEMON
+                    else TransactionCategory.ITEM,
+                    sellerUuid = player.uuid,
+                    sellerName = player.name.string,
+                    buyerUuid = null,
+                    buyerName = "",
+                    species = removed.pokemon?.species ?: removed.item?.itemId.orEmpty(),
+                    price = removed.price.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    fee = 0,
+                    detail = "",
+                    currency = MarketCurrency.POINTS,
+                    primaryType = ""
+                )
+            )
+        }
         return null
     }
 
@@ -377,6 +433,29 @@ object PointMarketService {
         PersistHelper.requestSave(server)
         CobbleMarket.LOGGER.info(
             "Point shop: {} bought slot {} x{} for {} RP", player.name.string, index, amount, total
+        )
+        // 交易账本留痕：成交（币种 RP、**不计入交易量** —— 额度与卡片资格只看主货币）。
+        // 卖家取条目的**上架者**；加 creator 字段之前的老条目为空 ⇒ 落零 UUID + 空名，
+        // 账本那两列留白（比编一个假卖家诚实）。
+        TransactionHistory.get(server).addRecord(
+            TransactionRecord(
+                timestamp = System.currentTimeMillis(),
+                type = TransactionType.PURCHASE,
+                category = if (entry.kind == ShopEntry.KIND_POKEMON) TransactionCategory.POKEMON
+                else TransactionCategory.ITEM,
+                sellerUuid = entry.creatorUuid.takeIf { it.isNotEmpty() }
+                    ?.let { runCatching { java.util.UUID.fromString(it) }.getOrNull() }
+                    ?: java.util.UUID(0L, 0L),
+                sellerName = entry.creatorName,
+                buyerUuid = player.uuid,
+                buyerName = player.name.string,
+                species = entry.pokemon?.species ?: entry.item?.itemId.orEmpty(),
+                price = total.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                fee = 0,
+                detail = "",
+                currency = MarketCurrency.POINTS,
+                primaryType = ""
+            )
         )
         // 把造出来的实物一并交出去：调用方要拿它发庆祝动画（概率闪光只有此刻才确定）。
         // ⚠ 交的是**交付前留的副本**，不是 `items` 本身（那边已经被交付消耗成空栈了，见上）

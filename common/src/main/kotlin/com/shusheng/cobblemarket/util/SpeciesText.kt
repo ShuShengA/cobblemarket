@@ -48,6 +48,63 @@ object SpeciesText {
     fun selectableForms(species: Species?): List<FormData> =
         species?.forms.orEmpty().filter { GMAX_ASPECT !in it.aspects }
 
+    /**
+     * **形态按钮的完整候选**（RP 商城编辑窗用）= 可选的 forms **+ 该物种的 species feature**，
+     * 返回 `aspect 串 → 显示名`。
+     *
+     * ⚠⚠ **为什么必须带上 features**：Cobblemon 原版的「选择形态」界面**就是把两者合起来列**的 ——
+     *   喷火龙的 `mega_x` / `mega_y`（来自 `mega_evolution`）、皮卡丘的 `partner-cap`
+     *   （来自 `league_cap`）、阿柏怪的 `snake-pattern-*` **全是 feature，不是 form**；
+     *   只列 `species.forms` 会少一大截（2026-09-27 用户对照原版截图发现：
+     *   我们只有「默认 / 阿罗拉」，原版还有 `partner-cap` 和 mega）。
+     *
+     * ⚠ **feature 的显示名直接用 aspect 原文**（`partner-cap`、`mega_x`）—— 与**原版一致**：
+     *   Cobblemon 自己的形态列表也是这么显示的，别自作主张去翻词条（翻了反而与游戏里对不上）。
+     *
+     * ⚠ **按 aspect 串去重**：同一个差异可能两种写法都有，撞了**以 form 为准**（它有本地化名）。
+     */
+    fun selectableFormAspects(species: Species?): List<Pair<String, String>> {
+        if (species == null) return emptyList()
+        val out = mutableListOf<Pair<String, String>>()   // aspect 串 → 显示名
+        val seen = mutableSetOf<String>()
+        // ① form（显示名走本模组的形态词条，照旧）
+        selectableForms(species).forEach { form ->
+            val aspects = form.aspects
+            if (aspects.isEmpty()) return@forEach
+            val value = aspects.joinToString(",")
+            if (seen.add(value)) {
+                out += value to aspects.joinToString("/") { aspectLabel(it) }
+            }
+        }
+        // ② species feature（choice 型的才有"可选值"这一说；显示名用 aspect 原文）
+        // ⚠⚠ **不能用 `getFeaturesFor()`**：它内部走 `getFeature()`，而那个是 **code 优先**
+        //   （`getCodeFeature(name) ?: getResourceFeature(name)`）。Cobblemon 给 `snake_pattern`
+        //   这类**同时注册了代码版**（`IntSpeciesFeatureProvider`，数值型、没有候选值）⇒ 拿到手根本
+        //   没法枚举（2026-09-27 日志实测：arbok → `IntSpeciesFeatureProvider`、out=0，界面上只剩「默认」）。
+        //   真正带 22 个花纹选项的是 **json 那份**（`species_features/*.json` 的 `"type": "choice"`）
+        //   ⇒ 必须走 **`getResourceFeature()` 只查 json 那份**。
+        val featureNames = species.features +
+            com.cobblemon.mod.common.api.pokemon.feature.SpeciesFeatureAssignments.getFeatures(species)
+        featureNames.distinct()
+            .mapNotNull { raw ->
+                // ⚠⚠ **两种写法都要试**：`arbok.json` 里写的是 `"features": ["snake-pattern"]`（**连字符**），
+                //   而 `species_features/snake_pattern.json` 注册的键是 `"keys": ["snake_pattern"]`（**下划线**）——
+                //   拿原样去查必然落空（2026-09-27 日志实测：out=0，界面上只剩「默认」）。
+                //   两个都试一遍，谁有算谁（转换只是兜底，不能反过来漏掉本来就叫连字符的）。
+                com.cobblemon.mod.common.api.pokemon.feature.SpeciesFeatures.getResourceFeature(raw)
+                    ?: com.cobblemon.mod.common.api.pokemon.feature.SpeciesFeatures
+                        .getResourceFeature(raw.replace('-', '_'))
+            }
+            .filterIsInstance<com.cobblemon.mod.common.api.pokemon.feature.AbstractChoiceSpeciesFeatureProvider<*>>()
+            .forEach { provider ->
+                provider.getAllAspects().let { it as? List<*> }.orEmpty().forEach { raw ->
+                    val value = raw as? String ?: return@forEach
+                    if (value.isNotEmpty() && seen.add(value)) out += value to value
+                }
+            }
+        return out
+    }
+
     // 客户端显示名：数据包物种未配语言文件时翻译返回 key 原文，fallback 到物种显示名（如 "Foo"）
     fun displayName(species: Species): String {
         val key = translationKey(species)
