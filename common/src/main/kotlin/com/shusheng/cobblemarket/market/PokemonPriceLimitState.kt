@@ -66,8 +66,12 @@ data class PokemonPriceLimitEntry(
         const val ALL_FORMS = "*" // 与 PokemonBlacklistEntry.ALL_FORMS 同值同语义
         /** 形态**不限**（形态不参与判定，只按变体限价）—— 与黑名单同值同语义 */
         const val ANY_FORMS = "**"
-        /** **全部变体**：精灵带任意变体 aspect 就命中 */
-        const val ALL_VARIANTS = "*"
+        /**
+         * ⚠ **曾经的「全部变体」哨兵**——**已废止**，只在读老数据时用来把它剔掉（见 [readNbt] 那段）。
+         * 理由同 `PokemonBlacklistEntry.LEGACY_ALL_VARIANTS`：它是"要带任意变体才命中"，会漏掉普通个体。
+         * 变体这一维的「不限」= **空表**。
+         */
+        const val LEGACY_ALL_VARIANTS = "*"
         const val SHINY_ANY = -1
         const val SHINY_NO = 0
         const val SHINY_YES = 1
@@ -76,7 +80,7 @@ data class PokemonPriceLimitEntry(
         const val HT_NONE = 2
     }
 
-    fun matches(targetSpeciesId: String, targetVCount: Int, targetShiny: Boolean, targetAspects: Set<String>, formAspectUnion: Set<String>, variantAspectUnion: Set<String>, targetHasHt: Boolean): Boolean {
+    fun matches(targetSpeciesId: String, targetVCount: Int, targetShiny: Boolean, targetAspects: Set<String>, formAspectUnion: Set<String>, targetHasHt: Boolean): Boolean {
         if (speciesId.isNotEmpty() && speciesId != targetSpeciesId) return false
         if (vCount >= 0 && vCount != targetVCount) return false
         if (shinyFilter != SHINY_ANY && targetShiny != (shinyFilter == SHINY_YES)) return false
@@ -92,11 +96,10 @@ data class PokemonPriceLimitEntry(
             else -> targetAspects.containsAll(aspects)
         }
         if (!formsMatch) return false
-        return when {
-            variantAspects.isEmpty() -> true
-            ALL_VARIANTS in variantAspects -> targetAspects.any { it in variantAspectUnion }
-            else -> variantAspects.any { it in targetAspects }
-        }
+        // ⚠ **空表 = 不限**（变体这一维不参与判定，恒过）——「全部」开关落的就是空表；
+        //   别写成变体 `*`：那是"要带任意变体才命中"，会把普通个体漏掉（见 [LEGACY_ALL_VARIANTS]）
+        if (variantAspects.isEmpty()) return true
+        return variantAspects.any { it in targetAspects }
     }
 }
 
@@ -124,8 +127,26 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
 
     fun getAll(): List<PokemonPriceLimitEntry> = entries.values.toList()
 
-    /** 该精灵所有匹配规则的最严交集：min 取最大、max 取最小；无匹配规则返回 null（不限制）。 */
-    fun getPriceBounds(pokemon: Pokemon): PriceBounds? {
+    /**
+     * 命中结果：合并区间 + **决定下限 / 上限的那两条规则**。
+     *
+     * 后两项是给"把理由带回给玩家"用的（见 [com.shusheng.cobblemarket.market.RuleReasonText]）：
+     * 区间是**多条规则取最严交集**算出来的，玩家只看到「最高价 ₽5000」根本不知道是哪条规则卡的 ——
+     * 尤其是按**形态 / 变体**限的规则（为别的变体设的上限，凭什么套到我这只）。
+     *
+     * ⚠ 两项都是**并列取第一条**（`maxByOrNull` / `minByOrNull` 返回第一个极值元素）：两条规则
+     *   卡同一个数时，理由显示哪条都足以说明问题。
+     * ⚠ 携带物那侧的限价规则**不在**这两项里（它没有形态 / 变体维度）；总价含携带物时提示自会另说。
+     */
+    data class PriceLimitMatch(
+        val bounds: PriceBounds?,
+        /** 决定下限的那条（下限取最大）；没有下限约束时为 null */
+        val minEntry: PokemonPriceLimitEntry?,
+        /** 决定上限的那条（上限取最小）；没有上限约束时为 null */
+        val maxEntry: PokemonPriceLimitEntry?
+    )
+
+    fun check(pokemon: Pokemon): PriceLimitMatch {
         val species = pokemon.species
         val speciesId = species.resourceIdentifier.toString()
         // 该物种所有已声明 form aspect 的并集（standard form + forms），用于"默认形态"判定（照黑名单）
@@ -137,14 +158,20 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
         val targetHasHt = pokemon.ivs.hyperTrainedIVs.values.any { it >= 0 }
         val matched = entries.values.filter {
             it.matches(
-                speciesId, vCountOf(pokemon), pokemon.shiny, pokemon.aspects, formAspectUnion,
-                com.shusheng.cobblemarket.util.SpeciesText.variantAspectsOf(species), targetHasHt
+                speciesId, vCountOf(pokemon), pokemon.shiny, pokemon.aspects, formAspectUnion, targetHasHt
             )
         }
-        if (matched.isEmpty()) return null
-        return PriceBounds(
-            min = matched.mapNotNull { it.minPrice }.maxOrNull(),
-            max = matched.mapNotNull { it.maxPrice }.minOrNull()
+        if (matched.isEmpty()) return PriceLimitMatch(null, null, null)
+        val withMin = matched.filter { it.minPrice != null }
+        val withMax = matched.filter { it.maxPrice != null }
+        return PriceLimitMatch(
+            bounds = PriceBounds(
+                min = matched.mapNotNull { it.minPrice }.maxOrNull(),
+                max = matched.mapNotNull { it.maxPrice }.minOrNull()
+            ),
+            // 并列取第一条：两个 maxBy/minBy 都是"第一个极值元素"的语义
+            minEntry = withMin.maxByOrNull { it.minPrice ?: Int.MIN_VALUE },
+            maxEntry = withMax.minByOrNull { it.maxPrice ?: Int.MAX_VALUE }
         )
     }
 
@@ -211,8 +238,12 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
                                 htFilter = if (c.contains("htFilter")) c.getInt("htFilter") else PokemonPriceLimitEntry.HT_ANY,
                                 // 旧格式无 variantAspects 键 → 空表 = **不限变体**（正是旧条目的语义：
                                 // 那时候压根没有变体这个维度）⇒ 不需要迁移分支
+                                // ⚠ 顺手**剔掉废止的哨兵**（同黑名单）：它在界面上既看不见也删不掉，
+                                //   留着会把规则偷偷变成"要带变体才命中"
                                 variantAspects = if (c.contains("variantAspects"))
-                                    c.getList("variantAspects", NbtList.STRING_TYPE.toInt()).map { it.asString() }
+                                    c.getList("variantAspects", NbtList.STRING_TYPE.toInt())
+                                        .map { it.asString() }
+                                        .filter { it != PokemonPriceLimitEntry.LEGACY_ALL_VARIANTS }
                                 else emptyList()
                             )
                             entries[EntryKey(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter, entry.variantAspects)] = entry

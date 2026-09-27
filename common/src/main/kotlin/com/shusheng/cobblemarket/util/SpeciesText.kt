@@ -41,10 +41,19 @@ object SpeciesText {
      * ⚠ 只用于**显示**；aspect 本身的匹配与存储一律用原始名（翻译表增删不影响已有数据）。
      * 黑名单的形态按钮与商城窗口的形态选项共用这一份（各写一遍必然漂移）。
      */
-    fun aspectLabel(aspect: String): String {
+    fun aspectLabel(aspect: String): String = aspectText(aspect).string
+
+    /**
+     * [aspectLabel] 的 **Text 版** —— 给**服务端拼提示**用（见 [com.shusheng.cobblemarket.market.RuleReasonText]）。
+     *
+     * ⚠ **服务端拼提示一律用这个，不许用 [aspectLabel]**：`.string` 解析出来的是**服务端语言**
+     *   （专用服务器多半是英文），发到中文客户端就成英文了。返回词条本身，客户端按自己的语言渲染。
+     * ⚠ 判"词条在不在"只能按**当前语言**判（MC 没有跨语言查表的 API）：模组自己的
+     *   `cobblemarket.aspect.*` 中英两份齐平，可靠；Cobblemon 那边的形态词条同理（它也是各语言都发）。
+     */
+    fun aspectText(aspect: String): Text {
         val key = "cobblemarket.aspect.$aspect"
-        val t = Text.translatable(key).string
-        return if (t == key) aspect else t
+        return if (Text.translatable(key).string == key) Text.literal(aspect) else Text.translatable(key)
     }
 
     /** 超极巨化形态的 aspect 名 —— Cobblemon 数据里 gmax 形态的 aspects 就是 `["gmax"]` */
@@ -131,18 +140,6 @@ object SpeciesText {
             val groups = featureGroupsFor(species)
             if (groups.isNotEmpty()) out[species.resourceIdentifier.toString()] = groups
         }
-        // 一条日志证明"服务端算得出候选"（这张表是**服务端独有**的数据，客户端那份 registry 是空的，
-        // 算空了没人看得出来）—— ⚠ **只打一次**：它 RP 商城 / 黑名单 / 价格限制都会调，
-        // 每次请求都打会把服务器窗口刷满（2026-09-28 用户报）。⚠ 前缀别写某个界面名，三处都在用
-        if (!loggedOnce) {
-            loggedOnce = true
-            com.shusheng.cobblemarket.CobbleMarket.LOGGER.info(
-                "[变体候选] 服务端算出：{} 个物种有候选，共 {} 个维度 / {} 项",
-                out.size,
-                out.values.sumOf { it.size },
-                out.values.sumOf { g -> g.sumOf { it.aspects.size } }
-            )
-        }
         return out
     }
 
@@ -163,10 +160,6 @@ object SpeciesText {
      *   地区形态归**形态按钮**管，变体这边整类跳过
      */
     private val EXCLUDED_FEATURES = setOf("mega_evolution", "dynamax_form", "region_bias")
-
-    /** [allFeatureAspects] 那条日志只打一次的标志 */
-    @Volatile
-    private var loggedOnce = false
 
     /**
      * 单个物种的 feature 候选，**按 feature 分好组**（[allFeatureAspects] 的逐条实现）。
@@ -266,31 +259,30 @@ object SpeciesText {
         return if (t == k) key else t
     }
 
-    fun featureValueLabel(aspect: String): String {
+    fun featureValueLabel(aspect: String): String = featureValueText(aspect).string
+
+    /**
+     * [featureValueLabel] 的 **Text 版** —— 给**服务端拼提示**用（同 [aspectText] 的理由：值必须以
+     * 词条下发，客户端按自己的语言渲染）。
+     *
+     * 三层回落与 [featureValueLabel] 完全一致，**只是每一层都保持是 Text**：
+     * ① 官方图鉴形态词条 → ② 末段当物品查（**取 `defaultStack.name` 这个 Text，不取 `.string`**，
+     * 物品名本身也是词条，中文客户端照样显示中文）→ ③ aspect 原文（Literal，各语言都一样）。
+     */
+    fun featureValueText(aspect: String): Text {
         val k = "cobblemon.ui.pokedex.info.form.$aspect"
-        val t = Text.translatable(k).string
-        if (t != k) return t
+        if (Text.translatable(k).string != k) return Text.translatable(k)
         val itemName = runCatching {
             val short = aspect.substringAfterLast('-')
             listOf("cobblemon", "minecraft").firstNotNullOfOrNull { ns ->
                 Identifier.tryParse("$ns:$short")
                     ?.let { net.minecraft.registry.Registries.ITEM.getOrEmpty(it).orElse(null) }
-                    ?.defaultStack?.name?.string
-                    ?.takeIf { it.isNotEmpty() }
+                    ?.defaultStack?.name
+                    ?.takeIf { it.string.isNotEmpty() }
             }
         }.getOrNull()
-        return itemName ?: aspect
+        return itemName ?: Text.literal(aspect)
     }
-
-    /**
-     * 该物种**全部变体候选**的 aspect 集合（扁平）。
-     *
-     * 用途：**黑名单 / 价格限制的服务端匹配** —— 要判断"精灵身上带的哪些 aspect 属于变体"，
-     * 用来和条目里勾的变体比对。⚠ 与 [allFeatureAspects]（给界面列候选用）不同，
-     * 这个**只算一个物种**，可以在每次交易匹配时现算。
-     */
-    fun variantAspectsOf(species: Species): Set<String> =
-        featureGroupsFor(species).flatMap { it.aspects }.toSet()
 
     private fun featureGroupsFor(species: Species): List<FeatureCandidates> {
         return choiceProvidersFor(species)
