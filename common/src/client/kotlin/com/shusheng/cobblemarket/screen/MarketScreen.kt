@@ -2151,14 +2151,17 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 val textures = entry.marks.mapNotNull { Identifier.tryParse(it) }
                 val perRow = EntryBadgeRenderer.marksPerRow(maxWidth)
                 val shown = minOf(perRow, textures.size)
+                // 整行在可用宽里**居中**（分割线撑满可用宽，图标不占满时会显偏左）
+                val rowWidth = shown * 12 - 4
+                val startX = tx + (maxWidth - rowWidth) / 2
                 textures.take(perRow).forEachIndexed { idx, texture ->
                     com.cobblemon.mod.common.api.gui.blitk(
                         matrixStack = context.matrices, texture = texture,
-                        x = tx + idx * 12, y = rowY, width = 8, height = 8
+                        x = startX + idx * 12, y = rowY, width = 8, height = 8
                     )
                 }
                 if (textures.size > perRow) {
-                    context.drawCenteredTextWithShadow(textRenderer, "+${textures.size - perRow}", tx + shown * 6, rowY + 12, 0xAAAAAA)
+                    context.drawCenteredTextWithShadow(textRenderer, "+${textures.size - perRow}", startX + rowWidth / 2, rowY + 12, 0xAAAAAA)
                     rowY += 24
                 } else {
                     rowY += 12
