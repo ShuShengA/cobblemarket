@@ -121,19 +121,24 @@ object RecordDetail {
         // 一只精灵最多能有近 200 个证章，全横着排那一行会长到没法看；
         // ⚠ 写入端会给含换行的值自动加引号包裹（见 TransactionFileLogger），
         //   所以 Excel / 标准 CSV 解析器仍然把它当**同一个格子**
-        // ⚠ 记的是 `Mark.name`（**词条 key**，如 `cobblemon.mark.ribbon_best_friends`），
-        //   **不是 `it.texture`**（纹理路径）—— 项目里对 marks 有两种用法：
-        //   界面**画图标**要 texture（`EntryBadgeRenderer` / `MarketNetwork` 那几处），
-        //   而**显示名字**要 name（拍卖播报的聊天悬停就是 `joinToString(",") { it.name }`）。
-        //   CSV 是给人读的文字账本 ⇒ 走后者。本来抄了渲染那套（纹理路径），
-        //   又长又难读（用户 2026-09-27 实测指出）。
-        // ⚠ 用 **`identifier`**（`cobblemon:mark_jumbo` 这种 id）—— **不要用 `it.name` 也不要 `it.texture`**：
-        //   `texture` 是纹理路径（`cobblemon:textures/gui/mark/xxx.png`，又长又难读）；
-        //   而 `name` **实测在运行时也是纹理路径**（用户 2026-09-27 用 1.3.0 全量实测，
-        //   与 `data/cobblemon/marks/*.json` 里 `"name": "cobblemon.mark.xxx"` 对不上 ——
-        //   那是**数据文件字段**，运行时 `Mark` 对象上的 `name` 未必等同）。
-        //   `identifier` 是唯一**不依赖数据文件字段语义**的取值，且正是玩家认的那个 id。
-        val marks = pokemon.marks.map { it.identifier.toString() }
+        // ⚠ 取 **`identifier`**（`cobblemon:mark_jumbo` 这种 id）—— **不要用 `it.texture`**：
+        //   那是纹理路径（`cobblemon:textures/gui/mark/xxx.png`），又长又难读
+        //   （CSV 最初抄了渲染那套，2026-09-27 用户实测指出）。
+        // ⚠⚠ 曾误判「`it.name` 运行时是纹理路径」—— **那句是错的，别照着推**：
+        //   反汇编 Cobblemon 1.8.1 证实 `name`=词条 key（`cobblemon.mark.xxx`）、
+        //   `identifier`=注册 id、`texture`=png 路径，**三者互不相同**；
+        //   当时看到路径纯粹是**服务端 jar 没换**（客户端换了 ⇒ 表现为「聊天悬停正常、CSV 却是路径」）。
+        //   选 id 而非 name 是因为它更短更整齐，不是因为 name 有问题。
+        // ⚠⚠ **内置证章省略 `cobblemon:` 前缀**（2026-09-27 用户拍板：一只精灵近 200 个证章，
+        //   每行重复 10 次前缀太吵）。省掉**不影响可用性** —— Cobblemon 的命令解析走
+        //   `asIdentifierDefaultingNamespace()`（默认补 `cobblemon`），`mark_weather_sandstorm`
+        //   直接就能喂给 `/mark give` 之类。**第三方证章必须保留 namespace**
+        //   （数据包可以加 `mymod:xxx`）：一刀切会把它误解析成 `cobblemon:xxx`、找错或找不到。
+        //   ⚠ 用全限定名而非 import —— 本文件已有 `CobbleMarket`，两个 `Cobble*` 并排容易看串。
+        val marks = pokemon.marks.map { mark ->
+            val id = mark.identifier
+            if (id.namespace == com.cobblemon.mod.common.Cobblemon.MODID) id.path else id.toString()
+        }
         if (marks.isNotEmpty()) {
             // ⚠ **内层必须再 join 一次**：`chunked` 返回的是 `List<List<String>>`，
             //   直接 `joinToString(",\n")` 会把每个**子列表的 `toString()`**（`[a, b, c]` 这种）
