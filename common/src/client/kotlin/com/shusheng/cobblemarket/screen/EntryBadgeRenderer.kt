@@ -152,6 +152,15 @@ object EntryBadgeRenderer {
      */
     const val NAME_TAIL_GAP = 5
 
+    /**
+     * **「性格 + 特性」在同一行**时，两者之间隔几个空格（默认字体 1 空格 = 4px）。
+     *
+     * ⚠ 原来这 **9 处各写各的 2**（8px）—— 两段**都是白字**，扣掉字形自带内距几乎贴住，
+     *   看着像一行连着的文字（用户 2026-09-27 报「性格：悠闲  特性：精神力」）。
+     *   收口到 [natureAbilityLine] 后**改间距只改这一个数**，界面里别再出现空格字面量。
+     */
+    private const val NATURE_ABILITY_GAP = 4
+
     /** 体型徽章纹理表（预建，避免每帧重复构造 Identifier） */
     private val SIZE_BADGE_TEXTURES: Map<String, Identifier> =
         listOf("xs", "s", "m", "l", "xl", "alpha")
@@ -266,6 +275,23 @@ object EntryBadgeRenderer {
             .append(Text.translatable("cobblemarket.gui.nature_mint"))
             .append(Text.literal("）"))
     }
+
+    /**
+     * **「性格 + 特性」同一行**的共用组装 —— 两段**都是白字**，全靠间距分开。
+     *
+     * ⚠ 分隔间距**只在这里定义**（[NATURE_ABILITY_GAP] 个空格）—— **别在各界面写 `"  "` 字面量**：
+     *   2026-09-27 用户报「性格：悠闲  特性：精神力」两段挨得太近、**看着像一行连着的文字**，
+     *   根因就是那 **9 处各写各的「两空格」**（8px，扣掉字形自带内距几乎贴住）。
+     *   收口到这里后，改间距只改一个数（同 [NAME_TAIL_GAP] 的做法）。
+     *
+     * ⚠ 两个标签都不设色（吃行色）、各段平级 append —— 别让带色的当父节点
+     *（见 CLAUDE.md 的「界面文字与聊天消息」约定）。
+     */
+    fun natureAbilityLine(natureBase: String, nature: String, abilityKey: String): Text =
+        Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
+            .append(natureText(natureBase, nature))
+            .append(Text.literal("${" ".repeat(NATURE_ABILITY_GAP)}${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
+            .append(Text.translatable(abilityKey))
 
     /**
      * 左对齐名字行：名字文本 + 右侧公母图标（♂蓝/♀红）+ 体型徽章图标。
@@ -436,10 +462,7 @@ object EntryBadgeRenderer {
             // 极巨行：**没有则整行不画**（普通精灵最常见）⇒ listOfNotNull 把 null 丢掉，
             // 与 drawInfoLines 的行列表严格对应
             com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(entry.gmaxFactor, entry.dmaxLevel),
-            Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
-                .append(natureText(entry.natureBase, entry.nature))
-                .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
-                .append(Text.translatable(entry.ability)),
+            natureAbilityLine(entry.natureBase, entry.nature, entry.ability),
             Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)),
             Text.translatable("cobblemarket.gui.tooltip_price").append(
                 Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}")),
@@ -477,10 +500,7 @@ object EntryBadgeRenderer {
         com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(entry.gmaxFactor, entry.dmaxLevel)
             ?.let { lines.add(it to 0xFFFFFF) }
         lines.add(
-            Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
-                .append(natureText(entry.natureBase, entry.nature))
-                .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
-                .append(Text.translatable(entry.ability)) to 0xFFFFFF
+            natureAbilityLine(entry.natureBase, entry.nature, entry.ability) to 0xFFFFFF
         )
         if (entry.ball.isNotEmpty()) {
             // 球名走**稀有度色**（大师球在物品栏里是紫的）—— 共用入口，别再念词条（那样是白字）。

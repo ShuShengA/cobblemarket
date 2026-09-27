@@ -637,10 +637,12 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(
                 extra["gmaxFactor"] == "true", extra["dmaxLevel"]?.toIntOrNull() ?: 0
             )?.let { staticLines.add(it to 0xFFFFFF) }
-            staticLines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
-                .append(EntryBadgeRenderer.natureText(extra["natureBase"] ?: "", extra["nature"] ?: ""))
-                .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
-                .append(Text.translatable(extra["ability"] ?: "")) to 0xFFFFFF)
+            // 性格 + 特性同一行：走共用入口（两段间的间距只在 EntryBadgeRenderer 里定义）
+            staticLines.add(
+                EntryBadgeRenderer.natureAbilityLine(
+                    extra["natureBase"] ?: "", extra["nature"] ?: "", extra["ability"] ?: ""
+                ) to 0xFFFFFF
+            )
             // 球种行：性格特性下面（原缺失，2026-09-27 补齐）；球名走**稀有度色**
             extra["ball"]?.takeIf { it.isNotEmpty() }?.let {
                 staticLines.add(

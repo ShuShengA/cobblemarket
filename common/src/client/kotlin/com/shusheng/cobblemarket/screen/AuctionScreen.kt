@@ -2020,10 +2020,12 @@ class AuctionScreen(
             com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(
                 extra["gmaxFactor"] == "true", extra["dmaxLevel"]?.toIntOrNull() ?: 0
             )?.let { staticLines.add(it to 0xFFFFFF) }
-            staticLines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
-                .append(EntryBadgeRenderer.natureText(extra["natureBase"] ?: "", extra["nature"] ?: ""))
-                .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
-                .append(Text.translatable(extra["ability"] ?: "")) to 0xFFFFFF)
+            // 性格 + 特性同一行：走共用入口（两段间的间距只在 EntryBadgeRenderer 里定义）
+            staticLines.add(
+                EntryBadgeRenderer.natureAbilityLine(
+                    extra["natureBase"] ?: "", extra["nature"] ?: "", extra["ability"] ?: ""
+                ) to 0xFFFFFF
+            )
             extra["ball"]?.takeIf { it.isNotEmpty() }?.let {
                 // 球名走**稀有度色**（大师球在物品栏里是紫的）—— 共用入口 ItemNameText.ballLine
                 staticLines.add(com.shusheng.cobblemarket.util.ItemNameText.ballLine(it, extra["ballItem"].orEmpty()) to 0xFFFFFF)
