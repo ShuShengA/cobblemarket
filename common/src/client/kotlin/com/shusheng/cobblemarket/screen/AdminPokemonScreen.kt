@@ -1296,10 +1296,17 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 entry.primaryType, entry.level) to w)
             lines.add(com.shusheng.cobblemarket.util.TypeTextColors.typeLineWithTera(
                 entry.primaryType, entry.secondaryType, entry.teraType) to w)
+            // 极巨行：属性行下面、有才显示（与市场侧走同一个组装入口）
+            com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(entry.gmaxFactor, entry.dmaxLevel)
+                ?.let { lines.add(it to w) }
             lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(EntryBadgeRenderer.natureText(entry.natureBase, entry.nature))
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
                 .append(Text.translatable(entry.ability)) to w)
+            // 球种行：性格特性下面（原缺失，2026-09-27 补齐）；球名走**稀有度色**
+            entry.ball.takeIf { it.isNotEmpty() }?.let {
+                lines.add(com.shusheng.cobblemarket.util.ItemNameText.ballLine(it, entry.ballItem) to w)
+            }
             var heldItemLine = -1
             if (hasHeldItem) {
                 heldItemLine = lines.size
@@ -1313,6 +1320,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             lines.add(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("  EV: ${entry.evsSpDef}").formatted(Formatting.RED)) to ivColors[4])
             lines.add(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("  EV: ${entry.evsSpd}").formatted(Formatting.RED)) to ivColors[5])
             lines.add(Text.translatable("cobblemarket.gui.friendship", entry.friendship) to 0xFF99CC)
+            // 初始训练家行：亲密度下面（与市场侧同位置；没有则整行不占位）
+            com.shusheng.cobblemarket.util.PokemonExtraLines.originalTrainer(entry.originalTrainer)
+                ?.let { lines.add(it to 0xFFFFFF) }
             // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：分割线 + 两行技能 + 分割线
             var movesLine = -1
             if (MoveText.hasAny(entry.moves)) {
