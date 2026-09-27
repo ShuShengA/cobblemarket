@@ -91,6 +91,165 @@ class PointsMarketScreen : Screen(
     /** 鼠标所在格子索引；-1 = 不在任何格子上。悬停的格子会**放大绘制**（浮在邻居之上） */
     private var hoveredCell = -1
 
+    // ── 窗口「从格子长大」的展开动画（2026-09-27；做法照 [com.shusheng.cobblemarket.client.FilterPanelAnimation]）──
+
+    /**
+     * 动画开始时刻（0 = 没有动画在跑）。**全局时间戳**，不用 `delta`/`tickDelta` ——
+     * 那个被 `FloatingState` 累加过，拿它当时间轴速度会变成「帧率 ÷ 40」（文档 points_shop_plan 记过这条）。
+     */
+    private var dialogAnimStart = 0L
+
+    /** 上一帧动画是否在跑（用来检测「刚播完」，好把窗口控件放出来） */
+    private var dialogAnimWasActive = false
+
+    /**
+     * 展开起点矩形 `[x, y, w, h]`：**1.15 倍的格子**（= 点下去那一刻鼠标正悬停、看到的那个放大态），
+     * 见 [HOVER_SCALE]。收回终点另算（1.0 倍基础格子，那时鼠标已经不在上面了）。
+     */
+    private var dialogAnimFrom = IntArray(4)
+
+    /** 插值终点矩形：展开时是弹窗矩形、收回时是 **1.0 倍基础格子**（非对称，见文档） */
+    private var dialogAnimTo = IntArray(4)
+
+    /** 本次是不是**收回**动画（决定插值方向 + 内容淡出还是淡入） */
+    private var dialogAnimClosing = false
+
+    /**
+     * 收回动画**播完**要做的事（真正清状态 + 重建界面）。展开时恒为 null。
+     * ⚠ [startDialogAnim] 会把它清掉 —— 切格子时 `closeBuyDialog` 与 `openBuyDialog` 连着调，
+     *   不清的话这个待办会在新窗口的动画结束时触发、**把刚开的窗口关掉**。
+     */
+    private var dialogAnimOnEnd: (() -> Unit)? = null
+
+    /** 展开动画时长（ms）。200 与筛选面板那套一致（文档写的「实测调参」起点） */
+    private val dialogAnimMs = com.shusheng.cobblemarket.client.FilterPanelAnimation.DURATION_MS
+
+    /** 动画原始进度 0..1（未开始或已结束都算 1） */
+    private fun dialogAnimRaw(): Float =
+        if (dialogAnimStart == 0L) 1f
+        else ((System.currentTimeMillis() - dialogAnimStart).toFloat() / dialogAnimMs).coerceIn(0f, 1f)
+
+    /** smoothstep 缓动（先快后慢，与筛选面板 / 进出场动画同一根曲线） */
+    private fun dialogAnimProgress(): Float {
+        val raw = dialogAnimRaw()
+        return raw * raw * (3f - 2f * raw)
+    }
+
+    /** 动画进行中 —— 窗口内的**控件**要藏起来、**内容**先不画（见 [updateDialogAnimControls]） */
+    private fun dialogAnimActive(): Boolean = dialogAnimStart != 0L && dialogAnimRaw() < 1f
+
+    /**
+     * 窗口**内容**的淡入 alpha：动画前 70% 全透明、后 30% 渐显到 1。
+     *
+     * 照 [com.shusheng.cobblemarket.client.FilterPanelAnimation] 的「1.4 倍进度」思路 ——
+     * 让内容比背景晚一点、但比「到点啪一下出现」柔和。
+     * ⚠ 调用方必须用 `setShaderColor` 包住内容绘制，并在**同一次 render 内**恢复成 `1,1,1,1`
+     *   （内容里有多个 `return` 分支，所以用 `try/finally`，别指望顺序恢复）。
+     */
+    private fun dialogAnimContentAlpha(): Float {
+        val p = dialogAnimProgress()
+        // 收回时**反过来**：前 30% 就淡干净 —— 别让内容拖到窗口快缩没了还挂着
+        return if (dialogAnimClosing) (1f - p / 0.3f).coerceIn(0f, 1f)
+        else ((p - 0.7f) / 0.3f).coerceIn(0f, 1f)
+    }
+
+    /**
+     * 当前这一帧窗口该画成多大：动画中 = 从 [dialogAnimFrom] 插值到最终矩形；否则 = 最终矩形。
+     *
+     * ⚠ 用**插值矩形重画九宫格**，而不是拿 matrices 缩放贴图 —— 后者会把圆角拉变形
+     * （`drawTexture` 的 width/height 是**源图采样区域**，传缩放尺寸只会把左上角那一块抽出来放大）。
+     */
+    private fun dialogAnimRect(): IntArray {
+        val full = intArrayOf(editDialogX(), editDialogY(), editDialogW(), editDialogHeight())
+        if (!dialogAnimActive()) return full
+        val t = dialogAnimProgress()
+        val a = dialogAnimFrom
+        val b = dialogAnimTo
+        return intArrayOf(
+            (a[0] + (b[0] - a[0]) * t).roundToInt(),
+            (a[1] + (b[1] - a[1]) * t).roundToInt(),
+            (a[2] + (b[2] - a[2]) * t).roundToInt(),
+            (a[3] + (b[3] - a[3]) * t).roundToInt()
+        )
+    }
+
+    /**
+     * 启动**收回**动画：弹窗矩形 → **1.0 倍基础格子**（不是 1.15 —— 关窗时鼠标已经不在格子上了），
+     * 播完执行 [onEnd]（真正清状态 + 重建界面）。
+     *
+     * ⚠ 靠 [dialogAnimOnEnd] 延迟关闭 ⇒ 这 200ms 里 `buySlot`/`editSlot` **还开着**，
+     *   所以下层照旧不可点（`dialogOpen()` 仍为 true）—— 这是有意为之，不是漏拦。
+     */
+    private fun startCloseAnimation(slot: Int, onEnd: () -> Unit) {
+        val layout = gridLayout(bgRect())
+        val pageCell = slot - (currentPage - 1) * PointShopState.POINTS_SHOP_PAGE_SIZE
+        dialogAnimFrom = intArrayOf(editDialogX(), editDialogY(), editDialogW(), editDialogHeight())
+        dialogAnimTo = intArrayOf(layout.cellX(pageCell), layout.cellY(pageCell), layout.cell, layout.cell)
+        dialogAnimClosing = true
+        dialogAnimStart = System.currentTimeMillis()
+        dialogAnimWasActive = true
+        dialogAnimOnEnd = onEnd
+    }
+
+    /**
+     * 记录展开起点并启动动画。**从格子点开时调**（起点 = 那个格子的 1.15 倍态）。
+     * @param slot 被点的格子**全局序号**
+     */
+    private fun startDialogAnim(slot: Int) {
+        val layout = gridLayout(bgRect())
+        val pageCell = slot - (currentPage - 1) * PointShopState.POINTS_SHOP_PAGE_SIZE
+        val size = layout.cell
+        // 与悬停放大同一份算法（drawShopCell 里的 grow）：两边各外扩一半 ⇒ 放大后仍居中于原格子
+        val grow = ((size * HOVER_SCALE) - size).roundToInt() / 2
+        dialogAnimFrom = intArrayOf(
+            layout.cellX(pageCell) - grow, layout.cellY(pageCell) - grow,
+            size + grow * 2, size + grow * 2
+        )
+        dialogAnimTo = intArrayOf(editDialogX(), editDialogY(), editDialogW(), editDialogHeight())
+        dialogAnimClosing = false
+        // ⚠ 切格子是「先 close 再 open」连着调的：不清掉的话收回的待办会在新窗口动画结束时**把新窗关掉**
+        dialogAnimOnEnd = null
+        dialogAnimStart = System.currentTimeMillis()
+        dialogAnimWasActive = true
+    }
+
+    /**
+     * 动画期间把窗口内的 MC 控件藏起来（它们由 `super.render()` 统一画、塞不进插值矩形）；
+     * **播完这一帧恢复**（检测「上一帧在跑、这一帧跑完」）。
+     *
+     * ⚠ 只负责开关**控件**；窗口**内容**（标题 / 预览 / 字段文字）由两个 render 各自判 [dialogAnimActive]。
+     */
+    private fun updateDialogAnimControls() {
+        val active = dialogAnimActive()
+        if (active) {
+            val base = if (buySlot >= 0) buyWidgetBase else editWidgetBase
+            if (base in 0 until children().size) {
+                children().drop(base)
+                    .filterIsInstance<net.minecraft.client.gui.widget.ClickableWidget>()
+                    .forEach { it.visible = false }
+            }
+        } else if (dialogAnimWasActive) {
+            val onEnd = dialogAnimOnEnd
+            if (onEnd != null) {
+                // 收回播完：真正关窗（清状态 + 重建界面）。控件交给重建，不再走下面的可见性恢复
+                dialogAnimOnEnd = null
+                dialogAnimClosing = false
+                onEnd()
+            } else if (editSlot >= 0) {
+                // 展开播完：把可见性交回常规逻辑（编辑窗有整套判断；购买窗控件默认就是显示的）
+                updateEditControlsVisibility()
+            } else if (buySlot >= 0) {
+                val base = buyWidgetBase
+                if (base in 0 until children().size) {
+                    children().drop(base)
+                        .filterIsInstance<net.minecraft.client.gui.widget.ClickableWidget>()
+                        .forEach { it.visible = true }
+                }
+            }
+        }
+        dialogAnimWasActive = active
+    }
+
     // ── 商城格子 添加 / 编辑窗口（2026-09-20 用户口述；**判 points.shop 节点**，见 [canEditShop]）──
 
     /** 正在编辑的格子**全局序号**（跨页递增，不是页内下标）；-1 = 窗口没开 */
@@ -1569,6 +1728,8 @@ class PointsMarketScreen : Screen(
         // 点格子的手感就是"没反应"（用户 2026-09-20 报「网格内的交互都没音效」）
         playButtonClickSound()
         editSlot = slot
+        // 窗口从**这个格子**长大出来（起点 = 它的 1.15 倍悬停态）
+        startDialogAnim(slot)
         // ⚠ 这里**只处理"添加"**（只有空网格会走到这，见 mouseClicked）：`editOriginal` 恒为 null。
         //   点有内容的格子走的是 [openBuyDialog]（购买窗 + 右上角多一枚「下架」），不再有"编辑"——
         //   用户 2026-09-25 拍板，想改内容就走「下架 → 重新添加」。
@@ -1587,7 +1748,16 @@ class PointsMarketScreen : Screen(
      * ⚠ 重建会重跑 init，兑换框里玩家敲了一半的码靠 `pendingCodeText` 恢复（见 init 的注释），
      * 翻页位置等状态也都是字段、不受影响。
      */
-    private fun closeEditDialog() {
+    private fun closeEditDialog(animate: Boolean = true) {
+        if (animate && editSlot >= 0) {
+            startCloseAnimation(editSlot) { reallyCloseEditDialog() }
+            return
+        }
+        reallyCloseEditDialog()
+    }
+
+    /** 真正关窗（收回动画播完、或不需要动画时直接走这条） */
+    private fun reallyCloseEditDialog() {
         editSlot = -1
         editSpecBase = null
         editHintMsg = null
@@ -1672,6 +1842,8 @@ class PointsMarketScreen : Screen(
         playButtonClickSound()
         buySlot = slot
         buyCanRemove = canRemove
+        // 窗口从**这个格子**长大出来（起点 = 它的 1.15 倍悬停态）
+        startDialogAnim(slot)
         buyCount = 1
         // 记下这一条的 id：购买时带回服务端比对，也用来判断它有没有被换过内容
         buySlotEntryId = PointMarketCache.slots[slot]?.entryId.orEmpty()
@@ -1689,10 +1861,22 @@ class PointsMarketScreen : Screen(
      * 关窗：清状态 + **重建界面**把主控件恢复回来（与 [closeEditDialog] 同一套）。
      * ⚠ 重建会重跑 init，兑换框里敲了一半的码靠 `pendingCodeText` 恢复 —— 与编辑窗同一条路。
      */
-    private fun closeBuyDialog() {
+    private fun closeBuyDialog(animate: Boolean = true) {
         // ⚠ **必须在清 buySlot 之前**：用户改完库存直接点「购买 / 取消」时，输入框会随控件一起被清掉 ——
         //   不在这儿补一刀，那次编辑就白填了（失焦那条路只覆盖"点了界面别处"）
+        // ⚠ 也必须在**动画之前**：收回那 200ms 里控件已藏起来，再读输入框就晚了
         submitBuyStockIfChanged()
+        // 购买成功那条路传 animate=false —— 接下来是**庆祝动画**（从弹窗图标位置起飞），
+        // 两个动画叠在一起会打架（弹窗正在缩回、同时精灵从弹窗起飞）
+        if (animate && buySlot >= 0) {
+            startCloseAnimation(buySlot) { reallyCloseBuyDialog() }
+            return
+        }
+        reallyCloseBuyDialog()
+    }
+
+    /** 真正关窗（收回动画播完、或不需要动画时直接走这条） */
+    private fun reallyCloseBuyDialog() {
         buySlot = -1
         buyCanRemove = false
         buySlotEntryId = ""
@@ -1891,6 +2075,9 @@ class PointsMarketScreen : Screen(
         // ⚠ kind 取 [currentKind]：窗口开着时主控件已隐藏、切不了 tab，所以它 == 打开窗口时那个 tab
         // ⚠ 带上**玩家看到的那一条**的 id：服务端比对，对不上就拒绝（防按改后的内容 / 价格成交）
         sendToServer(BuyPointMarketEntryPayload(buySlot, count, currentKind(), buySlotEntryId))
+        // 收回动画与**庆祝动画共存**（2026-09-27 用户拍板）：弹窗缩回格子的同时，精灵从弹窗图标
+        // 位置起飞。能共存是因为庆祝动画的起点 `buyIconOrigin` 在**渲染时**记录，而收回期间内容段
+        // 早已淡出、`renderBuyPreview` 不执行 ⇒ 起点保留弹窗静止时那一份，不会跟着窗口一起缩。
         closeBuyDialog()
     }
 
@@ -1901,9 +2088,19 @@ class PointsMarketScreen : Screen(
         val y = editDialogY()
         // 遮罩压暗下层（不压的话底下那排格子会跟弹窗抢注意力）
         drawScreenDimMask(context, width, height)
+        // 背景画**插值矩形**：展开动画期间窗口从格子那里长大（播完即最终矩形）。
+        // ⚠ 用矩形重画九宫格，不用 matrices 缩放贴图 —— 后者会把圆角拉变形
+        val animRect = dialogAnimRect()
         drawNineSlice(
-            context, DIALOG_BACKGROUND_TEXTURE, x, y, editDialogW(), editDialogHeight(), 0, DIALOG_BACKGROUND_TEX_H
+            context, DIALOG_BACKGROUND_TEXTURE,
+            animRect[0], animRect[1], animRect[2], animRect[3], 0, DIALOG_BACKGROUND_TEX_H
         )
+        // 动画期间**只画背景**：内容挤在小矩形里会糊成一团 ⇒ 等内容段淡入（见 [dialogAnimContentAlpha]）。
+        // ⚠ 内容里有多个 return 分支，shader 必须 try/finally 恢复（漏了会让整个界面串色）
+        val contentAlpha = dialogAnimContentAlpha()
+        if (contentAlpha <= 0f) return
+        context.setShaderColor(contentAlpha, contentAlpha, contentAlpha, contentAlpha)
+        try {
         context.drawCenteredTextWithShadow(
             textRenderer,
             // 标题**不分身份**：能管这一格的人（持 `points.shop` 节点 / 服主）进的也是购买窗，
@@ -1930,6 +2127,9 @@ class PointsMarketScreen : Screen(
             if (System.currentTimeMillis() < buyHintUntil) {
                 context.drawTextWithShadow(textRenderer, msg, x + EDIT_PAD, editPriceRowY() - 11, 0xFF6666)
             }
+        }
+        } finally {
+            context.setShaderColor(1f, 1f, 1f, 1f)
         }
     }
 
@@ -4139,9 +4339,18 @@ class PointsMarketScreen : Screen(
         drawScreenDimMask(context, width, height)
         // ⚠ 高度必须用 [editDialogHeight]（钳制后的实际值），**不能传设计常量** ——
         //   逻辑屏不足 EDIT_DIALOG_H + 8 时窗口会矮一截，背景照常量画就会往下冒出窗口底边（2026-09-20 修）
+        // 展开动画期间画**插值矩形**（窗口从格子那里长大），播完就是最终矩形
+        val animRect = dialogAnimRect()
         drawNineSlice(
-            context, DIALOG_BACKGROUND_TEXTURE, x, y, editDialogW(), editDialogHeight(), 0, DIALOG_BACKGROUND_TEX_H
+            context, DIALOG_BACKGROUND_TEXTURE,
+            animRect[0], animRect[1], animRect[2], animRect[3], 0, DIALOG_BACKGROUND_TEX_H
         )
+        // 动画期间**只画背景**：内容挤在小矩形里会糊成一团 ⇒ 等内容段淡入（见 [dialogAnimContentAlpha]）。
+        // ⚠ shader 必须 try/finally 恢复（本段里有多处分支，漏了会让整个界面串色）
+        val contentAlpha = dialogAnimContentAlpha()
+        if (contentAlpha <= 0f) return
+        context.setShaderColor(contentAlpha, contentAlpha, contentAlpha, contentAlpha)
+        try {
 
         // 标题：快照弹窗 / 展开的选项列表各自换标题（同一个位置只有一个标题，不叠字）
         val listKind = optionListKind
@@ -4231,6 +4440,9 @@ class PointsMarketScreen : Screen(
             textRenderer, Text.translatable("cobblemarket.points.store.field.stock"),
             editPriceGroupX() + editPriceColW() + EDIT_COL_GAP, labelY, 0xFFFFFF
         )
+        } finally {
+            context.setShaderColor(1f, 1f, 1f, 1f)
+        }
     }
 
     /** 物种预览槽：槽位贴图 + 精灵模型 + 候选计数（照黑名单的添加精灵弹窗） */
@@ -4768,6 +4980,9 @@ class PointsMarketScreen : Screen(
         //   的注释），不清空会逐帧累积、点到别处的图标。
         //   全项目其余 11 个界面都在 render 开头调它，本界面当初漏了。
         IconRegistry.beginFrame(mouseX, mouseY)
+        // 展开动画期间把窗口控件藏起来（它们是 MC 控件、由 super.render 统一画，塞不进插值矩形）；
+        // 播完这一帧会自动放回去（见 updateDialogAnimControls）
+        if (dialogOpen()) updateDialogAnimControls()
         super.render(context, mouseX, mouseY, delta)
         if (dialogOpen()) return
         drawMarketDecor(context, delta)
