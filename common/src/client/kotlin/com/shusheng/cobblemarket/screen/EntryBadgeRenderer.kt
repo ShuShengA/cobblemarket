@@ -23,11 +23,20 @@ import net.minecraft.util.Identifier
 object EntryBadgeRenderer {
 
     /**
-     * 证章图标每行个数（2026-09-09 用户拍板 6 → 10）：一行 10 个 = 120px，
-     * 仍窄于提示框最宽文本行（价格/性格特性行约 130~140px），不会把提示框撑宽。
-     * 全部证章排布（内联渲染 + 公共函数）统一引用本常量，调整只改这里。
+     * **一行能放几个证章图标** —— 按**可用宽度**算（每个图标占 12px，至少 1 个）。
+     *
+     * ⚠⚠ 这里**曾经是写死的 `const val MARKS_PER_ROW = 10`**（2026-09-09 拍板 6 → 10，
+     *   理由是「10 个 = 120px，窄于当时提示框最宽文本行 ⇒ 不会把框撑宽」）。**那个前提后来失效了**：
+     *   悬停窗陆续加了太晶 / 极巨化 / 初始训练家等条目、**框变宽了**，10 个图标占不满 ——
+     *   右边空一片、后面全挤进「+N」（用户 2026-09-27 截图实测指出）。
+     * ⇒ 改成**跟随可用宽度**：能放几个放几个，放不下的进第二行「+N」。
+     *
+     * ⚠ 参数是**可用内容宽**（悬停窗 / 弹窗的 `mw` / `maxWidth` / `dividerW`）——
+     *   用户的原话是「跟随**分割线长度**」，而分割线撑满的正是这个宽。
+     * ⚠ 调用方**别再把证章宽并进「窗口该多宽」的计算**（原先那种 `mw = max(mw, 10*12)`）——
+     *   现在方向反过来了：**窗口宽度决定证章排几个**，而不是证章把窗口撑宽。
      */
-    const val MARKS_PER_ROW = 10
+    fun marksPerRow(availableWidth: Int): Int = (availableWidth / 12).coerceAtLeast(1)
 
     /** 分割线占高（1px 灰线 + 上下留白） */
     private const val DIVIDER_H = 10
@@ -84,9 +93,10 @@ object EntryBadgeRenderer {
      * ⚠ [movesRaw] **故意不给默认值**：加技能块时 6 个弹窗的高度公式都要显式跟着改，
      * 留默认值会「编译通过但高度差 10」静默错位 —— 让编译器当检查清单。
      */
-    fun marksBlockHeight(marks: List<String>, movesRaw: String?): Int {
+    fun marksBlockHeight(marks: List<String>, movesRaw: String?, availableWidth: Int): Int {
         if (marks.isEmpty()) return 0
-        val icons = if (marks.size > MARKS_PER_ROW) 24 else 12
+        // 「要不要第二行 +N」现在取决于**可用宽度**（见 [marksPerRow]），不再是固定 10
+        val icons = if (marks.size > marksPerRow(availableWidth)) 24 else 12
         // 没有技能块（旧数据）时自己补回那条前导分割线，画面不至于秃
         return icons + DIVIDER_H + if (MoveText.hasAny(movesRaw)) 0 else DIVIDER_H
     }
@@ -450,17 +460,20 @@ object EntryBadgeRenderer {
         context.matrices.pop()
     }
 
-    fun drawMarksRow(context: DrawContext, marks: List<String>, leftX: Int, y: Int): Int {
+    fun drawMarksRow(context: DrawContext, marks: List<String>, leftX: Int, y: Int, availableWidth: Int): Int {
         val textures = marks.mapNotNull { Identifier.tryParse(it) }
         if (textures.isEmpty()) return 0
-        textures.take(MARKS_PER_ROW).forEachIndexed { idx, texture ->
+        // 一行放几个**跟着可用宽走**（见 [marksPerRow]）—— 能放几个放几个，放不下的进「+N」
+        val perRow = marksPerRow(availableWidth)
+        textures.take(perRow).forEachIndexed { idx, texture ->
             com.cobblemon.mod.common.api.gui.blitk(
                 matrixStack = context.matrices, texture = texture,
                 x = leftX + idx * 12, y = y, width = 8, height = 8
             )
         }
-        if (textures.size > MARKS_PER_ROW) {
-            context.drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer, "+${textures.size - MARKS_PER_ROW}", leftX + minOf(MARKS_PER_ROW, textures.size) * 6, y + 12, 0xAAAAAA)
+        if (textures.size > perRow) {
+            val shown = minOf(perRow, textures.size)
+            context.drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer, "+${textures.size - perRow}", leftX + shown * 6, y + 12, 0xAAAAAA)
             return 24
         }
         return 12
@@ -526,7 +539,8 @@ object EntryBadgeRenderer {
         com.shusheng.cobblemarket.util.PokemonExtraLines.originalTrainer(entry.originalTrainer)?.let { m(it) }
         // 技能块与证章行是**固定宽的块**（两列网格 / 图标行），不随文本变化，按各自的常量量
         if (MoveText.hasAny(entry.moves)) maxW = maxOf(maxW, MOVES_MAX_W)
-        if (entry.marks.isNotEmpty()) maxW = maxOf(maxW, minOf(MARKS_PER_ROW, entry.marks.size) * 12 - 4)
+        // ⚠ 证章**不再参与**量宽（原先 `minOf(10, n) * 12` 那套已废弃）——
+        //   方向反过来：**窗口宽度决定证章排几个**（见 [marksPerRow]），所以不能在量宽里反过来撑宽它
         m(Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)))
         m(
             Text.translatable("cobblemarket.gui.tooltip_price").append(
@@ -627,17 +641,19 @@ object EntryBadgeRenderer {
                     y += drawMovesBlock(context, entry.moves, centerX, y, dividerW)
                 }
                 line == null && i == marksLine -> {
-                    // 证章图标行：第一行最多 MARKS_PER_ROW 个居中；超出的部分第二行居中显示「+N」（不再画图标防挤占面板）
+                    // 证章图标行：**一行放几个跟着分割线长度**（能放几个放几个）；放不下的第二行居中「+N」
                     val textures = entry.marks.mapNotNull { Identifier.tryParse(it) }
-                    val rowW = minOf(MARKS_PER_ROW, textures.size) * 12 - 4
-                    textures.take(MARKS_PER_ROW).forEachIndexed { idx, texture ->
+                    val perRow = marksPerRow(dividerW)
+                    val shown = minOf(perRow, textures.size)
+                    val rowW = shown * 12 - 4
+                    textures.take(perRow).forEachIndexed { idx, texture ->
                         com.cobblemon.mod.common.api.gui.blitk(
                             matrixStack = context.matrices, texture = texture,
                             x = centerX - rowW / 2 + idx * 12, y = y, width = 8, height = 8
                         )
                     }
-                    if (textures.size > MARKS_PER_ROW) {
-                        context.drawCenteredTextWithShadow(font, "+${textures.size - MARKS_PER_ROW}", centerX, y + 12, 0xAAAAAA)
+                    if (textures.size > perRow) {
+                        context.drawCenteredTextWithShadow(font, "+${textures.size - perRow}", centerX, y + 12, 0xAAAAAA)
                         y += 24
                     } else {
                         y += 12

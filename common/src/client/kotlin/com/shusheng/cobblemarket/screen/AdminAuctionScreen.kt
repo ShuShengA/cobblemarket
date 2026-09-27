@@ -741,9 +741,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             if (heldItemLine >= 0) {
                 mw = maxOf(mw, textRenderer.getWidth(staticLines[heldItemLine].first!!) + 14)
             }
-            // 证章行宽（每行 MARKS_PER_ROW 个 12px 格）
+            // 证章行宽：⚠ **不再参与** mw（原先按固定 10 个算 12px 格的方式已废弃）
             if (marksLine >= 0) {
-                mw = maxOf(mw, minOf(EntryBadgeRenderer.MARKS_PER_ROW, extra["marks"].orEmpty().split(",").count { it.isNotEmpty() }) * 12)
+                // ⚠ 证章**不再参与** mw（方向反过来：窗口宽度决定证章排几个，见 marksPerRow）
             }
             mw = maxOf(mw, EntryBadgeRenderer.movesBlockWidth(extra["moves"].orEmpty()))
             tooltipCacheStaticLines = staticLines
@@ -785,7 +785,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         val pad = 4
         val tx = minOf(mouseX + 12, width - mw - 12)
         // 证章超过一行时第二行「+N」额外占 12px
-        val marksExtra = if (marksLine >= 0 && marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0
+        val marksExtra = if (marksLine >= 0 && marks.size > EntryBadgeRenderer.marksPerRow(mw)) 12 else 0
         val th = lines.size * 10 + pad + marksExtra + EntryBadgeRenderer.movesBlockExtra(movesRaw)
         val ty = if (mouseY - th - 4 <= 0) minOf(mouseY + 12, height - th) else mouseY - th - 4
 
@@ -798,7 +798,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 rowY += EntryBadgeRenderer.drawMovesBlockLeft(context, movesRaw, tx, mw, rowY)
             } else if (line == null && i == marksLine) {
                 // 证章图标行：左对齐排（照市场悬停；超过 6 个第二行左对齐显示「+N」）
-                rowY += EntryBadgeRenderer.drawMarksRow(context, marks, tx, rowY)
+                rowY += EntryBadgeRenderer.drawMarksRow(context, marks, tx, rowY, mw)
             } else if (line == null) {
                 // 分割线：1px 灰线，撑满提示框全宽（与信息区分隔线一致，不随证章数量变化）
                 val rowW = mw
@@ -905,7 +905,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         val infoRows = 12 + EntryBadgeRenderer.optionalRowCount(entry.extraData, entry.extraData["heldItemId"].orEmpty())
         return 56 + infoRows * 10 +
             EntryBadgeRenderer.movesBlockHeight(moves) +
-            EntryBadgeRenderer.marksBlockHeight(marks, moves) + 58
+            // 证章一行几个跟随可用宽（见 marksPerRow）—— 传本弹窗左列宽（与 rowW 同源）；
+            // ⚠ 取**最小**可能宽是保守做法：perRow 取小 ⇒ 更容易判「两行」⇒ 高度**宁多不少**
+            EntryBadgeRenderer.marksBlockHeight(marks, moves, 124) + 58
     }
 
     private fun renderCancelDialogBackground(context: DrawContext, delta: Float) {
@@ -1081,7 +1083,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                     context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF888888.toInt())
                     iy += 10
                 }
-                iy += EntryBadgeRenderer.drawMarksRow(context, marks, infoX, iy)
+                iy += EntryBadgeRenderer.drawMarksRow(context, marks, infoX, iy, rowW)
                 context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF888888.toInt())
                 iy += 10
             }
