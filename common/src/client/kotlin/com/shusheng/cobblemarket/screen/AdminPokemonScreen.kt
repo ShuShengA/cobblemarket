@@ -1290,8 +1290,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             if (heldItemLine >= 0) {
                 maxWidth = maxOf(maxWidth, textRenderer.getWidth(lines[heldItemLine].first) + 14)
             }
-            // 证章行宽（每行 MARKS_PER_ROW 个 12px 格）
-            if (marksLine >= 0) maxWidth = maxOf(maxWidth, minOf(EntryBadgeRenderer.MARKS_PER_ROW, entry.marks.size) * 12)
+            // 证章行宽：⚠ **不再参与** maxWidth（原先按固定 10 个算 12px 格的方式已废弃）
+            // ⚠ 证章**不再参与** maxWidth（方向反过来：窗口宽度决定证章排几个，见 marksPerRow）
             maxWidth = maxOf(maxWidth, EntryBadgeRenderer.movesBlockWidth(entry.moves))
             tooltipCacheLines = lines
             tooltipCacheHeldLine = heldItemLine
@@ -1310,7 +1310,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
 
         val padding = 4
         // 证章超过一行时第二行「+N」额外占 12px
-        val marksExtra = if (marksLine >= 0 && entry.marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0
+        val marksExtra = if (marksLine >= 0 && entry.marks.size > EntryBadgeRenderer.marksPerRow(maxWidth)) 12 else 0
         val tooltipHeight = lines.size * 10 + padding + marksExtra + EntryBadgeRenderer.movesBlockExtra(entry.moves)
         // 悬停窗**不许把本行的 ✕（下架）按钮盖掉一半以上**：本界面整屏都是下架按钮，被盖住就没法操作。
         // 矩形按行号算几何（与 rebuildCancelButtons 同源），不去查按钮列表
@@ -1330,7 +1330,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 rowY += EntryBadgeRenderer.drawMovesBlockLeft(context, entry.moves, tx, maxWidth, rowY)
             } else if (line == null && i == marksLine) {
                 // 证章图标行：左对齐排（照市场悬停；超过 6 个第二行左对齐显示「+N」）
-                rowY += EntryBadgeRenderer.drawMarksRow(context, entry.marks, tx, rowY)
+                rowY += EntryBadgeRenderer.drawMarksRow(context, entry.marks, tx, rowY, maxWidth)
             } else if (line == null) {
                 // 分割线：1px 灰线，撑满提示框全宽（与信息区分隔线一致，不随证章数量变化）
                 val rowW = maxWidth
@@ -1385,7 +1385,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0)
         return 60 + infoRows * 10 +
             EntryBadgeRenderer.movesBlockHeight(entry.moves) +
-            EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves) + 32
+            // 证章一行几个跟随可用宽（见 marksPerRow）—— 保守传最小宽 ⇒ 高度宁多不少
+            EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves, 124) + 32
     }
 
     /** 弹窗实际高度：**按屏幕钳制**（信息行多时设计高度会顶出屏幕，见求购单创建弹窗那套） */
