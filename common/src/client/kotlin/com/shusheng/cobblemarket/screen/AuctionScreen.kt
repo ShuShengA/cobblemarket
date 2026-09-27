@@ -1368,7 +1368,8 @@ class AuctionScreen(
             val infoRows = 12 + EntryBadgeRenderer.optionalRowCount(entry.extraData, entry.extraData["heldItemId"].orEmpty())
             val leftH = 56 + infoRows * 10 +
                 EntryBadgeRenderer.movesBlockHeight(moves) +
-                EntryBadgeRenderer.marksBlockHeight(marks, moves)
+                // 证章一行几个跟随可用宽（见 marksPerRow）—— 保守传最小宽 ⇒ 高度宁多不少
+                EntryBadgeRenderer.marksBlockHeight(marks, moves, 124)
             bidDialogExtraRows = ((leftH + 10 - 190 + 9) / 10).coerceAtLeast(0)
             bidDialogW = 280
             val id = Identifier.tryParse(entry.extraData["speciesId"] ?: "")
@@ -1673,7 +1674,7 @@ class AuctionScreen(
                     context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF888888.toInt())
                     iy += 10
                 }
-                iy += EntryBadgeRenderer.drawMarksRow(context, marks, infoX, iy)
+                iy += EntryBadgeRenderer.drawMarksRow(context, marks, infoX, iy, rowW)
                 context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF888888.toInt())
                 iy += 10
             }
@@ -2192,9 +2193,9 @@ class AuctionScreen(
             if (heldItemLine >= 0) {
                 mw = maxOf(mw, textRenderer.getWidth(staticLines[heldItemLine].first!!) + 14)
             }
-            // 证章行宽（每行 MARKS_PER_ROW 个 12px 格）
+            // 证章行宽：⚠ **不再参与** mw（原先按固定 10 个算 12px 格的方式已废弃）
             if (marksLine >= 0) {
-                mw = maxOf(mw, minOf(EntryBadgeRenderer.MARKS_PER_ROW, extra["marks"].orEmpty().split(",").count { it.isNotEmpty() }) * 12)
+                // ⚠ 证章**不再参与** mw（方向反过来：窗口宽度决定证章排几个，见 marksPerRow）
             }
             mw = maxOf(mw, EntryBadgeRenderer.movesBlockWidth(extra["moves"].orEmpty()))
             tooltipCacheStaticLines = staticLines
@@ -2236,7 +2237,7 @@ class AuctionScreen(
         val movesRaw = entry.extraData["moves"].orEmpty()
         val pad = 4
         // 证章超过一行时第二行「+N」额外占 12px
-        val marksExtra = if (marksLine >= 0 && marks.size > EntryBadgeRenderer.MARKS_PER_ROW) 12 else 0
+        val marksExtra = if (marksLine >= 0 && marks.size > EntryBadgeRenderer.marksPerRow(mw)) 12 else 0
         // 行数按屏幕高钳制（叠上技能块 / 证章后仍可能超屏）—— 见 [clampTooltipRows]
         clampTooltipRows(lines, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA }
             .let { if (it !== lines) { lines.clear(); lines.addAll(it) } }
@@ -2257,7 +2258,7 @@ class AuctionScreen(
                 rowY += EntryBadgeRenderer.drawMovesBlockLeft(context, movesRaw, tx, mw, rowY)
             } else if (line == null && i == marksLine) {
                 // 证章图标行：左对齐排（照市场悬停；超过 6 个第二行左对齐显示「+N」）
-                rowY += EntryBadgeRenderer.drawMarksRow(context, marks, tx, rowY)
+                rowY += EntryBadgeRenderer.drawMarksRow(context, marks, tx, rowY, mw)
             } else if (line == null) {
                 // 分割线：1px 灰线，撑满提示框全宽（与信息区分隔线一致，不随证章数量变化）
                 val rowW = mw

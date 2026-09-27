@@ -2060,7 +2060,10 @@ class PointsMarketScreen : Screen(
             Identifier.tryParse(id)?.let { com.cobblemon.mod.common.api.mark.Marks.getByIdentifier(it) }?.texture
         }
         if (textures.isEmpty()) return
-        val perRow = EntryBadgeRenderer.MARKS_PER_ROW
+        // ⚠ 这是**独立的证章悬停小窗**：它自身的宽就是按 `perRow` 反算出来的
+        //   （`w = minOf(size, perRow) * CELL + pad*2`）⇒ 沿用**固定列数**，
+        //   与 [EntryBadgeRenderer.marksPerRow] 那套「跟随可用宽度」是两回事（那个用在主窗口里）
+        val perRow = 10
         val rows = (textures.size + perRow - 1) / perRow
         val pad = MARK_TIP_PAD
         val w = minOf(textures.size, perRow) * MARK_CELL + pad * 2

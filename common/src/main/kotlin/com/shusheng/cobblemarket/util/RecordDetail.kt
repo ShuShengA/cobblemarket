@@ -121,7 +121,13 @@ object RecordDetail {
         // 一只精灵最多能有近 200 个证章，全横着排那一行会长到没法看；
         // ⚠ 写入端会给含换行的值自动加引号包裹（见 TransactionFileLogger），
         //   所以 Excel / 标准 CSV 解析器仍然把它当**同一个格子**
-        val marks = pokemon.marks.map { it.texture.toString() }
+        // ⚠ 记的是 `Mark.name`（**词条 key**，如 `cobblemon.mark.ribbon_best_friends`），
+        //   **不是 `it.texture`**（纹理路径）—— 项目里对 marks 有两种用法：
+        //   界面**画图标**要 texture（`EntryBadgeRenderer` / `MarketNetwork` 那几处），
+        //   而**显示名字**要 name（拍卖播报的聊天悬停就是 `joinToString(",") { it.name }`）。
+        //   CSV 是给人读的文字账本 ⇒ 走后者。本来抄了渲染那套（纹理路径），
+        //   又长又难读（用户 2026-09-27 实测指出）。
+        val marks = pokemon.marks.map { it.name }
         if (marks.isNotEmpty()) {
             // ⚠ **内层必须再 join 一次**：`chunked` 返回的是 `List<List<String>>`，
             //   直接 `joinToString(",\n")` 会把每个**子列表的 `toString()`**（`[a, b, c]` 这种）

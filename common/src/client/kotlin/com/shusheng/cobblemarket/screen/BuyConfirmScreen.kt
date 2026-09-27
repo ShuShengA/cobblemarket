@@ -36,6 +36,14 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
     /** 信息区顶（标题 14 + 图标 26+30 + 8）与底部按钮区高度 */
     private val infoTop = 64
     private val infoBottomH = 58
+
+    /**
+     * 信息分割线宽 = 本界面内容栏宽（260，见 `startX = width / 2 - 130`）减去左右各 10。
+     *
+     * ⚠ **证章一行放几个也按它算**（见 [EntryBadgeRenderer.marksBlockHeight]）—— 两处必须**同源**：
+     *   不同源就会出现「分割线比图标行长一截、明明还能多放几个」或反过来（用户 2026-09-27 报的正是这种）。
+     */
+    private val INFO_DIVIDER_W = 240
     /** 第一行按钮 y（init 按信息区高度算好，分期方案行跟随其上移） */
     private var buttonRow1Y = 0
     private val planButtons = mutableListOf<TextureButton>()
@@ -208,7 +216,7 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
         infoScroll = infoScroll.coerceIn(0, infoMaxScroll())
         context.enableScissor(0, viewTop, width, viewBottom)
         // 分割线宽 = 本界面内容栏宽（260，见 startX = width/2 - 130）减去左右各 10
-        EntryBadgeRenderer.drawInfoLines(context, entry, name, centerX, infoY - infoScroll, dividerW = 240)
+        EntryBadgeRenderer.drawInfoLines(context, entry, name, centerX, infoY - infoScroll, dividerW = INFO_DIVIDER_W)
         context.disableScissor()
     }
 
@@ -218,7 +226,8 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
         val infoRows = 13 + EntryBadgeRenderer.optionalRowCount(entry)
         return infoRows * 10 +
             EntryBadgeRenderer.movesBlockHeight(entry.moves) +
-            EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves)
+            // 证章一行放几个跟随可用宽（本界面固定 INFO_DIVIDER_W，与 render 里 drawInfoLines 的 dividerW 同源）
+            EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves, INFO_DIVIDER_W)
     }
 
     private fun infoMaxScroll(): Int =

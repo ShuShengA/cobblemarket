@@ -1465,7 +1465,6 @@ class SellSelectScreen(
             var marksRows = 0
             val markTextures = p.marks.mapNotNull { Identifier.tryParse(it) }
             if (markTextures.isNotEmpty()) {
-                marksRows = if (markTextures.size > EntryBadgeRenderer.MARKS_PER_ROW) 2 else 1
                 marksLine = lines.size
                 lines.add(null to 0)
                 lines.add(null to 0)
@@ -1477,8 +1476,14 @@ class SellSelectScreen(
             if (heldItemLine >= 0) {
                 mw = maxOf(mw, textRenderer.getWidth(lines[heldItemLine].first) + 14)
             }
-            if (marksRows > 0) mw = maxOf(mw, minOf(EntryBadgeRenderer.MARKS_PER_ROW, markTextures.size) * 12)
             mw = maxOf(mw, EntryBadgeRenderer.movesBlockWidth(p.moves))
+            // ⚠ 证章**不再参与** mw（方向反过来：**窗口宽度决定证章排几个**，见 [EntryBadgeRenderer.marksPerRow]）
+            //   ⇒ 必须在 mw 定稿之后才算「占几行」
+            marksRows = when {
+                markTextures.isEmpty() -> 0
+                markTextures.size > EntryBadgeRenderer.marksPerRow(mw) -> 2
+                else -> 1
+            }
             tooltipCacheLines = lines
             tooltipCacheHeldLine = heldItemLine
             tooltipCacheMovesLine = movesLine
@@ -1506,16 +1511,18 @@ class SellSelectScreen(
                 // 技能块：分割线 + 两行技能 + 分割线（左对齐版，分割线撑满提示框全宽）
                 rowY += EntryBadgeRenderer.drawMovesBlockLeft(context, p.moves, tx, mw, rowY)
             } else if (line == null && i == marksLine) {
-                // 证章图标行：第一行最多 MARKS_PER_ROW 个；超出的部分第二行显示「+N」
+                // 证章图标行：**一行放几个跟随可用宽**（见 [EntryBadgeRenderer.marksPerRow]）；放不下的第二行「+N」
                 val textures = p.marks.mapNotNull { Identifier.tryParse(it) }
-                textures.take(EntryBadgeRenderer.MARKS_PER_ROW).forEachIndexed { idx, texture ->
+                val perRow = EntryBadgeRenderer.marksPerRow(mw)
+                val shown = minOf(perRow, textures.size)
+                textures.take(perRow).forEachIndexed { idx, texture ->
                     com.cobblemon.mod.common.api.gui.blitk(
                         matrixStack = context.matrices, texture = texture,
                         x = tx + idx * 12, y = rowY, width = 8, height = 8
                     )
                 }
-                if (textures.size > EntryBadgeRenderer.MARKS_PER_ROW) {
-                    context.drawCenteredTextWithShadow(textRenderer, "+${textures.size - EntryBadgeRenderer.MARKS_PER_ROW}", tx + minOf(EntryBadgeRenderer.MARKS_PER_ROW, textures.size) * 6, rowY + 12, 0xAAAAAA)
+                if (textures.size > perRow) {
+                    context.drawCenteredTextWithShadow(textRenderer, "+${textures.size - perRow}", tx + shown * 6, rowY + 12, 0xAAAAAA)
                     rowY += 24
                 } else {
                     rowY += 12
