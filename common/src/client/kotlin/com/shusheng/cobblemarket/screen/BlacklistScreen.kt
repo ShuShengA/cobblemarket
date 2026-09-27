@@ -102,6 +102,8 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     // 富文本行 = Text + 行色：首行精灵名要走主属性色，纯 String 带不了颜色（见 buildPokemonTooltipLines）
     private var tooltipCacheKey: Any? = null
     private var tooltipCacheLines: List<Pair<Text, Int>> = emptyList()
+    /** 上面那份缓存是按**哪一版候选表**建的（见 [renderPokemonTooltip] 里的缓存键） */
+    private var tooltipCacheAspectsVersion = -1
     // 物品行 tooltip 富文本缓存（Text 保留词条自带颜色，照物品市场；Shift 展开按需构建）
     private var itemTooltipCacheKey: Any? = null
     private var itemTooltipLines: List<Pair<Text, Int>> = emptyList()
@@ -380,6 +382,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         val centerX = width / 2
         val leftX = centerX - panelWidth / 2
 
+        // 变体候选表**一进界面就问一次**（以前只在"打开变体列表"时问）：悬停列表行时要靠它
+        // 显示维度名，不问的话刚进界面悬停只能显示退化后的裸值。服务端有节流兜底，重复请求会被丢掉
+        sendToServer(com.shusheng.cobblemarket.network.RequestSpeciesFeatureAspectsPayload())
+
         val backBtn = NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
             Text.literal(""),
@@ -656,9 +662,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
                 formButton?.setMessage(formButtonText())
                 refreshPreviewModel()
             }
-            // 「全部」开关：数据层就是"形态全封 + 变体全封"，两个键都为 `*` 才算勾上
+            // 「全部」开关：数据层就是"形态全封 + 变体**不参与判定**"（变体空表）——
+            // ⚠ 以前这里判的是"变体表里有哨兵 `*`"，那个哨兵已废止（它漏掉不带变体的普通个体）
             allForms = PokemonBlacklistEntry.ALL_FORMS in entry.aspects &&
-                PokemonBlacklistEntry.ALL_VARIANTS in entry.variantAspects
+                entry.variantAspects.isEmpty()
             updateAllFormsButton()
             formButton?.dimmed = allForms
             variantButton?.dimmed = allForms
@@ -763,17 +770,11 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             htFilter = ruleHtFilter,
             // 编辑模式带原条目：服务端先删旧再插新（改了形态等字段也不会残留旧条目）
             originalId = editingEntry?.id,
-            // 变体（多选：封禁勾中的**任一个**）；「全部」勾上时写 `*` = 任意变体都封
-            variantAspects = if (allForms) listOf(PokemonBlacklistEntry.ALL_VARIANTS)
+            // 变体（多选：封禁勾中的**任一个**）；「全部」勾上时写**空表**（= 变体不参与判定，
+            // 配合形态 `*` 才是"整只精灵全封"）。⚠ 别写哨兵 `*`，那会漏掉不带变体的普通个体
+            variantAspects = if (allForms) emptyList()
             else selectedVariants.toList()
         ))
-        // ⚠ 临时诊断（2026-09-28 排「选了变体、存下来却是空」）：看清提交那一刻到底是什么。
-        //   客户端日志**你本机就能看**，服务端那边还有一条对应的（收到时打）——两条一对比就知道断在哪
-        com.shusheng.cobblemarket.CobbleMarket.LOGGER.info(
-            "[黑名单] 提交：allForms={} selectedVariants={} 发出 variantAspects={}",
-            allForms, selectedVariants,
-            if (allForms) listOf(PokemonBlacklistEntry.ALL_VARIANTS) else selectedVariants.toList()
-        )
         closeDialog()
     }
 
@@ -972,34 +973,24 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
      *   后者是给**按钮**显示数量的，拼在值后面会多出一个「项」（2026-09-28 用户实测）。
      */
     private fun variantTextOf(variantAspects: List<String>): String? =
-        variantAspects.takeIf { it.isNotEmpty() }
-            ?.joinToString("/") { com.shusheng.cobblemarket.util.SpeciesText.featureValueLabel(it) }
+        com.shusheng.cobblemarket.client.VariantText.rowValues(variantAspects)
             ?.let { Text.translatable("cobblemarket.blacklist.variant_label", it).string }
 
     /**
-     * **悬停窗**里的变体行 —— **每个变体单独一行**，带维度名（`花纹：face-spots-1`）。
+     * **悬停窗**里的变体行 —— **该物种每个维度一行**（照 RP 商城那枚按钮），没限制的维度写「不限」。
      *
      * ⚠ 悬停窗**不能横着排**：晃晃斑 5 个变体连起来能横跨整个屏幕（2026-09-28 用户截图）。
-     * ⚠ 带维度名是因为官方词条并不全（`face-spots-1` 那种官方压根没名字，只能显示原文），
-     *   光看原文不知道它属于哪一维。
+     * ⚠ **物种要传"这一行自己的"**：列表行悬停传 `entry.speciesId`，对话框那枚按钮传
+     *   [currentSpeciesId] —— 曾经这里写死用 `currentVariantGroups()`（= **对话框里正在编辑的
+     *   那只**），于是对话框关着就查不到维度名、开在别的物种上还会把**别人的维度名**打上去。
+     * ⚠ 具体排法（`*` 哨兵 → 「变体：全部」、表没到 → 逐值退化）在
+     *   [com.shusheng.cobblemarket.client.VariantText.tooltipLines]，**与价格限制共用**。
      */
-    private fun variantLinesOf(variantAspects: List<String>): List<String> {
-        if (variantAspects.isEmpty()) return emptyList()
-        val picked = variantAspects.toSet()
-        val withGroup = currentVariantGroups().flatMap { g ->
-            g.aspects.filter { it in picked }.map {
-                "${com.shusheng.cobblemarket.util.SpeciesText.featureGroupLabel(g.key)}：" +
-                    com.shusheng.cobblemarket.util.SpeciesText.featureValueLabel(it)
-            }
-        }
-        // ⚠⚠ **候选表没到时要退化**（2026-09-28 用户报"悬停窗里变体直接不见了"）：
-        //   维度名只能从候选表里查，而候选表**只有打开过变体列表才请求得到** ——
-        //   在主界面直接悬停列表行时它是空的，`.flatMap` 出来就是空 ⇒ 整行消失。
-        //   查不到维度名就只显示值，总比整行不见强。
-        return withGroup.ifEmpty {
-            variantAspects.map { com.shusheng.cobblemarket.util.SpeciesText.featureValueLabel(it) }
-        }
-    }
+    private fun variantLinesOf(speciesId: String?, variantAspects: List<String>): List<String> =
+        com.shusheng.cobblemarket.client.VariantText.tooltipLines(
+            variantAspects,
+            speciesId?.let { com.shusheng.cobblemarket.client.PointMarketCache.featureAspects[it] }.orEmpty()
+        )
 
     /**
      * 形态按钮的文案。
@@ -1054,10 +1045,8 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         variantButton?.setTooltip(
             if (selectedVariants.isEmpty()) null
             else net.minecraft.client.gui.tooltip.Tooltip.of(
-                // ⚠ **带维度名**（照 RP 商城那枚按钮的悬停窗）：光一串值看不出哪属于哪一维。
-                // ⚠⚠ 候选表**没打开过列表就没有** ⇒ 必须**退化**成只显示值，
-                //    否则 `.flatMap` 出来是空、tooltip 整段空白（同 [variantLinesOf]，2026-09-28）
-                Text.literal(variantLinesOf(selectedVariants.toList()).joinToString("\n"))
+                // ⚠ 物种用**对话框里这只**（[currentSpeciesId]）—— 这枚按钮配的就是它
+                Text.literal(variantLinesOf(currentSpeciesId(), selectedVariants.toList()).joinToString("\n"))
             )
         )
     }
@@ -1781,9 +1770,13 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     }
 
     private fun renderPokemonTooltip(context: DrawContext, entry: PokemonBlacklistEntry, mouseX: Int, mouseY: Int) {
-        // 文本行缓存：悬停同一行时内容不变，只在悬停目标变化时重建（见 tooltipCacheKey 注释）
-        if (tooltipCacheKey != entry.id) {
+        // 文本行缓存：悬停同一行时内容不变，只在悬停目标变化时重建（见 tooltipCacheKey 注释）。
+        // ⚠ **候选表版本也要进缓存键**：变体那几行的维度名是等表到了才有的 —— 只看行的话，
+        //   表在悬停期间到达，同一行的悬停窗会一直停在"退化后的裸值"，要移开鼠标再回来才刷新
+        val aspectsVersion = com.shusheng.cobblemarket.client.PointMarketCache.featureAspectsVersion
+        if (tooltipCacheKey != entry.id || tooltipCacheAspectsVersion != aspectsVersion) {
             tooltipCacheKey = entry.id
+            tooltipCacheAspectsVersion = aspectsVersion
             tooltipCacheLines = buildPokemonTooltipLines(entry)
         }
         // 走富文本重载（物品悬停窗同款）：首行名字要单独上属性色，纯 String 版只能整行白。
@@ -1801,8 +1794,9 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         // ⚠ 带「闪光：」前缀 —— 悬停窗里是**无条件**列出来的，光一个「不限」看不出是什么
         lines.add(Text.literal(shinyTextOf(entry.shinyFilter)) to 0xFFFFFF)
         lines.add(Text.literal(formTextOf(entry.aspects.toSet())) to 0xFFFFFF)
-        // 变体：**每个单独一行**（横向排会横跨整个屏幕，晃晃斑 5 个就已经溢出了）
-        variantLinesOf(entry.variantAspects).forEach { lines.add(Text.literal(it) to 0xFFFFFF) }
+        // 变体：每个维度单独一行（横向排会横跨整个屏幕，晃晃斑 5 个就已经溢出了）。
+        // ⚠ 物种用**这一行自己的**（entry.speciesId），不是对话框里正在编辑的那只
+        variantLinesOf(entry.speciesId, entry.variantAspects).forEach { lines.add(Text.literal(it) to 0xFFFFFF) }
         lines.add(Text.literal(htLabel(entry.htFilter)) to 0xFFFFFF)
         if (entry.ivHp >= 0) lines.add(Text.literal("${StatNames.HP}: ${entry.ivHp}") to 0xFFFFFF)
         if (entry.ivAtk >= 0) lines.add(Text.literal("${StatNames.ATK}: ${entry.ivAtk}") to 0xFFFFFF)

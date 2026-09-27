@@ -665,7 +665,14 @@ object PointMarketNetwork {
         // 而客户端拿不到（choice 型不同步，见 [SpeciesText.allFeatureAspects]）⇒ 服务端算好发过去。
         // ⚠ 判 `points.shop`：这份数据只有能上架的人用得上，没必要发给普通玩家
         registerC2S(RequestSpeciesFeatureAspectsPayload.ID, RequestSpeciesFeatureAspectsPayload.CODEC) { _, player ->
-            if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
+            // ⚠ **三个界面都要这张表**（RP 商城 / 黑名单 / 价格限制）⇒ 闸门必须是"任一相关节点"：
+            //   只授了黑名单或价格限制、没授 RP 商城的管理员，请求会被**静默丢掉** ——
+            //   表现是变体列表**空白**（等于配不了变体规则）+ 悬停窗只剩裸值，且一声不响
+            //   （2026-09-28 发现；表是只读数据，给了那几个节点本来就该看得到）
+            val allowed = MarketPermissions.has(player, MarketPermissions.POINTS_SHOP) ||
+                MarketPermissions.has(player, MarketPermissions.BLACKLIST) ||
+                MarketPermissions.has(player, MarketPermissions.PRICE_LIMIT)
+            if (!allowed) return@registerC2S
             if (!RequestThrottle.allow(player.uuid, "species_feature_aspects", RequestThrottle.READ_INTERVAL_MS)) {
                 return@registerC2S
             }
@@ -824,10 +831,9 @@ object PointMarketNetwork {
             )
             return
         }
-        // ⚠ **临时诊断日志**（2026-09-26 排「RP 商城买物品没有庆祝动画」，查到根因后删）——
-        //   两边服务端（主市场 / RP 商城）在这之前完全对称，只有 nbt 的来源不同，所以要看清它走到哪一步
-        // ⚠ 空栈要**显式挡掉**：`ItemStack.encode` 对空栈会抛 `IllegalStateException
-        //   (Cannot encode empty ItemStack)`，而这里抛出去会被 `server.execute` 吞掉 ——
+        // ⚠ 空栈要**显式挡掉**（下面两条 warn 是「写操作不再静默」的**修法本体，不是临时日志，别删**）：
+        //   `ItemStack.encode` 对空栈会抛 `IllegalStateException (Cannot encode empty ItemStack)`，
+        //   而这里抛出去会被 `server.execute` 吞掉 ——
         //   表现就是"购买成功、聊天有提示、**就是没动画**"（2026-09-26 服务端日志抓到的就是这个）。
         val stack = result.items.firstOrNull()?.takeIf { !it.isEmpty } ?: run {
             CobbleMarket.LOGGER.warn("[庆祝] RP商城买物品：没有可用的实物栈，不发包")

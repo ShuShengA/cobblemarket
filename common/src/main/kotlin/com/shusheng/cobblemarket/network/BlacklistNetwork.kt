@@ -192,12 +192,6 @@ object BlacklistNetwork {
                     htFilter = payload.htFilter.coerceIn(PokemonBlacklistEntry.HT_ANY, PokemonBlacklistEntry.HT_NONE),
                     variantAspects = payload.variantAspects
                 )
-                // ⚠ 临时诊断（2026-09-28）：与客户端那条对应 —— 服务端收到的和客户端发出的对不上，
-                //   说明**两端不同版**（payload 字段在本端被忽略）；都对就是后面读写/回填的问题
-                com.shusheng.cobblemarket.CobbleMarket.LOGGER.info(
-                    "[黑名单] 服务端收到：species={} aspects={} variantAspects={}",
-                    speciesId, payload.aspects, payload.variantAspects
-                )
                 val state = PokemonBlacklistState.get(server)
                 // 编辑语义：替换原条目（改了形态/IV/闪光/特训等字段时，旧条目不再残留）
                 payload.originalId?.let { state.remove(it) }
