@@ -428,18 +428,23 @@ object EntryBadgeRenderer {
      */
     fun measureInfoLines(entry: ListingEntry, displayName: Text): Int {
         val font = MinecraftClient.getInstance().textRenderer
-        val texts = listOf(
+        val texts = listOfNotNull(
             nameWithLevelLine(displayName, entry.primaryType, entry.level),
             // ⚠ 与 [drawInfoLines] 那行走**同一个组装入口**（含太晶那段）——
             //   两处行必须对应，否则量出来和画出来的不一致
             TypeTextColors.typeLineWithTera(entry.primaryType, entry.secondaryType, entry.teraType),
+            // 极巨行：**没有则整行不画**（普通精灵最常见）⇒ listOfNotNull 把 null 丢掉，
+            // 与 drawInfoLines 的行列表严格对应
+            com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(entry.gmaxFactor, entry.dmaxLevel),
             Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(natureText(entry.natureBase, entry.nature))
                 .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
                 .append(Text.translatable(entry.ability)),
             Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)),
             Text.translatable("cobblemarket.gui.tooltip_price").append(
-                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}"))
+                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}")),
+            // 初始训练家行：同样"没有就不画"
+            com.shusheng.cobblemarket.util.PokemonExtraLines.originalTrainer(entry.originalTrainer)
         )
         return texts.maxOf { font.getWidth(it) }
     }
@@ -467,6 +472,10 @@ object EntryBadgeRenderer {
         lines.add(
             TypeTextColors.typeLineWithTera(entry.primaryType, entry.secondaryType, entry.teraType) to 0xFFFFFF
         )
+        // 极巨行：属性行**下面**、有才显示（普通精灵两者都是默认值 ⇒ 整行不画，布局不变）。
+        // ⚠ 与 measureInfoLines 那行必须对应 —— 那边漏量，弹窗按内容收窄后这行就会被截断
+        com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(entry.gmaxFactor, entry.dmaxLevel)
+            ?.let { lines.add(it to 0xFFFFFF) }
         lines.add(
             Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
                 .append(natureText(entry.natureBase, entry.nature))
@@ -474,7 +483,9 @@ object EntryBadgeRenderer {
                 .append(Text.translatable(entry.ability)) to 0xFFFFFF
         )
         if (entry.ball.isNotEmpty()) {
-            lines.add(Text.literal("${Text.translatable("cobblemarket.gui.tooltip_ball").string}${Text.translatable(entry.ball).string}") to 0xFFFFFF)
+            // 球名走**稀有度色**（大师球在物品栏里是紫的）—— 共用入口，别再念词条（那样是白字）。
+            // ⚠ 这一行在 1.2.x 上漏下浮过：1.3.0 早就改成 ballLine 了
+            lines.add(com.shusheng.cobblemarket.util.ItemNameText.ballLine(entry.ball, entry.ballItem) to 0xFFFFFF)
         }
         var heldItemLine = -1
         if (hasHeldItem) {
@@ -489,6 +500,10 @@ object EntryBadgeRenderer {
         lines.add(Text.literal("  $spd: ${TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("  EV: ${entry.evsSpDef}").formatted(Formatting.RED)) to 0x66FF99)
         lines.add(Text.literal("  $spe: ${TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("  EV: ${entry.evsSpd}").formatted(Formatting.RED)) to 0xFF99FF)
         lines.add(Text.translatable("cobblemarket.gui.friendship", entry.friendship) to 0xFF99CC)
+        // 初始训练家行：亲密度**下面**、常驻（解析不出名字时整行不画）。
+        // ⚠ 同样要跟 measureInfoLines 对应
+        com.shusheng.cobblemarket.util.PokemonExtraLines.originalTrainer(entry.originalTrainer)
+            ?.let { lines.add(it to 0xFFFFFF) }
         // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：亲密度下方「分割线 + 两行技能 + 分割线」，
         // 整块由 drawMovesBlock 画（此处只占一个坑位）。证章块与它**共用下面那条分割线**，自己不再带前导分割线。
         // 无技能数据（旧挂单）= 整块不画。

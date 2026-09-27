@@ -87,7 +87,25 @@ data class ListingEntry(
      * ⚠ 曾经写成「只在 ≠ 主属性时才下发」，被用户否掉了：那等于把它定义成**附属模组专属功能**，
      *   而**玩家不一定知道这只精灵的主属性是哪个**（异兽、形态变化尤其）—— 太晶本身就该写明。
      */
-    val teraType: String = ""
+    val teraType: String = "",
+    /**
+     * 超极巨化（官方 `Pokemon.gmaxFactor`）：变的**是不是**超极巨（外观 + 专属 G-Max 招式）。
+     * ⚠ 与 [dmaxLevel] **不是二选一** —— 超极巨走同一条 HP 倍率公式，所以两者可以同时有值。
+     * 旧数据 / 普通精灵没有这一位 = false。
+     */
+    val gmaxFactor: Boolean = false,
+    /**
+     * 极巨等级（官方 `Pokemon.dmaxLevel`）：极巨化时 HP 倍率 = 1.5 + 0.05×等级；0 = 没喂过。
+     * 服务端从挂单自带的完整 NBT **现读**（同 [sizeCategory] / [moves] 的套路）
+     * ⇒ 升级上来的老挂单也显示，玩家不用重新上架。
+     */
+    val dmaxLevel: Int = 0,
+    /**
+     * 初始训练家（官方 `Pokemon.originalTrainer`）的**显示名** —— 服务端已把玩家 UUID 解析成
+     * 玩家名（见 [com.shusheng.cobblemarket.util.PokemonOT]），假训练家直接用原名。
+     * **空串 = 没有 / 解析不到**（那一行整行不画）。
+     */
+    val originalTrainer: String = ""
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(id)
@@ -122,6 +140,10 @@ data class ListingEntry(
         buf.writeString(moves)
         buf.writeBoolean(heldItemVisible)
         buf.writeString(teraType)
+        // ⚠ 新增字段一律**追加在末尾**（读端严格同序）；两端必须同步升级
+        buf.writeBoolean(gmaxFactor)
+        buf.writeInt(dmaxLevel)
+        buf.writeString(originalTrainer)
     }
 
     companion object {
@@ -157,7 +179,11 @@ data class ListingEntry(
             sizeCategory = buf.readString(),
             moves = buf.readString(),
             heldItemVisible = buf.readBoolean(),
-            teraType = buf.readString()
+            teraType = buf.readString(),
+            // 与 write 端严格同序（write 在 teraType 之后）—— 用具名参数防错位
+            gmaxFactor = buf.readBoolean(),
+            dmaxLevel = buf.readInt(),
+            originalTrainer = buf.readString()
         )
     }
 }
@@ -604,7 +630,26 @@ data class PokemonPreview(
      * ⚠ 曾经写成「只在 ≠ 主属性时才下发」，被用户否掉了：那等于把它定义成**附属模组专属功能**，
      *   而**玩家不一定知道这只精灵的主属性是哪个**（异兽、形态变化尤其）—— 太晶本身就该写明。
      */
-    val teraType: String = ""
+    val teraType: String = "",
+    /**
+     * 超极巨化（官方 `Pokemon.gmaxFactor`）：变的**是不是**超极巨。
+     * ⚠ 与 [dmaxLevel] **不是二选一** —— 超极巨走同一条 HP 倍率公式。
+     * 预览的是**活精灵**（队伍/PC 里那只），直接从 `Pokemon` 读，不走 NBT。
+     */
+    val gmaxFactor: Boolean = false,
+    /** 极巨等级（官方 `Pokemon.dmaxLevel`）：极巨化时 HP 倍率 = 1.5 + 0.05×等级；0 = 没喂过。 */
+    val dmaxLevel: Int = 0,
+    /**
+     * 初始训练家（官方 `Pokemon.originalTrainer`）的**显示名**，见
+     * [com.shusheng.cobblemarket.util.PokemonOT]。**空串 = 没有 / 解析不到**（那一行整行不画）。
+     */
+    val originalTrainer: String = "",
+    /**
+     * 球的 **item id**（`<ns>:<path>`，如 `cobblemon:master_ball`）：球种行取**稀有度色**用。
+     * ⚠ 只有球名的词条 key 不够 —— 直接念词条出来是**白字**（大师球在物品栏里是紫的），
+     *   见 [com.shusheng.cobblemarket.util.ItemNameText.ballLine]。旧数据缺这一位 = 空串（回退白字）
+     */
+    val ballItem: String = ""
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(uuid); buf.writeString(species); buf.writeString(speciesId); buf.writeString(speciesName)
@@ -625,6 +670,11 @@ data class PokemonPreview(
         buf.writeString(moves)
         buf.writeBoolean(heldItemVisible)
         buf.writeString(teraType)
+        // ⚠ 新增字段一律**追加在末尾**（读端严格同序）；两端必须同步升级
+        buf.writeBoolean(gmaxFactor)
+        buf.writeInt(dmaxLevel)
+        buf.writeString(originalTrainer)
+        buf.writeString(ballItem)
     }
 
     companion object {
@@ -644,7 +694,11 @@ data class PokemonPreview(
             buf.readString(),
             buf.readString(),   // moves：与 write 端严格同序（write 在 sizeCategory 之后）
             buf.readBoolean(),   // heldItemVisible：与 write 端严格同序（write 在 moves 之后）
-            buf.readString()     // teraType：与 write 端同序（write 在 heldItemVisible 之后）
+            buf.readString(),    // teraType：与 write 端同序（write 在 heldItemVisible 之后）
+            buf.readBoolean(),   // gmaxFactor：与 write 端严格同序（write 在 teraType 之后）
+            buf.readInt(),       // dmaxLevel
+            buf.readString(),    // originalTrainer
+            buf.readString()     // ballItem
         )
     }
 }
@@ -1271,6 +1325,10 @@ object MarketNetwork {
                         val detail = listing.extraData + ("teraType" to
                             com.shusheng.cobblemarket.util.PokemonTera.resolve(
                                 listing.extraData["teraType"], listing.pokemonNbt))
+                        // 极巨化 / 初始训练家：**同样从挂单自带的完整 NBT 现读**（与太晶同款）
+                        // ⇒ 升级上来的老挂单也显示，玩家不用重新上架。见 PokemonDynamax / PokemonOT
+                        val dyn = com.shusheng.cobblemarket.util.PokemonDynamax.fromNbt(listing.pokemonNbt)
+                        val otName = com.shusheng.cobblemarket.util.PokemonOT.fromNbt(listing.pokemonNbt, server)
                         ListingEntry(
                             id = listing.id,
                             sellerUuid = listing.sellerUuid,
@@ -1317,7 +1375,11 @@ object MarketNetwork {
                             aspects = parseAspects(detail),
                             marks = parseMarks(detail),
                             sizeCategory = PokemonSize.fromNbt(listing.pokemonNbt),
-                            moves = com.shusheng.cobblemarket.util.MoveText.resolve(detail["moves"], listing.pokemonNbt)
+                            moves = com.shusheng.cobblemarket.util.MoveText.resolve(detail["moves"], listing.pokemonNbt),
+                            // 极巨化 / 初始训练家（值见上面现读出来的 dyn / otName）
+                            gmaxFactor = dyn.gmaxFactor,
+                            dmaxLevel = dyn.dmaxLevel,
+                            originalTrainer = otName
                         )
                     }
                 }
@@ -1661,6 +1723,10 @@ object MarketNetwork {
                         val detail = listing.extraData + ("teraType" to
                             com.shusheng.cobblemarket.util.PokemonTera.resolve(
                                 listing.extraData["teraType"], listing.pokemonNbt))
+                        // 极巨化 / 初始训练家：**同样从挂单自带的完整 NBT 现读**（与太晶同款）
+                        // ⇒ 升级上来的老挂单也显示，玩家不用重新上架。见 PokemonDynamax / PokemonOT
+                        val dyn = com.shusheng.cobblemarket.util.PokemonDynamax.fromNbt(listing.pokemonNbt)
+                        val otName = com.shusheng.cobblemarket.util.PokemonOT.fromNbt(listing.pokemonNbt, server)
                         ListingEntry(
                             id = listing.id,
                             sellerUuid = listing.sellerUuid,
@@ -1707,7 +1773,11 @@ object MarketNetwork {
                             aspects = parseAspects(detail),
                             marks = parseMarks(detail),
                             sizeCategory = PokemonSize.fromNbt(listing.pokemonNbt),
-                            moves = com.shusheng.cobblemarket.util.MoveText.resolve(detail["moves"], listing.pokemonNbt)
+                            moves = com.shusheng.cobblemarket.util.MoveText.resolve(detail["moves"], listing.pokemonNbt),
+                            // 极巨化 / 初始训练家（值见上面现读出来的 dyn / otName）
+                            gmaxFactor = dyn.gmaxFactor,
+                            dmaxLevel = dyn.dmaxLevel,
+                            originalTrainer = otName
                         )
                     }
                 }
@@ -1879,7 +1949,7 @@ object MarketNetwork {
                     for (i in 0..5) {
                         try {
                             val p = party.get(PartyPosition(i)) ?: continue
-                            previews.add(toPreview(p, "party", i, server.registryManager))
+                            previews.add(toPreview(p, "party", i, server.registryManager, server))
                         } catch (_: Exception) {
                         }
                     }
@@ -1897,7 +1967,7 @@ object MarketNetwork {
                         if (idx++ < skip) continue
                         if (sent >= pageSize) { hasMore = true; break }
                         try {
-                            previews.add(toPreview(p, "pc", idx - 1, server.registryManager))
+                            previews.add(toPreview(p, "pc", idx - 1, server.registryManager, server))
                             sent++
                         } catch (_: Exception) {
                         }
@@ -2950,7 +3020,7 @@ object MarketNetwork {
                         val pokemon = com.shusheng.cobblemarket.util.PokemonLoader.fromNbt(
                             player.serverWorld.registryManager, listing.pokemonNbt
                         )
-                        toPreview(pokemon, "return", i, player.serverWorld.registryManager)
+                        toPreview(pokemon, "return", i, player.serverWorld.registryManager, player.server)
                     } catch (e: Exception) {
                         // 单条损坏不影响其他退回的预览
                         CobbleMarket.LOGGER.warn("Failed to build return preview for listing {}: {}", listing.id, e.message)
@@ -3110,7 +3180,9 @@ object MarketNetwork {
         pokemon: com.cobblemon.mod.common.pokemon.Pokemon,
         source: String,
         slot: Int,
-        registryManager: net.minecraft.registry.RegistryWrapper.WrapperLookup
+        registryManager: net.minecraft.registry.RegistryWrapper.WrapperLookup,
+        // 初始训练家要把玩家 UUID 解析成名字（`PokemonOT`），故需要 server
+        server: net.minecraft.server.MinecraftServer
     ) =
         PokemonPreview(
             uuid = pokemon.uuid,
@@ -3167,7 +3239,14 @@ object MarketNetwork {
             marks = pokemon.marks.map { it.texture.toString() },
             sizeCategory = PokemonSize.from(pokemon),
             // 技能槽快照（4 槽、空槽空串）：悬停窗技能块用，见 MoveText
-            moves = com.shusheng.cobblemarket.util.MoveText.of(pokemon)
+            moves = com.shusheng.cobblemarket.util.MoveText.of(pokemon),
+            // 极巨化 / 初始训练家：预览的是**活精灵**，直接从 Pokemon 读（不走 NBT）
+            gmaxFactor = pokemon.gmaxFactor,
+            dmaxLevel = pokemon.dmaxLevel,
+            originalTrainer = com.shusheng.cobblemarket.util.PokemonOT.from(pokemon, server),
+            // 球的 item id：球种行取稀有度色用（词条 key 单独走 ball 字段）——
+            // 与拍卖/求购侧的 `"ballItem"` 同款，见 ItemNameText.ballLine
+            ballItem = pokemon.caughtBall.name.toString()
         )
 
     fun openScreen(player: ServerPlayerEntity) {
