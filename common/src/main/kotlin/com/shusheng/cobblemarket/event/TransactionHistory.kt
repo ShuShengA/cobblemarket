@@ -75,7 +75,7 @@ class TransactionHistory private constructor() : PersistentState() {
                     species = e.listing.extraData["speciesKey"] ?: "cobblemon.species.${e.listing.species.lowercase()}.name",
                     price = e.listing.price,
                     fee = e.fee,
-                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny),
+                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.pokemonNbt, serverRef, e.listing.extraData, e.listing.level, e.listing.shiny),
                     currency = e.listing.currency,
                     // 精灵名上色用（形态感知的主属性，挂单时与 speciesKey 一起快照的）
                     primaryType = e.listing.extraData["primaryType"] ?: ""
@@ -93,7 +93,7 @@ class TransactionHistory private constructor() : PersistentState() {
                     species = e.listing.extraData["speciesKey"] ?: "cobblemon.species.${e.listing.species.lowercase()}.name",
                     price = e.price,
                     fee = 0,
-                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny),
+                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.pokemonNbt, serverRef, e.listing.extraData, e.listing.level, e.listing.shiny),
                     currency = e.listing.currency,
                     // 精灵名上色用（形态感知的主属性，挂单时与 speciesKey 一起快照的）
                     primaryType = e.listing.extraData["primaryType"] ?: ""
@@ -111,7 +111,7 @@ class TransactionHistory private constructor() : PersistentState() {
                     species = e.listing.extraData["speciesKey"] ?: "cobblemon.species.${e.listing.species.lowercase()}.name",
                     price = e.listing.price,
                     fee = 0,
-                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny),
+                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.pokemonNbt, serverRef, e.listing.extraData, e.listing.level, e.listing.shiny),
                     currency = e.listing.currency,
                     // 精灵名上色用（形态感知的主属性，挂单时与 speciesKey 一起快照的）
                     primaryType = e.listing.extraData["primaryType"] ?: ""
@@ -129,7 +129,7 @@ class TransactionHistory private constructor() : PersistentState() {
                     species = e.listing.extraData["speciesKey"] ?: "cobblemon.species.${e.listing.species.lowercase()}.name",
                     price = e.listing.price,
                     fee = 0,
-                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.extraData, e.listing.level, e.listing.shiny),
+                    detail = com.shusheng.cobblemarket.util.RecordDetail.pokemon(e.listing.pokemonNbt, serverRef, e.listing.extraData, e.listing.level, e.listing.shiny),
                     currency = e.listing.currency,
                     // 精灵名上色用（形态感知的主属性，挂单时与 speciesKey 一起快照的）
                     primaryType = e.listing.extraData["primaryType"] ?: ""
@@ -139,5 +139,15 @@ class TransactionHistory private constructor() : PersistentState() {
 
         // Static holder set once the server is available, since events fire on server thread
         var historyRef: TransactionHistory? = null
+
+    /**
+     * CSV「详情」列重建精灵时要用的 server（取 `registryManager` 解 NBT + 解析初始训练家的玩家名）。
+     *
+     * ⚠ 为什么要有它：下面那 4 个事件订阅（`MarketEvents.ADD.subscribe { e -> ... }`）**只有事件对象、
+     *   拿不到 server**，而 CSV 详情现在要写昵称 / 体型 / 极巨化 / 初始训练家 ——
+     *   这些只有**重建精灵**才拿得到（`extraData` 快照里没有）。
+     * ⚠ 与 [historyRef] **同生命周期**：`onServerStarted` 设置、`onServerStopped` 清空。
+     */
+    var serverRef: MinecraftServer? = null
     }
 }
