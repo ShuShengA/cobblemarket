@@ -104,6 +104,33 @@ object EntryBadgeRenderer {
     fun hasHeldItemLine(entry: ListingEntry): Boolean = hasHeldItemLine(entry.heldItemId)
 
     /**
+     * **「有才显示」的信息行有几行** —— 各弹窗「按内容算高度」时统一调它。
+     *
+     * ⚠⚠ **为什么必须收口**：这几行（球种 / 携带物 / 极巨行 / 初始训练家行）原先在 **6 个弹窗**里
+     *   各写了一份 `(if 球种)1 + (if 携带物)1` 的加法，而**基数里不含它们** ⇒
+     *   2026-09-27 加「极巨行 / 初始训练家行」时只改了渲染、没改那几个公式，
+     *   **六个弹窗的技能块全部压到了下方文字上**（用户实测报出「拍卖·强制下架弹窗文字重合」）。
+     *   ⇒ **以后增删「有才显示」的行，只改这一个函数**（[drawInfoLines] 的行列表同步改）。
+     *
+     * ⚠ 与 [drawInfoLines] / [measureInfoLines] 的行列表**必须一一对应**：
+     *   那边多一行，用这个函数的弹窗就少 10px 高度，行就叠上了。
+     * ⚠ 只算「可选行」——名字 / 属性 / 性格特性 / IV 标签+六项 / 亲密度 这些**恒显示**的行
+     *   仍由各弹窗自己的**基数**算（各弹窗显示的行不完全相同，基数没法统一）。
+     */
+    fun optionalRowCount(entry: ListingEntry): Int =
+        (if (entry.ball.isNotEmpty()) 1 else 0) +
+            (if (hasHeldItemLine(entry)) 1 else 0) +
+            (if (entry.gmaxFactor || entry.dmaxLevel > 0) 1 else 0) +
+            (if (entry.originalTrainer.isNotEmpty()) 1 else 0)
+
+    /** 拍卖侧版：数据来自 `AuctionEntry.extraData` 快照（精灵那支的字段名见 `auctionToEntry`） */
+    fun optionalRowCount(extra: Map<String, String>, heldItemId: String): Int =
+        (if (extra["ball"].orEmpty().isNotEmpty()) 1 else 0) +
+            (if (hasHeldItemLine(heldItemId)) 1 else 0) +
+            (if (extra["gmaxFactor"] == "true" || (extra["dmaxLevel"]?.toIntOrNull() ?: 0) > 0) 1 else 0) +
+            (if (extra["ot"].orEmpty().isNotEmpty()) 1 else 0)
+
+    /**
      * 拍卖条目的**带色名字** —— 精灵按**形态主属性色**、物品按**稀有度色**。
      *
      * ⚠ **各处一律走它，别再各拼各的**：拍卖场与管理端拍卖的**物品分支**当年是照精灵分支抄的，

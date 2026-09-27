@@ -1877,12 +1877,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
      * 加新信息行（如技能）时只改这里的 13，按钮位置自动跟随。
      */
     private fun confirmDialogHeight(entry: ListingEntry): Int {
-        // 极巨行 / 初始训练家行：有才显示（见 PokemonExtraLines），行数要跟着加
-        val infoRows = 13 +
-            (if (entry.gmaxFactor || entry.dmaxLevel > 0) 1 else 0) +
-            (if (entry.originalTrainer.isNotEmpty()) 1 else 0) +
-            (if (entry.ball.isNotEmpty()) 1 else 0) +
-            (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0)
+        // 「有才显示」的行数走**共用入口**（别在这自己加，加行时漏改的就是它）
+        val infoRows = 13 + EntryBadgeRenderer.optionalRowCount(entry)
         return 62 + infoRows * 10 +
             EntryBadgeRenderer.movesBlockHeight(entry.moves) +
             EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves) + 34
