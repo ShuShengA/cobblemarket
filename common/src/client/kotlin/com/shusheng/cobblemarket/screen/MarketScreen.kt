@@ -2047,10 +2047,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             // 极巨行：属性行下面、有才显示（与市场侧走同一个组装入口）
             com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(entry.gmaxFactor, entry.dmaxLevel)
                 ?.let { lines.add(it to w) }
-            lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
-                .append(EntryBadgeRenderer.natureText(entry.natureBase, entry.nature))
-                .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
-                .append(Text.translatable(entry.ability)) to w)
+            // 性格 + 特性同一行：走共用入口（两段间的间距只在 EntryBadgeRenderer 里定义）
+            lines.add(EntryBadgeRenderer.natureAbilityLine(entry.natureBase, entry.nature, entry.ability) to w)
             if (entry.ball.isNotEmpty()) {
                 // 球名走**稀有度色**（大师球在物品栏里是紫的）—— 共用入口 ItemNameText.ballLine
                 lines.add(com.shusheng.cobblemarket.util.ItemNameText.ballLine(entry.ball, entry.ballItem) to w)

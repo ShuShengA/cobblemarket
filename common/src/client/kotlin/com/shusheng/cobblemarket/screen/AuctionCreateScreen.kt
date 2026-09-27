@@ -1452,10 +1452,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             // 极巨行：属性行下面、有才显示（与市场侧走同一个组装入口）
             com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(p.gmaxFactor, p.dmaxLevel)
                 ?.let { lines.add(it to 0xFFFFFF) }
-            lines.add(Text.literal(Text.translatable("cobblemarket.gui.tooltip_nature").string)
-                .append(EntryBadgeRenderer.natureText(p.natureBase, p.nature))
-                .append(Text.literal("  ${Text.translatable("cobblemarket.gui.tooltip_ability").string}"))
-                .append(Text.translatable(p.ability)) to 0xFFFFFF)
+            // 性格 + 特性同一行：走共用入口（两段间的间距只在 EntryBadgeRenderer 里定义）
+            lines.add(EntryBadgeRenderer.natureAbilityLine(p.natureBase, p.nature, p.ability) to 0xFFFFFF)
             // 球种行：性格特性下面（与 EntryBadgeRenderer 的行顺序一致）；球名走**稀有度色**
             p.ball.takeIf { it.isNotEmpty() }?.let {
                 lines.add(com.shusheng.cobblemarket.util.ItemNameText.ballLine(it, p.ballItem) to 0xFFFFFF)
