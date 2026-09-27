@@ -1027,9 +1027,20 @@ object AuctionNetwork {
             RecordDetail.pokemon(auction.extraData, auction.level, auction.shiny)
         else
             RecordDetail.item(auction.itemNbt, auction.count, server.registryManager)
-        // 账本 fee 与实际扣费一致：走**唯一入口**（含按拍卖币种选费率、逾期翻倍、卡片折扣）
-        val fee = if (type == TransactionType.PURCHASE)
-            com.shusheng.cobblemarket.market.auctionFeeOf(server, auction, System.currentTimeMillis())
+        // 账本 fee 与实际扣费一致（含逾期翻倍，付款方=卖家）
+        // ⚠ 1.2.x 走这里的自算 —— `auctionFeeOf`「唯一入口」是 1.3.0 才收口的（含 RP 币种费率），
+        //   本分支没有 RP 拍卖、也没有那个函数，别往这里搬（c016c49c 搬过一次，1.2.0/1.2.1 都编译不过）
+        val fee = if (type == TransactionType.PURCHASE && CobbleMarketConfig.auctionFeePercent > 0)
+            com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
+                com.shusheng.cobblemarket.finance.FinanceState.get(server),
+                auction.sellerUuid,
+                com.shusheng.cobblemarket.finance.FinanceService.applyFeeMultiplier(
+                    com.shusheng.cobblemarket.finance.FinanceState.get(server), auction.sellerUuid,
+                    System.currentTimeMillis(),
+                    Math.ceil(auction.currentPrice.toLong() * CobbleMarketConfig.auctionFeePercent / 100.0).toLong()
+                        .coerceAtMost(Int.MAX_VALUE.toLong())
+                )
+            ).toInt()
         else 0
         TransactionHistory.get(server).addRecord(TransactionRecord(
             timestamp = System.currentTimeMillis(),
