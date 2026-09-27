@@ -127,7 +127,13 @@ object RecordDetail {
         //   而**显示名字**要 name（拍卖播报的聊天悬停就是 `joinToString(",") { it.name }`）。
         //   CSV 是给人读的文字账本 ⇒ 走后者。本来抄了渲染那套（纹理路径），
         //   又长又难读（用户 2026-09-27 实测指出）。
-        val marks = pokemon.marks.map { it.name }
+        // ⚠ 用 **`identifier`**（`cobblemon:mark_jumbo` 这种 id）—— **不要用 `it.name` 也不要 `it.texture`**：
+        //   `texture` 是纹理路径（`cobblemon:textures/gui/mark/xxx.png`，又长又难读）；
+        //   而 `name` **实测在运行时也是纹理路径**（用户 2026-09-27 用 1.3.0 全量实测，
+        //   与 `data/cobblemon/marks/*.json` 里 `"name": "cobblemon.mark.xxx"` 对不上 ——
+        //   那是**数据文件字段**，运行时 `Mark` 对象上的 `name` 未必等同）。
+        //   `identifier` 是唯一**不依赖数据文件字段语义**的取值，且正是玩家认的那个 id。
+        val marks = pokemon.marks.map { it.identifier.toString() }
         if (marks.isNotEmpty()) {
             // ⚠ **内层必须再 join 一次**：`chunked` 返回的是 `List<List<String>>`，
             //   直接 `joinToString(",\n")` 会把每个**子列表的 `toString()`**（`[a, b, c]` 这种）
