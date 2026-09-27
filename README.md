@@ -88,8 +88,8 @@ Market data is stored in `world/data/cobblemarket*.dat`. On every startup, the m
 
 Config file: `config/cobblemarket.json` (generated on first launch). Most settings can be edited in-game — the **Server Config** screen (at the bottom of the admin panel) covers fees, limits, durations and switches, and the **Meowth Bank Config** screen reached from there covers the finance section. Editing the file by hand works too; `/market reload` applies the changes without a restart, except for currency settings, which still need one.
 
-Full currency system guide (server owners): [中文](docs/currency_zh.md) / [English](docs/currency_en.md)
-Meowth Bank finance guide (server owners): [中文](docs/meowth_bank_zh.md) / [English](docs/meowth_bank_en.md)
+Full currency system guide (server owners): 中文 / English
+Meowth Bank finance guide (server owners): 中文 / English
 
 | Key | Default | Description |
 |---|---|---|
@@ -109,11 +109,11 @@ Meowth Bank finance guide (server owners): [中文](docs/meowth_bank_zh.md) / [E
 
 **Please download only from CurseForge.** Jars from any other source (QQ groups, "friend repacks", third-party download sites) cannot be guaranteed safe. You can verify every official file against the SHA-256 hash shown on its CurseForge page.
 
-This mod is designed with **server-authoritative architecture**: all transactions are validated server-side, the client is display-only, and no client data (prices, stats, balance) is ever trusted as an asset source. Cheating on the client cannot produce money or items. See [docs/security/SECURITY_en.md](docs/security/SECURITY_en.md) for the full defense design.
+This mod is designed with **server-authoritative architecture**: all transactions are validated server-side, the client is display-only, and no client data (prices, stats, balance) is ever trusted as an asset source. Cheating on the client cannot produce money or items.
 
 **请仅从 CurseForge 官方页面下载**。来自其他渠道的 jar（QQ 群、他人转发、第三方下载站）无法保证安全。官方文件均可与 CurseForge 页面显示的 SHA-256 哈希核对。
 
-本模组采用**服务端权威架构**：所有交易由服务端校验，客户端仅负责显示，任何客户端数据（价格、数值、余额）都不会被当作资产依据——客户端作弊无法凭空获得货币或物品。完整防御设计见 [docs/security/SECURITY_zh.md](docs/security/SECURITY_zh.md)。
+本模组采用**服务端权威架构**：所有交易由服务端校验，客户端仅负责显示，任何客户端数据（价格、数值、余额）都不会被当作资产依据——客户端作弊无法凭空获得货币或物品。
 
 ## License / 许可
 

@@ -47,3 +47,10 @@ libs/
 # 编译验证日志
 build_verify.log
 
+
+# 内部文件（不进版本控制：计划 / 约定 / 开发文档）
+docs/
+CLAUDE.md
+# 构建日志
+*.log
+.architectury-transformer/
