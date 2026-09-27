@@ -2284,7 +2284,8 @@ class BuyOrderScreen(
                 (if (hasOriginalTrainer) 1 else 0) +
                 (if (listing?.ball?.isNotEmpty() == true) 1 else 0) +
                 (if (listing != null && EntryBadgeRenderer.hasHeldItemLine(listing)) 1 else 0)
-            val marksH = if (listing != null) EntryBadgeRenderer.marksBlockHeight(listing.marks, listing.moves) else 0
+            // 证章一行几个跟随可用宽（见 marksPerRow）—— 保守传最小宽 ⇒ 高度宁多不少
+            val marksH = if (listing != null) EntryBadgeRenderer.marksBlockHeight(listing.marks, listing.moves, 124) else 0
             val movesH = if (listing != null) EntryBadgeRenderer.movesBlockHeight(listing.moves) else 0
             // 顶部 62 = 标题 + 28 高的图标（占 +28~+56）+ 6px 间隙，名字行才起在 +62（照市场购买确认弹窗）
             62 + infoRows * 10 + movesH + marksH + 72
