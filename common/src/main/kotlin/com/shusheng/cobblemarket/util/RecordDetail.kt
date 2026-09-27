@@ -122,7 +122,12 @@ object RecordDetail {
         // ⚠ 写入端会给含换行的值自动加引号包裹（见 TransactionFileLogger），
         //   所以 Excel / 标准 CSV 解析器仍然把它当**同一个格子**
         val marks = pokemon.marks.map { it.texture.toString() }
-        if (marks.isNotEmpty()) parts.add("marks=" + marks.chunked(MARKS_PER_CSV_LINE).joinToString(",\n"))
+        if (marks.isNotEmpty()) {
+            // ⚠ **内层必须再 join 一次**：`chunked` 返回的是 `List<List<String>>`，
+            //   直接 `joinToString(",\n")` 会把每个**子列表的 `toString()`**（`[a, b, c]` 这种）
+            //   当成元素 —— 出来是带方括号、逗号还多一个空格的格式（2026-09-27 用户实测抓到）
+            parts.add("marks=" + marks.chunked(MARKS_PER_CSV_LINE).joinToString(",\n") { it.joinToString(",") })
+        }
 
         return parts.joinToString("|")
     }
