@@ -80,8 +80,20 @@ object TransactionFileLogger {
                           退还（待领取退还）
 
                     详情列（"|"分隔，缺失字段整段省略）：
-                    精灵：lv=等级|shiny=Y/N|ivs=六项个体值|evs=六项努力值|ht=特训项：特训值|nature=生效性格|base=原生性格|ability=特性|gender=性别|ball=球种|held=携带物|form=形态
+                    精灵：lv=等级|shiny=Y/N|ivs=六项个体值|evs=六项努力值|ht=特训项：特训值
+                          |nature=生效性格|base=原生性格（用过薄荷才有）|ability=特性|gender=性别
+                          |ball=球种|held=携带物id|heldNbt=携带物完整NBT（附魔/自定义名等，无组件时省略）
+                          |form=形态|name=昵称|size=体型（XS/S/M/L/XL/ALPHA）
+                          |gmax=Y/N（超极巨化）|dmax=极巨等级|ot=初始训练家|tera=太晶属性
+                          |friend=亲密度|moves=四个技能槽（逗号分隔，空槽为空）
+                          |marks=证章（逗号分隔，每行 10 个）
                     物品：count=数量|ench=附魔id:等级,逗号分隔|nbt={完整NBT文本}
+
+                    ⚠ 证章多的时候（一只精灵最多近 200 个）是**在同一个格子里换行**的（每 10 个一行）：
+                      Excel 里需要开启「自动换行」才能看全；用程序读请按标准 CSV 解析
+                      （引号内的换行属于同一个格子，别按行切）。
+                    ⚠ 精灵这一段现在**从精灵的完整数据读取**，所以升级前就挂上的老条目同样能补齐
+                      （昵称 / 体型 / 极巨化 / 初始训练家这些原先没记的，现在也查得到）。
                     下架类记录额外带 reason：user=买家/卖家主动、expired=过期、admin=管理员强制、unsold=拍卖流拍
 
                     【玩家报告"上架的精灵/物品消失了"时，按三步对账补偿】
@@ -121,8 +133,23 @@ object TransactionFileLogger {
                            Returned (pending claim returned)
 
                     Details column ("|"-separated; segments omitted when not applicable):
-                    Pokémon: lv=level|shiny=Y/N|ivs=six IVs|evs=six EVs|ht=hyper-trained stats|nature=effective nature|base=base nature|ability=ability|gender=gender|ball=ball|held=held item|form=form
+                    Pokémon: lv=level|shiny=Y/N|ivs=six IVs|evs=six EVs|ht=hyper-trained stats
+                             |nature=effective nature|base=base nature (only when a mint was used)
+                             |ability=ability|gender=gender|ball=ball|held=held item id
+                             |heldNbt=full held-item NBT (enchantments / custom name; omitted when it has no components)
+                             |form=form|name=nickname|size=size (XS/S/M/L/XL/ALPHA)
+                             |gmax=Y/N (Gigantamax)|dmax=Dynamax Level|ot=Original Trainer|tera=Tera type
+                             |friend=friendship|moves=four move slots (comma-separated, empty when unused)
+                             |marks=marks (comma-separated, 10 per line)
                     Item: count=amount|ench=enchantment_id:level,comma-separated|nbt={full NBT text}
+
+                    NOTE: with many marks (up to ~200 on one Pokemon) the marks list wraps
+                    INSIDE the same cell (10 per line) — turn on "wrap text" in Excel to see it all,
+                    and parse the CSV properly in scripts (a newline inside quotes still belongs to
+                    the same field; never split on line breaks).
+                    NOTE: the Pokemon segment is now read from the Pokemon's FULL data, so trades
+                    recorded before this update are filled in as well (nickname / size / Dynamax /
+                    Original Trainer, which were previously not recorded at all).
                     Cancelled records carry reason=: user=closed by owner, expired, admin=admin-forced, unsold=auction ended unsold
 
                     [When a player reports "my listed Pokémon/item vanished", verify in 3 steps]
@@ -181,24 +208,43 @@ object TransactionFileLogger {
 
     // ── 回读（个人交易历史界面）：内存上限（全服 200 条）外的历史从 CSV 账本补 ──
 
-    /** 解析一条 CSV 行（引号状态机，兼容详情列中的逗号/引号） */
-    private fun parseCsvLine(line: String): List<String> {
+    /**
+     * 把整份 CSV 文本切成**一条条记录**（每条 = 一份字段表）。
+     *
+     * ⚠⚠ **为什么不能按行切**：详情列里的**证章是每 10 个换一行**的（一只精灵最多近 200 个证章，
+     *   见 [RecordDetail]），写入端会给整个字段加引号包裹、内嵌真实换行 ——
+     *   按 `\n` 切会把**一条交易拆成好几条**，回读（个人交易历史补老记录）立刻错位。
+     *   RFC 4180 里引号内的换行本来就属于同一个字段。
+     */
+    private fun parseCsvRecords(text: String): List<List<String>> {
+        val records = mutableListOf<List<String>>()
         val fields = mutableListOf<String>()
         val cur = StringBuilder()
         var inQuotes = false
         var i = 0
-        while (i < line.length) {
-            val c = line[i]
+        while (i < text.length) {
+            val c = text[i]
             when {
-                c == '"' && inQuotes && i + 1 < line.length && line[i + 1] == '"' -> { cur.append('"'); i++ }
+                c == '"' && inQuotes && i + 1 < text.length && text[i + 1] == '"' -> { cur.append('"'); i++ }
                 c == '"' -> inQuotes = !inQuotes
                 c == ',' && !inQuotes -> { fields.add(cur.toString()); cur.setLength(0) }
+                (c == '\n' || c == '\r') && !inQuotes -> {
+                    if (c == '\r' && i + 1 < text.length && text[i + 1] == '\n') i++  // \r\n 当一次
+                    fields.add(cur.toString())
+                    cur.setLength(0)
+                    if (fields.any { it.isNotBlank() }) records.add(fields.toList())
+                    fields.clear()
+                }
                 else -> cur.append(c)
             }
             i++
         }
-        fields.add(cur.toString())
-        return fields
+        // 收尾：文件末尾没有换行时最后一条也要收进来
+        if (cur.isNotEmpty() || fields.isNotEmpty()) {
+            fields.add(cur.toString())
+            if (fields.any { it.isNotBlank() }) records.add(fields.toList())
+        }
+        return records
     }
 
     /** 英文 CSV 类型名 → 枚举（回读固定读 en 文件，类型名不随语言变） */
@@ -230,11 +276,11 @@ object TransactionFileLogger {
             val file = File(dir, "history_${date}_en_us.csv")
             if (!file.isFile) continue
             try {
-                file.forEachLine { line ->
-                    if (line.isBlank()) return@forEachLine
-                    val fields = parseCsvLine(line)
-                    if (fields.size < 7 || fields[0].startsWith("Time")) return@forEachLine
-                    val type = typeFromCsv(fields[1]) ?: return@forEachLine
+                // ⚠ **按记录读、不按行读** —— 详情列里证章每 10 个换一行（见 RecordDetail），
+                //   引号内的换行属于同一条记录，按行切会把一条交易拆成几条
+                parseCsvRecords(file.readText()).forEach { fields ->
+                    if (fields.size < 7 || fields[0].startsWith("Time")) return@forEach
+                    val type = typeFromCsv(fields[1]) ?: return@forEach
                     // 新格式（含 UUID 列）字段序：0时间 1类型 2分类 3卖家 4买家 5卖家UUID 6买家UUID 7物种 8价格 9手续费 10详情
                     // 旧格式：0时间 1类型 2分类 3卖家 4买家 5物种 6价格 7手续费 8详情
                     val hasUuid = fields.size >= 10
@@ -248,7 +294,7 @@ object TransactionFileLogger {
                     val speciesRaw = fields[if (hasUuid) 7 else 5].removePrefix("'")
                     val species = if (fields[2] == "ITEM" || speciesRaw.contains(".species.")) speciesRaw
                     else "cobblemon.species.$speciesRaw.name"
-                    val price = fields[if (hasUuid) 8 else 6].toIntOrNull() ?: return@forEachLine
+                    val price = fields[if (hasUuid) 8 else 6].toIntOrNull() ?: return@forEach
                     // 主属性列（末尾新增）：老文件没有这一列 → 空串，界面按无色处理（只增不改）
                     val primaryType = if (fields.size > 11) fields[11].removePrefix("'") else ""
                     if (playerUuid != null) {
@@ -256,12 +302,12 @@ object TransactionFileLogger {
                         val uuidMatch = sellerUuid == playerUuid || buyerUuid == playerUuid
                         val nameMatch = playerName != null && (seller == playerName || buyer == playerName)
                         val nameFallbackAllowed = sellerUuid == null && (buyerUuid == null || buyer.isEmpty())
-                        if (!uuidMatch && !(nameFallbackAllowed && nameMatch)) return@forEachLine
+                        if (!uuidMatch && !(nameFallbackAllowed && nameMatch)) return@forEach
                     }
                     val timestamp = try {
                         java.time.LocalDateTime.parse(fields[0], timeFormat).atZone(zone).toInstant().toEpochMilli()
                     } catch (e: Exception) {
-                        return@forEachLine
+                        return@forEach
                     }
                     out.add(TransactionRecord(
                         timestamp = timestamp,

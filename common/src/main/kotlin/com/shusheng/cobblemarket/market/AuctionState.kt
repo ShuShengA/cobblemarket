@@ -254,7 +254,7 @@ class AuctionState private constructor() : PersistentState() {
                             price = auction.currentPrice,
                             fee = fee,
                             detail = if (auction.type == AuctionType.POKEMON)
-                                com.shusheng.cobblemarket.util.RecordDetail.pokemon(auction.extraData, auction.level, auction.shiny)
+                                com.shusheng.cobblemarket.util.RecordDetail.pokemon(auction.pokemonNbt, server, auction.extraData, auction.level, auction.shiny)
                             else
                                 com.shusheng.cobblemarket.util.RecordDetail.item(auction.itemNbt, auction.count, server.registryManager)
                         )

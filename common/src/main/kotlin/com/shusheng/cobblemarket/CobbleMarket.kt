@@ -76,6 +76,8 @@ object CobbleMarket {
 		}
 		onServerStarted { server ->
 			TransactionHistory.historyRef = TransactionHistory.get(server)
+			// CSV 详情重建精灵要 registries + 解析初始训练家 —— 事件订阅那边拿不到 server，这里挂一份
+			TransactionHistory.serverRef = server
 			// 金融系统状态预热（照 TransactionHistory 模式；批次 3 起实际读写）
 			com.shusheng.cobblemarket.finance.FinanceState.get(server)
 			// 服主名单为空 = 谁都进不去「服务器配置」与「权限管理」（安全默认）。升级后老服主
@@ -106,6 +108,7 @@ object CobbleMarket {
 			// 备份完成后释放历史记录静态引用；不在 STOPPING 提前置 null，
 			// 覆盖 STOPPING→STOPPED 窗口内的事件写入（CSV 文件日志同步落盘）
 			TransactionHistory.historyRef = null
+			TransactionHistory.serverRef = null
 		}
 
 		onPlayerDisconnect { player ->
