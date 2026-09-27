@@ -465,7 +465,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                 rowY += EntryBadgeRenderer.drawMovesBlockLeft(context, p.moves, tx, mw, rowY)
             } else if (line == null && i == marksLine) {
                 // 证章图标行：左对齐排（照市场悬停；超过 6 个第二行左对齐显示「+N」）
-                rowY += EntryBadgeRenderer.drawMarksRow(context, p.marks, tx, rowY, mw)
+                rowY += EntryBadgeRenderer.drawMarksRow(context, p.marks, tx, rowY, mw, centered = true)
             } else if (line == null) {
                 // 分割线：1px 灰线，撑满提示框全宽（与信息区分隔线一致，不随证章数量变化）
                 val rowW = mw
