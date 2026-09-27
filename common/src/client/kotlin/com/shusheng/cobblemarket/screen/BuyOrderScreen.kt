@@ -2498,7 +2498,13 @@ class BuyOrderScreen(
         if (entry.type != "POKEMON") 149 + itemExtra * 10
         else {
             val listing = entry.pending?.let { pendingToListing(entry, it) }
+            // 极巨行 / 初始训练家行：有才显示，**高度要跟着加**（见 PokemonExtraLines）——
+            // ⚠ 2026-09-27 加这两行时漏了这里（管理端的强制下架 / 精灵下架弹窗同样漏了）
+            val hasDynamax = listing != null && (listing.gmaxFactor || listing.dmaxLevel > 0)
+            val hasOriginalTrainer = listing != null && listing.originalTrainer.isNotEmpty()
             val infoRows = 13 +
+                (if (hasDynamax) 1 else 0) +
+                (if (hasOriginalTrainer) 1 else 0) +
                 (if (listing?.ball?.isNotEmpty() == true) 1 else 0) +
                 (if (listing != null && EntryBadgeRenderer.hasHeldItemLine(listing)) 1 else 0)
             val marksH = if (listing != null) EntryBadgeRenderer.marksBlockHeight(listing.marks, listing.moves) else 0
