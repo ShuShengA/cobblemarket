@@ -1077,7 +1077,7 @@ object BuyOrderNetwork {
                             price = gross.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                             fee = fee.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                             detail = if (order.type == BuyOrderType.POKEMON)
-                                com.shusheng.cobblemarket.util.RecordDetail.pokemon(pending.extraData, pending.level, pending.shiny)
+                                com.shusheng.cobblemarket.util.RecordDetail.pokemon(pending.pokemonNbt, server, pending.extraData, pending.level, pending.shiny)
                             else
                                 com.shusheng.cobblemarket.util.RecordDetail.item(pending.itemNbt, pending.count, server.registryManager)
                         )

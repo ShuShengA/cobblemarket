@@ -1,6 +1,12 @@
 package com.shusheng.cobblemarket.util
 
+import com.cobblemon.mod.common.api.pokemon.stats.Stats
+import com.cobblemon.mod.common.pokemon.Pokemon
+import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.network.encodeHeldItemNbt
 import net.minecraft.nbt.NbtCompound
+import net.minecraft.registry.Registries
+import net.minecraft.server.MinecraftServer
 
 /**
  * CSV 交易账本「详情」列的构建：精灵完整数值 / 物品 NBT 文本化。
@@ -18,7 +24,111 @@ object RecordDetail {
         "htSpAtk" to "SPA", "htSpDef" to "SPD", "htSpd" to "SPE"
     )
 
-    fun pokemon(extraData: Map<String, String>, level: Int, shiny: Boolean): String {
+    /** 证章在详情列里每行排几个（纯粹为了可读性，与界面上的 `MARKS_PER_ROW` 无关） */
+    private const val MARKS_PER_CSV_LINE = 10
+
+    private val STATS = listOf(
+        Stats.HP, Stats.ATTACK, Stats.DEFENCE, Stats.SPECIAL_ATTACK, Stats.SPECIAL_DEFENCE, Stats.SPEED
+    )
+
+    /** 极训项 → 缩写（重建路径用；老口径的 `HT_KEYS` 是快照 key 版） */
+    private val HT_STATS = listOf(
+        Stats.HP to "HP", Stats.ATTACK to "ATK", Stats.DEFENCE to "DEF",
+        Stats.SPECIAL_ATTACK to "SPA", Stats.SPECIAL_DEFENCE to "SPD", Stats.SPEED to "SPE"
+    )
+
+    /**
+     * 精灵详情列 —— **优先从精灵完整 NBT 重建后取值**，重建不出来再按老口径从快照取。
+     *
+     * ⚠ **为什么要重建**：CSV 是**审计底账**，出事时要靠它复刻货物。原先只从 `extraData` 快照取 12 项，
+     *   而**昵称 / 体型 / 极巨化 / 初始训练家快照里根本没有**，携带物也只有一个 id
+     *   （**附魔与自定义名全丢**）⇒ 真出事时复刻不出来，底账就白记了（用户 2026-09-27 提出）。
+     * ⚠ **老账本同样受益**：挂单 / 拍卖 / 求购本来就存着完整 NBT ⇒ 升级前挂上的条目也能补全。
+     * ⚠ 开销可接受：CSV 只在**成交那一刻**写一次（不像悬停窗每帧走），重建一次精灵不值一提。
+     *
+     * @param pokemonNbt 挂单 / 拍卖 / 求购存着的**完整精灵 NBT**
+     * @param server     取 `registryManager` 解 NBT + 解析初始训练家的玩家名；**传 null 时退回快照口径**
+     * @param fallbackExtra/Level/Shiny 重建失败（NBT 损坏 / 没有 server）时的老口径取值 ——
+     *   **保证任何情况下这一条都写得出来**，绝不因为重建失败就丢一条交易记录
+     */
+    fun pokemon(
+        pokemonNbt: NbtCompound?,
+        server: MinecraftServer?,
+        fallbackExtra: Map<String, String>,
+        fallbackLevel: Int,
+        fallbackShiny: Boolean
+    ): String {
+        val registryManager = server?.registryManager
+        val rebuilt = try {
+            if (registryManager != null && pokemonNbt != null) PokemonLoader.fromNbt(registryManager, pokemonNbt) else null
+        } catch (e: Exception) {
+            // 数据损坏不吞交易：记一条告警、退回快照口径照常写（只是少几个字段）
+            CobbleMarket.LOGGER.warn("CSV detail: failed to rebuild pokemon from NBT, using snapshot instead: {}", e.message)
+            null
+        }
+        return if (rebuilt != null && registryManager != null) fromPokemon(rebuilt, registryManager, server)
+        else legacy(fallbackExtra, fallbackLevel, fallbackShiny)
+    }
+
+    /** 重建成功：全部字段从精灵读（快照一个都不用） */
+    private fun fromPokemon(
+        pokemon: Pokemon,
+        registryManager: net.minecraft.registry.DynamicRegistryManager,
+        server: MinecraftServer?
+    ): String {
+        val parts = mutableListOf<String>()
+        // ── 老口径的 12 项（值改从精灵读，不再依赖快照）──
+        parts.add("lv=${pokemon.level}")
+        parts.add("shiny=" + if (pokemon.shiny) "Y" else "N")
+        parts.add("ivs=" + STATS.joinToString("/") { pokemon.ivs[it]?.toString() ?: "?" })
+        parts.add("evs=" + STATS.joinToString("/") { pokemon.evs[it]?.toString() ?: "?" })
+        val ht = HT_STATS.mapNotNull { (stat, abbr) ->
+            pokemon.ivs.hyperTrainedIVs[stat]?.takeIf { it >= 0 }?.let { "$abbr:$it" }
+        }
+        if (ht.isNotEmpty()) parts.add("ht=" + ht.joinToString(","))
+        val nature = pokemon.effectiveNature.name.path
+        parts.add("nature=$nature")
+        // 原生性格：与生效性格相同（没用过薄荷）就整段省略，与老口径一致
+        val base = pokemon.nature.name.path
+        if (base != nature) parts.add("base=$base")
+        parts.add("ability=${pokemon.ability.name}")
+        parts.add("gender=${pokemon.gender.name}")
+        parts.add("ball=${pokemon.caughtBall.name}")
+        pokemon.aspects.joinToString(",").takeIf { it.isNotEmpty() }?.let { parts.add("form=$it") }
+
+        // ── 本次新增（快照里没有、只有精灵本身才有）──
+        // 昵称：玩家自己起的名字，原样记（不翻译）
+        pokemon.nickname?.takeIf { it.string.isNotBlank() }?.let { parts.add("name=${it.string}") }
+        // 体型（XS/S/M/L/XL/ALPHA）
+        PokemonSize.from(pokemon).takeIf { it.isNotEmpty() }?.let { parts.add("size=$it") }
+        parts.add("gmax=" + if (pokemon.gmaxFactor) "Y" else "N")
+        parts.add("dmax=${pokemon.dmaxLevel}")
+        // 初始训练家：能解析出名字就记名字；解析不出（没设过 / 离线且无缓存）整段省略
+        PokemonOT.from(pokemon, server).takeIf { it.isNotEmpty() }?.let { parts.add("ot=$it") }
+        parts.add("tera=${pokemon.teraType.id.path}")
+        parts.add("friend=${pokemon.friendship}")
+        MoveText.of(pokemon).takeIf { it.isNotEmpty() }?.let { parts.add("moves=$it") }
+
+        // 携带物：id + **完整 NBT**（附魔 / 自定义名 / 染色 —— 复刻全靠它）。
+        // ⚠ 无组件时 encodeHeldItemNbt 返回空串（构造简单、不值得多记一份），那时只有 id 也够复刻
+        val held = pokemon.heldItem()
+        if (!held.isEmpty) {
+            parts.add("held=" + Registries.ITEM.getId(held.item))
+            encodeHeldItemNbt(held, registryManager).takeIf { it.isNotEmpty() }?.let { parts.add("heldNbt=$it") }
+        }
+
+        // 证章：**逗号分隔 + 每 [MARKS_PER_CSV_LINE] 个换一行**（在同一个格子里换行）。
+        // 一只精灵最多能有近 200 个证章，全横着排那一行会长到没法看；
+        // ⚠ 写入端会给含换行的值自动加引号包裹（见 TransactionFileLogger），
+        //   所以 Excel / 标准 CSV 解析器仍然把它当**同一个格子**
+        val marks = pokemon.marks.map { it.texture.toString() }
+        if (marks.isNotEmpty()) parts.add("marks=" + marks.chunked(MARKS_PER_CSV_LINE).joinToString(",\n"))
+
+        return parts.joinToString("|")
+    }
+
+    /** 重建不出来时的**老口径**：只有快照能取的那 12 项（原实现原样保留，保证向后行为不变） */
+    private fun legacy(extraData: Map<String, String>, level: Int, shiny: Boolean): String {
         val parts = mutableListOf<String>()
         parts.add("lv=$level")
         parts.add("shiny=" + if (shiny) "Y" else "N")

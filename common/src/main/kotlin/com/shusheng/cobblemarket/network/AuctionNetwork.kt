@@ -1036,7 +1036,7 @@ object AuctionNetwork {
     private fun recordAuction(server: MinecraftServer, auction: AuctionListing, type: TransactionType, reason: String? = null) {
         val category = if (auction.type == AuctionType.POKEMON) TransactionCategory.POKEMON else TransactionCategory.ITEM
         val detailBase = if (auction.type == AuctionType.POKEMON)
-            RecordDetail.pokemon(auction.extraData, auction.level, auction.shiny)
+            RecordDetail.pokemon(auction.pokemonNbt, server, auction.extraData, auction.level, auction.shiny)
         else
             RecordDetail.item(auction.itemNbt, auction.count, server.registryManager)
         // 账本 fee 与实际扣费一致（含逾期翻倍，付款方=卖家）
