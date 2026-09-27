@@ -245,7 +245,7 @@ object ShareNetwork {
         } else {
             Text.literal("").append(nameText)
         }
-        return shareMessage(player, shareId, displayName, pokemonHover(pokemon))
+        return shareMessage(player, shareId, displayName, pokemonHover(pokemon, player.server))
     }
 
     /**
@@ -283,7 +283,7 @@ object ShareNetwork {
      * 只是数据直接读精灵对象 —— 分享没有拍卖那份 `extraData` 缓存。
      * 比拍卖多一行**证章**（分享的意义就是展示，证章是稀有个体标签；聊天画不了纹理，用证章名）。
      */
-    private fun pokemonHover(pokemon: Pokemon): Text {
+    private fun pokemonHover(pokemon: Pokemon, server: net.minecraft.server.MinecraftServer): Text {
         val lines = mutableListOf<Text>()
         val genderText = when (pokemon.gender.name) {
             "MALE" -> Text.translatable("cobblemarket.aspect.male")
@@ -323,6 +323,9 @@ object ShareNetwork {
                 }
             )
         )
+        // 极巨行：属性行下面、有才显示（与各处界面走同一个组装入口）—— 展示直接读**活精灵**
+        com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(pokemon.gmaxFactor, pokemon.dmaxLevel)
+            ?.let { lines.add(it) }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_nature").append(Text.translatable("cobblemon.nature.${pokemon.effectiveNature.name.path}")))
         lines.add(Text.translatable("cobblemarket.gui.tooltip_ability").append(Text.translatable("cobblemon.ability.${pokemon.ability.name}")))
         // 球名走**稀有度色**（与悬停窗 / 物品栏一致）—— 2026-09-25 用户报展示的聊天悬停没跟上。
@@ -363,6 +366,10 @@ object ShareNetwork {
             Text.translatable("cobblemarket.gui.friendship", pokemon.friendship)
                 .styled { it.withColor(0xFF99CC) }
         )
+        // 初始训练家：亲密度下面（与各处界面同位置）—— 展示读活精灵，官方缓存名优先
+        com.shusheng.cobblemarket.util.PokemonExtraLines.originalTrainer(
+            com.shusheng.cobblemarket.util.PokemonOT.from(pokemon, server)
+        )?.let { lines.add(it) }
         // 技能（亲密度下方）：两行、一行两个 —— 与悬停窗**同源**（[MoveText.rows]，词条由客户端本地翻译）。
         // ⚠ 聊天悬停是纯文本、画不了分割线，所以只补两行技能；空行跳过，免得工具提示里多出空档
         com.shusheng.cobblemarket.util.MoveText.rows(com.shusheng.cobblemarket.util.MoveText.of(pokemon))
