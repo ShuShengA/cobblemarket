@@ -25,6 +25,7 @@ import com.shusheng.cobblemarket.market.MarketListing
 import com.shusheng.cobblemarket.market.MarketState
 import com.shusheng.cobblemarket.market.PokemonBlacklistEntry
 import com.shusheng.cobblemarket.market.PokemonBlacklistState
+import com.shusheng.cobblemarket.market.RuleReasonText
 import com.shusheng.cobblemarket.util.RequestThrottle
 import com.shusheng.cobblemarket.util.TypeTextColors
 import com.shusheng.cobblemarket.platform.onServerTickEnd
@@ -794,8 +795,9 @@ object BuyOrderNetwork {
                 }
                 // 治理校验（照拍卖上架路径）：黑名单 + 携带物黑名单 + 价格限制
                 // （价格限制不含特性/性格维度，实际交付精灵按 形态/V数/闪光/特训 匹配规则取 bounds）
-                if (PokemonBlacklistState.get(server).isBlacklisted(pokemon)) {
-                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.blocked")))
+                val blacklisted = PokemonBlacklistState.get(server).findMatch(pokemon)
+                if (blacklisted != null) {
+                    sendToPlayer(player, MarketResultPayload(false, RuleReasonText.blacklistBlocked(blacklisted)))
                     return@execute
                 }
                 val heldItem = pokemon.heldItem()
@@ -808,15 +810,17 @@ object BuyOrderNetwork {
                     return@execute
                 }
                 // ⚠ 限价表是**主货币口径**，RP 单整块跳过（拿主货币的上下限去套 RP 价只会误伤，与市场/拍卖同）
-                val bounds = if (order.currency == MarketCurrency.PRIMARY) {
-                    val pokemonBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
-                        .getPriceBounds(pokemon)
+                // pokemonLimit 顺带带回"决定上下限的那两条规则"——拦下时要把理由说清（见 RuleReasonText）
+                val pokemonLimit = if (order.currency == MarketCurrency.PRIMARY)
+                    com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server).check(pokemon)
+                else null
+                val bounds = pokemonLimit?.let { m ->
                     val itemBounds = if (heldItemId != null)
                         com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
                             .getPriceBounds(heldItem, player.serverWorld.registryManager)
                     else null
-                    com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
-                } else null
+                    com.shusheng.cobblemarket.market.mergePriceBounds(m.bounds, itemBounds)
+                }
                 if (bounds != null) {
                     // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
                     if (bounds.isEmptyRange) {
@@ -824,11 +828,19 @@ object BuyOrderNetwork {
                         return@execute
                     }
                     if (bounds.min != null && payload.price < bounds.min) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_below", CurrencyHandler.formatAmount(bounds.min))))
+                        val msg = RuleReasonText.priceLimit(
+                            Text.translatable("cobblemarket.buy_order.price_limit_below", CurrencyHandler.formatAmount(bounds.min)),
+                            pokemonLimit.minEntry
+                        )
+                        sendToPlayer(player, MarketResultPayload(false, msg))
                         return@execute
                     }
                     if (bounds.max != null && payload.price > bounds.max) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_above", CurrencyHandler.formatAmount(bounds.max))))
+                        val msg = RuleReasonText.priceLimit(
+                            Text.translatable("cobblemarket.buy_order.price_limit_above", CurrencyHandler.formatAmount(bounds.max)),
+                            pokemonLimit.maxEntry
+                        )
+                        sendToPlayer(player, MarketResultPayload(false, msg))
                         return@execute
                     }
                 }

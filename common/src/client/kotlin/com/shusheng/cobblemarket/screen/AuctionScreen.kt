@@ -1432,6 +1432,30 @@ class AuctionScreen(
         addDrawableChild(bidCancelButton)
     }
 
+    /**
+     * 出价弹窗**右列前四行**（卖家 / 当前价 / 起拍价 / 最低加价）—— **量宽度与渲染共用这一份**。
+     *
+     * ⚠ **别再两边各拼各的**：这里原先是测量侧把「词条.string」和半角冒号手工拼起来、渲染侧走
+     *   `词条.append(值)`，而词条本身就带「：」⇒ **同一个冒号写了两遍**、量出来的宽度偏大 3~12px
+     *   （弹窗白宽一截，玩家零感知所以一直没暴露）。更要命的是**不同源**：哪天只改一侧，
+     *   宽度立刻算错 —— 2026-09-21「精灵名一长就压到右列拍卖信息上」就是这一类。
+     *
+     * ⚠ 价格三行的标签默认色、**金额段金色**（2026-08-24 拍板）；金色写在 Text 自己的样式上，
+     *   **不影响宽度测量**（色不带宽度）。
+     */
+    private fun auctionRightColumnLines(entry: AuctionEntry): List<Text> = listOf(
+        Text.translatable("cobblemarket.auction.seller").append(entry.sellerName),
+        Text.translatable("cobblemarket.auction.current_price").append(displayPriceText(entry)),
+        Text.translatable("cobblemarket.auction.starting_price_label").append(
+            com.shusheng.cobblemarket.client.amountWithUnit(
+                com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice), entry.isPoints, "", inline = true
+            ).formatted(Formatting.GOLD)),
+        Text.translatable("cobblemarket.auction.min_increment_label").append(
+            com.shusheng.cobblemarket.client.amountWithUnit(
+                com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement), entry.isPoints, "", inline = true
+            ).formatted(Formatting.GOLD))
+    )
+
     private fun renderBidDialogBackground(context: DrawContext, delta: Float) {
         val entry = bidEntry ?: return
         val centerX = width / 2
@@ -1467,14 +1491,8 @@ class AuctionScreen(
         val dialogW = if (entry.type == "POKEMON") {
             val nameW = textRenderer.getWidth(displayName(entry)) + 60
             // 右列（拍卖信息）实测最宽：金额随挂单变化（100,000,000 这类），不量的话会顶出弹窗右边框
-            rightW = listOf(
-                Text.literal("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}"),
-                Text.translatable("cobblemarket.auction.current_price").append(": ").append(displayPriceText(entry)),
-                Text.translatable("cobblemarket.auction.starting_price").append(": ").append(
-                    Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}")),
-                Text.translatable("cobblemarket.auction.min_increment").append(": ").append(
-                    Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"))
-            ).maxOf { textRenderer.getWidth(it) }
+            // ⚠ 量的是 [auctionRightColumnLines] —— **与下面渲染用的是同一份 Text**（同源，别各拼各的）
+            rightW = auctionRightColumnLines(entry).maxOf { textRenderer.getWidth(it) }
             // 左列(nameW) + 右列(rightW + 30：右边距 10、与左列间隙 20) —— 右列宽跟着实测走，
             // 不能再写成「距右缘固定 k」：那样弹窗加宽时右列跟着右移，可用宽永远不变
             (maxOf(320, nameW + rightW + 30)).coerceAtMost(width - 20)
@@ -1697,18 +1715,8 @@ class AuctionScreen(
             context.drawTextWithShadow(textRenderer, text, auctionX, ay, color)
             ay += 10
         }
-        auctionLine(Text.translatable("cobblemarket.auction.seller").append(entry.sellerName))
-        // 价格三行：标签默认色，金额段蓝色（2026-08-24 拍板）
-        auctionLine(Text.translatable("cobblemarket.auction.current_price").append(
-            displayPriceText(entry)))
-        auctionLine(Text.translatable("cobblemarket.auction.starting_price_label").append(
-            com.shusheng.cobblemarket.client.amountWithUnit(
-                com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice), entry.isPoints, "", inline = true
-            ).formatted(Formatting.GOLD)))
-        auctionLine(Text.translatable("cobblemarket.auction.min_increment_label").append(
-            com.shusheng.cobblemarket.client.amountWithUnit(
-                com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement), entry.isPoints, "", inline = true
-            ).formatted(Formatting.GOLD)))
+        // 卖家 / 当前价 / 起拍价 / 最低加价：**与上面量宽度用的是同一份 Text**（同源）
+        auctionRightColumnLines(entry).forEach { auctionLine(it) }
         auctionLine(
             Text.translatable("cobblemarket.auction.ends").append(
                 com.shusheng.cobblemarket.util.RemainingTime.text(entry.endsAt, "cobblemarket.auction.ending")
@@ -1886,7 +1894,11 @@ class AuctionScreen(
             if (System.currentTimeMillis() > resultUntil) {
                 resultMsg = null
             } else {
-                context.drawCenteredTextWithShadow(textRenderer, resultMsg!!, centerX, height - 40, 0x55FF55)
+                // 截断到屏幕内：这条是**单行居中、不换行**画的，长消息（黑名单 / 限价带上了
+                // 命中的规则条件，见 RuleReasonText）会直接飘出屏幕两侧。全文仍在聊天栏里
+                context.drawCenteredTextWithShadow(
+                    textRenderer, TextUtil.truncateString(resultMsg!!, width - 8), centerX, height - 40, 0x55FF55
+                )
             }
         }
 

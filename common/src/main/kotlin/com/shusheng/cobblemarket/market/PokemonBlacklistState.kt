@@ -47,8 +47,13 @@ data class PokemonBlacklistEntry(
          */
         const val ANY_FORMS = "**"
 
-        /** **全部变体**：精灵带**任意**一个变体 aspect 就命中（与 [ALL_FORMS] 同款写法，但管的是变体字段） */
-        const val ALL_VARIANTS = "*"
+        /**
+         * ⚠ **曾经的「全部变体」哨兵**——**已废止**，只在读老数据时用来把它剔掉（见 [readNbt] 那段）。
+         * 别再产出它、也别再拿它判定：它的语义是"精灵**带任意变体**才命中"，而多数精灵身上
+         * 一个变体都没有 ⇒ 会**漏掉普通个体**（顶部「全部」开关曾用它，于是"整只封"名不副实）。
+         * 变体这一维的「不限」= **空表**（见 [matches] 里的注释）。
+         */
+        const val LEGACY_ALL_VARIANTS = "*"
         const val SHINY_ANY = -1
         const val SHINY_NO = 0
         const val SHINY_YES = 1
@@ -60,7 +65,7 @@ data class PokemonBlacklistEntry(
         const val MAX_ASPECTS = 64
     }
 
-    fun matches(targetSpeciesId: String, ivs: IVs, htIvs: Map<com.cobblemon.mod.common.api.pokemon.stats.Stat, Int>, targetAspects: Set<String>, formAspectUnion: Set<String>, variantAspectUnion: Set<String>, targetShiny: Boolean, targetHasHt: Boolean): Boolean {
+    fun matches(targetSpeciesId: String, ivs: IVs, htIvs: Map<com.cobblemon.mod.common.api.pokemon.stats.Stat, Int>, targetAspects: Set<String>, formAspectUnion: Set<String>, targetShiny: Boolean, targetHasHt: Boolean): Boolean {
         if (speciesId != targetSpeciesId) return false
         if (shinyFilter != SHINY_ANY && targetShiny != (shinyFilter == SHINY_YES)) return false
         if (htFilter != HT_ANY && targetHasHt != (htFilter == HT_ONLY)) return false
@@ -85,13 +90,13 @@ data class PokemonBlacklistEntry(
         }
         if (!formsMatch) return false
         // ── 变体条件 ──
-        return when {
-            variantAspects.isEmpty() -> true
-            // 全部变体：精灵带**任意**一个变体 aspect 就命中
-            ALL_VARIANTS in variantAspects -> targetAspects.any { it in variantAspectUnion }
-            // 勾了具体几个：命中**任一**即可（黑名单是"封禁"，不是"全都要"）
-            else -> variantAspects.any { it in targetAspects }
-        }
+        // ⚠ **空表 = 不限**（变体这一维不参与判定，恒过）。
+        //   界面顶部那个「全部」开关（= 整只精灵一刀切）落的就是**空表**，别写成变体 `*`：
+        //   `*` 曾经表示"带任意变体就命中"，而**多数精灵身上一个变体都没有** ⇒ 会把普通个体漏掉，
+        //   「全部」也就名不副实了（2026-09-28 用户实测：普通皮卡丘不被「全部」规则拦截）。
+        if (variantAspects.isEmpty()) return true
+        // 勾了具体几个：命中**任一**即可（黑名单是"封禁"，不是"全都要"）
+        return variantAspects.any { it in targetAspects }
     }
 }
 
@@ -112,7 +117,15 @@ class PokemonBlacklistState private constructor() : PersistentState() {
 
     fun getAll(): List<PokemonBlacklistEntry> = entries.values.toList()
 
-    fun isBlacklisted(pokemon: com.cobblemon.mod.common.pokemon.Pokemon): Boolean {
+    /**
+     * 命中黑名单的**那一条**规则；没命中返回 null（调用点判 `!= null` 即可）。
+     *
+     * ⚠ 这里返回**条目本身**（而不是只给 true/false）是为了**把禁掉的理由带回给玩家**
+     *   （见 [com.shusheng.cobblemarket.market.RuleReasonText]）：规则加了「变体」维度之后，
+     *   只封某个变体的规则也报「该精灵已被黑名单禁止交易」，玩家会以为**整只精灵**都不能卖。
+     * ⚠ 多条同时命中时取**第一条**：判定只关心"有没有命中"，理由取哪条都足以说明问题。
+     */
+    fun findMatch(pokemon: com.cobblemon.mod.common.pokemon.Pokemon): PokemonBlacklistEntry? {
         val species = pokemon.species
         val speciesId = species.resourceIdentifier.toString()
         // 该物种所有已声明 form aspect 的并集（standard form + forms），用于"默认形态"判定
@@ -122,12 +135,10 @@ class PokemonBlacklistState private constructor() : PersistentState() {
         }
         // 特训判定：六项特训值（hyper trained，值域 0~31）任一存在即"有特训"
         val targetHasHt = pokemon.ivs.hyperTrainedIVs.values.any { it >= 0 }
-        // 变体那半边：该物种**全部变体候选**的 aspect 集合（现算，只算这一个物种，够便宜）
-        return entries.values.any {
+        return entries.values.firstOrNull {
             it.matches(
                 speciesId, pokemon.ivs, pokemon.ivs.hyperTrainedIVs, pokemon.aspects,
-                formAspectUnion, com.shusheng.cobblemarket.util.SpeciesText.variantAspectsOf(species),
-                pokemon.shiny, targetHasHt
+                formAspectUnion, pokemon.shiny, targetHasHt
             )
         }
     }
@@ -190,8 +201,13 @@ class PokemonBlacklistState private constructor() : PersistentState() {
                                 htFilter = if (c.contains("htFilter")) c.getInt("htFilter") else PokemonBlacklistEntry.HT_ANY,
                                 // 旧格式无 variantAspects 键 → 空表 = **不限变体**（正是旧条目的语义：
                                 // 那时候压根没有变体这个维度）⇒ 不需要迁移分支，读不到就是对的
+                                // ⚠ 顺手**剔掉废止的哨兵**（[LEGACY_ALL_VARIANTS]）：1.3.0 未发布期间
+                                //   顶部「全部」开关会把它写在变体表里，而它在界面上既看不见也删不掉 ——
+                                //   留着它会把规则偷偷变成"要带变体才命中"。剔掉后按正常条目判（= 其余值生效）
                                 variantAspects = if (c.contains("variantAspects"))
-                                    c.getList("variantAspects", NbtList.STRING_TYPE.toInt()).map { it.asString() }
+                                    c.getList("variantAspects", NbtList.STRING_TYPE.toInt())
+                                        .map { it.asString() }
+                                        .filter { it != PokemonBlacklistEntry.LEGACY_ALL_VARIANTS }
                                 else emptyList()
                             )
                             entries[entry.id] = entry

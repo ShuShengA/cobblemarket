@@ -1627,12 +1627,14 @@ object MarketNetwork {
                 }
 
                 // 黑名单检查：拦截上架后被加入黑名单的存量挂单（治理即时生效）
-                if (com.shusheng.cobblemarket.market.PokemonBlacklistState.get(server)
-                        .isBlacklisted(pokemon)
-                ) {
+                // 拦下时把**命中的那条规则**一并说清（见 RuleReasonText）
+                val blacklisted = com.shusheng.cobblemarket.market.PokemonBlacklistState.get(server)
+                    .findMatch(pokemon)
+                if (blacklisted != null) {
+                    val msg = com.shusheng.cobblemarket.market.RuleReasonText.blacklistBlocked(blacklisted)
                     sendToPlayer(
                         player,
-                        MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.blocked"))
+                        MarketResultPayload(false, msg)
                     )
                     return@execute
                 }
@@ -2302,12 +2304,14 @@ object MarketNetwork {
                 }
 
                 // 黑名单检查（物种 + IV + 形态：["*"]=全形态，[]=默认形态，非空=子集匹配）
-                if (com.shusheng.cobblemarket.market.PokemonBlacklistState.get(server)
-                        .isBlacklisted(pokemon)
-                ) {
+                // 拦下时把**命中的那条规则**一并说清（见 RuleReasonText）
+                val blacklisted = com.shusheng.cobblemarket.market.PokemonBlacklistState.get(server)
+                    .findMatch(pokemon)
+                if (blacklisted != null) {
+                    val msg = com.shusheng.cobblemarket.market.RuleReasonText.blacklistBlocked(blacklisted)
                     sendToPlayer(
                         player,
-                        MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.blocked"))
+                        MarketResultPayload(false, msg)
                     )
                     return@execute
                 }
@@ -2327,14 +2331,15 @@ object MarketNetwork {
                 }
                 // 价格限制检查：精灵规则（物种可空=全部精灵、V 档可空=不限、形态照黑名单语义）+ 携带物规则合并。
                 // ⚠ **RP 挂单整块跳过**：限价表是**主货币口径**，拿主货币的上下限去套 RP 价只会误伤（方案已拍板）
-                val priceBounds = if (currency != MarketCurrency.PRIMARY) null else {
-                    val pokemonBounds = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
-                        .getPriceBounds(pokemon)
+                // pokemonLimit 顺带带回"决定上下限的那两条规则"——拦下时要把理由说清（见 RuleReasonText）
+                val pokemonLimit = if (currency != MarketCurrency.PRIMARY) null else
+                    com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server).check(pokemon)
+                val priceBounds = pokemonLimit?.let { m ->
                     val itemBounds = if (heldItemId != null)
                         com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
                             .getPriceBounds(heldItem, player.serverWorld.registryManager)
                     else null
-                    com.shusheng.cobblemarket.market.mergePriceBounds(pokemonBounds, itemBounds)
+                    com.shusheng.cobblemarket.market.mergePriceBounds(m.bounds, itemBounds)
                 }
                 if (priceBounds != null) {
                     // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
@@ -2345,18 +2350,20 @@ object MarketNetwork {
                     // 携带物参与限价时用带说明的提示，玩家才知道总价里包含了携带物部分
                     if (priceBounds.min != null && payload.price < priceBounds.min) {
                         val key = if (heldItemId != null) "cobblemarket.price_limit.held_below_min" else "cobblemarket.price_limit.below_min"
-                        sendToPlayer(
-                            player,
-                            MarketResultPayload(false, Text.translatable(key, CurrencyHandler.formatAmount(priceBounds.min)))
+                        val msg = com.shusheng.cobblemarket.market.RuleReasonText.priceLimit(
+                            Text.translatable(key, CurrencyHandler.formatAmount(priceBounds.min)),
+                            pokemonLimit.minEntry
                         )
+                        sendToPlayer(player, MarketResultPayload(false, msg))
                         return@execute
                     }
                     if (priceBounds.max != null && payload.price > priceBounds.max) {
                         val key = if (heldItemId != null) "cobblemarket.price_limit.held_above_max" else "cobblemarket.price_limit.above_max"
-                        sendToPlayer(
-                            player,
-                            MarketResultPayload(false, Text.translatable(key, CurrencyHandler.formatAmount(priceBounds.max)))
+                        val msg = com.shusheng.cobblemarket.market.RuleReasonText.priceLimit(
+                            Text.translatable(key, CurrencyHandler.formatAmount(priceBounds.max)),
+                            pokemonLimit.maxEntry
                         )
+                        sendToPlayer(player, MarketResultPayload(false, msg))
                         return@execute
                     }
                 }

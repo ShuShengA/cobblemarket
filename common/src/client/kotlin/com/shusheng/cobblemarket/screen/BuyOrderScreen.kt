@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.util.StatNames
+import com.shusheng.cobblemarket.util.TextUtil
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.playButtonClickSound
@@ -1189,7 +1190,11 @@ class BuyOrderScreen(
                 resultMsg = null
             } else {
                 // height-52：面板底部边框带（height-48 起）上方 4px，避免提示文字与边框重合
-                context.drawCenteredTextWithShadow(textRenderer, resultMsg!!, width / 2, height - 52, resultMsgColor)
+                // 截断到屏幕内：这条是**单行居中、不换行**画的，长消息（黑名单 / 限价带上了
+                // 命中的规则条件，见 RuleReasonText）会直接飘出屏幕两侧。全文仍在聊天栏里
+                context.drawCenteredTextWithShadow(
+                    textRenderer, TextUtil.truncateString(resultMsg!!, width - 8), width / 2, height - 52, resultMsgColor
+                )
             }
         }
 
