@@ -9,6 +9,7 @@ import com.cobblemon.mod.common.pokemon.Species
 import com.shusheng.cobblemarket.client.ClientPermissionCache
 import com.shusheng.cobblemarket.client.ItemComponentsDisplay
 import com.shusheng.cobblemarket.client.PointMarketCache
+import com.shusheng.cobblemarket.util.FeatureCandidates
 import com.shusheng.cobblemarket.client.PointsShopCache
 import com.shusheng.cobblemarket.client.drawItemWithBar
 import com.shusheng.cobblemarket.client.formatPriceShortLong
@@ -33,6 +34,7 @@ import com.shusheng.cobblemarket.currency.PointShopSnapshotState
 import com.shusheng.cobblemarket.network.DeleteShopSnapshotPayload
 import com.shusheng.cobblemarket.network.RedeemPointCodePayload
 import com.shusheng.cobblemarket.network.RequestShopSnapshotsPayload
+import com.shusheng.cobblemarket.network.RequestSpeciesFeatureAspectsPayload
 import com.shusheng.cobblemarket.network.SaveShopSnapshotPayload
 import com.shusheng.cobblemarket.network.ShopSnapshotInfo
 import com.shusheng.cobblemarket.network.RemovePointMarketEntryPayload
@@ -752,6 +754,9 @@ class PointsMarketScreen : Screen(
     private var optionListAll: List<OptionItem> = emptyList()
 
     /** 过滤后的候选项 —— 渲染、点击、滚动全都用它 */
+    /** 上次建变体列表时用的候选表版本（见 [PointMarketCache.featureAspectsVersion]），见 `tick` */
+    private var variantAspectsSeen = -1
+
     private var optionListItems: List<OptionItem> = emptyList()
     private var optionListScroll = 0
 
@@ -796,7 +801,18 @@ class PointsMarketScreen : Screen(
          */
         val labelText: Text = Text.literal(label),
         /** 行首**贴图**图标（证章用，原图 32×32）；球种/携带物那种物品走 [stack] */
-        val iconTexture: Identifier? = null
+        val iconTexture: Identifier? = null,
+        /**
+         * 「变体」用：这一项属于哪个 feature 维度（注册键，如 `snake_pattern`）。
+         * **同 key 互斥、跨 key 共存** —— 选中时只摘掉同 key 的旧值（见 [toggleFeatureAspect]）。
+         * 其余字段全为 null（它们都是一维单选，没有分组这回事）。
+         */
+        val groupKey: String? = null,
+        /**
+         * 「变体」用：**该维度的标题行**（画成分节标题，不可点、不参与选择）。
+         * ⚠ 它的 [value] 恒为空串，靠这个标记与「不指定」项区分开。
+         */
+        val isHeader: Boolean = false
     )
 
     /**
@@ -1157,9 +1173,15 @@ class PointsMarketScreen : Screen(
             //   物品窗那条搜索框**常驻在界面上**（见 [buildItemFields]），同样要放行
             if (optionSearchField?.isMouseOver(mouseX, mouseY) == true) return true
             if (editItemSearchField?.isMouseOver(mouseX, mouseY) == true) return true
-            if (!result && button == 0) clickOptionRow(mouseX, mouseY)
-            focused = null
-            return true
+            // ⚠ **只有真的点在列表行上才吃掉这次点击**：列表只占左半边，右边那块是精灵大图 ——
+            //   原来这里无条件 `return true`，点精灵图标被列表整个吞掉、**叫都不叫**
+            //   （2026-09-27 用户报「变体弹窗的精灵图标点击没反应」）。
+            //   落在列表外（右侧预览 / 列表下方的空白）就放行，交给下面的预览点击判定
+            if (hoveredOptionRow(mouseX, mouseY) >= 0) {
+                if (!result && button == 0) clickOptionRow(mouseX, mouseY)
+                focused = null
+                return true
+            }
         }
         // 点在输入框之外 → 手动失焦（否则 E 键被输入框吃掉、Esc 也关不掉窗口）
         if (focusWasInput && !isOverEditInput(mouseX, mouseY)) focused = null
@@ -1184,12 +1206,15 @@ class PointsMarketScreen : Screen(
         val i = hoveredOptionRow(mouseX, mouseY)
         if (i < 0) return false
         optionListItems.getOrNull(optionListScroll + i)?.let { item ->
+            // 分节标题（「变体」的 feature 名那一行）**只是一行字**：点了不做事，**也不出声** ——
+            // 出声会让人以为选上了（同头目之证那枚"点了不响应"的道理）
+            if (item.isHeader) return true
             // 选项行是**自绘**的（不走 NineSliceButton），点击音得自己播 ——
             // 缺了它，在性格 / 特性 / 太晶属性这些**展开式列表**里选东西会没有任何声音
             //（2026-09-25 用户报）。⚠ 单选、多选两种情况都要，所以放在分支之前
             playButtonClickSound()
-            // 多选（证章）只切勾选、不关列表；单选选完就走
-            if (optionListMultiSelect) toggleMultiOption(item.value) else selectOption(item.value)
+            // 多选（证章 / 变体）只切勾选、不关列表；单选选完就走
+            if (optionListMultiSelect) toggleMultiOption(item) else selectOption(item.value)
         }
         return true
     }
@@ -1283,6 +1308,15 @@ class PointsMarketScreen : Screen(
         super.tick()
         // ① 有人刚改了 / 下架了正在看的这一格 → 关窗 + 提示（见 checkBuySlotStillValid）
         checkBuySlotStillValid()
+        // ② 变体候选**异步**回来（打开列表时才请求）⇒ 列表开着就重建一次。
+        //    ⚠ 必须放在下面那句 `if (dialogOpen()) return` **之前** —— 需要重建的正是"编辑窗开着、
+        //      变体列表也开着"的时候，而那句话恰恰是"弹窗开着就提前返回"。
+        //      没有这段的话，先开列表、包后到就会一直停在**空列表**上（黑名单/价格限制那边实测过）
+        val aspectsVersion = PointMarketCache.featureAspectsVersion
+        if (optionListKind == OPT_FEATURE && variantAspectsSeen != aspectsVersion) {
+            variantAspectsSeen = aspectsVersion
+            rebuildOptionList()
+        }
         if (dialogOpen()) return
         val wantPage = currentPage - 1
         // ⚠ 判据**必须带上 kind**：精灵与物品各是一套数据，只看页号的话 ——
@@ -1447,8 +1481,12 @@ class PointsMarketScreen : Screen(
         // 顺序是用户 2026-09-20 定的那张表，2026-09-26 补入「极巨等级」后按"成组同排"重排过一次。
         listOf(
             KEY_SHINY, KEY_SHINY_CHANCE, KEY_FORM,
-            KEY_LEVEL, KEY_GENDER, KEY_ABILITY,
-            KEY_NATURE, KEY_BALL, KEY_SIZE,
+            // 「变体」占**形态正下方**那格（第 2 行第 3 格，原本是「特性」的位置）——
+            // 两者都是"这只长什么样"，挨着放才好找；被顶下去的字段**整体顺延一格**
+            // （用户 2026-09-27 定：同组的离得近）
+            KEY_LEVEL, KEY_GENDER, KEY_FEATURE,
+            KEY_ABILITY, KEY_NATURE, KEY_BALL,
+            KEY_SIZE,
             // 排法（用户 2026-09-26 定）：**成组的尽量同一行** ——
             //   极巨等级紧挨超极巨化（能不能极巨化 / 能不能超极巨化）；
             //   携带物 + 携带物可见 同排（一个是带什么、一个是模型上露不露，本就一对）
@@ -1742,6 +1780,10 @@ class PointsMarketScreen : Screen(
         editSlot = slot
         // 窗口从**这个格子**长大出来（起点 = 它的 1.15 倍悬停态）
         startDialogAnim(slot)
+        // 形态候选表：species feature（花纹 / 帽子 / mega）**客户端自己算不出来**，
+        // 得问服务端要（见 [SpeciesText.selectableFormAspects]）。精灵 tab 才用得上。
+        // ⚠ 包到得晚也不影响使用：那时候服主还在搜物种，缓存空时列表退化成只列 forms
+        if (isPokemonSlot()) sendToServer(RequestSpeciesFeatureAspectsPayload())
         // ⚠ 这里**只处理"添加"**（只有空网格会走到这，见 mouseClicked）：`editOriginal` 恒为 null。
         //   点有内容的格子走的是 [openBuyDialog]（购买窗 + 右上角多一枚「下架」），不再有"编辑"——
         //   用户 2026-09-25 拍板，想改内容就走「下架 → 重新添加」。
@@ -2197,6 +2239,8 @@ class PointsMarketScreen : Screen(
         // ⚠ 存的是**鼠标位置**，不是那一行的坐标 —— 具体落点由 [renderMarksTooltip] 按
         //   「鼠标上方优先」算，与界面里其它悬停窗**同一套**（照 [HistoryScreen] 的 `renderTooltip`）
         var marksTooltipAt: Pair<Int, Int>? = null
+        // 「变体」那一行的悬停（同证章：格子只有 82px，多维度时值会被截断，得能看全）
+        var featureTooltipAt: Pair<Int, Int>? = null
         for (key in editFieldOrder()) {
             if (key == FIELD_BREAK) continue
             val (row, col) = posOf(key)
@@ -2204,6 +2248,10 @@ class PointsMarketScreen : Screen(
             // 「证章」那一行：悬停弹小窗把**全部**证章图标排出来（见 renderMarksTooltip）
             if (key == KEY_MARKS && spec.marks.isNotEmpty() && overBuyField(mouseX, mouseY, row, col)) {
                 marksTooltipAt = mouseX to mouseY
+            }
+            // 「变体」那行同理：整串变体名在 82px 的格子里必然被截断
+            if (key == KEY_FEATURE && spec.aspects.isNotEmpty() && overBuyField(mouseX, mouseY, row, col)) {
+                featureTooltipAt = mouseX to mouseY
             }
             drawBuyField(
                 context, editColX(col), editRowY(row), editColW(), buyFieldLine(key, spec),
@@ -2247,6 +2295,28 @@ class PointsMarketScreen : Screen(
 
         // 悬停窗**最后画**（浮在上面）
         marksTooltipAt?.let { (tx, ty) -> renderMarksTooltip(context, spec, tx, ty) }
+        featureTooltipAt?.let { (tx, ty) -> renderFeatureTooltip(context, spec, tx, ty) }
+    }
+
+    /**
+     * 购买窗「变体」那行的悬停小窗：把**每个变体**单独列一行（格子里那串会被截断）。
+     *
+     * ⚠ 显示名走 [featureValueLabel]（官方形态词条 → 物品名 → 原文），**不依赖变体候选表** ——
+     *   购买窗是玩家看的，那张表要 `points.shop` 权限才发得下来。
+     * ⚠ 外框复用 [withTooltipLayer]（与「变体」按钮的悬停窗、以及证章那枚同一套落点与背景）。
+     */
+    private fun renderFeatureTooltip(context: DrawContext, spec: ShopPokemonSpec, mouseX: Int, mouseY: Int) {
+        val values = featureAspectsOf(spec).map { featureValueLabel(it) }
+        if (values.isEmpty()) return
+        val pad = MARK_TIP_PAD
+        val lineH = 11
+        val w = values.maxOf { textRenderer.getWidth(it) } + pad * 2
+        val h = values.size * lineH + pad * 2
+        withTooltipLayer(context, mouseX, mouseY, w, h) { tx, ty ->
+            values.forEachIndexed { i, v ->
+                context.drawTextWithShadow(textRenderer, v, tx + pad, ty + pad + i * lineH, 0xFFFFFF)
+            }
+        }
     }
 
     /** 鼠标在不在这一个字段格子里（悬停判定用 —— 与绘制共用 [editColX] / [editRowY] 那套坐标） */
@@ -2572,11 +2642,25 @@ class PointsMarketScreen : Screen(
             )
             // 闪光概率那格在编辑窗是个输入框，只读窗没有可显示的独立信息（并在闪光里了）
             KEY_SHINY_CHANCE -> Text.empty()
+            // ⚠ 只显示**形态**的 aspect：`spec.aspects` 里还混着「变体」（species feature）的值，
+            //   它们跟形态是两回事（2026-09-27 拆开），混进来这行会显示成看不懂的花纹串。
+            //   判据走**正向白名单**（该物种 forms 的 aspects）—— 玩家端**拿不到候选表**
+            //   （那要 `points.shop` 权限），所以这里不能靠"减掉变体"来滤
             KEY_FORM -> Text.translatable(
                 "cobblemarket.points.store.field.form",
-                spec.aspects.filter { it != "shiny" }
+                formAspectsOf(spec)
                     .takeIf { it.isNotEmpty() }
                     ?.joinToString("/") { SpeciesText.aspectLabel(it) } ?: default.string
+            )
+            // 变体（species feature）：`spec.aspects` 去掉形态、去掉闪光，剩下的就是它 ——
+            // 正好与上面「形态」那行**互为补集**，两行加起来就是全部 aspects。
+            // ⚠ 显示名走 [featureValueLabel]（官方形态词条 → 物品名 → 原文），**不能**走
+            //   "按候选表翻名字"：玩家端拿不到变体候选表（那要 `points.shop` 权限才发）
+            KEY_FEATURE -> Text.translatable(
+                "cobblemarket.points.store.field.feature",
+                featureAspectsOf(spec)
+                    .takeIf { it.isNotEmpty() }
+                    ?.joinToString("/") { featureValueLabel(it) } ?: default.string
             )
             // 等级：服主留空 = 生成 1 级（与官方 PokemonProperties 同口径，见 PointMarketFactory）
             KEY_LEVEL -> Text.translatable("cobblemarket.points.store.field.level", (spec.level ?: 1).toString())
@@ -2647,6 +2731,49 @@ class PointsMarketScreen : Screen(
             )
             else -> Text.empty()
         }
+    }
+
+    /**
+     * 规格里**属于形态（forms）**的那些 aspect —— 购买窗显示「形态：」用。
+     *
+     * ⚠ 走**正向白名单**（该物种 forms 的 aspects），不是"从 spec.aspects 里减掉变体"：
+     *   购买窗是**玩家**看的，而变体候选表要 `points.shop` 权限才发得下来 ⇒ 玩家端那张表**恒为空**，
+     *   靠减法是滤不掉的。forms 是客户端本来就有的数据，谁看都在。
+     */
+    private fun formAspectsOf(spec: ShopPokemonSpec): List<String> =
+        formAspectsAmong(
+            Identifier.tryParse(spec.species)?.let { PokemonSpecies.getByIdentifier(it) },
+            spec.aspects
+        )
+
+    /** 编辑窗里**已选中的形态**（`editAspects` 里属于 forms 的那些）—— 形态按钮的标签与列表打勾用 */
+    private fun pickedFormAspects(): List<String> = formAspectsAmong(editSpecies, editAspects)
+
+    /**
+     * 规格里的**变体** aspects（非形态、非闪光）—— 购买窗那行「变体：」用。
+     *
+     * ⚠ 只能**正向排除**（去掉 forms 的、去掉 `shiny`），**不能**靠"减掉候选表"：
+     *   购买窗是**玩家**看的，而变体候选表要 `points.shop` 权限才发得下来 ⇒ 玩家端恒为空。
+     *   排除法与 [formAspectsOf] 正好互补：两行加起来就是 `spec.aspects` 的全貌。
+     */
+    private fun featureAspectsOf(spec: ShopPokemonSpec): List<String> {
+        val species = Identifier.tryParse(spec.species)?.let { PokemonSpecies.getByIdentifier(it) }
+        val formAspects = SpeciesText.selectableForms(species).flatMap { it.aspects }.toSet()
+        return spec.aspects.filter { it != "shiny" && it !in formAspects }
+    }
+
+    /**
+     * 从一堆 aspect 里挑出**属于形态（forms）**的那些 —— 购买窗与编辑窗**共用这一份**。
+     *
+     * ⚠ 形态与变体在 `editAspects` / `spec.aspects` 里是**混放**的（存档层本来就只有 `aspects` 一个
+     *   列表），凡是**显示形态**的地方都得过这一道，漏一处就出怪相：选了花纹之后形态按钮显示成
+     *   花纹串、形态列表里原来的地区形态也不再被打勾（2026-09-27 用户实测报的就是前者）。
+     * ⚠ 判据走**正向白名单**（该物种 forms 的 aspects），不是"减掉变体"：购买窗是**玩家**看的，
+     *   而变体候选表要 `points.shop` 权限才发得下来 ⇒ 玩家端那张表恒为空，靠减法是滤不掉的。
+     */
+    private fun formAspectsAmong(species: Species?, aspects: List<String>): List<String> {
+        val formAspects = SpeciesText.selectableForms(species).map { it.aspects.toSet() }
+        return aspects.filter { a -> a != "shiny" && formAspects.any { a in it } }
     }
 
     /** 下拉类字段（特性 / 性格 / 球种）：走编辑窗同一张候选表翻显示名，查不到就显示原值 */
@@ -3426,12 +3553,24 @@ class PointsMarketScreen : Screen(
     private fun showFriendshipLabel(): Boolean = friendshipLabelW() > 0
 
     /**
+     * 「极巨等级」输入框前缀标签的宽度 —— **它的默认值是 0**，服主对着一个孤零零的「0」
+     * 根本不知道是什么（用户 2026-09-27 报：「鬼知道这是什么，应该是极巨等级+输入框」）。
+     * 口径与 [friendshipLabelW] 一致：整格减掉标签后放不下输入框就返回 0（不画标签、输入框吃满）。
+     */
+    private fun dmaxLabelW(): Int {
+        val w = textRenderer.getWidth(Text.translatable("cobblemarket.points.store.field.dmax_label"))
+        return if (editColW() - w >= MIN_FRIENDSHIP_INPUT_W) w else 0
+    }
+
+    /**
      * 该字段输入框在**列内**的左缩进（目前只有等级那格有前缀）。
      * ⚠ 建控件（[newEditField]）与滚动重排（[applyEditScroll]）**两处都走这里** ——
      *   各算一份的话，一滚动前缀就压到输入框上了。
      */
     private fun editFieldInsetX(key: String): Int = when (key) {
         KEY_LEVEL -> levelLabelW()
+        // 极巨等级同亲密度：默认值是 0，光看数字不知道是什么（用户 2026-09-27 提出）
+        KEY_DMAX -> dmaxLabelW()
         // 亲密度**默认填 50**，会把 placeholder 盖住 —— 服主看着一个光秃秃的数字不知道是什么意思，
         // 所以照等级的做法在左边画个标签、输入框让出标签宽度（2026-09-25 用户提出）
         KEY_FRIENDSHIP -> friendshipLabelW()
@@ -3482,6 +3621,7 @@ class PointsMarketScreen : Screen(
         when (key) {
             KEY_SHINY -> cycleShiny()
             KEY_FORM -> openOptionList(OPT_FORM)
+            KEY_FEATURE -> openOptionList(OPT_FEATURE)
             KEY_GENDER -> cycleGender()
             KEY_NATURE -> openOptionList(OPT_NATURE)
             KEY_ABILITY -> openOptionList(OPT_ABILITY)
@@ -3691,11 +3831,19 @@ class PointsMarketScreen : Screen(
      */
     private fun normalizeAspects() {
         if (editAspects.isEmpty()) return
-        // 判据与形态候选**同一个数据源**（[SpeciesText.selectableForms]，已滤掉超极巨化）——
-        // 两边不一致的话，选不出来的形态却判成合法、或者选得出来却被清掉
-        val ok = SpeciesText.selectableForms(editSpecies)
-            .any { it.aspects.isNotEmpty() && it.aspects.toSet() == editAspects.toSet() }
-        if (!ok) editAspects = emptyList()
+        // ⚠⚠ **候选表还没到就整条跳过**：这时候"变体"的 aspect 认不出来（`featureGroupsOf` 是空的），
+        //   会被当成非法形态**当场清掉**。而快照回填正是「回填 → 紧跟一条 normalizeAspects」的路子
+        //   （见 [applyDraft]），赶在包回来之前回填就把服主存好的花纹吃了。**宁可晚判也不能误清**。
+        if (!PointMarketCache.featureAspectsLoaded) return
+        val known = featureGroupsOf(editSpecies).flatMap { it.aspects }.toSet()
+        // 变体那部分**逐个**判：换物种后旧物种的变体值可能就不在这份候选里了，直接丢掉
+        val variants = editAspects.filter { it in known }
+        val rest = editAspects.filterNot { it in known }
+        // 剩下的是形态（forms）：判据与形态候选**同一个数据源**（[SpeciesText.selectableForms]，
+        // 已滤掉超极巨化）—— 两边不一致的话，选不出来的形态却判成合法、或者选得出来却被清掉
+        val formOk = rest.isEmpty() || SpeciesText.selectableForms(editSpecies)
+            .any { it.aspects.isNotEmpty() && it.aspects.toSet() == rest.toSet() }
+        editAspects = (if (formOk) rest else emptyList()) + variants
     }
 
     /**
@@ -3813,7 +3961,9 @@ class PointsMarketScreen : Screen(
             return
         }
         optionListKind = kind
-        optionListMultiSelect = kind == OPT_MARKS
+        // 「变体」也是多选：**每个维度各选一个、互不干扰**，选完还得接着选下一个维度，
+        // 所以点一下不能关列表（同证章那套，靠「返回」收场）
+        optionListMultiSelect = kind == OPT_MARKS || kind == OPT_FEATURE
         optionSearchText = ""
         applyOptionFilter()
         buildOptionSearchField()
@@ -3849,8 +3999,10 @@ class PointsMarketScreen : Screen(
             return
         }
         val q = optionSearchText.trim()
+        // ⚠ 搜索时**把分节标题一起滤掉**（「变体」列表的分节头）：它自己不是候选项，
+        //   留着的话要么匹配不上干占一行、要么匹配上了却让分组看着错位 —— 搜索态只看命中项
         optionListItems = if (q.isEmpty()) optionListAll
-        else optionListAll.filter { it.label.contains(q, ignoreCase = true) }
+        else optionListAll.filter { !it.isHeader && it.label.contains(q, ignoreCase = true) }
         // 过滤后行数变了，滚动位置要回到顶（不然停在一个空白的偏移上）
         optionListScroll = 0
     }
@@ -3867,7 +4019,7 @@ class PointsMarketScreen : Screen(
         val field = TextFieldWidget(
             textRenderer,
             editDialogX() + EDIT_PAD, editDialogY() + OPTION_SEARCH_Y,
-            editDialogW() - EDIT_PAD * 2, OPTION_SEARCH_H,
+            optionListW(), OPTION_SEARCH_H,
             Text.literal("")
         )
         // 复用全项目统一的搜索框占位词条（黑名单、市场那些列表都是它）
@@ -4003,7 +4155,7 @@ class PointsMarketScreen : Screen(
             val startX = editDialogX() + (editDialogW() - totalW) / 2
             val clear = NineSliceButton(
                 startX, btnY, EDIT_BUTTON_W, EDIT_BUTTON_H,
-                Text.translatable("cobblemarket.points.store.clear"), { clearMarks() }
+                Text.translatable("cobblemarket.points.store.clear"), { clearOptionSelection() }
             )
             optionClearButton = clear
             // 一个都没挂时置灰（没什么可清的）—— 走统一刷新，别再在这里单独设一次
@@ -4028,10 +4180,29 @@ class PointsMarketScreen : Screen(
         addDrawableChild(back)
     }
 
-    /** 清空已挂的证章（多选列表底部的「清空」）—— **不关列表**，清完还能接着挑 */
-    private fun clearMarks() {
-        editMarks = emptyList()
-        refreshEditLabels()
+    /**
+     * 列表底部那枚「清空」：**不关列表**，清完还能接着挑。
+     *
+     * ⚠ 按列表种类分派：证章清的是勾选；变体清的是**所有维度的选中**。
+     *   变体这边**只清变体的**（`featureGroupsOf` 里那些）—— 形态的 aspect **不动**，
+     *   它们归形态按钮管，清变体不该顺手把形态也清掉。
+     */
+    private fun clearOptionSelection() {
+        when (optionListKind) {
+            OPT_FEATURE -> {
+                val all = featureGroupsOf(editSpecies).flatMap { it.aspects }.toSet()
+                editAspects = editAspects.filterNot { it in all }
+                refreshEditPreview()
+                refreshEditLabels()
+            }
+
+            else -> {
+                editMarks = emptyList()
+                refreshEditLabels()
+            }
+        }
+        // 清完状态变了，按钮的亮灭要跟着走（统一刷新，别在调用点各设一次）
+        refreshOptionClearButton()
     }
 
     /** 列表一屏能放几行：**撑满窗口**（顶部到「返回」按钮上方），别在下面空一大片 */
@@ -4039,40 +4210,154 @@ class PointsMarketScreen : Screen(
         ((editDialogHeight() - OPTION_LIST_TOP - OPTION_LIST_BOTTOM) / OPTION_ROW_STEP).coerceAtLeast(1)
 
     /** 列表第 [i] 个可见行的矩形 —— **渲染与点击判定共用这一个**，各算一份必然错位 */
+    /**
+     * 展开列表的**内容宽度**。
+     *
+     * ⚠ **「变体」列表只占左半边**（右边让给精灵大图 —— 见渲染分支里那处成对的 `OPT_FEATURE` 判断），
+     *   其余列表（性格 / 球种 / 技能…）照旧占满整窗。
+     * ⚠ 行背景 [optionRowRect] 与搜索框**必须共用这一个**：各算一份的话两个宽度对不上，
+     *   搜索框会戳出列表右边。
+     */
+    private fun optionListW(): Int {
+        val full = editDialogW() - EDIT_PAD * 2
+        // 左边界一直排到预览区左缘（`editPreviewX()`），两边各留一个内边距
+        return (editPreviewX() - editDialogX() - EDIT_PAD * 2).coerceIn(0, full)
+    }
+
     private fun optionRowRect(i: Int) = com.shusheng.cobblemarket.client.TooltipPlacement.Rect(
         editDialogX() + EDIT_PAD,
         editDialogY() + OPTION_LIST_TOP + i * OPTION_ROW_STEP,
-        editDialogW() - EDIT_PAD * 2,
+        optionListW(),
         OPTION_ROW_H
     )
 
     /** 某行是不是「当前选中」：多选列表看已挂的证章，单选列表比当前值 */
-    private fun isOptionSelected(value: String): Boolean =
-        if (optionListMultiSelect) {
+    private fun isOptionSelected(item: OptionItem): Boolean =
+        if (optionListKind == OPT_FEATURE) {
+            // 「变体」：「不指定」项在该维度**一个值都没选**时打勾（其余项按"串在不在 editAspects 里"）
+            if (item.value.isEmpty()) {
+                featureGroupsOf(editSpecies).firstOrNull { it.key == item.groupKey }
+                    ?.aspects.orEmpty().none { it in editAspects }
+            } else {
+                item.value in editAspects
+            }
+        } else if (optionListMultiSelect) {
             // 头目之证的勾选态**跟着头目开关走**（不由服主在这里勾），见 [effectiveMarksOf]
-            if (value == ALPHA_MARK_ID) editAlpha else value in editMarks
+            if (item.value == ALPHA_MARK_ID) editAlpha else item.value in editMarks
         } else {
-            value == currentOptionValue()
+            item.value == currentOptionValue()
         }
 
-    private fun toggleMultiOption(value: String) {
+    /** 「变体」：该物种的各个 feature 维度（服务端下发；表还没到 / 该物种没有 feature 时为空） */
+    private fun featureGroupsOf(species: Species?): List<FeatureCandidates> =
+        PointMarketCache.featureAspects[species?.resourceIdentifier?.toString()].orEmpty()
+
+    /** 模型变体缓存：物种 id → 该物种模型里真有的 aspect 集合（`null` = 没算出来，见下） */
+    private val modelAspectCache = mutableMapOf<String, Set<String>?>()
+
+    /**
+     * 该物种**模型里真有**的 aspect 集合 —— 只有在这里面的候选，选了才看得到变化。
+     *
+     * 依据是 Cobblemon 自己的模型分发文件（`assets/cobblemon/bedrock/pokemon/resolvers/` 下，
+     * 每个物种一个「编号_物种名」目录，里面的 json 用 `variations[].aspects` 绑定外观）：
+     * 一个 aspect 想在模型上生效就得在这儿挂一条 variation —— 森林蜥蜴的 `cosmetic_item-stick`
+     * 正是挂了 `grovyle_stick.png` 那一层，才真能叼着木棍（用户 2026-09-27 实测确认）。
+     *
+     * ⚠ **返回 null = "没算出来"**（读不到资源 / 解析失败 / 该物种压根没模型变体），
+     *   调用方**这时绝不能过滤** —— 宁可多列几个空选项，也别因为读不到文件把整张列表清空
+     *   （模组加的物种常常没有自己的 bedrock 模型）。
+     * ⚠ 这是**客户端资源**（`assets/`），服务端读不到 ⇒ 只能在客户端做这一道。
+     * ⚠ 按需算 + 缓存：只在打开某个物种的变体列表时读一次，不必扫上千个物种。
+     */
+    private fun modelAspectsOf(species: Species?): Set<String>? {
+        val id = species?.resourceIdentifier ?: return null
+        val key = id.toString()
+        if (modelAspectCache.containsKey(key)) return modelAspectCache[key]
+        val result = runCatching {
+            // ⚠ **直接用 Cobblemon 自己解析好的表**（`VaryingModelRepository`），不要自己去扫
+            //   `bedrock/pokemon/resolvers/` 那份 json —— 它扫那目录时用的是 `listResources`，
+            //   **不分命名空间**，模组 / 数据包 / 服务器资源包放在 `assets/<自己的id>/...` 下的
+            //   皮肤与纹路**都会被收进来**；我们若自己按 species 目录名去匹配，只会匹配到内置那批，
+            //   模组加的 aspect 会被当成"没实现"**误滤掉**（2026-09-27 用户追问时发现的）。
+            //   用它这张表还有个好处：它已经按 order 合并好，Cobblemon 改了读法我们也自动跟上。
+            com.cobblemon.mod.common.client.render.models.blockbench.repository.VaryingModelRepository
+                .variations[id]
+                ?.variations
+                ?.flatMap { it.aspects }
+                ?.toSet()
+                // ⚠ 空集当成"没算出来"：物种可能只用默认外观（只有一条 aspects=[] 的 variation），
+                //   这时返回空集会让**所有**候选被滤掉 —— 那就跟"读不到"一样，不该过滤
+                ?.takeIf { it.isNotEmpty() }
+        }.getOrNull()
+        modelAspectCache[key] = result
+        return result
+    }
+
+    /**
+     * 「变体」按钮的标签内容：**已选的变体**用 `/` 连起来（一个都没选时显示「默认」）。
+     *
+     * ⚠ 只算 feature 那些 —— `editAspects` 里还混着**形态**（forms）的 aspect，那是「形态」按钮的事，
+     *   显示到这儿会重复（用户 2026-09-27 拍板把两者彻底分开）。
+     */
+    private fun featureButtonLabel(): String {
+        // ⚠ 同悬停窗：**属于形态的 aspect 不算变体**（`partner-cap` 那种两边都挂的会混进来）
+        val formAspects = SpeciesText.selectableForms(editSpecies).flatMap { it.aspects }.toSet()
+        val picked = featureGroupsOf(editSpecies)
+            .flatMap { g -> g.aspects.filter { it in editAspects && it !in formAspects } }
+        // ⚠ 每个值都要过 [featureValueLabel]（官方形态词条 → 物品名 → 原文）——
+        //   直接拼 aspect 串的话按钮上会是 `cosmetic_item-rage_candy_bar`，而悬停窗却写着
+        //   「愤怒馒头」，同一个东西两个名字（2026-09-27 用户报）
+        return picked.joinToString("/") { featureValueLabel(it) }.ifEmpty {
+            Text.translatable("cobblemarket.points.store.value.default").string
+        }
+    }
+
+    /**
+     * 「变体」里点一项：**只动它所属的那一个维度**。
+     *
+     * 这就是"组内互斥、组间共存"的落点 —— 先把**该维度**（同 [OptionItem.groupKey]）的旧值整个摘掉、
+     * 再加新值；别的维度的 aspect **原样留着**，所以花纹和帽子能同时挂在同一只精灵上。
+     *
+     * ⚠ 「不指定」项（空串）：**只摘不加** —— 摘干净 = "这个维度不管，交给游戏按 `default` 处理"。
+     *   ⚠ `default = random` 的维度（阿柏怪花纹那类）**不指定就是每次生成都随机掷一个**，
+     *   商城是每次购买现造一只 ⇒ 每个买家拿到的可能都不一样。
+     */
+    private fun toggleFeatureAspect(item: OptionItem) {
+        val group = featureGroupsOf(editSpecies).firstOrNull { it.key == item.groupKey } ?: return
+        val rest = editAspects.filterNot { it in group.aspects }
+        editAspects = if (item.value.isEmpty()) rest else rest + item.value
+        refreshEditPreview()
+        refreshEditLabels()
+        // ⚠ 「清空」的亮灭跟着选中状态走（原先漏了这一句，选了变体按钮还是灰的 —— 用户 2026-09-27 报）
+        refreshOptionClearButton()
+        // 不关列表、也不用重建控件：行是自绘的，下一帧就带上新的勾选状态
+    }
+
+    private fun toggleMultiOption(item: OptionItem) {
+        // 「变体」走按维度替换，不是简单切换（见 [toggleFeatureAspect]）
+        if (optionListKind == OPT_FEATURE) {
+            toggleFeatureAspect(item)
+            return
+        }
         // **头目之证不归这里切**：它跟着头目开关走，勾掉也没用（Cobblemon 生成时照样带）——
         // 让它可点反而是误导，所以点了不响应，要改就去动头目那个按钮
-        if (value == ALPHA_MARK_ID) return
-        editMarks = if (value in editMarks) editMarks - value else editMarks + value
+        if (item.value == ALPHA_MARK_ID) return
+        editMarks = if (item.value in editMarks) editMarks - item.value else editMarks + item.value
         refreshEditLabels()
         // 不关列表、也不用重建控件：行是自绘的，下一帧就带上新的勾选状态
     }
 
     private fun currentOptionValue(): String? = when (optionListKind) {
-        OPT_FORM -> editAspects.joinToString(",")
+        // ⚠ 同理只取形态：混进变体的话，形态列表里原来的地区形态一项**再也不会被打勾**（比不相等）
+        OPT_FORM -> pickedFormAspects().joinToString(",")
         OPT_NATURE -> editNature
         OPT_ABILITY -> editAbility
         OPT_BALL -> editBall
         OPT_TERA -> editTera
         OPT_CARRY -> editHeldItem.orEmpty()
-        // 证章是多选，没有单一「当前值」（选中判定走 isOptionSelected）
+        // 证章与「变体」都是多选，没有单一「当前值」（选中判定走 isOptionSelected）
         OPT_MARKS -> null
+        OPT_FEATURE -> null
         else -> optionListKind?.removePrefix(OPT_SKILL)?.toIntOrNull()
             ?.let { MoveText.slotIds(editMoves).getOrNull(it).orEmpty() }
     }
@@ -4080,7 +4365,10 @@ class PointsMarketScreen : Screen(
     private fun selectOption(value: String) {
         when (optionListKind) {
             OPT_FORM -> {
-                editAspects = value.split(",").filter { it.isNotEmpty() }
+                // ⚠ **只换形态那一部分**，变体（species feature）的值原样留着 ——
+                //   整组替换的话，选个地区形态就把花纹吃掉了（两者是并存的，见 [toggleFeatureAspect]）
+                val variants = editAspects.filterNot { it in pickedFormAspects() }
+                editAspects = value.split(",").filter { it.isNotEmpty() } + variants
                 refreshEditPreview()
             }
 
@@ -4129,6 +4417,45 @@ class PointsMarketScreen : Screen(
     }
 
     /**
+     * 「变体」列表里**分节标题**的文字 = feature 注册名的词条（`cobblemarket.feature.<键>`）。
+     *
+     * ⚠ 未收录就**回落显示键本身**（`snake_pattern`）—— 模组 / 数据包自己加的 feature 我们
+     *   不可能预先翻译，显示原文总比显示空白强（与 `SpeciesText.aspectLabel` 同一套做法）。
+     */
+    private fun featureGroupLabel(key: String): String {
+        val k = "cobblemarket.feature.$key"
+        val t = Text.translatable(k).string
+        return if (t == k) key else t
+    }
+
+    /**
+     * 「变体」**候选值**的显示名：优先用 **Cobblemon 官方的形态词条**
+     * （`cobblemon.ui.pokedex.info.form.<aspect>` —— 图鉴里显示这个形态叫什么就用它），
+     * 没有的**回落 aspect 原文**。
+     *
+     * ⚠ 官方那套并不全（实测 795 条里**不含**花纹 `snake-pattern-*`、饰品 `cosmetic-item-*`、
+     *   `mega_x` 这些）⇒ 只能"有就用、没有回落"，别指望它一份搞定。
+     * ⚠ 好处不止好看：**语言自动跟着走**（中文端「阿罗拉趋异的样子」、英文端它自己的写法），
+     *   而且 Cobblemon 将来补了词条我们自动受益，不用维护自己的表。
+     * ⚠ 别拿 `cobblemarket.aspect.*` 来顶（那是**形态按钮**用的短名表，用途不同）。
+     */
+    // ⚠ 实现已经挪到 [SpeciesText.featureValueLabel]（黑名单那边也要用，各写一份必然漂移）
+    private fun featureValueLabel(aspect: String): String = SpeciesText.featureValueLabel(aspect)
+
+
+    /**
+     * 「不指定」那一项的名字 —— **跟着数据里的 `default` 走**（2026-09-27 用户提出）。
+     *
+     * 数据写 `random` 的（阿柏怪花纹、晃晃斑斑纹、霜奶仙奶油…共 23 个）就写**「随机」**，
+     * 其余写「默认」。⚠ 不能一律叫「默认」：`default = random` 的维度**不选就是随机掷一个**，
+     * 服主以为"默认"是标准外观，卖出去才发现每只都不一样（用户实测阿柏怪后当场问过这个）。
+     * 标成「随机」，选之前就知道会发生什么。
+     */
+    private fun featureUnsetLabel(g: FeatureCandidates): String =
+        if (g.default == "random") Text.translatable("cobblemarket.points.store.value.random").string
+        else Text.translatable("cobblemarket.points.store.value.default").string
+
+    /**
      * 某个字段的候选列表（值, 显示名）。
      * ⚠ 值一律存**游戏内的标识**（资源 id / 名字），显示名才走本地化 —— 反过来存会把中英两套数据搅在一起。
      */
@@ -4142,11 +4469,44 @@ class PointsMarketScreen : Screen(
                 )
                 // 超极巨化形态**不在候选里**：它是 battleOnly 形态，超极巨化由这枚窗口的
                 // 「超极巨化」按钮（gmaxFactor）表达，见 SpeciesText.selectableForms
-                // ⚠ 候选**同时含 forms 与 species feature** —— 喷火龙的 `mega_x/y`、皮卡丘的
-                //   `partner-cap`、阿柏怪的花纹全在 feature 那边，只列 forms 会少一大截
-                //   （2026-09-27 用户对照 Cobblemon 原版发现）。见 [SpeciesText.selectableFormAspects]
+                // ⚠ **只管 forms** —— species feature（花纹 / 帽子 / 颜色）**不进这里**：
+                //   混进来会把极巨化之类的战斗形态带回来、还会混入 `mega` 那种对某些物种无意义的
+                //   死选项（2026-09-27 用户实测抓到 eternamax 后拍板拆开），见 [selectableFormAspects]
                 SpeciesText.selectableFormAspects(species).forEach { (value, label) ->
                     opts.add(OptionItem(value, label))
+                }
+                opts
+            }
+
+            // 变体：species feature 的各个维度（花纹 / 帽子 / 颜色…），**按维度分节** ——
+            // 组内互斥（点第二个换掉第一个）、组间共存（花纹和帽子能同时挂着）。
+            // ⚠ 候选**只能靠服务端下发**（客户端拿不到 choice 型，见 [SpeciesText.allFeatureAspects]）：
+            //   表还没到 / 该物种没有 feature 时这里是**空列表** ⇒ [openOptionList] 会响失败音
+            //   并拒绝打开（= 按钮"点不动"，正是要的效果），别在这儿想办法自己算。
+            OPT_FEATURE -> {
+                val groups = featureGroupsOf(species)
+                // ① 该物种**模型里真有**的 aspect（null = 还没算出来 / 读不到 ⇒ 不过滤）
+                val modeled = modelAspectsOf(species)
+                // ② 已经在「形态」里的 aspect 不再列（见下）
+                val formAspects = SpeciesText.selectableForms(species).flatMap { it.aspects }.toSet()
+                val opts = mutableListOf<OptionItem>()
+                groups.forEach { g ->
+                    // ⚠ **两道过滤缺一不可**：
+                    //   ① 模型过滤治"空选项"—— 候选是 feature 的**全部** choices，而具体物种常常只实现了
+                    //      其中一部分（森林蜥蜴的 `cosmetic_item` 26 个里只有 `stick` 有外观，用户实测）
+                    //   ② 按值去重治"两处重复"—— Cobblemon 里 form 常常**就是** feature 的一个取值
+                    //      （卡拉卡拉的阿罗拉形态 aspects 就是 `region-bias-alola`），不去重的话同一个东西
+                    //      在形态按钮和变体按钮各出现一次，服主配了一边、另一边没配，还以为是我们的 bug
+                    val visible = g.aspects.filter { a ->
+                        (modeled == null || a in modeled) && a !in formAspects
+                    }
+                    // 整节都被滤掉就**不显示这一节**（剩下的值一个能用的都没有，标题+「默认」只是噪音）
+                    if (visible.isEmpty()) return@forEach
+                    // 维度标题（不可点）
+                    opts.add(OptionItem("", featureGroupLabel(g.key), groupKey = g.key, isHeader = true))
+                    // 「不指定」——名字跟着数据里的 default 走，见 [featureUnsetLabel]
+                    opts.add(OptionItem("", featureUnsetLabel(g), groupKey = g.key))
+                    visible.forEach { a -> opts.add(OptionItem(a, featureValueLabel(a), groupKey = g.key)) }
                 }
                 opts
             }
@@ -4430,6 +4790,11 @@ class PointsMarketScreen : Screen(
         if (listKind != null) {
             renderOptionRows(context, mouseX, mouseY)
             renderOptionListDecor(context, x, y)
+            // ⚠ **列表展开时右侧照样露出大图**（本来是变体列表独有，2026-09-27 用户拍板推广到
+            //   **所有**列表：形态 / 太晶 / 性格 / 特性…都是"看着选"，右边一直有大图才连贯，
+            //   不会有"又打开了一个新界面"的感觉）。列表只占左半边（见 [optionListW]），
+            //   右边正好是编辑窗原本预览的位置（`editPreviewX/Y`，不用重算）
+            if (isPokemonSlot()) renderEditPreviewSlot(context, x, y, delta) else renderEditItemPreviewSlot(context)
             return
         }
 
@@ -4443,10 +4808,12 @@ class PointsMarketScreen : Screen(
         if (isPokemonSlot()) {
             for ((key, labelKey) in listOf(
                 KEY_LEVEL to LEVEL_LABEL_KEY,
-                KEY_FRIENDSHIP to "cobblemarket.points.store.field.friendship_label"
+                KEY_FRIENDSHIP to "cobblemarket.points.store.field.friendship_label",
+                KEY_DMAX to "cobblemarket.points.store.field.dmax_label"
             )) {
-                // 亲密度在小窗口里放不下标签 —— 那时输入框用的是全宽，这里就不能画（见 friendshipLabelW）
-                if (key == KEY_FRIENDSHIP && !showFriendshipLabel()) continue
+                // ⚠ 格子太窄时前缀宽是 0（输入框吃满整格）⇒ 这里就不能画，否则标签会压到输入框上。
+                //   判据**直接问 [editFieldInsetX]**，别在这儿各写一份特例（原来只判了亲密度一个）
+                if (editFieldInsetX(key) <= 0) continue
                 val row = editRowOf(key)
                 if (editRowVisible(row)) {
                     context.drawTextWithShadow(
@@ -4470,6 +4837,96 @@ class PointsMarketScreen : Screen(
         } finally {
             context.setShaderColor(1f, 1f, 1f, 1f)
         }
+
+        // ⚠ 悬停小窗**最后画**（浮在所有东西上面）—— 编辑窗里只有「变体」和「证章」两个按钮做
+        renderEditButtonTooltip(context, mouseX, mouseY)
+    }
+
+    /**
+     * 编辑窗里**两个按钮**的悬停小窗（用户 2026-09-27 定：只做这两个，不做全界面）：
+     * 「变体」与「证章」—— 这两个按钮**装不下自己要表达的东西**：变体多维度时标签会被截断
+     * （`a/b/c` 挤在 82px 里），证章是一排图标、本来就塞不进一个格子。
+     *
+     * ⚠ 外观照购买窗那枚 [renderMarksTooltip]：**我们自己的背景**（`dialog_background.png`）+
+     *   同一套落点（鼠标右移 12、优先上方 4px、钳进屏幕）+ 抬 Z 400。
+     *   **别退回原版的 `setTooltip`** —— 那是黑底原版样式，跟界面里其它悬停窗不是一套
+     *   （用户 2026-09-27 指出：购买窗的证章悬停用的是我们自己的背景，两边必须一致）。
+     */
+    private fun renderEditButtonTooltip(context: DrawContext, mouseX: Int, mouseY: Int) {
+        // ── 「变体」：每个维度一行「维度名：当前值」——
+        //    按钮标签只放得下"值/值/值"，这里才能看出**每个值分别属于哪个维度**
+        if (editButtons[KEY_FEATURE]?.isHovered() == true) {
+            val groups = featureGroupsOf(editSpecies)
+            if (groups.isEmpty()) return
+            val pad = MARK_TIP_PAD
+            val lineH = 11
+            // ⚠ **与列表同一口径**：已经在「形态」里的 aspect 不算变体 —— 它常常同时是某个
+            //   feature 的候选（`partner-cap` 既是皮卡丘的搭档帽形态、又是 `league_cap` 的取值），
+            //   不过滤的话悬停窗会把形态按钮里选的也算进来：用户只选了饰品，这里却多出一行
+            //   「帽子：partner-cap」（2026-09-27 用户实测指出）
+            val formAspects = SpeciesText.selectableForms(editSpecies).flatMap { it.aspects }.toSet()
+            val lines = groups.map { g ->
+                val picked = g.aspects.filter { it in editAspects && it !in formAspects }
+                val value = if (picked.isEmpty()) featureUnsetLabel(g)
+                else picked.joinToString("/") { featureValueLabel(it) }
+                Text.translatable(
+                    "cobblemarket.points.store.feature_tip", featureGroupLabel(g.key), value
+                )
+            }
+            val w = lines.maxOf { textRenderer.getWidth(it) } + pad * 2
+            val h = lines.size * lineH + pad * 2
+            withTooltipLayer(context, mouseX, mouseY, w, h) { tx, ty ->
+                lines.forEachIndexed { i, line ->
+                    context.drawTextWithShadow(textRenderer, line, tx + pad, ty + pad + i * lineH, 0xFFFFFF)
+                }
+            }
+            return
+        }
+        // ── 「证章」：把**全部**已选证章的图标排出来（同购买窗那枚的口径）——
+        //    ⚠ 数据源是 `editMarks` + `editAlpha`（编辑中的草稿），**不是** `spec.marks`
+        if (editButtons[KEY_MARKS]?.isHovered() == true) {
+            val textures = effectiveMarksOf(editMarks, editAlpha).mapNotNull { id ->
+                Identifier.tryParse(id)
+                    ?.let { com.cobblemon.mod.common.api.mark.Marks.getByIdentifier(it) }?.texture
+            }
+            if (textures.isEmpty()) return
+            val perRow = 10
+            val rows = (textures.size + perRow - 1) / perRow
+            val pad = MARK_TIP_PAD
+            val w = minOf(textures.size, perRow) * MARK_CELL + pad * 2
+            val h = rows * MARK_CELL + pad * 2
+            withTooltipLayer(context, mouseX, mouseY, w, h) { tx, ty ->
+                textures.forEachIndexed { idx, texture ->
+                    com.cobblemon.mod.common.api.gui.blitk(
+                        matrixStack = context.matrices, texture = texture,
+                        x = tx + pad + (idx % perRow) * MARK_CELL,
+                        y = ty + pad + (idx / perRow) * MARK_CELL,
+                        width = 8, height = 8
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * 悬停小窗的**外框**：落点 + 背景 + 抬 Z —— 内容由 [draw] 自己画。
+     *
+     * ⚠ 落点照 [renderMarksTooltip] 与 `HistoryScreen.renderTooltip`，**全项目同一套**，
+     *   别另发明（用户 2026-09-25 明确要求所有悬停窗长在同一个位置）。
+     */
+    private inline fun withTooltipLayer(
+        context: DrawContext, mouseX: Int, mouseY: Int, w: Int, h: Int,
+        draw: (Int, Int) -> Unit
+    ) {
+        val tx = minOf(mouseX + 12, width - w - 12).coerceAtLeast(4)
+        val tyAbove = mouseY - h - 4
+        val ty = if (tyAbove <= 0) minOf(mouseY + 12, height - h) else tyAbove
+        // ⚠ **必须抬 Z**：不抬的话下层那些字段文字会从悬停窗上透出来（同 renderMarksTooltip）
+        context.matrices.push()
+        context.matrices.translate(0.0, 0.0, 400.0)
+        drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, tx, ty, w, h, 0, DIALOG_BACKGROUND_TEX_H)
+        draw(tx, ty)
+        context.matrices.pop()
     }
 
     /** 物种预览槽：槽位贴图 + 精灵模型 + 候选计数（照黑名单的添加精灵弹窗） */
@@ -4631,11 +5088,21 @@ class PointsMarketScreen : Screen(
         val hovered = hoveredOptionRow(mouseX.toDouble(), mouseY.toDouble())
         optionListItems.drop(optionListScroll).take(rows).forEachIndexed { i, opt ->
             val r = optionRowRect(i)
+            // 分节标题（「变体」用）：**只画一行字** —— 不画行背景、不参与悬停与勾选，
+            // 让它一眼看上去就是"标题"而不是"一个能点的选项"
+            if (opt.isHeader) {
+                context.drawTextWithShadow(
+                    textRenderer,
+                    Text.literal(opt.label).formatted(Formatting.YELLOW),
+                    r.x + 4, r.y + (OPTION_ROW_H - 8) / 2, 0xFFFFFF
+                )
+                return@forEachIndexed
+            }
             // 行背景：与其余界面的列表行**同一张** `row_background.png`。
             // ⚠ 三段是 **0 普通 / 1 悬停 / 2 选中**，别拿 1 当选中用（项目里其他列表的 `1` 都是悬停）。
             // ⚠ 也别拿弹窗背景凑合 —— 那是给大窗口的，装饰条压到 16px 高的行上会糊成一条条红线。
             val state = when {
-                isOptionSelected(opt.value) -> 2
+                isOptionSelected(opt) -> 2
                 i == hovered -> 1
                 else -> 0
             }
@@ -4675,7 +5142,9 @@ class PointsMarketScreen : Screen(
         if (total <= rows) return
         val top = y + OPTION_LIST_TOP
         val trackH = rows * OPTION_ROW_STEP
-        val barX = x + editDialogW() - EDIT_PAD + 3
+        // ⚠ 贴着**列表自己的右缘**画（`optionListW()`）—— 原来按整窗右缘算，变体列表只占左半边时
+        //   滚动条会孤零零飘在右半边的预览区里（同 [optionRowRect] / 搜索框，三处共用一个宽度）
+        val barX = editDialogX() + EDIT_PAD + optionListW() + 3
         context.fill(barX, top, barX + 1, top + trackH, 0x40FFFFFF)
         val thumbH = (trackH * rows / total).coerceAtLeast(6)
         val maxScroll = (total - rows).coerceAtLeast(1)
@@ -4758,7 +5227,7 @@ class PointsMarketScreen : Screen(
         }
 
         refreshShinyButton()
-        longValueButton(KEY_FORM, editAspects.isNotEmpty(), formLabel())
+        longValueButton(KEY_FORM, pickedFormAspects().isNotEmpty(), formLabel())
         refreshGenderButton()
         editButtons[KEY_NATURE]?.setMessage(label("nature", natureLabel()))
         longValueButton(KEY_ABILITY, editAbility.isNotEmpty(), abilityLabel())
@@ -4798,6 +5267,11 @@ class PointsMarketScreen : Screen(
         applyIvInputLock()
         shortField(KEY_HELD_VISIBLE, yesNoLabel(editHeldVisible))
         editButtons[KEY_MARKS]?.setMessage(label("marks", marksLabel()))
+        editButtons[KEY_FEATURE]?.setMessage(label("feature", featureButtonLabel()))
+        // 该物种没有任何 feature 候选（或候选表还没到）→ **整个按钮置灰**，同「超极巨化」那枚的做法：
+        // 不藏起来 —— 位置固定、点不动，按钮才不会随物种选来选去而跳位。
+        // ⚠ 点击也进不去：[openOptionList] 见候选为空会响失败音并拒绝打开，天然拦住了
+        editButtons[KEY_FEATURE]?.dimmed = featureGroupsOf(editSpecies).isEmpty()
         // ⚠ 物品窗口那格「物品：无」按钮**已删**（2026-09-26 改成界面上直接一个搜索框，见 [buildItemFields]）——
         //   所以这里不再有 KEY_ITEM 那一项
 
@@ -4825,9 +5299,15 @@ class PointsMarketScreen : Screen(
      * 建列表时与每次改选 / 清空后都要走它 —— 见 [optionClearButton] 的注释。
      */
     private fun refreshOptionClearButton() {
-        // 「清空」只清**服主勾的那些** —— 头目之证不归它管（清了也还在），
-        // 所以判据要排掉它，否则只剩头目之证时按钮还是亮的、点了却什么都没变
-        optionClearButton?.active = editMarks.any { it != ALPHA_MARK_ID }
+        optionClearButton?.active = when (optionListKind) {
+            // 变体：**任一维度**有选中就亮（清空 = 把所有维度置回「不指定」）
+            // ⚠ 判据必须与 [clearOptionSelection] 真做的事**一致**，否则会"亮着却清不掉"
+            //   （2026-09-27 用户报：变体列表的「清空」一直灰着，选了也灰 —— 原先这里只判了证章）
+            OPT_FEATURE -> featureGroupsOf(editSpecies).any { g -> g.aspects.any { it in editAspects } }
+            // 证章：「清空」只清**服主勾的那些** —— 头目之证不归它管（清了也还在），
+            // 所以判据要排掉它，否则只剩头目之证时按钮还是亮的、点了却什么都没变
+            else -> editMarks.any { it != ALPHA_MARK_ID }
+        }
     }
 
     private fun yesNoLabel(value: Boolean): String = valueText(if (value) "yes" else "no")
@@ -4896,8 +5376,13 @@ class PointsMarketScreen : Screen(
     }
 
     private fun formLabel(): String =
-        if (editAspects.isEmpty()) valueText("default")
-        else editAspects.joinToString("/") { SpeciesText.aspectLabel(it) }
+        // ⚠ 只认**形态**：`editAspects` 里混着变体（species feature）的那些，直接读整个列表的话，
+        //   一只**没有 forms** 的精灵（比如阿柏怪，只有花纹那些变体）选了变体之后，形态按钮会
+        //   显示成花纹串 —— 它本该老老实实显示「默认」（2026-09-27 用户实测报的）
+        pickedFormAspects().let { picked ->
+            if (picked.isEmpty()) valueText("default")
+            else picked.joinToString("/") { SpeciesText.aspectLabel(it) }
+        }
 
     /**
      * 性别按钮：**图标化**（沿用项目 1.1.x 起的去文字化方向，不再写「性别：雄」）。
@@ -5669,6 +6154,9 @@ class PointsMarketScreen : Screen(
         const val KEY_MIN_IVS = "min_ivs"
         const val KEY_HELD_VISIBLE = "held_visible"
         const val KEY_MARKS = "marks"
+
+        /** 新增的「变体」按钮：species feature 维度（花纹 / 帽子 / 颜色…），**与形态按钮完全分开** */
+        const val KEY_FEATURE = "feature"
         const val KEY_SKILL = "skill"
 
         /**
@@ -5686,6 +6174,9 @@ class PointsMarketScreen : Screen(
         const val OPT_TERA = "tera"
         const val OPT_CARRY = "carry"
         const val OPT_MARKS = "marks"
+
+        /** 「变体」列表：**按 feature 分节、组内互斥、组间共存**（见 [buildOptionItems]） */
+        const val OPT_FEATURE = "feature"
 
         /**
          * 物品窗的**物品候选列表** —— **搜索式**，与 [OPT_CARRY] 同一套机制（见 [buildItemCandidates]）。

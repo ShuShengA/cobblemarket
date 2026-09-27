@@ -28,10 +28,27 @@ data class PokemonBlacklistEntry(
     val shinyFilter: Int = SHINY_ANY,
     // 特训限定（读官方 Pokemon 的 hyperTrainedIVs 字段；设置特训的内容由附属模组提供）：
     //   0 = 不限（旧数据缺省值），1 = 仅特训，2 = 不含特训
-    val htFilter: Int = HT_ANY
+    val htFilter: Int = HT_ANY,
+    // 变体限定（species feature：花纹 / 饰品 / 帽子…）—— 与上面的 aspects **是两个维度**，
+    // 各自独立、**都要满足**才算命中：
+    //   []          = 不限变体（旧数据缺省值）
+    //   ["*"]       = 全部变体（精灵带**任意**变体就命中）
+    //   [x, y, ...] = 命中所勾的**任一个**
+    // ⚠ **追加在末尾**并给默认值：旧档反序列化时缺这个字段自动落空表 = 不限，不损坏存档
+    val variantAspects: List<String> = emptyList()
 ) {
     companion object {
         const val ALL_FORMS = "*"
+
+        /**
+         * **形态不限** —— 形态条件**不参与判定**（精灵长什么样都行），只按变体封。
+         * 给"只封变体"那一档用（形态按钮里与「全部形态 / 默认形态」并列的「不限」）。
+         * ⚠ 与 [ALL_FORMS] 值不同：那个是"所有形态都封"，这个是"形态不管"。
+         */
+        const val ANY_FORMS = "**"
+
+        /** **全部变体**：精灵带**任意**一个变体 aspect 就命中（与 [ALL_FORMS] 同款写法，但管的是变体字段） */
+        const val ALL_VARIANTS = "*"
         const val SHINY_ANY = -1
         const val SHINY_NO = 0
         const val SHINY_YES = 1
@@ -43,7 +60,7 @@ data class PokemonBlacklistEntry(
         const val MAX_ASPECTS = 64
     }
 
-    fun matches(targetSpeciesId: String, ivs: IVs, htIvs: Map<com.cobblemon.mod.common.api.pokemon.stats.Stat, Int>, targetAspects: Set<String>, formAspectUnion: Set<String>, targetShiny: Boolean, targetHasHt: Boolean): Boolean {
+    fun matches(targetSpeciesId: String, ivs: IVs, htIvs: Map<com.cobblemon.mod.common.api.pokemon.stats.Stat, Int>, targetAspects: Set<String>, formAspectUnion: Set<String>, variantAspectUnion: Set<String>, targetShiny: Boolean, targetHasHt: Boolean): Boolean {
         if (speciesId != targetSpeciesId) return false
         if (shinyFilter != SHINY_ANY && targetShiny != (shinyFilter == SHINY_YES)) return false
         if (htFilter != HT_ANY && targetHasHt != (htFilter == HT_ONLY)) return false
@@ -54,13 +71,27 @@ data class PokemonBlacklistEntry(
         if (ivSpAtk >= 0 && (htIvs[Stats.SPECIAL_ATTACK] ?: ivs[Stats.SPECIAL_ATTACK]) != ivSpAtk) return false
         if (ivSpDef >= 0 && (htIvs[Stats.SPECIAL_DEFENCE] ?: ivs[Stats.SPECIAL_DEFENCE]) != ivSpDef) return false
         if (ivSpd >= 0 && (htIvs[Stats.SPEED] ?: ivs[Stats.SPEED]) != ivSpd) return false
-        if (ALL_FORMS in aspects) return true
-        if (aspects.isEmpty()) {
+        // ── 形态条件 ──
+        // ⚠ **不再提前 return**：形态与变体是**两个独立维度、都要满足** —— 服主可以
+        //   "全部形态 + 某个具体变体"，提前返回会把变体那一半吃掉
+        val formsMatch = when {
+            // 「不限」：只封变体那一档用（形态不参与判定）
+            ANY_FORMS in aspects -> true
+            ALL_FORMS in aspects -> true
             // 默认形态：精灵不能携带该物种任何 form aspect（shiny 等非 form aspect 不影响）
-            return formAspectUnion.none { it in targetAspects }
+            aspects.isEmpty() -> formAspectUnion.none { it in targetAspects }
+            // 形态子集匹配：条目限定的 aspect 必须全部出现在精灵上
+            else -> targetAspects.containsAll(aspects)
         }
-        // 形态子集匹配：条目限定的 aspect 必须全部出现在精灵上
-        return targetAspects.containsAll(aspects)
+        if (!formsMatch) return false
+        // ── 变体条件 ──
+        return when {
+            variantAspects.isEmpty() -> true
+            // 全部变体：精灵带**任意**一个变体 aspect 就命中
+            ALL_VARIANTS in variantAspects -> targetAspects.any { it in variantAspectUnion }
+            // 勾了具体几个：命中**任一**即可（黑名单是"封禁"，不是"全都要"）
+            else -> variantAspects.any { it in targetAspects }
+        }
     }
 }
 
@@ -91,7 +122,14 @@ class PokemonBlacklistState private constructor() : PersistentState() {
         }
         // 特训判定：六项特训值（hyper trained，值域 0~31）任一存在即"有特训"
         val targetHasHt = pokemon.ivs.hyperTrainedIVs.values.any { it >= 0 }
-        return entries.values.any { it.matches(speciesId, pokemon.ivs, pokemon.ivs.hyperTrainedIVs, pokemon.aspects, formAspectUnion, pokemon.shiny, targetHasHt) }
+        // 变体那半边：该物种**全部变体候选**的 aspect 集合（现算，只算这一个物种，够便宜）
+        return entries.values.any {
+            it.matches(
+                speciesId, pokemon.ivs, pokemon.ivs.hyperTrainedIVs, pokemon.aspects,
+                formAspectUnion, com.shusheng.cobblemarket.util.SpeciesText.variantAspectsOf(species),
+                pokemon.shiny, targetHasHt
+            )
+        }
     }
 
     override fun writeNbt(nbt: NbtCompound, registryLookup: RegistryWrapper.WrapperLookup): NbtCompound {
@@ -110,6 +148,11 @@ class PokemonBlacklistState private constructor() : PersistentState() {
             val aspectList = NbtList()
             e.aspects.forEach { aspectList.add(net.minecraft.nbt.NbtString.of(it)) }
             c.put("aspects", aspectList)
+            // 变体同理：**总是写**（空表也写），读取端用 `contains` 区分新旧格式
+            // ⚠ 新键（不在旧数据里）⇒ 旧档读不到自动落空表 = 不限变体 ✓ 不需要迁移分支
+            val variantList = NbtList()
+            e.variantAspects.forEach { variantList.add(net.minecraft.nbt.NbtString.of(it)) }
+            c.put("variantAspects", variantList)
             c.putInt("shinyFilter", e.shinyFilter)
             c.putInt("htFilter", e.htFilter)
             list.add(c)
@@ -144,7 +187,12 @@ class PokemonBlacklistState private constructor() : PersistentState() {
                                 // 旧格式无 shinyFilter 字段 → 不限闪光，保持旧语义
                                 shinyFilter = if (c.contains("shinyFilter")) c.getInt("shinyFilter") else PokemonBlacklistEntry.SHINY_ANY,
                                 // 旧格式无 htFilter 字段 → 不限特训，保持旧的不分特训语义
-                                htFilter = if (c.contains("htFilter")) c.getInt("htFilter") else PokemonBlacklistEntry.HT_ANY
+                                htFilter = if (c.contains("htFilter")) c.getInt("htFilter") else PokemonBlacklistEntry.HT_ANY,
+                                // 旧格式无 variantAspects 键 → 空表 = **不限变体**（正是旧条目的语义：
+                                // 那时候压根没有变体这个维度）⇒ 不需要迁移分支，读不到就是对的
+                                variantAspects = if (c.contains("variantAspects"))
+                                    c.getList("variantAspects", NbtList.STRING_TYPE.toInt()).map { it.asString() }
+                                else emptyList()
                             )
                             entries[entry.id] = entry
                         } catch (e: Exception) {

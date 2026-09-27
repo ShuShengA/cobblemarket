@@ -79,7 +79,9 @@ data class AddPokemonPriceLimitPayload(
     // 编辑语义：非空 = 替换原条目（先删旧再插新），null = 新增
     val original: PokemonPriceLimitEntry?,
     // 特训限定：0 = 不限，1 = 仅特训，2 = 不含特训
-    val htFilter: Int
+    val htFilter: Int,
+    // 变体限定（species feature，多选）—— ⚠ 追加末尾、读写顺序一一对应（payload 顺序铁律）
+    val variantAspects: List<String>
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -94,7 +96,9 @@ data class AddPokemonPriceLimitPayload(
                 b.writeBoolean(p.maxPrice != null); p.maxPrice?.let { b.writeInt(it) }
                 b.writeBoolean(p.original != null); p.original?.write(b)
                 b.writeInt(p.htFilter)
+                b.writeVarInt(p.variantAspects.size); p.variantAspects.forEach { b.writeString(it) }
             },
+            // ⚠ 读端字段顺序必须与写端一一对应（payload 顺序铁律）
             { b ->
                 AddPokemonPriceLimitPayload(
                     speciesId = b.readString(),
@@ -104,7 +108,8 @@ data class AddPokemonPriceLimitPayload(
                     minPrice = if (b.readBoolean()) b.readInt() else null,
                     maxPrice = if (b.readBoolean()) b.readInt() else null,
                     original = if (b.readBoolean()) readPokemonPriceLimitEntry(b) else null,
-                    htFilter = b.readInt()
+                    htFilter = b.readInt(),
+                    variantAspects = (0 until b.readVarInt()).map { b.readString() }
                 )
             }
         )
@@ -113,7 +118,7 @@ data class AddPokemonPriceLimitPayload(
 
 // ── C2S: 删除精灵价格限制 ──
 
-data class RemovePokemonPriceLimitPayload(val speciesId: String, val vCount: Int, val shinyFilter: Int, val aspects: List<String>, val htFilter: Int) : CustomPayload {
+data class RemovePokemonPriceLimitPayload(val speciesId: String, val vCount: Int, val shinyFilter: Int, val aspects: List<String>, val htFilter: Int, val variantAspects: List<String>) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<RemovePokemonPriceLimitPayload>(CobbleMarket.id("remove_pokemon_price_limit"))
@@ -122,12 +127,14 @@ data class RemovePokemonPriceLimitPayload(val speciesId: String, val vCount: Int
                 b.writeString(p.speciesId); b.writeInt(p.vCount); b.writeInt(p.shinyFilter)
                 b.writeVarInt(p.aspects.size); p.aspects.forEach { b.writeString(it) }
                 b.writeInt(p.htFilter)
+                b.writeVarInt(p.variantAspects.size); p.variantAspects.forEach { b.writeString(it) }
             },
             { b ->
                 RemovePokemonPriceLimitPayload(
                     b.readString(), b.readInt(), b.readInt(),
                     (0 until b.readVarInt()).map { b.readString() },
-                    b.readInt()
+                    b.readInt(),
+                    (0 until b.readVarInt()).map { b.readString() }
                 )
             }
         )
@@ -297,6 +304,13 @@ object PriceLimitNetwork {
                 }
                 val state = PokemonPriceLimitState.get(server)
                 // 形态列表上限（同求购单/黑名单）：恶意/异常输入不随条目持久化膨胀
+                // 变体列表上限：同上，恶意客户端塞海量 aspect 会随条目持久化并全服广播
+                if (payload.variantAspects.size > PokemonBlacklistEntry.MAX_ASPECTS) {
+                    player.sendMessage(
+                        Text.translatable("cobblemarket.blacklist.not_found").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)
+                    return@execute
+                }
                 if (payload.aspects.size > PokemonBlacklistEntry.MAX_ASPECTS) {
                     player.sendMessage(
                         Text.translatable("cobblemarket.blacklist.not_found").formatted(Formatting.RED), false)
@@ -304,11 +318,14 @@ object PriceLimitNetwork {
                     return@execute
                 }
                 // 编辑语义：替换原条目（改了形态/物种/V 数/闪光/特训等 key 字段时，旧条目不再残留）
-                payload.original?.let { state.remove(it.speciesId, it.vCount, it.shinyFilter, it.aspects, it.htFilter) }
+                payload.original?.let {
+                    state.remove(it.speciesId, it.vCount, it.shinyFilter, it.aspects, it.htFilter, it.variantAspects)
+                }
                 state.add(
                     PokemonPriceLimitEntry(
                         speciesId, vCount, shinyFilter, minPrice, maxPrice, payload.aspects,
-                        payload.htFilter.coerceIn(PokemonPriceLimitEntry.HT_ANY, PokemonPriceLimitEntry.HT_NONE)
+                        payload.htFilter.coerceIn(PokemonPriceLimitEntry.HT_ANY, PokemonPriceLimitEntry.HT_NONE),
+                        payload.variantAspects
                     )
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
@@ -323,7 +340,10 @@ object PriceLimitNetwork {
             if (!MarketPermissions.has(player, MarketPermissions.PRICE_LIMIT)) return@registerC2S
             val server = player.server
             server.execute {
-                PokemonPriceLimitState.get(server).remove(payload.speciesId, payload.vCount, payload.shinyFilter, payload.aspects, payload.htFilter)
+                PokemonPriceLimitState.get(server).remove(
+                    payload.speciesId, payload.vCount, payload.shinyFilter, payload.aspects,
+                    payload.htFilter, payload.variantAspects
+                )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendResultSound(player)   // 删除成功反馈

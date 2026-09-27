@@ -20,6 +20,7 @@ import com.shusheng.cobblemarket.network.PointCodesCreatedPayload
 import com.shusheng.cobblemarket.network.PointCodesPayload
 import com.shusheng.cobblemarket.network.PointMarketItemsPayload
 import com.shusheng.cobblemarket.network.ShopSnapshotsPayload
+import com.shusheng.cobblemarket.network.SpeciesFeatureAspectsPayload
 import com.shusheng.cobblemarket.network.PointRecordsPayload
 import com.shusheng.cobblemarket.network.PointsConfigPayload
 import com.shusheng.cobblemarket.network.PointsShopInfoPayload
@@ -600,6 +601,13 @@ object CobbleMarketClient {
         registerS2C(ShopSnapshotsPayload.ID, ShopSnapshotsPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 PointMarketCache.acceptSnapshots(payload)
+            }
+        }
+
+        // 形态候选表（species feature；同上只有持 points.shop 的人会收到）：落缓存，编辑窗直接读它
+        registerS2C(SpeciesFeatureAspectsPayload.ID, SpeciesFeatureAspectsPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                PointMarketCache.acceptFeatureAspects(payload)
             }
         }
 

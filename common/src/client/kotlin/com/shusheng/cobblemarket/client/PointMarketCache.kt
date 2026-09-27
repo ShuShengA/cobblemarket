@@ -69,4 +69,51 @@ object PointMarketCache {
         snapshotsLoaded = true
     }
 
+    // ── 形态候选表（species feature，编辑窗的「形态」列表用）──
+
+    /**
+     * `物种资源 id → aspect 串列表`（服务端下发，见 `SpeciesText.allFeatureAspects`）。
+     *
+     * ⚠ 空表只是**还没到**，不是错误：编辑窗照常只列 forms。同理**别期望客户端能自己算**
+     * —— choice 型 provider 不同步给客户端（原委见 `SpeciesText.selectableFormAspects`）。
+     */
+    var featureAspects: Map<String, List<com.shusheng.cobblemarket.util.FeatureCandidates>> = emptyMap()
+        private set
+
+    /**
+     * **收到过至少一次**候选表 —— 区分「还没到」与「服务端就是没有」。
+     *
+     * ⚠ 这个标志**必须判**（[PointsMarketScreen] 的形态合法性校验靠它）：表在飞的那几百毫秒里
+     *   候选只剩 forms，feature 型（花纹 / 帽子 / mega）会被当成非法**当场清掉** ——
+     *   而快照回填正是「回填 → 紧跟一条 normalize」的路子，赶上了就把服主存好的花纹吃了。
+     *   宁可**晚判**（等表到了再收）也不能误清。
+     */
+    var featureAspectsLoaded: Boolean = false
+        private set
+
+    /**
+     * 候选表的**版本号**，每收到一次自增。
+     *
+     * ⚠ 界面靠它判断"要不要重建列表"：候选是**异步**回来的（打开列表时才请求），
+     *   而列表**一旦建好就不会自己跟着缓存变**。没有这个的话，`先开列表、包后到` 的界面
+     *   会一直停在**空列表**上（2026-09-27 用户实测：同一个候选，黑名单里空的、价格限制里有内容 ——
+     *   差别只是"打开时包到了没有"）。
+     */
+    var featureAspectsVersion: Int = 0
+        private set
+
+    fun acceptFeatureAspects(payload: com.shusheng.cobblemarket.network.SpeciesFeatureAspectsPayload) {
+        featureAspects = payload.bySpecies
+        featureAspectsLoaded = true
+        featureAspectsVersion++
+        // 一条日志确认整条链路（客户端自己算不出来，只能靠服务端发）：
+        // 表为空 / 数字异常时，一眼看出是服务端没算出来还是包没到
+        com.shusheng.cobblemarket.CobbleMarket.LOGGER.info(
+            "[RP商城] 收到变体候选表：{} 个物种，共 {} 个维度 / {} 项",
+            featureAspects.size,
+            featureAspects.values.sumOf { it.size },
+            featureAspects.values.sumOf { g -> g.sumOf { it.aspects.size } }
+        )
+    }
+
 }

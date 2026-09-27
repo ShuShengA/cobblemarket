@@ -107,6 +107,7 @@ import com.shusheng.cobblemarket.network.SellFromStoragePayload
 import com.shusheng.cobblemarket.network.SellItemPayload
 import com.shusheng.cobblemarket.network.DeleteShopSnapshotPayload
 import com.shusheng.cobblemarket.network.RequestShopSnapshotsPayload
+import com.shusheng.cobblemarket.network.RequestSpeciesFeatureAspectsPayload
 import com.shusheng.cobblemarket.network.SaveShopSnapshotPayload
 import com.shusheng.cobblemarket.network.SetMarketEnabledPayload
 import com.shusheng.cobblemarket.network.SharePayload
@@ -182,6 +183,8 @@ fun registerClientC2S() {
         c2s(registrar, RequestShopSnapshotsPayload.ID, RequestShopSnapshotsPayload.CODEC)
         c2s(registrar, SaveShopSnapshotPayload.ID, SaveShopSnapshotPayload.CODEC)
         c2s(registrar, DeleteShopSnapshotPayload.ID, DeleteShopSnapshotPayload.CODEC)
+        // 形态候选表（编辑窗的 species feature 候选；同上）
+        c2s(registrar, RequestSpeciesFeatureAspectsPayload.ID, RequestSpeciesFeatureAspectsPayload.CODEC)
         c2s(registrar, RejectPendingDeliverPayload.ID, RejectPendingDeliverPayload.CODEC)
         c2s(registrar, RemoveItemBlacklistPayload.ID, RemoveItemBlacklistPayload.CODEC)
         c2s(registrar, RemoveItemPriceLimitPayload.ID, RemoveItemPriceLimitPayload.CODEC)

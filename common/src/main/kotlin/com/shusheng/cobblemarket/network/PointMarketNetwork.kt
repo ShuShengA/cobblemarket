@@ -308,6 +308,100 @@ data class DeleteShopSnapshotPayload(val name: String) : CustomPayload {
     }
 }
 
+// ── 形态候选表（服主动态拉；见 [SpeciesText.allFeatureAspects]）──
+//
+// 为什么要有这对包：RP 商城编辑窗的「形态」列表要同时列 **forms（客户端本地就有）** 与
+// **species feature 候选（客户端拿不到）** —— choice 型 provider 的 `visible = false`，
+// 被 Cobblemon 的同步包过滤掉了，客户端翻不出来。所以候选由服务端算好、按需下发。
+
+/** 请求形态候选表（打开添加窗时发；⚠ 判 `points.shop` 节点 —— 只有服主用得上这份数据） */
+data class RequestSpeciesFeatureAspectsPayload(val unused: Boolean = false) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<RequestSpeciesFeatureAspectsPayload>(
+            CobbleMarket.id("request_species_feature_aspects")
+        )
+        val CODEC: PacketCodec<PacketByteBuf, RequestSpeciesFeatureAspectsPayload> = PacketCodec.of(
+            { _, _ -> },
+            { RequestSpeciesFeatureAspectsPayload() }
+        )
+    }
+}
+
+/**
+ * 全部物种的变体候选（`物种资源 id → 各个 feature 维度`）。**只含真有 choice feature 的物种**，
+ * 所以表本身不大（绝大多数物种没有这个键，客户端查不到就只有形态按钮那一份）。
+ *
+ * ⚠ **必须带分组**（[FeatureCandidates.key]）：客户端要"点 mega_y 只换掉 mega_x、不碰花纹"
+ *   就得知道哪些 aspect 同属一个维度；扁平列表做不到。`default` 也要带 —— 界面靠它决定
+ *   「不指定」那一项叫「随机」还是「默认」。
+ */
+data class SpeciesFeatureAspectsPayload(
+    val bySpecies: Map<String, List<com.shusheng.cobblemarket.util.FeatureCandidates>>
+) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        /** 物种数上限（防伪造客户端塞超长表；实际已实现物种约一千） */
+        const val MAX_SPECIES = 4096
+
+        /** 单个物种的**维度数**上限（晃晃斑最多，5 个；真超了说明数据包异常） */
+        const val MAX_GROUPS_PER_SPECIES = 32
+
+        /** 单个维度的候选数上限（花纹 22、帽子 8 …… 正常几十） */
+        const val MAX_ASPECTS_PER_GROUP = 128
+
+        val ID = CustomPayload.Id<SpeciesFeatureAspectsPayload>(
+            CobbleMarket.id("species_feature_aspects")
+        )
+        val CODEC: PacketCodec<PacketByteBuf, SpeciesFeatureAspectsPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeInt(p.bySpecies.size)
+                p.bySpecies.forEach { (species, groups) ->
+                    b.writeString(species, MAX_ID_LENGTH)
+                    b.writeInt(groups.size)
+                    groups.forEach { g ->
+                        b.writeString(g.key, MAX_ID_LENGTH)
+                        b.writeString(g.default, MAX_TEXT_LENGTH)
+                        b.writeInt(g.aspects.size)
+                        g.aspects.forEach { b.writeString(it, MAX_ID_LENGTH) }
+                    }
+                }
+            },
+            // ⚠ 读端用具名参数：字段顺序一旦对不上立刻看出来（payload 顺序铁律）
+            { b ->
+                val speciesCount = b.readInt()
+                if (speciesCount < 0 || speciesCount > MAX_SPECIES) {
+                    throw IllegalArgumentException("species feature table size out of range: $speciesCount")
+                }
+                val map = LinkedHashMap<String, List<com.shusheng.cobblemarket.util.FeatureCandidates>>(speciesCount)
+                repeat(speciesCount) {
+                    val species = b.readString(MAX_ID_LENGTH)
+                    val groupCount = b.readInt()
+                    if (groupCount < 0 || groupCount > MAX_GROUPS_PER_SPECIES) {
+                        throw IllegalArgumentException("species feature group count out of range: $groupCount")
+                    }
+                    map[species] = List(groupCount) {
+                        val key = b.readString(MAX_ID_LENGTH)
+                        val default = b.readString(MAX_TEXT_LENGTH)
+                        val aspectCount = b.readInt()
+                        if (aspectCount < 0 || aspectCount > MAX_ASPECTS_PER_GROUP) {
+                            throw IllegalArgumentException("species feature aspect count out of range: $aspectCount")
+                        }
+                        com.shusheng.cobblemarket.util.FeatureCandidates(
+                            key = key,
+                            default = default,
+                            aspects = List(aspectCount) { b.readString(MAX_ID_LENGTH) }
+                        )
+                    }
+                }
+                SpeciesFeatureAspectsPayload(bySpecies = map)
+            }
+        )
+    }
+}
+
 // ── 商品规格的读写（顶层函数：快照与保存请求共用一份，两份各写一遍必然漂移）──
 
 private fun writeEntry(b: PacketByteBuf, e: ShopEntry) {
@@ -479,6 +573,7 @@ object PointMarketNetwork {
         //   漏了这一行 → 客户端启动即崩：fabric 的客户端 registerS2C **忽略 codec 参数**，
         //   类型只能靠这里；而 neoforge 那边自带 playToClient，漏了也不显形（踩坑记录见 CLAUDE.md）
         registerS2CType(ShopSnapshotsPayload.ID, ShopSnapshotsPayload.CODEC)
+        registerS2CType(SpeciesFeatureAspectsPayload.ID, SpeciesFeatureAspectsPayload.CODEC)
 
         // 请求某一页：进界面与翻页都走它（节流与其余列表请求同档）
         registerC2S(RequestPointMarketPayload.ID, RequestPointMarketPayload.CODEC) { payload, player ->
@@ -563,6 +658,20 @@ object PointMarketNetwork {
                     player.sendMessage(pointMarketErrorText(error).copy().formatted(Formatting.RED), false)
                     sendSound(player, "result_fail")
                 }
+            }
+        }
+
+        // 形态候选表：编辑窗的「形态」列表要列 species feature（花纹 / 帽子 / mega），
+        // 而客户端拿不到（choice 型不同步，见 [SpeciesText.allFeatureAspects]）⇒ 服务端算好发过去。
+        // ⚠ 判 `points.shop`：这份数据只有能上架的人用得上，没必要发给普通玩家
+        registerC2S(RequestSpeciesFeatureAspectsPayload.ID, RequestSpeciesFeatureAspectsPayload.CODEC) { _, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
+            if (!RequestThrottle.allow(player.uuid, "species_feature_aspects", RequestThrottle.READ_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            val server = player.server
+            server.execute {
+                sendToPlayer(player, SpeciesFeatureAspectsPayload(SpeciesText.allFeatureAspects()))
             }
         }
 
