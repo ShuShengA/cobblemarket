@@ -49,3 +49,7 @@ build_verify.log
 
 docs/
 CLAUDE.md
+
+# 构建日志（与源码无关，不入库）
+*.log
+.architectury-transformer/
