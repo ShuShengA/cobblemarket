@@ -1012,10 +1012,13 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 ?.let { infoLineText(it) }
             // 技能块（**总是画** —— Cobblemon 里不存在没技能的精灵）：分割线 + 两行技能 + 分割线
             val movesRaw = extra["moves"].orEmpty()
-            // ⚠ 与技术块/证章的分割线口径对齐（市场确认弹窗、管理端审核弹窗都是 dialogW − 20）：
-            // infoX 已经是 dialogX + 10，所以右边正好也留 10px，分割线居中且与弹窗边距一致。
-            // 原先写 dialogW − 156（左列宽）—— 长度和别处对不上，右边空一大片。
-            val rowW = dialogW - 156
+            // ⚠ **固定 124** —— 与出价弹窗（`AuctionScreen` 的同名处）**同一个口径**：
+            //   这两个弹窗是同一套两列布局（左列精灵信息 + 右列竞拍信息），技能块宽度必须一致。
+            // ⚠ **别写成 `dialogW − k`**：那样弹窗一宽技能块就跟着拉长，跟出价弹窗对不上，
+            //   而且左列信息区根本没这么宽（用户 2026-09-27 对比两张弹窗截图实测报出）。
+            //   出价弹窗那边早就写明过这条（它的注释：「写成 dialogW − 156 的话，技能块和上下两条
+            //   分割线会跟着弹窗一起变长」）—— 这里当时漏了。
+            val rowW = 124
             if (MoveText.hasAny(movesRaw)) {
                 iy += EntryBadgeRenderer.drawMovesBlockLeft(context, movesRaw, infoX, rowW, iy)
             }
