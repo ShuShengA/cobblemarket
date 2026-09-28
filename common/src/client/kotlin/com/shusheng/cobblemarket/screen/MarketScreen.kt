@@ -64,8 +64,14 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var typeFilter = ""
     private var typeFilterIndex = 0
     // 太晶属性筛选（属性 key，与「属性」同一套列表；空 = 不限）
+    /**
+     * 太晶筛选：**完整词条 key**（`cobblemon.type.fire`），不是 `typeFilter` 那种裸 key。
+     *
+     * ⚠ 服务端 `MarketState.search` 是拿它跟 `extraData["teraType"]`（= `cobblemon.type.xxx`）
+     *   做 `equals` **精确**比对的 ⇒ 传裸的 `fire` 会**恒不匹配**（选了太晶 → 列表全空）。
+     *   口径与上架选择 / 创建拍卖 / 管理端一致。
+     */
     private var teraFilter = ""
-    private var teraFilterIndex = 0
     // 超极巨化三态：0 = 不限，1 = 仅超极巨，2 = 仅非超极巨（照闪光那种循环按钮）
     private var gmaxFilter = 0
     private var abilityFilter = ""   // 特性翻译 key（空 = 不限）
@@ -781,13 +787,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     }
 
     private fun teraButtonText(): Text {
-        val key = typeOptions.getOrElse(teraFilterIndex) { "" }
-        val any = key.isEmpty()
+        val any = teraFilter.isEmpty()
         val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
-            else Text.translatable("cobblemon.type.$key")
+            else Text.translatable(teraFilter)
         return filterButtonText(
             "cobblemarket.gui.tera", label, filterTypeW, any,
-            if (any) null else typeColor("cobblemon.type.$key")
+            if (any) null else typeColor(teraFilter)
         )
     }
 
@@ -945,7 +950,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         if (!open) return
         val options: List<Pair<String, String>> = when (filterListOpen) {
             "type" -> listOf("" to "") + typeOptions.filter { it.isNotEmpty() }.map { it to "cobblemon.type.$it" }
-            "tera" -> listOf("" to "") + typeOptions.filter { it.isNotEmpty() }.map { it to "cobblemon.type.$it" }
+            // ⚠ 太晶的 key 用**完整词条 key**（与 typeFilter 的裸 key 不同，见 `teraFilter` 的说明）
+            "tera" -> listOf("" to "") + typeOptions.filter { it.isNotEmpty() }.map { "cobblemon.type.$it" to "cobblemon.type.$it" }
             "ability" -> listOf("" to "") + abilityOptions
             "nature" -> listOf("" to "") + natureOptions
             else -> emptyList()
@@ -984,8 +990,10 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 else Text.literal(TextUtil.truncateString(display, 260)),
                 { selectFilterOption(filterListOpen, key, idx) },
                 // 属性 / 太晶选项文字用对应属性色（两份列表共用同一套候选）
+                // ⚠ 两种 key 形式都喂给 typeColor：属性是裸 key（`fire`）、太晶是完整 key，
+                //   它内部走 `substringAfterLast(".")`，两种都能取到属性名
                 if ((filterListOpen == "type" || filterListOpen == "tera") && key.isNotEmpty())
-                    typeColor("cobblemon.type.$key") else 0xFFFFFF
+                    typeColor(key) else 0xFFFFFF
             )
             filterOptionButtons.add(btn)
             addDrawableChild(btn)
@@ -1014,7 +1022,6 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             }
             "tera" -> {
                 teraFilter = key
-                teraFilterIndex = typeOptions.indexOf(key).coerceAtLeast(0)
                 teraButton.message = teraButtonText()
                 (teraButton as? NineSliceButton)?.textColor = 0xFFFFFF
             }
@@ -1225,7 +1232,6 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         abilityFilter = ""
         natureFilter = ""
         teraFilter = ""
-        teraFilterIndex = 0
         gmaxFilter = 0
         teraButton.message = teraButtonText()
         gmaxButton.message = gmaxButtonText()
