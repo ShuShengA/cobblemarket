@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
+import com.shusheng.cobblemarket.util.TypeFilter
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
@@ -68,7 +69,6 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
 
     // [PC] 图标：Cobblemon 电脑物品栈（lazy 缓存，避免每帧查注册表）
     private val pcItemStack: ItemStack by lazy { ItemStack(Registries.ITEM.get(Identifier.of("cobblemon", "pc"))) }
-    private var typeIdx = 0
     private val ivExact = IntArray(6) { -1 }
     // IV 比较方式：0 = 等于（默认），1 = 大于等于，2 = 小于等于
     private val ivOps = IntArray(6)
@@ -425,15 +425,14 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
     }
 
     /**
-     * 属性候选（key = **完整词条 key**，label 同）。
+     * 属性候选（key = **裸属性名**如 `fire`，label = 翻译 key `cobblemon.type.fire`）。
      *
-     * ⚠ key 必须是 `cobblemon.type.xxx` 完整形式 —— [PokemonPreview.primaryType] / [PokemonPreview.teraType]
-     *   都是这个形式，拿裸的 `fire` 去比是**恒不命中**（选了属性 → 列表全空），按钮也会显示成
-     *   「属性：fire」而不是「属性：火」。2026-09-28 修（此前一直如此）。
-     * ⚠ **别照抄精灵市场那份裸 key**：那边是**发服务端过滤**、服务端按裸 key 匹配，两条路的口径不同。
+     * ⚠ 匹配一律走 [TypeFilter.matches] —— 它内部按 `substringAfterLast(".")` 规范化，
+     *   裸名与完整词条 key **两种写法都能命中**（[PokemonPreview.primaryType] 存的是完整 key，照样对得上）。
+     *   存裸名是因为：按钮要按 `cobblemon.type.$key` 拼词条显示，多选时还要用 `|` 把两个拼起来。
      */
     private val allTypes = listOf("" to "") + listOf("normal","fire","water","electric","grass","ice","fighting","poison","ground","flying",
-        "psychic","bug","rock","ghost","dragon","dark","steel","fairy").map { "cobblemon.type.$it" to "cobblemon.type.$it" }
+        "psychic","bug","rock","ghost","dragon","dark","steel","fairy").map { it to "cobblemon.type.$it" }
 
     // ── 属性展开列表（照精灵市场：不限+19 属性、属性色、限高滚动、展开隐藏下层与行内容） ──
 
@@ -509,7 +508,8 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
     }
 
     private fun isFilterSelected(kind: String, key: String): Boolean = when (kind) {
-        "type" -> key.isNotEmpty() && key == typeFilter
+        // ⚠ 属性是**多选**（最多 2 个）⇒ 选中态要问"在不在已选集合里"，不是 `==`
+        "type" -> key.isNotEmpty() && key in TypeFilter.keys(typeFilter)
         "tera" -> key.isNotEmpty() && key == teraFilter
         "ability" -> key.isNotEmpty() && key == abilityFilter
         "nature" -> key.isNotEmpty() && key == natureFilter
@@ -519,8 +519,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
     private fun selectFilterOption(kind: String, key: String) {
         when (kind) {
             "type" -> {
-                typeFilter = key
-                typeIdx = allTypes.indexOfFirst { it.second == key }.coerceAtLeast(0)
+                // 多选切换：已选 → 取消；未选 → 加上；**已满 2 个再点第 3 个 → 失败音、不改状态**
+                val picked = TypeFilter.toggle(TypeFilter.keys(typeFilter), key)
+                if (picked == null) playFailSound() else typeFilter = TypeFilter.join(picked)
                 typeBtn?.setMessage(typeButtonText())
                 typeBtn?.textColor = UNSET_FILTER_COLOR   // 颜色由「值」自己带
             }
@@ -540,7 +541,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
                 natureBtn?.textColor = UNSET_FILTER_COLOR   // 颜色由「值」自己带
             }
         }
-        filterListOpen = ""
+        // ⚠ **属性是多选**（最多 2 个）⇒ 选中 / 取消都**不关浮层**（选完第一个窗就没了的话没法接着选第二个）。
+        //   收起仍靠再点一下「属性」按钮（[toggleFilterList]）。`rebuildFilterList()` 照调：刷新选中态高亮
+        if (kind != "type") filterListOpen = ""
         rebuildFilterList()
         // 筛选变化只重建过滤缓存 + 回到顶部，**不重建界面**（重建会清空精灵图标的跨帧动画状态）
         rebuildFiltered()
@@ -551,10 +554,23 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
 
     private fun filterPanelBtnW() = MarketPanelBackground.filterWidth(width) - 8
 
+    /**
+     * 属性按钮文字 =「属性：」+ 各属性名 —— **每段属性名自己带属性色**：「属性：」前缀与 `+`
+     * 都是陪衬文字不设色（CLAUDE.md：带色的文字不能当父节点）。最多 2 个，顺序 = 玩家点击顺序。
+     *
+     * ⚠ 这里**不走 [filterButtonText]**：那个函数按 `value.string` 截断，会把分段样式整段丢掉。
+     *   宽度也不必截断 —— 英文最坏 `Type: Fighting+Electric` = 138px，最窄一档按钮内容宽 140px。
+     */
     private fun typeButtonText(): Text {
-        val any = typeFilter.isEmpty()
-        val label = if (any) Text.translatable("cobblemarket.gui.filter_any") else Text.translatable(typeFilter)
-        return filterButtonText("cobblemarket.gui.type", label, if (any) null else typeColor(typeFilter))
+        val picked = TypeFilter.keys(typeFilter)
+        val out = Text.translatable("cobblemarket.gui.type")
+        if (picked.isEmpty()) return out.append(Text.translatable("cobblemarket.gui.filter_any"))
+        picked.forEachIndexed { i, k ->
+            if (i > 0) out.append(Text.literal("+"))
+            out.append(Text.translatable("cobblemon.type.$k")
+                .setStyle(net.minecraft.text.Style.EMPTY.withColor(typeColor(k))))
+        }
+        return out
     }
 
     /** 太晶属性：与「属性」同一套候选列表（18 属性 +「不限」），颜色同样按属性上色 */
@@ -662,7 +678,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             (q == null || speciesDisplay(p).contains(q, ignoreCase = true) || p.speciesName.contains(q, ignoreCase = true)) &&
             (!shinyOnly || p.shiny) &&
             (genderFilter.isEmpty() || p.gender == genderFilter) &&
-            (typeFilter.isEmpty() || p.primaryType == typeFilter || p.secondaryType == typeFilter) &&
+            // 属性：可选 1 个或 2 个（`fire` / `fire|ghost`）——
+            // 1 个 = 主属性或副属性命中；2 个 = 主副**集合精确相等**（见 TypeFilter）
+            TypeFilter.matches(p.primaryType, p.secondaryType, typeFilter) &&
             // 太晶属性：**精确匹配**（口径与精灵市场 / 拍卖场一致）。p.teraType 是 `cobblemon.type.xxx`
             // 完整词条 key ⇒ [allTypes] 里存的也必须是完整 key，拿裸的 `fire` 比就是恒不命中
             (teraFilter.isEmpty() || p.teraType == teraFilter) &&
@@ -812,7 +830,6 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         genderFilter = ""
         updateGenderButton()
         typeFilter = ""
-        typeIdx = 0
         typeBtn?.setMessage(typeButtonText())
         typeBtn?.textColor = UNSET_FILTER_COLOR
         teraFilter = ""

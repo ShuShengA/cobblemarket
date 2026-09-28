@@ -1,7 +1,9 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
+import com.shusheng.cobblemarket.util.TypeFilter
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.clampTooltipRows
@@ -520,7 +522,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     }
 
     private fun isFilterSelected(kind: String, key: String): Boolean = when (kind) {
-        "type" -> key.isNotEmpty() && key == typeFilter
+        // ⚠ 属性是**多选**（最多 2 个）⇒ 选中态要问"在不在已选集合里"，不是 `==`
+        "type" -> key.isNotEmpty() && key in TypeFilter.keys(typeFilter)
         "tera" -> key.isNotEmpty() && key == teraFilter
         "ability" -> key.isNotEmpty() && key == abilityFilter
         "nature" -> key.isNotEmpty() && key == natureFilter
@@ -530,7 +533,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private fun selectFilterOption(kind: String, key: String) {
         when (kind) {
             "type" -> {
-                typeFilter = key
+                // 多选切换：已选 → 取消；未选 → 加上；**已满 2 个再点第 3 个 → 失败音、不改状态**
+                val picked = TypeFilter.toggle(TypeFilter.keys(typeFilter), key)
+                if (picked == null) playFailSound() else typeFilter = TypeFilter.join(picked)
                 typeButton?.setMessage(typeButtonText())
                 typeButton?.textColor = UNSET_FILTER_COLOR   // 颜色由「值」自己带
             }
@@ -550,7 +555,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 natureButton?.textColor = UNSET_FILTER_COLOR   // 颜色由「值」自己带
             }
         }
-        filterListOpen = ""
+        // ⚠ **属性是多选**（最多 2 个）⇒ 选中 / 取消都**不关浮层**（选完第一个窗就没了的话没法接着选第二个）。
+        //   收起仍靠再点一下「属性」按钮（[toggleFilterList]）。`rebuildFilterList()` 照调：刷新选中态高亮
+        if (kind != "type") filterListOpen = ""
         rebuildFilterList()
         currentPage = 1
         refreshData()
@@ -560,10 +567,25 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
 
     private fun filterPanelBtnW() = MarketPanelBackground.filterWidth(width) - 8
 
+    /**
+     * 属性按钮文字 =「属性：」+ 各属性名 —— **每段属性名自己带属性色**：「属性：」前缀与 `+`
+     * 都是陪衬文字不设色（CLAUDE.md：带色的文字不能当父节点）。最多 2 个，顺序 = 玩家点击顺序。
+     *
+     * ⚠ 这里**不走 [filterButtonText]**：那个函数按 `value.string` 截断，会把分段样式整段丢掉。
+     *   宽度也不必截断 —— 英文最坏 `Type: Fighting+Electric` = 138px，最窄一档按钮内容宽 140px。
+     * ⚠ 顺手修掉一个既有显示 bug：原实现是 `Text.translatable(typeFilter)`，而这里存的是**裸属性名**
+     *   （`fire`）⇒ 按钮一直显示成「属性：fire」而不是「属性：火」（下面的 `cobblemon.type.$key` 才对）。
+     */
     private fun typeButtonText(): Text {
-        val any = typeFilter.isEmpty()
-        val label = if (any) Text.translatable("cobblemarket.gui.filter_any") else Text.translatable(typeFilter)
-        return filterButtonText("cobblemarket.gui.type", label, if (any) null else typeColor(typeFilter))
+        val picked = TypeFilter.keys(typeFilter)
+        val out = Text.translatable("cobblemarket.gui.type")
+        if (picked.isEmpty()) return out.append(Text.translatable("cobblemarket.gui.filter_any"))
+        picked.forEachIndexed { i, k ->
+            if (i > 0) out.append(Text.literal("+"))
+            out.append(Text.translatable("cobblemon.type.$k")
+                .setStyle(net.minecraft.text.Style.EMPTY.withColor(typeColor(k))))
+        }
+        return out
     }
 
     /** 太晶属性：与「属性」同一套候选，但 key 是**完整词条 key**（服务端按完整 key 精确比对） */
