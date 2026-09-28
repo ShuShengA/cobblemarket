@@ -20,6 +20,8 @@
 
 - **How the UI marks a selected entry is now consistent**: lists, tabs and dropdowns used to mark the selected entry with a "●" in front of its label — they now use the **button's own selected highlight** (background) instead, so the same idea is no longer expressed twice; toggle buttons such as "Mine" got the same highlight too
 
+- **The admin buy-order screen no longer shows a balance**: every other screen in the admin panel goes without one, only buy orders had it (looked like a copy-paste slip) — it is now hidden in admin mode, while the player-side buy-order screen keeps it
+
 ### Fixes
 
 - **Nature and Ability sat too close together**: both render in white with only 8px between them, so the line could read as one run of text (e.g. "Nature: Relaxed  Ability: Synchronize"). The gap is now wider and consistent across every Pokemon info screen

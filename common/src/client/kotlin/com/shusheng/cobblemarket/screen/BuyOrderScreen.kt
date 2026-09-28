@@ -900,8 +900,12 @@ class BuyOrderScreen(
         context.drawCenteredTextWithShadow(textRenderer, titleText, centerX, 20, 0xFFFFFF)
 
         // 余额（左上角，避开背景左边框，来自全局缓存）；与标题同行，余额一长就压上去，
-        // 降级规则见 drawHeaderBalance（本界面标题在管理模式下属另一词条，长度不同，故现算）
-        drawHeaderBalance(context, textRenderer, centerX, leftX + PANEL_BORDER_X + 2, textRenderer.getWidth(titleText))
+        // 降级规则见 drawHeaderBalance（本界面标题在管理模式下属另一词条，长度不同，故现算）。
+        // ⚠ **管理模式下不画**：本界面兼任两职，管理端那份是「看全服求购单」的管理视图 ——
+        //   管理面板其余几个界面都不带余额，就它例外（2026-09-28 用户报）
+        if (!adminMode) {
+            drawHeaderBalance(context, textRenderer, centerX, leftX + PANEL_BORDER_X + 2, textRenderer.getWidth(titleText))
+        }
 
         // 分隔线缩进到行区域（不压背景左右边框）
         context.fill(rowL, startY - 2, rowL + rowW(), startY - 1, 0xFF888888.toInt())
