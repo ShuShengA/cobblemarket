@@ -767,8 +767,10 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         }
         // 动态行（当前价/倒计时/领先者随出价与时间变化）每帧构建
         val lines = tooltipCacheStaticLines.toMutableList()
-        // 分割线：上方精灵信息，下方拍卖信息
-        lines.add(null to 0xFFFFFF)
+        // 分割线：上方精灵信息，下方拍卖信息。
+        // ⚠ **只有存在证章块时才加**（这条线本是证章块的下分割线）—— 与拍卖场同处一并修
+        //（2026-09-29 用户报：没有证章时凭空多一条线）
+        if (tooltipCacheMarksLine >= 0) lines.add(null to 0xFFFFFF)
         lines.add(Text.translatable("cobblemarket.auction.seller").append(entry.sellerName) to 0xFFFFFF)
         val priceLine = Text.translatable("cobblemarket.auction.current_price").append(displayPriceText(entry))
         lines.add((if (entry.bidCount > 0)
@@ -810,7 +812,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 // 技能块：分割线 + 两行技能 + 分割线（左对齐版，分割线撑满提示框全宽）
                 rowY += EntryBadgeRenderer.drawMovesBlockLeft(context, movesRaw, tx, mw, rowY)
             } else if (line == null && i == marksLine) {
-                // 证章图标行：左对齐排（照市场悬停；超过 6 个第二行左对齐显示「+N」）
+                // 证章图标行：**居中**排（2026-09-29 统一口径，见 docs/pokemon_info_surfaces.md 第七节；「+N」同样居中）
                 rowY += EntryBadgeRenderer.drawMarksRow(context, marks, tx, rowY, mw, centered = true)
             } else if (line == null) {
                 // 分割线：1px 灰线，撑满提示框全宽（与信息区分隔线一致，不随证章数量变化）
@@ -1088,7 +1090,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             if (MoveText.hasAny(movesRaw)) {
                 iy += EntryBadgeRenderer.drawMovesBlockLeft(context, movesRaw, infoX, rowW, iy)
             }
-            // 证章区块：技能块下方，图标行 + 下分割线（左对齐，每行 MARKS_PER_ROW 个，照出价弹窗）
+            // 证章区块：技能块下方，图标行 + 下分割线（居中，一行几个跟随可用宽 —— 2026-09-29 与出价弹窗统一）
             // 没有技能块（旧数据）时自己补回上分割线
             val marks = extra["marks"].orEmpty().split(",").filter { it.isNotEmpty() }
             if (marks.isNotEmpty()) {
@@ -1096,7 +1098,15 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                     context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF888888.toInt())
                     iy += 10
                 }
-                iy += EntryBadgeRenderer.drawMarksRow(context, marks, infoX, iy, rowW, centered = false)
+                // ⚠ `centered = true`：与出价弹窗同一处口径 —— 证章在内容宽里居中，别左对齐
+                //（2026-09-29 与出价界面一起改的，见 AuctionScreen 同处的说明）
+                iy += EntryBadgeRenderer.drawMarksRow(
+                    context, marks, infoX, iy, rowW, centered = true,
+                    // 弹窗 ⇒ 接「+N」的二级证章窗（拿不到 render 鼠标参数，用登记的当前帧坐标）
+                    mouseX = com.shusheng.cobblemarket.client.icon.IconRegistry.mouseX,
+                    mouseY = com.shusheng.cobblemarket.client.icon.IconRegistry.mouseY
+                )
+                EntryBadgeRenderer.drawMarksMoreTooltip(context)
                 context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF888888.toInt())
                 iy += 10
             }

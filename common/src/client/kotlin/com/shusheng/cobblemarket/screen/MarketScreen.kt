@@ -2051,7 +2051,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         return 62 + infoRows * 10 +
             EntryBadgeRenderer.movesBlockHeight(entry.moves) +
             // 证章一行几个跟随可用宽（见 marksPerRow）—— 保守传最小宽 ⇒ 高度宁多不少
-            EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves, 124) + 34
+            // ⚠ 证章的可用宽必须是**分割线的实际宽度**（居中弹窗恒为 MOVES_MAX_W）——
+            //   原先传 124，与 drawInfoLines 画的（132）对不上，证章恰好 11 个时高度会多算一行
+            EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves, EntryBadgeRenderer.MOVES_MAX_W) + 34
     }
 
     /**
@@ -2153,9 +2155,13 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val viewBottom = dialogY + dialogH - confirmBottomH
         context.enableScissor(dialogX, viewTop, dialogX + dialogW, viewBottom)
         EntryBadgeRenderer.drawInfoLines(
-            context, entry, name, centerX, viewTop - confirmScroll, dividerW = dialogW - 156, maxWidth = dialogW - 24
+            context, entry, name, centerX, viewTop - confirmScroll, dividerW = dialogW - 156, maxWidth = dialogW - 24,
+            // 弹窗：鼠标能自由移动 ⇒ 停在证章行（有「+N」时）就补一个全部证章的二级窗
+            mouseX = mouseX, mouseY = mouseY
         )
         context.disableScissor()
+        // ⚠ 二级窗要在一级窗（信息行）画完之后 —— 它盖在上面（自己抬 z=400）
+        EntryBadgeRenderer.drawMarksMoreTooltip(context)
 
         // 按钮行（btnY = 弹窗底 -30；购买且喵喵支付可用：三枚并排；否则两枚）
         val btnW = 80

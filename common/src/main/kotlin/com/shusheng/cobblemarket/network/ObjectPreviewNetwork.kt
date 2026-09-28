@@ -48,6 +48,59 @@ data class RequestObjectPreviewPayload(val kind: String, val id: String) : Custo
     }
 }
 
+/**
+ * **拍卖播报悬停时的拍卖状态**（只有「拍卖」那条非空；商品/物品拍卖同样有）。
+ *
+ * 为什么要单独发、还要能刷新：大图那部分是「这只精灵 / 物品长什么样」——**不会变**，
+ * 客户端把它缓存十分钟都无所谓；而**当前价 / 出价次数 / 领先者 是会变的**，
+ * 悬停窗既然要显示它们，就必须让客户端能重新问一次
+ * （见 `ChatObjectPreview.REQUEST_REFRESH_MS`：同一个拍品每 10 秒允许重新请求）。
+ *
+ * ⚠ [endsAt] 会被**反狙击延长**改写 ⇒ 每次刷新都重新下发，客户端别拿旧值自己加时间。
+ * ⚠ 起拍价 / 最低加价**不会变**，但也一并发 —— 客户端只此一处取数，不必再为它们开二茬接口。
+ */
+data class AuctionPreviewInfo(
+    /**
+     * 卖家名与 UUID。
+     * ⚠ **必须带在这里、不能借 [ObjectPreviewPayload.listing]**：物品拍卖那条的 `listing` 恒为 null
+     *   （物品词条由客户端拿原版 tooltip 现算），借它就等于物品拍卖没有卖家行。
+     *   [sellerUuid] 用来判「这条是我自己发布的吗」（悬停窗尾部会标一句）。
+     */
+    val sellerName: String,
+    val sellerUuid: UUID,
+    val startingPrice: Int,
+    val minIncrement: Int,
+    val currentPrice: Int,
+    val bidCount: Int,
+    val endsAt: Long,
+    /** 领先者玩家名（空串 = 还没人出价） */
+    val currentBidderName: String
+) {
+    fun write(buf: PacketByteBuf) {
+        buf.writeString(sellerName)
+        buf.writeUuid(sellerUuid)
+        buf.writeInt(startingPrice)
+        buf.writeInt(minIncrement)
+        buf.writeInt(currentPrice)
+        buf.writeInt(bidCount)
+        buf.writeLong(endsAt)
+        buf.writeString(currentBidderName)
+    }
+
+    companion object {
+        fun read(buf: PacketByteBuf): AuctionPreviewInfo = AuctionPreviewInfo(
+            sellerName = buf.readString(),
+            sellerUuid = buf.readUuid(),
+            startingPrice = buf.readInt(),
+            minIncrement = buf.readInt(),
+            currentPrice = buf.readInt(),
+            bidCount = buf.readInt(),
+            endsAt = buf.readLong(),
+            currentBidderName = buf.readString()
+        )
+    }
+}
+
 // ── S2C：拍品的大图数据（只带渲染需要的字段，不带价格/卖家等聊天里已有的东西） ──
 
 /**
@@ -88,7 +141,15 @@ data class ObjectPreviewPayload(
      * ⚠ 求购的**需求**预览同样为 null —— 那是「买家想要什么」而不是实物，按它画完整信息行
      *   会误导玩家；只有**待交付的实物**才有（见 `deliveryPreview`）。
      */
-    val listing: ListingEntry? = null
+    val listing: ListingEntry? = null,
+    /**
+     * **拍卖状态**（当前价 / 出价次数 / 结束时间 / 领先者 / 起拍价 / 最低加价）——
+     * 只有「拍卖播报」那条非空；求购（含待交付）恒为 null。
+     *
+     * ⚠ 客户端把这些行排在信息行的**尾部**（照搬拍卖场的行悬停窗，另加起拍价 / 最低加价两行，
+     *   那两项在拍卖场是放在出价弹窗里的）。精灵与物品拍卖**都有**。
+     */
+    val auction: AuctionPreviewInfo? = null
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -113,6 +174,8 @@ data class ObjectPreviewPayload(
                 // ⚠ 新增字段**一律追加在末尾**，读端严格同序；两端必须同步升级
                 b.writeBoolean(p.listing != null)
                 p.listing?.write(b)
+                b.writeBoolean(p.auction != null)
+                p.auction?.write(b)
             },
             { b ->
                 // 具名参数：这段读序与上面的写序一一对应，错位了会静默读出垃圾数据
@@ -129,7 +192,8 @@ data class ObjectPreviewPayload(
                     count = b.readInt(),
                     heldItemVisible = b.readBoolean(),
                     // 与 write 端严格同序（write 在 heldItemVisible 之后）
-                    listing = if (b.readBoolean()) ListingEntry.read(b) else null
+                    listing = if (b.readBoolean()) ListingEntry.read(b) else null,
+                    auction = if (b.readBoolean()) AuctionPreviewInfo.read(b) else null
                 )
             }
         )
@@ -204,7 +268,9 @@ object ObjectPreviewNetwork {
                     itemComponentsSpec = null,
                     count = 1,
                     // 完整信息行（悬停窗右侧那套）：从拍品自带的数据组装，与市场行悬停窗同源
-                    listing = MarketNetwork.buildListingEntry(auction, server)
+                    listing = MarketNetwork.buildListingEntry(auction, server),
+                    // 拍卖状态（当前价 / 出价次数 / 结束倒计时 / 领先者…）：排在信息行**尾部**
+                    auction = auctionInfoOf(auction)
                 )
             } else {
                 // pokemonNbt 为空/损坏的兜底：extraData 里有物种 ID 与形态（老拍卖也带），拿它画默认形态
@@ -218,7 +284,9 @@ object ObjectPreviewNetwork {
                     itemId = "",
                     itemNbt = null,
                     itemComponentsSpec = null,
-                    count = 1
+                    count = 1,
+                    // 兜底分支照样带拍卖状态：大图数据不全，但「多少钱、还剩多久」照常有用
+                    auction = auctionInfoOf(auction)
                 )
             }
         } else {
@@ -232,9 +300,25 @@ object ObjectPreviewNetwork {
                 itemId = auction.species,
                 itemNbt = auction.itemNbt,
                 itemComponentsSpec = null,
-                count = auction.count
+                count = auction.count,
+                // ⚠ 物品拍卖**同样**带拍卖状态：拍卖场的物品行悬停窗也是「词条 + 当前价/倒计时/领先者」，
+                //   只给精灵补就又是一处「两边不一致」
+                auction = auctionInfoOf(auction)
             )
         }
+
+    /** 拍卖状态 → 悬停窗尾部那几项（精灵 / 物品拍卖都走它，**只有求购那条不适用**） */
+    private fun auctionInfoOf(auction: AuctionListing): AuctionPreviewInfo = AuctionPreviewInfo(
+        sellerName = auction.sellerName,
+        sellerUuid = auction.sellerUuid,
+        startingPrice = auction.startingPrice,
+        minIncrement = auction.minIncrement,
+        currentPrice = auction.currentPrice,
+        // 出价次数就是出价史的长度（拍卖列表那边同样用它，别另开计数器）
+        bidCount = auction.bids.size,
+        endsAt = auction.endsAt,
+        currentBidderName = auction.currentBidderName
+    )
 
     /** 求购单：**是"需求"不是实精灵/实物**，只能按需求字段画一只「长这样的」——物种/形态/闪光而已 */
     /**

@@ -2545,7 +2545,9 @@ class BuyOrderScreen(
             // 「有才显示」的行数走**共用入口**（`listing` 可能为 null = 没有待交付精灵）
             val infoRows = 13 + (listing?.let { EntryBadgeRenderer.optionalRowCount(it) } ?: 0)
             // 证章一行几个跟随可用宽（见 marksPerRow）—— 保守传最小宽 ⇒ 高度宁多不少
-            val marksH = if (listing != null) EntryBadgeRenderer.marksBlockHeight(listing.marks, listing.moves, 124) else 0
+            // ⚠ 证章的可用宽必须是**分割线的实际宽度**（居中弹窗恒为 MOVES_MAX_W），见 MarketScreen 同处说明
+            val marksH = if (listing != null)
+                EntryBadgeRenderer.marksBlockHeight(listing.marks, listing.moves, EntryBadgeRenderer.MOVES_MAX_W) else 0
             val movesH = if (listing != null) EntryBadgeRenderer.movesBlockHeight(listing.moves) else 0
             // 顶部 62 = 标题 + 28 高的图标（占 +28~+56）+ 6px 间隙，名字行才起在 +62（照市场购买确认弹窗）
             62 + infoRows * 10 + movesH + marksH + 72
@@ -2802,9 +2804,15 @@ class BuyOrderScreen(
                 context, listingEntry,
                 EntryBadgeRenderer.nameWithShinyStar(listingName, pending.shiny),
                 // +62：图标占 +28~+55，留 6px 间隙后起名字行（与市场购买确认弹窗一致）
-                centerX, viewTop - reviewScroll, dividerW = dialogW - 156, maxWidth = dialogW - 24
+                centerX, viewTop - reviewScroll, dividerW = dialogW - 156, maxWidth = dialogW - 24,
+                // 弹窗：鼠标能自由移动 ⇒ 停在证章行（有「+N」时）补一个全部证章的二级窗。
+                // ⚠ 这个函数拿不到 render 的鼠标参数 ⇒ 用界面在 render 开头登记的当前帧坐标
+                mouseX = com.shusheng.cobblemarket.client.icon.IconRegistry.mouseX,
+                mouseY = com.shusheng.cobblemarket.client.icon.IconRegistry.mouseY
             )
             context.disableScissor()
+            // ⚠ 二级窗要在一级窗（信息行）之后画
+            EntryBadgeRenderer.drawMarksMoreTooltip(context)
         } else {
             // 物品行：图标 + 名称 + 数量整体居中（照交付弹窗形态行格式）；
             // 垂直在标题（+14）与卖家行（+58）中间：物品行中心 ≈ 36 → 图标 y=28、文字基线 y=32

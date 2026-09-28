@@ -7,6 +7,7 @@ import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.ItemHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
+import com.shusheng.cobblemarket.network.AuctionPreviewInfo
 import com.shusheng.cobblemarket.network.ListingEntry
 import com.shusheng.cobblemarket.network.ObjectPreviewNetwork
 import com.shusheng.cobblemarket.network.ObjectPreviewPayload
@@ -16,6 +17,7 @@ import com.shusheng.cobblemarket.screen.EntryBadgeRenderer
 import com.shusheng.cobblemarket.screen.ROW_BACKGROUND_TEX_H
 import com.shusheng.cobblemarket.screen.ROW_BACKGROUND_TEXTURE
 import com.shusheng.cobblemarket.screen.drawNineSlice
+import com.shusheng.cobblemarket.util.RemainingTime
 import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
@@ -23,6 +25,7 @@ import net.minecraft.client.gui.screen.ChatScreen
 import net.minecraft.item.ItemStack
 import net.minecraft.item.tooltip.TooltipType
 import net.minecraft.text.Text
+import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import java.util.UUID
 
@@ -111,14 +114,40 @@ object ChatObjectPreview {
         val stack: ItemStack?,
         val at: Long,
         val listing: ListingEntry? = null,
-        val name: Text? = null
+        val name: Text? = null,
+        /**
+         * **拍卖状态**（只有拍卖播报那条有）：当前价 / 出价次数 / 起拍价 / 最低加价 /
+         * 结束时间 / 领先者 —— 排成信息行的**尾部**，见 [auctionFooterLines]。
+         * ⚠ 内容会变（当前价、领先者），所以悬停期间会**重新请求**刷新（见 [REQUEST_REFRESH_MS]）。
+         */
+        val auction: AuctionPreviewInfo? = null,
+        /**
+         * 精灵的**身份键**（物种 + 形态）：刷新回来时靠它认「还是同一只吗」——
+         * 是就**复用** [renderable] / [state]，否则每刷新一次模型动画都从头开始（看着像跳了一下）。
+         */
+        val pokemonKey: String? = null
     )
 
     /** 大图数据缓存（插入序，超上限淘汰最旧的） */
     private val cache = LinkedHashMap<String, Entry>()
 
-    /** 已请求过的 id：同一拍品只发一次请求（悬停期间每帧都会走到这里，不能每帧发一包） */
-    private val requested = LinkedHashSet<String>()
+    /**
+     * 已请求过的 id → **上次请求的时刻**。
+     *
+     * ⚠ 语义不是「只请求一次」：**拍卖那条的当前价 / 出价次数 / 领先者会变**，悬停窗既然要显示它们，
+     * 就得定期重新问（见 [REQUEST_REFRESH_MS]）。大图数据本身不会变 ⇒ 缓存照旧**秒显**，
+     * 刷新只是把新数据换上去（[onData] 里同一只会**复用模型**，动画不会重头开始）。
+     */
+    private val requested = LinkedHashMap<String, Long>()
+
+    /**
+     * 同一个拍品**隔多久允许重新请求一次**。
+     *
+     * 取 10 秒：别人出价的频率不会比这更高，而玩家悬停看一会儿也能自动刷到最新价。
+     * ⚠ 服务端对超限请求是**静默丢弃**，所以这个值必须大于服务端
+     *   `RequestThrottle.READ_INTERVAL_MS`（500ms）—— 10 秒远大于它，安全。
+     */
+    private const val REQUEST_REFRESH_MS = 10_000L
 
     /** 上次实际发出请求的时刻（客户端让开服务端限流窗口用，见 [REQUEST_MIN_INTERVAL_MS]） */
     private var lastRequestAt = 0L
@@ -173,10 +202,12 @@ object ChatObjectPreview {
             return
         }
 
+        // ⚠ 请求**不只在没数据时发**：拍卖那条的当前价 / 出价次数 / 领先者会变，悬停期间要定期刷新
+        //   （[requestOnce] 自己按 [REQUEST_REFRESH_MS] 判断该不该真发 ⇒ 每帧调也不会每帧发包）
+        requestOnce(hovered, now)
         val entry = cached(hovered.id, now)
         if (entry == null) {
-            // 数据没到：发一次请求（同一 id 只发一次），这帧先不显示
-            requestOnce(hovered, now)
+            // 数据还没到：这帧先不显示
             hide()
             return
         }
@@ -201,11 +232,16 @@ object ChatObjectPreview {
             if (payload.shiny && "shiny" !in aspects) aspects.add("shiny")
             // 携带物喂给模型：Cobblemon 会把它渲染在手上/嘴上，不传的话大图里的精灵是空手的
             val held = payload.heldItemNbt?.let { ItemStack.fromNbtOrEmpty(registryManager, it) } ?: ItemStack.EMPTY
+            // 身份键：物种 + 形态。**刷新回来时若还是同一只就复用渲染对象**（见 Entry.pokemonKey）——
+            // 否则数据一刷新（拍卖状态每 10 秒重问一次）模型动画就从头开始，看着像跳了一下
+            val pokemonKey = payload.speciesId + "|" + aspects.sorted().joinToString(",")
+            val reuse = cache[payload.id]?.takeIf { it.isPokemon && it.pokemonKey == pokemonKey }
             Entry(
                 isPokemon = true,
                 // 大图里的**模型**：玩家设了「隐藏」就不拿东西（别的界面同理，用户 2026-09-26 拍板）
-                renderable = RenderablePokemon(species, aspects, if (payload.heldItemVisible) held else ItemStack.EMPTY),
-                state = FloatingState(),
+                renderable = reuse?.renderable
+                    ?: RenderablePokemon(species, aspects, if (payload.heldItemVisible) held else ItemStack.EMPTY),
+                state = reuse?.state ?: FloatingState(),
                 stack = null,
                 at = now,
                 // 右侧信息行（服务端组装好随包下发；没有就只画大图）
@@ -213,7 +249,9 @@ object ChatObjectPreview {
                 // 名字行走**官方词条 key**（`cobblemon.species.<name>.name`）—— 与市场同一口径
                 name = if (payload.listing == null) null else EntryBadgeRenderer.nameWithShinyStar(
                     Text.translatable(speciesNameKey(payload.speciesId)), payload.shiny
-                )
+                ),
+                auction = payload.auction,
+                pokemonKey = pokemonKey
             )
         } else {
             // 拍卖存整栈 NBT、求购单存组件快照 —— 两种格式各走各的重建入口（都以 itemId 兜底）
@@ -222,7 +260,8 @@ object ChatObjectPreview {
             if (stack == null || stack.isEmpty) return
             // 数量以包里单独传的为准：挂单 NBT 里存的是上架总量（同庆祝动画的处理）
             stack.count = payload.count.coerceAtLeast(1)
-            Entry(isPokemon = false, renderable = null, state = null, stack = stack, at = now)
+            // ⚠ 物品拍卖**同样**带拍卖状态（拍卖场的物品悬停窗也是「词条 + 当前价 / 倒计时 / 领先者」）
+            Entry(isPokemon = false, renderable = null, state = null, stack = stack, at = now, auction = payload.auction)
         }
         cache[payload.id] = entry
         trimCache(now)
@@ -291,7 +330,16 @@ object ChatObjectPreview {
             val listing = entry.listing
             val name = entry.name
             if (listing != null && name != null) {
-                drawPokemonInfoPanel(context, listing, name, centerX, screenHeight)
+                // 尾部：拍卖那条换成「卖家 / 当前价 / 起拍价 / 加价 / 倒计时 / 领先者」
+                //（照拍卖场的行悬停窗 —— 市场那套的「价格」对拍卖没有意义）
+                drawPokemonInfoPanel(
+                    context, listing, name, screenHeight,
+                    // ⚠ `withDivider = false`：**证章块自己已经画了下分割线**（`drawInfoLines` 的证章块 =
+                    //   图标行 + 下分割线），footer 再加一条就是**重复**（2026-09-29 用户截图报出）。
+                    //   ⚠ 别照搬拍卖场那边的做法 —— 那边之所以要这条线，是因为它的证章块**不画**下分割线、
+                    //   由这条**充当**它（两种实现不一样，不能直接搬）
+                    footer = entry.auction?.let { auctionFooterLines(it, withDivider = false) }
+                )
             }
         } else {
             val stack = entry.stack ?: return
@@ -302,19 +350,34 @@ object ChatObjectPreview {
                 screenHeight = screenHeight,
                 centerX = centerX
             )
-            drawItemTooltipPanel(context, stack, centerX, screenHeight)
+            // 物品拍卖同样要接拍卖那几行：拍卖场的物品悬停窗也是「词条 + 当前价 / 倒计时 / 领先者」。
+            // ⚠ 物品侧这条线**恒要**（分隔「词条」与「拍卖信息」两块，没有证章那回事）
+            drawItemTooltipPanel(
+                context, stack, screenHeight,
+                entry.auction?.let { auctionFooterLines(it, withDivider = true) }
+            )
         }
     }
 
     // ── 词条面板的尺寸 ──
-    /** 大图半径（`ItemHoverPreview` 放大 8 倍 ⇒ 16×8÷2 = 64），词条面板据此贴到它右边 */
-    private const val ICON_HALF = 64f
-    /** 大图与词条面板之间的空隙 */
-    private const val PANEL_GAP = 8
     /** 词条面板的内边距 */
     private const val PANEL_PAD = 4
     /** 一行词条的高度（默认字体 9 + 1） */
     private const val LINE_H = 10
+
+    /**
+     * 词条面板的左缘：**中心落在右半屏的中心**（= 屏宽的 3/4），并钳在屏幕内。
+     *
+     * ⚠ 为什么不贴着大图右缘摆（2026-09-29 用户实测报出）：大图**自己**在屏幕正中没错，
+     *   但精灵模型不是以原点对称的、多数还带尾巴 / 翅膀 ⇒ 向右伸得比想象的远，
+     *   贴着摆会被模型盖住半个面板。挪到右半屏中心后两者自然拉开距离，大图仍待在正中。
+     * ⚠ 精灵与物品**共用这一个落点**：悬停两种东西时面板不该跳来跳去。
+     */
+    private fun panelXFor(context: DrawContext, panelW: Int): Int {
+        val screenW = context.scaledWindowWidth
+        val center = (screenW * 0.75f).toInt()
+        return (center - panelW / 2).coerceIn(0, maxOf(0, screenW - panelW - 4))
+    }
 
     /**
      * 大图**右侧**列出的完整物品词条（**带九宫格背景** —— 2026-09-29 用户定：不能凭空飘字）。
@@ -327,33 +390,50 @@ object ChatObjectPreview {
      * ⚠ 调用点与它服务的大图一样，走的是「展示 / 拍卖 / 求购播报」**共用的那套**。
      * ⚠ 词条**保留第一行**：这一侧的大图没有物品名（不像列表悬停窗那边已经画了名字、要 `.drop(1)`）。
      */
-    private fun drawItemTooltipPanel(context: DrawContext, stack: ItemStack, centerX: Float, screenHeight: Int) {
+    private fun drawItemTooltipPanel(
+        context: DrawContext, stack: ItemStack, screenHeight: Int,
+        /** 尾部行（拍卖那条传 [auctionFooterLines]，见 `draw()`）：null = 只有物品词条 */
+        footer: List<Pair<Text?, Int>>? = null
+    ) {
         val client = MinecraftClient.getInstance()
-        val lines = ItemComponentsDisplay.itemTooltip(stack, client.player, TooltipType.BASIC)
-        if (lines.isEmpty()) return
+        val tooltip = ItemComponentsDisplay.itemTooltip(stack, client.player, TooltipType.BASIC)
+        if (tooltip.isEmpty()) return
         val font = client.textRenderer
 
-        // 大图占 [centerX - ICON_HALF, centerX + ICON_HALF]（放大倍数与 ItemHoverPreview 的 8 倍一致）
-        val panelX = (centerX + ICON_HALF + PANEL_GAP).toInt()
-        val availW = (context.scaledWindowWidth - panelX - 6).coerceAtLeast(48)
+        // 词条可比屏幕宽（长名字 / 长 lore）⇒ 内容宽先按**右半屏的可用宽**截住
+        //（面板中心在 0.75 屏宽处，左右各占一半内容宽 ⇒ 上限就是半个屏幕）
+        val maxContentW = (context.scaledWindowWidth * 0.5f).toInt() - PANEL_PAD * 2 - 8
         val availH = screenHeight - 16
 
-        // 高度不够就少画几行（末行加个「…」表示被截了）—— 词条多的物品（附魔堆满）会很长
-        val maxRows = (availH - PANEL_PAD * 2) / LINE_H
-        val shown = lines.take(maxRows.coerceAtLeast(1))
+        val maxRows = ((availH - PANEL_PAD * 2) / LINE_H).coerceAtLeast(1)
+        val footerRows = footer.orEmpty()
+        // ⚠ 尾部（拍卖状态）**优先占位**：当前价 / 倒计时有时效性，词条少看两行不影响判断；
+        //   反过来把尾部截掉，玩家就看不到还剩多久、现在多少钱了
+        val tooltipRows = (maxRows - footerRows.size).coerceAtLeast(1)
+        // 统一成行模型：null 元素 = 分割线（与项目其余行列表同一约定）
+        val lines = tooltip.take(tooltipRows).map { it to 0xFFFFFF } + footerRows
+        val shown = lines.take(maxRows)
 
-        val textW = shown.maxOf { font.getWidth(it) }
-        val panelW = (minOf(textW, availW) + PANEL_PAD * 2).coerceAtLeast(40)
+        val textW = shown.maxOfOrNull { (line, _) -> if (line == null) 0 else font.getWidth(line) } ?: 0
+        val contentW = minOf(textW, maxContentW).coerceAtLeast(48)
+        val panelW = contentW + PANEL_PAD * 2
+        val panelX = panelXFor(context, panelW)
         val panelH = shown.size * LINE_H + PANEL_PAD * 2
         val panelY = (screenHeight / 2 - panelH / 2)
 
         // HUD 层浮窗用行背景那套九宫格（与项目里自绘悬停窗同一个贴图）
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, panelX, panelY, panelW, panelH, 1, ROW_BACKGROUND_TEX_H)
 
-        shown.forEachIndexed { i, line ->
-            // 超宽的单行截断（保分段样式：附魔行是分段的，压成一段会丢颜色）
-            val cut = TextUtil.truncateStyled(line, availW)
-            context.drawTextWithShadow(font, cut, panelX + PANEL_PAD, panelY + PANEL_PAD + i * LINE_H, 0xFFFFFF)
+        shown.forEachIndexed { i, (line, color) ->
+            val rowY = panelY + PANEL_PAD + i * LINE_H
+            if (line == null) {
+                // 分割线：撑满面板内容宽（与精灵面板 / 市场悬停窗同一画法）
+                context.fill(panelX + PANEL_PAD, rowY + 4, panelX + PANEL_PAD + contentW, rowY + 5, 0xFF888888.toInt())
+            } else {
+                // 超宽的单行截断（保分段样式：附魔行是分段的，压成一段会丢颜色）
+                val cut = TextUtil.truncateStyled(line, contentW)
+                context.drawTextWithShadow(font, cut, panelX + PANEL_PAD, rowY, color)
+            }
         }
         if (shown.size < lines.size) {
             // 被截掉了：末行右下角补一个省略号（完整内容请到物品栏里看）
@@ -363,6 +443,67 @@ object ChatObjectPreview {
                 panelY + PANEL_PAD + (shown.size - 1) * LINE_H, 0x888888
             )
         }
+    }
+
+    /**
+     * **拍卖那条的尾部信息行** —— 取代信息行默认的「卖家 / 价格」两行。
+     *
+     * 口径照搬**拍卖场的行悬停窗**（`AuctionScreen.renderPokemonTooltip` 的动态行那一段）：
+     * 分割线 / 卖家 / 当前价（有人出价才补 `×次数`）/ 结束倒计时（不足 5 分钟转红）/ 领先者 /
+     * 「我发布的」。**另加「起拍价」「最低加价」两行** —— 那两项在拍卖场是放在**出价弹窗**里的，
+     * 而聊天里点进来之前看不到弹窗，缺了它们玩家没法判断该出多少。
+     *
+     * ⚠ 与市场那套的「价格」行**不是一回事**：拍卖有起拍价 / 当前价 / 最低加价**三个**金额概念，
+     * 塞进一行「价格」只会误导（2026-09-29 用户指出）。
+     * ⚠ 用的是 `_label` 变体的词条（**自带冒号**）—— 不带冒号那版是给出价弹窗的表单用的
+     * （那边由代码补 `": "`，属于欠账，别再学）。
+     * ⚠ 全是**会变**的数据 ⇒ 悬停期间会定期重新请求（见 [REQUEST_REFRESH_MS]）。
+     */
+    private fun auctionFooterLines(
+        info: AuctionPreviewInfo,
+        /**
+         * 是否在顶部补一条分割线。
+         * **精灵**：跟**证章块**走 —— 那条线本就是证章块的下分割线（拍卖场同口径），没证章时
+         * 凭空多一条会被一眼看出来（2026-09-29 用户报）。
+         * **物品**：恒 `true` —— 它分隔的是「物品词条」与「拍卖信息」两块，不分隔会糊在一起。
+         */
+        withDivider: Boolean
+    ): List<Pair<Text?, Int>> {
+        val lines = mutableListOf<Pair<Text?, Int>>()
+        fun gold(v: Int): Text =
+            Text.literal("${formatPrice(v)} ${inlineCurrencyUnit()}").formatted(Formatting.GOLD)
+
+        if (withDivider) lines.add(null to 0xFFFFFF)
+        lines.add(
+            Text.translatable("cobblemarket.auction.seller").append(Text.literal(info.sellerName)) to 0xFFFFFF
+        )
+        // 当前价：还没人出价时显示「起拍 ₽xxx」（拍卖场那套口径），有人出价才补出价次数
+        val current = Text.translatable("cobblemarket.auction.current_price").append(
+            if (info.currentPrice > 0) gold(info.currentPrice)
+            else Text.translatable("cobblemarket.auction.from").append(gold(info.startingPrice))
+        )
+        lines.add(
+            (if (info.bidCount > 0)
+                current.append(Text.literal("  ×${info.bidCount}").formatted(Formatting.GRAY))
+            else current) to 0xFFFFFF
+        )
+        lines.add(Text.translatable("cobblemarket.auction.starting_price_label").append(gold(info.startingPrice)) to 0xFFFFFF)
+        lines.add(Text.translatable("cobblemarket.auction.min_increment_label").append(gold(info.minIncrement)) to 0xFFFFFF)
+        // 结束倒计时：颜色与拍卖场同源（RemainingTime.color，不足 5 分钟转红告警）
+        lines.add(
+            Text.translatable("cobblemarket.auction.ends").append(
+                RemainingTime.text(info.endsAt, "cobblemarket.auction.ending")
+            ) to RemainingTime.color(info.endsAt)
+        )
+        if (info.currentBidderName.isNotEmpty()) {
+            lines.add(
+                Text.translatable("cobblemarket.auction.leader").append(Text.literal(info.currentBidderName)) to 0xFFDD66
+            )
+        }
+        if (MinecraftClient.getInstance().player?.uuid == info.sellerUuid) {
+            lines.add(Text.translatable("cobblemarket.auction.mine_mark") to 0x55FF55)
+        }
+        return lines
     }
 
     /**
@@ -380,24 +521,25 @@ object ChatObjectPreview {
      *   改那个函数的行列表时这三处要一起改（少算一行 = 框比内容矮一截）。
      */
     private fun drawPokemonInfoPanel(
-        context: DrawContext, listing: ListingEntry, name: Text, centerX: Float, screenHeight: Int
+        context: DrawContext, listing: ListingEntry, name: Text, screenHeight: Int,
+        /** 尾部行：拍卖那条传 [auctionFooterLines]；其余传 null = 用默认的「卖家 / 价格」 */
+        footer: List<Pair<Text?, Int>>? = null
     ) {
-        val panelX = (centerX + ICON_HALF + PANEL_GAP).toInt()
-        // 屏幕右缘以内的可用宽：放不下就按它截断（长精灵名 / 长特性名），别画到屏幕外
-        val availW = (context.scaledWindowWidth - panelX - 6).coerceAtLeast(64)
-
-        // 内容宽：信息行 / 技能块 / 名字行 / 携带物图标 / 技能块那条固定兜底 —— 口径全在
-        // EntryBadgeRenderer.infoPanelContentWidth 里（与 drawInfoLines 同源，别在这儿另算一遍）
-        val contentW = EntryBadgeRenderer.infoPanelContentWidth(listing, name).coerceAtMost(availW)
+        // 内容宽：信息行 / 技能块 / 名字行 / 携带物图标 / 技能块那条固定兜底 / 尾部自带那几行 ——
+        // 口径全在 EntryBadgeRenderer.infoPanelContentWidth 里（与 drawInfoLines 同源，别在这儿另算）
+        val contentW = EntryBadgeRenderer.infoPanelContentWidth(listing, name, footer)
 
         val panelW = contentW + PANEL_PAD * 2
-        val panelH = EntryBadgeRenderer.measureInfoLinesHeight(listing, contentW) + PANEL_PAD * 2
+        val panelH = EntryBadgeRenderer.measureInfoLinesHeight(listing, contentW, footer) + PANEL_PAD * 2
+        val panelX = panelXFor(context, panelW)
         // 纵向与旁边的大图一样取屏幕中线；⚠ 比屏幕还高时**贴顶**（宁可下缘出去，也别把标题行顶没了）
         val panelY = ((screenHeight - panelH) / 2).coerceAtLeast(2)
 
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, panelX, panelY, panelW, panelH, 1, ROW_BACKGROUND_TEX_H)
 
-        // 行内容是**居中排版**的（drawInfoLines 的口径），所以中心传面板自己的中线
+        // ⚠ `alignLeft = true`：**照搬精灵市场行悬停窗的排布** —— 文字行贴左缘、分割线与技能块撑满
+        //   内容宽，而**证章行仍然居中**（那族本来就是**混合**的，别一概说成"全部左对齐"，
+        //   2026-09-29 用户特意提醒了证章这一条）。与弹窗那种"每行都居中"的排版不是一回事。
         EntryBadgeRenderer.drawInfoLines(
             context = context,
             entry = listing,
@@ -405,7 +547,9 @@ object ChatObjectPreview {
             centerX = panelX + panelW / 2,
             startY = panelY + PANEL_PAD,
             dividerW = contentW,
-            maxWidth = contentW
+            maxWidth = contentW,
+            footer = footer,
+            alignLeft = true
         )
     }
 
@@ -428,15 +572,23 @@ object ChatObjectPreview {
         return entry
     }
 
+    /**
+     * 请求这个拍品的数据（悬停期间**每帧都会调**，由它自己决定该不该真发）。
+     *
+     * 两道闸：① 距上次请求不足 [REQUEST_REFRESH_MS] → 不发（也就不用担心每帧发一包）；
+     * ② 距上次**实际发包**不足 [REQUEST_MIN_INTERVAL_MS] → 这帧先让开、**也不算已请求**
+     *（下一帧接着试，否则这一拍品会永久空白）。
+     */
     private fun requestOnce(hovered: Hovered, now: Long) {
-        if (hovered.id in requested) return
+        val lastAsked = requested[hovered.id]
+        if (lastAsked != null && now - lastAsked < REQUEST_REFRESH_MS) return
         // 还在服务端限流窗口里就先不发、**也不算已请求**：下一帧接着试，别让这一拍品永久空白
         if (now - lastRequestAt < REQUEST_MIN_INTERVAL_MS) return
         lastRequestAt = now
-        if (!requested.add(hovered.id)) return
-        // 集合同样设上限：按插入序淘汰最旧的，避免聊天刷屏时无限增长
+        requested[hovered.id] = now
+        // 同样设上限：按插入序淘汰最旧的，避免聊天刷屏时无限增长
         while (requested.size > REQUESTED_MAX) {
-            val oldest = requested.firstOrNull() ?: break
+            val oldest = requested.keys.firstOrNull() ?: break
             requested.remove(oldest)
         }
         sendToServer(RequestObjectPreviewPayload(hovered.kind, hovered.id))
