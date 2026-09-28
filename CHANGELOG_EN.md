@@ -20,6 +20,8 @@
 
 - **How the UI marks a selected entry is now consistent**: lists, tabs and dropdowns used to mark the selected entry with a "●" in front of its label — they now use the **button's own selected highlight** (background) instead, so the same idea is no longer expressed twice; toggle buttons such as "Mine" got the same highlight too
 
+- **Hovering an auction / buy-order announcement now shows the item's full details**: the large preview beside the chat used to show only the icon — but **many items look exactly the same and differ only in their tooltip** (enchantments, custom names, potions…), so it told you nothing. The preview now lists **the same information you would see in your inventory** — enchantments, attribute modifiers, potion effects, custom lore and durability, with **Shift / Ctrl expansion still working**; when there is too much, it truncates and marks it with an ellipsis
+
 - **The admin buy-order screen no longer shows a balance**: every other screen in the admin panel goes without one, only buy orders had it (looked like a copy-paste slip) — it is now hidden in admin mode, while the player-side buy-order screen keeps it
 
 ### Fixes
