@@ -179,6 +179,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         )
+        // 「我的」是**开关**：开启时按钮给选中态（resize 重建时 showMineOnly 可能已经是 true）
+        mineButton?.selectedVisual = showMineOnly
         addDrawableChild(mineButton)
 
         // 分页（照精灵市场：底部分割线在网格最后一行下方 4px 对称，按钮在其与背景底边之间居中偏上 5px）
@@ -303,6 +305,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         mineButton?.iconLeft = Identifier.of("cobblemarket",
             if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png")
         mineButton?.setTooltip(Tooltip.of(Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")))
+        // 「我的」是个**开关**：开启时除换图标，按钮也给选中态（照手持物品那几个开关）
+        mineButton?.selectedVisual = showMineOnly
         currentPage = 1
         requestFilterRefresh()
     }
