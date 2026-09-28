@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.util.ItemNameText
 import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
+import com.shusheng.cobblemarket.util.TypeFilter
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.FilterPanelAnimation
 import com.shusheng.cobblemarket.client.heldIconStack
@@ -834,11 +835,23 @@ class AuctionScreen(
     /** 面板内按钮的内容宽（面板宽减两侧各 4）—— 与 init 里的 `fw` 同源，别各写一份 */
     private fun filterPanelBtnW() = MarketPanelBackground.filterWidth(width) - 8
 
+    /**
+     * 属性按钮文字 =「属性：」+ 各属性名 —— **每段属性名自己带属性色**：「属性：」前缀与 `+`
+     * 都是陪衬文字不设色（CLAUDE.md：带色的文字不能当父节点）。最多 2 个，顺序 = 玩家点击顺序。
+     *
+     * ⚠ 这里**不走 [filterButtonText]**：那个函数按 `value.string` 截断，会把分段样式整段丢掉。
+     *   宽度也不必截断 —— 英文最坏 `Type: Fighting+Electric` = 138px，最窄一档按钮内容宽 140px。
+     */
     private fun typeButtonText(): Text {
-        val any = typeFilter.isEmpty()
-        val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
-            else Text.translatable("cobblemon.type.$typeFilter")
-        return filterButtonText("cobblemarket.gui.type", label, if (any) null else typeColor("cobblemon.type.$typeFilter"))
+        val picked = TypeFilter.keys(typeFilter)
+        val out = Text.translatable("cobblemarket.gui.type")
+        if (picked.isEmpty()) return out.append(Text.translatable("cobblemarket.gui.filter_any"))
+        picked.forEachIndexed { i, k ->
+            if (i > 0) out.append(Text.literal("+"))
+            out.append(Text.translatable("cobblemon.type.$k")
+                .setStyle(net.minecraft.text.Style.EMPTY.withColor(typeColor(k))))
+        }
+        return out
     }
 
     /**
@@ -990,7 +1003,8 @@ class AuctionScreen(
     }
 
     private fun isFilterSelected(kind: String, key: String): Boolean = when (kind) {
-        "type" -> key.isNotEmpty() && key == typeFilter
+        // ⚠ 属性是**多选**（最多 2 个）⇒ 选中态要问"在不在已选集合里"，不是 `==`
+        "type" -> key.isNotEmpty() && key in TypeFilter.keys(typeFilter)
         "tera" -> key.isNotEmpty() && key == teraFilter
         "ability" -> key.isNotEmpty() && key == abilityFilter
         "nature" -> key.isNotEmpty() && key == natureFilter
@@ -1000,7 +1014,9 @@ class AuctionScreen(
     private fun selectFilterOption(kind: String, key: String) {
         when (kind) {
             "type" -> {
-                typeFilter = key
+                // 多选切换：已选 → 取消；未选 → 加上；**已满 2 个再点第 3 个 → 失败音、不改状态**
+                val picked = TypeFilter.toggle(TypeFilter.keys(typeFilter), key)
+                if (picked == null) playFailSound() else typeFilter = TypeFilter.join(picked)
                 typeButton?.setMessage(typeButtonText())
                 typeButton?.textColor = UNSET_FILTER_COLOR   // 颜色由「值」自己带
             }
@@ -1020,7 +1036,9 @@ class AuctionScreen(
                 natureButton?.textColor = UNSET_FILTER_COLOR   // 颜色由「值」自己带
             }
         }
-        filterListOpen = ""
+        // ⚠ **属性是多选**（最多 2 个）⇒ 选中 / 取消都**不关浮层**（选完第一个窗就没了的话没法接着选第二个）。
+        //   收起仍靠再点一下「属性」按钮（[toggleFilterList]）。`rebuildFilterList()` 照调：刷新选中态高亮
+        if (kind != "type") filterListOpen = ""
         rebuildFilterList()
         rebuildFiltered()
         scrollOffset = 0
@@ -1306,12 +1324,11 @@ class AuctionScreen(
                 val d = entry.extraData
                 if (shinyOnly && !entry.shiny) return@filter false
                 if (genderFilter.isNotEmpty() && d["gender"] != genderFilter) return@filter false
-                if (typeFilter.isNotEmpty()) {
-                    val primary = d["primaryType"] ?: ""
-                    val secondary = d["secondaryType"] ?: ""
-                    if (!primary.contains(typeFilter, ignoreCase = true) && !secondary.contains(typeFilter, ignoreCase = true)) {
-                        return@filter false
-                    }
+                // 属性：可选 1 个或 2 个（`fire` / `fire|ghost`）——
+                // 1 个 = 主属性或副属性命中；2 个 = 主副**集合精确相等**（见 TypeFilter）
+                if (typeFilter.isNotEmpty() &&
+                    !TypeFilter.matches(d["primaryType"] ?: "", d["secondaryType"] ?: "", typeFilter)) {
+                    return@filter false
                 }
                 // 太晶属性：**精确匹配**（口径与精灵市场一致）。⚠ 拍卖的 extraData 一定有这个键 ——
                 //   新拍卖写上架快照，老拍卖由 auctionToEntry 从精灵 NBT 现读（见 PokemonTera.resolve）

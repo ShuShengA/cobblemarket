@@ -96,9 +96,14 @@ class MarketState private constructor() : PersistentState() {
         gmax?.let { g -> results = results.filter {
             (it.extraData["gmaxFactor"]?.toBooleanStrictOrNull() ?: false) == g
         } }
+        // 属性：可选中 1 个或 2 个（`fire` / `fire|ghost`）——
+        // 1 个 = 主属性或副属性命中它就算；2 个 = 主副属性**集合精确相等**。见 [TypeFilter]
         typeFilter?.let { t -> results = results.filter {
-            (it.extraData["primaryType"]?.contains(t, ignoreCase = true) == true) ||
-            (it.extraData["secondaryType"]?.contains(t, ignoreCase = true) == true)
+            com.shusheng.cobblemarket.util.TypeFilter.matches(
+                it.extraData["primaryType"].orEmpty(),
+                it.extraData["secondaryType"].orEmpty(),
+                t
+            )
         } }
         // 特性精确匹配（翻译 key）；性格按生效性格匹配（薄荷改成该性格也算）
         ability?.let { a -> results = results.filter { it.extraData["ability"] == a } }
