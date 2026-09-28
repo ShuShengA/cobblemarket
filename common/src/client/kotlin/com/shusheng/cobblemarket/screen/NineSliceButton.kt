@@ -89,18 +89,10 @@ class NineSliceButton(
         val totalIconW = if (iconLeft != null) iconW * (if (iconLeft2 != null) 2 else 1) + (if (iconLeft2 != null) 1 else 0) else 0
         val iconSpace = if (iconLeft != null) 5 + totalIconW + 4 else 0
         val textY = y + (height - 8) / 2
-        val msgString = message.string
-        // 选中标记黑点（TextUtil.selectedText 的 ● 前缀）无阴影绘制：带阴影看起来不是圆
-        if (msgString.startsWith("● ")) {
-            val dotW = font.getWidth("●")
-            val labelW = font.getWidth(msgString.substring(2))
-            val textX = x + iconSpace + (width - iconSpace - (dotW + 2 + labelW)) / 2
-            context.drawText(font, "●", textX, textY, 0x000000, false)
-            context.drawTextWithShadow(font, msgString.substring(2), textX + dotW + 2, textY, color)
-        } else {
-            val textX = x + iconSpace + (width - iconSpace - font.getWidth(message)) / 2
-            context.drawTextWithShadow(font, message, textX, textY, color)
-        }
+        // ⚠ 原先这里有一段「把 `● ` 前缀无阴影绘制」的特判 —— 那是 `TextUtil.selectedText` 时代的产物。
+        //   选中项改用按钮自己的选中态（背景第三段）后，那个函数已被删除，这段也一并删掉。
+        val textX = x + iconSpace + (width - iconSpace - font.getWidth(message)) / 2
+        context.drawTextWithShadow(font, message, textX, textY, color)
         // 置灰遮罩（视觉置灰但保留可点击性，见 dimmed 注释）
         if (dimmed) {
             context.fill(x, y, x + width, y + height, 0x66000000)
