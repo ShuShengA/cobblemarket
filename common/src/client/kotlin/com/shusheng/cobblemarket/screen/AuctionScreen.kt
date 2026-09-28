@@ -384,12 +384,24 @@ class AuctionScreen(
     }
 
     /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
+    /**
+     * 设置当前币种 —— **唯一入口**：改字段、刷按钮外观、写共享缓存，三件事一起做。
+     *
+     * ⚠⚠ **别直接写 `currency = ...`**：那样容易只改字段、忘了刷外观 ——
+     *   于是玩家**看到的**是主货币、**提交的**却是 RP（或反过来）。
+     *   ⚠ RP 的来路由服主决定（**可能是真钱充值来的**，也可能只是任务 / 活动奖励），
+     *   一旦不一致，轻则玩家卖亏、重则直接是经济损失（用户 2026-09-28 拍板必须堵死）。
+     *   自查：全类 `grep "currency = "` 应**只剩本函数里那一处**。
+     */
+    private fun setCurrency(value: MarketCurrency) {
+        currency = value
+        currencyButton?.let { updateCurrencyButton(it) }
+        com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency = value
+    }
+
     private fun onCurrencyClick() {
         // ⚠ 不拦开关：卖家要能切过去下架自己的存量 RP 挂单
-        currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
-        // 写回共享缓存：创建拍卖 / 返回后的拍卖场都跟着这个币种走（见 MarketStateCache.marketCurrency）
-        com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency = currency
-        currencyButton?.let { updateCurrencyButton(it) }
+        setCurrency(if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS)
         // 本地先按新币种过一遍（旧币种条目立刻消失），再向服务端要新币种的全量列表。
         // ⚠ 连点两次时第二次必然落在上一次的节流窗口内（500ms），必须走排队入口
         rebuildFiltered()

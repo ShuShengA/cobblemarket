@@ -1349,12 +1349,24 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         toggleCurrency()
     }
 
+    /**
+     * 设置当前币种 —— **唯一入口**：改字段、刷按钮外观、写共享缓存，三件事一起做。
+     *
+     * ⚠⚠ **别直接写 `currency = ...`**：那样容易只改字段、忘了刷外观 ——
+     *   于是玩家**看到的**是主货币、**提交的**却是 RP（或反过来）。
+     *   ⚠ RP 的来路由服主决定（**可能是真钱充值来的**，也可能只是任务 / 活动奖励），
+     *   一旦不一致，轻则玩家卖亏、重则直接是经济损失（用户 2026-09-28 拍板必须堵死）。
+     *   自查：全类 `grep "currency = "` 应**只剩本函数里那一处**。
+     */
+    private fun setCurrency(value: MarketCurrency) {
+        currency = value
+        currencyButton?.let { updateCurrencyButton(it) }
+        com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency = value
+    }
+
     /** 切主货币 ↔ RP：整屏换成另一半商品，**必须重置页码**（原页码在新币种下多半是空的） */
     private fun toggleCurrency() {
-        currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
-        // 写回共享缓存：上架界面 / 创建界面 / 返回后的市场都跟着这个币种走（见 MarketStateCache.marketCurrency）
-        com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency = currency
-        currencyButton?.let { updateCurrencyButton(it) }
+        setCurrency(if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS)
         // 「收款」只在主货币页有意义：它收的是**普通货币**的待收款（RP 收入直接进余额，没有待领账本）
         collectButton?.visible = currency != MarketCurrency.POINTS
         currentPage = 1
