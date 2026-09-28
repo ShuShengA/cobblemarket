@@ -411,7 +411,16 @@ data class AdminRequestPokemonPayload(
     /** 特性（翻译 key，精确匹配） */
     val abilityFilter: String = "",
     /** 性格（翻译 key，按**生效**性格匹配，薄荷后为薄荷性格） */
-    val natureFilter: String = ""
+    val natureFilter: String = "",
+    // ── 以下两项 2026-09-28 追加（管理端筛选面板照精灵市场补「太晶 / 超极巨化」）──
+    /**
+     * 太晶属性：**完整词条 key**（`cobblemon.type.fire`）。
+     * ⚠ `MarketState.search` 拿它跟 `extraData["teraType"]`（= 完整 key）做 `equals` **精确**比对 ⇒
+     *   传裸的 `fire` 会恒不匹配 —— 与 [typeFilter] 的裸 key **不是**一套口径。
+     */
+    val teraFilter: String = "",
+    /** 超极巨化筛选：0 = 不限 / 1 = 仅超极巨 / 2 = 仅非超极巨 */
+    val gmaxFilter: Int = 0
 ) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
@@ -443,6 +452,9 @@ data class AdminRequestPokemonPayload(
                 b.writeString(p.typeFilter)
                 b.writeString(p.abilityFilter)
                 b.writeString(p.natureFilter)
+                // ⚠ 新增字段一律**追加在末尾**；两端必须同步升级
+                b.writeString(p.teraFilter)
+                b.writeInt(p.gmaxFilter)
             },
             // 读端用具名参数，读写字段顺序必须一致
             { b ->
@@ -470,7 +482,9 @@ data class AdminRequestPokemonPayload(
                     genderFilter = b.readString(),
                     typeFilter = b.readString(),
                     abilityFilter = b.readString(),
-                    natureFilter = b.readString()
+                    natureFilter = b.readString(),
+                    teraFilter = b.readString(),
+                    gmaxFilter = b.readInt()
                 )
             }
         )
@@ -1722,7 +1736,14 @@ object MarketNetwork {
                     gender = payload.genderFilter.ifBlank { null },
                     typeFilter = payload.typeFilter.ifBlank { null },
                     ability = payload.abilityFilter.ifBlank { null },
-                    nature = payload.natureFilter.ifBlank { null }
+                    nature = payload.natureFilter.ifBlank { null },
+                    // 2026-09-28 追加：太晶（**完整词条 key**，见 payload 字段说明）/ 超极巨化
+                    teraFilter = payload.teraFilter.ifBlank { null },
+                    gmax = when (payload.gmaxFilter) {
+                        1 -> true
+                        2 -> false
+                        else -> null
+                    }
                 )
 
                 val pageSize = payload.pageSize.coerceIn(1, 30)
