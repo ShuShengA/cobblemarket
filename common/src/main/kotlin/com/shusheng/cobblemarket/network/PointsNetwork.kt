@@ -461,7 +461,7 @@ data class PointsConfigPayload(
      */
     val pointsMarketEnabled: Boolean = false,
     /**
-     * **「RP 当任务货币」开关**（默认关）：打开后**玩家身份的 OP（等级 ≥ 2）也能发放 / 回收 RP**
+     * **「give/take 权限下放」开关**（默认关）：打开后**玩家身份的 OP（等级 ≥ 2）也能发放 / 回收 RP**
      * —— FTB 之类的任务模组要把 RP 当奖励发给玩家（见 `CobbleMarketConfig.rpAsQuestCurrency`）。
      */
     val rpAsQuestCurrency: Boolean = false,
@@ -571,7 +571,7 @@ data class SavePointsConfigPayload(
      */
     val pointsMarketEnabled: Boolean = false,
     /**
-     * **「RP 当任务货币」开关**（默认关）：打开后**玩家身份的 OP（等级 ≥ 2）也能发放 / 回收 RP**
+     * **「give/take 权限下放」开关**（默认关）：打开后**玩家身份的 OP（等级 ≥ 2）也能发放 / 回收 RP**
      * —— FTB 之类的任务模组要把 RP 当奖励发给玩家（见 `CobbleMarketConfig.rpAsQuestCurrency`）。
      */
     val rpAsQuestCurrency: Boolean = false,
