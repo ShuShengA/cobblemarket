@@ -195,10 +195,16 @@ object CobbleMarketClient {
                 client.setScreen(MarketEntryScreen())
             }
             // ── 快速展示：**按住**显示两个大按钮、**松开**就展示（2026-09-29 用户定）──
-            // ⚠ 读的是 KeyBinding 自己的 isPressed（**不是**硬编码 GLFW_KEY_X）——
-            //   玩家在「按键设置」里改过键之后这里必须跟着变
-            // ⚠ 已经在别的界面里（比如正开着市场）按住 X ⇒ 不抢界面，只是不响应
-            val quickPressed = quickShowcaseKey.isPressed
+            // ⚠⚠ **必须读 GLFW 的真实按键状态，不能用 `KeyBinding.isPressed`** ——
+            //   MC 打开界面时会清空按键绑定状态（防卡键），于是这个界面**自己把自己关掉**：
+            //   按住 X ⇒ 读到"按下" ⇒ setScreen(界面) ⇒ 状态被清 ⇒ 下 tick 读到"松开" ⇒ 关界面
+            //   ⇒ 又读到"按下"…… **每两 tick 开关一次**，表现是按钮落一点就闪、连别家 HUD 都跟着闪
+            //   （2026-09-29 用户实测报的）。照 E 键那套（下面几行）读原始状态就没这问题。
+            // ⚠ 键码从**绑定键**反解（`boundKey` 字段是 private，只能走翻译 key）⇒
+            //   玩家在「按键设置」里改过键照样生效，不是硬编码 X
+            val quickKeyCode =
+                InputUtil.fromTranslationKey(quickShowcaseKey.boundKeyTranslationKey).code
+            val quickPressed = InputUtil.isKeyPressed(client.window.handle, quickKeyCode)
             if (quickPressed && !wasQuickShowcasePressed) {
                 if (client.currentScreen == null) client.setScreen(QuickShowcaseScreen())
             } else if (!quickPressed && wasQuickShowcasePressed) {
