@@ -558,7 +558,12 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
                 com.shusheng.cobblemarket.client.formatPriceShort(entry.price),
                 entry.isPoints, entry.currencyName, inline = true
             )
-            val priceText = com.shusheng.cobblemarket.util.TextUtil.truncateString(priceTextRaw.string, slotSize - 6)
+            // ⚠ 必须用 `truncateStyled`（**保留样式**），不能 `truncateString(x.string, …)`：
+            //   币种单位是**私用区字形 + 自定义字体**（`CurrencyService.pointsIcon()`），字体信息挂在
+            //   Text 的样式上 —— 压成 String 再画就退化成裸字符、渲染成**方块**（不报错、不崩）。
+            //   2026-09-28 用户实测报的：物品市场 RP tab 的格子里是方框，而精灵市场的**行**正常
+            //   —— 那边是直接画 Text、不截断。格子很窄（slotSize）必须截，所以走 truncateStyled。
+            val priceText = com.shusheng.cobblemarket.util.TextUtil.truncateStyled(priceTextRaw, slotSize - 6)
             context.drawText(textRenderer, priceText, x + 3, y + slotSize - 10, 0xFFAA00, false)
         }
 

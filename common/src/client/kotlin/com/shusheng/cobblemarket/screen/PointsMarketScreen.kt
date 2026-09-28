@@ -5122,8 +5122,11 @@ class PointsMarketScreen : Screen(
             // 选中态加「● 」前缀（项目统一的选中写法）；**不强制白色** —— 技能名要保持属性色
             var text = if (state == 2) Text.literal("● ").append(opt.labelText) else opt.labelText
             val maxW = r.w - 8
-            // 超长才截断（截断后会变纯文本 —— 极少发生，技能名一般十来个字，行宽 240 放得下）
-            if (textRenderer.getWidth(text) > maxW) text = Text.literal(TextUtil.truncateString(text.string, maxW))
+            // 超长才截断（极少发生，技能名一般十来个字，行宽 240 放得下）。
+            // ⚠ 用 `truncateStyled` 而不是 `truncateString(x.string, …)` —— 后者会把 Text 压成纯文本、
+            //   丢掉各段的样式（属性色、货币字形都会没）。原先的注释自己都写了"截断后会变纯文本"，
+            //   2026-09-28 统一改掉（同物品市场那个方块 bug 的根因）
+            if (textRenderer.getWidth(text) > maxW) text = TextUtil.truncateStyled(text, maxW)
             // 行很长，文字**居中**才好看；但**不能**用 drawCenteredTextWithShadow（它会让行首汉字
             // 抬高一点），所以自己算 x 再 drawText（混排文字的老坑，见项目约定）
             val drawX = r.x + (r.w - textRenderer.getWidth(text)) / 2

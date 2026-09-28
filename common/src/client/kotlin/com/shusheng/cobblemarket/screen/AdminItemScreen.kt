@@ -502,8 +502,11 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
                 com.shusheng.cobblemarket.client.formatPriceShort(entry.price),
                 entry.isPoints, entry.currencyName, inline = true
             )
-            // 格子很窄：超宽就截断（钱数优先于单位），别让它画出格子框
-            val priceText = com.shusheng.cobblemarket.util.TextUtil.truncateString(priceTextRaw.string, slotSize - 6)
+            // 格子很窄：超宽就截断（钱数优先于单位），别让它画出格子框。
+            // ⚠ 必须用 `truncateStyled`（**保留样式**）而不是 `truncateString(x.string, …)`：
+            //   币种单位是私用区字形 + 自定义字体，字体挂在 Text 的样式上 —— 压成 String 就渲染成方块
+            //   （2026-09-28 用户实测报的，物品市场同款写法）
+            val priceText = com.shusheng.cobblemarket.util.TextUtil.truncateStyled(priceTextRaw, slotSize - 6)
             context.drawText(textRenderer, priceText, x + 3, y + slotSize - 10, 0xFFAA00, false)
         }
 
