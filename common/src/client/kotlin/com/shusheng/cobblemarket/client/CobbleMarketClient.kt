@@ -494,6 +494,8 @@ object CobbleMarketClient {
                 val shareSucceeded = payload.success && when (screen) {
                     is SellSelectScreen -> screen.isShareMode()
                     is ItemSellScreen -> screen.isShareMode()
+                    // 快速展示：那个界面整个就是为展示而生的，不用再判模式
+                    is QuickShowcaseScreen -> true
                     else -> false
                 }
                 when {
@@ -521,6 +523,8 @@ object CobbleMarketClient {
                     is PointsMarketScreen -> screen.onMarketResult(payload)
                     is PointsConfigScreen -> screen.onMarketResult(payload)
                     is PointsCodeScreen -> screen.onMarketResult(payload)
+                    // 快速展示：回包到了才关界面（展示专属音效的判定靠"回包时界面还开着"）
+                    is QuickShowcaseScreen -> screen.onMarketResult(payload)
                     // 下单被拒（订单数达上限等）要在充值界面里说一声：只发聊天栏 + 一声失败音会被漏看
                     is PointsRechargeScreen -> screen.onMarketResult(payload)
                     // 确认发放 / 作废的结果：管理端界面要刷新列表（详细原因在 message 里，界面负责显示）

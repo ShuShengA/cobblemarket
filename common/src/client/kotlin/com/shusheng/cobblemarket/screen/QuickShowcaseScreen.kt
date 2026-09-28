@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.cobblemon.mod.common.client.CobblemonClient
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.ShareNetwork
 import com.shusheng.cobblemarket.network.SharePayload
 import com.shusheng.cobblemarket.platform.sendToServer
@@ -164,7 +165,15 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
                 sendToServer(SharePayload(ShareNetwork.KIND_ITEM, player.inventory.selectedSlot.toString()))
             }
         }
-        // 展示成功由服务端回包触发收尾（跟界面里点行一样：不需要本界面自己再做什么）
+        // ⚠ **发完不要立刻关界面**：要等服务端回包再关。两个原因：
+        //   ① 展示专属音效的判定是"回包到达时界面还开着"（`CobbleMarketClient` 的 shareSucceeded）
+        //      —— 提前关掉就会落到通用成功音（2026-09-29 用户实测报的）；
+        //   ② 界面里点行展示也是等回包的，行为要一致。
+        //   ⚠ 失败（空手 / 空位）在上面各自 return 前已经关掉了，那条路不等回包。
+    }
+
+    /** 服务端回包（展示成功、或被 10 秒节流拒掉）—— 与界面里点行展示同一套收尾：关界面 */
+    fun onMarketResult(payload: MarketResultPayload) {
         closeSelf()
     }
 
