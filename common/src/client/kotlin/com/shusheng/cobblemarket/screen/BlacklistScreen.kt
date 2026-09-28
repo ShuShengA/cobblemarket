@@ -505,7 +505,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     }
 
     private fun ruleHtButtonText(): Text = Text.translatable(
-        if (ruleHtFilter == PokemonBlacklistEntry.HT_ANY) "cobblemarket.gui.filter_ht_any" else "cobblemarket.gui.filter_ht_off"
+        if (ruleHtFilter == PokemonBlacklistEntry.HT_ANY) "cobblemarket.rule.ht_any" else "cobblemarket.rule.ht_none"
     )
 
     private fun toggleRuleHtFilter() {
@@ -517,21 +517,21 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private fun shinyLabel(state: Int): String = when (state) {
         PokemonBlacklistEntry.SHINY_YES -> Text.translatable("cobblemarket.gui.shiny_yes").string
         PokemonBlacklistEntry.SHINY_NO -> Text.translatable("cobblemarket.gui.shiny_no").string
-        else -> Text.translatable("cobblemarket.gui.shiny_any").string
+        else -> Text.translatable("cobblemarket.rule.shiny_any").string
     }
 
     private fun alphaLabel(state: Int): String = ""
 
     // 特训维度标签（tooltip 用）：不限 / 不含特训
     private fun htLabel(filter: Int): String = Text.translatable(
-        if (filter == PokemonBlacklistEntry.HT_ANY) "cobblemarket.gui.filter_ht_any" else "cobblemarket.gui.filter_ht_off"
+        if (filter == PokemonBlacklistEntry.HT_ANY) "cobblemarket.rule.ht_any" else "cobblemarket.rule.ht_none"
     ).string
 
     // 按钮只显示符号：★ = 仅闪光（金色），☆ = 仅非闪光，不限 = 默认文字（行显示/tooltip 仍用完整词）
     private fun shinyButtonText(): String = when (shinyFilter) {
         PokemonBlacklistEntry.SHINY_YES -> "★"
         PokemonBlacklistEntry.SHINY_NO -> "☆"
-        else -> Text.translatable("cobblemarket.gui.shiny_any").string
+        else -> Text.translatable("cobblemarket.rule.shiny_any").string
     }
 
     private fun updateShinyButton() {
