@@ -67,6 +67,8 @@
 
 ### Changes
 
+- **RP can now be handed out automatically as a quest reward (optional)**: new "**RP as quest currency**" switch in the RP config screen (off by default). When on, **player-ops (permission level 2+)** can also grant/take RP with `/market points give|take` — so quest mods such as FTB can hand RP to a player automatically the moment they finish a quest (write `/market points give @s N` as the reward), with no manual grants needed. ⚠ Turning it on accepts that any player-op can grant RP (/op is transferable); keep it off if RP is a top-up currency you hand out yourself. ⚠ The switch only affects the grant/take commands — permission grants, bad-debt cancellations and everything else still require you
+
 - **The Type filter can now take two types at once**: a Pokemon has at most two types, but the filter only accepted one — now picking a type **leaves the list open** so you can pick a second. ⚠ With **one** type selected the behaviour is exactly as before (matches when either the primary or the secondary type is that type); with **two**, it matches only Pokemon whose types are **exactly those two** — "Ghost+Fire" will not list Pokemon that are only Ghost, or only Fire. ⚠ Two is the maximum: a third pick plays a failure sound, and clicking a selected type again deselects it
 
 - **How the UI marks a selected entry is now consistent**: lists, tabs and dropdowns used to mark the selected entry with a "●" in front of its label — they now use the **button's own selected highlight** (background) instead, so the same idea is no longer expressed twice; toggle buttons such as "Mine" got the same highlight too

@@ -256,6 +256,7 @@
   "cobblemarket.points.config.entry": "%s 配置",
   "cobblemarket.points.config.points_enabled": "%s 总开关",
   "cobblemarket.points.config.points_market": "%s 玩家间交易",
+  "cobblemarket.points.config.rp_quest": "%s 当任务货币",
   "cobblemarket.points.config.fee_warn_title": "费率提醒",
   "cobblemarket.points.config.fee_warn_body1": "当前 %s 费率不为 0。",
   "cobblemarket.points.config.fee_warn_body2": "若 %s 来自玩家充值，",

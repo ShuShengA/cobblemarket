@@ -424,9 +424,9 @@ class PointsConfigScreen : Screen(
         }
         addToggle("points", pointsEnabled) { pointsEnabled = !pointsEnabled; markDirtyAndRebuild() }
         addToggle("points_market", pointsMarketEnabled) { onPointsMarketToggle() }
-        // ⚠ 「RP 当任务货币」开关（`rpAsQuestCurrency`）**尚未上界面** —— 它要多占一行设置项，
-        //   而本弹窗高度被屏幕钳死、加一行就少显示一行档位（见 [DIALOG_H] 的算式）。
-        //   取舍待用户拍板，见 docs/points_plan.md。**后端已可用**（手编配置文件即可开）。
+        // ⚠ 本行多占了一行设置项 ⇒ **档位区少显示一行**（见 [DIALOG_H] 的算式）。
+        //   用户 2026-09-28 拍板接受这个取舍（他 09-19 特意要求过"档位多显示一行"，所以不能擅自加）。
+        addToggle("rp_quest", rpAsQuestCurrency) { rpAsQuestCurrency = !rpAsQuestCurrency; markDirtyAndRebuild() }
         // RP 四个费率的入口：右侧一个「配置」按钮开二级弹窗 —— 四个费率直接摊在主弹窗里放不下
         feeCfgButton = NineSliceButton(
             rightX - 18, listStartY(), 40, 18,
@@ -639,6 +639,7 @@ class PointsConfigScreen : Screen(
         // 设置项 8 行（行号见 ROW_* 常量；与 render 里的标签顺序一一对应）
         place(ROW_POINTS, toggleButtons["points"], rightX, 0)
         place(ROW_POINTS_MARKET, toggleButtons["points_market"], rightX, 0)
+        place(ROW_RP_QUEST, toggleButtons["rp_quest"], rightX, 0)
         place(ROW_FEE, feeCfgButton, rightX - 18, 0)
         place(ROW_SHOP, toggleButtons["shop"], rightX, 0)
         place(ROW_QR, qrField, rightX - 130, 2)
@@ -902,11 +903,12 @@ class PointsConfigScreen : Screen(
             centerX, dialogY() + 14, 0xFFFFFF
         )
 
-        // 设置项标签：**行号与 layoutRows 里的 ROW_* 一一对应**（前 3 行是 RP 相关，标签带 RP 图标）。
+        // 设置项标签：**行号与 layoutRows 里的 ROW_* 一一对应**（前 4 行是 RP 相关，标签带 RP 图标）。
         // 装不下的行一律不画（跟控件同一套可见性判据）。
         val settingLabels = listOf(
             ROW_POINTS to "cobblemarket.points.config.points_enabled",
             ROW_POINTS_MARKET to "cobblemarket.points.config.points_market",
+            ROW_RP_QUEST to "cobblemarket.points.config.rp_quest",
             ROW_FEE to "cobblemarket.points.config.points_fee",
             ROW_SHOP to "cobblemarket.points.config.shop_enabled",
             ROW_QR to "cobblemarket.points.config.pay_qr",
@@ -1069,14 +1071,15 @@ class PointsConfigScreen : Screen(
          */
         const val ROW_POINTS = 0
         const val ROW_POINTS_MARKET = 1
-        const val ROW_FEE = 2
-        const val ROW_SHOP = 3
-        const val ROW_QR = 4
-        const val ROW_ICON = 5
-        const val ROW_TIMEOUT = 6
-        const val ROW_CURRENCY = 7
+        const val ROW_RP_QUEST = 2
+        const val ROW_FEE = 3
+        const val ROW_SHOP = 4
+        const val ROW_QR = 5
+        const val ROW_ICON = 6
+        const val ROW_TIMEOUT = 7
+        const val ROW_CURRENCY = 8
 
-        /** 设置项占的行数（总开关 / 玩家间交易 / 费率配置 / 充值开关 / 收款码 / 券图 / 超时 / 货币单位） */
+        /** 设置项占的行数（总开关 / 玩家间交易 / 当任务货币 / 费率配置 / 充值开关 / 收款码 / 券图 / 超时 / 货币单位） */
         const val FIXED_ROWS = ROW_CURRENCY + 1
 
         /**
