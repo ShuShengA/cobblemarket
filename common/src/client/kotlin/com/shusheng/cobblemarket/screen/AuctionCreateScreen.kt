@@ -495,7 +495,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private var durationButton: NineSliceButton? = null
 
     /** 这场拍卖收哪种币（每次开弹窗重置为主货币）；按钮没建时（RP 总开关关）恒为主货币 */
-    private var currency = MarketCurrency.PRIMARY
+    private var currency = com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency
 
     /** 货币切换按钮（起拍价输入框右侧）：RP 总开关关着时为 null = 压根没建 */
     private var currencyButton: NineSliceButton? = null
@@ -953,6 +953,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             return
         }
         currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
+        // 写回共享缓存：创建成功返回拍卖场时落在同一个币种页（见 MarketStateCache.marketCurrency）
+        com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency = currency
         currencyButton?.let { updateCurrencyButton(it) }
     }
 
@@ -1008,7 +1010,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         // 货币切换按钮（起拍价输入框右侧 4px）：与市场/上架界面同一个按钮、同一套三层拦截。
         // ⚠ RP 总开关关着 → **整个按钮不建**（那时 RP 系统停摆，留个点不动的灰按钮更难看）；
         //   「玩家间 RP 交易」没开 → 建但置灰，点了给失败音 + 红字提示
-        currency = MarketCurrency.PRIMARY
+        // ⚠ 这里**不再重置币种**：初始值来自 `MarketStateCache.marketCurrency`（2026-09-28）——
+        //   在 RP 页点「创建拍卖」进来就该是 RP；原先这一行会把刚读到的共享值清回主货币
         // ⚠ **总开关关着时也建**（只是置灰）：按钮的位置是排好的，凭空消失会空出一块。
         //   （用户 2026-09-24 定：创建类界面的货币按钮统一「建 + 置灰」。查看类界面本来就放行、不置灰）
         currencyButton = NineSliceButton(
