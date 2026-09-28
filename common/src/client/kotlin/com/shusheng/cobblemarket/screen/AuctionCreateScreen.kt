@@ -223,16 +223,14 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 else Text.translatable(label).string.let { t -> if (t == label) label else t }
             val btn = NineSliceButton(
                 fx, listTop + i * FILTER_LIST_ROW_H, fw, FILTER_LIST_ROW_H,
-                if (key.isNotEmpty() && isFilterSelected(filterListOpen, key))
-                    com.shusheng.cobblemarket.util.TextUtil.selectedText(
-                        com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)
-                    )
-                else Text.literal(com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)),
+                Text.literal(com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)),
                 { selectFilterOption(filterListOpen, key) },
-                // 选项文字：属性用对应属性色，特性 / 性格保持白色
                 // 选项文字：属性 / 太晶用对应属性色（两份列表共用同一套候选），特性 / 性格保持白色
                 if ((filterListOpen == "type" || filterListOpen == "tera") && key.isNotEmpty()) typeColor(key) else 0xFFFFFF
             )
+            // 选中项靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `● `
+            // （用户 2026-09-28：按钮已经有选中态了，再用圆圈是同一件事的两套表达）
+            btn.selectedVisual = isFilterSelected(filterListOpen, key)
             filterOptionButtons.add(btn)
             addDrawableChild(btn)
         }
@@ -805,7 +803,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         val keys = listOf("cobblemarket.auction.tab_pokemon", "cobblemarket.auction.tab_item")
         tabButtons.forEachIndexed { i, btn ->
             val label = Text.translatable(keys[i]).string
-            btn.setMessage(if (currentTab == i) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label))
+            btn.setMessage(Text.literal(label))
+            // 选中的 tab 靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `● `
+            btn.selectedVisual = currentTab == i
         }
     }
 
