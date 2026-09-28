@@ -829,6 +829,15 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private fun toggleFilters() {
         filterExpanded = !filterExpanded
         filterAnim.start(filterExpanded)
+        // ⚠ 收起时把展开的选项列表**一并收掉**：那一组是**动态创建的独立控件**，面板收起不会自动
+        //   跟着藏（它们不在 updateControlVisibility 的点名名单里），只能靠 rebuildFilterList 移除。
+        //   而且 `filterListOpen` 不清的话，面板**再展开时浮层会自己冒出来**。
+        //   （2026-09-28 用户实测报的：「属性 / 太晶展开时点筛选关掉，展开的按钮都还在」）
+        if (!filterExpanded) {
+            filterListOpen = ""
+            filterListScroll = 0
+            rebuildFilterList()
+        }
         updateFilterToggleVisual()
         updateControlVisibility()
     }
@@ -1177,6 +1186,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         showPanel(abilityButton)
         showPanel(natureButton)
         showPanel(gmaxButton)
+        // ⚠ 展开列表的**浮层按钮**是一组动态创建的控件，不在上面那份点名名单里 —— 单独按面板状态藏。
+        //   正常路径下 rebuildFilterList 会把它们 remove 掉，但弹窗这类路径不重建列表，这里兜住
+        filterOptionButtons.forEach { it.visible = panelOn }
         // 其余主面板控件
         if (::filterToggleButton.isInitialized) filterToggleButton.visible = !dialogOpen
         if (::prevButton.isInitialized) prevButton.visible = !dialogOpen

@@ -654,6 +654,9 @@ class AuctionScreen(
         show(natureButton)
         show(htButton)
         show(resetButton)
+        // ⚠ 展开列表的**浮层按钮**是一组动态创建的控件，不在上面那份点名名单里 —— 单独按面板状态藏。
+        //   正常路径下 rebuildFilterList 会把它们 remove 掉，但弹窗（出价等）这类路径不重建列表，这里兜住
+        filterOptionButtons.forEach { it.visible = panelOn }
         listOf(hpF, atkF, defF, spaF, spdF, speF).forEachIndexed { i, f ->
             val vis = panelOn && !coveredAt(ivOpButtons[i]?.y)
             f?.visible = vis
