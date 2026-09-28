@@ -808,6 +808,9 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             ivOpButtons[i]?.visible = vis
             ivResetButtons.getOrNull(i)?.visible = vis
         }
+        // ⚠ 展开列表的**浮层按钮**是一组动态创建的控件，不在上面那份点名名单里 —— 单独按面板状态藏，
+        //   否则面板收起 / 开关动画期间它们会留在屏幕上（正常路径下 rebuildFilterList 会 remove 掉）
+        filterOptionButtons.forEach { it.visible = filterExpanded && !animHidden }
         filterToggleButton?.visible = true
         // 面板内滚动：按登记的基准 y 重定位，滚出面板范围的控件藏起来（滚轮改了 filterPanelScroll
         // 之后调本函数重排）。⚠ 放在最后 —— 它会覆盖上面 show() 设的 visible
