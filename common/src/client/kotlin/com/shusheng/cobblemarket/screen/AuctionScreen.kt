@@ -988,9 +988,7 @@ class AuctionScreen(
                 else Text.translatable(label).string.let { t -> if (t == label) label else t }
             val btn = NineSliceButton(
                 fx, listTop + i * 14, fw, 14,
-                if (isFilterSelected(filterListOpen, key))
-                    TextUtil.selectedText(TextUtil.truncateString(display, 260))
-                else Text.literal(TextUtil.truncateString(display, 260)),
+                Text.literal(TextUtil.truncateString(display, 260)),
                 { selectFilterOption(filterListOpen, key) },
                 // 属性 / 太晶选项文字用对应属性色（两份列表共用同一套候选）。
                 // ⚠ 两种 key 形式都喂给 typeColor：属性是裸 key、太晶是完整词条 key，
@@ -998,6 +996,9 @@ class AuctionScreen(
                 if ((filterListOpen == "type" || filterListOpen == "tera") && key.isNotEmpty())
                     typeColor(key) else 0xFFFFFF
             )
+            // 选中项靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `● `
+            // （用户 2026-09-28：按钮已经有选中态了，再用圆圈是同一件事的两套表达）
+            btn.selectedVisual = isFilterSelected(filterListOpen, key)
             filterOptionButtons.add(btn)
             addDrawableChild(btn)
         }
@@ -1079,7 +1080,9 @@ class AuctionScreen(
         val tabOrder = listOf(2, 0, 1)
         tabButtons.forEachIndexed { i, btn ->
             val label = Text.translatable(keys[i]).string
-            btn.setMessage(if (currentTab == tabOrder[i]) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label))
+            btn.setMessage(Text.literal(label))
+            // 选中的 tab 靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `● `
+            btn.selectedVisual = currentTab == tabOrder[i]
         }
     }
 

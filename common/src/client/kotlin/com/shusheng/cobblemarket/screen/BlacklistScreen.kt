@@ -460,8 +460,11 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private fun updateTabButtons() {
         val pokemonLabel = Text.translatable("cobblemarket.blacklist.tab_pokemon").string
         val itemLabel = Text.translatable("cobblemarket.blacklist.tab_item").string
-        pokemonTabButton?.setMessage(if (currentTab == 0) com.shusheng.cobblemarket.util.TextUtil.selectedText(pokemonLabel) else Text.literal(pokemonLabel))
-        itemTabButton?.setMessage(if (currentTab == 1) com.shusheng.cobblemarket.util.TextUtil.selectedText(itemLabel) else Text.literal(itemLabel))
+        // 选中的 tab 靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `● `
+        pokemonTabButton?.setMessage(Text.literal(pokemonLabel))
+        pokemonTabButton?.selectedVisual = currentTab == 0
+        itemTabButton?.setMessage(Text.literal(itemLabel))
+        itemTabButton?.selectedVisual = currentTab == 1
     }
 
     private fun switchTab(tab: Int) {
@@ -1138,9 +1141,11 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(opt.label, 124)
             val btn = NineSliceButton(
                 centerX - 80, dialogY + LIST_TOP + i * 16, 140, 14,
-                if (idx == formIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
+                Text.literal(label),
                 { selectForm(idx) }
             )
+            // 选中项靠按钮自己的选中态（背景第三段），不再在文字前加 `● `
+            btn.selectedVisual = idx == formIndex
             formOptionButtons.add(btn)
             addDrawableChild(btn)
         }
@@ -1384,9 +1389,11 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(candidate.displayName, 124)
             val btn = NineSliceButton(
                 centerX - 80, dialogY + 72 + i * 16, 140, 14,
-                if (idx == selectedItemIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
+                Text.literal(label),
                 { selectItem(idx) }
             )
+            // 选中项靠按钮自己的选中态（背景第三段），不再在文字前加 `● `
+            btn.selectedVisual = idx == selectedItemIndex
             itemOptionButtons.add(btn)
             addDrawableChild(btn)
         }

@@ -59,11 +59,4 @@ object TextUtil {
         val zh = MinecraftClient.getInstance().options.language.startsWith("zh")
         return if (zh) "$real（$hyperTrained）" else "$real($hyperTrained)"
     }
-
-    // 选中标记文本：黑色 ●（按钮底色为白色，白色 ● 对比度不足）+ 白色标签。
-    // 供 tab 按钮与展开列表的选中项使用。
-    // 注意：子文本会继承父节点 Style，标签必须显式白色，否则跟着 ● 一起变黑
-    fun selectedText(label: String): Text =
-        Text.literal("● ").setStyle(net.minecraft.text.Style.EMPTY.withColor(0x000000))
-            .append(Text.literal(label).setStyle(net.minecraft.text.Style.EMPTY.withColor(0xFFFFFF)))
 }
