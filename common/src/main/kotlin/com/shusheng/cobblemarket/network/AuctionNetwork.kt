@@ -1076,8 +1076,12 @@ object AuctionNetwork {
         val bidLabel = Text.translatable("cobblemarket.chat.bid_button").formatted(Formatting.GOLD, Formatting.UNDERLINE)
         val clickableName = Text.literal("").append(nameText).append(Text.literal(" ")).append(bidLabel)
             .styled {
+                // ⚠ **只挂点击、不挂悬停**（2026-09-29 用户拍板）：悬停详情改由客户端的自绘悬浮窗给
+                //   （`ChatObjectPreview`）—— 原版那个灰框只能显示服务端拼的纯文本，长词条一行放不下、
+                //   精灵更是画不了图标。`buildAnnouncementHover` 暂时留着（万一居中方案要回退），
+                //   等用户验收后再决定删不删。
+                // ⚠ 指令末尾的**币种参数是 1.3.0 的 RP 功能**（1.2.1 上没有）—— 上浮时保留它
                 it.withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket auction ${auction.id} ${auction.currency.name}"))
-                    .withHoverEvent(HoverEvent(HoverEvent.Action.SHOW_TEXT, buildAnnouncementHover(auction, server)))
             }
         // 金额与货币名恒金（聊天颜色模板）；主体蓝（2026-08-30 拍板），名字属性色/按钮/金额子样式优先于父级蓝
         // 金额 + 单位按**拍卖自己的币种**（主货币 ₽ / RP 图标，唯一落点在 CurrencyService.amountText）
