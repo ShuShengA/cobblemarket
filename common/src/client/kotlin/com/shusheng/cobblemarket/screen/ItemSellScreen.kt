@@ -119,14 +119,18 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
     private fun rebuildSellButtons() {
         sellButtons.forEach { remove(it) }
         sellButtons.clear()
+        // ⚠ 分享模式**不建行内按钮**（2026-09-28 用户定：取消展示按钮，改成点行直接展示）。
+        //   这些是"每行一个"的动态控件 ⇒ 这里直接不建（不是设 visible）；
+        //   反正 `sellButtons` 只服务于"打开/关闭上架确认弹窗"的隐藏与恢复，分享模式用不到。
+        if (shareMode) return
         val leftX = width / 2 - panelWidth / 2
         val startY = getListStartY()
         items.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, item ->
             val y = startY + i * rowHeight
             val btn = NineSliceButton(
                 leftX + panelWidth - rowBtnInset, y + rowBtnDy, rowBtnW, rowBtnH,
-                Text.translatable(if (shareMode) "cobblemarket.share.button" else "cobblemarket.sell.sell"),
-                { if (shareMode) shareItem(item) else openConfirmDialog(item) }
+                Text.translatable("cobblemarket.sell.sell"),
+                { openConfirmDialog(item) }
             )
             // 弹窗打开期间重建（如滚动）的行按钮同样隐藏，防止文字透过遮罩
             if (selectedItem != null) btn.visible = false
@@ -515,6 +519,22 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
         val result = super.mouseClicked(mouseX, mouseY, button)
         if (wasInInput && !isMouseOverAnyInput(mouseX, mouseY)) {
             focused = null
+        }
+        // 分享模式：**点谁展示谁**（这一模式的列表里没有行内按钮，点行就是唯一操作）。
+        // ⚠ 放在 super 之后：让输入框 / 弹窗先有机会消费这次点击，别抢它们的。
+        // ⚠ 行号口径与 `renderBackground` 里算 hoveredRow 的那段**逐字一致** ——
+        //   两处口径不一样就会出现「点到的行和看到高亮的行不是同一行」。
+        if (shareMode && !result && selectedItem == null) {
+            val leftX = width / 2 - panelWidth / 2
+            val startY = getListStartY()
+            if (mouseX >= leftX && mouseX <= leftX + panelWidth && mouseY >= startY) {
+                val row = ((mouseY - startY) / rowHeight).toInt()
+                if (row < maxVisible() && (scrollOffset + row) < items.size) {
+                    // 展示成功由服务端回包触发关闭界面（见 onMarketResult），这里不用自己收尾
+                    shareItem(items[scrollOffset + row])
+                    return true
+                }
+            }
         }
         return result
     }

@@ -247,7 +247,14 @@ class SellSelectScreen(
         // 44 是精灵市场 / 管理端同一位置（间隙 15px），三个界面对齐
         // ⚠ 搜索框宽度是这一行的**余量**：1.3.0 中间多了货币切换按钮，挤出来的空间从搜索框扣
         //   （价格框 74 与 1.2.x 一致、**不缩** —— 用户 2026-09-24 明确要求）
-        searchField = TextFieldWidget(textRenderer, lx + 2, 44, 112, 20, Text.translatable("cobblemarket.sell.search"))
+        // ⚠ 宽度是这一行的**余量**，按模式不同（右边还有什么，决定搜索框能吃到哪）：
+        //   上架 / 交付：右边还有价格框(118~192)、货币按钮(192~212)、上架按钮(216~242) ⇒ 112
+        //   **分享**：这几样都没有，右边只剩「筛选」(246~296) ⇒ 搜索框吃到 242，宽 **240**
+        //   （2026-09-28 用户定：分享模式取消展示按钮，空出的位置给搜索框）
+        searchField = TextFieldWidget(
+            textRenderer, lx + 2, 44, if (shareMode) 240 else 112, 20,
+            Text.translatable("cobblemarket.sell.search")
+        )
         searchField?.setPlaceholder(Text.translatable("cobblemarket.sell.search"))
         // 搜索/筛选变化时重建过滤缓存（render 每帧只读，见 rebuildFiltered 注释）
         searchField?.setChangedListener { updateAbilityOptions(it); rebuildFiltered() }
@@ -317,6 +324,10 @@ class SellSelectScreen(
             // 纯图标时给悬停提示（有文字的那两种模式不需要）—— 1.2.0 上对应 deliverMode，这里对应 noPriceField
             tooltip = if (noPriceField) null else Text.translatable("cobblemarket.sell.sell")
         )
+        // ⚠ 分享模式**不显示**这个按钮（2026-09-28 用户定：取消展示按钮，改成点行直接展示）。
+        //   它是三模式**共用一个控件**：交付模式还要用它（「选择此精灵」）⇒ 隐藏而非不建。
+        //   全类没有第二处设它的 visible，所以隐藏后不会被别处改回来。
+        if (shareMode) sellBtn?.visible = false
         addDrawableChild(sellBtn)
 
         // 货币切换按钮（价格框与上架按钮之间）。
@@ -1120,11 +1131,16 @@ class SellSelectScreen(
         client?.setScreen(BuyOrderScreen())
     }
 
-    /** 分享模式：把所选精灵的 UUID 交给服务端（服务端自校验归属后广播全服，每人 10 秒一次） */
-    private fun shareSelected() {
+    /**
+     * 分享模式：把指定精灵的 UUID 交给服务端（服务端自校验归属后广播全服，每人 10 秒一次）。
+     *
+     * [index] 默认取"选中的那只"（按钮那条路）；但**分享模式下是点行直接展示**，
+     * 由行点击传入下标 —— 那种模式下界面没有选中态（2026-09-28 用户定：点谁展示谁）。
+     */
+    private fun shareSelected(index: Int = selectedIndex) {
         val filtered = filteredList()
-        if (selectedIndex !in filtered.indices) return
-        sendToServer(SharePayload(ShareNetwork.KIND_POKEMON, filtered[selectedIndex].uuid.toString()))
+        if (index !in filtered.indices) return
+        sendToServer(SharePayload(ShareNetwork.KIND_POKEMON, filtered[index].uuid.toString()))
     }
 
     private fun typeColor(tk: String) = when (tk.substringAfterLast(".").lowercase()) {
@@ -1759,7 +1775,12 @@ class SellSelectScreen(
         // 展开浮层搬进右侧面板后不再盖住列表行，点击不必再让位（原先那层展开状态判断随之删掉）
         if (mx in lx.toDouble()..(lx + 296).toDouble() && my >= startY) {
             val row = ((my - startY) / rowHeight).toInt() + scrollOffset
-            if (row in filtered.indices) { selectedIndex = row; return true }
+            if (row in filtered.indices) {
+                // 分享模式：**点谁展示谁**，不设选中态（没有"先选中、再点按钮"那一步）
+                if (shareMode) { shareSelected(row); return true }
+                selectedIndex = row
+                return true
+            }
         }
         return r
     }

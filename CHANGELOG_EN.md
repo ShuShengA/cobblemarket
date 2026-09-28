@@ -7,7 +7,7 @@
 #### Pokemon / Item Showcase
 
 - **Showcase button**: a showcase button now sits to the left of the Settings button on the market entry screen; clicking it expands two sub-buttons, Pokemon and Item
-- **Showcase to server chat**: pick a Pokemon or an item and it is posted to the server chat for **everyone online to see**; hovering the showcased name shows the full details — a Pokemon shows level, gender, size, type, nature, ability, ball, held item, IVs, EVs, friendship and marks, while an item shows its count and enchantments
+- **Showcase to server chat**: pick a Pokemon or an item and it is posted to the server chat for **everyone online to see** (just **click the Pokemon / item** in the picker — no need to select it and then click a button); hovering the showcased name shows the full details — a Pokemon shows level, gender, size, type, nature, ability, ball, held item, IVs, EVs, friendship and marks, while an item shows its count and enchantments
 - **Chat hover preview**: hovering a showcase message in chat shows a large image of that Pokemon or item in the right half of the screen (the same one used for auction and buy-order announcements)
 - **Rate limit and switch**: each player can showcase once every 10 seconds, and server owners can turn player showcasing off from the server config
 
