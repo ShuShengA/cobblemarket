@@ -22,6 +22,7 @@ import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
+import org.lwjgl.glfw.GLFW
 import java.util.UUID
 
 /**
@@ -130,10 +131,13 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
 
     private fun drawPokemonContent(context: DrawContext, x: Int, y: Int, delta: Float) {
         refreshRenderable()
-        // 槽底图（照弹窗那套：66×66 的槽贴图拉伸到按钮大小）
+        // 内容一律画在内框里（⚠ 按钮贴图自带边框，铺满会把它盖掉）
+        val cx = x + INSET
+        val cy = y + INSET
+        // 槽底图（照弹窗那套：66×66 的槽贴图拉伸到内框大小）
         context.matrices.push()
-        context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-        context.matrices.scale(BTN / 66f, BTN / 66f, 1f)
+        context.matrices.translate(cx.toDouble(), cy.toDouble(), 0.0)
+        context.matrices.scale(CONTENT / 66f, CONTENT / 66f, 1f)
         context.drawTexture(POKEMON_SLOT, 0, 0, 0f, 0f, 66, 66, 66, 66)
         context.matrices.pop()
 
@@ -147,7 +151,7 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
             context = context,
             renderable = rp,
             state = pokemonState.stateFor(rp),
-            x = x, y = y, size = ICON_SIZE, delta = delta,
+            x = cx, y = cy, size = ICON_SIZE, delta = delta,
             // 静态模式下不跟头（与其余界面同一个判据）
             animate = ClientConfig.iconAnimMode == IconAnimMode.FLOAT,
             useScissor = false
@@ -178,15 +182,9 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
 
     private fun drawItemContent(context: DrawContext, x: Int, y: Int) {
         val stack = client?.player?.mainHandStack
-        if (stack == null || stack.isEmpty) {
-            // 空手：画精灵球占位（保持按钮上有东西，别是一片空）
-            context.matrices.push()
-            context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
-            context.matrices.scale(BTN / 48f, BTN / 48f, 1f)
-            context.drawTexture(POKEBALL_ICON, 0, 0, 0f, 0f, 48, 48, 48, 48)
-            context.matrices.pop()
-            return
-        }
+        // 空手 ⇒ **什么都不画**（用户 2026-09-29 定：按钮留白，不要占位图）。
+        // ⚠ 与精灵那侧刻意不对称：精灵位为空仍画槽底图（那是"位置"的表示），物品空手就是没东西。
+        if (stack == null || stack.isEmpty) return
         // ⚠ 物品图同样要先 flush + 清深度（照物品悬停大图那套）
         context.draw()
         RenderSystem.clear(org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT, MinecraftClient.IS_SYSTEM_MAC)
@@ -297,6 +295,25 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         client?.setScreen(null)
     }
 
+    /**
+     * 吞掉方向键。
+     *
+     * 这个界面上没有任何"用键盘操作"的东西，但方向键会被 MC 当成**界面焦点导航** ——
+     * 焦点经过哪个按钮就把它的 tooltip 弹出来（2026-09-29 用户实测：按一下 ↓，
+     * 精灵按钮左下角冒出「精灵」悬停窗，而鼠标根本没移上去）。
+     *
+     * ⚠ **不把方向键转发给 Cobblemon**（用户 2026-09-29 定）：按住 X 期间不给模组加"换精灵"
+     *   的负担 —— 玩家松开 X 自己切就好。所以这里就是单纯吞掉。
+     */
+    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+        if (keyCode == GLFW.GLFW_KEY_UP || keyCode == GLFW.GLFW_KEY_DOWN ||
+            keyCode == GLFW.GLFW_KEY_LEFT || keyCode == GLFW.GLFW_KEY_RIGHT
+        ) {
+            return true
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers)
+    }
+
     override fun shouldPause() = false
 
     companion object {
@@ -308,12 +325,20 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         private const val LIFT = 10
         /** 掉落时长（ms）—— 要"快速"，别拖 */
         private const val DROP_MS = 220L
+        /**
+         * 内容和按钮边缘之间留的空隙。
+         *
+         * ⚠ 按钮贴图**自带一圈窄边框**，内容铺满就会把它盖掉（2026-09-29 用户实测报的）——
+         * 所以内容一律画在 `[INSET, BTN - INSET]` 这个内框里。
+         */
+        private const val INSET = 8
+        /** 内容可用边长 */
+        private const val CONTENT = BTN - INSET * 2
         /** 精灵模型的绘制尺寸（`PokemonIconRenderer` 的 size，内部自己算缩放） */
-        private const val ICON_SIZE = BTN - 12
-        /** 物品放大倍数：16px 的图标 × 5 = 80px，在 128 的按钮里留一圈边 */
-        private const val ITEM_SCALE = 5f
+        private const val ICON_SIZE = CONTENT
+        /** 物品放大倍数：16px 的图标 × 6 = 96px，在内容框里留一圈 */
+        private const val ITEM_SCALE = CONTENT / 16f
 
         private val POKEMON_SLOT = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
-        private val POKEBALL_ICON = Identifier.of("cobblemarket", "textures/gui/pokeball_icon.png")
     }
 }
