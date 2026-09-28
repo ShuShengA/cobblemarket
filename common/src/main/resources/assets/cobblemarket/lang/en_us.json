@@ -267,7 +267,7 @@
   "cobblemarket.points.config.grant_wait": "Wait (%ss)",
   "cobblemarket.points.config.market_title": "Player trading",
   "cobblemarket.points.config.market_line1": "When on, players can trade:",
-  "cobblemarket.points.config.market_line2": "· List Pokémon / items for %s",
+  "cobblemarket.points.config.market_line2": "· List Pokémon / items",
   "cobblemarket.points.config.market_line3": "· Auctions / buy orders",
   "cobblemarket.points.config.market_warn1": "⚠ No %s transfers",
   "cobblemarket.points.config.market_warn_fee": "⚠ %s fee rates are not 0 — set them to 0 first",
