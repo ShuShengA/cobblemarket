@@ -519,6 +519,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         )
+        // 「我的」是**开关**：开启时按钮给选中态（resize 重建时 showMineOnly 可能已经是 true）
+        mineButton.selectedVisual = showMineOnly
         addDrawableChild(mineButton)
 
         // 重置：与「我的」同行、改用**符号** ↺（照配置界面输入框右侧那枚，2026-09-23 用户要求）——
@@ -1262,6 +1264,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         mineButton.iconLeft = Identifier.of("cobblemarket",
             if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png")
         mineButton.setTooltip(Tooltip.of(Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")))
+        // 「我的」是个**开关**：开启时除换图标，按钮也给选中态（照手持物品那几个开关）
+        mineButton.selectedVisual = showMineOnly
         currentPage = 1
         requestFilterRefresh()
     }
@@ -1305,6 +1309,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         sortButton.message = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
         mineButton.iconLeft = Identifier.of("cobblemarket", "textures/gui/personal.png")
         mineButton.setTooltip(Tooltip.of(Text.translatable("cobblemarket.gui.mine")))
+        mineButton.selectedVisual = false
         requestFilterRefresh()
     }
 
