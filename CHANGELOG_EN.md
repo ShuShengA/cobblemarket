@@ -63,6 +63,8 @@
 
 - **Original Trainer shown in Pokemon info**: **a new line under the friendship line** reads "Original Trainer: XX", so buyers can see who originally caught the Pokemon (**it still shows for Pokemon that changed hands** — it is not just the current holder) — in all the same screens and chat hover popups as above. ⚠ It shows **the name of whoever originally caught it** (offline players resolve too); when the Pokemon has no OT, or the name cannot be resolved, the line is not shown
 
+- **The filter panel can now filter by Tera type and Gigantamax**: the market, auctions, the listing picker and the auction-creation picker each gained two buttons in the right-hand filter panel — "Tera", sharing the same 18-type list as "Type", and "Gmax", a three-state toggle (Any → Yes → No). ⚠ **Listings that were already on the market before this update** did not record either field, so they will not be listed when filtering by them (list the Pokemon again to have them recorded); **auctions are unaffected** — a Pokemon's Tera type and Gigantamax status are read fresh each time, so auctions created before this update filter correctly too
+
 ### Fixes
 
 - **Nature and Ability sat too close together**: both render in white with only 8px between them, so the line could read as one run of text (e.g. "Nature: Relaxed  Ability: Synchronize"). The gap is now wider and consistent across every Pokemon info screen
@@ -74,6 +76,8 @@
 - **A Pokémon previewed right after another one performed the previous Pokémon's animation**: open a preview, leave the moment its animation starts, then open another one — the new Pokémon strikes the **previous one's pose** (the cry, oddly, is its own). It takes quick hands to hit, and it affects every screen with a preview: market, auctions, buy orders. This is now fixed
 
 - **A tooltip with many lines had its top cut off screen**: holding Shift to read an item's full tooltip (or modded items that simply have many lines, or Ctrl for debug info with F3+H on) let the popup grow taller than the screen, hiding everything above it — the item name included. It is now cut to fit the screen, with a grey "… (N more rows)" line at the end instead of silently disappearing
+
+- **Picking a Type filter left the list empty**: in the "Select Pokemon to Sell" and "Create Auction" screens, choosing any type from the right-hand filter panel left the list with no Pokemon at all, even when matches existed — and the button showed an internal name such as `fire` instead of the type's name. This is now fixed
 
 ## 1.2.0 (in development, unreleased)
 
