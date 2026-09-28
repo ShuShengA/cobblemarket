@@ -219,7 +219,11 @@ class PointsConfigScreen : Screen(
             "cobblemarket.points.config.grant_line2",
             "cobblemarket.points.config.grant_line3"
         ).forEach { key ->
-            context.drawTextWithShadow(textRenderer, Text.translatable(key), dx + 10, y, 0xFFFFFF)
+            // ⚠ 统一传 `pointsIcon()`：货币单位**必须是图标**（项目规矩，游戏内文案不出现「RP」字样）。
+            //   没有 `%s` 的条目多传参数会被忽略，所以这里不必按 key 分支
+            context.drawTextWithShadow(
+                textRenderer, Text.translatable(key, CurrencyService.pointsIcon()), dx + 10, y, 0xFFFFFF
+            )
             y += 12
         }
         // ⚠ 风险提示单独一段、**红字** —— 这是唯一"会造成不可逆后果"的开关，要显眼
@@ -228,7 +232,9 @@ class PointsConfigScreen : Screen(
             "cobblemarket.points.config.grant_warn1",
             "cobblemarket.points.config.grant_warn2"
         ).forEach { key ->
-            context.drawTextWithShadow(textRenderer, Text.translatable(key), dx + 10, y, 0xFF5555)
+            context.drawTextWithShadow(
+                textRenderer, Text.translatable(key, CurrencyService.pointsIcon()), dx + 10, y, 0xFF5555
+            )
             y += 12
         }
     }
