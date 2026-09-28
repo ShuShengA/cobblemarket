@@ -1099,10 +1099,13 @@ object MarketCommands {
             source.entity is net.minecraft.entity.player.PlayerEntity &&
             source.hasPermissionLevel(2)
         ) return false
-        // 开关关着时给一句**可操作**的提示（服主最常问"FTB 怎么发不了 RP"）
+        // 开关关着时给一句**可操作**的提示（服主最常问"FTB 怎么发不了"）。
+        // ⚠ 货币单位走 `pointsIcon()`（游戏内文案不出现「RP」字样）；`perm.owner_only` 里没有 `%s`，
+        //   多传的参数会被忽略 ⇒ 不必按 key 分支
         source.sendError(Text.translatable(
             if (CobbleMarketConfig.rpAsQuestCurrency) "cobblemarket.perm.owner_only"
-            else "cobblemarket.points.grant_owner_only"
+            else "cobblemarket.points.grant_owner_only",
+            CurrencyService.pointsIcon()
         ))
         return true
     }
