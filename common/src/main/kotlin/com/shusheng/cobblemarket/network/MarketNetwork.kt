@@ -11,8 +11,10 @@ import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.market.ItemListing
 import com.shusheng.cobblemarket.market.ItemMarketState
 import com.shusheng.cobblemarket.market.ListingStatus
+import com.shusheng.cobblemarket.market.AuctionListing
 import com.shusheng.cobblemarket.market.MarketListing
 import com.shusheng.cobblemarket.market.MarketState
+import com.shusheng.cobblemarket.market.PendingDelivery
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
@@ -25,6 +27,7 @@ import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
 import net.minecraft.network.codec.PacketCodecs
 import net.minecraft.network.packet.CustomPayload
+import net.minecraft.server.MinecraftServer
 import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
@@ -1348,67 +1351,7 @@ object MarketNetwork {
                 val pageEntries = if (results.isEmpty()) emptyList() else {
                     val start = (clampedPage - 1) * pageSize
                     results.drop(start).take(pageSize).map { listing ->
-                        // 太晶：**老挂单没有这项快照**（那时还没快照它）⇒ 从挂单自带的完整 NBT 现读。
-                        // 与 `size` / `moves` 同一个套路（见 auctionToEntry 的注释），玩家不用重新上架
-                        val detail = listing.extraData + ("teraType" to
-                            com.shusheng.cobblemarket.util.PokemonTera.resolve(
-                                listing.extraData["teraType"], listing.pokemonNbt))
-                        // 极巨化 / 初始训练家：**同样从挂单自带的完整 NBT 现读**（与太晶同款）
-                        // ⇒ 升级上来的老挂单也显示，玩家不用重新上架。见 PokemonDynamax / PokemonOT
-                        val dyn = com.shusheng.cobblemarket.util.PokemonDynamax.fromNbt(listing.pokemonNbt)
-                        val otName = com.shusheng.cobblemarket.util.PokemonOT.fromNbt(listing.pokemonNbt, server)
-                        ListingEntry(
-                            id = listing.id,
-                            sellerUuid = listing.sellerUuid,
-                            species = listing.species,
-                            speciesId = detail["speciesId"] ?: listing.species.lowercase().replace(" ", "_"),
-                            level = listing.level,
-                            shiny = listing.shiny,
-                            price = listing.price,
-                            sellerName = listing.sellerName,
-                            primaryType = detail["primaryType"] ?: "normal",
-                            secondaryType = detail["secondaryType"] ?: "",
-                            ivsHp = detail["ivsHp"]?.toIntOrNull() ?: 0,
-                            ivsAtk = detail["ivsAtk"]?.toIntOrNull() ?: 0,
-                            ivsDef = detail["ivsDef"]?.toIntOrNull() ?: 0,
-                            ivsSpAtk = detail["ivsSpAtk"]?.toIntOrNull() ?: 0,
-                            ivsSpDef = detail["ivsSpDef"]?.toIntOrNull() ?: 0,
-                            ivsSpd = detail["ivsSpd"]?.toIntOrNull() ?: 0,
-                            htHp = detail["htHp"]?.toIntOrNull() ?: -1,
-                            htAtk = detail["htAtk"]?.toIntOrNull() ?: -1,
-                            htDef = detail["htDef"]?.toIntOrNull() ?: -1,
-                            htSpAtk = detail["htSpAtk"]?.toIntOrNull() ?: -1,
-                            htSpDef = detail["htSpDef"]?.toIntOrNull() ?: -1,
-                            htSpd = detail["htSpd"]?.toIntOrNull() ?: -1,
-                            evsHp = detail["evsHp"]?.toIntOrNull() ?: 0,
-                            evsAtk = detail["evsAtk"]?.toIntOrNull() ?: 0,
-                            evsDef = detail["evsDef"]?.toIntOrNull() ?: 0,
-                            evsSpAtk = detail["evsSpAtk"]?.toIntOrNull() ?: 0,
-                            evsSpDef = detail["evsSpDef"]?.toIntOrNull() ?: 0,
-                            evsSpd = detail["evsSpd"]?.toIntOrNull() ?: 0,
-                            friendship = detail["friendship"]?.toIntOrNull() ?: 0,
-                            nature = detail["nature"] ?: "?",
-                            natureBase = detail["natureBase"] ?: detail["nature"] ?: "?",
-                            ability = detail["ability"] ?: "?",
-                            gender = detail["gender"] ?: "?",
-                            ball = detail["ball"] ?: "?",
-                            ballItem = detail["ballItem"] ?: "cobblemon:poke_ball",
-                            heldItemId = detail["heldItemId"] ?: "",
-                            heldItemNbt = detail["heldItemNbt"] ?: "",
-                            // 「模型手里拿不拿」：缺这一位（旧挂单 / 旧服务端）= 显示，与字段默认值一致
-                            heldItemVisible = detail["heldItemVisible"] != "false",
-                            // 太晶属性：**空串 = 不显示**（服务端只在 ≠ 主属性时才写这个键）
-                            teraType = detail["teraType"] ?: "",
-                            currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
-                            aspects = parseAspects(detail),
-                            marks = parseMarks(detail),
-                            sizeCategory = PokemonSize.fromNbt(listing.pokemonNbt),
-                            moves = com.shusheng.cobblemarket.util.MoveText.resolve(detail["moves"], listing.pokemonNbt),
-                            // 极巨化 / 初始训练家（值见上面现读出来的 dyn / otName）
-                            gmaxFactor = dyn.gmaxFactor,
-                            dmaxLevel = dyn.dmaxLevel,
-                            originalTrainer = otName
-                        )
+                        buildListingEntry(listing, server)
                     }
                 }
 
@@ -1753,67 +1696,7 @@ object MarketNetwork {
                 val pageEntries = if (results.isEmpty()) emptyList() else {
                     val start = (clampedPage - 1) * pageSize
                     results.drop(start).take(pageSize).map { listing ->
-                        // 太晶：**老挂单没有这项快照**（那时还没快照它）⇒ 从挂单自带的完整 NBT 现读。
-                        // 与 `size` / `moves` 同一个套路（见 auctionToEntry 的注释），玩家不用重新上架
-                        val detail = listing.extraData + ("teraType" to
-                            com.shusheng.cobblemarket.util.PokemonTera.resolve(
-                                listing.extraData["teraType"], listing.pokemonNbt))
-                        // 极巨化 / 初始训练家：**同样从挂单自带的完整 NBT 现读**（与太晶同款）
-                        // ⇒ 升级上来的老挂单也显示，玩家不用重新上架。见 PokemonDynamax / PokemonOT
-                        val dyn = com.shusheng.cobblemarket.util.PokemonDynamax.fromNbt(listing.pokemonNbt)
-                        val otName = com.shusheng.cobblemarket.util.PokemonOT.fromNbt(listing.pokemonNbt, server)
-                        ListingEntry(
-                            id = listing.id,
-                            sellerUuid = listing.sellerUuid,
-                            species = listing.species,
-                            speciesId = detail["speciesId"] ?: listing.species.lowercase().replace(" ", "_"),
-                            level = listing.level,
-                            shiny = listing.shiny,
-                            price = listing.price,
-                            sellerName = listing.sellerName,
-                            primaryType = detail["primaryType"] ?: "normal",
-                            secondaryType = detail["secondaryType"] ?: "",
-                            ivsHp = detail["ivsHp"]?.toIntOrNull() ?: 0,
-                            ivsAtk = detail["ivsAtk"]?.toIntOrNull() ?: 0,
-                            ivsDef = detail["ivsDef"]?.toIntOrNull() ?: 0,
-                            ivsSpAtk = detail["ivsSpAtk"]?.toIntOrNull() ?: 0,
-                            ivsSpDef = detail["ivsSpDef"]?.toIntOrNull() ?: 0,
-                            ivsSpd = detail["ivsSpd"]?.toIntOrNull() ?: 0,
-                            htHp = detail["htHp"]?.toIntOrNull() ?: -1,
-                            htAtk = detail["htAtk"]?.toIntOrNull() ?: -1,
-                            htDef = detail["htDef"]?.toIntOrNull() ?: -1,
-                            htSpAtk = detail["htSpAtk"]?.toIntOrNull() ?: -1,
-                            htSpDef = detail["htSpDef"]?.toIntOrNull() ?: -1,
-                            htSpd = detail["htSpd"]?.toIntOrNull() ?: -1,
-                            evsHp = detail["evsHp"]?.toIntOrNull() ?: 0,
-                            evsAtk = detail["evsAtk"]?.toIntOrNull() ?: 0,
-                            evsDef = detail["evsDef"]?.toIntOrNull() ?: 0,
-                            evsSpAtk = detail["evsSpAtk"]?.toIntOrNull() ?: 0,
-                            evsSpDef = detail["evsSpDef"]?.toIntOrNull() ?: 0,
-                            evsSpd = detail["evsSpd"]?.toIntOrNull() ?: 0,
-                            friendship = detail["friendship"]?.toIntOrNull() ?: 0,
-                            nature = detail["nature"] ?: "?",
-                            natureBase = detail["natureBase"] ?: detail["nature"] ?: "?",
-                            ability = detail["ability"] ?: "?",
-                            gender = detail["gender"] ?: "?",
-                            ball = detail["ball"] ?: "?",
-                            ballItem = detail["ballItem"] ?: "cobblemon:poke_ball",
-                            heldItemId = detail["heldItemId"] ?: "",
-                            heldItemNbt = detail["heldItemNbt"] ?: "",
-                            // 「模型手里拿不拿」：缺这一位（旧挂单 / 旧服务端）= 显示，与字段默认值一致
-                            heldItemVisible = detail["heldItemVisible"] != "false",
-                            // 太晶属性：**空串 = 不显示**（服务端只在 ≠ 主属性时才写这个键）
-                            teraType = detail["teraType"] ?: "",
-                            currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
-                            aspects = parseAspects(detail),
-                            marks = parseMarks(detail),
-                            sizeCategory = PokemonSize.fromNbt(listing.pokemonNbt),
-                            moves = com.shusheng.cobblemarket.util.MoveText.resolve(detail["moves"], listing.pokemonNbt),
-                            // 极巨化 / 初始训练家（值见上面现读出来的 dyn / otName）
-                            gmaxFactor = dyn.gmaxFactor,
-                            dmaxLevel = dyn.dmaxLevel,
-                            originalTrainer = otName
-                        )
+                        buildListingEntry(listing, server)
                     }
                 }
 
@@ -3150,6 +3033,112 @@ object MarketNetwork {
                 "FEMALE" -> listOf("female")
                 else -> emptyList()
             }
+
+    /**
+     * **挂单 / 拍品 / 待交付 → 客户端信息行 DTO（[ListingEntry]）的唯一构造入口。**
+     *
+     * 精灵市场列表与管理端列表原先**各内联了一份逐字节相同的 60 行拼装**，聊天播报的悬停大图
+     * 又要第三份 ⇒ 2026-09-29 收口到这里（以后加字段只改这一处，不会再漏掉某一个界面）。
+     *
+     * ⚠ 太晶 / 极巨化 / 初始训练家三条**都从完整 NBT 现读**：老挂单没有这些快照，现读后
+     *   「升级上来的老挂单也显示」，玩家不用重新上架
+     *   （见 `PokemonTera` / `PokemonDynamax` / `PokemonOT`）。
+     * ⚠ [pokemonNbt] **可空**（拍卖的 NBT 损坏兜底 / 待交付的旧记录）⇒ 上述三条落默认值，
+     *   其余字段照常走 [extraData] 快照，画出来的信息行仍然完整。
+     */
+    internal fun buildListingEntry(
+        id: UUID,
+        sellerUuid: UUID,
+        sellerName: String,
+        species: String,
+        level: Int,
+        shiny: Boolean,
+        price: Int,
+        pokemonNbt: NbtCompound?,
+        extraData: Map<String, String>,
+        server: MinecraftServer
+    ): ListingEntry {
+        // 太晶：**老挂单没有这项快照**（那时还没快照它）⇒ 从挂单自带的完整 NBT 现读。
+        // 与 `size` / `moves` 同一个套路（见 auctionToEntry 的注释），玩家不用重新上架
+        val detail = extraData + ("teraType" to
+            com.shusheng.cobblemarket.util.PokemonTera.resolve(extraData["teraType"], pokemonNbt))
+        // 极巨化 / 初始训练家：**同样从挂单自带的完整 NBT 现读**（与太晶同款）
+        val dyn = com.shusheng.cobblemarket.util.PokemonDynamax.fromNbt(pokemonNbt)
+        val otName = com.shusheng.cobblemarket.util.PokemonOT.fromNbt(pokemonNbt, server)
+        return ListingEntry(
+            id = id,
+            sellerUuid = sellerUuid,
+            species = species,
+            speciesId = detail["speciesId"] ?: species.lowercase().replace(" ", "_"),
+            level = level,
+            shiny = shiny,
+            price = price,
+            sellerName = sellerName,
+            primaryType = detail["primaryType"] ?: "normal",
+            secondaryType = detail["secondaryType"] ?: "",
+            ivsHp = detail["ivsHp"]?.toIntOrNull() ?: 0,
+            ivsAtk = detail["ivsAtk"]?.toIntOrNull() ?: 0,
+            ivsDef = detail["ivsDef"]?.toIntOrNull() ?: 0,
+            ivsSpAtk = detail["ivsSpAtk"]?.toIntOrNull() ?: 0,
+            ivsSpDef = detail["ivsSpDef"]?.toIntOrNull() ?: 0,
+            ivsSpd = detail["ivsSpd"]?.toIntOrNull() ?: 0,
+            htHp = detail["htHp"]?.toIntOrNull() ?: -1,
+            htAtk = detail["htAtk"]?.toIntOrNull() ?: -1,
+            htDef = detail["htDef"]?.toIntOrNull() ?: -1,
+            htSpAtk = detail["htSpAtk"]?.toIntOrNull() ?: -1,
+            htSpDef = detail["htSpDef"]?.toIntOrNull() ?: -1,
+            htSpd = detail["htSpd"]?.toIntOrNull() ?: -1,
+            evsHp = detail["evsHp"]?.toIntOrNull() ?: 0,
+            evsAtk = detail["evsAtk"]?.toIntOrNull() ?: 0,
+            evsDef = detail["evsDef"]?.toIntOrNull() ?: 0,
+            evsSpAtk = detail["evsSpAtk"]?.toIntOrNull() ?: 0,
+            evsSpDef = detail["evsSpDef"]?.toIntOrNull() ?: 0,
+            evsSpd = detail["evsSpd"]?.toIntOrNull() ?: 0,
+            friendship = detail["friendship"]?.toIntOrNull() ?: 0,
+            nature = detail["nature"] ?: "?",
+            natureBase = detail["natureBase"] ?: detail["nature"] ?: "?",
+            ability = detail["ability"] ?: "?",
+            gender = detail["gender"] ?: "?",
+            ball = detail["ball"] ?: "?",
+            ballItem = detail["ballItem"] ?: "cobblemon:poke_ball",
+            heldItemId = detail["heldItemId"] ?: "",
+            heldItemNbt = detail["heldItemNbt"] ?: "",
+            // 「模型手里拿不拿」：缺这一位（旧挂单 / 旧服务端）= 显示，与字段默认值一致
+            heldItemVisible = detail["heldItemVisible"] != "false",
+            // 太晶属性：**空串 = 不显示**（服务端只在 ≠ 主属性时才写这个键）
+            teraType = detail["teraType"] ?: "",
+            currencyName = com.shusheng.cobblemarket.config.CurrencyHandler.getCurrencyId(),
+            aspects = parseAspects(detail),
+            marks = parseMarks(detail),
+            sizeCategory = PokemonSize.fromNbt(pokemonNbt),
+            moves = com.shusheng.cobblemarket.util.MoveText.resolve(detail["moves"], pokemonNbt),
+            // 极巨化 / 初始训练家（值见上面现读出来的 dyn / otName）
+            gmaxFactor = dyn.gmaxFactor,
+            dmaxLevel = dyn.dmaxLevel,
+            originalTrainer = otName
+        )
+    }
+
+    /** [MarketListing]（精灵市场挂单）→ 信息行 */
+    internal fun buildListingEntry(listing: MarketListing, server: MinecraftServer): ListingEntry =
+        buildListingEntry(
+            listing.id, listing.sellerUuid, listing.sellerName, listing.species,
+            listing.level, listing.shiny, listing.price, listing.pokemonNbt, listing.extraData, server
+        )
+
+    /** [AuctionListing]（拍品）→ 信息行；[price] 取**起拍价**（拍卖对外的展示口径就是它） */
+    internal fun buildListingEntry(auction: AuctionListing, server: MinecraftServer): ListingEntry =
+        buildListingEntry(
+            auction.id, auction.sellerUuid, auction.sellerName, auction.species,
+            auction.level, auction.shiny, auction.startingPrice, auction.pokemonNbt, auction.extraData, server
+        )
+
+    /** [PendingDelivery]（求购单待交付的**实物**）→ 信息行 */
+    internal fun buildListingEntry(delivery: PendingDelivery, server: MinecraftServer): ListingEntry =
+        buildListingEntry(
+            delivery.id, delivery.sellerUuid, delivery.sellerName, delivery.species,
+            delivery.level, delivery.shiny, delivery.price, delivery.pokemonNbt, delivery.extraData, server
+        )
 
     private fun buildListingExtra(
         pokemon: com.cobblemon.mod.common.pokemon.Pokemon,

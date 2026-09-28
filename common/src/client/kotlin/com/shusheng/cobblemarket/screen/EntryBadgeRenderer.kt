@@ -260,6 +260,15 @@ object EntryBadgeRenderer {
         else Text.literal(name)
 
     /**
+     * [nameWithShinyStar] 的 **Text 版**：名字是**词条 key** 构造出来的（而不是现成字符串）时用它，
+     * 星标口径完全一致（★ 接在名字后面、金色）。例如聊天播报的悬停窗 ——
+     * 那边手里只有物种 ID，名字必须 `Text.translatable("cobblemon.species.<id>.name")` 现翻。
+     */
+    fun nameWithShinyStar(name: Text, shiny: Boolean): Text =
+        if (shiny) Text.literal("").append(name).append(Text.literal(" ★").formatted(Formatting.GOLD))
+        else name
+
+    /**
      * 「名字★Lv」行：名字本体带主属性色、Lv 段跟行色（白）。**所有界面/悬停窗的第一行统一走此函数**。
      *
      *  ⚠ 两段必须**平级**：MC 的 `Text.visit` 把父节点合并后的样式传给每个 append 进来的段落，
@@ -500,6 +509,70 @@ object EntryBadgeRenderer {
             com.shusheng.cobblemarket.util.PokemonExtraLines.originalTrainer(entry.originalTrainer)
         )
         return texts.maxOf { font.getWidth(it) }
+    }
+
+    /** 携带物行里物品图标占的宽度（[drawInfoLines] 里那块「+14」），量宽度时要补上 */
+    private const val HELD_ICON_W = 14
+
+    /**
+     * **信息行面板的内容宽**（像素）—— 只量不画，供**自适应尺寸的悬停窗**定背景框宽度
+     * （聊天播报的悬浮窗：它没有弹窗那种写死的宽度可用）。
+     *
+     * = max(最宽信息行, 技能块宽, 名字行含尾部图标, [MOVES_MAX_W])
+     *
+     * ⚠ 最后一项是**兜底**：`drawInfoLines` 里的技能块走 [drawMovesBlock]，而它用的是**固定
+     *   [MOVES_MAX_W] 宽**（传入的 `dividerW` 只做居中基准、不参与网格宽度）⇒ 内容宽比 132 窄时
+     *   技能块会**戳出面板**。弹窗那边框宽都 ≥ 300 所以从没暴露过，自适应面板必须先兜住。
+     * ⚠ 证章**不参与**：方向是反的 —— 宽度决定证章排几个（见 [marksPerRow]）。
+     */
+    fun infoPanelContentWidth(entry: ListingEntry, displayName: Text): Int {
+        val font = MinecraftClient.getInstance().textRenderer
+        var w = measureInfoLines(entry, displayName)
+        w = maxOf(w, movesBlockWidth(entry.moves))
+        // 名字行尾部的公母 / 体型图标不计入文本宽，单独补
+        w = maxOf(w, nameLineWidth(displayName, entry.gender, entry.sizeCategory))
+        // 携带物行：文字 + 物品图标（图标不算在文本宽里）
+        if (hasHeldItemLine(entry)) {
+            w = maxOf(w, font.getWidth(Text.translatable("cobblemarket.gui.tooltip_held")) + HELD_ICON_W)
+        }
+        return maxOf(w, MOVES_MAX_W)
+    }
+
+    /**
+     * **信息行区块的总高度**（像素）—— 只量不画，供**自适应尺寸的悬停窗**先算背景框再画内容
+     * （聊天播报的悬浮窗：它不能像弹窗那样写死高度，也不能像列表悬停窗那样边画边累加）。
+     *
+     * ⚠⚠ 与 [drawInfoLines] 的行列表**必须严格对应**（同 [measureInfoLines] 的约定，
+     *   那两处一起改）—— 少算一行 = 背景框比内容矮一截、多算一行 = 下方留白。
+     * ⚠ [availableWidth] 决定**证章排几行**（见 [marksPerRow]）⇒ 必须在内容宽定稿之后再调它。
+     * ⚠ 这里**不能复用 [marksBlockHeight]**：那个是给弹窗用的，没有技能块时会多算一条前导
+     *   分割线（32 vs 实际的 22）——`drawInfoLines` 里证章块与技能块**共用**那条线。
+     */
+    fun measureInfoLinesHeight(entry: ListingEntry, availableWidth: Int): Int {
+        var h = MOVE_ROW_H                                   // 名字★Lv
+        h += MOVE_ROW_H                                      // 属性（含太晶）
+        if (com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(entry.gmaxFactor, entry.dmaxLevel) != null) {
+            h += MOVE_ROW_H                                  // 极巨行（有才画）
+        }
+        h += MOVE_ROW_H                                      // 性格 + 特性
+        if (entry.ball.isNotEmpty()) h += MOVE_ROW_H         // 球种（有才画）
+        if (hasHeldItemLine(entry)) h += MOVE_ROW_H          // 携带物（有才画）
+        h += MOVE_ROW_H                                      // 「个体值」标签
+        h += MOVE_ROW_H * 6                                  // IV 六项
+        h += MOVE_ROW_H                                      // 亲密度
+        if (com.shusheng.cobblemarket.util.PokemonExtraLines.originalTrainer(entry.originalTrainer) != null) {
+            h += MOVE_ROW_H                                  // 初始训练家（有才画）
+        }
+        // 技能块：整块自画（上分割线 + 两行 + 下分割线）
+        if (MoveText.hasAny(entry.moves)) h += MOVES_BLOCK_H
+        // 证章块：图标行（证章多则第二行「+N」）+ 它下面那条分割线
+        if (entry.marks.isNotEmpty()) {
+            h += if (entry.marks.size > marksPerRow(availableWidth)) 24 else 12
+            h += DIVIDER_H
+        }
+        h += MOVE_ROW_H                                      // 卖家
+        h += MOVE_ROW_H                                      // 价格
+        return h
     }
 
     fun drawInfoLines(

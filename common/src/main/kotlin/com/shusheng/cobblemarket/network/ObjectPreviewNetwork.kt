@@ -72,7 +72,22 @@ data class ObjectPreviewPayload(
      * 携带物在**精灵模型上是否渲染**（`Pokemon.heldItemVisible`，玩家可在 Cobblemon 队伍详情里关掉）。
      * ⚠ 只管大图里的**精灵模型手里** —— 携带物 NBT 照常下发、信息照常显示（用户 2026-09-26 拍板）
      */
-    val heldItemVisible: Boolean = true
+    val heldItemVisible: Boolean = true,
+    /**
+     * **精灵的完整信息行数据**（[ListingEntry]）—— 客户端聊天悬停窗据此画出
+     * **与精灵市场行悬停窗逐字段一致**的信息行（等级 / 属性+太晶 / 极巨 / 性格 / 特性 /
+     * 球种 / 携带物 / IV+EV / 亲密度 / 初始训练家 / 技能 / 证章 / 卖家 / 价格）。
+     *
+     * 为什么要它：悬停窗那套渲染器（`EntryBadgeRenderer.drawInfoLines`）吃的是 [ListingEntry]，
+     * 而这条包原本只有物种 / 形态 / 闪光 / 携带物 —— **画不出信息行**。
+     * 服务端本来就握着完整精灵 NBT，顺手组装一份即可（`MarketNetwork.buildListingEntry`）。
+     *
+     * ⚠ **物品侧恒为 null**：物品词条由客户端拿原版 tooltip 现算（附魔 / 药水 / 属性修饰符
+     *   全自动继承），不需要服务端组装。
+     * ⚠ 求购的**需求**预览同样为 null —— 那是「买家想要什么」而不是实物，按它画完整信息行
+     *   会误导玩家；只有**待交付的实物**才有（见 `deliveryPreview`）。
+     */
+    val listing: ListingEntry? = null
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -94,6 +109,9 @@ data class ObjectPreviewPayload(
                 p.itemComponentsSpec?.let { PacketCodecs.NBT_COMPOUND.encode(b, it) }
                 b.writeInt(p.count)
                 b.writeBoolean(p.heldItemVisible)
+                // ⚠ 新增字段**一律追加在末尾**，读端严格同序；两端必须同步升级
+                b.writeBoolean(p.listing != null)
+                p.listing?.write(b)
             },
             { b ->
                 // 具名参数：这段读序与上面的写序一一对应，错位了会静默读出垃圾数据
@@ -108,7 +126,9 @@ data class ObjectPreviewPayload(
                     itemNbt = if (b.readBoolean()) PacketCodecs.NBT_COMPOUND.decode(b) else null,
                     itemComponentsSpec = if (b.readBoolean()) PacketCodecs.NBT_COMPOUND.decode(b) else null,
                     count = b.readInt(),
-                    heldItemVisible = b.readBoolean()
+                    heldItemVisible = b.readBoolean(),
+                    // 与 write 端严格同序（write 在 heldItemVisible 之后）
+                    listing = if (b.readBoolean()) ListingEntry.read(b) else null
                 )
             }
         )
@@ -139,7 +159,7 @@ object ObjectPreviewNetwork {
                     // 只能以实体为准）；没有才退回买家的需求 —— 悬停大图的语义是「看货」，
                     // 用需求画等于要买家凭想象判断（2026-09-25 用户指出）
                     KIND_BUY_ORDER -> BuyOrderState.get(server).getOrder(uuid)?.let { order ->
-                        order.pendingDeliveries.lastOrNull()?.let { deliveryPreview(it) }
+                        order.pendingDeliveries.lastOrNull()?.let { deliveryPreview(server, it) }
                             ?: buyOrderPreview(order)
                     }
                     else -> null
@@ -174,7 +194,9 @@ object ObjectPreviewNetwork {
                     itemId = "",
                     itemNbt = null,
                     itemComponentsSpec = null,
-                    count = 1
+                    count = 1,
+                    // 完整信息行（悬停窗右侧那套）：从拍品自带的数据组装，与市场行悬停窗同源
+                    listing = MarketNetwork.buildListingEntry(auction, server)
                 )
             } else {
                 // pokemonNbt 为空/损坏的兜底：extraData 里有物种 ID 与形态（老拍卖也带），拿它画默认形态
@@ -216,7 +238,7 @@ object ObjectPreviewNetwork {
      * 锁定策略下待交付**最多一条**（`BuyOrderPendingEntry.pending` 的注释），调用方取那一条即可；
      * 买家拒绝后列表清空 ⇒ 悬停历史通知时将退回需求预览（或买家那条单已经没了）。
      */
-    private fun deliveryPreview(delivery: PendingDelivery): ObjectPreviewPayload? {
+    private fun deliveryPreview(server: MinecraftServer, delivery: PendingDelivery): ObjectPreviewPayload? {
         if (delivery.itemNbt != null) {
             // 物品交付：整栈 NBT（与拍卖同一条重建路径）
             return ObjectPreviewPayload(
@@ -245,7 +267,9 @@ object ObjectPreviewNetwork {
             itemId = "",
             itemNbt = null,
             itemComponentsSpec = null,
-            count = 1
+            count = 1,
+            // 与拍卖同源：交付快照（`buildDeliveryExtra`）的键名与挂单快照一致 ⇒ 信息行同样是完整的
+            listing = MarketNetwork.buildListingEntry(delivery, server)
         )
     }
 
