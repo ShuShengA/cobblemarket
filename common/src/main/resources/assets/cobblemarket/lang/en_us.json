@@ -15,6 +15,7 @@
   "cobblemarket.points.check_other": "%s has %s",
   "cobblemarket.points.name_required": "Specify a player name (required when run from the console)",
   "cobblemarket.points.players_only": "This command can only be run by a player",
+  "cobblemarket.points.grant_owner_only": "This command can only be run by the server owner. To let quest mods such as FTB grant RP automatically, turn on \"RP as quest currency\" in the RP config screen",
   "cobblemarket.points.redeem_ok": "Redeemed %s (balance: %s)",
   "cobblemarket.points.redeem_invalid": "That code is invalid, used up, expired, or not yours",
   "cobblemarket.points.redeem_locked": "Too many failed attempts — try again later",

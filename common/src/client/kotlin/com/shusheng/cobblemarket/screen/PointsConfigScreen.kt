@@ -36,6 +36,9 @@ class PointsConfigScreen : Screen(
     /** 玩家间 RP 交易开关（默认关）；控制上架界面的货币切换按钮显不显示 */
     private var pointsMarketEnabled = false
 
+    /** 「RP 当任务货币」开关（默认关）：打开后玩家身份的 OP / FTB 任务模组也能发放 RP */
+    private var rpAsQuestCurrency = false
+
     /** RP 的四个费率（%，服务端下发）：「费率配置」二级弹窗填初值，提醒弹窗看它们是否全 0 */
     private var pointsPokemonFee = 0.0
     private var pointsItemFee = 0.0
@@ -346,6 +349,7 @@ class PointsConfigScreen : Screen(
     fun onConfig(payload: PointsConfigPayload) {
         pointsEnabled = payload.pointsEnabled
         pointsMarketEnabled = payload.pointsMarketEnabled
+        rpAsQuestCurrency = payload.rpAsQuestCurrency
         pointsPokemonFee = payload.pointsPokemonFee
         pointsItemFee = payload.pointsItemFee
         pointsAuctionFee = payload.pointsAuctionFee
@@ -420,6 +424,9 @@ class PointsConfigScreen : Screen(
         }
         addToggle("points", pointsEnabled) { pointsEnabled = !pointsEnabled; markDirtyAndRebuild() }
         addToggle("points_market", pointsMarketEnabled) { onPointsMarketToggle() }
+        // ⚠ 「RP 当任务货币」开关（`rpAsQuestCurrency`）**尚未上界面** —— 它要多占一行设置项，
+        //   而本弹窗高度被屏幕钳死、加一行就少显示一行档位（见 [DIALOG_H] 的算式）。
+        //   取舍待用户拍板，见 docs/points_plan.md。**后端已可用**（手编配置文件即可开）。
         // RP 四个费率的入口：右侧一个「配置」按钮开二级弹窗 —— 四个费率直接摊在主弹窗里放不下
         feeCfgButton = NineSliceButton(
             rightX - 18, listStartY(), 40, 18,
@@ -787,6 +794,7 @@ class PointsConfigScreen : Screen(
                 tiers = tiers.toList(),
                 currencyLabel = pendingText["currency"] ?: currencyLabel,
                 pointsMarketEnabled = pointsMarketEnabled,
+                rpAsQuestCurrency = rpAsQuestCurrency,
                 pointsPokemonFee = pointsPokemonFee,
                 pointsItemFee = pointsItemFee,
                 pointsAuctionFee = pointsAuctionFee,

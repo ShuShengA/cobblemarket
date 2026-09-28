@@ -461,6 +461,11 @@ data class PointsConfigPayload(
      */
     val pointsMarketEnabled: Boolean = false,
     /**
+     * **「RP 当任务货币」开关**（默认关）：打开后**玩家身份的 OP（等级 ≥ 2）也能发放 / 回收 RP**
+     * —— FTB 之类的任务模组要把 RP 当奖励发给玩家（见 `CobbleMarketConfig.rpAsQuestCurrency`）。
+     */
+    val rpAsQuestCurrency: Boolean = false,
+    /**
      * RP 的四个费率（%，精灵上架 / 物品上架 / 拍卖成交 / 求购中介）。
      * 配置界面的「费率配置」二级弹窗用它填初值；「开玩家间交易」的提醒弹窗看这四个值是否全为 0。
      */
@@ -482,6 +487,7 @@ data class PointsConfigPayload(
                 b.writeLong(p.orderTimeoutMinutes)
                 b.writeString(p.currencyLabel, MAX_TIER_NAME_LENGTH)
                 b.writeBoolean(p.pointsMarketEnabled)
+                b.writeBoolean(p.rpAsQuestCurrency)
                 b.writeDouble(p.pointsPokemonFee)
                 b.writeDouble(p.pointsItemFee)
                 b.writeDouble(p.pointsAuctionFee)
@@ -503,6 +509,7 @@ data class PointsConfigPayload(
                 val timeout = b.readLong()
                 val currencyLabel = b.readString(MAX_TIER_NAME_LENGTH)
                 val pointsMarketEnabled = b.readBoolean()
+                val rpAsQuestCurrency = b.readBoolean()
                 val pointsPokemonFee = b.readDouble()
                 val pointsItemFee = b.readDouble()
                 val pointsAuctionFee = b.readDouble()
@@ -530,6 +537,7 @@ data class PointsConfigPayload(
                     tiers = tiers,
                     currencyLabel = currencyLabel,
                     pointsMarketEnabled = pointsMarketEnabled,
+                    rpAsQuestCurrency = rpAsQuestCurrency,
                     pointsPokemonFee = pointsPokemonFee,
                     pointsItemFee = pointsItemFee,
                     pointsAuctionFee = pointsAuctionFee,
@@ -563,6 +571,11 @@ data class SavePointsConfigPayload(
      */
     val pointsMarketEnabled: Boolean = false,
     /**
+     * **「RP 当任务货币」开关**（默认关）：打开后**玩家身份的 OP（等级 ≥ 2）也能发放 / 回收 RP**
+     * —— FTB 之类的任务模组要把 RP 当奖励发给玩家（见 `CobbleMarketConfig.rpAsQuestCurrency`）。
+     */
+    val rpAsQuestCurrency: Boolean = false,
+    /**
      * RP 的四个费率（%，精灵上架 / 物品上架 / 拍卖成交 / 求购中介）。
      * 配置界面的「费率配置」二级弹窗用它填初值；「开玩家间交易」的提醒弹窗看这四个值是否全为 0。
      */
@@ -584,6 +597,7 @@ data class SavePointsConfigPayload(
                 b.writeLong(p.orderTimeoutMinutes)
                 b.writeString(p.currencyLabel, MAX_TIER_NAME_LENGTH)
                 b.writeBoolean(p.pointsMarketEnabled)
+                b.writeBoolean(p.rpAsQuestCurrency)
                 b.writeDouble(p.pointsPokemonFee)
                 b.writeDouble(p.pointsItemFee)
                 b.writeDouble(p.pointsAuctionFee)
@@ -605,6 +619,7 @@ data class SavePointsConfigPayload(
                 val timeout = b.readLong()
                 val currencyLabel = b.readString(MAX_TIER_NAME_LENGTH)
                 val pointsMarketEnabled = b.readBoolean()
+                val rpAsQuestCurrency = b.readBoolean()
                 val pointsPokemonFee = b.readDouble()
                 val pointsItemFee = b.readDouble()
                 val pointsAuctionFee = b.readDouble()
@@ -632,6 +647,7 @@ data class SavePointsConfigPayload(
                     tiers = tiers,
                     currencyLabel = currencyLabel,
                     pointsMarketEnabled = pointsMarketEnabled,
+                    rpAsQuestCurrency = rpAsQuestCurrency,
                     pointsPokemonFee = pointsPokemonFee,
                     pointsItemFee = pointsItemFee,
                     pointsAuctionFee = pointsAuctionFee,
@@ -954,6 +970,7 @@ object PointsNetwork {
                 }
                 CobbleMarketConfig.setPointsEnabled(payload.pointsEnabled)
                 CobbleMarketConfig.setPointsMarketEnabled(payload.pointsMarketEnabled)
+                CobbleMarketConfig.setRpAsQuestCurrency(payload.rpAsQuestCurrency)
                 // RP 的四个费率（%）—— setter 只改内存，统一下面 save() 落盘
                 CobbleMarketConfig.setPointsPokemonListingFeePercent(payload.pointsPokemonFee)
                 CobbleMarketConfig.setPointsItemListingFeePercent(payload.pointsItemFee)
@@ -1402,6 +1419,7 @@ object PointsNetwork {
         },
         currencyLabel = CobbleMarketConfig.pointsShopCurrencyLabel,
         pointsMarketEnabled = CobbleMarketConfig.pointsMarketEnabled,
+        rpAsQuestCurrency = CobbleMarketConfig.rpAsQuestCurrency,
         pointsPokemonFee = CobbleMarketConfig.pointsPokemonListingFeePercent,
         pointsItemFee = CobbleMarketConfig.pointsItemListingFeePercent,
         pointsAuctionFee = CobbleMarketConfig.pointsAuctionFeePercent,
