@@ -1355,16 +1355,12 @@ class PointsMarketScreen : Screen(
     private fun updateTabButtons() {
         val pokemonLabel = Text.translatable("cobblemarket.points.market.tab_pokemon").string
         val itemLabel = Text.translatable("cobblemarket.points.market.tab_item").string
-        // 选中态用 selectedText（照 PriceLimitScreen 的 tab）——按钮底色图只有一段状态，
-        // 靠文字高亮区分选中
-        pokemonTabButton?.setMessage(
-            if (currentTab == 0) com.shusheng.cobblemarket.util.TextUtil.selectedText(pokemonLabel)
-            else Text.literal(pokemonLabel)
-        )
-        itemTabButton?.setMessage(
-            if (currentTab == 1) com.shusheng.cobblemarket.util.TextUtil.selectedText(itemLabel)
-            else Text.literal(itemLabel)
-        )
+        // 选中的 tab 靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `● `
+        // （原注释说的"按钮底色图只有一段状态"是贴图调整之前的旧情况，现在 button_9slice 是三段）
+        pokemonTabButton?.setMessage(Text.literal(pokemonLabel))
+        pokemonTabButton?.selectedVisual = currentTab == 0
+        itemTabButton?.setMessage(Text.literal(itemLabel))
+        itemTabButton?.selectedVisual = currentTab == 1
     }
 
     private fun prevPage() {

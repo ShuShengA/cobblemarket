@@ -187,11 +187,12 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
     }
 
     private fun updateTabButtons() {
-        fun label(key: String, selected: Boolean) = Text.literal(
-            Text.translatable(key).string
-        ).let { if (selected) com.shusheng.cobblemarket.util.TextUtil.selectedText(it.string) else it }
-        pendingTabButton?.setMessage(label("cobblemarket.points.admin.tab_pending", !showFinished))
-        finishedTabButton?.setMessage(label("cobblemarket.points.admin.tab_finished", showFinished))
+        fun label(key: String) = Text.literal(Text.translatable(key).string)
+        // 选中的 tab 靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `● `
+        pendingTabButton?.setMessage(label("cobblemarket.points.admin.tab_pending"))
+        pendingTabButton?.selectedVisual = !showFinished
+        finishedTabButton?.setMessage(label("cobblemarket.points.admin.tab_finished"))
+        finishedTabButton?.selectedVisual = showFinished
     }
 
     private fun requestList() {
