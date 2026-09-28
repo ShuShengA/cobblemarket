@@ -78,6 +78,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var genderFilter = ""
     private var typeFilter = ""
     private var typeFilterIndex = 0
+    // 太晶属性筛选（属性 key，与「属性」同一套列表；空 = 不限）
+    private var teraFilter = ""
+    private var teraFilterIndex = 0
+    // 超极巨化三态：0 = 不限，1 = 仅超极巨，2 = 仅非超极巨（照闪光那种循环按钮）
+    private var gmaxFilter = 0
     private var abilityFilter = ""   // 特性翻译 key（空 = 不限）
     private var natureFilter = ""    // 性格翻译 key（空 = 不限；按生效性格匹配，不分薄荷）
     private val ivExact = IntArray(6) { -1 }
@@ -105,6 +110,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     private lateinit var genderButton: NineSliceButton
     private lateinit var typeButton: ButtonWidget
+    private lateinit var teraButton: ButtonWidget
+    private lateinit var gmaxButton: ButtonWidget
     private lateinit var abilityButton: ButtonWidget
     private lateinit var natureButton: ButtonWidget
     private lateinit var shinyButton: NineSliceButton
@@ -147,7 +154,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
      * 最后一行的 Spd 输入框在 y=268、高 16（底 284），加 12 底部余量 ⇒ 296。
      * ⚠ 面板内容再加行时记得同步改这里。
      */
-    private val FILTER_PANEL_HEIGHT = 296
+    private val FILTER_PANEL_HEIGHT = 318
 
     /** 面板内滚动偏移（内容比面板高时才有用，见 [filterPanelHeight]） */
     private var filterPanelScroll = 0
@@ -396,6 +403,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // 列表起点恒定，也不用再处理「展开列表盖住下面的行」。
         val fx = MarketPanelBackground.filterLeft(width) + 4
         val fw = MarketPanelBackground.filterWidth(width) - 8
+        // 「特训 + 超极巨化」那行对半分（4px 间距）；两个按钮的文案在双语下都放得下
+        val half = (fw - 4) / 2
 
         // Row 2 (y=66): 性别图标 | 属性 | 特性 | 性格（四按钮，间距 4px；后三者展开选择）
         genderButton = NineSliceButton(
@@ -415,8 +424,18 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         )
         addDrawableChild(typeButton)
 
-        abilityButton = NineSliceButton(
+        // 太晶属性：与「属性」同一套候选列表（18 属性）+ 「不限」
+        // ⚠ 与属性各占**一整行**：英文带前缀最长 "Tera: Electric" = 84px，半宽（74px）塞不下
+        teraButton = NineSliceButton(
             fx, 64, fw, 20,
+            teraButtonText(),
+            { toggleFilterList("tera") },
+            if (teraFilter.isNotEmpty()) typeColor(teraFilter) else UNSET_FILTER_COLOR
+        )
+        addDrawableChild(teraButton)
+
+        abilityButton = NineSliceButton(
+            fx, 86, fw, 20,
             abilityButtonText(),
             { toggleFilterList("ability") },
             if (abilityFilter.isNotEmpty()) GOLD_COLOR else UNSET_FILTER_COLOR
@@ -424,7 +443,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         addDrawableChild(abilityButton)
 
         natureButton = NineSliceButton(
-            fx, 86, fw, 20,
+            fx, 108, fw, 20,
             natureButtonText(),
             { toggleFilterList("nature") },
             if (natureFilter.isNotEmpty()) GOLD_COLOR else UNSET_FILTER_COLOR
@@ -437,12 +456,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         ivResetButtons.clear()
         // 每行 = [输入框 84] [三态 40] [单框重置 ↺ 20]（2026-09-23 用户要求：输入框缩短、三态左移、
         // 右侧再给每项一枚重置 —— 为了清一个框不必去点总重置把六项全清掉）
-        hpField  = createIvField(fx, 158, "HP",  84); addIvOpButton(fx + 88, 158, 0); addIvResetButton(fx + 132, 158, 0)
-        atkField = createIvField(fx, 180, "ATK", 84); addIvOpButton(fx + 88, 180, 1); addIvResetButton(fx + 132, 180, 1)
-        defField = createIvField(fx, 202, "DEF", 84); addIvOpButton(fx + 88, 202, 2); addIvResetButton(fx + 132, 202, 2)
-        spaField = createIvField(fx, 224, "SpA", 84); addIvOpButton(fx + 88, 224, 3); addIvResetButton(fx + 132, 224, 3)
-        spdField = createIvField(fx, 246, "SpD", 84); addIvOpButton(fx + 88, 246, 4); addIvResetButton(fx + 132, 246, 4)
-        speField = createIvField(fx, 268, "Spd", 84); addIvOpButton(fx + 88, 268, 5); addIvResetButton(fx + 132, 268, 5)
+        hpField  = createIvField(fx, 180, "HP",  84); addIvOpButton(fx + 88, 180, 0); addIvResetButton(fx + 132, 180, 0)
+        atkField = createIvField(fx, 202, "ATK", 84); addIvOpButton(fx + 88, 202, 1); addIvResetButton(fx + 132, 202, 1)
+        defField = createIvField(fx, 224, "DEF", 84); addIvOpButton(fx + 88, 224, 2); addIvResetButton(fx + 132, 224, 2)
+        spaField = createIvField(fx, 246, "SpA", 84); addIvOpButton(fx + 88, 246, 3); addIvResetButton(fx + 132, 246, 3)
+        spdField = createIvField(fx, 268, "SpD", 84); addIvOpButton(fx + 88, 268, 4); addIvResetButton(fx + 132, 268, 4)
+        speField = createIvField(fx, 290, "Spd", 84); addIvOpButton(fx + 88, 290, 5); addIvResetButton(fx + 132, 290, 5)
 
         // 三态比较按钮（= / ≥ / ≤）：已随 IV 一起搬进右侧面板，见上面那六行里的 addIvOpButton
 
@@ -465,17 +484,27 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         addDrawableChild(sortButton)
 
         htButton = NineSliceButton(
-            fx, 108, fw, 20,
+            fx, 130, half, 20,
             htButtonText(),
             { toggleHtFilter() },
             if (htFilter != 0) GOLD_COLOR else 0xFFFFFF
         )
         addDrawableChild(htButton)
 
+        // 超极巨化：三态循环（不限 → 仅超极巨 → 仅非超极巨），与特训同排各占一半 ——
+        // 中文「超极巨化：是」54px / 英文 "Gmax: Yes" 54px，半宽放得下
+        gmaxButton = NineSliceButton(
+            fx + half + 4, 130, half, 20,
+            gmaxButtonText(),
+            { toggleGmax() },
+            if (gmaxFilter != 0) GOLD_COLOR else 0xFFFFFF
+        )
+        addDrawableChild(gmaxButton)
+
         // 我的（personal/personal_click 双图标：关 = 全部，开 = 仅我的；悬停词条随状态）
         // 「我的」与「重置」同一行（用户 2026-09-23 要求）：我的占左边、重置是右边那枚窄符号按钮
         mineButton = NineSliceButton(
-            fx, 130, fw - 24, 20,
+            fx, 152, fw - 24, 20,
             Text.literal(""),
             { toggleMineOnly() },
             iconLeft = Identifier.of("cobblemarket",
@@ -488,7 +517,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // 重置：与「我的」同行、改用**符号** ↺（照配置界面输入框右侧那枚，2026-09-23 用户要求）——
         // 面板只有 152 宽，文字「重置」/`Reset` 占地方，符号 + 悬停提示足够（纯图标按钮的惯例）
         resetButton = NineSliceButton(
-            fx + fw - 20, 130, 20, 20,
+            fx + fw - 20, 152, 20, 20,
             Text.literal("↺"),
             { resetFilters() },
             tooltip = Text.translatable("cobblemarket.gui.reset")
@@ -500,7 +529,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         filterPanelControls.clear()
         listOfNotNull(
             shinyButton, genderButton, sortButton, htButton, mineButton,
-            typeButton, abilityButton, natureButton, resetButton,
+            typeButton, teraButton, abilityButton, natureButton, resetButton,
+            gmaxButton,
             hpField, atkField, defField, spaField, spdField, speField
         ).forEach { filterPanelControls += it to it.y }
         ivOpButtons.values.forEach { filterPanelControls += it to it.y }
@@ -779,6 +809,30 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         return filterButtonText("cobblemarket.gui.type", label, filterTypeW, any)
     }
 
+    private fun teraButtonText(): Text {
+        val key = typeOptions.getOrElse(teraFilterIndex) { "" }
+        val any = key.isEmpty()
+        val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
+            else Text.translatable("cobblemon.type.$key")
+        return filterButtonText("cobblemarket.gui.tera", label, filterTypeW, any)
+    }
+
+    /** 超极巨化：0 = 不限（只显示标签）、1 = 仅超极巨、2 = 仅非超极巨 */
+    private fun gmaxButtonText(): Text {
+        val label = when (gmaxFilter) {
+            1 -> Text.translatable("cobblemarket.gui.filter_yes")
+            2 -> Text.translatable("cobblemarket.gui.filter_no")
+            else -> Text.translatable("cobblemarket.gui.filter_any")
+        }
+        return filterButtonText("cobblemarket.gui.gmax", label, (MarketPanelBackground.filterWidth(width) - 8 - 4) / 2, gmaxFilter == 0)
+    }
+
+    private fun toggleGmax() {
+        gmaxFilter = (gmaxFilter + 1) % 3
+        gmaxButton.message = gmaxButtonText()
+        (gmaxButton as? NineSliceButton)?.textColor = if (gmaxFilter != 0) GOLD_COLOR else 0xFFFFFF
+    }
+
     private fun abilityButtonText(): Text {
         val any = abilityFilter.isEmpty()
         val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
@@ -898,6 +952,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         if (!open) return
         val options: List<Pair<String, String>> = when (filterListOpen) {
             "type" -> listOf("" to "") + typeOptions.filter { it.isNotEmpty() }.map { it to "cobblemon.type.$it" }
+            "tera" -> listOf("" to "") + typeOptions.filter { it.isNotEmpty() }.map { it to "cobblemon.type.$it" }
             "ability" -> listOf("" to "") + abilityOptions
             "nature" -> listOf("" to "") + natureOptions
             else -> emptyList()
@@ -912,6 +967,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // ⚠ 别写显式类型 `ButtonWidget?`：那样 `?: return` 之后 Kotlin 不会把它当非空（声明类型仍是可空）
         val sourceBtn = when (filterListOpen) {
             "type" -> if (::typeButton.isInitialized) typeButton else null
+            "tera" -> if (::teraButton.isInitialized) teraButton else null
             "ability" -> if (::abilityButton.isInitialized) abilityButton else null
             "nature" -> if (::natureButton.isInitialized) natureButton else null
             else -> null
@@ -944,6 +1000,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     private fun isFilterSelected(kind: String, key: String, idx: Int): Boolean = when (kind) {
         "type" -> key.isNotEmpty() && key == typeFilter
+        "tera" -> key.isNotEmpty() && key == teraFilter
         "ability" -> key.isNotEmpty() && key == abilityFilter
         "nature" -> key.isNotEmpty() && key == natureFilter
         else -> false
@@ -956,6 +1013,13 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 typeFilterIndex = typeOptions.indexOf(key).coerceAtLeast(0)
                 typeButton.message = typeButtonText()
                 (typeButton as? NineSliceButton)?.textColor =
+                    if (key.isNotEmpty()) typeColor("cobblemon.type.$key") else 0xFFFFFF
+            }
+            "tera" -> {
+                teraFilter = key
+                teraFilterIndex = typeOptions.indexOf(key).coerceAtLeast(0)
+                teraButton.message = teraButtonText()
+                (teraButton as? NineSliceButton)?.textColor =
                     if (key.isNotEmpty()) typeColor("cobblemon.type.$key") else 0xFFFFFF
             }
             "ability" -> {
@@ -1162,6 +1226,13 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         htButton?.textColor = 0xFFFFFF
         abilityFilter = ""
         natureFilter = ""
+        teraFilter = ""
+        teraFilterIndex = 0
+        gmaxFilter = 0
+        teraButton.message = teraButtonText()
+        gmaxButton.message = gmaxButtonText()
+        (teraButton as? NineSliceButton)?.textColor = 0xFFFFFF
+        (gmaxButton as? NineSliceButton)?.textColor = 0xFFFFFF
         updateGenderButton()
         typeButton.message = typeButtonText()
         abilityButton.message = abilityButtonText()
@@ -1366,6 +1437,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 typeFilter = typeFilter,
                 abilityFilter = abilityFilter,
                 natureFilter = natureFilter,
+                teraFilter = teraFilter,
+                gmaxFilter = gmaxFilter,
                 ivExactHp = ivs[0],
                 ivExactAtk = ivs[1],
                 ivExactDef = ivs[2],
