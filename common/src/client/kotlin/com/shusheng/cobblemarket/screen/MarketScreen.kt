@@ -891,6 +891,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         if (::genderButton.isInitialized) show(genderButton)
         if (::sortButton.isInitialized) show(sortButton)
         if (::typeButton.isInitialized) show(typeButton)
+        // ⚠ **新加的筛选控件必须补进这个名单**（这里是一个个点名的，不补 = 面板收起时它还挂在屏幕上）
+        if (::teraButton.isInitialized) show(teraButton)
+        if (::gmaxButton.isInitialized) show(gmaxButton)
         if (::abilityButton.isInitialized) show(abilityButton)
         if (::natureButton.isInitialized) show(natureButton)
         show(htButton)
