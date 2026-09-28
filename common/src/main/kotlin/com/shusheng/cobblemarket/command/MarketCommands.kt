@@ -185,8 +185,19 @@ object MarketCommands {
                         //   以**控制台身份**执行照常可用（控制台 = 服主）；以命令方块身份会被拒
                         .then(CommandManager.literal("give")
                             .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
+                            // ⚠ `@s`（= 执行者自己）必须是**命令树里的字面量分支**：它是给 FTB
+                            //   任务奖励用的（`/market points give @s N`，玩家做完任务自动到账）。
+                            //   塞进 `StringArgumentType.word()` 当"合法值"是不行的 —— 客户端按参数类型
+                            //   解析，`@s` 会被标红、服务端报「参数后应有空格分隔，但发现了紧邻的数据」，
+                            //   **整条命令根本走不到我们的代码**（2026-09-28 用户实测；原先只在服务端
+                            //   手工认 `@s` 确实没用，解析这关就过不去）。字面量按字符精确匹配，两端都无歧义。
+                            .then(CommandManager.literal("@s")
+                                .then(CommandManager.argument("amount", IntegerArgumentType.integer(1))
+                                    .executes { ctx -> pointsAdjustSelf(ctx, give = true) }
+                                )
+                            )
                             .then(CommandManager.argument("name", StringArgumentType.word())
-                                .suggests(::suggestPointTargets)
+                                .suggests(::suggestOnlinePlayerNames)
                                 .then(CommandManager.argument("amount", IntegerArgumentType.integer(1))
                                     .executes { ctx -> pointsAdjust(ctx, give = true) }
                                 )
@@ -194,8 +205,14 @@ object MarketCommands {
                         )
                         .then(CommandManager.literal("take")
                             .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
+                            // `@s` 字面量分支：理由同 `give`（两条对称）
+                            .then(CommandManager.literal("@s")
+                                .then(CommandManager.argument("amount", IntegerArgumentType.integer(1))
+                                    .executes { ctx -> pointsAdjustSelf(ctx, give = false) }
+                                )
+                            )
                             .then(CommandManager.argument("name", StringArgumentType.word())
-                                .suggests(::suggestPointTargets)
+                                .suggests(::suggestOnlinePlayerNames)
                                 .then(CommandManager.argument("amount", IntegerArgumentType.integer(1))
                                     .executes { ctx -> pointsAdjust(ctx, give = false) }
                                 )
@@ -469,44 +486,63 @@ object MarketCommands {
 
     // ── RP：命令发放 / 回收 / 查询 ──
 
-    /**
-     * 发放 / 回收RP（**仅服主**：无凭证的即时直发/回收，属服主干预手段，同「撤销坏账」）。
-     * ⚠ 命令树的 `requires` 带 OP 只为让游戏内 OP 敲得进来看到红字，**真鉴权是下面首行**。
-     *
-     * 金额下界由命令参数 `integer(1)` 把关（**负数会让"扣款"变成"发钱"**），
-     * 这里再兜一层防以后改参数类型时漏掉。玩家可离线：走 [BanState.resolvePlayer]（在线优先 → userCache 兜底）。
-     *
-     * 每一次变动都写审计 CSV（RP 的来源由服主决定，可能是真钱买的，必须可对账）。
-     *
-     * ⚠ **FTB 任务奖励**走的就是这条命令（见下方 `@s` 分支）：以**控制台身份**执行时
-     *   操作者即控制台（= 服主），照常可用；以**命令方块**身份执行会被 `denyNonOwner` 拒 ——
-     *   这是既有安全设计（命令方块不能提权），别为它开口子。
-     */
+    // ── `/market points give|take` 的两条分支（真正的实现在 [pointsApply]）──
+    //
+    // ⚠ **仅服主**：无凭证的即时直发 / 回收，属服主干预手段，同「撤销坏账」。
+    //   命令树的 `requires` 带 OP 只为让游戏内 OP 敲得进来看到红字，**真鉴权是各分支首行的 `denyNonOwner`**
+    //   ⇒ OP 也发不了（只有服主与控制台可以）。
+    // ⚠ 金额下界由命令参数 `integer(1)` 把关（**负数会让"扣款"变成"发钱"**），
+    //   [pointsApply] 里再兜一层，防以后改参数类型时漏掉。
+    // ⚠ 每一次变动都写审计 CSV（RP 的来源由服主决定，可能是真钱买的，必须可对账）。
+    // ⚠ **FTB 任务奖励**走 `@s` 那条分支。⚠ **别写成"FTB 以控制台身份执行"** —— FTB 不是控制台
+    //   （用户 2026-09-28 实测：等级设到 4 也执行不了「仅限控制台」的命令），它是「玩家身份 + N 级权限」
+    //   ⇒ 执行者是**完成任务的普通玩家** ⇒ 现在会被 `denyNonOwner` 拒。
+    //   （**待办**：开关 `rpAsQuestCurrency` 打开后放行 —— 方案已定，见 docs/points_plan.md）
+
+    /** `/market points give|take <玩家名> <数量>` —— 按玩家名（可离线：走 [BanState.resolvePlayer]） */
     private fun pointsAdjust(context: CommandContext<ServerCommandSource>, give: Boolean): Int {
         if (denyNonOwner(context)) return 0
+        val name = StringArgumentType.getString(context, "name")
+        val resolved = BanState.resolvePlayer(context.source.server, name)
+        if (resolved == null) {
+            context.source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            return 0
+        }
+        return pointsApply(context, give, resolved.first, resolved.second)
+    }
+
+    /**
+     * `/market points give|take @s <数量>` —— 目标 = **执行者自己**。
+     *
+     * ⚠ **FTB 任务奖励走的就是这条**（`/market points give @s N`：玩家做完任务自动到账，
+     * 不需要市场管理员 / 服主手动发）。FTB 的命令奖励在 1.20+ 只有"以玩家身份 + N 级权限"
+     * 一种形态（旧的"以控制台执行"选项已被移除 —— 用户 2026-09-28 实测：等级设到 4 也执行不了
+     * 「仅限控制台」的命令），所以 `@s` 恰好指"完成这个任务的那位玩家"。
+     */
+    private fun pointsAdjustSelf(context: CommandContext<ServerCommandSource>, give: Boolean): Int {
+        if (denyNonOwner(context)) return 0
+        val player = context.source.player
+        if (player == null) {
+            context.source.sendError(Text.translatable("cobblemarket.points.players_only"))
+            return 0
+        }
+        return pointsApply(context, give, player.uuid, player.name.string)
+    }
+
+    /** 发放 / 回收的公共实现（两条分支共用；**鉴权由调用方先做**） */
+    private fun pointsApply(
+        context: CommandContext<ServerCommandSource>,
+        give: Boolean,
+        uuid: java.util.UUID,
+        playerName: String
+    ): Int {
         val source = context.source
         val server = source.server
-        val name = StringArgumentType.getString(context, "name")
         val amount = IntegerArgumentType.getInteger(context, "amount").toLong()
         if (amount <= 0) {
             source.sendError(Text.translatable("cobblemarket.points.invalid_amount"))
             return 0
         }
-        // ⚠ 支持 `@s`（执行者自己）：**FTB 任务奖励写的就是 `/market points give @s N`**，
-        // 而 StringArgumentType.word() 只认玩家名，`@s` 会被当成一个叫「@s」的人 → 查无此人
-        // （2026-09-18 用户实测）。换成 EntityArgumentType.player() 倒是有选择器了，
-        // 但会丢掉「给离线玩家发」的能力（现在走 BanState.resolvePlayer，覆盖存档里登录过的所有人），
-        // 所以这里手工认最常见的那一个。
-        val resolved = if (name.equals("@s", ignoreCase = true)) {
-            source.player?.let { it.uuid to it.name.string }
-        } else {
-            BanState.resolvePlayer(server, name)
-        }
-        if (resolved == null) {
-            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
-            return 0
-        }
-        val (uuid, playerName) = resolved
         val state = PointsState.get(server)
         // 操作者写命令执行者名字（控制台执行也留痕，能查出是谁发的）
         val operator = source.name
@@ -760,20 +796,6 @@ object MarketCommands {
         context: CommandContext<ServerCommandSource>,
         builder: com.mojang.brigadier.suggestion.SuggestionsBuilder
     ): java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> {
-        context.source.server.playerManager.playerList.forEach { builder.suggest(it.name.string) }
-        return builder.buildFuture()
-    }
-
-    /**
-     * `points give/take` 的目标联想：在线玩家名 **+ `@s`**。
-     * 单独一份而不是往 [suggestOnlinePlayerNames] 里加 —— 那个是全项目共用的，
-     * 别的命令并不认选择器，提示一个用不了的写法只会误导。
-     */
-    private fun suggestPointTargets(
-        context: CommandContext<ServerCommandSource>,
-        builder: com.mojang.brigadier.suggestion.SuggestionsBuilder
-    ): java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> {
-        builder.suggest("@s")
         context.source.server.playerManager.playerList.forEach { builder.suggest(it.name.string) }
         return builder.buildFuture()
     }
