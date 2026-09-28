@@ -1633,8 +1633,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val leftX = centerX - panelWidth / 2
 
         // 收款按钮右上角金币角标（8×8，仅 2px 露在角外，红点通知样式）：有待收款时显示；
-        // 弹窗打开时此段在遮罩之前渲染，角标随下层一起被压暗
-        if (pendingBalance > 0) {
+        // 弹窗打开时此段在遮罩之前渲染，角标随下层一起被压暗。
+        // ⚠ 还要判**当前页的币种**：待收款只有主货币那一份账（RP 收入直接进余额），
+        //   RP 页连「收款」按钮和待收款那行都不显示 —— 角标是在这里**单独按坐标画**的，
+        //   漏判就会出现「按钮没了、右上角那枚金币还在」（2026-09-28 用户实测报的）
+        if (pendingBalance > 0 && currency != MarketCurrency.POINTS) {
             context.matrices.push()
             context.matrices.translate((leftX + 50 - 6).toDouble(), (13 - 2).toDouble(), 0.0)
             context.matrices.scale(1f / 6f, 1f / 6f, 1f)
