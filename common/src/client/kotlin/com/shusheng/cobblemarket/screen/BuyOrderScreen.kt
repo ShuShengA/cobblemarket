@@ -473,7 +473,9 @@ class BuyOrderScreen(
         val keys = listOf("cobblemarket.buy_order.tab_all", "cobblemarket.buy_order.tab_mine")
         tabButtons.forEachIndexed { i, btn ->
             val label = Text.translatable(keys[i]).string
-            btn.setMessage(if (currentTab == i) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label))
+            btn.setMessage(Text.literal(label))
+            // 选中的 tab 靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `● `
+            btn.selectedVisual = currentTab == i
         }
     }
 
@@ -1316,7 +1318,9 @@ class BuyOrderScreen(
                 texH = BUY_ORDER_BUTTON_TEX_H
             )
             val label = Text.translatable(if (tab == 0) "cobblemarket.buy_order.create_tab_pokemon" else "cobblemarket.buy_order.create_tab_item").string
-            btn.setMessage(if (createTab == tab) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label))
+            btn.setMessage(Text.literal(label))
+            // 选中的 tab 靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `● `
+            btn.selectedVisual = createTab == tab
             createTabButtons.add(btn)
             addDrawableChild(btn)
         }
@@ -2049,11 +2053,13 @@ class BuyOrderScreen(
             val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(opt.label, 124)
             val btn = NineSliceButton(
                 centerX - 82, createY(82 + i * 14), 148, 14,
-                if (idx == formIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
+                Text.literal(label),
                 { selectForm(idx) },
                 texture = BUY_ORDER_BUTTON_TEXTURE,
                 texH = BUY_ORDER_BUTTON_TEX_H
             )
+            // 选中项靠按钮自己的选中态（背景第三段），不再在文字前加 `● `
+            btn.selectedVisual = idx == formIndex
             formListButtons.add(btn)
             addDrawableChild(btn)
         }
@@ -2071,7 +2077,7 @@ class BuyOrderScreen(
         // 第一行固定：不限（abilityIndex = -1）
         val anyBtn = NineSliceButton(
             centerX - 82, createY(140), 148, 14,
-            if (abilityIndex == -1) com.shusheng.cobblemarket.util.TextUtil.selectedText(anyLabel) else Text.literal(anyLabel),
+            Text.literal(anyLabel),
             {
                 abilityIndex = -1
                 abilityListOpen = false
@@ -2081,14 +2087,14 @@ class BuyOrderScreen(
             texture = BUY_ORDER_BUTTON_TEXTURE,
             texH = BUY_ORDER_BUTTON_TEX_H
         )
+        // 选中项靠按钮自己的选中态（背景第三段），不再在文字前加 `● `
+        anyBtn.selectedVisual = abilityIndex == -1
         abilityListButtons.add(anyBtn)
         addDrawableChild(anyBtn)
         abilityOptions.forEachIndexed { i, (_, label) ->
             val btn = NineSliceButton(
                 centerX - 82, createY(154 + i * 14), 148, 14,
-                if (i == abilityIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(
-                    com.shusheng.cobblemarket.util.TextUtil.truncateString(label, 124)
-                ) else Text.literal(com.shusheng.cobblemarket.util.TextUtil.truncateString(label, 124)),
+                Text.literal(com.shusheng.cobblemarket.util.TextUtil.truncateString(label, 124)),
                 {
                     abilityIndex = i
                     abilityListOpen = false
@@ -2098,6 +2104,8 @@ class BuyOrderScreen(
                 texture = BUY_ORDER_BUTTON_TEXTURE,
                 texH = BUY_ORDER_BUTTON_TEX_H
             )
+            // 选中项靠按钮自己的选中态（背景第三段），不再在文字前加 `● `
+            btn.selectedVisual = i == abilityIndex
             abilityListButtons.add(btn)
             addDrawableChild(btn)
         }
@@ -2115,7 +2123,7 @@ class BuyOrderScreen(
         // 第一行固定：不限（natureIndex = -1，不参与滚动）
         val anyBtn = NineSliceButton(
             centerX - 82, createY(158), 148, 14,
-            if (natureIndex == -1) com.shusheng.cobblemarket.util.TextUtil.selectedText(anyLabel) else Text.literal(anyLabel),
+            Text.literal(anyLabel),
             {
                 natureIndex = -1
                 natureListOpen = false
@@ -2125,13 +2133,15 @@ class BuyOrderScreen(
             texture = BUY_ORDER_BUTTON_TEXTURE,
             texH = BUY_ORDER_BUTTON_TEX_H
         )
+        // 选中项靠按钮自己的选中态（背景第三段），不再在文字前加 `● `
+        anyBtn.selectedVisual = natureIndex == -1
         natureListButtons.add(anyBtn)
         addDrawableChild(anyBtn)
         natureOptions.drop(natureListScroll).take(MAX_NATURE_LIST_ROWS).forEachIndexed { i, (_, label) ->
             val idx = natureListScroll + i
             val btn = NineSliceButton(
                 centerX - 82, createY(172 + i * 14), 148, 14,
-                if (idx == natureIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
+                Text.literal(label),
                 {
                     natureIndex = idx
                     natureListOpen = false
@@ -2141,6 +2151,8 @@ class BuyOrderScreen(
                 texture = BUY_ORDER_BUTTON_TEXTURE,
                 texH = BUY_ORDER_BUTTON_TEX_H
             )
+            // 选中项靠按钮自己的选中态（背景第三段），不再在文字前加 `● `
+            btn.selectedVisual = idx == natureIndex
             natureListButtons.add(btn)
             addDrawableChild(btn)
         }
@@ -2237,11 +2249,13 @@ class BuyOrderScreen(
             val label = com.shusheng.cobblemarket.util.TextUtil.truncateString(candidate.displayName, 124)
             val btn = NineSliceButton(
                 centerX - 82, createY(66 + i * 14), 148, 14,
-                if (idx == selectedItemIndex) com.shusheng.cobblemarket.util.TextUtil.selectedText(label) else Text.literal(label),
+                Text.literal(label),
                 { selectItem(idx) },
                 texture = BUY_ORDER_BUTTON_TEXTURE,
                 texH = BUY_ORDER_BUTTON_TEX_H
             )
+            // 选中项靠按钮自己的选中态（背景第三段），不再在文字前加 `● `
+            btn.selectedVisual = idx == selectedItemIndex
             itemOptionButtons.add(btn)
             addDrawableChild(btn)
         }

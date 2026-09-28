@@ -503,17 +503,16 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 else Text.translatable(label).string.let { t -> if (t == label) label else t }
             val btn = NineSliceButton(
                 fx, listTop + i * FILTER_LIST_ROW_H, fw, FILTER_LIST_ROW_H,
-                if (key.isNotEmpty() && isFilterSelected(filterListOpen, key))
-                    com.shusheng.cobblemarket.util.TextUtil.selectedText(
-                        com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)
-                    )
-                else Text.literal(com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)),
+                Text.literal(com.shusheng.cobblemarket.util.TextUtil.truncateString(display, 260)),
                 { selectFilterOption(filterListOpen, key) },
                 // 选项文字：属性 / 太晶用对应属性色（两种 key 形式都喂给 typeColor —— 它内部走
                 // `substringAfterLast(".")`，裸 key 与完整词条 key 都能取到属性名），特性 / 性格保持白色
                 if ((filterListOpen == "type" || filterListOpen == "tera") && key.isNotEmpty())
                     typeColor(key) else 0xFFFFFF
             )
+            // 选中项靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `● `
+            // （用户 2026-09-28：按钮已经有选中态了，再用圆圈是同一件事的两套表达）
+            btn.selectedVisual = isFilterSelected(filterListOpen, key)
             filterOptionButtons.add(btn)
             addDrawableChild(btn)
         }

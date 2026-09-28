@@ -273,8 +273,11 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
     private fun updateTabButtons() {
         val grants = Text.translatable("cobblemarket.perm.tab_grants").string
         val audit = Text.translatable("cobblemarket.perm.tab_audit").string
-        grantsTabButton?.setMessage(if (currentTab == 0) TextUtil.selectedText(grants) else Text.literal(grants))
-        auditTabButton?.setMessage(if (currentTab == 1) TextUtil.selectedText(audit) else Text.literal(audit))
+        // 选中的 tab 靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `● `
+        grantsTabButton?.setMessage(Text.literal(grants))
+        grantsTabButton?.selectedVisual = currentTab == 0
+        auditTabButton?.setMessage(Text.literal(audit))
+        auditTabButton?.selectedVisual = currentTab == 1
     }
 
     private fun switchTab(tab: Int) {
