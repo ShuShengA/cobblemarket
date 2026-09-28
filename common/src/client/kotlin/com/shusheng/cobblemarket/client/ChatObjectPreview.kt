@@ -54,6 +54,17 @@ object ChatObjectPreview {
     private const val REQUESTED_MAX = 256
 
     /**
+     * 两次**真正叫出声**之间至少要隔这么久。
+     *
+     * ⚠ 为什么远大于 [IconCryClick] 自己的 200ms 节流：战吼那一声有近 1 秒长，而且它是
+     * Cobblemon 的 `BedrockSoundKeyframe` **自动播**的 —— 我们手里没有 `SoundInstance`、
+     * **停不掉**；清动画只能停动作、停不了已经在响的声音。于是「悬停 → 移开 → 马上移回」
+     * 会让第二声叠在第一声上（2026-09-29 用户实测报的）。
+     * 取 1.2 秒盖住战吼时长：这段时间内**不重复叫**，但**动作照常播**（动作能自己停）。
+     */
+    private const val CRY_COOLDOWN_MS = 1200L
+
+    /**
      * 两次请求之间的最小间隔，**必须大于服务端 [com.shusheng.cobblemarket.util.RequestThrottle.READ_INTERVAL_MS]（500ms）**：
      * 服务端对超限的请求是**静默丢弃**，而超限那次如果被记成「已请求」就永远不会补发 ——
      * 表现为「连着悬停两个播报，第二个的大图死活不出来」。所以客户端自己先让开窗口，等下一帧再发。
@@ -96,6 +107,9 @@ object ChatObjectPreview {
 
     /** 待播叫声时刻（0 = 无）。每次「开始显示」重排一次，见 [beginShow] */
     private var cryAt = 0L
+
+    /** 上次**真正叫出声**的时刻：短时间内不重复叫，见 [CRY_COOLDOWN_MS] */
+    private var lastCryAt = 0L
 
     /** 上次推进动画的真实时间戳（纳秒），0 = 这一只还没推进过 */
     private var lastFrameNanos = 0L
@@ -200,8 +214,13 @@ object ChatObjectPreview {
         shownId = id
         // 重置帧间隔基准：上次显示是几分钟前的话，第一帧会带着一个巨大的 delta
         lastFrameNanos = 0L
-        // 物品不叫；精灵安排「显示后 AUTO_CRY_DELAY_MS」再叫（理由见类注释）
-        cryAt = if (entry.isPokemon) now + IconCryClick.AUTO_CRY_DELAY_MS else 0L
+        // 物品不叫；精灵安排「显示后 AUTO_CRY_DELAY_MS」再叫（理由见类注释）。
+        // ⚠ 刚叫过就别再排（[CRY_COOLDOWN_MS]）—— 移开、马上移回会让声音叠上，而声音停不掉
+        cryAt = if (entry.isPokemon && now - lastCryAt >= CRY_COOLDOWN_MS) {
+            now + IconCryClick.AUTO_CRY_DELAY_MS
+        } else {
+            0L
+        }
     }
 
     private fun draw(context: DrawContext, entry: Entry) {
@@ -221,6 +240,7 @@ object ChatObjectPreview {
             if (cryAt != 0L && System.currentTimeMillis() >= cryAt) {
                 cryAt = 0L
                 IconCryClick.play(state, renderable)
+                lastCryAt = System.currentTimeMillis()
             }
             // panelLeft 传 0：居中模式下它不参与定位（大图固定在屏幕正中，屏幕高度仍用于纵向居中）
             PokemonHoverPreview.render(
