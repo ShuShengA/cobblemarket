@@ -703,14 +703,15 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private fun shinyLabel(state: Int): String = when (state) {
         PokemonPriceLimitEntry.SHINY_YES -> Text.translatable("cobblemarket.gui.shiny_yes").string
         PokemonPriceLimitEntry.SHINY_NO -> Text.translatable("cobblemarket.gui.shiny_no").string
-        else -> Text.translatable("cobblemarket.gui.shiny_any").string
+        else -> Text.translatable("cobblemarket.rule.shiny_any").string
     }
 
-    // 按钮只显示符号：★ = 仅闪光（金色），☆ = 仅非闪光，不限 = 默认文字（行显示/tooltip 仍用完整词）
+    // 按钮只显示符号：★ = 仅闪光（金色），☆ = 仅非闪光，「全部」= 默认文字（行显示/tooltip 仍用完整词）。
+    // ⚠ 这只按钮**只有 20px 宽**，所以它的词只能是 2 个汉字（「不参与」= 27px 放不下）—— 别为统一把它改长
     private fun shinyButtonText(): String = when (shinyFilter) {
         PokemonPriceLimitEntry.SHINY_YES -> "★"
         PokemonPriceLimitEntry.SHINY_NO -> "☆"
-        else -> Text.translatable("cobblemarket.gui.shiny_any").string
+        else -> Text.translatable("cobblemarket.rule.shiny_any").string
     }
 
     private fun updateShinyButton() {
@@ -1817,13 +1818,14 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         return lines
     }
 
-    // 特训维度标签（tooltip 用）：不限 / 不含特训
+    // 特训维度标签（tooltip 用）：特训+原生 / 仅原生 —— **说"哪些种类都算"**，比"不参与"一读就懂
+    // ⚠ **规则**界面用 `rule.*` 那套，**列表筛选**按钮用 `gui.filter_*`（「不限/不含特训」）—— 别混着改
     private fun htLabel(filter: Int): String = Text.translatable(
-        if (filter == PokemonPriceLimitEntry.HT_ANY) "cobblemarket.gui.filter_ht_any" else "cobblemarket.gui.filter_ht_off"
+        if (filter == PokemonPriceLimitEntry.HT_ANY) "cobblemarket.rule.ht_any" else "cobblemarket.rule.ht_none"
     ).string
 
     private fun ruleHtButtonText(): Text = Text.translatable(
-        if (ruleHtFilter == PokemonPriceLimitEntry.HT_ANY) "cobblemarket.gui.filter_ht_any" else "cobblemarket.gui.filter_ht_off"
+        if (ruleHtFilter == PokemonPriceLimitEntry.HT_ANY) "cobblemarket.rule.ht_any" else "cobblemarket.rule.ht_none"
     )
 
     private fun toggleRuleHtFilter() {

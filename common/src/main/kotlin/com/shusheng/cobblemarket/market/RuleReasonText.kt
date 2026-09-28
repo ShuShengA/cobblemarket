@@ -132,10 +132,14 @@ object RuleReasonText {
             else Text.translatable("cobblemarket.gui.shiny_no")
         )
 
-    /** 特训：`仅特训` / `不含特训`（与规则悬停窗同一对词条，本身就自解释，不加前缀） */
+    /**
+     * 特训：`仅特训` / `仅原生` —— 与**规则界面**同一对词条（`rule.*`），玩家在提示里看到的
+     * 说法和服主配规则时看到的一致。⚠ `仅特训` 那一档规则界面**不给选**（只有两档），
+     * 但数据格式支持，留着以防手改配置。
+     */
     private fun htPart(filter: Int): Text =
         if (filter == PokemonBlacklistEntry.HT_ONLY) Text.translatable("cobblemarket.gui.filter_ht_on")
-        else Text.translatable("cobblemarket.gui.filter_ht_off")
+        else Text.translatable("cobblemarket.rule.ht_none")
 
     /** 黑名单专有：被限定的 IV 项（`HP=31`）。特训值不参与 —— 判定用的是特训后的有效值 */
     private fun ivParts(entry: PokemonBlacklistEntry): List<Text> {

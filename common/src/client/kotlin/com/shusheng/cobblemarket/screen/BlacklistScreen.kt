@@ -778,8 +778,10 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         closeDialog()
     }
 
+    // ⚠ **规则**界面用 `rule.*` 那套（「不参与 / 全部」），**列表筛选**按钮用 `gui.filter_*`（「不限」）——
+    //   两者含义其实一样（"这一维不作为条件"），但筛选那边说「不限」是惯用说法，别混着改
     private fun ruleHtButtonText(): Text = Text.translatable(
-        if (ruleHtFilter == PokemonBlacklistEntry.HT_ANY) "cobblemarket.gui.filter_ht_any" else "cobblemarket.gui.filter_ht_off"
+        if (ruleHtFilter == PokemonBlacklistEntry.HT_ANY) "cobblemarket.rule.ht_any" else "cobblemarket.rule.ht_none"
     )
 
     private fun toggleRuleHtFilter() {
@@ -791,7 +793,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private fun shinyLabel(state: Int): String = when (state) {
         PokemonBlacklistEntry.SHINY_YES -> Text.translatable("cobblemarket.gui.shiny_yes").string
         PokemonBlacklistEntry.SHINY_NO -> Text.translatable("cobblemarket.gui.shiny_no").string
-        else -> Text.translatable("cobblemarket.gui.shiny_any").string
+        else -> Text.translatable("cobblemarket.rule.shiny_any").string
     }
 
     /**
@@ -804,16 +806,18 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
 
     private fun alphaLabel(state: Int): String = ""
 
-    // 特训维度标签（tooltip 用）：不限 / 不含特训
+    // 特训维度标签（tooltip 用）：特训+原生 / 仅原生 —— **说"哪些种类都算"**，比"不参与"一读就懂
     private fun htLabel(filter: Int): String = Text.translatable(
-        if (filter == PokemonBlacklistEntry.HT_ANY) "cobblemarket.gui.filter_ht_any" else "cobblemarket.gui.filter_ht_off"
+        if (filter == PokemonBlacklistEntry.HT_ANY) "cobblemarket.rule.ht_any" else "cobblemarket.rule.ht_none"
     ).string
 
-    // 按钮只显示符号：★ = 仅闪光（金色），☆ = 仅非闪光，不限 = 默认文字（行显示/tooltip 仍用完整词）
+    // 按钮只显示符号：★ = 仅闪光（金色），☆ = 仅非闪光，「全部」= 默认文字（行显示/tooltip 仍用完整词）。
+    // ⚠ 这只按钮**只有 20px 宽**（NineSliceButton 建的时候就是 20），所以它的词只能是 2 个汉字：
+    //   「不参与」= 27px 放不下，「全部」/「不限」= 18px ✓ —— 别为了跟别的维度统一把它改长
     private fun shinyButtonText(): String = when (shinyFilter) {
         PokemonBlacklistEntry.SHINY_YES -> "★"
         PokemonBlacklistEntry.SHINY_NO -> "☆"
-        else -> Text.translatable("cobblemarket.gui.shiny_any").string
+        else -> Text.translatable("cobblemarket.rule.shiny_any").string
     }
 
     private fun updateShinyButton() {

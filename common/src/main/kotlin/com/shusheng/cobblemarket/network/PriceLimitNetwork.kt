@@ -310,15 +310,18 @@ object PriceLimitNetwork {
                 val state = PokemonPriceLimitState.get(server)
                 // 形态列表上限（同求购单/黑名单）：恶意/异常输入不随条目持久化膨胀
                 // 变体列表上限：同上，恶意客户端塞海量 aspect 会随条目持久化并全服广播
+                // ⚠ 提示词**别复用 blacklist.not_found**（那是"找不到物种"）—— 服主会跑去改物种
                 if (payload.variantAspects.size > PokemonBlacklistEntry.MAX_ASPECTS) {
                     player.sendMessage(
-                        Text.translatable("cobblemarket.blacklist.not_found").formatted(Formatting.RED), false)
+                        Text.translatable("cobblemarket.rule.too_many_aspects", PokemonBlacklistEntry.MAX_ASPECTS)
+                            .formatted(Formatting.RED), false)
                     sendResultSound(player, false)
                     return@execute
                 }
                 if (payload.aspects.size > PokemonBlacklistEntry.MAX_ASPECTS) {
                     player.sendMessage(
-                        Text.translatable("cobblemarket.blacklist.not_found").formatted(Formatting.RED), false)
+                        Text.translatable("cobblemarket.rule.too_many_aspects", PokemonBlacklistEntry.MAX_ASPECTS)
+                            .formatted(Formatting.RED), false)
                     sendResultSound(player, false)
                     return@execute
                 }
@@ -330,7 +333,8 @@ object PriceLimitNetwork {
                     PokemonPriceLimitEntry(
                         speciesId, vCount, shinyFilter, minPrice, maxPrice, payload.aspects,
                         payload.htFilter.coerceIn(PokemonPriceLimitEntry.HT_ANY, PokemonPriceLimitEntry.HT_NONE),
-                        payload.variantAspects
+                        // ⚠ 与**读档侧同口径**：剔掉退役的「全部变体」哨兵（留着它这条规则会永不命中）
+                        payload.variantAspects.filter { it != PokemonPriceLimitEntry.LEGACY_ALL_VARIANTS }
                     )
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
