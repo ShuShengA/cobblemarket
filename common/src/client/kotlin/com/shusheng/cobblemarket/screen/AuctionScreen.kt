@@ -742,12 +742,16 @@ class AuctionScreen(
         return filterButtonText("cobblemarket.gui.type", label, if (any) null else typeColor("cobblemon.type.$typeFilter"))
     }
 
-    /** 太晶属性：与「属性」同一套候选列表（18 属性 + 不限），颜色同样按属性上色 */
+    /**
+     * 太晶属性：与「属性」同一套候选列表（18 属性 + 不限），颜色同样按属性上色。
+     * ⚠ [teraFilter] 存的是**完整词条 key**（`cobblemon.type.fire`），不是属性筛选那种裸 key ——
+     *   比对的那一侧 `d["teraType"]` 是 `PokemonTera.resolve` / 上架快照给的完整 key，用裸 key 会恒不匹配。
+     */
     private fun teraButtonText(): Text {
         val any = teraFilter.isEmpty()
         val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
-            else Text.translatable("cobblemon.type.$teraFilter")
-        return filterButtonText("cobblemarket.gui.tera", label, if (any) null else typeColor("cobblemon.type.$teraFilter"))
+            else Text.translatable(teraFilter)
+        return filterButtonText("cobblemarket.gui.tera", label, if (any) null else typeColor(teraFilter))
     }
 
     /** 超极巨化：0 = 不限（只显示标签）、1 = 仅超极巨、2 = 仅非超极巨 */
@@ -837,8 +841,9 @@ class AuctionScreen(
         }
         val options: List<Pair<String, String>> = when (filterListOpen) {
             "type" -> listOf("" to "") + typeOptions.map { it to "cobblemon.type.$it" }
-            // 太晶与属性共用同一份候选（18 属性 + 不限）
-            "tera" -> listOf("" to "") + typeOptions.map { it to "cobblemon.type.$it" }
+            // 太晶与属性共用同一份候选（18 属性 + 不限）；
+            // ⚠ 太晶这份的 key 是**完整词条 key**（比对那一侧就是完整 key），属性那份是裸 key
+            "tera" -> listOf("" to "") + typeOptions.map { "cobblemon.type.$it" to "cobblemon.type.$it" }
             "ability" -> listOf("" to "") + abilityOptions
             "nature" -> listOf("" to "") + natureOptions
             else -> emptyList()
@@ -872,9 +877,11 @@ class AuctionScreen(
                     TextUtil.selectedText(TextUtil.truncateString(display, 260))
                 else Text.literal(TextUtil.truncateString(display, 260)),
                 { selectFilterOption(filterListOpen, key) },
-                // 属性 / 太晶选项文字用对应属性色（两份列表共用同一套候选）
+                // 属性 / 太晶选项文字用对应属性色（两份列表共用同一套候选）。
+                // ⚠ 两种 key 形式都喂给 typeColor：属性是裸 key、太晶是完整词条 key，
+                //   它内部走 `substringAfterLast(".")`，两种都能取到属性名
                 if ((filterListOpen == "type" || filterListOpen == "tera") && key.isNotEmpty())
-                    typeColor("cobblemon.type.$key") else 0xFFFFFF
+                    typeColor(key) else 0xFFFFFF
             )
             filterOptionButtons.add(btn)
             addDrawableChild(btn)
