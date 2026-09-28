@@ -172,8 +172,19 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         //   ⚠ 失败（空手 / 空位）在上面各自 return 前已经关掉了，那条路不等回包。
     }
 
-    /** 服务端回包（展示成功、或被 10 秒节流拒掉）—— 与界面里点行展示同一套收尾：关界面 */
+    /**
+     * 服务端回包（展示成功、或被 10 秒冷静期拒掉）—— 与界面里点行展示**同一套收尾**：
+     * 结果消息发到聊天栏（成功绿字 / 失败红字），然后关界面。
+     *
+     * ⚠ **失败那条必须发**：被冷静期拒掉时服务端给的原因就在 [MarketResultPayload.message] 里，
+     *   少了它玩家只听到一声失败音、不知道是自己点太快
+     *  （2026-09-29 用户报的：快速展示与界面里点行展示两条路没对齐）。
+     */
     fun onMarketResult(payload: MarketResultPayload) {
+        client?.player?.sendMessage(
+            payload.message.copy().formatted(if (payload.success) Formatting.GREEN else Formatting.RED),
+            false
+        )
         closeSelf()
     }
 
