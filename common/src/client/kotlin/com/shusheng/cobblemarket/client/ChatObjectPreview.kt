@@ -7,10 +7,12 @@ import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.ItemHoverPreview
 import com.shusheng.cobblemarket.client.icon.PokemonHoverPreview
+import com.shusheng.cobblemarket.network.ListingEntry
 import com.shusheng.cobblemarket.network.ObjectPreviewNetwork
 import com.shusheng.cobblemarket.network.ObjectPreviewPayload
 import com.shusheng.cobblemarket.network.RequestObjectPreviewPayload
 import com.shusheng.cobblemarket.platform.sendToServer
+import com.shusheng.cobblemarket.screen.EntryBadgeRenderer
 import com.shusheng.cobblemarket.screen.ROW_BACKGROUND_TEX_H
 import com.shusheng.cobblemarket.screen.ROW_BACKGROUND_TEXTURE
 import com.shusheng.cobblemarket.screen.drawNineSlice
@@ -29,7 +31,14 @@ import java.util.UUID
  *
  * 播报里的拍品名挂了客户端指令（见 `AuctionNetwork.announceAuction` / `BuyOrderNetwork`），
  * 这里就顺着那条 `clickEvent` 认出「鼠标下是哪个拍品」，再去服务端要数据（[RequestObjectPreviewPayload]）
- * 并在**右半屏的中心**画大图 —— 复用列表那套悬停大图的渲染器（居中模式）。
+ * 并在**屏幕正中**画大图（大图自己居中，不在「右半屏」了 —— 2026-09-29 用户定的），
+ * 再于它**右侧**排一块词条面板：精灵走 [EntryBadgeRenderer.drawInfoLines]（与精灵市场行悬停窗
+ * 同源，含等级 / 属性 / IV / 技能 / 证章…），物品走原版 tooltip（附魔 / 药水 / 属性修饰符全自动继承）。
+ *
+ * ⚠ **不再挂原版 HoverEvent 小窗**（那个灰框）：小窗的内容必须服务端拼文本，
+ * 拼不出完整词条、长行还会显示不下，精灵更是连图标都画不了 ⇒ 两条路体验割裂
+ * （2026-09-29 用户拍板：精灵与物品**统一用这一套**）。播报上的 `clickEvent` **保留** ——
+ * 它是这里识别「鼠标下是哪条播报」的唯一依据。
  *
  * 三条与列表预览不同的规矩（2026-09-17 拍板）：
  * - **不受「精灵预览图/物品预览图」开关约束**：聊天里的大图无条件显示（居中模式跳过开关判断）
@@ -43,8 +52,14 @@ import java.util.UUID
  */
 object ChatObjectPreview {
 
-    /** 扫过不算：同一拍品要连续悬停这么久才显示（聊天里滑过一段文字太容易了） */
-    private const val HOVER_DWELL_MS = 250L
+    /**
+     * 扫过不算：同一拍品要连续悬停这么久才显示（聊天里滑过一段文字太容易了）。
+     *
+     * ⚠ 2026-09-29 由 **250 缩到 120**：**原版那个灰框小窗是立即出现的**，舍弃它之后若还要停留
+     * 四分之一秒，玩家会觉得「悬停半天没反应」而不再多看一眼。120ms 只挡真正的「扫过」——
+     * 手感上接近即时（这几帧里大图还没冒出来，玩家察觉不到）。
+     */
+    private const val HOVER_DWELL_MS = 120L
 
     /** 缓存上限与存活时长：拍品数据不会变（成交后条目本身就查不到了），但也不能无限攒 */
     private const val CACHE_MAX = 64
@@ -69,13 +84,23 @@ object ChatObjectPreview {
     /** 播报里挂的指令前缀（服务端 `withClickEvent` 写的就是它） */
     private const val COMMAND_PREFIX = "/cobblemarket "
 
-    /** 缓存里的一条拍品：[isPokemon] 分流用哪套渲染器，另一个字段恒为 null */
+    /**
+     * 缓存里的一条拍品：[isPokemon] 分流用哪套渲染器，另一个字段恒为 null。
+     *
+     * [listing] / [name] 只有精灵有 —— 大图右侧那块信息行要用它们：
+     * - [listing]：服务端随包下发的完整信息（`ObjectPreviewPayload.listing`）；
+     *   求购的**需求**预览与拍卖的 NBT 损坏兜底**没有**它 ⇒ 那种情况只画大图、不画信息行
+     * - [name]：**名字行**（物种按官方词条 key 翻译、闪光带 ★）。⚠ 不能拿 [ListingEntry.species]
+     *   现拼 —— 那个字段是**裸物种名**（`pikachu`），`Text.translatable` 翻不出来
+     */
     private class Entry(
         val isPokemon: Boolean,
         val renderable: RenderablePokemon?,
         val state: FloatingState?,
         val stack: ItemStack?,
-        val at: Long
+        val at: Long,
+        val listing: ListingEntry? = null,
+        val name: Text? = null
     )
 
     /** 大图数据缓存（插入序，超上限淘汰最旧的） */
@@ -168,7 +193,13 @@ object ChatObjectPreview {
                 renderable = RenderablePokemon(species, aspects, if (payload.heldItemVisible) held else ItemStack.EMPTY),
                 state = FloatingState(),
                 stack = null,
-                at = now
+                at = now,
+                // 右侧信息行（服务端组装好随包下发；没有就只画大图）
+                listing = payload.listing,
+                // 名字行走**官方词条 key**（`cobblemon.species.<name>.name`）—— 与市场同一口径
+                name = if (payload.listing == null) null else EntryBadgeRenderer.nameWithShinyStar(
+                    Text.translatable(speciesNameKey(payload.speciesId)), payload.shiny
+                )
             )
         } else {
             // 拍卖存整栈 NBT、求购单存组件快照 —— 两种格式各走各的重建入口（都以 itemId 兜底）
@@ -204,10 +235,15 @@ object ChatObjectPreview {
         cryAt = if (entry.isPokemon) now + IconCryClick.AUTO_CRY_DELAY_MS else 0L
     }
 
+    /** 物种 ID（`cobblemon:pikachu`）→ 官方名字词条 key（`cobblemon.species.pikachu.name`） */
+    private fun speciesNameKey(speciesId: String): String =
+        "cobblemon.species.${speciesId.substringAfter(':').lowercase()}.name"
+
     private fun draw(context: DrawContext, entry: Entry) {
-        // 横向落点 = **右半屏的中心**（= 屏宽的 3/4）：屏幕正中会压住聊天框上方的正文，
-        // 右半边通常是空的，视觉上也不跟左下的聊天栏打架（2026-09-17 用户定的位置）
-        val centerX = context.scaledWindowWidth * 0.75f
+        // 横向落点 = **屏幕正中**（2026-09-29 用户拍板，原先在右半屏的中心 = 屏宽的 3/4）：
+        // 大图自己是严格居中的那一个，词条面板再从它**右缘**往后排 ——
+        // ⚠ 不是"大图 + 面板两块合起来居中"（那样大图会偏左），用户 2026-09-29 专门澄清过
+        val centerX = context.scaledWindowWidth * 0.5f
         val screenHeight = context.scaledWindowHeight
         if (entry.isPokemon) {
             val renderable = entry.renderable ?: return
@@ -231,6 +267,12 @@ object ChatObjectPreview {
                 screenHeight = screenHeight,
                 centerX = centerX
             )
+            // 右侧那块完整信息行（与精灵市场行悬停窗同源）；没有数据就只留大图
+            val listing = entry.listing
+            val name = entry.name
+            if (listing != null && name != null) {
+                drawPokemonInfoPanel(context, listing, name, centerX, screenHeight)
+            }
         } else {
             val stack = entry.stack ?: return
             ItemHoverPreview.render(
@@ -301,6 +343,50 @@ object ChatObjectPreview {
                 panelY + PANEL_PAD + (shown.size - 1) * LINE_H, 0x888888
             )
         }
+    }
+
+    /**
+     * 大图**右侧**列出的**精灵完整信息行**（带九宫格背景）—— 与精灵市场行悬停窗**同一套**：
+     * 同一份行列表、同一种排版（`EntryBadgeRenderer.drawInfoLines`），玩家看到的
+     * 等级 / 属性+太晶 / 极巨 / 性格 / 特性 / 球种 / 携带物 / IV+EV / 亲密度 / 初始训练家 /
+     * 技能 / 证章 / 卖家 / 价格，与在市场里悬停同一只时**一字不差**。
+     *
+     * 数据来自服务端随包下发的 [ListingEntry]（见 `ObjectPreviewPayload.listing`）——
+     * 客户端原本只有物种 / 形态 / 闪光 / 携带物，**画不出信息行**，所以那几个字段由服务端顺手组装。
+     *
+     * ⚠ 面板**先量后画**：`drawInfoLines` 是「边画边返回结束 y」的，而背景框必须动笔前就摆好 ⇒
+     *   宽度走 `measureInfoLines` / `movesBlockWidth` / `nameLineWidth`、
+     *   高度走 `measureInfoLinesHeight`。后两个与 `drawInfoLines` 的行列表**严格对应**，
+     *   改那个函数的行列表时这三处要一起改（少算一行 = 框比内容矮一截）。
+     */
+    private fun drawPokemonInfoPanel(
+        context: DrawContext, listing: ListingEntry, name: Text, centerX: Float, screenHeight: Int
+    ) {
+        val panelX = (centerX + ICON_HALF + PANEL_GAP).toInt()
+        // 屏幕右缘以内的可用宽：放不下就按它截断（长精灵名 / 长特性名），别画到屏幕外
+        val availW = (context.scaledWindowWidth - panelX - 6).coerceAtLeast(64)
+
+        // 内容宽：信息行 / 技能块 / 名字行 / 携带物图标 / 技能块那条固定兜底 —— 口径全在
+        // EntryBadgeRenderer.infoPanelContentWidth 里（与 drawInfoLines 同源，别在这儿另算一遍）
+        val contentW = EntryBadgeRenderer.infoPanelContentWidth(listing, name).coerceAtMost(availW)
+
+        val panelW = contentW + PANEL_PAD * 2
+        val panelH = EntryBadgeRenderer.measureInfoLinesHeight(listing, contentW) + PANEL_PAD * 2
+        // 纵向与旁边的大图一样取屏幕中线；⚠ 比屏幕还高时**贴顶**（宁可下缘出去，也别把标题行顶没了）
+        val panelY = ((screenHeight - panelH) / 2).coerceAtLeast(2)
+
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, panelX, panelY, panelW, panelH, 1, ROW_BACKGROUND_TEX_H)
+
+        // 行内容是**居中排版**的（drawInfoLines 的口径），所以中心传面板自己的中线
+        EntryBadgeRenderer.drawInfoLines(
+            context = context,
+            entry = listing,
+            displayName = name,
+            centerX = panelX + panelW / 2,
+            startY = panelY + PANEL_PAD,
+            dividerW = contentW,
+            maxWidth = contentW
+        )
     }
 
     /** 按真实帧间隔推进模型时间轴（1 秒 = 20 单位，即 Cobblemon 口径的 partialTicks） */
