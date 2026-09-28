@@ -237,6 +237,18 @@ class AuctionState private constructor() : PersistentState() {
                 com.shusheng.cobblemarket.currency.CurrencyService.creditSeller(
                     server, auction.sellerUuid, auction.currency, (auction.currentPrice - fee).toLong()
                 )
+                // RP 审计账本：买卖各一笔。两侧差额 = 卖家承担的手续费（销毁），写进详情里备查。
+                // ⚠ 赢家的钱在**出价时**就已扣走，这里记的是成交事件、不是扣款（见 PointsAuditLogger KDoc）
+                if (auction.currency == MarketCurrency.POINTS) {
+                    val goods = auction.extraData["speciesKey"] ?: auction.species
+                    com.shusheng.cobblemarket.currency.PointsAuditLogger.logMarketTrade(
+                        server, winnerUuid, auction.currentBidderName,
+                        auction.sellerUuid, auction.sellerName,
+                        auction.currentPrice.toLong(), (auction.currentPrice - fee).toLong(),
+                        "拍卖成交：$goods（手续费 $fee）",
+                        "Auction sale: $goods (fee $fee)"
+                    )
+                }
                 // 金融系统成交挂钩子：拍卖成交计入赢家（买入方）交易额；赢家可能离线，IP/OP 判定在 recordTrade 内按在线状态取。
                 // ⚠ **RP 拍卖不调** —— recordTrade 喂着紫卡/黑卡门槛与贷款额度公式，
                 //   让 RP 来回刷交易量等于白送资格（方案「统计隔离」）

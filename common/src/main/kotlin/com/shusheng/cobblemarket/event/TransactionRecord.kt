@@ -34,7 +34,15 @@ data class TransactionRecord(
     val currency: MarketCurrency = MarketCurrency.PRIMARY,
     // CSV「主属性」列：精灵名上色用（`cobblemon.type.fire` 这种 key，**形态感知** —— 挂单时取的
     // pokemon.primaryType）。物品记录为空串；旧记录也读不到 → 落空串，界面按无色处理（只增不改）
-    val primaryType: String = ""
+    val primaryType: String = "",
+    /**
+     * 这笔流水是不是 **RP 商城**（服主经营的商店）卖出的。
+     *
+     * 商城购买与玩家间市场直购是**同一个 [TransactionType.PURCHASE]**，界面光看类型分不出来，
+     * 所以由产生记录的一侧打标（`PointMarketService.buy` 传 true）。**追加在末尾并给默认值**
+     * ⇒ 旧记录读不到就是普通市场交易。⚠ 界面据此把卖家列画成「▣ 商城」而非上架者名。
+     */
+    val fromShop: Boolean = false
 ) {
     fun toNbt(): NbtCompound = NbtCompound().apply {
         putLong("timestamp", timestamp)
@@ -50,6 +58,7 @@ data class TransactionRecord(
         putString("detail", detail)
         putString("currency", currency.name)
         putString("primaryType", primaryType)
+        putBoolean("fromShop", fromShop)
     }
 
     companion object {
@@ -67,7 +76,9 @@ data class TransactionRecord(
             detail = if (nbt.contains("detail")) nbt.getString("detail") else "",
             // 旧记录没这个键（getString 给空串）/ 值是垃圾 ⇒ fromStored 一律落主货币，不抛不 warn
             currency = MarketCurrency.fromStored(nbt.getString("currency")),
-            primaryType = if (nbt.contains("primaryType")) nbt.getString("primaryType") else ""
+            primaryType = if (nbt.contains("primaryType")) nbt.getString("primaryType") else "",
+            // 旧记录没这个键 ⇒ false（普通市场交易），不抛不 warn
+            fromShop = nbt.contains("fromShop") && nbt.getBoolean("fromShop")
         )
     }
 }

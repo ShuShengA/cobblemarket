@@ -15,6 +15,7 @@ import com.shusheng.cobblemarket.market.MarketListing
 import com.shusheng.cobblemarket.market.MarketState
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.PointsAuditLogger
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
@@ -907,13 +908,18 @@ data class HistoryEntry(
      * 服务端在产生记录时（手上还有 nbt）算好，随记录一起存。
      * ⚠ **末尾追加 + 默认值**：精灵记录与旧记录为空串 → 界面退回按 itemId 取色（行为不变）。
      */
-    val itemRarity: String = ""
+    val itemRarity: String = "",
+    /**
+     * 是不是 **RP 商城**卖出的（`TransactionRecord.fromShop`）—— 界面据此把卖家列画成「▣ 商城」
+     * 而不是上架的管理员名。⚠ 末尾追加 + 默认值：旧记录落 false。
+     */
+    val fromShop: Boolean = false
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeString(type); buf.writeString(category); buf.writeString(species); buf.writeInt(price); buf.writeString(
             buyerName
         ); buf.writeString(sellerName); buf.writeLong(timestamp); buf.writeString(currency); buf.writeString(primaryType)
-        buf.writeString(itemRarity)
+        buf.writeString(itemRarity); buf.writeBoolean(fromShop)
     }
 
     companion object {
@@ -928,7 +934,8 @@ data class HistoryEntry(
             timestamp = buf.readLong(),
             currency = buf.readString(),
             primaryType = buf.readString(),
-            itemRarity = buf.readString()
+            itemRarity = buf.readString(),
+            fromShop = buf.readBoolean()
         )
     }
 }
@@ -1756,6 +1763,17 @@ object MarketNetwork {
 
                 // 卖家入账：主货币进待领余额、RP 直接到账（见 CurrencyService.creditSeller）
                 CurrencyService.creditSeller(server, listing.sellerUuid, listing.currency, listing.price.toLong())
+                // RP 审计账本：玩家间 RP 交易（此前只落交易历史，服主拿审计账本对账会漏掉一整类）。
+                // 精灵市场无手续费 ⇒ 两侧等值
+                if (listing.currency == MarketCurrency.POINTS) {
+                    PointsAuditLogger.logMarketTrade(
+                        server, player.uuid, player.name.string,
+                        listing.sellerUuid, listing.sellerName,
+                        listing.price.toLong(), listing.price.toLong(),
+                        "市场购买：${listing.species}",
+                        "Market purchase: ${listing.species}"
+                    )
+                }
                 // 卖家到账音：在线才发（离线那位由上线时的「离线收益」提示兜底，见 MarketEntryScreen）
                 server.playerManager.getPlayer(listing.sellerUuid)?.let { sendSound(it, "market_sold") }
                 listing.status = ListingStatus.SOLD
@@ -3137,6 +3155,17 @@ object MarketNetwork {
                         loanFunded = meowth
                     )
                 }
+                // RP 审计账本：主货币那本走上面的 recordTrade，RP 这本走这里（服主逐笔对账用）。
+                // 物品市场无手续费 ⇒ 两侧等值
+                if (listing.currency == MarketCurrency.POINTS) {
+                    PointsAuditLogger.logMarketTrade(
+                        server, player.uuid, player.name.string,
+                        listing.sellerUuid, listing.sellerName,
+                        totalPriceLong, totalPrice.toLong(),
+                        "市场购买：${listing.itemId} ×$count",
+                        "Market purchase: ${listing.itemId} x$count"
+                    )
+                }
                 listing.count -= count
                 if (listing.count <= 0) {
                     listing.status = ListingStatus.SOLD
@@ -3392,7 +3421,8 @@ object MarketNetwork {
                         r.currency.name, r.primaryType,
                         // 物品名上色用：稀有度**就存在详情列里**（产生记录时手上还有 nbt，见 RecordDetail.item）
                         // ⇒ 这里只提取那段短字符串发下去，不把整个详情列塞进 payload
-                        com.shusheng.cobblemarket.util.RecordDetail.rarityFromDetail(r.detail)
+                        com.shusheng.cobblemarket.util.RecordDetail.rarityFromDetail(r.detail),
+                        r.fromShop
                     )
                 }
                 sendToPlayer(player, HistoryDataPayload(entries))

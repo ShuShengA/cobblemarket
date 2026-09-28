@@ -7,6 +7,7 @@ import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.config.CurrencyHandler
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.PointsAuditLogger
 import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.event.TransactionCategory
 import com.shusheng.cobblemarket.event.TransactionHistory
@@ -1111,6 +1112,20 @@ object BuyOrderNetwork {
                 // ⚠ RP 不进待领账本 —— 「收款」按钮与角标只统计主货币，这正是「RP 收入直接到账」的落点
                 CurrencyService.creditSeller(server, order.buyerUuid, order.currency, unitDiff * pending.count)
                 CurrencyService.creditSeller(server, pending.sellerUuid, order.currency, gross - fee)
+                // RP 审计账本：买家按**实际价**记消费（冻结时多扣的差价已在上一行退回），卖家记实收。
+                // ⚠ 买家的钱在下单时就冻结了，这里记的是交付事件、不是扣款（见 PointsAuditLogger KDoc）
+                if (order.currency == MarketCurrency.POINTS) {
+                    val goods = if (order.type == BuyOrderType.POKEMON)
+                        (pending.extraData["speciesKey"] ?: pending.species)
+                    else order.itemId
+                    PointsAuditLogger.logMarketTrade(
+                        server, order.buyerUuid, order.buyerName,
+                        pending.sellerUuid, pending.sellerName,
+                        gross, gross - fee,
+                        "求购交付：$goods ×${pending.count}（中介费 $fee）",
+                        "Buy order delivery: $goods x${pending.count} (fee $fee)"
+                    )
+                }
                 // 卖家到账音：交付被接受、钱进了他的待领余额；在线才发（离线由「离线收益」提示兜底）
                 server.playerManager.getPlayer(pending.sellerUuid)?.let { sendSound(it, "market_sold") }
                 // 金融系统成交挂钩子：求购交付成交计入买家（求购发起方）交易额

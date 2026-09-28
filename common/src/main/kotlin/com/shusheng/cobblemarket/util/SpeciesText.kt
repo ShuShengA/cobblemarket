@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.util
 
+import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.pokemon.FormData
 import com.cobblemon.mod.common.pokemon.Pokemon
 import com.cobblemon.mod.common.pokemon.Species
@@ -34,6 +35,25 @@ object SpeciesText {
     }
 
     fun translated(species: Species): Text = Text.translatable(translationKey(species))
+
+    /**
+     * 物种 **ID**（`cobblemon:pikachu`）→ 翻译 key（`cobblemon.species.pikachu.name`）。
+     *
+     * 交易账本**全项目统一存 key**（市场 / 拍卖 / 求购都是 `extraData["speciesKey"]`，
+     * 由本类的 [translationKey] 快照而来），而**商城的配置里存的是物种 ID** ⇒
+     * 商城写交易账本前必须转一道。不转会同时坏两件事（2026-09-28 用户实测报的）：
+     * ① 界面拿 ID 当 key 翻译不出来，直接显示成 `cobblemon:pikachu`；
+     * ② CSV 回读会把 ID 补成 `cobblemon.species.cobblemon:pikachu.name`，与内存里那条对不上
+     *   ⇒ 去重键失效，**一条交易显示成两条**。
+     */
+    fun translationKeyOf(speciesId: String): String {
+        val species = Identifier.tryParse(speciesId)?.let { PokemonSpecies.getByIdentifier(it) }
+        if (species != null) return translationKey(species)
+        // 解析不到（该物种已被移除 / 产出它的附属模组没装）：按 Cobblemon 的命名规则拼一个，
+        // 至少比裸 ID 强 —— 界面会显示这条 key 本身，与「翻译缺失」的既有表现一致
+        val namespace = speciesId.substringBefore(':', "cobblemon")
+        return "$namespace.species.${speciesId.substringAfterLast(':')}.name"
+    }
 
     /**
      * aspect 的显示名：走本模组翻译表（`cobblemarket.aspect.<名>`），未收录的显示原文。
