@@ -255,11 +255,21 @@ class SellSelectScreen(
         addDrawableChild(searchField)
         searchField?.text = savedSearch
 
-        // 返回按钮：右上角（与精灵市场统一；交付模式返回求购单界面）
+        // 返回按钮：右上角（与精灵市场统一）。三类来路各有归处：
+        // **交付** → 求购单、**分享** → 入口界面（⚠ 必须 `skipDropAnim`，否则会重播一次掉落入场动画）、
+        // **上架** → 精灵市场
         addDrawableChild(NineSliceButton(
             lx + panelW - 50, 13, 50, 16,
             Text.literal(""),
-            { client?.setScreen(if (deliverMode) BuyOrderScreen() else MarketScreen()) },
+            {
+                client?.setScreen(
+                    when {
+                        deliverMode -> BuyOrderScreen()
+                        shareMode -> MarketEntryScreen(skipDropAnim = true)
+                        else -> MarketScreen()
+                    }
+                )
+            },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
@@ -1176,8 +1186,16 @@ class SellSelectScreen(
         // super.render 内部先调 renderBackground 画市场面板背景，精灵先画会被面板自然盖住
         renderGroudonFly(context, true)
         super.render(context, mouseX, mouseY, delta)
+        // ⚠ 标题有**两处**：构造里的 `Screen.title` 与这里（**真正画给玩家看的是这一处**）——
+        //   加分叉时两处都要改，只改构造那处玩家看不到任何变化（2026-09-28 用户报的就是这个）
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable(if (deliverMode) "cobblemarket.sell.deliver_title" else "cobblemarket.sell.title").formatted(Formatting.GOLD),
+            Text.translatable(
+                when {
+                    deliverMode -> "cobblemarket.sell.deliver_title"
+                    shareMode -> "cobblemarket.share.title_pokemon"
+                    else -> "cobblemarket.sell.title"
+                }
+            ).formatted(Formatting.GOLD),
             width / 2, 20, 0xFFFFFF)
         val lx = width / 2 - 148
         val panelW = 296

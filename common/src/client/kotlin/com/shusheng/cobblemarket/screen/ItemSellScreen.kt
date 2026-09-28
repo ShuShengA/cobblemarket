@@ -86,8 +86,10 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
         val backBtn = NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16,
             Text.literal(""),
-            // 分享模式是从入口界面进来的，返回也回入口（上架模式照旧回物品市场）
-            { client?.setScreen(if (shareMode) MarketEntryScreen() else ItemMarketScreen()) },
+            // 分享模式是从入口界面进来的，返回也回入口（上架模式照旧回物品市场）。
+            // ⚠ 必须 `skipDropAnim`：否则返回入口会**重播一次掉落入场动画** ——
+            //   那段动画是「从游戏外部打开市场」才该播的（2026-09-28 用户报）
+            { client?.setScreen(if (shareMode) MarketEntryScreen(skipDropAnim = true) else ItemMarketScreen()) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
@@ -375,8 +377,11 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
         val centerX = width / 2
         val leftX = centerX - panelWidth / 2
 
+        // ⚠ 标题有**两处**：构造里的 `Screen.title` 与这里（**真正画给玩家看的是这一处**）——
+        //   加分叉时两处都要改，只改构造那处玩家看不到任何变化（2026-09-28 用户报的就是这个）
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.item.sell_title").formatted(Formatting.GOLD),
+            Text.translatable(if (shareMode) "cobblemarket.share.title_item" else "cobblemarket.item.sell_title")
+                .formatted(Formatting.GOLD),
             centerX, 20, 0xFFFFFF)
 
         val dividerY = getListStartY() - 4
