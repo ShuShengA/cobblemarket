@@ -54,7 +54,11 @@ class MarketState private constructor() : PersistentState() {
         sellerUuid: UUID? = null,
         sellerName: String? = null,
         // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
-        htFilter: Int = 0
+        htFilter: Int = 0,
+        /** 太晶属性（属性 key，如 `cobblemon.type.fire`）；null = 不限 */
+        teraFilter: String? = null,
+        /** 超极巨化；null = 不限。旧挂单 extraData 缺这个键 ⇒ 按"非超极巨"处理（新挂单会写） */
+        gmax: Boolean? = null
     ): List<MarketListing> {
         var results = getActiveListings()
         // 搜索词可能带多个候选 id（客户端把中文词展开成「所有名字含该词的物种」，用 | 连接）：
@@ -79,6 +83,12 @@ class MarketState private constructor() : PersistentState() {
         minPrice?.let { p -> results = results.filter { it.price >= p } }
         maxPrice?.let { p -> results = results.filter { it.price <= p } }
         gender?.let { g -> results = results.filter { it.extraData["gender"]?.equals(g, ignoreCase = true) == true } }
+        teraFilter?.let { t -> results = results.filter {
+            it.extraData["teraType"]?.equals(t, ignoreCase = true) == true
+        } }
+        gmax?.let { g -> results = results.filter {
+            (it.extraData["gmaxFactor"]?.toBooleanStrictOrNull() ?: false) == g
+        } }
         typeFilter?.let { t -> results = results.filter {
             (it.extraData["primaryType"]?.contains(t, ignoreCase = true) == true) ||
             (it.extraData["secondaryType"]?.contains(t, ignoreCase = true) == true)

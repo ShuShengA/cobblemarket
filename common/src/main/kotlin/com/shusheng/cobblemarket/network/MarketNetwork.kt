@@ -302,7 +302,11 @@ data class RequestMarketPayload(
     val pageSize: Int,
     val mineOnly: Boolean,
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练
-    val htFilter: Int
+    val htFilter: Int,
+    // 太晶属性筛选（属性 key，如 `cobblemon.type.fire`；空串 = 不限）
+    val teraFilter: String = "",
+    // 超极巨化筛选：0 = 不限，1 = 仅超极巨，2 = 仅非超极巨
+    val gmaxFilter: Int = 0
 ) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
@@ -335,6 +339,8 @@ data class RequestMarketPayload(
                 b.writeInt(p.pageSize)
                 b.writeBoolean(p.mineOnly)
                 b.writeInt(p.htFilter)
+                b.writeString(p.teraFilter)
+                b.writeInt(p.gmaxFilter)
             },
             // 读端用具名参数，读写字段顺序必须一致
             { b ->
@@ -363,7 +369,9 @@ data class RequestMarketPayload(
                     ivOpSpd = b.readInt(),
                     pageSize = b.readInt(),
                     mineOnly = b.readBoolean(),
-                    htFilter = b.readInt()
+                    htFilter = b.readInt(),
+                    teraFilter = b.readString(),
+                    gmaxFilter = b.readInt()
                 )
             }
         )
@@ -1310,7 +1318,13 @@ object MarketNetwork {
                         if (payload.ivExactSpd >= 0) put("ivsSpd", payload.ivOpSpd.coerceIn(0, 2))
                     },
                     sellerUuid = if (payload.mineOnly) player.uuid else null,
-                    htFilter = payload.htFilter
+                    htFilter = payload.htFilter,
+                    teraFilter = payload.teraFilter.ifBlank { null },
+                    gmax = when (payload.gmaxFilter) {
+                        1 -> true
+                        2 -> false
+                        else -> null
+                    }
                 )
 
                 val pageSize = payload.pageSize.coerceIn(1, 30)
@@ -3134,6 +3148,8 @@ object MarketNetwork {
             //   （异兽、形态变化尤其），太晶本身就该是写明的一项，不该由「跟主属性比一比」决定给不给看。
             // 附属模组只能写官方这个字段 ⇒ 我们读它 = 天然兼容，不需要特判。
             "teraType" to "cobblemon.type.${pokemon.teraType.id.path}",
+            // 超极巨化：**挂单时就写下来**，供列表筛选用（旧挂单没这个键 ⇒ 筛选那侧按缺键回退读 NBT）
+            "gmaxFactor" to pokemon.gmaxFactor.toString(),
             "ivsHp" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP].toString(),
             "ivsAtk" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK].toString(),
             "ivsDef" to pokemon.ivs[com.cobblemon.mod.common.api.pokemon.stats.Stats.DEFENCE].toString(),
