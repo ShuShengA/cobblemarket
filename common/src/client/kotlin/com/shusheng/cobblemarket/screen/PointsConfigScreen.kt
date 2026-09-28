@@ -36,7 +36,7 @@ class PointsConfigScreen : Screen(
     /** 玩家间 RP 交易开关（默认关）；控制上架界面的货币切换按钮显不显示 */
     private var pointsMarketEnabled = false
 
-    /** 「RP 当任务货币」开关（默认关）：打开后玩家身份的 OP / FTB 任务模组也能发放 RP */
+    /** 「give/take 权限下放」开关（默认关）：打开后玩家身份的 OP / FTB 任务模组也能发放 RP */
     private var rpAsQuestCurrency = false
 
     /** RP 的四个费率（%，服务端下发）：「费率配置」二级弹窗填初值，提醒弹窗看它们是否全 0 */
@@ -1079,7 +1079,7 @@ class PointsConfigScreen : Screen(
         const val ROW_TIMEOUT = 7
         const val ROW_CURRENCY = 8
 
-        /** 设置项占的行数（总开关 / 玩家间交易 / 当任务货币 / 费率配置 / 充值开关 / 收款码 / 券图 / 超时 / 货币单位） */
+        /** 设置项占的行数（总开关 / 玩家间交易 / give/take 权限下放 / 费率配置 / 充值开关 / 收款码 / 券图 / 超时 / 货币单位） */
         const val FIXED_ROWS = ROW_CURRENCY + 1
 
         /**
