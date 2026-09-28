@@ -75,6 +75,8 @@
 
 ### Fixes
 
+- **Switching to an older build and back silently reset your config**: after running an older build once (even if you only changed some unrelated setting), coming back to the newer build **silently restored any setting that older build did not know about** — e.g. the RP Shop turned itself off, and the external redeem-code secret was wiped (**invalidating every code already issued on your website**). Saving the config now **keeps the parts the current build does not recognise**, so switching builds back and forth no longer loses anything
+
 - **Nature and Ability sat too close together**: both render in white with only 8px between them, so the line could read as one run of text (e.g. "Nature: Relaxed  Ability: Synchronize"). The gap is now wider and consistent across every Pokemon info screen
 - **Ball names rendered as white text in the UI**: a ball that is purple in the inventory (e.g. Master Ball) showed as plain white text in the Pokemon hover windows. Ball names now use the **rarity colour** on every Pokemon info screen, and the screens that were **not showing the ball line at all** (listing picker, auction creation picker, pending returns, admin) now show it
 - **Some Pokémon had the wrong battle-cry animation**: their body would lock into the wrong pose — Gurdurr could not lift its girder (the arm stayed at its side). This is now fixed

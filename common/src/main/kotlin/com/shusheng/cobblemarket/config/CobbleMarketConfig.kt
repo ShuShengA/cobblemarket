@@ -1080,7 +1080,31 @@ object CobbleMarketConfig {
         runCatching {
             if (configFile.exists()) configFile.copyTo(File(configFile.parentFile, configFile.name + ".bak"), overwrite = true)
         }.onFailure { CobbleMarket.LOGGER.warn("Failed to back up config before save: {}", it.message) }
-        configFile.writeText(gson.toJson(data))
+        configFile.writeText(gson.toJson(preserveUnknownKeys(data)))
+    }
+
+    /**
+     * 落盘前，把**当前文件里、本版本不认识**的顶层键原样并回来。
+     *
+     * ⚠ **为什么必须做**：`save()` 是**整份重写**的，只写"本版本认识的键"。降级到不认识某些
+     *   字段的旧版本时，那个版本只要 `save()` 一次（改任何一项设置都会），就会把它们**整个抹掉**；
+     *   再升回来时 `load()` 判定为"缺字段"⇒ 按默认值补写落盘 ⇒ **服主的配置静默回默认**。
+     *   2026-09-28 用户实测：1.3.0 配好 RP 商城 → 换 1.2.1 跑了一会儿（改过配置）→ 换回 1.3.0
+     *   ⇒ **RP 商城自动关上了**。更疼的是 `pointsExternalSecret`（外部签名码密钥）也一起丢，
+     *   那意味着网站上已签发的兑换码**全部验签失败**。
+     *
+     * 只并**顶层**：本版本写的键一律以新值覆盖（不合并），文件里多出来的键原样保留。
+     * 副作用：废弃的键会一直留在文件里 —— 比起静默丢配置，这个可以接受。
+     */
+    private fun preserveUnknownKeys(fresh: Map<String, Any?>): Map<String, Any?> {
+        if (!configFile.exists()) return fresh
+        val old = runCatching {
+            gson.fromJson(configFile.readText(), Map::class.java) as? Map<*, *>
+        }.getOrNull() ?: return fresh
+        val extra = old.entries.mapNotNull { (k, v) ->
+            if (k is String && k !in fresh) k to v else null
+        }.toMap()
+        return if (extra.isEmpty()) fresh else fresh + extra
     }
 
     fun getCurrencyItem(): Item {
