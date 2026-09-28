@@ -216,7 +216,12 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
         infoScroll = infoScroll.coerceIn(0, infoMaxScroll())
         context.enableScissor(0, viewTop, width, viewBottom)
         // 分割线宽 = 本界面内容栏宽（260，见 startX = width/2 - 130）减去左右各 10
-        EntryBadgeRenderer.drawInfoLines(context, entry, name, centerX, infoY - infoScroll, dividerW = INFO_DIVIDER_W)
+        EntryBadgeRenderer.drawInfoLines(
+            context, entry, name, centerX, infoY - infoScroll, dividerW = INFO_DIVIDER_W,
+            // 这是整页界面（不是跟着鼠标的悬停窗）⇒ 鼠标能停到证章行上，接二级窗
+            mouseX = mouseX, mouseY = mouseY
+        )
+        EntryBadgeRenderer.drawMarksMoreTooltip(context)
         context.disableScissor()
     }
 
@@ -231,7 +236,9 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
         return infoRows * 10 +
             EntryBadgeRenderer.movesBlockHeight(entry.moves) +
             // 证章一行放几个跟随可用宽（本界面固定 INFO_DIVIDER_W，与 render 里 drawInfoLines 的 dividerW 同源）
-            EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves, INFO_DIVIDER_W)
+            // ⚠ 证章的可用宽必须是**分割线的实际宽度**（居中弹窗恒为 MOVES_MAX_W）——
+            //   原先传 INFO_DIVIDER_W(240) 与实际画的 132 差 108px，证章一多就**溢出弹窗**
+            EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves, EntryBadgeRenderer.MOVES_MAX_W)
     }
 
     private fun infoMaxScroll(): Int =

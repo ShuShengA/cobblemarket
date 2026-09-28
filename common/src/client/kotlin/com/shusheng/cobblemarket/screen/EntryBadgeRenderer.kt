@@ -48,10 +48,19 @@ object EntryBadgeRenderer {
     private const val MOVES_BLOCK_H = DIVIDER_H + MOVE_ROW_H * 2 + DIVIDER_H
 
     /**
-     * 技能块（弹窗那版）的整块宽度：取 132 与悬停窗最宽的信息行（价格/性格特性行约 130~140）同量级，
-     * 不会把框撑宽。两列各占一半（减去 [MOVE_COL_GAP]）。
+     * **居中弹窗那一族里，横向三样东西的统一宽度**：技能块、它上下的两条分割线、**以及证章图标行**
+     *（取 132：与悬停窗最宽的信息行 130~140 同量级，不会把框撑宽；技能块两列各占一半、
+     * 减去 [MOVE_COL_GAP]）。
+     *
+     * ⚠ **这是公开常量、不是内部实现细节**：各弹窗**按内容算高度**时必须拿它当
+     *   「证章一行排几个」的可用宽（见 [marksBlockHeight] 的 `availableWidth`）。
+     *   拿别的值（124 / 240 / `dialogW - k`）去算，行数就与 [drawInfoLines] 实际画的**对不上** ——
+     *   **证章一多就溢出弹窗**（2026-09-29 查证：市场购买 / 购买确认界面 / 待交付 / 管理端精灵
+     *   四个弹窗各传各的，其中购买确认界面传的是 240，差得最多）。
+     * ⚠ **两列弹窗**（出价弹窗 / 管理端拍卖详情）的左列是**固定 124**、证章也是自己画的
+     *   ⇒ 那边照旧传 124，**别套这个常量**。
      */
-    private const val MOVES_MAX_W = 132
+    const val MOVES_MAX_W = 132
 
     /** 技能块两列之间的间隔：名字长时两列不贴上 */
     private const val MOVE_COL_GAP = 16
@@ -359,7 +368,7 @@ object EntryBadgeRenderer {
     }
 
     /**
-     * 证章图标行：从 [leftX] 开始排列，每行最多 [MARKS_PER_ROW] 个 8×8 图标；超出的部分第二行居中显示灰色「+N」。
+     * 证章图标行：从 [leftX] 开始排列 8×8 图标，**一行放几个跟随可用宽**（见 [marksPerRow]），放不下的第二行居中「+N」。传了鼠标坐标时还会登记「+N」区域的悬停（见 [drawMarksMoreTooltip]）。
      * 服务端直接传纹理路径（不依赖客户端 Marks 注册表解析）。返回该区块占用的高度（12 或 24）。
      * 拍卖 / 管理端拍卖 / 待归还 / 管理端精灵悬停共用（照市场悬停 tooltip 的排法）。
      */
@@ -454,7 +463,11 @@ object EntryBadgeRenderer {
      */
     fun drawMarksRow(
         context: DrawContext, marks: List<String>, leftX: Int, y: Int,
-        availableWidth: Int, centered: Boolean
+        availableWidth: Int, centered: Boolean,
+        // 鼠标坐标：传了（且这一行有「+N」、鼠标正停在这一行上）就**登记**下来，
+        // 等一级悬停窗画完之后再画二级的证章总览窗（见 [drawMarksMoreTooltip]）。
+        // ⚠ 界面在**画悬停窗**时传它（那儿才有鼠标坐标）；不传 = 没有二级窗
+        mouseX: Int = -1, mouseY: Int = -1
     ): Int {
         val textures = marks.mapNotNull { Identifier.tryParse(it) }
         if (textures.isEmpty()) return 0
@@ -473,9 +486,72 @@ object EntryBadgeRenderer {
         if (textures.size > perRow) {
             // 「+N」居中在**图标行**下方（与图标同基准）
             context.drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer, "+${textures.size - perRow}", startX + rowWidth / 2, y + 12, 0xAAAAAA)
+            // ⭐ 鼠标停在这一块（整行 24px 高，图标 + 「+N」都算）⇒ 等会儿补一个**全部证章**的二级窗。
+            //    ⚠ 判定用**整行**而不是只认「+N」那几个像素：玩家想查证章时鼠标落在哪块都有可能
+            if (mouseX >= leftX && mouseX < leftX + availableWidth && mouseY >= y && mouseY < y + 24) {
+                marksMoreHit = MarksMoreHit(leftX, y, availableWidth, textures, System.currentTimeMillis())
+            }
             return 24
         }
         return 12
+    }
+
+    /** 本帧鼠标下的「+N」区域（画证章行时登记，见 [drawMarksRow]） */
+    private var marksMoreHit: MarksMoreHit? = null
+
+    private class MarksMoreHit(
+        val x: Int, val y: Int, val width: Int,
+        /** **全部**证章贴图（不只是画出来的那几个）—— 二级窗要列全 */
+        val textures: List<Identifier>,
+        val at: Long
+    )
+
+    /** 二级窗的格子与内边距（照 1.3.0 RP 商城那个证章窗） */
+    private const val MARK_CELL = 12
+    private const val MARK_TIP_PAD = 4
+    /** 二级窗里一行排几个 —— **固定值**：它自己的宽度就是按它反算的（与主窗口那套「跟随可用宽」无关） */
+    private const val MARK_TIP_PER_ROW = 10
+    /** 登记的有效期：超过这么久没被取用就当过期（防止某帧没画证章行时残留上一帧的） */
+    private const val MARKS_MORE_TTL_MS = 120L
+
+    /**
+     * **「+N」的二级悬停窗**：鼠标停在证章行上时，列出这只精灵的**全部**证章图标。
+     *
+     * ⚠ **必须在一级悬停窗画完之后调**（它要盖在一级窗之上）—— 各界面在 [drawMarksRow] 之后、
+     *   `renderTooltip` 的**末尾**调一次即可。没登记（鼠标没停在证章行上）时**什么都不画**。
+     * ⚠ 落点与项目里其余悬停窗**同一套**（鼠标右移 12、优先放上方、再钳进屏幕），
+     *   别自己另发明一套 —— 见 1.3.0 `PointsMarketScreen.renderMarksTooltip` 的同款注释。
+     * ⚠ 用完就清，避免下一帧在别处冒出来；再加个 [MARKS_MORE_TTL_MS] 兜底。
+     */
+    fun drawMarksMoreTooltip(context: DrawContext) {
+        val hit = marksMoreHit ?: return
+        marksMoreHit = null
+        if (System.currentTimeMillis() - hit.at > MARKS_MORE_TTL_MS) return
+        val textures = hit.textures
+        if (textures.isEmpty()) return
+
+        val rows = (textures.size + MARK_TIP_PER_ROW - 1) / MARK_TIP_PER_ROW
+        val w = minOf(textures.size, MARK_TIP_PER_ROW) * MARK_CELL + MARK_TIP_PAD * 2
+        val h = rows * MARK_CELL + MARK_TIP_PAD * 2
+        // 落点照 HistoryScreen.renderTooltip：鼠标右移 12、**优先放上方 4px**（顶不下才翻到下方），再钳进屏幕
+        val screenW = context.scaledWindowWidth
+        val screenH = context.scaledWindowHeight
+        val tx = minOf(hit.x + hit.width + 12, screenW - w - 4).coerceAtLeast(4)
+        val tyAbove = hit.y - h - 4
+        val ty = if (tyAbove <= 0) minOf(hit.y + 24 + 4, screenH - h - 4).coerceAtLeast(4) else tyAbove
+
+        context.matrices.push()
+        context.matrices.translate(0.0, 0.0, 400.0)
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx, ty, w, h, 1, ROW_BACKGROUND_TEX_H)
+        textures.forEachIndexed { idx, texture ->
+            com.cobblemon.mod.common.api.gui.blitk(
+                matrixStack = context.matrices, texture = texture,
+                x = tx + MARK_TIP_PAD + (idx % MARK_TIP_PER_ROW) * MARK_CELL,
+                y = ty + MARK_TIP_PAD + (idx / MARK_TIP_PER_ROW) * MARK_CELL,
+                width = 8, height = 8
+            )
+        }
+        context.matrices.pop()
     }
 
     /**
@@ -525,9 +601,15 @@ object EntryBadgeRenderer {
      *   技能块会**戳出面板**。弹窗那边框宽都 ≥ 300 所以从没暴露过，自适应面板必须先兜住。
      * ⚠ 证章**不参与**：方向是反的 —— 宽度决定证章排几个（见 [marksPerRow]）。
      */
-    fun infoPanelContentWidth(entry: ListingEntry, displayName: Text): Int {
+    fun infoPanelContentWidth(
+        entry: ListingEntry, displayName: Text,
+        /** 与 [drawInfoLines] 的 `footer` **必须传同一个**（否则宽量不到那几行） */
+        footer: List<Pair<Text?, Int>>? = null
+    ): Int {
         val font = MinecraftClient.getInstance().textRenderer
         var w = measureInfoLines(entry, displayName)
+        // 自带尾部那几行也要量（金额随挂单变化，不量会被截断）
+        footer?.forEach { (line, _) -> if (line != null) w = maxOf(w, font.getWidth(line)) }
         w = maxOf(w, movesBlockWidth(entry.moves))
         // 名字行尾部的公母 / 体型图标不计入文本宽，单独补
         w = maxOf(w, nameLineWidth(displayName, entry.gender, entry.sizeCategory))
@@ -548,7 +630,11 @@ object EntryBadgeRenderer {
      * ⚠ 这里**不能复用 [marksBlockHeight]**：那个是给弹窗用的，没有技能块时会多算一条前导
      *   分割线（32 vs 实际的 22）——`drawInfoLines` 里证章块与技能块**共用**那条线。
      */
-    fun measureInfoLinesHeight(entry: ListingEntry, availableWidth: Int): Int {
+    fun measureInfoLinesHeight(
+        entry: ListingEntry, availableWidth: Int,
+        /** 与 [drawInfoLines] 的 `footer` **必须传同一个**（否则背景框和内容对不上） */
+        footer: List<Pair<Text?, Int>>? = null
+    ): Int {
         var h = MOVE_ROW_H                                   // 名字★Lv
         h += MOVE_ROW_H                                      // 属性（含太晶）
         if (com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(entry.gmaxFactor, entry.dmaxLevel) != null) {
@@ -570,16 +656,44 @@ object EntryBadgeRenderer {
             h += if (entry.marks.size > marksPerRow(availableWidth)) 24 else 12
             h += DIVIDER_H
         }
-        h += MOVE_ROW_H                                      // 卖家
-        h += MOVE_ROW_H                                      // 价格
+        if (footer == null) {
+            h += MOVE_ROW_H                                  // 卖家
+            h += MOVE_ROW_H                                  // 价格
+        } else {
+            // 自带尾部：null 元素是分割线，占 DIVIDER_H
+            footer.forEach { (line, _) -> h += if (line == null) DIVIDER_H else MOVE_ROW_H }
+        }
         return h
     }
 
     fun drawInfoLines(
         context: DrawContext, entry: ListingEntry, displayName: Text,
-        centerX: Int, startY: Int, dividerW: Int, maxWidth: Int = Int.MAX_VALUE
+        centerX: Int, startY: Int, dividerW: Int, maxWidth: Int = Int.MAX_VALUE,
+        // **替换默认尾部**（卖家 + 价格）：null = 用默认那两行（市场 / 待交付 / 管理端那一族）。
+        // 传入则整段替换 —— 拍卖播报要的是「卖家 / 当前价 / 起拍价 / 加价 / 倒计时 / 领先者」，
+        // 而市场那套的「价格」对拍卖没有意义（拍卖有起拍价 / 当前价 / 加价**三个**金额概念）。
+        // ⚠ 元素为 null = 分割线（与行列表其余地方同一约定）
+        footer: List<Pair<Text?, Int>>? = null,
+        // **排版**：false（默认）= 弹窗那一族（**每行都居中**）；
+        // true = 列表悬停窗 / 聊天播报窗那一族 —— ⚠ **别理解成「所有行都靠左」，那族是混合的**：
+        //   **文字行**贴左缘、**分割线与技能块撑满内容宽**，而**证章行照样在内容宽里居中**
+        //  （图标本就不一定占满一行，左对齐会显偏左 —— 市场行悬停窗就是这么画的），
+        //   技能块**内部的两列**也各自居中（见 [drawMoveGrid]）。
+        // 2026-09-29 用户要求聊天窗「完全照搬精灵行悬停窗的排布」，并**特意提醒了证章这一点**。
+        // ⚠ `centerX` 两种模式都传**内容区中心**：左对齐时左缘由它减去半个内容宽算出来
+        //（这样调用方不必知道自己该传"中心"还是"左缘"）
+        alignLeft: Boolean = false,
+        // 鼠标坐标：**只有弹窗传** —— 传了才会在鼠标停到证章行时登记、稍后补一个二级的证章总览窗
+        //（见 [drawMarksMoreTooltip]）。
+        // ⚠ **行悬停窗 / 聊天播报窗不要传**：那类窗跟着鼠标走、鼠标一移开就没了，
+        //   根本不可能停到证章行上 ⇒ 做了也没人用得到（2026-09-29 用户指出）。
+        mouseX: Int = -1, mouseY: Int = -1
     ): Int {
         val font = MinecraftClient.getInstance().textRenderer
+        val leftX = centerX - dividerW / 2
+        // 分割线的**实际**宽度：居中版固定 MOVES_MAX_W（三条线一样长）、左对齐版撑满内容宽。
+        // ⚠ 证章「一行排几个」要跟着**它**走，而不是跟着内容宽 `dividerW`（见下面 marksLine 分支的说明）
+        val marksAvailW = if (alignLeft) dividerW else MOVES_MAX_W
         val hp = StatNames.HP
         val atk = StatNames.ATK
         val def = StatNames.DEF
@@ -635,7 +749,7 @@ object EntryBadgeRenderer {
             movesLine = lines.size
             lines.add(null to 0)
         }
-        // 证章区块（证章不影响能力，纯外观展示）：技能块下方，图标行 + 下分割线（每行 MARKS_PER_ROW 个）
+        // 证章区块（证章不影响能力，纯外观展示）：技能块下方，图标行 + 下分割线（一行几个跟随可用宽）
         // 服务端直接传纹理路径（不依赖客户端 Marks 注册表解析）
         var marksLine = -1
         if (entry.marks.isNotEmpty()) {
@@ -643,13 +757,20 @@ object EntryBadgeRenderer {
             lines.add(null to 0)
             lines.add(null to 0)
         }
-        lines.add(
-            Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)) to 0xFFFFFF
-        )
-        lines.add(
-            Text.translatable("cobblemarket.gui.tooltip_price").append(
-                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)) to 0xFFFFFF
-        )
+        if (footer == null) {
+            // 默认尾部：卖家 + 价格（市场确认弹窗 / 待交付 / 管理端那一族）
+            lines.add(
+                Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)) to 0xFFFFFF
+            )
+            lines.add(
+                Text.translatable("cobblemarket.gui.tooltip_price").append(
+                    Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)) to 0xFFFFFF
+            )
+        } else {
+            // 调用方自带的尾部：拍卖播报那条要的是「卖家 / 当前价 / 起拍价 / 加价 / 倒计时 / 领先者」
+            // （市场那套的「价格」对拍卖没有意义 —— 拍卖有三个金额概念）
+            lines.addAll(footer)
+        }
 
         var y = startY
         var i = 0
@@ -658,30 +779,32 @@ object EntryBadgeRenderer {
             when {
                 i == movesLine -> {
                     // 技能块：上分割线 + 两行技能 + 下分割线（整块自画，返回值即占用高度）
-                    y += drawMovesBlock(context, entry.moves, centerX, y, dividerW)
+                    // ⚠ 左对齐走 `...Left` 那一支（分割线**撑满内容宽**）；居中版才是固定的 MOVES_MAX_W
+                    y += if (alignLeft) drawMovesBlockLeft(context, entry.moves, leftX, dividerW, y)
+                    else drawMovesBlock(context, entry.moves, centerX, y, dividerW)
                 }
                 line == null && i == marksLine -> {
-                    // 证章图标行：**一行放几个跟着分割线长度**（能放几个放几个）；放不下的第二行居中「+N」
-                    val textures = entry.marks.mapNotNull { Identifier.tryParse(it) }
-                    val perRow = marksPerRow(dividerW)
-                    val shown = minOf(perRow, textures.size)
-                    val rowW = shown * 12 - 4
-                    textures.take(perRow).forEachIndexed { idx, texture ->
-                        com.cobblemon.mod.common.api.gui.blitk(
-                            matrixStack = context.matrices, texture = texture,
-                            x = centerX - rowW / 2 + idx * 12, y = y, width = 8, height = 8
-                        )
-                    }
-                    if (textures.size > perRow) {
-                        context.drawCenteredTextWithShadow(font, "+${textures.size - perRow}", centerX, y + 12, 0xAAAAAA)
-                        y += 24
-                    } else {
-                        y += 12
-                    }
+                    // 证章图标行：**走共用入口 [drawMarksRow]**（一行放几个、居中口径、以及「+N」的
+                    // 二级悬停登记都在那边 —— 全项目只有那一份定义，别再在这儿内联一份）。
+                    // ⚠ 可用宽必须传**分割线的实际宽度** `marksAvailW`，不是内容宽 `dividerW`：
+                    //   居中版的分割线固定 MOVES_MAX_W（三条线一样长），而 dividerW 是内容宽（能到 300+）
+                    //   —— 拿内容宽算「一行几个」，图标就会**排到分割线外面**
+                    //  （2026-09-29 用户报：市场购买弹窗证章多时第一行超出了分割线）
+                    y += drawMarksRow(
+                        context = context, marks = entry.marks,
+                        leftX = centerX - marksAvailW / 2, y = y,
+                        availableWidth = marksAvailW, centered = true,
+                        mouseX = mouseX, mouseY = mouseY
+                    )
                 }
                 line == null -> {
-                    // 分割线：1px 灰线，宽度与技能块统一走 MOVES_MAX_W（三条线一样长）
-                    drawDivider(context, centerX, y, MOVES_MAX_W)
+                    // 分割线：居中版宽度与技能块统一走 MOVES_MAX_W（三条线一样长）；
+                    // 左对齐版**撑满内容宽**（照市场行悬停窗 —— 那边分割线就是跟提示框同宽）
+                    if (alignLeft) {
+                        context.fill(leftX, y + 4, leftX + dividerW, y + 5, 0xFF888888.toInt())
+                    } else {
+                        drawDivider(context, centerX, y, MOVES_MAX_W)
+                    }
                     y += DIVIDER_H
                 }
                 i == heldItemLine -> {
@@ -692,7 +815,7 @@ object EntryBadgeRenderer {
                     val noteW = hiddenNote?.let { font.getWidth(it) } ?: 0
                     val heldText = TextUtil.truncateStyled(line, (maxWidth - 14 - noteW).coerceAtLeast(0))
                     val textW = font.getWidth(heldText)
-                    val x = centerX - (textW + 14 + noteW) / 2
+                    val x = if (alignLeft) leftX else centerX - (textW + 14 + noteW) / 2
                     context.drawTextWithShadow(font, heldText, x, y, color)
                     heldIconStack(entry.heldItemId, entry.heldItemNbt)?.let { heldStack ->
                         com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
@@ -708,15 +831,21 @@ object EntryBadgeRenderer {
                     // 尾部图标不参与文本宽度，截断预算里先扣掉（居中总宽 = 名字 + 尾部 + 6）
                     val tail = nameTailWidth(entry.gender, entry.sizeCategory)
                     val nameBudget = if (tail == 0) maxWidth else maxWidth - tail - 6
-                    drawNameLine(context, TextUtil.truncateStyled(line, nameBudget), entry.gender, centerX, y, color, entry.sizeCategory)
+                    val nameText = TextUtil.truncateStyled(line, nameBudget)
+                    if (alignLeft) {
+                        drawNameLineLeft(context, nameText, entry.gender, leftX, y, color, entry.sizeCategory)
+                    } else {
+                        drawNameLine(context, nameText, entry.gender, centerX, y, color, entry.sizeCategory)
+                    }
                     y += 10
                 }
                 else -> {
-                    // 用"算好 x 再左对齐"的方式画（视觉上仍是居中）：drawCenteredTextWithShadow
+                    // 居中版用"算好 x 再左对齐"的方式画：drawCenteredTextWithShadow
                     // 在这套字体下会让行首汉字比后面的字高一点点，出价界面用 drawTextWithShadow 就正常。
                     // 超宽行按可用宽截断（保留分段着色），避免画出弹窗
                     val drawn = TextUtil.truncateStyled(line, maxWidth)
-                    context.drawTextWithShadow(font, drawn, centerX - font.getWidth(drawn) / 2, y, color)
+                    val x = if (alignLeft) leftX else centerX - font.getWidth(drawn) / 2
+                    context.drawTextWithShadow(font, drawn, x, y, color)
                     y += 10
                 }
             }

@@ -1476,7 +1476,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 // 技能块：分割线 + 两行技能 + 分割线（左对齐版，分割线撑满提示框全宽）
                 rowY += EntryBadgeRenderer.drawMovesBlockLeft(context, entry.moves, tx, maxWidth, rowY)
             } else if (line == null && i == marksLine) {
-                // 证章图标行：左对齐排（照市场悬停；超过 6 个第二行左对齐显示「+N」）
+                // 证章图标行：**居中**排（2026-09-29 统一口径，见 docs/pokemon_info_surfaces.md 第七节；「+N」同样居中）
                 rowY += EntryBadgeRenderer.drawMarksRow(context, entry.marks, tx, rowY, maxWidth, centered = true)
             } else if (line == null) {
                 // 分割线：1px 灰线，撑满提示框全宽（与信息区分隔线一致，不随证章数量变化）
@@ -1533,7 +1533,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         return 60 + infoRows * 10 +
             EntryBadgeRenderer.movesBlockHeight(entry.moves) +
             // 证章一行几个跟随可用宽（见 marksPerRow）—— 保守传最小宽 ⇒ 高度宁多不少
-            EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves, 124) + 32
+            // ⚠ 证章的可用宽必须是**分割线的实际宽度**（居中弹窗恒为 MOVES_MAX_W），见 MarketScreen 同处说明
+            EntryBadgeRenderer.marksBlockHeight(entry.marks, entry.moves, EntryBadgeRenderer.MOVES_MAX_W) + 32
     }
 
     /** 弹窗实际高度：**按屏幕钳制**（信息行多时设计高度会顶出屏幕，见求购单创建弹窗那套） */
@@ -1606,9 +1607,13 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         context.enableScissor(dialogX, viewTop, dialogX + dialogW, viewBottom)
         EntryBadgeRenderer.drawInfoLines(
             context, entry, EntryBadgeRenderer.nameWithShinyStar(confirmDisplayName, entry.shiny),
-            centerX, viewTop - confirmScroll, dividerW = dialogW - 156, maxWidth = dialogW - 24
+            centerX, viewTop - confirmScroll, dividerW = dialogW - 156, maxWidth = dialogW - 24,
+            // 弹窗：鼠标能自由移动 ⇒ 停在证章行（有「+N」时）补一个全部证章的二级窗
+            mouseX = mouseX, mouseY = mouseY
         )
         context.disableScissor()
+        // ⚠ 二级窗要在一级窗（信息行）之后画
+        EntryBadgeRenderer.drawMarksMoreTooltip(context)
 
         // 确认 / 取消按钮
         val btnY = dialogY + dialogH - 28
