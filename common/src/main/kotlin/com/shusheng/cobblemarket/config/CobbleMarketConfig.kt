@@ -137,6 +137,21 @@ object CobbleMarketConfig {
     var pointsMarketEnabled: Boolean = false
         private set
     /**
+     * **「RP 当任务货币」开关**（默认关）：打开后，**玩家身份的 OP（命令等级 ≥ 2）也能发放 / 回收 RP**。
+     *
+     * 存在的理由：FTB 之类的任务模组要把 RP 当奖励发给玩家，而它们**以完成任务的普通玩家身份**
+     * 执行命令（既不是服主、也不是控制台）—— 不开这个开关就永远被 `denyNonOwner` 拒。
+     * 打开后 FTB 里写 `/market points give @s N`（`@s` = 完成这个任务的那位玩家）即可自动到账。
+     *
+     * ⚠ 判定用「**玩家身份** + 等级 ≥ 2」而不是"是不是 OP"：命令方块（非玩家实体）天然被排除。
+     * ⚠ 打开 = 接受"任何玩家 OP 都能发 RP"（`/op` 可被传递 —— 这正是当初改判"不认 OP"的根因）。
+     *   只把 RP 当充值货币 / 服主手动发放时**保持关闭**。
+     * ⚠ 作用范围**只有 `/market points give|take` 两条命令**，
+     *   不碰权限授予（`perm grant`）与撤销坏账（`loan clear`）那些服主专属命令。
+     */
+    var rpAsQuestCurrency: Boolean = false
+        private set
+    /**
      * 外部签名码的 HMAC 密钥（服主在网站/发卡网卖RP 时用）。**留空 = 关闭外部码**，只接受本地生成的码。
      * ⚠ 只能放在服务端（网站后端 / 服主本机），绝不能进客户端、日志或公开仓库。
      */
@@ -411,6 +426,12 @@ object CobbleMarketConfig {
         save()
     }
 
+    /** 「RP 当任务货币」开关切换并落盘（仅服务端配置界面调用） */
+    fun setRpAsQuestCurrency(v: Boolean) {
+        rpAsQuestCurrency = v
+        save()
+    }
+
     /** 游戏内充值开关切换并落盘（仅服务端配置界面调用） */
     fun setPointsShopEnabled(v: Boolean) {
         pointsShopEnabled = v
@@ -625,7 +646,7 @@ object CobbleMarketConfig {
                     "auctionMinBidIncrement", "auctionAntiSnipeSeconds", "maxAuctionsPerPlayer",
                     "eggTradingEnabled", "buyOrderFeePercent", "buyOrderExpiryDays",
                     "maxBuyOrdersPerPlayer", "marketEnabled",
-                    "shareEnabled", "pointsEnabled", "pointsMarketEnabled",
+                    "shareEnabled", "pointsEnabled", "pointsMarketEnabled", "rpAsQuestCurrency",
                     "pointsExternalSecret", "pointsExternalMaxDays",
                     "pointsShop",
                     "serverOwners",
@@ -803,6 +824,8 @@ object CobbleMarketConfig {
                 pointsEnabled = data["pointsEnabled"] as? Boolean ?: false
                 // 缺失按 false（保守）：老配置升级上来时玩家间 RP 交易一律先关着
                 pointsMarketEnabled = data["pointsMarketEnabled"] as? Boolean ?: false
+                // 缺失按 false（保守）：老配置升级上来时「OP/FTB 能发 RP」一律先关着
+                rpAsQuestCurrency = data["rpAsQuestCurrency"] as? Boolean ?: false
                 pointsExternalSecret = data["pointsExternalSecret"] as? String ?: ""
                 pointsExternalMaxDays = ((data["pointsExternalMaxDays"] as? Double)?.toInt() ?: 365).coerceAtLeast(0)
                 val shop = data["pointsShop"] as? Map<*, *>
@@ -908,6 +931,7 @@ object CobbleMarketConfig {
                 "pointsExternalSecret" to "外部签名码的 HMAC 密钥：服主在自己的网站 / 发卡网卖RP 时，用同一个密钥签码，玩家在游戏内兑换。⚠ **留空 = 关闭外部码**（只接受 /market points code create 生成的本地码）。**必须放在服务端**（网站后端 / 服主本机），绝不能进客户端、日志或公开仓库；服务端日志只记码前缀不记全码（码 = 钱）。建议 ≥32 字符随机串 / HMAC secret for externally signed RP codes: sign codes on your website / card shop with the same secret, players redeem them in game. ⚠ **Leave blank to disable external codes** (only locally generated codes work). **Server-side only** (website backend / your machine) — never ship it in a client, log, or public repo. Logs record only a code prefix, never the full code (a code is money). Recommended: 32+ random characters",
                 "pointsExternalMaxDays" to "外部码的有效期上限（天，默认 365）：签发时有效期跨度超过它的码一律拒绝，防「永久码」满天飞（永久码的 serial 必须永久保留，会让存档持续膨胀）/ Maximum validity for external codes in days (default 365): codes valid for longer are rejected, preventing \"forever codes\" (whose serials must be kept forever and would bloat the save)",
                 "pointsEnabled" to "RP 总开关（默认关闭）：RP 是本模组的第二货币，与主货币并行流通但**不可兑换、不可转让、不参与金融**。关闭时：玩家设置价格的界面不出现RP 按钮，除RP 商城外的任何地方都不能用RP 交易（服主仍可在RP 商城上架精灵/物品供持有RP 的玩家购买）。⚠ RP 从哪来由服主决定（当任务奖励发、当充值货币卖，或两者并用），开启前请先规划好发放渠道 / RP master switch (off by default): RP is this mod's second currency, running alongside the primary one but **not convertible, not transferable, and outside the finance system**. When off, the RP button is hidden from every price-setting screen and RP cannot be used anywhere except the RP Shop (owners can still stock the RP Shop for players who already hold RP). ⚠ Where RP comes from is up to you (handed out as a reward, sold as a top-up, or both) — plan your distribution channel before enabling",
+                "rpAsQuestCurrency" to "「RP 当任务货币」开关（默认关闭）：打开后**玩家身份的 OP（命令等级 ≥ 2）也能发放 / 回收 RP**。用在「RP 当任务奖励」的场景 —— FTB 之类的任务模组要把 RP 发给玩家，而它们**以完成任务的普通玩家身份**执行命令（既不是服主、也不是控制台），不开这个开关就永远被拒；打开后在 FTB 里写 `/market points give @s N` 即可自动到账。⚠ 打开 = 接受「任何玩家 OP 都能发 RP」（/op 可被传递给任何人）；只把 RP 当充值货币、由服主手动发放时请保持关闭。⚠ 只作用于 /market points give|take 两条命令，不影响权限授予等其他服主专属命令 / \"RP as quest currency\" switch (off by default): when on, **player-ops (permission level 2+) can also grant/take RP**. Meant for the \"RP as a quest reward\" setup — quest mods like FTB hand RP to players but run their commands **as the completing player**, who is neither the owner nor the console, so they are always refused unless this is on. With it on, write `/market points give @s N` in FTB and it just works. ⚠ Turning it on accepts that **any player-op can grant RP** (/op is transferable to anyone); keep it off if RP is a top-up currency granted only by you. ⚠ It only affects the /market points give|take commands, not permission grants or other owner-only commands",
                 "shareEnabled" to "玩家展示开关（默认开启）：开启后玩家可把精灵/物品展示到全服聊天（悬停看详情），每人 10 秒一次。关闭后展示按钮不再生效 / Player showcase switch (on by default): players can showcase Pokémon/items to server chat (hover for details), once per 10 seconds each. When off, the showcase button stops working",
                 "pointsShop.enabled" to "游戏内充值开关（默认关闭，需 pointsEnabled 同时开启）。国内小服主普遍用个人收款码，而个人收款码没有支付回调——本功能**不做自动收款**，只把对账成本压到最低：玩家在游戏内下单（实付金额就是档位标价 + 6 位订单号）→ 扫码付款 → 点「我已支付」→ 服主对着账单点确认发放。⚠ 模组无法判断是否真的付了款，「我已支付」只是玩家的声明：**未确认一律不发放** / In-game top-up switch (off by default, requires pointsEnabled too). Personal payment QR codes have no payment callback, so this feature does NOT collect payments automatically — it only minimizes reconciliation work: the player orders in game (paying the list price, with a 6-char order number) → scans the QR → pays → taps \"I have paid\" → the owner checks the bill and confirms the grant. ⚠ The mod cannot tell whether a payment actually happened: \"I have paid\" is a claim, and nothing is granted until the owner confirms",
                 "pointsShop.payQrImage" to "收款码图片文件名（放在 config/cobblemarket/qr/ 下，如 pay.png；PNG 格式，单张 ≤512KB、像素 ≤2048×2048，收款码本身是正方形、512×512 左右就够）。**留空 = 走全局默认**。图片由服务端读取后下发给客户端绘制；订单号与实付金额由模组**动态绘制在图片旁**（不写进图片文件），防止玩家截图转给别人代付后认领。⚠ 每个档位还能在「RP 配置」界面里配**自己的**收款码（微信/支付宝的『设置金额』码），配了的那一档用那张码，实付金额同样是标价 / Payment QR image file name under config/cobblemarket/qr/ (e.g. pay.png; PNG, 512KB max and 2048x2048 pixels max — a payment QR is square, 512x512 is plenty). **Leave blank to fall back to the global default.** The server reads it and sends it to clients for drawing; the order number and exact amount are drawn by the mod next to the image (never baked into the file), so a shared screenshot cannot be claimed by someone else. ⚠ Each tier can also have its OWN QR image (set it in the in-game RP Config screen) — a \"fixed amount\" code from your payment app; that tier then use its own code, still charging the list price",
@@ -979,6 +1003,7 @@ object CobbleMarketConfig {
             "pointsEnabled" to pointsEnabled,
             // ⚠ 落盘这一行曾经漏过：读取端有、写入端没有 → 开关当次有效、重启就落回默认 false
             "pointsMarketEnabled" to pointsMarketEnabled,
+            "rpAsQuestCurrency" to rpAsQuestCurrency,
             "pointsExternalSecret" to pointsExternalSecret,
             "pointsExternalMaxDays" to pointsExternalMaxDays,
             "pointsShop" to mapOf(

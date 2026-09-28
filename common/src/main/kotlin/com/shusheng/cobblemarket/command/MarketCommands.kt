@@ -501,7 +501,7 @@ object MarketCommands {
 
     /** `/market points give|take <玩家名> <数量>` —— 按玩家名（可离线：走 [BanState.resolvePlayer]） */
     private fun pointsAdjust(context: CommandContext<ServerCommandSource>, give: Boolean): Int {
-        if (denyNonOwner(context)) return 0
+        if (denyPointsGrant(context)) return 0
         val name = StringArgumentType.getString(context, "name")
         val resolved = BanState.resolvePlayer(context.source.server, name)
         if (resolved == null) {
@@ -520,7 +520,7 @@ object MarketCommands {
      * 「仅限控制台」的命令），所以 `@s` 恰好指"完成这个任务的那位玩家"。
      */
     private fun pointsAdjustSelf(context: CommandContext<ServerCommandSource>, give: Boolean): Int {
-        if (denyNonOwner(context)) return 0
+        if (denyPointsGrant(context)) return 0
         val player = context.source.player
         if (player == null) {
             context.source.sendError(Text.translatable("cobblemarket.points.players_only"))
@@ -1077,6 +1077,33 @@ object MarketCommands {
     private fun denyNonOwner(context: CommandContext<ServerCommandSource>): Boolean {
         if (MarketPermissions.isServerOwner(context.source)) return false
         context.source.sendError(Text.translatable("cobblemarket.perm.owner_only"))
+        return true
+    }
+
+    /**
+     * `/market points give|take` 的守卫：**服主 / 控制台**，或「开关打开 + **玩家身份的** OP（等级 ≥ 2）」。
+     *
+     * ⚠⚠ **不能复用 [denyNonOwner]** —— 那个是 `perm grant`（权限授予）/ `loan clear`（撤销坏账）
+     *   等命令**共用**的；在它里面放行 OP，等于给"给自己加权限"开后门。这里单独一份，只管 RP 的收发。
+     *
+     * 开关的用途见 [CobbleMarketConfig.rpAsQuestCurrency]：任务模组（FTB 等）要把 RP 当奖励发给玩家，
+     * 而它们**以完成任务的普通玩家身份**执行命令 ⇒ 不开这个开关就永远被拒。
+     *
+     * ⚠ 判据里的 `entity is PlayerEntity` 是**有意的**：命令方块是"非玩家实体"⇒ 天然被排除，
+     *   不用再写一套"来源类型"的判断（开关打开也不给命令方块开口子）。
+     */
+    private fun denyPointsGrant(context: CommandContext<ServerCommandSource>): Boolean {
+        val source = context.source
+        if (MarketPermissions.isServerOwner(source)) return false
+        if (CobbleMarketConfig.rpAsQuestCurrency &&
+            source.entity is net.minecraft.entity.player.PlayerEntity &&
+            source.hasPermissionLevel(2)
+        ) return false
+        // 开关关着时给一句**可操作**的提示（服主最常问"FTB 怎么发不了 RP"）
+        source.sendError(Text.translatable(
+            if (CobbleMarketConfig.rpAsQuestCurrency) "cobblemarket.perm.owner_only"
+            else "cobblemarket.points.grant_owner_only"
+        ))
         return true
     }
 
