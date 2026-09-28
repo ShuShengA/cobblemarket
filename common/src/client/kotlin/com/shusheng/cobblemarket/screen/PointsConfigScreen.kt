@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.PointsConfigPayload
@@ -114,6 +115,122 @@ class PointsConfigScreen : Screen(
     private fun closeFeeDialog() {
         feeDialog = false
         markDirtyAndRebuild()
+    }
+
+    // ── 「give/take 权限下放」确认弹窗（点**开启**时弹；确认按钮 5 秒冷静期）──
+    //
+    // 为什么要有这个弹窗（用户 2026-09-28）：这个开关把「发放 / 回收 RP」的权限**交出去**，
+    // 后果不可逆（开了之后任何 OP 都能给自己发钱），而开关本身只有一行标签、说不清这么多。
+    // ⇒ 打开前用弹窗把**作用 / 用途 / 风险**讲清楚，并用 5 秒冷静期防手滑。
+
+    /** 确认弹窗开着没有 */
+    private var grantDialog = false
+
+    /** 确认按钮**解禁的时刻**：打开弹窗时 = now + [GRANT_CONFIRM_COOLDOWN_MS] */
+    private var grantReadyAt = 0L
+
+    /** 确认弹窗的按钮（只在它开着时创建）—— `[0]` 是确认、`[1]` 是取消 */
+    private val grantDialogButtons = mutableListOf<NineSliceButton>()
+
+    /** 点**开启**时走这里：先弹确认窗（关闭不需要确认，直接关） */
+    private fun onGrantToggle() {
+        if (rpAsQuestCurrency) {
+            rpAsQuestCurrency = false
+            markDirtyAndRebuild()
+        } else {
+            openGrantDialog()
+        }
+    }
+
+    /** 开确认弹窗：**先重建再建自己的控件**（顺序同 [openFeeDialog]，反了会被 rebuild 清掉） */
+    private fun openGrantDialog() {
+        // ⚠ 冷静期的起点**要在 rebuild 之前**记：rebuild 会重跑 init，之后算会少一帧（无妨但没必要）
+        grantReadyAt = System.currentTimeMillis() + GRANT_CONFIRM_COOLDOWN_MS
+        grantDialog = true
+        grantDialogButtons.clear()
+        rebuild()
+        hideMainControls()
+
+        val dx = editDialogX()
+        val closeY = editDialogY() + EDIT_H - 26
+        addDrawableChild(
+            NineSliceButton(dx + 22, closeY, 80, 16,
+                Text.translatable("cobblemarket.points.config.grant_confirm"), { commitGrantDialog() })
+                .also { grantDialogButtons += it }
+        )
+        addDrawableChild(
+            NineSliceButton(dx + EDIT_W - 102, closeY, 80, 16,
+                Text.translatable("cobblemarket.op.scfg_cancel"), { closeGrantDialog() })
+                .also { grantDialogButtons += it }
+        )
+    }
+
+    private fun closeGrantDialog() {
+        grantDialog = false
+        markDirtyAndRebuild()
+    }
+
+    /** 确认开启：**冷静期内点它无效**（按钮已置灰，这里是硬拦，防快捷键/连点绕过） */
+    private fun commitGrantDialog() {
+        if (System.currentTimeMillis() < grantReadyAt) {
+            playFailSound()
+            return
+        }
+        rpAsQuestCurrency = true
+        grantDialog = false
+        markDirtyAndRebuild()
+        save()
+    }
+
+    /**
+     * 确认按钮的冷静期表现：**剩余秒数显示在按钮上 + 置灰**，到点自动解禁。
+     *
+     * ⚠ 在 `render` 里每帧调 —— 到点那一刻没有任何事件回调，只在别处算会一直停在灰的
+     *   （同"面板开合动画播完那一刻"那个坑）。
+     */
+    private fun updateGrantConfirmButton() {
+        val btn = grantDialogButtons.firstOrNull() ?: return
+        val left = ((grantReadyAt - System.currentTimeMillis()) / 1000L).toInt()
+        if (left > 0) {
+            btn.dimmed = true
+            btn.setMessage(Text.translatable("cobblemarket.points.config.grant_wait", left))
+        } else {
+            btn.dimmed = false
+            btn.setMessage(Text.translatable("cobblemarket.points.config.grant_confirm"))
+        }
+    }
+
+    /**
+     * 确认弹窗的内容（面板由 [renderBackground] 画好）。
+     *
+     * ⚠ 说明文字**每行一个独立词条**，不写成一整句 —— 中英行宽差得多，长句英文必然溢出
+     *   （`EDIT_W = 220`，可用宽约 200px）。
+     */
+    private fun renderGrantDialog(context: DrawContext) {
+        val dx = editDialogX()
+        context.drawCenteredTextWithShadow(
+            textRenderer,
+            Text.translatable("cobblemarket.points.config.grant_title").formatted(Formatting.GOLD),
+            width / 2, editDialogY() + 14, 0xFFFFFF
+        )
+        var y = editDialogY() + 34
+        listOf(
+            "cobblemarket.points.config.grant_line1",
+            "cobblemarket.points.config.grant_line2",
+            "cobblemarket.points.config.grant_line3"
+        ).forEach { key ->
+            context.drawTextWithShadow(textRenderer, Text.translatable(key), dx + 10, y, 0xFFFFFF)
+            y += 12
+        }
+        // ⚠ 风险提示单独一段、**红字** —— 这是唯一"会造成不可逆后果"的开关，要显眼
+        y += 6
+        listOf(
+            "cobblemarket.points.config.grant_warn1",
+            "cobblemarket.points.config.grant_warn2"
+        ).forEach { key ->
+            context.drawTextWithShadow(textRenderer, Text.translatable(key), dx + 10, y, 0xFF5555)
+            y += 12
+        }
     }
 
     /** 保存四个费率：非法/超范围一律钳到 [0,100]（与配置层的 coerceIn 同一口径） */
@@ -257,7 +374,7 @@ class PointsConfigScreen : Screen(
     private val TIER_DELETE_W = 46
 
     /** 有弹窗开着吗（档位编辑 / 费率提醒 / 费率编辑）—— 滚动与行可见性都要看它 */
-    private fun anyDialogOpen() = editing || feeWarn || feeDialog
+    private fun anyDialogOpen() = editing || feeWarn || feeDialog || grantDialog
 
     private fun hideMainControls() {
         listOfNotNull(
@@ -426,7 +543,8 @@ class PointsConfigScreen : Screen(
         addToggle("points_market", pointsMarketEnabled) { onPointsMarketToggle() }
         // ⚠ 本行多占了一行设置项 ⇒ **档位区少显示一行**（见 [DIALOG_H] 的算式）。
         //   用户 2026-09-28 拍板接受这个取舍（他 09-19 特意要求过"档位多显示一行"，所以不能擅自加）。
-        addToggle("rp_quest", rpAsQuestCurrency) { rpAsQuestCurrency = !rpAsQuestCurrency; markDirtyAndRebuild() }
+        // ⚠ 点**开启**先弹确认窗（讲清交出了什么权限 + 5 秒冷静期）；**关闭**不用确认，直接关
+        addToggle("rp_quest", rpAsQuestCurrency) { onGrantToggle() }
         // RP 四个费率的入口：右侧一个「配置」按钮开二级弹窗 —— 四个费率直接摊在主弹窗里放不下
         feeCfgButton = NineSliceButton(
             rightX - 18, listStartY(), 40, 18,
@@ -832,7 +950,7 @@ class PointsConfigScreen : Screen(
             DIALOG_BACKGROUND_TEX_H
         )
         // 档位编辑弹窗的背景必须画在**控件之前**（放在 render 里会盖住它自己的输入框）
-        if (editing || feeWarn || feeDialog) {
+        if (anyDialogOpen()) {
             drawNineSlice(
                 context, DIALOG_BACKGROUND_TEXTURE,
                 editDialogX(), editDialogY(), EDIT_W, EDIT_H, 0, DIALOG_BACKGROUND_TEX_H
@@ -892,6 +1010,13 @@ class PointsConfigScreen : Screen(
         }
         if (feeDialog) {
             renderFeeDialog(context)
+            return
+        }
+        if (grantDialog) {
+            // ⚠ 冷静期的按钮文字要**每帧刷**：到点那一刻没有任何事件回调，
+            //   只在打开时算一次会一直停在"请稍候"（同"动画播完那一刻"那个坑）
+            updateGrantConfirmButton()
+            renderGrantDialog(context)
             return
         }
         val dx = dialogX()
@@ -1046,6 +1171,14 @@ class PointsConfigScreen : Screen(
         /** 档位编辑弹窗尺寸（5 行输入 + 标题 + 按钮） */
         const val EDIT_W = 220
         const val EDIT_H = 182
+
+        /**
+         * 「give/take 权限下放」确认按钮的**冷静期**（毫秒）。
+         *
+         * 这个开关一开，**任何 OP 都能给自己发 RP** —— 手滑的代价太大，所以确认按钮前 5 秒置灰
+         * 并显示倒计时（用户 2026-09-28 定）。
+         */
+        const val GRANT_CONFIRM_COOLDOWN_MS = 5000L
 
         /**
          * 主弹窗的设计高度；实际会被屏幕高度钳制（见 [dialogH]）。
