@@ -128,8 +128,6 @@ class HistoryScreen(private val showAll: Boolean = false) :
             drawNineSlice(context, ROW_BACKGROUND_TEXTURE, listLeft, y, panelWidth, rowHeight, if (i == hoveredRow) 1 else 0, ROW_BACKGROUND_TEX_H)
             val time = dateFormat.format(Date(e.timestamp))
             val typeLabel = "[${typeTextOf(e)}]"
-            val seller = if (e.sellerName.isNotEmpty()) e.sellerName else "?"
-            val buyer = if (e.buyerName.isNotEmpty()) " → ${e.buyerName}" else ""
 
             val x = listLeft + 5
             context.drawTextWithShadow(textRenderer, time, x, y + 4, 0x888888)
@@ -156,42 +154,44 @@ class HistoryScreen(private val showAll: Boolean = false) :
             //   卖出 →「→ 买家名」（东西给了他）；买入 →「卖家名 →」（东西是他给我的）。
             // 原先买入也走「→ 自己」—— 在一页全是自己的记录里，这等于没信息（用户 2026-09-26 报）。
             // ⚠ 判据用 type == "BUY"：服务端只对**买家本人**发这个值，卖出发的是 PURCHASE（见 RequestHistoryPayload 处理）
-            val buyerPart = when {
-                showAll -> ""
-                e.type == "BUY" -> "${if (e.sellerName.isNotEmpty()) e.sellerName else "?"} →"
-                e.buyerName.isNotEmpty() -> "→ ${e.buyerName}"
-                else -> ""
+            val tailPart: Text? = when {
+                showAll -> null
+                e.type == "BUY" -> Text.literal("").append(sellerTextOf(e)).append(" →")
+                e.buyerName.isNotEmpty() -> Text.literal("→ ${e.buyerName}")
+                else -> null
             }
             val right = width / 2 + panelHalf - 5
             val priceX = right - textRenderer.getWidth(priceText)
-            // 买家名夹在「中间段最小宽度」与价格之间，放不下就截断（完整名字见悬停窗）——
-            // 不截的话，长名字 + 大额价格会把中间段挤成空、两段文字叠在一起
-            val buyerShown = if (buyerPart.isEmpty()) buyerPart else TextUtil.truncateString(
-                buyerPart, (priceX - 6 - cx - MIDDLE_MIN_W - 6).coerceAtLeast(0)
-            )
-            val buyerX = priceX - (if (buyerShown.isNotEmpty()) textRenderer.getWidth(buyerShown) + 6 else 0)
+            // 这段夹在「中间段最小宽度」与价格之间，放不下就截断（完整内容见悬停窗）——
+            // 不截的话，长名字 + 大额价格会把中间段挤成空、两段文字叠在一起。
+            // ⚠ 必须用 truncateStyled：truncateText 会把 Text 压成一段、丢掉 RP 图标的字体样式（图标变方块）
+            val tailShown = tailPart?.let {
+                TextUtil.truncateStyled(it, (priceX - 6 - cx - MIDDLE_MIN_W - 6).coerceAtLeast(0))
+            }
+            val tailWidth = if (tailShown != null) textRenderer.getWidth(tailShown) else 0
+            val tailX = priceX - (if (tailShown != null) tailWidth + 6 else 0)
             // 中间段：内容色（精灵名=属性色 / 物品名=稀有度色）**显式写在段自己身上**，陪衬的
             // 卖家→买家不设色、吃行色白 —— 各段平级 append，别让带色的段污染整行（颜色铁律）
             // 截断走 truncateStyled（保留分段样式），预算按像素算
             val middle = TextUtil.truncateStyled(
                 Text.literal("").apply {
-                    if (showAll) append(Text.literal("$seller$buyer "))
+                    if (showAll) {
+                        append(sellerTextOf(e))
+                        append(buyerTextOf(e))
+                        append(" ")
+                    }
                     append(speciesNameText(e))
                 },
-                (if (buyerShown.isNotEmpty()) buyerX else priceX) - 6 - cx
+                (if (tailShown != null) tailX else priceX) - 6 - cx
             )
             context.drawTextWithShadow(textRenderer, middle, cx, y + 4, 0xFFFFFF)
             context.drawTextWithShadow(textRenderer, priceText, priceX, y + 4, 0xFFAA00)
-            if (buyerShown.isNotEmpty()) {
-                context.drawTextWithShadow(textRenderer, buyerShown, buyerX, y + 4, 0xFFFFFF)
-            }
+            tailShown?.let { context.drawTextWithShadow(textRenderer, it, tailX, y + 4, 0xFFFFFF) }
         }
 
         // 悬停行完整信息：行内的时间/类型/名字/价格都可能被截断或压缩，这里给全的
         if (hoveredRow >= 0) {
             val e = visibleEntries[hoveredRow]
-            val seller = if (e.sellerName.isNotEmpty()) e.sellerName else "?"
-            val buyer = if (e.buyerName.isNotEmpty()) " → ${e.buyerName}" else ""
             val fullTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date(e.timestamp))
             renderTooltip(context, listOf(
                 speciesNameText(e),                                                          // 属性色 / 稀有度色
@@ -201,7 +201,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
                 Text.literal("")
                     .append(Text.literal("[${typeTextOf(e)}]").styled { it.withColor(typeColor(e.type)) })
                     .append(Text.literal(" $fullTime").styled { it.withColor(0x888888) }),
-                Text.literal("$seller$buyer"),
+                Text.literal("").append(sellerTextOf(e)).append(buyerTextOf(e)),
                 Text.literal("${com.shusheng.cobblemarket.client.formatPrice(e.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}")
                     .formatted(Formatting.GOLD)                                              // 金额金
             ), mouseX, mouseY)
@@ -214,6 +214,25 @@ class HistoryScreen(private val showAll: Boolean = false) :
                 width / 2, height - 49, 0x888888)
         }
     }
+
+    /**
+     * 卖家段：**RP 商城**卖出的画「▣ 商城」，其余画上架者名（空名回落 `?`）。
+     *
+     * 商城购买与玩家间市场直购是同一个 `PURCHASE` 类型 ⇒ 只能靠记录里的 `fromShop` 区分。
+     * ⚠ 「商城」两字金色（与 RP 商城标题同色）；前面的图标**不受影响** —— `pointsIcon()` 自带
+     *   白色子样式，父级金色染不到它（颜色铁律：带色的别当父节点，这里靠子样式优先兜住）
+     */
+    private fun sellerTextOf(e: HistoryEntry): Text =
+        if (e.fromShop) {
+            Text.translatable("cobblemarket.history.from_shop", CurrencyService.pointsIcon())
+                .formatted(Formatting.GOLD)
+        } else {
+            Text.literal(if (e.sellerName.isNotEmpty()) e.sellerName else "?")
+        }
+
+    /** 买家段（只有「全部交易历史」画）：没有买家名就不画 */
+    private fun buyerTextOf(e: HistoryEntry): Text =
+        if (e.buyerName.isNotEmpty()) Text.literal(" → ${e.buyerName}") else Text.literal("")
 
     private fun typeColor(type: String): Int = when (type) {
         "ADD" -> 0x55FF55

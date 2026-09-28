@@ -69,16 +69,15 @@ object ClientConfig {
     var dropOverflowOnClaim: Boolean = false
         private set
 
-    /** 余额 HUD 显示模式（个人设置，设置弹窗三态循环）：ALWAYS 一直显示 / ON_CHANGE 余额变动后显示 5 秒 / OFF 关闭 */
-    var balanceHudMode: BalanceHudMode = BalanceHudMode.ALWAYS
-        private set
-
     /**
-     * RP 那一行自己的显示模式（同三态）。与主行**各自独立** —— 主行常显、RP 行只在变动时冒一下，
-     * 或者干脆关掉（关掉时背景框缩回一行）。⚠ 只在服务器开了 RP 时才有效
-     *（`pointsEnabled` 关着时服务端根本不下发余额，那一行不显示）
+     * 余额 HUD 显示模式（个人设置，设置弹窗三态循环）：ALWAYS 一直显示 / ON_CHANGE 余额变动后显示 5 秒 / OFF 关闭。
+     *
+     * ⚠ **管的是整个 HUD**（含下面 RP 那一行）—— 两行共用同一个背景框，所以同显同隐、一起淡出。
+     * 2026-09-28 合并：原先 RP 行有自己的 `pointsHudMode`，但那个开关**没有任何界面入口**
+     *（只能手改 json），而一个框挂两个开关本身也说不通。ON_CHANGE 的判据是**任一行**余额变动 ——
+     * 主货币变了、或 RP 变了，都会把整框唤出来
      */
-    var pointsHudMode: BalanceHudMode = BalanceHudMode.ALWAYS
+    var balanceHudMode: BalanceHudMode = BalanceHudMode.ALWAYS
         private set
 
     /** 精灵图标展示模式（个人设置，设置弹窗两态循环）：STATIC 静态 / FLOAT 动态（默认） */
@@ -129,12 +128,6 @@ object ClientConfig {
                 1.0 -> BalanceHudMode.ON_CHANGE
                 2.0 -> BalanceHudMode.OFF
                 else -> if (data["showBalanceHud"] as? Boolean == false) BalanceHudMode.OFF else BalanceHudMode.ALWAYS
-            }
-            // RP 行同理（无字段 = 旧版本升级 → 默认常显）
-            pointsHudMode = when (data["pointsHudMode"] as? Double) {
-                1.0 -> BalanceHudMode.ON_CHANGE
-                2.0 -> BalanceHudMode.OFF
-                else -> BalanceHudMode.ALWAYS
             }
             // 只有显式存过 0（静态）才保持静态；无字段（旧版本升级）、1（浮动）、2（已砍掉的完整动画占位）一律按新默认浮动
             iconAnimMode = if (data["iconAnimMode"] as? Double == 0.0) IconAnimMode.STATIC else IconAnimMode.FLOAT
@@ -213,11 +206,6 @@ object ClientConfig {
         save()
     }
 
-    fun setPointsHudMode(v: BalanceHudMode) {
-        pointsHudMode = v
-        save()
-    }
-
     /** 两态循环：STATIC ↔ FLOAT */
     fun cycleIconAnimMode(): IconAnimMode {
         iconAnimMode = when (iconAnimMode) {
@@ -260,7 +248,7 @@ object ClientConfig {
                             "marketAnimation" to "市场动画总开关：控制进入市场动画（入口掉落）与关闭市场动画（界面整体上滑出屏）（个人设置，可在市场入口界面右下角的设置里改）/ Master switch for market animations: controls the entry animation (drop onto the entry screen) and the close animation (screen slides up and out) (personal setting, editable via the gear button on the market entry screen)",
                             "pikachuRunLoop" to "皮卡丘跑步机：开启后皮卡丘绕入口/管理面板背景边缘环绕跑（默认沿背景顶部直线跑）/ Pikachu Treadmill: when on, Pikachu runs around the border of the entry/admin background instead of the straight top run",
                             "groudonFly" to "据说固拉多一生都在寻找这个按钮：开启后固拉多在精灵市场/上架选择界面穿梭飞行 / It is said Groudon spends its whole life looking for this button: when on, Groudon flies across the pokemon market and sell-select screens",
-                            "balanceHudMode" to "余额 HUD 显示模式：0=一直显示（默认），1=余额变动时显示 5 秒，2=关闭；可在市场入口界面右下角的设置里改 / Balance HUD mode: 0=always show (default), 1=show 5 seconds when the balance changes, 2=off; editable via the gear button on the market entry screen",
+                            "balanceHudMode" to "余额 HUD 显示模式（含 RP 那一行，两行同显同隐）：0=一直显示（默认），1=余额变动时显示 5 秒，2=关闭；可在市场入口界面右下角的设置里改 / Balance HUD mode (includes the RP row — both rows show and hide together): 0=always show (default), 1=show 5 seconds when the balance changes, 2=off; editable via the gear button on the market entry screen",
                             "iconAnimMode" to "精灵图标展示模式：0=完全静态，1=动态（默认，播放 Cobblemon 内置待机动画）；可在市场入口界面右下角的设置里改 / Pokemon icon mode: 0=static, 1=dynamic (default, plays Cobblemon's built-in idle animation); editable via the gear button on the market entry screen",
                             "hoverPreview" to "悬停精灵行时在屏幕左侧显示该精灵的放大预览（个人设置，可在市场入口界面右下角的设置里改）/ Show a large preview of the Pokemon on the left side of the screen when hovering its row (personal setting, editable via the gear button on the market entry screen)",
                             "hoverPreviewItem" to "悬停物品格时在屏幕左侧显示该物品的放大预览（个人设置，与精灵侧各自独立，同上）/ Show a large preview of the item on the left side of the screen when hovering its slot (personal setting, independent from the Pokemon side, same place)",
@@ -278,7 +266,6 @@ object ClientConfig {
                         "pikachuRunLoop" to pikachuRunLoop,
                         "groudonFly" to groudonFly,
                         "balanceHudMode" to balanceHudMode.ordinal,
-                        "pointsHudMode" to pointsHudMode.ordinal,
                         "iconAnimMode" to iconAnimMode.ordinal,
                         "hoverPreview" to hoverPreview,
                         "hoverPreviewItem" to hoverPreviewItem,

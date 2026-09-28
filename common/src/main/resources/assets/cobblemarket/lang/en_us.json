@@ -789,6 +789,7 @@
   "cobblemarket.history.open_folder": "Open Folder",
   "cobblemarket.history.folder_path": "Transaction records (CSV) are stored at: %s",
   "cobblemarket.history.empty": "No transaction history yet.",
+  "cobblemarket.history.from_shop": "%s Shop",
   "cobblemarket.history.type.ADD": "Listed",
   "cobblemarket.history.type.PURCHASE": "Sold",
   "cobblemarket.history.type.BUY": "Bought",

@@ -9,6 +9,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import net.minecraft.server.MinecraftServer
 
 /**
  * RP 变动类型（审计账本的类型列）。
@@ -75,6 +76,39 @@ object PointsAuditLogger {
         }
     }
 
+    /**
+     * 玩家间 RP 交易的**成对**落账：买家一笔「市场消费」、卖家一笔「市场收入」。
+     *
+     * 四条业务线共用（精灵市场 / 物品市场 / 拍卖成交 / 求购交付），一律在**钱动完之后**调 ——
+     * 本函数只读余额、不再动钱，所以 `balanceAfter` 是落账那一刻的真实余额。
+     *
+     * ⚠ 两侧金额**可以不等**：差额是销毁的手续费（拍卖 / 求购有，两个市场没有）。这不是错账，
+     * 但调用方**必须把手续费写进 [detail]**，否则服主从账本上看不出这笔钱销毁了多少。
+     * ⚠ 拍卖与求购的钱在下单 / 出价时就冻结了，成交这一刻买家余额并不变 —— 这两行的
+     * `balanceAfter` 是**落账时刻**的余额，不是扣款时刻的（方案「按交易事件落账」）。
+     */
+    fun logMarketTrade(
+        server: MinecraftServer,
+        buyerUuid: UUID,
+        buyerName: String,
+        sellerUuid: UUID,
+        sellerName: String,
+        buyerPaid: Long,
+        sellerGot: Long,
+        detail: String,
+        detailEn: String
+    ) {
+        val points = PointsState.get(server)
+        log(
+            PointsLogType.MARKET_SPEND, buyerUuid, buyerName, buyerPaid,
+            points.getBalance(buyerUuid), sellerName, detail, detailEn
+        )
+        log(
+            PointsLogType.MARKET_INCOME, sellerUuid, sellerName, sellerGot,
+            points.getBalance(sellerUuid), buyerName, detail, detailEn
+        )
+    }
+
     private fun refreshFiles(timestamp: Long) {
         val date = dateFormat.format(Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()))
         if (date == currentDate) return
@@ -121,6 +155,10 @@ object PointsAuditLogger {
                     若你用充值发放 RP，应定期拿它和自己的收款记录核对，确认每一笔发放都有对应的收款。
 
                     变动量恒为正数，「进/出」方向看类型列；「变动后余额」可直接逐行核对。
+
+                    ⚠ 拍卖与求购的钱在下单 / 出价时就已扣走，成交那一刻买家余额并不变化 ——
+                    这两类交易的「市场消费」行按**成交**落账，其「变动后余额」是落账时刻的余额，
+                    不是当初扣款时刻的。流拍 / 被超价的资金退回不产生账目行。
                     """.trimIndent()
                 )
             } catch (e: Exception) {
@@ -149,6 +187,11 @@ object PointsAuditLogger {
 
                     Amount is always positive; the direction is in the type column. "Balance After" lets
                     you verify row by row.
+
+                    Note: auction and buy-order funds are taken when a bid / order is placed, so the
+                    buyer's balance does not change at settlement time. Those "Market spend" rows are
+                    written at settlement, and "Balance After" is the balance at that moment rather than
+                    at the original deduction. Outbid refunds and expired orders leave no rows.
                     """.trimIndent()
                 )
             } catch (e: Exception) {

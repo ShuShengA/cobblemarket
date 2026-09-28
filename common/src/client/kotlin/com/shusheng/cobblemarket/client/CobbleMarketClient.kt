@@ -1062,12 +1062,13 @@ private const val HUD_TWO_LINE_GAP = 2
 private const val HUD_TWO_LINE_H = HUD_TEXT_DY * 2 + 8 * 2 + HUD_TWO_LINE_GAP
 
 /**
- * RP 那一行现在该不该显示：**总开关开着**（服务端没开就压根不下发余额）**+ 服务端下发了余额**
- * + 本行开关不是 OFF。三态里的 ON_CHANGE 由 [renderBalanceHud] 单独判（要配合 5 秒窗口与淡出）。
+ * RP 那一行现在**有没有东西可显示**：服务器开着 RP（没开就压根不下发余额）且下发了余额。
+ *
+ * ⚠ 显隐**跟着主行走**（2026-09-28 把两个开关合并了）—— 这里不再判开关，
+ * 三态（常显 / 变动时显 5 秒 / 关）由 [renderBalanceHud] 对**整个框**统一判。
  */
 private fun pointsHudRowVisible(): Boolean =
-    PointsStateCache.enabled && BalanceCache.pointsBalance.isNotEmpty() &&
-        ClientConfig.pointsHudMode != BalanceHudMode.OFF
+    PointsStateCache.enabled && BalanceCache.pointsBalance.isNotEmpty()
 
 /** RP 行 ON_CHANGE 的变动检测用（与主行各自独立） */
 private var lastHudPointsText: String? = null
@@ -1129,23 +1130,30 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext, onTop: Boole
         hudDiffUntil = System.currentTimeMillis() + 2_000
     }
     lastBalanceRaw = rawNow
-    // 三态显示判断：ALWAYS 恒显；ON_CHANGE 文本变化后显 5 秒；OFF 不显
+    // ON_CHANGE 的计时基准：两行**各自**记录自己的变动时刻（这样 RP 变了同样能把框唤出来），
+    // 取更晚的那个当整框的截止时间 —— 一个开关管整框 ⇒ 两行一起亮、一起淡出
+    val nowMs = System.currentTimeMillis()
+    if (text != lastHudBalanceText) {
+        lastHudBalanceText = text
+        lastBalanceChangeAt = nowMs
+    }
+    val pointsText = BalanceCache.pointsBalance
+    if (pointsText != lastHudPointsText) {
+        lastHudPointsText = pointsText
+        lastPointsChangeAt = nowMs
+    }
+    val lastChangeAt = maxOf(lastBalanceChangeAt, lastPointsChangeAt)
+    // 三态显示判断：ALWAYS 恒显；ON_CHANGE **任一行**变动后显 5 秒；OFF 不显
     val visible = editingPos || when (ClientConfig.balanceHudMode) {
         BalanceHudMode.OFF -> false
         BalanceHudMode.ALWAYS -> true
-        BalanceHudMode.ON_CHANGE -> {
-            if (text != lastHudBalanceText) {
-                lastHudBalanceText = text
-                lastBalanceChangeAt = System.currentTimeMillis()
-            }
-            System.currentTimeMillis() - lastBalanceChangeAt < 5_000
-        }
+        BalanceHudMode.ON_CHANGE -> nowMs - lastChangeAt < 5_000
     }
     if (!visible) return
     // 「适应」模式淡出：显示期最后 800ms 背景+文字整体线性渐隐（入口动画暗淡同款手法）
     var alphaF = 1f
     if (!editingPos && ClientConfig.balanceHudMode == BalanceHudMode.ON_CHANGE) {
-        val remaining = 5_000 - (System.currentTimeMillis() - lastBalanceChangeAt)
+        val remaining = 5_000 - (nowMs - lastChangeAt)
         if (remaining < 800) alphaF = (remaining / 800f).coerceIn(0f, 1f)
     }
     if (alphaF <= 0f) return
@@ -1159,28 +1167,9 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext, onTop: Boole
     // RGB 随 alpha 一起衰减（照入口动画淡出）：context.setShaderColor 同时作用于
     // drawTexture（背景贴图）与文字渲染；RenderSystem 全局色不响应 drawTexture，勿混用
     context.setShaderColor(alphaF, alphaF, alphaF, alphaF)
-    // ── RP 行（B3）：与主行各自独立的三态 + 变动浮字，框高随之 +16 ──
-    // ⚠ 只在主行**可见**的前提下才有它 —— 方案要求「主 HUD 的行为一字不变」
-    //（主行 OFF 时整框不画，RP 行不单独活着）
-    val pointsRowEnabled = pointsHudRowVisible() && (editingPos || when (ClientConfig.pointsHudMode) {
-        BalanceHudMode.ALWAYS -> true
-        BalanceHudMode.ON_CHANGE -> {
-            val pt = BalanceCache.pointsBalance
-            if (pt != lastHudPointsText) {
-                lastHudPointsText = pt
-                lastPointsChangeAt = System.currentTimeMillis()
-            }
-            System.currentTimeMillis() - lastPointsChangeAt < 5_000
-        }
-        BalanceHudMode.OFF -> false
-    })
-    // RP 行的淡出（照主行：最后 800ms 线性渐隐）——用独立的 alpha，两条文字各隐各的
-    var pointsAlpha = 1f
-    if (pointsRowEnabled && !editingPos && ClientConfig.pointsHudMode == BalanceHudMode.ON_CHANGE) {
-        val remaining = 5_000 - (System.currentTimeMillis() - lastPointsChangeAt)
-        if (remaining < 800) pointsAlpha = (remaining / 800f).coerceIn(0f, 1f)
-    }
-    val showPointsRow = pointsRowEnabled && pointsAlpha > 0f
+    // ── RP 行：与主行**同一个开关**（一个框一起显隐、一起淡出），框高随之 +16 ──
+    // ⚠ 仍受「服务器开着 RP 且下发了余额」限制（见 pointsHudRowVisible）
+    val showPointsRow = pointsHudRowVisible()
 
     // 背景框：HUD 专属九宫格贴图（40×40），宽随**最长那行**自适应，高按显示几行（16 / 32）
     val textW = client.textRenderer.getWidth(text)
@@ -1205,11 +1194,10 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext, onTop: Boole
         // 图标放前面的话它占着左边起始位、数字被顶到右边，两行的数字就不在一条竖线上了。
         // RP 行文字的 y：第一行文字底（hudY + textDy + 8）+ 行间缝
         val pointsRowY = hudY + textDy + 8 + HUD_TWO_LINE_GAP
-        context.setShaderColor(alphaF * pointsAlpha, alphaF * pointsAlpha, alphaF * pointsAlpha, alphaF * pointsAlpha)
+        // alpha 用外层已经设好的整框 alphaF（一个开关 ⇒ 两行一起淡出），这里不再单独乘
         context.drawTextWithShadow(client.textRenderer, BalanceCache.pointsBalance, hudX + 5, pointsRowY, 0xFFAA00)
         val iconX = hudX + 5 + client.textRenderer.getWidth(BalanceCache.pointsBalance) + unitGap(client.textRenderer)
         drawPointsSymbol(context, iconX, pointsRowY, POINTS_SYMBOL_INLINE_SIZE)
-        context.setShaderColor(alphaF, alphaF, alphaF, alphaF)
         // RP 变动浮字（照主行那份）：跟在这一行右边
         val rawPoints = BalanceCache.pointsRaw
         if (lastPointsRawForDiff != null && rawPoints != lastPointsRawForDiff!!) {

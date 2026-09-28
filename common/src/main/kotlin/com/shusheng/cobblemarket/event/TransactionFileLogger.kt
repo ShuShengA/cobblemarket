@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.event
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.platform.configDir
+import com.shusheng.cobblemarket.util.SpeciesText
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardOpenOption
@@ -27,10 +28,10 @@ object TransactionFileLogger {
             val date = dateFormat.format(instant)
             if (date != currentDate) {
                 currentDate = date
-                // ⚠ 表头必须与 buildCsvLine 的列一一对应（含**末尾的币种列与主属性列**）：
+                // ⚠ 表头必须与 buildCsvLine 的列一一对应（含**末尾的币种 / 主属性 / 来源三列**）：
                 //   漏了会让表头少列、数据多列，Excel 里整行错位
-                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,卖家UUID,买家UUID,精灵/物品,价格,手续费,详情,币种,主属性")
-                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Seller UUID,Buyer UUID,Pokemon/Item,Price,Fee,Details,Currency,Primary Type")
+                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,卖家UUID,买家UUID,精灵/物品,价格,手续费,详情,币种,主属性,来源")
+                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Seller UUID,Buyer UUID,Pokemon/Item,Price,Fee,Details,Currency,Primary Type,Source")
             }
             val zhFile = currentZhFile ?: return
             val enFile = currentEnFile ?: return
@@ -79,7 +80,8 @@ object TransactionFileLogger {
                     1 RP 与 1 主货币不等值，两种币的账目不能直接相加。老账本没有这一列，按主货币读。
 
                     主属性：精灵名在界面上的着色依据（形态感知 —— 阿罗拉六尾记的是冰系）；
-                    物品记录与老账本该列为空。精灵/物品列本身：精灵存物种 id、物品存物品 id。
+                    物品记录与老账本该列为空。精灵/物品列本身：精灵存**物种 id**（带命名空间，
+                    形如 `cobblemon:pikachu`；老账本里是没带命名空间的裸名）、物品存物品 id。
 
                     类型：上架（市场/拍卖挂单）、求购（求购单发布，发起者占卖家列）、
                           卖出（市场/拍卖成交、求购单交付成交）、下架（主动关闭/过期/流拍/管理员强制，详情列 reason 区分）、
@@ -136,6 +138,7 @@ object TransactionFileLogger {
 
                     Primary Type: what the UI colours a Pokemon name by — form-aware (Alolan Vulpix reads as Ice);
                     empty for items and older ledger rows. The Species/Item column holds a species id for Pokemon
+                    (namespaced, e.g. `cobblemon:pikachu`; older ledgers carry the bare name with no namespace)
                     and an item id for items.
 
                     Types: Listed (market/auction listing), Order (buy order placed; the buyer fills the seller column),
@@ -191,9 +194,12 @@ object TransactionFileLogger {
         // 卖家/买家 UUID 供程序回读按 UUID 匹配（改名玩家也查得到）；人读账本看名字列
         val sellerUuid = record.sellerUuid.toString()
         val buyerUuid = record.buyerUuid?.toString() ?: ""
-        // ⚠ 币种与主属性列都加在**末尾**：老 CSV 没有这两列，读的时候按「缺列 = 主货币 / 无色」容错
+        // ⚠ 币种、主属性、来源三列都加在**末尾**：老 CSV 没有这些列，读的时候按「缺列 = 主货币 / 无色 / 市场」容错
+        //   来源：market = 玩家间市场直购、shop = RP 商城（服主经营的商店）—— 两者同为 PURCHASE 类型，
+        //   只能靠这一列区分（界面据此把卖家列画成「▣ 商城」而不是上架的管理员名）
         return "$time,$type,$category,$seller,$buyer,$sellerUuid,$buyerUuid,$species," +
-            "${record.price},${record.fee},${csvEscape(record.detail)},${record.currency.name},${csvEscape(record.primaryType)}"
+            "${record.price},${record.fee},${csvEscape(record.detail)},${record.currency.name}," +
+            "${csvEscape(record.primaryType)},${if (record.fromShop) "shop" else "market"}"
     }
 
     private fun typeName(type: TransactionType, lang: String): String = when (type) {
@@ -204,10 +210,20 @@ object TransactionFileLogger {
         TransactionType.ORDER -> if (lang == "zh_cn") "求购" else "Order"
     }
 
+    /**
+     * 物种翻译 key（`cobblemon.species.pikachu.name`）→ 账本里的紧凑写法（`cobblemon:pikachu`）。
+     *
+     * ⚠ **命名空间必须留着**：附属模组的物种不在 `cobblemon` 命名空间下，剥掉之后回读补不回来
+     *（旧写法丢掉命名空间、回读硬补 `cobblemon.` ⇒ 附属模组物种在历史界面显示成错误的 key）。
+     * 不含 `.species.` 的值（物品 id、老账本的裸物种名）一律原样返回。
+     */
     private fun speciesDisplay(key: String): String {
         val marker = ".species."
         val idx = key.indexOf(marker)
-        return if (idx >= 0) key.substring(idx + marker.length).removeSuffix(".name") else key
+        if (idx < 0) return key
+        val namespace = key.substring(0, idx)
+        val path = key.substring(idx + marker.length).removeSuffix(".name")
+        return if (namespace.isEmpty()) path else "$namespace:$path"
     }
 
     private fun csvEscape(s: String): String {
@@ -301,12 +317,19 @@ object TransactionFileLogger {
                     val buyer = fields[4].removePrefix("'")
                     val sellerUuid = if (hasUuid) runCatching { java.util.UUID.fromString(fields[5]) }.getOrNull() else null
                     val buyerUuid = if (hasUuid) fields[6].takeIf { it.isNotEmpty() }?.let { runCatching { java.util.UUID.fromString(it) }.getOrNull() } else null
-                    // ⚠ CSV 里精灵存的是**物种 id**（buildCsvLine 的 speciesDisplay 剥掉了
-                    //   "*.species." 前缀与 ".name" 后缀），要补回翻译 key 才能在界面上显示本地化名字
-                    //   —— 不补的话历史列表里会显示成「pikachu」（物品存的就是物品 id，原样）
+                    // ⚠ CSV 里精灵存的是**紧凑物种 id**（`cobblemon:pikachu`，见 speciesDisplay），
+                    //   要补回翻译 key 才能在界面上显示本地化名字（物品存的就是物品 id，原样）。
+                    //   三种历史写法都要认：新格式（带命名空间）、老账本的裸名、本就是完整 key 的
                     val speciesRaw = fields[if (hasUuid) 7 else 5].removePrefix("'")
-                    val species = if (fields[2] == "ITEM" || speciesRaw.contains(".species.")) speciesRaw
-                    else "cobblemon.species.$speciesRaw.name"
+                    val species = when {
+                        fields[2] == "ITEM" -> speciesRaw
+                        speciesRaw.contains(".species.") -> speciesRaw
+                        // 带命名空间 ⇒ 走与商城写入同一个入口（解析得到就用物种自己的 key，
+                        // 解析不到就按该命名空间拼）—— 附属模组的物种靠这一步保住命名空间
+                        speciesRaw.contains(':') -> SpeciesText.translationKeyOf(speciesRaw)
+                        // 老账本：裸物种名，没有命名空间可依，只能按 Cobblemon 本体补
+                        else -> "cobblemon.species.$speciesRaw.name"
+                    }
                     val price = fields[if (hasUuid) 8 else 6].toIntOrNull() ?: return@forEach
                     // 主属性列：⚠ 列号**以本分支的表头为准**（1.3.0 多一列「币种」⇒ 主属性是第 13 列，
                     //   1.2.x 是第 12 列）。合并上浮时这里最容易出错 ——
@@ -341,9 +364,11 @@ object TransactionFileLogger {
                         // 索引：新格式（含 UUID 列）第 10 列、旧格式第 8 列 —— 老 CSV 里本就没有
                         // rarity 段 ⇒ 提取到空串 ⇒ 界面按 itemId 取色（与改动前一致）
                         detail = fields.getOrNull(if (hasUuid) 10 else 8)?.removePrefix("'").orEmpty(),
-                        // 币种在第 12 列、主属性在第 13 列（都在末尾）：老 CSV 没这两列 ⇒ 落主货币 / 空串
+                        // 币种在第 12 列、主属性在第 13 列、来源在第 14 列（都在末尾）：
+                        // 老 CSV 没这几列 ⇒ 落主货币 / 空串 / market（普通市场交易）
                         currency = MarketCurrency.fromStored(fields.getOrNull(11)),
-                        primaryType = primaryType
+                        primaryType = primaryType,
+                        fromShop = fields.getOrNull(13)?.removePrefix("'") == "shop"
                     ))
                 }
             } catch (e: Exception) {

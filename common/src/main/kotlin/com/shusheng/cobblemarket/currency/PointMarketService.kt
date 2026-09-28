@@ -13,8 +13,10 @@ import com.shusheng.cobblemarket.market.ItemRuleComponents
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.PersistHelper
+import com.shusheng.cobblemarket.util.RecordDetail
 import com.shusheng.cobblemarket.util.SpeciesText
 import net.minecraft.item.ItemStack
+import net.minecraft.nbt.NbtCompound
 import net.minecraft.registry.Registries
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.network.ServerPlayerEntity
@@ -213,13 +215,13 @@ object PointMarketService {
                 sellerName = player.name.string,
                 buyerUuid = null,
                 buyerName = "",
-                species = replaced.pokemon?.species ?: replaced.item?.itemId.orEmpty(),
+                species = speciesForHistory(replaced),
                 // ⚠ 账本的 price 是 Int，而 RP 价是 Long ⇒ 钳制转换（RP 价实际远达不到上限）
                 price = replaced.price.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                 fee = 0,
                 detail = "",
                 currency = MarketCurrency.POINTS,
-                primaryType = ""
+                primaryType = primaryTypeForHistory(player, null, replaced.pokemon)
             )
         )
         return null
@@ -273,12 +275,12 @@ object PointMarketService {
                     sellerName = player.name.string,
                     buyerUuid = null,
                     buyerName = "",
-                    species = removed.pokemon?.species ?: removed.item?.itemId.orEmpty(),
+                    species = speciesForHistory(removed),
                     price = removed.price.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                     fee = 0,
                     detail = "",
                     currency = MarketCurrency.POINTS,
-                    primaryType = ""
+                    primaryType = primaryTypeForHistory(player, null, removed.pokemon)
                 )
             )
         }
@@ -449,12 +451,15 @@ object PointMarketService {
                 sellerName = entry.creatorName,
                 buyerUuid = player.uuid,
                 buyerName = player.name.string,
-                species = entry.pokemon?.species ?: entry.item?.itemId.orEmpty(),
+                species = speciesForHistory(entry),
                 price = total.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                 fee = 0,
-                detail = "",
+                detail = detailForHistory(server, pokemon, deliveredItems),
                 currency = MarketCurrency.POINTS,
-                primaryType = ""
+                primaryType = primaryTypeForHistory(player, pokemon, null),
+                // 标记来源：交易历史界面据此把卖家列画成「▣ 商城」而不是上架的管理员名
+                // （上架 / 下架那两条**不标** —— 它们不是成交，界面也不画卖家段）
+                fromShop = true
             )
         )
         // 把造出来的实物一并交出去：调用方要拿它发庆祝动画（概率闪光只有此刻才确定）。
@@ -465,6 +470,58 @@ object PointMarketService {
     }
 
     /** 队伍或 PC 还有空位吗（`add` 会自动溢出到 PC，所以两边都满才是真放不下） */
+    /**
+     * 交易账本的「精灵/物品」列：精灵存**翻译 key**（全项目口径，见 [SpeciesText.translationKeyOf]）、
+     * 物品存 itemId。
+     *
+     * ⚠ 商城的配置里存的是**物种 ID**（`cobblemon:pikachu`），直接写进账本会让界面显示底层 ID，
+     * 而且 CSV 回读后的值与内存里那条对不上 ⇒ 去重失效、一条交易显示成两条。
+     */
+    private fun speciesForHistory(entry: ShopEntry): String =
+        entry.pokemon?.species?.let { SpeciesText.translationKeyOf(it) } ?: entry.item?.itemId.orEmpty()
+
+    /**
+     * 精灵名的**属性色**（形态感知 —— 阿罗拉六尾是冰系）：与市场 / 拍卖 / 求购同一个口径
+     *（`cobblemon.type.<主属性>`），界面按它上色。
+     *
+     * 购买时手上有造好的精灵、直接取；**上架 / 下架只有配置**（没有精灵对象），而主属性
+     * **与形态有关** ⇒ 照 [PointMarketFactory.createPokemon] 造一只来问（纯计算、用完即弃，
+     * 服主上架本来就不是高频操作）。取不到就空着 —— 只是名字无色，不影响成交与账本。
+     */
+    private fun primaryTypeForHistory(player: ServerPlayerEntity, pokemon: Pokemon?, spec: ShopPokemonSpec?): String {
+        val resolved = pokemon
+            ?: spec?.let { runCatching { PointMarketFactory.createPokemon(it, player) }.getOrNull() }
+            ?: return ""
+        return "cobblemon.type.${resolved.primaryType.name.lowercase()}"
+    }
+
+    /**
+     * 交易账本的**「详情」列**（与市场 / 拍卖 / 求购同口径）：精灵记完整数值、物品记 NBT 与稀有度。
+     *
+     * ⚠ 物品这一列**不能空**：历史界面的物品名**稀有度色全靠它** —— `RecordDetail.rarityFromDetail`
+     *   只从详情列里抠 `rarity=` 那一段（界面拿到的 DTO 里没有单独的稀有度字段）。
+     *   2026-09-28 用户实测报「商城的记录名字没有颜色」，根因就是这里原先写死空串。
+     * ⚠ 商城的货是**当场造的**，NBT 得现取：精灵 `saveToNBT`、物品 `encode`
+     *  （传 `deliveredItems` 而不是 `items` —— 后者交付时已被扣成空栈，见 [buy] 里的注释）。
+     *   取不到就空着：记账**不该拖垮成交**。
+     */
+    private fun detailForHistory(server: MinecraftServer, pokemon: Pokemon?, items: List<ItemStack>): String =
+        try {
+            if (pokemon != null) {
+                RecordDetail.pokemon(
+                    pokemon.saveToNBT(server.registryManager, NbtCompound()),
+                    server, emptyMap(), pokemon.level, pokemon.shiny
+                )
+            } else {
+                val stack = items.firstOrNull()
+                val nbt = stack?.encode(server.registryManager) as? NbtCompound
+                if (nbt == null) "" else RecordDetail.item(nbt, items.sumOf { it.count }, server.registryManager)
+            }
+        } catch (e: Exception) {
+            CobbleMarket.LOGGER.warn("Point shop: failed to build history detail: {}", e.message)
+            ""
+        }
+
     private fun hasPokemonSpace(player: ServerPlayerEntity): Boolean {
         val storage = Cobblemon.storage
         if (storage.getParty(player).getFirstAvailablePosition() != null) return true
