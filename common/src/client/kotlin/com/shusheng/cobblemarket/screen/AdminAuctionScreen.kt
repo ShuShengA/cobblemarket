@@ -71,10 +71,23 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
     private var currencyButton: NineSliceButton? = null
 
     /** 点货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（置灰态按钮同样走这里） */
+    /**
+     * 设置当前币种 —— **唯一入口**：改字段 + 刷按钮外观一起做。
+     *
+     * ⚠⚠ **别直接写 `currency = ...`**：只改字段、忘了刷外观，就会出现
+     *   「看到的是一半挂单、操作的却是另一半」—— 管理端下架 / 强制取消时同样会出事。
+     *   自查：全类 `grep "currency = "` 应**只剩本函数里那一处**。
+     * ⚠ 管理端**不碰** `MarketStateCache.marketCurrency`：那是玩家侧市场系界面共用的，
+     *   管理端之间各有各的币种，也不该被玩家侧的选择带着走。
+     */
+    private fun setCurrency(value: MarketCurrency) {
+        currency = value
+        currencyButton?.let { updateCurrencyButton(it) }
+    }
+
     private fun onCurrencyClick() {
         // ⚠ 管理端**不拦开关**：管理员要能查看并下架存量的 RP 挂单
-        currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
-        currencyButton?.let { updateCurrencyButton(it) }
+        setCurrency(if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS)
         // 本地先按新币种过一遍（旧币种条目立刻消失），再向服务端要新币种的全量列表
         rebuildFiltered()
         sendToServer(RequestAuctionListPayload(currency.name))

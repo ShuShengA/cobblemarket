@@ -972,10 +972,23 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         toggleCurrency()
     }
 
+    /**
+     * 设置当前币种 —— **唯一入口**：改字段 + 刷按钮外观一起做。
+     *
+     * ⚠⚠ **别直接写 `currency = ...`**：只改字段、忘了刷外观，就会出现
+     *   「看到的是一半挂单、操作的却是另一半」—— 管理端下架 / 强制取消时同样会出事。
+     *   自查：全类 `grep "currency = "` 应**只剩本函数里那一处**。
+     * ⚠ 管理端**不碰** `MarketStateCache.marketCurrency`：那是玩家侧市场系界面共用的，
+     *   管理端之间各有各的币种，也不该被玩家侧的选择带着走。
+     */
+    private fun setCurrency(value: MarketCurrency) {
+        currency = value
+        currencyButton?.let { updateCurrencyButton(it) }
+    }
+
     /** 切主货币 ↔ RP：整屏换成另一半挂单，**必须重置页码**（原页码在新币种下多半是空的） */
     private fun toggleCurrency() {
-        currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
-        currencyButton?.let { updateCurrencyButton(it) }
+        setCurrency(if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS)
         currentPage = 1
         refreshData()
     }

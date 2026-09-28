@@ -260,8 +260,7 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
         // ⚠ 提交前**再查一次实时缓存**：服主可能在弹窗开着的时候把「玩家间 RP 交易」关掉了，
         //   那这一次必须拦下并切回主货币（服务端也会拒，这里是为了给个明确提示、而不是静默失败）
         if (currency == MarketCurrency.POINTS && !PointsStateCache.marketEnabled) {
-            currency = MarketCurrency.PRIMARY
-            currencyButton?.let { updateCurrencyButton(it) }
+            setCurrency(MarketCurrency.PRIMARY)
             client?.player?.sendMessage(
                 // ⚠ 提醒类消息**用红色**，和普通反馈区分开（图标自带白色，不受影响）
                 Text.translatable("cobblemarket.network.points_market_disabled", CurrencyService.pointsIcon())
@@ -306,12 +305,24 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
         toggleCurrency()
     }
 
+    /**
+     * 设置当前币种 —— **唯一入口**：改字段、刷按钮外观、写共享缓存，三件事一起做。
+     *
+     * ⚠⚠ **别直接写 `currency = ...`**：那样容易只改字段、忘了刷外观 ——
+     *   于是玩家**看到的**是主货币、**提交的**却是 RP（或反过来）。
+     *   ⚠ RP 的来路由服主决定（**可能是真钱充值来的**，也可能只是任务 / 活动奖励），
+     *   一旦不一致，轻则玩家卖亏、重则直接是经济损失（用户 2026-09-28 拍板必须堵死）。
+     *   自查：全类 `grep "currency = "` 应**只剩本函数里那一处**。
+     */
+    private fun setCurrency(value: MarketCurrency) {
+        currency = value
+        currencyButton?.let { updateCurrencyButton(it) }
+        com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency = value
+    }
+
     /** 切主货币 ↔ RP */
     private fun toggleCurrency() {
-        currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
-        // 写回共享缓存：上架完返回的市场要落在同一个币种页（见 MarketStateCache.marketCurrency）
-        com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency = currency
-        currencyButton?.let { updateCurrencyButton(it) }
+        setCurrency(if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS)
     }
 
     /** 刷新货币按钮外观：主货币显示 `₽` 文字，RP 显示 8×8 图标（与余额 HUD 的单位同一张图） */
