@@ -256,6 +256,7 @@
   "cobblemarket.points.config.entry": "%s Config",
   "cobblemarket.points.config.points_enabled": "%s master switch",
   "cobblemarket.points.config.points_market": "%s player-to-player trading",
+  "cobblemarket.points.config.rp_quest": "%s as quest currency",
   "cobblemarket.points.config.fee_warn_title": "Fee Rate Notice",
   "cobblemarket.points.config.fee_warn_body1": "Current %s fee rates are not 0.",
   "cobblemarket.points.config.fee_warn_body2": "If %s comes from player top-ups,",
