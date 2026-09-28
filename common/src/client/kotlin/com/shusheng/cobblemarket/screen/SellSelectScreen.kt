@@ -313,7 +313,8 @@ class SellSelectScreen(
         // ⚠ **RP 总开关关着时也要建**（只是置灰），**不能整个不创建** —— 这一行的位置是排好的
         //   （搜索框 / 价格框 / 货币 / 上架 / 筛选），按钮凭空消失会空出一块（用户 2026-09-24 报：
         //   「没开启总开关这里就缺一个位置，不好看」）。点它给失败音 + 红字提示，与另一种情况一致。
-        currency = MarketCurrency.PRIMARY
+        // ⚠ 这里**不再重置币种**：初始值来自 `MarketStateCache.marketCurrency`（2026-09-28）——
+        //   在 RP 页点「上架」进来就该是 RP；原先这一行会把刚读到的共享值清回主货币（用户实测报的）
         currencyButton = if (!noPriceField) {
             NineSliceButton(
                 // 紧贴价格框右缘（无 4px 间隙）：看起来就像价格数字后面直接跟着货币符号
@@ -1044,7 +1045,7 @@ class SellSelectScreen(
     }
 
     /** 这次上架用哪个币种定价（默认主货币）；交付/分享模式没有价格框，用不到它 */
-    private var currency = MarketCurrency.PRIMARY
+    private var currency = com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency
 
     /** 货币切换按钮（服务端没开 RP 相关开关、或交付/分享模式下为 null = 压根没建） */
     private var currencyButton: NineSliceButton? = null
@@ -1078,6 +1079,8 @@ class SellSelectScreen(
     /** 切主货币 ↔ RP */
     private fun toggleCurrency() {
         currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
+        // 写回共享缓存：上架完返回的市场要落在同一个币种页（见 MarketStateCache.marketCurrency）
+        com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency = currency
         currencyButton?.let { updateCurrencyButton(it) }
     }
 

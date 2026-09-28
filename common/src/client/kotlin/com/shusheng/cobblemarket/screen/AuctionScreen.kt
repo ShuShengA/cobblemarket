@@ -128,7 +128,7 @@ class AuctionScreen(
 
     /** 列表在查哪个币种（货币切换按钮控制）—— **只决定查什么**：显示单位一律读条目自己的 [AuctionEntry.isPoints]。
      *  聊天播报带来的币种优先（一次命中），否则主货币 */
-    private var currency = initialCurrency ?: MarketCurrency.PRIMARY
+    private var currency = initialCurrency ?: com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency
 
     /** 货币切换按钮（RP 总开关关着时为 null = 压根没建） */
     private var currencyButton: NineSliceButton? = null
@@ -387,6 +387,8 @@ class AuctionScreen(
     private fun onCurrencyClick() {
         // ⚠ 不拦开关：卖家要能切过去下架自己的存量 RP 挂单
         currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
+        // 写回共享缓存：创建拍卖 / 返回后的拍卖场都跟着这个币种走（见 MarketStateCache.marketCurrency）
+        com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency = currency
         currencyButton?.let { updateCurrencyButton(it) }
         // 本地先按新币种过一遍（旧币种条目立刻消失），再向服务端要新币种的全量列表。
         // ⚠ 连点两次时第二次必然落在上一次的节流窗口内（500ms），必须走排队入口

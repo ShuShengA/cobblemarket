@@ -52,7 +52,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     /** 列表在查哪个币种（货币切换按钮控制）—— **只决定查什么，不参与渲染**：
      *  显示单位一律读挂单自己的 [ItemEntry.isPoints]，否则任何一处漏改就会把 RP 商品标成 ₽ */
-    private var currency = MarketCurrency.PRIMARY
+    private var currency = com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency
 
     /** 货币切换按钮（RP 总开关关着时 = null，压根没建） */
     private var currencyButton: NineSliceButton? = null
@@ -375,6 +375,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     /** 切主货币 ↔ RP：整屏换成另一半商品，**必须重置页码**（原页码在新币种下多半是空的） */
     private fun toggleCurrency() {
         currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
+        // 写回共享缓存：上架界面 / 创建界面 / 返回后的市场都跟着这个币种走（见 MarketStateCache.marketCurrency）
+        com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency = currency
         currencyButton?.let { updateCurrencyButton(it) }
         // 「收款」只在主货币页有意义：它收的是**普通货币**的待收款（RP 收入直接进余额，没有待领账本）
         collectButton?.visible = currency != MarketCurrency.POINTS
