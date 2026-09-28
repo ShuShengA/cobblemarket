@@ -365,6 +365,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             leftX, 13, 50, 16,
             Text.translatable("cobblemarket.gui.collect"), { collectBalance() }
         )
+        // ⚠ 初值跟着**当前币种**设：resize 会重建界面而 currency 是字段（值保留），
+        //   这里漏了就会出现「在 RP 页 resize 一下，收款按钮又冒出来」
+        collectButton?.visible = currency != MarketCurrency.POINTS
         addDrawableChild(collectButton)
 
         // Expired returns button
@@ -1350,6 +1353,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private fun toggleCurrency() {
         currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
         currencyButton?.let { updateCurrencyButton(it) }
+        // 「收款」只在主货币页有意义：它收的是**普通货币**的待收款（RP 收入直接进余额，没有待领账本）
+        collectButton?.visible = currency != MarketCurrency.POINTS
         currentPage = 1
         // 走筛选变更那条节流/排队通道：直接发会撞上服务端 250ms 节流被静默丢弃，列表不刷新
         requestFilterRefresh()
@@ -1646,16 +1651,23 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // ⚠ 两段都没有任何宽度防护：金额一长就压住页码、再长画出面板（296 的面板装不下大额）。
         // 可用宽 = 面板宽 − 页码宽 − 左右留白（从布局反算，别写死）；超宽时按三级降级：
         // 待收款为 0 整段不显示 → 金额换缩写（999,999,999 → 1.0B）→ 截断兜底
-        val balUnit = com.shusheng.cobblemarket.client.inlineCurrencyUnit()
+        // ⚠ 余额跟着**当前看的币种**走（2026-09-28）；**待收款只在主货币页显示** ——
+        //   RP 没有待领账本（收入直接进余额，见 CurrencyService.creditSeller），
+        //   在 RP 页显示它等于谎称"有 RP 没领"
+        val isPoints = currency == MarketCurrency.POINTS
+        val cache = com.shusheng.cobblemarket.client.BalanceCache
+        val shownBal = if (isPoints) cache.pointsBalance else cache.balance
         val avail = panelWidth - 10 - pageW
-        val balText: Text? = com.shusheng.cobblemarket.client.BalanceCache.balance.takeIf { it.isNotEmpty() }?.let {
-            Text.translatable("cobblemarket.gui.balance", Text.literal("$it $balUnit").formatted(Formatting.GOLD))
+        val balText: Text? = shownBal.takeIf { it.isNotEmpty() }?.let {
+            Text.translatable("cobblemarket.gui.balance",
+                com.shusheng.cobblemarket.client.amountWithUnit(it, isPoints, cache.currencyName, inline = true)
+                    .formatted(Formatting.GOLD))
         }
         val balW = balText?.let { textRenderer.getWidth(it) + 4 } ?: 0
         fun pendingLine(amount: String): Text = Text.translatable("cobblemarket.gui.pending_balance",
-            Text.literal("$amount $balUnit").formatted(Formatting.GREEN))
-        // 待收款为 0 时不占位：没有待领的东西就整段不显示
-        val pendingFull: Text? = if (pendingBalance > 0)
+            Text.literal("$amount ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GREEN))
+        // 待收款为 0 时不占位：没有待领的东西就整段不显示；RP 页整段不显示（没有 RP 待收款这回事）
+        val pendingFull: Text? = if (!isPoints && pendingBalance > 0)
             pendingLine(com.shusheng.cobblemarket.client.formatBalanceLong(pendingBalance)) else null
         val pendingText: Text? = pendingFull?.takeIf { balW + textRenderer.getWidth(it) <= avail }
             ?: pendingFull?.let { pendingLine(com.shusheng.cobblemarket.client.formatPriceShortLong(pendingBalance)) }

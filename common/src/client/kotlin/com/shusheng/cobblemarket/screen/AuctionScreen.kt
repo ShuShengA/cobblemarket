@@ -2011,7 +2011,7 @@ class AuctionScreen(
 
         // 余额（左上角，与标题同一行）—— 标题居中在 y=20、tab 在 y=32、搜索框在 y=50，中间塞不下第三行，
         // 所以这一行是唯一位置；余额一长就压上去，降级规则见 drawHeaderBalance
-        drawHeaderBalance(context, textRenderer, centerX, leftX + 4, textRenderer.getWidth(titleText))
+        drawHeaderBalance(context, textRenderer, centerX, leftX + 4, textRenderer.getWidth(titleText), currency)
 
         // 操作结果提示
         if (resultMsg != null) {
