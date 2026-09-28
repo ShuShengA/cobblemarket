@@ -388,7 +388,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             fx, 42, fw, 20,
             typeButtonText(),
             { toggleFilterList("type") },
-            if (typeFilter.isNotEmpty()) typeColor("cobblemon.type.$typeFilter") else UNSET_FILTER_COLOR
+            UNSET_FILTER_COLOR   // 颜色由「值」自己带（见 filterButtonText），这里必须留白
         )
         addDrawableChild(typeButton)
 
@@ -398,7 +398,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             fx, 64, fw, 20,
             teraButtonText(),
             { toggleFilterList("tera") },
-            if (teraFilter.isNotEmpty()) typeColor(teraFilter) else UNSET_FILTER_COLOR
+            UNSET_FILTER_COLOR   // 同属性按钮：颜色由「值」自己带
         )
         addDrawableChild(teraButton)
 
@@ -406,7 +406,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             fx, 86, fw, 20,
             abilityButtonText(),
             { toggleFilterList("ability") },
-            if (abilityFilter.isNotEmpty()) GOLD_COLOR else UNSET_FILTER_COLOR
+            UNSET_FILTER_COLOR   // 颜色由「值」自己带
         )
         addDrawableChild(abilityButton)
 
@@ -414,7 +414,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             fx, 108, fw, 20,
             natureButtonText(),
             { toggleFilterList("nature") },
-            if (natureFilter.isNotEmpty()) GOLD_COLOR else UNSET_FILTER_COLOR
+            UNSET_FILTER_COLOR   // 颜色由「值」自己带
         )
         addDrawableChild(natureButton)
 
@@ -465,7 +465,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             fx + half + 4, 130, half, 20,
             gmaxButtonText(),
             { toggleGmax() },
-            if (gmaxFilter != 0) GOLD_COLOR else 0xFFFFFF
+            0xFFFFFF   // 颜色由「值」自己带
         )
         addDrawableChild(gmaxButton)
 
@@ -774,7 +774,10 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val any = key.isEmpty()
         val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable("cobblemon.type.$key")
-        return filterButtonText("cobblemarket.gui.type", label, filterTypeW, any)
+        return filterButtonText(
+            "cobblemarket.gui.type", label, filterTypeW, any,
+            if (any) null else typeColor("cobblemon.type.$key")
+        )
     }
 
     private fun teraButtonText(): Text {
@@ -782,7 +785,10 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val any = key.isEmpty()
         val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable("cobblemon.type.$key")
-        return filterButtonText("cobblemarket.gui.tera", label, filterTypeW, any)
+        return filterButtonText(
+            "cobblemarket.gui.tera", label, filterTypeW, any,
+            if (any) null else typeColor("cobblemon.type.$key")
+        )
     }
 
     /** 超极巨化：0 = 不限（只显示标签）、1 = 仅超极巨、2 = 仅非超极巨 */
@@ -792,27 +798,36 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             2 -> Text.translatable("cobblemarket.gui.filter_no")
             else -> Text.translatable("cobblemarket.gui.filter_any")
         }
-        return filterButtonText("cobblemarket.gui.gmax", label, (MarketPanelBackground.filterWidth(width) - 8 - 4) / 2, gmaxFilter == 0)
+        return filterButtonText(
+            "cobblemarket.gui.gmax", label, (MarketPanelBackground.filterWidth(width) - 8 - 4) / 2, gmaxFilter == 0,
+            if (gmaxFilter == 0) null else GOLD_COLOR
+        )
     }
 
     private fun toggleGmax() {
         gmaxFilter = (gmaxFilter + 1) % 3
         gmaxButton.message = gmaxButtonText()
-        (gmaxButton as? NineSliceButton)?.textColor = if (gmaxFilter != 0) GOLD_COLOR else 0xFFFFFF
+        (gmaxButton as? NineSliceButton)?.textColor = 0xFFFFFF
     }
 
     private fun abilityButtonText(): Text {
         val any = abilityFilter.isEmpty()
         val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable(abilityFilter)
-        return filterButtonText("cobblemarket.buy_order.ability_label", label, filterValueW, any)
+        return filterButtonText(
+            "cobblemarket.buy_order.ability_label", label, filterValueW, any,
+            if (any) null else GOLD_COLOR
+        )
     }
 
     private fun natureButtonText(): Text {
         val any = natureFilter.isEmpty()
         val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable(natureFilter)
-        return filterButtonText("cobblemarket.buy_order.nature_label", label, filterValueW, any)
+        return filterButtonText(
+            "cobblemarket.buy_order.nature_label", label, filterValueW, any,
+            if (any) null else GOLD_COLOR
+        )
     }
 
     /**
@@ -824,11 +839,19 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
      * ⚠ 值超宽时按按钮宽度截断（两侧各留 4px）。**不需要悬停提示**：展开列表里的选项按钮是整行的宽，
      *   玩家展开时就能看到完整名字、选之前已经知道是什么（用户 2026-09-23 定）。
      */
-    private fun filterButtonText(labelKey: String, value: Text, buttonW: Int, isAny: Boolean): Text {
+    private fun filterButtonText(labelKey: String, value: Text, buttonW: Int, isAny: Boolean, valueColor: Int? = null): Text {
         // ⚠ `isAny` 已无用（2026-09-23 恢复「标签 + 值」前缀后，两种状态都要拼标签）——
         //   留着只是少改几个调用点，下次动这块时一并清掉。
         val prefix = Text.translatable(labelKey)
-        return prefix.append(Text.literal(TextUtil.truncateString(value.string, buttonW - 8 - textRenderer.getWidth(prefix))))
+        val shown = Text.literal(TextUtil.truncateString(value.string, buttonW - 8 - textRenderer.getWidth(prefix)))
+        // ⚠ **颜色只上在「值」上，前缀是陪衬文字不设色**（用户 2026-09-28 实测报的：原来整段染成属性色，
+        //   连「属性：」这几个字都跟着变色）。走的是 CLAUDE.md 那条规矩：带色的文字不能当父节点 ——
+        //   前缀（无色）当父、把颜色设在**值**自己的样式上，前缀就吃按钮的默认白字。
+        //   ⚠ 同时按钮的 `textColor` 必须留**白色**：那是"整段默认色"，设成属性色会把前缀again染色。
+        val valueText = if (valueColor != null)
+            shown.setStyle(net.minecraft.text.Style.EMPTY.withColor(valueColor))
+        else shown
+        return prefix.append(valueText)
     }
 
     /** 25 种性格（翻译 key, 显示名），与求购单创建一致 */
@@ -987,25 +1010,23 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 typeFilter = key
                 typeFilterIndex = typeOptions.indexOf(key).coerceAtLeast(0)
                 typeButton.message = typeButtonText()
-                (typeButton as? NineSliceButton)?.textColor =
-                    if (key.isNotEmpty()) typeColor("cobblemon.type.$key") else 0xFFFFFF
+                (typeButton as? NineSliceButton)?.textColor = 0xFFFFFF
             }
             "tera" -> {
                 teraFilter = key
                 teraFilterIndex = typeOptions.indexOf(key).coerceAtLeast(0)
                 teraButton.message = teraButtonText()
-                (teraButton as? NineSliceButton)?.textColor =
-                    if (key.isNotEmpty()) typeColor("cobblemon.type.$key") else 0xFFFFFF
+                (teraButton as? NineSliceButton)?.textColor = 0xFFFFFF
             }
             "ability" -> {
                 abilityFilter = key
                 abilityButton.message = abilityButtonText()
-                (abilityButton as? NineSliceButton)?.textColor = if (key.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
+                (abilityButton as? NineSliceButton)?.textColor = 0xFFFFFF
             }
             "nature" -> {
                 natureFilter = key
                 natureButton.message = natureButtonText()
-                (natureButton as? NineSliceButton)?.textColor = if (key.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
+                (natureButton as? NineSliceButton)?.textColor = 0xFFFFFF
             }
         }
         filterListOpen = ""
