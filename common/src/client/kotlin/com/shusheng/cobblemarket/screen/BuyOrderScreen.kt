@@ -101,9 +101,15 @@ class BuyOrderScreen(
      * 列表在查哪个币种（货币切换按钮控制）—— **只决定查什么，不参与渲染**：
      * 显示单位一律读订单自己的 [BuyOrderEntry.isPoints]，否则任何一处漏改就会把 RP 求购单标成 ₽。
      */
-    // 通知带了币种就用它（一次命中）；否则用交付流程跨界面暂存的；都没有则主货币。
+    // 币种优先级：**通知带的（一次命中）** > **交付流程跨界面暂存的** > **玩家侧共享的** > 主货币。
+    // ⚠ 求购单也算玩家侧市场系界面：关掉再从入口进来要停在上次的币种（与市场 / 拍卖场一致）；
+    //   ⚠ 管理端模式**不接**共享缓存 —— 管理端各有各的币种，不该被玩家侧带着走。
     // ⚠ 写成「先消费再覆盖」：consumeReturnCurrency() 有副作用（清空静态暂存），短路求值会跳过它
-    private var currency = consumeReturnCurrency().let { initialCurrency ?: it }
+    private var currency = consumeReturnCurrency().let { stashed ->
+        initialCurrency ?: stashed
+            ?: com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency.takeIf { !adminMode }
+            ?: MarketCurrency.PRIMARY
+    }
 
     /** 货币切换按钮（RP 总开关关着时 = null，压根没建；照市场/拍卖场） */
     private var currencyButton: NineSliceButton? = null
@@ -578,11 +584,26 @@ class BuyOrderScreen(
         }
     }
 
+    /**
+     * 设置当前币种 —— **唯一入口**：改字段、刷按钮外观、写共享缓存，三件事一起做。
+     *
+     * ⚠⚠ **别直接写 `currency = ...`**：那样容易只改字段、忘了刷外观 ——
+     *   于是玩家**看到的**是主货币、**提交的**却是 RP（或反过来）。
+     *   ⚠ RP 的来路由服主决定（**可能是真钱充值来的**，也可能只是任务 / 活动奖励），
+     *   一旦不一致，轻则玩家卖亏、重则直接是经济损失（用户 2026-09-28 拍板必须堵死）。
+     *   自查：全类 `grep "currency = "` 应**只剩本函数里那一处**。
+     * ⚠ 管理端**不写**共享缓存：那是玩家侧市场系界面共用的。
+     */
+    private fun setCurrency(value: MarketCurrency) {
+        currency = value
+        currencyButton?.let { updateCurrencyButton(it, currency == MarketCurrency.POINTS) }
+        if (!adminMode) com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency = value
+    }
+
     /** 点货币按钮：列表是**查看**用途，不拦开关（买家要能切过去关掉存量 RP 单取回冻结金） */
     private fun onCurrencyClick() {
         // ⚠ 连点两次时第二次必然落在上一次的节流窗口内（500ms），走排队入口才不会丢掉这次请求
-        currency = if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
-        currencyButton?.let { updateCurrencyButton(it, currency == MarketCurrency.POINTS) }
+        setCurrency(if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS)
         // 本地先按新币种过一遍（旧币种条目立刻消失），回到顶部，再向服务端要新币种的全量列表。
         // ⚠ 本界面没有分页，「重置页码」对应的就是滚动位置归零
         rebuildDisplayList()
@@ -3585,8 +3606,14 @@ class BuyOrderScreen(
             pendingReturnCurrency = currency
         }
 
-        /** 构造时**一次性消费**：其它入口（市场入口 / 聊天直达）拿到的仍是主货币 */
-        private fun consumeReturnCurrency(): MarketCurrency =
-            (pendingReturnCurrency ?: MarketCurrency.PRIMARY).also { pendingReturnCurrency = null }
+        /**
+         * 构造时**一次性消费**（消费即清空，防跨实例残留）。
+         *
+         * ⚠ 返回 **null = 没有暂存**，兜底交给调用方（构造处：玩家侧退到共享币种、管理端退到主货币）。
+         *   本函数**不能**自己兜底成主货币 —— 那样求购单永远走不到"共享币种"那一步，
+         *   表现为「从入口重进求购单总是回到主货币」（2026-09-28 用户实测报的）。
+         */
+        private fun consumeReturnCurrency(): MarketCurrency? =
+            pendingReturnCurrency.also { pendingReturnCurrency = null }
     }
 }
