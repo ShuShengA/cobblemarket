@@ -1560,13 +1560,15 @@ object BuyOrderNetwork {
         order: com.shusheng.cobblemarket.market.BuyOrder,
         deliveryExtra: Map<String, String>? = null
     ): Text {
-        val hover = buildDeliveryHover(order, deliveryExtra)
         val button = Text.translatable("cobblemarket.chat.review_button").styled {
-            var style = it.withColor(Formatting.GOLD)
+            // ⚠ **只挂点击、不挂悬停**（2026-09-29 用户拍板，同拍卖播报）：悬停详情改由客户端的
+            //   自绘悬浮窗给（`ChatObjectPreview`）。`buildDeliveryHover` 暂时留着，
+            //   等用户验收后再决定删不删。
+            it.withColor(Formatting.GOLD)
                 .withUnderline(true)
+                // ⚠ 指令末尾的**币种参数是 1.3.0 的 RP 功能**（1.2.1 上没有）—— 上浮时保留它；
+                //   悬停那两行（`hover` / `withHoverEvent`）随本次改动一并去掉
                 .withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket review ${order.id} ${order.currency.name}"))
-            if (hover != null) style = style.withHoverEvent(HoverEvent(HoverEvent.Action.SHOW_TEXT, hover))
-            style
         }
         // 需求里的**物种名按主属性色**（全模组统一口径，同拍卖播报）：
         // 下面整行 `.formatted(GREEN)` 会把名字一起染绿，而**子样式优先于父级** —— 显式给名字上色即可。
