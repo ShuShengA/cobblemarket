@@ -47,11 +47,6 @@ class PointsConfigScreen : Screen(
     private var pointsBuyOrderFee = 0.0
 
 
-    /** 上面那个提醒弹窗开着没有 */
-    private var feeWarn = false
-
-    /** 提醒弹窗的按钮（只在它开着时创建） */
-    private val feeWarnButtons = mutableListOf<NineSliceButton>()
 
     /** 费率配置二级弹窗开着没有 */
     private var feeDialog = false
@@ -123,31 +118,54 @@ class PointsConfigScreen : Screen(
     // 后果不可逆（开了之后任何 OP 都能给自己发钱），而开关本身只有一行标签、说不清这么多。
     // ⇒ 打开前用弹窗把**作用 / 用途 / 风险**讲清楚，并用 5 秒冷静期防手滑。
 
-    /** 确认弹窗开着没有 */
-    private var grantDialog = false
+    /**
+     * 当前开着的确认弹窗是哪一种：`""` = 没开、`"grant"` = 权限下放、`"market"` = 玩家间交易。
+     *
+     * ⚠ **两处复用同一套弹窗** —— 它们都是"打开就有不可逆后果"的开关，机制完全一样
+     *   （讲清含义 + 确认按钮 5 秒冷静期），差别只在**词条**与**确认后写哪个字段**。
+     */
+    private var confirmKind = ""
 
     /** 确认按钮**解禁的时刻**：打开弹窗时 = now + [GRANT_CONFIRM_COOLDOWN_MS] */
-    private var grantReadyAt = 0L
+    private var confirmReadyAt = 0L
 
     /** 确认弹窗的按钮（只在它开着时创建）—— `[0]` 是确认、`[1]` 是取消 */
-    private val grantDialogButtons = mutableListOf<NineSliceButton>()
+    private val confirmDialogButtons = mutableListOf<NineSliceButton>()
 
-    /** 点**开启**时走这里：先弹确认窗（关闭不需要确认，直接关） */
+    /** give/take 权限下放：点**开启**时走这里先弹确认窗（关闭不需要确认，直接关） */
     private fun onGrantToggle() {
         if (rpAsQuestCurrency) {
             rpAsQuestCurrency = false
             markDirtyAndRebuild()
         } else {
-            openGrantDialog()
+            openConfirmDialog("grant")
+        }
+    }
+
+    /**
+     * 玩家间交易：点**开启**时弹确认窗。
+     *
+     * ⚠ 这个弹窗的首要任务是**破除一个误解**（用户 2026-09-28）：服主看到"玩家间交易"多半会
+     *   以为**玩家能直接给另一个人转 RP**（像 `/pay` 那样）。实际机制是**只能靠买卖东西** ——
+     *   没有"转账"这回事。所以正文写"可以互相买卖"，红字段明确否掉转账。
+     * ⚠ 费率提醒（原先的 `feeWarn`）**并进了这个弹窗**：有费率时多一行红字提示去调 0。
+     *   否则会出现"确认窗 → 又弹一个费率窗"的两层弹出。
+     */
+    private fun onMarketToggle() {
+        if (pointsMarketEnabled) {
+            pointsMarketEnabled = false
+            markDirtyAndRebuild()
+        } else {
+            openConfirmDialog("market")
         }
     }
 
     /** 开确认弹窗：**先重建再建自己的控件**（顺序同 [openFeeDialog]，反了会被 rebuild 清掉） */
-    private fun openGrantDialog() {
+    private fun openConfirmDialog(kind: String) {
         // ⚠ 冷静期的起点**要在 rebuild 之前**记：rebuild 会重跑 init，之后算会少一帧（无妨但没必要）
-        grantReadyAt = System.currentTimeMillis() + GRANT_CONFIRM_COOLDOWN_MS
-        grantDialog = true
-        grantDialogButtons.clear()
+        confirmReadyAt = System.currentTimeMillis() + GRANT_CONFIRM_COOLDOWN_MS
+        confirmKind = kind
+        confirmDialogButtons.clear()
         rebuild()
         hideMainControls()
 
@@ -155,29 +173,32 @@ class PointsConfigScreen : Screen(
         val closeY = editDialogY() + EDIT_H - 26
         addDrawableChild(
             NineSliceButton(dx + 22, closeY, 80, 16,
-                Text.translatable("cobblemarket.points.config.grant_confirm"), { commitGrantDialog() })
-                .also { grantDialogButtons += it }
+                Text.translatable("cobblemarket.points.config.grant_confirm"), { commitConfirmDialog() })
+                .also { confirmDialogButtons += it }
         )
         addDrawableChild(
             NineSliceButton(dx + EDIT_W - 102, closeY, 80, 16,
-                Text.translatable("cobblemarket.op.scfg_cancel"), { closeGrantDialog() })
-                .also { grantDialogButtons += it }
+                Text.translatable("cobblemarket.op.scfg_cancel"), { closeConfirmDialog() })
+                .also { confirmDialogButtons += it }
         )
     }
 
-    private fun closeGrantDialog() {
-        grantDialog = false
+    private fun closeConfirmDialog() {
+        confirmKind = ""
         markDirtyAndRebuild()
     }
 
     /** 确认开启：**冷静期内点它无效**（按钮已置灰，这里是硬拦，防快捷键/连点绕过） */
-    private fun commitGrantDialog() {
-        if (System.currentTimeMillis() < grantReadyAt) {
+    private fun commitConfirmDialog() {
+        if (System.currentTimeMillis() < confirmReadyAt) {
             playFailSound()
             return
         }
-        rpAsQuestCurrency = true
-        grantDialog = false
+        when (confirmKind) {
+            "grant" -> rpAsQuestCurrency = true
+            "market" -> pointsMarketEnabled = true
+        }
+        confirmKind = ""
         markDirtyAndRebuild()
         save()
     }
@@ -188,9 +209,9 @@ class PointsConfigScreen : Screen(
      * ⚠ 在 `render` 里每帧调 —— 到点那一刻没有任何事件回调，只在别处算会一直停在灰的
      *   （同"面板开合动画播完那一刻"那个坑）。
      */
-    private fun updateGrantConfirmButton() {
-        val btn = grantDialogButtons.firstOrNull() ?: return
-        val left = ((grantReadyAt - System.currentTimeMillis()) / 1000L).toInt()
+    private fun updateConfirmButton() {
+        val btn = confirmDialogButtons.firstOrNull() ?: return
+        val left = ((confirmReadyAt - System.currentTimeMillis()) / 1000L).toInt()
         if (left > 0) {
             btn.dimmed = true
             btn.setMessage(Text.translatable("cobblemarket.points.config.grant_wait", left))
@@ -206,32 +227,55 @@ class PointsConfigScreen : Screen(
      * ⚠ 说明文字**每行一个独立词条**，不写成一整句 —— 中英行宽差得多，长句英文必然溢出
      *   （`EDIT_W = 220`，可用宽约 200px）。
      */
-    private fun renderGrantDialog(context: DrawContext) {
+    private fun renderConfirmDialog(context: DrawContext) {
+        val titleKey = when (confirmKind) {
+            "grant" -> "cobblemarket.points.config.grant_title"
+            "market" -> "cobblemarket.points.config.market_title"
+            else -> return
+        }
+        val lineKeys = when (confirmKind) {
+            "grant" -> listOf(
+                "cobblemarket.points.config.grant_line1",
+                "cobblemarket.points.config.grant_line2",
+                "cobblemarket.points.config.grant_line3"
+            )
+            else -> listOf(
+                "cobblemarket.points.config.market_line1",
+                "cobblemarket.points.config.market_line2",
+                "cobblemarket.points.config.market_line3"
+            )
+        }
+        // 红字段：玩家间交易那条在**配了费率**时多一行（原先的 `feeWarn` 弹窗并进来了）
+        val warnKeys = when (confirmKind) {
+            "grant" -> listOf(
+                "cobblemarket.points.config.grant_warn1",
+                "cobblemarket.points.config.grant_warn2"
+            )
+            else -> buildList {
+                // ⚠ 首要任务是**破除"玩家之间能转账"这个误解**（用户 2026-09-28）——
+                //   服主看到"玩家间交易"多半以为能像 /pay 那样直接转，实际只能靠买卖东西
+                add("cobblemarket.points.config.market_warn1")
+                if (anyFee()) add("cobblemarket.points.config.market_warn_fee")
+            }
+        }
+
         val dx = editDialogX()
         context.drawCenteredTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.points.config.grant_title").formatted(Formatting.GOLD),
+            textRenderer, Text.translatable(titleKey).formatted(Formatting.GOLD),
             width / 2, editDialogY() + 14, 0xFFFFFF
         )
+        // ⚠ 货币单位一律 `pointsIcon()`（项目规矩：游戏内文案不出现「RP」字样）；
+        //   没有 `%s` 的条目多传参数会被忽略，所以统一传、不必按 key 分支
         var y = editDialogY() + 34
-        listOf(
-            "cobblemarket.points.config.grant_line1",
-            "cobblemarket.points.config.grant_line2",
-            "cobblemarket.points.config.grant_line3"
-        ).forEach { key ->
-            // ⚠ 统一传 `pointsIcon()`：货币单位**必须是图标**（项目规矩，游戏内文案不出现「RP」字样）。
-            //   没有 `%s` 的条目多传参数会被忽略，所以这里不必按 key 分支
+        lineKeys.forEach { key ->
             context.drawTextWithShadow(
                 textRenderer, Text.translatable(key, CurrencyService.pointsIcon()), dx + 10, y, 0xFFFFFF
             )
             y += 12
         }
-        // ⚠ 风险提示单独一段、**红字** —— 这是唯一"会造成不可逆后果"的开关，要显眼
+        // ⚠ 风险提示单独一段、**红字** —— 这两个开关都有不可逆后果，要显眼
         y += 6
-        listOf(
-            "cobblemarket.points.config.grant_warn1",
-            "cobblemarket.points.config.grant_warn2"
-        ).forEach { key ->
+        warnKeys.forEach { key ->
             context.drawTextWithShadow(
                 textRenderer, Text.translatable(key, CurrencyService.pointsIcon()), dx + 10, y, 0xFF5555
             )
@@ -380,7 +424,7 @@ class PointsConfigScreen : Screen(
     private val TIER_DELETE_W = 46
 
     /** 有弹窗开着吗（档位编辑 / 费率提醒 / 费率编辑）—— 滚动与行可见性都要看它 */
-    private fun anyDialogOpen() = editing || feeWarn || feeDialog || grantDialog
+    private fun anyDialogOpen() = editing || feeDialog || confirmKind.isNotEmpty()
 
     private fun hideMainControls() {
         listOfNotNull(
@@ -546,7 +590,7 @@ class PointsConfigScreen : Screen(
             addDrawableChild(btn)
         }
         addToggle("points", pointsEnabled) { pointsEnabled = !pointsEnabled; markDirtyAndRebuild() }
-        addToggle("points_market", pointsMarketEnabled) { onPointsMarketToggle() }
+        addToggle("points_market", pointsMarketEnabled) { onMarketToggle() }
         // ⚠ 本行多占了一行设置项 ⇒ **档位区少显示一行**（见 [DIALOG_H] 的算式）。
         //   用户 2026-09-28 拍板接受这个取舍（他 09-19 特意要求过"档位多显示一行"，所以不能擅自加）。
         // ⚠ 点**开启**先弹确认窗（讲清交出了什么权限 + 5 秒冷静期）；**关闭**不用确认，直接关
@@ -653,55 +697,6 @@ class PointsConfigScreen : Screen(
 
     private fun markDirtyAndRebuild() {
         rebuild()
-    }
-
-    /**
-     * 点「玩家间交易」开关。
-     *
-     * ⚠ **只在「要打开」且 RP 费率非 0 时**先弹一次提醒：这个组合意味着玩家上架会被
-     * 从余额里抽成，而 RP 若是真钱充值的，那抽的就是真钱。默认费率是 0，所以正常服
-     * 一辈子见不到这个弹窗；只有**自己配过非 0 费率的服**才会被拦一下 ——
-     * 那种服多半是早先把 RP 当纯游戏币配的，后来改成充值货币时想不起配置文件里还有个费率。
-     */
-    private fun onPointsMarketToggle() {
-        if (!pointsMarketEnabled && anyFee()) {
-            openFeeWarn()
-            return
-        }
-        pointsMarketEnabled = !pointsMarketEnabled
-        markDirtyAndRebuild()
-    }
-
-    /** 开提醒弹窗：**先重建**（清掉旧控件）**再建自己的两个按钮**，顺序不能反 */
-    private fun openFeeWarn() {
-        feeWarn = true
-        feeWarnButtons.clear()
-        rebuild()
-        // **弹窗打开时下层控件全部隐藏**（全模组弹窗惯例：不隐藏的话它们会透过遮罩显形、还能被点到）。
-        // ⚠ 顺序不能反：必须放在 rebuild() **之后** —— rebuild 会把下层控件重新建出来且 visible=true
-        // ⚠ 这是一份**手写列表**：界面新增控件时三处都要追（这里、openFeeDialog、mouseClicked 的失焦名单）
-        hideMainControls()
-        val cx = width / 2
-        val by = editDialogY() + EDIT_H - 26
-        addDrawableChild(
-            NineSliceButton(
-                cx - 84, by, 80, 16,
-                Text.translatable("cobblemarket.points.config.fee_warn_proceed"), { closeFeeWarn(true) }
-            ).also { feeWarnButtons += it }
-        )
-        addDrawableChild(
-            NineSliceButton(
-                cx + 4, by, 80, 16,
-                Text.translatable("cobblemarket.op.scfg_cancel"), { closeFeeWarn(false) }
-            ).also { feeWarnButtons += it }
-        )
-    }
-
-    /** 提醒弹窗：仍然开启（放行）/ 回去改（关弹窗、开关保持不动） */
-    private fun closeFeeWarn(proceed: Boolean) {
-        feeWarn = false
-        if (proceed) pointsMarketEnabled = true
-        markDirtyAndRebuild()
     }
 
     /**
@@ -964,38 +959,6 @@ class PointsConfigScreen : Screen(
         }
     }
 
-    /**
-     * 费率提醒弹窗的内容（面板与遮罩已由 [renderBackground] 画好）。
-     * 三行正文**手动拆行**而不是靠自动换行 —— 弹窗宽度固定，长句必须自己断在标点处。
-     */
-    private fun renderFeeWarn(context: DrawContext) {
-        val cx = width / 2
-        val top = editDialogY()
-        context.drawCenteredTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.points.config.fee_warn_title").formatted(Formatting.GOLD),
-            cx, top + 16, 0xFFFFFF
-        )
-        // ⚠ 正文里的货币单位一律用**图标**：RP 只是内部代号，玩家侧界面不该出现这两个字母
-        var y = top + 42
-        for (key in listOf(
-            "cobblemarket.points.config.fee_warn_body1",
-            "cobblemarket.points.config.fee_warn_body2"
-        )) {
-            context.drawCenteredTextWithShadow(
-                textRenderer,
-                Text.translatable(key, CurrencyService.pointsIcon()),
-                cx, y, 0xFFFFFF
-            )
-            y += 13
-        }
-        context.drawCenteredTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.points.config.fee_warn_body3"),
-            cx, y, 0xFFFFFF
-        )
-    }
-
     // 档位编辑弹窗：**屏幕居中**（照全模组弹窗惯例）。
     // 之前写成"相对主弹窗偏移"是错的 —— 弹出的二级弹窗一律居中，不跟着父窗口挪
     private fun editDialogX() = width / 2 - EDIT_W / 2
@@ -1010,19 +973,15 @@ class PointsConfigScreen : Screen(
             renderEditDialog(context)
             return
         }
-        if (feeWarn) {
-            renderFeeWarn(context)
-            return
-        }
         if (feeDialog) {
             renderFeeDialog(context)
             return
         }
-        if (grantDialog) {
+        if (confirmKind.isNotEmpty()) {
             // ⚠ 冷静期的按钮文字要**每帧刷**：到点那一刻没有任何事件回调，
             //   只在打开时算一次会一直停在"请稍候"（同"动画播完那一刻"那个坑）
-            updateGrantConfirmButton()
-            renderGrantDialog(context)
+            updateConfirmButton()
+            renderConfirmDialog(context)
             return
         }
         val dx = dialogX()
