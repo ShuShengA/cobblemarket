@@ -258,7 +258,7 @@
   "cobblemarket.points.config.points_market": "%s 玩家间交易",
   "cobblemarket.points.config.rp_quest": "%s give/take 权限下放",
   "cobblemarket.points.config.grant_title": "give/take 权限下放",
-  "cobblemarket.points.config.grant_line1": "打开后，玩家的 OP（等级 ≥ 2）",
+  "cobblemarket.points.config.grant_line1": "打开后，OP 玩家（等级 ≥ 2）",
   "cobblemarket.points.config.grant_line2": "也能发放 / 回收 RP",
   "cobblemarket.points.config.grant_line3": "方便 FTB 等模组自动发奖励",
   "cobblemarket.points.config.grant_warn1": "⚠ RP 若是充值货币，请勿打开",
