@@ -1095,10 +1095,23 @@ object MarketCommands {
     private fun denyPointsGrant(context: CommandContext<ServerCommandSource>): Boolean {
         val source = context.source
         if (MarketPermissions.isServerOwner(source)) return false
-        if (CobbleMarketConfig.rpAsQuestCurrency &&
-            source.entity is net.minecraft.entity.player.PlayerEntity &&
-            source.hasPermissionLevel(2)
-        ) return false
+        val questSwitch = CobbleMarketConfig.rpAsQuestCurrency
+        val entity = source.entity
+        val isPlayer = entity is net.minecraft.entity.player.PlayerEntity
+        val level2 = source.hasPermissionLevel(2)
+        if (questSwitch && isPlayer && level2) return false
+        // ⚠ **诊断日志**（2026-09-28 加）：用户实测「开关打开后 FTB 仍发不了 RP」，
+        //   打三个判定依据 + source 身份，一次就能看出是哪一项没过：
+        //   - `entityType=null` ⇒ FTB 那边没带玩家实体（命令源不是"完成任务的玩家"）
+        //   - `isPlayer=false` ⇒ 带的是非玩家实体（命令方块之类）
+        //   - `hasLevel2=false` ⇒ FTB 的"运行等级"没生效（没设 / 设了但没作用到这个 source）
+        //   ⚠ 只在**开关打开**时打（开关关着被拒是正常行为，不必刷日志）
+        if (questSwitch) {
+            com.shusheng.cobblemarket.CobbleMarket.LOGGER.info(
+                "[points] grant denied with rpAsQuestCurrency=ON: entityType={}, isPlayer={}, hasLevel2={}, source={}",
+                entity?.javaClass?.name ?: "null", isPlayer, level2, source.name
+            )
+        }
         // 开关关着时给一句**可操作**的提示（服主最常问"FTB 怎么发不了 RP"）
         source.sendError(Text.translatable(
             if (CobbleMarketConfig.rpAsQuestCurrency) "cobblemarket.perm.owner_only"
