@@ -993,12 +993,17 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                     )
                 else Text.literal(TextUtil.truncateString(display, 260)),
                 { selectFilterOption(filterListOpen, key, idx) },
-                // 属性选项文字用对应属性色
-                if (filterListOpen == "type" && key.isNotEmpty()) typeColor("cobblemon.type.$key") else 0xFFFFFF
+                // 属性 / 太晶选项文字用对应属性色（两份列表共用同一套候选）
+                if ((filterListOpen == "type" || filterListOpen == "tera") && key.isNotEmpty())
+                    typeColor("cobblemon.type.$key") else 0xFFFFFF
             )
             filterOptionButtons.add(btn)
             addDrawableChild(btn)
         }
+        // ⚠ **几何算完必须再刷一次可见性**：上面 920 行那次是在 `filterListTopY/BottomY` **算出来之前**跑的
+        //   ⇒ 判"被浮层盖住"用的是上一次的（首次展开还是 0）⇒ 浮层下面那几个按钮**不会立刻藏**，
+        //   文字就从浮层里透出来了（用户实测报的是太晶展开时超极巨化的字透过来）
+        updateControlVisibility()
     }
 
     private fun isFilterSelected(kind: String, key: String, idx: Int): Boolean = when (kind) {
@@ -1152,6 +1157,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         if (filterListOpen.isNotEmpty()) {
             val total = when (filterListOpen) {
                 "type" -> typeOptions.size
+                // ⚠ 太晶与属性共用同一份候选 ⇒ 总数也要跟这里对上，漏了 = **展开后滚不动**（用户实测报的）
+                "tera" -> typeOptions.size
                 "ability" -> abilityOptions.size + 1
                 "nature" -> natureOptions.size + 1
                 else -> 0
