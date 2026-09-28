@@ -363,19 +363,22 @@ class AuctionScreen(
         addDrawableChild(rulesBtn)
 
         val savedSearch = searchField?.text ?: ""
-        // 宽度随 tab 变（见 searchRowCompact）：精灵 tab 右手边有「筛选」开关，其余 tab 没有
+        // ⚠ 宽度**三个 tab 统一**（2026-09-29 用户拍板，推翻 2026-09-21 那套）：原先精灵 tab 短 32px
+        //   （给「筛选」开关腾位）、物品 / 我的 tab 铺满 ⇒ 切 tab 时搜索框和按钮**位置会跳**。
+        //   现在一律「右手边留 108px」，与**精灵市场**同一口径；物品 / 我的 tab 右边会空一点，
+        //   换来的是三个 tab 的按钮位置完全一致
         searchField = TextFieldWidget(textRenderer, leftX + 2, 50,
-            if (searchRowCompact()) panelWidth - 108 else panelWidth - 76, 16, Text.translatable("cobblemarket.gui.search"))
+            panelWidth - 108, 16, Text.translatable("cobblemarket.gui.search"))
         updateSearchPlaceholder()
         searchField?.setChangedListener { updateAbilityOptions(it); rebuildFiltered(); rebuildBidButtons() }
         addSelectableChild(searchField)
         addDrawableChild(searchField)
         searchField?.text = savedSearch
 
-        // 宽 50；**位置随 tab 变**（见 searchRowCompact）——精灵 tab 与「筛选」开关对齐，
+        // 宽 50；位置**三个 tab 统一**（距面板右缘 104，见上面搜索框的说明）——
         // 其余 tab 右手边没有按钮，只往右加宽、搜索框保持原宽
         val createBtn = NineSliceButton(
-            leftX + panelWidth - (if (searchRowCompact()) 104 else 72), 50, 50, 16,
+            leftX + panelWidth - 104, 50, 50, 16,
             Text.literal(""), { client?.setScreen(AuctionCreateScreen(currentTab)) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
@@ -987,14 +990,6 @@ class AuctionScreen(
         }
     }
 
-    /**
-     * 搜索框与上架小手的横向摆法**随 tab 变**（2026-09-21 用户拍板）：
-     *  · 精灵 tab（0）：一行三个控件，右手边还有「筛选」开关 —— 小手与它同宽（50）、搜索框相应缩短；
-     *  · 物品 / 我的 tab：右手边没有按钮 —— 搜索框保持原宽，小手只往右加宽（右边空着无所谓）。
-     *  ⚠ init 与 switchTab **两处都要调**（同 updateSearchPlaceholder 的规矩，漏一处就会错位）。
-     */
-    private fun searchRowCompact() = currentTab == 0
-
     private fun switchTab(tab: Int) {
         currentTab = tab
         searchField?.text = ""
@@ -1006,9 +1001,11 @@ class AuctionScreen(
         updateTabButtons()
         // 「我的」tab 没有上架入口
         createButton?.visible = currentTab != 2
-        // 搜索框宽度与小手位置随 tab 重摆（精灵 tab 要腾位给「筛选」开关，见 searchRowCompact）
-        searchField?.setWidth(if (searchRowCompact()) panelWidth - 108 else panelWidth - 76)
-        createButton?.setX(width / 2 - panelWidth / 2 + panelWidth - (if (searchRowCompact()) 104 else 72))
+        // 搜索框与小手的位置**不再随 tab 变**（2026-09-29 用户拍板，推翻 2026-09-21 那套）：
+        // 三个 tab 一律「右手边留 108px」、小手距面板右缘 104 —— 这样切 tab 时按钮不会左右跳。
+        // 幂等重设一次：init 按当时的屏幕尺寸算过，resize 后重跑 init 会重建，这里兜个底
+        searchField?.setWidth(panelWidth - 108)
+        createButton?.setX(width / 2 - panelWidth / 2 + panelWidth - 104)
         // 筛选面板与「筛选」开关只对精灵 tab 显示（里面判 currentTab）
         applyFilterVisibility()
         rebuildFiltered()
@@ -1068,6 +1065,12 @@ class AuctionScreen(
         pendingBidLocate?.let { id ->
             entries.find { it.id == id }?.let { e ->
                 pendingBidLocate = null
+                // ⚠ **先切到这个拍品所属的页签**：物品拍品却停在精灵页，玩家会以为点错了
+                //   （2026-09-29 用户从聊天点自己的大师球拍卖报出）。⚠ 自己挂的拍品**不弹窗**
+                //   （与界面内行为一致），那时页签就是唯一的落地反馈 —— 更不能漏。
+                //   ⚠ 用 `!= "POKEMON"` 而不是 `== "ITEM"`：非精灵即物品，将来扩类型也不至于落空
+                val tab = if (e.type == "POKEMON") 0 else 1
+                if (currentTab != tab) switchTab(tab)
                 if (!isMine(e)) openBidDialog(e)
             }
         }
@@ -1673,7 +1676,7 @@ class AuctionScreen(
             if (MoveText.hasAny(movesRaw)) {
                 iy += EntryBadgeRenderer.drawMovesBlockLeft(context, movesRaw, infoX, rowW, iy)
             }
-            // 证章区块：技能块下方，图标行 + 下分割线（左对齐，每行 MARKS_PER_ROW 个，照悬停 tooltip）
+            // 证章区块：技能块下方，图标行 + 下分割线（每行几个看分割线有多长，照悬停 tooltip）
             // 没有技能块（旧数据）时自己补回上分割线
             val marks = extra["marks"].orEmpty().split(",").filter { it.isNotEmpty() }
             if (marks.isNotEmpty()) {
@@ -1681,7 +1684,16 @@ class AuctionScreen(
                     context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF888888.toInt())
                     iy += 10
                 }
-                iy += EntryBadgeRenderer.drawMarksRow(context, marks, infoX, iy, rowW, centered = false)
+                // ⚠ `centered = true`：证章图标要在**内容宽里居中**（分割线只有 124，图标不一定占满，
+                //   左对齐会显偏左）。2026-09-29 用户报「出价界面的证章在分割线内不居中，其他几个界面都是居中的」
+                iy += EntryBadgeRenderer.drawMarksRow(
+                    context, marks, infoX, iy, rowW, centered = true,
+                    // 弹窗：鼠标能自由移动 ⇒ 停在证章行上时补一个全部证章的二级窗。
+                    // ⚠ 这个函数拿不到 render 的鼠标参数 ⇒ 用界面在 render 开头登记的当前帧坐标
+                    mouseX = com.shusheng.cobblemarket.client.icon.IconRegistry.mouseX,
+                    mouseY = com.shusheng.cobblemarket.client.icon.IconRegistry.mouseY
+                )
+                EntryBadgeRenderer.drawMarksMoreTooltip(context)
                 context.fill(infoX, iy + 4, infoX + rowW, iy + 5, 0xFF888888.toInt())
                 iy += 10
             }
@@ -2207,8 +2219,12 @@ class AuctionScreen(
         }
         // 动态行（当前价/倒计时/领先者随出价与时间变化）每帧构建
         val lines = tooltipCacheStaticLines.toMutableList()
-        // 分割线：上方精灵信息，下方拍卖信息
-        lines.add(null to 0xFFFFFF)
+        // 分割线：上方精灵信息，下方拍卖信息。
+        // ⚠ **只有存在证章块时才加**：这条线本来是**证章块的下分割线**（证章块自己只往列表里加了
+        //   图标行，见上面 staticLines 那边的注释「下方那条分割线由拍卖信息前的分割线充当」）——
+        //   没有证章时它就是凭空多出来的一条，与市场行悬停窗对不上
+        //（2026-09-29 用户报「拍卖场的精灵行在没有证章时多显示了一条分割线」）
+        if (tooltipCacheMarksLine >= 0) lines.add(null to 0xFFFFFF)
         lines.add(Text.translatable("cobblemarket.auction.seller").append(entry.sellerName) to 0xFFFFFF)
         val priceLine = Text.translatable("cobblemarket.auction.current_price").append(displayPriceText(entry))
         lines.add((if (entry.bidCount > 0)
@@ -2258,7 +2274,7 @@ class AuctionScreen(
                 // 技能块：分割线 + 两行技能 + 分割线（左对齐版，分割线撑满提示框全宽）
                 rowY += EntryBadgeRenderer.drawMovesBlockLeft(context, movesRaw, tx, mw, rowY)
             } else if (line == null && i == marksLine) {
-                // 证章图标行：左对齐排（照市场悬停；超过 6 个第二行左对齐显示「+N」）
+                // 证章图标行：**居中**排（2026-09-29 统一口径，见 docs/pokemon_info_surfaces.md 第七节；「+N」同样居中）
                 rowY += EntryBadgeRenderer.drawMarksRow(context, marks, tx, rowY, mw, centered = true)
             } else if (line == null) {
                 // 分割线：1px 灰线，撑满提示框全宽（与信息区分隔线一致，不随证章数量变化）
