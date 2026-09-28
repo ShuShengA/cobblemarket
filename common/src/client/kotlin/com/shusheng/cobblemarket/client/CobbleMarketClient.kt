@@ -89,6 +89,7 @@ import com.shusheng.cobblemarket.screen.MeowthPayScreen
 import com.shusheng.cobblemarket.screen.RepayScreen
 import com.shusheng.cobblemarket.screen.LoanScreen
 import com.shusheng.cobblemarket.screen.MarketEntryScreen
+import com.shusheng.cobblemarket.screen.QuickShowcaseScreen
 import com.shusheng.cobblemarket.screen.MarketScreen
 import com.shusheng.cobblemarket.screen.MeowthBankScreen
 import com.shusheng.cobblemarket.screen.ItemMarketScreen
@@ -132,6 +133,12 @@ object CobbleMarketClient {
     private lateinit var openMarketKey: KeyBinding
     private var wasEPressed = false
 
+    /** 快速展示键（默认 X；**按住**期间显示两个大按钮，见 [QuickShowcaseScreen]） */
+    private lateinit var quickShowcaseKey: KeyBinding
+
+    /** 上一帧的按住状态（边沿检测：上升沿开、下降沿收尾） */
+    private var wasQuickShowcasePressed = false
+
     /** 余额 HUD 低频兜底轮询计时（交易响应已即时刷新，这里兜住离线收益补发等） */
     private var lastBalancePollAt = 0L
     private var lastFinancePollAt = 0L
@@ -151,6 +158,15 @@ object CobbleMarketClient {
                 "key.cobblemarket.open_market",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_K,
+                "category.cobblemarket"
+            )
+        )
+        // 快速展示：默认 X。照上面那套注册 ⇒ **自动出现在「按键设置」里、玩家可改**
+        quickShowcaseKey = registerKeyBinding(
+            KeyBinding(
+                "key.cobblemarket.quick_showcase",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_X,
                 "category.cobblemarket"
             )
         )
@@ -178,6 +194,18 @@ object CobbleMarketClient {
                 playEntrySound()
                 client.setScreen(MarketEntryScreen())
             }
+            // ── 快速展示：**按住**显示两个大按钮、**松开**就展示（2026-09-29 用户定）──
+            // ⚠ 读的是 KeyBinding 自己的 isPressed（**不是**硬编码 GLFW_KEY_X）——
+            //   玩家在「按键设置」里改过键之后这里必须跟着变
+            // ⚠ 已经在别的界面里（比如正开着市场）按住 X ⇒ 不抢界面，只是不响应
+            val quickPressed = quickShowcaseKey.isPressed
+            if (quickPressed && !wasQuickShowcasePressed) {
+                if (client.currentScreen == null) client.setScreen(QuickShowcaseScreen())
+            } else if (!quickPressed && wasQuickShowcasePressed) {
+                // 松键：悬停哪个就展示哪个，没悬停就什么都不做，然后关界面
+                (client.currentScreen as? QuickShowcaseScreen)?.finishAndClose()
+            }
+            wasQuickShowcasePressed = quickPressed
             val ePressed = InputUtil.isKeyPressed(client.window.handle, GLFW.GLFW_KEY_E)
             if (ePressed && !wasEPressed) {
                 val screen = client.currentScreen
@@ -1273,7 +1301,8 @@ private fun hudBalanceRaw(client: MinecraftClient): Long {
 }
 
 internal fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean =
-    s is MarketScreen || s is SellSelectScreen || s is HistoryScreen || s is MarketEntryScreen ||
+    s is QuickShowcaseScreen ||
+        s is MarketScreen || s is SellSelectScreen || s is HistoryScreen || s is MarketEntryScreen ||
         s is ItemMarketScreen || s is ItemSellScreen || s is ItemReturnScreen || s is PokemonReturnScreen ||
         s is BuyConfirmScreen || s is AdminScreen || s is PermissionScreen || s is AdminPokemonScreen || s is AdminItemScreen || s is AdminBanScreen ||
         s is BlacklistScreen || s is PriceLimitScreen || s is AuctionScreen || s is AuctionCreateScreen ||
