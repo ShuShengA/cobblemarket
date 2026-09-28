@@ -89,11 +89,12 @@ class AuctionScreen(
     /**
      * 右侧筛选面板的**内容高度** —— 由内容定，不跟随主面板铺到屏幕底边（照精灵市场）。
      *
-     * 布局：闪光+性别 一行 → 属性 / 特性 / 性格 / 特训 各一行 → 重置 ↺ 一行 → IV 六行（每行 22）。
-     * 最后一行 `Spd` 输入框在 y=262、高 16（底 278），加 12 底部余量 ⇒ 290。
+     * 布局：闪光+性别 一行 → 属性 / 太晶 / 特性 / 性格 各一行 → 特训+超极巨化 一行 → 重置 ↺ 一行
+     *      → IV 六行（每行 22）。
+     * 最后一行 `Spd` 输入框在 y=290、高 16（底 306），加 12 底部余量 ⇒ 318。
      * ⚠ 面板里再加一行时记得同步改这里。
      */
-    private val FILTER_PANEL_HEIGHT = 290
+    private val FILTER_PANEL_HEIGHT = 318
 
     /** 面板内滚动偏移（内容比面板高时才有用，见 [filterPanelHeight]） */
     private var filterPanelScroll = 0
@@ -117,7 +118,7 @@ class AuctionScreen(
     /**
      * 面板的**实际高度** = 内容高度与屏幕可用高度的较小值。
      *
-     * ⚠ GUI 缩放设「自动」时逻辑屏高会变小（1080p + 缩放 4 只有 270），写死 290 会让面板戳出屏幕、
+     * ⚠ GUI 缩放设「自动」时逻辑屏高会变小（1080p + 缩放 4 只有 270），写死 318 会让面板戳出屏幕、
      *   底部的 IV 输入框看不见 —— 超出部分靠**面板内滚动**看（照精灵市场）。
      */
     private fun filterPanelHeight() = minOf(FILTER_PANEL_HEIGHT, height - 34)
@@ -152,9 +153,13 @@ class AuctionScreen(
     // 带索引列表缓存（IndexedValue.index = entries 中的原始索引）：render 行循环每帧 entries.indexOf 是扫描热点，重建过滤缓存时同步构建
     private var indexedFiltered = listOf<IndexedValue<AuctionEntry>>()
     private var searchField: TextFieldWidget? = null
-    // 筛选（仅精灵 tab；拍卖列表全量下发，客户端过滤）：性别/属性/特性/性格
+    // 筛选（仅精灵 tab；拍卖列表全量下发，客户端过滤）：性别/属性/太晶/特性/性格
     private var genderFilter = ""
     private var typeFilter = ""
+    // 太晶属性筛选（属性 key，如 `cobblemon.type.fire`；与「属性」共用同一套候选列表；空 = 不限）
+    private var teraFilter = ""
+    // 超极巨化三态：0 = 不限，1 = 仅超极巨，2 = 仅非超极巨（照闪光/特训那种循环按钮）
+    private var gmaxFilter = 0
     private var abilityFilter = ""
     private var natureFilter = ""
     /** 闪光筛选（照精灵市场那一枚）：筛选行最右的 ★/☆ */
@@ -178,6 +183,8 @@ class AuctionScreen(
     private var abilityOptions = listOf<Pair<String, String>>()
     private var genderButton: NineSliceButton? = null
     private var typeButton: NineSliceButton? = null
+    private var teraButton: NineSliceButton? = null
+    private var gmaxButton: NineSliceButton? = null
     private var abilityButton: NineSliceButton? = null
     private var natureButton: NineSliceButton? = null
     private var shinyButton: NineSliceButton? = null
@@ -503,6 +510,9 @@ class AuctionScreen(
         // 精灵 tab 的列表起点也从 92 回到 70（与另外两个 tab 统一，每页多显示一行）。
         val fx = MarketPanelBackground.filterLeft(width) + 4
         val fw = MarketPanelBackground.filterWidth(width) - 8
+        // 「特训 + 超极巨化」那一行对半分（4px 间距）：中文「超极巨化：是」54px / 英文 "Gmax: Yes" 54px，
+        // 半宽（最窄一档 72px）放得下
+        val half = (fw - 4) / 2
 
         // 第一行：★闪光(30) + ♂性别(24) —— 尺寸与顺序照精灵市场
         shinyButton = NineSliceButton(
@@ -526,34 +536,52 @@ class AuctionScreen(
             fx, 42, fw, 20,
             typeButtonText(),
             { toggleFilterList("type") },
-            if (typeFilter.isNotEmpty()) typeColor("cobblemon.type.$typeFilter") else UNSET_FILTER_COLOR
+            UNSET_FILTER_COLOR   // 颜色由「值」自己带（见 filterButtonText），这里必须留白
         )
         addDrawableChild(typeButton)
-        abilityButton = NineSliceButton(
+        // 太晶属性：与「属性」共用同一套候选列表（18 属性）+「不限」
+        // ⚠ 与属性各占**一整行**：英文带前缀最长 "Tera: Electric" = 84px，半宽（最窄 72px）塞不下
+        teraButton = NineSliceButton(
             fx, 64, fw, 20,
+            teraButtonText(),
+            { toggleFilterList("tera") },
+            UNSET_FILTER_COLOR   // 同属性按钮：颜色由「值」自己带
+        )
+        addDrawableChild(teraButton)
+        abilityButton = NineSliceButton(
+            fx, 86, fw, 20,
             abilityButtonText(),
             { toggleFilterList("ability") },
-            if (abilityFilter.isNotEmpty()) GOLD_COLOR else UNSET_FILTER_COLOR
+            UNSET_FILTER_COLOR   // 颜色由「值」自己带
         )
         addDrawableChild(abilityButton)
         natureButton = NineSliceButton(
-            fx, 86, fw, 20,
+            fx, 108, fw, 20,
             natureButtonText(),
             { toggleFilterList("nature") },
-            if (natureFilter.isNotEmpty()) GOLD_COLOR else UNSET_FILTER_COLOR
+            UNSET_FILTER_COLOR   // 颜色由「值」自己带
         )
         addDrawableChild(natureButton)
-        // 特训筛选（三态循环）：从搜索框那一行搬进来（搬走后搜索框不必再为它缩窄）
+        // 特训筛选（三态循环）：从搜索框那一行搬进来（搬走后搜索框不必再为它缩窄）。
+        // ⚠ 文案是**一整个词条**（「特训：不限」/「仅特训」/「不含特训」），没有"前缀 + 值"可拆 ⇒ 整段金色
         htButton = NineSliceButton(
-            fx, 108, fw, 20,
+            fx, 130, half, 20,
             htButtonText(),
             { toggleHtFilter() },
             if (htFilter != 0) GOLD_COLOR else UNSET_FILTER_COLOR
         )
         addDrawableChild(htButton)
+        // 超极巨化：三态循环（不限 → 仅超极巨 → 仅非超极巨），与特训同排各占一半
+        gmaxButton = NineSliceButton(
+            fx + half + 4, 130, half, 20,
+            gmaxButtonText(),
+            { toggleGmax() },
+            UNSET_FILTER_COLOR   // 颜色由「值」自己带
+        )
+        addDrawableChild(gmaxButton)
         // 重置：整行（精灵市场那一行的左半是「我的」，拍卖场有「我的」tab、这一行空出来）
         resetButton = NineSliceButton(
-            fx, 130, fw, 20,
+            fx, 152, fw, 20,
             Text.literal("↺"),
             { resetFilters() },
             tooltip = Text.translatable("cobblemarket.gui.reset")
@@ -571,18 +599,18 @@ class AuctionScreen(
         }
         ivOpButtons.clear()
         ivResetButtons.clear()
-        hpF  = mkIv(fx, 152, "HP");  addIvOpButton(fx + 88, 152, 0); addIvResetButton(fx + 132, 152, 0)
-        atkF = mkIv(fx, 174, "ATK"); addIvOpButton(fx + 88, 174, 1); addIvResetButton(fx + 132, 174, 1)
-        defF = mkIv(fx, 196, "DEF"); addIvOpButton(fx + 88, 196, 2); addIvResetButton(fx + 132, 196, 2)
-        spaF = mkIv(fx, 218, "SpA"); addIvOpButton(fx + 88, 218, 3); addIvResetButton(fx + 132, 218, 3)
-        spdF = mkIv(fx, 240, "SpD"); addIvOpButton(fx + 88, 240, 4); addIvResetButton(fx + 132, 240, 4)
-        speF = mkIv(fx, 262, "Spd"); addIvOpButton(fx + 88, 262, 5); addIvResetButton(fx + 132, 262, 5)
+        hpF  = mkIv(fx, 180, "HP");  addIvOpButton(fx + 88, 180, 0); addIvResetButton(fx + 132, 180, 0)
+        atkF = mkIv(fx, 202, "ATK"); addIvOpButton(fx + 88, 202, 1); addIvResetButton(fx + 132, 202, 1)
+        defF = mkIv(fx, 224, "DEF"); addIvOpButton(fx + 88, 224, 2); addIvResetButton(fx + 132, 224, 2)
+        spaF = mkIv(fx, 246, "SpA"); addIvOpButton(fx + 88, 246, 3); addIvResetButton(fx + 132, 246, 3)
+        spdF = mkIv(fx, 268, "SpD"); addIvOpButton(fx + 88, 268, 4); addIvResetButton(fx + 132, 268, 4)
+        speF = mkIv(fx, 290, "Spd"); addIvOpButton(fx + 88, 290, 5); addIvResetButton(fx + 132, 290, 5)
 
         // 登记面板内控件：记下基准 y，滚动时按它重定位（见 filterPanelControls 的说明）
         filterPanelControls.clear()
         listOfNotNull(
-            shinyButton, genderButton, typeButton, abilityButton, natureButton,
-            htButton, resetButton, hpF, atkF, defF, spaF, spdF, speF
+            shinyButton, genderButton, typeButton, teraButton, abilityButton, natureButton,
+            htButton, gmaxButton, resetButton, hpF, atkF, defF, spaF, spdF, speF
         ).forEach { filterPanelControls += it to it.y }
         ivOpButtons.values.forEach { filterPanelControls += it to it.y }
         ivResetButtons.forEach { filterPanelControls += it to it.y }
@@ -619,6 +647,8 @@ class AuctionScreen(
         show(shinyButton)
         show(genderButton)
         show(typeButton)
+        show(teraButton)
+        show(gmaxButton)
         show(abilityButton)
         show(natureButton)
         show(htButton)
@@ -773,8 +803,8 @@ class AuctionScreen(
     /**
      * 重置全部筛选（筛选行右端的 ↺ 按钮）。
      *
-     * ⚠ 走**整界面重建**而不是逐个 `setMessage` / `textColor`：五个筛选控件（公母 / 属性 / 特性 / 性格 /
-     *   闪光 / 特训）的文字、颜色、图标状态各不相同，逐个还原太容易漏；重建一次全都回初始态
+     * ⚠ 走**整界面重建**而不是逐个 `setMessage` / `textColor`：八个筛选控件（公母 / 属性 / 太晶 /
+     *   特性 / 性格 / 超极巨化 / 闪光 / 特训）的文字、颜色、图标状态各不相同，逐个还原太容易漏；重建一次全都回初始态
      *   （与创建拍卖界面的 [AuctionCreateScreen.resetFilters] 同一做法）。
      * ⚠ 不清搜索框：重置的是**筛选条件**，搜索词是玩家自己敲的、保留更符合预期。
      */
@@ -782,6 +812,8 @@ class AuctionScreen(
         shinyOnly = false
         genderFilter = ""
         typeFilter = ""
+        teraFilter = ""
+        gmaxFilter = 0
         abilityFilter = ""
         natureFilter = ""
         htFilter = 0
@@ -803,21 +835,52 @@ class AuctionScreen(
     private fun filterPanelBtnW() = MarketPanelBackground.filterWidth(width) - 8
 
     private fun typeButtonText(): Text {
-        val label = if (typeFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
+        val any = typeFilter.isEmpty()
+        val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable("cobblemon.type.$typeFilter")
-        return filterButtonText("cobblemarket.gui.type", label)
+        return filterButtonText("cobblemarket.gui.type", label, if (any) null else typeColor("cobblemon.type.$typeFilter"))
+    }
+
+    /** 太晶属性：与「属性」同一套候选列表（18 属性 + 不限），颜色同样按属性上色 */
+    private fun teraButtonText(): Text {
+        val any = teraFilter.isEmpty()
+        val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
+            else Text.translatable("cobblemon.type.$teraFilter")
+        return filterButtonText("cobblemarket.gui.tera", label, if (any) null else typeColor("cobblemon.type.$teraFilter"))
+    }
+
+    /** 超极巨化：0 = 不限（只显示标签）、1 = 仅超极巨、2 = 仅非超极巨 */
+    private fun gmaxButtonText(): Text {
+        val label = when (gmaxFilter) {
+            1 -> Text.translatable("cobblemarket.gui.filter_yes")
+            2 -> Text.translatable("cobblemarket.gui.filter_no")
+            else -> Text.translatable("cobblemarket.gui.filter_any")
+        }
+        return filterButtonText("cobblemarket.gui.gmax", label, if (gmaxFilter == 0) null else GOLD_COLOR)
+    }
+
+    private fun toggleGmax() {
+        gmaxFilter = (gmaxFilter + 1) % 3
+        gmaxButton?.setMessage(gmaxButtonText())
+        gmaxButton?.textColor = UNSET_FILTER_COLOR   // 颜色由「值」自己带
+        rebuildFiltered()
+        scrollOffset = 0
+        hoveredRow = -1
+        rebuildBidButtons()
     }
 
     private fun abilityButtonText(): Text {
-        val label = if (abilityFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
+        val any = abilityFilter.isEmpty()
+        val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable(abilityFilter)
-        return filterButtonText("cobblemarket.buy_order.ability_label", label)
+        return filterButtonText("cobblemarket.buy_order.ability_label", label, if (any) null else GOLD_COLOR)
     }
 
     private fun natureButtonText(): Text {
-        val label = if (natureFilter.isEmpty()) Text.translatable("cobblemarket.gui.filter_any")
+        val any = natureFilter.isEmpty()
+        val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
             else Text.translatable(natureFilter)
-        return filterButtonText("cobblemarket.buy_order.nature_label", label)
+        return filterButtonText("cobblemarket.buy_order.nature_label", label, if (any) null else GOLD_COLOR)
     }
 
     /**
@@ -828,11 +891,20 @@ class AuctionScreen(
      *   三个界面的筛选按钮必须是同一种观感）。
      * ⚠ 值超宽时按按钮宽截断（两侧各留 4px）。**不需要悬停提示**：展开列表里的选项是整行宽，
      *   玩家展开时就能看到完整名字、选之前已经知道是什么。
+     *
+     * ⚠ **颜色只上在「值」上，前缀是陪衬文字不设色**（用户 2026-09-28 实测报的：原来整段染成属性色，
+     *   连「属性：」这几个字都跟着变色）。走的是 CLAUDE.md 那条规矩：带色的文字不能当父节点 ——
+     *   前缀（无色）当父、把颜色设在**值**自己的样式上，前缀就吃按钮的默认白字。
+     *   ⚠ 同时按钮的 `textColor` 必须留**白色**：那是"整段默认色"，设成属性色会把前缀又染一遍。
      */
-    private fun filterButtonText(labelKey: String, value: Text): Text {
+    private fun filterButtonText(labelKey: String, value: Text, valueColor: Int? = null): Text {
         val prefix = Text.translatable(labelKey)
-        return prefix.append(Text.literal(
-            TextUtil.truncateString(value.string, filterPanelBtnW() - 8 - textRenderer.getWidth(prefix))))
+        val shown = Text.literal(
+            TextUtil.truncateString(value.string, filterPanelBtnW() - 8 - textRenderer.getWidth(prefix)))
+        val valueText = if (valueColor != null)
+            shown.setStyle(net.minecraft.text.Style.EMPTY.withColor(valueColor))
+        else shown
+        return prefix.append(valueText)
     }
 
     private val typeOptions = listOf("normal","fire","water","electric","grass","ice","fighting","poison","ground","flying",
@@ -864,6 +936,8 @@ class AuctionScreen(
         }
         val options: List<Pair<String, String>> = when (filterListOpen) {
             "type" -> listOf("" to "") + typeOptions.map { it to "cobblemon.type.$it" }
+            // 太晶与属性共用同一份候选（18 属性 + 不限）
+            "tera" -> listOf("" to "") + typeOptions.map { it to "cobblemon.type.$it" }
             "ability" -> listOf("" to "") + abilityOptions
             "nature" -> listOf("" to "") + natureOptions
             else -> emptyList()
@@ -876,6 +950,7 @@ class AuctionScreen(
         //   `sourceBtn.y` 会报 "Only safe calls are allowed"（精灵市场同一处踩过）
         val sourceBtn = when (filterListOpen) {
             "type" -> typeButton
+            "tera" -> teraButton
             "ability" -> abilityButton
             "nature" -> natureButton
             else -> null
@@ -896,7 +971,9 @@ class AuctionScreen(
                     TextUtil.selectedText(TextUtil.truncateString(display, 260))
                 else Text.literal(TextUtil.truncateString(display, 260)),
                 { selectFilterOption(filterListOpen, key) },
-                if (filterListOpen == "type" && key.isNotEmpty()) typeColor("cobblemon.type.$key") else 0xFFFFFF
+                // 属性 / 太晶选项文字用对应属性色（两份列表共用同一套候选）
+                if ((filterListOpen == "type" || filterListOpen == "tera") && key.isNotEmpty())
+                    typeColor("cobblemon.type.$key") else 0xFFFFFF
             )
             filterOptionButtons.add(btn)
             addDrawableChild(btn)
@@ -907,6 +984,7 @@ class AuctionScreen(
 
     private fun isFilterSelected(kind: String, key: String): Boolean = when (kind) {
         "type" -> key.isNotEmpty() && key == typeFilter
+        "tera" -> key.isNotEmpty() && key == teraFilter
         "ability" -> key.isNotEmpty() && key == abilityFilter
         "nature" -> key.isNotEmpty() && key == natureFilter
         else -> false
@@ -917,17 +995,22 @@ class AuctionScreen(
             "type" -> {
                 typeFilter = key
                 typeButton?.setMessage(typeButtonText())
-                typeButton?.textColor = if (key.isNotEmpty()) typeColor("cobblemon.type.$key") else 0xFFFFFF
+                typeButton?.textColor = UNSET_FILTER_COLOR   // 颜色由「值」自己带
+            }
+            "tera" -> {
+                teraFilter = key
+                teraButton?.setMessage(teraButtonText())
+                teraButton?.textColor = UNSET_FILTER_COLOR   // 颜色由「值」自己带
             }
             "ability" -> {
                 abilityFilter = key
                 abilityButton?.setMessage(abilityButtonText())
-                abilityButton?.textColor = if (key.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
+                abilityButton?.textColor = UNSET_FILTER_COLOR   // 颜色由「值」自己带
             }
             "nature" -> {
                 natureFilter = key
                 natureButton?.setMessage(natureButtonText())
-                natureButton?.textColor = if (key.isNotEmpty()) GOLD_COLOR else 0xFFFFFF
+                natureButton?.textColor = UNSET_FILTER_COLOR   // 颜色由「值」自己带
             }
         }
         filterListOpen = ""
@@ -1211,7 +1294,7 @@ class AuctionScreen(
                 if (!ivMatchEntry(d, "ivsSpDef", "htSpDef", ivOps[4], ivExact[4])) return@filter false
                 if (!ivMatchEntry(d, "ivsSpd", "htSpd", ivOps[5], ivExact[5])) return@filter false
             }
-            // 筛选（仅精灵 tab 生效）：闪光/性别/属性/特性/性格（生效性格，不分薄荷）
+            // 筛选（仅精灵 tab 生效）：闪光/性别/属性/太晶/超极巨化/特性/性格（生效性格，不分薄荷）
             if (entry.type == "POKEMON") {
                 val d = entry.extraData
                 if (shinyOnly && !entry.shiny) return@filter false
@@ -1222,6 +1305,17 @@ class AuctionScreen(
                     if (!primary.contains(typeFilter, ignoreCase = true) && !secondary.contains(typeFilter, ignoreCase = true)) {
                         return@filter false
                     }
+                }
+                // 太晶属性：**精确匹配**（口径与精灵市场一致）。⚠ 拍卖的 extraData 一定有这个键 ——
+                //   新拍卖写上架快照，老拍卖由 auctionToEntry 从精灵 NBT 现读（见 PokemonTera.resolve）
+                if (teraFilter.isNotEmpty() && d["teraType"]?.equals(teraFilter, ignoreCase = true) != true) {
+                    return@filter false
+                }
+                // 超极巨化：1 = 仅超极巨，2 = 仅非超极巨；缺键一律按"非超极巨"（与市场同一口径）
+                if (gmaxFilter != 0) {
+                    val gmax = d["gmaxFactor"]?.toBooleanStrictOrNull() ?: false
+                    if (gmaxFilter == 1 && !gmax) return@filter false
+                    if (gmaxFilter == 2 && gmax) return@filter false
                 }
                 if (abilityFilter.isNotEmpty() && d["ability"] != abilityFilter) return@filter false
                 if (natureFilter.isNotEmpty() && d["nature"] != natureFilter) return@filter false
@@ -1811,7 +1905,7 @@ class AuctionScreen(
 
         // 右侧筛选面板（仅精灵 tab、且面板展开、无弹窗时）：**主面板保持居中不动**，
         // 筛选面板占用它右侧本来就空着的区域 —— 这样主面板里所有控件坐标一个都不动。
-        // 高度由内容定（290，最后一行的 Spd 输入框 + 12 余量），不跟主面板铺到屏幕底边
+        // 高度由内容定（318，最后一行的 Spd 输入框 + 12 余量），不跟主面板铺到屏幕底边
         // ⚠ 展开中、**或收起动画还没播完**都要画（后者要从目标位置缩回按钮），照精灵市场。
         //   别写回 `if (filterExpanded)`：那样收起动画根本没机会播（条件当帧就不成立）
         if (currentTab == 0 && bidEntry == null && (filterExpanded || filterAnim.isActive())) {
@@ -2421,6 +2515,8 @@ class AuctionScreen(
         if (filterListOpen.isNotEmpty()) {
             val total = when (filterListOpen) {
                 "type" -> typeOptions.size + 1
+                // ⚠ 太晶与属性共用同一份候选 ⇒ 总数也要跟这里对上，漏了 = **展开后滚不动**（用户实测报过）
+                "tera" -> typeOptions.size + 1
                 "ability" -> abilityOptions.size + 1
                 "nature" -> natureOptions.size + 1
                 else -> 0
