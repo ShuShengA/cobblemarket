@@ -11,10 +11,16 @@ import com.shusheng.cobblemarket.network.ObjectPreviewNetwork
 import com.shusheng.cobblemarket.network.ObjectPreviewPayload
 import com.shusheng.cobblemarket.network.RequestObjectPreviewPayload
 import com.shusheng.cobblemarket.platform.sendToServer
+import com.shusheng.cobblemarket.screen.ROW_BACKGROUND_TEX_H
+import com.shusheng.cobblemarket.screen.ROW_BACKGROUND_TEXTURE
+import com.shusheng.cobblemarket.screen.drawNineSlice
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.ChatScreen
 import net.minecraft.item.ItemStack
+import net.minecraft.item.tooltip.TooltipType
+import net.minecraft.text.Text
 import net.minecraft.util.Identifier
 import java.util.UUID
 
@@ -233,6 +239,66 @@ object ChatObjectPreview {
                 panelLeft = 0,
                 screenHeight = screenHeight,
                 centerX = centerX
+            )
+            drawItemTooltipPanel(context, stack, centerX, screenHeight)
+        }
+    }
+
+    // ── 词条面板的尺寸 ──
+    /** 大图半径（`ItemHoverPreview` 放大 8 倍 ⇒ 16×8÷2 = 64），词条面板据此贴到它右边 */
+    private const val ICON_HALF = 64f
+    /** 大图与词条面板之间的空隙 */
+    private const val PANEL_GAP = 8
+    /** 词条面板的内边距 */
+    private const val PANEL_PAD = 4
+    /** 一行词条的高度（默认字体 9 + 1） */
+    private const val LINE_H = 10
+
+    /**
+     * 大图**右侧**列出的完整物品词条（**带九宫格背景** —— 2026-09-29 用户定：不能凭空飘字）。
+     *
+     * 为什么要它：很多物品**模型长得一样、区别全在词条上**，只给个大图等于没说
+     * （2026-09-29 用户报的）。悬停小窗那条路是**服务端**拼文本、补不成原版那种完整词条；
+     * 这里是**客户端**渲染 ⇒ 直接拿原版 tooltip：附魔 / 属性修饰符 / 药水 / lore / 耐久
+     * 全都有，**Shift / Ctrl 展开也自动继承**，不用自己实现。
+     *
+     * ⚠ 调用点与它服务的大图一样，走的是「展示 / 拍卖 / 求购播报」**共用的那套**。
+     * ⚠ 词条**保留第一行**：这一侧的大图没有物品名（不像列表悬停窗那边已经画了名字、要 `.drop(1)`）。
+     */
+    private fun drawItemTooltipPanel(context: DrawContext, stack: ItemStack, centerX: Float, screenHeight: Int) {
+        val client = MinecraftClient.getInstance()
+        val lines = ItemComponentsDisplay.itemTooltip(stack, client.player, TooltipType.BASIC)
+        if (lines.isEmpty()) return
+        val font = client.textRenderer
+
+        // 大图占 [centerX - ICON_HALF, centerX + ICON_HALF]（放大倍数与 ItemHoverPreview 的 8 倍一致）
+        val panelX = (centerX + ICON_HALF + PANEL_GAP).toInt()
+        val availW = (context.scaledWindowWidth - panelX - 6).coerceAtLeast(48)
+        val availH = screenHeight - 16
+
+        // 高度不够就少画几行（末行加个「…」表示被截了）—— 词条多的物品（附魔堆满）会很长
+        val maxRows = (availH - PANEL_PAD * 2) / LINE_H
+        val shown = lines.take(maxRows.coerceAtLeast(1))
+
+        val textW = shown.maxOf { font.getWidth(it) }
+        val panelW = (minOf(textW, availW) + PANEL_PAD * 2).coerceAtLeast(40)
+        val panelH = shown.size * LINE_H + PANEL_PAD * 2
+        val panelY = (screenHeight / 2 - panelH / 2)
+
+        // HUD 层浮窗用行背景那套九宫格（与项目里自绘悬停窗同一个贴图）
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, panelX, panelY, panelW, panelH, 1, ROW_BACKGROUND_TEX_H)
+
+        shown.forEachIndexed { i, line ->
+            // 超宽的单行截断（保分段样式：附魔行是分段的，压成一段会丢颜色）
+            val cut = TextUtil.truncateStyled(line, availW)
+            context.drawTextWithShadow(font, cut, panelX + PANEL_PAD, panelY + PANEL_PAD + i * LINE_H, 0xFFFFFF)
+        }
+        if (shown.size < lines.size) {
+            // 被截掉了：末行右下角补一个省略号（完整内容请到物品栏里看）
+            context.drawTextWithShadow(
+                font, Text.literal("…"),
+                panelX + panelW - PANEL_PAD - font.getWidth("…"),
+                panelY + PANEL_PAD + (shown.size - 1) * LINE_H, 0x888888
             )
         }
     }
