@@ -3550,6 +3550,38 @@ object MarketNetwork {
             currency, server
         )
 
+    /**
+     * **玩家「展示」出去的那只精灵** → 信息行（`ShareNetwork` 用）。
+     *
+     * ⚠ 展示**没有交易信息**（既不是挂单、也不是拍品）⇒ 这里的 `sellerUuid` / `sellerName` /
+     *   `price` 只是让 DTO 填得满的占位值，**客户端不会画出来** —— 它靠
+     *   `ObjectPreviewPayload.isShare` 把「卖家 / 价格」那两行**整个略掉**。
+     *   要改成"展示也显示谁发的"时，动的是客户端那边加行，不是这里填值。
+     */
+    internal fun buildListingEntryForShare(
+        pokemon: com.cobblemon.mod.common.pokemon.Pokemon,
+        ownerUuid: UUID,
+        ownerName: String,
+        id: UUID,
+        server: MinecraftServer
+    ): ListingEntry {
+        val rm = server.registryManager
+        return buildListingEntry(
+            id = id,
+            sellerUuid = ownerUuid,
+            sellerName = ownerName,
+            species = pokemon.species.name.lowercase(),
+            level = pokemon.level,
+            shiny = pokemon.shiny,
+            price = 0,
+            // 精灵的完整 NBT 现取 —— 太晶 / 极巨 / 初始训练家 / 体型 / 技能都由它现读（老数据也适用）
+            pokemonNbt = pokemon.saveToNBT(rm, NbtCompound()),
+            extraData = buildListingExtra(pokemon, pokemon.heldItem(), rm),
+            currency = MarketCurrency.PRIMARY,
+            server = server
+        )
+    }
+
     private fun buildListingExtra(
         pokemon: com.cobblemon.mod.common.pokemon.Pokemon,
         heldItemStack: ItemStack,

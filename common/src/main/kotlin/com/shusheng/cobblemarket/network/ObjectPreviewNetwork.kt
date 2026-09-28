@@ -149,7 +149,17 @@ data class ObjectPreviewPayload(
      * ⚠ 客户端把这些行排在信息行的**尾部**（照搬拍卖场的行悬停窗，另加起拍价 / 最低加价两行，
      *   那两项在拍卖场是放在出价弹窗里的）。精灵与物品拍卖**都有**。
      */
-    val auction: AuctionPreviewInfo? = null
+    val auction: AuctionPreviewInfo? = null,
+    /**
+     * **这条是不是「展示」播报**（玩家把自己的精灵 / 物品发到聊天栏）。
+     *
+     * 为什么要它：展示是**没有交易信息**的 —— 而悬停窗的默认尾部是「卖家 / 价格」两行，
+     * 不区分就会画出「卖家：xxx / 价格：0 ₽」这种凭空捏造的内容（2026-09-29 用户要求
+     * 展示单独处理时定的）。客户端据此把尾部换成空、只保留精灵自身的那些行。
+     *
+     * ⚠ 拍卖 / 求购那两条恒为 false（它们有各自的尾部：拍卖是拍卖状态、求购是卖家+单价）。
+     */
+    val isShare: Boolean = false
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -176,6 +186,7 @@ data class ObjectPreviewPayload(
                 p.listing?.write(b)
                 b.writeBoolean(p.auction != null)
                 p.auction?.write(b)
+                b.writeBoolean(p.isShare)
             },
             { b ->
                 // 具名参数：这段读序与上面的写序一一对应，错位了会静默读出垃圾数据
@@ -193,7 +204,9 @@ data class ObjectPreviewPayload(
                     heldItemVisible = b.readBoolean(),
                     // 与 write 端严格同序（write 在 heldItemVisible 之后）
                     listing = if (b.readBoolean()) ListingEntry.read(b) else null,
-                    auction = if (b.readBoolean()) AuctionPreviewInfo.read(b) else null
+                    auction = if (b.readBoolean()) AuctionPreviewInfo.read(b) else null,
+                    // 与 write 端严格同序（write 在 auction 之后）
+                    isShare = b.readBoolean()
                 )
             }
         )
