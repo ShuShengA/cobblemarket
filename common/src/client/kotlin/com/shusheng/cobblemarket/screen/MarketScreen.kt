@@ -1,8 +1,10 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.util.ItemNameText
 import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
+import com.shusheng.cobblemarket.util.TypeFilter
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.clampTooltipRows
@@ -76,9 +78,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private val filterAnim = FilterPanelAnimation()
     private var sortMode = "NEWEST"
     private var genderFilter = ""
+    /** 属性筛选：**裸属性名**、最多 2 个用 `|` 连接（`fire` / `fire|ghost`）；空 = 不限。见 [TypeFilter] */
     private var typeFilter = ""
-    private var typeFilterIndex = 0
-    // 太晶属性筛选（属性 key，与「属性」同一套列表；空 = 不限）
     /**
      * 太晶筛选：**完整词条 key**（`cobblemon.type.fire`），不是 `typeFilter` 那种裸 key。
      *
@@ -807,15 +808,23 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     // ── 属性/特性/性格展开选择（互斥、限高滚动、展开时隐藏被覆盖控件） ──
 
+    /**
+     * 属性按钮文字 =「属性：」+ 各属性名 —— **每段属性名自己带属性色**：「属性：」前缀与 `+`
+     * 都是陪衬文字不设色（CLAUDE.md：带色的文字不能当父节点）。最多 2 个，顺序 = 玩家点击顺序。
+     *
+     * ⚠ 这里**不走 [filterButtonText]**：那个函数按 `value.string` 截断，会把分段样式整段丢掉。
+     *   宽度也不必截断 —— 英文最坏 `Type: Fighting+Electric` = 138px，最窄一档按钮内容宽 140px。
+     */
     private fun typeButtonText(): Text {
-        val key = typeOptions.getOrElse(typeFilterIndex) { "" }
-        val any = key.isEmpty()
-        val label = if (any) Text.translatable("cobblemarket.gui.filter_any")
-            else Text.translatable("cobblemon.type.$key")
-        return filterButtonText(
-            "cobblemarket.gui.type", label, filterTypeW, any,
-            if (any) null else typeColor("cobblemon.type.$key")
-        )
+        val picked = TypeFilter.keys(typeFilter)
+        val out = Text.translatable("cobblemarket.gui.type")
+        if (picked.isEmpty()) return out.append(Text.translatable("cobblemarket.gui.filter_any"))
+        picked.forEachIndexed { i, k ->
+            if (i > 0) out.append(Text.literal("+"))
+            out.append(Text.translatable("cobblemon.type.$k")
+                .setStyle(net.minecraft.text.Style.EMPTY.withColor(typeColor(k))))
+        }
+        return out
     }
 
     private fun teraButtonText(): Text {
@@ -1038,7 +1047,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     }
 
     private fun isFilterSelected(kind: String, key: String, idx: Int): Boolean = when (kind) {
-        "type" -> key.isNotEmpty() && key == typeFilter
+        // ⚠ 属性是**多选**（最多 2 个）⇒ 选中态要问"在不在已选集合里"，不是 `==`
+        "type" -> key.isNotEmpty() && key in TypeFilter.keys(typeFilter)
         "tera" -> key.isNotEmpty() && key == teraFilter
         "ability" -> key.isNotEmpty() && key == abilityFilter
         "nature" -> key.isNotEmpty() && key == natureFilter
@@ -1048,8 +1058,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private fun selectFilterOption(kind: String, key: String, idx: Int) {
         when (kind) {
             "type" -> {
-                typeFilter = key
-                typeFilterIndex = typeOptions.indexOf(key).coerceAtLeast(0)
+                // 多选切换：已选 → 取消；未选 → 加上；**已满 2 个再点第 3 个 → 失败音、不改状态**
+                val picked = TypeFilter.toggle(TypeFilter.keys(typeFilter), key)
+                if (picked == null) playFailSound() else typeFilter = TypeFilter.join(picked)
                 typeButton.message = typeButtonText()
                 (typeButton as? NineSliceButton)?.textColor = 0xFFFFFF
             }
@@ -1069,7 +1080,10 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 (natureButton as? NineSliceButton)?.textColor = 0xFFFFFF
             }
         }
-        filterListOpen = ""
+        // ⚠ **属性是多选**（最多 2 个）⇒ 选中 / 取消都**不关浮层** —— 原来"选中就关"在双选下没法用
+        //   （选完第一个窗就没了，还得重新点开）。收起仍靠再点一下「属性」按钮（[toggleFilterList]）。
+        //   `rebuildFilterList()` 照调：浮层还开着，要重建来刷新选中态高亮
+        if (kind != "type") filterListOpen = ""
         rebuildFilterList()
         currentPage = 1
         requestFilterRefresh()
@@ -1246,7 +1260,6 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         showMineOnly = false
         genderFilter = ""
         typeFilter = ""
-        typeFilterIndex = 0
         sortMode = "NEWEST"
         currentPage = 1
         for (i in 0..5) { ivExact[i] = -1; ivOps[i] = 0 }

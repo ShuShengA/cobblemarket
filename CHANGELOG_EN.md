@@ -65,6 +65,10 @@
 
 - **The filter panel can now filter by Tera type and Gigantamax**: the market, auctions, the listing picker, the auction-creation picker and the admin screen ("All Listed Pokémon") each gained two buttons in the right-hand filter panel — "Tera", sharing the same 18-type list as "Type", and "Gmax", a three-state toggle (Any → Yes → No). ⚠ **Listings that were already on the market before this update** did not record either field, so they will not be listed when filtering by them (list the Pokemon again to have them recorded); **auctions are unaffected** — a Pokemon's Tera type and Gigantamax status are read fresh each time, so auctions created before this update filter correctly too
 
+### Changes
+
+- **The Type filter can now take two types at once**: a Pokemon has at most two types, but the filter only accepted one — now picking a type **leaves the list open** so you can pick a second. ⚠ With **one** type selected the behaviour is exactly as before (matches when either the primary or the secondary type is that type); with **two**, it matches only Pokemon whose types are **exactly those two** — "Ghost+Fire" will not list Pokemon that are only Ghost, or only Fire. ⚠ Two is the maximum: a third pick plays a failure sound, and clicking a selected type again deselects it
+
 ### Fixes
 
 - **Nature and Ability sat too close together**: both render in white with only 8px between them, so the line could read as one run of text (e.g. "Nature: Relaxed  Ability: Synchronize"). The gap is now wider and consistent across every Pokemon info screen
