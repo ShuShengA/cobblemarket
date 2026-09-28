@@ -56,9 +56,9 @@ data class PokemonPriceLimitEntry(
     //   2 = 不含特训（精灵无任何特训值）
     val htFilter: Int = HT_ANY,
     // 变体限定（species feature：花纹 / 饰品 / 帽子…）—— 与黑名单**同一套语义**：
-    //   []          = 不限变体（旧数据缺省值）
-    //   ["*"]       = 全部变体（精灵带任意变体就命中）
+    //   []          = 不限（变体这一维**不参与判定**；顶部「全部」开关落的就是"形态 `*` + 这个空表"）
     //   [x, y, ...] = 命中所勾的任一个
+    // ⚠ 这里**没有**"全部变体"哨兵（同黑名单，2026-09-28 废止，见 [LEGACY_ALL_VARIANTS]）
     // ⚠ 追加末尾 + 默认值：旧档读不到自动落空表 = 不限，不损坏存档
     val variantAspects: List<String> = emptyList()
 ) {
@@ -111,16 +111,30 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
 
     private val entries = mutableMapOf<EntryKey, PokemonPriceLimitEntry>()
 
+    /**
+     * 条目的 key（= 编辑 / 去重的身份）——**所有构造 key 的地方都走这里**。
+     *
+     * ⚠ **形态与变体列表要先排序再进 key**：`List` 相等是**顺序敏感**的，而变体是**多选**，
+     *   顺序就是玩家的**点选顺序** ⇒ 同一组合、点的顺序不同会被当成两条不同的规则，
+     *   "重复添加 = 覆盖"随之失效（列表里留下两条看着一样的）。
+     * ⚠ 读档处也要走这个（否则排序过的 key 和存档里原序拼的 key 对不上，同一条规则会存成两份）。
+     */
+    private fun keyOf(speciesId: String, vCount: Int, shinyFilter: Int, aspects: List<String>, htFilter: Int, variantAspects: List<String>): EntryKey =
+        EntryKey(speciesId, vCount, shinyFilter, aspects.sorted(), htFilter, variantAspects.sorted())
+
+    private fun keyOf(entry: PokemonPriceLimitEntry): EntryKey =
+        keyOf(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter, entry.variantAspects)
+
     fun add(entry: PokemonPriceLimitEntry) {
         // 先删后插：同物品价格限制一致的语义——已存在 key 的 put 不移动位置，重复添加会留在旧位置
-        val key = EntryKey(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter, entry.variantAspects)
+        val key = keyOf(entry)
         entries.remove(key)
         entries[key] = entry
         markDirty()
     }
 
     fun remove(speciesId: String, vCount: Int, shinyFilter: Int, aspects: List<String>, htFilter: Int, variantAspects: List<String>): Boolean {
-        val removed = entries.remove(EntryKey(speciesId, vCount, shinyFilter, aspects, htFilter, variantAspects)) != null
+        val removed = entries.remove(keyOf(speciesId, vCount, shinyFilter, aspects, htFilter, variantAspects)) != null
         if (removed) markDirty()
         return removed
     }
@@ -246,7 +260,7 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
                                         .filter { it != PokemonPriceLimitEntry.LEGACY_ALL_VARIANTS }
                                 else emptyList()
                             )
-                            entries[EntryKey(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter, entry.variantAspects)] = entry
+                            entries[keyOf(entry)] = entry
                         } catch (e: Exception) {
                             CobbleMarket.LOGGER.warn("Skipping corrupted pokemon price limit entry: {}", e.message)
                         }

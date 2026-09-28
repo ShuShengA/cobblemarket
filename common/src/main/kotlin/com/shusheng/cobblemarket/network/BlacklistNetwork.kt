@@ -163,18 +163,21 @@ object BlacklistNetwork {
                     return@execute
                 }
                 // 变体列表上限：同上，恶意客户端塞海量 aspect 会随条目持久化并全服广播
+                // ⚠ 提示词**别复用 blacklist.not_found**（那是"找不到物种"）—— 服主会跑去改物种
                 if (payload.variantAspects.size > PokemonBlacklistEntry.MAX_ASPECTS) {
                     player.sendMessage(
-                        net.minecraft.text.Text.translatable("cobblemarket.blacklist.not_found")
-                            .formatted(net.minecraft.util.Formatting.RED), false)
+                        net.minecraft.text.Text.translatable(
+                            "cobblemarket.rule.too_many_aspects", PokemonBlacklistEntry.MAX_ASPECTS
+                        ).formatted(net.minecraft.util.Formatting.RED), false)
                     sendResultSound(player, false)
                     return@execute
                 }
                 // 形态列表上限（同求购单）：恶意/异常输入不随条目持久化膨胀
                 if (payload.aspects.size > PokemonBlacklistEntry.MAX_ASPECTS) {
                     player.sendMessage(
-                        net.minecraft.text.Text.translatable("cobblemarket.blacklist.not_found")
-                            .formatted(net.minecraft.util.Formatting.RED), false)
+                        net.minecraft.text.Text.translatable(
+                            "cobblemarket.rule.too_many_aspects", PokemonBlacklistEntry.MAX_ASPECTS
+                        ).formatted(net.minecraft.util.Formatting.RED), false)
                     sendResultSound(player, false)
                     return@execute
                 }
@@ -190,7 +193,11 @@ object BlacklistNetwork {
                     aspects = payload.aspects,
                     shinyFilter = payload.shinyFilter.coerceIn(PokemonBlacklistEntry.SHINY_ANY, PokemonBlacklistEntry.SHINY_YES),
                     htFilter = payload.htFilter.coerceIn(PokemonBlacklistEntry.HT_ANY, PokemonBlacklistEntry.HT_NONE),
-                    variantAspects = payload.variantAspects
+                    // ⚠ 与**读档侧同口径**：剔掉退役的「全部变体」哨兵 —— 留着它这条规则会**永不命中**
+                    //   （判定里已经没有 `*` 分支了，它只会被当成一个普通 aspect 去比对）
+                    variantAspects = payload.variantAspects.filter {
+                        it != PokemonBlacklistEntry.LEGACY_ALL_VARIANTS
+                    }
                 )
                 val state = PokemonBlacklistState.get(server)
                 // 编辑语义：替换原条目（改了形态/IV/闪光/特训等字段时，旧条目不再残留）
