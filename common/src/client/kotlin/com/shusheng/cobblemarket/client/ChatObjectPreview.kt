@@ -125,7 +125,12 @@ object ChatObjectPreview {
          * 精灵的**身份键**（物种 + 形态）：刷新回来时靠它认「还是同一只吗」——
          * 是就**复用** [renderable] / [state]，否则每刷新一次模型动画都从头开始（看着像跳了一下）。
          */
-        val pokemonKey: String? = null
+        val pokemonKey: String? = null,
+        /**
+         * 这条是不是**展示**播报。展示**没有交易信息**（没有卖家、没有价格）⇒ 信息行的尾部
+         * 整个不画 —— 否则会凭空画出「卖家：xxx / 价格：0 ₽」（2026-09-29 用户要求展示单独处理）
+         */
+        val isShare: Boolean = false
     )
 
     /** 大图数据缓存（插入序，超上限淘汰最旧的） */
@@ -251,7 +256,8 @@ object ChatObjectPreview {
                     Text.translatable(speciesNameKey(payload.speciesId)), payload.shiny
                 ),
                 auction = payload.auction,
-                pokemonKey = pokemonKey
+                pokemonKey = pokemonKey,
+                isShare = payload.isShare
             )
         } else {
             // 拍卖存整栈 NBT、求购单存组件快照 —— 两种格式各走各的重建入口（都以 itemId 兜底）
@@ -261,7 +267,10 @@ object ChatObjectPreview {
             // 数量以包里单独传的为准：挂单 NBT 里存的是上架总量（同庆祝动画的处理）
             stack.count = payload.count.coerceAtLeast(1)
             // ⚠ 物品拍卖**同样**带拍卖状态（拍卖场的物品悬停窗也是「词条 + 当前价 / 倒计时 / 领先者」）
-            Entry(isPokemon = false, renderable = null, state = null, stack = stack, at = now, auction = payload.auction)
+            Entry(
+                isPokemon = false, renderable = null, state = null, stack = stack, at = now,
+                auction = payload.auction, isShare = payload.isShare
+            )
         }
         cache[payload.id] = entry
         trimCache(now)
@@ -330,16 +339,20 @@ object ChatObjectPreview {
             val listing = entry.listing
             val name = entry.name
             if (listing != null && name != null) {
-                // 尾部：拍卖那条换成「卖家 / 当前价 / 起拍价 / 加价 / 倒计时 / 领先者」
-                //（照拍卖场的行悬停窗 —— 市场那套的「价格」对拍卖没有意义）
-                drawPokemonInfoPanel(
-                    context, listing, name, screenHeight,
+                val auction = entry.auction
+                val footer = when {
+                    // 展示：**没有交易信息** ⇒ 尾部整个不要（否则会画出「卖家：xxx / 价格：0 ₽」）
+                    entry.isShare -> emptyList()
+                    // 拍卖：换成拍卖状态那几行（照拍卖场的行悬停窗 —— 市场那套的「价格」对拍卖没意义）
                     // ⚠ `withDivider = false`：**证章块自己已经画了下分割线**（`drawInfoLines` 的证章块 =
                     //   图标行 + 下分割线），footer 再加一条就是**重复**（2026-09-29 用户截图报出）。
-                    //   ⚠ 别照搬拍卖场那边的做法 —— 那边之所以要这条线，是因为它的证章块**不画**下分割线、
+                    //   ⚠ 别照搬拍卖场那边的做法 —— 那边要这条线，是因为它的证章块**不画**下分割线、
                     //   由这条**充当**它（两种实现不一样，不能直接搬）
-                    footer = entry.auction?.let { auctionFooterLines(it, withDivider = false) }
-                )
+                    auction != null -> auctionFooterLines(auction, withDivider = false)
+                    // 市场式（待交付）：用默认的「卖家 / 价格」两行
+                    else -> null
+                }
+                drawPokemonInfoPanel(context, listing, name, screenHeight, footer)
             }
         } else {
             val stack = entry.stack ?: return

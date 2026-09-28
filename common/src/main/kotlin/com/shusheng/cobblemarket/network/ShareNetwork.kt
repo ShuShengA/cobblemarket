@@ -187,7 +187,18 @@ object ShareNetwork {
                 itemId = "",
                 itemNbt = null,
                 itemComponentsSpec = null,
-                count = 1
+                count = 1,
+                // 完整信息行：从**活精灵**现组装（与市场 / 拍卖走同一条入口 —— 等级 / 属性+太晶 /
+                // 极巨 / 性格 / 特性 / 球种 / 携带物 / IV+EV / 亲密度 / OT / 技能 / 证章一应俱全）。
+                // ⚠ 尾部那两行（卖家 / 价格）由客户端按 `isShare` **整个略掉** —— 展示没有交易信息
+                listing = MarketNetwork.buildListingEntryForShare(
+                    pokemon = pokemon,
+                    ownerUuid = player.uuid,
+                    ownerName = player.name.string,
+                    id = shareId,
+                    server = player.server
+                ),
+                isShare = true
             )
         )
         return buildPokemonMessage(player, shareId, pokemon)
@@ -217,7 +228,9 @@ object ShareNetwork {
                 itemId = Registries.ITEM.getId(stack.item).toString(),
                 itemNbt = encodeStack(stack, player.serverWorld.registryManager),
                 itemComponentsSpec = null,
-                count = total
+                count = total,
+                // 展示：物品词条走客户端现算的原版 tooltip，没有尾部那两行（见 isShare 的说明）
+                isShare = true
             )
         )
 
@@ -229,8 +242,7 @@ object ShareNetwork {
         return shareMessage(
             player = player,
             shareId = shareId,
-            nameText = nameText,
-            hover = itemHover(stack, total, player.serverWorld.registryManager)
+            nameText = nameText
         )
     }
 
@@ -245,7 +257,7 @@ object ShareNetwork {
         } else {
             Text.literal("").append(nameText)
         }
-        return shareMessage(player, shareId, displayName, pokemonHover(pokemon, player.server))
+        return shareMessage(player, shareId, displayName)
     }
 
     /**
@@ -257,11 +269,14 @@ object ShareNetwork {
      * clickEvent 里的指令词认出「鼠标下是哪个对象」的。点击它时执行的是个**空分支**（客户端什么都不做），
      * 所以对玩家而言点了没反应。
      */
-    private fun shareMessage(player: ServerPlayerEntity, shareId: UUID, nameText: Text, hover: Text): Text {
+    private fun shareMessage(player: ServerPlayerEntity, shareId: UUID, nameText: Text): Text {
         val clickable = Text.literal("").append(nameText)
             .styled {
-                it.withHoverEvent(HoverEvent(HoverEvent.Action.SHOW_TEXT, hover))
-                    .withClickEvent(
+                // ⚠ **只挂点击、不挂悬停**（2026-09-29，与拍卖 / 求购播报统一）：悬停详情改由
+                //   客户端自绘的悬浮窗给（`ChatObjectPreview`）—— 原版灰框显示不了完整内容、
+                //   精灵更是连图标都画不出来。`pokemonHover` / `itemHover` 暂时留着（万一要回退），
+                //   等用户验收后再决定删不删
+                it.withClickEvent(
                         ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket share $shareId")
                     )
                     // 下划线在这一层也设一遍：名字自己那层已经设了（精灵名还带属性色），
