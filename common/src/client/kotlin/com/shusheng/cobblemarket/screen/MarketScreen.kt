@@ -936,6 +936,10 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         show(htButton)
         if (::mineButton.isInitialized) show(mineButton)
         if (::resetButton.isInitialized) show(resetButton)
+        // ⚠ 展开列表的**浮层按钮**是一组动态创建的控件，不在上面那份点名名单里 —— 单独按面板状态藏。
+        //   否则面板收起 / 弹窗打开 / 开关动画期间它们会留在屏幕上（正常路径下 rebuildFilterList 会把
+        //   它们 remove 掉，但弹窗这类路径不重建列表，这里兜住）
+        filterOptionButtons.forEach { it.visible = filterExpanded && !dialogOpen && !animHidden }
         buyButtons.forEach { it.visible = !dialogOpen }
         if (::prevButton.isInitialized) prevButton.visible = !dialogOpen
         if (::nextButton.isInitialized) nextButton.visible = !dialogOpen
@@ -1194,6 +1198,15 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         filterExpanded = !filterExpanded
         // 面板开关动画：展开时从「筛选」按钮那里放大长出来、收起时缩回去（照市场进出场动画的手法）
         filterAnim.start(filterExpanded)
+        // ⚠ 收起时把展开的选项列表**一并收掉**：那一组是**动态创建的独立控件**，面板收起不会自动
+        //   跟着藏（它们不在 updateControlVisibility 的点名名单里），只能靠 rebuildFilterList 移除。
+        //   而且 `filterListOpen` 不清的话，面板**再展开时浮层会自己冒出来**。
+        //   （2026-09-28 用户实测报的：「属性 / 太晶展开时点筛选关掉，展开的按钮都还在」）
+        if (!filterExpanded) {
+            filterListOpen = ""
+            filterListScroll = 0
+            rebuildFilterList()
+        }
         // ⚠ **不重建界面**：筛选面板的控件常驻（见 init 里的说明），开关只要切可见性。
         //   重建会清空 iconData 里的跨帧动画状态（睡觉的精灵会站起来一下再睡回去），
         //   还会把输入框内容、滚动位置一并丢掉。
