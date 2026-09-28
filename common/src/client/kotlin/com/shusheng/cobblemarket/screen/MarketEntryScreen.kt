@@ -1077,7 +1077,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                     Text.literal(com.shusheng.cobblemarket.client.formatPriceShortLong(totalVolume)).formatted(Formatting.GOLD),
                     Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)
                 ),
-                width / 2, btnStartY - 29, 0xFFFFFF
+                width / 2, btnStartY - 36, 0xFFFFFF
             )
             val lineW = textRenderer.getWidth(
                 Text.translatable(
@@ -1086,7 +1086,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                     inlineCurrencyUnit()
                 )
             )
-            if (mouseY in (btnStartY - 29)..(btnStartY - 20) && Math.abs(mouseX - width / 2) <= lineW / 2) {
+            if (mouseY in (btnStartY - 36)..(btnStartY - 27) && Math.abs(mouseX - width / 2) <= lineW / 2) {
                 renderAmountTooltip(
                     context, mouseX, mouseY,
                     "${com.shusheng.cobblemarket.client.formatPriceLong(totalVolume)} ${activeCurrencyUnit()}"
@@ -1276,7 +1276,19 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                 textRenderer,
                 Text.translatable("cobblemarket.gui.balance",
                     Text.literal(bal + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
-                width / 2, btnStartY - 18, 0xFFFFFF
+                width / 2, btnStartY - 24, 0xFFFFFF
+            )
+        }
+        // RP 余额：紧跟在主余额**下一行**，与余额 HUD 同一个格局（数字在前、图标当单位）。
+        // ⚠ 服务器没开 RP 就不画（`PointsStateCache.enabled`）——没有这种货币就别占一行。
+        // ⚠ 图标必须走 Text 拼接（`.append(pointsIcon())`），拼进字符串会丢字体样式变方块
+        val pts = com.shusheng.cobblemarket.client.BalanceCache.pointsBalance
+        if (com.shusheng.cobblemarket.client.PointsStateCache.enabled && pts.isNotEmpty()) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.gui.balance",
+                    Text.literal("$pts ").append(CurrencyService.pointsIcon()).formatted(Formatting.GOLD)),
+                width / 2, btnStartY - 12, 0xFFFFFF
             )
         }
     }

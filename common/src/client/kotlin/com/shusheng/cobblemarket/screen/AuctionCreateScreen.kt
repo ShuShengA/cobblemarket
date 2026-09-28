@@ -1464,7 +1464,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         context.drawCenteredTextWithShadow(textRenderer, titleText, centerX, 20, 0xFFFFFF)
 
         // 余额（左上角，来自全局缓存）；与标题同行，余额一长就压上去，降级规则见 drawHeaderBalance
-        drawHeaderBalance(context, textRenderer, centerX, leftX + 4, textRenderer.getWidth(titleText))
+        drawHeaderBalance(context, textRenderer, centerX, leftX + 4, textRenderer.getWidth(titleText), currency)
 
         val startY = getListStartY()
         // 分割线在列表起点上方 **4px**（⚠ 别用 -2：那样它离行背景只有 2px，看着"紧贴精灵行"；
