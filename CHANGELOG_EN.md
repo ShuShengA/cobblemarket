@@ -18,6 +18,8 @@
 
 ### Changes
 
+- **The force-cancel dialog now shows an item's full tooltip**: for an item auction it used to show only "item name + ×count" — no enchantments, no attribute modifiers, no potions, no custom lore — while the **bid dialog** showed them all. It now matches the bid dialog: the full tooltip, and **Shift / Ctrl expands it** (the dialog grows taller and wider to fit, and the **two buttons at the bottom move down with it** — they used to stay put and overlap the "Force-cancel this auction?" notice that had already moved down)
+
 - **The Type filter can now take two types at once**: a Pokemon has at most two types, but the filter only accepted one — now picking a type **leaves the list open** so you can pick a second. ⚠ With **one** type selected the behaviour is exactly as before (matches when either the primary or the secondary type is that type); with **two**, it matches only Pokemon whose types are **exactly those two** — "Ghost+Fire" will not list Pokemon that are only Ghost, or only Fire. ⚠ Two is the maximum: a third pick plays a failure sound, and clicking a selected type again deselects it
 
 - **How the UI marks a selected entry is now consistent**: lists, tabs and dropdowns used to mark the selected entry with a "●" in front of its label — they now use the **button's own selected highlight** (background) instead, so the same idea is no longer expressed twice; toggle buttons such as "Mine" got the same highlight too
@@ -31,6 +33,10 @@
 - **The admin buy-order screen no longer shows a balance**: every other screen in the admin panel goes without one, only buy orders had it (looked like a copy-paste slip) — it is now hidden in admin mode, while the player-side buy-order screen keeps it
 
 ### Fixes
+
+- **The buy dialog's input box and buttons did not follow the tooltip**: an item with a long tooltip (such as a **TM**, whose full move description appears while you hold Shift) makes the dialog taller and pushes the text down — but the **quantity input and the Buy / Meowth Pay / Cancel buttons stayed put**, even ending up overlapped by the "total" line that did move. They now follow the dialog every frame, exactly like the item bid dialog does
+- **Buttons drifted away from the background in Meowth Bank when permissions changed while it was open**: the panel is one row taller for players holding any admin node, and that permission state can arrive **while the screen is already open** — the background moved but the Back / Rules / Deposit / Borrow buttons stayed put. They now move along with it
+- **The item icon in the "Set up auction" dialog sat off to the right**: in Pokemon mode the preview sits right under the title, but in item mode it was **50 pixels too far right** (the two modes each had their own coordinates). Both now share one set of coordinates
 
 - **Mark icons were drawn inconsistently on a few screens**: ① in the **bid dialog** and the **admin auction detail** they were **not centred** (every other screen centres them); ② the **auction hall** and **admin** Pokemon row tooltips showed **a stray divider even when the Pokemon had no marks at all**; ③ on the **market buy-confirm screen**, a Pokemon with many marks had its **first icon row run past the divider**; ④ the market buy dialog, the buy-confirm screen, the pending-delivery dialog and the admin Pokemon dialog **added one row of height too many** when the marks nearly filled a row (leaving a gap at the bottom). All four now follow the same layout
 
