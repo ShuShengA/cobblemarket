@@ -616,12 +616,15 @@ class PointsMarketScreen : Screen(
     private var editSnapshotButton: NineSliceButton? = null
 
     /**
-     * 快照按钮**左侧**那枚 info —— 草稿选中的形态**需要前置条件**时出现
+     * 「添加」按钮**左侧**那枚 info —— 草稿选中的形态**需要前置条件**时出现
      * （判定见 [SpeciesText.GATED_FORM_ASPECTS] / [SpeciesText.hasGatedAspect]）。
      *
      * 点开 [GatedFormScreen] 看完整说明。显隐**每帧在 [render] 里刷**（同 [prevButton] 那套写法）：
      * 判据是草稿里的形态，而改动形态的路子有十几处（选项列表点选 / 快照回填 / 换物种 / 清空），
      * 逐个补事件必然漏。物品窗没有形态 ⇒ 判据恒假，按钮自然不出现。
+     *
+     * ⚠ **位置在「添加」左边、不在右上角快照旁边** —— 一轮实测后用户改的：那个角落太空、
+     *   按钮"突然冒出来"根本注意不到；贴着「添加」（服主配完必然要点的那个）才看得见。
      */
     private var editGatedInfoButton: NineSliceButton? = null
 
@@ -853,6 +856,21 @@ class PointsMarketScreen : Screen(
 
     // 输入框原文：resize 会重建控件，不留下这几份就会清空（占位符那种小字丢得最明显）
     private var editSpeciesText = ""
+
+    /**
+     * 正在**恢复**物种搜索框的文本（重建控件时）—— 这期间的赋值不算「用户改了输入」。
+     *
+     * ⚠⚠ **必须有这道闸**：MC 的 `TextFieldWidget.setText` **会同步触发 changedListener**
+     *   （口径同 [editItemSearchSyncing] 那条注释），而这里 listener 里跑的是 [updateEditSpecies]
+     *   —— 它顺手把 `editSpeciesIndex` 归零、物种换成候选第一个。
+     *   表现：「搜『喷火』→ 点箭头切到喷火驼 → 点开形态说明界面再回来 → **变回喷火龙**」
+     *   （2026-09-30 用户实测）。
+     * ⚠ 同一路径 **resize 也会走到**（resize → `init` → [buildEditDialog]），所以这坑在
+     *   子界面出现之前就存在，只是没被撞上；⚠ 快照弹窗不走 `init`，所以它从来不触发。
+     *
+     * ⚠ 别把它加到 [fillDraft] 那条赋值上（回填物种）—— 那里**就是要**让候选跟着重算。
+     */
+    private var editSpeciesSyncing = false
     private var editLevelText = ""
     private var editDmaxText = ""
     private var editPriceText = ""
@@ -1844,6 +1862,7 @@ class PointsMarketScreen : Screen(
         editItemSearchField = null
         editItemHeldButton = null
         editItemSearchSyncing = false
+        editSpeciesSyncing = false
         editConfirmButton = null
         editRemoveButton = null
         editButtons.clear()
@@ -3193,9 +3212,10 @@ class PointsMarketScreen : Screen(
         val btnY = editButtonRowY()
         val confirmText = "cobblemarket.points.store.add"
         val contentW = editDialogW() - EDIT_PAD * 2
+        // 抽成局部量：紧挨它左边要放「形态需要前置条件」那枚 info（见下），各算一份必然错开
+        val confirmX = x + EDIT_PAD + (contentW - EDIT_BUTTON_W * 2 - 8) / 2
         editConfirmButton = NineSliceButton(
-            x + EDIT_PAD + (contentW - EDIT_BUTTON_W * 2 - 8) / 2,
-            btnY, EDIT_BUTTON_W, EDIT_BUTTON_H, Text.translatable(confirmText), { submitEdit() }
+            confirmX, btnY, EDIT_BUTTON_W, EDIT_BUTTON_H, Text.translatable(confirmText), { submitEdit() }
         )
         addDrawableChild(editConfirmButton)
         // ⚠ 取消按钮**必须存字段**：展开选项列表时要把它一起藏掉，否则它压在列表上、
@@ -3206,6 +3226,24 @@ class PointsMarketScreen : Screen(
             Text.translatable("cobblemarket.buy_confirm.cancel"), { closeEditDialog() }
         )
         addDrawableChild(editCancelButton)
+
+        // 「形态需要前置条件」警告：**紧挨「添加」按钮左侧 4px**（用户 2026-09-30 定的位置）。
+        // 放这儿是因为服主配完必然要点「添加」—— 紧贴指尖，比右上角那种"突然出现在偏僻角落"看得见得多。
+        // 16×16 纯图标（info.png 的惯例写法同交易历史 / 兑换码那两处），**只有精灵窗有**；
+        // 显隐见 [editGatedInfoButton]（每帧刷，判据是草稿里选中的形态）。
+        // ⚠ 与「添加」**垂直居中对齐**（按钮 18 高、图标 16 高，上让 1px）
+        if (isPokemonSlot()) {
+            editGatedInfoButton = NineSliceButton(
+                confirmX - 4 - EDIT_GATED_INFO_W,
+                btnY + (EDIT_BUTTON_H - EDIT_GATED_INFO_W) / 2,
+                EDIT_GATED_INFO_W, EDIT_GATED_INFO_W,
+                Text.literal(""),
+                { openGatedFormScreen() },
+                iconLeft = Identifier.of("cobblemarket", "textures/gui/info.png"),
+                iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+                tooltip = Text.translatable("cobblemarket.gated_form.button_tip")
+            ).also { addDrawableChild(it) }
+        }
 
         // **快照**：右上角那枚 —— 位置**就是原来「下架」的那个**（`editRemoveY()` 这名字是那时候留下的，
         // 它算的是"距顶 = 距右"那条对角线上，与具体是哪枚按钮无关）。
@@ -3219,17 +3257,6 @@ class PointsMarketScreen : Screen(
                 editRowRightX() - EDIT_SNAPSHOT_W, editRemoveY(),
                 EDIT_SNAPSHOT_W, EDIT_ROW_H,
                 Text.translatable("cobblemarket.points.store.snapshot_button"), { openSnapshotDialog() }
-            ).also { addDrawableChild(it) }
-            // 「需要前置条件的形态」警告：紧挨快照按钮**左侧 4px**（按钮间距规则，用户 2026-09-30 定的位置）。
-            // 纯图标按钮（info.png 的惯例写法同交易历史 / 兑换码那两处）；显隐见 [editGatedInfoButton]
-            editGatedInfoButton = NineSliceButton(
-                editRowRightX() - EDIT_SNAPSHOT_W - 4 - EDIT_GATED_INFO_W, editRemoveY(),
-                EDIT_GATED_INFO_W, EDIT_ROW_H,
-                Text.literal(""),
-                { openGatedFormScreen() },
-                iconLeft = Identifier.of("cobblemarket", "textures/gui/info.png"),
-                iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
-                tooltip = Text.translatable("cobblemarket.gated_form.button_tip")
             ).also { addDrawableChild(it) }
         }
 
@@ -3285,10 +3312,17 @@ class PointsMarketScreen : Screen(
         field.setPlaceholder(Text.translatable("cobblemarket.points.store.species_hint"))
         // ⚠ 输入变化要重解析候选（精确优先，见 SpeciesText.candidatesByNameOrId）——
         //   直接取第一个会把中文名互为子串的物种静默换掉（「鬼斯」/「鬼斯通」）
-        field.setChangedListener { text -> editSpeciesText = text; updateEditSpecies(text) }
+        field.setChangedListener { text ->
+            if (editSpeciesSyncing) return@setChangedListener
+            editSpeciesText = text; updateEditSpecies(text)
+        }
+        // ⚠ 这条赋值**会触发上面那个 listener** ⇒ 必须挡一道（见 [editSpeciesSyncing]）：
+        //   不挡的话每次重建都把候选下标归零、物种退回第一个
+        editSpeciesSyncing = true
         field.text = editSpeciesText.ifEmpty {
             editSpecies?.resourceIdentifier?.toString() ?: editSpecBase?.pokemon?.species.orEmpty()
         }
+        editSpeciesSyncing = false
         editSpeciesField = field
         addSelectableChild(field)
         addDrawableChild(field)
@@ -6108,12 +6142,13 @@ class PointsMarketScreen : Screen(
         const val EDIT_SNAPSHOT_W = 62
 
         /**
-         * 快照按钮**左侧**那枚「形态需要前置条件」info 的边长 —— 纯图标按钮，16×16 见方
+         * 「添加」按钮**左侧**那枚「形态需要前置条件」info 的边长 —— 纯图标按钮，16×16 见方
          * （与交易历史 / 兑换码界面那两枚 info 同尺寸）。
          *
-         * ⚠ 它很小是有原因的：这一条带（`editRemoveY()` 那行）左侧可用宽度**随窗口缩**
-         * ——窗口拉到下限 [EDIT_DIALOG_MIN_W] 时只剩 ~64px（物种行那排小按钮到快照按钮之间），
-         * 文字按钮怎么压都放不下。图标不吃宽度，16px 任何档位都稳。
+         * ⚠ 位置跟着 `confirmX` 走（见 [buildEditDialog]）：贴合「添加」才看得见（用户实测定）。
+         * ⚠ 宽度用不着纠结：窗口拉到下限 [EDIT_DIALOG_MIN_W] 时，它距左内边距仍有 ~36px
+         *   —— 16px 的图标任何档位都稳（早先那版放右上角时，那条带在窄窗口下只剩 ~64px，
+         *   文字按钮怎么压都放不下，才选的图标）。
          */
         const val EDIT_GATED_INFO_W = 16
 
