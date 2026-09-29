@@ -93,6 +93,57 @@ object SpeciesText {
     private val DYNAMAX_ASPECTS = setOf(GMAX_ASPECT, "eternamax")
 
     /**
+     * **「正常路径下需要满足某个前置条件」的形态 aspect** —— RP 商城上架精灵时给服主**警告**用。
+     *
+     * 判据（2026-09-30 用户拍板）：**这个形态正常变身需要道具 / 招式 / 等级 / 特性之类的前置条件**，
+     * 而商城造出来的精灵**必然不满足** ⇒ 从诞生就是**非法**精灵：
+     * - 形态 ↔ 道具的不变量被打破（Mega 精灵却没带 Mega 石）
+     * - ⚠ **省掉一个携带物位** ⇒ 能另带一件道具 ⇒ **影响对战平衡**
+     * - `Species.getForm` **不看 `battleOnly`** ⇒ 种族值 / 属性 / 特性 / 可学技能**全部常驻**走那一套
+     * - 附属模组认为"它已经是 Mega"是**事实正确**的 ⇒ **无法解除**
+     *
+     * ⚠⚠ **必须硬编码**：Cobblemon 的 `FormData` 根本没读 species json 的 `battleOnly`
+     *   （`PokemonSpecies.kt` 里只有一个 `// ToDo battleOnly`），`labels` 虽被读入但**不同步给客户端**
+     *   ⇒ 客户端**没有任何权威判据可用**，只能按 aspect 值列在这儿。见 [selectableForms] 的同类说明。
+     *
+     * 来源：扫 `Cobblemon-fabric-1.8.0+1.21.1.jar` 里 `data/cobblemon/species` 下各世代的 json（1025 个物种）
+     * ⇒ `battleOnly: true` 共 **107 个 form / 94 物种**；减去**已滤掉**的 `gmax` 34 + `eternamax` 1
+     * ⇒ 本表 **24 个 aspect 值覆盖 72 个 form**。
+     *
+     * ⚠ **Cobblemon 升级时要复核本表** —— 官方新增 Mega / 战斗形态时这里**不会自动跟上**。
+     *
+     * ⚠ 下面这 3 个例外要知道：
+     * - **烈空坐的 Mega 靠「画龙点睛」不靠道具**（用户 2026-09-30 指出）—— 判据因此从"需要道具"
+     *   放宽成"需要**前置条件**"，它用的仍是 `mega`
+     * - `xerneas` 的 `active-mode` ⚠ **待核**：哲尔尼亚斯平时就是 Active Mode（Neutral 是伪装态），
+     *   它被标 `battleOnly: true` **可能是数据标注问题**，别误伤
+     * - `castform` / `cherrim` / `aegislash` / `xerneas` / `cramorant` / `eiscue` / `morpeko` / `terapagos`
+     *   这 **8 只的 forms 里全是 battleOnly**（没有普通形态），形态按钮点开就全是它们
+     */
+    val GATED_FORM_ASPECTS: Set<String> = setOf(
+        // Mega 系（需 Mega 石；⚠ 烈空坐例外，见上）
+        "mega", "mega_x", "mega_y",
+        // 传说专属（需宝珠 / 腐朽的剑与盾 / 与日月神合体）
+        "primal", "crowned", "ultra-fusion",
+        // 自动触发型（等级 / 换人下场 / 特性 / 天气 / 受击…）
+        "sunny-form", "rainy-form", "snowy-form", "sunshine-form",
+        "zen-mode", "blade-forme", "ash", "active-mode", "complete-percent",
+        "busted-form", "school-form", "gulping-form", "gorging-form",
+        "noice_face", "hangry-mode", "hero-form", "terastal-form", "stellar-form",
+    )
+
+    /** 这个形态是不是**需要前置条件**的那种（任一 aspect 命中 [GATED_FORM_ASPECTS]）—— 商城上架时警告用 */
+    fun isGatedForm(form: FormData): Boolean = form.aspects.any { it in GATED_FORM_ASPECTS }
+
+    /**
+     * 一堆 aspect 里**有没有**需要前置条件的 —— 判"当前草稿选中的形态危不危险"用。
+     *
+     * ⚠ 传的是 `spec.aspects` 这类**混放**列表（形态 + 变体 + 闪光），这里只按值判，
+     *   不会误伤变体 —— 因为变体的值（花纹 / 帽子那些）不在 [GATED_FORM_ASPECTS] 里。
+     */
+    fun hasGatedAspect(aspects: Collection<String>): Boolean = aspects.any { it in GATED_FORM_ASPECTS }
+
+    /**
      * 该物种**可选的形态**（给各界面的形态按钮做候选）：**滤掉超极巨化形态**。
      *
      * 为什么滤（2026-09-20 用户拍板）：
