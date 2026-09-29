@@ -101,9 +101,21 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         return startY - 14 - (146 - totalH) / 2 - 33
     }
 
+    /**
+     * 上次把控件贴到面板顶时用的 [bgTop] 值。
+     *
+     * ⚠ **为什么要有它**：本界面所有控件的 y 都是「`bgTop()` + 固定偏移」，而 `bgTop()` 依赖
+     *   「有没有管理权限」（面板 3 行 / 2 行）—— 权限快照**可能在界面开着的时候**到达
+     *   （入口界面会 clearChildren+init 重建，本界面原先没有 ⇒ 背景挪了、按钮不挪，全错位）。
+     *   ⚠ 判据必须与入口一致：两边都读 `ClientPermissionCache.canManage()`（见 [bgTop] 的注释）。
+     */
+    private var syncedBgTop = Int.MIN_VALUE
+
     override fun init() {
         super.init()
         val bgTop = bgTop()
+        // 记下**这次建控件用的**值：每帧据此判断「权限变了、背景挪了没」（见 [syncControlsToBgTop]）
+        syncedBgTop = bgTop
 
         // 返回按钮：右边缘与「全部借款历史」按钮右边缘对齐（48 宽 → x=width/2+57）
         // （全部借款历史：x=width/2+25 宽 80 → 右边缘 width/2+105）
@@ -215,6 +227,25 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
 
     private fun boardVisibleRows(): Int = 5
 
+    /**
+     * 面板顶一变，**所有控件一起挪这个差值** —— 否则背景挪了、按钮全停在原地
+     *（`bgTop()` 由「有没有管理权限」决定，而权限快照可能在界面开着的时候到达）。
+     *
+     * ⚠ 用 `children()` 整体挪、**不逐个记基准**：各控件的偏移本来就各不相同，记一张基准表要维护
+     *   6~8 个常量、还容易漏；而这里**只需要差值** —— 挪完把 [syncedBgTop] 更新掉，
+     *   同一帧不会重复挪（不会累积漂移）。
+     */
+    private fun syncControlsToBgTop() {
+        val now = bgTop()
+        if (now == syncedBgTop) return
+        val delta = now - syncedBgTop
+        syncedBgTop = now
+        // 只挪「可点击控件」（按钮 / 输入框 —— 本界面的控件全是这一类）：
+        // `children()` 的静态类型是 `Element`，它没有可直接读写的 y
+        children().filterIsInstance<net.minecraft.client.gui.widget.ClickableWidget>()
+            .forEach { it.y += delta }
+    }
+
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         // 背景 256×213，顶边与入口界面同锚定公式（切换界面背景不跳动）
         val bg = Identifier.of("cobblemarket", "textures/gui/meowth_bank_background.png")
@@ -222,6 +253,9 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // ⚠ **必须在 super.render 之前**：控件是在 super.render 里画的，晚一步同步就会看到
+        //   「背景已经挪了、按钮还停在原地」的那一帧
+        syncControlsToBgTop()
         super.render(context, mouseX, mouseY, delta)
         val bgTop = bgTop()
         // 标题：背景内顶部边框（27px）下方 4px 处

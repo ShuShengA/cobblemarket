@@ -37,6 +37,7 @@ import net.minecraft.client.gui.Drawable
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.item.ItemStack
 import net.minecraft.registry.Registries
+import net.minecraft.item.tooltip.TooltipType
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
@@ -128,6 +129,20 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
      * 所以打开时只记「now + [IconCryClick.AUTO_CRY_DELAY_MS]」，渲染处到点才播。
      */
     private var cancelCryAt = 0L
+    // ── 强制下架弹窗的**物品词条**（基础 / Shift·Ctrl 展开）—— 照搬出价弹窗那一套 ──
+    // ⚠ 原先物品模式左列**只有「物品名 + 数量」两行、根本没有词条区**，所以按 Shift 也没反应；
+    //   这里补齐后，它与出价弹窗才真正「逻辑一致」（2026-09-29 用户选 A）
+    /** 基础词条（`TooltipType.BASIC`，已丢掉首行物品名 —— 弹窗自己画了名字） */
+    private var cancelItemTooltipLines: List<Text> = emptyList()
+    /** 展开词条（Shift / Ctrl 按住时的 `ADVANCED`） */
+    private var cancelItemAdvancedLines: List<Text> = emptyList()
+    /** 展开词条是不是**按当前按键组合**建的（组合变了要重建，见渲染处） */
+    private var cancelAdvancedBuiltWithShift = false
+    private var cancelAdvancedType: TooltipType? = null
+
+    /** 弹窗底部两枚按钮**相对弹窗底边**的距离 —— 创建处与每帧重贴处必须同源（改就改这一处） */
+    private val cancelButtonDy = 30
+
     private var cancelConfirmButton: NineSliceButton? = null
     private var cancelCancelButton: NineSliceButton? = null
 
@@ -398,6 +413,13 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 if (entry.shiny && "shiny" !in aspects) aspects.add("shiny")
                 cancelRenderable = RenderablePokemon(species, aspects, heldIconStackForModel(entry.extraData))
             }
+        } else {
+            // 物品：两套词条**在打开时就建好**（基础 + 展开）—— 渲染每帧直接取用，
+            // 别每帧重新构建（原版 tooltip 构建不便宜）。照搬出价弹窗的做法
+            cancelItemTooltipLines = buildCancelItemLines(entry, TooltipType.BASIC)
+            cancelItemAdvancedLines = buildCancelItemLines(entry, TooltipType.ADVANCED)
+            cancelAdvancedBuiltWithShift = false
+            cancelAdvancedType = null
         }
         // 点行 → 弹窗弹出 → 由弹窗里的精灵叫一声（用户拍板的「叫声转移」）。
         // ⚠ 只记待播时刻、不在这里直接播：addFirstAnimation 依赖 state.currentModel，
@@ -420,13 +442,13 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         // 整体往右长：-50/+34，间距 4px。原注：-60 会压左列信息区（王冠 IV 行等长文字），
         // 英文下左列行宽更大，原位置会压到按钮；右列竞拍信息在 y 28~100 不冲突
         cancelConfirmButton = NineSliceButton(
-            centerX - 50, dialogY + dialogH - 30, 80, 20,
+            centerX - 50, dialogY + dialogH - cancelButtonDy, 80, 20,
             Text.translatable("cobblemarket.auction.force_cancel"),
             { confirmCancel() }
         )
         addDrawableChild(cancelConfirmButton)
         cancelCancelButton = NineSliceButton(
-            centerX + 34, dialogY + dialogH - 30, 80, 20,
+            centerX + 34, dialogY + dialogH - cancelButtonDy, 80, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeCancelDialog() }
         )
@@ -907,12 +929,66 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
      * 上下分割线 20 + 图标行 12（超过一行再加 12 的「+N」行）+ 余量（保证按钮不压到左列最后一行）。
      */
     /**
+     * 把弹窗底部两枚按钮贴到**当前**布局上 —— 弹窗高度会随 Shift 展开变，
+     * 而按钮是打开时定位一次的（见渲染处的说明）。只重贴 `y`：x 与弹窗宽度无关。
+     */
+    private fun syncCancelDialogButtons(dialogY: Int, dialogH: Int) {
+        val y = dialogY + dialogH - cancelButtonDy
+        cancelConfirmButton?.y = y
+        cancelCancelButton?.y = y
+    }
+
+    /** 强制下架弹窗的**物品词条**构建（原版 tooltip 去掉首行物品名；`type` 区分 BASIC / ADVANCED）
+     *  —— 照搬出价弹窗的同名函数 */
+    private fun buildCancelItemLines(entry: AuctionEntry, type: TooltipType): List<Text> {
+        val out = mutableListOf<Text>()
+        entry.itemNbt?.let { nbt ->
+            client?.world?.registryManager?.let { rm ->
+                val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
+                if (!stack.isEmpty) {
+                    out.addAll(
+                        com.shusheng.cobblemarket.client.ItemComponentsDisplay
+                            .itemTooltip(stack, client?.player, type).drop(1)
+                    )
+                }
+            }
+        }
+        return out
+    }
+
+    /**
+     * 当前该显示哪一份物品词条：按住 Shift / Ctrl 用**展开**那份，否则用基础那份。
+     *
+     * ⚠ 与出价弹窗同款：按住时**按当前按键组合重建** —— Shift、Ctrl、Shift+Ctrl 展开出的东西
+     *   不一样（`tooltipTypeForHover()` 分三种），只在组合真的变了才重建。
+     */
+    private fun cancelItemLines(entry: AuctionEntry): List<Text> {
+        if (!com.shusheng.cobblemarket.client.ItemComponentsDisplay.hoverExpanded()) {
+            cancelAdvancedBuiltWithShift = false
+            cancelAdvancedType = null
+            return cancelItemTooltipLines
+        }
+        val type = com.shusheng.cobblemarket.client.ItemComponentsDisplay.tooltipTypeForHover()
+        if (!cancelAdvancedBuiltWithShift || cancelAdvancedType != type) {
+            cancelItemAdvancedLines = buildCancelItemLines(entry, type)
+            cancelAdvancedBuiltWithShift = true
+            cancelAdvancedType = type
+        }
+        return cancelItemAdvancedLines
+    }
+
+    /**
      * 强制取消弹窗高度：按左列信息区实际内容算——起始 +56，12 基础行
      * （名字/类型/性格/特性/IV 标签/6×IV/亲密度）+ 球种/携带物行 + 证章区块，
      * 底部再留 58px（提示两行在 -54/-44、按钮在 -30，照出价弹窗布局）。
      * 加新信息行（如技能）时只改这里的 12。
      */
     private fun cancelDialogHeight(entry: AuctionEntry): Int {
+        // 物品：左列 = 物品名 + 数量 + 词条（取**当前按键下**的那一份：基础 / 展开）
+        // ⚠ 与出价弹窗一样**每帧算** ⇒ 按住 Shift 弹窗跟着长高、按钮与提示相对弹窗底定位
+        if (entry.type != "POKEMON") {
+            return 56 + (2 + cancelItemLines(entry).size) * 10 + 58
+        }
         val marks = entry.extraData["marks"].orEmpty().split(",").filter { it.isNotEmpty() }
         val moves = entry.extraData["moves"].orEmpty()
         // 「有才显示」的行数（球种 / 携带物 / 极巨行 / 初始训练家行）走**共用入口** ——
@@ -937,11 +1013,19 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             Text.translatable("cobblemarket.auction.min_increment_label").append(
                 Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"))
         ).maxOf { textRenderer.getWidth(it) }
-        // 左列固定 140（infoX+10 ~ auctionX），右列 rightW + 20 右边距
-        val dialogW = maxOf(340, 180 + rightW).coerceAtMost(width - 20)
+        // 左列默认 140（infoX+10 ~ auctionX），右列 rightW + 20 右边距；
+        // ⚠ **物品模式**左列还有词条，长行会把左列撑宽 ⇒ 并上词条实测宽（与出价弹窗同一套做法）
+        val itemLines = if (entry.type == "POKEMON") emptyList() else cancelItemLines(entry)
+        var maxLineW = 0
+        itemLines.forEach { maxLineW = maxOf(maxLineW, textRenderer.getWidth(it)) }
+        val dialogW = maxOf(340, 180 + rightW, maxLineW + rightW + 50).coerceAtMost(width - 20)
         val dialogH = cancelDialogHeight(entry)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
+        // ⚠ **每帧把按钮贴回当前布局**：词条会随 Shift 展开变多 ⇒ 弹窗长高、下面那两行提示跟着下移，
+        //   而按钮是**打开弹窗时定位一次**的 ⇒ 不重贴就钉在原地，还会把已经下移的提示**压住**
+        //  （2026-09-29 用户截图报出）。与物品购买弹窗的 `syncBuyDialogControls` 是同一类修法
+        syncCancelDialogButtons(dialogY, dialogH)
 
         drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
@@ -1114,6 +1198,10 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             // 物品名走**稀有度色** —— `displayName()` 返回 String，直接画必然白字（2026-09-26 用户报）
             infoLineText(EntryBadgeRenderer.auctionNameText(entry))
             infoLine("×${entry.count}")
+            // 完整词条（附魔 / 属性加成 / 药水 / 自定义说明 / 耐久…）：原版 tooltip 渲染，与背包里
+            // 悬停看到的一模一样；**按住 Shift / Ctrl 换成展开那份**（工具提示里带 "按住 Shift" 之类的
+            // 原版语义也一并继承）—— 与出价弹窗逻辑一致（2026-09-29 用户选 A）
+            cancelItemLines(entry).forEach { infoLineText(it) }
         }
 
         // ── 右列：竞拍信息 ──
