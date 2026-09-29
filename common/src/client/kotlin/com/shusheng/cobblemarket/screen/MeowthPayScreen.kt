@@ -1,7 +1,9 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.currencyUnitWidth
+import com.shusheng.cobblemarket.client.drawAmountLine
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.formatPriceLong
-import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.network.CreditInfoPayload
@@ -217,9 +219,10 @@ class MeowthPayScreen(
             lineX, ly, 0xFFFFFF
         )
         ly += 18
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.meowth_pay.confirm_amount", formatPriceLong(amount), inlineCurrencyUnit()),
+        // ⚠ 金额与单位拆开画（物品货币时单位是物品图标）：词条的单位参数传空串占位，见 drawAmountLine
+        drawAmountLine(
+            context, textRenderer,
+            Text.translatable("cobblemarket.meowth_pay.confirm_amount", formatPriceLong(amount), Text.literal("")),
             lineX, ly, 0xFFFFFF
         )
         ly += 18
@@ -229,24 +232,24 @@ class MeowthPayScreen(
             lineX, ly, 0xFFFFFF
         )
         ly += 18
-        context.drawTextWithShadow(
-            textRenderer,
+        drawAmountLine(
+            context, textRenderer,
             Text.translatable(
                 "cobblemarket.loan.confirm_each",
                 formatPriceLong(amount / periods + estInterest(periods, feeRate) / periods),
-                inlineCurrencyUnit()
+                Text.literal("")
             ),
             lineX, ly, 0xFFFFFF
         )
         ly += 18
-        context.drawTextWithShadow(
-            textRenderer,
+        drawAmountLine(
+            context, textRenderer,
             Text.translatable(
                 "cobblemarket.loan.confirm_total",
                 Text.literal(formatPriceLong(amount + estInterest(periods, feeRate))).formatted(Formatting.GOLD),
-                Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)
+                Text.literal("")
             ),
-            lineX, ly, 0xFFFFFF
+            lineX, ly, 0xFFFFFF, unitColor = 0xFFAA00
         )
     }
 
@@ -284,14 +287,15 @@ class MeowthPayScreen(
         // ① **金额与单位金色**（真实金额用金；蓝色只留给服务器给的虚拟额度，见下面的额度行）；
         // ② 必须走富文本参数，别用 itemDesc.string 拼 —— 那是纯文本，会把精灵名的样式整个丢掉
         //    （闪光精灵的金★就长在名字里），长名截断改用 truncateStyled（保样式）
-        context.drawTextWithShadow(
-            textRenderer,
+        // ⚠ 金额与单位拆开画（物品货币时单位是物品图标）：金额那个参数只留金额 + 一个空格，见 drawAmountLine
+        drawAmountLine(
+            context, textRenderer,
             Text.translatable(
                 "cobblemarket.meowth_pay.item_line",
                 com.shusheng.cobblemarket.util.TextUtil.truncateStyled(itemDesc, 120),
-                Text.literal("${formatPriceLong(amount)} ${inlineCurrencyUnit()}").formatted(Formatting.GOLD)
+                Text.literal("${formatPriceLong(amount)} ").formatted(Formatting.GOLD)
             ),
-            dialogX + 12, dialogY + 58, 0xFFFFFF
+            dialogX + 12, dialogY + 58, 0xFFFFFF, unitColor = 0xFFAA00
         )
         // 可用额度：**居中紧贴标题**（用户 2026-09-21 拍板）—— 与标题同属「头部状态区」，
         // 商品/方案/估算才是左对齐的交易信息。蓝色同 LoanScreen 的额度行，
@@ -299,27 +303,26 @@ class MeowthPayScreen(
         // ⚠ 混排行别用 drawCenteredTextWithShadow —— 它会让行首汉字比同行的数字高一点点，
         //   改成「算好 x 再左对齐画」，观感同样居中（见 docs/gui_pitfalls.md）
         // ⚠ 额度由 requestCreditInfo 异步拉取、未到达前按 0 显示（与 LoanScreen 同口径）
+        val limitColor = if (limit < amount) 0xFF5555 else 0x55FFFF
         val limitLine = Text.translatable(
             "cobblemarket.meowth_pay.limit_line",
             formatPriceLong(limit.coerceAtLeast(0)),
-            inlineCurrencyUnit()
+            Text.literal("")
         )
-        context.drawTextWithShadow(
-            textRenderer,
-            limitLine,
-            width / 2 - textRenderer.getWidth(limitLine) / 2, dialogY + 36,
-            if (limit < amount) 0xFF5555 else 0x55FFFF
-        )
+        // 单位不在文本里了 → 居中锚点按「整行含单位」算，单位紧跟在词条文本之后
+        val limitX = width / 2 - (textRenderer.getWidth(limitLine) + currencyUnitWidth(textRenderer)) / 2
+        context.drawTextWithShadow(textRenderer, limitLine, limitX, dialogY + 36, limitColor)
+        drawCurrencyUnit(context, textRenderer, limitX + textRenderer.getWidth(limitLine), dialogY + 36, limitColor)
         // 动态估算行：随选中方案刷新（玩家能看到每期/总计该还多少）
         val (periods, feeRate) = plans.getOrNull(selectedPlan) ?: (0 to 0.0)
         if (periods > 0) {
-            context.drawTextWithShadow(
-                textRenderer,
+            drawAmountLine(
+                context, textRenderer,
                 Text.translatable(
                     "cobblemarket.meowth_pay.each_est",
                     formatPriceLong(amount / periods + estInterest(periods, feeRate) / periods),
                     formatPriceLong(amount + estInterest(periods, feeRate)),
-                    inlineCurrencyUnit()
+                    Text.literal("")
                 ),
                 dialogX + 12, dialogY + 104, 0x888888
             )

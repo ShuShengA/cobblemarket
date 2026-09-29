@@ -391,7 +391,13 @@ object ChatObjectPreview {
         //   反过来把尾部截掉，玩家就看不到还剩多久、现在多少钱了
         val tooltipRows = (maxRows - footerRows.size).coerceAtLeast(1)
         // 统一成行模型：null 元素 = 分割线（与项目其余行列表同一约定）
-        val lines = tooltip.take(tooltipRows).map { it to 0xFFFFFF } + footerRows
+        val tooltipPart = tooltip.take(tooltipRows).map { it to 0xFFFFFF }
+        val lines = tooltipPart + footerRows
+        // ⚠ priceRows 记的是 **footer 内**的行号，而实际渲染的是「tooltip 词条 + footer」拼起来的整表 ⇒
+        //   判定时要减去 footer 的起始行号（`tooltipPart.size`）。
+        //   ⚠ **别在这里直接把 priceRows 偏移掉**：精灵侧的 footer 只在 beginShow 时构建一次，
+        //     而本方法是**每帧**调的 —— 每帧再偏移一次会一路越界，单位就再也画不出来（2026-09-29 踩过）
+        val footerOffset = tooltipPart.size
         val shown = lines.take(maxRows)
 
         val textW = shown.maxOfOrNull { (line, _) -> if (line == null) 0 else font.getWidth(line) } ?: 0
@@ -412,7 +418,11 @@ object ChatObjectPreview {
             } else {
                 // 超宽的单行截断（保分段样式：附魔行是分段的，压成一段会丢颜色）
                 val cut = TextUtil.truncateStyled(line, contentW)
-                context.drawTextWithShadow(font, cut, panelX + PANEL_PAD, rowY, color)
+                // ⚠ 金额行（当前价 / 起拍价 / 最低加价）的货币单位补在行尾 —— 单位不在文本里，
+                //   见 auctionFooterLines；物品货币时它就是那件物品的图标。
+                //   ⚠ drawTextWithShadow 返回的是**文本结束坐标**（不是宽度），直接拿它当单位起点
+                val endX = context.drawTextWithShadow(font, cut, panelX + PANEL_PAD, rowY, color)
+                if (i - footerOffset in priceRows) drawCurrencyUnit(context, font, endX, rowY, 0xFFAA00)
             }
         }
         if (shown.size < lines.size) {
@@ -439,6 +449,12 @@ object ChatObjectPreview {
      * （那边由代码补 `": "`，属于欠账，别再学）。
      * ⚠ 全是**会变**的数据 ⇒ 悬停期间会定期重新请求（见 [REQUEST_REFRESH_MS]）。
      */
+    /**
+     * 本帧聊天悬停窗里**金额行**的下标 —— 拍卖播报有三行（当前价 / 起拍价 / 最低加价），
+     * 所以是个集合，不是单个下标。构建行时收集，渲染时按它补货币单位（物品货币时是物品图标）。
+     */
+    private var priceRows: MutableSet<Int> = mutableSetOf()
+
     private fun auctionFooterLines(
         info: AuctionPreviewInfo,
         /**
@@ -450,8 +466,11 @@ object ChatObjectPreview {
         withDivider: Boolean
     ): List<Pair<Text?, Int>> {
         val lines = mutableListOf<Pair<Text?, Int>>()
+        priceRows = mutableSetOf()   // 每次重建都清空（一帧只显示精灵或物品其中之一）
+        // ⚠ 货币单位**不拼进文本**，由渲染循环补在行尾（物品货币时是那件物品的图标）——
+        //   金额行有三处，所以下面**每处 add 前**都要把下标记进 priceRows
         fun gold(v: Int): Text =
-            Text.literal("${formatPrice(v)} ${inlineCurrencyUnit()}").formatted(Formatting.GOLD)
+            Text.literal("${formatPrice(v)} ").formatted(Formatting.GOLD)
 
         if (withDivider) lines.add(null to 0xFFFFFF)
         lines.add(
@@ -462,12 +481,15 @@ object ChatObjectPreview {
             if (info.currentPrice > 0) gold(info.currentPrice)
             else Text.translatable("cobblemarket.auction.from").append(gold(info.startingPrice))
         )
+        priceRows += lines.size
         lines.add(
             (if (info.bidCount > 0)
                 current.append(Text.literal("  ×${info.bidCount}").formatted(Formatting.GRAY))
             else current) to 0xFFFFFF
         )
+        priceRows += lines.size
         lines.add(Text.translatable("cobblemarket.auction.starting_price_label").append(gold(info.startingPrice)) to 0xFFFFFF)
+        priceRows += lines.size
         lines.add(Text.translatable("cobblemarket.auction.min_increment_label").append(gold(info.minIncrement)) to 0xFFFFFF)
         // 结束倒计时：颜色与拍卖场同源（RemainingTime.color，不足 5 分钟转红告警）
         lines.add(

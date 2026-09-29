@@ -6,6 +6,8 @@ import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.util.TypeFilter
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.amountUnitWidth
+import com.shusheng.cobblemarket.client.drawAmountWithUnit
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.TooltipPlacement
@@ -1282,9 +1284,12 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             context.drawText(textRenderer, levelText, leftX + 169, y + 7, 0x000000, false)
 
             // 价格右对齐到取消按钮左缘（行内缩写，同精灵市场；悬停窗仍为完整千分位）
-            val priceText = "${com.shusheng.cobblemarket.client.formatPriceShort(entry.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
+            val priceAmount = com.shusheng.cobblemarket.client.formatPriceShort(entry.price)
             val btnLeft = leftX + panelWidth - 42
-            context.drawTextWithShadow(textRenderer, priceText, btnLeft - textRenderer.getWidth(priceText) - 4, y + 7, 0xFFAA00)
+            drawAmountWithUnit(
+                context, textRenderer, priceAmount,
+                btnLeft - amountUnitWidth(textRenderer, priceAmount) - 4, y + 7, 0xFFAA00
+            )
         }
 
         if (confirmEntry == null && hoveredRow in displayList.indices) {

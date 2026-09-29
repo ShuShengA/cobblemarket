@@ -849,9 +849,10 @@ fun balanceHudPixelPos(screenW: Int, screenH: Int, hudW: Int, hudH: Int): Pair<I
     return ((nx * maxX + 0.5f).toInt()).coerceIn(0, maxX) to ((ny * maxY + 0.5f).toInt()).coerceIn(0, maxY)
 }
 
-/** 余额 HUD 当前尺寸（宽随文字自适应，高固定 16）：位置编辑界面的点击判定与吸附计算用 */
+/** 余额 HUD 当前尺寸（宽随文字自适应，高固定 16）：位置编辑界面的点击判定与吸附计算用。
+ *  ⚠ 宽度必须与绘制同源（`amountUnitWidth`）：物品本位货币时单位是 8px 图标，自己写 `getWidth("$金额 ₽")` 会算窄 */
 fun balanceHudSize(client: net.minecraft.client.MinecraftClient): Pair<Int, Int> =
-    (client.textRenderer.getWidth("${hudBalanceText(client)} ${inlineCurrencyUnit()}") + 10) to 16
+    (amountUnitWidth(client.textRenderer, hudBalanceText(client)) + 10) to 16
 
 /** 上次 HUD 余额文本（ON_CHANGE 模式变动检测） */
 private var lastHudBalanceText: String? = null
@@ -898,7 +899,10 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext, onTop: Boole
         if (marketScreen) return           // HUD 层：本模组界面跳过（顶层那份会画，避免重影）
         if (screen != null && !vanillaScreen) return
     }
-    val text = "${hudBalanceText(client)} ${inlineCurrencyUnit()}"
+    val hudAmount = hudBalanceText(client)
+    // 这段 text 只用于 ON_CHANGE 模式的变动比对（单位一并参与：切换货币也算「变了」），
+    // 真正画到屏幕上的是下面 amountUnitWidth / drawAmountWithUnit 那一对
+    val text = "$hudAmount ${inlineCurrencyUnit()}"
     // 余额变动检测（每帧，OFF 模式也跟踪避免切回时误报）：差值驱动 +绿/-红浮字
     val rawNow = hudBalanceRaw(client)
     if (lastBalanceRaw != null && rawNow != lastBalanceRaw!!) {
@@ -937,7 +941,7 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext, onTop: Boole
     // drawTexture（背景贴图）与文字渲染；RenderSystem 全局色不响应 drawTexture，勿混用
     context.setShaderColor(alphaF, alphaF, alphaF, alphaF)
     // 背景框：HUD 专属九宫格贴图（40×40），宽随文字自适应，高 16；左上角 = 归一化位置换算
-    val textW = client.textRenderer.getWidth(text)
+    val textW = amountUnitWidth(client.textRenderer, hudAmount)
     val hudW = textW + 10
     val hudPos = balanceHudPixelPos(context.scaledWindowWidth, context.scaledWindowHeight, hudW, 16)
     val hudX = hudPos.first
@@ -948,7 +952,7 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext, onTop: Boole
         hudX, hudY, hudW, 16,
         0, HUD_BALANCE_BG_TEX_H
     )
-    context.drawTextWithShadow(client.textRenderer, text, hudX + 5, hudY + 4, 0xFFAA00)
+    drawAmountWithUnit(context, client.textRenderer, hudAmount, hudX + 5, hudY + 4, 0xFFAA00)
     // 余额变动浮字：+绿/-红，2 秒后消失（照 CobbleDollars 右下角的变动提示）
     if (hudDiff != 0L && System.currentTimeMillis() < hudDiffUntil) {
         val diffText = if (hudDiff > 0) "+${formatBalanceLong(hudDiff)}" else formatBalanceLong(hudDiff).toString()

@@ -7,7 +7,8 @@ import com.shusheng.cobblemarket.client.MarketStateCache
 import com.shusheng.cobblemarket.client.activeCurrencyUnit
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.formatPriceShortLong
-import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.client.currencyUnitWidth
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.FinanceStatsPayload
 import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
@@ -60,16 +61,19 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
     }
 
     /** 大额金额悬停提示：鼠标附近小面板显示完整千分位数字 */
-    private fun renderAmountTooltip(context: DrawContext, mx: Int, my: Int, fullText: String) {
+    /** [amount] 只传**金额**（不带单位）—— 货币单位由这里补画在右侧（物品货币时是那件物品的图标） */
+    private fun renderAmountTooltip(context: DrawContext, mx: Int, my: Int, amount: String) {
         val pad = 4
-        val w = textRenderer.getWidth(fullText) + 2 * pad
+        val w = com.shusheng.cobblemarket.client.amountUnitWidth(textRenderer, amount) + 2 * pad
         val h = 14
         val tx = minOf(mx + 12, width - w - 4)
         val ty = maxOf(my - h - 4, 0)
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx, ty, w, h, 1, ROW_BACKGROUND_TEX_H)
-        context.drawTextWithShadow(textRenderer, fullText, tx + pad, ty + 3, 0xFFD700.toInt())
+        com.shusheng.cobblemarket.client.drawAmountWithUnit(
+            context, textRenderer, amount, tx + pad, ty + 3, 0xFFD700.toInt()
+        )
         context.matrices.pop()
     }
 
@@ -481,44 +485,36 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             val poolY = btnStartY - 20
             val debtY = btnStartY - 10
             if (reservePool != -1L) {
-                context.drawCenteredTextWithShadow(
-                    textRenderer,
-                    Text.translatable(
-                        "cobblemarket.op.reserve_line",
-                        Text.literal(formatPriceShortLong(reservePool)).formatted(if (alert) Formatting.RED else Formatting.GOLD),
-                        Text.literal(inlineCurrencyUnit()).formatted(if (alert) Formatting.RED else Formatting.GOLD)
-                    ),
-                    width / 2, poolY, 0xFFFFFF
+                // ⚠ 金额与单位拆开画（物品货币时单位是物品图标）：词条单位参数传空串占位；
+                //   居中锚点与悬停命中区都按「整行含单位」的总宽算（原来单位在文本里，getWidth 已含）
+                val poolLine = Text.translatable(
+                    "cobblemarket.op.reserve_line",
+                    Text.literal(formatPriceShortLong(reservePool)).formatted(if (alert) Formatting.RED else Formatting.GOLD),
+                    Text.literal("")
                 )
+                val lineW = textRenderer.getWidth(poolLine) + currencyUnitWidth(textRenderer)
+                val lineX = width / 2 - lineW / 2
+                context.drawTextWithShadow(textRenderer, poolLine, lineX, poolY, 0xFFFFFF)
+                drawCurrencyUnit(context, textRenderer, lineX + textRenderer.getWidth(poolLine), poolY,
+                    if (alert) 0xFF5555 else 0xFFAA00)
                 // 悬停显示完整数字（X 限行文字范围内，防面板外触发）
-                val lineW = textRenderer.getWidth(
-                    Text.translatable(
-                        "cobblemarket.op.reserve_line",
-                        formatPriceShortLong(reservePool), inlineCurrencyUnit()
-                    )
-                )
                 if (mouseY in poolY..(poolY + 9) && Math.abs(mouseX - width / 2) <= lineW / 2) {
-                    renderAmountTooltip(context, mouseX, mouseY, "${formatPriceLong(reservePool)} ${activeCurrencyUnit()}")
+                    renderAmountTooltip(context, mouseX, mouseY, formatPriceLong(reservePool))
                 }
             }
             if (badDebtTotal != -1L) {
-                context.drawCenteredTextWithShadow(
-                    textRenderer,
-                    Text.translatable(
-                        "cobblemarket.op.bad_debt_line",
-                        Text.literal(formatPriceShortLong(badDebtTotal)).formatted(Formatting.GOLD),
-                        Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)
-                    ),
-                    width / 2, debtY, 0xFFFFFF
+                // 同上：单位单独画，居中锚点与悬停命中区都按含单位的总宽算
+                val debtLine = Text.translatable(
+                    "cobblemarket.op.bad_debt_line",
+                    Text.literal(formatPriceShortLong(badDebtTotal)).formatted(Formatting.GOLD),
+                    Text.literal("")
                 )
-                val lineW = textRenderer.getWidth(
-                    Text.translatable(
-                        "cobblemarket.op.bad_debt_line",
-                        formatPriceShortLong(badDebtTotal), inlineCurrencyUnit()
-                    )
-                )
+                val lineW = textRenderer.getWidth(debtLine) + currencyUnitWidth(textRenderer)
+                val lineX = width / 2 - lineW / 2
+                context.drawTextWithShadow(textRenderer, debtLine, lineX, debtY, 0xFFFFFF)
+                drawCurrencyUnit(context, textRenderer, lineX + textRenderer.getWidth(debtLine), debtY, 0xFFAA00)
                 if (mouseY in debtY..(debtY + 9) && Math.abs(mouseX - width / 2) <= lineW / 2) {
-                    renderAmountTooltip(context, mouseX, mouseY, "${formatPriceLong(badDebtTotal)} ${activeCurrencyUnit()}")
+                    renderAmountTooltip(context, mouseX, mouseY, formatPriceLong(badDebtTotal))
                 }
             }
         }

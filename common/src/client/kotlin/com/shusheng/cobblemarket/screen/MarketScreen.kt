@@ -6,6 +6,10 @@ import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.util.TypeFilter
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.amountUnitWidth
+import com.shusheng.cobblemarket.client.currencyUnitWidth
+import com.shusheng.cobblemarket.client.drawAmountWithUnit
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
@@ -236,6 +240,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var tooltipCacheHeldLine = -1
     private var tooltipCacheMovesLine = -1
     private var tooltipCacheMarksLine = -1
+    /** 悬停窗里**价格行**的下标（构建时算、渲染时取；-1 = 无）—— 货币单位要补在这一行的行尾 */
+    private var tooltipCachePriceRow = -1
     private var tooltipCacheMarksRows = 0
     private var tooltipCacheMaxWidth = 0
 
@@ -1464,6 +1470,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         IconRegistry.beginFrame(mouseX, mouseY)
+        // 弹窗打开时下层的货币图标不画：3D 图标不受遮罩压暗，会比压暗的文字亮一截
+        //（看起来像"高亮浮在弹窗上"，2026-09-29 用户报）—— 见 suppressCurrencyIcons
+        com.shusheng.cobblemarket.client.suppressCurrencyIcons = confirmEntry != null || cancelEntry != null
         val centerX = width / 2
         // 「筛选」按钮开关的是**右侧那块面板**（原来开关的是界面上方的一行）。
         // ⚠ **主面板保持居中不动**（不传 leftOverride）—— 筛选面板占用它右侧本来就空着的区域，
@@ -1552,11 +1561,19 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // 收款按钮右上角金币角标（8×8，仅 2px 露在角外，红点通知样式）：有待收款时显示；
         // 弹窗打开时此段在遮罩之前渲染，角标随下层一起被压暗
         if (pendingBalance > 0) {
-            context.matrices.push()
-            context.matrices.translate((leftX + 50 - 6).toDouble(), (13 - 2).toDouble(), 0.0)
-            context.matrices.scale(1f / 6f, 1f / 6f, 1f)
-            context.drawTexture(COIN_ICON, 0, 0, 0f, 0f, 48, 48, 48, 48)
-            context.matrices.pop()
+            // ⚠ 角标跟随货币（2026-09-29）：虚拟货币仍是那枚金币图，物品本位货币改画**那件物品的图标** ——
+            //   否则玩家看到「有待收款 + 一个 ₽ 金币」会以为收的是主货币
+            val unitStack = com.shusheng.cobblemarket.client.currencyUnitStack()
+            if (unitStack == null) {
+                context.matrices.push()
+                context.matrices.translate((leftX + 50 - 6).toDouble(), (13 - 2).toDouble(), 0.0)
+                context.matrices.scale(1f / 6f, 1f / 6f, 1f)
+                context.drawTexture(COIN_ICON, 0, 0, 0f, 0f, 48, 48, 48, 48)
+                context.matrices.pop()
+            } else {
+                // 12×12（与行内单位同尺寸），中心对齐原来那枚 8×8 金币图的中心
+                com.shusheng.cobblemarket.client.drawCurrencyItemIcon(context, unitStack, leftX + 42, 9, 12)
+            }
         }
         // 待领取按钮右上角红点（与收款角标同位置样式）：有待领取精灵时显示
         if (pendingReturns > 0) {
@@ -1582,26 +1599,32 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // ⚠ 两段都没有任何宽度防护：金额一长就压住页码、再长画出面板（296 的面板装不下大额）。
         // 可用宽 = 面板宽 − 页码宽 − 左右留白（从布局反算，别写死）；超宽时按三级降级：
         // 待收款为 0 整段不显示 → 金额换缩写（999,999,999 → 1.0B）→ 截断兜底
-        val balUnit = com.shusheng.cobblemarket.client.inlineCurrencyUnit()
+        // ⚠ 金额与货币单位**拆开画**（2026-09-29）：物品本位货币时单位是**物品图标**，拼不进字符串。
+        //   词条里只放金额，单位由 drawCurrencyUnit 补在金额右侧；行宽 = 词条宽 + 空格 + 单位宽。
+        val unitGapW = textRenderer.getWidth(" ")
+        val balUnitW = unitGapW + currencyUnitWidth(textRenderer)
         val avail = panelWidth - 10 - pageW
         val balText: Text? = com.shusheng.cobblemarket.client.BalanceCache.balance.takeIf { it.isNotEmpty() }?.let {
-            Text.translatable("cobblemarket.gui.balance", Text.literal("$it $balUnit").formatted(Formatting.GOLD))
+            Text.translatable("cobblemarket.gui.balance", Text.literal(it).formatted(Formatting.GOLD))
         }
-        val balW = balText?.let { textRenderer.getWidth(it) + 4 } ?: 0
+        val balW = balText?.let { textRenderer.getWidth(it) + balUnitW + 4 } ?: 0
         fun pendingLine(amount: String): Text = Text.translatable("cobblemarket.gui.pending_balance",
-            Text.literal("$amount $balUnit").formatted(Formatting.GREEN))
+            Text.literal(amount).formatted(Formatting.GREEN))
         // 待收款为 0 时不占位：没有待领的东西就整段不显示
         val pendingFull: Text? = if (pendingBalance > 0)
             pendingLine(com.shusheng.cobblemarket.client.formatBalanceLong(pendingBalance)) else null
-        val pendingText: Text? = pendingFull?.takeIf { balW + textRenderer.getWidth(it) <= avail }
+        val pendingText: Text? = pendingFull?.takeIf { balW + textRenderer.getWidth(it) + balUnitW <= avail }
             ?: pendingFull?.let { pendingLine(com.shusheng.cobblemarket.client.formatPriceShortLong(pendingBalance)) }
 
-        if (balText != null) context.drawTextWithShadow(textRenderer, balText, leftX, 31, 0xFFFFFF)
+        if (balText != null) {
+            val drawn = context.drawTextWithShadow(textRenderer, balText, leftX, 31, 0xFFFFFF)
+            drawCurrencyUnit(context, textRenderer, drawn + unitGapW, 31, 0xFFAA00)
+        }
         pendingText?.let {
-            context.drawTextWithShadow(
-                textRenderer,
-                TextUtil.truncateStyled(it, avail - balW), leftX + balW, 31, 0xFFFFFF
-            )
+            // 截断预算按「整行剩余」算（balW 里已经含单位那份，别重复扣）
+            val shown = TextUtil.truncateStyled(it, (avail - balW).coerceAtLeast(0))
+            val drawn = context.drawTextWithShadow(textRenderer, shown, leftX + balW, 31, 0xFFFFFF)
+            drawCurrencyUnit(context, textRenderer, drawn + unitGapW, 31, 0x55FF55)
         }
         context.drawTextWithShadow(textRenderer, pageText, leftX + panelWidth - 4 - pageW, 32, 0xFFFFFF)
 
@@ -1724,9 +1747,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             context.drawText(textRenderer, levelText, leftX + 169, y + 7, 0x000000, false)
 
             // Price（行内缩写，同拍卖场/物品市场；悬停窗仍为完整千分位。右对齐到按钮左缘：价格再长也只向左延伸，不会遮按钮）
-            val priceText = "${com.shusheng.cobblemarket.client.formatPriceShort(entry.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"
+            val priceAmount = com.shusheng.cobblemarket.client.formatPriceShort(entry.price)
             val btnLeft = leftX + panelWidth - 42
-            context.drawTextWithShadow(textRenderer, priceText, btnLeft - textRenderer.getWidth(priceText) - 4, y + 7, 0xFFAA00)
+            drawAmountWithUnit(
+                context, textRenderer, priceAmount,
+                btnLeft - amountUnitWidth(textRenderer, priceAmount) - 4, y + 7, 0xFFAA00
+            )
         }
 
         // Tooltip on hover
@@ -2228,6 +2254,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             // 证章区块（拥有的全部证章，纯外观）：技能块下方，图标行 + 下分割线（与技能块共用上分割线）
             // 服务端直接传纹理路径（不依赖客户端 Marks 注册表解析）
             var marksLine = -1
+            var priceRow = -1
             var marksRows = 0
             val markTextures = entry.marks.mapNotNull { Identifier.tryParse(it) }
             if (markTextures.isNotEmpty()) {
@@ -2236,8 +2263,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 lines.add(null to 0)
             }
             lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)) to w)
+            // ⚠ 货币单位**不拼进文本**，由渲染循环补在行尾（物品货币时是那件物品的图标）。
+            //   先记下这行的下标 —— lines 里混着证章/技能块那些 null 行，不能靠数。
+            //   ⚠ 赋值给**外层**那个 priceRow：这里是缓存分支内层，循环在外层看不到局部 val
+            priceRow = lines.size
             lines.add(Text.translatable("cobblemarket.gui.tooltip_price").append(
-                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)) to w)
+                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ").formatted(Formatting.GOLD)) to w)
 
             var maxWidth = 0
             lines.forEach { if (it.first != null) maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
@@ -2259,6 +2290,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             tooltipCacheHeldLine = heldItemLine
             tooltipCacheMovesLine = movesLine
             tooltipCacheMarksLine = marksLine
+            tooltipCachePriceRow = priceRow
             tooltipCacheMarksRows = marksRows
             tooltipCacheMaxWidth = maxWidth
         }
@@ -2269,6 +2301,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val heldItemLine = tooltipCacheHeldLine
         val movesLine = tooltipCacheMovesLine
         val marksLine = tooltipCacheMarksLine
+        val priceRow = tooltipCachePriceRow
         val marksRows = tooltipCacheMarksRows
         val maxWidth = tooltipCacheMaxWidth
 
@@ -2316,6 +2349,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 // 分割线：1px 灰线，撑满提示框全宽（与信息区分隔线一致，不随证章数量变化）
                 val rowW = maxWidth
                 context.fill(tx, rowY + 4, tx + rowW, rowY + 5, 0xFF888888.toInt())
+                rowY += 10
+            } else if (i == priceRow) {
+                // 价格行：货币单位补在行尾（物品货币时是那件物品的图标），颜色照金额那段的金色。
+                // ⚠ drawTextWithShadow 返回的是**结束坐标**，直接拿它当单位起点（别再 + tx）
+                val w = context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
+                drawCurrencyUnit(context, textRenderer, w, rowY, 0xFFAA00)
                 rowY += 10
             } else if (i == heldItemLine) {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)

@@ -654,6 +654,8 @@
   "cobblemarket.repay.dialog_period_due": "This period: %s %s",
   "cobblemarket.repay.dialog_settle_total": "Settle all: %s %s",
   "cobblemarket.repay.dialog_split": "Principal %s + interest %s",
+  "cobblemarket.repay.split_principal": "Principal %s",
+  "cobblemarket.repay.split_interest": " + interest %s",
   "cobblemarket.repay.dialog_due_count": "%s period(s) in arrears, repay soon",
   "cobblemarket.repay.pay_period": "1 Period",
   "cobblemarket.repay.settle": "Settle",

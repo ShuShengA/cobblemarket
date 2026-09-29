@@ -32,6 +32,11 @@
 
 - **The admin buy-order screen no longer shows a balance**: every other screen in the admin panel goes without one, only buy orders had it (looked like a copy-paste slip) — it is now hidden in admin mode, while the player-side buy-order screen keeps it
 
+- **Item-backed currencies now show that item's icon inline, instead of `₽`**: when a server picks an item (say a Master Ball) as its currency, inline amounts used to read `₽` exactly like ordinary money — you could not tell what the server actually charges in; only the hover window spelled the item name out. Inline amounts now render **that item's own icon** (balance HUD, market / auction / buy-order list rows, bid and purchase dialogs, and the loan / deposit / repayment screens). The icon has a fixed width, so "the item name is too long to fit" is no longer a concern
+  - ⚠ **Hover windows and chat broadcasts still spell out the item name** — those are plain-text places where an icon cannot be drawn (Minecraft 1.21 text cannot embed images), so they fall back to the name, which is just as clear
+  - ⚠ **Virtual currencies (CobbleDollars / Cobblemon Economy / Impactor) are unchanged** and still show `₽`, pixel-for-pixel identical to before this change
+  - ⚠ Client-side only — **no server upgrade needed alongside it** (amounts are computed every frame; nothing is stored in saves or the trade-history CSV)
+
 ### Fixes
 
 - **The buy dialog's input box and buttons did not follow the tooltip**: an item with a long tooltip (such as a **TM**, whose full move description appears while you hold Shift) makes the dialog taller and pushes the text down — but the **quantity input and the Buy / Meowth Pay / Cancel buttons stayed put**, even ending up overlapped by the "total" line that did move. They now follow the dialog every frame, exactly like the item bid dialog does

@@ -3,6 +3,8 @@ package com.shusheng.cobblemarket.screen
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
+import com.shusheng.cobblemarket.client.currencyUnitWidth
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.network.ListingEntry
 import com.shusheng.cobblemarket.network.AuctionEntry
@@ -689,6 +691,13 @@ object EntryBadgeRenderer {
         //   根本不可能停到证章行上 ⇒ 做了也没人用得到（2026-09-29 用户指出）。
         mouseX: Int = -1, mouseY: Int = -1
     ): Int {
+        // ⚠ **弹窗自己的货币图标不受门禁管**（2026-09-29）：遮罩一画就把图标禁了，而遮罩是
+        //   **这同一个界面**画的 —— 弹窗的图标会被它自己的遮罩挡住，表现是「金额后面没有单位、
+        //   而整行还按『文本 + 单位』居中 ⇒ 看着偏左、跟上一行对不齐」（用户报的确认交付弹窗）。
+        //   ⚠ 本函数只被**弹窗那一族**调用（购买确认 / 交付审核 / 管理端）—— 列表悬停窗走的是
+        //   别的渲染路径 ⇒ 在这里关掉最省，不必去动那 40 处 `drawScreenDimMask`。
+        //   不复原：门禁由 ScreenMixin 每帧 HEAD 复位（`NineSlice.kt` 里也是这个约定）。
+        com.shusheng.cobblemarket.client.suppressCurrencyIcons = false
         val font = MinecraftClient.getInstance().textRenderer
         val leftX = centerX - dividerW / 2
         // 分割线的**实际**宽度：居中版固定 MOVES_MAX_W（三条线一样长）、左对齐版撑满内容宽。
@@ -757,14 +766,18 @@ object EntryBadgeRenderer {
             lines.add(null to 0)
             lines.add(null to 0)
         }
+        var priceRow = -1   // ⚠ 必须在**构造行之前**声明（下面 if 里赋值，绘制循环里用）
         if (footer == null) {
             // 默认尾部：卖家 + 价格（市场确认弹窗 / 待交付 / 管理端那一族）
             lines.add(
                 Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)) to 0xFFFFFF
             )
+            // ⚠ 货币单位**不拼进文本**，由下面的绘制循环补在行尾（物品货币时是那件物品的图标）——
+            //   先记下标（价格行是这里 add 的，但后面可能还有行，不能靠数）
+            priceRow = lines.size
             lines.add(
                 Text.translatable("cobblemarket.gui.tooltip_price").append(
-                    Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ${com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)}").formatted(Formatting.GOLD)) to 0xFFFFFF
+                    Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ").formatted(Formatting.GOLD)) to 0xFFFFFF
             )
         } else {
             // 调用方自带的尾部：拍卖播报那条要的是「卖家 / 当前价 / 起拍价 / 加价 / 倒计时 / 领先者」
@@ -837,6 +850,17 @@ object EntryBadgeRenderer {
                     } else {
                         drawNameLine(context, nameText, entry.gender, centerX, y, color, entry.sizeCategory)
                     }
+                    y += 10
+                }
+                i == priceRow -> {
+                    // 价格行：货币单位补在行尾（物品货币时是那件物品的图标）。
+                    // ⚠ 单位不在文本里 ⇒ 居中/左对齐都要按「文本 + 单位」的总宽重算；
+                    //   ⚠ `drawTextWithShadow` 返回的是**文本结束坐标**（不是宽度），单位直接画在它上面
+                    val drawn = TextUtil.truncateStyled(line, maxWidth)
+                    val w = font.getWidth(drawn)
+                    val x = if (alignLeft) leftX else centerX - (w + currencyUnitWidth(font)) / 2
+                    val endX = context.drawTextWithShadow(font, drawn, x, y, color)
+                    drawCurrencyUnit(context, font, endX, y, 0xFFAA00)
                     y += 10
                 }
                 else -> {
