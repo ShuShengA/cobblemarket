@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.client
 
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
+import net.minecraft.client.gui.screen.Screen
 
 /**
  * 界面关闭动画（入口掉落动画倒放）：按 E/Esc 关闭模组界面时，当前界面整体向上缩回屏幕顶部，
@@ -13,9 +14,18 @@ object CloseAnimation {
 
     private var startAt = 0L
 
-    /** 启动动画；已在动画中返回 false（防重复触发） */
-    fun start(): Boolean {
+    /**
+     * 动画播完后要切到的界面；`null` = 回游戏（绝大多数界面）。
+     *
+     * 供**「叠在别的界面上」的界面**用（[com.shusheng.cobblemarket.screen.GatedFormScreen] 就是）——
+     * 那类界面关掉时该回它的上层，回游戏等于把上层配到一半的草稿一起丢了。
+     */
+    private var target: Screen? = null
+
+    /** 启动动画；已在动画中返回 false（防重复触发）。[target] 见同名字段 */
+    fun start(target: Screen? = null): Boolean {
         if (isActive()) return false
+        this.target = target
         startAt = System.currentTimeMillis()
         playCloseSound()
         return true
@@ -41,12 +51,15 @@ object CloseAnimation {
         return raw * raw * (3f - 2f * raw)
     }
 
-    /** 每帧 tick：动画播完真正关闭当前界面 */
+    /** 每帧 tick：动画播完真正关闭当前界面（切到 [target]，默认回游戏） */
     fun onTick(client: MinecraftClient) {
         if (!isActive()) return
         if (System.currentTimeMillis() - startAt >= DURATION_MS) {
             startAt = 0L
-            client.setScreen(null)
+            // 先取出再清空：切界面会连带触发别的逻辑，留着重入时不会误用上一次的目标
+            val to = target
+            target = null
+            client.setScreen(to)
         }
     }
 

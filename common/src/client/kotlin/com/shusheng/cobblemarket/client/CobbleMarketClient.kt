@@ -77,6 +77,7 @@ import com.shusheng.cobblemarket.screen.BuyOrderScreen
 import com.shusheng.cobblemarket.screen.HistoryScreen
 import com.shusheng.cobblemarket.screen.DepositScreen
 import com.shusheng.cobblemarket.screen.FinanceConfigScreen
+import com.shusheng.cobblemarket.screen.GatedFormScreen
 import com.shusheng.cobblemarket.screen.PurpleCardApplyConditionsScreen
 import com.shusheng.cobblemarket.screen.PurpleCardApplyScreen
 import com.shusheng.cobblemarket.screen.BlackCardApplyScreen
@@ -217,13 +218,17 @@ object CobbleMarketClient {
                 val screen = client.currentScreen
                 val inputFocused = screen?.focused is TextFieldWidget
                 if (!inputFocused && isMarketScreen(screen)) {
+                    // ⚠ 「叠在别的界面上」的界面（形态说明）按 E 要**回它的上层**，不能回游戏 ——
+                    //   服主是**在编辑窗配到一半**时点进来看说明的，回游戏等于把那一窗草稿丢了。
+                    //   其余界面 null = 照旧回游戏。
+                    val backTo = (screen as? GatedFormScreen)?.backScreen
                     if (ClientConfig.marketAnimation) {
                         // 关闭动画：界面整体上滑出屏，200ms 后真正关闭（tick 兜底见 CloseAnimation.onTick）
-                        CloseAnimation.start()
+                        CloseAnimation.start(backTo)
                     } else {
                         // 动画关：音效仍播（与动画解绑），直接关闭
                         CloseAnimation.playCloseSound()
-                        client.setScreen(null)
+                        client.setScreen(backTo)
                     }
                 }
             }
@@ -1329,4 +1334,5 @@ internal fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean
         s is BlackCardConfigScreen || s is BlackCardApplyScreen || s is BlackCardApplyConditionsScreen || s is CardManageScreen || s is ItemVariantSelectScreen ||
         s is MeowthBankScreen || s is LoanScreen || s is LoanHistoryScreen || s is RepayScreen || s is MeowthPayScreen ||
         s is DepositScreen || s is BalanceHudPositionScreen || s is PointsMarketScreen || s is PointsRechargeScreen ||
-        s is PointsConfigScreen || s is AdminPointOrdersScreen || s is PointsCodeScreen || s is PointsRecordScreen
+        s is PointsConfigScreen || s is AdminPointOrdersScreen || s is PointsCodeScreen || s is PointsRecordScreen ||
+        s is GatedFormScreen

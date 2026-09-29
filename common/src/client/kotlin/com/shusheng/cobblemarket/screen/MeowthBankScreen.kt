@@ -389,14 +389,14 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         val pad = 4
         val lineH = 10
         val dividerH = 4
-        // 每条 = (红段 warn, 白段 text)；text 按「面板宽 − warn 宽 − 4」逐字符填满换行（wrapTip 中文友好断行）
+        // 每条 = (红段 warn, 白段 text)；text 按「面板宽 − warn 宽 − 4」断行（断行算法见 [TextUtil.wrapText]）
         val rules = (1..7).map { i ->
             Text.translatable("cobblemarket.meowth_bank.rule.${i}_warn").string to
                 Text.translatable("cobblemarket.meowth_bank.rule.${i}_text").string
         }
         val wrappedTexts = rules.map { (warn, text) ->
             val warnW = textRenderer.getWidth(warn)
-            wrapRuleText(text, maxTextWidth - warnW - 4)
+            TextUtil.wrapText(text, maxTextWidth - warnW - 4)
         }
         val totalLines = wrappedTexts.sumOf { maxOf(1, it.size) }
         val panelW = maxTextWidth + 2 * pad
@@ -426,41 +426,6 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         context.matrices.pop()
     }
 
-    /**
-     * 规则面板断行：按空格分词（英文友好），超长词（中文整串无空格）逐字符硬断填满。
-     * wrapTip（气泡专用，空格当普通字符）不适用英文长句——整句当一个词会溢出面板。
-     */
-    private fun wrapRuleText(text: String, maxW: Int): List<net.minecraft.text.OrderedText> {
-        val result = mutableListOf<net.minecraft.text.OrderedText>()
-        val sb = StringBuilder()
-        fun width(): Int = textRenderer.getWidth(sb.toString())
-        fun flush() {
-            if (sb.isNotEmpty()) {
-                result.add(Text.literal(sb.toString()).asOrderedText())
-                sb.setLength(0)
-            }
-        }
-        for (token in text.split(' ')) {
-            if (token.isEmpty()) continue
-            val tokenW = textRenderer.getWidth(token)
-            if (tokenW > maxW) {
-                // 超长词（中文整串）：逐字符硬断填满
-                flush()
-                var cur = token
-                while (cur.isNotEmpty()) {
-                    var cut = cur.length
-                    while (cut > 1 && textRenderer.getWidth(cur.substring(0, cut)) > maxW) cut--
-                    result.add(Text.literal(cur.substring(0, cut)).asOrderedText())
-                    cur = cur.substring(cut)
-                }
-                continue
-            }
-            if (sb.isNotEmpty() && width() + textRenderer.getWidth(" ") + tokenW > maxW) flush()
-            sb.append(if (sb.isEmpty()) token else " $token")
-        }
-        flush()
-        return result
-    }
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val result = super.mouseClicked(mouseX, mouseY, button)
         if (button != 0) return result

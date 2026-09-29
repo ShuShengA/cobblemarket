@@ -415,6 +415,17 @@ class PointsMarketScreen : Screen(
         rebuildSnapshotDialog()
     }
 
+    /**
+     * 打开「需要前置条件的形态」说明界面（编辑窗右上角那枚 info 点的）。
+     *
+     * ⚠ **必须把自己（本实例）传过去** —— 服主是**在编辑窗配到一半**时点进来的，
+     *   在那边新建一个 [PointsMarketScreen] 再回来，编辑窗连同草稿就全没了。
+     *   [GatedFormScreen] 那边按"回原实例"处理，`init()` 会照状态把编辑窗重建出来。
+     */
+    private fun openGatedFormScreen() {
+        client?.setScreen(GatedFormScreen(this))
+    }
+
     /** 关弹窗：卸掉它自己那批控件 + 把添加窗的控件恢复回来 */
     private fun closeSnapshotDialog() {
         snapshotDialog = false
@@ -603,6 +614,16 @@ class PointsMarketScreen : Screen(
 
     /** 添加窗右上角那枚「快照」（关窗时随其余控件一起清） */
     private var editSnapshotButton: NineSliceButton? = null
+
+    /**
+     * 快照按钮**左侧**那枚 info —— 草稿选中的形态**需要前置条件**时出现
+     * （判定见 [SpeciesText.GATED_FORM_ASPECTS] / [SpeciesText.hasGatedAspect]）。
+     *
+     * 点开 [GatedFormScreen] 看完整说明。显隐**每帧在 [render] 里刷**（同 [prevButton] 那套写法）：
+     * 判据是草稿里的形态，而改动形态的路子有十几处（选项列表点选 / 快照回填 / 换物种 / 清空），
+     * 逐个补事件必然漏。物品窗没有形态 ⇒ 判据恒假，按钮自然不出现。
+     */
+    private var editGatedInfoButton: NineSliceButton? = null
 
     // ── 配方快照弹窗（服主用；点添加窗右上角那枚「快照」开）──
     //
@@ -2747,6 +2768,16 @@ class PointsMarketScreen : Screen(
     private fun pickedFormAspects(): List<String> = formAspectsAmong(editSpecies, editAspects)
 
     /**
+     * 草稿选中的形态**是不是「需要前置条件」的那种** —— 决定编辑窗那枚 info 出不出现。
+     *
+     * ⚠ 判据走 [SpeciesText.hasGatedAspect]（按 aspect 值判，形态 / 变体 / 闪光**混放也能用**），
+     *   **不用** [pickedFormAspects] 再逐 form 判：那条路要现算 `selectableForms`（本函数每帧都调，白烧）。
+     * ⚠ 顺手挡一下物品窗：那里 `editAspects` 恒空、本来也判不出东西，写出来是为了意图明确。
+     */
+    private fun hasGatedPickedForm(): Boolean =
+        editSlot >= 0 && isPokemonSlot() && SpeciesText.hasGatedAspect(editAspects)
+
+    /**
      * 规格里的**变体** aspects（非形态、非闪光）—— 购买窗那行「变体：」用。
      *
      * ⚠ 只能**正向排除**（去掉 forms 的、去掉 `shiny`），**不能**靠"减掉候选表"：
@@ -3188,6 +3219,17 @@ class PointsMarketScreen : Screen(
                 editRowRightX() - EDIT_SNAPSHOT_W, editRemoveY(),
                 EDIT_SNAPSHOT_W, EDIT_ROW_H,
                 Text.translatable("cobblemarket.points.store.snapshot_button"), { openSnapshotDialog() }
+            ).also { addDrawableChild(it) }
+            // 「需要前置条件的形态」警告：紧挨快照按钮**左侧 4px**（按钮间距规则，用户 2026-09-30 定的位置）。
+            // 纯图标按钮（info.png 的惯例写法同交易历史 / 兑换码那两处）；显隐见 [editGatedInfoButton]
+            editGatedInfoButton = NineSliceButton(
+                editRowRightX() - EDIT_SNAPSHOT_W - 4 - EDIT_GATED_INFO_W, editRemoveY(),
+                EDIT_GATED_INFO_W, EDIT_ROW_H,
+                Text.literal(""),
+                { openGatedFormScreen() },
+                iconLeft = Identifier.of("cobblemarket", "textures/gui/info.png"),
+                iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+                tooltip = Text.translatable("cobblemarket.gated_form.button_tip")
             ).also { addDrawableChild(it) }
         }
 
@@ -4078,14 +4120,22 @@ class PointsMarketScreen : Screen(
     }
 
     /**
+     * 有没有东西**叠在编辑窗上面**（展开的选项列表 / 快照弹窗）。
+     *
+     * ⚠ 判据是「**有没有叠层**」，不是「选项列表展开了没」—— 快照弹窗也是叠层（它盖在添加窗上），
+     *   只判 optionListKind 的话，快照弹窗一开编辑窗那批控件就全冒出来了、黑压压压在新弹窗底下。
+     *
+     * ⚠ 抽成函数是因为它有**两个**使用点：编辑窗控件的显隐（[updateEditControlsVisibility]）
+     *   与 info 按钮的每帧显隐（[render]）。这种"两处都要判"的东西各写一份，改一处必漏另一处。
+     */
+    private fun editDialogCovered(): Boolean = optionListKind != null || snapshotDialog
+
+    /**
      * 窗口控件的显隐**统一入口**：展开列表时全藏，否则按滚动可见性。
      * 各写一遍必然漏 —— 展开完列表恢复时会把滚出视野的按钮也一起显示出来。
      */
     private fun updateEditControlsVisibility() {
-        // ⚠ 判据是「**有没有东西叠在编辑窗上面**」，不是「选项列表展开了没」——
-        //   快照弹窗也是叠层（它盖在添加窗上），只判 optionListKind 的话，
-        //   快照弹窗一开编辑窗那批控件就全冒出来了、黑压压压在新弹窗底下。
-        val covered = optionListKind != null || snapshotDialog
+        val covered = editDialogCovered()
         editSpeciesField?.visible = !covered
         editPriceField?.visible = !covered
         editStockField?.visible = !covered
@@ -4098,6 +4148,9 @@ class PointsMarketScreen : Screen(
         editRemoveButton?.visible = !covered
         // 右上角那枚「快照」同理（它也是编辑窗的控件，别忘在清单外）
         editSnapshotButton?.visible = !covered
+        // 快照左边那枚 info 也同理。⚠ 它**什么时候该出现**不在这里判（判据是草稿里的形态，
+        //   每帧在 [render] 里刷）—— 这里只管"叠层打开时一律藏"，免得展开选项列表时它浮在列表上
+        editGatedInfoButton?.visible = !covered
         // 清空按钮：跟 covered 走就行（**不跟候选数量走** —— 那是箭头的事，清空随时都能点）
         editSpeciesClear?.visible = !covered
         editButtons.forEach { (key, btn) -> btn.visible = !covered && editRowVisible(editRowOf(key)) }
@@ -5557,6 +5610,13 @@ class PointsMarketScreen : Screen(
         // 展开动画期间把窗口控件藏起来（它们是 MC 控件、由 super.render 统一画，塞不进插值矩形）；
         // 播完这一帧会自动放回去（见 updateDialogAnimControls）
         if (dialogOpen()) updateDialogAnimControls()
+        // 「形态需要前置条件」那枚 info：**每帧**刷，且**必须排在 [updateDialogAnimControls] 之后** ——
+        // 那个函数在开窗动画期间把 `editWidgetBase` 之后的控件一律藏掉、播完又交给
+        // [updateEditControlsVisibility]（那儿只知道"叠层打开没"，不知道有没有选中前置形态），
+        // 排在它前面就会被它的恢复覆盖成"无条件显示"。
+        // 判据放每帧的理由同 [prevButton]：改形态的路子有十几处（选项列表点选 / 快照回填 / 换物种 / 清空），
+        // 逐个补事件必然漏一处，而漏了的表现是"选了战斗形态却不给警告"。
+        editGatedInfoButton?.visible = hasGatedPickedForm() && !editDialogCovered()
         super.render(context, mouseX, mouseY, delta)
         if (dialogOpen()) return
         drawMarketDecor(context, delta)
@@ -6046,6 +6106,16 @@ class PointsMarketScreen : Screen(
          * 中文「快照」36px、英文 `Snapshots` 54px —— 取宽的再加边距（项目一贯的"按最宽文案定宽"）。
          */
         const val EDIT_SNAPSHOT_W = 62
+
+        /**
+         * 快照按钮**左侧**那枚「形态需要前置条件」info 的边长 —— 纯图标按钮，16×16 见方
+         * （与交易历史 / 兑换码界面那两枚 info 同尺寸）。
+         *
+         * ⚠ 它很小是有原因的：这一条带（`editRemoveY()` 那行）左侧可用宽度**随窗口缩**
+         * ——窗口拉到下限 [EDIT_DIALOG_MIN_W] 时只剩 ~64px（物种行那排小按钮到快照按钮之间），
+         * 文字按钮怎么压都放不下。图标不吃宽度，16px 任何档位都稳。
+         */
+        const val EDIT_GATED_INFO_W = 16
 
         /** 快照弹窗里「保存当前配置」按钮的宽度（中文 54px、英文 `Save Current` 72px，取宽的） */
         const val SNAPSHOT_SAVE_BTN_W = 80

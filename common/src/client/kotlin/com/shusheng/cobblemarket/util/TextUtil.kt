@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.util
 
 import net.minecraft.client.MinecraftClient
 import net.minecraft.item.ItemStack
+import net.minecraft.text.OrderedText
 import net.minecraft.text.Text
 
 object TextUtil {
@@ -40,6 +41,44 @@ object TextUtil {
             java.util.Optional.empty<Unit>()
         }, net.minecraft.text.Style.EMPTY)
         return out.append(Text.literal("…"))
+    }
+
+    // 按宽度断行（**中英双友好**）：先按空格分词（英文断得自然），超长词（中文整串没有空格）
+    // 逐字符硬断填满。两处共用：喵喵银行的规则面板、形态说明界面。
+    // ⚠ 别拿它当通用换行 —— 它按空格分词，中文词条里若写了「 / 」这种带空格的斜杠会被当断点
+    //   （原生 tooltip 那条规矩同源）；真要那种效果就自己主动 \n。
+    // ⚠ 也别换成 MarketEntryScreen 的 wrapTip（那个把空格当普通字符）：它按"中文优先"设计，
+    //   英文长句会被整句当成一个词 ⇒ 溢出容器。
+    fun wrapText(text: String, maxWidth: Int): List<OrderedText> {
+        val font = MinecraftClient.getInstance().textRenderer
+        val result = mutableListOf<OrderedText>()
+        val sb = StringBuilder()
+        fun flush() {
+            if (sb.isNotEmpty()) {
+                result.add(Text.literal(sb.toString()).asOrderedText())
+                sb.setLength(0)
+            }
+        }
+        for (token in text.split(' ')) {
+            if (token.isEmpty()) continue
+            val tokenW = font.getWidth(token)
+            if (tokenW > maxWidth) {
+                // 超长词（中文整串）：逐字符硬断，每次至少吃掉一个字，不会空转
+                flush()
+                var cur = token
+                while (cur.isNotEmpty()) {
+                    var cut = cur.length
+                    while (cut > 1 && font.getWidth(cur.substring(0, cut)) > maxWidth) cut--
+                    result.add(Text.literal(cur.substring(0, cut)).asOrderedText())
+                    cur = cur.substring(cut)
+                }
+                continue
+            }
+            if (sb.isNotEmpty() && font.getWidth(sb.toString()) + font.getWidth(" ") + tokenW > maxWidth) flush()
+            sb.append(if (sb.isEmpty()) token else " $token")
+        }
+        flush()
+        return result
     }
 
     // 物品显示名照物品栏悬浮第一行着色（按稀有度；名字自带样式码的物品如卡片不受影响）

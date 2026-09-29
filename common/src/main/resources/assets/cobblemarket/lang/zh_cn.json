@@ -1225,5 +1225,13 @@
   "cobblemarket.buy_order.nature_label": "性格：",
   "cobblemarket.buy_order.item_label": "物品：",
   "cobblemarket.buy_order.item_matches": "%s 个匹配",
-  "cobblemarket.persist.save_failed": "⚠ 市场数据保存失败！挂单/拍卖/求购单可能未写入存档——请检查服务器磁盘空间与权限，并尽快通知玩家"
+  "cobblemarket.persist.save_failed": "⚠ 市场数据保存失败！挂单/拍卖/求购单可能未写入存档——请检查服务器磁盘空间与权限，并尽快通知玩家",
+  "cobblemarket.gated_form.title": "需要前置条件的形态",
+  "cobblemarket.gated_form.intro": "你为这只精灵选的形态，在正常游戏里需要先满足一个条件才能变身 —— 携带对应道具、学会特定招式、或达到某个等级。商城上架是直接造出一只该形态的精灵，那个条件从来没被满足过。",
+  "cobblemarket.gated_form.item.1": "与形态配套的道具不变量被打破（Mega 精灵却没带 Mega 石）",
+  "cobblemarket.gated_form.item.2": "省下一个携带物位，能另带一件道具",
+  "cobblemarket.gated_form.item.3": "种族值 / 属性 / 特性 / 可学技能全部按该形态常驻计算",
+  "cobblemarket.gated_form.item.4": "商城造出来的精灵已经是那个形态，附属模组视作既成事实 —— 无法解除",
+  "cobblemarket.gated_form.outro": "只在确实想让玩家直接拿到这个形态时才上架；否则建议上架普通形态，把变身留给玩家自己完成。",
+  "cobblemarket.gated_form.button_tip": "该形态需要前置条件\n点击查看说明"
 }
