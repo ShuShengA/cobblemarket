@@ -203,13 +203,19 @@ object EntryBadgeRenderer {
     private const val LOCK_MIN = 5
 
     /**
-     * 锁距精灵图标**左上角**的边距。
+     * 锁距精灵图标**左上角**的边距 —— ⚠ **横向与纵向故意不同，别合并成一个**。
      *
-     * ⚠ **不居中、还压到一半以下，是为了别挡精灵**（用户 2026-09-30 定）——
+     * ⚠ 实测那张锁图（解 PNG 得到的**内容边界**）：**左右各留白 2px、上下顶满**（内容 y 0..19）。
+     *   缩到 [LOCK_SIZE_RATIO] 那么小之后，横向那 2px 只合 0.6px —— 再按 1px 画，
+     *   锁看着就"离左边比离顶边远"（用户 2026-09-30 指出）。
+     *   ⇒ 横向取 0（靠图自带的留白撑出间距）、纵向取 1（它自己不留白，得给一点）。
+     *
+     * ⚠ **不居中、还压到一半以下，是为了别挡精灵**（用户定）——
      *   「**图标的动态（转头 / 待机动画）本来就是本模组的特色**，盖上一个大锁就只剩锁了，观感不佳」。
      *   ⇒ 以后谁想把这个锁调大或挪回中间，先回来看一眼这句。
      */
-    private const val LOCK_MARGIN = 1
+    private const val LOCK_MARGIN_X = 0
+    private const val LOCK_MARGIN_Y = 1
     /** 名字后面多个徽章之间的空隙 */
     private const val BADGE_GAP = 3
 
@@ -279,7 +285,7 @@ object EntryBadgeRenderer {
         //   靠矩阵缩到目标大小（口径同 [drawSizeBadgeIcon] 那边的 blitk）。
         val scale = lock.toFloat() / LOCK_TEX_SIZE
         context.matrices.push()
-        context.matrices.translate((x + LOCK_MARGIN).toFloat(), (y + LOCK_MARGIN).toFloat(), 0f)
+        context.matrices.translate((x + LOCK_MARGIN_X).toFloat(), (y + LOCK_MARGIN_Y).toFloat(), 0f)
         context.matrices.scale(scale, scale, 1f)
         context.drawTexture(
             UNTRADEABLE_LOCK_TEX, 0, 0, 0f, 0f,
