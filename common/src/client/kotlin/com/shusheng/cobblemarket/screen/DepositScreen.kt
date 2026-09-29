@@ -1,7 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.formatPriceLong
-import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.client.drawAmountLine
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.DepositInfoPayload
 import com.shusheng.cobblemarket.network.RequestDepositInfoPayload
@@ -129,19 +129,20 @@ class DepositScreen : Screen(Text.translatable("cobblemarket.deposit.title")) {
         )
         // 余额 / 累计利息：**真金白银**（能取出来花）→ 数字与单位金色、标签白
         // 蓝色只留给服务器给的虚拟授信与债务（口径：「这个数字能不能花」）
-        context.drawTextWithShadow(
-            textRenderer,
+        // ⚠ 金额与单位拆开画（物品货币时单位是物品图标）：词条的单位参数传空串占位，见 drawAmountLine
+        drawAmountLine(
+            context, textRenderer, false,
             Text.translatable("cobblemarket.deposit.balance_line",
                 Text.literal(formatPriceLong(balance)).formatted(Formatting.GOLD),
-                Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)),
-            dialogX + 12, dialogY + 40, 0xFFFFFF
+                Text.literal("")),
+            dialogX + 12, dialogY + 40, 0xFFFFFF, unitColor = 0xFFAA00
         )
-        context.drawTextWithShadow(
-            textRenderer,
+        drawAmountLine(
+            context, textRenderer, false,
             Text.translatable("cobblemarket.deposit.interest_line",
                 Text.literal(formatPriceLong(interest)).formatted(Formatting.GOLD),
-                Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)),
-            dialogX + 12, dialogY + 58, 0xFFFFFF
+                Text.literal("")),
+            dialogX + 12, dialogY + 58, 0xFFFFFF, unitColor = 0xFFAA00
         )
         // 日利率（0.0001 → 0.01%）
         val ratePercent = String.format("%.2f%%", rate * 100)

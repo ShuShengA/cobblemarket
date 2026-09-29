@@ -1030,6 +1030,8 @@
   "cobblemarket.repay.dialog_period_due": "本期应还：%s %s",
   "cobblemarket.repay.dialog_settle_total": "结清总额：%s %s",
   "cobblemarket.repay.dialog_split": "本期本金 %s + 利息 %s",
+  "cobblemarket.repay.split_principal": "本期本金 %s",
+  "cobblemarket.repay.split_interest": " + 利息 %s",
   "cobblemarket.repay.dialog_due_count": "已欠 %s 期，请尽快还清",
   "cobblemarket.repay.pay_period": "还一期",
   "cobblemarket.repay.settle": "提前结清",

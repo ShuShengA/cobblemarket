@@ -9,7 +9,6 @@ import com.shusheng.cobblemarket.client.PointsStateCache
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
 import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
-import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.CurrencyService
 
@@ -1030,7 +1029,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             centerX + 84, dialogY + 52, 20, 16, Text.literal(""), { onCurrencyClick() },
             iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
             iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
-            tooltip = Text.translatable("cobblemarket.gui.currency_switch", inlineCurrencyUnit(), CurrencyService.pointsIcon())
+            tooltip = Text.translatable("cobblemarket.gui.currency_switch", com.shusheng.cobblemarket.client.activeCurrencyUnit(), CurrencyService.pointsIcon())
         ).also {
             // 两种"不能用"都置灰：RP 总开关关 / 玩家间 RP 交易没开
             it.dimmed = !PointsStateCache.enabled || !PointsStateCache.marketEnabled
@@ -1169,8 +1168,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private fun applyIncrementPlaceholder() {
         if (serverMinIncrement <= 0) return
         incrementField?.setPlaceholder(
+            // ⚠ placeholder 是输入框内的纯文本，塞不进图标 ⇒ 物品货币时退回**物品名**（信息正确优先）
             Text.translatable("cobblemarket.auction.increment_placeholder",
-                "${com.shusheng.cobblemarket.client.formatPrice(serverMinIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GRAY))
+                "${com.shusheng.cobblemarket.client.formatPrice(serverMinIncrement)} ${com.shusheng.cobblemarket.client.activeCurrencyUnit()}").formatted(Formatting.GRAY))
     }
 
     /** 服务端真实时长档位到达：更新选项与按钮显示（服务器自定义配置时按钮不再失真） */

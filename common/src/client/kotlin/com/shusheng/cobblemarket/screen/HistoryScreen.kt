@@ -1,5 +1,9 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.amountUnitWidth
+import com.shusheng.cobblemarket.client.drawAmountWithUnit
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
+import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
@@ -138,17 +142,13 @@ class HistoryScreen(private val showAll: Boolean = false) :
             // 行尾（价格 / 买家名）**从右缘反推定位**（照贷款历史界面的惯例）。
             // ⚠ 别写成「中间段之后再累加」—— 那样「价格 + 买家名」合计超宽时（长名字 + 大额），
             //   尾段会被一路推出面板右缘、中间段被挤成只剩一个「…」（2026-09-21 修）
-            // 单位按**这一笔自己的币种**来：主货币 `₽`、RP 用图标（与全项目同一个口径）
-            val priceText: Text =
-                if (MarketCurrency.fromStored(e.currency) == MarketCurrency.POINTS) {
-                    Text.literal("| ${com.shusheng.cobblemarket.client.formatPrice(e.price)} ")
-                        .append(CurrencyService.pointsIcon())
-                } else {
-                    Text.literal(
-                        "| ${com.shusheng.cobblemarket.client.formatPrice(e.price)} " +
-                            com.shusheng.cobblemarket.client.inlineCurrencyUnit()
-                    )
-                }
+            // ⚠ 金额与单位**拆开画**：物品本位货币时单位是物品图标、RP 时是字形图标，都拼不进字符串。
+            //   「| 」前缀与金额各自定位，总宽走 amountUnitWidth —— 与下面的绘制同源，别自己写算式
+            // ⚠ 币种按**这一笔自己的**（`e.currency`）来，不是全局主货币
+            val priceIsPoints = MarketCurrency.fromStored(e.currency) == MarketCurrency.POINTS
+            val pricePrefix = "| "
+            val priceAmount = com.shusheng.cobblemarket.client.formatPrice(e.price)
+            val priceW = textRenderer.getWidth(pricePrefix) + amountUnitWidth(textRenderer, priceAmount, priceIsPoints)
             // 个人界面右侧那一段（管理端不用它 —— 那里两个名字都写在中间段里）。
             // **箭头表示物品的去向、自己省略不写**（这页本来就是看自己的）：
             //   卖出 →「→ 买家名」（东西给了他）；买入 →「卖家名 →」（东西是他给我的）。
@@ -161,7 +161,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
                 else -> null
             }
             val right = width / 2 + panelHalf - 5
-            val priceX = right - textRenderer.getWidth(priceText)
+            val priceX = right - priceW
             // 这段夹在「中间段最小宽度」与价格之间，放不下就截断（完整内容见悬停窗）——
             // 不截的话，长名字 + 大额价格会把中间段挤成空、两段文字叠在一起。
             // ⚠ 必须用 truncateStyled：truncateText 会把 Text 压成一段、丢掉 RP 图标的字体样式（图标变方块）
@@ -185,7 +185,11 @@ class HistoryScreen(private val showAll: Boolean = false) :
                 (if (tailShown != null) tailX else priceX) - 6 - cx
             )
             context.drawTextWithShadow(textRenderer, middle, cx, y + 4, 0xFFFFFF)
-            context.drawTextWithShadow(textRenderer, priceText, priceX, y + 4, 0xFFAA00)
+            context.drawTextWithShadow(textRenderer, pricePrefix, priceX, y + 4, 0xFFAA00)
+            drawAmountWithUnit(
+                context, textRenderer, priceAmount, priceIsPoints,
+                priceX + textRenderer.getWidth(pricePrefix), y + 4, 0xFFAA00
+            )
             tailShown?.let { context.drawTextWithShadow(textRenderer, it, tailX, y + 4, 0xFFFFFF) }
         }
 
@@ -202,9 +206,14 @@ class HistoryScreen(private val showAll: Boolean = false) :
                     .append(Text.literal("[${typeTextOf(e)}]").styled { it.withColor(typeColor(e.type)) })
                     .append(Text.literal(" $fullTime").styled { it.withColor(0x888888) }),
                 Text.literal("").append(sellerTextOf(e)).append(buyerTextOf(e)),
-                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(e.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}")
+                // ⚠ 价格行的货币单位**不拼进文本** —— 由 renderTooltip 补画在行尾
+                //   （物品货币时是物品图标、RP 时是字形图标）；
+                //   末尾那个空格留着，renderTooltip 按 `getWidth(本行)` 定位单位
+                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(e.price)} ")
                     .formatted(Formatting.GOLD)                                              // 金额金
-            ), mouseX, mouseY)
+            ), mouseX, mouseY, unitLine = 3,       // ← 3 = 价格行在 listOf 里的下标（改行列表顺序要一起改）
+                // ⚠ 币种取**这一笔自己的**（`e.currency`），不是全局主货币
+                isPoints = MarketCurrency.fromStored(e.currency) == MarketCurrency.POINTS)
         }
 
         // Scroll indicator
@@ -268,11 +277,24 @@ class HistoryScreen(private val showAll: Boolean = false) :
      * ⚠ 行色固定白 —— 具体颜色一律由各行的 [Text] 自带（金额金、精灵名属性色…），
      * 别在这里按行号上色（那会把自带颜色的段也染掉）。
      */
-    private fun renderTooltip(context: DrawContext, lines0: List<Text>, mouseX: Int, mouseY: Int) {
+    private fun renderTooltip(
+        context: DrawContext,
+        lines0: List<Text>,
+        mouseX: Int,
+        mouseY: Int,
+        /** 哪一行的末尾要补货币单位（物品货币时画那件物品的图标）；-1 = 没有 */
+        unitLine: Int = -1,
+        /** 这一笔的币种（RP 的单位是字形图标）—— ⚠ **必传**，不给默认值：漏传会把 RP 的钱标成主货币 */
+        isPoints: Boolean,
+    ) {
         // 行数按屏幕高钳制（内容比屏幕高时末行换成「…（还有 N 行）」）—— 见 [clampTooltipRows]
         val lines = clampTooltipRows(lines0, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) }
+        // ⚠ unitLine 那行的货币单位**画在行尾、不在文本里** ⇒ 测量要把它补上，否则提示框算窄
+        val unitW = if (unitLine >= 0) currencyUnitWidth(textRenderer, isPoints) else 0
         var maxWidth = 0
-        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
+        lines.forEachIndexed { i, line ->
+            maxWidth = maxOf(maxWidth, textRenderer.getWidth(line) + if (i == unitLine) unitW else 0)
+        }
 
         val padding = 4
         val tx = minOf(mouseX + 12, width - maxWidth - 12).coerceAtLeast(4)
@@ -284,7 +306,13 @@ class HistoryScreen(private val showAll: Boolean = false) :
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
         lines.forEachIndexed { i, line ->
-            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, 0xFFFFFF)
+            val w = context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, 0xFFFFFF)
+            // 金额行：货币单位补在行尾（物品货币时是那件物品的图标）。
+            // ⚠ 行数被 clampTooltipRows 截过时**不要把单位挪到最后一行**补 —— 金额行被截掉了就不补
+            if (i == unitLine) {
+                // ⚠ 币种取**这一笔自己的**（由调用点按 `e.currency` 传进来）—— 标错单位就是误导
+                drawCurrencyUnit(context, textRenderer, isPoints, w, ty + i * 10, 0xFFAA00)
+            }
         }
         context.matrices.pop()
     }

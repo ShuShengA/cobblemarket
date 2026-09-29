@@ -1,7 +1,9 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.formatPriceLong
-import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.client.currencyUnitWidth
+import com.shusheng.cobblemarket.client.drawAmountLine
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.finance.CardNames
 import com.shusheng.cobblemarket.network.PurpleCardApplyInfoPayload
@@ -163,12 +165,14 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
             // 卡权益（图标右侧，持有者/申请者都显示）：额度（**服务器给的虚拟授信 → 蓝 0x55FFFF**，完整千分位）+ 手续费减免（0 = 无）
             // ⚠ 蓝色只给额度/债务这类"不能花的账本数字"；真实金额（价格、余额、要付的钱）一律金色——见「能不能花」判据
             val rightsX = centerX + 36
-            context.drawTextWithShadow(
-                textRenderer,
+            // ⚠ 金额与单位拆开画（物品货币时单位是物品图标）：单位参数只留「金额 + 空格」，见 drawAmountLine。
+            //   额度是「不能花的账本数字」→ 蓝色（同「能不能花」判据），单位跟着金额走
+            drawAmountLine(
+                context, textRenderer, false,
                 Text.translatable("cobblemarket.card.apply_credit_line",
-                    Text.literal("${formatPriceLong(payload.creditLimit)} ${inlineCurrencyUnit()}")
+                    Text.literal("${formatPriceLong(payload.creditLimit)} ")
                         .setStyle(net.minecraft.text.Style.EMPTY.withColor(0x55FFFF))),
-                rightsX, dialogY + 42, 0xFFFFFF
+                rightsX, dialogY + 42, 0xFFFFFF, unitColor = 0x55FFFF
             )
             val pct = payload.feeDiscount * 100
             val discountText = if (payload.feeDiscount <= 0)
@@ -180,12 +184,17 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
                 rightsX, dialogY + 60, 0xFFFFFF
             )
             // 持有者（补发模式）：条件与资格无关，只居中显示补发费用行；非持有者显示条件行 + 申请费用行
+            // ⚠ 金额与单位拆开画（物品货币时单位是物品图标）：词条的单位参数传空串占位，见 drawAmountLine。
+            //   本行两处调用（持有者居中 / 申请者左对齐）都要把单位补在行尾
             val feeLine = Text.translatable(
                 if (isHolder) "cobblemarket.card.redo_fee_line" else "cobblemarket.card.apply_fee_line",
-                formatPriceLong(if (isHolder) payload.redoFee else payload.fee), inlineCurrencyUnit()
+                formatPriceLong(if (isHolder) payload.redoFee else payload.fee) + " ", Text.literal("")
             )
             if (isHolder) {
-                context.drawCenteredTextWithShadow(textRenderer, feeLine, centerX, dialogY + 120, 0x888888)
+                val feeW = textRenderer.getWidth(feeLine) + currencyUnitWidth(textRenderer, false)
+                val feeX = centerX - feeW / 2
+                context.drawTextWithShadow(textRenderer, feeLine, feeX, dialogY + 120, 0x888888)
+                drawCurrencyUnit(context, textRenderer, false, feeX + textRenderer.getWidth(feeLine), dialogY + 120, 0x888888)
             } else {
                 var y = dialogY + 96
                 conditionKeys.forEachIndexed { i, key ->
@@ -200,7 +209,9 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
                         isBool -> if (entry.current > 0) Text.translatable("cobblemarket.card.apply_no_record").string
                         else Text.translatable("cobblemarket.card.apply_has_record").string
                         isDexCount -> "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)}"
-                        else -> "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)} ${inlineCurrencyUnit()}"
+                        // ⚠ 末尾只留一个空格 —— 货币单位在下面绘制时补画（物品货币时是图标）；
+                        //   图鉴数（isDexCount）与布尔项（isBool）本来就不带单位，别给它俩补
+                        else -> "${formatPriceLong(entry.current)}/${formatPriceLong(entry.requirement)} "
                     }
                     // 行尾短符号（✓/✗ 绿红，长文案超宽改用颜色表意；完整语义在申请按钮文案）
                     val mark = if (entry.satisfied)
@@ -210,11 +221,16 @@ class PurpleCardApplyScreen : Screen(Text.translatable("cobblemarket.card.apply_
                     // 两行布局：标签在上、带括号的条件值在下（英文长标签不再挤压数值）
                     context.drawTextWithShadow(textRenderer, label, dialogX + 14, y, 0xFFFFFF)
                     val valueLine = Text.translatable("cobblemarket.card.apply_cond_value", valueText)
-                    context.drawTextWithShadow(textRenderer, valueLine, dialogX + 14, y + 11, 0x55FFFF)
+                    val valueDrawn = context.drawTextWithShadow(textRenderer, valueLine, dialogX + 14, y + 11, 0x55FFFF)
+                    // 图鉴数 / 布尔项不带货币单位（它们的 valueText 里没留空格），只有金额条件要补
+                    if (!isBool && !isDexCount) {
+                        drawCurrencyUnit(context, textRenderer, false, valueDrawn, y + 11, 0x55FFFF)
+                    }
                     context.drawTextWithShadow(textRenderer, mark.first, dialogX + dialogW - 26, y + 6, mark.second)
                     y += 22
                 }
-                context.drawTextWithShadow(textRenderer, feeLine, dialogX + 14, y + 2, 0x888888)
+                val feeDrawn = context.drawTextWithShadow(textRenderer, feeLine, dialogX + 14, y + 2, 0x888888)
+                drawCurrencyUnit(context, textRenderer, false, feeDrawn, y + 2, 0x888888)
             }
         }
     }

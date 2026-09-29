@@ -3,7 +3,8 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.ClientPermissionCache
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.client.formatPriceLong
-import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.client.currencyUnitWidth
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.finance.CardNames
 import com.shusheng.cobblemarket.network.CardHolderBoardEntry
@@ -267,16 +268,22 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         // 信息组：「可用额度 / 当前欠款」两行（价格+货币名照全模组规矩用蓝色）；
         // 缓存未拉取（-1）时按 0 显示（秒显优先，响应到达即更新）；
         // 行距 14px；上移给右侧按钮列（返回按钮 y+76）让位，避免文字右缘压按钮
-        context.drawCenteredTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.loan.limit_line", formatPriceLong(limit.coerceAtLeast(0)), inlineCurrencyUnit()),
-            width / 2, bgTop + 50, 0x55FFFF
+        // ⚠ 金额与单位拆开画（物品货币时单位是物品图标）：词条单位参数传空串占位。
+        //   原来是 drawCenteredTextWithShadow —— 单位不在文本里了，得自己按「整行含单位」的总宽居中
+        val limitLine = Text.translatable(
+            "cobblemarket.loan.limit_line", formatPriceLong(limit.coerceAtLeast(0)), Text.literal("")
         )
-        context.drawCenteredTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.loan.debt_line", formatPriceLong(debt.coerceAtLeast(0)), inlineCurrencyUnit()),
-            width / 2, bgTop + 64, 0x55FFFF
+        val limitW = textRenderer.getWidth(limitLine) + currencyUnitWidth(textRenderer, false)
+        val limitX = width / 2 - limitW / 2
+        context.drawTextWithShadow(textRenderer, limitLine, limitX, bgTop + 50, 0x55FFFF)
+        drawCurrencyUnit(context, textRenderer, false, limitX + textRenderer.getWidth(limitLine), bgTop + 50, 0x55FFFF)
+        val debtLine = Text.translatable(
+            "cobblemarket.loan.debt_line", formatPriceLong(debt.coerceAtLeast(0)), Text.literal("")
         )
+        val debtW = textRenderer.getWidth(debtLine) + currencyUnitWidth(textRenderer, false)
+        val debtX = width / 2 - debtW / 2
+        context.drawTextWithShadow(textRenderer, debtLine, debtX, bgTop + 64, 0x55FFFF)
+        drawCurrencyUnit(context, textRenderer, false, debtX + textRenderer.getWidth(debtLine), bgTop + 64, 0x55FFFF)
         // 坏账警示：额度行已被服务端置 0，补一行红字说明原因（行高 9px，不与 bgTop+88 起的持有者面板重叠）
         if (hasBadDebt) {
             context.drawCenteredTextWithShadow(
