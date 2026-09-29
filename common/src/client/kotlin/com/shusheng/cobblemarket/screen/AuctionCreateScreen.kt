@@ -1006,6 +1006,14 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         val fieldW = 100
         val slotX = fieldX + (fieldW - slotSize) / 2
         val slotY = dialogY + 52 - slotSize - 4
+        // 物品模式：**只有那个 16px 的物品图标** —— `pokemon_slot.png` 是**精灵专用**的占位图，物品不用
+        // ⚠ 坐标必须与精灵那支**同源**：原先物品画在 `renderDialogBackground` 里、slotX 是硬编码的
+        //   `centerX + 66` ⇒ 精灵在标题正下方、物品却**偏右 50px**（2026-09-29 用户报）
+        // ⚠ `+6` = 28 的槽里放 16 的图标时的内缩量（左右/上下各 6）—— 两支共用同一个中心
+        dialogItem?.let {
+            drawItemWithBar(context, it.stack, slotX + 6, slotY + 6)
+            return
+        }
         val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
         context.matrices.push()
         context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
@@ -1047,13 +1055,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             Text.translatable("cobblemarket.auction.create_dialog_title").formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
 
-        // 预览槽
-        val slotSize = 28
-        val slotX = centerX + 66
-        val slotY = dialogY + 24
-        if (dialogItem != null) {
-            drawItemWithBar(context, dialogItem!!.stack, slotX + 6, slotY + 6)
-        }
+        // ⚠ 预览图标**不在这儿画** —— 精灵与物品都在 `renderPreviewAboveField` 里、共用同一个槽位坐标
+        //（原先物品在这硬编码 `slotX = centerX + 66`，与精灵对不上，2026-09-29 已收口）
 
         // 字段标签
         val labelX = dialogX + 10
@@ -1371,10 +1374,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         super.render(context, mouseX, mouseY, delta)
 
         if (dialogPokemon != null || dialogItem != null) {
-            // 弹窗打开时：精灵预览显示在起拍价输入框上方（以输入框居中）
-            if (dialogPokemon != null && dialogRenderable != null) {
-                renderPreviewAboveField(context, delta)
-            }
+            // 弹窗打开时：预览显示在起拍价输入框上方（以输入框居中）—— 精灵 = 模型（带槽位底图）、
+            // 物品 = 那个 16px 图标，两支在 renderPreviewAboveField 里共用同一套坐标
+            renderPreviewAboveField(context, delta)
             return
         }
 

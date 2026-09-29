@@ -91,6 +91,15 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     // ── 喵喵支付（消费贷，批次 4）：购买弹窗内入口按钮，点击进独立 MeowthPayScreen ──
     private var buyPayButton: NineSliceButton? = null
+
+    /**
+     * 购买 / 取消两枚按钮 —— ⚠ **必须存引用**：弹窗里的词条会随 Shift 展开而变多
+     *（TM 这类物品的词条是 Cobblemon 自己生成的，**自己会读 Shift，`TooltipType.BASIC` 拦不住**），
+     * 弹窗跟着长高、文字整体下移，控件要**每帧**按当前布局重贴（见 [syncBuyDialogControls]）。
+     * 没存引用就贴不了 —— 原先这两枚是直接 `addDrawableChild(NineSliceButton(...))` 匿名加进去的。
+     */
+    private var buyConfirmButton: NineSliceButton? = null
+    private var buyCancelButton: NineSliceButton? = null
     /** 消费贷开关：初始读全局缓存（入口界面已拉取）避免首次打开弹窗高度闪烁；关时弹窗 170 无喵喵支付按钮 */
     private var payAvailable = com.shusheng.cobblemarket.client.FinanceCache.consumerLoanEnabled
 
@@ -647,16 +656,18 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         val confirmX = if (threeButtons) centerX - btnW - 44 else centerX - btnW - 5
         val payX = centerX - 40
         val cancelX = if (threeButtons) centerX + 44 else centerX + 5
-        addDrawableChild(NineSliceButton(
+        buyConfirmButton = NineSliceButton(
             confirmX, L.buttonY, btnW, 20,
             Text.translatable("cobblemarket.gui.buy"),
             { confirmBuy() }
-        ))
-        addDrawableChild(NineSliceButton(
+        )
+        addDrawableChild(buyConfirmButton)
+        buyCancelButton = NineSliceButton(
             cancelX, L.buttonY, btnW, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeBuyDialog() }
-        ))
+        )
+        addDrawableChild(buyCancelButton)
 
         // 喵喵支付入口（点击进独立 MeowthPayScreen 选方案）；消费贷关时不显示
         if (payAvailable) {
@@ -678,8 +689,11 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     /**
      * 购买弹窗里要显示的词条行。
      *
-     * ⚠ **只取 BASIC、不跟随 Shift 展开**：跟着展开的话一按键弹窗就长高，
-     *   违反 CLAUDE.md 那条「弹窗高度开出来就固定」。
+     * ⚠ **`BASIC` 只挡得住普通物品** —— 原先这里写着「不跟随 Shift 展开、弹窗高度恒定」，
+     *   但 **TM（招式学习器）这类物品的词条是 Cobblemon 自己生成的，它自己会读 Shift**，
+     *   `TooltipType.BASIC` 根本拦不住 ⇒ 按住 Shift 词条就变多、弹窗跟着长高
+     *  （2026-09-29 用户截图证实）。**所以弹窗高度并不是恒定的**，控件必须每帧重贴
+     *  （见 [syncBuyDialogControls]）。
      */
     private fun buyInfoLines(): List<Text> {
         val rm = client?.world?.registryManager ?: return emptyList()
@@ -725,6 +739,20 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         return BuyLayout(dialogY, infoTop, labelY, fieldY, totalY, buttonY)
     }
 
+    /**
+     * 把弹窗里的控件贴到**当前**布局上 —— 词条行数会变（Shift 展开），所以布局每帧都得重贴一次。
+     *
+     * ⚠ 传进来的是渲染**已经在用**的那份 [BuyLayout]，别在这儿再调一次 [buyDialogLayout]()
+     *   —— 同一套坐标算两遍，正是历史上「建与重摆两处各写一遍」那个老毛病的温床。
+     * ⚠ 只重贴 `y`：弹窗宽度是固定的（`minOf(300, …)`），x 不会变。
+     */
+    private fun syncBuyDialogControls(L: BuyLayout) {
+        buyCountField?.y = L.fieldY
+        buyConfirmButton?.y = L.buttonY
+        buyCancelButton?.y = L.buttonY
+        buyPayButton?.y = L.buttonY
+    }
+
     /** 购买弹窗高度：**按内容算**（= 按钮底 + 距边框 10px） */
     private fun buyDialogH(): Int = 140 + infoRows() * 10
 
@@ -746,6 +774,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         buyDialogIconOrigin = null
         buyCountField = null
         buyPayButton = null
+        buyConfirmButton = null
+        buyCancelButton = null
         clearChildren()
         init()
     }
@@ -925,6 +955,11 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         val centerX = width / 2
         val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         val L = buyDialogLayout()
+        // ⚠ **每帧把控件贴回当前布局**：词条会随 Shift 展开变多（TM 那类物品的词条是 Cobblemon
+        //   自己生成的、它自己读 Shift，`TooltipType.BASIC` 拦不住）⇒ 弹窗长高、文字整体下移；
+        //   而控件是**打开弹窗时定位一次**的 ⇒ 不重贴就钉在原地 ——「总价」跟着走了、四个控件没动
+        //  （2026-09-29 用户截图报出）。出价弹窗一直就是这么做的（`bidField?.y = …`），这里补同一套
+        syncBuyDialogControls(L)
         val dialogH = buyDialogH()
         val dialogX = centerX - dialogW / 2
         val dialogY = L.dialogY
