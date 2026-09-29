@@ -3,8 +3,8 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.activeCurrencyUnit
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.formatPrice
-import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
@@ -1142,7 +1142,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         filteredPokemonCache = filteredPokemonIndexed.map { it.value }
         pokemonRowTexts = filteredPokemonCache.map { entry ->
             val vText = if (entry.vCount >= 0) " · ${entry.vCount}V" else ""
-            "${pokemonName(entry.speciesId)}$vText · ${formLabel(entry.aspects.toSet())} · ${priceText(entry.minPrice, entry.maxPrice, inlineCurrencyUnit())}"
+            // ⚠ 单位用 activeCurrencyUnit（物品货币显示**物品名**）：整串随后会被截断，图标补不进来
+            "${pokemonName(entry.speciesId)}$vText · ${formLabel(entry.aspects.toSet())} · ${priceText(entry.minPrice, entry.maxPrice, activeCurrencyUnit())}"
         }
         // 搜索索引匹配（itemId + 名称 + tooltip 文本 + TM 招式，见 ItemSearchIndex；原版创造模式同款语义）
         // 条目级精确过滤：带组件条目按组件精确（搜「打鼾」只出打鼾 TM 条目），无组件条目仅物品文本命中
@@ -1152,7 +1153,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         itemRowTexts = filteredItemsCache.map { entry ->
             val summary = com.shusheng.cobblemarket.client.ItemComponentsDisplay.summary(entry.componentsSpec)
             val name = if (summary.isEmpty()) itemDisplay(entry.itemId) else "${itemDisplay(entry.itemId)}（$summary）"
-            "$name · ${priceText(entry.minPrice, entry.maxPrice, inlineCurrencyUnit())}"
+            // 同上：物品货币显示物品名（整串会被截断，图标补不进来）
+            "$name · ${priceText(entry.minPrice, entry.maxPrice, activeCurrencyUnit())}"
         }
     }
 
@@ -1392,7 +1394,11 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         }
         // 走富文本重载（物品悬停窗同款）：首行名字要单独上属性色，纯 String 版只能整行白。
         // 行文本内容与原先逐字相同 → 宽度/行高计算不变（宽度仍按各行完整文本量）
-        drawRichTooltip(context, tooltipCacheLines, mouseX, mouseY, rowButtonsRect(hoveredRow))
+        // 价格行是行列表**最后一行**，单位补在它行尾（见 drawRichTooltip 的 unitLine）
+        drawRichTooltip(
+            context, tooltipCacheLines, mouseX, mouseY, rowButtonsRect(hoveredRow),
+            unitLine = tooltipCacheLines.size - 1,
+        )
     }
 
     private fun buildPokemonTooltipLines(entry: PokemonPriceLimitEntry): List<Pair<Text, Int>> {
@@ -1405,7 +1411,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         lines.add(Text.literal(shinyLabel(entry.shinyFilter)) to 0xFFFFFF)
         lines.add(Text.literal(formLabel(entry.aspects.toSet())) to 0xFFFFFF)
         lines.add(Text.literal(htLabel(entry.htFilter)) to 0xFFFFFF)
-        lines.add(Text.literal(priceText(entry.minPrice, entry.maxPrice, activeCurrencyUnit())) to 0xFFFFFF)
+        // ⚠ 单位传**空串**：`priceText` 会留下尾随空格（`"100 ~ 200 "`），货币单位由
+        //   drawRichTooltip 补画在这一行的行尾（物品货币时是那件物品的图标）
+        lines.add(Text.literal(priceText(entry.minPrice, entry.maxPrice, "")) to 0xFFFFFF)
         return lines
     }
 
@@ -1443,7 +1451,10 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             itemTooltipAdvancedType = null
             null
         }
-        drawRichTooltip(context, advanced ?: itemTooltipLines, mouseX, mouseY, rowButtonsRect(hoveredRow))
+        drawRichTooltip(
+            context, advanced ?: itemTooltipLines, mouseX, mouseY, rowButtonsRect(hoveredRow),
+            unitLine = (advanced ?: itemTooltipLines).size - 1,
+        )
     }
 
     private fun buildItemTooltipLines(entry: ItemPriceLimitEntry, type: TooltipType): List<Pair<Text, Int>> {
@@ -1459,13 +1470,23 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             lines.add(Text.literal(itemDisplay(entry.itemId)) to
                 com.shusheng.cobblemarket.util.TextUtil.rarityNameColor(stack))
         }
-        lines.add(Text.literal(priceText(entry.minPrice, entry.maxPrice, activeCurrencyUnit())) to 0xFFFFFF)
+        // ⚠ 单位传**空串**：`priceText` 会留下尾随空格（`"100 ~ 200 "`），货币单位由
+        //   drawRichTooltip 补画在这一行的行尾（物品货币时是那件物品的图标）
+        lines.add(Text.literal(priceText(entry.minPrice, entry.maxPrice, "")) to 0xFFFFFF)
         return lines
     }
 
     /** 富文本行 tooltip 渲染（照物品市场：Text 自带颜色样式优先于行色参数）；
      *  [avoid] 为本行按钮矩形（按行号算几何，见 rowButtonsRect），传 null = 不避让 */
-    private fun drawRichTooltip(context: DrawContext, lines0: List<Pair<Text, Int>>, mouseX: Int, mouseY: Int, avoid: TooltipPlacement.Rect? = null) {
+    private fun drawRichTooltip(
+        context: DrawContext,
+        lines0: List<Pair<Text, Int>>,
+        mouseX: Int,
+        mouseY: Int,
+        avoid: TooltipPlacement.Rect? = null,
+        /** 哪一行的末尾要补货币单位（物品货币时画那件物品的图标）；-1 = 没有 */
+        unitLine: Int = -1,
+    ) {
         // 行数按屏幕高钳制（Shift / Ctrl 展开可能几十行）—— 见 [clampTooltipRows]
         val lines = clampTooltipRows(lines0, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA }
         var maxWidth = 0
@@ -1484,7 +1505,13 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
         lines.forEachIndexed { i, (line, color) ->
-            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
+            val w = context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
+            // 价格行：货币单位补在行尾（物品货币时是那件物品的图标）。
+            // ⚠ w 是**文本结束坐标**不是宽度（MC 的约定），直接拿它当单位起点。
+            // ⚠ 行数被 clampTooltipRows 截过时不补 —— 别把单位挪到最后一行去
+            if (i == unitLine) {
+                drawCurrencyUnit(context, textRenderer, w, ty + i * 10, 0xFFFFFF)
+            }
         }
         context.matrices.pop()
     }

@@ -22,6 +22,8 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import java.util.UUID
 import com.shusheng.cobblemarket.client.clampTooltipRows
+import com.shusheng.cobblemarket.client.currencyUnitWidth
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.drawItemWithBar
 
 class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
@@ -443,9 +445,19 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             val countText = "×${entry.count}"
             context.drawText(textRenderer, countText, x + slotSize - 2 - textRenderer.getWidth(countText), y + 3, 0xFFFFFF, false)
 
-            // 价格过长时用缩写（与物品市场界面一致），完整价格见 tooltip
-            val priceText = com.shusheng.cobblemarket.util.TextUtil.truncateString("${com.shusheng.cobblemarket.client.formatPriceShort(entry.price)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}", slotSize - 6)
-            context.drawText(textRenderer, priceText, x + 3, y + slotSize - 10, 0xFFAA00, false)
+            // 价格过长时用缩写（与物品市场界面一致），完整价格见 tooltip。
+            // ⚠ 金额与单位拆开画（物品货币时单位是物品图标），截断预算先把单位那份扣掉
+            val priceAmount = com.shusheng.cobblemarket.client.formatPriceShort(entry.price)
+            val priceUnitW = textRenderer.getWidth(" ") + currencyUnitWidth(textRenderer)
+            val priceShown = com.shusheng.cobblemarket.util.TextUtil.truncateString(
+                priceAmount, (slotSize - 6 - priceUnitW).coerceAtLeast(0)
+            )
+            context.drawText(textRenderer, priceShown, x + 3, y + slotSize - 10, 0xFFAA00, false)
+            drawCurrencyUnit(
+                context, textRenderer,
+                x + 3 + textRenderer.getWidth(priceShown) + textRenderer.getWidth(" "),
+                y + slotSize - 10, 0xFFAA00, shadow = false
+            )
         }
 
         if (hoveredSlot in displayEntries.indices) {

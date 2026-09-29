@@ -35,6 +35,9 @@ public abstract class ScreenMixin {
         // 进场动画（聊天跳转）：先 push 进场、再 push 关闭，TAIL 逆序 pop（两者不同时进行，栈配对安全）
         EnterAnimation.INSTANCE.pushTransform(context);
         CloseAnimation.INSTANCE.pushTransform(context);
+        // 货币图标门禁**每帧复位**：界面在自己的 render 里按弹窗状态重新置位。
+        // 不在这里复位的话，某个界面置过一次 true 就会残留到别的界面（图标集体消失）。
+        com.shusheng.cobblemarket.client.CurrencyDisplayKt.setSuppressCurrencyIcons(false);
     }
 
     @Inject(method = "renderWithTooltip", at = @At("TAIL"))

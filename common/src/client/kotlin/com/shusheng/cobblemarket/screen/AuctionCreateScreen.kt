@@ -1090,8 +1090,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private fun applyIncrementPlaceholder() {
         if (serverMinIncrement <= 0) return
         incrementField?.setPlaceholder(
+            // ⚠ placeholder 是输入框内的纯文本，塞不进图标 ⇒ 物品货币时退回**物品名**（信息正确优先）
             Text.translatable("cobblemarket.auction.increment_placeholder",
-                "${com.shusheng.cobblemarket.client.formatPrice(serverMinIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}").formatted(Formatting.GRAY))
+                "${com.shusheng.cobblemarket.client.formatPrice(serverMinIncrement)} ${com.shusheng.cobblemarket.client.activeCurrencyUnit()}").formatted(Formatting.GRAY))
     }
 
     /** 服务端真实时长档位到达：更新选项与按钮显示（服务器自定义配置时按钮不再失真） */

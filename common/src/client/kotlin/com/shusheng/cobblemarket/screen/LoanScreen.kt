@@ -1,7 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.drawAmountLine
 import com.shusheng.cobblemarket.client.formatPriceLong
-import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.network.CreditInfoPayload
@@ -230,9 +230,10 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
         val estInterest = Math.round(confirmAmount * feeRate * (periods + 1) / 2.0)
         val lineX = dialogX + 12
         var ly = dialogY + 42
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.loan.confirm_amount", formatPriceLong(confirmAmount), inlineCurrencyUnit()),
+        // ⚠ 金额与单位拆开画（物品货币时单位是物品图标）：词条的单位参数传空串占位，见 drawAmountLine
+        drawAmountLine(
+            context, textRenderer,
+            Text.translatable("cobblemarket.loan.confirm_amount", formatPriceLong(confirmAmount), Text.literal("")),
             lineX, ly, 0xFFFFFF
         )
         ly += 18
@@ -242,23 +243,23 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
             lineX, ly, 0xFFFFFF
         )
         ly += 18
-        context.drawTextWithShadow(
-            textRenderer,
+        drawAmountLine(
+            context, textRenderer,
             Text.translatable(
                 "cobblemarket.loan.confirm_each",
-                formatPriceLong(confirmAmount / periods), inlineCurrencyUnit()
+                formatPriceLong(confirmAmount / periods), Text.literal("")
             ),
             lineX, ly, 0xFFFFFF
         )
         ly += 18
-        context.drawTextWithShadow(
-            textRenderer,
+        drawAmountLine(
+            context, textRenderer,
             Text.translatable(
                 "cobblemarket.loan.confirm_total",
                 Text.literal(formatPriceLong(confirmAmount + estInterest)).formatted(Formatting.GOLD),
-                Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)
+                Text.literal("")
             ),
-            lineX, ly, 0xFFFFFF
+            lineX, ly, 0xFFFFFF, unitColor = 0xFFAA00
         )
     }
 
@@ -304,14 +305,14 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
             width / 2, dialogY + 14, 0xFFFFFF
         )
         // 可用额度 / 当前欠款（价格+货币名照全模组规矩用蓝色；缓存未拉取按 0 显示，响应到达即更新）
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.loan.limit_line", formatPriceLong(limit.coerceAtLeast(0)), inlineCurrencyUnit()),
+        drawAmountLine(
+            context, textRenderer,
+            Text.translatable("cobblemarket.loan.limit_line", formatPriceLong(limit.coerceAtLeast(0)), Text.literal("")),
             dialogX + 12, dialogY + 40, 0x55FFFF
         )
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.loan.debt_line", formatPriceLong(debt.coerceAtLeast(0)), inlineCurrencyUnit()),
+        drawAmountLine(
+            context, textRenderer,
+            Text.translatable("cobblemarket.loan.debt_line", formatPriceLong(debt.coerceAtLeast(0)), Text.literal("")),
             dialogX + 12, dialogY + 58, 0x55FFFF
         )
         if (hasBadDebt || hasOverdue) {

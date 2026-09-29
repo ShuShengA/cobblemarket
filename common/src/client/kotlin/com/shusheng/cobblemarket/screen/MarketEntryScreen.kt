@@ -4,7 +4,9 @@ import com.shusheng.cobblemarket.client.ClientPermissionCache
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.permission.RequestPermissionSnapshotPayload
 import com.shusheng.cobblemarket.client.activeCurrencyUnit
-import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.client.amountUnitWidth
+import com.shusheng.cobblemarket.client.currencyUnitWidth
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 
 import com.mojang.blaze3d.systems.RenderSystem
 import com.shusheng.cobblemarket.client.BalanceHudMode
@@ -102,16 +104,19 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     }
 
     /** 大额金额悬停提示：鼠标附近小面板显示完整千分位数字（照 AdminScreen） */
-    private fun renderAmountTooltip(context: DrawContext, mx: Int, my: Int, fullText: String) {
+    /** [amount] 只传**金额**（不带单位）—— 货币单位由这里补画在右侧（物品货币时是那件物品的图标） */
+    private fun renderAmountTooltip(context: DrawContext, mx: Int, my: Int, amount: String) {
         val pad = 4
-        val w = textRenderer.getWidth(fullText) + 2 * pad
+        val w = amountUnitWidth(textRenderer, amount) + 2 * pad
         val h = 14
         val tx = minOf(mx + 12, width - w - 4)
         val ty = maxOf(my - h - 4, 0)
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx, ty, w, h, 1, ROW_BACKGROUND_TEX_H)
-        context.drawTextWithShadow(textRenderer, fullText, tx + pad, ty + 3, 0xFFD700.toInt())
+        com.shusheng.cobblemarket.client.drawAmountWithUnit(
+            context, textRenderer, amount, tx + pad, ty + 3, 0xFFD700.toInt()
+        )
         context.matrices.pop()
     }
 
@@ -882,26 +887,23 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 全服累计成交额（标题与余额之间；服务器经济规模氛围展示，不参与任何计算）；
         // 金额单位缩写（k/M/B），悬停显示完整数字
         if (totalVolume >= 0) {
-            context.drawCenteredTextWithShadow(
-                textRenderer,
-                Text.translatable(
-                    "cobblemarket.entry.total_volume",
-                    Text.literal(com.shusheng.cobblemarket.client.formatPriceShortLong(totalVolume)).formatted(Formatting.GOLD),
-                    Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)
-                ),
-                width / 2, btnStartY - 29, 0xFFFFFF
+            // ⚠ 金额与单位拆开画（物品货币时单位是物品图标，塞不进词条参数）。
+            //   词条 `...：%s %s` 照旧不动 —— 第二个参数传**空串**占位（词条里的空格保留），
+            //   单位由 drawCurrencyUnit 补在整行右侧。**别去改词条**：这些词条多为界面/聊天共用，
+            //   改了会把服务端聊天消息一起带偏（聊天栏按既定边界仍显示物品名）。
+            val volumeLine = Text.translatable(
+                "cobblemarket.entry.total_volume",
+                Text.literal(com.shusheng.cobblemarket.client.formatPriceShortLong(totalVolume)).formatted(Formatting.GOLD),
+                Text.literal(""),
             )
-            val lineW = textRenderer.getWidth(
-                Text.translatable(
-                    "cobblemarket.entry.total_volume",
-                    com.shusheng.cobblemarket.client.formatPriceShortLong(totalVolume),
-                    inlineCurrencyUnit()
-                )
-            )
+            val lineW = textRenderer.getWidth(volumeLine) + currencyUnitWidth(textRenderer)
+            val lineX = width / 2 - lineW / 2
+            context.drawTextWithShadow(textRenderer, volumeLine, lineX, btnStartY - 29, 0xFFFFFF)
+            drawCurrencyUnit(context, textRenderer, lineX + textRenderer.getWidth(volumeLine), btnStartY - 29, 0xFFAA00)
             if (mouseY in (btnStartY - 29)..(btnStartY - 20) && Math.abs(mouseX - width / 2) <= lineW / 2) {
                 renderAmountTooltip(
                     context, mouseX, mouseY,
-                    "${com.shusheng.cobblemarket.client.formatPriceLong(totalVolume)} ${activeCurrencyUnit()}"
+                    com.shusheng.cobblemarket.client.formatPriceLong(totalVolume)
                 )
             }
         }
@@ -1076,12 +1078,14 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 余额（标题下方，来自全局缓存）
         val bal = com.shusheng.cobblemarket.client.BalanceCache.balance
         if (bal.isNotEmpty()) {
-            context.drawCenteredTextWithShadow(
-                textRenderer,
-                Text.translatable("cobblemarket.gui.balance",
-                    Text.literal(bal + " " + com.shusheng.cobblemarket.client.inlineCurrencyUnit()).formatted(Formatting.GOLD)),
-                width / 2, btnStartY - 18, 0xFFFFFF
-            )
+            // ⚠ 金额与单位拆开画（物品货币时单位是物品图标）；词条 gui.balance 只吃一个 %s（金额）
+            val balLine = Text.translatable("cobblemarket.gui.balance",
+                Text.literal(bal).formatted(Formatting.GOLD))
+            val balGapW = textRenderer.getWidth(" ")
+            val balW = textRenderer.getWidth(balLine) + balGapW + currencyUnitWidth(textRenderer)
+            val balX = width / 2 - balW / 2
+            context.drawTextWithShadow(textRenderer, balLine, balX, btnStartY - 18, 0xFFFFFF)
+            drawCurrencyUnit(context, textRenderer, balX + textRenderer.getWidth(balLine) + balGapW, btnStartY - 18, 0xFFAA00)
         }
     }
 
