@@ -3,7 +3,6 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_INLINE_SIZE
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
-import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
 import com.shusheng.cobblemarket.client.PointsStateCache
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.TooltipPlacement
@@ -331,12 +330,9 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
         setCurrency(if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS)
     }
 
-    /** 刷新货币按钮外观：主货币显示 `₽` 文字，RP 显示 8×8 图标（与余额 HUD 的单位同一张图） */
-    private fun updateCurrencyButton(btn: NineSliceButton) {
-        val points = currency == MarketCurrency.POINTS
-        btn.setMessage(Text.literal(if (points) "" else "₽"))
-        btn.iconLeft = if (points) POINTS_SYMBOL_TEXTURE else null
-    }
+    /** 刷新货币按钮外观（三态：RP 图标 / 物品图标 / ₽ —— 见 [updateCurrencyButtonIcon]） */
+    private fun updateCurrencyButton(btn: NineSliceButton) =
+        updateCurrencyButtonIcon(btn, currency == MarketCurrency.POINTS)
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         MarketPanelBackground.draw(context, width, height)

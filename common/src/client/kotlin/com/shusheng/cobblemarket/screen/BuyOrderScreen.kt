@@ -58,7 +58,6 @@ import java.util.UUID
 import com.shusheng.cobblemarket.client.drawItemWithBar
 import com.shusheng.cobblemarket.client.PointsStateCache
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
-import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
 import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
 import com.shusheng.cobblemarket.client.amountWithUnit
 import com.shusheng.cobblemarket.currency.CurrencyService
@@ -617,12 +616,10 @@ class BuyOrderScreen(
         requestBuyOrderList()
     }
 
-    /** 刷新货币按钮外观：主货币显示 `₽`，RP 显示图标（与市场/拍卖/上架界面同一套口径）。
+    /** 刷新货币按钮外观（三态：RP 图标 / 物品图标 / ₽ —— 见 [updateCurrencyButtonIcon]）。
      *  列表按钮与创建对话框按钮共用（[points] 由各自的币种状态传入） */
-    private fun updateCurrencyButton(btn: NineSliceButton, points: Boolean) {
-        btn.setMessage(Text.literal(if (points) "" else "₽"))
-        btn.iconLeft = if (points) POINTS_SYMBOL_TEXTURE else null
-    }
+    private fun updateCurrencyButton(btn: NineSliceButton, points: Boolean) =
+        updateCurrencyButtonIcon(btn, points)
 
     /** 点创建对话框的货币按钮：「玩家间 RP 交易」没开就只给反馈、不切（**创建是拦截点**，与上架/拍卖创建一致） */
     private fun onCreateCurrencyClick() {
