@@ -2024,6 +2024,8 @@ class AuctionScreen(
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // ⚠ 余额包是**异步**到的（进服首帧缓存可能还空着）⇒ 每帧刷一次按钮外观，包一到就换成物品图标
+        currencyButton?.let { updateCurrencyButton(it) }
         // ⚠ **每帧**重算面板控件的显隐（照精灵市场与 `AdminPokemonScreen`）：面板开合走的是**动画**，
         //   而动画播完那一刻**没有任何事件回调** —— 只在 toggle / 滚轮 / 弹窗开关里算的话，
         //   展开动画结束后控件会永远停在「动画期间藏起来」的状态（用户 2026-09-25 报：展开后界面是空的）。

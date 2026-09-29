@@ -470,6 +470,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // ⚠ 余额包是**异步**到的（进服首帧缓存可能还空着）⇒ 每帧刷一次按钮外观，包一到就换成物品图标
+        currencyButton?.let { updateCurrencyButton(it) }
         // 模态层（弹窗）打开时收掉下层控件 —— 不收的话鼠标停在弹窗按钮上会弹下层按钮的 tooltip
         updateControlVisibility()
         // 弹窗打开时下层的货币图标不画：3D 图标不受遮罩压暗，会比压暗的文字亮一截

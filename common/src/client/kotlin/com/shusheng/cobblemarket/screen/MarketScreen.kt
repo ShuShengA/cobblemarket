@@ -1617,6 +1617,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // ⚠ 余额包是**异步**到的（进服首帧缓存可能还空着）⇒ 每帧刷一次按钮外观，包一到就换成物品图标
+        currencyButton?.let { updateCurrencyButton(it) }
         // 固拉多第七步（精灵市场背景下层水平右飞）画在 super.render 之前：
         // super.render 内部先调 renderBackground 画市场面板背景，精灵先画会被面板自然盖住
         // 弹窗打开时不画（与末尾上层绘制一致；dialogOpen 是后段局部变量，这里用等价条件）
