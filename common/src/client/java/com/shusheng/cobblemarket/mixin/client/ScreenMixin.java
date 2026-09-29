@@ -8,6 +8,7 @@ import com.shusheng.cobblemarket.client.CustomCursor;
 import com.shusheng.cobblemarket.client.EnterAnimation;
 import com.shusheng.cobblemarket.client.ItemCelebrationAnimation;
 import com.shusheng.cobblemarket.client.PokemonCelebrationAnimation;
+import com.shusheng.cobblemarket.screen.GatedFormScreen;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import org.spongepowered.asm.mixin.Mixin;
@@ -71,8 +72,13 @@ public abstract class ScreenMixin {
         // Esc 且无聚焦输入框：市场动画开关开启时改启动关闭动画，关闭时放行原逻辑（原版 Esc 直接关闭）；
         // focused 非空放行，保持原版输入框 Esc 行为；音效与动画解绑，两条路径都播
         if (keyCode == 256 && self.shouldCloseOnEsc() && self.getFocused() == null) {
+            // ⚠ 「叠在别的界面上」的界面（形态说明）关掉时要**回它的上层**，不是回游戏 ——
+            //   服主是在编辑窗配到一半时点进来的，回游戏等于把那一窗草稿一起丢了。
+            //   其余界面 backTo 为 null（= 原行为）。⚠ `start` 的默认参数 Java 不认，必须显式传。
+            Screen backTo = self instanceof GatedFormScreen
+                    ? ((GatedFormScreen) self).getBackScreen() : null;
             if (com.shusheng.cobblemarket.client.ClientConfig.INSTANCE.getMarketAnimation()) {
-                if (CloseAnimation.INSTANCE.start()) {
+                if (CloseAnimation.INSTANCE.start(backTo)) {
                     cir.setReturnValue(true);
                 }
             } else {

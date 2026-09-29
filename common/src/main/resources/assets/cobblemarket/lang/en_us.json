@@ -1224,5 +1224,13 @@
   "cobblemarket.buy_order.nature_label": "Nature: ",
   "cobblemarket.buy_order.item_label": "Item: ",
   "cobblemarket.buy_order.item_matches": "%s matches",
-  "cobblemarket.persist.save_failed": "⚠ Market data save failed! Listings/auctions/buy orders may not have been written to disk — check server disk space and permissions, and warn players as soon as possible"
+  "cobblemarket.persist.save_failed": "⚠ Market data save failed! Listings/auctions/buy orders may not have been written to disk — check server disk space and permissions, and warn players as soon as possible",
+  "cobblemarket.gated_form.title": "Forms That Need a Prerequisite",
+  "cobblemarket.gated_form.intro": "The form you picked normally needs a condition met before the Pokémon can transform — holding a specific item, knowing a certain move, or reaching a level. Listing it here creates the Pokémon already in that form, with that condition never met.",
+  "cobblemarket.gated_form.item.1": "The form's item invariant is broken (a Mega with no Mega Stone)",
+  "cobblemarket.gated_form.item.2": "A held-item slot is freed up for a second item",
+  "cobblemarket.gated_form.item.3": "Base stats, typing, ability and movepool are permanently the form's",
+  "cobblemarket.gated_form.item.4": "Add-ons treat \"it already is that form\" as fact — it cannot be undone",
+  "cobblemarket.gated_form.outro": "Only list it this way if you really want players to get the form directly. Otherwise list the normal form and let players transform it themselves.",
+  "cobblemarket.gated_form.button_tip": "Prerequisite required\nClick for details"
 }
