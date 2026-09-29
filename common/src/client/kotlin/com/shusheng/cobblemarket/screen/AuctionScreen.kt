@@ -5,6 +5,8 @@ import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.util.TypeFilter
 import com.shusheng.cobblemarket.client.clampTooltipRows
+import com.shusheng.cobblemarket.client.currencyUnitWidth
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.FilterPanelAnimation
 import com.shusheng.cobblemarket.client.heldIconStack
 import com.shusheng.cobblemarket.client.heldIconStackForModel
@@ -17,7 +19,6 @@ import com.shusheng.cobblemarket.client.PointsStateCache
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
 import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
-import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.CurrencyService
 
@@ -312,21 +313,20 @@ class AuctionScreen(
      *  单位按**这场拍卖自己的币种**（主货币 ₽ / RP 图标），走统一入口 `amountWithUnit` */
     private fun displayPriceText(entry: AuctionEntry): Text {
         val price = if (entry.currentPrice > 0) entry.currentPrice else entry.startingPrice
-        val priceT = com.shusheng.cobblemarket.client.amountWithUnit(
-            com.shusheng.cobblemarket.client.formatPrice(price), entry.isPoints, "", inline = true
-        ).formatted(Formatting.GOLD)
+        // ⚠ **不含货币单位** —— 单位由调用方补画在行尾（物品货币时是那件物品的图标、RP 时是字形图标）。
+        //   末尾那个空格留在文本里，调用方按 `getWidth(本文本)` 就能定位单位
+        val priceT = Text.literal(com.shusheng.cobblemarket.client.formatPrice(price) + " ").formatted(Formatting.GOLD)
         return if (entry.currentPrice > 0) priceT
         else Text.translatable("cobblemarket.auction.from").append(priceT)
     }
 
-    /** 行内价格（缩写、无「起拍」前缀，与物品市场/求购单行内一致）：悬停与出价弹窗仍走 [displayPriceText] 千分位 */
-    private fun displayPriceCompactText(entry: AuctionEntry): Text =
-        com.shusheng.cobblemarket.client.amountWithUnit(
-            com.shusheng.cobblemarket.client.formatPriceShort(
-                if (entry.currentPrice > 0) entry.currentPrice else entry.startingPrice
-            ),
-            entry.isPoints, "", inline = true
-        ).formatted(Formatting.GOLD)
+    /** 行内价格（缩写、无「起拍」前缀，与物品市场/求购单行内一致）：悬停与出价弹窗仍走 [displayPriceText] 千分位。
+     *  ⚠ **不含货币单位**（2026-09-29）—— 物品本位货币时单位是**物品图标**、拼不进 Text，由调用方补画；
+     *    末尾那个空格留在文本里，调用方按 `getWidth(本文本)` 就能定位单位 */
+    private fun displayPriceCompactText(entry: AuctionEntry): Text {
+        val price = if (entry.currentPrice > 0) entry.currentPrice else entry.startingPrice
+        return Text.literal(com.shusheng.cobblemarket.client.formatPriceShort(price) + " ").formatted(Formatting.GOLD)
+    }
 
     private fun typeColor(tk: String) = when (tk.substringAfterLast(".").lowercase()) {
         "normal" -> 0xAAAA99; "fire" -> 0xFF4422; "water" -> 0x3399FF
@@ -442,7 +442,7 @@ class AuctionScreen(
                 leftX + panelWidth - 74, 13, 20, 16, Text.literal(""), { onCurrencyClick() },
                 iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
                 iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
-                tooltip = Text.translatable("cobblemarket.gui.currency_switch", inlineCurrencyUnit(), CurrencyService.pointsIcon())
+                tooltip = Text.translatable("cobblemarket.gui.currency_switch", com.shusheng.cobblemarket.client.activeCurrencyUnit(), CurrencyService.pointsIcon())
         ).also {
             updateCurrencyButton(it)
             addDrawableChild(it)
@@ -1587,14 +1587,12 @@ class AuctionScreen(
     private fun auctionRightColumnLines(entry: AuctionEntry): List<Text> = listOf(
         Text.translatable("cobblemarket.auction.seller").append(entry.sellerName),
         Text.translatable("cobblemarket.auction.current_price").append(displayPriceText(entry)),
+        // ⚠ 后三行的货币单位**不拼进文本** —— 由 `auctionLine` 补画在行尾（物品货币时是物品图标、
+        //   RP 时是字形图标）；末尾那个空格留着，`auctionLine` 按 `getWidth(本行)` 定位单位
         Text.translatable("cobblemarket.auction.starting_price_label").append(
-            com.shusheng.cobblemarket.client.amountWithUnit(
-                com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice), entry.isPoints, "", inline = true
-            ).formatted(Formatting.GOLD)),
+            Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice)} ").formatted(Formatting.GOLD)),
         Text.translatable("cobblemarket.auction.min_increment_label").append(
-            com.shusheng.cobblemarket.client.amountWithUnit(
-                com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement), entry.isPoints, "", inline = true
-            ).formatted(Formatting.GOLD))
+            Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ").formatted(Formatting.GOLD))
     )
 
     private fun renderBidDialogBackground(context: DrawContext, delta: Float) {
@@ -1633,7 +1631,13 @@ class AuctionScreen(
             val nameW = textRenderer.getWidth(displayName(entry)) + 60
             // 右列（拍卖信息）实测最宽：金额随挂单变化（100,000,000 这类），不量的话会顶出弹窗右边框
             // ⚠ 量的是 [auctionRightColumnLines] —— **与下面渲染用的是同一份 Text**（同源，别各拼各的）
-            rightW = auctionRightColumnLines(entry).maxOf { textRenderer.getWidth(it) }
+            // ⚠ 但货币单位**画在行尾**、不拼进文本（见 auctionLine 的 unitColor）⇒ 带金额的后三行
+            //   实际宽 = 文本宽 + 单位宽；首行「卖家」没有单位，不能加
+            val rightLines = auctionRightColumnLines(entry)
+            val rightUnitW = currencyUnitWidth(textRenderer, entry.isPoints)
+            rightW = rightLines.mapIndexed { i, t ->
+                textRenderer.getWidth(t) + if (i == 0) 0 else rightUnitW
+            }.max()
             // 左列(nameW) + 右列(rightW + 30：右边距 10、与左列间隙 20) —— 右列宽跟着实测走，
             // 不能再写成「距右缘固定 k」：那样弹窗加宽时右列跟着右移，可用宽永远不变
             (maxOf(320, nameW + rightW + 30)).coerceAtMost(width - 20)
@@ -1857,16 +1861,22 @@ class AuctionScreen(
         // ── 右列：竞拍信息 ──
         val auctionX = dialogX + dialogW - (if (entry.type == "POKEMON") rightW + 20 else 140)
         var ay = dialogY + 28
-        fun auctionLine(text: String, color: Int = 0xFFFFFF) {
-            context.drawTextWithShadow(textRenderer, text, auctionX, ay, color)
-            ay += 10
-        }
-        fun auctionLine(text: Text, color: Int = 0xFFFFFF) {
-            context.drawTextWithShadow(textRenderer, text, auctionX, ay, color)
+        // ⚠ 货币单位**不拼进文本**，而是画完本行后补在行尾（物品货币时就是那件物品的图标）：
+        //   由 `unitColor` 非空开启，颜色照同一行里金额那一段（金额金色 ⇒ 单位也金色）
+        // ⚠ 弹窗自己的货币图标不受门禁管（同 EntryBadgeRenderer.drawInfoLines 的说明）：
+        //   遮罩是这个界面自己画的，不关掉的话弹窗里的单位会被自己的遮罩挡住
+        com.shusheng.cobblemarket.client.suppressCurrencyIcons = false
+        fun auctionLine(text: Text, color: Int = 0xFFFFFF, unitColor: Int? = null) {
+            val w = context.drawTextWithShadow(textRenderer, text, auctionX, ay, color)
+            if (unitColor != null) drawCurrencyUnit(context, textRenderer, entry.isPoints, w, ay, unitColor)
             ay += 10
         }
         // 卖家 / 当前价 / 起拍价 / 最低加价：**与上面量宽度用的是同一份 Text**（同源）
-        auctionRightColumnLines(entry).forEach { auctionLine(it) }
+        // ⚠ 后三行带金额 ⇒ 货币单位由 auctionLine 补画在行尾（物品货币时是物品图标、RP 时是字形图标），
+        //   颜色跟金额一起走金色；首行「卖家」没有单位，传 null
+        auctionRightColumnLines(entry).forEachIndexed { i, line ->
+            auctionLine(line, unitColor = if (i == 0) null else 0xFFAA00)
+        }
         auctionLine(
             Text.translatable("cobblemarket.auction.ends").append(
                 com.shusheng.cobblemarket.util.RemainingTime.text(entry.endsAt, "cobblemarket.auction.ending")
@@ -2164,11 +2174,13 @@ class AuctionScreen(
                     textRenderer, countSuffix, leftX + 28 + textRenderer.getWidth(name), y + 7, 0xFFFFFF)
             }
 
-            // 当前价（行内缩写）+ 出价次数（灰，拆段）：货币单位紧跟 ×次数，中间不留空格
+            // 当前价（行内缩写）+ 货币单位 + 出价次数（灰，拆段）：单位夹在价格与次数之间，
+            // 三者都是独立画的（物品货币时单位是图标，进不了字符串）
             val priceStr = displayPriceCompactText(entry)
             val bidPart = if (entry.bidCount > 0) "×${entry.bidCount}" else ""
+            val priceUnitW = currencyUnitWidth(textRenderer, entry.isPoints)
             // 价格区右端与出价按钮（左缘 leftX+panelWidth-50）留 4px
-            val priceX = leftX + panelWidth - 54 - textRenderer.getWidth(priceStr) - textRenderer.getWidth(bidPart)
+            val priceX = leftX + panelWidth - 54 - textRenderer.getWidth(priceStr) - priceUnitW - textRenderer.getWidth(bidPart)
 
             // 价格左侧锤子图标：默认静止，警告声到达时切换敲击状态约 0.3 秒（视觉联动）
             val hammerTex = if ((hammerHitUntil[entry.id] ?: 0L) > System.currentTimeMillis())
@@ -2183,9 +2195,11 @@ class AuctionScreen(
             context.matrices.pop()
 
             context.drawTextWithShadow(textRenderer, priceStr, priceX, y + 7, 0xFFFFFF)
+            val unitX = priceX + textRenderer.getWidth(priceStr)
+            drawCurrencyUnit(context, textRenderer, entry.isPoints, unitX, y + 7, 0xFFAA00)
             if (bidPart.isNotEmpty()) {
                 context.drawTextWithShadow(textRenderer, bidPart,
-                    priceX + textRenderer.getWidth(priceStr), y + 7, 0xAAAAAA)
+                    unitX + priceUnitW, y + 7, 0xAAAAAA)
             }
 
             // 结束倒计时 + 卖家头像：头像位置与精灵市场对齐（leftX+149，各行对齐）；
@@ -2375,6 +2389,9 @@ class AuctionScreen(
         //（2026-09-29 用户报「拍卖场的精灵行在没有证章时多显示了一条分割线」）
         if (tooltipCacheMarksLine >= 0) lines.add(null to 0xFFFFFF)
         lines.add(Text.translatable("cobblemarket.auction.seller").append(entry.sellerName) to 0xFFFFFF)
+        // ⚠ 货币单位**不拼进文本**，由下面的渲染循环补在行尾（物品货币时是那件物品的图标）——
+        //   先记下这行的下标（lines 里还混着分割线 / 技能块 / 证章块这些 null 行，不能靠数）
+        val priceRow = lines.size
         val priceLine = Text.translatable("cobblemarket.auction.current_price").append(displayPriceText(entry))
         lines.add((if (entry.bidCount > 0)
             priceLine.append(Text.literal("  ×${entry.bidCount}").formatted(Formatting.GRAY))
@@ -2392,9 +2409,11 @@ class AuctionScreen(
             lines.add(Text.literal(Text.translatable("cobblemarket.auction.mine_mark").string) to 0x55FF55)
         }
 
+        // ⚠ 价格行还要加单位宽（单位画在行尾、不在文本里）—— 漏了提示框会算窄、图标顶出边框
+        val priceUnitW = currencyUnitWidth(textRenderer, entry.isPoints)
         var mw = tooltipCacheMaxWidth
         for (i in tooltipCacheStaticLines.size until lines.size) {
-            lines[i].first?.let { t -> mw = maxOf(mw, textRenderer.getWidth(t)) }
+            lines[i].first?.let { t -> mw = maxOf(mw, textRenderer.getWidth(t) + if (i == priceRow) priceUnitW else 0) }
         }
         val heldItemLine = tooltipCacheHeldLine
         val movesLine = tooltipCacheMovesLine
@@ -2449,6 +2468,11 @@ class AuctionScreen(
                     )
                 }
                 rowY += 10
+            } else if (i == priceRow) {
+                // 当前价行：货币单位补在行尾（物品货币时是那件物品的图标），颜色照金额那段的金色
+                val w = context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
+                drawCurrencyUnit(context, textRenderer, entry.isPoints, w, rowY, 0xFFAA00)
+                rowY += 10
             } else if (i == 0) {
                 // 第一行（名字★Lv）带公母图标
                 EntryBadgeRenderer.drawNameLineLeft(context, line, entry.extraData["gender"] ?: "", tx, rowY, color, entry.extraData["size"] ?: "")
@@ -2491,6 +2515,9 @@ class AuctionScreen(
             itemTooltipAdvancedType = null
         }
         val lines = staticBase.toMutableList()
+        // ⚠ 货币单位**不拼进文本**，由下面的渲染循环补在行尾（物品货币时是那件物品的图标）——
+        //   先记下这行的下标（lines 里还混着分割线 / 技能块 / 证章块这些 null 行，不能靠数）
+        val priceRow = lines.size
         val priceLine = Text.translatable("cobblemarket.auction.current_price").append(displayPriceText(entry))
         lines.add((if (entry.bidCount > 0)
             priceLine.append(Text.literal("  ×${entry.bidCount}").formatted(Formatting.GRAY))
@@ -2508,8 +2535,10 @@ class AuctionScreen(
             lines.add(Text.literal(Text.translatable("cobblemarket.auction.mine_mark").string) to 0x55FF55)
         }
 
+        // ⚠ 价格行还要加单位宽（单位画在行尾、不在文本里）—— 漏了提示框会算窄、图标顶出边框
+        val priceUnitW = currencyUnitWidth(textRenderer, entry.isPoints)
         for (i in staticBase.size until lines.size) {
-            maxWidth = maxOf(maxWidth, textRenderer.getWidth(lines[i].first))
+            maxWidth = maxOf(maxWidth, textRenderer.getWidth(lines[i].first) + if (i == priceRow) priceUnitW else 0)
         }
 
         // 行数按屏幕高钳制（Shift / Ctrl 展开可能几十行）—— 见 [clampTooltipRows]
@@ -2528,7 +2557,9 @@ class AuctionScreen(
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
         lines.forEachIndexed { i, (line, color) ->
-            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
+            val w = context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
+            // 当前价行：货币单位补在行尾（物品货币时是那件物品的图标）
+            if (i == priceRow) drawCurrencyUnit(context, textRenderer, entry.isPoints, w, ty + i * 10, 0xFFAA00)
         }
         context.matrices.pop()
     }

@@ -1074,7 +1074,9 @@ fun balanceHudPixelPos(screenW: Int, screenH: Int, hudW: Int, hudH: Int): Pair<I
 
 /** 余额 HUD 当前尺寸（宽随最长那行文字自适应，**高按显示几行**：只有主货币 = 16，带 RP = 32） */
 fun balanceHudSize(client: net.minecraft.client.MinecraftClient): Pair<Int, Int> {
-    val mainW = client.textRenderer.getWidth("${hudBalanceText(client)} ${inlineCurrencyUnit()}")
+    // ⚠ 宽度必须与绘制同源（`amountUnitWidth`）：物品本位货币时单位是那件物品的图标，
+    //   与 `₽` 宽度不同 —— 自己写 `getWidth("$金额 ₽")` 会算窄，图标就压出框外
+    val mainW = amountUnitWidth(client.textRenderer, hudBalanceText(client), isPoints = false)
     val hasPoints = pointsHudRowVisible()
     val pointsW = if (hasPoints) client.textRenderer.getWidth(BalanceCache.pointsBalance) + unitGap(client.textRenderer) + POINTS_SYMBOL_INLINE_SIZE else 0
     val h = if (hasPoints) HUD_TWO_LINE_H else HUD_ROW_H
@@ -1160,7 +1162,10 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext, onTop: Boole
         if (marketScreen) return           // HUD 层：本模组界面跳过（顶层那份会画，避免重影）
         if (screen != null && !vanillaScreen) return
     }
-    val text = "${hudBalanceText(client)} ${inlineCurrencyUnit()}"
+    val hudAmount = hudBalanceText(client)
+    // 这段 text 只用于 ON_CHANGE 模式的变动比对（单位一并参与：切换货币也算「变了」），
+    // 真正画到屏幕上的是下面 amountUnitWidth / drawAmountWithUnit 那一对
+    val text = "$hudAmount ${inlineCurrencyUnit()}"
     // 余额变动检测（每帧，OFF 模式也跟踪避免切回时误报）：差值驱动 +绿/-红浮字
     val rawNow = hudBalanceRaw(client)
     if (lastBalanceRaw != null && rawNow != lastBalanceRaw!!) {
@@ -1210,7 +1215,9 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext, onTop: Boole
     val showPointsRow = pointsHudRowVisible()
 
     // 背景框：HUD 专属九宫格贴图（40×40），宽随**最长那行**自适应，高按显示几行（16 / 32）
-    val textW = client.textRenderer.getWidth(text)
+    // ⚠ 主行宽度必须与绘制同源（`amountUnitWidth`）：物品本位货币时单位是那件物品的图标，
+    //   与 `₽` 宽度不同 —— 按「金额 + ₽」的宽度算会让图标压出框外
+    val textW = amountUnitWidth(client.textRenderer, hudAmount, isPoints = false)
     val pointsInnerW = client.textRenderer.getWidth(BalanceCache.pointsBalance)
     val pointsTextW = pointsInnerW + unitGap(client.textRenderer) + POINTS_SYMBOL_INLINE_SIZE
     val hudW = maxOf(textW, if (showPointsRow) pointsTextW else 0) + 10
@@ -1226,7 +1233,8 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext, onTop: Boole
         hudX, hudY, hudW, hudH,
         0, HUD_BALANCE_BG_TEX_H
     )
-    context.drawTextWithShadow(client.textRenderer, text, hudX + 5, hudY + textDy, 0xFFAA00)
+    // ⚠ 主行：金额与单位**拆开画**（物品本位货币时单位是那件物品的图标，拼不进 Text）
+    drawAmountWithUnit(context, client.textRenderer, hudAmount, false, hudX + 5, hudY + textDy, 0xFFAA00)
     if (showPointsRow) {
         // RP 行：**数字在前、图标在后当单位**（与主行 `1000 ₽` 同一个格局）——
         // 图标放前面的话它占着左边起始位、数字被顶到右边，两行的数字就不在一条竖线上了。

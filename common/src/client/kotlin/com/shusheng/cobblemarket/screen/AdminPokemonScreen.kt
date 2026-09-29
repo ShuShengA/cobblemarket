@@ -6,6 +6,10 @@ import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.util.TypeFilter
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.amountUnitWidth
+import com.shusheng.cobblemarket.client.drawAmountWithUnit
+import com.shusheng.cobblemarket.client.currencyUnitWidth
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.TooltipPlacement
@@ -237,7 +241,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 Text.literal(""), { onCurrencyClick() },
                 iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
                 iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
-                tooltip = Text.translatable("cobblemarket.gui.currency_switch", com.shusheng.cobblemarket.client.inlineCurrencyUnit(), CurrencyService.pointsIcon())
+                tooltip = Text.translatable("cobblemarket.gui.currency_switch", com.shusheng.cobblemarket.client.activeCurrencyUnit(), CurrencyService.pointsIcon())
         ).also {
             updateCurrencyButton(it)
             addDrawableChild(it)
@@ -1346,13 +1350,14 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             context.drawText(textRenderer, levelText, leftX + 169, y + 7, 0x000000, false)
 
             // 价格右对齐到取消按钮左缘（行内缩写，同精灵市场；悬停窗仍为完整千分位）
-            // 单位走统一入口，币种取**这条挂单自己的**（行内用恒定 ₽ 写法）
-            val priceText = com.shusheng.cobblemarket.client.amountWithUnit(
-                com.shusheng.cobblemarket.client.formatPriceShort(entry.price),
-                entry.isPoints, entry.currencyName, inline = true
-            )
+            // 单位**不拼进文本**，由下面的绘制补一笔（物品货币时是那件物品的图标）。
+            // ⚠ 币种取**这条挂单自己的**（`entry.isPoints`）—— 漏了会把 RP 价格标成 ₽
+            val priceAmount = com.shusheng.cobblemarket.client.formatPriceShort(entry.price)
             val btnLeft = leftX + panelWidth - 42
-            context.drawTextWithShadow(textRenderer, priceText, btnLeft - textRenderer.getWidth(priceText) - 4, y + 7, 0xFFAA00)
+            drawAmountWithUnit(
+                context, textRenderer, priceAmount, entry.isPoints,
+                btnLeft - amountUnitWidth(textRenderer, priceAmount, entry.isPoints) - 4, y + 7, 0xFFAA00
+            )
         }
 
         if (confirmEntry == null && hoveredRow in displayList.indices) {
@@ -1429,6 +1434,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private var tooltipCacheKey: java.util.UUID? = null
     private var tooltipCacheLines: List<Pair<Text?, Int>> = emptyList()
     private var tooltipCacheHeldLine = -1
+    /** 价格行下标（货币单位补画用；-1 = 无）—— ⚠ 行列表混着分割线/技能块/证章块那些 null 行，不能靠数 */
+    private var tooltipCachePriceLine = -1
     private var tooltipCacheMaxWidth = 0
     private var tooltipCacheMovesLine = -1
     private var tooltipCacheMarksLine = -1
@@ -1489,19 +1496,27 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             }
             // 证章区块：技能块下方，图标行 + 下分割线（与技能块共用上分割线；照市场悬停 tooltip）
             var marksLine = -1
+            var priceLine = -1
             if (entry.marks.isNotEmpty()) {
                 marksLine = lines.size
                 lines.add(null to 0)
                 lines.add(null to 0)
             }
             lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(Text.literal(entry.sellerName)) to w)
+            // ⚠ 价格行的货币单位**不拼进文本**，由绘制循环补在行尾（物品货币时是那件物品的图标、
+            //   RP 时是字形图标）—— 先记下标（lines 里混着 null 行，不能靠数）
+            priceLine = lines.size
             lines.add(Text.translatable("cobblemarket.gui.tooltip_price").append(
-                com.shusheng.cobblemarket.client.amountWithUnit(
-                    com.shusheng.cobblemarket.client.formatPrice(entry.price), entry.isPoints, entry.currencyName
-                ).formatted(Formatting.GOLD)) to w)
+                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ").formatted(Formatting.GOLD)) to w)
 
+            // ⚠ 价格行还要加单位宽（单位画在行尾、不在文本里）—— 漏了提示框会算窄、图标顶出边框
+            val priceUnitW = currencyUnitWidth(textRenderer, entry.isPoints)
             var maxWidth = 0
-            lines.forEach { it.first?.let { t -> maxWidth = maxOf(maxWidth, textRenderer.getWidth(t)) } }
+            lines.forEachIndexed { i, (line, _) ->
+                line?.let { t ->
+                    maxWidth = maxOf(maxWidth, textRenderer.getWidth(t) + if (i == priceLine) priceUnitW else 0)
+                }
+            }
             // 名字行尾部图标（公母 + 体型徽章）不计入文本宽度，单独补上
             lines[0].first?.let { maxWidth = maxOf(maxWidth, EntryBadgeRenderer.nameLineWidth(it, entry.gender, entry.sizeCategory)) }
             if (heldItemLine >= 0) {
@@ -1512,6 +1527,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             maxWidth = maxOf(maxWidth, EntryBadgeRenderer.movesBlockWidth(entry.moves))
             tooltipCacheLines = lines
             tooltipCacheHeldLine = heldItemLine
+            tooltipCachePriceLine = priceLine
             tooltipCacheMaxWidth = maxWidth
             tooltipCacheMovesLine = movesLine
             tooltipCacheMarksLine = marksLine
@@ -1521,6 +1537,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA
         }
         val heldItemLine = tooltipCacheHeldLine
+        val priceLine = tooltipCachePriceLine
         val maxWidth = tooltipCacheMaxWidth
         val movesLine = tooltipCacheMovesLine
         val marksLine = tooltipCacheMarksLine
@@ -1575,6 +1592,11 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             } else if (i == 0) {
                 // 第一行（名字★Lv）带公母图标
                 EntryBadgeRenderer.drawNameLineLeft(context, line, entry.gender, tx, rowY, color, entry.sizeCategory)
+                rowY += 10
+            } else if (i == priceLine) {
+                // 价格行：货币单位补在行尾（物品货币时是那件物品的图标、RP 时是字形图标）
+                val w = context.drawTextWithShadow(textRenderer, line, tx, rowY, color)
+                drawCurrencyUnit(context, textRenderer, entry.isPoints, w, rowY, 0xFFAA00)
                 rowY += 10
             } else {
                 context.drawTextWithShadow(textRenderer, line, tx, rowY, color)

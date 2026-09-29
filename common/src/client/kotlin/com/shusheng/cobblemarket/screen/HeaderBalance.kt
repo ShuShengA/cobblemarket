@@ -3,6 +3,8 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.BalanceCache
 import com.shusheng.cobblemarket.client.amountWithUnit
 import com.shusheng.cobblemarket.client.formatPriceShortLong
+import com.shusheng.cobblemarket.client.currencyUnitWidth
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.font.TextRenderer
@@ -44,14 +46,22 @@ fun drawHeaderBalance(
 
     // 标题左缘再留 6px 间隙，避免贴到字上
     val avail = centerX - titleWidth / 2 - 6 - x
-    // 单位走全项目统一入口 amountWithUnit（RP 侧是图标，必须 Text 拼接）
+    // ⚠ 金额与货币单位**拆开画**（2026-09-29）：物品本位货币时单位是**物品图标**，拼不进字符串；
+    //   RP 单位虽是字形，也走同一条统一路径（`drawCurrencyUnit` 内部按 `isPoints` 分派）。
+    //   可用宽里先把「空格 + 单位」那一份让出来，否则单位会被截断/挤出标题左缘
+    val unitGapW = textRenderer.getWidth(" ")
+    val unitW = unitGapW + currencyUnitWidth(textRenderer, isPoints)
     fun balLine(amount: String) = Text.translatable(
         "cobblemarket.gui.balance",
-        amountWithUnit(amount, isPoints, BalanceCache.currencyName, inline = true).formatted(Formatting.GOLD),
+        Text.literal(amount).formatted(Formatting.GOLD),
     )
     val balFull = balLine(balRaw)
-    val balShown = if (textRenderer.getWidth(balFull) <= avail) balFull
+    val balShown = if (textRenderer.getWidth(balFull) + unitW <= avail) balFull
     else balLine(formatPriceShortLong(if (isPoints) BalanceCache.pointsRaw else BalanceCache.balanceRaw))
 
-    context.drawTextWithShadow(textRenderer, TextUtil.truncateStyled(balShown, avail), x, y, 0xFFFFFF)
+    val drawn = context.drawTextWithShadow(
+        textRenderer,
+        TextUtil.truncateStyled(balShown, (avail - unitW).coerceAtLeast(0)), x, y, 0xFFFFFF,
+    )
+    drawCurrencyUnit(context, textRenderer, isPoints, drawn + unitGapW, y, 0xFFAA00)
 }

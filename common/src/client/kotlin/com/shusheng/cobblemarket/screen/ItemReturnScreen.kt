@@ -1,6 +1,8 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.clampTooltipRows
+import com.shusheng.cobblemarket.client.currencyUnitWidth
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.network.ClaimItemReturnPayload
 import com.shusheng.cobblemarket.network.ItemEntry
@@ -289,20 +291,24 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
             lines.add(Text.literal(entry.itemId) to 0xFFFFFF)
         }
         lines.add(Text.translatable("cobblemarket.gui.tooltip_seller").append(entry.sellerName) to 0xFFFFFF)
-        // 价格行：标签默认色，金额段蓝色（2026-08-24 拍板）；
-        // 单位走统一入口，币种取**这条挂单自己的**（待领取里可能就是 RP 单）
+        // 价格行：标签默认色，金额段蓝色（2026-08-24 拍板）。
+        // ⚠ 货币单位**不拼进文本**，由下面的绘制循环补在行尾（物品货币时是那件物品的图标、
+        //   RP 时是字形图标）—— 币种取**这条挂单自己的**（待领取里可能就是 RP 单）
+        val priceRow = lines.size
         lines.add(Text.translatable("cobblemarket.item.tooltip_price").append(
-            com.shusheng.cobblemarket.client.amountWithUnit(
-                com.shusheng.cobblemarket.client.formatPrice(entry.price), entry.isPoints, entry.currencyName
-            ).formatted(Formatting.GOLD)
+            Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.price)} ").formatted(Formatting.GOLD)
         ) to 0xFFFFFF)
         lines.add(Text.literal("×${entry.count}") to 0xFFFFFF)
 
         // 行数按屏幕高钳制（Shift / Ctrl 展开可能几十行）—— 见 [clampTooltipRows]
         clampTooltipRows(lines, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA }
             .let { if (it !== lines) { lines.clear(); lines.addAll(it) } }
+        // ⚠ 价格行还要加单位宽（单位画在行尾、不在文本里）—— 漏了提示框会算窄、图标顶出边框
+        val priceUnitW = currencyUnitWidth(textRenderer, entry.isPoints)
         var maxWidth = 0
-        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.first)) }
+        lines.forEachIndexed { i, (line, _) ->
+            maxWidth = maxOf(maxWidth, textRenderer.getWidth(line) + if (i == priceRow) priceUnitW else 0)
+        }
 
         val padding = 4
         val tx = minOf(mouseX + 12, width - maxWidth - 12)
@@ -314,7 +320,10 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
         lines.forEachIndexed { i, (line, color) ->
-            context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
+            val w = context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, color)
+            // ⚠ 价格行的货币单位补在行尾（物品货币时是那件物品的图标、RP 时是字形图标）；
+            //   行被 clampTooltipRows 截掉时 i 对不上，天然不补
+            if (i == priceRow) drawCurrencyUnit(context, textRenderer, entry.isPoints, w, ty + i * 10, 0xFFAA00)
         }
         context.matrices.pop()
     }

@@ -36,6 +36,13 @@ const val BUTTON_TEX_H_S = 80
 /** 弹窗全屏半透明遮罩：关闭动画进行中跳过绘制——按 E/Esc 后游戏画面立刻变亮，遮罩不随界面上缩 */
 fun drawScreenDimMask(context: DrawContext, width: Int, height: Int) {
     if (CloseAnimation.isActive()) return
+    // ⚠ **遮罩一画，下层的货币图标就要停**（2026-09-29）：
+    //   货币图标是 3D 模型，**不响应这层半透明黑**（遮罩压暗文字/贴图，压不住 3D）——
+    //   于是下层图标比周围压暗的文字亮一截，看着像"高亮浮在弹窗上"。
+    //   遮罩在 `renderBackground` 里画、早于 `render` 的下层内容，所以在这里置位**同一帧就生效**；
+    //   复位由 `ScreenMixin` 每帧 HEAD 负责（`CurrencyDisplayKt.setSuppressCurrencyIcons(false)`），
+    //   界面自己不用管 —— 这样全项目「只要有弹窗遮罩」的地方都自动覆盖，不必逐个界面接。
+    com.shusheng.cobblemarket.client.suppressCurrencyIcons = true
     context.fill(0, 0, width, height, 0xC0000000.toInt())
 }
 

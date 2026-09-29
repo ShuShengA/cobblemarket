@@ -1,7 +1,9 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.currencyUnitWidth
+import com.shusheng.cobblemarket.client.drawAmountLine
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.formatPriceLong
-import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.network.RepayEntry
 import com.shusheng.cobblemarket.network.RepayListDataPayload
 import com.shusheng.cobblemarket.network.RequestRepayListPayload
@@ -144,20 +146,24 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
             val statusText = Text.translatable("cobblemarket.loan_history.status.${e.status}").string
             context.drawTextWithShadow(textRenderer, statusText, x, y + 8, statusColor(e.status))
             x += textRenderer.getWidth(statusText) + 6
+            // ⚠ 金额与单位拆开画（物品货币时单位是物品图标）：词条的单位参数传空串占位，
+            //   右对齐宽度与截断预算都要**把单位那份算进去**（单位是货币符号，不能被截掉）
             val remainingText = Text.translatable(
                 "cobblemarket.repay.remaining",
                 formatPriceLong(e.remaining),
-                inlineCurrencyUnit()
+                Text.literal("")
             ).string
             // 剩余本金右对齐到行按钮左侧（照列表界面惯例）；空间不足退回 x 截断绘制
             val btnLeftX = leftX + panelWidth - 54
-            val remX = btnLeftX - 5 - textRenderer.getWidth(remainingText)
+            val remGapW = textRenderer.getWidth(" ")
+            val remUnitW = remGapW + currencyUnitWidth(textRenderer, false)
+            val remX = btnLeftX - 5 - textRenderer.getWidth(remainingText) - remUnitW
             val drawX = if (remX > x) remX else x
-            context.drawTextWithShadow(
-                textRenderer,
-                TextUtil.truncateString(remainingText, btnLeftX - 5 - drawX),
-                drawX, y + 8, 0x55FFFF
+            val remShown = TextUtil.truncateString(
+                remainingText, (btnLeftX - 5 - drawX - remUnitW).coerceAtLeast(0)
             )
+            val remDrawn = context.drawTextWithShadow(textRenderer, remShown, drawX, y + 8, 0x55FFFF)
+            drawCurrencyUnit(context, textRenderer, false, remDrawn + remGapW, y + 8, 0x55FFFF)
         }
 
         if (entries.size > maxVisible) {
@@ -257,35 +263,41 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
             lineX, ly, 0x888888
         )
         ly += 18
-        context.drawTextWithShadow(
-            textRenderer,
+        // ⚠ 金额与单位拆开画（物品货币时单位是物品图标）：词条的单位参数传空串占位，见 drawAmountLine
+        drawAmountLine(
+            context, textRenderer, false,
             Text.translatable(
                 "cobblemarket.repay.dialog_period_due",
                 formatPriceLong(entry.periodPrincipal + entry.periodInterest),
-                inlineCurrencyUnit()
+                Text.literal("")
             ),
             lineX, ly, 0xFFFFFF
         )
         ly += 18
-        context.drawTextWithShadow(
-            textRenderer,
+        drawAmountLine(
+            context, textRenderer, false,
             Text.translatable(
                 "cobblemarket.repay.dialog_settle_total",
                 Text.literal(formatPriceLong(entry.settleTotal)).formatted(Formatting.GOLD),
-                Text.literal(inlineCurrencyUnit()).formatted(Formatting.GOLD)
+                Text.literal("")
             ),
-            lineX, ly, 0xFFFFFF
+            lineX, ly, 0xFFFFFF, unitColor = 0xFFAA00
         )
         ly += 18
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable(
-                "cobblemarket.repay.dialog_split",
-                "${formatPriceLong(entry.periodPrincipal)} ${inlineCurrencyUnit()}",
-                "${formatPriceLong(entry.periodInterest)} ${inlineCurrencyUnit()}"
-            ),
-            lineX, ly, 0x888888
+        // ⚠ 这一行**两个金额各带一个单位**，所以拆成「本金段 + 利息段」分别画（单位在物品货币时是图标）。
+        //   原词条 `repay.dialog_split`（"本期本金 %s + 利息 %s"）因此拆成 split_principal / split_interest 两条，
+        //   拼接结果与原词条逐字一致，中英语序各自成立
+        val splitP = Text.translatable(
+            "cobblemarket.repay.split_principal", Text.literal("${formatPriceLong(entry.periodPrincipal)} ")
         )
+        val splitPW = context.drawTextWithShadow(textRenderer, splitP, lineX, ly, 0x888888)
+        val splitPUnit = drawCurrencyUnit(context, textRenderer, false, lineX + splitPW, ly, 0x888888)
+        val splitIX = lineX + splitPW + splitPUnit
+        val splitI = Text.translatable(
+            "cobblemarket.repay.split_interest", Text.literal("${formatPriceLong(entry.periodInterest)} ")
+        )
+        val splitIW = context.drawTextWithShadow(textRenderer, splitI, splitIX, ly, 0x888888)
+        drawCurrencyUnit(context, textRenderer, false, splitIX + splitIW, ly, 0x888888)
         if (entry.dueCount > 0) {
             ly += 18
             context.drawTextWithShadow(
