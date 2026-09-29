@@ -1402,6 +1402,11 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
             )
         } catch (_: Exception) {
         }
+        // 不可交易：在这只图标上盖一把锁（Cobblemon 原版那张图，见 [EntryBadgeRenderer.drawUntradeableLock]）。
+        // ⚠ 取数走 [origIdx] —— 它恒是 [pokemonList] 的**原始下标**（筛选后也保持，见 indexedFilteredCache）
+        if (pokemonList.getOrNull(origIdx)?.tradeable == false) {
+            EntryBadgeRenderer.drawUntradeableLock(context, x, y, size)
+        }
     }
 
     // tooltip 内容缓存：内容只取决于条目，悬停同一行时每帧重建全部文本行是悬停掉帧主因
@@ -1603,7 +1608,20 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         // 展开浮层搬进右侧面板后不再盖住列表行，点击不必再让位（原先那层展开状态判断随之删掉）
         if (mx in lx.toDouble()..(lx + 296).toDouble() && my >= startY) {
             val row = ((my - startY) / rowHeight).toInt() + scrollOffset
-            if (row in filtered.indices) { selectedIndex = row; return true }
+            if (row in filtered.indices) {
+                // 不可交易的精灵**选不了**（与原版交换界面一致）：响一声失败音 + 一句说明。
+                // ⚠ 别静默 return —— 玩家点了没反应会以为是界面坏了
+                val picked = filtered[row]
+                if (!picked.tradeable) {
+                    playFailSound()
+                    client?.player?.sendMessage(
+                        Text.translatable("cobblemarket.trade.untradeable").formatted(Formatting.RED), false
+                    )
+                    return true
+                }
+                selectedIndex = row
+                return true
+            }
         }
         return r
     }

@@ -674,7 +674,16 @@ data class PokemonPreview(
      * ⚠ 只有球名的词条 key 不够 —— 直接念词条出来是**白字**（大师球在物品栏里是紫的），
      *   见 [com.shusheng.cobblemarket.util.ItemNameText.ballLine]。旧数据缺这一位 = 空串（回退白字）
      */
-    val ballItem: String = ""
+    val ballItem: String = "",
+    /**
+     * 这只**能不能交易**（官方 `Pokemon.tradeable`）：`false` = 不可交易。
+     *
+     * ⚠ **必须下发**：客户端要在「选择要上架的精灵」那几屏的行上画一把锁（与 Cobblemon 原版
+     *   交换界面**同一张图**），提前告诉玩家这只选不了 —— 光靠服务端拒绝的话，
+     *   玩家是「点了才知道不行」。
+     * ⚠ 默认 `true`：挂单行那两个构造点不传它，那些行本来也不会画锁。
+     */
+    val tradeable: Boolean = true
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(uuid); buf.writeString(species); buf.writeString(speciesId); buf.writeString(speciesName)
@@ -700,6 +709,7 @@ data class PokemonPreview(
         buf.writeInt(dmaxLevel)
         buf.writeString(originalTrainer)
         buf.writeString(ballItem)
+        buf.writeBoolean(tradeable)
     }
 
     companion object {
@@ -723,7 +733,8 @@ data class PokemonPreview(
             buf.readBoolean(),   // gmaxFactor：与 write 端严格同序（write 在 teraType 之后）
             buf.readInt(),       // dmaxLevel
             buf.readString(),    // originalTrainer
-            buf.readString()     // ballItem
+            buf.readString(),    // ballItem
+            buf.readBoolean()    // tradeable：与 write 端严格同序（write 在 ballItem 之后）
         )
     }
 }
@@ -1956,6 +1967,17 @@ object MarketNetwork {
                     sendToPlayer(
                         player,
                         MarketResultPayload(false, Text.translatable("cobblemarket.network.party_last"))
+                    )
+                    return@execute
+                }
+
+                // 不可交易：官方 `Pokemon.tradeable = false` 的精灵（原版交换界面会锁住这只）。
+                // ⚠ 我们这条路径必须同样遵守 —— 否则那个开关在我们这里形同虚设
+                //   （2026-09-30 用户实测：设了「可交易：否」照样能从市场 / 拍卖 / 求购转手）
+                if (!pokemon.tradeable) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.trade.untradeable"))
                     )
                     return@execute
                 }
@@ -3254,6 +3276,8 @@ object MarketNetwork {
             heldItemId = if (pokemon.heldItem().isEmpty) "" else Registries.ITEM.getId(pokemon.heldItem().item).toString(),
             heldItemNbt = encodeHeldItemNbt(pokemon.heldItem(), registryManager),
             heldItemVisible = pokemon.heldItemVisible,
+            // 不可交易标记：客户端据此在「选择要上架的精灵」行上画锁（见 PokemonPreview.tradeable）
+            tradeable = pokemon.tradeable,
             aspects = pokemon.aspects.toList(),
             evsHp = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP] ?: 0,
             evsAtk = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK] ?: 0,
