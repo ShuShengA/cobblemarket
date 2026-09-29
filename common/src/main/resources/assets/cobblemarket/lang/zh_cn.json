@@ -532,6 +532,7 @@
   "cobblemarket.network.inventory_full": "背包已满，请腾出空间再下架。",
   "cobblemarket.network.party_last": "队伍至少要保留一只精灵！",
   "cobblemarket.network.in_battle": "对战期间无法进行此操作，请战斗结束后再试",
+  "cobblemarket.trade.untradeable": "这只精灵不可交易",
   "cobblemarket.network.bought": "你购买了 %s，花费 %s %s！",
   "cobblemarket.network.sold": "你的 %s 已卖出！",
 
