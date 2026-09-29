@@ -109,6 +109,31 @@ object EntryBadgeRenderer {
     private const val SIZE_ICON_TEX_H = 16
     /** 徽章显示宽度（取整，居中排版用） */
     private const val SIZE_ICON_W = 19
+
+    /** Cobblemon 原版「不可交易」锁图标（⚠ **内部资源路径**，不是 API —— 见 [drawUntradeableLock]） */
+    private val UNTRADEABLE_LOCK_TEX =
+        Identifier.of("cobblemon", "textures/gui/trade/trade_slot_icon_locked.png")
+
+    /** 锁图的实际边长（20×20；绘制时按目标尺寸缩放采样） */
+    private const val LOCK_TEX_SIZE = 20
+
+    /**
+     * 锁占精灵图标的比例 —— **三成**（用户 2026-09-30 逐档试出来的：铺满 → 六成 → 一半都嫌大，
+     * 「这个大小让人觉得是不小心放歪了，而不是想放到左上角」⇒ 只有缩到角标那个量级才读得出是**刻意贴的**）。
+     */
+    private const val LOCK_SIZE_RATIO = 0.3f
+
+    /** 锁的绘制下限：图标再小也别缩到看不清（⚠ 调小 [LOCK_SIZE_RATIO] 时记得一起看它，会顶掉比例值） */
+    private const val LOCK_MIN = 5
+
+    /**
+     * 锁距精灵图标**左上角**的边距。
+     *
+     * ⚠ **不居中、还压到一半以下，是为了别挡精灵**（用户 2026-09-30 定）——
+     *   「**图标的动态（转头 / 待机动画）本来就是本模组的特色**，盖上一个大锁就只剩锁了，观感不佳」。
+     *   ⇒ 以后谁想把这个锁调大或挪回中间，先回来看一眼这句。
+     */
+    private const val LOCK_MARGIN = 1
     /** 名字后面多个徽章之间的空隙 */
     private const val BADGE_GAP = 3
 
@@ -132,6 +157,38 @@ object EntryBadgeRenderer {
             width = SIZE_ICON_TEX_W, height = SIZE_ICON_TEX_H, scale = SIZE_ICON_SCALE
         )
         return SIZE_ICON_W
+    }
+
+    /**
+     * 在精灵图标上盖一把「不可交易」的锁 —— **直接用 Cobblemon 原版那张图**。
+     *
+     * 为什么复用原版的图（用户 2026-09-30 定）：玩家在原版交换界面见过这把锁，
+     * 同一张图能直接建立「这只不能交易」的认知；自己画一个反而要重新教一遍。
+     *
+     * ⚠⚠ **这是 Cobblemon 的「内部资源路径」，不是 API** —— 官方升级挪了位置就会画成紫黑格。
+     *   它与 `SpeciesText.GATED_FORM_ASPECTS` 那类硬编码同性质：**跟一次 Cobblemon 大版本就复核一眼**
+     *   （图还在不在、尺寸变没变）。
+     *
+     * ⚠⚠ **别照搬它的尺寸**（2026-09-30 用户实测截图报「比整个精灵图标都大、跟行一样高」）：
+     *   Cobblemon 的槽位有 30 多像素、锁图 20 只占**六成**，而我们的图标边长本身就是 20
+     *   ⇒ 原样画等于把精灵整个盖住。这里缩到**一半**、贴图标的**左上角**（用户实测定档）。
+     */
+    fun drawUntradeableLock(context: DrawContext, x: Int, y: Int, size: Int) {
+        // 屏幕上的目标边长（图标一半，小图标有下限）
+        val lock = maxOf((size * LOCK_SIZE_RATIO).toInt(), LOCK_MIN)
+        // ⚠⚠ **缩放必须走 matrices，不能把目标尺寸塞给 `drawTexture` 的 width/height** ——
+        //   那两个参数同时是「绘制尺寸」和「采样区」：传 12 会变成「从锁图左上角取 12×12 像素」，
+        //   于是只画出一角（2026-09-30 用户实测截图报的第二个症状）。这里取**整张 20×20**、
+        //   靠矩阵缩到目标大小（口径同 [drawSizeBadgeIcon] 那边的 blitk）。
+        val scale = lock.toFloat() / LOCK_TEX_SIZE
+        context.matrices.push()
+        context.matrices.translate((x + LOCK_MARGIN).toFloat(), (y + LOCK_MARGIN).toFloat(), 0f)
+        context.matrices.scale(scale, scale, 1f)
+        context.drawTexture(
+            UNTRADEABLE_LOCK_TEX, 0, 0, 0f, 0f,
+            LOCK_TEX_SIZE, LOCK_TEX_SIZE, LOCK_TEX_SIZE, LOCK_TEX_SIZE
+        )
+        context.matrices.pop()
     }
 
     /**

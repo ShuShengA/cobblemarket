@@ -396,6 +396,12 @@ object AuctionNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.party_last")))
                     return@execute
                 }
+                // 不可交易：官方 `Pokemon.tradeable = false` 的精灵（原版交换界面会锁住这只）。
+                // ⚠ 我们这条路径必须同样遵守 —— 否则那个开关在我们这里形同虚设
+                if (!pokemon.tradeable) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.trade.untradeable")))
+                    return@execute
+                }
                 // 黑名单检查（照搬上架路径）
                 if (com.shusheng.cobblemarket.market.PokemonBlacklistState.get(server).isBlacklisted(pokemon)) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.blocked")))

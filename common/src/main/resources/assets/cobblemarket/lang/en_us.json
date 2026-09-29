@@ -520,6 +520,7 @@
   "cobblemarket.network.inventory_full": "Your inventory is full! Free up space to cancel this listing.",
   "cobblemarket.network.party_last": "You must keep at least one Pokémon in your party!",
   "cobblemarket.network.in_battle": "You can't do this during a battle. Try again after it ends",
+  "cobblemarket.trade.untradeable": "This Pokémon is untradeable",
   "cobblemarket.network.bought": "You bought %s for %s %s!",
   "cobblemarket.network.sold": "Your %s was sold!",
 

@@ -1160,6 +1160,11 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             )
         } catch (_: Exception) {
         }
+        // 不可交易：在这只图标上盖一把锁（Cobblemon 原版那张图，见 [EntryBadgeRenderer.drawUntradeableLock]）。
+        // ⚠ 取数走 [index] —— 调用方传的是**原始下标**（`origIndex`，见 indexedFilteredCache）
+        if (pokemonList.getOrNull(index)?.tradeable == false) {
+            EntryBadgeRenderer.drawUntradeableLock(context, x, y, size)
+        }
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -1669,7 +1674,19 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             val idx = scrollOffset + hoveredRow
             if (currentTab == 0) {
                 val list = filteredPokemon()
-                if (idx in list.indices) openDialog(list[idx], null)
+                if (idx in list.indices) {
+                    val picked = list[idx]
+                    // 不可交易的精灵**选不了**（与原版交换界面一致）：失败音 + 一句说明。
+                    // ⚠ 别静默 return —— 玩家点了没反应会以为是界面坏了
+                    if (!picked.tradeable) {
+                        playFailSound()
+                        client?.player?.sendMessage(
+                            Text.translatable("cobblemarket.trade.untradeable").formatted(Formatting.RED), false
+                        )
+                    } else {
+                        openDialog(picked, null)
+                    }
+                }
             } else {
                 if (idx in items.indices) openDialog(null, items[idx])
             }

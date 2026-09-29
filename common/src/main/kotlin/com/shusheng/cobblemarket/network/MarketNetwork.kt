@@ -586,7 +586,16 @@ data class PokemonPreview(
      * ⚠ 只管**模型手里**：行信息 / 弹窗 / 图标 / 大图一律照常显示（用户 2026-09-26 拍板——
      *   隐藏是「不渲染在模型上」，不是「没带东西」，交易信息不该跟着消失）。旧数据没有这一位 = true
      */
-    val heldItemVisible: Boolean = true
+    val heldItemVisible: Boolean = true,
+    /**
+     * 这只**能不能交易**（官方 `Pokemon.tradeable`）：`false` = 不可交易。
+     *
+     * ⚠ **必须下发**：客户端要在「选择要上架的精灵」那几屏的行上画一把锁（与 Cobblemon 原版
+     *   交换界面**同一张图**），提前告诉玩家这只选不了 —— 光靠服务端拒绝的话，
+     *   玩家是「点了才知道不行」。
+     * ⚠ 默认 `true`：挂单行那两个构造点不传它，那些行本来也不会画锁。
+     */
+    val tradeable: Boolean = true
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(uuid); buf.writeString(species); buf.writeString(speciesId); buf.writeString(speciesName)
@@ -606,6 +615,8 @@ data class PokemonPreview(
         buf.writeString(sizeCategory)
         buf.writeString(moves)
         buf.writeBoolean(heldItemVisible)
+        // ⚠ 新增字段一律**追加在末尾**（读端严格同序；两端必须同步升级）
+        buf.writeBoolean(tradeable)
     }
 
     companion object {
@@ -624,7 +635,8 @@ data class PokemonPreview(
             (0 until buf.readVarInt()).map { buf.readString() },
             buf.readString(),
             buf.readString(),   // moves：与 write 端严格同序（write 在 sizeCategory 之后）
-            buf.readBoolean()   // heldItemVisible：与 write 端严格同序（write 在 moves 之后）
+            buf.readBoolean(),  // heldItemVisible：与 write 端严格同序（write 在 moves 之后）
+            buf.readBoolean()   // tradeable：与 write 端严格同序（write 在 heldItemVisible 之后）
         )
     }
 }
@@ -1940,6 +1952,17 @@ object MarketNetwork {
                     return@execute
                 }
 
+                // 不可交易：官方 `Pokemon.tradeable = false` 的精灵（原版交换界面会锁住这只）。
+                // ⚠ 我们这条路径必须同样遵守 —— 否则那个开关在我们这里形同虚设
+                //   （2026-09-30 用户实测：设了「可交易：否」照样能从市场 / 拍卖 / 求购转手）
+                if (!pokemon.tradeable) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(false, Text.translatable("cobblemarket.trade.untradeable"))
+                    )
+                    return@execute
+                }
+
                 // 黑名单检查（物种 + IV + 形态：["*"]=全形态，[]=默认形态，非空=子集匹配）
                 if (com.shusheng.cobblemarket.market.PokemonBlacklistState.get(server)
                         .isBlacklisted(pokemon)
@@ -3109,6 +3132,8 @@ object MarketNetwork {
             heldItemId = if (pokemon.heldItem().isEmpty) "" else Registries.ITEM.getId(pokemon.heldItem().item).toString(),
             heldItemNbt = encodeHeldItemNbt(pokemon.heldItem(), registryManager),
             heldItemVisible = pokemon.heldItemVisible,
+            // 不可交易标记：客户端据此在「选择要上架的精灵」行上画锁（见 PokemonPreview.tradeable）
+            tradeable = pokemon.tradeable,
             aspects = pokemon.aspects.toList(),
             evsHp = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP] ?: 0,
             evsAtk = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK] ?: 0,
