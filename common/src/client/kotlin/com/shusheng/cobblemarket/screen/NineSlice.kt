@@ -48,27 +48,45 @@ fun drawScreenDimMask(context: DrawContext, width: Int, height: Int) {
 
 val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
 
-/** 槽位贴图是 66×66 的方图 */
-const val POKEMON_SLOT_TEX_SIZE = 66
+/** 槽位贴图是 **86×86** 的方图（⚠ 与文件真实尺寸对齐，别按印象写） */
+const val POKEMON_SLOT_TEX_SIZE = 86
 
 /**
- * 精灵图标的**槽背景**（66×66 的方图缩放到 [size]，左上角对齐）。
+ * 槽位贴图的**大分辨率版**（256×256）—— 只给 RP 商城的「添加 / 购买精灵」两个弹窗用。
+ *
+ * ⚠ **为什么单独一张**：那两个弹窗的预览槽比列表图标大得多（`editPreviewSize()` 量级），
+ *   86×86 那张放大会糊。⚠ **别铺到全项目** —— 256 的图加载与显存都是小图的十倍上下，
+ *   列表行 / 格子那些小尺寸位置用不着。
+ */
+val POKEMON_SLOT_BIG_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot_big.png")
+
+/** 大图是 256×256 */
+const val POKEMON_SLOT_BIG_TEX_SIZE = 256
+
+/**
+ * 精灵图标的**槽背景**（方图缩放到 [size]，左上角对齐）。
  *
  * 列表行 / 弹窗预览 / 商城格子里的精灵图标都该垫这一张 —— 模型直接浮在格子上会显得没有底座。
  *
  * ⚠ 缩放必须走 matrices：`drawTexture` 的 width/height 是**采样区域**，直接传缩放后的尺寸
  * 只会把原图左上角那一块抽出来放大（项目里踩过的 `reference-gui-drawtexture-scale`）。
  */
-fun drawPokemonSlot(context: DrawContext, x: Int, y: Int, size: Int) {
-    val scale = size / POKEMON_SLOT_TEX_SIZE.toFloat()
+fun drawPokemonSlot(context: DrawContext, x: Int, y: Int, size: Int) =
+    drawSlotTexture(context, POKEMON_SLOT_TEXTURE, POKEMON_SLOT_TEX_SIZE, x, y, size)
+
+/** [drawPokemonSlot] 的**大图版**（256×256 那张）—— 只给 RP 商城的两个精灵弹窗，见 [POKEMON_SLOT_BIG_TEXTURE] */
+fun drawPokemonSlotBig(context: DrawContext, x: Int, y: Int, size: Int) =
+    drawSlotTexture(context, POKEMON_SLOT_BIG_TEXTURE, POKEMON_SLOT_BIG_TEX_SIZE, x, y, size)
+
+private fun drawSlotTexture(
+    context: DrawContext, texture: Identifier, texSize: Int,
+    x: Int, y: Int, size: Int,
+) {
+    val scale = size / texSize.toFloat()
     context.matrices.push()
     context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
     context.matrices.scale(scale, scale, 1f)
-    context.drawTexture(
-        POKEMON_SLOT_TEXTURE, 0, 0, 0f, 0f,
-        POKEMON_SLOT_TEX_SIZE, POKEMON_SLOT_TEX_SIZE,
-        POKEMON_SLOT_TEX_SIZE, POKEMON_SLOT_TEX_SIZE
-    )
+    context.drawTexture(texture, 0, 0, 0f, 0f, texSize, texSize, texSize, texSize)
     context.matrices.pop()
 }
 

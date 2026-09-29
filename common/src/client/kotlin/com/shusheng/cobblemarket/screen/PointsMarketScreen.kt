@@ -2193,7 +2193,8 @@ class PointsMarketScreen : Screen(
         val slotSize = editPreviewSize()
         val slotX = editPreviewSlotX()
         val slotY = editPreviewSlotY()
-        drawPokemonSlot(context, slotX, slotY, slotSize)
+        // ⚠ 用**大图版**槽位贴图：本弹窗的槽比列表图标大得多，86×86 那张放大会糊（见 drawPokemonSlotBig）
+        drawPokemonSlotBig(context, slotX, slotY, slotSize)
         // 图标直接复用格子那份缓存（同一只精灵，没必要再建一个模型）
         val renderable = cellIcon(buySlot, entry).renderable
         // 记下这个图标的位置（买下时庆祝动画要从这里起飞）。**渲染时记录** = 与实际画出来的必然一致；
@@ -4931,7 +4932,8 @@ class PointsMarketScreen : Screen(
         val slotSize = editPreviewSize()
         val slotX = editPreviewSlotX()
         val slotY = editPreviewSlotY()
-        drawPokemonSlot(context, slotX, slotY, slotSize)
+        // ⚠ 用**大图版**槽位贴图：本弹窗的槽比列表图标大得多，86×86 那张放大会糊（见 drawPokemonSlotBig）
+        drawPokemonSlotBig(context, slotX, slotY, slotSize)
 
         val renderable = editPreview
         if (renderable != null) {
