@@ -92,6 +92,10 @@ data class DialogGeometry(
          * @param screenW/screenH 屏幕逻辑尺寸（各界面传 `width` / `height`）
          * @param contentW 内容最宽（像素，**调用方实测**：标题、信息行、按钮行、输入框取最大）
          * @param contentNeeded 内容需要的高（像素，按行数 × 行高算）
+         *   ⚠ **必须把内容区自己的上下内边距也算进来** —— 这个值同时是
+         *   [裁剪区][beginContent]的高度，少算了最后一行就被切掉一截。
+         *   ⚠ 而且**平时看不出来**：字高 9 < 常见行高 11，那 2px 差值正好把末行行底顶出边界，
+         *   表现是「**末行汉字的底部被削掉一点**」（2026-09-30 形态说明界面栽过，用户实测报的）
          * @param minW/maxW 宽度下限 / 上限 —— 下限防内容太窄时弹窗看着瘪，上限防超宽屏上拉得离谱
          * @param titleH/bottomH/padW 见同名常量，一般不用改
          */

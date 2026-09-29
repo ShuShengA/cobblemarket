@@ -51,7 +51,7 @@ class GatedFormScreen(
         //   —— 这正是「测量与绘制同源」那条老坑。
         val dialogW = DialogGeometry.of(width, height, contentW = TEXT_W, contentNeeded = 0).w
         blocks = buildBlocks(dialogW - DialogGeometry.PAD_W)
-        val g = DialogGeometry.of(width, height, contentW = TEXT_W, contentNeeded = blocks.size * LINE_H)
+        val g = DialogGeometry.of(width, height, contentW = TEXT_W, contentNeeded = contentHeight())
         geo = g
         scroll = 0
 
@@ -66,6 +66,16 @@ class GatedFormScreen(
             )
         )
     }
+
+    /**
+     * 内容区需要的总高（**含上下内边距**）。
+     *
+     * ⚠⚠ **内边距必须算进来**：内容区是**按这个值裁剪**的（[DialogGeometry.beginContent] ⇒
+     *   `contentTop` 起 `contentNeeded` 高），只按「行数 × 行高」算的话，最后一行会落到裁剪线
+     *   底下被切掉一截。⚠ 而且**平时看不出来** —— 字高 9 < 行高 [LINE_H] 11，那 2px 差值正好
+     *   把行底顶出边界，表现是**末行汉字的底部被削掉一点**（2026-09-30 用户实测报的「成」字）。
+     */
+    private fun contentHeight(): Int = PAD_TOP + blocks.size * LINE_H + PAD_BOTTOM
 
     // ── 正文 ──
 
@@ -153,6 +163,13 @@ class GatedFormScreen(
 
         /** 正文距内容区顶的间距 */
         const val PAD_TOP = 4
+
+        /**
+         * 正文距内容区底的间距。
+         * ⚠ 取 2 是为了**与 [PAD_TOP] 视觉对称**：末行的字底本来就比行底高 2px
+         * （字 9 / 行 [LINE_H] 11），所以「4 + 行数×11 + 2」让首行字顶与末行字底各距边界 4px。
+         */
+        const val PAD_BOTTOM = 2
 
         /** 行高：文字本身 9px，留 2px 行距 */
         const val LINE_H = 11
