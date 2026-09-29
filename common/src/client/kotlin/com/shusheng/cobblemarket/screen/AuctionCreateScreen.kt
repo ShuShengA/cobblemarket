@@ -7,7 +7,6 @@ import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.client.PointsStateCache
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
-import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
 import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.CurrencyService
@@ -969,12 +968,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         com.shusheng.cobblemarket.client.MarketStateCache.marketCurrency = value
     }
 
-    /** 刷新货币按钮外观：主货币显示 `₽`，RP 显示图标（与市场/上架界面同一套口径） */
-    private fun updateCurrencyButton(btn: NineSliceButton) {
-        val points = currency == MarketCurrency.POINTS
-        btn.setMessage(Text.literal(if (points) "" else "₽"))
-        btn.iconLeft = if (points) POINTS_SYMBOL_TEXTURE else null
-    }
+    /** 刷新货币按钮外观（三态：RP 图标 / 物品图标 / ₽ —— 见 [updateCurrencyButtonIcon]） */
+    private fun updateCurrencyButton(btn: NineSliceButton) =
+        updateCurrencyButtonIcon(btn, currency == MarketCurrency.POINTS)
 
     private fun openDialog(pokemon: PokemonPreview?, item: SellItem?) {
         dialogPokemon = pokemon

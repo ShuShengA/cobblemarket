@@ -13,7 +13,6 @@ import com.shusheng.cobblemarket.client.heldIconStackForModel
 import com.shusheng.cobblemarket.client.iconStackOf
 import com.shusheng.cobblemarket.client.PointsStateCache
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
-import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
 import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
 import com.shusheng.cobblemarket.client.playButtonClickSound
 import com.shusheng.cobblemarket.currency.MarketCurrency
@@ -95,12 +94,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         sendToServer(RequestAuctionListPayload(currency.name))
     }
 
-    /** 刷新货币按钮外观：主货币显示 `₽`，RP 显示图标（与市场/上架界面同一套口径） */
-    private fun updateCurrencyButton(btn: NineSliceButton) {
-        val points = currency == MarketCurrency.POINTS
-        btn.setMessage(Text.literal(if (points) "" else "₽"))
-        btn.iconLeft = if (points) POINTS_SYMBOL_TEXTURE else null
-    }
+    /** 刷新货币按钮外观（三态：RP 图标 / 物品图标 / ₽ —— 见 [updateCurrencyButtonIcon]） */
+    private fun updateCurrencyButton(btn: NineSliceButton) =
+        updateCurrencyButtonIcon(btn, currency == MarketCurrency.POINTS)
 
     // 到期结算轮询（照搬拍卖场）：存在到期未结算条目时周期重拉，触发服务端结算
     private var lastSettlePoll = 0L

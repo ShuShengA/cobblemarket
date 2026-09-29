@@ -28,6 +28,12 @@ class NineSliceButton(
      */
     var iconStack: ItemStack? = null,
     /**
+     * [iconStack] 的绘制边长（默认 16 —— 携带物 / 球种那些按钮都是这个尺寸）。
+     * 货币切换按钮要它与 RP 图标（[com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE]）**同尺寸**、
+     * 切换时不跳变，所以做成可配；⚠ 改它不影响那些没传的调用点。
+     */
+    var iconStackSize: Int = 16,
+    /**
      * 图标排在**文字之后**（「携带物：[图标]」这种「标签 + 值」的排法）。
      * 默认 false = 图标在前 —— 项目里既有的按钮都是纯图标或图标在前，别动它们。
      */
@@ -96,8 +102,8 @@ class NineSliceButton(
         val leftIcon = iconFrames?.let { frames ->
             frames[((System.currentTimeMillis() / 100) % frames.size).toInt()]
         } ?: iconLeft
-        val iconW = if (stackIcon != null) 16 else (iconTexW * iconScale).toInt()
-        val iconH = if (stackIcon != null) 16 else (iconTexH * iconScale).toInt()
+        val iconW = if (stackIcon != null) iconStackSize else (iconTexW * iconScale).toInt()
+        val iconH = if (stackIcon != null) iconStackSize else (iconTexH * iconScale).toInt()
         val iconCount = if (stackIcon != null) 1 else if (iconLeft2 != null) 2 else 1
         val totalIconW = if (stackIcon != null || leftIcon != null) iconW * iconCount + (iconCount - 1) else 0
 
@@ -117,6 +123,11 @@ class NineSliceButton(
         if (stackIcon != null) {
             context.matrices.push()
             context.matrices.translate(iconX.toDouble(), (y + (height - iconH) / 2).toDouble(), 0.0)
+            // ⚠ drawItem 恒按 16×16 画（没有尺寸参数）⇒ 非 16 的走 matrices 缩放
+            if (iconStackSize != 16) {
+                val s = iconStackSize / 16f
+                context.matrices.scale(s, s, 1f)
+            }
             context.drawItem(stackIcon, 0, 0)
             context.matrices.pop()
         } else if (leftIcon != null) {
