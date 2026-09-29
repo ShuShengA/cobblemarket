@@ -908,6 +908,7 @@
   "cobblemarket.network.party_last": "You must keep at least one Pokémon in your party!",
   "cobblemarket.network.in_battle": "You can't do this during a battle. Try again after it ends",
   "cobblemarket.network.bought": "You bought %s for %s!",
+  "cobblemarket.trade.untradeable": "This Pokémon is untradeable",
   "cobblemarket.network.sold": "Your %s was sold!",
 
   "cobblemarket.sell.title": "Select Pokémon to Sell",

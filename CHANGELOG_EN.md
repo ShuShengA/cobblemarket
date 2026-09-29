@@ -184,6 +184,7 @@
 
 ### Fixes
 
+- **Untradeable Pokémon could still be traded through the market / auctions / buy orders**: Cobblemon lets a Pokémon be marked untradeable, but our market ignored that flag entirely — the Pokémon could still be listed, auctioned, or delivered to someone else. All three paths now block it with a message, and **the selection rows show the very same lock as vanilla**
 - **Auction announcements in chat showed the ball name in white on hover**: for the same Pokemon the ball name is coloured by rarity (a Master Ball is purple) in the tooltips and the bid dialog, but the chat hover printed the raw translation. It now matches the rest
 - **The "review pending delivery" chat notice showed no details on hover**: after being told goods were waiting, the buyer could not see what the seller had actually handed over (ball, IVs, moves — none of it) without opening the screen and backing out again. It now carries the same hover detail as auction announcements (types, nature, ability, ball, held item, the six IVs and the moves, with hyper-trained stats called out); for item buy orders it shows the item name
 - **The hover preview for "review pending delivery" drew the buyer's request instead of what the seller actually handed over**: what the buyer wants to see is the thing itself — its held item, its form, whether it is shiny — and only the real entity can tell you that; drawing the request left them guessing. It now draws the **delivered Pokemon** (when no delivery is pending any more, it falls back to the request preview)
