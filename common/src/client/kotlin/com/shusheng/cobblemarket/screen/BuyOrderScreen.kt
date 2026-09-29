@@ -1213,6 +1213,9 @@ class BuyOrderScreen(
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // ⚠ 余额包是**异步**到的（进服首帧缓存可能还空着）⇒ 每帧刷一次按钮外观，包一到就换成物品图标
+        currencyButton?.let { updateCurrencyButton(it, currency == MarketCurrency.POINTS) }
+        createCurrencyButton?.let { updateCurrencyButton(it, createCurrency == MarketCurrency.POINTS) }
         // 前景（标题/余额/行内容/tooltip）全部在 renderBackground 绘制（早于弹窗遮罩），
         // 这里只渲染 children（弹窗遮罩/背景 Drawable 与各控件）
         super.render(context, mouseX, mouseY, delta)

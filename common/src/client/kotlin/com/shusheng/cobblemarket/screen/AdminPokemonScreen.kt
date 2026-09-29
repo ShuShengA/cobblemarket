@@ -1221,6 +1221,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // ⚠ 余额包是**异步**到的（进服首帧缓存可能还空着）⇒ 每帧刷一次按钮外观，包一到就换成物品图标
+        currencyButton?.let { updateCurrencyButton(it) }
         updateControlVisibility()
         super.render(context, mouseX, mouseY, delta)
 
