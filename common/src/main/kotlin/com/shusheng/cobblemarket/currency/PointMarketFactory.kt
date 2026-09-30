@@ -15,6 +15,7 @@ import com.cobblemon.mod.common.pokemon.Pokemon
 import com.cobblemon.mod.common.pokemon.stat.CobblemonStatProvider
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.util.MoveText
+import com.shusheng.cobblemarket.util.PokemonTags
 import com.shusheng.cobblemarket.util.SpeciesText
 import net.minecraft.item.ItemStack
 import net.minecraft.nbt.NbtCompound
@@ -139,6 +140,14 @@ object PointMarketFactory {
         pokemon.dmaxLevel = spec.dmaxLevel
         pokemon.tradeable = spec.tradeable
         pokemon.heldItemVisible = spec.heldItemVisible
+        // ⭐ 自动打上「从 RP 商城出来」的标记 —— 它的含义是**这只从哪来**，与合不合法无关
+        //   （⚠ 禁赛按 illegal 判、不按它：服主卖个普通皮卡丘也是商城精灵）。
+        //   ⚠ 标记跟着精灵走 ⇒ 买家转手挂到市场再卖时还在，这是**想要的行为**（追得到源）
+        PokemonTags.add(pokemon, PokemonTags.SHOP)
+        // ⭐ 「非法」是**服主自己勾的**（编辑窗那颗常驻开关），不是我们按形态自动判的 ——
+        //   ⚠ 别在这里"顺手代劳"：上架警告只覆盖「战斗形态」**一维**，而服主才是最终判断者
+        //   （用户 2026-09-30 拍板：警告归警告、勾选归勾选，两者不做强制联动）
+        if (spec.illegal) PokemonTags.add(pokemon, PokemonTags.ILLEGAL)
 
         // 个体值：**`-1` = 该项没填**（保持出生时掷的那个）；整组 null = 六项全随机
         spec.ivs?.let { ivs ->

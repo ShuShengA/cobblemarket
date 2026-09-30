@@ -45,6 +45,9 @@ object CobbleMarket {
 	fun init() {
 		LOGGER.info("CobbleMarket initializing...")
 		com.shusheng.cobblemarket.config.CobbleMarketConfig.load()
+		// 精灵标记（cobblemarket:shop / cobblemarket:illegal）：注册之后 PokemonProperties 的解析器
+		// 就认得这两个 key ⇒ 数据包 / NPC 定义 / spawn 规则里能直接写（详见 PokemonTags 的 KDoc）
+		com.shusheng.cobblemarket.util.PokemonTags.register()
 		// 喵喵紫卡/黑卡物品注册（额度凭证，绑定 FinanceState 持有者状态）
 		com.shusheng.cobblemarket.platform.registerItems(
 			listOf(

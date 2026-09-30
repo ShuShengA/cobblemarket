@@ -183,24 +183,89 @@ class PointsRechargeScreen : Screen(
     }
 
     /**
+     * 点击：主界面里**只有滚动条**要判（档位卡本身是控件，`super` 已经处理过了）。
+     *
+     * ⚠ 先给 `super`（控件优先），滚动条判定**放最后** —— 它的命中区左右各放宽了 3px，
+     *   压在卡片右缘那一两像素会被它截胡（见 [ScrollBar] 的交互口径）。
+     * ⚠ 收款码 / 订单列表弹窗盖着时滚动条不画（render 提前返回）⇒ 这里也不判，
+     *   免得点到"看不见的条"（几何还停在上一帧）
+     */
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        val result = super.mouseClicked(mouseX, mouseY, button)
+        // `!result` = 控件已经吃下这一击时不再判（档位卡是控件，卡片右缘就在轨道旁边）；
+        // `maxScrollRow() > 0` = 现在确实有得滚（装得下时它不画，几何还停在上一帧）
+        if (!result && button == 0 && viewingOrderNo == null && !orderListOpen && maxScrollRow() > 0) {
+            ScrollBar.shared.mouseClicked(mouseX, mouseY, scrollRow)?.let {
+                setTierScrollRow(it)
+                return true
+            }
+        }
+        return result
+    }
+
+    /** 拖动滚动条（见 [ScrollBar]）—— 本界面里**只有它**在用拖动 */
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        ScrollBar.shared.mouseDragged(mouseY, scrollRow)?.let {
+            setTierScrollRow(it)
+            return true
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+    }
+
+    /**
+     * 松开：结束滚动条的拖动。
+     *
+     * ⚠ 结束时要**吃掉这次松开** —— 否则它会在别处又触发一次点击（松手那一刻鼠标往往正压着某张卡）。
+     */
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (ScrollBar.shared.mouseReleased()) return true
+        return super.mouseReleased(mouseX, mouseY, button)
+    }
+
+    /**
+     * 界面以任何方式离开（返回按钮 / Esc / E / 关闭动画）都在这里收尾：
+     * 放弃可能还在进行中的滚动条拖动（滚动条是**单例**，不清理会留个"半拖"状态给下个界面）。
+     *
+     * ⚠ 放 [removed] 而不是 `close()`：Esc 走动画时是 `setScreen(null)`，不经过 `close()`
+     *   （同 BalanceHudPositionScreen 那条注释）。
+     */
+    override fun removed() {
+        super.removed()
+        ScrollBar.shared.cancel()
+    }
+
+    /**
+     * 把档位区滚到第 [row] 行（滚动条用）：与滚轮同款 —— 只落行号 + **缓动目标**，
+     * 实际位移由 [stepTierScroll] 每帧推进。
+     *
+     * ⚠ `scrollTargetPx` 这一步不能省：画面位置读的是 [scrollPx]（朝目标缓动），
+     *   只改行号的话拖起来**画面一动不动**（滑块动了、内容没动）。
+     */
+    private fun setTierScrollRow(row: Int) {
+        scrollRow = row
+        val cardW = tierCardW(PointsMarketBackground.rect(width, height))
+        scrollTargetPx = (row * tierRowStride(cardW)).toFloat()
+    }
+
+    /**
      * 右侧滚动条：有装不下的档位行才画 —— 否则玩家不知道下面还有档位。
      *
-     * 画法与服务器配置界面 / RP 配置界面同一套（2px 宽、半透明轨道 + 不透明滑块）。
      * 位置：**两条红线之间、档位卡区右侧那条缝里** —— 卡片区右边缘取 `inset`，
      * 而红线右端到 `texPx(78)`，前者更靠内，中间正好腾出十几像素。
+     *
+     * ⚠ 走共用的 [ScrollBar]（**可拖动** —— 原先只是画出来的两根竖条，按上去没反应）：
+     *   几何由它记下来供拖动换算，**别在这儿自己 fill**（自己画的条拖不动）。
+     * ⚠ 三个参数**都是"行"**：本界面本来就是按行滚动（[scrollRow] / [tierRows] /
+     *   [fittedTierRows]），直接喂即可；「装得下就不画」也由它自己判。
      */
     private fun renderScrollbar(context: DrawContext, bg: PointsMarketBackground.Rect) {
-        val maxScroll = maxScrollRow()
-        if (maxScroll <= 0) return
         val inset = PointsMarketBackground.borderInset(width, height)
-        val x = bg.x + bg.w - inset + 3
-        val top = tierAreaTop(bg)
-        val trackH = (tierAreaBottom(bg) - tierAreaTop(bg)).coerceAtLeast(1)
-        // 这里是**按行**滚动：滑块高直接按「装得下的行数 / 总行数」算
-        val thumbH = maxOf(16, trackH * fittedTierRows(tierCardW(bg)) / tierRows())
-        val thumbY = top + (trackH - thumbH) * scrollRow / maxScroll
-        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
-        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
+        val cardW = tierCardW(bg)
+        ScrollBar.shared.draw(
+            context, bg.x + bg.w - inset + 3, tierAreaTop(bg),
+            (tierAreaBottom(bg) - tierAreaTop(bg)).coerceAtLeast(1),
+            tierRows(), fittedTierRows(cardW), scrollRow
+        )
     }
 
     /** 把档位卡按钮挪到当前滚动位置（含可见性） */

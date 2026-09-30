@@ -345,6 +345,16 @@ class PointsMarketScreen : Screen(
     private var buyIconOrigin: com.shusheng.cobblemarket.client.PokemonCelebrationAnimation.Origin? = null
     private var buyItemIconOrigin: com.shusheng.cobblemarket.client.ItemCelebrationAnimation.Origin? = null
 
+    /**
+     * 购买窗名字行那枚「非法」印章的**屏幕矩形** `[x, y, w, h]` ——
+     * **渲染时记录**（[renderBuyNameLines]），悬停判定用（[renderBuyPokemonFields] 末尾）。
+     * null = 这一格没标非法 / 不是精灵格。
+     *
+     * ⚠ 那枚图标是**自绘**的（不是控件）⇒ 没有内置 tooltip，位置只能自己记
+     *（项目的既有惯例：渲染时记录 = 与实际画出来的必然一致）。
+     */
+    private var buyIllegalBadgeRect: IntArray? = null
+
     /** 提交失败提示（窗口内、[EDIT_HINT_MS] 毫秒）：画在标题右侧的空位，见 [renderEditDialogBackground] */
     private var editHintMsg: Text? = null
     private var editHintUntil = 0L
@@ -430,6 +440,8 @@ class PointsMarketScreen : Screen(
     private fun closeSnapshotDialog() {
         snapshotDialog = false
         snapshotScroll = 0
+        // ⚠ 滚动条可能**正被拖着**（关弹窗时鼠标还按着）—— 状态一并复位，否则留个"半拖"状态
+        ScrollBar.shared.cancel()
         hoveredSnapshot = -1
         // ⚠ **顺手清掉失败提示**：它是**这个弹窗自己的**（保存失败时由 [failSubmit] 设的），
         //   关窗后还留着会盖到添加窗的元素上 —— 提示「只该长在产生它的那个界面里」
@@ -577,6 +589,14 @@ class PointsMarketScreen : Screen(
                 )
             }
         }
+        // 滚动条（贴列表右缘外 3px，与选项列表**同一个口径**）—— 走共用的 [ScrollBar]：
+        // **可拖动** + 点轨道跳转。⚠ 它与下面那句「还有 N 条」的灰字**各管一半**，都要有：
+        // 灰字说"下面还有内容"，滚动条说"你在哪儿、还能拖多远"
+        ScrollBar.shared.draw(
+            context,
+            rowLeft + rowW + 3, listTop, rows * SNAPSHOT_ROW_H,
+            snapshots.size, rows, snapshotScroll
+        )
         // 还有没显示完的：底下给个灰字提示（也提示能滚）
         if (snapshotMaxScroll() > 0) {
             context.drawCenteredTextWithShadow(
@@ -616,17 +636,44 @@ class PointsMarketScreen : Screen(
     private var editSnapshotButton: NineSliceButton? = null
 
     /**
-     * 「添加」按钮**左侧**那枚 info —— 草稿选中的形态**需要前置条件**时出现
-     * （判定见 [SpeciesText.GATED_FORM_ASPECTS] / [SpeciesText.hasGatedAspect]）。
+     * 按钮组最左那枚**形态警告**（`⚠`）—— 点开 [GatedFormScreen] 看完整说明。
      *
-     * 点开 [GatedFormScreen] 看完整说明。显隐**每帧在 [render] 里刷**（同 [prevButton] 那套写法）：
-     * 判据是草稿里的形态，而改动形态的路子有十几处（选项列表点选 / 快照回填 / 换物种 / 清空），
-     * 逐个补事件必然漏。物品窗没有形态 ⇒ 判据恒假，按钮自然不出现。
+     * ⭐ **常驻**（用户 2026-09-30 定）：判据 [SpeciesText.hasGatedAspect] 是**硬编码清单**
+     * （72 个 aspect），**自制 / 魔改数据包加的战斗形态不在里面** ⇒ 靠"命中才出现"的话那些形态
+     * 永远不会有提示。改成常驻后入口一直在，服主随时能点开看。
+     * ⚠ 但**颜色分两态**：草稿里真选中那类形态才染红（[GATED_WARN_COLOR]），否则常规白 ——
+     *   红色常驻会被读成"当前配置有问题"。
      *
-     * ⚠ **位置在「添加」左边、不在右上角快照旁边** —— 一轮实测后用户改的：那个角落太空、
-     *   按钮"突然冒出来"根本注意不到；贴着「添加」（服主配完必然要点的那个）才看得见。
+     * ⚠ **颜色每帧在 [render] 里刷**（同 [prevButton] 那套写法）：判据是草稿里的形态，而改动形态的
+     *   路子有十几处（选项列表点选 / 快照回填 / 换物种 / 清空），逐个补事件必然漏。
+     *   **可见性**则交给 [updateEditControlsVisibility]（常驻 ⇒ 只在叠层打开时藏）。
+     * ⚠ 物品窗没有形态 ⇒ 判据恒假、颜色恒白，且那枚按钮**本来就不建**（见 `buildEditDialog`）。
+     *
+     * ⚠ **位置在按钮组最左端**（原先贴着「添加」—— 一轮实测后用户定的："那个角落太空、
+     *   按钮突然冒出来根本注意不到；贴着服主配完必然要点的「添加」才看得见"；2026-09-30 加
+     *   「非法」时整组改成居中排，它成了组里第一枚）。
      */
     private var editGatedInfoButton: NineSliceButton? = null
+
+    /**
+     * 编辑窗那枚**常驻**的「非法」开关（**只有精灵窗有**）。
+     *
+     * 勾上 = 从这一格买到的精灵带上 `cobblemarket:illegal` 标记，**将来对战禁赛按它判**
+     *（与自动打的 `shop` 来源标记分工不同，见 [PokemonTags]）。
+     *
+     * ⚠ 它**不藏在任何判据后面**（不像 info 那样"选中战斗形态才出现"）——
+     *   常驻是用户 2026-09-30 明确要求的：警告判据只有「战斗形态」一维，漏了标记就漏。
+     */
+    private var editIllegalButton: NineSliceButton? = null
+
+    /**
+     * 右上角那枚**「解锁特性 / 技能池」**开关（**只有精灵窗有**，紧挨「快照」左侧）。
+     *
+     * 选中 = 特性 / 技能候选不再受物种限制，且**自动带上非法标记** —— 详见 [editFreePick]。
+     * ⚠ 界面上**没有文字**：状态靠 [FREE_PICK_LOCK_ICON] / [FREE_PICK_UNLOCK_ICON] 两张图表达
+     *（用户 2026-09-30 定 —— 原先那版写「自由」两个字，用户的评价是"不准确"）。
+     */
+    private var editFreePickButton: NineSliceButton? = null
 
     // ── 配方快照弹窗（服主用；点添加窗右上角那枚「快照」开）──
     //
@@ -693,6 +740,43 @@ class PointsMarketScreen : Screen(
     private var editTera = ""
     private var editGmax = false
     private var editTradeable = true
+
+    /**
+     * 服主勾的「非法」—— **常驻开关**（用户 2026-09-30 拍板）。
+     *
+     * ⚠ **刻意不做成"命中战斗形态才出现"**：那枚上架警告只覆盖「战斗形态」**一维**，
+     *   而服主只能靠它才知道要勾 ⇒ **提示漏了标记就漏**（用户原话：「我就怕你做的提示功能可能会遗漏」）。
+     *   常驻 = 服主任何时候都能自己勾。
+     * ⚠ 与 [KEY_FORM] 那枚 info 警告**各自独立，不做强制联动**（警告归警告、勾选归勾选）。
+     */
+    private var editIllegal = false
+
+    /**
+     * **「自由选择特性 / 技能」** —— 右上角那枚开关（**只有精灵窗有**，紧挨「快照」左侧）。
+     *
+     * 勾上 ⇒ 特性 / 技能的候选**不再受该物种限制**（改用 `Abilities.all()` / `Moves.all()`），
+     * 于是能造出「有非法特性 / 非法技能」的精灵 —— 这正是这个开关存在的理由
+     *（用户 2026-09-30：「既然 Cobblemon 本来就支持非法，不如把非法入口扩大」）。
+     *
+     * ## ⚠⭐ 与「非法」开关的联动（用户 2026-09-30 定）
+     *
+     * **不变式：自由 ⇒ 非法。**
+     * - 勾上它 ⇒ **自动勾上「非法」**（放开限制造出来的必然非法，不该还能忘标）
+     * - 取消「非法」⇒ **自动取消它**（否则会停在"自由开着、却没标非法"这种自相矛盾的状态上 ——
+     *   那样造出来的非法精灵身上不会有任何标记）
+     * ⇒ 两个方向的落地都在 [toggleFreePick] / [toggleIllegal] 里
+     *
+     * ⚠ 它**与形态警告仍然互不联动**（那条是"提醒你形态有风险"，这条是"我要造非法的"，
+     *   见 [editIllegal] 的注释）。
+     *
+     * ## ⚠ 纯编辑态 —— 不进存档、不上 payload
+     *
+     * 精灵生成时只看 `ability` / `moves` / `illegal` 三个字段，**不看"当初是怎么选出来的"**
+     *（⇒ 不需要给 [ShopPokemonSpec] 加字段，也不用动网络包）。
+     * ⚠ 但**快照回填要能反推它**（见 [fillDraft]）：一只带非法特性 / 技能的快照回填进来时，
+     *   若不置上它，末尾那两处 normalize 会把这些值当成"换物种后的残留"清掉。
+     */
+    private var editFreePick = false
 
     /** 携带物：**完整物品栈 NBT 的 SNBT 串**（与挂单 `heldItemNbt` 同口径）；null = 无 */
     private var editHeldItem: String? = null
@@ -1200,6 +1284,15 @@ class PointsMarketScreen : Screen(
                     }
                 }
             }
+            // ⭐ **滚动条**（在列表右缘外那一条）：按滑块 / 点轨道空白都直接改 scroll（点轨道 = 跳转）。
+            //   ⚠ 排在**行判定之后**（同选项列表那条注释）；⚠ 还要判**确实装不下** ——
+            //   [ScrollBar.draw] 在装得下时不记几何，命中会拿上一次残留的那份
+            if (!result && button == 0 && PointMarketCache.snapshots.size > snapshotVisibleRows()) {
+                ScrollBar.shared.mouseClicked(mouseX, mouseY, snapshotScroll)?.let {
+                    snapshotScroll = it
+                    return true
+                }
+            }
             return true
         }
 
@@ -1220,6 +1313,19 @@ class PointsMarketScreen : Screen(
                 if (!result && button == 0) clickOptionRow(mouseX, mouseY)
                 focused = null
                 return true
+            }
+            // ⭐ **滚动条**（在列表右缘外那一条）：按下滑块 / 点轨道空白都直接改 scroll，
+            //   点轨道 = **跳转**（见 [ScrollBar] 的交互口径）。
+            //   ⚠ 必须排在**上面那步行判定之后** —— 滚动条的命中区左右放宽过（滑块才 3px 宽，
+            //   1:1 抓不住），压在列表右缘那一两像素会被它截胡；**行优先**才符合直觉
+            //   ⚠ 还要判**这次列表确实装不下**：[ScrollBar.draw] 在装得下时**直接返回、不记几何**，
+            //   此时命中用的是**上一次**留下的那份 ⇒ 会点出一个越界的位置（列表看着空了）。
+            //   铺开其余界面时发现样板漏了这条，一并补上
+            if (button == 0 && optionListItems.size > optionListRows()) {
+                ScrollBar.shared.mouseClicked(mouseX, mouseY, optionListScroll)?.let {
+                    optionListScroll = it
+                    return true
+                }
             }
         }
         // 点在输入框之外 → 手动失焦（否则 E 键被输入框吃掉、Esc 也关不掉窗口）
@@ -1256,6 +1362,41 @@ class PointsMarketScreen : Screen(
             if (optionListMultiSelect) toggleMultiOption(item) else selectOption(item.value)
         }
         return true
+    }
+
+    /**
+     * 拖动中 —— 本界面里**只有滚动条**在用（见 [ScrollBar]）。
+     *
+     * ⚠ 以后要加别的拖动逻辑先看这里：拖动状态的复位在 [mouseReleased] 与 [ScrollBar.cancel]，
+     *   别各处再写一份。
+     */
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        if (optionListKind != null) {
+            ScrollBar.shared.mouseDragged(mouseY, optionListScroll)?.let {
+                optionListScroll = it
+                return true
+            }
+        }
+        // 快照弹窗的列表滚动条 —— 与选项列表用**同一个实例**（这两个列表不会同时出现：
+        // 快照弹窗开着时 `optionListKind` 恒为 null，见 [editDialogCovered]）
+        if (snapshotDialog) {
+            ScrollBar.shared.mouseDragged(mouseY, snapshotScroll)?.let {
+                snapshotScroll = it
+                return true
+            }
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+    }
+
+    /**
+     * 松开：结束滚动条的拖动。
+     *
+     * ⚠ 结束拖动时要**吃掉这次松开** —— 否则它会在别处又触发一次点击
+     *   （松手那一刻鼠标往往正压着某一行或某个按钮）。
+     */
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (ScrollBar.shared.mouseReleased()) return true
+        return super.mouseReleased(mouseX, mouseY, button)
     }
 
     override fun mouseScrolled(
@@ -2333,6 +2474,13 @@ class PointsMarketScreen : Screen(
         // 悬停窗**最后画**（浮在上面）
         marksTooltipAt?.let { (tx, ty) -> renderMarksTooltip(context, spec, tx, ty) }
         featureTooltipAt?.let { (tx, ty) -> renderFeatureTooltip(context, spec, tx, ty) }
+        // 「非法」印章的悬停窗（同上面两个：**最后画**才浮在字段上面）。
+        // ⚠ 名额是**名字行**记下的（那行画得比这里早），判的却是这一刻的鼠标位置
+        buyIllegalBadgeRect?.let { r ->
+            if (mouseX >= r[0] && mouseX < r[0] + r[2] && mouseY >= r[1] && mouseY < r[1] + r[3]) {
+                renderIllegalBadgeTooltip(context, mouseX, mouseY)
+            }
+        }
     }
 
     /**
@@ -2439,13 +2587,49 @@ class PointsMarketScreen : Screen(
         )
         context.drawTextWithShadow(textRenderer, nameLine, editDialogX() + EDIT_PAD, y, 0xFFFFFF)
         // 属性跟在名字右边（名字宽度是**画出来的**那个宽度，不是估算 —— 两段才不会叠字）
-        context.drawTextWithShadow(
-            textRenderer,
-            EntryBadgeRenderer.typeLine(primary, secondary),
-            editDialogX() + EDIT_PAD + textRenderer.getWidth(nameLine) + 8,
-            y,
-            0xFFFFFF
-        )
+        val typeLine = EntryBadgeRenderer.typeLine(primary, secondary)
+        val typeX = editDialogX() + EDIT_PAD + textRenderer.getWidth(nameLine) + 8
+        context.drawTextWithShadow(textRenderer, typeLine, typeX, y, 0xFFFFFF)
+        // 服主标过的「非法」：**紧跟属性右边一枚印章图**（与格子左上角、编辑窗开关**同一份图标**
+        // [ILLEGAL_BADGE_ICON]）。
+        // ⚠⭐ 「非法」那两个字**移到悬停窗里**（用户 2026-09-30：名字行上挂着一行红字不好看）——
+        //   所以这里**只画图标**、并把它的矩形记下来，悬停在图标上时由
+        //   [renderBuyPokemonFields] 末尾弹出说明（自绘元素没有内置 tooltip，只能自己来）。
+        // ⚠ 尺寸写死 12 不按格算（这里空间充足）；**与那一行的文字垂直居中** ——
+        //   [y] 是文字顶边，图标比字高 4px，所以往上让 2px
+        buyIllegalBadgeRect = if (spec.illegal) {
+            val badge = 12
+            val badgeX = typeX + textRenderer.getWidth(typeLine) + 8
+            val badgeY = y - (badge - 8) / 2
+            // ⚠ 缩放走 matrices（`drawTexture` 的宽高是**采样区**、不是目标尺寸 —— 项目踩过的坑）
+            context.matrices.push()
+            context.matrices.translate(badgeX.toDouble(), badgeY.toDouble(), 0.0)
+            val s = badge / 48f
+            context.matrices.scale(s, s, 1f)
+            context.drawTexture(ILLEGAL_BADGE_ICON, 0, 0, 0f, 0f, 48, 48, 48, 48)
+            context.matrices.pop()
+            intArrayOf(badgeX, badgeY, badge, badge)
+        } else {
+            null   // ⚠ 必须显式清 —— 否则切到别的商品时还挂着上一只的矩形，悬停会凭空弹说明
+        }
+    }
+
+    /**
+     * 名字行那枚「非法」印章的悬停窗 —— 自绘元素没有内置 tooltip，只能自己画。
+     *
+     * ⚠ 落点与外观**走全项目同一套** [withTooltipLayer]（同 [renderMarksTooltip] /
+     *   [renderFeatureTooltip]）：鼠标右移 12、优先上方 4px、钳进屏幕 + 抬 Z —— 别自己另发明一个位置。
+     * ⚠ 文字用**红色**（与格子角标、售罄的 0、EV 段同一个红）。这里空间不受限，所以照**完整词条**画
+     *  （名字行上挂不下那两个字，才挪进来的 —— 用户 2026-09-30）。
+     */
+    private fun renderIllegalBadgeTooltip(context: DrawContext, mouseX: Int, mouseY: Int) {
+        val text = Text.translatable("cobblemarket.points.store.illegal")
+        val pad = MARK_TIP_PAD
+        val w = textRenderer.getWidth(text) + pad * 2
+        val h = 8 + pad * 2
+        withTooltipLayer(context, mouseX, mouseY, w, h) { tx, ty ->
+            context.drawTextWithShadow(textRenderer, text, tx + pad, ty + pad, 0xFF5555)
+        }
     }
 
     /** 物品格：右侧大图 + 大图**左侧**那一列词条（物品名 + 附魔 / 招式 / 自定义名 / 耐久） */
@@ -2787,10 +2971,12 @@ class PointsMarketScreen : Screen(
     private fun pickedFormAspects(): List<String> = formAspectsAmong(editSpecies, editAspects)
 
     /**
-     * 草稿选中的形态**是不是「需要前置条件」的那种** —— 决定编辑窗那枚 info 出不出现。
+     * 草稿选中的形态**是不是「需要前置条件」的那种** —— 决定编辑窗那枚 `⚠` **点不点亮**（红 / 白）。
      *
      * ⚠ 判据走 [SpeciesText.hasGatedAspect]（按 aspect 值判，形态 / 变体 / 闪光**混放也能用**），
      *   **不用** [pickedFormAspects] 再逐 form 判：那条路要现算 `selectableForms`（本函数每帧都调，白烧）。
+     * ⚠ 它**只影响颜色，不影响显隐** —— 那枚按钮是**常驻**的（判据会漏掉自制 / 魔改的形态，
+     *   见 [editGatedInfoButton] 的注释）。
      * ⚠ 顺手挡一下物品窗：那里 `editAspects` 恒空、本来也判不出东西，写出来是为了意图明确。
      */
     private fun hasGatedPickedForm(): Boolean =
@@ -2919,6 +3105,8 @@ class PointsMarketScreen : Screen(
         editTera = ""
         editGmax = false
         editTradeable = true
+        editIllegal = false
+        editFreePick = false
         editHeldItem = null
         editHeldItemName = ""
         editMinIvs = 0
@@ -2986,6 +3174,7 @@ class PointsMarketScreen : Screen(
         editTera = spec.teraType.orEmpty()
         editGmax = spec.gmaxFactor
         editTradeable = spec.tradeable
+        editIllegal = spec.illegal
         editHeldItem = spec.heldItemSpec
         editHeldItemName = spec.heldItemSpec?.let { heldItemLabel(it) }.orEmpty()
         // 两者互斥：`ivs` 有值时保底不参与（数据层口径，见 ShopPokemonSpec 注释）—— 回填按同一口径走，
@@ -3012,6 +3201,17 @@ class PointsMarketScreen : Screen(
         // ⚠ 这几行 normalize **必须落在物种定下来之后**。原先它们写在上头（那时 editSpecies 还是
         //   [resetDraft] 清掉的 null）⇒ 全是空操作，「编辑老数据时收进合法范围」其实从没生效
         //   （2026-09-20 修；注释当时就写着"物种定了之后"，代码没跟上）
+        //
+        // ⚠⚠ 而**「自由选择」的反推更要排在它们之前**（它是纯编辑态、不在规格里）：
+        //   一只带非法特性 / 技能的快照回填进来时，若不先置上它，下面两处 normalize 会把这些值
+        //   当成"换物种后的残留"清掉 —— 表现是「快照里的非法特性，读回来就没了」。
+        //   判据与那两处 normalize **同一口径**（该物种的池子），见 [editFreePick]
+        run {
+            val poolAbilities = species?.abilities?.map { it.template.name }.orEmpty()
+            val poolMoves = species?.moves?.getAllLegalMoves()?.map { it.name }?.toSet().orEmpty()
+            editFreePick = (spec.ability?.isNotEmpty() == true && spec.ability !in poolAbilities) ||
+                MoveText.slotIds(spec.moves).any { it.isNotEmpty() && it !in poolMoves }
+        }
         normalizeGender()
         normalizeGmax()
         normalizeAspects()
@@ -3111,6 +3311,7 @@ class PointsMarketScreen : Screen(
             teraType = editTera.ifEmpty { null },
             gmaxFactor = editGmax,
             tradeable = editTradeable,
+            illegal = editIllegal,
             heldItemSpec = editHeldItem,
             // 六项个体值：**整组全空**才回退到「保底 V 数」（数据层对这两种玩法是互斥的，见注释）
             ivs = if (hasIv) ivs else null,
@@ -3212,8 +3413,24 @@ class PointsMarketScreen : Screen(
         val btnY = editButtonRowY()
         val confirmText = "cobblemarket.points.store.add"
         val contentW = editDialogW() - EDIT_PAD * 2
-        // 抽成局部量：紧挨它左边要放「形态需要前置条件」那枚 info（见下），各算一份必然错开
-        val confirmX = x + EDIT_PAD + (contentW - EDIT_BUTTON_W * 2 - 8) / 2
+        // 底部按钮行**整组居中**：精灵窗那组左边多两位成员 —— 「形态说明」info（16px）与「非法」开关。
+        //
+        // ⚠⚠ **info 那一格恒占位**（它只在选中战斗形态时才画出来）⇒ 它出现 / 消失
+        //   不会让「非法 / 添加 / 取消」横移。用户 2026-09-30 拍板：加「非法」时一并按
+        //   "整组固定"排，谁都不许动（按钮跳位是这个界面的老毛病）。
+        // ⚠ 组宽**两条路各算一份**（物品窗那组只有两枚、窄 74px）：成员数不同，
+        //   起始位置不能共用一份，否则物品窗那两枚会整体偏左。
+        val groupStart = if (isPokemonSlot()) {
+            val groupW = EDIT_GATED_INFO_W + EDIT_INFO_GAP + EDIT_ILLEGAL_W + 8 + EDIT_BUTTON_W * 2 + 8
+            x + EDIT_PAD + (contentW - groupW) / 2
+        } else {
+            // 物品窗：维持原样（「添加 + 取消」两枚居中）
+            x + EDIT_PAD + (contentW - EDIT_BUTTON_W * 2 - 8) / 2
+        }
+        // 抽成局部量：紧挨它左边要放 info 与「非法」（见下），各算一份必然错开
+        // ⚠ 前面那两枚的宽度都要算进来 —— 只算 info 的话「非法」会压在「添加」上
+        val confirmX = groupStart + if (isPokemonSlot())
+            EDIT_GATED_INFO_W + EDIT_INFO_GAP + EDIT_ILLEGAL_W + 8 else 0
         editConfirmButton = NineSliceButton(
             confirmX, btnY, EDIT_BUTTON_W, EDIT_BUTTON_H, Text.translatable(confirmText), { submitEdit() }
         )
@@ -3221,27 +3438,59 @@ class PointsMarketScreen : Screen(
         // ⚠ 取消按钮**必须存字段**：展开选项列表时要把它一起藏掉，否则它压在列表上、
         //   一点就把整个窗口关了（2026-09-20 用户实测：选形态时点「取消」直接退出了编辑窗）
         editCancelButton = NineSliceButton(
-            x + EDIT_PAD + (contentW + 8) / 2,
+            // ⚠ 由 [confirmX] 推出来，**不另起一个公式** —— 两个公式等价（原式是
+            //   `x + EDIT_PAD + (contentW + 8) / 2`），但改组宽时改了一处漏另一处，
+            //   取消就会压在「添加」上
+            confirmX + EDIT_BUTTON_W + 8,
             btnY, EDIT_BUTTON_W, EDIT_BUTTON_H,
             Text.translatable("cobblemarket.buy_confirm.cancel"), { closeEditDialog() }
         )
         addDrawableChild(editCancelButton)
 
-        // 「形态需要前置条件」警告：**紧挨「添加」按钮左侧 4px**（用户 2026-09-30 定的位置）。
-        // 放这儿是因为服主配完必然要点「添加」—— 紧贴指尖，比右上角那种"突然出现在偏僻角落"看得见得多。
-        // 16×16 纯图标（info.png 的惯例写法同交易历史 / 兑换码那两处），**只有精灵窗有**；
-        // 显隐见 [editGatedInfoButton]（每帧刷，判据是草稿里选中的形态）。
-        // ⚠ 与「添加」**垂直居中对齐**（按钮 18 高、图标 16 高，上让 1px）
+        // 按钮组最左那两枚（**只有精灵窗有**）：形态警告 + 「非法」开关。
+        //
+        // 「形态需要前置条件」警告：**紧挨「非法」的左边**，离「添加」也只隔一枚
+        // —— 服主配完必然要点「添加」，挤在这一带才看得见（原先试过右上角，用户报"突然出现在
+        // 偏僻角落、根本注意不到"）。
+        // ⚠ 画的是**符号 `⚠` 本身**，不是图标贴图（用户 2026-09-30 点名要它）：
+        //   与关市横幅「⚠ 市场功能已关闭」开头**同一个字符**（原先是一枚蓝色 info 图标，
+        //   语义偏"信息"，而这个该是"警告"）。
+        // ⭐ **它是常驻的**（用户 2026-09-30 定）：判据是**硬编码清单**，管不住自制 / 魔改加的
+        //   战斗形态 ⇒ 靠"命中才出现"的话那些形态永远不会有提示，入口得一直在。
+        //   ⚠ 但**颜色分两态**：草稿里真选中那类形态才染红（[GATED_WARN_COLOR]），否则常规白 ——
+        //   一个红 ⚠ 常驻着会被读成"当前配置有问题"。刷色在 [render] 里每帧做。
+        // ⚠ 与「添加」**垂直居中对齐**（按钮 18 高、这枚 16 高，上让 1px）
         if (isPokemonSlot()) {
             editGatedInfoButton = NineSliceButton(
-                confirmX - 4 - EDIT_GATED_INFO_W,
+                groupStart,
                 btnY + (EDIT_BUTTON_H - EDIT_GATED_INFO_W) / 2,
                 EDIT_GATED_INFO_W, EDIT_GATED_INFO_W,
-                Text.literal(""),
+                // ⚠ 符号走**词条**（同 `species_clear` 那个「×」的做法），别硬编码在代码里
+                Text.translatable("cobblemarket.gated_form.button_icon"),
                 { openGatedFormScreen() },
-                iconLeft = Identifier.of("cobblemarket", "textures/gui/info.png"),
-                iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+                // 初始白；渲染第一帧起由 [render] 按草稿状态刷（建控件时草稿还没回填完）
+                textColor = 0xFFFFFF,
                 tooltip = Text.translatable("cobblemarket.gated_form.button_tip")
+            ).also { addDrawableChild(it) }
+
+            // 「非法」开关：**常驻**（用户 2026-09-30 拍板 —— 不做成"命中战斗形态才出现"：
+            // 那枚警告只管「战斗形态」一维，判据漏了标记就漏，常驻才轮得到服主自己判断）。
+            // 勾上的意思 = **从这一格买到的精灵会带上 `cobblemarket:illegal`**，
+            // 将来对战禁赛按它判（与自动打的 `shop` 来源标记分工不同，见 PokemonTags）。
+            // 图标按钮：`illegal.png`（48×48 的印章图，**图里自带 ILLEGAL 字样** ⇒ 不再配文字 ——
+            // 再挂一行「非法 / Illegal」就是同一件事说两遍）。
+            // ⚠ **勾没勾由按钮底图表达**（`selectedVisual`，同 tab 按钮那套）—— 用户 2026-09-30 定：
+            //   图标只有这一张，不另做"选中版图标"。
+            // ⚠ 图标缩到 16px 后图上的字是**看不清**的（本来就是印章图形），它是**符号**不是文字 ——
+            //   自明性靠悬停说明（[illegal_tip] 那条），别指望玩家读出图里的字
+            editIllegalButton = NineSliceButton(
+                groupStart + EDIT_GATED_INFO_W + EDIT_INFO_GAP,
+                btnY, EDIT_ILLEGAL_W, EDIT_ILLEGAL_W,
+                Text.literal(""),
+                { toggleIllegal() },
+                iconLeft = ILLEGAL_BADGE_ICON,
+                iconTexW = 48, iconTexH = 48, iconScale = 0.3333f,
+                tooltip = Text.translatable("cobblemarket.points.store.illegal_tip")
             ).also { addDrawableChild(it) }
         }
 
@@ -3257,6 +3506,24 @@ class PointsMarketScreen : Screen(
                 editRowRightX() - EDIT_SNAPSHOT_W, editRemoveY(),
                 EDIT_SNAPSHOT_W, EDIT_ROW_H,
                 Text.translatable("cobblemarket.points.store.snapshot_button"), { openSnapshotDialog() }
+            ).also { addDrawableChild(it) }
+
+            // 「解锁特性 / 技能池」那枚开关：**紧挨「快照」左侧**（用户 2026-09-30 定的位置 ——
+            // 最初那枚 info 图标就放在这儿，后来搬去「添加」旁边，这个位置就一直空着）。
+            // ⚠ 与快照**同高、同顶边**（都贴 [editRemoveY] 那条"距顶 = 距右"的线）。
+            // ⚠⭐ 状态由**图标本身**表达（用户 2026-09-30 定）：没选中 = 闭锁 [FREE_PICK_LOCK_ICON]、
+            //   选中 = 开锁 [FREE_PICK_UNLOCK_ICON] ⇒ **不用 `selectedVisual`**
+            //   （那是给"图标不变、只能靠底色表达"的按钮用的；这里再叠一层底色是同一件事说两遍）。
+            //   ⚠ 也**不用文字**：用户否掉了原先的「自由」两个字（原话「不准确」）。
+            // ⚠ 联动见 [toggleFreePick]：选中它 ⇒ 底部的「非法」自动跟着选中
+            editFreePickButton = NineSliceButton(
+                editRowRightX() - EDIT_SNAPSHOT_W - BUTTON_GAP - EDIT_FREE_SIZE, editRemoveY(),
+                EDIT_FREE_SIZE, EDIT_FREE_SIZE,
+                Text.literal(""),
+                { toggleFreePick() },
+                iconLeft = if (editFreePick) FREE_PICK_UNLOCK_ICON else FREE_PICK_LOCK_ICON,
+                iconTexW = 48, iconTexH = 48, iconScale = 0.3333f,
+                tooltip = Text.translatable("cobblemarket.points.store.free_pick_tip")
             ).also { addDrawableChild(it) }
         }
 
@@ -3929,6 +4196,9 @@ class PointsMarketScreen : Screen(
      *   出来（「特性：cobblemon:blaze」这种英文字母，用户实测）—— 清掉回「随机」，界面才说得通。
      */
     private fun normalizeAbility() {
+        // ⚠ 「自由选择」开着时**不清理** —— 服主就是**故意**选该物种池外的特性（见 [editFreePick]）；
+        //   关掉那个开关时由 [toggleFreePick] 显式跑一次本函数，把池外的值清回「随机」
+        if (editFreePick) return
         if (editAbility.isEmpty()) return
         val allowed = editSpecies?.abilities?.map { it.template.name }
         if (allowed == null || editAbility !in allowed) editAbility = ""
@@ -3945,11 +4215,49 @@ class PointsMarketScreen : Screen(
      *   服务端也接得住 —— 它只校验技能**存在**，不校验该物种能不能学（[PointMarketService]）。
      */
     private fun normalizeMoves() {
+        // 同 [normalizeAbility]：自由选择开着就不清（关掉时由 [toggleFreePick] 补跑一次）
+        if (editFreePick) return
         val ids = MoveText.slotIds(editMoves)
         if (ids.none { it.isNotEmpty() }) return
         val allowed = editSpecies?.moves?.getAllLegalMoves()?.map { it.name }?.toSet() ?: emptySet()
         val fixed = ids.map { if (it.isEmpty() || it in allowed) it else "" }
         if (fixed != ids) editMoves = MoveText.encode(fixed)
+    }
+
+    /**
+     * 右上角那枚**「自由选择特性 / 技能」**的点击 —— 连带「非法」一起管（不变式见 [editFreePick]）。
+     *
+     * ⚠ **关掉时要把该物种池外的特性 / 技能清掉**（跑那两处 normalize）：它们之所以能留在草稿里，
+     *   全靠这个开关开着；开关一关，它们就是「换物种后没清干净的残留」—— 与既有行为一致。
+     *   ⚠ 不清的话会停在"自由关着、非法也没勾，但特性是非法的"这种自相矛盾的状态上，
+     *     提交后造出来的就是**没有标记的非法精灵**。
+     */
+    private fun toggleFreePick() {
+        editFreePick = !editFreePick
+        if (editFreePick) {
+            // ⭐ 联动（用户 2026-09-30 定）：放开限制造出来的必然非法 ⇒ 自动打上标记，别让服主忘
+            editIllegal = true
+        } else {
+            editIllegal = false
+            normalizeAbility()
+            normalizeMoves()
+        }
+        refreshEditLabels()
+    }
+
+    /**
+     * 底部那枚**「非法」**的点击 —— 取消它时**连带取消「自由选择」**（不变式：自由 ⇒ 非法，见 [editFreePick]）。
+     *
+     * ⚠ 顺序：先关「自由」（[toggleFreePick] 会把池外的特性 / 技能清掉，并把非法一并置回 false），
+     *   所以这里直接转发给它就行，别自己再改一遍 —— 两处各改一遍必然分叉。
+     */
+    private fun toggleIllegal() {
+        if (editIllegal && editFreePick) {
+            toggleFreePick()
+            return
+        }
+        editIllegal = !editIllegal
+        refreshEditLabels()
     }
 
     private fun cycleGender() {
@@ -4053,6 +4361,9 @@ class PointsMarketScreen : Screen(
         optionListButtons.forEach { remove(it) }
         optionListButtons.clear()
         optionListScroll = 0
+        // ⚠ 滚动条可能**正被拖着**（列表关掉时鼠标还按着）—— 状态一并复位，
+        //   否则会留个"半拖"状态：下次画出来的是新内容，而 `dragging` 还是 true，鼠标没按也跟着走
+        ScrollBar.shared.cancel()
         updateEditControlsVisibility()
         refreshEditLabels()
     }
@@ -4182,9 +4493,14 @@ class PointsMarketScreen : Screen(
         editRemoveButton?.visible = !covered
         // 右上角那枚「快照」同理（它也是编辑窗的控件，别忘在清单外）
         editSnapshotButton?.visible = !covered
-        // 快照左边那枚 info 也同理。⚠ 它**什么时候该出现**不在这里判（判据是草稿里的形态，
-        //   每帧在 [render] 里刷）—— 这里只管"叠层打开时一律藏"，免得展开选项列表时它浮在列表上
+        // 形态警告那枚 `⚠`（按钮组最左）：**常驻** ⇒ 这里只管"叠层打开时一律藏"，
+        //   免得展开选项列表时它浮在列表上。⚠ 它的**颜色**另在 [render] 里每帧刷
         editGatedInfoButton?.visible = !covered
+        // 常驻的「非法」开关同理：它"常驻"指的是**不藏在形态判据后面**，
+        // 不是"叠层打开时也露在外面"—— 展开选项列表 / 快照弹窗时照样得藏
+        editIllegalButton?.visible = !covered
+        // 右上角那枚「自由选择」：编辑窗的控件，跟 covered 走（它与快照是同一排的）
+        editFreePickButton?.visible = !covered
         // 清空按钮：跟 covered 走就行（**不跟候选数量走** —— 那是箭头的事，清空随时都能点）
         editSpeciesClear?.visible = !covered
         editButtons.forEach { (key, btn) -> btn.visible = !covered && editRowVisible(editRowOf(key)) }
@@ -4602,10 +4918,22 @@ class PointsMarketScreen : Screen(
                 OptionItem(n.name.toString(), if (t == key) n.displayName else t)
             }
 
-            // 特性：该物种的全部可能特性（含隐藏特性）
-            OPT_ABILITY -> species?.abilities?.toList().orEmpty().map { potential ->
-                val ability = potential.template
-                OptionItem(ability.name, Text.translatable(ability.displayName).string)
+            // 特性：默认 = 该物种的全部可能特性（含隐藏特性）；
+            // ⚠ **「自由选择」开着时改成全部特性**（`Abilities.all()`，300 条上下）——
+            //   这正是那个开关的作用：选出来的会是"非法特性"，Cobblemon 自己会给它标
+            //   `Ability.forced`（见 [editFreePick]）。⚠ 全表要**按显示名排序**，否则按注册顺序
+            //   排、中文界面下毫无规律，只能靠搜索
+            OPT_ABILITY -> if (editFreePick) {
+                com.cobblemon.mod.common.api.abilities.Abilities.all()
+                    .map { ability ->
+                        OptionItem(ability.name, Text.translatable(ability.displayName).string)
+                    }
+                    .sortedBy { it.label }
+            } else {
+                species?.abilities?.toList().orEmpty().map { potential ->
+                    val ability = potential.template
+                    OptionItem(ability.name, Text.translatable(ability.displayName).string)
+                }
             }
 
             // 球种：**没有 displayName**，显示名走物品词条（`item.cobblemon.poke_ball`，与挂单详情同口径）；
@@ -4673,9 +5001,13 @@ class PointsMarketScreen : Screen(
                 val takenByOthers = MoveText.slotIds(editMoves)
                     .filterIndexed { i, id -> i != thisSlot && id.isNotEmpty() }
                     .toSet()
+                // ⚠ **「自由选择」开着 ⇒ 全部技能**（`Moves.all()`，900 条上下）—— 与特性同一个
+                //   开关（见 [editFreePick]）；否则只有该物种能学的那些。
+                //   两条路**共用同一条流水线**（排掉其它槽已选 → 按显示名排序），别各写一遍
+                val pool = if (editFreePick) com.cobblemon.mod.common.api.moves.Moves.all()
+                else species?.moves?.getAllLegalMoves().orEmpty().toList()
                 addAll(
-                    species?.moves?.getAllLegalMoves().orEmpty()
-                        .filter { it.name !in takenByOthers }
+                    pool.filter { it.name !in takenByOthers }
                         .map { OptionItem(it.name, it.displayName.string, labelText = MoveText.name(it.name)) }
                         .sortedBy { it.label }
                 )
@@ -5048,7 +5380,14 @@ class PointsMarketScreen : Screen(
         }
 
         // 候选计数（1/3）：居中于物种输入框与预览槽之间那段空隙
-        if (editSpeciesCandidates.size > 1) {
+        // ⚠⚠ **叠层打开时不能画**：本函数在**列表展开时也会被调**（右侧要留着大图"看着选"，
+        //   见 [renderEditDialogBackground] 那个 `if (listKind != null)` 分支），若照画，这个计数
+        //   就会**浮在选项列表之上** —— 2026-09-30 用户实测：「点开技能、性格选择弹窗，1/2 都会透上来」。
+        //   快照弹窗同理（那时走的是下面那条分支，但这条判据一样管）。
+        //   ⚠ 它是**自绘文字、不是 MC 控件** ⇒ 吃不到 [updateEditControlsVisibility] 那条
+        //   "不在白名单里一律隐藏"的兜底（兜底只遍历 `children()`，自绘的一律漏）⇒ **必须在这里自己判**。
+        //   判据用同一个 [editDialogCovered]，别另写一套（两套判据必然分叉）
+        if (editSpeciesCandidates.size > 1 && !editDialogCovered()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.literal("${editSpeciesIndex + 1}/${editSpeciesCandidates.size}").formatted(Formatting.GRAY),
@@ -5223,21 +5562,22 @@ class PointsMarketScreen : Screen(
         }
     }
 
-    /** 展开列表的滚动条（条目装得下就不画） */
+    /**
+     * 展开列表的滚动条（条目装得下就不画）。
+     *
+     * ⚠ 走共用的 [ScrollBar]（**可拖动** —— 2026-09-30 用户报「滚动条点不动」后抽出来的）：
+     *   它的几何由 [ScrollBar.draw] 记下来供拖动换算，**别在这儿自己 fill**（自己画的条拖不动）。
+     * ⚠ 位置贴着**列表自己的右缘**（`optionListW()`）—— 原来按整窗右缘算，变体列表只占左半边时
+     *   滚动条会孤零零飘在右半边的预览区里（同 [optionRowRect] / 搜索框，三处共用一个宽度）
+     */
     private fun renderOptionListDecor(context: DrawContext, x: Int, y: Int) {
-        val total = optionListItems.size
         val rows = optionListRows()
-        if (total <= rows) return
-        val top = y + OPTION_LIST_TOP
-        val trackH = rows * OPTION_ROW_STEP
-        // ⚠ 贴着**列表自己的右缘**画（`optionListW()`）—— 原来按整窗右缘算，变体列表只占左半边时
-        //   滚动条会孤零零飘在右半边的预览区里（同 [optionRowRect] / 搜索框，三处共用一个宽度）
-        val barX = editDialogX() + EDIT_PAD + optionListW() + 3
-        context.fill(barX, top, barX + 1, top + trackH, 0x40FFFFFF)
-        val thumbH = (trackH * rows / total).coerceAtLeast(6)
-        val maxScroll = (total - rows).coerceAtLeast(1)
-        val thumbY = top + (trackH - thumbH) * optionListScroll / maxScroll
-        context.fill(barX - 1, thumbY, barX + 2, thumbY + thumbH, 0xFFFFFFFF.toInt())
+        ScrollBar.shared.draw(
+            context,
+            editDialogX() + EDIT_PAD + optionListW() + 3,
+            y + OPTION_LIST_TOP, rows * OPTION_ROW_STEP,
+            optionListItems.size, rows, optionListScroll
+        )
     }
 
     // ── 窗口：按钮文案 ──
@@ -5342,6 +5682,14 @@ class PointsMarketScreen : Screen(
         // 就是入口界面喵喵银行关闭时那个做法；`active = false` 只是文字变暗，不够）
         editButtons[KEY_GMAX]?.dimmed = !speciesCanGmax()
         shortField(KEY_TRADEABLE, yesNoLabel(editTradeable))
+        // 「非法」那枚是**常驻**的独立按钮（不在网格里）：消息是固定的词条、不随值变，
+        // 所以这里只刷**选中态**（背景第三段，同 tab 按钮那套做法）。
+        // ⚠ 它是**选中类**开关 ⇒ 必须有 selectedVisual（项目规矩：只有选中类才加）
+        editIllegalButton?.selectedVisual = editIllegal
+        // 右上角那枚「自由选择」同理（它也是**选中类**开关，消息固定不变）
+        // 右上角那枚「解锁」同理，但它**不走 `selectedVisual`** —— 状态由 lock / unlock **图标本身**
+        // 表达（见 [editFreePickButton] 的注释）
+        editFreePickButton?.iconLeft = if (editFreePick) FREE_PICK_UNLOCK_ICON else FREE_PICK_LOCK_ICON
         // 携带物 / 球种：**标签 + 物品图标**（「携带物：[图标]」）——
         // 标签只留字段名不带值（值由图标表达，这才是去文字化的本意）；没设时只有标签
         shortField(KEY_HELD, "")
@@ -5644,13 +5992,24 @@ class PointsMarketScreen : Screen(
         // 展开动画期间把窗口控件藏起来（它们是 MC 控件、由 super.render 统一画，塞不进插值矩形）；
         // 播完这一帧会自动放回去（见 updateDialogAnimControls）
         if (dialogOpen()) updateDialogAnimControls()
-        // 「形态需要前置条件」那枚 info：**每帧**刷，且**必须排在 [updateDialogAnimControls] 之后** ——
-        // 那个函数在开窗动画期间把 `editWidgetBase` 之后的控件一律藏掉、播完又交给
-        // [updateEditControlsVisibility]（那儿只知道"叠层打开没"，不知道有没有选中前置形态），
-        // 排在它前面就会被它的恢复覆盖成"无条件显示"。
-        // 判据放每帧的理由同 [prevButton]：改形态的路子有十几处（选项列表点选 / 快照回填 / 换物种 / 清空），
-        // 逐个补事件必然漏一处，而漏了的表现是"选了战斗形态却不给警告"。
-        editGatedInfoButton?.visible = hasGatedPickedForm() && !editDialogCovered()
+        // 「形态需要前置条件」那枚警告：**常驻**（用户 2026-09-30 定），这里每帧只刷**它的颜色**。
+        //
+        // ⚠⭐ 为什么改成常驻：它的判据 [SpeciesText.hasGatedAspect] 是**硬编码清单**（72 个 aspect，
+        //   见 [SpeciesText.GATED_FORM_ASPECTS]），**自制 / 魔改数据包加的战斗形态不在清单里**
+        //   ⇒ 靠"命中才出现"的话那些形态**永远不会给提示**（用户点出的正是这个：
+        //   「指定 72 种形态就把范围定死了，管得住原版，管不住自制和魔改」）。
+        //   常驻 = 入口一直在，服主随时能点开看，**不依赖判据命中**。
+        // ⚠ 但**颜色跟着草稿走**：真选中那类形态才染红 —— 一个红 ⚠ 常驻在那儿会被读成
+        //   "当前配置有问题"（本项目"红 = 警告态"到处都是：关市横幅 / 售罄的 0 / EV 段），
+        //   没命中时用常规白，语义退回"入口 / 帮助"，不误导。
+        //
+        // ⚠ 刷颜色**必须每帧**、且**排在 [updateDialogAnimControls] 之后**（同 [prevButton]）：
+        //   那个函数在开窗动画期间把 `editWidgetBase` 之后的控件一律藏掉、播完又交给
+        //   [updateEditControlsVisibility]；改形态的路子有十几处（选项列表点选 / 快照回填 /
+        //   换物种 / 清空），逐个补事件必然漏一处。
+        //   ⚠ **可见性不在这儿管** —— 交给 [updateEditControlsVisibility] 的 `covered`
+        //   （常驻 = 只在叠层打开时藏起来）
+        editGatedInfoButton?.textColor = if (hasGatedPickedForm()) GATED_WARN_COLOR else 0xFFFFFF
         super.render(context, mouseX, mouseY, delta)
         if (dialogOpen()) return
         drawMarketDecor(context, delta)
@@ -5783,6 +6142,28 @@ class PointsMarketScreen : Screen(
             CurrencyService.amountText(formatPriceShortLong(entry.price), MarketCurrency.POINTS),
             x + size / 2, bottom - PRICE_BOTTOM_GAP, 0xFFFFFF
         )
+
+        // 「非法」角标（服主在编辑窗标过的那一格）：**左上角一枚印章图**（右上角给库存角标占了）。
+        // 用户 2026-09-30 定：标过的必须**在格子上就看得出来**，否则服主事后想不起来哪只标了。
+        // ⚠ 2026-09-30 二次改：原先画的是**红色「非法」两个字**，用户嫌丑 ⇒ 换成 [ILLEGAL_BADGE_ICON]。
+        //   顺带解决了一个老问题：文字在窄格子下必须截断（英文 `Illegal` 42px 塞不进 30px 的格子），
+        //   而图标只按比例缩放，**任何格子尺寸都不会溢出到邻格**。
+        // ⚠ 尺寸**按格子比例算再钳制**（写死的话小格子里它会吃掉半个图标区）；
+        //   贴边口径与库存角标一致（左上内边框，[STOCK_BADGE_INSET]）
+        if (entry.pokemon?.illegal == true) {
+            val badge = (size * 0.30f).roundToInt().coerceIn(10, 16)
+            // ⚠ 缩放走 matrices，别直接给 drawTexture 传目标尺寸 —— 那两个参数是**采样区**
+            //   （项目踩过的坑，见 [NineSliceButton] 画图标那段注释）
+            context.matrices.push()
+            context.matrices.translate(
+                (x - grow + STOCK_BADGE_INSET).toDouble(),
+                (y - grow + STOCK_BADGE_INSET).toDouble(), 0.0
+            )
+            val s = badge / 48f
+            context.matrices.scale(s, s, 1f)
+            context.drawTexture(ILLEGAL_BADGE_ICON, 0, 0, 0f, 0f, 48, 48, 48, 48)
+            context.matrices.pop()
+        }
 
         // 库存角标：**只有限量格才画**（不限量是默认玩法，画个 ∞ 只是碍眼）；
         // 售罄时变红 0，格子**保留**（服主可以补货或换内容）。贴当前格子的右上角内边框，
@@ -6142,15 +6523,46 @@ class PointsMarketScreen : Screen(
         const val EDIT_SNAPSHOT_W = 62
 
         /**
-         * 「添加」按钮**左侧**那枚「形态需要前置条件」info 的边长 —— 纯图标按钮，16×16 见方
-         * （与交易历史 / 兑换码界面那两枚 info 同尺寸）。
+         * 按钮组最左那枚「形态需要前置条件」警告的边长 —— 16×16 见方，里面画的是
+         * **符号 `⚠`**（不是图标贴图，见 [buildEditDialog]；用户 2026-09-30 从蓝色 info 图标改过来）。
          *
-         * ⚠ 位置跟着 `confirmX` 走（见 [buildEditDialog]）：贴合「添加」才看得见（用户实测定）。
-         * ⚠ 宽度用不着纠结：窗口拉到下限 [EDIT_DIALOG_MIN_W] 时，它距左内边距仍有 ~36px
-         *   —— 16px 的图标任何档位都稳（早先那版放右上角时，那条带在窄窗口下只剩 ~64px，
-         *   文字按钮怎么压都放不下，才选的图标）。
+         * ⚠ 位置在**按钮组的最左端**（原先跟着 `confirmX` 贴着「添加」，2026-09-30 加「非法」时
+         *   整组改成居中排，它就成了组里第一枚）。
+         * ⚠ 宽度用不着纠结：窗口拉到下限 [EDIT_DIALOG_MIN_W] 时，整组仍有余量
+         *   —— 一个符号任何档位都放得下（早先那版放右上角时，那条带在窄窗口下只剩 ~64px）。
          */
         const val EDIT_GATED_INFO_W = 16
+
+        /** 警告符号与它右边那枚「非法」之间的空隙（沿用原先"info 距添加 4px"那个口径） */
+        const val EDIT_INFO_GAP = 4
+
+        /**
+         * 「形态需要前置条件」那枚警告**点亮时的红** —— 与关市横幅 / 售罄的 0 / EV 段 / 商城格子的
+         * 「非法」角标**同一个红**（那行本来就是用 0xFF5555 画的红字，符号跟着一起红
+         * ⇒ "红色三角"是**染**出来的，字形本身没有颜色）。
+         *
+         * ⚠ 只在**草稿里真选中那类形态时**才用它；平时是常规白 —— 理由见 [render] 里刷色那段。
+         */
+        const val GATED_WARN_COLOR = 0xFF5555
+
+        /**
+         * 底部那枚「非法」开关的**边长**（正方形图标按钮，名字沿用 info 那枚的 "W" 写法）。
+         *
+         * 取 **18 = 底部按钮行的高**（[EDIT_BUTTON_H]）⇒ 与「添加 / 取消」一排齐平。
+         * ⚠ 比 [EDIT_GATED_INFO_W]（16）大 2px 是有意的：那枚只是**看**的提示，
+         *   这枚是要**点**的开关，手感上该大一点。
+         */
+        const val EDIT_ILLEGAL_W = 18
+
+        /**
+         * 右上角那枚「解锁特性 / 技能池」开关的**边长**（正方形图标按钮）——
+         * **紧挨快照左侧**（间距 [BUTTON_GAP]）、与快照同顶边（[editRemoveY]）。
+         *
+         * 取 16 = 与快照同高（[EDIT_ROW_H]）⇒ 一排齐平。
+         * ⚠ 它**没有文案**，也不看文案宽窄：状态由 [FREE_PICK_LOCK_ICON] /
+         *   [FREE_PICK_UNLOCK_ICON] 两张图自己表达（用户 2026-09-30 定）。
+         */
+        const val EDIT_FREE_SIZE = 16
 
         /** 快照弹窗里「保存当前配置」按钮的宽度（中文 54px、英文 `Save Current` 72px，取宽的） */
         const val SNAPSHOT_SAVE_BTN_W = 80
@@ -6308,6 +6720,23 @@ class PointsMarketScreen : Screen(
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
         val ALPHA_BADGE_ICON = Identifier.of("cobblemon", "textures/gui/summary/icon_size_alpha.png")
+
+        /**
+         * 「解锁特性 / 技能池」那枚开关的两个图标（**用户 2026-09-30 提供**；48×48，
+         * 按 `iconScale ≈ 1/3` 缩到 16px 显示）。
+         *
+         * 闭锁 = **未选中**（候选表照旧按物种限）、开锁 = **选中**（放开成全部特性 / 技能）。
+         * ⚠ 状态就靠换这张图表达，不叠 `selectedVisual`、也没有文字 —— 见 [EDIT_FREE_SIZE]。
+         */
+        val FREE_PICK_LOCK_ICON = Identifier.of("cobblemarket", "textures/gui/lock.png")
+        val FREE_PICK_UNLOCK_ICON = Identifier.of("cobblemarket", "textures/gui/unlock.png")
+
+        /**
+         * 「非法」的印章图（48×48）—— **两处共用这一份**，别各写一遍：
+         * - 编辑窗底部那枚「非法」开关（按钮图标）
+         * - **商城格子左上角**的角标（缩放后画在格子上）
+         */
+        val ILLEGAL_BADGE_ICON = Identifier.of("cobblemarket", "textures/gui/illegal.png")
 
         /**
          * 头目徽章的**原始尺寸与显示缩放** —— 编辑窗按钮与购买窗只读行**共用这一份**，别各写一遍

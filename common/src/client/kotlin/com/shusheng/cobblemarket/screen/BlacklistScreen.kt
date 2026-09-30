@@ -229,6 +229,8 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private fun closeAnyList() {
         formListOpen = false
         variantListOpen = false
+        // 列表关了 = 滚动条不画了：拖动状态一并复位，否则会留个"半拖"状态（见 [ScrollBar.cancel]）
+        ScrollBar.shared.cancel()
         rebuildFormList()
         rebuildVariantList()
     }
@@ -255,20 +257,16 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
      *   而且必须画在主 `render` 里（背景那层会被控件盖住）。RP 商城的列表是自绘的，
      *   滚动条跟行一起画；这边结构不同，所以做法不同 —— 但**观感要一致**（同款半透明轨道 + 白色滑块）。
      * ⚠ 判据用 [currentVariantRows]（标题行也占一行），与列表渲染同一口径。
+     * ⚠ 走共用的 [ScrollBar]（**可拖动**）：装得下就不画由它自己判、几何由它记下来供拖动换算，
+     *   **别在这儿自己 fill**（自己画的条拖不动）。三个数字的单位都是**行**（与 [variantListScroll] 同口径）。
      */
     private fun renderVariantScrollbar(context: DrawContext) {
         if (!variantListOpen) return
-        val total = currentVariantRows().size
-        if (total <= MAX_FORM_LIST_ROWS) return
-        val centerX = width / 2
-        val top = height / 2 - 97 + LIST_TOP
-        val trackH = MAX_FORM_LIST_ROWS * 16
-        val barX = centerX + 62
-        context.fill(barX, top, barX + 1, top + trackH, 0x40FFFFFF)
-        val thumbH = (trackH * MAX_FORM_LIST_ROWS / total).coerceAtLeast(6)
-        val maxScroll = (total - MAX_FORM_LIST_ROWS).coerceAtLeast(1)
-        val thumbY = top + (trackH - thumbH) * variantListScroll / maxScroll
-        context.fill(barX - 1, thumbY, barX + 2, thumbY + thumbH, 0xFFFFFFFF.toInt())
+        ScrollBar.shared.draw(
+            context,
+            width / 2 + 62, height / 2 - 97 + LIST_TOP, MAX_FORM_LIST_ROWS * 16,
+            currentVariantRows().size, MAX_FORM_LIST_ROWS, variantListScroll
+        )
     }
 
     private fun rebuildVariantList() {
@@ -1077,6 +1075,8 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         if (allForms) return playFailSound()
         variantListOpen = !variantListOpen
         variantListScroll = 0
+        // 开 / 关都把拖动状态复位（关掉时列表不画了，见 [ScrollBar.cancel]）
+        ScrollBar.shared.cancel()
         if (variantListOpen) {
             // 候选**只能服务端给**（客户端拿不到 choice 型 feature 的候选）—— 打开时问一次。
             // ⚠ 服务端有节流兜底，重复请求会被丢掉，缓存里已有旧值也能直接用
@@ -1422,6 +1422,8 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         variantButton = null
         variantListOpen = false
         variantListScroll = 0
+        // 弹窗整个关掉：滚动条的拖动状态一并复位（列表不画了，见 [ScrollBar.cancel]）
+        ScrollBar.shared.cancel()
         variantOptionButtons.clear()
         listBackButton = null
         listClearButton = null
@@ -1949,7 +1951,42 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         if (wasInInput && !isMouseOverAnyInput(mouseX, mouseY)) {
             focused = null
         }
+        // ⭐ **滚动条**（变体列表右侧那一条）：按滑块 / 点轨道空白都直接改 scroll，点轨道 = **跳转**
+        //   （见 [ScrollBar] 的交互口径）。
+        //   ⚠ 必须排在**列表行之后**：列表行是 140 宽的控件（右缘 centerX+60），而滚动条的命中区
+        //   左右放宽过（滑块才 3px 宽，1:1 抓不住）⇒ 压在行右缘那一两像素会被它截胡；
+        //   放在 `super.mouseClicked` 之后（`!result` = 没有控件吃掉这次点击）才是**行优先**
+        //   ⚠ 还要判**本列表自己装不下**：装得下时 [ScrollBar.draw] 不记几何，命中用的会是**别的
+        //   列表留下的**那份（这条条的坐标只跟窗口有关，换个候选个数就不同）⇒ 会点出越界的 scroll
+        if (!result && variantListOpen && button == 0 && currentVariantRows().size > MAX_FORM_LIST_ROWS) {
+            ScrollBar.shared.mouseClicked(mouseX, mouseY, variantListScroll)?.let {
+                variantListScroll = it
+                rebuildVariantList()
+                return true
+            }
+        }
         return result
+    }
+
+    /**
+     * 拖动中 —— 本界面里**只有滚动条**在用（见 [ScrollBar]）。
+     * ⚠ 变体行是**控件**，偏移一变必须 [rebuildVariantList] 重建（与滚轮那条路同一口径）。
+     */
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        if (variantListOpen) {
+            ScrollBar.shared.mouseDragged(mouseY, variantListScroll)?.let {
+                variantListScroll = it
+                rebuildVariantList()
+                return true
+            }
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+    }
+
+    /** 松开：结束滚动条的拖动 —— 结束时要**吃掉这次松开**，否则它会在别处又触发一次点击 */
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (ScrollBar.shared.mouseReleased()) return true
+        return super.mouseReleased(mouseX, mouseY, button)
     }
 
     override fun resize(client: MinecraftClient, width: Int, height: Int) {

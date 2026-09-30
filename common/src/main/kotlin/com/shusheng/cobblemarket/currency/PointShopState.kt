@@ -138,7 +138,19 @@ data class ShopPokemonSpec(
      * ⚠ 必须是**槽位串**而不是"会的招列表"：服主要能看到自己设的是第几个槽，
      * 空串 = 该槽没设（生成时随机补）。
      */
-    val moves: String = ""
+    val moves: String = "",
+    /**
+     * **服主认定这只非法** —— 编辑窗那颗**常驻**的「非法」开关（用户 2026-09-30 拍板）。
+     *
+     * ⚠ 与 `cobblemarket:shop`（来源标记，自动打）**分工不同**，别混：
+     * - `shop` = 这只**从哪来**（商城造的都有，⚠ **不都是非法的**）
+     * - 本项 = 这只**本身正不正常** ⇒ 将来**对战禁赛只按它判**
+     *   （按来源判会把合法的商城精灵一起误伤 —— 用户原话：「从 RP 商城买来的精灵怎么可能都是非法的」）
+     *
+     * ⚠ 末尾追加 + 默认值 false：**存档铁律（只增不改）** —— 旧档读不到就是 false，
+     *   写盘后旧版本照样能读（多一个键而已）。
+     */
+    val illegal: Boolean = false
 )
 
 /**
@@ -329,6 +341,8 @@ internal fun writeShopEntryBody(c: NbtCompound, entry: ShopEntry) {
         p.heldItemSpec?.let { pc.putString("heldItemSpec", it) }
         if (p.marks.isNotEmpty()) putStringList(pc, "marks", p.marks)
         if (p.moves.isNotEmpty()) pc.putString("moves", p.moves)
+        // 服主勾的「非法」（false 是默认值 —— 与 heldItemVisible / tradeable 一个口径，不写省空间）
+        if (p.illegal) pc.putBoolean("illegal", true)
         c.put("pokemon", pc)
     }
     entry.item?.let { i ->
@@ -382,7 +396,9 @@ internal fun readShopEntryBody(c: NbtCompound): ShopEntry? {
             nickname = if (pc.contains("nickname")) pc.getString("nickname") else null,
             heldItemSpec = if (pc.contains("heldItemSpec")) pc.getString("heldItemSpec") else null,
             marks = readStringList(pc, "marks"),
-            moves = if (pc.contains("moves")) pc.getString("moves") else ""
+            moves = if (pc.contains("moves")) pc.getString("moves") else "",
+            // 缺字段落 false（旧档没有这个键）—— 存档铁律：读取容错，不抛异常
+            illegal = pc.getBoolean("illegal")
         )
     } else null
     val item = if (c.contains("item")) {
