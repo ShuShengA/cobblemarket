@@ -192,22 +192,56 @@ class PointsRechargeScreen : Screen(
      */
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val result = super.mouseClicked(mouseX, mouseY, button)
-        // `!result` = 控件已经吃下这一击时不再判（档位卡是控件，卡片右缘就在轨道旁边）；
-        // `maxScrollRow() > 0` = 现在确实有得滚（装得下时它不画，几何还停在上一帧）
-        if (!result && button == 0 && viewingOrderNo == null && !orderListOpen && maxScrollRow() > 0) {
-            ScrollBar.shared.mouseClicked(mouseX, mouseY, scrollRow)?.let {
-                setTierScrollRow(it)
-                return true
+        if (!result && button == 0) {
+            // 订单弹窗盖着时：只判它那根（弹窗一开 `render` 就提前返回，档位条那一帧根本不画）
+            if (orderListOpen) {
+                // ⚠ 守卫 `maxOrderScroll() > 0` 不能省：装得下时 `ScrollBar.draw` **不记几何**，
+                //   残留的是别的列表那份 ⇒ 不判会照着旧几何算出一个越界位置（列表看着空了）
+                if (maxOrderScroll() > 0) {
+                    ScrollBar.shared.mouseClicked(mouseX, mouseY, orderScroll)?.let {
+                        orderScroll = it
+                        applyOrderScroll()
+                        return true
+                    }
+                }
+                return result
+            }
+            // `!result` = 控件已经吃下这一击时不再判（档位卡是控件，卡片右缘就在轨道旁边）；
+            // `maxScrollRow() > 0` = 现在确实有得滚（装得下时它不画，几何还停在上一帧）
+            if (viewingOrderNo == null && maxScrollRow() > 0) {
+                ScrollBar.shared.mouseClicked(mouseX, mouseY, scrollRow)?.let {
+                    setTierScrollRow(it)
+                    return true
+                }
             }
         }
         return result
     }
 
-    /** 拖动滚动条（见 [ScrollBar]）—— 本界面里**只有它**在用拖动 */
+    /**
+     * 拖动滚动条（见 [ScrollBar]）。
+     *
+     * ⚠ 本界面**有两个列表**（档位卡 / 订单弹窗），但**同一帧只会画一根条**
+     *   （订单弹窗一开 `render` 就提前返回，档位条不画）⇒ 共用 [ScrollBar.shared] 这一个单例是安全的，
+     *   不必像 `MeowthBankScreen` 那样各 new 一个。按谁开着决定拖的是哪根。
+     */
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
-        ScrollBar.shared.mouseDragged(mouseY, scrollRow)?.let {
-            setTierScrollRow(it)
-            return true
+        if (orderListOpen) {
+            // 同 [mouseClicked]：装得下时它不记几何，必须用 `maxOrderScroll() > 0` 挡住
+            if (maxOrderScroll() > 0) {
+                ScrollBar.shared.mouseDragged(mouseY, orderScroll)?.let {
+                    orderScroll = it
+                    applyOrderScroll()
+                    return true
+                }
+            }
+        } else {
+            // ⚠ 只能调**一次** —— `mouseDragged` 内部带拖动状态（`dragging` / `grabOffset`），
+            //   写成"先判一下再调一次"会把状态推两次
+            ScrollBar.shared.mouseDragged(mouseY, scrollRow)?.let {
+                setTierScrollRow(it)
+                return true
+            }
         }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
     }
@@ -284,7 +318,11 @@ class PointsRechargeScreen : Screen(
             button.clipRect = if (visible) intArrayOf(0, areaTop, width, areaBottom) else null
             if (visible) {
                 val (x, y) = tierCardPos(bg, index, cardW)
-                button.setPosition(x, y + tierIconH(cardW) + TIER_ICON_V_GAP)
+                // ⚠ 按钮**贴卡片右缘**，与 [buildMain] 里建按钮时的 x **同一个算式**（改一处漏一处就错位）
+                button.setPosition(
+                    x + cardW - tierBtnW(cardW),
+                    y + tierIconH(cardW) + TIER_ICON_V_GAP
+                )
             }
         }
     }
@@ -341,7 +379,12 @@ class PointsRechargeScreen : Screen(
         if (viewingOrderNo != null && PointsShopCache.orders.none { it.orderNo == viewingOrderNo }) {
             viewingOrderNo = null
         }
-        if (PointsShopCache.orders.isEmpty()) orderListOpen = false
+        // ⚠⚠ **别在订单为空时自动关弹窗**（2026-09-30 用户报「订单为 0 时点『查看订单』没反应」）：
+        //   这里原本是 `if (orders.isEmpty()) orderListOpen = false` —— 本意是「异步刷新后
+        //   别留个空弹窗」，但**玩家刚点开时那次 rebuild() 也会命中** ⇒ 弹窗开完立刻被关回去，
+        //   表现出来就是「点了没反应」。两个用途打架了。
+        //   ⇒ 改成让弹窗**自己支持空状态**（见 [renderOrdersDialog]），那句自动关闭就整个不需要了；
+        //   订单被服主处理光时留着「暂无订单」，比"窗口突然自己消失"更说得清。
 
         when {
             viewingOrderNo != null -> buildQrDialog(PointsShopCache.orders.first { it.orderNo == viewingOrderNo })
@@ -374,11 +417,14 @@ class PointsRechargeScreen : Screen(
         val ordersBtn = NineSliceButton(
             bg.x + bg.w - inset - ORDERS_W, bg.y + inset + ROW_TOP_OFFSET,
             ORDERS_W, ROW_H,
-            // 有未完结订单时带上数量，没有就只写「我的订单」——
+            // ⚠⚠ 文案**固定**，不随订单数变（2026-09-30 用户定）：
+            //   ① 这是**界面的名字**（「我的订单」），不是动作 —— 原来的「查看订单」是动作说法
+            //   ② 带上数量会**溢出**：`ORDERS_W` 只有 68px，而 [NineSliceButton] **只量不截断**
+            //      ⇒「查看订单（100）」就已 72px、「（1000）」78px，且订单数**没有条数上限**
+            //      （服务端只按时间清理已结束订单）⇒ 超出后文字会整块跑到按钮左缘外面
+            //   ③ 数量移进弹窗标题显示（见 [renderOrdersDialog]）—— 那儿的宽度绰绰有余
             // 按钮**常驻**（订单列表现在含历史，随时可查，不再是有单才冒出来）
-            if (PointsShopCache.orders.isNotEmpty())
-                Text.translatable("cobblemarket.points.recharge.view_orders", PointsShopCache.orders.size)
-            else Text.translatable("cobblemarket.points.recharge.orders_title"),
+            Text.translatable("cobblemarket.points.recharge.orders_title"),
             { orderListOpen = true; rebuild() }
         )
         ordersEntryButton = ordersBtn
@@ -397,7 +443,10 @@ class PointsRechargeScreen : Screen(
             val (x, y) = tierCardPos(bg, index, cardW)
             val btnW = tierBtnW(cardW)
             val button = NineSliceButton(
-                x, y + tierIconH(cardW) + TIER_ICON_V_GAP, btnW, TIER_BTN_H,
+                // ⚠ 按钮**贴卡片右缘**（2026-09-30 用户定：金额按钮与 RP 数量调换位置，
+                //   「人都是习惯点击右侧按钮」）。⚠ 与 [applyTierScroll] 里的重摆**必须同一个算式** ——
+                //   只改建、不改重摆，一滚动就错位。
+                x + cardW - btnW, y + tierIconH(cardW) + TIER_ICON_V_GAP, btnW, TIER_BTN_H,
                 // 金额超宽也要截断：窄卡片上「1000.00 元」同样会画到按钮外
                 Text.literal(fitText(moneyText(tier.priceCents), btnW - 8)).formatted(Formatting.GOLD),
                 {
@@ -452,7 +501,8 @@ class PointsRechargeScreen : Screen(
             dx + ORDERS_DIALOG_W / 2 - DIALOG_BTN_W / 2, dy + ordersDialogH() - 26,
             DIALOG_BTN_W, DIALOG_BTN_H,
             Text.translatable("cobblemarket.gui.close"),
-            { orderListOpen = false; rebuild() }
+            // ⚠ 关列表处 cancel 滚动条拖动（见 [ScrollBar]；另一条关闭路径在 [rebuild] 里）
+            { orderListOpen = false; ScrollBar.shared.cancel(); rebuild() }
         )
         ordersCloseButton?.let { addDrawableChild(it) }
     }
@@ -635,9 +685,10 @@ class PointsRechargeScreen : Screen(
             context.matrices.scale(scale, scale, 1f)
             context.drawTexture(custom?.id ?: TIER_ICON, 0, 0, 0f, 0f, texW, texH, texW, texH)
             context.matrices.pop()
-            // 「N + RP 图标」并到按钮那一行：画在按钮右侧剩下的区域里，与按钮垂直居中。
+            // 「N + RP 图标」并到按钮那一行：画在**按钮左侧**剩下的区域里
+            // （2026-09-30 用户与金额按钮调换了位置），与按钮垂直居中。
             // ⚠ 小分辨率（GUI scale 调大）下这块区域可能只有二三十像素，文字必须**截断** ——
-            //   否则居中后会往两边溢出，正好盖到左边的金额按钮上。
+            //   否则居中后会往两边溢出，正好盖到**右边**的金额按钮上。
             //   截断只针对数字：末尾那个图标宽度是固定值，得先留出来再算数字的可用宽度。
             val btnW = tierBtnW(cardW)
             val pointsW = cardW - btnW
@@ -649,7 +700,7 @@ class PointsRechargeScreen : Screen(
                         (pointsW - POINTS_SYMBOL_INLINE_SIZE - unitGap(textRenderer)).coerceAtLeast(0)
                     )
                 ).formatted(Formatting.GOLD).append(" ").append(CurrencyService.pointsIcon()),
-                x + btnW + pointsW / 2,
+                x + pointsW / 2,
                 y + boxH + TIER_ICON_V_GAP + (TIER_BTN_H - 8) / 2,
                 0xFFFFFF
             )
@@ -668,7 +719,13 @@ class PointsRechargeScreen : Screen(
         val dy = ordersDialogY()
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.points.recharge.orders_title").formatted(Formatting.GOLD),
+            // 数量写在标题里（2026-09-30 用户定：按钮写界面名、数量进来再看）。
+            // ⚠ 弹窗宽 [ORDERS_DIALOG_W]=408，标题中文最宽（4 位数字 ≈78px）绰绰有余 ——
+            //   这正是它从按钮上搬过来的原因（按钮只有 68px）
+            Text.translatable(
+                "cobblemarket.points.recharge.orders_title_count",
+                PointsShopCache.orders.size
+            ).formatted(Formatting.GOLD),
             dx + ORDERS_DIALOG_W / 2, dy + 10, 0xFFFFFF
         )
         PointsShopCache.orders.forEachIndexed { index, order ->
@@ -703,6 +760,32 @@ class PointsRechargeScreen : Screen(
                 textRenderer, Text.literal(orderTimeText(order.createdAt)), dx + COL_TIME_X, textY, 0xAAAAAA
             )
         }
+        // 空状态：**没有订单也要能进来**（用户 2026-09-30 定 —— 「玩家有没有订单跟进入我的订单
+        // 界面有什么关系」）。没有这一行的话，零订单时进去是个空框，看着像坏了。
+        // 高度够：弹窗按 `visibleOrderRows()` 算，它 `coerceAtLeast(1)` ⇒ 至少留了一行的位置。
+        if (PointsShopCache.orders.isEmpty()) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.points.recharge.orders_empty"),
+                dx + ORDERS_DIALOG_W / 2,
+                dy + ORDERS_DIALOG_HEADER_H + (ORDER_ROW_H - 8) / 2,
+                0xAAAAAA
+            )
+        }
+        // ⚠ 滚动条（2026-09-30 用户报「我的订单界面没有滚动条，玩家都不知道自己有多少记录」）——
+        //   本弹窗原先**只有滚轮**，看不出底下还有多少笔。
+        //   摆位照档位那根（`bg.x + bg.w - inset + 3`）：轨道左缘落在右缘内侧 3px。
+        //   ⚠ 订单行**没有像素缓动**（`orderScroll` 直接落值）⇒ 拖动后紧跟一次 [applyOrderScroll]
+        //     重排「查看」按钮，否则滑块跟手了、行却不动（那正是配置类界面踩过的坑）。
+        ScrollBar.shared.draw(
+            context,
+            dx + ORDERS_DIALOG_W - NINE_SLICE_BORDER + 3,
+            dy + ORDERS_DIALOG_HEADER_H,
+            visibleOrderRows() * ORDER_ROW_H,
+            PointsShopCache.orders.size,
+            visibleOrderRows(),
+            orderScroll
+        )
     }
 
     /**
