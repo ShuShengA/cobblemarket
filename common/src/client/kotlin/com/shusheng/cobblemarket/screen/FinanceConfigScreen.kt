@@ -222,9 +222,9 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             else -> false
         }
         return if (on)
-            net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/switch_icon_on.png")
+            net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/button/switch_icon_on.png")
         else
-            net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/switch_icon_off.png")
+            net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/button/switch_icon_off.png")
     }
 
     private fun currentToggleValue(key: String): Boolean {

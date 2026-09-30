@@ -47,7 +47,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
                 leftX, 18, 16, 16,
                 Text.literal(""),
                 { },
-                iconLeft = Identifier.of("cobblemarket", "textures/gui/info.png"),
+                iconLeft = Identifier.of("cobblemarket", "textures/gui/icon/info.png"),
                 iconTexW = 48, iconTexH = 48, iconScale = 0.25f
             )
             infoBtn.setTooltip(
@@ -68,7 +68,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
                 // 「交易历史」（showAll=false）才是从市场入口那排按钮进的，回入口
                 if (showAll) AdminScreen() else MarketEntryScreen(skipDropAnim = true)
             ) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         ))

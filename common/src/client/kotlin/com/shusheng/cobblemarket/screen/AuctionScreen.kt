@@ -422,7 +422,7 @@ class AuctionScreen(
             leftX + panelWidth - 50, 13, 50, 16,
             Text.literal(""),
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
@@ -489,7 +489,7 @@ class AuctionScreen(
         val createBtn = NineSliceButton(
             leftX + panelWidth - 104, 50, 50, 16,
             Text.literal(""), { client?.setScreen(AuctionCreateScreen(currentTab)) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/choose.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             // 纯图标按钮一律给悬停提示（同排搜索框右侧，没提示玩家不知道小手是干什么的）
             tooltip = Text.translatable("cobblemarket.gui.create_auction")
@@ -506,7 +506,7 @@ class AuctionScreen(
             Text.literal(""),
             { toggleFilters() },
             iconLeft = Identifier.of("cobblemarket",
-                if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png"),
+                if (filterExpanded) "textures/gui/button/filter.png" else "textures/gui/button/filter_close.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f
         )
         filterToggle.setTooltip(Tooltip.of(Text.translatable(
@@ -782,7 +782,7 @@ class AuctionScreen(
     private fun updateFilterToggleVisual() {
         val b = filterToggleButton ?: return
         b.iconLeft = Identifier.of("cobblemarket",
-            if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png")
+            if (filterExpanded) "textures/gui/button/filter.png" else "textures/gui/button/filter_close.png")
         b.selectedVisual = filterExpanded
         b.setTooltip(Tooltip.of(Text.translatable(
             if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand")))
@@ -2674,9 +2674,9 @@ class AuctionScreen(
     private companion object {
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
-        val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
-        val HAMMER_TEX_LEFT = Identifier.of("cobblemarket", "textures/gui/auction_gavel_left.png")
-        val HAMMER_TEX_LEFT_NO = Identifier.of("cobblemarket", "textures/gui/auction_gavel_left_no.png")
+        val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon/pokemon_slot.png")
+        val HAMMER_TEX_LEFT = Identifier.of("cobblemarket", "textures/gui/auction/auction_gavel_left.png")
+        val HAMMER_TEX_LEFT_NO = Identifier.of("cobblemarket", "textures/gui/auction/auction_gavel_left_no.png")
         const val MAX_FILTER_LIST_ROWS = 8
 
         // 列表请求的最小间隔：服务端 `auction_list` 节流窗口 500ms + 100ms 余量

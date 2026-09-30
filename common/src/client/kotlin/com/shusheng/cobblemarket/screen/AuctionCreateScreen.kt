@@ -522,7 +522,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             leftX + panelWidth - 50, 13, 50, 16,
             Text.literal(""),
             { client?.setScreen(AuctionScreen(currentTab)) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
@@ -804,7 +804,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private fun updateFilterToggleVisual() {
         val b = filterToggleButton ?: return
         b.iconLeft = Identifier.of("cobblemarket",
-            if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png")
+            if (filterExpanded) "textures/gui/button/filter.png" else "textures/gui/button/filter_close.png")
         b.selectedVisual = filterExpanded
         b.setTooltip(Tooltip.of(Text.translatable(
             if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand")))
@@ -1088,7 +1088,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             drawItemWithBar(context, it.stack, slotX + 6, slotY + 6)
             return
         }
-        val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
+        val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon/pokemon_slot.png")
         context.matrices.push()
         context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
         context.matrices.scale(slotSize / 66f, slotSize / 66f, 1f)
@@ -1977,9 +1977,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         private const val FILTER_LIST_ROW_H = 14
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
-        val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
+        val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon/pokemon_slot.png")
 
         /** 顶部身份位的拍卖锤图标（48x48，与拍卖场界面同一枚） */
-        val HAMMER_TEX_LEFT = Identifier.of("cobblemarket", "textures/gui/auction_gavel_left.png")
+        val HAMMER_TEX_LEFT = Identifier.of("cobblemarket", "textures/gui/auction/auction_gavel_left.png")
     }
 }

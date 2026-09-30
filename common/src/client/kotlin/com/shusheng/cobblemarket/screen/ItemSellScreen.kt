@@ -89,7 +89,7 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
             // ⚠ 必须 `skipDropAnim`：否则返回入口会**重播一次掉落入场动画** ——
             //   那段动画是「从游戏外部打开市场」才该播的（2026-09-28 用户报）
             { client?.setScreen(if (shareMode) MarketEntryScreen(skipDropAnim = true) else ItemMarketScreen()) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )

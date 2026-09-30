@@ -190,7 +190,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
             leftX + panelWidth - 52, 13, 50, 16,
             Text.literal(""),
             { client?.setScreen(AdminScreen()) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
@@ -267,7 +267,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
             centerX - 148, 18, 16, 16,
             Text.literal(""),
             { },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/info.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/icon/info.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f
         )
         infoBtn.setTooltip(

@@ -559,7 +559,7 @@ class PointsConfigScreen : Screen(
         backButton = NineSliceButton(
             dx + dialogW() - 58, dy + 8, 50, 16, Text.literal(""),
             { client?.setScreen(ServerConfigScreen()) },
-            iconLeft = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
@@ -572,7 +572,7 @@ class PointsConfigScreen : Screen(
             dx + 8, dy + 8, 16, 16,
             Text.literal(""),
             { },
-            iconLeft = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/info.png"),
+            iconLeft = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/icon/info.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f
         )
         info.setTooltip(Tooltip.of(Text.translatable("cobblemarket.points.config.paths_hint")))
@@ -1249,7 +1249,7 @@ class PointsConfigScreen : Screen(
          */
         const val BOTTOM_GAP = 4
         // 开关图标沿用服务器配置界面那一对（不再新画）
-        val ON_ICON = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/switch_icon_on.png")
-        val OFF_ICON = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/switch_icon_off.png")
+        val ON_ICON = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/button/switch_icon_on.png")
+        val OFF_ICON = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/button/switch_icon_off.png")
     }
 }

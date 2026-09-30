@@ -388,7 +388,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             leftX + panelWidth - 50, 13, 50, 16,
             Text.literal(""),
             { client?.setScreen(AdminScreen()) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
@@ -420,7 +420,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         val addBtn = NineSliceButton(
             leftX + panelWidth - 114, 62, 50, 16,
             Text.literal(""), { openAddDialog() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/choose.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             // 纯图标按钮一律给悬停提示（同排搜索框右侧，没提示玩家不知道小手是干什么的）
             tooltip = Text.translatable("cobblemarket.gui.blacklist_add")
@@ -568,14 +568,14 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         speciesPrevButton = NineSliceButton(
             centerX + 62, dialogY + 54, 18, 16, Text.literal(""),
             { cycleSpecies(-1) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/previous.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.species_prev")
         ).also { it.visible = false; addDrawableChild(it) }
         speciesNextButton = NineSliceButton(
             centerX + 84, dialogY + 54, 18, 16, Text.literal(""),
             { cycleSpecies(1) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/next.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.species_next")
         ).also { it.visible = false; addDrawableChild(it) }
@@ -1173,7 +1173,7 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
             centerX - 104, dialogY + 40, 16, 16,
             Text.literal(""),
             { toggleHeldAdd() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/hand.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/cursor/hand.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             // 三段贴图：第三段是**选中态**（进入手持添加模式后保持高亮）
             texH = 120,
@@ -2045,6 +2045,6 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     override fun shouldPause() = false
 
     private companion object {
-        val SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
+        val SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon/pokemon_slot.png")
     }
 }

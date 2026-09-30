@@ -157,7 +157,7 @@ class PointsCodeScreen : Screen(Text.translatable("cobblemarket.points.code.titl
         //   见 memory 的 project-code-screen-tip-button。
         val infoButton = NineSliceButton(
             leftX, 18, 16, 16, Text.literal(""), { },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/info.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/icon/info.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f
         )
         // TODO(发布 1.3.0 前)：infoButton.setTooltip(...) 写清外部签名码怎么用 + 官网链接
@@ -169,7 +169,7 @@ class PointsCodeScreen : Screen(Text.translatable("cobblemarket.points.code.titl
         backButton = NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16, Text.literal(""),
             { client?.setScreen(AdminScreen()) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
@@ -844,8 +844,8 @@ class PointsCodeScreen : Screen(Text.translatable("cobblemarket.points.code.titl
         const val COL_AMOUNT = 110
         const val COL_STATUS = 172
 
-        val PANEL_TOP = Identifier.of("cobblemarket", "textures/gui/market_panel_top.png")
-        val PANEL_MID = Identifier.of("cobblemarket", "textures/gui/market_panel_middle.png")
-        val PANEL_BOT = Identifier.of("cobblemarket", "textures/gui/market_panel_bottom.png")
+        val PANEL_TOP = Identifier.of("cobblemarket", "textures/gui/background/market_panel_top.png")
+        val PANEL_MID = Identifier.of("cobblemarket", "textures/gui/background/market_panel_middle.png")
+        val PANEL_BOT = Identifier.of("cobblemarket", "textures/gui/background/market_panel_bottom.png")
     }
 }

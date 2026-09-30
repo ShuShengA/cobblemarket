@@ -183,7 +183,7 @@ class NineSliceButton(
     }
 
     companion object {
-        private val TEXTURE = Identifier.of("cobblemarket", "textures/gui/button_9slice.png")
+        private val TEXTURE = Identifier.of("cobblemarket", "textures/gui/button/button_9slice.png")
         // 贴图总高 = 120（三段：普通 / 悬停 / 选中）——**必须与贴图实际高度一致**：
         // drawNineSlice 拿它做纵向坐标归一化（vOffset / texH），对不上会把按钮切成"上下各半"
         private const val TEX_H = 120

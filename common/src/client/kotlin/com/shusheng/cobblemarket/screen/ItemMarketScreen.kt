@@ -157,7 +157,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             leftX + panelWidth - 50, 13, 50, 16,
             Text.literal(""),
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
@@ -195,7 +195,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         sellAddButton = NineSliceButton(
             leftX + 136, 44, 50, 16,
             Text.literal(""), { openItemSellScreen() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/choose.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             // 纯图标按钮一律给悬停提示（同排搜索框右侧，没提示玩家不知道小手是干什么的）
             tooltip = Text.translatable("cobblemarket.gui.sell_item")
@@ -217,7 +217,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             Text.literal(""),
             { toggleMineOnly() },
             iconLeft = Identifier.of("cobblemarket",
-                if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png"),
+                if (showMineOnly) "textures/gui/button/personal_click.png" else "textures/gui/button/personal.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         )
@@ -232,7 +232,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             leftX, btnY, 80, 20,
             Text.literal(""),
             { prevPage() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/previous.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.prev")
         )
@@ -241,7 +241,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             leftX + panelWidth - 80, btnY, 80, 20,
             Text.literal(""),
             { nextPage() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/next.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.next")
         )
@@ -346,7 +346,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private fun toggleMineOnly() {
         showMineOnly = !showMineOnly
         mineButton?.iconLeft = Identifier.of("cobblemarket",
-            if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png")
+            if (showMineOnly) "textures/gui/button/personal_click.png" else "textures/gui/button/personal.png")
         mineButton?.setTooltip(Tooltip.of(Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")))
         // 「我的」是个**开关**：开启时除换图标，按钮也给选中态（照手持物品那几个开关）
         mineButton?.selectedVisual = showMineOnly
@@ -441,9 +441,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         /** 补发请求最小间隔：服务端 request_item_market 节流 500ms + 100ms 余量，防网络抖动边界丢弃 */
         const val PAGE_CLICK_INTERVAL_MS = 600L
         /** 收款按钮右上角金币角标（48×48 源图按 1/6 缩到 8×8） */
-        val COIN_ICON = Identifier.of("cobblemarket", "textures/gui/coin_icon.png")
+        val COIN_ICON = Identifier.of("cobblemarket", "textures/gui/currency/coin_icon.png")
         /** 待领取按钮右上角红点（48×48 源图按 1/6 缩到 8×8） */
-        val RED_DOT = Identifier.of("cobblemarket", "textures/gui/red_dot.png")
+        val RED_DOT = Identifier.of("cobblemarket", "textures/gui/icon/red_dot.png")
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {

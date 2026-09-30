@@ -361,7 +361,7 @@ class PointsRechargeScreen : Screen(
             cx - BACK_W / 2, backButtonY(bg), BACK_W, BACK_H,
             Text.literal(""),
             { client?.setScreen(PointsMarketScreen()) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
@@ -488,7 +488,7 @@ class PointsRechargeScreen : Screen(
         dialogButtons += NineSliceButton(dx + ORDER_DIALOG_W - 56, dy + 8, 48, 16,
             Text.literal(""),
             { viewingOrderNo = null; orderListOpen = true; rebuild() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.points.recharge.back_to_list"))
         dialogButtons.forEach { addDrawableChild(it) }

@@ -14,9 +14,9 @@ import net.minecraft.util.Identifier
  * 不传 topIcon 就是纯三张拼接（大多数界面）。
  */
 object MarketPanelBackground {
-    private val TOP = Identifier.of("cobblemarket", "textures/gui/market_panel_top.png")
-    private val MIDDLE = Identifier.of("cobblemarket", "textures/gui/market_panel_middle.png")
-    private val BOTTOM = Identifier.of("cobblemarket", "textures/gui/market_panel_bottom.png")
+    private val TOP = Identifier.of("cobblemarket", "textures/gui/background/market_panel_top.png")
+    private val MIDDLE = Identifier.of("cobblemarket", "textures/gui/background/market_panel_middle.png")
+    private val BOTTOM = Identifier.of("cobblemarket", "textures/gui/background/market_panel_bottom.png")
 
     /**
      * 面板宽度。贴图 640 宽按 panelWidth/640 缩放，默认 320 宽、左缘 width/2 - 160。

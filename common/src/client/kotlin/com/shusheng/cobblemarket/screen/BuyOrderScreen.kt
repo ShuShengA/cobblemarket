@@ -466,7 +466,7 @@ class BuyOrderScreen(
             width / 2 + panelWidth / 2 - 12 - 50, 13, 50, 16,
             Text.literal(""),
             { client?.setScreen(if (adminMode) AdminScreen() else MarketEntryScreen(skipDropAnim = true)) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back"),
             texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -521,7 +521,7 @@ class BuyOrderScreen(
                 rowLeftX() + rowW() - 50, 48, 50, 16,
                 Text.literal(""),
                 { openCreateDialog() },
-                iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
+                iconLeft = Identifier.of("cobblemarket", "textures/gui/button/choose.png"),
                 iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
                 texture = BUY_ORDER_BUTTON_TEXTURE,
                 texH = BUY_ORDER_BUTTON_TEX_H
@@ -998,7 +998,7 @@ class BuyOrderScreen(
             context.matrices.translate(iconX.toDouble(), iconY.toDouble(), 0.0)
             context.matrices.scale(forceIconSize / 66f, forceIconSize / 66f, 1f)
             context.drawTexture(
-                net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png"),
+                net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/pokemon/pokemon_slot.png"),
                 0, 0, 0f, 0f, 66, 66, 66, 66
             )
             context.matrices.pop()
@@ -1741,14 +1741,14 @@ class BuyOrderScreen(
         speciesPrevButton = NineSliceButton(
             centerX + 96, createY(48), 18, 16, Text.literal(""),
             { cycleSpecies(-1) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/previous.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.species_prev")
         ).also { it.visible = false; addDrawableChild(it) }
         speciesNextButton = NineSliceButton(
             centerX + 118, createY(48), 18, 16, Text.literal(""),
             { cycleSpecies(1) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/next.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.species_next")
         ).also { it.visible = false; addDrawableChild(it) }
@@ -1840,7 +1840,7 @@ class BuyOrderScreen(
             centerX - 106, createY(48), 16, 16,
             Text.literal(""),
             { toggleHeldItemMode() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/hand.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/cursor/hand.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             // 三段贴图：第三段是**选中态**（进入手持物品模式后保持高亮）
             texH = 120,
@@ -3603,13 +3603,13 @@ class BuyOrderScreen(
         private const val PANEL_BORDER_Y = 17
         // 顶部身份位图标（48x48，与入场界面求购单入口按钮同一枚）。
         // 顶部背景已并入通用三张拼接，不再有求购单专属的 buy_order_panel_top.png
-        private val BUY_ORDER_ICON = Identifier.of("cobblemarket", "textures/gui/buy_order_icon.png")
+        private val BUY_ORDER_ICON = Identifier.of("cobblemarket", "textures/gui/icon/buy_order_icon.png")
         // 精灵槽背景（行内与创建弹窗预览槽共用）
-        private val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
+        private val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon/pokemon_slot.png")
         // 按钮贴图（40×80 = 普通/悬停两段），求购单界面所有按钮统一使用。
         // 2026-09-16：改用全项目通用的 button_9slice —— 原先的 buy_order_button 只是同一套按钮的
         // 另一个配色（实测差异仅约 21% 通道差、肉眼难辨），两份资源没必要，专属贴图已删
-        private val BUY_ORDER_BUTTON_TEXTURE = Identifier.of("cobblemarket", "textures/gui/button_9slice.png")
+        private val BUY_ORDER_BUTTON_TEXTURE = Identifier.of("cobblemarket", "textures/gui/button/button_9slice.png")
         // 与 button_9slice 的总高一致（三段：普通 / 悬停 / 选中）
         private const val BUY_ORDER_BUTTON_TEX_H = 120
         // 创建弹窗形态列表最大可见行数（超出滚动，照黑名单添加框）

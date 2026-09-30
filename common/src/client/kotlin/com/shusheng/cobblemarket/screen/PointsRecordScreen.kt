@@ -54,7 +54,7 @@ class PointsRecordScreen : Screen(Text.translatable("cobblemarket.points.record.
         backButton = NineSliceButton(
             leftX() + panelWidth - 50, 13, 50, 16, Text.literal(""),
             { client?.setScreen(PointsMarketScreen()) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
@@ -312,8 +312,8 @@ class PointsRecordScreen : Screen(Text.translatable("cobblemarket.points.record.
         const val COL_AMOUNT = 118
         const val COL_BALANCE = 206
 
-        val PANEL_TOP = Identifier.of("cobblemarket", "textures/gui/market_panel_top.png")
-        val PANEL_MID = Identifier.of("cobblemarket", "textures/gui/market_panel_middle.png")
-        val PANEL_BOT = Identifier.of("cobblemarket", "textures/gui/market_panel_bottom.png")
+        val PANEL_TOP = Identifier.of("cobblemarket", "textures/gui/background/market_panel_top.png")
+        val PANEL_MID = Identifier.of("cobblemarket", "textures/gui/background/market_panel_middle.png")
+        val PANEL_BOT = Identifier.of("cobblemarket", "textures/gui/background/market_panel_bottom.png")
     }
 }

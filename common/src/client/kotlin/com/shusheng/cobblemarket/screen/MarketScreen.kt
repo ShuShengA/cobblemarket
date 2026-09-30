@@ -342,7 +342,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             Text.literal(""),
             { toggleFilters() },
             iconLeft = Identifier.of("cobblemarket",
-                if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png"),
+                if (filterExpanded) "textures/gui/button/filter.png" else "textures/gui/button/filter_close.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f
         ).also {
             it.setTooltip(Tooltip.of(Text.translatable(
@@ -360,7 +360,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         addDrawableChild(NineSliceButton(
             leftX + panelWidth - 104, 44, 50, 16,
             Text.literal(""), { openSellScreen() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/choose.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/choose.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.sell_pokemon")
         ))
@@ -386,7 +386,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             leftX + panelWidth - 50, 13, 50, 16,
             Text.literal(""),
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         ))
@@ -523,7 +523,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             Text.literal(""),
             { toggleMineOnly() },
             iconLeft = Identifier.of("cobblemarket",
-                if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png"),
+                if (showMineOnly) "textures/gui/button/personal_click.png" else "textures/gui/button/personal.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         )
@@ -569,7 +569,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             leftX, btnY, 80, 20,
             Text.literal(""),
             { prevPage() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/previous.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.prev")
         )
@@ -579,7 +579,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             leftX + panelWidth - 80, btnY, 80, 20,
             Text.literal(""),
             { nextPage() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/next.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.next")
         )
@@ -1261,7 +1261,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private fun updateFilterToggleButton() {
         if (!::filterToggleButton.isInitialized) return
         filterToggleButton.iconLeft = Identifier.of("cobblemarket",
-            if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png")
+            if (filterExpanded) "textures/gui/button/filter.png" else "textures/gui/button/filter_close.png")
         filterToggleButton.selectedVisual = filterExpanded
         filterToggleButton.setTooltip(Tooltip.of(Text.translatable(
             if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand")))
@@ -1270,7 +1270,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private fun toggleMineOnly() {
         showMineOnly = !showMineOnly
         mineButton.iconLeft = Identifier.of("cobblemarket",
-            if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png")
+            if (showMineOnly) "textures/gui/button/personal_click.png" else "textures/gui/button/personal.png")
         mineButton.setTooltip(Tooltip.of(Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")))
         // 「我的」是个**开关**：开启时除换图标，按钮也给选中态（照手持物品那几个开关）
         mineButton.selectedVisual = showMineOnly
@@ -1315,7 +1315,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         (abilityButton as? NineSliceButton)?.textColor = 0xFFFFFF
         (natureButton as? NineSliceButton)?.textColor = 0xFFFFFF
         sortButton.message = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
-        mineButton.iconLeft = Identifier.of("cobblemarket", "textures/gui/personal.png")
+        mineButton.iconLeft = Identifier.of("cobblemarket", "textures/gui/button/personal.png")
         mineButton.setTooltip(Tooltip.of(Text.translatable("cobblemarket.gui.mine")))
         mineButton.selectedVisual = false
         requestFilterRefresh()
@@ -1751,7 +1751,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             // Pokemon icon slot background（GUI 层，弹窗遮罩会自动压暗，照常渲染）
             val slotX = leftX + 2
             val slotY = y + 2
-            val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
+            val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon/pokemon_slot.png")
             context.matrices.push()
             context.matrices.translate(slotX.toDouble(), slotY.toDouble(), 0.0)
             context.matrices.scale(iconSize / 66f, iconSize / 66f, 1f)
@@ -2041,7 +2041,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         g.smoothRot += (((targetRot - g.smoothRot + 540f) % 360f) - 180f) * 0.15f
         val rotDeg = g.smoothRot
         val flyFrame = ((System.currentTimeMillis() / g.FRAME_MS) % 40).toInt()
-        val flyTex = Identifier.of("cobblemarket", "textures/gui/groudon_sheet.png")
+        val flyTex = Identifier.of("cobblemarket", "textures/gui/misc/groudon_sheet.png")
         val flyCol = flyFrame % 10
         val flyRow = flyFrame / 10
         val flyW = 210f
@@ -2134,7 +2134,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val iconSize = 28
         val iconX = centerX - iconSize / 2
         val iconY = dialogY + 28
-        val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
+        val slotTexture = Identifier.of("cobblemarket", "textures/gui/pokemon/pokemon_slot.png")
         context.matrices.push()
         context.matrices.translate(iconX.toDouble(), iconY.toDouble(), 0.0)
         context.matrices.scale(iconSize / 66f, iconSize / 66f, 1f)
@@ -2505,9 +2505,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         /** 补发请求最小间隔：服务端 request_market 节流 250ms + 100ms 余量，防网络抖动边界丢弃 */
         const val PAGE_CLICK_INTERVAL_MS = 350L
         /** 收款按钮右上角金币角标（48×48 源图按 1/6 缩到 8×8） */
-        val COIN_ICON = Identifier.of("cobblemarket", "textures/gui/coin_icon.png")
+        val COIN_ICON = Identifier.of("cobblemarket", "textures/gui/currency/coin_icon.png")
         /** 待领取按钮右上角红点（48×48 源图按 1/6 缩到 8×8） */
-        val RED_DOT = Identifier.of("cobblemarket", "textures/gui/red_dot.png")
+        val RED_DOT = Identifier.of("cobblemarket", "textures/gui/icon/red_dot.png")
     }
 
     override fun resize(client: net.minecraft.client.MinecraftClient, width: Int, height: Int) {

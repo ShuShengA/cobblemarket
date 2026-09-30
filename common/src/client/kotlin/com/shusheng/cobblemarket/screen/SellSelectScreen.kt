@@ -276,7 +276,7 @@ class SellSelectScreen(
                     }
                 )
             },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         ))
@@ -962,7 +962,7 @@ class SellSelectScreen(
     private fun updateFilterToggleVisual() {
         val b = filterToggleButton ?: return
         b.iconLeft = Identifier.of("cobblemarket",
-            if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png")
+            if (filterExpanded) "textures/gui/button/filter.png" else "textures/gui/button/filter_close.png")
         b.selectedVisual = filterExpanded
         b.setTooltip(Tooltip.of(Text.translatable(
             if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand")))
@@ -1527,7 +1527,7 @@ class SellSelectScreen(
         g.smoothRot += (((targetRot - g.smoothRot + 540f) % 360f) - 180f) * 0.15f
         val rotDeg = g.smoothRot
         val flyFrame = ((System.currentTimeMillis() / g.FRAME_MS) % 40).toInt()
-        val flyTex = Identifier.of("cobblemarket", "textures/gui/groudon_sheet.png")
+        val flyTex = Identifier.of("cobblemarket", "textures/gui/misc/groudon_sheet.png")
         val flyCol = flyFrame % 10
         val flyRow = flyFrame / 10
         val flyW = 210f
@@ -1871,6 +1871,6 @@ class SellSelectScreen(
         const val UNSET_FILTER_COLOR = 0xFFFFFF
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
-        val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
+        val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon/pokemon_slot.png")
     }
 }

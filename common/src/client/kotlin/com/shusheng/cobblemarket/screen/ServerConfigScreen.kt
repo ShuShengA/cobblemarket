@@ -356,7 +356,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             "consumerLoan" -> latest?.consumerLoanEnabled ?: true
             else -> false
         }
-        return Identifier.of("cobblemarket", if (on) "textures/gui/switch_icon_on.png" else "textures/gui/switch_icon_off.png")
+        return Identifier.of("cobblemarket", if (on) "textures/gui/button/switch_icon_on.png" else "textures/gui/button/switch_icon_off.png")
     }
 
     // ── 保存 ──
