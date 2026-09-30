@@ -21,7 +21,6 @@ import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
-import net.minecraft.util.Identifier
 import org.lwjgl.glfw.GLFW
 import java.util.UUID
 
@@ -134,14 +133,10 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         // 内容一律画在内框里（⚠ 按钮贴图自带边框，铺满会把它盖掉）
         val cx = x + INSET
         val cy = y + INSET
-        // 槽底图（照弹窗那套：66×66 的槽贴图拉伸到内框大小）
-        context.matrices.push()
-        context.matrices.translate(cx.toDouble(), cy.toDouble(), 0.0)
-        context.matrices.scale(CONTENT / 66f, CONTENT / 66f, 1f)
-        context.drawTexture(POKEMON_SLOT, 0, 0, 0f, 0f, 66, 66, 66, 66)
-        context.matrices.pop()
-
-        // 队伍位为空（只有刚进游戏还没选初始精灵时才会这样）⇒ 只画空槽，不画模型
+        // ⚠⚠ **不画槽底占位图**（用户 2026-09-30 定）—— 按钮上只放「要展示的那个东西本身」。
+        //   2026-09-29 曾**刻意与物品侧不对称**（精灵侧画 `pokemon_slot.png` 当"位置"的表示），
+        //   2026-09-30 用户改口径：这里也不用占位图 ⇒ **两侧现在一致**（空 ⇒ 什么都不画）。
+        //   所以队伍位为空时，按钮上只剩它自己的背景（只有刚进游戏还没选初始精灵才会这样）。
         val rp = cachedRenderable ?: return
 
         // ⚠ 3D 之前要 flush 拼批 + 清深度，否则模型会被先前画的 GUI 整片剔除
@@ -183,7 +178,7 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     private fun drawItemContent(context: DrawContext, x: Int, y: Int) {
         val stack = client?.player?.mainHandStack
         // 空手 ⇒ **什么都不画**（用户 2026-09-29 定：按钮留白，不要占位图）。
-        // ⚠ 与精灵那侧刻意不对称：精灵位为空仍画槽底图（那是"位置"的表示），物品空手就是没东西。
+        // ⚠ 两侧**已对称**：精灵那侧的槽底图也在 2026-09-30 去掉了（见 [drawPokemonContent]）。
         if (stack == null || stack.isEmpty) return
         // ⚠ 物品图同样要先 flush + 清深度（照物品悬停大图那套）
         context.draw()
@@ -338,7 +333,5 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         private const val ICON_SIZE = CONTENT
         /** 物品放大倍数：16px 的图标 × 6 = 96px，在内容框里留一圈 */
         private const val ITEM_SCALE = CONTENT / 16f
-
-        private val POKEMON_SLOT = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
     }
 }
