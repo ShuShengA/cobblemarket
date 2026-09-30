@@ -983,7 +983,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         // 筛选面板里的控件与「筛选」开关一并藏掉（统一走 applyFilterVisibility，别在这儿列名单）
         applyFilterVisibility()
         val centerX = width / 2
-        val dialogY = height / 2 - (if (item != null) 180 else 150) / 2
+        // ⚠ 传 `item != null` 而不是让 [dialogY] 读 [dialogItem] —— 这里是形参，字段还没赋值
+        val dialogY = dialogY(item != null)
 
         if (pokemon != null) {
             val id = Identifier.tryParse(pokemon.speciesId)
@@ -1009,7 +1010,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             }
         })
 
-        startingField = TextFieldWidget(textRenderer, centerX - 20, dialogY + 52, 100, 16, Text.literal(""))
+        startingField = TextFieldWidget(textRenderer, centerX - 20, dialogY + 66, 100, 16, Text.literal(""))
         startingField?.setPlaceholder(Text.translatable("cobblemarket.auction.starting_placeholder").formatted(Formatting.GRAY))
         startingField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(startingField)
@@ -1021,8 +1022,11 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         //   在 RP 页点「创建拍卖」进来就该是 RP；原先这一行会把刚读到的共享值清回主货币
         // ⚠ **总开关关着时也建**（只是置灰）：按钮的位置是排好的，凭空消失会空出一块。
         //   （用户 2026-09-24 定：创建类界面的货币按钮统一「建 + 置灰」。查看类界面本来就放行、不置灰）
+        // ⚠⚠ y 必须跟着「起拍价输入框」走 —— 它紧贴那个框。2026-10-01 弹窗整体下移 14，
+        //     而这个按钮是 **1.3.0 独有**的（1.2.1 没有），下移那次改动覆盖不到它 ⇒
+        //     从 52 手动补到 66，否则它比输入框高 14px（cherry-pick 上浮时最容易漏的就是这种）。
         currencyButton = NineSliceButton(
-            centerX + 84, dialogY + 52, 20, 16, Text.literal(""), { onCurrencyClick() },
+            centerX + 84, dialogY + 66, 20, 16, Text.literal(""), { onCurrencyClick() },
             iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
             iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
             tooltip = Text.translatable("cobblemarket.gui.currency_switch", com.shusheng.cobblemarket.client.activeCurrencyUnit(), CurrencyService.pointsIcon())
@@ -1033,7 +1037,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             addDrawableChild(it)
         }
 
-        incrementField = TextFieldWidget(textRenderer, centerX - 20, dialogY + 72, 100, 16, Text.literal(""))
+        incrementField = TextFieldWidget(textRenderer, centerX - 20, dialogY + 86, 100, 16, Text.literal(""))
         // 先铺兜底文案「留空=默认」，再用已缓存的服务器值覆盖 ——
         // ⚠ 那个包多半**比这个弹窗先到**（init 里就发了请求），onDurations 只是缓存了值，
         //   它执行时 incrementField 还不存在，所以占位符必须在这里补设（2026-09-15 修的时序 bug）
@@ -1046,18 +1050,18 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         incrementField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(incrementField)
 
-        durationButton = NineSliceButton(centerX - 20, dialogY + 92, 100, 14, Text.literal(""), { cycleDuration() })
+        durationButton = NineSliceButton(centerX - 20, dialogY + 106, 100, 14, Text.literal(""), { cycleDuration() })
         addDrawableChild(durationButton)
         updateDurationButton()
 
         if (item != null) {
-            countField = TextFieldWidget(textRenderer, centerX - 20, dialogY + 112, 100, 16, Text.literal(""))
+            countField = TextFieldWidget(textRenderer, centerX - 20, dialogY + 126, 100, 16, Text.literal(""))
             countField?.setPlaceholder(Text.translatable("cobblemarket.auction.count_placeholder", item.count).formatted(Formatting.GRAY))
             countField?.setTextPredicate { it.length <= 4 && it.all { c -> c.isDigit() } }
             addDrawableChild(countField)
         }
 
-        val btnY = if (item != null) dialogY + 134 else dialogY + 112
+        val btnY = if (item != null) dialogY + 148 else dialogY + 126
         confirmButton = NineSliceButton(
             centerX - 85, btnY, 80, 20,
             Text.translatable("cobblemarket.auction.create"),
@@ -1075,11 +1079,12 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     // 弹窗打开时：预览精灵画在起拍价输入框上方，以输入框水平居中
     private fun renderPreviewAboveField(context: DrawContext, delta: Float) {
         val slotSize = 28
-        val dialogY = height / 2 - (if (dialogItem != null) 180 else 150) / 2
-        val fieldX = width / 2 - 20
-        val fieldW = 100
-        val slotX = fieldX + (fieldW - slotSize) / 2
-        val slotY = dialogY + 52 - slotSize - 4
+        val dialogY = dialogY()
+        // ⚠⚠ 槽位**对弹窗居中**，不是对输入框居中（2026-10-01 用户报「精灵图标偏右」）：
+        //   输入框是 `中心 − 20` 起、宽 100 ⇒ 它**自己就偏右 30px**，
+        //   槽位跟着它居中 ⇒ 图标整体偏右 30px、和居中的标题对不上。
+        val slotX = width / 2 - slotSize / 2
+        val slotY = dialogY + 66 - slotSize - 4
         // 物品模式：**只有那个 16px 的物品图标** —— `pokemon_slot.png` 是**精灵专用**的占位图，物品不用
         // ⚠ 坐标必须与精灵那支**同源**：原先物品画在 `renderDialogBackground` 里、slotX 是硬编码的
         //   `centerX + 66` ⇒ 精灵在标题正下方、物品却**偏右 50px**（2026-09-29 用户报）
@@ -1116,25 +1121,38 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         }
     }
 
+    /**
+     * 弹窗高度 / 左上角 y —— **只在这里算**。
+     *
+     * ⚠⚠ 这个高度原先在**三个地方各写了一遍**（[buildDialog] / [renderPreviewAboveField] /
+     *   [renderDialogBackground]）⇒ 改高度时漏一处，预览图与字段标签就和弹窗对不上
+     *   （同 memory「测量与绘制必须同源」那条）。**别在别处重算。**
+     * ⚠ 物品模式多一行「数量」输入 ⇒ 比精灵模式高。
+     * ⚠ [hasItem] 必须能**显式传**：[buildDialog] 里那个是形参，那时 [dialogItem] 还没赋值。
+     */
+    private fun dialogH(hasItem: Boolean = dialogItem != null) =
+        if (hasItem) DIALOG_H_ITEM else DIALOG_H_POKEMON
+
+    private fun dialogY(hasItem: Boolean = dialogItem != null) = height / 2 - dialogH(hasItem) / 2
+
     private fun renderDialogBackground(context: DrawContext) {
         val centerX = width / 2
-        val dialogH = if (dialogItem != null) 180 else 150
         val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         val dialogX = centerX - dialogW / 2
-        val dialogY = height / 2 - dialogH / 2
+        val dialogY = dialogY()
 
         drawScreenDimMask(context, width, height)
-        drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
+        drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH(), 0, DIALOG_BACKGROUND_TEX_H)
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.auction.create_dialog_title").formatted(Formatting.GOLD),
-            centerX, dialogY + 14, 0xFFFFFF)
+            centerX, dialogY + 20, 0xFFFFFF)
 
         // ⚠ 预览图标**不在这儿画** —— 精灵与物品都在 `renderPreviewAboveField` 里、共用同一个槽位坐标
         //（原先物品在这硬编码 `slotX = centerX + 66`，与精灵对不上，2026-09-29 已收口）
 
         // 字段标签
         val labelX = dialogX + 10
-        var ly = dialogY + 56
+        var ly = dialogY + 70
         fun label(text: Text) {
             context.drawTextWithShadow(textRenderer, text.string, labelX, ly, 0xAAAAAA)
             ly += 20
@@ -1148,7 +1166,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             // 物品拍卖：起拍价为整组总价提示
             context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("cobblemarket.auction.price_total_hint").formatted(Formatting.GRAY),
-                centerX, dialogY + 158, 0xFFFFFF)
+                centerX, dialogY + 172, 0xFFFFFF)
         }
     }
 
@@ -1163,10 +1181,18 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
      */
     private fun applyIncrementPlaceholder() {
         if (serverMinIncrement <= 0) return
-        incrementField?.setPlaceholder(
-            // ⚠ placeholder 是输入框内的纯文本，塞不进图标 ⇒ 物品货币时退回**物品名**（信息正确优先）
-            Text.translatable("cobblemarket.auction.increment_placeholder",
-                "${com.shusheng.cobblemarket.client.formatPrice(serverMinIncrement)} ${com.shusheng.cobblemarket.client.activeCurrencyUnit()}").formatted(Formatting.GRAY))
+        val field = incrementField ?: return
+        // ⚠ placeholder 是输入框内的纯文本，塞不进图标 ⇒ 物品货币时退回**物品名**（信息正确优先）
+        val ph = Text.translatable(
+            "cobblemarket.auction.increment_placeholder",
+            "${com.shusheng.cobblemarket.client.formatPrice(serverMinIncrement)} " +
+                com.shusheng.cobblemarket.client.activeCurrencyUnit()
+        ).formatted(Formatting.GRAY)
+        // ⚠⚠ **占位符必须截断到输入框内宽**（2026-10-01 用户报「Master Ball 超出输入框」）：
+        //   物品本位货币下单位是**物品名**，长名字（Master Ball）会整串冲出框外；
+        //   而 `TextFieldWidget` 画占位符**不裁剪**，只能自己按内宽截。
+        //   走 [TextUtil.truncateStyled]（保分段样式）—— 别用 `\.string` 拼，那会丢样式。
+        field.setPlaceholder(com.shusheng.cobblemarket.util.TextUtil.truncateStyled(ph, field.innerWidth))
     }
 
     /** 服务端真实时长档位到达：更新选项与按钮显示（服务器自定义配置时按钮不再失真） */
@@ -1975,6 +2001,17 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         const val MAX_FILTER_LIST_ROWS = 8
         // ⚠ 浮层起点不再是常量：改成「被点按钮自己的 y + 22」，读控件、不维护第二份坐标表
         private const val FILTER_LIST_ROW_H = 14
+        /**
+         * 精灵模式的弹窗高：标题 + 预览槽 + 三个字段 + 按钮区。
+         * ⚠ 2026-10-01 由 **150 加高到 166** —— 原来标题（在 `dialogY + 14`）与 28px 的预览槽
+         *   （`dialogY + 20 ~ +48`）**重叠 2px**，用户报「标题和精灵图标重合了一点」。
+         *   改法是**整体下移内容、同时加高弹窗**（只下移会顶到下面的字段）。
+         */
+        const val DIALOG_H_POKEMON = 166
+
+        /** 物品模式弹窗高：比精灵模式**多一行「数量」输入**。⚠ 2026-10-01 由 180 加高到 196（同上） */
+        const val DIALOG_H_ITEM = 196
+
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
         val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon/pokemon_slot.png")
