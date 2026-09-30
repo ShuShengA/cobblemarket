@@ -524,6 +524,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private fun openSettingsDialog() {
         settingsOpen = true
         settingsScroll = 0
+        // 内容重置 = 滚动条也重置：拖动状态一并复位，否则会留个"半拖"状态（见 [ScrollBar.cancel]）
+        ScrollBar.shared.cancel()
         // 隐藏下层控件（弹窗打开期间不可交互；closeSettingsDialog 的 init 重建会恢复）
         entryButtons.forEach { it.visible = false }
 
@@ -637,6 +639,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsHoverPreviewButton = null
         settingsRows.clear()
         settingsScroll = 0
+        // 弹窗关了 = 滚动条不画了：拖动状态一并复位，否则会留个"半拖"状态（见 [ScrollBar.cancel]）
+        ScrollBar.shared.cancel()
         clearChildren()
         init()
     }
@@ -873,18 +877,44 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         return maxOf(0, contentH - (settingsViewBottomRel() - SETTINGS_ROWS_TOP))
     }
 
-    /** 右侧滚动条：只有内容超出一屏才画（否则玩家不知道下面还有东西） */
+    /**
+     * 右侧滚动条：只有内容超出一屏才画（否则玩家不知道下面还有东西）。
+     *
+     * ⚠ 走共用的 [ScrollBar]（**可拖动**）：装得下就不画由它自己判；几何由它记下来供拖动换算，
+     *   **别在这儿自己 fill**（自己画的条拖不动）。
+     * ⚠⚠ **单位换算**：本弹窗的 [settingsScroll] 是**像素**口径（滚轮一次一行 = [SETTINGS_ROW_STEP]），
+     *   而 [ScrollBar] 三个参数都要**行** ⇒ 进走 [settingsScrollRow]、出走 [applySettingsScrollByRow]。
+     *   原来那个 `thumbH = trackH² / (trackH + maxScroll)` 与 `trackH * rows / total` 等价
+     *   （`trackH + maxScroll` = 内容总高），所以换算过来就是这三个参数。
+     */
     private fun renderSettingsScrollbar(context: DrawContext) {
-        val maxScroll = settingsMaxScroll()
-        if (maxScroll <= 0) return
-        val dialogY = settingsDialogY()
-        val x = width / 2 + DIALOG_W / 2 - 5
-        val top = dialogY + SETTINGS_ROWS_TOP
         val trackH = settingsViewBottomRel() - SETTINGS_ROWS_TOP
-        val thumbH = maxOf(16, trackH * trackH / (trackH + maxScroll))
-        val thumbY = top + (trackH - thumbH) * settingsScroll / maxScroll
-        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
-        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
+        ScrollBar.shared.draw(
+            context,
+            width / 2 + DIALOG_W / 2 - 5, settingsDialogY() + SETTINGS_ROWS_TOP, trackH,
+            settingsRows.size, settingsScrollRow(trackH), settingsScrollRow(settingsScroll)
+        )
+    }
+
+    /**
+     * 像素 → 行（[ScrollBar] 只认行）。
+     *
+     * ⚠ **四舍五入，不是整除**：整除会把可见行数少算一行（`trackH` 不是 26 的整数倍时），
+     *   于是 `(total − rows) × 26` 比像素上限大出一截 —— 滑块拖到底、内容却还差一截没走完。
+     *   四舍五入后与 [settingsMaxScroll]（像素口径）只差末行那 4px（行高 22 ≠ 步进 26），无感。
+     */
+    private fun settingsScrollRow(px: Int) = (px.toFloat() / SETTINGS_ROW_STEP).roundToInt()
+
+    /**
+     * 滚动条算出的**行偏移**写回像素口径的 [settingsScroll]，并重摆各行。
+     *
+     * ⚠ 要 `coerceIn(0, settingsMaxScroll())`：行上限换算成像素后可能比上限多几像素
+     *   （末行高 22 ≠ 步进 26，弹窗被屏幕压矮时上限也不是整行），越界的话最后一行会被
+     *   [settingsRowVisible] 整行判出可视区、拖到底却仍看不见。
+     */
+    private fun applySettingsScrollByRow(row: Int) {
+        settingsScroll = (row * SETTINGS_ROW_STEP).coerceIn(0, settingsMaxScroll())
+        layoutSettingsRows()
     }
 
     /** 设置弹窗内容滚动：鼠标在弹窗内才吃事件，一次一行（行高 26） */
@@ -1015,7 +1045,38 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                 shareItemBtn?.isMouseOver(mouseX, mouseY) == true
             if (!overShare) collapseShareMenu()
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        val result = super.mouseClicked(mouseX, mouseY, button)
+        // ⭐ **设置弹窗的滚动条**：按滑块 / 点轨道空白都直接滚，点轨道 = **跳转**（见 [ScrollBar]）
+        //   ⚠ 排在**弹窗里的行控件之后**（`!result`）—— 命中区左右放宽过，压在控件右缘会被它截胡
+        //   ⚠ 还要判**内容确实装不下**：装得下时 [ScrollBar.draw] 不记几何，命中用的是**别处留下的**
+        //   那份，会把这次点击白白吃掉（[applySettingsScrollByRow] 会夹回 0，不至于出错）
+        if (!result && settingsOpen && button == 0 && settingsMaxScroll() > 0) {
+            ScrollBar.shared.mouseClicked(mouseX, mouseY, settingsScrollRow(settingsScroll))?.let {
+                applySettingsScrollByRow(it)
+                return true
+            }
+        }
+        return result
+    }
+
+    /**
+     * 拖动中 —— 本界面里**只有滚动条**在用（见 [ScrollBar]）。
+     * 行是**控件**，偏移一变必须重摆（走 [applySettingsScrollByRow]，与滚轮那条路同一口径）。
+     */
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        if (settingsOpen) {
+            ScrollBar.shared.mouseDragged(mouseY, settingsScrollRow(settingsScroll))?.let {
+                applySettingsScrollByRow(it)
+                return true
+            }
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+    }
+
+    /** 松开：结束滚动条的拖动 —— 结束时要**吃掉这次松开**，否则它会在别处又触发一次点击 */
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (ScrollBar.shared.mouseReleased()) return true
+        return super.mouseReleased(mouseX, mouseY, button)
     }
 
     /**

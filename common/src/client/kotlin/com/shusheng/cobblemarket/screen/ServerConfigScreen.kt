@@ -568,7 +568,41 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         if (wasInInput && !numFields.values.any { it.isMouseOver(mouseX, mouseY) }) {
             focused = null
         }
+        // ⭐ 滚动条：**排在最后**（控件 / 行优先）—— [ScrollBar] 的命中区左右各放宽了 3px，
+        //   压在列表右缘那一两像素会被它截胡；`!result` = 控件已经吃下这一击时不再判。
+        //   ⚠ 确认弹窗开着时滚动条不画（render 提前返回）⇒ 这里也不判，免得点到"看不见的条"
+        //   （`totalRows > getMaxVisibleRows()` = 现在确实有得滚；装得下时它不画，几何还停在上一帧）
+        if (!result && !eggConfirmOpen && button == 0 && totalRows > getMaxVisibleRows()) {
+            ScrollBar.shared.mouseClicked(mouseX, mouseY, scrollOffset)?.let {
+                scrollOffset = it
+                // 行是**控件** ⇒ 位置得跟着新偏移重摆（同 [mouseScrolled]）
+                rebuildPositions()
+                return true
+            }
+        }
         return result
+    }
+
+    /** 拖动滚动条（见 [ScrollBar]）—— 本界面里**只有它**在用拖动 */
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        if (!eggConfirmOpen) {
+            ScrollBar.shared.mouseDragged(mouseY, scrollOffset)?.let {
+                scrollOffset = it
+                rebuildPositions()
+                return true
+            }
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+    }
+
+    /**
+     * 松开：结束滚动条的拖动。
+     *
+     * ⚠ 结束时要**吃掉这次松开** —— 否则它会在别处又触发一次点击（松手那一刻鼠标往往正压着某个按钮）。
+     */
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (ScrollBar.shared.mouseReleased()) return true
+        return super.mouseReleased(mouseX, mouseY, button)
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
@@ -684,18 +718,30 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     }
 
     /** 右侧滚动条：内容超出一屏才画（否则玩家不知道下面还有东西），样式照入口界面的设置弹窗。
-     *  贴弹窗右内缘：控件最右到 dialogW - 10、行分割线到 dialogW - 6，这里占 -5~-3 不重叠 */
+     *  贴弹窗右内缘：控件最右到 dialogW - 10、行分割线到 dialogW - 6，这里占 -5~-3 不重叠。
+     *
+     *  ⚠ 走共用的 [ScrollBar]（**可拖动** —— 原先只是画出来的两根竖条，按上去没反应）：
+     *   几何由它记下来供拖动换算，**别在这儿自己 fill**（自己画的条拖不动）。
+     *  ⚠ 三个参数**都是"行"**：本界面的 totalRows / getMaxVisibleRows / scrollOffset 本来就是行口径，
+     *   直接喂即可（原来那套 px 换算交给它按比例算）；「装得下就不画」也由它自己判。
+     */
     private fun renderScrollbar(context: DrawContext) {
-        val maxScroll = maxOf(0, totalRows - getMaxVisibleRows())
-        if (maxScroll <= 0) return
-        val x = width / 2 + dialogW / 2 - 5
-        val top = listStartY()
-        val trackH = listAreaH()
-        // 滑块高按「可视 / 内容总高」比例；scrollOffset 单位是行，× rowHeight 换算成像素才与 trackH 同量纲
-        val thumbH = maxOf(16, trackH * trackH / (trackH + maxScroll * rowHeight))
-        val thumbY = top + (trackH - thumbH) * scrollOffset / maxScroll
-        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
-        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
+        ScrollBar.shared.draw(
+            context, width / 2 + dialogW / 2 - 5, listStartY(), listAreaH(),
+            totalRows, getMaxVisibleRows(), scrollOffset
+        )
+    }
+
+    /**
+     * 界面以任何方式离开（返回按钮 / Esc / E / 关闭动画）都在这里收尾：放弃可能还在进行中的滚动条拖动。
+     *
+     * ⚠ 放 [removed] 而不是 `close()`：Esc 走动画时是 `setScreen(null)`，不经过 `close()`
+     *   （同 BalanceHudPositionScreen 那条注释）。不清理会留个"半拖"状态 —— 滚动条是**单例**，
+     *   下个界面里鼠标没按住也会跟着走。
+     */
+    override fun removed() {
+        super.removed()
+        ScrollBar.shared.cancel()
     }
 
     override fun shouldPause() = false

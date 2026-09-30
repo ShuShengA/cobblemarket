@@ -721,20 +721,22 @@ class PointsConfigScreen : Screen(
     }
 
     /**
-     * 右侧滚动条：内容装不下才画（2px 宽，轨道半透明、滑块不透明 —— 与服务器配置界面同一套）。
-     * 轨道 = 内容可视区；滑块高按「可视高 / 内容总高」的比例。
+     * 右侧滚动条：内容装不下才画。
+     * 轨道 = 内容可视区；滑块高按「可见行数 / 总行数」的比例。
+     *
+     * ⚠ 走共用的 [ScrollBar]（**可拖动** —— 原先只是画出来的两根竖条，按上去没反应）：
+     *   几何由它记下来供拖动换算，**别在这儿自己 fill**（自己画的条拖不动）。
+     * ⚠ 三个参数**都是"行"**。行高有两种（设置项 [ROW_H] / 档位行 [TIER_ROW_H]），所以
+     *   「可见行数」不能按 `viewportH() / ROW_H` 估 —— 那样算出的 maxScroll 与 [maxScrollRow]
+     *   对不上（滑块行程与滚轮范围会错位）。这里由 [maxScrollRow] **反推**：
+     *   可见行数 = 总行数 − 最多能滚的行数 ⇒ 两者的 maxScroll 天然一致。
      */
     private fun renderScrollbar(context: DrawContext) {
-        val maxScroll = maxScrollRow()
-        if (maxScroll <= 0) return
-        val x = dialogX() + dialogW() - 5
-        val top = contentTop()
-        val trackH = viewportH()
-        val hidden = rowTop(contentRowCount()) - viewportH()
-        val thumbH = maxOf(16, trackH * trackH / (trackH + hidden))
-        val thumbY = top + (trackH - thumbH) * scrollRow / maxScroll
-        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
-        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
+        val rows = (contentRowCount() - maxScrollRow()).coerceAtLeast(1)
+        ScrollBar.shared.draw(
+            context, dialogX() + dialogW() - 5, contentTop(), viewportH(),
+            contentRowCount(), rows, scrollRow
+        )
     }
 
     /**
@@ -1113,7 +1115,54 @@ class PointsConfigScreen : Screen(
         val wasInInput = fields.any { it === focused }
         val result = super.mouseClicked(mouseX, mouseY, button)
         if (wasInInput && fields.none { it.isMouseOver(mouseX, mouseY) }) focused = null
+        // ⭐ 滚动条：**排在最后**（控件 / 行优先）—— [ScrollBar] 的命中区左右各放宽了 3px，
+        //   压在内容行右缘那一两像素会被它截胡。
+        //   ⚠ 弹窗盖着时滚动条不画（render 提前返回）⇒ 这里也不判，免得点到"看不见的条"
+        // `!result` = 控件已经吃下这一击时不再判（行上的按钮 / 输入框优先）；
+        // `maxScrollRow() > 0` = 现在确实有得滚（装得下时它不画，几何还停在上一帧）
+        if (!result && !anyDialogOpen() && button == 0 && maxScrollRow() > 0) {
+            ScrollBar.shared.mouseClicked(mouseX, mouseY, scrollRow)?.let {
+                scrollRow = it
+                // 行是**控件** ⇒ 位置得跟着新偏移重摆（同 [mouseScrolled]）
+                layoutRows()
+                return true
+            }
+        }
         return result
+    }
+
+    /** 拖动滚动条（见 [ScrollBar]）—— 本界面里**只有它**在用拖动 */
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        if (!anyDialogOpen()) {
+            ScrollBar.shared.mouseDragged(mouseY, scrollRow)?.let {
+                scrollRow = it
+                layoutRows()
+                return true
+            }
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+    }
+
+    /**
+     * 松开：结束滚动条的拖动。
+     *
+     * ⚠ 结束时要**吃掉这次松开** —— 否则它会在别处又触发一次点击（松手那一刻鼠标往往正压着一行 / 一个按钮）。
+     */
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (ScrollBar.shared.mouseReleased()) return true
+        return super.mouseReleased(mouseX, mouseY, button)
+    }
+
+    /**
+     * 界面以任何方式离开（返回按钮 / Esc / E / 关闭动画）都在这里收尾：
+     * 放弃可能还在进行中的滚动条拖动（滚动条是**单例**，不清理会留个"半拖"状态给下个界面）。
+     *
+     * ⚠ 放 [removed] 而不是 `close()`：Esc 走动画时是 `setScreen(null)`，不经过 `close()`
+     *   （同 BalanceHudPositionScreen 那条注释）。
+     */
+    override fun removed() {
+        super.removed()
+        ScrollBar.shared.cancel()
     }
 
     override fun shouldPause() = false

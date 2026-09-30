@@ -182,6 +182,8 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
         if (showFinished == finished) return
         showFinished = finished
         scrollOffset = 0
+        // 换 tab = 列表整个换掉：滚动条的拖动状态一并复位，否则会留个"半拖"状态（见 [ScrollBar.cancel]）
+        ScrollBar.shared.cancel()
         updateTabButtons()
         requestList()
     }
@@ -207,6 +209,9 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
         orders = payload.orders
         loading = false
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, orders.size - maxVisible()))
+        // 列表内容换了（条数可能少了一大截）：拖动状态一并复位，否则还在拖的那只手会按旧几何
+        // 把 scroll 又推到越界值（列表看着空了），见 [ScrollBar.cancel]
+        ScrollBar.shared.cancel()
         rebuildRowButtons()
     }
 
@@ -314,7 +319,40 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
         val wasInInput = isInputFieldFocused()
         val result = super.mouseClicked(mouseX, mouseY, button)
         if (wasInInput && !isMouseOverAnyInput(mouseX, mouseY)) focused = null
+        // ⭐ **滚动条**（面板右缘外那一条）：按滑块 / 点轨道空白都直接改 scroll，点轨道 = **跳转**
+        //   （见 [ScrollBar] 的交互口径）。
+        //   ⚠ 必须排在**行按钮之后**（`!result` = 控件没吃掉这次点击）—— 滚动条的命中区左右放宽过
+        //   （滑块才 3px 宽，1:1 抓不住），压在「处理」按钮右缘那一两像素会被它截胡
+        //   ⚠ 确认弹窗开着时列表不画（[render] 提前 return）⇒ 几何是**上一帧的**，这时一律不响应
+        //   ⚠ 同样要判**本列表自己装不下**：装得下时 [ScrollBar.draw] 不记几何，命中用的会是
+        //   **别的列表留下的**那份（本界面与 RP 券的条是同一坐标）⇒ 会点出一个越界的 scroll、列表看着空了
+        if (!result && confirmingOrder == null && button == 0 && orders.size > maxVisible()) {
+            ScrollBar.shared.mouseClicked(mouseX, mouseY, scrollOffset)?.let {
+                scrollOffset = it
+                rebuildRowButtons()
+                return true
+            }
+        }
         return result
+    }
+
+    /**
+     * 拖动中 —— 本界面里**只有滚动条**在用（见 [ScrollBar]）。
+     * ⚠ 行按钮是**控件**，行内容变了必须 [rebuildRowButtons] 重建（与滚轮那条路同一口径）。
+     */
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        ScrollBar.shared.mouseDragged(mouseY, scrollOffset)?.let {
+            scrollOffset = it
+            rebuildRowButtons()
+            return true
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+    }
+
+    /** 松开：结束滚动条的拖动 —— 结束时要**吃掉这次松开**，否则它会在别处又触发一次点击 */
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (ScrollBar.shared.mouseReleased()) return true
+        return super.mouseReleased(mouseX, mouseY, button)
     }
 
     override fun mouseScrolled(
@@ -363,17 +401,21 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
         context.matrices.pop()
     }
 
-    /** 右侧滚动条（照同族界面，与六个配置界面同款）：**行数超出一屏才画**，否则玩家不知道下面还有东西 */
+    /**
+     * 右侧滚动条（照同族界面，与六个配置界面同款）：**行数超出一屏才画**，否则玩家不知道下面还有东西。
+     *
+     * ⚠ 走共用的 [ScrollBar]（**可拖动**）：装得下就不画由它自己判（`total <= rows` 直接返回），
+     *   几何也由它记下来供拖动换算 —— **别在这儿自己 fill**（自己画的条拖不动）。
+     * ⚠ 三个数字的单位都是**行**（与 [scrollOffset] / [maxVisible] 同口径）：原来按像素算的
+     *   `thumbH = trackH² / (trackH + maxScroll * rowHeight)` 与 `trackH * rows / total` 等价
+     *   （`trackH + maxScroll * rowHeight` = 总内容高），换算过来就是下面这三个参数。
+     */
     private fun renderScrollbar(context: DrawContext) {
-        val maxScroll = maxOf(0, orders.size - maxVisible())
-        if (maxScroll <= 0) return
-        val x = leftX() + panelWidth - 5
-        val top = listStartY
-        val trackH = height - CONTENT_BOTTOM_INSET - listStartY
-        val thumbH = maxOf(16, trackH * trackH / (trackH + maxScroll * rowHeight))
-        val thumbY = top + (trackH - thumbH) * scrollOffset / maxScroll
-        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
-        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
+        ScrollBar.shared.draw(
+            context,
+            leftX() + panelWidth - 5, listStartY, height - CONTENT_BOTTOM_INSET - listStartY,
+            orders.size, maxVisible(), scrollOffset
+        )
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {

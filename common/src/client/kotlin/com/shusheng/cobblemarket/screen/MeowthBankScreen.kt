@@ -60,6 +60,11 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
          */
         const val CARD_SHOW_TOP = 20
         const val CARD_SHOW_BOTTOM = 108
+
+        /** 滚动条属于哪块持有者面板（见 `mouseClicked` / `mouseDragged`）；[NO_BOARD] = 没在拖 */
+        const val PURPLE_BOARD = -1
+        const val BLACK_BOARD = 1
+        const val NO_BOARD = 0
     }
 
     private var backButton: NineSliceButton? = null
@@ -80,6 +85,20 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
     private var blackBoardMax = 0L
     private var purpleBoardOffset = 0
     private var blackBoardOffset = 0
+    /** 正在拖的滚动条属于哪块面板（[NO_BOARD] = 没在拖）—— 拖动期间按它写回，别按鼠标 x 现算 */
+    private var boardDragSide = NO_BOARD
+
+    /**
+     * 两块持有者面板**各持一个滚动条实例** —— [ScrollBar] 一帧只记一份几何（见它的类 KDoc），
+     * 紫卡 / 黑卡两条若共用一个，**后画的那条会把几何覆盖掉，前一条就拖不动**
+     *（2026-09-30 铺开时实测发现的）。
+     */
+    private val purpleBoardScrollBar = ScrollBar()
+    private val blackBoardScrollBar = ScrollBar()
+
+    /** 取某块面板自己的滚动条实例（⚠ 别改成共用一个） */
+    private fun scrollBarOf(side: Int) =
+        if (side == PURPLE_BOARD) purpleBoardScrollBar else blackBoardScrollBar
     // 皮肤头像（照 AdminAuctionScreen 模板：每行每帧查 skinProvider 是分配热点，按 UUID 缓存）
     private val skinCache = mutableMapOf<UUID, Identifier>()
     private val defaultSkinTexture = Identifier.of("minecraft", "textures/entity/player/wide/steve.png")
@@ -224,6 +243,11 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         blackBoardMax = payload.blackMax
         purpleBoardOffset = purpleBoardOffset.coerceIn(0, maxOf(0, payload.purple.size - boardVisibleRows()))
         blackBoardOffset = blackBoardOffset.coerceIn(0, maxOf(0, payload.black.size - boardVisibleRows()))
+        // 名单换了 = 滚动条内容换了：把拖动状态一并复位，否则会留个"半拖"状态（见 [ScrollBar.cancel]）
+        // ⚠ 两条都要复位（各持一个实例）
+        purpleBoardScrollBar.cancel()
+        blackBoardScrollBar.cancel()
+        boardDragSide = NO_BOARD
     }
 
     private fun boardVisibleRows(): Int = 5
@@ -443,7 +467,57 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             client?.setScreen(BlackCardApplyScreen())
             return true
         }
+        // ⭐ **滚动条**（两个持有者面板各一条）：按滑块 / 点轨道空白都直接改 offset，点轨道 = **跳转**
+        //   （见 [ScrollBar] 的交互口径）。⚠ 命中区左右放宽过，所以排在卡片点击之后。
+        //   ⚠ 是哪条命中由 **x 落在哪个面板**决定（两条的 x 相差 2×CARD_OUTER，不可能同时命中）；
+        //   两条**各持一个 `ScrollBar` 实例**，所以各自都拖得动（见 [purpleBoardScrollBar]）
+        //   ⚠ 还要判**这块面板自己装不下**：装得下时 [ScrollBar.draw] 不记几何 ⇒ 命中用的是
+        //   **另一块面板**（或别的界面）留下的那份，会把这次点击白白吃掉
+        val side = if (mouseX < width / 2) PURPLE_BOARD else BLACK_BOARD
+        val rows = boardVisibleRows()
+        val overflowing = if (side == PURPLE_BOARD) purpleBoardEntries.size > rows else blackBoardEntries.size > rows
+        if (overflowing) {
+            scrollBarOf(side).mouseClicked(mouseX, mouseY, boardOffsetOf(side))?.let {
+                boardDragSide = side
+                setBoardOffset(side, it)
+                return true
+            }
+        }
         return result
+    }
+
+    /**
+     * 拖动中 —— 本界面里**只有滚动条**在用（见 [ScrollBar]）。
+     * ⚠ 拖动期间**按开始拖的那条面板**写回（[boardDragSide]）—— 不按鼠标 x 现算：
+     *   横着拖过屏幕中线时现算会把偏移写进另一块面板（[ScrollBar.mouseDragged] 只看 y，本来就该跟手）。
+     */
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        if (boardDragSide != NO_BOARD) {
+            scrollBarOf(boardDragSide).mouseDragged(mouseY, boardOffsetOf(boardDragSide))?.let {
+                setBoardOffset(boardDragSide, it)
+                return true
+            }
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+    }
+
+    /** 松开：结束滚动条的拖动 —— 结束时要**吃掉这次松开**，否则它会在别处又触发一次点击 */
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        // ⚠ 两条**都要松开**：别写成 `a || b` —— 短路会让第二条根本不被调用
+        val purpleReleased = purpleBoardScrollBar.mouseReleased()
+        val blackReleased = blackBoardScrollBar.mouseReleased()
+        if (purpleReleased || blackReleased) {
+            boardDragSide = NO_BOARD
+            return true
+        }
+        return super.mouseReleased(mouseX, mouseY, button)
+    }
+
+    /** 某块面板当前的滚动偏移（行） */
+    private fun boardOffsetOf(side: Int) = if (side == PURPLE_BOARD) purpleBoardOffset else blackBoardOffset
+
+    private fun setBoardOffset(side: Int, offset: Int) {
+        if (side == PURPLE_BOARD) purpleBoardOffset = offset else blackBoardOffset = offset
     }
 
     override fun shouldPause() = false
@@ -509,7 +583,13 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
     /**
      * 面板右侧滚动条（样式照入口界面设置弹窗的 [MarketEntryScreen.renderSettingsScrollbar]）：
      * **只有行数超出一屏才画** —— 否则玩家不知道下面还有东西。
-     * ⚠ 放在 `panelW-5`（宽 2）：头像右缘在 `panelW-6`，正好让开不挡；轨道/滑块都走半透明白。
+     * ⚠ 放在 `panelW-5`：头像右缘在 `panelW-6`，正好让开不挡。
+     *
+     * ⚠ 走共用的 [ScrollBar]（**可拖动**）：装得下就不画由它自己判；几何由它记下来供拖动换算，
+     *   **别在这儿自己 fill**（自己画的条拖不动）。`total / visible / offset` 的单位都是**行**。
+     * ⚠⚠ **本界面一帧画两条**（紫卡 / 黑卡两个面板各一条）—— [ScrollBar] 一帧只记一份几何，
+     *   所以**两条各持一个实例**（见 [purpleBoardScrollBar]）；共用一个的话后画的那条会把几何
+     *   覆盖掉、前一条就拖不动（2026-09-30 铺开时实测发现）。
      */
     private fun renderBoardScrollbar(
         context: DrawContext,
@@ -520,15 +600,10 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         offset: Int
     ) {
         val visible = boardVisibleRows()
-        val maxScroll = total - visible
-        if (maxScroll <= 0) return
-        val rowHeight = 20
-        val trackH = visible * rowHeight
-        val thumbH = maxOf(16, trackH * visible / total)
-        val thumbY = top + (trackH - thumbH) * offset / maxScroll
-        val x = panelX + panelW - 5
-        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
-        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
+        val rowHeight = 20   // 与 [renderHolderBoard] 的行高同一口径（轨道高 = 可见行 × 行高）
+        // ⚠ 两块面板**各持一个实例** ⇒ 这里按 panelX 落在中线哪侧取（与 [mouseClicked] 判 side 同口径）
+        val side = if (panelX < width / 2) PURPLE_BOARD else BLACK_BOARD
+        scrollBarOf(side).draw(context, panelX + panelW - 5, top, visible * rowHeight, total, visible, offset)
     }
 
     private fun truncateName(name: String, maxWidth: Int): String {

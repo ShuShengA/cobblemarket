@@ -230,6 +230,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         vListOpen = false
         formListOpen = false
         variantListOpen = false
+        // 变体列表的滚动条可能**正被拖着**（键盘关列表时鼠标还按着）—— 状态一并复位，
+        // 否则会留个"半拖"状态：下次画出来的是新内容，而 `dragging` 还是 true
+        ScrollBar.shared.cancel()
         rebuildVList()
         rebuildFormList()
         rebuildVariantList()
@@ -253,20 +256,15 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
      *
      * ⚠ 列表行是**控件**，滚动条没法跟着走 ⇒ 只能自绘，且要画在主 `render` 里（背景层会被控件盖住）。
      * ⚠ 判据用 [currentVariantRows]（标题行也占一行），与列表渲染同一口径。
+     * ⚠ 走共用的 [ScrollBar]（**可拖动**）：几何由它记下来供拖动换算，**别在这儿自己 fill**；
+     *   三个参数都是**行**（本界面本来就是行口径），「装得下就不画」也由它自己判。
      */
     private fun renderVariantScrollbar(context: DrawContext) {
         if (!variantListOpen) return
-        val total = currentVariantRows().size
-        if (total <= MAX_FORM_LIST_ROWS) return
-        val centerX = width / 2
-        val top = height / 2 - 92 + LIST_TOP
-        val trackH = MAX_FORM_LIST_ROWS * 16
-        val barX = centerX + 62
-        context.fill(barX, top, barX + 1, top + trackH, 0x40FFFFFF)
-        val thumbH = (trackH * MAX_FORM_LIST_ROWS / total).coerceAtLeast(6)
-        val maxScroll = (total - MAX_FORM_LIST_ROWS).coerceAtLeast(1)
-        val thumbY = top + (trackH - thumbH) * variantListScroll / maxScroll
-        context.fill(barX - 1, thumbY, barX + 2, thumbY + thumbH, 0xFFFFFFFF.toInt())
+        ScrollBar.shared.draw(
+            context, width / 2 + 62, height / 2 - 92 + LIST_TOP, MAX_FORM_LIST_ROWS * 16,
+            currentVariantRows().size, MAX_FORM_LIST_ROWS, variantListScroll
+        )
     }
 
     private fun rebuildVariantList() {
@@ -1413,6 +1411,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         variantButton = null
         variantListOpen = false
         variantListScroll = 0
+        // 列表关了 ⇒ 滚动条（若正被拖着）一并复位（见 [ScrollBar.cancel]）
+        ScrollBar.shared.cancel()
         variantOptionButtons.clear()
         listBackButton = null
         listClearButton = null
@@ -1996,7 +1996,54 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         if (wasInInput && !isMouseOverAnyInput(mouseX, mouseY)) {
             focused = null
         }
+        // ⭐ 滚动条（变体列表右缘外那一条）：**排在最后**（控件 / 行优先）——
+        //   [ScrollBar] 的命中区左右各放宽了 3px，而列表行按钮右缘到 `centerX + 60`、
+        //   命中区从 `centerX + 58` 起 ⇒ 那 2px 必须仍然归行（`!result` = 控件已经吃下这一击）。
+        //   ⚠ 列表收起时滚动条不画（几何还停在上一帧）⇒ 这里也不判，免得点到"看不见的条"
+        //   （`> MAX_FORM_LIST_ROWS` = 现在确实有得滚；装得下时它不画，几何还停在上一帧）
+        if (!result && variantListOpen && button == 0 && currentVariantRows().size > MAX_FORM_LIST_ROWS) {
+            ScrollBar.shared.mouseClicked(mouseX, mouseY, variantListScroll)?.let {
+                variantListScroll = it
+                // 行是**控件** ⇒ 位置得跟着新偏移重摆
+                rebuildVariantList()
+                return true
+            }
+        }
         return result
+    }
+
+    /** 拖动滚动条（见 [ScrollBar]）—— 本界面里**只有它**在用拖动 */
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        if (variantListOpen) {
+            ScrollBar.shared.mouseDragged(mouseY, variantListScroll)?.let {
+                variantListScroll = it
+                rebuildVariantList()
+                return true
+            }
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+    }
+
+    /**
+     * 松开：结束滚动条的拖动。
+     *
+     * ⚠ 结束时要**吃掉这次松开** —— 否则它会在别处又触发一次点击（松手那一刻鼠标往往正压着一行）。
+     */
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (ScrollBar.shared.mouseReleased()) return true
+        return super.mouseReleased(mouseX, mouseY, button)
+    }
+
+    /**
+     * 界面以任何方式离开（返回按钮 / Esc / E / 关闭动画）都在这里收尾：
+     * 放弃可能还在进行中的滚动条拖动（滚动条是**单例**，不清理会留个"半拖"状态给下个界面）。
+     *
+     * ⚠ 放 [removed] 而不是 `close()`：Esc 走动画时是 `setScreen(null)`，不经过 `close()`
+     *   （同 BalanceHudPositionScreen 那条注释）。
+     */
+    override fun removed() {
+        super.removed()
+        ScrollBar.shared.cancel()
     }
 
     override fun resize(client: MinecraftClient, width: Int, height: Int) {

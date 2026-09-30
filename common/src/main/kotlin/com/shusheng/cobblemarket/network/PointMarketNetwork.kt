@@ -455,6 +455,8 @@ private fun writePokemonSpec(b: PacketByteBuf, s: ShopPokemonSpec) {
     b.writeString(s.heldItemSpec ?: "", MAX_SPEC_LENGTH)
     writeIdList(b, s.marks)
     b.writeString(s.moves, MAX_SPEC_LENGTH)
+    // 服主勾的「非法」—— ⚠ 加在**末尾**（payload 顺序铁律），两端同版才读得对
+    b.writeBoolean(s.illegal)
 }
 
 private fun readPokemonSpec(b: PacketByteBuf) = ShopPokemonSpec(
@@ -480,7 +482,8 @@ private fun readPokemonSpec(b: PacketByteBuf) = ShopPokemonSpec(
     nickname = b.readString(MAX_TEXT_LENGTH).ifEmpty { null },
     heldItemSpec = b.readString(MAX_SPEC_LENGTH).ifEmpty { null },
     marks = readIdList(b),
-    moves = b.readString(MAX_SPEC_LENGTH)
+    moves = b.readString(MAX_SPEC_LENGTH),
+    illegal = b.readBoolean()
 )
 
 private fun writeItemSpec(b: PacketByteBuf, s: ShopItemSpec) {

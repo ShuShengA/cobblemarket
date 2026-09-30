@@ -439,10 +439,57 @@ class BlackCardConfigScreen : Screen(CardNames.label("cobblemarket.op.black_card
         // 点击空白处结束输入状态（照 LoanScreen 惯例）
         val wasInInput = focused is TextFieldWidget
         val result = super.mouseClicked(mouseX, mouseY, button)
+        // ⭐ **滚动条**（在弹窗右缘往里那一小条）：按下滑块 / 点轨道空白都直接改 scroll，
+        //   点轨道 = **跳转**（见 [ScrollBar] 的交互口径）。
+        //   ⚠ 本界面控件位置是**预算好**的（[rebuildPositions]），改完 scroll 必须跟着挪行，
+        //     否则滑块动了、行不动。⚠ 行上的判定（输入框 / ↺ / 开关）在 [super.mouseClicked] 里已经先跑过了
+        //   ⚠ 确认弹窗打开时**不能认**：那时滚动条没画（[render] 早返回），几何还是弹窗前那一份，
+        //     认了等于点弹窗却把下层表单滚走
+        if (button == 0 && !selfApplyConfirmOpen) {
+            ScrollBar.shared.mouseClicked(mouseX, mouseY, scrollOffset)?.let {
+                scrollOffset = it
+                rebuildPositions()
+                return true
+            }
+        }
         if (wasInInput && numFields.values.none { it.isMouseOver(mouseX, mouseY) }) {
             focused = null
         }
         return result
+    }
+
+    /**
+     * 拖动中 —— 本界面里**只有滚动条**在用（见 [ScrollBar]）：拖出轨道也照样跟手，
+     * 换算出的新 scroll 要立刻 [rebuildPositions]（否则滑块跟手了、行没跟）。
+     */
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        ScrollBar.shared.mouseDragged(mouseY, scrollOffset)?.let {
+            scrollOffset = it
+            rebuildPositions()
+            return true
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+    }
+
+    /**
+     * 松开：结束滚动条的拖动。
+     *
+     * ⚠ 结束拖动时要**吃掉这次松开** —— 否则它会在别处又触发一次点击（松手那刻鼠标往往正压着某个按钮）。
+     */
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (ScrollBar.shared.mouseReleased()) return true
+        return super.mouseReleased(mouseX, mouseY, button)
+    }
+
+    /**
+     * 界面被关掉 / 被替换（ESC、点「取消」跳别的配置界面）时复位滚动条的拖动状态。
+     *
+     * ⚠ 不调会留个"半拖"：按住滑块直接按 ESC，`dragging` 还是 true ⇒ 下个界面里**没按在条上**
+     *   的拖动也会被当成在拖条（见 [ScrollBar.cancel]）。
+     */
+    override fun removed() {
+        ScrollBar.shared.cancel()
+        super.removed()
     }
 
     override fun resize(client: MinecraftClient, width: Int, height: Int) {
@@ -456,18 +503,20 @@ class BlackCardConfigScreen : Screen(CardNames.label("cobblemarket.op.black_card
         }
     }
 
-    /** 右侧滚动条（照 ServerConfigScreen 同款）：**行数超出一屏才画**，否则玩家不知道下面还有东西 */
+    /**
+     * 右侧滚动条（**可拖动**，2026-09-30 用户报「滚动条点不动」后统一）：
+     * 走共用的 [ScrollBar]，**别再自己 fill** —— 自己画的条拖不动。
+     *
+     * ⚠ 传的 `totalRows` / `getMaxVisibleRows()` / `scrollOffset` **本来就是"行"**（与 [ScrollBar] 同一口径），
+     *   不需要再像原来那样绕 `rowHeight` 换成像素（滑块高 / 滑块位置由 [ScrollBar.draw] 自己按行数比例算）。
+     * ⚠ 「装得下就不画」也交给它（`total <= rows` 时它直接返回 false）—— 本函数不用再判。
+     */
     private fun renderScrollbar(context: DrawContext) {
-        val maxScroll = maxOf(0, totalRows - getMaxVisibleRows())
-        if (maxScroll <= 0) return
-        val x = width / 2 + dialogW / 2 - 5
-        val top = listStartY()
-        val trackH = listAreaH()
-        // 滑块高按「可视 / 内容总高」比例；scrollOffset 单位是行，× rowHeight 换算成像素才与 trackH 同量纲
-        val thumbH = maxOf(16, trackH * trackH / (trackH + maxScroll * rowHeight))
-        val thumbY = top + (trackH - thumbH) * scrollOffset / maxScroll
-        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
-        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
+        ScrollBar.shared.draw(
+            context,
+            width / 2 + dialogW / 2 - 5, listStartY(), listAreaH(),
+            totalRows, getMaxVisibleRows(), scrollOffset
+        )
     }
 
     override fun shouldPause() = false
@@ -489,6 +538,9 @@ class BlackCardConfigScreen : Screen(CardNames.label("cobblemarket.op.black_card
         // 保存未提交的编辑（关闭弹窗走 clearChildren+init 重建，init 里恢复）
         savePendingEdits()
         setControlsVisible(false)
+        // 滚动条的拖动状态一并复位：弹窗期间滚动条**不画也不认**（见 [mouseClicked] / [render]），
+        // 留着 dragging 只会让鼠标没按在条上也跟着走
+        ScrollBar.shared.cancel()
 
         // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染）
         addDrawable(object : Drawable {

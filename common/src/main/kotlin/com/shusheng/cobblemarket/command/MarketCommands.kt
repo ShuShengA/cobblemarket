@@ -1,5 +1,7 @@
 package com.shusheng.cobblemarket.command
 
+import com.cobblemon.mod.common.Cobblemon
+import com.shusheng.cobblemarket.util.PokemonTags
 import com.shusheng.cobblemarket.permission.PermissionFileLogger
 import com.shusheng.cobblemarket.permission.PermissionNetwork
 import com.shusheng.cobblemarket.permission.PermissionState
@@ -101,6 +103,23 @@ object MarketCommands {
                             .then(CommandManager.argument("player", StringArgumentType.word())
                                 .suggests(::suggestOnlinePlayerNames)
                                 .executes(::loanClear)
+                            )
+                        )
+                    )
+                    .then(CommandManager.literal("tag")
+                        // ⚠ **只服主**（用户 2026-09-30 定）：它能改**别人队伍里**的精灵，影响面大。
+                        //   命令树的 `requires` 带 OP 只为让游戏内 OP 敲得进来看到红字，
+                        //   **真正的鉴权是 [removePokemonTag] 首行的 `denyNonOwner`**
+                        .requires { MarketPermissions.isServerOwner(it) || it.hasPermissionLevel(2) }
+                        .then(CommandManager.literal("remove")
+                            // ⚠ 只有 remove、**没有 add**（用户 2026-09-30 定）：打标的入口已经够多
+                            //   （商城编辑窗 / 数据包 / `/pokeedit`），而"给任意精灵打标"那条路早前否过；
+                            //   remove 补的是**唯一**缺口 —— 标记打错之后**没有任何别的办法撤销**。
+                            // ⚠ 玩家名用 EntityArgumentType.player()：它**自带在线玩家补全**（别自己写 suggests）
+                            .then(CommandManager.argument("player", EntityArgumentType.player())
+                                .then(CommandManager.argument("slot", IntegerArgumentType.integer(1, PARTY_SIZE))
+                                    .executes(::removePokemonTag)
+                                )
                             )
                         )
                     )
@@ -369,7 +388,7 @@ object MarketCommands {
                         "cobblemarket.points.redeem_ok",
                         CurrencyService.amountText(outcome.amount, MarketCurrency.POINTS),
                         CurrencyService.amountText(outcome.balanceAfter, MarketCurrency.POINTS)
-                    )
+                    ).formatted(Formatting.GREEN)
                 }, false)
                 RedeemOutcome.Locked -> source.sendError(Text.translatable("cobblemarket.points.redeem_locked"))
                 RedeemOutcome.Invalid -> source.sendError(Text.translatable("cobblemarket.points.redeem_invalid"))
@@ -430,7 +449,7 @@ object MarketCommands {
             }
         }
         source.sendFeedback({
-            Text.translatable("cobblemarket.points.code_created", created.size)
+            Text.translatable("cobblemarket.points.code_created", created.size).formatted(Formatting.GREEN)
         }, true)
         return 1
     }
@@ -472,7 +491,7 @@ object MarketCommands {
             PointsLogType.CODE_REVOKE, java.util.UUID(0, 0), "-", 0, 0, source.name,
             "作废兑换码 ${PointCodes.format(code)}"
         )
-        source.sendFeedback({ Text.translatable("cobblemarket.points.code_revoked") }, true)
+        source.sendFeedback({ Text.translatable("cobblemarket.points.code_revoked").formatted(Formatting.GREEN) }, true)
         return 1
     }
 
@@ -480,7 +499,7 @@ object MarketCommands {
     private fun pointsCodePurge(context: CommandContext<ServerCommandSource>): Int {
         val source = context.source
         val removed = PointCodeState.get(source.server).purgeExpired(System.currentTimeMillis())
-        source.sendFeedback({ Text.translatable("cobblemarket.points.code_purged", removed) }, true)
+        source.sendFeedback({ Text.translatable("cobblemarket.points.code_purged", removed).formatted(Formatting.GREEN) }, true)
         return 1
     }
 
@@ -572,7 +591,7 @@ object MarketCommands {
                     CurrencyService.amountText(amount, MarketCurrency.POINTS),
                     playerName,
                     CurrencyService.amountText(after, MarketCurrency.POINTS)
-                )
+                ).formatted(Formatting.GREEN)
             }, true)
             return 1
         }
@@ -593,7 +612,7 @@ object MarketCommands {
                 playerName,
                 CurrencyService.amountText(amount, MarketCurrency.POINTS),
                 CurrencyService.amountText(after, MarketCurrency.POINTS)
-            )
+            ).formatted(Formatting.GREEN)
         }, true)
         return 1
     }
@@ -653,7 +672,7 @@ object MarketCommands {
                         PointOrderNumbers.format(order.orderNo),
                         PointShopService.formatCents(order.payCents),
                         CurrencyService.amountText(order.points, MarketCurrency.POINTS)
-                    )
+                    ).formatted(Formatting.GREEN)
                 }, false)
                 1
             }
@@ -700,7 +719,7 @@ object MarketCommands {
                     "cobblemarket.points.shop.cancelled"
                 }
                 source.sendFeedback({
-                    Text.translatable(messageKey, PointOrderNumbers.format(result.order.orderNo))
+                    Text.translatable(messageKey, PointOrderNumbers.format(result.order.orderNo)).formatted(Formatting.GREEN)
                 }, false)
                 1
             }
@@ -764,7 +783,7 @@ object MarketCommands {
                         if (granted) "cobblemarket.points.shop.confirmed" else "cobblemarket.points.shop.rejected_ok",
                         PointOrderNumbers.format(result.order.orderNo),
                         result.order.playerName
-                    )
+                    ).formatted(Formatting.GREEN)
                 }, true)
                 1
             }
@@ -778,7 +797,7 @@ object MarketCommands {
     /** 清理已完结订单（判 `points.order`；保留期内留作对账，正常由服务端定时任务自动做） */
     private fun shopPurge(context: CommandContext<ServerCommandSource>): Int {
         val removed = PointShopService.purgeFinished(context.source.server)
-        context.source.sendFeedback({ Text.translatable("cobblemarket.points.shop.purged", removed) }, true)
+        context.source.sendFeedback({ Text.translatable("cobblemarket.points.shop.purged", removed).formatted(Formatting.GREEN) }, true)
         return 1
     }
 
@@ -1065,6 +1084,68 @@ object MarketCommands {
         }
         source.sendFeedback({ permLine(target.second, nodes) }, false)
         return nodes.size
+    }
+
+    // ── /market tag remove：撤掉精灵身上的「非法」标记（只服主） ──
+
+    /**
+     * 队伍槽位数（1~6）—— `slot` 参数的上界。
+     *
+     * ⚠ 命令**够不到 PC**（用户 2026-09-30 认可这个范围）：PC 里是哪只服主本来就看不到、也指不出来
+     *  ⇒ 让玩家把有问题的换到队伍里更划算。
+     */
+    private const val PARTY_SIZE = 6
+
+    /**
+     * `/market tag remove <玩家> <槽位>` —— 撤掉**别人队伍里**某只精灵的 `cobblemarket:illegal` 标记。
+     *
+     * ⭐ **这是唯一的撤销途径**（用户 2026-09-30 定）。标记一旦打上就洗不掉：
+     * - `/pokeedit` 撤不了（`=no` 一律不认，那是**有意**的 —— 能被洗掉就等于禁赛失效）
+     * - 商城编辑窗那颗开关只管"**以后新造的**"
+     * ⇒ 标错了（手滑勾上、卖出去才发现）本来**只能看着**，这条命令补的就是这个洞。
+     *
+     * ⚠ **只服主**：`denyNonOwner` 首行拦下非服主 —— 它改的是**别人的**精灵。
+     * ⚠ 只撤 [PokemonTags.ILLEGAL]，**不撤 `shop`**：那是"从哪来"的来源标记，只用于追溯，
+     *   撤掉没有意义（见 `PokemonTags` 的 KDoc）。
+     * ⚠ 改完**必须 `onChange()`** —— 那是"这只精灵变了、该存盘"的通知（官方改任何字段都走它，
+     *   见 `Pokemon.kt` 里那一串 `onChange(XxxUpdatePacket(...))`）。官方**没有**针对
+     *   `customProperties` 的更新包 ⇒ 这里**不发包给客户端**：我们那几处标记显示
+     *  （商城格子 / 购买窗）读的都是**服务端下发的商品规格**，跟玩家客户端那份精灵数据无关。
+     */
+    private fun removePokemonTag(context: CommandContext<ServerCommandSource>): Int {
+        if (denyNonOwner(context)) return 0
+        val target = EntityArgumentType.getPlayer(context, "player")
+        val slot = IntegerArgumentType.getInteger(context, "slot")
+        // ⚠ 按**槽位下标**取 —— `party[i]`，与 Cobblemon 自己的移动 / 交换处理**同一个取法**
+        //  （`MovePartyPokemonHandler` / `SwapPartyPokemonHandler` 都是 `party[position]`）。
+        //  别用 `elementAtOrNull`：那是按 Iterable 顺序取的，语义未必等于槽位。
+        //  空槽位 / 越界它自己就返回 null，`runCatching` 只是再兜一层（玩家可能刚把那只换走）
+        val party = Cobblemon.storage.getParty(target)
+        // ⚠ 必须走**方法调用** `get(slot)` —— `PartyStore.get(Int)` **没标 `operator`**，
+        //   写成 `party[i]` 编译不过（同类坑见 memory「Cobblemon API 访问坑」）。
+        //   参数本身就是槽位下标（0 基），命令给的是 1~6 ⇒ 减一
+        val pokemon = runCatching { party.get(slot - 1) }.getOrNull()
+        if (pokemon == null) {
+            context.source.sendError(Text.translatable("cobblemarket.tag.empty_slot", slot))
+            return 0
+        }
+        if (!PokemonTags.has(pokemon, PokemonTags.ILLEGAL)) {
+            context.source.sendError(
+                Text.translatable("cobblemarket.tag.not_marked", pokemon.species.translatedName)
+            )
+            return 0
+        }
+        PokemonTags.remove(pokemon, PokemonTags.ILLEGAL)
+        pokemon.onChange()
+        // ⚠ 成功提示走**绿色**（用户 2026-09-30 指出：聊天框里的成功反馈不能用白字 ——
+        //   与本项目其余"成功"反馈同一口径，如 RP 商城上架后的 `points.store.saved`）
+        context.source.sendFeedback({
+            Text.translatable(
+                "cobblemarket.tag.removed",
+                target.name, slot, pokemon.species.translatedName
+            ).formatted(Formatting.GREEN)
+        }, true)
+        return 1
     }
 
     // ── /market owner：服主名单（整套权限的根，只认服务器控制台） ──
