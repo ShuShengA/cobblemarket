@@ -33,6 +33,7 @@ import net.minecraft.network.packet.CustomPayload
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.text.Text
+import net.minecraft.util.Formatting
 import java.io.File
 
 /**
@@ -999,22 +1000,66 @@ object PointsNetwork {
                 // （2026-09-18 用户实测：放了张 .jpg，只认 PNG 的校验把它拒了，界面却毫无提示）。
                 // 券图也走同一道预检：配了张读不出来的图，玩家那边只会静默回退到内置券图，
                 // 服主根本不知道自己的图没生效。
-                val badQr = mutableListOf<String>()
-                fun checkImage(name: String, what: String, load: (String) -> ByteArray?) {
-                    if (name.isNotBlank() && load(name) == null) badQr += "$name（$what）"
+                // ⚠⚠ **每一项都拼成 `Text`（词条 + 参数），别在服务端拼死语言文本** ——
+                //   服务端拼出来的是**服务端语言**，客户端拿到的就是一串定死的字：
+                //   2026-09-30 用户实测，**英文模式下这里冒出「默认券图」**。
+                //   ⇒ 标签、括号、顿号**全部走词条**，由客户端按**玩家自己的语言**解析
+                //   （同 `RuleReasonText` 的口径；`SpeciesText` 那两处也是这个坑）。
+                val badImages = mutableListOf<Text>()
+                fun checkImage(name: String, what: Text, load: (String) -> ByteArray?) {
+                    if (name.isNotBlank() && load(name) == null) {
+                        badImages += Text.translatable("cobblemarket.points.config.img_entry", name, what)
+                    }
                 }
-                checkImage(CobbleMarketConfig.pointsShopPayQrImage, "全局", PayQrImage::load)
-                checkImage(CobbleMarketConfig.pointsShopDefaultIcon, "默认券图", TierIconImage::load)
+                checkImage(
+                    CobbleMarketConfig.pointsShopPayQrImage,
+                    Text.translatable("cobblemarket.points.config.img_global"),
+                    PayQrImage::load
+                )
+                checkImage(
+                    CobbleMarketConfig.pointsShopDefaultIcon,
+                    Text.translatable("cobblemarket.points.config.default_icon"),
+                    TierIconImage::load
+                )
                 CobbleMarketConfig.pointsShopTiers.forEach {
-                    checkImage(it.qr, it.name, PayQrImage::load)
-                    checkImage(it.icon, "${it.name} 券图", TierIconImage::load)
+                    // 档位名是**服主自己填的**，原样带上、不做词条
+                    checkImage(it.qr, Text.literal(it.name), PayQrImage::load)
+                    checkImage(
+                        it.icon,
+                        Text.translatable("cobblemarket.points.config.img_tier_icon", it.name),
+                        TierIconImage::load
+                    )
                 }
-                if (badQr.isNotEmpty()) {
+                if (badImages.isNotEmpty()) {
+                    // 列表分隔符也走词条：「、」是中文标点，英文该是「, 」
+                    val sep = Text.translatable("cobblemarket.points.config.img_sep")
+                    val joined = Text.literal("").also { out ->
+                        badImages.forEachIndexed { i, t ->
+                            if (i > 0) out.append(sep)
+                            out.append(t)
+                        }
+                    }
                     sendToPlayer(
                         player,
                         MarketResultPayload(
+                            // ⚠⚠ **`success` 仍是 `false`，一个字节都没动** —— 音效与界面 toast 的
+                            //   选择全依赖它，改它 = 改逻辑（2026-09-30 试过、退回了）。
+                            //   这里**只把这一句话拆成两半、各染一个色**：前半「配置已保存，」走绿
+                            //   （"存了"这件事是真的）、后半走红（图片的问题）—— **纯配色**。
+                            //   ⚠ 两段必须**平级**挂在 `Text.literal("")` 下、各自带色：
+                            //     带色的文字当父节点会让后面整段的样式继承它（CLAUDE.md 的界面文字约定）。
                             false,
-                            Text.translatable("cobblemarket.points.config.qr_problem", badQr.joinToString("、"))
+                            Text.literal("")
+                                .append(
+                                    Text.translatable("cobblemarket.points.config.qr_problem_ok")
+                                        .formatted(Formatting.GREEN)
+                                )
+                                .append(
+                                    Text.translatable(
+                                        "cobblemarket.points.config.qr_problem_bad",
+                                        joined
+                                    ).formatted(Formatting.RED)
+                                )
                         )
                     )
                 } else {
