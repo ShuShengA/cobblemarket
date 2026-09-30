@@ -143,7 +143,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             width / 2 + 57, bgTop + 76, 48, 16,
             Text.literal(""),
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
@@ -273,7 +273,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         // 背景 256×213，顶边与入口界面同锚定公式（切换界面背景不跳动）
-        val bg = Identifier.of("cobblemarket", "textures/gui/meowth_bank_background.png")
+        val bg = Identifier.of("cobblemarket", "textures/gui/background/meowth_bank_background.png")
         context.drawTexture(bg, width / 2 - 128, bgTop(), 0f, 0f, 256, 213, 256, 213)
     }
 

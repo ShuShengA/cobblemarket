@@ -16,7 +16,7 @@ import org.lwjgl.glfw.GLFW
  */
 object CustomCursor {
 
-    private val TEXTURE = Identifier.of("cobblemarket", "textures/gui/cursor.png")
+    private val TEXTURE = Identifier.of("cobblemarket", "textures/gui/cursor/cursor.png")
 
     /** 源图边长（是张方图） */
     private const val SRC_SIZE = 128

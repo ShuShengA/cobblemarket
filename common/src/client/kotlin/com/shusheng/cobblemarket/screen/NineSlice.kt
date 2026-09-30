@@ -11,13 +11,13 @@ const val NINE_SLICE_STATE_H = 40
 // Minecraft 标准金色（Formatting.GOLD 色值），用于闪光按钮等特殊高亮
 const val GOLD_COLOR = 0xFFAA00
 
-val ROW_BACKGROUND_TEXTURE = Identifier.of("cobblemarket", "textures/gui/row_background.png")
+val ROW_BACKGROUND_TEXTURE = Identifier.of("cobblemarket", "textures/gui/button/row_background.png")
 const val ROW_BACKGROUND_TEX_H = 120
 
-val DIALOG_BACKGROUND_TEXTURE = Identifier.of("cobblemarket", "textures/gui/dialog_background.png")
+val DIALOG_BACKGROUND_TEXTURE = Identifier.of("cobblemarket", "textures/gui/background/dialog_background.png")
 const val DIALOG_BACKGROUND_TEX_H = 40
 
-val BUTTON_TEXTURE = Identifier.of("cobblemarket", "textures/gui/button_9slice.png")
+val BUTTON_TEXTURE = Identifier.of("cobblemarket", "textures/gui/button/button_9slice.png")
 /** 按钮贴图总高（三段：普通 / 悬停 / 选中）—— 手动 drawNineSlice 画按钮时要与它一致 */
 const val BUTTON_TEX_H = 120
 
@@ -29,7 +29,7 @@ const val BUTTON_TEX_H = 120
  * 用途（2026-09-24 用户定）：市场入口的**求购单 / 喵喵银行 / 设置**，管理面板的**权限管理 / 市场开关 /
  * 服务器配置**，以及分享按钮 —— 让这类"入口型"按钮与列表行里的操作按钮在视觉上分开。
  */
-val BUTTON_TEXTURE_S = Identifier.of("cobblemarket", "textures/gui/button_9slice_s.png")
+val BUTTON_TEXTURE_S = Identifier.of("cobblemarket", "textures/gui/button/button_9slice_s.png")
 /** [BUTTON_TEXTURE_S] 的总高（两段） */
 const val BUTTON_TEX_H_S = 80
 
@@ -46,7 +46,7 @@ fun drawScreenDimMask(context: DrawContext, width: Int, height: Int) {
     context.fill(0, 0, width, height, 0xC0000000.toInt())
 }
 
-val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
+val POKEMON_SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon/pokemon_slot.png")
 
 /** 槽位贴图是 **86×86** 的方图（⚠ 与文件真实尺寸对齐，别按印象写） */
 const val POKEMON_SLOT_TEX_SIZE = 86
@@ -58,7 +58,7 @@ const val POKEMON_SLOT_TEX_SIZE = 86
  *   86×86 那张放大会糊。⚠ **别铺到全项目** —— 256 的图加载与显存都是小图的十倍上下，
  *   列表行 / 格子那些小尺寸位置用不着。
  */
-val POKEMON_SLOT_BIG_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot_big.png")
+val POKEMON_SLOT_BIG_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon/pokemon_slot_big.png")
 
 /** 大图是 256×256 */
 const val POKEMON_SLOT_BIG_TEX_SIZE = 256

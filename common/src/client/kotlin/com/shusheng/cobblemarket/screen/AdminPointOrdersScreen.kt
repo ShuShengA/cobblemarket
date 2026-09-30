@@ -129,7 +129,7 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
         backButton = NineSliceButton(
             leftX + panelWidth - 50, 13, 50, 16, Text.literal(""),
             { client?.setScreen(AdminScreen()) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
@@ -479,9 +479,9 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
         const val COLOR_MUTED = 0xAAAAAA       // 下单时间 / 已完结里的作废
         const val COLOR_GRANTED = 0x55FF55     // 已发放的「+N」
 
-        val PANEL_TOP = Identifier.of("cobblemarket", "textures/gui/market_panel_top.png")
-        val PANEL_MID = Identifier.of("cobblemarket", "textures/gui/market_panel_middle.png")
-        val PANEL_BOT = Identifier.of("cobblemarket", "textures/gui/market_panel_bottom.png")
+        val PANEL_TOP = Identifier.of("cobblemarket", "textures/gui/background/market_panel_top.png")
+        val PANEL_MID = Identifier.of("cobblemarket", "textures/gui/background/market_panel_middle.png")
+        val PANEL_BOT = Identifier.of("cobblemarket", "textures/gui/background/market_panel_bottom.png")
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {

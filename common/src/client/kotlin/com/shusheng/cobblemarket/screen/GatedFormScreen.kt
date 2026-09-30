@@ -60,7 +60,7 @@ class GatedFormScreen(
                 g.x + g.w / 2 - BACK_W / 2, g.buttonY, BACK_W, DialogGeometry.BUTTON_H,
                 Text.literal(""),
                 { goBack() },
-                iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+                iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
                 iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
                 tooltip = Text.translatable("cobblemarket.gui.back")
             )

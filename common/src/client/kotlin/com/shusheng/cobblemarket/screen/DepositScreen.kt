@@ -49,7 +49,7 @@ class DepositScreen : Screen(Text.translatable("cobblemarket.deposit.title")) {
             dialogX + dialogW - 58, dialogY + 8, 50, 16,
             Text.literal(""),
             { client?.setScreen(MeowthBankScreen()) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         ))

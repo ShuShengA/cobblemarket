@@ -141,7 +141,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             leftX + panelWidth - 50, 13, 50, 16,
             Text.literal(""),
             { client?.setScreen(MarketScreen()) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         ))
@@ -153,7 +153,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             leftX, btnY, 80, 20,
             Text.literal(""),
             { prevPage() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/previous.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.prev")
         )
@@ -165,7 +165,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             leftX + panelWidth - 80, btnY, 80, 20,
             Text.literal(""),
             { nextPage() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/next.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.next")
         )
@@ -514,7 +514,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
     override fun shouldPause() = false
 
     private companion object {
-        val SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
+        val SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon/pokemon_slot.png")
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
         /** 补发请求最小间隔：服务端 request_pokemon_return 节流 500ms + 100ms 余量，防网络抖动边界丢弃 */

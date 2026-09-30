@@ -130,7 +130,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     private fun toggleMineOnly() {
         showMineOnly = !showMineOnly
         mineButton?.iconLeft = Identifier.of("cobblemarket",
-            if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png")
+            if (showMineOnly) "textures/gui/button/personal_click.png" else "textures/gui/button/personal.png")
         mineButton?.setTooltip(Tooltip.of(Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")))
         // 「我的」是个**开关**：开启时除换图标，按钮也给选中态（照手持物品那几个开关）
         mineButton?.selectedVisual = showMineOnly
@@ -146,7 +146,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             leftX + panelWidth - 50, 13, 50, 16,
             Text.literal(""),
             { client?.setScreen(AdminScreen()) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
@@ -193,7 +193,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             Text.literal(""),
             { toggleMineOnly() },
             iconLeft = Identifier.of("cobblemarket",
-                if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png"),
+                if (showMineOnly) "textures/gui/button/personal_click.png" else "textures/gui/button/personal.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         )
@@ -211,7 +211,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             leftX, btnY, 80, 20,
             Text.literal(""),
             { prevPage() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/previous.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.prev")
         )
@@ -221,7 +221,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
             leftX + panelWidth - 80, btnY, 80, 20,
             Text.literal(""),
             { nextPage() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/next.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.next")
         )

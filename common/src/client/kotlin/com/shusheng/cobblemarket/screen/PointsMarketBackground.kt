@@ -16,7 +16,7 @@ import kotlin.math.roundToInt
  */
 object PointsMarketBackground {
 
-    val TEXTURE = Identifier.of("cobblemarket", "textures/gui/points_market_background.png")
+    val TEXTURE = Identifier.of("cobblemarket", "textures/gui/background/points_market_background.png")
     const val TEX_W = 1280
     const val TEX_H = 720
 

@@ -124,7 +124,7 @@ import net.minecraft.util.Identifier
 import org.lwjgl.glfw.GLFW
 import org.slf4j.LoggerFactory
 
-private val HUD_BALANCE_BG = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/hud_balance_bg.png")
+private val HUD_BALANCE_BG = net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/background/hud_balance_bg.png")
 private const val HUD_BALANCE_BG_TEX_H = 40
 
 object CobbleMarketClient {

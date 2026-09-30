@@ -70,7 +70,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         private const val DIVIDER_HALF = 103
 
         /** 充值订单入口的图标 */
-        val POINT_ORDERS_ICON = Identifier.of("cobblemarket", "textures/gui/point_orders_icon.png")
+        val POINT_ORDERS_ICON = Identifier.of("cobblemarket", "textures/gui/icon/point_orders_icon.png")
 
         /** 有待处理订单时挂在它右上角的角标（48×48 源图按 1/6 缩到 8×8，同精灵市场的红点） */
         val POINTS_SYMBOL = POINTS_SYMBOL_TEXTURE
@@ -243,7 +243,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             centerX + DIVIDER_HALF - 44, btnStartY - 40, 44, 16,
             Text.literal(""),
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexSize = 48, iconDisplaySize = 12,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
@@ -289,7 +289,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             centerX + iconRowHalf - iconSize, iconY, iconSize, iconSize,
             Text.literal(""),
             { openIfOwner { client?.setScreen(ServerConfigScreen()) } },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/server_config_icon.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/icon/server_config_icon.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
@@ -309,7 +309,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             iconLeftX, iconY, iconSize, iconSize,
             Text.literal(""),
             { openIfOwner { client?.setScreen(PermissionScreen()) } },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/permission.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/icon/permission.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
@@ -363,7 +363,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             iconLeftX + iconStep * 2, iconY, iconSize, iconSize,
             Text.literal(""),
             { openIfPermitted(MarketPermissions.POINTS_CODE) { client?.setScreen(PointsCodeScreen()) } },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/redeem_code_icon.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/icon/redeem_code_icon.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
         )
@@ -408,7 +408,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
     // ── 市场总开关按钮（2026-09-12 从入口界面移来）：乐观切换 + 服务端广播回状态 ──
 
     private fun marketSwitchIcon(): Identifier =
-        Identifier.of("cobblemarket", if (MarketStateCache.enabled) "textures/gui/emergency_button_on.png" else "textures/gui/emergency_button_off.png")
+        Identifier.of("cobblemarket", if (MarketStateCache.enabled) "textures/gui/button/emergency_button_on.png" else "textures/gui/button/emergency_button_off.png")
 
     /** 服务端广播 MarketStatePayload 时同步刷新图标（切换后 / 他处命令切换时都能跟上） */
     fun updateMarketSwitchIcon() {
@@ -542,7 +542,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-        val bg = Identifier.of("cobblemarket", "textures/gui/market_entry_background.png")
+        val bg = Identifier.of("cobblemarket", "textures/gui/background/market_entry_background.png")
         // 背景底贴原 160 高背景底边再下移 20、向上扩展（不遮下方 HUD）；按钮布局不动。贴图 256×213
         // -29：补偿按钮下移的 5px，背景保持与入口界面（OP 三行时）完全一致，两界面切换背景不跳动
         val bgTop = btnStartY - 29

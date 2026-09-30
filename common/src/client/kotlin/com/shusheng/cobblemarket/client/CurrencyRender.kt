@@ -25,10 +25,10 @@ fun unitGap(textRenderer: TextRenderer): Int = textRenderer.getWidth(" ")
  *   所以服主换这一张，聊天 / HUD / 列表行的图标全都跟着变。
  * - [POINTS_ICON_TEXTURE] 充值界面那张大的，源图 **256×160**（1.6:1，像点卡），显示 128×80。
  */
-val POINTS_SYMBOL_TEXTURE: Identifier = Identifier.of("cobblemarket", "textures/gui/points_symbol.png")
+val POINTS_SYMBOL_TEXTURE: Identifier = Identifier.of("cobblemarket", "textures/gui/currency/points_symbol.png")
 
 /** 充值界面图标（档位行 / 订单弹窗）。行内符号用的是上面那张，别混 */
-val POINTS_ICON_TEXTURE: Identifier = Identifier.of("cobblemarket", "textures/gui/points_icon.png")
+val POINTS_ICON_TEXTURE: Identifier = Identifier.of("cobblemarket", "textures/gui/currency/points_icon.png")
 
 /** [POINTS_SYMBOL_TEXTURE] 的源图边长（正方形）。缩放比 = 目标尺寸 / 它 */
 const val POINTS_SYMBOL_SRC = 48
@@ -37,7 +37,7 @@ const val POINTS_SYMBOL_SRC = 48
  * 「上架」按钮的图标（`sell.png`，同样 48×48 源图）。
  * 上架按钮用它替掉原来的「上架」二字后能窄一大截，腾出的位置正好够放货币切换按钮。
  */
-val SELL_ICON_TEXTURE: Identifier = Identifier.of("cobblemarket", "textures/gui/sell.png")
+val SELL_ICON_TEXTURE: Identifier = Identifier.of("cobblemarket", "textures/gui/icon/sell.png")
 
 /** [SELL_ICON_TEXTURE] 的源图边长 */
 const val SELL_ICON_SRC = 48

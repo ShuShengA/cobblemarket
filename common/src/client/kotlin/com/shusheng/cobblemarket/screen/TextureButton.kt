@@ -68,7 +68,7 @@ class TextureButton(
 
     override fun isHovered(): Boolean = !hoverBlocked && super.isHovered()
 
-    private val texture = Identifier.of("cobblemarket", "textures/gui/button.png")
+    private val texture = Identifier.of("cobblemarket", "textures/gui/button/button.png")
     private val textureWidth = 320
     private val textureHeight = 96
     private val stateHeight = 48

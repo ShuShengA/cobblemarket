@@ -227,7 +227,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             leftX + panelWidth - 50, 13, 50, 16,
             Text.literal(""),
             { client?.setScreen(AdminScreen()) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         ))
@@ -388,7 +388,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             Text.literal(""),
             { toggleMineOnly() },
             iconLeft = Identifier.of("cobblemarket",
-                if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png"),
+                if (showMineOnly) "textures/gui/button/personal_click.png" else "textures/gui/button/personal.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         )
@@ -430,7 +430,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             leftX, btnY, 80, 20,
             Text.literal(""),
             { prevPage() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/previous.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.prev")
         )
@@ -439,7 +439,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             leftX + panelWidth - 80, btnY, 80, 20,
             Text.literal(""),
             { nextPage() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/next.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.next")
         )
@@ -804,7 +804,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         showMineOnly = !showMineOnly
         currentPage = 1
         mineButton.iconLeft = Identifier.of("cobblemarket",
-            if (showMineOnly) "textures/gui/personal_click.png" else "textures/gui/personal.png")
+            if (showMineOnly) "textures/gui/button/personal_click.png" else "textures/gui/button/personal.png")
         mineButton.setTooltip(Tooltip.of(Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")))
         // 「我的」是个**开关**：开启时除换图标，按钮也给选中态（照手持物品那几个开关）
         mineButton.selectedVisual = showMineOnly
@@ -852,7 +852,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private fun updateFilterToggleVisual() {
         if (!::filterToggleButton.isInitialized) return
         filterToggleButton.iconLeft = Identifier.of("cobblemarket",
-            if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png")
+            if (filterExpanded) "textures/gui/button/filter.png" else "textures/gui/button/filter_close.png")
         // 面板展开期间按钮保持**选中态**（按钮背景第三态）：一眼看出面板开着还是关着（照精灵市场）
         filterToggleButton.selectedVisual = filterExpanded
         filterToggleButton.setTooltip(Tooltip.of(Text.translatable(
@@ -899,7 +899,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         htButton?.setMessage(htButtonText())
         htButton?.textColor = UNSET_FILTER_COLOR
         sortButton.message = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
-        mineButton.iconLeft = Identifier.of("cobblemarket", "textures/gui/personal.png")
+        mineButton.iconLeft = Identifier.of("cobblemarket", "textures/gui/button/personal.png")
         mineButton.setTooltip(Tooltip.of(Text.translatable("cobblemarket.gui.mine")))
         mineButton.selectedVisual = false
         refreshData()
@@ -1806,7 +1806,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     override fun shouldPause() = false
 
     private companion object {
-        val SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon_slot.png")
+        val SLOT_TEXTURE = Identifier.of("cobblemarket", "textures/gui/pokemon/pokemon_slot.png")
         val GENDER_ICON_MALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_male.png")
         val GENDER_ICON_FEMALE = Identifier.of("cobblemon", "textures/gui/pc/gender_icon_female.png")
         /** 筛选按钮「未选中」的文字色：**白色**（与精灵市场 / 拍卖场 / 上架选择同一口径） */

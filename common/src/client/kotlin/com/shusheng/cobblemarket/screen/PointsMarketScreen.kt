@@ -1035,7 +1035,7 @@ class PointsMarketScreen : Screen(
             cx - BACK_W / 2, backButtonY(bg), BACK_W, BACK_H,
             Text.literal(""),
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
@@ -1144,7 +1144,7 @@ class PointsMarketScreen : Screen(
             bg.x + third / 2 - PAGE_BTN_W / 2, pageBtnY, PAGE_BTN_W, PAGE_BTN_H,
             Text.literal(""),
             { prevPage() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/previous.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.prev")
         )
@@ -1152,7 +1152,7 @@ class PointsMarketScreen : Screen(
             bg.x + bg.w - third / 2 - PAGE_BTN_W / 2, pageBtnY, PAGE_BTN_W, PAGE_BTN_H,
             Text.literal(""),
             { nextPage() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/next.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.next")
         )
@@ -3605,14 +3605,14 @@ class PointsMarketScreen : Screen(
         editSpeciesPrev = NineSliceButton(
             editArrowX(), y + EDIT_SPECIES_Y, EDIT_ARROW_W, EDIT_ROW_H, Text.literal(""),
             { cycleEditSpecies(-1) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/previous.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/previous.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.species_prev")
         )
         editSpeciesNext = NineSliceButton(
             editArrow2X(), y + EDIT_SPECIES_Y, EDIT_ARROW_W, EDIT_ROW_H, Text.literal(""),
             { cycleEditSpecies(1) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/next.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/next.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.species_next")
         )
@@ -3824,7 +3824,7 @@ class PointsMarketScreen : Screen(
             editDialogX() + EDIT_PAD, searchY, OPTION_HELD_BTN_W, EDIT_ROW_H,
             Text.literal(""),
             { pickHeldItemAsShopEntry() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/hand.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/cursor/hand.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.points.store.pick_held")
         )
@@ -6249,7 +6249,7 @@ class PointsMarketScreen : Screen(
     override fun shouldPause() = false
 
     private companion object {
-        val BACKGROUND = Identifier.of("cobblemarket", "textures/gui/points_market_background.png")
+        val BACKGROUND = Identifier.of("cobblemarket", "textures/gui/background/points_market_background.png")
         const val TEX_W = 1280
         const val TEX_H = 720
 
@@ -6728,15 +6728,15 @@ class PointsMarketScreen : Screen(
          * 闭锁 = **未选中**（候选表照旧按物种限）、开锁 = **选中**（放开成全部特性 / 技能）。
          * ⚠ 状态就靠换这张图表达，不叠 `selectedVisual`、也没有文字 —— 见 [EDIT_FREE_SIZE]。
          */
-        val FREE_PICK_LOCK_ICON = Identifier.of("cobblemarket", "textures/gui/lock.png")
-        val FREE_PICK_UNLOCK_ICON = Identifier.of("cobblemarket", "textures/gui/unlock.png")
+        val FREE_PICK_LOCK_ICON = Identifier.of("cobblemarket", "textures/gui/pokemon/lock.png")
+        val FREE_PICK_UNLOCK_ICON = Identifier.of("cobblemarket", "textures/gui/pokemon/unlock.png")
 
         /**
          * 「非法」的印章图（48×48）—— **两处共用这一份**，别各写一遍：
          * - 编辑窗底部那枚「非法」开关（按钮图标）
          * - **商城格子左上角**的角标（缩放后画在格子上）
          */
-        val ILLEGAL_BADGE_ICON = Identifier.of("cobblemarket", "textures/gui/illegal.png")
+        val ILLEGAL_BADGE_ICON = Identifier.of("cobblemarket", "textures/gui/pokemon/illegal.png")
 
         /**
          * 头目徽章的**原始尺寸与显示缩放** —— 编辑窗按钮与购买窗只读行**共用这一份**，别各写一遍
