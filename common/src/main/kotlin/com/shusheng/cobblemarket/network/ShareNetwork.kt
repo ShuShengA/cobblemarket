@@ -283,7 +283,11 @@ object ShareNetwork {
                     // 但物品名只有下划线、一旦被外层样式盖掉就整个看不出来，这里兜底保证两者一致
                     .withUnderline(true)
             }
-        return Text.literal("[分享] ").formatted(Formatting.GOLD)
+        // ⚠ 前缀**走词条**，别硬编码 —— 服务端写死的字在英文客户端上照样是中文
+        //   （2026-10-01 用户实测：`[分享] Shu_ShengA showcased …`，后半句是词条、前缀不是）。
+        //   ⚠ 那个空格留在代码里（不是语言差异），跟着语言走的只有方括号里那个词。
+        return Text.translatable("cobblemarket.chat.share_prefix").formatted(Formatting.GOLD)
+            .append(" ")
             .append(
                 Text.translatable(
                     "cobblemarket.chat.share_announce",
