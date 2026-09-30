@@ -1335,29 +1335,40 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             )
         }
         // 余额（标题下方，来自全局缓存）
+        // ⚠⚠ **两行必须共用同一个左缘**（2026-09-30 修，用户报「第二个余额明显靠右一点」）：
+        //   原先主余额是「自己量宽 + `width/2 - w/2` 居中」，RP 余额交给 `drawCenteredTextWithShadow`
+        //   —— **两种口径**，而两行的单位宽度本来就不同（主余额的**物品图标**是自绘的 12px、
+        //   RP 的**字形**只有 ~8px）⇒ 整行宽不同 ⇒ 「余额：」对不齐；而且数字位数一变
+        //   （138 → 1380）还会再错一次。**"整行居中"这个口径本身就保证不了标签对齐。**
+        //   ⇒ 改成：两行都先量总宽、取大者定公共左缘，**左对齐**画。
+        //   （只有一行时 maxOf 退化成它自己 ⇒ 单行行为与改动前一致，不是回归。）
         val bal = com.shusheng.cobblemarket.client.BalanceCache.balance
-        if (bal.isNotEmpty()) {
-            // ⚠ 金额与单位拆开画（物品货币时单位是物品图标）；词条 gui.balance 只吃一个 %s（金额）
-            // ⚠ 这是**主余额**（RP 余额在下面一行单独画）⇒ isPoints 恒 false
-            val balLine = Text.translatable("cobblemarket.gui.balance",
-                Text.literal(bal).formatted(Formatting.GOLD))
-            val balGapW = textRenderer.getWidth(" ")
-            val balW = textRenderer.getWidth(balLine) + balGapW + currencyUnitWidth(textRenderer, false)
-            val balX = width / 2 - balW / 2
-            context.drawTextWithShadow(textRenderer, balLine, balX, btnStartY - 24, 0xFFFFFF)
-            drawCurrencyUnit(context, textRenderer, false, balX + textRenderer.getWidth(balLine) + balGapW, btnStartY - 24, 0xFFAA00)
-        }
-        // RP 余额：紧跟在主余额**下一行**，与余额 HUD 同一个格局（数字在前、图标当单位）。
-        // ⚠ 服务器没开 RP 就不画（`PointsStateCache.enabled`）——没有这种货币就别占一行。
-        // ⚠ 图标必须走 Text 拼接（`.append(pointsIcon())`），拼进字符串会丢字体样式变方块
+        val balGapW = textRenderer.getWidth(" ")
+        // 主余额：⚠ 金额与单位**拆开画**（物品货币时单位是物品图标，拼不进字符串）
+        // ⇒ 量宽时必须把「空格 + 单位」补上，否则居中会偏（见 memory「测量与绘制同源」）
+        val mainLine = if (bal.isNotEmpty()) Text.translatable("cobblemarket.gui.balance",
+            Text.literal(bal).formatted(Formatting.GOLD)) else null
+        val mainW = mainLine?.let {
+            textRenderer.getWidth(it) + balGapW + currencyUnitWidth(textRenderer, false)
+        } ?: 0
+        // RP 余额：⚠ 图标必须走 Text 拼接（`.append(pointsIcon())`），拼进字符串会丢字体样式变方块
+        // ⚠ 服务器没开 RP 就不画（`PointsStateCache.enabled`）——没有这种货币就别占一行
         val pts = com.shusheng.cobblemarket.client.BalanceCache.pointsBalance
-        if (com.shusheng.cobblemarket.client.PointsStateCache.enabled && pts.isNotEmpty()) {
-            context.drawCenteredTextWithShadow(
-                textRenderer,
-                Text.translatable("cobblemarket.gui.balance",
-                    Text.literal("$pts ").append(CurrencyService.pointsIcon()).formatted(Formatting.GOLD)),
-                width / 2, btnStartY - 12, 0xFFFFFF
+        val rpLine = if (com.shusheng.cobblemarket.client.PointsStateCache.enabled && pts.isNotEmpty())
+            Text.translatable("cobblemarket.gui.balance",
+                Text.literal("$pts ").append(CurrencyService.pointsIcon()).formatted(Formatting.GOLD)) else null
+        val rpW = rpLine?.let { textRenderer.getWidth(it) } ?: 0
+
+        val balLeftX = width / 2 - maxOf(mainW, rpW) / 2
+        mainLine?.let {
+            context.drawTextWithShadow(textRenderer, it, balLeftX, btnStartY - 24, 0xFFFFFF)
+            drawCurrencyUnit(
+                context, textRenderer, false,
+                balLeftX + textRenderer.getWidth(it) + balGapW, btnStartY - 24, 0xFFAA00
             )
+        }
+        rpLine?.let {
+            context.drawTextWithShadow(textRenderer, it, balLeftX, btnStartY - 12, 0xFFFFFF)
         }
     }
 
