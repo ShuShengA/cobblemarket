@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.POINTS_ICON_TEXTURE
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.network.MarketResultPayload
@@ -882,6 +883,14 @@ class PointsConfigScreen : Screen(
         )
         if (editingIndex in tiers.indices) tiers[editingIndex] = entry else tiers += entry
         closeTierDialog()
+        // ⚠⚠ **点「保存」就要真的保存**（2026-09-30 用户报「添加/编辑档位点保存不触发保存」）：
+        //   这颗按钮用的是 `scfg_save`「保存」，而**隔壁费率弹窗的 [commitFeeDialog] 就是
+        //   提交后直接 [save]** —— 当初这里漏了这一行，表现成「按钮叫保存、却只改了本地列表」，
+        //   服主以为存了、要 `/market reload` 才生效。
+        // ⚠ 顺序必须是**先关弹窗、再保存**：`closeTierDialog()` 会 rebuild 一次，
+        //   而 [save] 要么成功发提示、要么因「快照没到」给 `saveBlocked` 提示 ——
+        //   那两条提示都画在**主界面**底部，弹窗还盖着就看不见了。
+        save()
     }
 
     private fun closeTierDialog() {
@@ -1014,6 +1023,42 @@ class PointsConfigScreen : Screen(
                 if (row <= ROW_FEE) Text.translatable(key, CurrencyService.pointsIcon())
                 else Text.translatable(key)
             context.drawTextWithShadow(textRenderer, text, dx + 10, rowY(row) + 7, 0xFFFFFF)
+            // 「默认券图」这行：标签后面**用括号把内置券图那张图括起来画**（2026-09-30 用户定）——
+            // 光看输入框里那句「留空 = 用内置券图」，服主不知道内置的那张长什么样。
+            //
+            // ⚠ **括号不能少**（用户强调了三轮）：整组是「（ ＋ 图 ＋ ）」，三段各画各的。
+            //   括号走普通文字 —— 图是绘制出来的、进不了 Text 流，所以只能这么拼。
+            // ⚠ 画的是**真图** `points_icon.png`（[PointsRechargeScreen] 档位卡的默认券图也是它）
+            //   ⇒ 服主或资源包换过它时这里跟着一起变，**不存第二份、不用同步**。
+            // ⚠ 缩放必须走 matrices —— `drawTexture` 的 width/height 是**采样区**不是绘制尺寸
+            //   （照 `PointsRechargeScreen` 画券图那套）。
+            // ⚠ 竖直方向：两个括号与**标签文字同一条基线**（`rowY + 7`），图对准文字的中心，
+            //   这样「默认券图（图）」读起来是连续的一串，不是三块浮着的东西。
+            // ⚠ 位置：标签右缘 + 4px 起。这行空档 150px（标签到 dx+46、输入框在 dx+196），
+            //   整组画满也只有 ~84px，**碰不到输入框**。
+            if (row == ROW_ICON) {
+                val iconH = BUILTIN_ICON_H
+                // ⚠ 宽度**向上取整**，别用整除：图是按 `iconH / 160` 缩放画的，实际画出来
+                //   25.6px 宽，而整除得 25 ⇒ 少推进 0.6px，右括号就压到图上（2026-09-30 用户报的）
+                val iconW = (iconH * BUILTIN_ICON_TEX_W + BUILTIN_ICON_TEX_H - 1) / BUILTIN_ICON_TEX_H
+                val parenY = rowY(row) + 7
+                var px = dx + 10 + textRenderer.getWidth(text) + 4
+                context.drawTextWithShadow(textRenderer, Text.literal("（"), px, parenY, 0xFFFFFF)
+                // ⚠ 括号与图之间**两侧补同样宽的空**：`（`/`）` 的字形自带边距，
+                //   不补的话右边看着比左边"贴死"（用户原话），补上才左右对称
+                px += textRenderer.getWidth("（") + BUILTIN_ICON_PAREN_GAP
+                context.matrices.push()
+                // 文字中心 = parenY + 4（8px 高的字）⇒ 图对准它
+                context.matrices.translate(px.toDouble(), (parenY + 4 - iconH / 2).toDouble(), 0.0)
+                context.matrices.scale(iconH / BUILTIN_ICON_TEX_H.toFloat(), iconH / BUILTIN_ICON_TEX_H.toFloat(), 1f)
+                context.drawTexture(
+                    POINTS_ICON_TEXTURE, 0, 0, 0f, 0f,
+                    BUILTIN_ICON_TEX_W, BUILTIN_ICON_TEX_H, BUILTIN_ICON_TEX_W, BUILTIN_ICON_TEX_H
+                )
+                context.matrices.pop()
+                px += iconW + BUILTIN_ICON_PAREN_GAP
+                context.drawTextWithShadow(textRenderer, Text.literal("）"), px, parenY, 0xFFFFFF)
+            }
         }
         // 档位行：名称 / 价格 / 点数（带 `*` = 该档配了专用收款码，文件名在编辑弹窗里看）。
         // 行号 = FIXED_ROWS + 下标；装不下的行不画。
@@ -1067,7 +1112,20 @@ class PointsConfigScreen : Screen(
                     Text.translatable("cobblemarket.points.config.saved", CurrencyService.pointsIcon())
                         .formatted(Formatting.GREEN)
 
-                else -> Text.translatable("cobblemarket.points.config.qr_problem_short").formatted(Formatting.RED)
+                // ⚠ **保存本身是成功的**、只是有图读不出来 ⇒ 前半句走**绿**（"存了"这件事是真的）、
+                //   后半句走**红**（图片的问题）。整条都红会被读成"没保存成功" ——
+                //   2026-09-30 用户原话：「fail 音让人以为保存没生效，而不是没读出图」。
+                // ⚠ 两段必须**平级**挂在 `Text.literal("")` 下、各自带色：带色的文字当父节点
+                //   会让后面整段的样式继承它（CLAUDE.md 的界面文字约定）。
+                else -> Text.literal("")
+                    .append(
+                        Text.translatable("cobblemarket.points.config.qr_problem_ok")
+                            .formatted(Formatting.GREEN)
+                    )
+                    .append(
+                        Text.translatable("cobblemarket.points.config.qr_problem_short_bad")
+                            .formatted(Formatting.RED)
+                    )
             }
             context.drawCenteredTextWithShadow(textRenderer, text, centerX, y, 0xFFFFFF)
         }
@@ -1169,6 +1227,19 @@ class PointsConfigScreen : Screen(
 
     private companion object {
         const val ROW_H = 20
+        /**
+         * 「默认券图」那行**括号里那张内置券图**的真实像素尺寸。
+         *
+         * ⚠ 与 `currency/points_icon.png` 的实际尺寸对齐（256×160，**不是正方形**）。
+         *   缩放走 matrices、按这个比例等比缩到 [BUILTIN_ICON_H] 高 —— 同 `POKEMON_SLOT_TEX_SIZE`
+         *   的口径（常量与文件真实尺寸对齐）。
+         */
+        const val BUILTIN_ICON_TEX_W = 256
+        const val BUILTIN_ICON_TEX_H = 160
+        /** 括号里那张图的显示高度（行高 20，留 4px 余量）。**要调大小改这一个数就行** */
+        const val BUILTIN_ICON_H = 16
+        /** 括号与图之间的空隙。**要调疏密改这一个数**（两侧同时生效，别只调一边） */
+        const val BUILTIN_ICON_PAREN_GAP = 2
 
         /**
          * **档位行高**（比固定项的 [ROW_H] 矮 2px）。
