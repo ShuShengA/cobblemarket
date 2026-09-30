@@ -105,12 +105,30 @@ object PokemonTags {
     }
 }
 
+/**
+ * ⚠⚠ **补全只推荐 `yes`，绝不推荐 `no`**（2026-09-30 用户实测报出）。
+ *
+ * 官方 `UncatchableProperty` 的约定是「`=no` ⇒ `FlagProperty(key, remove = true)` ⇒ **删掉标记**」，
+ * 而我们是**有意不支持撤销**的（[flagValueOf] 对 `no` 返回 `null`）。两边口径不同 ——
+ * 若照官方写法把 `no` 也写进 [CustomPokemonPropertyType.examples]，玩家 Tab 一下就看到它、
+ * 选中、回车，再看到 `/pokeedit` 那句**无条件**的成功提示
+ * （`PokemonEditCommand.execute` 的 `sendSuccess` 不看有没有真应用），
+ * 就会合理地以为标记被洗掉了 —— **实际上什么都没发生**。
+ * ⇒ **别把做不到的值写进补全候选。**
+ *
+ * ⚠ 手打 `=no` 仍然是**静默无事发生**（这层拦不了，除非 mixin 掉那条命令）——
+ * 但至少不再是我们主动推荐它。
+ * ⚠ 反过来 `no` **确实无害**：`flagValueOf` 返回 `null` 后被 `PokemonProperties.parse` 丢弃，
+ * 标记原封不动（2026-09-30 用户实测：探针报绿字 = 标记还在）。
+ */
+private val ONLY_SETTABLE_EXAMPLES = setOf("yes")
+
 /** 「商城来的」那个标记的属性类型 —— 结构照官方 `UncatchableProperty` */
 object ShopProperty : CustomPokemonPropertyType<FlagProperty> {
     override val keys = setOf(PokemonTags.SHOP)
     override val needsKey = true
     override fun fromString(value: String?) = flagValueOf(keys.first(), value)
-    override fun examples() = setOf("yes", "no")
+    override fun examples() = ONLY_SETTABLE_EXAMPLES
 }
 
 /** 「非法」那个标记的属性类型 */
@@ -118,7 +136,7 @@ object IllegalProperty : CustomPokemonPropertyType<FlagProperty> {
     override val keys = setOf(PokemonTags.ILLEGAL)
     override val needsKey = true
     override fun fromString(value: String?) = flagValueOf(keys.first(), value)
-    override fun examples() = setOf("yes", "no")
+    override fun examples() = ONLY_SETTABLE_EXAMPLES
 }
 
 /**
