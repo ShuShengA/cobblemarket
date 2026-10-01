@@ -91,12 +91,11 @@ object CobbleMarket {
 			if (owners.isEmpty()) {
 				LOGGER.warn(
 					"CobbleMarket: no server owner configured — nobody can edit the market config or grant admin permissions.\n" +
-						"  • Dedicated server: run \"/market owner add <player>\" in the server console.\n" +
-						"  • Single-player / LAN (no console): edit config/cobblemarket.json and put your UUID in the array, like this —\n" +
+						"  • Put your UUID into \"serverOwners\" in config/cobblemarket.json, like this —\n" +
 						"        \"serverOwners\": [\"6b8d9b8a-9580-4f8c-b72d-220328d4aea3\"]\n" +
 						"    (each entry needs its quotes; several owners are separated by commas)\n" +
 						"    Get your UUID from usercache.json, or run /data get entity @s UUID in game — that form is accepted too.\n" +
-						"    Then reload the world (or run /market reload in game if you have cheats on)."
+						"    Then run /market reload in game (with cheats on) or restart the server."
 				)
 			} else {
 				LOGGER.info("CobbleMarket: {} server owner(s) loaded from config", owners.size)
