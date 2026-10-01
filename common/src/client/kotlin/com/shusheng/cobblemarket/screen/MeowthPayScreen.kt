@@ -81,6 +81,7 @@ class MeowthPayScreen(
         }
     }
 
+    /** 方案按钮行（照 LoanScreen）：并排间距 4px；选中档靠**按钮自己的选中态**（背景第三段）表达 */
     private fun rebuildPlanButtons(dialogX: Int, dialogY: Int) {
         planButtons.forEach(::remove)
         planButtons.clear()
@@ -88,28 +89,27 @@ class MeowthPayScreen(
         plans.forEachIndexed { i, (periods, fee) ->
             val btn = NineSliceButton(
                 dialogX + 10 + i * (btnW + 4), dialogY + 80, btnW, 16,
-                Text.literal(planLabel(periods, fee, i == selectedPlan)),
+                Text.literal(planLabel(periods, fee)),
                 {
                     selectedPlan = i
                     refreshPlanLabels()
                 }
             )
+            // 选中的档位靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `▶`
+            btn.selectedVisual = i == selectedPlan
             planButtons.add(btn)
             addDrawableChild(btn)
         }
     }
 
+    /** 只刷选中态（按钮不重建；文案与选中无关，不再 setMessage） */
     private fun refreshPlanLabels() {
-        plans.forEachIndexed { i, (periods, fee) ->
-            planButtons.getOrNull(i)?.setMessage(Text.literal(planLabel(periods, fee, i == selectedPlan)))
-        }
+        planButtons.forEachIndexed { i, btn -> btn.selectedVisual = i == selectedPlan }
     }
 
-    /** 方案按钮文案：「▶3期·0.5%」（照 LoanScreen） */
-    private fun planLabel(periods: Int, feeRate: Double, selected: Boolean): String {
-        val base = Text.translatable("cobblemarket.loan.plan_btn", periods, planPercentText(feeRate)).string
-        return if (selected) "▶$base" else base
-    }
+    /** 方案按钮文案：「3期·0.5%」（照 LoanScreen；选中态由按钮自己的 selectedVisual 表达） */
+    private fun planLabel(periods: Int, feeRate: Double): String =
+        Text.translatable("cobblemarket.loan.plan_btn", periods, planPercentText(feeRate)).string
 
     private fun planPercentText(feeRate: Double): String {
         val tenths = (feeRate * 1000).roundToLong()
