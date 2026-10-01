@@ -59,6 +59,20 @@ object PokemonTags {
     const val ILLEGAL = "cobblemarket:illegal"
 
     /**
+     * **可撤销的标签**：短名 → 标记 key —— 给 `/market tag remove <玩家> <槽位> <标签>` 用。
+     *
+     * ⚠⭐ **`shop` 故意不在其中**：它是「**从哪来**」的来源标记、只用于追溯，**撤掉没有意义**
+     *   ⇒ 不进补全候选、手打也会被拒（用户 2026-09-30 定）。
+     *
+     * ⚠ 命令里只敲**短名**（`illegal`），不带 `cobblemarket:` 前缀 —— 前缀长且没必要；
+     *   而**显示名走词条** `cobblemarket.tag.name.<短名>`（中文「非法」/ 英文 "Illegal"），
+     *   **别把显示名硬编码进命令**（服务端拼死文本会在英文客户端上原样露出来）。
+     */
+    val REMOVABLE_TAGS: Map<String, String> = mapOf(
+        "illegal" to ILLEGAL
+    )
+
+    /**
      * 注册这两个属性 —— 由 [com.shusheng.cobblemarket.CobbleMarket.init] 调用。
      *
      * ⚠ **两端都要跑**（common 的 init 本来就两端都执行）：

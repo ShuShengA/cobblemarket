@@ -118,7 +118,17 @@ object MarketCommands {
                             // ⚠ 玩家名用 EntityArgumentType.player()：它**自带在线玩家补全**（别自己写 suggests）
                             .then(CommandManager.argument("player", EntityArgumentType.player())
                                 .then(CommandManager.argument("slot", IntegerArgumentType.integer(1, PARTY_SIZE))
-                                    .executes(::removePokemonTag)
+                                    // ⚠ **标签参数必填**（用户 2026-10-01 定）：现在只有一个可撤标签，
+                                    //   看着多余，但命令**还没发布过** ⇒ 现在加是零成本；等发布后再加
+                                    //   就是破坏性变更（老用法失效）。补全里去掉记不住名字的问题。
+                                    .then(CommandManager.argument("tag", StringArgumentType.word())
+                                        // 只补全**可撤销的**短名（`shop` 有意不在其中 —— 来源标记不可撤）
+                                        .suggests { _, builder ->
+                                            PokemonTags.REMOVABLE_TAGS.keys.forEach { builder.suggest(it) }
+                                            builder.buildFuture()
+                                        }
+                                        .executes(::removePokemonTag)
+                                    )
                                 )
                             )
                         )
@@ -1086,7 +1096,7 @@ object MarketCommands {
         return nodes.size
     }
 
-    // ── /market tag remove：撤掉精灵身上的「非法」标记（只服主） ──
+    // ── /market tag remove：撤掉精灵身上的某个标签（只服主） ──
 
     /**
      * 队伍槽位数（1~6）—— `slot` 参数的上界。
@@ -1097,7 +1107,11 @@ object MarketCommands {
     private const val PARTY_SIZE = 6
 
     /**
-     * `/market tag remove <玩家> <槽位>` —— 撤掉**别人队伍里**某只精灵的 `cobblemarket:illegal` 标记。
+     * `/market tag remove <玩家> <槽位> <标签>` —— 撤掉**别人队伍里**某只精灵身上的某个标签。
+     *
+     * ⚠ **标签参数必填**（用户 2026-10-01 定）：目前只有一个可撤标签、看着多余，
+     *   但命令**还没发布过** ⇒ 现在加是零成本；等发布后再加就成了破坏性变更（老用法失效）。
+     *   补全只列 [PokemonTags.REMOVABLE_TAGS] 的短名，记不住名字的问题由 Tab 解决。
      *
      * ⭐ **这是唯一的撤销途径**（用户 2026-09-30 定）。标记一旦打上就洗不掉：
      * - `/pokeedit` 撤不了（`=no` 一律不认，那是**有意**的 —— 能被洗掉就等于禁赛失效）
@@ -1105,8 +1119,8 @@ object MarketCommands {
      * ⇒ 标错了（手滑勾上、卖出去才发现）本来**只能看着**，这条命令补的就是这个洞。
      *
      * ⚠ **只服主**：`denyNonOwner` 首行拦下非服主 —— 它改的是**别人的**精灵。
-     * ⚠ 只撤 [PokemonTags.ILLEGAL]，**不撤 `shop`**：那是"从哪来"的来源标记，只用于追溯，
-     *   撤掉没有意义（见 `PokemonTags` 的 KDoc）。
+     * ⚠ 标签只认 [PokemonTags.REMOVABLE_TAGS] 里的（目前 = `illegal`）—— **`shop` 有意不可撤**：
+     *   那是"从哪来"的来源标记、只用于追溯，撤掉没有意义（见 `PokemonTags` 的 KDoc）。
      * ⚠ 改完**必须 `onChange()`** —— 那是"这只精灵变了、该存盘"的通知（官方改任何字段都走它，
      *   见 `Pokemon.kt` 里那一串 `onChange(XxxUpdatePacket(...))`）。官方**没有**针对
      *   `customProperties` 的更新包 ⇒ 这里**不发包给客户端**：我们那几处标记显示
@@ -1114,6 +1128,20 @@ object MarketCommands {
      */
     private fun removePokemonTag(context: CommandContext<ServerCommandSource>): Int {
         if (denyNonOwner(context)) return 0
+        // 标签先查表：**不在可撤表里的一律拒绝**（含 `shop` —— 它是来源标记、有意不可撤）。
+        // ⚠ 小写化后再查 ⇒ 手打 `Illegal` 也认（补全给的是小写，正常不会打错）
+        val rawTag = StringArgumentType.getString(context, "tag")
+        val tagName = rawTag.lowercase()
+        val tagKey = PokemonTags.REMOVABLE_TAGS[tagName]
+        if (tagKey == null) {
+            context.source.sendError(
+                Text.translatable(
+                    "cobblemarket.tag.not_removable",
+                    rawTag, PokemonTags.REMOVABLE_TAGS.keys.joinToString(", ")
+                )
+            )
+            return 0
+        }
         val target = EntityArgumentType.getPlayer(context, "player")
         val slot = IntegerArgumentType.getInteger(context, "slot")
         // ⚠ 按**槽位下标**取 —— `party[i]`，与 Cobblemon 自己的移动 / 交换处理**同一个取法**
@@ -1129,24 +1157,30 @@ object MarketCommands {
             context.source.sendError(Text.translatable("cobblemarket.tag.empty_slot", slot))
             return 0
         }
-        if (!PokemonTags.has(pokemon, PokemonTags.ILLEGAL)) {
+        if (!PokemonTags.has(pokemon, tagKey)) {
             context.source.sendError(
-                Text.translatable("cobblemarket.tag.not_marked", pokemon.species.translatedName)
+                Text.translatable(
+                    "cobblemarket.tag.not_marked",
+                    pokemon.species.translatedName, tagDisplay(tagName)
+                )
             )
             return 0
         }
-        PokemonTags.remove(pokemon, PokemonTags.ILLEGAL)
+        PokemonTags.remove(pokemon, tagKey)
         pokemon.onChange()
         // ⚠ 成功提示走**绿色**（用户 2026-09-30 指出：聊天框里的成功反馈不能用白字 ——
         //   与本项目其余"成功"反馈同一口径，如 RP 商城上架后的 `points.store.saved`）
         context.source.sendFeedback({
             Text.translatable(
                 "cobblemarket.tag.removed",
-                target.name, slot, pokemon.species.translatedName
+                target.name, slot, pokemon.species.translatedName, tagDisplay(tagName)
             ).formatted(Formatting.GREEN)
         }, true)
         return 1
     }
+
+    /** 标签的**显示名**（词条）：中文「非法」/ 英文 "Illegal" —— ⚠ 别硬编码，见 [PokemonTags.REMOVABLE_TAGS] */
+    private fun tagDisplay(tagName: String): Text = Text.translatable("cobblemarket.tag.name.$tagName")
 
     // ── /market owner：服主名单（整套权限的根，只认服务器控制台） ──
 
