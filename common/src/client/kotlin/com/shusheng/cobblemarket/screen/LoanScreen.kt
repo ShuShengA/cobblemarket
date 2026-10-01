@@ -101,7 +101,7 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
         }
     }
 
-    /** 方案按钮行：并排间距 4px，选中档前缀 ▶ */
+    /** 方案按钮行：并排间距 4px；选中档靠**按钮自己的选中态**（背景第三段）表达 */
     private fun rebuildPlanButtons(dialogX: Int, dialogY: Int) {
         planButtons.forEach(::remove)
         planButtons.clear()
@@ -109,28 +109,27 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
         plans.forEachIndexed { i, (periods, fee) ->
             val btn = NineSliceButton(
                 dialogX + 10 + i * (btnW + 4), dialogY + 110, btnW, 16,
-                Text.literal(planLabel(periods, fee, i == selectedPlan)),
+                Text.literal(planLabel(periods, fee)),
                 {
                     selectedPlan = i
                     refreshPlanLabels()
                 }
             )
+            // 选中的档位靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `▶`
+            btn.selectedVisual = i == selectedPlan
             planButtons.add(btn)
             addDrawableChild(btn)
         }
     }
 
+    /** 只刷选中态（按钮不重建；文案与选中无关，不再 setMessage） */
     private fun refreshPlanLabels() {
-        plans.forEachIndexed { i, (periods, fee) ->
-            planButtons.getOrNull(i)?.setMessage(Text.literal(planLabel(periods, fee, i == selectedPlan)))
-        }
+        planButtons.forEachIndexed { i, btn -> btn.selectedVisual = i == selectedPlan }
     }
 
-    /** 方案按钮文案：「▶3期·0.5%」（费率一位小数百分比，选中加 ▶） */
-    private fun planLabel(periods: Int, feeRate: Double, selected: Boolean): String {
-        val base = Text.translatable("cobblemarket.loan.plan_btn", periods, planPercentText(feeRate)).string
-        return if (selected) "▶$base" else base
-    }
+    /** 方案按钮文案：「3期·0.5%」（费率一位小数百分比；选中态由按钮自己的 selectedVisual 表达） */
+    private fun planLabel(periods: Int, feeRate: Double): String =
+        Text.translatable("cobblemarket.loan.plan_btn", periods, planPercentText(feeRate)).string
 
     /** 费率百分比文本（0.005 → 0.5%；截断一位小数，自实现避开 Locale） */
     private fun planPercentText(feeRate: Double): String {
