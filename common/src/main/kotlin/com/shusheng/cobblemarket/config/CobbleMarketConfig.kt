@@ -202,29 +202,14 @@ object CobbleMarketConfig {
     /**
      * 服主名单：**只存 UUID**（不收游戏名 —— 改名即失效、且存在重名抢注）。
      * - 服主 = 拥有全部管理节点 + 独享「服务器配置」与「权限管理」两个界面
-     * - **`OP` 不等于服主**：OP 可被任何 OP 传递（`/op`），而本名单只能从服务器控制台改
+     * - **`OP` 不等于服主**：OP 可被任何 OP 传递（`/op`），而本名单只认 `config/cobblemarket.json`
+     *   里手写的条目（改完 `/market reload` 生效；2026-10-01 起命令入口只剩只读的 `list`）
      * - **空名单 = 谁都没有管理权限**（默认安全，勿改成「空名单则 OP 可用」，那等于没收紧）
      */
     var serverOwners: List<UUID> = emptyList()
         private set
 
     fun isServerOwner(uuid: UUID): Boolean = uuid in serverOwners
-
-    /** 加入服主名单（已在名单里返回 false）。改完立即落盘，无需重启或 reload */
-    fun addServerOwner(uuid: UUID): Boolean {
-        if (uuid in serverOwners) return false
-        serverOwners = serverOwners + uuid
-        save()
-        return true
-    }
-
-    /** 移出服主名单（本来不在返回 false）⚠ 允许移除最后一名服主：那之后谁都进不去，只能手编配置文件救回 */
-    fun removeServerOwner(uuid: UUID): Boolean {
-        if (uuid !in serverOwners) return false
-        serverOwners = serverOwners - uuid
-        save()
-        return true
-    }
 
     /**
      * 解析名单里的一个条目，**认两种写法**（2026-09-23 用户实测后加）：
