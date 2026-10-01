@@ -77,7 +77,7 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
         }
     }
 
-    /** 全部/坏账 tab（仅 OP 全服流水）：分割线上方左侧并排，间距 4px；选中态黑圈在前（照拍卖场 tab，● 前缀走 NineSliceButton 黑点渲染） */
+    /** 全部/坏账 tab（仅 OP 全服流水）：分割线上方左侧并排，间距 4px；选中态靠**按钮自己的选中态**（背景第三段）表达 */
     private fun rebuildTabButtons() {
         tabButtons.forEach(::remove)
         tabButtons.clear()
@@ -102,23 +102,27 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
         tabButtons.add(infoBtn)
         addDrawableChild(infoBtn)
 
-        // 双 tab 居中（两个等宽 + 4 间隙）：**宽度按实测最宽文案定** —— 选中态会多个「● 」前缀、
-        // 英文又比中文长，写死 50 时英文选中态「● Bad Debt」会直接溢出按钮（2026-09-21 用户报，
-        // 中文下看着刚好）。左右各留 8px 给九宫格边框。
+        // 双 tab 居中（两个等宽 + 4 间隙）：**宽度按实测最宽文案定** —— 英文又比中文长，
+        // 写死 50 时英文「Bad Debt」会直接溢出按钮（2026-09-21 用户报，中文下看着刚好）。
+        // 左右各留 8px 给九宫格边框。
+        // ⚠ 文案里不再有「● 」前缀（选中态改走按钮第三段贴图），宽度按纯文案算即可 —— 别把前缀又加回来
         val tabW = maxOf(
-            textRenderer.getWidth("● " + Text.translatable("cobblemarket.loan_history.tab_all").string),
-            textRenderer.getWidth("● " + Text.translatable("cobblemarket.loan_history.tab_bad_debt").string)
+            textRenderer.getWidth(Text.translatable("cobblemarket.loan_history.tab_all").string),
+            textRenderer.getWidth(Text.translatable("cobblemarket.loan_history.tab_bad_debt").string)
         ) + 16
         val btn1 = NineSliceButton(
             width / 2 - tabW - 2, tabY, tabW, 14,
-            Text.literal((if (!showBadDebtOnly) "● " else "") + Text.translatable("cobblemarket.loan_history.tab_all").string),
+            Text.literal(Text.translatable("cobblemarket.loan_history.tab_all").string),
             { switchTab(false) }
         )
+        // 选中的 tab 靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `● `
+        btn1.selectedVisual = !showBadDebtOnly
         val btn2 = NineSliceButton(
             width / 2 + 2, tabY, tabW, 14,
-            Text.literal((if (showBadDebtOnly) "● " else "") + Text.translatable("cobblemarket.loan_history.tab_bad_debt").string),
+            Text.literal(Text.translatable("cobblemarket.loan_history.tab_bad_debt").string),
             { switchTab(true) }
         )
+        btn2.selectedVisual = showBadDebtOnly
         tabButtons.add(btn1)
         tabButtons.add(btn2)
         addDrawableChild(btn1)
