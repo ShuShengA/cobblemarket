@@ -362,6 +362,12 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             )
         } catch (_: Exception) {
         }
+        // 「非法」角标：贴图标**右上角**（见 [EntryBadgeRenderer.drawIllegalBadge]）。
+        // ⚠ 这里画的是**已经在流转中**的精灵（下架 / 求购 / 拍卖取消回来的）⇒ 拿到手之前
+        //   就该看出它带没带标记；下标口径与 iconData 一致（调用方传 `startOffset + i`）
+        if (pokemon.getOrNull(index)?.illegal == true) {
+            EntryBadgeRenderer.drawIllegalBadge(context, x, y, size)
+        }
     }
 
     // tooltip 内容缓存：内容只取决于条目，悬停同一行时每帧重建全部文本行是悬停掉帧主因

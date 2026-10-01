@@ -4,6 +4,9 @@ import com.cobblemon.mod.common.api.properties.CustomPokemonProperty
 import com.cobblemon.mod.common.api.properties.CustomPokemonPropertyType
 import com.cobblemon.mod.common.pokemon.Pokemon
 import com.cobblemon.mod.common.pokemon.properties.FlagProperty
+import com.cobblemon.mod.common.util.DataKeys
+import net.minecraft.nbt.NbtCompound
+import net.minecraft.nbt.NbtElement
 
 /**
  * 往精灵身上打的**我们自己的标记**。
@@ -92,6 +95,29 @@ object PokemonTags {
     /** 这只精灵带没带某个标记（[key] 传 [SHOP] / [ILLEGAL]） */
     fun has(pokemon: Pokemon, key: String): Boolean =
         pokemon.customProperties.any { it is FlagProperty && it.key == key }
+
+    /**
+     * **从存档 NBT 直接判**有没有某个标记 —— 给「手里只有 `pokemonNbt`」的路径用
+     *（市场 / 拍卖的行渲染：每条每次请求都要判一次，**不能构造 Pokemon**；
+     * 与 [PokemonDynamax.fromNbt] 的轻量套路一致，那边也是只解字段）。
+     *
+     * ⚠⚠ **官方内部结构，跟 Cobblemon 大版本要复核**：
+     * - 键名 `DataKeys.POKEMON_DATA`（= `"PokemonData"`），值是**字符串列表**
+     *   （`PokemonP2` 里 `CUSTOM_PROPERTIES_CODEC = Codec.list(Codec.STRING)`）
+     * - 每条 `asString()` 就是 **key 本身**（`FlagProperty.asString() = key`，**不带 `=yes`**）
+     *   ⇒ 精确比字符串即可 —— 这也是「`=no` 洗不掉标记」的另一面：存进去的恒是裸 key
+     *
+     * ⚠ NBT 为空 / 没有这个键 / 结构对不上 ⇒ **一律 false**（等同"没标记"，不崩）。
+     */
+    fun hasInNbt(nbt: NbtCompound?, key: String): Boolean {
+        val n = nbt ?: return false
+        return runCatching {
+            // ⚠ `NbtElement.STRING_TYPE` 在 1.21.1 是 **Byte**，而 `getList` 收 Int ⇒ 显式转
+            //   （1.21.2+ 官方才把它改成 Int；升级时这行会报"多余转换"，跟着删掉即可）
+            val list = n.getList(DataKeys.POKEMON_DATA, NbtElement.STRING_TYPE.toInt())
+            (0 until list.size).any { list.getString(it) == key }
+        }.getOrDefault(false)
+    }
 
     /** 给精灵打上某个标记（已存在则什么都不做，不会重复加） */
     fun add(pokemon: Pokemon, key: String) {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.1 (in development, unreleased)
+
+### New Feature
+
+- **The "Illegal" mark is now visible across the trading screens**: a Pokemon tagged Illegal by the server owner in the RP shop (or tagged by a datapack) **stays recognisable once it leaves the shop** — an "Illegal" stamp is drawn on the **top-right corner of that Pokemon's icon**. **Both the list rows and the dialogs opened from them show it**: **selecting a Pokemon to sell**, **creating an auction** (including its starting-price dialog), **pending pickup**, the **Pokemon market** (including its buy / cancel confirmation), the **auction house** (including its bid dialog), and the **admin screens** for both Pokemon and auctions (including their force-cancel dialogs). ⚠ The stamp is mirrored against the "untradeable" lock in the top-left (they never overlap) — the two are **independent states**, but the **only place you can see both at once is the "pick a Pokemon to sell" screens**: an untradeable Pokemon can never be listed in the first place, so it never shows up in the market or auction house. ⚠ The check reads the **mark on the Pokemon itself**, not a snapshot taken at listing time ⇒ listings and auctions **created before the update still show it** — nobody has to re-list anything. ⚠ A `cobblemarket:illegal` written by server owners in their own datapacks is recognised too (it is the same mark the shop toggle applies)
+
 ## 1.3.0 (in development, unreleased)
 
 ### New Feature

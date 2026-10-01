@@ -78,6 +78,17 @@ data class AuctionEntry(
     val isPoints: Boolean = com.shusheng.cobblemarket.currency.MarketCurrency
         .fromStored(currency) == com.shusheng.cobblemarket.currency.MarketCurrency.POINTS
 
+    /**
+     * 服主 / 数据包标的**「非法」**（精灵 `customProperties` 里的 `cobblemarket:illegal`）
+     * —— 行图标右上角那枚印章角标读它（见 `EntryBadgeRenderer.drawIllegalBadge`）。
+     *
+     * ⚠ 走 [extraData] 而不是新字段：与 size / moves / teraType / ot 同一套路（那边是
+     * `Map<String,String>`，加键**不必动 write/read 的字段顺序** —— 顺序一错就是两端断连）。
+     * ⚠ 服务端在 [auctionToEntry] 里**从精灵 NBT 现算**（不是上架快照）⇒ 老拍卖也显示；
+     *   物品拍卖根本没有这一项（没有"这只精灵"的概念）⇒ 恒 false。
+     */
+    val illegal: Boolean = extraData["illegal"] == "true"
+
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(id)
         buf.writeString(type)
@@ -152,7 +163,10 @@ fun auctionToEntry(a: AuctionListing, server: MinecraftServer): AuctionEntry = A
                 a.extraData["teraType"], a.pokemonNbt)) +
             ("gmaxFactor" to dyn.gmaxFactor.toString()) +
             ("dmaxLevel" to dyn.dmaxLevel.toString()) +
-            ("ot" to com.shusheng.cobblemarket.util.PokemonOT.fromNbt(a.pokemonNbt, server))
+            ("ot" to com.shusheng.cobblemarket.util.PokemonOT.fromNbt(a.pokemonNbt, server)) +
+            // 「非法」角标：与上面几条同款 —— **从精灵 NBT 现算**（老拍卖也显示）
+            ("illegal" to com.shusheng.cobblemarket.util.PokemonTags.hasInNbt(
+                a.pokemonNbt, com.shusheng.cobblemarket.util.PokemonTags.ILLEGAL).toString())
     } else a.extraData,
     startingPrice = a.startingPrice,
     minIncrement = a.minIncrement,

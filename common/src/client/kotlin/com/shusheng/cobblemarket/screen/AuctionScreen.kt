@@ -1439,6 +1439,11 @@ class AuctionScreen(
             )
         } catch (_: Exception) {
         }
+        // 「非法」角标：图标**右上角**那枚印章（与小锁镜像对称，见 [EntryBadgeRenderer.drawIllegalBadge]）。
+        // ⚠ 下标口径与 [cacheIcons] 一致（那边按 `entries` 的下标建表、调用方传 `origIndex`）
+        if (entries.getOrNull(index)?.illegal == true) {
+            EntryBadgeRenderer.drawIllegalBadge(context, x, y, size)
+        }
     }
 
     // ── 行按钮 ──
@@ -1695,6 +1700,11 @@ class AuctionScreen(
                     }
                 } catch (_: Exception) {
                 }
+            }
+            // 「非法」角标：贴图标**右上角**（见 [EntryBadgeRenderer.drawIllegalBadge]）。
+            // ⚠ 只在**精灵拍卖**这一支（物品拍卖画的是物品图标，没有"这只精灵"的概念）
+            if (entry.illegal) {
+                EntryBadgeRenderer.drawIllegalBadge(context, slotX, slotY, slotSize)
             }
         } else {
             // 物品拍卖：走完整 NBT 重建，附魔光效与自定义名称才显示得出来

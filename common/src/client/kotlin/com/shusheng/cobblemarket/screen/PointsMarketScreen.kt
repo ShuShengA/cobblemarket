@@ -6732,11 +6732,12 @@ class PointsMarketScreen : Screen(
         val FREE_PICK_UNLOCK_ICON = Identifier.of("cobblemarket", "textures/gui/pokemon/unlock.png")
 
         /**
-         * 「非法」的印章图（48×48）—— **两处共用这一份**，别各写一遍：
+         * 「非法」的印章图（48×48）—— **只声明一份**（在 [EntryBadgeRenderer] 里），这里只是转发：
          * - 编辑窗底部那枚「非法」开关（按钮图标）
          * - **商城格子左上角**的角标（缩放后画在格子上）
+         * - ⭐ **市场 / 拍卖 / 管理端的行角标**（`EntryBadgeRenderer.drawIllegalBadge`，贴**右上角**）
          */
-        val ILLEGAL_BADGE_ICON = Identifier.of("cobblemarket", "textures/gui/pokemon/illegal.png")
+        val ILLEGAL_BADGE_ICON = EntryBadgeRenderer.ILLEGAL_BADGE_TEX
 
         /**
          * 头目徽章的**原始尺寸与显示缩放** —— 编辑窗按钮与购买窗只读行**共用这一份**，别各写一遍

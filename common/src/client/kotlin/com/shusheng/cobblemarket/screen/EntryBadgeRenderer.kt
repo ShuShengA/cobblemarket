@@ -194,28 +194,41 @@ object EntryBadgeRenderer {
     private const val LOCK_TEX_SIZE = 20
 
     /**
-     * 锁占精灵图标的比例 —— **三成**（用户 2026-09-30 逐档试出来的：铺满 → 六成 → 一半都嫌大，
-     * 「这个大小让人觉得是不小心放歪了，而不是想放到左上角」⇒ 只有缩到角标那个量级才读得出是**刻意贴的**）。
+     * 「非法」印章图（48×48）—— **与 RP 商城那两处是同一张**，所以**只在这里声明一份**，
+     * 别处一律引用它（[PointsMarketScreen] 的编辑窗开关 / 格子角标读的也是这份）。
      */
-    private const val LOCK_SIZE_RATIO = 0.3f
+    val ILLEGAL_BADGE_TEX: Identifier = Identifier.of("cobblemarket", "textures/gui/pokemon/illegal.png")
 
-    /** 锁的绘制下限：图标再小也别缩到看不清（⚠ 调小 [LOCK_SIZE_RATIO] 时记得一起看它，会顶掉比例值） */
-    private const val LOCK_MIN = 5
+    /** 印章图的实际边长（48×48；同上，绘制时按目标尺寸缩放采样） */
+    private const val ILLEGAL_TEX_SIZE = 48
 
     /**
-     * 锁距精灵图标**左上角**的边距 —— ⚠ **横向与纵向故意不同，别合并成一个**。
+     * **角标族共用的尺寸比例** —— 精灵图标角上那几枚小图（[drawUntradeableLock] 的锁、
+     * [drawIllegalBadge] 的印章）**必须一样大**，所以比例与下限只定义这一份。
      *
-     * ⚠ 实测那张锁图（解 PNG 得到的**内容边界**）：**左右各留白 2px、上下顶满**（内容 y 0..19）。
-     *   缩到 [LOCK_SIZE_RATIO] 那么小之后，横向那 2px 只合 0.6px —— 再按 1px 画，
-     *   锁看着就"离左边比离顶边远"（用户 2026-09-30 指出）。
-     *   ⇒ 横向取 0（靠图自带的留白撑出间距）、纵向取 1（它自己不留白，得给一点）。
+     * **三成**（用户 2026-09-30 逐档试出来的：铺满 → 六成 → 一半都嫌大，
+     * 「这个大小让人觉得是不小心放歪了，而不是想放到左上角」⇒ 只有缩到角标那个量级才读得出是**刻意贴的**）。
+     */
+    private const val BADGE_SIZE_RATIO = 0.3f
+
+    /** 角标的绘制下限：图标再小也别缩到看不清（⚠ 调小 [BADGE_SIZE_RATIO] 时记得一起看它，会顶掉比例值） */
+    private const val BADGE_MIN = 5
+
+    /**
+     * 角标距精灵图标**角上的边距** —— ⚠ **横向与纵向故意不同，别合并成一个**，
+     * 也**别给某一侧单独加**（两枚角标是镜像关系，共用常量才能保证对称）。
+     *
+     * ⚠ 实测两张图的**内容边界**（解 PNG 量的，见 [drawCornerBadge] 的说明）：
+     * - 锁（20×20）：**左右各留白 2px、上下顶满**（内容 y 0..19）。缩到 [BADGE_SIZE_RATIO]
+     *   那么小之后，横向那 2px 只合 0.6px —— 再按 1px 画，锁看着就"离左边比离顶边远"
+     *   （用户 2026-09-30 指出）。⇒ 横向取 0（靠图自带的留白撑出间距）、纵向取 1。
      *
      * ⚠ **不居中、还压到一半以下，是为了别挡精灵**（用户定）——
      *   「**图标的动态（转头 / 待机动画）本来就是本模组的特色**，盖上一个大锁就只剩锁了，观感不佳」。
-     *   ⇒ 以后谁想把这个锁调大或挪回中间，先回来看一眼这句。
+     *   ⇒ 以后谁想把这些角标调大或挪回中间，先回来看一眼这句。
      */
-    private const val LOCK_MARGIN_X = 0
-    private const val LOCK_MARGIN_Y = 1
+    private const val BADGE_MARGIN_X = 0
+    private const val BADGE_MARGIN_Y = 1
     /** 名字后面多个徽章之间的空隙 */
     private const val BADGE_GAP = 3
 
@@ -263,7 +276,40 @@ object EntryBadgeRenderer {
     }
 
     /**
-     * 在精灵图标上盖一把「不可交易」的锁 —— **直接用 Cobblemon 原版那张图**。
+     * **角标族的唯一绘制入口** —— 把 [texture] 缩到「图标的三成」画在精灵图标的角上。
+     *
+     * @param texSize 贴图的**实际边长**（采样区必须传整张，见下面的 ⚠）
+     * @param rightSide `true` = 贴**右上角**（「非法」印章）、`false` = 贴**左上角**（不可交易锁）。
+     *   两枚角标**相对图标竖直中心线镜像对称**（用户 2026-10-01 定）⇒ 横向一律"起点贴角"，
+     *   共用 [BADGE_MARGIN_X] / [BADGE_MARGIN_Y]。
+     *
+     * ⚠⚠ **缩放必须走 matrices，不能把目标尺寸塞给 `drawTexture` 的 width/height** ——
+     *   那两个参数同时是「绘制尺寸」和「采样区」：传 12 会变成「从图左上角取 12×12 像素」，
+     *   于是只画出一角（2026-09-30 用户实测截图报过）。这里取**整张图**、靠矩阵缩到目标大小
+     *   （口径同 [drawSizeBadgeIcon] 那边的 blitk）。
+     *
+     * ⚠ 两张图**各自带的留白不同**（解 PNG 量到的**内容边界**）：
+     *   锁 = 左右各留 2px、上下顶满；印章 = **左右顶满**、上下各留 3px（48 尺度）。
+     *   缩到角标大小后这些留白都不到 1px，故两边都不额外补偿 ——
+     *   **观感若不对称，调的是共用边距常量，别给某一侧单独加偏移**（那样另一侧就不对称了）。
+     */
+    private fun drawCornerBadge(
+        context: DrawContext, texture: Identifier, texSize: Int,
+        x: Int, y: Int, size: Int, rightSide: Boolean
+    ) {
+        // 屏幕上的目标边长（图标三成，小图标有下限）
+        val badge = maxOf((size * BADGE_SIZE_RATIO).toInt(), BADGE_MIN)
+        val scale = badge.toFloat() / texSize
+        val bx = if (rightSide) x + size - badge - BADGE_MARGIN_X else x + BADGE_MARGIN_X
+        context.matrices.push()
+        context.matrices.translate(bx.toFloat(), (y + BADGE_MARGIN_Y).toFloat(), 0f)
+        context.matrices.scale(scale, scale, 1f)
+        context.drawTexture(texture, 0, 0, 0f, 0f, texSize, texSize, texSize, texSize)
+        context.matrices.pop()
+    }
+
+    /**
+     * 在精灵图标**左上角**盖一把「不可交易」的锁 —— **直接用 Cobblemon 原版那张图**。
      *
      * 为什么复用原版的图（用户 2026-09-30 定）：玩家在原版交换界面见过这把锁，
      * 同一张图能直接建立「这只不能交易」的认知；自己画一个反而要重新教一遍。
@@ -274,25 +320,26 @@ object EntryBadgeRenderer {
      *
      * ⚠⚠ **别照搬它的尺寸**（2026-09-30 用户实测截图报「比整个精灵图标都大、跟行一样高」）：
      *   Cobblemon 的槽位有 30 多像素、锁图 20 只占**六成**，而我们的图标边长本身就是 20
-     *   ⇒ 原样画等于把精灵整个盖住。这里缩到**一半**、贴图标的**左上角**（用户实测定档）。
+     *   ⇒ 原样画等于把精灵整个盖住。尺寸与边距见 [drawCornerBadge]（角标族共用）。
      */
-    fun drawUntradeableLock(context: DrawContext, x: Int, y: Int, size: Int) {
-        // 屏幕上的目标边长（图标一半，小图标有下限）
-        val lock = maxOf((size * LOCK_SIZE_RATIO).toInt(), LOCK_MIN)
-        // ⚠⚠ **缩放必须走 matrices，不能把目标尺寸塞给 `drawTexture` 的 width/height** ——
-        //   那两个参数同时是「绘制尺寸」和「采样区」：传 12 会变成「从锁图左上角取 12×12 像素」，
-        //   于是只画出一角（2026-09-30 用户实测截图报的第二个症状）。这里取**整张 20×20**、
-        //   靠矩阵缩到目标大小（口径同 [drawSizeBadgeIcon] 那边的 blitk）。
-        val scale = lock.toFloat() / LOCK_TEX_SIZE
-        context.matrices.push()
-        context.matrices.translate((x + LOCK_MARGIN_X).toFloat(), (y + LOCK_MARGIN_Y).toFloat(), 0f)
-        context.matrices.scale(scale, scale, 1f)
-        context.drawTexture(
-            UNTRADEABLE_LOCK_TEX, 0, 0, 0f, 0f,
-            LOCK_TEX_SIZE, LOCK_TEX_SIZE, LOCK_TEX_SIZE, LOCK_TEX_SIZE
-        )
-        context.matrices.pop()
-    }
+    fun drawUntradeableLock(context: DrawContext, x: Int, y: Int, size: Int) =
+        drawCornerBadge(context, UNTRADEABLE_LOCK_TEX, LOCK_TEX_SIZE, x, y, size, rightSide = false)
+
+    /**
+     * 在精灵图标**右上角**盖一枚「非法」印章 —— 服主 / 数据包标过 `cobblemarket:illegal` 的精灵。
+     *
+     * 位置与尺寸**与小锁镜像对称**（用户 2026-10-01 定）：「非法」与「不可交易」是两条独立的状态，
+     * 各占一角、互不遮挡。
+     *
+     * ⚠ 但**能同时看到这两枚角标的，只有「选精灵去卖」那几屏**（上架选择 / 创建拍卖）——
+     *   **不可交易的精灵压根挂不上去** ⇒ 市场 / 拍卖 / 管理端里**永远只有印章**、不会出现锁
+     *  （用户 2026-10-01 指出；原先这里写"两条状态可以同时出现"，是不准确的）。
+     *
+     * ⚠ 与 RP 商城格子角标（那边在**左上**）**是同一张图、同一个含义**，只是贴的角不同 ——
+     *   服主在商城里标过的精灵被买走、再挂到市场 / 拍卖时也该看得出来。
+     */
+    fun drawIllegalBadge(context: DrawContext, x: Int, y: Int, size: Int) =
+        drawCornerBadge(context, ILLEGAL_BADGE_TEX, ILLEGAL_TEX_SIZE, x, y, size, rightSide = true)
 
     /**
      * 名字行整体占宽（文本 + 公母图标 + 体型徽章），供悬停窗面板宽度计算。

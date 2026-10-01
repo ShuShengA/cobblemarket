@@ -122,7 +122,17 @@ data class ListingEntry(
      * 玩家名（见 [com.shusheng.cobblemarket.util.PokemonOT]），假训练家直接用原名。
      * **空串 = 没有 / 解析不到**（那一行整行不画）。
      */
-    val originalTrainer: String = ""
+    val originalTrainer: String = "",
+    /**
+     * 服主 / 数据包标的**「非法」**（精灵 `customProperties` 里的 `cobblemarket:illegal`）
+     * —— 行图标右上角那枚印章角标读它（见 `EntryBadgeRenderer.drawIllegalBadge`）。
+     *
+     * ⚠⭐ 服务端**组装 DTO 时从精灵 NBT 现算**，**不是上架那一刻的快照**：
+     *   现算 ⇒ 老挂单（1.3.1 之前挂上去的）照样显示角标；存快照则会永远不显示。
+     *   标签本体写在**精灵存档**里、跟着精灵走（交易 / 进 PC / 换玩家都在）。
+     * 旧数据 / 普通精灵没有这一位 = false。
+     */
+    val illegal: Boolean = false
 ) {
     /**
      * 这条挂单是不是 RP 计价 —— **渲染货币单位就读它**。
@@ -169,6 +179,7 @@ data class ListingEntry(
         buf.writeBoolean(gmaxFactor)
         buf.writeInt(dmaxLevel)
         buf.writeString(originalTrainer)
+        buf.writeBoolean(illegal)
     }
 
     companion object {
@@ -209,7 +220,8 @@ data class ListingEntry(
             // 与 write 端严格同序（write 在 teraType 之后）—— 用具名参数防错位
             gmaxFactor = buf.readBoolean(),
             dmaxLevel = buf.readInt(),
-            originalTrainer = buf.readString()
+            originalTrainer = buf.readString(),
+            illegal = buf.readBoolean()
         )
     }
 }
@@ -786,7 +798,16 @@ data class PokemonPreview(
      *   玩家是「点了才知道不行」。
      * ⚠ 默认 `true`：挂单行那两个构造点不传它，那些行本来也不会画锁。
      */
-    val tradeable: Boolean = true
+    val tradeable: Boolean = true,
+    /**
+     * 服主 / 数据包标的**「非法」**（精灵 `customProperties` 里的 `cobblemarket:illegal`）——
+     *「选择要上架的精灵」「创建拍卖」那几屏的行上，图标**右上角**那枚印章读它
+     *（与左上角那把锁**可以同时出现**：这几屏画的是**玩家自己**的精灵，两条状态互不排斥）。
+     *
+     * ⚠ 与 [tradeable] 同源：预览的是**活精灵**（队伍 / PC 里那只），**直接查 `customProperties`**、
+     *   不走 NBT（见 [com.shusheng.cobblemarket.util.PokemonTags.has]）。旧服务端不下发这一位 = false。
+     */
+    val illegal: Boolean = false
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(uuid); buf.writeString(species); buf.writeString(speciesId); buf.writeString(speciesName)
@@ -813,6 +834,7 @@ data class PokemonPreview(
         buf.writeString(originalTrainer)
         buf.writeString(ballItem)
         buf.writeBoolean(tradeable)
+        buf.writeBoolean(illegal)
     }
 
     companion object {
@@ -837,7 +859,8 @@ data class PokemonPreview(
             buf.readInt(),       // dmaxLevel
             buf.readString(),    // originalTrainer
             buf.readString(),    // ballItem
-            buf.readBoolean()    // tradeable：与 write 端严格同序（write 在 ballItem 之后）
+            buf.readBoolean(),   // tradeable：与 write 端严格同序（write 在 ballItem 之后）
+            buf.readBoolean()    // illegal：与 write 端严格同序（write 在 tradeable 之后）
         )
     }
 }
@@ -3455,9 +3478,11 @@ object MarketNetwork {
      * 精灵市场列表与管理端列表原先**各内联了一份逐字节相同的 60 行拼装**，聊天播报的悬停大图
      * 又要第三份 ⇒ 2026-09-29 收口到这里（以后加字段只改这一处，不会再漏掉某一个界面）。
      *
-     * ⚠ 太晶 / 极巨化 / 初始训练家三条**都从完整 NBT 现读**：老挂单没有这些快照，现读后
-     *   「升级上来的老挂单也显示」，玩家不用重新上架
-     *   （见 `PokemonTera` / `PokemonDynamax` / `PokemonOT`）。
+     * ⚠ 太晶 / 极巨化 / 初始训练家 / **非法标记**四条**都从完整 NBT 现读**：老挂单没有这些快照，
+     *   现读后「升级上来的老挂单也显示」，玩家不用重新上架
+     *   （见 `PokemonTera` / `PokemonDynamax` / `PokemonOT` / `PokemonTags`）。
+     *   ⚠ 非法那条**必须**现算：标签是在别处（商城编辑窗 / 数据包）打上去的，
+     *   上架那一刻的快照会把它永远冻结在"挂单时有没有标"上。
      * ⚠ [pokemonNbt] **可空**（拍卖的 NBT 损坏兜底 / 待交付的旧记录）⇒ 上述三条落默认值，
      *   其余字段照常走 [extraData] 快照，画出来的信息行仍然完整。
      */
@@ -3486,6 +3511,10 @@ object MarketNetwork {
         // 极巨化 / 初始训练家：**同样从挂单自带的完整 NBT 现读**（与太晶同款）
         val dyn = com.shusheng.cobblemarket.util.PokemonDynamax.fromNbt(pokemonNbt)
         val otName = com.shusheng.cobblemarket.util.PokemonOT.fromNbt(pokemonNbt, server)
+        // 「非法」角标：同样**从完整 NBT 现算**（不是上架快照）⇒ 老挂单也显示
+        val illegal = com.shusheng.cobblemarket.util.PokemonTags.hasInNbt(
+            pokemonNbt, com.shusheng.cobblemarket.util.PokemonTags.ILLEGAL
+        )
         return ListingEntry(
             id = id,
             sellerUuid = sellerUuid,
@@ -3538,7 +3567,9 @@ object MarketNetwork {
             // 极巨化 / 初始训练家（值见上面现读出来的 dyn / otName）
             gmaxFactor = dyn.gmaxFactor,
             dmaxLevel = dyn.dmaxLevel,
-            originalTrainer = otName
+            originalTrainer = otName,
+            // 「非法」角标（值见上面现算出来的 illegal）
+            illegal = illegal
         )
     }
 
@@ -3720,6 +3751,11 @@ object MarketNetwork {
             heldItemVisible = pokemon.heldItemVisible,
             // 不可交易标记：客户端据此在「选择要上架的精灵」行上画锁（见 PokemonPreview.tradeable）
             tradeable = pokemon.tradeable,
+            // 「非法」标记：客户端据此在同一行的图标**右上角**画印章（见 PokemonPreview.illegal）。
+            // ⚠ 与 tradeable 同源：预览的是**活精灵** ⇒ 直接查 customProperties、不走 NBT
+            illegal = com.shusheng.cobblemarket.util.PokemonTags.has(
+                pokemon, com.shusheng.cobblemarket.util.PokemonTags.ILLEGAL
+            ),
             aspects = pokemon.aspects.toList(),
             evsHp = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.HP] ?: 0,
             evsAtk = pokemon.evs[com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK] ?: 0,

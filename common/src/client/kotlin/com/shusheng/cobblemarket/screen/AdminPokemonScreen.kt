@@ -1426,6 +1426,11 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             )
         } catch (_: Exception) {
         }
+        // 「非法」角标：图标**右上角**那枚印章（与小锁镜像对称，见 [EntryBadgeRenderer.drawIllegalBadge]）。
+        // ⚠ 判据取数走**同一个下标**（调用方传的是 `origIndex`、恒为 listings 的原始下标）
+        if (listings.getOrNull(index)?.illegal == true) {
+            EntryBadgeRenderer.drawIllegalBadge(context, x, y, size)
+        }
     }
 
     // tooltip 内容缓存：内容只取决于条目，悬停同一行时每帧重建全部文本行是悬停掉帧主因
@@ -1680,6 +1685,11 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
                 confirmCryAt = 0L
                 IconCryClick.play(confirmState.stateFor(rp), rp)
             }
+        }
+        // 「非法」角标：贴图标**右上角**（见 [EntryBadgeRenderer.drawIllegalBadge]）。
+        // ⚠ 画在 `confirmRenderable` 块**之外**（图标槽先画了，角标不该跟着 3D 模型一起等）
+        if (entry.illegal) {
+            EntryBadgeRenderer.drawIllegalBadge(context, iconX, iconY, iconSize)
         }
 
         // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 技能 / 证章 / 卖家 / 价格

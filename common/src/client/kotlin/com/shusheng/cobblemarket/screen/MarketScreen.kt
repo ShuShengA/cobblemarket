@@ -2167,6 +2167,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 IconCryClick.play(confirmState.stateFor(rp), rp)
             }
         }
+        // 「非法」角标：贴图标**右上角**（与小锁镜像对称，见 [EntryBadgeRenderer.drawIllegalBadge]）。
+        // ⚠ 画在 `confirmRenderable` 块**之外** —— 图标槽本来就先画了，角标是「这条挂单的属性」，
+        //   不该跟着 3D 模型一起等（模型还没建好时也该看得见）
+        if (entry.illegal) {
+            EntryBadgeRenderer.drawIllegalBadge(context, iconX, iconY, iconSize)
+        }
 
         // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 技能 / 证章 / 卖家 / 价格
         // 弹窗被屏幕压矮时**信息区可滚动**：只画可视区（scissor 裁剪），起始 y 减去滚动偏移
@@ -2288,6 +2294,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             val initial = (iconData[index]?.displayName ?: entry.species).take(2)
             val tw = textRenderer.getWidth(initial)
             context.drawTextWithShadow(textRenderer, initial, x + (size - tw) / 2, y + (size - 8) / 2, 0xFFFFFF)
+        }
+        // 「非法」角标：图标**右上角**那枚印章（与小锁左上角镜像对称，见 [EntryBadgeRenderer.drawIllegalBadge]）。
+        // ⚠ 判据取数走**同一个下标**（`listings.getOrNull(index)`，与上面 fallback 一致）——
+        //   列表是筛选后的视图，下标对不上就会把 A 的角标画到 B 头上
+        if (listings.getOrNull(index)?.illegal == true) {
+            EntryBadgeRenderer.drawIllegalBadge(context, x, y, size)
         }
     }
 

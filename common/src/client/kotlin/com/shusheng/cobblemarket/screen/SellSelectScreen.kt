@@ -1577,6 +1577,12 @@ class SellSelectScreen(
         if (pokemonList.getOrNull(origIdx)?.tradeable == false) {
             EntryBadgeRenderer.drawUntradeableLock(context, x, y, size)
         }
+        // 「非法」角标：贴图标**右上角**（见 [EntryBadgeRenderer.drawIllegalBadge]）。
+        // ⚠ 与上面那把锁**可以同时出现** —— 这一屏画的是**玩家自己**的精灵，两条状态互不排斥
+        //   （锁 = 卖不出去、印章 = 服主标过这只不正常，各说各的事）
+        if (pokemonList.getOrNull(origIdx)?.illegal == true) {
+            EntryBadgeRenderer.drawIllegalBadge(context, x, y, size)
+        }
     }
 
     // tooltip 内容缓存：内容只取决于条目，悬停同一行时每帧重建全部文本行是悬停掉帧主因

@@ -1099,6 +1099,13 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         context.matrices.scale(slotSize / 66f, slotSize / 66f, 1f)
         context.drawTexture(slotTexture, 0, 0, 0f, 0f, 66, 66, 66, 66)
         context.matrices.pop()
+        // 「非法」角标：贴图标**右上角**（见 [EntryBadgeRenderer.drawIllegalBadge]）。
+        // ⚠ 与左上角那把「不可交易」的锁**可以同时出现** —— 这一屏画的是**玩家自己**的精灵，
+        //   两条状态互不排斥（这是全项目唯一能同时看到两枚角标的地方）
+        // ⚠ 画在 `dialogRenderable` 取值**之前**：模型还没建好时图标槽已经在画了，角标不该跟着等
+        if (dialogPokemon?.illegal == true) {
+            EntryBadgeRenderer.drawIllegalBadge(context, slotX, slotY, slotSize)
+        }
         val rp = dialogRenderable ?: return
         // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
         val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
@@ -1413,6 +1420,12 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         // ⚠ 取数走 [index] —— 调用方传的是**原始下标**（`origIndex`，见 indexedFilteredCache）
         if (pokemonList.getOrNull(index)?.tradeable == false) {
             EntryBadgeRenderer.drawUntradeableLock(context, x, y, size)
+        }
+        // 「非法」角标：贴图标**右上角**（见 [EntryBadgeRenderer.drawIllegalBadge]）。
+        // ⚠ 与上面那把锁**可以同时出现**（这一屏画的是玩家自己的精灵，两条状态互不排斥）
+        // ⚠ 取数下标与锁**同一处**（`index` / `origIdx` 都是 pokemonList 的原始下标）
+        if (pokemonList.getOrNull(index)?.illegal == true) {
+            EntryBadgeRenderer.drawIllegalBadge(context, x, y, size)
         }
     }
 
