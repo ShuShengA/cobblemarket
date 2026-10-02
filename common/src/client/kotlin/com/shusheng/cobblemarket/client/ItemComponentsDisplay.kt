@@ -67,7 +67,13 @@ object ItemComponentsDisplay {
      * 只作用于 getTooltip 返回值，自定义行（itemId/价格等）由各界面自行追加不受影响。
      */
     fun itemTooltip(stack: ItemStack, player: net.minecraft.entity.player.PlayerEntity?, type: TooltipType): List<Text> {
-        val lines = stack.getTooltip(net.minecraft.item.Item.TooltipContext.DEFAULT, player, type)
+        // ⚠⚠ **别用 `TooltipContext.DEFAULT`** —— 它的 `getRegistryLookup()` / `getMapState()` 都返回
+        //   **null**，模组物品的 tooltip 会因此**退化**：精致存储的背包/磁盘按住 Shift 只显示一个
+        //   UUID、看不到真正的内容（2026-10-02 用户实测报的；潜影箱没事是因为原版容器预览只读组件）。
+        //   原版 GUI 走的是 `TooltipContext.create(client.world)`（见 `Screen.getTooltipFromItem`），
+        //   这边**照它对齐**；world 为 null 时 `create` 自己退回 DEFAULT，所以照传不误。
+        val context = net.minecraft.item.Item.TooltipContext.create(MinecraftClient.getInstance().world)
+        val lines = stack.getTooltip(context, player, type)
         val filtered = if (!type.isAdvanced() || MinecraftClient.getInstance().options.advancedItemTooltips) lines
         else {
             // 原版 isAdvanced 分支附带的调试行：物品 ID 行（DARK_GRAY + 可解析 Identifier）
