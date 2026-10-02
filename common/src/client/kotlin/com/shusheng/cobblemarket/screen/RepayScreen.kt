@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.finance.LoanRecord
 import com.shusheng.cobblemarket.network.RepayEntry
 import com.shusheng.cobblemarket.network.RepayListDataPayload
 import com.shusheng.cobblemarket.network.RequestRepayListPayload
@@ -316,7 +317,26 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
                 Text.translatable("cobblemarket.repay.dialog_due_count", entry.dueCount).formatted(Formatting.RED),
                 lineX, ly, 0xFFFFFF
             )
+        } else {
+            // 未逾期：同一行位显示下期到期倒计时（逾期时该行位归「已欠 N 期」，两者互斥）
+            formatNextDue(entry.nextDueAt)?.let { nextDue ->
+                ly += 18
+                context.drawTextWithShadow(textRenderer, nextDue, lineX, ly, 0x888888)
+            }
         }
+    }
+
+    /**
+     * 「下期到期还有 X 天 XX 小时」：时长**向上取整到小时**——刚借完显示满一期（如 7 天 0 小时，便于一眼核对），
+     * 临近到期也不会出现「0 天 0 小时」。已过期（正常由「已欠 N 期」行承担）返回 null 不显示。
+     * 期界值由服务端按 LoanRecord.PERIOD_MS_LONG 算好随列表下发（nextDueAt），这里只做展示换算。
+     */
+    private fun formatNextDue(nextDueAt: Long): Text? {
+        val ms = nextDueAt - System.currentTimeMillis()
+        if (ms <= 0) return null
+        val hourMs = LoanRecord.DAY_MS_LONG / 24
+        val totalHours = (ms + hourMs - 1) / hourMs
+        return Text.translatable("cobblemarket.repay.dialog_next_due", totalHours / 24, totalHours % 24)
     }
 
     override fun resize(client: MinecraftClient, width: Int, height: Int) {

@@ -23,7 +23,7 @@ data class LoanRecord(
     val playerName: String,
     /** 本金总额（金额一律 Long，与市场挂单/冻结金一致） */
     val principal: Long,
-    /** 期数（每期 7 天） */
+    /** 期数（每期 PERIOD_DAYS 天 = 7 天） */
     val periodsTotal: Int,
     /** 已还期数 */
     val periodsPaid: Int,
@@ -59,22 +59,35 @@ data class LoanRecord(
     }
 
     /**
-     * 到期期数（固定基准：借后第 7/14/21 天…，与还款解耦，防滚动基准「还一期欠二期却算追平」的欠期蒸发）。
-     * 利息基准仍是 lastRepayAt（每次还款刷新），两职责分离。
+     * 到期期数（固定基准：一期 PERIOD_DAYS 天 ⇒ 借后第 7/14/21 天…，与还款解耦，
+     * 防滚动基准「还一期欠二期却算追平」的欠期蒸发）。利息基准仍是 lastRepayAt（每次还款刷新），两职责分离。
      */
     fun duePeriodsAt(now: Long): Int =
-        minOf(periodsTotal, (((now - createdAt).coerceAtLeast(0)) / DAY_MS_LONG).toInt())
+        minOf(periodsTotal, (((now - createdAt).coerceAtLeast(0)) / PERIOD_MS_LONG).toInt())
 
-    /** 逾期天数：距最早欠期（第 periodsPaid+1 期）到期日已过的整天数；未欠期返回 0（批次 6 制裁档位用） */
+    /**
+     * 逾期天数：距最早欠期（第 periodsPaid+1 期）到期日已过的**整天数**（真实天，不是期数）；
+     * 未欠期返回 0（批次 6 制裁档位 7/14/30 天按真实天判，与期界无关）。
+     */
     fun overdueDaysAt(now: Long): Long {
         if (duePeriodsAt(now) <= periodsPaid) return 0
-        val firstDueAt = createdAt + (periodsPaid + 1) * DAY_MS_LONG
+        val firstDueAt = createdAt + (periodsPaid + 1) * PERIOD_MS_LONG
         return ((now - firstDueAt).coerceAtLeast(0)) / DAY_MS_LONG
     }
 
     companion object {
         const val DAY_MS = 24.0 * 60 * 60 * 1000
         const val DAY_MS_LONG = 24L * 60 * 60 * 1000
+
+        /**
+         * 一期几天 —— 配置（finance.loanPlans 注释）与界面文案（loan.confirm_each「每 7 天一期」）都按 7 天写，
+         * 改这里要同步它们（喵喵支付日利率 = 每期费率 ÷ PERIOD_DAYS，也由它决定）。
+         * ⚠ 期界换算一律用它（[PERIOD_MS_LONG]）；按**天**算利息的地方（[interestSince] 的 DAY_MS）不受影响
+         */
+        const val PERIOD_DAYS = 7L
+
+        /** 期界时长（一期 = PERIOD_DAYS 天）：到期期数 / 逾期起算日 / 到期提醒的基准换算是它，不是 DAY_MS_LONG */
+        const val PERIOD_MS_LONG = PERIOD_DAYS * DAY_MS_LONG
     }
 }
 

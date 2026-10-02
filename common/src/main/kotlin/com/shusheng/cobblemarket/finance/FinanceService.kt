@@ -216,7 +216,9 @@ object FinanceService {
             playerName = player.name.string,
             principal = amount,
             periodsTotal = plan?.periods ?: 1,
-            dailyRate = (plan?.feeRate ?: 0.0) / 7.0,
+            // 日利率 = 每期费率 ÷ 一期天数（一期 7 天，见 LoanRecord.PERIOD_DAYS）；
+            // 利息仍按**天**实算（LoanRecord.interestSince 的 DAY_MS），两处口径互不影响
+            dailyRate = (plan?.feeRate ?: 0.0) / LoanRecord.PERIOD_DAYS,
             source = source,
             now = now
         )
@@ -322,8 +324,9 @@ object FinanceService {
             if (loan.status == LoanStatus.ACTIVE && loan.periodsPaid < loan.periodsTotal &&
                 loan.dueRemindedPeriods <= loan.periodsPaid
             ) {
-                val nextDueAt = loan.createdAt + (loan.periodsPaid + 1) * LoanRecord.DAY_MS_LONG
+                val nextDueAt = loan.createdAt + (loan.periodsPaid + 1) * LoanRecord.PERIOD_MS_LONG
                 val dueIn = nextDueAt - now
+                // 提醒窗口 = 到期前「1 天」（真实天，与期界 PERIOD_DAYS 无关）——这里仍用 DAY_MS_LONG
                 if (dueIn in 1..LoanRecord.DAY_MS_LONG &&
                     state.markDueReminded(loan.id, loan.periodsPaid + 1)
                 ) {
@@ -565,7 +568,9 @@ object FinanceService {
                     periodInterest = interest,
                     settleTotal = r.remainingPrincipal + interest,
                     status = r.status.name,
-                    dueCount = (r.duePeriodsAt(now) - r.periodsPaid).coerceAtLeast(0)
+                    dueCount = (r.duePeriodsAt(now) - r.periodsPaid).coerceAtLeast(0),
+                    // 下期到期时刻（期界基准同到期划扣/提醒：createdAt + 期号 × PERIOD_MS_LONG）
+                    nextDueAt = r.createdAt + (r.periodsPaid + 1) * LoanRecord.PERIOD_MS_LONG
                 )
             }
         sendToPlayer(player, RepayListDataPayload(entries))

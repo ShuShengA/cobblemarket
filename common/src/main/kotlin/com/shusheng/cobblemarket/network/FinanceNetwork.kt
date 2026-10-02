@@ -123,19 +123,21 @@ data class RepayEntry(
     val settleTotal: Long,
     val status: String,
     /** 已欠期数（到期期数 − 已还期数，OVERDUE 弹窗提示用） */
-    val dueCount: Int
+    val dueCount: Int,
+    /** 下期到期时刻（epoch ms）：服务端按 LoanRecord.PERIOD_MS_LONG 算，还款弹窗「下期到期还有 X 天 XX 小时」用 */
+    val nextDueAt: Long
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeLong(id); buf.writeInt(periodsTotal); buf.writeInt(periodsPaid); buf.writeLong(remaining)
         buf.writeLong(periodPrincipal); buf.writeLong(periodInterest); buf.writeLong(settleTotal)
-        buf.writeString(status); buf.writeInt(dueCount)
+        buf.writeString(status); buf.writeInt(dueCount); buf.writeLong(nextDueAt)
     }
 
     companion object {
         fun read(buf: PacketByteBuf) = RepayEntry(
             buf.readLong(), buf.readInt(), buf.readInt(), buf.readLong(),
             buf.readLong(), buf.readLong(), buf.readLong(),
-            buf.readString(), buf.readInt()
+            buf.readString(), buf.readInt(), buf.readLong()
         )
     }
 }

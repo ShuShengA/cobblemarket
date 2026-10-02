@@ -582,6 +582,7 @@
   "cobblemarket.repay.dialog_settle_total": "Settle all: %s %s",
   "cobblemarket.repay.dialog_split": "Principal %s + interest %s",
   "cobblemarket.repay.dialog_due_count": "%s period(s) in arrears, repay soon",
+  "cobblemarket.repay.dialog_next_due": "Next period due in %s day(s) %s hour(s)",
   "cobblemarket.repay.pay_period": "1 Period",
   "cobblemarket.repay.settle": "Settle",
   "cobblemarket.repay.not_yours": "This is not your loan",
