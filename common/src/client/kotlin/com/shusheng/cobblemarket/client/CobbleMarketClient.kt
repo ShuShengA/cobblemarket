@@ -117,6 +117,8 @@ object CobbleMarketClient {
     /** 由各平台客户端入口类（fabric 的 CobbleMarketClientFabric 等）在对应初始化阶段调用。 */
     fun init() {
         ClientConfig.load()
+        // 「有新版本可用」提示：起个后台线程查官网版本文件（查完什么都不做，等玩家真打开市场界面时才提）
+        UpdateNotice.init()
         PokemonCelebrationAnimation.register()
         CardCelebrationAnimation.register()
         openMarketKey = registerKeyBinding(
@@ -128,6 +130,8 @@ object CobbleMarketClient {
             )
         )
         onClientTick { client ->
+            // 「有新版本可用」：查到结果后，等玩家第一次打开市场界面时说一次（每个世界一次）
+            UpdateNotice.tick(client)
             // 成交铃声定时（落槌后 0.4 秒）
             val tickNow = System.currentTimeMillis()
             if (bellSoundAt > 0 && tickNow >= bellSoundAt) {

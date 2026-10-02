@@ -50,6 +50,11 @@ fun getPlayerIp(player: ServerPlayerEntity): String? =
 
 fun isModLoaded(modId: String): Boolean = ModList.get().isLoaded(modId)
 
+fun modVersion(): String =
+    ModList.get().getModContainerById("cobblemarket")
+        .map { it.modInfo.version.toString() }
+        .orElse("")
+
 // ── 网络：C2S 注册 + 服务端发送 ──
 
 fun <T : CustomPayload> registerC2S(

@@ -20,6 +20,7 @@
   "cobblemarket.settings.balance_hud_position": "Balance HUD position: ",
   "cobblemarket.settings.balance_hud_position_custom": "Custom",
   "cobblemarket.settings.icon_anim": "Pokémon icon animation: ",
+  "cobblemarket.settings.update_notice": "Update notice: ",
   "cobblemarket.settings.icon_anim_static": "Static",
   "cobblemarket.settings.icon_anim_dynamic": "Dynamic",
   "cobblemarket.settings.on_state": "ON",
@@ -441,6 +442,8 @@
   "cobblemarket.return.item_claimed": "Claimed %d items, %d remain (inventory full).",
   "cobblemarket.return.item_claimed_all": "Claimed %d items.",
   "cobblemarket.cmd.login_earnings": "You earned %d %s from market sales while offline! Claim it in the market.",
+  "cobblemarket.update.available": "CobbleMarket %s is available —",
+  "cobblemarket.update.available_link": "download from CurseForge",
 
   "cobblemarket.network.not_found": "Listing not found or no longer active.",
   "cobblemarket.network.egg_trading_disabled": "Egg trading is disabled on this server",

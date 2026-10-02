@@ -51,6 +51,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsBalanceHudButton: NineSliceButton? = null
     private var settingsBalanceHudPosButton: NineSliceButton? = null
     private var settingsIconAnimButton: NineSliceButton? = null
+    private var settingsUpdateNoticeButton: NineSliceButton? = null
     // 入口底部居中的市场总开关（仅 OP 可见）
     private var marketSwitchBtn: NineSliceButton? = null
     // 入口底部市场总开关左侧的服务器配置按钮（仅 OP 可见）
@@ -406,8 +407,13 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             { cycleIconAnim() }
         )
         addDrawableChild(settingsIconAnimButton)
+        // 更新提示：有新版时打开市场界面会发一条可点聊天消息（关掉后连查都不查）
+        // ⚠ 本线（1.1.2）的设置弹窗是**固定高度 + 硬编码行位**：这一行插在最后，弹窗高 298 → 324、
+        //   分割线补 263、下面的「完成」按钮 265 → 291（三处必须一起改，漏一处就压字或悬空）
+        settingsUpdateNoticeButton = makeSwitchButton(ClientConfig.updateNotice) { toggleUpdateNotice() }
+        settingsUpdateNoticeButton?.let { b -> b.x = switchX; b.y = dialogY + 265; addDrawableChild(b) }
         addDrawableChild(NineSliceButton(
-            centerX - 28, dialogY + 265, 56, 20,
+            centerX - 28, dialogY + 291, 56, 20,
             Text.translatable("cobblemarket.settings.done"),
             { closeSettingsDialog() }
         ))
@@ -424,6 +430,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsBalanceHudButton = null
         settingsBalanceHudPosButton = null
         settingsIconAnimButton = null
+        settingsUpdateNoticeButton = null
         clearChildren()
         init()
     }
@@ -489,6 +496,16 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         showSettingsToast("cobblemarket.settings.groudon_fly", ClientConfig.groudonFly)
     }
 
+    /**
+     * 更新提示开关。⚠ 关掉只影响**以后**：本次已经查到并排好的那条提示不撤回
+     * （查询只在客户端启动时与每次进世界时各试一次），下次起连查都不查。
+     */
+    private fun toggleUpdateNotice() {
+        ClientConfig.setUpdateNotice(!ClientConfig.updateNotice)
+        settingsUpdateNoticeButton?.iconLeft = switchIconFor(ClientConfig.updateNotice)
+        showSettingsToast("cobblemarket.settings.update_notice", ClientConfig.updateNotice)
+    }
+
     private fun balanceHudModeKey(): String = when (ClientConfig.balanceHudMode) {
         BalanceHudMode.ALWAYS -> "cobblemarket.settings.balance_hud_always"
         BalanceHudMode.ON_CHANGE -> "cobblemarket.settings.balance_hud_change"
@@ -540,7 +557,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 187 与 213 两行同属余额 HUD 设置，中间不画线
         val lineX1 = centerX - 108
         val lineX2 = centerX + 108
-        for (lineY in intArrayOf(27, 54, 80, 106, 132, 158, 184, 237)) {
+        for (lineY in intArrayOf(27, 54, 80, 106, 132, 158, 184, 237, 263)) {
             context.fill(lineX1, dialogY + lineY, lineX2, dialogY + lineY + 1, 0xFF555555.toInt())
         }
     }
@@ -593,6 +610,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             textRenderer,
             Text.translatable("cobblemarket.settings.icon_anim"),
             centerX - 100, dialogY + 245, 0xFFFFFF
+        )
+        context.drawTextWithShadow(
+            textRenderer,
+            toggleText("cobblemarket.settings.update_notice", ClientConfig.updateNotice),
+            centerX - 100, dialogY + 272, 0xFFFFFF
         )
     }
 
@@ -1077,7 +1099,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     companion object {
         private const val DIALOG_W = 240
-        private const val DIALOG_H = 298
+        private const val DIALOG_H = 324
         // 入口掉落动画三段：下落 → 落地停留 → 淡出（淡出期间入口界面从图下透出，慢慢显现）
         private const val DROP_DURATION_MS = 100L
         private const val HOLD_DURATION_MS = 100L

@@ -20,6 +20,7 @@
   "cobblemarket.settings.balance_hud_position": "余额HUD位置设置：",
   "cobblemarket.settings.balance_hud_position_custom": "自定义",
   "cobblemarket.settings.icon_anim": "精灵图标动画：",
+  "cobblemarket.settings.update_notice": "更新提示：",
   "cobblemarket.settings.icon_anim_static": "静态",
   "cobblemarket.settings.icon_anim_dynamic": "动态",
   "cobblemarket.settings.on_state": "开",
@@ -441,6 +442,8 @@
   "cobblemarket.return.item_claimed": "已领取 %d 个物品，剩余 %d 个（背包已满）。",
   "cobblemarket.return.item_claimed_all": "已领取 %d 个物品。",
   "cobblemarket.cmd.login_earnings": "离线期间市场出售，你有 %d %s 待收款，请到市场领取！",
+  "cobblemarket.update.available": "CobbleMarket 有新版本 %s——可前往",
+  "cobblemarket.update.available_link": "CurseForge 下载",
 
   "cobblemarket.network.not_found": "未找到上架或已失效。",
   "cobblemarket.network.egg_trading_disabled": "服务器已禁止蛋交易",
