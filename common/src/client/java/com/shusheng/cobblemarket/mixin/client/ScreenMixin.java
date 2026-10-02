@@ -23,6 +23,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *
  * 关闭动画：renderWithTooltip HEAD/TAIL 包矩阵（整个界面整体上滑出屏）；
  * keyPressed 拦截 Esc 改启动关闭动画（无聚焦输入框时）；动画期间吞鼠标点击。
+ *
+ * ⚠⚠ **关闭动画只对本模组界面生效**（包名前缀判断，见 `cobblemarket$interceptEsc`）——
+ * 别的界面（背包 / 合成台 / 箱子 / 其它模组的商店界面…）必须走原版 `Screen.close()`：
+ * 容器界面（`HandledScreen`）的 `close()` 里有 `player.closeHandledScreen()`，
+ * 被我们接管就会跳过那一步，服务端与客户端的容器状态就此错位（2026-10-03 修）。
  */
 @Mixin(Screen.class)
 public abstract class ScreenMixin {
@@ -57,6 +62,15 @@ public abstract class ScreenMixin {
         // Esc 且无聚焦输入框：市场动画开关开启时改启动关闭动画，关闭时放行原逻辑（原版 Esc 直接关闭）；
         // focused 非空放行，保持原版输入框 Esc 行为；音效与动画解绑，两条路径都播
         if (keyCode == 256 && self.shouldCloseOnEsc() && self.getFocused() == null) {
+            // ⚠⚠ **只对本模组的界面接管**（2026-10-03 修的真 bug）：别的界面一律放行 —— 它们必须走
+            //   原版 `Screen.close()`，而容器界面（`HandledScreen`）的 `close()` 里还有
+            //   `player.closeHandledScreen()`（发包告诉服务端「容器已关」）。替它们接管、动画结束直接
+            //   `setScreen(null)` 会把那一步跳掉 ⇒ **服务端以为玩家还在容器里** ⇒ 合成有时失灵 /
+            //   背包↔快捷栏移动卡住 / 与商店模组交互时错位（静默、无日志、多半下次开容器自愈）。
+            // ⚠ 用**包名前缀**判断而不是逐个列界面类：我们的界面全在 `com.shusheng.cobblemarket.*` 下，
+            //   前缀能自动覆盖以后新增的界面（逐个列必然漏）。
+            // ⚠ 排在音效分支**之前**：非本模组界面关闭时也不该播我们的关闭音效。
+            if (!self.getClass().getName().startsWith("com.shusheng.cobblemarket.")) return;
             if (com.shusheng.cobblemarket.client.ClientConfig.INSTANCE.getMarketAnimation()) {
                 if (CloseAnimation.INSTANCE.start()) {
                     cir.setReturnValue(true);
