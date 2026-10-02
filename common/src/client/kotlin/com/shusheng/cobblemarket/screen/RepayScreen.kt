@@ -297,14 +297,17 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
         val splitP = Text.translatable(
             "cobblemarket.repay.split_principal", Text.literal("${formatPriceLong(entry.periodPrincipal)} ")
         )
-        val splitPW = context.drawTextWithShadow(textRenderer, splitP, lineX, ly, 0x888888)
-        val splitPUnit = drawCurrencyUnit(context, textRenderer, lineX + splitPW, ly, 0x888888)
-        val splitIX = lineX + splitPW + splitPUnit
+        // ⚠⚠ 两个函数的返回值语义**不同**：`drawTextWithShadow` 给的是**文本结束的 x 坐标**（可直接接着画），
+        //   `drawCurrencyUnit` 给的是**单位宽度**（只能用来推下一段的起点）—— 把前者当宽度用会把单位甩到行外
+        //   （2026-10-02 踩过：图标画到 2×起点、利息的单位整个出界）
+        val splitPEndX = context.drawTextWithShadow(textRenderer, splitP, lineX, ly, 0x888888)
+        val splitPUnitW = drawCurrencyUnit(context, textRenderer, splitPEndX, ly, 0x888888)
         val splitI = Text.translatable(
             "cobblemarket.repay.split_interest", Text.literal("${formatPriceLong(entry.periodInterest)} ")
         )
-        val splitIW = context.drawTextWithShadow(textRenderer, splitI, splitIX, ly, 0x888888)
-        drawCurrencyUnit(context, textRenderer, splitIX + splitIW, ly, 0x888888)
+        val splitIEndX =
+            context.drawTextWithShadow(textRenderer, splitI, splitPEndX + splitPUnitW, ly, 0x888888)
+        drawCurrencyUnit(context, textRenderer, splitIEndX, ly, 0x888888)
         if (entry.dueCount > 0) {
             ly += 18
             context.drawTextWithShadow(
