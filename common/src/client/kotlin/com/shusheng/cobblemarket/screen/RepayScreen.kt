@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
+import com.shusheng.cobblemarket.finance.LoanRecord
 import com.shusheng.cobblemarket.network.RepayEntry
 import com.shusheng.cobblemarket.network.RepayListDataPayload
 import com.shusheng.cobblemarket.network.RequestRepayListPayload
@@ -184,7 +185,9 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
         rowButtons.forEach { it.visible = false }
 
         val centerX = width / 2
-        val dialogY = height / 2 - 80
+        // dH = 164（与 renderDialogBackground 成对）：按钮距底部边框 10px（约定值），
+        // 末行文字（下期到期/已欠 N 期，底边 +121）与按钮顶（+134）之间留 13px
+        val dialogY = height / 2 - 82
 
         // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染，照搬取消弹窗）
         addDrawable(object : Drawable {
@@ -194,19 +197,19 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
         })
 
         dialogPeriodButton = NineSliceButton(
-            centerX - 88, dialogY + 122, 56, 20,
+            centerX - 88, dialogY + 134, 56, 20,
             Text.translatable("cobblemarket.repay.pay_period"),
             { sendRepay(false) }
         )
         addDrawableChild(dialogPeriodButton)
         dialogSettleButton = NineSliceButton(
-            centerX - 28, dialogY + 122, 56, 20,
+            centerX - 28, dialogY + 134, 56, 20,
             Text.translatable("cobblemarket.repay.settle"),
             { sendRepay(true) }
         )
         addDrawableChild(dialogSettleButton)
         dialogCancelButton = NineSliceButton(
-            centerX + 32, dialogY + 122, 56, 20,
+            centerX + 32, dialogY + 134, 56, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeRepayDialog() }
         )
@@ -232,7 +235,8 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
         val entry = dialogEntry ?: return
         val centerX = width / 2
         val dW = 280
-        val dH = 160
+        // 164 = 末行底 121 + 间距 13 + 按钮 20 + 底部留白 10（按钮 y 在 openRepayDialog，成对）
+        val dH = 164
         val dialogX = centerX - dW / 2
         val dialogY = height / 2 - dH / 2
 
@@ -293,7 +297,26 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
                 Text.translatable("cobblemarket.repay.dialog_due_count", entry.dueCount).formatted(Formatting.RED),
                 lineX, ly, 0xFFFFFF
             )
+        } else {
+            // 未逾期：同一行位显示下期到期倒计时（逾期时该行位归「已欠 N 期」，两者互斥）
+            formatNextDue(entry.nextDueAt)?.let { nextDue ->
+                ly += 18
+                context.drawTextWithShadow(textRenderer, nextDue, lineX, ly, 0x888888)
+            }
         }
+    }
+
+    /**
+     * 「下期到期还有 X 天 XX 小时」：时长**向上取整到小时**——刚借完显示满一期（如 7 天 0 小时，便于一眼核对），
+     * 临近到期也不会出现「0 天 0 小时」。已过期（正常由「已欠 N 期」行承担）返回 null 不显示。
+     * 期界值由服务端按 LoanRecord.PERIOD_MS_LONG 算好随列表下发（nextDueAt），这里只做展示换算。
+     */
+    private fun formatNextDue(nextDueAt: Long): Text? {
+        val ms = nextDueAt - System.currentTimeMillis()
+        if (ms <= 0) return null
+        val hourMs = LoanRecord.DAY_MS_LONG / 24
+        val totalHours = (ms + hourMs - 1) / hourMs
+        return Text.translatable("cobblemarket.repay.dialog_next_due", totalHours / 24, totalHours % 24)
     }
 
     override fun resize(client: MinecraftClient, width: Int, height: Int) {
