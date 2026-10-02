@@ -42,6 +42,11 @@ fun getPlayerIp(player: ServerPlayerEntity): String? =
 
 fun isModLoaded(modId: String): Boolean = FabricLoader.getInstance().isModLoaded(modId)
 
+fun modVersion(): String =
+    FabricLoader.getInstance().getModContainer("cobblemarket")
+        .map { it.metadata.version.friendlyString }
+        .orElse("")
+
 // ── 网络 ──
 
 fun <T : CustomPayload> registerC2S(
