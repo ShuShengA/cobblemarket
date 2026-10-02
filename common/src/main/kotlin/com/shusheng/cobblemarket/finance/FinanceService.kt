@@ -314,7 +314,7 @@ object FinanceService {
         // 已结清贷款清理（结清超 90 天删除，防存档无限膨胀；审计 CSV 保留历史）
         val purged = state.purgeClosedLoans(now, CLOSED_LOAN_RETAIN_DAYS)
         if (purged > 0) {
-            com.shusheng.cobblemarket.CobbleMarket.LOGGER.info("[Finance] purged {} closed loan record(s) older than {} days", purged, CLOSED_LOAN_RETAIN_DAYS)
+            com.shusheng.cobblemarket.CobbleMarket.LOGGER.info("[Finance] purged {} closed loan records older than {} days", purged, CLOSED_LOAN_RETAIN_DAYS)
             com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
         }
         val online = server.playerManager.playerList.associateBy { it.uuid }

@@ -76,7 +76,7 @@ object CobbleMarket {
 			// 贷款期界是 hotfix 改过的值（1.1.2 由 1 天改回 7 天），这行日志用于一眼核对：
 			// 7 天 = 604800000 ms；若与此不符，说明 LoanRecord.PERIOD_DAYS 被动过
 			LOGGER.info(
-				"CobbleMarket: loan period = {} day(s)/period ({} ms)",
+				"CobbleMarket: loan period = {} days/period ({} ms)",
 				com.shusheng.cobblemarket.finance.LoanRecord.PERIOD_DAYS,
 				com.shusheng.cobblemarket.finance.LoanRecord.PERIOD_MS_LONG
 			)
