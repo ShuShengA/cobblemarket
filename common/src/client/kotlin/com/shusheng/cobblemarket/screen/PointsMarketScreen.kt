@@ -2404,6 +2404,19 @@ class PointsMarketScreen : Screen(
             }
         } catch (_: Exception) {
         }
+
+        // 「非法」印章：贴**精灵预览图的右上角**（全项目统一口径，见 [EntryBadgeRenderer.drawIllegalBadge]）。
+        // ⚠ 必须画在**预览之后** —— 名字行那个函数（[renderBuyNameLines]）跑在预览**之前**，
+        //   印章画在那儿会被图标盖住（2026-10-02 收口时发现的坑）。
+        // ⚠⭐ 「非法」那两个字在**悬停窗**里（用户 2026-09-30：名字行上挂一行红字不好看）——
+        //   所以这里只画图标，并把矩形记下来给 [renderBuyPokemonFields] 末尾弹说明用
+        //   （自绘元素没有内置 tooltip，只能自己来）。
+        // ⚠⚠ 不合法时**必须显式清空** —— 否则切到别的商品时还挂着上一只的矩形，悬停会凭空弹说明
+        buyIllegalBadgeRect = if (entry.pokemon?.illegal == true) {
+            EntryBadgeRenderer.drawIllegalBadge(context, slotX, slotY, slotSize)
+        } else {
+            null
+        }
     }
 
     /**
@@ -2590,28 +2603,10 @@ class PointsMarketScreen : Screen(
         val typeLine = EntryBadgeRenderer.typeLine(primary, secondary)
         val typeX = editDialogX() + EDIT_PAD + textRenderer.getWidth(nameLine) + 8
         context.drawTextWithShadow(textRenderer, typeLine, typeX, y, 0xFFFFFF)
-        // 服主标过的「非法」：**紧跟属性右边一枚印章图**（与格子左上角、编辑窗开关**同一份图标**
-        // [ILLEGAL_BADGE_ICON]）。
-        // ⚠⭐ 「非法」那两个字**移到悬停窗里**（用户 2026-09-30：名字行上挂着一行红字不好看）——
-        //   所以这里**只画图标**、并把它的矩形记下来，悬停在图标上时由
-        //   [renderBuyPokemonFields] 末尾弹出说明（自绘元素没有内置 tooltip，只能自己来）。
-        // ⚠ 尺寸写死 12 不按格算（这里空间充足）；**与那一行的文字垂直居中** ——
-        //   [y] 是文字顶边，图标比字高 4px，所以往上让 2px
-        buyIllegalBadgeRect = if (spec.illegal) {
-            val badge = 12
-            val badgeX = typeX + textRenderer.getWidth(typeLine) + 8
-            val badgeY = y - (badge - 8) / 2
-            // ⚠ 缩放走 matrices（`drawTexture` 的宽高是**采样区**、不是目标尺寸 —— 项目踩过的坑）
-            context.matrices.push()
-            context.matrices.translate(badgeX.toDouble(), badgeY.toDouble(), 0.0)
-            val s = badge / 48f
-            context.matrices.scale(s, s, 1f)
-            context.drawTexture(ILLEGAL_BADGE_ICON, 0, 0, 0f, 0f, 48, 48, 48, 48)
-            context.matrices.pop()
-            intArrayOf(badgeX, badgeY, badge, badge)
-        } else {
-            null   // ⚠ 必须显式清 —— 否则切到别的商品时还挂着上一只的矩形，悬停会凭空弹说明
-        }
+        // ⚠ 「非法」印章**不再画在这一行**（2026-10-02 收口）：它现在贴**精灵预览图的右上角**、
+        //   走全项目共用入口（原先画在属性行右边、固定 12px —— 与别处两套口径）。
+        //   ⚠ 也不能在这儿画：本函数跑在 [renderBuyPreview] **之前**，画了会被预览图盖住。
+        //   悬停命中矩形（[buyIllegalBadgeRect]）也随它一起搬到了那边。
     }
 
     /**
@@ -6143,26 +6138,16 @@ class PointsMarketScreen : Screen(
             x + size / 2, bottom - PRICE_BOTTOM_GAP, 0xFFFFFF
         )
 
-        // 「非法」角标（服主在编辑窗标过的那一格）：**左上角一枚印章图**（右上角给库存角标占了）。
+        // 「非法」角标（服主在编辑窗标过的那一格）：**左上角一枚印章图**（右上角给库存角标 ×N 占了）。
         // 用户 2026-09-30 定：标过的必须**在格子上就看得出来**，否则服主事后想不起来哪只标了。
-        // ⚠ 2026-09-30 二次改：原先画的是**红色「非法」两个字**，用户嫌丑 ⇒ 换成 [ILLEGAL_BADGE_ICON]。
+        // ⚠ 2026-09-30 二次改：原先画的是**红色「非法」两个字**，用户嫌丑 ⇒ 换成印章图。
         //   顺带解决了一个老问题：文字在窄格子下必须截断（英文 `Illegal` 42px 塞不进 30px 的格子），
         //   而图标只按比例缩放，**任何格子尺寸都不会溢出到邻格**。
-        // ⚠ 尺寸**按格子比例算再钳制**（写死的话小格子里它会吃掉半个图标区）；
-        //   贴边口径与库存角标一致（左上内边框，[STOCK_BADGE_INSET]）
+        // ⚠ 2026-10-02 三次改：**收口到共用入口**（[EntryBadgeRenderer.drawIllegalBadgeLeft]）——
+        //   原先这里自己手写 matrices 缩放、尺寸按 10~16 钳制、贴边 4px，与全项目口径各写一套
+        //   （比例/边距调一次要改两处）。现在尺寸与边距都走共用常量，全项目只有"贴哪一角"不同。
         if (entry.pokemon?.illegal == true) {
-            val badge = (size * 0.30f).roundToInt().coerceIn(10, 16)
-            // ⚠ 缩放走 matrices，别直接给 drawTexture 传目标尺寸 —— 那两个参数是**采样区**
-            //   （项目踩过的坑，见 [NineSliceButton] 画图标那段注释）
-            context.matrices.push()
-            context.matrices.translate(
-                (x - grow + STOCK_BADGE_INSET).toDouble(),
-                (y - grow + STOCK_BADGE_INSET).toDouble(), 0.0
-            )
-            val s = badge / 48f
-            context.matrices.scale(s, s, 1f)
-            context.drawTexture(ILLEGAL_BADGE_ICON, 0, 0, 0f, 0f, 48, 48, 48, 48)
-            context.matrices.pop()
+            EntryBadgeRenderer.drawIllegalBadgeLeft(context, x - grow, y - grow, size)
         }
 
         // 库存角标：**只有限量格才画**（不限量是默认玩法，画个 ∞ 只是碍眼）；

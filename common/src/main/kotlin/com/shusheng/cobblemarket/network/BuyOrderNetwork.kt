@@ -244,7 +244,13 @@ fun buyOrderToEntry(o: BuyOrder, server: MinecraftServer): BuyOrderEntry = BuyOr
                 ) +
                 ("gmaxFactor" to dyn.gmaxFactor.toString()) +
                 ("dmaxLevel" to dyn.dmaxLevel.toString()) +
-                ("ot" to com.shusheng.cobblemarket.util.PokemonOT.fromNbt(p.pokemonNbt, server)),
+                ("ot" to com.shusheng.cobblemarket.util.PokemonOT.fromNbt(p.pokemonNbt, server)) +
+                // 「非法」角标（同挂单 / 拍卖口径）：⚠⭐ **必须在这里现读、不能写在 buildDeliveryExtra 里** ——
+                //   那是在**交付那一刻**算的，会变成快照：本次实测就踩到了（改之前就已经交付的那笔不显示，
+                //   要等买家拒绝、卖家重新交付才有）。写在这里 ⇒ 与 moves / ot 一样「下发时现算」，
+                //   **老交付照样显示**，服主事后标/撤标记也能立刻反映
+                ("illegal" to com.shusheng.cobblemarket.util.PokemonTags.hasInNbt(
+                    p.pokemonNbt, com.shusheng.cobblemarket.util.PokemonTags.ILLEGAL).toString()),
             count = p.count,
             itemNbt = p.itemNbt
         )

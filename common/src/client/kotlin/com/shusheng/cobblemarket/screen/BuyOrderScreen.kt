@@ -2817,6 +2817,13 @@ class BuyOrderScreen(
                 }
             }
 
+            // 「非法」角标：贴图标**右上角**（与小锁镜像对称，见 [EntryBadgeRenderer.drawIllegalBadge]）。
+            // ⚠ 画在 `reviewRenderable` 块**之外** —— 图标槽本来就先画了，角标是「这只交付物」的属性，
+            //   不该跟着 3D 模型一起等（模型还没建好时也该看得见，同市场购买确认弹窗）
+            if (listing?.illegal == true) {
+                EntryBadgeRenderer.drawIllegalBadge(context, iconX, iconY, iconSize)
+            }
+
             // 完整精灵信息行（与市场购买确认弹窗同一渲染器：名字★Lv/类型/性格特性/携带物/IVs 六行/卖家/价格）
             // ⚠ listing / listingName 在**函数开头（定宽之前）**已构造好 —— 弹窗宽度就是按它量的，这里复用
             val listingEntry = listing ?: return
@@ -2893,6 +2900,9 @@ class BuyOrderScreen(
 
     /** pending 的 extraData 构造 ListingEntry（复用市场确认弹窗的完整信息行渲染器） */
     private fun pendingToListing(entry: BuyOrderEntry, pending: BuyOrderPendingEntry): ListingEntry {
+        // ⚠⚠ 这里是**全项目唯一手工拼 ListingEntry 的地方**（其余都走服务端整份下发）——
+        //   服务端 `buildDeliveryExtra` 新加了字段、这里没读，那个界面就会永远不显示（不报错、不崩）。
+        //   加字段时**两处一起改**（见 docs/pokemon_info_surfaces.md 的同款教训）
         val d = pending.extraData
         fun i(key: String) = d[key]?.toIntOrNull() ?: 0
         fun ht(key: String) = d[key]?.toIntOrNull() ?: -1
@@ -2921,6 +2931,8 @@ class BuyOrderScreen(
             ball = d["ball"] ?: "",
             ballItem = d["ballItem"] ?: "",
             heldItemId = d["heldItemId"] ?: "",
+            // 「非法」标记（服务端 buildDeliveryExtra 现算下发）：弹窗图标右上角画印章用
+            illegal = d["illegal"] == "true",
             // ⚠ 这三个与太晶同批漏接（2026-09-27 补齐）：服务端 `buildDeliveryExtra` 一直有写，
             //   这里此前没读 ⇒ 待交付弹窗里 携带物图标丢附魔光效 / 隐藏了也不注明 / 名字旁没有体型徽章
             heldItemNbt = d["heldItemNbt"] ?: "",

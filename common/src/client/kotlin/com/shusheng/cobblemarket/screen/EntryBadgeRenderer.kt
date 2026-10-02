@@ -296,16 +296,18 @@ object EntryBadgeRenderer {
     private fun drawCornerBadge(
         context: DrawContext, texture: Identifier, texSize: Int,
         x: Int, y: Int, size: Int, rightSide: Boolean
-    ) {
+    ): IntArray {
         // 屏幕上的目标边长（图标三成，小图标有下限）
         val badge = maxOf((size * BADGE_SIZE_RATIO).toInt(), BADGE_MIN)
         val scale = badge.toFloat() / texSize
         val bx = if (rightSide) x + size - badge - BADGE_MARGIN_X else x + BADGE_MARGIN_X
+        val by = y + BADGE_MARGIN_Y
         context.matrices.push()
-        context.matrices.translate(bx.toFloat(), (y + BADGE_MARGIN_Y).toFloat(), 0f)
+        context.matrices.translate(bx.toFloat(), by.toFloat(), 0f)
         context.matrices.scale(scale, scale, 1f)
         context.drawTexture(texture, 0, 0, 0f, 0f, texSize, texSize, texSize, texSize)
         context.matrices.pop()
+        return intArrayOf(bx, by, badge, badge)
     }
 
     /**
@@ -322,8 +324,9 @@ object EntryBadgeRenderer {
      *   Cobblemon 的槽位有 30 多像素、锁图 20 只占**六成**，而我们的图标边长本身就是 20
      *   ⇒ 原样画等于把精灵整个盖住。尺寸与边距见 [drawCornerBadge]（角标族共用）。
      */
-    fun drawUntradeableLock(context: DrawContext, x: Int, y: Int, size: Int) =
+    fun drawUntradeableLock(context: DrawContext, x: Int, y: Int, size: Int) {
         drawCornerBadge(context, UNTRADEABLE_LOCK_TEX, LOCK_TEX_SIZE, x, y, size, rightSide = false)
+    }
 
     /**
      * 在精灵图标**右上角**盖一枚「非法」印章 —— 服主 / 数据包标过 `cobblemarket:illegal` 的精灵。
@@ -335,11 +338,24 @@ object EntryBadgeRenderer {
      *   **不可交易的精灵压根挂不上去** ⇒ 市场 / 拍卖 / 管理端里**永远只有印章**、不会出现锁
      *  （用户 2026-10-01 指出；原先这里写"两条状态可以同时出现"，是不准确的）。
      *
-     * ⚠ 与 RP 商城格子角标（那边在**左上**）**是同一张图、同一个含义**，只是贴的角不同 ——
-     *   服主在商城里标过的精灵被买走、再挂到市场 / 拍卖时也该看得出来。
+     * ⚠ 与 RP 商城格子角标（那边在**左上**，见 [drawIllegalBadgeLeft]）**是同一张图、同一个含义**，
+     *   只是贴的角不同 —— 服主在商城里标过的精灵被买走、再挂到市场 / 拍卖时也该看得出来。
+     *
+     * 返回画出来的矩形 `[x, y, 边长, 边长]`：给「自绘元素 + 悬停出说明」的地方用
+     * （RP 商城购买窗要拿它做命中判定 —— 自绘图标没有内置 tooltip）。
      */
-    fun drawIllegalBadge(context: DrawContext, x: Int, y: Int, size: Int) =
+    fun drawIllegalBadge(context: DrawContext, x: Int, y: Int, size: Int): IntArray =
         drawCornerBadge(context, ILLEGAL_BADGE_TEX, ILLEGAL_TEX_SIZE, x, y, size, rightSide = true)
+
+    /**
+     * 同 [drawIllegalBadge]，但贴图标**左上角** —— ⚠ **只给 RP 商城格子用**。
+     *
+     * 为什么那一格不能放右上：**格子的右上角被库存角标 `×N` 占了**（限量格才画）——
+     * 放右上会打架；而"限量格放左上、不限量格放右上"又会让同一排格子位置不一致（更怪）。
+     * 所以整片商城统一放左上，其余所有界面（精灵列表 / 各种弹窗）一律用右上那版。
+     */
+    fun drawIllegalBadgeLeft(context: DrawContext, x: Int, y: Int, size: Int): IntArray =
+        drawCornerBadge(context, ILLEGAL_BADGE_TEX, ILLEGAL_TEX_SIZE, x, y, size, rightSide = false)
 
     /**
      * 名字行整体占宽（文本 + 公母图标 + 体型徽章），供悬停窗面板宽度计算。
