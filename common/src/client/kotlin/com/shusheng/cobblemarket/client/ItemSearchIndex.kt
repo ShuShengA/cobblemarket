@@ -42,7 +42,10 @@ object ItemSearchIndex {
         val moveMap = mutableMapOf<String, String>()
         val enchantMap = mutableMapOf<String, String>()
         val player = MinecraftClient.getInstance().player
-        val context = Item.TooltipContext.DEFAULT
+        // ⚠ 带 world 的 context（照原版 GUI）—— `DEFAULT` 的 `getRegistryLookup()` 是 null，
+        //   模组物品的 tooltip 会退化（精致存储磁盘那类按 Shift 只出 UUID），索引自然就少了那些词、
+        //   搜不到。world 为 null 时 `create` 自己退回 DEFAULT。
+        val context = Item.TooltipContext.create(MinecraftClient.getInstance().world)
         // 创造模式 tooltip（照原版搜索索引：显示全部信息、无 Shift 提示行，避免搜「shift」误命中）
         val tooltipType = TooltipType.BASIC.withCreative()
 
