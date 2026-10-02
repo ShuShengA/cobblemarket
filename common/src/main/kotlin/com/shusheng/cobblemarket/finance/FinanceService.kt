@@ -179,6 +179,10 @@ object FinanceService {
         if (plan == null) {
             return Text.translatable("cobblemarket.loan.invalid_plan").formatted(Formatting.RED)
         }
+        // 金额 < 期数 ⇒ 每期本金整除为 0（分期形同虚设、界面「每期约还 0」误导）⇒ 直接拒，不做「每期至少 1」的钳制
+        if (amount < plan.periods) {
+            return Text.translatable("cobblemarket.meowth_pay.amount_too_small").formatted(Formatting.RED)
+        }
         val limit = state.creditLimitFor(player.uuid, now)
         if (amount > limit) {
             return Text.translatable(
@@ -223,7 +227,9 @@ object FinanceService {
             playerName = player.name.string,
             principal = amount,
             periodsTotal = plan?.periods ?: 1,
-            dailyRate = (plan?.feeRate ?: 0.0) / 7.0,
+            // 日利率 = 每期费率 ÷ 一期天数（一期 7 天，见 LoanRecord.PERIOD_DAYS）；
+            // 利息仍按**天**实算（LoanRecord.interestSince 的 DAY_MS），两处口径互不影响
+            dailyRate = (plan?.feeRate ?: 0.0) / LoanRecord.PERIOD_DAYS,
             source = source,
             now = now
         )
@@ -329,8 +335,9 @@ object FinanceService {
             if (loan.status == LoanStatus.ACTIVE && loan.periodsPaid < loan.periodsTotal &&
                 loan.dueRemindedPeriods <= loan.periodsPaid
             ) {
-                val nextDueAt = loan.createdAt + (loan.periodsPaid + 1) * LoanRecord.DAY_MS_LONG
+                val nextDueAt = loan.createdAt + (loan.periodsPaid + 1) * LoanRecord.PERIOD_MS_LONG
                 val dueIn = nextDueAt - now
+                // 提醒窗口 = 到期前「1 天」（真实天，与期界 PERIOD_DAYS 无关）——这里仍用 DAY_MS_LONG
                 if (dueIn in 1..LoanRecord.DAY_MS_LONG &&
                     state.markDueReminded(loan.id, loan.periodsPaid + 1)
                 ) {

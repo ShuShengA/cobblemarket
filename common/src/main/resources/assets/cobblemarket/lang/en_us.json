@@ -608,6 +608,7 @@
   "cobblemarket.meowth_pay.each_est": "~%s per period · ~%s %s total",
   "cobblemarket.meowth_pay.confirm_item": "Buying: ",
   "cobblemarket.meowth_pay.confirm_amount": "Pay amount: %s %s",
+  "cobblemarket.meowth_pay.amount_too_small": "Amount too small to split into this many periods",
   "cobblemarket.buy_confirm.paid_by_meowth": "Meowth Pay success: %s %s %s in %s installments (7 days each)",
   "cobblemarket.buy_confirm.paid_by_meowth_item": "Meowth Pay success: %s×%s total %s %s, %s installments (7 days each)",
   "cobblemarket.loan.amount_label": "How much?",
