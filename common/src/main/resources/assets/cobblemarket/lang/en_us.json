@@ -653,6 +653,7 @@
   "cobblemarket.repay.split_principal": "Principal %s",
   "cobblemarket.repay.split_interest": " + interest %s",
   "cobblemarket.repay.dialog_due_count": "%s periods in arrears, repay soon",
+  "cobblemarket.repay.dialog_next_due": "Next period due in %s days %s hours",
   "cobblemarket.repay.pay_period": "1 Period",
   "cobblemarket.repay.settle": "Settle",
   "cobblemarket.repay.not_yours": "This is not your loan",

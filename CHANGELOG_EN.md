@@ -124,6 +124,8 @@
 - **Both cards gained a flavour-text line**: hovering a card in the inventory now shows a description under its name — "Amethyst struck by Pikachu's Thunderbolt, its charge frozen into a card." for the Volt Card, and "Forged from a shard of Arceus's golden wheel, said to have shaped the world." for the Genesis Card
 - **Card names are now colourful — and the colours flow**: the Volt Card alternates character by character between amethyst purple and Electric yellow, and the Genesis Card cycles through all **18 Pokémon type colours**, with the colours scrolling along the text like a rainbow marquee; the "Meowth·" prefix stays gold. The inventory tooltip, the Meowth Bank holder panels and both card application screens use the **exact type colours** (same palette as Pokémon names) and do animate; chat messages are limited by Minecraft's chat box itself (once a message is in the chat it is a fixed text with no per-frame redraw) and are therefore **static** colour — a 16-colour approximation where a few type colours share a shade
 
+- **The repay counter shows when the next instalment is due**: the repay dialog gains a "Next period due in X days X hours" line, so you can see at a glance how long is left; overdue loans keep showing "N periods in arrears" in that same slot (the two never stack)
+
 ### Fixes
 
 - **Untradeable Pokémon could still be traded through the market / auctions / buy orders**: Cobblemon lets a Pokémon be marked untradeable, but our market ignored that flag entirely — the Pokémon could still be listed, auctioned, or delivered to someone else. All three paths now block it with a message, and **the selection rows show the very same lock as vanilla**
