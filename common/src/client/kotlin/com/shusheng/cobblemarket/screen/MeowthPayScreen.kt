@@ -40,6 +40,9 @@ class MeowthPayScreen(
     /** 可用额度（进界面时经 requestCreditInfo 拉取，响应到达即刷新；未到达前按 0 显示，与 LoanScreen 同口径） */
     private var limit = 0L
 
+    /** 点了置灰档（金额 < 期数）时的红字提示截止时刻（3 秒；照入口界面 financeNoticeUntil） */
+    private var smallAmountNoticeUntil = 0L
+
     private val planButtons = mutableListOf<NineSliceButton>()
     private var backButton: NineSliceButton? = null
     private var payButton: NineSliceButton? = null
@@ -81,22 +84,45 @@ class MeowthPayScreen(
         }
     }
 
+    /**
+     * 档位是否可用：金额 < 期数时每期本金整除为 0（分期形同虚设，界面「每期约还 0」会误导玩家）。
+     * 服务端 meowthCheck 同样拒收（amount_too_small），这里只是提前置灰、不发无谓请求。
+     * ⚠ 不做「每期至少 1」的钳制——那只是把误导金额换个数。
+     */
+    private fun planUsable(periods: Int): Boolean = amount >= periods
+
+    /** 选中档若变成不可用则落到第一个可用档（全不可用时保持不动，由 openConfirmDialog 拦下并提示） */
+    private fun ensureUsableSelection() {
+        if (plans.getOrNull(selectedPlan)?.let { planUsable(it.first) } == true) return
+        val fallback = plans.indexOfFirst { planUsable(it.first) }
+        if (fallback >= 0) selectedPlan = fallback
+    }
+
     /** 方案按钮行（照 LoanScreen）：并排间距 4px；选中档靠**按钮自己的选中态**（背景第三段）表达 */
     private fun rebuildPlanButtons(dialogX: Int, dialogY: Int) {
         planButtons.forEach(::remove)
         planButtons.clear()
+        ensureUsableSelection()
         val btnW = 84
         plans.forEachIndexed { i, (periods, fee) ->
             val btn = NineSliceButton(
                 dialogX + 10 + i * (btnW + 4), dialogY + 80, btnW, 16,
                 Text.literal(planLabel(periods, fee)),
                 {
-                    selectedPlan = i
-                    refreshPlanLabels()
+                    if (planUsable(periods)) {
+                        selectedPlan = i
+                        refreshPlanLabels()
+                    } else {
+                        // 置灰档仍可点（dimmed 不影响可点性，见 NineSliceButton）：给失败音 + 3 秒红字提示，不选中
+                        playFailSound()
+                        smallAmountNoticeUntil = System.currentTimeMillis() + 3000
+                    }
                 }
             )
-            // 选中的档位靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `▶`
+            // 选中的档位靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `▶`；
+            // 不可用档置灰（dimmed，不是 active=false —— 后者会吞掉点击、连提示音都放不出）
             btn.selectedVisual = i == selectedPlan
+            btn.dimmed = !planUsable(periods)
             planButtons.add(btn)
             addDrawableChild(btn)
         }
@@ -141,8 +167,16 @@ class MeowthPayScreen(
     // ── 确认弹窗（黄金模板照 LoanScreen.openConfirmDialog） ──
 
     private fun openConfirmDialog() {
-        if (plans.getOrNull(selectedPlan) == null) {
+        val plan = plans.getOrNull(selectedPlan)
+        if (plan == null) {
             playFailSound()
+            return
+        }
+        // 选中档不可用（金额 < 期数；全档都不可用时选中档会停在这种档上）：不弹确认弹窗
+        //（弹了也只能显示「每期约还 0」），给失败音 + 3 秒红字提示（与服务端 amount_too_small 同一句）
+        if (!planUsable(plan.first)) {
+            playFailSound()
+            smallAmountNoticeUntil = System.currentTimeMillis() + 3000
             return
         }
         confirmOpen = true
@@ -319,6 +353,14 @@ class MeowthPayScreen(
                     inlineCurrencyUnit()
                 ),
                 dialogX + 12, dialogY + 104, 0x888888
+            )
+        }
+        // 置灰档点击提示（3 秒红字，画在弹窗下方；照入口界面 financeNoticeUntil 的写法）
+        if (System.currentTimeMillis() < smallAmountNoticeUntil) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.meowth_pay.amount_too_small").string,
+                width / 2, dialogY + dialogH + 6, 0xFF5555
             )
         }
     }
