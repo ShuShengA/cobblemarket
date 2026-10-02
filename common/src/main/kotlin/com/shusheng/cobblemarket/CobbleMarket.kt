@@ -96,7 +96,7 @@ object CobbleMarket {
 						"    Then run /market reload in game (with cheats on) or restart the server."
 				)
 			} else {
-				LOGGER.info("CobbleMarket: {} server owner(s) loaded from config", owners.size)
+				LOGGER.info("CobbleMarket: {} server owners loaded from config", owners.size)
 			}
 		}
 		onServerStopped { server ->
