@@ -34,6 +34,7 @@ import com.shusheng.cobblemarket.client.drawItemWithBar
 import com.shusheng.cobblemarket.client.ItemCelebrationAnimation
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.currencyUnitWidth
+import com.shusheng.cobblemarket.client.drawAmountLine
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
 
 class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
@@ -1006,6 +1007,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         val dialogY = L.dialogY
 
         drawScreenDimMask(context, width, height)
+        // ⚠ 弹窗自己的货币图标不受门禁管（同 EntryBadgeRenderer.drawInfoLines 的说明）：
+        //   遮罩是这个界面自己画的，不关掉的话弹窗里的单位会被自己的遮罩挡住
+        com.shusheng.cobblemarket.client.suppressCurrencyIcons = false
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
         context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.buy_title").formatted(Formatting.GOLD),
@@ -1037,10 +1041,13 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         context.drawTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.buy_count").string + "（" + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}）",
             centerX - 80, L.labelY, 0xAAAAAA)
-        context.drawTextWithShadow(textRenderer,
+        // ⚠ 金额与单位拆开画（物品货币时单位是物品图标，而不是物品名长串）：词条的单位参数传空串占位，
+        //   见 drawAmountLine —— 这是弹窗里唯一一处金额行，原先还停在 `displayCurrency` 文字拼接的旧写法
+        drawAmountLine(
+            context, textRenderer,
             Text.translatable("cobblemarket.item.buy_total").append(
-                Text.literal(com.shusheng.cobblemarket.client.formatPriceLong(buyTotal()) + " " + com.shusheng.cobblemarket.client.displayCurrency(entry.currencyName)).formatted(Formatting.GOLD)),
-            centerX - 80, L.totalY, 0xFFFFFF)
+                Text.literal(com.shusheng.cobblemarket.client.formatPriceLong(buyTotal()) + " ").formatted(Formatting.GOLD)),
+            centerX - 80, L.totalY, 0xFFFFFF, unitColor = 0xFFAA00)
     }
 
     fun onMarketResult(payload: MarketResultPayload) {
