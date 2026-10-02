@@ -4,7 +4,7 @@
 
 ### New Feature
 
-- **Update available notice**
+- **Update available notice** (can be turned off in the settings on the entry screen)
 
 ### Changes
 
