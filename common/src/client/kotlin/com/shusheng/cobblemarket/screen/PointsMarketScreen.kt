@@ -22,6 +22,7 @@ import com.shusheng.cobblemarket.network.UpdatePointMarketStockPayload
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.PointMarketService
 import com.shusheng.cobblemarket.currency.PointShopState
 import com.shusheng.cobblemarket.currency.ShopEntry
 import com.shusheng.cobblemarket.currency.ShopItemSpec
@@ -799,6 +800,13 @@ class PointsMarketScreen : Screen(
     private var editFriendshipField: TextFieldWidget? = null
     private var editHeldVisible = true
     private var editMarks = emptyList<String>()
+
+    /**
+     * **初始训练家（配信）** 输入框的暂存文本 —— 空 = 不设，
+     * 生成的精灵初训家还是**买家本人**（见 [ShopPokemonSpec.originalTrainer]）。
+     */
+    private var editOriginalTrainerText = ""
+    private var editOriginalTrainerField: TextFieldWidget? = null
 
     // 物品窗口选中的物品（id + 组件快照 + 显示名；显示名只是给人看的，不进存档）
     // ⚠ 一律走 [setEditItem] 赋值，别直接改这三个 —— 大图的缓存靠它刷新
@@ -1669,7 +1677,8 @@ class PointsMarketScreen : Screen(
             KEY_ALPHA, KEY_GMAX, KEY_DMAX,
             KEY_TERA, KEY_TRADEABLE, KEY_FRIENDSHIP,
             KEY_HELD, KEY_HELD_VISIBLE, KEY_MARKS,
-            KEY_MIN_IVS
+            // 「初始训练家」（配信）占保底 V 数右边那格 —— 它是**文本**输入框（见 [otLabelW]）
+            KEY_MIN_IVS, KEY_OT
         ).forEachIndexed { i, key ->
             add(key)
             if (i % 3 == 2) add(FIELD_BREAK)   // 一行满了就换行，右 3 格留空
@@ -2950,6 +2959,12 @@ class PointsMarketScreen : Screen(
                 if (spec.ivs != null || spec.minPerfectIvs <= 0) Text.translatable("cobblemarket.points.store.value.any")
                 else Text.literal("${spec.minPerfectIvs}V")
             )
+            // 初始训练家（配信）：**服主没设就整格不画**（用户 2026-10-02 定）——
+            // 默认情况下买到的初训家就是买家自己，这格写什么都是多余；
+            // 做法与 [KEY_SHINY_CHANCE] 那格一致（编辑窗是输入框、只读窗没有独立信息可显示）
+            KEY_OT -> spec.originalTrainer?.let {
+                Text.translatable("cobblemarket.points.store.field.ot", it)
+            } ?: Text.empty()
             else -> Text.empty()
         }
     }
@@ -3118,6 +3133,8 @@ class PointsMarketScreen : Screen(
         editIvText = List(STAT_COUNT) { "" }
         editEvText = List(STAT_COUNT) { "" }
         editFriendshipText = DEFAULT_FRIENDSHIP.toString()
+        // 初始训练家（配信）：**默认空**（= 生成的精灵初训家还是买家本人）
+        editOriginalTrainerText = ""
         editHeldVisible = true
         editMarks = emptyList()
         // ⚠ 输入框的暂存文本**必须一起重置** —— 它们是 resize 重建时恢复输入用的，
@@ -3185,6 +3202,8 @@ class PointsMarketScreen : Screen(
         editIvText = spec.ivs?.map { if (it < 0) "" else it.toString() } ?: List(STAT_COUNT) { "" }
         editEvText = spec.evs?.map { if (it <= 0) "" else it.toString() } ?: List(STAT_COUNT) { "" }
         editFriendshipText = spec.friendship?.toString().orEmpty()
+        // 初始训练家（配信）：null 回填成空框（界面「空」与数据「不设」是同一个状态）
+        editOriginalTrainerText = spec.originalTrainer.orEmpty()
         // ⚠ 等级**必须在这里显式覆盖** [resetDraft] 预填的那个默认值 —— 输入框那边的 ifEmpty 兜底
         //   只在 `editLevelText` 为空时才生效，预填之后它不再为空，不覆盖的话编辑任何一条已有商品
         //   都会显示成 Lv.1（数据没错、只是显示骗人，但保存下去就成了 1 级）
@@ -3318,6 +3337,9 @@ class PointsMarketScreen : Screen(
             minPerfectIvs = if (hasIv) 0 else editMinIvs,
             evs = if (evs.any { it > 0 }) evs else null,
             friendship = editFriendshipText.trim().toIntOrNull()?.coerceIn(0, 255),
+            // 初始训练家（配信）：trim 后为空 = 不设（生成时初训家还是买家本人）。
+            // ⚠ 长度 / `§` 由输入框 predicate 当场拒收，服务端 [PointMarketService.normalizePokemon] 再卡一道
+            originalTrainer = editOriginalTrainerText.trim().ifEmpty { null },
             heldItemVisible = editHeldVisible,
             // ⚠ 带上**头目自动那个**：服务端生成时 Cobblemon 自己也会加一遍（Set 去重、无害），
             //   但数据层要存它 —— 存档读回来、购买窗显示的数才对得上
@@ -3540,6 +3562,7 @@ class PointsMarketScreen : Screen(
         add(editLevelField to KEY_LEVEL)
         add(editDmaxField to KEY_DMAX)
         add(editFriendshipField to KEY_FRIENDSHIP)
+        add(editOriginalTrainerField to KEY_OT)
         editIvFields.forEachIndexed { i, f -> add(f to "$KEY_IV$i") }
         editEvFields.forEachIndexed { i, f -> add(f to "$KEY_EV$i") }
     }
@@ -3678,6 +3701,28 @@ class PointsMarketScreen : Screen(
                     )
                     editFriendshipField?.setChangedListener { editFriendshipText = it }
                     editFriendshipField?.text = editFriendshipText
+                }
+
+                // 初始训练家（配信）：**文本**输入框，空 = 不设（生成的精灵初训家还是买家本人）
+                key == KEY_OT -> {
+                    editOriginalTrainerField = newEditField(key)
+                    // ⚠ 长度上限与服务端**共用同一个数**（[PointMarketService.MAX_OT_LENGTH]）；
+                    //   `§` 禁掉 —— 颜色注入符会让所有显示这个名字的地方变色 / 乱码
+                    editOriginalTrainerField?.setTextPredicate { s ->
+                        s.length <= PointMarketService.MAX_OT_LENGTH && '§' !in s
+                    }
+                    // ⚠ 占位符**不带冒号**（表单 label 才带）；按量出来的宽度选长短两版 ——
+                    //   原版输入框画占位符**不裁剪**，长了会溢出到隔壁格（照 EV hint 的先例）
+                    // ⚠ 文案是**示例名**（「如小智」/ "e.g. サトシ"），**不是字段名**（用户 2026-10-02 定）：
+                    //   写「初始训练家」会被误读成"不填就叫这个"；示例名还能让中英玩家都看出
+                    //   这里能填任意文字（中文 / 假名都行），不是只能填字母
+                    val otHintFull = Text.translatable("cobblemarket.points.store.field.ot_hint")
+                    editOriginalTrainerField?.setPlaceholder(
+                        if (textRenderer.getWidth(otHintFull) <= editFieldW(key)) otHintFull
+                        else Text.translatable("cobblemarket.points.store.field.ot_hint_short")
+                    )
+                    editOriginalTrainerField?.setChangedListener { editOriginalTrainerText = it }
+                    editOriginalTrainerField?.text = editOriginalTrainerText
                 }
 
                 // 六项个体值 / 努力值：顺序表里各连着 6 个，按序进各自的清单
@@ -3893,6 +3938,18 @@ class PointsMarketScreen : Screen(
     private fun showFriendshipLabel(): Boolean = friendshipLabelW() > 0
 
     /**
+     * 「初始训练家（配信）」输入框前缀标签的宽度 —— 口径与 [friendshipLabelW] 一致，
+     * 放不下就返回 0（不画标签、输入框吃满整格）。
+     *
+     * ⚠ 它是**文本**框（名字最长 16 字符），判据比亲密度的 3 位数宽一点：
+     *   短名字（「サトシ」3 个字）也得完整看得见，见 [MIN_OT_INPUT_W]。
+     */
+    private fun otLabelW(): Int {
+        val w = textRenderer.getWidth(Text.translatable("cobblemarket.points.store.field.ot_label"))
+        return if (editColW() - w >= MIN_OT_INPUT_W) w else 0
+    }
+
+    /**
      * 「极巨等级」输入框前缀标签的宽度 —— **它的默认值是 0**，服主对着一个孤零零的「0」
      * 根本不知道是什么（用户 2026-09-27 报：「鬼知道这是什么，应该是极巨等级+输入框」）。
      * 口径与 [friendshipLabelW] 一致：整格减掉标签后放不下输入框就返回 0（不画标签、输入框吃满）。
@@ -3914,6 +3971,8 @@ class PointsMarketScreen : Screen(
         // 亲密度**默认填 50**，会把 placeholder 盖住 —— 服主看着一个光秃秃的数字不知道是什么意思，
         // 所以照等级的做法在左边画个标签、输入框让出标签宽度（2026-09-25 用户提出）
         KEY_FRIENDSHIP -> friendshipLabelW()
+        // 初始训练家（配信）：文本框，同亲密度在左边画标签（填了名字后光看内容认不出这格是什么）
+        KEY_OT -> otLabelW()
         else -> 0
     }
 
@@ -4423,8 +4482,10 @@ class PointsMarketScreen : Screen(
     /**
      * 小手按钮：取**主手那件**当商品（组件一起提取）。
      *
-     * ⚠ 走 [ItemRuleComponents.extractSpec] —— 与列表里选中一条候选**同一套提取**
-     *（见 [selectOption] 的 `OPT_ITEM` 分支），两条路径的组件口径才不会分叉。
+     * ⚠⭐ 走 [ItemRuleComponents.extractFullSpec]（**完整组件**）—— 与列表选中候选那条路
+     *（[selectOption] 的 `OPT_ITEM` 分支，走**白名单**）**有意不是一套**（2026-10-02 用户拍板）：
+     * 小手 = **复制服主手上那件**（要一模一样，含模组自定义的插件 / 升级数据）；
+     * 候选 = 凭空造一件**全新**的（附魔书 / 招式学习器，本来就只有白名单那几个组件）。
      */
     private fun pickHeldItemAsShopEntry() {
         val stack = client?.player?.mainHandStack ?: return
@@ -4436,9 +4497,12 @@ class PointsMarketScreen : Screen(
         setEditItem(
             Registries.ITEM.getId(stack.item).toString(),
             stack.name.string,
-            // ⚠ includeDamage = true：**卖的是实物**，磨损得跟着走 —— 默认那套是给黑名单 / 价格限制
-            //   那种"规则条目"用的（那边磨损是噪音）。漏了它，一把快坏的镐子上架后买家拿到满耐久
-            ItemRuleComponents.extractSpec(stack, lookup, includeDamage = true)
+            // ⭐ **完整组件**（2026-10-02 用户拍板）：「小手要做到完完整整的复制手上那件」——
+            //   附魔 / 磨损之外，「插件 / 升级数据」这类**模组自定义组件**也要跟着商品走
+            //   （少一个，买家拿到的就不是原来那件，物品商城的功能就不完整）。
+            //   ⚠ 与规则条目（黑名单 / 价格限制 / 求购单）的**白名单**口径**有意不同，别"统一"掉**：
+            //   那边存的是"匹配条件"，白名单外的组件会变成怪规则 —— 见 [ItemRuleComponents] 的注释
+            ItemRuleComponents.extractFullSpec(stack, lookup)
         )
         // 名字回填进搜索框（否则框里还是上一次搜的词，看着像"没选上"）
         setItemSearchText(editItemName)
@@ -4784,8 +4848,10 @@ class PointsMarketScreen : Screen(
             }
 
             OPT_ITEM -> {
-                // 候选自带重建好的物品栈（见 [buildItemCandidates]）—— 与「从主手取」用**同一套提取**
-                //（[ItemRuleComponents.extractSpec]），两条路径的组件口径才不会分叉
+                // 候选自带重建好的物品栈（见 [buildItemCandidates]），走**白名单**提取 ——
+                // ⚠ 与「小手」（[pickHeldItemAsShopEntry]，**完整组件**）**有意不是一套**（2026-10-02）：
+                //   候选是凭空构造的全新物品（附魔书 / 招式学习器），本来就只有白名单那几个组件；
+                //   小手要完整复制手上那件，见那边的注释
                 optionListItems.firstOrNull { it.value == value }?.let { opt ->
                     val stack = opt.stack ?: return@let
                     val lookup = client?.world?.registryManager ?: return@let
@@ -5225,7 +5291,8 @@ class PointsMarketScreen : Screen(
             for ((key, labelKey) in listOf(
                 KEY_LEVEL to LEVEL_LABEL_KEY,
                 KEY_FRIENDSHIP to "cobblemarket.points.store.field.friendship_label",
-                KEY_DMAX to "cobblemarket.points.store.field.dmax_label"
+                KEY_DMAX to "cobblemarket.points.store.field.dmax_label",
+                KEY_OT to "cobblemarket.points.store.field.ot_label"
             )) {
                 // ⚠ 格子太窄时前缀宽是 0（输入框吃满整格）⇒ 这里就不能画，否则标签会压到输入框上。
                 //   判据**直接问 [editFieldInsetX]**，别在这儿各写一份特例（原来只判了亲密度一个）
@@ -6510,6 +6577,14 @@ class PointsMarketScreen : Screen(
          */
         const val MIN_FRIENDSHIP_INPUT_W = 20
 
+        /**
+         * 「初始训练家」输入框让出标签后**至少**要留这么宽。
+         * 它是**文本**框：短名字「サトシ」3 个字 = 27px（中文/假名 9px 一个），
+         * 取 24px 让 3-4 个字符能完整露出来（更长的靠输入框自带滚动）。
+         * 不够就干脆不画标签（见 [otLabelW]）—— 硬画会把输入框挤得几乎看不见。
+         */
+        const val MIN_OT_INPUT_W = 24
+
         /** 证章悬停窗：每个图标占的格子边长（与 `EntryBadgeRenderer.drawMarksRow` 的 12px 同口径） */
         const val MARK_CELL = 12
 
@@ -6794,5 +6869,11 @@ class PointsMarketScreen : Screen(
          */
         const val LEVEL_LABEL_KEY = "cobblemarket.gui.lv"
         const val KEY_FRIENDSHIP = "friendship"
+
+        /**
+         * 「初始训练家」（配信）输入框 —— 在「保底 V 数」右边那格（第 7 行第 3 格，2026-10-02 加）。
+         * 填了就按官网配信写成假训练家；留空 = 生成的精灵初训家还是买家本人（见 [ShopPokemonSpec.originalTrainer]）。
+         */
+        const val KEY_OT = "ot"
     }
 }

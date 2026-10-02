@@ -150,7 +150,17 @@ data class ShopPokemonSpec(
      * ⚠ 末尾追加 + 默认值 false：**存档铁律（只增不改）** —— 旧档读不到就是 false，
      *   写盘后旧版本照样能读（多一个键而已）。
      */
-    val illegal: Boolean = false
+    val illegal: Boolean = false,
+    /**
+     * **初始训练家（配信）** —— 服主填了名字（如「サトシ」）⇒ 生成的精灵写成
+     * **假训练家**（`OriginalTrainerType.NPC`），照宝可梦官网配信那样；
+     * 留空 = 初训家还是**买家本人**（现状，见 [PointMarketFactory.createPokemon]）。
+     *
+     * ⚠ 名字长度 / 合法性由 `PointMarketService.normalizePokemon` 卡死（不只手信客户端）。
+     * ⚠ 末尾追加 + 默认值 null：**存档铁律（只增不改）** —— 旧档读不到就是 null，
+     *   写盘后旧版本照样能读（多一个键而已）。
+     */
+    val originalTrainer: String? = null
 )
 
 /**
@@ -162,9 +172,14 @@ data class ShopPokemonSpec(
 data class ShopItemSpec(
     val itemId: String,
     /**
-     * 物品组件快照（附魔等）；null = 无组件。
-     * ⚠ 与黑名单 / 价格限制 / 求购单**同一个类型、同一套白名单组件**
-     * （见 `market/ItemRuleComponents`）—— 生成物品时按它重建组件，不是 SNBT 串。
+     * 物品组件快照；null = 无组件。**完整组件** —— 附魔 / 磨损 / 自定义名，以及
+     * 「插件 / 升级数据」这类**模组自定义组件**，全都原样保留（生成物品时按它重建，不是 SNBT 串）。
+     *
+     * ⚠⭐ 与黑名单 / 价格限制 / 求购单**类型相同、口径有意不同**（2026-10-02 起）：
+     * 那三处走 `market/ItemRuleComponents` 的**白名单**（它们存的是"匹配条件"，白名单外的组件
+     * 会变成怪规则、是设计）；商城是**卖实物**，走同一份文件的**完整**口径
+     * （`extractFullSpec` / `sanitizeFullSpec`）—— 少一个组件，买家拿到的就不是原来那件。
+     * **别把两边"统一"掉**（见那份文件的注释）。
      */
     val componentsSpec: NbtCompound? = null
 )
@@ -343,6 +358,8 @@ internal fun writeShopEntryBody(c: NbtCompound, entry: ShopEntry) {
         if (p.moves.isNotEmpty()) pc.putString("moves", p.moves)
         // 服主勾的「非法」（false 是默认值 —— 与 heldItemVisible / tradeable 一个口径，不写省空间）
         if (p.illegal) pc.putBoolean("illegal", true)
+        // 初始训练家（配信假训练家）；null = 不设（生成时初训家还是买家本人，不写省空间）
+        p.originalTrainer?.let { pc.putString("originalTrainer", it) }
         c.put("pokemon", pc)
     }
     entry.item?.let { i ->
@@ -398,7 +415,10 @@ internal fun readShopEntryBody(c: NbtCompound): ShopEntry? {
             marks = readStringList(pc, "marks"),
             moves = if (pc.contains("moves")) pc.getString("moves") else "",
             // 缺字段落 false（旧档没有这个键）—— 存档铁律：读取容错，不抛异常
-            illegal = pc.getBoolean("illegal")
+            illegal = pc.getBoolean("illegal"),
+            // 缺字段落 null；空串当没设（手改存档塞空串时不至于让界面/生成见到"空名字"）
+            originalTrainer = if (pc.contains("originalTrainer"))
+                pc.getString("originalTrainer").ifEmpty { null } else null
         )
     } else null
     val item = if (c.contains("item")) {
