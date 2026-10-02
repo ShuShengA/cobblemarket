@@ -88,19 +88,62 @@ object ItemRuleComponents {
         includeDamage: Boolean = false
     ): NbtCompound? {
         if (raw == null || raw.isEmpty) return null
-        val stack = try {
-            ItemStack.fromNbtOrEmpty(registryLookup, NbtCompound().apply {
-                putString("id", itemId)
-                putInt("count", 1)
-                put("components", raw)
-            })
-        } catch (_: Throwable) {
-            return null
-        }
+        val stack = rebuild(itemId, raw, registryLookup) ?: return null
         // ⚠ `includeDamage` 必须**透传**：服务端这道重建会把白名单外的组件丢掉，
         //   不透传的话客户端传上来的磨损还是会被吃掉（那边改了这边不改 = 白改）
         return extractSpec(stack, registryLookup, includeDamage)
     }
+
+    // ── 「完整组件」口径（**卖实物**用，RP 商城的物品商品）────────────────────────────
+    //
+    // ⚠⚠ 与上面那套**白名单**口径是**两套语义、有意分开的**（2026-10-02 用户拍板：
+    //   「小手按钮应该要做到完完整整的复制……不然物品商城的功能就算不完整」）：
+    //   - **白名单**（[extractSpec]/[sanitizeSpec]）= **规则条目**（黑名单 / 价格限制 / 求购单）：
+    //     存的是"匹配条件"，白名单外的组件会变成怪规则（磨损 ⇒ "要求物品全新"、插件等级 ⇒
+    //     "必须带某个等级"），那些是噪音，**是设计不是缺陷**
+    //   - **完整**（[extractFullSpec]/[sanitizeFullSpec]）= **卖实物**（RP 商城的物品商品）：
+    //     买家要拿到**一模一样**的东西，「插件 / 升级数据」这类模组自定义组件必须跟着走
+    //   ⇒ **别把两边"统一"掉**，那是把其中一个语义改坏。
+
+    /**
+     * **完整提取**：物品栈的**全部**组件，原样返回（无任何组件时返回 null）。
+     *
+     * ⚠ 只给**卖实物**的调用方用（RP 商城的物品商品），**别拿去替换** [extractSpec] —— 见上面那条。
+     */
+    fun extractFullSpec(stack: ItemStack, registryLookup: RegistryWrapper.WrapperLookup): NbtCompound? {
+        if (stack.isEmpty) return null
+        val components = (stack.encode(registryLookup) as? NbtCompound)?.getCompound("components")
+            ?: return null
+        return components.takeIf { !it.isEmpty }
+    }
+
+    /**
+     * 服务端侧：完整版的 [sanitizeSpec] —— **重建校验照样做**（畸形 NBT 重建不出来就直接拒，
+     * 不盲信客户端），只是**不再按白名单筛**：游戏认得的组件全部保留。
+     *
+     * 重建走 [rebuild]，与 [sanitizeSpec] 同一段逻辑（不各写一份）。
+     */
+    fun sanitizeFullSpec(
+        itemId: String,
+        raw: NbtCompound?,
+        registryLookup: RegistryWrapper.WrapperLookup
+    ): NbtCompound? {
+        if (raw == null || raw.isEmpty) return null
+        val stack = rebuild(itemId, raw, registryLookup) ?: return null
+        return extractFullSpec(stack, registryLookup)
+    }
+
+    /** 「itemId + 组件快照」→ ItemStack；重建失败（畸形 NBT / 物品 id 不存在）返回 null，绝不抛 */
+    private fun rebuild(itemId: String, components: NbtCompound, registryLookup: RegistryWrapper.WrapperLookup): ItemStack? =
+        try {
+            ItemStack.fromNbtOrEmpty(registryLookup, NbtCompound().apply {
+                putString("id", itemId)
+                putInt("count", 1)
+                put("components", components)
+            })
+        } catch (_: Throwable) {
+            null
+        }
 
     /** 条目组件要求的「具体程度」：附魔按个数计（锋利V+抢夺III=2 比 锋利V=1 更具体），其它组件各计 1；无组件=0。
      * 限价多条目命中的「最具体优先」用（2026-09-06 拍板：避免「锋利V [10,10]」压死「锋利V+抢夺III [20,30]」产生空区间） */

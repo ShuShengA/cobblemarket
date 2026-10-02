@@ -140,6 +140,15 @@ object PointMarketService {
     private const val MAX_LEVEL = 100
 
     /**
+     * **初始训练家（配信假训练家）名字的长度上限** —— 取 **16**，与 MC 玩家名同口径
+     *（NPC 名与玩家名共用存档里同一个字段，分寸也照玩家的来）。
+     *
+     * ⚠ 公开给客户端编辑窗用（输入框的 `setTextPredicate`）—— 两边**共用一个数**，
+     *   各写一份必然慢慢分叉（本项目的老坑）。
+     */
+    const val MAX_OT_LENGTH = 16
+
+    /**
      * 单次购买的数量上限（36 格 × 64 = 2304）。
      * 不是产品限制而是**防呆**：再多也必然放不下，先拦下来比让客户端填个天文数字更有意义。
      */
@@ -644,22 +653,32 @@ object PointMarketService {
         if (evs != null && evs.sum() > MAX_EV_TOTAL) return null
         spec.level?.let { if (it !in MIN_LEVEL..MAX_LEVEL) return null }
 
-        return spec.copy(species = speciesId)
+        // 初始训练家（配信假训练家）：trim 后为空 = 没设（生成时初训家还是买家本人）；
+        // 超长 / 含 `§`（颜色注入，会污染界面上所有显示这个名字的地方）**整条拒绝** ——
+        // 与其它字段同一个口径：不做"尽力修补"（见 [normalize] 注释）
+        val originalTrainer = spec.originalTrainer?.trim()?.takeIf { it.isNotEmpty() }
+        if (originalTrainer != null &&
+            (originalTrainer.length > MAX_OT_LENGTH || originalTrainer.contains('§'))
+        ) return null
+
+        return spec.copy(species = speciesId, originalTrainer = originalTrainer)
     }
 
     /**
-     * 物品规格：物品 id 必须存在；组件快照走 [ItemRuleComponents.sanitizeSpec] 重建一遍，
-     * **白名单外的组件一律丢弃** —— 客户端塞什么组件进来都不算数，服务端重建出来的才算。
+     * 物品规格：物品 id 必须存在；组件快照走 [ItemRuleComponents.sanitizeFullSpec] **重建校验** ——
+     * 客户端塞什么组件进来都不算数，服务端重建得出来的才算。
      *
-     * ⚠ `includeDamage = true`：商城卖的是**实物**，磨损要跟着商品走（默认那套是给黑名单 /
-     *   价格限制那种"规则条目"用的，那边磨损是噪音）。**漏了它，客户端把耐久传上来也会被这道
-     *   重建吃掉** —— 表现是商品图标的耐久条永远不显示、快坏的装备卖出去变成满耐久。
+     * ⚠⭐ **完整保留全部组件**（2026-10-02 用户拍板：「小手按钮应该要做到完完整整的复制……
+     *   不然物品商城的功能就算不完整」）：商城卖的是**实物**，「插件 / 升级数据」这类
+     *   模组自定义组件也要跟着商品走。**重建校验仍在**：畸形 NBT 重建失败 ⇒ 整条拒绝。
+     * ⚠ 与规则条目（黑名单 / 价格限制 / 求购单）那套**白名单**口径**有意不同**，别"统一"掉
+     *   （那边存的是匹配条件，白名单外的组件会变成怪规则 —— 见 [ItemRuleComponents] 的注释）。
      */
     private fun normalizeItem(spec: ShopItemSpec, server: MinecraftServer): ShopItemSpec? {
         val identifier = Identifier.tryParse(spec.itemId) ?: return null
         if (Registries.ITEM.getOrEmpty(identifier).isEmpty) return null
-        val sanitized = ItemRuleComponents.sanitizeSpec(
-            spec.itemId, spec.componentsSpec, server.registryManager, includeDamage = true
+        val sanitized = ItemRuleComponents.sanitizeFullSpec(
+            spec.itemId, spec.componentsSpec, server.registryManager
         )
         return spec.copy(componentsSpec = sanitized)
     }

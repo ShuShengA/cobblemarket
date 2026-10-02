@@ -31,7 +31,8 @@ import kotlin.random.Random
  * **RP 商城的「生货」工厂** —— 把服主捏的**配方**（[ShopPokemonSpec] / [ShopItemSpec]）变成实物。
  *
  * 为什么单独一层：商城卖的是**配方**不是实物（见 [ShopEntry] 注释），同一格每卖一次都要
- * **凭空造一份新的**（精灵的初训家 = 买家、UUID 全新 —— 服主的名字不会印到卖出去的精灵上）。
+ * **凭空造一份新的**（精灵的初训家 = 买家、UUID 全新 —— 服主的名字不会印到卖出去的精灵上；
+ * 唯一例外是服主**显式填了配信名**，那时照官网配信写成假训练家，见 [ShopPokemonSpec.originalTrainer]）。
  * 造物是**纯对象构造**：不碰玩家数据、不写盘、不改存档，所以与 [PointMarketService] 的
  * 扣款发货事务分开 —— 造不出来时（物种被删、存档数据损坏）直接失败，**不留下半成品**。
  *
@@ -180,8 +181,14 @@ object PointMarketFactory {
         //   并在招式全空时兜底 —— 得让它有机会校验上面设的那些值
         pokemon.initialize()
 
-        // 初训家 = **买家本人**（这是「配方」而非「服主的实物」的落脚点）
-        pokemon.setOriginalTrainer(buyer.uuid)
+        // 初训家：服主填了**配信名** ⇒ 照官网配信那样写成**假训练家**（`NPC` 类型，
+        // 名字原样显示）；留空 ⇒ **买家本人**（这是「配方」而非「服主的实物」的落脚点）。
+        // ⚠ 两个重载别搞混：UUID ⇒ PLAYER 类型、String ⇒ NPC 类型（Cobblemon `Pokemon.setOriginalTrainer`）
+        // ⚠ 两边都要 `refreshOriginalTrainer()`：NPC 那边它把 `originalTrainerName`（缓存的显示名，
+        //   客户端 GUI 用）设成名字本身；PLAYER 那边是解析 UUID → 玩家名。存档 codec 不写这个缓存，
+        //   读回来由 Cobblemon 进队伍时刷新 / 我们 `PokemonOT` 自己兜底
+        val ot = spec.originalTrainer?.takeIf { it.isNotBlank() }
+        if (ot != null) pokemon.setOriginalTrainer(ot) else pokemon.setOriginalTrainer(buyer.uuid)
         pokemon.refreshOriginalTrainer()
 
         // 携带物最后给：swapHeldItem 会广播持有物变更包，此时精灵已完全成型
