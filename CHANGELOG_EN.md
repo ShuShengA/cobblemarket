@@ -104,10 +104,6 @@
 - **Offline rewards cue**: the first time you open a market screen after logging in, a sound plays if there are Pokémon/items waiting to be claimed or unclaimed balance to collect (once per login)
 - **Market open / close**: when the owner flips the market master switch, everyone online hears a sound and gets a chat broadcast ("The market is open again" / "The market is closed") instead of the market going dark silently until someone's trade gets blocked
 
-#### Update Notice
-
-- **Update available notice**
-
 ### Changes
 
 - **The admin panel now says so when no server owner is configured**: with an empty owner list a red line sits right under the panel background — "⚠ Server owner not set — admins disabled (see log)". Before, only the server startup log and the changelog mentioned it, so anyone landing on a greyed-out panel had no idea what happened or where to fix it
@@ -127,8 +123,6 @@
 - **The two finance cards were renamed**: "Meowth·Purple Gold Card" / "Meowth·Black Gold Card" are now **"Meowth·Volt Card"** / **"Meowth·Genesis Card"** — the old names were a literal rendering of the card art's colours, and `Black Gold` reads as **crude oil** in English, sending overseas players down the wrong path. The new names come from the Pokémon on the cards: **Volt** from Pikachu's electricity, **Genesis** from Arceus, the creator Pokémon. The cards themselves, their limits and their perks are unchanged — already-issued cards do not need to be reclaimed
 - **Both cards gained a flavour-text line**: hovering a card in the inventory now shows a description under its name — "Amethyst struck by Pikachu's Thunderbolt, its charge frozen into a card." for the Volt Card, and "Forged from a shard of Arceus's golden wheel, said to have shaped the world." for the Genesis Card
 - **Card names are now colourful — and the colours flow**: the Volt Card alternates character by character between amethyst purple and Electric yellow, and the Genesis Card cycles through all **18 Pokémon type colours**, with the colours scrolling along the text like a rainbow marquee; the "Meowth·" prefix stays gold. The inventory tooltip, the Meowth Bank holder panels and both card application screens use the **exact type colours** (same palette as Pokémon names) and do animate; chat messages are limited by Minecraft's chat box itself (once a message is in the chat it is a fixed text with no per-frame redraw) and are therefore **static** colour — a 16-colour approximation where a few type colours share a shade
-
-- **The repay counter shows when the next instalment is due**: the repay dialog gains a "Next period due in X days X hours" line, so you can see at a glance how long is left; overdue loans keep showing "N periods in arrears" in that same slot (the two never stack)
 
 ### Fixes
 
@@ -170,8 +164,21 @@
 
 - **Hiding a held item made it disappear from the trading screens**: switching a held item's visibility off in Cobblemon's summary removed the whole "Held" line from the market and auction rows, their tooltips and the purchase dialogs, leaving buyers unable to tell what a Pokemon was carrying (hiding it is the player's own choice for the model — the information should not vanish with it). It is now listed as usual and marked "(hidden)"; only the Pokemon model itself goes without it
 
-- **Loan periods actually lasted 1 day, not the documented 7**: the config comments, the in-game screens and the website all said "each period is 7 days", but the period arithmetic used 24 hours — a 12-period loan fell due in full after 12 days, nothing like the schedule players were budgeting against, and it pushed them into overdue (and the sanctions that follow) far too early (fees double at 7 days overdue / trading freezes at 14 / the loan is written off as bad debt at 30). Periods are now **a true 7 days**, matching the description. ⚠ **Loans taken out before the update**: recomputing overdue days on the new period length **cuts `6 × (periods already repaid + 1)` days** off them (a loan with nothing repaid is 6 days short of the line), so bills about to hit the 14-day freeze / 30-day write-off **can fall back inside the safe line**; the doubled fee is computed at every charge, so under 7 days it **simply stops doubling** with no action needed; freezes are re-evaluated at login / repayment against the latest overdue days — under 14 days with no bad debt **unfreezes automatically at the next login** (with a green notice), and 14+ days stays frozen. ⚠ **The "overdue" mark itself does not clear on its own** (it blocks new loans and Meowth Pay) — the player must **repay one period to catch up** or settle early to return to normal. ⚠ **Loans already written off as bad debt are not affected by this fix** (the debt is gone but borrowing stays blocked) — only the owner can handle those: `/market loan clear <player>` (or "Revoke" in the admin panel) deletes the record (debt cleared, the audit ledger keeps the trace, the money is not recovered), after which the freeze is re-evaluated and lifted; `/market unban` only lifts the market trading block and **does not revoke bad debt**. ⚠ For owners: the money behind a bad debt left the reserve pool at the moment of borrowing — an existing loss this fix does not recover
 - **Installments are no longer offered when the amount is too small**: with an amount smaller than the number of periods (say 10 over 12 periods), the per-period principal divides down to 0 — the "~0 per period" figure made players think nothing would be charged, while the final period actually took the entire principal at once. Such plans are now **greyed out, with a notice when clicked**, and the server rejects them as well (blocked on both the client and the server)
+
+## 1.1.2 (released)
+
+### New Feature
+
+- **Update available notice**
+
+### Changes
+
+- **The repay counter shows when the next instalment is due**: the repay dialog gains a "Next period due in X days X hours" line, so you can see at a glance how long is left; overdue loans keep showing "N periods in arrears" in that same slot (the two never stack)
+
+### Fixes
+
+- **Loan periods actually lasted 1 day, not the documented 7**: the config comments, the in-game screens and the website all said "each period is 7 days", but the period arithmetic used 24 hours — a 12-period loan fell due in full after 12 days, nothing like the schedule players were budgeting against, and it pushed them into overdue (and the sanctions that follow) far too early (fees double at 7 days overdue / trading freezes at 14 / the loan is written off as bad debt at 30). Periods are now **a true 7 days**, matching the description. ⚠ **Loans taken out before the update**: recomputing overdue days on the new period length **cuts `6 × (periods already repaid + 1)` days** off them (a loan with nothing repaid is 6 days short of the line), so bills about to hit the 14-day freeze / 30-day write-off **can fall back inside the safe line**; the doubled fee is computed at every charge, so under 7 days it **simply stops doubling** with no action needed; freezes are re-evaluated at login / repayment against the latest overdue days — under 14 days with no bad debt **unfreezes automatically at the next login** (with a green notice), and 14+ days stays frozen. ⚠ **The "overdue" mark itself does not clear on its own** (it blocks new loans and Meowth Pay) — the player must **repay one period to catch up** or settle early to return to normal. ⚠ **Loans already written off as bad debt are not affected by this fix** (the debt is gone but borrowing stays blocked) — only the owner can handle those: `/market loan clear <player>` (or "Revoke" in the admin panel) deletes the record (debt cleared, the audit ledger keeps the trace, the money is not recovered), after which the freeze is re-evaluated and lifted; `/market unban` only lifts the market trading block and **does not revoke bad debt**. ⚠ For owners: the money behind a bad debt left the reserve pool at the moment of borrowing — an existing loss this fix does not recover
 
 ## 1.1.1 (released)
 
