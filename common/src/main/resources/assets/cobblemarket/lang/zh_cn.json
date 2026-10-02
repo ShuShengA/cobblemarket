@@ -609,6 +609,7 @@
   "cobblemarket.meowth_pay.each_est": "每期约还 %s · 共约还 %s %s",
   "cobblemarket.meowth_pay.confirm_item": "购买：",
   "cobblemarket.meowth_pay.confirm_amount": "支付金额：%s %s",
+  "cobblemarket.meowth_pay.amount_too_small": "金额太小，不适合分这么多期",
   "cobblemarket.buy_confirm.paid_by_meowth": "喵喵支付成功：%s %s %s 分 %s 期偿还（每 7 天一期）",
   "cobblemarket.buy_confirm.paid_by_meowth_item": "喵喵支付成功：%s×%s 共 %s %s，分 %s 期偿还（每 7 天一期）",
   "cobblemarket.loan.amount_label": "想借多少",
