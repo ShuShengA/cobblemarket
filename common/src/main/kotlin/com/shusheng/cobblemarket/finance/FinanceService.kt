@@ -581,7 +581,9 @@ object FinanceService {
                     periodInterest = interest,
                     settleTotal = r.remainingPrincipal + interest,
                     status = r.status.name,
-                    dueCount = (r.duePeriodsAt(now) - r.periodsPaid).coerceAtLeast(0)
+                    dueCount = (r.duePeriodsAt(now) - r.periodsPaid).coerceAtLeast(0),
+                    // 下期到期时刻（期界基准同到期划扣/提醒：createdAt + 期号 × PERIOD_MS_LONG）
+                    nextDueAt = r.createdAt + (r.periodsPaid + 1) * LoanRecord.PERIOD_MS_LONG
                 )
             }
         sendToPlayer(player, RepayListDataPayload(entries))
