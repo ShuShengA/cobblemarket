@@ -80,6 +80,13 @@ object CobbleMarket {
 			TransactionHistory.serverRef = server
 			// 金融系统状态预热（照 TransactionHistory 模式；批次 3 起实际读写）
 			com.shusheng.cobblemarket.finance.FinanceState.get(server)
+			// 贷款期界换算一律走 LoanRecord.PERIOD_MS_LONG（一期 PERIOD_DAYS 天），这行日志用于一眼核对：
+			// 7 天 = 604800000 ms；若与此不符，说明 LoanRecord.PERIOD_DAYS 被动过
+			LOGGER.info(
+				"CobbleMarket: loan period = {} day(s)/period ({} ms)",
+				com.shusheng.cobblemarket.finance.LoanRecord.PERIOD_DAYS,
+				com.shusheng.cobblemarket.finance.LoanRecord.PERIOD_MS_LONG
+			)
 			// 服主名单为空 = 谁都进不去「服务器配置」与「权限管理」（安全默认）。升级后老服主
 			// 会发现入口点不动了，这里在启动日志里提醒一次怎么配（兜底三件套之一，方案见 docs/permission_nodes_plan.md）
 			//
