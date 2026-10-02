@@ -233,6 +233,9 @@ class MeowthPayScreen(
         val dialogY = height / 2 - dH / 2
 
         drawScreenDimMask(context, width, height)
+        // ⚠ 弹窗自己的货币图标不受门禁管（同 EntryBadgeRenderer.drawInfoLines 的说明）：
+        //   遮罩是这个界面自己画的，不关掉的话弹窗里的单位会被自己的遮罩挡住
+        com.shusheng.cobblemarket.client.suppressCurrencyIcons = false
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dW, dH, 0, DIALOG_BACKGROUND_TEX_H)
         context.drawCenteredTextWithShadow(
             textRenderer,
@@ -300,6 +303,9 @@ class MeowthPayScreen(
         val dialogX = width / 2 - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
         drawScreenDimMask(context, width, height)
+        // ⚠ 弹窗自己的货币图标不受门禁管（同 EntryBadgeRenderer.drawInfoLines 的说明）：
+        //   遮罩是这个界面自己画的，不关掉的话弹窗里的单位会被自己的遮罩挡住
+        com.shusheng.cobblemarket.client.suppressCurrencyIcons = false
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
     }
 
@@ -317,19 +323,23 @@ class MeowthPayScreen(
             Text.translatable("cobblemarket.meowth_pay.title").formatted(Formatting.GOLD),
             width / 2, dialogY + 14, 0xFFFFFF
         )
-        // 商品行：名称 + 金额。⚠ 两条规矩：
+        // 商品行：名称 + 金额。⚠ 三条规矩：
         // ① **金额与单位金色**（真实金额用金；蓝色只留给服务器给的虚拟额度，见下面的额度行）；
         // ② 必须走富文本参数，别用 itemDesc.string 拼 —— 那是纯文本，会把精灵名的样式整个丢掉
-        //    （闪光精灵的金★就长在名字里），长名截断改用 truncateStyled（保样式）
+        //    （闪光精灵的金★就长在名字里），长名截断改用 truncateStyled（保样式）；
+        // ③ **居中**（与标题 / 可用额度一致）：先量「整行含单位」再左画 —— 同下面额度行的做法，
+        //    别用 drawCenteredTextWithShadow（混排行会让行首汉字比同行的数字高一点点）
         // ⚠ 金额与单位拆开画（物品货币时单位是物品图标）：金额那个参数只留金额 + 一个空格，见 drawAmountLine
+        val itemLineText = Text.translatable(
+            "cobblemarket.meowth_pay.item_line",
+            com.shusheng.cobblemarket.util.TextUtil.truncateStyled(itemDesc, 120),
+            Text.literal("${formatPriceLong(amount)} ").formatted(Formatting.GOLD)
+        )
+        val itemLineX = width / 2 - (textRenderer.getWidth(itemLineText) + currencyUnitWidth(textRenderer, false)) / 2
         drawAmountLine(
             context, textRenderer, false,
-            Text.translatable(
-                "cobblemarket.meowth_pay.item_line",
-                com.shusheng.cobblemarket.util.TextUtil.truncateStyled(itemDesc, 120),
-                Text.literal("${formatPriceLong(amount)} ").formatted(Formatting.GOLD)
-            ),
-            dialogX + 12, dialogY + 58, 0xFFFFFF, unitColor = 0xFFAA00
+            itemLineText,
+            itemLineX, dialogY + 58, 0xFFFFFF, unitColor = 0xFFAA00
         )
         // 可用额度：**居中紧贴标题**（用户 2026-09-21 拍板）—— 与标题同属「头部状态区」，
         // 商品/方案/估算才是左对齐的交易信息。蓝色同 LoanScreen 的额度行，
