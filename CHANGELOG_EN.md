@@ -229,6 +229,9 @@
 
 - **Hiding a held item made it disappear from the trading screens**: switching a held item's visibility off in Cobblemon's summary removed the whole "Held" line from the market and auction rows, their tooltips and the purchase dialogs, leaving buyers unable to tell what a Pokemon was carrying (hiding it is the player's own choice for the model — the information should not vanish with it). It is now listed as usual and marked "(hidden)"; only the Pokemon model itself goes without it
 
+- **Loan periods are now 7 days each instead of 1**: the config comments, the in-game screens and the website all say "7 days per period", but the period arithmetic used 24 hours — a 12-period loan fell due in full after 12 days, nothing like what the screens described (and players budgeting by the displayed schedule were caught off guard). The implementation now matches the description. ⚠ **Loans taken out before the update** have their due dates pushed back accordingly (recomputed at 7 days per period) — this **loosens** the schedule for players, it never tightens it. ⚠ Interest was always charged per real day (daily rate = per-period fee ÷ 7), so only now does "one period's interest ≈ principal × per-period fee" hold
+- **Installments are no longer offered when the amount is too small**: with an amount smaller than the number of periods (say 10 over 12 periods), the per-period principal divides down to 0 — the "~0 per period" figure made players think nothing would be charged, while the final period actually took the entire principal at once. Such plans are now **greyed out, with a notice when clicked**, and the server rejects them as well (blocked on both the client and the server)
+
 ## 1.1.1 (released)
 
 ### Fixes
