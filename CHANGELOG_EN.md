@@ -233,7 +233,7 @@
 
 - **Installments are no longer offered when the amount is too small**: with an amount smaller than the number of periods (say 10 over 12 periods), the per-period principal divides down to 0 — the "~0 per period" figure made players think nothing would be charged, while the final period actually took the entire principal at once. Such plans are now **greyed out, with a notice when clicked**, and the server rejects them as well (blocked on both the client and the server)
 
-## 1.1.3 (in development, unreleased)
+## 1.1.3 (released)
 
 ### Fixes
 
