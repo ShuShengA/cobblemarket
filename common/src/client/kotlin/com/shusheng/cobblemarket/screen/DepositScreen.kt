@@ -115,6 +115,9 @@ class DepositScreen : Screen(Text.translatable("cobblemarket.deposit.title")) {
         val dialogX = width / 2 - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
         drawScreenDimMask(context, width, height)
+        // ⚠ 弹窗自己的货币图标不受门禁管（同 EntryBadgeRenderer.drawInfoLines 的说明）：
+        //   遮罩是这个界面自己画的，不关掉的话弹窗里的单位会被自己的遮罩挡住
+        com.shusheng.cobblemarket.client.suppressCurrencyIcons = false
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
     }
 

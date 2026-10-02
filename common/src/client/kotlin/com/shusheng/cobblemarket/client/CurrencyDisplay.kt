@@ -75,7 +75,15 @@ fun activeCurrencyUnit(): String {
  *
  * 用法：**界面不用自己管** —— `drawScreenDimMask`（`NineSlice.kt`）一画就自动置位，
  * `ScreenMixin` 每帧 HEAD 复位。全项目「只要有弹窗遮罩」的地方因此自动覆盖。
- * ⚠ **不要在界面里手动赋值**（市场那两处是早期写法，留着当兜底，别再加新的）。
+ *
+ * ⚠ **唯一的例外：弹窗自己的渲染器要放开**（2026-10-02）—— 遮罩正是**这个界面自己**画的，
+ *   不放开的后果是「弹窗自己的金额缺单位」（图标被自己的遮罩挡住，虚拟货币 ₽ 是字形、不受影响，
+ *   所以只有物品本位货币会缺）。在**画完遮罩之后**补一句
+ *   `suppressCurrencyIcons = false`（照 AuctionScreen / AdminAuctionScreen / EntryBadgeRenderer 的写法；
+ *   喵喵支付 ×2 / 借款 ×2 / 存款 / 还款 / 物品购买弹窗这几处的自带遮罩同理）。
+ *   门禁由 `ScreenMixin` 每帧复位 ⇒ 放开后**不用复原**。
+ * ⚠ 市场两处（MarketScreen / ItemMarketScreen 的 `render()` 里按弹窗状态提前置位）是早期写法，
+ *   留着当兜底，别再加这种。
  *
  * ⚠ 已接的门禁有**两个** 3D 图标入口：行内 `drawInlineCurrencyIcon`、角标 `drawCurrencyItemIcon`
  * —— 新增任何画 3D 物品图标的入口，都要把这两行判据一并带上。
