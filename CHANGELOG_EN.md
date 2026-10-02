@@ -175,6 +175,10 @@
 - **Offline rewards cue**: the first time you open a market screen after logging in, a sound plays if there are Pokémon/items waiting to be claimed or unclaimed balance to collect (once per login)
 - **Market open / close**: when the owner flips the market master switch, everyone online hears a sound and gets a chat broadcast ("The market is open again" / "The market is closed") instead of the market going dark silently until someone's trade gets blocked
 
+#### Update Notice
+
+- **Update available notice**
+
 ### Changes
 
 - **The admin panel now says so when no server owner is configured**: with an empty owner list a red line sits right under the panel background — "⚠ Server owner not set — admins disabled (see log)". Before, only the server startup log and the changelog mentioned it, so anyone landing on a greyed-out panel had no idea what happened or where to fix it
