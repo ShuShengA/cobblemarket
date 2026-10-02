@@ -57,6 +57,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsBalanceHudPosButton: NineSliceButton? = null
     private var settingsIconAnimButton: NineSliceButton? = null
     private var settingsHoverPreviewButton: NineSliceButton? = null
+    private var settingsUpdateNoticeButton: NineSliceButton? = null
 
     /** 设置弹窗的一行：左侧标签 + 右侧控件；[newGroup] = 与上一行之间画一条分隔线（同组的连续行之间不画）。
      *  [button] 为 null 时是本组的小标题行（只画标签、不可交互，但照常占一行高度）。
@@ -422,6 +423,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsCursorButton = cursorBtn
         addSettingsRow(cursorBtn, switchX, toggleText("cobblemarket.settings.custom_cursor", ClientConfig.customCursor))
 
+        // 更新提示：有新版时打开市场界面会发一条可点聊天消息（关掉后连查都不查）
+        val updateNoticeBtn = makeSwitchButton(ClientConfig.updateNotice) { toggleUpdateNotice() }
+        settingsUpdateNoticeButton = updateNoticeBtn
+        addSettingsRow(updateNoticeBtn, switchX, toggleText("cobblemarket.settings.update_notice", ClientConfig.updateNotice))
+
         // done 固定在底部，不参与滚动
         addDrawableChild(NineSliceButton(
             centerX - 28, settingsDialogY() + settingsDialogH() - SETTINGS_DONE_INSET, 56, 20,
@@ -448,6 +454,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsBalanceHudPosButton = null
         settingsIconAnimButton = null
         settingsHoverPreviewButton = null
+        settingsUpdateNoticeButton = null
         settingsRows.clear()
         settingsScroll = 0
         clearChildren()
@@ -542,6 +549,16 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         ClientConfig.setHoverPreview(!ClientConfig.hoverPreview)
         settingsHoverPreviewButton?.iconLeft = switchIconFor(ClientConfig.hoverPreview)
         showSettingsToast("cobblemarket.settings.hover_preview", ClientConfig.hoverPreview)
+    }
+
+    /**
+     * 更新提示开关。⚠ 关掉只影响**以后**：本次已经查到并排好的那条提示不撤回
+     * （查询只在客户端启动时与每次进世界时各试一次），下次起连查都不查。
+     */
+    private fun toggleUpdateNotice() {
+        ClientConfig.setUpdateNotice(!ClientConfig.updateNotice)
+        settingsUpdateNoticeButton?.iconLeft = switchIconFor(ClientConfig.updateNotice)
+        showSettingsToast("cobblemarket.settings.update_notice", ClientConfig.updateNotice)
     }
 
     private fun balanceHudModeKey(): String = when (ClientConfig.balanceHudMode) {
