@@ -102,9 +102,20 @@ object ItemCelebrationAnimation {
     private var pendingOrigin: Origin? = null
     private var pendingOriginAt = 0L
 
-    /** 界面在关闭前登记起飞起点 —— 弹窗一关那个图标就不在了，坐标必须提前抓下来 */
+    /** 界面在关闭前登记起飞起点 —— 弹窗一关那个图标就不在了，坐标必须提前抓下来。
+     *
+     *  ⚠ **这里就把坐标换算成屏幕坐标**：起点取自**界面**（购买弹窗里的物品图标，虚拟坐标），
+     *  而本动画画在缩放矩阵**之外**（落点按 `window.scaledWidth` 算屏幕中心，是整个屏幕层的特效）⇒
+     *  两者不在同一坐标系。不换算的话界面**被放大**时起点会偏到屏幕左上角外（同精灵那边，2026-10-04）。
+     *  ⚠ 收在这一处最保险：起点可能来自任何界面，逐个改调用点必漏。 */
     fun setPendingOrigin(origin: Origin?) {
-        pendingOrigin = origin
+        pendingOrigin = origin?.let { o ->
+            val screen = MinecraftClient.getInstance().currentScreen
+            if (screen == null) o else {
+                val factor = GuiScale.factorFor(screen)
+                if (factor == 1f) o else Origin(o.x * factor, o.y * factor, o.scale * factor)
+            }
+        }
         pendingOriginAt = System.currentTimeMillis()
     }
 

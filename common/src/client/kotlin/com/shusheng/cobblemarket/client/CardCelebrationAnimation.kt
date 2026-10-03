@@ -55,10 +55,15 @@ object CardCelebrationAnimation {
     private var pendingStartX: Int? = null
     private var pendingStartY: Int? = null
 
-    /** 申请/补发按钮点击时登记卡片图标中心坐标（屏幕坐标；动画包到达时取走） */
+    /** 申请/补发按钮点击时登记卡片图标中心坐标（**界面坐标**；动画包到达时取走）。
+     *
+     *  ⚠ **换算必须在登记时做**：本动画按 `window.scaledWidth` 算落点（屏幕坐标），而这里拿到的是
+     *  界面坐标（虚拟）—— 动画开播时申请界面多半已经关了，那时再换算就取不到缩放系数了。
+     *  非缩放界面 / 非本模组界面下 `factor = 1`，原样返回。 */
     fun setPendingStart(x: Int, y: Int) {
-        pendingStartX = x
-        pendingStartY = y
+        val screen = MinecraftClient.getInstance().currentScreen
+        pendingStartX = if (screen == null) x else GuiScale.toReal(x, screen)
+        pendingStartY = if (screen == null) y else GuiScale.toReal(y, screen)
     }
 
     fun trigger(cardKind: String) {
@@ -139,8 +144,13 @@ object CardCelebrationAnimation {
             is com.shusheng.cobblemarket.screen.BlackCardApplyScreen -> s.cardIconCenter()
             else -> null
         }
-        val startX = (liveStart?.first ?: pendingStartX)?.toFloat() ?: (scaledW / 2f)
-        val startY = (liveStart?.second ?: pendingStartY)?.toFloat() ?: (scaledH * 0.72f)
+        // ⚠ liveStart 是**实时**读出来的界面坐标（界面此刻还开着）⇒ 在这里换算成屏幕坐标；
+        //   pendingStart 已经在 setPendingStart 里换算过了（那时界面还在），这里**不能**再动它
+        val liveScreen = client.currentScreen
+        val liveX = liveStart?.let { if (liveScreen == null) it.first else GuiScale.toReal(it.first, liveScreen) }
+        val liveY = liveStart?.let { if (liveScreen == null) it.second else GuiScale.toReal(it.second, liveScreen) }
+        val startX = (liveX ?: pendingStartX)?.toFloat() ?: (scaledW / 2f)
+        val startY = (liveY ?: pendingStartY)?.toFloat() ?: (scaledH * 0.72f)
         pendingStartX = null
         pendingStartY = null
 

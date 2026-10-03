@@ -62,6 +62,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsIconAnimButton: NineSliceButton? = null
     private var settingsHoverPreviewButton: NineSliceButton? = null
     private var settingsUpdateNoticeButton: NineSliceButton? = null
+    private var settingsGuiScaleButton: NineSliceButton? = null
 
     /** 设置弹窗的一行：左侧标签 + 右侧控件；[newGroup] = 与上一行之间画一条分隔线（同组的连续行之间不画）。
      *  [button] 为 null 时是本组的小标题行（只画标签、不可交互，但照常占一行高度）。
@@ -545,6 +546,26 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         val textBtnX = centerX + 32
         settingsRows.clear()
 
+        // 「显示」组（用户 2026-10-04 定）：界面尺寸 + 自定义光标两项归一组。
+        // 界面尺寸是**第一条**（2026-10-03 定）—— 它管的是「界面画多大」，与下面那些内容开关不同类。
+        // 六态循环文字按钮（自动 / 1..5）
+        addSettingsHeading(Text.translatable("cobblemarket.settings.group_display"))
+        val guiScaleBtn = NineSliceButton(
+            0, 0, 54, 20,
+            guiScaleModeText(),
+            { cycleGuiScale() }
+        )
+        settingsGuiScaleButton = guiScaleBtn
+        // 悬停说明：玩家遇到"界面看起来不对"时最容易当成 bug，这里直接给退路（选「自动」= 完全跟随游戏设置）
+        guiScaleBtn.setTooltip(
+            net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.settings.gui_scale_hint"))
+        )
+        addSettingsRow(guiScaleBtn, textBtnX, Text.translatable("cobblemarket.settings.gui_scale"), newGroup = false)
+        // 自定义鼠标光标（从最下方搬上来与界面尺寸同组）：用系统光标主题的玩家可以关掉
+        val cursorBtn = makeSwitchButton(ClientConfig.customCursor) { toggleCustomCursor() }
+        settingsCursorButton = cursorBtn
+        addSettingsRow(cursorBtn, switchX, toggleText("cobblemarket.settings.custom_cursor", ClientConfig.customCursor), newGroup = false)
+
         // 精灵庆祝动画：沿用旧字段——老配置里把它关掉的玩家，精灵侧原样保持关闭
         addSettingsHeading(Text.translatable("cobblemarket.settings.group_pokemon"))
         val marketBtn = makeSwitchButton(ClientConfig.celebrationOnMarketBuy) { toggleMarketAnimation() }
@@ -607,12 +628,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsBalanceHudPosButton = balanceHudPosBtn
         addSettingsRow(balanceHudPosBtn, textBtnX, Text.translatable("cobblemarket.settings.balance_hud_position"), newGroup = false)
 
-        // 自定义鼠标光标：放最下方、独立成组（用系统光标主题的玩家可以关掉）
-        val cursorBtn = makeSwitchButton(ClientConfig.customCursor) { toggleCustomCursor() }
-        settingsCursorButton = cursorBtn
-        addSettingsRow(cursorBtn, switchX, toggleText("cobblemarket.settings.custom_cursor", ClientConfig.customCursor))
-
         // 更新提示：有新版时打开市场界面会发一条可点聊天消息（关掉后连查都不查）
+        // ⚠ 自定义光标已搬到顶部「显示」组，原来由它开的那个组没了 ⇒ 这里要自己开一组，
+        //   否则会跟上面「余额HUD位置」那行粘在一起、不画分隔线
         val updateNoticeBtn = makeSwitchButton(ClientConfig.updateNotice) { toggleUpdateNotice() }
         settingsUpdateNoticeButton = updateNoticeBtn
         addSettingsRow(updateNoticeBtn, switchX, toggleText("cobblemarket.settings.update_notice", ClientConfig.updateNotice))
@@ -644,6 +662,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsIconAnimButton = null
         settingsHoverPreviewButton = null
         settingsUpdateNoticeButton = null
+        settingsGuiScaleButton = null
         settingsRows.clear()
         settingsScroll = 0
         // 弹窗关了 = 滚动条不画了：拖动状态一并复位，否则会留个"半拖"状态（见 [ScrollBar.cancel]）
@@ -776,6 +795,23 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsIconAnimButton?.message = Text.translatable(iconAnimModeKey())
         settingsToastText = Text.translatable("cobblemarket.settings.icon_anim")
             .append(Text.translatable(iconAnimModeKey()))
+        settingsToastUntil = System.currentTimeMillis() + 1500
+    }
+
+    /** 界面尺寸档位按钮文字：自动 / 1..5。
+     *  ⚠ 该按钮只有 54px 宽 ⇒ 档位必须用最短写法；「跟随原版」照原版口径写「自动」，
+     *  别写 "Follow vanilla"（≈84px，放不下） */
+    private fun guiScaleModeText(): Text {
+        val scale = ClientConfig.guiScaleMode.scale
+        return if (scale == 0) Text.translatable("cobblemarket.settings.gui_scale_vanilla")
+        else Text.literal(scale.toString())
+    }
+
+    private fun cycleGuiScale() {
+        ClientConfig.cycleGuiScaleMode()
+        settingsGuiScaleButton?.message = guiScaleModeText()
+        settingsToastText = Text.translatable("cobblemarket.settings.gui_scale")
+            .append(guiScaleModeText())
         settingsToastUntil = System.currentTimeMillis() + 1500
     }
 
