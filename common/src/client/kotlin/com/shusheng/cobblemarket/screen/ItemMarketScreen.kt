@@ -684,7 +684,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             }
         })
 
-        buyCountField = TextFieldWidget(textRenderer, centerX - 80, L.fieldY, 100, 16, Text.literal(""))
+        // ⚠ x 取 centerX - 宽度/2 才是真居中（2026-10-03 用户指出：原先写死 centerX - 80，
+        //   而宽 100 ⇒ 整块偏左 30px）。⚠ 别改「宽 100」那一项 —— 居中点是按它反推的
+        buyCountField = TextFieldWidget(textRenderer, centerX - 50, L.fieldY, 100, 16, Text.literal(""))
         buyCountField?.setPlaceholder(Text.translatable("cobblemarket.item.buy_count"))
         buyCountField?.setTextPredicate { it.length <= 4 && it.all { c -> c.isDigit() } }
         // 重新输入时清除校验失败提示
@@ -786,7 +788,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
      *
      * ⚠ 传进来的是渲染**已经在用**的那份 [BuyLayout]，别在这儿再调一次 [buyDialogLayout]()
      *   —— 同一套坐标算两遍，正是历史上「建与重摆两处各写一遍」那个老毛病的温床。
-     * ⚠ 只重贴 `y`：弹窗宽度是固定的（`minOf(300, …)`），x 不会变。
+     * ⚠ 只重贴 `y`：x 在创建时定死、且**都基于 `centerX` 算**（输入框 `centerX-50`、三枚按钮 `centerX±…`）
+     *   ⇒ 弹窗宽度变化不影响它们的位置（宽度现在是按词条算的，见 [buyDialogW]）。
      */
     private fun syncBuyDialogControls(L: BuyLayout) {
         buyCountField?.y = L.fieldY
@@ -797,6 +800,19 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     /** 购买弹窗高度：**按内容算**（= 按钮底 + 距边框 10px） */
     private fun buyDialogH(): Int = 140 + infoRows() * 10
+
+    /**
+     * 购买弹窗宽度：**按最宽的那行词条算**，下限 300、上限贴屏幕（两侧各留 12px）。
+     *
+     * ⚠ 词条是这里唯一长度不可控的内容 —— **英文词条可长达一整句**
+     *   （如 "Evolves Onix into Steelix and Scyther into Scizor when held while trading"），
+     *   原先宽度写死 300 ⇒ 长词条直接画出弹窗两侧（2026-10-03 用户报出）。
+     * ⚠ 与 [buyDialogH] 一样每帧算一次（渲染词条时本来就要调 [buyInfoLines]），别再缓存一套。
+     */
+    private fun buyDialogW(): Int {
+        val maxInfoW = buyInfoLines().take(MAX_INFO_ROWS).maxOfOrNull { textRenderer.getWidth(it) } ?: 0
+        return minOf(maxOf(300, maxInfoW + 24), width - 40).coerceAtLeast(200)
+    }
 
     /** 消费贷开关快照（打开购买弹窗时拉取）：状态变化时重建弹窗控件（含输入恢复）+ 回写缓存 */
     fun onCreditInfo(payload: CreditInfoPayload) {
@@ -915,6 +931,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private fun renderCancelDialogBackground(context: DrawContext, mouseX: Int, mouseY: Int) {
         val entry = cancelEntry ?: return
         val centerX = width / 2
+        // ⚠ 本弹窗只有「图标 + 物品名 + 一行提示」，**没有词条** ⇒ 宽度保持固定基准即可。
+        //   购买弹窗那边是按最宽词条算的（见 buyDialogW）—— 两者内容不同，别硬统一。
         val dialogW = minOf(300, width - 40).coerceAtLeast(200)
         val dialogH = 170
         val dialogX = centerX - dialogW / 2
@@ -995,7 +1013,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private fun renderBuyDialogBackground(context: DrawContext) {
         val entry = selectedEntry ?: return
         val centerX = width / 2
-        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
+        // ⚠ 宽度按**词条**算（见 buyDialogW）—— 写死 300 时长英文词条会画出弹窗两侧
+        val dialogW = buyDialogW()
         val L = buyDialogLayout()
         // ⚠ **每帧把控件贴回当前布局**：词条会随 Shift 展开变多（TM 那类物品的词条是 Cobblemon
         //   自己生成的、它自己读 Shift，`TooltipType.BASIC` 拦不住）⇒ 弹窗长高、文字整体下移；
@@ -1038,16 +1057,19 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             context.drawCenteredTextWithShadow(textRenderer, line, centerX, L.infoTop + i * 10, 0xFFFFFF)
         }
 
-        context.drawTextWithShadow(textRenderer,
+        // ⚠ 两行都居中（2026-10-03 用户指出：原先和输入框一起写成 centerX-80 左对齐 ⇒ 整块偏左 30px）
+        context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.buy_count").string + "（" + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}）",
-            centerX - 80, L.labelY, 0xAAAAAA)
+            centerX, L.labelY, 0xAAAAAA)
         // ⚠ 金额与单位拆开画（物品货币时单位是物品图标，而不是物品名长串）：词条的单位参数传空串占位，
         //   见 drawAmountLine —— 这是弹窗里唯一一处金额行，原先还停在 `displayCurrency` 文字拼接的旧写法
+        // ⚠ 居中：总宽 = 词条宽 + 单位宽（物品货币时单位是图标，宽度固定，见 currencyUnitWidth）
+        val totalLine = Text.translatable("cobblemarket.item.buy_total").append(
+            Text.literal(com.shusheng.cobblemarket.client.formatPriceLong(buyTotal()) + " ").formatted(Formatting.GOLD))
         drawAmountLine(
-            context, textRenderer,
-            Text.translatable("cobblemarket.item.buy_total").append(
-                Text.literal(com.shusheng.cobblemarket.client.formatPriceLong(buyTotal()) + " ").formatted(Formatting.GOLD)),
-            centerX - 80, L.totalY, 0xFFFFFF, unitColor = 0xFFAA00)
+            context, textRenderer, totalLine,
+            centerX - (textRenderer.getWidth(totalLine) + currencyUnitWidth(textRenderer)) / 2,
+            L.totalY, 0xFFFFFF, unitColor = 0xFFAA00)
     }
 
     fun onMarketResult(payload: MarketResultPayload) {
