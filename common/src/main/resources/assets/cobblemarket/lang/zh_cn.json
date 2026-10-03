@@ -1253,5 +1253,6 @@
   "cobblemarket.gated_form.item.4": "商城造出来的精灵已经是那个形态，附属模组视作既成事实 —— 无法解除",
   "cobblemarket.gated_form.outro": "只在确实想让玩家直接拿到这个形态时才上架；否则建议上架普通形态，把变身留给玩家自己完成。",
   "cobblemarket.gated_form.button_tip": "有一类形态需要前置条件\n点击查看说明",
-  "cobblemarket.gated_form.button_icon": "⚠"
+  "cobblemarket.gated_form.button_icon": "⚠",
+  "cobblemarket.smartphone.open_market": "打开 Cobble市场"
 }
