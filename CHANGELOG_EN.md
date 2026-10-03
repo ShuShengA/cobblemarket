@@ -28,6 +28,7 @@
   - ⚠ Sorting applies to **all three tabs** — pick price sorting on the item tab and the Pokémon / Mine tabs are sorted that way too
   - ⚠ "Price" means **the price shown in the list**: the current bid once there is one, otherwise the starting price — the same number the row and the hover window show, so a lot displaying 500 never sorts below one displaying 100
   - ⚠ The vacant slot at the right end of the item tab's top bar (next to the list button) is now the **Filter** button
+  - ⚠ That panel's first row also carries a **↺ Reset** which resets **the item side only** (Sort / Category) — **the Pokémon filters are never touched** (shiny / gender / type / ability / nature / hyper training / IVs all stay as they were)
 
 ### Changes
 
@@ -50,7 +51,9 @@
   - ⚠ **Virtual currencies (CobbleDollars / Cobblemon Economy / Impactor) are unchanged** and still show `₽`, pixel-for-pixel identical to before this change
   - ⚠ Client-side only — **no server upgrade needed alongside it** (amounts are computed every frame; nothing is stored in saves or the trade-history CSV)
 
-- **The item market's top bar now uses the Pokemon market's layout**: the top bar used to pack four controls into one row ("search + list + Mine + Sort"); it now matches the Pokemon market's "search + list + **Filter**", with **Sort and Mine moved into the right-hand filter panel** that the button opens. Both work exactly as before — Sort still cycles through its modes, Mine is still a toggle (highlighted while on) — and the search box is longer as a result, so longer item names fit at a glance
+- **"Reset" no longer wipes the search box**: the ↺ button in the Pokémon market's and the admin screen's ("All Listed Pokémon") filter panels used to clear **your search keyword along with the filters** — but it sits inside the filter panel, and pressing it usually just means "put the filters back to default". It now resets **the filter options only** (shiny / gender / type / sort / IVs and so on) and keeps your search text, matching how the other screens (auctions / listing picker / auction creation) already behaved
+
+- **The item market's top bar now uses the Pokemon market's layout**: the top bar used to pack four controls into one row ("search + list + Mine + Sort"); it now matches the Pokemon market's "search + list + **Filter**", with **Sort and Mine moved into the right-hand filter panel** that the button opens. Both work exactly as before — Sort still cycles through its modes, Mine is still a toggle (highlighted while on) — and the search box is longer as a result, so longer item names fit at a glance. ⚠ The panel's first row also carries a **↺ Reset** that puts its three controls (Sort / Mine / Category) back to their defaults — **your search keyword is left alone**
 
 ### Fixes
 
