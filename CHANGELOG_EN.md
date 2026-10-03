@@ -108,6 +108,8 @@
 
 - **Installments are no longer offered when the amount is too small**: with an amount smaller than the number of periods (say 10 over 12 periods), the per-period principal divides down to 0 — the "~0 per period" figure made players think nothing would be charged, while the final period actually took the entire principal at once. Such plans are now **greyed out, with a notice when clicked**, and the server rejects them as well (blocked on both the client and the server)
 
+- **The hover label on our app icon inside the smartphone now reads correctly**: with Cobblemon Smartphone installed, hovering the Market icon on the phone (home screen, and the hide / reorder screen in Settings) used to show **"Pokémon"** (the Chinese client showed the Pokémon Market label) — a name borrowed from the Pokémon Market button on the entry screen, while the icon actually opens the **whole market entry**. It now reads **"Open CobbleMarket"**, matching how the phone's own apps are worded ("Open Pokémon Storage", "Open CobbleDollars Shop")
+
 ## 1.1.3 (released)
 
 ### Fixes

@@ -835,5 +835,6 @@
   "cobblemarket.buy_order.nature_label": "性格：",
   "cobblemarket.buy_order.item_label": "物品：",
   "cobblemarket.buy_order.item_matches": "%s 个匹配",
-  "cobblemarket.persist.save_failed": "⚠ 市场数据保存失败！挂单/拍卖/求购单可能未写入存档——请检查服务器磁盘空间与权限，并尽快通知玩家"
+  "cobblemarket.persist.save_failed": "⚠ 市场数据保存失败！挂单/拍卖/求购单可能未写入存档——请检查服务器磁盘空间与权限，并尽快通知玩家",
+  "cobblemarket.smartphone.open_market": "打开 Cobble市场"
 }
