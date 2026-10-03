@@ -16,6 +16,19 @@
 
 - **A crowded mark row can now be read in full**: a Pokemon may carry close to two hundred marks, so dialogs collapse the overflow into "+N" — hovering that row now pops up a small window listing **every** mark (ten per row). ⚠ Dialogs only (buy confirm, bid, pending delivery, admin): the tooltips that follow your cursor are no use here, since they vanish the moment you move onto them
 
+- **The item market and the auction house can filter by creative category**: both filter panels gained a **Category** button (third row in the item market, second row on the auction's item tab) that opens a **grid of category cells** — the very tabs along the top of the creative inventory (Building Blocks, Colored Blocks, Natural, Functional, Redstone, Tools, Combat, Food & Drink, Ingredients, Spawn Eggs, …). Hover a cell for its name, click it to show only that category (the "Any" cell clears it); **the grid stays open after picking one**, so you can flip through several
+  - ⚠ **Every mod that adds a creative tab adds a cell automatically** — the grid reads the tabs mods register, so nothing has to be adapted per mod
+  - ⚠ Too many categories to fit? The grid caps its height and scrolls with the mouse wheel (a thin scrollbar appears on the right)
+  - ⚠ It filters by **item only — enchantments and components are ignored**: picking "Enchanted Books" lists every enchanted book, and an enchanted tool sits in the same category as a plain one
+  - ⚠ It combines with the search box as **AND**: the category narrows the list first, then the keyword filters it
+  - ⚠ In the auction house it filters the **item tab only** (the Pokémon filters are unchanged and Pokémon entries are never affected by a category)
+  - ⚠ **The item market requires both client and server to be upgraded** (its packet changed); the auction house filters locally and is not affected
+
+- **The auction house can be sorted**: all three tabs (Mine / Pokémon / Items) used to be listed "newest first" with no choice. Each filter panel now has a **Sort** button (on the Pokémon tab it sits next to the shiny / gender buttons, on the item tab it fills a whole row — both drive **the same setting**), cycling through **Newest → Price ↑ → Price ↓ → Ends soon**
+  - ⚠ Sorting applies to **all three tabs** — pick price sorting on the item tab and the Pokémon / Mine tabs are sorted that way too
+  - ⚠ "Price" means **the price shown in the list**: the current bid once there is one, otherwise the starting price — the same number the row and the hover window show, so a lot displaying 500 never sorts below one displaying 100
+  - ⚠ The vacant slot at the right end of the item tab's top bar (next to the list button) is now the **Filter** button
+
 ### Changes
 
 - **The force-cancel dialog now shows an item's full tooltip**: for an item auction it used to show only "item name + ×count" — no enchantments, no attribute modifiers, no potions, no custom lore — while the **bid dialog** showed them all. It now matches the bid dialog: the full tooltip, and **Shift / Ctrl expands it** (the dialog grows taller and wider to fit, and the **two buttons at the bottom move down with it** — they used to stay put and overlap the "Force-cancel this auction?" notice that had already moved down)
@@ -36,6 +49,8 @@
   - ⚠ **Hover windows and chat broadcasts still spell out the item name** — those are plain-text places where an icon cannot be drawn (Minecraft 1.21 text cannot embed images), so they fall back to the name, which is just as clear
   - ⚠ **Virtual currencies (CobbleDollars / Cobblemon Economy / Impactor) are unchanged** and still show `₽`, pixel-for-pixel identical to before this change
   - ⚠ Client-side only — **no server upgrade needed alongside it** (amounts are computed every frame; nothing is stored in saves or the trade-history CSV)
+
+- **The item market's top bar now uses the Pokemon market's layout**: the top bar used to pack four controls into one row ("search + list + Mine + Sort"); it now matches the Pokemon market's "search + list + **Filter**", with **Sort and Mine moved into the right-hand filter panel** that the button opens. Both work exactly as before — Sort still cycles through its modes, Mine is still a toggle (highlighted while on) — and the search box is longer as a result, so longer item names fit at a glance
 
 ### Fixes
 

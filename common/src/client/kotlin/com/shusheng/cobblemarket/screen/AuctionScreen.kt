@@ -84,6 +84,20 @@ class AuctionScreen(
      */
     private val FILTER_PANEL_HEIGHT = 318
 
+    /**
+     * **物品 tab** 筛选面板的内容高度：两行 —— 排序 y=20 高 20 → 分类 y=44 高 20、底 64
+     * ⇒ 内容 62 + 底部留白 10 = 72（口径同物品市场）。
+     * ⚠ 往里加控件要同步改；⚠ 展开分类网格时面板还要往下长 —— 高度一律走 [filterPanelHeight]。
+     */
+    private val ITEM_FILTER_PANEL_HEIGHT = 72
+
+    /** 「分类」按钮所在行的 y（物品 tab 面板第二行）；分类网格就挂在它下方 */
+    private val CATEGORY_BTN_Y = 44
+
+    /** 分类网格：4 列、格间距 2px（格子边长按面板内容宽反算，窄屏自动变小） */
+    private val GRID_COLS = 4
+    private val GRID_GAP = 2
+
     /** 面板内滚动偏移（内容比面板高时才有用，见 [filterPanelHeight]） */
     private var filterPanelScroll = 0
 
@@ -109,12 +123,150 @@ class AuctionScreen(
      * ⚠ GUI 缩放设「自动」时逻辑屏高会变小（1080p + 缩放 4 只有 270），写死 318 会让面板戳出屏幕、
      *   底部的 IV 输入框看不见 —— 超出部分靠**面板内滚动**看（照精灵市场）。
      */
-    private fun filterPanelHeight() = minOf(FILTER_PANEL_HEIGHT, height - 34)
+    private fun filterPanelHeight() = minOf(
+        when {
+            // 物品 tab 展开分类网格：面板往下长，长到把网格包住（网格自身限高 + 整行滚动）
+            currentTab == 1 && categoryGridOpen -> gridBottomY() - 2 + 10
+            // 物品 tab：排序 + 分类两行、定高 72（**没有面板内滚动**）；精灵 tab 是 318 + 面板内滚动
+            currentTab == 1 -> ITEM_FILTER_PANEL_HEIGHT
+            else -> FILTER_PANEL_HEIGHT
+        },
+        height - 34,
+    )
+
+    // ── 分类网格的几何（全部按当前窗口现算，resize 后自动跟）──
+    //    口径与物品市场那份一致（不抽共用件：两边的面板宽、行数、可见性归属都不同，硬抽反而绕）
+
+    /** 格子边长（4 列铺满内容宽；窄屏自动变小，兜底 16） */
+    private fun gridCell() = ((filterPanelBtnW() - (GRID_COLS - 1) * GRID_GAP) / GRID_COLS).coerceAtLeast(16)
+
+    /** 网格首行的 y：分类按钮下方 4px */
+    private fun gridTopY() = CATEGORY_BTN_Y + 24
+
+    private fun gridRows() = (categoryButtons.size + GRID_COLS - 1) / GRID_COLS
+
+    /** 一屏最多铺几行 —— 往下不越过屏幕底部留白（32，与主面板同一口径） */
+    private fun gridMaxRows(): Int {
+        val avail = (height - 32) - gridTopY() - 10
+        return maxOf(1, avail / (gridCell() + GRID_GAP))
+    }
+
+    private fun gridVisibleRows() = minOf(gridRows(), gridMaxRows())
+    private fun gridMaxScrollRow() = maxOf(0, gridRows() - gridVisibleRows())
+    private fun gridBottomY() = gridTopY() + gridVisibleRows() * (gridCell() + GRID_GAP)
+
+    /** 第 i 格（0 = 不限）的 x —— 与滚动无关 */
+    private fun gridCellX(i: Int): Int {
+        val cell = gridCell()
+        val gridW = GRID_COLS * cell + (GRID_COLS - 1) * GRID_GAP
+        return MarketPanelBackground.filterLeft(width) + 4 +
+            (filterPanelBtnW() - gridW) / 2 + (i % GRID_COLS) * (cell + GRID_GAP)
+    }
+
+    /**
+     * 分类网格此刻**该不该显示**：**物品 tab** + 面板展开 + 网格展开 + 没弹窗 + 开关动画播完。
+     * ⚠ **单一判据** —— 格子的可见性、深色底、滚轮都读它，别各写一份（分散判定必漏）
+     */
+    private fun gridShown() = currentTab == 1 && filterExpanded && categoryGridOpen &&
+        bidEntry == null && !filterAnim.isActive()
+
+    private fun isOverGrid(mx: Double, my: Double): Boolean {
+        val fl = MarketPanelBackground.filterLeft(width)
+        return mx >= fl && mx < fl + MarketPanelBackground.filterWidth(width) &&
+            my >= gridTopY() && my < gridBottomY()
+    }
+
+    /** 当前分类的**完整**显示名（不限 = 「不限」）；按钮文字与悬停提示都取它 */
+    private fun categoryFullText(): Text {
+        val name = categoryFilter?.let { id ->
+            com.shusheng.cobblemarket.client.ItemCategories.all().firstOrNull { it.id == id }?.name
+        } ?: Text.translatable("cobblemarket.gui.filter_any")
+        return Text.translatable("cobblemarket.item.category", name)
+    }
+
+    /** 按钮文字：按按钮宽**截断**（分类名是模组起的、长度不可控；完整名走悬停提示） */
+    private fun categoryButtonText(): Text =
+        com.shusheng.cobblemarket.util.TextUtil.truncateStyled(categoryFullText(), filterPanelBtnW() - 8)
+
+    /** 当前选中分类在网格里的下标（第 0 格是「不限」）；没选中 / 那个分类不在了 ⇒ 落回 0 */
+    private fun selectedCategoryIndex(): Int {
+        val id = categoryFilter ?: return 0
+        val idx = com.shusheng.cobblemarket.client.ItemCategories.all().indexOfFirst { it.id == id }
+        return if (idx < 0) 0 else idx + 1
+    }
+
+    /** 展开 / 收起分类网格 */
+    private fun toggleCategoryGrid() {
+        categoryGridOpen = !categoryGridOpen
+        if (!categoryGridOpen) categoryScrollRow = 0
+        applyFilterVisibility()
+    }
+
+    /**
+     * 选中一个分类（null = 不限）：**客户端本地重筛**（拍卖列表不走网络包）。
+     * ⚠ 网格**保持展开**、滚动位置不动（用户 2026-10-03 要求：选完就收没法连着换几个看）。
+     */
+    private fun selectCategory(id: Identifier?) {
+        categoryFilter = id
+        categoryButton?.message = categoryButtonText()
+        categoryButton?.setTooltip(Tooltip.of(categoryFullText()))
+        rebuildFiltered()
+        scrollOffset = 0
+        rebuildBidButtons()
+        applyFilterVisibility()
+    }
+
+    /** 当前分类的物品 ID 集合（客户端本地算 + 缓存，与物品市场服务端**同一份实现**）；没选分类 ⇒ null */
+    private fun categoryItemIds(): Set<String>? {
+        val id = categoryFilter ?: return null
+        val world = client?.world ?: return null
+        return com.shusheng.cobblemarket.util.ItemCategoryIndex.itemIds(world, id)
+    }
+
+    /** 分类网格的滚动条（**不可拖**，照 ServerConfigScreen 同款）：只在格子铺不下时才画 */
+    private fun renderGridScrollbar(context: DrawContext) {
+        val maxScroll = gridMaxScrollRow()
+        if (maxScroll <= 0) return
+        val x = MarketPanelBackground.filterLeft(width) + MarketPanelBackground.filterWidth(width) - 4
+        val top = gridTopY()
+        val trackH = gridVisibleRows() * (gridCell() + GRID_GAP)
+        val thumbH = maxOf(12, trackH * gridVisibleRows() / gridRows())
+        val thumbY = top + (trackH - thumbH) * categoryScrollRow / maxScroll
+        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
+        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
+    }
 
     private var currentTab = initialTab.coerceIn(0, 2) // 0 = 精灵, 1 = 物品, 2 = 我的
     // 特训筛选三态：0 = 不限，1 = 仅含训练，2 = 仅不含训练（仅精灵 tab）
     private var htFilter = 0
     private var htButton: NineSliceButton? = null
+
+    /**
+     * 排序（2026-10-03）：拍卖场原先三个 tab 一律按「最新」排、没有排序开关。
+     * 现在**两边的筛选面板里各有一枚**：精灵 tab 第一行性别右边那格（照精灵市场）、
+     * 物品 tab 的面板里占整行，两枚是**同一个状态**（点哪枚都一起变）。
+     * ⚠ **排序对三个 tab 通用**（用户 2026-10-03 拍板）：它是界面级状态，切 tab 不会跳回「最新」。
+     */
+    private var sortMode = "NEWEST"
+    /** 精灵 tab 那枚（第一行、性别右边） */
+    private var sortButton: NineSliceButton? = null
+    /** 物品 tab 那枚（整行） */
+    private var itemSortButton: NineSliceButton? = null
+
+    // ── 「分类」筛选（创造模式物品分类，2026-10-03 二期）────────────────────────────
+    /**
+     * 物品 tab 面板里的「分类」按钮 + 点开的分类网格 —— 与物品市场同一套（同 4 列格、同样的限高滚动）。
+     *
+     * ⚠ **与物品市场不同：这边不走网络包** —— 拍卖列表是**服务端回全量、客户端本地筛**的
+     *   （见 [rebuildFiltered]），所以分类集合在**客户端**算（复用 `util/ItemCategoryIndex`，带缓存）。
+     * ⚠ 只筛**物品**条目（`type == ITEM`）：精灵的 `species` 是翻译 key，不是物品 ID。
+     */
+    private var categoryFilter: Identifier? = null
+    private var categoryGridOpen = false
+    private var categoryScrollRow = 0
+    private var categoryButton: NineSliceButton? = null
+    /** 格子：第 0 个是「不限」，其后与 `ItemCategories.all()` 一一对应 */
+    private val categoryButtons = mutableListOf<NineSliceButton>()
     private var entries = listOf<AuctionEntry>()
     // 过滤结果缓存：数据/搜索/筛选变化时重建，render 每帧只读（避免每帧全量 filter+sort）
     private var filteredCache = listOf<AuctionEntry>()
@@ -396,8 +548,9 @@ class AuctionScreen(
         createBtn.visible = currentTab != 2
         addDrawableChild(createBtn)
 
-        // 「筛选」开关（y=50 行右端）：开关右边那块面板。仅精灵 tab 显示
-        // （物品/我的 tab 没有任何筛选，面板连同这枚开关一起藏）
+        // 「筛选」开关（y=50 行右端）：开关右边那块面板。精灵 / 物品两个 tab 都显示
+        // （**内容不同**：精灵 tab 是闪光~IV 那一整组，物品 tab 只有一枚排序），
+        // 「我的」tab 没有筛选 —— 面板连同这枚开关一起藏（里面判 currentTab）
         val filterToggle = NineSliceButton(
             leftX + panelWidth - 52, 50, 50, 16,
             Text.literal(""),
@@ -441,6 +594,16 @@ class AuctionScreen(
         )
         updateGenderButton()
         addDrawableChild(genderButton)
+        // 排序：紧跟在性别右边、占满第一行剩下的宽（照精灵市场那一格）——
+        // 2026-10-03 用户指出这格一直空着。⚠ 宽度 = fw - 62（★ 30 + 4 + ♂ 24 + 4 已占 62），
+        // 与精灵市场同一算式：最窄档（1080p + 缩放 3，逻辑屏 640）算出来 86px，
+        // 英文最长的 "Sort: Ends soon" ≈ 80px，放得下
+        sortButton = NineSliceButton(
+            fx + 62, 20, fw - 62, 20,
+            Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay())),
+            { cycleSort() }
+        )
+        addDrawableChild(sortButton)
         // 其余各占**整行**：搬进面板后不再受"几枚并排挤在一行"的限制，
         // 长英文名（`Neutralizing Gas` 96px）也放得下
         typeButton = NineSliceButton(
@@ -517,11 +680,65 @@ class AuctionScreen(
         spdF = mkIv(fx, 268, "SpD"); addIvOpButton(fx + 88, 268, 4); addIvResetButton(fx + 132, 268, 4)
         speF = mkIv(fx, 290, "Spd"); addIvOpButton(fx + 88, 290, 5); addIvResetButton(fx + 132, 290, 5)
 
+        // ── 物品 tab 的面板：只有一枚「排序」（2026-10-03）────────────────────────────
+        // 拍卖场原先三个 tab 一律按「最新」排、没有排序开关；物品 tab 顶栏右端本来就空着一个
+        // 筛选按钮的位置（上架小手右边那 50px），补上后与物品市场同构。
+        // ⚠ 与上面那组**共用同一块面板背景**，按 tab 二选一显示（见 applyFilterVisibility）
+        itemSortButton = NineSliceButton(
+            fx, 20, fw, 20,
+            Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay())),
+            { cycleSort() }
+        )
+        addDrawableChild(itemSortButton)
+
+        // 分类（物品 tab 第二行）：显示当前分类名，点一下在下方展开**分类网格**（创造模式物品分类）
+        categoryButton = NineSliceButton(
+            fx, CATEGORY_BTN_Y, fw, 20,
+            categoryButtonText(),
+            { toggleCategoryGrid() }
+        )
+        // 按钮文字会截断 ⇒ 悬停提示给**完整**分类名（分类名是模组起的，长度不可控）
+        categoryButton?.setTooltip(Tooltip.of(categoryFullText()))
+        addDrawableChild(categoryButton)
+
+        // 分类网格的格子：第 0 格「不限」，其后每格一个创造分类（图标 = 该分类的代表物品）
+        // ⚠ 常驻创建，开关 / 滚动只改位置与可见性（见 applyFilterVisibility）；
+        //   ⚠ **不登记进 filterPanelControls**：它们每帧自己定位，且物品 tab 的面板不滚动
+        val cell = gridCell()
+        val gridW = GRID_COLS * cell + (GRID_COLS - 1) * GRID_GAP
+        val cellX0 = fx + (fw - gridW) / 2
+        val cellIcon = (cell - 14).coerceIn(16, 22)
+        categoryButtons.clear()
+        val anyCell = NineSliceButton(
+            cellX0, gridTopY(), cell, cell,
+            Text.translatable("cobblemarket.gui.filter_any"),
+            { selectCategory(null) },
+            tooltip = Text.translatable("cobblemarket.gui.filter_any")
+        )
+        addDrawableChild(anyCell)
+        categoryButtons += anyCell
+        com.shusheng.cobblemarket.client.ItemCategories.all().forEach { cat ->
+            val btn = NineSliceButton(
+                cellX0, gridTopY(), cell, cell,
+                Text.literal(""),          // 纯图标格：名字走悬停提示
+                { selectCategory(cat.id) },
+                tooltip = cat.name
+            )
+            btn.iconStack = cat.icon
+            btn.iconStackSize = cellIcon
+            addDrawableChild(btn)
+            categoryButtons += btn
+        }
+
         // 登记面板内控件：记下基准 y，滚动时按它重定位（见 filterPanelControls 的说明）
         filterPanelControls.clear()
         listOfNotNull(
             shinyButton, genderButton, typeButton, teraButton, abilityButton, natureButton,
-            htButton, gmaxButton, resetButton, hpF, atkF, defF, spaF, spdF, speF
+            htButton, gmaxButton, resetButton, hpF, atkF, defF, spaF, spdF, speF, sortButton,
+            // 物品 tab 那两枚也登记：那块面板**不滚动**，靠 switchTab 把 filterPanelScroll 清零
+            // 来保证精灵 tab 的滚动偏移不会顶掉它们（不然切过去会被顶到面板外藏起来）
+            // ⚠ 网格**格子**不登记 —— 它们每帧自己定位（见 applyFilterVisibility）
+            itemSortButton, categoryButton
         ).forEach { filterPanelControls += it to it.y }
         ivOpButtons.values.forEach { filterPanelControls += it to it.y }
         ivResetButtons.forEach { filterPanelControls += it to it.y }
@@ -564,6 +781,24 @@ class AuctionScreen(
         show(natureButton)
         show(htButton)
         show(resetButton)
+        show(sortButton)
+        // 物品 tab 的面板：排序 + 分类（与上面那组互斥：同一块面板按 tab 二选一）
+        val itemPanelOn = currentTab == 1 && filterExpanded && bidEntry == null && !animHidden
+        itemSortButton?.visible = itemPanelOn
+        categoryButton?.visible = itemPanelOn
+        // 分类网格的格子：只在网格展开时显示，且**只显示落在可视行里**的那几行（滚出去的、没点开的一律藏）。
+        // ⚠ 每帧重定位 —— 窗口尺寸、面板展开状态变了都靠它兜住
+        val gridOn = gridShown()
+        val selIdx = selectedCategoryIndex()
+        categoryButtons.forEachIndexed { i, btn ->
+            val row = i / GRID_COLS - categoryScrollRow
+            btn.visible = gridOn && row in 0 until gridVisibleRows()
+            btn.selectedVisual = i == selIdx
+            if (btn.visible) {
+                btn.x = gridCellX(i)
+                btn.y = gridTopY() + row * (gridCell() + GRID_GAP)
+            }
+        }
         // ⚠ 展开列表的**浮层按钮**是一组动态创建的控件，不在上面那份点名名单里 —— 单独按面板状态藏。
         //   正常路径下 rebuildFilterList 会把它们 remove 掉，但弹窗（出价等）这类路径不重建列表，这里兜住
         filterOptionButtons.forEach { it.visible = panelOn }
@@ -573,8 +808,9 @@ class AuctionScreen(
             ivOpButtons[i]?.visible = vis
             ivResetButtons.getOrNull(i)?.visible = vis
         }
-        // 开关本身只跟 tab 与弹窗走（面板收着的时候它还得在，用来把面板打开）
-        filterToggleButton?.visible = currentTab == 0 && bidEntry == null
+        // 开关本身只跟 tab 与弹窗走（面板收着的时候它还得在，用来把面板打开）。
+        // ⚠ 精灵 / 物品两个 tab 都有面板（内容不同），只有「我的」tab 没有筛选
+        filterToggleButton?.visible = currentTab != 2 && bidEntry == null
         // 面板内滚动：按登记的基准 y 重定位，滚出面板范围的控件藏起来（滚轮改了 filterPanelScroll
         // 之后调本函数重排）。⚠ 放在最后 —— 它会覆盖上面 show() 设的 visible
         val panelTop = 4
@@ -731,6 +967,13 @@ class AuctionScreen(
         abilityFilter = ""
         natureFilter = ""
         htFilter = 0
+        // 排序也算「筛选态」的一部分（照精灵市场 resetFilters）——
+        // 下面 clearChildren + init 会带着新状态重建两枚排序按钮，文案自动回到「最新」
+        sortMode = "NEWEST"
+        // 分类（物品 tab）同样归零：下面重建后按钮显示「不限」、网格收起
+        categoryFilter = null
+        categoryGridOpen = false
+        categoryScrollRow = 0
         filterListOpen = ""
         filterListScroll = 0
         filterListTopY = 0
@@ -1004,6 +1247,10 @@ class AuctionScreen(
         hoveredRow = -1
         filterListOpen = ""
         rebuildFilterList()
+        // 面板内滚动偏移**跨 tab 无意义**（物品 tab 的面板根本不滚动）——
+        // 不清零的话，切到物品 tab 时那枚排序按钮会被精灵 tab 残留的偏移顶出面板、连带藏起来。
+        // 与上面 `scrollOffset = 0`（主列表滚动也归零）同一口径
+        filterPanelScroll = 0
         updateTabButtons()
         // 「我的」tab 没有上架入口
         createButton?.visible = currentTab != 2
@@ -1012,7 +1259,7 @@ class AuctionScreen(
         // 幂等重设一次：init 按当时的屏幕尺寸算过，resize 后重跑 init 会重建，这里兜个底
         searchField?.setWidth(panelWidth - 108)
         createButton?.setX(width / 2 - panelWidth / 2 + panelWidth - 104)
-        // 筛选面板与「筛选」开关只对精灵 tab 显示（里面判 currentTab）
+        // 筛选面板与「筛选」开关：精灵 / 物品两个 tab 都有（内容不同），「我的」tab 没有（里面判 currentTab）
         applyFilterVisibility()
         rebuildFiltered()
         rebuildBidButtons()
@@ -1182,9 +1429,52 @@ class AuctionScreen(
 
     private fun filtered(): List<AuctionEntry> = filteredCache
 
+    /** 排序按钮的文案（两枚共用；`cobblemarket.gui.sort` = 「排序： %s」/ "Sort: %s"） */
+    private fun sortDisplay(): String = when (sortMode) {
+        "PRICE_ASC" -> "cobblemarket.sort.price_asc"
+        "PRICE_DESC" -> "cobblemarket.sort.price_desc"
+        "ENDING_SOON" -> "cobblemarket.sort.ending_soon"
+        else -> "cobblemarket.sort.newest"
+    }
+
+    /**
+     * 排序循环：最新 → 价格 ↑ → 价格 ↓ → 即将结束 → 最新。
+     *
+     * ⚠ 两枚按钮（精灵 tab 第一行那枚 + 物品 tab 面板那枚）是**同一个状态**，要一起更新文案；
+     * ⚠ 改排序 = 列表顺序变了 ⇒ 与其余筛选路径一样把 `scrollOffset` 归零并重建出价按钮
+     *   （行号 → 条目 的映射跟着变，不重建会点错行）。
+     */
+    private fun cycleSort() {
+        sortMode = when (sortMode) {
+            "NEWEST" -> "PRICE_ASC"
+            "PRICE_ASC" -> "PRICE_DESC"
+            "PRICE_DESC" -> "ENDING_SOON"
+            else -> "NEWEST"
+        }
+        val label = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
+        sortButton?.message = label
+        itemSortButton?.message = label
+        rebuildFiltered()
+        scrollOffset = 0
+        rebuildBidButtons()
+    }
+
+    /**
+     * 排序用的**显示价**：有人出价就是当前价、没人出价就是起拍价 ——
+     * 与行内 / 悬停窗的显示口径**完全一致**（那两处也是这个式子），
+     * 免得出现「界面上显示 500 却排在 100 后面」。
+     */
+    private fun effectivePrice(e: AuctionEntry): Int =
+        if (e.currentPrice > 0) e.currentPrice else e.startingPrice
+
     /** 数据/搜索/筛选任一变化时重建过滤缓存（排序只在这里做一次，render 每帧只读） */
     private fun rebuildFiltered() {
         val query = searchField?.text?.trim()?.takeIf { it.isNotEmpty() }
+        // 「分类」筛的物品集合：**每次重建只查一次**（ItemCategoryIndex 自带缓存；别在下面的
+        // 过滤 lambda 里逐条目调 —— 那会每条目都走一遍缓存查找 + client.world 取值）
+        // ⚠ 返回 null（没选分类 / 分类未知）⇒ 不筛；返回**空集**（该分类构建失败）⇒ 筛不出东西，
+        //   与物品市场服务端同一口径（那边也是空集进缓存）
+        val categoryIds = categoryItemIds()
         filteredCache = entries.filter { entry ->
             val inTab = when (currentTab) {
                 0 -> entry.type == "POKEMON"
@@ -1195,6 +1485,10 @@ class AuctionScreen(
                 }
             }
             if (!inTab) return@filter false
+            // 「分类」筛选（创造模式物品分类，2026-10-03 二期）：**只筛物品条目**
+            //（精灵的 `species` 是翻译 key，不是物品 ID）。⚠ 拍卖列表是**客户端本地筛**的
+            // ⇒ 集合在客户端算（复用物品市场的 `ItemCategoryIndex`，带缓存）；取不到就按"不限"
+            if (categoryIds != null && entry.type == "ITEM" && entry.species !in categoryIds) return@filter false
             // 特训筛选三态：六项特训值（-1 = 未特训）任一 >= 0 即有特训
             if (htFilter != 0 && entry.type == "POKEMON") {
                 val d = entry.extraData
@@ -1243,7 +1537,16 @@ class AuctionScreen(
                 entry.species.contains(query, ignoreCase = true) || entry.sellerName.contains(query, ignoreCase = true) ||
                 // 物品条目走搜索索引（名称/tooltip/TM 招式精确匹配，见 ItemSearchIndex）
                 (entry.type == "ITEM" && com.shusheng.cobblemarket.client.ItemSearchIndex.entryMatches(entry.species, entry.itemNbt, query))
-        }.sortedByDescending { it.createdAt }
+        }
+        // 排序（2026-10-03 起可切换，**三个 tab 通用**）：默认「最新」= 原先唯一的行为，逐字节不变
+        filteredCache = when (sortMode) {
+            // 价格：按**界面上显示的那个价**排（见 [effectivePrice]，与行内 / 悬停窗同源）
+            "PRICE_ASC" -> filteredCache.sortedBy { effectivePrice(it) }
+            "PRICE_DESC" -> filteredCache.sortedByDescending { effectivePrice(it) }
+            // 即将结束：离结束时间最近的排最前
+            "ENDING_SOON" -> filteredCache.sortedBy { it.endsAt }
+            else -> filteredCache.sortedByDescending { it.createdAt }
+        }
         indexedFiltered = filteredCache.map { IndexedValue(entries.indexOf(it), it) }
     }
 
@@ -1833,12 +2136,13 @@ class AuctionScreen(
         // 检测一次即可覆盖本帧全部读缓存点）
         if (syncIvFields()) rebuildFiltered()
 
-        // 右侧筛选面板（仅精灵 tab、且面板展开、无弹窗时）：**主面板保持居中不动**，
+        // 右侧筛选面板（精灵 / 物品两个 tab、且面板展开、无弹窗时）：**主面板保持居中不动**，
         // 筛选面板占用它右侧本来就空着的区域 —— 这样主面板里所有控件坐标一个都不动。
-        // 高度由内容定（318，最后一行的 Spd 输入框 + 12 余量），不跟主面板铺到屏幕底边
+        // 高度由内容定（精灵 tab 318：最后一行的 Spd 输入框 + 12 余量；物品 tab 48：只有一枚排序），
+        // 不跟主面板铺到屏幕底边。「我的」tab 没有筛选、不画
         // ⚠ 展开中、**或收起动画还没播完**都要画（后者要从目标位置缩回按钮），照精灵市场。
         //   别写回 `if (filterExpanded)`：那样收起动画根本没机会播（条件当帧就不成立）
-        if (currentTab == 0 && bidEntry == null && (filterExpanded || filterAnim.isActive())) {
+        if (currentTab != 2 && bidEntry == null && (filterExpanded || filterAnim.isActive())) {
             val fl = MarketPanelBackground.filterLeft(width)
             val fw = MarketPanelBackground.filterWidth(width)
             val ph = filterPanelHeight()
@@ -1869,6 +2173,17 @@ class AuctionScreen(
                 fl + MarketPanelBackground.filterWidth(width) - 2, filterListBottomY,
                 0xF0101010.toInt()
             )
+        }
+        // 分类网格的深色垫底（物品 tab）：格子按钮的背景是半透明的，不垫底面板底纹会透上来。
+        // ⚠ 判据与格子可见性**同源**（gridShown）
+        if (gridShown()) {
+            val fl = MarketPanelBackground.filterLeft(width)
+            context.fill(
+                fl + 2, gridTopY() - 2,
+                fl + MarketPanelBackground.filterWidth(width) - 2, gridBottomY(),
+                0xF0101010.toInt()
+            )
+            renderGridScrollbar(context)
         }
 
         val leftX = width / 2 - panelWidth / 2
@@ -2479,6 +2794,12 @@ class AuctionScreen(
         ) {
             filterPanelScroll = (filterPanelScroll - verticalAmount.toInt() * 10)
                 .coerceIn(0, FILTER_PANEL_HEIGHT - filterPanelHeight())
+            applyFilterVisibility()
+            return true
+        }
+        // 分类网格滚动（物品 tab；**整行**滚，保证格子始终对齐）
+        if (gridShown() && gridMaxScrollRow() > 0 && isOverGrid(mouseX, mouseY)) {
+            categoryScrollRow = (categoryScrollRow - verticalAmount.toInt()).coerceIn(0, gridMaxScrollRow())
             applyFilterVisibility()
             return true
         }

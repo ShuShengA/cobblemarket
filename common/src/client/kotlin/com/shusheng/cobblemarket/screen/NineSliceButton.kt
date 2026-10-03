@@ -20,6 +20,15 @@ class NineSliceButton(
     var clickSound: Identifier? = Identifier.of("cobblemarket", "button_click"),
     // 可选图标（默认 24×24 纹理按 iconScale 缩放居中；纯图标按钮传空 message；性别按钮运行时切换用 var）
     var iconLeft: Identifier? = null,
+    /**
+     * **物品图标**（[iconLeft] 的另一种来源）：与其给每个物品准备贴图，不如直接画物品栈 ——
+     * 物品市场的「创造分类」网格那种"一格一个物品"的按钮用。
+     * ⚠ 与 [iconLeft] **二选一**（两者都传时 iconStack 优先，本按钮的既有调用点一个都没传
+     *   ⇒ 行为零变化）。名称与 1.3.0 上那套**同名同义**，上浮时好合。
+     */
+    var iconStack: net.minecraft.item.ItemStack? = null,
+    /** [iconStack] 的绘制边长（默认 16 —— 1.3.0 上同名同义） */
+    var iconStackSize: Int = 16,
     // 第二图标（并排绘制，间距 1px；性别按钮不限态用 ♂♀ 双图标）
     var iconLeft2: Identifier? = null,
     // 图标贴图实际尺寸与缩放（6×8 性别图标用 iconTexW=6/iconTexH=8/iconScale=1.5）
@@ -61,8 +70,24 @@ class NineSliceButton(
         }
         drawNineSlice(context, texture, x, y, width, height, state, texH)
 
+        // 物品图标（iconStack）：整格居中画一个物品栈，与贴图图标互斥
+        // ⚠ 缩放走 matrices —— `drawItem` 恒按 16×16 画、没有尺寸参数（与 CurrencyDisplay 同款手法）
+        val stackIcon = iconStack?.takeIf { !it.isEmpty }
+        if (stackIcon != null) {
+            val s = iconStackSize / 16f
+            context.matrices.push()
+            context.matrices.translate(
+                (x + (width - iconStackSize) / 2).toDouble(),
+                (y + (height - iconStackSize) / 2).toDouble(),
+                0.0
+            )
+            context.matrices.scale(s, s, 1f)
+            context.drawItem(stackIcon, 0, 0)
+            context.matrices.pop()
+        }
+
         // 可选图标（可双图标并排，整体居中）
-        val leftIcon = iconLeft
+        val leftIcon = if (stackIcon == null) iconLeft else null
         if (leftIcon != null) {
             val iconW = (iconTexW * iconScale).toInt()
             val iconH = (iconTexH * iconScale).toInt()

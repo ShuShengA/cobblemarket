@@ -435,6 +435,7 @@
   "cobblemarket.gui.search": "搜索",
   "cobblemarket.gui.search_placeholder": "精灵/玩家名...",
   "cobblemarket.gui.sort": "排序： %s",
+  "cobblemarket.item.category": "分类： %s",
   "cobblemarket.gui.prev": "< 上一页",
   "cobblemarket.gui.next": "下一页 >",
   "cobblemarket.gui.species_prev": "上一个匹配的精灵",
@@ -492,6 +493,7 @@
   "cobblemarket.sort.level_asc": "等级 ↑",
   "cobblemarket.sort.level_desc": "等级 ↓",
   "cobblemarket.sort.newest": "最新",
+  "cobblemarket.sort.ending_soon": "即将结束",
 
   "cobblemarket.cmd.listed": "已上架 %s (Lv.%d)，售价 %d %s！",
   "cobblemarket.cmd.listed_fee": "已上架 %s (Lv.%d)，售价 %d %s！手续费 %d %s 已扣除。",
