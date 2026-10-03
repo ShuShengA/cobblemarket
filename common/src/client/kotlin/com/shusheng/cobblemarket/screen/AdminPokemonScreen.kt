@@ -860,14 +860,14 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     }
 
     private fun resetFilters() {
-        searchField?.text = ""
+        // ⚠ **只清筛选项，不碰搜索框**（用户 2026-10-03 定：重置在筛选里，清的就是筛选项）
+        // —— 原先这里清搜索，与其余界面口径不一
         shinyOnly = false
         showMineOnly = false
         htFilter = 0
         sortMode = "NEWEST"
         currentPage = 1
-        // 2026-09-24 追加的四项（本界面的重置**连搜索框一起清**，与拍卖场 / 上架选择 / 创建拍卖不同 ——
-        // 那三个界面的重置只清筛选条件；这里保持原有行为不动）
+        // 2026-09-24 追加的四项（重置一律只清筛选条件，见函数开头的说明）
         genderFilter = ""
         updateGenderButton()
         typeFilter = ""

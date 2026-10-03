@@ -229,6 +229,31 @@ class AuctionScreen(
         applyFilterVisibility()
     }
 
+    /**
+     * 物品 tab 面板第一行那枚 ↺：**只重置物品侧的筛选项** —— 排序回「最新」、分类回「不限」（网格收起）。
+     *
+     * ⚠⭐ **绝不碰精灵那几项**（闪光 / 性别 / 属性 / 太晶 / 特性 / 性格 / 特训 / IV）——
+     *   用户 2026-10-03 明确：「只重置当前物品的，别给精灵的也重置了」。
+     * ⚠ 排序是**三个 tab 通用**的状态（用户早先拍板），所以重置它也会让精灵 / 我的 tab 回到「最新」——
+     *   那是**同一个状态**，不是"顺带把精灵的筛选重置了"。
+     * ⚠ 拍卖列表是客户端本地筛的 ⇒ 这里不比请求，直接重建（照 [selectCategory]）。
+     * ⚠ **分类网格保持展开、滚动位置也不动**（用户 2026-10-03 要求：别"主动"把展开的收起来 ——
+     *   与"选中一格也不收"同一条口径）。
+     */
+    private fun resetItemFilters() {
+        sortMode = "NEWEST"
+        categoryFilter = null
+        val label = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
+        sortButton?.message = label
+        itemSortButton?.message = label
+        categoryButton?.message = categoryButtonText()
+        categoryButton?.setTooltip(Tooltip.of(categoryFullText()))
+        rebuildFiltered()
+        scrollOffset = 0
+        rebuildBidButtons()
+        applyFilterVisibility()
+    }
+
     /** 当前分类的物品 ID 集合（客户端本地算 + 缓存，与物品市场服务端**同一份实现**）；没选分类 ⇒ null */
     private fun categoryItemIds(): Set<String>? {
         val id = categoryFilter ?: return null
@@ -285,6 +310,8 @@ class AuctionScreen(
     private var sortButton: NineSliceButton? = null
     /** 物品 tab 那枚（整行） */
     private var itemSortButton: NineSliceButton? = null
+    /** 物品 tab 面板第一行右侧那枚 ↺：**只重置物品侧**（排序 / 分类），不碰精灵的筛选 */
+    private var itemResetButton: NineSliceButton? = null
 
     // ── 「分类」筛选（创造模式物品分类，2026-10-03 二期）────────────────────────────
     /**
@@ -788,11 +815,21 @@ class AuctionScreen(
         // 筛选按钮的位置（上架小手右边那 50px），补上后与物品市场同构。
         // ⚠ 与上面那组**共用同一块面板背景**，按 tab 二选一显示（见 applyFilterVisibility）
         itemSortButton = NineSliceButton(
-            fx, 20, fw, 20,
+            fx, 20, fw - 24, 20,
             Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay())),
             { cycleSort() }
         )
         addDrawableChild(itemSortButton)
+
+        // 重置 ↺（第一行右侧，照精灵市场的排法）：**只重置物品侧的筛选项**（排序 / 分类），
+        // ⚠ **绝不碰精灵那几项**（用户 2026-10-03 明确：「只重置当前物品的，别给精灵的也重置了」）
+        itemResetButton = NineSliceButton(
+            fx + fw - 20, 20, 20, 20,
+            Text.literal("↺"),
+            { resetItemFilters() },
+            tooltip = Text.translatable("cobblemarket.gui.reset")
+        )
+        addDrawableChild(itemResetButton)
 
         // 分类（物品 tab 第二行）：显示当前分类名，点一下在下方展开**分类网格**（创造模式物品分类）
         categoryButton = NineSliceButton(
@@ -841,7 +878,7 @@ class AuctionScreen(
             // 物品 tab 那两枚也登记：那块面板**不滚动**，靠 switchTab 把 filterPanelScroll 清零
             // 来保证精灵 tab 的滚动偏移不会顶掉它们（不然切过去会被顶到面板外藏起来）
             // ⚠ 网格**格子**不登记 —— 它们每帧自己定位（见 applyFilterVisibility）
-            itemSortButton, categoryButton
+            itemSortButton, itemResetButton, categoryButton
         ).forEach { filterPanelControls += it to it.y }
         ivOpButtons.values.forEach { filterPanelControls += it to it.y }
         ivResetButtons.forEach { filterPanelControls += it to it.y }
@@ -888,6 +925,7 @@ class AuctionScreen(
         // 物品 tab 的面板：排序 + 分类（与上面那组互斥：同一块面板按 tab 二选一）
         val itemPanelOn = currentTab == 1 && filterExpanded && bidEntry == null && !animHidden
         itemSortButton?.visible = itemPanelOn
+        itemResetButton?.visible = itemPanelOn
         categoryButton?.visible = itemPanelOn
         // 分类网格的格子：只在网格展开时显示，且**只显示落在可视行里**的那几行（滚出去的、没点开的一律藏）。
         // ⚠ 每帧重定位 —— 窗口尺寸、面板展开状态变了都靠它兜住
@@ -1072,11 +1110,12 @@ class AuctionScreen(
         htFilter = 0
         // 排序也算「筛选态」的一部分（照精灵市场 resetFilters）——
         // 下面 clearChildren + init 会带着新状态重建两枚排序按钮，文案自动回到「最新」
+        // ⚠ 排序照旧清（它是**三 tab 通用**的同一个状态，且本面板自己就有一枚排序按钮 ⇒ 算"自己面板里的项"）
         sortMode = "NEWEST"
-        // 分类（物品 tab）同样归零：下面重建后按钮显示「不限」、网格收起
-        categoryFilter = null
-        categoryGridOpen = false
-        categoryScrollRow = 0
+        // ⚠ **不清「分类」**：那是**物品 tab 面板**里的筛选，本面板（精灵）没有这个控件 ——
+        //   跨 tab 替另一个面板重置，正是用户 2026-10-03 那条规矩的反面
+        //   （「物品 tab 的重置只重置物品的、别动精灵的」⇒ 对称地，精灵的重置也别动物品的）。
+        //   物品侧要清，去物品 tab 点它自己那枚 ↺
         filterListOpen = ""
         filterListScroll = 0
         filterListTopY = 0
