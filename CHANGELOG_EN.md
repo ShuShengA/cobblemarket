@@ -58,6 +58,8 @@
 
 - **Picking a Type filter left the list empty**: in the "Select Pokemon to Sell" and "Create Auction" screens, choosing any type from the right-hand filter panel left the list with no Pokemon at all, even when matches existed — and the button showed an internal name such as `fire` instead of the type's name. This is now fixed
 
+- **The hover label on our app icon inside the smartphone now reads correctly**: with Cobblemon Smartphone installed, hovering the Market icon on the phone (home screen, and the hide / reorder screen in Settings) used to show **"Pokémon"** (the Chinese client showed the Pokémon Market label) — a name borrowed from the Pokémon Market button on the entry screen, while the icon actually opens the **whole market entry**. It now reads **"Open CobbleMarket"**, matching how the phone's own apps are worded ("Open Pokémon Storage", "Open CobbleDollars Shop")
+
 ## 1.2.0 (in development, unreleased)
 
 ### New Feature
