@@ -127,6 +127,8 @@
 
 - **Part of the Pokemon icon was being cut off**: in the market list and the buy / bid dialogs, a Pokemon model would lose a chunk of itself (tails especially — Dracozolt is the clearest example), and in list rows it could visually merge with the icon in the row above. Fixed
 
+- **The buy dialog was too narrow and long tooltip lines spilled outside it**: English item tooltips are often a full sentence (Metal Coat's, for instance), and they were drawn past both edges of the dialog; it now sizes itself to the widest tooltip line
+
 ## 1.2.0 (in development, unreleased)
 
 ### New Feature
