@@ -1115,7 +1115,11 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         // 算到 ~194 宽，三个按钮就戳出左右边框（用户 2026-09-26 报「底部三个按钮超出左右弹窗」）。
         // 两按钮时跨度 170 ⇒ 半宽 85，与原先那个固定下限同值，行为不变。
         val buttonsHalfW = if (meowthAvailable(entry)) 124 else 85
-        val halfW = maxOf(buttonsHalfW, countLabelW - 80, totalLabelW - 80, itemNameW / 2)
+        // ⚠ **词条**是最容易漏的一项 —— 英文词条可长达一整句（如金属涂层那条），
+        //   之前没算它 ⇒ 长词条直接画出弹窗两侧（2026-10-03 用户报出）
+        val infoW = buyInfoLines(entry).take(MAX_INFO_ROWS).maxOfOrNull { textRenderer.getWidth(it) } ?: 0
+        // ⚠ 文字与词条已**居中**（2026-10-03 由「左对齐 centerX−80」改）⇒ 各项取**全宽的一半**（原先才要 −80）
+        val halfW = maxOf(buttonsHalfW, countLabelW / 2, totalLabelW / 2, itemNameW / 2, infoW / 2)
         val dialogW = (halfW * 2 + 24)
             .coerceAtMost(width - 40)
             // ⚠ 下限：按钮行本身**不能被屏幕钳制吃掉**，否则小窗口下三枚按钮又戳出弹窗
@@ -1162,14 +1166,17 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             context.drawCenteredTextWithShadow(textRenderer, line, centerX, L.infoTop + i * 10, 0xFFFFFF)
         }
 
-        context.drawTextWithShadow(textRenderer,
+        // ⚠ 两行都居中（2026-10-03 用户指出：原先与输入框一起左对齐于 centerX-80 ⇒ 整块偏左 30px）
+        context.drawCenteredTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.buy_count").string + "（" + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}）",
-            centerX - 80, L.labelY, 0xAAAAAA)
+            centerX, L.labelY, 0xAAAAAA)
         // 总价单位同样取这条挂单自己的币种（RP 挂单不会出现喵喵行，词条行数决定弹窗高度）
         // ⚠ 货币单位**不拼进文本** —— 补画在行尾（物品货币时是物品图标、RP 时是字形图标）
+        // ⚠ 居中：起点 = centerX − (词条宽 + 单位宽)/2（与上面 halfW 的 totalLabelW 同一套算法）
         val totalLine = Text.translatable("cobblemarket.item.buy_total").append(
             Text.literal("${com.shusheng.cobblemarket.client.formatPriceLong(buyTotal())} ").formatted(Formatting.GOLD))
-        val totalEndX = context.drawTextWithShadow(textRenderer, totalLine, centerX - 80, L.totalY, 0xFFFFFF)
+        val totalW = textRenderer.getWidth(totalLine) + currencyUnitWidth(textRenderer, entry.isPoints)
+        val totalEndX = context.drawTextWithShadow(textRenderer, totalLine, centerX - totalW / 2, L.totalY, 0xFFFFFF)
         drawCurrencyUnit(context, textRenderer, entry.isPoints, totalEndX, L.totalY, 0xFFAA00)
     }
 
