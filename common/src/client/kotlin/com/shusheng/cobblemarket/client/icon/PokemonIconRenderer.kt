@@ -102,6 +102,14 @@ object PokemonIconRenderer {
             }
             matrices.translate(x + size / 2.0, y + if (centerAnchorY) size / 2.0 else 1.0, 0.0)
             matrices.scale(size / 25f * 2.5f, size / 25f * 2.5f, 1f)
+            // ⚠ 照庆祝动画的做法（CardCelebrationAnimation.renderOverlay，2026-10-03）：
+            //   先 flush 已排队的 GUI、再清掉深度缓冲 —— 否则 3D 模型会被残留深度切掉一部分
+            //   （尾巴靠后的精灵如雷鸟龙最明显，切口是直线），行内还会与相邻行的模型互相遮挡。
+            context.draw()
+            com.mojang.blaze3d.systems.RenderSystem.clear(
+                org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT,
+                net.minecraft.client.MinecraftClient.IS_SYSTEM_MAC
+            )
             drawProfilePokemon(
                 renderablePokemon = renderable,
                 matrixStack = matrices,
@@ -115,6 +123,7 @@ object PokemonIconRenderer {
             )
             // 携带物：与 drawProfilePokemon 成对（它不画这个），详见 drawHeldItem 注释
             drawHeldItem(context, renderable.heldItem, state, matrices)
+            context.draw()
         } finally {
             if (scissor != null) {
                 context.disableScissor()

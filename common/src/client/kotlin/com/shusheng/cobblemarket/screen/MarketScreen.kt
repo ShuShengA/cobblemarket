@@ -2145,29 +2145,6 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         else PokemonCelebrationAnimation.Origin.ofIcon(
             x = iconX, y = iconY, size = iconSize, centerAnchorY = false
         )
-        confirmRenderable?.let { rp ->
-            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
-            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
-                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
-            // 弹窗图标原先没有裁剪，沿用 useScissor = false
-            PokemonIconRenderer.draw(
-                context = context,
-                renderable = rp,
-                state = confirmState.stateFor(rp),
-                x = iconX, y = iconY, size = iconSize,
-                delta = delta,
-                animate = useFloat,
-                useScissor = false
-            )
-            // 打开弹窗时自动叫一声（替玩家点一下这个图标）：**必须在渲染之后** ——
-            // addFirstAnimation 依赖 currentModel，那是 drawProfilePokemon 里才建好的；
-            // 再叠一层 AUTO_CRY_DELAY_MS 延迟，等弹窗稳定显示、玩家看清了再叫
-            if (confirmCryAt != 0L && System.currentTimeMillis() >= confirmCryAt) {
-                confirmCryAt = 0L
-                IconCryClick.play(confirmState.stateFor(rp), rp)
-            }
-        }
-
         // 完整信息行（与市场列表悬停 tooltip 结构一致）：名字★Lv / 类型 / 性格特性 / 携带物 / IV / 技能 / 证章 / 卖家 / 价格
         // 弹窗被屏幕压矮时**信息区可滚动**：只画可视区（scissor 裁剪），起始 y 减去滚动偏移
         // 与函数开头定宽用的是同一个名字文本（confirmName），别在这儿再拼一遍
@@ -2182,6 +2159,36 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             mouseX = mouseX, mouseY = mouseY
         )
         context.disableScissor()
+
+        // ⚠ 精灵 3D 模型画在**信息区 scissor 关闭之后**（2026-10-03）：
+        //   ⚠ 真正解决「模型缺一块 / 尾巴被切」的是 PokemonIconRenderer 里的**清深度缓冲**；
+        //     这里让模型在 scissor 之外绘制只是额外保险 —— 实测单独调顺序**并不能**解决问题，
+        //     别把它当成那个 bug 的修法。模型本就在最上层，放到这里不影响观感。
+        confirmRenderable?.let { rp ->
+            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
+            // 弹窗图标原先没有裁剪，沿用 useScissor = false
+            PokemonIconRenderer.draw(
+                context = context,
+                renderable = rp,
+                state = confirmState.stateFor(rp),
+                x = iconX, y = iconY, size = iconSize,
+                delta = delta,
+                animate = useFloat,
+                useScissor = false
+            )
+            // ⚠ 强制 flush（2026-10-03）：3D 模型的绘制会拖到帧末，而那时 scissor 可能已被
+            //   信息区的滚动裁剪改掉 ⇒ 模型被切掉一条直线。这里让它**立即**画出来。
+            context.draw()
+            // 打开弹窗时自动叫一声（替玩家点一下这个图标）：**必须在渲染之后** ——
+            // addFirstAnimation 依赖 currentModel，那是 drawProfilePokemon 里才建好的；
+            // 再叠一层 AUTO_CRY_DELAY_MS 延迟，等弹窗稳定显示、玩家看清了再叫
+            if (confirmCryAt != 0L && System.currentTimeMillis() >= confirmCryAt) {
+                confirmCryAt = 0L
+                IconCryClick.play(confirmState.stateFor(rp), rp)
+            }
+        }
         // ⚠ 二级窗要在一级窗（信息行）画完之后 —— 它盖在上面（自己抬 z=400）
         EntryBadgeRenderer.drawMarksMoreTooltip(context)
 

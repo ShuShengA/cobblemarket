@@ -89,6 +89,13 @@ object PokemonHoverPreview {
         matrices.push()
         try {
             matrices.translate(x.toDouble(), y.toDouble(), 0.0)
+            // ⚠ 与 PokemonIconRenderer 同款（2026-10-03）：先 flush 已排队的 GUI、再清深度缓冲 ——
+            //   否则大图会被上一次绘制残留的深度信息切掉一部分（尾巴靠后的精灵最明显，切口是直线）
+            context.draw()
+            com.mojang.blaze3d.systems.RenderSystem.clear(
+                org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT,
+                net.minecraft.client.MinecraftClient.IS_SYSTEM_MAC
+            )
             drawProfilePokemon(
                 renderablePokemon = renderable,
                 matrixStack = matrices,

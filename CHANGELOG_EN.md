@@ -125,6 +125,8 @@
 
 - **Picking a Type filter left the list empty**: in the "Select Pokemon to Sell" and "Create Auction" screens, choosing any type from the right-hand filter panel left the list with no Pokemon at all, even when matches existed — and the button showed an internal name such as `fire` instead of the type's name. This is now fixed
 
+- **Part of the Pokemon icon was being cut off**: in the market list and the buy / bid dialogs, a Pokemon model would lose a chunk of itself (tails especially — Dracozolt is the clearest example), and in list rows it could visually merge with the icon in the row above. Fixed
+
 ## 1.2.0 (in development, unreleased)
 
 ### New Feature
