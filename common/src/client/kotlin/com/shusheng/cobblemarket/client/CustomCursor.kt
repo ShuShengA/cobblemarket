@@ -21,10 +21,21 @@ object CustomCursor {
     /** 源图边长（是张方图） */
     private const val SRC_SIZE = 128
 
-    /** 显示边长（像素）：源图缩放后画多大。
+    /** 显示边长 —— **物理像素**（⚠ 不是逻辑像素，所以它不随任何「界面尺寸」变化）。
+     *
      *  源图是满幅的（图形铺满整张 128×128，不像系统箭头那样四周留白），所以同样尺寸下视觉上会大一圈，
-     *  取值要比系统光标保守——16 是试出来的观感，嫌大/嫌小直接调这个数。 */
-    private const val DISPLAY_SIZE = 12f
+     *  取值要比系统光标保守。**嫌大/嫌小直接调这个数**（它就是屏幕上的实际像素数）。
+     *
+     *  ⚠ 用户 2026-10-04 定：**定死**，既不跟随游戏的「界面尺寸」、也不跟随本模组界面的档位。
+     *  原先它是按**逻辑像素**定的（12）⇒ 会被原版倍数放大：玩家把游戏「界面尺寸」调大，
+     *  或者用「自动」在大屏上（自动档会算到 4~5），光标就跟着变粗，与我们的界面档位脱节
+     *  （用户原话：「我们鼠标图标本来就比 window 的大一些，如果再跟随游戏尺寸放大，就很大了」）。
+     *  改成物理像素后，不管玩家怎么设界面尺寸，光标在屏幕上的粗细都恒定、可预期。
+     *
+     *  ⚠ 取 **36** = 12（原逻辑边长）× 3（用户习惯的游戏「界面尺寸」）—— 也就是**他改动前看到的大小**，
+     *  所以他这边逐像素无变化。⚠ **有意破例**：游戏尺寸不是 3 的玩家（如 2K 屏自动档算出 4~5）
+     *  会看到光标比改动前**小**一些；这与「跟随原版 = 逐像素一致」那条判据在**光标**这一项上是有意破的。 */
+    private const val DISPLAY_PHYSICAL_SIZE = 36f
 
     /** 热点：源图里「真正被点击的那个点」的像素坐标。
      *  自绘时把它对准鼠标坐标，否则会出现「明明指着按钮却点不中」的偏移感。
@@ -60,7 +71,7 @@ object CustomCursor {
         if (ClientConfig.customCursor && isMarketScreen(screen) && isWindowHovered(client)) {
             hiddenByUs = true
             setGlfwCursor(client, GLFW.GLFW_CURSOR_HIDDEN)
-            draw(context, mouseX, mouseY)
+            draw(context, mouseX, mouseY, client)
         } else if (hiddenByUs) {
             hiddenByUs = false
             setGlfwCursor(
@@ -93,8 +104,11 @@ object CustomCursor {
         GLFW.glfwSetInputMode(client.window.handle, GLFW.GLFW_CURSOR, mode)
     }
 
-    private fun draw(context: DrawContext, mouseX: Int, mouseY: Int) {
-        val scale = DISPLAY_SIZE / SRC_SIZE
+    private fun draw(context: DrawContext, mouseX: Int, mouseY: Int, client: MinecraftClient) {
+        // 物理像素 → 逻辑像素：画多粗由 DISPLAY_PHYSICAL_SIZE 按**物理像素**定死，
+        // 而绘制走的是逻辑坐标系 ⇒ 除掉原版倍数换算过去（玩家改游戏「界面尺寸」时光标粗细不变）
+        val logicalSize = DISPLAY_PHYSICAL_SIZE / client.window.scaleFactor.toFloat()
+        val scale = logicalSize / SRC_SIZE
         val matrices = context.matrices
         matrices.push()
         // 热点对准鼠标坐标；z 拉高，保证盖在所有界面内容之上

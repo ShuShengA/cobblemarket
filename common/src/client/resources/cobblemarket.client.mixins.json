@@ -3,6 +3,8 @@
   "package": "com.shusheng.cobblemarket.mixin.client",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "DrawContextMixin",
+    "MouseMixin",
     "ScreenMixin"
   ],
   "injectors": {

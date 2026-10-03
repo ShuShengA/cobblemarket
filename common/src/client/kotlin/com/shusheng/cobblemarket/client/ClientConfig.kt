@@ -32,6 +32,35 @@ enum class BalanceHudMode {
     OFF
 }
 
+/**
+ * 本模组界面的尺寸档位（个人设置，设置弹窗循环：跟随原版 → 1 → 2 → 3 → 4 → 5 → 跟随原版）。
+ *
+ * 原版「界面尺寸」是**全局**的，而我们 35 个界面都是按 3 档（1080p = 逻辑 640×360）设计的
+ * ⇒ 默认的「自动」档在小窗口/大屏幕上会把界面压扁。【s1】..【s5】就是只在我们自己的界面内
+ * 生效的固定档位（口径与原版一致：档位 N ⇒ 逻辑屏 = 窗口物理宽 ÷ N）。
+ */
+enum class GuiScaleMode {
+    /** 跟随原版：界面完全按原版全局倍数渲染（与没有这个功能时逐像素一致）—— 也是 4K / 视力需求的退路 */
+    VANILLA,
+    S1,
+    S2,
+    S3,
+    S4,
+    S5;
+
+    /** 实际档位：0 = 跟随原版（调用方据此**整段短路**，不做任何缩放），1..5 = 固定档位 */
+    val scale: Int get() = ordinal
+
+    companion object {
+        /** 默认档位 = 3（我们界面的设计基准；老配置无此字段时也落这里） */
+        val DEFAULT = S3
+
+        /** 按存盘序号还原，越界/非法值落默认（数据层容错铁律） */
+        fun fromOrdinal(v: Int?): GuiScaleMode =
+            entries.getOrElse(v ?: DEFAULT.ordinal) { DEFAULT }
+    }
+}
+
 object ClientConfig {
     private val gson = GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create()
     private val configFile: File
@@ -75,6 +104,10 @@ object ClientConfig {
 
     /** 精灵图标展示模式（个人设置，设置弹窗两态循环）：STATIC 静态 / FLOAT 动态（默认） */
     var iconAnimMode: IconAnimMode = IconAnimMode.FLOAT
+        private set
+
+    /** 本模组界面的尺寸档位（个人设置，设置弹窗六态循环；见 [GuiScaleMode]）。默认 3 = 我们的设计基准 */
+    var guiScaleMode: GuiScaleMode = GuiScaleMode.DEFAULT
         private set
 
     /** 悬停精灵行时，在屏幕左侧显示该精灵的放大预览（个人设置，设置弹窗开关，默认开） */
@@ -132,6 +165,8 @@ object ClientConfig {
             }
             // 只有显式存过 0（静态）才保持静态；无字段（旧版本升级）、1（浮动）、2（已砍掉的完整动画占位）一律按新默认浮动
             iconAnimMode = if (data["iconAnimMode"] as? Double == 0.0) IconAnimMode.STATIC else IconAnimMode.FLOAT
+            // 界面尺寸档位：无字段（旧版本升级）落默认 3；越界/非法值同样落默认
+            guiScaleMode = GuiScaleMode.fromOrdinal((data["guiScaleMode"] as? Double)?.toInt())
             // 无字段（旧版本升级）按新默认「开」
             hoverPreview = data["hoverPreview"] as? Boolean ?: true
             // 物品侧独立开关：无字段（旧版本升级）同样按新默认「开」
@@ -219,6 +254,20 @@ object ClientConfig {
         return iconAnimMode
     }
 
+    /** 六态循环：跟随原版 → 1 → 2 → 3 → 4 → 5 → 跟随原版 */
+    fun cycleGuiScaleMode(): GuiScaleMode {
+        guiScaleMode = when (guiScaleMode) {
+            GuiScaleMode.VANILLA -> GuiScaleMode.S1
+            GuiScaleMode.S1 -> GuiScaleMode.S2
+            GuiScaleMode.S2 -> GuiScaleMode.S3
+            GuiScaleMode.S3 -> GuiScaleMode.S4
+            GuiScaleMode.S4 -> GuiScaleMode.S5
+            GuiScaleMode.S5 -> GuiScaleMode.VANILLA
+        }
+        save()
+        return guiScaleMode
+    }
+
     /** 保存余额 HUD 位置（归一化坐标，越界自动钳制）：位置编辑界面点「确定」时调用 */
     fun setBalanceHudPosition(x: Float, y: Float) {
         balanceHudX = x.coerceIn(0f, 1f)
@@ -259,6 +308,7 @@ object ClientConfig {
                             "groudonFly" to "据说固拉多一生都在寻找这个按钮：开启后固拉多在精灵市场/上架选择界面穿梭飞行 / It is said Groudon spends its whole life looking for this button: when on, Groudon flies across the pokemon market and sell-select screens",
                             "balanceHudMode" to "余额 HUD 显示模式：0=一直显示（默认），1=余额变动时显示 5 秒，2=关闭；可在市场入口界面右下角的设置里改 / Balance HUD mode: 0=always show (default), 1=show 5 seconds when the balance changes, 2=off; editable via the gear button on the market entry screen",
                             "iconAnimMode" to "精灵图标展示模式：0=完全静态，1=动态（默认，播放 Cobblemon 内置待机动画）；可在市场入口界面右下角的设置里改 / Pokemon icon mode: 0=static, 1=dynamic (default, plays Cobblemon's built-in idle animation); editable via the gear button on the market entry screen",
+                            "guiScaleMode" to "本模组界面的尺寸档位：0=跟随原版（与本模组所有界面的尺寸都不受影响），1~5=固定档位（口径同原版「界面尺寸」：档位 N ⇒ 界面按「窗口物理宽 ÷ N」排布，只影响本模组的界面，聊天框/其他模组界面不受影响），默认 3；可在市场入口界面右下角的设置里改。⚠ 屏幕越大，固定档位下本模组界面占屏比例越小，4K 玩家建议改回 0 / GUI scale of this mod's screens: 0=follow vanilla (this mod's screens are completely unaffected), 1~5=fixed scale (same meaning as vanilla's GUI Scale: scale N lays out the screen as if the window were N× smaller; only affects this mod's screens — the chat, toasts and other mods' screens are unaffected), default 3; editable via the gear button on the market entry screen. Note: on larger monitors a fixed scale makes this mod's screens occupy proportionally less of the screen — 4K players may prefer 0",
                             "hoverPreview" to "悬停精灵行时在屏幕左侧显示该精灵的放大预览（个人设置，可在市场入口界面右下角的设置里改）/ Show a large preview of the Pokemon on the left side of the screen when hovering its row (personal setting, editable via the gear button on the market entry screen)",
                             "hoverPreviewItem" to "悬停物品格时在屏幕左侧显示该物品的放大预览（个人设置，与精灵侧各自独立，同上）/ Show a large preview of the item on the left side of the screen when hovering its slot (personal setting, independent from the Pokemon side, same place)",
                             "customCursor" to "在本模组的界面里用模组自带的图标代替系统鼠标箭头（个人设置，默认开启；用系统光标主题的玩家可关掉）/ Replace the system mouse arrow with the mod's own icon while in this mod's screens (personal setting, on by default; turn off if you use a custom system cursor theme)",
@@ -277,6 +327,7 @@ object ClientConfig {
                         "groudonFly" to groudonFly,
                         "balanceHudMode" to balanceHudMode.ordinal,
                         "iconAnimMode" to iconAnimMode.ordinal,
+                        "guiScaleMode" to guiScaleMode.ordinal,
                         "hoverPreview" to hoverPreview,
                         "hoverPreviewItem" to hoverPreviewItem,
                         "customCursor" to customCursor,

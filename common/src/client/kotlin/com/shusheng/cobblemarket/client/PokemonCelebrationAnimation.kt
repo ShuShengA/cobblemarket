@@ -112,9 +112,21 @@ object PokemonCelebrationAnimation {
     private var pendingOriginAt = 0L
     private const val PENDING_ORIGIN_TTL_MS = 3_000L
 
-    /** 界面在关闭前登记起飞起点 —— 弹窗一关那个图标就不在了，坐标必须提前抓下来 */
+    /** 界面在关闭前登记起飞起点 —— 弹窗一关那个图标就不在了，坐标必须提前抓下来。
+     *
+     *  ⚠ **这里就把坐标换算成屏幕坐标**：起点取自**界面**（购买/结算弹窗里的精灵图标，虚拟坐标），
+     *  而本动画画在缩放矩阵**之外**（落点按 `window.scaledWidth` 算屏幕中心，是整个屏幕层的特效）⇒
+     *  两者不在同一坐标系。不换算的话界面**被放大**时起点会偏到屏幕左上角外
+     *  （用户 2026-10-04 实测：档位 5 / 游戏尺寸 3，精灵从左上角飞出来）；被缩小时则偏向右下。
+     *  ⚠ 收在这一处最保险：起点可能来自任何界面，逐个改调用点必漏。 */
     fun setPendingOrigin(origin: Origin?) {
-        pendingOrigin = origin
+        pendingOrigin = origin?.let { o ->
+            val screen = MinecraftClient.getInstance().currentScreen
+            if (screen == null) o else {
+                val factor = GuiScale.factorFor(screen)
+                if (factor == 1f) o else Origin(o.x * factor, o.y * factor, o.scale * factor)
+            }
+        }
         pendingOriginAt = System.currentTimeMillis()
     }
 
