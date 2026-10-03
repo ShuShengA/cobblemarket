@@ -185,25 +185,9 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
             Text.translatable("cobblemarket.buy_confirm.title").formatted(Formatting.GOLD),
             centerX, 14, 0xFFFFFF)
 
-        // 3D icon
+        // 3D icon（尺寸与位置不变；**实际绘制挪到信息区 scissor 关闭之后**，见下方）
         val iconSize = 30
         val iconY = 26
-        renderable?.let { rp ->
-            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
-            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
-                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
-            // 整屏页原先既无裁剪、纵向锚点也取矩形中心（其余界面是 +1），两处都照旧保留
-            PokemonIconRenderer.draw(
-                context = context,
-                renderable = rp,
-                state = state.stateFor(rp),
-                x = centerX - iconSize / 2, y = iconY, size = iconSize,
-                delta = delta,
-                animate = useFloat,
-                useScissor = false,
-                centerAnchorY = true
-            )
-        }
 
         val infoY = iconY + iconSize + 8
 
@@ -223,6 +207,30 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
         )
         EntryBadgeRenderer.drawMarksMoreTooltip(context)
         context.disableScissor()
+
+        // ⚠ 精灵 3D 模型画在**信息区 scissor 关闭之后**（2026-10-03）：
+        //   ⚠ 真正解决「模型缺一块 / 尾巴被切」的是 PokemonIconRenderer 里的**清深度缓冲**；
+        //     这里让模型在 scissor 之外绘制只是额外保险 —— 实测单独调顺序**并不能**解决问题，
+        //     别把它当成那个 bug 的修法。模型本就在最上层，放到这里不影响观感。
+        renderable?.let { rp ->
+            // 动态模式：drawProfilePokemon 内部自会推进 FloatingState（与队伍界面同款），这里只控制是否传 delta；静态保持 0
+            val useFloat = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode ==
+                com.shusheng.cobblemarket.client.IconAnimMode.FLOAT
+            // 整屏页原先既无裁剪、纵向锚点也取矩形中心（其余界面是 +1），两处都照旧保留
+            PokemonIconRenderer.draw(
+                context = context,
+                renderable = rp,
+                state = state.stateFor(rp),
+                x = centerX - iconSize / 2, y = iconY, size = iconSize,
+                delta = delta,
+                animate = useFloat,
+                useScissor = false,
+                centerAnchorY = true
+            )
+            // ⚠ 强制 flush（2026-10-03）：3D 模型的绘制会拖到帧末，而那时 scissor 可能已被
+            //   信息区的滚动裁剪改掉 ⇒ 模型被切掉一条直线。这里让它**立即**画出来。
+            context.draw()
+        }
     }
 
     /** 信息区内容高（设计值，与 init 里那套算法同源） */
