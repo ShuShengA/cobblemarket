@@ -822,6 +822,7 @@
   "cobblemarket.gui.too_fast": "Too fast — please wait a moment",
   "cobblemarket.gui.search_placeholder": "Pokémon/player...",
   "cobblemarket.gui.sort": "Sort: %s",
+  "cobblemarket.item.category": "Category: %s",
   "cobblemarket.gui.prev": "< Prev",
   "cobblemarket.gui.next": "Next >",
   "cobblemarket.gui.species_prev": "Previous matching Pokémon",
@@ -881,6 +882,7 @@
   "cobblemarket.sort.level_asc": "Level ↑",
   "cobblemarket.sort.level_desc": "Level ↓",
   "cobblemarket.sort.newest": "Newest",
+  "cobblemarket.sort.ending_soon": "Ends soon",
 
   "cobblemarket.cmd.listed": "Listed %s (Lv.%d) for %s!",
   "cobblemarket.cmd.listed_fee": "Listed %s (Lv.%d) for %s! Fee of %s charged.",
