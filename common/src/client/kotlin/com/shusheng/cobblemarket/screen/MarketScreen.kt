@@ -1278,8 +1278,14 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         requestFilterRefresh()
     }
 
+    /**
+     * 面板里那枚 ↺ 重置。
+     *
+     * ⚠ **只清筛选项，不碰搜索框**（用户 2026-10-03 定：「重置在筛选里，清理的是筛选项」）——
+     *   搜索词是玩家自己敲的、不是面板里的开关；原先这里第一行就是 `searchField?.text = ""`，
+     *   一并清掉会让人以为"点了重置、结果连我搜的东西也没了"。要与其余界面保持同一口径。
+     */
     private fun resetFilters() {
-        searchField?.text = ""
         shinyOnly = false
         showMineOnly = false
         genderFilter = ""

@@ -90,6 +90,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private var sellAddButton: NineSliceButton? = null
     private var sortButton: NineSliceButton? = null
     private var mineButton: NineSliceButton? = null
+    /** 面板第一行右侧那枚 ↺：只重置**这块面板里**的筛选项（排序 / 我的 / 分类） */
+    private var resetButton: NineSliceButton? = null
     private var prevButton: NineSliceButton? = null
     private var nextButton: NineSliceButton? = null
 
@@ -270,13 +272,23 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         val fx = MarketPanelBackground.filterLeft(width) + 4
         val fw = filterPanelBtnW()
 
-        // 排序（整行，点一下循环：价格↑ → 价格↓ → 最新；逻辑照旧，只是从顶栏搬进面板）
+        // 排序（整行左边，点一下循环：价格↑ → 价格↓ → 最新）+ 重置 ↺（右侧 20 宽，照精灵市场那一行）
+        // ⚠ 排序让出 24px 给 ↺（fw - 24 = 128；英文最长的 "Sort: Price ↓" ≈ 66px，够放）
         sortButton = NineSliceButton(
-            fx, 20, fw, 20,
+            fx, 20, fw - 24, 20,
             Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay())),
             { cycleSort() }
         )
         addDrawableChild(sortButton)
+
+        // 重置 ↺：**只重置这块面板里的筛选项**（排序 / 我的 / 分类）—— 不碰搜索框
+        resetButton = NineSliceButton(
+            fx + fw - 20, 20, 20, 20,
+            Text.literal("↺"),
+            { resetItemFilters() },
+            tooltip = Text.translatable("cobblemarket.gui.reset")
+        )
+        addDrawableChild(resetButton)
 
         // 我的（personal/personal_click 双图标：关 = 全部，开 = 仅我的；悬停词条随状态）
         // 搬进面板后占满整行（原来在顶栏只占 18 宽的纯图标位）
@@ -284,8 +296,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             fx, 44, fw, 20,
             Text.literal(""),
             { toggleMineOnly() },
-            iconLeft = Identifier.of("cobblemarket",
-                if (showMineOnly) "textures/gui/button/personal_click.png" else "textures/gui/button/personal.png"),
+            iconLeft = mineIcon(showMineOnly),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")
         )
@@ -457,15 +468,45 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         requestFilterRefresh()
     }
 
-    private fun toggleMineOnly() {
-        showMineOnly = !showMineOnly
-        mineButton?.iconLeft = Identifier.of("cobblemarket",
-            if (showMineOnly) "textures/gui/button/personal_click.png" else "textures/gui/button/personal.png")
+    /**
+     * 「我的」按钮的开/关图标 —— ⚠ **贴图路径只此一处**：1.2.x 在 `gui/` 下、1.3.x 在 `gui/button/` 下，
+     * 上浮时改这一个串就够（原先 init 与 toggle 里各写一份，加重置就成了三处）。
+     */
+    private fun mineIcon(on: Boolean) = Identifier.of("cobblemarket",
+        if (on) "textures/gui/button/personal_click.png" else "textures/gui/button/personal.png")
+
+    /** 把「我的」按钮的外观刷成当前状态（图标 / 悬停词条 / 选中态）—— 开关与重置共用 */
+    private fun updateMineButton() {
+        mineButton?.iconLeft = mineIcon(showMineOnly)
         mineButton?.setTooltip(Tooltip.of(Text.translatable(if (showMineOnly) "cobblemarket.gui.mine_active" else "cobblemarket.gui.mine")))
         // 「我的」是个**开关**：开启时除换图标，按钮也给选中态（照手持物品那几个开关）
         mineButton?.selectedVisual = showMineOnly
+    }
+
+    private fun toggleMineOnly() {
+        showMineOnly = !showMineOnly
+        updateMineButton()
         currentPage = 1
         requestFilterRefresh()
+    }
+
+    /**
+     * 面板第一行那枚 ↺：**只重置这块面板里的筛选项** —— 排序回「最新」、我的关掉、分类回「不限」。
+     * ⚠ 不碰**搜索框**（搜索词是玩家自己敲的，不属于"筛选面板的开关"）。
+     * ⚠ **分类网格保持展开、滚动位置也不动**（用户 2026-10-03 要求：别"主动"把展开的收起来 ——
+     *   与"选中一格也不收"同一条口径）。
+     */
+    private fun resetItemFilters() {
+        sortMode = "NEWEST"
+        showMineOnly = false
+        categoryFilter = null
+        sortButton?.message = Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay()))
+        updateMineButton()
+        categoryButton?.message = categoryButtonText()
+        categoryButton?.setTooltip(Tooltip.of(categoryFullText()))
+        currentPage = 1
+        requestFilterRefresh()
+        updateControlVisibility()
     }
 
     // ── 右侧筛选面板（照精灵市场：内容定高、展开动画、开关只切可见性）──
@@ -766,7 +807,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         val panelVisible = filterExpanded && !filterAnim.isActive() && !open
         // ⚠ 面板内控件是**常驻创建**的：面板收起 / 动画中 / 弹窗打开时都要藏。
         //   这里是一个个点名的写法 —— 往面板里加控件必须补进这份名单（漏了不报错，只是它挂在屏幕上）
-        listOf(sortButton, mineButton, categoryButton).forEach { it?.visible = panelVisible }
+        listOf(sortButton, resetButton, mineButton, categoryButton).forEach { it?.visible = panelVisible }
         // 分类网格：只在网格展开时显示，且**只显示落在可视行里**的那几行（滚出去的、没点开的一律藏）。
         // ⚠ 每帧重定位（不只在滚动时）—— 窗口尺寸、面板展开状态变了都靠它兜住
         val gridOn = gridShown()
@@ -1083,6 +1124,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         // 面板内两枚也一并收掉（面板收起时它们本来就是 hidden，这里 `visible=true` 不会让它们冒出来：
         // render 开头的 updateControlVisibility 每帧按 filterExpanded 重设）
         sortButton?.visible = visible
+        resetButton?.visible = visible
         mineButton?.visible = visible
         prevButton?.visible = visible
         nextButton?.visible = visible
