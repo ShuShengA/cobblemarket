@@ -11,7 +11,9 @@ object OpenMarketAction : SmartphoneAction {
     override val id = "cobblemarket:market"
     override val texture = Identifier.of("cobblemarket", "textures/gui/button/market.png")
     override val hoverTexture = Identifier.of("cobblemarket", "textures/gui/button/market_hover.png")
-    override val displayName: Text get() = Text.translatable("cobblemarket.entry.pokemon")
+    // 手机界面悬停图标的 tooltip：对齐 smartphone 内置 app 的「打开 XXX」写法
+    // （曾误借用入口界面「精灵市场」按钮的译名，英文显示成 Pokémon —— 而且点开的是整个入口界面，不是精灵市场）
+    override val displayName: Text get() = Text.translatable("cobblemarket.smartphone.open_market")
 
     override fun onClick() {
         CobbleMarketClient.playEntrySound()

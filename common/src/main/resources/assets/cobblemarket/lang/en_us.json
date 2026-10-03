@@ -1252,5 +1252,6 @@
   "cobblemarket.gated_form.item.4": "Add-ons treat \"it already is that form\" as fact — it cannot be undone",
   "cobblemarket.gated_form.outro": "Only list it this way if you really want players to get the form directly. Otherwise list the normal form and let players transform it themselves.",
   "cobblemarket.gated_form.button_tip": "Some forms need a prerequisite\nClick for details",
-  "cobblemarket.gated_form.button_icon": "⚠"
+  "cobblemarket.gated_form.button_icon": "⚠",
+  "cobblemarket.smartphone.open_market": "Open CobbleMarket"
 }
