@@ -252,7 +252,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             Text.literal(""),
             { toggleFilters() },
             iconLeft = Identifier.of("cobblemarket",
-                if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png"),
+                if (filterExpanded) "textures/gui/button/filter.png" else "textures/gui/button/filter_close.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f
         ).also {
             it.setTooltip(Tooltip.of(Text.translatable(
@@ -579,7 +579,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private fun updateFilterToggleButton() {
         val btn = filterToggleButton ?: return
         btn.iconLeft = Identifier.of("cobblemarket",
-            if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png")
+            if (filterExpanded) "textures/gui/button/filter.png" else "textures/gui/button/filter_close.png")
         btn.setTooltip(Tooltip.of(Text.translatable(
             if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand")))
         btn.selectedVisual = filterExpanded
