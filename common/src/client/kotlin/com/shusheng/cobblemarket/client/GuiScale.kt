@@ -1,6 +1,5 @@
 package com.shusheng.cobblemarket.client
 
-import com.shusheng.cobblemarket.screen.MarketScreen
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
@@ -39,13 +38,34 @@ import net.minecraft.client.gui.screen.Screen
  */
 object GuiScale {
     /**
-     * 参与缩放的界面。
+     * 参与缩放的界面（**分批铺开** —— 见 `docs/gui_scale.md` 第八节）。
      *
-     * ⚠ **步骤 2 = 白名单只放精灵市场**（缩小爆炸半径，见 `docs/gui_scale.md` 第八节）；
-     * 步骤 4 铺开时把这里换成 `screen.javaClass.name.startsWith("com.shusheng.cobblemarket.screen.")`
+     * ⚠ 用**类名字符串**而不是 `screen is XxxScreen`：一是免掉十几个 import，二是加界面只动这一个集合。
+     * ⚠ 最终（第 3 批）整体换成 `screen.javaClass.name.startsWith("com.shusheng.cobblemarket.screen.")`
      * —— **只改这一处**，35 屏一屏不用动。
+     *
+     * 分批理由：静态审计看不到"运行时才暴露"的坑（本功能 15 条坑里有 5 条是那么来的）⇒
+     * 每批只放一类界面，出问题时范围小、好定位。
      */
-    fun isTarget(screen: Screen): Boolean = screen is MarketScreen
+    private val TARGETS = setOf(
+        "MarketScreen",              // 步骤 2：首屏（列表 + 右侧面板 + 展开浮层 + 3D 图标 + scissor）
+        // ── 第 1 批：纯列表 / 表单型（无弹窗、无自绘特效）──
+        "AdminBanScreen",
+        "AdminItemScreen",
+        "DepositScreen",
+        "LoanScreen",
+        "LoanHistoryScreen",
+        "HistoryScreen",
+        "ItemReturnScreen",
+        "PokemonReturnScreen",
+        "ItemSellScreen",
+        // ⚠ 特意**不**放 `BalanceHudPositionScreen`：它是**全屏 HUD 的位置编辑器** ——
+        //   HUD 由 ScreenMixin 画在缩放矩阵**之外**（屏幕坐标系），而该界面的 posX/posY/width
+        //   全在**虚拟坐标系** ⇒ 判定框与 HUD 各在一处，表现成"只有中心一小块能拖"（2026-10-04 实测）。
+        //   ⇒ **凡是"编辑全屏元素位置/尺寸"的界面都别放进白名单**（它的坐标必须与那个全屏元素同系）。
+    )
+
+    fun isTarget(screen: Screen): Boolean = screen.javaClass.simpleName in TARGETS
 
     /**
      * 本界面该用的档位：**0 = 不缩放**（跟随原版 / 非目标界面 / 未选择）。
