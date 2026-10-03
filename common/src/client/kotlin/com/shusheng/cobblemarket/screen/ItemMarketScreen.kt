@@ -36,6 +36,7 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 import java.util.UUID
 import com.shusheng.cobblemarket.client.drawItemWithBar
+import com.shusheng.cobblemarket.client.FilterPanelAnimation
 import com.shusheng.cobblemarket.client.ItemCelebrationAnimation
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.currencyUnitWidth
@@ -46,6 +47,22 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private val panelWidth = 296
     private val slotSize = 36
     private val gap = 4
+
+    /**
+     * 筛选面板的**内容高度**（照精灵市场：由内容定，不跟随主面板铺到屏幕底边）。
+     * 面板顶 y=2，三行按钮：排序 y=20 / 我的 y=44 / 分类 y=68，各高 20 ⇒ 末行底 88
+     * ⇒ 内容 86 + 底部留白 10 = 96（精灵市场同口径：末行底 310 → 高 318）。
+     * ⚠ 往面板里加控件要同步改它，否则新控件会掉出面板背景。
+     * ⚠ 展开**分类网格**时面板还要往下长 —— 高度一律走 [filterPanelHeight]，别读这个常量。
+     */
+    private val FILTER_PANEL_HEIGHT = 96
+
+    /** 「分类」按钮所在行的 y（面板第三行）；分类网格就挂在它下方 */
+    private val CATEGORY_BTN_Y = 68
+
+    /** 分类网格：4 列、格间距 2px（格子边长按面板内容宽反算，窄屏自动变小） */
+    private val GRID_COLS = 4
+    private val GRID_GAP = 2
 
     private var entries = listOf<ItemEntry>()
     private var currentPage = 1
@@ -75,6 +92,31 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private var mineButton: NineSliceButton? = null
     private var prevButton: NineSliceButton? = null
     private var nextButton: NineSliceButton? = null
+
+    // ── 筛选展开（右侧独立面板，照精灵市场）：开关按钮 + 面板开关动画 ──
+    // ⚠ 开关**只切可见性、不重建界面**（照精灵市场）：重建会把搜索词、翻页状态一并丢掉；
+    //   代价是开关按钮**自己**的图标 / 选中态 / 悬停提示要手动更一次（见 updateFilterToggleButton）
+    private var filterToggleButton: NineSliceButton? = null
+    private var filterExpanded = false
+    private val filterAnim = FilterPanelAnimation()
+
+    // ── 分类筛选（创造模式物品分类，2026-10-03）──────────────────────────────────
+    /**
+     * 当前选中的分类（null = 不限）。
+     * ⚠ 发请求时**只发这个分类 ID**，分类里有哪些物品由**服务端**自己算 —— 一个分类几百上千个物品，
+     *   走不了客户端算 ID 列表那条路（`MAX_ITEM_IDS` 只有 256）。见 `util/ItemCategoryIndex`。
+     */
+    private var categoryFilter: Identifier? = null
+    /** 分类网格是否展开（面板第三行那枚「分类」按钮点开） */
+    private var categoryGridOpen = false
+    /** 网格的**行**滚动 —— 整行滚，保证格子永远对齐（分类多到一屏铺不下时才用得上） */
+    private var categoryScrollRow = 0
+    private var categoryButton: NineSliceButton? = null
+    /**
+     * 网格格子按钮：第 0 个是「不限」，其后与 `ItemCategories.all()` 一一对应。
+     * 常驻创建（分类在注册表冻结后就是固定的），开关 / 滚动只改位置与可见性。
+     */
+    private val categoryButtons = mutableListOf<NineSliceButton>()
 
     private var hoveredSlot = -1
     // 物品栈解析缓存：itemNbt → ItemStack 反序列化只在收到市场数据时做一次，
@@ -177,9 +219,12 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             addDrawableChild(it)
         }
 
-        // 搜索框
+        // 搜索框：宽度 = 面板 − 4（左右边距）− 50（小手）− 2 − 2（两侧间隔）− 50（筛选展开）
+        // （照精灵市场算式 panelWidth - 108：顶栏三件套「搜索框 | 小手 | 筛选展开」，小手与筛选同宽 50；
+        //   2026-10-03 用户要求向精灵市场看齐，排序与「我的」搬进筛选面板）
+
         val savedSearch = searchField?.text ?: ""
-        searchField = TextFieldWidget(textRenderer, leftX + 2, 44, 132, 16, Text.translatable("cobblemarket.item.search"))
+        searchField = TextFieldWidget(textRenderer, leftX + 2, 44, panelWidth - 108, 16, Text.translatable("cobblemarket.item.search"))
         searchField?.setPlaceholder(Text.translatable("cobblemarket.item.search").formatted(Formatting.GRAY))
         // 服务端搜索：文字变化只标记 dirty，tick 防抖后回到第一页重新拉取（与精灵市场一致）
         searchField?.setChangedListener { _ ->
@@ -190,10 +235,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         addDrawableChild(searchField)
         searchField?.text = savedSearch
 
-        // 上架按钮（choose 图标）：宽 50，与「我的」对调宽度（2026-09-21 用户拍板：
-        // 「我的」只是个图标、用不到 50 宽，腾给小手更好点）
+        // 上架按钮（choose 图标）：宽 50，紧贴搜索框右侧（宽度同精灵市场那枚小手）
         sellAddButton = NineSliceButton(
-            leftX + 136, 44, 50, 16,
+            leftX + panelWidth - 104, 44, 50, 16,
             Text.literal(""), { openItemSellScreen() },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/button/choose.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
@@ -202,18 +246,42 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         )
         addDrawableChild(sellAddButton)
 
-        // 排序按钮
+        // 筛选展开/收起按钮（顶栏最右，照精灵市场）：去文字化——展开显示 filter、收起显示 filter_close
+        filterToggleButton = NineSliceButton(
+            leftX + panelWidth - 52, 44, 50, 16,
+            Text.literal(""),
+            { toggleFilters() },
+            iconLeft = Identifier.of("cobblemarket",
+                if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+        ).also {
+            it.setTooltip(Tooltip.of(Text.translatable(
+                if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand")))
+            // 面板展开期间按钮保持**选中态**（按钮背景第三态，见 NineSliceButton.selectedVisual）——
+            // 一眼看出面板当前是开着还是关着（resize 重建时按当前状态设一次）
+            it.selectedVisual = filterExpanded
+        }
+        addDrawableChild(filterToggleButton)
+
+        // ── 以下两枚是**右侧筛选面板**内的控件（**常驻创建**，开关只切可见性）──────────────
+        // ⚠ 别用 `if (filterExpanded)` 把它们包起来：那会让开关走"重建界面"的老路，
+        //   把搜索词与翻页状态一并丢掉。面板是独立的一块，开关只该影响它自己
+        //   （见 updateControlVisibility 的 filterExpanded）。
+        val fx = MarketPanelBackground.filterLeft(width) + 4
+        val fw = filterPanelBtnW()
+
+        // 排序（整行，点一下循环：价格↑ → 价格↓ → 最新；逻辑照旧，只是从顶栏搬进面板）
         sortButton = NineSliceButton(
-            leftX + panelWidth - 88, 44, 86, 16,
+            fx, 20, fw, 20,
             Text.translatable("cobblemarket.gui.sort", Text.translatable(sortDisplay())),
             { cycleSort() }
         )
         addDrawableChild(sortButton)
 
         // 我的（personal/personal_click 双图标：关 = 全部，开 = 仅我的；悬停词条随状态）
-        // 宽度与左边的小手对调（50 → 18）：里面只有图标，窄一点够用，让给小手更好点
+        // 搬进面板后占满整行（原来在顶栏只占 18 宽的纯图标位）
         mineButton = NineSliceButton(
-            leftX + 188, 44, 18, 16,
+            fx, 44, fw, 20,
             Text.literal(""),
             { toggleMineOnly() },
             iconLeft = Identifier.of("cobblemarket",
@@ -224,6 +292,46 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         // 「我的」是**开关**：开启时按钮给选中态（resize 重建时 showMineOnly 可能已经是 true）
         mineButton?.selectedVisual = showMineOnly
         addDrawableChild(mineButton)
+
+        // 分类（第三行）：显示当前分类名，点一下在下方展开**分类网格**（创造模式物品分类）
+        categoryButton = NineSliceButton(
+            fx, CATEGORY_BTN_Y, fw, 20,
+            categoryButtonText(),
+            { toggleCategoryGrid() }
+        )
+        // 按钮文字会截断 ⇒ 悬停提示给**完整**分类名（照项目「不定长内容」的规矩）
+        categoryButton?.setTooltip(Tooltip.of(categoryFullText()))
+        addDrawableChild(categoryButton)
+
+        // 分类网格的格子：第 0 格是「不限」，其后每格一个创造分类（图标 = 该分类的代表物品）。
+        // ⚠ 常驻创建（分类在注册表冻结后是固定的），开关 / 滚动只改位置与可见性。
+        //   分类数量随模组增减 ⇒ 网格行数跟着变，这正是要的效果
+        val cell = gridCell()
+        val gridW = GRID_COLS * cell + (GRID_COLS - 1) * GRID_GAP
+        val cellX0 = fx + (fw - gridW) / 2
+        val cellIcon = (cell - 14).coerceIn(16, 22)
+        categoryButtons.clear()
+        val anyCell = NineSliceButton(
+            cellX0, gridTopY(), cell, cell,
+            Text.translatable("cobblemarket.gui.filter_any"),
+            { selectCategory(null) },
+            tooltip = Text.translatable("cobblemarket.gui.filter_any")
+        )
+        addDrawableChild(anyCell)
+        categoryButtons += anyCell
+        com.shusheng.cobblemarket.client.ItemCategories.all().forEach { cat ->
+            val btn = NineSliceButton(
+                cellX0, gridTopY(), cell, cell,
+                Text.literal(""),            // 纯图标格：名字走悬停提示
+                { selectCategory(cat.id) },
+                tooltip = cat.name
+            )
+            btn.iconStack = cat.icon
+            btn.iconStackSize = cellIcon
+            addDrawableChild(btn)
+            categoryButtons += btn
+        }
+        // 选中态/网格展开态在 init 末尾的 updateControlVisibility 里统一刷（它顺带给格子定位）
 
         // 分页（照精灵市场：底部分割线在网格最后一行下方 4px 对称，按钮在其与背景底边之间居中偏上 5px）
         val gridBottom = getGridStartY() + rows() * (slotSize + gap)
@@ -247,6 +355,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         )
         addDrawableChild(nextButton)
         updatePageButtons()
+        // 建完先刷一遍可见性：面板控件是**常驻创建**的（默认 visible=true），
+        // 面板收起时必须立刻藏起来，否则会挂在屏幕右侧（照精灵市场 init 末尾那一次）
+        updateControlVisibility()
 
         requestFilterRefresh()
     }
@@ -266,7 +377,10 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
                 com.shusheng.cobblemarket.client.ItemSearchIndex.itemIdsMatchingStrict(query),
                 com.shusheng.cobblemarket.client.ItemSearchIndex.tmMovesMatching(query).toList(),
                 com.shusheng.cobblemarket.client.ItemSearchIndex.enchantsMatching(query).toList(),
-                currency.name
+                currency.name,
+                // 「分类」筛选：只发分类 ID，这个分类里有哪些物品由**服务端**自己算
+                //（一个分类几百上千个物品，走 itemIds 那条路会撑爆 256 的上限）
+                categoryFilter?.toString() ?: ""
             )
         )
     }
@@ -352,6 +466,123 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         mineButton?.selectedVisual = showMineOnly
         currentPage = 1
         requestFilterRefresh()
+    }
+
+    // ── 右侧筛选面板（照精灵市场：内容定高、展开动画、开关只切可见性）──
+
+    /** 面板内容宽（面板宽 − 两侧各 4）—— 与 init 里的 `fw` 同源，别各写一份 */
+    private fun filterPanelBtnW() = MarketPanelBackground.filterWidth(width) - 8
+
+    /**
+     * 面板的**实际高度** = 内容高度与屏幕可用高度的较小值（不戳出屏幕底边）。
+     * 展开分类网格时往下长、长到把网格包住为止（网格自身**限高 + 整行滚动**，见 [gridMaxRows]）。
+     */
+    private fun filterPanelHeight(): Int {
+        val contentBottom = if (categoryGridOpen) gridBottomY() else CATEGORY_BTN_Y + 20
+        return minOf(contentBottom - 2 + 10, height - 34)
+    }
+
+    // ── 分类网格的几何（全部按当前窗口现算，resize 后自动跟）──
+
+    /** 格子边长（4 列铺满内容宽；窄屏自动变小，兜底 16） */
+    private fun gridCell() = ((filterPanelBtnW() - (GRID_COLS - 1) * GRID_GAP) / GRID_COLS).coerceAtLeast(16)
+
+    /** 网格首行的 y：分类按钮下方 4px */
+    private fun gridTopY() = CATEGORY_BTN_Y + 24
+
+    /** 网格总行数（含「不限」那一格） */
+    private fun gridRows() = (categoryButtons.size + GRID_COLS - 1) / GRID_COLS
+
+    /** 一屏最多铺几行 —— 往下不越过屏幕底部留白（32，与主面板同一口径） */
+    private fun gridMaxRows(): Int {
+        val avail = (height - 32) - gridTopY() - 10
+        return maxOf(1, avail / (gridCell() + GRID_GAP))
+    }
+
+    private fun gridVisibleRows() = minOf(gridRows(), gridMaxRows())
+    private fun gridMaxScrollRow() = maxOf(0, gridRows() - gridVisibleRows())
+    private fun gridBottomY() = gridTopY() + gridVisibleRows() * (gridCell() + GRID_GAP)
+
+    /** 第 i 格（0 = 不限）的 x —— 与滚动无关 */
+    private fun gridCellX(i: Int): Int {
+        val cell = gridCell()
+        val gridW = GRID_COLS * cell + (GRID_COLS - 1) * GRID_GAP
+        return MarketPanelBackground.filterLeft(width) + 4 +
+            (filterPanelBtnW() - gridW) / 2 + (i % GRID_COLS) * (cell + GRID_GAP)
+    }
+
+    /**
+     * 分类网格此刻**该不该显示**：面板展开 + 网格展开 + 没弹窗 + 开关动画播完。
+     * ⚠ **单一判据** —— 格子的可见性、深色底、滚轮都读它，别各写一份（分散判定必漏）
+     */
+    private fun gridShown() = filterExpanded && categoryGridOpen &&
+        !filterAnim.isActive() && selectedEntry == null && cancelEntry == null
+
+    private fun isOverGrid(mx: Double, my: Double): Boolean {
+        val fl = MarketPanelBackground.filterLeft(width)
+        return mx >= fl && mx < fl + MarketPanelBackground.filterWidth(width) &&
+            my >= gridTopY() && my < gridBottomY()
+    }
+
+    /** 当前分类的**完整**显示名（不限 = 「不限」）；按钮文字与悬停提示都取它 */
+    private fun categoryFullText(): Text {
+        val name = categoryFilter?.let { id ->
+            com.shusheng.cobblemarket.client.ItemCategories.all().firstOrNull { it.id == id }?.name
+        } ?: Text.translatable("cobblemarket.gui.filter_any")
+        return Text.translatable("cobblemarket.item.category", name)
+    }
+
+    /**
+     * 「分类」按钮的文字：「分类： 不限」/「分类： 建筑方块」。
+     * ⚠ 分类名是**模组起的**、长度不可控 ⇒ 一律按按钮宽**截断**（完整名走悬停提示，见 [updateControlVisibility]）——
+     *   原版按钮文字是居中绘制、**不裁剪**的，不截断就会左右各画出一截。
+     */
+    private fun categoryButtonText(): Text =
+        com.shusheng.cobblemarket.util.TextUtil.truncateStyled(categoryFullText(), filterPanelBtnW() - 8)
+
+    /** 展开 / 收起分类网格 */
+    private fun toggleCategoryGrid() {
+        categoryGridOpen = !categoryGridOpen
+        if (!categoryGridOpen) categoryScrollRow = 0
+        updateControlVisibility()
+    }
+
+    /**
+     * 选中一个分类（null = 不限）：回第一页重新拉取。
+     *
+     * ⚠ **网格保持展开、滚动位置也不动**（2026-10-03 用户要求：选完就收起来没法连着换几个分类看）——
+     * 想收起来点「筛选」开关或「分类」按钮即可。
+     */
+    private fun selectCategory(id: Identifier?) {
+        categoryFilter = id
+        categoryButton?.message = categoryButtonText()
+        categoryButton?.setTooltip(Tooltip.of(categoryFullText()))
+        currentPage = 1
+        requestFilterRefresh()
+        updateControlVisibility()
+    }
+
+    /**
+     * 筛选展开/收起：只切可见性 + 起动画，**不重建界面**。
+     * ⚠ 重建会清空搜索词与翻页状态（照精灵市场的教训）；代价是开关按钮**自己**的
+     *   图标 / 选中态 / 悬停提示要手动更一次（见 [updateFilterToggleButton]）。
+     */
+    private fun toggleFilters() {
+        filterExpanded = !filterExpanded
+        // 面板开关动画：展开时从「筛选」按钮那里放大长出来、收起时缩回去（照精灵市场）
+        filterAnim.start(filterExpanded)
+        updateFilterToggleButton()
+        updateControlVisibility()
+    }
+
+    /** 筛选开关按钮的外观随 [filterExpanded] 更新：图标（开/关两枚）、选中态、悬停提示 */
+    private fun updateFilterToggleButton() {
+        val btn = filterToggleButton ?: return
+        btn.iconLeft = Identifier.of("cobblemarket",
+            if (filterExpanded) "textures/gui/filter.png" else "textures/gui/filter_close.png")
+        btn.setTooltip(Tooltip.of(Text.translatable(
+            if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand")))
+        btn.selectedVisual = filterExpanded
     }
 
     // 翻页请求在途标志：响应到达前不重复发请求
@@ -447,7 +678,70 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // ⚠ 主面板保持居中不动（不传 leftOverride）—— 筛选面板占用它右侧本来就空着的区域，
+        //   这样主面板里所有控件的坐标一个都不用动，开关面板时主面板也不会平移（照精灵市场）
         MarketPanelBackground.draw(context, width, height)
+        // 面板展开中、或收起动画还没播完（后者要从目标位置缩回按钮）都要画
+        if (filterExpanded || filterAnim.isActive()) {
+            val fl = MarketPanelBackground.filterLeft(width)
+            val panelW = MarketPanelBackground.filterWidth(width)
+            val ph = filterPanelHeight()
+            val panelCx = fl + panelW / 2f
+            val panelCy = 2f + ph / 2f
+            // 动画锚点 = 「筛选」按钮中心；按钮还没建时退化成"原地不动"（不影响正常开关）
+            val btnCx = filterToggleButton?.let { it.x + it.width / 2f } ?: panelCx
+            val btnCy = filterToggleButton?.let { it.y + it.height / 2f } ?: panelCy
+            val animating = filterAnim.applyTransform(context, btnCx, btnCy, panelCx, panelCy)
+            // ⚠ 收起动画的**最后一帧**：applyTransform 返回 false（进度到 1、内部刚清掉动画状态）
+            //   —— 那一帧**不能画**，画了就是"全尺寸面板闪一下"（精灵市场 2026-09-24 实测报过）。
+            //   展开状态（filterExpanded）则必须照画：动画播完后 isActive 恒为 false，跳过就再也不画了
+            if (filterExpanded || animating) {
+                MarketPanelBackground.draw(
+                    context, width, height,
+                    panelWidth = panelW,
+                    leftOverride = fl,
+                    // 高度由内容定，但**不超屏幕**（小屏 / 自动 GUI 档位下取屏幕可用高度）
+                    heightOverride = ph,
+                )
+                if (animating) filterAnim.restore(context)
+            }
+        }
+        // 分类网格的深色垫底：格子按钮的背景是半透明的，不垫底的话面板底纹会从格子里透上来
+        //（照其余界面「展开列表」的做法）。⚠ 判据与格子的可见性**同源**（gridShown）
+        if (gridShown()) {
+            val fl = MarketPanelBackground.filterLeft(width)
+            context.fill(
+                fl + 2, gridTopY() - 2,
+                fl + MarketPanelBackground.filterWidth(width) - 2, gridBottomY(),
+                0xF0101010.toInt()
+            )
+            renderGridScrollbar(context)
+        }
+    }
+
+    /** 分类网格的滚动条（**不可拖**，照 ServerConfigScreen 同款）：只在格子铺不下时才画 */
+    private fun renderGridScrollbar(context: DrawContext) {
+        val maxScroll = gridMaxScrollRow()
+        if (maxScroll <= 0) return
+        val x = MarketPanelBackground.filterLeft(width) + MarketPanelBackground.filterWidth(width) - 4
+        val top = gridTopY()
+        val trackH = gridVisibleRows() * (gridCell() + GRID_GAP)
+        val thumbH = maxOf(12, trackH * gridVisibleRows() / gridRows())
+        val thumbY = top + (trackH - thumbH) * categoryScrollRow / maxScroll
+        context.fill(x, top, x + 2, top + trackH, 0x40FFFFFF)
+        context.fill(x, thumbY, x + 2, thumbY + thumbH, 0xC0FFFFFF.toInt())
+    }
+
+    override fun mouseScrolled(
+        mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double
+    ): Boolean {
+        // 鼠标停在展开的分类网格上时滚的是网格（**整行**滚，保证格子始终对齐）
+        if (gridShown() && gridMaxScrollRow() > 0 && isOverGrid(mouseX, mouseY)) {
+            categoryScrollRow = (categoryScrollRow - verticalAmount.toInt()).coerceIn(0, gridMaxScrollRow())
+            updateControlVisibility()
+            return true
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)
     }
 
     /**
@@ -464,9 +758,36 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         //   混在统一赋值里会被覆盖掉（这就是"逐个点名"类写法的坑）
         listOf(
             currencyButton, searchField, returnsButton, backButton,
-            sellAddButton, sortButton, mineButton, prevButton, nextButton
+            sellAddButton, filterToggleButton, prevButton, nextButton
         ).forEach { it?.visible = !open }
         collectButton?.visible = !open && currency != MarketCurrency.POINTS
+        // 开关动画进行中：面板内的按钮先藏起来 —— 它们是 MC 控件、塞不进矩阵、不跟着缩放，
+        // 留着会像浮在缩小中的面板外面。播完（isActive 转 false）下一帧自动恢复（照精灵市场）
+        val panelVisible = filterExpanded && !filterAnim.isActive() && !open
+        // ⚠ 面板内控件是**常驻创建**的：面板收起 / 动画中 / 弹窗打开时都要藏。
+        //   这里是一个个点名的写法 —— 往面板里加控件必须补进这份名单（漏了不报错，只是它挂在屏幕上）
+        listOf(sortButton, mineButton, categoryButton).forEach { it?.visible = panelVisible }
+        // 分类网格：只在网格展开时显示，且**只显示落在可视行里**的那几行（滚出去的、没点开的一律藏）。
+        // ⚠ 每帧重定位（不只在滚动时）—— 窗口尺寸、面板展开状态变了都靠它兜住
+        val gridOn = gridShown()
+        val selIdx = selectedCategoryIndex()
+        categoryButtons.forEachIndexed { i, btn ->
+            val row = i / GRID_COLS - categoryScrollRow
+            btn.visible = gridOn && row in 0 until gridVisibleRows()
+            btn.selectedVisual = i == selIdx
+            if (btn.visible) {
+                btn.x = gridCellX(i)
+                btn.y = gridTopY() + row * (gridCell() + GRID_GAP)
+            }
+        }
+    }
+
+    /** 当前选中分类在网格里的下标（第 0 格是「不限」）；没选中 / 那个分类不在了 ⇒ 落回 0 */
+    private fun selectedCategoryIndex(): Int {
+        val id = categoryFilter ?: return 0
+        val idx = com.shusheng.cobblemarket.client.ItemCategories.all().indexOfFirst { it.id == id }
+        return if (idx < 0) 0 else idx + 1
+
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -758,6 +1079,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         currencyButton?.visible = visible
         searchField?.visible = visible
         sellAddButton?.visible = visible
+        filterToggleButton?.visible = visible
+        // 面板内两枚也一并收掉（面板收起时它们本来就是 hidden，这里 `visible=true` 不会让它们冒出来：
+        // render 开头的 updateControlVisibility 每帧按 filterExpanded 重设）
         sortButton?.visible = visible
         mineButton?.visible = visible
         prevButton?.visible = visible

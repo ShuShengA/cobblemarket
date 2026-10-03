@@ -1082,7 +1082,15 @@ data class RequestItemMarketPayload(
     /** 查询命中的附魔 ID 集合（附魔书搜索的精确过滤，见 ItemSearchIndex） */
     val enchants: List<String>,
     /** 查询币种（原始字符串，不在这里解析；理由同 [RequestMarketPayload.currency]） */
-    val currency: String
+    val currency: String,
+    /**
+     * 「分类」筛选：**创造模式分类 ID**（如 `minecraft:building_blocks`），空串 = 不限。
+     * ⚠ 只发 ID、不发物品列表 —— 一个分类几百上千个物品，既超 `MAX_ITEM_IDS`、也把每个请求撑到几十 KB；
+     *   服务端自己按 ID 认这个分类里有什么（`util/ItemCategoryIndex`）。
+     * ⚠ 末尾新增字段 ⇒ **改了 payload，两端必须同版**。
+     */
+    val categoryId: String
+
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -1095,6 +1103,7 @@ data class RequestItemMarketPayload(
                 b.writeVarInt(p.tmMoves.size); p.tmMoves.forEach { b.writeString(it) }
                 b.writeVarInt(p.enchants.size); p.enchants.forEach { b.writeString(it) }
                 b.writeString(p.currency)
+                b.writeString(p.categoryId)
             },
             // 读端用具名参数，读写字段顺序必须一致
             { b ->
@@ -1107,7 +1116,8 @@ data class RequestItemMarketPayload(
                     itemIds = (0 until b.readVarInt()).map { b.readString() },
                     tmMoves = (0 until b.readVarInt()).map { b.readString() },
                     enchants = (0 until b.readVarInt()).map { b.readString() },
-                    currency = b.readString()
+                    currency = b.readString(),
+                    categoryId = b.readString()
                 )
             }
         )
@@ -2824,15 +2834,23 @@ object MarketNetwork {
                     )
                     return@execute
                 }
+                // 「分类」筛选（创造模式分类 ID，2026-10-03）：先按分类收窄、再走搜索框 —— 两个条件是 AND。
+                // ⚠ 无效 / 未知的分类 ID 一律**忽略**（itemIds 返回 null ⇒ 按"不限"处理），
+                //   不把结果清空 —— 客户端可能装了服务端没有的模组分类
+                val categoryIds = payload.categoryId.takeIf { it.isNotEmpty() }
+                    ?.let { Identifier.tryParse(it) }
+                    ?.let { com.shusheng.cobblemarket.util.ItemCategoryIndex.itemIds(server.overworld, it) }
+
                 val results = state.search(
                     currency = currency,
                     sortBy = sortMode,
                     sellerUuid = if (payload.mineOnly) player.uuid else null
                 ).let { list ->
+                    val byCategory = if (categoryIds == null) list else list.filter { it.itemId in categoryIds }
                     val query = payload.query.trim()
-                    if (query.isEmpty()) list
+                    if (query.isEmpty()) byCategory
                     // 同一个搜索框也匹配**卖家名**（2026-09-24，与精灵市场 / 拍卖场同一口径）
-                    else list.filter {
+                    else byCategory.filter {
                         it.sellerName.contains(query, ignoreCase = true) ||
                             matchesItemQuery(it.itemId, it.itemNbt, payload.itemIds.take(MAX_ITEM_IDS).toSet(), payload.tmMoves.toSet(), payload.enchants.toSet(), server.overworld.registryManager)
                     }
