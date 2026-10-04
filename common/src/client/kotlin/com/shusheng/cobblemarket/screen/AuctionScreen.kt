@@ -1828,16 +1828,14 @@ class AuctionScreen(
             // ⚠ 测量必须与**绘制**同源：这三行现在都把货币单位**画在行尾**（不拼进文本，
             //   见 auctionLine 的 unitColor），所以每行宽度 = 文本宽 + 单位宽
             rightW = maxOf(
+                textRenderer.getWidth(Text.translatable("cobblemarket.auction.seller").append(entry.sellerName)),
                 textRenderer.getWidth(
-                    Text.literal("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}")
-                ),
-                textRenderer.getWidth(
-                    Text.translatable("cobblemarket.auction.current_price").append(": ").append(displayPriceText(entry))
+                    Text.translatable("cobblemarket.auction.current_price").append(displayPriceText(entry))
                 ) + currencyUnitWidth(textRenderer),
-                textRenderer.getWidth(Text.translatable("cobblemarket.auction.starting_price").append(": ")) +
+                textRenderer.getWidth(Text.translatable("cobblemarket.auction.starting_price_label")) +
                     textRenderer.getWidth(com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice) + " ") +
                     currencyUnitWidth(textRenderer),
-                textRenderer.getWidth(Text.translatable("cobblemarket.auction.min_increment").append(": ")) +
+                textRenderer.getWidth(Text.translatable("cobblemarket.auction.min_increment_label")) +
                     textRenderer.getWidth(com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement) + " ") +
                     currencyUnitWidth(textRenderer)
             )
