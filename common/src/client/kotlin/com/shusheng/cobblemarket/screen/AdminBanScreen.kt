@@ -41,15 +41,26 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     private fun listStartY() = if (currentTab == 0) banListStartY else changeListStartY
 
     // ── 行按钮几何（**建按钮与悬停窗避让共用一处定义**，别各写一份）──
-    private val rowBtnInset = 60
+    private val rowBtnInset = 60      // 「解封」左缘距面板右缘
     private val rowBtnW = 56
+    private val editBtnW = 46         // 「编辑」宽（照 PermissionScreen 的行内按钮）
+    private val rowBtnGap = 4
     private val rowBtnH = 16
     private val rowBtnDy = 3
 
-    /** 第 [row] 行的解封按钮矩形 —— 与 `rebuildUnbanButtons` 同源（行按钮只属于页签 0，故用 [banListStartY]） */
-    private fun unbanButtonRect(row: Int) = TooltipPlacement.Rect(
-        width / 2 - panelWidth / 2 + panelWidth - rowBtnInset,
-        banListStartY + row * rowHeight + rowBtnDy, rowBtnW, rowBtnH
+    // 「编辑」左缘距面板右缘：从**解封的左缘**再往左让出「间隙 + 编辑宽」
+    // ⚠ 用 editBtnW（不是 rowBtnW）—— 写成 rowBtnW 会多空出 10px（两枚按钮间距变成 14）
+    private val editBtnInset = rowBtnInset + rowBtnGap + editBtnW
+
+    /**
+     * 第 [row] 行**整排按钮**（编辑 + 解封）的矩形。
+     * ⚠⭐ 悬停窗避让必须用**这个**、不能只框解封按钮 —— 否则悬停窗会压在「编辑」上
+     *   （与 `rebuildRowButtons` 同源；行按钮只属于页签 0，故用 [banListStartY]）
+     */
+    private fun rowButtonsRect(row: Int) = TooltipPlacement.Rect(
+        width / 2 - panelWidth / 2 + panelWidth - editBtnInset,
+        banListStartY + row * rowHeight + rowBtnDy,
+        editBtnInset, rowBtnH
     )
 
     private var nameField: TextFieldWidget? = null
@@ -63,6 +74,8 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     private var pendingBanName = ""
     private var pendingBanDuration = ""
     private var pendingBlockLoan = false
+    /** 弹窗是在**编辑**一笔已生效的封禁（不是新封）：提交走 `editBan`、标题也不同 */
+    private var pendingIsEdit = false
     private var bans = listOf<BanEntry>()
     private var scrollOffset = 0
     private var hoveredRow = -1
@@ -218,10 +231,52 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         unbanButtons.forEach { it.visible = false }
     }
 
-    private fun openBanConfirmDialog(name: String, duration: String) {
+    /**
+     * 行内「编辑」：拿该行的现状预填确认弹窗（名字**不可改**，弹窗里只显示、没有输入框）。
+     * ⚠ 预填的是**原时长**（`expiresAt - bannedAt`），不是剩余时间 —— 不动它 ⇒ 到期时刻不变。
+     */
+    private fun openBanEditDialog(entry: BanEntry) {
+        openBanConfirmDialog(
+            name = entry.playerName,
+            duration = durationInputText(entry.expiresAt?.minus(entry.bannedAt)),
+            // ⚠ 理由填**原始值**：系统来源存的是 `$词条键`，原样带回才能保住"按客户端语言渲染"
+            reason = entry.reason,
+            blockLoan = entry.blockLoan,
+            isEdit = true
+        )
+    }
+
+    /** 毫秒 → `1d12h` 这种**输入格式**（与 `BanState.parseDurationMs` 互为反向），编辑时预填时长框用 */
+    private fun durationInputText(ms: Long?): String {
+        if (ms == null) return ""              // 永久：留空（空 = 永久，与主界面输入框同一口径）
+        val totalMinutes = ms / 60000
+        if (totalMinutes <= 0) return "1m"     // 不足一分钟（马上到期）：给个能通过校验的最小值
+        val d = totalMinutes / (24 * 60)
+        val h = (totalMinutes % (24 * 60)) / 60
+        val m = totalMinutes % 60
+        return buildString {
+            if (d > 0) append("${d}d")
+            if (h > 0) append("${h}h")
+            if (m > 0 || isEmpty()) append("${m}m")
+        }
+    }
+
+    /**
+     * 打开封禁确认弹窗。
+     * @param isEdit 编辑一笔**已生效**的封禁：标题换成「编辑封禁」，提交时走 `BanState.editBan`
+     *   （⚠ 到期时刻按**原封禁起点 + 新时长**算，不是"此刻 + 新时长"）
+     */
+    private fun openBanConfirmDialog(
+        name: String,
+        duration: String,
+        reason: String = "",
+        blockLoan: Boolean = false,
+        isEdit: Boolean = false
+    ) {
         pendingBanName = name
         pendingBanDuration = duration
-        pendingBlockLoan = false   // 每次开弹窗都从「不选」起（= 老行为），不继承上一次
+        pendingBlockLoan = blockLoan
+        pendingIsEdit = isEdit
         hideMainControls()
         // 收起可能展开的联想列表（否则联想按钮残留在遮罩下可点）
         suggestionsOpen = false
@@ -240,6 +295,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         reasonField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 74, 160, 16, Text.literal(""))
         reasonField?.setPlaceholder(Text.translatable("cobblemarket.ban.reason"))
         reasonField?.setTextPredicate { it.length <= 100 }
+        reasonField?.text = reason    // 编辑时预填原理由；新封禁传空串
         addDrawableChild(reasonField)
 
         // 「同时禁止借款」开关：**按钮形态**（标签就是状态名，选中态走第三段纹理），
@@ -277,7 +333,9 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
 
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.ban.confirm_title").formatted(Formatting.GOLD),
+            Text.translatable(
+                if (pendingIsEdit) "cobblemarket.ban.edit_title" else "cobblemarket.ban.confirm_title"
+            ).formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
 
         context.drawTextWithShadow(textRenderer,
@@ -297,16 +355,22 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
 
     private fun confirmBan() {
         val reason = reasonField?.text?.trim() ?: ""
-        sendToServer(AdminBanPayload(pendingBanName, pendingBanDuration, reason, pendingBlockLoan))
+        // ⚠ 先记下来：closeBanConfirmDialog 会把 pendingIsEdit 清掉
+        val wasEdit = pendingIsEdit
+        sendToServer(AdminBanPayload(pendingBanName, pendingBanDuration, reason, pendingBlockLoan, pendingIsEdit))
         closeBanConfirmDialog()
-        nameField?.text = ""
-        durationField?.text = ""
+        // 「编辑」不动主界面那两个输入框 —— 它们是"新封禁"用的，编辑时把人家填的清掉很突兀
+        if (!wasEdit) {
+            nameField?.text = ""
+            durationField?.text = ""
+        }
     }
 
     private fun closeBanConfirmDialog() {
         pendingBanName = ""
         pendingBanDuration = ""
         pendingBlockLoan = false
+        pendingIsEdit = false
         reasonField = null
         blockLoanButton = null
         clearChildren()
@@ -320,7 +384,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     fun onBanList(payload: BanListDataPayload) {
         bans = payload.entries
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, bans.size - maxVisible()))
-        rebuildUnbanButtons()
+        rebuildRowButtons()
     }
 
     fun onBanChanges(payload: BanChangesPayload) {
@@ -330,29 +394,36 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
 
     /** 一条变更记录 → 行内文本 + 悬停窗内容（**建行时算一次**；两处的分段与配色一一对应） */
     private fun buildChangeLine(row: BanChangesPayload.Row): ChangeLine {
-        val isBan = row.actionKey == BanState.ACTION_BAN
         fun at(format: java.time.format.DateTimeFormatter) = format.format(
             java.time.Instant.ofEpochMilli(row.timestamp).atZone(java.time.ZoneId.systemDefault())
         )
         val whoRow = Text.literal("${BanState.reasonText(row.operator).string} → ${row.targetName}")
             .formatted(Formatting.GOLD)
-        val actionRow = BanState.reasonText(row.actionKey)
-            .formatted(if (isBan) Formatting.RED else Formatting.GREEN)
+        val actionRow = BanState.reasonText(row.actionKey).formatted(
+            when (row.actionKey) {
+                BanState.ACTION_BAN -> Formatting.RED
+                BanState.ACTION_UNBAN -> Formatting.GREEN
+                else -> Formatting.YELLOW   // 「修改」：既不是新增也不是撤销，给个中性又显眼的色
+            }
+        )
         // 时长：永久封禁、以及拿不到原时长的解封行都是 null ⇒ 显示「永久」
         val durationRow = row.durationMs?.let { BanState.remainingText(it) }
             ?: Text.translatable("cobblemarket.ban.permanent")
         val originalRow = row.originalBanner.takeIf { it.isNotBlank() }?.let {
             Text.translatable("cobblemarket.ban.changes_original_banner", BanState.reasonText(it))
         }
+        // 「修改」行额外带一段「改前 → 改后」（只列真的变了的项）
+        val changeRow = if (row.actionKey == BanState.ACTION_EDIT) editChangeText(row, durationRow) else null
 
-        // 行内：时间 · 执行者→目标 · 动作 · 时长 [· 原封禁者] [· 理由] —— 超宽会被截断，完整内容看悬停
+        // 行内：时间 · 执行者→目标 · 动作 · 时长 [· 原封禁者] [· 改动] [· 理由] —— 超宽会被截断，完整看悬停
         // ⚠ 全部**平级**挂在空父节点下：带色的段自己带色，` · ` 这些陪衬文字不设色（吃行色 0xFFFFFF）
         val text = Text.literal("")
             .append(Text.literal(at(changeTimeFormat)).formatted(Formatting.GRAY)).append("  ·  ")
             .append(whoRow).append("  ·  ")
             .append(actionRow).append("  ·  ")
             .append(durationRow)
-        if (!isBan) originalRow?.let { text.append("  ·  ").append(it) }
+        originalRow?.let { text.append("  ·  ").append(it) }
+        changeRow?.let { text.append("  ·  ").append(it) }
         if (row.reason.isNotBlank()) text.append("  ·  ").append(BanState.reasonText(row.reason))
 
         // 悬停窗：同样的分段各自成行（时间给到秒），颜色与行内一一对应
@@ -363,11 +434,40 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
             )
             add(Text.literal("").append(actionRow).append("  ·  ").append(durationRow))
             originalRow?.let { add(it) }
+            changeRow?.let { add(it) }
             if (row.reason.isNotBlank()) {
                 add(Text.literal("").append(Text.translatable("cobblemarket.ban.reason_label")).append(BanState.reasonText(row.reason)))
             }
         }
         return ChangeLine(text, tooltip)
+    }
+
+    /**
+     * 「修改」行的**改前 → 改后**，只列**真的变了**的项（用户要的「写清改前改后」）。
+     * 各段之间用 `"  ·  "` 拼 —— **不用「、」**：分隔符也得分中英，而 `·` 两边一样（同行的既有做法）。
+     * @return null = 时长与借款都没变（只改了理由）⇒ 那一段不显示，理由本身有自己的列
+     */
+    private fun editChangeText(row: BanChangesPayload.Row, durationRow: Text): Text? {
+        val parts = mutableListOf<Text>()
+        if (row.beforeDurationMs != row.durationMs) {
+            val before = row.beforeDurationMs?.let { BanState.remainingText(it) }
+                ?: Text.translatable("cobblemarket.ban.permanent")
+            parts.add(Text.translatable("cobblemarket.ban.changes_edit_duration", before, durationRow))
+        }
+        val beforeLoan = row.beforeBlockLoan
+        if (beforeLoan != null && beforeLoan != row.blockLoan) {
+            fun state(on: Boolean) = Text.translatable(
+                if (on) "cobblemarket.ban.state_on" else "cobblemarket.ban.state_off"
+            )
+            parts.add(Text.translatable("cobblemarket.ban.changes_edit_loan", state(beforeLoan), state(row.blockLoan)))
+        }
+        if (parts.isEmpty()) return null
+        val out = Text.literal("")
+        parts.forEachIndexed { i, p ->
+            if (i > 0) out.append("  ·  ")
+            out.append(p)
+        }
+        return out
     }
 
     private fun updateTabButtons() {
@@ -398,7 +498,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         //   金融自动冻结/解冻追加的，都可能在你停留期间出现。写成"只拉第一次"就会一直显示
         //   进界面那一刻的旧数据，**不退重进就看不到新的**（2026-10-04 用户实测报的）
         if (!bansTab) sendToServer(RequestBanChangesPayload())
-        rebuildUnbanButtons()
+        rebuildRowButtons()
     }
 
     fun onResult(payload: MarketResultPayload) {
@@ -406,24 +506,35 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         sendToServer(RequestBanListPayload())
     }
 
-    private fun rebuildUnbanButtons() {
+    private fun rebuildRowButtons() {
         unbanButtons.forEach { remove(it) }
         unbanButtons.clear()
         // 联想列表展开时行按钮保持隐藏：数据刷新触发的重建会把新按钮追加到 children 末尾，
         // 浮在联想按钮之上拦截点击（联想收起时 rebuildSuggestionList 会重建恢复）
         if (suggestionsOpen) return
         val leftX = width / 2 - panelWidth / 2
+        // ⚠ 行按钮都要**捕获该行的 entry**（别存下标回头查：滚动 / 数据刷新后下标会错位）
         bans.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, entry ->
             val y = banListStartY + i * rowHeight
-            val btn = NineSliceButton(
+            val show = pendingBanName.isEmpty() && currentTab == 0
+            val editBtn = NineSliceButton(
+                leftX + panelWidth - editBtnInset, y + rowBtnDy, editBtnW, rowBtnH,
+                Text.translatable("cobblemarket.ban.edit"),
+                { openBanEditDialog(entry) }
+            )
+            editBtn.visible = show
+            unbanButtons.add(editBtn)
+            addDrawableChild(editBtn)
+
+            val unbanBtn = NineSliceButton(
                 leftX + panelWidth - rowBtnInset, y + rowBtnDy, rowBtnW, rowBtnH,
                 Text.translatable("cobblemarket.ban.unban"),
                 { doUnban(entry) }
             )
-            // 弹窗打开时 / 切到变更记录页签时都要藏起来（那一页没有可解封的行）
-            btn.visible = pendingBanName.isEmpty() && currentTab == 0
-            unbanButtons.add(btn)
-            addDrawableChild(btn)
+            // 弹窗打开时 / 切到变更记录页签时都要藏起来（那一页没有可操作的行）
+            unbanBtn.visible = show
+            unbanButtons.add(unbanBtn)
+            addDrawableChild(unbanBtn)
         }
     }
 
@@ -481,7 +592,9 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
             context.drawTextWithShadow(textRenderer,
                 TextUtil.truncateText(
                     Text.literal("${entry.playerName}  ·  ").append(com.shusheng.cobblemarket.market.BanState.reasonText(entry.bannedBy)).append("  ·  ").append(durationText),
-                    panelWidth - 68
+                    // 行文字画到「编辑按钮左侧留 4px」为止：按钮组起于 panelWidth-110、文字起于 +4
+                    // ⇒ 可用 = panelWidth - 118（多一枚「编辑」后从原来的 68 收窄）
+                    panelWidth - 118
                 ),
                 leftX + 4, y + 5, 0xFFFFFF)
         }
@@ -529,8 +642,8 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         // remove+重建只发生在展开路径（onNameSuggestions 数据到达，该路径一直工作正常）
         if (!suggestionsOpen) {
             suggestionButtons.forEach { it.visible = false }
-            // 收起时重建行按钮（展开期间 rebuildUnbanButtons 被拦截，行按钮已移除）
-            rebuildUnbanButtons()
+            // 收起时重建行按钮（展开期间 rebuildRowButtons 被拦截，行按钮已移除）
+            rebuildRowButtons()
             return
         }
         // 展开路径：清理旧按钮后重建。
@@ -597,8 +710,8 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
             if (entry.blockLoan) add(Text.translatable("cobblemarket.ban.block_loan"))
         }
 
-        // 悬停窗**不许把本行的解封按钮盖掉一半以上**：矩形按行号算几何（与 rebuildUnbanButtons 同源）
-        renderTextTooltip(context, lines, mouseX, mouseY, avoid = unbanButtonRect(hoveredRow))
+        // 悬停窗**不许把本行的按钮盖掉**：矩形按行号算几何，**整排**（编辑 + 解封）一起避让
+        renderTextTooltip(context, lines, mouseX, mouseY, avoid = rowButtonsRect(hoveredRow))
     }
 
     /**
@@ -640,7 +753,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
             return true
         }
         scrollOffset = (scrollOffset - verticalAmount.toInt()).coerceIn(0, maxOf(0, bans.size - maxVisible()))
-        rebuildUnbanButtons()
+        rebuildRowButtons()
         return true
     }
 
