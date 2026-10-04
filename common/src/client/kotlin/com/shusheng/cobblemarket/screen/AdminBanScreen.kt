@@ -74,9 +74,17 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     private var changesTabButton: NineSliceButton? = null
 
     // ── 变更记录（页签 1）──
-    /** 全量记录（服务端读**整个**账本、不分页不设窗口：封禁不多、文件永久保留） */
-    private var changeRows = listOf<BanChangesPayload.Row>()
-    private var changesRequested = false
+    /**
+     * 全量记录（服务端读**整个**账本、不分页不设窗口：封禁不多、文件永久保留）。
+     * ⚠ 行文本与悬停内容**在数据到达时算一次**，render 每帧只读（照 `PermissionScreen.AuditLine`）——
+     *   时间格式化 + 词条拼接每帧现算，在全量列表上就是可见的掉帧源。
+     */
+    private data class ChangeLine(
+        val text: Text,
+        /** 悬停窗内容：**逐段带色、与行内一一对应**（灰时间 / 金执行者→目标 / 红封禁·绿解封 / 时长 / 理由） */
+        val tooltip: List<Text>
+    )
+    private var changeLines = listOf<ChangeLine>()
     private val unbanButtons = mutableListOf<NineSliceButton>()
 
     // 玩家名联想（覆盖存档所有登录过的玩家，含离线）：输入防抖后请求服务端，展开列表点选
@@ -110,8 +118,11 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
          */
         const val DIALOG_H = 176
 
-        /** 变更记录行首的时间：账本 CSV 里存到秒，界面只显示到分钟就够 */
+        /** 变更记录**行内**的时间：只到分钟就够（当天看的是"什么时候"的大致位置） */
         private val changeTimeFormat = java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm")
+
+        /** 悬停窗里的时间：给**完整日期 + 秒** —— 账本本来就是按秒记的，查账时要能对得上 */
+        private val changeTooltipTimeFormat = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     }
 
     override fun init() {
@@ -320,9 +331,50 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     }
 
     fun onBanChanges(payload: BanChangesPayload) {
-        changeRows = payload.rows
-        changesRequested = true
-        scrollOffset = scrollOffset.coerceIn(0, maxOf(0, changeRows.size - maxVisible()))
+        changeLines = payload.rows.map { buildChangeLine(it) }
+        scrollOffset = scrollOffset.coerceIn(0, maxOf(0, changeLines.size - maxVisible()))
+    }
+
+    /** 一条变更记录 → 行内文本 + 悬停窗内容（**建行时算一次**；两处的分段与配色一一对应） */
+    private fun buildChangeLine(row: BanChangesPayload.Row): ChangeLine {
+        val isBan = row.actionKey == BanState.ACTION_BAN
+        fun at(format: java.time.format.DateTimeFormatter) = format.format(
+            java.time.Instant.ofEpochMilli(row.timestamp).atZone(java.time.ZoneId.systemDefault())
+        )
+        val whoRow = Text.literal("${BanState.reasonText(row.operator).string} → ${row.targetName}")
+            .formatted(Formatting.GOLD)
+        val actionRow = BanState.reasonText(row.actionKey)
+            .formatted(if (isBan) Formatting.RED else Formatting.GREEN)
+        // 时长：永久封禁、以及拿不到原时长的解封行都是 null ⇒ 显示「永久」
+        val durationRow = row.durationMs?.let { BanState.remainingText(it) }
+            ?: Text.translatable("cobblemarket.ban.permanent")
+        val originalRow = row.originalBanner.takeIf { it.isNotBlank() }?.let {
+            Text.translatable("cobblemarket.ban.changes_original_banner", BanState.reasonText(it))
+        }
+
+        // 行内：时间 · 执行者→目标 · 动作 · 时长 [· 原封禁者] [· 理由] —— 超宽会被截断，完整内容看悬停
+        // ⚠ 全部**平级**挂在空父节点下：带色的段自己带色，` · ` 这些陪衬文字不设色（吃行色 0xFFFFFF）
+        val text = Text.literal("")
+            .append(Text.literal(at(changeTimeFormat)).formatted(Formatting.GRAY)).append("  ·  ")
+            .append(whoRow).append("  ·  ")
+            .append(actionRow).append("  ·  ")
+            .append(durationRow)
+        if (!isBan) originalRow?.let { text.append("  ·  ").append(it) }
+        if (row.reason.isNotBlank()) text.append("  ·  ").append(BanState.reasonText(row.reason))
+
+        // 悬停窗：同样的分段各自成行（时间给到秒），颜色与行内一一对应
+        val tooltip = buildList {
+            add(
+                Text.literal("").append(Text.literal(at(changeTooltipTimeFormat)).formatted(Formatting.GRAY))
+                    .append("   ").append(whoRow)
+            )
+            add(Text.literal("").append(actionRow).append("  ·  ").append(durationRow))
+            originalRow?.let { add(it) }
+            if (row.reason.isNotBlank()) {
+                add(Text.literal("").append(Text.translatable("cobblemarket.ban.reason_label")).append(BanState.reasonText(row.reason)))
+            }
+        }
+        return ChangeLine(text, tooltip)
     }
 
     private fun updateTabButtons() {
@@ -348,8 +400,11 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         suggestDirty = false
         lastRequestPrefix = null
         rebuildSuggestionList()
-        // 变更记录不随封禁列表刷新（账本是只写不改的历史），进页签时拉一次就够
-        if (!bansTab && !changesRequested) sendToServer(RequestBanChangesPayload())
+        // ⚠⭐ **每次切到变更记录都要重拉**（照 `PermissionScreen.requestCurrentTabData`）：
+        //   这一页是历史账本，刚封禁 / 刚解封（本界面或命令操作的）、别的管理员加的、
+        //   金融自动冻结/解冻追加的，都可能在你停留期间出现。写成"只拉第一次"就会一直显示
+        //   进界面那一刻的旧数据，**不退重进就看不到新的**（2026-10-04 用户实测报的）
+        if (!bansTab) sendToServer(RequestBanChangesPayload())
         rebuildUnbanButtons()
     }
 
@@ -406,6 +461,13 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
 
         if (currentTab == 1) {
             renderChangeList(context, centerX, leftX)
+            // 行悬停窗：行内会被截断，悬停给完整内容 —— 与封禁行同一套（变更记录没有行按钮，不用避让）
+            if (hoveredRow >= 0) {
+                val idx = scrollOffset + hoveredRow
+                if (idx in changeLines.indices) {
+                    renderTextTooltip(context, changeLines[idx].tooltip, mouseX, mouseY)
+                }
+            }
             return
         }
 
@@ -516,75 +578,57 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
      *   `BanState.reasonText` 解析：**按客户端语言**渲染，服务端不拼死任何一种语言。
      */
     private fun renderChangeList(context: DrawContext, centerX: Int, leftX: Int) {
-        if (changeRows.isEmpty()) {
+        if (changeLines.isEmpty()) {
             context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable("cobblemarket.ban.changes_empty").formatted(Formatting.GRAY),
                 centerX, listStartY() + 30, 0xFFFFFF)
             return
         }
 
-        changeRows.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, row ->
+        changeLines.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, line ->
             val y = listStartY() + i * rowHeight
-            val isBan = row.actionKey == BanState.ACTION_BAN
-            val time = Text.literal(changeTimeFormat.format(
-                java.time.Instant.ofEpochMilli(row.timestamp).atZone(java.time.ZoneId.systemDefault())
-            )).formatted(Formatting.GRAY)
-            val who = Text.literal("${BanState.reasonText(row.operator).string} → ${row.targetName}")
-                .formatted(Formatting.GOLD)
-            val action = BanState.reasonText(row.actionKey)
-                .formatted(if (isBan) Formatting.RED else Formatting.GREEN)
-            // 时长：永久 / 拿不到原时长的解封行都是 null ⇒ 显示「永久」
-            val duration = row.durationMs?.let { BanState.remainingText(it) }
-                ?: Text.translatable("cobblemarket.ban.permanent")
-            val reason = BanState.reasonText(row.reason)
-
-            // ⚠ 全部**平级**挂在空父节点下：带色的段自己带色，` · ` 这些陪衬文字不设色（吃 0xFFFFFF）
-            val line = Text.literal("")
-                .append(time).append("  ·  ")
-                .append(who).append("  ·  ")
-                .append(action).append("  ·  ")
-                .append(duration)
-            if (isBan) {
-                if (row.reason.isNotBlank()) line.append("  ·  ").append(reason)
-            } else {
-                // 解封那行自带「当初是谁封的、原时长多久」—— 用户要的正是「A 封的、B 解的也查得到」
-                if (row.originalBanner.isNotBlank()) {
-                    line.append("  ·  ").append(
-                        Text.translatable("cobblemarket.ban.changes_original_banner", BanState.reasonText(row.originalBanner))
-                    )
-                }
-                if (row.reason.isNotBlank()) line.append("  ·  ").append(reason)
-            }
             context.drawTextWithShadow(textRenderer,
-                TextUtil.truncateText(line, panelWidth - 8), leftX + 4, y + 5, 0xFFFFFF)
+                TextUtil.truncateText(line.text, panelWidth - 8), leftX + 4, y + 5, 0xFFFFFF)
         }
 
-        if (changeRows.size > maxVisible()) {
+        if (changeLines.size > maxVisible()) {
             context.drawCenteredTextWithShadow(textRenderer,
-                "${scrollOffset + 1}-${minOf(scrollOffset + maxVisible(), changeRows.size)} / ${changeRows.size}",
+                "${scrollOffset + 1}-${minOf(scrollOffset + maxVisible(), changeLines.size)} / ${changeLines.size}",
                 width / 2, height - 49, 0x888888)
         }
     }
 
     private fun renderBanTooltip(context: DrawContext, entry: BanEntry, mouseX: Int, mouseY: Int) {
-        val lines = buildList {
-            add("${Text.translatable("cobblemarket.ban.target").string} ${entry.playerName}")
-            add("${Text.translatable("cobblemarket.ban.by").string} ${com.shusheng.cobblemarket.market.BanState.reasonText(entry.bannedBy).string}")
-            add("${Text.translatable("cobblemarket.ban.reason_label").string} ${com.shusheng.cobblemarket.market.BanState.reasonText(entry.reason).string.ifBlank { "-" }}")
+        val lines: List<Text> = buildList {
+            add(Text.literal("${Text.translatable("cobblemarket.ban.target").string} ${entry.playerName}"))
+            add(Text.literal("${Text.translatable("cobblemarket.ban.by").string} ${com.shusheng.cobblemarket.market.BanState.reasonText(entry.bannedBy).string}"))
+            add(Text.literal("${Text.translatable("cobblemarket.ban.reason_label").string} ${com.shusheng.cobblemarket.market.BanState.reasonText(entry.reason).string.ifBlank { "-" }}"))
             // 勾了「同时禁止借款」才多这一行：这开关设完在别处看不见，悬停窗是唯一能回看的地方
-            if (entry.blockLoan) add(Text.translatable("cobblemarket.ban.block_loan").string)
+            if (entry.blockLoan) add(Text.translatable("cobblemarket.ban.block_loan"))
         }
 
+        // 悬停窗**不许把本行的解封按钮盖掉一半以上**：矩形按行号算几何（与 rebuildUnbanButtons 同源）
+        renderTextTooltip(context, lines, mouseX, mouseY, avoid = unbanButtonRect(hoveredRow))
+    }
+
+    /**
+     * 悬停窗的通用绘制（封禁行 / 变更记录行共用）。
+     * @param lines **逐段带色**的完整内容 —— 行内会被截断，悬停这里给全，且颜色与行内一一对应
+     * @param avoid 本行的按钮矩形：鼠标落在按钮上就不画（玩家准备点了）
+     */
+    private fun renderTextTooltip(
+        context: DrawContext, lines: List<Text>, mouseX: Int, mouseY: Int,
+        avoid: TooltipPlacement.Rect? = null
+    ) {
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
 
         val padding = 4
         val tooltipHeight = lines.size * 10 + padding
-        // 悬停窗**不许把本行的解封按钮盖掉一半以上**：矩形按行号算几何（与 rebuildUnbanButtons 同源）
         val (tx, ty) = TooltipPlacement.place(
             mouseX = mouseX, mouseY = mouseY,
             textW = maxWidth, textH = tooltipHeight, pad = padding,
-            screenW = width, screenH = height, avoid = unbanButtonRect(hoveredRow)
+            screenW = width, screenH = height, avoid = avoid
         ) ?: return
 
         context.matrices.push()
@@ -658,7 +702,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         val visibleRows = maxVisible()
         val startY = listStartY()
         val listAreaBottom = startY + visibleRows * rowHeight
-        val rowCount = if (currentTab == 0) bans.size else changeRows.size
+        val rowCount = if (currentTab == 0) bans.size else changeLines.size
 
         hoveredRow = -1
         if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom) {
