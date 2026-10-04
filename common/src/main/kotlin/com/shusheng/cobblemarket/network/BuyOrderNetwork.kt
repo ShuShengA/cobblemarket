@@ -1328,7 +1328,7 @@ object BuyOrderNetwork {
         val timeDesc: Text = if (banInfo.isPermanent)
             Text.translatable("cobblemarket.ban.permanent")
         else
-            Text.translatable("cobblemarket.ban.remaining", BanState.formatRemaining(banInfo.expiresAt!! - System.currentTimeMillis()))
+            Text.translatable("cobblemarket.ban.remaining", BanState.remainingText(banInfo.expiresAt!! - System.currentTimeMillis()))
         val banMsg = if (banInfo.reason.isNotBlank())
             Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, com.shusheng.cobblemarket.market.BanState.reasonText(banInfo.reason))
         else
