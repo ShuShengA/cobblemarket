@@ -698,8 +698,11 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
 
         changeLines.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, line ->
             val y = listStartY() + i * rowHeight
+            // ⚠⭐ 必须用 **truncateStyled**：`truncateText` 是 `Text.literal(t.string)`，
+            //   会把整串压成一段、**分段颜色全丢**（时间灰 / 执行者金 / 封禁红·解封绿全变白），
+            //   于是"行内单色、悬停窗带色"两边对不上 —— 用户 2026-10-04 实测报的正是这个
             context.drawTextWithShadow(textRenderer,
-                TextUtil.truncateText(line.text, panelWidth - 8), leftX + 4, y + 5, 0xFFFFFF)
+                TextUtil.truncateStyled(line.text, panelWidth - 8), leftX + 4, y + 5, 0xFFFFFF)
         }
 
         if (changeLines.size > maxVisible()) {
