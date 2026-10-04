@@ -920,9 +920,17 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         if (payload.success) {
             // 上架成功：回到拍卖场并保持当前 tab（物品上架留在物品 tab）
             client?.setScreen(AuctionScreen(currentTab))
-        } else {
-            // 创建失败（价格限制/黑名单/数量上限等）：聊天框红字提示，弹窗保留供改价重试
-            client?.player?.sendMessage(payload.message.copy().formatted(Formatting.RED), false)
+            return
+        }
+        // 失败：一律先在聊天框说清原因
+        client?.player?.sendMessage(payload.message.copy().formatted(Formatting.RED), false)
+        // ⚠ 然后分两类（2026-10-04 用户实测报的：封禁被拒时弹窗留着，能反复点「上架」）：
+        //   · **可改价重试**（限价类，`retryable`）⇒ 弹窗留着，改完起拍价直接再来一次
+        //   · **没什么可改的**（封禁 / 黑名单 / 市场已关 / 数量上限…）⇒ 关掉回拍卖场，
+        //     别让人对着一个注定失败的弹窗反复点（连点还会把音效刷到被引擎静音）
+        if (!payload.retryable) {
+            closeDialog()
+            client?.setScreen(AuctionScreen(currentTab))
         }
     }
 

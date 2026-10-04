@@ -539,6 +539,8 @@ object CobbleMarketClient {
                     is PointsRechargeScreen -> screen.onMarketResult(payload)
                     // 确认发放 / 作废的结果：管理端界面要刷新列表（详细原因在 message 里，界面负责显示）
                     is AdminPointOrdersScreen -> screen.onResult(payload)
+                    // 借款被拒也走结果包（失败音效挂在它上面）—— 见 LoanScreen.onMarketResult
+                    is LoanScreen -> screen.onMarketResult(payload)
                 }
             }
         }
