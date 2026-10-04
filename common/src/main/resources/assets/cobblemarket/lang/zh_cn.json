@@ -991,7 +991,7 @@
   "cobblemarket.ban.confirm": "确认封禁",
   "cobblemarket.finance.title": "金融管理",
   "cobblemarket.finance.entry_tip": "管理金融事务\n（禁止借款 / 卡片）",
-  "cobblemarket.finance.info_tip": "这里管**金融**：\n· 禁止借款 —— 名单里的玩家借不了钱；存款、取款、还款照常\n· 卡片管理 —— 紫卡 / 黑卡持有者，可直接收回\n⚠ 这里的操作不影响市场交易 —— 封交易在「封禁管理」界面",
+  "cobblemarket.finance.info_tip": "这里管金融，不管市场交易\n· 禁止借款：名单里的人借不了钱\n· 卡片管理：持有者可在这里收回\n⚠ 封交易请去「封禁管理」界面",
   "cobblemarket.finance.tab_loan_block": "禁止借款",
   "cobblemarket.finance.tab_cards": "卡片管理",
   "cobblemarket.finance.player_name": "玩家名",

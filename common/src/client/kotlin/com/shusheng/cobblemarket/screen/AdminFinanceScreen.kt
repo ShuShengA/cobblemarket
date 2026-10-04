@@ -104,8 +104,12 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         /** 当前实现的页签（**按实现进度往里加**；加一枚就自动重排、不用手改坐标） */
         val TABS = listOf("cobblemarket.finance.tab_loan_block", "cobblemarket.finance.tab_cards")
 
-        /** 禁借确认弹窗高度 —— 控件定位与背景绘制**共用这一个数**（照封禁那枚 `DIALOG_H` 的教训） */
-        const val DIALOG_H = 150
+        /**
+         * 禁借确认弹窗高度 —— 控件定位与背景绘制**共用这一个数**（照封禁那枚 `DIALOG_H` 的教训）。
+         * ⚠ 与封禁确认弹窗**取同一个值**（那边也是 148：按钮 118 + 20 + 距底边框 10）——
+         *   两个弹窗长得一样，改一处记得另一处一起看
+         */
+        const val DIALOG_H = 148
     }
 
     override fun init() {
@@ -355,7 +359,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             }
         })
 
-        reasonField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 74, 160, 16, Text.literal(""))
+        reasonField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 92, 160, 16, Text.literal(""))
         reasonField?.setPlaceholder(Text.translatable("cobblemarket.ban.reason"))
         reasonField?.setTextPredicate { it.length <= 100 }
         addDrawableChild(reasonField)
@@ -403,16 +407,13 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             dialogX + 12, dialogY + 58, 0xFFFFFF
         )
         // 时长：空串 = 永久（与输入框同一口径）—— 确认界面就该把正要确认的东西全列出来
+        // ⚠ 版式与封禁确认弹窗**逐行对齐**（标题 14 / 目标 40 / 执行人 58 / 时长 76 / 理由框 92 /
+        //   按钮 118）：两个弹窗长得一样，改一处记得另一处一起看
         context.drawTextWithShadow(
             textRenderer,
             Text.translatable("cobblemarket.ban.duration_label").string +
                 pendingDuration.ifBlank { Text.translatable("cobblemarket.ban.permanent").string },
-            dialogX + 12, dialogY + 22, 0xFFFFFF
-        )
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.ban.reason_label").string,
-            dialogX + 12, dialogY + 92, 0xFFFFFF
+            dialogX + 12, dialogY + 76, 0xFFFFFF
         )
     }
 

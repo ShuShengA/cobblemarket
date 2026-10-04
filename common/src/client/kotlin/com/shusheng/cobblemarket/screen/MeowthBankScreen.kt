@@ -137,14 +137,10 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         // 记下**这次建控件用的**值：每帧据此判断「权限变了、背景挪了没」（见 [syncControlsToBgTop]）
         syncedBgTop = bgTop
 
-        // 返回按钮：右边缘与「全部借款历史」按钮右边缘对齐（**56 宽** → x=width/2+57 ⇒ 右缘 +113）
-        // （全部借款历史：x=width/2+33 宽 80 → 右边缘同为 width/2+113）
-        // ⚠ 这一列从 48 加宽到 56：`NINE_SLICE_BORDER = 6` ⇒ 48 的内净只有 36px，
-        //   而「金融管理」中文 4 字 = 36（贴满）、英文 `Finance` = 42（压边框）；
-        //   56 的内净 44 ⇒ 中文余 8、英文余 2 ✓。加宽时**左缘不动**（右缘往右长），
-        //   否则会撞上左侧那列 100 宽的按钮（它们右缘在 width/2+50）
+        // 返回按钮：右边缘与「全部借款历史」按钮右边缘对齐（48 宽 → x=width/2+57 ⇒ 右缘 +105）
+        // （全部借款历史：x=width/2+25 宽 80 → 右边缘同为 width/2+105）
         backButton = NineSliceButton(
-            width / 2 + 57, bgTop + 76, 56, 16,
+            width / 2 + 57, bgTop + 76, 48, 16,
             Text.literal(""),
             { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
@@ -155,19 +151,20 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
 
         // 规则按钮：返回按钮下方 4px，与「喵喵的帮助」按钮同一水平（悬停显示借款规则与后果面板，照拍卖场规则按钮）
         rulesButton = NineSliceButton(
-            width / 2 + 57, bgTop + 96, 56, 16,
+            width / 2 + 57, bgTop + 96, 48, 16,
             Text.translatable("cobblemarket.meowth_bank.rules"),
             { }
         )
         addDrawableChild(rulesButton)
 
-        // 金融管理入口（FINANCE 节点）：规则按钮下方 4px，与它同宽同 x（56×16）。
-        // ⚠ 原来是「卡片管理」入口（纯图标、两张卡缩略图）；卡片管理现已搬进金融管理当页签，
-        //   所以这里改成文字入口 + 悬停提示（用户 2026-10-05 定：直接写「金融管理」）
+        // 金融管理入口（FINANCE 节点）：规则按钮下方 4px；与规则按钮同宽同 x（48×16），
+        // 两张卡微缩图标在 render 叠加：紫卡左端、黑卡右端，互不粘连（**照原来那个入口的样子** ——
+        // 用户 2026-10-05 实测指出：不要改成文字，就要两张图）。
+        // 悬停提示补上（原来那枚连 tooltip 都没有）
         if (ClientPermissionCache.has(MarketPermissions.FINANCE)) {
             financeButton = NineSliceButton(
-                width / 2 + 57, bgTop + 116, 56, 16,
-                Text.translatable("cobblemarket.finance.title"),
+                width / 2 + 57, bgTop + 116, 48, 16,
+                Text.literal(""),
                 { client?.setScreen(AdminFinanceScreen()) },
                 tooltip = Text.translatable("cobblemarket.finance.entry_tip")
             )
@@ -218,10 +215,9 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         ))
 
         // 全部借款历史（右下）：仅 FINANCE 节点 → 全服借贷流水审计
-        // （x 从 +25 挪到 +33：右列按钮加宽到 56 后右缘到 +113，这里跟着对齐）
         if (ClientPermissionCache.has(MarketPermissions.FINANCE)) {
             addDrawableChild(NineSliceButton(
-                width / 2 + 33, bgTop + 164, 80, 16,
+                width / 2 + 25, bgTop + 164, 80, 16,
                 Text.translatable("cobblemarket.meowth_bank.all_loan_history"),
                 { client?.setScreen(LoanHistoryScreen(showAll = true)) }
             ))
@@ -375,6 +371,32 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         // 规则按钮悬停面板（照拍卖场规则面板：自绘 + 悬停位置自适应）
         if (rulesButton?.isHovered == true) {
             renderRulesPanel(context, mouseX, mouseY)
+        }
+        // 金融管理按钮的两张卡微缩图标（16px 满按钮高，贴图上下透明像素自然留边）：紫卡左端、黑卡右端
+        financeButton?.let { btn ->
+            if (btn.visible) {
+                val purpleItem = net.minecraft.registry.Registries.ITEM.get(
+                    net.minecraft.util.Identifier.of("cobblemarket", "meowth_purple_card")
+                )
+                val blackItem = net.minecraft.registry.Registries.ITEM.get(
+                    net.minecraft.util.Identifier.of("cobblemarket", "meowth_black_card")
+                )
+                val air = net.minecraft.registry.Registries.ITEM.get(net.minecraft.util.Identifier.of("minecraft", "air"))
+                if (purpleItem != air) {
+                    com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                        itemStack = net.minecraft.item.ItemStack(purpleItem),
+                        x = (btn.x + 2).toDouble(), y = (btn.y + 0).toDouble(), scale = 1.0,
+                        matrixStack = context.matrices
+                    )
+                }
+                if (blackItem != air) {
+                    com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                        itemStack = net.minecraft.item.ItemStack(blackItem),
+                        x = (btn.x + btn.width - 2 - 16).toDouble(), y = (btn.y + 0).toDouble(), scale = 1.0,
+                        matrixStack = context.matrices
+                    )
+                }
+            }
         }
         // 关市时点置灰的「喵喵的帮助」：3 秒红字提示（文案与入口界面关市提示同一口径）。
         // 位置取背景底部居中，只有两侧持有者面板之间这条缝是空的 → 完整句子放不下一行，
