@@ -37,46 +37,33 @@ import net.minecraft.client.gui.screen.Screen
  * 把"要不要缩放"的判定收在唯一的策略点 [scaleFor]（只由 `Screen.init` / `Screen.resize` 的注入点调用）。
  */
 object GuiScale {
+    /** 本模组界面所在的包 —— 界面的缩放判定**按包名前缀**（见 [isTarget]） */
+    private const val SCREEN_PACKAGE = "com.shusheng.cobblemarket.screen."
+
     /**
-     * 参与缩放的界面（**分批铺开** —— 见 `docs/gui_scale.md` 第八节）。
+     * **不参与**缩放的界面（其余全部自动生效）。
      *
-     * ⚠ 用**类名字符串**而不是 `screen is XxxScreen`：一是免掉十几个 import，二是加界面只动这一个集合。
-     * ⚠ 最终（第 3 批）整体换成 `screen.javaClass.name.startsWith("com.shusheng.cobblemarket.screen.")`
-     * —— **只改这一处**，35 屏一屏不用动。
-     *
-     * 分批理由：静态审计看不到"运行时才暴露"的坑（本功能 15 条坑里有 5 条是那么来的）⇒
-     * 每批只放一类界面，出问题时范围小、好定位。
+     * ⚠ 用**类名字符串**而不是 `screen !is XxxScreen`：免掉 import，也方便把"为什么排除"写在旁边。
      */
-    private val TARGETS = setOf(
-        "MarketScreen",              // 步骤 2：首屏（列表 + 右侧面板 + 展开浮层 + 3D 图标 + scissor）
-        // ── 第 1 批：纯列表 / 表单型（无弹窗、无自绘特效）──
-        "AdminBanScreen",
-        "AdminItemScreen",
-        "DepositScreen",
-        "LoanScreen",
-        "LoanHistoryScreen",
-        "HistoryScreen",
-        "ItemReturnScreen",
-        "PokemonReturnScreen",
-        "ItemSellScreen",
-        // ── 第 2 批：带弹窗 + 输入框（重点验：弹窗重建后状态恢复）──
-        "BlacklistScreen",
-        "PriceLimitScreen",
-        "BuyOrderScreen",
-        "ServerConfigScreen",
-        "PermissionScreen",
-        "FinanceConfigScreen",
-        "AuctionCreateScreen",
-        "ItemMarketScreen",
-        // ⚠ 特意**不**放 `BalanceHudPositionScreen`：它是**全屏 HUD 的位置编辑器** ——
-        //   HUD 由 ScreenMixin 画在缩放矩阵**之外**（屏幕坐标系），而该界面的 posX/posY/width
-        //   全在**虚拟坐标系** ⇒ 判定框与 HUD 各在一处，表现成"只有中心一小块能拖"（2026-10-04 实测）。
-        //   ⇒ **凡是"编辑全屏元素位置/尺寸"的界面都别放进白名单**（它的坐标必须与那个全屏元素同系）。
-        // ── 第 2.5 批：入口界面 —— 档位按钮就在它自己的设置弹窗里 ⇒ 必须配 `rebuildForScaleChange()` ──
-        "MarketEntryScreen",
+    private val EXCLUDED = setOf(
+        // 全屏 HUD 的位置编辑器：它编辑的 HUD 由 `ScreenMixin` 画在缩放矩阵**之外**（屏幕坐标系），
+        // 而该界面的 posX/posY/width 全在**虚拟坐标系** ⇒ 判定框与 HUD 各在一处，
+        // 表现成"只有中心一小块能拖"（2026-10-04 实测 = 坑 16）。
+        // ⚠⭐ **通用规则**：凡是"**编辑某个全屏元素的位置/尺寸**"的界面都别缩放 ——
+        //   它的坐标必须与**那个全屏元素**同系，一旦把它放进虚拟坐标系就必然与全屏元素错开。
+        "BalanceHudPositionScreen",
     )
 
-    fun isTarget(screen: Screen): Boolean = screen.javaClass.simpleName in TARGETS
+    /**
+     * 是否参与缩放 —— **按包名前缀判定**（第 3 批全量铺开后的形态，见 `docs/gui_scale.md` 第八节）：
+     * 本模组界面全在 `com.shusheng.cobblemarket.screen` 下 ⇒ **新界面自动生效、一屏都不用改**，
+     * 只有 [EXCLUDED] 那几屏例外。
+     *
+     * ⚠ 判定必须在 `Screen.init` **之前**就能出结果（`init` 的注入点要用它算虚拟尺寸）——
+     * 这里只看类名，不依赖任何界面状态 ✓。
+     */
+    fun isTarget(screen: Screen): Boolean =
+        screen.javaClass.name.startsWith(SCREEN_PACKAGE) && screen.javaClass.simpleName !in EXCLUDED
 
     /**
      * 本界面该用的档位：**0 = 不缩放**（跟随原版 / 非目标界面 / 未选择）。
