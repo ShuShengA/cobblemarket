@@ -276,7 +276,8 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
             val durationText = if (entry.expiresAt == null)
                 Text.translatable("cobblemarket.ban.permanent")
             else
-                Text.literal(entry.durationDisplay)
+                // 服务端发的是**剩余毫秒**（不是格式化好的串），这里按词条渲染 ⇒ 跟客户端语言走
+                com.shusheng.cobblemarket.market.BanState.remainingText(entry.remainingMs)
             // 行文字画到「解封按钮左侧留 4px 空隙」为止：按钮起于 panelWidth-60、宽 56，
             // 文字起于 +4 → 可用 = panelWidth - 60 - 4 - 4。金融封禁的原因词条很长，不截会压到按钮上
             context.drawTextWithShadow(textRenderer,

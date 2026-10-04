@@ -139,15 +139,21 @@ class BanState private constructor() : PersistentState() {
             return profile?.let { it.id to it.name }
         }
 
-        fun formatRemaining(ms: Long): String {
+        /**
+         * 剩余时长（**本地化**）：返回 Text 而非字符串 —— 调用方一律把它当**嵌套参数**塞进词条
+         * （如 `ban.remaining`），由客户端按自己的语言渲染。⚠ 别先 `.string` 成串：那样在服务端
+         * 就定死成一种语言了（英文客户端玩家会看到中文）。
+         * 三档与旧的 `3d5h` 写法一一对应，只是补上了语言与单位名。
+         */
+        fun remainingText(ms: Long): net.minecraft.text.Text {
             val totalMinutes = ms / 60000
             val days = totalMinutes / (24 * 60)
             val hours = (totalMinutes % (24 * 60)) / 60
             val minutes = totalMinutes % 60
             return when {
-                days > 0 -> "${days}d${hours}h"
-                hours > 0 -> "${hours}h${minutes}m"
-                else -> "${minutes}m"
+                days > 0 -> net.minecraft.text.Text.translatable("cobblemarket.ban.dur_days_hours", days, hours)
+                hours > 0 -> net.minecraft.text.Text.translatable("cobblemarket.ban.dur_hours_minutes", hours, minutes)
+                else -> net.minecraft.text.Text.translatable("cobblemarket.ban.dur_minutes", minutes)
             }
         }
     }
