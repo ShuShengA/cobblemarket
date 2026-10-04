@@ -272,16 +272,7 @@ object BanNetwork {
         }
     }
 
-    private fun buildBanNotice(expiresAt: Long?, reason: String): MutableText {
-        // 保留 Text 对象：嵌套翻译在客户端语言下渲染
-        val timeDesc: Text = if (expiresAt == null)
-            Text.translatable("cobblemarket.ban.permanent")
-        else
-            Text.translatable("cobblemarket.ban.remaining", BanState.remainingText(expiresAt - System.currentTimeMillis()))
-        val msg = if (reason.isNotBlank())
-            Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, com.shusheng.cobblemarket.market.BanState.reasonText(reason))
-        else
-            Text.translatable("cobblemarket.ban.banned_msg_time", timeDesc)
-        return msg.formatted(Formatting.RED)
-    }
+    /** 封禁通知（红字聊天行）：拼装统一在 BanState.noticeText，这里只管着色 */
+    private fun buildBanNotice(expiresAt: Long?, reason: String): MutableText =
+        BanState.noticeText(expiresAt, reason, System.currentTimeMillis()).formatted(Formatting.RED)
 }
