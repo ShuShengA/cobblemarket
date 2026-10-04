@@ -949,6 +949,7 @@
   "cobblemarket.ban.info_tip": "封禁 = 掐掉市场的交易入口，不没收已有资产\n限制：买入精灵 / 购买物品 / 上架出售 / 发起拍卖 / 拍卖出价 / 发布求购单 / 交付 / 领取待交付\n不影响：取消挂单、领取退货与待领余额、拒绝交付；喵喵银行存取款与还款、卡片照常\n借款：默认照常；封禁时选中「同时禁止借款」才拦",
   "cobblemarket.ban.player_name": "玩家名",
   "cobblemarket.ban.duration": "1d/12h/30m",
+  "cobblemarket.ban.duration_label": "封禁时长：",
   "cobblemarket.ban.ban": "封禁",
   "cobblemarket.ban.unban": "解封",
   "cobblemarket.ban.banned": "已将 %s 封禁交易！",
