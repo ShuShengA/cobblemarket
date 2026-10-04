@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.network
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.finance.FinanceService
+import com.shusheng.cobblemarket.market.BanChangeLogger
 import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
@@ -142,10 +143,79 @@ data class BanListDataPayload(val entries: List<BanEntry>) : CustomPayload {
     }
 }
 
+// ── C2S: 请求封禁变更记录 ──
+
+class RequestBanChangesPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestBanChangesPayload>(CobbleMarket.id("request_ban_changes"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestBanChangesPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestBanChangesPayload() }
+        )
+    }
+}
+
+// ── S2C: 封禁变更记录（**全量**下发：账本永久保留、封禁又不多，不做分页也不做时间窗口） ──
+
+data class BanChangesPayload(val rows: List<Row>) : CustomPayload {
+
+    data class Row(
+        val timestamp: Long,
+        val operator: String,
+        val targetName: String,
+        /** `$cobblemarket.ban.action_ban` / `_unban` —— 客户端按**自己语言**渲染 */
+        val actionKey: String,
+        /** 有效时长毫秒；永久封禁、以及拿不到原时长的解封行 = null */
+        val durationMs: Long?,
+        val reason: String,
+        /** 解封行 = 当初是谁封的；封禁行为空 */
+        val originalBanner: String
+    )
+
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<BanChangesPayload>(CobbleMarket.id("ban_changes"))
+        val CODEC: PacketCodec<PacketByteBuf, BanChangesPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeVarInt(p.rows.size)
+                p.rows.forEach { r ->
+                    b.writeLong(r.timestamp)
+                    b.writeString(r.operator)
+                    b.writeString(r.targetName)
+                    b.writeString(r.actionKey)
+                    b.writeBoolean(r.durationMs != null)
+                    r.durationMs?.let { b.writeLong(it) }
+                    b.writeString(r.reason)
+                    b.writeString(r.originalBanner)
+                }
+            },
+            { b ->
+                val n = b.readVarInt()
+                // ⚠ 读端一律**具名传参**：顺序写错会静默串位（那列的显示会整体错位，编译不报）
+                BanChangesPayload(List(n) {
+                    Row(
+                        timestamp = b.readLong(),
+                        operator = b.readString(),
+                        targetName = b.readString(),
+                        actionKey = b.readString(),
+                        durationMs = if (b.readBoolean()) b.readLong() else null,
+                        reason = b.readString(),
+                        originalBanner = b.readString()
+                    )
+                })
+            }
+        )
+    }
+}
+
 object BanNetwork {
 
     fun register() {
         registerS2CType(BanListDataPayload.ID, BanListDataPayload.CODEC)
+        // ⚠ S2C 两步缺一不可：这里是 common 侧注册类型，客户端那边还要 registerS2C 挂 handler
+        //   （漏了这一步 **Fabric 客户端启动即崩**；NeoForge 自带类型注册、不显形 —— 别拿它跑通当没事）
+        registerS2CType(BanChangesPayload.ID, BanChangesPayload.CODEC)
         registerS2CType(PlayerNameSuggestionsPayload.ID, PlayerNameSuggestionsPayload.CODEC)
 
         registerC2S(RequestPlayerNameSuggestionsPayload.ID, RequestPlayerNameSuggestionsPayload.CODEC) { payload, player ->
@@ -233,7 +303,7 @@ object BanNetwork {
             if (!MarketPermissions.has(player, MarketPermissions.BAN)) return@registerC2S
             val server = player.server
             server.execute {
-                val removed = BanState.get(server).unban(payload.playerUuid)
+                val removed = BanState.get(server).unban(payload.playerUuid, player.name.string)
                 if (removed != null) {
                     // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                     com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
@@ -269,6 +339,24 @@ object BanNetwork {
                 }
                 sendToPlayer(player, BanListDataPayload(entries.reversed()))
             }
+        }
+
+        registerC2S(RequestBanChangesPayload.ID, RequestBanChangesPayload.CODEC) { _, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.BAN)) return@registerC2S
+            // ⚠ **有意不套 `server.execute`**（照 PermissionNetwork 的审计请求）：读 CSV 是磁盘 IO，
+            //   丢回主线程反而会卡 tick；fabric 的 sendToPlayer 在这里是安全的
+            val rows = BanChangeLogger.readAll().map {
+                BanChangesPayload.Row(
+                    timestamp = it.timestamp,
+                    operator = it.operator,
+                    targetName = it.targetName,
+                    actionKey = it.actionKey,
+                    durationMs = it.durationMs,
+                    reason = it.reason,
+                    originalBanner = it.originalBanner
+                )
+            }
+            sendToPlayer(player, BanChangesPayload(rows))
         }
     }
 

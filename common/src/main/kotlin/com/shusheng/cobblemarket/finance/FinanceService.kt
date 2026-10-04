@@ -438,7 +438,8 @@ object FinanceService {
         } else {
             val info = banState.getBanInfo(uuid, now)
             if (info != null && (info.bannedBy == FINANCE_BAN_MARK || info.bannedBy == LEGACY_FINANCE_BAN_MARK)) {
-                banState.unban(uuid)
+                // 系统来源的自动解冻：执行者记成「喵喵行长」那个词条键（与它当初被封的来源对称）
+                banState.unban(uuid, FINANCE_BAN_MARK)
                 server.playerManager.getPlayer(uuid)?.sendMessage(
                     Text.translatable("cobblemarket.repay.unfrozen").formatted(Formatting.GREEN),
                     false

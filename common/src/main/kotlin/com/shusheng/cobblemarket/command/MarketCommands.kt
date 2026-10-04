@@ -1424,7 +1424,7 @@ object MarketCommands {
             return 0
         }
 
-        if (BanState.get(server).unban(target.first) != null) {
+        if (BanState.get(server).unban(target.first, source.name) != null) {
             source.sendFeedback({ Text.translatable("cobblemarket.ban.unbanned", target.second).formatted(Formatting.GREEN) }, false)
             // 坏账玩家解封只放行市场交易：借款/喵喵支付另有独立拦截，撤销坏账才是彻底恢复
             if (FinanceService.hasBadDebt(server, target.first)) {

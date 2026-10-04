@@ -103,6 +103,13 @@
   - ⚠ **A fixed scale only ever makes this mod's UI bigger, never smaller**: on a small window where vanilla's own scale is already low, switching may appear to do nothing — that is by design, not a failure
   - ⚠ Applies **immediately** (no need to reopen the screen); ⚠ client-side only — **server and client do not need to be updated together**
 
+- **Ban management gained a "Change Log" tab**: the ban list only ever showed the bans **currently in effect** — who issued them and when one was lifted was gone the moment it was lifted (if A banned someone and B unbanned them, there was no way to look it up afterwards). A new tab at the top of the screen lists **every ban and unban**: time, operator → target, action, duration, reason
+  - ⚠ **Each unban entry carries the original banner**: one line tells you who originally banned them, for how long, and why — no need to go hunting for the original ban entry
+  - ⚠ **Automatic ones are recorded too**: an overdue auto-freeze / auto-unfreeze is logged as "Meowth Bank Manager", the same wording used in ban reasons
+  - ⚠ The ledger lives in `config/cobblemarket/bans/` (bilingual CSVs, split by day) and is **kept forever — never auto-deleted**; delete files yourself if you want to clean up
+  - ⚠ Bans and unbans made through `/market ban`, `/market unban` and the admin screen **are all recorded** (writing is funnelled through one place, so no entry point can silently skip it)
+  - ⚠ **Server and client must be updated together** (the network format changed)
+
 ### Changes
 
 - **The force-cancel dialog now shows an item's full tooltip**: for an item auction it used to show only "item name + ×count" — no enchantments, no attribute modifiers, no potions, no custom lore — while the **bid dialog** showed them all. It now matches the bid dialog: the full tooltip, and **Shift / Ctrl expands it** (the dialog grows taller and wider to fit, and the **two buttons at the bottom move down with it** — they used to stay put and overlap the "Force-cancel this auction?" notice that had already moved down)
@@ -127,6 +134,14 @@
 - **"Reset" no longer wipes the search box**: the ↺ button in the Pokémon market's and the admin screen's ("All Listed Pokémon") filter panels used to clear **your search keyword along with the filters** — but it sits inside the filter panel, and pressing it usually just means "put the filters back to default". It now resets **the filter options only** (shiny / gender / type / sort / IVs and so on) and keeps your search text, matching how the other screens (auctions / listing picker / auction creation) already behaved
 
 - **The item market's top bar now uses the Pokemon market's layout**: the top bar used to pack four controls into one row ("search + list + Mine + Sort"); it now matches the Pokemon market's "search + list + **Filter**", with **Sort and Mine moved into the right-hand filter panel** that the button opens. Both work exactly as before — Sort still cycles through its modes, Mine is still a toggle (highlighted while on) — and the search box is longer as a result, so longer item names fit at a glance. ⚠ The panel's first row also carries a **↺ Reset** that puts its three controls (Sort / Mine / Category) back to their defaults — **your search keyword is left alone**
+
+- **Ban remaining time now follows your client language**: it used to be shown as `3d5h` in every language (Chinese clients saw `3d5h` too). It is now "3 天 5 小时" in Chinese and `3d 5h` in English — both in the admin ban list and in the chat message a banned player receives
+
+- **The ban management screen now explains what a ban does and does not affect**: an **info icon in the top-left corner** shows the full scope on hover — a ban cuts off the market's trading entries (buying Pokemon / buying items / listing for sale / starting an auction / bidding / buy orders / delivering / claiming a delivery) and **does not seize existing assets** (cancelling a listing, collecting returns and pending balance, and declining a delivery all still work), while Meowth Bank deposits, withdrawals and repayments and cards are unaffected. ⚠ This matches the wording used on the "Ban Management" page of the website
+
+- **Banned players are now told when they open the market**: previously you only got rejected **when you clicked something you were restricted from** — the only way to find out you were banned was to try. Now, **the first time you open the market after logging in**, a red message (remaining time + reason) appears in chat
+
+- **Bans can now also block borrowing**: the admin ban confirmation dialog has a new "Also block loans" toggle (**off by default**, so existing behaviour is unchanged) — when selected, the ban blocks **borrowing** on top of market trading. ⚠ **Borrowing only**: deposits, withdrawals and **repayments still work** (repayments must keep working — paying the loan down is how the player climbs out of overdue status; locking them out just means the money never comes back). ⚠ A player blocked this way gets "you are banned from taking loans" rather than "you are banned from trading" (they can still trade normally, and telling them otherwise sends them off to ask the owner why they can still buy things)
 
 ### Fixes
 
