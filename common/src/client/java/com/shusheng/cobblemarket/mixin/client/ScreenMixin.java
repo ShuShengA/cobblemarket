@@ -66,11 +66,13 @@ public abstract class ScreenMixin {
         PokemonCelebrationAnimation.renderOverlay(context, deltaTicks);
         ItemCelebrationAnimation.INSTANCE.renderOverlay(context, deltaTicks);
         CardCelebrationAnimation.INSTANCE.renderOverlay(context);
+        // 关闭动画矩阵恢复（与 HEAD 配对）。⚠ 余额 HUD 画在它**之后**（见下）
+        CloseAnimation.INSTANCE.popTransform(context);
         // 余额 HUD（顶层，onTop=true）：界面（含弹窗遮罩）画完后补画，保证竞价/购买弹窗打开时余额不被压暗。
         // ⚠ 这条路径只在**本模组界面**画；原版界面那种「在下面淡淡透出来」的效果由 HUD 层那条路径负责
+        // ⚠⭐ **位置有讲究**（2026-10-04）：必须夹在**两个动画 pop 之间** —— 在关闭动画矩阵**之外**
+        //   （不然关闭界面时 HUD 会跟着界面上滑、界面一关又跳回原位），但在进场动画矩阵**之内**（照旧）。
         CobbleMarketClientKt.renderBalanceHud(context, true);
-        // 关闭动画矩阵恢复（与 HEAD 配对；动画中界面内容与 HUD 一起滑出）
-        CloseAnimation.INSTANCE.popTransform(context);
         EnterAnimation.INSTANCE.popTransform(context);
         // 聊天播报悬浮大图：鼠标停在拍卖/求购播报上时在右半屏中心画拍品大图。
         // 必须放在矩阵恢复之后（它自己会清深度缓冲，夹在 push/pop 之间会把矩阵栈搅乱），
