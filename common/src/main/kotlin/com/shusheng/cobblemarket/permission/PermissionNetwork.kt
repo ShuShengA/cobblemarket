@@ -234,6 +234,10 @@ object PermissionNetwork {
 
         registerC2S(RequestPermissionSnapshotPayload.ID, RequestPermissionSnapshotPayload.CODEC) { _, player ->
             if (!RequestThrottle.allow(player.uuid, "request_permission_snapshot", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
+            // 顺手补一条封禁提示（本会话只发一次）。⚠ 放在节流**之后**：被丢掉的请求不该消耗这次机会。
+            // 入口界面来要快照 = 玩家"开市场"的那一刻，正是告知他封禁状态的最好时机
+            // （那个请求只有入口界面发、不轮询 —— 别挪到余额那种被 HUD 每 2 秒拉一次的请求上去）
+            com.shusheng.cobblemarket.market.BanState.notifyOnMarketOpen(player.server, player)
             sendToPlayer(player, snapshotOf(player))
         }
 

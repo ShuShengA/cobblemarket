@@ -114,6 +114,53 @@ class BanState private constructor() : PersistentState() {
             server.overworld.persistentStateManager.getOrCreate(TYPE, "${CobbleMarket.MOD_ID}_bans")
 
         /**
+         * 本会话**已经提示过封禁**的玩家（内存、**不落盘**）。
+         * 登录时清掉自己的条目 ⇒ 语义正好是「每次登录后首次开市场提示一次」，**不需要退出钩子**。
+         * 用并发集合：登录钩子与请求处理虽然都在主线程，但这里刻意不留线程假设。
+         */
+        private val sessionNotified: MutableSet<UUID> =
+            java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<UUID, Boolean>())
+
+        /** 玩家上线：清掉会话提示标记（下次开市场还要能收到那条提示） */
+        fun clearSessionNotified(uuid: UUID) {
+            sessionNotified.remove(uuid)
+        }
+
+        /**
+         * 玩家**开市场**（入口界面来要权限快照那一刻）补一条封禁提示 —— **每个会话只发一次**，
+         * 让被封的玩家不至于"点了才知道"。用的是与"操作被拒"完全相同的那句红字词条。
+         * ⚠ 判"首次"直接用集合 add 的返回值：同一个集合同时承担去重，不用另开标志位。
+         */
+        fun notifyOnMarketOpen(server: net.minecraft.server.MinecraftServer, player: net.minecraft.server.network.ServerPlayerEntity) {
+            if (!sessionNotified.add(player.uuid)) return
+            val info = get(server).getBanInfo(player.uuid, System.currentTimeMillis()) ?: return
+            server.execute {
+                player.sendMessage(
+                    noticeText(info, System.currentTimeMillis()).formatted(net.minecraft.util.Formatting.RED), false
+                )
+            }
+        }
+
+        /**
+         * 封禁提示（聊天行）的**统一拼装**：`<首句>。<剩余时间或永久>。理由：…`
+         * —— 理由为空时自动走不带理由的变体，**不留一个空的「理由：」**。
+         * @param keyBase 词条前缀，**不带** `_time` / `_time_reason` 后缀 ——
+         *   市场交易 = `cobblemarket.ban.banned_msg`；仅借款 = `cobblemarket.ban.loan_blocked_msg`
+         * ⚠ 全程只传 Text、**不拼串**：嵌套词条由**客户端**按自己的语言渲染（服务端语言 ≠ 客户端语言）
+         */
+        // ⚠ 返回 MutableText（不是 Text）：调用方要接 `.formatted(RED)`，而 formatted 只挂在 MutableText 上
+        fun noticeText(info: BanInfo, now: Long, keyBase: String = "cobblemarket.ban.banned_msg"): net.minecraft.text.MutableText {
+            val timeDesc: net.minecraft.text.Text = if (info.isPermanent)
+                net.minecraft.text.Text.translatable("cobblemarket.ban.permanent")
+            else
+                net.minecraft.text.Text.translatable("cobblemarket.ban.remaining", remainingText(info.expiresAt!! - now))
+            return if (info.reason.isNotBlank())
+                net.minecraft.text.Text.translatable("${keyBase}_time_reason", timeDesc, reasonText(info.reason))
+            else
+                net.minecraft.text.Text.translatable("${keyBase}_time", timeDesc)
+        }
+
+        /**
          * 封禁理由渲染约定：以 $ 开头的 reason 是 translatable key（系统来源，渲染时按玩家语言翻译）；
          * 玩家手动填写的理由原样显示（不翻译）。
          */

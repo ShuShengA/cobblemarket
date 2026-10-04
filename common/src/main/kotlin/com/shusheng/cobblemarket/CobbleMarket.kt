@@ -156,6 +156,9 @@ object CobbleMarket {
 			val state = MarketState.get(player.server)
 			val stateServer = player.server
 
+			// 封禁提示：登录即清掉会话标记 ⇒ 本次会话首次开市场时会补一条（见 BanState.notifyOnMarketOpen）
+			com.shusheng.cobblemarket.market.BanState.clearSessionNotified(player.uuid)
+
 			stateServer.execute {
 				// 金融系统：登录即检查该玩家贷款的到期划扣（覆盖「到期后玩家才上线」场景）
 				com.shusheng.cobblemarket.finance.FinanceService.onPlayerJoin(player)
