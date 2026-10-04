@@ -45,8 +45,11 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     private var banButton: NineSliceButton? = null
     private var backButton: NineSliceButton? = null
     private var infoButton: NineSliceButton? = null
+    /** 「同时禁止借款」开关（确认弹窗里那枚）：标签即状态名，选中态走 `selectedVisual` 第三段纹理 */
+    private var blockLoanButton: NineSliceButton? = null
     private var pendingBanName = ""
     private var pendingBanDuration = ""
+    private var pendingBlockLoan = false
     private var bans = listOf<BanEntry>()
     private var scrollOffset = 0
     private var hoveredRow = -1
@@ -69,6 +72,13 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
 
     private companion object {
         const val MAX_SUGGESTION_ROWS = 8
+        /**
+         * 封禁确认弹窗高度 —— **控件定位与背景绘制共用这一个数**。
+         * 原先两边各写一遍（`height/2 - 75` 与 `dialogH = 150`），加一行控件漏改一处就会控件与背景错位。
+         * 版式：标题 14 / 玩家名 40 / 执行人员 58 / 理由输入框 74(h16) /
+         *       借款开关 100(h20) / 按钮 134(h20) / 距底边框 22
+         */
+        const val DIALOG_H = 176
     }
 
     override fun init() {
@@ -148,6 +158,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     private fun openBanConfirmDialog(name: String, duration: String) {
         pendingBanName = name
         pendingBanDuration = duration
+        pendingBlockLoan = false   // 每次开弹窗都从「不选」起（= 老行为），不继承上一次
         nameField?.visible = false
         durationField?.visible = false
         banButton?.visible = false
@@ -161,7 +172,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         lastRequestPrefix = null
         rebuildSuggestionList()
         val centerX = width / 2
-        val dialogY = height / 2 - 75
+        val dialogY = height / 2 - DIALOG_H / 2
 
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -174,13 +185,25 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         reasonField?.setTextPredicate { it.length <= 100 }
         addDrawableChild(reasonField)
 
+        // 「同时禁止借款」开关：**按钮形态**（标签就是状态名，选中态走第三段纹理），
+        // 两态说明按约定写在悬停提示里（「选中：… / 不选：…」），不是打勾的说法
+        val loanBtn = NineSliceButton(
+            centerX - 85, dialogY + 100, 170, 20,
+            Text.translatable("cobblemarket.ban.block_loan"),
+            { toggleBlockLoan() },
+            tooltip = Text.translatable("cobblemarket.ban.block_loan_tip")
+        )
+        loanBtn.selectedVisual = pendingBlockLoan
+        blockLoanButton = loanBtn
+        addDrawableChild(loanBtn)
+
         addDrawableChild(NineSliceButton(
-            centerX - 85, dialogY + 108, 80, 20,
+            centerX - 85, dialogY + 134, 80, 20,
             Text.translatable("cobblemarket.ban.confirm"),
             { confirmBan() }
         ))
         addDrawableChild(NineSliceButton(
-            centerX + 5, dialogY + 108, 80, 20,
+            centerX + 5, dialogY + 134, 80, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeBanConfirmDialog() }
         ))
@@ -189,7 +212,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     private fun renderBanDialogBackground(context: DrawContext) {
         val centerX = width / 2
         val dialogW = minOf(300, width - 40).coerceAtLeast(200)
-        val dialogH = 150
+        val dialogH = DIALOG_H
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
 
@@ -209,9 +232,15 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
             dialogX + 12, dialogY + 58, 0xFFFFFF)
     }
 
+    /** 翻「同时禁止借款」：只改状态与选中态，不重建按钮 */
+    private fun toggleBlockLoan() {
+        pendingBlockLoan = !pendingBlockLoan
+        blockLoanButton?.selectedVisual = pendingBlockLoan
+    }
+
     private fun confirmBan() {
         val reason = reasonField?.text?.trim() ?: ""
-        sendToServer(AdminBanPayload(pendingBanName, pendingBanDuration, reason))
+        sendToServer(AdminBanPayload(pendingBanName, pendingBanDuration, reason, pendingBlockLoan))
         closeBanConfirmDialog()
         nameField?.text = ""
         durationField?.text = ""
@@ -220,7 +249,9 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     private fun closeBanConfirmDialog() {
         pendingBanName = ""
         pendingBanDuration = ""
+        pendingBlockLoan = false
         reasonField = null
+        blockLoanButton = null
         clearChildren()
         init()
     }
@@ -380,11 +411,13 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     }
 
     private fun renderBanTooltip(context: DrawContext, entry: BanEntry, mouseX: Int, mouseY: Int) {
-        val lines = listOf(
-            "${Text.translatable("cobblemarket.ban.target").string} ${entry.playerName}",
-            "${Text.translatable("cobblemarket.ban.by").string} ${com.shusheng.cobblemarket.market.BanState.reasonText(entry.bannedBy).string}",
-            "${Text.translatable("cobblemarket.ban.reason_label").string} ${com.shusheng.cobblemarket.market.BanState.reasonText(entry.reason).string.ifBlank { "-" }}"
-        )
+        val lines = buildList {
+            add("${Text.translatable("cobblemarket.ban.target").string} ${entry.playerName}")
+            add("${Text.translatable("cobblemarket.ban.by").string} ${com.shusheng.cobblemarket.market.BanState.reasonText(entry.bannedBy).string}")
+            add("${Text.translatable("cobblemarket.ban.reason_label").string} ${com.shusheng.cobblemarket.market.BanState.reasonText(entry.reason).string.ifBlank { "-" }}")
+            // 勾了「同时禁止借款」才多这一行：这开关设完在别处看不见，悬停窗是唯一能回看的地方
+            if (entry.blockLoan) add(Text.translatable("cobblemarket.ban.block_loan").string)
+        }
 
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
