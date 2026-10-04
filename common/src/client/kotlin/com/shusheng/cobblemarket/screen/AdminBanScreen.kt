@@ -161,7 +161,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
             width / 2 - 148, 18, 16, 16,
             Text.literal(""),
             { },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/info.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/icon/info.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f
         )
         infoBtn.setTooltip(
