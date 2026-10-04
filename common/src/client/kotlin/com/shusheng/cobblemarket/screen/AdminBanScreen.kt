@@ -706,6 +706,16 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         val lines: List<Text> = buildList {
             add(Text.literal("${Text.translatable("cobblemarket.ban.target").string} ${entry.playerName}"))
             add(Text.literal("${Text.translatable("cobblemarket.ban.by").string} ${com.shusheng.cobblemarket.market.BanState.reasonText(entry.bannedBy).string}"))
+            // ⚠⭐ 剩余时间**必须在这里也来一行**（2026-10-04 用户报）：行内虽然有，但玩家名一长
+            //   行就被截断成「Shu_ShengA · Shu_ShengA · 23 ...」，悬停窗又只列了 玩家/执行人/理由
+            //   ⇒ 两头都看不到。永久也走同一个标签（值用「永久」）⇒「剩余时间：永久」读得通、不用多加词条
+            add(
+                Text.translatable(
+                    "cobblemarket.ban.remaining",
+                    if (entry.expiresAt == null) Text.translatable("cobblemarket.ban.permanent")
+                    else com.shusheng.cobblemarket.market.BanState.remainingText(entry.remainingMs)
+                )
+            )
             add(Text.literal("${Text.translatable("cobblemarket.ban.reason_label").string} ${com.shusheng.cobblemarket.market.BanState.reasonText(entry.reason).string.ifBlank { "-" }}"))
             // 勾了「同时禁止借款」才多这一行：这开关设完在别处看不见，悬停窗是唯一能回看的地方
             if (entry.blockLoan) add(Text.translatable("cobblemarket.ban.block_loan"))
