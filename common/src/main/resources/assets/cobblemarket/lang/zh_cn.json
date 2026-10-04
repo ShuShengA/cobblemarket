@@ -590,7 +590,7 @@
   "cobblemarket.ban.by_finance": "喵喵行长",
   "cobblemarket.ban.reason_label": "封禁理由：",
   "cobblemarket.ban.block_loan": "同时禁止借款",
-  "cobblemarket.ban.block_loan_tip": "选中：借款也一并禁止（存款、取款、还款照常）\n不选：只拦市场交易",
+  "cobblemarket.ban.block_loan_tip": "选中：借款也一并禁止\n不选：只拦市场交易\n存款、取款、还款两种状态下都照常",
   "cobblemarket.ban.confirm": "确认封禁",
   "cobblemarket.buy_order.title": "求购单",
   "cobblemarket.meowth_bank.title": "喵喵银行",

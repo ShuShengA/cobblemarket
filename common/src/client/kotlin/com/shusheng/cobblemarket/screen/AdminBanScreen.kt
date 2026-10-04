@@ -190,17 +190,28 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         openBanConfirmDialog(name, duration)
     }
 
-    private fun openBanConfirmDialog(name: String, duration: String) {
-        pendingBanName = name
-        pendingBanDuration = duration
-        pendingBlockLoan = false   // 每次开弹窗都从「不选」起（= 老行为），不继承上一次
+    /**
+     * 弹窗打开时藏掉主界面**所有可点控件**。
+     * ⚠⭐ **新增任何按钮/输入框都要加进这里** —— 遮罩只挡视线、**挡不住点击**（用户实测报过：
+     *   封禁确认弹窗开着还能点到底下的页签）。所以这份名单必须收口成一处，别散在各自的开弹窗代码里。
+     * （关闭走 `closeBanConfirmDialog` → `clearChildren()` + `init()`，控件是重建的，不用手动恢复）
+     */
+    private fun hideMainControls() {
         nameField?.visible = false
         durationField?.visible = false
         banButton?.visible = false
         backButton?.visible = false
-        // 弹窗开着时藏掉：它虽是先加的（会被遮罩压住），但仍可点、悬停提示会刺穿弹窗
         infoButton?.visible = false
+        bansTabButton?.visible = false
+        changesTabButton?.visible = false
         unbanButtons.forEach { it.visible = false }
+    }
+
+    private fun openBanConfirmDialog(name: String, duration: String) {
+        pendingBanName = name
+        pendingBanDuration = duration
+        pendingBlockLoan = false   // 每次开弹窗都从「不选」起（= 老行为），不继承上一次
+        hideMainControls()
         // 收起可能展开的联想列表（否则联想按钮残留在遮罩下可点）
         suggestionsOpen = false
         suggestDirty = false
