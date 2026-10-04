@@ -97,7 +97,8 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         val tooltip: List<Text>
     )
     private var changeLines = listOf<ChangeLine>()
-    private val unbanButtons = mutableListOf<NineSliceButton>()
+    /** 每行的行内按钮（**编辑 + 解封两枚都在这里**）—— 名字别再叫 unbanButtons，它装的不止解封 */
+    private val rowButtons = mutableListOf<NineSliceButton>()
 
     // 玩家名联想（覆盖存档所有登录过的玩家，含离线）：输入防抖后请求服务端，展开列表点选
     private var suggestions = listOf<String>()
@@ -228,7 +229,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         infoButton?.visible = false
         bansTabButton?.visible = false
         changesTabButton?.visible = false
-        unbanButtons.forEach { it.visible = false }
+        rowButtons.forEach { it.visible = false }
     }
 
     /**
@@ -507,8 +508,8 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     }
 
     private fun rebuildRowButtons() {
-        unbanButtons.forEach { remove(it) }
-        unbanButtons.clear()
+        rowButtons.forEach { remove(it) }
+        rowButtons.clear()
         // 联想列表展开时行按钮保持隐藏：数据刷新触发的重建会把新按钮追加到 children 末尾，
         // 浮在联想按钮之上拦截点击（联想收起时 rebuildSuggestionList 会重建恢复）
         if (suggestionsOpen) return
@@ -523,7 +524,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
                 { openBanEditDialog(entry) }
             )
             editBtn.visible = show
-            unbanButtons.add(editBtn)
+            rowButtons.add(editBtn)
             addDrawableChild(editBtn)
 
             val unbanBtn = NineSliceButton(
@@ -533,7 +534,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
             )
             // 弹窗打开时 / 切到变更记录页签时都要藏起来（那一页没有可操作的行）
             unbanBtn.visible = show
-            unbanButtons.add(unbanBtn)
+            rowButtons.add(unbanBtn)
             addDrawableChild(unbanBtn)
         }
     }
