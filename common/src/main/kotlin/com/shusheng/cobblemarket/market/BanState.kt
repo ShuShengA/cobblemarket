@@ -43,8 +43,40 @@ class BanState private constructor() : PersistentState() {
         BanChangeLogger.log(
             operator = bannedBy, targetName = playerName, targetUuid = playerUuid,
             actionKey = ACTION_BAN, durationMs = expiresAt?.minus(now), reason = reason,
-            originalBanner = ""
+            originalBanner = "", blockLoan = blockLoan
         )
+    }
+
+    /**
+     * **编辑**一笔已生效的封禁（时长 / 理由 / 同时禁止借款）。
+     *
+     * ⚠⭐ **保留原 `bannedAt`**（用户 2026-10-04 拍板）：新的到期时刻 = **原起点 + 新时长** ——
+     *   只是去开个「同时禁止借款」开关，不该把已经过了两天的 3 天封禁续成新的 3 天。
+     *   真要把人关更久，就把时长填大。
+     *
+     * @param expiresAt 新的到期时刻（null = 改成永久）
+     * @return 改后的 [BanInfo]；该玩家当前没被封则返回 null（调用方据此回一句提示）
+     */
+    fun editBan(
+        playerUuid: UUID,
+        bannedBy: String,
+        expiresAt: Long?,
+        reason: String,
+        blockLoan: Boolean
+    ): BanInfo? {
+        val old = bans[playerUuid] ?: return null
+        val updated = BanInfo(playerUuid, old.playerName, bannedBy, old.bannedAt, expiresAt, reason, blockLoan)
+        bans[playerUuid] = updated
+        markDirty()
+        BanChangeLogger.log(
+            operator = bannedBy, targetName = old.playerName, targetUuid = playerUuid,
+            actionKey = ACTION_EDIT, durationMs = expiresAt?.minus(old.bannedAt), reason = reason,
+            originalBanner = "", blockLoan = blockLoan,
+            // 「改前」两列：新值在时长/借款两列，旧值在这里 ⇒ 账本上一比就是「3 天 → 7 天、不选 → 选中」
+            beforeDurationMs = old.expiresAt?.minus(old.bannedAt),
+            beforeBlockLoan = old.blockLoan
+        )
+        return updated
     }
 
     /**
@@ -60,7 +92,8 @@ class BanState private constructor() : PersistentState() {
             BanChangeLogger.log(
                 operator = operator, targetName = removed.playerName, targetUuid = playerUuid,
                 actionKey = ACTION_UNBAN, durationMs = removed.expiresAt?.minus(removed.bannedAt),
-                reason = removed.reason, originalBanner = removed.bannedBy
+                reason = removed.reason, originalBanner = removed.bannedBy,
+                blockLoan = removed.blockLoan
             )
         }
         return removed
@@ -106,6 +139,8 @@ class BanState private constructor() : PersistentState() {
          *  直接复用界面上那两枚按钮的译名（「封禁 / 解封」）—— 同一个概念只留一个词条 */
         const val ACTION_BAN = "\$cobblemarket.ban.ban"
         const val ACTION_UNBAN = "\$cobblemarket.ban.unban"
+        /** 「修改」= 编辑一笔已生效的封禁（见 [editBan]）：账本要能一眼看出这是编辑、不是新封 */
+        const val ACTION_EDIT = "\$cobblemarket.ban.action_edit"
 
         private val TYPE = PersistentState.Type(
             { BanState() },
