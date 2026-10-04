@@ -597,7 +597,7 @@
   "cobblemarket.ban.confirm": "Confirm Ban",
   "cobblemarket.finance.title": "Finance",
   "cobblemarket.finance.entry_tip": "Manage finance\n(loan blocks / cards)",
-  "cobblemarket.finance.info_tip": "This screen manages **finance**:\n- Loan blocks: listed players cannot borrow.\n  Deposits, withdrawals and repayments work as usual\n- Cards: purple / black card holders, revocable here\nTrading is NOT affected here - that is Ban Management",
+  "cobblemarket.finance.info_tip": "This screen manages finance, not trading\n- Loan blocks: listed players cannot borrow\n- Cards: revoke purple / black cards here\nTrading lives in Ban Management",
   "cobblemarket.finance.tab_loan_block": "Loan Ban",
   "cobblemarket.finance.tab_cards": "Cards",
   "cobblemarket.finance.player_name": "Player name",
