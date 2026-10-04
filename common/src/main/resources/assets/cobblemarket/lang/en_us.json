@@ -578,7 +578,7 @@
   "cobblemarket.ban.reason": "Reason (optional)",
   "cobblemarket.ban.reason_finance": "Meowth Bank: overdue loan (auto-unfreeze upon repayment; bad debt needs a market admin)",
   "cobblemarket.ban.by_finance": "Meowth Bank Manager",
-  "cobblemarket.ban.reason_label": "Reason",
+  "cobblemarket.ban.reason_label": "Reason: ",
   "cobblemarket.ban.confirm": "Confirm Ban",
   "cobblemarket.buy_order.title": "Buy Orders",
   "cobblemarket.meowth_bank.title": "Meowth Bank",
