@@ -234,6 +234,8 @@
 
 - **The smartphone Market icon now reads "Open CobbleMarket" on hover** (it used to show "Pokémon" / the Chinese market label)
 
+- **The balance HUD slid up together with the screen when closing a market screen**: with the "market animation" setting on, closing any market screen made the balance number slide up with the screen and then snap right back once the screen was gone (present since 1.1.1). The close animation now only moves the screen itself — the balance stays where it is
+
 ## 1.1.3 (released)
 
 ### Fixes
