@@ -598,7 +598,9 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
             // 行文字画到「解封按钮左侧留 4px 空隙」为止：按钮起于 panelWidth-60、宽 56，
             // 文字起于 +4 → 可用 = panelWidth - 60 - 4 - 4。金融封禁的原因词条很长，不截会压到按钮上
             context.drawTextWithShadow(textRenderer,
-                TextUtil.truncateText(
+                // 同样用 truncateStyled：今天这行是单色、两种写法看不出差别，但换成富文本（哪天给名字上色）
+                // 就会踩同一个坑 —— 一刀切用富文本版，省得下次再想起来
+                TextUtil.truncateStyled(
                     Text.literal("${entry.playerName}  ·  ").append(com.shusheng.cobblemarket.market.BanState.reasonText(entry.bannedBy)).append("  ·  ").append(durationText),
                     // 行文字画到「编辑按钮左侧留 4px」为止：按钮组起于 panelWidth-110、文字起于 +4
                     // ⇒ 可用 = panelWidth - 118（多一枚「编辑」后从原来的 68 收窄）
