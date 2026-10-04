@@ -444,6 +444,8 @@ object CobbleMarketClient {
                     is AuctionCreateScreen -> screen.onMarketResult(payload)
                     is AdminAuctionScreen -> screen.onMarketResult(payload)
                     is BuyOrderScreen -> screen.onMarketResult(payload)
+                    // 借款被拒也走结果包（失败音效挂在它上面）—— 见 LoanScreen.onMarketResult
+                    is LoanScreen -> screen.onMarketResult(payload)
                 }
             }
         }

@@ -669,32 +669,32 @@ object FinanceNetwork {
                 val now = System.currentTimeMillis()
                 // 文案区分：总开关关 = 喵喵银行没开门；现金贷关 = 喵喵的帮助暂未开放
                 if (!CobbleMarketConfig.financeEnabled) {
-                    player.sendMessage(Text.translatable("cobblemarket.loan.finance_disabled").formatted(Formatting.RED), false)
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.loan.finance_disabled").formatted(Formatting.RED)))
                     return@execute
                 }
                 if (!CobbleMarketConfig.cashLoanEnabled) {
-                    player.sendMessage(Text.translatable("cobblemarket.loan.cash_loan_disabled").formatted(Formatting.RED), false)
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.loan.cash_loan_disabled").formatted(Formatting.RED)))
                     return@execute
                 }
                 // 逾期/坏账禁止新增借贷（ACTIVE 不拦：允许多笔并存）；文案区分：逾期=暂时，坏账=永久
                 val mine = state.getLoansByPlayer(player.uuid)
                 if (mine.any { it.status == LoanStatus.BAD_DEBT }) {
-                    player.sendMessage(Text.translatable("cobblemarket.loan.bad_debt_blocked").formatted(Formatting.RED), false)
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.loan.bad_debt_blocked").formatted(Formatting.RED)))
                     return@execute
                 }
                 if (mine.any { it.status == LoanStatus.OVERDUE }) {
-                    player.sendMessage(Text.translatable("cobblemarket.loan.overdue_blocked").formatted(Formatting.RED), false)
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.loan.overdue_blocked").formatted(Formatting.RED)))
                     return@execute
                 }
                 val plan = CobbleMarketConfig.loanPlans.getOrNull(payload.planIndex)
                 if (plan == null) {
-                    player.sendMessage(Text.translatable("cobblemarket.loan.invalid_plan").formatted(Formatting.RED), false)
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.loan.invalid_plan").formatted(Formatting.RED)))
                     return@execute
                 }
                 val amount = payload.amount
                 // CurrencyHandler.remove 为 Int 签名（批次 5 还款划扣侧），借款金额钳制在 Int 范围内防后续截断
                 if (amount <= 0 || amount > Int.MAX_VALUE) {
-                    player.sendMessage(Text.translatable("cobblemarket.loan.invalid_amount").formatted(Formatting.RED), false)
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.loan.invalid_amount").formatted(Formatting.RED)))
                     return@execute
                 }
                 val limit = state.creditLimitFor(player.uuid, now)
@@ -1199,7 +1199,9 @@ object FinanceNetwork {
     private fun banBlocksLoan(server: MinecraftServer, player: ServerPlayerEntity): Boolean {
         val info = BanState.get(server).getBanInfo(player.uuid, System.currentTimeMillis()) ?: return false
         if (!info.blockLoan) return false
-        player.sendMessage(banLoanNotice(info), false)
+        // ⚠ 走结果包（不是 `player.sendMessage`）：失败音效由 `MarketResultPayload(success=false)` 在客户端
+        //   触发，直接发聊天行就只有红字、没有声音（用户 2026-10-04 实测报的）；同一条路上的其它拦截也一并改了
+        sendToPlayer(player, MarketResultPayload(false, banLoanNotice(info)))
         return true
     }
 
