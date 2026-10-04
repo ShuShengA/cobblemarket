@@ -30,6 +30,12 @@
   - ⚠ The vacant slot at the right end of the item tab's top bar (next to the list button) is now the **Filter** button
   - ⚠ That panel's first row also carries a **↺ Reset** which resets **the item side only** (Sort / Category) — **the Pokémon filters are never touched** (shiny / gender / type / ability / nature / hyper training / IVs all stay as they were)
 
+- **UI scale (affects this mod's screens only)**: the market entry screen's **settings dialog** gained a **"UI scale"** row (first one in the "Display" group), cycling through **Auto / 1 / 2 / 3 / 4 / 5**, **default 3**
+  - Why: this mod's screens are laid out for **1080p (vanilla scale 3)**, and on 2K / 4K displays vanilla's "Auto" gives a *smaller* logical screen — the UI gets squeezed (English lines drawn past their box, lists crammed together). You can now enlarge **this mod's screens** on their own; the chat, toasts and other mods' screens are **not affected in the slightest**
+  - **"Auto" = follow vanilla exactly** (identical to not having this option) and is your way back if anything looks off; conversely, on a 4K display a fixed scale makes the UI look small — "Auto" is the better pick there
+  - ⚠ **A fixed scale only ever makes this mod's UI bigger, never smaller**: on a small window where vanilla's own scale is already low, switching may appear to do nothing — that is by design, not a failure
+  - ⚠ Applies **immediately** (no need to reopen the screen); ⚠ client-side only — **server and client do not need to be updated together**
+
 ### Changes
 
 - **The force-cancel dialog now shows an item's full tooltip**: for an item auction it used to show only "item name + ×count" — no enchantments, no attribute modifiers, no potions, no custom lore — while the **bid dialog** showed them all. It now matches the bid dialog: the full tooltip, and **Shift / Ctrl expands it** (the dialog grows taller and wider to fit, and the **two buttons at the bottom move down with it** — they used to stay put and overlap the "Force-cancel this auction?" notice that had already moved down)
