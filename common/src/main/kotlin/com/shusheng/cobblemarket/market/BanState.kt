@@ -133,10 +133,11 @@ class BanState private constructor() : PersistentState() {
          */
         fun notifyOnMarketOpen(server: net.minecraft.server.MinecraftServer, player: net.minecraft.server.network.ServerPlayerEntity) {
             if (!sessionNotified.add(player.uuid)) return
-            val info = get(server).getBanInfo(player.uuid, System.currentTimeMillis()) ?: return
+            val now = System.currentTimeMillis()
+            val info = get(server).getBanInfo(player.uuid, now) ?: return
             server.execute {
                 player.sendMessage(
-                    noticeText(info, System.currentTimeMillis()).formatted(net.minecraft.util.Formatting.RED), false
+                    noticeText(info.expiresAt, info.reason, now).formatted(net.minecraft.util.Formatting.RED), false
                 )
             }
         }
@@ -149,13 +150,20 @@ class BanState private constructor() : PersistentState() {
          * ⚠ 全程只传 Text、**不拼串**：嵌套词条由**客户端**按自己的语言渲染（服务端语言 ≠ 客户端语言）
          */
         // ⚠ 返回 MutableText（不是 Text）：调用方要接 `.formatted(RED)`，而 formatted 只挂在 MutableText 上
-        fun noticeText(info: BanInfo, now: Long, keyBase: String = "cobblemarket.ban.banned_msg"): net.minecraft.text.MutableText {
-            val timeDesc: net.minecraft.text.Text = if (info.isPermanent)
+        // ⚠ 收的是 expiresAt + reason 两个**原始字段**（而不是 BanInfo）：封禁刚下发、还没从 BanState
+        //   读回实体的那处（BanNetwork）也得能用同一个函数，否则它只能另抄一份 —— 那正是这次要消掉的东西
+        fun noticeText(
+            expiresAt: Long?,
+            reason: String,
+            now: Long,
+            keyBase: String = "cobblemarket.ban.banned_msg"
+        ): net.minecraft.text.MutableText {
+            val timeDesc: net.minecraft.text.Text = if (expiresAt == null)
                 net.minecraft.text.Text.translatable("cobblemarket.ban.permanent")
             else
-                net.minecraft.text.Text.translatable("cobblemarket.ban.remaining", remainingText(info.expiresAt!! - now))
-            return if (info.reason.isNotBlank())
-                net.minecraft.text.Text.translatable("${keyBase}_time_reason", timeDesc, reasonText(info.reason))
+                net.minecraft.text.Text.translatable("cobblemarket.ban.remaining", remainingText(expiresAt - now))
+            return if (reason.isNotBlank())
+                net.minecraft.text.Text.translatable("${keyBase}_time_reason", timeDesc, reasonText(reason))
             else
                 net.minecraft.text.Text.translatable("${keyBase}_time", timeDesc)
         }

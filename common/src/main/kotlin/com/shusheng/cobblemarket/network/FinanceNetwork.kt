@@ -1209,7 +1209,8 @@ object FinanceNetwork {
      *   说成交易被封会把人误导去问服主"我不是还能买东西吗"。
      */
     private fun banLoanNotice(info: BanInfo): Text =
-        BanState.noticeText(info, System.currentTimeMillis(), "cobblemarket.ban.loan_blocked_msg").formatted(Formatting.RED)
+        BanState.noticeText(info.expiresAt, info.reason, System.currentTimeMillis(), "cobblemarket.ban.loan_blocked_msg")
+            .formatted(Formatting.RED)
 
     private fun sendPurpleCardApplyInfo(player: ServerPlayerEntity) {
         val server = player.server
