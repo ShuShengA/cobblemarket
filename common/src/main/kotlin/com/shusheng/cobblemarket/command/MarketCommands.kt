@@ -1453,7 +1453,7 @@ object MarketCommands {
             val duration: Text = if (info.isPermanent)
                 Text.translatable("cobblemarket.ban.permanent")
             else
-                Text.literal(BanState.formatRemaining(info.expiresAt!! - System.currentTimeMillis()))
+                BanState.remainingText(info.expiresAt!! - System.currentTimeMillis())
             source.sendFeedback({
                 Text.translatable("cobblemarket.ban.banlist_entry", info.playerName, info.bannedBy, duration)
             }, false)
