@@ -552,6 +552,7 @@
   "cobblemarket.sell.party": "[Party]",
 
   "cobblemarket.ban.title": "Ban Management",
+  "cobblemarket.ban.info_tip": "A ban cuts off the market's trading entries — it does not seize existing assets\nBlocked: buying Pokemon, buying items, listing for sale, starting an auction, bidding, buy orders, delivering, claiming a delivery\nNot affected: cancelling a listing, collecting returns and pending balance, declining a delivery; Meowth Bank and cards work as usual",
   "cobblemarket.ban.player_name": "Player name",
   "cobblemarket.ban.duration": "1d/12h/30m",
   "cobblemarket.ban.ban": "Ban",

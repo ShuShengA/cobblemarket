@@ -44,6 +44,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     private var reasonField: TextFieldWidget? = null
     private var banButton: NineSliceButton? = null
     private var backButton: NineSliceButton? = null
+    private var infoButton: NineSliceButton? = null
     private var pendingBanName = ""
     private var pendingBanDuration = ""
     private var bans = listOf<BanEntry>()
@@ -84,6 +85,22 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         )
         backButton = backBtn
         addDrawableChild(backBtn)
+
+        // info 图标（左上角）：封禁拦什么 / 不拦什么 —— 与交易历史 / 借贷账本 / 权限管理同一套做法
+        // ⚠ x 取「中线 -148」（不是本界面自己的 leftX = 中线 -150）：那三个界面 panelWidth=296、
+        //   左缘正好是 148，本界面虽然 panelWidth=300，但输入框列也在 leftX+2 = 同一列
+        val infoBtn = NineSliceButton(
+            width / 2 - 148, 18, 16, 16,
+            Text.literal(""),
+            { },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/info.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f
+        )
+        infoBtn.setTooltip(
+            net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.ban.info_tip"))
+        )
+        infoButton = infoBtn
+        addDrawableChild(infoBtn)
 
         val savedName = nameField?.text ?: ""
         nameField = TextFieldWidget(textRenderer, leftX + 2, 44, 120, 16, Text.literal(""))
@@ -135,6 +152,8 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         durationField?.visible = false
         banButton?.visible = false
         backButton?.visible = false
+        // 弹窗开着时藏掉：它虽是先加的（会被遮罩压住），但仍可点、悬停提示会刺穿弹窗
+        infoButton?.visible = false
         unbanButtons.forEach { it.visible = false }
         // 收起可能展开的联想列表（否则联想按钮残留在遮罩下可点）
         suggestionsOpen = false
