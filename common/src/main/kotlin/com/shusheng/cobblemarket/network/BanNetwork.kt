@@ -23,7 +23,8 @@ data class BanEntry(
     val bannedBy: String,
     val bannedAt: Long,
     val expiresAt: Long?,
-    val durationDisplay: String,
+    /** 剩余毫秒（服务端算好发过来；永久封禁发 0，客户端按 expiresAt == null 渲染"永久"） */
+    val remainingMs: Long,
     val reason: String
 ) {
     fun write(buf: PacketByteBuf) {
@@ -33,7 +34,7 @@ data class BanEntry(
         buf.writeLong(bannedAt)
         buf.writeBoolean(expiresAt != null)
         expiresAt?.let { buf.writeLong(it) }
-        buf.writeString(durationDisplay)
+        buf.writeLong(remainingMs)
         buf.writeString(reason)
     }
 
@@ -44,7 +45,7 @@ data class BanEntry(
             bannedBy = buf.readString(),
             bannedAt = buf.readLong(),
             expiresAt = if (buf.readBoolean()) buf.readLong() else null,
-            durationDisplay = buf.readString(),
+            remainingMs = buf.readLong(),
             reason = buf.readString()
         )
     }
@@ -247,8 +248,8 @@ object BanNetwork {
                         bannedBy = info.bannedBy,
                         bannedAt = info.bannedAt,
                         expiresAt = info.expiresAt,
-                        // permanent 发空串，客户端按 expiresAt == null 用翻译键渲染"永久"
-                        durationDisplay = if (info.isPermanent) "" else BanState.formatRemaining(info.expiresAt!! - now),
+                        // 永久发 0（客户端按 expiresAt == null 走翻译键渲染"永久"，这个值用不到）
+                        remainingMs = if (info.isPermanent) 0L else info.expiresAt!! - now,
                         reason = info.reason
                     )
                 }
@@ -262,7 +263,7 @@ object BanNetwork {
         val timeDesc: Text = if (expiresAt == null)
             Text.translatable("cobblemarket.ban.permanent")
         else
-            Text.translatable("cobblemarket.ban.remaining", BanState.formatRemaining(expiresAt - System.currentTimeMillis()))
+            Text.translatable("cobblemarket.ban.remaining", BanState.remainingText(expiresAt - System.currentTimeMillis()))
         val msg = if (reason.isNotBlank())
             Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, com.shusheng.cobblemarket.market.BanState.reasonText(reason))
         else
