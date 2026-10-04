@@ -32,6 +32,7 @@ import com.shusheng.cobblemarket.network.BuyOrderListDataPayload
 import com.shusheng.cobblemarket.network.PlayerNameSuggestionsPayload
 import com.shusheng.cobblemarket.network.AuctionWarnSoundPayload
 import com.shusheng.cobblemarket.network.BalanceDataPayload
+import com.shusheng.cobblemarket.network.BanChangesPayload
 import com.shusheng.cobblemarket.network.BanListDataPayload
 import com.shusheng.cobblemarket.network.CreditInfoPayload
 import com.shusheng.cobblemarket.network.HistoryDataPayload
@@ -822,6 +823,17 @@ object CobbleMarketClient {
                 val screen = client.currentScreen
                 if (screen is AdminBanScreen) {
                     screen.onBanList(payload)
+                }
+            }
+        }
+
+        // 封禁变更记录（封禁管理界面的「变更记录」页签）
+        registerS2C(BanChangesPayload.ID, BanChangesPayload.CODEC) { payload ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                if (screen is AdminBanScreen) {
+                    screen.onBanChanges(payload)
                 }
             }
         }
