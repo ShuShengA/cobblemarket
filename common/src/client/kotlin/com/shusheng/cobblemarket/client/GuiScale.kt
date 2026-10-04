@@ -72,10 +72,8 @@ object GuiScale {
         //   HUD 由 ScreenMixin 画在缩放矩阵**之外**（屏幕坐标系），而该界面的 posX/posY/width
         //   全在**虚拟坐标系** ⇒ 判定框与 HUD 各在一处，表现成"只有中心一小块能拖"（2026-10-04 实测）。
         //   ⇒ **凡是"编辑全屏元素位置/尺寸"的界面都别放进白名单**（它的坐标必须与那个全屏元素同系）。
-        // ⚠ 也**暂不**放 `MarketEntryScreen`（2026-10-04 与用户确认）：档位就是在它的设置弹窗里改的
-        //   ⇒ 它一进白名单，改档位就必须**立刻重建当前屏**，否则：切回「跟随原版」时 `resize` 的 TAIL
-        //   按 `scaleFor > 0` 判定、**不会重建**，而 width/height 已退回真实值 ⇒ 控件停在旧位置（坑 11）。
-        //   ⇒ 那件事（含 `clearAndInit` 的混入钩子）单独一步做，是**第 3 批全量铺开的前置**。
+        // ── 第 2.5 批：入口界面 —— 档位按钮就在它自己的设置弹窗里 ⇒ 必须配 `rebuildForScaleChange()` ──
+        "MarketEntryScreen",
     )
 
     fun isTarget(screen: Screen): Boolean = screen.javaClass.simpleName in TARGETS
@@ -207,5 +205,41 @@ object GuiScale {
         val factor = factorFor(screen)
         return if (factor <= 0f || factor == 1f) realValue else Math.round(realValue / factor)
     }
+
+    /**
+     * 档位改动后**立刻**让当前界面按新档位重建（设置弹窗里点一下即生效，不用重开界面）。
+     * 由**档位按钮所在的界面**在改完 [ClientConfig.guiScaleMode] 之后调用（现在只有入口界面）。
+     *
+     * ⚠ 为什么不能只靠 `resize()`：`ScreenMixin` 在 `resize` 的 TAIL 按 `scaleFor > 0` 判定要不要重建，
+     * 而**切回「跟随原版」时它恰好是 0** ⇒ 不重建，可 `width/height` 已经被退回真实值
+     * ⇒ **控件停在旧位置**（正是坑 11 的症状）。这里用一个**一次性标志**告诉混入
+     * 「这一次 resize 是改档位引起的」，让它无条件重建一次。
+     *
+     * ⚠ 只对**目标界面**做：非目标界面直接返回 —— 保持"逐像素零变化"。
+     * ⚠ 重建会换掉**全部控件**（设置弹窗连同里面的按钮一起换新）⇒ 调用方手里那些控件引用会失效，
+     *   要在**重建之后**再取新实例（入口界面的按钮文字因此要在调用本函数**之后**再设，或干脆让
+     *   `openSettingsDialog()` 重新读一遍配置 —— 现在两者都成立）。
+     */
+    fun rebuildForScaleChange() {
+        val client = MinecraftClient.getInstance()
+        val screen = client.currentScreen ?: return
+        if (!isTarget(screen)) return
+        scaleChangeRebuild = true
+        try {
+            // 传**原版逻辑尺寸**（与 `MinecraftClient.onResolutionChanged` 同源）——
+            // 混入的注入点会把它换算成新档位下的虚拟尺寸
+            screen.resize(client, client.window.scaledWidth, client.window.scaledHeight)
+        } finally {
+            scaleChangeRebuild = false
+        }
+    }
+
+    /**
+     * 「这一次 `resize` 是改档位引起的」——仅 [rebuildForScaleChange] 调用期间为 true，
+     * 供 `ScreenMixin` 的重建判据读取（**它让切回「跟随原版」那一次也重建**）。
+     */
+    @Volatile
+    var scaleChangeRebuild: Boolean = false
+        private set
 
 }
