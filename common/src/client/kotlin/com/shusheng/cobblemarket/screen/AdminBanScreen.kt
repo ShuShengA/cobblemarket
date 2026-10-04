@@ -477,7 +477,9 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         val leftX = width / 2 - panelWidth / 2
         suggestions.drop(suggestScroll).take(MAX_SUGGESTION_ROWS).forEachIndexed { i, name ->
             val btn = NineSliceButton(
-                leftX + 2, 62 + i * 14, 118, 14,
+                // ⚠ 起点**必须跟着表单行走**（原来写死 62、是按表单在 44 那版算的；表单挪到 62 之后
+                //   联想按钮就压在输入框上了）—— 用 formRowY 推，别再写字面量
+                leftX + 2, formRowY + 18 + i * 14, 118, 14,
                 Text.literal(name),
                 {
                     suppressSuggest = true
