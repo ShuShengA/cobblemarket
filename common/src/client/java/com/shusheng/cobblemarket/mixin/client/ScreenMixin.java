@@ -133,16 +133,22 @@ public abstract class ScreenMixin {
      * 旧位置。原版界面大多在 `render` 里现算位置，所以不重建也没事；我们的界面不是 ——
      * 症状就是用户 2026-10-04 实测的「缩放窗口后界面整体跑到屏幕外 / 缩在左上角」。
      *
-     * ⚠ **只对本模组被缩放的界面做**（`scaleFor > 0`）：跟随原版 / 别的界面一律不碰，
-     * 免得把"跟随原版 = 零变化"一起破掉。
+     * ⚠ **两条触发支路，判据必须都认**：
+     * ① **窗口缩放** —— 只对本模组**正被缩放**的界面做（`scaleFor > 0`）；跟随原版 / 别的界面一律不碰，
+     *    免得把"跟随原版 = 零变化"一起破掉；
+     * ② **改档位**（`GuiScale.rebuildForScaleChange` 设的一次性标志）—— **这一支必须无条件重建**：
+     *    切回「跟随原版」时 `scaleFor` 恰好 = 0，只认第一支就不会重建，而 width/height 已退回真实值
+     *    ⇒ 控件停在旧位置（坑 11 症状）。⚠ 别把这一支并回第一支。
      * ⚠ 注入在 `resize` 的 **TAIL**：此时 width/height 已是新值，而且**子类 `super.resize` 之后
      * 的代码还没跑** —— 各界 resize 里"存下输入框内容 → super.resize → 写回去"的写法正好
-     * 作用在**新控件**上（`MarketScreen.resize` 就是这么写的，搜索词不会丢）。
+     * 作用在**新控件**上（`MarketScreen.resize` 就是这么写的，搜索词不会丢；
+     * 入口界面也是靠这个把开着设置弹窗原样重开的）。
      * ⚠ 代价（有意）：重建会丢滚动位置 / 展开状态等非控件状态。窗口缩放是低频操作，值。
      */
     @Inject(method = "resize(Lnet/minecraft/client/MinecraftClient;II)V", at = @At("TAIL"))
     private void cobblemarket$rebuildAfterResize(MinecraftClient client, int width, int height, CallbackInfo ci) {
-        if (GuiScale.INSTANCE.scaleFor((Screen) (Object) this) <= 0) return;
+        Screen self = (Screen) (Object) this;
+        if (!GuiScale.INSTANCE.getScaleChangeRebuild() && GuiScale.INSTANCE.scaleFor(self) <= 0) return;
         clearAndInit();
     }
 
