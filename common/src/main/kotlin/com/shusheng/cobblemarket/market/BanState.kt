@@ -14,7 +14,10 @@ data class BanInfo(
     val bannedBy: String,
     val bannedAt: Long,
     val expiresAt: Long?,  // null = 永久封禁
-    val reason: String
+    val reason: String,
+    /** 同时禁止借款（**只拦借款**：存取款、还款都不受影响 —— 还款必须留着，他还钱才能把逾期降下来）。
+     *  末尾新字段 + 默认 false ⇒ 旧档缺这一格自动落默认，不需要迁移分支 */
+    val blockLoan: Boolean = false
 ) {
     val isPermanent: Boolean get() = expiresAt == null
 }
@@ -23,10 +26,17 @@ class BanState private constructor() : PersistentState() {
 
     private val bans = mutableMapOf<UUID, BanInfo>()
 
-    fun ban(playerUuid: UUID, playerName: String, bannedBy: String, expiresAt: Long?, reason: String) {
+    fun ban(
+        playerUuid: UUID,
+        playerName: String,
+        bannedBy: String,
+        expiresAt: Long?,
+        reason: String,
+        blockLoan: Boolean = false
+    ) {
         // 先删后插：重复封禁（改时长/理由）时 put 覆盖不移动位置，强制移到末尾保证最新在前
         bans.remove(playerUuid)
-        bans[playerUuid] = BanInfo(playerUuid, playerName, bannedBy, System.currentTimeMillis(), expiresAt, reason)
+        bans[playerUuid] = BanInfo(playerUuid, playerName, bannedBy, System.currentTimeMillis(), expiresAt, reason, blockLoan)
         markDirty()
     }
 
@@ -64,6 +74,7 @@ class BanState private constructor() : PersistentState() {
             c.putLong("bannedAt", info.bannedAt)
             info.expiresAt?.let { c.putLong("expiresAt", it) }
             c.putString("reason", info.reason)
+            c.putBoolean("blockLoan", info.blockLoan)
             list.add(c)
         }
         nbt.put("bans", list)
@@ -85,7 +96,9 @@ class BanState private constructor() : PersistentState() {
                                 bannedBy = c.getString("bannedBy"),
                                 bannedAt = c.getLong("bannedAt"),
                                 expiresAt = expiresAt,
-                                reason = c.getString("reason")
+                                reason = c.getString("reason"),
+                                // 缺这格 = 旧档 ⇒ getBoolean 给 false，正是要的默认值
+                                blockLoan = c.getBoolean("blockLoan")
                             )
                             bans[info.playerUuid] = info
                         } catch (e: Exception) {

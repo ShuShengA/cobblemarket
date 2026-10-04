@@ -9,6 +9,8 @@ import com.shusheng.cobblemarket.finance.FinanceState
 import com.shusheng.cobblemarket.finance.LoanLogType
 import com.shusheng.cobblemarket.finance.LoanSource
 import com.shusheng.cobblemarket.finance.LoanStatus
+import com.shusheng.cobblemarket.market.BanInfo
+import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.market.MarketState
 import com.shusheng.cobblemarket.platform.getPlayerIp
 import com.shusheng.cobblemarket.platform.registerC2S
@@ -660,6 +662,9 @@ object FinanceNetwork {
                 // 金融操作，停市要防的就是这个口子。存款/取款/还款/卡片申请都不拦 ——
                 // 那些要么是玩家自有资金、要么是钱流进池子，不增加服主风险（2026-09-16 与用户逐项确认）
                 if (marketBlocked(player)) return@execute
+                // 封禁的借款闸：**只有勾了「同时禁止借款」的封禁**才拦。与上面的关市闸并列、互不替代。
+                // 存取款/还款不在此列 —— 还款必须留着，他还钱才能把逾期降下来（2026-10-04 定）
+                if (banBlocksLoan(server, player)) return@execute
                 val state = FinanceState.get(server)
                 val now = System.currentTimeMillis()
                 // 文案区分：总开关关 = 喵喵银行没开门；现金贷关 = 喵喵的帮助暂未开放
@@ -1186,6 +1191,35 @@ object FinanceNetwork {
     }
 
     /** 申请紫卡条件快照（打开界面/申请后回发）：7 项条件 + 费用 + 资格 + 开关 */
+    /**
+     * 封禁的借款闸：**只有勾了「同时禁止借款」的封禁**才拦（普通封禁不管银行）。
+     * ⚠ 只拦借款 —— 存款/取款/还款一律放行；喵喵支付那种"买东西"的路径本来就被购买闸拦着，
+     *   不归这里管（2026-10-04 用户拍板）。
+     */
+    private fun banBlocksLoan(server: MinecraftServer, player: ServerPlayerEntity): Boolean {
+        val info = BanState.get(server).getBanInfo(player.uuid, System.currentTimeMillis()) ?: return false
+        if (!info.blockLoan) return false
+        player.sendMessage(banLoanNotice(info), false)
+        return true
+    }
+
+    /**
+     * 被「同时禁止借款」拦下时的红字提示。
+     * ⚠ 首句特意**不是**"禁止参与交易"：这种封禁只多拦了借款，市场交易照常，
+     *   说成交易被封会把人误导去问服主"我不是还能买东西吗"。
+     */
+    private fun banLoanNotice(info: BanInfo): Text {
+        val timeDesc: Text = if (info.isPermanent)
+            Text.translatable("cobblemarket.ban.permanent")
+        else
+            Text.translatable("cobblemarket.ban.remaining", BanState.remainingText(info.expiresAt!! - System.currentTimeMillis()))
+        val msg = if (info.reason.isNotBlank())
+            Text.translatable("cobblemarket.ban.loan_blocked_msg_time_reason", timeDesc, BanState.reasonText(info.reason))
+        else
+            Text.translatable("cobblemarket.ban.loan_blocked_msg_time", timeDesc)
+        return msg.formatted(Formatting.RED)
+    }
+
     private fun sendPurpleCardApplyInfo(player: ServerPlayerEntity) {
         val server = player.server
         val state = FinanceState.get(server)
