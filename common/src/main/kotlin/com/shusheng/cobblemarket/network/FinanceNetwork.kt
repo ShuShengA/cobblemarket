@@ -1208,17 +1208,8 @@ object FinanceNetwork {
      * ⚠ 首句特意**不是**"禁止参与交易"：这种封禁只多拦了借款，市场交易照常，
      *   说成交易被封会把人误导去问服主"我不是还能买东西吗"。
      */
-    private fun banLoanNotice(info: BanInfo): Text {
-        val timeDesc: Text = if (info.isPermanent)
-            Text.translatable("cobblemarket.ban.permanent")
-        else
-            Text.translatable("cobblemarket.ban.remaining", BanState.remainingText(info.expiresAt!! - System.currentTimeMillis()))
-        val msg = if (info.reason.isNotBlank())
-            Text.translatable("cobblemarket.ban.loan_blocked_msg_time_reason", timeDesc, BanState.reasonText(info.reason))
-        else
-            Text.translatable("cobblemarket.ban.loan_blocked_msg_time", timeDesc)
-        return msg.formatted(Formatting.RED)
-    }
+    private fun banLoanNotice(info: BanInfo): Text =
+        BanState.noticeText(info, System.currentTimeMillis(), "cobblemarket.ban.loan_blocked_msg").formatted(Formatting.RED)
 
     private fun sendPurpleCardApplyInfo(player: ServerPlayerEntity) {
         val server = player.server
