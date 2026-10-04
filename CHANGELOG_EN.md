@@ -83,6 +83,10 @@
 
 ### Fixes
 
+- **After a failed "Start auction" the dialog stayed open and could be clicked again and again**: failures such as a ban, a blacklist entry or a closed market **cannot be fixed by changing the price**, yet the dialog stayed put, inviting people to keep clicking — and after a dozen clicks **even the sound got muted by the engine** (too many concurrent instances of the same sound are dropped). It now splits by **whether the failure is fixable by editing the price**: the **price limit** kind (which tells you the allowed range) still keeps the dialog so you can fix the number and retry; **every other failure** closes the screen and returns to the auction house, with the reason still in chat
+
+- **Rejected loan requests had no failure sound**: clicking "Confirm" in Meowth Bank / Meowth's Help and being refused (finance off, cash loans disabled, overdue, bad debt, invalid amount) only produced a red line of chat text with **no failure sound**, unlike every other screen (buying, buy orders). Those refusals now play it
+
 - **The buy dialog's input box and buttons did not follow the tooltip**: an item with a long tooltip (such as a **TM**, whose full move description appears while you hold Shift) makes the dialog taller and pushes the text down — but the **quantity input and the Buy / Meowth Pay / Cancel buttons stayed put**, even ending up overlapped by the "total" line that did move. They now follow the dialog every frame, exactly like the item bid dialog does
 - **Buttons drifted away from the background in Meowth Bank when permissions changed while it was open**: the panel is one row taller for players holding any admin node, and that permission state can arrive **while the screen is already open** — the background moved but the Back / Rules / Deposit / Borrow buttons stayed put. They now move along with it
 - **The item icon in the "Set up auction" dialog sat off to the right**: in Pokemon mode the preview sits right under the title, but in item mode it was **50 pixels too far right** (the two modes each had their own coordinates). Both now share one set of coordinates

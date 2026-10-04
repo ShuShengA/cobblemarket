@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.client.requestCreditInfo
 import com.shusheng.cobblemarket.network.CreditInfoPayload
+import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.RequestLoanPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.MinecraftClient
@@ -207,6 +208,18 @@ class LoanScreen : Screen(Text.translatable("cobblemarket.loan.title")) {
         if (plans.getOrNull(selectedPlan) == null) return
         sendToServer(RequestLoanPayload(confirmAmount, selectedPlan))
         closeConfirmDialog()
+    }
+
+    /**
+     * 借款请求被拒（没开金融 / 现金贷关 / 逾期 / 坏账 / 金额非法 / **被「同时禁止借款」拦下**）时，
+     * 服务端走 `MarketResultPayload(success=false)` 回来 —— **失败音效就是它触发的**
+     * （音效挂在结果包上，光发聊天行只有红字、没声音；用户 2026-10-04 实测报的）。
+     * ⚠ 确认弹窗在 [confirmLoan] 里**发请求那一刻就关了**，所以这里不用再管弹窗开关。
+     */
+    fun onMarketResult(payload: MarketResultPayload) {
+        client?.player?.sendMessage(
+            payload.message.copy().formatted(if (payload.success) Formatting.GREEN else Formatting.RED), false
+        )
     }
 
     private fun renderConfirmBackground(context: DrawContext) {

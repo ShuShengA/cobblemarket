@@ -437,18 +437,18 @@ object AuctionNetwork {
                 if (bounds != null) {
                     // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
                     if (bounds.isEmptyRange) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.conflict")))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.conflict"), retryable = true))
                         return@execute
                     }
                     // 携带物参与限价时用带说明的提示，玩家才知道总价里包含了携带物部分
                     if (bounds.min != null && payload.startingPrice < bounds.min) {
                         val key = if (heldItemId != null) "cobblemarket.auction.price_limit.held_below_min" else "cobblemarket.auction.price_limit.below_min"
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable(key, bounds.min)))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable(key, bounds.min), retryable = true))
                         return@execute
                     }
                     if (bounds.max != null && payload.startingPrice > bounds.max) {
                         val key = if (heldItemId != null) "cobblemarket.auction.price_limit.held_above_max" else "cobblemarket.auction.price_limit.above_max"
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable(key, bounds.max)))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable(key, bounds.max), retryable = true))
                         return@execute
                     }
                 }
@@ -554,18 +554,18 @@ object AuctionNetwork {
                 if (itemBounds != null) {
                     // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
                     if (itemBounds.isEmptyRange) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.conflict")))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.price_limit.conflict"), retryable = true))
                         return@execute
                     }
                     // 价格限制是单价语义：拍卖起拍价为整组总价，下限/上限按数量换算
                     val minTotal = itemBounds.min?.toLong()?.times(payload.count)
                     val maxTotal = itemBounds.max?.toLong()?.times(payload.count)
                     if (minTotal != null && payload.startingPrice.toLong() < minTotal) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.price_limit.below_min", CurrencyHandler.formatAmount(minTotal))))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.price_limit.below_min", CurrencyHandler.formatAmount(minTotal)), retryable = true))
                         return@execute
                     }
                     if (maxTotal != null && payload.startingPrice.toLong() > maxTotal) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.price_limit.above_max", CurrencyHandler.formatAmount(maxTotal))))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.price_limit.above_max", CurrencyHandler.formatAmount(maxTotal)), retryable = true))
                         return@execute
                     }
                 }
