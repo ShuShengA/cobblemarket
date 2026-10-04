@@ -12,6 +12,7 @@ import com.mojang.blaze3d.systems.RenderSystem
 import com.shusheng.cobblemarket.client.BalanceHudMode
 import com.shusheng.cobblemarket.client.IconAnimMode
 import com.shusheng.cobblemarket.client.ClientConfig
+import com.shusheng.cobblemarket.client.GuiScale
 import com.shusheng.cobblemarket.client.OakTips
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
 import com.shusheng.cobblemarket.client.requestCreditInfo
@@ -809,6 +810,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     private fun cycleGuiScale() {
         ClientConfig.cycleGuiScaleMode()
+        // ⚠ 立刻按新档位重建当前界面 —— 不重建的话：切到固定档位会"点了没反应"（要重开界面才生效），
+        //   切回「自动」更糟（width/height 已退回真实值、控件还按旧虚拟尺寸摆着 ⇒ 整体错位）。
+        //   ⚠ 顺序：**先重建、再取按钮** —— 重建会把设置弹窗连同按钮一起换新，旧引用已失效
+        //   （`openSettingsDialog()` 会读一遍新档位，所以下面那行对已重建的情况只是补个保险）
+        GuiScale.rebuildForScaleChange()
         settingsGuiScaleButton?.message = guiScaleModeText()
         settingsToastText = Text.translatable("cobblemarket.settings.gui_scale")
             .append(guiScaleModeText())
