@@ -127,10 +127,10 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         /**
          * 封禁确认弹窗高度 —— **控件定位与背景绘制共用这一个数**。
          * 原先两边各写一遍（`height/2 - 75` 与 `dialogH = 150`），加一行控件漏改一处就会控件与背景错位。
-         * 版式：标题 14 / 玩家名 40 / 执行人员 58 / 理由输入框 74(h16) /
-         *       借款开关 100(h20) / 按钮 134(h20) / 距底边框 22
+         * 版式：标题 14 / 玩家名 40 / 执行人员 58 / **封禁时长 76** / 理由输入框 92(h16) /
+         *       借款开关 118(h20) / 按钮 152(h20) / 距底边框 22
          */
-        const val DIALOG_H = 176
+        const val DIALOG_H = 194
 
         /** 变更记录**行内**的时间：只到分钟就够（当天看的是"什么时候"的大致位置） */
         private val changeTimeFormat = java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm")
@@ -300,7 +300,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
             }
         })
 
-        reasonField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 74, 160, 16, Text.literal(""))
+        reasonField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 92, 160, 16, Text.literal(""))
         reasonField?.setPlaceholder(Text.translatable("cobblemarket.ban.reason"))
         reasonField?.setTextPredicate { it.length <= 100 }
         reasonField?.text = reason    // 编辑时预填原理由；新封禁传空串
@@ -309,7 +309,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         // 「同时禁止借款」开关：**按钮形态**（标签就是状态名，选中态走第三段纹理），
         // 两态说明按约定写在悬停提示里（「选中：… / 不选：…」），不是打勾的说法
         val loanBtn = NineSliceButton(
-            centerX - 85, dialogY + 100, 170, 20,
+            centerX - 85, dialogY + 118, 170, 20,
             Text.translatable("cobblemarket.ban.block_loan"),
             { toggleBlockLoan() },
             tooltip = Text.translatable("cobblemarket.ban.block_loan_tip")
@@ -319,12 +319,12 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         addDrawableChild(loanBtn)
 
         addDrawableChild(NineSliceButton(
-            centerX - 85, dialogY + 134, 80, 20,
+            centerX - 85, dialogY + 152, 80, 20,
             Text.translatable("cobblemarket.ban.confirm"),
             { confirmBan() }
         ))
         addDrawableChild(NineSliceButton(
-            centerX + 5, dialogY + 134, 80, 20,
+            centerX + 5, dialogY + 152, 80, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
             { closeBanConfirmDialog() }
         ))
@@ -353,6 +353,13 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         context.drawTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.ban.by").string + (client?.player?.name?.string ?: ""),
             dialogX + 12, dialogY + 58, 0xFFFFFF)
+
+        // 封禁时长：**这个界面叫「确认封禁」，就该把正要确认的东西全列出来**（2026-10-04 用户报：
+        // 填了时长却在确认界面上看不到）。空串 = 永久，与输入框那边同一口径
+        context.drawTextWithShadow(textRenderer,
+            Text.translatable("cobblemarket.ban.duration_label").string +
+                pendingBanDuration.ifBlank { Text.translatable("cobblemarket.ban.permanent").string },
+            dialogX + 12, dialogY + 76, 0xFFFFFF)
     }
 
     /** 翻「同时禁止借款」：只改状态与选中态，不重建按钮 */
