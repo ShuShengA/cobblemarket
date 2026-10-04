@@ -892,18 +892,10 @@ object AuctionNetwork {
     // ── 共享校验/广播 ──
 
     private fun banBlocked(server: MinecraftServer, player: net.minecraft.server.network.ServerPlayerEntity): Boolean {
-        val banInfo = BanState.get(server).getBanInfo(player.uuid, System.currentTimeMillis())
-        if (banInfo == null) return false
-        // 保留 Text 对象而非 .string：翻译在客户端语言下渲染
-        val timeDesc: Text = if (banInfo.isPermanent)
-            Text.translatable("cobblemarket.ban.permanent")
-        else
-            Text.translatable("cobblemarket.ban.remaining", BanState.remainingText(banInfo.expiresAt!! - System.currentTimeMillis()))
-        val banMsg = if (banInfo.reason.isNotBlank())
-            Text.translatable("cobblemarket.ban.banned_msg_time_reason", timeDesc, com.shusheng.cobblemarket.market.BanState.reasonText(banInfo.reason))
-        else
-            Text.translatable("cobblemarket.ban.banned_msg_time", timeDesc)
-        sendToPlayer(player, MarketResultPayload(false, banMsg))
+        val now = System.currentTimeMillis()
+        val banInfo = BanState.get(server).getBanInfo(player.uuid, now) ?: return false
+        // 提示统一走 BanState.noticeText：Text 对象不拼串 ⇒ 按**客户端语言**渲染
+        sendToPlayer(player, MarketResultPayload(false, BanState.noticeText(banInfo.expiresAt, banInfo.reason, now)))
         return true
     }
 
