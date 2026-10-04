@@ -59,10 +59,23 @@ object GuiScale {
         "ItemReturnScreen",
         "PokemonReturnScreen",
         "ItemSellScreen",
+        // ── 第 2 批：带弹窗 + 输入框（重点验：弹窗重建后状态恢复）──
+        "BlacklistScreen",
+        "PriceLimitScreen",
+        "BuyOrderScreen",
+        "ServerConfigScreen",
+        "PermissionScreen",
+        "FinanceConfigScreen",
+        "AuctionCreateScreen",
+        "ItemMarketScreen",
         // ⚠ 特意**不**放 `BalanceHudPositionScreen`：它是**全屏 HUD 的位置编辑器** ——
         //   HUD 由 ScreenMixin 画在缩放矩阵**之外**（屏幕坐标系），而该界面的 posX/posY/width
         //   全在**虚拟坐标系** ⇒ 判定框与 HUD 各在一处，表现成"只有中心一小块能拖"（2026-10-04 实测）。
         //   ⇒ **凡是"编辑全屏元素位置/尺寸"的界面都别放进白名单**（它的坐标必须与那个全屏元素同系）。
+        // ⚠ 也**暂不**放 `MarketEntryScreen`（2026-10-04 与用户确认）：档位就是在它的设置弹窗里改的
+        //   ⇒ 它一进白名单，改档位就必须**立刻重建当前屏**，否则：切回「跟随原版」时 `resize` 的 TAIL
+        //   按 `scaleFor > 0` 判定、**不会重建**，而 width/height 已退回真实值 ⇒ 控件停在旧位置（坑 11）。
+        //   ⇒ 那件事（含 `clearAndInit` 的混入钩子）单独一步做，是**第 3 批全量铺开的前置**。
     )
 
     fun isTarget(screen: Screen): Boolean = screen.javaClass.simpleName in TARGETS
@@ -84,6 +97,15 @@ object GuiScale {
      * ⚠ 用**物理宽**而不是 `scaledWidth × S ÷ N`：前者正是原版「档位」的定义，且没有取整误差
      * （`scaledWidth` 本身是 物理宽÷S 取整来的，乘回去会偏小几像素）。
      *
+     * ⚠⭐ **物理宽必须读 `framebufferWidth`，不能读 `window.width`**（2026-10-04 实测的 bug）：
+     * 这两个字段由**两个独立的 GLFW 回调**分别更新（`onWindowSizeChanged` 写 `width`、
+     * `onFramebufferSizeChanged` 写 `framebufferWidth`），而原版**只在帧缓冲那个回调里**通知界面 ——
+     * 先写 `framebufferWidth`、紧接着 `onResolutionChanged()` → `Screen.resize` ⇒
+     * **`resize` 那一刻 `window.width` 还是旧值**，`framebufferWidth` 才是新的。
+     * 用旧值的症状 = **慢一拍**：窗口**缩小**时按旧的大宽算（界面反而"变大"、能看到更多行）、
+     * **放大**时按旧的小宽算（被下面那条下限顶回原版宽 ⇒ 看着像「自动」）。
+     * ⚠ 两者在 100% 显示缩放下**数值相等** ⇒ 平时完全看不出来，**只有"改窗口的那一瞬"才分得出来**。
+     *
      * ⚠⭐ **那条下限（原版逻辑宽）是有意加的**（用户 2026-10-04 拍板）：原版**倍率会随窗口自适应**
      * （窗口一小，自动档就从 3 降到 2），而我们的档位是死数 ⇒ 不加下限的话「窗口一缩，我们的界面
      * 比没装模组时还挤」—— 玩家第一反应就是"这模组有 bug"。
@@ -93,14 +115,14 @@ object GuiScale {
     fun widthFor(screen: Screen, realWidth: Int): Int {
         val n = scaleFor(screen)
         if (n <= 0) return realWidth
-        return maxOf(ceilDiv(MinecraftClient.getInstance().window.width, n), realWidth)
+        return maxOf(ceilDiv(MinecraftClient.getInstance().window.framebufferWidth, n), realWidth)
     }
 
     /** 同 [widthFor]，取高度。⚠ 宽高**分别**除以档位（不要拿宽算比例反推高） */
     fun heightFor(screen: Screen, realHeight: Int): Int {
         val n = scaleFor(screen)
         if (n <= 0) return realHeight
-        return maxOf(ceilDiv(MinecraftClient.getInstance().window.height, n), realHeight)
+        return maxOf(ceilDiv(MinecraftClient.getInstance().window.framebufferHeight, n), realHeight)
     }
 
     /**
