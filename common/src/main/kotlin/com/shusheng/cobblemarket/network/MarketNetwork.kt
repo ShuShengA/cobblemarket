@@ -682,15 +682,29 @@ data class CancelFromMarketPayload(val listingId: UUID) : CustomPayload {
 
 data class MarketResultPayload(
     val success: Boolean,
-    val message: Text
+    val message: Text,
+    /**
+     * **这次失败能不能靠"改个数字"解决**（末尾新字段，默认 false = 不能）。
+     * 目前只有拍卖创建的**限价**类失败标 true（改完起拍价就能过 ⇒ 界面把弹窗留着让人重试）；
+     * 其余失败（封禁 / 黑名单 / 市场已关 / 数量上限…）没什么可改的 ⇒ 界面直接关掉回上一级。
+     * ⚠ 见 `AuctionCreateScreen.onMarketResult`：关不关弹窗就看这个字段。
+     */
+    val retryable: Boolean = false
 ) : CustomPayload {
     override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
     companion object {
         val ID = CustomPayload.Id<MarketResultPayload>(CobbleMarket.id("market_result"))
         val CODEC: PacketCodec<PacketByteBuf, MarketResultPayload> = PacketCodec.of(
-            { p, b -> b.writeBoolean(p.success); net.minecraft.text.TextCodecs.PACKET_CODEC.encode(b, p.message) },
-            { b -> MarketResultPayload(b.readBoolean(), net.minecraft.text.TextCodecs.PACKET_CODEC.decode(b)) }
+            { p, b ->
+                b.writeBoolean(p.success); net.minecraft.text.TextCodecs.PACKET_CODEC.encode(b, p.message)
+                b.writeBoolean(p.retryable)
+            },
+            { b ->
+                MarketResultPayload(
+                    b.readBoolean(), net.minecraft.text.TextCodecs.PACKET_CODEC.decode(b), b.readBoolean()
+                )
+            }
         )
     }
 }
