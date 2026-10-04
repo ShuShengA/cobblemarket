@@ -115,6 +115,25 @@ data class TradeRecord(
 )
 
 /**
+ * 一笔「禁止借款」（金融管理界面维护）。
+ *
+ * ⚠ [blockedBy] / [reason] 里可能是 `$` 开头的**词条键**（系统来源），显示前一律过
+ *   `BanState.reasonText(...)` —— 与封禁账本同一套约定，账本与界面都**语言中立**。
+ */
+data class LoanBlockEntry(
+    val playerUuid: UUID,
+    val playerName: String,
+    /** 执行者（管理员名，或系统来源的 `$词条键`） */
+    val blockedBy: String,
+    val blockedAt: Long,
+    /** null = 永久 */
+    val expiresAt: Long?,
+    val reason: String
+) {
+    fun expired(now: Long): Boolean = expiresAt != null && expiresAt <= now
+}
+
+/**
  * 金融系统持久化状态（world/data/cobblemarket_finance.dat，PersistHelper/StateBackup 自动兜底）：
  * 准备金池是所有借贷资金的唯一进出口（可为负 = 服主负债）；贷款表保存每笔借贷的状态机；
  * 全服累计成交额仅入口展示用；IP 记录供额度防刷。
@@ -139,6 +158,22 @@ class FinanceState private constructor() : PersistentState() {
     private val blackCardHolders = mutableSetOf<UUID>()
     /** 黑卡加入时间（同上） */
     private val blackCardAddedAt = mutableMapOf<UUID, Long>()
+    /**
+     * 「禁止借款」名单（金融管理节点维护）。
+     *
+     * ⚠ 与封禁系统**无关** —— 用户 2026-10-05 定：「金融的事归金融侧」：
+     *   原先它是封禁弹窗里的一枚开关（`BanInfo.blockLoan`），现改成金融管理界面自己的名单。
+     * ⚠ 逾期本身另有独立判据拦借款（`FinanceNetwork` 借款 handler），与本名单**并列、互不替代**。
+     */
+    private val loanBlocks = mutableMapOf<UUID, LoanBlockEntry>()
+    /**
+     * 人工额度修正量（正 = 加、负 = 减；**清零 = 填一个足够大的负数**）。
+     *
+     * ⚠ 与额度公式**并存**：公式算的是 base，这里是**叠加在它之上的修正** ——
+     *   直接改写公式结果的话，下次重算就被冲掉了（本项目「两处各自算同一个量」的老坑）。
+     * ⚠ 只对**非持卡**玩家有意义：持卡玩家的额度 = 配置固定值，不走公式（见 `creditLimitFor`）。
+     */
+    private val creditAdjust = mutableMapOf<UUID, Long>()
 
     // ── 准备金池 ──
 
@@ -328,6 +363,70 @@ class FinanceState private constructor() : PersistentState() {
 
     /** 玩家历史累计计入成交额（申请条件「消费金额」口径） */
     fun getTotalCountedVolumeOf(playerUuid: UUID): Long = totalCountedVolume[playerUuid] ?: 0L
+
+    // ── 禁止借款名单（金融管理界面维护；与封禁系统无关） ──
+
+    /** 取某人当前生效的禁借条目；已到期的一并清掉（惰性清理，照 `BanState.getBanInfo`） */
+    fun getLoanBlock(uuid: UUID, now: Long): LoanBlockEntry? {
+        val e = loanBlocks[uuid] ?: return null
+        if (e.expired(now)) {
+            loanBlocks.remove(uuid)
+            markDirty()
+            return null
+        }
+        return e
+    }
+
+    /** 是否被禁止借款（借款闸的判据） */
+    fun isLoanBlocked(uuid: UUID, now: Long): Boolean = getLoanBlock(uuid, now) != null
+
+    /** 全部生效中的禁借条目（界面列表用；新的在前，与封禁列表一致） */
+    fun getActiveLoanBlocks(now: Long): List<LoanBlockEntry> {
+        val expired = loanBlocks.values.filter { it.expired(now) }
+        if (expired.isNotEmpty()) {
+            expired.forEach { loanBlocks.remove(it.playerUuid) }
+            markDirty()
+        }
+        return loanBlocks.values.sortedByDescending { it.blockedAt }
+    }
+
+    /** 加一笔禁借（**覆盖式**：同一玩家再禁一次 = 改时长/理由，起点重新计时 —— 照 `BanState.ban`） */
+    fun blockLoan(uuid: UUID, name: String, operator: String, expiresAt: Long?, reason: String): LoanBlockEntry {
+        val e = LoanBlockEntry(uuid, name, operator, System.currentTimeMillis(), expiresAt, reason)
+        loanBlocks[uuid] = e
+        markDirty()
+        return e
+    }
+
+    /** 改一笔禁借（**保留原起点、只改终点** —— 与封禁的「编辑」同一口径） */
+    fun editLoanBlock(uuid: UUID, operator: String, expiresAt: Long?, reason: String): LoanBlockEntry? {
+        val old = loanBlocks[uuid] ?: return null
+        val e = old.copy(blockedBy = operator, expiresAt = expiresAt, reason = reason)
+        loanBlocks[uuid] = e
+        markDirty()
+        return e
+    }
+
+    /** 解禁借；返回被解掉的那笔（没有则 null），照 `BanState.unban` */
+    fun unblockLoan(uuid: UUID): LoanBlockEntry? {
+        val removed = loanBlocks.remove(uuid) ?: return null
+        markDirty()
+        return removed
+    }
+
+    // ── 人工额度修正 ──
+
+    /** 人工修正量（无 = 0） */
+    fun getCreditAdjust(uuid: UUID): Long = creditAdjust[uuid] ?: 0L
+
+    /** 设置人工修正量（0 = 清掉这条修正、回到纯公式） */
+    fun setCreditAdjust(uuid: UUID, delta: Long) {
+        if (delta == 0L) creditAdjust.remove(uuid) else creditAdjust[uuid] = delta
+        markDirty()
+    }
+
+    /** 全部被人工调整过额度的玩家（额度管理页签的列表数据源） */
+    fun getAdjustedPlayers(): Map<UUID, Long> = creditAdjust.toMap()
 
     /**
      * 自行申请紫卡资格校验（各门槛全部满足；0 = 不要求）：
@@ -597,7 +696,11 @@ class FinanceState private constructor() : PersistentState() {
         if (isPurpleCardHolder(playerUuid)) {
             return (CobbleMarketConfig.purpleCardCreditLimit - debt).coerceAtLeast(0L)
         }
-        return (creditBaseFor(playerUuid, now) - debt).coerceAtLeast(0L).coerceAtMost(CobbleMarketConfig.creditLimitMax)
+        // 普通玩家：公式 base **+ 人工修正量** − 欠款。
+        // ⚠ 修正叠加在公式之上（不是改写公式结果）；修正负得够多 ⇒ 结果被 coerceAtLeast(0) 钳成 0
+        //   ⇒ 金融管理那边的「清零额度」是可达的；正修正同样受 creditLimitMax 钳制（max 是服主给全服定的上限）
+        return (creditBaseFor(playerUuid, now) + getCreditAdjust(playerUuid) - debt)
+            .coerceAtLeast(0L).coerceAtMost(CobbleMarketConfig.creditLimitMax)
     }
 
     // ── NBT ──
@@ -689,6 +792,29 @@ class FinanceState private constructor() : PersistentState() {
             blackList.add(c)
         }
         nbt.put("blackCards", blackList)
+        // ── 金融管理（禁止借款名单 / 人工额度修正）──
+        // ⚠ 两条都**新开 NBT 键**（不去动上面任何已有结构）⇒ 旧档读不到 = 空名单 / 无修正，
+        //   天然向后兼容，**不需要迁移分支**（项目铁律：新数据开新键）
+        val blockList = NbtList()
+        loanBlocks.values.forEach { e ->
+            val c = NbtCompound()
+            c.putUuid("uuid", e.playerUuid)
+            c.putString("name", e.playerName)
+            c.putString("by", e.blockedBy)
+            c.putLong("at", e.blockedAt)
+            e.expiresAt?.let { c.putLong("expiresAt", it) }
+            c.putString("reason", e.reason)
+            blockList.add(c)
+        }
+        nbt.put("loanBlocks", blockList)
+        val adjustList = NbtList()
+        creditAdjust.forEach { (uuid, delta) ->
+            val c = NbtCompound()
+            c.putUuid("uuid", uuid)
+            c.putLong("delta", delta)
+            adjustList.add(c)
+        }
+        nbt.put("creditAdjust", adjustList)
         return nbt
     }
 
@@ -793,6 +919,32 @@ class FinanceState private constructor() : PersistentState() {
                             blackCardAddedAt[uuid] = c.getLong("addedAt")
                         } catch (e: Exception) {
                             CobbleMarket.LOGGER.warn("Skipping corrupted finance black card entry: {}", e.message)
+                        }
+                    }
+                    // 金融管理：两条新键**缺了就是没有**（旧档天然走这里），逐条容错、损坏只 warn
+                    nbt.getList("loanBlocks", NbtList.COMPOUND_TYPE.toInt()).forEach { element ->
+                        try {
+                            val c = element as NbtCompound
+                            val uuid = c.getUuid("uuid")
+                            loanBlocks[uuid] = LoanBlockEntry(
+                                playerUuid = uuid,
+                                playerName = c.getString("name"),
+                                blockedBy = c.getString("by"),
+                                blockedAt = c.getLong("at"),
+                                // 永久禁借 = 压根不写这个键（与 BanInfo 同款：空 = 永久）
+                                expiresAt = if (c.contains("expiresAt")) c.getLong("expiresAt") else null,
+                                reason = c.getString("reason")
+                            )
+                        } catch (e: Exception) {
+                            CobbleMarket.LOGGER.warn("Skipping corrupted loan block entry: {}", e.message)
+                        }
+                    }
+                    nbt.getList("creditAdjust", NbtList.COMPOUND_TYPE.toInt()).forEach { element ->
+                        try {
+                            val c = element as NbtCompound
+                            creditAdjust[c.getUuid("uuid")] = c.getLong("delta")
+                        } catch (e: Exception) {
+                            CobbleMarket.LOGGER.warn("Skipping corrupted credit adjust entry: {}", e.message)
                         }
                     }
                 }
