@@ -89,7 +89,12 @@ data class AdminBanPayload(
     val duration: String,
     val reason: String,
     /** 同时禁止借款（末尾新字段，两端同版） */
-    val blockLoan: Boolean
+    val blockLoan: Boolean,
+    /**
+     * **编辑一笔已生效的封禁**（末尾新字段，两端同版）：走 [BanState.editBan] ——
+     * 到期时刻按**原封禁起点 + 新时长**算，不是"此刻 + 新时长"（见那里的说明）
+     */
+    val isEdit: Boolean = false
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -97,9 +102,11 @@ data class AdminBanPayload(
         val CODEC: PacketCodec<PacketByteBuf, AdminBanPayload> = PacketCodec.of(
             { p, b ->
                 b.writeString(p.playerName); b.writeString(p.duration); b.writeString(p.reason)
-                b.writeBoolean(p.blockLoan)
+                b.writeBoolean(p.blockLoan); b.writeBoolean(p.isEdit)
             },
-            { b -> AdminBanPayload(b.readString(), b.readString(), b.readString(), b.readBoolean()) }
+            { b ->
+                AdminBanPayload(b.readString(), b.readString(), b.readString(), b.readBoolean(), b.readBoolean())
+            }
         )
     }
 }
@@ -169,8 +176,14 @@ data class BanChangesPayload(val rows: List<Row>) : CustomPayload {
         /** 有效时长毫秒；永久封禁、以及拿不到原时长的解封行 = null */
         val durationMs: Long?,
         val reason: String,
-        /** 解封行 = 当初是谁封的；封禁行为空 */
-        val originalBanner: String
+        /** 解封行 = 当初是谁封的；其余行为空 */
+        val originalBanner: String,
+        /** 本次动作**之后**「同时禁止借款」的状态；解封行 = 被解掉的那笔的状态 */
+        val blockLoan: Boolean,
+        /** 「修改」行有值：改前的时长；其余为 null */
+        val beforeDurationMs: Long?,
+        /** 「修改」行有值：改前的「同时禁止借款」；其余为 null */
+        val beforeBlockLoan: Boolean?
     )
 
     override fun getId() = ID
@@ -188,6 +201,11 @@ data class BanChangesPayload(val rows: List<Row>) : CustomPayload {
                     r.durationMs?.let { b.writeLong(it) }
                     b.writeString(r.reason)
                     b.writeString(r.originalBanner)
+                    b.writeBoolean(r.blockLoan)
+                    b.writeBoolean(r.beforeDurationMs != null)
+                    r.beforeDurationMs?.let { b.writeLong(it) }
+                    b.writeBoolean(r.beforeBlockLoan != null)
+                    r.beforeBlockLoan?.let { b.writeBoolean(it) }
                 }
             },
             { b ->
@@ -201,7 +219,10 @@ data class BanChangesPayload(val rows: List<Row>) : CustomPayload {
                         actionKey = b.readString(),
                         durationMs = if (b.readBoolean()) b.readLong() else null,
                         reason = b.readString(),
-                        originalBanner = b.readString()
+                        originalBanner = b.readString(),
+                        blockLoan = b.readBoolean(),
+                        beforeDurationMs = if (b.readBoolean()) b.readLong() else null,
+                        beforeBlockLoan = if (b.readBoolean()) b.readBoolean() else null
                     )
                 })
             }
@@ -270,24 +291,38 @@ object BanNetwork {
                     return@execute
                 }
 
-                val expiresAt = if (payload.duration.isBlank()) {
+                val state = BanState.get(server)
+                // 编辑：该玩家当前必须确实被封着（否则没什么可编辑的）
+                val existing = if (payload.isEdit) state.getBanInfo(target.first, System.currentTimeMillis()) else null
+                if (payload.isEdit && existing == null) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.not_banned", target.second)))
+                    return@execute
+                }
+                val ms = if (payload.duration.isBlank()) {
                     null
                 } else {
-                    val ms = BanState.parseDurationMs(payload.duration)
-                    if (ms == null) {
+                    BanState.parseDurationMs(payload.duration) ?: run {
                         sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.invalid_duration")))
                         return@execute
                     }
-                    System.currentTimeMillis() + ms
                 }
+                // ⚠⭐ **编辑**时新的到期时刻 = **原封禁起点 + 新时长**（不是"此刻 + 新时长"）——
+                //   只是去开个「同时禁止借款」开关，不该把已经过了两天的 3 天封禁续成新的 3 天
+                //   （用户 2026-10-04 拍板；起点取不着时退回此刻，只有理论上的边角能走到）
+                val expiresAt = ms?.let { (existing?.bannedAt ?: System.currentTimeMillis()) + it }
 
                 // 封禁理由长度钳制（防超长输入撑大存档/广播；正常理由远小于上限）
-                BanState.get(server).ban(target.first, target.second, player.name.string, expiresAt, payload.reason.take(100), payload.blockLoan)
+                if (payload.isEdit) {
+                    state.editBan(target.first, player.name.string, expiresAt, payload.reason.take(100), payload.blockLoan)
+                } else {
+                    state.ban(target.first, target.second, player.name.string, expiresAt, payload.reason.take(100), payload.blockLoan)
+                }
 
-                val msg = if (expiresAt == null)
-                    Text.translatable("cobblemarket.ban.banned", target.second)
-                else
-                    Text.translatable("cobblemarket.ban.banned_until", target.second, payload.duration)
+                val msg = when {
+                    payload.isEdit -> Text.translatable("cobblemarket.ban.edited", target.second)
+                    expiresAt == null -> Text.translatable("cobblemarket.ban.banned", target.second)
+                    else -> Text.translatable("cobblemarket.ban.banned_until", target.second, payload.duration)
+                }
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, msg))
@@ -353,7 +388,10 @@ object BanNetwork {
                     actionKey = it.actionKey,
                     durationMs = it.durationMs,
                     reason = it.reason,
-                    originalBanner = it.originalBanner
+                    originalBanner = it.originalBanner,
+                    blockLoan = it.blockLoan,
+                    beforeDurationMs = it.beforeDurationMs,
+                    beforeBlockLoan = it.beforeBlockLoan
                 )
             }
             sendToPlayer(player, BanChangesPayload(rows))

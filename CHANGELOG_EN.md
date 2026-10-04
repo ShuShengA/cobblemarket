@@ -116,6 +116,11 @@
   - ⚠ Bans and unbans made through `/market ban`, `/market unban` and the admin screen **are all recorded** (writing is funnelled through one place, so no entry point can silently skip it)
   - ⚠ **Server and client must be updated together** (the network format changed)
 
+- **A ban can now be edited directly instead of "unban and re-ban"**: every row in the ban list has an **Edit** button — change the duration, the reason, or the "Also block loans" toggle in one dialog instead of lifting the ban and issuing a new one
+  - ⚠ **Changing the duration counts from the original ban time, not from the moment you edit**: if someone has 3 days left and all you wanted was to switch on "Also block loans", they still have 3 days afterwards (you don't hand out a fresh full term). To actually keep them banned longer, enter a longer duration
+  - ⚠ **The player name cannot be changed** (that would amount to banning someone else, and the ledger would no longer line up) — the name is shown in the dialog for reference only
+  - ⚠ Each edit is recorded in the **Change Log** as an **Edit** entry that spells out before → after (e.g. "Duration: 3 days → 7 days, Block loans: Off → On")
+
 ### Changes
 
 - **The force-cancel dialog now shows an item's full tooltip**: for an item auction it used to show only "item name + ×count" — no enchantments, no attribute modifiers, no potions, no custom lore — while the **bid dialog** showed them all. It now matches the bid dialog: the full tooltip, and **Shift / Ctrl expands it** (the dialog grows taller and wider to fit, and the **two buttons at the bottom move down with it** — they used to stay put and overlap the "Force-cancel this auction?" notice that had already moved down)
