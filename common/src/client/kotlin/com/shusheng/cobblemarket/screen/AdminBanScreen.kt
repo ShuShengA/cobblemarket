@@ -113,7 +113,13 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     private var lastRequestPrefix: String? = null
     private val suggestionButtons = mutableListOf<NineSliceButton>()
 
-    private fun maxVisible() = maxOf(0, (height - listStartY() - 16) / rowHeight)
+    /**
+     * 一屏几行。⚠ 底部预留 **48** 是**照 `LoanHistoryScreen` / `HistoryScreen` 的既有口径**：
+     * 滚动数字画在 `height - 49`，加上行底边距刚好 48 —— 我先前写 16，少留 32px ⇒ 会**多塞一行**，
+     * 最后一行压出面板底边、把滚动数字盖住（2026-10-04 用户改到「自动」档位一眼看出来）。
+     * ⚠ 改这个数，`renderBackground` 的行底板与滚动范围都跟着走（都调这一个函数）✓
+     */
+    private fun maxVisible() = maxOf(0, (height - 48 - listStartY()) / rowHeight)
 
     private companion object {
         const val MAX_SUGGESTION_ROWS = 8
