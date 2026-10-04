@@ -982,7 +982,7 @@
   "cobblemarket.ban.by_finance": "Meowth Bank Manager",
   "cobblemarket.ban.reason_label": "Reason: ",
   "cobblemarket.ban.block_loan": "Also block loans",
-  "cobblemarket.ban.block_loan_tip": "On: loans are blocked too (deposits, withdrawals and repayments work as usual)\nOff: market trading only",
+  "cobblemarket.ban.block_loan_tip": "On: loans are blocked too\nOff: market trading only\nDeposits, withdrawals and repayments work as usual in both states",
   "cobblemarket.ban.confirm": "Confirm Ban",
   "cobblemarket.buy_order.title": "Buy Orders",
   "cobblemarket.meowth_bank.title": "Meowth Bank",
