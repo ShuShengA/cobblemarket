@@ -15,9 +15,6 @@ data class BanInfo(
     val bannedAt: Long,
     val expiresAt: Long?,  // null = 永久封禁
     val reason: String,
-    /** 同时禁止借款（**只拦借款**：存取款、还款都不受影响 —— 还款必须留着，他还钱才能把逾期降下来）。
-     *  末尾新字段 + 默认 false ⇒ 旧档缺这一格自动落默认，不需要迁移分支 */
-    val blockLoan: Boolean = false
 ) {
     val isPermanent: Boolean get() = expiresAt == null
 }
@@ -31,28 +28,26 @@ class BanState private constructor() : PersistentState() {
         playerName: String,
         bannedBy: String,
         expiresAt: Long?,
-        reason: String,
-        blockLoan: Boolean = false
+        reason: String
     ) {
         // 先删后插：重复封禁（改时长/理由）时 put 覆盖不移动位置，强制移到末尾保证最新在前
         bans.remove(playerUuid)
         val now = System.currentTimeMillis()
-        bans[playerUuid] = BanInfo(playerUuid, playerName, bannedBy, now, expiresAt, reason, blockLoan)
+        bans[playerUuid] = BanInfo(playerUuid, playerName, bannedBy, now, expiresAt, reason)
         markDirty()
         // ⭐ 审计账本**收口在这里** ⇒ 命令 / 管理端界面 / 金融自动冻结这些写入点全部自动覆盖，不会漏
         BanChangeLogger.log(
             operator = bannedBy, targetName = playerName, targetUuid = playerUuid,
             actionKey = ACTION_BAN, durationMs = expiresAt?.minus(now), reason = reason,
-            originalBanner = "", blockLoan = blockLoan
+            originalBanner = ""
         )
     }
 
     /**
-     * **编辑**一笔已生效的封禁（时长 / 理由 / 同时禁止借款）。
+     * **编辑**一笔已生效的封禁（时长 / 理由）。
      *
      * ⚠⭐ **保留原 `bannedAt`**（用户 2026-10-04 拍板）：新的到期时刻 = **原起点 + 新时长** ——
-     *   只是去开个「同时禁止借款」开关，不该把已经过了两天的 3 天封禁续成新的 3 天。
-     *   真要把人关更久，就把时长填大。
+     *   只是去改个理由或时长，不该把已经过了两天的 3 天封禁续成新的 3 天。真要把人关更久，就把时长填大。
      *
      * @param expiresAt 新的到期时刻（null = 改成永久）
      * @return 改后的 [BanInfo]；该玩家当前没被封则返回 null（调用方据此回一句提示）
@@ -61,20 +56,18 @@ class BanState private constructor() : PersistentState() {
         playerUuid: UUID,
         bannedBy: String,
         expiresAt: Long?,
-        reason: String,
-        blockLoan: Boolean
+        reason: String
     ): BanInfo? {
         val old = bans[playerUuid] ?: return null
-        val updated = BanInfo(playerUuid, old.playerName, bannedBy, old.bannedAt, expiresAt, reason, blockLoan)
+        val updated = BanInfo(playerUuid, old.playerName, bannedBy, old.bannedAt, expiresAt, reason)
         bans[playerUuid] = updated
         markDirty()
         BanChangeLogger.log(
             operator = bannedBy, targetName = old.playerName, targetUuid = playerUuid,
             actionKey = ACTION_EDIT, durationMs = expiresAt?.minus(old.bannedAt), reason = reason,
-            originalBanner = "", blockLoan = blockLoan,
-            // 「改前」两列：新值在时长/借款两列，旧值在这里 ⇒ 账本上一比就是「3 天 → 7 天、不选 → 选中」
-            beforeDurationMs = old.expiresAt?.minus(old.bannedAt),
-            beforeBlockLoan = old.blockLoan
+            originalBanner = "",
+            // 「改前」一列：新值在「时长」列、旧值在这里 ⇒ 账本上一比就是「3 天 → 7 天」
+            beforeDurationMs = old.expiresAt?.minus(old.bannedAt)
         )
         return updated
     }
@@ -92,8 +85,7 @@ class BanState private constructor() : PersistentState() {
             BanChangeLogger.log(
                 operator = operator, targetName = removed.playerName, targetUuid = playerUuid,
                 actionKey = ACTION_UNBAN, durationMs = removed.expiresAt?.minus(removed.bannedAt),
-                reason = removed.reason, originalBanner = removed.bannedBy,
-                blockLoan = removed.blockLoan
+                reason = removed.reason, originalBanner = removed.bannedBy
             )
         }
         return removed
@@ -127,7 +119,6 @@ class BanState private constructor() : PersistentState() {
             c.putLong("bannedAt", info.bannedAt)
             info.expiresAt?.let { c.putLong("expiresAt", it) }
             c.putString("reason", info.reason)
-            c.putBoolean("blockLoan", info.blockLoan)
             list.add(c)
         }
         nbt.put("bans", list)
@@ -156,9 +147,7 @@ class BanState private constructor() : PersistentState() {
                                 bannedBy = c.getString("bannedBy"),
                                 bannedAt = c.getLong("bannedAt"),
                                 expiresAt = expiresAt,
-                                reason = c.getString("reason"),
-                                // 缺这格 = 旧档 ⇒ getBoolean 给 false，正是要的默认值
-                                blockLoan = c.getBoolean("blockLoan")
+                                reason = c.getString("reason")
                             )
                             bans[info.playerUuid] = info
                         } catch (e: Exception) {

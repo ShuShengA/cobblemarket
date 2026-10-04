@@ -33,6 +33,7 @@ import com.shusheng.cobblemarket.network.CardHolderListPayload
 import com.shusheng.cobblemarket.network.FinanceStatsPayload
 import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
+import com.shusheng.cobblemarket.network.LoanBlockListPayload
 import com.shusheng.cobblemarket.network.LoanHistoryDataPayload
 import com.shusheng.cobblemarket.network.RepayListDataPayload
 import com.shusheng.cobblemarket.network.ItemBlacklistDataPayload
@@ -51,6 +52,7 @@ import com.shusheng.cobblemarket.network.RequestBalancePayload
 import com.shusheng.cobblemarket.network.ServerConfigDataPayload
 import com.shusheng.cobblemarket.screen.AdminAuctionScreen
 import com.shusheng.cobblemarket.screen.AdminBanScreen
+import com.shusheng.cobblemarket.screen.AdminFinanceScreen
 import com.shusheng.cobblemarket.screen.AuctionCreateScreen
 import com.shusheng.cobblemarket.screen.AuctionScreen
 import com.shusheng.cobblemarket.screen.BlacklistScreen
@@ -68,7 +70,6 @@ import com.shusheng.cobblemarket.screen.PurpleCardApplyScreen
 import com.shusheng.cobblemarket.screen.BlackCardApplyScreen
 import com.shusheng.cobblemarket.screen.BlackCardConfigScreen
 import com.shusheng.cobblemarket.screen.BlackCardApplyConditionsScreen
-import com.shusheng.cobblemarket.screen.CardManageScreen
 import com.shusheng.cobblemarket.screen.PurpleCardConfigScreen
 import com.shusheng.cobblemarket.screen.LoanHistoryScreen
 import com.shusheng.cobblemarket.screen.MeowthPayScreen
@@ -378,8 +379,17 @@ object CobbleMarketClient {
             val client = MinecraftClient.getInstance()
             client.execute {
                 val screen = client.currentScreen
-                if (screen is CardManageScreen) {
-                    screen.onCardHolderList(payload)
+                // 卡片管理已搬进金融管理界面当页签（原 `CardManageScreen` 已删）
+                if (screen is AdminFinanceScreen) screen.onCardHolders(payload)
+            }
+        }
+
+        registerS2C(LoanBlockListPayload.ID, LoanBlockListPayload.CODEC) { payload ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                if (screen is AdminFinanceScreen) {
+                    screen.onLoanBlocks(payload)
                 }
             }
         }
@@ -440,6 +450,7 @@ object CobbleMarketClient {
                     is AdminPokemonScreen -> screen.onMarketResult(payload)
                     is AdminItemScreen -> screen.onMarketResult(payload)
                     is AdminBanScreen -> screen.onResult(payload)
+                    is AdminFinanceScreen -> screen.onResult(payload)
                     is AuctionScreen -> screen.onMarketResult(payload)
                     is AuctionCreateScreen -> screen.onMarketResult(payload)
                     is AdminAuctionScreen -> screen.onMarketResult(payload)
@@ -647,6 +658,9 @@ object CobbleMarketClient {
             MinecraftClient.getInstance().execute {
                 val screen = MinecraftClient.getInstance().currentScreen
                 if (screen is AdminBanScreen) {
+                    screen.onNameSuggestions(payload)
+                } else if (screen is AdminFinanceScreen) {
+                    // 金融管理「禁止借款」页签的搜索框用的同一套联想
                     screen.onNameSuggestions(payload)
                 } else if (screen is PermissionScreen) {
                     // 权限管理界面也用同一套服务端玩家名联想（服务端那处权限已放宽到「任一管理权限」）
@@ -1028,6 +1042,7 @@ internal fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean
         s is BlacklistScreen || s is PriceLimitScreen || s is AuctionScreen || s is AuctionCreateScreen ||
         s is BuyOrderScreen || s is AdminAuctionScreen || s is ServerConfigScreen || s is FinanceConfigScreen ||
         s is PurpleCardConfigScreen || s is PurpleCardApplyScreen || s is PurpleCardApplyConditionsScreen ||
-        s is BlackCardConfigScreen || s is BlackCardApplyScreen || s is BlackCardApplyConditionsScreen || s is CardManageScreen || s is ItemVariantSelectScreen ||
+        s is BlackCardConfigScreen || s is BlackCardApplyScreen || s is BlackCardApplyConditionsScreen || s is ItemVariantSelectScreen ||
+        s is AdminFinanceScreen ||
         s is MeowthBankScreen || s is LoanScreen || s is LoanHistoryScreen || s is RepayScreen || s is MeowthPayScreen ||
         s is DepositScreen || s is BalanceHudPositionScreen

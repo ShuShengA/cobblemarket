@@ -5,11 +5,11 @@ import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.config.CurrencyHandler
 import com.shusheng.cobblemarket.finance.CreditFileLogger
+import com.shusheng.cobblemarket.finance.FinanceChangeLogger
 import com.shusheng.cobblemarket.finance.FinanceState
 import com.shusheng.cobblemarket.finance.LoanLogType
 import com.shusheng.cobblemarket.finance.LoanSource
 import com.shusheng.cobblemarket.finance.LoanStatus
-import com.shusheng.cobblemarket.market.BanInfo
 import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.market.MarketState
 import com.shusheng.cobblemarket.platform.getPlayerIp
@@ -512,6 +512,108 @@ data class CardHolderListPayload(val entries: List<CardHolderEntry>) : CustomPay
     }
 }
 
+// ── 禁止借款名单（金融管理界面；FINANCE 节点） ──
+//
+// 用户 2026-10-05：禁借从「封禁弹窗里的一枚开关」搬到金融侧、成为金融管理界面自己的名单。
+// ⚠ 与封禁系统**无关**（不再写 `BanState`），与「逾期/坏账」那两条判据也**并列互不替代**。
+
+/**
+ * 一条「禁止借款」（下发给客户端）。
+ * ⚠ 与 `BanEntry` 同款：**发剩余毫秒**、`expiresAt == null` 表示永久 —— 由客户端按自己的语言渲染
+ * （服务端不拼死任何一种语言的时间文本）。
+ */
+data class LoanBlockInfo(
+    val playerUuid: UUID,
+    val playerName: String,
+    /** 执行者：管理员名，或系统来源的 `$词条键`（渲染侧过 `BanState.reasonText`） */
+    val blockedBy: String,
+    /** null = 永久 */
+    val expiresAt: Long?,
+    /** 剩余毫秒（永久时无意义，界面按 expiresAt 判） */
+    val remainingMs: Long,
+    val reason: String
+) {
+    fun write(buf: PacketByteBuf) {
+        buf.writeUuid(playerUuid)
+        buf.writeString(playerName)
+        buf.writeString(blockedBy)
+        buf.writeBoolean(expiresAt != null)
+        expiresAt?.let { buf.writeLong(it) }
+        buf.writeLong(remainingMs)
+        buf.writeString(reason)
+    }
+
+    companion object {
+        fun read(buf: PacketByteBuf) = LoanBlockInfo(
+            playerUuid = buf.readUuid(),
+            playerName = buf.readString(),
+            blockedBy = buf.readString(),
+            expiresAt = if (buf.readBoolean()) buf.readLong() else null,
+            remainingMs = buf.readLong(),
+            reason = buf.readString()
+        )
+    }
+}
+
+// ── C2S：请求禁借名单 ──
+
+class RequestLoanBlockListPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestLoanBlockListPayload>(CobbleMarket.id("request_loan_block_list"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestLoanBlockListPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestLoanBlockListPayload() }
+        )
+    }
+}
+
+// ── S2C：禁借名单 ──
+
+data class LoanBlockListPayload(val entries: List<LoanBlockInfo>) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<LoanBlockListPayload>(CobbleMarket.id("loan_block_list"))
+        val CODEC: PacketCodec<PacketByteBuf, LoanBlockListPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeVarInt(p.entries.size)
+                p.entries.forEach { it.write(b) }
+            },
+            { b -> LoanBlockListPayload((0 until b.readVarInt()).map { LoanBlockInfo.read(b) }) }
+        )
+    }
+}
+
+// ── C2S：加一笔禁借（玩家名 / 时长 / 理由 —— 照 `AdminBanPayload`） ──
+
+data class AdminLoanBlockPayload(
+    val playerName: String,
+    val duration: String,
+    val reason: String
+) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<AdminLoanBlockPayload>(CobbleMarket.id("admin_loan_block"))
+        val CODEC: PacketCodec<PacketByteBuf, AdminLoanBlockPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.playerName); b.writeString(p.duration); b.writeString(p.reason) },
+            { b -> AdminLoanBlockPayload(b.readString(), b.readString(), b.readString()) }
+        )
+    }
+}
+
+// ── C2S：解除禁借（照 `AdminUnbanPayload`） ──
+
+data class AdminLoanUnblockPayload(val playerUuid: UUID) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<AdminLoanUnblockPayload>(CobbleMarket.id("admin_loan_unblock"))
+        val CODEC: PacketCodec<PacketByteBuf, AdminLoanUnblockPayload> = PacketCodec.of(
+            { p, b -> b.writeUuid(p.playerUuid) },
+            { b -> AdminLoanUnblockPayload(b.readUuid()) }
+        )
+    }
+}
+
 // ── 卡片持有者展示面板（喵喵银行界面两张卡下方，所有玩家可见） ──
 
 // ── C2S：请求持有者面板数据（进入喵喵银行时拉取） ──
@@ -650,6 +752,7 @@ object FinanceNetwork {
         registerS2CType(PurpleCardApplyInfoPayload.ID, PurpleCardApplyInfoPayload.CODEC)
         registerS2CType(BlackCardApplyInfoPayload.ID, BlackCardApplyInfoPayload.CODEC)
         registerS2CType(CardHolderListPayload.ID, CardHolderListPayload.CODEC)
+        registerS2CType(LoanBlockListPayload.ID, LoanBlockListPayload.CODEC)
         registerS2CType(CardHolderBoardPayload.ID, CardHolderBoardPayload.CODEC)
 
         // ── 应急贷款借款 ──
@@ -662,9 +765,10 @@ object FinanceNetwork {
                 // 金融操作，停市要防的就是这个口子。存款/取款/还款/卡片申请都不拦 ——
                 // 那些要么是玩家自有资金、要么是钱流进池子，不增加服主风险（2026-09-16 与用户逐项确认）
                 if (marketBlocked(player)) return@execute
-                // 封禁的借款闸：**只有勾了「同时禁止借款」的封禁**才拦。与上面的关市闸并列、互不替代。
-                // 存取款/还款不在此列 —— 还款必须留着，他还钱才能把逾期降下来（2026-10-04 定）
-                if (banBlocksLoan(server, player)) return@execute
+                // 金融管理的禁借名单闸（原封禁弹窗那枚「同时禁止借款」开关的继任者）。
+                // 与上面的关市闸并列、互不替代；存取款/还款不在此列 —— 还款必须留着，
+                // 他还钱才能把逾期降下来（2026-10-04 定，2026-10-05 搬到金融侧）
+                if (loanBlocked(player)) return@execute
                 val state = FinanceState.get(server)
                 val now = System.currentTimeMillis()
                 // 文案区分：总开关关 = 喵喵银行没开门；现金贷关 = 喵喵的帮助暂未开放
@@ -1005,6 +1109,100 @@ object FinanceNetwork {
             }
         }
 
+        // ── 金融管理：禁止借款名单（FINANCE 节点；用户 2026-10-05 从封禁弹窗搬过来） ──
+        //
+        // ⚠ 判据一律 `MarketPermissions.FINANCE`（**与 OP 无关**，项目铁律）；
+        //   与卡片管理那两条并列 —— 金融管理界面能做的三件事（卡片 / 禁借 / 额度）同属一个节点。
+        registerC2S(RequestLoanBlockListPayload.ID, RequestLoanBlockListPayload.CODEC) { _, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
+            val server = player.server
+            server.execute { sendLoanBlockList(player) }
+        }
+
+        registerC2S(AdminLoanBlockPayload.ID, AdminLoanBlockPayload.CODEC) { payload, player ->
+            if (!RequestThrottle.allow(player.uuid, "admin_loan_block", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val target = BanState.resolvePlayer(server, payload.playerName)
+                if (target == null) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", payload.playerName)))
+                    return@execute
+                }
+                // 时长解析与封禁那边**同一个函数**（空 = 永久；`1d12h` 那套输入格式两边一致）
+                val ms = if (payload.duration.isBlank()) {
+                    null
+                } else {
+                    BanState.parseDurationMs(payload.duration) ?: run {
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.invalid_duration")))
+                        return@execute
+                    }
+                }
+                val now = System.currentTimeMillis()
+                val expiresAt = ms?.let { now + it }
+                FinanceState.get(server)
+                    .blockLoan(target.first, target.second, player.name.string, expiresAt, payload.reason.take(100))
+                FinanceChangeLogger.log(
+                    operator = player.name.string,
+                    targetName = target.second,
+                    targetUuid = target.first,
+                    actionKey = FinanceChangeLogger.ACTION_LOAN_BLOCK,
+                    durationMs = ms,
+                    reason = payload.reason.take(100)
+                )
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                sendToPlayer(
+                    player,
+                    MarketResultPayload(
+                        true,
+                        if (expiresAt == null) Text.translatable("cobblemarket.finance.loan_blocked", target.second)
+                        else Text.translatable("cobblemarket.finance.loan_blocked_until", target.second, payload.duration)
+                    )
+                )
+                sendLoanBlockList(player)
+                // 通知被禁的玩家（在线才发）。⚠ 文案与「逾期/坏账拦借」那两条刻意分开 ——
+                //   那两条是贷款状态判的，这条是管理员的决定，混成一句话玩家会去问错人
+                server.playerManager.getPlayer(target.first)?.sendMessage(
+                    Text.translatable("cobblemarket.finance.loan_blocked_notice").formatted(Formatting.RED),
+                    false
+                )
+            }
+        }
+
+        registerC2S(AdminLoanUnblockPayload.ID, AdminLoanUnblockPayload.CODEC) { payload, player ->
+            if (!RequestThrottle.allow(player.uuid, "admin_loan_unblock", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val name = holderDisplayName(server, payload.playerUuid)
+                val removed = FinanceState.get(server).unblockLoan(payload.playerUuid)
+                if (removed != null) {
+                    // 解禁那行**自带原时长与理由**（照封禁账本：不用回头翻当初那条）
+                    FinanceChangeLogger.log(
+                        operator = player.name.string,
+                        targetName = removed.playerName,
+                        targetUuid = removed.playerUuid,
+                        actionKey = FinanceChangeLogger.ACTION_LOAN_UNBLOCK,
+                        durationMs = removed.expiresAt?.minus(removed.blockedAt),
+                        reason = removed.reason
+                    )
+                    com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                }
+                sendToPlayer(
+                    player,
+                    MarketResultPayload(
+                        removed != null,
+                        Text.translatable(
+                            if (removed != null) "cobblemarket.finance.loan_unblocked" else "cobblemarket.finance.not_blocked",
+                            name
+                        )
+                    )
+                )
+                sendResultSound(player, removed != null)
+                sendLoanBlockList(player)
+            }
+        }
+
         // ── 活期存款（总开关只拦存款，取款永远开放——钱是玩家的不能卡） ──
         registerC2S(RequestDepositPayload.ID, RequestDepositPayload.CODEC) { payload, player ->
             if (!RequestThrottle.allow(player.uuid, "request_deposit", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
@@ -1192,27 +1390,31 @@ object FinanceNetwork {
 
     /** 申请紫卡条件快照（打开界面/申请后回发）：7 项条件 + 费用 + 资格 + 开关 */
     /**
-     * 封禁的借款闸：**只有勾了「同时禁止借款」的封禁**才拦（普通封禁不管银行）。
-     * ⚠ 只拦借款 —— 存款/取款/还款一律放行；喵喵支付那种"买东西"的路径本来就被购买闸拦着，
-     *   不归这里管（2026-10-04 用户拍板）。
+     * 禁止借款的闸：**金融管理名单**（用户 2026-10-05 定）。
+     *
+     * ⚠ 来历：原先是封禁弹窗里那枚「同时禁止借款」开关（挂在 `BanInfo.blockLoan`），
+     *   现已搬成金融侧自己的名单 —— **与封禁系统无关**了（金融的事归金融侧）。
+     * ⚠ 与「逾期 / 坏账」那两条拦借判据**并列、互不替代**：那两条按**贷款状态**判、在下面的借款
+     *   handler 里；这条按**管理员的决定**判。三者的提示文案刻意分开，别合并。
+     * ⚠ 只拦借款 —— 存款/取款/还款一律放行（还款必须留着：他还钱才能把逾期降下来）。
      */
-    private fun banBlocksLoan(server: MinecraftServer, player: ServerPlayerEntity): Boolean {
-        val info = BanState.get(server).getBanInfo(player.uuid, System.currentTimeMillis()) ?: return false
-        if (!info.blockLoan) return false
+    private fun loanBlocked(player: ServerPlayerEntity): Boolean {
+        val now = System.currentTimeMillis()
+        val entry = FinanceState.get(player.server).getLoanBlock(player.uuid, now) ?: return false
         // ⚠ 走结果包（不是 `player.sendMessage`）：失败音效由 `MarketResultPayload(success=false)` 在客户端
-        //   触发，直接发聊天行就只有红字、没有声音（用户 2026-10-04 实测报的）；同一条路上的其它拦截也一并改了
-        sendToPlayer(player, MarketResultPayload(false, banLoanNotice(info)))
+        //   触发，直接发聊天行就只有红字、没有声音（用户 2026-10-04 实测报的）
+        // ⚠ 首句特意**不是**"禁止参与交易"：这条只多拦了借款，市场交易照常，
+        //   说成交易被封会把人误导去问服主"我不是还能买东西吗"
+        sendToPlayer(
+            player,
+            MarketResultPayload(
+                false,
+                BanState.noticeText(entry.expiresAt, entry.reason, now, "cobblemarket.finance.loan_blocked_msg")
+                    .formatted(Formatting.RED)
+            )
+        )
         return true
     }
-
-    /**
-     * 被「同时禁止借款」拦下时的红字提示。
-     * ⚠ 首句特意**不是**"禁止参与交易"：这种封禁只多拦了借款，市场交易照常，
-     *   说成交易被封会把人误导去问服主"我不是还能买东西吗"。
-     */
-    private fun banLoanNotice(info: BanInfo): Text =
-        BanState.noticeText(info.expiresAt, info.reason, System.currentTimeMillis(), "cobblemarket.ban.loan_blocked_msg")
-            .formatted(Formatting.RED)
 
     private fun sendPurpleCardApplyInfo(player: ServerPlayerEntity) {
         val server = player.server
@@ -1333,6 +1535,28 @@ object FinanceNetwork {
     }
 
     /** 卡片管理（金融管理节点）：持有者列表回发（紫卡 ∪ 黑卡 混排，按加入时间正序=先申请在前，同刻按名字） */
+    /** 禁借名单回发（金融管理界面；新的在前，与封禁列表同口径。增删后也调它刷新） */
+    private fun sendLoanBlockList(player: ServerPlayerEntity) {
+        val now = System.currentTimeMillis()
+        sendToPlayer(
+            player,
+            LoanBlockListPayload(
+                FinanceState.get(player.server).getActiveLoanBlocks(now).map { e ->
+                    LoanBlockInfo(
+                        playerUuid = e.playerUuid,
+                        playerName = e.playerName,
+                        blockedBy = e.blockedBy,
+                        expiresAt = e.expiresAt,
+                        // 永久（expiresAt == null）时这个值没意义 —— 界面按 expiresAt 判「永久」，
+                        // 与封禁列表同一口径（那边也是发剩余毫秒 + 用 null 表示永久）
+                        remainingMs = (e.expiresAt ?: now) - now,
+                        reason = e.reason
+                    )
+                }
+            )
+        )
+    }
+
     private fun sendCardHolderList(player: ServerPlayerEntity) {
         val server = player.server
         val state = FinanceState.get(server)

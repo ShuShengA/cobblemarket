@@ -26,9 +26,7 @@ data class BanEntry(
     val expiresAt: Long?,
     /** 剩余毫秒（服务端算好发过来；永久封禁发 0，客户端按 expiresAt == null 渲染"永久"） */
     val remainingMs: Long,
-    val reason: String,
-    /** 同时禁止借款（末尾新字段）：列表悬停窗要显示它，否则这个开关设完就再也看不见了 */
-    val blockLoan: Boolean
+    val reason: String
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(playerUuid)
@@ -39,7 +37,6 @@ data class BanEntry(
         expiresAt?.let { buf.writeLong(it) }
         buf.writeLong(remainingMs)
         buf.writeString(reason)
-        buf.writeBoolean(blockLoan)
     }
 
     companion object {
@@ -50,8 +47,7 @@ data class BanEntry(
             bannedAt = buf.readLong(),
             expiresAt = if (buf.readBoolean()) buf.readLong() else null,
             remainingMs = buf.readLong(),
-            reason = buf.readString(),
-            blockLoan = buf.readBoolean()
+            reason = buf.readString()
         )
     }
 }
@@ -88,10 +84,8 @@ data class AdminBanPayload(
     val playerName: String,
     val duration: String,
     val reason: String,
-    /** 同时禁止借款（末尾新字段，两端同版） */
-    val blockLoan: Boolean,
     /**
-     * **编辑一笔已生效的封禁**（末尾新字段，两端同版）：走 [BanState.editBan] ——
+     * **编辑一笔已生效的封禁**（末尾字段，两端同版）：走 [BanState.editBan] ——
      * 到期时刻按**原封禁起点 + 新时长**算，不是"此刻 + 新时长"（见那里的说明）
      */
     val isEdit: Boolean = false
@@ -102,10 +96,10 @@ data class AdminBanPayload(
         val CODEC: PacketCodec<PacketByteBuf, AdminBanPayload> = PacketCodec.of(
             { p, b ->
                 b.writeString(p.playerName); b.writeString(p.duration); b.writeString(p.reason)
-                b.writeBoolean(p.blockLoan); b.writeBoolean(p.isEdit)
+                b.writeBoolean(p.isEdit)
             },
             { b ->
-                AdminBanPayload(b.readString(), b.readString(), b.readString(), b.readBoolean(), b.readBoolean())
+                AdminBanPayload(b.readString(), b.readString(), b.readString(), b.readBoolean())
             }
         )
     }
@@ -178,12 +172,8 @@ data class BanChangesPayload(val rows: List<Row>) : CustomPayload {
         val reason: String,
         /** 解封行 = 当初是谁封的；其余行为空 */
         val originalBanner: String,
-        /** 本次动作**之后**「同时禁止借款」的状态；解封行 = 被解掉的那笔的状态 */
-        val blockLoan: Boolean,
         /** 「修改」行有值：改前的时长；其余为 null */
-        val beforeDurationMs: Long?,
-        /** 「修改」行有值：改前的「同时禁止借款」；其余为 null */
-        val beforeBlockLoan: Boolean?
+        val beforeDurationMs: Long?
     )
 
     override fun getId() = ID
@@ -201,11 +191,8 @@ data class BanChangesPayload(val rows: List<Row>) : CustomPayload {
                     r.durationMs?.let { b.writeLong(it) }
                     b.writeString(r.reason)
                     b.writeString(r.originalBanner)
-                    b.writeBoolean(r.blockLoan)
                     b.writeBoolean(r.beforeDurationMs != null)
                     r.beforeDurationMs?.let { b.writeLong(it) }
-                    b.writeBoolean(r.beforeBlockLoan != null)
-                    r.beforeBlockLoan?.let { b.writeBoolean(it) }
                 }
             },
             { b ->
@@ -220,9 +207,7 @@ data class BanChangesPayload(val rows: List<Row>) : CustomPayload {
                         durationMs = if (b.readBoolean()) b.readLong() else null,
                         reason = b.readString(),
                         originalBanner = b.readString(),
-                        blockLoan = b.readBoolean(),
-                        beforeDurationMs = if (b.readBoolean()) b.readLong() else null,
-                        beforeBlockLoan = if (b.readBoolean()) b.readBoolean() else null
+                        beforeDurationMs = if (b.readBoolean()) b.readLong() else null
                     )
                 })
             }
@@ -313,9 +298,9 @@ object BanNetwork {
 
                 // 封禁理由长度钳制（防超长输入撑大存档/广播；正常理由远小于上限）
                 if (payload.isEdit) {
-                    state.editBan(target.first, player.name.string, expiresAt, payload.reason.take(100), payload.blockLoan)
+                    state.editBan(target.first, player.name.string, expiresAt, payload.reason.take(100))
                 } else {
-                    state.ban(target.first, target.second, player.name.string, expiresAt, payload.reason.take(100), payload.blockLoan)
+                    state.ban(target.first, target.second, player.name.string, expiresAt, payload.reason.take(100))
                 }
 
                 val msg = when {
@@ -368,8 +353,7 @@ object BanNetwork {
                         expiresAt = info.expiresAt,
                         // 永久发 0（客户端按 expiresAt == null 走翻译键渲染"永久"，这个值用不到）
                         remainingMs = if (info.isPermanent) 0L else info.expiresAt!! - now,
-                        reason = info.reason,
-                        blockLoan = info.blockLoan
+                        reason = info.reason
                     )
                 }
                 sendToPlayer(player, BanListDataPayload(entries.reversed()))
@@ -389,9 +373,7 @@ object BanNetwork {
                     durationMs = it.durationMs,
                     reason = it.reason,
                     originalBanner = it.originalBanner,
-                    blockLoan = it.blockLoan,
-                    beforeDurationMs = it.beforeDurationMs,
-                    beforeBlockLoan = it.beforeBlockLoan
+                    beforeDurationMs = it.beforeDurationMs
                 )
             }
             sendToPlayer(player, BanChangesPayload(rows))
