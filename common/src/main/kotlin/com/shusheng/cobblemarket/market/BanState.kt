@@ -36,13 +36,33 @@ class BanState private constructor() : PersistentState() {
     ) {
         // 先删后插：重复封禁（改时长/理由）时 put 覆盖不移动位置，强制移到末尾保证最新在前
         bans.remove(playerUuid)
-        bans[playerUuid] = BanInfo(playerUuid, playerName, bannedBy, System.currentTimeMillis(), expiresAt, reason, blockLoan)
+        val now = System.currentTimeMillis()
+        bans[playerUuid] = BanInfo(playerUuid, playerName, bannedBy, now, expiresAt, reason, blockLoan)
         markDirty()
+        // ⭐ 审计账本**收口在这里** ⇒ 命令 / 管理端界面 / 金融自动冻结这些写入点全部自动覆盖，不会漏
+        BanChangeLogger.log(
+            operator = bannedBy, targetName = playerName, targetUuid = playerUuid,
+            actionKey = ACTION_BAN, durationMs = expiresAt?.minus(now), reason = reason,
+            originalBanner = ""
+        )
     }
 
-    fun unban(playerUuid: UUID): BanInfo? {
+    /**
+     * 解封。[operator] = 执行解封的人（或系统来源的 `$词条键`）。
+     * ⚠ 这个参数是 1.2.1 加的：审计账本要记「谁解的」——**封禁那条里没有 B**，
+     *   「A 封的、被 B 解了」这件事只有解封这一刻才记得到。
+     */
+    fun unban(playerUuid: UUID, operator: String): BanInfo? {
         val removed = bans.remove(playerUuid)
-        if (removed != null) markDirty()
+        if (removed != null) {
+            markDirty()
+            // 解封这条**自带原封禁者与原时长**，不用回头去翻当初封禁那行（用户要的正是这个场景）
+            BanChangeLogger.log(
+                operator = operator, targetName = removed.playerName, targetUuid = playerUuid,
+                actionKey = ACTION_UNBAN, durationMs = removed.expiresAt?.minus(removed.bannedAt),
+                reason = removed.reason, originalBanner = removed.bannedBy
+            )
+        }
         return removed
     }
 
@@ -82,6 +102,11 @@ class BanState private constructor() : PersistentState() {
     }
 
     companion object {
+        /** 审计账本「动作」列的取值（`$` 前缀 = 词条键，界面按**客户端语言**渲染，见 [reasonText]）。
+         *  直接复用界面上那两枚按钮的译名（「封禁 / 解封」）—— 同一个概念只留一个词条 */
+        const val ACTION_BAN = "\$cobblemarket.ban.ban"
+        const val ACTION_UNBAN = "\$cobblemarket.ban.unban"
+
         private val TYPE = PersistentState.Type(
             { BanState() },
             { nbt, _ ->
@@ -172,7 +197,8 @@ class BanState private constructor() : PersistentState() {
          * 封禁理由渲染约定：以 $ 开头的 reason 是 translatable key（系统来源，渲染时按玩家语言翻译）；
          * 玩家手动填写的理由原样显示（不翻译）。
          */
-        fun reasonText(reason: String): net.minecraft.text.Text =
+        // ⚠ 返回 MutableText（不是 Text）：调用方常要接 `.formatted(色)`，而 formatted 只挂在 MutableText 上
+        fun reasonText(reason: String): net.minecraft.text.MutableText =
             if (reason.startsWith("$"))
                 net.minecraft.text.Text.translatable(reason.removePrefix("$"))
             else
