@@ -25,7 +25,9 @@ data class BanEntry(
     val expiresAt: Long?,
     /** 剩余毫秒（服务端算好发过来；永久封禁发 0，客户端按 expiresAt == null 渲染"永久"） */
     val remainingMs: Long,
-    val reason: String
+    val reason: String,
+    /** 同时禁止借款（末尾新字段）：列表悬停窗要显示它，否则这个开关设完就再也看不见了 */
+    val blockLoan: Boolean
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(playerUuid)
@@ -36,6 +38,7 @@ data class BanEntry(
         expiresAt?.let { buf.writeLong(it) }
         buf.writeLong(remainingMs)
         buf.writeString(reason)
+        buf.writeBoolean(blockLoan)
     }
 
     companion object {
@@ -46,7 +49,8 @@ data class BanEntry(
             bannedAt = buf.readLong(),
             expiresAt = if (buf.readBoolean()) buf.readLong() else null,
             remainingMs = buf.readLong(),
-            reason = buf.readString()
+            reason = buf.readString(),
+            blockLoan = buf.readBoolean()
         )
     }
 }
@@ -79,13 +83,22 @@ data class PlayerNameSuggestionsPayload(val names: List<String>) : CustomPayload
 
 // ── C2S: 封禁 ──
 
-data class AdminBanPayload(val playerName: String, val duration: String, val reason: String) : CustomPayload {
+data class AdminBanPayload(
+    val playerName: String,
+    val duration: String,
+    val reason: String,
+    /** 同时禁止借款（末尾新字段，两端同版） */
+    val blockLoan: Boolean
+) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<AdminBanPayload>(CobbleMarket.id("admin_ban"))
         val CODEC: PacketCodec<PacketByteBuf, AdminBanPayload> = PacketCodec.of(
-            { p, b -> b.writeString(p.playerName); b.writeString(p.duration); b.writeString(p.reason) },
-            { b -> AdminBanPayload(b.readString(), b.readString(), b.readString()) }
+            { p, b ->
+                b.writeString(p.playerName); b.writeString(p.duration); b.writeString(p.reason)
+                b.writeBoolean(p.blockLoan)
+            },
+            { b -> AdminBanPayload(b.readString(), b.readString(), b.readString(), b.readBoolean()) }
         )
     }
 }
@@ -199,7 +212,7 @@ object BanNetwork {
                 }
 
                 // 封禁理由长度钳制（防超长输入撑大存档/广播；正常理由远小于上限）
-                BanState.get(server).ban(target.first, target.second, player.name.string, expiresAt, payload.reason.take(100))
+                BanState.get(server).ban(target.first, target.second, player.name.string, expiresAt, payload.reason.take(100), payload.blockLoan)
 
                 val msg = if (expiresAt == null)
                     Text.translatable("cobblemarket.ban.banned", target.second)
@@ -250,7 +263,8 @@ object BanNetwork {
                         expiresAt = info.expiresAt,
                         // 永久发 0（客户端按 expiresAt == null 走翻译键渲染"永久"，这个值用不到）
                         remainingMs = if (info.isPermanent) 0L else info.expiresAt!! - now,
-                        reason = info.reason
+                        reason = info.reason,
+                        blockLoan = info.blockLoan
                     )
                 }
                 sendToPlayer(player, BanListDataPayload(entries.reversed()))
