@@ -21,7 +21,7 @@ import java.util.UUID
  * 「封禁不是频繁的操作，文件也不会很大，永久保存都没事，一个服务器能封几个人？」
  * ⇒ 想清理由服主自己删文件，代码里不做保留期、不做 `readRecent(days)` 那一套。
  *
- * ### 列：时间 / 执行者 / 目标玩家 / 目标UUID / 动作 / 时长 / 理由 / 原封禁者 / 借款 / 原时长 / 原借款
+ * ### 列：时间 / 执行者 / 目标玩家 / 目标UUID / 动作 / 时长 / 理由 / 原封禁者 / 原时长
  *
  * - 「执行者」「动作」「理由」里凡是**已知短语**（系统来源），一律存 `$cobblemarket.xxx` 的
  *   **词条键形式**，由界面按**客户端语言**渲染（`BanState.reasonText` 同款）；玩家手填的理由原样存。
@@ -30,10 +30,12 @@ import java.util.UUID
  *   ⇒ 与聊天提示、管理端列表三处口径一致（`3d5h` 那套已在 1.2.1 本地化掉）。
  * - 「原封禁者」**只有解封那行有值**：用户要的场景是「A 封的、B 解的也要查得到」，
  *   这一列让解封那行**自成一条**，不用回头去翻当初封禁那行。
- * - 「借款」= 本次动作**之后**「同时禁止借款」的状态（`Y` / `N`）；解封行记的是**被解掉的那笔**的状态。
- * - 「原时长」「原借款」**只有「修改」那行有值** —— 用户要的「写清改前改后」：
- *   新的时长/借款状态在各自的列里，旧值在这里 ⇒ 两列一比就是「3 天 → 7 天、不选 → 选中」。
- *   ⚠ 这两列**只放数字**（毫秒 / `Y`·`N`），不含自由文本 ⇒ 读端不需要任何转义解析。
+ * - 「原时长」**只有「修改」那行有值** —— 用户要的「写清改前改后」：新时长在「时长」列、
+ *   旧时长在这里 ⇒ 两列一比就是「3 天 → 7 天」。⚠ 只放数字（毫秒），读端不需要任何转义解析。
+ *
+ * ⚠ 2026-10-05：原先还有「借款 / 原借款」两列（当时「同时禁止借款」挂在封禁上）——
+ *   该开关已搬去金融管理界面（`FinanceState` 的禁借名单），两列随之**删掉**。
+ *   旧账本文件仍是 11 列，读端**容错**（多出来的列被忽略）；表头对不上会重开新文件，见 [resolveFile]。
  */
 object BanChangeLogger {
 
@@ -55,8 +57,7 @@ object BanChangeLogger {
      * @param durationMs    本次封禁的有效时长（`expiresAt - bannedAt`）；永久或解封无原时长时传 null
      * @param reason        封禁理由（`$词条键` 或玩家原文）；解封时传**原封禁的理由**
      * @param originalBanner 原封禁者；**只有解封那行有值**，其余传空串
-     * @param blockLoan 本次动作**之后**「同时禁止借款」的状态
-     * @param beforeDurationMs / @param beforeBlockLoan **只有「修改」那行有值**（改前的值）
+     * @param beforeDurationMs **只有「修改」那行有值**（改前的时长）
      * @return 是否写成功（失败已 warn，调用方**不需要**中断封禁操作）
      */
     fun log(
@@ -67,9 +68,7 @@ object BanChangeLogger {
         durationMs: Long?,
         reason: String,
         originalBanner: String,
-        blockLoan: Boolean,
         beforeDurationMs: Long? = null,
-        beforeBlockLoan: Boolean? = null,
         timestamp: Long = System.currentTimeMillis()
     ): Boolean {
         return try {
@@ -86,9 +85,7 @@ object BanChangeLogger {
                 durationMs?.toString().orEmpty(),
                 esc(reason),
                 esc(originalBanner),
-                if (blockLoan) "Y" else "N",
-                beforeDurationMs?.toString().orEmpty(),
-                beforeBlockLoan?.let { if (it) "Y" else "N" }.orEmpty()
+                beforeDurationMs?.toString().orEmpty()
             ).joinToString(",")
             Files.writeString(zh.toPath(), row + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
             Files.writeString(en.toPath(), row + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
@@ -122,8 +119,8 @@ object BanChangeLogger {
         val date = dateFormat.format(Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()))
         if (date == currentDate) return
         currentDate = date
-        currentZh = resolveFile(date, "zh_cn", "时间,执行者,目标玩家,目标UUID,动作,时长,理由,原封禁者,借款,原时长,原借款")
-        currentEn = resolveFile(date, "en_us", "Time,Operator,Target,Target UUID,Action,Duration,Reason,Original Banner,Block Loans,Prev Duration,Prev Block Loans")
+        currentZh = resolveFile(date, "zh_cn", "时间,执行者,目标玩家,目标UUID,动作,时长,理由,原封禁者,原时长")
+        currentEn = resolveFile(date, "en_us", "Time,Operator,Target,Target UUID,Action,Duration,Reason,Original Banner,Prev Duration")
     }
 
     private fun bansDir(): File = configDir().resolve("cobblemarket/bans").toFile()
@@ -195,11 +192,10 @@ object BanChangeLogger {
                     actionKey = cols[4].trim('"'),
                     durationMs = cols[5].trim('"').toLongOrNull(),
                     reason = cols[6].trim('"'),
-                    // 后四列都是随功能追加的：一律**容错读**，缺列/缺值按"没有"处理（照 1.2.1 的前几列）
+                    // 后两列随功能追加（且「借款」两列已于 2026-10-05 删掉）：一律**容错读**，
+                    // 缺列/缺值按"没有"处理 —— 旧账本文件多出来的列同样被忽略
                     originalBanner = cols.getOrNull(7)?.trim('"').orEmpty(),
-                    blockLoan = cols.getOrNull(8)?.trim('"') == "Y",
-                    beforeDurationMs = cols.getOrNull(9)?.trim('"')?.toLongOrNull(),
-                    beforeBlockLoan = cols.getOrNull(10)?.trim('"')?.let { it == "Y" }
+                    beforeDurationMs = cols.getOrNull(8)?.trim('"')?.toLongOrNull()
                 )
             }.toList()
         }
@@ -229,10 +225,6 @@ data class BanChangeRow(
     val reason: String,
     /** 解封行 = 当初是谁封的；其余行为空 */
     val originalBanner: String,
-    /** 本次动作**之后**「同时禁止借款」的状态；解封行 = 被解掉的那笔的状态 */
-    val blockLoan: Boolean,
     /** 「修改」行有值：改前的时长；其余为 null */
-    val beforeDurationMs: Long?,
-    /** 「修改」行有值：改前的「同时禁止借款」；其余为 null */
-    val beforeBlockLoan: Boolean?
+    val beforeDurationMs: Long?
 )
