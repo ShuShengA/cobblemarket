@@ -579,7 +579,7 @@
   "cobblemarket.ban.reason": "封禁理由（可选）",
   "cobblemarket.ban.reason_finance": "喵喵银行：逾期未还款（还清欠款自动解冻；坏账后需市场管理员解封）",
   "cobblemarket.ban.by_finance": "喵喵行长",
-  "cobblemarket.ban.reason_label": "封禁理由",
+  "cobblemarket.ban.reason_label": "封禁理由：",
   "cobblemarket.ban.confirm": "确认封禁",
   "cobblemarket.buy_order.title": "求购单",
   "cobblemarket.meowth_bank.title": "喵喵银行",
