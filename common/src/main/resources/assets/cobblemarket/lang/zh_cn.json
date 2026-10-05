@@ -1017,7 +1017,7 @@
   "cobblemarket.finance.credit_amount_label": "额度：",
   "cobblemarket.finance.credit_adjust_label": "人工修正：",
   "cobblemarket.finance.credit_empty": "暂无被调整过额度的玩家（用上面的搜索框查别人）",
-  "cobblemarket.finance.credit_set": "已把 %s 的额度从 %s 改成 %s",
+  "cobblemarket.finance.credit_set": "已把 %s 的额度从 %s %s 改成 %s %s",
   "cobblemarket.finance.credit_changed": "您的可借上限已被金融管理员调整：%s %s → %s %s",
   "cobblemarket.finance.credit_changed_reason": "您的可借上限已被金融管理员调整：%s %s → %s %s。理由：%s",
   "cobblemarket.finance.credit_invalid": "额度不能是负数",

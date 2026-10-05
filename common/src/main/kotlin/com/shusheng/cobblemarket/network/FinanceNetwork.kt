@@ -1458,7 +1458,12 @@ object FinanceNetwork {
                     player,
                     MarketResultPayload(
                         true,
-                        Text.translatable("cobblemarket.finance.credit_set", target.second, CurrencyHandler.formatAmount(before), CurrencyHandler.formatAmount(after))
+                        // ⚠ 聊天里的金额 = `goldAmount` + `goldCurrencyText` 两个参数分开传（单位不能拼进串）
+                        Text.translatable(
+                            "cobblemarket.finance.credit_set", target.second,
+                            CurrencyHandler.goldAmount(before), CurrencyHandler.goldCurrencyText(),
+                            CurrencyHandler.goldAmount(after), CurrencyHandler.goldCurrencyText()
+                        )
                     )
                 )
                 sendCreditAdjustList(player)
