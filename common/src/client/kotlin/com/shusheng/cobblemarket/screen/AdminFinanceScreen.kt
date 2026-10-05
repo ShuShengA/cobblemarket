@@ -101,18 +101,33 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     private companion object {
         const val MAX_SUGGESTION_ROWS = 8
 
-        /**
-         * 「卡片管理」页签的下标 —— 它的标签**不放文字、画两张卡图标**
-         * （用户 2026-10-05 定：就照原来喵喵银行上那枚卡片管理入口的样子；图标在 [render] 里叠加）。
-         * ⚠ 往 TABS 里插页签时记得跟着改这个下标。
-         */
-        const val TAB_CARDS = 1
+        /** 文字页签的统一宽度（照权限管理 / 封禁管理那两屏的规格） */
+        const val TAB_W = 80
 
-        /** 页签上那两张卡图标的边长：页签只有 14 高（图标原尺寸 16 会上下各顶出 1px） */
+        /**
+         * 图标页签的宽度 —— 只放两张卡图标，用不到 80（用户 2026-10-05：「可以不用这么长」）；
+         * 48 正好是原来喵喵银行上那枚按钮的宽度，观感对得上。
+         */
+        const val TAB_W_ICON = 48
+
+        /** 图标页签上卡图标的边长：页签只有 14 高（图标原尺寸 16 会上下各顶出 1px） */
         const val TAB_ICON = 14
 
-        /** 当前实现的页签（**按实现进度往里加**；加一枚就自动重排、不用手改坐标） */
-        val TABS = listOf("cobblemarket.finance.tab_loan_block", "cobblemarket.finance.tab_cards")
+        /**
+         * 一个页签：词条 + 宽度 + 是否用**两张卡图标**代替文字。
+         * ⚠ 图标页签的词条仍要填 —— 它挂在悬停提示上（光两张图看不出来是什么）。
+         */
+        private data class TabSpec(val key: String, val width: Int, val icon: Boolean = false)
+
+        /**
+         * 当前实现的页签（**按实现进度往里加**；加一枚就自动重排 —— 每枚自己的宽度由 [TabSpec] 带，
+         * 不用手改坐标、也不会因为某枚变窄把别人挤歪）。
+         */
+        val TABS = listOf(
+            TabSpec("cobblemarket.finance.tab_loan_block", TAB_W),
+            // 「卡片管理」用**两张卡图标**（用户 2026-10-05 定：就是原来喵喵银行那枚按钮的样子）
+            TabSpec("cobblemarket.finance.tab_cards", TAB_W_ICON, icon = true)
+        )
 
         /**
          * 禁借确认弹窗高度 —— 控件定位与背景绘制**共用这一个数**（照封禁那枚 `DIALOG_H` 的教训）。
@@ -203,27 +218,27 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         tabButtons.forEach { remove(it) }
         tabButtons.clear()
         val perRow = 3
-        val btnW = 80
         val gap = 4
-        TABS.forEachIndexed { i, key ->
-            val row = i / perRow
-            val col = i % perRow
-            // 本行实际有几枚（最后一行可能不满）：居中的分母要按**本行**算，不然最后一行会偏左
-            val inRow = minOf(perRow, TABS.size - row * perRow)
-            val rowW = inRow * btnW + (inRow - 1) * gap
-            val x = width / 2 - rowW / 2 + col * (btnW + gap)
+        // 每行按**本行实际那几枚**的宽度和居中（各枚宽度不同 ⇒ 必须逐枚累加，不能拿「枚数×统一宽」算）
+        val rows = TABS.indices.groupBy { it / perRow }
+        rows.forEach { (row, idxInRow) ->
+            val rowW = idxInRow.sumOf { TABS[it].width } + (idxInRow.size - 1) * gap
+            var x = width / 2 - rowW / 2
             val y = tabRowY + row * 18
-            val isCards = i == TAB_CARDS
-            val btn = NineSliceButton(
-                x, y, btnW, 14,
-                // 卡片管理页签不放文字（改成两张卡图标，见 render 的叠加绘制），
-                // 但把词条挂成悬停提示 —— 光两张图看不出来是"卡片管理"
-                if (isCards) Text.literal("") else Text.translatable(key),
-                { switchTab(i) },
-                tooltip = if (isCards) Text.translatable(key) else null
-            )
-            tabButtons.add(btn)
-            addDrawableChild(btn)
+            idxInRow.forEach { i ->
+                val spec = TABS[i]
+                val btn = NineSliceButton(
+                    x, y, spec.width, 14,
+                    // 图标页签不放文字（改成两张卡图标，见 render 的叠加绘制），
+                    // 但把词条挂成悬停提示 —— 光两张图看不出来是"卡片管理"
+                    if (spec.icon) Text.literal("") else Text.translatable(spec.key),
+                    { switchTab(i) },
+                    tooltip = if (spec.icon) Text.translatable(spec.key) else null
+                )
+                tabButtons.add(btn)
+                addDrawableChild(btn)
+                x += spec.width + gap
+            }
         }
         updateTabButtons()
     }
@@ -559,26 +574,30 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
      * ⚠ 页签高 14 ⇒ 图标缩到 14（原尺寸 16 会上下各顶出 1px）。
      */
     private fun renderCardTabIcons(context: DrawContext) {
-        val btn = tabButtons.getOrNull(TAB_CARDS) ?: return
-        if (!btn.visible) return
+        if (!TABS.any { it.icon }) return
         val purple = net.minecraft.registry.Registries.ITEM.get(Identifier.of("cobblemarket", "meowth_purple_card"))
         val black = net.minecraft.registry.Registries.ITEM.get(Identifier.of("cobblemarket", "meowth_black_card"))
-        val air = net.minecraft.registry.Registries.ITEM.get(Identifier.of("minecraft", "air"))
+        val air = net.minecraft.registry.Registries.ITEM.get(net.minecraft.util.Identifier.of("minecraft", "air"))
         val gap = 4
-        val startX = btn.x + (btn.width - (TAB_ICON * 2 + gap)) / 2
-        if (purple != air) {
-            com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                itemStack = net.minecraft.item.ItemStack(purple),
-                x = startX.toDouble(), y = btn.y.toDouble(), scale = TAB_ICON / 16.0,
-                matrixStack = context.matrices
-            )
-        }
-        if (black != air) {
-            com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
-                itemStack = net.minecraft.item.ItemStack(black),
-                x = (startX + TAB_ICON + gap).toDouble(), y = btn.y.toDouble(), scale = TAB_ICON / 16.0,
-                matrixStack = context.matrices
-            )
+        TABS.forEachIndexed { i, spec ->
+            if (!spec.icon) return@forEachIndexed
+            val btn = tabButtons.getOrNull(i) ?: return@forEachIndexed
+            if (!btn.visible) return@forEachIndexed
+            val startX = btn.x + (btn.width - (TAB_ICON * 2 + gap)) / 2
+            if (purple != air) {
+                com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                    itemStack = net.minecraft.item.ItemStack(purple),
+                    x = startX.toDouble(), y = btn.y.toDouble(), scale = TAB_ICON / 16.0,
+                    matrixStack = context.matrices
+                )
+            }
+            if (black != air) {
+                com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                    itemStack = net.minecraft.item.ItemStack(black),
+                    x = (startX + TAB_ICON + gap).toDouble(), y = btn.y.toDouble(), scale = TAB_ICON / 16.0,
+                    matrixStack = context.matrices
+                )
+            }
         }
     }
 
