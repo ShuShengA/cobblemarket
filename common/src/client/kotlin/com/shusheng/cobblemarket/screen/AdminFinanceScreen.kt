@@ -1,10 +1,17 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.TooltipPlacement
+import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.market.BanState
+import com.shusheng.cobblemarket.network.AdminCreditSetPayload
 import com.shusheng.cobblemarket.network.AdminLoanBlockPayload
 import com.shusheng.cobblemarket.network.AdminLoanUnblockPayload
+import com.shusheng.cobblemarket.network.CreditAdjustListPayload
+import com.shusheng.cobblemarket.network.CreditLookupPayload
+import com.shusheng.cobblemarket.network.CreditRowInfo
+import com.shusheng.cobblemarket.network.RequestCreditAdjustListPayload
+import com.shusheng.cobblemarket.network.RequestCreditLookupPayload
 import com.shusheng.cobblemarket.network.CardHolderEntry
 import com.shusheng.cobblemarket.network.CardHolderListPayload
 import com.shusheng.cobblemarket.network.LoanBlockInfo
@@ -61,7 +68,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     private val formRowY = tabRowY + 14 + 4 + (tabRows - 1) * 18
 
     /** 列表起始 y：需要表单行的页签接在表单下面，不需要的直接贴页签行 */
-    private fun listStartY() = formRowY + if (currentTab == 0) 24 else 4
+    private fun listStartY() = formRowY + if (currentTab in FORM_TABS) 24 else 4
 
     private var currentTab = 0
     private val tabButtons = mutableListOf<NineSliceButton>()
@@ -78,6 +85,19 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     // ── 页签 1：卡片管理 ──
     private var cardEntries = listOf<CardHolderEntry>()
     private val cardButtons = mutableListOf<Pair<NineSliceButton, String>>()
+
+    // ── 页签 2：额度管理 ──
+    /** 被人工调整过额度的玩家（服务端实算的额度，不是全服） */
+    private var creditRows = listOf<CreditRowInfo>()
+    private var creditQueryField: TextFieldWidget? = null
+    private var creditQueryButton: NineSliceButton? = null
+    private val creditButtons = mutableListOf<NineSliceButton>()
+
+    // 调整额度弹窗（查询到目标后才开）
+    private var creditTarget: CreditRowInfo? = null
+    private var creditAmountField: TextFieldWidget? = null
+    private var creditReasonField: TextFieldWidget? = null
+    private val creditDialogButtons = mutableListOf<NineSliceButton>()
 
     private var backButton: NineSliceButton? = null
     private var infoButton: NineSliceButton? = null
@@ -126,8 +146,12 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         val TABS = listOf(
             TabSpec("cobblemarket.finance.tab_loan_block", TAB_W),
             // 「卡片管理」用**两张卡图标**（用户 2026-10-05 定：就是原来喵喵银行那枚按钮的样子）
-            TabSpec("cobblemarket.finance.tab_cards", TAB_W_ICON, icon = true)
+            TabSpec("cobblemarket.finance.tab_cards", TAB_W_ICON, icon = true),
+            TabSpec("cobblemarket.finance.tab_credit", TAB_W)
         )
+
+        /** 带表单行（搜索框等）的页签下标 —— 列表起始 y 与控件可见性都按它判 */
+        val FORM_TABS = setOf(0, 2)
 
         /**
          * 禁借确认弹窗高度 —— 控件定位与背景绘制**共用这一个数**（照封禁那枚 `DIALOG_H` 的教训）。
@@ -135,6 +159,13 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
          *   两个弹窗长得一样，改一处记得另一处一起看
          */
         const val DIALOG_H = 148
+
+        /**
+         * 调整额度弹窗高度 —— 比禁借弹窗多一行「当前额度」和一行理由输入框。
+         * 版式：标题 14 / 目标 40 / 当前额度 58 / 新额度框 76(h16) / 理由框 100(h16) /
+         *       按钮 126(h20) / 距底边框 10（约定值）
+         */
+        const val CREDIT_DIALOG_H = 156
     }
 
     override fun init() {
@@ -196,6 +227,30 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         blockButton = blockBtn
         addDrawableChild(blockBtn)
 
+        // 额度管理页签的表单行：搜索框（同一个联想通道）+「调整额度」按钮
+        val savedQuery = creditQueryField?.text ?: ""
+        creditQueryField = TextFieldWidget(textRenderer, leftX + 2, formRowY, 120, 16, Text.literal(""))
+        creditQueryField?.setPlaceholder(Text.translatable("cobblemarket.finance.player_name"))
+        creditQueryField?.setChangedListener {
+            if (suppressSuggest) {
+                suppressSuggest = false
+                return@setChangedListener
+            }
+            suggestDirty = true
+            lastSuggestEdit = System.currentTimeMillis()
+        }
+        addSelectableChild(creditQueryField)
+        addDrawableChild(creditQueryField)
+        creditQueryField?.text = savedQuery
+
+        val creditBtn = NineSliceButton(
+            leftX + 220, formRowY, 76, 16,
+            Text.translatable("cobblemarket.finance.credit_adjust"),
+            { queryCreditTarget() }
+        )
+        creditQueryButton = creditBtn
+        addDrawableChild(creditBtn)
+
         applyTabVisibility()
         scrollOffset = 0
         requestCurrentTabData()
@@ -203,9 +258,15 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
 
     /** 拉当前页签的数据（**每次切页签都重拉** —— 别人刚改过的状态要能看见，照 `AdminBanScreen`） */
     private fun requestCurrentTabData() {
-        if (currentTab == 0) sendToServer(RequestLoanBlockListPayload())
-        else sendToServer(RequestCardHolderListPayload())
+        when (currentTab) {
+            0 -> sendToServer(RequestLoanBlockListPayload())
+            1 -> sendToServer(RequestCardHolderListPayload())
+            else -> sendToServer(RequestCreditAdjustListPayload())
+        }
     }
+
+    /** 当前页签那个「输入玩家名」的框（禁止借款 / 额度管理各有一个，联想通道共用） */
+    private fun queryField(): TextFieldWidget? = if (currentTab == 2) creditQueryField else nameField
 
     // ── 页签几何（按 TABS 数量自动排版，加页签不用手改坐标） ──
 
@@ -264,12 +325,15 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         requestCurrentTabData()
     }
 
-    /** 表单行（玩家名 / 时长 / 禁借按钮）只属于页签 0 */
+    /** 表单行（玩家名 / 时长 / 按钮）只属于需要它的页签（见 `FORM_TABS`） */
     private fun applyTabVisibility() {
         val isBlockTab = currentTab == 0
         nameField?.visible = isBlockTab
         durationField?.visible = isBlockTab
         blockButton?.visible = isBlockTab
+        val isCreditTab = currentTab == 2
+        creditQueryField?.visible = isCreditTab
+        creditQueryButton?.visible = isCreditTab
     }
 
     // ── 数据到达 ──
@@ -286,6 +350,32 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         rebuildRowButtons()
     }
 
+    fun onCreditRows(payload: CreditAdjustListPayload) {
+        creditRows = payload.rows
+        scrollOffset = scrollOffset.coerceIn(0, maxOf(0, creditRows.size - maxVisible()))
+        rebuildRowButtons()
+    }
+
+    /** 查询结果到达 ⇒ 打开调整弹窗（新额度预填当前额度，服主在上面改） */
+    fun onCreditLookup(payload: CreditLookupPayload) {
+        creditTarget = payload.row
+        hideMainControls()
+        suggestionsOpen = false
+        suggestDirty = false
+        lastRequestPrefix = null
+        rebuildSuggestionList()
+        openCreditDialog(payload.row)
+    }
+
+    /** 表单行那个按钮：查当前额度（查到了服务端回 `CreditLookupPayload`，再开弹窗） */
+    private fun queryCreditTarget() {
+        val name = creditQueryField?.text?.trim()?.takeIf { it.isNotEmpty() } ?: run {
+            playFailSound()
+            return
+        }
+        sendToServer(RequestCreditLookupPayload(name))
+    }
+
     fun onResult(payload: MarketResultPayload) {
         client?.player?.sendMessage(
             payload.message.copy().formatted(if (payload.success) Formatting.GREEN else Formatting.RED), false
@@ -295,7 +385,11 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
 
     private fun maxVisible() = maxOf(0, (height - 48 - listStartY()) / rowHeight)
 
-    private fun rowCount() = if (currentTab == 0) entries.size else cardEntries.size
+    private fun rowCount() = when (currentTab) {
+        0 -> entries.size
+        1 -> cardEntries.size
+        else -> creditRows.size
+    }
 
     // ── 行按钮 ──
 
@@ -317,6 +411,27 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
                 )
                 btn.visible = pendingName.isEmpty()
                 rowButtons.add(btn)
+                addDrawableChild(btn)
+            }
+            return
+        }
+        if (currentTab == 2) {
+            val creditInset = 68
+            val creditW = 64
+            creditRows.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, row ->
+                val btn = NineSliceButton(
+                    leftX + panelWidth - creditInset, startY + i * rowHeight + 4, creditW, 16,
+                    Text.translatable("cobblemarket.finance.credit_adjust"),
+                    {
+                        // ⚠ 置灰用 `dimmed`（`active = false` 是 MC 的"禁用"、点了**没声音**）——
+                        //   所以拦截要写在这里：点了给对方一声 fail，别让人以为是卡住了
+                        if (row.hasCard) playFailSound() else openCreditDialog(row)
+                    },
+                    tooltip = if (row.hasCard) Text.translatable("cobblemarket.finance.credit_card_fixed_tip") else null
+                )
+                // 持卡玩家：额度 = 配置固定值、不走公式 ⇒ 调了也没意义（服务端也拦，这里只是别让人白点）
+                btn.dimmed = row.hasCard
+                creditButtons.add(btn)
                 addDrawableChild(btn)
             }
             return
@@ -367,6 +482,9 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         tabButtons.forEach { it.visible = false }
         rowButtons.forEach { it.visible = false }
         cardButtons.forEach { (b, _) -> b.visible = false }
+        creditQueryField?.visible = false
+        creditQueryButton?.visible = false
+        creditButtons.forEach { it.visible = false }
     }
 
     // ── 禁借确认弹窗 ──
@@ -468,13 +586,112 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         init()
     }
 
+    // ── 调整额度弹窗（比禁借弹窗多一行「当前额度」和一行输入框） ──
+
+    /**
+     * 打开调整额度弹窗。[row] 是服务端刚回的那条（额度/欠款/是否持卡都是**服务端实算**的，
+     * 客户端不自己算 —— 额度公式在服务端，客户端重算必然两处不一致）。
+     */
+    private fun openCreditDialog(row: CreditRowInfo) {
+        creditTarget = row
+        val centerX = width / 2
+        val dialogY = height / 2 - CREDIT_DIALOG_H / 2
+
+        addDrawable(object : Drawable {
+            override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+                renderCreditDialogBackground(context)
+            }
+        })
+
+        creditAmountField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 76, 160, 16, Text.literal(""))
+        creditAmountField?.setPlaceholder(Text.translatable("cobblemarket.finance.credit_new_limit"))
+        creditAmountField?.setTextPredicate { t -> t.length <= 15 && t.all { it.isDigit() } }
+        // 预填**当前额度**（要清零就把它删掉填 0）
+        creditAmountField?.text = row.limit.toString()
+        addSelectableChild(creditAmountField)
+        addDrawableChild(creditAmountField)
+
+        creditReasonField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 100, 160, 16, Text.literal(""))
+        creditReasonField?.setPlaceholder(Text.translatable("cobblemarket.ban.reason"))
+        creditReasonField?.setTextPredicate { it.length <= 100 }
+        addSelectableChild(creditReasonField)
+        addDrawableChild(creditReasonField)
+
+        creditDialogButtons.forEach { remove(it) }
+        creditDialogButtons.clear()
+        val ok = NineSliceButton(
+            centerX - 85, dialogY + 126, 80, 20,
+            Text.translatable("cobblemarket.ban.confirm"),
+            { confirmCreditSet() }
+        )
+        val cancel = NineSliceButton(
+            centerX + 5, dialogY + 126, 80, 20,
+            Text.translatable("cobblemarket.buy_confirm.cancel"),
+            { closeCreditDialog() }
+        )
+        creditDialogButtons.add(ok)
+        creditDialogButtons.add(cancel)
+        addDrawableChild(ok)
+        addDrawableChild(cancel)
+    }
+
+    private fun renderCreditDialogBackground(context: DrawContext) {
+        val row = creditTarget ?: return
+        val centerX = width / 2
+        val dialogW = minOf(300, width - 40).coerceAtLeast(200)
+        val dialogX = centerX - dialogW / 2
+        val dialogY = height / 2 - CREDIT_DIALOG_H / 2
+
+        drawScreenDimMask(context, width, height)
+        drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, CREDIT_DIALOG_H, 0, DIALOG_BACKGROUND_TEX_H)
+
+        context.drawCenteredTextWithShadow(
+            textRenderer,
+            Text.translatable("cobblemarket.finance.credit_dialog_title").formatted(Formatting.GOLD),
+            centerX, dialogY + 14, 0xFFFFFF
+        )
+        context.drawTextWithShadow(
+            textRenderer,
+            Text.translatable("cobblemarket.ban.target").string + row.playerName,
+            dialogX + 12, dialogY + 40, 0xFFFFFF
+        )
+        // 当前额度：让服主知道"从多少改成多少"（不然填数字全靠猜）
+        context.drawTextWithShadow(
+            textRenderer,
+            Text.translatable("cobblemarket.finance.credit_current", formatPriceLong(row.limit)),
+            dialogX + 12, dialogY + 58, 0xFFFFFF
+        )
+    }
+
+    private fun confirmCreditSet() {
+        val row = creditTarget ?: return
+        val amount = creditAmountField?.text?.trim()?.toLongOrNull()
+        if (amount == null || amount < 0) {
+            playFailSound()
+            return
+        }
+        sendToServer(AdminCreditSetPayload(row.playerName, amount, creditReasonField?.text?.trim() ?: ""))
+        closeCreditDialog()
+    }
+
+    private fun closeCreditDialog() {
+        creditTarget = null
+        creditAmountField = null
+        creditReasonField = null
+        creditDialogButtons.forEach { remove(it) }
+        creditDialogButtons.clear()
+        clearChildren()
+        init()
+    }
+
     // ── 联想（照 AdminBanScreen，一字不改地照搬） ──
 
     fun onNameSuggestions(payload: PlayerNameSuggestionsPayload) {
-        if (pendingName.isNotEmpty()) return
-        if ((nameField?.text?.trim() ?: "") != lastRequestPrefix) return
+        if (pendingName.isNotEmpty() || creditTarget != null) return
+        // ⚠ 一律走 queryField()：禁止借款与额度管理各有一个输入框，联想通道是同一条
+        if ((queryField()?.text?.trim() ?: "") != lastRequestPrefix) return
         suggestions = payload.names
-        suggestionsOpen = suggestions.isNotEmpty() && !(nameField?.text?.isBlank() ?: true)
+        suggestionsOpen = suggestions.isNotEmpty() && !(queryField()?.text?.isBlank() ?: true)
         suggestScroll = 0
         rebuildSuggestionList()
     }
@@ -483,7 +700,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         if (!suggestDirty) return
         if (System.currentTimeMillis() - lastSuggestEdit < 250) return
         suggestDirty = false
-        lastRequestPrefix = nameField?.text?.trim().orEmpty()
+        lastRequestPrefix = queryField()?.text?.trim().orEmpty()
         sendToServer(RequestPlayerNameSuggestionsPayload(lastRequestPrefix ?: ""))
     }
 
@@ -503,7 +720,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
                 Text.literal(name),
                 {
                     suppressSuggest = true
-                    nameField?.text = name
+                    queryField()?.text = name
                     suggestDirty = false
                     lastRequestPrefix = null
                     suggestionsOpen = false
@@ -544,7 +761,8 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         super.render(context, mouseX, mouseY, delta)
 
-        if (pendingName.isNotEmpty()) return
+        // 任一弹窗开着就只画弹窗（弹窗内容由 addDrawable 那条路径画）
+        if (pendingName.isNotEmpty() || creditTarget != null) return
 
         val centerX = width / 2
         val leftX = centerX - panelWidth / 2
@@ -557,14 +775,68 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
 
         renderCardTabIcons(context)
 
-        if (currentTab == 0) checkSuggestDebounce()
+        if (currentTab in FORM_TABS) checkSuggestDebounce()
         if (suggestionsOpen) return
 
         drawPanelDivider(context, leftX + panelWidth / 2, listStartY() - 4)
 
-        if (currentTab == 0) renderBlockList(context, centerX, leftX, mouseX, mouseY)
-        else renderCardList(context, centerX, leftX, mouseX, mouseY)
+        when (currentTab) {
+            0 -> renderBlockList(context, centerX, leftX, mouseX, mouseY)
+            1 -> renderCardList(context, centerX, leftX, mouseX, mouseY)
+            else -> renderCreditList(context, centerX, leftX, mouseX, mouseY)
+        }
     }
+
+    /** 额度管理页签的列表：`名字 · 额度 X`（行尾「调整额度」按钮；持卡玩家那枚是灰的） */
+    private fun renderCreditList(context: DrawContext, centerX: Int, leftX: Int, mouseX: Int, mouseY: Int) {
+        if (creditRows.isEmpty()) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.finance.credit_empty").formatted(Formatting.GRAY),
+                centerX, listStartY() + 30, 0xFFFFFF
+            )
+            return
+        }
+        creditRows.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, row ->
+            val y = listStartY() + i * rowHeight
+            val text = Text.literal("").append(row.playerName).append("  ·  ")
+                .append(Text.translatable("cobblemarket.finance.credit_amount", formatPriceLong(row.limit)))
+            context.drawTextWithShadow(
+                textRenderer,
+                // 行文字画到「调整额度按钮左侧留 4px」为止（按钮起于 panelWidth-68）
+                TextUtil.truncateStyled(text, panelWidth - 76),
+                leftX + 4, y + 7, 0xFFFFFF
+            )
+        }
+        if (creditRows.size > maxVisible()) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                "${scrollOffset + 1}-${minOf(scrollOffset + maxVisible(), creditRows.size)} / ${creditRows.size}",
+                centerX, height - 49, 0x888888
+            )
+        }
+        if (hoveredRow >= 0) {
+            val idx = scrollOffset + hoveredRow
+            if (idx in creditRows.indices) renderCreditTooltip(context, creditRows[idx], mouseX, mouseY)
+        }
+    }
+
+    /** 额度行的悬停窗：把行内被截断的东西给全（额度是主信息，另有修正量与是否持卡） */
+    private fun renderCreditTooltip(context: DrawContext, row: CreditRowInfo, mouseX: Int, mouseY: Int) {
+        val lines: List<Text> = buildList {
+            add(Text.literal("${Text.translatable("cobblemarket.ban.target").string} ${row.playerName}"))
+            add(Text.translatable("cobblemarket.finance.credit_amount", formatPriceLong(row.limit)))
+            if (row.adjust != 0L) {
+                add(Text.translatable("cobblemarket.finance.credit_adjust_amount", formatPriceLong(row.adjust)))
+            }
+            if (row.hasCard) add(Text.translatable("cobblemarket.finance.credit_card_fixed_tip"))
+        }
+        renderTextTooltip(context, lines, mouseX, mouseY, avoid = creditRowRect(hoveredRow))
+    }
+
+    private fun creditRowRect(row: Int) = TooltipPlacement.Rect(
+        width / 2 - panelWidth / 2 + panelWidth - 68, listStartY() + row * rowHeight + 4, 68, 16
+    )
 
     /**
      * 「卡片管理」页签上的两张卡图标（紫卡 + 黑卡，居中等距）。
@@ -791,12 +1063,21 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         val name = pendingName
         val duration = pendingDuration
         val reason = reasonField?.text ?: ""
+        val creditRow = creditTarget
+        val creditAmount = creditAmountField?.text ?: ""
+        val creditReason = creditReasonField?.text ?: ""
         super.resize(client, width, height)
         if (name.isNotEmpty()) {
             pendingName = ""
             pendingDuration = ""
             openConfirmDialogFor(name, duration)
             reasonField?.text = reason
+        }
+        if (creditRow != null) {
+            creditTarget = null
+            openCreditDialog(creditRow)
+            creditAmountField?.text = creditAmount
+            creditReasonField?.text = creditReason
         }
     }
 
@@ -807,11 +1088,17 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         openConfirmDialog()
     }
 
-    private fun isInputFieldFocused() = focused?.let { f -> f === nameField || f === durationField } ?: false
+    private fun isInputFieldFocused() = focused?.let { f ->
+        f === nameField || f === durationField || f === creditQueryField ||
+            f === creditAmountField || f === creditReasonField
+    } ?: false
 
     private fun isMouseOverAnyInput(mouseX: Double, mouseY: Double): Boolean =
         nameField?.isMouseOver(mouseX, mouseY) == true ||
-        durationField?.isMouseOver(mouseX, mouseY) == true
+        durationField?.isMouseOver(mouseX, mouseY) == true ||
+        creditQueryField?.isMouseOver(mouseX, mouseY) == true ||
+        creditAmountField?.isMouseOver(mouseX, mouseY) == true ||
+        creditReasonField?.isMouseOver(mouseX, mouseY) == true
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val wasInInput = isInputFieldFocused()
