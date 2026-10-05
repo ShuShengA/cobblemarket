@@ -89,13 +89,32 @@ object TextUtil {
     // 供「名字要拆成独立一段画」的场景（行内两段绘制、悬停窗两段混排）取色，Text 版取不到纯色值。
     fun rarityNameColor(stack: ItemStack?): Int = stack?.rarity?.formatting?.colorValue ?: 0xFFFFFF
 
+    /**
+     * 客户端语言是不是中文 —— **全项目唯一判据**，别在别处再写一遍 `startsWith("zh")`
+     * （此前有三处各写各的，将来必然不同步）。
+     */
+    fun isZhClient(): Boolean = MinecraftClient.getInstance().options.language.startsWith("zh")
+
+    /**
+     * 左 / 右括号：中文全角、英文半角。
+     * ⚠ 英文**必须**半角 —— 全角括号在英文里占 16px（原先 `ivText` 那处注释记的坑：
+     * 强制下架弹窗左列 IV 行会被挤到下架按钮上）；反过来说，改半角只会更宽松、不会引发溢出。
+     * ⚠ 服务端**不能**用这几个（拿不到客户端语言）—— 那边要拼标点就走词条。
+     */
+    fun parenOpen(): String = if (isZhClient()) "（" else "("
+    fun parenClose(): String = if (isZhClient()) "）" else ")"
+
+    /** 用括号包住内容，按客户端语言取形：中文 `（x）`、英文 `(x)` */
+    fun paren(inner: String): String = parenOpen() + inner + parenClose()
+
+    /** 并列项分隔符：中文顿号、英文逗号加空格 */
+    fun listSeparator(): String = if (isZhClient()) "、" else ", "
+
     // IV 显示：极限特训过（hyper trained）时显示「真实值（特训值）」，未特训只显示真实值。
     // 用于市场/拍卖/上架等界面的个体值展示，与 Cobblemon 队伍详情格式一致。
-    // 括号按语言：中文全角（排版惯例），英文半角（全角括号在英文里占 16px，强制下架弹窗左列
-    // IV 行会压到下架按钮）
+    // 括号按语言（走上面的共用函数，别再内联判断）
     fun ivText(real: Int, hyperTrained: Int): String {
         if (hyperTrained < 0) return "$real"
-        val zh = MinecraftClient.getInstance().options.language.startsWith("zh")
-        return if (zh) "$real（$hyperTrained）" else "$real($hyperTrained)"
+        return "$real" + paren("$hyperTrained")
     }
 }

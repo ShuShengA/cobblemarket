@@ -403,7 +403,7 @@ class BuyOrderScreen(
             val name = if (item.name.string == item.translationKey) id.path else item.name.string
             // 带组件要求的订单追加摘要（如「锋利V」）
             val summary = com.shusheng.cobblemarket.client.ItemComponentsDisplay.summary(entry.itemComponentsSpec)
-            return if (summary.isEmpty()) name else "$name（$summary）"
+            return if (summary.isEmpty()) name else name + com.shusheng.cobblemarket.util.TextUtil.paren(summary)
         }
         val key = entry.speciesKey ?: return Text.translatable("cobblemarket.buy_order.any_pokemon").string
         val t = Text.translatable(key).string

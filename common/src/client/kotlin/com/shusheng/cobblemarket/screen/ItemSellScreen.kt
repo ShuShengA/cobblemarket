@@ -215,7 +215,7 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
             entry.name, centerX, dialogY + 46, 0xFFFFFF)
 
         context.drawTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.item.sell_count").string + "（" + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}）",
+            Text.translatable("cobblemarket.item.sell_count").string + com.shusheng.cobblemarket.util.TextUtil.parenOpen() + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}" + com.shusheng.cobblemarket.util.TextUtil.parenClose(),
             centerX - 80, dialogY + 62, 0xAAAAAA)
         context.drawTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.sell_price").string,
