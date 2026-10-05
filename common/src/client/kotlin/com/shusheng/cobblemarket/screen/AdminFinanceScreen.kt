@@ -1,6 +1,8 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.TooltipPlacement
+import com.shusheng.cobblemarket.client.activeCurrencyUnit
+import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.playFailSound
@@ -673,6 +675,11 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         val dialogY = height / 2 - CREDIT_DIALOG_H / 2
 
         drawScreenDimMask(context, width, height)
+        // ⚠⭐ **弹窗自己的货币图标不受门禁管**（照 `LoanScreen` / `RepayScreen` 那几处）：
+        //   `drawScreenDimMask` 会把 `suppressCurrencyIcons` 置 true（那是给"被遮罩盖住的**下层**"用的 ——
+        //   货币图标是 3D 模型、不响应半透明黑，会亮得像浮在弹窗上）⇒ 本弹窗里画金额之前必须置回 false，
+        //   否则「当前额度」的单位**画不出来**（2026-10-05 用户实测报的正是这个）
+        com.shusheng.cobblemarket.client.suppressCurrencyIcons = false
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, CREDIT_DIALOG_H, 0, DIALOG_BACKGROUND_TEX_H)
 
         context.drawCenteredTextWithShadow(
@@ -860,8 +867,11 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             durationMs != null -> BanState.remainingText(durationMs)
             value != null -> Text.translatable(
                 "cobblemarket.finance.changes_credit",
-                formatPriceLong(prevValue ?: 0L), formatPriceLong(value)
-            )
+                formatPriceLong(prevValue ?: 0L), formatPriceLong(value),
+                // ⚠ 这一处金额在**行中间**（后面还跟着理由）⇒ 图标塞不进去，
+                //   按项目既有口径退回**物品名/₽ 文本**（`activeCurrencyUnit()`，同"截断链/串中间"那条）
+                activeCurrencyUnit()
+            ).formatted(Formatting.AQUA)   // 账本口径 = 蓝
             else -> null
         }
 
@@ -932,14 +942,24 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         }
         creditRows.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, row ->
             val y = listStartY() + i * rowHeight
-            val text = Text.literal("").append(row.playerName).append("  ·  ")
-                .append(Text.translatable("cobblemarket.finance.credit_amount", formatPriceLong(row.limit)))
-            context.drawTextWithShadow(
-                textRenderer,
-                // 行文字画到「调整额度按钮左侧留 4px」为止（按钮起于 panelWidth-68）
-                TextUtil.truncateStyled(text, panelWidth - 76),
-                leftX + 4, y + 7, 0xFFFFFF
+            // 行：`名字(白) · 额度：(白) <金额(蓝)> <货币单位>`。
+            // ⚠⭐ 金额的**两个必备元素**：蓝色 `0x55FFFF`（账本口径；能花才用金）+ 货币单位 ——
+            //   单位可能是符号 `₽`、也可能是**物品图标** ⇒ 只能单独补画（照喵喵银行的可借上限那两行）
+            val amount = Text.literal(formatPriceLong(row.limit))
+            val amountW = textRenderer.getWidth(amount)
+            val unitW = currencyUnitWidth(textRenderer)
+            // 行文字画到「调整额度按钮左侧留 4px」为止（按钮起于 panelWidth-68）；
+            // 名字那截**先按"给金额与单位留够"反算预算再截断**，否则长名字会把金额挤出可用宽
+            val nameBudget = panelWidth - 76 - amountW - unitW
+            val namePart = TextUtil.truncateStyled(
+                Text.literal("").append(row.playerName).append("  ·  ")
+                    .append(Text.translatable("cobblemarket.finance.credit_amount_label")),
+                nameBudget
             )
+            context.drawTextWithShadow(textRenderer, namePart, leftX + 4, y + 7, 0xFFFFFF)
+            val amountX = leftX + 4 + textRenderer.getWidth(namePart)
+            context.drawTextWithShadow(textRenderer, amount, amountX, y + 7, 0x55FFFF)
+            drawCurrencyUnit(context, textRenderer, amountX + amountW, y + 7, 0x55FFFF)
         }
         if (creditRows.size > maxVisible()) {
             context.drawCenteredTextWithShadow(
@@ -956,15 +976,24 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
 
     /** 额度行的悬停窗：把行内被截断的东西给全（额度是主信息，另有修正量与是否持卡） */
     private fun renderCreditTooltip(context: DrawContext, row: CreditRowInfo, mouseX: Int, mouseY: Int) {
-        val lines: List<Text> = buildList {
-            add(Text.literal("${Text.translatable("cobblemarket.finance.target").string} ${row.playerName}"))
-            add(Text.translatable("cobblemarket.finance.credit_amount", formatPriceLong(row.limit)))
-            if (row.adjust != 0L) {
-                add(Text.translatable("cobblemarket.finance.credit_adjust_amount", formatPriceLong(row.adjust)))
-            }
-            if (row.hasCard) add(Text.translatable("cobblemarket.finance.credit_card_fixed_tip"))
+        val amountLines = mutableSetOf<Int>()
+        val lines = mutableListOf<Text>()
+        lines.add(Text.literal("${Text.translatable("cobblemarket.finance.target").string} ${row.playerName}"))
+        // 金额行：标签白、金额蓝，**货币单位单独补画**（可能是物品图标、进不了文本流）⇒ 记下行号
+        lines.add(
+            Text.literal("").append(Text.translatable("cobblemarket.finance.credit_amount_label"))
+                .append(Text.literal(formatPriceLong(row.limit)).formatted(Formatting.AQUA))
+        )
+        amountLines.add(lines.size - 1)
+        if (row.adjust != 0L) {
+            lines.add(
+                Text.literal("").append(Text.translatable("cobblemarket.finance.credit_adjust_label"))
+                    .append(Text.literal(formatPriceLong(row.adjust)).formatted(Formatting.AQUA))
+            )
+            amountLines.add(lines.size - 1)
         }
-        renderTextTooltip(context, lines, mouseX, mouseY, avoid = creditRowRect(hoveredRow))
+        if (row.hasCard) lines.add(Text.translatable("cobblemarket.finance.credit_card_fixed_tip"))
+        renderTextTooltip(context, lines, mouseX, mouseY, avoid = creditRowRect(hoveredRow), unitLines = amountLines)
     }
 
     private fun creditRowRect(row: Int) = TooltipPlacement.Rect(
@@ -1155,7 +1184,9 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
      */
     private fun renderTextTooltip(
         context: DrawContext, lines: List<Text>, mouseX: Int, mouseY: Int,
-        avoid: TooltipPlacement.Rect? = null
+        avoid: TooltipPlacement.Rect? = null,
+        /** 哪几行是**金额行** ⇒ 那几行末尾要补画货币单位（可能是物品图标，进不了文本流） */
+        unitLines: Set<Int> = emptySet()
     ) {
         var maxWidth = 0
         lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
@@ -1173,6 +1204,11 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H)
         lines.forEachIndexed { i, line ->
             context.drawTextWithShadow(textRenderer, line, tx, ty + i * 10, 0xFFFFFF)
+            // 金额行末尾补货币单位（可能与图标同宽的空格也要让出来 ⇒ 宽度算进 maxWidth 之外，
+            // 悬停窗够宽自然没问题；这里只负责画）
+            if (i in unitLines) {
+                drawCurrencyUnit(context, textRenderer, tx + textRenderer.getWidth(line), ty + i * 10, 0x55FFFF)
+            }
         }
         context.matrices.pop()
     }
