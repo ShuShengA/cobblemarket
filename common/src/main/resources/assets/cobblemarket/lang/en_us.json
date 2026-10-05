@@ -990,7 +990,7 @@
   "cobblemarket.ban.confirm": "Confirm Ban",
   "cobblemarket.finance.title": "Finance",
   "cobblemarket.finance.entry_tip": "Manage finance\n(%s)",
-  "cobblemarket.finance.info_tip": "This screen manages finance, not trading\n- Loan blocks: listed players cannot borrow\n  (manual only - overdue / bad-debt blocking is separate,\n  see All Loan History)\n- Cards: revoke purple / black cards here\n- Credits: adjust a player's credit limit\n- Change Log: the ledger for the above\nTrading lives in Ban Management",
+  "cobblemarket.finance.info_tip": "This screen manages finance, not trading\n- Loan blocks: listed players cannot borrow\n  (manual only - overdue / bad-debt blocking is separate,\n  see All Loan History)\n- Cards: revoke purple / black cards here\n- Credits: adjust a player's credit limit\n- Change Log: the ledger for the above\n- Top Limits: the server's top 50 (to spot outliers)\nTrading lives in Ban Management",
   "cobblemarket.finance.tab_loan_block": "Loan Ban",
   "cobblemarket.finance.target": "Player: ",
   "cobblemarket.finance.reason": "Reason (optional)",
