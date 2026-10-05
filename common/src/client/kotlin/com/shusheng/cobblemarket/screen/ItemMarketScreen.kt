@@ -1534,7 +1534,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
         // ⚠ 两行都居中（2026-10-03 用户指出：原先与输入框一起左对齐于 centerX-80 ⇒ 整块偏左 30px）
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.item.buy_count").string + "（" + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}）",
+            Text.translatable("cobblemarket.item.buy_count").string + com.shusheng.cobblemarket.util.TextUtil.parenOpen() + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}" + com.shusheng.cobblemarket.util.TextUtil.parenClose(),
             centerX, L.labelY, 0xAAAAAA)
         // 总价单位同样取这条挂单自己的币种（RP 挂单不会出现喵喵行，词条行数决定弹窗高度）
         // ⚠ 货币单位**不拼进文本** —— 补画在行尾（物品货币时是物品图标、RP 时是字形图标）
