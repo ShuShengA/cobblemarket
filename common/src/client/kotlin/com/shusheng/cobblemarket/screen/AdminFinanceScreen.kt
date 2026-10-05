@@ -101,6 +101,16 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     private companion object {
         const val MAX_SUGGESTION_ROWS = 8
 
+        /**
+         * 「卡片管理」页签的下标 —— 它的标签**不放文字、画两张卡图标**
+         * （用户 2026-10-05 定：就照原来喵喵银行上那枚卡片管理入口的样子；图标在 [render] 里叠加）。
+         * ⚠ 往 TABS 里插页签时记得跟着改这个下标。
+         */
+        const val TAB_CARDS = 1
+
+        /** 页签上那两张卡图标的边长：页签只有 14 高（图标原尺寸 16 会上下各顶出 1px） */
+        const val TAB_ICON = 14
+
         /** 当前实现的页签（**按实现进度往里加**；加一枚就自动重排、不用手改坐标） */
         val TABS = listOf("cobblemarket.finance.tab_loan_block", "cobblemarket.finance.tab_cards")
 
@@ -203,7 +213,15 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             val rowW = inRow * btnW + (inRow - 1) * gap
             val x = width / 2 - rowW / 2 + col * (btnW + gap)
             val y = tabRowY + row * 18
-            val btn = NineSliceButton(x, y, btnW, 14, Text.translatable(key), { switchTab(i) })
+            val isCards = i == TAB_CARDS
+            val btn = NineSliceButton(
+                x, y, btnW, 14,
+                // 卡片管理页签不放文字（改成两张卡图标，见 render 的叠加绘制），
+                // 但把词条挂成悬停提示 —— 光两张图看不出来是"卡片管理"
+                if (isCards) Text.literal("") else Text.translatable(key),
+                { switchTab(i) },
+                tooltip = if (isCards) Text.translatable(key) else null
+            )
             tabButtons.add(btn)
             addDrawableChild(btn)
         }
@@ -522,6 +540,8 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             centerX, 20, 0xFFFFFF
         )
 
+        renderCardTabIcons(context)
+
         if (currentTab == 0) checkSuggestDebounce()
         if (suggestionsOpen) return
 
@@ -529,6 +549,37 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
 
         if (currentTab == 0) renderBlockList(context, centerX, leftX, mouseX, mouseY)
         else renderCardList(context, centerX, leftX, mouseX, mouseY)
+    }
+
+    /**
+     * 「卡片管理」页签上的两张卡图标（紫卡 + 黑卡，居中等距）。
+     *
+     * ⚠ 用**物品图标**而不是贴图：卡片是物品（`meowth_purple_card` / `meowth_black_card`），
+     *   照原来喵喵银行那枚入口的做法（`renderScaledGuiItemIcon`）。
+     * ⚠ 页签高 14 ⇒ 图标缩到 14（原尺寸 16 会上下各顶出 1px）。
+     */
+    private fun renderCardTabIcons(context: DrawContext) {
+        val btn = tabButtons.getOrNull(TAB_CARDS) ?: return
+        if (!btn.visible) return
+        val purple = net.minecraft.registry.Registries.ITEM.get(Identifier.of("cobblemarket", "meowth_purple_card"))
+        val black = net.minecraft.registry.Registries.ITEM.get(Identifier.of("cobblemarket", "meowth_black_card"))
+        val air = net.minecraft.registry.Registries.ITEM.get(Identifier.of("minecraft", "air"))
+        val gap = 4
+        val startX = btn.x + (btn.width - (TAB_ICON * 2 + gap)) / 2
+        if (purple != air) {
+            com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                itemStack = net.minecraft.item.ItemStack(purple),
+                x = startX.toDouble(), y = btn.y.toDouble(), scale = TAB_ICON / 16.0,
+                matrixStack = context.matrices
+            )
+        }
+        if (black != air) {
+            com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                itemStack = net.minecraft.item.ItemStack(black),
+                x = (startX + TAB_ICON + gap).toDouble(), y = btn.y.toDouble(), scale = TAB_ICON / 16.0,
+                matrixStack = context.matrices
+            )
+        }
     }
 
     private fun renderBlockList(context: DrawContext, centerX: Int, leftX: Int, mouseX: Int, mouseY: Int) {
