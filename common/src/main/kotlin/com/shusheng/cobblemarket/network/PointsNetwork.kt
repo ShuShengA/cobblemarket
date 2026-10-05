@@ -1109,9 +1109,19 @@ object PointsNetwork {
         }
 
         registerC2S(RequestPayQrPayload.ID, RequestPayQrPayload.CODEC) { payload, player ->
+            // ⚠ 节流：读盘 + 校验 PNG 全是主线程活，不限速就能被高频打
+            if (!RequestThrottle.allowNotify(player, "request_pay_qr", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
             player.server.execute {
                 val orderNo = PointOrderNumbers.normalize(payload.orderNo)
                 val order = orderNo?.let { PointOrderState.get(player.server).find(it) }
+                // ⚠⭐ 归属校验：只有**订单主人**能取自己那张码。不加的话，谁拿订单号都能拉走收款码，
+                //   而返回「空包 vs 非空」还兼作「该订单是否存在」的探测器（订单号 25 bit ≈ 3300 万，可枚举）。
+                //   ⚠ 越权与"订单不存在"**同样回空包** —— 连"存在但不是你的"都探测不出来。
+                //   ⚠ 服主侧不看收款码（`AdminPointOrdersScreen` 零引用，核对账单看的是他自己的流水）⇒ 零副作用。
+                if (order != null && order.playerUuid != player.uuid) {
+                    sendToPlayer(player, PayQrImagePayload(ByteArray(0)))
+                    return@execute
+                }
                 // 按**订单上快照的文件名**取图（下单时已解析好：专用码优先、否则全局码）
                 // 图不存在/不是 PNG/太大 → 发**空包**：弹窗显示「收款码不可用」，
                 // 而不是发失败结果（那会播一声 fail 音，玩家一头雾水，2026-09-18 实测踩到）
@@ -1121,6 +1131,10 @@ object PointsNetwork {
         }
 
         registerC2S(RequestTierIconPayload.ID, RequestTierIconPayload.CODEC) { payload, player ->
+            // ⚠ 同上：读盘 + 校验 PNG 在主线程。文件名本身是安全的 —— `ConfigImage` 已挡路径穿越，
+            //   且只认 icon/ 目录下的 PNG（魔数 + 尺寸都校验），所以这里只补节流、不加白名单
+            //   （加白名单会限制服主自备券图，而风险并不成立）。
+            if (!RequestThrottle.allowNotify(player, "request_tier_icon", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
             player.server.execute {
                 // 读不出来就发**空包**（客户端回退到内置券图），而不是不回 ——
                 // 不回的话客户端会一直停在「等图」状态，卡片空着
@@ -1281,7 +1295,11 @@ object PointsNetwork {
             server.execute {
                 // 服务端是权威：界面也钳，但伪造客户端可能直接发包
                 val count = payload.count.coerceIn(1, MAX_CODE_BATCH)
-                if (payload.amount <= 0 || payload.uses <= 0 || payload.days < 0) {
+                // ⚠ 上界与**命令侧**对齐（命令用 `IntegerArgumentType.integer(1)` ⇒ 限 Int）：
+                //   不封顶的话 `payload.amount * payload.uses` 会把审计 CSV 的「变动量」溢出成负数、污染对账
+                //   （余额本身有钳制不受影响，脏的只是账本）。
+                //   ⚠ 封到 Int 之后乘积**天然不溢出**：Int.MAX × Int.MAX ≈ 4.6e18 < Long.MAX ≈ 9.2e18。
+                if (payload.amount <= 0 || payload.amount > Int.MAX_VALUE || payload.uses <= 0 || payload.days < 0) {
                     sendToPlayer(player, PointCodesCreatedPayload(false, emptyList(), "", Text.translatable("cobblemarket.points.invalid_amount")))
                     return@execute
                 }
