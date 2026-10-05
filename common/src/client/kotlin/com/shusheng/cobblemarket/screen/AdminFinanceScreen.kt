@@ -1014,7 +1014,10 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             // 行：`名字(白) · 额度：(白) <金额(蓝)> <货币单位>`。
             // ⚠⭐ 金额的**两个必备元素**：蓝色 `0x55FFFF`（账本口径；能花才用金）+ 货币单位 ——
             //   单位可能是符号 `₽`、也可能是**物品图标** ⇒ 只能单独补画（照喵喵银行的可借上限那两行）
-            val amount = Text.literal(formatPriceLong(row.limit))
+            // ⚠ 金额串**必须带尾随空格**（单位写法恒为 `金额 + 空格 + 单位`）——
+            //   `drawCurrencyUnit` 是"假设末尾已有一个空格"再往左收 2px 画的，
+            //   少了那个空格图标就贴死在数字上（用户 2026-10-05 报的，见 memory 里那条约定）
+            val amount = Text.literal("${formatPriceLong(row.limit)} ")
             val amountW = textRenderer.getWidth(amount)
             val unitW = currencyUnitWidth(textRenderer)
             // 行文字画到「调整额度按钮左侧留 4px」为止（按钮起于 panelWidth-68）；
@@ -1051,13 +1054,13 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         // 金额行：标签白、金额蓝，**货币单位单独补画**（可能是物品图标、进不了文本流）⇒ 记下行号
         lines.add(
             Text.literal("").append(Text.translatable("cobblemarket.finance.credit_amount_label"))
-                .append(Text.literal(formatPriceLong(row.limit)).formatted(Formatting.AQUA))
+                .append(Text.literal("${formatPriceLong(row.limit)} ").formatted(Formatting.AQUA))
         )
         amountLines.add(lines.size - 1)
         if (row.adjust != 0L) {
             lines.add(
                 Text.literal("").append(Text.translatable("cobblemarket.finance.credit_adjust_label"))
-                    .append(Text.literal(formatPriceLong(row.adjust)).formatted(Formatting.AQUA))
+                    .append(Text.literal("${formatPriceLong(row.adjust)} ").formatted(Formatting.AQUA))
             )
             amountLines.add(lines.size - 1)
         }
