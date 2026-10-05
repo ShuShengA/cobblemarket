@@ -516,6 +516,9 @@ data class PointsConfigPayload(
                 val pointsAuctionFee = b.readDouble()
                 val pointsBuyOrderFee = b.readDouble()
                 val count = b.readInt()
+                if (count < 0 || count > MAX_TIERS) {
+                    throw IllegalArgumentException("tier count out of range: $count")
+                }
                 val tiers = ArrayList<PointsTierConfig>(count)
                 repeat(count) {
                     tiers.add(
@@ -626,6 +629,9 @@ data class SavePointsConfigPayload(
                 val pointsAuctionFee = b.readDouble()
                 val pointsBuyOrderFee = b.readDouble()
                 val count = b.readInt()
+                if (count < 0 || count > MAX_TIERS) {
+                    throw IllegalArgumentException("tier count out of range: $count")
+                }
                 val tiers = ArrayList<PointsTierConfig>(count)
                 repeat(count) {
                     tiers.add(
@@ -664,6 +670,15 @@ private const val MAX_TIER_NAME_LENGTH = 32
 
 /** 文件名长度上限 */
 private const val MAX_FILE_NAME_LENGTH = 128
+
+/**
+ * 充值档位条数上限 —— 防伪造客户端塞超长列表。
+ *
+ * ⚠⭐ **必须在解码期拦**：解码发生在 handler **之前**（网络线程），`isServerOwner` 那道门根本轮不到 ⇒
+ * `ArrayList(count)` 会被一个几十字节的包（`count` 写 `Int.MAX_VALUE`）变成一次巨型分配。
+ * 照 `PointMarketNetwork` 的同一写法。
+ */
+private const val MAX_TIERS = 64
 
 // ── C2S：兑换码管理（生成 / 列表 / 作废）—— 与 `/market points code …` 命令同一批内核 ──
 
@@ -1115,6 +1130,8 @@ object PointsNetwork {
         }
 
         registerC2S(CreatePointOrderPayload.ID, CreatePointOrderPayload.CODEC) { payload, player ->
+            // ⚠ 必须节流：每条写路径都要**同步写两份账本 CSV**（中英）+ 请求落盘，跑在主线程上
+            if (!RequestThrottle.allowNotify(player, "create_point_order", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 when (val result = PointShopService.createOrder(server, player.uuid, player.name.string, payload.tierIndex)) {
@@ -1126,6 +1143,8 @@ object PointsNetwork {
         }
 
         registerC2S(MarkPointOrderPaidPayload.ID, MarkPointOrderPaidPayload.CODEC) { payload, player ->
+            // ⚠ 同上：改状态 + 写两份账本 CSV，必须限速
+            if (!RequestThrottle.allowNotify(player, "mark_point_order_paid", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val orderNo = PointOrderNumbers.normalize(payload.orderNo)
@@ -1154,6 +1173,8 @@ object PointsNetwork {
         }
 
         registerC2S(CancelPointOrderPayload.ID, CancelPointOrderPayload.CODEC) { payload, player ->
+            // ⚠ 同上：`下单 → 取消` 是无限循环，不节流就是主线程磁盘 IO 轰炸
+            if (!RequestThrottle.allowNotify(player, "cancel_point_order", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
             val server = player.server
             server.execute {
                 val orderNo = PointOrderNumbers.normalize(payload.orderNo)
@@ -1207,7 +1228,7 @@ object PointsNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.points.shop.not_found")))
                     return@execute
                 }
-                when (val result = PointShopService.confirm(server, player.name.string, orderNo)) {
+                when (val result = PointShopService.confirm(server, player.uuid, player.name.string, orderNo)) {
                     is PointShopResult.Success -> sendToPlayer(
                         player,
                         MarketResultPayload(

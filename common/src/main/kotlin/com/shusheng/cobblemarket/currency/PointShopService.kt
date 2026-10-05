@@ -191,9 +191,15 @@ object PointShopService {
      * 再加余额**。极端崩溃窗口下最坏是「状态没落盘、钱也没加」——服主重新确认即可；
      * 反过来先加余额再标状态的话，崩溃后订单仍是待确认，服主再点一次就是**凭空多给一份**。
      */
-    fun confirm(server: MinecraftServer, operatorName: String, orderNo: String): PointShopResult {
+    fun confirm(server: MinecraftServer, operatorUuid: UUID?, operatorName: String, orderNo: String): PointShopResult {
         val state = PointOrderState.get(server)
         val order = state.find(orderNo) ?: return PointShopResult.Failure(PointShopError.NOT_FOUND)
+        // ⚠⭐ 不许确认**自己的**订单：`points.order` 是"发给信任的人做对账"的节点，
+        //   缺这一道 = 持有者能**自助印钞**（自己下单 → 自己点「我已支付」 → 自己确认，钱凭空进账，服主账上没这笔钱）。
+        //   ⚠ 控制台（uuid 为 null）不受此限 —— 它本来就是最高权限（照 `/market loan clear` 的口径）。
+        if (operatorUuid != null && order.playerUuid == operatorUuid) {
+            return PointShopResult.Failure(PointShopError.BAD_STATUS)
+        }
         if (order.status != PointOrderStatus.PENDING_CONFIRM) {
             return PointShopResult.Failure(PointShopError.BAD_STATUS)
         }

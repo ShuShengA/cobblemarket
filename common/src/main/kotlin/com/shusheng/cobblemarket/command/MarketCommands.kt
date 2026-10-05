@@ -754,20 +754,20 @@ object MarketCommands {
 
     /** 确认发放（判 `points.order`，幂等：重复确认不会二次发放） */
     private fun shopConfirm(context: CommandContext<ServerCommandSource>): Int =
-        shopOperatorAction(context) { server, operator, orderNo ->
-            PointShopService.confirm(server, operator, orderNo)
+        shopOperatorAction(context) { server, operatorUuid, operator, orderNo ->
+            PointShopService.confirm(server, operatorUuid, operator, orderNo)
         }
 
     /** 作废订单（判 `points.order`）：核对账单后没这笔钱、重复提交、误操作等 */
     private fun shopReject(context: CommandContext<ServerCommandSource>): Int =
-        shopOperatorAction(context) { server, operator, orderNo ->
+        shopOperatorAction(context) { server, _, operator, orderNo ->
             PointShopService.reject(server, operator, orderNo)
         }
 
     /** 订单操作的公共外壳（鉴权在命令树的 `requires` 里，两个入口都走它） */
     private fun shopOperatorAction(
         context: CommandContext<ServerCommandSource>,
-        action: (net.minecraft.server.MinecraftServer, String, String) -> PointShopResult
+        action: (net.minecraft.server.MinecraftServer, java.util.UUID?, String, String) -> PointShopResult
     ): Int {
         val source = context.source
         val orderNo = PointOrderNumbers.normalize(StringArgumentType.getString(context, "order"))
@@ -775,7 +775,8 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.points.shop.not_found"))
             return 0
         }
-        return when (val result = action(source.server, source.name, orderNo)) {
+        // ⚠ 传执行者 uuid（控制台/命令方块为 null）—— `confirm` 靠它拦「确认自己的订单」
+        return when (val result = action(source.server, source.player?.uuid, source.name, orderNo)) {
             is PointShopResult.Success -> {
                 val granted = result.order.status == PointOrderStatus.GRANTED
                 source.sendFeedback({
