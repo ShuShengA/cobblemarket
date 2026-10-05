@@ -624,6 +624,8 @@
   "cobblemarket.finance.credit_adjust_label": "Manual adjustment: ",
   "cobblemarket.finance.credit_empty": "No players have an adjusted limit (use the search box above)",
   "cobblemarket.finance.credit_set": "Changed %s's credit limit from %s to %s",
+  "cobblemarket.finance.credit_changed": "Your credit limit was adjusted by a finance admin: %s %s → %s %s",
+  "cobblemarket.finance.credit_changed_reason": "Your credit limit was adjusted by a finance admin: %s %s → %s %s. Reason: %s",
   "cobblemarket.finance.credit_invalid": "The limit cannot be negative",
   "cobblemarket.finance.credit_card_fixed": "%s holds a card - the limit comes from the card config and cannot be adjusted",
   "cobblemarket.finance.credit_card_fixed_tip": "Card holders' limits come from the card config and cannot be adjusted",

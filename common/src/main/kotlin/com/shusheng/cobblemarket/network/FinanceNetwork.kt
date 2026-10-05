@@ -1462,6 +1462,26 @@ object FinanceNetwork {
                     )
                 )
                 sendCreditAdjustList(player)
+                // 通知**被调的玩家**（在线才发，照封禁 / 禁借那两套）——
+                // ⚠ 没有这条的话他只会发现"我怎么借不了钱了"，然后来问服主，而理由只有账本里才有。
+                // ⚠ 聊天里的金额口径 = `goldAmount` + `goldCurrencyText` **两个参数分开传**
+                //   （单位不能拼进字符串：物品本位货币时它是个物品名、RP 时是字形）
+                val noticeReason = payload.reason.take(100)
+                val unit = CurrencyHandler.goldCurrencyText()
+                server.playerManager.getPlayer(target.first)?.sendMessage(
+                    (if (noticeReason.isNotBlank()) {
+                        Text.translatable(
+                            "cobblemarket.finance.credit_changed_reason",
+                            CurrencyHandler.goldAmount(before), unit, CurrencyHandler.goldAmount(after), unit, noticeReason
+                        )
+                    } else {
+                        Text.translatable(
+                            "cobblemarket.finance.credit_changed",
+                            CurrencyHandler.goldAmount(before), unit, CurrencyHandler.goldAmount(after), unit
+                        )
+                    }).formatted(Formatting.GOLD),
+                    false
+                )
             }
         }
 
