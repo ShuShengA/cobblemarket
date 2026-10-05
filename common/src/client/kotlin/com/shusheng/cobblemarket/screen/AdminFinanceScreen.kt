@@ -15,7 +15,9 @@ import com.shusheng.cobblemarket.network.AdminLoanBlockPayload
 import com.shusheng.cobblemarket.network.AdminLoanUnblockPayload
 import com.shusheng.cobblemarket.network.CreditAdjustListPayload
 import com.shusheng.cobblemarket.network.CreditLookupPayload
+import com.shusheng.cobblemarket.network.CreditRankPayload
 import com.shusheng.cobblemarket.network.CreditRowInfo
+import com.shusheng.cobblemarket.network.RequestCreditRankPayload
 import com.shusheng.cobblemarket.network.RequestCreditAdjustListPayload
 import com.shusheng.cobblemarket.network.RequestCreditLookupPayload
 import com.shusheng.cobblemarket.network.CardHolderEntry
@@ -115,6 +117,15 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     private var creditReasonField: TextFieldWidget? = null
     private val creditDialogButtons = mutableListOf<NineSliceButton>()
 
+    // ── 页签 4：额度排行 ──
+    /**
+     * 全服额度前 50（服务端算好、**顺序即名次**）。
+     * ⚠⭐ **只在进页签 / 点刷新时拉**：它是"全服算一遍"的结果，不像额度列表那样每 2 秒重拉
+     *   （那个只算几个人）—— 排行看的是趋势，不需要灵敏。
+     */
+    private var rankRows = listOf<CreditRowInfo>()
+    private var rankRefreshButton: NineSliceButton? = null
+
     // ── 页签 3：变更记录 ──
     /**
      * 一条变更记录 → 行内文本 + 悬停窗内容（**数据到达时算一次**，render 每帧只读 ——
@@ -188,11 +199,12 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             // 「卡片管理」用**两张卡图标**（用户 2026-10-05 定：就是原来喵喵银行那枚按钮的样子）
             TabSpec("cobblemarket.finance.tab_cards", TAB_W_ICON, icon = true),
             TabSpec("cobblemarket.finance.tab_credit", TAB_W),
-            TabSpec("cobblemarket.finance.tab_changes", TAB_W)
+            TabSpec("cobblemarket.finance.tab_changes", TAB_W),
+            TabSpec("cobblemarket.finance.tab_rank", TAB_W)
         )
 
-        /** 带表单行（搜索框等）的页签下标 —— 列表起始 y 与控件可见性都按它判 */
-        val FORM_TABS = setOf(0, 2)
+        /** 带表单行（搜索框 / 操作按钮）的页签下标 —— 列表起始 y 与控件可见性都按它判 */
+        val FORM_TABS = setOf(0, 2, 4)
 
         /**
          * 额度列表的自动重拉间隔（照余额 HUD 那档 2 秒）—— 只在停留在额度页签、且没开弹窗时发。
@@ -308,6 +320,16 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         creditQueryButton = creditBtn
         addDrawableChild(creditBtn)
 
+        // 额度排行页签的表单行：一枚「刷新」（主动重拉最新排行）。
+        // ⚠ 位置与其它页签的动作按钮**同 x 同宽**（+220 / 76），换页签时按钮不会跳位
+        val rankBtn = NineSliceButton(
+            leftX + 220, formRowY, 76, 16,
+            Text.translatable("cobblemarket.finance.rank_refresh"),
+            { sendToServer(RequestCreditRankPayload()) }
+        )
+        rankRefreshButton = rankBtn
+        addDrawableChild(rankBtn)
+
         applyTabVisibility()
         scrollOffset = 0
         // ⚠ 关弹窗走的是 `clearChildren()` + `init()` ⇒ 行按钮被清掉了，这里补一次重建请求
@@ -322,6 +344,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             0 -> sendToServer(RequestLoanBlockListPayload())
             1 -> sendToServer(RequestCardHolderListPayload())
             2 -> sendToServer(RequestCreditAdjustListPayload())
+            4 -> sendToServer(RequestCreditRankPayload())
             // ⚠⭐ 变更记录**每次切过来都重拉**（照封禁那张账本）：刚在别的页签做过的操作、
             //   别的管理员做的、系统的，都可能在你停留期间出现 —— 写成"只拉一次"就会一直显示旧数据
             else -> sendToServer(RequestFinanceChangesPayload())
@@ -399,6 +422,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         val isCreditTab = currentTab == 2
         creditQueryField?.visible = isCreditTab
         creditQueryButton?.visible = isCreditTab
+        rankRefreshButton?.visible = currentTab == 4
     }
 
     // ── 数据到达 ──
@@ -418,6 +442,12 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     fun onCreditRows(payload: CreditAdjustListPayload) {
         creditRows = payload.rows
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, creditRows.size - maxVisible()))
+        requestRowRebuild()
+    }
+
+    fun onCreditRank(payload: CreditRankPayload) {
+        rankRows = payload.rows
+        scrollOffset = scrollOffset.coerceIn(0, maxOf(0, rankRows.size - maxVisible()))
         requestRowRebuild()
     }
 
@@ -448,6 +478,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         0 -> entries.size
         1 -> cardEntries.size
         2 -> creditRows.size
+        4 -> rankRows.size
         else -> changeLines.size
     }
 
@@ -506,10 +537,13 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             }
             return
         }
-        if (currentTab == 2) {
+        // 额度管理（2）与额度排行（4）**共用同一套行按钮**：都是「调整额度」、都开同一个弹窗，
+        // 只是行的来源不同（被调整过的 / 前 50 名）—— 排行的行**也能直接点开调**，这正是做排行的目的
+        if (currentTab == 2 || currentTab == 4) {
+            val rows = if (currentTab == 4) rankRows else creditRows
             val creditInset = 68
             val creditW = 64
-            creditRows.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, row ->
+            rows.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, row ->
                 val btn = NineSliceButton(
                     leftX + panelWidth - creditInset, startY + i * rowHeight + 4, creditW, 16,
                     Text.translatable("cobblemarket.finance.credit_adjust"),
@@ -577,6 +611,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         cardButtons.forEach { (b, _) -> b.visible = false }
         creditQueryField?.visible = false
         creditQueryButton?.visible = false
+        rankRefreshButton?.visible = false
         creditButtons.forEach { it.visible = false }
     }
 
@@ -912,7 +947,8 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         when (currentTab) {
             0 -> renderBlockList(context, centerX, leftX, mouseX, mouseY)
             1 -> renderCardList(context, centerX, leftX, mouseX, mouseY)
-            2 -> renderCreditList(context, centerX, leftX, mouseX, mouseY)
+            2 -> renderCreditList(context, centerX, leftX, mouseX, mouseY, creditRows, showRank = false)
+            4 -> renderCreditList(context, centerX, leftX, mouseX, mouseY, rankRows, showRank = true)
             else -> renderChangeList(context, centerX, leftX, mouseX, mouseY)
         }
     }
@@ -1016,16 +1052,25 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     }
 
     /** 额度管理页签的列表：`名字 · 额度 X`（行尾「调整额度」按钮；持卡玩家那枚是灰的） */
-    private fun renderCreditList(context: DrawContext, centerX: Int, leftX: Int, mouseX: Int, mouseY: Int) {
-        if (creditRows.isEmpty()) {
+    /**
+     * 额度列表 —— 额度管理页签（[rows] = 被人工调整过的玩家）与额度排行页签（[rows] = 前 50 名、
+     * [showRank] = true 时行首带名次）**共用这一个渲染**，别各写一份。
+     */
+    private fun renderCreditList(
+        context: DrawContext, centerX: Int, leftX: Int, mouseX: Int, mouseY: Int,
+        rows: List<CreditRowInfo>, showRank: Boolean
+    ) {
+        if (rows.isEmpty()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.finance.credit_empty").formatted(Formatting.GRAY),
+                Text.translatable(
+                    if (showRank) "cobblemarket.finance.rank_empty" else "cobblemarket.finance.credit_empty"
+                ).formatted(Formatting.GRAY),
                 centerX, listStartY() + 30, 0xFFFFFF
             )
             return
         }
-        creditRows.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, row ->
+        rows.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, row ->
             val y = listStartY() + i * rowHeight
             // 行：`名字(白) · 额度：(白) <金额(蓝)> <货币单位>`。
             // ⚠⭐ 金额的**两个必备元素**：蓝色 `0x55FFFF`（账本口径；能花才用金）+ 货币单位 ——
@@ -1039,33 +1084,38 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             // 行文字画到「调整额度按钮左侧留 4px」为止（按钮起于 panelWidth-68）；
             // 名字那截**先按"给金额与单位留够"反算预算再截断**，否则长名字会把金额挤出可用宽
             val nameBudget = panelWidth - 76 - amountW - unitW
-            val namePart = TextUtil.truncateStyled(
-                Text.literal("").append(row.playerName).append("  ·  ")
-                    .append(Text.translatable("cobblemarket.finance.credit_amount_label")),
-                nameBudget
-            )
+            // 排行版在行首带名次（实时按下标算：滚动时名次跟着变，不能靠数据里存）
+            val head = Text.literal("")
+            if (showRank) head.append(Text.literal("${scrollOffset + i + 1}. ").formatted(Formatting.GRAY))
+            head.append(row.playerName).append("  ·  ")
+                .append(Text.translatable("cobblemarket.finance.credit_amount_label"))
+            val namePart = TextUtil.truncateStyled(head, nameBudget)
             context.drawTextWithShadow(textRenderer, namePart, leftX + 4, y + 7, 0xFFFFFF)
             val amountX = leftX + 4 + textRenderer.getWidth(namePart)
             context.drawTextWithShadow(textRenderer, amount, amountX, y + 7, 0x55FFFF)
             drawCurrencyUnit(context, textRenderer, amountX + amountW, y + 7, 0x55FFFF)
         }
-        if (creditRows.size > maxVisible()) {
+        if (rows.size > maxVisible()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                "${scrollOffset + 1}-${minOf(scrollOffset + maxVisible(), creditRows.size)} / ${creditRows.size}",
+                "${scrollOffset + 1}-${minOf(scrollOffset + maxVisible(), rows.size)} / ${rows.size}",
                 centerX, height - 49, 0x888888
             )
         }
         if (hoveredRow >= 0) {
             val idx = scrollOffset + hoveredRow
-            if (idx in creditRows.indices) renderCreditTooltip(context, creditRows[idx], mouseX, mouseY)
+            if (idx in rows.indices) renderCreditTooltip(context, idx + 1, rows[idx], mouseX, mouseY)
         }
     }
 
     /** 额度行的悬停窗：把行内被截断的东西给全（额度是主信息，另有修正量与是否持卡） */
-    private fun renderCreditTooltip(context: DrawContext, row: CreditRowInfo, mouseX: Int, mouseY: Int) {
+    private fun renderCreditTooltip(
+        context: DrawContext, rank: Int, row: CreditRowInfo, mouseX: Int, mouseY: Int
+    ) {
         val amountLines = mutableSetOf<Int>()
         val lines = mutableListOf<Text>()
+        // 排行页签给行号（[rank] > 0）；额度管理那边不传（它没有名次的概念）
+        if (rank > 0) lines.add(Text.literal("No.$rank").formatted(Formatting.GRAY))
         lines.add(Text.literal("${Text.translatable("cobblemarket.finance.target").string} ${row.playerName}"))
         // 金额行：标签白、金额蓝，**货币单位单独补画**（可能是物品图标、进不了文本流）⇒ 记下行号
         lines.add(

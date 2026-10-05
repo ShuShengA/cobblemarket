@@ -699,6 +699,32 @@ data class CreditLookupPayload(val row: CreditRowInfo) : CustomPayload {
     }
 }
 
+// ── C2S：请求额度排行（金融管理界面「额度排行」页签；一次算全服 ⇒ 服务端加了节流） ──
+
+class RequestCreditRankPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestCreditRankPayload>(CobbleMarket.id("request_credit_rank"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestCreditRankPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestCreditRankPayload() }
+        )
+    }
+}
+
+// ── S2C：额度排行（复用 `CreditRowInfo` 那一行；**顺序即名次**，客户端按下标算名次） ──
+
+data class CreditRankPayload(val rows: List<CreditRowInfo>) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<CreditRankPayload>(CobbleMarket.id("credit_rank"))
+        val CODEC: PacketCodec<PacketByteBuf, CreditRankPayload> = PacketCodec.of(
+            { p, b -> b.writeVarInt(p.rows.size); p.rows.forEach { it.write(b) } },
+            { b -> CreditRankPayload((0 until b.readVarInt()).map { CreditRowInfo.read(b) }) }
+        )
+    }
+}
+
 // ── C2S：把某人的额度**设成**目标值（服务端反算 delta = 目标 − 公式 base） ──
 
 data class AdminCreditSetPayload(
@@ -947,6 +973,7 @@ object FinanceNetwork {
         registerS2CType(CreditAdjustListPayload.ID, CreditAdjustListPayload.CODEC)
         registerS2CType(CreditLookupPayload.ID, CreditLookupPayload.CODEC)
         registerS2CType(FinanceChangesPayload.ID, FinanceChangesPayload.CODEC)
+        registerS2CType(CreditRankPayload.ID, CreditRankPayload.CODEC)
         registerS2CType(CardHolderBoardPayload.ID, CardHolderBoardPayload.CODEC)
 
         // ── 应急贷款借款 ──
@@ -1405,6 +1432,15 @@ object FinanceNetwork {
             server.execute { sendCreditAdjustList(player) }
         }
 
+        registerC2S(RequestCreditRankPayload.ID, RequestCreditRankPayload.CODEC) { _, player ->
+            // ⚠ **必须节流**：这一条要**给全服每个人算一遍额度**（虽然已经优化成 O(N+M)，
+            //   也不是能高频拉的东西）。照其它只读请求用 READ_INTERVAL。
+            if (!RequestThrottle.allow(player.uuid, "request_credit_rank", RequestThrottle.READ_INTERVAL_MS)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
+            val server = player.server
+            server.execute { sendCreditRank(player) }
+        }
+
         registerC2S(RequestCreditLookupPayload.ID, RequestCreditLookupPayload.CODEC) { payload, player ->
             if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
             val server = player.server
@@ -1843,6 +1879,34 @@ object FinanceNetwork {
     }
 
     /** 卡片管理（金融管理节点）：持有者列表回发（紫卡 ∪ 黑卡 混排，按加入时间正序=先申请在前，同刻按名字） */
+    /** 排行名次数 —— 用户 2026-10-05 定「前 50」：够看出差距，又不至于把 payload 撑大 */
+    private const val CREDIT_RANK_TOP = 50
+
+    /**
+     * 额度排行回发（金融管理界面「额度排行」页签）。
+     * ⚠ 名次**不发**：顺序即名次，客户端按下标算 ✓
+     * ⚠ 只在**进页签**与**点刷新**时拉（Δ 全服计算不平宜，绝不轮询）
+     */
+    private fun sendCreditRank(player: ServerPlayerEntity) {
+        val server = player.server
+        val now = System.currentTimeMillis()
+        val state = FinanceState.get(server)
+        sendToPlayer(
+            player,
+            CreditRankPayload(
+                state.creditLimitRank(now, CREDIT_RANK_TOP).map { (uuid, limit) ->
+                    CreditRowInfo(
+                        playerUuid = uuid,
+                        playerName = holderDisplayName(server, uuid),
+                        limit = limit,
+                        adjust = state.getCreditAdjust(uuid),
+                        hasCard = state.isBlackCardHolder(uuid) || state.isPurpleCardHolder(uuid)
+                    )
+                }
+            )
+        )
+    }
+
     /** 一个人的额度行（列表与查询共用；limit/adjust 都是服务端实算） */
     private fun creditRowOf(server: MinecraftServer, uuid: UUID, name: String): CreditRowInfo {
         val state = FinanceState.get(server)
