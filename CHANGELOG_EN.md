@@ -286,6 +286,8 @@
 
 - **The balance HUD slid up together with the screen when closing a market screen**: with the "market animation" setting on, closing any market screen made the balance number slide up with the screen and then snap right back once the screen was gone (present since 1.1.1). The close animation now only moves the screen itself — the balance stays where it is
 
+- **Chinese punctuation no longer leaks into English clients**: the item count line, the rule summaries in Blacklist / Price Limits / Buy Orders, and the nature line all had **hard-coded full-width** brackets and separators (`（）`, `、`) — the right typography for a Chinese UI, but on an English client they wrap English text in full-width brackets, which are also twice as wide and read as clearly out of place. Punctuation now **follows the client language**: full-width for Chinese, half-width for English
+
 ## 1.1.3 (released)
 
 ### Fixes
