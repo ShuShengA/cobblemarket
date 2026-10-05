@@ -497,7 +497,7 @@
   "cobblemarket.perm.node.pricelimit.desc": "Set min / max prices for\nPokémon / items",
   "cobblemarket.perm.node.ban.desc": "Ban / unban players,\nview the ban list\n(banned can reclaim assets)",
   "cobblemarket.perm.node.market.desc": "Remove any player's\nPokémon / items",
-  "cobblemarket.perm.node.finance.desc": "Manage player cards,\nview all loan ledgers\n(write-off is owner-only)",
+  "cobblemarket.perm.node.finance.desc": "Manage cards, block loans, adjust credit limits\nView all loan ledgers (write-off is owner-only)",
   "cobblemarket.perm.node.auction.desc": "Force-cancel any\nplayer's auction",
   "cobblemarket.perm.node.buyorder.desc": "Force-cancel any\nplayer's buy order",
   "cobblemarket.perm.node.marketswitch": "Market Switch",
