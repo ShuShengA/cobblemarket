@@ -1343,11 +1343,11 @@ class AuctionScreen(
             val nameW = textRenderer.getWidth(displayName(entry)) + 60
             // 右列（拍卖信息）实测最宽：金额随挂单变化（100,000,000 这类），不量的话会顶出弹窗右边框
             rightW = listOf(
-                Text.literal("${Text.translatable("cobblemarket.auction.seller").string}: ${entry.sellerName}"),
-                Text.translatable("cobblemarket.auction.current_price").append(": ").append(displayPriceText(entry)),
-                Text.translatable("cobblemarket.auction.starting_price").append(": ").append(
+                Text.translatable("cobblemarket.auction.seller").append(entry.sellerName),
+                Text.translatable("cobblemarket.auction.current_price").append(displayPriceText(entry)),
+                Text.translatable("cobblemarket.auction.starting_price_label").append(
                     Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.startingPrice)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}")),
-                Text.translatable("cobblemarket.auction.min_increment").append(": ").append(
+                Text.translatable("cobblemarket.auction.min_increment_label").append(
                     Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ${com.shusheng.cobblemarket.client.inlineCurrencyUnit()}"))
             ).maxOf { textRenderer.getWidth(it) }
             // 左列(nameW) + 右列(rightW + 30：右边距 10、与左列间隙 20) —— 右列宽跟着实测走，

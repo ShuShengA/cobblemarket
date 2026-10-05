@@ -1140,7 +1140,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         }
         itemRowTexts = filteredItemsCache.map { entry ->
             val summary = com.shusheng.cobblemarket.client.ItemComponentsDisplay.summary(entry.componentsSpec)
-            val name = if (summary.isEmpty()) itemDisplay(entry.itemId) else "${itemDisplay(entry.itemId)}（$summary）"
+            val name = if (summary.isEmpty()) itemDisplay(entry.itemId) else itemDisplay(entry.itemId) + com.shusheng.cobblemarket.util.TextUtil.paren(summary)
             "$name · ${priceText(entry.minPrice, entry.maxPrice, inlineCurrencyUnit())}"
         }
     }
