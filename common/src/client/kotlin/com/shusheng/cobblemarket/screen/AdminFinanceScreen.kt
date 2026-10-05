@@ -131,7 +131,8 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
      * 一条变更记录 → 行内文本 + 悬停窗内容（**数据到达时算一次**，render 每帧只读 ——
      * 时间格式化 + 词条拼接每帧现算，在全量列表上就是可见的掉帧源，照 `AdminBanScreen`）。
      */
-    private data class ChangeLine(val text: Text, val tooltip: List<Text>)
+    /** [tooltipUnitLines] = 悬停窗里哪几行是金额行 ⇒ 那几行末尾补画**货币图标** */
+    private data class ChangeLine(val text: Text, val tooltip: List<Text>, val tooltipUnitLines: Set<Int> = emptySet())
     private var changeLines = listOf<ChangeLine>()
 
     private var backButton: NineSliceButton? = null
@@ -981,20 +982,35 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         val durationMs = row.durationMs
         val value = row.value
         val prevValue = row.prevValue
-        val detail: Text? = when {
+        // 调整额度那一条的金额两版**分开做**（用户 2026-10-05 报：「悬停窗里明明可以显示物品货币图标」）：
+        //   · 行内：金额在**串中间**（后面还跟着理由）且**会被截断** ⇒ 按既有口径用**物品名/₽ 文本**
+        //   · 悬停窗：我们**自绘**的、能画图标 ⇒ 词条的单位参数传**空串占位**，单位由
+        //     `renderTextTooltip` 按行号补画图标（照 2026-09-29 定的口径）
+        val priceAmounts = value != null
+        val detailRow: Text? = when {
             kind.isNotBlank() -> Text.translatable(
                 if (kind == "black") "cobblemarket.card.black_name" else "cobblemarket.card.purple_name"
             )
             durationMs != null -> BanState.remainingText(durationMs)
-            value != null -> Text.translatable(
+            priceAmounts -> Text.translatable(
                 "cobblemarket.finance.changes_credit",
-                formatPriceLong(prevValue ?: 0L), formatPriceLong(value),
-                // ⚠ 这一处金额在**行中间**（后面还跟着理由）⇒ 图标塞不进去，
-                //   按项目既有口径退回**物品名/₽ 文本**（`activeCurrencyUnit()`，同"截断链/串中间"那条）
-                activeCurrencyUnit()
+                formatPriceLong(prevValue ?: 0L), formatPriceLong(value!!), activeCurrencyUnit()
             ).formatted(Formatting.AQUA)   // 账本口径 = 蓝
             else -> null
         }
+        val detailTooltip: Text? = when {
+            kind.isNotBlank() -> Text.translatable(
+                if (kind == "black") "cobblemarket.card.black_name" else "cobblemarket.card.purple_name"
+            )
+            durationMs != null -> BanState.remainingText(durationMs)
+            priceAmounts -> Text.translatable(
+                "cobblemarket.finance.changes_credit",
+                formatPriceLong(prevValue ?: 0L), formatPriceLong(value!!), Text.literal("")
+            ).formatted(Formatting.AQUA)
+            else -> null
+        }
+        // ⚠ 变量名沿用下面的拼装（行内那份）
+        val detail = detailRow
 
         // 行内：时间 · 执行者→目标 · 动作 [· 详情] [· 理由]
         // ⚠ 全部**平级**挂在空父节点下：带色的段自己带色，` · ` 这些陪衬文字不设色（吃行色）
@@ -1011,12 +1027,14 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
                 Text.literal("").append(Text.literal(at(changeTooltipTimeFormat)).formatted(Formatting.GRAY))
                     .append("   ").append(whoRow)
             )
-            add(Text.literal("").append(actionRow).apply { detail?.let { append("  ·  ").append(it) } })
+            add(Text.literal("").append(actionRow).apply { detailTooltip?.let { append("  ·  ").append(it) } })
             if (row.reason.isNotBlank()) {
                 add(Text.literal("").append(Text.translatable("cobblemarket.finance.reason_label")).append(BanState.reasonText(row.reason)))
             }
         }
-        return ChangeLine(text, tooltip)
+        // 第 1 行（动作 + 详情）里若是金额 ⇒ 标出来，绘制侧在行尾补画货币图标
+        val unitLines = if (priceAmounts) setOf(1) else emptySet()
+        return ChangeLine(text, tooltip, unitLines)
     }
 
     /** 变更记录列表（行样式照封禁那张账本） */
@@ -1046,7 +1064,10 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         if (hoveredRow >= 0) {
             val idx = scrollOffset + hoveredRow
             if (idx in changeLines.indices) {
-                renderTextTooltip(context, changeLines[idx].tooltip, mouseX, mouseY)
+                renderTextTooltip(
+                    context, changeLines[idx].tooltip, mouseX, mouseY,
+                    unitLines = changeLines[idx].tooltipUnitLines
+                )
             }
         }
     }
