@@ -93,8 +93,16 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     private val cardButtons = mutableListOf<Pair<NineSliceButton, String>>()
 
     // ── 页签 2：额度管理 ──
-    /** 被人工调整过额度的玩家（服务端实算的额度，不是全服） */
+    /**
+     * 被人工调整过额度的玩家（服务端实算的额度，不是全服）。
+     * ⚠⭐ 这张表里的「额度」是**算出来的**（`公式base + 人工修正 − 欠款`）⇒ 玩家在别处还一笔款，
+     *   这个数当场就变。放成静止快照就是**假数据**（用户 2026-10-05 实测：把某人调到 0，
+     *   那人还清欠款后自己看到 30，这边还显示 0）。⇒ 停留在这个页签时按 [CREDIT_REFRESH_MS] 重拉。
+     */
     private var creditRows = listOf<CreditRowInfo>()
+
+    /** 额度列表上次重拉的时刻（见 [creditRows] 的说明） */
+    private var lastCreditRefreshAt = 0L
     private var creditQueryField: TextFieldWidget? = null
     private var creditQueryButton: NineSliceButton? = null
     private val creditButtons = mutableListOf<NineSliceButton>()
@@ -167,6 +175,13 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
 
         /** 带表单行（搜索框等）的页签下标 —— 列表起始 y 与控件可见性都按它判 */
         val FORM_TABS = setOf(0, 2)
+
+        /**
+         * 额度列表的自动重拉间隔（照余额 HUD 那档 2 秒）—— 只在停留在额度页签、且没开弹窗时发。
+         * ⚠ 别的页签**不这么干**：禁借列表的「剩余时间」虽然也会走，但封禁管理那边同样是快照口径
+         *   （用户实测过、认可），为了保持一致不额外轮询；额度这里轮询是因为**行里的主内容就是个算出来的数**。
+         */
+        const val CREDIT_REFRESH_MS = 2000L
 
         /**
          * 禁借确认弹窗高度 —— 控件定位与背景绘制**共用这一个数**（照封禁那枚 `DIALOG_H` 的教训）。
@@ -818,6 +833,13 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         )
 
         renderCardTabIcons(context)
+
+        // 额度页签：定时重拉（行里那个数是算出来的，见 creditRows 的说明）。
+        // ⚠ 放在这里 ⇒ 弹窗开着时上面已经 return（不打扰正在填表的人）
+        if (currentTab == 2 && System.currentTimeMillis() - lastCreditRefreshAt >= CREDIT_REFRESH_MS) {
+            lastCreditRefreshAt = System.currentTimeMillis()
+            sendToServer(RequestCreditAdjustListPayload())
+        }
 
         if (currentTab in FORM_TABS) checkSuggestDebounce()
         if (suggestionsOpen) return
