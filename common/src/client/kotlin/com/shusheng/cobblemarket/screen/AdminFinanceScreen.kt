@@ -246,8 +246,11 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         addDrawableChild(blockBtn)
 
         // 额度管理页签的表单行：搜索框（同一个联想通道）+「调整额度」按钮
+        // ⚠ 宽度**不跟禁止借款那排一样**：那边中间要让给「时长」输入框（起于 +126），
+        //   这边没有时长框 ⇒ 搜索框一路占满到按钮左边留 4px（用户 2026-10-05 实测指出：
+        //   照搬 120 会在中间空出近百像素）
         val savedQuery = creditQueryField?.text ?: ""
-        creditQueryField = TextFieldWidget(textRenderer, leftX + 2, formRowY, 120, 16, Text.literal(""))
+        creditQueryField = TextFieldWidget(textRenderer, leftX + 2, formRowY, 214, 16, Text.literal(""))
         creditQueryField?.setPlaceholder(Text.translatable("cobblemarket.finance.player_name"))
         creditQueryField?.setChangedListener {
             if (suppressSuggest) {
@@ -742,7 +745,8 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         suggestions.drop(suggestScroll).take(MAX_SUGGESTION_ROWS).forEachIndexed { i, name ->
             val btn = NineSliceButton(
                 // ⚠ 起点**跟着表单行走**（写死数字会在页签换行时压到输入框上 —— 封禁界面栽过）
-                leftX + 2, formRowY + 18 + i * 14, 118, 14,
+                // ⚠ 宽度跟着**当前页签那个输入框**（额度管理的搜索框更长，联想列表跟着拉长才不别扭）
+                leftX + 2, formRowY + 18 + i * 14, queryField()?.width ?: 118, 14,
                 Text.literal(name),
                 {
                     suppressSuggest = true
