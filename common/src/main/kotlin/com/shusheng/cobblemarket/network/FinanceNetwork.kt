@@ -717,6 +717,85 @@ data class AdminCreditSetPayload(
     }
 }
 
+// ── 金融管理变更记录（跨来源账本：卡片 / 禁借 / 额度；照 `BanChangesPayload` 那对） ──
+
+/** C2S：请求金融管理变更记录（读的是服务端 CSV，全量、不分页） */
+class RequestFinanceChangesPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestFinanceChangesPayload>(CobbleMarket.id("request_finance_changes"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestFinanceChangesPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestFinanceChangesPayload() }
+        )
+    }
+}
+
+data class FinanceChangesPayload(val rows: List<Row>) : CustomPayload {
+
+    /**
+     * 一条变更记录。⚠ 与 `FinanceChangeRow`（CSV 那侧）**有意分开**（照 `BanChangesPayload.Row`）：
+     * 账本加列不该顺手改协议。
+     * ⚠ [operator] / [actionKey] / [reason] 可能是 `$` 开头的词条键 —— 显示前过 `BanState.reasonText`。
+     */
+    data class Row(
+        val timestamp: Long,
+        val operator: String,
+        val targetName: String,
+        val actionKey: String,
+        /** 禁借的时长毫秒（永久 = null）；其余动作为 null */
+        val durationMs: Long?,
+        /** 调整额度：改后的可用额度；其余为 null */
+        val value: Long?,
+        /** 调整额度：改前的可用额度；其余为 null */
+        val prevValue: Long?,
+        /** `purple` / `black`；非卡片动作为空串 */
+        val cardKind: String,
+        val reason: String
+    )
+
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<FinanceChangesPayload>(CobbleMarket.id("finance_changes"))
+        val CODEC: PacketCodec<PacketByteBuf, FinanceChangesPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeVarInt(p.rows.size)
+                p.rows.forEach { r ->
+                    b.writeLong(r.timestamp)
+                    b.writeString(r.operator)
+                    b.writeString(r.targetName)
+                    b.writeString(r.actionKey)
+                    b.writeBoolean(r.durationMs != null)
+                    r.durationMs?.let { b.writeLong(it) }
+                    b.writeBoolean(r.value != null)
+                    r.value?.let { b.writeLong(it) }
+                    b.writeBoolean(r.prevValue != null)
+                    r.prevValue?.let { b.writeLong(it) }
+                    b.writeString(r.cardKind)
+                    b.writeString(r.reason)
+                }
+            },
+            { b ->
+                val n = b.readVarInt()
+                // ⚠ 读端一律**具名传参**：顺序写错会静默串位（编译不报，那列显示会整体错位）
+                FinanceChangesPayload(List(n) {
+                    Row(
+                        timestamp = b.readLong(),
+                        operator = b.readString(),
+                        targetName = b.readString(),
+                        actionKey = b.readString(),
+                        durationMs = if (b.readBoolean()) b.readLong() else null,
+                        value = if (b.readBoolean()) b.readLong() else null,
+                        prevValue = if (b.readBoolean()) b.readLong() else null,
+                        cardKind = b.readString(),
+                        reason = b.readString()
+                    )
+                })
+            }
+        )
+    }
+}
+
 // ── 卡片持有者展示面板（喵喵银行界面两张卡下方，所有玩家可见） ──
 
 // ── C2S：请求持有者面板数据（进入喵喵银行时拉取） ──
@@ -858,6 +937,7 @@ object FinanceNetwork {
         registerS2CType(LoanBlockListPayload.ID, LoanBlockListPayload.CODEC)
         registerS2CType(CreditAdjustListPayload.ID, CreditAdjustListPayload.CODEC)
         registerS2CType(CreditLookupPayload.ID, CreditLookupPayload.CODEC)
+        registerS2CType(FinanceChangesPayload.ID, FinanceChangesPayload.CODEC)
         registerS2CType(CardHolderBoardPayload.ID, CardHolderBoardPayload.CODEC)
 
         // ── 应急贷款借款 ──
@@ -1029,7 +1109,7 @@ object FinanceNetwork {
                     }
                     state.depositReserve(fee)
                 }
-                state.addPurpleCardHolder(player.uuid)
+                state.addPurpleCardHolder(player.uuid, player.name.string, player.name.string)
                 broadcastCardHolderBoard(server)
                 val item = net.minecraft.registry.Registries.ITEM.get(CobbleMarket.id("meowth_purple_card"))
                 val added = player.inventory.insertStack(net.minecraft.item.ItemStack(item))
@@ -1118,9 +1198,9 @@ object FinanceNetwork {
                     }
                     state.depositReserve(fee)
                 }
-                state.addBlackCardHolder(player.uuid)
+                state.addBlackCardHolder(player.uuid, player.name.string, player.name.string)
                 // 黑卡是紫卡的升级替代：获得黑卡自动移除紫卡资格，并主动清除背包紫卡（自检有 OP 豁免）
-                state.removePurpleCardHolder(player.uuid)
+                state.removePurpleCardHolder(player.uuid, player.name.string, player.name.string)
                 com.shusheng.cobblemarket.finance.FinanceService.clearPurpleCardItems(player)
                 broadcastCardHolderBoard(server)
                 val item = net.minecraft.registry.Registries.ITEM.get(CobbleMarket.id("meowth_black_card"))
@@ -1195,8 +1275,9 @@ object FinanceNetwork {
                 } else {
                     Text.translatable("cobblemarket.card.purple_name")
                 }
-                val removed = if (payload.kind == "black") state.removeBlackCardHolder(payload.uuid)
-                else state.removePurpleCardHolder(payload.uuid)
+                val targetName = holderDisplayName(server, payload.uuid)
+                val removed = if (payload.kind == "black") state.removeBlackCardHolder(payload.uuid, player.name.string, targetName)
+                else state.removePurpleCardHolder(payload.uuid, player.name.string, targetName)
                 if (removed) {
                     com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                     broadcastCardHolderBoard(server)
@@ -1373,6 +1454,27 @@ object FinanceNetwork {
                 )
                 sendCreditAdjustList(player)
             }
+        }
+
+        // ── 金融管理：变更记录（读 CSV） ──
+        registerC2S(RequestFinanceChangesPayload.ID, RequestFinanceChangesPayload.CODEC) { _, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
+            // ⚠ **有意不套 `server.execute`**（照封禁账本那对）：读 CSV 是磁盘 IO，
+            //   丢回主线程反而会卡 tick；fabric 的 sendToPlayer 在这里是安全的
+            val rows = FinanceChangeLogger.readAll().map {
+                FinanceChangesPayload.Row(
+                    timestamp = it.timestamp,
+                    operator = it.operator,
+                    targetName = it.targetName,
+                    actionKey = it.actionKey,
+                    durationMs = it.durationMs,
+                    value = it.value,
+                    prevValue = it.prevValue,
+                    cardKind = it.cardKind,
+                    reason = it.reason
+                )
+            }
+            sendToPlayer(player, FinanceChangesPayload(rows))
         }
 
         // ── 活期存款（总开关只拦存款，取款永远开放——钱是玩家的不能卡） ──

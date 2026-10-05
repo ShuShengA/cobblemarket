@@ -248,12 +248,12 @@ object MarketCommands {
             return 0
         }
         if (black) {
-            state.addBlackCardHolder(player.uuid)
+            state.addBlackCardHolder(player.uuid, source.name, player.name.string)
             // 黑卡是紫卡的升级替代：获得黑卡自动移除紫卡资格，并主动清除背包紫卡（自检有 OP 豁免）
-            state.removePurpleCardHolder(player.uuid)
+            state.removePurpleCardHolder(player.uuid, source.name, player.name.string)
             com.shusheng.cobblemarket.finance.FinanceService.clearPurpleCardItems(player)
         } else {
-            state.addPurpleCardHolder(player.uuid)
+            state.addPurpleCardHolder(player.uuid, source.name, player.name.string)
         }
         com.shusheng.cobblemarket.network.FinanceNetwork.broadcastCardHolderBoard(server)
         player.inventory.insertStack(net.minecraft.item.ItemStack(item))
@@ -280,7 +280,8 @@ object MarketCommands {
         val black = kind == "black"
         val cardName = cardNameOf(kind)
         val state = com.shusheng.cobblemarket.finance.FinanceState.get(server)
-        val removed = if (black) state.removeBlackCardHolder(player.uuid) else state.removePurpleCardHolder(player.uuid)
+        val removed = if (black) state.removeBlackCardHolder(player.uuid, source.name, player.name.string)
+        else state.removePurpleCardHolder(player.uuid, source.name, player.name.string)
         if (!removed) {
             source.sendError(Text.translatable("cobblemarket.card.not_holder", player.name.string, cardName))
             return 0
@@ -316,7 +317,9 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
             return 0
         }
-        val removed = if (black) state.removeBlackCardHolder(uuid) else state.removePurpleCardHolder(uuid)
+        val targetName = displayNameOf(uuid) ?: name
+        val removed = if (black) state.removeBlackCardHolder(uuid, source.name, targetName)
+        else state.removePurpleCardHolder(uuid, source.name, targetName)
         if (!removed) {
             source.sendError(Text.translatable("cobblemarket.card.not_holder", name, cardName))
             return 0

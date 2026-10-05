@@ -3,7 +3,10 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.finance.FinanceChangeLogger
 import com.shusheng.cobblemarket.market.BanState
+import com.shusheng.cobblemarket.network.FinanceChangesPayload
+import com.shusheng.cobblemarket.network.RequestFinanceChangesPayload
 import com.shusheng.cobblemarket.network.AdminCreditSetPayload
 import com.shusheng.cobblemarket.network.AdminLoanBlockPayload
 import com.shusheng.cobblemarket.network.AdminLoanUnblockPayload
@@ -99,6 +102,14 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     private var creditReasonField: TextFieldWidget? = null
     private val creditDialogButtons = mutableListOf<NineSliceButton>()
 
+    // ── 页签 3：变更记录 ──
+    /**
+     * 一条变更记录 → 行内文本 + 悬停窗内容（**数据到达时算一次**，render 每帧只读 ——
+     * 时间格式化 + 词条拼接每帧现算，在全量列表上就是可见的掉帧源，照 `AdminBanScreen`）。
+     */
+    private data class ChangeLine(val text: Text, val tooltip: List<Text>)
+    private var changeLines = listOf<ChangeLine>()
+
     private var backButton: NineSliceButton? = null
     private var infoButton: NineSliceButton? = null
 
@@ -147,7 +158,8 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             TabSpec("cobblemarket.finance.tab_loan_block", TAB_W),
             // 「卡片管理」用**两张卡图标**（用户 2026-10-05 定：就是原来喵喵银行那枚按钮的样子）
             TabSpec("cobblemarket.finance.tab_cards", TAB_W_ICON, icon = true),
-            TabSpec("cobblemarket.finance.tab_credit", TAB_W)
+            TabSpec("cobblemarket.finance.tab_credit", TAB_W),
+            TabSpec("cobblemarket.finance.tab_changes", TAB_W)
         )
 
         /** 带表单行（搜索框等）的页签下标 —— 列表起始 y 与控件可见性都按它判 */
@@ -166,6 +178,12 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
          *       按钮 126(h20) / 距底边框 10（约定值）
          */
         const val CREDIT_DIALOG_H = 156
+
+        /** 变更记录**行内**的时间：只到分钟就够（当天看的是"什么时候"的大致位置） */
+        private val changeTimeFormat = java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm")
+
+        /** 悬停窗里的时间：给**完整日期 + 秒** —— 账本本来就是按秒记的，查账时要能对得上 */
+        private val changeTooltipTimeFormat = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     }
 
     override fun init() {
@@ -261,7 +279,10 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         when (currentTab) {
             0 -> sendToServer(RequestLoanBlockListPayload())
             1 -> sendToServer(RequestCardHolderListPayload())
-            else -> sendToServer(RequestCreditAdjustListPayload())
+            2 -> sendToServer(RequestCreditAdjustListPayload())
+            // ⚠⭐ 变更记录**每次切过来都重拉**（照封禁那张账本）：刚在别的页签做过的操作、
+            //   别的管理员做的、系统的，都可能在你停留期间出现 —— 写成"只拉一次"就会一直显示旧数据
+            else -> sendToServer(RequestFinanceChangesPayload())
         }
     }
 
@@ -278,7 +299,9 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     private fun rebuildTabs() {
         tabButtons.forEach { remove(it) }
         tabButtons.clear()
-        val perRow = 3
+        // ≤3 枚一行；4 枚起分两行、且**两行一样多**（4 ⇒ 2+2、5 ⇒ 3+2）——
+        // 用 3+1 会在第二行留一枚孤零零的页签，看着像没做完
+        val perRow = if (TABS.size <= 3) 3 else (TABS.size + 1) / 2
         val gap = 4
         // 每行按**本行实际那几枚**的宽度和居中（各枚宽度不同 ⇒ 必须逐枚累加，不能拿「枚数×统一宽」算）
         val rows = TABS.indices.groupBy { it / perRow }
@@ -388,7 +411,8 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     private fun rowCount() = when (currentTab) {
         0 -> entries.size
         1 -> cardEntries.size
-        else -> creditRows.size
+        2 -> creditRows.size
+        else -> changeLines.size
     }
 
     // ── 行按钮 ──
@@ -436,6 +460,8 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             }
             return
         }
+        // 页签 3（变更记录）没有行按钮 —— 上面两个分支都没命中就到这里，直接收工
+        if (currentTab != 1) return
         // 页签 1：卡片管理 —— 卡组（图标 + 按钮）右对齐行尾，双持时紫组在黑组左侧
         // （算式照 `CardManageScreen`：按钮永远在行末尾，图标在按钮左）
         val rightEdge = leftX + panelWidth - 8
@@ -783,7 +809,103 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         when (currentTab) {
             0 -> renderBlockList(context, centerX, leftX, mouseX, mouseY)
             1 -> renderCardList(context, centerX, leftX, mouseX, mouseY)
-            else -> renderCreditList(context, centerX, leftX, mouseX, mouseY)
+            2 -> renderCreditList(context, centerX, leftX, mouseX, mouseY)
+            else -> renderChangeList(context, centerX, leftX, mouseX, mouseY)
+        }
+    }
+
+    /** 变更记录回包 → 行文本与悬停内容（**在这里算一次**，render 每帧只读） */
+    fun onFinanceChanges(payload: FinanceChangesPayload) {
+        changeLines = payload.rows.map { buildChangeLine(it) }
+        scrollOffset = scrollOffset.coerceIn(0, maxOf(0, changeLines.size - maxVisible()))
+    }
+
+    /** 一条变更记录 → 行内文本 + 悬停窗（两处的分段与配色一一对应，照封禁那张账本） */
+    private fun buildChangeLine(row: FinanceChangesPayload.Row): ChangeLine {
+        fun at(format: java.time.format.DateTimeFormatter) = format.format(
+            java.time.Instant.ofEpochMilli(row.timestamp).atZone(java.time.ZoneId.systemDefault())
+        )
+        val whoRow = Text.literal("${BanState.reasonText(row.operator).string} → ${row.targetName}")
+            .formatted(Formatting.GOLD)
+        fun actionKeyOf(k: String) = "$k".removePrefix("\$")
+        val actionRow = Text.translatable(actionKeyOf(row.actionKey)).formatted(
+            when (row.actionKey) {
+                FinanceChangeLogger.ACTION_CARD_GRANT, FinanceChangeLogger.ACTION_LOAN_UNBLOCK -> Formatting.GREEN
+                FinanceChangeLogger.ACTION_CARD_REVOKE, FinanceChangeLogger.ACTION_LOAN_BLOCK -> Formatting.RED
+                else -> Formatting.YELLOW   // 调整额度：不是"加"也不是"撤"，给个中性又显眼的色
+            }
+        )
+        // 详情按动作类型拼（**每类只有一两段**，空的就不显示）：
+        //   卡片 ⇒ 卡种；禁借 ⇒ 时长；调额度 ⇒ 额度：改前 → 改后
+        // ⚠ 先取成局部变量：这几个字段来自别的模块（`network`），Kotlin 不给做智能转换
+        val kind = row.cardKind
+        val durationMs = row.durationMs
+        val value = row.value
+        val prevValue = row.prevValue
+        val detail: Text? = when {
+            kind.isNotBlank() -> Text.translatable(
+                if (kind == "black") "cobblemarket.card.black_name" else "cobblemarket.card.purple_name"
+            )
+            durationMs != null -> BanState.remainingText(durationMs)
+            value != null -> Text.translatable(
+                "cobblemarket.finance.changes_credit",
+                formatPriceLong(prevValue ?: 0L), formatPriceLong(value)
+            )
+            else -> null
+        }
+
+        // 行内：时间 · 执行者→目标 · 动作 [· 详情] [· 理由]
+        // ⚠ 全部**平级**挂在空父节点下：带色的段自己带色，` · ` 这些陪衬文字不设色（吃行色）
+        val text = Text.literal("")
+            .append(Text.literal(at(changeTimeFormat)).formatted(Formatting.GRAY)).append("  ·  ")
+            .append(whoRow).append("  ·  ")
+            .append(actionRow)
+        detail?.let { text.append("  ·  ").append(it) }
+        if (row.reason.isNotBlank()) text.append("  ·  ").append(BanState.reasonText(row.reason))
+
+        // 悬停窗：同样的分段各自成行（时间给到秒），颜色与行内一一对应
+        val tooltip = buildList {
+            add(
+                Text.literal("").append(Text.literal(at(changeTooltipTimeFormat)).formatted(Formatting.GRAY))
+                    .append("   ").append(whoRow)
+            )
+            add(Text.literal("").append(actionRow).apply { detail?.let { append("  ·  ").append(it) } })
+            if (row.reason.isNotBlank()) {
+                add(Text.literal("").append(Text.translatable("cobblemarket.ban.reason_label")).append(BanState.reasonText(row.reason)))
+            }
+        }
+        return ChangeLine(text, tooltip)
+    }
+
+    /** 变更记录列表（行样式照封禁那张账本） */
+    private fun renderChangeList(context: DrawContext, centerX: Int, leftX: Int, mouseX: Int, mouseY: Int) {
+        if (changeLines.isEmpty()) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.finance.changes_empty").formatted(Formatting.GRAY),
+                centerX, listStartY() + 30, 0xFFFFFF
+            )
+            return
+        }
+        changeLines.drop(scrollOffset).take(maxVisible()).forEachIndexed { i, line ->
+            val y = listStartY() + i * rowHeight
+            // ⚠⭐ 必须 truncateStyled：`truncateText` 会把分段颜色压平成一段（封禁界面实测报过）
+            context.drawTextWithShadow(
+                textRenderer, TextUtil.truncateStyled(line.text, panelWidth - 8), leftX + 4, y + 7, 0xFFFFFF
+            )
+        }
+        if (changeLines.size > maxVisible()) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                "${scrollOffset + 1}-${minOf(scrollOffset + maxVisible(), changeLines.size)} / ${changeLines.size}",
+                centerX, height - 49, 0x888888
+            )
+        }
+        if (hoveredRow >= 0) {
+            val idx = scrollOffset + hoveredRow
+            if (idx in changeLines.indices) {
+                renderTextTooltip(context, changeLines[idx].tooltip, mouseX, mouseY)
+            }
         }
     }
 

@@ -35,6 +35,7 @@ import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
 import com.shusheng.cobblemarket.network.CreditAdjustListPayload
 import com.shusheng.cobblemarket.network.CreditLookupPayload
+import com.shusheng.cobblemarket.network.FinanceChangesPayload
 import com.shusheng.cobblemarket.network.LoanBlockListPayload
 import com.shusheng.cobblemarket.network.LoanHistoryDataPayload
 import com.shusheng.cobblemarket.network.RepayListDataPayload
@@ -409,6 +410,14 @@ object CobbleMarketClient {
             client.execute {
                 val screen = client.currentScreen
                 if (screen is AdminFinanceScreen) screen.onCreditLookup(payload)
+            }
+        }
+
+        // 金融管理变更记录（金融管理界面的「变更记录」页签）
+        registerS2C(FinanceChangesPayload.ID, FinanceChangesPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                val screen = MinecraftClient.getInstance().currentScreen
+                if (screen is AdminFinanceScreen) screen.onFinanceChanges(payload)
             }
         }
 
