@@ -315,17 +315,25 @@ class FinanceState private constructor() : PersistentState() {
 
     fun isPurpleCardHolder(uuid: UUID): Boolean = uuid in purpleCardHolders
 
-    fun addPurpleCardHolder(uuid: UUID): Boolean {
+    /**
+     * 加紫卡。**审计账本收口在这里**（发放/收回共 4 个函数）—— 玩家自己申请 / 管理员命令
+     * 这些入口全部自动覆盖，不会漏记。
+     * @param operator 谁发的（玩家自己申请 = 他的名字；管理员命令 = 他的名 / 控制台 = "Server"）
+     * @param targetName 持卡人名字（`FinanceState` 只有 UUID，名字由调用方给）
+     */
+    fun addPurpleCardHolder(uuid: UUID, operator: String, targetName: String): Boolean {
         if (!purpleCardHolders.add(uuid)) return false
         purpleCardAddedAt[uuid] = System.currentTimeMillis()
         markDirty()
+        FinanceChangeLogger.log(operator, targetName, uuid, FinanceChangeLogger.ACTION_CARD_GRANT, cardKind = "purple")
         return true
     }
 
-    fun removePurpleCardHolder(uuid: UUID): Boolean {
+    fun removePurpleCardHolder(uuid: UUID, operator: String, targetName: String): Boolean {
         if (!purpleCardHolders.remove(uuid)) return false
         purpleCardAddedAt.remove(uuid)
         markDirty()
+        FinanceChangeLogger.log(operator, targetName, uuid, FinanceChangeLogger.ACTION_CARD_REVOKE, cardKind = "purple")
         return true
     }
 
@@ -340,17 +348,20 @@ class FinanceState private constructor() : PersistentState() {
 
     fun isBlackCardHolder(uuid: UUID): Boolean = uuid in blackCardHolders
 
-    fun addBlackCardHolder(uuid: UUID): Boolean {
+    /** 加黑卡；[operator] / [targetName] 同 [addPurpleCardHolder]（账本收口在同一套里） */
+    fun addBlackCardHolder(uuid: UUID, operator: String, targetName: String): Boolean {
         if (!blackCardHolders.add(uuid)) return false
         blackCardAddedAt[uuid] = System.currentTimeMillis()
         markDirty()
+        FinanceChangeLogger.log(operator, targetName, uuid, FinanceChangeLogger.ACTION_CARD_GRANT, cardKind = "black")
         return true
     }
 
-    fun removeBlackCardHolder(uuid: UUID): Boolean {
+    fun removeBlackCardHolder(uuid: UUID, operator: String, targetName: String): Boolean {
         if (!blackCardHolders.remove(uuid)) return false
         blackCardAddedAt.remove(uuid)
         markDirty()
+        FinanceChangeLogger.log(operator, targetName, uuid, FinanceChangeLogger.ACTION_CARD_REVOKE, cardKind = "black")
         return true
     }
 
