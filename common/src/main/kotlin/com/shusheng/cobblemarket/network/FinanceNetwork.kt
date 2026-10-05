@@ -1290,8 +1290,6 @@ object FinanceNetwork {
                 if (removed) {
                     com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                     broadcastCardHolderBoard(server)
-                    // 通知持卡人本人（原先只发给了管理员 —— 他那边是"卡凭空消失"）
-                    com.shusheng.cobblemarket.finance.FinanceService.notifyCardRevoked(server, payload.uuid, payload.kind)
                 }
                 player.sendMessage(
                     Text.translatable(

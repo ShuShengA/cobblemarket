@@ -448,23 +448,6 @@ object FinanceService {
         }
     }
 
-    /**
-     * 卡片被**收回**时给持卡人一句通知（人不在线就只留账本，回来自己会看到额度变了）。
-     *
-     * ⚠ 原先收回是**完全静默**的：`clearPurpleCardItems` 直接把背包那张卡 `setStack(EMPTY)`、
-     *   额度也跟着降，而消息只发给了**管理员** ⇒ 玩家那边"卡凭空消失、没有任何说明"
-     *   （用户 2026-10-05 追问额度通知时一并核出来的）。与额度那条通知同一口径。
-     */
-    fun notifyCardRevoked(server: MinecraftServer, uuid: UUID, kind: String) {
-        server.playerManager.getPlayer(uuid)?.sendMessage(
-            Text.translatable(
-                "cobblemarket.card.revoked_notice",
-                Text.translatable(if (kind == "black") "cobblemarket.card.black_name" else "cobblemarket.card.purple_name")
-            ).formatted(Formatting.RED),
-            false
-        )
-    }
-
     /** 在线服主广播（坏账告警）—— 只发给服主：改事件只有他能处置 */
     private fun notifyOps(server: MinecraftServer, text: Text) {
         server.playerManager.playerList.forEach { p ->
