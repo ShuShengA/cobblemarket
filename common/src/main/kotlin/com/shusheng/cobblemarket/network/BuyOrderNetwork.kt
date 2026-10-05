@@ -480,6 +480,15 @@ object BuyOrderNetwork {
     /** 备注最大长度（字符，服务端钳制；客户端输入框同值限制） */
     const val NOTE_MAX_LENGTH = 100
 
+    /**
+     * 特性 / 性格 / 形态 aspect 这几个**键**的单条字符上限。
+     *
+     * ⚠ 条目**条数**有 `MAX_ASPECTS` 兜着，但**单条长度**原先没人管 —— 正常形如
+     * `cobblemon.ability.xxx` 只有几十字符，而 `readString()` 默认能塞 32KB/条 ⇒
+     * 一条订单可把存档撑大 2MB，且它还会随 `broadcastEvent` 发给每个在线玩家、每次拉列表再发一遍。
+     */
+    const val MAX_KEY_LENGTH = 64
+
     fun register() {
         registerS2CType(BuyOrderListDataPayload.ID, BuyOrderListDataPayload.CODEC)
         registerS2CType(BuyOrderEventPayload.ID, BuyOrderEventPayload.CODEC)
@@ -560,10 +569,11 @@ object BuyOrderNetwork {
                     ivSpAtk = payload.ivSpAtk.coerceIn(-1, 31),
                     ivSpDef = payload.ivSpDef.coerceIn(-1, 31),
                     ivSpd = payload.ivSpd.coerceIn(-1, 31),
-                    // 归一化：含 "*" 即不限形态，其余 aspect 原样存
-                    aspects = if (PokemonBlacklistEntry.ALL_FORMS in payload.aspects) listOf(PokemonBlacklistEntry.ALL_FORMS) else payload.aspects,
-                    abilityKey = payload.abilityKey.trim().ifEmpty { null },
-                    natureKey = payload.natureKey.trim().ifEmpty { null },
+                    // 归一化：含 "*" 即不限形态，其余 aspect 原样存（⚠ 每条都截断，见 MAX_KEY_LENGTH）
+                    aspects = if (PokemonBlacklistEntry.ALL_FORMS in payload.aspects) listOf(PokemonBlacklistEntry.ALL_FORMS)
+                    else payload.aspects.map { it.take(MAX_KEY_LENGTH) },
+                    abilityKey = payload.abilityKey.trim().take(MAX_KEY_LENGTH).ifEmpty { null },
+                    natureKey = payload.natureKey.trim().take(MAX_KEY_LENGTH).ifEmpty { null },
                     itemId = "",
                     totalCount = 1,
                     remainingCount = 1,
