@@ -1423,7 +1423,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
         // ⚠ 两行都居中（2026-10-03 用户指出：原先和输入框一起写成 centerX-80 左对齐 ⇒ 整块偏左 30px）
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.item.buy_count").string + "（" + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}）",
+            Text.translatable("cobblemarket.item.buy_count").string + com.shusheng.cobblemarket.util.TextUtil.parenOpen() + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}" + com.shusheng.cobblemarket.util.TextUtil.parenClose(),
             centerX, L.labelY, 0xAAAAAA)
         // ⚠ 金额与单位拆开画（物品货币时单位是物品图标，而不是物品名长串）：词条的单位参数传空串占位，
         //   见 drawAmountLine —— 这是弹窗里唯一一处金额行，原先还停在 `displayCurrency` 文字拼接的旧写法
