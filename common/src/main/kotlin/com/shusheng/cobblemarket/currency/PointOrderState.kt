@@ -197,7 +197,7 @@ class PointOrderState private constructor() : PersistentState() {
         }
         expired.forEach {
             markVoid(it, PointOrderVoidReason.TIMEOUT, null, now)
-            PointOrderLogger.log(PointOrderLogType.VOID_TIMEOUT, it, "服务器（超时）")
+            PointOrderLogger.log(PointOrderLogType.VOID_TIMEOUT, it, "服务器（超时）", detailEn = "Server (timeout)")
         }
         return expired.size
     }

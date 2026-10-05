@@ -1295,7 +1295,8 @@ object PointsNetwork {
                         PointsAuditLogger.log(
                             PointsLogType.CODE_CREATE, boundUuid ?: java.util.UUID(0, 0), boundNameResolved ?: "-",
                             payload.amount * payload.uses, 0, player.name.string,
-                            "生成兑换码 ${PointCodes.format(code)}（面额 ${payload.amount} × ${payload.uses} 次）"
+                            "生成兑换码 ${PointCodes.format(code)}（面额 ${payload.amount} × ${payload.uses} 次）",
+                            detailEn = "Generated code ${PointCodes.format(code)} (value ${payload.amount} x ${payload.uses} uses)"
                         )
                     } catch (e: Exception) {
                         CobbleMarket.LOGGER.warn("Failed to audit point code create: {}", e.message)
@@ -1362,7 +1363,8 @@ object PointsNetwork {
                     // 批量操作记**一条汇总**（逐条写会把审计刷爆）
                     PointsAuditLogger.log(
                         PointsLogType.CODE_REVOKE, java.util.UUID(0, 0), "-", 0, 0, player.name.string,
-                        "清理已失效兑换码 ${dead.size} 张"
+                        "清理已失效兑换码 ${dead.size} 张",
+                        detailEn = "Purged ${dead.size} used-up or expired codes"
                     )
                 } catch (e: Exception) {
                     CobbleMarket.LOGGER.warn("Failed to audit point code purge: {}", e.message)
@@ -1389,7 +1391,8 @@ object PointsNetwork {
                 try {
                     PointsAuditLogger.log(
                         PointsLogType.CODE_REVOKE, java.util.UUID(0, 0), "-", 0, 0, player.name.string,
-                        "作废兑换码 ${PointCodes.format(code)}"
+                        "作废兑换码 ${PointCodes.format(code)}",
+                        detailEn = "Revoked code ${PointCodes.format(code)}"
                     )
                 } catch (e: Exception) {
                     CobbleMarket.LOGGER.warn("Failed to audit point code revoke: {}", e.message)

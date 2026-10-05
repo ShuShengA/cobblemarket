@@ -109,7 +109,7 @@ object PointShopService {
             qrFile = tier.qr.ifBlank { CobbleMarketConfig.pointsShopPayQrImage },
             now = now
         ) ?: return PointShopResult.Failure(PointShopError.GENERATE_FAILED)
-        PointOrderLogger.log(PointOrderLogType.CREATE, order, playerName, "档位 ${tier.name}")
+        PointOrderLogger.log(PointOrderLogType.CREATE, order, playerName, "档位 ${tier.name}", detailEn = "Tier ${tier.name}")
         PersistHelper.requestSave(server)
         return PointShopResult.Success(order)
     }
@@ -126,7 +126,7 @@ object PointShopService {
         // 同 PointOrderState.voidExpired：用减法避免 expireAt 为 Long.MAX_VALUE 时加法溢出
         if (order.status == PointOrderStatus.PENDING_PAYMENT && now - PAYMENT_GRACE_MS > order.expireAt) {
             state.markVoid(order, PointOrderVoidReason.TIMEOUT, null, now)
-            PointOrderLogger.log(PointOrderLogType.VOID_TIMEOUT, order, "服务器（超时）")
+            PointOrderLogger.log(PointOrderLogType.VOID_TIMEOUT, order, "服务器（超时）", detailEn = "Server (timeout)")
             PersistHelper.requestSave(server)
             return PointShopResult.Failure(PointShopError.EXPIRED)
         }

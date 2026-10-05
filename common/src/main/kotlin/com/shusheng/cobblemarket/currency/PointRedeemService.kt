@@ -82,7 +82,8 @@ object PointRedeemService {
             val after = PointsState.get(server).addBalance(player.uuid, external.amount)
             PointsAuditLogger.log(
                 PointsLogType.REDEEM, player.uuid, player.name.string, external.amount, after,
-                player.name.string, "外部码 serial=${external.serial}"
+                player.name.string, "外部码 serial=${external.serial}",
+                detailEn = "External code serial=${external.serial}"
             )
             remember(server, player, external.amount, after, now)
             failures.remove(player.uuid)
@@ -102,7 +103,8 @@ object PointRedeemService {
         val after = PointsState.get(server).addBalance(player.uuid, entry.amount)
         PointsAuditLogger.log(
             PointsLogType.REDEEM, player.uuid, player.name.string, entry.amount, after,
-            player.name.string, "兑换码 ${PointCodes.format(entry.code)}"
+            player.name.string, "兑换码 ${PointCodes.format(entry.code)}",
+            detailEn = "Code ${PointCodes.format(entry.code)}"
         )
         remember(server, player, entry.amount, after, now)
         failures.remove(player.uuid)
