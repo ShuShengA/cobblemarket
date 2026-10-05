@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.TooltipPlacement
+import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.finance.FinanceChangeLogger
@@ -540,7 +541,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         })
 
         reasonField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 92, 160, 16, Text.literal(""))
-        reasonField?.setPlaceholder(Text.translatable("cobblemarket.ban.reason"))
+        reasonField?.setPlaceholder(Text.translatable("cobblemarket.finance.reason"))
         reasonField?.setTextPredicate { it.length <= 100 }
         addDrawableChild(reasonField)
 
@@ -548,7 +549,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         confirmButtons.clear()
         val confirmBtn = NineSliceButton(
             centerX - 85, dialogY + 118, 80, 20,
-            Text.translatable("cobblemarket.ban.confirm"),
+            Text.translatable("cobblemarket.finance.confirm_block"),
             { confirmBlock() }
         )
         val cancelBtn = NineSliceButton(
@@ -578,7 +579,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         )
         context.drawTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.ban.target").string + pendingName,
+            Text.translatable("cobblemarket.finance.target").string + pendingName,
             dialogX + 12, dialogY + 40, 0xFFFFFF
         )
         context.drawTextWithShadow(
@@ -591,7 +592,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         //   按钮 118）：两个弹窗长得一样，改一处记得另一处一起看
         context.drawTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.ban.duration_label").string +
+            Text.translatable("cobblemarket.finance.duration_label").string +
                 pendingDuration.ifBlank { Text.translatable("cobblemarket.ban.permanent").string },
             dialogX + 12, dialogY + 76, 0xFFFFFF
         )
@@ -641,7 +642,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         addDrawableChild(creditAmountField)
 
         creditReasonField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 100, 160, 16, Text.literal(""))
-        creditReasonField?.setPlaceholder(Text.translatable("cobblemarket.ban.reason"))
+        creditReasonField?.setPlaceholder(Text.translatable("cobblemarket.finance.reason"))
         creditReasonField?.setTextPredicate { it.length <= 100 }
         addSelectableChild(creditReasonField)
         addDrawableChild(creditReasonField)
@@ -650,7 +651,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         creditDialogButtons.clear()
         val ok = NineSliceButton(
             centerX - 85, dialogY + 126, 80, 20,
-            Text.translatable("cobblemarket.ban.confirm"),
+            Text.translatable("cobblemarket.finance.confirm_set"),
             { confirmCreditSet() }
         )
         val cancel = NineSliceButton(
@@ -681,14 +682,20 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         )
         context.drawTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.ban.target").string + row.playerName,
+            Text.translatable("cobblemarket.finance.target").string + row.playerName,
             dialogX + 12, dialogY + 40, 0xFFFFFF
         )
-        // 当前额度：让服主知道"从多少改成多少"（不然填数字全靠猜）
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable("cobblemarket.finance.credit_current", formatPriceLong(row.limit)),
-            dialogX + 12, dialogY + 58, 0xFFFFFF
+        // 当前额度：让服主知道"从多少改成多少"（不然填数字全靠猜）。
+        // ⚠⭐ 金额的**两个必备元素**：① 颜色走金额蓝 `0x55FFFF`（能花才用金）② 必须带**货币单位** ——
+        //   而单位可能是符号 `₽`、也可能是**物品图标**（物品本位货币）⇒ 只能走 `CurrencyDisplay`：
+        //   词条的单位参数传**空串占位**，再单独补画单位（照 `MeowthBankScreen` 的可借上限那两行）
+        val limitLine = Text.translatable(
+            "cobblemarket.finance.credit_current", formatPriceLong(row.limit), Text.literal("")
+        )
+        context.drawTextWithShadow(textRenderer, limitLine, dialogX + 12, dialogY + 58, 0x55FFFF)
+        drawCurrencyUnit(
+            context, textRenderer,
+            dialogX + 12 + textRenderer.getWidth(limitLine), dialogY + 58, 0x55FFFF
         )
     }
 
@@ -875,7 +882,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             )
             add(Text.literal("").append(actionRow).apply { detail?.let { append("  ·  ").append(it) } })
             if (row.reason.isNotBlank()) {
-                add(Text.literal("").append(Text.translatable("cobblemarket.ban.reason_label")).append(BanState.reasonText(row.reason)))
+                add(Text.literal("").append(Text.translatable("cobblemarket.finance.reason_label")).append(BanState.reasonText(row.reason)))
             }
         }
         return ChangeLine(text, tooltip)
@@ -950,7 +957,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     /** 额度行的悬停窗：把行内被截断的东西给全（额度是主信息，另有修正量与是否持卡） */
     private fun renderCreditTooltip(context: DrawContext, row: CreditRowInfo, mouseX: Int, mouseY: Int) {
         val lines: List<Text> = buildList {
-            add(Text.literal("${Text.translatable("cobblemarket.ban.target").string} ${row.playerName}"))
+            add(Text.literal("${Text.translatable("cobblemarket.finance.target").string} ${row.playerName}"))
             add(Text.translatable("cobblemarket.finance.credit_amount", formatPriceLong(row.limit)))
             if (row.adjust != 0L) {
                 add(Text.translatable("cobblemarket.finance.credit_adjust_amount", formatPriceLong(row.adjust)))
@@ -1113,7 +1120,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
      */
     private fun renderBlockTooltip(context: DrawContext, e: LoanBlockInfo, mouseX: Int, mouseY: Int) {
         val lines: List<Text> = buildList {
-            add(Text.literal("${Text.translatable("cobblemarket.ban.target").string} ${e.playerName}"))
+            add(Text.literal("${Text.translatable("cobblemarket.finance.target").string} ${e.playerName}"))
             add(Text.literal("${Text.translatable("cobblemarket.ban.by").string} ${BanState.reasonText(e.blockedBy).string}"))
             add(
                 Text.translatable(
@@ -1122,7 +1129,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
                     else BanState.remainingText(e.remainingMs)
                 )
             )
-            add(Text.literal("${Text.translatable("cobblemarket.ban.reason_label").string} ${BanState.reasonText(e.reason).string.ifBlank { "-" }}"))
+            add(Text.literal("${Text.translatable("cobblemarket.finance.reason_label").string} ${BanState.reasonText(e.reason).string.ifBlank { "-" }}"))
         }
         // 悬停窗不许盖掉本行的「解除」按钮
         renderTextTooltip(context, lines, mouseX, mouseY, avoid = rowButtonRect(hoveredRow))
@@ -1130,7 +1137,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
 
     private fun renderCardTooltip(context: DrawContext, e: CardHolderEntry, mouseX: Int, mouseY: Int) {
         val lines: List<Text> = buildList {
-            add(Text.literal("${Text.translatable("cobblemarket.ban.target").string} ${e.name}"))
+            add(Text.literal("${Text.translatable("cobblemarket.finance.target").string} ${e.name}"))
             if (e.holdsPurple) add(Text.translatable("cobblemarket.card.purple_name"))
             if (e.holdsBlack) add(Text.translatable("cobblemarket.card.black_name"))
         }
