@@ -208,6 +208,32 @@ data class SetMarketEnabledPayload(val enabled: Boolean) : CustomPayload {
  *  服务端 take 钳制 + toSet() 把「挂单数 × ID 数」线性查找降为 O(1) */
 private const val MAX_ITEM_IDS = 256
 
+/** TM 招式 / 附魔搜索集合的条数上限（同 [MAX_ITEM_IDS] 的理由 —— 客户端可控长度） */
+private const val MAX_SEARCH_TERMS = 256
+
+/**
+ * 「我的精灵」分页请求的最小间隔。
+ *
+ * ⚠ 用**宽松节流**而不是"只给 page 0 节流"：正常客户端是「收到响应才发下一页」（一个往返），
+ *   但**伪造客户端不等响应** ⇒ 原先那道只拦 page 0 的节流等于给连发开了绿灯，
+ *   而每个包都要遍历 PC + 构造最多 100 条预览。
+ * 100ms ≈ 人手连点的极限（翻页只有点击触发、没有连发循环），正常翻页无感，连发轰炸被压到 10 Hz。
+ */
+private const val POKEMON_PAGE_INTERVAL_MS = 100L
+
+/**
+ * 读一个**有界**的字符串列表（长度前缀越界直接抛）。
+ *
+ * ⚠⭐ 必须在**解码期**拦：payload 的解码发生在 handler **之前**（网络线程），
+ *   handler 里的节流 / 权限**根本轮不到** ⇒ 无界的 `(0 until n).map {}` 会被一个几十字节的包
+ *   变成一次巨型分配（`n` 写 `Int.MAX_VALUE` 即 OOM）。照 `PointMarketNetwork` 的同一写法。
+ */
+private fun PacketByteBuf.readBoundedStrings(max: Int, what: String): List<String> {
+    val n = readVarInt()
+    if (n < 0 || n > max) throw IllegalArgumentException("$what size out of range: $n")
+    return (0 until n).map { readString() }
+}
+
 fun toggleMarketEnabled(server: net.minecraft.server.MinecraftServer, enabled: Boolean) {
     com.shusheng.cobblemarket.config.CobbleMarketConfig.setMarketEnabled(enabled)
     // 全服播报：开市/停市音效由客户端在收到 MarketStatePayload 时自己播（见 CobbleMarketClient），
@@ -830,9 +856,9 @@ data class RequestItemMarketPayload(
             { b ->
                 RequestItemMarketPayload(
                     b.readString(), b.readInt(), b.readBoolean(), b.readInt(), b.readString(),
-                    (0 until b.readVarInt()).map { b.readString() },
-                    (0 until b.readVarInt()).map { b.readString() },
-                    (0 until b.readVarInt()).map { b.readString() }
+                    b.readBoundedStrings(MAX_ITEM_IDS, "itemIds"),
+                    b.readBoundedStrings(MAX_SEARCH_TERMS, "tmMoves"),
+                    b.readBoundedStrings(MAX_SEARCH_TERMS, "enchants")
                 )
             }
         )
@@ -1750,9 +1776,16 @@ object MarketNetwork {
                     if (query.isEmpty()) list
                     // 同一个搜索框也匹配**卖家名**（2026-09-24 与管理端的两个搜索框合并），
                     // 与拍卖场的客户端过滤同一语义
-                    else list.filter {
-                        it.sellerName.contains(query, ignoreCase = true) ||
-                            matchesItemQuery(it.itemId, it.itemNbt, payload.itemIds.take(MAX_ITEM_IDS).toSet(), payload.tmMoves.toSet(), payload.enchants.toSet(), server.overworld.registryManager)
+                    else {
+                        // ⚠ 三个集合**必须提到 lambda 外**：写在 lambda 里 = 每条挂单重建一次 Set，
+                        //   而列表长度客户端可控 ⇒ 「挂单数 × 列表长」次哈希插入（放大到千万级/请求）
+                        val idSet = payload.itemIds.take(MAX_ITEM_IDS).toSet()
+                        val moveSet = payload.tmMoves.toSet()
+                        val enchantSet = payload.enchants.toSet()
+                        list.filter {
+                            it.sellerName.contains(query, ignoreCase = true) ||
+                                matchesItemQuery(it.itemId, it.itemNbt, idSet, moveSet, enchantSet, server.overworld.registryManager)
+                        }
                     }
                 }
 
@@ -1844,9 +1877,10 @@ object MarketNetwork {
         registerC2S(RequestMyPokemonPayload.ID, RequestMyPokemonPayload.CODEC) { payload, player ->
             // page 超出合理范围直接丢弃，防 page * pageSize 溢出
             if (payload.page !in 0..10000) return@registerC2S
-            // page 0 是开关界面的入口，保留节流防刷；分页请求由响应驱动（拿到响应才会发下一个），
-            // 天然有节奏且只读无副作用，不节流——本地服务器往返 <1ms，500ms 冷却会把整条链全部拒掉。
-            if (payload.page == 0 && !RequestThrottle.allow(player.uuid, "request_my_pokemon", RequestThrottle.READ_INTERVAL_MS)) {
+            // ⚠ 原先只给 page 0 节流，理由是"分页由响应驱动、天然有节奏" —— 那是**正常客户端**的行为，
+            //   伪造客户端不等响应 ⇒ 连发 page 1..N 完全不受限，而每包都要遍历 PC + 造 100 条预览。
+            //   改用覆盖所有页的宽松节流（见 POKEMON_PAGE_INTERVAL_MS 的说明）。
+            if (!RequestThrottle.allow(player.uuid, "request_my_pokemon", POKEMON_PAGE_INTERVAL_MS)) {
                 return@registerC2S
             }
             val server = player.server
@@ -2433,9 +2467,15 @@ object MarketNetwork {
                     val query = payload.query.trim()
                     if (query.isEmpty()) list
                     // 同一个搜索框也匹配**卖家名**（2026-09-24，与精灵市场 / 拍卖场同一口径）
-                    else list.filter {
-                        it.sellerName.contains(query, ignoreCase = true) ||
-                            matchesItemQuery(it.itemId, it.itemNbt, payload.itemIds.take(MAX_ITEM_IDS).toSet(), payload.tmMoves.toSet(), payload.enchants.toSet(), server.overworld.registryManager)
+                    else {
+                        // ⚠ 三个集合**必须提到 lambda 外**（同管理端那份）—— 写在里面就是每条挂单重建一次
+                        val idSet = payload.itemIds.take(MAX_ITEM_IDS).toSet()
+                        val moveSet = payload.tmMoves.toSet()
+                        val enchantSet = payload.enchants.toSet()
+                        list.filter {
+                            it.sellerName.contains(query, ignoreCase = true) ||
+                                matchesItemQuery(it.itemId, it.itemNbt, idSet, moveSet, enchantSet, server.overworld.registryManager)
+                        }
                     }
                 }
 

@@ -21,6 +21,15 @@ import net.minecraft.server.network.ServerPlayerEntity
 import java.util.UUID
 
 /**
+ * 节点列表的**条数上限** —— 防伪造客户端塞超长列表（权限节点实际只有十几个，512 已是极度宽松）。
+ *
+ * ⚠⭐ **必须在解码期拦**：payload 的解码发生在 handler **之前**（网络线程），
+ * `isServerOwner` 那道门根本轮不到 ⇒ 无界的 `List(size)` 会让服务端**直接去分配**巨型数组
+ *（`size` 写 `Int.MAX_VALUE` 就是一个几十字节的包换一次 OOM）。照 `PointMarketNetwork` 同一写法。
+ */
+private const val MAX_PERMISSION_NODES = 512
+
+/**
  * 「添加一个还没有权限的玩家」时客户端填的占位 UUID —— 服务端见到它就改用 `playerName` 解析
  * （在线玩家 → userCache）。省掉一趟「先解析 UUID 再保存」的往返。
  */
@@ -75,6 +84,9 @@ data class PermissionSnapshotPayload(
             { b ->
                 val owner = b.readBoolean()
                 val size = b.readInt()
+                if (size < 0 || size > MAX_PERMISSION_NODES) {
+                    throw IllegalArgumentException("permission node count out of range: $size")
+                }
                 val nodes = List(size) { b.readString() }
                 PermissionSnapshotPayload(nodes, owner, b.readBoolean(), b.readBoolean())
             }
@@ -174,6 +186,9 @@ data class SavePlayerPermissionsPayload(
                 val uuid = b.readUuid()
                 val name = b.readString()
                 val size = b.readInt()
+                if (size < 0 || size > MAX_PERMISSION_NODES) {
+                    throw IllegalArgumentException("permission node count out of range: $size")
+                }
                 SavePlayerPermissionsPayload(uuid, name, List(size) { b.readString() })
             }
         )
