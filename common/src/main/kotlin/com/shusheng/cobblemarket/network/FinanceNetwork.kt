@@ -925,6 +925,15 @@ data class LoanHistoryDataPayload(val entries: List<LoanHistoryEntry>) : CustomP
 
 object FinanceNetwork {
 
+    /**
+     * 「卡片自助申请」这个来源的标记（`$` 前缀 = 词条键，账本按**客户端语言**渲染）。
+     *
+     * ⚠⭐ 玩家**自己**在界面上申请到的卡，账本的「执行者」**不能填他自己的名字** ——
+     *   那样会记成「Q → Q」，读起来像"服主给 Q 发了张卡"（用户 2026-10-05 实测指出）。
+     *   与封禁那边的「喵喵行长」（`$cobblemarket.ban.by_finance`）同款：**这不是任何人的操作**。
+     */
+    private const val CARD_SELF_APPLY = "\$cobblemarket.finance.by_self"
+
     fun register() {
         registerS2CType(CreditInfoPayload.ID, CreditInfoPayload.CODEC)
         registerS2CType(LoanHistoryDataPayload.ID, LoanHistoryDataPayload.CODEC)
@@ -1109,7 +1118,7 @@ object FinanceNetwork {
                     }
                     state.depositReserve(fee)
                 }
-                state.addPurpleCardHolder(player.uuid, player.name.string, player.name.string)
+                state.addPurpleCardHolder(player.uuid, CARD_SELF_APPLY, player.name.string)
                 broadcastCardHolderBoard(server)
                 val item = net.minecraft.registry.Registries.ITEM.get(CobbleMarket.id("meowth_purple_card"))
                 val added = player.inventory.insertStack(net.minecraft.item.ItemStack(item))
@@ -1198,9 +1207,9 @@ object FinanceNetwork {
                     }
                     state.depositReserve(fee)
                 }
-                state.addBlackCardHolder(player.uuid, player.name.string, player.name.string)
+                state.addBlackCardHolder(player.uuid, CARD_SELF_APPLY, player.name.string)
                 // 黑卡是紫卡的升级替代：获得黑卡自动移除紫卡资格，并主动清除背包紫卡（自检有 OP 豁免）
-                state.removePurpleCardHolder(player.uuid, player.name.string, player.name.string)
+                state.removePurpleCardHolder(player.uuid, CARD_SELF_APPLY, player.name.string)
                 com.shusheng.cobblemarket.finance.FinanceService.clearPurpleCardItems(player)
                 broadcastCardHolderBoard(server)
                 val item = net.minecraft.registry.Registries.ITEM.get(CobbleMarket.id("meowth_black_card"))
