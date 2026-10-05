@@ -597,7 +597,7 @@
   "cobblemarket.ban.reason_label": "封禁理由：",
   "cobblemarket.ban.confirm": "确认封禁",
   "cobblemarket.finance.title": "金融管理",
-  "cobblemarket.finance.entry_tip": "管理金融事务\n（禁止借款 / 卡片）",
+  "cobblemarket.finance.entry_tip": "管理金融事务\n（%s）",
   "cobblemarket.finance.info_tip": "这里管金融，不管市场交易\n· 禁止借款：名单里的人借不了钱\n· 卡片管理：持有者可在这里收回\n⚠ 封交易请去「封禁管理」界面",
   "cobblemarket.finance.tab_loan_block": "禁止借款",
   "cobblemarket.finance.target": "目标玩家：",

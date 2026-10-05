@@ -151,7 +151,8 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
                 width / 2 + 53, bgTop + 116, 56, 16,
                 Text.translatable("cobblemarket.finance.title"),
                 { client?.setScreen(AdminFinanceScreen()) },
-                tooltip = Text.translatable("cobblemarket.finance.entry_tip")
+                // ⚠ 页签清单**从 AdminFinanceScreen.TABS 生成**，别再手写（手写过一次、漏了两枚页签）
+                tooltip = Text.translatable("cobblemarket.finance.entry_tip", AdminFinanceScreen.tabListText())
             )
             addDrawableChild(financeButton)
         }
