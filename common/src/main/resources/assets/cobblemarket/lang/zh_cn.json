@@ -138,7 +138,7 @@
   "cobblemarket.perm.node.pricelimit.desc": "可给精灵 / 物品设价格上下限，\n超出范围的不能上架",
   "cobblemarket.perm.node.ban.desc": "可封禁 / 解封玩家、\n查看封禁名单（被封禁仍可取回资产）",
   "cobblemarket.perm.node.market.desc": "可下架任意玩家的精灵 / 物品",
-  "cobblemarket.perm.node.finance.desc": "可管理玩家卡片、查看全服借贷流水\n（撤销坏账仅服主）",
+  "cobblemarket.perm.node.finance.desc": "可管理玩家卡片、禁止借款、调整玩家额度\n还可查看全服借贷流水（撤销坏账仅服主）",
   "cobblemarket.perm.node.auction.desc": "可强制取消任意玩家的拍卖",
   "cobblemarket.perm.node.buyorder.desc": "可强制取消任意玩家的求购单",
   "cobblemarket.perm.node.marketswitch": "市场开关",
