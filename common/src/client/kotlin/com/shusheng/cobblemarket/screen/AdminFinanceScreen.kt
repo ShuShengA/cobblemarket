@@ -767,6 +767,9 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         }
         sendToServer(AdminCreditSetPayload(row.playerName, amount, creditReasonField?.text?.trim() ?: ""))
         closeCreditDialog()
+        // 确认后清空搜索框 —— 照封禁管理那边：主界面的输入框是"新操作"用的，
+        // 办完了把人家上次搜的名字留着，下次一点「调整额度」会直接查那个人（用户 2026-10-05 报的）
+        creditQueryField?.text = ""
     }
 
     private fun closeCreditDialog() {
