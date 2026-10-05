@@ -86,6 +86,8 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     private var entries = listOf<LoanBlockInfo>()
     private var hoveredRow = -1
     private var scrollOffset = 0
+    /** 行按钮待重建（下一帧做，见 [requestRowRebuild]） */
+    private var rowRebuildPending = false
     private val rowButtons = mutableListOf<NineSliceButton>()
 
     // ── 页签 1：卡片管理 ──
@@ -292,6 +294,9 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
 
         applyTabVisibility()
         scrollOffset = 0
+        // ⚠ 关弹窗走的是 `clearChildren()` + `init()` ⇒ 行按钮被清掉了，这里补一次重建请求
+        //   （只靠 `requestCurrentTabData` 的回包也行，但那要等一个网络来回、会看到按钮空一下）
+        requestRowRebuild()
         requestCurrentTabData()
     }
 
@@ -365,7 +370,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         lastRequestPrefix = null
         rebuildSuggestionList()
         applyTabVisibility()
-        rebuildRowButtons()
+        requestRowRebuild()
         requestCurrentTabData()
     }
 
@@ -385,19 +390,19 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     fun onLoanBlocks(payload: LoanBlockListPayload) {
         entries = payload.entries
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, entries.size - maxVisible()))
-        rebuildRowButtons()
+        requestRowRebuild()
     }
 
     fun onCardHolders(payload: CardHolderListPayload) {
         cardEntries = payload.entries
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, cardEntries.size - maxVisible()))
-        rebuildRowButtons()
+        requestRowRebuild()
     }
 
     fun onCreditRows(payload: CreditAdjustListPayload) {
         creditRows = payload.rows
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, creditRows.size - maxVisible()))
-        rebuildRowButtons()
+        requestRowRebuild()
     }
 
     /** 查询结果到达 ⇒ 打开调整弹窗（新额度预填当前额度，服主在上面改） */
@@ -437,6 +442,23 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
      * ⚠ 弹窗状态不止一个字段 —— 两处弹窗的判断都必须走这里，别再各写各的。
      */
     private fun dialogOpen() = pendingName.isNotEmpty() || creditTarget != null
+
+    /**
+     * 请求重建行按钮（**下一帧**才真建）+ **立刻把现有的全部藏掉**。
+     *
+     * ⚠⭐ 不能在 `mouseClicked` 的调用栈里 `remove()` 子元素 —— **该操作不可靠**（本项目既有结论，
+     *   封禁界面栽过，那里为此专门写了注释）。而**页签切换正是从按钮的 onPress 里调过来的** ⇒
+     *   旧页签的行按钮会残留下来，跟新页签的行按钮**重合**、点下去执行的还是旧页签那个
+     *   （用户 2026-10-05 实测：从额度管理切到禁止借款，「调整额度」压着「解除」，点了开的是额度弹窗）。
+     *
+     * ⇒ 一律延迟到下一帧（`render` 开头）重建；这中间先把旧的藏起来，别留那一下点得到的窗口。
+     */
+    private fun requestRowRebuild() {
+        rowButtons.forEach { it.visible = false }
+        cardButtons.forEach { (b, _) -> b.visible = false }
+        creditButtons.forEach { it.visible = false }
+        rowRebuildPending = true
+    }
 
     private fun rebuildRowButtons() {
         rowButtons.forEach { remove(it) }
@@ -780,7 +802,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     private fun rebuildSuggestionList() {
         if (!suggestionsOpen) {
             suggestionButtons.forEach { it.visible = false }
-            rebuildRowButtons()
+            requestRowRebuild()
             return
         }
         suggestionButtons.forEach { remove(it) }
@@ -834,6 +856,13 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         super.render(context, mouseX, mouseY, delta)
+
+        // 行按钮的延迟重建（见 requestRowRebuild：不能在 mouseClicked 栈里 remove 子元素）。
+        // ⚠ 放在最前面：别让"该建的没建"影响到本帧的悬停/绘制判断
+        if (rowRebuildPending) {
+            rowRebuildPending = false
+            rebuildRowButtons()
+        }
 
         // 任一弹窗开着就只画弹窗（弹窗内容由 addDrawable 那条路径画）
         if (pendingName.isNotEmpty() || creditTarget != null) return
@@ -1261,7 +1290,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             return true
         }
         scrollOffset = (scrollOffset - verticalAmount.toInt()).coerceIn(0, maxOf(0, rowCount() - maxVisible()))
-        rebuildRowButtons()
+        requestRowRebuild()
         return true
     }
 
