@@ -142,8 +142,23 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     private var lastRequestPrefix: String? = null
     private val suggestionButtons = mutableListOf<NineSliceButton>()
 
-    private companion object {
-        const val MAX_SUGGESTION_ROWS = 8
+    companion object {
+        /**
+         * 页签名连成一行（喵喵银行那枚「金融管理」入口按钮的悬停提示用）。
+         *
+         * ⚠⭐ **别再手写这份清单** —— 用户 2026-10-05 实测报的就是它漏了两枚页签
+         *   （提示里只有「禁止借款 / 卡片」，额度管理与变更记录都没写）。从 [TABS] 生成 ⇒ 增删页签自动跟上。
+         */
+        fun tabListText(): Text {
+            val out = Text.literal("")
+            TABS.forEachIndexed { i, spec ->
+                if (i > 0) out.append(Text.literal(" / "))
+                out.append(Text.translatable(spec.key))
+            }
+            return out
+        }
+
+        private const val MAX_SUGGESTION_ROWS = 8
 
         /** 文字页签的统一宽度（照权限管理 / 封禁管理那两屏的规格） */
         const val TAB_W = 80
@@ -167,7 +182,8 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
          * 当前实现的页签（**按实现进度往里加**；加一枚就自动重排 —— 每枚自己的宽度由 [TabSpec] 带，
          * 不用手改坐标、也不会因为某枚变窄把别人挤歪）。
          */
-        val TABS = listOf(
+        // ⚠ 保持 private：它的元素类型 TabSpec 是私有的，公开出去编译器会拦（伴生对象对外只用 tabListText()）
+        private val TABS = listOf(
             TabSpec("cobblemarket.finance.tab_loan_block", TAB_W),
             // 「卡片管理」用**两张卡图标**（用户 2026-10-05 定：就是原来喵喵银行那枚按钮的样子）
             TabSpec("cobblemarket.finance.tab_cards", TAB_W_ICON, icon = true),
