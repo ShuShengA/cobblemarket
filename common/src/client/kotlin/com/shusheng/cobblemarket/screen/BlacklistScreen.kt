@@ -1164,14 +1164,14 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         if (entry.ivSpAtk >= 0) parts.add("${StatNames.SP_ATK}${entry.ivSpAtk}")
         if (entry.ivSpDef >= 0) parts.add("${StatNames.SP_DEF}${entry.ivSpDef}")
         if (entry.ivSpd >= 0) parts.add("${StatNames.SPEED}${entry.ivSpd}")
-        return if (parts.isEmpty()) name else "$name（${parts.joinToString(" ")}）"
+        return if (parts.isEmpty()) name else name + com.shusheng.cobblemarket.util.TextUtil.paren(parts.joinToString(" "))
     }
 
     private fun itemEntryDisplay(entry: ItemBlacklistEntry): String {
         val name = com.shusheng.cobblemarket.client.ItemCandidateResolver.displayNameOf(entry.itemId)
         // 带组件快照的条目追加摘要（附魔名+等级等）；主列表条目区宽约 210px，超长名截断防止与删除按钮重叠
         val summary = com.shusheng.cobblemarket.client.ItemComponentsDisplay.summary(entry.componentsSpec)
-        val full = if (summary.isEmpty()) name else "$name（$summary）"
+        val full = if (summary.isEmpty()) name else name + com.shusheng.cobblemarket.util.TextUtil.paren(summary)
         return com.shusheng.cobblemarket.util.TextUtil.truncateString(full, 210)
     }
 

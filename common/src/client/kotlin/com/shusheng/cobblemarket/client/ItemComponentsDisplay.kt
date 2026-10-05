@@ -156,7 +156,7 @@ object ItemComponentsDisplay {
             // 用翻译后的显示名（name 是英文招式 ID，displayName 才是玩家看到的招式名）
             TMMoveComponent.getTMMove(stack)?.let { parts.add(it.displayName.string) }
         }
-        return parts.joinToString("、")
+        return parts.joinToString(com.shusheng.cobblemarket.util.TextUtil.listSeparator())
     }
 
     /** 行内图标栈：带快照的条目重建完整物品（含真实组件），无快照用默认栈 */

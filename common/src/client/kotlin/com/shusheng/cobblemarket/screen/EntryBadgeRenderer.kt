@@ -363,10 +363,10 @@ object EntryBadgeRenderer {
         if (baseKey.isEmpty() || baseKey == effKey) return Text.translatable(effKey)
         return Text.literal("")
             .append(Text.translatable(baseKey).formatted(Formatting.ITALIC))
-            .append(Text.literal("（"))
+            .append(Text.literal(TextUtil.parenOpen()))
             .append(Text.translatable(effKey))
             .append(Text.translatable("cobblemarket.gui.nature_mint"))
-            .append(Text.literal("）"))
+            .append(Text.literal(TextUtil.parenClose()))
     }
 
     /**
