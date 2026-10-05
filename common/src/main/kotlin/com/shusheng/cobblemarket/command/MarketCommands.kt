@@ -437,7 +437,8 @@ object MarketCommands {
             PointsAuditLogger.log(
                 PointsLogType.CODE_CREATE, boundUuid ?: java.util.UUID(0, 0), boundNameResolved ?: "-",
                 amount * uses, 0, source.name,
-                "生成兑换码 ${PointCodes.format(code)}（面额 $amount × $uses 次，过期 ${if (expiresAt == null) "永不" else "见配置"}）"
+                "生成兑换码 ${PointCodes.format(code)}（面额 $amount × $uses 次，过期 ${if (expiresAt == null) "永不" else "见配置"}）",
+                detailEn = "Generated code ${PointCodes.format(code)} (value $amount x $uses uses, expires ${if (expiresAt == null) "never" else "per config"})"
             )
         }
         // ≤10 张直接回显；更多只报数量（导出文件的能力在 B7 的 GUI/命令里补）
@@ -487,7 +488,8 @@ object MarketCommands {
         }
         PointsAuditLogger.log(
             PointsLogType.CODE_REVOKE, java.util.UUID(0, 0), "-", 0, 0, source.name,
-            "作废兑换码 ${PointCodes.format(code)}"
+            "作废兑换码 ${PointCodes.format(code)}",
+            detailEn = "Revoked code ${PointCodes.format(code)}"
         )
         source.sendFeedback({ Text.translatable("cobblemarket.points.code_revoked").formatted(Formatting.GREEN) }, true)
         return 1
@@ -565,7 +567,7 @@ object MarketCommands {
         val operator = source.name
         if (give) {
             val after = state.addBalance(uuid, amount)
-            PointsAuditLogger.log(PointsLogType.GIVE, uuid, playerName, amount, after, operator, "命令发放")
+            PointsAuditLogger.log(PointsLogType.GIVE, uuid, playerName, amount, after, operator, "命令发放", detailEn = "Granted via command")
             // 到账反馈给**玩家本人**（不是执行者）：命令发放与 FTB 任务奖励都走这条路，
             // 只回执给 OP 的话玩家那边毫无动静 —— 钱进来了得让他知道。
             // ⚠ 离线玩家不发（没法播音），余额本身已经加上了
@@ -603,7 +605,7 @@ object MarketCommands {
             return 0
         }
         val after = state.getBalance(uuid)
-        PointsAuditLogger.log(PointsLogType.TAKE, uuid, playerName, amount, after, operator, "命令回收")
+        PointsAuditLogger.log(PointsLogType.TAKE, uuid, playerName, amount, after, operator, "命令回收", detailEn = "Taken via command")
         source.sendFeedback({
             Text.translatable(
                 "cobblemarket.points.take_ok",
