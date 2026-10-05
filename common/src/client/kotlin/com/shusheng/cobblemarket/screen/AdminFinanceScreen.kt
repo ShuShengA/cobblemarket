@@ -1257,8 +1257,14 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         /** 哪几行是**金额行** ⇒ 那几行末尾要补画货币单位（可能是物品图标，进不了文本流） */
         unitLines: Set<Int> = emptySet()
     ) {
+        // ⚠⭐ **测量与绘制同源**：金额行的货币单位是**单独补画**的（可能是物品图标、进不了文本流）
+        //   ⇒ 量宽度时必须把它算进去，否则悬停窗按"只有文本"的宽度画，单位会戳到框外
+        //   （用户 2026-10-05 实测报的正是这个；照 `MeowthBankScreen` 的可借上限那两行）
+        val unitW = currencyUnitWidth(textRenderer)
         var maxWidth = 0
-        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
+        lines.forEachIndexed { i, line ->
+            maxWidth = maxOf(maxWidth, textRenderer.getWidth(line) + if (i in unitLines) unitW else 0)
+        }
 
         val padding = 4
         val tooltipHeight = lines.size * 10 + padding
