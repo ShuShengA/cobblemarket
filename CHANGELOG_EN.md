@@ -67,6 +67,25 @@
 - **Rapid clicks no longer do "nothing at all"**: buying, bidding, listing and cancelling used to share a half-second cooldown, and clicks landing inside that window were **silently dropped** — the dialog closed, nothing was charged, and not a word was shown, which looked like a broken screen. You now get a clear "Too fast — please wait a moment" notice and a failure sound. (Background list refreshes are unaffected — those retry themselves, and a notice there would only be noise.)
 - **Switching to an older build and back silently reset your config**: after running an older build once (even if you only changed some unrelated setting), coming back to the newer build **silently restored any setting that older build did not know about** — e.g. the RP Shop turned itself off, and the external redeem-code secret was wiped (**invalidating every code already issued on your website**). Saving the config now **keeps the parts the current build does not recognise**, so switching builds back and forth no longer loses anything
 
+## 1.2.2 (in development, unreleased)
+
+### New Feature
+
+- **Finance Management screen**: the entry button in Meowth Bank now opens **Finance Management** — a screen with **four tabs** (that button used to open the card management screen directly). The tabs are:
+  - **Loan Ban**: type a player name (with autocomplete) plus a duration and a reason to add them to the list — listed players **cannot take loans** (⚠ deposits, withdrawals and **repayments still work**: repayments must keep working, since paying back is how a player clears their overdue status). Players are also removed from the list on this tab
+  - **Cards**: the list of purple / black card holders, with a revoke button on each row (everything the old card management screen did)
+  - **Credits**: look up a player and set their **borrowable limit** to whatever you want (see the next entry)
+  - **Change Log**: a ledger of all of the above **plus self-service card applications** (who, when, to whom, what, and the previous value), written to its **own CSV** under `config/cobblemarket/finance/` — kept separate from the trading / loan / ban / permission ledgers, so each can be read on its own. ⚠ This ledger **starts recording with this version**; earlier card grants / revokes have no history
+
+- **The borrowable limit can now be adjusted by hand**: the limit used to be **computed from a formula only, and it never went down** (not even on overdue loans), so a server owner facing a player with an illegitimately high limit had **only a ban as a blunt instrument**. Finance Management can now lower a player's limit, or zero it.
+  ⚠ **It does not pin that number down** — what gets stored is a correction applied **on top of** the formula, so afterwards **repayments and a growing trade volume still move it**. That is exactly why a zeroed limit can grow back: stopping it from growing would be the same thing as a ban.
+  ⚠ **Card holders cannot be adjusted** (their limit comes from the card config and does not use the formula) — the button is greyed out for them.
+  ⚠ The affected player **receives a notice** (including the reason you typed) — otherwise they would only notice "why can't I borrow any more" and come asking you
+
+### Changes
+
+- **"Also block loans" moved to the Finance Management screen**: it used to be a toggle in the **ban** confirmation dialog (ticked while banning someone); it is now a **separate list** on the Finance Management screen's "Loan Ban" tab — finance belongs on the finance side, and bans only cover trading. ⚠ The ban ledger (`config/cobblemarket/bans/`) drops its "Block Loans / Prev Block Loans" columns accordingly
+
 ## 1.2.1 (in development, unreleased)
 
 ### New Feature
