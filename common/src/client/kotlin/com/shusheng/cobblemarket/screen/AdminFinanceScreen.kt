@@ -402,12 +402,6 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
 
     /** 查询结果到达 ⇒ 打开调整弹窗（新额度预填当前额度，服主在上面改） */
     fun onCreditLookup(payload: CreditLookupPayload) {
-        creditTarget = payload.row
-        hideMainControls()
-        suggestionsOpen = false
-        suggestDirty = false
-        lastRequestPrefix = null
-        rebuildSuggestionList()
         openCreditDialog(payload.row)
     }
 
@@ -438,12 +432,26 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
 
     // ── 行按钮 ──
 
+    /**
+     * 任一确认弹窗是否开着（禁借 / 调整额度）。
+     * ⚠ 弹窗状态不止一个字段 —— 两处弹窗的判断都必须走这里，别再各写各的。
+     */
+    private fun dialogOpen() = pendingName.isNotEmpty() || creditTarget != null
+
     private fun rebuildRowButtons() {
         rowButtons.forEach { remove(it) }
         rowButtons.clear()
         cardButtons.forEach { (btn, _) -> remove(btn) }
         cardButtons.clear()
-        if (suggestionsOpen) return
+        // ⚠ 额度行按钮**也必须清**：不清的话每次重建都往 children 末尾再堆一批（旧的还在、点得到）
+        creditButtons.forEach { remove(it) }
+        creditButtons.clear()
+        // ⚠⭐ 弹窗开着 / 联想列表展开时**一个行按钮都不建**。
+        //   理由不只是"别挡视线"：新建的按钮会被追加到 children **末尾** ⇒ **画在遮罩之上、还点得到**
+        //   （用户 2026-10-05 实测报的「调整额度弹窗下层那个按钮亮着、还能点」）。
+        //   ⚠ 光靠 `hideMainControls` 事后隐藏不够 —— 开弹窗那条路上 `rebuildSuggestionList` 会被调一次，
+        //   它内部会重建行按钮，把刚隐藏的又建回来（封禁界面是用 `pendingBanName.isEmpty()` 做的同一件事）
+        if (suggestionsOpen || dialogOpen()) return
         val leftX = width / 2 - panelWidth / 2
         val startY = listStartY()
         if (currentTab == 0) {
@@ -641,6 +649,13 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
      */
     private fun openCreditDialog(row: CreditRowInfo) {
         creditTarget = row
+        // ⚠ 收口在这里（不再只在"查询回来"那条路上做）：resize 后重开弹窗也会走这个函数，
+        //   不藏控件的话下层会亮着、还能点
+        hideMainControls()
+        suggestionsOpen = false
+        suggestDirty = false
+        lastRequestPrefix = null
+        rebuildSuggestionList()
         val centerX = width / 2
         val dialogY = height / 2 - CREDIT_DIALOG_H / 2
 
