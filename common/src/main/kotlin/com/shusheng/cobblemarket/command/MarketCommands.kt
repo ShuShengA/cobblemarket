@@ -515,8 +515,9 @@ object MarketCommands {
     // ⚠ 每一次变动都写审计 CSV（RP 的来源由服主决定，可能是真钱买的，必须可对账）。
     // ⚠ **FTB 任务奖励**走 `@s` 那条分支。⚠ **别写成"FTB 以控制台身份执行"** —— FTB 不是控制台
     //   （用户 2026-09-28 实测：等级设到 4 也执行不了「仅限控制台」的命令），它是「玩家身份 + N 级权限」
-    //   ⇒ 执行者是**完成任务的普通玩家** ⇒ 现在会被 `denyNonOwner` 拒。
-    //   （**待办**：开关 `rpAsQuestCurrency` 打开后放行 —— 方案已定，见 docs/points_plan.md）
+    //   ⇒ 执行者是**完成任务的普通玩家**（权限等级由那条奖励命令自己配）。
+    //   ⚠ 开关 `rpAsQuestCurrency` 打开时放行（见下方 [denyPointsGrant]）；判据要 `hasPermissionLevel(2)`
+    //     ⇒ **FTB 那边运行等级得设 2 及以上**（0/1 会被拒）；⚠ 代价是**真 OP 手敲也能发**。
 
     /** `/market points give|take <玩家名> <数量>` —— 按玩家名（可离线：走 [BanState.resolvePlayer]） */
     private fun pointsAdjust(context: CommandContext<ServerCommandSource>, give: Boolean): Int {
