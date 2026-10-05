@@ -16,6 +16,7 @@ import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
+import com.shusheng.cobblemarket.util.TextUtil
 import kotlin.math.roundToInt
 
 /**
@@ -1043,10 +1044,10 @@ class PointsConfigScreen : Screen(
                 val iconW = (iconH * BUILTIN_ICON_TEX_W + BUILTIN_ICON_TEX_H - 1) / BUILTIN_ICON_TEX_H
                 val parenY = rowY(row) + 7
                 var px = dx + 10 + textRenderer.getWidth(text) + 4
-                context.drawTextWithShadow(textRenderer, Text.literal("（"), px, parenY, 0xFFFFFF)
+                context.drawTextWithShadow(textRenderer, Text.literal(TextUtil.parenOpen()), px, parenY, 0xFFFFFF)
                 // ⚠ 括号与图之间**两侧补同样宽的空**：`（`/`）` 的字形自带边距，
                 //   不补的话右边看着比左边"贴死"（用户原话），补上才左右对称
-                px += textRenderer.getWidth("（") + BUILTIN_ICON_PAREN_GAP
+                px += textRenderer.getWidth(TextUtil.parenOpen()) + BUILTIN_ICON_PAREN_GAP
                 context.matrices.push()
                 // 文字中心 = parenY + 4（8px 高的字）⇒ 图对准它
                 context.matrices.translate(px.toDouble(), (parenY + 4 - iconH / 2).toDouble(), 0.0)
@@ -1057,7 +1058,7 @@ class PointsConfigScreen : Screen(
                 )
                 context.matrices.pop()
                 px += iconW + BUILTIN_ICON_PAREN_GAP
-                context.drawTextWithShadow(textRenderer, Text.literal("）"), px, parenY, 0xFFFFFF)
+                context.drawTextWithShadow(textRenderer, Text.literal(TextUtil.parenClose()), px, parenY, 0xFFFFFF)
             }
         }
         // 档位行：名称 / 价格 / 点数（带 `*` = 该档配了专用收款码，文件名在编辑弹窗里看）。

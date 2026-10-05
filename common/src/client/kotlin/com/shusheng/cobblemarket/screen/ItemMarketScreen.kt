@@ -1467,8 +1467,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         // 右半区取「文字行宽 − 80」与 85 的较大者；各留 12px 边距。
         // 原先写死 300，内容才 ~170 宽，两侧各白留 65。
         val countLabelW = textRenderer.getWidth(
-            Text.translatable("cobblemarket.item.buy_count").string + "（" +
-                Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}）"
+            Text.translatable("cobblemarket.item.buy_count").string + com.shusheng.cobblemarket.util.TextUtil.parenOpen() +
+                Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}" + com.shusheng.cobblemarket.util.TextUtil.parenClose()
         )
         // ⚠ 单位**不拼进文本**（画在行尾，见下面的渲染）⇒ 测量要把它补上，否则弹窗算窄
         val totalLabelW = textRenderer.getWidth(
