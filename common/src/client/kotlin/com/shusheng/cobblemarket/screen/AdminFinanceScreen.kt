@@ -805,7 +805,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         )
         context.drawTextWithShadow(textRenderer, limitLine, dialogX + 12, dialogY + 58, 0x55FFFF)
         drawCurrencyUnit(
-            context, textRenderer,
+            context, textRenderer, false,
             dialogX + 12 + textRenderer.getWidth(limitLine), dialogY + 58, 0x55FFFF
         )
     }
@@ -1101,7 +1101,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             //   少了那个空格图标就贴死在数字上（用户 2026-10-05 报的，见 memory 里那条约定）
             val amount = Text.literal("${formatPriceLong(row.limit)} ")
             val amountW = textRenderer.getWidth(amount)
-            val unitW = currencyUnitWidth(textRenderer)
+            val unitW = currencyUnitWidth(textRenderer, false)
             // 行文字画到「调整额度按钮左侧留 4px」为止（按钮起于 panelWidth-68）；
             // 名字那截**先按"给金额与单位留够"反算预算再截断**，否则长名字会把金额挤出可用宽
             val nameBudget = panelWidth - 76 - amountW - unitW
@@ -1114,7 +1114,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             context.drawTextWithShadow(textRenderer, namePart, leftX + 4, y + 7, 0xFFFFFF)
             val amountX = leftX + 4 + textRenderer.getWidth(namePart)
             context.drawTextWithShadow(textRenderer, amount, amountX, y + 7, 0x55FFFF)
-            drawCurrencyUnit(context, textRenderer, amountX + amountW, y + 7, 0x55FFFF)
+            drawCurrencyUnit(context, textRenderer, false, amountX + amountW, y + 7, 0x55FFFF)
         }
         if (rows.size > maxVisible()) {
             context.drawCenteredTextWithShadow(
@@ -1350,7 +1350,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         // ⚠⭐ **测量与绘制同源**：金额行的货币单位是**单独补画**的（可能是物品图标、进不了文本流）
         //   ⇒ 量宽度时必须把它算进去，否则悬停窗按"只有文本"的宽度画，单位会戳到框外
         //   （用户 2026-10-05 实测报的正是这个；照 `MeowthBankScreen` 的可借上限那两行）
-        val unitW = currencyUnitWidth(textRenderer)
+        val unitW = currencyUnitWidth(textRenderer, false)
         var maxWidth = 0
         lines.forEachIndexed { i, line ->
             maxWidth = maxOf(maxWidth, textRenderer.getWidth(line) + if (i in unitLines) unitW else 0)
@@ -1372,7 +1372,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             // 金额行末尾补货币单位（可能与图标同宽的空格也要让出来 ⇒ 宽度算进 maxWidth 之外，
             // 悬停窗够宽自然没问题；这里只负责画）
             if (i in unitLines) {
-                drawCurrencyUnit(context, textRenderer, tx + textRenderer.getWidth(line), ty + i * 10, 0x55FFFF)
+                drawCurrencyUnit(context, textRenderer, false, tx + textRenderer.getWidth(line), ty + i * 10, 0x55FFFF)
             }
         }
         context.matrices.pop()
