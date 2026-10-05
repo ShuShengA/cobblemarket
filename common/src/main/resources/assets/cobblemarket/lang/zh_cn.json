@@ -612,6 +612,7 @@
   "cobblemarket.finance.changes_empty": "暂无变更记录",
   "cobblemarket.finance.changes_credit": "额度：%s → %s %s",
   "cobblemarket.finance.by_self": "自助申请",
+  "cobblemarket.card.revoked_notice": "您的 %s 已被金融管理员收回",
   "cobblemarket.finance.action.card_grant": "发放卡片",
   "cobblemarket.finance.action.card_revoke": "收回卡片",
   "cobblemarket.finance.action.loan_block": "禁止借款",

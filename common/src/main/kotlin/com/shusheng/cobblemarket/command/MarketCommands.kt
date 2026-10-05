@@ -288,6 +288,7 @@ object MarketCommands {
         }
         com.shusheng.cobblemarket.network.FinanceNetwork.broadcastCardHolderBoard(server)
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+        com.shusheng.cobblemarket.finance.FinanceService.notifyCardRevoked(server, player.uuid, kind)
         source.sendFeedback(
             { Text.translatable("cobblemarket.card.revoked", player.name.string, cardName).formatted(Formatting.GREEN) },
             false
@@ -326,6 +327,7 @@ object MarketCommands {
         }
         com.shusheng.cobblemarket.network.FinanceNetwork.broadcastCardHolderBoard(server)
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+        com.shusheng.cobblemarket.finance.FinanceService.notifyCardRevoked(server, uuid, kind)
         source.sendFeedback(
             { Text.translatable("cobblemarket.card.revoked", name, cardName).formatted(Formatting.GREEN) },
             false
