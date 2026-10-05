@@ -394,10 +394,17 @@ object ShareNetwork {
         com.shusheng.cobblemarket.util.MoveText.rows(com.shusheng.cobblemarket.util.MoveText.of(pokemon))
             .forEach { row -> if (row.string.isNotEmpty()) lines.add(row) }
         if (pokemon.marks.isNotEmpty()) {
-            val shown = pokemon.marks.take(MARKS_SHOWN).map { it.getName().string }
+            // 分隔符走词条、证章名保持 Text（不取 `.string`）—— 服务端语言 ≠ 客户端语言，
+            // 这里拼死的顿号在英文端会很怪（照 `AuctionNetwork` 那份证章行的做法，同一套写法）
+            val shown = pokemon.marks.take(MARKS_SHOWN)
             val rest = pokemon.marks.size - shown.size
-            val marksText = shown.joinToString("、") + if (rest > 0) " +$rest" else ""
-            lines.add(Text.translatable("cobblemarket.gui.tooltip_marks").append(Text.literal(marksText)))
+            var marksValue: MutableText = Text.literal("")
+            shown.forEachIndexed { i, mark ->
+                if (i > 0) marksValue = marksValue.append(Text.translatable("cobblemarket.gui.marks_sep"))
+                marksValue = marksValue.append(mark.getName())
+            }
+            if (rest > 0) marksValue = marksValue.append(Text.literal(" +$rest"))
+            lines.add(Text.translatable("cobblemarket.gui.tooltip_marks").append(marksValue))
         }
 
         var hover: MutableText = Text.literal("")
