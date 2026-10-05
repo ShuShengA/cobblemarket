@@ -614,6 +614,109 @@ data class AdminLoanUnblockPayload(val playerUuid: UUID) : CustomPayload {
     }
 }
 
+// ── 额度管理（金融管理界面；FINANCE 节点） ──
+//
+// 用户 2026-10-05：额度「只增不减、没人能改」⇒ 服主遇到来路不正的额度只有封禁这一把钝刀。
+// 这里的「调整」= 在**公式算出的 base 之上叠一个修正量**（不是改写公式结果 —— 那会被下次重算冲掉），
+// 所以存的是 `FinanceState.creditAdjust` 里的 delta，客户端看到的是**修正后的可用额度**。
+
+/**
+ * 一行额度信息（下发用）：被人工调整过额度的玩家 / 刚查出来的那个玩家。
+ * ⚠ [limit] 是**服务端实算的可用额度**（`creditLimitFor`：base + 人工修正 − 欠款，钳 0..max）。
+ */
+data class CreditRowInfo(
+    val playerUuid: UUID,
+    val playerName: String,
+    /** 当前可用额度（服务端实算） */
+    val limit: Long,
+    /** 人工修正量（正 = 加、负 = 减；0 = 没调过） */
+    val adjust: Long,
+    /** 持卡玩家（紫/黑）：额度 = 配置固定值，**不允许人工调整**（界面据此置灰按钮） */
+    val hasCard: Boolean
+) {
+    fun write(buf: PacketByteBuf) {
+        buf.writeUuid(playerUuid); buf.writeString(playerName)
+        buf.writeLong(limit); buf.writeLong(adjust); buf.writeBoolean(hasCard)
+    }
+
+    companion object {
+        fun read(buf: PacketByteBuf) = CreditRowInfo(
+            playerUuid = buf.readUuid(), playerName = buf.readString(),
+            limit = buf.readLong(), adjust = buf.readLong(), hasCard = buf.readBoolean()
+        )
+    }
+}
+
+// ── C2S：请求「被人工调整过额度」的玩家列表 ──
+
+class RequestCreditAdjustListPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestCreditAdjustListPayload>(CobbleMarket.id("request_credit_adjust_list"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestCreditAdjustListPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestCreditAdjustListPayload() }
+        )
+    }
+}
+
+// ── S2C：额度列表 ──
+
+data class CreditAdjustListPayload(val rows: List<CreditRowInfo>) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<CreditAdjustListPayload>(CobbleMarket.id("credit_adjust_list"))
+        val CODEC: PacketCodec<PacketByteBuf, CreditAdjustListPayload> = PacketCodec.of(
+            { p, b -> b.writeVarInt(p.rows.size); p.rows.forEach { it.write(b) } },
+            { b -> CreditAdjustListPayload((0 until b.readVarInt()).map { CreditRowInfo.read(b) }) }
+        )
+    }
+}
+
+// ── C2S：查一个玩家当前的额度（搜索框点选后查，服务端回 [CreditLookupPayload]） ──
+
+data class RequestCreditLookupPayload(val playerName: String) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestCreditLookupPayload>(CobbleMarket.id("request_credit_lookup"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestCreditLookupPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.playerName) },
+            { b -> RequestCreditLookupPayload(b.readString()) }
+        )
+    }
+}
+
+// ── S2C：某个玩家的额度（弹窗里显示"当前额度"用） ──
+
+data class CreditLookupPayload(val row: CreditRowInfo) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<CreditLookupPayload>(CobbleMarket.id("credit_lookup"))
+        val CODEC: PacketCodec<PacketByteBuf, CreditLookupPayload> = PacketCodec.of(
+            { p, b -> p.row.write(b) },
+            { b -> CreditLookupPayload(CreditRowInfo.read(b)) }
+        )
+    }
+}
+
+// ── C2S：把某人的额度**设成**目标值（服务端反算 delta = 目标 − 公式 base） ──
+
+data class AdminCreditSetPayload(
+    val playerName: String,
+    /** 目标可用额度（**含欠款扣减后的口径**：填 0 = 清空额度） */
+    val targetLimit: Long,
+    val reason: String
+) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<AdminCreditSetPayload>(CobbleMarket.id("admin_credit_set"))
+        val CODEC: PacketCodec<PacketByteBuf, AdminCreditSetPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.playerName); b.writeLong(p.targetLimit); b.writeString(p.reason) },
+            { b -> AdminCreditSetPayload(b.readString(), b.readLong(), b.readString()) }
+        )
+    }
+}
+
 // ── 卡片持有者展示面板（喵喵银行界面两张卡下方，所有玩家可见） ──
 
 // ── C2S：请求持有者面板数据（进入喵喵银行时拉取） ──
@@ -753,6 +856,8 @@ object FinanceNetwork {
         registerS2CType(BlackCardApplyInfoPayload.ID, BlackCardApplyInfoPayload.CODEC)
         registerS2CType(CardHolderListPayload.ID, CardHolderListPayload.CODEC)
         registerS2CType(LoanBlockListPayload.ID, LoanBlockListPayload.CODEC)
+        registerS2CType(CreditAdjustListPayload.ID, CreditAdjustListPayload.CODEC)
+        registerS2CType(CreditLookupPayload.ID, CreditLookupPayload.CODEC)
         registerS2CType(CardHolderBoardPayload.ID, CardHolderBoardPayload.CODEC)
 
         // ── 应急贷款借款 ──
@@ -1203,6 +1308,73 @@ object FinanceNetwork {
             }
         }
 
+        // ── 金融管理：额度调整（FINANCE 节点） ──
+        registerC2S(RequestCreditAdjustListPayload.ID, RequestCreditAdjustListPayload.CODEC) { _, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
+            val server = player.server
+            server.execute { sendCreditAdjustList(player) }
+        }
+
+        registerC2S(RequestCreditLookupPayload.ID, RequestCreditLookupPayload.CODEC) { payload, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val target = BanState.resolvePlayer(server, payload.playerName)
+                if (target == null) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", payload.playerName)))
+                    return@execute
+                }
+                sendToPlayer(player, CreditLookupPayload(creditRowOf(server, target.first, target.second)))
+            }
+        }
+
+        registerC2S(AdminCreditSetPayload.ID, AdminCreditSetPayload.CODEC) { payload, player ->
+            if (!RequestThrottle.allow(player.uuid, "admin_credit_set", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val target = BanState.resolvePlayer(server, payload.playerName)
+                if (target == null) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", payload.playerName)))
+                    return@execute
+                }
+                val state = FinanceState.get(server)
+                val now = System.currentTimeMillis()
+                // 持卡玩家的额度 = 配置固定值、不走公式 ⇒ 人工调整没有意义（界面已置灰，这里兜底拦住）
+                if (state.isBlackCardHolder(target.first) || state.isPurpleCardHolder(target.first)) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.finance.credit_card_fixed", target.second)))
+                    return@execute
+                }
+                if (payload.targetLimit < 0) {
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.finance.credit_invalid")))
+                    return@execute
+                }
+                val before = state.creditLimitFor(target.first, now)
+                // ⚠ 反算修正量在 FinanceState 里做（与 creditLimitFor 同一个模型），这里别自己算
+                state.setCreditLimitTarget(target.first, payload.targetLimit, now)
+                val after = state.creditLimitFor(target.first, now)
+                FinanceChangeLogger.log(
+                    operator = player.name.string,
+                    targetName = target.second,
+                    targetUuid = target.first,
+                    actionKey = FinanceChangeLogger.ACTION_CREDIT_SET,
+                    // 账本记的是**可用额度**（改前 → 改后）—— 用户要的是「把谁的额度从多少改成多少」
+                    value = after,
+                    prevValue = before,
+                    reason = payload.reason.take(100)
+                )
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                sendToPlayer(
+                    player,
+                    MarketResultPayload(
+                        true,
+                        Text.translatable("cobblemarket.finance.credit_set", target.second, CurrencyHandler.formatAmount(before), CurrencyHandler.formatAmount(after))
+                    )
+                )
+                sendCreditAdjustList(player)
+            }
+        }
+
         // ── 活期存款（总开关只拦存款，取款永远开放——钱是玩家的不能卡） ──
         registerC2S(RequestDepositPayload.ID, RequestDepositPayload.CODEC) { payload, player ->
             if (!RequestThrottle.allow(player.uuid, "request_deposit", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
@@ -1535,6 +1707,35 @@ object FinanceNetwork {
     }
 
     /** 卡片管理（金融管理节点）：持有者列表回发（紫卡 ∪ 黑卡 混排，按加入时间正序=先申请在前，同刻按名字） */
+    /** 一个人的额度行（列表与查询共用；limit/adjust 都是服务端实算） */
+    private fun creditRowOf(server: MinecraftServer, uuid: UUID, name: String): CreditRowInfo {
+        val state = FinanceState.get(server)
+        val now = System.currentTimeMillis()
+        return CreditRowInfo(
+            playerUuid = uuid,
+            playerName = name,
+            limit = state.creditLimitFor(uuid, now),
+            adjust = state.getCreditAdjust(uuid),
+            hasCard = state.isBlackCardHolder(uuid) || state.isPurpleCardHolder(uuid)
+        )
+    }
+
+    /**
+     * 额度列表回发：**只列被人工调整过额度的玩家**（用户 2026-10-05 定）。
+     * ⚠ 不列全服 —— 额度是算出来的，全量列表 = 一次请求里给几千人各算一遍
+     *   （要读每人的交易历史/存款/图鉴），而且几千行里也找不到人。
+     *   要调别人就用搜索框查（`RequestCreditLookupPayload`）。
+     */
+    private fun sendCreditAdjustList(player: ServerPlayerEntity) {
+        val server = player.server
+        sendToPlayer(
+            player,
+            CreditAdjustListPayload(
+                FinanceState.get(server).getAdjustedPlayers().keys.map { creditRowOf(server, it, holderDisplayName(server, it)) }
+            )
+        )
+    }
+
     /** 禁借名单回发（金融管理界面；新的在前，与封禁列表同口径。增删后也调它刷新） */
     private fun sendLoanBlockList(player: ServerPlayerEntity) {
         val now = System.currentTimeMillis()

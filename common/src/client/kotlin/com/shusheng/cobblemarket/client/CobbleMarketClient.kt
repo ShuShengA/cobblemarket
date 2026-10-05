@@ -33,6 +33,8 @@ import com.shusheng.cobblemarket.network.CardHolderListPayload
 import com.shusheng.cobblemarket.network.FinanceStatsPayload
 import com.shusheng.cobblemarket.network.RequestCreditInfoPayload
 import com.shusheng.cobblemarket.network.RequestFinanceStatsPayload
+import com.shusheng.cobblemarket.network.CreditAdjustListPayload
+import com.shusheng.cobblemarket.network.CreditLookupPayload
 import com.shusheng.cobblemarket.network.LoanBlockListPayload
 import com.shusheng.cobblemarket.network.LoanHistoryDataPayload
 import com.shusheng.cobblemarket.network.RepayListDataPayload
@@ -391,6 +393,22 @@ object CobbleMarketClient {
                 if (screen is AdminFinanceScreen) {
                     screen.onLoanBlocks(payload)
                 }
+            }
+        }
+
+        registerS2C(CreditAdjustListPayload.ID, CreditAdjustListPayload.CODEC) { payload ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                if (screen is AdminFinanceScreen) screen.onCreditRows(payload)
+            }
+        }
+
+        registerS2C(CreditLookupPayload.ID, CreditLookupPayload.CODEC) { payload ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                if (screen is AdminFinanceScreen) screen.onCreditLookup(payload)
             }
         }
 
