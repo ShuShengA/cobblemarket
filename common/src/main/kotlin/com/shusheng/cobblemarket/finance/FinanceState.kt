@@ -440,6 +440,28 @@ class FinanceState private constructor() : PersistentState() {
     fun getAdjustedPlayers(): Map<UUID, Long> = creditAdjust.toMap()
 
     /**
+     * 全服额度排行（金融管理界面的「额度排行」页签）—— 按**当前可用额度**降序的前 [limit] 名。
+     *
+     * ⚠⭐ **性能**：`creditLimitFor` 每次都调 `debtOf`，而它是扫全表贷款 ⇒ 逐人调用就是 O(N×M)。
+     *   这里**先把欠款按玩家归一次表**（O(M)），再逐个算（O(N)）⇒ O(N+M)。
+     *   别图省事在循环里调 `creditLimitFor`（几千人 × 几千笔贷款 = 主线程上百万次操作）。
+     * ⚠ 只列**有过成交记录**的玩家（`totalCountedVolume` 的键）—— 没交易过的人额度都是同一档下限，
+     *   列进排行纯属噪声（要查他们用额度管理页签那个搜索框）。
+     * ⚠ 欠款口径与 [debtOf] **逐字一致**（CLOSED / BAD_DEBT 除外、按玩家求和），别只改一处。
+     */
+    fun creditLimitRank(now: Long, limit: Int): List<Pair<UUID, Long>> {
+        val debtByPlayer = mutableMapOf<UUID, Long>()
+        loans.values.forEach { l ->
+            if (l.status == LoanStatus.CLOSED || l.status == LoanStatus.BAD_DEBT) return@forEach
+            debtByPlayer.merge(l.playerUuid, l.remainingPrincipal.toLong(), Long::plus)
+        }
+        return totalCountedVolume.keys
+            .map { uuid -> uuid to creditLimitWithDebt(uuid, now, debtByPlayer[uuid] ?: 0L) }
+            .sortedByDescending { it.second }
+            .take(limit)
+    }
+
+    /**
      * 自行申请紫卡资格校验（各门槛全部满足；0 = 不要求）：
      * 资产 = 当前现金余额（调用方传）、消费 = 历史买入成交额累计、额度 = 信用基础（无欠款公式值）、
      * 存款 = 净存款（活期存款 − 未还欠款，防借钱包装资产）、图鉴 = 遇见数/捕捉数（调用方传，遇见含捕捉）。
@@ -720,8 +742,16 @@ class FinanceState private constructor() : PersistentState() {
         return delta
     }
 
-    fun creditLimitFor(playerUuid: UUID, now: Long): Long {
-        val debt = debtOf(playerUuid)
+    fun creditLimitFor(playerUuid: UUID, now: Long): Long = creditLimitWithDebt(playerUuid, now, debtOf(playerUuid))
+
+    /**
+     * 可用额度的**唯一算式**（[creditLimitFor] 与 [creditLimitRank] 共用）。
+     *
+     * ⚠⭐ 欠款由调用方传进来：`debtOf` 是**扫全表贷款**（CLOSED 还留 90 天，老服几千条）
+     *   ⇒ 排行那种"给全服每个人算一遍"的场景必须先归一次表，否则就是 O(N×M)。
+     *   ⇒ 算式收在这里一处，两个入口都别自己重写（「两处各自算同一个量」是本项目的老坑）。
+     */
+    private fun creditLimitWithDebt(playerUuid: UUID, now: Long, debt: Long): Long {
         // 喵喵黑卡持有者：额度 = 黑卡配置固定值 − 欠款（高级卡覆盖紫卡；不受公式/上下限钳制）
         if (isBlackCardHolder(playerUuid)) {
             return (CobbleMarketConfig.blackCardCreditLimit - debt).coerceAtLeast(0L)
