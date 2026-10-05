@@ -684,10 +684,33 @@ class FinanceState private constructor() : PersistentState() {
         ).coerceAtLeast(CobbleMarketConfig.creditLimitMin)
     }
 
+    /**
+     * 未还欠款（未结清贷款剩余本金之和；CLOSED / BAD_DEBT 除外）——现金贷与消费贷共享同一额度池。
+     * ⚠ [creditLimitFor] 与 [setCreditLimitTarget] 都读它：**欠款口径只有这一处**，
+     *   别在别处再写一遍（「两处各自算同一个量」是本项目的老坑）。
+     */
+    fun debtOf(playerUuid: UUID): Long = loans.values
+        .filter { it.playerUuid == playerUuid && it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
+        .sumOf { it.remainingPrincipal.toLong() }
+
+    /**
+     * 把某人的**可用额度设成** [target]（金融管理界面的「调整额度」）：
+     * 反算修正量 `delta = target + 欠款 − 公式 base`。
+     *
+     * ⚠ 反算用的是**同一个模型**（`creditLimitFor` 的 `base + 修正 − 欠款`）—— 在这里算一次就够，
+     *   调用方别再算一遍。
+     * ⚠ 目标最终仍受 `0..creditLimitMax` 钳制（max 是服主给全服定的上限）⇒ 返回的是**落下的修正量**，
+     *   调用方若要回报"实际设成了多少"，回读 `creditLimitFor`。
+     * @return 实际写入的修正量（0 = 清掉了那条修正）
+     */
+    fun setCreditLimitTarget(playerUuid: UUID, target: Long, now: Long): Long {
+        val delta = target + debtOf(playerUuid) - creditBaseFor(playerUuid, now)
+        setCreditAdjust(playerUuid, delta)
+        return delta
+    }
+
     fun creditLimitFor(playerUuid: UUID, now: Long): Long {
-        val debt = loans.values
-            .filter { it.playerUuid == playerUuid && it.status != LoanStatus.CLOSED && it.status != LoanStatus.BAD_DEBT }
-            .sumOf { it.remainingPrincipal.toLong() }
+        val debt = debtOf(playerUuid)
         // 喵喵黑卡持有者：额度 = 黑卡配置固定值 − 欠款（高级卡覆盖紫卡；不受公式/上下限钳制）
         if (isBlackCardHolder(playerUuid)) {
             return (CobbleMarketConfig.blackCardCreditLimit - debt).coerceAtLeast(0L)
