@@ -72,6 +72,20 @@ object ChatObjectPreview {
     private const val REQUESTED_MAX = 256
 
     /**
+     * 两次**真正叫出声**之间至少要隔这么久。
+     *
+     * ⚠⚠ 为什么是 2.5 秒（2026-10-07 重定，此前 1.2 秒**不够**）：
+     * 那一声**不是因为我们的触发就立刻响的** —— 声音是动画里的 `sound_effects` 关键帧，
+     * 而关键帧在**起手之后**：实测喷火龙在 `0.6667s / 1.0833s` 处（各物种不同，但都在起手之后），
+     * 那一声本身还有 1 秒多 ⇒ 从我们触发算起，**最晚到 ~2.3 秒才响完**。
+     * 原先按「触发时刻 + 1.2 秒」算，玩家在 1.2~2.5 秒之间移回来就会被判成"早过去了"⇒ 重新触发
+     * ⇒ 第二声在新动画跑到关键帧时响起、**恰好叠在第一声的尾巴上**（2026-10-07 用户实测报的）。
+     * ⚠ 而且它是 `SimpleSoundInstance` **自动播**的，我们手里没有句柄、**停不掉** ⇒
+     * 唯一的办法就是**别在它还在响的时候再触发**（重叫必然叠音，没有第二条路）。
+     */
+    private const val CRY_COOLDOWN_MS = 2500L
+
+    /**
      * 两次请求之间的最小间隔，**必须大于服务端 [com.shusheng.cobblemarket.util.RequestThrottle.READ_INTERVAL_MS]（500ms）**：
      * 服务端对超限的请求是**静默丢弃**，而超限那次如果被记成「已请求」就永远不会补发 ——
      * 表现为「连着悬停两个播报，第二个的大图死活不出来」。所以客户端自己先让开窗口，等下一帧再发。
@@ -150,6 +164,9 @@ object ChatObjectPreview {
 
     /** 待播叫声时刻（0 = 无）。每次「开始显示」重排一次，见 [beginShow] */
     private var cryAt = 0L
+
+    /** 上次**真正触发**叫声的时刻：短时间内不重复叫，见 [CRY_COOLDOWN_MS] */
+    private var lastCryAt = 0L
 
     /** 上次推进动画的真实时间戳（纳秒），0 = 这一只还没推进过 */
     private var lastFrameNanos = 0L
@@ -261,6 +278,13 @@ object ChatObjectPreview {
 
     /** 收起大图：鼠标移开、停留不够、数据没到都走这里（缓存不动，回头秒显） */
     private fun hide() {
+        // ⚠ **把正在播的叫声动画停掉**（2026-10-07）：不清的话那段战吼会**停在半截**，
+        //   下次悬停接着播 —— 看着像"继续"而不是重新叫；更糟的是**移开时若还没跑到声音关键帧，
+        //   那一声会等你回来时才补响**，与紧接着的第二次触发叠上（用户实测报的叠音正是这个）。
+        // ⚠ 只清 `activeAnimations`（= [IconCryClick.play] 内部同款操作，安全）：
+        //   姿势 / 待机动画**不在这个列表里**（见 Cobblemon 的 runEffects），别去碰 pose 那套
+        //   （`:primary` 会 dump 掉姿势动画 —— 暴鲤龙立起来那次，2026-09-22 踩过）
+        cache[shownId]?.state?.activeAnimations?.clear()
         shownId = null
         cryAt = 0L
     }
@@ -270,8 +294,13 @@ object ChatObjectPreview {
         shownId = id
         // 重置帧间隔基准：上次显示是几分钟前的话，第一帧会带着一个巨大的 delta
         lastFrameNanos = 0L
-        // 物品不叫；精灵安排「显示后 AUTO_CRY_DELAY_MS」再叫（理由见类注释）
-        cryAt = if (entry.isPokemon) now + IconCryClick.AUTO_CRY_DELAY_MS else 0L
+        // 物品不叫；精灵安排「显示后 AUTO_CRY_DELAY_MS」再叫（理由见类注释）。
+        // ⚠ 刚叫过就别再排（[CRY_COOLDOWN_MS]）—— 那一声还在响时重叫必然叠上，而声音停不掉
+        cryAt = if (entry.isPokemon && now - lastCryAt >= CRY_COOLDOWN_MS) {
+            now + IconCryClick.AUTO_CRY_DELAY_MS
+        } else {
+            0L
+        }
     }
 
     /** 物种 ID（`cobblemon:pikachu`）→ 官方名字词条 key（`cobblemon.species.pikachu.name`） */
@@ -296,6 +325,9 @@ object ChatObjectPreview {
             if (cryAt != 0L && System.currentTimeMillis() >= cryAt) {
                 cryAt = 0L
                 IconCryClick.play(state, renderable)
+                // 记**触发**时刻（不是"响完"时刻）：冷却窗要盖住「起手 + 那一声」的总时长，
+                // 见 [CRY_COOLDOWN_MS] 的推算
+                lastCryAt = System.currentTimeMillis()
             }
             // panelLeft 传 0：居中模式下它不参与定位（大图固定在屏幕正中，屏幕高度仍用于纵向居中）
             PokemonHoverPreview.render(
