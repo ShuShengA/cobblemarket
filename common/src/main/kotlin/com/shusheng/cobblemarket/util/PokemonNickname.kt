@@ -5,6 +5,7 @@ import com.cobblemon.mod.common.util.DataKeys
 import com.google.gson.JsonParser
 import com.mojang.serialization.JsonOps
 import net.minecraft.nbt.NbtCompound
+import net.minecraft.text.Text
 import net.minecraft.text.TextCodecs
 
 /**
@@ -45,4 +46,33 @@ object PokemonNickname {
     /** 过滤 § 格式码 + 去首尾空白；空串 = 没有昵称 */
     private fun String?.cleaned(): String? =
         this?.replace("§", "")?.trim()?.takeIf { it.isNotEmpty() }
+
+    /**
+     * **「名字（昵称）」** —— 昵称非空才补括号段，否则**原样返回 [name]**。
+     *
+     * ⚠ 用在**聊天播报的正文**（拍卖上架 / 成交 / 展示）：昵称直接跟在名字后面、
+     *   **不带「昵称：」前缀**（用户 2026-10-06 定：`喷火龙（阿黄）` 这样读最顺）；
+     *   悬停窗 / 弹窗里那一行**仍走 `EntryBadgeRenderer.nicknameLine`**（带前缀、独占一行）。
+     * ⚠ 括号走**词条**（中文全角 `（%s）` / 英文半角 ` (%s)`）—— 服务端拼不了语言相关的标点
+     *   （服务端语言 ≠ 客户端语言，见 CLAUDE.md）。
+     * ⚠⭐ **颜色 = 白色，整段（括号 + 昵称）一起**（用户 2026-10-06 定的口径）：
+     *   锚点是**悬停窗里那个「昵称值白色」** —— 「昵称是白的」在所有地方一致；
+     *   名字本体保持**自己的属性色**（属性色只属于「物种名」），不能让昵称也吃它，
+     *   否则悬停窗 / 弹窗那两处就得跟着改成属性色、把已定的口径推翻。
+     *   ⚠ 若只给 `%s` 参数设色，**括号会留在行色**（词条那一段自己没设色 ⇒ 继承整条播报的主体蓝，
+     *   2026-10-06 用户截图报「括号和昵称为什么是蓝色」）⇒ 必须设在**整段词条**上。
+     * ⚠⭐ 调用方必须把返回值**放进挂了 clickEvent 的那一段里**（悬停识别靠它，见 `ChatObjectPreview`）——
+     *   昵称若是裸字，鼠标从名字挪到昵称会**闪一下重出 + 再叫一声**（2026-10-06 实测踩过同款坑）。
+     */
+    fun withNickname(name: Text, nickname: String?): Text =
+        nickname?.takeIf { it.isNotBlank() }
+            ?.let {
+                Text.literal("")
+                    .append(name)
+                    .append(
+                        Text.translatable("cobblemarket.chat.nickname_paren", Text.literal(it))
+                            .formatted(net.minecraft.util.Formatting.WHITE)
+                    )
+            }
+            ?: name
 }

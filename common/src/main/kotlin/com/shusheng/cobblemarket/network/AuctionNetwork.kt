@@ -1091,7 +1091,14 @@ object AuctionNetwork {
         //   （颜色写在段自己身上，见 CLAUDE.md「名字带色、陪衬文字不设色、段落平级」）
         val baseName: Text = Text.literal("")
             .append(Text.literal("[").formatted(Formatting.GRAY))
-            .append(auction.speciesText())
+            // 名字后跟「（昵称）」（没有昵称则原样）—— ⚠ 必须留在这一层里：
+            //   它连同方括号一起在下面 `peekableName` 的 clickEvent 覆盖范围内，鼠标停在昵称上照样出大图
+            .append(
+                com.shusheng.cobblemarket.util.PokemonNickname.withNickname(
+                    auction.speciesText(),
+                    com.shusheng.cobblemarket.util.PokemonNickname.fromNbt(auction.pokemonNbt)
+                )
+            )
             .append(Text.literal("]").formatted(Formatting.GRAY))
         val nameText = TypeTextColors.withShinyStar(baseName, auction.type == AuctionType.POKEMON && auction.shiny)
         val bidLabel = Text.translatable("cobblemarket.chat.bid_button").formatted(Formatting.GOLD, Formatting.UNDERLINE)
@@ -1178,9 +1185,13 @@ object AuctionNetwork {
     /** 成交全服播报：金 [拍卖] 标签 + 蓝主体 + 属性色名字（闪光带金★）+ 金金额——金币符号恒金铁律；
      *  名字不带点击（拍品已结束），纯展示 */
     private fun settlementAnnouncement(auction: AuctionListing): Text {
-        // 名字本体已带色（见 AuctionListing.speciesText），闪光补前置金★
+        // 名字本体已带色（见 AuctionListing.speciesText），闪光补前置金★；名字后跟「（昵称）」
         val nameText = TypeTextColors.withShinyStar(
-            auction.speciesText(), auction.type == AuctionType.POKEMON && auction.shiny
+            com.shusheng.cobblemarket.util.PokemonNickname.withNickname(
+                auction.speciesText(),
+                com.shusheng.cobblemarket.util.PokemonNickname.fromNbt(auction.pokemonNbt)
+            ),
+            auction.type == AuctionType.POKEMON && auction.shiny
         )
         // 金额 + 单位按**拍卖自己的币种**（成交播报同样不能写死主货币）
         val priceText = CurrencyService.amountText(auction.currentPrice, auction.currency)
