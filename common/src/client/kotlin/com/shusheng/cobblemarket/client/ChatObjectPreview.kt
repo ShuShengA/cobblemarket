@@ -48,8 +48,8 @@ import java.util.UUID
  * - **防扫过**：同一拍品连续悬停 [HOVER_DWELL_MS] 才算选中 —— 鼠标划过一屏聊天时不该闪一片大图
  * - **鼠标移开立刻收起**（不进淡出、不留残影），缓存保留，回头再悬停秒显
  *
- * 识别方式与具体是哪条播报无关：**只要那段聊天文字挂了 `auction` / `review` 指令就生效**
- * （新增播报时不必改这里）。叫声沿用 [IconCryClick]（随机普通叫/战吼、静态模式与睡觉不叫）：
+ * 识别方式与具体是哪条播报无关：**只要那段聊天文字挂了 `auctionpeek` / `auction` / `review` 指令就生效**
+ * （新增指令时记得在 [hoveredAnnouncement] 里补一条映射）。叫声沿用 [IconCryClick]（随机普通叫/战吼、静态模式与睡觉不叫）：
  * 显示后延迟 [IconCryClick.AUTO_CRY_DELAY_MS] 才响，理由与各弹窗一致 ——
  * 大图刚出现时玩家还没反应过来声音从哪来。
  */
@@ -620,7 +620,8 @@ object ChatObjectPreview {
     private fun hoveredAnnouncement(client: MinecraftClient, mouseX: Int, mouseY: Int): Hovered? {
         val style = client.inGameHud.chatHud
             .getTextStyleAt(mouseX.toDouble(), mouseY.toDouble()) ?: return null
-        // 播报格式由服务端定：`/cobblemarket auction <uuid>`（拍卖）/ `/cobblemarket review <uuid>`（求购）
+        // 播报格式由服务端定：`/cobblemarket auction <uuid>`（拍卖的 [点击出价]）/
+        // `/cobblemarket auctionpeek <uuid>`（拍卖的**名字**，点了不做事）/ `/cobblemarket review <uuid>`（求购）
         val command = style.clickEvent?.value ?: return null
         if (!command.startsWith(COMMAND_PREFIX)) return null
         val parts = command.substring(COMMAND_PREFIX.length).split(' ')
@@ -629,6 +630,9 @@ object ChatObjectPreview {
         // 拍卖碰巧同名（auction）能跑，**求购这一路会永远静默不出图**（2026-09-17 用户实测踩到）
         val kind = when (parts.getOrNull(0)) {
             "auction" -> ObjectPreviewNetwork.KIND_AUCTION
+            // 拍卖播报的**名字**（2026-10-06 起名字改挂这条，点击无动作）：名字只做悬停、不做跳转
+            // ⇒ 与 [点击出价] 那条**同一个 kind**（同一场拍卖，走同一份缓存 / 同一个大图）
+            "auctionpeek" -> ObjectPreviewNetwork.KIND_AUCTION
             "review" -> ObjectPreviewNetwork.KIND_BUY_ORDER
             else -> return null
         }
