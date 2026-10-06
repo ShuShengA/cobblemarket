@@ -7,6 +7,7 @@
   "cobblemarket.entry.market_switch": "Market switch: emergency stop / resume",
   "cobblemarket.entry.settings": "Settings",
   "cobblemarket.entry.share": "Showcase to chat",
+  "cobblemarket.entry.quick_showcase_key": "Quick showcase: hold %s",
   "cobblemarket.points.invalid_amount": "Amount must be greater than 0",
   "cobblemarket.points.give_ok": "Gave %s to %s (balance: %s)",
   "cobblemarket.points.take_ok": "Took %s from %s (balance: %s)",

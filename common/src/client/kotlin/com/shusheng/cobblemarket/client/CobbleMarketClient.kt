@@ -143,6 +143,27 @@ object CobbleMarketClient {
     /** 快速展示键（默认 X；**按住**期间显示两个大按钮，见 [QuickShowcaseScreen]） */
     private lateinit var quickShowcaseKey: KeyBinding
 
+    /**
+     * **快速展示键当前绑定的显示文本**（入口界面那三处悬停提示用，见 `MarketEntryScreen.withQuickKeyHint`）。
+     *
+     * 返回 null = **那一行整个不显示**：还没初始化，或玩家**把键解绑了**（显示「按住 未知」只会误导）。
+     * ⚠ 键位**可改** ⇒ 提示里不能写死 X，必须读当前绑定。
+     *
+     * ⚠⚠ **必须用原版这个访问器，别自己 `Text.translatable(boundKeyTranslationKey)`**：
+     *   字母 / 数字键（X、Z、1…）**根本不在语言表里** —— 原版对「GLFW 能给出名字」的键是
+     *   直接 `Text.literal(名字.toUpperCase())`（`InputUtil$Type` 里那段），
+     *   只有 escape / f1 这类**没有 GLFW 名字**的键才去查表（那 85 条 `key.keyboard.*` 全是这种）。
+     *   自己拼的后果：提示里原样显示成 `key.keyboard.x`（2026-10-06 用户实测报出）。
+     * ⚠ 末尾的 `.string` 是**客户端**取词条（这条提示只用在客户端界面），
+     *   与「服务端不能 .string 拼语言文本」那条规矩不冲突；取成 String 再交给词条的 `%s`
+     *   （避免把"待翻译的 Text"当参数嵌进去）。
+     */
+    fun quickShowcaseKeyText(): String? {
+        if (!::quickShowcaseKey.isInitialized) return null
+        if (quickShowcaseKey.isUnbound) return null
+        return quickShowcaseKey.boundKeyLocalizedText.string
+    }
+
     /** 上一帧的按住状态（边沿检测：上升沿开、下降沿收尾） */
     private var wasQuickShowcasePressed = false
 
