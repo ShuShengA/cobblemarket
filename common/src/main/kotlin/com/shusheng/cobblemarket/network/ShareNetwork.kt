@@ -234,11 +234,17 @@ object ShareNetwork {
             )
         )
 
-        // 物品名走稀有度色（= 物品栏悬停的名字颜色，含自定义名），再套下划线
-        val nameText = Text.literal("").append(
-            com.shusheng.cobblemarket.util.ItemNameText.rarityColoredName(stack)
-                ?: Text.translatable(stack.item.translationKey)
-        ).styled { it.withUnderline(true) }
+        // 物品名走稀有度色（= 物品栏悬停的名字颜色，含自定义名），外面套灰色 `[]`
+        // ⚠ **不带下划线**：MC 里下划线的语义是「可点击」，而这个名字点了什么都不做（纯悬停出大图）
+        //   ⇒ 能悬停的用 `[]`（2026-10-06 标记统一，见 `docs/hover_marker_unify_plan.md`）
+        // ⚠ 方括号与名字**平级**挂在空 literal 下 —— 带色的文字不能当父节点，否则名字会继承括号的灰
+        val nameText = Text.literal("")
+            .append(Text.literal("[").formatted(Formatting.GRAY))
+            .append(
+                com.shusheng.cobblemarket.util.ItemNameText.rarityColoredName(stack)
+                    ?: Text.translatable(stack.item.translationKey)
+            )
+            .append(Text.literal("]").formatted(Formatting.GRAY))
         return shareMessage(
             player = player,
             shareId = shareId,
@@ -248,10 +254,16 @@ object ShareNetwork {
 
     private fun buildPokemonMessage(player: ServerPlayerEntity, shareId: UUID, pokemon: Pokemon): Text {
         val primaryTypeKey = "cobblemon.type.${pokemon.primaryType.name.lowercase()}"
-        // 名字颜色按**当前形态**取主属性色（与列表/悬停窗同一口径：阿罗拉形态显示冰色而非物种默认色）
-        val nameText = Text.literal("").append(SpeciesText.translated(pokemon.species)).styled {
-            it.withColor(TypeTextColors.color(primaryTypeKey)).withUnderline(true)
-        }
+        // 名字颜色按**当前形态**取主属性色（与列表/悬停窗同一口径：阿罗拉形态显示冰色而非物种默认色）；
+        // 外面套灰色 `[]`、**不带下划线**（理由同物品名那段：下划线是「可点击」的意思，这条名字点了不做事）
+        val nameText = Text.literal("")
+            .append(Text.literal("[").formatted(Formatting.GRAY))
+            .append(
+                Text.literal("").append(SpeciesText.translated(pokemon.species)).styled {
+                    it.withColor(TypeTextColors.color(primaryTypeKey))
+                }
+            )
+            .append(Text.literal("]").formatted(Formatting.GRAY))
         val displayName = if (pokemon.shiny) {
             Text.literal("").append(Text.literal("★ ").formatted(Formatting.GOLD)).append(nameText)
         } else {
@@ -261,8 +273,11 @@ object ShareNetwork {
     }
 
     /**
-     * 消息骨架：`[分享] <玩家名> 分享了 <名字>`；`[分享]` 金、主体蓝、名字自带样式，
-     * 挂着悬浮详情 + 一条**给聊天悬浮大图认人的指令**。
+     * 消息骨架：`[分享] <玩家名> 分享了 [<名字>]`；`[分享]` 金、主体蓝、名字自带样式、方括号灰，
+     * 挂着一条**给聊天悬浮大图认人的指令**（悬停详情由客户端自绘，见 `ChatObjectPreview`）。
+     *
+     * ⚠ 名字**用 `[]` 而不是下划线**（2026-10-06 标记统一，见 `docs/hover_marker_unify_plan.md`）：
+     * 下划线在 MC 里的语义是「可点击」，而这条名字点了什么都不做（纯悬停出大图）。
      *
      * 那条 `/cobblemarket share <id>` 是需求「不要点击跳转」下唯一可行的识别手段：
      * 原版聊天文字能挂的只有 clickEvent / hoverEvent，客户端 `ChatObjectPreview` 就是顺着
@@ -279,9 +294,6 @@ object ShareNetwork {
                 it.withClickEvent(
                         ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket share $shareId")
                     )
-                    // 下划线在这一层也设一遍：名字自己那层已经设了（精灵名还带属性色），
-                    // 但物品名只有下划线、一旦被外层样式盖掉就整个看不出来，这里兜底保证两者一致
-                    .withUnderline(true)
             }
         // ⚠ 前缀**走词条**，别硬编码 —— 服务端写死的字在英文客户端上照样是中文
         //   （2026-10-01 用户实测：`[分享] Shu_ShengA showcased …`，后半句是词条、前缀不是）。
