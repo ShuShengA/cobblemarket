@@ -1276,7 +1276,7 @@
   "cobblemarket.chat.auction_tag": "[拍卖]",
   "cobblemarket.chat.auction_announce": "%s 上架了 %s，起拍价 %s",
   "cobblemarket.chat.share_prefix": "[分享]",
-  "cobblemarket.chat.share_announce": "%s 展示了他的 %s",
+  "cobblemarket.chat.share_announce": "%s 展示了自己的 %s",
   "cobblemarket.chat.auction_sold_announce": "%s 以 %s 拍得 %s",
   "cobblemarket.buy_order.pending_locked": "该求购单已有待确认交付，请稍后再试",
   "cobblemarket.buy_order.pending_mark": "待确认",
