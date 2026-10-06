@@ -18,7 +18,6 @@ import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
-import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import org.lwjgl.glfw.GLFW
@@ -87,20 +86,17 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
 
         // ⚠ 按钮**只留背景**（不给 iconFrames / iconLeft）：内容由 render 自己画 —— 3D 精灵与
         //   物品图都必须画在 super.render 之后、且要先 flush 清深度，交给按钮画反而做不到
+        // ⚠ **刻意不挂悬停词条**（用户 2026-10-06 报「多余」）：框里画的就是那只精灵 / 那件物品本身，
+        //   再写「精灵」「物品」纯属废话（他还专门截图说明过）。⚠ 入口界面那两枚 22×22 的**小图标**按钮
+        //   仍挂着同样的词条 —— 那儿的图标不自解释，**两处别混**
         pokemonBtn = NineSliceButton(
             leftX, baseY, BTN, BTN, Text.literal(""), { doShowcase(Kind.POKEMON) },
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
-        ).also {
-            it.setTooltip(Tooltip.of(Text.translatable("cobblemarket.share.pokemon")))
-            addDrawableChild(it)
-        }
+        ).also { addDrawableChild(it) }
         itemBtn = NineSliceButton(
             rightX, baseY, BTN, BTN, Text.literal(""), { doShowcase(Kind.ITEM) },
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
-        ).also {
-            it.setTooltip(Tooltip.of(Text.translatable("cobblemarket.share.item")))
-            addDrawableChild(it)
-        }
+        ).also { addDrawableChild(it) }
     }
 
     /** 不画暗罩：按住期间世界照常可见（照其余模组界面） */
@@ -293,12 +289,13 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     /**
      * 吞掉方向键。
      *
-     * 这个界面上没有任何"用键盘操作"的东西，但方向键会被 MC 当成**界面焦点导航** ——
-     * 焦点经过哪个按钮就把它的 tooltip 弹出来（2026-09-29 用户实测：按一下 ↓，
-     * 精灵按钮左下角冒出「精灵」悬停窗，而鼠标根本没移上去）。
+     * 这个界面上没有任何"用键盘操作"的东西，方向键只会被 MC 当成**界面焦点导航** ——
+     * 焦点跑到哪个按钮上就把它画成选中态。
      *
      * ⚠ **不把方向键转发给 Cobblemon**（用户 2026-09-29 定）：按住 X 期间不给模组加"换精灵"
      *   的负担 —— 玩家松开 X 自己切就好。所以这里就是单纯吞掉。
+     * ⚠ 2026-10-06 起**"焦点导航会弹 tooltip"那层理由没有了**（这两个按钮的悬停词条已按用户要求
+     *   去掉），但"焦点会改外观"与"不转发"两条依然成立 ⇒ 继续吞掉。
      */
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
         if (keyCode == GLFW.GLFW_KEY_UP || keyCode == GLFW.GLFW_KEY_DOWN ||
