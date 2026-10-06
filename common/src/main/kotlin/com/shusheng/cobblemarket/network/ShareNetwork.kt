@@ -258,10 +258,16 @@ object ShareNetwork {
         // 外面套灰色 `[]`、**不带下划线**（理由同物品名那段：下划线是「可点击」的意思，这条名字点了不做事）
         val nameText = Text.literal("")
             .append(Text.literal("[").formatted(Formatting.GRAY))
+            // 名字后跟「（昵称）」（没有昵称则原样；展示的是**活精灵**，直接读）。
+            // ⚠ 必须留在这一层里：方括号 + 名字 + 昵称一起被 `shareMessage` 的 clickEvent 覆盖，
+            //   鼠标停在昵称上照样出悬停大图（与名字同范围、同样不可点）
             .append(
-                Text.literal("").append(SpeciesText.translated(pokemon.species)).styled {
-                    it.withColor(TypeTextColors.color(primaryTypeKey))
-                }
+                com.shusheng.cobblemarket.util.PokemonNickname.withNickname(
+                    Text.literal("").append(SpeciesText.translated(pokemon.species)).styled {
+                        it.withColor(TypeTextColors.color(primaryTypeKey))
+                    },
+                    com.shusheng.cobblemarket.util.PokemonNickname.from(pokemon)
+                )
             )
             .append(Text.literal("]").formatted(Formatting.GRAY))
         val displayName = if (pokemon.shiny) {

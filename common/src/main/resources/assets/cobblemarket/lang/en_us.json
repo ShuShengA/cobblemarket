@@ -1274,6 +1274,7 @@
   "cobblemarket.buy_order.pending_buyer": "New delivery awaiting your review (%s)",
   "cobblemarket.chat.review_button": "[Review]",
   "cobblemarket.chat.bid_button": "[Click to bid]",
+  "cobblemarket.chat.nickname_paren": " (%s)",
   "cobblemarket.chat.auction_tag": "[Auction]",
   "cobblemarket.chat.auction_announce": "%s listed %s, starting at %s",
   "cobblemarket.chat.share_prefix": "[Share]",
