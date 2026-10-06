@@ -987,17 +987,38 @@ object AuctionNetwork {
 
     // ── 拍卖创建全服聊天播报 ──
 
-    /** 全服播报新拍品：拍品名带 hover 详情 + 点击直达出价弹窗（客户端指令 /cobblemarket auction <id>）。
-     *  名字下划线 + 金色 [点击出价] 按钮提示可点（玩家不会想到裸名字能点击）。 */
+    /** 全服播报新拍品：拍品名可悬停出大图（客户端指令 `/cobblemarket auctionpeek <id>` —— 点了不做事）、
+     *  金色 [点击出价] 按钮点击直达出价弹窗（客户端指令 `/cobblemarket auction <id>`）。
+     *
+     *  ⚠ **能点的用下划线、能悬停的用 `[]`**（2026-10-06 标记统一，见 `docs/hover_marker_unify_plan.md`）：
+     *  名字只做悬停 ⇒ 用灰色 `[]` 框住、**不带下划线**；下划线只留给末尾那个真能点的 [点击出价]。 */
     private fun announceAuction(server: MinecraftServer, auction: AuctionListing) {
-        // 拍品名：名字本体 + 下划线（颜色由 speciesText 自带：精灵属性色 / 物品稀有度色）；闪光再加前置金★
-        // styled/append 只在 MutableText 上，speciesText 返回 Text，先包一层 literal 再上样式
-        // 名字本体已带色（精灵 = 主属性色、物品 = 稀有度色，统一在 AuctionListing.speciesText 里），
-        // 这里只套下划线；闪光由 withShinyStar 补前置金★
-        val baseName: Text = Text.literal("").append(auction.speciesText()).styled { it.withUnderline(true) }
+        // 拍品名：`[` 名字 `]`（名字色由 speciesText 自带：精灵属性色 / 物品稀有度色）；闪光再加前置金★
+        // styled/append 只在 MutableText 上，speciesText 返回 Text，先包一层 literal 再摆平级段
+        // ⚠ 名字**不带下划线**：MC 里下划线的语义是「可点击」，而名字点了什么都不做（纯悬停出大图）。
+        // ⚠ 方括号与名字**平级**挂在空 literal 下 —— 带色的文字不能当父节点，否则名字会继承括号的灰色
+        //   （颜色写在段自己身上，见 CLAUDE.md「名字带色、陪衬文字不设色、段落平级」）
+        val baseName: Text = Text.literal("")
+            .append(Text.literal("[").formatted(Formatting.GRAY))
+            .append(auction.speciesText())
+            .append(Text.literal("]").formatted(Formatting.GRAY))
         val nameText = TypeTextColors.withShinyStar(baseName, auction.type == AuctionType.POKEMON && auction.shiny)
         val bidLabel = Text.translatable("cobblemarket.chat.bid_button").formatted(Formatting.GOLD, Formatting.UNDERLINE)
-        val clickableName = Text.literal("").append(nameText).append(Text.literal(" ")).append(bidLabel)
+        // ⚠ 名字与按钮**各挂各的点击**，别再合并成一层：一层覆盖两段的话，名字就变成「点了会打开出价界面」
+        //   名字 = `/cobblemarket auctionpeek <id>` —— 客户端那条是个**空分支**（点了什么都不做），
+        //   唯一用途是让 `ChatObjectPreview` 顺着 clickEvent 认出「鼠标下是哪场拍卖」⇒ 悬停出大图。
+        //   ⚠ **不能删**：识别全靠它，删了名字就悬停不出大图了（真能点的那条挂在 [点击出价] 上）
+        val peekableName = Text.literal("")
+            .append(nameText)
+            // ⚠ 名字后面那个**空格也得挂上识别指令**：`ChatObjectPreview` 一碰到「没有 clickEvent 的字」
+            //   就立刻收起大图（`exitChat` ⇒ hoverId 归零、大图收起、叫声重排）⇒ 中间夹一个裸空格的话，
+            //   鼠标从名字往右挪到 [点击出价] 会**闪一下重出、并再叫一声**（2026-10-06 用户实测报出）。
+            //   挂名字这侧（点了不做事），真能点的仍然只有 [点击出价] —— 别挪到按钮那侧去扩大点击区
+            .append(Text.literal(" "))
+            .styled {
+                it.withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket auctionpeek ${auction.id}"))
+            }
+        val clickableBid = Text.literal("").append(bidLabel)
             .styled {
                 // ⚠ **只挂点击、不挂悬停**（2026-09-29 用户拍板）：悬停详情改由客户端的自绘悬浮窗给
                 //   （`ChatObjectPreview`）—— 原版那个灰框只能显示服务端拼的纯文本，长词条一行放不下、
@@ -1005,6 +1026,9 @@ object AuctionNetwork {
                 //   等用户验收后再决定删不删。
                 it.withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket auction ${auction.id}"))
             }
+        val clickableName = Text.literal("")
+            .append(peekableName)
+            .append(clickableBid)
         // 金额与货币名恒金（聊天颜色模板）；主体蓝（2026-08-30 拍板），名字属性色/按钮/金额子样式优先于父级蓝
         val priceText = Text.literal("")
             .append(CurrencyHandler.goldAmount(auction.startingPrice))
