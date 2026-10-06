@@ -871,6 +871,7 @@
   "cobblemarket.gui.tooltip_dmax": "Dynamax Level: %s",
   "cobblemarket.gui.tooltip_dmax_inline": " (Dynamax Level: %s)",
   "cobblemarket.gui.tooltip_ball": "Ball: ",
+  "cobblemarket.gui.tooltip_nickname": "Nickname: ",
   "cobblemarket.gui.tooltip_nature": "Nature: ",
   "cobblemarket.gui.tooltip_ability": "Ability: ",
   "cobblemarket.gui.tooltip_ivs": "IVs: ",

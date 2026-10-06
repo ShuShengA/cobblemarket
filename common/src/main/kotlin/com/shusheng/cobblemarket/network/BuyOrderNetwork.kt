@@ -250,7 +250,9 @@ fun buyOrderToEntry(o: BuyOrder, server: MinecraftServer): BuyOrderEntry = BuyOr
                 //   要等买家拒绝、卖家重新交付才有）。写在这里 ⇒ 与 moves / ot 一样「下发时现算」，
                 //   **老交付照样显示**，服主事后标/撤标记也能立刻反映
                 ("illegal" to com.shusheng.cobblemarket.util.PokemonTags.hasInNbt(
-                    p.pokemonNbt, com.shusheng.cobblemarket.util.PokemonTags.ILLEGAL).toString()),
+                    p.pokemonNbt, com.shusheng.cobblemarket.util.PokemonTags.ILLEGAL).toString()) +
+                // 昵称：同款**从待交付精灵的完整 NBT 现读**（加键、不动协议顺序）
+                ("nickname" to com.shusheng.cobblemarket.util.PokemonNickname.fromNbt(p.pokemonNbt).orEmpty()),
             count = p.count,
             itemNbt = p.itemNbt
         )

@@ -2951,7 +2951,10 @@ class BuyOrderScreen(
             // 极巨化 / 初始训练家：值由服务端组装 pending 时写进 extraData（见 buyOrderToEntry）
             gmaxFactor = d["gmaxFactor"] == "true",
             dmaxLevel = i("dmaxLevel"),
-            originalTrainer = d["ot"].orEmpty()
+            originalTrainer = d["ot"].orEmpty(),
+            // 昵称：同样由服务端组装 pending 时写进 extraData（⚠ 手工拼 DTO 的字段漏接是这里的惯犯，
+            //   2026-09-27 就因为漏了四个字段导致弹窗里没有太晶 / 体型 / 携带物）
+            nickname = d["nickname"].orEmpty()
         )
     }
 

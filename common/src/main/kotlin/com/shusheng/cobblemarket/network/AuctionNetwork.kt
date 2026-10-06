@@ -166,7 +166,9 @@ fun auctionToEntry(a: AuctionListing, server: MinecraftServer): AuctionEntry = A
             ("ot" to com.shusheng.cobblemarket.util.PokemonOT.fromNbt(a.pokemonNbt, server)) +
             // 「非法」角标：与上面几条同款 —— **从精灵 NBT 现算**（老拍卖也显示）
             ("illegal" to com.shusheng.cobblemarket.util.PokemonTags.hasInNbt(
-                a.pokemonNbt, com.shusheng.cobblemarket.util.PokemonTags.ILLEGAL).toString())
+                a.pokemonNbt, com.shusheng.cobblemarket.util.PokemonTags.ILLEGAL).toString()) +
+            // 昵称：同款**从拍卖自带的完整 NBT 现读**（走 extraData 加键、不动 write/read 的字段顺序）
+            ("nickname" to com.shusheng.cobblemarket.util.PokemonNickname.fromNbt(a.pokemonNbt).orEmpty())
     } else a.extraData,
     startingPrice = a.startingPrice,
     minIncrement = a.minIncrement,
