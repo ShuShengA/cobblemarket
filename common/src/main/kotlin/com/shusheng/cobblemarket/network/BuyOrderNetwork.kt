@@ -244,7 +244,9 @@ fun buyOrderToEntry(o: BuyOrder, server: MinecraftServer): BuyOrderEntry = BuyOr
                 ) +
                 ("gmaxFactor" to dyn.gmaxFactor.toString()) +
                 ("dmaxLevel" to dyn.dmaxLevel.toString()) +
-                ("ot" to com.shusheng.cobblemarket.util.PokemonOT.fromNbt(p.pokemonNbt, server)),
+                ("ot" to com.shusheng.cobblemarket.util.PokemonOT.fromNbt(p.pokemonNbt, server)) +
+                // 昵称：同款**从待交付精灵的完整 NBT 现读**（加键、不动协议顺序）
+                ("nickname" to com.shusheng.cobblemarket.util.PokemonNickname.fromNbt(p.pokemonNbt).orEmpty()),
             count = p.count,
             itemNbt = p.itemNbt
         )

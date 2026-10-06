@@ -142,14 +142,18 @@ object EntryBadgeRenderer {
         (if (entry.ball.isNotEmpty()) 1 else 0) +
             (if (hasHeldItemLine(entry)) 1 else 0) +
             (if (entry.gmaxFactor || entry.dmaxLevel > 0) 1 else 0) +
-            (if (entry.originalTrainer.isNotEmpty()) 1 else 0)
+            (if (entry.originalTrainer.isNotEmpty()) 1 else 0) +
+            // 昵称行（名字下面那行）：有才显示 —— 判据与渲染同源（见 [nicknameLine]）
+            (if (nicknameLine(entry.nickname) != null) 1 else 0)
 
     /** 拍卖侧版：数据来自 `AuctionEntry.extraData` 快照（精灵那支的字段名见 `auctionToEntry`） */
     fun optionalRowCount(extra: Map<String, String>, heldItemId: String): Int =
         (if (extra["ball"].orEmpty().isNotEmpty()) 1 else 0) +
             (if (hasHeldItemLine(heldItemId)) 1 else 0) +
             (if (extra["gmaxFactor"] == "true" || (extra["dmaxLevel"]?.toIntOrNull() ?: 0) > 0) 1 else 0) +
-            (if (extra["ot"].orEmpty().isNotEmpty()) 1 else 0)
+            (if (extra["ot"].orEmpty().isNotEmpty()) 1 else 0) +
+            // 昵称行：同上（拍卖侧从 extraData 的 nickname 键读）
+            (if (nicknameLine(extra["nickname"]) != null) 1 else 0)
 
     /**
      * 拍卖条目的**带色名字** —— 精灵按**形态主属性色**、物品按**稀有度色**。
@@ -380,6 +384,18 @@ object EntryBadgeRenderer {
         Text.literal("")
             .append(displayName.copy().styled { it.withColor(typeColor(primaryType)) })
             .append(Text.literal("  ${Text.translatable("cobblemarket.gui.lv").string}$level"))
+
+    /**
+     * 「昵称：xxx」行（**名字行的下一行**，用户 2026-10-06 定）；**没有昵称就返回 null = 整行不画**。
+     *
+     * ⚠⭐ 全项目**只有这一处**组装这一行（共用入口 + 9 处自拼行的界面都调它）——
+     *   少接一处就是「那个界面永远不显示昵称」，而且**不报错、不崩、编译也过**。
+     * ⚠ 标签不设色（吃行色）；昵称值也走行色白（用户定：不抢名字的属性色）。
+     * ⚠ 昵称的 § 已在 [com.shusheng.cobblemarket.util.PokemonNickname] 里过滤掉了，这里不再管。
+     */
+    fun nicknameLine(nickname: String?): Text? =
+        nickname?.takeIf { it.isNotBlank() }
+            ?.let { Text.translatable("cobblemarket.gui.tooltip_nickname").append(Text.literal(it)) }
 
     /**
      * 性格显示文本（照 Cobblemon 薄荷约定）：
@@ -677,6 +693,9 @@ object EntryBadgeRenderer {
             font.getWidth(nameWithLevelLine(displayName, entry.primaryType, entry.level)) +
                 (if (tail > 0) tail + 6 else 0)
         )
+        // 昵称行：**有才量**（与 drawInfoLines 的行列表严格对应）——
+        //   漏量的话，按内容定宽的弹窗（市场确认 / 购买确认 / 管理端下架）会把长昵称截断
+        nicknameLine(entry.nickname)?.let { m(it) }
         // ⚠ 与 [drawInfoLines] 那行走**同一个组装入口**（含太晶那段）——
         //   两处行必须对应，否则量出来和画出来的不一致
         m(TypeTextColors.typeLineWithTera(entry.primaryType, entry.secondaryType, entry.teraType))
@@ -766,6 +785,7 @@ object EntryBadgeRenderer {
         footer: List<Pair<Text?, Int>>? = null
     ): Int {
         var h = MOVE_ROW_H                                   // 名字★Lv
+        if (nicknameLine(entry.nickname) != null) h += MOVE_ROW_H   // 昵称（有才画）
         h += MOVE_ROW_H                                      // 属性（含太晶）
         if (com.shusheng.cobblemarket.util.PokemonExtraLines.dynamax(entry.gmaxFactor, entry.dmaxLevel) != null) {
             h += MOVE_ROW_H                                  // 极巨行（有才画）
@@ -844,6 +864,12 @@ object EntryBadgeRenderer {
         val lines = mutableListOf<Pair<Text?, Int>>()
         // 名字行：名字本体主属性色、Lv 段白（统一走 nameWithLevelLine，别再在这里自己拼）
         lines.add(nameWithLevelLine(displayName, entry.primaryType, entry.level) to 0xFFFFFF)
+        // 昵称行：**名字下面一行**、有才画（用户 2026-10-06 定）。
+        // ⚠ 与 measureInfoLines（量宽）/ measureInfoLinesHeight（聊天悬停面板高）/
+        //   各弹窗高度公式（market/buyorder/admin 的那几个 infoRows）**必须同步**，
+        //   漏一处 = 框比内容矮一截或多一截空行；⚠ 必须插在**索引 0（名字行）之后**，
+        //   那几处自拼行的界面都特判 i==0 画公母/体型图标，插到 0 号位会把图标画到昵称行上
+        nicknameLine(entry.nickname)?.let { lines.add(it to 0xFFFFFF) }
         // 类型行（**含太晶**）：走共用组装入口 —— 全项目这一行只有一份定义
         //（太晶那段稍不留神就漏一处，它在七个地方各有过一份拷贝）
         lines.add(

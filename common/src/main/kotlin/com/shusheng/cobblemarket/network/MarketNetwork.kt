@@ -122,7 +122,16 @@ data class ListingEntry(
      * 玩家名（见 [com.shusheng.cobblemarket.util.PokemonOT]），假训练家直接用原名。
      * **空串 = 没有 / 解析不到**（那一行整行不画）。
      */
-    val originalTrainer: String = ""
+    val originalTrainer: String = "",
+    /**
+     * **昵称**（玩家给精灵起的名字，见 [com.shusheng.cobblemarket.util.PokemonNickname]）。
+     *
+     * ⚠⭐ 服务端**组装 DTO 时从精灵 NBT 现读**，**不是上架那一刻的快照** ——
+     *   现读 ⇒ 老挂单（这次改动之前挂上去的）照样显示；存快照就永远不显示
+     *   （与 `teraType` / `moves` / `originalTrainer` 同一口径）。
+     * **空串 = 没有昵称** ⇒ 信息行里那一整行不画。
+     */
+    val nickname: String = ""
 ) {
     /**
      * 这条挂单是不是 RP 计价 —— **渲染货币单位就读它**。
@@ -169,6 +178,7 @@ data class ListingEntry(
         buf.writeBoolean(gmaxFactor)
         buf.writeInt(dmaxLevel)
         buf.writeString(originalTrainer)
+        buf.writeString(nickname)
     }
 
     companion object {
@@ -209,7 +219,8 @@ data class ListingEntry(
             // 与 write 端严格同序（write 在 teraType 之后）—— 用具名参数防错位
             gmaxFactor = buf.readBoolean(),
             dmaxLevel = buf.readInt(),
-            originalTrainer = buf.readString()
+            originalTrainer = buf.readString(),
+            nickname = buf.readString()
         )
     }
 }
@@ -826,7 +837,13 @@ data class PokemonPreview(
      *   玩家是「点了才知道不行」。
      * ⚠ 默认 `true`：挂单行那两个构造点不传它，那些行本来也不会画锁。
      */
-    val tradeable: Boolean = true
+    val tradeable: Boolean = true,
+    /**
+     * **昵称**（官方 `Pokemon.nickname`，见 [com.shusheng.cobblemarket.util.PokemonNickname]）。
+     * 预览的是**活精灵**（队伍 / PC 里那只）⇒ 直接读，不走 NBT。
+     * **空串 = 没有昵称** ⇒ 信息行里那一整行不画。
+     */
+    val nickname: String = ""
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(uuid); buf.writeString(species); buf.writeString(speciesId); buf.writeString(speciesName)
@@ -853,6 +870,7 @@ data class PokemonPreview(
         buf.writeString(originalTrainer)
         buf.writeString(ballItem)
         buf.writeBoolean(tradeable)
+        buf.writeString(nickname)
     }
 
     companion object {
@@ -877,7 +895,8 @@ data class PokemonPreview(
             buf.readInt(),       // dmaxLevel
             buf.readString(),    // originalTrainer
             buf.readString(),    // ballItem
-            buf.readBoolean()    // tradeable：与 write 端严格同序（write 在 ballItem 之后）
+            buf.readBoolean(),   // tradeable：与 write 端严格同序（write 在 ballItem 之后）
+            buf.readString()     // nickname：与 write 端严格同序（write 在 tradeable 之后）
         )
     }
 }
@@ -3514,6 +3533,9 @@ object MarketNetwork {
         // 极巨化 / 初始训练家：**同样从挂单自带的完整 NBT 现读**（与太晶同款）
         val dyn = com.shusheng.cobblemarket.util.PokemonDynamax.fromNbt(pokemonNbt)
         val otName = com.shusheng.cobblemarket.util.PokemonOT.fromNbt(pokemonNbt, server)
+        // 昵称：**同样从挂单自带的完整 NBT 现读**（不是上架那一刻的快照）——
+        // 现读 ⇒ 老挂单照样显示昵称；存快照就永远不显示（与太晶 / 极巨 / OT 同一个口径）
+        val nickname = com.shusheng.cobblemarket.util.PokemonNickname.fromNbt(pokemonNbt)
         return ListingEntry(
             id = id,
             sellerUuid = sellerUuid,
@@ -3566,7 +3588,8 @@ object MarketNetwork {
             // 极巨化 / 初始训练家（值见上面现读出来的 dyn / otName）
             gmaxFactor = dyn.gmaxFactor,
             dmaxLevel = dyn.dmaxLevel,
-            originalTrainer = otName
+            originalTrainer = otName,
+            nickname = nickname.orEmpty()
         )
     }
 
@@ -3766,7 +3789,9 @@ object MarketNetwork {
             originalTrainer = com.shusheng.cobblemarket.util.PokemonOT.from(pokemon, server),
             // 球的 item id：球种行取稀有度色用（词条 key 单独走 ball 字段）——
             // 与拍卖/求购侧的 `"ballItem"` 同款，见 ItemNameText.ballLine
-            ballItem = pokemon.caughtBall.name.toString()
+            ballItem = pokemon.caughtBall.name.toString(),
+            // 昵称：预览的是**活精灵**，直接读（不走 NBT）；空 = 信息行里那一整行不画
+            nickname = com.shusheng.cobblemarket.util.PokemonNickname.from(pokemon).orEmpty()
         )
 
     fun openScreen(player: ServerPlayerEntity) {

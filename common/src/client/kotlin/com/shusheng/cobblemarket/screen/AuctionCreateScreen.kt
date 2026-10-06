@@ -1708,6 +1708,9 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             lines.add(EntryBadgeRenderer.nameWithLevelLine(
                 EntryBadgeRenderer.nameWithShinyStar(speciesDisplay(p), p.shiny),
                 p.primaryType, p.level) to 0xFFFFFF)
+            // 昵称行：**名字下面一行**、有才画（用户 2026-10-06 定）——
+            // ⚠ 必须插在**名字行之后**（索引 0 那行会额外画公母/体型图标）
+            EntryBadgeRenderer.nicknameLine(p.nickname)?.let { lines.add(it to 0xFFFFFF) }
             lines.add(com.shusheng.cobblemarket.util.TypeTextColors.typeLineWithTera(
                 p.primaryType, p.secondaryType, p.teraType) to 0xFFFFFF)
             // 极巨行：属性行下面、有才显示（与市场侧走同一个组装入口）
