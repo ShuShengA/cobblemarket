@@ -89,6 +89,8 @@
   ⚠ **Card holders cannot be adjusted** (their limit comes from the card config and does not use the formula) — the button is greyed out for them.
   ⚠ The affected player **receives a notice** (including the reason you typed) — otherwise they would only notice "why can't I borrow any more" and come asking you
 
+- **Pokémon nicknames are now shown**: a player-given nickname now appears in **hover windows and dialogs** — on the line **right below the Pokémon's name** (e.g. "Nickname: Sparky"). That covers the market, auctions, buy orders, the listing picker, pending returns, the admin screens, and the chat broadcast hover. ⚠ **Not shown in list rows** (there is no room there); **Pokémon without a nickname get no extra line**, so those screens look exactly as before
+
 ### Changes
 
 - **"Also block loans" moved to the Finance Management screen**: it used to be a toggle in the **ban** confirmation dialog (ticked while banning someone); it is now a **separate list** on the Finance Management screen's "Loan Ban" tab — finance belongs on the finance side, and bans only cover trading. ⚠ The ban ledger (`config/cobblemarket/bans/`) drops its "Block Loans / Prev Block Loans" columns accordingly
