@@ -12,6 +12,7 @@ import com.mojang.blaze3d.systems.RenderSystem
 import com.shusheng.cobblemarket.client.BalanceHudMode
 import com.shusheng.cobblemarket.client.IconAnimMode
 import com.shusheng.cobblemarket.client.ClientConfig
+import com.shusheng.cobblemarket.client.CobbleMarketClient
 import com.shusheng.cobblemarket.client.GuiScale
 import com.shusheng.cobblemarket.client.OakTips
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
@@ -410,7 +411,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
         )
-        shareBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.share")))
+        shareBtn.setTooltip(withQuickKeyHint("cobblemarket.entry.share"))
         this.shareBtn = shareBtn
         entryButtons += addDrawableChild(shareBtn)
 
@@ -432,7 +433,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
         )
-        pokemonBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.share.pokemon")))
+        pokemonBtn.setTooltip(withQuickKeyHint("cobblemarket.share.pokemon"))
         pokemonBtn.visible = false
         this.sharePokemonBtn = pokemonBtn
         entryButtons += addDrawableChild(pokemonBtn)
@@ -446,12 +447,32 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
         )
-        itemBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.share.item")))
+        itemBtn.setTooltip(withQuickKeyHint("cobblemarket.share.item"))
         itemBtn.visible = false
         this.shareItemBtn = itemBtn
         entryButtons += addDrawableChild(itemBtn)
 
         // 市场总开关 / 服务器配置两个 OP 按钮已移到管理面板（AdminScreen 底部，2026-09-12）
+    }
+
+    /**
+     * 悬停词条 = **基础文案 + 一行「快速展示：按住 X」**（X 取玩家当前绑定；未绑定就不加那行）。
+     *
+     * ⚠ 为什么非写不可（用户 2026-10-06 提的）：快速展示是**按住快捷键**才有的功能，
+     *   玩家**不会想到去翻「按键设置」**；有些模组还把 X 当默认键，撞上了更发现不了
+     *   ⇒ 入口界面这三个按钮是玩家唯一可能"顺便看到"它的地方。
+     * ⚠ 键位**可改** ⇒ 取当前绑定（[CobbleMarketClient.quickShowcaseKeyText]），别写死 X；
+     *   且是「**按住**」不是按一下（hold 语义，见 [QuickShowcaseScreen]）。
+     * ⚠ 这里的 `\n` 只是**排版分段**，语言差异（冒号全角/半角、用词）全在那条词条里。
+     */
+    private fun withQuickKeyHint(baseKey: String): net.minecraft.client.gui.tooltip.Tooltip {
+        val keyText = CobbleMarketClient.quickShowcaseKeyText()
+            ?: return net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable(baseKey))
+        return net.minecraft.client.gui.tooltip.Tooltip.of(
+            Text.translatable(baseKey)
+                .append("\n")
+                .append(Text.translatable("cobblemarket.entry.quick_showcase_key", keyText))
+        )
     }
 
     // ── 分享按钮的展开 / 收起 ──

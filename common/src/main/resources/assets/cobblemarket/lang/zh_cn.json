@@ -7,6 +7,7 @@
   "cobblemarket.entry.market_switch": "市场总开关：紧急停市/恢复",
   "cobblemarket.entry.settings": "设置",
   "cobblemarket.entry.share": "展示到聊天框",
+  "cobblemarket.entry.quick_showcase_key": "快速展示：按住 %s",
   "cobblemarket.points.invalid_amount": "金额必须大于 0",
   "cobblemarket.points.give_ok": "已发放 %s 给 %s（当前余额 %s）",
   "cobblemarket.points.take_ok": "已从 %s 回收 %s（当前余额 %s）",
