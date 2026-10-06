@@ -137,7 +137,9 @@ fun auctionToEntry(a: AuctionListing, server: MinecraftServer): AuctionEntry = A
                 a.extraData["teraType"], a.pokemonNbt)) +
             ("gmaxFactor" to dyn.gmaxFactor.toString()) +
             ("dmaxLevel" to dyn.dmaxLevel.toString()) +
-            ("ot" to com.shusheng.cobblemarket.util.PokemonOT.fromNbt(a.pokemonNbt, server))
+            ("ot" to com.shusheng.cobblemarket.util.PokemonOT.fromNbt(a.pokemonNbt, server)) +
+            // 昵称：同款**从拍卖自带的完整 NBT 现读**（走 extraData 加键、不动 write/read 的字段顺序）
+            ("nickname" to com.shusheng.cobblemarket.util.PokemonNickname.fromNbt(a.pokemonNbt).orEmpty())
     } else a.extraData,
     startingPrice = a.startingPrice,
     minIncrement = a.minIncrement,

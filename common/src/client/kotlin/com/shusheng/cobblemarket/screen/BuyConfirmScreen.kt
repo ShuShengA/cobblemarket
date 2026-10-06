@@ -240,7 +240,9 @@ class BuyConfirmScreen(private val entry: ListingEntry) : Screen(Text.translatab
             (if (entry.gmaxFactor || entry.dmaxLevel > 0) 1 else 0) +
             (if (entry.originalTrainer.isNotEmpty()) 1 else 0) +
             (if (entry.ball.isNotEmpty()) 1 else 0) +
-            (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0)
+            (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0) +
+            // 昵称行：有才画（判据与渲染同源 —— 见 EntryBadgeRenderer.nicknameLine）
+            (if (EntryBadgeRenderer.nicknameLine(entry.nickname) != null) 1 else 0)
         return infoRows * 10 +
             EntryBadgeRenderer.movesBlockHeight(entry.moves) +
             // 证章一行放几个跟随可用宽（本界面固定 INFO_DIVIDER_W，与 render 里 drawInfoLines 的 dividerW 同源）

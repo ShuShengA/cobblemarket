@@ -479,6 +479,7 @@
   "cobblemarket.gui.tooltip_dmax": "极巨等级：%s",
   "cobblemarket.gui.tooltip_dmax_inline": "（极巨等级：%s）",
   "cobblemarket.gui.tooltip_ball": "球种：",
+  "cobblemarket.gui.tooltip_nickname": "昵称：",
   "cobblemarket.gui.tooltip_nature": "性格：",
   "cobblemarket.gui.tooltip_ability": "特性：",
   "cobblemarket.gui.tooltip_ivs": "IVs:",

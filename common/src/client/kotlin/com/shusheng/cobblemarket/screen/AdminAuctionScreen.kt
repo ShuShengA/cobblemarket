@@ -659,6 +659,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             staticLines.add(EntryBadgeRenderer.nameWithLevelLine(
                 EntryBadgeRenderer.nameWithShinyStar(displayName(entry), entry.shiny),
                 primaryType, entry.level) to 0xFFFFFF)
+            // 昵称行：**名字下面一行**、有才画（用户 2026-10-06 定）——
+            // ⚠ 必须插在**名字行之后**（索引 0 那行会额外画公母/体型图标）
+            EntryBadgeRenderer.nicknameLine(extra["nickname"])?.let { staticLines.add(it to 0xFFFFFF) }
             // 属性行（**含太晶**）：与其余各处共用同一个组装入口，别再各拼各的
             staticLines.add(
                 com.shusheng.cobblemarket.util.TypeTextColors.typeLineWithTera(
@@ -951,7 +954,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             (if (hasDynamax) 1 else 0) +
             (if (hasOriginalTrainer) 1 else 0) +
             (if (entry.extraData["ball"].orEmpty().isNotEmpty()) 1 else 0) +
-            (if (EntryBadgeRenderer.hasHeldItemLine(entry.extraData["heldItemId"].orEmpty())) 1 else 0)
+            (if (EntryBadgeRenderer.hasHeldItemLine(entry.extraData["heldItemId"].orEmpty())) 1 else 0) +
+            // 昵称行：有才画（判据与渲染同源 —— 见 EntryBadgeRenderer.nicknameLine）
+            (if (EntryBadgeRenderer.nicknameLine(entry.extraData["nickname"]) != null) 1 else 0)
         return 56 + infoRows * 10 +
             EntryBadgeRenderer.movesBlockHeight(moves) +
             // 证章一行几个跟随可用宽（见 marksPerRow）—— 传本弹窗左列宽（与 rowW 同源）；
@@ -1067,6 +1072,9 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 infoX, iy, 0xFFFFFF
             )
             iy += 10
+            // 昵称行：**名字下面一行**、有才画（用户 2026-10-06 定）——
+            // ⚠ 这里逐行 `iy` 增量自画（不走 drawInfoLines），弹窗高度公式那边也加了同一判断，两处成对
+            EntryBadgeRenderer.nicknameLine(extra["nickname"])?.let { infoLineText(it) }
             val secondaryType = extra["secondaryType"] ?: ""
             val typeText = (if (primaryType.isNotEmpty()) Text.translatable(primaryType).string else "-") +
                 if (secondaryType.isNotEmpty()) " + ${Text.translatable(secondaryType).string}" else ""

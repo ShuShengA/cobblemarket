@@ -2331,7 +2331,9 @@ class BuyOrderScreen(
                 (if (hasDynamax) 1 else 0) +
                 (if (hasOriginalTrainer) 1 else 0) +
                 (if (listing?.ball?.isNotEmpty() == true) 1 else 0) +
-                (if (listing != null && EntryBadgeRenderer.hasHeldItemLine(listing)) 1 else 0)
+                (if (listing != null && EntryBadgeRenderer.hasHeldItemLine(listing)) 1 else 0) +
+                // 昵称行：有才画（判据与渲染同源 —— 见 EntryBadgeRenderer.nicknameLine）
+                (if (listing != null && EntryBadgeRenderer.nicknameLine(listing.nickname) != null) 1 else 0)
             // 证章一行几个跟随可用宽（见 marksPerRow）—— 保守传最小宽 ⇒ 高度宁多不少
             // ⚠ 证章的可用宽必须是**分割线的实际宽度**（居中弹窗恒为 MOVES_MAX_W），见 MarketScreen 同处说明
             val marksH = if (listing != null)
@@ -2682,7 +2684,10 @@ class BuyOrderScreen(
             // 极巨化 / 初始训练家：值由服务端组装 pending 时写进 extraData（见 buyOrderToEntry）
             gmaxFactor = d["gmaxFactor"] == "true",
             dmaxLevel = i("dmaxLevel"),
-            originalTrainer = d["ot"].orEmpty()
+            originalTrainer = d["ot"].orEmpty(),
+            // 昵称：同样由服务端组装 pending 时写进 extraData（⚠ 手工拼 DTO 的字段漏接是这里的惯犯，
+            //   2026-09-27 就因为漏了四个字段导致弹窗里没有太晶 / 体型 / 携带物）
+            nickname = d["nickname"].orEmpty()
         )
     }
 

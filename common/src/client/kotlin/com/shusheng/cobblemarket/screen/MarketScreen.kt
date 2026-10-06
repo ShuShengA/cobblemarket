@@ -1986,7 +1986,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             (if (entry.gmaxFactor || entry.dmaxLevel > 0) 1 else 0) +
             (if (entry.originalTrainer.isNotEmpty()) 1 else 0) +
             (if (entry.ball.isNotEmpty()) 1 else 0) +
-            (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0)
+            (if (EntryBadgeRenderer.hasHeldItemLine(entry)) 1 else 0) +
+            // 昵称行：有才画（判据与渲染同源 —— 见 EntryBadgeRenderer.nicknameLine）
+            (if (EntryBadgeRenderer.nicknameLine(entry.nickname) != null) 1 else 0)
         return 62 + infoRows * 10 +
             EntryBadgeRenderer.movesBlockHeight(entry.moves) +
             // 证章一行几个跟随可用宽（见 marksPerRow）—— 保守传最小宽 ⇒ 高度宁多不少
@@ -2231,6 +2233,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             lines.add(EntryBadgeRenderer.nameWithLevelLine(
                 EntryBadgeRenderer.nameWithShinyStar(iconData[listings.indexOf(entry)]?.displayName ?: entry.species, entry.shiny),
                 entry.primaryType, entry.level) to w)
+            // 昵称行：**名字下面一行**、有才画（用户 2026-10-06 定）——
+            // ⚠ 必须插在**名字行之后**（索引 0 那行会额外画公母/体型图标）
+            EntryBadgeRenderer.nicknameLine(entry.nickname)?.let { lines.add(it to w) }
             lines.add(com.shusheng.cobblemarket.util.TypeTextColors.typeLineWithTera(
                 entry.primaryType, entry.secondaryType, entry.teraType) to w)
             // 极巨行：属性行下面、有才显示（与市场侧走同一个组装入口）
