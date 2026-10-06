@@ -306,6 +306,10 @@ object CobbleMarketClient {
                 // （ChatObjectPreview）顺着 clickEvent 认出这条消息。**点击不跳转**是需求，
                 // 所以这里刻意什么都不做——别以为是漏了实现
                 "share" -> {}
+                // "auctionpeek"：同 "share" —— 拍卖播报的**名字**上挂的指令（名字只做悬停、不做跳转，
+                // 能点的只有它末尾的 [点击出价]，见 AuctionNetwork.announceAuction）。
+                // 同样**刻意什么都不做**——别以为是漏了实现、也别"顺手"让它去打开出价界面
+                "auctionpeek" -> {}
             }
         }
 
