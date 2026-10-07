@@ -74,6 +74,18 @@ class SellSelectScreen(
     private var closed = false
     // 防串扰：秒关再开界面时，旧界面的迟到响应会被 requestId 比对丢弃
     private val requestId = nextRequestId++
+
+    /**
+     * 待发的下一页请求（页码 → 该发的时刻）。
+     *
+     * ⚠⭐ **为什么要等**：服务端给这个请求加了 100ms 节流防连发（`POKEMON_PAGE_INTERVAL_MS`），
+     * 超限是**静默丢弃**；而我们是「收到一页就立刻发下一页」，本机往返只有几毫秒 ⇒
+     * **必然落在窗口内被丢掉**，客户端又收不到响应、不会再发 ⇒ **永久停在"正在加载"**
+     * （2026-10-07 用户实测：卡在"已加载 106 只"= 正好第一页）。
+     * 等 [PAGE_REQUEST_DELAY_MS] 让过窗口即可 —— 服务端那道防护一字不动。
+     */
+    private var pendingPageRequest: Int? = null
+    private var pendingPageAt = 0L
     private val rowHeight = 24
     private var scrollOffset = 0
     private var shinyOnly = false
@@ -1031,11 +1043,21 @@ class SellSelectScreen(
         }
         rebuildFiltered()
         if (payload.hasMore) {
-            // 响应驱动串行拉取，直到服务端说没有更多页
-            sendToServer(RequestMyPokemonPayload(payload.page + 1, requestId))
+            // 响应驱动串行拉取，直到服务端说没有更多页。
+            // ⚠ **不立刻发** —— 排进待发队列、等过服务端的 100ms 节流窗口（见字段注释）
+            pendingPageRequest = payload.page + 1
+            pendingPageAt = System.currentTimeMillis() + PAGE_REQUEST_DELAY_MS
         } else {
             loadedAll = true
         }
+    }
+
+    /** 每帧检查有没有到点该发的下一页请求（延迟发送的落点，见 [pendingPageRequest]） */
+    private fun tickPendingPageRequest() {
+        val page = pendingPageRequest ?: return
+        if (System.currentTimeMillis() < pendingPageAt) return
+        pendingPageRequest = null
+        sendToServer(RequestMyPokemonPayload(page, requestId))
     }
 
     private fun sellSelected() {
@@ -1190,6 +1212,8 @@ class SellSelectScreen(
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // 到点了就把排队的下一页请求发出去（见 pendingPageRequest）
+        tickPendingPageRequest()
         // ⚠ 余额包是**异步**到的（进服首帧缓存可能还空着）⇒ 每帧刷一次按钮外观，包一到就换成物品图标
         currencyButton?.let { updateCurrencyButton(it) }
         // ⚠ **每帧**重算面板控件的显隐（照精灵市场与 `AdminPokemonScreen`）：面板开合走的是**动画**，
@@ -1870,6 +1894,14 @@ class SellSelectScreen(
         private var nextRequestId = 0
         /** 展开列表最多显示几行（超出用滚轮翻，照精灵市场） */
         const val MAX_FILTER_LIST_ROWS = 8
+        /**
+         * 下一页请求发出前要等多久（ms）。
+         *
+         * ⚠ 必须**大于服务端的 `POKEMON_PAGE_INTERVAL_MS`（100）** —— 那边超限是静默丢弃，
+         *   而「响应驱动」的下一页请求只隔一个往返（本机几毫秒）⇒ 不 waiting 就会被丢掉、列表卡死。
+         *   取 120：留 20ms 余量，正常翻页无感（一页只多 0.12 秒）。
+         */
+        private const val PAGE_REQUEST_DELAY_MS = 120L
         /** 展开列表每行高 */
         private const val FILTER_LIST_ROW_H = 14
         /** 筛选按钮「未选中」的文字色：灰色 = 该项不过滤（与精灵市场 / 拍卖场同一口径，2026-09-23） */
