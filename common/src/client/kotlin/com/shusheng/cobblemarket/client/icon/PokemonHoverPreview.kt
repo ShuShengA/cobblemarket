@@ -96,8 +96,13 @@ object PokemonHoverPreview {
                 org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT,
                 net.minecraft.client.MinecraftClient.IS_SYSTEM_MAC
             )
+            // ⚠ 走 **species 重载**（`renderablePokemon` 那个**不暴露** `doQuirks`、内部恒为 false）：
+            //   官方 quirk（眨眼 / idle 小动作）由 `RenderContext.DO_QUIRKS` 开关，只在 species 重载上。
+            //   代价 = `currentAspects` 要**自己喂**（那个重载本来替我们做这件事）—— 形态决定用哪个模型，
+            //   漏了会退化成默认形态（⚠ 静默，编译不报错）。
+            state.currentAspects = renderable.aspects
             drawProfilePokemon(
-                renderablePokemon = renderable,
+                species = renderable.species.resourceIdentifier,
                 matrixStack = matrices,
                 rotation = rotation,
                 poseType = anim.poseType,
@@ -106,6 +111,7 @@ object PokemonHoverPreview {
                 // 且 FloatingState 是累加式的，一帧推两次动画会翻倍。
                 partialTicks = 0f,
                 scale = PREVIEW_SCALE,
+                doQuirks = true,
                 headYaw = anim.headYaw,
                 headPitch = anim.headPitch
             )

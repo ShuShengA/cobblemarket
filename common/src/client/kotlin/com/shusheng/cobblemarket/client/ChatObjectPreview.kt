@@ -293,10 +293,16 @@ object ChatObjectPreview {
         // ⚠ **把正在播的叫声动画停掉**（2026-10-07）：不清的话那段战吼会**停在半截**，
         //   下次悬停接着播 —— 看着像"继续"而不是重新叫；更糟的是**移开时若还没跑到声音关键帧，
         //   那一声会等你回来时才补响**，与紧接着的第二次触发叠上（用户实测报的叠音正是这个）。
-        // ⚠ 只清 `activeAnimations`（= [IconCryClick.play] 内部同款操作，安全）：
-        //   姿势 / 待机动画**不在这个列表里**（见 Cobblemon 的 runEffects），别去碰 pose 那套
-        //   （`:primary` 会 dump 掉姿势动画 —— 暴鲤龙立起来那次，2026-09-22 踩过）
-        cache[shownId]?.state?.activeAnimations?.clear()
+        // ⚠ 只清这两个 map —— 姿势 / 待机动画**不在**它们里（见 Cobblemon 的 runEffects），
+        //   别去碰 pose 那套（`:primary` 会 dump 掉姿势动画 —— 暴鲤龙立起来那次，2026-09-22 踩过）：
+        // - `activeAnimations`：叫声 / 战吼（[IconCryClick.play] 内部也清这个）
+        // - `quirks`：官方 quirk（眨眼 / idle 小动作）住在**另一个 map** 里
+        //   （`allActiveAnimations = activeAnimations + quirks`）—— 漏了它，小动作会停半截、回来接着播
+        //   （2026-10-07 开 quirk 时一并加上）
+        cache[shownId]?.state?.let { state ->
+            state.activeAnimations.clear()
+            state.quirks.clear()
+        }
         shownId = null
         cryAt = 0L
     }
