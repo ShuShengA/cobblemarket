@@ -14,6 +14,7 @@ import com.shusheng.cobblemarket.network.ItemCelebrationPayload
 import com.shusheng.cobblemarket.network.PokemonCelebrationPayload
 import com.shusheng.cobblemarket.network.MarketStatePayload
 import com.shusheng.cobblemarket.network.PendingReturnsPayload
+import com.shusheng.cobblemarket.network.MarketNoticePayload
 import com.shusheng.cobblemarket.network.PlaySoundPayload
 import com.shusheng.cobblemarket.network.BuyOrderEventPayload
 import com.shusheng.cobblemarket.network.BuyOrderListDataPayload
@@ -134,6 +135,8 @@ object CobbleMarketClient {
         // 「有新版本可用」提示：起个后台线程查官网版本文件（查完什么都不做，等玩家真打开市场界面时才提）
         UpdateNotice.init()
         PokemonCelebrationAnimation.register()
+        // 上架通知的顶部气泡（HUD 层，照庆祝动画的注册方式）
+        MarketNoticeHud.register()
         ItemCelebrationAnimation.register()
         CardCelebrationAnimation.register()
         openMarketKey = registerKeyBinding(
@@ -566,7 +569,18 @@ object CobbleMarketClient {
 
         // 通用音效通道：服务端事件（出价被超越 / 自动划扣 / 逾期 / 卖出到账 / 权限变更）→ 播一个音效
         registerS2C(PlaySoundPayload.ID, PlaySoundPayload.CODEC) { payload ->
-            MinecraftClient.getInstance().execute { playMarketSound(payload.soundId) }
+            MinecraftClient.getInstance().execute {
+                // ⚠ 「通知提示音」这个开关**只作用于通知音**（用户 2026-10-07 定，见设置里的「通知」区域）：
+                //   在播放入口把关，其余音效（结果音 / 拍卖铃声…）一概不受影响
+                if (payload.soundId != MarketNoticeHud.SOUND_ID || ClientConfig.marketNoticeSound) {
+                    playMarketSound(payload.soundId)
+                }
+            }
+        }
+
+        // 市场 / 拍卖场的新上架通知（顶部气泡，见 MarketNoticeHud）—— 服务端广播给「别人」，本人不发
+        registerS2C(MarketNoticePayload.ID, MarketNoticePayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute { MarketNoticeHud.push(payload) }
         }
 
         // 聊天播报悬浮大图的数据（客户端悬停在拍卖/求购播报上时请求，见 ChatObjectPreview）

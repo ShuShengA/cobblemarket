@@ -61,6 +61,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsIconAnimButton: NineSliceButton? = null
     private var settingsHoverPreviewButton: NineSliceButton? = null
     private var settingsUpdateNoticeButton: NineSliceButton? = null
+
+    /** 通知区域（2026-10-07）：市场/拍卖场通知 + 其提示音 */
+    private var settingsNoticeButton: NineSliceButton? = null
+    private var settingsNoticeSoundButton: NineSliceButton? = null
     private var settingsGuiScaleButton: NineSliceButton? = null
 
     /** 设置弹窗的一行：左侧标签 + 右侧控件；[newGroup] = 与上一行之间画一条分隔线（同组的连续行之间不画）。
@@ -452,6 +456,16 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsUpdateNoticeButton = updateNoticeBtn
         addSettingsRow(updateNoticeBtn, switchX, toggleText("cobblemarket.settings.update_notice", ClientConfig.updateNotice))
 
+        // ── 通知（2026-10-07 用户定）：别人在市场 / 拍卖场上架时，屏幕顶部弹一个气泡 + 一声提示音 ──
+        // ⚠ 这两个是「总开关 + 音效」的关系：总开关关掉则既不显示也不响（播放入口与 HUD 各把关一处）
+        addSettingsHeading(Text.translatable("cobblemarket.settings.group_notice"))
+        val noticeBtn = makeSwitchButton(ClientConfig.marketNotice) { toggleMarketNotice() }
+        settingsNoticeButton = noticeBtn
+        addSettingsRow(noticeBtn, switchX, toggleText("cobblemarket.settings.market_notice", ClientConfig.marketNotice), newGroup = false)
+        val noticeSoundBtn = makeSwitchButton(ClientConfig.marketNoticeSound) { toggleMarketNoticeSound() }
+        settingsNoticeSoundButton = noticeSoundBtn
+        addSettingsRow(noticeSoundBtn, switchX, toggleText("cobblemarket.settings.market_notice_sound", ClientConfig.marketNoticeSound), newGroup = false)
+
         // done 固定在底部，不参与滚动
         addDrawableChild(NineSliceButton(
             centerX - 28, settingsDialogY() + settingsDialogH() - SETTINGS_DONE_INSET, 56, 20,
@@ -479,6 +493,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsIconAnimButton = null
         settingsHoverPreviewButton = null
         settingsUpdateNoticeButton = null
+        settingsNoticeButton = null
+        settingsNoticeSoundButton = null
         settingsGuiScaleButton = null
         settingsRows.clear()
         settingsScroll = 0
@@ -584,6 +600,18 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         ClientConfig.setUpdateNotice(!ClientConfig.updateNotice)
         settingsUpdateNoticeButton?.iconLeft = switchIconFor(ClientConfig.updateNotice)
         showSettingsToast("cobblemarket.settings.update_notice", ClientConfig.updateNotice)
+    }
+
+    private fun toggleMarketNotice() {
+        ClientConfig.setMarketNotice(!ClientConfig.marketNotice)
+        settingsNoticeButton?.iconLeft = switchIconFor(ClientConfig.marketNotice)
+        showSettingsToast("cobblemarket.settings.market_notice", ClientConfig.marketNotice)
+    }
+
+    private fun toggleMarketNoticeSound() {
+        ClientConfig.setMarketNoticeSound(!ClientConfig.marketNoticeSound)
+        settingsNoticeSoundButton?.iconLeft = switchIconFor(ClientConfig.marketNoticeSound)
+        showSettingsToast("cobblemarket.settings.market_notice_sound", ClientConfig.marketNoticeSound)
     }
 
     private fun balanceHudModeKey(): String = when (ClientConfig.balanceHudMode) {
