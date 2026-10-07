@@ -12,6 +12,7 @@ import com.shusheng.cobblemarket.platform.onPlayerJoin
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
+import com.shusheng.cobblemarket.util.PlayerNameText
 import com.shusheng.cobblemarket.util.RequestThrottle
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
@@ -293,7 +294,7 @@ object PermissionNetwork {
                 if (payload.playerUuid == EMPTY_UUID) {
                     val resolved = BanState.resolvePlayer(server, payload.playerName)
                     if (resolved == null) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", payload.playerName)))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(payload.playerName))))
                         return@execute
                     }
                     targetUuid = resolved.first

@@ -15,6 +15,7 @@ import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
 import com.shusheng.cobblemarket.util.PersistHelper
+import com.shusheng.cobblemarket.util.PlayerNameText
 import com.shusheng.cobblemarket.util.RequestThrottle
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
@@ -1136,7 +1137,7 @@ object FinanceNetwork {
                     com.shusheng.cobblemarket.finance.FinanceService.syncFreeze(server, payload.playerUuid)
                     com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                     player.sendMessage(
-                        Text.translatable("cobblemarket.repay.revoke_success", removed.first().playerName, removed.size)
+                        Text.translatable("cobblemarket.repay.revoke_success", PlayerNameText.of(removed.first().playerName), removed.size)
                             .formatted(Formatting.GREEN),
                         false
                     )

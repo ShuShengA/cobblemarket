@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.finance.FinanceService
 import com.shusheng.cobblemarket.market.BanState
+import com.shusheng.cobblemarket.util.PlayerNameText
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
@@ -182,7 +183,7 @@ object BanNetwork {
             server.execute {
                 val target = BanState.resolvePlayer(server, payload.playerName)
                 if (target == null) {
-                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", payload.playerName)))
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(payload.playerName))))
                     return@execute
                 }
 
@@ -201,9 +202,9 @@ object BanNetwork {
                 BanState.get(server).ban(target.first, target.second, player.name.string, expiresAt, payload.reason.take(100))
 
                 val msg = if (expiresAt == null)
-                    Text.translatable("cobblemarket.ban.banned", target.second)
+                    Text.translatable("cobblemarket.ban.banned", PlayerNameText.of(target.second))
                 else
-                    Text.translatable("cobblemarket.ban.banned_until", target.second, payload.duration)
+                    Text.translatable("cobblemarket.ban.banned_until", PlayerNameText.of(target.second), payload.duration)
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, msg))
@@ -223,7 +224,7 @@ object BanNetwork {
                 if (removed != null) {
                     // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                     com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
-                    sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.ban.unbanned", removed.playerName)))
+                    sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.ban.unbanned", PlayerNameText.of(removed.playerName))))
                     // 坏账提示直发聊天栏（不再发一个 MarketResultPayload，避免重复播放成功音）
                     if (FinanceService.hasBadDebt(server, payload.playerUuid)) {
                         player.sendMessage(Text.translatable("cobblemarket.ban.unbanned_bad_debt").formatted(Formatting.YELLOW), false)
