@@ -1123,6 +1123,24 @@ object AuctionNetwork {
             .append(Text.literal(" "))
             .append(Text.translatable("cobblemarket.chat.auction_announce", Text.literal(auction.sellerName), clickableName, priceText).formatted(Formatting.BLUE))
         server.playerManager.playerList.forEach { it.sendMessage(msg) }
+        // 屏幕顶部的上架通知（用户 2026-10-07 定）：**只发给别人** —— 上架者自己不发（他知道自己刚做了什么）。
+        // ⚠ 精灵那几个字段直接从 `extraData` 取，与庆祝动画同一套口径（见 CelebrationNetwork.sendFromEntry）——
+        //   别自己去解析 pokemonNbt，两处口径不一致的话，同一个形态在两边的表现会不一样。
+        broadcastMarketNotice(
+            server,
+            MarketNoticePayload(
+                isPokemon = auction.type == AuctionType.POKEMON,
+                speciesId = auction.extraData["speciesId"] ?: auction.species,
+                aspects = (auction.extraData["aspects"] ?: "").split(",").filter { it.isNotEmpty() },
+                shiny = auction.shiny,
+                heldItemNbt = auction.extraData["heldItemNbt"].orEmpty(),
+                heldItemVisible = auction.extraData["heldItemVisible"] != "false",
+                itemNbt = auction.itemNbt,
+                count = auction.count,
+                fromAuction = true
+            ),
+            exceptUuid = auction.sellerUuid
+        )
     }
 
     /** 物品附魔词条行（提取逻辑共享 RecordDetail.enchantmentLevels）；

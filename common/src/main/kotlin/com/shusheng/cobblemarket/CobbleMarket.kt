@@ -15,6 +15,7 @@ import com.shusheng.cobblemarket.network.CelebrationNetwork
 import com.shusheng.cobblemarket.network.FinanceNetwork
 import com.shusheng.cobblemarket.network.ItemBlacklistNetwork
 import com.shusheng.cobblemarket.network.MarketNetwork
+import com.shusheng.cobblemarket.network.MarketNoticeNetwork
 import com.shusheng.cobblemarket.network.ObjectPreviewNetwork
 import com.shusheng.cobblemarket.network.PointMarketNetwork
 import com.shusheng.cobblemarket.network.PointsNetwork
@@ -74,6 +75,8 @@ object CobbleMarket {
 		PointsNetwork.register()
 		// RP 商城（商品区）：与 RP 充值那条线分开的一套包（商城是服主上架、玩家用 RP 买）
 		PointMarketNetwork.register()
+		// 上架通知（1.2.2 新增，上浮时与本线独有的 RP 那几行并存）
+		MarketNoticeNetwork.register()
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()
 		TransactionHistory.register()
