@@ -174,5 +174,13 @@
         "stream": false
       }
     ]
+  },
+  "market_notice": {
+    "sounds": [
+      {
+        "name": "cobblemarket:notification",
+        "stream": false
+      }
+    ]
   }
 }

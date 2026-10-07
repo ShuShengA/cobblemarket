@@ -82,6 +82,17 @@ object ClientConfig {
     var celebrationItemOnAuctionAndOrder: Boolean = true
         private set
 
+    /**
+     * **市场、拍卖场通知**（2026-10-07 新增）：别人在市场挂单 / 拍卖场上架时，屏幕顶部弹一个圆形气泡。
+     * 关掉则**既不显示、也不响**（它与 [marketNoticeSound] 是「总开关 + 音效」的关系）。
+     */
+    var marketNotice: Boolean = true
+        private set
+
+    /** 上面那个通知的**提示音**（只在 [marketNotice] 开着时才有意义；默认开） */
+    var marketNoticeSound: Boolean = true
+        private set
+
     /** 市场动画总开关：控制进入市场动画（入口掉落）与关闭市场动画（界面整体上滑出屏） */
     var marketAnimation: Boolean = true
         private set
@@ -184,6 +195,9 @@ object ClientConfig {
             balanceHudY = ((data["balanceHudY"] as? Double)?.toFloat() ?: 0f).coerceIn(0f, 1f)
             // 无字段（旧版本升级）按新默认「开」
             updateNotice = data["updateNotice"] as? Boolean ?: true
+            // 通知（2026-10-07 新增）：无字段（旧版本升级）同样按新默认「开」
+            marketNotice = data["marketNotice"] as? Boolean ?: true
+            marketNoticeSound = data["marketNoticeSound"] as? Boolean ?: true
             if (legacy != null) save()
         } catch (e: Exception) {
             CobbleMarketClient.LOGGER.warn("Failed to load client config: ${e.message}")
@@ -193,6 +207,16 @@ object ClientConfig {
 
     fun setCelebrationOnMarketBuy(v: Boolean) {
         celebrationOnMarketBuy = v
+        save()
+    }
+
+    fun setMarketNotice(v: Boolean) {
+        marketNotice = v
+        save()
+    }
+
+    fun setMarketNoticeSound(v: Boolean) {
+        marketNoticeSound = v
         save()
     }
 
@@ -322,6 +346,8 @@ object ClientConfig {
                             "balanceHudX" to "余额 HUD 水平位置（0=贴左，1=贴右，0.5=居中）；由设置里的「余额HUD位置设置 → 自定义」拖动写入，手改请填 0~1 / Balance HUD horizontal position (0=left, 1=right, 0.5=centered); written by dragging in Settings → Balance HUD position → Custom; keep within 0~1 if editing by hand",
                             "balanceHudY" to "余额 HUD 垂直位置（0=贴顶，1=贴底，0.5=居中）；同样由拖动写入 / Balance HUD vertical position (0=top, 1=bottom, 0.5=centered); likewise written by dragging",
                             "updateNotice" to "有新版本可用时是否提示（个人设置，默认开；可在市场入口界面右下角的设置里改）。开启时**每次进入世界后**、第一次打开市场界面会提示一次（退出存档重进、重连服务器都算），直到你更新为止。查的是官网的一个版本文件，不带任何玩家信息 / Whether to show a chat notice when a newer version is available (personal setting, on by default; editable via the gear button on the market entry screen). When on, it shows once per world join — the first time you open a market screen (leaving and re-entering a world counts too) — until you update. It reads a single version file from our website and sends no player information",
+                            "marketNotice" to "别人在市场挂单 / 拍卖场上架时，是否在屏幕顶部弹一个圆形气泡通知（个人设置，默认开；可在市场入口界面右下角的设置里改）。关掉则既不显示也不响 / Whether to pop a round on-screen notice at the top of the screen when someone else lists an item or Pokémon on the market or auctions (personal setting, on by default; editable via the gear button on the market entry screen). Off hides the notice and mutes it",
+                            "marketNoticeSound" to "上面那个通知的提示音（个人设置，默认开；只在通知本身开着时有效）/ The sound played with the market listing notice above (personal setting, on by default; only meaningful while the notice itself is on)",
                             "_note" to "服主还可在服务端配置 cobblemarket.json 的 celebrationAnimationEnabled 里全局关闭动画，那种情况下本文件的开关不起作用 / The server owner can also disable animations globally via celebrationAnimationEnabled in the server-side cobblemarket.json, in which case these switches have no effect"
                         ),
                         "celebrationOnMarketBuy" to celebrationOnMarketBuy,
@@ -340,7 +366,9 @@ object ClientConfig {
                         "customCursor" to customCursor,
                         "balanceHudX" to balanceHudX,
                         "balanceHudY" to balanceHudY,
-                        "updateNotice" to updateNotice
+                        "updateNotice" to updateNotice,
+                        "marketNotice" to marketNotice,
+                        "marketNoticeSound" to marketNoticeSound
                     )
                 )
             )

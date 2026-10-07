@@ -2550,6 +2550,21 @@ object MarketNetwork {
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, listedMsg))
+                // 屏幕顶部的上架通知（用户 2026-10-07 定）：**只发给别人**，上架者自己不发。
+                // ⚠ 字段口径与拍卖 / 庆祝动画一致 —— 都从 `extraData` 取，别另起一套
+                broadcastMarketNotice(
+                    server,
+                    MarketNoticePayload(
+                        isPokemon = true,
+                        speciesId = listing.extraData["speciesId"] ?: listing.species,
+                        aspects = (listing.extraData["aspects"] ?: "").split(",").filter { it.isNotEmpty() },
+                        shiny = listing.shiny,
+                        heldItemNbt = listing.extraData["heldItemNbt"].orEmpty(),
+                        heldItemVisible = listing.extraData["heldItemVisible"] != "false",
+                        fromAuction = false
+                    ),
+                    exceptUuid = listing.sellerUuid
+                )
             }
         }
 
@@ -2848,6 +2863,17 @@ object MarketNetwork {
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, listedMsg))
+                // 屏幕顶部的上架通知（用户 2026-10-07 定）：**只发给别人**，上架者自己不发
+                broadcastMarketNotice(
+                    server,
+                    MarketNoticePayload(
+                        isPokemon = false,
+                        itemNbt = payload.itemNbt,
+                        count = payload.count,
+                        fromAuction = false
+                    ),
+                    exceptUuid = player.uuid
+                )
             }
         }
 
