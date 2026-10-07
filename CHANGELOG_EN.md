@@ -93,6 +93,10 @@
 
 - **Pokémon icons now blink and do idle quirks**: the 3D Pokémon shown in interfaces now **blink at random intervals**, and some species occasionally **play a little idle animation** (e.g. Timburr turning its log, Lucario shifting about). ⚠ The interval is **randomized over 8~30 seconds** and a blink lasts only **~0.17 s**, so it can take a full **30 seconds** of watching one Pokémon to be sure of catching one (they do not all blink at once). ⚠ What plays is **decided by Cobblemon's own animation data**: no idle quirks while walking and barely anything while asleep; it is disabled when the icon is set to "fully static", and it cannot be seen during the purchase / sale **celebration animation** (that animation only lives 4 seconds, while a blink needs at least 8)
 
+- **A notice now pops up when someone else lists something**: when another player lists a Pokémon or an item on either market, or puts one up for auction, a **round bubble drops down from the top of your screen** (showing that Pokémon's 3D model / that item's icon) along with a short **chime**. ⚠ **Your own listings produce no notice** (you just did it yourself), and **buy orders don't count** (they aren't a physical item). Up to **3 show at once** — when a 4th arrives the leftmost one slides away; each stays for 3 seconds and then fades on its own.
+  Settings gained a new **Notices** section with two switches: **① Market / auction notice** (off = neither the bubble nor the sound) and **② Notice sound** (mutes the sound only; the bubble still shows).
+  ⚠ This feature **adds a network packet ⇒ both client and server must be updated** (updating only one side will fail to connect)
+
 ### Changes
 
 - **"Also block loans" moved to the Finance Management screen**: it used to be a toggle in the **ban** confirmation dialog (ticked while banning someone); it is now a **separate list** on the Finance Management screen's "Loan Ban" tab — finance belongs on the finance side, and bans only cover trading. ⚠ The ban ledger (`config/cobblemarket/bans/`) drops its "Block Loans / Prev Block Loans" columns accordingly
