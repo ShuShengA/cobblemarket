@@ -89,13 +89,17 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         // ⚠ **刻意不挂悬停词条**（用户 2026-10-06 报「多余」）：框里画的就是那只精灵 / 那件物品本身，
         //   再写「精灵」「物品」纯属废话（他还专门截图说明过）。⚠ 入口界面那两枚 22×22 的**小图标**按钮
         //   仍挂着同样的词条 —— 那儿的图标不自解释，**两处别混**
+        // ⚠ 贴图用**弹窗背景** `dialog_background.png`（用户 2026-10-07 定）—— 它只有**一段**
+        //   （40×40），所以悬停时不会再换一张图（`NineSliceButton` 已把悬停态钳到 maxState，
+        //   见那里的注释）；"悬停上浮"的反馈仍在，由 [LIFT] 那套位移负责。
+        //   ⚠ 尺寸 / 掉落动画 / 上浮幅度一概未动。
         pokemonBtn = NineSliceButton(
             leftX, baseY, BTN, BTN, Text.literal(""), { doShowcase(Kind.POKEMON) },
-            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
+            texture = DIALOG_BACKGROUND_TEXTURE, texH = DIALOG_BACKGROUND_TEX_H
         ).also { addDrawableChild(it) }
         itemBtn = NineSliceButton(
             rightX, baseY, BTN, BTN, Text.literal(""), { doShowcase(Kind.ITEM) },
-            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
+            texture = DIALOG_BACKGROUND_TEXTURE, texH = DIALOG_BACKGROUND_TEX_H
         ).also { addDrawableChild(it) }
     }
 
