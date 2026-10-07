@@ -23,6 +23,7 @@ import com.shusheng.cobblemarket.market.MarketListing
 import com.shusheng.cobblemarket.market.MarketState
 import com.shusheng.cobblemarket.market.PokemonBlacklistEntry
 import com.shusheng.cobblemarket.market.PokemonBlacklistState
+import com.shusheng.cobblemarket.util.PlayerNameText
 import com.shusheng.cobblemarket.util.RequestThrottle
 import com.shusheng.cobblemarket.util.TypeTextColors
 import com.shusheng.cobblemarket.platform.onServerTickEnd
@@ -696,7 +697,7 @@ object BuyOrderNetwork {
                 }
                 sendToPlayer(
                     player,
-                    MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.force_cancelled_msg", order.buyerName, order.requirementText()))
+                    MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.force_cancelled_msg", PlayerNameText.of(order.buyerName), order.requirementText()))
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
@@ -1157,10 +1158,10 @@ object BuyOrderNetwork {
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, pending.sellerUuid,
                     if (reason.isNotBlank())
                         Text.translatable("cobblemarket.buy_order.rejected_seller_reason",
-                            order.buyerName, order.requirementText(), reason).formatted(Formatting.YELLOW)
+                            PlayerNameText.of(order.buyerName), order.requirementText(), reason).formatted(Formatting.YELLOW)
                     else
                         Text.translatable("cobblemarket.buy_order.rejected_seller",
-                            order.buyerName, order.requirementText()).formatted(Formatting.YELLOW)
+                            PlayerNameText.of(order.buyerName), order.requirementText()).formatted(Formatting.YELLOW)
                 )
                 broadcastEvent(server, "UPDATED", buyOrderToEntry(order, server))
             }

@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.cobblemon.mod.common.Cobblemon
 import com.cobblemon.mod.common.api.storage.party.PartyPosition
 import com.shusheng.cobblemarket.config.CurrencyHandler
+import com.shusheng.cobblemarket.util.PlayerNameText
 import com.shusheng.cobblemarket.util.PokemonSize
 import com.shusheng.cobblemarket.util.RequestThrottle
 import com.shusheng.cobblemarket.CobbleMarket
@@ -1784,7 +1785,7 @@ object MarketNetwork {
                     player,
                     MarketResultPayload(
                         true,
-                        Text.translatable("cobblemarket.op.cancelled", listing.sellerName, listing.speciesText())
+                        Text.translatable("cobblemarket.op.cancelled", PlayerNameText.of(listing.sellerName), listing.speciesText())
                     )
                 )
             }
@@ -1899,7 +1900,7 @@ object MarketNetwork {
                     player,
                     MarketResultPayload(
                         true,
-                        Text.translatable("cobblemarket.op.cancelled", listing.sellerName, itemName)
+                        Text.translatable("cobblemarket.op.cancelled", PlayerNameText.of(listing.sellerName), itemName)
                     )
                 )
             }
