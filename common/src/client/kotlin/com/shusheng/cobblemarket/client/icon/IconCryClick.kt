@@ -43,6 +43,11 @@ object IconCryClick {
      * 两种情况**不响应**：
      * - 图标设为「完全静态」（静态的意思本来就是"一个不会动的图标"，与头部跟随、睡眠姿态的判据一致）
      * - **精灵正在睡觉**（睡觉的精灵当然不叫；判定与睡眠姿态共用 [IconAnimationResolver.isSleeping]）
+     *
+     * ⚠ **走路中触发的战吼是"直接切姿势"**（2026-10-07 试过加过渡，实测更糟、已回退）：
+     * 悬停行 / 悬停大图时精灵在走路，战吼会强制切到待机姿势 —— 那一"啪"是**数据层的固有代价**
+     * （动画是相对模型原始姿势的偏移量、且累加写入，跨类型姿势无法平滑）。
+     * 完整实测三方案对比见 [IconAnimationResolver] 里的 `BATTLE_CRY_POSE_TRANSITION` 注释。
      */
     fun play(state: PosableState, renderable: RenderablePokemon) {
         val mode = com.shusheng.cobblemarket.client.ClientConfig.iconAnimMode

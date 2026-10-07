@@ -152,24 +152,77 @@ object IconAnimationResolver {
             state.poseIntensity = 1F
         }
 
-        val model = state.currentModel ?: return
-        // 首次渲染时 currentPose 为 null —— 没有旧姿势可插值，交给 drawProfilePokemon 直接切（从无到有）
-        val current = state.currentPose?.let { model.poses[it] } ?: return
         // 已经有东西在跑（战吼、上一次过渡）就不打断
         if (state.primaryAnimation != null) return
-        val target = model.getFirstSuitablePose(state, poseType)
-        if (target.poseName == current.poseName) return
+        val transition = poseTransitionTo(state, poseType) ?: return
         state.addPrimaryAnimation(
-            PrimaryAnimation(
-                animation = PoseTransitionAnimation(
-                    beforePose = current,
-                    afterPose = target,
-                    durationTicks = poseTransitionTicks(current, target)
-                ),
-                excludedLabels = emptySet(),
-                curve = { 1f }
-            )
+            PrimaryAnimation(animation = transition, excludedLabels = emptySet(), curve = { 1f })
         )
+    }
+
+    /**
+     * 造一条「**当前姿势 → [poseType]**」的过渡动画；**不需要过渡时返回 null**（调用方按"零延迟"处理）。
+     *
+     * 两种返回 null 的情况：
+     * - 首次渲染还没有 `currentPose` —— 没有旧姿势可插值，交给 `drawProfilePokemon` 直接切（从无到有）
+     * - 已经站在目标姿势上 —— 没什么可过渡的
+     *
+     * 过渡时长读 poser 的 `transformTicks`（见 [poseTransitionTicks]），不写死。
+     * 本函数只**造**不**播**：调用方自己决定是当独立的 primary 播（[ensurePoseTransition]），
+     * 还是接在别的动画前面当入场段（[playBattleCry] 的战吼起手）。
+     */
+    /**
+     * ⚠⚠⚠ **临时诊断开关（2026-10-07，用完删）**：战吼入场过渡的放慢倍数，正常值 = `1`。
+     *
+     * 用途：用户报「悬停聊天大图时从 walk 到战吼会**闪一下看不清是什么**的动作」，
+     * 把它调大后那段过渡变慢、肉眼能看清 —— 看清了才知道要修哪儿。
+     * ⚠ 这是**诊断版**，定位完必须改回 `1`。
+     */
+    private const val BATTLE_CRY_TRANSITION_SLOWDOWN = 1
+
+    /**
+     * ⚠⭐ **战吼入场要不要先播一段姿势过渡 —— 2026-10-07 用户实测定案：`false`（直接切换）。**
+     *
+     * ## 为什么最终选择"直接切换"
+     *
+     * 起因是用户报「走路 → 战吼动作不连贯（腿啪地换掉）」，于是加了入场过渡（[PoseTransitionThenBattleCry]）。
+     * 但实测把三种做法全试了一遍，**跨类型姿势切换（喷火龙：水面游动 ⇄ 直立）没有"平滑"可言**：
+     *
+     * | 做法 | 原理 | 实测观感 |
+     * |---|---|---|
+     * | **直接切换**（本开关 = `false`） | 一帧内换姿势 | ✅ 不塌不扭曲；只是"啪"一下 —— **最终采用** |
+     * | **官方的 `PoseTransitionAnimation`**（两套动画互补叠加） | 走路 ×(1−t) **+** 站立 ×t | ❌ 「闪一下奇怪的画面」—— 两个**偏移量相加**（往水平躺 + 站直）出来一个**拧着的角度** |
+     * | **只淡出当前姿势的动画** | 走路 ×(1−t)，目标姿势不跑动画 | ❌ 更糟：偏移量归零 ⇒ **回模型原始建模姿势**（用户原话「头伸直往上、其他关节全都伸直僵硬」） |
+     *
+     * **根因（别再重复试）**：Cobblemon 的关键帧是**相对模型原始姿势的偏移量**，而 `BedrockAnimation`
+     * 写骨骼是**累加**的（`part.xRot += value * intensity`）⇒ 两套动画的权重混合 = **偏移量相加**，
+     * 只有当两套动画本来就接近（`ground_idle` ⇄ `battle_idle` 这类官方场景）时才近似正确。
+     * 喷火龙的「水面游动」和「直立待机」差了一个 90° 的身体朝向 ⇒ 相加、归零都不对。
+     *
+     * ⚠ 官方那个过渡类不是"更高级的插值"，它对**跨类型**姿势一样无能为力 —— 别再回头试它。
+     * ⚠ 真要再做，方向只能是"不切姿势"（战吼在走路姿势下播）—— 但那会与走路动画**累加**打架
+     *   （2026-09-22 已经踩过：见 [PoseWithBattleCry] 的说明），**也不是路**。
+     */
+    private const val BATTLE_CRY_POSE_TRANSITION = false
+
+    private fun poseTransitionTo(
+        state: PosableState,
+        poseType: PoseType,
+        /** 诊断用的放慢倍数；**正式代码一律不传**（默认 1） */
+        ticksScale: Int = 1
+    ): PoseTransitionAnimation? {
+        val model = state.currentModel ?: return null
+        val current = state.currentPose?.let { model.poses[it] } ?: return null
+        val target = model.getFirstSuitablePose(state, poseType)
+        if (target.poseName == current.poseName) return null
+        val ticks = (poseTransitionTicks(current, target) * ticksScale).coerceAtLeast(1)
+        if (BATTLE_CRY_TRANSITION_SLOWDOWN != 1) {
+            CobbleMarket.LOGGER.info(
+                "[icon-anim] battle-cry transition: from={} to={} ticks={}x{} poseType={}",
+                current.poseName, target.poseName, ticks, ticksScale, poseType
+            )
+        }
+        return PoseTransitionAnimation(beforePose = current, afterPose = target, durationTicks = ticks)
     }
 
     /**
@@ -311,16 +364,39 @@ object IconAnimationResolver {
         logBattleCryDiagnostics(renderable, model, state, group, cry, selfContained)
         val anim = PoseWithBattleCry(
             cry = cry,
-            transitionSeconds = battlePoseTransformSeconds(model) ?: DEFAULT_TRANSITION_SECONDS,
+            // ⚠ 诊断版：把入场缓动也一起放慢（见 [BATTLE_CRY_TRANSITION_SLOWDOWN]）——
+            //   用户报「闪一下」，但过渡段放慢后闪**没跟着变慢** ⇒ 需把战吼入场也拉长才能定位它在哪一段。
+            transitionSeconds = (battlePoseTransformSeconds(model) ?: DEFAULT_TRANSITION_SECONDS) *
+                BATTLE_CRY_TRANSITION_SLOWDOWN,
             selfContained = selfContained
         )
-        state.addPrimaryAnimation(
-            PrimaryAnimation(
-                animation = anim,
-                excludedLabels = emptySet(),
-                curve = { t -> anim.intensityAt(t) }
+        // ⚠⭐ **战吼的入场姿势过渡（`BATTLE_CRY_POSE_TRANSITION`）2026-10-07 试过三轮、最终关掉**：
+        //   背景是用户报「走路 → 战吼动作不连贯（腿啪地换掉）」—— 成因确实是战吼强制 `PROFILE` 让
+        //   `setPoseToFirstSuitable` 把 `currentPose` **瞬切**（走路那套动画当帧从播放列表消失）。
+        //   但补过渡的两种做法实测都更糟（拧着的怪画面 / 回原始建模姿势），
+        //   **跨类型姿势切换没有"平滑"可言** —— 完整实测记录与根因见 [BATTLE_CRY_POSE_TRANSITION]。
+        //   ⇒ 现在就是**直接切换**：那一"啪"是数据层的固有代价，不塌不扭曲。
+        //   ⚠ 开关留着只为将来官方改了动画机制时好重试（组合动画本体的说明见 [PoseTransitionThenBattleCry]）。
+        val transition = if (!BATTLE_CRY_POSE_TRANSITION) null else
+            poseTransitionTo(state, PoseType.PROFILE, BATTLE_CRY_TRANSITION_SLOWDOWN)
+        if (transition == null) {
+            state.addPrimaryAnimation(
+                PrimaryAnimation(
+                    animation = anim,
+                    excludedLabels = emptySet(),
+                    curve = { t -> anim.intensityAt(t) }
+                )
             )
-        )
+        } else {
+            val combined = PoseTransitionThenBattleCry(transition, anim)
+            state.addPrimaryAnimation(
+                PrimaryAnimation(
+                    animation = combined,
+                    excludedLabels = emptySet(),
+                    curve = { t -> combined.intensityAt(t) }
+                )
+            )
+        }
         return true
     }
 }
@@ -732,3 +808,94 @@ private class PoseWithBattleCry(
         cry.applyEffects(entity, state, prev.coerceAtLeast(0f), next.coerceAtMost(crySeconds))
     }
 }
+
+/**
+ * 「姿势过渡 → 战吼」的组合动画（2026-10-07 新增）：先播 [transition]（走路 → 待机），过渡完再交给 [cry]。
+ *
+ * ## 为什么需要它
+ *
+ * 战吼期间 [IconAnimationResolver.resolve] 会强制 `PoseType.PROFILE`，而 `drawProfilePokemon` 拿到 poseType 就
+ * `setPoseToFirstSuitable` **瞬切** `currentPose` —— 正在播的走路动画（属于 `walking` 姿势）当帧从播放列表消失，
+ * 被互补插值淡出的其实是**新姿势**的 idle ⇒ 这就是用户实报的「走路 → 战吼动作不连贯」。
+ *
+ * 官方的「姿势↔姿势」平滑过渡（[PoseTransitionAnimation]）本来就在，只是被 [ensurePoseTransition] 开头那句
+ * `if (state.primaryAnimation != null) return` 绕过了（战吼正占着 primary 槽）。本类把过渡**前置**成战吼的入场段、
+ * 两段合成**一个** primary 播 —— 而不是先后设两次 primary（那样过渡的收尾会被战吼的开场硬切）。
+ *
+ * ## 两段的强度怎么接
+ *
+ * 组合动画整体是 primary（`curve = { t -> intensityAt(t) }`）：
+ * - **过渡段**：[intensityAt] 恒返回 `1f` ⇒ `poseIntensity = 0`，框架那套姿势动画**不参与**，
+ *   画面完全由 [PoseTransitionAnimation] 自己控制（它自足：先 `setDefault()`、再按互补强度 apply 前后两个姿势）
+ *   —— 与 [ensurePoseTransition] 里 `curve = { 1f }` 的独立过渡**同一口径**。
+ * - **战吼段**：强度交给 [PoseWithBattleCry.intensityAt]（两端缓动）。起始值 0 ⇒ 姿势动画恢复满强度，
+ *   而过渡动画的终点本就是"目标姿势满强度" ⇒ 交接**连续**，不会跳变。
+ *
+ * ## 计时
+ *
+ * 两段各记各的：过渡段由 [PoseTransitionAnimation] 自己在首次 `run` 时初始化起点（读 `state.animationSeconds`）；
+ * 战吼段由本类在过渡结束那一帧调 [PoseWithBattleCry.start] 起算（它自己按 `state.animationSeconds` 记账）。
+ *
+ * ⚠ [isTransition] 在过渡段**必须为 true**：`resolve()` 靠它判断"当前是不是战吼"来决定要不要强制待机姿势 ——
+ * 过渡段若报 false，`currentPose` 会在过渡动画之上又被 `setPoseToFirstSuitable(PROFILE)` 切一次。
+ */
+private class PoseTransitionThenBattleCry(
+    private val transition: PoseTransitionAnimation,
+    private val cry: PoseWithBattleCry
+) : ActiveAnimation {
+
+    /** 战吼是否已经开始（过渡段的判据，见类注释） */
+    private var cryStarted = false
+
+    /** 过渡段算「姿势过渡」、战吼段不算 —— 见类注释里那条 ⚠ */
+    override val isTransition: Boolean get() = !cryStarted
+
+    override val duration: Float = transition.duration + cry.duration
+    override val enduresPrimaryAnimations = false
+
+    private var startedSeconds = -1f
+
+    override fun start(state: PosableState) {
+        startedSeconds = state.animationSeconds
+    }
+
+    /** 过渡段恒 `1f`（姿势动画让位给过渡动画），战吼段交给 [PoseWithBattleCry.intensityAt] */
+    fun intensityAt(t: Float): Float {
+        val elapsed = t * duration
+        if (elapsed < transition.duration) return 1f
+        return cry.intensityAt((elapsed - transition.duration) / cry.duration)
+    }
+
+    override fun run(
+        context: RenderContext,
+        model: PosableModel,
+        state: PosableState,
+        limbSwing: Float,
+        limbSwingAmount: Float,
+        ageInTicks: Float,
+        headYaw: Float,
+        headPitch: Float,
+        intensity: Float
+    ): Boolean {
+        if (!cryStarted) {
+            if (state.animationSeconds - startedSeconds < transition.duration) {
+                // 过渡动画**忽略** intensity：它自己按互补曲线算前后姿势的权重（见 PoseTransitionAnimation）
+                transition.run(context, model, state, limbSwing, limbSwingAmount, ageInTicks, headYaw, headPitch, intensity)
+                return true
+            }
+            cryStarted = true
+            cry.start(state)
+        }
+        return cry.run(context, model, state, limbSwing, limbSwingAmount, ageInTicks, headYaw, headPitch, intensity)
+    }
+
+    /** 音效只在战吼段有（过渡段没有关键帧要转发）—— 吼声就是靠这里转发出去的，漏了会静默无声 */
+    override fun applyEffects(entity: Entity?, state: PosableState, previousSeconds: Float, newSeconds: Float) {
+        if (!cryStarted) return
+        cry.applyEffects(entity, state, previousSeconds, newSeconds)
+    }
+}
+
+// ⚠ 2026-10-07 这里**删掉过一个** `SettlePoseAnimation`（"只让当前姿势的动画淡出、目标姿势不跑动画"）——
+//   实测**更糟**：动画权重归零 = 骨骼回到模型**原始建模姿势**，用户看到"头伸直往上、其他关节全都伸直僵硬"。
+//   教训与三种做法的完整对比见 [BATTLE_CRY_POSE_TRANSITION]，别再重新发明它。
