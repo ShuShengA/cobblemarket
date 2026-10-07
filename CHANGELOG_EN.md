@@ -296,6 +296,8 @@
 
 - **Chinese punctuation no longer leaks into English clients**: the item count line, the rule summaries in Blacklist / Price Limits / Buy Orders, and the nature line all had **hard-coded full-width** brackets and separators (`（）`, `、`) — the right typography for a Chinese UI, but on an English client they wrap English text in full-width brackets, which are also twice as wide and read as clearly out of place. Punctuation now **follows the client language**: full-width for Chinese, half-width for English
 
+- **The Pokémon picker got stuck on "Loading" (listing a Pokémon / creating an auction)**: with more than one page (100) of Pokémon, the list froze after the first page and sat on "Loading PC Pokémon… (100 loaded)" forever; the **delivery picker** was affected the same way. The cause was that "ask for the next page the moment one arrives" ran into the 100 ms anti-spam throttle the server added for this request — over-limit requests are **dropped silently**, and a client that never gets a reply never asks again. The next page is now requested 0.12 s later, and paging works again
+
 ## 1.1.3 (released)
 
 ### Fixes
