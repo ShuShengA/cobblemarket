@@ -8,6 +8,7 @@ import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.sendToPlayer
 import com.shusheng.cobblemarket.util.ItemNameText
+import com.shusheng.cobblemarket.util.PlayerNameText
 import com.shusheng.cobblemarket.util.PokemonSize
 import com.shusheng.cobblemarket.util.RecordDetail
 import com.shusheng.cobblemarket.util.RequestThrottle
@@ -309,7 +310,7 @@ object ShareNetwork {
             .append(
                 Text.translatable(
                     "cobblemarket.chat.share_announce",
-                    Text.literal(player.name.string),
+                    PlayerNameText.of(player.name.string),
                     clickable
                 ).formatted(Formatting.BLUE)
             )

@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.finance.FinanceService
 import com.shusheng.cobblemarket.market.BanChangeLogger
 import com.shusheng.cobblemarket.market.BanState
+import com.shusheng.cobblemarket.util.PlayerNameText
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
@@ -272,7 +273,7 @@ object BanNetwork {
             server.execute {
                 val target = BanState.resolvePlayer(server, payload.playerName)
                 if (target == null) {
-                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", payload.playerName)))
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(payload.playerName))))
                     return@execute
                 }
 
@@ -280,7 +281,7 @@ object BanNetwork {
                 // 编辑：该玩家当前必须确实被封着（否则没什么可编辑的）
                 val existing = if (payload.isEdit) state.getBanInfo(target.first, System.currentTimeMillis()) else null
                 if (payload.isEdit && existing == null) {
-                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.not_banned", target.second)))
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.not_banned", PlayerNameText.of(target.second))))
                     return@execute
                 }
                 val ms = if (payload.duration.isBlank()) {
@@ -304,9 +305,9 @@ object BanNetwork {
                 }
 
                 val msg = when {
-                    payload.isEdit -> Text.translatable("cobblemarket.ban.edited", target.second)
-                    expiresAt == null -> Text.translatable("cobblemarket.ban.banned", target.second)
-                    else -> Text.translatable("cobblemarket.ban.banned_until", target.second, payload.duration)
+                    payload.isEdit -> Text.translatable("cobblemarket.ban.edited", PlayerNameText.of(target.second))
+                    expiresAt == null -> Text.translatable("cobblemarket.ban.banned", PlayerNameText.of(target.second))
+                    else -> Text.translatable("cobblemarket.ban.banned_until", PlayerNameText.of(target.second), payload.duration)
                 }
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
@@ -327,7 +328,7 @@ object BanNetwork {
                 if (removed != null) {
                     // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                     com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
-                    sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.ban.unbanned", removed.playerName)))
+                    sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.ban.unbanned", PlayerNameText.of(removed.playerName))))
                     // 坏账提示直发聊天栏（不再发一个 MarketResultPayload，避免重复播放成功音）
                     if (FinanceService.hasBadDebt(server, payload.playerUuid)) {
                         player.sendMessage(Text.translatable("cobblemarket.ban.unbanned_bad_debt").formatted(Formatting.YELLOW), false)

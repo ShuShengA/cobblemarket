@@ -297,6 +297,8 @@
 
 - **Chinese punctuation no longer leaks into English clients**: the item count line, the rule summaries in Blacklist / Price Limits / Buy Orders, and the nature line all had **hard-coded full-width** brackets and separators (`（）`, `、`) — the right typography for a Chinese UI, but on an English client they wrap English text in full-width brackets, which are also twice as wide and read as clearly out of place. Punctuation now **follows the client language**: full-width for Chinese, half-width for English
 
+- **Player names in chat are no longer tinted by the message colour**: the auction listing and sale broadcasts are blue throughout, rejected buy-order notices are yellow, and notices and command feedback alike (cards, permissions, bans, bad-debt revocation…) go green on success and red on failure — a player name sitting inside them used to be **tinted along with everything else**, as if we had coloured it ourselves. Player names in these messages now stay **default white**, while the rest of the text keeps its colour
+
 ## 1.1.3 (released)
 
 ### Fixes
