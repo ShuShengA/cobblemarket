@@ -17,6 +17,7 @@ import com.shusheng.cobblemarket.market.AuctionType
 import com.shusheng.cobblemarket.market.MarketState
 import com.shusheng.cobblemarket.platform.onServerTickEnd
 import com.shusheng.cobblemarket.market.BanState
+import com.shusheng.cobblemarket.util.PlayerNameText
 import com.shusheng.cobblemarket.util.PokemonSize
 import com.shusheng.cobblemarket.util.RequestThrottle
 import com.shusheng.cobblemarket.platform.registerC2S
@@ -1046,7 +1047,7 @@ object AuctionNetwork {
         //   （中括号与尾空格：词条含中括号（与 [点击出价] 等惯例一致），空格由这里补）
         val msg = Text.translatable("cobblemarket.chat.auction_tag").formatted(Formatting.GOLD)
             .append(Text.literal(" "))
-            .append(Text.translatable("cobblemarket.chat.auction_announce", Text.literal(auction.sellerName), clickableName, priceText).formatted(Formatting.BLUE))
+            .append(Text.translatable("cobblemarket.chat.auction_announce", PlayerNameText.of(auction.sellerName), clickableName, priceText).formatted(Formatting.BLUE))
         server.playerManager.playerList.forEach { it.sendMessage(msg) }
         // 屏幕顶部的上架通知（用户 2026-10-07 定）：**只发给别人** —— 上架者自己不发（他知道自己刚做了什么）。
         // ⚠ 精灵那几个字段直接从 `extraData` 取，与庆祝动画同一套口径（见 CelebrationNetwork.sendFromEntry）——
@@ -1137,7 +1138,7 @@ object AuctionNetwork {
             .append(CurrencyHandler.goldCurrencyText())
         return Text.translatable("cobblemarket.chat.auction_tag").formatted(Formatting.GOLD)
             .append(Text.literal(" "))
-            .append(Text.translatable("cobblemarket.chat.auction_sold_announce", Text.literal(auction.currentBidderName), priceText, nameText).formatted(Formatting.BLUE))
+            .append(Text.translatable("cobblemarket.chat.auction_sold_announce", PlayerNameText.of(auction.currentBidderName), priceText, nameText).formatted(Formatting.BLUE))
     }
 
     /** 聊天悬停里最多列几个证章名，其余折成「+N」。列表悬停窗那行图标能排 10 个

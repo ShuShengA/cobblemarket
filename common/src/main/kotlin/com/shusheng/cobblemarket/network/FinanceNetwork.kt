@@ -17,6 +17,7 @@ import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
 import com.shusheng.cobblemarket.util.PersistHelper
+import com.shusheng.cobblemarket.util.PlayerNameText
 import com.shusheng.cobblemarket.util.RequestThrottle
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
@@ -1348,7 +1349,7 @@ object FinanceNetwork {
             server.execute {
                 val target = BanState.resolvePlayer(server, payload.playerName)
                 if (target == null) {
-                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", payload.playerName)))
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(payload.playerName))))
                     return@execute
                 }
                 // 时长解析与封禁那边**同一个函数**（空 = 永久；`1d12h` 那套输入格式两边一致）
@@ -1377,8 +1378,8 @@ object FinanceNetwork {
                     player,
                     MarketResultPayload(
                         true,
-                        if (expiresAt == null) Text.translatable("cobblemarket.finance.loan_blocked", target.second)
-                        else Text.translatable("cobblemarket.finance.loan_blocked_until", target.second, payload.duration)
+                        if (expiresAt == null) Text.translatable("cobblemarket.finance.loan_blocked", PlayerNameText.of(target.second))
+                        else Text.translatable("cobblemarket.finance.loan_blocked_until", PlayerNameText.of(target.second), payload.duration)
                     )
                 )
                 sendLoanBlockList(player)
@@ -1447,7 +1448,7 @@ object FinanceNetwork {
             server.execute {
                 val target = BanState.resolvePlayer(server, payload.playerName)
                 if (target == null) {
-                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", payload.playerName)))
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(payload.playerName))))
                     return@execute
                 }
                 sendToPlayer(player, CreditLookupPayload(creditRowOf(server, target.first, target.second)))
@@ -1461,14 +1462,14 @@ object FinanceNetwork {
             server.execute {
                 val target = BanState.resolvePlayer(server, payload.playerName)
                 if (target == null) {
-                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", payload.playerName)))
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(payload.playerName))))
                     return@execute
                 }
                 val state = FinanceState.get(server)
                 val now = System.currentTimeMillis()
                 // 持卡玩家的额度 = 配置固定值、不走公式 ⇒ 人工调整没有意义（界面已置灰，这里兜底拦住）
                 if (state.isBlackCardHolder(target.first) || state.isPurpleCardHolder(target.first)) {
-                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.finance.credit_card_fixed", target.second)))
+                    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.finance.credit_card_fixed", PlayerNameText.of(target.second))))
                     return@execute
                 }
                 if (payload.targetLimit < 0) {
@@ -1683,7 +1684,7 @@ object FinanceNetwork {
                     com.shusheng.cobblemarket.finance.FinanceService.syncFreeze(server, payload.playerUuid)
                     com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                     player.sendMessage(
-                        Text.translatable("cobblemarket.repay.revoke_success", removed.first().playerName, removed.size)
+                        Text.translatable("cobblemarket.repay.revoke_success", PlayerNameText.of(removed.first().playerName), removed.size)
                             .formatted(Formatting.GREEN),
                         false
                     )

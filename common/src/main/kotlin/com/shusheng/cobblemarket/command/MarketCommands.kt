@@ -19,6 +19,7 @@ import com.shusheng.cobblemarket.network.MarketStatePayload
 import com.shusheng.cobblemarket.platform.onPlayerJoin
 import com.shusheng.cobblemarket.platform.registerCommands
 import com.shusheng.cobblemarket.platform.sendToPlayer
+import com.shusheng.cobblemarket.util.PlayerNameText
 import net.minecraft.server.command.CommandManager
 import net.minecraft.server.command.ServerCommandSource
 import net.minecraft.text.Text
@@ -224,12 +225,12 @@ object MarketCommands {
         val state = com.shusheng.cobblemarket.finance.FinanceState.get(server)
         val isHolder = if (black) state.isBlackCardHolder(player.uuid) else state.isPurpleCardHolder(player.uuid)
         if (isHolder) {
-            source.sendError(Text.translatable("cobblemarket.card.already_holder", player.name.string, cardName))
+            source.sendError(Text.translatable("cobblemarket.card.already_holder", PlayerNameText.of(player.name.string), cardName))
             return 0
         }
         // 升级替代互斥：给黑卡持有者发紫卡视为降级，拒绝并提示先收回黑卡
         if (!black && state.isBlackCardHolder(player.uuid)) {
-            source.sendError(Text.translatable("cobblemarket.card.black_holder_block_purple", player.name.string))
+            source.sendError(Text.translatable("cobblemarket.card.black_holder_block_purple", PlayerNameText.of(player.name.string)))
             return 0
         }
         val max = if (black) com.shusheng.cobblemarket.config.CobbleMarketConfig.blackCardCount
@@ -260,7 +261,7 @@ object MarketCommands {
         com.shusheng.cobblemarket.network.CelebrationNetwork.sendCard(player, if (black) "black" else "purple")
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
         source.sendFeedback(
-            { Text.translatable("cobblemarket.card.given", player.name.string, cardName).formatted(Formatting.GREEN) },
+            { Text.translatable("cobblemarket.card.given", PlayerNameText.of(player.name.string), cardName).formatted(Formatting.GREEN) },
             false
         )
         return 1
@@ -283,13 +284,13 @@ object MarketCommands {
         val removed = if (black) state.removeBlackCardHolder(player.uuid, source.name, player.name.string)
         else state.removePurpleCardHolder(player.uuid, source.name, player.name.string)
         if (!removed) {
-            source.sendError(Text.translatable("cobblemarket.card.not_holder", player.name.string, cardName))
+            source.sendError(Text.translatable("cobblemarket.card.not_holder", PlayerNameText.of(player.name.string), cardName))
             return 0
         }
         com.shusheng.cobblemarket.network.FinanceNetwork.broadcastCardHolderBoard(server)
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
         source.sendFeedback(
-            { Text.translatable("cobblemarket.card.revoked", player.name.string, cardName).formatted(Formatting.GREEN) },
+            { Text.translatable("cobblemarket.card.revoked", PlayerNameText.of(player.name.string), cardName).formatted(Formatting.GREEN) },
             false
         )
         return 1
@@ -314,20 +315,20 @@ object MarketCommands {
             ?: server.userCache?.findByName(name)?.orElse(null)?.id
             ?: holders.firstOrNull { u -> displayNameOf(u)?.equals(name, ignoreCase = true) == true }
         if (uuid == null) {
-            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(name)))
             return 0
         }
         val targetName = displayNameOf(uuid) ?: name
         val removed = if (black) state.removeBlackCardHolder(uuid, source.name, targetName)
         else state.removePurpleCardHolder(uuid, source.name, targetName)
         if (!removed) {
-            source.sendError(Text.translatable("cobblemarket.card.not_holder", name, cardName))
+            source.sendError(Text.translatable("cobblemarket.card.not_holder", PlayerNameText.of(name), cardName))
             return 0
         }
         com.shusheng.cobblemarket.network.FinanceNetwork.broadcastCardHolderBoard(server)
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
         source.sendFeedback(
-            { Text.translatable("cobblemarket.card.revoked", name, cardName).formatted(Formatting.GREEN) },
+            { Text.translatable("cobblemarket.card.revoked", PlayerNameText.of(name), cardName).formatted(Formatting.GREEN) },
             false
         )
         return 1
@@ -362,13 +363,13 @@ object MarketCommands {
         val name = StringArgumentType.getString(context, "player")
         val target = BanState.resolvePlayer(source.server, name)
         if (target == null) {
-            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(name)))
             return 0
         }
         // 节点名走与界面 / 聊天通知同一套词条：中文环境显示「黑名单」而不是 blacklist
         val nodeText = Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX))
         if (!PermissionState.get(source.server).grant(target.first, target.second, node, source.name)) {
-            source.sendError(Text.translatable("cobblemarket.perm.already_holding", target.second, nodeText))
+            source.sendError(Text.translatable("cobblemarket.perm.already_holding", PlayerNameText.of(target.second), nodeText))
             return 0
         }
         // 剩余节点 = 授予后的完整集合；写失败要提醒（别静默丢审计）
@@ -389,7 +390,7 @@ object MarketCommands {
             com.shusheng.cobblemarket.network.sendSound(it, "permission_change")
         }
         PermissionNetwork.notifyChanged(source.server, target.first, setOf(node), emptySet())
-        source.sendFeedback({ Text.translatable("cobblemarket.perm.granted", target.second, nodeText).formatted(Formatting.GREEN) }, false)
+        source.sendFeedback({ Text.translatable("cobblemarket.perm.granted", PlayerNameText.of(target.second), nodeText).formatted(Formatting.GREEN) }, false)
         return 1
     }
 
@@ -404,13 +405,13 @@ object MarketCommands {
         val name = StringArgumentType.getString(context, "player")
         val target = BanState.resolvePlayer(source.server, name)
         if (target == null) {
-            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(name)))
             return 0
         }
         // 同上：节点名用本地化词条
         val nodeText = Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX))
         if (!PermissionState.get(source.server).revoke(target.first, node)) {
-            source.sendError(Text.translatable("cobblemarket.perm.not_holding", target.second, nodeText))
+            source.sendError(Text.translatable("cobblemarket.perm.not_holding", PlayerNameText.of(target.second), nodeText))
             return 0
         }
         if (!PermissionFileLogger.log(
@@ -429,7 +430,7 @@ object MarketCommands {
             com.shusheng.cobblemarket.network.sendSound(it, "permission_change")
         }
         PermissionNetwork.notifyChanged(source.server, target.first, emptySet(), setOf(node))
-        source.sendFeedback({ Text.translatable("cobblemarket.perm.revoked", target.second, nodeText).formatted(Formatting.GREEN) }, false)
+        source.sendFeedback({ Text.translatable("cobblemarket.perm.revoked", PlayerNameText.of(target.second), nodeText).formatted(Formatting.GREEN) }, false)
         return 1
     }
 
@@ -450,12 +451,12 @@ object MarketCommands {
         }
         val target = BanState.resolvePlayer(source.server, nameArg)
         if (target == null) {
-            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", nameArg))
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(nameArg)))
             return 0
         }
         val nodes = state.getNodes(target.first)
         if (nodes.isEmpty()) {
-            source.sendFeedback({ Text.translatable("cobblemarket.perm.list_empty_player", target.second).formatted(Formatting.GRAY) }, false)
+            source.sendFeedback({ Text.translatable("cobblemarket.perm.list_empty_player", PlayerNameText.of(target.second)).formatted(Formatting.GRAY) }, false)
             return 1
         }
         source.sendFeedback({ permLine(target.second, nodes) }, false)
@@ -496,7 +497,7 @@ object MarketCommands {
                 ?: server.userCache?.getByUuid(uuid)?.orElse(null)?.name
             source.sendFeedback(
                 {
-                    if (name != null) Text.literal(" - $name").append(Text.literal(" ($uuid)").formatted(Formatting.GRAY))
+                    if (name != null) Text.literal(" - ").append(PlayerNameText.of(name)).append(Text.literal(" ($uuid)").formatted(Formatting.GRAY))
                     else Text.literal(" - $uuid")
                 },
                 false
@@ -505,14 +506,19 @@ object MarketCommands {
         return owners.size
     }
 
-    /** 一名玩家的节点行：名字金色 + 本地化节点名白色，按 ALL 顺序稳定排列（不受授予先后影响） */
+    /**
+     * 一名玩家的节点行：玩家名走统一入口（默认白，不被行色染）+ 本地化节点名白色，按 ALL 顺序稳定排列（不受授予先后影响）。
+     * ⚠ 名字段 **不能** 当父节点（会把白色传给子段），所以三段平级挂在无色 `Text.literal("")` 下。
+     */
     private fun permLine(playerName: String, nodes: Set<String>): Text {
         val body = Text.literal("")
         MarketPermissions.ALL.filter { it in nodes }.forEachIndexed { i, node ->
             if (i > 0) body.append(Text.literal(", "))
             body.append(Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX)))
         }
-        return Text.literal("$playerName: ").formatted(Formatting.GOLD)
+        return Text.literal("")
+            .append(PlayerNameText.of(playerName))
+            .append(Text.literal(": "))
             .append(body.formatted(Formatting.WHITE))
     }
 
@@ -543,7 +549,7 @@ object MarketCommands {
         sortedHolders.forEach { uuid ->
             val name = server.playerManager.getPlayer(uuid)?.name?.string
                 ?: server.userCache?.getByUuid(uuid)?.orElse(null)?.name ?: uuid.toString()
-            source.sendFeedback({ Text.literal(" - $name") }, false)
+            source.sendFeedback({ Text.literal(" - ").append(PlayerNameText.of(name)) }, false)
         }
         return 1
     }
@@ -556,7 +562,7 @@ object MarketCommands {
         val name = StringArgumentType.getString(context, "player")
         val target = BanState.resolvePlayer(server, name)
         if (target == null) {
-            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(name)))
             return 0
         }
         val state = FinanceState.get(server)
@@ -575,7 +581,7 @@ object MarketCommands {
             FinanceService.syncFreeze(server, target.first)
             com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
             source.sendFeedback(
-                { Text.translatable("cobblemarket.repay.revoke_success", target.second, removed.size).formatted(Formatting.GREEN) },
+                { Text.translatable("cobblemarket.repay.revoke_success", PlayerNameText.of(target.second), removed.size).formatted(Formatting.GREEN) },
                 false
             )
         } else {
@@ -641,7 +647,7 @@ object MarketCommands {
 
         val target = BanState.resolvePlayer(server, name)
         if (target == null) {
-            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(name)))
             return 0
         }
 
@@ -659,9 +665,9 @@ object MarketCommands {
         BanState.get(server).ban(target.first, target.second, source.name, expiresAt, reason)
 
         if (expiresAt == null) {
-            source.sendFeedback({ Text.translatable("cobblemarket.ban.banned", target.second).formatted(Formatting.GREEN) }, false)
+            source.sendFeedback({ Text.translatable("cobblemarket.ban.banned", PlayerNameText.of(target.second)).formatted(Formatting.GREEN) }, false)
         } else {
-            source.sendFeedback({ Text.translatable("cobblemarket.ban.banned_until", target.second, durationStr).formatted(Formatting.GREEN) }, false)
+            source.sendFeedback({ Text.translatable("cobblemarket.ban.banned_until", PlayerNameText.of(target.second), durationStr).formatted(Formatting.GREEN) }, false)
         }
 
         // 若目标在线，即时通知
@@ -682,18 +688,18 @@ object MarketCommands {
 
         val target = BanState.resolvePlayer(server, name)
         if (target == null) {
-            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            source.sendError(Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(name)))
             return 0
         }
 
         if (BanState.get(server).unban(target.first, source.name) != null) {
-            source.sendFeedback({ Text.translatable("cobblemarket.ban.unbanned", target.second).formatted(Formatting.GREEN) }, false)
+            source.sendFeedback({ Text.translatable("cobblemarket.ban.unbanned", PlayerNameText.of(target.second)).formatted(Formatting.GREEN) }, false)
             // 坏账玩家解封只放行市场交易：借款/喵喵支付另有独立拦截，撤销坏账才是彻底恢复
             if (FinanceService.hasBadDebt(server, target.first)) {
                 source.sendFeedback({ Text.translatable("cobblemarket.ban.unbanned_bad_debt").formatted(Formatting.YELLOW) }, false)
             }
         } else {
-            source.sendError(Text.translatable("cobblemarket.ban.not_banned", target.second))
+            source.sendError(Text.translatable("cobblemarket.ban.not_banned", PlayerNameText.of(target.second)))
             return 0
         }
         return Command.SINGLE_SUCCESS
@@ -717,7 +723,7 @@ object MarketCommands {
             else
                 BanState.remainingText(info.expiresAt!! - System.currentTimeMillis())
             source.sendFeedback({
-                Text.translatable("cobblemarket.ban.banlist_entry", info.playerName, info.bannedBy, duration)
+                Text.translatable("cobblemarket.ban.banlist_entry", PlayerNameText.of(info.playerName), PlayerNameText.of(info.bannedBy), duration)
             }, false)
         }
         return Command.SINGLE_SUCCESS
