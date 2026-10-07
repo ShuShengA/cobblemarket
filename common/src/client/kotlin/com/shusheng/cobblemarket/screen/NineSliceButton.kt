@@ -90,7 +90,11 @@ class NineSliceButton(
         val maxState = texH / NINE_SLICE_STATE_H - 1
         val state = when {
             selectedVisual -> 2.coerceAtMost(maxState)
-            isHovered -> 1
+            // ⚠ 悬停态**也要**钳到 maxState（与上面那行同一个写法）—— 贴图只有一段时
+            //   （`texH = NINE_SLICE_STATE_H` ⇒ maxState = 0），`state = 1` 会让 `drawNineSlice`
+            //   的 `vOffset = 1 × 40` 越出贴图高度、采到界外。2026-10-07 快速展示按钮换成
+            //   `dialog_background.png`（40×40，单段）时暴露 —— 钳住即退回默认态，外观不变。
+            isHovered -> 1.coerceAtMost(maxState)
             else -> 0
         }
         drawNineSlice(context, texture, x, y, width, height, state, texH)
