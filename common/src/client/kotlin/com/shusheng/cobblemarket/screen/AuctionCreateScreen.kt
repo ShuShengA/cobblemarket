@@ -68,6 +68,16 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     private var closed = false
     // 防串扰：秒关再开界面时，旧界面的迟到响应会被 requestId 比对丢弃（独立计数器）
     private val requestId = auctionRequestId++
+
+    /**
+     * 待发的下一页请求（页码 → 该发的时刻）。与 `SellSelectScreen` 同一套处理。
+     *
+     * ⚠⭐ **为什么要等**：服务端给这个请求加了 100ms 节流防连发（`POKEMON_PAGE_INTERVAL_MS`），
+     * 超限**静默丢弃**；而「收到一页就立刻发下一页」的往返只有几毫秒 ⇒ 必然被丢掉、
+     * 客户端又收不到响应 ⇒ **永久停在"正在加载"**（2026-10-07 用户实测报出）。
+     */
+    private var pendingPageRequest: Int? = null
+    private var pendingPageAt = 0L
     private var scrollOffset = 0
     private var hoveredRow = -1
     private var searchField: TextFieldWidget? = null
@@ -778,10 +788,20 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         }
         rebuildFiltered()
         if (payload.hasMore) {
-            sendToServer(RequestMyPokemonPayload(payload.page + 1, requestId))
+            // ⚠ **不立刻发** —— 排进待发队列、等过服务端的 100ms 节流窗口（见 pendingPageRequest）
+            pendingPageRequest = payload.page + 1
+            pendingPageAt = System.currentTimeMillis() + PAGE_REQUEST_DELAY_MS
         } else {
             loadedAll = true
         }
+    }
+
+    /** 每帧检查有没有到点该发的下一页请求（延迟发送的落点，见 [pendingPageRequest]） */
+    private fun tickPendingPageRequest() {
+        val page = pendingPageRequest ?: return
+        if (System.currentTimeMillis() < pendingPageAt) return
+        pendingPageRequest = null
+        sendToServer(RequestMyPokemonPayload(page, requestId))
     }
 
     fun onMarketResult(payload: MarketResultPayload) {
@@ -1237,6 +1257,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // 到点了就把排队的下一页请求发出去（见 pendingPageRequest）
+        tickPendingPageRequest()
         // ⚠ **每帧**重算面板控件的显隐（照精灵市场与 `AdminPokemonScreen`）：面板开合走的是**动画**，
         //   而动画播完那一刻**没有任何事件回调** —— 只在 toggle / 滚轮 / 弹窗开关里算的话，
         //   展开动画结束后控件会永远停在「动画期间藏起来」的状态（2026-09-25 用户报）。
@@ -1724,6 +1746,11 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     companion object {
         private var auctionRequestId = 0
+        /**
+         * 下一页请求发出前要等多久（ms）—— 与 `SellSelectScreen` 同一个值，理由见那边常量注释。
+         * ⚠ 必须**大于服务端的 `POKEMON_PAGE_INTERVAL_MS`（100）**，否则请求会被静默丢弃、列表卡死。
+         */
+        private const val PAGE_REQUEST_DELAY_MS = 120L
         /** 展开列表最多显示几行（超出用滚轮翻，照精灵市场） */
         const val MAX_FILTER_LIST_ROWS = 8
         // ⚠ 浮层起点不再是常量：改成「被点按钮自己的 y + 22」，读控件、不维护第二份坐标表
