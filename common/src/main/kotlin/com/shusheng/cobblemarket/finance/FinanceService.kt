@@ -10,6 +10,7 @@ import com.shusheng.cobblemarket.network.sendSound
 import com.shusheng.cobblemarket.network.RepayListDataPayload
 import com.shusheng.cobblemarket.platform.sendToPlayer
 import com.shusheng.cobblemarket.util.PersistHelper
+import com.shusheng.cobblemarket.util.PlayerNameText
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.text.Text
@@ -380,7 +381,7 @@ object FinanceService {
                         server,
                         Text.translatable(
                             "cobblemarket.repay.op_bad_debt",
-                            bad.playerName,
+                            PlayerNameText.of(bad.playerName),
                             bad.id,
                             CurrencyHandler.goldAmount(bad.remainingPrincipal),
                             CurrencyHandler.goldCurrencyText()
