@@ -307,8 +307,14 @@ object PokemonCelebrationAnimation {
         matrices.push()
         matrices.translate(posX.toDouble(), posY.toDouble(), 0.0)
         try {
+            // ⚠ 走 **species 重载**（`renderablePokemon` 那个**不暴露** `doQuirks`、内部恒为 false）：
+            //   官方 quirk（眨眼 / idle 小动作）由 `RenderContext.DO_QUIRKS` 开关，只在 species 重载上。
+            //   代价 = `currentAspects` 要**自己喂**（那个重载本来替我们做这件事）。
+            //   本屏其实**看不到** quirk（它 8~30 秒才触发一次，而庆祝动画只活几秒）——
+            //   跟着开只为口径统一：三处图标渲染对 quirk 的态度一致，将来调时长也不会漏掉这里。
+            st.currentAspects = rp.aspects
             drawProfilePokemon(
-                renderablePokemon = rp,
+                species = rp.species.resourceIdentifier,
                 matrixStack = matrices,
                 rotation = rotation,
                 poseType = anim.poseType,
@@ -318,6 +324,7 @@ object PokemonCelebrationAnimation {
                 partialTicks = selfDelta,
                 // 最大约 200px；scale 参数围绕模型中心缩放，位置不会偏移
                 scale = renderScale,
+                doQuirks = true,
                 headYaw = anim.headYaw,
                 headPitch = anim.headPitch,
                 r = alpha,
