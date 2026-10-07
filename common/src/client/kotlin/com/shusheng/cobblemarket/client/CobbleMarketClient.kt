@@ -858,14 +858,27 @@ private val LEGACY_VOLUME_SOUNDS = setOf("result_success", "result_fail")
  *
  * 若以后新旧素材统一重做，这两档可以合并回一个值。
  */
+/**
+ * 上一次播的**上架通知音**实例 —— 下一次响之前先 `stop` 它，做出「后一声顶掉前一声」的手感
+ *（见 [playMarketSound] 里的说明）。只记这一个音效；停一个已经播完的实例是 no-op，不会出错。
+ */
+private var lastMarketNoticeSound: PositionedSoundInstance? = null
+
 fun playMarketSound(soundId: String) {
-    MinecraftClient.getInstance().soundManager.play(
-        PositionedSoundInstance.master(
-            SoundEvent.of(Identifier.of("cobblemarket", soundId)),
-            1.0f,
-            if (soundId in LEGACY_VOLUME_SOUNDS) 0.5f else 0.9f
-        )
+    val instance = PositionedSoundInstance.master(
+        SoundEvent.of(Identifier.of("cobblemarket", soundId)),
+        1.0f,
+        if (soundId in LEGACY_VOLUME_SOUNDS) 0.5f else 0.9f
     )
+    // ⚠⭐ **上架通知音：新的一声【顶掉】上一声**（用户 2026-10-07 定，要的是现实中 app 通知的手感：
+    //   来第二条时第一条会被打断，而不是两条叠在一起糊成一团）。
+    //   两个玩家几乎同时上架时，两声会在同一帧播出 —— 不停掉前一声就只是"变响了"，不是"顶掉"。
+    // ⚠ 只对这一个音效生效；其余音效（结果音 / 拍卖铃声…）各响各的，不受影响。
+    if (soundId == MarketNoticeHud.SOUND_ID) {
+        lastMarketNoticeSound?.let { MinecraftClient.getInstance().soundManager.stop(it) }
+        lastMarketNoticeSound = instance
+    }
+    MinecraftClient.getInstance().soundManager.play(instance)
 }
 
 // ── 额度快照请求：未响应自动重试 ──
