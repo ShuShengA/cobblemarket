@@ -23,6 +23,17 @@ object TextUtil {
             .firstOrNull { MinecraftClient.getInstance().textRenderer.getWidth(it) <= field.width - 8 }
             ?: Text.translatable(shortKey)
 
+    /**
+     * **并排**的一组框共用同一个判断（按**最窄**的那个）—— 逐框各判的话，相邻两格可能一个用全称、
+     * 一个退回短版，并排摆着就不对称了（用户 2026-10-08 指出）。
+     *
+     * ⚠ 用这个重载时，**调用点必须等这一组框都创建完**再设占位符（否则列表里还少一个，
+     *   又退化成逐框判断 —— 跟没用一样）。
+     */
+    fun fieldHint(fields: List<TextFieldWidget>, longKey: String, shortKey: String): MutableText =
+        fields.minByOrNull { it.width }?.let { fieldHint(it, longKey, shortKey) }
+            ?: Text.translatable(shortKey)
+
     // 截断到 maxWidth 像素：超宽时截断尾部加 "…"；未超宽原样返回。
     // 用于黑名单按钮/列表等固定宽度区域，防止无翻译物品的超长 key 原文溢出控件。
     fun truncateString(s: String, maxWidth: Int): String {
