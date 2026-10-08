@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
+import com.shusheng.cobblemarket.util.TextUtil
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.playFailSound
 
@@ -1417,20 +1418,6 @@ class BuyOrderScreen(
     private fun createY(designOffset: Int): Int = createDialogY() + designOffset - createScroll
 
     /**
-     * 输入框占位符：原版画占位符**不裁剪**，长了会溢出到隔壁格（用户 2026-10-08 报
-     * 「Max unit price 的 e 顶出框外」）。按**量出来的宽度**从长到短挑第一个放得下的 ——
-     * 中文放得下就一直用全称，英文放不下才退回短版。
-     * `8` = 原版输入框左右各 4px 内边距（照 RP 商城 `code_hint` / EV hint 的先例）。
-     *
-     * ⚠ 新增占位符前先量宽度：英文半角 **6px/字符**、中文 **9px/字符**（默认位图字体），
-     *   别按中文观感定长短 ——「最高单价」36px、「Max unit price」84px，同一格中文刚好、英文溢出。
-     */
-    private fun fieldHint(field: TextFieldWidget, longKey: String, shortKey: String): MutableText =
-        listOf(longKey, shortKey).map { Text.translatable(it) }
-            .firstOrNull { textRenderer.getWidth(it) <= field.width - 8 }
-            ?: Text.translatable(shortKey)
-
-    /**
      * 表单里**画出来的东西**（精灵预览图 / 候选计数 / 冻结提示）现在该不该画。
      *
      * ⚠ 它们不是控件，[layoutCreateForm] 的可见性管不到 —— 漏了就会出现「输入框滚走了、
@@ -1592,13 +1579,13 @@ class BuyOrderScreen(
         // 单价区间（并排，placeholder 短不溢出）
         createMinPriceField = TextFieldWidget(textRenderer, centerX - 75, createY(174), 74, 16, Text.literal(""))
         createMinPriceField?.let {
-            it.setPlaceholder(fieldHint(it, "cobblemarket.buy_order.create_min_price", "cobblemarket.buy_order.create_min_price_short").formatted(Formatting.GRAY))
+            it.setPlaceholder(TextUtil.fieldHint(it, "cobblemarket.buy_order.create_min_price", "cobblemarket.buy_order.create_min_price_short").formatted(Formatting.GRAY))
         }
         createMinPriceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(createMinPriceField)
         createMaxPriceField = TextFieldWidget(textRenderer, centerX + 3, createY(174), 74, 16, Text.literal(""))
         createMaxPriceField?.let {
-            it.setPlaceholder(fieldHint(it, "cobblemarket.buy_order.create_max_price", "cobblemarket.buy_order.create_max_price_short").formatted(Formatting.GRAY))
+            it.setPlaceholder(TextUtil.fieldHint(it, "cobblemarket.buy_order.create_max_price", "cobblemarket.buy_order.create_max_price_short").formatted(Formatting.GRAY))
         }
         createMaxPriceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(createMaxPriceField)
@@ -1606,7 +1593,7 @@ class BuyOrderScreen(
         // 备注（额外需求提醒卖家，选填）
         createNoteField = TextFieldWidget(textRenderer, centerX - 74, createY(194), 148, 16, Text.literal(""))
         createNoteField?.let {
-            it.setPlaceholder(fieldHint(it, "cobblemarket.buy_order.create_note", "cobblemarket.buy_order.create_note_short").formatted(Formatting.GRAY))
+            it.setPlaceholder(TextUtil.fieldHint(it, "cobblemarket.buy_order.create_note", "cobblemarket.buy_order.create_note_short").formatted(Formatting.GRAY))
         }
         createNoteField?.setMaxLength(100)
         addDrawableChild(createNoteField)
@@ -1658,13 +1645,13 @@ class BuyOrderScreen(
         // min/max/备注与上方搜索框左右缘完全对齐（搜索框 centerX-82 宽 148）
         createMinPriceField = TextFieldWidget(textRenderer, centerX - 82, createY(106), 72, 16, Text.literal(""))
         createMinPriceField?.let {
-            it.setPlaceholder(fieldHint(it, "cobblemarket.buy_order.create_min_price", "cobblemarket.buy_order.create_min_price_short").formatted(Formatting.GRAY))
+            it.setPlaceholder(TextUtil.fieldHint(it, "cobblemarket.buy_order.create_min_price", "cobblemarket.buy_order.create_min_price_short").formatted(Formatting.GRAY))
         }
         createMinPriceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(createMinPriceField)
         createMaxPriceField = TextFieldWidget(textRenderer, centerX - 6, createY(106), 72, 16, Text.literal(""))
         createMaxPriceField?.let {
-            it.setPlaceholder(fieldHint(it, "cobblemarket.buy_order.create_max_price", "cobblemarket.buy_order.create_max_price_short").formatted(Formatting.GRAY))
+            it.setPlaceholder(TextUtil.fieldHint(it, "cobblemarket.buy_order.create_max_price", "cobblemarket.buy_order.create_max_price_short").formatted(Formatting.GRAY))
         }
         createMaxPriceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(createMaxPriceField)
@@ -1672,7 +1659,7 @@ class BuyOrderScreen(
         // 备注（额外需求提醒卖家，选填）
         createNoteField = TextFieldWidget(textRenderer, centerX - 82, createY(126), 148, 16, Text.literal(""))
         createNoteField?.let {
-            it.setPlaceholder(fieldHint(it, "cobblemarket.buy_order.create_note", "cobblemarket.buy_order.create_note_short").formatted(Formatting.GRAY))
+            it.setPlaceholder(TextUtil.fieldHint(it, "cobblemarket.buy_order.create_note", "cobblemarket.buy_order.create_note_short").formatted(Formatting.GRAY))
         }
         createNoteField?.setMaxLength(100)
         addDrawableChild(createNoteField)
