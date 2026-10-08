@@ -232,6 +232,8 @@
 
 - **Player names in chat are no longer tinted by the message colour**: the auction listing and sale broadcasts are blue throughout, rejected buy-order notices are yellow, and notices and command feedback alike (cards, permissions, bans, bad-debt revocation…) go green on success and red on failure — a player name sitting inside them used to be **tinted along with everything else**, as if we had coloured it ourselves. Player names in these messages now stay **default white**, while the rest of the text keeps its colour
 
+- **Pokemon auctions were called "items" in the notifications**: winning an auction, an auction ending unsold and an auction being force-cancelled all said "**item** sent to / returned to your pending claims" no matter what the lot actually was — a Pokemon is not an item. The same wording was on the Auction House rules page ("the winner's **item** goes to their returns"), the admin's force-cancel confirmation and the market-close confirmation (present since 1.1.1). The wording now either drops the noun or uses the neutral "**lot**"
+
 ## 1.1.3 (released)
 
 ### Fixes
