@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.client.activeCurrencyUnit
 import com.shusheng.cobblemarket.client.formatPrice
 import com.shusheng.cobblemarket.client.inlineCurrencyUnit
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.util.TextUtil
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
@@ -442,7 +443,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     private fun createPriceField(x: Int, y: Int, placeholderKey: String): TextFieldWidget {
         val field = TextFieldWidget(textRenderer, x, y, 46, 16, Text.literal(""))
-        field.setPlaceholder(Text.translatable(placeholderKey).formatted(Formatting.GRAY))
+        // 框只有 46px（可用 38）：英文「Min price」54px 会顶出框外 ⇒ 走宽窄两版自动挑。
+        // 约定：短版 key = 长版 key + `_short`（min/max 两条都是这么配的）
+        field.setPlaceholder(TextUtil.fieldHint(field, placeholderKey, "${placeholderKey}_short").formatted(Formatting.GRAY))
         field.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         field.setChangedListener { dialogError = null }
         addDrawableChild(field)

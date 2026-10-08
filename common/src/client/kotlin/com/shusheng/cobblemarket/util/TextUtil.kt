@@ -1,10 +1,28 @@
 package com.shusheng.cobblemarket.util
 
 import net.minecraft.client.MinecraftClient
+import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.item.ItemStack
+import net.minecraft.text.MutableText
 import net.minecraft.text.Text
 
 object TextUtil {
+
+    /**
+     * 输入框占位符：原版画占位符**不裁剪**，长了会溢出到隔壁格（用户 2026-10-08 报
+     * 「Max unit price 的 e 顶出框外」）。按**量出来的宽度**从长到短挑第一个放得下的 ——
+     * 中文放得下就一直用全称，英文放不下才退回短版。
+     * `8` = 原版输入框左右各 4px 内边距（照 RP 商城 `code_hint` / EV hint 的先例）。
+     *
+     * ⚠ 新增占位符前先量宽度：英文半角 **6px/字符**、中文 **9px/字符**（默认位图字体），
+     *   别按中文观感定长短 ——「最高单价」36px、「Max unit price」84px，同一格中文刚好、英文溢出。
+     * ⚠ 传**控件本身**而不是宽度数字：框宽改了这里自动跟着走，不会两处不同步。
+     */
+    fun fieldHint(field: TextFieldWidget, longKey: String, shortKey: String): MutableText =
+        listOf(longKey, shortKey).map { Text.translatable(it) }
+            .firstOrNull { MinecraftClient.getInstance().textRenderer.getWidth(it) <= field.width - 8 }
+            ?: Text.translatable(shortKey)
+
     // 截断到 maxWidth 像素：超宽时截断尾部加 "…"；未超宽原样返回。
     // 用于黑名单按钮/列表等固定宽度区域，防止无翻译物品的超长 key 原文溢出控件。
     fun truncateString(s: String, maxWidth: Int): String {
