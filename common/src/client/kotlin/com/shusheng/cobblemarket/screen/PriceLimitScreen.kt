@@ -379,8 +379,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         ruleHtButton = NineSliceButton(centerX - 80, dialogY + 66, 140, 14, ruleHtButtonText(), { toggleRuleHtFilter() })
         addDrawableChild(ruleHtButton)
 
-        minField = createPriceField(centerX - 48, dialogY + 84, "cobblemarket.price_limit.min_placeholder")
-        maxField = createPriceField(centerX + 2, dialogY + 84, "cobblemarket.price_limit.max_placeholder")
+        minField = createPriceField(centerX - 48, dialogY + 84)
+        maxField = createPriceField(centerX + 2, dialogY + 84)
+        applyPriceHints()
 
         addConfirmButton = NineSliceButton(
             centerX - 85, dialogY + 104, 80, 20,
@@ -446,15 +447,31 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         refreshPreviewModel()
     }
 
-    private fun createPriceField(x: Int, y: Int, placeholderKey: String): TextFieldWidget {
+    private fun createPriceField(x: Int, y: Int): TextFieldWidget {
         val field = TextFieldWidget(textRenderer, x, y, 46, 16, Text.literal(""))
-        // 框只有 46px（可用 38）：英文「Min price」54px 会顶出框外 ⇒ 走宽窄两版自动挑。
-        // 约定：短版 key = 长版 key + `_short`（min/max 两条都是这么配的）
-        field.setPlaceholder(TextUtil.fieldHint(field, placeholderKey, "${placeholderKey}_short").formatted(Formatting.GRAY))
         field.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         field.setChangedListener { dialogError = null }
         addDrawableChild(field)
         return field
+    }
+
+    /**
+     * 两个价格框的占位符：**都建好之后**统一设 —— 框只有 46px（可用 38px），英文
+     * 「Min price / Max price」都放不下 ⇒ 整组退回 `Min` / `Max`。
+     * 整组一起判（而不是各判各的）是为了「将来只有一条压线时，两格仍然一致」。
+     */
+    private fun applyPriceHints() {
+        val fields = listOfNotNull(minField, maxField)
+        if (fields.isEmpty()) return
+        val texts = TextUtil.fieldPlaceholders(
+            fields,
+            listOf(
+                "cobblemarket.price_limit.min_placeholder" to "cobblemarket.price_limit.min_placeholder_short",
+                "cobblemarket.price_limit.max_placeholder" to "cobblemarket.price_limit.max_placeholder_short"
+            )
+        )
+        minField?.setPlaceholder(texts[0].formatted(Formatting.GRAY))
+        maxField?.setPlaceholder(texts[1].formatted(Formatting.GRAY))
     }
 
     private fun renderPokemonDialogBackground(context: DrawContext, delta: Float) {
@@ -561,8 +578,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         itemSelectButton?.visible = false
         addDrawableChild(itemSelectButton)
 
-        minField = createPriceField(centerX - 48, dialogY + 78, "cobblemarket.price_limit.min_placeholder")
-        maxField = createPriceField(centerX + 2, dialogY + 78, "cobblemarket.price_limit.max_placeholder")
+        minField = createPriceField(centerX - 48, dialogY + 78)
+        maxField = createPriceField(centerX + 2, dialogY + 78)
+        applyPriceHints()
 
         addConfirmButton = NineSliceButton(
             centerX - 85, dialogY + 100, 80, 20,
