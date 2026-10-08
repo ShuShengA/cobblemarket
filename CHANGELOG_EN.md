@@ -97,6 +97,8 @@
 
 - **A batch of Pokemon names in chat still did not follow their type colour**: in the listing confirmation ("Listed X (Lv.10)…") and in the buy-order notices for a delivery being accepted / returned, an order expiring or being force-cancelled, the species name took **the line's colour** instead of its own type colour — the same Pokemon read one way in the market list and another way in chat. Now consistent (the buy-order side is handled in one shared place, covering all six messages), and shiny Pokemon get the gold star there too
 
+- **On English clients the "Create Buy Order" field hints spilled outside their boxes**: the two price fields showed `Max unit price`, which measures 84px against a 74px field, and **the note field overflowed too** (`Note (extra needs, optional)` at 168px vs 148px) — vanilla does **not** clip these hints, so the extra was drawn outside the box (the Chinese 「最高单价」 is only 36px, which is why it never showed). These three fields now **pick by measured width**: the full wording when it fits, a shorter one (`Max price` / `Note (optional)`) only when it does not — **Chinese keeps the full wording**
+
 ## 1.1.3 (released)
 
 ### Fixes
