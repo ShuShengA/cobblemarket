@@ -236,6 +236,8 @@
 
 - **The listing confirmation did not colour the species name by its type**: in "Listed X (Lv.10)…" the name took **the line's colour** instead of its own type colour — the same Pokemon read one way in the market list and another way in chat. Fixed, and shiny Pokemon get the gold star there too
 
+- **On English clients the "Create Buy Order" field hints spilled outside their boxes**: the two price fields showed `Max unit price`, which measures 84px against a 74px field, and **the note field overflowed too** (`Note (extra needs, optional)` at 168px vs 148px) — vanilla does **not** clip these hints, so the extra was drawn outside the box (the Chinese 「最高单价」 is only 36px, which is why it never showed). These three fields now **pick by measured width**: the full wording when it fits, a shorter one (`Max price` / `Note (optional)`) only when it does not — **Chinese keeps the full wording**
+
 ## 1.1.3 (released)
 
 ### Fixes
