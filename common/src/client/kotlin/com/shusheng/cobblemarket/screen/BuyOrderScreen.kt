@@ -1543,11 +1543,15 @@ class BuyOrderScreen(
         createMaxPriceField = TextFieldWidget(textRenderer, centerX + 3, createY(174), 74, 16, Text.literal(""))
         createMaxPriceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(createMaxPriceField)
-        val priceFields = listOfNotNull(createMinPriceField, createMaxPriceField)
-        createMinPriceField?.setPlaceholder(
-            TextUtil.fieldHint(priceFields, "cobblemarket.buy_order.create_min_price", "cobblemarket.buy_order.create_min_price_short").formatted(Formatting.GRAY))
-        createMaxPriceField?.setPlaceholder(
-            TextUtil.fieldHint(priceFields, "cobblemarket.buy_order.create_max_price", "cobblemarket.buy_order.create_max_price_short").formatted(Formatting.GRAY))
+        val priceTexts = TextUtil.fieldPlaceholders(
+            listOfNotNull(createMinPriceField, createMaxPriceField),
+            listOf(
+                "cobblemarket.buy_order.create_min_price" to "cobblemarket.buy_order.create_min_price_short",
+                "cobblemarket.buy_order.create_max_price" to "cobblemarket.buy_order.create_max_price_short"
+            )
+        )
+        createMinPriceField?.setPlaceholder(priceTexts[0].formatted(Formatting.GRAY))
+        createMaxPriceField?.setPlaceholder(priceTexts[1].formatted(Formatting.GRAY))
 
         // 备注（额外需求提醒卖家，选填）
         createNoteField = TextFieldWidget(textRenderer, centerX - 74, createY(194), 148, 16, Text.literal(""))
@@ -1609,11 +1613,15 @@ class BuyOrderScreen(
         createMaxPriceField = TextFieldWidget(textRenderer, centerX - 6, createY(106), 72, 16, Text.literal(""))
         createMaxPriceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
         addDrawableChild(createMaxPriceField)
-        val editPriceFields = listOfNotNull(createMinPriceField, createMaxPriceField)
-        createMinPriceField?.setPlaceholder(
-            TextUtil.fieldHint(editPriceFields, "cobblemarket.buy_order.create_min_price", "cobblemarket.buy_order.create_min_price_short").formatted(Formatting.GRAY))
-        createMaxPriceField?.setPlaceholder(
-            TextUtil.fieldHint(editPriceFields, "cobblemarket.buy_order.create_max_price", "cobblemarket.buy_order.create_max_price_short").formatted(Formatting.GRAY))
+        val editPriceTexts = TextUtil.fieldPlaceholders(
+            listOfNotNull(createMinPriceField, createMaxPriceField),
+            listOf(
+                "cobblemarket.buy_order.create_min_price" to "cobblemarket.buy_order.create_min_price_short",
+                "cobblemarket.buy_order.create_max_price" to "cobblemarket.buy_order.create_max_price_short"
+            )
+        )
+        createMinPriceField?.setPlaceholder(editPriceTexts[0].formatted(Formatting.GRAY))
+        createMaxPriceField?.setPlaceholder(editPriceTexts[1].formatted(Formatting.GRAY))
 
         // 备注（额外需求提醒卖家，选填）
         createNoteField = TextFieldWidget(textRenderer, centerX - 82, createY(126), 148, 16, Text.literal(""))
