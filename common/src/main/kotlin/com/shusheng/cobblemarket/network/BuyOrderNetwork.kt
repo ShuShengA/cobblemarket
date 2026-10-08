@@ -1581,30 +1581,10 @@ object BuyOrderNetwork {
                 //   悬停那两行（`hover` / `withHoverEvent`）随本次改动一并去掉
                 .withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket review ${order.id} ${order.currency.name}"))
         }
-        // 需求里的**物种名按主属性色**（全模组统一口径，同拍卖播报）：
-        // 下面整行 `.formatted(GREEN)` 会把名字一起染绿，而**子样式优先于父级** —— 显式给名字上色即可。
-        // 物品名与「任意精灵」不上色（没有属性色可言），保持通知绿
-        val speciesId = order.speciesId
-        val typeKey = if (order.type == BuyOrderType.POKEMON && speciesId != null) {
-            com.cobblemon.mod.common.api.pokemon.PokemonSpecies.implemented
-                .firstOrNull { it.resourceIdentifier.toString() == speciesId }
-                ?.let { species ->
-                    // ⚠ 必须按**形态**取属性，不能拿基础物种：阿罗拉六尾的基础物种是火系，它自己和大图里的
-                    // 模型却是冰系 —— 用物种属性会做出「图是冰、字是火」的自相矛盾。
-                    // 解析规则直接复用 Cobblemon 自己的 getForm（形态的 aspects 全包含在给定 aspects 里 → 取最后一个），
-                    // 与客户端给大图建模型时的解析口径一致；形态没定义主属性时 FormData 会回落到物种属性
-                    val aspects = if (com.shusheng.cobblemarket.market.PokemonBlacklistEntry.ALL_FORMS in order.aspects)
-                        emptySet() else order.aspects.toSet()
-                    "cobblemon.type.${species.getForm(aspects).primaryType.name.lowercase()}"
-                }
-        } else null
-        val requirement = if (typeKey != null) {
-            // ⚠ 得先 copy()：requirementText() 返回的是 Text 接口，`styled` 只在 MutableText 上
-            order.requirementText().copy().styled { style ->
-                style.withColor(com.shusheng.cobblemarket.util.TypeTextColors.color(typeKey))
-            }
-        } else order.requirementText()
-        return Text.translatable("cobblemarket.buy_order.pending_buyer", requirement).formatted(Formatting.GREEN)
+        // 需求里的物种名由 `requirementText()` **自己**按主属性色上（全模组统一口径，同拍卖播报）——
+        // 这里别再手动补：子样式优先于父级，下面整行 `.formatted(GREEN)` 染不到名字。
+        // （2026-10-08 起上色收口进 requirementText() 内部，求购线 6 条消息一次全覆盖）
+        return Text.translatable("cobblemarket.buy_order.pending_buyer", order.requirementText()).formatted(Formatting.GREEN)
             .append(Text.literal(" ")).append(button)
     }
 }

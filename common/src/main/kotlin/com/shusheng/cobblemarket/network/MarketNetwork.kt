@@ -2510,10 +2510,18 @@ object MarketNetwork {
                 )
 
                 // 金额 + 单位合成一个 amountText（词条里也从 `%d %s` 合并成了单个 `%s`）
+                // 精灵名带**主属性色**（闪光另加金★）—— 与其他所有通知同一口径。
+                // 这里手上有完整 Pokemon，`pokemon.primaryType` 本身就是形态感知的
+                // （阿罗拉六尾取冰系，不是基础物种的火系）；Lv 段是陪衬文字，吃外层行色。
+                val listedName = com.shusheng.cobblemarket.util.TypeTextColors.speciesName(
+                    pokemon.species.translatedName,
+                    "cobblemon.type.${pokemon.primaryType.name.lowercase()}",
+                    pokemon.shiny
+                )
                 val listedMsg: Text = if (fee > 0)
                     Text.translatable(
                         "cobblemarket.cmd.listed_fee",
-                        pokemon.species.translatedName,
+                        listedName,
                         pokemon.level,
                         CurrencyService.amountText(payload.price, currency),
                         CurrencyService.amountText(fee, currency)
@@ -2521,7 +2529,7 @@ object MarketNetwork {
                 else
                     Text.translatable(
                         "cobblemarket.cmd.listed",
-                        pokemon.species.translatedName,
+                        listedName,
                         pokemon.level,
                         CurrencyService.amountText(payload.price, currency)
                     )
