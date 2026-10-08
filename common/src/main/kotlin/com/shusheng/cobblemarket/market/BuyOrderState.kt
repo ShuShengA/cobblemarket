@@ -157,15 +157,41 @@ data class BuyOrder(
         return true
     }
 
-    /** 通知消息用的展示名：精灵 = 物种翻译 key（客户端语言渲染）或「任意精灵」key；物品 = 物品翻译 key */
+    /**
+     * 通知消息用的展示名：精灵 = 物种翻译 key（客户端语言渲染）或「任意精灵」key；物品 = 物品翻译 key。
+     *
+     * ⚠⭐ **物种名的属性色在这里上，别在调用方打补丁** —— 求购这条线有 6 条聊天消息共用它
+     * （交付被接受 / 被退回 / 过期 / 强制下架 / 待确认交付），逐条在调用方补就是「修一处漏一处」：
+     * 2026-10-08 用户报「上架与交付的通知里精灵名没有属性色」，根因正是当初只在 `pendingReviewNotice`
+     * 手动套了色、没管这里。
+     */
     fun requirementText(): net.minecraft.text.Text =
         if (type == BuyOrderType.POKEMON) {
-            net.minecraft.text.Text.translatable(speciesKey ?: "cobblemarket.buy_order.any_pokemon")
+            val plain = net.minecraft.text.Text.translatable(speciesKey ?: "cobblemarket.buy_order.any_pokemon")
+            // 「任意精灵」没有属性色可言 ⇒ 原样返回（保持外层行色）
+            primaryTypeKey()?.let { key ->
+                plain.copy().styled { it.withColor(com.shusheng.cobblemarket.util.TypeTextColors.color(key)) }
+            } ?: plain
         } else {
             // 物品名走稀有度色（= 物品栏悬停的名字颜色）；求购单只有 itemId、没有完整栈
             com.shusheng.cobblemarket.util.ItemNameText.rarityColoredNameById(itemId)
                 ?: net.minecraft.text.Text.literal(itemId)
         }
+
+    /**
+     * 该求购单物种的**主属性 key**（`cobblemon.type.xxx`）；「任意精灵」或解析不出物种时返回 null。
+     *
+     * ⚠ 必须按**形态**取属性，不能拿基础物种：阿罗拉六尾的基础物种是火系、它自己却是冰系 ——
+     * 用物种属性会做出「图是冰、字是火」的自相矛盾（口径同 `EntryBadgeRenderer.speciesTypeColor`
+     * 与本模组各处的 `primaryType` 快照）。
+     */
+    private fun primaryTypeKey(): String? {
+        val id = speciesId ?: return null
+        val species = com.cobblemon.mod.common.api.pokemon.PokemonSpecies.implemented
+            .firstOrNull { it.resourceIdentifier.toString() == id } ?: return null
+        val formAspects = if (PokemonBlacklistEntry.ALL_FORMS in aspects) emptySet() else aspects.toSet()
+        return "cobblemon.type.${species.getForm(formAspects).primaryType.name.lowercase()}"
+    }
 
     fun toNbt(): NbtCompound = NbtCompound().apply {
         putUuid("id", id)

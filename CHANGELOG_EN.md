@@ -95,6 +95,8 @@
 
 - **Pokemon auctions were called "items" in the notifications**: winning an auction, an auction ending unsold and an auction being force-cancelled all said "**item** sent to / returned to your pending claims" no matter what the lot actually was — a Pokemon is not an item. The same wording was on the Auction House rules page ("the winner's **item** goes to their returns"), the admin's force-cancel confirmation and the market-close confirmation (present since 1.1.1). The wording now either drops the noun or uses the neutral "**lot**"
 
+- **A batch of Pokemon names in chat still did not follow their type colour**: in the listing confirmation ("Listed X (Lv.10)…") and in the buy-order notices for a delivery being accepted / returned, an order expiring or being force-cancelled, the species name took **the line's colour** instead of its own type colour — the same Pokemon read one way in the market list and another way in chat. Now consistent (the buy-order side is handled in one shared place, covering all six messages), and shiny Pokemon get the gold star there too
+
 ## 1.1.3 (released)
 
 ### Fixes
