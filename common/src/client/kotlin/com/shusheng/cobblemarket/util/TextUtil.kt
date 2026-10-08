@@ -25,15 +25,22 @@ object TextUtil {
             ?: Text.translatable(shortKey)
 
     /**
-     * **并排**的一组框共用同一个判断（按**最窄**的那个）—— 逐框各判的话，相邻两格可能一个用全称、
-     * 一个退回短版，并排摆着就不对称了（用户 2026-10-08 指出）。
+     * **一组同族 / 并排**的输入框（如「最低单价 / 最高单价」）的占位符：按**最窄**的那个框判，
+     * 并且**整组统一** —— 只要有一条放不下，全组一起退回短版。
      *
-     * ⚠ 用这个重载时，**调用点必须等这一组框都创建完**再设占位符（否则列表里还少一个，
-     *   又退化成逐框判断 —— 跟没用一样）。
+     * ⚠⭐ 为什么要"整组统一"：MC 默认字体**不是等宽**的（`i`/`n`/`t` 比 `a`/`x` 窄），
+     *   于是 `Min unit price` 实量 66px（恰好放得下）、`Max unit price` 70px（超了）——
+     *   各自为政就会出现「左边全称、右边短版」的并排不对称（用户 2026-10-08 报）。
+     * ⚠ 调用点必须等这一组框**都创建完**再调（否则列表里还少一个，又退化成逐框判断）。
+     *
+     * @param keys 每一项 = `长版key to 短版key`，顺序与 [fields] 一一对应
      */
-    fun fieldHint(fields: List<TextFieldWidget>, longKey: String, shortKey: String): MutableText =
-        fields.minByOrNull { it.width }?.let { fieldHint(it, longKey, shortKey) }
-            ?: Text.translatable(shortKey)
+    fun fieldPlaceholders(fields: List<TextFieldWidget>, keys: List<Pair<String, String>>): List<MutableText> {
+        val font = MinecraftClient.getInstance().textRenderer
+        val usable = (fields.minByOrNull { it.width }?.width ?: 0) - 8
+        val useLong = keys.all { (long, _) -> font.getWidth(Text.translatable(long)) <= usable }
+        return keys.map { (long, short) -> Text.translatable(if (useLong) long else short) }
+    }
 
     // 截断到 maxWidth 像素：超宽时截断尾部加 "…"；未超宽原样返回。
     // 用于黑名单按钮/列表等固定宽度区域，防止无翻译物品的超长 key 原文溢出控件。
