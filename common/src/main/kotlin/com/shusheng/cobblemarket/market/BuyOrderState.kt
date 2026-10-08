@@ -167,7 +167,12 @@ data class BuyOrder(
         return true
     }
 
-    /** 通知消息用的展示名：精灵 = 物种翻译 key（客户端语言渲染）或「任意精灵」key；物品 = 物品翻译 key */
+    /**
+     * 通知消息用的展示名：精灵 = 物种翻译 key（客户端语言渲染）或「任意精灵」key；物品 = 物品翻译 key。
+     *
+     * ⚠⭐ 物种名的属性色**在这里上**（2026-09-26 起），**别在调用方再打补丁** —— 求购这条线有 6 条
+     * 聊天消息共用它（交付被接受 / 被退回 / 过期 / 强制下架 / 待确认交付），逐条补就是「修一处漏一处」。
+     */
     fun requirementText(): net.minecraft.text.Text =
         if (type == BuyOrderType.POKEMON) {
             // 精灵名走**主属性色**，与下面物品分支的稀有度色对称 ——
@@ -183,6 +188,21 @@ data class BuyOrder(
             com.shusheng.cobblemarket.util.ItemNameText.rarityColoredNameById(itemId)
                 ?: net.minecraft.text.Text.literal(itemId)
         }
+
+    /**
+     * 该求购单物种的**主属性 key**（`cobblemon.type.xxx`）；「任意精灵」或解析不出物种时返回 null。
+     *
+     * ⚠ 必须按**形态**取属性，不能拿基础物种：阿罗拉六尾的基础物种是火系、它自己却是冰系 ——
+     * 用物种属性会做出「图是冰、字是火」的自相矛盾（口径同 `EntryBadgeRenderer.speciesTypeColor`
+     * 与本模组各处的 `primaryType` 快照）。
+     */
+    private fun primaryTypeKey(): String? {
+        val id = speciesId ?: return null
+        val species = com.cobblemon.mod.common.api.pokemon.PokemonSpecies.implemented
+            .firstOrNull { it.resourceIdentifier.toString() == id } ?: return null
+        val formAspects = if (PokemonBlacklistEntry.ALL_FORMS in aspects) emptySet() else aspects.toSet()
+        return "cobblemon.type.${species.getForm(formAspects).primaryType.name.lowercase()}"
+    }
 
     fun toNbt(): NbtCompound = NbtCompound().apply {
         putUuid("id", id)
