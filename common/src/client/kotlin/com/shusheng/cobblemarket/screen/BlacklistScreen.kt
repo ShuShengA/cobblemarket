@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.client.clampTooltipRows
+import com.shusheng.cobblemarket.util.TextUtil
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.playFailSound
 
@@ -343,7 +344,9 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         })
 
         addField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 30, 140, 16, Text.literal(""))
-        addField?.setPlaceholder(Text.translatable("cobblemarket.blacklist.add_placeholder"))
+        addField?.let {
+            it.setPlaceholder(TextUtil.fieldHint(it, "cobblemarket.blacklist.add_placeholder", "cobblemarket.blacklist.add_placeholder_short"))
+        }
         addField?.setChangedListener { updatePokemonPreview(it) }
         addDrawableChild(addField)
 
