@@ -139,7 +139,7 @@
 
 - **The buy dialog was too narrow and long tooltip lines spilled outside it**: English item tooltips are often a full sentence (Metal Coat's, for instance), and they were drawn past both edges of the dialog; it now sizes itself to the widest tooltip line
 
-## 1.2.0 (in development, unreleased)
+## 1.2.0 (released)
 
 ### New Feature
 
