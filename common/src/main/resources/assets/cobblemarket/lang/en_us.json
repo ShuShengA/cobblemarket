@@ -67,6 +67,7 @@
   "cobblemarket.item.title": "Item Market",
   "cobblemarket.item.search": "Item/player...",
   "cobblemarket.item.empty": "No items.",
+  "cobblemarket.gui.loading": "Loading…",
   "cobblemarket.item.sell_title": "Select Item to Sell",
   "cobblemarket.item.sell_confirm_title": "List Item",
   "cobblemarket.item.sell_count": "Count",
