@@ -110,7 +110,7 @@
 
 - **购买物品的弹窗太窄，长词条画到了弹窗外面**：英文词条常是一整句（如金属涂层的「Evolves Onix into Steelix and Scyther into Scizor when held while trading」），会被画到弹窗两侧之外；现在弹窗按最宽的那行词条自动伸缩
 
-## 1.2.0（开发中，未发布）
+## 1.2.0（已发布）
 
 ### 新功能
 
