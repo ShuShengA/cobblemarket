@@ -238,6 +238,8 @@
 
 - **On English clients several field hints spilled outside their boxes**: the two price fields in "Create Buy Order" (`Max unit price` measures 84px against a 74px field), its note field (`Note (extra needs, optional)` at 168px vs 148px), the blacklist add field (`Enter species name or ID` at 144px vs 132px usable) and the price-limit min/max fields (`Min price` at 54px against a field only 46px wide) — vanilla does **not** clip these hints, so the overflow was drawn straight outside the box. Chinese never showed it (「最高单价」 is 36px) — English simply runs wider than Chinese. These fields now **pick by measured width**: the full wording when it fits, a shorter one (`Max price` / `Note (optional)` / `Min` / `Max`…) only when it does not — **Chinese keeps the full wording**
 
+- **The item market briefly said "No items." while opening, which reads as "the market is empty"**: the list is requested only once the screen opens, and until it arrives the list is still empty — "**not loaded yet**" and "**genuinely nothing there**" used to share the same message, sending players off to ask the server owner. The former now shows "**Loading…**", and "No items." appears only when there really are none
+
 ## 1.1.3 (released)
 
 ### Fixes

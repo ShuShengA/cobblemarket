@@ -70,6 +70,7 @@
   "cobblemarket.item.title": "物品市场",
   "cobblemarket.item.search": "物品/玩家名...",
   "cobblemarket.item.empty": "暂无物品。",
+  "cobblemarket.gui.loading": "加载中…",
   "cobblemarket.item.sell_title": "选择要上架的物品",
   "cobblemarket.item.sell_confirm_title": "上架物品",
   "cobblemarket.item.sell_count": "数量",
