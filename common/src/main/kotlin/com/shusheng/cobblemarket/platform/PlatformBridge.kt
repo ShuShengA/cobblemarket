@@ -36,7 +36,7 @@ fun configDir(): Path = throw AssertionError()
 fun isModLoaded(modId: String): Boolean = throw AssertionError()
 
 /**
- * 本模组版本号（如 `1.3.1`）—— 「有新版本可用」提示拿它跟官网 `version.json` 比对。
+ * 本模组版本号（如 `1.2.0`）—— 「有新版本可用」提示拿它跟官网 `version.json` 比对。
  * 取不到时返回空串：调用方据此静默跳过，绝不误报。
  */
 @ExpectPlatform
