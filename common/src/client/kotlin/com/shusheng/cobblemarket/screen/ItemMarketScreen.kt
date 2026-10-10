@@ -65,6 +65,14 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private val GRID_GAP = 2
 
     private var entries = listOf<ItemEntry>()
+    /**
+     * 收到过**至少一次**服务端数据 —— 用来区分「还没加载」与「真的一件都没有」。
+     *
+     * ⚠ 两者此前共用「暂无物品。」这一句 ⇒ 打开界面那一瞬间列表还是空的，玩家会以为
+     * **市场空了**去问服主（用户 2026-10-10 自己就这样误会了一次）。
+     * ⚠ 不需要在发请求时重置：界面每次打开都是一个新实例，字段天然回到 false。
+     */
+    private var everLoaded = false
     private var currentPage = 1
     private var totalPages = 1
 
@@ -429,6 +437,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     fun onItemMarketData(payload: ItemMarketDataPayload) {
         entries = payload.entries
+        everLoaded = true
         totalPages = payload.totalPages
         when {
             pendingPage == 0 -> currentPage = payload.currentPage
@@ -934,8 +943,10 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         context.drawTextWithShadow(textRenderer, pageText, leftX + panelWidth - 4 - pageW, 32, 0xFFFFFF)
 
         if (entries.isEmpty()) {
+            // 没收到过数据 = 「加载中」；收到过但是空 = 「暂无物品」—— 同一句会把玩家骗去问服主
+            val key = if (everLoaded) "cobblemarket.item.empty" else "cobblemarket.gui.loading"
             context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.item.empty").formatted(Formatting.GRAY),
+                Text.translatable(key).formatted(Formatting.GRAY),
                 centerX, getGridStartY() + 40, 0xFFFFFF)
         }
 
