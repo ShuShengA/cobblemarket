@@ -98,113 +98,91 @@
 
 ## 1.2.1 (in development, unreleased)
 
+⚠ **Server and client must be updated together** (this release changes the packet format).
+
 ### New Feature
 
-- **The transaction ledger now records full Pokemon details**: the CSVs under `config/cobblemarket/history/` now capture a Pokemon's **complete information** — on top of the existing level / IVs / EVs / hyper training / nature / ability / gender / ball / form, they now also record **the nickname, size, Gigantamax and Dynamax Level, Original Trainer, Tera type, moves, friendship, and the held item's full data** (enchantments / custom name — previously only an item id was stored, which made the goods **impossible to recreate**, defeating the point of an audit ledger). ⚠ With many marks (up to ~200 on one Pokemon) the marks list wraps **inside the same cell** (10 per line) — turn on "wrap text" in Excel to see it all. ⚠ Items **listed** before this update but **sold after** it get the full details (the data always travelled with the Pokemon); however **rows already written to the CSV before this update are not rewritten** — they keep the old 12-field format
+- **The transaction ledger now records full Pokemon details**: the CSVs under `config/cobblemarket/history/` now also record the nickname, size, Gigantamax and Dynamax Level, Original Trainer, Tera type, moves, friendship and the held item's full data (previously only an item id). ⚠ Rows already written to the CSV before this update are not rewritten
 
-- **Tera type shown in Pokemon info**: **the type line** now lists the Pokemon's Tera type (e.g. "(Tera: Electric)") — in the market, auctions, buy orders, the listing picker, pending returns and the chat hover popups. ⚠ **Cobblemon's Tera defaults to the Pokemon's own primary type**: the field has existed officially all along (only the battle effect is missing). ⚠ **Listings that were already on the market / in auctions before this update show it too** — the Tera type travels with the Pokemon's full data and was there all along, we simply were not reading it; re-listing is not needed
+- **Tera type shown in Pokemon info**: the type line now lists the Pokemon's Tera type (e.g. "(Tera: Electric)") — in the market, auctions, buy orders, the listing picker, pending returns and the chat hover popups; listings already up before this update show it too
 
-- **Gigantamax / Dynamax Level shown in Pokemon info**: **a new line under the type line** lists the Pokemon's Gigantamax status and Dynamax Level (e.g. "Gigantamax (Dynamax Level: 5)") — in the market, auctions, buy orders, the listing picker, pending returns and the chat hover popups. ⚠ Neither can be changed within Cobblemon itself (any content for them is left to add-on mods), so the vast majority of Pokemon have both at their defaults — **the line simply does not appear then**, and the UI looks exactly as before. ⚠ **Listings that were already up before this update show it too** — no re-listing needed
+- **Gigantamax / Dynamax Level shown in Pokemon info**: a new line under the type line (e.g. "Gigantamax (Dynamax Level: 5)"), in the same places as above. ⚠ When both are at their defaults the line does not appear at all
 
-- **Original Trainer shown in Pokemon info**: **a new line under the friendship line** reads "Original Trainer: XX", so buyers can see who originally caught the Pokemon (**it still shows for Pokemon that changed hands** — it is not just the current holder) — in all the same screens and chat hover popups as above. ⚠ It shows **the name of whoever originally caught it** (offline players resolve too); when the Pokemon has no OT, or the name cannot be resolved, the line is not shown
+- **Original Trainer shown in Pokemon info**: a new line under the friendship line reads "Original Trainer: XX"; it still shows for Pokemon that changed hands, in the same places as above. ⚠ When there is no OT, or the name cannot be resolved, the line is not shown
 
-- **The filter panel can now filter by Tera type and Gigantamax**: the market, auctions, the listing picker, the auction-creation picker and the admin screen ("All Listed Pokémon") each gained two buttons in the right-hand filter panel — "Tera", sharing the same 18-type list as "Type", and "Gmax", a three-state toggle (Any → Yes → No). ⚠ **Listings that were already on the market before this update** did not record either field, so they will not be listed when filtering by them (list the Pokemon again to have them recorded); **auctions are unaffected** — a Pokemon's Tera type and Gigantamax status are read fresh each time, so auctions created before this update filter correctly too
+- **The filter panel can now filter by Tera type and Gigantamax**: the market, auctions, the listing picker, the auction-creation picker and the admin screen each gained these two buttons in the right-hand filter panel. ⚠ Listings already on the market before this update did not record either field, so filtering by them will not list those (list the Pokemon again to have them recorded); auctions are unaffected
 
-- **A crowded mark row can now be read in full**: a Pokemon may carry close to two hundred marks, so dialogs collapse the overflow into "+N" — hovering that row now pops up a small window listing **every** mark (ten per row). ⚠ Dialogs only (buy confirm, bid, pending delivery, admin): the tooltips that follow your cursor are no use here, since they vanish the moment you move onto them
+- **A crowded mark row can now be read in full**: a mark row collapsed into "+N" pops up a small window listing every mark when hovered (dialogs only)
 
-- **The item market and the auction house can filter by creative category**: both filter panels gained a **Category** button (third row in the item market, second row on the auction's item tab) that opens a **grid of category cells** — the very tabs along the top of the creative inventory (Building Blocks, Colored Blocks, Natural, Functional, Redstone, Tools, Combat, Food & Drink, Ingredients, Spawn Eggs, …). Hover a cell for its name, click it to show only that category (the "Any" cell clears it); **the grid stays open after picking one**, so you can flip through several
-  - ⚠ **Every mod that adds a creative tab adds a cell automatically** — the grid reads the tabs mods register, so nothing has to be adapted per mod
-  - ⚠ Too many categories to fit? The grid caps its height and scrolls with the mouse wheel (a thin scrollbar appears on the right)
-  - ⚠ It filters by **item only — enchantments and components are ignored**: picking "Enchanted Books" lists every enchanted book, and an enchanted tool sits in the same category as a plain one
-  - ⚠ It combines with the search box as **AND**: the category narrows the list first, then the keyword filters it
-  - ⚠ In the auction house it filters the **item tab only** (the Pokémon filters are unchanged and Pokémon entries are never affected by a category)
-  - ⚠ **The item market requires both client and server to be upgraded** (its packet changed); the auction house filters locally and is not affected
+- **The item market and the auction house can filter by creative category**: the filter panel gained a **Category** button that opens a grid of the creative inventory's categories; picking one shows only that category, and it combines with the search box as AND. ⚠ In the auction house it filters the item tab only; Pokemon entries are never affected
 
-- **The auction house can be sorted**: all three tabs (Mine / Pokémon / Items) used to be listed "newest first" with no choice. Each filter panel now has a **Sort** button (on the Pokémon tab it sits next to the shiny / gender buttons, on the item tab it fills a whole row — both drive **the same setting**), cycling through **Newest → Price ↑ → Price ↓ → Ends soon**
-  - ⚠ Sorting applies to **all three tabs** — pick price sorting on the item tab and the Pokémon / Mine tabs are sorted that way too
-  - ⚠ "Price" means **the price shown in the list**: the current bid once there is one, otherwise the starting price — the same number the row and the hover window show, so a lot displaying 500 never sorts below one displaying 100
-  - ⚠ The vacant slot at the right end of the item tab's top bar (next to the list button) is now the **Filter** button
-  - ⚠ That panel's first row also carries a **↺ Reset** which resets **the item side only** (Sort / Category) — **the Pokémon filters are never touched** (shiny / gender / type / ability / nature / hyper training / IVs all stay as they were)
+- **The auction house can be sorted**: all three tabs used to be listed "newest first"; a **Sort** button now cycles through Newest → Price ↑ → Price ↓ → Ends soon. ⚠ Sorting applies to all three tabs, and "price" means the price shown in the list
 
-- **UI scale (affects this mod's screens only)**: the market entry screen's **settings dialog** gained a **"UI scale"** row (first one in the "Display" group), cycling through **Auto / 1 / 2 / 3 / 4 / 5**, **default 3**
-  - Why: this mod's screens are laid out for **1080p (vanilla scale 3)**, and on 2K / 4K displays vanilla's "Auto" gives a *smaller* logical screen — the UI gets squeezed (English lines drawn past their box, lists crammed together). You can now enlarge **this mod's screens** on their own; the chat, toasts and other mods' screens are **not affected in the slightest**
-  - **"Auto" = follow vanilla exactly** (identical to not having this option) and is your way back if anything looks off; conversely, on a 4K display a fixed scale makes the UI look small — "Auto" is the better pick there
-  - ⚠ **A fixed scale only ever makes this mod's UI bigger, never smaller**: on a small window where vanilla's own scale is already low, switching may appear to do nothing — that is by design, not a failure
-  - ⚠ Applies **immediately** (no need to reopen the screen); ⚠ client-side only — **server and client do not need to be updated together**
+- **UI scale (affects this mod's screens only)**: the market entry screen's settings dialog gained a "UI scale" row cycling through Auto / 1-5, **default 3**, with "Auto" meaning follow vanilla exactly — on 2K / 4K displays vanilla's Auto squeezes this mod's screens, and they can now be enlarged on their own; the chat and other mods are unaffected
 
-- **Ban management gained a "Change Log" tab**: the ban list only ever showed the bans **currently in effect** — who issued them and when one was lifted was gone the moment it was lifted (if A banned someone and B unbanned them, there was no way to look it up afterwards). A new tab at the top of the screen lists **every ban and unban**: time, operator → target, action, duration, reason
-  - ⚠ **Each unban entry carries the original banner**: one line tells you who originally banned them, for how long, and why — no need to go hunting for the original ban entry
-  - ⚠ **Automatic ones are recorded too**: an overdue auto-freeze / auto-unfreeze is logged as "Meowth Bank Manager", the same wording used in ban reasons
-  - ⚠ The ledger lives in `config/cobblemarket/bans/` (bilingual CSVs, split by day) and is **kept forever — never auto-deleted**; delete files yourself if you want to clean up
-  - ⚠ Bans and unbans made through `/market ban`, `/market unban` and the admin screen **are all recorded** (writing is funnelled through one place, so no entry point can silently skip it)
-  - ⚠ **Server and client must be updated together** (the network format changed)
+- **Ban management gained a "Change Log" tab**: it lists **every ban and unban** (time, operator → target, action, duration, reason), and each unban entry carries the original banner. The ledger lives in `config/cobblemarket/bans/` and is kept forever
 
-- **A ban can now be edited directly instead of "unban and re-ban"**: every row in the ban list has an **Edit** button — change the duration, the reason, or the "Also block loans" toggle in one dialog instead of lifting the ban and issuing a new one
-  - ⚠ **Changing the duration counts from the original ban time, not from the moment you edit**: if someone has 3 days left and all you wanted was to switch on "Also block loans", they still have 3 days afterwards (you don't hand out a fresh full term). To actually keep them banned longer, enter a longer duration
-  - ⚠ **The player name cannot be changed** (that would amount to banning someone else, and the ledger would no longer line up) — the name is shown in the dialog for reference only
-  - ⚠ Each edit is recorded in the **Change Log** as an **Edit** entry that spells out before → after (e.g. "Duration: 3 days → 7 days, Block loans: Off → On")
+- **A ban can now be edited directly**: every row in the ban list has an **Edit** button, so duration, reason and "Also block loans" are changed in one dialog. ⚠ Changing the duration counts from the original ban time, not from the moment you edit
 
 ### Changes
 
-- **The force-cancel dialog now shows an item's full tooltip**: for an item auction it used to show only "item name + ×count" — no enchantments, no attribute modifiers, no potions, no custom lore — while the **bid dialog** showed them all. It now matches the bid dialog: the full tooltip, and **Shift / Ctrl expands it** (the dialog grows taller and wider to fit, and the **two buttons at the bottom move down with it** — they used to stay put and overlap the "Force-cancel this auction?" notice that had already moved down)
+- **The force-cancel dialog now shows an item's full tooltip**: it used to show only "item name + ×count" for item auctions; it now matches the item bid dialog — enchantments, attribute modifiers, potions and custom lore all included, and expandable with Shift / Ctrl
 
-- **The Type filter can now take two types at once**: a Pokemon has at most two types, but the filter only accepted one — now picking a type **leaves the list open** so you can pick a second. ⚠ With **one** type selected the behaviour is exactly as before (matches when either the primary or the secondary type is that type); with **two**, it matches only Pokemon whose types are **exactly those two** — "Ghost+Fire" will not list Pokemon that are only Ghost, or only Fire. ⚠ Two is the maximum: a third pick plays a failure sound, and clicking a selected type again deselects it
+- **The Type filter can now take two types at once**: picking a type leaves the list open so you can pick a second. ⚠ With one type selected the behaviour is exactly as before; with two, it matches only Pokemon whose types are exactly those two
 
-- **How the UI marks a selected entry is now consistent**: lists, tabs and dropdowns used to mark the selected entry with a "●" in front of its label — they now use the **button's own selected highlight** (background) instead, so the same idea is no longer expressed twice; toggle buttons such as "Mine" got the same highlight too
+- **How the UI marks a selected entry is now consistent**: lists, tabs and dropdowns use the button's own selected highlight instead of a "●" in front of the label
 
-- **Hovering a chat announcement now shows the full details of the Pokemon or the item**: the hover preview used to be two things — a large render on the right of the screen, plus the vanilla grey box next to the cursor (whose contents had to be assembled server-side, so items only got their count and enchantments and a long tooltip ran off the line, while a Pokemon could not even show an icon). The large render now sits **in the centre of the screen**, with a **backed panel of full details** to its right:
-  - **Pokemon**: **exactly** what you see when hovering the same Pokemon in the market — level, types and Tera, Gmax and Dynamax level, nature, ability, ball, held item, all six IVs and EVs, friendship, original trainer, moves, marks
-  - **Items**: the very same tooltip you get in your inventory — enchantments, attribute modifiers, potion effects, custom lore and durability, with **Shift / Ctrl expansion still working**; when there is too much, it truncates and marks it with an ellipsis
-  - **Auction announcements** (both Pokemon and items): additionally list the **seller, the current price (with the bid count once there are bids), the starting price, the minimum increment, the time left and who is leading** — the "time left" line turns red as the auction nears its end. ⚠ It shows the state **as of the moment you hover** — leave the cursor there and it refreshes itself every ten seconds or so
-  ⚠ The vanilla grey box next to the cursor is **gone** (it cannot show the full details) — every announcement ("auction started", "new bid", "delivery submitted") now uses the above; hovering also responds much faster (it used to require a quarter-second pause, now it is near-instant)
+- **Hovering a chat announcement now shows the full details of the Pokemon or the item**: the large render sits in the centre of the screen with a backed panel of full details to its right — Pokemon and items both match their regular tooltips, and auction announcements also list the seller, current price, starting price, minimum increment, time left and who is leading. ⚠ The vanilla grey box next to the cursor is gone
 
-- **The admin buy-order screen no longer shows a balance**: every other screen in the admin panel goes without one, only buy orders had it (looked like a copy-paste slip) — it is now hidden in admin mode, while the player-side buy-order screen keeps it
+- **The admin buy-order screen no longer shows a balance**: it is hidden in admin mode; the player-side buy-order screen keeps it
 
-- **Item-backed currencies now show that item's icon inline, instead of `₽`**: when a server picks an item (say a Master Ball) as its currency, inline amounts used to read `₽` exactly like ordinary money — you could not tell what the server actually charges in; only the hover window spelled the item name out. Inline amounts now render **that item's own icon** (balance HUD, market / auction / buy-order list rows, bid and purchase dialogs, and the loan / deposit / repayment screens). The icon has a fixed width, so "the item name is too long to fit" is no longer a concern
-  - ⚠ **Hover windows and chat broadcasts still spell out the item name** — those are plain-text places where an icon cannot be drawn (Minecraft 1.21 text cannot embed images), so they fall back to the name, which is just as clear
-  - ⚠ **Virtual currencies (CobbleDollars / Cobblemon Economy / Impactor) are unchanged** and still show `₽`, pixel-for-pixel identical to before this change
-  - ⚠ Client-side only — **no server upgrade needed alongside it** (amounts are computed every frame; nothing is stored in saves or the trade-history CSV)
+- **Item-backed currencies now show that item's icon inline, instead of `₽`**: inline amounts no longer read `₽` (balance HUD, market / auction / buy-order list rows, bid and purchase dialogs, loan / deposit / repayment screens). ⚠ Hover windows and chat broadcasts still spell out the item name, and virtual currencies are unchanged
 
-- **"Reset" no longer wipes the search box**: the ↺ button in the Pokémon market's and the admin screen's ("All Listed Pokémon") filter panels used to clear **your search keyword along with the filters** — but it sits inside the filter panel, and pressing it usually just means "put the filters back to default". It now resets **the filter options only** (shiny / gender / type / sort / IVs and so on) and keeps your search text, matching how the other screens (auctions / listing picker / auction creation) already behaved
+- **"Reset" no longer wipes the search box**: the ↺ button in the Pokemon market's and the admin screen's filter panels now resets the filter options only and keeps your search text
 
-- **The item market's top bar now uses the Pokemon market's layout**: the top bar used to pack four controls into one row ("search + list + Mine + Sort"); it now matches the Pokemon market's "search + list + **Filter**", with **Sort and Mine moved into the right-hand filter panel** that the button opens. Both work exactly as before — Sort still cycles through its modes, Mine is still a toggle (highlighted while on) — and the search box is longer as a result, so longer item names fit at a glance. ⚠ The panel's first row also carries a **↺ Reset** that puts its three controls (Sort / Mine / Category) back to their defaults — **your search keyword is left alone**
+- **The item market's top bar now uses the Pokemon market's layout**: Sort and Mine moved into the right-hand filter panel. ⚠ The ↺ Reset in that panel's first row only resets those three (Sort / Mine / Category), leaving your search keyword alone
 
-- **Ban remaining time now follows your client language**: it used to be shown as `3d5h` in every language (Chinese clients saw `3d5h` too). It is now "3 天 5 小时" in Chinese and `3d 5h` in English — both in the admin ban list and in the chat message a banned player receives
+- **Ban remaining time now follows your client language**: "3 天 5 小时" in Chinese, `3d 5h` in English — in the admin ban list and the chat message a banned player receives
 
-- **The ban management screen now explains what a ban does and does not affect**: an **info icon in the top-left corner** shows the full scope on hover — a ban cuts off the market's trading entries (buying Pokemon / buying items / listing for sale / starting an auction / bidding / buy orders / delivering / claiming a delivery) and **does not seize existing assets** (cancelling a listing, collecting returns and pending balance, and declining a delivery all still work), while Meowth Bank deposits, withdrawals and repayments and cards are unaffected. ⚠ This matches the wording used on the "Ban Management" page of the website
+- **The ban management screen now explains what a ban does and does not affect**: an info icon in the top-left corner shows the full scope on hover
 
-- **Banned players are now told when they open the market**: previously you only got rejected **when you clicked something you were restricted from** — the only way to find out you were banned was to try. Now, **the first time you open the market after logging in**, a red message (remaining time + reason) appears in chat
+- **Banned players are now told when they open the market**: the first time you open the market after logging in, a red message (remaining time + reason) appears in chat
 
-- **Bans can now also block borrowing**: the admin ban confirmation dialog has a new "Also block loans" toggle (**off by default**, so existing behaviour is unchanged) — when selected, the ban blocks **borrowing** on top of market trading. ⚠ **Borrowing only**: deposits, withdrawals and **repayments still work** (repayments must keep working — paying the loan down is how the player climbs out of overdue status; locking them out just means the money never comes back). ⚠ A player blocked this way gets "you are banned from taking loans" rather than "you are banned from trading" (they can still trade normally, and telling them otherwise sends them off to ask the owner why they can still buy things)
+- **Bans can now also block borrowing**: the admin ban confirmation dialog has a new "Also block loans" toggle (off by default). ⚠ Borrowing only — deposits, withdrawals and repayments still work
 
 ### Fixes
 
-- **After a failed "Start auction" the dialog stayed open and could be clicked again and again**: failures such as a ban, a blacklist entry or a closed market **cannot be fixed by changing the price**, yet the dialog stayed put, inviting people to keep clicking — and after a dozen clicks **even the sound got muted by the engine** (too many concurrent instances of the same sound are dropped). It now splits by **whether the failure is fixable by editing the price**: the **price limit** kind (which tells you the allowed range) still keeps the dialog so you can fix the number and retry; **every other failure** closes the screen and returns to the auction house, with the reason still in chat
+- **After a failed "Start auction" the dialog stayed open and could be clicked again and again**: price-limit failures still keep the dialog so you can fix the number and retry; every other failure closes it and returns to the auction house, with the reason still in chat
 
-- **Rejected loan requests had no failure sound**: clicking "Confirm" in Meowth Bank / Meowth's Help and being refused (finance off, cash loans disabled, overdue, bad debt, invalid amount) only produced a red line of chat text with **no failure sound**, unlike every other screen (buying, buy orders). Those refusals now play it
+- **Rejected loan requests had no failure sound**: those refusals now play it
 
-- **The buy dialog's input box and buttons did not follow the tooltip**: an item with a long tooltip (such as a **TM**, whose full move description appears while you hold Shift) makes the dialog taller and pushes the text down — but the **quantity input and the Buy / Meowth Pay / Cancel buttons stayed put**, even ending up overlapped by the "total" line that did move. They now follow the dialog every frame, exactly like the item bid dialog does
-- **Buttons drifted away from the background in Meowth Bank when permissions changed while it was open**: the panel is one row taller for players holding any admin node, and that permission state can arrive **while the screen is already open** — the background moved but the Back / Rules / Deposit / Borrow buttons stayed put. They now move along with it
-- **The item icon in the "Set up auction" dialog sat off to the right**: in Pokemon mode the preview sits right under the title, but in item mode it was **50 pixels too far right** (the two modes each had their own coordinates). Both now share one set of coordinates
+- **The buy dialog's input box and buttons did not follow the tooltip**: they now follow the dialog every frame, exactly like the item bid dialog
 
-- **Mark icons were drawn inconsistently on a few screens**: ① in the **bid dialog** and the **admin auction detail** they were **not centred** (every other screen centres them); ② the **auction hall** and **admin** Pokemon row tooltips showed **a stray divider even when the Pokemon had no marks at all**; ③ on the **market buy-confirm screen**, a Pokemon with many marks had its **first icon row run past the divider**; ④ the market buy dialog, the buy-confirm screen, the pending-delivery dialog and the admin Pokemon dialog **added one row of height too many** when the marks nearly filled a row (leaving a gap at the bottom). All four now follow the same layout
+- **Buttons drifted away from the background in Meowth Bank when permissions changed while it was open**: they now move along with it
 
-- **Nature and Ability sat too close together**: both render in white with only 8px between them, so the line could read as one run of text (e.g. "Nature: Relaxed  Ability: Synchronize"). The gap is now wider and consistent across every Pokemon info screen
-- **Ball names rendered as white text in the UI**: a ball that is purple in the inventory (e.g. Master Ball) showed as plain white text in the Pokemon hover windows. Ball names now use the **rarity colour** on every Pokemon info screen, and the screens that were **not showing the ball line at all** (listing picker, auction creation picker, pending returns, admin) now show it
-- **Some Pokémon had the wrong battle-cry animation**: their body would lock into the wrong pose — Gurdurr could not lift its girder (the arm stayed at its side). This is now fixed
-- **The body froze during a battle cry, with limbs snapping back to their default pose**: while a battle cry played the idle motion froze — **Quilava** showed it worst, with all four legs falling back to the model's default pose (front legs straight down, hind legs straight back). This is now fixed, and the body keeps moving through the cry
-- **Pokémon listing screen: the bottom of the list wasted a full row**: the gap between the last row and the "x-y / n" counter underneath was wide enough for one more row; it now matches the **item** listing screen
-- **Opening the balance HUD position editor in single-player paused the whole world**: opening it in a single-player save froze time, crops and furnaces, just like pressing ESC. It now behaves like the other screens. Only affects **single-player saves**; dedicated servers are unaffected
-- **At night, icons stood up before lying down when a screen opened**: during a species' rest hours the icon is supposed to already be asleep, yet it began from the idle pose and transitioned over — noticeable on every page flip and screen switch. This is now fixed, so the icon is already asleep as the screen opens
-- **A Pokémon previewed right after another one performed the previous Pokémon's animation**: open a preview, leave the moment its animation starts, then open another one — the new Pokémon strikes the **previous one's pose** (the cry, oddly, is its own). It takes quick hands to hit, and it affects every screen with a preview: market, auctions, buy orders. This is now fixed
+- **The item icon in the "Set up auction" dialog sat off to the right**: both modes now share one set of coordinates
 
-- **A tooltip with many lines had its top cut off screen**: holding Shift to read an item's full tooltip (or modded items that simply have many lines, or Ctrl for debug info with F3+H on) let the popup grow taller than the screen, hiding everything above it — the item name included. It is now cut to fit the screen, with a grey "… (N more rows)" line at the end instead of silently disappearing
+- **Mark icons were drawn inconsistently on a few screens**: not centred in the bid dialog and the admin auction detail, a stray divider in the auction and admin row tooltips, a first icon row running past the divider on the buy-confirm screen, and one row of extra height in four dialogs — all four now follow the same layout
 
-- **Picking a Type filter left the list empty**: in the "Select Pokemon to Sell" and "Create Auction" screens, choosing any type from the right-hand filter panel left the list with no Pokemon at all, even when matches existed — and the button showed an internal name such as `fire` instead of the type's name. This is now fixed
+- **Ball names rendered as white text in the UI**: they now use the rarity colour, and the screens that showed no ball line at all (listing picker, auction creation picker, pending returns, admin) now show it
 
-- **Part of the Pokemon icon was being cut off**: in the market list and the buy / bid dialogs, a Pokemon model would lose a chunk of itself (tails especially — Dracozolt is the clearest example), and in list rows it could visually merge with the icon in the row above. Fixed
+- **Some Pokémon had the wrong battle-cry animation** (e.g. Gurdurr could not lift its girder): fixed
 
-- **The buy dialog was too narrow and long tooltip lines spilled outside it**: English item tooltips are often a full sentence (Metal Coat's, for instance), and they were drawn past both edges of the dialog; it now sizes itself to the widest tooltip line
+- **The body froze during a battle cry, with limbs snapping back to their default pose** (e.g. Quilava): fixed
+
+- **Pokémon listing screen: the bottom of the list wasted a full row**: it now matches the item listing screen
+
+- **At night, icons stood up before lying down when a screen opened**: fixed, so the icon is already asleep as the screen opens
+
+- **A Pokémon previewed right after another one performed the previous Pokémon's animation**: fixed
+
+- **A tooltip with many lines had its top cut off screen**: it is now cut to fit the screen, with a grey "… (N more rows)" line at the end
+
+- **Picking a Type filter left the list empty**: fixed, including the button showing an internal name such as `fire`
+
+- **Part of the Pokemon icon was being cut off**: fixed
+
+- **The buy dialog was too narrow and long tooltip lines spilled outside it**: it now sizes itself to the widest tooltip line
 
 ## 1.2.0 (released)
 
