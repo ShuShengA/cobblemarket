@@ -877,13 +877,22 @@ data class HistoryEntry(
      * 服务端在产生记录时（手上还有 nbt）算好，随记录一起存。
      * ⚠ **末尾追加 + 默认值**：精灵记录与旧记录为空串 → 界面退回按 itemId 取色（行为不变）。
      */
-    val itemRarity: String = ""
+    val itemRarity: String = "",
+    /**
+     * **物品数量**：历史界面的物品行与它的悬停窗显示 `×N` 用。`-1` = 没有这个信息 ⇒ 界面**不显示**。
+     *
+     * ⚠ 取值同 [itemRarity]：服务端从记录详情列里提出来（`RecordDetail.countFromDetail`），
+     * 只把这一个数字发下去。**旧记录没有 `count=` 段落 ⇒ -1 ⇒ 不显示 `×N`**（而不是 `×0`）。
+     * ⚠ **末尾追加 + 默认值**：精灵记录与旧记录都落 -1，行为与改动前一致。
+     */
+    val itemCount: Int = -1
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeString(type); buf.writeString(category); buf.writeString(species); buf.writeInt(price); buf.writeString(
             buyerName
         ); buf.writeString(sellerName); buf.writeLong(timestamp); buf.writeString(primaryType)
         buf.writeString(itemRarity)
+        buf.writeInt(itemCount)
     }
 
     companion object {
@@ -897,7 +906,8 @@ data class HistoryEntry(
             sellerName = buf.readString(),
             timestamp = buf.readLong(),
             primaryType = buf.readString(),
-            itemRarity = buf.readString()
+            itemRarity = buf.readString(),
+            itemCount = buf.readInt()
         )
     }
 }
@@ -3015,7 +3025,9 @@ object MarketNetwork {
                         r.primaryType,
                         // 物品名上色用：稀有度**就存在详情列里**（产生记录时手上还有 nbt，见 RecordDetail.item）
                         // ⇒ 这里只提取那段短字符串发下去，不把整个详情列塞进 payload
-                        com.shusheng.cobblemarket.util.RecordDetail.rarityFromDetail(r.detail)
+                        com.shusheng.cobblemarket.util.RecordDetail.rarityFromDetail(r.detail),
+                        // 数量同理：物品行与悬停窗要显示「×N」。旧记录没有这一段 ⇒ -1 ⇒ 界面不显示
+                        com.shusheng.cobblemarket.util.RecordDetail.countFromDetail(r.detail)
                     )
                 }
                 sendToPlayer(player, HistoryDataPayload(entries))
