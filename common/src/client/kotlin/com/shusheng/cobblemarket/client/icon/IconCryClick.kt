@@ -11,7 +11,8 @@ import kotlin.random.Random
  * - 动画：**随机**在普通叫与战吼之间二选一，两者都是**叠加**（战吼见
  *   [IconAnimationResolver.playBattleCry]，与官方 cry 同一个 `BedrockActiveAnimation` 类型）。
  *   ⚠ **都别改成主动画版（`:primary`）**：它会把姿势的基础待机动画一并 dump 掉、模型掉回 rest pose
- *   （2026-09-15 普通叫踩过、2026-09-22 战吼又踩一次）。114 个物种有战吼，
+ *   （2026-09-15 普通叫踩过、2026-09-22 战吼又踩一次）。**130 条**战吼动画
+ *   （2026-10-12 在 Cobblemon 1.8.2 上全量扫描；1.8.1 是 118 条），
  *   将来 Cobblemon 补上更多时这边不用改代码就自动生效
  * - 声音：`FloatingState` 没有 entity，Cobblemon 的 `BedrockSoundKeyframe` 会走
  *   `SimpleSoundInstance.forUI(...)` 自动播出来
