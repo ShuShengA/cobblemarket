@@ -2791,7 +2791,13 @@ object MarketNetwork {
                         species = listing.itemId,
                         price = totalPrice,
                         fee = 0,
-                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count, server.registryManager),
+                        // ⚠⚠ **要记本次买走的量，不是剩余量** —— 上面那句 `listing.count -= count` 已经扣过了，
+                        //   再读 `listing.count` 记下的是**扣完剩下的**（2026-10-12 用户实测：上架 64 个、
+                        //   买走 60 个，记录里显示 ×4）。
+                        //   同一个函数下面那行庆祝动画本来就用对了（注释写着「数量按本次实际到手传」）——
+                        //   记录这处是**唯一的漏网**。下架 / 退回 / 上架那几处的 `listing.count` 是对的：
+                        //   那时它正好是「本次动作涉及的量」，**别一刀切改**。
+                        detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, count, server.registryManager),
                     )
                 )
 

@@ -85,6 +85,8 @@
 
 ### Fixes
 
+- **The trade history recorded the leftover stock for purchases, not the quantity bought**: listing 64 and buying 60 showed up as "4" — it now records the amount actually bought (purchase rows already written to the CSV keep the old value; delist / return / list records were correct all along)
+
 - **The trade history did not show how many items were involved**: item records showed only the item name, so there was no way to tell how many of your listings had sold — both the row and its hover window now show "×N" (unstackable items are left alone — their count is always 1; records that predate this have no count stored, so they simply show nothing rather than "×0")
 
 - **Some Pokémon played a swimming animation for the walk preview**: Pokémon such as Charizard and Pikachu played their water pose when hovered — they now fall back to idle (better to stand still than to play the wrong animation)
