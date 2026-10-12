@@ -48,6 +48,9 @@ object IconAnimationResolver {
     /** 鼠标静止多久后头部转回正前方；照 Cobblemon 详情页的 `MAX_SECONDS_LOOKING = 6` 秒。 */
     private const val LOOK_RESET_MS = 6_000L
 
+    /** 上一次因「水面姿势」退回待机的 `物种|姿势` —— 给日志去重，同一只只打一次。 */
+    private var lastWaterFallback: String? = null
+
     /**
      * @param renderable 该图标渲染的精灵（物种与形态决定有没有睡眠姿势、头部能不能转）
      * @param state      该图标的持久状态，跨帧的 yaw/pitch 从这里取
@@ -241,11 +244,54 @@ object IconAnimationResolver {
      */
     private fun walkPoseOrProfile(renderable: RenderablePokemon, state: PosableState): PoseType {
         val model = modelFor(renderable, state) ?: return PoseType.PROFILE
-        val hasWalk = model.poses.values.any { pose ->
-            pose.poseTypes.any { it in PoseType.MOVING_POSES } && pose.isSuitable(state)
+        val candidates = model.poses.values.filter { pose ->
+            pose.poseTypes.any { it in PoseType.MOVING_POSES }
         }
-        return if (hasWalk) PoseType.WALK else PoseType.PROFILE
+        val hasWalk = candidates.any { it.isSuitable(state) }
+
+        if (!hasWalk) return PoseType.PROFILE
+
+        // ⚠⚠ **无实体 state 上「水里 / 陆地」这层区分是失效的**（2026-10-12 查实）：
+        //   Cobblemon 的 `PoseAdapter` 把 `isTouchingWater` 这类条件编译成
+        //   `{ it.getEntity()?.let { e -> … } ?: true }` —— 我们的图标**没有实体** ⇒ **条件一律为真**
+        //   ⇒ `getFirstSuitablePose` 退化成「取注册顺序里第一条带 WALK 的」。
+        //   喷火龙 / 皮卡丘这类的水面版恰好排在陆地版前面 ⇒ 在陆地上播「划水」。
+        //
+        //   这里**不去猜那个顺序**（离线算不出来，实测已证它 ≠ JSON 文件里的顺序），
+        //   而是直接问渲染自己要调的那个函数 —— 它返回谁、画面就是谁。
+        //   若那条播的是水面动画，就**这一帧不请求 WALK、退回待机**：宁可不动，也不播错的。
+        //   ⚠ 代价：这些物种失去走路预览。**别写成"跟官方 PC 一致"** ——
+        //     官方图标**从来就没有**走路动画（只有点击吼叫与转头），这是我们自己的功能缺口。
+        val chosen = runCatching { model.getFirstSuitablePose(state, PoseType.WALK) }.getOrNull()
+        if (chosen != null && playsWaterAnimation(chosen)) {
+            val sp = renderable.species.name
+            if ("$sp|${chosen.poseName}" != lastWaterFallback) {
+                lastWaterFallback = "$sp|${chosen.poseName}"
+                println("[CM-Walk-Fallback] $sp 官方会选=${chosen.poseName} 动画=${poseAnimationNames(chosen)} → 退回待机")
+            }
+            return PoseType.PROFILE
+        }
+
+        return PoseType.WALK
     }
+
+    /** 这条姿势实际播的 bedrock 动画全名（形如 `animation.pikachu.surfacewater_swim`）。 */
+    private fun poseAnimationNames(pose: Pose): List<String> =
+        pose.animations.filterIsInstance<BedrockPoseAnimation>().map { it.animation.name }
+
+    /**
+     * 这条姿势是不是**水面姿势** —— 判据是它**实际播的动画名**里带 `water` / `seafloor`。
+     *
+     * ⚠ **只看动画名、不看姿势名**（2026-10-12 全量核对）：`Caterpie` / `Weedle` 的姿势名叫
+     *   `swimming` 却播 `ground_walk`，`Muk` 的 `surface_swimming` 播 `ground_idle`
+     *   ⇒ 用姿势名会**误伤这几只**（它们本来是对的）。
+     * ⚠ **也不能只看 `swim`**：`sand_swim`（沙里游）会被一起抓进来 —— 那是**沙地**姿势不是水，
+     *   对 `Sandile` / `Krokorok` / `Krookodile` 反而未必算错（2026-10-12 用户拍板：沙地不算）。
+     */
+    private fun playsWaterAnimation(pose: Pose): Boolean =
+        poseAnimationNames(pose).any { n ->
+            n.contains("water", ignoreCase = true) || n.contains("seafloor", ignoreCase = true)
+        }
 
     /**
      * 取这个图标当前的模型：**优先用已经建好的** `currentModel`（O(1)），首帧还没有时**自己按物种取一个**。
@@ -792,9 +838,12 @@ private class PoseWithBattleCry(
      * （接口里是空实现），所以凡是走 primary 的动画，音效一律不播 —— 这正是
      * 「有些动画的音效丢了」的原因（丢的就是战吼那条，姿势动画的照常）。
      *
-     * ⚠ **还要换算成动画内的时间**：`BedrockAnimation.applyEffects` 拿
-     * `effect.seconds in previousSeconds..newSeconds` 判定，而这里收到的时间轴是 `state` 的
-     * 全局秒数，不减掉起始时刻就永远对不上关键帧。
+     * ⚠ **还要换算成动画内的时间**：`BedrockAnimation.applyEffects` 按「窗口」判定关键帧，
+     * 而这里收到的时间轴是 `state` 的全局秒数，不减掉起始时刻就永远对不上关键帧。
+     * ⚠ 那个窗口的判据**官方改过**（所以别在这里写死原文）：1.8.1 是**闭区间**
+     * `it.seconds in previousSeconds..newSeconds`，**1.8.2 起改成开区间**
+     * `it.seconds >= previousSeconds && it.seconds < newSeconds`（官方借此修「动画特定时刻声音重复」）。
+     * ⇒ 我们只是把窗口**递过去**、从不自己判命中，所以官方一改这边自动跟上、**无需改代码**。
      */
     override fun applyEffects(entity: Entity?, state: PosableState, previousSeconds: Float, newSeconds: Float) {
         if (startedSeconds < 0f) return
