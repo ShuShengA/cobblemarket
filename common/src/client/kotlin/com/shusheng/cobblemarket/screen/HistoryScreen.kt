@@ -272,7 +272,12 @@ class HistoryScreen(private val showAll: Boolean = false) :
         // ⚠ **必须平级 append** —— 直接 `name.append(" ×N")` 会让 ×N 继承物品的稀有度色（颜色铁律：
         //   带色的文字绝不能当父节点）；这里 ×N 不设色，吃行色。
         // ⚠ `itemCount <= 0` 一律不显示：旧记录没记这个字段是 -1，**显示 `×0` 会变成"卖了 0 个"**。
-        if (e.itemCount > 0) Text.literal("").append(name).append(" ×${e.itemCount}") else name
+        // ⚠ **不可堆叠的不显示**（2026-10-12 用户指出「钻石镐属于不可堆叠，肯定没有 ×N」）：
+        //   挂单数量不可能超过 `maxCount`，而不可堆叠物品的输入栈恒为 1 ⇒ 它的 `count` 恒为 1，
+        //   显示 `×1` 是纯噪音。⚠ **可堆叠物品的 `×1` 是真信息**（"只挂了 1 个" vs "挂了 64 个"），照显。
+        val stackable = net.minecraft.util.Identifier.tryParse(e.species)
+            ?.let { net.minecraft.registry.Registries.ITEM.get(it).maxCount > 1 } ?: false
+        if (e.itemCount > 0 && stackable) Text.literal("").append(name).append(" ×${e.itemCount}") else name
     } else {
         TypeTextColors.speciesName(Text.translatable(e.species), e.primaryType.ifEmpty { null }, false)
     }
