@@ -56,6 +56,8 @@
 
 ### Fixes
 
+- **Some Pokémon played a swimming animation for the walk preview**: Pokémon such as Charizard and Pikachu played their water pose when hovered — they now fall back to idle (better to stand still than to play the wrong animation)
+
 - **After a failed "Start auction" the dialog stayed open and could be clicked again and again**: price-limit failures still keep the dialog so you can fix the number and retry; every other failure closes it and returns to the auction house, with the reason still in chat
 
 - **Rejected loan requests had no failure sound**: those refusals now play it
