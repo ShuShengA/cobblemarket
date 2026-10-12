@@ -266,7 +266,13 @@ class HistoryScreen(private val showAll: Boolean = false) :
     private fun speciesNameText(e: HistoryEntry): Text = if (e.category == "ITEM") {
         // 稀有度优先用记录里存的那个（服务端产生记录时算好的，**含附魔提升那一档**）；
         // 旧记录没有它 ⇒ 退回按 itemId 取默认栈的稀有度（改动前的老行为）
-        ItemNameText.rarityColoredNameById(e.species, e.itemRarity) ?: Text.literal(e.species)
+        val name = ItemNameText.rarityColoredNameById(e.species, e.itemRarity) ?: Text.literal(e.species)
+        // **数量**：以前物品行只显示物品名，卖出去几个看不出来（2026-10-12 用户报）。
+        // ⚠ 加在本入口上 ⇒ **行内与悬停窗一处改、两处都有**（悬停窗 = 行的完整版）。
+        // ⚠ **必须平级 append** —— 直接 `name.append(" ×N")` 会让 ×N 继承物品的稀有度色（颜色铁律：
+        //   带色的文字绝不能当父节点）；这里 ×N 不设色，吃行色。
+        // ⚠ `itemCount <= 0` 一律不显示：旧记录没记这个字段是 -1，**显示 `×0` 会变成"卖了 0 个"**。
+        if (e.itemCount > 0) Text.literal("").append(name).append(" ×${e.itemCount}") else name
     } else {
         TypeTextColors.speciesName(Text.translatable(e.species), e.primaryType.ifEmpty { null }, false)
     }

@@ -211,6 +211,17 @@ object RecordDetail {
         detail.split("|").firstOrNull { it.startsWith("rarity=") }?.removePrefix("rarity=").orEmpty()
 
     /**
+     * 从详情列里取出 [item] 写进去的**数量**段（`count=5` → `5`）。
+     *
+     * ⚠ **取不到返回 `-1`、不是 `0`** —— 界面据此**不显示** `×N`：
+     * 显示 `×0` 会变成"这笔卖了 0 个"，比不显示更糟。旧记录 / 精灵记录 / 手工改过的 CSV 都可能没有这一段。
+     * ⚠ 与 [rarityFromDetail] 同一个口径：**只提取这一段发下去**，不把整个详情列塞进 payload。
+     */
+    fun countFromDetail(detail: String): Int =
+        detail.split("|").firstOrNull { it.startsWith("count=") }
+            ?.removePrefix("count=")?.toIntOrNull() ?: -1
+
+    /**
      * 这件物品的**稀有度枚举名**（`RARE` 这种），取不到返回 null（整段省略）。
      *
      * ⚠ **重建完整栈、直接读 `stack.rarity`** —— 这与项目里那个唯一入口
