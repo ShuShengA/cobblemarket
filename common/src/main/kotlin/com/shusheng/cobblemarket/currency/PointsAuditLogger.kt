@@ -14,9 +14,10 @@ import net.minecraft.server.MinecraftServer
 /**
  * RP 变动类型（审计账本的类型列）。
  * GIVE/TAKE = 命令发放与回收；REDEEM = 兑换码；MARKET_* = **玩家间交易**的消费与收入；
- * STORE_BUY = **RP 商城购买**（RP 直接销毁，没有对应的收入方）；SHOP_CONFIRM = 充值订单确认发放。
+ * STORE_BUY = **RP 商城购买**（RP 直接销毁，没有对应的收入方）；SHOP_CONFIRM = 充值订单确认发放；
+ * REWARD = **数据包奖励规则自动发放**（捕捉 / 孵化 / 战斗胜利 / 化石复活 / 进化）。
  */
-enum class PointsLogType { GIVE, TAKE, REDEEM, MARKET_SPEND, MARKET_INCOME, STORE_BUY, SHOP_CONFIRM, CODE_CREATE, CODE_REVOKE }
+enum class PointsLogType { GIVE, TAKE, REDEEM, MARKET_SPEND, MARKET_INCOME, STORE_BUY, SHOP_CONFIRM, CODE_CREATE, CODE_REVOKE, REWARD }
 
 /**
  * **RP 审计账本**（`config/cobblemarket/points/`）。
@@ -223,6 +224,7 @@ object PointsAuditLogger {
             // 生成/作废兑换码本身**不改变任何余额**（余额列写 0），单独类型免得污染"发放"口径
             PointsLogType.CODE_CREATE -> if (zh) "生成兑换码" else "Code created"
             PointsLogType.CODE_REVOKE -> if (zh) "作废兑换码" else "Code revoked"
+            PointsLogType.REWARD -> if (zh) "奖励发放" else "Reward"
         }
         // 玩家 UUID 供程序按 UUID 对账（改名玩家也查得到）；人读账本看玩家名
         return "$time,$typeName,${csvEscape(targetName)},$targetUuid,$amount,$balanceAfter," +

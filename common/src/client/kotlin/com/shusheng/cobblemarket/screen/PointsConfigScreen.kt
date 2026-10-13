@@ -42,6 +42,14 @@ class PointsConfigScreen : Screen(
     /** 「give/take 权限下放」开关（默认关）：打开后玩家身份的 OP / FTB 任务模组也能发放 RP */
     private var rpAsQuestCurrency = false
 
+    /**
+     * **RP 奖励系统开关**（默认关）：打开后数据包里的奖励规则生效（捕捉 / 孵化 / 战斗胜利…自动发 RP）。
+     *
+     * ⚠ 点**开启**时弹确认窗（与 [rpAsQuestCurrency] / [pointsMarketEnabled] 同一套机制）——
+     *   这是本模组**唯一会自动发 RP** 的开关，而"RP 是不是充值货币卖出去的"只有服主知道。
+     */
+    private var pointsRewardsEnabled = false
+
     /** RP 的四个费率（%，服务端下发）：「费率配置」二级弹窗填初值，提醒弹窗看它们是否全 0 */
     private var pointsPokemonFee = 0.0
     private var pointsItemFee = 0.0
@@ -162,6 +170,22 @@ class PointsConfigScreen : Screen(
         }
     }
 
+    /**
+     * RP 奖励系统：点**开启**时弹确认窗。
+     *
+     * ⚠ 这个开关的风险跟另外两个不同 —— 它不交权限、也不开玩家间交易，
+     *   **它直接发钱**（用游戏行为换 RP）。所以正文要把"数据包配规则"这层讲清、
+     *   红字要正对着「RP 当充值货币卖」这个场景警告。
+     */
+    private fun onRewardsToggle() {
+        if (pointsRewardsEnabled) {
+            pointsRewardsEnabled = false
+            markDirtyAndRebuild()
+        } else {
+            openConfirmDialog("rewards")
+        }
+    }
+
     /** 开确认弹窗：**先重建再建自己的控件**（顺序同 [openFeeDialog]，反了会被 rebuild 清掉） */
     private fun openConfirmDialog(kind: String) {
         // ⚠ 冷静期的起点**要在 rebuild 之前**记：rebuild 会重跑 init，之后算会少一帧（无妨但没必要）
@@ -199,6 +223,7 @@ class PointsConfigScreen : Screen(
         when (confirmKind) {
             "grant" -> rpAsQuestCurrency = true
             "market" -> pointsMarketEnabled = true
+            "rewards" -> pointsRewardsEnabled = true
         }
         confirmKind = ""
         markDirtyAndRebuild()
@@ -233,6 +258,7 @@ class PointsConfigScreen : Screen(
         val titleKey = when (confirmKind) {
             "grant" -> "cobblemarket.points.config.grant_title"
             "market" -> "cobblemarket.points.config.market_title"
+            "rewards" -> "cobblemarket.points.config.rewards_title"
             else -> return
         }
         val lineKeys = when (confirmKind) {
@@ -240,6 +266,11 @@ class PointsConfigScreen : Screen(
                 "cobblemarket.points.config.grant_line1",
                 "cobblemarket.points.config.grant_line2",
                 "cobblemarket.points.config.grant_line3"
+            )
+            "rewards" -> listOf(
+                "cobblemarket.points.config.rewards_line1",
+                "cobblemarket.points.config.rewards_line2",
+                "cobblemarket.points.config.rewards_line3"
             )
             else -> listOf(
                 "cobblemarket.points.config.market_line1",
@@ -252,6 +283,12 @@ class PointsConfigScreen : Screen(
             "grant" -> listOf(
                 "cobblemarket.points.config.grant_warn1",
                 "cobblemarket.points.config.grant_warn2"
+            )
+            // ⚠ 奖励这条的警告必须**直指那个具体场景**（把 RP 当充值货币卖）——
+            //   它是唯一会让"卖了钱却没收到钱"变得可能的开关，泛泛说"有风险"服主不会当真
+            "rewards" -> listOf(
+                "cobblemarket.points.config.rewards_warn1",
+                "cobblemarket.points.config.rewards_warn2"
             )
             else -> buildList {
                 // ⚠ 首要任务是**破除"玩家之间能转账"这个误解**（用户 2026-09-28）——
@@ -519,6 +556,7 @@ class PointsConfigScreen : Screen(
         pointsEnabled = payload.pointsEnabled
         pointsMarketEnabled = payload.pointsMarketEnabled
         rpAsQuestCurrency = payload.rpAsQuestCurrency
+        pointsRewardsEnabled = payload.pointsRewardsEnabled
         pointsPokemonFee = payload.pointsPokemonFee
         pointsItemFee = payload.pointsItemFee
         pointsAuctionFee = payload.pointsAuctionFee
@@ -604,6 +642,8 @@ class PointsConfigScreen : Screen(
         )
         addDrawableChild(feeCfgButton)
         addToggle("shop", shopEnabled) { shopEnabled = !shopEnabled; markDirtyAndRebuild() }
+        // RP 奖励系统（数据包驱动、默认关）：点**开启**先弹确认窗（唯一会自动发 RP 的开关）
+        addToggle("rewards", pointsRewardsEnabled) { onRewardsToggle() }
 
         // 收款码文件名（全局码；每个档位还可以在编辑弹窗里配自己的）
         qrField = TextFieldWidget(textRenderer, rightX - 130, listStartY(), 152, 16, Text.literal(""))
@@ -769,6 +809,7 @@ class PointsConfigScreen : Screen(
         place(ROW_ICON, defaultIconField, rightX - 130, 2)
         place(ROW_TIMEOUT, timeoutField, rightX - 60, 2)
         place(ROW_CURRENCY, currencyField, rightX - 60, 2)
+        place(ROW_REWARDS, toggleButtons["rewards"], rightX, 0)
         // 档位行：行号 = FIXED_ROWS + 下标（按钮比行矮，垂直居中 → +2）
         tierEditButtons.forEachIndexed { index, btn ->
             place(FIXED_ROWS + index, btn, rightX + TIER_EDIT_DX, (TIER_ROW_H - TIER_BTN_H) / 2)
@@ -927,6 +968,7 @@ class PointsConfigScreen : Screen(
                 currencyLabel = pendingText["currency"] ?: currencyLabel,
                 pointsMarketEnabled = pointsMarketEnabled,
                 rpAsQuestCurrency = rpAsQuestCurrency,
+                pointsRewardsEnabled = pointsRewardsEnabled,
                 pointsPokemonFee = pointsPokemonFee,
                 pointsItemFee = pointsItemFee,
                 pointsAuctionFee = pointsAuctionFee,
@@ -1016,12 +1058,19 @@ class PointsConfigScreen : Screen(
             ROW_QR to "cobblemarket.points.config.pay_qr",
             ROW_ICON to "cobblemarket.points.config.default_icon",
             ROW_TIMEOUT to "cobblemarket.points.config.timeout",
-            ROW_CURRENCY to "cobblemarket.points.config.currency_label"
+            ROW_CURRENCY to "cobblemarket.points.config.currency_label",
+            ROW_REWARDS to "cobblemarket.points.config.rewards_enabled"
         )
         settingLabels.forEach { (row, key) ->
             if (!rowFits(row)) return@forEach
+            // ⚠ **哪些行的标签带 `%s` 图标，由行号集合决定，别写成 `row <= 某个行`** ——
+            //   那样只能表达"从第一行到第 N 行连续一段"，而带图标的行**并不连续**
+            //   （第 0~3 行带、第 4~8 行不带、第 9 行「奖励规则」又带）。
+            //   2026-10-13 加「奖励规则」时就栽在这：它落在 `row <= ROW_FEE` 之外 ⇒ 走了不带参数的
+            //   分支 ⇒ 词条里的 `%s` 没东西可填，**标签前面凭空多出一段空白/畸形块**
+            //   （而不是报错，界面上完全看不出是这里的问题）。
             val text =
-                if (row <= ROW_FEE) Text.translatable(key, CurrencyService.pointsIcon())
+                if (row in ICON_LABEL_ROWS) Text.translatable(key, CurrencyService.pointsIcon())
                 else Text.translatable(key)
             context.drawTextWithShadow(textRenderer, text, dx + 10, rowY(row) + 7, 0xFFFFFF)
             // 「默认券图」这行：标签后面**用括号把内置券图那张图括起来画**（2026-09-30 用户定）——
@@ -1274,15 +1323,17 @@ class PointsConfigScreen : Screen(
          * 可视区高 = DIALOG_H − (BOTTOM_BUTTON_BOTTOM + GAP + TIER_ADD_H + GAP)   ← 底部两行（钉死）
          *                    − 26                                                ← 标题区
          *          = DIALOG_H − 48 − 26 = DIALOG_H − 74
-         *          = 368 − 74 = 294px
+         *          = 388 − 74 = 314px
          * ```
-         * 可视区里依次排：8 行设置项（8×20=160）+ [TIER_SECTION_H] + N 行档位（N×[TIER_ROW_H]）。
-         * 弹窗没被钳短时 294 − 162 = 132 ÷ 18 = **7 行档位**同时可见；用户屏幕钳到 308 时
-         * `234 − 162 = 72 ÷ 18 = 4 行`（改这个式子的任何一项都可能让它掉回 3 行）。
+         * 可视区里依次排：10 行设置项（10×20=200）+ [TIER_SECTION_H] + N 行档位（N×[TIER_ROW_H]）。
+         * 弹窗没被钳短时 314 − 202 = 112 ÷ 18 = **6 行档位**同时可见；用户屏幕钳到 308 时
+         * `234 − 202 = 32 ÷ 18 = 2 行`（改这个式子的任何一项都可能让它再掉一行）。
          * ⚠ **FIXED_ROWS 每 +1（加一行设置项）就少 20px**，加设置项前先按上式算一遍。
+         * ⚠ 加「奖励规则」那一行时**同步把 [DIALOG_H] 从 368 提到 388** —— 只加行不提高度的话，
+         *   可视区里凭空少一整行（设置项+档位一共 314 的额度，多出来的一行会把档位挤掉一格）。
          * ⚠ 内容装不下**不会重叠**：装不下的行直接藏起来、可滚动（2026-09-19 改成整块滚动）。
          */
-        const val DIALOG_H = 368
+        const val DIALOG_H = 388
 
         /**
          * 设置项各行的**行号**（0 起）—— **唯一一份**：
@@ -1297,9 +1348,21 @@ class PointsConfigScreen : Screen(
         const val ROW_ICON = 6
         const val ROW_TIMEOUT = 7
         const val ROW_CURRENCY = 8
+        const val ROW_REWARDS = 9
 
-        /** 设置项占的行数（总开关 / 玩家间交易 / give/take 权限下放 / 费率配置 / 充值开关 / 收款码 / 券图 / 超时 / 货币单位） */
-        const val FIXED_ROWS = ROW_CURRENCY + 1
+        /** 设置项占的行数（总开关 / 玩家间交易 / give/take 权限下放 / 费率配置 / 充值开关 / 收款码 / 券图 / 超时 / 货币单位 / 奖励规则） */
+        const val FIXED_ROWS = ROW_REWARDS + 1
+
+        /**
+         * **标签带 `RP` 图标（词条里有 `%s`）的行** —— 与 `render` 里传不传 `pointsIcon()` 参数**成对**。
+         *
+         * ⚠⚠ **必须是显式集合，不能写成 `row <= ROW_某`**：带图标的行**不连续**
+         *   （0~3 带、4~8 不带、9「奖励规则」又带）。
+         * ⚠ 加"带图标的设置行"时**两处一起改**：这里加行号 + 词条里带上 `%s`。
+         *   漏了前者 ⇒ `%s` 没参数可填，标签前面凭空多出一段**空白或畸形小方块**
+         *   ——不报错、不崩，2026-10-13 就是这么加了「奖励规则」才发现的老写法（`row <= ROW_FEE`）的坑。
+         */
+        val ICON_LABEL_ROWS = setOf(ROW_POINTS, ROW_POINTS_MARKET, ROW_RP_QUEST, ROW_FEE, ROW_REWARDS)
 
         /**
          * 设置项与档位行之间留的缝（那条 1px 分割线画在这段缝里）。

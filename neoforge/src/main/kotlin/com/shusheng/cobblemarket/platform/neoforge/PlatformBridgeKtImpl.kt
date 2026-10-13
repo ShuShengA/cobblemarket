@@ -119,6 +119,42 @@ fun onPlayerDisconnect(handler: (player: ServerPlayerEntity) -> Unit) {
     }
 }
 
+// ── 服务端数据包重载监听 ──
+
+fun registerServerDataReload(
+    id: net.minecraft.util.Identifier,
+    handler: (net.minecraft.resource.ResourceManager, MinecraftServer) -> Unit,
+) {
+    // ⚠ **先把"当前服务端"记下来**：重载回调只给 `ResourceManager`，而读规则要
+    //   `server.getSavePath(...)`（见 common 侧那段的说明）⇒ 这里存一份，回调时一起传出去。
+    //   ⚠ 必须在**服务器启动**就记 —— 世界重载可能早于 `ServerStartedEvent`。
+    currentServer = null
+    NeoForge.EVENT_BUS.addListener(ServerStartingEvent::class.java) { e -> currentServer = e.server }
+    NeoForge.EVENT_BUS.addListener(ServerStoppedEvent::class.java) { currentServer = null }
+
+    // ⚠ 发在**游戏总线**（`NeoForge.EVENT_BUS`）上，不是 mod 总线 —— 这个 event **每次都 fire**
+    //   （每次重载各一次），而 mod 总线的监听器只在加载期收得到。
+    //
+    // ⚠ 与 fabric 的差别：**这里没有"按 id 去重"的机制**（fabric 那边靠 `getFabricId` 挡），
+    //   同一个 id 注册两次就会回调两遍 ⇒ 由 common 侧保证只注册一次。
+    //   `id` 因此在 neoforge 侧只用于**日志**：neo 的报错信息里能看出是哪一套监听器出的问题。
+    com.shusheng.cobblemarket.CobbleMarket.LOGGER.debug("Registered server data reload listener: {}", id)
+    NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.event.AddReloadListenerEvent::class.java) { event ->
+        event.addListener(
+            object : net.minecraft.resource.SynchronousResourceReloader {
+                override fun reload(manager: net.minecraft.resource.ResourceManager) {
+                    // 服务端还没起来 ⇒ 没有世界数据包可读，跳过
+                    val server = currentServer ?: return
+                    handler(manager, server)
+                }
+            }
+        )
+    }
+}
+
+/** 当前服务端（neoforge）：重载回调只给 `ResourceManager`，读规则要 `server` ⇒ 这里存一份 */
+private var currentServer: MinecraftServer? = null
+
 // ── 命令注册（三个参数均为原版类型，双端通用） ──
 
 fun registerCommands(

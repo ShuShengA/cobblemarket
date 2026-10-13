@@ -152,6 +152,20 @@ object CobbleMarketConfig {
     var rpAsQuestCurrency: Boolean = false
         private set
     /**
+     * **RP 奖励系统总开关**（默认关，需 [pointsEnabled] 同时开启）。
+     *
+     * 打开后，**数据包**里配的奖励规则（`data/` 下 `cobblemarket/points_rewards/` 的 json）会生效：
+     * 玩家捕捉 / 孵化 / 战斗胜利 / 化石复活 / 进化时，按规则**自动发放 RP**。
+     *
+     * ⚠⭐ **默认关的理由**（用户 2026-10-13 点名）：**如果 RP 被当充值货币卖，自动发就等于自动发钱**。
+     *   装了本模组、什么都不配 ⇒ 不可能有任何一个 RP 因为游戏行为自动进玩家账户；
+     *   **整合包自带了奖励规则也一样** —— 开关仍是关的，要服主**手动**打开。
+     * ⚠ 开启时会弹确认窗（讲清后果 + 5 秒冷静期，界面侧实现）。
+     * ⚠ 加了新数据包 / 改了 json 之后跑一次 `/reload` 即生效（不用重启）。
+     */
+    var pointsRewardsEnabled: Boolean = false
+        private set
+    /**
      * 外部签名码的 HMAC 密钥（服主在网站/发卡网卖RP 时用）。**留空 = 关闭外部码**，只接受本地生成的码。
      * ⚠ 只能放在服务端（网站后端 / 服主本机），绝不能进客户端、日志或公开仓库。
      */
@@ -417,6 +431,12 @@ object CobbleMarketConfig {
         save()
     }
 
+    /** RP 奖励系统开关切换并落盘（仅服务端配置界面调用） */
+    fun setPointsRewardsEnabled(v: Boolean) {
+        pointsRewardsEnabled = v
+        save()
+    }
+
     /** 游戏内充值开关切换并落盘（仅服务端配置界面调用） */
     fun setPointsShopEnabled(v: Boolean) {
         pointsShopEnabled = v
@@ -632,6 +652,7 @@ object CobbleMarketConfig {
                     "eggTradingEnabled", "buyOrderFeePercent", "buyOrderExpiryDays",
                     "maxBuyOrdersPerPlayer", "marketEnabled",
                     "shareEnabled", "pointsEnabled", "pointsMarketEnabled", "rpAsQuestCurrency",
+                    "pointsRewardsEnabled",
                     "pointsExternalSecret", "pointsExternalMaxDays",
                     "pointsShop",
                     "serverOwners",
@@ -811,6 +832,9 @@ object CobbleMarketConfig {
                 pointsMarketEnabled = data["pointsMarketEnabled"] as? Boolean ?: false
                 // 缺失按 false（保守）：老配置升级上来时「OP/FTB 能发 RP」一律先关着
                 rpAsQuestCurrency = data["rpAsQuestCurrency"] as? Boolean ?: false
+                // 缺失按 false（保守）：老配置升级上来时**自动发 RP 一律先关着** ——
+                // 这是「RP 当充值货币卖时等于自动发钱」那道护栏的兜底（见该字段的 KDoc）
+                pointsRewardsEnabled = data["pointsRewardsEnabled"] as? Boolean ?: false
                 pointsExternalSecret = data["pointsExternalSecret"] as? String ?: ""
                 pointsExternalMaxDays = ((data["pointsExternalMaxDays"] as? Double)?.toInt() ?: 365).coerceAtLeast(0)
                 val shop = data["pointsShop"] as? Map<*, *>
@@ -989,6 +1013,7 @@ object CobbleMarketConfig {
             // ⚠ 落盘这一行曾经漏过：读取端有、写入端没有 → 开关当次有效、重启就落回默认 false
             "pointsMarketEnabled" to pointsMarketEnabled,
             "rpAsQuestCurrency" to rpAsQuestCurrency,
+            "pointsRewardsEnabled" to pointsRewardsEnabled,
             "pointsExternalSecret" to pointsExternalSecret,
             "pointsExternalMaxDays" to pointsExternalMaxDays,
             "pointsShop" to mapOf(

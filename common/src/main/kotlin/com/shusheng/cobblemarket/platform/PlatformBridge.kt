@@ -6,10 +6,12 @@ import net.minecraft.command.CommandRegistryAccess
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
 import net.minecraft.network.packet.CustomPayload
+import net.minecraft.resource.ResourceManager
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.command.CommandManager
 import net.minecraft.server.command.ServerCommandSource
 import net.minecraft.server.network.ServerPlayerEntity
+import net.minecraft.util.Identifier
 import java.math.BigDecimal
 import java.nio.file.Path
 import java.util.UUID
@@ -88,6 +90,26 @@ fun registerItems(items: List<Pair<net.minecraft.util.Identifier, () -> net.mine
 
 @ExpectPlatform
 fun onPlayerDisconnect(handler: (player: ServerPlayerEntity) -> Unit): Unit = throw AssertionError()
+
+// ── 服务端数据包重载监听 ──
+
+/**
+ * 注册一个**服务端数据包（datapack）重载监听**：每次世界加载 / `/reload` 后回调一次，
+ * 回调参数是该次重载的 [ResourceManager] 与**服务端实例**。
+ *
+ * ⚠ 为什么要把 `server` 一起给出去：`ResourceManager` 的"按目录列资源"（`findResources`）
+ *   对**世界数据包**要不到东西（2026-10-13 实测，见 `RewardRules.load` 上方那段），
+ *   所以读规则的落点改成了"**从存档的 `datapacks/` 目录读盘列文件名** +
+ *   `getAllResources(id)` 直取" —— 那条路要 `server.getSavePath(WorldSavePath.DATAPACKS)`。
+ *
+ * ⚠ 回调**在重载线程上同步执行**（fabric `SynchronousResourceReloader` / neoforge
+ *   `AddReloadListenerEvent` 都保证）⇒ 回调里只做"读盘 + 解析 + 换掉内存里的规则表"，
+ *   别在里头碰世界状态、别发网络包。
+ * ⚠ 同一个 [id] 只该注册一次（重复注册会回调两遍）。本模组只有 RP 奖励规则用得到它。
+ * ⚠ 实现侧**拿不到 server 时会跳过回调**（服务器还没起来，这时候本来也没世界数据包可读）。
+ */
+@ExpectPlatform
+fun registerServerDataReload(id: Identifier, handler: (ResourceManager, MinecraftServer) -> Unit): Unit = throw AssertionError()
 
 // ── 命令注册（三个参数均为原版类型，双端通用） ──
 

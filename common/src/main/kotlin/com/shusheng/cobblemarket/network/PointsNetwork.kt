@@ -473,7 +473,13 @@ data class PointsConfigPayload(
     val pointsPokemonFee: Double = 0.0,
     val pointsItemFee: Double = 0.0,
     val pointsAuctionFee: Double = 0.0,
-    val pointsBuyOrderFee: Double = 0.0
+    val pointsBuyOrderFee: Double = 0.0,
+    /**
+     * **RP 奖励系统开关**（默认关）：打开后数据包里的奖励规则生效（见
+     * `CobbleMarketConfig.pointsRewardsEnabled`）。
+     * ⚠ 改这个字段会**同时**让 `PointsRewards` 整块开关跟着变 —— 它就是那个开关的界面形态。
+     */
+    val pointsRewardsEnabled: Boolean = false
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -501,6 +507,7 @@ data class PointsConfigPayload(
                     b.writeString(t.qr, MAX_FILE_NAME_LENGTH)
                     b.writeString(t.icon, MAX_FILE_NAME_LENGTH)
                 }
+                b.writeBoolean(p.pointsRewardsEnabled)
             },
             { b ->
                 val pointsEnabled = b.readBoolean()
@@ -531,6 +538,7 @@ data class PointsConfigPayload(
                         )
                     )
                 }
+                val pointsRewardsEnabled = b.readBoolean()
                 // ⚠ 具名参数：位置参数在字段增删时会静默错位（加 defaultIcon 时就撞到过一次）
                 PointsConfigPayload(
                     pointsEnabled = pointsEnabled,
@@ -545,7 +553,8 @@ data class PointsConfigPayload(
                     pointsPokemonFee = pointsPokemonFee,
                     pointsItemFee = pointsItemFee,
                     pointsAuctionFee = pointsAuctionFee,
-                    pointsBuyOrderFee = pointsBuyOrderFee
+                    pointsBuyOrderFee = pointsBuyOrderFee,
+                    pointsRewardsEnabled = pointsRewardsEnabled
                 )
             }
         )
@@ -586,7 +595,13 @@ data class SavePointsConfigPayload(
     val pointsPokemonFee: Double = 0.0,
     val pointsItemFee: Double = 0.0,
     val pointsAuctionFee: Double = 0.0,
-    val pointsBuyOrderFee: Double = 0.0
+    val pointsBuyOrderFee: Double = 0.0,
+    /**
+     * **RP 奖励系统开关**（默认关）：打开后数据包里的奖励规则生效
+     * （见 `CobbleMarketConfig.pointsRewardsEnabled`）。
+     * ⚠ 这是本模组**唯一会自动发 RP** 的开关，界面侧点开启时会弹确认窗 + 5 秒冷静期。
+     */
+    val pointsRewardsEnabled: Boolean = false
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -614,6 +629,7 @@ data class SavePointsConfigPayload(
                     b.writeString(t.qr, MAX_FILE_NAME_LENGTH)
                     b.writeString(t.icon, MAX_FILE_NAME_LENGTH)
                 }
+                b.writeBoolean(p.pointsRewardsEnabled)
             },
             { b ->
                 val pointsEnabled = b.readBoolean()
@@ -644,6 +660,7 @@ data class SavePointsConfigPayload(
                         )
                     )
                 }
+                val pointsRewardsEnabled = b.readBoolean()
                 // ⚠ 具名参数（同上）
                 SavePointsConfigPayload(
                     pointsEnabled = pointsEnabled,
@@ -658,7 +675,8 @@ data class SavePointsConfigPayload(
                     pointsPokemonFee = pointsPokemonFee,
                     pointsItemFee = pointsItemFee,
                     pointsAuctionFee = pointsAuctionFee,
-                    pointsBuyOrderFee = pointsBuyOrderFee
+                    pointsBuyOrderFee = pointsBuyOrderFee,
+                    pointsRewardsEnabled = pointsRewardsEnabled
                 )
             }
         )
@@ -987,6 +1005,15 @@ object PointsNetwork {
                 CobbleMarketConfig.setPointsEnabled(payload.pointsEnabled)
                 CobbleMarketConfig.setPointsMarketEnabled(payload.pointsMarketEnabled)
                 CobbleMarketConfig.setRpAsQuestCurrency(payload.rpAsQuestCurrency)
+                // RP 奖励系统开关：开启时留一条日志 —— 这是**唯一会自动发 RP** 的开关，
+                // 出问题时（玩家说"我没买东西怎么多了 RP"）翻日志能立刻对上时间
+                if (!CobbleMarketConfig.pointsRewardsEnabled && payload.pointsRewardsEnabled) {
+                    CobbleMarket.LOGGER.info(
+                        "RP reward rules enabled by {} — players will now earn RP automatically",
+                        player.name.string
+                    )
+                }
+                CobbleMarketConfig.setPointsRewardsEnabled(payload.pointsRewardsEnabled)
                 // RP 的四个费率（%）—— setter 只改内存，统一下面 save() 落盘
                 CobbleMarketConfig.setPointsPokemonListingFeePercent(payload.pointsPokemonFee)
                 CobbleMarketConfig.setPointsItemListingFeePercent(payload.pointsItemFee)
@@ -1510,7 +1537,8 @@ object PointsNetwork {
         pointsPokemonFee = CobbleMarketConfig.pointsPokemonListingFeePercent,
         pointsItemFee = CobbleMarketConfig.pointsItemListingFeePercent,
         pointsAuctionFee = CobbleMarketConfig.pointsAuctionFeePercent,
-        pointsBuyOrderFee = CobbleMarketConfig.pointsBuyOrderFeePercent
+        pointsBuyOrderFee = CobbleMarketConfig.pointsBuyOrderFeePercent,
+        pointsRewardsEnabled = CobbleMarketConfig.pointsRewardsEnabled
     )
 
     private fun sendShopInfo(server: MinecraftServer, player: ServerPlayerEntity) {
