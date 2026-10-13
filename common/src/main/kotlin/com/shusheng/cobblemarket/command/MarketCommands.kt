@@ -11,6 +11,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
 import net.minecraft.command.argument.EntityArgumentType
+import net.minecraft.text.ClickEvent
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
@@ -339,6 +340,54 @@ object MarketCommands {
                             .then(CommandManager.literal("purge")
                                 .requires { MarketPermissions.has(it, MarketPermissions.POINTS_ORDER) }
                                 .executes(::shopPurge)
+                            )
+                        )
+                        // RP 奖励规则的"查物种怎么填" —— 服主配规则时的**唯一查找入口**。
+                        // ⚠ 只读、不改任何东西，但仍然**只限服主**：输出是几百行物种清单，
+                        //   是给配数据包的人看的，不该变成玩家能刷的东西（项目铁律：不认 OP）。
+                        .then(CommandManager.literal("rewards")
+                            .requires { MarketPermissions.isServerOwner(it) }
+                            .then(CommandManager.literal("species")
+                                // 不带命名空间 = 只给各命名空间的物种数（先让服主知道有哪几个包）
+                                .executes { ctx -> rewardsSpeciesList(ctx, null, null, 1) }
+                                .then(CommandManager.argument("namespace", StringArgumentType.word())
+                                    .suggests { _, builder ->
+                                        com.cobblemon.mod.common.api.pokemon.PokemonSpecies.species
+                                            .map { it.resourceIdentifier.namespace }
+                                            .distinct()
+                                            .sorted()
+                                            .forEach { builder.suggest(it) }
+                                        builder.buildFuture()
+                                    }
+                                    .executes { ctx ->
+                                        rewardsSpeciesList(ctx, StringArgumentType.getString(ctx, "namespace"), null, 1)
+                                    }
+                                    // 搜索词：本体 1000+ 物种，不带搜索根本定位不到想要的那只
+                                    .then(CommandManager.argument("search", StringArgumentType.word())
+                                        .executes { ctx ->
+                                            rewardsSpeciesList(
+                                                ctx,
+                                                StringArgumentType.getString(ctx, "namespace"),
+                                                StringArgumentType.getString(ctx, "search"),
+                                                1
+                                            )
+                                        }
+                                        // 页码：翻页按钮点出来的就是这个形式（服主也可以手敲）
+                                        .then(CommandManager.argument("page", IntegerArgumentType.integer(1))
+                                            .executes { ctx ->
+                                                rewardsSpeciesList(
+                                                    ctx,
+                                                    StringArgumentType.getString(ctx, "namespace"),
+                                                    StringArgumentType.getString(ctx, "search"),
+                                                    IntegerArgumentType.getInteger(ctx, "page")
+                                                )
+                                            }
+                                        )
+                                    )
+                                )
+                            )
+                            .then(CommandManager.literal("labels")
+                                .executes(::rewardsLabelList)
                             )
                         )
                     )
@@ -1103,6 +1152,14 @@ object MarketCommands {
     private const val PARTY_SIZE = 6
 
     /**
+     * `/market points rewards species <命名空间>` 一次最多列多少条。
+     *
+     * 聊天栏不是分页器：本体就有 1000+ 物种，全列出来会把玩家的正常发言整屏冲掉。
+     * 超出的部分只报个数并提示缩小范围（换命名空间再查）。
+     */
+    private const val SPECIES_PER_PAGE = 40
+
+    /**
      * `/market tag remove <玩家> <槽位> <标签>` —— 撤掉**别人队伍里**某只精灵身上的某个标签。
      *
      * ⚠ **标签参数必填**（用户 2026-10-01 定）：目前只有一个可撤标签、看着多余，
@@ -1222,6 +1279,164 @@ object MarketCommands {
     }
 
     /** `/market owner list`：列出服主名单（名字查不到时只显示 UUID） */
+    /**
+     * `/market points rewards species [命名空间 [搜索词 [页码]]]` —— 列出物种的**资源 id**
+     * （配规则时直接抄进 `species` 字段的那个写法）。
+     *
+     * 用法分三层：不带参数先报"装了哪些包"；带命名空间看那个包；带搜索词精确定位。
+     *
+     * ⚠⭐ **一定要带搜索**：本体自己就有 1000+ 物种，不带搜索时翻一屏就是一屏的噪音，
+     *   服主想问"超梦怎么写"根本无从下手（2026-10-13 实测：列了 60 条还得手动往后翻）。
+     * ⚠ 用**完整注册表**（`PokemonSpecies.species`）而不是 `implemented` —— 后者会滤掉
+     *   `implemented: false` 的物种（2026-10-13 实测差 125 只），
+     *   而**能不能捕获与能不能配规则是两回事**：注册了就写得出规则，滤掉只会让服主查不到。
+     *   未实现的会标上 `[未实现]`，避免他以为配了就有用。
+     */
+    private fun rewardsSpeciesList(
+        context: CommandContext<ServerCommandSource>,
+        namespace: String?,
+        search: String?,
+        page: Int
+    ): Int {
+        val source = context.source
+        val all = com.cobblemon.mod.common.api.pokemon.PokemonSpecies.species
+
+        if (namespace == null) {
+            val byNs = all.groupingBy { it.resourceIdentifier.namespace }.eachCount().toList()
+                .sortedByDescending { it.second }
+            source.sendFeedback(
+                {
+                    Text.translatable("cobblemarket.rewards.species_header_ns", all.size, byNs.size)
+                        .formatted(Formatting.GOLD)
+                },
+                false
+            )
+            byNs.forEach { (ns, count) ->
+                source.sendFeedback(
+                    {
+                        Text.literal(" - ").append(Text.literal(ns).formatted(Formatting.AQUA))
+                            .append(Text.literal(" × $count").formatted(Formatting.GRAY))
+                    },
+                    false
+                )
+            }
+            source.sendFeedback({ Text.translatable("cobblemarket.rewards.species_hint").formatted(Formatting.YELLOW) }, false)
+            return 1
+        }
+
+        // 搜索词为空 = 列该命名空间全部（此时配合翻页看）
+        val matched = all
+            .filter { it.resourceIdentifier.namespace == namespace }
+            .filter { search.isNullOrBlank() || it.resourceIdentifier.path.contains(search, ignoreCase = true) }
+            .sortedBy { it.resourceIdentifier.path }
+        if (matched.isEmpty()) {
+            source.sendError(
+                Text.translatable(
+                    "cobblemarket.rewards.species_empty",
+                    if (search.isNullOrBlank()) namespace else "$namespace × $search"
+                )
+            )
+            return 0
+        }
+
+        val pages = ((matched.size - 1) / SPECIES_PER_PAGE) + 1
+        val safePage = page.coerceIn(1, pages)
+        val from = (safePage - 1) * SPECIES_PER_PAGE
+        val pageItems = matched.subList(from, minOf(from + SPECIES_PER_PAGE, matched.size))
+
+        source.sendFeedback(
+            {
+                Text.translatable("cobblemarket.rewards.species_header", namespace, matched.size)
+                    .append(
+                        if (pages > 1) Text.translatable("cobblemarket.rewards.species_page", safePage, pages)
+                            .formatted(Formatting.YELLOW)
+                        else Text.literal("")
+                    )
+                    .formatted(Formatting.GOLD)
+            },
+            false
+        )
+        pageItems.forEach { species ->
+            val labels = species.labels.sorted()
+            source.sendFeedback(
+                {
+                    Text.literal(" - ")
+                        .append(Text.literal(species.resourceIdentifier.toString()).formatted(Formatting.WHITE))
+                        .append(
+                            if (labels.isEmpty())
+                                Text.translatable("cobblemarket.rewards.species_no_label").formatted(Formatting.DARK_GRAY)
+                            else Text.literal("  " + labels.joinToString(" ")).formatted(Formatting.GRAY)
+                        )
+                        .append(
+                            if (!species.implemented)
+                                Text.translatable("cobblemarket.rewards.species_unimplemented").formatted(Formatting.DARK_RED)
+                            else Text.literal("")
+                        )
+                },
+                false
+            )
+        }
+        // 翻页：**点击执行**（`/reload` 那套一样的 clickEvent），比"自己重敲命令"顺手得多
+        if (pages > 1) {
+            val ctx = "${namespace}${if (search.isNullOrBlank()) "" else " $search"}"
+            source.sendFeedback(
+                {
+                    Text.literal("")
+                        .append(
+                            if (safePage > 1) Text.translatable("cobblemarket.rewards.species_prev")
+                                .styled {
+                                    it.withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND,
+                                        "/market points rewards species $ctx ${safePage - 1}"))
+                                        .withColor(Formatting.AQUA)
+                                }
+                            else Text.literal("")
+                        )
+                        .append(Text.literal("  "))
+                        .append(
+                            if (safePage < pages) Text.translatable("cobblemarket.rewards.species_next")
+                                .styled {
+                                    it.withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND,
+                                        "/market points rewards species $ctx ${safePage + 1}"))
+                                        .withColor(Formatting.AQUA)
+                                }
+                            else Text.literal("")
+                        )
+                },
+                false
+            )
+        }
+        return 1
+    }
+
+    /** `/market points rewards labels` —— 列出全服物种用到的所有标签（配 `labels` 字段时照着抄） */
+    private fun rewardsLabelList(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val counts = mutableMapOf<String, Int>()
+        com.cobblemon.mod.common.api.pokemon.PokemonSpecies.species.forEach { species ->
+            species.labels.forEach { counts[it] = (counts[it] ?: 0) + 1 }
+        }
+        if (counts.isEmpty()) {
+            source.sendError(Text.translatable("cobblemarket.rewards.labels_empty"))
+            return 0
+        }
+        val sorted = counts.entries.sortedByDescending { it.value }
+        source.sendFeedback(
+            { Text.translatable("cobblemarket.rewards.labels_header", sorted.size).formatted(Formatting.GOLD) },
+            false
+        )
+        sorted.forEach { (label, count) ->
+            source.sendFeedback(
+                {
+                    Text.literal(" - ").append(Text.literal(label).formatted(Formatting.AQUA))
+                        .append(Text.literal(" × $count").formatted(Formatting.GRAY))
+                },
+                false
+            )
+        }
+        source.sendFeedback({ Text.translatable("cobblemarket.rewards.labels_hint").formatted(Formatting.YELLOW) }, false)
+        return 1
+    }
+
     private fun ownerList(context: CommandContext<ServerCommandSource>): Int {
         val source = context.source
         val server = source.server

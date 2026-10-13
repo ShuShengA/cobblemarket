@@ -103,6 +103,40 @@ fun onPlayerDisconnect(handler: (player: ServerPlayerEntity) -> Unit) {
     }
 }
 
+// ── 服务端数据包重载监听 ──
+
+fun registerServerDataReload(
+    id: net.minecraft.util.Identifier,
+    handler: (net.minecraft.resource.ResourceManager, MinecraftServer) -> Unit,
+) {
+    // ⚠ **先把"当前服务端"记下来**：重载回调只给 `ResourceManager`，而读规则要
+    //   `server.getSavePath(...)`（见 common 侧那段的说明）⇒ 这里存一份，回调时一起传出去。
+    //   ⚠ 必须在 `SERVER_STARTING` 就记 —— 世界重载可能早于 `SERVER_STARTED`。
+    ServerLifecycleEvents.SERVER_STARTING.register { s -> currentServer = s }
+    ServerLifecycleEvents.SERVER_STOPPED.register { currentServer = null }
+
+    // fabric-resource-loader-v0 的 `IdentifiableResourceReloadListener` 自带唯一 id（`getFabricId`），
+    // 框架按它去重 ⇒ id 本身就是防重复注册的闸门（id 必须落在 cobblemarket 命名空间下）。
+    //
+    // ⚠ 用 `SynchronousResourceReloader`（**接口**，不是要等 prepare/apply 两个 future 的那种）：
+    //   它把全部活儿放在 apply 阶段跑完 ⇒ 回调返回时规则表**已经是新的**，后面的事件直接看得见。
+    val listener = object : net.fabricmc.fabric.api.resource.IdentifiableResourceReloadListener,
+        net.minecraft.resource.SynchronousResourceReloader {
+        override fun getFabricId(): net.minecraft.util.Identifier = id
+        override fun reload(manager: net.minecraft.resource.ResourceManager) {
+            // 服务端还没起来（比如客户端资源重载）⇒ 没有世界数据包可读，跳过
+            val server = currentServer ?: return
+            handler(manager, server)
+        }
+    }
+    net.fabricmc.fabric.api.resource.ResourceManagerHelper
+        .get(net.minecraft.resource.ResourceType.SERVER_DATA)
+        .registerReloadListener(listener)
+}
+
+/** 当前服务端（fabric）：重载回调只给 `ResourceManager`，读规则要 `server` ⇒ 这里存一份 */
+private var currentServer: MinecraftServer? = null
+
 // ── 命令 ──
 
 fun registerCommands(

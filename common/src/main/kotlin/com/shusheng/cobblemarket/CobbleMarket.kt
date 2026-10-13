@@ -80,6 +80,9 @@ object CobbleMarket {
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()
 		TransactionHistory.register()
+		// RP 奖励系统（数据包驱动）：注册数据包重载监听 + 订阅五个 Cobblemon 事件。
+		// ⚠ **默认整块关着**（配置里的 pointsRewardsEnabled）—— 见该字段的 KDoc
+		com.shusheng.cobblemarket.currency.rewards.PointsRewards.register()
 
 		onServerStarting { server ->
 			// 清空上一世界残留的保存待办（单机切存档同进程，静态状态不得跨世界——见 PersistHelper.reset）
@@ -95,6 +98,13 @@ object CobbleMarket {
 			TransactionHistory.historyRef = TransactionHistory.get(server)
 			// CSV 详情重建精灵要 registries + 解析初始训练家 —— 事件订阅那边拿不到 server，这里挂一份
 			TransactionHistory.serverRef = server
+			// ⚠⚠ **RP 奖励规则必须在这里再加载一次**（2026-10-13 实测踩到）：
+			//   平台层注册的重载监听**只在 `/reload` 时被回调**，**进世界那次加载不经过它** ——
+			//   玩家直接进存档时规则表是空的 ⇒ "我明明配了、抓精灵却没奖励"，
+			//   而他手动 `/reload` 一下就好了（看起来像"每次都要手动开一次数据包"，
+			//   其实包一直是启用的、缺的是这次加载）。
+			//   ⇒ 世界启动时主动读一次，之后 `/reload` 仍由监听器接管。
+			com.shusheng.cobblemarket.currency.rewards.PointsRewards.onReload(server.resourceManager, server)
 			// 金融系统状态预热（照 TransactionHistory 模式；批次 3 起实际读写）
 			com.shusheng.cobblemarket.finance.FinanceState.get(server)
 			// 贷款期界换算一律走 LoanRecord.PERIOD_MS_LONG（一期 PERIOD_DAYS 天），这行日志用于一眼核对：
@@ -128,6 +138,8 @@ object CobbleMarket {
 		onServerStopped { server ->
 			// 正常关服保存完成后，用最新数据刷新备份
 			com.shusheng.cobblemarket.util.StateBackup.backupOnStop(server)
+			// RP 奖励：清掉待发的动作栏提示与内存里的规则表（单机切存档同进程，静态状态不得跨世界）
+			com.shusheng.cobblemarket.currency.rewards.PointsRewards.reset()
 			// 备份完成后释放历史记录静态引用；不在 STOPPING 提前置 null，
 			// 覆盖 STOPPING→STOPPED 窗口内的事件写入（CSV 文件日志同步落盘）
 			TransactionHistory.historyRef = null
@@ -147,6 +159,8 @@ object CobbleMarket {
 			com.shusheng.cobblemarket.finance.FinanceService.tick(server)
 			// 充值订单维护：超时作废 + 完结订单清理（内部 60 秒节流，见 PointShopService）
 			com.shusheng.cobblemarket.currency.PointShopService.tick(server)
+			// RP 奖励的动作栏提示：1 秒合并窗口到点就发（见 PointsRewards.queueActionBar）
+			com.shusheng.cobblemarket.currency.rewards.PointsRewards.onServerTick(server)
 			// 喵喵紫卡/黑卡丢弃即消失扫描（0.5 秒节流，近乎立即可见消失；
 			// 非持有者背包自删走物品自身的 inventoryTick，无需服务器扫描）
 			if (++cardScanTick >= 10) {
