@@ -21,6 +21,7 @@ import com.shusheng.cobblemarket.network.PointCodesPayload
 import com.shusheng.cobblemarket.network.PointMarketItemsPayload
 import com.shusheng.cobblemarket.network.ShopSnapshotsPayload
 import com.shusheng.cobblemarket.network.SpeciesFeatureAspectsPayload
+import com.shusheng.cobblemarket.network.SpeciesMovesPayload
 import com.shusheng.cobblemarket.network.PointRecordsPayload
 import com.shusheng.cobblemarket.network.PointsConfigPayload
 import com.shusheng.cobblemarket.network.PointsShopInfoPayload
@@ -733,6 +734,14 @@ object CobbleMarketClient {
         registerS2C(SpeciesFeatureAspectsPayload.ID, SpeciesFeatureAspectsPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 PointMarketCache.acceptFeatureAspects(payload)
+            }
+        }
+
+        // 完整招式表（六桶；按物种拉）：落缓存，技能候选与它的来源筛选直接读它。
+        // ⚠ 与上面那条分开一个包 —— 那份是「全部物种的变体候选」一次性下发，这份按物种来
+        registerS2C(SpeciesMovesPayload.ID, SpeciesMovesPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                PointMarketCache.acceptSpeciesMoves(payload)
             }
         }
 

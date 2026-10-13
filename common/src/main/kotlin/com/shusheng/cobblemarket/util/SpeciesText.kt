@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.util
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
+import com.cobblemon.mod.common.api.pokemon.moves.Learnset
 import com.cobblemon.mod.common.pokemon.FormData
 import com.cobblemon.mod.common.pokemon.Pokemon
 import com.cobblemon.mod.common.pokemon.Species
@@ -213,6 +214,43 @@ object SpeciesText {
         }
         return out
     }
+
+    /**
+     * **招式来源桶的键** —— RP 商城编辑窗「技能」列表的**筛选按钮**、以及
+     * [com.shusheng.cobblemarket.network.SpeciesMovesPayload] 按来源拆分下发用的键。
+     *
+     * ⚠ 只列**合法**的那六桶 —— 这六个**恰好**是 `Learnset.getAllLegalMoves()` 的来源，
+     *   也恰好是本体判「这只精灵能不能学」的 `LearnsetQuery.LEGAL`：
+     *   `legacy:`（前代招式机）与 `special:`（配信 / 活动）**两边都不算合法**，不进候选、也不做桶
+     *   ⇒ **六桶的并集 = 能不能学的完整判据**，一个不多一个不少。
+     */
+    object MoveSources {
+        const val LEVEL = "level"
+        const val TM = "tm"
+        const val EGG = "egg"
+        const val TUTOR = "tutor"
+        const val EVOLUTION = "evolution"
+        const val FORM_CHANGE = "form_change"
+
+        /** **显示顺序**（筛选按钮排布、桶的遍历顺序都按它）：常规途径在前 */
+        val ORDER = listOf(LEVEL, TM, EGG, TUTOR, EVOLUTION, FORM_CHANGE)
+    }
+
+    /**
+     * 把一张招式表按**来源**拆成六桶（`桶 → 招式 id`，桶内去重 + 排序）。
+     *
+     * ⚠ **桶与桶之间不去重**（用户 2026-10-13 拍板）：同一个招可以既是「升级学的」又是
+     *   「招式机能学的」（喷火龙的火牙三桶都有）—— 按"最专属的一桶"归属会把
+     *   "这招还有别的来路"这个事实藏起来。⇒ 每桶各自给全，列表那边靠**筛选**看单桶。
+     */
+    fun learnsetBuckets(learnset: Learnset): Map<String, List<String>> = mapOf(
+        MoveSources.LEVEL to learnset.levelUpMoves.values.flatten().map { it.name },
+        MoveSources.TM to learnset.tmMoves.map { it.name },
+        MoveSources.EGG to learnset.eggMoves.map { it.name },
+        MoveSources.TUTOR to learnset.tutorMoves.map { it.name },
+        MoveSources.EVOLUTION to learnset.evolutionMoves.map { it.name },
+        MoveSources.FORM_CHANGE to learnset.formChangeMoves.map { it.name },
+    ).mapValues { (_, ids) -> ids.distinct().sorted() }
 
     /**
      * **整类不列候选的 feature**（按注册键，下划线形式）—— 2026-09-27 用户实测后拍板。

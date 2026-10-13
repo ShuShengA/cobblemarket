@@ -1,8 +1,10 @@
 package com.shusheng.cobblemarket.screen
 
+import com.cobblemon.mod.common.api.abilities.PotentialAbility
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.client.settings.ServerSettings
+import com.cobblemon.mod.common.pokemon.FormData
 import com.cobblemon.mod.common.pokemon.PokemonSizeCategory
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.cobblemon.mod.common.pokemon.Species
@@ -36,6 +38,7 @@ import com.shusheng.cobblemarket.network.DeleteShopSnapshotPayload
 import com.shusheng.cobblemarket.network.RedeemPointCodePayload
 import com.shusheng.cobblemarket.network.RequestShopSnapshotsPayload
 import com.shusheng.cobblemarket.network.RequestSpeciesFeatureAspectsPayload
+import com.shusheng.cobblemarket.network.RequestSpeciesMovesPayload
 import com.shusheng.cobblemarket.network.SaveShopSnapshotPayload
 import com.shusheng.cobblemarket.network.ShopSnapshotInfo
 import com.shusheng.cobblemarket.network.RemovePointMarketEntryPayload
@@ -881,6 +884,15 @@ class PointsMarketScreen : Screen(
     private var optionSearchText = ""
 
     /**
+     * 「技能」列表的**来源筛选**（[SpeciesText.MoveSources] 里的桶键）；`null` = 「全部」。
+     * ⚠ 只在技能列表上有意义（那排按钮也只在那儿显示），**开列表时复位** —— 与搜索词同一个口径。
+     */
+    private var moveSourceFilter: String? = null
+
+    /** 上次建技能列表时用的招式表版本（见 [PointMarketCache.speciesMovesVersion]），见 `tick` */
+    private var moveTableSeen = -1
+
+    /**
      * 该列表是否**多选**（目前只有证章）。
      * 多选时点一行只切换勾选、**不关列表** —— 不然挂第二个章还得把按钮重新点开。
      */
@@ -928,7 +940,16 @@ class PointsMarketScreen : Screen(
          * 「变体」用：**该维度的标题行**（画成分节标题，不可点、不参与选择）。
          * ⚠ 它的 [value] 恒为空串，靠这个标记与「不指定」项区分开。
          */
-        val isHeader: Boolean = false
+        val isHeader: Boolean = false,
+        /**
+         * 「技能」用：这个招属于**哪些来源桶**（[SpeciesText.MoveSources]）——
+         * 技能列表顶上那排筛选按钮按"属不属于"命中（**桶间不去重**：火牙三桶都有，
+         * 在「等级」「招式机」「教学」三个筛选下都出得来）。
+         *
+         * ⚠ **空集 = 不属于任何桶**（「无」那一项、以及「自由选择」的全表那份）——
+         *   空集**任何筛选下都显示**：否则选了某一桶之后「无」被筛掉，那一槽就再也清不掉了。
+         */
+        val sources: Set<String> = emptySet()
     )
 
     /**
@@ -1313,6 +1334,13 @@ class PointsMarketScreen : Screen(
             //   物品窗那条搜索框**常驻在界面上**（见 [buildItemFields]），同样要放行
             if (optionSearchField?.isMouseOver(mouseX, mouseY) == true) return true
             if (editItemSearchField?.isMouseOver(mouseX, mouseY) == true) return true
+            // 技能列表顶上那排**来源筛选按钮**（自绘）：命中就切档。
+            // ⚠ **整条带子都要吃掉**（含按钮之间的空隙）—— 漏掉的话点空处会落到右边那张精灵大图上，
+            //   精灵当场叫一声，看着像"按钮坏了"（见 [moveFilterBand]）
+            if (showMoveFilterRow() && moveFilterBand().contains(mouseX.toInt(), mouseY.toInt())) {
+                if (!result && button == 0) clickMoveFilterChip(mouseX, mouseY)
+                return true
+            }
             // ⚠ **只有真的点在列表行上才吃掉这次点击**：列表只占左半边，右边那块是精灵大图 ——
             //   原来这里无条件 `return true`，点精灵图标被列表整个吞掉、**叫都不叫**
             //   （2026-09-27 用户报「变体弹窗的精灵图标点击没反应」）。
@@ -1504,6 +1532,25 @@ class PointsMarketScreen : Screen(
         if (optionListKind == OPT_FEATURE && variantAspectsSeen != aspectsVersion) {
             variantAspectsSeen = aspectsVersion
             rebuildOptionList()
+        }
+        // ③ 完整招式表**异步**回来（开窗 / 换物种 / 开列表时请求）⇒ 补两件事：
+        //    ① 正开着的技能列表重建一次（候选这下才带上教学 / 形态专属 / 进化那几桶——
+        //       [openOptionList] 建表时表可能还在飞，那时用的是本地三桶）
+        //    ② [normalizeMoves] 补跑一次：它在表没到时**故意跳过**（本地池子是真子集，会误清）
+        //    ⚠ 同上面那条：必须排在下面那句 `if (dialogOpen()) return` **之前**
+        val movesVersion = PointMarketCache.speciesMovesVersion
+        if (movesVersion != moveTableSeen) {
+            moveTableSeen = movesVersion
+            val openKind = optionListKind
+            if (openKind != null && openKind.startsWith(OPT_SKILL)) {
+                optionListAll = buildOptionItems(openKind)
+                applyOptionFilter()
+                rebuildOptionList()
+            }
+            if (editSlot >= 0 && isPokemonSlot() && moveTableReady(editSpecies)) {
+                normalizeMoves()
+                refreshEditLabels()
+            }
         }
         if (dialogOpen()) return
         val wantPage = currentPage - 1
@@ -3024,6 +3071,85 @@ class PointsMarketScreen : Screen(
         return aspects.filter { a -> a != "shiny" && formAspects.any { a in it } }
     }
 
+    /**
+     * 草稿当前选中的**形态**（由 `editAspects` 反推）—— 特性池 / 技能池都跟着它走。
+     *
+     * ⚠ 与数据层**同一个 API**：造精灵读的是 `pokemon.form`，而 `Pokemon.updateForm()` 就是
+     *   `species.getForm(aspects)`（见 `PointMarketFactory` 的 `applyAbility` / `applyMoves`）。
+     *   界面判据与生成结果必须同源 —— 两处各自算同一个量，迟早分叉，
+     *   下面那两条"候选池没跟着形态走"就是这么来的（2026-10-12 用户实测报洛托姆配不出「过热」）。
+     * ⚠ `editAspects` 里混着变体（species feature）的 aspect —— **一起传进去是对的**：服务端也是拿
+     *   `pokemon.aspects` 整个集合判形态，而 `getForm` 只要求"形态自己的 aspects 都在集合里"。
+     */
+    private fun pickedForm(): FormData? = editSpecies?.getForm(editAspects.toSet())
+
+    /**
+     * **当前形态的招式来源桶**（`桶 → 招式 id`，见 [SpeciesText.MoveSources]）——
+     * 技能候选与它上面那排筛选按钮的**唯一数据源**。
+     *
+     * 优先用**服务端下发的那份**（`SpeciesMovesPayload`，六桶齐全）；没到 / 没请求到就用**本地**兜底 ——
+     * 本地只有三桶：Cobblemon 同步物种给客户端时 `Learnset` **只传升级 / 招式机 / 遗传**
+     * （`tutor` / `form_change` / `evolution` 一列都不传）⇒ 专用服务器上客户端**根本拿不到**教学招；
+     * 单机是内存连接、不同步，本地那份就是全的。⚠ 兜底是**有意的**：宁可少几桶，也别让技能列表空着。
+     *
+     * ⚠ 形态怎么取：**自带招式表的形态**（洛托姆的五个家电那种）服务端会单独发一份，
+     *   键是 `form.aspects` 拼的串；形态没写自己的表 ⇒ 表里不会有它 ⇒ 回落 [SpeciesMovesPayload.base]
+     *   （与 `FormData.moves` 的回落语义完全一致）。
+     */
+    private fun pickedMoveBuckets(): Map<String, List<String>> {
+        val species = editSpecies ?: return emptyMap()
+        val payload = PointMarketCache.speciesMoves[species.resourceIdentifier.toString()]
+        if (payload != null) {
+            val key = pickedForm()?.aspects?.joinToString(",").orEmpty()
+            return payload.forms[key] ?: payload.base
+        }
+        return pickedForm()?.let { SpeciesText.learnsetBuckets(it.moves) }.orEmpty()
+    }
+
+    /**
+     * **当前形态的合法招式 id** = [pickedMoveBuckets] 六桶的并集。
+     *
+     * ⚠ 这个集合**恰好**是本体判「这只精灵能不能学」的那一套（`LearnsetQuery.LEGAL` =
+     *   升级 / 遗传 / 教学 / 招式机 / 形态专属 / 进化），也恰好是服务端造精灵时补招用的
+     *   `getAllLegalMoves()` ⇒ **只要服主选的招在这里面，造出来就是"正常能学到"的精灵**，
+     *   不该被逼去开「自由选择」（那条路做出来的是贴着「非法」的）。
+     */
+    private fun legalMoveIds(): Set<String> = pickedMoveBuckets().values.flatten().toSet()
+
+    /**
+     * 拉某个物种的**完整招式表**（六桶）—— **已缓存就不发**。
+     *
+     * ⚠ 服务端有 500ms 节流（与其余列表请求同档），**被丢掉也不影响用**：技能候选会自动用本地
+     *   三桶兜底（见 [pickedMoveBuckets]）。⇒ 只在"换物种 / 开列表"这类**人类节奏**的动作里发，
+     *   丢了下次还有机会，不用自己搞重试。
+     */
+    private fun requestSpeciesMoves(species: Species?) {
+        val id = species?.resourceIdentifier?.toString() ?: return
+        if (PointMarketCache.speciesMoves.containsKey(id)) return
+        sendToServer(RequestSpeciesMovesPayload(id))
+    }
+
+    /**
+     * 这个物种的**完整招式表到了没** —— 没到就别拿池子判合法性（本地那份只有三桶）。
+     *
+     * ⚠ 用在两处**会动草稿**的判定上（池外反推、[normalizeMoves] 的清理）：本地池子是服务端池子的
+     *   **真子集**（少教学 / 形态专属 / 进化），拿它判会把**合法的招**当成"池外值"误清掉。
+     *   与 [normalizeAspects] 的"宁可晚判也不能误清"同一条规矩。
+     * ⚠ 物种为空 ⇒ 返回 true：没物种就没得判，让调用方照原样走（它那边本来也只是清空）。
+     */
+    private fun moveTableReady(species: Species?): Boolean {
+        val id = species?.resourceIdentifier?.toString() ?: return true
+        return PointMarketCache.speciesMoves.containsKey(id)
+    }
+
+    /**
+     * **特性候选池的唯一取法** = 当前形态的可能特性（含隐藏特性）。
+     *
+     * ⚠ 同 [legalMoves]：形态可以有自己的特性表（阿罗拉九尾是「降雪」、Mega 系各有专属特性），
+     *   [FormData.abilities] 同样在形态自己没写表时**回落物种级**。
+     */
+    private fun legalAbilities(): List<PotentialAbility> = pickedForm()?.abilities?.toList().orEmpty()
+
     /** 下拉类字段（特性 / 性格 / 球种）：走编辑窗同一张候选表翻显示名，查不到就显示原值 */
     /**
      * 特性名（**按 id 直接取**，不依赖物种 —— 见 [buyFieldLine] 的 `KEY_ABILITY`）。
@@ -3217,6 +3343,8 @@ class PointsMarketScreen : Screen(
         editSpecies = species
         editSpeciesCandidates = listOfNotNull(species)
         editSpeciesIndex = 0
+        // 回填这一只的规格 ⇒ 顺手把它的完整招式表拉下来（下面的池外反推与技能列表都要用）
+        requestSpeciesMoves(species)
         // ⚠ 这几行 normalize **必须落在物种定下来之后**。原先它们写在上头（那时 editSpecies 还是
         //   [resetDraft] 清掉的 null）⇒ 全是空操作，「编辑老数据时收进合法范围」其实从没生效
         //   （2026-09-20 修；注释当时就写着"物种定了之后"，代码没跟上）
@@ -3224,12 +3352,19 @@ class PointsMarketScreen : Screen(
         // ⚠⚠ 而**「自由选择」的反推更要排在它们之前**（它是纯编辑态、不在规格里）：
         //   一只带非法特性 / 技能的快照回填进来时，若不先置上它，下面两处 normalize 会把这些值
         //   当成"换物种后的残留"清掉 —— 表现是「快照里的非法特性，读回来就没了」。
-        //   判据与那两处 normalize **同一口径**（该物种的池子），见 [editFreePick]
+        //   判据与那两处 normalize **同一口径**（该物种 / 形态的池子），见 [editFreePick]
         run {
-            val poolAbilities = species?.abilities?.map { it.template.name }.orEmpty()
-            val poolMoves = species?.moves?.getAllLegalMoves()?.map { it.name }?.toSet().orEmpty()
+            // ⚠ 池子走**当前形态**（见 [pickedMoveBuckets] / [legalAbilities]）：洛托姆那种"形态专属招"若按
+            //   物种级判，回填一只加热形态的洛托姆时「过热」会被当成池外值 ⇒ 误判成"自由选择"，
+            //   界面上那把锁一进来就是开的（非法的来源凭空多一条）
+            val poolAbilities = legalAbilities().map { it.template.name }
+            // ⚠ 招式那半**要等完整招式表**（[moveTableReady]）：只有本地三桶时，教学 / 形态专属招
+            //   全被当成"池外值" ⇒ 同样是误判成"自由选择"。⚠ **表到了不补判**（有意的）：
+            //   宁可少判一次，也别在服主已经开始配的草稿上把锁开开关关 —— 少了这一判的代价只是
+            //   "一把本来该开的锁没开"，服务端生成时照旧按它自己那张全表来。
+            val poolMoves = if (moveTableReady(species)) legalMoveIds() else null
             editFreePick = (spec.ability?.isNotEmpty() == true && spec.ability !in poolAbilities) ||
-                MoveText.slotIds(spec.moves).any { it.isNotEmpty() && it !in poolMoves }
+                (poolMoves != null && MoveText.slotIds(spec.moves).any { it.isNotEmpty() && it !in poolMoves })
         }
         normalizeGender()
         normalizeGmax()
@@ -4095,6 +4230,8 @@ class PointsMarketScreen : Screen(
 
     private fun applyEditSpecies(species: Species?) {
         editSpecies = species
+        // 换了物种 ⇒ 它的完整招式表按需拉一份（技能候选与来源筛选都要用；见 [requestSpeciesMoves]）
+        requestSpeciesMoves(species)
         // 换了物种，原来的性别 / 超极巨化 / 形态 / 特性 / 技能可能就不合法了（喷火龙 → 小磁怪）
         // → 各自收进合法范围
         normalizeGender()
@@ -4246,10 +4383,11 @@ class PointsMarketScreen : Screen(
     }
 
     /**
-     * 特性收进该物种**真有的**范围 —— 上面三件（性别 / 超极巨化 / 形态）之外的第四件
+     * 特性收进该物种 / 形态**真有的**范围 —— 上面三件（性别 / 超极巨化 / 形态）之外的第四件
      * （用户 2026-09-20 报「特性按钮一样没受钳制」）。
      *
-     * 判据与特性候选表**同一个口径**（[buildOptionItems] 的 `OPT_ABILITY` = 该物种的全部可能特性）。
+     * 判据与特性候选表**同一个口径**（[buildOptionItems] 的 `OPT_ABILITY` = [legalAbilities]，
+     * **跟着当前形态走**）。
      *
      * ⚠ 物种为空时**也要清**：那时候选表是空的，而 [optionLabelOf] 查不到会把**内部 id 原样显示**
      *   出来（「特性：cobblemon:blaze」这种英文字母，用户实测）—— 清掉回「随机」，界面才说得通。
@@ -4259,15 +4397,15 @@ class PointsMarketScreen : Screen(
         //   关掉那个开关时由 [toggleFreePick] 显式跑一次本函数，把池外的值清回「随机」
         if (editFreePick) return
         if (editAbility.isEmpty()) return
-        val allowed = editSpecies?.abilities?.map { it.template.name }
-        if (allowed == null || editAbility !in allowed) editAbility = ""
+        val allowed = legalAbilities().map { it.template.name }
+        if (editAbility !in allowed) editAbility = ""
     }
 
     /**
-     * 技能槽收进该物种**能学的**范围 —— 第五件（用户 2026-09-20 拍板「要加」）。
+     * 技能槽收进该物种 / 形态**能学的**范围 —— 第五件（用户 2026-09-20 拍板「要加」）。
      *
-     * 判据与技能候选表**同一个口径**（[buildOptionItems] 的兜底分支：`species.moves.getAllLegalMoves()`）。
-     * 学不了的槽**清空** —— 即回「未指定」，生成时那一槽随机补招（数据层的既有语义）。
+     * 判据与技能候选表**同一个口径**（[buildOptionItems] 的兜底分支：`legalMoveIds()`，
+     * **跟着当前形态走**）。学不了的槽**清空** —— 即回「未指定」，生成时那一槽随机补招（数据层的既有语义）。
      *
      * ⚠ 别改成「替他随机填一个合法技能」：界面会凭空多出几个不是他选的技能、看着像自己设的，
      *   反而把「换物种后这里失效了」藏起来；清空则显示「技能1：空」，要重挑一目了然。
@@ -4276,9 +4414,13 @@ class PointsMarketScreen : Screen(
     private fun normalizeMoves() {
         // 同 [normalizeAbility]：自由选择开着就不清（关掉时由 [toggleFreePick] 补跑一次）
         if (editFreePick) return
+        // ⚠ **完整招式表没到就先别清**（[moveTableReady]）：本地那份少三桶，拿它清会把教学 /
+        //   形态专属 / 进化招**误清掉**（服主刚配好的「过热」一换形态就没了）。
+        //   表到了由 `tick` 补跑一次本函数（那一跑才是拿全表判的）
+        if (!moveTableReady(editSpecies)) return
         val ids = MoveText.slotIds(editMoves)
         if (ids.none { it.isNotEmpty() }) return
-        val allowed = editSpecies?.moves?.getAllLegalMoves()?.map { it.name }?.toSet() ?: emptySet()
+        val allowed = legalMoveIds()
         val fixed = ids.map { if (it.isEmpty() || it in allowed) it else "" }
         if (fixed != ids) editMoves = MoveText.encode(fixed)
     }
@@ -4378,6 +4520,12 @@ class PointsMarketScreen : Screen(
      * 不隐藏的话点击会被它们拦截、列表永远点不到（黑名单那儿踩过）。
      */
     private fun openOptionList(kind: String) {
+        // 技能列表：**来源筛选复位**（与搜索词同一个口径）+ 顺手催一下完整招式表 ——
+        // 表还没到也照常开（候选用本地三桶），到了由 `tick` 把正开着的列表重建一次
+        if (kind.startsWith(OPT_SKILL)) {
+            moveSourceFilter = null
+            requestSpeciesMoves(editSpecies)
+        }
         // ⚠⚠ **每个「可选字段」都得能回到「随机」**（2026-09-27 用户实测：特性 / 性格 / 太晶
         //   选中一个值之后就再也回不去了 —— 候选里压根没有"随机"这一项）。
         //   形态不用管：它的候选本来就带「默认」（`OptionItem("")`）。
@@ -4442,12 +4590,97 @@ class PointsMarketScreen : Screen(
             return
         }
         val q = optionSearchText.trim()
+        // 技能列表的来源筛选（`null` = 全部）：**空集那一类（「无」）任何筛选下都留着** ——
+        // 否则选了某一桶之后「无」被筛掉，那一槽就再也清不掉了
+        val bySource = if (showMoveFilterRow() && moveSourceFilter != null) {
+            optionListAll.filter { it.sources.isEmpty() || moveSourceFilter in it.sources }
+        } else optionListAll
         // ⚠ 搜索时**把分节标题一起滤掉**（「变体」列表的分节头）：它自己不是候选项，
         //   留着的话要么匹配不上干占一行、要么匹配上了却让分组看着错位 —— 搜索态只看命中项
-        optionListItems = if (q.isEmpty()) optionListAll
-        else optionListAll.filter { !it.isHeader && it.label.contains(q, ignoreCase = true) }
+        optionListItems = if (q.isEmpty()) bySource
+        else bySource.filter { !it.isHeader && it.label.contains(q, ignoreCase = true) }
         // 过滤后行数变了，滚动位置要回到顶（不然停在一个空白的偏移上）
         optionListScroll = 0
+    }
+
+    /**
+     * 技能列表顶上那排**来源筛选按钮**显不显示。
+     *
+     * 只有技能候选有"来源"可言：「自由选择」那份是**全表**（`Moves.all()`，900 条上下），
+     * 压根没有桶 ⇒ 不显示 —— 别摆一排点了没反应的按钮。
+     */
+    private fun showMoveFilterRow(): Boolean =
+        optionListKind?.startsWith(OPT_SKILL) == true && !editFreePick
+
+    /** 筛选按钮的文案：`全部` + 六桶（[SpeciesText.MoveSources]）；未收录回落显示键本身 */
+    private fun moveSourceLabel(source: String?): String {
+        val key = "cobblemarket.points.store.movesrc.${source ?: "all"}"
+        val t = Text.translatable(key).string
+        return if (t == key) source.orEmpty() else t
+    }
+
+    /**
+     * 筛选按钮的**标签与矩形** —— 渲染与点击判定**共用这一份**（各算一份必然错位）。
+     * 列表第一项是「全部」（`source = null`）。
+     *
+     * ⚠ **流式排布**：一行放不下就换行 —— 列表只占左半边（见 [optionListW]，最宽也就 260 出头），
+     *   而中英两版宽度差得多（「形态专属」36px vs `Form` 24px），写死一行在窄窗口下会戳出去。
+     *   ⚠ 第一项不参与换行（再窄也得有个落点），否则窗口一窄就无限换行。
+     */
+    private fun moveFilterChips(): List<Pair<String?, com.shusheng.cobblemarket.client.TooltipPlacement.Rect>> {
+        val out = mutableListOf<Pair<String?, com.shusheng.cobblemarket.client.TooltipPlacement.Rect>>()
+        val left = editDialogX() + EDIT_PAD
+        val right = left + optionListW()
+        var x = left
+        var y = editDialogY() + OPTION_FILTER_Y
+        (listOf<String?>(null) + SpeciesText.MoveSources.ORDER).forEach { source ->
+            val w = textRenderer.getWidth(moveSourceLabel(source)) + OPTION_FILTER_PAD * 2
+            if (x > left && x + w > right) {
+                x = left
+                y += OPTION_FILTER_H + OPTION_FILTER_GAP
+            }
+            out += source to com.shusheng.cobblemarket.client.TooltipPlacement.Rect(x, y, w, OPTION_FILTER_H)
+            x += w + OPTION_FILTER_GAP
+        }
+        return out
+    }
+
+    /** 筛选行占掉的高度（不显示时 = 0）—— [optionListTop] 靠它给列表让位 */
+    private fun moveFilterRowHeight(): Int {
+        if (!showMoveFilterRow()) return 0
+        val chips = moveFilterChips()
+        val bottom = chips.maxOf { it.second.y + it.second.h }
+        return bottom - (editDialogY() + OPTION_FILTER_Y) + OPTION_FILTER_LEAD
+    }
+
+    /**
+     * **整条筛选行**的矩形（含按钮之间的空隙）。
+     *
+     * ⚠ 点击判定要按整条带子吃 —— 只吃按钮本身的话，点在两个按钮中间会**落到右边那张精灵大图上**，
+     *   精灵当场叫一声（那是预览的点击效果），看着像"按钮坏了"。
+     */
+    private fun moveFilterBand(): com.shusheng.cobblemarket.client.TooltipPlacement.Rect =
+        com.shusheng.cobblemarket.client.TooltipPlacement.Rect(
+            editDialogX() + EDIT_PAD,
+            editDialogY() + OPTION_FILTER_Y,
+            optionListW(),
+            moveFilterRowHeight()
+        )
+
+    /**
+     * 点某个筛选按钮：切到那一档（点「全部」回全量）。
+     * ⚠ 只动筛选、**不关列表**（多半还要接着挑技能）；不响那声点击音会让人以为没生效。
+     */
+    private fun clickMoveFilterChip(mouseX: Double, mouseY: Double): Boolean {
+        if (!showMoveFilterRow()) return false
+        val hit = moveFilterChips()
+            .firstOrNull { it.second.contains(mouseX.toInt(), mouseY.toInt()) }
+            ?: return false
+        playButtonClickSound()
+        moveSourceFilter = hit.first
+        applyOptionFilter()
+        rebuildOptionList()
+        return true
     }
 
     /**
@@ -4669,9 +4902,17 @@ class PointsMarketScreen : Screen(
         refreshOptionClearButton()
     }
 
+    /**
+     * 列表第一行的**顶边**：搜索框底下；技能列表还要再让出**来源筛选那一行**（见 [moveFilterRowHeight]）。
+     *
+     * ⚠ 行数 / 行矩形 / 滚动条**三处必须共用这一个** —— 各算一份的话必有一处错位
+     *   （要么压到筛选行上、要么滚动条比列表高出一截）。
+     */
+    private fun optionListTop(): Int = OPTION_LIST_TOP + moveFilterRowHeight()
+
     /** 列表一屏能放几行：**撑满窗口**（顶部到「返回」按钮上方），别在下面空一大片 */
     private fun optionListRows(): Int =
-        ((editDialogHeight() - OPTION_LIST_TOP - OPTION_LIST_BOTTOM) / OPTION_ROW_STEP).coerceAtLeast(1)
+        ((editDialogHeight() - optionListTop() - OPTION_LIST_BOTTOM) / OPTION_ROW_STEP).coerceAtLeast(1)
 
     /** 列表第 [i] 个可见行的矩形 —— **渲染与点击判定共用这一个**，各算一份必然错位 */
     /**
@@ -4690,7 +4931,7 @@ class PointsMarketScreen : Screen(
 
     private fun optionRowRect(i: Int) = com.shusheng.cobblemarket.client.TooltipPlacement.Rect(
         editDialogX() + EDIT_PAD,
-        editDialogY() + OPTION_LIST_TOP + i * OPTION_ROW_STEP,
+        editDialogY() + optionListTop() + i * OPTION_ROW_STEP,
         optionListW(),
         OPTION_ROW_H
     )
@@ -4833,6 +5074,12 @@ class PointsMarketScreen : Screen(
                 //   整组替换的话，选个地区形态就把花纹吃掉了（两者是并存的，见 [toggleFeatureAspect]）
                 val variants = editAspects.filterNot { it in pickedFormAspects() }
                 editAspects = value.split(",").filter { it.isNotEmpty() } + variants
+                // ⚠⭐ 换了形态 ⇒ 特性池与技能池跟着换（见 [legalAbilities] / [legalMoves]），原来选的
+                //   特性 / 技能可能就不在这个形态的池子里了 ⇒ 立刻收一遍，与「换物种」同一个口径
+                //   （[applyEditSpecies] 也跑这两条）。不清的话能配出「默认形态 + 过热」这种自相矛盾的
+                //   组合、还不会被打上「非法」标 —— 正是这次要堵的那条路
+                normalizeAbility()
+                normalizeMoves()
                 refreshEditPreview()
             }
 
@@ -4984,7 +5231,7 @@ class PointsMarketScreen : Screen(
                 OptionItem(n.name.toString(), if (t == key) n.displayName else t)
             }
 
-            // 特性：默认 = 该物种的全部可能特性（含隐藏特性）；
+            // 特性：默认 = 该物种 / 形态的全部可能特性（含隐藏特性，见 [legalAbilities]）；
             // ⚠ **「自由选择」开着时改成全部特性**（`Abilities.all()`，300 条上下）——
             //   这正是那个开关的作用：选出来的会是"非法特性"，Cobblemon 自己会给它标
             //   `Ability.forced`（见 [editFreePick]）。⚠ 全表要**按显示名排序**，否则按注册顺序
@@ -4996,7 +5243,7 @@ class PointsMarketScreen : Screen(
                     }
                     .sortedBy { it.label }
             } else {
-                species?.abilities?.toList().orEmpty().map { potential ->
+                legalAbilities().map { potential ->
                     val ability = potential.template
                     OptionItem(ability.name, Text.translatable(ability.displayName).string)
                 }
@@ -5068,13 +5315,31 @@ class PointsMarketScreen : Screen(
                     .filterIndexed { i, id -> i != thisSlot && id.isNotEmpty() }
                     .toSet()
                 // ⚠ **「自由选择」开着 ⇒ 全部技能**（`Moves.all()`，900 条上下）—— 与特性同一个
-                //   开关（见 [editFreePick]）；否则只有该物种能学的那些。
-                //   两条路**共用同一条流水线**（排掉其它槽已选 → 按显示名排序），别各写一遍
-                val pool = if (editFreePick) com.cobblemon.mod.common.api.moves.Moves.all()
-                else species?.moves?.getAllLegalMoves().orEmpty().toList()
+                //   开关（见 [editFreePick]）；否则只有该物种 / 形态能学的那些（见 [pickedMoveBuckets]）。
+                //   两条路**共用同一条流水线**（排掉其它槽已选 → 按显示名排序），别各写一遍 ——
+                //   区别只在"带不带来源"：全表那份没有来源可言（筛选行那时也不显示）
+                val bySource: Map<String, Set<String>> = if (editFreePick) {
+                    com.cobblemon.mod.common.api.moves.Moves.all().associate { it.name to emptySet<String>() }
+                } else {
+                    // ⚠ 一个招属于几桶就带几桶（**桶间不去重**，用户 2026-10-13 定）⇒
+                    //   按"属不属于"筛选，「火花」在「等级」和「招式机」两个筛选下都出得来
+                    val merged = mutableMapOf<String, MutableSet<String>>()
+                    pickedMoveBuckets().forEach { (source, ids) ->
+                        ids.forEach { id -> merged.getOrPut(id) { mutableSetOf() } += source }
+                    }
+                    merged
+                }
                 addAll(
-                    pool.filter { it.name !in takenByOthers }
-                        .map { OptionItem(it.name, it.displayName.string, labelText = MoveText.name(it.name)) }
+                    bySource.entries
+                        .filter { it.key !in takenByOthers }
+                        .mapNotNull { (id, sources) ->
+                            val move = com.cobblemon.mod.common.api.moves.Moves.getByName(id)
+                                ?: return@mapNotNull null
+                            OptionItem(
+                                id, move.displayName.string,
+                                labelText = MoveText.name(id), sources = sources
+                            )
+                        }
                         .sortedBy { it.label }
                 )
             }
@@ -5270,6 +5535,8 @@ class PointsMarketScreen : Screen(
         }
 
         if (listKind != null) {
+            // 技能列表顶上那排来源筛选按钮：**排在行前面**（行从它下面起，见 [optionListTop]）
+            renderMoveFilterRow(context, mouseX, mouseY)
             renderOptionRows(context, mouseX, mouseY)
             renderOptionListDecor(context, x, y)
             // ⚠ **列表展开时右侧照样露出大图**（本来是变体列表独有，2026-09-27 用户拍板推广到
@@ -5561,6 +5828,29 @@ class PointsMarketScreen : Screen(
     }
 
     /**
+     * 技能列表顶上的**来源筛选按钮**（自绘 —— 与选项行同一套：真控件会被下面的自绘列表截胡）。
+     *
+     * 观感与选项行一致（同一张 `row_background.png`：0 普通 / 1 悬停 / 2 选中），只是矮一档
+     * （[OPTION_FILTER_H]，九宫格最小要 12px）—— 它表达的是一排"档位"，不是可选条目。
+     */
+    private fun renderMoveFilterRow(context: DrawContext, mouseX: Int, mouseY: Int) {
+        if (!showMoveFilterRow()) return
+        moveFilterChips().forEach { (source, r) ->
+            val state = when {
+                source == moveSourceFilter -> 2
+                r.contains(mouseX, mouseY) -> 1
+                else -> 0
+            }
+            drawNineSlice(context, ROW_BACKGROUND_TEXTURE, r.x, r.y, r.w, r.h, state, ROW_BACKGROUND_TEX_H)
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.literal(moveSourceLabel(source)),
+                r.x + r.w / 2, r.y + (r.h - 8) / 2, 0xFFFFFF
+            )
+        }
+    }
+
+    /**
      * 展开列表的行 —— **自绘**（不用 NineSliceButton）：行首要画物品图标（球种、携带物），
      * 而按钮只支持贴图 id 的图标，球是物品、得走物品渲染。
      */
@@ -5569,9 +5859,14 @@ class PointsMarketScreen : Screen(
         // 搜索式列表（携带物）还没输入 / 没命中时：给一行提示，别留一片空白看着像坏了
         if (optionListItems.isEmpty()) {
             val r = optionRowRect(0)
+            // ⚠ **技能列表要换一句**：那边空了是"筛出来是空的"（某只精灵一档教学招都没有、
+            //   或搜索词没命中），提示"输入物品名搜索"会把人往物品上引 —— 完全对不上
+            val key = if (optionListKind?.startsWith(OPT_SKILL) == true) {
+                "cobblemarket.points.store.no_move_match"
+            } else "cobblemarket.points.store.search_item_hint"
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.points.store.search_item_hint").formatted(Formatting.GRAY),
+                Text.translatable(key).formatted(Formatting.GRAY),
                 r.x + r.w / 2, r.y + (OPTION_ROW_H - 8) / 2, 0xFFFFFF
             )
             return
@@ -5642,7 +5937,7 @@ class PointsMarketScreen : Screen(
         ScrollBar.shared.draw(
             context,
             editDialogX() + EDIT_PAD + optionListW() + 3,
-            y + OPTION_LIST_TOP, rows * OPTION_ROW_STEP,
+            y + optionListTop(), rows * OPTION_ROW_STEP,
             optionListItems.size, rows, optionListScroll
         )
     }
@@ -5771,10 +6066,14 @@ class PointsMarketScreen : Screen(
         shortField(KEY_HELD_VISIBLE, yesNoLabel(editHeldVisible))
         editButtons[KEY_MARKS]?.setMessage(label("marks", marksLabel()))
         editButtons[KEY_FEATURE]?.setMessage(label("feature", featureButtonLabel()))
-        // 该物种没有任何 feature 候选（或候选表还没到）→ **整个按钮置灰**，同「超极巨化」那枚的做法：
-        // 不藏起来 —— 位置固定、点不动，按钮才不会随物种选来选去而跳位。
-        // ⚠ 点击也进不去：[openOptionList] 见候选为空会响失败音并拒绝打开，天然拦住了
-        editButtons[KEY_FEATURE]?.dimmed = featureGroupsOf(editSpecies).isEmpty()
+        // 「变体」一个**真能选的**候选都没有（或候选表还没到）→ **整个按钮置灰**，
+        // 同「超极巨化」那枚的做法：不藏起来 —— 位置固定、点不动，按钮才不会随物种选来选去而跳位。
+        // ⚠ 判据必须与点击那条**同一个量**：[openOptionList] 也是拿 [buildOptionItems] 判空
+        //   （空 ⇒ 响失败音、拒绝打开）。⭐ 曾经的坑（2026-10-12 用户实测）：置灰看的是
+        //   `featureGroupsOf(...)` = "有没有 feature 维度"，而洛托姆的家电（`appliance`）虽然是个
+        //   维度、5 个取值却**全是形态**的 aspect，被候选表里 `formAspects` 那道过滤**整组滤掉**
+        //   ⇒ 有维度、零可选项 ⇒ 按钮亮着、点了只响失败音
+        editButtons[KEY_FEATURE]?.dimmed = buildOptionItems(OPT_FEATURE).isEmpty()
         // ⚠ 物品窗口那格「物品：无」按钮**已删**（2026-09-26 改成界面上直接一个搜索框，见 [buildItemFields]）——
         //   所以这里不再有 KEY_ITEM 那一项
 
@@ -6687,6 +6986,20 @@ class PointsMarketScreen : Screen(
 
         /** 展开列表上方的搜索框（只在列表展开期间存在，关列表时一并移除） */
         const val OPTION_SEARCH_Y = 28
+
+        /**
+         * 技能列表顶上那排**「来源」筛选按钮**（在搜索框底下，见 [moveFilterChips]）。
+         *
+         * ⚠ 高度 14 贴着九宫格的下限（`NINE_SLICE_BORDER = 6`，上下边框各 6 ⇒ 最少 12）——
+         *   再矮就不是圆角卡片、成了一条线。
+         */
+        const val OPTION_FILTER_Y = 46
+        const val OPTION_FILTER_H = 14
+
+        /** 筛选按钮的左右内边距 / 按钮间距 / 与列表第一行之间的空隙 */
+        const val OPTION_FILTER_PAD = 5
+        const val OPTION_FILTER_GAP = 4
+        const val OPTION_FILTER_LEAD = 6
 
         /** 提交失败提示在弹窗内停留的毫秒数（与兑换结果提示同档） */
         const val EDIT_HINT_MS = 5000L
