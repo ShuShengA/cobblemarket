@@ -24,6 +24,7 @@ import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.ChatScreen
 import net.minecraft.item.ItemStack
 import net.minecraft.item.tooltip.TooltipType
+import net.minecraft.text.OrderedText
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
@@ -355,6 +356,7 @@ object ChatObjectPreview {
                 centerX = centerX
             )
             // 右侧那块完整信息行（与精灵市场行悬停窗同源）；没有数据就只留大图
+            clearDepthBeforePanel(context)
             val listing = entry.listing
             val name = entry.name
             if (listing != null && name != null) {
@@ -384,6 +386,7 @@ object ChatObjectPreview {
             )
             // 物品拍卖同样要接拍卖那几行：拍卖场的物品悬停窗也是「词条 + 当前价 / 倒计时 / 领先者」。
             // ⚠ 物品侧这条线**恒要**（分隔「词条」与「拍卖信息」两块，没有证章那回事）
+            clearDepthBeforePanel(context)
             drawItemTooltipPanel(
                 context, stack, screenHeight,
                 entry.auction?.let { auctionFooterLines(it, withDivider = true) }
@@ -396,6 +399,25 @@ object ChatObjectPreview {
     private const val PANEL_PAD = 4
     /** 一行词条的高度（默认字体 9 + 1） */
     private const val LINE_H = 10
+
+    /**
+     * 画**面板之前**再 flush 一次 + 清深度缓冲 —— 大图刚往深度缓冲里写过值。
+     *
+     * ⚠ 大图自己的绘制开头清过一次（防它被先画的 GUI 剔除，见 `ItemHoverPreview` / `PokemonHoverPreview`），
+     *   但**清完它自己也会写深度** ⇒ 随后画的面板，凡是落在**大图轮廓之内**的部分会被深度测试
+     *   整个剔掉 —— 看起来就像"面板钻到大图下面/被咬掉一块"。
+     *   2026-10-13 用户截图报的正是这个：物品词条面板左边缺一块，而且**两行文字的切口不一样**
+     *   （跟着物品模型的形状走）—— 切口跟着模型形状就是残留深度的指纹，
+     *   与 2026-10-03「尾巴靠后的精灵被切一块、切口是直线」是同一个病。
+     * ⚠ 清在这里是安全的：面板是这一帧最后画的东西，之后再画的 2D 元素不受空深度缓冲影响。
+     */
+    private fun clearDepthBeforePanel(context: DrawContext) {
+        context.draw()
+        com.mojang.blaze3d.systems.RenderSystem.clear(
+            org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT,
+            MinecraftClient.IS_SYSTEM_MAC
+        )
+    }
 
     /**
      * 词条面板的左缘：**中心落在右半屏的中心**（= 屏宽的 3/4），并钳在屏幕内。
@@ -432,9 +454,16 @@ object ChatObjectPreview {
         if (tooltip.isEmpty()) return
         val font = client.textRenderer
 
-        // 词条可比屏幕宽（长名字 / 长 lore）⇒ 内容宽先按**右半屏的可用宽**截住
-        //（面板中心在 0.75 屏宽处，左右各占一半内容宽 ⇒ 上限就是半个屏幕）
-        val maxContentW = (context.scaledWindowWidth * 0.5f).toInt() - PANEL_PAD * 2 - 8
+        // 词条可比屏幕宽（长名字 / 长 lore）⇒ 内容宽要有个上限，上限 = **大图右缘到屏幕右缘之间放得下的**：
+        //   面板中心固定在 0.75 屏宽（见 [panelXFor]）⇒ 面板左缘 = `0.75屏 − (内容宽 + 内边距×2)/2`；
+        //   而大图是**居中**摆的、边长 [ItemHoverPreview.PREVIEW_SIZE] ⇒ 右缘在 `半屏 + 大图半宽`。
+        //   ⇒ 内容宽 ≤ `半屏 − 2 × (大图半宽 + 左侧留的间隙)`，面板左缘才能落在大图右缘之外。
+        // ⚠ 原上限是"半个屏幕"⇒ 面板左缘正好落在大图**正中心**上，大图右半边压在词条底下
+        //   （2026-10-13 用户截图报出）。
+        // ⚠ **短词条完全不受影响**：上限没被触发时面板宽度仍是实测值、位置与以前一模一样。
+        val previewHalf = ItemHoverPreview.PREVIEW_SIZE / 2
+        val leftGap = 8 + PANEL_PAD
+        val maxContentW = (context.scaledWindowWidth * 0.5f).toInt() - 2 * (previewHalf + leftGap)
         val availH = screenHeight - 16
 
         val maxRows = ((availH - PANEL_PAD * 2) / LINE_H).coerceAtLeast(1)
@@ -442,9 +471,24 @@ object ChatObjectPreview {
         // ⚠ 尾部（拍卖状态）**优先占位**：当前价 / 倒计时有时效性，词条少看两行不影响判断；
         //   反过来把尾部截掉，玩家就看不到还剩多久、现在多少钱了
         val tooltipRows = (maxRows - footerRows.size).coerceAtLeast(1)
-        // 统一成行模型：null 元素 = 分割线（与项目其余行列表同一约定）
-        val tooltipPart = tooltip.take(tooltipRows).map { it to 0xFFFFFF }
-        val lines = tooltipPart + footerRows
+
+        // 内容宽：按**未换行的实测宽**定（短词条据此保持窄面板，与以前一致），超过上限才用上限
+        val rawTextW = tooltip.maxOfOrNull { font.getWidth(it) } ?: 0
+        val contentW = minOf(rawTextW, maxContentW).coerceAtLeast(48)
+
+        // ⚠ **先换行、再按行数截断**（顺序不能反）：换行走原版 `TextRenderer.wrapLines` —— **样式跟着走**
+        //   （附魔行那种分段颜色不会丢）。原先直接对整行截断 ⇒ 长 lore 只剩半句 + 一个「…」
+        //   （2026-10-13 用户报「右侧文字显示不完整」）。
+        val wrappedTooltip = tooltip.flatMap { line -> font.wrapLines(line, contentW) }
+        // 统一成行模型：null 元素 = 分割线（与项目其余行列表同一约定）；
+        // 尾部那几行是**我们自己拼的短行**（价格 / 倒计时），不参与换行、原样转成 OrderedText（保样式）
+        val tooltipPart: List<Pair<OrderedText?, Int>> = wrappedTooltip.take(tooltipRows).map { it to 0xFFFFFF }
+        // ⚠ 尾部那几行是**我们自己拼的短行**、不参与换行 ⇒ 超宽时在 **Text 上**截断（[TextUtil.truncateStyled]
+        //   保分段样式）再转 OrderedText。⚠ **不能等画的时候再截**：`OrderedText` 这边没有可用的
+        //   `trimToWidth` 重载（只有 String / StringVisitable 的），改到那时只能丢样式
+        val lines: List<Pair<OrderedText?, Int>> = tooltipPart + footerRows.map { (text, color) ->
+            text?.let { TextUtil.truncateStyled(it, contentW).asOrderedText() } to color
+        }
         // ⚠ priceRows 记的是 **footer 内**的行号，而实际渲染的是「tooltip 词条 + footer」拼起来的整表 ⇒
         //   判定时要减去 footer 的起始行号（`tooltipPart.size`）。
         //   ⚠ **别在这里直接把 priceRows 偏移掉**：精灵侧的 footer 只在 beginShow 时构建一次，
@@ -452,8 +496,6 @@ object ChatObjectPreview {
         val footerOffset = tooltipPart.size
         val shown = lines.take(maxRows)
 
-        val textW = shown.maxOfOrNull { (line, _) -> if (line == null) 0 else font.getWidth(line) } ?: 0
-        val contentW = minOf(textW, maxContentW).coerceAtLeast(48)
         val panelW = contentW + PANEL_PAD * 2
         val panelX = panelXFor(context, panelW)
         val panelH = shown.size * LINE_H + PANEL_PAD * 2
@@ -468,12 +510,12 @@ object ChatObjectPreview {
                 // 分割线：撑满面板内容宽（与精灵面板 / 市场悬停窗同一画法）
                 context.fill(panelX + PANEL_PAD, rowY + 4, panelX + PANEL_PAD + contentW, rowY + 5, 0xFF888888.toInt())
             } else {
-                // 超宽的单行截断（保分段样式：附魔行是分段的，压成一段会丢颜色）
-                val cut = TextUtil.truncateStyled(line, contentW)
+                // 词条那部分**已经换好行**、尾部那几行也**已经截好**了（见上面 `lines` 的构造）——
+                // 这里直接画。⚠ 走 OrderedText 的重载：`drawTextWithShadow` 只收 Text
                 // ⚠ 金额行（当前价 / 起拍价 / 最低加价）的货币单位补在行尾 —— 单位不在文本里，
                 //   见 auctionFooterLines；物品货币时它就是那件物品的图标。
-                //   ⚠ drawTextWithShadow 返回的是**文本结束坐标**（不是宽度），直接拿它当单位起点
-                val endX = context.drawTextWithShadow(font, cut, panelX + PANEL_PAD, rowY, color)
+                //   ⚠ 它返回的是**文本结束坐标**（不是宽度），直接拿它当单位起点
+                val endX = context.drawText(font, line, panelX + PANEL_PAD, rowY, color, true)
                 // ⚠ 这里**恒按主货币**画：拍卖播报的 payload（`AuctionPreviewInfo`）没有币种字段，
                 //   客户端根本判断不出这场拍卖是不是 RP（要补得动 payload = 大版本范畴）。
                 //   现状就是恒 ₽，本次改动不改这个行为

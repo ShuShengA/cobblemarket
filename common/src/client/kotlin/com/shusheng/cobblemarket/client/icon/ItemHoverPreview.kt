@@ -20,7 +20,15 @@ import org.lwjgl.opengl.GL11
 object ItemHoverPreview {
 
     /** 放大倍数：GUI 物品图标基准 16px，8 倍约 128px（视觉重量与精灵版约 200px 高的模型相称） */
-    private const val PREVIEW_SCALE = 8f
+    const val PREVIEW_SCALE = 8f
+
+    /**
+     * 大图的**绘制边长**（16 × [PREVIEW_SCALE] = 128）。
+     * ⚠ 大图是**居中**摆的 ⇒ 右缘 = `屏宽/2 + 它的一半`；词条面板那边靠它算
+     *   「面板左缘别压到大图上」（见 `ChatObjectPreview.drawItemTooltipPanel`）——
+     *   别在那边再写一份 128，改缩放时两边会对不上。
+     */
+    const val PREVIEW_SIZE = 128
 
     /**
      * 画在**面板之下**：调用点必须位于界面 `render()` 中 `super.render()` 之前
