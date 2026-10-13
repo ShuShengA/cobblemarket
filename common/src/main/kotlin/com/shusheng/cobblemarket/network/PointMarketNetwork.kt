@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.network
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
+import com.cobblemon.mod.common.pokemon.Species
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
@@ -402,6 +403,130 @@ data class SpeciesFeatureAspectsPayload(
     }
 }
 
+// ── 完整招式表（服主动态拉；见 [SpeciesText.learnsetBuckets] / [SpeciesText.MoveSources]）──
+//
+// 为什么要有这对包：Cobblemon 把物种同步给客户端时，**招式表只传三桶**
+// （升级 / 招式机 / 遗传）—— `tutor` / `form_change` / `evolution` **一列都不传**
+// （`Learnset.encode/decode` 就这么写的），而服务端生成商品时用的 `getAllLegalMoves()`
+// 是**含**这些的 ⇒ 专用服务器上，商城编辑窗的技能候选会少掉教学招（治愈铃声 / 伏特攻击 /
+// 流星群那些），服主只能靠「自由选择」开关去补 —— 那条路做出来的是贴着「非法」的精灵。
+// ⇒ 完整表由服务端算好、按需下发（**按物种**，不是整表 —— 整表一千多个物种太大）。
+
+/** 请求某个物种的完整招式表（编辑窗定下物种 / 打开技能列表时发） */
+data class RequestSpeciesMovesPayload(val speciesId: String) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<RequestSpeciesMovesPayload>(
+            CobbleMarket.id("request_species_moves")
+        )
+        val CODEC: PacketCodec<PacketByteBuf, RequestSpeciesMovesPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.speciesId, MAX_ID_LENGTH) },
+            { b -> RequestSpeciesMovesPayload(speciesId = b.readString(MAX_ID_LENGTH)) }
+        )
+    }
+}
+
+/**
+ * **一个物种的完整招式表，按来源分成六桶**（`桶 → 招式 id`，见 [SpeciesText.MoveSources]）。
+ *
+ * - [base] = 标准形态那份（**形态自己没写招式表的都回落它**，与 `FormData.moves` 的回落一致）
+ * - [forms] = **自带招式表**的那些形态：`form.aspects` 拼成的串 → 六桶
+ *   （洛托姆的五个家电各有一份自己的表 —— 「过热」只在加热形态那张里）
+ *
+ * ⚠ 客户端拿它做两件事：**技能候选**（六桶并集 = 服务端认可的合法招）与**按来源筛选**。
+ */
+data class SpeciesMovesPayload(
+    val speciesId: String,
+    val base: Map<String, List<String>>,
+    val forms: Map<String, Map<String, List<String>>>
+) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        /** 桶数上限（实际就 [SpeciesText.MoveSources.ORDER] 那六个） */
+        const val MAX_BUCKETS = 8
+
+        /** 单桶招式数上限（实测最多的表 342 条，留一倍余量） */
+        const val MAX_MOVES_PER_BUCKET = 512
+
+        /** 自带招式表的形态数上限（洛托姆 5 个；真超了说明数据包异常） */
+        const val MAX_FORMS = 32
+
+        val ID = CustomPayload.Id<SpeciesMovesPayload>(
+            CobbleMarket.id("species_moves")
+        )
+        val CODEC: PacketCodec<PacketByteBuf, SpeciesMovesPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeString(p.speciesId, MAX_ID_LENGTH)
+                b.writeMoveBuckets(p.base)
+                b.writeInt(p.forms.size)
+                p.forms.forEach { (key, buckets) ->
+                    b.writeString(key, MAX_ID_LENGTH)
+                    b.writeMoveBuckets(buckets)
+                }
+            },
+            { b ->
+                val speciesId = b.readString(MAX_ID_LENGTH)
+                val base = b.readMoveBuckets()
+                val formCount = b.readInt()
+                if (formCount < 0 || formCount > MAX_FORMS) {
+                    throw IllegalArgumentException("species move form count out of range: $formCount")
+                }
+                val forms = LinkedHashMap<String, Map<String, List<String>>>(formCount)
+                repeat(formCount) {
+                    forms[b.readString(MAX_ID_LENGTH)] = b.readMoveBuckets()
+                }
+                SpeciesMovesPayload(speciesId = speciesId, base = base, forms = forms)
+            }
+        )
+
+        /**
+         * **服务端**：某个物种的完整招式表。
+         *
+         * ⚠ 只发**真有自己那张表**的形态 —— `FormData.moves` 在形态没写表时回落物种级
+         *   （引用就是同一个 `Learnset`），发一份一模一样的没有意义（120 个形态 vs 1025 个物种）。
+         *   ⚠ 判据用**引用相等**（`===`）：那正是 `FormData.moves` 的回落写法，
+         *     换成"内容相等"的话，一张与物种级恰好同内容的表会被漏掉、那份就成了 `base`（等价，无害但白算）。
+         */
+        fun of(species: Species): SpeciesMovesPayload = SpeciesMovesPayload(
+            speciesId = species.resourceIdentifier.toString(),
+            base = SpeciesText.learnsetBuckets(species.moves),
+            forms = species.forms.mapNotNull { form ->
+                val aspects = form.aspects
+                if (aspects.isEmpty() || form.moves === species.moves) null
+                else aspects.joinToString(",") to SpeciesText.learnsetBuckets(form.moves)
+            }.toMap()
+        )
+    }
+}
+
+private fun PacketByteBuf.writeMoveBuckets(buckets: Map<String, List<String>>) {
+    writeInt(buckets.size)
+    buckets.forEach { (key, ids) ->
+        writeString(key, MAX_TEXT_LENGTH)
+        writeInt(ids.size)
+        ids.forEach { writeString(it, MAX_ID_LENGTH) }
+    }
+}
+
+private fun PacketByteBuf.readMoveBuckets(): Map<String, List<String>> {
+    val count = readInt()
+    if (count < 0 || count > SpeciesMovesPayload.MAX_BUCKETS) {
+        throw IllegalArgumentException("move bucket count out of range: $count")
+    }
+    val out = LinkedHashMap<String, List<String>>(count)
+    repeat(count) {
+        val key = readString(MAX_TEXT_LENGTH)
+        val moveCount = readInt()
+        if (moveCount < 0 || moveCount > SpeciesMovesPayload.MAX_MOVES_PER_BUCKET) {
+            throw IllegalArgumentException("move bucket size out of range: $moveCount")
+        }
+        out[key] = List(moveCount) { readString(MAX_ID_LENGTH) }
+    }
+    return out
+}
+
 // ── 商品规格的读写（顶层函数：快照与保存请求共用一份，两份各写一遍必然漂移）──
 
 private fun writeEntry(b: PacketByteBuf, e: ShopEntry) {
@@ -580,6 +705,7 @@ object PointMarketNetwork {
         //   类型只能靠这里；而 neoforge 那边自带 playToClient，漏了也不显形（踩坑记录见 CLAUDE.md）
         registerS2CType(ShopSnapshotsPayload.ID, ShopSnapshotsPayload.CODEC)
         registerS2CType(SpeciesFeatureAspectsPayload.ID, SpeciesFeatureAspectsPayload.CODEC)
+        registerS2CType(SpeciesMovesPayload.ID, SpeciesMovesPayload.CODEC)
 
         // 请求某一页：进界面与翻页都走它（节流与其余列表请求同档）
         registerC2S(RequestPointMarketPayload.ID, RequestPointMarketPayload.CODEC) { payload, player ->
@@ -685,6 +811,25 @@ object PointMarketNetwork {
             val server = player.server
             server.execute {
                 sendToPlayer(player, SpeciesFeatureAspectsPayload(SpeciesText.allFeatureAspects()))
+            }
+        }
+
+        // 完整招式表（**按物种**拉）：客户端那份只有三桶，教学 / 形态专属 / 进化招拿不到，
+        // 而服务端生成时用的是全的 ⇒ 不发的话服主只能开「自由选择」补（= 贴着「非法」）
+        registerC2S(RequestSpeciesMovesPayload.ID, RequestSpeciesMovesPayload.CODEC) { payload, player ->
+            // ⚠ 闸门**有意比形态候选表窄**：那份三个界面共用（商城 / 黑名单 / 价格限制），
+            //   这份只有 RP 商城的编辑窗用得上 ⇒ 只认 `points.shop`（与编辑窗本身同一个节点）
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
+            if (!RequestThrottle.allow(player.uuid, "species_moves", RequestThrottle.READ_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            // 物种 id 非法 / 该物种没装（附属模组卸了）⇒ **静默不发**：客户端会一直用本地三桶兜底，
+            // 技能列表照常能用（它本来就有那一份），只是少了教学 / 形态专属那几个筛选项的内容
+            val species = Identifier.tryParse(payload.speciesId)
+                ?.let { PokemonSpecies.getByIdentifier(it) } ?: return@registerC2S
+            val server = player.server
+            server.execute {
+                sendToPlayer(player, SpeciesMovesPayload.of(species))
             }
         }
 

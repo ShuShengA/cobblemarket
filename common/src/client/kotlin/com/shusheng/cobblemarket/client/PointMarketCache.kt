@@ -108,4 +108,31 @@ object PointMarketCache {
         featureAspectsVersion++
     }
 
+    // ── 完整招式表（六桶；编辑窗的「技能」候选与筛选按钮用）──
+
+    /**
+     * `物种资源 id → 完整招式表（六桶）` —— 服务端按需下发（见 `SpeciesMovesPayload`）。
+     *
+     * ⚠ **按物种缓存**（不是整表）：一个会话里同一个物种只请求一次，省往返也避开服务端节流。
+     * ⚠ **查不到 ≠ 出错**：客户端自己那份表（三桶）照常能用，只是少了教学 / 形态专属 / 进化招
+     *   —— 界面走本地兜底、不做任何等待（见 `PointsMarketScreen.legalMoveIds`）。
+     */
+    var speciesMoves: Map<String, com.shusheng.cobblemarket.network.SpeciesMovesPayload> = emptyMap()
+        private set
+
+    /**
+     * 收到过几份招式表（每收到一份自增）。
+     *
+     * ⚠ 与 [featureAspectsVersion] 同一个用途：候选是**异步**回来的，而列表**一旦建好就不会自己
+     *   跟着缓存变** ⇒ 界面靠它把**正开着**的技能列表重建一次（不然"先开列表、包后到"会一直停在
+     *   本地三桶那份上，教学招永远不出现）。
+     */
+    var speciesMovesVersion: Int = 0
+        private set
+
+    fun acceptSpeciesMoves(payload: com.shusheng.cobblemarket.network.SpeciesMovesPayload) {
+        speciesMoves = speciesMoves + (payload.speciesId to payload)
+        speciesMovesVersion++
+    }
+
 }
