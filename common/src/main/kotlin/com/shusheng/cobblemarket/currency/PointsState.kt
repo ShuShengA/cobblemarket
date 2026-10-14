@@ -65,6 +65,12 @@ class PointsState private constructor() : PersistentState() {
     /** 有余额的玩家数（管理端统计用） */
     fun holderCount(): Int = balances.size
 
+    /**
+     * 全部余额的**只读副本**（[PointsRankingExport] 导出余额排行、`/market points top` 用）。
+     * ⚠ 返回副本而不是 map 本身：调用方拿不到内部表、写不进来 —— 余额只能经上面那三个方法改。
+     */
+    fun allBalances(): Map<UUID, Long> = balances.toMap()
+
     // ── RP 奖励规则的进度（去重计数 + 每日累计） ──
     //
     // ⚠⚠ **为什么存在这里而不是另开一个 `PersistentState`**（2026-10-13 改）：

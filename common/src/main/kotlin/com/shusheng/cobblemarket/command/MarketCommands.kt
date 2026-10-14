@@ -27,6 +27,7 @@ import com.shusheng.cobblemarket.currency.PointShopService
 import com.shusheng.cobblemarket.currency.pointShopErrorText
 import com.shusheng.cobblemarket.currency.PointsAuditLogger
 import com.shusheng.cobblemarket.currency.PointsLogType
+import com.shusheng.cobblemarket.currency.PointsRankingExport
 import com.shusheng.cobblemarket.currency.PointsState
 import com.shusheng.cobblemarket.currency.RedeemOutcome
 import com.shusheng.cobblemarket.finance.CreditFileLogger
@@ -297,6 +298,35 @@ object MarketCommands {
                                 .suggests(::suggestOnlinePlayerNames)
                                 .executes { ctx -> pointsCheck(ctx, StringArgumentType.getString(ctx, "name")) }
                             )
+                        )
+                        .then(CommandManager.literal("top")
+                            // ⭐ **只服主**（2026-10-14 用户拍板）：全服余额是敏感信息（谁富谁穷、
+                            //   这个服的经济到了什么量级），不该任何人敲一句就摊开。
+                            //   要让**全服都看到**排行 —— 服主拿导出文件自己搭（全息 / 牌子 / 网站，
+                            //   见 `PointsRankingExport`），公不公开由他决定。
+                            // ⚠ **别给它加 `points.check` 节点**：那是"点名查某人"（给客服核对用），
+                            //   不是"浏览全服财富"，两件事的敏感度不同。
+                            // ⚠ 也不认 OP（本项目铁律）：requires 拦下之后游戏内 OP 看不到这条命令，
+                            //   但**没有第二个入口会走到它**，所以不需要再补一句红字提示
+                            //   （照 `rewards` 那棵树的做法）。
+                            .requires { MarketPermissions.isServerOwner(it) }
+                            .executes { ctx -> pointsTop(ctx, 1) }
+                            // 翻页按钮点出来的就是这个形式（服主也可以手敲）
+                            .then(CommandManager.argument("page", IntegerArgumentType.integer(1))
+                                .executes { ctx -> pointsTop(ctx, IntegerArgumentType.getInteger(ctx, "page")) }
+                            )
+                        )
+                        .then(CommandManager.literal("update")
+                            // ⚠⭐ **本项目第六处"有意保留 OP"**（其余五处见 CLAUDE.md 的铁律，
+                            //   完整理由写在 [pointsExportUpdate] 的 KDoc 里）。
+                            //   一句话：它**只把余额表提前落盘**，不动任何人的钱、不改任何状态 ⇒
+                            //   认 OP **没有东西可被"开后门"** —— 而那正是那条铁律防的事。
+                            // ⚠ 判据**故意只看权限等级**（不像 give/take 那样要求"玩家身份"）：
+                            //   服主用「命令方块 + 时钟」自定刷新节奏就是设计用法，命令方块必须放行
+                            //   （CobbleDollars 的 leaderboard.update 判的也是这一档）。
+                            // ⚠ 不受 rpAsQuestCurrency 开关管：那个开关是给"发 RP"开的，这条一分钱不发。
+                            .requires { it.hasPermissionLevel(2) }
+                            .executes(::pointsExportUpdate)
                         )
                         .then(CommandManager.literal("shop")
                             // 下单/我已支付/取消：玩家可用（正式路径走RP 商城界面，命令留给后台与客服代操作）
@@ -701,6 +731,130 @@ object MarketCommands {
             )
         }, false)
         return 1
+    }
+
+    /**
+     * `/market points top [页码]` —— 全服余额排行（**只服主**，权限理由见命令树那一节）。
+     *
+     * ⚠ 走 [PointsRankingExport.ranking] **实时算**，不读导出的 `ranking.json`：那个文件最多
+     *   落后一个导出周期，而命令是"现在看一眼"，实时算才是服主预期的数字（两者同一份数据）。
+     * ⚠ **不做搜索**（2026-10-14 拍板）：`/market points check <玩家>` 已经覆盖"查某人"
+     *   （查自己人人可用、查别人要 `points.check` 节点），再来一个按人搜的就是重复功能。
+     */
+    private fun pointsTop(context: CommandContext<ServerCommandSource>, page: Int): Int {
+        val source = context.source
+        val rows = PointsRankingExport.ranking(source.server)
+        if (rows.isEmpty()) {
+            source.sendError(Text.translatable("cobblemarket.points.top_empty", CurrencyService.pointsIcon()))
+            return 0
+        }
+
+        val pages = ((rows.size - 1) / TOP_PER_PAGE) + 1
+        val safePage = page.coerceIn(1, pages)
+        val from = (safePage - 1) * TOP_PER_PAGE
+        val pageRows = rows.subList(from, minOf(from + TOP_PER_PAGE, rows.size))
+
+        // 标题：货币图标 + 人数（页码只有一页时不显示，免得"第 1/1 页"占地方）
+        source.sendFeedback(
+            {
+                Text.translatable("cobblemarket.points.top_header", CurrencyService.pointsIcon(), rows.size)
+                    .append(
+                        if (pages > 1) Text.translatable("cobblemarket.points.top_page", safePage, pages)
+                            .formatted(Formatting.YELLOW)
+                        else Text.literal("")
+                    )
+                    .formatted(Formatting.GOLD)
+            },
+            false
+        )
+
+        pageRows.forEachIndexed { index, row ->
+            // 名次右对齐补位（默认字体的数字等宽 ⇒ 1 与 100 能对齐）
+            val rank = (from + index + 1).toString().padStart(3)
+            source.sendFeedback(
+                {
+                    // ⚠ 无色字面量当父、各段自己带色（见 CLAUDE.md「带色的文字绝不能当父节点」）
+                    Text.literal(" ")
+                        .append(Text.literal(rank).formatted(Formatting.GRAY))
+                        .append(Text.literal(". "))
+                        .append(PlayerNameText.of(row.name))
+                        .append(Text.literal("  "))
+                        .append(CurrencyService.amountText(row.points, MarketCurrency.POINTS))
+                },
+                false
+            )
+        }
+
+        // 翻页：点击执行（与 `rewards species` 同一套写法）
+        if (pages > 1) {
+            source.sendFeedback(
+                {
+                    Text.literal("")
+                        .append(
+                            if (safePage > 1) Text.translatable("cobblemarket.points.top_prev").styled {
+                                it.withClickEvent(
+                                    ClickEvent(ClickEvent.Action.RUN_COMMAND, "/market points top ${safePage - 1}")
+                                ).withColor(Formatting.AQUA)
+                            } else Text.literal("")
+                        )
+                        .append(Text.literal("  "))
+                        .append(
+                            if (safePage < pages) Text.translatable("cobblemarket.points.top_next").styled {
+                                it.withClickEvent(
+                                    ClickEvent(ClickEvent.Action.RUN_COMMAND, "/market points top ${safePage + 1}")
+                                ).withColor(Formatting.AQUA)
+                            } else Text.literal("")
+                        )
+                },
+                false
+            )
+        }
+        return 1
+    }
+
+    /**
+     * `/market points update` —— **立刻**把余额排行导出一次（不等下一个定时周期）。
+     *
+     * 用途：想自己控刷新节奏的服主，用「命令方块 + 时钟」定时跑这条（CobbleDollars 的
+     * `leaderboard.update` 就是这个用法，判据也是"等级 2 / 命令方块"这一档）；平时不折腾的
+     * 服主什么都不用做，默认每 5 分钟自动导一次。
+     *
+     * ⚠⭐⭐ **本项目第六处"有意保留 OP"**（其余五处见 CLAUDE.md 的那条铁律）。
+     *
+     * **为什么可以认 OP**（不能只写"因为要照搬 CobbleDollars"，那不是理由）：
+     * 本项目认 OP 之所以危险，是因为 `/op` 能被任何 OP 传给任何人、而模组感知不到 ⇒
+     * "认 OP"等于给某种**能力**开后门 —— 那些能力是**发钞 / 提权 / 改别人的东西**。
+     * 而这一条**只把余额表提前落盘**：
+     *   ① **不动任何人的钱**（只读 `PointsState`，一分不加不减）；
+     *   ② **不改任何游戏状态**（不写存档、不发网络包、不碰玩家数据、不发物品）；
+     *   ③ 它写出来的文件，本来就是每 5 分钟会**自动写**的**同一份内容** ——
+     *      充其量让"外部工具看到的数据"早几秒新一次。
+     * ⇒ **开了后门也无事可做** —— 那条铁律要防的东西在这里**根本不存在**。
+     *
+     * ⚠ **判据是权限等级，不是"玩家身份 + 等级"**（与 give/take 的 [denyPointsGrant] **有意不同**）：
+     *   命令方块是"非玩家实体"，而"服主用命令方块 + 时钟"**正是这条命令的设计用法** ⇒ 必须放行。
+     *   控制台 = 4、游戏内 OP = 2、命令方块 = 2 都过；普通玩家 = 0，看不到也执行不了。
+     * ⚠ 判据在**命令树的 `requires`**（本函数只做事）：等级 ≥ 2 就是最终判据，没有更严的一层
+     *   需要加，所以不必像 give/take 那样在函数首行再套一道（那两道是为了"放 OP 进来听红字"）。
+     * ⚠ 也**不受 [CobbleMarketConfig.rpAsQuestCurrency] 开关管**：那个开关是给"发 RP"开的，
+     *   这条一分钱都不发。
+     */
+    private fun pointsExportUpdate(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val count = PointsState.get(source.server).holderCount()
+        // force = true：**无条件重写**。服主敲完命令要看的就是"文件刷新了"，
+        // 走"只写变化"的话他那边 mtime 纹丝不动，只会以为功能坏了（见 PointsRankingExport.export）
+        return if (PointsRankingExport.export(source.server, force = true)) {
+            // ⚠ 成功走绿色（聊天框里的系统反馈不用白字 —— 白的跟玩家发言一个样）
+            source.sendFeedback(
+                { Text.translatable("cobblemarket.points.export_ok", count).formatted(Formatting.GREEN) },
+                false
+            )
+            1
+        } else {
+            source.sendError(Text.translatable("cobblemarket.points.export_failed"))
+            0
+        }
     }
 
     // ── RP：游戏内充值订单（正式路径走RP 商城界面，命令用于后台与客服代操作） ──
@@ -1158,6 +1312,14 @@ object MarketCommands {
      * 超出的部分只报个数并提示缩小范围（换命名空间再查）。
      */
     private const val SPECIES_PER_PAGE = 40
+
+    /**
+     * `/market points top` 一页列多少人。
+     *
+     * 同一个道理（聊天栏不是分页器），但这里的处理**不是截断而是翻页** —— 看排行本来就是
+     * "从头看下来"的动作，只报个数没有意义（2026-10-14 定：全量、10 人一页、带翻页按钮）。
+     */
+    private const val TOP_PER_PAGE = 10
 
     /**
      * `/market tag remove <玩家> <槽位> <标签>` —— 撤掉**别人队伍里**某只精灵身上的某个标签。

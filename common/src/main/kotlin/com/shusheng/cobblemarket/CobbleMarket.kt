@@ -161,6 +161,8 @@ object CobbleMarket {
 			com.shusheng.cobblemarket.currency.PointShopService.tick(server)
 			// RP 奖励的动作栏提示：1 秒合并窗口到点就发（见 PointsRewards.queueActionBar）
 			com.shusheng.cobblemarket.currency.rewards.PointsRewards.onServerTick(server)
+			// RP 余额排行导出：按配置分钟数节流，**内容没变就不碰磁盘**（见 PointsRankingExport）
+			com.shusheng.cobblemarket.currency.PointsRankingExport.tick(server)
 			// 喵喵紫卡/黑卡丢弃即消失扫描（0.5 秒节流，近乎立即可见消失；
 			// 非持有者背包自删走物品自身的 inventoryTick，无需服务器扫描）
 			if (++cardScanTick >= 10) {
