@@ -210,6 +210,16 @@ object CobbleMarketConfig {
      */
     var pointsShopCurrencyLabel: String = ""
         private set
+    /**
+     * **余额排行的导出间隔**（分钟，默认 5，钳 1~1440）。
+     *
+     * 模组每隔这么久把全服余额写进 `<存档>/cobblemarket_points/`（**只写变化的那些**，
+     * 见 [com.shusheng.cobblemarket.currency.PointsRankingExport]），供服主自己的全息板 / 牌子 / 网站读取。
+     * ⚠ 想自己控节奏的（命令方块 + 时钟）**不用改这里**：定时导出照旧，需要立刻刷新时敲
+     *   `/market points update` 即可。
+     */
+    var pointsRankingExportMinutes: Int = 5
+        private set
 
     // ── 服主名单（唯一恒真的超级权限，方案见 docs/permission_nodes_plan.md） ──
 
@@ -654,6 +664,7 @@ object CobbleMarketConfig {
                     "shareEnabled", "pointsEnabled", "pointsMarketEnabled", "rpAsQuestCurrency",
                     "pointsRewardsEnabled",
                     "pointsExternalSecret", "pointsExternalMaxDays",
+                    "pointsRankingExportMinutes",
                     "pointsShop",
                     "serverOwners",
                     "finance"
@@ -837,6 +848,10 @@ object CobbleMarketConfig {
                 pointsRewardsEnabled = data["pointsRewardsEnabled"] as? Boolean ?: false
                 pointsExternalSecret = data["pointsExternalSecret"] as? String ?: ""
                 pointsExternalMaxDays = ((data["pointsExternalMaxDays"] as? Double)?.toInt() ?: 365).coerceAtLeast(0)
+                // 导出间隔钳 1~1440 分钟：0 会让它每 tick 都扫一遍（虽说不写盘，也是白跑），
+                // 超过一天则几乎等于没开这个功能
+                pointsRankingExportMinutes =
+                    ((data["pointsRankingExportMinutes"] as? Number)?.toInt() ?: 5).coerceIn(1, 1440)
                 val shop = data["pointsShop"] as? Map<*, *>
                 if (shop != null) {
                     val shopKeys =
@@ -939,6 +954,7 @@ object CobbleMarketConfig {
                 "marketEnabled" to "市场总开关（默认开启）：紧急情况可整体关闭市场功能——所有买卖/拍卖/求购操作被拦截并提示，但待领取、余额等取回自己资产的操作仍可用。可在游戏内用 /market on|off 切换 / Master market switch (on by default): emergency kill switch for the entire market — all buy/sell/auction/buy-order operations are blocked with a notice, while claiming returns and collecting balances still work. Toggle in-game via /market on|off",
                 "pointsExternalSecret" to "外部签名码的 HMAC 密钥：服主在自己的网站 / 发卡网卖RP 时，用同一个密钥签码，玩家在游戏内兑换。⚠ **留空 = 关闭外部码**（只接受 /market points code create 生成的本地码）。**必须放在服务端**（网站后端 / 服主本机），绝不能进客户端、日志或公开仓库；服务端日志只记码前缀不记全码（码 = 钱）。建议 ≥32 字符随机串 / HMAC secret for externally signed RP codes: sign codes on your website / card shop with the same secret, players redeem them in game. ⚠ **Leave blank to disable external codes** (only locally generated codes work). **Server-side only** (website backend / your machine) — never ship it in a client, log, or public repo. Logs record only a code prefix, never the full code (a code is money). Recommended: 32+ random characters",
                 "pointsExternalMaxDays" to "外部码的有效期上限（天，默认 365）：签发时有效期跨度超过它的码一律拒绝，防「永久码」满天飞（永久码的 serial 必须永久保留，会让存档持续膨胀）/ Maximum validity for external codes in days (default 365): codes valid for longer are rejected, preventing \"forever codes\" (whose serials must be kept forever and would bloat the save)",
+                "pointsRankingExportMinutes" to "余额排行的导出间隔（分钟，默认 5，钳 1~1440）：模组每隔这么久把全服余额写进存档目录下的 cobblemarket_points/（**只写变化的那些**，没变化就不碰磁盘），供服主自己的全息板 / 牌子 / 网站读取。文件格式与用法见该目录里的 README。⚠ 想自己控节奏（命令方块 + 时钟）不用改这里，敲 /market points update 即可强制刷新一次 / Minutes between balance-ranking exports (default 5, clamped 1-1440): the mod writes every player's balance into cobblemarket_points/ inside the save folder (**only entries that changed** — nothing is written when nothing changed), for your own holograms / signs / website to read. See the README in that folder for the file format. ⚠ To control the cadence yourself (command block on a clock), leave this alone and run /market points update to force a refresh",
                 "pointsEnabled" to "RP 总开关（默认关闭）：RP 是本模组的第二货币，与主货币并行流通但**不可兑换、不可转让、不参与金融**。关闭时：玩家设置价格的界面不出现RP 按钮，除RP 商城外的任何地方都不能用RP 交易（服主仍可在RP 商城上架精灵/物品供持有RP 的玩家购买）。⚠ RP 从哪来由服主决定（当任务奖励发、当充值货币卖，或两者并用），开启前请先规划好发放渠道 / RP master switch (off by default): RP is this mod's second currency, running alongside the primary one but **not convertible, not transferable, and outside the finance system**. When off, the RP button is hidden from every price-setting screen and RP cannot be used anywhere except the RP Shop (owners can still stock the RP Shop for players who already hold RP). ⚠ Where RP comes from is up to you (handed out as a reward, sold as a top-up, or both) — plan your distribution channel before enabling",
                 "rpAsQuestCurrency" to "「give/take 权限下放」开关（默认关闭）：打开后**玩家身份的 OP（命令等级 ≥ 2）也能发放 / 回收 RP**。用在「RP 当任务奖励」的场景 —— FTB 之类的任务模组要把 RP 发给玩家，而它们**以完成任务的普通玩家身份**执行命令（既不是服主、也不是控制台），不开这个开关就永远被拒；打开后在 FTB 里写 `/market points give @s N` 即可自动到账。⚠ 打开 = 接受「任何玩家 OP 都能发 RP」（/op 可被传递给任何人）；只把 RP 当充值货币、由服主手动发放时请保持关闭。⚠ 只作用于 /market points give|take 两条命令，不影响权限授予等其他服主专属命令 / \"delegate give/take\" switch (off by default): when on, **player-ops (permission level 2+) can also grant/take RP**. Meant for the \"RP as a quest reward\" setup — quest mods like FTB hand RP to players but run their commands **as the completing player**, who is neither the owner nor the console, so they are always refused unless this is on. With it on, write `/market points give @s N` in FTB and it just works. ⚠ Turning it on accepts that **any player-op can grant RP** (/op is transferable to anyone); keep it off if RP is a top-up currency granted only by you. ⚠ It only affects the /market points give|take commands, not permission grants or other owner-only commands",
                 "shareEnabled" to "玩家展示开关（默认开启）：开启后玩家可把精灵/物品展示到全服聊天（悬停看详情），每人 10 秒一次。关闭后展示按钮不再生效 / Player showcase switch (on by default): players can showcase Pokémon/items to server chat (hover for details), once per 10 seconds each. When off, the showcase button stops working",
@@ -1016,6 +1032,7 @@ object CobbleMarketConfig {
             "pointsRewardsEnabled" to pointsRewardsEnabled,
             "pointsExternalSecret" to pointsExternalSecret,
             "pointsExternalMaxDays" to pointsExternalMaxDays,
+            "pointsRankingExportMinutes" to pointsRankingExportMinutes,
             "pointsShop" to mapOf(
                 "enabled" to pointsShopEnabled,
                 "payQrImage" to pointsShopPayQrImage,
