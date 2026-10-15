@@ -149,6 +149,8 @@
   "cobblemarket.perm.node.marketswitch.desc": "可紧急停市 / 恢复市场（影响全服）",
   "cobblemarket.perm.node.history": "交易历史",
   "cobblemarket.perm.node.history.desc": "可查看全服所有人的交易记录\n（买卖双方、金额、时间）",
+  "cobblemarket.perm.node.overview": "玩家总览",
+  "cobblemarket.perm.node.overview.desc": "可查看全服每个玩家的经济数据\n（余额、挂单数、额度、借款、存款与利息、图鉴数）\n注意：等于让对方看到全服所有人的余额与债务",
   "cobblemarket.perm.panel.pokemon": "可查看 / 下架任意玩家的精灵挂单",
   "cobblemarket.perm.panel.item": "可查看 / 下架任意玩家的物品挂单",
   "cobblemarket.perm.need_node": "需要「%s」权限节点\n（由服主授予）",

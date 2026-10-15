@@ -72,6 +72,18 @@ object MarketPermissions {
     const val HISTORY = PREFIX + "history"
 
     /**
+     * 玩家总览：查看**全服每个玩家**的市场与经济数据 —— 余额、挂单数、可借额度、已借与剩余、
+     * 存款与已赚利息、图鉴遇见 / 捕捉数、封禁与禁借状态（2026-10-15 用户拍板新开）。
+     *
+     * ⚠ **授予即等于让对方看到全服所有人的余额与债务** —— 节点授予是全给、收不回来，
+     *   服主得清楚自己给出去的是什么（节点说明里也写了这句）。
+     * ⚠ 它不塞进 [FINANCE]：这张表跨了市场与金融（有挂单数），塞进金融语义不符。
+     * ⚠ 1.3.x 上 `/market points top`（全服余额排行）**与它共用本节点**（那条命令原本只服主）——
+     *   否则会出现「界面里看得见、敲命令却被拒」的怪事。1.2.x 没有那条命令。
+     */
+    const val OVERVIEW = PREFIX + "overview"
+
+    /**
      * 全部管理节点（快照、入口判定、`/market perm list` 与权限编辑界面的按钮都用它）。
      * **顺序 = 权限编辑弹窗里按钮的排列顺序**（按此顺序交替分列，每行两个）。
      *
@@ -86,7 +98,7 @@ object MarketPermissions {
      * ⚠ 原 `CONFIG`（服务器配置）节点已于 2026-09-23 删除：服务器配置改为**服主专属**，
      * 不再作为可授予的节点 —— 想放权就把对方 UUID 加进 `serverOwners`。
      */
-    val ALL = listOf(MARKET, HISTORY, BAN, BLACKLIST, PRICE_LIMIT, AUCTION, BUY_ORDER, FINANCE, MARKET_SWITCH)
+    val ALL = listOf(MARKET, HISTORY, BAN, BLACKLIST, PRICE_LIMIT, AUCTION, BUY_ORDER, FINANCE, MARKET_SWITCH, OVERVIEW)
 
     /**
      * 是不是服主（**唯一恒真的超级权限**）：UUID 在配置的 `serverOwners` 名单里。

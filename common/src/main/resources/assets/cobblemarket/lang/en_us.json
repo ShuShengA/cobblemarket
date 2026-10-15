@@ -149,6 +149,8 @@
   "cobblemarket.perm.node.marketswitch.desc": "Close / reopen the whole\nmarket (affects everyone)",
   "cobblemarket.perm.node.history": "Trade History",
   "cobblemarket.perm.node.history.desc": "View every player's trades\n(both sides, amount, time)",
+  "cobblemarket.perm.node.overview": "Player Overview",
+  "cobblemarket.perm.node.overview.desc": "View every player's economy data\n(balance, listings, loans, deposits, interest, Pokédex)\nNote: reveals everyone's balance and debt",
   "cobblemarket.perm.panel.pokemon": "View / remove any\nplayer's Pokémon listings",
   "cobblemarket.perm.panel.item": "View / remove any\nplayer's item listings",
   "cobblemarket.perm.need_node": "'%s' node required\n(granted by the server owner)",

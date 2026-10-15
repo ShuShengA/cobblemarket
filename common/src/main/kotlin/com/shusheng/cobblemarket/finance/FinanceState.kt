@@ -450,15 +450,39 @@ class FinanceState private constructor() : PersistentState() {
      * ⚠ 欠款口径与 [debtOf] **逐字一致**（CLOSED / BAD_DEBT 除外、按玩家求和），别只改一处。
      */
     fun creditLimitRank(now: Long, limit: Int): List<Pair<UUID, Long>> {
-        val debtByPlayer = mutableMapOf<UUID, Long>()
-        loans.values.forEach { l ->
-            if (l.status == LoanStatus.CLOSED || l.status == LoanStatus.BAD_DEBT) return@forEach
-            debtByPlayer.merge(l.playerUuid, l.remainingPrincipal.toLong(), Long::plus)
-        }
+        val debtByPlayer = debtIndex()
         return totalCountedVolume.keys
             .map { uuid -> uuid to creditLimitWithDebt(uuid, now, debtByPlayer[uuid] ?: 0L) }
             .sortedByDescending { it.second }
             .take(limit)
+    }
+
+    /**
+     * 欠款索引：**一次**遍历贷款表建 `uuid → 未还本金`（已结清 / 坏账不计）。
+     *
+     * ⚠ 需要给**一批人**算额度时必须走它 —— 逐人调 [debtOf] 是每次全表扫描，全服就是 O(N×M)。
+     */
+    private fun debtIndex(): Map<UUID, Long> {
+        val m = mutableMapOf<UUID, Long>()
+        loans.values.forEach { l ->
+            if (l.status == LoanStatus.CLOSED || l.status == LoanStatus.BAD_DEBT) return@forEach
+            m.merge(l.playerUuid, l.remainingPrincipal.toLong(), Long::plus)
+        }
+        return m
+    }
+
+    /**
+     * 批量取「未还本金 + 可用额度」（供全服玩家总览用）。
+     *
+     * @return uuid → (`未还本金`, `可用额度`)；名单里的人没贷款记录时返回 `(0, 公式值)`。
+     * ⚠ 与 [creditLimitFor] **同口径**（含人工修正、已扣欠款、钳上下限），只是一次归表后批量算。
+     */
+    fun creditOverviewFor(uuids: Collection<UUID>, now: Long): Map<UUID, Pair<Long, Long>> {
+        val debtByPlayer = debtIndex()
+        return uuids.associateWith { uuid ->
+            val debt = debtByPlayer[uuid] ?: 0L
+            debt to creditLimitWithDebt(uuid, now, debt)
+        }
     }
 
     /**
