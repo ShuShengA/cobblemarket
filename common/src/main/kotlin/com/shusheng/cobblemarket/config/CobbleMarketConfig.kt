@@ -221,6 +221,19 @@ object CobbleMarketConfig {
     var pointsRankingExportMinutes: Int = 5
         private set
 
+    // ── 市场 ID 卡 ──
+
+    /**
+     * 市场 ID 卡的**背景图文件名**（图放在 `config/cobblemarket/idcard/` 下，**只写文件名、不带路径**）。
+     * 留空 = 用模组内置的背景图。
+     *
+     * ⚠ 只认 PNG、单张 ≤512KB、像素 ≤2048×2048；超限 / 损坏的图会被拒绝并记日志
+     * （客户端回退到内置背景，不会显示成空白）。改完 `/market reload` 即可生效，
+     * 玩家**下次打开 ID 卡**时看到新图（就地覆盖同名文件也算）。
+     */
+    var idCardBackground: String = ""
+        private set
+
     // ── 服主名单（唯一恒真的超级权限，方案见 docs/permission_nodes_plan.md） ──
 
     /**
@@ -660,7 +673,7 @@ object CobbleMarketConfig {
                     "pendingReturnRetentionDays", "auctionFeePercent", "auctionDurationOptions",
                     "auctionMinBidIncrement", "auctionAntiSnipeSeconds", "maxAuctionsPerPlayer",
                     "eggTradingEnabled", "buyOrderFeePercent", "buyOrderExpiryDays",
-                    "maxBuyOrdersPerPlayer", "marketEnabled",
+                    "maxBuyOrdersPerPlayer", "marketEnabled", "idCardBackground",
                     "shareEnabled", "pointsEnabled", "pointsMarketEnabled", "rpAsQuestCurrency",
                     "pointsRewardsEnabled",
                     "pointsExternalSecret", "pointsExternalMaxDays",
@@ -837,6 +850,8 @@ object CobbleMarketConfig {
                 buyOrderExpiryDays = (rawBuyOrderExpiry ?: 3).coerceAtLeast(1)
                 maxBuyOrdersPerPlayer = ((data["maxBuyOrdersPerPlayer"] as? Double)?.toInt() ?: 5).coerceAtLeast(0)
                 marketEnabled = data["marketEnabled"] as? Boolean ?: true
+                // 背景图文件名：只留文件名本身（路径穿越 / 非法字符由 ConfigImage 拦下并记日志）
+                idCardBackground = (data["idCardBackground"] as? String)?.trim() ?: ""
                 shareEnabled = data["shareEnabled"] as? Boolean ?: true
                 pointsEnabled = data["pointsEnabled"] as? Boolean ?: false
                 // 缺失按 false（保守）：老配置升级上来时玩家间 RP 交易一律先关着
@@ -963,6 +978,7 @@ object CobbleMarketConfig {
                 "pointsShop.defaultIcon" to "档位「RP 券」的**全局默认**图文件名（放在 config/cobblemarket/icons/ 下，如 coupon.png；PNG 格式，单张 ≤512KB、像素 ≤2048×2048，建议 256×160 或它的整数倍 512×320）。填了它，所有没单独配券图的档位都用这张；留空 = 用模组内置券图。**每个档位还能配自己的**（见 tiers 的 icon）。图片由服务端读取后下发给客户端绘制，什么宽高比都行（卡片按原图比例缩放，不会变形）/ **Global default** RP coupon image file name under config/cobblemarket/icons/ (e.g. coupon.png; PNG, 512KB max and 2048x2048 pixels max — 256x160 or a multiple such as 512x320 recommended). Every tier without its OWN coupon image uses this one; leave blank to use the mod's built-in coupon image. **Each tier can also have its own** (see the icon field of tiers). The server reads it and sends it to clients; any aspect ratio works (the card scales the image to fit without distortion)",
                 "pointsShop.orderTimeoutMinutes" to "待支付订单超时分钟数（默认 15，钳 1~1440）：超时后订单作废，玩家可重新下单。⚠ 超时后有 30 分钟宽限期，期内玩家仍可提交「我已支付」（他可能已经付款、只是回来点得慢；作废是安全的失败方向，误判成已付款才危险）/ Minutes before an unpaid order expires (default 15, clamped 1–1440). Expired orders are voided so the player can order again. ⚠ A 30-minute grace period follows, during which \"I have paid\" is still accepted (the player may have paid but tapped late; voiding is the safe failure direction, wrongly granting is not)",
                 "pointsShop.tiers" to "充值档位列表：[{name=展示名, price=标价, points=发放点数, qr=该档收款码文件名(可留空), icon=该档RP券图文件名(可留空，放在 config/cobblemarket/icons/ 下，留空则用内置券图)}]。**实付金额 = 档位标价**——玩家在界面上看到多少就付多少，模组不加任何钱。留空数组 = 不开放「购买RP」/ Top-up tiers: [{name=display name, price=list price, points=points granted, qr=this tier's own QR file name (optional), icon=this tier's RP coupon image file name (optional; put it under config/cobblemarket/icons/, blank = built-in coupon image)}]. **Amount to pay = the list price** — the player pays exactly what the screen shows; the mod adds nothing. An empty array disables the in-game purchase entry",
+                "idCardBackground" to "市场 ID 卡的背景图文件名：把图放进 config/cobblemarket/idcard/（只写文件名、不带路径），留空 = 用模组内置的背景图。只认 PNG、单张 ≤512KB、像素 ≤2048×2048，超限/损坏的图会被拒绝并记日志（客户端回退内置图）。改完 /market reload 生效，玩家下次打开 ID 卡时看到新图（就地覆盖同名文件也算）/ Market ID card background image file name: put the file into config/cobblemarket/idcard/ (plain file name only, no path); leave blank to use the mod's built-in background. PNG only, max 512KB and max 2048x2048 per image — oversized or corrupt images are rejected with a log entry (clients fall back to the built-in one). Applies after /market reload; players see it the next time they open the ID card (overwriting the same file in place also works)",
                 "maxBuyOrdersPerPlayer" to "每个玩家同时进行的求购单数量上限，精灵与物品合计（0=不限制）。求购单列表全量下发给所有客户端，玩家较多的服务器建议保持较小值，避免全服活跃求购单总量过大导致卡顿 / Max concurrent buy orders per player, Pokémon and items combined (0=unlimited). The buy order list is broadcast in full to every client, so on crowded servers keep this small to avoid lag from too many active orders",
                 "serverOwners" to "服主名单（UUID 数组）—— 服主拥有全部管理权限，也只有服主能改服务器配置、给别人发权限。填一串 UUID、每条加英文双引号、多条用逗号隔开（缺引号整份配置都读不了）；UUID 查 usercache.json，或用游戏内 /data get entity @s UUID 拿（打出来的整数数组也能直接粘）。⚠ 别填游戏名。改完重进存档生效，启动日志会打印「已加载几名服主」。空数组 = 谁都不是服主。⚠ OP 不等于服主：OP 能被 /op 传递，这份名单不能。填法与示例见官网「权限节点」页 https://shushenga.github.io/CobbleMarket-Website/#/permission /Server owner list (UUID array) — owners have every admin permission, and only they can edit the server config or grant admin permissions. Fill in a list of UUIDs: wrap each in double quotes, separate several with commas (a single missing quote makes the whole config unreadable). Get your UUID from usercache.json, or run /data get entity @s UUID in game (the integer array it prints can be pasted as-is). ⚠ A player name will not work. Reload the world to apply; the log prints how many owners were loaded. An empty array means nobody is an owner. ⚠ OP is not the owner: OP can be passed on with /op, this list cannot. Full guide: https://shushenga.github.io/CobbleMarket-Website/#/en/permission",
                 "finance.enabled" to "金融系统总开关（默认关闭）。开启后玩家可借贷/使用喵喵支付；关闭时禁止新增借贷与信用支付，已有贷款照常运行（还款/逾期/坏账不受影响） / Master switch for the finance system (off by default). When on, players can take loans and use Meowth Pay; when off, new loans and credit payments are blocked while existing loans keep running (repayment/overdue/bad debt unaffected)",
@@ -1050,6 +1066,7 @@ object CobbleMarketConfig {
                     )
                 }
             ),
+            "idCardBackground" to idCardBackground,
             "serverOwners" to serverOwners.map { it.toString() },
             "finance" to mapOf(
                 "enabled" to financeEnabled,

@@ -79,7 +79,21 @@ object ConfigImage {
      * 读子目录下指定文件名的图；返回 null = 没配 / 读不了 / 不合法。
      * 调用方传**空串**即表示"这一项没配"，同样返回 null。
      */
-    fun load(dir: String, fileName: String): ByteArray? {
+    fun load(dir: String, fileName: String): ByteArray? = loadVersioned(dir, fileName)?.bytes
+
+    /** 一张图 + 它的版本戳（版本的含义见 [loadVersioned]） */
+    class Versioned(val bytes: ByteArray, val version: String)
+
+    /**
+     * 带**版本戳**读图：读盘、校验、缓存与 [load] 共用同一份逻辑，只是多回一个版本号。
+     *
+     * 版本 = **`文件名@修改时间`** —— 换名会变，**就地覆盖同名文件也会变**。
+     * 用途：客户端把手里那张图的版本回传给服务端，服务端比对相同就**不重传图**
+     * （回几十字节 vs 几十 KB）。判据（文件名 + mtime）只有服务端手里有，所以判定在服务端做。
+     *
+     * 返回 null = 没配 / 读不了 / 不合法（这时**连版本也没有**，调用方按"没有图"处理）。
+     */
+    fun loadVersioned(dir: String, fileName: String): Versioned? {
         // ⚠ 建目录必须在「空文件名直接返回」**之前** —— 否则只配了档位专用图的服主
         //   永远看不到这个目录（2026-09-18 用户实测踩到）
         ensureDir(dir)
@@ -99,7 +113,7 @@ object ConfigImage {
             return null
         }
         val mtime = file.lastModified()
-        cache[key]?.let { if (it.mtime == mtime) return it.bytes }
+        cache[key]?.let { if (it.mtime == mtime) return Versioned(it.bytes, versionOf(name, it.mtime)) }
 
         if (file.length() > MAX_BYTES) {
             CobbleMarket.LOGGER.warn(
@@ -130,8 +144,11 @@ object ConfigImage {
             return null
         }
         cache[key] = Cached(bytes, mtime)
-        return bytes
+        return Versioned(bytes, versionOf(name, mtime))
     }
+
+    /** 版本戳：`文件名@修改时间`。客户端只原样回传、不解析，改格式也不会牵连客户端 */
+    private fun versionOf(name: String, mtime: Long): String = "$name@$mtime"
 
     /**
      * 从 PNG 字节里量出宽高：`8 字节签名 + 4 字节块长度 + "IHDR" + 宽 4 + 高 4`，
