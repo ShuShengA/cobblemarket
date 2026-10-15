@@ -106,7 +106,7 @@
 
 - **"Also block loans" moved to the Finance Management screen**: it used to be a toggle in the **ban** confirmation dialog (ticked while banning someone); it is now a **separate list** on the Finance Management screen's "Loan Ban" tab — finance belongs on the finance side, and bans only cover trading. ⚠ The ban ledger (`config/cobblemarket/bans/`) drops its "Block Loans / Prev Block Loans" columns accordingly
 
-## 1.2.1 (in development, unreleased)
+## 1.2.1 (released)
 
 ⚠ **Server and client must be updated together** (this release changes the packet format).
 
