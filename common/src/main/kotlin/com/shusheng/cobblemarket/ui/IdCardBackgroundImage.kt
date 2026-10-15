@@ -28,11 +28,14 @@ object IdCardBackgroundImage {
         file name into config/cobblemarket.json -> "idCardBackground".
 
         - PNG only. Max 512KB, max 2048x2048 pixels per image.
-        - The card is drawn at a fixed size on screen; the image is scaled to fit and
-          centred, so any aspect ratio works (matching the card's ratio fills it exactly).
+        - The card is drawn at a fixed size on screen. The image is scaled so that its
+          bottom "width x 9/16" part fills the card exactly; anything above that is an
+          overflow decoration drawn above the card (e.g. a Pokemon sitting on the card's
+          top edge). The built-in image deliberately leaves that area blank, so server
+          packs can put their own mascot / title there.
         - Leave "idCardBackground" blank to use the mod's built-in background.
         - Images are read on demand (no restart needed); replacing one takes effect the
-          next time a player opens the ID card.
+          next time a player opens the ID card (overwriting the same file in place works too).
 
         市场 ID 卡背景图目录
         ====================
@@ -40,10 +43,12 @@ object IdCardBackgroundImage {
         然后把文件名填进 `config/cobblemarket.json` 的 `idCardBackground`。
 
         - 只认 PNG，单张不超过 512KB、像素不超过 2048×2048。
-        - 卡片在屏幕上按固定尺寸绘制，图会等比缩放居中，什么比例的图都不会变形
-          （与卡片比例一致的图正好填满）。
+        - 卡片在屏幕上按固定尺寸绘制。图按「**从底边往上、宽 × 9/16 那块 = 卡片本体**」缩放：
+          那块正好填满卡片，上面多出来的部分是**溢出装饰**，会画在卡片上方
+          （比如一只趴在卡片顶边的精灵）。模组内置的那张**刻意把这块留空**，
+          留给服主放自己的吉祥物 / 标题。
         - `idCardBackground` **留空 = 用模组内置的背景图**。
-        - 读图是按需的（改图不用重启），换图对下一次打开 ID 卡生效。
+        - 读图是按需的（改图不用重启），换图对下一次打开 ID 卡生效（就地覆盖同名文件也算）。
     """.trimIndent()
 
     /** 确保背景图目录存在（顺手放一份说明）。服务端启动时调一次 */
@@ -51,6 +56,11 @@ object IdCardBackgroundImage {
         ConfigImage.writeReadmeIfAbsent(BG_DIR, README_TEXT)
     }
 
-    /** 读指定文件名的背景图；null = 没配 / 读不了 / 不合法（客户端回退到内置背景） */
-    fun load(fileName: String): ByteArray? = ConfigImage.load(BG_DIR, fileName)
+    /**
+     * 带**版本戳**读指定文件名的背景图；null = 没配 / 读不了 / 不合法（客户端回退到内置背景）。
+     *
+     * 版本（`文件名@修改时间`）要发给客户端、由它下次回传 ⇒ 服务端据此判断**要不要重传图**
+     * （详见 [com.shusheng.cobblemarket.network.IdCardBackgroundPayload]）。
+     */
+    fun loadVersioned(fileName: String): ConfigImage.Versioned? = ConfigImage.loadVersioned(BG_DIR, fileName)
 }
