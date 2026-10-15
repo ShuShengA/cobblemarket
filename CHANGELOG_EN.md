@@ -160,9 +160,10 @@
 
 - **Bans can now also block borrowing**: the admin ban confirmation dialog has a new "Also block loans" toggle (off by default). ⚠ Borrowing only — deposits, withdrawals and repayments still work
 
+- **The borrowing entry is easier to find in English**: the Meowth Bank button (and the screen title behind it) was labelled "Meowth's Help", which gave no clue that it means borrowing — the config switch controlling it and the "unavailable" notice read the same way. They are now **Counter Loans** (the config switch is **Cash loan**), the wording already used for "counter loans" in the in-game rules and clearly distinct from "Meowth Pay" for checkout credit. ⚠ English text only; the Chinese label is unchanged
+
 ### Fixes
 
-- **English players could not find the borrowing entry**: the Meowth Bank button (and the screen title behind it) was labelled "Meowth's Help", which gave no clue that it means borrowing — the config switch controlling it and the "unavailable" notice read the same way. They are now **Counter Loans** (the config switch is **Cash loan**), the wording already used for "counter loans" in the in-game rules and clearly distinct from "Meowth Pay" for checkout credit. ⚠ English text only; the Chinese label is unchanged
 - **The trade history recorded the leftover stock for purchases, not the quantity bought**: listing 64 and buying 60 showed up as "4" — it now records the amount actually bought (purchase rows already written to the CSV keep the old value; delist / return / list records were correct all along)
 
 - **The trade history did not show how many items were involved**: item records showed only the item name, so there was no way to tell how many of your listings had sold — both the row and its hover window now show "×N" (unstackable items are left alone — their count is always 1; records that predate this have no count stored, so they simply show nothing rather than "×0")
