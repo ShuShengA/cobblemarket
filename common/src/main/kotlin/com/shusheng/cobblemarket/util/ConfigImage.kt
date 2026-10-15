@@ -5,7 +5,7 @@ import com.shusheng.cobblemarket.platform.configDir
 import java.io.File
 
 /**
- * **配置目录下图片的读取**（`config/cobblemarket/<子目录>/<文件名>`）—— 收款码与 RP 券图共用。
+ * **配置目录下图片的读取**（`config/cobblemarket/<子目录>/<文件名>`）—— 收款码、RP 券图与 ID 卡背景图共用。
  *
  * 为什么由服务端读、再经网络下发给客户端：配置文件在服务端，而图要在玩家的客户端上画 ——
  * 专用服务器上玩家本地根本没有那个文件（2026-09-18 拍板，见方案「实施细节」）。
@@ -28,7 +28,8 @@ object ConfigImage {
     const val MAX_BYTES = 512 shl 10
 
     /**
-     * 单边像素上限，**与客户端解码时的上限一致**（`PayQrTexture` / `TierIconTextures` 的 MAX_SIDE）。
+     * 单边像素上限，**与客户端解码时的上限一致**
+     * （`PayQrTexture` / `TierIconTextures` / `IdCardBackgroundTexture` 的 MAX_SIDE）。
      *
      * ⚠ 服务端必须在**这里**就拦下来：客户端超限是**静默忽略**（只写日志），服主只会看到
      * 「图没生效」，根本不知道是尺寸的问题。拦在这里还能顺着保存配置那条路报给服主。

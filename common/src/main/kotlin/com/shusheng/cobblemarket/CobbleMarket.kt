@@ -77,6 +77,8 @@ object CobbleMarket {
 		PointMarketNetwork.register()
 		// 上架通知（1.2.2 新增，上浮时与本线独有的 RP 那几行并存）
 		MarketNoticeNetwork.register()
+		// 市场 ID 卡背景图（可替换贴图：服务端读配置目录 → 下发字节 → 客户端动态纹理）
+		com.shusheng.cobblemarket.network.IdCardNetwork.register()
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()
 		TransactionHistory.register()

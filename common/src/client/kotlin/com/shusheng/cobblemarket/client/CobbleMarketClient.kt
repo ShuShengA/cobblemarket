@@ -346,6 +346,17 @@ object CobbleMarketClient {
             }
         }
 
+        // 市场 ID 卡背景图：把服务端下发的字节解成动态纹理。
+        // 界面每帧读缓存（IdCardBackgroundTexture.get），所以这里不用额外通知谁重画
+        registerS2C(
+            com.shusheng.cobblemarket.network.IdCardBackgroundPayload.ID,
+            com.shusheng.cobblemarket.network.IdCardBackgroundPayload.CODEC
+        ) { payload ->
+            MinecraftClient.getInstance().execute {
+                IdCardBackgroundTexture.accept(payload.fileName, payload.bytes)
+            }
+        }
+
         registerS2C(MarketDataPayload.ID, MarketDataPayload.CODEC) { payload ->
             val client = MinecraftClient.getInstance()
             client.execute {
