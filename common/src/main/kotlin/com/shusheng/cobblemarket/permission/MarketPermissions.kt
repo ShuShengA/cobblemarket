@@ -115,6 +115,18 @@ object MarketPermissions {
     const val POINTS_SHOP = PREFIX + "points.shop"
 
     /**
+     * 玩家总览：查看**全服每个玩家**的市场与经济数据 —— 余额、挂单数、可借额度、已借与剩余、
+     * 存款与已赚利息、图鉴遇见 / 捕捉数、封禁与禁借状态（2026-10-15 用户拍板新开）。
+     *
+     * ⚠ **授予即等于让对方看到全服所有人的余额与债务** —— 节点授予是全给、收不回来，
+     *   服主得清楚自己给出去的是什么（节点说明里也写了这句）。
+     * ⚠ 它不塞进 [FINANCE]：这张表跨了市场与金融（有挂单数），塞进金融语义不符。
+     * ⚠ 1.3.x 上 `/market points top`（全服余额排行）**与它共用本节点**（那条命令原本只服主）——
+     *   否则会出现「界面里看得见、敲命令却被拒」的怪事。1.2.x 没有那条命令。
+     */
+    const val OVERVIEW = PREFIX + "overview"
+
+    /**
      * 全部管理节点（快照、入口判定、`/market perm list` 与权限编辑界面的按钮都用它）。
      * **顺序 = 权限编辑弹窗里按钮的排列顺序**（按此顺序交替分列，每行两个）。
      *
@@ -126,17 +138,19 @@ object MarketPermissions {
      *   但它们在弹窗里的落点由本列表顺序决定，别再假设「位置 = 面板按钮位置」。
      * 末尾四个是本线（1.3.0）的 RP 节点，同样两两成行：
      *   查余额｜兑换码 / 充值订单｜RP 商城（**先只读后写**，与上面那批同一习惯）。
+     * 最后是 [OVERVIEW]（从 1.2.2 上浮上来的「玩家总览」）—— **有意排在最末**：
+     *   它本身就是「看全服」的重权限；且 14 个正好凑满 7 行（与 13 个同高，权限弹窗高度不变）。
      * 改这里的顺序会同时改掉界面按钮与 list 输出的顺序。
      *
      * ⚠ **加 / 删节点时权限弹窗的高度会跟着变**：`PermissionScreen` 的高度由本列表长度推导
-     *   （两列、每行 2 个），别再手写死高度。13 个 = 7 行 = 214 高。
+     *   （两列、每行 2 个），别再手写死高度。14 个 = 7 行 = 214 高。
      *
      * ⚠ 原 `CONFIG`（服务器配置）节点已于 2026-09-23 删除：服务器配置改为**服主专属**，
      * 不再作为可授予的节点 —— 想放权就把对方 UUID 加进 `serverOwners`。
      */
     val ALL = listOf(
         MARKET, HISTORY, BAN, BLACKLIST, PRICE_LIMIT, AUCTION, BUY_ORDER, FINANCE, MARKET_SWITCH,
-        POINTS_CHECK, POINTS_CODE, POINTS_ORDER, POINTS_SHOP
+        POINTS_CHECK, POINTS_CODE, POINTS_ORDER, POINTS_SHOP, OVERVIEW
     )
 
     /**

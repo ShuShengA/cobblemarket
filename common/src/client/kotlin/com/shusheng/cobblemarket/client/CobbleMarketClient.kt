@@ -346,14 +346,24 @@ object CobbleMarketClient {
             }
         }
 
-        // 市场 ID 卡背景图：把服务端下发的字节解成动态纹理。
+        // 市场 ID 卡背景图：服务端回应（新图 / 没变 / 没配）⇒ 更新客户端那张动态纹理。
         // 界面每帧读缓存（IdCardBackgroundTexture.get），所以这里不用额外通知谁重画
         registerS2C(
             com.shusheng.cobblemarket.network.IdCardBackgroundPayload.ID,
             com.shusheng.cobblemarket.network.IdCardBackgroundPayload.CODEC
         ) { payload ->
             MinecraftClient.getInstance().execute {
-                IdCardBackgroundTexture.accept(payload.fileName, payload.bytes)
+                IdCardBackgroundTexture.accept(payload.version, payload.bytes)
+            }
+        }
+
+        // 全服玩家总览：服务端把全服行一次下发 ⇒ 存进缓存，界面自己读（搜索/排序在客户端本地做）
+        registerS2C(
+            com.shusheng.cobblemarket.network.PlayerOverviewPayload.ID,
+            com.shusheng.cobblemarket.network.PlayerOverviewPayload.CODEC
+        ) { payload ->
+            MinecraftClient.getInstance().execute {
+                PlayerOverviewCache.accept(payload.rows)
             }
         }
 
