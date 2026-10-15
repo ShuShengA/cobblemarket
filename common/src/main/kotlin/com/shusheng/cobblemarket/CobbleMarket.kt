@@ -79,6 +79,7 @@ object CobbleMarket {
 		MarketNoticeNetwork.register()
 		// 市场 ID 卡背景图（可替换贴图：服务端读配置目录 → 下发字节 → 客户端动态纹理）
 		com.shusheng.cobblemarket.network.IdCardNetwork.register()
+		com.shusheng.cobblemarket.network.PlayerOverviewNetwork.register()
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()
 		TransactionHistory.register()
@@ -93,6 +94,9 @@ object CobbleMarket {
 			// 收款码 / RP 券图目录：启动时就建好 + 各落一份说明，服主打开 config 就知道图该往哪放
 			com.shusheng.cobblemarket.currency.PayQrImage.ensureDir()
 			com.shusheng.cobblemarket.currency.TierIconImage.ensureDir()
+			// 配置目录的读图缓存（ID 卡背景图等）同理：虽按文件 mtime 自失效，
+			// 但静态状态不该跨世界，统一起点更干净
+			com.shusheng.cobblemarket.util.ConfigImage.reset()
 			// 世界加载前校验 PersistentState 数据文件：损坏则从 .bak 恢复，再制作新备份
 			com.shusheng.cobblemarket.util.StateBackup.verifyAndBackup(server)
 		}
@@ -153,6 +157,8 @@ object CobbleMarket {
 			// 玩家退出时 MC 立即保存其玩家数据（货/钱已扣就此落盘），模组状态立即追上，
 			// 否则此后杀进程/崩溃会形成错位导致货蒸发（见 PersistHelper 注释）
 			com.shusheng.cobblemarket.util.PersistHelper.onPlayerDisconnect(player.server)
+			// 总览的离线快照：记下这一刻的余额与图鉴数（离线期间它们不会再变，见 PlayerSnapshotState）
+			com.shusheng.cobblemarket.overview.PlayerOverviewService.onPlayerDisconnect(player)
 		}
 		// 交易后节流全量落盘的定时检查（见 PersistHelper）
 		onServerTickEnd { server ->
@@ -165,6 +171,8 @@ object CobbleMarket {
 			com.shusheng.cobblemarket.currency.rewards.PointsRewards.onServerTick(server)
 			// RP 余额排行导出：按配置分钟数节流，**内容没变就不碰磁盘**（见 PointsRankingExport）
 			com.shusheng.cobblemarket.currency.PointsRankingExport.tick(server)
+			// 总览快照兜底刷新（内部 5 分钟节流、只刷在线的；正常下线另有下线事件兜）
+			com.shusheng.cobblemarket.overview.PlayerOverviewService.tick(server)
 			// 喵喵紫卡/黑卡丢弃即消失扫描（0.5 秒节流，近乎立即可见消失；
 			// 非持有者背包自删走物品自身的 inventoryTick，无需服务器扫描）
 			if (++cardScanTick >= 10) {

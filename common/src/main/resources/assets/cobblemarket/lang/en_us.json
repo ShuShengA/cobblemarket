@@ -554,6 +554,8 @@
   "cobblemarket.perm.node.points.order.desc": "Confirm / void top-up orders\n(confirming adds %s)",
   "cobblemarket.perm.node.points.shop": "%s Shop",
   "cobblemarket.perm.node.points.shop.desc": "Add / edit / remove items\n(what players buy with %s)",
+  "cobblemarket.perm.node.overview": "Player Overview",
+  "cobblemarket.perm.node.overview.desc": "View every player's economy data\n(balance, listings, loans, deposits, interest, Pokédex)\nNote: reveals everyone's balance and debt",
   "cobblemarket.perm.panel.pokemon": "View / remove any\nplayer's Pokémon listings",
   "cobblemarket.perm.panel.item": "View / remove any\nplayer's item listings",
   "cobblemarket.perm.need_node": "'%s' node required\n(granted by the server owner)",
