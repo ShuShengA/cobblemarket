@@ -66,6 +66,8 @@ object CobbleMarket {
 		SoundNetwork.register()
 		ObjectPreviewNetwork.register()
 		MarketNoticeNetwork.register()
+		// 市场 ID 卡背景图（可替换贴图：服务端读配置目录 → 下发字节 → 客户端动态纹理）
+		com.shusheng.cobblemarket.network.IdCardNetwork.register()
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()
 		TransactionHistory.register()
