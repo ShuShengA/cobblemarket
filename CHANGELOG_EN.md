@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.1 (in development, unreleased)
+## 1.2.1 (released)
 
 ⚠ **Server and client must be updated together** (this release changes the packet format).
 
