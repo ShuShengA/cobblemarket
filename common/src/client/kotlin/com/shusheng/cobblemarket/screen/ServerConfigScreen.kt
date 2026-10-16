@@ -44,8 +44,6 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         NumDef("cobblemarket.op.scfg_anti_snipe", true) to "antiSnipe",
         NumDef("cobblemarket.op.scfg_max_auctions", true) to "maxAuctions",
         NumDef("cobblemarket.op.scfg_auction_durations", false) to "auctionDurations",
-        // 市场 ID 卡的背景图文件名（空 = 用模组内置那张）；图放 config/cobblemarket/idcard/
-        NumDef("cobblemarket.op.scfg_id_card_bg", false) to "idCardBackground",
         NumDef("cobblemarket.op.scfg_buyorder_fee", false) to "buyOrderFee",
         NumDef("cobblemarket.op.scfg_buyorder_days", true) to "buyOrderExpiry",
         NumDef("cobblemarket.op.scfg_max_buyorders", true) to "maxBuyOrders",
@@ -54,6 +52,13 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     private val toggleDefs = listOf(
         "cobblemarket.op.scfg_egg_trading" to "eggTrading",
     )
+
+    /**
+     * ID 卡背景图那一行 —— **有意不放进 [numDefs]**：它不属于任何功能块（上架 / 拍卖 / 求购 / 金融），
+     * 要排在**蛋交易之后**（用户 2026-10-16 要求它靠后）。
+     * 界面的建控件 / 重排 / 刷新 / 渲染都靠「按调用顺序自增 row」⇒ 只要**调用顺序**对就行。
+     */
+    private val ID_CARD_DEF = NumDef("cobblemarket.op.scfg_id_card_bg", false)
 
     private val numFields = mutableMapOf<String, TextFieldWidget>()
     private val toggleButtons = mutableMapOf<String, NineSliceButton>()
@@ -66,7 +71,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     private val localToggles = mutableMapOf<String, Boolean>()
     private var savedToastUntil = 0L
     // +1 = 喵喵银行配置入口行（左标签 + 右「配置」按钮）
-    private val totalRows = numDefs.size + toggleDefs.size + 1
+    // +1 = 喵喵银行入口行；再 +1 = ID 卡背景图行（它不在 numDefs 里，见 ID_CARD_DEF）
+    private val totalRows = numDefs.size + toggleDefs.size + 2
     private var financeOpenButton: NineSliceButton? = null
 
     // ── 蛋交易二次确认弹窗（照 AdminScreen 原模板：开启有 3 秒冷静期，蛋可绕过精灵黑名单） ──
@@ -116,7 +122,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         super.init()
         val dialogX = width / 2 - dialogW / 2
         val startY = listStartY()
-        numDefs.forEach { (def, key) ->
+        fun buildNumRow(def: NumDef, key: String) {
             // 输入框右缘钉死贴 ↺ 按钮左缘（间隙 2px），宽度一律**往左长**（见 ConfigFieldLayout）
             val isDurations = key == "auctionDurations"
             // ID 卡背景图是**文件名**（可能带中文 / 空格 / 点）⇒ 既不限字符集、也不限小数
@@ -159,6 +165,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             resetButtons[key] = resetBtn
             addDrawableChild(resetBtn)
         }
+        numDefs.forEach { (def, key) -> buildNumRow(def, key) }
         toggleDefs.forEach { (_, key) ->
             val btn = NineSliceButton(
                 dialogX + dialogW - 10 - 22, startY, 22, 22,
@@ -198,6 +205,12 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             { client?.setScreen(FinanceConfigScreen()) }
         )
         addDrawableChild(financeOpenButton)
+        // ID 卡背景图：**排在蛋交易之后**（它不在 numDefs 里，见 ID_CARD_DEF）。
+        // ⚠ 必须**建出控件**再调 rebuildPositions —— `placeNumField` 第一行就是
+        //   `numFields[key] ?: return`，缺这一步会**占不到 row**、后面所有行整体上移一格；
+        //   而且**不能放进下面那个 `if (savedFieldTexts != null)` 分支**里：
+        //   那个分支只在「确认弹窗关闭 / resize 重建」时走，首次打开走的是 else（2026-10-16 实测栽过）
+        buildNumRow(ID_CARD_DEF, "idCardBackground")
         rebuildPositions()
         // 确认弹窗关闭/resize 走 clearChildren+init 重建：恢复未提交的编辑，且不重新请求快照
         // （请求会把本地编辑的开关状态冲回服务端旧值——蛋交易确认后按钮图标变回关就是这个原因）
@@ -244,6 +257,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         }
         numDefs.forEach { (def, key) -> placeNumField(def, key) }
         toggleDefs.forEach { (_, key) -> placeToggle(key) }
+        placeNumField(ID_CARD_DEF, "idCardBackground")
         // 喵喵银行配置入口行（列表末尾：标签「喵喵银行」+ 右侧「配置」按钮）
         val y = startY + (row - scrollOffset) * rowHeight
         val visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
@@ -268,6 +282,14 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 // ⚠ 设完值要把光标挪回开头：光标默认停在**末尾**，而框窄、只围绕光标显示一段，
                 //   长值（拍卖档位 "720,1440,…"）就会只露出尾巴，看着像"配置被改了"（2026-09-22 用户报）
                 field.setCursor(0, false)
+            }
+        }
+        // ID 卡背景图那行**不在 numDefs 里**（见 ID_CARD_DEF），单独刷一次 ——
+        // 判据同上：聚焦中的输入框不覆盖，光标挪回开头
+        numFields["idCardBackground"]?.let { f ->
+            if (focused !== f) {
+                f.text = payload.idCardBackground
+                f.setCursor(0, false)
             }
         }
         // 服务端快照到达：本地开关状态重置（保存回发 / 打开时首次填充）
@@ -645,6 +667,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         }
         numDefs.forEach { (def, key) -> drawNumRow(def, key) }
         toggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
+        // ID 卡背景图：**排在蛋交易之后**（不在 numDefs 里）
+        drawNumRow(ID_CARD_DEF, "idCardBackground")
         // 喵喵银行配置入口行（列表末尾）
         if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
             val rowY = startY + (row - scrollOffset) * rowHeight
