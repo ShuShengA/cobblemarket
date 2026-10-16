@@ -293,7 +293,7 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
             centerX + 42, iconY, iconSize, iconSize,
             Text.literal(""),
             { openIfPermitted(MarketPermissions.OVERVIEW) { client?.setScreen(PlayerOverviewScreen()) } },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/personal.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/personal.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,

@@ -21,11 +21,15 @@ import java.io.File
 object ConfigImage {
 
     /**
-     * 512KB：这类图正常几十 KB，这个上限只是兜底。
-     * ⚠ 不取 1MB —— MC 的 `PacketByteBuf.writeByteArray` 自带 1MB 上限（含长度前缀），
-     * 顶着那个值写会直接抛异常；留一半余量稳妥。
+     * **1016KB**：ID 卡那种**整屏背景**用料很大 —— 模组内置那张 795KB、服主定制的实测到过 974KB，
+     * 所以一路放宽到贴着网络包上限。
+     *
+     * ⚠ **1MB（1048576）是 MC 的硬顶** —— `CustomPayloadS2CPacket.MAX_PAYLOAD_SIZE`，
+     *   反编译确认过；图片要装在那个包里下发。留 8KB 给包 ID / 文件名 / 长度前缀。
+     *   ⚠ 超过这个数**不是"图被拒"那么简单**：包一封就会断连 —— 所以这里必须拦死。
+     *   真需要更大的图，只能改成分块传输（多包发送、客户端重组），那是另一件事。
      */
-    const val MAX_BYTES = 512 shl 10
+    const val MAX_BYTES = 1016 shl 10
 
     /**
      * 单边像素上限，**与客户端解码时的上限一致**

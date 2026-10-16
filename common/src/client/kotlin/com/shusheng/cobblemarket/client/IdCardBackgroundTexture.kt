@@ -73,7 +73,7 @@ object IdCardBackgroundTexture {
             )
             return
         }
-        // 纹理尺寸上限：即便服务端已限 512KB，解压后的像素仍可能很大（PNG 压缩率高）
+        // 纹理尺寸上限：即便服务端已限 1MB，解压后的像素仍可能很大（PNG 压缩率高）
         if (image.width <= 0 || image.height <= 0 || image.width > MAX_SIDE || image.height > MAX_SIDE) {
             com.shusheng.cobblemarket.CobbleMarket.LOGGER.warn(
                 "ID card background ({}) has an unreasonable size ({}x{}); ignored",
