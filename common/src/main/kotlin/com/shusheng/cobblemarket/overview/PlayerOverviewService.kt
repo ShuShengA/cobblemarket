@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.overview
 
 import com.shusheng.cobblemarket.config.CurrencyHandler
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.finance.FinanceService
 import com.shusheng.cobblemarket.finance.FinanceState
 import com.shusheng.cobblemarket.finance.LoanRecord
@@ -87,7 +88,9 @@ object PlayerOverviewService {
         val pokemonListingCount = countBy(market.getActiveListings()) { it.sellerUuid }
         val itemListingCount = countBy(itemMarket.getActiveListings()) { it.sellerUuid }
         val auctionCount = countBy(auctions.getActiveAuctions()) { it.sellerUuid }
-        val buyOrderCount = countBy(buyOrders.getOpenOrders()) { it.buyerUuid }
+        // ⚠ 1.3.x 的求购单**按币种分开**（`getOpenOrders(currency)` 必须传币种）——
+        //   总览这一行要的是「这个人一共挂了几单」，所以**两种币种都算上**
+        val buyOrderCount = countBy(MarketCurrency.entries.flatMap { buyOrders.getOpenOrders(it) }) { it.buyerUuid }
         val loansByPlayer = mutableMapOf<UUID, MutableList<LoanRecord>>()
         finance.getAllLoans().forEach { loansByPlayer.getOrPut(it.playerUuid) { mutableListOf() }.add(it) }
 
