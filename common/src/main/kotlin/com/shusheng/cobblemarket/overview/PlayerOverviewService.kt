@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.overview
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.config.CurrencyHandler
 import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.PointsState
 import com.shusheng.cobblemarket.finance.FinanceService
 import com.shusheng.cobblemarket.finance.FinanceState
 import com.shusheng.cobblemarket.finance.LoanRecord
@@ -87,6 +88,10 @@ object PlayerOverviewService {
         val finance = FinanceState.get(server)
         val bans = BanState.get(server)
         val snapshots = PlayerSnapshotState.get(server)
+        // RP 余额（1.3.x 独有）：**一次性取出 state**，别在循环里逐人 `get(server)`
+        val pointsState = PointsState.get(server)
+        // RP 总开关关着 ⇒ 整行不显示（传 null）。判据放服务端：客户端读不到 config
+        val pointsOn = CobbleMarketConfig.pointsEnabled
 
         val pokemonListingCount = countBy(market.getActiveListings()) { it.sellerUuid }
         val itemListingCount = countBy(itemMarket.getActiveListings()) { it.sellerUuid }
@@ -165,6 +170,9 @@ object PlayerOverviewService {
                 totalVolume = finance.getTotalCountedVolumeOf(uuid),
                 dexSeen = dexSeen,
                 dexCaught = dexCaught,
+                // RP 余额：**永远实时**（不像主货币要分「在线实时 / 离线读快照」）
+                // —— 它存在自己的 PersistentState 里，玩家离线期间没有任何东西会动它
+                pointsBalance = if (pointsOn) pointsState.getBalance(uuid) else null,
             )
         }
     }

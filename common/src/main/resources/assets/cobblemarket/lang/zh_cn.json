@@ -584,6 +584,7 @@
   "cobblemarket.overview.group.status": "状态",
   "cobblemarket.overview.group.dex": "图鉴",
   "cobblemarket.overview.field.balance": "主货币余额",
+  "cobblemarket.overview.field.points": "RP 余额",
   "cobblemarket.overview.field.pco": "PCO 余额",
   "cobblemarket.overview.field.pending_balance": "待领余额",
   "cobblemarket.overview.field.credit_limit": "剩余额度",
