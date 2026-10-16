@@ -1,6 +1,9 @@
 package com.shusheng.cobblemarket.overview
 
+import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.config.CurrencyHandler
+import com.shusheng.cobblemarket.platform.cobecoAvailable
+import com.shusheng.cobblemarket.platform.cobecoGetBalance
 import com.shusheng.cobblemarket.finance.FinanceService
 import com.shusheng.cobblemarket.finance.FinanceState
 import com.shusheng.cobblemarket.finance.LoanRecord
@@ -115,6 +118,11 @@ object PlayerOverviewService {
             val balance = if (player != null) {
                 runCatching { CurrencyHandler.getBalance(player).toLong() }.getOrNull()
             } else snapshot?.balance
+            // PCO 余额：装了 Cobblemon Economy 才有这个概念（它收 UUID ⇒ 离线也准）；
+            // ⚠ 主货币本来就是 PCO 时跳过 —— 那会跟上面那行重复显示同一个数
+            val pco = if (cobecoAvailable() && CobbleMarketConfig.cobecoCurrency != "PCO") {
+                runCatching { cobecoGetBalance(uuid, true)?.toLong() }.getOrNull()
+            } else null
             val dex = if (player != null) FinanceService.getDexCounts(server, uuid) else null
             val dexSeen = dex?.seen ?: snapshot?.dexSeen
             val dexCaught = dex?.caught ?: snapshot?.dexCaught
@@ -136,6 +144,7 @@ object PlayerOverviewService {
                 pendingItems = itemMarket.getPendingReturns(uuid).size,
                 pendingBalance = market.getPendingBalance(uuid),
                 balance = balance,
+                pcoBalance = pco,
                 fromSnapshot = !online,
                 creditLimit = creditLimit,
                 debt = debt,
@@ -156,6 +165,16 @@ object PlayerOverviewService {
             )
         }
     }
+
+    /**
+     * 单人行 —— **ID 卡**用（玩家看自己）。
+     *
+     * ⚠ 有意直接筛 [buildRows] 的结果，而不是另写一条单人查询：这样 ID 卡与总览悬停窗的内容
+     *   由**同一份代码**保证一致（方案要的就是"逐项一致"），也不会两份逻辑各自漂移。
+     *   代价是开一次 ID 卡会算一遍全服（几毫秒、界面打开时一次）—— 这个量级无所谓。
+     */
+    fun buildRow(server: MinecraftServer, uuid: UUID): PlayerOverviewRow? =
+        buildRows(server).firstOrNull { it.uuid == uuid }
 
     /** 按 uuid 计数（各表一次遍历用，避免逐人全表扫描） */
     private fun <T> countBy(items: Collection<T>, key: (T) -> UUID): Map<UUID, Int> {
