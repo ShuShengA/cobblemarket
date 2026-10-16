@@ -2,11 +2,15 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.IdCardBackgroundTexture
 import com.shusheng.cobblemarket.client.IdCardDataCache
+import com.shusheng.cobblemarket.client.OVERVIEW_ICON_W
 import com.shusheng.cobblemarket.client.OverviewLine
 import com.shusheng.cobblemarket.client.amountUnitWidth
 import com.shusheng.cobblemarket.client.drawAmountWithUnit
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
+import com.shusheng.cobblemarket.client.drawLineIcon
+import com.shusheng.cobblemarket.client.lineIconY
+import com.shusheng.cobblemarket.client.lineTextY
 import com.shusheng.cobblemarket.client.overviewLines
 import com.shusheng.cobblemarket.util.TextUtil
 import com.mojang.blaze3d.systems.RenderSystem
@@ -67,6 +71,14 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
          *   （2026-10-16 用户实测问「为什么变大了」），所以位置用满、大小单独收一点。
          */
         const val MODEL_SCALE = 0.85f
+
+        /**
+         * 模型整体**下移**的像素数 —— 给「戴了模组的帽子 / 装了个子更高的模型」留顶部余量
+         * （用户 2026-10-16 要求；模型是**居中**于那块区域的，上下各只剩 ~17px）。
+         * ⚠ 别调太大：实测整体下移 18px 就会让脚压到品牌字（2026-10-16 第二轮实测）。
+         * ⚠ 只挪区域、不改区域高度 ⇒ 模型的**缩放不变**（size 是按区域高度算的）。
+         */
+        const val MODEL_DROP = 10
     }
 
     /** 金额行的命中框：界面显示的是**缩写**（`9.8k`），鼠标停上来时用完整千分位展全 */
@@ -199,10 +211,11 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
 
         // ⚠ 位置是 2026-10-16 用户**两轮**实测定下来的：区域取满「内框顶 → 品牌字顶」整块，
         //   既不留余量也不下移 —— 第一次留 85% 余量显得偏上，第二次整体下移 18px 又压住了品牌字
+        // ➕ 再按用户要求整体下移 MODEL_DROP：戴帽子的模型更高，顶部原来会贴着内框上沿
         val x1 = geo.innerLeft.toInt()
-        val y1 = geo.innerTop.toInt()
+        val y1 = geo.innerTop.toInt() + MODEL_DROP
         val x2 = geo.split.toInt()
-        val y2 = geo.titleTop.toInt()
+        val y2 = geo.titleTop.toInt() + MODEL_DROP
         val modelBottom = y2
 
         // ⚠ 1.21.1 里这个方法叫 `drawEntity`（旧名 renderEntityInInventoryFollowsMouse 已不存在，
@@ -224,7 +237,8 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
     // ── 右侧：两列信息（与总览悬停窗同一份文本，只是排成两列）──
 
     private fun drawInfoColumns(context: DrawContext, row: com.shusheng.cobblemarket.overview.PlayerOverviewRow, geo: Geometry) {
-        val lines = overviewLines(row)
+        // showOnline = false：自己看自己必然在线，名字后面不跟「在线」（用户 2026-10-16 指出）
+        val lines = overviewLines(row, showOnline = false)
         amountHits.clear()
         // ⚠ 按**分组块**分列，一块不拆开 —— 2026-10-16 用户实测指出：原先按"前半 / 后半"硬切，
         //   会出现「钱」这个标题落在左列末尾、它的内容（主货币余额）却跑到右列开头的割裂
@@ -235,29 +249,37 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
         val startY = geo.innerTop + 18f
         val colGap = 8f
         val colW = (geo.innerRight - geo.split - colGap) / 2f
-        val lineH = 10
 
         columns.forEachIndexed { ci, col ->
             val x = startX + ci * (colW + colGap)
-            col.forEachIndexed { li, line ->
-                val y = startY + li * lineH
+            // ⚠ 行高**逐行累加**（不是 `下标 × 10`）—— 带图标的那两行比普通行高（OVERVIEW_ICON_ROW_HEIGHT）
+            var y = startY
+            col.forEach { line ->
+                // ⚠ 行内位置**只用这两个算式**（与悬停窗共用同一份，别在这里另算一遍 —— 两处各算迟早不同步）
+                val rowY = y.toInt()
+                val textY = lineTextY(rowY, line)
+                val iconY = lineIconY(rowY, line)
                 // ⚠ 截断到列宽，别让长文案压到内框右边那条线。
                 //   用 `truncateStyled`：它会**保住词条参数里那段的颜色**，而 `truncateText`
                 //   只留顶层样式，会把金额的颜色抹掉。
                 //   ⚠ 还得**扣掉货币单位的宽度** —— 单位是截断之后另外补画的，
                 //     不扣的话文字截到线内、单位照样顶出去（2026-10-16 用户实测报的就是这个）
                 val unitW = if (line.money) currencyUnitWidth(textRenderer) else 0
-                val text = TextUtil.truncateStyled(line.text, (colW.toInt() - unitW).coerceAtLeast(0))
-                val drawn = context.drawTextWithShadow(textRenderer, text, x.toInt(), y.toInt(), 0xFFFFFF)
+                // 行首有图标时（图鉴那两行）：文字要**右移**、截断宽度也要把图标那块扣掉
+                val iconW = if (line.icon != null) OVERVIEW_ICON_W else 0
+                val text = TextUtil.truncateStyled(line.text, (colW.toInt() - unitW - iconW).coerceAtLeast(0))
+                line.icon?.let { drawLineIcon(context, it, x.toInt(), iconY) }
+                val drawn = context.drawTextWithShadow(textRenderer, text, (x + iconW).toInt(), textY, 0xFFFFFF)
                 // 金额行：数字的颜色已由词条参数自带（金 = 能花的钱 / 蓝 = 额度、待还），这里只补行尾的单位
                 if (line.money) {
-                    drawCurrencyUnit(context, textRenderer, drawn, y.toInt(), line.color)
+                    drawCurrencyUnit(context, textRenderer, drawn, textY, line.color)
                     // 记下命中框 —— 界面上是缩写，鼠标停上来要能展全完整千分位
                     line.fullAmount?.let {
                         val endX = drawn + currencyUnitWidth(textRenderer)
-                        amountHits += AmountHit(x.toInt(), y.toInt(), endX - x.toInt(), it)
+                        amountHits += AmountHit(x.toInt(), textY, endX - x.toInt(), it)
                     }
                 }
+                y += line.height
             }
         }
     }

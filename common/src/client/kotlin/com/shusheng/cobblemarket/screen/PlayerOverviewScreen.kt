@@ -1,10 +1,14 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.OVERVIEW_ICON_W
 import com.shusheng.cobblemarket.client.PlayerOverviewCache
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
+import com.shusheng.cobblemarket.client.drawLineIcon
 import com.shusheng.cobblemarket.client.formatPriceLong
+import com.shusheng.cobblemarket.client.lineIconY
+import com.shusheng.cobblemarket.client.lineTextY
 import com.shusheng.cobblemarket.client.noneValue
 import com.shusheng.cobblemarket.client.overviewLines
 import com.shusheng.cobblemarket.overview.PlayerOverviewRow
@@ -346,12 +350,19 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         //   （2026-10-16 用户实测报「货币符号超出右侧边框」）
         val unitW = currencyUnitWidth(textRenderer)
         var maxWidth = 0
-        lines.forEach { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.text) + if (it.money) unitW else 0) }
+        // 面板总高 = 各行高度**之和**（带图标的那两行比普通行高，见 OVERVIEW_ICON_ROW_HEIGHT）
+        var contentH = 0
+        lines.forEach {
+            // 图标行还要把行首那块图标算进去（图鉴那两行）
+            val iconW = if (it.icon != null) OVERVIEW_ICON_W else 0
+            maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.text) + iconW + if (it.money) unitW else 0)
+            contentH += it.height
+        }
 
         val padding = 4
         val (tx, ty) = TooltipPlacement.place(
             mouseX = mouseX, mouseY = mouseY,
-            textW = maxWidth, textH = lines.size * 10 + padding, pad = padding,
+            textW = maxWidth, textH = contentH + padding, pad = padding,
             screenW = width, screenH = height
         ) ?: return
 
@@ -361,17 +372,26 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         //   （2026-10-16 用户实测报「分割线透过悬停窗」）
         context.fill(
             tx - padding, ty - padding,
-            tx + maxWidth + padding, ty + lines.size * 10 + padding,
+            tx + maxWidth + padding, ty + contentH + padding,
             0xF0101010.toInt()
         )
         drawNineSlice(
             context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding,
-            maxWidth + 2 * padding, lines.size * 10 + 2 * padding, 1, ROW_BACKGROUND_TEX_H
+            maxWidth + 2 * padding, contentH + 2 * padding, 1, ROW_BACKGROUND_TEX_H
         )
-        lines.forEachIndexed { i, line ->
-            val drawn = context.drawTextWithShadow(textRenderer, line.text, tx, ty + i * 10, 0xFFFFFF)
+        // ⚠ 行 y 同样**逐行累加**（不是 `下标 × 10`）—— 带图标的那两行更高
+        var rowY = ty
+        lines.forEach { line ->
+            // ⚠ 行内位置**只用这两个算式**（与 ID 卡共用同一份，别在这里另算一遍）
+            val textY = lineTextY(rowY, line)
+            val iconY = lineIconY(rowY, line)
+            // 行首图标（图鉴那两行）—— 文字要**右移**，别压在图标上
+            val iconW = if (line.icon != null) OVERVIEW_ICON_W else 0
+            line.icon?.let { drawLineIcon(context, it, tx, iconY) }
+            val drawn = context.drawTextWithShadow(textRenderer, line.text, tx + iconW, textY, 0xFFFFFF)
             // 金额行：数字的颜色已由词条参数自带（金 = 能花的钱 / 蓝 = 额度、待还），这里只补行尾的单位
-            if (line.money) drawCurrencyUnit(context, textRenderer, drawn, ty + i * 10, line.color)
+            if (line.money) drawCurrencyUnit(context, textRenderer, drawn, textY, line.color)
+            rowY += line.height
         }
         context.matrices.pop()
     }
