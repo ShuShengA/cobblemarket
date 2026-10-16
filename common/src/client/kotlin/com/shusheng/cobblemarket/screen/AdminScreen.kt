@@ -285,6 +285,26 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         ))
         menuButtons += addDrawableChild(marketSwitchBtn!!)
 
+        // 玩家总览入口（2026-10-16）：在「服务器配置」**左侧**（用户 2026-10-15 定）。
+        // ⚠ 它与旁边两颗的判据不同：**不看服主身份**，有 overview 节点就能进
+        //   （`canManage` 认「有任何节点」，所以节点持有人本来就进得来管理面板）。
+        // ⚠ 图标是**占位**（personal.png，语义最接近"玩家"）—— 用户会给正式的，换 iconLeft 一行即可。
+        val overviewBtn = NineSliceButton(
+            centerX + 42, iconY, iconSize, iconSize,
+            Text.literal(""),
+            { openIfPermitted(MarketPermissions.OVERVIEW) { client?.setScreen(PlayerOverviewScreen()) } },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/personal.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+            // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
+            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
+        )
+        overviewBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(
+            Text.translatable("cobblemarket.perm.node.overview")
+                .append(Text.literal("\n"))
+                .append(Text.translatable("cobblemarket.perm.node.overview.desc"))
+        ))
+        menuButtons += addDrawableChild(overviewBtn)
+
         val serverConfigBtn = NineSliceButton(
             centerX + iconRowHalf - iconSize, iconY, iconSize, iconSize,
             Text.literal(""),
@@ -385,6 +405,8 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         permRefreshers += { marketSwitchBtn?.dimmed = !ClientPermissionCache.has(MarketPermissions.MARKET_SWITCH) }
         permRefreshers += { serverConfigBtn.dimmed = !ClientPermissionCache.isServerOwner() }
         permRefreshers += { permissionBtn.dimmed = !ClientPermissionCache.isServerOwner() }
+        // 玩家总览：走 overview 节点（与旁边两颗「只限服主」的不同）；没节点的 OP 看得到置灰按钮 + 悬停说明
+        permRefreshers += { overviewBtn.dimmed = !ClientPermissionCache.has(MarketPermissions.OVERVIEW) }
         refreshPermissionState()
 
         // resize 重建按钮后 visible 全是 true，停市确认弹窗开着时需恢复隐藏（老坑，照入口界面）

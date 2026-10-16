@@ -37,76 +37,12 @@ data class PlayerOverviewPayload(val rows: List<PlayerOverviewRow>) : CustomPayl
         val CODEC: PacketCodec<PacketByteBuf, PlayerOverviewPayload> = PacketCodec.of(
             { p, b ->
                 b.writeVarInt(p.rows.size)
-                p.rows.forEach { r ->
-                    b.writeUuid(r.uuid)
-                    b.writeString(r.name)
-                    b.writeBoolean(r.online)
-                    b.writeVarInt(r.pokemonListings)
-                    b.writeVarInt(r.itemListings)
-                    b.writeVarInt(r.activeAuctions)
-                    b.writeVarInt(r.openBuyOrders)
-                    b.writeVarInt(r.pendingPokemon)
-                    b.writeVarInt(r.pendingItems)
-                    b.writeLong(r.pendingBalance)
-                    b.writeBoolean(r.balance != null)
-                    r.balance?.let { b.writeLong(it) }
-                    b.writeBoolean(r.fromSnapshot)
-                    b.writeLong(r.creditLimit)
-                    b.writeLong(r.debt)
-                    b.writeLong(r.debtInterest)
-                    b.writeLong(r.depositPrincipal)
-                    b.writeLong(r.depositInterest)
-                    b.writeLong(r.netDeposit)
-                    b.writeBoolean(r.overdue)
-                    b.writeBoolean(r.badDebt)
-                    b.writeBoolean(r.purpleCard)
-                    b.writeBoolean(r.blackCard)
-                    b.writeBoolean(r.banned)
-                    b.writeBoolean(r.banUntil != null)
-                    r.banUntil?.let { b.writeLong(it) }
-                    b.writeBoolean(r.loanBlocked)
-                    b.writeLong(r.totalVolume)
-                    b.writeBoolean(r.dexSeen != null)
-                    r.dexSeen?.let { b.writeVarInt(it) }
-                    b.writeBoolean(r.dexCaught != null)
-                    r.dexCaught?.let { b.writeVarInt(it) }
-                }
+                p.rows.forEach { r -> OverviewRowCodec.write(b, r) }
             },
             { b ->
                 val n = b.readVarInt()
                 // ⚠ 读端一律**具名传参**：顺序写错会静默串位（整列显示错位，编译不报）—— 照 BanChangesPayload
-                PlayerOverviewPayload(List(n) {
-                    PlayerOverviewRow(
-                        uuid = b.readUuid(),
-                        name = b.readString(),
-                        online = b.readBoolean(),
-                        pokemonListings = b.readVarInt(),
-                        itemListings = b.readVarInt(),
-                        activeAuctions = b.readVarInt(),
-                        openBuyOrders = b.readVarInt(),
-                        pendingPokemon = b.readVarInt(),
-                        pendingItems = b.readVarInt(),
-                        pendingBalance = b.readLong(),
-                        balance = if (b.readBoolean()) b.readLong() else null,
-                        fromSnapshot = b.readBoolean(),
-                        creditLimit = b.readLong(),
-                        debt = b.readLong(),
-                        debtInterest = b.readLong(),
-                        depositPrincipal = b.readLong(),
-                        depositInterest = b.readLong(),
-                        netDeposit = b.readLong(),
-                        overdue = b.readBoolean(),
-                        badDebt = b.readBoolean(),
-                        purpleCard = b.readBoolean(),
-                        blackCard = b.readBoolean(),
-                        banned = b.readBoolean(),
-                        banUntil = if (b.readBoolean()) b.readLong() else null,
-                        loanBlocked = b.readBoolean(),
-                        totalVolume = b.readLong(),
-                        dexSeen = if (b.readBoolean()) b.readVarInt() else null,
-                        dexCaught = if (b.readBoolean()) b.readVarInt() else null,
-                    )
-                })
+                PlayerOverviewPayload(List(n) { OverviewRowCodec.read(b) })
             }
         )
     }
@@ -132,4 +68,81 @@ object PlayerOverviewNetwork {
             sendToPlayer(player, PlayerOverviewPayload(PlayerOverviewService.buildRows(player.server)))
         }
     }
+}
+
+/**
+ * 一行的读写 —— **总览与 ID 卡共用同一份**（两处各写一遍的话，加字段时迟早只改一处 ⇒ 静默串位）。
+ *
+ * ⚠ **读端一律具名传参**：顺序写错会静默串位（整列显示错位，编译不报），照 `BanChangesPayload`。
+ */
+internal object OverviewRowCodec {
+
+    fun write(b: PacketByteBuf, r: PlayerOverviewRow) {
+        b.writeUuid(r.uuid)
+        b.writeString(r.name)
+        b.writeBoolean(r.online)
+        b.writeVarInt(r.pokemonListings)
+        b.writeVarInt(r.itemListings)
+        b.writeVarInt(r.activeAuctions)
+        b.writeVarInt(r.openBuyOrders)
+        b.writeVarInt(r.pendingPokemon)
+        b.writeVarInt(r.pendingItems)
+        b.writeLong(r.pendingBalance)
+        b.writeBoolean(r.balance != null)
+        r.balance?.let { b.writeLong(it) }
+        b.writeBoolean(r.pcoBalance != null)
+        r.pcoBalance?.let { b.writeLong(it) }
+        b.writeBoolean(r.fromSnapshot)
+        b.writeLong(r.creditLimit)
+        b.writeLong(r.debt)
+        b.writeLong(r.debtInterest)
+        b.writeLong(r.depositPrincipal)
+        b.writeLong(r.depositInterest)
+        b.writeLong(r.netDeposit)
+        b.writeBoolean(r.overdue)
+        b.writeBoolean(r.badDebt)
+        b.writeBoolean(r.purpleCard)
+        b.writeBoolean(r.blackCard)
+        b.writeBoolean(r.banned)
+        b.writeBoolean(r.banUntil != null)
+        r.banUntil?.let { b.writeLong(it) }
+        b.writeBoolean(r.loanBlocked)
+        b.writeLong(r.totalVolume)
+        b.writeBoolean(r.dexSeen != null)
+        r.dexSeen?.let { b.writeVarInt(it) }
+        b.writeBoolean(r.dexCaught != null)
+        r.dexCaught?.let { b.writeVarInt(it) }
+    }
+
+    fun read(b: PacketByteBuf): PlayerOverviewRow = PlayerOverviewRow(
+        uuid = b.readUuid(),
+        name = b.readString(),
+        online = b.readBoolean(),
+        pokemonListings = b.readVarInt(),
+        itemListings = b.readVarInt(),
+        activeAuctions = b.readVarInt(),
+        openBuyOrders = b.readVarInt(),
+        pendingPokemon = b.readVarInt(),
+        pendingItems = b.readVarInt(),
+        pendingBalance = b.readLong(),
+        balance = if (b.readBoolean()) b.readLong() else null,
+        pcoBalance = if (b.readBoolean()) b.readLong() else null,
+        fromSnapshot = b.readBoolean(),
+        creditLimit = b.readLong(),
+        debt = b.readLong(),
+        debtInterest = b.readLong(),
+        depositPrincipal = b.readLong(),
+        depositInterest = b.readLong(),
+        netDeposit = b.readLong(),
+        overdue = b.readBoolean(),
+        badDebt = b.readBoolean(),
+        purpleCard = b.readBoolean(),
+        blackCard = b.readBoolean(),
+        banned = b.readBoolean(),
+        banUntil = if (b.readBoolean()) b.readLong() else null,
+        loanBlocked = b.readBoolean(),
+        totalVolume = b.readLong(),
+        dexSeen = if (b.readBoolean()) b.readVarInt() else null,
+        dexCaught = if (b.readBoolean()) b.readVarInt() else null,
+    )
 }
