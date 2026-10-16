@@ -67,10 +67,33 @@ object CardNames {
     private var genesisPlain: String? = null
     private var genesisText: Text? = null
 
-    /** 喵·紫电卡（紫水晶紫 ↔ 电黄 交替，颜色沿文字流动） */
-    fun volt(): Text {
+    // 「去掉前缀」版单独一套缓存 —— ⚠ 别和上面共用：两者会在同一帧里先后被调用，共键会互相清空、每帧重建
+    private var voltShortTick = Long.MIN_VALUE
+    private var voltShortPlain: String? = null
+    private var voltShortText: Text? = null
+
+    private var genesisShortTick = Long.MIN_VALUE
+    private var genesisShortPlain: String? = null
+    private var genesisShortText: Text? = null
+
+    /**
+     * 喵·紫电卡（紫水晶紫 ↔ 电黄 交替，颜色沿文字流动）。
+     * [withPrefix] = false ⇒ **只出卡名本身、不带「喵·」** —— 窄格子里带前缀会撑不下
+     * （2026-10-16 用户要求：界面里直接用卡片名字，别加 Meowth·）。
+     */
+    fun volt(withPrefix: Boolean = true): Text {
         val t = tick()
         val plain = plainName("cobblemarket.card.purple_name")
+        if (!withPrefix) {
+            if (voltShortText == null || t != voltShortTick || plain != voltShortPlain) {
+                voltShortTick = t
+                voltShortPlain = plain
+                voltShortText = buildShort(plain) { i ->
+                    VOLT_PALETTE[Math.floorMod(i - shift(VOLT_PALETTE.size), VOLT_PALETTE.size)]
+                }
+            }
+            return voltShortText!!
+        }
         if (voltText == null || t != voltTick || plain != voltPlain) {
             voltTick = t
             voltPlain = plain
@@ -81,10 +104,22 @@ object CardNames {
         return voltText!!
     }
 
-    /** 喵·金轮卡（18 属性色循环流动） */
-    fun genesis(): Text {
+    /**
+     * 喵·金轮卡（18 属性色循环流动）。[withPrefix] = false 同 [volt]：只出卡名本身。
+     */
+    fun genesis(withPrefix: Boolean = true): Text {
         val t = tick()
         val plain = plainName("cobblemarket.card.black_name")
+        if (!withPrefix) {
+            if (genesisShortText == null || t != genesisShortTick || plain != genesisShortPlain) {
+                genesisShortTick = t
+                genesisShortPlain = plain
+                genesisShortText = buildShort(plain) { i ->
+                    TYPE_COLORS[Math.floorMod(i - shift(TYPE_COLORS.size), TYPE_COLORS.size)]
+                }
+            }
+            return genesisShortText!!
+        }
         if (genesisText == null || t != genesisTick || plain != genesisPlain) {
             genesisTick = t
             genesisPlain = plain
@@ -93,6 +128,15 @@ object CardNames {
             }
         }
         return genesisText!!
+    }
+
+    /** 同 [build]，但**不带「喵·」前缀**、只给卡名逐字着色（窄格子用） */
+    private fun buildShort(plain: String, colorAt: (Int) -> Int): Text {
+        val out = Text.empty()
+        val dot = plain.indexOf('·')
+        val name = if (dot < 0) plain else plain.substring(dot + 1)
+        name.forEachIndexed { i, c -> out.append(colored(c, colorAt(i))) }
+        return out
     }
 
     /**

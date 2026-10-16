@@ -301,6 +301,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             maxBuyOrders = p?.maxBuyOrders ?: 5,
             eggTrading = p?.eggTrading ?: false,
             auctionDurations = p?.auctionDurations ?: "",
+            idCardBackground = p?.idCardBackground ?: "",
             // 金融字段提交编辑值
             financeEnabled = localToggles["financeEnabled"] ?: (p?.financeEnabled ?: false),
             cashLoanEnabled = localToggles["cashLoan"] ?: (p?.cashLoanEnabled ?: true),

@@ -51,6 +51,8 @@ data class ServerConfigDataPayload(
     val eggTrading: Boolean,
     /** 拍卖时长选项，逗号分隔（分钟）；服务端解析为 List<Int> */
     val auctionDurations: String,
+    /** 市场 ID 卡的背景图文件名（空 = 用内置图）；图放 `config/cobblemarket/idcard/` */
+    val idCardBackground: String,
     // ── 金融系统（喵喵银行）配置 ──
     val financeEnabled: Boolean,
     val cashLoanEnabled: Boolean,
@@ -120,6 +122,7 @@ data class ServerConfigDataPayload(
                 b.writeInt(p.maxBuyOrders)
                 b.writeBoolean(p.eggTrading)
                 b.writeString(p.auctionDurations)
+                b.writeString(p.idCardBackground)
                 b.writeBoolean(p.financeEnabled)
                 b.writeBoolean(p.cashLoanEnabled)
                 b.writeBoolean(p.consumerLoanEnabled)
@@ -182,6 +185,7 @@ data class ServerConfigDataPayload(
                 maxBuyOrders = b.readInt(),
                 eggTrading = b.readBoolean(),
                 auctionDurations = b.readString(),
+                idCardBackground = b.readString(),
                 financeEnabled = b.readBoolean(),
                 cashLoanEnabled = b.readBoolean(),
                 consumerLoanEnabled = b.readBoolean(),
@@ -250,6 +254,8 @@ data class SaveServerConfigPayload(
     val eggTrading: Boolean,
     /** 拍卖时长选项，逗号分隔（分钟）；服务端解析为 List<Int>，解析失败保持旧值 */
     val auctionDurations: String,
+    /** 市场 ID 卡的背景图文件名（空 = 用内置图） */
+    val idCardBackground: String,
     // ── 金融系统（喵喵银行）配置 ──
     val financeEnabled: Boolean,
     val cashLoanEnabled: Boolean,
@@ -317,6 +323,7 @@ data class SaveServerConfigPayload(
                 b.writeInt(p.maxBuyOrders)
                 b.writeBoolean(p.eggTrading)
                 b.writeString(p.auctionDurations)
+                b.writeString(p.idCardBackground)
                 b.writeBoolean(p.financeEnabled)
                 b.writeBoolean(p.cashLoanEnabled)
                 b.writeBoolean(p.consumerLoanEnabled)
@@ -379,6 +386,7 @@ data class SaveServerConfigPayload(
                 maxBuyOrders = b.readInt(),
                 eggTrading = b.readBoolean(),
                 auctionDurations = b.readString(),
+                idCardBackground = b.readString(),
                 financeEnabled = b.readBoolean(),
                 cashLoanEnabled = b.readBoolean(),
                 consumerLoanEnabled = b.readBoolean(),
@@ -450,6 +458,20 @@ object ServerConfigNetwork {
             server.execute {
                 applyAll(payload)
                 CobbleMarketConfig.save()
+                // ⚠ ID 卡背景图：配了文件名却**读不出来**（不存在 / 不是 PNG / 超限）⇒ 当场给服主一句红字。
+                //   图的问题必须让配的人立刻知道 —— 否则他只会看到"界面没变化"，以为配置没生效
+                //   （2026-10-16 用户实测报「填了错误的名字也不提示」）。
+                //   「没配」（空串）是正常状态，不提示。
+                val bgName = payload.idCardBackground.trim()
+                if (bgName.isNotEmpty() &&
+                    com.shusheng.cobblemarket.ui.IdCardBackgroundImage.loadVersioned(bgName) == null
+                ) {
+                    player.sendMessage(
+                        net.minecraft.text.Text.translatable("cobblemarket.op.scfg_id_card_bg_bad", bgName)
+                            .formatted(net.minecraft.util.Formatting.RED),
+                        false
+                    )
+                }
                 // 保存成功反馈音（管理操作不回 MarketResultPayload，避免刷聊天栏，只给一声结果音）
                 sendResultSound(player)
                 sendToPlayer(player, snapshot())
@@ -474,6 +496,7 @@ object ServerConfigNetwork {
         maxBuyOrders = CobbleMarketConfig.maxBuyOrdersPerPlayer,
         eggTrading = CobbleMarketConfig.eggTradingEnabled,
         auctionDurations = CobbleMarketConfig.auctionDurationOptions.joinToString(","),
+        idCardBackground = CobbleMarketConfig.idCardBackground,
         financeEnabled = CobbleMarketConfig.financeEnabled,
         cashLoanEnabled = CobbleMarketConfig.cashLoanEnabled,
         creditCooldown = CobbleMarketConfig.creditLimitCooldownHours,
@@ -537,6 +560,7 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setMaxBuyOrdersPerPlayer(p.maxBuyOrders)
         CobbleMarketConfig.setEggTradingEnabled(p.eggTrading)
         CobbleMarketConfig.setAuctionDurationOptions(p.auctionDurations)
+        CobbleMarketConfig.setIdCardBackground(p.idCardBackground)
         CobbleMarketConfig.setFinanceEnabled(p.financeEnabled)
         CobbleMarketConfig.setCreditLimitCooldownHours(p.creditCooldown)
         CobbleMarketConfig.setDailyDepositRate(p.dailyDepositRate)
