@@ -69,11 +69,12 @@ data class PlayerOverviewRow(
 
     // ── RP（1.3.x 独有）──
     /**
-     * RP 余额；**null = RP 总开关关着**（整行不显示，与 [pcoBalance] 同理）。
+     * RP 余额 —— **恒显示**（RP 总开关关着也照画，显示 0）：用户 2026-10-17 拍板「0 也显示」。
+     * ⚠ 别按 [pcoBalance] 那种「没这个概念就整行不画」处理 —— 这一行总是要在的。
      *
      * ⚠ 与 [balance] **正好相反**：RP **永远实时**（在线的、离线的都准）—— 它存在自己的
      *   PersistentState 里、玩家离线期间不会有任何东西动它（主货币那套才会被别的模组改）
      *   ⇒ **不进快照**，也不区分在线离线。
      */
-    val pointsBalance: Long?,
+    val pointsBalance: Long,
 )

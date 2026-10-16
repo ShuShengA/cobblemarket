@@ -89,9 +89,8 @@ object PlayerOverviewService {
         val bans = BanState.get(server)
         val snapshots = PlayerSnapshotState.get(server)
         // RP 余额（1.3.x 独有）：**一次性取出 state**，别在循环里逐人 `get(server)`
+        // ⚠ **不看 RP 总开关** —— 用户 2026-10-17 拍板「0 也显示」（关着就是 0，照样画这一行）
         val pointsState = PointsState.get(server)
-        // RP 总开关关着 ⇒ 整行不显示（传 null）。判据放服务端：客户端读不到 config
-        val pointsOn = CobbleMarketConfig.pointsEnabled
 
         val pokemonListingCount = countBy(market.getActiveListings()) { it.sellerUuid }
         val itemListingCount = countBy(itemMarket.getActiveListings()) { it.sellerUuid }
@@ -172,7 +171,7 @@ object PlayerOverviewService {
                 dexCaught = dexCaught,
                 // RP 余额：**永远实时**（不像主货币要分「在线实时 / 离线读快照」）
                 // —— 它存在自己的 PersistentState 里，玩家离线期间没有任何东西会动它
-                pointsBalance = if (pointsOn) pointsState.getBalance(uuid) else null,
+                pointsBalance = pointsState.getBalance(uuid),
             )
         }
     }
