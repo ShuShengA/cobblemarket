@@ -29,6 +29,12 @@ data class PlayerOverviewRow(
     /** 主货币余额；**null = 拿不到**（离线且还没记过快照 —— 老存档升级后第一次看到就是这样，界面显示「—」） */
     val balance: Long?,
     /**
+     * **PCO 余额**（Cobblemon Economy 的 PokeCoins —— 与 PokeDollars 是**两套独立账本**）。
+     * null = 没装 CE / 主货币本来就是 PCO（那行会重复）/ 读不到。
+     * ⚠ CE 的接口收 **UUID** ⇒ **离线也能实时读**，不走快照。
+     */
+    val pcoBalance: Long?,
+    /**
      * true = **余额与图鉴读的是离线快照**（界面给这两行标一句灰字「离线时记录」）。
      * 其余字段走的都是按 UUID 存的 State，离线也准 —— 只有这两个需要特殊处理。
      */
