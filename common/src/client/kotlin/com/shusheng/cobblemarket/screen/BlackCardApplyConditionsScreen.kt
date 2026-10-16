@@ -209,6 +209,7 @@ class BlackCardApplyConditionsScreen : Screen(CardNames.label("cobblemarket.op.b
             maxBuyOrders = p?.maxBuyOrders ?: 5,
             eggTrading = p?.eggTrading ?: false,
             auctionDurations = p?.auctionDurations ?: "",
+            idCardBackground = p?.idCardBackground ?: "",
             financeEnabled = p?.financeEnabled ?: false,
             cashLoanEnabled = p?.cashLoanEnabled ?: true,
             consumerLoanEnabled = p?.consumerLoanEnabled ?: true,

@@ -32,9 +32,11 @@ class NineSliceButton(
     // 第二图标（并排绘制，间距 1px；性别按钮不限态用 ♂♀ 双图标）
     var iconLeft2: Identifier? = null,
     // 图标贴图实际尺寸与缩放（6×8 性别图标用 iconTexW=6/iconTexH=8/iconScale=1.5）
-    private val iconTexW: Int = 24,
-    private val iconTexH: Int = 24,
-    private val iconScale: Float = 0.5f,
+    // ⚠ 这三个是 **var**（2026-10-16 起）：ID 卡入口的图标要**跟随服主换的背景图**——
+    //   那是一张运行时才知道尺寸的动态纹理，构造时定不下来，只能每帧同步。
+    var iconTexW: Int = 24,
+    var iconTexH: Int = 24,
+    var iconScale: Float = 0.5f,
     // 可选悬停词条（图标化按钮构造即挂上，替代文字说明）
     tooltip: Text? = null,
     // 可选背景纹理（默认按钮九宫格；入口右下角小按钮用 row_background）

@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.ClientPermissionCache
+import com.shusheng.cobblemarket.client.IdCardBackgroundTexture
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.permission.RequestPermissionSnapshotPayload
 import com.shusheng.cobblemarket.client.activeCurrencyUnit
@@ -45,6 +46,15 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     // 弹窗打开期间需要整体隐藏的下层控件（closeSettingsDialog 的 init 重建会恢复）
     private val entryButtons = mutableListOf<ClickableWidget>()
+
+    // ── 市场 ID 卡入口（底部居中）──
+    /** 入口按钮本体：图标要每帧跟随背景图，所以留个引用（见 [syncIdCardIcon]） */
+    private var idCardButton: NineSliceButton? = null
+    /** 图标显示边长（按钮 22×22 留 2px 边距，照同排的求购单 / 设置） */
+    private val idCardIconW = 18
+    /** 内置背景图尺寸（服主没配 / 图还没到时用它，与 IdCardScreen 里那份一致） */
+    private val idCardBuiltinW = 1280
+    private val idCardBuiltinH = 940
     private var settingsOpen = false
     private var settingsMarketButton: NineSliceButton? = null
     private var settingsAuctionButton: NineSliceButton? = null
@@ -290,6 +300,26 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 纯图标按钮：悬停提示名称（无障碍与可读性）
         buyOrderBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.buy_order")))
         entryButtons += addDrawableChild(buyOrderBtn)
+
+        // 市场 ID 卡入口（2026-10-16）：**底部居中**，位置对应管理面板那颗「市场开关」。
+        // ⚠ 图标**不是固定贴图**：跟随服主换的背景图（没配 = 内置背景缩小版）⇒ 尺寸/缩放每帧同步，
+        //   所以 NineSliceButton 的 iconTexW/iconTexH/iconScale 这三个参数被改成了 var。
+        val idCardBtn = NineSliceButton(
+            centerX - cornerSize / 2, cornerY, cornerSize, cornerSize,
+            Text.literal(""),
+            { client?.setScreen(IdCardScreen()) },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/id_card_background.png"),
+            iconTexW = idCardBuiltinW, iconTexH = idCardBuiltinH,
+            iconScale = idCardIconW.toFloat() / idCardBuiltinW,
+            // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
+            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
+        )
+        idCardBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.idcard.title")))
+        entryButtons += addDrawableChild(idCardBtn)
+        idCardButton = idCardBtn
+
+        // 顺便问一次背景图：服主换图后，入口按钮的图标下次打开这个界面就跟着变（服务端没变只回版本号）
+        IdCardBackgroundTexture.requestRefresh()
 
         // 喵喵银行（金融系统入口）：求购单右侧，所有玩家可见；与求购单间隙 4px（同总开关→服务器配置间隙）
         // 不套 openIfMarketEnabled：关市期间看账/还款照常可用，界面内「新增借贷」按钮再按开关禁用（只拦新交易不卡资产）
@@ -930,7 +960,23 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         return (minOf(1f, kv, kh) * OAK_BASE_SCALE).coerceAtLeast(0.25f)
     }
 
+    /**
+     * ID 卡入口的图标**每帧跟随背景图**：服主换了自己的图 ⇒ 图标跟着换；没配 = 内置背景缩小版。
+     * 幂等、只是给几个字段赋值，放心每帧调。
+     */
+    private fun syncIdCardIcon() {
+        val btn = idCardButton ?: return
+        val entry = IdCardBackgroundTexture.get()
+        val w = entry?.width ?: idCardBuiltinW
+        btn.iconLeft = entry?.id ?: Identifier.of("cobblemarket", "textures/gui/id_card_background.png")
+        btn.iconTexW = w
+        btn.iconTexH = entry?.height ?: idCardBuiltinH
+        // 按**宽度**缩到图标边长（很宽的图会跟着变矮 —— 「直接缩整张」的必然结果，用户已知）
+        btn.iconScale = idCardIconW.toFloat() / w
+    }
+
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        syncIdCardIcon()
         // 打开入口的掉落动画（照购买精灵动画，个人设置可关）：
         // 下落+停留阶段只画暗底+掉落图；淡出阶段完整渲染入口界面、掉落图渐透明——界面随图淡出慢慢显现
         val animElapsed = System.currentTimeMillis() - dropAnimStart

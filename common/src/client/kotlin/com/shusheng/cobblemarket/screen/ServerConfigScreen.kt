@@ -44,6 +44,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         NumDef("cobblemarket.op.scfg_anti_snipe", true) to "antiSnipe",
         NumDef("cobblemarket.op.scfg_max_auctions", true) to "maxAuctions",
         NumDef("cobblemarket.op.scfg_auction_durations", false) to "auctionDurations",
+        // 市场 ID 卡的背景图文件名（空 = 用模组内置那张）；图放 config/cobblemarket/idcard/
+        NumDef("cobblemarket.op.scfg_id_card_bg", false) to "idCardBackground",
         NumDef("cobblemarket.op.scfg_buyorder_fee", false) to "buyOrderFee",
         NumDef("cobblemarket.op.scfg_buyorder_days", true) to "buyOrderExpiry",
         NumDef("cobblemarket.op.scfg_max_buyorders", true) to "maxBuyOrders",
@@ -117,6 +119,9 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         numDefs.forEach { (def, key) ->
             // 输入框右缘钉死贴 ↺ 按钮左缘（间隙 2px），宽度一律**往左长**（见 ConfigFieldLayout）
             val isDurations = key == "auctionDurations"
+            // ID 卡背景图是**文件名**（可能带中文 / 空格 / 点）⇒ 既不限字符集、也不限小数
+            // ⚠ 只挡路径分隔符，其余一律交给服务端的 ConfigImage 校验（防路径穿越它自己会拦 + 记日志）
+            val isFileName = key == "idCardBackground"
             val fieldW = ConfigFieldLayout.configFieldWidth(textRenderer, dialogW, key, def.labelKey)
             val field = TextFieldWidget(
                 textRenderer, ConfigFieldLayout.configFieldRight(dialogX, dialogW) - fieldW,
@@ -125,11 +130,12 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             field.setTextPredicate { text ->
                 when {
                     isDurations -> text.all { it.isDigit() || it == ',' }
+                    isFileName -> text.none { it == '/' || it == '\\' }
                     def.isInt -> text.all { it.isDigit() }
                     else -> text.all { it.isDigit() || it == '.' }
                 }
             }
-            field.setMaxLength(if (isDurations) 60 else 10)
+            field.setMaxLength(if (isDurations || isFileName) 60 else 10)
             numFields[key] = field
             addSelectableChild(field)
             addDrawableChild(field)
@@ -142,6 +148,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                     numFields[key]?.text = when (key) {
                         // 拍卖时长重置 = 恢复默认档位（快照值可能已被服主改过，重置回快照等于没变）
                         "auctionDurations" -> "720,1440,2880,4320"
+                        // ID 卡背景图重置 = 清空（= 用模组内置的那张）
+                        "idCardBackground" -> ""
                         else -> snapshotText(key, null)
                     }
                     // 同上：光标回开头，长值才不会只显示尾巴
@@ -254,6 +262,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 field.text = when (key) {
                     "auctionDurations" -> payload.auctionDurations
                     "loanPlans" -> payload.loanPlans
+                    "idCardBackground" -> payload.idCardBackground
                     else -> snapshotText(key, payload)
                 }
                 // ⚠ 设完值要把光标挪回开头：光标默认停在**末尾**，而框窄、只围绕光标显示一段，
@@ -378,6 +387,9 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             eggTrading = localToggles["eggTrading"] ?: (p?.eggTrading ?: false),
             auctionDurations = numFields["auctionDurations"]?.text.orEmpty()
                 .ifBlank { p?.auctionDurations ?: "" },
+            // ⚠ **别照拍卖时长那样 ifBlank 回退旧值** —— 对背景图来说「空」是合法状态
+            //   （= 用模组内置那张）。回退旧值会让服主**再也清不掉**已填的名字（2026-10-16 用户实测）
+            idCardBackground = numFields["idCardBackground"]?.text.orEmpty(),
             // 金融字段全部回填快照原值（已迁移到 FinanceConfigScreen 编辑）
             financeEnabled = p?.financeEnabled ?: false,
             cashLoanEnabled = p?.cashLoanEnabled ?: true,

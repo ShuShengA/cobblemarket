@@ -4,6 +4,8 @@ import com.shusheng.cobblemarket.network.SpeciesRestPayload
 import com.shusheng.cobblemarket.permission.PermissionAuditPayload
 import com.shusheng.cobblemarket.permission.PermissionListDataPayload
 import com.shusheng.cobblemarket.screen.PermissionScreen
+import com.shusheng.cobblemarket.screen.PlayerOverviewScreen
+import com.shusheng.cobblemarket.screen.IdCardScreen
 import com.shusheng.cobblemarket.permission.PermissionSnapshotPayload
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.network.AuctionDurationsPayload
@@ -269,6 +271,16 @@ object CobbleMarketClient {
         ) { payload ->
             MinecraftClient.getInstance().execute {
                 PlayerOverviewCache.accept(payload.rows)
+            }
+        }
+
+        // ID 卡（自己那张）：服务端只回自己一行
+        registerS2C(
+            com.shusheng.cobblemarket.network.IdCardDataPayload.ID,
+            com.shusheng.cobblemarket.network.IdCardDataPayload.CODEC
+        ) { payload ->
+            MinecraftClient.getInstance().execute {
+                IdCardDataCache.accept(payload.row)
             }
         }
 
@@ -1134,4 +1146,5 @@ internal fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean
         s is BlackCardConfigScreen || s is BlackCardApplyScreen || s is BlackCardApplyConditionsScreen || s is ItemVariantSelectScreen ||
         s is AdminFinanceScreen ||
         s is MeowthBankScreen || s is LoanScreen || s is LoanHistoryScreen || s is RepayScreen || s is MeowthPayScreen ||
-        s is DepositScreen || s is BalanceHudPositionScreen
+        s is DepositScreen || s is BalanceHudPositionScreen ||
+        s is PlayerOverviewScreen || s is IdCardScreen
