@@ -32,6 +32,12 @@ class OverviewLine(
     val icon: LineIcon? = null,
     /** 这一行占的高度 —— 普通行 [OVERVIEW_LINE_HEIGHT]，带图标的行见 [OVERVIEW_ICON_ROW_HEIGHT] */
     val height: Int = OVERVIEW_LINE_HEIGHT,
+    /**
+     * 金额行是不是 **RP** —— 决定行尾补哪种单位：RP 是**图标字形**、主货币是 `₽` 或那件物品的图标。
+     * ⚠ 这两种**绝不能混**（见 `CurrencyDisplay.kt` 顶部的红线）：一条金额属于哪套账本，
+     *   就只画那一套的单位。
+     */
+    val isPoints: Boolean = false,
 )
 
 /**
@@ -169,6 +175,12 @@ fun overviewLines(
     val balance = r.balance
     out += if (balance == null) line("cobblemarket.overview.field.balance", noneValue())
     else moneyLine("cobblemarket.overview.field.balance", balance, OVERVIEW_GOLD)
+    // RP 余额（**1.3.x 独有**）：与主货币是**两套账本**，单独列一行；能花的钱 ⇒ 金色。
+    // ⚠ 它走 `isPoints = true`（行尾补 RP 图标），而**不是**主货币那套单位。
+    // ⚠ null = RP 总开关关着 ⇒ 整行不画（判据在服务端，见 PlayerOverviewRow.pointsBalance）
+    r.pointsBalance?.let {
+        out += moneyLine("cobblemarket.overview.field.points", it, OVERVIEW_GOLD, isPoints = true)
+    }
     // PCO 余额（装了 CE 且主货币不是 PCO 时才有）—— 与主货币是**两套独立账本**，单独列一行
     r.pcoBalance?.let { out += moneyLine("cobblemarket.overview.field.pco", it, OVERVIEW_GOLD) }
 
@@ -269,9 +281,14 @@ private fun line(labelKey: String, value: String, color: Int? = null): OverviewL
  * ⚠ 缩写规则复用 `formatPriceShortLong`：**负数的符号先摘出来再缩写**（它内部处理好了），
  *   别自己写一套。
  */
-private fun moneyLine(labelKey: String, amount: Long, color: Int): OverviewLine =
+private fun moneyLine(labelKey: String, amount: Long, color: Int, isPoints: Boolean = false): OverviewLine =
     line(labelKey, formatPriceShortLong(amount), color)
-        .let { OverviewLine(it.text, money = true, color = color, fullAmount = formatPriceLong(amount)) }
+        .let {
+            OverviewLine(
+                it.text, money = true, color = color,
+                fullAmount = formatPriceLong(amount), isPoints = isPoints,
+            )
+        }
 
 /** 值本身就是个带样式的 **Text**（如 § 色码逐字滚动的卡片名）—— 别先 `.string` 再包一层，样式会丢 */
 private fun lineText(labelKey: String, value: Text): OverviewLine =

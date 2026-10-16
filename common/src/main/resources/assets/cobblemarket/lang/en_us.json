@@ -586,6 +586,7 @@
   "cobblemarket.overview.group.status": "Status",
   "cobblemarket.overview.group.dex": "Pokédex",
   "cobblemarket.overview.field.balance": "Balance",
+  "cobblemarket.overview.field.points": "RP balance",
   "cobblemarket.overview.field.pco": "PCO balance",
   "cobblemarket.overview.field.pending_balance": "Pending balance",
   "cobblemarket.overview.field.credit_limit": "Credit",

@@ -134,14 +134,14 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
     /** 完整金额的小面板（照 `MarketEntryScreen.renderAmountTooltip`：鼠标右上、贴屏边兜底） */
     private fun renderAmountTooltip(context: DrawContext, mx: Int, my: Int, amount: String) {
         val pad = 4
-        val w = amountUnitWidth(textRenderer, amount) + 2 * pad
+        val w = amountUnitWidth(textRenderer, amount, false) + 2 * pad
         val h = 14
         val tx = minOf(mx + 12, width - w - 4)
         val ty = maxOf(my - h - 4, 0)
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx, ty, w, h, 1, ROW_BACKGROUND_TEX_H)
-        drawAmountWithUnit(context, textRenderer, amount, tx + pad, ty + 3, 0xFFD700.toInt())
+        drawAmountWithUnit(context, textRenderer, amount, false, tx + pad, ty + 3, 0xFFD700.toInt())
         context.matrices.pop()
     }
 
@@ -264,7 +264,8 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
                 //   只留顶层样式，会把金额的颜色抹掉。
                 //   ⚠ 还得**扣掉货币单位的宽度** —— 单位是截断之后另外补画的，
                 //     不扣的话文字截到线内、单位照样顶出去（2026-10-16 用户实测报的就是这个）
-                val unitW = if (line.money) currencyUnitWidth(textRenderer) else 0
+                // ⚠ 单位宽度/画法都**按这一行的币种**：RP 行补 RP 图标、主货币行补 ₽ / 物品图标
+                val unitW = if (line.money) currencyUnitWidth(textRenderer, line.isPoints) else 0
                 // 行首有图标时（图鉴那两行）：文字要**右移**、截断宽度也要把图标那块扣掉
                 val iconW = if (line.icon != null) OVERVIEW_ICON_W else 0
                 val text = TextUtil.truncateStyled(line.text, (colW.toInt() - unitW - iconW).coerceAtLeast(0))
@@ -272,10 +273,10 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
                 val drawn = context.drawTextWithShadow(textRenderer, text, (x + iconW).toInt(), textY, 0xFFFFFF)
                 // 金额行：数字的颜色已由词条参数自带（金 = 能花的钱 / 蓝 = 额度、待还），这里只补行尾的单位
                 if (line.money) {
-                    drawCurrencyUnit(context, textRenderer, drawn, textY, line.color)
+                    drawCurrencyUnit(context, textRenderer, line.isPoints, drawn, textY, line.color)
                     // 记下命中框 —— 界面上是缩写，鼠标停上来要能展全完整千分位
                     line.fullAmount?.let {
-                        val endX = drawn + currencyUnitWidth(textRenderer)
+                        val endX = drawn + currencyUnitWidth(textRenderer, line.isPoints)
                         amountHits += AmountHit(x.toInt(), textY, endX - x.toInt(), it)
                     }
                 }

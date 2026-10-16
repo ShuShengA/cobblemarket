@@ -112,6 +112,9 @@ internal object OverviewRowCodec {
         r.dexSeen?.let { b.writeVarInt(it) }
         b.writeBoolean(r.dexCaught != null)
         r.dexCaught?.let { b.writeVarInt(it) }
+        // RP 余额（1.3.x 独有）：null = RP 总开关关着 ⇒ 客户端不画这一行
+        b.writeBoolean(r.pointsBalance != null)
+        r.pointsBalance?.let { b.writeLong(it) }
     }
 
     fun read(b: PacketByteBuf): PlayerOverviewRow = PlayerOverviewRow(
@@ -144,5 +147,6 @@ internal object OverviewRowCodec {
         totalVolume = b.readLong(),
         dexSeen = if (b.readBoolean()) b.readVarInt() else null,
         dexCaught = if (b.readBoolean()) b.readVarInt() else null,
+        pointsBalance = if (b.readBoolean()) b.readLong() else null,
     )
 }

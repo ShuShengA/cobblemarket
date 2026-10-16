@@ -322,10 +322,10 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
 
             // 右侧：当前排序字段的值（右对齐行尾；排序字段是名字时这一格不画）
             val value = rowValueText(r) ?: return@forEachIndexed
-            val unitW = if (isMoney) currencyUnitWidth(textRenderer) else 0
+            val unitW = if (isMoney) currencyUnitWidth(textRenderer, false) else 0
             val valueX = leftX + panelWidth - 5 - textRenderer.getWidth(value) - unitW
             val drawn = context.drawTextWithShadow(textRenderer, value, valueX, y + 8, 0x55FFFF)
-            if (isMoney) drawCurrencyUnit(context, textRenderer, drawn, y + 8, 0x55FFFF)
+            if (isMoney) drawCurrencyUnit(context, textRenderer, false, drawn, y + 8, 0x55FFFF)
         }
 
         // 悬停窗 = 行的完整版（方案第二节那一整张表）
@@ -348,14 +348,16 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         val lines = overviewLines(r)
         // ⚠ 金额行行尾还要补货币单位 ⇒ 宽度得把它算进去，否则单位会顶出面板右缘
         //   （2026-10-16 用户实测报「货币符号超出右侧边框」）
-        val unitW = currencyUnitWidth(textRenderer)
         var maxWidth = 0
         // 面板总高 = 各行高度**之和**（带图标的那两行比普通行高，见 OVERVIEW_ICON_ROW_HEIGHT）
         var contentH = 0
         lines.forEach {
             // 图标行还要把行首那块图标算进去（图鉴那两行）
             val iconW = if (it.icon != null) OVERVIEW_ICON_W else 0
-            maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.text) + iconW + if (it.money) unitW else 0)
+            // ⚠ 单位宽度**按行算**：RP 行补的是 RP 图标、主货币行补 ₽ / 物品图标，两者宽度不同 ——
+            //   共用一个宽度会把 RP 行的单位算错、顶出面板右缘
+            val unitW = if (it.money) currencyUnitWidth(textRenderer, it.isPoints) else 0
+            maxWidth = maxOf(maxWidth, textRenderer.getWidth(it.text) + iconW + unitW)
             contentH += it.height
         }
 
@@ -390,7 +392,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
             line.icon?.let { drawLineIcon(context, it, tx, iconY) }
             val drawn = context.drawTextWithShadow(textRenderer, line.text, tx + iconW, textY, 0xFFFFFF)
             // 金额行：数字的颜色已由词条参数自带（金 = 能花的钱 / 蓝 = 额度、待还），这里只补行尾的单位
-            if (line.money) drawCurrencyUnit(context, textRenderer, drawn, textY, line.color)
+            if (line.money) drawCurrencyUnit(context, textRenderer, line.isPoints, drawn, textY, line.color)
             rowY += line.height
         }
         context.matrices.pop()
