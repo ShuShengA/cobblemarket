@@ -177,10 +177,8 @@ fun overviewLines(
     else moneyLine("cobblemarket.overview.field.balance", balance, OVERVIEW_GOLD)
     // RP 余额（**1.3.x 独有**）：与主货币是**两套账本**，单独列一行；能花的钱 ⇒ 金色。
     // ⚠ 它走 `isPoints = true`（行尾补 RP 图标），而**不是**主货币那套单位。
-    // ⚠ null = RP 总开关关着 ⇒ 整行不画（判据在服务端，见 PlayerOverviewRow.pointsBalance）
-    r.pointsBalance?.let {
-        out += moneyLine("cobblemarket.overview.field.points", it, OVERVIEW_GOLD, isPoints = true)
-    }
+    // ⚠ **恒显示** —— RP 总开关关着也画（值就是 0）：「0 也显示」是用户 2026-10-17 拍板的
+    out += moneyLine("cobblemarket.overview.field.points", r.pointsBalance, OVERVIEW_GOLD, isPoints = true)
     // PCO 余额（装了 CE 且主货币不是 PCO 时才有）—— 与主货币是**两套独立账本**，单独列一行
     r.pcoBalance?.let { out += moneyLine("cobblemarket.overview.field.pco", it, OVERVIEW_GOLD) }
 
