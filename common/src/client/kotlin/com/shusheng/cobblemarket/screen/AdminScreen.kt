@@ -289,8 +289,14 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         // ⚠ 它与旁边两颗的判据不同：**不看服主身份**，有 overview 节点就能进
         //   （`canManage` 认「有任何节点」，所以节点持有人本来就进得来管理面板）。
         // ⚠ 图标是**占位**（personal.png，语义最接近"玩家"）—— 用户会给正式的，换 iconLeft 一行即可。
+        // ⚠⚠ **坐标不能照抄 1.2.2 的 `centerX + 42`**：那边服务器配置贴的是 centerX ± 90、
+        //   这颗紧挨它左边（间隙 4），而**本线这排多了充值订单 / 兑换码两颗**、服务器配置改贴
+        //   **红线右端**（centerX + 103）⇒ 写死值会让它悬在半空（左空 31px、右空 17px，
+        //   2026-10-17 用户一眼看出「位置不对」）。改成**由服务器配置左缘倒推**、空隙取本排
+        //   统一的 [iconGap]（左边三颗之间也是它），以后谁挪服务器配置这颗都跟着走。
+        val overviewX = centerX + iconRowHalf - iconSize - iconGap - iconSize
         val overviewBtn = NineSliceButton(
-            centerX + 42, iconY, iconSize, iconSize,
+            overviewX, iconY, iconSize, iconSize,
             Text.literal(""),
             { openIfPermitted(MarketPermissions.OVERVIEW) { client?.setScreen(PlayerOverviewScreen()) } },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/button/personal.png"),
