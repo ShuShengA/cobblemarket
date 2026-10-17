@@ -12,6 +12,7 @@ import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.PointsAuditLogger
 import com.shusheng.cobblemarket.currency.PointsLogType
 import com.shusheng.cobblemarket.currency.PointsState
+import com.shusheng.cobblemarket.network.sendSound
 import com.shusheng.cobblemarket.platform.registerServerDataReload
 import net.minecraft.resource.ResourceManager
 import net.minecraft.server.MinecraftServer
@@ -307,6 +308,9 @@ object PointsRewards {
                 val text = Text.translatable("cobblemarket.points.reward_gained")
                     .append(CurrencyService.amountText(entry.amount, MarketCurrency.POINTS))
                 player.sendMessage(text, true)
+                // 与文字**同一时刻**给一声 RP 到账音（与 `/market points give` 同一个音效 id）。
+                // ⚠ 放在合并后的发送处、而不是每次 grant 都放：连抓一串时只响一声，不叠音
+                sendSound(player, "points_in")
             }
         }
     }
