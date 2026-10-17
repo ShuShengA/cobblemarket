@@ -4,6 +4,7 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.cobblemon.mod.common.api.battles.model.PokemonBattle
 import com.shusheng.cobblemarket.CobbleMarket
 import net.minecraft.resource.ResourceManager
 import net.minecraft.server.MinecraftServer
@@ -54,6 +55,54 @@ enum class RewardRepeat(val key: String) {
 }
 
 /**
+ * **战斗胜利规则匹配谁**（只有 `battle_victory` 用）。
+ *
+ * - [SELF]（默认）：条件匹配**你方上过场的精灵** —— "用烈空坐赢一场 → 2000"
+ * - [OPPONENT]：条件匹配**被打倒的对手** —— "击败一只烈空坐 → 2000"
+ *   （NPC 的整队里只算真的倒下的；没上场 / 没倒下不算）
+ *
+ * ⚠ PvP 已在事件层**全局排除**；用球捕捉走 `capture`、不算战斗胜利。
+ */
+enum class RewardTarget(val key: String) {
+    SELF("self"),
+    OPPONENT("opponent");
+
+    override fun toString(): String = key
+
+    companion object {
+        fun fromJson(raw: String?): RewardTarget? =
+            entries.firstOrNull { it.key.equals(raw, ignoreCase = true) }
+    }
+}
+
+/**
+ * **战斗类型过滤**（只有 `battle_victory` 用）。
+ *
+ * - [ANY]（默认）：野生 + NPC（PvP 已全局排除）
+ * - [WILD]：只算野生对战
+ * - [NPC]：只算 NPC 对战
+ */
+enum class RewardBattleType(val key: String) {
+    ANY("any"),
+    WILD("wild"),
+    NPC("npc");
+
+    override fun toString(): String = key
+
+    /** 这场战斗是否属于本档；非战斗事件传 null ⇒ 只有 [ANY] 通过 */
+    fun matches(battle: PokemonBattle?): Boolean = when (this) {
+        ANY -> true
+        WILD -> battle?.isPvW == true
+        NPC -> battle?.isPvN == true
+    }
+
+    companion object {
+        fun fromJson(raw: String?): RewardBattleType? =
+            entries.firstOrNull { it.key.equals(raw, ignoreCase = true) }
+    }
+}
+
+/**
  * 一条奖励规则（解析完的形态）。
  *
  * @param amount 固定金额（每发一次给这么多）
@@ -74,7 +123,11 @@ data class RewardRule(
     val amountMin: Long?,
     val amountMax: Long?,
     val decay: List<Long>?,
-    val dailyCap: Long?
+    val dailyCap: Long?,
+    /** 战斗胜利：条件匹配谁（默认自己参战的精灵；非 battle 事件恒为默认值） */
+    val target: RewardTarget = RewardTarget.SELF,
+    /** 战斗胜利：只算哪种战斗（默认野生 + NPC；非 battle 事件恒为默认值） */
+    val battleType: RewardBattleType = RewardBattleType.ANY
 ) {
     /** 是区间金额吗 */
     val isRange: Boolean get() = amountMin != null && amountMax != null
@@ -101,7 +154,14 @@ data class RewardRule(
      *
      * ⚠ 不含金额 / 档位表：**改价钱不重置进度、改条件才算换了一条规则**。
      */
-    fun fingerprint(): String = "${event.key}|${condition.fingerprint()}"
+    fun fingerprint(): String = buildString {
+        append(event.key).append('|')
+        // ⚠ 只在**非默认值**时拼进去：默认的 self / any 不改变老规则的指纹
+        //   ⇒ 升级到带这两个字段的版本时，现有进度不会被无故清空
+        if (target != RewardTarget.SELF) append("target=").append(target.key).append('|')
+        if (battleType != RewardBattleType.ANY) append("battleType=").append(battleType.key).append('|')
+        append(condition.fingerprint())
+    }
 
     /** 命中列表里显示用的短标签 */
     fun label(): String = "第 ${indexInFile + 1} 条"
@@ -362,6 +422,8 @@ class RewardRules(
 
         private val KNOWN_KEYS = setOf(
             "amount", "decay", "repeat", "daily_cap",
+            // 战斗胜利专用（见 RewardTarget / RewardBattleType）
+            "target", "battleType",
             "species", "namespace", "aspects", "variantAspects", "labels",
             "shiny", "alpha", "ht", "minPerfectIvs", "level",
             // 排除条件（`excludeXxx`）—— 见 RewardCondition 里那段 KDoc：
@@ -468,6 +530,44 @@ class RewardRules(
 
             val cap = obj.get("daily_cap")?.let { parsePositiveLong(it, file, "daily_cap") } ?: defaultCap
 
+            // ── 战斗胜利专用：匹配谁 / 哪种战斗 ──
+            // ⚠ 非法值**跳过该条 + warn**（不回退默认）—— 写错一个字母若回退成 self，
+            //   会变成"用你的精灵赢一场就发钱"，比不生效更糟（配置错误要显式）
+            var target = RewardTarget.SELF
+            var battleType = RewardBattleType.ANY
+            if (event == RewardEvent.BATTLE_VICTORY) {
+                obj.get("target")?.let { el ->
+                    val raw = el.takeIf { it.isJsonPrimitive }?.asString
+                    val parsed = raw?.let { RewardTarget.fromJson(it) }
+                    if (parsed == null) {
+                        CobbleMarket.LOGGER.warn(
+                            "RP reward rules: {} skipped — \"target\" must be \"self\" or \"opponent\" (got: {})",
+                            where, el.toString()
+                        )
+                        return null
+                    }
+                    target = parsed
+                }
+                obj.get("battleType")?.let { el ->
+                    val raw = el.takeIf { it.isJsonPrimitive }?.asString
+                    val parsed = raw?.let { RewardBattleType.fromJson(it) }
+                    if (parsed == null) {
+                        CobbleMarket.LOGGER.warn(
+                            "RP reward rules: {} skipped — \"battleType\" must be \"any\", \"wild\" or \"npc\" (got: {})",
+                            where, el.toString()
+                        )
+                        return null
+                    }
+                    battleType = parsed
+                }
+            } else if (obj.has("target") || obj.has("battleType")) {
+                // 写在别的 event 上没意义：明确说一声、按默认处理（不跳过规则）
+                CobbleMarket.LOGGER.warn(
+                    "RP reward rules: {} — \"target\" / \"battleType\" only apply to event \"battle_victory\"; ignored",
+                    where
+                )
+            }
+
             // ── 条件 ──
             val level = readLevel(obj, where)
             val condition = RewardCondition(
@@ -500,7 +600,9 @@ class RewardRules(
                 amountMin = amountMin,
                 amountMax = amountMax,
                 decay = decay,
-                dailyCap = cap
+                dailyCap = cap,
+                target = target,
+                battleType = battleType
             )
         }
 

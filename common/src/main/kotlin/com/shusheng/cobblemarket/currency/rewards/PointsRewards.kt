@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.currency.rewards
 
+import com.cobblemon.mod.common.api.battles.model.PokemonBattle
 import com.cobblemon.mod.common.api.battles.model.actor.ActorType
 import com.cobblemon.mod.common.api.events.CobblemonEvents
 import com.cobblemon.mod.common.pokemon.Pokemon
@@ -121,6 +122,17 @@ object PointsRewards {
             //   不排掉的话"抓到一只"会**同时**触发 capture 与 battle_victory 两条奖励（双倍发钱）。
             //   本体自己的 `StatHandler.onWinBattle` 就是拿这个字段挡的，照抄。
             if (event.wasWildCapture) return@subscribe
+
+            // 被击败的对手（野生 / NPC；PvP 已在上面排除）——
+            // 只认真的倒下的（`health <= 0`）：NPC 整队里没上场 / 还没倒下的不算
+            val defeated = event.losers
+                .filter { it.type == ActorType.WILD || it.type == ActorType.NPC }
+                .flatMap { actor ->
+                    actor.pokemonList
+                        .filter { it.health <= 0 }
+                        .mapNotNull { it.originalPokemon }
+                }
+
             event.winners.forEach { actor ->
                 if (actor.type != ActorType.PLAYER) return@forEach
                 // 一个 actor 可能代表多名玩家（双人合战）⇒ 逐个来，别只取第一个
@@ -131,7 +143,13 @@ object PointsRewards {
                     val fighters = actor.getSide().activePokemon
                         .filter { it.battlePokemon?.facedOpponents?.isNotEmpty() == true }
                         .mapNotNull { it.battlePokemon?.originalPokemon }
-                    fighters.forEach { pokemon -> onPokemonEvent(RewardEvent.BATTLE_VICTORY, player, pokemon) }
+                    fighters.forEach { pokemon ->
+                        onPokemonEvent(RewardEvent.BATTLE_VICTORY, player, pokemon, RewardTarget.SELF, event.battle)
+                    }
+                    // 对手目标：**每个获胜玩家各判一次**（双人合战里两人都"打赢"了同一只对手）
+                    defeated.forEach { pokemon ->
+                        onPokemonEvent(RewardEvent.BATTLE_VICTORY, player, pokemon, RewardTarget.OPPONENT, event.battle)
+                    }
                 }
             }
         }
@@ -145,7 +163,13 @@ object PointsRewards {
      * ⚠ **每只精灵最多发一条**（第一条命中即止）—— 与"一场战斗里多只精灵各判各的"是两件事：
      *   前者防止**一条规则重复发**，后者是**每只参战精灵各自算一次**（战斗胜利那条事件的定义如此）。
      */
-    private fun onPokemonEvent(kind: RewardEvent, player: ServerPlayerEntity, pokemon: Pokemon) {
+    private fun onPokemonEvent(
+        kind: RewardEvent,
+        player: ServerPlayerEntity,
+        pokemon: Pokemon,
+        target: RewardTarget = RewardTarget.SELF,
+        battle: PokemonBattle? = null
+    ) {
         if (!enabled()) return
         val table = rules
         // 只看这个事件自己的那几条（提前分好桶，见 RewardRules.byEvent）
@@ -160,6 +184,16 @@ object PointsRewards {
         val worldDay = worldDay(server)
 
         candidates.forEach { rule ->
+            // 战斗胜利：只判**本条规则指定的那一侧**
+            // （`target` / `battleType` 对其它事件没有意义，解析时已警告并归默认）
+            if (rule.target != target) {
+                debug(table, rule, "skipped (target ${rule.target.key}; evaluating ${target.key})")
+                return@forEach
+            }
+            if (!rule.battleType.matches(battle)) {
+                debug(table, rule, "skipped (battleType ${rule.battleType.key})")
+                return@forEach
+            }
             if (!rule.condition.matches(pokemon, formAspectUnion)) {
                 debug(table, rule, "no match (condition)")
                 return@forEach
