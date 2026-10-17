@@ -24,6 +24,13 @@ object IdCardRenderer {
     private const val INNER_RIGHT = 0.952f
     private const val INNER_TOP = 0.139f
     private const val SPLIT = 0.366f
+    private const val TITLE_TOP = 0.751f
+
+    /** 模型占可用区高度的比例（照 `IdCardScreen`：区域取满会让模型大一圈，大小单独收一点） */
+    private const val MODEL_SCALE = 0.85f
+
+    /** 模型整体下移的像素数（给帽子 / 高个子模型留顶部余量，照 `IdCardScreen`） */
+    private const val MODEL_DROP = 10
 
     /**
      * 画整张卡（背景 + 两列信息）。
@@ -36,7 +43,9 @@ object IdCardRenderer {
         textRenderer: TextRenderer,
         row: PlayerOverviewRow,
         cardLeft: Float,
-        cardTop: Float
+        cardTop: Float,
+        /** 要画的玩家模型（null = 解析不到展示者的实体，模型区留空） */
+        player: net.minecraft.entity.LivingEntity? = null
     ) {
         val entry = IdCardBackgroundTexture.get()
         val tex = entry?.id ?: IdCardBackgroundTexture.BUILTIN_TEX
@@ -84,6 +93,30 @@ object IdCardRenderer {
                 if (line.money) drawCurrencyUnit(context, textRenderer, drawn, textY, line.color)
                 y += line.height
             }
+        }
+
+        // 左侧：展示者的 3D 模型（能解析到实体才画）。
+        // ⚠ 模型**最后画**（先文字后模型）—— 反过来模型之后绘制的 GUI 会把深度写进缓冲、
+        //   把模型切掉一块，照 `IdCardScreen.drawPlayerModel`
+        if (player != null) {
+            val innerLeft = cardLeft + CARD_W * INNER_LEFT
+            val innerTop = cardTop + CARD_H * INNER_TOP + MODEL_DROP
+            val titleTop = cardTop + CARD_H * TITLE_TOP + MODEL_DROP
+            // ⚠ 画 3D 前先 flush 已排队的 GUI、再清深度缓冲
+            context.draw()
+            com.mojang.blaze3d.systems.RenderSystem.clear(
+                org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT, net.minecraft.client.MinecraftClient.IS_SYSTEM_MAC
+            )
+            net.minecraft.client.gui.screen.ingame.InventoryScreen.drawEntity(
+                context, innerLeft.toInt(), innerTop.toInt(), split.toInt(), titleTop.toInt(),
+                ((titleTop - innerTop) * MODEL_SCALE / 2f).toInt(),
+                0f, 0f, 0f, player
+            )
+            // 画完把模型批次提交、再清一次深度 —— 别把 3D 的深度留给后续绘制
+            context.draw()
+            com.mojang.blaze3d.systems.RenderSystem.clear(
+                org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT, net.minecraft.client.MinecraftClient.IS_SYSTEM_MAC
+            )
         }
     }
 

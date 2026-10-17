@@ -336,6 +336,22 @@ object ChatObjectPreview {
     private fun speciesNameKey(speciesId: String): String =
         "cobblemon.species.${speciesId.substringAfter(':').lowercase()}.name"
 
+    /**
+     * 解析 ID 卡展示要画的**玩家实体**：
+     * ① 世界里有（在线且在附近）→ 直接用；
+     * ② 在线但不在附近 → 用 tab 列表的 profile 建一个 `OtherClientPlayerEntity`（皮肤照样加载）；
+     * ③ 离线 / 都拿不到 → null ⇒ 卡片模型区留空（不崩）。
+     */
+    private fun resolveIdCardPlayer(uuid: UUID): net.minecraft.entity.player.PlayerEntity? {
+        val client = MinecraftClient.getInstance()
+        val world = client.world ?: return null
+        world.getPlayerByUuid(uuid)?.let { return it }
+        val entry = client.networkHandler?.getPlayerListEntry(uuid) ?: return null
+        return runCatching {
+            net.minecraft.client.network.OtherClientPlayerEntity(world, entry.profile)
+        }.getOrNull()
+    }
+
     private fun draw(context: DrawContext, entry: Entry) {
         // 横向落点 = **屏幕正中**（2026-09-29 用户拍板，原先在右半屏的中心 = 屏宽的 3/4）：
         // 大图自己是严格居中的那一个，词条面板再从它**右缘**往后排 ——
@@ -348,7 +364,8 @@ object ChatObjectPreview {
             val cardLeft = (context.scaledWindowWidth - IdCardRenderer.CARD_W) / 2f
             val cardTop = (screenHeight - IdCardRenderer.CARD_H) / 2f
             IdCardRenderer.draw(
-                context, MinecraftClient.getInstance().textRenderer, idCard, cardLeft, cardTop
+                context, MinecraftClient.getInstance().textRenderer, idCard, cardLeft, cardTop,
+                resolveIdCardPlayer(idCard.uuid)
             )
             return
         }
