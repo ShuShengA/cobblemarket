@@ -113,6 +113,10 @@ object PointsRewards {
             }
         }
         CobblemonEvents.BATTLE_VICTORY.subscribe { event ->
+            // ⚠ **PvP 一律不发**（2026-10-18 用户拍板）：双方都有玩家时 `isPvP = true`，
+            //   两名玩家 / 开小号互打就能无限刷 RP。战斗胜利规则的本意只有**野生 / NPC**
+            //   （方案 §2.1）；NPC 对战照发，玩家对战不算。
+            if (event.battle.isPvP) return@subscribe
             // ⚠ **野生宝可梦被捕捉时也会走这个事件**（源码 `WinInstruction` 里 `wasCaught=true`）——
             //   不排掉的话"抓到一只"会**同时**触发 capture 与 battle_victory 两条奖励（双倍发钱）。
             //   本体自己的 `StatHandler.onWinBattle` 就是拿这个字段挡的，照抄。
