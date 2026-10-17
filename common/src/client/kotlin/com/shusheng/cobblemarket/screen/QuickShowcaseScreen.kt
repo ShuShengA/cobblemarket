@@ -46,7 +46,7 @@ import java.util.UUID
 class QuickShowcaseScreen : Screen(Text.literal("")) {
 
     /** 展示哪一类 */
-    enum class Kind { POKEMON, ITEM }
+    enum class Kind { POKEMON, IDCARD, ITEM }
 
     /** 掉落动画起点（构造时记；resize 重建不重置） */
     private var animStart = System.currentTimeMillis()
@@ -61,6 +61,7 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         private set
 
     private var pokemonBtn: NineSliceButton? = null
+    private var idCardBtn: NineSliceButton? = null
     private var itemBtn: NineSliceButton? = null
 
     /** 两个按钮的目标 y（上浮与掉落都相对它算） */
@@ -101,6 +102,11 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
             rightX, baseY, BTN, BTN, Text.literal(""), { doShowcase(Kind.ITEM) },
             texture = DIALOG_BACKGROUND_TEXTURE, texH = DIALOG_BACKGROUND_TEX_H
         ).also { addDrawableChild(it) }
+        // ID 卡框：**上方中间**（2026-10-17 用户要求；原来两个框的位置不动）
+        idCardBtn = NineSliceButton(
+            width / 2 - BTN / 2, baseY - BTN - GAP, BTN, BTN, Text.literal(""), { doShowcase(Kind.IDCARD) },
+            texture = DIALOG_BACKGROUND_TEXTURE, texH = DIALOG_BACKGROUND_TEX_H
+        ).also { addDrawableChild(it) }
     }
 
     /** 不画暗罩：按住期间世界照常可见（照其余模组界面） */
@@ -116,17 +122,36 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         hoveredKind = hovered
         val pokemonY = baseY + drop - (if (hovered == Kind.POKEMON) LIFT else 0)
         val itemY = baseY + drop - (if (hovered == Kind.ITEM) LIFT else 0)
+        // ID 卡框在**上方中间**（目标位 = baseY 再上移一格）
+        val idCardY = baseY - BTN - GAP + drop - (if (hovered == Kind.IDCARD) LIFT else 0)
         pokemonBtn?.y = pokemonY
+        idCardBtn?.y = idCardY
         itemBtn?.y = itemY
 
         // 先让按钮把自己的背景画出来（贴图在下），内容再压上去
         super.render(context, mouseX, mouseY, delta)
 
         drawPokemonContent(context, width / 2 - BTN - GAP / 2, pokemonY, delta)
+        drawIdCardContent(context, width / 2 - BTN / 2, idCardY)
         drawItemContent(context, width / 2 + GAP / 2, itemY)
     }
 
-    // ── 两个按钮的内容 ──
+    // ── 三个框的内容 ──
+
+    /** ID 卡框的内容：一枚 share 图标（框里放"要展示的东西"的视觉提示） */
+    private fun drawIdCardContent(context: DrawContext, x: Int, y: Int) {
+        val size = (BTN - INSET * 2) * 0.6f
+        val cx = x + (BTN - size) / 2f
+        val cy = y + (BTN - size) / 2f
+        context.matrices.push()
+        context.matrices.translate(cx.toDouble(), cy.toDouble(), 0.0)
+        context.matrices.scale(size / 48f, size / 48f, 1f)
+        context.drawTexture(
+            net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/share.png"),
+            0, 0, 0f, 0f, 48, 48, 48, 48
+        )
+        context.matrices.pop()
+    }
 
     private fun drawPokemonContent(context: DrawContext, x: Int, y: Int, delta: Float) {
         refreshRenderable()
@@ -206,14 +231,14 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
      * "看着浮起来了、松手却没反应"）。
      */
     private fun hoveredAt(mouseX: Int, mouseY: Int, drop: Int): Kind? {
-        fun hit(idx: Int): Boolean {
-            val x = if (idx == 0) width / 2 - BTN - GAP / 2 else width / 2 + GAP / 2
-            val y = baseY + drop
-            return mouseX >= x && mouseX < x + BTN && mouseY >= y && mouseY < y + BTN
-        }
+        fun hit(x: Int, y: Int): Boolean =
+            mouseX >= x && mouseX < x + BTN && mouseY >= y && mouseY < y + BTN
+        val y = baseY + drop
         return when {
-            hit(0) -> Kind.POKEMON
-            hit(1) -> Kind.ITEM
+            hit(width / 2 - BTN - GAP / 2, y) -> Kind.POKEMON
+            // ID 卡：**上方中间**（2026-10-17 用户要求；原来两个框的位置不动）
+            hit(width / 2 - BTN / 2, y - BTN - GAP) -> Kind.IDCARD
+            hit(width / 2 + GAP / 2, y) -> Kind.ITEM
             else -> null
         }
     }
@@ -250,6 +275,8 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
                 sendToServer(SharePayload(ShareNetwork.KIND_POKEMON, pokemon.uuid.toString()))
             }
 
+            // ID 卡：发完就完事（卡一直存在，没有"取不到"的情况）
+            Kind.IDCARD -> sendToServer(SharePayload(ShareNetwork.KIND_IDCARD, ""))
             Kind.ITEM -> {
                 if (player.mainHandStack.isEmpty) {
                     playFailSound()

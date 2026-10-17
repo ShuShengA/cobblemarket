@@ -102,6 +102,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     /** 分享按钮与它上方展开的子按钮（点击主按钮切换展开，见 [toggleShareMenu]） */
     private var shareBtn: NineSliceButton? = null
     private var sharePokemonBtn: NineSliceButton? = null
+    private var shareIdCardBtn: NineSliceButton? = null
     private var shareItemBtn: NineSliceButton? = null
     private var shareMenuOpen = false
 
@@ -454,8 +455,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // y：整组落在红色分割线**上方**，与主按钮相对分割线对称
         //（分割线在 bgBottom()-30，主按钮顶边距它 3px，子按钮底边同样距它 3px）
         val subY = cornerY - (subSize + 6)
+        // 三个子按钮并排（精灵 / ID 卡 / 物品），整组仍以 subCenterX 为中心（2026-10-17 用户要求加 ID 卡）
         val pokemonBtn = NineSliceButton(
-            subCenterX - subSize, subY, subSize, subSize,
+            subCenterX - subSize * 3 / 2, subY, subSize, subSize,
             Text.literal(""),
             { openSharePokemon() },
             // 与精灵市场入口同一个会动的小卡比兽（8 帧，100ms/帧）
@@ -469,8 +471,22 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         this.sharePokemonBtn = pokemonBtn
         entryButtons += addDrawableChild(pokemonBtn)
 
+        // ID 卡（中间那个）
+        val idCardShareBtn = NineSliceButton(
+            subCenterX - subSize / 2, subY, subSize, subSize,
+            Text.literal(""),
+            { openShareIdCard() },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/icon/share.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
+        )
+        idCardShareBtn.setTooltip(withQuickKeyHint("cobblemarket.share.id_card_name"))
+        idCardShareBtn.visible = false
+        this.shareIdCardBtn = idCardShareBtn
+        entryButtons += addDrawableChild(idCardShareBtn)
+
         val itemBtn = NineSliceButton(
-            subCenterX, subY, subSize, subSize,
+            subCenterX + subSize / 2, subY, subSize, subSize,
             Text.literal(""),
             { openShareItem() },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/icon/pokeball_icon.png"),
@@ -532,6 +548,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private fun applyShareMenu() {
         shareBtn?.selectedVisual = shareMenuOpen
         sharePokemonBtn?.visible = shareMenuOpen
+        shareIdCardBtn?.visible = shareMenuOpen
         shareItemBtn?.visible = shareMenuOpen
         if (shareMenuOpen) {
             val pokemonBtn = sharePokemonBtn ?: return
@@ -572,6 +589,16 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     private fun openShareItem() {
         client?.setScreen(ItemSellScreen(shareMode = true))
+    }
+
+    /** ID 卡展示：直接发（没有选择界面 —— 展示的就是自己那张卡）；发完关界面回游戏看聊天 */
+    private fun openShareIdCard() {
+        com.shusheng.cobblemarket.platform.sendToServer(
+            com.shusheng.cobblemarket.network.SharePayload(
+                com.shusheng.cobblemarket.network.ShareNetwork.KIND_IDCARD, ""
+            )
+        )
+        client?.setScreen(null)
     }
 
     // ── 设置弹窗（客户端个人观感开关；以后新开关统一加在这里） ──
@@ -1177,6 +1204,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         if (shareMenuOpen) {
             val overShare = shareBtn?.isMouseOver(mouseX, mouseY) == true ||
                 sharePokemonBtn?.isMouseOver(mouseX, mouseY) == true ||
+                shareIdCardBtn?.isMouseOver(mouseX, mouseY) == true ||
                 shareItemBtn?.isMouseOver(mouseX, mouseY) == true
             if (!overShare) collapseShareMenu()
         }
