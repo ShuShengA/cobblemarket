@@ -502,6 +502,7 @@
   "cobblemarket.buy_confirm.confirm": "确认购买",
   "cobblemarket.buy_confirm.cancel": "取消",
   "key.cobblemarket.open_market": "打开市场",
+  "key.cobblemarket.open_id_card": "打开市场 ID 卡",
   "category.cobblemarket": "Cobble市场",
   "cobblemarket.gui.page": "第 %d/%d 页",
   "cobblemarket.gui.search": "搜索",

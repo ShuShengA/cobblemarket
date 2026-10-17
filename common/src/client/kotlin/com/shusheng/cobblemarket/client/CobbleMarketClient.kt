@@ -121,6 +121,7 @@ object CobbleMarketClient {
     val LOGGER = LoggerFactory.getLogger(CobbleMarket.MOD_ID)
 
     private lateinit var openMarketKey: KeyBinding
+    private lateinit var openIdCardKey: KeyBinding
     private var wasEPressed = false
 
     /** 余额 HUD 低频兜底轮询计时（交易响应已即时刷新，这里兜住离线收益补发等） */
@@ -149,6 +150,16 @@ object CobbleMarketClient {
                 "category.cobblemarket"
             )
         )
+        // 市场 ID 卡快捷键（2026-10-17）：从任何地方直接打开自己的 ID 卡。
+        // ⚠ 键位取 **I**（ID 卡首字母；原版没有默认绑定 I）。玩家可在「按键设置」里改/解绑
+        openIdCardKey = registerKeyBinding(
+            KeyBinding(
+                "key.cobblemarket.open_id_card",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_I,
+                "category.cobblemarket"
+            )
+        )
         onClientTick { client ->
             // 「有新版本可用」：查到结果后，等玩家第一次打开市场界面时说一次（每个世界一次）
             UpdateNotice.tick(client)
@@ -174,6 +185,12 @@ object CobbleMarketClient {
             while (openMarketKey.wasPressed()) {
                 playEntrySound()
                 client.setScreen(MarketEntryScreen())
+            }
+            // 市场 ID 卡：与「打开市场」同款音效，直接打开自己的 ID 界面
+            // （界面里按 E 能关 —— IdCardScreen 已在 isMarketScreen 名单里）
+            while (openIdCardKey.wasPressed()) {
+                playEntrySound()
+                client.setScreen(IdCardScreen())
             }
             val ePressed = InputUtil.isKeyPressed(client.window.handle, GLFW.GLFW_KEY_E)
             if (ePressed && !wasEPressed) {

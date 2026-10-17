@@ -502,6 +502,7 @@
   "cobblemarket.buy_confirm.confirm": "Confirm",
   "cobblemarket.buy_confirm.cancel": "Cancel",
   "key.cobblemarket.open_market": "Open Market",
+  "key.cobblemarket.open_id_card": "Open Market ID Card",
   "category.cobblemarket": "CobbleMarket",
   "cobblemarket.gui.page": "Page %d/%d",
   "cobblemarket.gui.search": "Search",
