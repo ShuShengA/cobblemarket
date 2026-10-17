@@ -124,7 +124,7 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
                 )
                 client?.setScreen(null)
             },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/share.png"),
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/icon/share.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.share.id_card_button")
         ))
