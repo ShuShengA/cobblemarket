@@ -566,13 +566,12 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             entryButtons.forEach { btn ->
                 // 只有带文字的入口按钮需要收字（求购单/喵喵银行/设置那几个是纯图标按钮，没有文字可露）
                 val texBtn = btn as? TextureButton ?: return@forEach
-                // 判据是「按钮**中心**落在子按钮横向范围内」+ 纵向有重叠，不是普通矩形相交：
-                // 有管理权限的人布局多一行、背景随之上移，管理员面板按钮与子按钮在横向上只擦到
-                // 约 2px——那是视觉上没被盖住，不该动它（2026-09-17 用户实测踩到）。
-                // 真被盖住的那种（普通玩家布局下的「拍卖场」）中心稳稳落在范围内。
-                val coveredHorizontally = texBtn.x + texBtn.width / 2 in menuLeft..menuRight
+                // 判据 = **矩形重叠超过 2px**（不是「中心落在范围内」）——
+                //   管理面板按钮中心可能在精灵子按钮**左侧**、但右半部分实实在在压在子按钮上，
+                //   用"中心"判据它不会让路 ⇒ 点精灵按钮的左半边会被它抢走（2026-10-17 用户报）
+                val overlapW = minOf(texBtn.x + texBtn.width, menuRight) - maxOf(texBtn.x, menuLeft)
                 val overlapsVertically = texBtn.y < menuBottom && texBtn.y + texBtn.height > menuTop
-                if (coveredHorizontally && overlapsVertically && texBtn.blockedArea == null) {
+                if (overlapW > 2 && overlapsVertically && texBtn.blockedArea == null) {
                     shareCoveredButtons.add(texBtn)
                     texBtn.hideText = true
                     // 重叠区让给子按钮：MC 的点击分发按添加顺序，子按钮排在这个按钮后面，
