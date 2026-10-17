@@ -279,7 +279,10 @@ object ShareNetwork {
         )
         val nameText = Text.literal("")
             .append(Text.literal("[").formatted(Formatting.GRAY))
-            .append(Text.translatable("cobblemarket.share.id_card_name"))
+            // ⚠ 必须显式设色：消息主体整条是 `Formatting.BLUE`，不设色会继承成蓝色
+            //   （精灵 / 物品的名字自带属性色 / 稀有度色，盖得住；ID 卡没有这个颜色 —— 2026-10-17 用户报）
+            //   金色：与「卡片 = 值钱的东西」的观感一致（用户 2026-10-17 定）
+            .append(Text.translatable("cobblemarket.share.id_card_name").formatted(Formatting.GOLD))
             .append(Text.literal("]").formatted(Formatting.GRAY))
         return shareMessage(player, shareId, nameText)
     }
