@@ -124,12 +124,16 @@ object PointsRewards {
             if (event.wasWildCapture) return@subscribe
 
             // 被击败的对手（野生 / NPC；PvP 已在上面排除）——
-            // 只认真的倒下的（`health <= 0`）：NPC 整队里没上场 / 还没倒下的不算
+            // ⚠⚠ **不能用 `health <= 0` 判断"倒下了"**：`BATTLE_VICTORY` 是在 `battle.end()`
+            //   之后才发的，而 `end()` 会先把 NPC 队伍治好（`autoHealParty` 默认 true）⇒
+            //   NPC 的 BattlePokemon 血量已经回满，用 health 过滤会**一只都不剩**
+            //   （2026-10-18 用户实测：野生能发、NPC 不发）。
+            //   `faintedAt` 是倒下那一刻记的序号，治疗不会清它 —— 这才是"真的倒下了"。
             val defeated = event.losers
                 .filter { it.type == ActorType.WILD || it.type == ActorType.NPC }
                 .flatMap { actor ->
                     actor.pokemonList
-                        .filter { it.health <= 0 }
+                        .filter { it.faintedAt != null }
                         .mapNotNull { it.originalPokemon }
                 }
 
