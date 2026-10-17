@@ -5,7 +5,7 @@ import com.cobblemon.mod.common.pokemon.Pokemon
 import com.cobblemon.mod.common.pokemon.Species
 
 /**
- * **RP 奖励规则的条件**（数据包 `data/` 下 `cobblemarket/points_rewards/` 里一条规则的判定部分）。
+ * **RP 奖励规则的条件**（数据包 `data/<命名空间>/points_rewards/` 里一条规则的判定部分）。
  *
  * ⚠⭐ **词汇照抄黑名单 / 价格限制，但类型独立** —— 三者的语义不同（黑名单"命中即拦"、
  *   限价"命中即限价"、奖励"命中即给钱"），塞进同一个类会让三边字段互相污染。

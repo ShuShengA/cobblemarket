@@ -170,7 +170,7 @@ data class RewardRule(
 /**
  * 一个数据包文件解析出来的规则集。
  *
- * @param file 文件在数据包里的相对路径（`<命名空间>/cobblemarket/points_rewards/<名>.json`）
+ * @param file 文件在数据包里的相对路径（`<命名空间>/points_rewards/<名>.json`）
  * @param debug 该文件开了 `"debug": true` ⇒ 每次事件都打一行"命中了第几条 / 没命中"
  */
 data class RewardRuleFile(
@@ -211,21 +211,15 @@ class RewardRules(
 
     companion object {
 
-        /** 数据包里的固定目录（`data/<命名空间>/cobblemarket/points_rewards/`） */
         /**
-         * ⚠⚠ **命名空间与子目录必须分开写**（2026-10-13 实测，同一个错犯了两遍）：
-         * 数据包目录是 `data/<命名空间>/<子目录>/`，而文件的**资源 id** 是
-         * `<命名空间>:<子目录>/<文件名>` —— 两者差一个命名空间前缀。
+         * **规则文件在数据包里的子目录名**（完整路径 = `data/<命名空间>/points_rewards/`）。
          *
-         * 之前只有一个 `DIR = "cobblemarket/points_rewards"` 常量，于是
-         * ① 拿它去 `nsDir.resolve(...)`（`nsDir` 已含命名空间）
-         * ② 拿它拼资源 id 的包内路径
-         * **两处都多出了一层 `cobblemarket/`**，而 MC 找不到就静默返回空 ⇒ 只表现为
-         * "0 条规则"，看不出是路径错。⇒ 拆成两个常量，让调用方没机会拼错。
+         * ⚠⚠ **命名空间 = `data/` 下的一级文件夹名**（扫描时从目录名读，**不是固定值**）。
+         * 之前把 `cobblemarket/points_rewards` 写成一个常量 ⇒ 路径与资源 id 两处都多套了一层
+         * `cobblemarket/`，MC 静默返回空、只表现为"0 条规则"（2026-10-13）。
+         * ⚠ 2026-10-18 又复现了一次：**文档**里写成 `data/<命名空间>/cobblemarket/points_rewards/`，
+         * 测试包照抄 ⇒ 一条规则都没加载。文档已改成 `data/<命名空间>/points_rewards/`。
          */
-        const val NAMESPACE = "cobblemarket"
-
-        /** 子目录名（不含命名空间）—— 拼资源 id 的包内路径、resolve 目录都用它 */
         const val SUBDIR = "points_rewards"
 
         private const val JSON_SUFFIX = ".json"
@@ -259,8 +253,8 @@ class RewardRules(
             //   而 `nsDir` 已经是 `…/data/cobblemarket` ⇒ `nsDir.resolve(DIR)` 拼出
             //   `…/data/cobblemarket/cobblemarket/points_rewards`（永远不存在的路径），
             //   而**路径不存在时 `findResources` 静默返回空表**、不报错 —— 于是看起来像"API 坏了"。
-            //   同一处错误在"解析目录"和"拼资源 id 路径"两处各犯了一次（故拆成
-            //   [NAMESPACE] / [SUBDIR] 两个常量，让调用方没机会拼错）。
+            //   同一处错误在"解析目录"和"拼资源 id 路径"两处各犯了一次（现在只保留
+            //   [SUBDIR]；命名空间从 `data/` 的一级目录名读，不是固定值）。
             //
             // ⚠ 结论：**`findResources` 本身是好的**（扫本体 `data/cobblemon/species` 能扫到 1025 个）。
             //   现在的读盘写法**能用、也已实测**（捕获/孵化/战斗胜利全链路通过），
@@ -364,7 +358,7 @@ class RewardRules(
         private fun logSummary(files: List<RewardRuleFile>, ordered: List<RewardRule>) {
             if (ordered.isEmpty()) {
                 CobbleMarket.LOGGER.info(
-                    "RP reward rules: no rule loaded ({} file(s) under {}:{})", files.size, NAMESPACE, SUBDIR
+                    "RP reward rules: no rule loaded ({} file(s) under data/*/{})", files.size, SUBDIR
                 )
                 return
             }
