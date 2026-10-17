@@ -927,6 +927,7 @@
   "cobblemarket.buy_confirm.cancel": "Cancel",
   "key.cobblemarket.quick_showcase": "Quick Showcase (hold)",
   "key.cobblemarket.open_market": "Open Market",
+  "key.cobblemarket.open_id_card": "Open Market ID Card",
   "category.cobblemarket": "CobbleMarket",
   "cobblemarket.gui.page": "Page %d/%d",
   "cobblemarket.gui.search": "Search",
