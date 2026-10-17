@@ -30,6 +30,7 @@ import com.shusheng.cobblemarket.currency.PointsLogType
 import com.shusheng.cobblemarket.currency.PointsRankingExport
 import com.shusheng.cobblemarket.currency.PointsState
 import com.shusheng.cobblemarket.currency.RedeemOutcome
+import com.shusheng.cobblemarket.currency.rewards.RewardProgressState
 import com.shusheng.cobblemarket.finance.CreditFileLogger
 import com.shusheng.cobblemarket.finance.FinanceService
 import com.shusheng.cobblemarket.finance.FinanceState
@@ -418,6 +419,24 @@ object MarketCommands {
                             )
                             .then(CommandManager.literal("labels")
                                 .executes(::rewardsLabelList)
+                            )
+                            // 重置奖励进度（**只清进度、不碰余额**）：
+                            // - `reset all` —— 全服所有人；必须显式写 `all`，防手滑
+                            // - `reset <玩家>` —— 单人，在线 / 离线都行（BanState.resolvePlayer）
+                            // ⚠ 清的是「已发次数 + 当天每日上限累计」两样；服主重置后玩家应立刻
+                            //   按第一档拿，而不是被"今天已经领满"挡住。
+                            // ⚠ 权限沿用父节点（只限服主），函数首行再走一次 denyNonOwner 兜底。
+                            .then(CommandManager.literal("reset")
+                                .then(CommandManager.literal("all")
+                                    .executes(::rewardsResetAll)
+                                )
+                                .then(CommandManager.argument("player", StringArgumentType.word())
+                                    // 只联想在线玩家；离线玩家直接敲名字也能重置
+                                    .suggests(::suggestOnlinePlayerNames)
+                                    .executes { ctx ->
+                                        rewardsResetPlayer(ctx, StringArgumentType.getString(ctx, "player"))
+                                    }
+                                )
                             )
                         )
                     )
@@ -1597,6 +1616,55 @@ object MarketCommands {
         }
         source.sendFeedback({ Text.translatable("cobblemarket.rewards.labels_hint").formatted(Formatting.YELLOW) }, false)
         return 1
+    }
+
+    /**
+     * `/market points rewards reset all` —— 清空**全服所有人**的奖励进度
+     * （已发次数 + 当天每日上限累计）。
+     *
+     * ⚠ 只清进度，**不碰余额** —— 这是它与"删掉 `cobblemarket_points.dat`"的本质区别。
+     * ⚠ 全服重置必须显式写 `all`（命令树里没有裸的 `reset`），防手滑。
+     */
+    private fun rewardsResetAll(context: CommandContext<ServerCommandSource>): Int {
+        if (denyNonOwner(context)) return 0
+        val count = RewardProgressState.get(context.source.server).resetAll()
+        val done = count > 0
+        context.source.sendFeedback(
+            {
+                Text.translatable(
+                    if (done) "cobblemarket.rewards.reset_all_done" else "cobblemarket.rewards.reset_all_empty",
+                    count
+                ).formatted(if (done) Formatting.GREEN else Formatting.YELLOW)
+            },
+            false
+        )
+        return if (done) 1 else 0
+    }
+
+    /**
+     * `/market points rewards reset <玩家>` —— 只清一个人的奖励进度（在线 / 离线都行）。
+     * ⚠ 同样只清进度、不碰余额。
+     */
+    private fun rewardsResetPlayer(context: CommandContext<ServerCommandSource>, name: String): Int {
+        if (denyNonOwner(context)) return 0
+        val server = context.source.server
+        val resolved = BanState.resolvePlayer(server, name)
+        if (resolved == null) {
+            context.source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            return 0
+        }
+        val (uuid, playerName) = resolved
+        val had = RewardProgressState.get(server).resetPlayer(uuid)
+        context.source.sendFeedback(
+            {
+                Text.translatable(
+                    if (had) "cobblemarket.rewards.reset_player_done" else "cobblemarket.rewards.reset_player_empty",
+                    playerName
+                ).formatted(if (had) Formatting.GREEN else Formatting.YELLOW)
+            },
+            false
+        )
+        return if (had) 1 else 0
     }
 
     private fun ownerList(context: CommandContext<ServerCommandSource>): Int {
