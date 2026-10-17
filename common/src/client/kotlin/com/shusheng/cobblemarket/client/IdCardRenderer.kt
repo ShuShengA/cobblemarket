@@ -85,12 +85,12 @@ object IdCardRenderer {
                 val textY = lineTextY(rowY, line)
                 val iconY = lineIconY(rowY, line)
                 // ⚠ 截断要**扣掉货币单位宽度**（单位是截断之后另外补画的）与行首图标宽度
-                val unitW = if (line.money) currencyUnitWidth(textRenderer) else 0
+                val unitW = if (line.money) currencyUnitWidth(textRenderer, line.isPoints) else 0
                 val iconW = if (line.icon != null) OVERVIEW_ICON_W else 0
                 val text = TextUtil.truncateStyled(line.text, (colW.toInt() - unitW - iconW).coerceAtLeast(0))
                 line.icon?.let { drawLineIcon(context, it, x.toInt(), iconY) }
                 val drawn = context.drawTextWithShadow(textRenderer, text, (x + iconW).toInt(), textY, 0xFFFFFF)
-                if (line.money) drawCurrencyUnit(context, textRenderer, drawn, textY, line.color)
+                if (line.money) drawCurrencyUnit(context, textRenderer, line.isPoints, drawn, textY, line.color)
                 y += line.height
             }
         }
