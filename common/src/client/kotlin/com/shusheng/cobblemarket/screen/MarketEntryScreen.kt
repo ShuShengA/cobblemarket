@@ -48,13 +48,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private val entryButtons = mutableListOf<ClickableWidget>()
 
     // ── 市场 ID 卡入口（底部居中）──
-    /** 入口按钮本体：图标要每帧跟随背景图，所以留个引用（见 [syncIdCardIcon]） */
+    /** 入口按钮本体：图标要每帧跟随背景图，所以留个引用（同步走 [syncIdCardIcon]） */
     private var idCardButton: NineSliceButton? = null
     /** 图标显示边长（按钮 22×22 留 2px 边距，照同排的求购单 / 设置） */
     private val idCardIconW = 18
-    /** 内置背景图尺寸（服主没配 / 图还没到时用它，与 IdCardScreen 里那份一致） */
-    private val idCardBuiltinW = 1280
-    private val idCardBuiltinH = 940
     private var settingsOpen = false
     private var settingsMarketButton: NineSliceButton? = null
     private var settingsAuctionButton: NineSliceButton? = null
@@ -308,9 +305,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             centerX - cornerSize / 2, cornerY, cornerSize, cornerSize,
             Text.literal(""),
             { client?.setScreen(IdCardScreen()) },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/id_card_background.png"),
-            iconTexW = idCardBuiltinW, iconTexH = idCardBuiltinH,
-            iconScale = idCardIconW.toFloat() / idCardBuiltinW,
+            iconLeft = IdCardBackgroundTexture.BUILTIN_TEX,
+            iconTexW = IdCardBackgroundTexture.BUILTIN_WIDTH, iconTexH = IdCardBackgroundTexture.BUILTIN_HEIGHT,
+            iconScale = idCardIconW.toFloat() / IdCardBackgroundTexture.BUILTIN_WIDTH,
             // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
         )
@@ -960,23 +957,11 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         return (minOf(1f, kv, kh) * OAK_BASE_SCALE).coerceAtLeast(0.25f)
     }
 
-    /**
-     * ID 卡入口的图标**每帧跟随背景图**：服主换了自己的图 ⇒ 图标跟着换；没配 = 内置背景缩小版。
-     * 幂等、只是给几个字段赋值，放心每帧调。
-     */
-    private fun syncIdCardIcon() {
-        val btn = idCardButton ?: return
-        val entry = IdCardBackgroundTexture.get()
-        val w = entry?.width ?: idCardBuiltinW
-        btn.iconLeft = entry?.id ?: Identifier.of("cobblemarket", "textures/gui/id_card_background.png")
-        btn.iconTexW = w
-        btn.iconTexH = entry?.height ?: idCardBuiltinH
-        // 按**宽度**缩到图标边长（很宽的图会跟着变矮 —— 「直接缩整张」的必然结果，用户已知）
-        btn.iconScale = idCardIconW.toFloat() / w
-    }
-
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-        syncIdCardIcon()
+        // ID 卡入口的图标**每帧跟随背景图**：服主换了自己的图 ⇒ 图标跟着换（没配 = 内置背景缩小版）。
+        // 幂等（只给几个字段赋值）⇒ 放心每帧调。口径与管理面板的「玩家总览」那颗**共用一处**
+        // （[syncIdCardIcon]）—— 同一个量两边各算一遍，迟早会不同步。
+        idCardButton?.syncIdCardIcon(idCardIconW)
         // 打开入口的掉落动画（照购买精灵动画，个人设置可关）：
         // 下落+停留阶段只画暗底+掉落图；淡出阶段完整渲染入口界面、掉落图渐透明——界面随图淡出慢慢显现
         val animElapsed = System.currentTimeMillis() - dropAnimStart
