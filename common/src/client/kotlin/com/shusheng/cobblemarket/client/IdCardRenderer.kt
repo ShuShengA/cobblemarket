@@ -111,9 +111,10 @@ object IdCardRenderer {
                 context, innerLeft.toInt(), innerTop.toInt(), split.toInt(), titleTop.toInt(),
                 ((titleTop - innerTop) * MODEL_SCALE / 2f).toInt(),
                 0f,
-                // ⚠ 后两个是**看向的目标点**（不是鼠标偏移）：传 (0,0) 会让模型盯着屏幕左上角。
-                //   指向模型区域自己的左上角 ⇒ 正前方、平视（2026-10-17 用户报「为什么看左上方」）
-                innerLeft, innerTop, player
+                // ⚠ 后两个是**看向的目标点**（不是鼠标偏移）。`drawEntity` 以**区域中心**为基准算偏角
+                //   ⇒ 指向区域中心 = 正前方平视（2026-10-17 用户两次报「看左上方」：传 (0,0) 看屏幕左上、
+                //   传区域左上角看区域左上，都不对）
+                (innerLeft + split) / 2f, (innerTop + titleTop) / 2f, player
             )
             // 画完把模型批次提交、再清一次深度 —— 别把 3D 的深度留给后续绘制
             context.draw()
