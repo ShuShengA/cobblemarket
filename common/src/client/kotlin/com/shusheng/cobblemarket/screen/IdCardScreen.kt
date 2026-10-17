@@ -109,6 +109,24 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
             tooltip = Text.translatable("cobblemarket.gui.back")
         ))
 
+        // 展示按钮（2026-10-17）：把自己的**整张 ID 卡**发到全服聊天（别人悬停能看整张卡）。
+        // 发完直接关界面回游戏 —— 展示的落点是聊天，玩家该直接看到那条播报
+        addDrawableChild(NineSliceButton(
+            (geo.innerRight - 50 - 6 - 50 - 4).toInt(), (geo.innerBottom - 16 - 2).toInt(), 50, 16,
+            Text.literal(""),
+            {
+                com.shusheng.cobblemarket.platform.sendToServer(
+                    com.shusheng.cobblemarket.network.SharePayload(
+                        com.shusheng.cobblemarket.network.ShareNetwork.KIND_IDCARD, ""
+                    )
+                )
+                client?.setScreen(null)
+            },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/share.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+            tooltip = Text.translatable("cobblemarket.share.id_card_button")
+        ))
+
         // 每次打开都重新拉：1) 自己的数据（顺便刷新）2) 背景图（服主换图后无需重连）
         IdCardDataCache.request()
         IdCardBackgroundTexture.requestRefresh()

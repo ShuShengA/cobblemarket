@@ -984,6 +984,8 @@
   "cobblemarket.buy_order.item_variant_not_matching": "交付物品不符合求购单的组件要求",
   "cobblemarket.buy_order.not_enough": "余额不足，无法冻结资金",
   "cobblemarket.buy_order.too_large": "冻结金额超出上限",
+  "cobblemarket.share.id_card_name": "市场 ID 卡",
+  "cobblemarket.share.id_card_button": "展示到聊天",
   "cobblemarket.share.no_pokemon": "精灵位为空，没有可展示的精灵",
   "cobblemarket.share.no_item": "手上没有可展示的物品",
   "cobblemarket.share.pokemon": "精灵",

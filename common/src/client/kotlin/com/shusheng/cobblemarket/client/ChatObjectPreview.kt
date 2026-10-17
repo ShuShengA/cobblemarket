@@ -133,7 +133,9 @@ object ChatObjectPreview {
          * **这条是「展示」而不是交易播报**（2026-10-17 从 1.3.0 下放）：
          * 展示没有交易信息 ⇒ 尾部那两行（卖家 / 价格）**整个略掉**。
          */
-        val isShare: Boolean = false
+        val isShare: Boolean = false,
+        /** ID 卡展示的数据快照（非空 = 这条是 ID 卡展示，画整张卡） */
+        val idCardRow: com.shusheng.cobblemarket.overview.PlayerOverviewRow? = null
     )
 
     /** 大图数据缓存（插入序，超上限淘汰最旧的） */
@@ -232,7 +234,14 @@ object ChatObjectPreview {
         // 没有世界就没有注册表：物种/物品栈都重建不了（正常不会走到，服务端只在玩家在线时发包）
         val registryManager = MinecraftClient.getInstance().world?.registryManager ?: return
 
-        val entry = if (payload.isPokemon) {
+        // ID 卡展示：没有精灵/物品模型，直接用数据快照。
+        // ⚠ 必须**最先判** —— 它的 isPokemon=false 会掉进下面的物品分支，而那个分支会因 itemId 为空直接 return
+        val entry = if (payload.idCardRow != null) {
+            Entry(
+                isPokemon = false, renderable = null, state = null, stack = null,
+                at = now, idCardRow = payload.idCardRow
+            )
+        } else if (payload.isPokemon) {
             val speciesId = Identifier.tryParse(payload.speciesId) ?: return
             val species = PokemonSpecies.getByIdentifier(speciesId) ?: return
             // 形态照各界面统一口径：挂单真实 aspects + 闪光补 "shiny"（缺了这一步闪光精灵画成普通色）
@@ -260,7 +269,8 @@ object ChatObjectPreview {
                 ),
                 auction = payload.auction,
                 pokemonKey = pokemonKey,
-                isShare = payload.isShare
+                isShare = payload.isShare,
+                idCardRow = payload.idCardRow
             )
         } else {
             // 拍卖存整栈 NBT、求购单存组件快照 —— 两种格式各走各的重建入口（都以 itemId 兜底）
@@ -270,7 +280,7 @@ object ChatObjectPreview {
             // 数量以包里单独传的为准：挂单 NBT 里存的是上架总量（同庆祝动画的处理）
             stack.count = payload.count.coerceAtLeast(1)
             // ⚠ 物品拍卖**同样**带拍卖状态（拍卖场的物品悬停窗也是「词条 + 当前价 / 倒计时 / 领先者」）
-            Entry(isPokemon = false, renderable = null, state = null, stack = stack, at = now, auction = payload.auction, isShare = payload.isShare)
+            Entry(isPokemon = false, renderable = null, state = null, stack = stack, at = now, auction = payload.auction, isShare = payload.isShare, idCardRow = payload.idCardRow)
         }
         cache[payload.id] = entry
         trimCache(now)
@@ -325,6 +335,16 @@ object ChatObjectPreview {
         // ⚠ 不是"大图 + 面板两块合起来居中"（那样大图会偏左），用户 2026-09-29 专门澄清过
         val centerX = context.scaledWindowWidth * 0.5f
         val screenHeight = context.scaledWindowHeight
+        // ID 卡展示：画**整张卡**（背景 + 两列信息）；不画 3D 玩家模型 —— 展示者的实体本地不一定有
+        val idCard = entry.idCardRow
+        if (idCard != null) {
+            val cardLeft = (context.scaledWindowWidth - IdCardRenderer.CARD_W) / 2f
+            val cardTop = (screenHeight - IdCardRenderer.CARD_H) / 2f
+            IdCardRenderer.draw(
+                context, MinecraftClient.getInstance().textRenderer, idCard, cardLeft, cardTop
+            )
+            return
+        }
         if (entry.isPokemon) {
             val renderable = entry.renderable ?: return
             val state = entry.state ?: return

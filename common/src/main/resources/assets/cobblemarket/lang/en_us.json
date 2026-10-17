@@ -983,6 +983,8 @@
   "cobblemarket.buy_order.item_variant_not_matching": "Delivered item does not match the order's component requirements",
   "cobblemarket.buy_order.not_enough": "Not enough balance to freeze",
   "cobblemarket.buy_order.too_large": "Frozen amount exceeds limit",
+  "cobblemarket.share.id_card_name": "Market ID Card",
+  "cobblemarket.share.id_card_button": "Showcase to chat",
   "cobblemarket.share.no_pokemon": "Nothing to showcase — the Pokémon slot is empty",
   "cobblemarket.share.no_item": "Nothing to showcase — your hand is empty",
   "cobblemarket.share.pokemon": "Pokémon",

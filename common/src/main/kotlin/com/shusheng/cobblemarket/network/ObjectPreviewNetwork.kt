@@ -154,7 +154,12 @@ data class ObjectPreviewPayload(
      * 客户端据此**整个略掉尾部那两行**（卖家 / 价格）—— 展示没有交易信息。
      * ⚠ 拍卖 / 求购那两条恒为 false。
      */
-    val isShare: Boolean = false
+    val isShare: Boolean = false,
+    /**
+     * **ID 卡展示**的数据快照（2026-10-17）：非空 = 这条是 ID 卡展示，客户端按**整张卡**渲染。
+     * 只在 [ShareNetwork] 的 idcard 分享里出现；精灵 / 物品恒为 null。
+     */
+    val idCardRow: com.shusheng.cobblemarket.overview.PlayerOverviewRow? = null
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -182,6 +187,9 @@ data class ObjectPreviewPayload(
                 b.writeBoolean(p.auction != null)
                 p.auction?.write(b)
                 b.writeBoolean(p.isShare)
+                // ⚠ 新增字段**一律追加在末尾**，读端严格同序；两端必须同步升级
+                b.writeBoolean(p.idCardRow != null)
+                p.idCardRow?.let { OverviewRowCodec.write(b, it) }
             },
             { b ->
                 // 具名参数：这段读序与上面的写序一一对应，错位了会静默读出垃圾数据
@@ -201,7 +209,8 @@ data class ObjectPreviewPayload(
                     listing = if (b.readBoolean()) ListingEntry.read(b) else null,
                     auction = if (b.readBoolean()) AuctionPreviewInfo.read(b) else null,
                     // 与 write 端严格同序（write 在 auction 之后）
-                    isShare = b.readBoolean()
+                    isShare = b.readBoolean(),
+                    idCardRow = if (b.readBoolean()) OverviewRowCodec.read(b) else null
                 )
             }
         )

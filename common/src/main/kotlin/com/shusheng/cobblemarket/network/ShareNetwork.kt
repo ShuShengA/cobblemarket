@@ -69,6 +69,7 @@ object ShareNetwork {
 
     const val KIND_POKEMON = "pokemon"
     const val KIND_ITEM = "item"
+    const val KIND_IDCARD = "idcard"
 
     /** 分享冷却：全服播报类操作，10 秒一次既能防刷屏又不影响正常使用 */
     private const val SHARE_COOLDOWN_MS = 10_000L
@@ -152,6 +153,8 @@ object ShareNetwork {
                 val message = when (payload.kind) {
                     KIND_POKEMON -> pokemonShareMessage(player, shareId, payload.target)
                     KIND_ITEM -> itemShareMessage(player, shareId, payload.target)
+                    // ID 卡（2026-10-17）：把自己**整张卡**发到全服（数据取分享那一刻的快照）
+                    KIND_IDCARD -> idCardShareMessage(player, shareId)
                     // 非法 kind 只可能是改过的客户端：静默丢弃，与存档读取的容错语义相反
                     else -> null
                 }
@@ -251,6 +254,34 @@ object ShareNetwork {
             shareId = shareId,
             nameText = nameText
         )
+    }
+
+    /** ID 卡分享：把自己的**整张卡**发到全服（数据取分享那一刻的快照，与精灵/物品同一套缓存语义） */
+    private fun idCardShareMessage(player: ServerPlayerEntity, shareId: UUID): Text? {
+        val row = com.shusheng.cobblemarket.overview.PlayerOverviewService
+            .buildRow(player.server, player.uuid) ?: return null
+        cachePreview(
+            shareId,
+            ObjectPreviewPayload(
+                id = shareId.toString(),
+                isPokemon = false,
+                speciesId = "",
+                aspects = emptyList(),
+                shiny = false,
+                heldItemNbt = null,
+                itemId = "",
+                itemNbt = null,
+                itemComponentsSpec = null,
+                count = 0,
+                isShare = true,
+                idCardRow = row
+            )
+        )
+        val nameText = Text.literal("")
+            .append(Text.literal("[").formatted(Formatting.GRAY))
+            .append(Text.translatable("cobblemarket.share.id_card_name"))
+            .append(Text.literal("]").formatted(Formatting.GRAY))
+        return shareMessage(player, shareId, nameText)
     }
 
     private fun buildPokemonMessage(player: ServerPlayerEntity, shareId: UUID, pokemon: Pokemon): Text {

@@ -27,6 +27,8 @@
 
 - **Showcase to chat**: a new showcase button on the entry screen (left of Settings) opens two sub-buttons (Pokémon / Item) — pick one to post it to server chat, **hover the message for the full details**; **hold X** to quickly showcase the selected party Pokémon / the item in your main hand (rebindable). Once every 10 seconds per player
 
+- **The Market ID Card can be showcased too**: a "Showcase to chat" button on your ID Card screen; the entry showcase menu now has **Pokémon / ID Card / Item**; holding **X** shows an extra ID Card box above the other two. Hovering the chat message shows the **whole card**
+
 - **A keybind for the Market ID Card**: defaults to **I** (rebindable in Controls)
 
 - **New "Player Overview" screen**: the admin panel gained an entry (behind the new **"Player Overview" permission node**), listing every player on the server on one line each — the right-hand cell shows the field you currently sort by, with **name search and sorting by any field** (balance / limit / debt / deposits / trade volume / Pokédex counts and more); hovering a row brings up that player's **full info card** (item by item the same as the Market ID Card). ⚠ Offline players show **the data recorded while they were last online** (marked as such on the line); online players show live values.
