@@ -172,6 +172,13 @@ object CobbleMarketClient {
     /** 上一帧的按住状态（边沿检测：上升沿开、下降沿收尾） */
     private var wasQuickShowcasePressed = false
 
+    /**
+     * 刚发过一次 **ID 卡展示**（回包到达前置位）—— 用来播**展示专属音效**。
+     * ⚠ ID 卡展示是「发完包立刻关界面」，回包时 `currentScreen` 已经是 null，
+     *   光靠界面类型判不出来（2026-10-17 用户报「播的是成功音」）。
+     */
+    var pendingIdCardShare = false
+
     /** 余额 HUD 低频兜底轮询计时（交易响应已即时刷新，这里兜住离线收益补发等） */
     private var lastBalancePollAt = 0L
     private var lastFinancePollAt = 0L
@@ -631,8 +638,10 @@ object CobbleMarketClient {
                     is ItemSellScreen -> screen.isShareMode()
                     // 快速展示：那个界面整个就是为展示而生的，不用再判模式
                     is QuickShowcaseScreen -> true
-                    else -> false
+                    // ID 卡展示是「发完包立刻关界面」⇒ 回包时界面已关，靠标记认
+                    else -> pendingIdCardShare
                 }
+                pendingIdCardShare = false
                 when {
                     shareSucceeded -> playMarketSound("share")
                     // 出价成功时不播全局成功音：点击「确认出价」时的金币声即为反馈，避免叠音

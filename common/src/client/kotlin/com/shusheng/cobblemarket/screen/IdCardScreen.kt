@@ -115,6 +115,8 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
             (geo.innerRight - 50 - 6 - 50 - 4).toInt(), (geo.innerBottom - 16 - 2).toInt(), 50, 16,
             Text.literal(""),
             {
+                // 置位「ID 卡展示」标记 —— 界面立刻关掉，回包时靠它播展示专属音效
+                com.shusheng.cobblemarket.client.CobbleMarketClient.pendingIdCardShare = true
                 com.shusheng.cobblemarket.platform.sendToServer(
                     com.shusheng.cobblemarket.network.SharePayload(
                         com.shusheng.cobblemarket.network.ShareNetwork.KIND_IDCARD, ""

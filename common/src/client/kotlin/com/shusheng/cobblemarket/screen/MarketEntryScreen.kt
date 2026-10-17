@@ -599,6 +599,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     /** ID 卡展示：直接发（没有选择界面 —— 展示的就是自己那张卡）；发完关界面回游戏看聊天 */
     private fun openShareIdCard() {
+        // 置位「ID 卡展示」标记 —— 界面立刻关掉，回包时靠它播展示专属音效（见 CobbleMarketClient）
+        CobbleMarketClient.pendingIdCardShare = true
         com.shusheng.cobblemarket.platform.sendToServer(
             com.shusheng.cobblemarket.network.SharePayload(
                 com.shusheng.cobblemarket.network.ShareNetwork.KIND_IDCARD, ""
