@@ -676,6 +676,13 @@ object CobbleMarketClient {
                     is AdminPointOrdersScreen -> screen.onResult(payload)
                     // 借款被拒也走结果包（失败音效挂在它上面）—— 见 LoanScreen.onMarketResult
                     is LoanScreen -> screen.onMarketResult(payload)
+                    // ID 卡展示是「发完包立刻关界面」⇒ 失败时没有界面接结果，红字要自己补
+                    //（成功有展示专属音效、不需要文字；失败原本只剩 fail 音，2026-10-17 用户报）
+                    else -> if (!payload.success && pendingIdCardShare) {
+                        client.player?.sendMessage(
+                            payload.message.copy().formatted(net.minecraft.util.Formatting.RED), false
+                        )
+                    }
                 }
             }
         }
