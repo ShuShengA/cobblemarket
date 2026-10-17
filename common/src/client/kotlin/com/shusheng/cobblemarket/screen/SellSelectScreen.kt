@@ -1732,6 +1732,12 @@ class SellSelectScreen(
     fun onMarketResult(payload: MarketResultPayload) {
         if (payload.success) {
             client?.player?.sendMessage(payload.message.copy().formatted(Formatting.GREEN), false)
+            // 分享成功即完成：**关掉界面回游戏**（分享的落点是聊天，玩家该直接看到聊天里的那条播报；
+            // 留在这里反而要手动按 E 退出）
+            if (shareMode) {
+                client?.setScreen(null)
+                return
+            }
             priceField?.text = ""
             selectedIndex = -1
             // 上架成功后从第一页重新拉取全量列表
