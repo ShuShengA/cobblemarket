@@ -641,6 +641,8 @@ object CobbleMarketClient {
                     // ID 卡展示是「发完包立刻关界面」⇒ 回包时界面已关，靠标记认
                     else -> pendingIdCardShare
                 }
+                // ⚠ 先存后清：失败红字分支还要用它（ID 卡展示发完界面已关，只能靠这个标记认）
+                val idCardSharePending = pendingIdCardShare
                 pendingIdCardShare = false
                 when {
                     shareSucceeded -> playMarketSound("share")
@@ -678,7 +680,7 @@ object CobbleMarketClient {
                     is LoanScreen -> screen.onMarketResult(payload)
                     // ID 卡展示是「发完包立刻关界面」⇒ 失败时没有界面接结果，红字要自己补
                     //（成功有展示专属音效、不需要文字；失败原本只剩 fail 音，2026-10-17 用户报）
-                    else -> if (!payload.success && pendingIdCardShare) {
+                    else -> if (!payload.success && idCardSharePending) {
                         client.player?.sendMessage(
                             payload.message.copy().formatted(net.minecraft.util.Formatting.RED), false
                         )
