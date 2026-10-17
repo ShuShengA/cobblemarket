@@ -22,7 +22,7 @@ import java.util.UUID
 
 /**
  * **RP 奖励系统** —— 服主用数据包配"做某件事就给 RP"的规则（`data/` 下
- * `cobblemarket/points_rewards/` 里的 json）。
+ * `points_rewards/` 里的 json —— 路径是 `data/<命名空间>/points_rewards/`）。
  *
  * ⚠⭐ **默认整块关着**（`CobbleMarketConfig.pointsRewardsEnabled`，默认 false）：装了 1.3.0
  *   什么都不动 ⇒ **不可能有任何一个 RP 因为捕捉 / 孵化 / 战斗而自动进玩家账户**。
