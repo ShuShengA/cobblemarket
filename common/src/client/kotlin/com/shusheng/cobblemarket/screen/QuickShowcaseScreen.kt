@@ -102,9 +102,9 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
             rightX, baseY, BTN, BTN, Text.literal(""), { doShowcase(Kind.ITEM) },
             texture = DIALOG_BACKGROUND_TEXTURE, texH = DIALOG_BACKGROUND_TEX_H
         ).also { addDrawableChild(it) }
-        // ID 卡框：**上方中间**（2026-10-17 用户要求；原来两个框的位置不动）
+        // ID 卡框：**下方中间**（2026-10-17 用户要求；原来两个框的位置不动）
         idCardBtn = NineSliceButton(
-            width / 2 - BTN / 2, baseY - BTN - GAP, BTN, BTN, Text.literal(""), { doShowcase(Kind.IDCARD) },
+            width / 2 - BTN / 2, baseY + BTN + GAP, BTN, BTN, Text.literal(""), { doShowcase(Kind.IDCARD) },
             texture = DIALOG_BACKGROUND_TEXTURE, texH = DIALOG_BACKGROUND_TEX_H
         ).also { addDrawableChild(it) }
     }
@@ -122,8 +122,8 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         hoveredKind = hovered
         val pokemonY = baseY + drop - (if (hovered == Kind.POKEMON) LIFT else 0)
         val itemY = baseY + drop - (if (hovered == Kind.ITEM) LIFT else 0)
-        // ID 卡框在**上方中间**（目标位 = baseY 再上移一格）
-        val idCardY = baseY - BTN - GAP + drop - (if (hovered == Kind.IDCARD) LIFT else 0)
+        // ID 卡框在**下方中间**（目标位 = baseY 再下移一格）
+        val idCardY = baseY + BTN + GAP + drop - (if (hovered == Kind.IDCARD) LIFT else 0)
         pokemonBtn?.y = pokemonY
         idCardBtn?.y = idCardY
         itemBtn?.y = itemY
@@ -138,18 +138,24 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
 
     // ── 三个框的内容 ──
 
-    /** ID 卡框的内容：一枚 share 图标（框里放"要展示的东西"的视觉提示） */
+    /**
+     * ID 卡框的内容 = **ID 卡图标**（与入口底部那颗 ID 卡按钮同源：当前生效的 ID 卡背景图，
+     * 没配 = 内置那张）。按**宽度**缩到框内、上下留 INSET 边距。
+     */
     private fun drawIdCardContent(context: DrawContext, x: Int, y: Int) {
-        val size = (BTN - INSET * 2) * 0.6f
-        val cx = x + (BTN - size) / 2f
-        val cy = y + (BTN - size) / 2f
+        val entry = com.shusheng.cobblemarket.client.IdCardBackgroundTexture.get()
+        val tex = entry?.id ?: com.shusheng.cobblemarket.client.IdCardBackgroundTexture.BUILTIN_TEX
+        val texW = entry?.width ?: com.shusheng.cobblemarket.client.IdCardBackgroundTexture.BUILTIN_WIDTH
+        val texH = entry?.height ?: com.shusheng.cobblemarket.client.IdCardBackgroundTexture.BUILTIN_HEIGHT
+        val scale = (BTN - INSET * 2).toFloat() / texW
+        val drawW = texW * scale
+        val drawH = texH * scale
+        val cx = x + (BTN - drawW) / 2f
+        val cy = y + (BTN - drawH) / 2f
         context.matrices.push()
         context.matrices.translate(cx.toDouble(), cy.toDouble(), 0.0)
-        context.matrices.scale(size / 48f, size / 48f, 1f)
-        context.drawTexture(
-            net.minecraft.util.Identifier.of("cobblemarket", "textures/gui/share.png"),
-            0, 0, 0f, 0f, 48, 48, 48, 48
-        )
+        context.matrices.scale(scale, scale, 1f)
+        context.drawTexture(tex, 0, 0, 0f, 0f, texW, texH, texW, texH)
         context.matrices.pop()
     }
 
@@ -236,8 +242,8 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         val y = baseY + drop
         return when {
             hit(width / 2 - BTN - GAP / 2, y) -> Kind.POKEMON
-            // ID 卡：**上方中间**（2026-10-17 用户要求；原来两个框的位置不动）
-            hit(width / 2 - BTN / 2, y - BTN - GAP) -> Kind.IDCARD
+            // ID 卡：**下方中间**（2026-10-17 用户要求；原来两个框的位置不动）
+            hit(width / 2 - BTN / 2, y + BTN + GAP) -> Kind.IDCARD
             hit(width / 2 + GAP / 2, y) -> Kind.ITEM
             else -> null
         }
