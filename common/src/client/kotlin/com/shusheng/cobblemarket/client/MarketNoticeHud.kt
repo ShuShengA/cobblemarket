@@ -28,6 +28,8 @@ import kotlin.math.abs
  *   ⚠ **不是"都从中央落下再挤开"** —— 那样新老会在中间叠一下（用户自己指出来的）
  * - **重排**：数量一变就**整组重新居中** —— 来新的整体左移、走老的剩下整体右靠
  * - **到期（3 秒）与被挤走，走同一套淡出**（视觉一致）
+ * - **淡出中的气泡跟着整行一起让位**：还有其它气泡时排在 live 行左侧、继续往左滑走；
+ *   只剩它自己时原地淡出（2026-10-18 修重叠 —— 见 `render` ②）
  *
  * ## 画什么
  *
@@ -69,7 +71,8 @@ object MarketNoticeHud {
      * 淡出时长（被挤走 / 到期都用它）。
      *
      * ⚠ 2026-10-07 用户实测：原本与入场共用 220ms ⇒「太快，看起来就像直接消失」⇒ 单独拉长到 450。
-     * 淡出同时带**左移**，时长加长后滑走也变得可见（见 `render` 里给 `targetX` 减的那段）。
+     * 有其它气泡时淡出**同时带左移**（让位给新气泡），加长后滑走也变得可见；
+     * 只剩自己时原地淡出（见 `render` ② 的统一排布）。
      */
     private const val FADE_MS = 450f
 
@@ -162,10 +165,8 @@ object MarketNoticeHud {
         while (live.size > MAX_VISIBLE) {
             val oldest = live.removeFirst()
             oldest.dyingAt = System.currentTimeMillis()
-            // 淡出起点定为"它现在的位置"，避免它一上来就瞬移到左边
-            if (!oldest.x.isNaN()) {
-                oldest.targetX = oldest.x - SIZE * 0.8f
-            }
+            // ⚠ 目标位置不在这里定：render 每帧把 fading 整组排到 live 行左侧（见 ②），
+            //   这样后面还有新气泡到来时它们会继续往左让，不会叠在一起
             fading.add(oldest)
         }
     }
@@ -196,13 +197,14 @@ object MarketNoticeHud {
         lastFrameNanos = nowNanos
 
         // ── ① 到期判定：活够 3 秒的转淡出 ──
-        // ⚠ **到期与"被挤走"不是同一套**（2026-10-07 用户指出）：到期是**原地淡出**（不位移），
-        //   只有被第 4 个挤走那个才带左滑 —— 左移是"被挤出去"的语义，只有一个气泡时左移莫名其妙。
-        //   两者共用 [FADE_MS] 的时长与透明度曲线，只是位移与否不同。
+        // ⚠ **到期与被挤走共用同一套淡出曲线**，位置统一由 ② 排：
+        //   还有其它气泡时都排在 live 行左侧、往左滑走（两者没有视觉差别）；
+        //   只剩它自己时才原地淡出（用户 2026-10-07 定的"单个气泡到期不左移"）。
+        //   ⚠ 2026-10-18 改：原先"到期一律原地"会在剩下的 live 重新居中时被压住 ⇒ 重叠。
         while (live.isNotEmpty() && now - live.first().bornAt >= HOLD_MS) {
             val expired = live.removeFirst()
             expired.dyingAt = now
-            // 不设 targetX ⇒ 保持它在 live 里最后算出的槽位 ⇒ 原地淡出
+            // ⚠ 位置交给下面的统一排布：还有其它气泡时往左让位、只剩自己时原地淡出
             fading.add(expired)
         }
 
@@ -214,8 +216,25 @@ object MarketNoticeHud {
             notice.targetX = startX + i * (SIZE + GAP)
             notice.targetY = TOP_MARGIN.toFloat()
         }
-        // ⚠ 淡出中的**不参与上面这套重排**：它的 targetX / targetY 保持转出时的值 ——
-        //   到期的原地不动、被挤走的继续往左滑（见上面那两处）；剩下的 live 才重新居中。
+        // ⚠ 淡出中的**不占 live 的槽位，但必须跟着整行一起让位**：
+        //   只把 live 重新居中、把 fading 钉在原地的话，剩下的 live 会往左挪进它的位置
+        //   ⇒ 与正在淡出的那个**叠在一起**（2026-10-18 用户实测报的：上一条正在消失时
+        //   又来一条，两个气泡重合了）。
+        //   有 live 时：fading 整组排在 live 行左侧，**越老的越靠左**（列表按加入顺序，老的在前），
+        //   新来的气泡把整行往左顶，它们自然继续往左滑；
+        //   只剩 fading 自己时：保持原位、原地淡出（用户 2026-10-07 定的"单个气泡到期不左移"）。
+        if (n > 0) {
+            fading.forEachIndexed { i, notice ->
+                notice.targetX = startX - (fading.size - i) * (SIZE + GAP)
+                notice.targetY = TOP_MARGIN.toFloat()
+            }
+        } else {
+            fading.forEach { notice ->
+                // 还没渲染过（x 仍是 NaN）就落回居中，避免用未初始化的位置
+                if (notice.x.isNaN()) notice.targetX = (context.scaledWindowWidth - SIZE) / 2f
+                notice.targetY = TOP_MARGIN.toFloat()
+            }
+        }
 
         // ── ③ 位置趋近（与帧率无关的指数收敛）──
         val dt = selfDelta / 20f
@@ -229,7 +248,8 @@ object MarketNoticeHud {
         fading.forEach(::step)
 
         // ── ④ 绘制 ──
-        (live + fading).forEach { notice ->
+        // 淡出的先画、在场后画：过渡帧万一还有重叠，新的压在上面（也符合"新的在前"的直觉）
+        (fading + live).forEach { notice ->
             val alpha = alphaOf(notice, now)
             if (alpha <= 0.01f) return@forEach
             // 入场：从槽位上方掉进来（只对还活着的生效；淡出中的不再参与）
