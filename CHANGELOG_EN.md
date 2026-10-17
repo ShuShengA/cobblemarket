@@ -96,6 +96,8 @@
 - **New "Market ID Card" screen**: click the card at the bottom of the entry screen to open **your own market ID** — your 3D avatar on the left, and two columns on the right listing everything you have in this system: listings / auctions / buy orders / pending returns, balance, borrowable limit, debt, deposits and interest, lifetime trade volume, and your Pokédex seen / caught counts (**those two Pokédex lines use Cobblemon's own Pokédex icons**).
   ⚠ **The background image can be replaced with your server's own**: drop an image into `config/cobblemarket/idcard/` and enter its file name in the server config (leave it blank to use the built-in one) — the built-in image **leaves the top area empty on purpose**, for server owners to add a title or a mascot
 
+- **A keybind for the Market ID Card**: defaults to **I** (rebindable in Controls)
+
 - **New "Player Overview" screen**: the admin panel gained an entry (behind the new **"Player Overview" permission node**), listing every player on the server on one line each — the right-hand cell shows the field you currently sort by, with **name search and sorting by any field** (balance / limit / debt / deposits / trade volume / Pokédex counts and more); hovering a row brings up that player's **full info card** (item by item the same as the Market ID Card). ⚠ Offline players show **the data recorded while they were last online** (marked as such on the line); online players show live values.
   ⚠ This feature **adds a network packet ⇒ both client and server must be updated** (updating only one side will fail to connect)
 
