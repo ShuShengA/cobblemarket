@@ -408,13 +408,15 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         this.sharePokemonBtn = pokemonShareBtn
         entryButtons += addDrawableChild(pokemonShareBtn)
 
-        // ID 卡（中间那个）
+        // ID 卡（中间那个）：图标 = **ID 卡背景图**（与底部那颗 ID 卡按钮同源，不是 share 图标）
         val idCardShareBtn = NineSliceButton(
             subCenterX - subSize / 2, subY, subSize, subSize,
             Text.literal(""),
             { openShareIdCard() },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/share.png"),
-            iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+            iconLeft = com.shusheng.cobblemarket.client.IdCardBackgroundTexture.BUILTIN_TEX,
+            iconTexW = com.shusheng.cobblemarket.client.IdCardBackgroundTexture.BUILTIN_WIDTH,
+            iconTexH = com.shusheng.cobblemarket.client.IdCardBackgroundTexture.BUILTIN_HEIGHT,
+            iconScale = 18f / com.shusheng.cobblemarket.client.IdCardBackgroundTexture.BUILTIN_WIDTH,
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
         )
         idCardShareBtn.setTooltip(withQuickKeyHint("cobblemarket.share.id_card_name"))
