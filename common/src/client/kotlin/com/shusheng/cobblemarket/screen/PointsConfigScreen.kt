@@ -238,8 +238,12 @@ class PointsConfigScreen : Screen(
      */
     private fun updateConfirmButton() {
         val btn = confirmDialogButtons.firstOrNull() ?: return
-        val left = ((confirmReadyAt - System.currentTimeMillis()) / 1000L).toInt()
-        if (left > 0) {
+        val remaining = confirmReadyAt - System.currentTimeMillis()
+        if (remaining > 0) {
+            // ⚠ 秒数必须**向上取整**（剩 1~999ms 显示「1 秒」并继续置灰）：
+            //   向下取整/截断会让它在真正解禁前最多 1 秒就变成「确认开启」，
+            //   点了只有失败音 —— 显示与可点状态对不上（2026-10-18 用户实测报的）
+            val left = ((remaining + 999L) / 1000L).toInt()
             btn.dimmed = true
             btn.setMessage(Text.translatable("cobblemarket.points.config.grant_wait", left))
         } else {
