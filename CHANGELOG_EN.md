@@ -27,7 +27,7 @@
 
 - **Showcase to chat**: a new showcase button on the entry screen (left of Settings) opens two sub-buttons (Pokémon / Item) — pick one to post it to server chat, **hover the message for the full details**; **hold X** to quickly showcase the selected party Pokémon / the item in your main hand (rebindable). Once every 10 seconds per player
 
-- **The Market ID Card can be showcased too**: a "Showcase to chat" button on your ID Card screen; the entry showcase menu now has **Pokémon / ID Card / Item**; holding **X** shows an extra ID Card box above the other two. Hovering the chat message shows the **whole card**
+- **The Market ID Card can be showcased too**: a "Showcase to chat" button on your ID Card screen; the entry showcase menu now has **Pokémon / ID Card / Item**; holding **X** shows an extra ID Card box below the other two. Hovering the chat message shows the **whole card**
 
 - **A keybind for the Market ID Card**: defaults to **I** (rebindable in Controls)
 
