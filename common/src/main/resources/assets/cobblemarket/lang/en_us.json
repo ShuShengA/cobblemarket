@@ -978,6 +978,7 @@
   "cobblemarket.buy_order.not_enough": "Not enough balance to freeze",
   "cobblemarket.buy_order.too_large": "Frozen amount exceeds limit",
   "cobblemarket.buy_order.ended": "This buy order has ended",
+  "cobblemarket.buy_order.no_pending_delivery": "This buy order has no pending delivery right now",
   "cobblemarket.buy_order.cannot_deliver_own": "Cannot deliver to your own order",
   "cobblemarket.buy_order.price_out_of_range": "Price outside the order range",
   "cobblemarket.buy_order.price_limit_below": "Price below the price limit (min %s)",

@@ -549,7 +549,17 @@ class BuyOrderScreen(
         pendingReviewLocate?.let { id ->
             entries.find { it.id == id }?.let { e ->
                 pendingReviewLocate = null
-                openReviewDialog(e)
+                // ⚠ 找到订单 ≠ 还有待确认的交付：拒绝 / 接受之后**求购单本身还在列表里**
+                //   （继续等别的卖家），只是 pending 清空了。漏判这一下就会弹出一个
+                //   「几行空信息 + 输入框 + 按钮」的空壳弹窗（2026-10-17 用户从聊天旧链接点进来报的）
+                if (e.pending != null) {
+                    openReviewDialog(e)
+                } else {
+                    client?.player?.sendMessage(
+                        Text.translatable("cobblemarket.buy_order.no_pending_delivery").formatted(Formatting.RED),
+                        false
+                    )
+                }
             }
         }
     }
@@ -974,21 +984,13 @@ class BuyOrderScreen(
             }
             // 行内不显示备注（空间不足几字截断无意义），完整留言见悬停面板/交付弹窗
 
-            // 买家头像 + 剩余时间（左移，给右侧数量+价格区间让位，避免与长价格重合）
+            // 买家头像
             drawSellerAvatar(context, entry.buyerUuid, entry.buyerName, rowL + 96, y + 4, 16)
-            // 求购单没有反狙击延长，不需要秒级精度
-            val remaining = com.shusheng.cobblemarket.util.RemainingTime.text(
-                entry.expiresAt, "cobblemarket.buy_order.ending", secondPrecision = false)
-            val remainingColor = com.shusheng.cobblemarket.util.RemainingTime.color(entry.expiresAt)
-            context.drawTextWithShadow(textRenderer, remaining, rowL + 116, y + 7, remainingColor)
-            if (entry.pending != null) {
-                context.drawTextWithShadow(textRenderer,
-                    Text.translatable("cobblemarket.buy_order.pending_mark").string,
-                    rowL + 116 + textRenderer.getWidth(remaining) + 4, y + 7, GOLD_COLOR)
-            }
 
             // 数量 + 价格区间（右对齐，与行按钮左缘留 4px 空隙，不压按钮）；
-            // 待确认时隐藏（锁定期展示无意义，由「待确认」标记取代，避免与标记文字重合）
+            // 待确认时隐藏（锁定期展示无意义，由「待确认」标记取代，避免与标记文字重合）。
+            // ⚠ 必须**先算它的左缘**：剩余时间能不能画取决于它（见下）
+            var rightLeft = Int.MAX_VALUE
             if (entry.pending == null) {
                 val countStr = countText(entry)
                 val rightText = if (countStr.isEmpty()) priceRangeText(entry) else "$countStr  ${priceRangeText(entry)}"
@@ -997,8 +999,27 @@ class BuyOrderScreen(
                 // 货币单位单独画在区间右侧（物品货币时是图标），右对齐的锚点要把单位那份也算进去
                 val rightW = textRenderer.getWidth(rightText) + currencyUnitWidth(textRenderer)
                 val rightX = btnLeft - 4 - rightW
+                rightLeft = rightX
                 context.drawTextWithShadow(textRenderer, rightText, rightX, y + 7, 0xFFAA00)
                 drawCurrencyUnit(context, textRenderer, rightX + textRenderer.getWidth(rightText), y + 7, 0xFFAA00)
+            }
+
+            // 剩余时间（固定起点画）+ 待确认标记。
+            // ⚠ 右侧价格是**右对齐**的 ⇒ 价格越长左缘越靠左，会直接压到剩余时间上
+            //   （2026-10-17 用户报「数字和剩余时间重叠」；1.3.x 同样有）。这里做一次碰撞检测：
+            //   与右侧文字至少留 4px，放不下就**不画** —— 完整的到期时间在悬停窗里（expiresLineOf），
+            //   行内省略比糊成一团好。求购单没有反狙击延长，不需要秒级精度。
+            val remaining = com.shusheng.cobblemarket.util.RemainingTime.text(
+                entry.expiresAt, "cobblemarket.buy_order.ending", secondPrecision = false)
+            val remainingRight = rowL + 116 + textRenderer.getWidth(remaining)
+            if (remainingRight + 4 <= rightLeft) {
+                val remainingColor = com.shusheng.cobblemarket.util.RemainingTime.color(entry.expiresAt)
+                context.drawTextWithShadow(textRenderer, remaining, rowL + 116, y + 7, remainingColor)
+                if (entry.pending != null) {
+                    context.drawTextWithShadow(textRenderer,
+                        Text.translatable("cobblemarket.buy_order.pending_mark").string,
+                        remainingRight + 4, y + 7, GOLD_COLOR)
+                }
             }
         }
 
@@ -1189,6 +1210,12 @@ class BuyOrderScreen(
             lines[quantityLine].first?.let { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
         }
         lines.last().first?.let { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
+        // ⚠ 价格行的货币单位是**另画在行尾**的（见下面 drawCurrencyUnit）⇒ 量宽必须把它算进去，
+        //   否则单位戳到悬停窗边框外（2026-10-17 用户报；1.3.x 已修，这里照搬）
+        val priceUnitW = currencyUnitWidth(textRenderer)
+        lines.getOrNull(priceRow)?.first?.let {
+            maxWidth = maxOf(maxWidth, textRenderer.getWidth(it) + priceUnitW)
+        }
 
         val padding = 4
         val tooltipHeight = lines.size * 10 + padding

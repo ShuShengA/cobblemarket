@@ -979,6 +979,7 @@
   "cobblemarket.buy_order.not_enough": "余额不足，无法冻结资金",
   "cobblemarket.buy_order.too_large": "冻结金额超出上限",
   "cobblemarket.buy_order.ended": "该求购单已结束",
+  "cobblemarket.buy_order.no_pending_delivery": "该求购单当前没有待确认的交付",
   "cobblemarket.buy_order.cannot_deliver_own": "不能交付自己的求购单",
   "cobblemarket.buy_order.price_out_of_range": "价格超出求购区间",
   "cobblemarket.buy_order.price_limit_below": "成交价低于该物品的价格限制（最低 %s）",
