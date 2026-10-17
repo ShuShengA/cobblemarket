@@ -102,7 +102,7 @@
 - **New "Market ID Card" screen**: click the card at the bottom of the entry screen to open **your own market ID** — your 3D avatar on the left, and two columns on the right listing everything you have in this system: listings / auctions / buy orders / pending returns, balance, borrowable limit, debt, deposits and interest, lifetime trade volume, and your Pokédex seen / caught counts (**those two Pokédex lines use Cobblemon's own Pokédex icons**).
   ⚠ **The background image can be replaced with your server's own**: drop an image into `config/cobblemarket/idcard/` and enter its file name in the server config (leave it blank to use the built-in one) — the built-in image **leaves the top area empty on purpose**, for server owners to add a title or a mascot
 
-- **The Market ID Card can be showcased too**: a "Showcase to chat" button on your ID Card screen; the entry showcase menu now has **Pokémon / ID Card / Item**; holding **X** shows an extra ID Card box above the other two. Hovering the chat message shows the **whole card**
+- **The Market ID Card can be showcased too**: a "Showcase to chat" button on your ID Card screen; the entry showcase menu now has **Pokémon / ID Card / Item**; holding **X** shows an extra ID Card box below the other two. Hovering the chat message shows the **whole card**
 
 - **A keybind for the Market ID Card**: defaults to **I** (rebindable in Controls)
 
