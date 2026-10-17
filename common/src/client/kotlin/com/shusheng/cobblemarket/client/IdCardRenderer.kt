@@ -110,7 +110,10 @@ object IdCardRenderer {
             net.minecraft.client.gui.screen.ingame.InventoryScreen.drawEntity(
                 context, innerLeft.toInt(), innerTop.toInt(), split.toInt(), titleTop.toInt(),
                 ((titleTop - innerTop) * MODEL_SCALE / 2f).toInt(),
-                0f, 0f, 0f, player
+                0f,
+                // ⚠ 后两个是**看向的目标点**（不是鼠标偏移）：传 (0,0) 会让模型盯着屏幕左上角。
+                //   指向模型区域自己的左上角 ⇒ 正前方、平视（2026-10-17 用户报「为什么看左上方」）
+                innerLeft, innerTop, player
             )
             // 画完把模型批次提交、再清一次深度 —— 别把 3D 的深度留给后续绘制
             context.draw()

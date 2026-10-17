@@ -81,6 +81,8 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
 
     override fun init() {
         super.init()
+        // 问一次 ID 卡背景图：服主换图后，这里的 ID 卡框要跟着变（没变只回版本号、不重传图）
+        com.shusheng.cobblemarket.client.IdCardBackgroundTexture.requestRefresh()
         // 三个框作为**一整组**在屏幕上居中（2026-10-17 用户要求）：上排精灵/物品、下排 ID 卡
         baseY = (height - (BTN * 2 + GAP)) / 2
         val leftX = width / 2 - BTN - GAP / 2
