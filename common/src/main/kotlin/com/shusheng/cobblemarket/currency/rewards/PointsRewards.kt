@@ -32,7 +32,7 @@ import java.util.UUID
  *   别在奖励侧再判一遍 —— 两处各判一次迟早分叉）。
  *
  * **事件里零读盘、零反射**（性能要求）：规则表常驻内存、命中即算；写盘只有发放时那两下
- * `PointsState` 的 `markDirty()`（去重计数 + 每日累计）。
+ * `RewardProgressState` 的 `markDirty()`（去重计数 + 每日累计）。
  */
 object PointsRewards {
 
@@ -152,7 +152,7 @@ object PointsRewards {
 
         // 该物种的 form aspect 并集只算一次（同一只精灵要判一串规则，别每条重算）
         val formAspectUnion by lazy { RewardCondition.formAspectUnion(pokemon.species) }
-        val state = PointsState.get(server)
+        val state = RewardProgressState.get(server)
         val worldDay = worldDay(server)
 
         candidates.forEach { rule ->
@@ -162,7 +162,7 @@ object PointsRewards {
             }
 
             // 计数与递减（`once` 与 `decay` **共用这份计数**）
-            val hits = state.rewardHitCount(player.uuid, hitKey(speciesId, rule))
+            val hits = state.hitCount(player.uuid, hitKey(speciesId, rule))
             if (rule.repeat == RewardRepeat.ONCE && hits > 0) {
                 debug(table, rule, "skipped (already rewarded once for $speciesId)")
                 return@forEach
@@ -176,7 +176,7 @@ object PointsRewards {
             // 每日上限：**撞上就整次不发**、而且**继续往下判**（不消耗计数 —— 否则玩家等于白丢一次首抓）
             val cap = rule.dailyCap
             if (cap != null) {
-                val used = state.rewardDailyTotal(player.uuid, kind.key, worldDay)
+                val used = state.dailyTotal(player.uuid, kind.key, worldDay)
                 if (used >= cap) {
                     debug(table, rule, "skipped (daily cap $cap reached for ${kind.key})")
                     return@forEach
@@ -197,12 +197,12 @@ object PointsRewards {
         amount: Long
     ) {
         val speciesId = pokemon.species.resourceIdentifier.toString()
-        val state = PointsState.get(server)
+        val state = RewardProgressState.get(server)
 
         val actual = CurrencyService.give(player, MarketCurrency.POINTS, amount)
         if (actual <= 0L) return
-        state.recordRewardHit(player.uuid, hitKey(speciesId, rule))
-        state.addRewardDaily(player.uuid, rule.event.key, worldDay(server), actual)
+        state.recordHit(player.uuid, hitKey(speciesId, rule))
+        state.addDaily(player.uuid, rule.event.key, worldDay(server), actual)
 
         // 审计：来源写「文件名 + 第几条 + 事件 + **哪只精灵**」
         // ⚠ 物种必须带上（2026-10-13 补）：原先只写规则来源，服主对账时**看不出这笔钱是哪只精灵给的**
@@ -282,7 +282,7 @@ object PointsRewards {
     /**
      * **计数键** = 物种 + 规则条件指纹。
      *
-     * ⚠⭐ 两样都要（见 `PointsState` 里奖励进度那段 KDoc 与方案 §3.5）：
+     * ⚠⭐ 两样都要（见 `RewardProgressState` 顶部 KDoc 与方案 §3.5）：
      * - **物种**：腐化皮卡丘与腐化妙蛙种子的进度各算各的（抓到新物种不该从第 5 档开始）
      * - **规则**：腐化（贵 / 稀有）与普通（可能压根不发）**互不干扰** —— 抓普通皮卡丘**不会吃掉**
      *   腐化那条的"首次"
