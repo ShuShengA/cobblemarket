@@ -81,7 +81,8 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
 
     override fun init() {
         super.init()
-        baseY = height / 2 - BTN / 2
+        // 三个框作为**一整组**在屏幕上居中（2026-10-17 用户要求）：上排精灵/物品、下排 ID 卡
+        baseY = (height - (BTN * 2 + GAP)) / 2
         val leftX = width / 2 - BTN - GAP / 2
         val rightX = width / 2 + GAP / 2
 
