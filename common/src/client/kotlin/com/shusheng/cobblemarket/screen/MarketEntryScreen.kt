@@ -482,7 +482,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             iconScale = 18f / com.shusheng.cobblemarket.client.IdCardBackgroundTexture.BUILTIN_WIDTH,
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
         )
-        idCardShareBtn.setTooltip(withQuickKeyHint("cobblemarket.share.id_card_name"))
+        idCardShareBtn.setTooltip(withQuickKeyHint("cobblemarket.share.id_card_name", gold = true))
         idCardShareBtn.visible = false
         this.shareIdCardBtn = idCardShareBtn
         entryButtons += addDrawableChild(idCardShareBtn)
@@ -514,11 +514,15 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
      *   且是「**按住**」不是按一下（hold 语义，见 [QuickShowcaseScreen]）。
      * ⚠ 这里的 `\n` 只是**排版分段**，语言差异（冒号全角/半角、用词）全在那条词条里。
      */
-    private fun withQuickKeyHint(baseKey: String): net.minecraft.client.gui.tooltip.Tooltip {
+    private fun withQuickKeyHint(baseKey: String, gold: Boolean = false): net.minecraft.client.gui.tooltip.Tooltip {
+        fun title(): net.minecraft.text.MutableText {
+            val base = Text.translatable(baseKey)
+            return if (gold) base.formatted(Formatting.GOLD) else base
+        }
         val keyText = CobbleMarketClient.quickShowcaseKeyText()
-            ?: return net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable(baseKey))
+            ?: return net.minecraft.client.gui.tooltip.Tooltip.of(title())
         return net.minecraft.client.gui.tooltip.Tooltip.of(
-            Text.translatable(baseKey)
+            title()
                 .append("\n")
                 .append(Text.translatable("cobblemarket.entry.quick_showcase_key", keyText))
         )
