@@ -142,6 +142,16 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 }
             }
             field.setMaxLength(if (isDurations || isFileName) 60 else 10)
+            // ID 卡背景图：占位符提示「填 png 文件名」—— 长版按实际宽度量，放不下自动退短版
+            if (isFileName) {
+                field.setPlaceholder(
+                    com.shusheng.cobblemarket.util.TextUtil.fieldHint(
+                        field,
+                        "cobblemarket.config.idcard_bg_hint",
+                        "cobblemarket.config.idcard_bg_hint_short"
+                    )
+                )
+            }
             numFields[key] = field
             addSelectableChild(field)
             addDrawableChild(field)

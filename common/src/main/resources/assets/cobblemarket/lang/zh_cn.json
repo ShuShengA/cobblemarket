@@ -955,6 +955,8 @@
   "cobblemarket.chat.review_button": "[查看待交付]",
   "cobblemarket.chat.bid_button": "[点击出价]",
   "cobblemarket.chat.nickname_paren": "（%s）",
+  "cobblemarket.config.idcard_bg_hint": "idcard 目录下的 png 文件名（含后缀）",
+  "cobblemarket.config.idcard_bg_hint_short": "png 文件名（含后缀）",
   "cobblemarket.chat.auction_tag": "[拍卖]",
   "cobblemarket.chat.share_prefix": "[分享]",
   "cobblemarket.chat.share_announce": "%s 展示了自己的 %s",
