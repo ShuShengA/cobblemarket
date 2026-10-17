@@ -16,6 +16,8 @@ import com.shusheng.cobblemarket.client.icon.PokemonIconData
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.*
+import com.shusheng.cobblemarket.network.ShareNetwork
+import com.shusheng.cobblemarket.network.SharePayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
@@ -35,11 +37,21 @@ import kotlin.math.sin
  * 选择要上架的精灵界面；求购单交付模式（deliverOrderId 非 null）复用本界面：
  * 选择精灵后返回求购单界面继续交付流程（价格在交付弹窗输入）。
  */
-class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Screen(Text.translatable(
-    if (deliverOrderId != null) "cobblemarket.sell.deliver_title" else "cobblemarket.sell.title"
+class SellSelectScreen(
+    private val deliverOrderId: java.util.UUID? = null,
+    /** 展示模式（2026-10-17 从 1.3.0 下放）：选一只精灵直接发到全服聊天（**点行即选**，没有价格框） */
+    private val shareMode: Boolean = false
+) : Screen(Text.translatable(
+    when {
+        shareMode -> "cobblemarket.share.title_pokemon"
+        deliverOrderId != null -> "cobblemarket.sell.deliver_title"
+        else -> "cobblemarket.sell.title"
+    }
 )) {
 
     private val deliverMode = deliverOrderId != null
+
+    fun isShareMode(): Boolean = shareMode
 
     private var pokemonList = listOf<PokemonPreview>()
     private var selectedIndex = -1
@@ -245,7 +257,15 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         addDrawableChild(NineSliceButton(
             lx + panelW - 50, 13, 50, 16,
             Text.literal(""),
-            { client?.setScreen(if (deliverMode) BuyOrderScreen() else MarketScreen()) },
+            {
+                client?.setScreen(
+                    when {
+                        deliverMode -> BuyOrderScreen()
+                        shareMode -> MarketEntryScreen(skipDropAnim = true)
+                        else -> MarketScreen()
+                    }
+                )
+            },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
@@ -265,22 +285,26 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         addSelectableChild(priceField)
         addDrawableChild(priceField)
         priceField?.text = savedPrice
-        // 交付模式：价格在求购单交付弹窗输入，隐藏价格框（选择按钮占这一格）
-        priceField?.visible = !deliverMode
+        // 交付模式：价格在求购单交付弹窗输入；分享模式：没有价格。两种都隐藏价格框
+        priceField?.visible = !deliverMode && !shareMode
 
         // 上架按钮：普通模式用图标（sell.png）替掉「上架」二字，按钮能窄一大截；交付模式仍是文字，
         // 宽度补满到筛选开关左边（106 = lx+136 到 lx+242，减去与开关之间的 4px 间隙）
         sellBtn = NineSliceButton(
-            if (deliverMode) lx + 136 else lx + 214, 44, if (deliverMode) 106 else 28, 20,
+            if (deliverMode || shareMode) lx + 136 else lx + 214, 44,
+            if (deliverMode || shareMode) 106 else 28, 20,
             if (deliverMode) Text.translatable("cobblemarket.sell.deliver_select") else Text.literal(""),
             { if (deliverMode) deliverSelected() else sellSelected() },
-            iconLeft = if (deliverMode) null else Identifier.of("cobblemarket", "textures/gui/sell.png"),
+            iconLeft = if (deliverMode || shareMode) null else Identifier.of("cobblemarket", "textures/gui/sell.png"),
             // 图标 16×16：按钮高 20 减上下各 2px（同市场那批图标按钮的惯例）。贴图 48×48 纵向自带
             // 约 12px 透明留白，画出来红块 ≈16×11.7；还想更醒目可加大（20 即撑满按钮高度）
             iconTexW = 48, iconTexH = 48, iconScale = 16 / 48f,
-            // 普通模式是纯图标（sell.png），要给悬停提示；交付模式本身就是文字按钮，不需要
-            tooltip = if (deliverMode) null else Text.translatable("cobblemarket.sell.sell")
+            // 普通模式是纯图标（sell.png），要给悬停提示；交付/分享模式本身就是文字按钮，不需要
+            tooltip = if (deliverMode || shareMode) null else Text.translatable("cobblemarket.sell.sell")
         )
+        // 分享模式**不显示**这个按钮（2026-09-28 用户定：点行直接展示）。
+        // 三模式共用这一个控件（交付模式还要用它），所以隐藏而非不建
+        if (shareMode) sellBtn?.visible = false
         addDrawableChild(sellBtn)
 
         // 「筛选」开关（行右端）：开关右边那块筛选面板（上架/交付两种模式都有筛选需求）
@@ -982,6 +1006,14 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         sendToServer(RequestMyPokemonPayload(page, requestId))
     }
 
+    /** 分享模式：把第 [index] 只精灵发到全服聊天（点行直接触发，没有选中态） */
+    private fun shareSelected(index: Int = -1) {
+        val filtered = filteredList()
+        val i = if (index >= 0) index else selectedIndex
+        if (i !in filtered.indices) return
+        sendToServer(SharePayload(ShareNetwork.KIND_POKEMON, filtered[i].uuid.toString()))
+    }
+
     private fun sellSelected() {
         val filtered = filteredList()
         if (selectedIndex !in filtered.indices) return
@@ -1063,7 +1095,13 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
         renderGroudonFly(context, true)
         super.render(context, mouseX, mouseY, delta)
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable(if (deliverMode) "cobblemarket.sell.deliver_title" else "cobblemarket.sell.title").formatted(Formatting.GOLD),
+            Text.translatable(
+                when {
+                    shareMode -> "cobblemarket.share.title_pokemon"
+                    deliverMode -> "cobblemarket.sell.deliver_title"
+                    else -> "cobblemarket.sell.title"
+                }
+            ).formatted(Formatting.GOLD),
             width / 2, 20, 0xFFFFFF)
         val lx = width / 2 - 148
         val panelW = 296
@@ -1644,6 +1682,11 @@ class SellSelectScreen(private val deliverOrderId: java.util.UUID? = null) : Scr
                     client?.player?.sendMessage(
                         Text.translatable("cobblemarket.trade.untradeable").formatted(Formatting.RED), false
                     )
+                    return true
+                }
+                // 分享模式：**点谁展示谁**（没有选中态，2026-09-28 用户定）
+                if (shareMode) {
+                    shareSelected(row)
                     return true
                 }
                 selectedIndex = row

@@ -32,6 +32,8 @@ class NineSliceButton(
     var iconStackSize: Int = 16,
     // 第二图标（并排绘制，间距 1px；性别按钮不限态用 ♂♀ 双图标）
     var iconLeft2: Identifier? = null,
+    // 动画图标帧列表（每 100ms 切一帧，帧率同小卡比兽/皮卡丘入口图标）；非空时优先于 iconLeft
+    private val iconFrames: List<Identifier>? = null,
     // 图标贴图实际尺寸与缩放（6×8 性别图标用 iconTexW=6/iconTexH=8/iconScale=1.5）
     // ⚠ 这三个是 **var**（2026-10-16 起）：ID 卡入口的图标要**跟随服主换的背景图**——
     //   那是一张运行时才知道尺寸的动态纹理，构造时定不下来，只能每帧同步。
@@ -99,7 +101,12 @@ class NineSliceButton(
         }
 
         // 可选图标（可双图标并排、可叠层，两种都整体居中）
-        val leftIcon = if (stackIcon == null) iconLeft else null
+        // 动画图标帧（每 100ms 切一帧）优先于静态 iconLeft；物品图标优先于两者
+        val leftIcon = if (stackIcon == null) {
+            iconFrames?.let { frames ->
+                frames[((System.currentTimeMillis() / 100) % frames.size).toInt()]
+            } ?: iconLeft
+        } else null
         if (leftIcon != null) {
             val iconW = (iconTexW * iconScale).toInt()
             val iconH = (iconTexH * iconScale).toInt()

@@ -35,12 +35,44 @@ class TextureButton(
      */
     var dimmed: Boolean = false
 
+    /**
+     * **只藏文字、保留底图与可点性**：用于「被浮层压住一半」的按钮 ——
+     * 浮层盖不住整个按钮时，半截露在覆盖区外的文字比没有文字更难看（见 MarketEntryScreen 的展示子按钮）。
+     */
+    var hideText: Boolean = false
+
+    /**
+     * 被浮层压住的矩形（屏幕坐标 `[left, top, right, bottom]`，null = 没被压住）：
+     * 鼠标落在其中时本按钮**既不显示悬停态、也不接管点击**，把这一块整个让给上层浮层。
+     *
+     * ⚠ 拦的是 [clicked] 与 [isHovered]，**不是 `isMouseOver`** —— 反编译原版 `ClickableWidget` 可见：
+     * `render` 是 final，里面直接按坐标给 `hovered` 赋值；`mouseClicked` 调的也是 `clicked(...)`。
+     * 这两条路径都不经过 `isMouseOver`，重写它等于没写。
+     */
+    var blockedArea: IntArray? = null
+
+    /** 本次渲染时鼠标是否落在 [blockedArea] 内：悬停态与 tooltip 都要据此让路 */
+    private var hoverBlocked = false
+
+    private fun isBlocked(mouseX: Double, mouseY: Double): Boolean {
+        val area = blockedArea ?: return false
+        return mouseX >= area[0] && mouseX < area[2] && mouseY >= area[1] && mouseY < area[3]
+    }
+
+    override fun clicked(mouseX: Double, mouseY: Double): Boolean =
+        !isBlocked(mouseX, mouseY) && super.clicked(mouseX, mouseY)
+
+    override fun isHovered(): Boolean = !hoverBlocked && super.isHovered()
+
     private val texture = Identifier.of("cobblemarket", "textures/gui/button.png")
     private val textureWidth = 320
     private val textureHeight = 96
     private val stateHeight = 48
 
     override fun renderWidget(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // 先按本帧鼠标位置刷新让路标记，再取悬停态：原版的 tooltip 渲染排在 renderWidget **之后**，
+        // 所以这里更新完，同一帧里 isHovered() 对按钮自己和 tooltip 都已经是对的
+        hoverBlocked = isBlocked(mouseX.toDouble(), mouseY.toDouble())
         val hovered = isHovered
         val vOffset = if (hovered) stateHeight else 0
 
@@ -70,7 +102,7 @@ class TextureButton(
         val iconSpace = if (currentIcon != null) 5 + iconDisplaySize + 4 else 0
         val textX = x + iconSpace + (width - iconSpace - font.getWidth(message)) / 2
         val textY = y + (height - 8) / 2
-        context.drawTextWithShadow(font, message, textX, textY, 0xFFFFFF)
+        if (!hideText) context.drawTextWithShadow(font, message, textX, textY, 0xFFFFFF)
 
         // 置灰遮罩（视觉置灰但保留可点击性，见 dimmed 注释）
         if (dimmed) {

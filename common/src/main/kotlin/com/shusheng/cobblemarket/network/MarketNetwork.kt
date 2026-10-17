@@ -3265,6 +3265,34 @@ object MarketNetwork {
             delivery.level, delivery.shiny, delivery.price, delivery.pokemonNbt, delivery.extraData, server
         )
 
+    /**
+     * 展示专用：从**活精灵**现组装一份 [ListingEntry]（价格 0，客户端会整个略掉交易信息）。
+     * ⚠ 1.2.2 的 [buildListingEntry] **没有 currency 参数**（那是 1.3.0 的 RP 系统）——
+     *   从 1.3.0 下放时删掉了 `currency = MarketCurrency.PRIMARY` 那一行。
+     */
+    internal fun buildListingEntryForShare(
+        pokemon: com.cobblemon.mod.common.pokemon.Pokemon,
+        ownerUuid: UUID,
+        ownerName: String,
+        id: UUID,
+        server: MinecraftServer
+    ): ListingEntry {
+        val rm = server.registryManager
+        return buildListingEntry(
+            id = id,
+            sellerUuid = ownerUuid,
+            sellerName = ownerName,
+            species = pokemon.species.name.lowercase(),
+            level = pokemon.level,
+            shiny = pokemon.shiny,
+            price = 0,
+            // 精灵的完整 NBT 现取 —— 太晶 / 极巨 / 初始训练家 / 体型 / 技能都由它现读（老数据也适用）
+            pokemonNbt = pokemon.saveToNBT(rm, NbtCompound()),
+            extraData = buildListingExtra(pokemon, pokemon.heldItem(), rm),
+            server = server
+        )
+    }
+
     private fun buildListingExtra(
         pokemon: com.cobblemon.mod.common.pokemon.Pokemon,
         heldItemStack: ItemStack,

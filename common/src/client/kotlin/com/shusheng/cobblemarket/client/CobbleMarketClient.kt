@@ -6,6 +6,7 @@ import com.shusheng.cobblemarket.permission.PermissionListDataPayload
 import com.shusheng.cobblemarket.screen.PermissionScreen
 import com.shusheng.cobblemarket.screen.PlayerOverviewScreen
 import com.shusheng.cobblemarket.screen.IdCardScreen
+import com.shusheng.cobblemarket.screen.QuickShowcaseScreen
 import com.shusheng.cobblemarket.permission.PermissionSnapshotPayload
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.network.AuctionDurationsPayload
@@ -122,7 +123,11 @@ object CobbleMarketClient {
 
     private lateinit var openMarketKey: KeyBinding
     private lateinit var openIdCardKey: KeyBinding
+    /** 快速展示键（默认 X；**按住**期间显示两个大按钮，见 [QuickShowcaseScreen]） */
+    private lateinit var quickShowcaseKey: KeyBinding
     private var wasEPressed = false
+    /** 上一帧的按住状态（边沿检测：上升沿开、下降沿收尾） */
+    private var wasQuickShowcasePressed = false
 
     /** 余额 HUD 低频兜底轮询计时（交易响应已即时刷新，这里兜住离线收益补发等） */
     private var lastBalancePollAt = 0L
@@ -160,6 +165,15 @@ object CobbleMarketClient {
                 "category.cobblemarket"
             )
         )
+        // 快速展示：默认 X。照上面那套注册 ⇒ **自动出现在「按键设置」里、玩家可改**
+        quickShowcaseKey = registerKeyBinding(
+            KeyBinding(
+                "key.cobblemarket.quick_showcase",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_X,
+                "category.cobblemarket"
+            )
+        )
         onClientTick { client ->
             // 「有新版本可用」：查到结果后，等玩家第一次打开市场界面时说一次（每个世界一次）
             UpdateNotice.tick(client)
@@ -192,6 +206,24 @@ object CobbleMarketClient {
                 playEntrySound()
                 client.setScreen(IdCardScreen())
             }
+            // ── 快速展示：**按住**显示两个大按钮、**松开**就展示（2026-09-29 用户定）──
+            // ⚠⚠ **必须读 GLFW 的真实按键状态，不能用 `KeyBinding.isPressed`** ——
+            //   MC 打开界面时会清空按键绑定状态（防卡键），于是这个界面**自己把自己关掉**：
+            //   按住 X ⇒ 读到"按下" ⇒ setScreen(界面) ⇒ 状态被清 ⇒ 下 tick 读到"松开" ⇒ 关界面
+            //   ⇒ 又读到"按下"…… **每两 tick 开关一次**，表现是按钮落一点就闪、连别家 HUD 都跟着闪
+            //   （2026-09-29 用户实测报的）。照 E 键那套读原始状态就没这问题。
+            // ⚠ 键码从**绑定键**反解（`boundKey` 字段是 private，只能走翻译 key）⇒
+            //   玩家在「按键设置」里改过键照样生效，不是硬编码 X
+            val quickKeyCode =
+                InputUtil.fromTranslationKey(quickShowcaseKey.boundKeyTranslationKey).code
+            val quickPressed = InputUtil.isKeyPressed(client.window.handle, quickKeyCode)
+            if (quickPressed && !wasQuickShowcasePressed) {
+                if (client.currentScreen == null) client.setScreen(QuickShowcaseScreen())
+            } else if (!quickPressed && wasQuickShowcasePressed) {
+                // 松键：悬停哪个就展示哪个，没悬停就什么都不做，然后关界面
+                (client.currentScreen as? QuickShowcaseScreen)?.finishAndClose()
+            }
+            wasQuickShowcasePressed = quickPressed
             val ePressed = InputUtil.isKeyPressed(client.window.handle, GLFW.GLFW_KEY_E)
             if (ePressed && !wasEPressed) {
                 val screen = client.currentScreen
@@ -259,6 +291,10 @@ object CobbleMarketClient {
                 // （ChatObjectPreview）顺着 clickEvent 认出这条消息 —— 所以这里**刻意什么都不做**，
                 // 别以为是漏了实现、也别"顺手"让它去打开出价界面
                 "auctionpeek" -> {}
+                // "share"：展示播报的精灵/物品名上挂的指令，唯一用途是让聊天悬浮大图
+                // （ChatObjectPreview）顺着 clickEvent 认出这条消息 —— 所以这里**刻意什么都不做**，
+                // 别以为是漏了实现
+                "share" -> {}
             }
         }
 
@@ -528,9 +564,20 @@ object CobbleMarketClient {
             val client = MinecraftClient.getInstance()
             client.execute {
                 val screen = client.currentScreen
-                // 出价成功时不播全局成功音：点击「确认出价」时的金币声即为反馈，避免叠音
-                if (!(payload.success && screen is AuctionScreen && screen.isBidDialogOpen())) {
-                    playResultSound(payload.success)
+                // 展示到聊天框成功时播专属音（分享出去的反馈，与买卖的成功音不是一回事）；
+                // 失败仍走通用失败音。判据看界面是不是展示模式——收到包时界面还没被关掉
+                val shareSucceeded = payload.success && when (screen) {
+                    is SellSelectScreen -> screen.isShareMode()
+                    is ItemSellScreen -> screen.isShareMode()
+                    // 快速展示：那个界面整个就是为展示而生的，不用再判模式
+                    is QuickShowcaseScreen -> true
+                    else -> false
+                }
+                when {
+                    shareSucceeded -> playMarketSound("share")
+                    // 出价成功时不播全局成功音：点击「确认出价」时的金币声即为反馈，避免叠音
+                    payload.success && screen is AuctionScreen && screen.isBidDialogOpen() -> {}
+                    else -> playResultSound(payload.success)
                 }
                 // 交易操作后余额可能变化，主动拉取一次最新余额
                 sendToServer(RequestBalancePayload())
@@ -549,6 +596,7 @@ object CobbleMarketClient {
                     is AuctionCreateScreen -> screen.onMarketResult(payload)
                     is AdminAuctionScreen -> screen.onMarketResult(payload)
                     is BuyOrderScreen -> screen.onMarketResult(payload)
+                    is QuickShowcaseScreen -> screen.onMarketResult(payload)
                     // 借款被拒也走结果包（失败音效挂在它上面）—— 见 LoanScreen.onMarketResult
                     is LoanScreen -> screen.onMarketResult(payload)
                 }
@@ -856,6 +904,18 @@ object CobbleMarketClient {
     }
 
     /** 打开入口界面时播放音效（K 键、/market gui、smartphone 三个入口共用）。 */
+    /**
+     * 快速展示键的**显示文本**（给入口界面的悬停提示用）。
+     * ⚠ 必须用 `boundKeyLocalizedText`：字母/数字键**不在语言表里**，自己拿
+     * `boundKeyTranslationKey` 去翻译会显示成 `key.keyboard.x`（2026-10-06 用户实测报出）。
+     * 未绑定 / 未初始化时返回 null（提示里那一行整个不显示）。
+     */
+    fun quickShowcaseKeyText(): String? {
+        if (!::quickShowcaseKey.isInitialized) return null
+        if (quickShowcaseKey.isUnbound) return null
+        return quickShowcaseKey.boundKeyLocalizedText.string
+    }
+
     fun playEntrySound() {
         MinecraftClient.getInstance().soundManager.play(
             PositionedSoundInstance.master(
@@ -1164,4 +1224,4 @@ internal fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean
         s is AdminFinanceScreen ||
         s is MeowthBankScreen || s is LoanScreen || s is LoanHistoryScreen || s is RepayScreen || s is MeowthPayScreen ||
         s is DepositScreen || s is BalanceHudPositionScreen ||
-        s is PlayerOverviewScreen || s is IdCardScreen
+        s is PlayerOverviewScreen || s is IdCardScreen || s is QuickShowcaseScreen

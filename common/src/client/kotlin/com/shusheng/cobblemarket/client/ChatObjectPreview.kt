@@ -128,7 +128,12 @@ object ChatObjectPreview {
          * 精灵的**身份键**（物种 + 形态）：刷新回来时靠它认「还是同一只吗」——
          * 是就**复用** [renderable] / [state]，否则每刷新一次模型动画都从头开始（看着像跳了一下）。
          */
-        val pokemonKey: String? = null
+        val pokemonKey: String? = null,
+        /**
+         * **这条是「展示」而不是交易播报**（2026-10-17 从 1.3.0 下放）：
+         * 展示没有交易信息 ⇒ 尾部那两行（卖家 / 价格）**整个略掉**。
+         */
+        val isShare: Boolean = false
     )
 
     /** 大图数据缓存（插入序，超上限淘汰最旧的） */
@@ -254,7 +259,8 @@ object ChatObjectPreview {
                     Text.translatable(speciesNameKey(payload.speciesId)), payload.shiny
                 ),
                 auction = payload.auction,
-                pokemonKey = pokemonKey
+                pokemonKey = pokemonKey,
+                isShare = payload.isShare
             )
         } else {
             // 拍卖存整栈 NBT、求购单存组件快照 —— 两种格式各走各的重建入口（都以 itemId 兜底）
@@ -264,7 +270,7 @@ object ChatObjectPreview {
             // 数量以包里单独传的为准：挂单 NBT 里存的是上架总量（同庆祝动画的处理）
             stack.count = payload.count.coerceAtLeast(1)
             // ⚠ 物品拍卖**同样**带拍卖状态（拍卖场的物品悬停窗也是「词条 + 当前价 / 倒计时 / 领先者」）
-            Entry(isPokemon = false, renderable = null, state = null, stack = stack, at = now, auction = payload.auction)
+            Entry(isPokemon = false, renderable = null, state = null, stack = stack, at = now, auction = payload.auction, isShare = payload.isShare)
         }
         cache[payload.id] = entry
         trimCache(now)
@@ -356,7 +362,12 @@ object ChatObjectPreview {
                     //   图标行 + 下分割线），footer 再加一条就是**重复**（2026-09-29 用户截图报出）。
                     //   ⚠ 别照搬拍卖场那边的做法 —— 那边之所以要这条线，是因为它的证章块**不画**下分割线、
                     //   由这条**充当**它（两种实现不一样，不能直接搬）
-                    footer = entry.auction?.let { auctionFooterLines(it, withDivider = false) }
+                    footer = when {
+                        // 展示：**没有交易信息** ⇒ 尾部整个不要（否则会画出「卖家：xxx / 价格：0」）
+                        entry.isShare -> emptyList()
+                        entry.auction != null -> auctionFooterLines(entry.auction, withDivider = false)
+                        else -> null
+                    }
                 )
             }
         } else {
@@ -672,6 +683,8 @@ object ChatObjectPreview {
             // ⇒ 与 [点击出价] 那条**同一个 kind**（同一场拍卖，走同一份缓存 / 同一个大图）
             "auctionpeek" -> ObjectPreviewNetwork.KIND_AUCTION
             "review" -> ObjectPreviewNetwork.KIND_BUY_ORDER
+            // 展示播报：名字上挂的是 `/cobblemarket share <id>`（点击无动作）
+            "share" -> ObjectPreviewNetwork.KIND_SHARE
             else -> return null
         }
         val rawId = parts.getOrNull(1) ?: return null

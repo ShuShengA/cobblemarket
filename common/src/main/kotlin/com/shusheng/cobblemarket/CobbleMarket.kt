@@ -18,6 +18,7 @@ import com.shusheng.cobblemarket.network.MarketNetwork
 import com.shusheng.cobblemarket.network.MarketNoticeNetwork
 import com.shusheng.cobblemarket.network.ObjectPreviewNetwork
 import com.shusheng.cobblemarket.network.ServerConfigNetwork
+import com.shusheng.cobblemarket.network.ShareNetwork
 import com.shusheng.cobblemarket.network.SoundNetwork
 import com.shusheng.cobblemarket.network.PriceLimitNetwork
 import com.shusheng.cobblemarket.platform.onPlayerDisconnect
@@ -65,6 +66,7 @@ object CobbleMarket {
 		RestSyncNetwork.register()
 		SoundNetwork.register()
 		ObjectPreviewNetwork.register()
+		ShareNetwork.register()
 		MarketNoticeNetwork.register()
 		// 市场 ID 卡背景图（可替换贴图：服务端读配置目录 → 下发字节 → 客户端动态纹理）
 		com.shusheng.cobblemarket.network.IdCardNetwork.register()

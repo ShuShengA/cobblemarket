@@ -148,7 +148,13 @@ data class ObjectPreviewPayload(
      * ⚠ 客户端把这些行排在信息行的**尾部**（照搬拍卖场的行悬停窗，另加起拍价 / 最低加价两行，
      *   那两项在拍卖场是放在出价弹窗里的）。精灵与物品拍卖**都有**。
      */
-    val auction: AuctionPreviewInfo? = null
+    val auction: AuctionPreviewInfo? = null,
+    /**
+     * **这条是「展示」而不是交易播报**（2026-10-17 从 1.3.0 下放）：
+     * 客户端据此**整个略掉尾部那两行**（卖家 / 价格）—— 展示没有交易信息。
+     * ⚠ 拍卖 / 求购那两条恒为 false。
+     */
+    val isShare: Boolean = false
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -175,6 +181,7 @@ data class ObjectPreviewPayload(
                 p.listing?.write(b)
                 b.writeBoolean(p.auction != null)
                 p.auction?.write(b)
+                b.writeBoolean(p.isShare)
             },
             { b ->
                 // 具名参数：这段读序与上面的写序一一对应，错位了会静默读出垃圾数据
@@ -192,7 +199,9 @@ data class ObjectPreviewPayload(
                     heldItemVisible = b.readBoolean(),
                     // 与 write 端严格同序（write 在 heldItemVisible 之后）
                     listing = if (b.readBoolean()) ListingEntry.read(b) else null,
-                    auction = if (b.readBoolean()) AuctionPreviewInfo.read(b) else null
+                    auction = if (b.readBoolean()) AuctionPreviewInfo.read(b) else null,
+                    // 与 write 端严格同序（write 在 auction 之后）
+                    isShare = b.readBoolean()
                 )
             }
         )
@@ -206,6 +215,10 @@ object ObjectPreviewNetwork {
 
     /** 求购单播报的 kind（客户端指令是 `/cobblemarket review <id>`，用词与指令保持一致） */
     const val KIND_BUY_ORDER = "buyorder"
+
+    /** 展示播报的 kind：数据取自分享广播那一刻的**快照缓存**（[ShareNetwork.getPreview]），
+     *  不是「按 id 现取」—— 分享的东西可能马上被交易/放生，现取会对不上消息内容甚至取不到 */
+    const val KIND_SHARE = "share"
 
     fun register() {
         registerS2CType(ObjectPreviewPayload.ID, ObjectPreviewPayload.CODEC)
@@ -226,6 +239,8 @@ object ObjectPreviewNetwork {
                         order.pendingDeliveries.lastOrNull()?.let { deliveryPreview(server, it) }
                             ?: buyOrderPreview(order)
                     }
+                    // 展示：取**广播那一刻**的快照缓存（见 ShareNetwork.getPreview 的注释）
+                    KIND_SHARE -> ShareNetwork.getPreview(uuid)
                     else -> null
                 } ?: return@execute
                 sendToPlayer(player, preview)

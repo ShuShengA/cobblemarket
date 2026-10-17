@@ -166,5 +166,13 @@
         "stream": false
       }
     ]
+  },
+  "share": {
+    "sounds": [
+      {
+        "name": "cobblemarket:share",
+        "stream": false
+      }
+    ]
   }
 }
