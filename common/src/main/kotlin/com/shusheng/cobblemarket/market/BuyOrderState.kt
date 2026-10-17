@@ -93,7 +93,7 @@ data class BuyOrder(
     val speciesKey: String?,   // 物种翻译 key（客户端翻译显示）；null = 任意精灵
     val shinyFilter: Int,      // 照黑名单：-1 不限 / 0 仅非闪 / 1 仅闪
     val htFilter: Int,         // 照黑名单：0 不限 / 1 仅特训 / 2 不含特训
-    val ivHp: Int, val ivAtk: Int, val ivDef: Int,   // -1 = 不限；精确匹配（按有效值）
+    val ivHp: Int, val ivAtk: Int, val ivDef: Int,   // -1 = 不限；**至少**（≥，按有效值）
     val ivSpAtk: Int, val ivSpDef: Int, val ivSpd: Int,
     val aspects: List<String>, // 形态照黑名单语义：["*"]=不限，[]=默认形态，[x..]=子集
     val abilityKey: String?,   // 特性翻译 key，null = 不限
@@ -135,12 +135,15 @@ data class BuyOrder(
         if (htFilter != PokemonBlacklistEntry.HT_ANY && targetHasHt != (htFilter == PokemonBlacklistEntry.HT_ONLY)) return false
         val htIvs = pokemon.ivs.hyperTrainedIVs
         val ivs = pokemon.ivs
-        if (ivHp >= 0 && (htIvs[Stats.HP] ?: ivs[Stats.HP]) != ivHp) return false
-        if (ivAtk >= 0 && (htIvs[Stats.ATTACK] ?: ivs[Stats.ATTACK]) != ivAtk) return false
-        if (ivDef >= 0 && (htIvs[Stats.DEFENCE] ?: ivs[Stats.DEFENCE]) != ivDef) return false
-        if (ivSpAtk >= 0 && (htIvs[Stats.SPECIAL_ATTACK] ?: ivs[Stats.SPECIAL_ATTACK]) != ivSpAtk) return false
-        if (ivSpDef >= 0 && (htIvs[Stats.SPECIAL_DEFENCE] ?: ivs[Stats.SPECIAL_DEFENCE]) != ivSpDef) return false
-        if (ivSpd >= 0 && (htIvs[Stats.SPEED] ?: ivs[Stats.SPEED]) != ivSpd) return false
+        // ⚠ 2026-10-17 起是「**至少**」（≥）、不是精确匹配：IV 越高越好，买家填 20 的本意是"≥20"
+        //   （旧挂单因此只会变宽松 —— 原本能交付的仍然能交付，不存在突然交付不了）
+        // ⚠ `ivs[...]` 返回 Int? ⇒ 取不到时按 0 算（保守：不满足下限），否则 `<` 不能用可空
+        if (ivHp >= 0 && (htIvs[Stats.HP] ?: ivs[Stats.HP] ?: 0) < ivHp) return false
+        if (ivAtk >= 0 && (htIvs[Stats.ATTACK] ?: ivs[Stats.ATTACK] ?: 0) < ivAtk) return false
+        if (ivDef >= 0 && (htIvs[Stats.DEFENCE] ?: ivs[Stats.DEFENCE] ?: 0) < ivDef) return false
+        if (ivSpAtk >= 0 && (htIvs[Stats.SPECIAL_ATTACK] ?: ivs[Stats.SPECIAL_ATTACK] ?: 0) < ivSpAtk) return false
+        if (ivSpDef >= 0 && (htIvs[Stats.SPECIAL_DEFENCE] ?: ivs[Stats.SPECIAL_DEFENCE] ?: 0) < ivSpDef) return false
+        if (ivSpd >= 0 && (htIvs[Stats.SPEED] ?: ivs[Stats.SPEED] ?: 0) < ivSpd) return false
         if (PokemonBlacklistEntry.ALL_FORMS !in aspects) {
             val formAspectUnion = buildSet {
                 addAll(pokemon.species.standardForm.aspects)

@@ -1142,7 +1142,8 @@ class BuyOrderScreen(
             val spd = StatNames.SP_DEF
             val spe = StatNames.SPEED
             lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs").asOrderedText() to w)
-            fun ivReq(v: Int) = if (v < 0) "—" else v.toString()
+            // 带「≥」：填的是下限（至少多少），不是精确值（2026-10-17 用户定）
+            fun ivReq(v: Int) = if (v < 0) "—" else "≥$v"
             lines.add(Text.literal("  $hp: ${ivReq(entry.ivHp)}").asOrderedText() to ivColors[0])
             lines.add(Text.literal("  $atk: ${ivReq(entry.ivAtk)}").asOrderedText() to ivColors[1])
             lines.add(Text.literal("  $def: ${ivReq(entry.ivDef)}").asOrderedText() to ivColors[2])
@@ -1567,8 +1568,8 @@ class BuyOrderScreen(
         addDrawableChild(createHtButton)
         updateCreateHtButton()
 
-        // IV 六项
-        val ivPlaceholders = listOf("HP", "ATK", "DEF", "SpA", "SpD", "Spd")
+        // IV 六项：占位符带「≥」—— 填的是**下限**（至少多少），不是精确值（2026-10-17 用户定）
+        val ivPlaceholders = listOf("HP≥", "ATK≥", "DEF≥", "SpA≥", "SpD≥", "Spd≥")
         for (i in 0..5) {
             val col = i % 3
             val row = i / 3
@@ -3017,12 +3018,13 @@ class BuyOrderScreen(
         val hasHt = p.htHp >= 0 || p.htAtk >= 0 || p.htDef >= 0 || p.htSpAtk >= 0 || p.htSpDef >= 0 || p.htSpd >= 0
         if (e.htFilter != PokemonBlacklistEntry.HT_ANY && hasHt != (e.htFilter == PokemonBlacklistEntry.HT_ONLY)) return false
         fun effIvs(ht: Int, iv: Int) = if (ht >= 0) ht else iv
-        if (e.ivHp >= 0 && effIvs(p.htHp, p.ivsHp) != e.ivHp) return false
-        if (e.ivAtk >= 0 && effIvs(p.htAtk, p.ivsAtk) != e.ivAtk) return false
-        if (e.ivDef >= 0 && effIvs(p.htDef, p.ivsDef) != e.ivDef) return false
-        if (e.ivSpAtk >= 0 && effIvs(p.htSpAtk, p.ivsSpAtk) != e.ivSpAtk) return false
-        if (e.ivSpDef >= 0 && effIvs(p.htSpDef, p.ivsSpDef) != e.ivSpDef) return false
-        if (e.ivSpd >= 0 && effIvs(p.htSpd, p.ivsSpd) != e.ivSpd) return false
+        // ⚠ 「至少」（≥），与服务端 BuyOrderState.matchesPokemon 同口径（2026-10-17 起）
+        if (e.ivHp >= 0 && effIvs(p.htHp, p.ivsHp) < e.ivHp) return false
+        if (e.ivAtk >= 0 && effIvs(p.htAtk, p.ivsAtk) < e.ivAtk) return false
+        if (e.ivDef >= 0 && effIvs(p.htDef, p.ivsDef) < e.ivDef) return false
+        if (e.ivSpAtk >= 0 && effIvs(p.htSpAtk, p.ivsSpAtk) < e.ivSpAtk) return false
+        if (e.ivSpDef >= 0 && effIvs(p.htSpDef, p.ivsSpDef) < e.ivSpDef) return false
+        if (e.ivSpd >= 0 && effIvs(p.htSpd, p.ivsSpd) < e.ivSpd) return false
         if (PokemonBlacklistEntry.ALL_FORMS !in e.aspects) {
             val species = e.speciesId?.let { Identifier.tryParse(it)?.let { id -> PokemonSpecies.getByIdentifier(id) } }
             if (species != null) {
