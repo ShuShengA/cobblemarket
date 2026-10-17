@@ -31,7 +31,8 @@ object ConfigFieldLayout {
 
     /** 值是**一长串**的配置项（逗号分隔的档位 / 期数:费率）：窄框连一半都看不全。
      *  各界面按自己有的取，不在这张表里的 key 命中不了、无副作用 */
-    private val LONG_TEXT_KEYS = setOf("auctionDurations", "loanPlans")
+    // idCardBackground：文件名（可能带中文/空格），2026-10-17 用户要求加长
+    private val LONG_TEXT_KEYS = setOf("auctionDurations", "loanPlans", "idCardBackground")
 
     /** 输入框右缘 = ↺ 按钮左缘再退 2px。**固定不动**，加宽只往左长 */
     fun configFieldRight(dialogX: Int, dialogW: Int) = dialogX + dialogW - 10 - 20 - 2

@@ -1385,6 +1385,8 @@
   "cobblemarket.chat.review_button": "[Review]",
   "cobblemarket.chat.bid_button": "[Click to bid]",
   "cobblemarket.chat.nickname_paren": " (%s)",
+  "cobblemarket.config.idcard_bg_hint": "PNG file name in the idcard folder",
+  "cobblemarket.config.idcard_bg_hint_short": "PNG file name (with .png)",
   "cobblemarket.chat.auction_tag": "[Auction]",
   "cobblemarket.chat.auction_announce": "%s listed %s, starting at %s",
   "cobblemarket.chat.share_prefix": "[Share]",
