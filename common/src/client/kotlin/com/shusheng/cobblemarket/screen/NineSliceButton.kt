@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.mojang.blaze3d.systems.RenderSystem
+import com.shusheng.cobblemarket.client.IdCardBackgroundTexture
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.tooltip.Tooltip
@@ -48,6 +49,15 @@ class NineSliceButton(
     var iconTexW: Int = 24,
     var iconTexH: Int = 24,
     var iconScale: Float = 0.5f,
+    /**
+     * **图标叠层**（> 1 才生效）：把同一张图叠这么多层、每层往**右上**错开 [iconLayerStep] 像素
+     * ——「一叠卡片」的观感。整组（含错开的余量）在按钮里居中 ⇒ 看着最完整的那张偏左下、
+     * 最靠右上那张压在最底下。管理面板的「玩家总览」入口用它画一叠 ID 卡。
+     * ⚠ 与并排的 [iconLeft2] 互斥（叠层时后者不画）。⚠ 与物品图标 [iconStack] 无关（那个是 ItemStack）。
+     */
+    var iconLayers: Int = 1,
+    /** 叠层往右上错开的像素（仅 [iconLayers] > 1 时生效） */
+    var iconLayerStep: Int = 3,
     // 可选悬停词条（图标化按钮构造即挂上，替代文字说明）
     tooltip: Text? = null,
     // 可选背景纹理（默认按钮九宫格；入口右下角小按钮用 row_background）
@@ -137,11 +147,9 @@ class NineSliceButton(
             context.drawItem(stackIcon, 0, 0)
             context.matrices.pop()
         } else if (leftIcon != null) {
-            val startX = iconX
-            val startY = y + (height - iconH) / 2
-            fun drawIcon(id: Identifier, ix: Int) {
+            fun drawIcon(id: Identifier, ix: Int, iy: Int) {
                 context.matrices.push()
-                context.matrices.translate(ix.toDouble(), startY.toDouble(), 0.0)
+                context.matrices.translate(ix.toDouble(), iy.toDouble(), 0.0)
                 context.matrices.scale(iconScale, iconScale, 1f)
                 // 禁用态图标与文字同样置灰（文字 0xA0A0A0 = 160/255 ≈ 0.627）
                 if (!active) RenderSystem.setShaderColor(0.627f, 0.627f, 0.627f, 1f)
@@ -149,8 +157,22 @@ class NineSliceButton(
                 if (!active) RenderSystem.setShaderColor(1f, 1f, 1f, 1f)
                 context.matrices.pop()
             }
-            drawIcon(leftIcon, startX)
-            iconLeft2?.let { drawIcon(it, startX + iconW + 1) }
+            if (iconLayers > 1) {
+                // 叠层：整组（图 + 错开的余量）在按钮里居中；**从最右上那张开始画**，后画的盖住先画的
+                // ⇒ 下标 0 那张最后画、看着压在最上层（位置偏左下）。
+                // ⚠ 叠层自己算起点、不用 [iconX]：那是按**单个**图标算的组内位置
+                val extra = (iconLayers - 1) * iconLayerStep
+                val stackX = x + (width - iconW - extra) / 2
+                val stackY = y + (height - iconH - extra) / 2
+                for (i in iconLayers - 1 downTo 0) {
+                    drawIcon(leftIcon, stackX + i * iconLayerStep, stackY + extra - i * iconLayerStep)
+                }
+            } else {
+                val startX = iconX
+                val startY = y + (height - iconH) / 2
+                drawIcon(leftIcon, startX, startY)
+                iconLeft2?.let { drawIcon(it, startX + iconW + 1, startY) }
+            }
         }
 
         val color = if (active) textColor else 0xA0A0A0
@@ -198,3 +220,20 @@ class NineSliceButton(
 
 /** 按钮里「图标 + 文字」并排时的间距（两者作为一整组居中，见 renderWidget） */
 private const val ICON_TEXT_GAP = 4
+
+/**
+ * 让这颗按钮的图标**跟随服主换的 ID 卡背景图**：没配 / 还没到货 = 内置那张，尺寸按 [targetWidth] 等比缩。
+ * ⚠ 缩的是**宽度**（很宽的图会跟着变矮 —— 「整张直接缩」的必然结果，用户已知）。
+ *
+ * 幂等（只是给几个字段赋值）⇒ 放心每帧调 —— 两个入口都在自己的 `render` 开头调一次。
+ * ⚠ 入口界面的 ID 卡按钮与管理面板的「玩家总览」按钮**共用这一处**：
+ *   各自算一遍「当前是哪张图、缩成多大」，迟早会不同步（2026-10-17 收口）。
+ */
+fun NineSliceButton.syncIdCardIcon(targetWidth: Int) {
+    val entry = IdCardBackgroundTexture.get()
+    val w = entry?.width ?: IdCardBackgroundTexture.BUILTIN_WIDTH
+    iconLeft = entry?.id ?: IdCardBackgroundTexture.BUILTIN_TEX
+    iconTexW = w
+    iconTexH = entry?.height ?: IdCardBackgroundTexture.BUILTIN_HEIGHT
+    iconScale = targetWidth.toFloat() / w
+}

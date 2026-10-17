@@ -50,10 +50,9 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
         /** 440 × 9/16 = 247.5 —— **必须与图的 9/16 严格一致**，否则图里的边框会与卡片本体错位 */
         const val CARD_H = 247.5f
 
-        /** 内置背景图（服主没配 / 图还没到货时用它）—— 尺寸写死在内置图上，与配置图的动态尺寸区分 */
-        val BUILTIN_TEX = Identifier.of("cobblemarket", "textures/gui/background/id_card_background.png")
-        const val BUILTIN_W = 1280
-        const val BUILTIN_H = 940
+        // 内置背景图（纹理 id + 尺寸）**收口在 [IdCardBackgroundTexture]** 那一组 ——
+        // 这里不再各写一份：那个 object 是「没配图时用哪张、多大」的唯一定义处
+        // （2026-10-17 收口，此前项目里散着三份 1280×940）
 
         // ── 卡片内部比例（从内置图量出来的，见 docs/player_overview_plan.md 第十二节）──
         const val INNER_LEFT = 0.051f
@@ -149,9 +148,9 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
 
     private fun drawCardBackground(context: DrawContext) {
         val entry = IdCardBackgroundTexture.get()
-        val tex = entry?.id ?: BUILTIN_TEX
-        val texW = entry?.width ?: BUILTIN_W
-        val texH = entry?.height ?: BUILTIN_H
+        val tex = entry?.id ?: IdCardBackgroundTexture.BUILTIN_TEX
+        val texW = entry?.width ?: IdCardBackgroundTexture.BUILTIN_WIDTH
+        val texH = entry?.height ?: IdCardBackgroundTexture.BUILTIN_HEIGHT
 
         val geo = geometry()
         val scale = CARD_W.toFloat() / texW
@@ -174,8 +173,8 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
 
     private fun geometry(): Geometry {
         val entry = IdCardBackgroundTexture.get()
-        val texW = entry?.width ?: BUILTIN_W
-        val texH = entry?.height ?: BUILTIN_H
+        val texW = entry?.width ?: IdCardBackgroundTexture.BUILTIN_WIDTH
+        val texH = entry?.height ?: IdCardBackgroundTexture.BUILTIN_HEIGHT
         val scale = CARD_W.toFloat() / texW
         val drawH = texH * scale
 

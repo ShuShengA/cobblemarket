@@ -107,4 +107,16 @@ object IdCardBackgroundTexture {
 
     /** 单边上限 2048（与服务端 `ConfigImage.MAX_SIDE` 一致） */
     private const val MAX_SIDE = 2048
+
+    /** **模组内置背景图**（服主没配 / 还没到货时的回退）—— 纹理 id 与像素尺寸**都收口在这里** */
+    val BUILTIN_TEX: Identifier = Identifier.of("cobblemarket", "textures/gui/background/id_card_background.png")
+
+    /**
+     * 内置背景图的像素尺寸：三个用处（ID 卡界面、入口那颗 ID 卡按钮、管理面板的玩家总览按钮）
+     * 都按它算等比缩放。
+     * ⚠ 别在别处再写一遍 1280 / 940 —— 2026-10-17 收口时项目里散着**三份**拷贝，
+     *   将来换内置图（比如给它加标题）必漏改。
+     */
+    const val BUILTIN_WIDTH = 1280
+    const val BUILTIN_HEIGHT = 940
 }
