@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.client.IdCardBackgroundTexture
 import com.shusheng.cobblemarket.client.IdCardDataCache
 import com.shusheng.cobblemarket.client.OVERVIEW_ICON_W
@@ -78,14 +79,24 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
          * ⚠ 只挪区域、不改区域高度 ⇒ 模型的**缩放不变**（size 是按区域高度算的）。
          */
         const val MODEL_DROP = 10
+
+        /** 入场掉落动画：下落 / 停留 / 淡出（毫秒）—— 与入口界面同款 */
+        const val DROP_DURATION_MS = 100L
+        const val HOLD_DURATION_MS = 100L
+        const val FADE_DURATION_MS = 100L
     }
 
     /** 金额行的命中框：界面显示的是**缩写**（`9.8k`），鼠标停上来时用完整千分位展全 */
     private class AmountHit(val x: Int, val y: Int, val w: Int, val full: String)
     private val amountHits = mutableListOf<AmountHit>()
 
+    /** 入场掉落动画开始时间（首次 init 记录；resize 重建不重播）—— 与入口界面同款三段动画 */
+    private var dropAnimStart = -1L
+
     override fun init() {
         super.init()
+        // 入场掉落动画只在新打开时播（resize 重建不重播）—— 与入口界面的 dropAnimStart 同款
+        if (dropAnimStart < 0) dropAnimStart = System.currentTimeMillis()
         // 返回按钮 —— **卡片内容区右下角**（2026-10-16 用户实测反馈：原先放屏幕右上角、离得太远）
         val geo = geometry()
         addDrawableChild(NineSliceButton(
@@ -108,6 +119,31 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // 入场掉落动画（照入口界面，受「界面动画」开关控制）：
+        // 下落 + 停留阶段只画掉落的卡片；淡出阶段完整界面在下、卡片渐透明
+        val animElapsed = System.currentTimeMillis() - dropAnimStart
+        if (ClientConfig.marketAnimation) {
+            if (animElapsed < DROP_DURATION_MS + HOLD_DURATION_MS) {
+                renderDropCard(context, animElapsed, 1f)
+                return
+            }
+            val fadeElapsed = animElapsed - DROP_DURATION_MS - HOLD_DURATION_MS
+            if (fadeElapsed < FADE_DURATION_MS) {
+                renderCardContent(context, mouseX, mouseY, delta)
+                // flush 夹心（照入口界面 / 精灵动画）：先提交界面，再画卡片并立刻提交，
+                // 否则界面写进深度缓冲后会把后画的卡片整片剔除
+                context.draw()
+                RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT, MinecraftClient.IS_SYSTEM_MAC)
+                renderDropCard(context, animElapsed, 1f - fadeElapsed.toFloat() / FADE_DURATION_MS)
+                context.draw()
+                return
+            }
+        }
+        renderCardContent(context, mouseX, mouseY, delta)
+    }
+
+    /** 界面本体（动画结束后 / 淡出阶段的底图） */
+    private fun renderCardContent(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         super.render(context, mouseX, mouseY, delta)
 
         val row = IdCardDataCache.row ?: run {
@@ -128,6 +164,35 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
         // （照入口界面「全服累计成交额」的做法：缩写 + 悬停出完整值）
         amountHits.firstOrNull { mouseX in it.x until (it.x + it.w) && mouseY in it.y until (it.y + 10) }
             ?.let { renderAmountTooltip(context, mouseX, mouseY, it.full) }
+    }
+
+    /**
+     * 掉落动画的卡片：**当前生效的背景图**（服主换的也算）从屏幕顶外缓出落到卡片位置，
+     * 同时 0→1 放大（照入口界面的 `renderDropImage`）。[alpha] 供淡出阶段渐变。
+     */
+    private fun renderDropCard(context: DrawContext, elapsed: Long, alpha: Float) {
+        val entry = IdCardBackgroundTexture.get()
+        val tex = entry?.id ?: IdCardBackgroundTexture.BUILTIN_TEX
+        val texW = entry?.width ?: IdCardBackgroundTexture.BUILTIN_WIDTH
+        val texH = entry?.height ?: IdCardBackgroundTexture.BUILTIN_HEIGHT
+        val geo = geometry()
+        val imgScale = CARD_W.toFloat() / texW
+        val drawW = texW * imgScale
+        val drawH = texH * imgScale
+        val k = (elapsed.toFloat() / DROP_DURATION_MS).coerceIn(0f, 1f)
+        fun smooth(v: Float): Float = v * v * (3f - 2f * v)
+        val eased = smooth(k)
+        // 起点：图底贴屏幕顶（完全在屏幕外）
+        val y = -drawH + (geo.textureTop + drawH) * eased
+        val scale = eased * imgScale
+        context.matrices.push()
+        context.matrices.translate((geo.textureLeft + drawW / 2f).toDouble(), (y + drawH / 2f).toDouble(), 0.0)
+        context.matrices.scale(scale, scale, 1f)
+        // RGB 随 alpha 一起衰减：先变暗再消失（照入口界面）
+        context.setShaderColor(alpha, alpha, alpha, alpha)
+        context.drawTexture(tex, -texW / 2, -texH / 2, 0f, 0f, texW, texH, texW, texH)
+        context.setShaderColor(1f, 1f, 1f, 1f)
+        context.matrices.pop()
     }
 
     /** 完整金额的小面板（照 `MarketEntryScreen.renderAmountTooltip`：鼠标右上、贴屏边兜底） */
