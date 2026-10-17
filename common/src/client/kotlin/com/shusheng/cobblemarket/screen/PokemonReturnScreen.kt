@@ -119,7 +119,11 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
         pokemon.forEachIndexed { i, p ->
             val id = Identifier.tryParse(p.speciesId) ?: return@forEachIndexed
             val species = PokemonSpecies.getByIdentifier(id) ?: return@forEachIndexed
-            val aspects = mutableSetOf<String>()
+            // ⚠ 必须用数据里的**完整 aspects**（含地区 / 特殊形态），不能只补 shiny：
+            //   此前只加了 shiny ⇒ 退回的「阿罗拉六尾」等形态一律按**默认形态**渲染
+            //   （2026-10-17 用户报，1.2.1 起就有、1.3.x 同样中招）。照市场 / 拍卖创建那几处的写法
+            val aspects = p.aspects.toMutableSet()
+            // 兜底：极老的数据 aspects 可能为空，至少别把闪光弄丢（重复 add 无害）
             if (p.shiny) aspects.add("shiny")
             // 携带物同时喂给模型（Cobblemon 会渲染在手上/嘴上）与行内小图标
             val held = heldIconStack(p.heldItemId, p.heldItemNbt)
