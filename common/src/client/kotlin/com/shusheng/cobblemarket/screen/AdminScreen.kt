@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.client.ClientPermissionCache
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.client.ClientConfig
+import com.shusheng.cobblemarket.client.IdCardBackgroundTexture
 import com.shusheng.cobblemarket.client.MarketStateCache
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_TEXTURE
 import com.shusheng.cobblemarket.client.activeCurrencyUnit
@@ -48,6 +49,8 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
     /** 充值订单入口（权限管理右边）：有待确认订单时在它右上角点一个红点 */
     private var orderEntryBtn: NineSliceButton? = null
     private var pendingOrderCount = 0
+    /** 玩家总览入口：图标每帧跟随服主换的 ID 卡背景图（与入口界面那颗同源），留个引用 */
+    private var overviewBtn: NineSliceButton? = null
     // 停市确认弹窗（照入口界面原实现：3 秒冷静期 + 红白双色文字）
     private var marketConfirmOpen = false
     private var marketConfirmOpenedAt = 0L
@@ -74,6 +77,12 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
 
         /** 有待处理订单时挂在它右上角的角标（48×48 源图按 1/6 缩到 8×8，同精灵市场的红点） */
         val POINTS_SYMBOL = POINTS_SYMBOL_TEXTURE
+
+        // 玩家总览入口的「一叠 ID 卡」：每张缩到这么宽、层间往右上错开这么多像素。
+        // 按钮 22×22、内置背景比例 1280:940 ⇒ 单张 14×10、整组（含错开余量）18×14，四边都留得出余量
+        // ⚠ 错开 3 → 2（2026-10-17 实测：3px 看着太散）
+        private const val OVERVIEW_CARD_W = 14
+        private const val OVERVIEW_LAYER_STEP = 2
     }
 
     /** 金融统计快照（进入管理面板时拉取）：准备金池告警行 */
@@ -288,19 +297,24 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         // 玩家总览入口（2026-10-16）：在「服务器配置」**左侧**（用户 2026-10-15 定）。
         // ⚠ 它与旁边两颗的判据不同：**不看服主身份**，有 overview 节点就能进
         //   （`canManage` 认「有任何节点」，所以节点持有人本来就进得来管理面板）。
-        // ⚠ 图标是**占位**（personal.png，语义最接近"玩家"）—— 用户会给正式的，换 iconLeft 一行即可。
         // ⚠⚠ **坐标不能照抄 1.2.2 的 `centerX + 42`**：那边服务器配置贴的是 centerX ± 90、
         //   这颗紧挨它左边（间隙 4），而**本线这排多了充值订单 / 兑换码两颗**、服务器配置改贴
         //   **红线右端**（centerX + 103）⇒ 写死值会让它悬在半空（左空 31px、右空 17px，
         //   2026-10-17 用户一眼看出「位置不对」）。改成**由服务器配置左缘倒推**、空隙取本排
         //   统一的 [iconGap]（左边三颗之间也是它），以后谁挪服务器配置这颗都跟着走。
         val overviewX = centerX + iconRowHalf - iconSize - iconGap - iconSize
+        // 图标 = **一叠 ID 卡**（三张背景图往右上错开叠放，2026-10-17 用户定）：
+        //   「一张卡 = 一个玩家」⇒ 一叠 = 全服玩家。源图与入口界面那颗**同源** ——
+        //   跟着服主换的背景图走，所以尺寸/缩放每帧同步（见 [syncIdCardIcon]）。
+        // ⚠ 构造时先按**内置**图摆好（下一帧 render 就会覆盖成当前生效那张），照入口界面那颗的写法
         val overviewBtn = NineSliceButton(
             overviewX, iconY, iconSize, iconSize,
             Text.literal(""),
             { openIfPermitted(MarketPermissions.OVERVIEW) { client?.setScreen(PlayerOverviewScreen()) } },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/personal.png"),
-            iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
+            iconLeft = IdCardBackgroundTexture.BUILTIN_TEX,
+            iconTexW = IdCardBackgroundTexture.BUILTIN_WIDTH, iconTexH = IdCardBackgroundTexture.BUILTIN_HEIGHT,
+            iconScale = OVERVIEW_CARD_W.toFloat() / IdCardBackgroundTexture.BUILTIN_WIDTH,
+            iconLayers = 3, iconLayerStep = OVERVIEW_LAYER_STEP,
             // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
         )
@@ -310,6 +324,9 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
                 .append(Text.translatable("cobblemarket.perm.node.overview.desc"))
         ))
         menuButtons += addDrawableChild(overviewBtn)
+        this.overviewBtn = overviewBtn
+        // 跟入口界面同款：打开就问一次背景图（服主换了图这两颗按钮一起变；没变只回版本号、不重传图）
+        IdCardBackgroundTexture.requestRefresh()
 
         val serverConfigBtn = NineSliceButton(
             centerX + iconRowHalf - iconSize, iconY, iconSize, iconSize,
@@ -578,6 +595,8 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // 总览那颗的图标跟着服主换的 ID 卡背景图走（与入口界面那颗同源，照它每帧同步）
+        overviewBtn?.syncIdCardIcon(OVERVIEW_CARD_W)
         super.render(context, mouseX, mouseY, delta)
         // 停市确认弹窗：下层控件已隐藏，标题/告警/皮卡丘不再重绘（否则会浮在弹窗遮罩之上），照入口界面
         if (marketConfirmOpen) {
