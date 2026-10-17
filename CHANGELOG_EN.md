@@ -106,6 +106,16 @@
 
 - **"Also block loans" moved to the Finance Management screen**: it used to be a toggle in the **ban** confirmation dialog (ticked while banning someone); it is now a **separate list** on the Finance Management screen's "Loan Ban" tab — finance belongs on the finance side, and bans only cover trading. ⚠ The ban ledger (`config/cobblemarket/bans/`) drops its "Block Loans / Prev Block Loans" columns accordingly
 
+### Fixes
+
+- **Buy orders: "View pending delivery" in chat opened an empty dialog**: after you rejected a delivery, that old chat notice stays — clicking it again opened a **blank confirmation dialog** (a few empty rows + Accept / Reject buttons) even though there was no pending delivery on that order anymore. It now shows "This buy order has no pending delivery right now" instead of opening an empty dialog
+
+- **Buy orders: the quantity overlapped the remaining time in item rows**: with a longer price range, "× N" ran into the remaining time on its left. They now keep out of each other's way; when there is not enough room, the remaining time is omitted from the row (the full expiry time is still shown in the tooltip)
+
+- **Buy orders: the currency unit stuck out of the tooltip**: the currency unit at the end of the price line (an item icon when using item currency) was drawn outside the tooltip. It is now taken into account when measuring the width
+
+- **Pending returns: returned Pokémon showed their default form**: after a delivery was rejected and the Pokémon went back to the pending-returns screen, it was rendered in its **default form** (e.g. an Alolan form drawn as the normal one) — claiming it gave the correct Pokémon. It now uses the actual form
+
 ## 1.2.1 (released)
 
 ⚠ **Server and client must be updated together** (this release changes the packet format).
