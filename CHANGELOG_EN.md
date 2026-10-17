@@ -34,6 +34,8 @@
 
 - **"Also block loans" moved to the Finance Management screen**: it used to be a toggle in the **ban** confirmation dialog (ticked while banning someone); it is now a **separate list** on the Finance Management screen's "Loan Ban" tab — finance belongs on the finance side, and bans only cover trading. ⚠ The ban ledger (`config/cobblemarket/bans/`) drops its "Block Loans / Prev Block Loans" columns accordingly
 
+- **Buy order IV requirements are now "at least"**: the six IV fields when creating a buy order used to match **exactly** (entering 20 meant only an IV of exactly 20 was accepted); they are now a **lower bound** (20 or higher). The field placeholders show "≥" as well. ⚠ Existing buy orders follow the same rule — it is only more permissive, so anything that could be delivered before still can be
+
 ### Fixes
 
 - **Buy orders: "View pending delivery" in chat opened an empty dialog**: after you rejected a delivery, that old chat notice stays — clicking it again opened a **blank confirmation dialog** (a few empty rows + Accept / Reject buttons) even though there was no pending delivery on that order anymore. It now shows "This buy order has no pending delivery right now" instead of opening an empty dialog
