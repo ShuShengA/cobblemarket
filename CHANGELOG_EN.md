@@ -79,7 +79,7 @@
 
 ### New Feature
 
-- **Finance Management screen**: the entry button in Meowth Bank now opens **Finance Management** — a screen with **four tabs** (that button used to open the card management screen directly). The tabs are:
+- **Finance Management screen**: the entry button in Meowth Bank now opens **Finance Management** — a screen with **five tabs** (that button used to open the card management screen directly). The tabs are:
   - **Loan Ban**: type a player name (with autocomplete) plus a duration and a reason to add them to the list — listed players **cannot take loans** (⚠ deposits, withdrawals and **repayments still work**: repayments must keep working, since paying back is how a player clears their overdue status). Players are also removed from the list on this tab
   - **Cards**: the list of purple / black card holders, with a revoke button on each row (everything the old card management screen did)
   - **Credits**: look up a player and set their **borrowable limit** to whatever you want (see the next entry)
