@@ -340,11 +340,13 @@ object PokemonCelebrationAnimation {
             if (!cryTriggered) {
                 cryTriggered = true
                 if (!IconAnimationResolver.isSleeping(rp)) {
-                    // 有战吼的物种吼战吼，其余落到 cry。
-                    // ⚠ 两条都**必须叠加**、不能做成主动画（`:primary`）：那会把姿势的基础待机动画
-                    //   一并 dump 掉、模型掉回 rest pose —— 暴鲤龙整个立起来、化石翼龙翅膀变直纸片
-                    //   （2026-09-15 普通叫踩过，2026-09-22 战吼又踩一次，见 playBattleCry 的注释）。
-                    if (!IconAnimationResolver.playBattleCry(st, rp)) {
+                    // 有战吼 / 战斗入场的物种在两者间随机（原来固定战吼；2026-10-18 用户要求加上战斗入场），
+                    // 其余落到 cry。
+                    // ⚠ 两条都**必须叠加 / 合成 primary**、不能把普通叫做成主动画（`:primary`）：那会把
+                    //   姿势的基础待机动画一并 dump 掉、模型掉回 rest pose —— 暴鲤龙整个立起来、
+                    //   化石翼龙翅膀变直纸片（2026-09-15 普通叫踩过，2026-09-22 战吼又踩一次，
+                    //   见 playBattleCry 的注释）。
+                    if (!IconAnimationResolver.playCelebrationCry(st, rp)) {
                         st.addFirstAnimation(setOf("cry"))
                     }
                 }
