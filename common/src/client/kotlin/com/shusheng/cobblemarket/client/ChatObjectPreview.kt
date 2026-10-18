@@ -375,7 +375,19 @@ object ChatObjectPreview {
         // ID 卡展示：画**整张卡**（背景 + 两列信息）；不画 3D 玩家模型 —— 展示者的实体本地不一定有
         val idCard = entry.idCardRow
         if (idCard != null) {
-            val cardLeft = (context.scaledWindowWidth - IdCardRenderer.CARD_W) / 2f
+            // ID 卡**偏右**放（2026-10-18 用户要求）：聊天框占着左侧，居中的卡会压到聊天文字上。
+            // ⚠ 不能按屏幕 3/4 写死（用户实测「太靠右了，聊天框的宽度没有这么宽」）——
+            //   按**聊天框实际右缘**算，在「聊天框右侧的剩余区域」里居中：
+            //   - ChatHud.render 的矩阵 = scale(chatScale) → translate(4,0)，背景画到 k+8（k = ceil(width/chatScale)）
+            //     ⇒ on-screen 右缘 = width + 12 × chatScale（GUI 单位，与 scaledWindowWidth 同一坐标系）
+            //   - 再留 8px 间隙；剩余区域比卡片还窄时贴右缘留 8px（小分辨率下无解，只能别画出屏幕）
+            val chatHud = MinecraftClient.getInstance().inGameHud.chatHud
+            val chatRight = chatHud.width + (12.0 * chatHud.chatScale).toInt()
+            val areaLeft = (chatRight + 8).toFloat()
+            val areaRight = context.scaledWindowWidth.toFloat()
+            val desiredLeft = areaLeft + ((areaRight - areaLeft - IdCardRenderer.CARD_W) / 2f)
+            val maxLeft = (areaRight - IdCardRenderer.CARD_W - 8f).coerceAtLeast(8f)
+            val cardLeft = desiredLeft.coerceIn(8f, maxLeft)
             val cardTop = (screenHeight - IdCardRenderer.CARD_H) / 2f
             IdCardRenderer.draw(
                 context, MinecraftClient.getInstance().textRenderer, idCard, cardLeft, cardTop,
