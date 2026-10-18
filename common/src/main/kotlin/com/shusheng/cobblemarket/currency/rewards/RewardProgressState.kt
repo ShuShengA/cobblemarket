@@ -91,6 +91,67 @@ class RewardProgressState private constructor() : PersistentState() {
         return true
     }
 
+    /**
+     * **只清某一类事件**的奖励进度（全服），返回受影响人数。
+     *
+     * 计数键的格式是 `<物种 id>@<事件名>|<条件指纹>`（见 `RewardRule.fingerprint`）——
+     * 事件名就在前缀里；每日上限本来就按事件 key 存在 [rewardDaily] 里。
+     * ⇒ 两边都能精确过滤；**其它事件（捕捉 / 战斗 / 孵化…）的进度与余额都不动**。
+     */
+    fun resetEventAll(eventKey: String): Int {
+        val affected = mutableSetOf<UUID>()
+        val hitIt = rewardHits.entries.iterator()
+        while (hitIt.hasNext()) {
+            val entry = hitIt.next()
+            val keyIt = entry.value.entries.iterator()
+            while (keyIt.hasNext()) {
+                if (eventOfHitKey(keyIt.next().key) == eventKey) {
+                    keyIt.remove()
+                    affected += entry.key
+                }
+            }
+            if (entry.value.isEmpty()) hitIt.remove()
+        }
+        val dailyIt = rewardDaily.entries.iterator()
+        while (dailyIt.hasNext()) {
+            val entry = dailyIt.next()
+            if (entry.value.remove(eventKey) != null) affected += entry.key
+            if (entry.value.isEmpty()) dailyIt.remove()
+        }
+        if (affected.isNotEmpty()) markDirty()
+        return affected.size
+    }
+
+    /** 只清**某一个人的某一类事件**，返回是否真的清掉了什么 */
+    fun resetEventPlayer(playerUuid: UUID, eventKey: String): Boolean {
+        var changed = false
+        rewardHits[playerUuid]?.let { byKey ->
+            val keyIt = byKey.entries.iterator()
+            while (keyIt.hasNext()) {
+                if (eventOfHitKey(keyIt.next().key) == eventKey) {
+                    keyIt.remove()
+                    changed = true
+                }
+            }
+            if (byKey.isEmpty()) rewardHits.remove(playerUuid)
+        }
+        rewardDaily[playerUuid]?.let { byEvent ->
+            if (byEvent.remove(eventKey) != null) changed = true
+            if (byEvent.isEmpty()) rewardDaily.remove(playerUuid)
+        }
+        if (changed) markDirty()
+        return changed
+    }
+
+    /** 计数键里的「事件名」——格式：`<物种 id>@<事件名>|<条件指纹>`（物种 id 不含 `@`） */
+    private fun eventOfHitKey(key: String): String? {
+        val at = key.indexOf('@')
+        if (at < 0) return null
+        val fp = key.substring(at + 1)
+        val bar = fp.indexOf('|')
+        return if (bar <= 0) null else fp.substring(0, bar)
+    }
+
     override fun writeNbt(nbt: NbtCompound, registryLookup: RegistryWrapper.WrapperLookup): NbtCompound {
         // 空表不写 —— 不用的服主的存档里不会多出空 compound
         if (rewardHits.isNotEmpty()) {

@@ -30,6 +30,7 @@ import com.shusheng.cobblemarket.currency.PointsLogType
 import com.shusheng.cobblemarket.currency.PointsRankingExport
 import com.shusheng.cobblemarket.currency.PointsState
 import com.shusheng.cobblemarket.currency.RedeemOutcome
+import com.shusheng.cobblemarket.currency.rewards.RewardEvent
 import com.shusheng.cobblemarket.currency.rewards.RewardProgressState
 import com.shusheng.cobblemarket.finance.CreditFileLogger
 import com.shusheng.cobblemarket.finance.FinanceService
@@ -429,6 +430,30 @@ object MarketCommands {
                             .then(CommandManager.literal("reset")
                                 .then(CommandManager.literal("all")
                                     .executes(::rewardsResetAll)
+                                )
+                                // 只重置某一类事件（capture / hatch / battle_victory / ...）
+                                .then(CommandManager.literal("event")
+                                    .then(CommandManager.argument("event", StringArgumentType.word())
+                                        .suggests { _, builder ->
+                                            RewardEvent.entries.forEach { builder.suggest(it.key) }
+                                            builder.buildFuture()
+                                        }
+                                        .then(CommandManager.literal("all")
+                                            .executes { ctx ->
+                                                rewardsResetEventAll(ctx, StringArgumentType.getString(ctx, "event"))
+                                            }
+                                        )
+                                        .then(CommandManager.argument("player", StringArgumentType.word())
+                                            .suggests(::suggestOnlinePlayerNames)
+                                            .executes { ctx ->
+                                                rewardsResetEventPlayer(
+                                                    ctx,
+                                                    StringArgumentType.getString(ctx, "event"),
+                                                    StringArgumentType.getString(ctx, "player")
+                                                )
+                                            }
+                                        )
+                                    )
                                 )
                                 .then(CommandManager.argument("player", StringArgumentType.word())
                                     // 只联想在线玩家；离线玩家直接敲名字也能重置
@@ -1662,6 +1687,65 @@ object MarketCommands {
                     playerName
                 ).formatted(if (had) Formatting.GREEN else Formatting.YELLOW)
             },
+            false
+        )
+        return if (had) 1 else 0
+    }
+
+    /**
+     * `/market points rewards reset event <事件> all` —— 只清全服某一类事件的奖励进度
+     * （已发次数 + 当天每日上限累计）；其它事件与余额都不动。
+     */
+    private fun rewardsResetEventAll(context: CommandContext<ServerCommandSource>, rawEvent: String): Int {
+        if (denyNonOwner(context)) return 0
+        val event = RewardEvent.fromJson(rawEvent)
+        if (event == null) {
+            context.source.sendError(Text.translatable("cobblemarket.rewards.reset_event_invalid", rawEvent))
+            return 0
+        }
+        val count = RewardProgressState.get(context.source.server).resetEventAll(event.key)
+        val label = Text.translatable("cobblemarket.rewards.event.${event.key}")
+        val done = count > 0
+        val message = if (done) {
+            Text.translatable("cobblemarket.rewards.reset_event_all_done", count, label)
+        } else {
+            Text.translatable("cobblemarket.rewards.reset_event_all_empty", label)
+        }
+        context.source.sendFeedback(
+            { message.formatted(if (done) Formatting.GREEN else Formatting.YELLOW) },
+            false
+        )
+        return if (done) 1 else 0
+    }
+
+    /** `/market points rewards reset event <事件> <玩家>` —— 只清某个人某一类事件的进度 */
+    private fun rewardsResetEventPlayer(
+        context: CommandContext<ServerCommandSource>,
+        rawEvent: String,
+        name: String
+    ): Int {
+        if (denyNonOwner(context)) return 0
+        val event = RewardEvent.fromJson(rawEvent)
+        if (event == null) {
+            context.source.sendError(Text.translatable("cobblemarket.rewards.reset_event_invalid", rawEvent))
+            return 0
+        }
+        val server = context.source.server
+        val resolved = BanState.resolvePlayer(server, name)
+        if (resolved == null) {
+            context.source.sendError(Text.translatable("cobblemarket.ban.player_not_found", name))
+            return 0
+        }
+        val (uuid, playerName) = resolved
+        val had = RewardProgressState.get(server).resetEventPlayer(uuid, event.key)
+        val label = Text.translatable("cobblemarket.rewards.event.${event.key}")
+        val message = if (had) {
+            Text.translatable("cobblemarket.rewards.reset_event_player_done", playerName, label)
+        } else {
+            Text.translatable("cobblemarket.rewards.reset_event_player_empty", playerName, label)
+        }
+        context.source.sendFeedback(
+            { message.formatted(if (had) Formatting.GREEN else Formatting.YELLOW) },
             false
         )
         return if (had) 1 else 0
