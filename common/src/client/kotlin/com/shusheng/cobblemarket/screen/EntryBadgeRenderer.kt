@@ -583,7 +583,7 @@ object EntryBadgeRenderer {
         val at: Long
     )
 
-    /** 二级窗的格子与内边距（照 1.3.0 RP 商城那个证章窗） */
+    /** 二级窗的格子与内边距（与证章窗同款） */
     private const val MARK_CELL = 12
     private const val MARK_TIP_PAD = 4
     /** 二级窗里一行排几个 —— **固定值**：它自己的宽度就是按它反算的（与主窗口那套「跟随可用宽」无关） */
@@ -597,7 +597,7 @@ object EntryBadgeRenderer {
      * ⚠ **必须在一级悬停窗画完之后调**（它要盖在一级窗之上）—— 各界面在 [drawMarksRow] 之后、
      *   `renderTooltip` 的**末尾**调一次即可。没登记（鼠标没停在证章行上）时**什么都不画**。
      * ⚠ 落点与项目里其余悬停窗**同一套**（鼠标右移 12、优先放上方、再钳进屏幕），
-     *   别自己另发明一套 —— 见 1.3.0 `PointsMarketScreen.renderMarksTooltip` 的同款注释。
+     *   别自己另发明一套 —— 与证章窗那里保持同一套规则。
      * ⚠ 用完就清，避免下一帧在别处冒出来；再加个 [MARKS_MORE_TTL_MS] 兜底。
      */
     fun drawMarksMoreTooltip(context: DrawContext) {
@@ -815,7 +815,7 @@ object EntryBadgeRenderer {
         )
         if (entry.ball.isNotEmpty()) {
             // 球名走**稀有度色**（大师球在物品栏里是紫的）—— 共用入口，别再念词条（那样是白字）。
-            // ⚠ 这一行在 1.2.x 上漏下浮过：1.3.0 早就改成 ballLine 了
+            // ⚠ 这一行曾经漏改过：应使用 ballLine
             lines.add(com.shusheng.cobblemarket.util.ItemNameText.ballLine(entry.ball, entry.ballItem) to 0xFFFFFF)
         }
         var heldItemLine = -1

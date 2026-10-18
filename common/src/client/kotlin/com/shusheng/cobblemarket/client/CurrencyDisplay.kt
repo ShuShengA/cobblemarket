@@ -110,12 +110,9 @@ const val INLINE_CURRENCY_GAP = 2
  * `activeCurrencyUnit()` 也是兜底 ₽）。物品 ID 非法（含空串、被删掉的模组物品）同样落到这里，
  * 不会画出空气/崩溃。
  *
- * ⚠⚠ **RP 是另一类，别混**（用户 2026-09-29 明确）：本函数取的是**主货币**
- * （`BalanceCache.currencyName`）—— `₽`（虚拟货币）与**物品图标**（物品本位货币）属于**同一类**
- * （主货币长什么样，只看服主把主货币设成了什么），而 **RP 图标是独立的一类**。
+ * ⚠ **本函数取的是主货币的单位**：`₽`（虚拟货币）与**物品图标**（物品本位货币）属于同一类，
+ * 长什么样只看服主把主货币设成了什么。
  * 一条挂单是什么币种就**只显示那一类**的单位，绝不能混着画。
- * ⇒ 上浮 1.3.0 时：这套图标**只能进 `amountWithUnit` 的 `isPoints = false` 分支**，
- *   碰 `isPoints = true` 就是「RP 挂单显示成物品图标」，属于钱显示错了。
  */
 fun currencyUnitStack(): ItemStack? {
     val raw = BalanceCache.currencyName

@@ -25,10 +25,10 @@ class NineSliceButton(
      * **物品图标**（[iconLeft] 的另一种来源）：与其给每个物品准备贴图，不如直接画物品栈 ——
      * 物品市场的「创造分类」网格那种"一格一个物品"的按钮用。
      * ⚠ 与 [iconLeft] **二选一**（两者都传时 iconStack 优先，本按钮的既有调用点一个都没传
-     *   ⇒ 行为零变化）。名称与 1.3.0 上那套**同名同义**，上浮时好合。
+     *   ⇒ 行为零变化）。
      */
     var iconStack: net.minecraft.item.ItemStack? = null,
-    /** [iconStack] 的绘制边长（默认 16 —— 1.3.0 上同名同义） */
+    /** [iconStack] 的绘制边长（默认 16） */
     var iconStackSize: Int = 16,
     // 第二图标（并排绘制，间距 1px；性别按钮不限态用 ♂♀ 双图标）
     var iconLeft2: Identifier? = null,

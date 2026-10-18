@@ -130,7 +130,7 @@ object ChatObjectPreview {
          */
         val pokemonKey: String? = null,
         /**
-         * **这条是「展示」而不是交易播报**（2026-10-17 从 1.3.0 下放）：
+         * **这条是「展示」而不是交易播报**（2026-10-17 加入）：
          * 展示没有交易信息 ⇒ 尾部那两行（卖家 / 价格）**整个略掉**。
          */
         val isShare: Boolean = false,

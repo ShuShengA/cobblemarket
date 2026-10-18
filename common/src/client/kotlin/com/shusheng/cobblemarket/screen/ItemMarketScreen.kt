@@ -448,8 +448,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     }
 
     /**
-     * 「我的」按钮的开/关图标 —— ⚠ **贴图路径只此一处**：1.2.x 在 `gui/` 下、1.3.x 在 `gui/button/` 下，
-     * 上浮时改这一个串就够（原先 init 与 toggle 里各写一份，加重置就成了三处）。
+     * 「我的」按钮的开/关图标 —— ⚠ **贴图路径只此一处**：都在 `gui/` 下，
+     * 以后要换目录只改这一个串就够（原先 init 与 toggle 里各写一份，加重置就成了三处）。
      */
     private fun mineIcon(on: Boolean) = Identifier.of("cobblemarket",
         if (on) "textures/gui/personal_click.png" else "textures/gui/personal.png")

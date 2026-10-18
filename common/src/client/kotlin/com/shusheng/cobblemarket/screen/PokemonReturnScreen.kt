@@ -121,7 +121,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             val species = PokemonSpecies.getByIdentifier(id) ?: return@forEachIndexed
             // ⚠ 必须用数据里的**完整 aspects**（含地区 / 特殊形态），不能只补 shiny：
             //   此前只加了 shiny ⇒ 退回的「阿罗拉六尾」等形态一律按**默认形态**渲染
-            //   （2026-10-17 用户报，1.2.1 起就有、1.3.x 同样中招）。照市场 / 拍卖创建那几处的写法
+            //   （2026-10-17 用户报，1.2.1 起就有）。照市场 / 拍卖创建那几处的写法
             val aspects = p.aspects.toMutableSet()
             // 兜底：极老的数据 aspects 可能为空，至少别把闪光弄丢（重复 add 无害）
             if (p.shiny) aspects.add("shiny")

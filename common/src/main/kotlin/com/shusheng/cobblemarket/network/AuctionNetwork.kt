@@ -1093,8 +1093,8 @@ object AuctionNetwork {
         else
             RecordDetail.item(auction.itemNbt, auction.count, server.registryManager)
         // 账本 fee 与实际扣费一致（含逾期翻倍，付款方=卖家）
-        // ⚠ 1.2.x 走这里的自算 —— `auctionFeeOf`「唯一入口」是 1.3.0 才收口的（含 RP 币种费率），
-        //   本分支没有 RP 拍卖、也没有那个函数，别往这里搬（c016c49c 搬过一次，1.2.0/1.2.1 都编译不过）
+        // ⚠ 这里走的是自算 —— 本分支没有统一的 auctionFeeOf 入口（也没有第二种币种），
+        //   别往这里搬别的分支的收费实现（c016c49c 搬过一次，编译不过）
         val fee = if (type == TransactionType.PURCHASE && CobbleMarketConfig.auctionFeePercent > 0)
             com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount(
                 com.shusheng.cobblemarket.finance.FinanceState.get(server),

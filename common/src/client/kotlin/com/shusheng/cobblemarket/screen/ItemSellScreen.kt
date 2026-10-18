@@ -25,7 +25,7 @@ import net.minecraft.util.Identifier
 import com.shusheng.cobblemarket.client.drawItemWithBar
 
 class ItemSellScreen(
-    /** 展示模式（2026-10-17 从 1.3.0 下放）：**点背包里的物品直接发到全服聊天**（没有价格/数量框） */
+    /** 展示模式（2026-10-17 加入）：**点背包里的物品直接发到全服聊天**（没有价格/数量框） */
     private val shareMode: Boolean = false
 ) : Screen(Text.translatable(
     if (shareMode) "cobblemarket.share.title_item" else "cobblemarket.item.sell_title"
@@ -49,7 +49,7 @@ class ItemSellScreen(
     )
 
     // name：显示名在背包扫描时构建一次，render 每帧取 stack.name 是分配热点
-    /** [slot] = 主背包里的槽位号（分享模式要用它让服务端按槽位读背包，2026-10-17 从 1.3.0 下放） */
+    /** [slot] = 主背包里的槽位号（分享模式要用它让服务端按槽位读背包，2026-10-17 加入） */
     private data class SellItem(val stack: ItemStack, val count: Int, val name: String, val slot: Int)
 
     private var items = listOf<SellItem>()

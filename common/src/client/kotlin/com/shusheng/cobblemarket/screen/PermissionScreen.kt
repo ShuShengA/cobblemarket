@@ -145,7 +145,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         const val DIALOG_W = 220
         /** 高度按**最多 5 行节点**留（`MarketPermissions.ALL` 到 9~10 个时）：节点区最底
          *  = 40 + 4*20 + 16 = 136，按钮顶 144（间隙 8px，与 4 行时一致），底部余 174-164 = 10px。
-         *  ⚠ 2026-09-24：加第 9 个节点时（1.3.0 是 `POINTS`、1.2.1 是拆出的交易历史），
+         *  ⚠ 2026-09-24：加第 9 个节点时（本版本是拆出的交易历史），
          *  原 150 高 + 按钮在 124 会把第 5 行**压掉 12px** —— 这里是同步加高的，别再调回去 */
         const val DIALOG_H = 174
         const val DIALOG_MARGIN = 12                 // 弹窗内容左右留白

@@ -3267,8 +3267,7 @@ object MarketNetwork {
 
     /**
      * 展示专用：从**活精灵**现组装一份 [ListingEntry]（价格 0，客户端会整个略掉交易信息）。
-     * ⚠ 1.2.2 的 [buildListingEntry] **没有 currency 参数**（那是 1.3.0 的 RP 系统）——
-     *   从 1.3.0 下放时删掉了 `currency = MarketCurrency.PRIMARY` 那一行。
+     * ⚠ [buildListingEntry] **没有 currency 参数** —— 本版本只有一种货币。
      */
     internal fun buildListingEntryForShare(
         pokemon: com.cobblemon.mod.common.pokemon.Pokemon,

@@ -1006,7 +1006,7 @@ class BuyOrderScreen(
 
             // 剩余时间（固定起点画）+ 待确认标记。
             // ⚠ 右侧价格是**右对齐**的 ⇒ 价格越长左缘越靠左，会直接压到剩余时间上
-            //   （2026-10-17 用户报「数字和剩余时间重叠」；1.3.x 同样有）。这里做一次碰撞检测：
+            //   （2026-10-17 用户报「数字和剩余时间重叠」）。这里做一次碰撞检测：
             //   与右侧文字至少留 4px，放不下就**不画** —— 完整的到期时间在悬停窗里（expiresLineOf），
             //   行内省略比糊成一团好。求购单没有反狙击延长，不需要秒级精度。
             val remaining = com.shusheng.cobblemarket.util.RemainingTime.text(
@@ -1212,7 +1212,7 @@ class BuyOrderScreen(
         }
         lines.last().first?.let { maxWidth = maxOf(maxWidth, textRenderer.getWidth(it)) }
         // ⚠ 价格行的货币单位是**另画在行尾**的（见下面 drawCurrencyUnit）⇒ 量宽必须把它算进去，
-        //   否则单位戳到悬停窗边框外（2026-10-17 用户报；1.3.x 已修，这里照搬）
+        //   否则单位戳到悬停窗边框外（2026-10-17 用户报）
         val priceUnitW = currencyUnitWidth(textRenderer)
         lines.getOrNull(priceRow)?.first?.let {
             maxWidth = maxOf(maxWidth, textRenderer.getWidth(it) + priceUnitW)
