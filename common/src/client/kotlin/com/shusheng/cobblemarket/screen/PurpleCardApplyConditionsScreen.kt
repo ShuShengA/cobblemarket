@@ -255,6 +255,7 @@ class PurpleCardApplyConditionsScreen : Screen(CardNames.label("cobblemarket.op.
             overdueFeeDouble = p?.overdueFeeDouble ?: 7,
             overdueFreeze = p?.overdueFreeze ?: 14,
             overdueBadDebt = p?.overdueBadDebt ?: 30,
+            shareCooldownSeconds = p?.shareCooldownSeconds ?: 10,
         ))
         savedToastUntil = System.currentTimeMillis() + 1500
     }
