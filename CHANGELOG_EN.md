@@ -81,7 +81,7 @@
 - **Switching to an older build and back silently reset your config**: after running an older build once (even if you only changed some unrelated setting), coming back to the newer build **silently restored any setting that older build did not know about** — e.g. the RP Shop turned itself off, and the external redeem-code secret was wiped (**invalidating every code already issued on your website**). Saving the config now **keeps the parts the current build does not recognise**, so switching builds back and forth no longer loses anything
 - **Item previews in chat: the tooltip panel was cut off and slid under the item art**: with a long name or lore the panel went **underneath the preview**, lost its left edge, and the rest of the line was trimmed to an ellipsis. Long lines now **wrap** and the panel no longer overlaps the art, so the whole panel is readable
 
-## 1.2.2 (in development, unreleased)
+## 1.2.2 (released)
 
 ### New Feature
 
