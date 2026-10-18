@@ -25,7 +25,7 @@
 - **New "Market ID Card" screen**: click the card at the bottom of the entry screen to open **your own market ID** — your 3D avatar on the left, and two columns on the right listing everything you have in this system: listings / auctions / buy orders / pending returns, balance, borrowable limit, debt, deposits and interest, lifetime trade volume, and your Pokédex seen / caught counts (**those two Pokédex lines use Cobblemon's own Pokédex icons**).
   ⚠ **The background image can be replaced with your server's own**: drop an image into `config/cobblemarket/idcard/` and enter its file name in the server config (leave it blank to use the built-in one) — the built-in image **leaves the top area empty on purpose**, for server owners to add a title or a mascot
 
-- **Showcase to chat**: a new showcase button on the entry screen (left of Settings) opens two sub-buttons (Pokémon / Item) — pick one to post it to server chat, **hover the message for the full details**; **hold X** to quickly showcase the selected party Pokémon / the item in your main hand (rebindable). Once every 10 seconds per player
+- **Showcase to chat**: a new showcase button on the entry screen (left of Settings) opens two sub-buttons (Pokémon / Item) — pick one to post it to server chat, **hover the message for the full details**; **hold X** to quickly showcase the selected party Pokémon / the item in your main hand (rebindable). The cooldown defaults to **10 seconds** (adjustable at the bottom of the server config screen, 1–3600 seconds; shared by Pokémon / ID card / item showcases)
 
 - **The Market ID Card can be showcased too**: a "Showcase to chat" button on your ID Card screen; the entry showcase menu now has **Pokémon / ID Card / Item**; holding **X** shows an extra ID Card box below the other two. Hovering the chat message shows the **whole card**
 
@@ -43,8 +43,6 @@
 - **Buy order IV requirements are now "at least"**: the six IV fields when creating a buy order used to match **exactly** (entering 20 meant only an IV of exactly 20 was accepted); they are now a **lower bound** (20 or higher). The field placeholders show "≥" as well. ⚠ Existing buy orders follow the same rule — it is only more permissive, so anything that could be delivered before still can be
 
 - **Meowth Bank: the deposit / withdraw screen now shows your current balance**: on servers with the balance HUD turned off, there was no way to tell how much cash you had available to deposit — a "Wallet balance" line now sits above the deposit balance
-
-- **The showcase cooldown is now configurable**: a new "Showcase cooldown (s)" row at the bottom of the server config screen (default 10, range 1–3600) — Pokémon / ID card / item showcases share the same cooldown; shorten it on quiet servers or lengthen it when chat moves fast
 
 ### Fixes
 
