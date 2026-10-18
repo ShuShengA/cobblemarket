@@ -12,6 +12,7 @@ import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animatio
 import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockAnimationRepository
 import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockKeyFrameBoneValue
 import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockPoseAnimation
+import com.cobblemon.mod.common.client.render.models.blockbench.bedrock.animation.BedrockSoundKeyframe
 import com.cobblemon.mod.common.client.render.models.blockbench.pose.Pose
 import com.cobblemon.mod.common.client.render.models.blockbench.repository.RenderContext
 import com.cobblemon.mod.common.client.render.models.blockbench.repository.VaryingModelRepository
@@ -398,11 +399,81 @@ object IconAnimationResolver {
      *
      * ⚠ 调用方必须**先渲染过一帧**：`currentModel` 是 `drawProfilePokemon` 里才建好的。
      */
-    fun playBattleCry(state: PosableState, renderable: RenderablePokemon): Boolean {
-        val group = animationGroup(renderable, "battle_cry")
+    fun playBattleCry(state: PosableState, renderable: RenderablePokemon): Boolean =
+        playBattleAction(state, renderable, "battle_cry")
+
+    /**
+     * 播放该物种的**战斗入场**动画（`battle_intro`）；没有 / 模型没建好返回 false。
+     *
+     * 2026-10-18 新增：苍炎刃鬼这类物种的 poser 在 `standing` 上定义了
+     * `"battle-standing": q.bedrock_primary(..., 'battle_intro')` 这条过渡 —— 放出来的精灵
+     * 在**别的精灵开战**时也会进入战斗状态（`BattleRegistry` 给参战玩家整队实体都设 `battleId`），
+     * 于是从站姿播这套入场动作（多数自带叫声关键帧），观感与 `battle_cry` 完全不同。
+     *
+     * 与战吼共用 [PoseWithBattleCry]：入场动画同样是「自带战斗姿态的一整段动作」，
+     * 播完维持战斗姿态、再淡出交还姿势动画。
+     */
+    fun playBattleIntro(state: PosableState, renderable: RenderablePokemon): Boolean =
+        playBattleAction(state, renderable, "battle_intro")
+
+    /**
+     * 点击图标时可随机播放的叫声类动画名（**至少含 `cry`**）。
+     *
+     * - `battle_cry`：该物种有就加入（沿用原来的「战吼」选项）
+     * - `battle_intro`：仅当该物种有、且动画里**带声音关键帧**时加入 —— 它是「站姿 → 战斗姿态」的
+     *   入场动作，有些物种（如烈咬陆鲨）整条**没有任何音效**，放进点击会让那次点击「只动不响」，
+     *   违反「点击精灵图标必须有叫声」的约定
+     *
+     * ⇒ 苍炎刃鬼这类两样都有的物种是**三选一**；普通物种维持原来的二选一 / 只有普通叫。
+     */
+    fun cryAnimationNames(renderable: RenderablePokemon): List<String> {
+        val names = mutableListOf("cry")
+        if (animationGroup(renderable, "battle_cry") != null) names += "battle_cry"
+        if (hasBattleIntroWithSound(renderable)) names += "battle_intro"
+        return names
+    }
+
+    /**
+     * 庆祝动画（买到 / 拍到 / 求购接受交付）的登场吼叫：**战吼 / 战斗入场二选一**，都没有返回 false。
+     *
+     * 与点击图标不同，这里**不掺普通叫** —— 原来的行为就是「固定战吼」，2026-10-18 用户只要求把它改成
+     * 「战吼 / 战斗入场二选一」；调用方在没有战吼时仍降级到 `cry`（维持原兜底）。
+     *
+     * ⚠ `battle_intro` 同样要求自带声音关键帧（见 [hasBattleIntroWithSound]），否则会「只动不响」。
+     */
+    fun playCelebrationCry(state: PosableState, renderable: RenderablePokemon): Boolean =
+        when (listOfNotNull(
+            "battle_cry".takeIf { animationGroup(renderable, "battle_cry") != null },
+            "battle_intro".takeIf { hasBattleIntroWithSound(renderable) }
+        ).randomOrNull()) {
+            "battle_cry" -> playBattleCry(state, renderable)
+            "battle_intro" -> playBattleIntro(state, renderable)
+            else -> false
+        }
+
+    /**
+     * 该物种是否有 `battle_intro`，且动画里**带声音关键帧**。
+     *
+     * 声音门槛是必须的：`battle_intro` 是「站姿 → 战斗姿态」的入场动作，个别物种（烈咬陆鲨）
+     * 整条**没有任何音效**，进随机池会让那次播放「只动不响」。
+     */
+    private fun hasBattleIntroWithSound(renderable: RenderablePokemon): Boolean {
+        val group = animationGroup(renderable, "battle_intro") ?: return false
+        val intro = BedrockAnimationRepository.getAnimationOrNull(group, "animation.$group.battle_intro")
+            ?: return false
+        return intro.effects.any { it is BedrockSoundKeyframe }
+    }
+
+    /** [playBattleCry] / [playBattleIntro] 的共同实现：取名、判断自带姿态、用 primary 播两段式。 */
+    private fun playBattleAction(
+        state: PosableState,
+        renderable: RenderablePokemon,
+        animationName: String
+    ): Boolean {
+        val group = animationGroup(renderable, animationName)
         val model = state.currentModel
         if (group == null || model == null) return false
-        val cry = BedrockAnimationRepository.getAnimationOrNull(group, "animation.$group.battle_cry")
+        val cry = BedrockAnimationRepository.getAnimationOrNull(group, "animation.$group.$animationName")
             ?: return false
         // 用 primary 播「战吼 → 维持战斗姿态」两段式动画（见 PoseWithBattleCry 的说明）：
         // 独占是必须的 —— 否则框架后跑的姿势动画会再累加一份、把战吼淹掉。
@@ -449,6 +520,9 @@ object IconAnimationResolver {
 
 /**
  * 「战吼 → 维持战斗姿态」两段式动画（用户 2026-09-22 提的设计，见下）。
+ *
+ * ⚠ 2026-10-18 起也用于 `battle_intro`（苍炎刃鬼这类「站姿 → 战斗姿态」的入场动作）——
+ * 两者都是「自带战斗姿态的整段动作」，播放机制完全相同，类名沿用历史。
  *
  * ## 为什么不能简单地把两条动画叠一起
  *

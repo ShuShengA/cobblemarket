@@ -2,18 +2,22 @@ package com.shusheng.cobblemarket.client.icon
 
 import com.cobblemon.mod.common.client.render.models.blockbench.PosableState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
-import kotlin.random.Random
 
 /**
- * 点击精灵图标时播放叫声（普通 `cry` 与战吼 `battle_cry` **随机**二选一），各个界面共用。
+ * 点击精灵图标时播放叫声（普通 `cry` / 战吼 `battle_cry` / 战斗入场 `battle_intro` ——
+ * **有哪个就等概率随机哪个**），各个界面共用。
  *
  * **动作与声音都不用分别写代码**：
- * - 动画：**随机**在普通叫与战吼之间二选一，两者都是**叠加**（战吼见
- *   [IconAnimationResolver.playBattleCry]，与官方 cry 同一个 `BedrockActiveAnimation` 类型）。
- *   ⚠ **都别改成主动画版（`:primary`）**：它会把姿势的基础待机动画一并 dump 掉、模型掉回 rest pose
+ * - 动画：从 [IconAnimationResolver.cryAnimationNames] 给出的名字里随机选一个。普通叫是**叠加**，
+ *   战吼 / 战斗入场走 [IconAnimationResolver.playBattleCry] / [IconAnimationResolver.playBattleIntro]
+ *   的合成动画（与官方 cry 同一个 `BedrockActiveAnimation` 类型）。
+ *   ⚠ **普通叫别改成主动画版（`:primary`）**：它会把姿势的基础待机动画一并 dump 掉、模型掉回 rest pose
  *   （2026-09-15 普通叫踩过、2026-09-22 战吼又踩一次）。**130 条**战吼动画
  *   （2026-10-12 在 Cobblemon 1.8.2 上全量扫描；1.8.1 是 118 条），
  *   将来 Cobblemon 补上更多时这边不用改代码就自动生效
+ * - **战斗入场**（`battle_intro`，2026-10-18 新增）：野外「放出来的精灵进入战斗状态」时播的
+ *   那套从站姿到战斗姿态的入场动作（苍炎刃鬼就是）。只有该物种定义了这条过渡动画才会参与，
+ *   且**必须自带叫声关键帧** —— 个别物种（如烈咬陆鲨）整条没有声音，放进来会让点击「只动不响」
  * - 声音：`FloatingState` 没有 entity，Cobblemon 的 `BedrockSoundKeyframe` 会走
  *   `SimpleSoundInstance.forUI(...)` 自动播出来
  *
@@ -61,11 +65,14 @@ object IconCryClick {
 
         // 先清掉正在播的，避免连点叠加动画（节流之外的兜底）
         state.activeAnimations.clear()
-        // 普通叫与战吼**随机**二选一（用户拍板：每次点击都吼太单调）。
+        // 普通叫 / 战吼 / 战斗入场：有哪个就**等概率**随机哪个（用户 2026-10-18 定「三选一」）。
         // ⚠ 战吼**不能**再用主动画版（`:primary`）：那会把姿势的基础待机动画一并 dump 掉、
         //   模型掉回 rest pose —— 暴鲤龙整个立起来、化石翼龙 4 段翅膀变直纸片（2026-09-22 用户报）。
         //   现在走 [IconAnimationResolver.playBattleCry]（官方同款叠加对象）。
-        if (Random.nextBoolean() && IconAnimationResolver.playBattleCry(state, renderable)) return
+        when (IconAnimationResolver.cryAnimationNames(renderable).random()) {
+            "battle_cry" -> if (IconAnimationResolver.playBattleCry(state, renderable)) return
+            "battle_intro" -> if (IconAnimationResolver.playBattleIntro(state, renderable)) return
+        }
         // 没随机到战吼 / 该物种没战吼 / 模型还没建好 → 普通叫。
         // 它同样必须**叠加**（官方注册的就是 `q.bedrock_stateful`）：只提供嘴/头部的关键帧，
         // 身体姿态靠姿势动画撑着，独占会让其余骨骼掉回 rest pose（2026-09-15 实测踩到并回退）。
