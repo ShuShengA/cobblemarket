@@ -245,7 +245,13 @@ class SellSelectScreen(
         //  矮一截就会看着偏上、发细，用户原话「这个搜索框看起来很细」）
         // y 30 → 44（用户次日反馈「和上方返回按钮空隙太小」）：返回按钮底边 29，30 只有 1px 间隙；
         // 44 是精灵市场 / 管理端同一位置（间隙 15px），三个界面对齐
-        searchField = TextFieldWidget(textRenderer, lx + 2, 44, 130, 20, Text.translatable("cobblemarket.sell.search"))
+        // ⚠ 宽度按模式：普通 / 交付 130（右边还有价格框 / 选择按钮）；**分享 240**
+        //   —— 分享模式价格框和上架按钮都隐藏，空出来的位置给搜索框（照 1.3.x 的口径，
+        //   2026-10-18 用户要求看齐；搜索框 2~242、筛选开关 246~296，留 4px 间隙）
+        searchField = TextFieldWidget(
+            textRenderer, lx + 2, 44, if (shareMode) 240 else 130, 20,
+            Text.translatable("cobblemarket.sell.search")
+        )
         searchField?.setPlaceholder(Text.translatable("cobblemarket.sell.search"))
         // 搜索/筛选变化时重建过滤缓存（render 每帧只读，见 rebuildFiltered 注释）
         searchField?.setChangedListener { updateAbilityOptions(it); rebuildFiltered() }
@@ -275,6 +281,7 @@ class SellSelectScreen(
         // 按钮挪到它右边）。整行从内容区左缘排到右缘 lx+296：
         //   上架：搜索框 130 | 价格框 74 | 上架 28 | 筛选开关 50
         //   交付：搜索框 130 |      选择 106      | 筛选开关 50
+        //   分享：搜索框 240 |                       筛选开关 50（价格框 / 上架按钮都隐藏）
         // ⚠ 价格框宽度 74 **不要缩**（1.3.0 那边中间还夹着货币切换按钮，挤了就缩搜索框）
         // ⚠ 价格框与上架按钮之间留 4px 标准间隙：紧贴看着像两个控件粘在一起（2026-09-21 用户报）
         // ⚠ 高度一律 20（搜索框也一样）：原版输入框文字 y = y+(h-8)/2 与 NineSliceButton 同一算式，
