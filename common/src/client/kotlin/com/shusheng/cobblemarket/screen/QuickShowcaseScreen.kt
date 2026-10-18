@@ -24,14 +24,19 @@ import org.lwjgl.glfw.GLFW
 import java.util.UUID
 
 /**
- * **快速展示**：按住快捷键（默认 X）期间存在的**临时界面**（2026-09-29 用户定）。
+ * **快速展示**：按住（或按一下，模式在入口设置里切换）快捷键（默认 X）期间存在的**临时界面**（2026-09-29 用户定）。
  *
  * 形态：
- * - 两个大按钮从屏幕上方**落下**（掉落那套照入口界面），左右居中、中间留空隙，
+ * - 三个大框从屏幕上方**落下**（掉落那套照入口界面），上排精灵/物品、下排 ID 卡，
  *   边长取自喵喵银行卡片（128）
  * - 鼠标悬停哪个，哪个**瞬间上浮**（⚠ 不做缓动 —— 这个功能就叫"快速展示"，动作不能拖）
- * - **松开快捷键** ⇒ 展示悬停的那个；没悬停任何按钮 ⇒ 什么都不做
+ * - **按住模式**（默认）：松开快捷键 ⇒ 展示悬停的那个；没悬停任何按钮 ⇒ 什么都不做
+ * - **按一下模式**：按一下 X 打开，**松开不关**；点框展示，再按一次 X（或 Esc / 点框外）关闭
  * - **点按钮** ⇒ 立刻展示并关掉（与在界面里点行一个效果）
+ * - **收起**：按一下模式的「再按 X / Esc / 点框外」、按住模式的松手 / 回包收尾，
+ *   都会把三个框**向上收起**（[CLOSE_MS]）再真正关界面，不再瞬消（2026-10-18 用户要求）
+ * - ⚠ **三个框完全落下之前，悬停 / 点击 / 松手选择一律不响应**（2026-10-18 用户要求）：
+ *   框还在往下掉时鼠标可能正好在 ID 卡框的**目标位置**上，松手会误触发展示。
  *
  * 按钮上画的是**要展示的东西本身**（不是固定图标）：
  * - 精灵 ⇒ **那只精灵的 3D 图**（头部跟随鼠标）+ 落到即叫一声；队伍位为空时只画槽底图
@@ -50,6 +55,15 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
 
     /** 掉落动画起点（构造时记；resize 重建不重置） */
     private var animStart = System.currentTimeMillis()
+
+    // ── 收起动画（2026-10-18）──
+    /** 是否正在收起：收起期间不响应悬停 / 点击 / 松手选择，播完才真正关界面 */
+    private var closing = false
+    private var closeStart = 0L
+    /** 收起起点（相对目标位的偏移）：从当前落下位置开始收，中途关也不会跳一下 */
+    private var closeFromOffset = 0
+    /** 真正关界面的任务是否已排队（防止收完后每帧重复 setScreen） */
+    private var closeQueued = false
 
     /**
      * 鼠标**当前停在哪个按钮上**（null = 没停在任何按钮上）。
@@ -119,10 +133,59 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         // ⚠ 必须在最开头：头部跟随靠它拿鼠标坐标，不调则精灵盯着屏幕左上角不动
         IconRegistry.beginFrame(mouseX, mouseY)
 
+        // ── 收起动画：三个框向上退场，播完才真正关界面 ──
+        if (closing) {
+            val t = ((System.currentTimeMillis() - closeStart) / CLOSE_MS.toFloat()).coerceIn(0f, 1f)
+            if (t >= 1f) {
+                // 最后一帧不画：框已经全部退到屏幕外，排队关界面。
+                // ⚠ **不能在 render 里直接 setScreen(null)**（2026-10-18 用户实测）：
+                //   界面在渲染途中关闭，光标锁定状态不会按正常路径恢复 —— 回到游戏后
+                //   "视角只能转到屏幕边界"，按 E 开关一次背包才恢复。交给主线程下一 tick 执行。
+                if (!closeQueued) {
+                    closeQueued = true
+                    // ⚠ 用 send（只入队）而**不是 execute**：execute 在客户端线程上会**立即执行**
+                    //   （ThreadExecutor.shouldExecuteAsync 只在非本线程时为 true）⇒ 等于还在 render 里。
+                    val mc = client
+                    val self = this
+                    if (mc != null) {
+                        mc.send(Runnable {
+                            // 只关「当前还是这个界面」的情况：排队到下一 tick 的窗口里
+                            // 若已经切到别的界面（E 关闭 / 其它入口），别把新界面误关掉
+                            if (mc.currentScreen === self) mc.setScreen(null)
+                        })
+                    }
+                }
+                return
+            }
+            val eased = t * t // 收起用 ease-in：先慢后快，像被"吸"上去
+            // 目标偏移：让最下面的 ID 卡框底边也完全离开屏幕顶（再留 8px 余量）
+            val closeTarget = -(baseY + BTN + GAP + BTN + 8)
+            val offset = (closeFromOffset + (closeTarget - closeFromOffset) * eased).toInt()
+            val pokemonY = baseY + offset
+            val itemY = baseY + offset
+            val idCardY = baseY + BTN + GAP + offset
+            pokemonBtn?.y = pokemonY
+            idCardBtn?.y = idCardY
+            itemBtn?.y = itemY
+            super.render(context, mouseX, mouseY, delta)
+            drawPokemonContent(context, width / 2 - BTN - GAP / 2, pokemonY, delta)
+            drawIdCardContent(context, width / 2 - BTN / 2, idCardY)
+            drawItemContent(context, width / 2 + GAP / 2, itemY)
+            return
+        }
+
         // 掉落 + 悬停上浮都是**直接改按钮的 y**（瞬间跳，不做缓动）
         val drop = dropOffsetY()
-        val hovered = hoveredAt(mouseX, mouseY, drop)
+        val dropDone = dropFinished()
+        // ⚠ 落下动画结束前**不参与悬停/选择**（2026-10-18 用户要求）：
+        //   框还在往下掉时鼠标可能正好在 ID 卡框的**目标位置**上，松手会误触发展示。
+        //   ⇒ 落下期间 hoveredKind = null、不显示上浮；三个按钮也临时 active=false
+        //   （挡住点击与点击音效，落下后再恢复）。
+        val hovered = if (dropDone) hoveredAt(mouseX, mouseY, drop) else null
         hoveredKind = hovered
+        pokemonBtn?.active = dropDone
+        idCardBtn?.active = dropDone
+        itemBtn?.active = dropDone
         val pokemonY = baseY + drop - (if (hovered == Kind.POKEMON) LIFT else 0)
         val itemY = baseY + drop - (if (hovered == Kind.ITEM) LIFT else 0)
         // ID 卡框在**下方中间**（目标位 = baseY 再下移一格）
@@ -259,14 +322,41 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         return -((1f - eased) * (baseY + BTN)).toInt()
     }
 
-    /** 松键时 tick 调它：悬停哪个就展示哪个；没悬停 ⇒ 什么都不做，只关界面 */
+    /** 三个框是否已完全落到位（落下期间不响应悬停 / 点击 / 松手选择） */
+    private fun dropFinished(): Boolean = System.currentTimeMillis() - animStart >= DROP_MS
+
+    /**
+     * 请求关闭：三个框**向上收起**（[CLOSE_MS]），动画结束才真正关界面。
+     * 按一下模式的「再按 X / Esc / 点框外」、按住模式的松手 / 回包收尾都走这里。
+     * 收起期间不响应悬停 / 点击 / 松手选择（同落下动画）。
+     */
+    fun requestClose() {
+        if (closing) return
+        closing = true
+        closeStart = System.currentTimeMillis()
+        closeFromOffset = dropOffsetY()
+        hoveredKind = null
+        cryAt = 0L
+        pokemonBtn?.active = false
+        idCardBtn?.active = false
+        itemBtn?.active = false
+    }
+
+    /**
+     * **按住模式**松键时 tick 调它：悬停哪个就展示哪个；没悬停 / **落下动画还没结束** ⇒ 什么都不做，只关界面。
+     * （按一下模式不会调它 —— 松键不关，留给点击选择。）
+     */
     fun finishAndClose() {
-        val kind = hoveredKind
+        if (closing) return
+        val kind = if (dropFinished()) hoveredKind else null
         if (kind == null) closeSelf() else doShowcase(kind)
     }
 
     /** 展示 [kind] 然后关界面。取不到东西 ⇒ 失败音 + 聊天红字（用户 2026-09-29 定） */
     private fun doShowcase(kind: Kind) {
+        // 落下动画结束前不响应（按钮 click 也会走到这里；render 里 active=false 是第一道，
+        // 这里是第二道，防止别的入口绕过）；收起中也不再接受新的展示
+        if (closing || !dropFinished()) return
         val player = client?.player ?: return
         when (kind) {
             Kind.POKEMON -> {
@@ -323,7 +413,7 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     }
 
     private fun closeSelf() {
-        client?.setScreen(null)
+        requestClose()
     }
 
     /**
@@ -346,6 +436,22 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         return super.keyPressed(keyCode, scanCode, modifiers)
     }
 
+    /** 按一下模式：点框外 = 取消（按住模式点外面不关，松手才是确认） */
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (closing) return true
+        val handled = super.mouseClicked(mouseX, mouseY, button)
+        if (!handled && ClientConfig.quickShowcasePressOnce) {
+            requestClose()
+            return true
+        }
+        return handled
+    }
+
+    /** Esc（`Screen.close()`）：同样走收起动画，别瞬消 */
+    override fun close() {
+        requestClose()
+    }
+
     override fun shouldPause() = false
 
     companion object {
@@ -357,6 +463,8 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         private const val LIFT = 10
         /** 掉落时长（ms）—— 要"快速"，别拖 */
         private const val DROP_MS = 220L
+        /** 收起时长（ms）：三个框向上退场，播完才真正关界面 */
+        private const val CLOSE_MS = 180L
         /**
          * 内容和按钮边缘之间留的空隙。
          *

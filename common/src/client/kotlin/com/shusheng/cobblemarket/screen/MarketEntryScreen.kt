@@ -68,6 +68,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsGroudonFlyButton: NineSliceButton? = null
     private var settingsBalanceHudButton: NineSliceButton? = null
     private var settingsBalanceHudPosButton: NineSliceButton? = null
+    private var settingsQuickShowcaseButton: NineSliceButton? = null
     private var settingsIconAnimButton: NineSliceButton? = null
     private var settingsHoverPreviewButton: NineSliceButton? = null
     private var settingsUpdateNoticeButton: NineSliceButton? = null
@@ -556,13 +557,13 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     }
 
     /**
-     * 悬停词条 = **基础文案 + 一行「快速展示：按住 X」**（X 取玩家当前绑定；未绑定就不加那行）。
+     * 悬停词条 = **基础文案 + 一行「快速展示：按住 / 按一下 X」**（X 取玩家当前绑定；未绑定就不加那行）。
      *
-     * ⚠ 为什么非写不可（用户 2026-10-06 提的）：快速展示是**按住快捷键**才有的功能，
+     * ⚠ 为什么非写不可（用户 2026-10-06 提的）：快速展示是**快捷键**才有的功能，
      *   玩家**不会想到去翻「按键设置」**；有些模组还把 X 当默认键，撞上了更发现不了
      *   ⇒ 入口界面这三个按钮是玩家唯一可能"顺便看到"它的地方。
      * ⚠ 键位**可改** ⇒ 取当前绑定（[CobbleMarketClient.quickShowcaseKeyText]），别写死 X；
-     *   且是「**按住**」不是按一下（hold 语义，见 [QuickShowcaseScreen]）。
+     *   「按住 / 按一下」按设置里的模式取词条（见 [QuickShowcaseScreen]）。
      * ⚠ 这里的 `\n` 只是**排版分段**，语言差异（冒号全角/半角、用词）全在那条词条里。
      */
     private fun withQuickKeyHint(baseKey: String, gold: Boolean = false): net.minecraft.client.gui.tooltip.Tooltip {
@@ -572,10 +573,15 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         }
         val keyText = CobbleMarketClient.quickShowcaseKeyText()
             ?: return net.minecraft.client.gui.tooltip.Tooltip.of(title())
+        val hintKey = if (ClientConfig.quickShowcasePressOnce) {
+            "cobblemarket.entry.quick_showcase_key_press"
+        } else {
+            "cobblemarket.entry.quick_showcase_key"
+        }
         return net.minecraft.client.gui.tooltip.Tooltip.of(
             title()
                 .append("\n")
-                .append(Text.translatable("cobblemarket.entry.quick_showcase_key", keyText))
+                .append(Text.translatable(hintKey, keyText))
         )
     }
 
@@ -833,6 +839,16 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsBalanceHudPosButton = balanceHudPosBtn
         addSettingsRow(balanceHudPosBtn, textBtnX, Text.translatable("cobblemarket.settings.balance_hud_position"), newGroup = false)
 
+        // 快速展示键：按住 / 按一下（两态循环文字按钮，照余额 HUD 模板；默认按住）
+        val quickShowcaseBtn = NineSliceButton(
+            0, 0, 54, 20,
+            Text.translatable(quickShowcaseModeKey()),
+            { cycleQuickShowcaseMode() },
+            tooltip = Text.translatable("cobblemarket.settings.quick_showcase_tip")
+        )
+        settingsQuickShowcaseButton = quickShowcaseBtn
+        addSettingsRow(quickShowcaseBtn, textBtnX, Text.translatable("cobblemarket.settings.quick_showcase_mode"))
+
         // 更新提示：有新版时打开市场界面会发一条可点聊天消息（关掉后连查都不查）
         // ⚠ 自定义光标已搬到顶部「显示」组，原来由它开的那个组没了 ⇒ 这里要自己开一组，
         //   否则会跟上面「余额HUD位置」那行粘在一起、不画分隔线
@@ -874,6 +890,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsGroudonFlyButton = null
         settingsBalanceHudButton = null
         settingsBalanceHudPosButton = null
+        settingsQuickShowcaseButton = null
         settingsIconAnimButton = null
         settingsHoverPreviewButton = null
         settingsUpdateNoticeButton = null
@@ -1011,6 +1028,18 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsBalanceHudButton?.message = Text.translatable(balanceHudModeKey())
         settingsToastText = Text.translatable("cobblemarket.settings.balance_hud")
             .append(Text.translatable(balanceHudModeKey()))
+        settingsToastUntil = System.currentTimeMillis() + 1500
+    }
+
+    private fun quickShowcaseModeKey(): String =
+        if (ClientConfig.quickShowcasePressOnce) "cobblemarket.settings.quick_showcase_press"
+        else "cobblemarket.settings.quick_showcase_hold"
+
+    private fun cycleQuickShowcaseMode() {
+        ClientConfig.setQuickShowcasePressOnce(!ClientConfig.quickShowcasePressOnce)
+        settingsQuickShowcaseButton?.message = Text.translatable(quickShowcaseModeKey())
+        settingsToastText = Text.translatable("cobblemarket.settings.quick_showcase_mode")
+            .append(Text.translatable(quickShowcaseModeKey()))
         settingsToastUntil = System.currentTimeMillis() + 1500
     }
 
