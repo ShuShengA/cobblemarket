@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.2 (in development, unreleased)
+## 1.2.2 (released)
 
 ### New Feature
 
