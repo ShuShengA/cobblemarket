@@ -316,6 +316,20 @@ object ChatObjectPreview {
         shownId = id
         // 重置帧间隔基准：上次显示是几分钟前的话，第一帧会带着一个巨大的 delta
         lastFrameNanos = 0L
+        // 每次开始显示都当作「第一次出现」：清掉这个 state 上一轮留下的姿势与未播完的主动画。
+        // ⚠ 用户 2026-10-18 报：白天悬停过、时间切到夜晚后再悬停，会先补一段「站起 → 躺下」。
+        //   真因：`Entry.state` 是**跨悬停缓存**的（见 [cache] / [Entry.state]），而 [hide] 只清了
+        //   `activeAnimations` / `quirks`、没清 `currentPose`；于是 `resolve()` 拿旧姿势当过渡起点、
+        //   [IconAnimationResolver] 的 `ensurePoseTransition` 就补了一段过渡。
+        //   `currentPose = null` ⇒ 找不到旧姿势、不播过渡，`drawProfilePokemon` 直接把姿势设成
+        //   当前该有的（与 1.2.1「进界面直接就是睡姿」同一原则）。
+        // ⚠ **悬停期间**真的跨昼夜时 `beginShow` 不会再被调用 ⇒ 仍走平滑过渡（有意保留，
+        //   与市场界面的行内图标一致）。
+        entry.state?.let { state ->
+            state.currentPose = null
+            state.primaryAnimation = null
+            state.poseIntensity = 1F
+        }
         // 物品不叫；精灵安排「显示后 AUTO_CRY_DELAY_MS」再叫（理由见类注释）。
         // ⚠ 刚叫过就别再排（[CRY_COOLDOWN_MS]）—— 那一声还在响时重叫必然叠上，而声音停不掉
         cryAt = if (entry.isPokemon && now - lastCryAt >= CRY_COOLDOWN_MS) {
