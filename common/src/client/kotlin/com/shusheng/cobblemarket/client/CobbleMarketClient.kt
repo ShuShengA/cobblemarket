@@ -123,7 +123,7 @@ object CobbleMarketClient {
 
     private lateinit var openMarketKey: KeyBinding
     private lateinit var openIdCardKey: KeyBinding
-    /** 快速展示键（默认 X；**按住**期间显示两个大按钮，见 [QuickShowcaseScreen]） */
+    /** 快速展示键（默认 X；**按住 / 按一下**期间显示三个大框，模式在入口设置里切换，见 [QuickShowcaseScreen]） */
     private lateinit var quickShowcaseKey: KeyBinding
     private var wasEPressed = false
     /** 上一帧的按住状态（边沿检测：上升沿开、下降沿收尾） */
@@ -225,10 +225,17 @@ object CobbleMarketClient {
                 InputUtil.fromTranslationKey(quickShowcaseKey.boundKeyTranslationKey).code
             val quickPressed = InputUtil.isKeyPressed(client.window.handle, quickKeyCode)
             if (quickPressed && !wasQuickShowcasePressed) {
-                if (client.currentScreen == null) client.setScreen(QuickShowcaseScreen())
+                when {
+                    client.currentScreen == null -> client.setScreen(QuickShowcaseScreen())
+                    // 按一下模式：再按一次关闭（不展示，走收起动画）；按住模式保持"只在没界面时打开"
+                    ClientConfig.quickShowcasePressOnce && client.currentScreen is QuickShowcaseScreen ->
+                        (client.currentScreen as? QuickShowcaseScreen)?.requestClose()
+                }
             } else if (!quickPressed && wasQuickShowcasePressed) {
-                // 松键：悬停哪个就展示哪个，没悬停就什么都不做，然后关界面
-                (client.currentScreen as? QuickShowcaseScreen)?.finishAndClose()
+                // 按住模式：松键 = 悬停哪个展示哪个；按一下模式：松键不关，留给点击选择
+                if (!ClientConfig.quickShowcasePressOnce) {
+                    (client.currentScreen as? QuickShowcaseScreen)?.finishAndClose()
+                }
             }
             wasQuickShowcasePressed = quickPressed
             val ePressed = InputUtil.isKeyPressed(client.window.handle, GLFW.GLFW_KEY_E)
