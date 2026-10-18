@@ -106,7 +106,32 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var shareItemBtn: NineSliceButton? = null
     private var shareMenuOpen = false
 
-    /** 展开子按钮期间被它压住的按钮：临时收起文字 + 在被覆盖的那块矩形里让路（见 [applyShareMenu]） */
+    // ── 子按钮的展开 / 收起动画（2026-10-18）──
+    /**
+     * 展开进度：`0` = 三个子按钮**全部叠在展示按钮上**、`1` = 各自的目标位置。
+     * 打开时 0→1、关闭时 1→0；动画没播完再点一次会从**当前进度**反向（见 [startShareMenuAnimation]）。
+     */
+    private var shareMenuProgress = 0f
+    private var shareMenuAnimFrom = 0f
+    private var shareMenuAnimTo = 0f
+    private var shareMenuAnimStart = 0L
+    private var shareMenuAnimating = false
+
+    /** 三个子按钮**完全展开时**的目标位置（动画期间会改写 x/y，不能从按钮自身读） */
+    private val shareSubTargets = mutableListOf<Pair<Int, Int>>()
+
+    /** 子按钮组完全展开时的矩形（给下方按钮让路 / 收字用，判据见 [setShareMenuBlocking]） */
+    private var shareMenuRect: IntArray? = null
+
+    /**
+     * 子按钮的悬停词条。动画期间临时摘掉、播完再挂回：
+     * 打开瞬间三个子按钮正叠在展示按钮上，鼠标还停在原地 ⇒ 不摘会立刻弹出它们的提示。
+     */
+    private var sharePokemonTooltip: net.minecraft.client.gui.tooltip.Tooltip? = null
+    private var shareIdCardTooltip: net.minecraft.client.gui.tooltip.Tooltip? = null
+    private var shareItemTooltip: net.minecraft.client.gui.tooltip.Tooltip? = null
+
+    /** 展开子按钮期间被它压住的按钮：临时收起文字 + 在被覆盖的那块矩形里让路（见 [setShareMenuBlocking]） */
     private val shareCoveredButtons = mutableListOf<TextureButton>()
     private var creditInfoLoaded = false
     // 全服累计成交额（批次 7 入口展示；仅氛围展示不参与任何计算）；
@@ -198,6 +223,16 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 每次重建（进界面/resize/关弹窗）都从收起状态开始：按钮是新造的，
         // 留着上一轮的展开标记会让子按钮与主按钮高亮对不上（被压住的旧按钮引用也一并丢弃）
         shareMenuOpen = false
+        shareMenuProgress = 0f
+        shareMenuAnimFrom = 0f
+        shareMenuAnimTo = 0f
+        shareMenuAnimStart = 0L
+        shareMenuAnimating = false
+        shareSubTargets.clear()
+        shareMenuRect = null
+        sharePokemonTooltip = null
+        shareIdCardTooltip = null
+        shareItemTooltip = null
         shareCoveredButtons.clear()
         if (dropAnimStart < 0) dropAnimStart = System.currentTimeMillis()
         sendToServer(RequestBalancePayload())
@@ -445,7 +480,6 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         )
         shareBtn.setTooltip(withQuickKeyHint("cobblemarket.entry.share"))
         this.shareBtn = shareBtn
-        entryButtons += addDrawableChild(shareBtn)
 
         // 子按钮：**左右并排、彼此无间隙**，整组的分界线对准主按钮中心，整组紧贴主按钮上方
         //（用户 2026-09-17 定的形态）。图标沿用两个市场入口的（小卡比兽 / 精灵球），
@@ -456,8 +490,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         //（分割线在 bgBottom()-30，主按钮顶边距它 3px，子按钮底边同样距它 3px）
         val subY = cornerY - (subSize + 6)
         // 三个子按钮并排（精灵 / ID 卡 / 物品），整组仍以 subCenterX 为中心（2026-10-17 用户要求加 ID 卡）
+        val pokemonShareX = subCenterX - subSize * 3 / 2
         val pokemonBtn = NineSliceButton(
-            subCenterX - subSize * 3 / 2, subY, subSize, subSize,
+            pokemonShareX, subY, subSize, subSize,
             Text.literal(""),
             { openSharePokemon() },
             // 与精灵市场入口同一个会动的小卡比兽（8 帧，100ms/帧）
@@ -466,14 +501,16 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
         )
-        pokemonBtn.setTooltip(withQuickKeyHint("cobblemarket.share.pokemon"))
+        sharePokemonTooltip = withQuickKeyHint("cobblemarket.share.pokemon")
+        pokemonBtn.setTooltip(sharePokemonTooltip)
         pokemonBtn.visible = false
         this.sharePokemonBtn = pokemonBtn
         entryButtons += addDrawableChild(pokemonBtn)
 
         // ID 卡（中间那个）：图标 = **ID 卡背景图**（与底部那颗 ID 卡按钮同源，不是 share 图标）
+        val idCardShareX = subCenterX - subSize / 2
         val idCardShareBtn = NineSliceButton(
-            subCenterX - subSize / 2, subY, subSize, subSize,
+            idCardShareX, subY, subSize, subSize,
             Text.literal(""),
             { openShareIdCard() },
             iconLeft = com.shusheng.cobblemarket.client.IdCardBackgroundTexture.BUILTIN_TEX,
@@ -482,13 +519,15 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             iconScale = 18f / com.shusheng.cobblemarket.client.IdCardBackgroundTexture.BUILTIN_WIDTH,
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
         )
-        idCardShareBtn.setTooltip(withQuickKeyHint("cobblemarket.share.id_card_name", gold = true))
+        shareIdCardTooltip = withQuickKeyHint("cobblemarket.share.id_card_name", gold = true)
+        idCardShareBtn.setTooltip(shareIdCardTooltip)
         idCardShareBtn.visible = false
         this.shareIdCardBtn = idCardShareBtn
         entryButtons += addDrawableChild(idCardShareBtn)
 
+        val itemShareX = subCenterX + subSize / 2
         val itemBtn = NineSliceButton(
-            subCenterX + subSize / 2, subY, subSize, subSize,
+            itemShareX, subY, subSize, subSize,
             Text.literal(""),
             { openShareItem() },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/icon/pokeball_icon.png"),
@@ -496,10 +535,22 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S
         )
-        itemBtn.setTooltip(withQuickKeyHint("cobblemarket.share.item"))
+        shareItemTooltip = withQuickKeyHint("cobblemarket.share.item")
+        itemBtn.setTooltip(shareItemTooltip)
         itemBtn.visible = false
         this.shareItemBtn = itemBtn
         entryButtons += addDrawableChild(itemBtn)
+
+        // 展开动画的目标位置 / 让路矩形：一律用**完全展开后**的坐标，动画期间不跟着移动
+        shareSubTargets += pokemonShareX to subY
+        shareSubTargets += idCardShareX to subY
+        shareSubTargets += itemShareX to subY
+        shareMenuRect = intArrayOf(pokemonShareX, subY, itemShareX + subSize, subY + subSize)
+
+        // ⚠ 主按钮放在三个子按钮**之后**加入 children（决定绘制顺序）：展开动画开始时三个子按钮正叠在
+        //   主按钮上，让主按钮后画（压在上面）⇒ 观感是子按钮从主按钮背后滑出来，
+        //   而不是主按钮的图标先被最上面那个子按钮盖掉 200ms。
+        entryButtons += addDrawableChild(shareBtn)
 
         // 市场总开关 / 服务器配置两个 OP 按钮已移到管理面板（AdminScreen 底部，2026-09-12）
     }
@@ -532,59 +583,126 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     /** 点击分享按钮：切换上方子按钮的显示，主按钮同步进入选中态（持久高亮，不是按下反馈） */
     private fun toggleShareMenu() {
-        shareMenuOpen = !shareMenuOpen
-        applyShareMenu()
+        val open = !shareMenuOpen
+        shareMenuOpen = open
+        startShareMenuAnimation(open)
     }
 
     private fun collapseShareMenu() {
         if (!shareMenuOpen) return
         shareMenuOpen = false
-        applyShareMenu()
+        startShareMenuAnimation(false)
     }
 
     /**
-     * 展开/收起子按钮。
+     * 启动展开 / 收起动画：三个子按钮**从展示按钮的位置**散开 / 收回（2026-10-18 用户要求）。
      *
-     * 展开时子按钮是**浮层**：盖住下方的按钮是正常的（底图被压住看着就是被盖住了），
+     * 从**当前进度**起步 ⇒ 动画没播完再点一次是平滑反向，不会跳回起点
+     * （耗时 / 缓动见 [updateShareMenuAnimation]）。
+     */
+    private fun startShareMenuAnimation(open: Boolean) {
+        shareBtn?.selectedVisual = open
+        shareMenuAnimFrom = shareMenuProgress
+        shareMenuAnimTo = if (open) 1f else 0f
+        shareMenuAnimStart = System.currentTimeMillis()
+        shareMenuAnimating = true
+        // 动画期间摘掉子按钮的悬停词条：打开瞬间它们正叠在展示按钮上、鼠标还停在原地，
+        // 不摘会立刻弹出「精灵 / ID 卡 / 物品」的提示（播完再挂回，见 updateShareMenuAnimation）
+        setShareSubTooltipsEnabled(false)
+        if (open) {
+            shareSubButtons().forEach { it.visible = true }
+            // 让路 / 收字按**完全展开后**的矩形先做掉：子按钮扫过去的途中也不会露出半截字
+            setShareMenuBlocking(true)
+        }
+        applyShareMenuPositions()
+    }
+
+    /**
+     * 每帧推进展开 / 收起动画。**必须在 [render] 开头调** —— 按时间推进的状态没有"结束事件"，
+     * 只在 toggle 里改一次会让最后一帧停在半路（见 `docs/gui_pitfalls.md` 第十五节）。
+     *
+     * 缓动 = smoothstep、时长 200ms，与筛选面板开关动画（`FilterPanelAnimation`）同一手感：先快后慢。
+     */
+    private fun updateShareMenuAnimation() {
+        if (!shareMenuAnimating) return
+        val raw = ((System.currentTimeMillis() - shareMenuAnimStart).toFloat() / SHARE_MENU_ANIM_MS)
+            .coerceIn(0f, 1f)
+        val eased = raw * raw * (3f - 2f * raw)
+        shareMenuProgress = shareMenuAnimFrom + (shareMenuAnimTo - shareMenuAnimFrom) * eased
+        applyShareMenuPositions()
+        if (raw < 1f) return
+
+        // 播完：展开 ⇒ 恢复悬停词条；收起 ⇒ 藏起按钮、恢复下方按钮的文字与点击
+        shareMenuAnimating = false
+        shareMenuProgress = shareMenuAnimTo
+        if (shareMenuAnimTo >= 1f) {
+            setShareSubTooltipsEnabled(true)
+        } else {
+            shareSubButtons().forEach { it.visible = false }
+            setShareMenuBlocking(false)
+        }
+    }
+
+    /** 按当前 [shareMenuProgress] 摆放三个子按钮：0 = 全部叠在展示按钮上，1 = 各自的目标位置 */
+    private fun applyShareMenuPositions() {
+        val origin = shareBtn ?: return
+        val buttons = shareSubButtons()
+        if (buttons.size != 3 || shareSubTargets.size != 3) return
+        buttons.forEachIndexed { index, button ->
+            val (targetX, targetY) = shareSubTargets[index]
+            button.x = (origin.x + (targetX - origin.x) * shareMenuProgress).roundToInt()
+            button.y = (origin.y + (targetY - origin.y) * shareMenuProgress).roundToInt()
+        }
+    }
+
+    private fun shareSubButtons(): List<NineSliceButton> =
+        listOfNotNull(sharePokemonBtn, shareIdCardBtn, shareItemBtn)
+
+    private fun setShareSubTooltipsEnabled(enabled: Boolean) {
+        sharePokemonBtn?.setTooltip(if (enabled) sharePokemonTooltip else null)
+        shareIdCardBtn?.setTooltip(if (enabled) shareIdCardTooltip else null)
+        shareItemBtn?.setTooltip(if (enabled) shareItemTooltip else null)
+    }
+
+    /**
+     * 展开时**让路**：子按钮是浮层，盖住下方的按钮是正常的（底图被压住看着就是被盖住了），
      * 但它盖不满整个按钮——下方按钮的字排在按钮中上部，会**露在覆盖区外面**，半截字比没有字更难看。
      * 所以与被压住的按钮相交时**只收起它的文字**（[TextureButton.hideText]），底图原样留着：
      * 视觉上就是「那个按钮被浮层盖住了」，收起后文字自动回来。
      * （2026-09-17 用户纠正：早先写的"整个按钮隐藏"太粗暴——按钮会凭空消失。）
+     *
+     * 矩形取**完全展开后**的目标位置（[shareMenuRect]），动画期间不跟着移动 ——
+     * 子按钮刚出现时就先让路，避免它们扫过去时才闪一下。
      */
-    private fun applyShareMenu() {
-        shareBtn?.selectedVisual = shareMenuOpen
-        sharePokemonBtn?.visible = shareMenuOpen
-        shareIdCardBtn?.visible = shareMenuOpen
-        shareItemBtn?.visible = shareMenuOpen
-        if (shareMenuOpen) {
-            val pokemonBtn = sharePokemonBtn ?: return
-            val itemBtn = shareItemBtn ?: return
-            val menuLeft = pokemonBtn.x
-            val menuTop = pokemonBtn.y
-            val menuRight = itemBtn.x + itemBtn.width
-            val menuBottom = pokemonBtn.y + pokemonBtn.height
-            entryButtons.forEach { btn ->
-                // 只有带文字的入口按钮需要收字（求购单/喵喵银行/设置那几个是纯图标按钮，没有文字可露）
-                val texBtn = btn as? TextureButton ?: return@forEach
-                // 判据 = **矩形重叠超过 2px**（不是「中心落在范围内」）——
-                //   管理面板按钮中心可能在精灵子按钮**左侧**、但右半部分实实在在压在子按钮上，
-                //   用"中心"判据它不会让路 ⇒ 点精灵按钮的左半边会被它抢走（2026-10-17 用户报）
-                val overlapW = minOf(texBtn.x + texBtn.width, menuRight) - maxOf(texBtn.x, menuLeft)
-                val overlapsVertically = texBtn.y < menuBottom && texBtn.y + texBtn.height > menuTop
-                if (overlapW > 2 && overlapsVertically && texBtn.blockedArea == null) {
-                    shareCoveredButtons.add(texBtn)
-                    texBtn.hideText = true
-                    // 重叠区让给子按钮：MC 的点击分发按添加顺序，子按钮排在这个按钮后面，
-                    // 不让路的话「点子上半截」会被这个按钮接走（见 TextureButton.blockedArea）
-                    texBtn.blockedArea = intArrayOf(menuLeft, menuTop, menuRight, menuBottom)
-                }
-            }
-        } else {
+    private fun setShareMenuBlocking(active: Boolean) {
+        if (!active) {
             shareCoveredButtons.forEach {
                 it.hideText = false
                 it.blockedArea = null
             }
             shareCoveredButtons.clear()
+            return
+        }
+        val rect = shareMenuRect ?: return
+        val menuLeft = rect[0]
+        val menuTop = rect[1]
+        val menuRight = rect[2]
+        val menuBottom = rect[3]
+        entryButtons.forEach { btn ->
+            // 只有带文字的入口按钮需要收字（求购单/喵喵银行/设置那几个是纯图标按钮，没有文字可露）
+            val texBtn = btn as? TextureButton ?: return@forEach
+            // 判据 = **矩形重叠超过 2px**（不是「中心落在范围内」）——
+            //   管理面板按钮中心可能在精灵子按钮**左侧**、但右半部分实实在在压在子按钮上，
+            //   用"中心"判据它不会让路 ⇒ 点精灵按钮的左半边会被它抢走（2026-10-17 用户报）
+            val overlapW = minOf(texBtn.x + texBtn.width, menuRight) - maxOf(texBtn.x, menuLeft)
+            val overlapsVertically = texBtn.y < menuBottom && texBtn.y + texBtn.height > menuTop
+            if (overlapW > 2 && overlapsVertically && texBtn.blockedArea == null) {
+                shareCoveredButtons.add(texBtn)
+                texBtn.hideText = true
+                // 重叠区让给子按钮：MC 的点击分发按添加顺序，子按钮排在这个按钮后面，
+                // 不让路的话「点子上半截」会被这个按钮接走（见 TextureButton.blockedArea）
+                texBtn.blockedArea = intArrayOf(menuLeft, menuTop, menuRight, menuBottom)
+            }
         }
     }
 
@@ -1190,6 +1308,15 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 掉落动画播完前按钮不可点（事件分发与渲染无关，init 已创建的按钮会照常响应，需显式拦截）
         val total = DROP_DURATION_MS + HOLD_DURATION_MS + FADE_DURATION_MS
         if (ClientConfig.marketAnimation && System.currentTimeMillis() - dropAnimStart < total) return true
+        // 展开 / 收起动画期间：子按钮还在移动，点它们不触发任何操作（连点击音效一起吞掉）。
+        // 点**展示按钮本身**仍有效 —— 允许中途反向（见 [startShareMenuAnimation]）。
+        if (shareMenuAnimating) {
+            if (shareBtn?.isMouseOver(mouseX, mouseY) == true) {
+                toggleShareMenu()
+                return true
+            }
+            if (shareSubButtons().any { it.isMouseOver(mouseX, mouseY) }) return true
+        }
         // 点击大木博士立绘（48×128 主体区域，随 oakScaleFactor 缩放）：主动切换下一条知识点
         val oakK = oakScaleFactor()
         val oakRight = width / 2 - 128 - 1
@@ -1264,6 +1391,9 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // 展开 / 收起动画：先把子按钮摆到这一帧的位置，再交给 super.render 统一绘制。
+        // ⚠ 必须在最开头（包括掉落动画的提前 return 之前）—— 按时间推进的状态必须有每帧入口。
+        updateShareMenuAnimation()
         // ID 卡入口的图标**每帧跟随背景图**：服主换了自己的图 ⇒ 图标跟着换（没配 = 内置背景缩小版）。
         // 幂等（只给几个字段赋值）⇒ 放心每帧调。口径与管理面板的「玩家总览」那颗**共用一处**
         // （[syncIdCardIcon]）—— 同一个量两边各算一遍，迟早会不同步。
@@ -1576,6 +1706,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         private const val DROP_DURATION_MS = 100L
         private const val HOLD_DURATION_MS = 100L
         private const val FADE_DURATION_MS = 100L
+        // 分享子按钮的展开 / 收起动画时长（smoothstep 先快后慢，与 FilterPanelAnimation 同一手感）
+        private const val SHARE_MENU_ANIM_MS = 200L
         // 知识点气泡首行缩进（2 个汉字宽 = 16px）
         private const val TIP_INDENT_PX = 16
         // 大木博士三元素设计缩放（原始尺寸偏大，整体缩到 80%）
