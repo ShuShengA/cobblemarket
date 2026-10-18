@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.currency.rewards
 import com.cobblemon.mod.common.api.battles.model.PokemonBattle
 import com.cobblemon.mod.common.api.battles.model.actor.ActorType
 import com.cobblemon.mod.common.api.events.CobblemonEvents
+import com.cobblemon.mod.common.entity.npc.NPCBattleActor
 import com.cobblemon.mod.common.pokemon.Pokemon
 import com.cobblemon.mod.common.util.getPlayer
 import com.shusheng.cobblemarket.CobbleMarket
@@ -138,6 +139,11 @@ object PointsRewards {
                         .mapNotNull { it.originalPokemon }
                 }
 
+            // 被击败的 NPC 身份（按类 id 判；整场战斗每个 NPC 只判一次，不看他带什么精灵）
+            val defeatedNpcs = event.losers
+                .filter { it.type == ActorType.NPC }
+                .mapNotNull { (it as? NPCBattleActor)?.npc?.npc?.id?.toString() }
+
             event.winners.forEach { actor ->
                 if (actor.type != ActorType.PLAYER) return@forEach
                 // 一个 actor 可能代表多名玩家（双人合战）⇒ 逐个来，别只取第一个
@@ -154,6 +160,10 @@ object PointsRewards {
                     // 对手目标：**每个获胜玩家各判一次**（双人合战里两人都"打赢"了同一只对手）
                     defeated.forEach { pokemon ->
                         onPokemonEvent(RewardEvent.BATTLE_VICTORY, player, pokemon, RewardTarget.OPPONENT, event.battle)
+                    }
+                    // NPC 身份目标：整场战斗每个被击败的 NPC 各判一次
+                    defeatedNpcs.forEach { npcId ->
+                        onNpcVictory(player, npcId, event.battle)
                     }
                 }
             }
@@ -226,39 +236,115 @@ object PointsRewards {
                 }
             }
 
-            grant(server, player, pokemon, rule, amount)
+            // 每日次数上限（daily_count）：到次数就跳过，且不消耗 hits
+            val maxCount = rule.dailyCount
+            if (maxCount != null) {
+                val usedCount = state.dailyCount(player.uuid, rule.fingerprint(), worldDay)
+                if (usedCount >= maxCount) {
+                    debug(table, rule, "skipped (daily count $maxCount reached)")
+                    return@forEach
+                }
+            }
+
+            grant(server, player, rule, amount, speciesId)
             return
         }
     }
 
-    /** 发放：落币 + 账本 + 计数 + 每日累计 + 动作栏提示 */
+    /**
+     * **按 NPC 身份**判一次（`target: "npc"`）。
+     *
+     * - 整场战斗每个被击败的 NPC actor 只调一次，不看他带了几只 / 什么精灵
+     * - 条件字段不参与判定（解析时已警告并归空）；只看 `npc` 类 id + `battleType`
+     */
+    private fun onNpcVictory(player: ServerPlayerEntity, npcId: String, battle: PokemonBattle?) {
+        if (!enabled()) return
+        val table = rules
+        val candidates = table.forEvent(RewardEvent.BATTLE_VICTORY)
+        if (candidates.isEmpty() || player.isRemoved) return
+        val server = player.server
+        val state = RewardProgressState.get(server)
+        val worldDay = worldDay(server)
+        val subject = "npc:$npcId"
+
+        candidates.forEach { rule ->
+            if (rule.target != RewardTarget.NPC) return@forEach
+            if (npcId !in rule.npc) {
+                debug(table, rule, "skipped (npc $npcId not in rule)")
+                return@forEach
+            }
+            if (!rule.battleType.matches(battle)) {
+                debug(table, rule, "skipped (battleType ${rule.battleType.key})")
+                return@forEach
+            }
+
+            val hits = state.hitCount(player.uuid, hitKey(subject, rule))
+            if (rule.repeat == RewardRepeat.ONCE && hits > 0) {
+                debug(table, rule, "skipped (already rewarded once for $subject)")
+                return@forEach
+            }
+            val amount = rule.rolledAmount(hits, random)
+            if (amount == null) {
+                debug(table, rule, "skipped (decay table rolled 0 for $subject)")
+                return@forEach
+            }
+
+            val cap = rule.dailyCap
+            if (cap != null) {
+                val used = state.dailyTotal(player.uuid, rule.event.key, worldDay)
+                if (used >= cap) {
+                    debug(table, rule, "skipped (daily cap $cap reached for ${rule.event.key})")
+                    return@forEach
+                }
+            }
+            val maxCount = rule.dailyCount
+            if (maxCount != null) {
+                val usedCount = state.dailyCount(player.uuid, rule.fingerprint(), worldDay)
+                if (usedCount >= maxCount) {
+                    debug(table, rule, "skipped (daily count $maxCount reached)")
+                    return@forEach
+                }
+            }
+
+            grant(server, player, rule, amount, subject)
+            return
+        }
+    }
+
+    /**
+     * 发放：落币 + 账本 + 计数 + 每日累计 + 动作栏提示。
+     *
+     * @param subject 命中对象：物种资源 id，或 NPC 的 `npc:<类 id>`（用于计数键与账本详情）
+     */
     private fun grant(
         server: MinecraftServer,
         player: ServerPlayerEntity,
-        pokemon: Pokemon,
         rule: RewardRule,
-        amount: Long
+        amount: Long,
+        subject: String
     ) {
-        val speciesId = pokemon.species.resourceIdentifier.toString()
         val state = RewardProgressState.get(server)
 
         val actual = CurrencyService.give(player, MarketCurrency.POINTS, amount)
         if (actual <= 0L) return
-        state.recordHit(player.uuid, hitKey(speciesId, rule))
+        state.recordHit(player.uuid, hitKey(subject, rule))
         state.addDaily(player.uuid, rule.event.key, worldDay(server), actual)
+        rule.dailyCount?.let {
+            state.addDailyCount(player.uuid, rule.fingerprint(), worldDay(server), 1L)
+        }
 
-        // 审计：来源写「文件名 + 第几条 + 事件 + **哪只精灵**」
-        // ⚠ 物种必须带上（2026-10-13 补）：原先只写规则来源，服主对账时**看不出这笔钱是哪只精灵给的**
-        //   —— 实测中我自己就撞上过（"那 15 点是哪只？"从账本里查不出来）。走**物种资源 id**，
+        // 审计：来源写「文件名 + 第几条 + 事件 + **命中对象**」
+        // ⚠ 物种 / NPC 必须带上（2026-10-13 补）：原先只写规则来源，服主对账时**看不出这笔钱是谁给的**
+        //   —— 实测中我自己就撞上过（"那 15 点是哪只？"从账本里查不出来）。走**资源 id**，
         //   语言中立（与交易历史 CSV 的字段口径一致）。
-        val source = "${rule.sourceFile} #${rule.indexInFile + 1} (${rule.event.key}) · $speciesId"
+        val source = "${rule.sourceFile} #${rule.indexInFile + 1} (${rule.event.key}) · $subject"
         PointsAuditLogger.log(
             PointsLogType.REWARD, player.uuid, player.name.string, actual,
             com.shusheng.cobblemarket.currency.PointsState.get(server).getBalance(player.uuid),
             "系统", "奖励规则 $source", detailEn = "Reward rule $source"
         )
 
-        debug(rules, rule, "granted $actual for $speciesId")
+        debug(rules, rule, "granted $actual for $subject")
         queueActionBar(player, actual)
     }
 
