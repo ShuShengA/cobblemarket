@@ -1262,6 +1262,7 @@
   "cobblemarket.repay.unfrozen": "Loans back on track, market trading unfrozen",
   "cobblemarket.deposit.button": "Deposit/Withdraw",
   "cobblemarket.deposit.title": "Deposit & Withdraw",
+  "cobblemarket.deposit.wallet_line": "Wallet balance: %s %s",
   "cobblemarket.deposit.balance_line": "Deposit balance: %s %s",
   "cobblemarket.deposit.interest_line": "Accrued interest: %s %s",
   "cobblemarket.deposit.rate_line": "Daily rate: %s",
