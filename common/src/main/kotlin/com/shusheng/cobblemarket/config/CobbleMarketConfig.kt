@@ -220,6 +220,12 @@ object CobbleMarketConfig {
      */
     var pointsRankingExportMinutes: Int = 5
         private set
+    /**
+     * 展示冷却（秒）：每个玩家两次展示之间要等待多久；精灵 / ID 卡 / 物品三种展示**共用**同一个冷却。
+     * 默认 10，允许 1~3600（设 0 等于完全不限流，会被刷屏）。服务器配置界面可改。
+     */
+    var shareCooldownSeconds: Int = 10
+        private set
 
     // ── 市场 ID 卡 ──
 
@@ -434,6 +440,11 @@ object CobbleMarketConfig {
     fun setShareEnabled(v: Boolean) {
         shareEnabled = v
         save()
+    }
+
+    /** 展示冷却（秒）设置（仅服务端配置界面调用；范围 1~3600，防止设成 0 变成刷屏） */
+    fun setShareCooldownSeconds(v: Int) {
+        shareCooldownSeconds = v.coerceIn(1, 3600)
     }
 
     /** RP 总开关切换并落盘（仅服务端配置界面调用） */
@@ -677,7 +688,8 @@ object CobbleMarketConfig {
                     "auctionMinBidIncrement", "auctionAntiSnipeSeconds", "maxAuctionsPerPlayer",
                     "eggTradingEnabled", "buyOrderFeePercent", "buyOrderExpiryDays",
                     "maxBuyOrdersPerPlayer", "marketEnabled", "idCardBackground",
-                    "shareEnabled", "pointsEnabled", "pointsMarketEnabled", "rpAsQuestCurrency",
+                    "shareEnabled", "shareCooldownSeconds",
+                    "pointsEnabled", "pointsMarketEnabled", "rpAsQuestCurrency",
                     "pointsRewardsEnabled",
                     "pointsExternalSecret", "pointsExternalMaxDays",
                     "pointsRankingExportMinutes",
@@ -856,6 +868,9 @@ object CobbleMarketConfig {
                 // 背景图文件名：只留文件名本身（路径穿越 / 非法字符由 ConfigImage 拦下并记日志）
                 idCardBackground = (data["idCardBackground"] as? String)?.trim() ?: ""
                 shareEnabled = data["shareEnabled"] as? Boolean ?: true
+                // 展示冷却（秒）：1~3600，缺省 10；非法值钳到范围而不是整份配置读取失败
+                shareCooldownSeconds =
+                    ((data["shareCooldownSeconds"] as? Number)?.toInt() ?: 10).coerceIn(1, 3600)
                 pointsEnabled = data["pointsEnabled"] as? Boolean ?: false
                 // 缺失按 false（保守）：老配置升级上来时玩家间 RP 交易一律先关着
                 pointsMarketEnabled = data["pointsMarketEnabled"] as? Boolean ?: false
@@ -975,7 +990,8 @@ object CobbleMarketConfig {
                 "pointsRankingExportMinutes" to "余额排行的导出间隔（分钟，默认 5，钳 1~1440）：模组每隔这么久把全服余额写进存档目录下的 cobblemarket_points/（**只写变化的那些**，没变化就不碰磁盘），供服主自己的全息板 / 牌子 / 网站读取。文件格式与用法见该目录里的 README。⚠ 想自己控节奏（命令方块 + 时钟）不用改这里，敲 /market points update 即可强制刷新一次 / Minutes between balance-ranking exports (default 5, clamped 1-1440): the mod writes every player's balance into cobblemarket_points/ inside the save folder (**only entries that changed** — nothing is written when nothing changed), for your own holograms / signs / website to read. See the README in that folder for the file format. ⚠ To control the cadence yourself (command block on a clock), leave this alone and run /market points update to force a refresh",
                 "pointsEnabled" to "RP 总开关（默认关闭）：RP 是本模组的第二货币，与主货币并行流通但**不可兑换、不可转让、不参与金融**。关闭时：玩家设置价格的界面不出现RP 按钮，除RP 商城外的任何地方都不能用RP 交易（服主仍可在RP 商城上架精灵/物品供持有RP 的玩家购买）。⚠ RP 从哪来由服主决定（当任务奖励发、当充值货币卖，或两者并用），开启前请先规划好发放渠道 / RP master switch (off by default): RP is this mod's second currency, running alongside the primary one but **not convertible, not transferable, and outside the finance system**. When off, the RP button is hidden from every price-setting screen and RP cannot be used anywhere except the RP Shop (owners can still stock the RP Shop for players who already hold RP). ⚠ Where RP comes from is up to you (handed out as a reward, sold as a top-up, or both) — plan your distribution channel before enabling",
                 "rpAsQuestCurrency" to "「give/take 权限下放」开关（默认关闭）：打开后**玩家身份的 OP（命令等级 ≥ 2）也能发放 / 回收 RP**。用在「RP 当任务奖励」的场景 —— FTB 之类的任务模组要把 RP 发给玩家，而它们**以完成任务的普通玩家身份**执行命令（既不是服主、也不是控制台），不开这个开关就永远被拒；打开后在 FTB 里写 `/market points give @s N` 即可自动到账。⚠ 打开 = 接受「任何玩家 OP 都能发 RP」（/op 可被传递给任何人）；只把 RP 当充值货币、由服主手动发放时请保持关闭。⚠ 只作用于 /market points give|take 两条命令，不影响权限授予等其他服主专属命令 / \"delegate give/take\" switch (off by default): when on, **player-ops (permission level 2+) can also grant/take RP**. Meant for the \"RP as a quest reward\" setup — quest mods like FTB hand RP to players but run their commands **as the completing player**, who is neither the owner nor the console, so they are always refused unless this is on. With it on, write `/market points give @s N` in FTB and it just works. ⚠ Turning it on accepts that **any player-op can grant RP** (/op is transferable to anyone); keep it off if RP is a top-up currency granted only by you. ⚠ It only affects the /market points give|take commands, not permission grants or other owner-only commands",
-                "shareEnabled" to "玩家展示开关（默认开启）：开启后玩家可把精灵/物品展示到全服聊天（悬停看详情），每人 10 秒一次。关闭后展示按钮不再生效 / Player showcase switch (on by default): players can showcase Pokémon/items to server chat (hover for details), once per 10 seconds each. When off, the showcase button stops working",
+                "shareEnabled" to "玩家展示开关（默认开启）：开启后玩家可把精灵/物品展示到全服聊天（悬停看详情），冷却时间见 shareCooldownSeconds（默认 10 秒）。关闭后展示按钮不再生效 / Player showcase switch (on by default): players can showcase Pokémon/items to server chat (hover for details); the cooldown is shareCooldownSeconds (default 10 seconds). When off, the showcase button stops working",
+                "shareCooldownSeconds" to "展示冷却秒数（默认 10，范围 1~3600）：每个玩家两次展示之间的等待时间，精灵 / ID 卡 / 物品三种展示共用。设得太小会让全服播报刷屏 / Showcase cooldown in seconds (default 10, range 1–3600): the wait between two showcases by the same player; Pokémon / ID card / item showcases share this cooldown. Too small a value floods server chat",
                 "pointsShop.enabled" to "游戏内充值开关（默认关闭，需 pointsEnabled 同时开启）。国内小服主普遍用个人收款码，而个人收款码没有支付回调——本功能**不做自动收款**，只把对账成本压到最低：玩家在游戏内下单（实付金额就是档位标价 + 6 位订单号）→ 扫码付款 → 点「我已支付」→ 服主对着账单点确认发放。⚠ 模组无法判断是否真的付了款，「我已支付」只是玩家的声明：**未确认一律不发放** / In-game top-up switch (off by default, requires pointsEnabled too). Personal payment QR codes have no payment callback, so this feature does NOT collect payments automatically — it only minimizes reconciliation work: the player orders in game (paying the list price, with a 6-char order number) → scans the QR → pays → taps \"I have paid\" → the owner checks the bill and confirms the grant. ⚠ The mod cannot tell whether a payment actually happened: \"I have paid\" is a claim, and nothing is granted until the owner confirms",
                 "pointsShop.payQrImage" to "收款码图片文件名（放在 config/cobblemarket/qr/ 下，如 pay.png；PNG 格式，单张 ≤512KB、像素 ≤2048×2048，收款码本身是正方形、512×512 左右就够）。**留空 = 走全局默认**。图片由服务端读取后下发给客户端绘制；订单号与实付金额由模组**动态绘制在图片旁**（不写进图片文件），防止玩家截图转给别人代付后认领。⚠ 每个档位还能在「RP 配置」界面里配**自己的**收款码（微信/支付宝的『设置金额』码），配了的那一档用那张码，实付金额同样是标价 / Payment QR image file name under config/cobblemarket/qr/ (e.g. pay.png; PNG, 512KB max and 2048x2048 pixels max — a payment QR is square, 512x512 is plenty). **Leave blank to fall back to the global default.** The server reads it and sends it to clients for drawing; the order number and exact amount are drawn by the mod next to the image (never baked into the file), so a shared screenshot cannot be claimed by someone else. ⚠ Each tier can also have its OWN QR image (set it in the in-game RP Config screen) — a \"fixed amount\" code from your payment app; that tier then use its own code, still charging the list price",
                 "pointsShop.defaultIcon" to "档位「RP 券」的**全局默认**图文件名（放在 config/cobblemarket/icons/ 下，如 coupon.png；PNG 格式，单张 ≤512KB、像素 ≤2048×2048，建议 256×160 或它的整数倍 512×320）。填了它，所有没单独配券图的档位都用这张；留空 = 用模组内置券图。**每个档位还能配自己的**（见 tiers 的 icon）。图片由服务端读取后下发给客户端绘制，什么宽高比都行（卡片按原图比例缩放，不会变形）/ **Global default** RP coupon image file name under config/cobblemarket/icons/ (e.g. coupon.png; PNG, 512KB max and 2048x2048 pixels max — 256x160 or a multiple such as 512x320 recommended). Every tier without its OWN coupon image uses this one; leave blank to use the mod's built-in coupon image. **Each tier can also have its own** (see the icon field of tiers). The server reads it and sends it to clients; any aspect ratio works (the card scales the image to fit without distortion)",
@@ -1044,6 +1060,7 @@ object CobbleMarketConfig {
             "maxBuyOrdersPerPlayer" to maxBuyOrdersPerPlayer,
             "marketEnabled" to marketEnabled,
             "shareEnabled" to shareEnabled,
+            "shareCooldownSeconds" to shareCooldownSeconds,
             "pointsEnabled" to pointsEnabled,
             // ⚠ 落盘这一行曾经漏过：读取端有、写入端没有 → 开关当次有效、重启就落回默认 false
             "pointsMarketEnabled" to pointsMarketEnabled,

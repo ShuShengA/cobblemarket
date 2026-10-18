@@ -61,6 +61,13 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
      */
     private val ID_CARD_DEF = NumDef("cobblemarket.op.scfg_id_card_bg", false)
 
+    /**
+     * 「展示冷却（秒）」行 —— **排在列表最末**（ID 卡背景图之后、喵喵银行入口之前；
+     * 2026-10-18 用户要求：不要插进已有配置里，按顺序往下排）。与 [ID_CARD_DEF] 一样不在 [numDefs] 里，
+     * 建控件 / 重排 / 刷新 / 渲染各要单独处理一处。
+     */
+    private val SHARE_COOLDOWN_DEF = NumDef("cobblemarket.op.scfg_share_cooldown", true)
+
     private val numFields = mutableMapOf<String, TextFieldWidget>()
     private val toggleButtons = mutableMapOf<String, NineSliceButton>()
     // 每个数字输入框后的重置按钮（恢复该行为服务端快照值）
@@ -71,9 +78,9 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     // 编辑只改本地状态：开关的本地值（保存时提交，快照刷新时重置）
     private val localToggles = mutableMapOf<String, Boolean>()
     private var savedToastUntil = 0L
-    // +3 = 喵喵银行配置入口行 + RP 配置入口行（各是一个左标签 + 右「配置」按钮）
-    //       + ID 卡背景图行（它不在 numDefs 里，见 ID_CARD_DEF —— 排在蛋交易之后的那些行里最末）
-    private val totalRows = numDefs.size + toggleDefs.size + 3
+    // +4 = 喵喵银行配置入口行 + RP 配置入口行（各是一个左标签 + 右「配置」按钮）
+    //       + ID 卡背景图行 + 展示冷却行（后两行不在 numDefs 里，见 ID_CARD_DEF / SHARE_COOLDOWN_DEF）
+    private val totalRows = numDefs.size + toggleDefs.size + 4
     private var financeOpenButton: NineSliceButton? = null
     private var pointsOpenButton: NineSliceButton? = null
 
@@ -230,6 +237,9 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         //   而且**不能放进下面那个 `if (savedFieldTexts != null)` 分支**里：
         //   那个分支只在「确认弹窗关闭 / resize 重建」时走，首次打开走的是 else（2026-10-16 实测栽过）
         buildNumRow(ID_CARD_DEF, "idCardBackground")
+        // 展示冷却：**排在 ID 卡背景图之后、喵喵银行入口之前**（列表最末的配置行；见 SHARE_COOLDOWN_DEF）。
+        // 同样必须**先建出控件**再 rebuildPositions，否则占不到 row、后面所有行整体上移一格。
+        buildNumRow(SHARE_COOLDOWN_DEF, "shareCooldown")
         rebuildPositions()
         // 确认弹窗关闭/resize 走 clearChildren+init 重建：恢复未提交的编辑，且不重新请求快照
         // （请求会把本地编辑的开关状态冲回服务端旧值——蛋交易确认后按钮图标变回关就是这个原因）
@@ -277,6 +287,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         numDefs.forEach { (def, key) -> placeNumField(def, key) }
         toggleDefs.forEach { (_, key) -> placeToggle(key) }
         placeNumField(ID_CARD_DEF, "idCardBackground")
+        // 展示冷却：列表最末的配置行（ID 卡之后、喵喵银行入口之前；见 SHARE_COOLDOWN_DEF）
+        placeNumField(SHARE_COOLDOWN_DEF, "shareCooldown")
         // 喵喵银行配置入口行（列表末尾：标签「喵喵银行」+ 右侧「配置」按钮）
         val y = startY + (row - scrollOffset) * rowHeight
         val visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
@@ -314,6 +326,13 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         numFields["idCardBackground"]?.let { f ->
             if (focused !== f) {
                 f.text = payload.idCardBackground
+                f.setCursor(0, false)
+            }
+        }
+        // 展示冷却同样不在 numDefs 里（见 SHARE_COOLDOWN_DEF），单独刷一次
+        numFields["shareCooldown"]?.let { f ->
+            if (focused !== f) {
+                f.text = payload.shareCooldownSeconds.toString()
                 f.setCursor(0, false)
             }
         }
@@ -362,6 +381,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         "overdueFeeDouble" -> (payload?.overdueFeeDouble ?: 7).toDouble()
         "overdueFreeze" -> (payload?.overdueFreeze ?: 14).toDouble()
         "overdueBadDebt" -> (payload?.overdueBadDebt ?: 30).toDouble()
+        "shareCooldown" -> (payload?.shareCooldownSeconds ?: 10).toDouble()
         else -> 0.0
     }
 
@@ -483,6 +503,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             overdueFeeDouble = p?.overdueFeeDouble ?: 7,
             overdueFreeze = p?.overdueFreeze ?: 14,
             overdueBadDebt = p?.overdueBadDebt ?: 30,
+            // 展示冷却（秒）：输入框空/非法回退旧值，范围由服务端 setter 再钳一次
+            shareCooldownSeconds = intOr("shareCooldown", p?.shareCooldownSeconds ?: 10).coerceIn(1, 3600),
         ))
         // 乐观提示（服务端回发快照确认最终值；保存后按钮侧 toast 1.5 秒）
         savedToastUntil = System.currentTimeMillis() + 1500
@@ -728,6 +750,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         toggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
         // ID 卡背景图：**排在蛋交易之后**（不在 numDefs 里）
         drawNumRow(ID_CARD_DEF, "idCardBackground")
+        // 展示冷却：列表最末的配置行（ID 卡之后、喵喵银行入口之前；见 SHARE_COOLDOWN_DEF）
+        drawNumRow(SHARE_COOLDOWN_DEF, "shareCooldown")
         // 喵喵银行配置入口行（列表末尾）
         if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
             val rowY = startY + (row - scrollOffset) * rowHeight
