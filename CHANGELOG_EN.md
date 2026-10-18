@@ -42,6 +42,8 @@
 
 - **Buy order IV requirements are now "at least"**: the six IV fields when creating a buy order used to match **exactly** (entering 20 meant only an IV of exactly 20 was accepted); they are now a **lower bound** (20 or higher). The field placeholders show "≥" as well. ⚠ Existing buy orders follow the same rule — it is only more permissive, so anything that could be delivered before still can be
 
+- **Meowth Bank: the deposit / withdraw screen now shows your current balance**: on servers with the balance HUD turned off, there was no way to tell how much cash you had available to deposit — a "Wallet balance" line now sits above the deposit balance
+
 ### Fixes
 
 - **Buy orders: "View pending delivery" in chat opened an empty dialog**: after you rejected a delivery, that old chat notice stays — clicking it again opened a **blank confirmation dialog** (a few empty rows + Accept / Reject buttons) even though there was no pending delivery on that order anymore. It now shows "This buy order has no pending delivery right now" instead of opening an empty dialog
@@ -51,6 +53,8 @@
 - **Buy orders: the currency unit stuck out of the tooltip**: the currency unit at the end of the price line (an item icon when using item currency) was drawn outside the tooltip. It is now taken into account when measuring the width
 
 - **Pending returns: returned Pokémon showed their default form**: after a delivery was rejected and the Pokémon went back to the pending-returns screen, it was rendered in its **default form** (e.g. an Alolan form drawn as the normal one) — claiming it gave the correct Pokémon. It now uses the actual form
+
+- **Meowth Bank: the deposit screen's daily rate hid the real precision**: after the anti-arbitrage guard clamped the rate to `0.00047619`, the deposit screen still showed `0.05%` (identical to what `0.00047` showed), so it was impossible to tell whether the configured value took effect. It now shows the actual precision (`0.047619%` / `0.047%`), up to 6 decimals with trailing zeros trimmed
 
 ## 1.2.1 (released)
 
