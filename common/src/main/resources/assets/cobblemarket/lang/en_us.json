@@ -156,6 +156,7 @@
   "cobblemarket.idcard.title": "Market ID Card",
   "cobblemarket.op.scfg_id_card_bg": "ID card image",
   "cobblemarket.op.scfg_id_card_bg_bad": "ID card image could not be read (missing file / not a PNG / over 1MB or 2048x2048): %s",
+  "cobblemarket.op.scfg_share_cooldown": "Showcase cooldown (s)",
   "cobblemarket.overview.title": "Player Overview",
   "cobblemarket.overview.search": "Search player...",
   "cobblemarket.overview.loading": "Loading…",

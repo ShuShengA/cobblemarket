@@ -227,6 +227,7 @@
   "cobblemarket.op.scfg_max_auctions": "拍卖上限",
   "cobblemarket.op.scfg_id_card_bg": "ID 卡背景图",
   "cobblemarket.op.scfg_id_card_bg_bad": "ID 卡背景图读不出来（文件不存在 / 不是 PNG / 超过 1MB 或 2048×2048）：%s",
+  "cobblemarket.op.scfg_share_cooldown": "展示冷却（秒）",
   "cobblemarket.op.scfg_auction_durations": "拍卖时长（分钟）",
   "cobblemarket.op.scfg_buyorder_fee": "求购手续费（%）",
   "cobblemarket.op.scfg_buyorder_days": "求购过期（天）",

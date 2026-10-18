@@ -61,7 +61,7 @@ data class SharePayload(val kind: String, val target: String) : CustomPayload {
  *
  * 安全口径（与其余网络处理一致）：
  * - **归属校验**：精灵必须真的在自己队伍/PC 里、物品槽位必须非空，查不到直接静默丢弃
- * - **节流**：每人 [SHARE_COOLDOWN_MS] 一次（防刷屏），超限静默丢弃
+ * - **节流**：每人 [CobbleMarketConfig.shareCooldownSeconds] 秒一次（默认 10，服务器配置界面可改），超限回失败提示
  * - **服主开关**：`shareEnabled` 关闭时整条路径不工作
  * - **非法入参不崩服**：UUID 解析失败、槽位越界、物品栈为空都走「静默忽略」而非抛异常
  */
@@ -71,8 +71,7 @@ object ShareNetwork {
     const val KIND_ITEM = "item"
     const val KIND_IDCARD = "idcard"
 
-    /** 分享冷却：全服播报类操作，10 秒一次既能防刷屏又不影响正常使用 */
-    private const val SHARE_COOLDOWN_MS = 10_000L
+    // 分享冷却走服务器配置 `shareCooldownSeconds`（默认 10 秒，范围 1~3600；精灵 / ID 卡 / 物品共用）
 
     /**
      * 悬停详情里最多列几个证章名，其余折成「+N」。
@@ -144,7 +143,8 @@ object ShareNetwork {
                     return@execute
                 }
                 // 冷却**必须回包**：静默丢弃会让玩家以为分享坏了（点了没反应、聊天里也没消息）
-                if (!RequestThrottle.allow(player.uuid, "share", SHARE_COOLDOWN_MS)) {
+                val cooldownMs = CobbleMarketConfig.shareCooldownSeconds.coerceIn(1, 3600) * 1000L
+                if (!RequestThrottle.allow(player.uuid, "share", cooldownMs)) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.share.cooldown")))
                     return@execute
                 }

@@ -101,6 +101,8 @@ data class ServerConfigDataPayload(
     val overdueFeeDouble: Int,
     val overdueFreeze: Int,
     val overdueBadDebt: Int,
+    /** 展示冷却（秒）：精灵 / ID 卡 / 物品三种展示共用；1~3600，默认 10（2026-10-18） */
+    val shareCooldownSeconds: Int,
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -167,6 +169,7 @@ data class ServerConfigDataPayload(
                 b.writeInt(p.overdueFeeDouble)
                 b.writeInt(p.overdueFreeze)
                 b.writeInt(p.overdueBadDebt)
+                b.writeInt(p.shareCooldownSeconds)
             },
             // 读端用具名参数，读写字段顺序必须一致
             { b -> ServerConfigDataPayload(
@@ -230,6 +233,7 @@ data class ServerConfigDataPayload(
                 overdueFeeDouble = b.readInt(),
                 overdueFreeze = b.readInt(),
                 overdueBadDebt = b.readInt(),
+                shareCooldownSeconds = b.readInt(),
             ) }
         )
     }
@@ -302,6 +306,8 @@ data class SaveServerConfigPayload(
     val overdueFeeDouble: Int,
     val overdueFreeze: Int,
     val overdueBadDebt: Int,
+    /** 展示冷却（秒）：精灵 / ID 卡 / 物品三种展示共用；1~3600，默认 10（2026-10-18） */
+    val shareCooldownSeconds: Int,
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -368,6 +374,7 @@ data class SaveServerConfigPayload(
                 b.writeInt(p.overdueFeeDouble)
                 b.writeInt(p.overdueFreeze)
                 b.writeInt(p.overdueBadDebt)
+                b.writeInt(p.shareCooldownSeconds)
             },
             // 读端用具名参数，读写字段顺序必须一致
             { b -> SaveServerConfigPayload(
@@ -431,6 +438,7 @@ data class SaveServerConfigPayload(
                 overdueFeeDouble = b.readInt(),
                 overdueFreeze = b.readInt(),
                 overdueBadDebt = b.readInt(),
+                shareCooldownSeconds = b.readInt(),
             ) }
         )
     }
@@ -541,6 +549,7 @@ object ServerConfigNetwork {
         overdueFeeDouble = CobbleMarketConfig.overdueFeeDoubleDays,
         overdueFreeze = CobbleMarketConfig.overdueFreezeDays,
         overdueBadDebt = CobbleMarketConfig.overdueBadDebtDays,
+        shareCooldownSeconds = CobbleMarketConfig.shareCooldownSeconds,
     )
 
     /** 批量应用（钳制规则与各 setter 一致）；eggTrading 走既有 setter（含 save，重复落盘无害） */
@@ -605,6 +614,7 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setOverdueFeeDoubleDays(p.overdueFeeDouble)
         CobbleMarketConfig.setOverdueFreezeDays(p.overdueFreeze)
         CobbleMarketConfig.setOverdueBadDebtDays(p.overdueBadDebt)
+        CobbleMarketConfig.setShareCooldownSeconds(p.shareCooldownSeconds)
         // 全部字段设完再跑跨项校验：遇见数门槛不得低于捕捉数门槛
         // （保存后回发快照，配置界面的遇见输入框会随之刷新成抬平后的值）
         CobbleMarketConfig.enforceCardApplySeenGuard()

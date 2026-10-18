@@ -349,6 +349,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             overdueFeeDouble = intOr("overdueFeeDouble", p?.overdueFeeDouble ?: 7),
             overdueFreeze = intOr("overdueFreeze", p?.overdueFreeze ?: 14),
             overdueBadDebt = intOr("overdueBadDebt", p?.overdueBadDebt ?: 30),
+            shareCooldownSeconds = p?.shareCooldownSeconds ?: 10,
         ))
         savedToastUntil = System.currentTimeMillis() + 1500
     }

@@ -73,6 +73,12 @@ object CobbleMarketConfig {
     /** 玩家展示开关：关闭后玩家不能把精灵/物品展示到全服聊天（运营开关，与市场总开关同类） */
     var shareEnabled: Boolean = true
         private set
+    /**
+     * 展示冷却（秒）：每个玩家两次展示之间要等待多久；精灵 / ID 卡 / 物品三种展示**共用**同一个冷却。
+     * 默认 10，允许 1~3600（设 0 等于完全不限流，会被刷屏）。服务器配置界面可改。
+     */
+    var shareCooldownSeconds: Int = 10
+        private set
 
     // ── 市场 ID 卡 ──
 
@@ -283,6 +289,11 @@ object CobbleMarketConfig {
         save()
     }
 
+    /** 展示冷却（秒）设置（仅服务端配置界面调用；范围 1~3600，防止设成 0 变成刷屏） */
+    fun setShareCooldownSeconds(v: Int) {
+        shareCooldownSeconds = v.coerceIn(1, 3600)
+    }
+
     /** 蛋交易开关切换并落盘（仅管理面板调用） */
     fun setEggTradingEnabled(v: Boolean) {
         eggTradingEnabled = v
@@ -436,6 +447,7 @@ object CobbleMarketConfig {
                     "auctionMinBidIncrement", "auctionAntiSnipeSeconds", "maxAuctionsPerPlayer",
                     "eggTradingEnabled", "buyOrderFeePercent", "buyOrderExpiryDays",
                     "maxBuyOrdersPerPlayer", "marketEnabled", "idCardBackground", "shareEnabled",
+                    "shareCooldownSeconds",
                     "serverOwners",
                     "finance"
                 )
@@ -599,6 +611,9 @@ object CobbleMarketConfig {
                 maxBuyOrdersPerPlayer = ((data["maxBuyOrdersPerPlayer"] as? Double)?.toInt() ?: 5).coerceAtLeast(0)
                 marketEnabled = data["marketEnabled"] as? Boolean ?: true
                 shareEnabled = data["shareEnabled"] as? Boolean ?: true
+                // 展示冷却（秒）：1~3600，缺省 10；非法值钳到范围而不是整份配置读取失败
+                shareCooldownSeconds =
+                    ((data["shareCooldownSeconds"] as? Number)?.toInt() ?: 10).coerceIn(1, 3600)
                 // 背景图文件名：只留文件名本身（路径穿越 / 非法字符由 ConfigImage 拦下并记日志）
                 idCardBackground = (data["idCardBackground"] as? String)?.trim() ?: ""
                 // 服主名单：容错解析 —— 单条写错只跳过该条并记日志，不让整份配置读取失败
@@ -681,7 +696,8 @@ object CobbleMarketConfig {
                 "buyOrderFeePercent" to "求购单中介费百分比：买家成交时从卖家实收中扣除（0=免中介费）/ Buy order fee percentage charged on seller's actual payment (0=no fee)",
                 "buyOrderExpiryDays" to "求购单过期天数（到期自动关闭，剩余冻结金退买家待领余额）/ Buy order expiry in days (expired orders close automatically and refund frozen money)",
                 "marketEnabled" to "市场总开关（默认开启）：紧急情况可整体关闭市场功能——所有买卖/拍卖/求购操作被拦截并提示，但待领取、余额等取回自己资产的操作仍可用。可在游戏内用 /market on|off 切换 / Master market switch (on by default): emergency kill switch for the entire market — all buy/sell/auction/buy-order operations are blocked with a notice, while claiming returns and collecting balances still work. Toggle in-game via /market on|off",
-                "shareEnabled" to "玩家展示开关（默认开启）：开启后玩家可把精灵/物品展示到全服聊天（悬停看详情），每人 10 秒一次。关闭后展示按钮不再生效 / Player showcase switch (on by default): players can showcase Pokémon/items to server chat (hover for details), once per 10 seconds each. When off, the showcase button stops working",
+                "shareEnabled" to "玩家展示开关（默认开启）：开启后玩家可把精灵/物品展示到全服聊天（悬停看详情），冷却时间见 shareCooldownSeconds（默认 10 秒）。关闭后展示按钮不再生效 / Player showcase switch (on by default): players can showcase Pokémon/items to server chat (hover for details); the cooldown is shareCooldownSeconds (default 10 seconds). When off, the showcase button stops working",
+                "shareCooldownSeconds" to "展示冷却秒数（默认 10，范围 1~3600）：每个玩家两次展示之间的等待时间，精灵 / ID 卡 / 物品三种展示共用。设得太小会让全服播报刷屏 / Showcase cooldown in seconds (default 10, range 1–3600): the wait between two showcases by the same player; Pokémon / ID card / item showcases share this cooldown. Too small a value floods server chat",
                 "idCardBackground" to "市场 ID 卡的背景图文件名：把图放进 config/cobblemarket/idcard/（只写文件名、不带路径），留空 = 用模组内置的背景图。只认 PNG、单张 ≤1MB、像素 ≤2048×2048，超限/损坏的图会被拒绝并记日志（客户端回退内置图）。改完 /market reload 生效，玩家下次打开 ID 卡时看到新图（就地覆盖同名文件也算）/ Market ID card background image file name: put the file into config/cobblemarket/idcard/ (plain file name only, no path); leave blank to use the mod's built-in background. PNG only, max 1MB and max 2048x2048 per image — oversized or corrupt images are rejected with a log entry (clients fall back to the built-in one). Applies after /market reload; players see it the next time they open the ID card (overwriting the same file in place also works)",
                 "maxBuyOrdersPerPlayer" to "每个玩家同时进行的求购单数量上限，精灵与物品合计（0=不限制）。求购单列表全量下发给所有客户端，玩家较多的服务器建议保持较小值，避免全服活跃求购单总量过大导致卡顿 / Max concurrent buy orders per player, Pokémon and items combined (0=unlimited). The buy order list is broadcast in full to every client, so on crowded servers keep this small to avoid lag from too many active orders",
                 "serverOwners" to "服主名单（UUID 数组）—— 服主拥有全部管理权限，也只有服主能改服务器配置、给别人发权限。填一串 UUID、每条加英文双引号、多条用逗号隔开（缺引号整份配置都读不了）；UUID 查 usercache.json，或用游戏内 /data get entity @s UUID 拿（打出来的整数数组也能直接粘）。⚠ 别填游戏名。改完重进存档生效，启动日志会打印「已加载几名服主」。空数组 = 谁都不是服主。⚠ OP 不等于服主：OP 能被 /op 传递，这份名单不能。填法与示例见官网「权限节点」页 https://shushenga.github.io/CobbleMarket-Website/#/permission /Server owner list (UUID array) — owners have every admin permission, and only they can edit the server config or grant admin permissions. Fill in a list of UUIDs: wrap each in double quotes, separate several with commas (a single missing quote makes the whole config unreadable). Get your UUID from usercache.json, or run /data get entity @s UUID in game (the integer array it prints can be pasted as-is). ⚠ A player name will not work. Reload the world to apply; the log prints how many owners were loaded. An empty array means nobody is an owner. ⚠ OP is not the owner: OP can be passed on with /op, this list cannot. Full guide: https://shushenga.github.io/CobbleMarket-Website/#/en/permission",
@@ -741,6 +757,7 @@ object CobbleMarketConfig {
             "maxBuyOrdersPerPlayer" to maxBuyOrdersPerPlayer,
             "marketEnabled" to marketEnabled,
             "shareEnabled" to shareEnabled,
+            "shareCooldownSeconds" to shareCooldownSeconds,
             "idCardBackground" to idCardBackground,
             "serverOwners" to serverOwners.map { it.toString() },
             "finance" to mapOf(
