@@ -65,7 +65,9 @@ enum class RewardRepeat(val key: String) {
  */
 enum class RewardTarget(val key: String) {
     SELF("self"),
-    OPPONENT("opponent");
+    OPPONENT("opponent"),
+    /** 按**被击败的 NPC 身份**匹配（整场战斗判一次，不看对方带什么精灵） */
+    NPC("npc");
 
     override fun toString(): String = key
 
@@ -127,7 +129,15 @@ data class RewardRule(
     /** 战斗胜利：条件匹配谁（默认自己参战的精灵；非 battle 事件恒为默认值） */
     val target: RewardTarget = RewardTarget.SELF,
     /** 战斗胜利：只算哪种战斗（默认野生 + NPC；非 battle 事件恒为默认值） */
-    val battleType: RewardBattleType = RewardBattleType.ANY
+    val battleType: RewardBattleType = RewardBattleType.ANY,
+    /**
+     * 战斗胜利：按 NPC 身份匹配（仅 [RewardTarget.NPC] 使用）。
+     * 值是 Cobblemon 数据包 NPC 的**类 id**（`data/<ns>/npcs/<file>.json` 的路径，即 `/spawnnpc` 后面那段）。
+     * ⚠ 命中后整场战斗**只判一次**，不看 NPC 带什么精灵、也不按其队伍只数发。
+     */
+    val npc: List<String> = emptyList(),
+    /** 每人每天**最多发几次**（超过就不发；null = 不限）。⚠ 按「规则」计数，不是按物种 / NPC */
+    val dailyCount: Int? = null
 ) {
     /** 是区间金额吗 */
     val isRange: Boolean get() = amountMin != null && amountMax != null
@@ -160,6 +170,8 @@ data class RewardRule(
         //   ⇒ 升级到带这两个字段的版本时，现有进度不会被无故清空
         if (target != RewardTarget.SELF) append("target=").append(target.key).append('|')
         if (battleType != RewardBattleType.ANY) append("battleType=").append(battleType.key).append('|')
+        // NPC 列表排序后再拼：只换顺序不该被当成换了一条规则
+        if (npc.isNotEmpty()) append("npc=").append(npc.sorted().joinToString(",")).append('|')
         append(condition.fingerprint())
     }
 
@@ -415,9 +427,9 @@ class RewardRules(
         }
 
         private val KNOWN_KEYS = setOf(
-            "amount", "decay", "repeat", "daily_cap",
+            "amount", "decay", "repeat", "daily_cap", "daily_count",
             // 战斗胜利专用（见 RewardTarget / RewardBattleType）
-            "target", "battleType",
+            "target", "battleType", "npc",
             "species", "namespace", "aspects", "variantAspects", "labels",
             "shiny", "alpha", "ht", "minPerfectIvs", "level",
             // 排除条件（`excludeXxx`）—— 见 RewardCondition 里那段 KDoc：
@@ -524,18 +536,25 @@ class RewardRules(
 
             val cap = obj.get("daily_cap")?.let { parsePositiveLong(it, file, "daily_cap") } ?: defaultCap
 
-            // ── 战斗胜利专用：匹配谁 / 哪种战斗 ──
+            // ── 每人每天最多发几次（可选；按规则计数）──
+            val dailyCount = obj.get("daily_count")?.let { el ->
+                val value = parsePositiveLong(el, file, "daily_count") ?: return null
+                value.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            }
+
+            // ── 战斗胜利专用：匹配谁 / 哪种战斗 / 哪个 NPC ──
             // ⚠ 非法值**跳过该条 + warn**（不回退默认）—— 写错一个字母若回退成 self，
             //   会变成"用你的精灵赢一场就发钱"，比不生效更糟（配置错误要显式）
             var target = RewardTarget.SELF
             var battleType = RewardBattleType.ANY
+            var npc = emptyList<String>()
             if (event == RewardEvent.BATTLE_VICTORY) {
                 obj.get("target")?.let { el ->
                     val raw = el.takeIf { it.isJsonPrimitive }?.asString
                     val parsed = raw?.let { RewardTarget.fromJson(it) }
                     if (parsed == null) {
                         CobbleMarket.LOGGER.warn(
-                            "RP reward rules: {} skipped — \"target\" must be \"self\" or \"opponent\" (got: {})",
+                            "RP reward rules: {} skipped — \"target\" must be \"self\", \"opponent\" or \"npc\" (got: {})",
                             where, el.toString()
                         )
                         return null
@@ -554,17 +573,35 @@ class RewardRules(
                     }
                     battleType = parsed
                 }
-            } else if (obj.has("target") || obj.has("battleType")) {
+                if (target == RewardTarget.NPC) {
+                    npc = readStringList(obj, "npc")
+                    if (npc.isEmpty()) {
+                        CobbleMarket.LOGGER.warn(
+                            "RP reward rules: {} skipped — \"target\": \"npc\" requires a non-empty \"npc\" list " +
+                                "(Cobblemon NPC class id, e.g. \"yourpack:elite_four_lorelei\")",
+                            where
+                        )
+                        return null
+                    }
+                } else if (obj.has("npc")) {
+                    CobbleMarket.LOGGER.warn(
+                        "RP reward rules: {} skipped — \"npc\" is only used with \"target\": \"npc\"", where
+                    )
+                    return null
+                }
+            } else {
                 // 写在别的 event 上没意义：明确说一声、按默认处理（不跳过规则）
-                CobbleMarket.LOGGER.warn(
-                    "RP reward rules: {} — \"target\" / \"battleType\" only apply to event \"battle_victory\"; ignored",
-                    where
-                )
+                if (obj.has("target") || obj.has("battleType") || obj.has("npc")) {
+                    CobbleMarket.LOGGER.warn(
+                        "RP reward rules: {} — \"target\" / \"battleType\" / \"npc\" only apply to event " +
+                            "\"battle_victory\"; ignored", where
+                    )
+                }
             }
 
             // ── 条件 ──
             val level = readLevel(obj, where)
-            val condition = RewardCondition(
+            val rawCondition = RewardCondition(
                 species = readStringList(obj, "species"),
                 namespace = obj.get("namespace")?.takeIf { it.isJsonPrimitive }?.asString?.trim()?.takeIf { it.isNotEmpty() },
                 aspects = readStringList(obj, "aspects"),
@@ -583,6 +620,17 @@ class RewardRules(
                 excludeAspects = readStringList(obj, "excludeAspects"),
                 excludeVariantAspects = readStringList(obj, "excludeVariantAspects")
             )
+            // NPC 规则按身份匹配，不看对方带什么精灵 ⇒ 条件字段一律不参与判定
+            val condition = if (target == RewardTarget.NPC) {
+                if (rawCondition != RewardCondition()) {
+                    CobbleMarket.LOGGER.warn(
+                        "RP reward rules: {} — NPC rules ignore Pokémon conditions; they will not be used", where
+                    )
+                }
+                RewardCondition()
+            } else {
+                rawCondition
+            }
 
             return RewardRule(
                 event = event,
@@ -596,7 +644,9 @@ class RewardRules(
                 decay = decay,
                 dailyCap = cap,
                 target = target,
-                battleType = battleType
+                battleType = battleType,
+                npc = npc,
+                dailyCount = dailyCount
             )
         }
 

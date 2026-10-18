@@ -36,6 +36,9 @@ class RewardProgressState private constructor() : PersistentState() {
     /** 玩家 → 事件 key → [世界日, 当日累计 RP] */
     private val rewardDaily = mutableMapOf<UUID, MutableMap<String, LongArray>>()
 
+    /** 玩家 → 规则指纹 → [世界日, 当天已发次数]（规则的 `daily_count` 用） */
+    private val rewardDailyCount = mutableMapOf<UUID, MutableMap<String, LongArray>>()
+
     /** 这条规则对这个物种已经发过几次（0 = 还没发过） */
     fun hitCount(playerUuid: UUID, key: String): Int =
         rewardHits[playerUuid]?.get(key) ?: 0
@@ -65,6 +68,24 @@ class RewardProgressState private constructor() : PersistentState() {
         markDirty()
     }
 
+    /** 这条规则今天（[ruleKey]）已经发了几次；跨天自动归零（按世界时间） */
+    fun dailyCount(playerUuid: UUID, ruleKey: String, worldDay: Long): Long {
+        val entry = rewardDailyCount[playerUuid]?.get(ruleKey) ?: return 0L
+        return if (entry[0] == worldDay) entry[1] else 0L
+    }
+
+    /** 记一次「该规则今天又发了一次」（只在真的发出去之后调） */
+    fun addDailyCount(playerUuid: UUID, ruleKey: String, worldDay: Long, amount: Long) {
+        val byPlayer = rewardDailyCount.getOrPut(playerUuid) { mutableMapOf() }
+        val entry = byPlayer[ruleKey]
+        if (entry == null || entry[0] != worldDay) {
+            byPlayer[ruleKey] = longArrayOf(worldDay, amount)
+        } else {
+            entry[1] += amount
+        }
+        markDirty()
+    }
+
     /**
      * **清空全服所有人的奖励进度**（已发次数 + 当天每日上限累计），返回受影响人数。
      *
@@ -74,10 +95,11 @@ class RewardProgressState private constructor() : PersistentState() {
     fun resetAll(): Int {
         // 两个 map 的玩家集合取并集：有人可能只有每日累计、没有计数（例如同一事件反复领取后
         // 规则条件被改过、计数键换了），只清 hits 会留下"今天已领满"的残留
-        val affected = (rewardHits.keys + rewardDaily.keys).toSet().size
+        val affected = (rewardHits.keys + rewardDaily.keys + rewardDailyCount.keys).toSet().size
         if (affected == 0) return 0
         rewardHits.clear()
         rewardDaily.clear()
+        rewardDailyCount.clear()
         markDirty()
         return affected
     }
@@ -86,7 +108,8 @@ class RewardProgressState private constructor() : PersistentState() {
     fun resetPlayer(playerUuid: UUID): Boolean {
         val hadHits = rewardHits.remove(playerUuid) != null
         val hadDaily = rewardDaily.remove(playerUuid) != null
-        if (!hadHits && !hadDaily) return false
+        val hadCount = rewardDailyCount.remove(playerUuid) != null
+        if (!hadHits && !hadDaily && !hadCount) return false
         markDirty()
         return true
     }
@@ -118,6 +141,19 @@ class RewardProgressState private constructor() : PersistentState() {
             if (entry.value.remove(eventKey) != null) affected += entry.key
             if (entry.value.isEmpty()) dailyIt.remove()
         }
+        // daily_count 的 key 是规则指纹（以事件名开头），按前缀清
+        val countIt = rewardDailyCount.entries.iterator()
+        while (countIt.hasNext()) {
+            val entry = countIt.next()
+            val keyIt = entry.value.entries.iterator()
+            while (keyIt.hasNext()) {
+                if (eventOfFingerprint(keyIt.next().key) == eventKey) {
+                    keyIt.remove()
+                    affected += entry.key
+                }
+            }
+            if (entry.value.isEmpty()) countIt.remove()
+        }
         if (affected.isNotEmpty()) markDirty()
         return affected.size
     }
@@ -139,6 +175,16 @@ class RewardProgressState private constructor() : PersistentState() {
             if (byEvent.remove(eventKey) != null) changed = true
             if (byEvent.isEmpty()) rewardDaily.remove(playerUuid)
         }
+        rewardDailyCount[playerUuid]?.let { byKey ->
+            val keyIt = byKey.entries.iterator()
+            while (keyIt.hasNext()) {
+                if (eventOfFingerprint(keyIt.next().key) == eventKey) {
+                    keyIt.remove()
+                    changed = true
+                }
+            }
+            if (byKey.isEmpty()) rewardDailyCount.remove(playerUuid)
+        }
         if (changed) markDirty()
         return changed
     }
@@ -151,6 +197,9 @@ class RewardProgressState private constructor() : PersistentState() {
         val bar = fp.indexOf('|')
         return if (bar <= 0) null else fp.substring(0, bar)
     }
+
+    /** 规则指纹里的「事件名」——格式：`<事件名>|...` */
+    private fun eventOfFingerprint(fp: String): String = fp.substringBefore('|')
 
     override fun writeNbt(nbt: NbtCompound, registryLookup: RegistryWrapper.WrapperLookup): NbtCompound {
         // 空表不写 —— 不用的服主的存档里不会多出空 compound
@@ -176,6 +225,20 @@ class RewardProgressState private constructor() : PersistentState() {
                 dailyRoot.put(uuid.toString(), playerNode)
             }
             nbt.put("rewardDaily", dailyRoot)
+        }
+        if (rewardDailyCount.isNotEmpty()) {
+            val countRoot = NbtCompound()
+            rewardDailyCount.forEach { (uuid, byKey) ->
+                val playerNode = NbtCompound()
+                byKey.forEach { (ruleKey, pair) ->
+                    val e = NbtCompound()
+                    e.putLong("day", pair[0])
+                    e.putLong("count", pair[1])
+                    playerNode.put(ruleKey, e)
+                }
+                countRoot.put(uuid.toString(), playerNode)
+            }
+            nbt.put("rewardDailyCount", countRoot)
         }
         return nbt
     }
@@ -212,6 +275,22 @@ class RewardProgressState private constructor() : PersistentState() {
                                 if (byEvent.isNotEmpty()) rewardDaily[uuid] = byEvent
                             } catch (e: Exception) {
                                 CobbleMarket.LOGGER.warn("Skipping corrupted reward daily for {}: {}", uuidKey, e.message)
+                            }
+                        }
+                    }
+                    runCatching { nbt.getCompound("rewardDailyCount") }.getOrNull()?.let { countRoot ->
+                        countRoot.keys.forEach { uuidKey ->
+                            try {
+                                val uuid = UUID.fromString(uuidKey)
+                                val node = countRoot.getCompound(uuidKey)
+                                val byKey = mutableMapOf<String, LongArray>()
+                                node.keys.forEach { k ->
+                                    val e = node.getCompound(k)
+                                    byKey[k] = longArrayOf(e.getLong("day"), e.getLong("count"))
+                                }
+                                if (byKey.isNotEmpty()) rewardDailyCount[uuid] = byKey
+                            } catch (e: Exception) {
+                                CobbleMarket.LOGGER.warn("Skipping corrupted reward daily count for {}: {}", uuidKey, e.message)
                             }
                         }
                     }
