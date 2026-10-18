@@ -123,6 +123,8 @@
 
 - **Meowth Bank: the deposit / withdraw screen now shows your current balance**: on servers with the balance HUD turned off, there was no way to tell how much cash you had available to deposit — a "Wallet balance" line now sits above the deposit balance
 
+- **The showcase cooldown is now configurable**: a new "Showcase cooldown (s)" row at the bottom of the server config screen (default 10, range 1–3600) — Pokémon / ID card / item showcases share the same cooldown; shorten it on quiet servers or lengthen it when chat moves fast
+
 ### Fixes
 
 - **Buy orders: "View pending delivery" in chat opened an empty dialog**: after you rejected a delivery, that old chat notice stays — clicking it again opened a **blank confirmation dialog** (a few empty rows + Accept / Reject buttons) even though there was no pending delivery on that order anymore. It now shows "This buy order has no pending delivery right now" instead of opening an empty dialog
