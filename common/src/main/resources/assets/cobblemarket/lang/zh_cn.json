@@ -1263,6 +1263,7 @@
   "cobblemarket.repay.unfrozen": "借款恢复正常，市场交易已解冻",
   "cobblemarket.deposit.button": "存款/取款",
   "cobblemarket.deposit.title": "存款/取款",
+  "cobblemarket.deposit.wallet_line": "当前余额：%s %s",
   "cobblemarket.deposit.balance_line": "存款余额：%s %s",
   "cobblemarket.deposit.interest_line": "累计利息：%s %s",
   "cobblemarket.deposit.rate_line": "日利率：%s",
