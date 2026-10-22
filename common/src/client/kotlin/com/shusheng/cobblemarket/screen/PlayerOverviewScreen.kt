@@ -83,16 +83,19 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
     private val sortOptionButtons = mutableListOf<NineSliceButton>()
     private var sortFieldButton: NineSliceButton? = null
 
-    // ── 顶栏几何（照 BlacklistScreen：搜索框与按钮**同一行**、y = 62、左右各留 2px）──
+    // ── 顶栏几何（搜索框与按钮**同一行**、y = 58、左右各留 2px）──
     // 字段按钮只显示字段名本身（英文最长 "Remaining credit" ≈ 96px），不带宽的「排序：」前缀
     private val searchW = 114
     private val fieldBtnW = 100
     private val dirBtnW = 72
 
+    /** 顶栏 y；顶栏底 74 → 分割线 80 → 列表首行 86（上下各 6px） */
+    private val topRowY = 58
+
     override fun init() {
         super.init()
         val leftX = width / 2 - panelWidth / 2
-        val topY = 62
+        val topY = topRowY
 
         // 返回按钮（右上，照参考屏：y = 13）
         addDrawableChild(NineSliceButton(
@@ -191,7 +194,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         val leftX = width / 2 - panelWidth / 2
         fields.forEachIndexed { i, f ->
             val btn = NineSliceButton(
-                leftX + 120, 80 + i * 14, 120, 14,
+                leftX + 120, topRowY + 18 + i * 14, 120, 14,
                 Text.translatable("cobblemarket.overview.sort.${f.key}"),
                 { selectSortField(f) }
             )
@@ -296,10 +299,10 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         val maxVisible = maxOf(3, (height - 48 - startY) / rowHeight)
         val rows = displayRows()
 
-        // 顶栏与列表之间的分割线（照参考屏：画在列表起点上方 2px）
+        // 顶栏与列表之间的分割线：顶栏底 74 → 线 80 → 首行 86（上下各 6px）
         // ⚠ 展开排序列表时**不画** —— 选项按钮是**控件**（在 super.render 里画），而这行分割线
         //   画在控件之后 ⇒ 会横穿列表第一项（2026-10-16 用户实测报「分割线透上来」）
-        if (!sortListOpen) drawPanelDivider(context, width / 2, startY - 2)
+        if (!sortListOpen) drawPanelDivider(context, width / 2, startY - 6)
 
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, rows.size - maxVisible))
 
