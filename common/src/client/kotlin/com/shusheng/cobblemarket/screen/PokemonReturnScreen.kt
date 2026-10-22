@@ -7,6 +7,7 @@ import net.minecraft.registry.Registries
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.shusheng.cobblemarket.client.heldIconStack
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.heldIconStackForModel
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
@@ -34,7 +35,8 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
     private val rowHeight = 24
 
     private var pokemon = listOf<PokemonPreview>()
-    private var loaded = false
+    /** 首包状态：回来前显示「加载中…」，回来后才允许显示「没有待领取的精灵」 */
+    private val loadState = LoadState()
     private var hoveredRow = -1
     private var currentPage = 1
     private var totalPages = 1
@@ -176,7 +178,6 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
         addDrawableChild(nextButton)
 
         requestData()
-        loaded = true
     }
 
     private fun claimAll() {
@@ -198,7 +199,7 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
             else -> {}
         }
         updatePageButtons()
-        loaded = true
+        loadState.markLoaded()
         tooltipCacheKey = null
         buildIconCache()
     }
@@ -263,9 +264,9 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
         val listBottom = getListStartY() + maxVisible() * rowHeight
         drawPanelDivider(context, leftX + panelWidth / 2, listBottom + 4)
 
-        if (pokemon.isEmpty() && loaded) {
+        if (pokemon.isEmpty()) {
             context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.return.pokemon_empty").formatted(Formatting.GRAY),
+                Text.translatable(loadState.emptyKey("cobblemarket.return.pokemon_empty")).formatted(Formatting.GRAY),
                 centerX, 100, 0xFFFFFF)
         }
 

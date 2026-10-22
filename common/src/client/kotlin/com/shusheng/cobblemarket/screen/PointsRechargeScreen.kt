@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.GuiColors
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.POINTS_ICON_TEXTURE
 import com.shusheng.cobblemarket.client.POINTS_SYMBOL_INLINE_SIZE
 import com.shusheng.cobblemarket.client.PayQrTexture
@@ -89,6 +90,8 @@ class PointsRechargeScreen : Screen(
     private var qrRequestedFor: String? = null
     /** 本次进界面是否已请求过快照（init 会被 resize 反复调用，别重复发） */
     private var requested = false
+    /** 首包状态：订单快照回来前显示「加载中…」，回来后才允许显示「暂无订单」 */
+    private val loadState = LoadState()
 
     /**
      * 本次进界面已请求过的券图文件名 —— 快照连来时别把同一个请求重发好几遍。
@@ -329,6 +332,7 @@ class PointsRechargeScreen : Screen(
 
     /** 服务端下发快照后重走一遍（档位、订单列表、货币单位都可能变了） */
     fun onShopInfo() {
+        loadState.markLoaded()
         // 刚点过档位：快照里**新冒出来的那一笔**就是它 —— 自动弹出收款码。
         // 方案原文是「选档位下单 → **拿订单号 + 收款码 + 实付金额**」；那句话里的「不再强弹收款码」
         // 指的是**进界面时**不弹历史订单，不是下单后不弹 —— 漏了这一步就成了
@@ -766,7 +770,7 @@ class PointsRechargeScreen : Screen(
         if (PointsShopCache.orders.isEmpty()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.points.recharge.orders_empty"),
+                Text.translatable(loadState.emptyKey("cobblemarket.points.recharge.orders_empty")),
                 dx + ORDERS_DIALOG_W / 2,
                 dy + ORDERS_DIALOG_HEADER_H + (ORDER_ROW_H - 8) / 2,
                 0xAAAAAA

@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.icon.ItemHoverPreview
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.client.requestCreditInfo
@@ -72,7 +73,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
      * **市场空了**去问服主（用户 2026-10-10 自己就这样误会了一次）。
      * ⚠ 不需要在发请求时重置：界面每次打开都是一个新实例，字段天然回到 false。
      */
-    private var everLoaded = false
+    /** 首包状态：回来前显示「加载中…」，回来后才允许显示「暂无物品」（切币种时 reset） */
+    private val loadState = LoadState()
     private var currentPage = 1
     private var totalPages = 1
 
@@ -437,7 +439,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     fun onItemMarketData(payload: ItemMarketDataPayload) {
         entries = payload.entries
-        everLoaded = true
+        loadState.markLoaded()
         totalPages = payload.totalPages
         when {
             pendingPage == 0 -> currentPage = payload.currentPage
@@ -686,6 +688,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         // 「收款」只在主货币页有意义：它收的是**普通货币**的待收款（RP 收入直接进余额，没有待领账本）
         collectButton?.visible = currency != MarketCurrency.POINTS
         currentPage = 1
+        // 新币种是**另一份列表**：在新回包前重新显示「加载中…」
+        loadState.reset()
         requestFilterRefresh()
     }
 
@@ -944,7 +948,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
         if (entries.isEmpty()) {
             // 没收到过数据 = 「加载中」；收到过但是空 = 「暂无物品」—— 同一句会把玩家骗去问服主
-            val key = if (everLoaded) "cobblemarket.item.empty" else "cobblemarket.gui.loading"
+            val key = loadState.emptyKey("cobblemarket.item.empty")
             context.drawCenteredTextWithShadow(textRenderer,
                 Text.translatable(key).formatted(Formatting.GRAY),
                 centerX, getGridStartY() + 40, 0xFFFFFF)

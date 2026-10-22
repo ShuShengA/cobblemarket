@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.activeCurrencyUnit
@@ -85,6 +86,10 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private var currentTab = 0 // 0 = 精灵, 1 = 物品
     private var pokemonEntries = listOf<PokemonPriceLimitEntry>()
     private var itemEntries = listOf<ItemPriceLimitEntry>()
+    /** 首包状态（两个 tab 各一份）：当前 tab 的首包没回来前显示「加载中…」 */
+    private val pokemonLoadState = LoadState()
+    private val itemLoadState = LoadState()
+    private fun currentLoadState() = if (currentTab == 0) pokemonLoadState else itemLoadState
     // 过滤结果缓存：数据/搜索/筛选变化时重建，render 每帧只读（避免每帧全量 filter）
     private var filteredPokemonCache = listOf<PokemonPriceLimitEntry>()
     private var filteredItemsCache = listOf<ItemPriceLimitEntry>()
@@ -1474,6 +1479,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     fun onPokemonPriceLimitData(payload: PokemonPriceLimitDataPayload) {
         pokemonEntries = payload.entries
+        pokemonLoadState.markLoaded()
         tooltipCacheKey = null
         rebuildFiltered()
         cacheIcons()
@@ -1483,6 +1489,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
     fun onItemPriceLimitData(payload: ItemPriceLimitDataPayload) {
         itemEntries = payload.entries
+        itemLoadState.markLoaded()
         itemTooltipCacheKey = null
         tooltipCacheKey = null
         rebuildItemIconStacks()
@@ -1710,7 +1717,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
 
         if (displayCount() == 0) {
             context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.price_limit.empty").formatted(Formatting.GRAY),
+                Text.translatable(currentLoadState().emptyKey("cobblemarket.price_limit.empty")).formatted(Formatting.GRAY),
                 centerX, startY + 50, 0xFFFFFF)
         }
 

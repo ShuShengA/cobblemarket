@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawAmountLine
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
@@ -30,7 +31,10 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
     private val rowHeight = 24
 
     private var entries = listOf<RepayEntry>()
-    private var loaded = false
+    /** 首包状态：回来前显示「加载中…」，回来后才允许显示「没有需要还款的贷款」 */
+    private val loadState = LoadState()
+    /** 只发一次请求（init 会被 resize 反复调） */
+    private var requested = false
     private var scrollOffset = 0
 
     private var backButton: NineSliceButton? = null
@@ -58,14 +62,15 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
 
         rebuildRowButtons()
 
-        if (!loaded) {
+        if (!requested) {
             sendToServer(RequestRepayListPayload())
-            loaded = true
+            requested = true
         }
     }
 
     fun onRepayListData(payload: RepayListDataPayload) {
         entries = payload.entries
+        loadState.markLoaded()
         rebuildRowButtons()
     }
 
@@ -128,10 +133,10 @@ class RepayScreen : Screen(Text.translatable("cobblemarket.repay.title")) {
 
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, entries.size - maxVisible))
 
-        if (entries.isEmpty() && loaded) {
+        if (entries.isEmpty()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.repay.empty").formatted(Formatting.GRAY),
+                Text.translatable(loadState.emptyKey("cobblemarket.repay.empty")).formatted(Formatting.GRAY),
                 width / 2, startY + 20, 0xFFFFFF
             )
         }

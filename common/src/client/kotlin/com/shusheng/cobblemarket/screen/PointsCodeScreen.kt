@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.MarketCurrency
@@ -60,6 +61,8 @@ class PointsCodeScreen : Screen(Text.translatable("cobblemarket.points.code.titl
 
     // ── 列表状态 ──
     private var entries = listOf<PointCodeInfo>()
+    /** 首包状态：回来前显示「加载中…」，回来后才允许显示「还没有兑换码」 */
+    private val loadState = LoadState()
     private var scrollOffset = 0
     private var hoveredRow = -1
     private val rowButtons = mutableListOf<NineSliceButton>()
@@ -201,6 +204,7 @@ class PointsCodeScreen : Screen(Text.translatable("cobblemarket.points.code.titl
 
     fun onPointCodes(payload: PointCodesPayload) {
         entries = payload.entries
+        loadState.markLoaded()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, entries.size - maxVisible()))
         // 列表内容换了（条数可能少了一大截）：拖动状态一并复位，否则还在拖的那只手会按旧几何
         // 把 scroll 又推到越界值（列表看着空了），见 [ScrollBar.cancel]
@@ -605,7 +609,7 @@ class PointsCodeScreen : Screen(Text.translatable("cobblemarket.points.code.titl
         if (entries.isEmpty()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.points.code.empty").formatted(Formatting.GRAY),
+                Text.translatable(loadState.emptyKey("cobblemarket.points.code.empty")).formatted(Formatting.GRAY),
                 cx, listStartY + 24, 0xAAAAAA
             )
         } else {

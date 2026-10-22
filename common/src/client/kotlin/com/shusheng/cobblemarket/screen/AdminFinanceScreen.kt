@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.activeCurrencyUnit
 import com.shusheng.cobblemarket.client.currencyUnitWidth
@@ -79,6 +80,12 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     private fun listStartY() = formRowY + if (currentTab in FORM_TABS) 24 else 4
 
     private var currentTab = 0
+    // 首包状态（五个页签各一份）：当前页签的首包没回来前显示「加载中…」
+    private val blockLoadState = LoadState()
+    private val cardLoadState = LoadState()
+    private val creditAdjustLoadState = LoadState()
+    private val changesLoadState = LoadState()
+    private val creditRankLoadState = LoadState()
     private val tabButtons = mutableListOf<NineSliceButton>()
 
     // ── 页签 0：禁止借款 ──
@@ -430,24 +437,28 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
 
     fun onLoanBlocks(payload: LoanBlockListPayload) {
         entries = payload.entries
+        blockLoadState.markLoaded()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, entries.size - maxVisible()))
         requestRowRebuild()
     }
 
     fun onCardHolders(payload: CardHolderListPayload) {
         cardEntries = payload.entries
+        cardLoadState.markLoaded()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, cardEntries.size - maxVisible()))
         requestRowRebuild()
     }
 
     fun onCreditRows(payload: CreditAdjustListPayload) {
         creditRows = payload.rows
+        creditAdjustLoadState.markLoaded()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, creditRows.size - maxVisible()))
         requestRowRebuild()
     }
 
     fun onCreditRank(payload: CreditRankPayload) {
         rankRows = payload.rows
+        creditRankLoadState.markLoaded()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, rankRows.size - maxVisible()))
         requestRowRebuild()
     }
@@ -957,6 +968,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
     /** 变更记录回包 → 行文本与悬停内容（**在这里算一次**，render 每帧只读） */
     fun onFinanceChanges(payload: FinanceChangesPayload) {
         changeLines = payload.rows.map { buildChangeLine(it) }
+        changesLoadState.markLoaded()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, changeLines.size - maxVisible()))
     }
 
@@ -1042,7 +1054,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         if (changeLines.isEmpty()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.finance.changes_empty").formatted(Formatting.GRAY),
+                Text.translatable(changesLoadState.emptyKey("cobblemarket.finance.changes_empty")).formatted(Formatting.GRAY),
                 centerX, listStartY() + 30, 0xFFFFFF
             )
             return
@@ -1085,7 +1097,9 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.translatable(
-                    if (showRank) "cobblemarket.finance.rank_empty" else "cobblemarket.finance.credit_empty"
+                    (if (showRank) creditRankLoadState else creditAdjustLoadState).emptyKey(
+                        if (showRank) "cobblemarket.finance.rank_empty" else "cobblemarket.finance.credit_empty"
+                    )
                 ).formatted(Formatting.GRAY),
                 centerX, listStartY() + 30, 0xFFFFFF
             )
@@ -1198,7 +1212,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         if (entries.isEmpty()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.finance.block_empty").formatted(Formatting.GRAY),
+                Text.translatable(blockLoadState.emptyKey("cobblemarket.finance.block_empty")).formatted(Formatting.GRAY),
                 centerX, listStartY() + 30, 0xFFFFFF
             )
             return
@@ -1236,7 +1250,7 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         if (cardEntries.isEmpty()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.card.manage_empty").formatted(Formatting.GRAY),
+                Text.translatable(cardLoadState.emptyKey("cobblemarket.card.manage_empty")).formatted(Formatting.GRAY),
                 centerX, listStartY() + 30, 0xFFFFFF
             )
             return

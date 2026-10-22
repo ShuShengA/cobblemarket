@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
@@ -55,6 +56,8 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
     private val iconSize = 20
 
     private var entries = listOf<AuctionEntry>()
+    /** 首包状态：回来前显示「加载中…」，回来后才允许显示「暂无拍卖」 */
+    private val loadState = LoadState()
     // 过滤结果缓存：数据/搜索变化时重建，render 每帧只读（避免每帧全量 filter）
     private var filteredCache = listOf<AuctionEntry>()
     // 带索引列表缓存（IndexedValue.index = entries 中的原始索引）：render 行循环每帧 entries.indexOf 是扫描热点，重建过滤缓存时同步构建
@@ -89,6 +92,8 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
     private fun onCurrencyClick() {
         // ⚠ 管理端**不拦开关**：管理员要能查看并下架存量的 RP 挂单
         setCurrency(if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS)
+        // 新币种是**另一份列表**：在新回包前重新显示「加载中…」（同 AuctionScreen）
+        loadState.reset()
         // 本地先按新币种过一遍（旧币种条目立刻消失），再向服务端要新币种的全量列表
         rebuildFiltered()
         sendToServer(RequestAuctionListPayload(currency.name))
@@ -356,6 +361,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         // 结算中条目保留到动画结束（照搬拍卖场），其余以服务端为准
         val settling = entries.filter { it.id in settlingUntil }
         entries = payload.entries + settling.filter { s -> payload.entries.none { it.id == s.id } }
+        loadState.markLoaded()
         rebuildFiltered()
         cacheIcons()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, entries.size - getMaxVisibleRows()))
@@ -565,7 +571,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
 
         if (filtered.isEmpty()) {
             context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.auction.empty").formatted(Formatting.GRAY),
+                Text.translatable(loadState.emptyKey("cobblemarket.auction.empty")).formatted(Formatting.GRAY),
                 centerX, startY + 30, 0xFFFFFF)
         }
 
