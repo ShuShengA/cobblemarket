@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.util.TextUtil
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
@@ -115,6 +116,8 @@ class BuyOrderScreen(
     private var currencyButton: NineSliceButton? = null
 
     private var entries = listOf<BuyOrderEntry>()
+    /** 首包状态：回来前显示「加载中…」，回来后才允许显示「暂无求购单」 */
+    private val loadState = LoadState()
     // 过滤结果缓存：数据/搜索变化时重建，render 每帧只读（避免每帧全量 filter+sort）
     private var displayCache = listOf<BuyOrderEntry>()
     // 带索引列表缓存（IndexedValue.index = entries 中的原始索引）：render 行循环每帧 entries.indexOf 是扫描热点，重建显示缓存时同步构建
@@ -671,6 +674,7 @@ class BuyOrderScreen(
 
     fun onBuyOrderList(payload: BuyOrderListDataPayload) {
         entries = payload.entries
+        loadState.markLoaded()
         rebuildDisplayList()
         cacheIcons()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayCount() - getMaxVisibleRows()))
@@ -1125,7 +1129,7 @@ class BuyOrderScreen(
 
         if (displayList.isEmpty()) {
             context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.buy_order.empty").formatted(Formatting.GRAY),
+                Text.translatable(loadState.emptyKey("cobblemarket.buy_order.empty")).formatted(Formatting.GRAY),
                 centerX, startY + 50, 0xFFFFFF)
         }
 

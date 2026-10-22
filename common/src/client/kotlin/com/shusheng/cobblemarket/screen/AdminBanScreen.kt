@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.market.BanState
@@ -75,6 +76,9 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     /** 弹窗是在**编辑**一笔已生效的封禁（不是新封）：提交走 `editBan`、标题也不同 */
     private var pendingIsEdit = false
     private var bans = listOf<BanEntry>()
+    /** 首包状态（两个 tab 各一份）：当前 tab 的首包没回来前显示「加载中…」 */
+    private val banListLoadState = LoadState()
+    private val banChangesLoadState = LoadState()
     private var scrollOffset = 0
     private var hoveredRow = -1
 
@@ -375,12 +379,14 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
 
     fun onBanList(payload: BanListDataPayload) {
         bans = payload.entries
+        banListLoadState.markLoaded()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, bans.size - maxVisible()))
         rebuildRowButtons()
     }
 
     fun onBanChanges(payload: BanChangesPayload) {
         changeLines = payload.rows.map { buildChangeLine(it) }
+        banChangesLoadState.markLoaded()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, changeLines.size - maxVisible()))
     }
 
@@ -553,7 +559,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
 
         if (bans.isEmpty()) {
             context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.ban.banlist_empty").formatted(Formatting.GRAY),
+                Text.translatable(banListLoadState.emptyKey("cobblemarket.ban.banlist_empty")).formatted(Formatting.GRAY),
                 centerX, listStartY() + 30, 0xFFFFFF)
             return
         }
@@ -664,7 +670,7 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
     private fun renderChangeList(context: DrawContext, centerX: Int, leftX: Int) {
         if (changeLines.isEmpty()) {
             context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.ban.changes_empty").formatted(Formatting.GRAY),
+                Text.translatable(banChangesLoadState.emptyKey("cobblemarket.ban.changes_empty")).formatted(Formatting.GRAY),
                 centerX, listStartY() + 30, 0xFFFFFF)
             return
         }

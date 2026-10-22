@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.amountUnitWidth
 import com.shusheng.cobblemarket.client.drawAmountWithUnit
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
@@ -30,7 +31,10 @@ class HistoryScreen(private val showAll: Boolean = false) :
 
     private val panelWidth = 296
     private var entries = listOf<HistoryEntry>()
-    private var loaded = false
+    /** 首包状态：回来前显示「加载中…」，回来后才允许显示「暂无交易历史」 */
+    private val loadState = LoadState()
+    /** 只发一次请求（init 会被 resize 反复调） */
+    private var requested = false
     private var scrollOffset = 0
     /** 鼠标当前悬停的行（-1 = 无）：行悬停态与悬停窗共用，每帧在 render 里重算 */
     private var hoveredRow = -1
@@ -73,9 +77,9 @@ class HistoryScreen(private val showAll: Boolean = false) :
             tooltip = Text.translatable("cobblemarket.gui.back")
         ))
 
-        if (!loaded) {
+        if (!requested) {
             sendToServer(RequestHistoryPayload(showAll))
-            loaded = true
+            requested = true
         }
     }
 
@@ -87,6 +91,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
 
     fun onHistoryData(payload: HistoryDataPayload) {
         entries = payload.entries
+        loadState.markLoaded()
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -110,9 +115,9 @@ class HistoryScreen(private val showAll: Boolean = false) :
 
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, entries.size - maxVisible))
 
-        if (entries.isEmpty() && loaded) {
+        if (entries.isEmpty()) {
             context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.history.empty").formatted(Formatting.GRAY),
+                Text.translatable(loadState.emptyKey("cobblemarket.history.empty")).formatted(Formatting.GRAY),
                 width / 2, startY + 20, 0xFFFFFF)
         }
 

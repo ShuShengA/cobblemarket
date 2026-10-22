@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
@@ -28,7 +29,8 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
     private val gap = 4
 
     private var items = listOf<ItemEntry>()
-    private var loaded = false
+    /** 首包状态：回来前显示「加载中…」，回来后才允许显示「没有待领取的物品」 */
+    private val loadState = LoadState()
     private var hoveredSlot = -1
     private var currentPage = 1
     private var totalPages = 1
@@ -154,7 +156,6 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
         addDrawableChild(nextButton)
 
         requestData()
-        loaded = true
     }
 
     private fun claimAll() {
@@ -176,7 +177,7 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
             else -> {}
         }
         updatePageButtons()
-        loaded = true
+        loadState.markLoaded()
         rebuildEntryCaches(payload.items)
     }
 
@@ -229,9 +230,9 @@ class ItemReturnScreen : Screen(Text.translatable("cobblemarket.return.title")) 
         val gridBottom = getGridStartY() + rows() * (slotSize + gap)
         drawPanelDivider(context, leftX + panelWidth / 2, gridBottom + 4)
 
-        if (items.isEmpty() && loaded) {
+        if (items.isEmpty()) {
             context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable("cobblemarket.return.empty").formatted(Formatting.GRAY),
+                Text.translatable(loadState.emptyKey("cobblemarket.return.empty")).formatted(Formatting.GRAY),
                 centerX, 100, 0xFFFFFF)
         }
 

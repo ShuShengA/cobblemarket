@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.ClientPermissionCache
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.currencyUnitWidth
@@ -80,6 +81,8 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
     private var hasBadDebt = false
     // 持有者面板数据（两张卡下方，所有人可见；进入时拉取，服务端变化时广播刷新）
     private var purpleBoardEntries = listOf<CardHolderBoardEntry>()
+    /** 首包状态：名单回来前显示「加载中…」，回来后才允许显示「暂无持卡人」 */
+    private val cardBoardLoadState = LoadState()
     private var purpleBoardMax = 0L
     private var blackBoardEntries = listOf<CardHolderBoardEntry>()
     private var blackBoardMax = 0L
@@ -245,6 +248,7 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
 
     /** 持有者面板快照（进入拉取/服务端广播刷新；滚动位置钳制到新名单长度） */
     fun onCardHolderBoard(payload: CardHolderBoardPayload) {
+        cardBoardLoadState.markLoaded()
         purpleBoardEntries = payload.purple
         purpleBoardMax = payload.purpleMax
         blackBoardEntries = payload.black
@@ -543,7 +547,10 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
             context.drawCenteredTextWithShadow(
                 textRenderer,
                 Text.literal(
-                    TextUtil.truncateString(Text.translatable("cobblemarket.card.manage_empty").string, panelW - 12)
+                    TextUtil.truncateString(
+                        Text.translatable(cardBoardLoadState.emptyKey("cobblemarket.card.manage_empty")).string,
+                        panelW - 12
+                    )
                 ).formatted(Formatting.GRAY),
                 panelX + panelW / 2, startY + 8, 0xFFFFFF
             )

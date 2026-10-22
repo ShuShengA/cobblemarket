@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.network.PlayerNameSuggestionsPayload
@@ -81,6 +82,10 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
 
     // ── 主列表状态（页签 1）──
     private var entries = listOf<PermissionListDataPayload.Entry>()
+    /** 首包状态（两个 tab 各一份）：当前 tab 的首包没回来前显示「加载中…」 */
+    private val grantsLoadState = LoadState()
+    private val auditLoadState = LoadState()
+    private fun currentLoadState() = if (currentTab == 0) grantsLoadState else auditLoadState
     // 过滤结果与行文本缓存：render 每帧只读 —— 节点短标签要查词条再拼接，
     // 每帧现算在全量列表上是可见的掉帧源（照 PriceLimitScreen 的 rebuildFiltered 思路）
     private var filtered = listOf<PermissionListDataPayload.Entry>()
@@ -324,6 +329,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
 
     fun onPermissionList(payload: PermissionListDataPayload) {
         entries = payload.entries
+        grantsLoadState.markLoaded()
         rebuildFiltered()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayCount() - maxVisible()))
         rebuildRowButtons()
@@ -357,6 +363,7 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
             }
             AuditLine(time, who, added, removed, remaining, tooltip)
         }
+        auditLoadState.markLoaded()
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayCount() - maxVisible()))
         rebuildRowButtons()
     }
@@ -692,7 +699,11 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
             val filteredOut = currentTab == 0 && entries.isNotEmpty() &&
                 !searchField?.text?.trim().isNullOrEmpty()
             val msg = if (filteredOut) Text.translatable("cobblemarket.perm.list_no_match")
-            else Text.translatable(if (currentTab == 0) "cobblemarket.perm.list_empty" else "cobblemarket.perm.audit_empty")
+            else Text.translatable(
+                currentLoadState().emptyKey(
+                    if (currentTab == 0) "cobblemarket.perm.list_empty" else "cobblemarket.perm.audit_empty"
+                )
+            )
             context.drawCenteredTextWithShadow(textRenderer, msg.formatted(Formatting.GRAY), centerX, startY + 30, 0xFFFFFF)
             return
         }

@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.ClientPermissionCache
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.client.activeCurrencyUnit
@@ -36,7 +37,10 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
     private var entries = listOf<LoanHistoryEntry>()
     /** 鼠标当前悬停的行（-1 = 无）：行悬停态与悬停窗共用（renderBackground 里算，render 里用） */
     private var hoveredRow = -1
-    private var loaded = false
+    /** 首包状态：回来前显示「加载中…」，回来后才允许显示「暂无借款历史」 */
+    private val loadState = LoadState()
+    /** 只发一次请求（init 会被 resize 反复调） */
+    private var requested = false
     private var scrollOffset = 0
     private val rowButtons = mutableListOf<NineSliceButton>()
 
@@ -71,9 +75,9 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
         rebuildTabButtons()
         rebuildRowButtons()
 
-        if (!loaded) {
+        if (!requested) {
             sendToServer(RequestLoanHistoryPayload(showAll))
-            loaded = true
+            requested = true
         }
     }
 
@@ -139,6 +143,7 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
 
     fun onLoanHistoryData(payload: LoanHistoryDataPayload) {
         entries = payload.entries
+        loadState.markLoaded()
         rebuildRowButtons()
     }
 
@@ -318,10 +323,10 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
 
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, displayEntries().size - maxVisible))
 
-        if (displayEntries().isEmpty() && loaded) {
+        if (displayEntries().isEmpty()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.loan_history.empty").formatted(Formatting.GRAY),
+                Text.translatable(loadState.emptyKey("cobblemarket.loan_history.empty")).formatted(Formatting.GRAY),
                 width / 2, startY + 20, 0xFFFFFF
             )
         }
