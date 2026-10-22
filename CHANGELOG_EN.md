@@ -15,7 +15,7 @@
 - **Opening / closing**: after `/market shop disable <id>` the NPC no longer opens the shop and the server rejects all purchases from it; offers and settings are kept, and `enable` restores it.
 - **No remote buying**: when buying from a custom shop the server re-checks that the player is still **within 8 blocks of a bound NPC** — walking away after opening the screen, or forging a purchase packet, will not work. ⚠ **This update changes network payloads — client and server must be upgraded together.**
 
-## 1.3.0 (in development, unreleased)
+## 1.3.0 (released)
 
 ### New Feature
 
