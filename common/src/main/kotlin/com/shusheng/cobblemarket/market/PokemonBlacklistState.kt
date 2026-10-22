@@ -202,7 +202,7 @@ class PokemonBlacklistState private constructor() : PersistentState() {
                                 htFilter = if (c.contains("htFilter")) c.getInt("htFilter") else PokemonBlacklistEntry.HT_ANY,
                                 // 旧格式无 variantAspects 键 → 空表 = **不限变体**（正是旧条目的语义：
                                 // 那时候压根没有变体这个维度）⇒ 不需要迁移分支，读不到就是对的
-                                // ⚠ 顺手**剔掉废止的哨兵**（[LEGACY_ALL_VARIANTS]）：1.3.0 未发布期间
+                                // ⚠ 顺手**剔掉废止的哨兵**（[LEGACY_ALL_VARIANTS]）：1.3.0 开发期间
                                 //   顶部「全部」开关会把它写在变体表里，而它在界面上既看不见也删不掉 ——
                                 //   留着它会把规则偷偷变成"要带变体才命中"。剔掉后按正常条目判（= 其余值生效）
                                 variantAspects = if (c.contains("variantAspects"))
