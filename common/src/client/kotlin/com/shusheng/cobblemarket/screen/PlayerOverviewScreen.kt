@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.OVERVIEW_ICON_W
 import com.shusheng.cobblemarket.client.PlayerOverviewCache
+import com.shusheng.cobblemarket.client.PointsStateCache
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
@@ -11,6 +12,7 @@ import com.shusheng.cobblemarket.client.lineIconY
 import com.shusheng.cobblemarket.client.lineTextY
 import com.shusheng.cobblemarket.client.noneValue
 import com.shusheng.cobblemarket.client.overviewLines
+import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.overview.PlayerOverviewRow
 import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
@@ -48,6 +50,8 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
     private enum class SortField(val key: String) {
         NAME("name"),
         BALANCE("balance"),
+        /** ⚠ RP 余额 —— 与主货币是**两套账本**；按钮文字用货币图标开头（界面里不出现「RP」字样） */
+        POINTS("points"),
         CREDIT("credit"),
         DEBT("debt"),
         DEPOSIT("deposit"),
@@ -119,7 +123,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         val fieldX = dirX - 4 - fieldBtnW
         sortFieldButton = addDrawableChild(NineSliceButton(
             fieldX, topY, fieldBtnW, 16,
-            Text.translatable("cobblemarket.overview.sort.${sortField.key}"),
+            sortFieldText(sortField),
             { toggleSortList() },
             tooltip = Text.translatable("cobblemarket.overview.sort_by_hint")
         ))
@@ -164,8 +168,26 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
      */
     private fun availableFields(): List<SortField> =
         SortField.entries.filter {
-            it != SortField.PCO || PlayerOverviewCache.rows.any { r -> r.pcoBalance != null }
+            when (it) {
+                SortField.PCO -> PlayerOverviewCache.rows.any { r -> r.pcoBalance != null }
+                // RP 总开关关着时不列（全员都是 0，排了也没意义）—— 与入口界面那行 RP 的显隐同源
+                SortField.POINTS -> PointsStateCache.enabled
+                else -> true
+            }
         }
+
+    /**
+     * 排序字段的显示文字。
+     * ⚠ RP 那一档**用货币图标开头**（项目规矩：界面里不出现「RP」文字）——
+     *   与主货币的「余额」同字，靠图标区分是两套账本。
+     */
+    private fun sortFieldText(f: SortField): Text =
+        if (f == SortField.POINTS)
+            Text.empty()
+                .append(CurrencyService.pointsIcon())
+                .append(" ")
+                .append(Text.translatable("cobblemarket.overview.sort.points"))
+        else Text.translatable("cobblemarket.overview.sort.${f.key}")
 
     private fun toggleSortList() {
         sortListOpen = !sortListOpen
@@ -180,7 +202,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         hoveredRow = -1
         scrollOffset = 0
         rebuildSortList()
-        sortFieldButton?.setMessage(Text.translatable("cobblemarket.overview.sort.${f.key}"))
+        sortFieldButton?.setMessage(sortFieldText(f))
     }
 
     /** 重建展开的字段列表（照 BlacklistScreen.rebuildFormList：每次全清全建） */
@@ -195,7 +217,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         fields.forEachIndexed { i, f ->
             val btn = NineSliceButton(
                 leftX + 120, topRowY + 18 + i * 14, 120, 14,
-                Text.translatable("cobblemarket.overview.sort.${f.key}"),
+                sortFieldText(f),
                 { selectSortField(f) }
             )
             // 选中项靠按钮自己的选中态（背景第三段），不在文字前加 ●
@@ -226,6 +248,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
     private fun sortNumeric(r: PlayerOverviewRow): Long? = when (sortField) {
         SortField.NAME -> null
         SortField.BALANCE -> r.balance
+        SortField.POINTS -> r.pointsBalance
         SortField.CREDIT -> r.creditLimit
         SortField.DEBT -> r.debt + r.debtInterest
         SortField.DEPOSIT -> r.depositPrincipal
@@ -241,6 +264,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
     private fun rowValueText(r: PlayerOverviewRow): Text? = when (sortField) {
         SortField.NAME -> null
         SortField.BALANCE -> Text.literal(r.balance?.let { formatPriceLong(it) } ?: noneValue())
+        SortField.POINTS -> Text.literal(formatPriceLong(r.pointsBalance))
         SortField.CREDIT -> Text.literal(formatPriceLong(r.creditLimit))
         SortField.DEBT -> Text.literal(formatPriceLong(r.debt + r.debtInterest))
         SortField.DEPOSIT -> Text.literal(formatPriceLong(r.depositPrincipal))
@@ -255,7 +279,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
 
     /** 行值那一列是不是金额（要在行尾补货币单位：物品货币时是那件物品的图标） */
     private fun rowValueIsMoney(): Boolean = when (sortField) {
-        SortField.BALANCE, SortField.CREDIT, SortField.DEBT, SortField.DEPOSIT,
+        SortField.BALANCE, SortField.POINTS, SortField.CREDIT, SortField.DEBT, SortField.DEPOSIT,
         SortField.INTEREST, SortField.VOLUME, SortField.PCO -> true
         else -> false
     }
@@ -316,6 +340,8 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
 
         val visible = rows.drop(scrollOffset).take(maxVisible)
         val isMoney = rowValueIsMoney()
+        // ⚠ 单位按**这一列自己的币种**：RP 列补 RP 图标，其余补主货币单位（两者绝不能混）
+        val isPoints = sortField == SortField.POINTS
         visible.forEachIndexed { i, r ->
             val y = startY + i * rowHeight
 
@@ -325,10 +351,10 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
 
             // 右侧：当前排序字段的值（右对齐行尾；排序字段是名字时这一格不画）
             val value = rowValueText(r) ?: return@forEachIndexed
-            val unitW = if (isMoney) currencyUnitWidth(textRenderer, false) else 0
+            val unitW = if (isMoney) currencyUnitWidth(textRenderer, isPoints) else 0
             val valueX = leftX + panelWidth - 5 - textRenderer.getWidth(value) - unitW
             val drawn = context.drawTextWithShadow(textRenderer, value, valueX, y + 8, 0x55FFFF)
-            if (isMoney) drawCurrencyUnit(context, textRenderer, false, drawn, y + 8, 0x55FFFF)
+            if (isMoney) drawCurrencyUnit(context, textRenderer, isPoints, drawn, y + 8, 0x55FFFF)
         }
 
         // 悬停窗 = 行的完整版（方案第二节那一整张表）
