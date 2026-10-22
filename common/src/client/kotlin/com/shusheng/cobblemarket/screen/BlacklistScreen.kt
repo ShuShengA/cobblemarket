@@ -373,7 +373,8 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
     private val iconData = mutableMapOf<Int, PokemonIconData>()
     private val iconSize = 20
 
-    private fun getListStartY() = 86
+    /** 顶栏底 78 → 分割线 84 → 列表首行 90（上下各 6px） */
+    private fun getListStartY() = 90
     private fun getMaxVisibleRows() = maxOf(0, (height - getListStartY() - 48) / rowHeight)
 
     override fun init() {
@@ -1694,8 +1695,8 @@ class BlacklistScreen : Screen(Text.translatable("cobblemarket.op.blacklist")) {
         }
 
         val startY = getListStartY()
-        // 分割线贴搜索行底部（y=66）：tab 行让出 2px 后搜索框在 50~66，线画 66~67 不重叠
-        drawPanelDivider(context, leftX + panelWidth / 2, startY - 2)
+        // 顶栏底 78 → 分割线 84 → 列表首行 90（上下各 6px）
+        drawPanelDivider(context, leftX + panelWidth / 2, startY - 6)
 
         if (displayCount() == 0) {
             context.drawCenteredTextWithShadow(textRenderer,
