@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.client
 
+import com.shusheng.cobblemarket.currency.MAIN_SHOP_ID
 import com.shusheng.cobblemarket.currency.ShopEntry
 import com.shusheng.cobblemarket.network.PointMarketItemsPayload
 
@@ -39,11 +40,32 @@ object PointMarketCache {
     var loaded: Boolean = false
         private set
 
+    /**
+     * 这份快照属于哪个商店（[MAIN_SHOP_ID] = 主商城）。
+     *
+     * ⚠ **界面必须比对它**：打开 A 店再打开 B 店时，A 店的迟到快照会落进同一个缓存 ——
+     * 不比对的话 B 店界面会拿 A 店的货去画（格子序号恰好对得上，看着像"商店串了"）。
+     */
+    var shopId: String = MAIN_SHOP_ID
+        private set
+
+    /**
+     * 当前界面正在看哪个商店（由 `PointsMarketScreen` 在 `init` / `removed` 里维护）。
+     *
+     * ⚠ 用来**丢掉迟到的旧商店快照**：从 A 店换到 B 店时，A 店的请求可能还在路上 ——
+     *   落进缓存会让 B 店界面先画出 A 店的货（格子序号恰好对得上，看着像"商店串了"）。
+     *   null = 没有商城界面开着，照常接收（下次界面打开时再按页请求）。
+     */
+    var viewingShopId: String? = null
+
     fun accept(payload: PointMarketItemsPayload) {
+        val viewing = viewingShopId
+        if (viewing != null && viewing != payload.shopId) return
         slots = payload.slots.associate { it.index to it.entry }
         page = payload.page
         totalPages = payload.totalPages
         kind = payload.kind
+        shopId = payload.shopId
         loaded = true
     }
 

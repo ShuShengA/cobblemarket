@@ -192,7 +192,7 @@ data class ShopItemSpec(
  *
  * ⚠ 只有 OP 能改（上架/编辑/下架），**不下放任何权限节点**（同 `points give` 的印钞权口径）。
  */
-class PointShopState private constructor() : PersistentState() {
+class PointShopState private constructor() : PersistentState(), ShopStore {
 
     /**
      * **种类 → (格子序号 → 商品)**。
@@ -205,21 +205,21 @@ class PointShopState private constructor() : PersistentState() {
 
     private fun slotsOf(kind: String): MutableMap<Int, ShopEntry> = slots.getOrPut(kind) { mutableMapOf() }
 
-    fun find(kind: String, index: Int): ShopEntry? = slots[kind]?.get(index)
+    override fun find(kind: String, index: Int): ShopEntry? = slots[kind]?.get(index)
 
     /** 某个种类下的全部已上架格子（序号 → 商品） */
-    fun all(kind: String): Map<Int, ShopEntry> = slots[kind] ?: emptyMap()
+    override fun all(kind: String): Map<Int, ShopEntry> = slots[kind] ?: emptyMap()
 
     fun size(kind: String): Int = slots[kind]?.size ?: 0
 
     /** 上架 / 覆盖某格（[kind] 由 [ShopEntry.kind] 决定，调用方已校验过两者一致） */
-    fun put(kind: String, index: Int, entry: ShopEntry) {
+    override fun put(kind: String, index: Int, entry: ShopEntry) {
         slotsOf(kind)[index] = entry
         markDirty()
     }
 
     /** 清空某格（服主"删除这个格子里的内容"）；返回是否真的删掉了 */
-    fun remove(kind: String, index: Int): Boolean {
+    override fun remove(kind: String, index: Int): Boolean {
         if (slots[kind]?.remove(index) == null) return false
         markDirty()
         return true
@@ -232,7 +232,7 @@ class PointShopState private constructor() : PersistentState() {
      * ⚠ 与扣款同一事务内调用：**先扣库存再加货/扣钱**，崩溃窗口最坏是少卖一份（可补），
      * 反过来则会超卖 —— 玩家付了钱却拿不到货，或者拿了货没付钱。
      */
-    fun consume(kind: String, index: Int, amount: Int = 1): Boolean {
+    override fun consume(kind: String, index: Int, amount: Int): Boolean {
         if (amount <= 0) return false
         val bucket = slots[kind] ?: return false
         val entry = bucket[index] ?: return false
@@ -244,27 +244,12 @@ class PointShopState private constructor() : PersistentState() {
     }
 
     /** 补货 / 改库存。`amount < 0` = 改成无限量 */
-    fun setStock(kind: String, index: Int, amount: Int): Boolean {
+    override fun setStock(kind: String, index: Int, amount: Int): Boolean {
         val bucket = slots[kind] ?: return false
         val entry = bucket[index] ?: return false
         bucket[index] = entry.copy(stock = amount)
         markDirty()
         return true
-    }
-
-    /**
-     * 某个种类的页数：按**该种类下最大已填序号**算，至少 1 页
-     *（一件没上架也有一页空位等着服主填）。
-     * 例：填了 0~31 → 2 页（第 2 页全空，供继续添加）；填了 0~32 → 仍是 2 页。
-     */
-    fun pageCount(kind: String): Int {
-        val maxIndex = slots[kind]?.keys?.maxOrNull() ?: return 1
-        // ⚠ **只按内容算**（"已填最大序号在第几页"）——**不给空页**。
-        //   客户端那边对**有编辑权限的人**再多显示一页（见 `PointsMarketScreen.totalPages`）：
-        //   他得能翻到空页去放货；普通玩家看到空页没意义，翻过去只能对着空白发呆
-        //   （2026-09-27 用户定的口径）。
-        //   ⚠ 服务端**没法**按人算：快照是**广播**给所有人的，只能客户端按自己的权限补。
-        return maxIndex / POINTS_SHOP_PAGE_SIZE + 1
     }
 
     override fun writeNbt(nbt: NbtCompound, registryLookup: RegistryWrapper.WrapperLookup): NbtCompound {
@@ -454,13 +439,13 @@ internal fun readShopEntryBody(c: NbtCompound): ShopEntry? {
 
 // ── NBT 字符串列表辅助（1.21 的 NbtCompound 没有 putStringList / getStringList）──
 
-private fun putStringList(nbt: NbtCompound, key: String, values: List<String>) {
+internal fun putStringList(nbt: NbtCompound, key: String, values: List<String>) {
     val list = NbtList()
     values.forEach { list.add(NbtString.of(it)) }
     nbt.put(key, list)
 }
 
-private fun readStringList(nbt: NbtCompound, key: String): List<String> {
+internal fun readStringList(nbt: NbtCompound, key: String): List<String> {
     if (!nbt.contains(key)) return emptyList()
     return nbt.getList(key, NbtElement.STRING_TYPE.toInt())
         .mapNotNull { (it as? NbtString)?.asString() }

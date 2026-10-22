@@ -294,6 +294,31 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         ))
         menuButtons += addDrawableChild(marketSwitchBtn!!)
 
+        // 自定义商店管理入口（2026-10-21 用户要求）：市场开关**右侧**第一颗。
+        // 右边界不动：市场开关右缘 + 8px = centerX + 19；它与「玩家总览」之间因此是 10px
+        //（不是左边那排统一的 8px）—— 右边三颗的右缘要贴红线 / 保持原位置，只能让这一处多 2px。
+        // 图标暂时复用市场按钮那张（36×36），用户以后给正式图时换 `iconLeft` 一行即可。
+        val customShopBtn = NineSliceButton(
+            centerX + iconSize / 2 + iconGap, iconY, iconSize, iconSize,
+            Text.literal(""),
+            { openIfPermitted(MarketPermissions.POINTS_SHOP) { client?.setScreen(CustomShopAdminScreen()) } },
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/market.png"),
+            iconTexW = 36, iconTexH = 36, iconScale = 0.5f,
+            texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
+        )
+        customShopBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(
+            Text.translatable("cobblemarket.op.custom_shops")
+                .append(Text.literal("\n"))
+                .append(
+                    Text.translatable(
+                        "cobblemarket.perm.need_node",
+                        Text.translatable("cobblemarket.perm.node.points.shop", CurrencyService.pointsIcon())
+                    )
+                )
+        ))
+        menuButtons += addDrawableChild(customShopBtn)
+        permRefreshers += { customShopBtn.dimmed = !ClientPermissionCache.has(MarketPermissions.POINTS_SHOP) }
+
         // 玩家总览入口（2026-10-16）：在「服务器配置」**左侧**（用户 2026-10-15 定）。
         // ⚠ 它与旁边两颗的判据不同：**不看服主身份**，有 overview 节点就能进
         //   （`canManage` 认「有任何节点」，所以节点持有人本来就进得来管理面板）。

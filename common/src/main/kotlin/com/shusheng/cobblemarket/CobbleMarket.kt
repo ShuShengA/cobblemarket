@@ -75,6 +75,10 @@ object CobbleMarket {
 		PointsNetwork.register()
 		// RP 商城（商品区）：与 RP 充值那条线分开的一套包（商城是服主上架、玩家用 RP 买）
 		PointMarketNetwork.register()
+		// 自定义（NPC）商店：右键绑定过的实体 → 打开对应商店（并取消实体自己的交互）
+		com.shusheng.cobblemarket.currency.CustomShopInteraction.register()
+		// 自定义商店管理界面（列表 / 创建 / 绑定 / 改名 / 类型 / 开关 / 删除）
+		com.shusheng.cobblemarket.network.CustomShopAdminNetwork.register()
 		// 上架通知（1.2.2 新增，上浮时与本线独有的 RP 那几行并存）
 		MarketNoticeNetwork.register()
 		// 市场 ID 卡背景图（可替换贴图：服务端读配置目录 → 下发字节 → 客户端动态纹理）

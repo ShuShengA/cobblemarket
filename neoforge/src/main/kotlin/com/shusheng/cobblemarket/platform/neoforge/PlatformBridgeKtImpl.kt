@@ -119,6 +119,38 @@ fun onPlayerDisconnect(handler: (player: ServerPlayerEntity) -> Unit) {
     }
 }
 
+/**
+ * 右键实体（服务端）：handler 返回 true ⇒ 取消事件并回 SUCCESS，实体自己的交互不再执行。
+ *
+ * ⚠ 两个事件都要接：
+ * - `EntityInteractSpecific`（interactAt）—— 有些 NPC 模组把"打开对话"写在这里；
+ *   只接 `EntityInteract` 的话会被它抢先（那也是 NeoForge 的**推荐**写法）。
+ * - `EntityInteract`（interact）—— 普通实体交互。
+ * 两者都返回 SUCCESS 时 NeoForge 只算一次（Specific 成功后不再发 EntityInteract）。
+ */
+fun onUseEntity(handler: (player: ServerPlayerEntity, entity: net.minecraft.entity.Entity) -> Boolean) {
+    NeoForge.EVENT_BUS.addListener(
+        net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.EntityInteractSpecific::class.java
+    ) { event ->
+        if (event.hand != net.minecraft.util.Hand.MAIN_HAND) return@addListener
+        val player = event.entity as? ServerPlayerEntity ?: return@addListener
+        if (handler(player, event.target)) {
+            event.isCanceled = true
+            event.cancellationResult = net.minecraft.util.ActionResult.SUCCESS
+        }
+    }
+    NeoForge.EVENT_BUS.addListener(
+        net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.EntityInteract::class.java
+    ) { event ->
+        if (event.hand != net.minecraft.util.Hand.MAIN_HAND) return@addListener
+        val player = event.entity as? ServerPlayerEntity ?: return@addListener
+        if (handler(player, event.target)) {
+            event.isCanceled = true
+            event.cancellationResult = net.minecraft.util.ActionResult.SUCCESS
+        }
+    }
+}
+
 // ── 服务端数据包重载监听 ──
 
 fun registerServerDataReload(

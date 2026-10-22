@@ -91,6 +91,22 @@ fun registerItems(items: List<Pair<net.minecraft.util.Identifier, () -> net.mine
 @ExpectPlatform
 fun onPlayerDisconnect(handler: (player: ServerPlayerEntity) -> Unit): Unit = throw AssertionError()
 
+/**
+ * **服务端「玩家右键实体」回调** —— 返回 `true` = 这次交互已被我们处理（取消实体的默认交互）。
+ *
+ * 用途：自定义商店绑定 NPC 后，右键 NPC 打开本模组的商城界面，**不让 NPC 自己再弹对话 / 交易**。
+ *
+ * ⚠ 回调在**双端**都会收到（Fabric 的 UseEntityCallback 与 NeoForge 的 PlayerInteractEvent 都是），
+ *   handler 里必须自己判 `player is ServerPlayerEntity` —— 这里不做过滤，
+ *   因为平台侧的过滤方式不同（NeoForge 走事件、Fabric 走回调值）。
+ * ⚠ 只处理**主手**：副手右键同一次交互会各来一遍，不过滤会打开两次界面。
+ * ⚠ 实现侧都只拦「普通右键（interact）」；Fabric 没有 `interactAt` 的标准回调
+ *   （NeoForge 两个事件都接）—— 普通 NPC 模组走的是 interact，够用。
+ */
+@ExpectPlatform
+fun onUseEntity(handler: (player: ServerPlayerEntity, entity: net.minecraft.entity.Entity) -> Boolean): Unit =
+    throw AssertionError()
+
 // ── 服务端数据包重载监听 ──
 
 /**

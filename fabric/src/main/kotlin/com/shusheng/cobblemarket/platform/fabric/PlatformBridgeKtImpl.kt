@@ -103,6 +103,17 @@ fun onPlayerDisconnect(handler: (player: ServerPlayerEntity) -> Unit) {
     }
 }
 
+/** 右键实体（服务端）：handler 返回 true ⇒ 返回 SUCCESS，实体自己的 interact 不再执行 */
+fun onUseEntity(handler: (player: ServerPlayerEntity, entity: net.minecraft.entity.Entity) -> Boolean) {
+    net.fabricmc.fabric.api.event.player.UseEntityCallback.EVENT.register { player, _, hand, entity, _ ->
+        // 只认主手：副手那一下也走同一个回调，不过滤会开两次界面
+        if (hand != net.minecraft.util.Hand.MAIN_HAND) return@register net.minecraft.util.ActionResult.PASS
+        val serverPlayer = player as? ServerPlayerEntity ?: return@register net.minecraft.util.ActionResult.PASS
+        if (handler(serverPlayer, entity)) net.minecraft.util.ActionResult.SUCCESS
+        else net.minecraft.util.ActionResult.PASS
+    }
+}
+
 // ── 服务端数据包重载监听 ──
 
 fun registerServerDataReload(

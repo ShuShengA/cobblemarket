@@ -23,6 +23,8 @@ import com.shusheng.cobblemarket.client.playButtonClickSound
 import com.shusheng.cobblemarket.network.UpdatePointMarketStockPayload
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.CustomShopType
+import com.shusheng.cobblemarket.currency.MAIN_SHOP_ID
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.PointMarketService
 import com.shusheng.cobblemarket.currency.PointShopState
@@ -77,9 +79,48 @@ import kotlin.math.roundToInt
  * 背景渲染（方案 2026-09-17 拍板）：`points_market_background.png` **等比缩放 + 居中 + 四周留 4%**。
  * ⚠ **不用九宫格**：四条边的中段都有红色装饰条，九宫格拉伸会把它们拉长变形（越宽的屏拉得越长）。
  */
-class PointsMarketScreen : Screen(
-    Text.translatable("cobblemarket.points.market.title", CurrencyService.pointsTitleIcon())
+class PointsMarketScreen(
+    /**
+     * 哪个商店：[MAIN_SHOP_ID] = 从入口界面进来的主 RP 商城；其余 = 自定义（NPC）商店 id。
+     *
+     * ⚠ 同一个界面同时服务两种商店：只有顶部兑换区与返回目标不同（见 [isCustomShop]），
+     * 商品区 / 购买窗 / 编辑窗**完全共用** —— 别为自定义商店另抄一份界面。
+     */
+    val shopId: String = MAIN_SHOP_ID,
+    /** 自定义商店的显示名（主商城留空；标题见 [drawMarketDecor]） */
+    private val customShopName: String = "",
+    /** 自定义商店出售什么：`pokemon` / `item` / `both`（主商城恒 both，见 [CustomShopType]） */
+    shopType: String = CustomShopType.BOTH.id,
+    /** 从管理界面打开的：返回按钮回管理界面，而不是回游戏 */
+    private val returnToAdmin: Boolean = false
+) : Screen(
+    if (shopId == MAIN_SHOP_ID)
+        Text.translatable("cobblemarket.points.market.title", CurrencyService.pointsTitleIcon())
+    else Text.literal(customShopName.ifEmpty { shopId })
 ) {
+
+    /** 是不是自定义（NPC）商店 —— 顶部兑换区显隐、返回目标都用它 */
+    private val isCustomShop: Boolean get() = shopId != MAIN_SHOP_ID
+
+    /**
+     * 单类型商店**只显示那一类**的网格（不建 tab 按钮）。
+     * null = 双 tab（主商城 / `both` 自定义商店）。
+     *
+     * ⚠ [shopType] 由打开包带下来；类型命令改了之后需要重新打开界面（服务端另有闸门，
+     *   旧界面就算还留着另一类的格子也买不了 / 存不进去）。
+     */
+    private val fixedKind: String? = if (isCustomShop) when (CustomShopType.fromId(shopType)) {
+        CustomShopType.POKEMON -> ShopEntry.KIND_POKEMON
+        CustomShopType.ITEM -> ShopEntry.KIND_ITEM
+        CustomShopType.BOTH -> null
+    } else null
+
+    init {
+        // 自定义商店**每次打开都强制拉一次**新快照（只在新实例上做，resize 重建不会清）：
+        // 缓存是进程级的，重连服务器 / 服务器重启后可能还留着旧店的数据；
+        // 主商城保持原有行为（它一直是这个缓存口径，不在这次改动范围内）。
+        if (isCustomShop) PointMarketCache.clear()
+    }
 
     private var codeField: TextFieldWidget? = null
     /** 输入框内容：界面 resize 会重建控件，靠它把玩家已经敲进去的码恢复回来 */
@@ -155,6 +196,30 @@ class PointsMarketScreen : Screen(
 
     /** 动画进行中 —— 窗口内的**控件**要藏起来、**内容**先不画（见 [updateDialogAnimControls]） */
     private fun dialogAnimActive(): Boolean = dialogAnimStart != 0L && dialogAnimRaw() < 1f
+
+    // ── 自定义商店的「打开动画」：从鼠标位置放大（2026-10-20 用户要求）──
+    // 只作用于自定义商店（右键 NPC / `/market shop open`），主商城保持原来的直接出现。
+    // 起点取**首帧的鼠标坐标** —— 玩家右键 NPC 时鼠标就在点击位置，界面下一帧才画，
+    // 中间不会有真实移动；比在 S2C handler 里换算窗口像素更省事，也天然跟着 GUI scale 走。
+
+    /** 打开动画是否已经开始（一个界面实例只播一次；resize 重跑 [init] 不重播） */
+    private var openAnimStarted = false
+    private var openAnimStart = 0L
+    private var openAnimOriginX = 0f
+    private var openAnimOriginY = 0f
+    private var openAnimOriginCaptured = false
+
+    /** 动画时长（ms）—— 比弹窗的 200ms 稍长一点，整屏缩放看得清 */
+    private val openAnimMs = 220L
+
+    /** 起手缩放（相对最终背景）—— 640×360 下约 37×21，从鼠标位置的一小块长到全屏 */
+    private val openAnimStartScale = 0.06f
+
+    private fun openAnimRaw(): Float =
+        ((System.currentTimeMillis() - openAnimStart).toFloat() / openAnimMs).coerceIn(0f, 1f)
+
+    private fun openAnimActive(): Boolean =
+        isCustomShop && openAnimStarted && openAnimRaw() < 1f
 
     /**
      * 窗口**内容**的淡入 alpha：动画前 70% 全透明、后 30% 渐显到 1。
@@ -1055,25 +1120,42 @@ class PointsMarketScreen : Screen(
 
     override fun init() {
         super.init()
+        // 告诉缓存"现在在看哪个商店" —— 迟到的旧商店快照会被丢掉（见 PointMarketCache.viewingShopId）
+        PointMarketCache.viewingShopId = shopId
+        // 换店时先把上一个商店的格子清掉：不清的话在新快照到达前会拿旧店数据画一帧
+        if (PointMarketCache.shopId != shopId) PointMarketCache.clear()
+        // 打开动画只在**界面实例第一次 init** 时启动；resize 会重跑 init，别让动画重播
+        if (isCustomShop && !openAnimStarted) {
+            openAnimStarted = true
+            openAnimStart = System.currentTimeMillis()
+        }
         val bg = bgRect()
         val inset = borderInset()
         val cx = bg.x + bg.w / 2
 
         // 返回按钮：**底部居中**，底边距背景底 BACK_BOTTOM（原图口径）
+        // ⚠ 自定义商店没有"入口界面"这一层：返回直接回游戏（用户 2026-10-20 拍板）
         backButton = NineSliceButton(
             cx - BACK_W / 2, backButtonY(bg), BACK_W, BACK_H,
             Text.literal(""),
-            { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) },
+            {
+                when {
+                    !isCustomShop -> client?.setScreen(MarketEntryScreen(skipDropAnim = true))
+                    returnToAdmin -> client?.setScreen(CustomShopAdminScreen())
+                    else -> client?.setScreen(null)
+                }
+            },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
         addDrawableChild(backButton)
 
-        // 兑换区：**内容区左上角**（不占中部的商品区；没有小标题，输入框本身就是说明）
+        // 兑换区：**主商城独有**。兑换码 / 购买 RP / 兑换记录都属于「买 RP」那条线，
+        // 摆在 NPC 店里既没用也误导（用户 2026-10-20 拍板：只留商品区）。
         // 商城快照（档位 / 有没有收款码）决定右上角那个入口显不显示；没请求过就请求一次
         //（init 会被 resize 反复调用，用标志挡住重复请求）
-        if (!shopInfoRequested) {
+        if (!isCustomShop && !shopInfoRequested) {
             sendToServer(RequestPointsShopPayload(true))
             shopInfoRequested = true
         }
@@ -1081,89 +1163,98 @@ class PointsMarketScreen : Screen(
         val rowY = redeemRowY(bg)
         val fieldX = bg.x + inset
         val buyBtnX = bg.x + bg.w - inset - BUY_ENTRY_W
-        // ⚠ 兑换行要挤下**四组**东西（输入框 / 兑换 / 双 tab / 购买），而背景是等比缩放、
-        //   控件是固定逻辑像素 —— GUI scale 调大时逻辑分辨率变小（1080p 用 Auto 时只有 640×360，
-        //   scale 更大时 480×270），背景缩了控件没缩就会挤成一团。
-        //   所以输入框宽度按**剩余空间**算，压到下限为止。
         val tabGroupW = TAB_W * 2 + TAB_GAP
-        val rowNeed = REDEEM_BUTTON_W + ROW_GAP + tabGroupW + ROW_GAP + RECORD_ENTRY_W +
-            ROW_GAP + BUY_ENTRY_W + ROW_GAP * 2
-        val fieldW = minOf(REDEEM_FIELD_W, bg.w - 2 * inset - rowNeed).coerceAtLeast(MIN_REDEEM_FIELD_W)
+        val tabLeftX: Int
+        if (isCustomShop) {
+            // 自定义商店的顶部只剩两个 tab —— 在整条可用区域里居中（不再给兑换行让位）
+            tabLeftX = cx - tabGroupW / 2
+        } else {
+            // ⚠ 兑换行要挤下**四组**东西（输入框 / 兑换 / 双 tab / 购买），而背景是等比缩放、
+            //   控件是固定逻辑像素 —— GUI scale 调大时逻辑分辨率变小（1080p 用 Auto 时只有 640×360，
+            //   scale 更大时 480×270），背景缩了控件没缩就会挤成一团。
+            //   所以输入框宽度按**剩余空间**算，压到下限为止。
+            val rowNeed = REDEEM_BUTTON_W + ROW_GAP + tabGroupW + ROW_GAP + RECORD_ENTRY_W +
+                ROW_GAP + BUY_ENTRY_W + ROW_GAP * 2
+            val fieldW = minOf(REDEEM_FIELD_W, bg.w - 2 * inset - rowNeed).coerceAtLeast(MIN_REDEEM_FIELD_W)
 
-        // 兑换码输入框（重建后恢复输入；上限按外部码带分隔符的 39 字符留余量）
-        codeField = TextFieldWidget(textRenderer, fieldX, rowY, fieldW, ROW_H, Text.literal(""))
-        codeField?.setMaxLength(MAX_CODE_INPUT)
-        // ⚠ 占位提示**按输入框实际宽度挑**：原版画 placeholder **不做截断也不裁剪**，
-        //   GUI scale 自动那一档输入框只有 24px 宽，长的「输入兑换码」会一路画到右边的
-        //   「兑换」按钮上（2026-09-19 用户实测）。两条都放不下就干脆不显示 —— 那种宽度下
-        //   任何字样都会溢出去（按钮本身就说明了这里是干什么的）。
-        codeField?.setPlaceholder(
-            listOf(
-                "cobblemarket.points.market.code_hint",
-                "cobblemarket.points.market.code_hint_short"
-            ).asSequence()
-                .map { Text.translatable(it) }
-                .firstOrNull { textRenderer.getWidth(it) <= fieldW - 8 }   // 8 = 左右各 4px 内边距
-        )
-        codeField?.setChangedListener { pendingCodeText = it }
-        codeField?.text = pendingCodeText
-        addSelectableChild(codeField)
-        addDrawableChild(codeField)
+            // 兑换码输入框（重建后恢复输入；上限按外部码带分隔符的 39 字符留余量）
+            codeField = TextFieldWidget(textRenderer, fieldX, rowY, fieldW, ROW_H, Text.literal(""))
+            codeField?.setMaxLength(MAX_CODE_INPUT)
+            // ⚠ 占位提示**按输入框实际宽度挑**：原版画 placeholder **不做截断也不裁剪**，
+            //   GUI scale 自动那一档输入框只有 24px 宽，长的「输入兑换码」会一路画到右边的
+            //   「兑换」按钮上（2026-09-19 用户实测）。两条都放不下就干脆不显示 —— 那种宽度下
+            //   任何字样都会溢出去（按钮本身就说明了这里是干什么的）。
+            codeField?.setPlaceholder(
+                listOf(
+                    "cobblemarket.points.market.code_hint",
+                    "cobblemarket.points.market.code_hint_short"
+                ).asSequence()
+                    .map { Text.translatable(it) }
+                    .firstOrNull { textRenderer.getWidth(it) <= fieldW - 8 }   // 8 = 左右各 4px 内边距
+            )
+            codeField?.setChangedListener { pendingCodeText = it }
+            codeField?.text = pendingCodeText
+            addSelectableChild(codeField)
+            addDrawableChild(codeField)
 
-        // 兑换按钮：输入框右侧 4px（按钮间距规则）
-        redeemButton = NineSliceButton(
-            fieldX + fieldW + ROW_GAP, rowY, REDEEM_BUTTON_W, ROW_H,
-            Text.translatable("cobblemarket.points.market.redeem_button"),
-            { doRedeem() }
-        )
-        addDrawableChild(redeemButton)
+            // 兑换按钮：输入框右侧 4px（按钮间距规则）
+            redeemButton = NineSliceButton(
+                fieldX + fieldW + ROW_GAP, rowY, REDEEM_BUTTON_W, ROW_H,
+                Text.translatable("cobblemarket.points.market.redeem_button"),
+                { doRedeem() }
+            )
+            addDrawableChild(redeemButton)
 
-        // 「购买 RP」入口：**与左边的兑换码输入框左右对称**（离各自一侧边框的距离都是 inset、
-        // 同一水平线）—— 用户 2026-09-18 指出原来放在标题那一行"太右上"。
-        // 只判档位、**不判收款码**：没配收款码时入口照样给，点进去弹窗里会提示缺什么（藏起来
-        // 会让服主以为功能坏了）。按钮**总是建出来、靠 visible 开关**：快照到达时只改一个标志，
-        // 重建整个界面会清掉玩家已经敲进兑换框的内容。
-        val buyBtn = NineSliceButton(
-            buyBtnX, rowY,
-            BUY_ENTRY_W, ROW_H,
-            Text.translatable("cobblemarket.points.recharge.entry", CurrencyService.pointsIcon()),
-            { client?.setScreen(PointsRechargeScreen()) }
-        )
-        buyBtn.visible = PointsShopCache.tiers.isNotEmpty()
-        buyEntryButton = buyBtn
-        addDrawableChild(buyBtn)
+            // 「购买 RP」入口：**与左边的兑换码输入框左右对称**（离各自一侧边框的距离都是 inset、
+            // 同一水平线）—— 用户 2026-09-18 指出原来放在标题那一行"太右上"。
+            // 只判档位、**不判收款码**：没配收款码时入口照样给，点进去弹窗里会提示缺什么（藏起来
+            // 会让服主以为功能坏了）。按钮**总是建出来、靠 visible 开关**：快照到达时只改一个标志，
+            // 重建整个界面会清掉玩家已经敲进兑换框的内容。
+            val buyBtn = NineSliceButton(
+                buyBtnX, rowY,
+                BUY_ENTRY_W, ROW_H,
+                Text.translatable("cobblemarket.points.recharge.entry", CurrencyService.pointsIcon()),
+                { client?.setScreen(PointsRechargeScreen()) }
+            )
+            buyBtn.visible = PointsShopCache.tiers.isNotEmpty()
+            buyEntryButton = buyBtn
+            addDrawableChild(buyBtn)
 
-        // 「兑换记录」按钮（用户 2026-09-19 定）：**放在「购买 RP」左侧**；购买入口不可见时
-        // （没配档位）**顶上它的位置**。与购买入口同理**总是建出来、只改 x/visible** ——
-        // 重建界面会清掉玩家已经敲进兑换框的内容。
-        val recordBtn = NineSliceButton(
-            buyBtnX - ROW_GAP - RECORD_ENTRY_W, rowY, RECORD_ENTRY_W, ROW_H,
-            Text.translatable("cobblemarket.points.market.record_entry"),
-            { client?.setScreen(PointsRecordScreen()) }
-        )
-        recordButton = recordBtn
-        addDrawableChild(recordBtn)
-        layoutRecordButton()
+            // 「兑换记录」按钮（用户 2026-09-19 定）：**放在「购买 RP」左侧**；购买入口不可见时
+            // （没配档位）**顶上它的位置**。与购买入口同理**总是建出来、只改 x/visible** ——
+            // 重建界面会清掉玩家已经敲进兑换框的内容。
+            val recordBtn = NineSliceButton(
+                buyBtnX - ROW_GAP - RECORD_ENTRY_W, rowY, RECORD_ENTRY_W, ROW_H,
+                Text.translatable("cobblemarket.points.market.record_entry"),
+                { client?.setScreen(PointsRecordScreen()) }
+            )
+            recordButton = recordBtn
+            addDrawableChild(recordBtn)
+            layoutRecordButton()
 
-        // 精灵 / 物品 tab：与兑换行同一水平线，**在「兑换按钮右侧 ~ 购买按钮左侧」这段空档里居中**
-        // （用户 2026-09-18 定的是"居中"，但死盯背景正中在小分辨率下会压到左边的兑换按钮上 ——
-        //  改成居中于剩余空间后，大分辨率下位置与原来一致，小分辨率下自动让位）
-        val tabMinLeft = fieldX + fieldW + ROW_GAP + REDEEM_BUTTON_W + ROW_GAP
-        // 右边界要给**两个**按钮让位（购买 RP + 它左侧的兑换记录），各自按自己的宽度算
-        val tabMaxLeft = buyBtnX - ROW_GAP - RECORD_ENTRY_W - ROW_GAP - tabGroupW
-        val tabLeftX =
-            if (tabMinLeft <= tabMaxLeft) (cx - tabGroupW / 2).coerceIn(tabMinLeft, tabMaxLeft)
-            // 兜底：极端小分辨率下这一行真的挤不下（按钮都已按文字宽度收到最小），
-            // 只能让 tab 紧跟兑换按钮 —— 此时它会压到「兑换记录」上，属于「看得见但挤」，
-            // 再往下就是字都看不清了，不如保持这个下限。
-            else tabMinLeft
-        pokemonTabButton = NineSliceButton(tabLeftX, rowY, TAB_W, TAB_H, Text.literal(""), { switchTab(0) })
-        itemTabButton = NineSliceButton(
-            tabLeftX + TAB_W + TAB_GAP, rowY, TAB_W, TAB_H, Text.literal(""), { switchTab(1) }
-        )
-        addDrawableChild(pokemonTabButton)
-        addDrawableChild(itemTabButton)
-        updateTabButtons()
+            // 精灵 / 物品 tab：与兑换行同一水平线，**在「兑换按钮右侧 ~ 购买按钮左侧」这段空档里居中**
+            // （用户 2026-09-18 定的是"居中"，但死盯背景正中在小分辨率下会压到左边的兑换按钮上 ——
+            //  改成居中于剩余空间后，大分辨率下位置与原来一致，小分辨率下自动让位）
+            val tabMinLeft = fieldX + fieldW + ROW_GAP + REDEEM_BUTTON_W + ROW_GAP
+            // 右边界要给**两个**按钮让位（购买 RP + 它左侧的兑换记录），各自按自己的宽度算
+            val tabMaxLeft = buyBtnX - ROW_GAP - RECORD_ENTRY_W - ROW_GAP - tabGroupW
+            tabLeftX =
+                if (tabMinLeft <= tabMaxLeft) (cx - tabGroupW / 2).coerceIn(tabMinLeft, tabMaxLeft)
+                // 兜底：极端小分辨率下这一行真的挤不下（按钮都已按文字宽度收到最小），
+                // 只能让 tab 紧跟兑换按钮 —— 此时它会压到「兑换记录」上，属于「看得见但挤」，
+                // 再往下就是字都看不清了，不如保持这个下限。
+                else tabMinLeft
+        }
+        // 单类型商店没有 tab：直接是那一类的网格（2026-10-20 用户要求）
+        if (fixedKind == null) {
+            pokemonTabButton = NineSliceButton(tabLeftX, rowY, TAB_W, TAB_H, Text.literal(""), { switchTab(0) })
+            itemTabButton = NineSliceButton(
+                tabLeftX + TAB_W + TAB_GAP, rowY, TAB_W, TAB_H, Text.literal(""), { switchTab(1) }
+            )
+            addDrawableChild(pokemonTabButton)
+            addDrawableChild(itemTabButton)
+            updateTabButtons()
+        }
 
         // 翻页按钮：与返回按钮同一行。**三个按钮按背景宽度三等分、各自在所属等分里居中**
         // （用户 2026-09-18）—— 返回按钮因此仍在正中间，位置不变
@@ -1250,6 +1341,8 @@ class PointsMarketScreen : Screen(
      * 先记「点之前焦点在不在输入框」再交给 super —— 让点击先落到控件上（点输入框内部不能误清）。
      */
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        // 打开动画播放中：控件还没画出来，别让这一下点到网格 / 按钮上
+        if (openAnimActive()) return true
         // 窗口开着：事件**只给窗口**（格子与主界面一律不响应；下层控件已 visible=false）
         if (editSlot >= 0) return handleEditDialogClick(mouseX, mouseY, button)
         if (buySlot >= 0) return handleBuyDialogClick(mouseX, mouseY, button)
@@ -1438,6 +1531,8 @@ class PointsMarketScreen : Screen(
     override fun mouseScrolled(
         mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double
     ): Boolean {
+        // 打开动画播放中：还没有可滚的内容
+        if (openAnimActive()) return true
         // 快照列表：滚轮翻（最多 64 条，一屏放不下）
         if (snapshotDialog) {
             val max = snapshotMaxScroll()
@@ -1558,22 +1653,25 @@ class PointsMarketScreen : Screen(
         //   缓存里留着**另一个 tab** 的快照时会被当成"已经加载好了"，于是一个包都不发、网格空着
         //  （2026-09-26 用户报：切过 tab 再进商城，精灵网格是空的，再切一次 tab 才出来）。
         //   ⚠ `PointMarketCache.kind` 这个字段本来就是为此存的，之前只写不读。
+        // ⚠ **还要判商店**：缓存是全局一份，A 店与 B 店的页号 / tab 可能恰好相同 ——
+        //   只比页号与 tab 会把「B 店的快照还没来」误判成「已经加载好了」，于是一个包都不发、网格空着
         if (PointMarketCache.loaded && PointMarketCache.page == wantPage &&
-            PointMarketCache.kind == currentKind()
+            PointMarketCache.kind == currentKind() && PointMarketCache.shopId == shopId
         ) return
         val now = System.currentTimeMillis()
         if (now - lastPageRequestAt < PAGE_REQUEST_INTERVAL_MS) return
         lastPageRequestAt = now
-        sendToServer(RequestPointMarketPayload(wantPage, currentKind()))
+        sendToServer(RequestPointMarketPayload(wantPage, currentKind(), shopId))
     }
 
     // ── 商品区：tab / 翻页 / 网格几何 ──
 
     /**
-     * 当前 tab 对应的商品种类 —— **tab 与 kind 的唯一换算处**（别在别处再写一遍）
+     * 当前界面在看的商品种类 —— **界面与 kind 的唯一换算处**（别在别处再写一遍）。
+     * 单类型商店直接返回固定种类（没有 tab，currentTab 无意义）。
      */
     private fun currentKind(): String =
-        if (currentTab == 0) ShopEntry.KIND_POKEMON else ShopEntry.KIND_ITEM
+        fixedKind ?: if (currentTab == 0) ShopEntry.KIND_POKEMON else ShopEntry.KIND_ITEM
 
     private fun switchTab(tab: Int) {
         if (currentTab == tab) return
@@ -1584,7 +1682,7 @@ class PointsMarketScreen : Screen(
         // ⚠ 清缓存 + **重新请求**：精灵与物品各占一套独立的格子编号（2026-09-25 起 tab 是真过滤），
         //   不清的话新快照到达前会拿上一个 tab 的数据画，格子序号还恰好对得上、看着像"没切过去"
         PointMarketCache.clear()
-        sendToServer(RequestPointMarketPayload(currentPage - 1, currentKind()))
+        sendToServer(RequestPointMarketPayload(currentPage - 1, currentKind(), shopId))
     }
 
     private fun updateTabButtons() {
@@ -1998,7 +2096,9 @@ class PointsMarketScreen : Screen(
         return top >= viewTop - 1 && top + EDIT_ROW_H <= viewTop + editScrollViewHeight() + 1
     }
 
-    private fun isPokemonSlot(): Boolean = currentTab == 0
+    // ⚠ 跟 [currentKind] 走，不要再直接看 currentTab —— 单类型商店的 currentTab 恒为 0，
+    //   只卖物品的店会因此把编辑窗开成精灵规格
+    private fun isPokemonSlot(): Boolean = currentKind() == ShopEntry.KIND_POKEMON
 
     /**
      * 点格子：持 `points.shop` 节点者点空格 = 添加、点有内容的格 = 编辑。
@@ -2256,7 +2356,7 @@ class PointsMarketScreen : Screen(
      */
     private fun removeFromBuyDialog() {
         if (buySlot < 0) return
-        sendToServer(RemovePointMarketEntryPayload(buySlot, currentKind()))
+        sendToServer(RemovePointMarketEntryPayload(buySlot, currentKind(), shopId))
         // ⚠ **不播收回动画**（`animate = false`）：与「购买成功」同一个道理 ——
         //   服务端收到请求后会**立刻广播新快照**（几十毫秒），而收回动画要 200ms；
         //   快照到达时弹窗还开着 ⇒ 界面按"弹窗开着"的状态处理刷新，下架后整个商城显示为空，
@@ -2304,7 +2404,7 @@ class PointsMarketScreen : Screen(
         val raw = field.text.trim()
         val value = if (raw.isEmpty()) ShopEntry.UNLIMITED else raw.toIntOrNull() ?: return
         if (value == buyStockOriginal) return
-        sendToServer(UpdatePointMarketStockPayload(buySlot, currentKind(), value))
+        sendToServer(UpdatePointMarketStockPayload(buySlot, currentKind(), value, shopId))
         buyStockOriginal = value
     }
 
@@ -2366,7 +2466,7 @@ class PointsMarketScreen : Screen(
 
         // ⚠ kind 取 [currentKind]：窗口开着时主控件已隐藏、切不了 tab，所以它 == 打开窗口时那个 tab
         // ⚠ 带上**玩家看到的那一条**的 id：服务端比对，对不上就拒绝（防按改后的内容 / 价格成交）
-        sendToServer(BuyPointMarketEntryPayload(buySlot, count, currentKind(), buySlotEntryId))
+        sendToServer(BuyPointMarketEntryPayload(buySlot, count, currentKind(), buySlotEntryId, shopId))
         // 收回动画与**庆祝动画共存**（2026-09-27 用户拍板）：弹窗缩回格子的同时，精灵从弹窗图标
         // 位置起飞。能共存是因为庆祝动画的起点 `buyIconOrigin` 在**渲染时**记录，而收回期间内容段
         // 早已淡出、`renderBuyPreview` 不执行 ⇒ 起点保留弹窗静止时那一份，不会跟着窗口一起缩。
@@ -3420,7 +3520,7 @@ class PointsMarketScreen : Screen(
             if (isPokemonSlot()) failSubmit("species_required") else failSubmit("item_required")
             return
         }
-        sendToServer(SavePointMarketEntryPayload(editSlot, entry))
+        sendToServer(SavePointMarketEntryPayload(editSlot, entry, shopId))
         closeEditDialog()
     }
 
@@ -6299,17 +6399,76 @@ class PointsMarketScreen : Screen(
         )
     }
 
-    override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-        val bg = bgRect()
-        // ⚠ drawTexture 的 width/height **同时是「从源图采样的区域尺寸」**（1:1 采样），
-        // 不是目标缩放尺寸 —— 直接传缩放后的目标尺寸，只会把原图左上角那一块抽出来放大
-        // （2026-09-18 用户实测踩到：「只剩整张图的左上角」）。
-        // 缩放必须走矩阵：按原图尺寸绘制、再整体缩到目标大小（同入口掉落动画的做法）。
+    /**
+     * 界面销毁时放开缓存：不放开的话，下一个打开**另一个**商店的界面在 `init` 之前
+     * （一帧都不到的空档）可能被旧商店快照落进来；而且离开游戏后全局缓存会一直卡着一个 id。
+     *
+     * ⚠ 判 `== shopId` 再清：换店时原版是**先 removed 旧界面、再 init 新界面**，
+     *   顺序正常；但 resize / 其它路径若出现交叠，别把新界面刚设的 id 清掉。
+     */
+    override fun removed() {
+        super.removed()
+        if (PointMarketCache.viewingShopId == shopId) PointMarketCache.viewingShopId = null
+    }
+
+    /**
+     * 把背景贴图按**目标矩形**画出来（正常界面与打开动画共用）。
+     *
+     * ⚠ `drawTexture` 的 width/height **同时是「从源图采样的区域尺寸」**（1:1 采样），
+     * 不是目标缩放尺寸 —— 直接传缩放后的目标尺寸，只会把原图左上角那一块抽出来放大
+     * （2026-09-18 用户实测踩到：「只剩整张图的左上角」）。
+     * 缩放必须走矩阵：按原图尺寸绘制、再整体缩到目标大小（同入口掉落动画的做法）。
+     */
+    private fun drawBackgroundScaled(context: DrawContext, x: Int, y: Int, w: Int, h: Int) {
         context.matrices.push()
-        context.matrices.translate(bg.x.toDouble(), bg.y.toDouble(), 0.0)
-        context.matrices.scale(bgScale(), bgScale(), 1f)
+        context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
+        context.matrices.scale(w.toFloat() / TEX_W, h.toFloat() / TEX_H, 1f)
         context.drawTexture(BACKGROUND, 0, 0, 0f, 0f, TEX_W, TEX_H, TEX_W, TEX_H)
         context.matrices.pop()
+    }
+
+    /**
+     * 自定义商店的打开动画：面板从**鼠标位置**的一小块长到正常大小。
+     *
+     * 曲线用 **ease-out（先快后慢）**，而不是弹窗那套 smoothstep：
+     * 前 80% 就把面板撑到 ≥96%，最后 20% 才淡入标题 / 网格 ——
+     * 这样内容在**最终位置**出现时已经装得进面板，不会先露到面板外面。
+     *
+     * ⚠ 动画期间 `super.render()` 整个跳过：控件（返回 / tab / 翻页）是 MC 控件、
+     *   没法塞进缩放中的矩形，等播完那一帧再交给正常路径画。点击 / 滚轮也一并挡掉。
+     * ⚠ 内容里的 shader 颜色必须在同一次 render 内恢复（用 try/finally，别指望顺序）。
+     */
+    private fun renderOpenAnimation(context: DrawContext, delta: Float) {
+        val bg = bgRect()
+        val t = openAnimRaw()
+        val eased = 1f - (1f - t) * (1f - t)
+        val scale = openAnimStartScale + (1f - openAnimStartScale) * eased
+        val centerX = openAnimOriginX + (bg.x + bg.w / 2f - openAnimOriginX) * eased
+        val centerY = openAnimOriginY + (bg.y + bg.h / 2f - openAnimOriginY) * eased
+        val w = (bg.w * scale).roundToInt().coerceAtLeast(1)
+        val h = (bg.h * scale).roundToInt().coerceAtLeast(1)
+        drawBackgroundScaled(
+            context,
+            (centerX - w / 2f).roundToInt(),
+            (centerY - h / 2f).roundToInt(),
+            w, h
+        )
+
+        val alpha = ((t - 0.8f) / 0.2f).coerceIn(0f, 1f)
+        if (alpha <= 0f) return
+        // 动画期间不认悬停：格子放大 / 浮起会在缩放中的面板里乱跳
+        hoveredCell = -1
+        context.setShaderColor(alpha, alpha, alpha, alpha)
+        try {
+            drawMarketDecor(context, delta)
+        } finally {
+            context.setShaderColor(1f, 1f, 1f, 1f)
+        }
+    }
+
+    override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        val bg = bgRect()
+        drawBackgroundScaled(context, bg.x, bg.y, bg.w, bg.h)
 
         // 兑换结果提示：水平居中、落在**返回按钮底边与背景底边之间**那段空隙的中点
         // （用户 2026-09-19 指定）。此前画的是**背景正中** —— 压着界面内容很难看，
@@ -6345,6 +6504,17 @@ class PointsMarketScreen : Screen(
         //   的注释），不清空会逐帧累积、点到别处的图标。
         //   全项目其余 11 个界面都在 render 开头调它，本界面当初漏了。
         IconRegistry.beginFrame(mouseX, mouseY)
+        // 自定义商店打开动画：首帧记下鼠标位置（= 玩家右键 NPC 的点击点），
+        // 动画期间只画面板与淡入中的内容；控件等播完再交给正常路径画。
+        if (openAnimActive()) {
+            if (!openAnimOriginCaptured) {
+                openAnimOriginX = mouseX.toFloat()
+                openAnimOriginY = mouseY.toFloat()
+                openAnimOriginCaptured = true
+            }
+            renderOpenAnimation(context, delta)
+            return
+        }
         // 翻页按钮的可用态：第一页 →「上一页」置灰、最后一页 →「下一页」置灰（照精灵市场的做法）。
         // ⚠ 放在 render 里而不是建控件时：`totalPages` 来自**服务端快照**，会随每次广播变，
         //   建控件时那份早就过期了（2026-09-27 用户报「第一页时上一页该是暗的」）
@@ -6379,11 +6549,17 @@ class PointsMarketScreen : Screen(
     private fun drawMarketDecor(context: DrawContext, delta: Float) {
         val bg = bgRect()
         // 标题：与其余界面同一套写法（**金色样式挂在 Text 上**，绘制行色仍是白 ——
-        // 直接把行色写成金色是错的，那样整行都是金的、与全模组颜色模板不符）
+        // 直接把行色写成金色是错的，那样整行都是金的、与全模组颜色模板不符）。
+        // ⚠ 自定义商店用**服主起的店名**（服务端随打开包下发），不再显示「RP 商城」固定词条
+        val titleText = if (isCustomShop) {
+            Text.literal(customShopName.ifEmpty { shopId }).formatted(Formatting.GOLD)
+        } else {
+            Text.translatable("cobblemarket.points.market.title", CurrencyService.pointsTitleIcon())
+                .formatted(Formatting.GOLD)
+        }
         context.drawCenteredTextWithShadow(
             textRenderer,
-            Text.translatable("cobblemarket.points.market.title", CurrencyService.pointsTitleIcon())
-                .formatted(Formatting.GOLD),
+            titleText,
             bg.x + bg.w / 2, bg.y + texPx(TITLE_TOP), 0xFFFFFF
         )
         // 两条红色分割线：**夹出中间的商品区**（服主上架的精灵/物品放这里）。

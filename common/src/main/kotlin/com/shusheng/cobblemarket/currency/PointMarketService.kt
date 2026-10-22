@@ -72,7 +72,22 @@ enum class PointMarketError {
      * 玩家看到的可能是旧精灵 / 旧价格，按新的成交等于骗人；这一条是"付钱前一刻的强制检查"，
      * 光靠界面上关窗拦不住（广播有网络延迟，见 [PointMarketService.buy] 的竞态说明）。
      */
-    STALE_ENTRY
+    STALE_ENTRY,
+
+    // ── 自定义商店（2026-10-20 新增）──
+
+    /** 商店不存在（被删了 / id 打错 / 客户端伪造） */
+    SHOP_NOT_FOUND,
+    /** 商店已关闭（服主临时停业；格子还在，但右键与购买都不放行） */
+    SHOP_DISABLED,
+    /** 玩家不在绑定 NPC 的 8 格范围内 —— 只对自定义商店生效，防止远程发包买货 */
+    TOO_FAR,
+
+    /**
+     * 商店类型不允许这类商品：只卖精灵的店收到物品上架 / 购买，或反过来。
+     * ⚠ 客户端已经隐藏了另一类的 tab，这一条防的是伪造包 / 类型刚改过还没重开界面。
+     */
+    KIND_NOT_ALLOWED
 }
 
 /**
@@ -157,23 +172,72 @@ object PointMarketService {
     /** 主背包格数 —— 判收件空间只看它（副手当额外余量，宁可判严） */
     private const val MAIN_INVENTORY_SIZE = 36
 
+    /**
+     * 自定义商店的**交互距离**（格）：玩家必须离**任何一个**绑定的 NPC 这么近才允许购买。
+     *
+     * ⚠ 打开界面时服务端已经校验过一次（右键 NPC 本身就在交互距离内），但**购买是另一个包** ——
+     *   客户端完全可以打开界面后走开、或者伪造 `BuyPointMarketEntryPayload` 远程买货。
+     *   所以扣钱之前必须再按服务端世界里的实体位置判一次（与 `PointsMarketScreen` 无关）。
+     * ⚠ 只对自定义商店生效：主商城没有 NPC，从入口界面随时可进。
+     */
+    private const val MAX_SHOP_DISTANCE = 8.0
+
+    // ── 商店解析 ──
+
+    /**
+     * 按 shopId 取存储：主商城 → [PointShopState]；自定义商店 → [CustomShopState] 里那个。
+     * 返回 null = 自定义商店不存在（主商城恒存在）。
+     *
+     * ⚠ 读（[pageEntries] / [pageCount]）遇到 null 时给空快照；写与购买则回具体错误。
+     */
+    fun store(server: MinecraftServer, shopId: String): ShopStore? =
+        if (shopId == MAIN_SHOP_ID) PointShopState.get(server)
+        else CustomShopState.get(server).find(shopId)
+
+    /** 自定义商店对象（主商城恒 null） */
+    fun customShop(server: MinecraftServer, shopId: String): CustomShop? =
+        if (shopId == MAIN_SHOP_ID) null else CustomShopState.get(server).find(shopId)
+
+    /**
+     * 玩家是否在商店绑定的**任意一个** NPC 的 8 格内。
+     *
+     * ⚠ 用玩家所在世界的 `getEntity(uuid)`：跨维度的 NPC 查不到 ⇒ 自然判为"不在附近"。
+     * ⚠ 一个 NPC 都没绑 ⇒ **恒 false**（自定义商店没绑定就没有合法入口，管理命令开的界面只能看/配）。
+     */
+    private fun isNearBoundNpc(player: ServerPlayerEntity, shop: CustomShop): Boolean {
+        val maxSq = MAX_SHOP_DISTANCE * MAX_SHOP_DISTANCE
+        return shop.npcUuids.any { uuid ->
+            player.serverWorld.getEntity(uuid)?.squaredDistanceTo(player)?.let { it <= maxSq } == true
+        }
+    }
+
     // ── 读 ──
 
     /**
      * 某一页**已上架**的格子（序号升序）。空格子本来就不进表（数据层如此），
      * 所以返回值可能远少于 32 项 —— 界面照旧画满 32 个格子，空位由界面补。
      */
-    fun pageEntries(server: MinecraftServer, page: Int, kind: String): List<Pair<Int, ShopEntry>> {
+    fun pageEntries(
+        server: MinecraftServer, page: Int, kind: String, shopId: String = MAIN_SHOP_ID
+    ): List<Pair<Int, ShopEntry>> {
         val from = page * PointShopState.POINTS_SHOP_PAGE_SIZE
         val to = from + PointShopState.POINTS_SHOP_PAGE_SIZE
-        return PointShopState.get(server).all(kind)
+        val custom = customShop(server, shopId)
+        // 只卖精灵的店请求物品页（或反过来）⇒ 空快照；服务端不把另一类的内容发出去
+        if (custom != null && !custom.type.allows(kind)) return emptyList()
+        val state = store(server, shopId) ?: return emptyList()
+        return state.all(kind)
             .filterKeys { it in from until to }
             .toSortedMap()
             .map { it.key to it.value }
     }
 
     /** 某个种类的总页数（至少 1 页：一件没上架也留一页空位等着服主填） */
-    fun pageCount(server: MinecraftServer, kind: String): Int = PointShopState.get(server).pageCount(kind)
+    fun pageCount(server: MinecraftServer, kind: String, shopId: String = MAIN_SHOP_ID): Int {
+        val custom = customShop(server, shopId)
+        if (custom != null && !custom.type.allows(kind)) return 1
+        return store(server, shopId)?.pageCount(kind) ?: 1
+    }
 
     /** 把任意页号收进合法范围（客户端翻页参数不可信） */
     fun clampPage(page: Int): Int = page.coerceIn(0, MAX_INDEX / PointShopState.POINTS_SHOP_PAGE_SIZE)
@@ -186,11 +250,22 @@ object PointMarketService {
      *
      * @return null = 成功；否则是拒绝原因（调用方翻成提示语）
      */
-    fun save(server: MinecraftServer, player: ServerPlayerEntity, index: Int, entry: ShopEntry): PointMarketError? {
+    fun save(
+        server: MinecraftServer,
+        player: ServerPlayerEntity,
+        index: Int,
+        entry: ShopEntry,
+        shopId: String = MAIN_SHOP_ID
+    ): PointMarketError? {
         if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return PointMarketError.NO_PERMISSION
         if (index < 0 || index > MAX_INDEX) return PointMarketError.BAD_INDEX
         val normalized = normalize(entry, server) ?: return reject(entry)
-        val state = PointShopState.get(server)
+        // ⚠ 自定义商店**不判启用状态**：关店只是「玩家不能买」，管理员照样要能进去补货 / 改内容
+        val state = store(server, shopId) ?: return PointMarketError.SHOP_NOT_FOUND
+        // 商店类型是一道**服务端**闸门：只卖物品的店，伪造一个精灵上架包也存不进去
+        customShop(server, shopId)?.let {
+            if (!it.type.allows(normalized.kind)) return PointMarketError.KIND_NOT_ALLOWED
+        }
         // ⚠ **每次保存都换一个全新的 id**（绝不信客户端传的）：语义上等于"旧的作废、换了一个新的"，
         //   玩家手里那份随之失效 —— 他再点购买会被 [buy] 拒绝，而不是按改后的内容 / 价格成交。
         //   ⚠ 用 UUID 而不是自增版本号：下架后重新上架会从 0 重来，与玩家手里旧的 0 撞上就漏了。
@@ -206,8 +281,8 @@ object PointMarketService {
         // 交易品变更强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
         PersistHelper.requestSave(server)
         CobbleMarket.LOGGER.info(
-            "Point shop slot {} set by {} (kind={}, price={}, stock={}, id={})",
-            index, player.name.string, replaced.kind, replaced.price, replaced.stock, replaced.entryId
+            "Point shop[{}] slot {} set by {} (kind={}, price={}, stock={}, id={})",
+            shopId, index, player.name.string, replaced.kind, replaced.price, replaced.stock, replaced.entryId
         )
         // 交易账本留痕：上架（与市场 / 拍卖同口径）。
         // ⚠ **币种是 RP**、**不计入交易量**（额度/卡片资格只看主货币，见 AuctionState 的「统计隔离」）——
@@ -245,33 +320,44 @@ object PointMarketService {
      * ⚠ 也**不走 [save]**：那一版每次都会换新 id（防按改后内容成交，见它的注释），语义正好相反。
      */
     fun updateStock(
-        server: MinecraftServer, player: ServerPlayerEntity, kind: String, index: Int, stock: Int
+        server: MinecraftServer,
+        player: ServerPlayerEntity,
+        kind: String,
+        index: Int,
+        stock: Int,
+        shopId: String = MAIN_SHOP_ID
     ): PointMarketError? {
         if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return PointMarketError.NO_PERMISSION
         if (kind != ShopEntry.KIND_POKEMON && kind != ShopEntry.KIND_ITEM) return PointMarketError.BAD_KIND
         if (index < 0 || index > MAX_INDEX) return PointMarketError.BAD_INDEX
+        val state = store(server, shopId) ?: return PointMarketError.SHOP_NOT_FOUND
         // 入库前归一：负数一律按「不限量」算（界面留空传的就是它），别把 -5 这种写进存档
         val normalized = if (stock < 0) ShopEntry.UNLIMITED else stock
-        if (!PointShopState.get(server).setStock(kind, index, normalized)) return PointMarketError.NOT_FOUND
+        if (!state.setStock(kind, index, normalized)) return PointMarketError.NOT_FOUND
         PersistHelper.requestSave(server)
         CobbleMarket.LOGGER.info(
-            "Point shop slot {} stock set to {} by {}", index, normalized, player.name.string
+            "Point shop[{}] slot {} stock set to {} by {}", shopId, index, normalized, player.name.string
         )
         return null
     }
 
     /** 下架（清空一格）；返回 null = 成功。⚠ 要指明 [kind] —— 同一序号在两个 tab 下是两个格子 */
     fun remove(
-        server: MinecraftServer, player: ServerPlayerEntity, kind: String, index: Int
+        server: MinecraftServer,
+        player: ServerPlayerEntity,
+        kind: String,
+        index: Int,
+        shopId: String = MAIN_SHOP_ID
     ): PointMarketError? {
         if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return PointMarketError.NO_PERMISSION
         if (kind != ShopEntry.KIND_POKEMON && kind != ShopEntry.KIND_ITEM) return PointMarketError.BAD_KIND
         if (index < 0 || index > MAX_INDEX) return PointMarketError.BAD_INDEX
+        val state = store(server, shopId) ?: return PointMarketError.SHOP_NOT_FOUND
         // ⚠ **先取再删**：remove 会把条目从表里拿掉，之后就读不到价格 / 物种 —— 账本那条就记不全了
-        val removed = PointShopState.get(server).find(kind, index)
-        if (!PointShopState.get(server).remove(kind, index)) return PointMarketError.NOT_FOUND
+        val removed = state.find(kind, index)
+        if (!state.remove(kind, index)) return PointMarketError.NOT_FOUND
         PersistHelper.requestSave(server)
-        CobbleMarket.LOGGER.info("Point shop slot {} removed by {}", index, player.name.string)
+        CobbleMarket.LOGGER.info("Point shop[{}] slot {} removed by {}", shopId, index, player.name.string)
         // 交易账本留痕：下架（与市场 / 拍卖同口径；币种 RP、**不计入交易量**）
         if (removed != null) {
             TransactionHistory.get(server).addRecord(
@@ -316,6 +402,9 @@ object PointMarketService {
      *
      * @param count 购买数量。**精灵格恒按 1 算**（买一次就是一只，数量由请求几次表达）——
      *              不把这个自由度留给客户端；物品格才是玩家在购买窗填的那个数
+     * @param shopId [MAIN_SHOP_ID] = 主商城；其余 = 自定义商店 id。
+     *              自定义商店会额外校验：存在 / 已启用 / 玩家在绑定 NPC 的 8 格内
+     *              （购买是独立于"打开界面"的包，必须在这里再判一次，见 [MAX_SHOP_DISTANCE]）
      * @return [PointMarketBuyResult.Success]（含造出来的实物，供发庆祝动画）/ [PointMarketBuyResult.Failure]
      */
     fun buy(
@@ -324,13 +413,27 @@ object PointMarketService {
         kind: String,
         index: Int,
         count: Int,
-        expectedEntryId: String
+        expectedEntryId: String,
+        shopId: String = MAIN_SHOP_ID
     ): PointMarketBuyResult {
         if (kind != ShopEntry.KIND_POKEMON && kind != ShopEntry.KIND_ITEM) {
             return PointMarketBuyResult.Failure(PointMarketError.BAD_KIND)
         }
         if (index < 0 || index > MAX_INDEX) return PointMarketBuyResult.Failure(PointMarketError.BAD_INDEX)
-        val state = PointShopState.get(server)
+        // 自定义商店：先确认它存在、开着、玩家就在 NPC 旁边 —— 全在**扣钱之前**
+        val custom = customShop(server, shopId)
+        if (shopId != MAIN_SHOP_ID && custom == null) {
+            return PointMarketBuyResult.Failure(PointMarketError.SHOP_NOT_FOUND)
+        }
+        if (custom != null) {
+            if (!custom.enabled) return PointMarketBuyResult.Failure(PointMarketError.SHOP_DISABLED)
+            if (!isNearBoundNpc(player, custom)) return PointMarketBuyResult.Failure(PointMarketError.TOO_FAR)
+            // 隐藏的另一类商品不能被伪造包买走（客户端已经没有那个 tab 了，这里是最后一道）
+            if (!custom.type.allows(kind)) {
+                return PointMarketBuyResult.Failure(PointMarketError.KIND_NOT_ALLOWED)
+            }
+        }
+        val state: ShopStore = custom ?: PointShopState.get(server)
         val entry = state.find(kind, index) ?: return PointMarketBuyResult.Failure(PointMarketError.NOT_FOUND)
 
         // ⚠ **付钱前一刻的强制检查**，必须紧跟在取到 entry 之后、早于算价 ——
@@ -431,6 +534,9 @@ object PointMarketService {
             ShopEntry.KIND_POKEMON -> entry.pokemon?.species.orEmpty()
             else -> entry.item?.itemId.orEmpty()
         }
+        // 自定义商店在账本里带上店名（zh）/ 店 id（en）—— 服主对账时能分清是哪个 NPC 的店
+        val shopZh = custom?.let { "（${it.name}）" } ?: ""
+        val shopEn = custom?.let { " [shop ${it.id}]" } ?: ""
         PointsAuditLogger.log(
             PointsLogType.STORE_BUY,
             player.uuid,
@@ -438,12 +544,13 @@ object PointMarketService {
             total,
             points.getBalance(player.uuid),
             player.name.string,
-            "商城购买：$goods ×$amount（第 ${index + 1} 格）",
-            "Store purchase: $goods x$amount (slot ${index + 1})"
+            "商城购买$shopZh：$goods ×$amount（第 ${index + 1} 格）",
+            "Store purchase$shopEn: $goods x$amount (slot ${index + 1})"
         )
         PersistHelper.requestSave(server)
         CobbleMarket.LOGGER.info(
-            "Point shop: {} bought slot {} x{} for {} RP", player.name.string, index, amount, total
+            "Point shop[{}]: {} bought slot {} x{} for {} RP",
+            shopId, player.name.string, index, amount, total
         )
         // 交易账本留痕：成交（币种 RP、**不计入交易量** —— 额度与卡片资格只看主货币）。
         // 卖家取条目的**上架者**；加 creator 字段之前的老条目为空 ⇒ 落零 UUID + 空名，

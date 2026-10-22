@@ -111,6 +111,10 @@ object MarketPermissions {
      * 等于**发给玩家的东西**的质量把关权。
      *
      * ⚠ 2026-09-25 从 OP 改判为节点（原先判 `hasPermissionLevel(2)`）。
+     *
+     * ⚠ 2026-10-20 起**也管自定义（NPC）商店**：创建 / 删除 / 改名 / 开关 / 绑定 NPC
+     *   （`/market shop ...`）与在自定义商店里上架商品都判这个节点 —— 用户拍板沿用，不另开节点。
+     *   玩家侧不需要任何节点：右键绑定过的 NPC 即可进店（购买仍要花 RP）。
      */
     const val POINTS_SHOP = PREFIX + "points.shop"
 

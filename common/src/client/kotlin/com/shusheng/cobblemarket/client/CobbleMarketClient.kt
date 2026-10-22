@@ -20,6 +20,8 @@ import com.shusheng.cobblemarket.network.MarketStatePayload
 import com.shusheng.cobblemarket.network.PayQrImagePayload
 import com.shusheng.cobblemarket.network.PointCodesCreatedPayload
 import com.shusheng.cobblemarket.network.PointCodesPayload
+import com.shusheng.cobblemarket.network.CustomShopAdminListPayload
+import com.shusheng.cobblemarket.network.OpenCustomShopPayload
 import com.shusheng.cobblemarket.network.PointMarketItemsPayload
 import com.shusheng.cobblemarket.network.ShopSnapshotsPayload
 import com.shusheng.cobblemarket.network.SpeciesFeatureAspectsPayload
@@ -109,6 +111,7 @@ import com.shusheng.cobblemarket.screen.ItemSellScreen
 import com.shusheng.cobblemarket.screen.ItemVariantSelectScreen
 import com.shusheng.cobblemarket.screen.PokemonReturnScreen
 import com.shusheng.cobblemarket.screen.PointsConfigScreen
+import com.shusheng.cobblemarket.screen.CustomShopAdminScreen
 import com.shusheng.cobblemarket.screen.PointsMarketScreen
 import com.shusheng.cobblemarket.screen.PointsRechargeScreen
 import com.shusheng.cobblemarket.screen.PriceLimitScreen
@@ -683,6 +686,7 @@ object CobbleMarketClient {
                     is PointsRechargeScreen -> screen.onMarketResult(payload)
                     // 确认发放 / 作废的结果：管理端界面要刷新列表（详细原因在 message 里，界面负责显示）
                     is AdminPointOrdersScreen -> screen.onResult(payload)
+                    is CustomShopAdminScreen -> screen.onResult(payload)
                     // 借款被拒也走结果包（失败音效挂在它上面）—— 见 LoanScreen.onMarketResult
                     is LoanScreen -> screen.onMarketResult(payload)
                     // ID 卡展示是「发完包立刻关界面」⇒ 失败时没有界面接结果，红字要自己补
@@ -795,6 +799,31 @@ object CobbleMarketClient {
         registerS2C(PointMarketItemsPayload.ID, PointMarketItemsPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 PointMarketCache.accept(payload)
+            }
+        }
+
+        // 打开自定义（NPC）商店：右键绑定过的 NPC / `/market shop open` 由服务端发。
+        // ⚠ 同一商店重复收到（右键事件在双端平台可能触发两次）**不重建界面** ——
+        //   重建会清掉玩家已经敲了一半的搜索/数量输入
+        registerS2C(OpenCustomShopPayload.ID, OpenCustomShopPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                val client = MinecraftClient.getInstance()
+                val current = client.currentScreen
+                if (current is PointsMarketScreen && current.shopId == payload.shopId) return@execute
+                client.setScreen(
+                    PointsMarketScreen(
+                        payload.shopId, payload.shopName, payload.shopType, payload.returnToAdmin
+                    )
+                )
+            }
+        }
+
+        // 自定义商店管理列表（管理界面打开 / 每次操作后服务端回发）：先落缓存，
+        // 界面在不在都保存；开着就通知重建行按钮。
+        registerS2C(CustomShopAdminListPayload.ID, CustomShopAdminListPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                CustomShopAdminCache.accept(payload)
+                (MinecraftClient.getInstance().currentScreen as? CustomShopAdminScreen)?.onListData()
             }
         }
 
@@ -1540,5 +1569,6 @@ internal fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean
         s is MeowthBankScreen || s is LoanScreen || s is LoanHistoryScreen || s is RepayScreen || s is MeowthPayScreen ||
         s is DepositScreen || s is BalanceHudPositionScreen || s is PointsMarketScreen || s is PointsRechargeScreen ||
         s is PointsConfigScreen || s is AdminPointOrdersScreen || s is PointsCodeScreen || s is PointsRecordScreen ||
+        s is CustomShopAdminScreen ||
         s is GatedFormScreen ||
         s is PlayerOverviewScreen || s is IdCardScreen

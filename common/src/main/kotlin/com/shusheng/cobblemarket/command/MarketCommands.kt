@@ -14,6 +14,11 @@ import net.minecraft.command.argument.EntityArgumentType
 import net.minecraft.text.ClickEvent
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.CustomShopError
+import com.shusheng.cobblemarket.currency.CustomShopState
+import com.shusheng.cobblemarket.currency.CustomShopType
+import com.shusheng.cobblemarket.currency.customShopErrorText
+import com.shusheng.cobblemarket.currency.customShopTypeText
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.PointCodeState
 import com.shusheng.cobblemarket.currency.PointCodes
@@ -39,13 +44,16 @@ import com.shusheng.cobblemarket.finance.LoanLogType
 import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.network.MarketNetwork
 import com.shusheng.cobblemarket.network.MarketStatePayload
+import com.shusheng.cobblemarket.network.PointMarketNetwork
 import com.shusheng.cobblemarket.network.sendSound
 import com.shusheng.cobblemarket.platform.onPlayerJoin
 import com.shusheng.cobblemarket.platform.registerCommands
 import com.shusheng.cobblemarket.platform.sendToPlayer
 import com.shusheng.cobblemarket.util.PlayerNameText
+import net.minecraft.entity.Entity
 import net.minecraft.server.command.CommandManager
 import net.minecraft.server.command.ServerCommandSource
+import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 
@@ -57,6 +65,77 @@ object MarketCommands {
                 CommandManager.literal("market")
                     .then(CommandManager.literal("gui")
                         .executes(::openGui)
+                    )
+                    // ── 自定义（NPC）商店（2026-10-20）──
+                    // 与 `/market points shop ...`（RP 充值订单）是**两棵树**，别搞混：
+                    // 这棵管「用 RP 买商品」的商店，子命令全是服主 / 持 points.shop 的管理操作。
+                    // ⚠ 玩家进店走**右键绑定 NPC**，不靠命令（命令只是管理端的测试入口）。
+                    .then(CommandManager.literal("shop")
+                        .requires { MarketPermissions.has(it, MarketPermissions.POINTS_SHOP) }
+                        .then(CommandManager.literal("create")
+                            .then(CommandManager.argument("id", StringArgumentType.word())
+                                .then(CommandManager.argument("name", StringArgumentType.greedyString())
+                                    .executes(::customShopCreate)
+                                )
+                            )
+                        )
+                        .then(CommandManager.literal("delete")
+                            .then(CommandManager.argument("id", StringArgumentType.word())
+                                .suggests(::suggestShopIds)
+                                .executes(::customShopDelete)
+                            )
+                        )
+                        .then(CommandManager.literal("list")
+                            .executes(::customShopList)
+                        )
+                        .then(CommandManager.literal("bind")
+                            .then(CommandManager.argument("id", StringArgumentType.word())
+                                .suggests(::suggestShopIds)
+                                .executes(::customShopBind)
+                            )
+                        )
+                        .then(CommandManager.literal("unbind")
+                            .executes(::customShopUnbind)
+                        )
+                        .then(CommandManager.literal("rename")
+                            .then(CommandManager.argument("id", StringArgumentType.word())
+                                .suggests(::suggestShopIds)
+                                .then(CommandManager.argument("name", StringArgumentType.greedyString())
+                                    .executes(::customShopRename)
+                                )
+                            )
+                        )
+                        // 只卖精灵 / 只卖物品 / 两者都卖（2026-10-20 用户要求）
+                        // ⚠ 必须放在 rename 的 greedyString **之外**（greedy 会把后面的参数全吃掉）
+                        .then(CommandManager.literal("type")
+                            .then(CommandManager.argument("id", StringArgumentType.word())
+                                .suggests(::suggestShopIds)
+                                .then(CommandManager.argument("type", StringArgumentType.word())
+                                    .suggests(::suggestShopTypes)
+                                    .executes(::customShopType)
+                                )
+                            )
+                        )
+                        .then(CommandManager.literal("enable")
+                            .then(CommandManager.argument("id", StringArgumentType.word())
+                                .suggests(::suggestShopIds)
+                                .executes { ctx -> setCustomShopEnabled(ctx, true) }
+                            )
+                        )
+                        .then(CommandManager.literal("disable")
+                            .then(CommandManager.argument("id", StringArgumentType.word())
+                                .suggests(::suggestShopIds)
+                                .executes { ctx -> setCustomShopEnabled(ctx, false) }
+                            )
+                        )
+                        // 管理端的测试入口（也用于不带 NPC 的调试：能看商品，但**买不了** ——
+                        // 购买侧仍会校验"必须在绑定 NPC 8 格内"）
+                        .then(CommandManager.literal("open")
+                            .then(CommandManager.argument("id", StringArgumentType.word())
+                                .suggests(::suggestShopIds)
+                                .executes(::customShopOpen)
+                            )
+                        )
                     )
                     .then(CommandManager.literal("ban")
                         .requires { MarketPermissions.has(it, MarketPermissions.BAN) }
@@ -1049,6 +1128,298 @@ object MarketCommands {
         val removed = PointShopService.purgeFinished(context.source.server)
         context.source.sendFeedback({ Text.translatable("cobblemarket.points.shop.purged", removed).formatted(Formatting.GREEN) }, true)
         return 1
+    }
+
+    // ── 自定义（NPC）商店 ──
+    //
+    // 这一组只做**管理**：建店 / 删店 / 改名 / 开关 / 绑 NPC / 打开测试。
+    // 商品内容的管理**复用 RP 商城的编辑窗**（`/market shop open <id>` 或右键 NPC 后点空格子），
+    // 不另做一套界面。玩家的正常入口是右键绑定过的 NPC，不是命令。
+
+    private fun customShopCreate(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val state = CustomShopState.get(source.server)
+        val rawId = StringArgumentType.getString(context, "id")
+        val name = StringArgumentType.getString(context, "name")
+        val error = state.create(rawId, name)
+        if (error != null) {
+            source.sendError(customShopErrorText(error))
+            return 0
+        }
+        // 商店结构变更强制落盘（防杀进程/崩溃蒸发，与上架同一个口径）
+        com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
+        // 建完后按**规范化后**的 id 取回来（大小写 / 首尾空格在 create 里已统一）
+        val shop = state.find(rawId.trim().lowercase())
+        source.sendFeedback({
+            Text.translatable(
+                "cobblemarket.shop.created",
+                shop?.id.orEmpty(),
+                shop?.name.orEmpty()
+            ).formatted(Formatting.GREEN)
+        }, false)
+        // 新店默认 both —— 只卖一种的服主要知道下一步敲什么（否则会以为只能双 tab）
+        shop?.let {
+            source.sendFeedback({
+                Text.translatable("cobblemarket.shop.created_hint", it.id)
+            }, false)
+        }
+        return 1
+    }
+
+    private fun customShopDelete(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val state = CustomShopState.get(source.server)
+        val id = StringArgumentType.getString(context, "id")
+        // 先取一份：删掉之后就拿不到名字与条目数了（回执要说明删掉了什么）
+        val shop = state.find(id)
+        if (shop == null) {
+            source.sendError(Text.translatable("cobblemarket.shop.err.not_found", id))
+            return 0
+        }
+        val name = shop.name
+        val entries = shop.entryCount()
+        if (!state.delete(id)) {
+            source.sendError(Text.translatable("cobblemarket.shop.err.not_found", id))
+            return 0
+        }
+        com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
+        source.sendFeedback({
+            Text.translatable("cobblemarket.shop.deleted", id, name, entries).formatted(Formatting.GREEN)
+        }, false)
+        return 1
+    }
+
+    private fun customShopList(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val shops = CustomShopState.get(source.server).all()
+        if (shops.isEmpty()) {
+            source.sendFeedback({ Text.translatable("cobblemarket.shop.list_empty") }, false)
+            return 0
+        }
+        source.sendFeedback({ Text.translatable("cobblemarket.shop.list_header", shops.size) }, false)
+        shops.forEach { shop ->
+            val status = Text.translatable(
+                if (shop.enabled) "cobblemarket.shop.state.open" else "cobblemarket.shop.state.closed"
+            )
+            source.sendFeedback({
+                Text.translatable(
+                    "cobblemarket.shop.list_line",
+                    shop.id, shop.name, status, customShopTypeText(shop.type),
+                    shop.visibleEntryCount(), shop.npcCount()
+                )
+            }, false)
+        }
+        return 1
+    }
+
+    private fun customShopBind(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val player = source.player
+        if (player == null) {
+            source.sendError(Text.translatable("cobblemarket.points.players_only"))
+            return 0
+        }
+        val state = CustomShopState.get(source.server)
+        val id = StringArgumentType.getString(context, "id")
+        val shop = state.find(id)
+        if (shop == null) {
+            source.sendError(Text.translatable("cobblemarket.shop.err.not_found", id))
+            return 0
+        }
+        val target = targetedEntity(player, BIND_DISTANCE)
+        if (target == null) {
+            source.sendError(Text.translatable("cobblemarket.shop.err.no_entity"))
+            return 0
+        }
+        // 玩家不能当 NPC（绑了以后右键玩家会被我们拦下来，很怪）
+        if (target is ServerPlayerEntity) {
+            source.sendError(Text.translatable("cobblemarket.shop.err.bind_player"))
+            return 0
+        }
+        val typeId = net.minecraft.registry.Registries.ENTITY_TYPE.getId(target.type).toString()
+        val customName = target.customName?.string.orEmpty()
+        return when (val error = state.bind(id, target.uuid, typeId, customName)) {
+            null -> {
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
+                source.sendFeedback({
+                    Text.translatable("cobblemarket.shop.bound", shop.name, target.name)
+                        .formatted(Formatting.GREEN)
+                }, false)
+                1
+            }
+            CustomShopError.ALREADY_BOUND -> {
+                // 已绑在别处：告诉他是哪家（不然他以为绑定失败了、反复试）
+                val owner = state.shopForNpc(target.uuid)
+                source.sendError(
+                    Text.translatable(
+                        "cobblemarket.shop.err.already_bound",
+                        entityLabel(target),
+                        owner?.name.orEmpty()
+                    )
+                )
+                0
+            }
+            else -> {
+                source.sendError(customShopErrorText(error))
+                0
+            }
+        }
+    }
+
+    private fun customShopUnbind(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val player = source.player
+        if (player == null) {
+            source.sendError(Text.translatable("cobblemarket.points.players_only"))
+            return 0
+        }
+        val target = targetedEntity(player, BIND_DISTANCE)
+        if (target == null) {
+            source.sendError(Text.translatable("cobblemarket.shop.err.no_entity"))
+            return 0
+        }
+        val shop = CustomShopState.get(source.server).unbind(target.uuid)
+        if (shop == null) {
+            source.sendError(Text.translatable("cobblemarket.shop.err.not_bound", entityLabel(target)))
+            return 0
+        }
+        com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
+        source.sendFeedback({
+            Text.translatable("cobblemarket.shop.unbound", entityLabel(target), shop.name)
+                .formatted(Formatting.GREEN)
+        }, false)
+        return 1
+    }
+
+    private fun customShopRename(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val id = StringArgumentType.getString(context, "id")
+        val name = StringArgumentType.getString(context, "name")
+        val error = CustomShopState.get(source.server).rename(id, name)
+        if (error != null) {
+            source.sendError(customShopErrorText(error))
+            return 0
+        }
+        com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
+        // 回显**规范化后**的名字（trim / 空名回退 id 都在 rename 里处理）
+        val shop = CustomShopState.get(source.server).find(id)
+        source.sendFeedback({
+            Text.translatable("cobblemarket.shop.renamed", id, shop?.name.orEmpty()).formatted(Formatting.GREEN)
+        }, false)
+        return 1
+    }
+
+    /**
+     * 设置商店出售类型（`pokemon` / `item` / `both`）。
+     * ⚠ 切到单类型**不删**另一类商品，只隐藏；切回 both 原样回来（见 [CustomShopState.setType]）。
+     */
+    private fun customShopType(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val id = StringArgumentType.getString(context, "id")
+        val raw = StringArgumentType.getString(context, "type").trim().lowercase()
+        // ⚠ 不用 fromId（认不出会落 both）—— 手滑打错类型会被静默当成 "both"
+        val type = CustomShopType.values().firstOrNull { it.id == raw }
+        if (type == null) {
+            source.sendError(customShopErrorText(CustomShopError.INVALID_TYPE, raw))
+            return 0
+        }
+        val error = CustomShopState.get(source.server).setType(id, type)
+        if (error != null) {
+            source.sendError(customShopErrorText(error))
+            return 0
+        }
+        com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
+        source.sendFeedback({
+            Text.translatable("cobblemarket.shop.type_set", id, customShopTypeText(type)).formatted(Formatting.GREEN)
+        }, false)
+        if (type != CustomShopType.BOTH) {
+            source.sendFeedback({ Text.translatable("cobblemarket.shop.type_hidden_hint") }, false)
+        }
+        return 1
+    }
+
+    private fun suggestShopTypes(
+        context: CommandContext<ServerCommandSource>,
+        builder: com.mojang.brigadier.suggestion.SuggestionsBuilder
+    ): java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> {
+        CustomShopType.values().forEach { builder.suggest(it.id) }
+        return builder.buildFuture()
+    }
+
+    private fun setCustomShopEnabled(context: CommandContext<ServerCommandSource>, enabled: Boolean): Int {
+        val source = context.source
+        val id = StringArgumentType.getString(context, "id")
+        if (!CustomShopState.get(source.server).setEnabled(id, enabled)) {
+            source.sendError(Text.translatable("cobblemarket.shop.err.not_found", id))
+            return 0
+        }
+        com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
+        source.sendFeedback({
+            Text.translatable(
+                if (enabled) "cobblemarket.shop.opened" else "cobblemarket.shop.closed_admin", id
+            ).formatted(Formatting.GREEN)
+        }, false)
+        return 1
+    }
+
+    private fun customShopOpen(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val player = source.player
+        if (player == null) {
+            source.sendError(Text.translatable("cobblemarket.points.players_only"))
+            return 0
+        }
+        val id = StringArgumentType.getString(context, "id")
+        val shop = CustomShopState.get(source.server).find(id)
+        if (shop == null) {
+            source.sendError(Text.translatable("cobblemarket.shop.err.not_found", id))
+            return 0
+        }
+        PointMarketNetwork.openCustomShop(player, shop)
+        return 1
+    }
+
+    /** 绑定/解绑的取实体距离（格）—— 玩家视线射线，够到面前几格的实体即可 */
+    private const val BIND_DISTANCE = 8.0
+
+    /**
+     * 玩家**视线正前方**那个实体（用于 `bind` / `unbind`）。
+     *
+     * 判据：实体碰撞箱（放宽 0.3）与视线射线相交、取最近的那个；
+     * **方块挡住视线时不算**（隔着墙绑 NPC 会让服主以为绑错了对象）。
+     * 排除玩家自己与已死亡的实体。
+     */
+    private fun targetedEntity(player: ServerPlayerEntity, maxDistance: Double): Entity? {
+        val start = player.eyePos
+        val end = start.add(player.getRotationVec(1f).multiply(maxDistance))
+        var best: Entity? = null
+        var bestSq = maxDistance * maxDistance
+        player.serverWorld.getOtherEntities(player, player.boundingBox.expand(maxDistance)) { e ->
+            e.isAlive && e !is ServerPlayerEntity
+        }.forEach { candidate ->
+            // ⚠ Box.raycast 返回的是 Optional<Vec3d>（1.21.1），不是可空值
+            val hit = candidate.boundingBox.expand(0.3).raycast(start, end).orElse(null) ?: return@forEach
+            val sq = hit.squaredDistanceTo(start)
+            if (sq < bestSq) {
+                bestSq = sq
+                best = candidate
+            }
+        }
+        val block = player.raycast(maxDistance, 0f, false)
+        if (block != null && block.pos.squaredDistanceTo(start) < bestSq) return null
+        return best
+    }
+
+    /** 实体显示名（自定义名优先，否则是类型名）—— 回执里让人认得出绑的是哪只 */
+    private fun entityLabel(entity: Entity): Text = entity.name
+
+    /** 商店 id 联想（create 不联想 —— 那是新 id；其余管理命令都列已有的） */
+    private fun suggestShopIds(
+        context: CommandContext<ServerCommandSource>,
+        builder: com.mojang.brigadier.suggestion.SuggestionsBuilder
+    ): java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> {
+        CustomShopState.get(context.source.server).all().forEach { builder.suggest(it.id) }
+        return builder.buildFuture()
     }
 
     private fun marketOn(context: CommandContext<ServerCommandSource>): Int = setMarketEnabled(context, true)
