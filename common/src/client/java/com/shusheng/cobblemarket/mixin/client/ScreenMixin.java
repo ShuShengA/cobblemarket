@@ -8,6 +8,7 @@ import com.shusheng.cobblemarket.client.CustomCursor;
 import com.shusheng.cobblemarket.client.EnterAnimation;
 import com.shusheng.cobblemarket.client.GuiScale;
 import com.shusheng.cobblemarket.client.ItemCelebrationAnimation;
+import com.shusheng.cobblemarket.client.ItemClaimFlyAnimation;
 import com.shusheng.cobblemarket.client.PokemonCelebrationAnimation;
 import com.shusheng.cobblemarket.screen.GatedFormScreen;
 import net.minecraft.client.MinecraftClient;
@@ -66,6 +67,7 @@ public abstract class ScreenMixin {
 
         PokemonCelebrationAnimation.renderOverlay(context, deltaTicks);
         ItemCelebrationAnimation.INSTANCE.renderOverlay(context, deltaTicks);
+        ItemClaimFlyAnimation.INSTANCE.renderOverlay(context, deltaTicks);
         CardCelebrationAnimation.INSTANCE.renderOverlay(context);
         // 关闭动画矩阵恢复（与 HEAD 配对）。⚠ 余额 HUD 画在它**之后**（见下）
         CloseAnimation.INSTANCE.popTransform(context);

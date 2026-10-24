@@ -9,6 +9,8 @@ import com.cobblemon.mod.common.pokemon.PokemonSizeCategory
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.cobblemon.mod.common.pokemon.Species
 import com.shusheng.cobblemarket.client.ClientPermissionCache
+import com.shusheng.cobblemarket.client.CustomShopClaimCache
+import com.shusheng.cobblemarket.client.ItemClaimFlyAnimation
 import com.shusheng.cobblemarket.client.ItemComponentsDisplay
 import com.shusheng.cobblemarket.client.PointMarketCache
 import com.shusheng.cobblemarket.util.FeatureCandidates
@@ -23,7 +25,9 @@ import com.shusheng.cobblemarket.client.playButtonClickSound
 import com.shusheng.cobblemarket.network.UpdatePointMarketStockPayload
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.CustomShopMode
 import com.shusheng.cobblemarket.currency.CustomShopType
+import com.shusheng.cobblemarket.currency.DEFAULT_CLAIM_HOURS
 import com.shusheng.cobblemarket.currency.MAIN_SHOP_ID
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.PointMarketService
@@ -33,6 +37,7 @@ import com.shusheng.cobblemarket.currency.ShopItemSpec
 import com.shusheng.cobblemarket.currency.ShopPokemonSpec
 import com.shusheng.cobblemarket.market.ItemRuleComponents
 import com.shusheng.cobblemarket.network.BuyPointMarketEntryPayload
+import com.shusheng.cobblemarket.network.ClaimCustomShopPayload
 import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.currency.PointShopSnapshotState
@@ -92,7 +97,16 @@ class PointsMarketScreen(
     /** 自定义商店出售什么：`pokemon` / `item` / `both`（主商城恒 both，见 [CustomShopType]） */
     shopType: String = CustomShopType.BOTH.id,
     /** 从管理界面打开的：返回按钮回管理界面，而不是回游戏 */
-    private val returnToAdmin: Boolean = false
+    private val returnToAdmin: Boolean = false,
+    /**
+     * 这家店的结算币种（**整店一个**）：主商城恒 RP；自定义商店看建店时的选择。
+     * 价格 / 购买窗 / 总价全按它显示（服务端扣款也按它，界面只是展示）。
+     */
+    private val shopCurrency: MarketCurrency = MarketCurrency.POINTS,
+    /** 经营模式：`normal` = 普通购买；`claim` = 定期领取（主商城恒普通） */
+    private val shopMode: CustomShopMode = CustomShopMode.NORMAL,
+    /** 领取周期（小时）；只有领取店用得到 */
+    private val claimHours: Int = DEFAULT_CLAIM_HOURS
 ) : Screen(
     if (shopId == MAIN_SHOP_ID)
         Text.translatable("cobblemarket.points.market.title", CurrencyService.pointsTitleIcon())
@@ -101,6 +115,9 @@ class PointsMarketScreen(
 
     /** 是不是自定义（NPC）商店 —— 顶部兑换区显隐、返回目标都用它 */
     private val isCustomShop: Boolean get() = shopId != MAIN_SHOP_ID
+
+    /** 定期领取店：隐藏购买流程，底部出现「领取」按钮（主商城永远不是领取店） */
+    private val isClaimShop: Boolean get() = isCustomShop && shopMode == CustomShopMode.CLAIM
 
     /**
      * 单类型商店**只显示那一类**的网格（不建 tab 按钮）。
@@ -574,10 +591,13 @@ class PointsMarketScreen(
         // ⚠ **逐项挡、走 [failSubmit]**：`buildShopEntry` 只回 null、不区分缺哪一项，
         //   之前这里三处都只 `playFailSound()` —— 服主点保存只有一声闷响，不知道哪儿没填
         //   （2026-09-25 用户报）。顺序与 [submitEdit] 一致：价格 → 物种 / 物品
-        val price = editPriceField?.text?.trim()?.toLongOrNull()
-        if (price == null || price < 0) {
-            failSubmit("price_required")
-            return
+        // ⚠ 领取店没有价格框（价格固定 0），跳过这一关
+        if (!isClaimShop) {
+            val price = editPriceField?.text?.trim()?.toLongOrNull()
+            if (price == null || price < 0) {
+                failSubmit("price_required")
+                return
+            }
         }
         val entry = buildShopEntry() ?: run {
             if (isPokemonSlot()) failSubmit("species_required") else failSubmit("item_required")
@@ -1133,10 +1153,13 @@ class PointsMarketScreen(
         val inset = borderInset()
         val cx = bg.x + bg.w / 2
 
-        // 返回按钮：**底部居中**，底边距背景底 BACK_BOTTOM（原图口径）
+        // 返回按钮：主商城**底部居中**（原图口径）；自定义商店挪到**右上角**
+        //（底部居中那个位置留给领取店的「领取」按钮 —— 用户 2026-10-23 要求）
         // ⚠ 自定义商店没有"入口界面"这一层：返回直接回游戏（用户 2026-10-20 拍板）
+        val backX = if (isCustomShop) bg.x + bg.w - inset - BACK_W else cx - BACK_W / 2
+        val backY = if (isCustomShop) redeemRowY(bg) else backButtonY(bg)
         backButton = NineSliceButton(
-            cx - BACK_W / 2, backButtonY(bg), BACK_W, BACK_H,
+            backX, backY, BACK_W, BACK_H,
             Text.literal(""),
             {
                 when {
@@ -1150,6 +1173,24 @@ class PointsMarketScreen(
             tooltip = Text.translatable("cobblemarket.gui.back")
         )
         addDrawableChild(backButton)
+
+        // 领取店的「一键领取全部」：占原本返回按钮的位置（底部居中）。
+        // 尺寸 / 纵向位置**与左右两颗翻页按钮一致**（2026-10-24 用户要求：加宽加高，同一条底栏）。
+        // 只放图标（手接礼物，用户 2026-10-24 提供的正式 48×48 像素图）不写文字；名称放进 tooltip。
+        if (isClaimShop) {
+            addDrawableChild(NineSliceButton(
+                cx - PAGE_BTN_W / 2, pageRowY(bg), PAGE_BTN_W, PAGE_BTN_H,
+                Text.literal(""),
+                {
+                    // 飞入动画的起点必须在**点击这一刻**快照：回执到达时格子可能已经翻页 / 界面已关
+                    ItemClaimFlyAnimation.setPending(shopId, claimIconOrigins())
+                    sendToServer(ClaimCustomShopPayload(shopId))
+                },
+                iconLeft = Identifier.of("cobblemarket", "textures/gui/button/claim.png"),
+                iconTexW = 48, iconTexH = 48, iconScale = 1f / 3f,
+                tooltip = Text.translatable("cobblemarket.points.store.claim")
+            ))
+        }
 
         // 兑换区：**主商城独有**。兑换码 / 购买 RP / 兑换记录都属于「买 RP」那条线，
         // 摆在 NPC 店里既没用也误导（用户 2026-10-20 拍板：只留商品区）。
@@ -1258,7 +1299,7 @@ class PointsMarketScreen(
 
         // 翻页按钮：与返回按钮同一行。**三个按钮按背景宽度三等分、各自在所属等分里居中**
         // （用户 2026-09-18）—— 返回按钮因此仍在正中间，位置不变
-        val pageBtnY = backButtonY(bg) - 2
+        val pageBtnY = pageRowY(bg)
         val third = bg.w / 3
         prevButton = NineSliceButton(
             bg.x + third / 2 - PAGE_BTN_W / 2, pageBtnY, PAGE_BTN_W, PAGE_BTN_H,
@@ -1327,6 +1368,12 @@ class PointsMarketScreen(
     private fun backButtonY(bg: BgRect): Int = bg.y + bg.h - texPx(BACK_BOTTOM) - BACK_H
 
     /**
+     * 底部「翻页 / 领取」那一行的顶边 —— **翻页按钮与领取按钮共用**，别各算一份。
+     * （翻页按钮比返回按钮再上移 2px，领取按钮现在也贴这一行、同宽同高）
+     */
+    private fun pageRowY(bg: BgRect): Int = backButtonY(bg) - 2
+
+    /**
      * 上分割线 y：**与兑换行解耦**（写在原兑换行位置的下方，不含 [ROW_TOP_OFFSET]）。
      * 这样把兑换行往下挪时分割线不动，两者的间距随之收窄到 `DIVIDER_GAP − ROW_TOP_OFFSET`。
      */
@@ -1368,7 +1415,10 @@ class PointsMarketScreen(
                 }
                 // 有内容的格子：**所有人都进购买窗**，能管的人只是右上角多一枚「下架」
                 // ⚠ 谁都不能编辑已有格子（2026-09-25 用户拍板）—— 想改就走「下架 → 重新添加」
+                // ⚠ 领取店：普通玩家点格子**不进购买窗**（没有价格，领取走底部按钮）；
+                //   管理员仍要能开这一格（补货 / 下架）
                 if (occupied) {
+                    if (isClaimShop && !admin) return true
                     openBuyDialog(slot, canRemove = admin)
                     return true
                 }
@@ -1717,6 +1767,32 @@ class PointsMarketScreen(
     ) {
         fun cellX(index: Int): Int = startX + (index % cols) * (cell + gap)
         fun cellY(index: Int): Int = startY + (index / cols) * (cell + gap)
+    }
+
+    /** 格子图标区的矩形（左上角 + 边长） */
+    private data class IconRect(val x: Int, val y: Int, val size: Int)
+
+    /**
+     * 格子内容（精灵模型 / 物品图标）占的那块正方形。
+     *
+     * 图标区：上边距取边长 8% **再下移 [ICON_TOP_NUDGE]**，下边到价格行上方，再按比例取小值 ——
+     * 小格子里自动缩小、不压到价格（写死比例的话，格子小于约 55px 就会叠在一起）。
+     *
+     * ⚠ 那个 4px 的下移是必要的：格子上边框才 6px 宽，而 8% 的上边距（70px 格子约 6px）
+     *   正好把图标顶到边框内缘，3D 模型再往上溢出 4px 就**盖住边框**了（2026-09-20 用户指出）。
+     *   代价：底部让给价格行、动不了，所以图标会按比例小一点点（70px 格子约小 3px）。
+     *
+     * [drawX] / [drawY] / [drawSize] 是**当前画出来的那个格子**（悬停放大后与静止时不同），
+     * 绘制与领取飞入动画的起点共用这一份 —— 两处各算一遍迟早不同步。
+     */
+    private fun iconRectOf(drawX: Int, drawY: Int, drawSize: Int): IconRect {
+        val iconTop = drawY + (drawSize * ICON_TOP_RATIO).roundToInt() + ICON_TOP_NUDGE
+        val iconBottom = drawY + drawSize - PRICE_BOTTOM_GAP - 2
+        val iconSize = (iconBottom - iconTop)
+            .coerceAtMost((drawSize * ICON_SIZE_RATIO).roundToInt())
+            .coerceAtLeast(MIN_ICON_SIZE)
+        val iconX = drawX + (drawSize - iconSize) / 2
+        return IconRect(iconX, iconTop, iconSize)
     }
 
     private fun gridLayout(bg: BgRect): GridLayout {
@@ -2295,7 +2371,8 @@ class PointsMarketScreen(
         })
 
         // 数量框：**只有物品格有** —— 精灵格买一次就是一只（买几只就点几次），服务端同样这么算
-        if (entry.kind != ShopEntry.KIND_POKEMON) {
+        // 领取店不卖东西，没有数量可填
+        if (entry.kind != ShopEntry.KIND_POKEMON && !isClaimShop) {
             val field = TextFieldWidget(
                 textRenderer, buyCountX(), editPriceRowY(), BUY_COUNT_W, EDIT_ROW_H, Text.literal("")
             )
@@ -2316,7 +2393,14 @@ class PointsMarketScreen(
                 textRenderer, buyStockFieldX(), editPriceRowY(), buyStockFieldW(), EDIT_ROW_H, Text.literal("")
             )
             stockField.setTextPredicate { s -> s.length <= 9 && s.all { it.isDigit() } }
-            stockField.setPlaceholder(Text.translatable("cobblemarket.points.store.value.unlimited"))
+            // 领取店：这里是「每期每人可领数量」，留空 = 0（不开放），不是不限量
+            // ⚠ 这个框很窄：占位符按实宽挑长短版，否则直接溢出框外（2026-10-23 用户报）
+            stockField.setPlaceholder(
+                if (isClaimShop) TextUtil.fieldHint(
+                    stockField, "cobblemarket.points.store.claim_quota_hint",
+                    "cobblemarket.points.store.claim_quota_hint_short"
+                ) else Text.translatable("cobblemarket.points.store.value.unlimited")
+            )
             stockField.text = if (entry.stock == ShopEntry.UNLIMITED) "" else entry.stock.toString()
             buyStockField = stockField
             addSelectableChild(stockField)
@@ -2334,10 +2418,13 @@ class PointsMarketScreen(
                 Text.translatable("cobblemarket.points.store.remove"), { removeFromBuyDialog() }
             ).also { addDrawableChild(it) }
         }
-        buyConfirmButton = NineSliceButton(
-            editDialogX() + editDialogW() - EDIT_PAD - BUY_BTN_W * 2 - BUTTON_GAP, rowY, BUY_BTN_W, 16,
-            Text.translatable("cobblemarket.points.store.buy_confirm"), { confirmBuy() }
-        ).also { addDrawableChild(it) }
+        // 领取店没有"购买"：这个窗口只有管理员会开（补货 / 下架），不给购买按钮
+        if (!isClaimShop) {
+            buyConfirmButton = NineSliceButton(
+                editDialogX() + editDialogW() - EDIT_PAD - BUY_BTN_W * 2 - BUTTON_GAP, rowY, BUY_BTN_W, 16,
+                Text.translatable("cobblemarket.points.store.buy_confirm"), { confirmBuy() }
+            ).also { addDrawableChild(it) }
+        }
         buyCancelButton = NineSliceButton(
             editDialogX() + editDialogW() - EDIT_PAD - BUY_BTN_W, rowY, BUY_BTN_W, 16,
             Text.translatable("cobblemarket.points.store.buy_cancel"), { closeBuyDialog() }
@@ -2824,21 +2911,22 @@ class PointsMarketScreen(
      */
     private fun renderBuyPriceRow(context: DrawContext, entry: ShopEntry) {
         val y = editPriceRowY() + (EDIT_ROW_H - 8) / 2
-        context.drawTextWithShadow(
-            textRenderer,
-            Text.translatable(
-                "cobblemarket.points.store.buy_price",
-                CurrencyService.amountText(entry.price, MarketCurrency.POINTS)
-            ),
-            buyRowLeft(), y, 0xFFFFFF
-        )
+        // 领取店没有价格（这个窗口只有管理员会开：补货 / 下架），不画单价
+        if (!isClaimShop) {
+            context.drawTextWithShadow(
+                textRenderer,
+                Text.translatable(
+                    "cobblemarket.points.store.buy_price",
+                    CurrencyService.amountText(entry.price, shopCurrency)
+                ),
+                buyRowLeft(), y, 0xFFFFFF
+            )
+        }
         // 「剩余」那一格：**能管这一格的人**在这儿是个可编辑的输入框（见 [buildBuyDialog]），
         // 所以只画标签、值交给控件；普通玩家仍是不可编辑的「剩余：N」
         if (buyCanRemove) {
             context.drawTextWithShadow(
-                textRenderer,
-                Text.translatable("cobblemarket.points.store.buy_stock_label"),
-                buyStockLabelX(), y, 0xFFFFFF
+                textRenderer, Text.translatable(buyStockLabelKey()), buyStockLabelX(), y, 0xFFFFFF
             )
         } else {
             context.drawTextWithShadow(
@@ -2852,7 +2940,8 @@ class PointsMarketScreen(
             )
         }
         // 数量 / 总价：**只有物品格有**（精灵格买一次就是一只，显示总价只是把单价重复一遍）
-        if (entry.kind != ShopEntry.KIND_POKEMON) {
+        // 领取店没有购买数量/总价（金额与数量都不适用）
+        if (entry.kind != ShopEntry.KIND_POKEMON && !isClaimShop) {
             // ⚠ 标签位置与建控件（[buyCountX]）**同源**，别在这儿再算一遍第 3 格起点
             context.drawTextWithShadow(
                 textRenderer, Text.translatable("cobblemarket.points.store.buy_count"), buyCountLabelX(), y, 0xFFFFFF
@@ -2865,7 +2954,7 @@ class PointsMarketScreen(
             //   —— 它会让行首汉字高一点（项目踩过的坑），算好 x 再画。
             val totalText = Text.translatable(
                 "cobblemarket.points.store.buy_total",
-                CurrencyService.amountText(total, MarketCurrency.POINTS)
+                CurrencyService.amountText(total, shopCurrency)
             )
             val btnLeft = editDialogX() + editDialogW() - EDIT_PAD - BUY_BTN_W * 2 - BUTTON_GAP
             val btnCenter = btnLeft + (BUY_BTN_W * 2 + BUTTON_GAP) / 2
@@ -2891,17 +2980,22 @@ class PointsMarketScreen(
     /** 「剩余」标签（或只读值）的左缘 = 第 2 格 */
     private fun buyStockLabelX(): Int = buyRowLeft() + buyColW()
 
+    /** 库存那一格的标签词条：普通店「剩余：」、领取店「每期可领：」 */
+    private fun buyStockLabelKey(): String =
+        if (isClaimShop) "cobblemarket.points.store.claim_quota_label"
+        else "cobblemarket.points.store.buy_stock_label"
+
     /**
-     * 库存框的 x：「剩余：」标签的**右缘**（那一格从标签之后开始）。
-     * ⚠ 渲染（[renderBuyPriceRow]）与建控件（[buildBuyDialog]）**共用这个函数** ——
-     *   各算一份必然错位（本项目反复踩过）。
+     * 库存框的 x：标签的**右缘**（那一格从标签之后开始）。
+     * ⚠ 渲染（[renderBuyPriceRow]）与建控件（[buildBuyDialog]）**共用这个 key/函数** ——
+     *   各算一份必然错位（领取店的「每期可领：」比「剩余：」宽，一开始就重叠了，2026-10-23 用户报）。
      */
     private fun buyStockFieldX(): Int =
-        buyStockLabelX() + textRenderer.getWidth(Text.translatable("cobblemarket.points.store.buy_stock_label"))
+        buyStockLabelX() + textRenderer.getWidth(Text.translatable(buyStockLabelKey()))
 
     /** 库存框宽度：那一格**扣掉标签之后**剩下的宽度，别顶到下一格的「数量」上 */
     private fun buyStockFieldW(): Int =
-        (buyColW() - textRenderer.getWidth(Text.translatable("cobblemarket.points.store.buy_stock_label")) - 4)
+        (buyColW() - textRenderer.getWidth(Text.translatable(buyStockLabelKey())) - 4)
             .coerceAtLeast(16)
 
     /** 「数量：」标签的左缘 —— 接在「剩余」那格之后，再让开 [BUY_COUNT_LABEL_GAP] 别贴死左边的框 */
@@ -3493,11 +3587,18 @@ class PointsMarketScreen(
      * 以后加字段必然漏一处（本项目"同一样东西写两遍"的坑已经踩过很多次）。
      */
     private fun buildShopEntry(): ShopEntry? {
-        val price = editPriceField?.text?.trim()?.toLongOrNull() ?: return null
+        // 领取店没有价格框：价格固定 0（服务端也不看）
+        val price = if (isClaimShop) {
+            editPriceText.trim().toLongOrNull() ?: 0L
+        } else {
+            editPriceField?.text?.trim()?.toLongOrNull() ?: return null
+        }
         if (price < 0) return null
         val stockText = editStockField?.text?.trim().orEmpty()
-        // 留空 = 不限量（-1）；填 0 没意义（上架即售罄），服务端也会拒
-        val stock = if (stockText.isEmpty()) ShopEntry.UNLIMITED else stockText.toIntOrNull() ?: return null
+        // 普通店：留空 = 不限量（-1）；领取店：留空 = 0（不开放，**不能无限**）
+        val stock = if (stockText.isEmpty()) {
+            if (isClaimShop) 0 else ShopEntry.UNLIMITED
+        } else stockText.toIntOrNull() ?: return null
         return if (isPokemonSlot()) {
             val spec = buildPokemonSpec() ?: return null
             ShopEntry(ShopEntry.KIND_POKEMON, price, stock, pokemon = spec)
@@ -3509,11 +3610,13 @@ class PointsMarketScreen(
 
     private fun submitEdit() {
         // 价格单独再挡一道：只有它能给出"请填写价格"这条**具体**提示
-        //（[buildShopEntry] 只回 null，不区分是哪一项缺）
-        val price = editPriceField?.text?.trim()?.toLongOrNull()
-        if (price == null || price < 0) {
-            failSubmit("price_required")
-            return
+        //（[buildShopEntry] 只回 null，不区分是哪一项缺）。领取店没有价格，跳过这一关
+        if (!isClaimShop) {
+            val price = editPriceField?.text?.trim()?.toLongOrNull()
+            if (price == null || price < 0) {
+                failSubmit("price_required")
+                return
+            }
         }
         val entry = buildShopEntry() ?: run {
             // 走到这儿只可能是物种 / 物品没选（价格上面挡过了）
@@ -3632,25 +3735,42 @@ class PointsMarketScreen(
         if (isPokemonSlot()) buildPokemonFields(x, y) else buildItemFields(y)
 
         // 价格 / 库存（两种窗口都有；**钉在窗口底部**，不随内容滚动）
+        // ⚠ 领取店**不需要价格**：不建价格框，把「配额」框拉宽占满整组（用户 2026-10-23 报）
         val priceY = editPriceRowY()
-        editPriceField = TextFieldWidget(
-            textRenderer, editPriceGroupX() + EDIT_LABEL_W, priceY,
-            editPriceColW() - EDIT_LABEL_W, EDIT_ROW_H, Text.literal("")
-        )
-        editPriceField?.setTextPredicate { s -> s.length <= 12 && s.all { it.isDigit() } }
-        editPriceField?.setChangedListener { editPriceText = it }
-        editPriceField?.text = editPriceText.ifEmpty {
-            editSpecBase?.price?.takeIf { it > 0L }?.toString().orEmpty()
+        if (!isClaimShop) {
+            editPriceField = TextFieldWidget(
+                textRenderer, editPriceGroupX() + EDIT_LABEL_W, priceY,
+                editPriceColW() - EDIT_LABEL_W, EDIT_ROW_H, Text.literal("")
+            )
+            editPriceField?.setTextPredicate { s -> s.length <= 12 && s.all { it.isDigit() } }
+            editPriceField?.setChangedListener { editPriceText = it }
+            editPriceField?.text = editPriceText.ifEmpty {
+                editSpecBase?.price?.takeIf { it > 0L }?.toString().orEmpty()
+            }
+            addSelectableChild(editPriceField)
+            addDrawableChild(editPriceField)
+        } else {
+            editPriceField = null
         }
-        addSelectableChild(editPriceField)
-        addDrawableChild(editPriceField)
 
+        val stockX = if (isClaimShop) editPriceGroupX() + EDIT_LABEL_W
+        else editPriceGroupX() + editPriceColW() + EDIT_COL_GAP + EDIT_LABEL_W
+        val stockW = if (isClaimShop) editPriceColW() * 2 + EDIT_COL_GAP - EDIT_LABEL_W
+        else editPriceColW() - EDIT_LABEL_W
         editStockField = TextFieldWidget(
-            textRenderer, editPriceGroupX() + editPriceColW() + EDIT_COL_GAP + EDIT_LABEL_W, priceY,
-            editPriceColW() - EDIT_LABEL_W, EDIT_ROW_H, Text.literal("")
+            textRenderer, stockX, priceY, stockW, EDIT_ROW_H, Text.literal("")
         )
         editStockField?.setTextPredicate { s -> s.length <= 9 && s.all { it.isDigit() } }
-        editStockField?.setPlaceholder(Text.translatable("cobblemarket.points.store.value.unlimited"))
+        // 领取店：这个框是「每期每人可领数量」，留空 = 0（不开放），不是不限量
+        // ⚠ 占位符必须按框宽实测挑长短版（原版不裁剪，长了直接溢出框外）
+        editStockField?.let { f ->
+            f.setPlaceholder(
+                if (isClaimShop) TextUtil.fieldHint(
+                    f, "cobblemarket.points.store.claim_quota_hint",
+                    "cobblemarket.points.store.claim_quota_hint_short"
+                ) else Text.translatable("cobblemarket.points.store.value.unlimited")
+            )
+        }
         editStockField?.setChangedListener { editStockText = it }
         // 回填：不限量 → 留空（「不改 = 什么都不变」）
         editStockField?.text = editStockText.ifEmpty {
@@ -5670,15 +5790,23 @@ class PointsMarketScreen(
         }
 
         // 价格 / 库存的标签（原版输入框自己画不了标签，位置与它对同一行）
+        // 领取店没有价格框：只在最左侧画「配额」
         val labelY = editPriceRowY() + (EDIT_ROW_H - 8) / 2
-        context.drawTextWithShadow(
-            textRenderer, Text.translatable("cobblemarket.points.store.field.price"),
-            editPriceGroupX(), labelY, 0xFFFFFF
-        )
-        context.drawTextWithShadow(
-            textRenderer, Text.translatable("cobblemarket.points.store.field.stock"),
-            editPriceGroupX() + editPriceColW() + EDIT_COL_GAP, labelY, 0xFFFFFF
-        )
+        if (!isClaimShop) {
+            context.drawTextWithShadow(
+                textRenderer, Text.translatable("cobblemarket.points.store.field.price"),
+                editPriceGroupX(), labelY, 0xFFFFFF
+            )
+            context.drawTextWithShadow(
+                textRenderer, Text.translatable("cobblemarket.points.store.field.stock"),
+                editPriceGroupX() + editPriceColW() + EDIT_COL_GAP, labelY, 0xFFFFFF
+            )
+        } else {
+            context.drawTextWithShadow(
+                textRenderer, Text.translatable("cobblemarket.points.store.field.claim_quota"),
+                editPriceGroupX(), labelY, 0xFFFFFF
+            )
+        }
         } finally {
             context.setShaderColor(1f, 1f, 1f, 1f)
         }
@@ -6544,6 +6672,281 @@ class PointsMarketScreen(
         super.render(context, mouseX, mouseY, delta)
         if (dialogOpen()) return
         drawMarketDecor(context, delta)
+        // 领取店：底部「领取」按钮上方显示刷新倒计时
+        drawClaimRefreshHint(context)
+        // 领取店：格子**点不进去**（没有购买窗）⇒ 悬停时给完整详情 + 完整的「可领 N」
+        drawClaimCellTooltip(context, mouseX, mouseY)
+    }
+
+    /**
+     * 「领取」飞入动画的起点：**当前页可见的物品格**（精灵不做动画）。
+     *
+     * 只登记、不判「这一格现在能不能领」—— 实际飞哪几格由服务端回执决定（可能部分交付，
+     * 背包放不下的留在店里）。别页 / 另一个 tab 的格子看不见起点，登记了也没用，直接不登记。
+     *
+     * ⚠ 必须在**点击领取那一刻**调用：回执到达时界面可能已经翻页 / 关掉，格子位置就没了。
+     */
+    private fun claimIconOrigins(): Map<String, ItemClaimFlyAnimation.Icon> {
+        if (!isClaimShop) return emptyMap()
+        val layout = gridLayout(bgRect())
+        val icons = LinkedHashMap<String, ItemClaimFlyAnimation.Icon>()
+        for (cell in 0 until layout.cols * layout.rows) {
+            val slot = globalSlot(cell)
+            val entry = PointMarketCache.slots[slot] ?: continue
+            if (entry.kind != ShopEntry.KIND_ITEM || entry.entryId.isEmpty()) continue
+            // 与格子里画的是**同一个栈**（动画触发时会复制再加数量，不会污染商店图标）
+            val stack = cellIcon(slot, entry).stack ?: continue
+            val rect = iconRectOf(layout.cellX(cell), layout.cellY(cell), layout.cell)
+            icons[entry.entryId] = ItemClaimFlyAnimation.Icon(
+                stack = stack,
+                origin = ItemClaimFlyAnimation.Origin.ofIcon(rect.x, rect.y, rect.size)
+            )
+        }
+        return icons
+    }
+
+    /**
+     * 这一格当前还能领几个（领取店专用）。
+     *
+     * - 还没收到状态（-1）→ 返回 -1，界面先不画
+     * - 冷却已过（`nextResetAt` 到了）→ 直接按满配额显示，不等服务端补发（服务端也是懒重置）
+     */
+    private fun claimRemaining(entry: ShopEntry): Int {
+        val cached = CustomShopClaimCache.remainingOf(shopId, entry.entryId, entry.stock)
+        if (cached < 0) return -1
+        val next = CustomShopClaimCache.nextResetAtOf(shopId)
+        if (next > 0L && System.currentTimeMillis() >= next) return entry.stock
+        return cached
+    }
+
+    /**
+     * **领取店格子的悬停窗**（2026-10-24 用户要求）。
+     *
+     * 领取店**点不进格子**（没有购买窗），玩家看不到精灵 / 物品的详情 ⇒ 悬停时把详情补上，
+     * 并且把**完整的**「Claimable: N / 可领 N」放在**最后一行**（格子里只放得下短标签 `N left`）。
+     *
+     * ⚠ 只在领取店画；普通商店点格子会开购买窗，不需要这层。
+     * ⚠ 落点 / 外观走全项目同一套 [withTooltipLayer]（同证章 / 变体 / 非法印章那几个悬停窗）。
+     */
+    private fun drawClaimCellTooltip(context: DrawContext, mouseX: Int, mouseY: Int) {
+        if (!isClaimShop) return
+        // ⚠ 这里**现算**格子（不用缓存的 hoveredCell）：翻页 / 数据刷新后它可能停在旧值上
+        val cell = cellAt(mouseX.toDouble(), mouseY.toDouble(), gridLayout(bgRect()))
+        if (cell < 0) return
+        val slot = globalSlot(cell)
+        val entry = PointMarketCache.slots[slot] ?: return
+        val lines = claimTooltipLines(slot, entry)
+        if (lines.isEmpty()) return
+        val pad = MARK_TIP_PAD
+        val lineH = 10
+        // 太高就截断（物品词条可能很多），但**最后一行「可领 N」必须留着**
+        val maxLines = ((height - pad * 2) / lineH).coerceAtLeast(2)
+        val shown = if (lines.size <= maxLines) lines else lines.take(maxLines - 1) + lines.last()
+        val w = shown.maxOf { textRenderer.getWidth(it) } + pad * 2
+        val h = shown.size * lineH + pad * 2
+        withTooltipLayer(context, mouseX, mouseY, w, h) { tx, ty ->
+            shown.forEachIndexed { i, line ->
+                context.drawTextWithShadow(textRenderer, line, tx + pad, ty + pad + i * lineH, 0xFFFFFF)
+            }
+        }
+    }
+
+    /** 悬停窗内容：精灵 = 规格详情；物品 = 原版词条；**最后一行固定是完整的「可领 N」** */
+    private fun claimTooltipLines(slot: Int, entry: ShopEntry): List<Text> {
+        val lines = mutableListOf<Text>()
+        val spec = entry.pokemon
+        if (spec != null) {
+            lines += claimPokemonSpecLines(spec)
+        } else {
+            val itemSpec = entry.item
+            val stack = cellIcon(slot, entry).stack
+            if (itemSpec != null && stack != null && !stack.isEmpty) {
+                lines += ItemComponentsDisplay.itemTooltip(
+                    stack, client?.player, ItemComponentsDisplay.tooltipTypeForHover()
+                )
+            } else if (itemSpec != null) {
+                lines += Text.literal(itemDisplayName(itemSpec.itemId))
+            }
+        }
+        val remaining = claimRemaining(entry)
+        if (remaining >= 0) {
+            lines += Text.translatable("cobblemarket.points.store.claim_remaining", remaining)
+                .formatted(if (remaining > 0) Formatting.GREEN else Formatting.DARK_GRAY)
+        }
+        return lines.filter { it.string.isNotEmpty() }
+    }
+
+    /**
+     * 精灵规格的详情行 —— **与购买窗同一份取数**（[buyFieldLine] / 形态 / 闪光 / 球种 / 携带物），
+     * 只是改成单列文字（悬停窗里画不了购买窗那套图标控件）。
+     */
+    private fun claimPokemonSpecLines(spec: ShopPokemonSpec): List<Text> {
+        val lines = mutableListOf<Text>()
+        val species = Identifier.tryParse(spec.species)?.let { PokemonSpecies.getByIdentifier(it) }
+        if (species != null) {
+            val primary = "cobblemon.type.${species.primaryType.name.lowercase()}"
+            val secondary = species.secondaryType?.let { "cobblemon.type.${it.name.lowercase()}" }.orEmpty()
+            // 名字 + 等级 + 属性：与购买窗名字行同一套（名字属性色、等级/加号不设色）
+            lines += Text.literal("")
+                .append(
+                    EntryBadgeRenderer.nameWithLevelLine(
+                        Text.literal(SpeciesText.translated(species).string), primary, spec.level ?: 1
+                    )
+                )
+                .append(Text.literal("  "))
+                .append(EntryBadgeRenderer.typeLine(primary, secondary))
+        } else {
+            lines += Text.literal(spec.species)
+        }
+        // 闪光（金★ / 灰★ / ★ xx%）—— 走购买窗的同一份星标文本；悬停窗里补上「闪光：」标签
+        //（购买窗那格本身就是星标按钮，不需要标签）
+        lines += Text.translatable(
+            "cobblemarket.points.store.field.shiny", buyFieldLine(KEY_SHINY, spec)
+        )
+        formAspectsOf(spec).takeIf { it.isNotEmpty() }?.let {
+            lines += Text.translatable(
+                "cobblemarket.points.store.field.form",
+                it.joinToString("/") { aspect -> SpeciesText.aspectLabel(aspect) }
+            )
+        }
+        featureAspectsOf(spec).takeIf { it.isNotEmpty() }?.let {
+            lines += Text.translatable(
+                "cobblemarket.points.store.field.feature",
+                it.joinToString("/") { aspect -> featureValueLabel(aspect) }
+            )
+        }
+        lines += buyFieldLine(KEY_ABILITY, spec)
+        lines += buyFieldLine(KEY_NATURE, spec)
+        // 性别 / 体型：购买窗用贴图表示，文字窗这边给文字值
+        lines += Text.translatable(
+            "cobblemarket.points.store.field.gender",
+            when (spec.gender?.uppercase()) {
+                "MALE" -> Text.translatable("cobblemarket.aspect.male")
+                "FEMALE" -> Text.translatable("cobblemarket.aspect.female")
+                "GENDERLESS" -> Text.translatable("cobblemarket.points.store.value.genderless")
+                else -> Text.translatable("cobblemarket.points.store.value.random")
+            }
+        )
+        lines += Text.translatable(
+            "cobblemarket.points.store.field.size",
+            PokemonSizeCategory.entries.getOrNull(sizeIndexOf(spec.scale) - 1)?.name
+                ?: Text.translatable("cobblemarket.points.store.value.random").string
+        )
+        // 球种 / 携带物：悬停窗里给可读名字（购买窗那边是物品图标）
+        spec.ball?.takeIf { it.isNotBlank() }?.let {
+            lines += Text.translatable("cobblemarket.points.store.field.ball", itemDisplayName(it))
+        }
+        if (spec.heldItemVisible) {
+            val held = stackOfSpec(spec.heldItemSpec)
+            if (!held.isEmpty) {
+                lines += Text.translatable(
+                    "cobblemarket.points.store.field.held",
+                    ItemNameText.rarityColoredName(held) ?: Text.translatable(held.item.translationKey)
+                )
+            }
+        }
+        lines += claimIvLine(spec)
+        if (spec.ivs == null && spec.minPerfectIvs > 0) {
+            lines += Text.translatable("cobblemarket.points.store.field.min_ivs", "${spec.minPerfectIvs}V")
+        }
+        claimEvLine(spec)?.let { lines += it }
+        lines += claimMovesLine(spec)
+        // 稀有 / 特殊项：**有才显示**（避免一堆「否」把悬停窗撑长）
+        if (spec.teraType != null) lines += buyFieldLine(KEY_TERA, spec)
+        if (spec.gmaxFactor) lines += buyFieldLine(KEY_GMAX, spec)
+        if (spec.dmaxLevel > 0) lines += buyFieldLine(KEY_DMAX, spec)
+        // 头目：购买窗那行画的是**徽章贴图**当标签（`field.alpha` 词条只有「：%s」），
+        // 悬停窗里用带文字标签的词条，别直接复用那行（会显示成孤零零的「：是」）
+        if (spec.alpha) {
+            lines += Text.translatable(
+                "cobblemarket.points.store.field.alpha_label", yesNoText(true)
+            )
+        }
+        if (effectiveMarksOf(spec.marks, spec.alpha).isNotEmpty()) lines += buyFieldLine(KEY_MARKS, spec)
+        spec.originalTrainer?.takeIf { it.isNotBlank() }?.let { lines += buyFieldLine(KEY_OT, spec) }
+        // 不可交易的**必须写出来**（玩家拿到后不能转手，属于重要信息）
+        if (!spec.tradeable) lines += buyFieldLine(KEY_TRADEABLE, spec)
+        return lines
+    }
+
+    /** 个体值一行：全随机 → 「个体值：随机」；有具体值 → `HP 31 / Atk 31 / …`，没填的项标「随机」 */
+    private fun claimIvLine(spec: ShopPokemonSpec): Text {
+        val ivs = spec.ivs
+            ?: return Text.translatable(
+                "cobblemarket.points.store.field.ivs",
+                Text.translatable("cobblemarket.points.store.value.random")
+            )
+        val value = Text.literal("")
+        var first = true
+        ivs.forEachIndexed { i, v ->
+            if (v < 0) return@forEachIndexed
+            if (!first) value.append(Text.literal(" / "))
+            value.append(Text.literal("${STAT_ABBR[i]} $v"))
+            first = false
+        }
+        if (ivs.any { it < 0 }) {
+            if (!first) value.append(Text.literal(" / "))
+            value.append(Text.translatable("cobblemarket.points.store.value.random"))
+        }
+        return Text.translatable("cobblemarket.points.store.field.ivs", value)
+    }
+
+    /** 努力值一行：**全 0 / 没设就不画**（只给玩家看真正设过的项） */
+    private fun claimEvLine(spec: ShopPokemonSpec): Text? {
+        val evs = spec.evs ?: return null
+        val value = Text.literal("")
+        var first = true
+        evs.forEachIndexed { i, v ->
+            if (v <= 0) return@forEachIndexed
+            if (!first) value.append(Text.literal(" / "))
+            value.append(Text.literal("${STAT_ABBR[i]} $v"))
+            first = false
+        }
+        if (first) return null
+        return Text.translatable("cobblemarket.points.store.field.evs", value)
+    }
+
+    /** 技能一行：四个槽位按顺序列出；空槽 = 生成时随机补，标「随机」 */
+    private fun claimMovesLine(spec: ShopPokemonSpec): Text {
+        val slots = spec.moves.split(",")
+        val value = Text.literal("")
+        repeat(4) { i ->
+            if (i > 0) value.append(Text.literal(" / "))
+            val id = slots.getOrNull(i)?.trim().orEmpty()
+            value.append(
+                if (id.isEmpty()) Text.translatable("cobblemarket.points.store.value.random")
+                else MoveText.name(id)
+            )
+        }
+        return Text.translatable("cobblemarket.points.store.field.moves", value)
+    }
+
+    /** 领取店：底部按钮上方的「刷新剩余」提示（没有进行中的周期就不画） */
+    private fun drawClaimRefreshHint(context: DrawContext) {
+        if (!isClaimShop) return
+        val next = CustomShopClaimCache.nextResetAtOf(shopId)
+        if (next <= 0L) return
+        val bg = bgRect()
+        val remain = com.shusheng.cobblemarket.util.RemainingTime.text(
+            next, "cobblemarket.points.store.claim_ready", secondPrecision = false
+        )
+        // 放在「领取」按钮**右侧**（不是上方 —— 上方会压到那条红色分割线，用户 2026-10-23 报）。
+        // ⚠ 领取按钮 2026-10-24 改成与翻页按钮**同宽同高**（80×20）⇒ 偏移量必须跟着换。
+        // ⚠ 右侧放不下英文全称时（640×360 下会压到「下一页」按钮）**改到按钮正下方居中** ——
+        //   按钮行下沿到背景底边还有一段空白，是唯一不会撞到别的控件的位置。
+        val buttonY = pageRowY(bg)
+        val hint = Text.translatable("cobblemarket.points.store.claim_refresh_in", remain)
+        val rightX = bg.x + bg.w / 2 + PAGE_BTN_W / 2 + 8
+        val rightLimit = (nextButton?.x ?: (bg.x + bg.w)) - 4
+        if (rightX + textRenderer.getWidth(hint) <= rightLimit) {
+            context.drawTextWithShadow(
+                textRenderer, hint, rightX, buttonY + (PAGE_BTN_H - 8) / 2, 0xAAAAAA
+            )
+        } else {
+            context.drawCenteredTextWithShadow(
+                textRenderer, hint, bg.x + bg.w / 2, buttonY + PAGE_BTN_H + 6, 0xAAAAAA
+            )
+        }
     }
 
     private fun drawMarketDecor(context: DrawContext, delta: Float) {
@@ -6625,19 +7028,11 @@ class PointsMarketScreen(
         val drawX = x - grow
         val drawY = y - grow
 
-        // 图标区：上边距取边长 8% **再下移 [ICON_TOP_NUDGE]**，下边到价格行上方，再按比例取小值 ——
-        // 小格子里自动缩小、不压到价格（写死比例的话，格子小于约 55px 就会叠在一起）
-        //
-        // ⚠ 那个 4px 的下移是必要的：格子上边框才 6px 宽，而 8% 的上边距（70px 格子约 6px）
-        //   正好把图标顶到边框内缘，3D 模型再往上溢出 4px 就**盖住边框**了（2026-09-20 用户指出）。
-        //   代价：底部让给价格行、动不了，所以图标会按比例小一点点（70px 格子约小 3px）。
-        val iconTop = drawY + (drawSize * ICON_TOP_RATIO).roundToInt() + ICON_TOP_NUDGE
-        val iconBottom = drawY + drawSize - PRICE_BOTTOM_GAP - 2
-        val iconSize = (iconBottom - iconTop)
-            .coerceAtMost((drawSize * ICON_SIZE_RATIO).roundToInt())
-            .coerceAtLeast(MIN_ICON_SIZE)
-        val iconX = drawX + (drawSize - iconSize) / 2
-        val iconY = iconTop
+        // 图标区（算法见 [iconRectOf]；领取飞入动画的起点也用同一份，别各算一遍）
+        val iconRect = iconRectOf(drawX, drawY, drawSize)
+        val iconX = iconRect.x
+        val iconY = iconRect.y
+        val iconSize = iconRect.size
 
         val renderable = icon.renderable
         val state = icon.state
@@ -6669,16 +7064,36 @@ class PointsMarketScreen(
         //   按正常格子的坐标写死的话，一悬停价格就浮在离下边框一截的位置（2026-09-20 用户指出）。
         //   上边距 12 = 文字高 8 + 离下边框 4（原来 10 会压到边框线上）
         val bottom = y + size + grow
-        context.drawCenteredTextWithShadow(
-            textRenderer,
-            // 金额走**缩写**（`9,999,999` → `9.9M`）：格子就这么宽，完整价格会长到顶破整个格子
-            //（用户 2026-09-20 报）。与列表界面同一个口径（[formatPriceShortLong]，它的注释就写着
-            //「小格子用的价格缩写」），网格这边当初漏了。
-            // ⚠ 缩写串是**字符串**喂进 amountText 的：`goldAmount → formatAmount` 对非数值类型
-            //   **原样输出**（不套千分位），所以不会被二次加工；RP 图标仍由 unitText 补，没走字符串拼接
-            CurrencyService.amountText(formatPriceShortLong(entry.price), MarketCurrency.POINTS),
-            x + size / 2, bottom - PRICE_BOTTOM_GAP, 0xFFFFFF
-        )
+        // 领取店：格子下方显示「可领 N」（价格对领取店没有意义）；0 = 已领完，画灰
+        if (isClaimShop) {
+            val remaining = claimRemaining(entry)
+            if (remaining >= 0) {
+                // 格子里**只放短标签**（用户 2026-10-24：英文 `Claimable` 放不下；「Claim N」又是动作语义）
+                // —— 短标签是「N left / 可领 N」，完整的「Claimable: N」放在**悬停窗最后一行**
+                //   （见 [drawClaimCellTooltip]）。窄到连短标签都放不下时退回纯数字。
+                val label = Text.translatable("cobblemarket.points.store.claim_remaining_short", remaining)
+                val text = if (textRenderer.getWidth(label) <= size - 2) label
+                else Text.literal(remaining.toString())
+                context.drawCenteredTextWithShadow(
+                    textRenderer,
+                    text,
+                    // -1：绿字看着比白色价格更贴底边（用户 2026-10-23 报压住边框），单独上移 1px
+                    x + size / 2, bottom - PRICE_BOTTOM_GAP - 1,
+                    if (remaining > 0) 0x55FF55 else 0x777777
+                )
+            }
+        } else {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                // 金额走**缩写**（`9,999,999` → `9.9M`）：格子就这么宽，完整价格会长到顶破整个格子
+                //（用户 2026-09-20 报）。与列表界面同一个口径（[formatPriceShortLong]，它的注释就写着
+                //「小格子用的价格缩写」），网格这边当初漏了。
+                // ⚠ 缩写串是**字符串**喂进 amountText 的：`goldAmount → formatAmount` 对非数值类型
+                //   **原样输出**（不套千分位），所以不会被二次加工；RP 图标仍由 unitText 补，没走字符串拼接
+                CurrencyService.amountText(formatPriceShortLong(entry.price), shopCurrency),
+                x + size / 2, bottom - PRICE_BOTTOM_GAP, 0xFFFFFF
+            )
+        }
 
         // 「非法」角标（服主在编辑窗标过的那一格）：**左上角一枚印章图**（右上角给库存角标 ×N 占了）。
         // 用户 2026-09-30 定：标过的必须**在格子上就看得出来**，否则服主事后想不起来哪只标了。

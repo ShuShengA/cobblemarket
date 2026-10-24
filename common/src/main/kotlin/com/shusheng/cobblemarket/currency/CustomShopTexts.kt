@@ -17,6 +17,15 @@ fun customShopTypeText(type: CustomShopType): Text = Text.translatable(
 )
 
 /**
+ * 结算币种的**显示文本**：主货币用词条（₽ / 物品名由货币后端决定），RP 用图标。
+ * ⚠ 界面里不出现「RP」字样（项目口径）—— RP 一律走图标。
+ */
+fun customShopCurrencyText(currency: MarketCurrency): Text = when (currency) {
+    MarketCurrency.PRIMARY -> Text.translatable("cobblemarket.shop.currency.primary")
+    MarketCurrency.POINTS -> CurrencyService.pointsIcon()
+}
+
+/**
  * 错误码 → 玩家语言提示。
  *
  * [args] 给带占位符的词条用（NOT_FOUND 的 id、ALREADY_BOUND 的实体名 + 店名、
@@ -42,6 +51,10 @@ fun customShopErrorText(error: CustomShopError, vararg args: Any): Text {
         CustomShopError.INVALID_TYPE -> "cobblemarket.shop.err.invalid_type"
         CustomShopError.NPC_NOT_FOUND -> "cobblemarket.shop.err.npc_not_found"
         CustomShopError.NPC_TOO_FAR -> "cobblemarket.shop.err.npc_too_far"
+        CustomShopError.INVALID_CURRENCY -> "cobblemarket.shop.err.invalid_currency"
+        CustomShopError.NOT_EMPTY -> "cobblemarket.shop.err.not_empty"
+        CustomShopError.INVALID_MODE -> "cobblemarket.shop.err.invalid_mode"
+        CustomShopError.INVALID_PERIOD -> "cobblemarket.shop.err.invalid_period"
     }
     return if (args.isEmpty()) Text.translatable(key) else Text.translatable(key, *args)
 }

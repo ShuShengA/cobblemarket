@@ -245,94 +245,34 @@ class RewardRules(
          *   **绝不整体抛**（存档铁律 §读取容错 的同一条思路 —— 一份写错的 json 不该让整台服务器没奖励）。
          * ⚠ 规则表**来自几个文件**这一条要能被官网的排错表引用 ⇒ 每次重载都打一行汇总日志。
          */
-        /** 磁盘上发现的一个规则文件：命名空间 + 包内路径 + 可直接取内容的 id */
-        data class Entry(
-            val namespace: String,
-            val path: String,
-            val id: Identifier
-        )
-
         fun load(server: MinecraftServer): RewardRules {
             val out = mutableListOf<RewardRuleFile>()
 
-            // **写法**：用文件系统列出文件名（存档的 `datapacks/` 目录），再用
-            // `getAllResources(id)` 直取内容。
+            // **发现方式**：`ResourceManager.findResources(SUBDIR)` 一次扫全 ——
+            // 模组自带包 / 世界数据包（**文件夹与 zip 都算**）/ 其它模组带的包都会命中。
             //
-            // ⚠⚠ **2026-10-13 排查记录（写给将来想改回 `findResources` 的人）**：
-            //   当时"按目录列"一直返回空、判据一次都没被调用，我一度判定"`findResources` 对
-            //   世界数据包失效"，并据此改成了读盘列文件名 —— **那个判定是错的**。
-            //   真因是**本函数自己的 bug**：`DIR` 常量含命名空间（`cobblemarket/points_rewards`），
-            //   而 `nsDir` 已经是 `…/data/cobblemarket` ⇒ `nsDir.resolve(DIR)` 拼出
-            //   `…/data/cobblemarket/cobblemarket/points_rewards`（永远不存在的路径），
-            //   而**路径不存在时 `findResources` 静默返回空表**、不报错 —— 于是看起来像"API 坏了"。
-            //   同一处错误在"解析目录"和"拼资源 id 路径"两处各犯了一次（现在只保留
-            //   [SUBDIR]；命名空间从 `data/` 的一级目录名读，不是固定值）。
-            //
-            // ⚠ 结论：**`findResources` 本身是好的**（扫本体 `data/cobblemon/species` 能扫到 1025 个）。
-            //   现在的读盘写法**能用、也已实测**（捕获/孵化/战斗胜利全链路通过），
-            //   但它**只认文件夹形态的数据包**（zip 会被跳过 + warn）。
-            //   ⇒ 将来若要支持 zip，正确做法是**改回 `findResources(SUBDIR) { … }` 一次扫全**
-            //     （它会同时覆盖模组自带包 / 世界包 / zip），而**不是**在文件系统这条路上打补丁。
-            //
-            // ⚠ 排序：**包名 → 命名空间 → 文件名**字典序 ⇒ 拼出来的判定顺序就是服主能预测的那个
-            //   （官网「哪条规则先被看」那一节写的就是这条）
+            // ⚠ 2026-10-23 改回资源管理器（此前是读盘列 `datapacks/` 目录 —— 那条路只认文件夹，
+            //   zip 数据包会被静默跳过）。用户实测：「示例包是 zip，放进去不生效」。
+            //   MC 本身支持 zip 数据包，限制来自我们自己的发现方式，改这里即可。
+            // ⚠ `findResources` 返回**每个 id 优先级最高的那一份**（已按数据包优先级合并）——
+            //   这正是 Minecraft 的覆盖语义；要"所有同名文件"才用 `findAllResources`。
+            // ⚠ 路径只有一层：`data/<命名空间>/points_rewards/<文件>.json`，`<命名空间>` 是
+            //   id 的 namespace（**不是固定值**）。别再拼一次 `cobblemarket/points_rewards`
+            //   —— 2026-10-13 就是路径多套一层、静默返回空表（`SUBDIR` 只保留子目录部分）。
+            // ⚠ 排序口径：**先按命名空间、再按文件名**字典序 ⇒ 官网「哪条规则先被看」写的就是这条。
             val manager = server.resourceManager
-            val discovered = mutableListOf<Entry>()
-            try {
-                val packsDir = server.getSavePath(net.minecraft.util.WorldSavePath.DATAPACKS)
-                if (java.nio.file.Files.isDirectory(packsDir)) {
-                    java.nio.file.Files.list(packsDir).use { stream ->
-                        stream.filter { java.nio.file.Files.isDirectory(it) }
-                            .sorted(compareBy { it.fileName.toString() })
-                            .forEach { packDir ->
-                                val dataDir = packDir.resolve("data")
-                                if (!java.nio.file.Files.isDirectory(dataDir)) return@forEach
-                                java.nio.file.Files.list(dataDir).use { nsStream ->
-                                    nsStream.filter { java.nio.file.Files.isDirectory(it) }.forEach { nsDir ->
-                                        val ns = nsDir.fileName.toString()
-                                        // ⚠⚠ **`DIR` 含命名空间（`cobblemarket/points_rewards`），
-                                        //   而 `nsDir` 已经是 `…/data/cobblemarket`** ⇒ 这里只能取
-                                        //   `DIR` 的**子目录部分**去 resolve，否则会拼成
-                                        //   `…/data/cobblemarket/cobblemarket/points_rewards`（永远不存在）。
-                                        //   2026-10-13 实测就是这么栽的：`discovered` 恒为 0、
-                                        //   日志却只显示"0 file(s)"，完全看不出是路径多了一层。
-                                        val rulesDir = nsDir.resolve(SUBDIR)
-                                        if (!java.nio.file.Files.isDirectory(rulesDir)) return@forEach
-                                        java.nio.file.Files.list(rulesDir).use { fileStream ->
-                                            fileStream.filter { java.nio.file.Files.isRegularFile(it) }
-                                                .filter { it.fileName.toString().endsWith(JSON_SUFFIX) }
-                                                .sorted(compareBy { it.fileName.toString() })
-                                                .forEach { file ->
-                                                    val name = file.fileName.toString()
-                                                    // ⚠ 包内路径**不含命名空间**（文件的资源 id 才是
-                                                    //   `<命名空间>:<包内路径>`，见 Entry 的 KDoc）。
-                                                    //   ⚠⚠ 这里**不能**写 `"$DIR/$name"` —— `DIR` 含命名空间，
-                                                    //   再拼一次就成了 `cobblemarket/points_rewards` 的
-                                                    //   加倍版 `cobblemarket/cobblemarket/points_rewards`，
-                                                    //   于是 `getAllResources` 永远找不到（2026-10-13 实测
-                                                    //   —— 同一个错在"解析目录"和"拼路径"两处各犯了一次）。
-                                                    val innerPath = "$SUBDIR/$name"
-                                                    discovered += Entry(ns, innerPath, Identifier.of(ns, innerPath))
-                                                }
-                                        }
-                                    }
-                                }
-                            }
-                    }
-                }
+            val discovered: List<Identifier> = try {
+                manager.findResources(SUBDIR) { id ->
+                    id.path.startsWith("$SUBDIR/") &&
+                        id.path.endsWith(JSON_SUFFIX) &&
+                        id.path.count { it == '/' } == 1
+                }.keys.sortedWith(compareBy({ it.namespace }, { it.path }))
             } catch (e: Exception) {
-                CobbleMarket.LOGGER.warn("RP reward rules: failed to list datapack folder — {}", e.message)
+                CobbleMarket.LOGGER.warn("RP reward rules: failed to list datapack resources — {}", e.message)
+                emptyList()
             }
 
-            // 同一个 (命名空间, 文件名) 只取一份 —— 与 Minecraft 的"数据包覆盖"语义一致
-            // （先遇到的包赢，discovered 已按包名 → 命名空间 → 文件名字典序排好）
-            val deduped = LinkedHashMap<Pair<String, String>, Identifier>()
-            for (entry in discovered) {
-                val key: Pair<String, String> = entry.namespace to entry.path.substringAfterLast('/')
-                if (!deduped.containsKey(key)) deduped[key] = entry.id
-            }
-
-            for ((_, fileId) in deduped) {
+            for (fileId in discovered) {
                 val relative = "${fileId.namespace}:${fileId.path}"
                 val resource = try {
                     // ⚠ `getAllResources` 返回**所有**数据包里的同名文件（已按优先级排好）

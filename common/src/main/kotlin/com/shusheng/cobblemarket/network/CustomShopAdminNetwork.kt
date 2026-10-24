@@ -3,7 +3,12 @@ package com.shusheng.cobblemarket.network
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.currency.CustomShopError
 import com.shusheng.cobblemarket.currency.CustomShopState
+import com.shusheng.cobblemarket.currency.CustomShopMode
 import com.shusheng.cobblemarket.currency.CustomShopType
+import com.shusheng.cobblemarket.currency.DEFAULT_CLAIM_HOURS
+import com.shusheng.cobblemarket.currency.MAX_CLAIM_HOURS
+import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.NpcDisplayMeta
 import com.shusheng.cobblemarket.currency.customShopErrorText
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.platform.registerC2S
@@ -40,7 +45,11 @@ data class CustomShopNpcInfo(
     val typeId: String,
     val customName: String,
     /** 距玩家多少格；-1 = 不在玩家所在世界 / 区块未加载 */
-    val distance: Int
+    val distance: Int,
+    /** 宝可梦物种 id（如 `cobblemon:pikachu`）；非宝可梦 / 旧绑定为空 */
+    val species: String = "",
+    /** 宝可梦形态 aspects（空格分隔）；非宝可梦 / 旧绑定为空 */
+    val aspects: String = ""
 )
 
 /** 管理列表里的一家商店 */
@@ -53,7 +62,13 @@ data class CustomShopAdminInfo(
     val itemCount: Int,
     /** 实际绑定的 NPC 总数（[npcs] 最多只带 16 条） */
     val npcCount: Int,
-    val npcs: List<CustomShopNpcInfo>
+    val npcs: List<CustomShopNpcInfo>,
+    /** [MarketCurrency] 名（`PRIMARY` / `POINTS`）—— 管理界面显示用 */
+    val currency: String = MarketCurrency.PRIMARY.name,
+    /** [CustomShopMode] id（`normal` / `claim`）—— 管理界面显示用 */
+    val mode: String = CustomShopMode.NORMAL.id,
+    /** 领取周期（小时）—— 只有 `claim` 店用得到 */
+    val claimHours: Int = DEFAULT_CLAIM_HOURS
 )
 
 /** 管理界面「附近实体」列表的一项 */
@@ -64,7 +79,11 @@ data class CustomShopNearbyInfo(
     val distance: Int,
     /** 已绑定到哪家店（空 = 未绑定） */
     val boundShopId: String,
-    val boundShopName: String
+    val boundShopName: String,
+    /** 宝可梦物种 id（如 `cobblemon:pikachu`）；非宝可梦为空 */
+    val species: String = "",
+    /** 宝可梦形态 aspects（空格分隔）；非宝可梦为空 */
+    val aspects: String = ""
 )
 
 /**
@@ -90,12 +109,17 @@ data class CustomShopAdminListPayload(
                     b.writeInt(s.pokemonCount)
                     b.writeInt(s.itemCount)
                     b.writeInt(s.npcCount)
+                    b.writeString(s.currency, ADMIN_MAX_TEXT)
+                    b.writeString(s.mode, ADMIN_MAX_TEXT)
+                    b.writeInt(s.claimHours)
                     b.writeInt(s.npcs.size)
                     s.npcs.forEach { n ->
                         b.writeString(n.uuid, ADMIN_MAX_TEXT)
                         b.writeString(n.typeId, ADMIN_MAX_ID)
                         b.writeString(n.customName, ADMIN_MAX_TEXT)
                         b.writeInt(n.distance)
+                        b.writeString(n.species.take(ADMIN_MAX_ID), ADMIN_MAX_ID)
+                        b.writeString(n.aspects.take(ADMIN_MAX_ID), ADMIN_MAX_ID)
                     }
                 }
                 b.writeInt(p.nearby.size)
@@ -106,6 +130,8 @@ data class CustomShopAdminListPayload(
                     b.writeInt(n.distance)
                     b.writeString(n.boundShopId, ADMIN_MAX_TEXT)
                     b.writeString(n.boundShopName, ADMIN_MAX_TEXT)
+                    b.writeString(n.species.take(ADMIN_MAX_ID), ADMIN_MAX_ID)
+                    b.writeString(n.aspects.take(ADMIN_MAX_ID), ADMIN_MAX_ID)
                 }
             },
             { b ->
@@ -121,6 +147,9 @@ data class CustomShopAdminListPayload(
                     val pokemonCount = b.readInt()
                     val itemCount = b.readInt()
                     val npcCount = b.readInt()
+                    val currency = b.readString(ADMIN_MAX_TEXT)
+                    val mode = b.readString(ADMIN_MAX_TEXT)
+                    val claimHours = b.readInt()
                     val npcListCount = b.readInt()
                     if (npcListCount < 0 || npcListCount > ADMIN_MAX_NPCS_PER_SHOP) {
                         throw IllegalArgumentException("custom shop admin npc count out of range: $npcListCount")
@@ -130,10 +159,14 @@ data class CustomShopAdminListPayload(
                             uuid = b.readString(ADMIN_MAX_TEXT),
                             typeId = b.readString(ADMIN_MAX_ID),
                             customName = b.readString(ADMIN_MAX_TEXT),
-                            distance = b.readInt()
+                            distance = b.readInt(),
+                            species = b.readString(ADMIN_MAX_ID),
+                            aspects = b.readString(ADMIN_MAX_ID)
                         )
                     }
-                    CustomShopAdminInfo(id, name, type, enabled, pokemonCount, itemCount, npcCount, npcs)
+                    CustomShopAdminInfo(
+                        id, name, type, enabled, pokemonCount, itemCount, npcCount, npcs, currency, mode, claimHours
+                    )
                 }
                 val nearbyCount = b.readInt()
                 if (nearbyCount < 0 || nearbyCount > ADMIN_MAX_NEARBY) {
@@ -146,7 +179,9 @@ data class CustomShopAdminListPayload(
                         customName = b.readString(ADMIN_MAX_TEXT),
                         distance = b.readInt(),
                         boundShopId = b.readString(ADMIN_MAX_TEXT),
-                        boundShopName = b.readString(ADMIN_MAX_TEXT)
+                        boundShopName = b.readString(ADMIN_MAX_TEXT),
+                        species = b.readString(ADMIN_MAX_ID),
+                        aspects = b.readString(ADMIN_MAX_ID)
                     )
                 }
                 CustomShopAdminListPayload(shops, nearby)
@@ -167,7 +202,17 @@ data class RequestCustomShopAdminPayload(val unused: Boolean = false) : CustomPa
     }
 }
 
-data class CreateCustomShopPayload(val id: String, val name: String, val type: String) : CustomPayload {
+data class CreateCustomShopPayload(
+    val id: String,
+    val name: String,
+    val type: String,
+    /** [MarketCurrency] 名（`PRIMARY` / `POINTS`）；空 = 兼容旧客户端，落主货币 */
+    val currency: String = MarketCurrency.PRIMARY.name,
+    /** [CustomShopMode] id（`normal` / `claim`） */
+    val mode: String = CustomShopMode.NORMAL.id,
+    /** 领取周期（小时）；只有 `claim` 用得到 */
+    val claimHours: Int = DEFAULT_CLAIM_HOURS
+) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<CreateCustomShopPayload>(CobbleMarket.id("create_custom_shop"))
@@ -176,8 +221,21 @@ data class CreateCustomShopPayload(val id: String, val name: String, val type: S
                 b.writeString(p.id, ADMIN_MAX_TEXT)
                 b.writeString(p.name, ADMIN_MAX_TEXT)
                 b.writeString(p.type, ADMIN_MAX_TEXT)
+                // ⚠ 追加在**末尾**（payload 顺序铁律）
+                b.writeString(p.currency, ADMIN_MAX_TEXT)
+                b.writeString(p.mode, ADMIN_MAX_TEXT)
+                b.writeInt(p.claimHours)
             },
-            { b -> CreateCustomShopPayload(b.readString(ADMIN_MAX_TEXT), b.readString(ADMIN_MAX_TEXT), b.readString(ADMIN_MAX_TEXT)) }
+            { b ->
+                CreateCustomShopPayload(
+                    id = b.readString(ADMIN_MAX_TEXT),
+                    name = b.readString(ADMIN_MAX_TEXT),
+                    type = b.readString(ADMIN_MAX_TEXT),
+                    currency = b.readString(ADMIN_MAX_TEXT),
+                    mode = b.readString(ADMIN_MAX_TEXT),
+                    claimHours = b.readInt()
+                )
+            }
         )
     }
 }
@@ -290,8 +348,23 @@ object CustomShopAdminNetwork {
                     sendResult(player, false, customShopErrorText(CustomShopError.INVALID_TYPE, payload.type))
                     return@execute
                 }
+                // 币种来自创建请求 ⇒ 用**严格版**解析（非法值必须拒绝，防篡改）
+                val currency = MarketCurrency.fromRequest(payload.currency)
+                if (currency == null) {
+                    sendResult(player, false, customShopErrorText(CustomShopError.INVALID_CURRENCY, payload.currency))
+                    return@execute
+                }
+                val mode = CustomShopMode.fromRequest(payload.mode)
+                if (mode == null) {
+                    sendResult(player, false, customShopErrorText(CustomShopError.INVALID_MODE, payload.mode))
+                    return@execute
+                }
+                if (payload.claimHours !in 1..MAX_CLAIM_HOURS) {
+                    sendResult(player, false, customShopErrorText(CustomShopError.INVALID_PERIOD, payload.claimHours))
+                    return@execute
+                }
                 val state = CustomShopState.get(player.server)
-                val error = state.create(payload.id, payload.name, type)
+                val error = state.create(payload.id, payload.name, type, currency, mode, payload.claimHours)
                 if (error != null) {
                     sendResult(player, false, customShopErrorText(error))
                     return@execute
@@ -442,7 +515,9 @@ object CustomShopAdminNetwork {
                 }
                 val typeId = Registries.ENTITY_TYPE.getId(entity.type).toString()
                 val customName = entity.customName?.string.orEmpty()
-                when (val error = state.bind(payload.shopId, uuid, typeId, customName)) {
+                val species = NpcDisplayMeta.speciesOf(entity)
+                val aspects = NpcDisplayMeta.aspectsOf(entity)
+                when (val error = state.bind(payload.shopId, uuid, typeId, customName, species, aspects)) {
                     null -> {
                         PersistHelper.requestSave(player.server)
                         sendResult(player, true, Text.translatable("cobblemarket.shop.bound", shop.name, entity.name))
@@ -523,8 +598,11 @@ object CustomShopAdminNetwork {
                     ?: entity?.let { Registries.ENTITY_TYPE.getId(it.type).toString() }.orEmpty()
                 val customName = meta?.customName?.takeIf { it.isNotEmpty() }
                     ?: entity?.customName?.string.orEmpty()
+                // 物种 / aspects：旧绑定没有，实体还在就现场解析（不在 = 空，客户端画通用图标）
+                val species = meta?.species?.takeIf { it.isNotEmpty() } ?: NpcDisplayMeta.speciesOf(entity)
+                val aspects = meta?.aspects?.takeIf { it.isNotEmpty() } ?: NpcDisplayMeta.aspectsOf(entity)
                 val distance = entity?.let { sqrt(it.squaredDistanceTo(player)).toInt() } ?: -1
-                CustomShopNpcInfo(uuid.toString(), typeId, customName, distance)
+                CustomShopNpcInfo(uuid.toString(), typeId, customName, distance, species, aspects)
             }
             CustomShopAdminInfo(
                 id = shop.id,
@@ -534,7 +612,10 @@ object CustomShopAdminNetwork {
                 pokemonCount = shop.pokemonCount(),
                 itemCount = shop.itemCount(),
                 npcCount = shop.npcCount(),
-                npcs = npcs
+                npcs = npcs,
+                currency = shop.currency.name,
+                mode = shop.mode.id,
+                claimHours = shop.claimHours
             )
         }
 
@@ -552,7 +633,9 @@ object CustomShopAdminNetwork {
                     customName = entity.customName?.string.orEmpty(),
                     distance = sqrt(entity.squaredDistanceTo(player)).toInt(),
                     boundShopId = bound?.id.orEmpty(),
-                    boundShopName = bound?.name.orEmpty()
+                    boundShopName = bound?.name.orEmpty(),
+                    species = NpcDisplayMeta.speciesOf(entity),
+                    aspects = NpcDisplayMeta.aspectsOf(entity)
                 )
             }
 

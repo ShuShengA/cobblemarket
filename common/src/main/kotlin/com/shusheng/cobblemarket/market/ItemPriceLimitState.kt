@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.market
 
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import net.minecraft.item.ItemStack
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.nbt.NbtList
@@ -18,7 +19,12 @@ data class ItemPriceLimitEntry(
     val itemId: String,
     val componentsSpec: NbtCompound?,
     val minPrice: Int?,
-    val maxPrice: Int?
+    val maxPrice: Int?,
+    /**
+     * 这条规则管哪种币种（2026-10-24）：主货币 / RP。同一物品可以同时有两条（各币种一条）。
+     * ⚠ 末尾追加 + 默认主货币：旧档读不到自动落主货币，不损坏存档。
+     */
+    val currency: MarketCurrency = MarketCurrency.PRIMARY
 )
 
 /**
@@ -41,14 +47,21 @@ class ItemPriceLimitState private constructor() : PersistentState() {
     private val entries = mutableListOf<ItemPriceLimitEntry>()
 
     fun add(entry: ItemPriceLimitEntry) {
-        // 按键覆盖：同 itemId + 同组件快照 = 更新价格并移到最前；不同组件快照 = 独立条目
-        entries.removeAll { it.itemId == entry.itemId && ItemRuleComponents.specsEqual(it.componentsSpec, entry.componentsSpec) }
+        // 按键覆盖：同 itemId + 同组件快照 + **同币种** = 更新价格并移到最前；
+        // 不同组件快照 / 不同币种 = 独立条目（主货币与 RP 各一条）
+        entries.removeAll {
+            it.itemId == entry.itemId && it.currency == entry.currency &&
+                ItemRuleComponents.specsEqual(it.componentsSpec, entry.componentsSpec)
+        }
         entries.add(0, entry)
         markDirty()
     }
 
-    fun remove(itemId: String, componentsSpec: NbtCompound?): Boolean {
-        val removed = entries.removeAll { it.itemId == itemId && ItemRuleComponents.specsEqual(it.componentsSpec, componentsSpec) }
+    fun remove(itemId: String, componentsSpec: NbtCompound?, currency: MarketCurrency): Boolean {
+        val removed = entries.removeAll {
+            it.itemId == itemId && it.currency == currency &&
+                ItemRuleComponents.specsEqual(it.componentsSpec, componentsSpec)
+        }
         if (removed) markDirty()
         return removed
     }
@@ -57,16 +70,29 @@ class ItemPriceLimitState private constructor() : PersistentState() {
 
     /** 完整物品匹配：命中条目按「最具体优先」（组件要求最多的条目生效，2026-09-06 拍板）——
      * 锋利V+抢夺III 走自己的条目而不是被「锋利V」条目的上限压死；同具体程度多条仍取交集最严 */
-    fun getPriceBounds(stack: ItemStack, registryLookup: RegistryWrapper.WrapperLookup): PriceBounds? {
-        val hit = entries.filter { ItemRuleComponents.matches(stack, it.itemId, it.componentsSpec, registryLookup) }
+    fun getPriceBounds(
+        stack: ItemStack,
+        registryLookup: RegistryWrapper.WrapperLookup,
+        currency: MarketCurrency? = null
+    ): PriceBounds? {
+        val hit = entries.filter {
+            (currency == null || it.currency == currency) &&
+                ItemRuleComponents.matches(stack, it.itemId, it.componentsSpec, registryLookup)
+        }
         if (hit.isEmpty()) return null
         val maxSpec = hit.maxOf { ItemRuleComponents.specSize(it.componentsSpec) }
         return mergeRuleBounds(hit.filter { ItemRuleComponents.specSize(it.componentsSpec) == maxSpec })
     }
 
-    /** 只有 id 的场景（老格式容器内容）：组件无法验证，只按无组件条目取 bounds */
-    fun getPriceBoundsByIdOnly(itemId: String): PriceBounds? {
-        val hit = entries.filter { it.itemId == itemId && (it.componentsSpec == null || it.componentsSpec.isEmpty) }
+    /**
+     * 只有 id 的场景（老格式容器内容）：组件无法验证，只按无组件条目取 bounds。
+     * [currency] 传 null = **任意币种**（容器检查用：只要有任何一条限价规则就不许塞箱子）。
+     */
+    fun getPriceBoundsByIdOnly(itemId: String, currency: MarketCurrency? = null): PriceBounds? {
+        val hit = entries.filter {
+            it.itemId == itemId && (currency == null || it.currency == currency) &&
+                (it.componentsSpec == null || it.componentsSpec.isEmpty)
+        }
         return mergeRuleBounds(hit)
     }
 
@@ -80,6 +106,8 @@ class ItemPriceLimitState private constructor() : PersistentState() {
             e.minPrice?.let { c.putInt("minPrice", it) }
             c.putBoolean("hasMax", e.maxPrice != null)
             e.maxPrice?.let { c.putInt("maxPrice", it) }
+            // 币种（末尾追加）：旧档读不到 → fromStored 落主货币
+            c.putString("currency", e.currency.name)
             list.add(c)
         }
         nbt.put("entries", list)
@@ -99,7 +127,11 @@ class ItemPriceLimitState private constructor() : PersistentState() {
                                 itemId = c.getString("itemId"),
                                 componentsSpec = spec,
                                 minPrice = if (c.getBoolean("hasMin")) c.getInt("minPrice") else null,
-                                maxPrice = if (c.getBoolean("hasMax")) c.getInt("maxPrice") else null
+                                maxPrice = if (c.getBoolean("hasMax")) c.getInt("maxPrice") else null,
+                                // 币种：旧档无此键 → 主货币（fromStored 容错，不抛异常）
+                                currency = MarketCurrency.fromStored(
+                                    if (c.contains("currency")) c.getString("currency") else null
+                                )
                             )
                             entries.add(entry)
                         } catch (e: Exception) {

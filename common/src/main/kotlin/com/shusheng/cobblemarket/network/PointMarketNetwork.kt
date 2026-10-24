@@ -1,11 +1,18 @@
 package com.shusheng.cobblemarket.network
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
+import com.cobblemon.mod.common.pokemon.Pokemon
 import com.cobblemon.mod.common.pokemon.Species
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.currency.ClaimedItem
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.CustomShop
+import com.shusheng.cobblemarket.currency.CustomShopClaimState
+import com.shusheng.cobblemarket.currency.CustomShopMode
 import com.shusheng.cobblemarket.currency.CustomShopType
+import com.shusheng.cobblemarket.currency.DEFAULT_CLAIM_HOURS
+import com.shusheng.cobblemarket.currency.MAX_CLAIM_HOURS
+import com.shusheng.cobblemarket.currency.PointMarketClaimResult
 import com.shusheng.cobblemarket.currency.MAIN_SHOP_ID
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.PointMarketBuyResult
@@ -22,6 +29,7 @@ import com.shusheng.cobblemarket.platform.registerS2CType
 import com.shusheng.cobblemarket.platform.sendToPlayer
 import com.shusheng.cobblemarket.util.ItemNameText
 import com.shusheng.cobblemarket.util.PersistHelper
+import com.shusheng.cobblemarket.util.PlayerNameText
 import com.shusheng.cobblemarket.util.RequestThrottle
 import com.shusheng.cobblemarket.util.SpeciesText
 import com.shusheng.cobblemarket.util.TypeTextColors
@@ -33,6 +41,8 @@ import net.minecraft.server.MinecraftServer
 import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import net.minecraft.util.Identifier
 
 /**
@@ -87,7 +97,13 @@ data class OpenCustomShopPayload(
     /** [CustomShopType.id]：客户端据此决定显示双 tab 还是单一类型的网格 */
     val shopType: String = CustomShopType.BOTH.id,
     /** 从管理界面打开的：商品界面的「返回」回管理界面，而不是回游戏 */
-    val returnToAdmin: Boolean = false
+    val returnToAdmin: Boolean = false,
+    /** [MarketCurrency] 名：客户端据此显示价格 / 货币单位（整店一个币种） */
+    val shopCurrency: String = MarketCurrency.POINTS.name,
+    /** [CustomShopMode] id：`normal` = 普通购买；`claim` = 定期领取 */
+    val shopMode: String = CustomShopMode.NORMAL.id,
+    /** 领取周期（小时）—— 只有 `claim` 店用得到 */
+    val claimHours: Int = DEFAULT_CLAIM_HOURS
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -103,6 +119,9 @@ data class OpenCustomShopPayload(
                 // ⚠ 追加在**末尾**（payload 顺序铁律）
                 b.writeString(p.shopType, MAX_SHOP_TEXT)
                 b.writeBoolean(p.returnToAdmin)
+                b.writeString(p.shopCurrency, MAX_SHOP_TEXT)
+                b.writeString(p.shopMode, MAX_SHOP_TEXT)
+                b.writeInt(p.claimHours)
             },
             // ⚠ 读端用具名参数：字段顺序一旦对不上立刻看出来（payload 顺序铁律）
             { b ->
@@ -110,8 +129,119 @@ data class OpenCustomShopPayload(
                     shopId = b.readString(MAX_SHOP_TEXT),
                     shopName = b.readString(MAX_SHOP_TEXT),
                     shopType = b.readString(MAX_SHOP_TEXT),
-                    returnToAdmin = b.readBoolean()
+                    returnToAdmin = b.readBoolean(),
+                    shopCurrency = b.readString(MAX_SHOP_TEXT),
+                    shopMode = b.readString(MAX_SHOP_TEXT),
+                    claimHours = b.readInt()
                 )
+            }
+        )
+    }
+}
+
+/**
+ * **定期领取店的玩家周期状态**（S2C，2026-10-23）。
+ *
+ * 给界面显示「每格还能领几个」和「距下次刷新多久」；服务端在打开商店、每次领取后下发。
+ * ⚠ 全量（每个有配额的格一项）—— 最多 [MAX_CLAIM_STATUS_ENTRIES] 项，客户端伪造不了（这是 S2C）。
+ */
+data class CustomShopClaimStatusPayload(
+    val shopId: String,
+    /** 下次刷新时间（epoch ms）；0 = 还没有进行中的周期（现在就能领） */
+    val nextResetAt: Long,
+    /** entryId → 剩余可领数量 */
+    val remaining: Map<String, Int>
+) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        const val MAX_CLAIM_STATUS_ENTRIES = 256
+        val ID = CustomPayload.Id<CustomShopClaimStatusPayload>(CobbleMarket.id("custom_shop_claim_status"))
+        val CODEC: PacketCodec<PacketByteBuf, CustomShopClaimStatusPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeString(p.shopId, OpenCustomShopPayload.MAX_SHOP_TEXT)
+                b.writeLong(p.nextResetAt)
+                b.writeInt(p.remaining.size)
+                p.remaining.forEach { (entryId, count) ->
+                    b.writeString(entryId, OPEN_CLAIM_MAX_ENTRY_ID)
+                    b.writeInt(count)
+                }
+            },
+            { b ->
+                val shopId = b.readString(OpenCustomShopPayload.MAX_SHOP_TEXT)
+                val nextResetAt = b.readLong()
+                val size = b.readInt()
+                if (size < 0 || size > MAX_CLAIM_STATUS_ENTRIES) {
+                    throw IllegalArgumentException("claim status size out of range: $size")
+                }
+                val remaining = LinkedHashMap<String, Int>(size)
+                repeat(size) {
+                    remaining[b.readString(OPEN_CLAIM_MAX_ENTRY_ID)] = b.readInt()
+                }
+                CustomShopClaimStatusPayload(shopId, nextResetAt, remaining)
+            }
+        )
+    }
+}
+
+/** entryId 是 UUID 字符串（36 字符），给点余量 */
+private const val OPEN_CLAIM_MAX_ENTRY_ID = 64
+
+/** 一键领取请求（C2S）：只带店 id，其余全由服务端判定 */
+data class ClaimCustomShopPayload(val shopId: String) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<ClaimCustomShopPayload>(CobbleMarket.id("claim_custom_shop"))
+        val CODEC: PacketCodec<PacketByteBuf, ClaimCustomShopPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.shopId, OpenCustomShopPayload.MAX_SHOP_TEXT) },
+            { b -> ClaimCustomShopPayload(b.readString(OpenCustomShopPayload.MAX_SHOP_TEXT)) }
+        )
+    }
+}
+
+/**
+ * **一键领取的交付回执**（S2C，2026-10-23）：只含**物品**格 —— 客户端拿它给「飞入物品栏」动画
+ * 决定飞哪几格、每格带几个 ×N。
+ *
+ * ⚠ 只发**真的进了背包**的格（部分交付时未交付的不在里面）；精灵不进这个包（不做动画）。
+ * ⚠ 客户端只对有**可见起点**（当前页 / 当前 tab）的格子播动画，其余条目直接忽略。
+ */
+data class ClaimCustomShopResultPayload(
+    val shopId: String,
+    val claimed: List<ClaimedItem>
+) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        /**
+         * 条目数上限。一屏最多 32 格，动画只可能用到可见的那几格；这里给到 256 只是兜底，
+         * 防止异常店铺把包写爆。服务端写包前会先截断，两端上下限必须一致（读超限会抛异常）。
+         */
+        const val MAX_CLAIMED_ENTRIES = 256
+
+        val ID = CustomPayload.Id<ClaimCustomShopResultPayload>(CobbleMarket.id("claim_custom_shop_result"))
+        val CODEC: PacketCodec<PacketByteBuf, ClaimCustomShopResultPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeString(p.shopId, OpenCustomShopPayload.MAX_SHOP_TEXT)
+                val list = p.claimed.take(MAX_CLAIMED_ENTRIES)
+                b.writeInt(list.size)
+                list.forEach {
+                    b.writeString(it.entryId, OPEN_CLAIM_MAX_ENTRY_ID)
+                    b.writeInt(it.count)
+                }
+            },
+            { b ->
+                val shopId = b.readString(OpenCustomShopPayload.MAX_SHOP_TEXT)
+                val size = b.readInt()
+                if (size < 0 || size > MAX_CLAIMED_ENTRIES) {
+                    throw IllegalArgumentException("claim result size out of range: $size")
+                }
+                val claimed = ArrayList<ClaimedItem>(size)
+                repeat(size) {
+                    claimed += ClaimedItem(b.readString(OPEN_CLAIM_MAX_ENTRY_ID), b.readInt())
+                }
+                ClaimCustomShopResultPayload(shopId, claimed)
             }
         )
     }
@@ -773,7 +903,7 @@ private fun readOptionalStatList(b: PacketByteBuf): List<Int>? {
  * RP 商城的错误码 → 提示文本。**网络层与将来的命令侧共用这一份**
  *（两处各写一遍必然漂移，同 [pointShopErrorText] 的道理）。
  */
-fun pointMarketErrorText(error: PointMarketError): Text = Text.translatable(
+fun pointMarketErrorText(error: PointMarketError, currency: MarketCurrency = MarketCurrency.POINTS): Text = Text.translatable(
     when (error) {
         PointMarketError.NO_PERMISSION -> "cobblemarket.points.store.err.no_permission"
         PointMarketError.BAD_INDEX -> "cobblemarket.points.store.err.bad_index"
@@ -788,7 +918,7 @@ fun pointMarketErrorText(error: PointMarketError): Text = Text.translatable(
         PointMarketError.BAD_COUNT -> "cobblemarket.points.store.err.bad_count"
         PointMarketError.SOLD_OUT -> "cobblemarket.points.store.err.sold_out"
         PointMarketError.STOCK_NOT_ENOUGH -> "cobblemarket.points.store.err.stock_not_enough"
-        PointMarketError.NOT_ENOUGH_POINTS -> "cobblemarket.points.store.err.not_enough_points"
+        PointMarketError.NOT_ENOUGH_FUNDS -> "cobblemarket.points.store.err.not_enough_points"
         PointMarketError.NO_SPACE -> "cobblemarket.points.store.err.no_space"
         PointMarketError.GENERATE_FAILED -> "cobblemarket.points.store.err.generate_failed"
         PointMarketError.STALE_ENTRY -> "cobblemarket.points.store.err.stale_entry"
@@ -796,12 +926,31 @@ fun pointMarketErrorText(error: PointMarketError): Text = Text.translatable(
         PointMarketError.SHOP_DISABLED -> "cobblemarket.points.store.err.shop_disabled"
         PointMarketError.TOO_FAR -> "cobblemarket.points.store.err.too_far"
         PointMarketError.KIND_NOT_ALLOWED -> "cobblemarket.points.store.err.kind_not_allowed"
+        // 与市场其它 RP 操作同一条提示（词条自带 %s 货币图标）
+        PointMarketError.POINTS_DISABLED -> "cobblemarket.network.points_disabled"
+        PointMarketError.NOT_FOR_SALE -> "cobblemarket.points.store.err.not_for_sale"
+        PointMarketError.NOT_A_CLAIM_SHOP -> "cobblemarket.points.store.err.not_a_claim_shop"
     },
-    // 统一传货币图标：含 %s 的词条（如「%s 余额不足」）用它，不含的多余参数会被忽略
-    CurrencyService.pointsIcon()
+    // 统一传**这家店的货币单位**：含 %s 的词条（如「%s 余额不足」）用它，不含的多余参数会被忽略。
+    // RP 是图标、主货币是 ₽ / 物品名 —— 主货币店的余额不足不能再说「RP 不足」。
+    CurrencyService.unitText(currency)
 )
 
 object PointMarketNetwork {
+
+    /**
+     * 玩家最近一次**通过哪个 NPC** 打开的自定义商店（只给「买到闪光」播报取前缀）。
+     *
+     * ⚠ **不持久化**：重连 / 服务器重启后为空 ⇒ 播报退回店名，绝不会用错人。
+     * 玩家断线时由 [onPlayerDisconnect] 清掉，长期运行也不会按人数无限增长。
+     */
+    private data class OpenedFromNpc(val shopId: String, val npcUuid: UUID)
+    /** ⚠ 并发表：写入在主线程，[onPlayerDisconnect] 在**网络线程**清（同 [RequestThrottle] 的做法） */
+    private val openedFromNpc = ConcurrentHashMap<UUID, OpenedFromNpc>()
+
+    fun onPlayerDisconnect(playerUuid: UUID) {
+        openedFromNpc.remove(playerUuid)
+    }
 
     /**
      * 每个玩家**最后请求过的 (页, tab, 商店)**。
@@ -819,6 +968,10 @@ object PointMarketNetwork {
         registerS2CType(PointMarketItemsPayload.ID, PointMarketItemsPayload.CODEC)
         // 打开自定义商店：右键绑定 NPC / `/market shop open` 由服务端发
         registerS2CType(OpenCustomShopPayload.ID, OpenCustomShopPayload.CODEC)
+        // 定期领取店的周期状态（打开 / 每次领取后下发）
+        registerS2CType(CustomShopClaimStatusPayload.ID, CustomShopClaimStatusPayload.CODEC)
+        // 一键领取的交付回执（只有物品；客户端的飞入动画据此决定飞哪几格）
+        registerS2CType(ClaimCustomShopResultPayload.ID, ClaimCustomShopResultPayload.CODEC)
         // ⚠ S2C 是**两步**注册：类型在这里注册（两端各一次），客户端 `registerS2C` 只挂 handler。
         //   漏了这一行 → 客户端启动即崩：fabric 的客户端 registerS2C **忽略 codec 参数**，
         //   类型只能靠这里；而 neoforge 那边自带 playToClient，漏了也不显形（踩坑记录见 CLAUDE.md）
@@ -1019,6 +1172,70 @@ object PointMarketNetwork {
             }
         }
 
+        // 定期领取店：一键领取全部（免费；服务端判周期 / 距离 / 启用状态）
+        registerC2S(ClaimCustomShopPayload.ID, ClaimCustomShopPayload.CODEC) { payload, player ->
+            if (!RequestThrottle.allowNotify(player, "custom_shop_claim", RequestThrottle.WRITE_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            val server = player.server
+            server.execute {
+                when (val result = PointMarketService.claimAll(server, player, payload.shopId)) {
+                    is PointMarketClaimResult.Failure -> {
+                        player.sendMessage(
+                            pointMarketErrorText(result.error).copy().formatted(Formatting.RED), false
+                        )
+                        sendSound(player, "result_fail")
+                    }
+
+                    is PointMarketClaimResult.Success -> {
+                        // 交付内容按**精灵 / 物品分开**报：领取店两类都能卖，笼统写「N 件物品」会让
+                        // 「领到 1 只精灵」也显示成 Claimed 1 item(s)（2026-10-24 用户报）。
+                        val itemCount = result.items.sumOf { it.count }
+                        val pokemonCount = (result.delivered - itemCount).coerceAtLeast(0)
+                        val goods: Text = when {
+                            pokemonCount > 0 && itemCount > 0 -> Text.translatable(
+                                "cobblemarket.points.store.claim_goods_mixed",
+                                Text.translatable("cobblemarket.points.store.claim_goods_pokemon", pokemonCount),
+                                Text.translatable("cobblemarket.points.store.claim_goods_items", itemCount)
+                            )
+                            pokemonCount > 0 ->
+                                Text.translatable("cobblemarket.points.store.claim_goods_pokemon", pokemonCount)
+                            else ->
+                                Text.translatable("cobblemarket.points.store.claim_goods_items", itemCount)
+                        }
+                        val text = when {
+                            // 有可领内容但一件都没放下 = 空间不足
+                            result.delivered == 0 && result.hadRemaining ->
+                                Text.translatable("cobblemarket.points.store.claim_no_space").formatted(Formatting.RED)
+                            result.delivered == 0 ->
+                                Text.translatable("cobblemarket.points.store.claim_nothing").formatted(Formatting.YELLOW)
+                            // 领了一部分：提醒剩余还在店里（本期有效）
+                            result.leftBehind -> Text.translatable(
+                                "cobblemarket.points.store.claim_partial", goods
+                            ).formatted(Formatting.GREEN)
+                            else -> Text.translatable(
+                                "cobblemarket.points.store.claim_success", goods
+                            ).formatted(Formatting.GREEN)
+                        }
+                        player.sendMessage(text, false)
+                        sendSound(player, if (result.delivered > 0) "result_success" else "result_fail")
+                        // 把最新的剩余 / 刷新时间回给客户端
+                        PointMarketService.customShop(server, payload.shopId)?.let {
+                            sendToPlayer(player, buildClaimStatus(player, it))
+                        }
+                        // 交付明细（只用于飞入动画）：没有物品（只领到精灵 / 一件都没领到）就不发
+                        if (result.items.isNotEmpty()) {
+                            sendToPlayer(
+                                player, ClaimCustomShopResultPayload(payload.shopId, result.items)
+                            )
+                        }
+                        // 领取到**闪光精灵** ⇒ 全服播报（措辞是「领取到」，不是购买）
+                        announceShinyClaim(server, player, payload.shopId, result.shinyPokemon)
+                    }
+                }
+            }
+        }
+
         // 购买：玩家侧唯一"花钱"的入口（**不判权限** —— 谁有 RP 谁能买）。
         // 库存 / 余额 / 收件空间全在服务端校验，客户端只是发起请求
         registerC2S(BuyPointMarketEntryPayload.ID, BuyPointMarketEntryPayload.CODEC) { payload, player ->
@@ -1034,7 +1251,10 @@ object PointMarketNetwork {
                 ) {
                     is PointMarketBuyResult.Failure -> {
                         player.sendMessage(
-                            pointMarketErrorText(result.error).copy().formatted(Formatting.RED), false
+                            pointMarketErrorText(
+                                result.error, PointMarketService.currencyOf(server, payload.shopId)
+                            ).copy().formatted(Formatting.RED),
+                            false
                         )
                         sendSound(player, "result_fail")
                         // 失败也回发**他自己**那一页：库存以服务端为准 —— 别人刚买走最后一件时，
@@ -1051,6 +1271,8 @@ object PointMarketNetwork {
                         )
                         sendSound(player, "result_success")
                         sendPurchaseCelebration(server, player, payload.kind, payload.index, result, payload.shopId)
+                        // 买到**闪光精灵** ⇒ 全服播报（只购买；领取店领到的不播）
+                        announceShinyPurchase(server, player, payload.kind, payload.shopId, result)
                         // 买走一件会改库存 —— **广播**给所有在看商城的人（服主那边那格也要跟着减）
                         broadcastSnapshot(server)
                     }
@@ -1060,7 +1282,7 @@ object PointMarketNetwork {
     }
 
     /**
-     * 购买成功的回执：**买的是什么 × 几份、花了多少 RP**。
+     * 购买成功的回执：**买的是什么 × 几份、花了多少（按这家店的币种）**。
      *
      * ⚠ 数量与金额都取 [PointMarketBuyResult.Success] 里的**实际成交值**、不重算 ——
      * 精灵格恒 1 份、金额以服务端真正扣掉的为准，回执不能报出与实际不符的数字。
@@ -1080,7 +1302,9 @@ object PointMarketNetwork {
             "cobblemarket.points.store.bought",
             goodsName(entry),
             result.count,
-            CurrencyService.amountText(result.total, MarketCurrency.POINTS)
+            CurrencyService.amountText(
+                result.total, PointMarketService.currencyOf(server, shopId)
+            )
         ).formatted(Formatting.GREEN)
     }
 
@@ -1130,6 +1354,93 @@ object PointMarketNetwork {
             return
         }
         CelebrationNetwork.sendItem(player, nbt, result.count, CelebrationSource.STORE)
+    }
+
+    /**
+     * **买到闪光精灵的全服播报**（2026-10-24 用户要求）。
+     *
+     * - 触发：**购买**（不含领取店领取）且**实际造出来的精灵**是闪光 —— 不按 5% 的概率字段判，
+     *   概率摇完才知道闪没闪（与 [sendPurchaseCelebration] 同一口径）
+     * - 前缀：自定义 NPC 商店 = 玩家**右键进店的那个 NPC** 的名字（没有自定义名 / 不是从 NPC 进的 ⇒ 店名）；
+     *   主 RP 商城 = 固定词条 `[RP商城]`（主商城同样有闪光概率设置，两边共用一个编辑窗）
+     * - 精灵名可悬停：复用分享那套大图快照（[ShareNetwork.hoverablePokemonName]）⇒ 大图 + 完整悬停窗
+     */
+    private fun announceShinyPurchase(
+        server: MinecraftServer,
+        player: ServerPlayerEntity,
+        kind: String,
+        shopId: String,
+        result: PointMarketBuyResult.Success
+    ) {
+        if (kind != ShopEntry.KIND_POKEMON) return
+        val pokemon = result.pokemon ?: return
+        if (!pokemon.shiny) return
+
+        val shop = PointMarketService.customShop(server, shopId)
+        val prefix = if (shop == null) {
+            // customShop 对未知 / 已删除的店也返回 null ⇒ 只认主商城
+            if (shopId != MAIN_SHOP_ID) return
+            mainShopTag()
+        } else {
+            customShopTag(player, shop)
+        }
+        broadcastShiny(server, player, prefix, "cobblemarket.chat.shiny_purchase", listOf(pokemon))
+    }
+
+    /**
+     * **领取到闪光精灵**的全服播报（2026-10-24 用户要求）。
+     *
+     * 领取店没有购买流程；`claimAll` 会把**实际交付的闪光精灵**放进 [PointMarketClaimResult.Success.shinyPokemon]。
+     * 文案用「领取到」而不是「购买到」，前缀仍是这家店的 NPC 名字（跟购买播报同一套）。
+     */
+    private fun announceShinyClaim(
+        server: MinecraftServer,
+        player: ServerPlayerEntity,
+        shopId: String,
+        shinyPokemon: List<Pokemon>
+    ) {
+        if (shinyPokemon.isEmpty()) return
+        val shop = PointMarketService.customShop(server, shopId) ?: return
+        broadcastShiny(server, player, customShopTag(player, shop), "cobblemarket.chat.shiny_claim", shinyPokemon)
+    }
+
+    /** 自定义商店的播报前缀：右键进店的那个 NPC 的名字（没有自定义名 / 从命令进店 ⇒ 店名） */
+    private fun customShopTag(player: ServerPlayerEntity, shop: CustomShop): Text {
+        val openedNpc = openedFromNpc[player.uuid]?.takeIf { it.shopId == shop.id }?.npcUuid
+        return Text.translatable(
+            "cobblemarket.chat.npc_shop_tag",
+            Text.literal(PointMarketService.merchantName(player, shop, openedNpc))
+        ).formatted(Formatting.GOLD)
+    }
+
+    /**
+     * 主商城前缀：[Ⓡ 商城] / [Ⓡ Shop]。
+     * ⚠ 游戏内**不出现「RP」字样**：用与商城标题同一个写法（`pointsIcon()` 字体图标字形）。
+     */
+    private fun mainShopTag(): Text = Text.translatable(
+        "cobblemarket.chat.rp_shop_tag",
+        Text.translatable("cobblemarket.points.market.title", CurrencyService.pointsIcon())
+    ).formatted(Formatting.GOLD)
+
+    /** 全服播报一段「拿到闪光」消息；多只闪光各播一条（每条都带自己的悬停快照） */
+    private fun broadcastShiny(
+        server: MinecraftServer,
+        player: ServerPlayerEntity,
+        prefix: Text,
+        bodyKey: String,
+        pokemonList: List<Pokemon>
+    ) {
+        val playerName = PlayerNameText.of(player.name.string)
+        for (pokemon in pokemonList) {
+            val message = prefix.copy()
+                .append(Text.literal(" "))
+                .append(
+                    Text.translatable(
+                        bodyKey, playerName, ShareNetwork.hoverablePokemonName(player, pokemon)
+                    ).formatted(Formatting.BLUE)
+                )
+            server.playerManager.playerList.forEach { it.sendMessage(message) }
+        }
     }
 
     /** 商品名（带色）：精灵照**主属性**色 + 闪光星标、物品照**稀有度**色 —— 与聊天消息、悬停窗同一套口径 */
@@ -1183,8 +1494,46 @@ object PointMarketNetwork {
      * ⚠ 客户端收到后自己建界面并请求快照；服务端**不在下发里塞商品** ——
      * 与主商城同一条链路（[RequestPointMarketPayload]），少一套数据格式。
      */
-    fun openCustomShop(player: ServerPlayerEntity, shop: CustomShop, returnToAdmin: Boolean = false) {
-        sendToPlayer(player, OpenCustomShopPayload(shop.id, shop.name, shop.type.id, returnToAdmin))
+    fun openCustomShop(
+        player: ServerPlayerEntity,
+        shop: CustomShop,
+        returnToAdmin: Boolean = false,
+        npcUuid: UUID? = null
+    ) {
+        // 记下「这次是从哪个 NPC 进的店」—— 买到闪光精灵时播报的前缀要用它的名字。
+        // ⚠ 不能按"附近最近的绑定 NPC"猜：两家 NPC 挨得近时，玩家离另一家更近就会用错名字。
+        // ⚠ 从命令 / 管理界面打开（没有 NPC）⇒ 清掉，前缀退回店名。
+        if (npcUuid != null) openedFromNpc[player.uuid] = OpenedFromNpc(shop.id, npcUuid)
+        else openedFromNpc.remove(player.uuid)
+        sendToPlayer(
+            player,
+            OpenCustomShopPayload(
+                shop.id, shop.name, shop.type.id, returnToAdmin, shop.currency.name,
+                shop.mode.id, shop.claimHours
+            )
+        )
+        // 领取店：把本玩家的周期状态一并下发（每格还能领几个 / 何时刷新）
+        if (shop.mode == CustomShopMode.CLAIM) {
+            sendToPlayer(player, buildClaimStatus(player, shop))
+        }
+    }
+
+    /** 组装某个玩家在一家领取店的当前周期状态（每格剩余 + 下次刷新时间） */
+    fun buildClaimStatus(player: ServerPlayerEntity, shop: CustomShop): CustomShopClaimStatusPayload {
+        val now = System.currentTimeMillis()
+        val periodMs = shop.claimHours.coerceIn(1, MAX_CLAIM_HOURS) * 3_600_000L
+        val state = CustomShopClaimState.get(player.server)
+        val period = state.periodFor(shop.id, player.uuid, now, periodMs)
+        val remaining = LinkedHashMap<String, Int>()
+        for (kind in listOf(ShopEntry.KIND_POKEMON, ShopEntry.KIND_ITEM)) {
+            if (!shop.type.allows(kind)) continue
+            shop.all(kind).values.forEach { entry ->
+                if (entry.stock > 0) remaining[entry.entryId] = state.remaining(period, entry.entryId, entry.stock)
+            }
+        }
+        return CustomShopClaimStatusPayload(
+            shop.id, state.nextResetAt(shop.id, player.uuid, periodMs), remaining
+        )
     }
 
     /** 组装配方快照列表（只发给请求过的人 / 刚操作过的人，不做广播 —— 它是服主的私人配方库） */

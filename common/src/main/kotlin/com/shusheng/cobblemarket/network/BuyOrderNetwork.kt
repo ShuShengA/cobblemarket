@@ -835,15 +835,14 @@ object BuyOrderNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.held_item_blocked")))
                     return@execute
                 }
-                // ⚠ 限价表是**主货币口径**，RP 单整块跳过（拿主货币的上下限去套 RP 价只会误伤，与市场/拍卖同）
                 // pokemonLimit 顺带带回"决定上下限的那两条规则"——拦下时要把理由说清（见 RuleReasonText）
-                val pokemonLimit = if (order.currency == MarketCurrency.PRIMARY)
-                    com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server).check(pokemon)
-                else null
+                // 规则按**求购单自己的币种**取（2026-10-24，主货币 / RP 各一套）
+                val pokemonLimit = com.shusheng.cobblemarket.market.PokemonPriceLimitState.get(server)
+                    .check(pokemon, order.currency)
                 val bounds = pokemonLimit?.let { m ->
                     val itemBounds = if (heldItemId != null)
                         com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
-                            .getPriceBounds(heldItem, player.serverWorld.registryManager)
+                            .getPriceBounds(heldItem, player.serverWorld.registryManager, order.currency)
                     else null
                     com.shusheng.cobblemarket.market.mergePriceBounds(m.bounds, itemBounds)
                 }
@@ -855,7 +854,10 @@ object BuyOrderNetwork {
                     }
                     if (bounds.min != null && payload.price < bounds.min) {
                         val msg = RuleReasonText.priceLimit(
-                            Text.translatable("cobblemarket.buy_order.price_limit_below", CurrencyHandler.formatAmount(bounds.min)),
+                            Text.translatable(
+                                "cobblemarket.buy_order.price_limit_below",
+                                CurrencyService.amountText(bounds.min, order.currency)
+                            ),
                             pokemonLimit.minEntry
                         )
                         sendToPlayer(player, MarketResultPayload(false, msg))
@@ -863,7 +865,10 @@ object BuyOrderNetwork {
                     }
                     if (bounds.max != null && payload.price > bounds.max) {
                         val msg = RuleReasonText.priceLimit(
-                            Text.translatable("cobblemarket.buy_order.price_limit_above", CurrencyHandler.formatAmount(bounds.max)),
+                            Text.translatable(
+                                "cobblemarket.buy_order.price_limit_above",
+                                CurrencyService.amountText(bounds.max, order.currency)
+                            ),
                             pokemonLimit.maxEntry
                         )
                         sendToPlayer(player, MarketResultPayload(false, msg))
@@ -989,12 +994,9 @@ object BuyOrderNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.blacklist.item_blocked")))
                     return@execute
                 }
-                // 物品价格限制是单价语义：交付单价直接对照 bounds
-                // ⚠ 限价表是**主货币口径**，RP 单整块跳过（理由同精灵交付）
-                val itemBounds = if (order.currency == MarketCurrency.PRIMARY)
-                    com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
-                        .getPriceBounds(referenceStack, player.serverWorld.registryManager)
-                else null
+                // 物品价格限制是单价语义：交付单价直接对照 bounds；规则按**订单币种**取（2026-10-24）
+                val itemBounds = com.shusheng.cobblemarket.market.ItemPriceLimitState.get(server)
+                    .getPriceBounds(referenceStack, player.serverWorld.registryManager, order.currency)
                 if (itemBounds != null) {
                     // 空区间 = 多条同档限价规则交叉锁死，任何价格都过不了校验：明确告知而不是轮流报上下限
                     if (itemBounds.isEmptyRange) {
@@ -1002,11 +1004,17 @@ object BuyOrderNetwork {
                         return@execute
                     }
                     if (itemBounds.min != null && payload.price < itemBounds.min) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_below", CurrencyHandler.formatAmount(itemBounds.min))))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable(
+                            "cobblemarket.buy_order.price_limit_below",
+                            CurrencyService.amountText(itemBounds.min, order.currency)
+                        )))
                         return@execute
                     }
                     if (itemBounds.max != null && payload.price > itemBounds.max) {
-                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.price_limit_above", CurrencyHandler.formatAmount(itemBounds.max))))
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable(
+                            "cobblemarket.buy_order.price_limit_above",
+                            CurrencyService.amountText(itemBounds.max, order.currency)
+                        )))
                         return@execute
                     }
                 }

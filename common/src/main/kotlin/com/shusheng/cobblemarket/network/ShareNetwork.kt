@@ -174,6 +174,12 @@ object ShareNetwork {
         val pokemon = Cobblemon.storage.getParty(player).find { it.uuid == uuid }
             ?: Cobblemon.storage.getPC(player).find { it.uuid == uuid }
             ?: return null
+        cachePokemonPreview(shareId, player, pokemon)
+        return buildPokemonMessage(player, shareId, pokemon)
+    }
+
+    /** 把一只**活精灵**缓存成大图快照（分享 / 「买到闪光」播报共用，保证两处的大图与悬停窗同源） */
+    private fun cachePokemonPreview(shareId: UUID, player: ServerPlayerEntity, pokemon: Pokemon) {
         // 大图快照：形态取真实 aspects（闪光补 "shiny"，缺了会把闪光画成普通色，与各界面同口径）；
         // 携带物设成「隐藏」的不下发（同挂单/大图通道）
         cachePreview(
@@ -205,7 +211,23 @@ object ShareNetwork {
                 isShare = true
             )
         )
-        return buildPokemonMessage(player, shareId, pokemon)
+    }
+
+    /**
+     * **系统播报**（「买到闪光精灵」等）用的可悬停名字：名字本体照分享那套（金色 ★ + 属性色 + 灰方括号），
+     * 另外把大图快照按 [ShareNetwork.getPreview] 的同一套缓存登记好 —— 鼠标停上去由客户端自绘
+     * 大图 + 完整悬停窗，与分享 / 拍卖播报完全同源。
+     *
+     * 名字上挂的 `/cobblemarket share <id>` 与分享一致：**只用来让 `ChatObjectPreview` 认出对象**，
+     * 点击是空分支（点了没反应）。
+     */
+    fun hoverablePokemonName(player: ServerPlayerEntity, pokemon: Pokemon): Text {
+        val shareId = UUID.randomUUID()
+        cachePokemonPreview(shareId, player, pokemon)
+        return Text.literal("").append(pokemonNameText(pokemon))
+            .styled {
+                it.withClickEvent(ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cobblemarket share $shareId"))
+            }
     }
 
     /** 物品分享：按槽位定位到背包主栏里的那个栈（越界/空栈一律丢弃；槽位号来自客户端，必须先校验范围） */
@@ -287,7 +309,11 @@ object ShareNetwork {
         return shareMessage(player, shareId, nameText)
     }
 
-    private fun buildPokemonMessage(player: ServerPlayerEntity, shareId: UUID, pokemon: Pokemon): Text {
+    private fun buildPokemonMessage(player: ServerPlayerEntity, shareId: UUID, pokemon: Pokemon): Text =
+        shareMessage(player, shareId, pokemonNameText(pokemon))
+
+    /** 精灵名的统一写法（金色 ★ + 属性色 + 昵称 + 灰方括号）—— 分享播报与系统播报共用 */
+    private fun pokemonNameText(pokemon: Pokemon): Text {
         val primaryTypeKey = "cobblemon.type.${pokemon.primaryType.name.lowercase()}"
         // 名字颜色按**当前形态**取主属性色（与列表/悬停窗同一口径：阿罗拉形态显示冰色而非物种默认色）；
         // 外面套灰色 `[]`、**不带下划线**（理由同物品名那段：下划线是「可点击」的意思，这条名字点了不做事）
@@ -305,12 +331,11 @@ object ShareNetwork {
                 )
             )
             .append(Text.literal("]").formatted(Formatting.GRAY))
-        val displayName = if (pokemon.shiny) {
+        return if (pokemon.shiny) {
             Text.literal("").append(Text.literal("★ ").formatted(Formatting.GOLD)).append(nameText)
         } else {
             Text.literal("").append(nameText)
         }
-        return shareMessage(player, shareId, displayName)
     }
 
     /**

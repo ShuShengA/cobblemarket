@@ -159,6 +159,8 @@ object CobbleMarket {
 
 		onPlayerDisconnect { player ->
 			com.shusheng.cobblemarket.util.RequestThrottle.onDisconnect(player.uuid)
+			// 「从哪个 NPC 打开的自定义商店」只用于闪光播报前缀，断线即清（不持久化）
+			com.shusheng.cobblemarket.network.PointMarketNetwork.onPlayerDisconnect(player.uuid)
 			// 玩家退出时 MC 立即保存其玩家数据（货/钱已扣就此落盘），模组状态立即追上，
 			// 否则此后杀进程/崩溃会形成错位导致货蒸发（见 PersistHelper 注释）
 			com.shusheng.cobblemarket.util.PersistHelper.onPlayerDisconnect(player.server)

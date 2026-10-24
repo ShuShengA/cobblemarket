@@ -297,13 +297,14 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
         // 自定义商店管理入口（2026-10-21 用户要求）：市场开关**右侧**第一颗。
         // 右边界不动：市场开关右缘 + 8px = centerX + 19；它与「玩家总览」之间因此是 10px
         //（不是左边那排统一的 8px）—— 右边三颗的右缘要贴红线 / 保持原位置，只能让这一处多 2px。
-        // 图标暂时复用市场按钮那张（36×36），用户以后给正式图时换 `iconLeft` 一行即可。
+        // 图标 = 用户 2026-10-24 给的正式图（48×48）。显示 **16×16**（本排其它入口是 18×18）——
+        // 用户看过后要求缩一点，摊位图细节多，略小一点反而清爽。
         val customShopBtn = NineSliceButton(
             centerX + iconSize / 2 + iconGap, iconY, iconSize, iconSize,
             Text.literal(""),
             { openIfPermitted(MarketPermissions.POINTS_SHOP) { client?.setScreen(CustomShopAdminScreen()) } },
-            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/market.png"),
-            iconTexW = 36, iconTexH = 36, iconScale = 0.5f,
+            iconLeft = Identifier.of("cobblemarket", "textures/gui/button/custom_shop.png"),
+            iconTexW = 48, iconTexH = 48, iconScale = 1f / 3f,
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
         )
         customShopBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(

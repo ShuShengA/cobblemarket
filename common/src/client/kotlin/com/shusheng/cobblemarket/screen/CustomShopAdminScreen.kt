@@ -3,10 +3,15 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.CustomShopAdminCache
 import com.shusheng.cobblemarket.client.NpcAvatarRenderer
 import com.shusheng.cobblemarket.client.TooltipPlacement
+import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.playButtonClickSound
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.currency.CustomShopMode
 import com.shusheng.cobblemarket.currency.CustomShopState
 import com.shusheng.cobblemarket.currency.CustomShopType
+import com.shusheng.cobblemarket.currency.DEFAULT_CLAIM_HOURS
+import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.customShopCurrencyText
 import com.shusheng.cobblemarket.currency.customShopTypeText
 import com.shusheng.cobblemarket.network.BindCustomShopNpcPayload
 import com.shusheng.cobblemarket.network.CreateCustomShopPayload
@@ -45,7 +50,8 @@ import net.minecraft.util.Identifier
  * 这里只负责发请求与展示；结果走 `MarketResultPayload`（成功绿、失败红，聊天栏 + 弹窗红字）。
  *
  * ⚠ 管理端**不要求距离**（除绑定 NPC 要 ≤16 格）；绑定/解绑、改名、类型、开关、删除都不动钱。
- * ⚠ 3D 头像见 [NpcAvatarRenderer]：按实体类型画默认模型，自定义皮肤本期不传。
+ * ⚠ 3D 头像见 [NpcAvatarRenderer]：按实体类型画默认模型，自定义皮肤本期不传；
+ *   宝可梦另带物种 + aspects（否则所有宝可梦是同一个随机小模型、名字全叫「宝可梦」）。
  */
 class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.title")) {
 
@@ -81,17 +87,23 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
     private var createId = ""
     private var createName = ""
     private var createType = CustomShopType.BOTH
+    private var createCurrency = MarketCurrency.PRIMARY
+    private var createMode = CustomShopMode.NORMAL
+    private var createHoursText = DEFAULT_CLAIM_HOURS.toString()
     private var renameName = ""
     private var dialogError: Text? = null
 
     private var createIdField: TextFieldWidget? = null
     private var createNameField: TextFieldWidget? = null
+    private var createHoursField: TextFieldWidget? = null
     private var renameField: TextFieldWidget? = null
 
     private val rowButtons = mutableListOf<NineSliceButton>()
     private val dialogButtons = mutableListOf<NineSliceButton>()
     private var createTypeButtons = mutableListOf<Pair<CustomShopType, NineSliceButton>>()
     private var detailTypeButtons = mutableListOf<Pair<CustomShopType, NineSliceButton>>()
+    private var createCurrencyButtons = mutableListOf<Pair<MarketCurrency, NineSliceButton>>()
+    private var createModeButtons = mutableListOf<Pair<CustomShopMode, NineSliceButton>>()
 
     /** 「管理」按钮宽度：按当前语言量出来（英文 Manage 比中文宽） */
     private var manageW = 44
@@ -116,9 +128,12 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
         dialogButtons.clear()
         createTypeButtons = mutableListOf()
         detailTypeButtons = mutableListOf()
+        createCurrencyButtons = mutableListOf()
+        createModeButtons = mutableListOf()
         // 控件已随 clearChildren 移除，旧引用不能留（否则失焦判定会拿已移除的输入框）
         createIdField = null
         createNameField = null
+        createHoursField = null
         renameField = null
         manageW = maxOf(44, textRenderer.getWidth(Text.translatable("cobblemarket.shop_admin.manage").string) + 12)
 
@@ -196,6 +211,9 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
         createId = ""
         createName = ""
         createType = CustomShopType.BOTH
+        createCurrency = MarketCurrency.PRIMARY
+        createMode = CustomShopMode.NORMAL
+        createHoursText = DEFAULT_CLAIM_HOURS.toString()
         openDialog(Dialog.CREATE)
     }
 
@@ -250,14 +268,35 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
             Dialog.NONE -> 0
         }
         val h = when (kind) {
-            Dialog.CREATE -> 180
+            // ID / 名字 / 模式 / 出售类型 / 货币或领取周期 各一行
+            Dialog.CREATE -> 250
             Dialog.RENAME -> 120
             Dialog.DELETE -> 130
-            Dialog.DETAIL -> 200
+            // 信息行变多（领取店多一行周期）时弹窗跟着长高，底部两排按钮才不会压到类型行
+            Dialog.DETAIL -> maxOf(200, detailTypeRowY(0) + 80)
             Dialog.NONE -> 0
         }
         return intArrayOf((width - w) / 2, (height - h) / 2, w, h)
     }
+
+    /**
+     * 详情弹窗「类型」区的位置。
+     *
+     * 信息区行数不固定（领取店多一行周期；NPC 名单永远有一行）——
+     * 写死 `dy + 106` 会让名单行压到按钮上（2026-10-23 用户截图报）。
+     * 行高 11、文字高 8：最后一行底 = `30 + (lines-1)*11 + 8`，标签放在它下面 4px、按钮再下 12px。
+     */
+    private fun detailTypeLabelLocalY(): Int {
+        val shop = CustomShopAdminCache.shop(detailShopId)
+        val claim = shop != null && CustomShopMode.fromId(shop.mode) == CustomShopMode.CLAIM
+        // ID / 状态 / 货币 / 模式 / [周期] / 商品 / NPC / 名单（或"未绑定"）
+        val lines = 7 + (if (claim) 1 else 0)
+        val infoBottom = 30 + (lines - 1) * 11 + 8
+        return maxOf(94, infoBottom + 4)
+    }
+
+    /** 类型按钮那一行的 y（= 标签 y + 12） */
+    private fun detailTypeRowY(dy: Int): Int = dy + detailTypeLabelLocalY() + 12
 
     private fun buildDialog() {
         val rect = dialogRect(dialog)
@@ -284,10 +323,32 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                     setPlaceholder(Text.translatable("cobblemarket.shop_admin.create.name_hint"))
                     addSelectableChild(this); addDrawableChild(this)
                 }
-                buildTypeButtons(dx + 16, dy + 118, dw - 32, 16, createType) {
+                // 模式（普通购买 / 定期领取）：**建店后不可改**
+                buildModeButtons(dx + 16, dy + 118, dw - 32, 16, createMode) {
+                    createMode = it
+                    createModeButtons.forEach { (m, b) -> b.selectedVisual = m == it }
+                    // 普通店要选货币、领取店要填周期 —— 两套控件常驻，只切可见性
+                    updateCreateRowVisibility()
+                }
+                buildTypeButtons(dx + 16, dy + 154, dw - 32, 16, createType) {
                     createType = it
                     createTypeButtons.forEach { (t, b) -> b.selectedVisual = t == it }
                 }
+                buildCurrencyButtons(dx + 16, dy + 190, dw - 32, 16, createCurrency) {
+                    createCurrency = it
+                    createCurrencyButtons.forEach { (c, b) -> b.selectedVisual = c == it }
+                }
+                createHoursField = TextFieldWidget(textRenderer, dx + 16, dy + 190, dw - 32, 16, Text.literal("")).apply {
+                    setMaxLength(5)
+                    text = createHoursText
+                    setChangedListener {
+                        createHoursText = it.filter(Char::isDigit)
+                        if (it != createHoursText) text = createHoursText
+                    }
+                    setPlaceholder(Text.translatable("cobblemarket.shop_admin.create.claim_hours_hint"))
+                    addSelectableChild(this); addDrawableChild(this)
+                }
+                updateCreateRowVisibility()
                 addDialogPairButtons(
                     dx, buttonY, dw,
                     Text.translatable("cobblemarket.shop_admin.create.confirm"), { sendCreate() },
@@ -323,8 +384,8 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                 val gap = 4
                 val btnW = (dw - 32 - gap * 2) / 3
                 val row1 = dy + dh - 10 - 16 - gap - 16
-                // 类型三选一（放在信息区下方）
-                buildTypeButtons(dx + 16, dy + 106, dw - 32, 14, CustomShopType.fromId(shop.type)) { sendType(it) }
+                // 类型三选一（放在信息区下方；信息行数会随「领取店 / 周期」变多，位置按行数让）
+                buildTypeButtons(dx + 16, detailTypeRowY(dy), dw - 32, 14, CustomShopType.fromId(shop.type)) { sendType(it) }
                 val actions = listOf<Pair<Text, () -> Unit>>(
                     Text.translatable("cobblemarket.shop_admin.detail.open") to { sendOpen() },
                     Text.translatable("cobblemarket.shop_admin.detail.bind") to { openPicker(detailShopId) },
@@ -380,6 +441,61 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
         }
     }
 
+    /** 创建弹窗的**商店模式**一行：普通购买 / 定期领取（建店后不可改） */
+    private fun buildModeButtons(
+        x: Int, y: Int, totalW: Int, h: Int, selected: CustomShopMode,
+        onPick: (CustomShopMode) -> Unit
+    ) {
+        val gap = 4
+        val btnW = (totalW - gap) / 2
+        listOf(CustomShopMode.NORMAL, CustomShopMode.CLAIM).forEachIndexed { i, mode ->
+            val b = NineSliceButton(
+                x + i * (btnW + gap), y, btnW, h,
+                Text.translatable(
+                    if (mode == CustomShopMode.CLAIM) "cobblemarket.shop_admin.mode.claim"
+                    else "cobblemarket.shop_admin.mode.normal"
+                ),
+                { onPick(mode) }
+            )
+            b.selectedVisual = mode == selected
+            createModeButtons.add(mode to b)
+            dialogButtons.add(b)
+            addDrawableChild(b)
+        }
+    }
+
+    /** 第 4 行两套控件（货币按钮 / 领取周期输入框）只切可见性，不重建界面 */
+    private fun updateCreateRowVisibility() {
+        val claim = createMode == CustomShopMode.CLAIM
+        createCurrencyButtons.forEach { (_, b) -> b.visible = !claim }
+        createHoursField?.visible = claim
+    }
+
+    /**
+     * 创建弹窗的**货币类型**一行：两个按钮（主货币 / RP 图标）。
+     *
+     * ⚠ RP 按项目口径用**图标字形**，界面里不出现「RP」字样。
+     * ⚠ 建店后只有空店能改币种（服务端 `/market shop currency`），创建这一步是主要入口。
+     */
+    private fun buildCurrencyButtons(
+        x: Int, y: Int, totalW: Int, h: Int, selected: MarketCurrency,
+        onPick: (MarketCurrency) -> Unit
+    ) {
+        val gap = 4
+        val btnW = (totalW - gap) / 2
+        listOf(MarketCurrency.PRIMARY, MarketCurrency.POINTS).forEachIndexed { i, currency ->
+            val b = NineSliceButton(
+                x + i * (btnW + gap), y, btnW, h,
+                customShopCurrencyText(currency),
+                { onPick(currency) }
+            )
+            b.selectedVisual = currency == selected
+            createCurrencyButtons.add(currency to b)
+            dialogButtons.add(b)
+            addDrawableChild(b)
+        }
+    }
+
     private fun addDialogPairButtons(
         dx: Int, y: Int, dw: Int,
         confirm: Text, onConfirm: () -> Unit,
@@ -403,10 +519,25 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
             playFailSound()
             return
         }
+        // 领取周期：空白 / 非法 → 24；超出范围直接在客户端拦一下（服务端还会再判）
+        // ⚠ 普通店用不到周期字段 —— 一律发默认值，免得切回普通模式时带着刚才输的极端值
+        val hours = if (createMode == CustomShopMode.CLAIM) {
+            val typed = createHoursText.toIntOrNull() ?: DEFAULT_CLAIM_HOURS
+            if (typed !in 1..com.shusheng.cobblemarket.currency.MAX_CLAIM_HOURS) {
+                dialogError = Text.translatable("cobblemarket.shop.err.invalid_period", typed)
+                playFailSound()
+                return
+            }
+            typed
+        } else DEFAULT_CLAIM_HOURS
         dialogError = null
         pending = Pending.CREATE
         pendingCreateId = id
-        sendToServer(CreateCustomShopPayload(id, createName.trim(), createType.id))
+        sendToServer(
+            CreateCustomShopPayload(
+                id, createName.trim(), createType.id, createCurrency.name, createMode.id, hours
+            )
+        )
     }
 
     private fun sendRename() {
@@ -560,10 +691,12 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // ⚠ 必须在最开头：宝可梦头像走 PokemonIconRenderer（头部跟随 / 点击叫声靠本帧的登记表）
+        IconRegistry.beginFrame(mouseX, mouseY)
         super.render(context, mouseX, mouseY, delta)
 
         if (dialog != Dialog.NONE) {
-            renderDialog(context, mouseX, mouseY)
+            renderDialog(context, mouseX, mouseY, delta)
             return
         }
 
@@ -610,9 +743,10 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
             val visible = CustomShopAdminCache.shops.drop(scrollOffset).take(maxVisible)
             visible.forEachIndexed { i, shop -> renderShopRow(context, shop, left, startY + i * rowHeight) }
             visible.forEachIndexed { i, shop ->
+                val npc = displayNpc(shop)
                 NpcAvatarRenderer.draw(
                     context, left + 4, startY + i * rowHeight + 2, 20,
-                    displayNpc(shop)?.typeId.orEmpty()
+                    npc?.typeId.orEmpty(), npc?.species.orEmpty(), npc?.aspects.orEmpty(), delta
                 )
             }
             if (hoveredRow in visible.indices) {
@@ -626,7 +760,8 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
             visible.forEachIndexed { i, npc -> renderNearbyRow(context, npc, left, startY + i * rowHeight) }
             visible.forEachIndexed { i, npc ->
                 NpcAvatarRenderer.draw(
-                    context, left + 4, startY + i * rowHeight + 2, 20, npc.typeId
+                    context, left + 4, startY + i * rowHeight + 2, 20,
+                    npc.typeId, npc.species, npc.aspects, delta
                 )
             }
             if (hoveredRow in visible.indices) {
@@ -668,9 +803,9 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
             if (npc.customName.isNotBlank()) {
                 line.append(Text.literal(npc.customName).formatted(Formatting.GRAY))
                 line.append(Text.literal(" · ").formatted(Formatting.DARK_GRAY))
-                line.append(NpcAvatarRenderer.typeName(npc.typeId).copy().formatted(Formatting.DARK_GRAY))
+                line.append(NpcAvatarRenderer.typeName(npc.typeId, npc.species, npc.aspects).copy().formatted(Formatting.DARK_GRAY))
             } else {
-                line.append(NpcAvatarRenderer.typeName(npc.typeId).copy().formatted(Formatting.GRAY))
+                line.append(NpcAvatarRenderer.typeName(npc.typeId, npc.species, npc.aspects).copy().formatted(Formatting.GRAY))
             }
             if (shop.npcCount > 1) {
                 line.append(Text.literal(" +${shop.npcCount - 1}").formatted(Formatting.DARK_GRAY))
@@ -693,10 +828,10 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
         if (npc.customName.isNotBlank()) {
             line.append(Text.literal(npc.customName).formatted(Formatting.WHITE))
             line.append(Text.literal(" · ").formatted(Formatting.DARK_GRAY))
-            line.append(NpcAvatarRenderer.typeName(npc.typeId).copy().formatted(Formatting.GRAY))
+            line.append(NpcAvatarRenderer.typeName(npc.typeId, npc.species, npc.aspects).copy().formatted(Formatting.GRAY))
         } else {
-            // 没有自定义名时类型名就是名字，别重复显示两遍
-            line.append(NpcAvatarRenderer.typeName(npc.typeId).copy().formatted(Formatting.WHITE))
+            // 没有自定义名时类型名就是名字，别重复显示两遍（宝可梦的物种名自带属性色，别再覆盖）
+            line.append(NpcAvatarRenderer.typeName(npc.typeId, npc.species, npc.aspects))
         }
         line.append(Text.literal(" · ").formatted(Formatting.DARK_GRAY))
         line.append(Text.translatable("cobblemarket.shop_admin.picker.distance", npc.distance).formatted(Formatting.GRAY))
@@ -730,10 +865,26 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
             Text.translatable("cobblemarket.shop_admin.hover.id", shop.id).formatted(Formatting.GRAY),
             Text.translatable("cobblemarket.shop_admin.hover.type", customShopTypeText(CustomShopType.fromId(shop.type)))
                 .formatted(Formatting.GRAY),
+            Text.translatable(
+                "cobblemarket.shop_admin.hover.currency",
+                customShopCurrencyText(MarketCurrency.fromRequest(shop.currency) ?: MarketCurrency.PRIMARY)
+            ).formatted(Formatting.GRAY),
+            Text.translatable(
+                "cobblemarket.shop_admin.hover.mode",
+                Text.translatable(
+                    if (CustomShopMode.fromId(shop.mode) == CustomShopMode.CLAIM) "cobblemarket.shop_admin.mode.claim"
+                    else "cobblemarket.shop_admin.mode.normal"
+                )
+            ).formatted(Formatting.GRAY),
             Text.translatable("cobblemarket.shop_admin.hover.offers", shop.pokemonCount, shop.itemCount)
                 .formatted(Formatting.GRAY),
             Text.translatable("cobblemarket.shop_admin.hover.npcs", shop.npcCount).formatted(Formatting.GRAY)
         )
+        // 领取店补一行周期（普通店不显示，免得一行废话）
+        if (CustomShopMode.fromId(shop.mode) == CustomShopMode.CLAIM) {
+            lines += Text.translatable("cobblemarket.shop_admin.hover.period", shop.claimHours)
+                .formatted(Formatting.GRAY)
+        }
         if (shop.npcs.isEmpty()) {
             lines += Text.translatable("cobblemarket.shop_admin.row.unbound").formatted(Formatting.DARK_GRAY)
         } else {
@@ -742,11 +893,11 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                 if (npc.customName.isNotBlank()) {
                     line.append(Text.literal(npc.customName).formatted(Formatting.WHITE))
                     line.append(Text.literal(" (").formatted(Formatting.DARK_GRAY))
-                    line.append(NpcAvatarRenderer.typeName(npc.typeId).copy().formatted(Formatting.GRAY))
+                    line.append(NpcAvatarRenderer.typeName(npc.typeId, npc.species, npc.aspects).copy().formatted(Formatting.GRAY))
                     line.append(Text.literal(")").formatted(Formatting.DARK_GRAY))
                 } else {
-                    // 没有自定义名时类型名就是名字，别写成「类型 (类型)」
-                    line.append(NpcAvatarRenderer.typeName(npc.typeId).copy().formatted(Formatting.WHITE))
+                    // 没有自定义名时类型名就是名字，别写成「类型 (类型)」（宝可梦的物种名自带属性色）
+                    line.append(NpcAvatarRenderer.typeName(npc.typeId, npc.species, npc.aspects))
                 }
                 lines += line
             }
@@ -763,11 +914,11 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
             lines += Text.literal(npc.customName).formatted(Formatting.WHITE)
             lines += Text.translatable(
                 "cobblemarket.shop_admin.hover.npc_type",
-                NpcAvatarRenderer.typeName(npc.typeId)
+                NpcAvatarRenderer.typeName(npc.typeId, npc.species, npc.aspects)
             ).formatted(Formatting.GRAY)
         } else {
-            // 没有自定义名时类型名就是名字，不再重复一行「类型」
-            lines += NpcAvatarRenderer.typeName(npc.typeId).copy().formatted(Formatting.WHITE)
+            // 没有自定义名时类型名就是名字，不再重复一行「类型」（宝可梦的物种名自带属性色）
+            lines += NpcAvatarRenderer.typeName(npc.typeId, npc.species, npc.aspects)
         }
         lines += Text.translatable("cobblemarket.shop_admin.picker.distance", npc.distance)
             .formatted(Formatting.GRAY)
@@ -811,7 +962,7 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
 
     // ── 弹窗渲染 ──
 
-    private fun renderDialog(context: DrawContext, mouseX: Int, mouseY: Int) {
+    private fun renderDialog(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val rect = dialogRect(dialog)
         val dx = rect[0]
         val dy = rect[1]
@@ -827,8 +978,18 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                 )
                 context.drawTextWithShadow(textRenderer, Text.translatable("cobblemarket.shop_admin.create.id"), dx + 16, dy + 34, 0xFFFFFF)
                 context.drawTextWithShadow(textRenderer, Text.translatable("cobblemarket.shop_admin.create.name"), dx + 16, dy + 70, 0xFFFFFF)
-                context.drawTextWithShadow(textRenderer, Text.translatable("cobblemarket.shop_admin.create.type"), dx + 16, dy + 106, 0xFFFFFF)
-                drawDialogError(context, dx, dy + 142, dw)
+                context.drawTextWithShadow(textRenderer, Text.translatable("cobblemarket.shop_admin.create.mode"), dx + 16, dy + 106, 0xFFFFFF)
+                context.drawTextWithShadow(textRenderer, Text.translatable("cobblemarket.shop_admin.create.type"), dx + 16, dy + 142, 0xFFFFFF)
+                // 第 4 行：普通店 = 货币类型；领取店 = 领取周期（小时）
+                context.drawTextWithShadow(
+                    textRenderer,
+                    Text.translatable(
+                        if (createMode == CustomShopMode.CLAIM) "cobblemarket.shop_admin.create.claim_hours"
+                        else "cobblemarket.shop_admin.create.currency"
+                    ),
+                    dx + 16, dy + 178, 0xFFFFFF
+                )
+                drawDialogError(context, dx, dy + 212, dw)
             }
             Dialog.RENAME -> {
                 context.drawCenteredTextWithShadow(
@@ -879,8 +1040,10 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                     centerX, dy + 12, 0xFFFFFF
                 )
                 // 大号头像
+                val npc = displayNpc(shop)
                 NpcAvatarRenderer.draw(
-                    context, dx + 16, dy + 28, 44, displayNpc(shop)?.typeId.orEmpty()
+                    context, dx + 16, dy + 28, 44,
+                    npc?.typeId.orEmpty(), npc?.species.orEmpty(), npc?.aspects.orEmpty(), delta
                 )
                 val infoX = dx + 70
                 var ty = dy + 30
@@ -900,6 +1063,33 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                 ); ty += 11
                 context.drawTextWithShadow(
                     textRenderer,
+                    Text.translatable(
+                        "cobblemarket.shop_admin.hover.currency",
+                        customShopCurrencyText(MarketCurrency.fromRequest(shop.currency) ?: MarketCurrency.PRIMARY)
+                    ),
+                    infoX, ty, 0xFFFFFF
+                ); ty += 11
+                val claimMode = CustomShopMode.fromId(shop.mode) == CustomShopMode.CLAIM
+                context.drawTextWithShadow(
+                    textRenderer,
+                    Text.translatable(
+                        "cobblemarket.shop_admin.hover.mode",
+                        Text.translatable(
+                            if (claimMode) "cobblemarket.shop_admin.mode.claim"
+                            else "cobblemarket.shop_admin.mode.normal"
+                        )
+                    ),
+                    infoX, ty, 0xFFFFFF
+                ); ty += 11
+                if (claimMode) {
+                    context.drawTextWithShadow(
+                        textRenderer,
+                        Text.translatable("cobblemarket.shop_admin.hover.period", shop.claimHours),
+                        infoX, ty, 0xFFFFFF
+                    ); ty += 11
+                }
+                context.drawTextWithShadow(
+                    textRenderer,
                     Text.translatable("cobblemarket.shop_admin.hover.offers", shop.pokemonCount, shop.itemCount),
                     infoX, ty, 0xFFFFFF
                 ); ty += 11
@@ -912,7 +1102,10 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                     val names = Text.literal("")
                     shop.npcs.take(3).forEach { npc ->
                         if (names.string.isNotEmpty()) names.append(Text.literal(", ").formatted(Formatting.DARK_GRAY))
-                        names.append(NpcAvatarRenderer.displayName(npc.customName, npc.typeId).copy().formatted(Formatting.GRAY))
+                        names.append(
+                            NpcAvatarRenderer.displayName(npc.customName, npc.typeId, npc.species, npc.aspects)
+                                .copy().formatted(Formatting.GRAY)
+                        )
                     }
                     if (shop.npcCount > 3) names.append(Text.literal(" +${shop.npcCount - 3}").formatted(Formatting.DARK_GRAY))
                     context.drawTextWithShadow(
@@ -926,11 +1119,12 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                         infoX, ty, 0xFFFFFF
                     )
                 }
+                val typeRowY = detailTypeRowY(dy)
                 context.drawTextWithShadow(
                     textRenderer, Text.translatable("cobblemarket.shop_admin.detail.type"),
-                    dx + 16, dy + 94, 0xFFFFFF
+                    dx + 16, typeRowY - 12, 0xFFFFFF
                 )
-                drawDialogError(context, dx, dy + 128, dw)
+                drawDialogError(context, dx, typeRowY + 22, dw)
             }
             Dialog.NONE -> Unit
         }
@@ -984,8 +1178,15 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
         return if (row in 0 until shown) row else -1
     }
 
+    /**
+     * 弹窗里**全部**输入框 —— 失焦判定（[mouseClicked]）唯一依据，别各列一份。
+     *
+     * ⚠ **新增弹窗输入框必须加进这里**：漏了的话，点它时 `super` 先把焦点给它、
+     *   紧接着这段逻辑因为"点的不是输入框"又把焦点清掉 ⇒ **点了无法编辑**。
+     *   2026-10-24 用户报的「创建商店的领取周期框点不了」就是漏了 [createHoursField]。
+     */
     private fun dialogTextFields(): List<TextFieldWidget> =
-        listOfNotNull(createIdField, createNameField, renameField)
+        listOfNotNull(createIdField, createNameField, createHoursField, renameField)
 
     override fun mouseScrolled(
         mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double

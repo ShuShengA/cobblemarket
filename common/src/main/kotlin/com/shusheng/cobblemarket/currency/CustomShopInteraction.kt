@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.currency
 
+import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.network.PointMarketNetwork
 import com.shusheng.cobblemarket.platform.onUseEntity
 import net.minecraft.entity.Entity
@@ -39,6 +40,22 @@ object CustomShopInteraction {
         if (entity is ServerPlayerEntity) return false
         val shop = CustomShopState.get(player.server).shopForNpc(entity.uuid) ?: return false
 
+        // ⚠ **有意不判市场总开关**（`CobbleMarketConfig.marketEnabled`）：停市只拦玩家市场 / 借款，
+        //   NPC 商店是服主自己开的售货点 —— 用户 2026-10-24 拍板「跟随市场总开关就管得太宽了」。
+        //   要关某家店就用它自己的营业开关（`shop.enabled`），别再往这里补 marketBlocked。
+        // RP 总开关关着 ⇒ **RP 计价的普通店**不可用（2026-10-23 用户报：关着还能从 NPC 商店买）
+        // ⚠ 领取店是免费的，与 RP 总开关无关；主货币店也无关
+        if (shop.mode == CustomShopMode.NORMAL &&
+            shop.currency == MarketCurrency.POINTS &&
+            !CobbleMarketConfig.pointsEnabled
+        ) {
+            player.sendMessage(
+                Text.translatable("cobblemarket.shop.rp_disabled", CurrencyService.pointsIcon())
+                    .formatted(Formatting.RED),
+                false
+            )
+            return true
+        }
         if (!shop.enabled) {
             player.sendMessage(
                 Text.translatable("cobblemarket.shop.closed", shop.name).formatted(Formatting.RED),
@@ -54,7 +71,9 @@ object CustomShopInteraction {
             )
             return true
         }
-        PointMarketNetwork.openCustomShop(player, shop)
+        // 把**是哪个 NPC** 一并带上：买到闪光精灵时要用它的名字播报（不能按"最近的 NPC"猜，
+        // 两家挨着时会用错人；详见 PointMarketNetwork.openCustomShop 的注释）
+        PointMarketNetwork.openCustomShop(player, shop, npcUuid = entity.uuid)
         return true
     }
 }

@@ -1,5 +1,9 @@
 package com.shusheng.cobblemarket.client
 
+import com.shusheng.cobblemarket.currency.CustomShopMode
+import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.network.ClaimCustomShopResultPayload
+import com.shusheng.cobblemarket.network.CustomShopClaimStatusPayload
 import com.shusheng.cobblemarket.network.SpeciesRestPayload
 import com.shusheng.cobblemarket.permission.PermissionAuditPayload
 import com.shusheng.cobblemarket.permission.PermissionListDataPayload
@@ -199,6 +203,8 @@ object CobbleMarketClient {
         // 上架通知的顶部气泡（HUD 层，照庆祝动画的注册方式）
         MarketNoticeHud.register()
         ItemCelebrationAnimation.register()
+        // 定期领取店「物品飞入物品栏」（HUD 层；有界面时由 ScreenMixin 接管）
+        ItemClaimFlyAnimation.register()
         CardCelebrationAnimation.register()
         openMarketKey = registerKeyBinding(
             KeyBinding(
@@ -810,11 +816,33 @@ object CobbleMarketClient {
                 val client = MinecraftClient.getInstance()
                 val current = client.currentScreen
                 if (current is PointsMarketScreen && current.shopId == payload.shopId) return@execute
+                // 打开音效与按 K 打开市场同档（右键 NPC 打开商店此前是静默的，用户 2026-10-23 报）
+                playEntrySound()
+                // 换店：旧的领取状态不能串到新店（服务端随后会推新店的）
+                CustomShopClaimCache.clear()
                 client.setScreen(
                     PointsMarketScreen(
-                        payload.shopId, payload.shopName, payload.shopType, payload.returnToAdmin
+                        payload.shopId, payload.shopName, payload.shopType, payload.returnToAdmin,
+                        // 包里的值认不出 → 落 RP（服务端才是最终判据，界面只决定显示）
+                        MarketCurrency.fromRequest(payload.shopCurrency) ?: MarketCurrency.POINTS,
+                        CustomShopMode.fromRequest(payload.shopMode) ?: CustomShopMode.NORMAL,
+                        payload.claimHours
                     )
                 )
+            }
+        }
+
+        // 定期领取店：本玩家的周期状态（每格剩余 / 下次刷新）
+        registerS2C(CustomShopClaimStatusPayload.ID, CustomShopClaimStatusPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                CustomShopClaimCache.accept(payload)
+            }
+        }
+
+        // 定期领取店：交付明细（只用于「物品飞入物品栏」动画；精灵不进这个包）
+        registerS2C(ClaimCustomShopResultPayload.ID, ClaimCustomShopResultPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                ItemClaimFlyAnimation.onClaimed(payload.shopId, payload.claimed)
             }
         }
 

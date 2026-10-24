@@ -36,6 +36,34 @@ enum class CustomShopType(val id: String) {
     }
 }
 
+/** 领取周期默认 / 上限（小时）：24 = 每日，8760 = 一年（够覆盖「每月」720） */
+const val DEFAULT_CLAIM_HOURS: Int = 24
+const val MAX_CLAIM_HOURS: Int = 8760
+
+/**
+ * **商店的经营模式**（2026-10-23 用户要求）：
+ *
+ * - [NORMAL]：普通购买店（用 [CustomShop.currency] 结账）
+ * - [CLAIM]：**定期领取店** —— 商品免费，每个玩家每 [CustomShop.claimHours] 小时
+ *   可以领走各格的数量；领到的数量不叠加（过期未领的部分作废）。
+ *
+ * ⚠ 与 [CustomShopType]（卖什么）是**两根独立的轴**：领取店也能选精灵 / 物品 / 两者。
+ */
+enum class CustomShopMode(val id: String) {
+    NORMAL("normal"),
+    CLAIM("claim");
+
+    companion object {
+        /** 宽松解析（存档 / 网络）：认不出就按普通购买店，不崩 */
+        fun fromId(raw: String?): CustomShopMode =
+            values().firstOrNull { it.id == raw?.trim()?.lowercase() } ?: NORMAL
+
+        /** 请求校验：非法值返回 null，调用方必须拒绝（防篡改） */
+        fun fromRequest(raw: String?): CustomShopMode? =
+            values().firstOrNull { it.id == raw?.trim()?.lowercase() }
+    }
+}
+
 /**
  * **一个自定义（NPC）商店**。
  *
@@ -43,9 +71,12 @@ enum class CustomShopType(val id: String) {
  * 售罄格保留、`-1` = 无限量 —— 所以直接实现 [ShopStore]，服务层的购买 / 上架 / 校验逻辑
  * 一份就够（[PointMarketService] 只认接口）。
  *
- * 额外三样：
+ * 额外五样：
  * - [name]：显示在商城标题上的名字（主商城用固定词条，自定义商店用这个）
  * - [type]：只卖精灵 / 只卖物品 / 两者都卖（见 [CustomShopType]）
+ * - [currency]：结算币种（主货币 / RP）—— **建店时选定，有商品之后不可改**（改币种等于把价格全部重新解释）
+ * - [mode] / [claimHours]：普通购买 / 定期领取，以及领取周期（小时）—— 模式建店时选定，
+ *   周期可以随时改（不改变任何价格语义）
  * - [npcUuids]：绑定到哪些 NPC；玩家右键这些实体即打开本商店（一个商店可以绑多个）
  *
  * ⚠ 条目的序列化**复用** `writeShopEntryBody` / `readShopEntryBody`（与主商城同一份）——
@@ -56,7 +87,11 @@ class CustomShop internal constructor(
     val id: String,
     var name: String,
     var enabled: Boolean = true,
-    var type: CustomShopType = CustomShopType.BOTH
+    var type: CustomShopType = CustomShopType.BOTH,
+    var currency: MarketCurrency = MarketCurrency.POINTS,
+    var mode: CustomShopMode = CustomShopMode.NORMAL,
+    /** 领取周期（小时）：24 = 每日、168 = 每周、720 = 每月（**滚动冷却**，从该玩家第一次领取开始算） */
+    var claimHours: Int = DEFAULT_CLAIM_HOURS
 ) : ShopStore {
 
     /** 种类 → (格子序号 → 商品)。空格子不存（省存档空间），序号本身即位置 */
@@ -136,8 +171,18 @@ class CustomShop internal constructor(
     fun itemCount(): Int = all(ShopEntry.KIND_ITEM).size
 }
 
-/** 绑定 NPC 时记下的显示信息：实体类型 id + 自定义名（空 = 没有自定义名） */
-data class CustomShopNpcMeta(val typeId: String, val customName: String = "")
+/**
+ * 绑定 NPC 时记下的显示信息：实体类型 id + 自定义名 + 模型信息。
+ *
+ * [species] / [aspects] 只有宝可梦才有（其它实体为空）：物种决定画哪只模型、显示哪个名字，
+ * aspects 决定闪光 / 地区形态。**新 NBT 键、旧档缺省为空**，读取端按空值落默认。
+ */
+data class CustomShopNpcMeta(
+    val typeId: String,
+    val customName: String = "",
+    val species: String = "",
+    val aspects: String = ""
+)
 
 /** 自定义商店的操作结果（命令侧翻成中英提示） */
 enum class CustomShopError {
@@ -163,7 +208,15 @@ enum class CustomShopError {
     /** 要绑定的实体不在了 / 不在玩家所在世界 / 区块没加载 */
     NPC_NOT_FOUND,
     /** 要绑定的实体离玩家太远（管理界面只列 16 格内的） */
-    NPC_TOO_FAR
+    NPC_TOO_FAR,
+    /** 币种字符串认不出来（`primary` / `points` 之外的值） */
+    INVALID_CURRENCY,
+    /** 店里还有商品，不能改币种（改币种 = 把价格全部重新解释） */
+    NOT_EMPTY,
+    /** 模式字符串认不出来（`normal` / `claim` 之外的值） */
+    INVALID_MODE,
+    /** 领取周期不合法（1 ~ 8760 小时） */
+    INVALID_PERIOD
 }
 
 /**
@@ -198,14 +251,53 @@ class CustomShopState private constructor() : PersistentState() {
 
     // ── 写（服务端命令 / 交互；权限由调用方判） ──
 
-    /** 新建商店；返回 null = 成功。默认 [CustomShopType.BOTH]（与以前一致） */
-    fun create(rawId: String, rawName: String, type: CustomShopType = CustomShopType.BOTH): CustomShopError? {
+    /** 新建商店；返回 null = 成功。默认 [CustomShopType.BOTH]；货币默认主货币；模式默认普通购买 */
+    fun create(
+        rawId: String,
+        rawName: String,
+        type: CustomShopType = CustomShopType.BOTH,
+        currency: MarketCurrency = MarketCurrency.PRIMARY,
+        mode: CustomShopMode = CustomShopMode.NORMAL,
+        claimHours: Int = DEFAULT_CLAIM_HOURS
+    ): CustomShopError? {
         val id = normalizeId(rawId)
         if (!SHOP_ID_PATTERN.matches(id) || id == MAIN_SHOP_ID) return CustomShopError.INVALID_ID
         if (shops.containsKey(id)) return CustomShopError.EXISTS
         if (shops.size >= MAX_SHOPS) return CustomShopError.TOO_MANY
+        if (claimHours !in 1..MAX_CLAIM_HOURS) return CustomShopError.INVALID_PERIOD
         val name = normalizeName(rawName, id) ?: return CustomShopError.INVALID_NAME
-        shops[id] = CustomShop(this, id, name, type = type)
+        shops[id] = CustomShop(
+            this, id, name, type = type, currency = currency, mode = mode, claimHours = claimHours
+        )
+        markDirty()
+        return null
+    }
+
+    /**
+     * 改领取周期（小时）；返回 null = 成功。
+     *
+     * ⚠ 周期只影响"下一次刷新何时到"（滚动冷却），**不改变任何价格 / 库存语义** ⇒ 随时可改。
+     * 普通购买店也能改，但界面不会用到。
+     */
+    fun setClaimHours(id: String, hours: Int): CustomShopError? {
+        val shop = shops[normalizeId(id)] ?: return CustomShopError.NOT_FOUND
+        if (hours !in 1..MAX_CLAIM_HOURS) return CustomShopError.INVALID_PERIOD
+        shop.claimHours = hours
+        markDirty()
+        return null
+    }
+
+    /**
+     * 改一家店的结算币种；返回 null = 成功。
+     *
+     * ⚠ **只允许空店改**：已有商品时改币种 = 把每个价格数字重新解释成另一种货币
+     * （100 RP 变 100 主货币），必然出事 —— 要么删商品重上，要么删店重建。
+     */
+    fun setCurrency(id: String, currency: MarketCurrency): CustomShopError? {
+        val shop = shops[normalizeId(id)] ?: return CustomShopError.NOT_FOUND
+        if (shop.entryCount() > 0) return CustomShopError.NOT_EMPTY
+        if (shop.currency == currency) return null
+        shop.currency = currency
         markDirty()
         return null
     }
@@ -257,27 +349,33 @@ class CustomShopState private constructor() : PersistentState() {
         id: String,
         uuid: UUID,
         typeId: String = "",
-        customName: String = ""
+        customName: String = "",
+        species: String = "",
+        aspects: String = ""
     ): CustomShopError? {
         val shop = shops[normalizeId(id)] ?: return CustomShopError.NOT_FOUND
         val existing = shopForNpc(uuid)
         if (existing != null) {
             if (existing.id != shop.id) return CustomShopError.ALREADY_BOUND
             // 已绑在本店：允许刷新元信息（重新 bind 一遍不该报错，也不该丢掉新名字）
-            if (typeId.isNotEmpty() || customName.isNotEmpty()) {
-                shop.npcMeta[uuid] = CustomShopNpcMeta(typeId, customName)
+            if (hasMeta(typeId, customName, species, aspects)) {
+                shop.npcMeta[uuid] = CustomShopNpcMeta(typeId, customName, species, aspects)
                 markDirty()
             }
             return null
         }
         if (shop.npcUuids.size >= MAX_NPCS_PER_SHOP) return CustomShopError.TOO_MANY_NPCS
         shop.npcUuids.add(uuid)
-        if (typeId.isNotEmpty() || customName.isNotEmpty()) {
-            shop.npcMeta[uuid] = CustomShopNpcMeta(typeId, customName)
+        if (hasMeta(typeId, customName, species, aspects)) {
+            shop.npcMeta[uuid] = CustomShopNpcMeta(typeId, customName, species, aspects)
         }
         markDirty()
         return null
     }
+
+    /** 全是空值 = 没东西可记（别在存档里塞空条目） */
+    private fun hasMeta(typeId: String, customName: String, species: String, aspects: String): Boolean =
+        typeId.isNotEmpty() || customName.isNotEmpty() || species.isNotEmpty() || aspects.isNotEmpty()
 
     /** 解绑某个实体（从所有商店里移除）；返回它原本所在的商店 */
     fun unbind(uuid: UUID): CustomShop? {
@@ -321,6 +419,11 @@ class CustomShopState private constructor() : PersistentState() {
             if (!shop.enabled) c.putBoolean("enabled", false)
             // 默认是 both —— 只在单类型时写（读取端缺字段落 BOTH）
             if (shop.type != CustomShopType.BOTH) c.putString("type", shop.type.id)
+            // 默认 POINTS（缺字段 = 老店，它们都是 RP 店）；只在非 RP 时写，省空间
+            if (shop.currency != MarketCurrency.POINTS) c.putString("currency", shop.currency.name)
+            // 默认 NORMAL / 24 小时；只在非默认时写
+            if (shop.mode != CustomShopMode.NORMAL) c.putString("mode", shop.mode.id)
+            if (shop.claimHours != DEFAULT_CLAIM_HOURS) c.putInt("claimHours", shop.claimHours)
             if (shop.npcUuids.isNotEmpty()) {
                 putStringList(c, "npcUuids", shop.npcUuids.map { it.toString() })
             }
@@ -332,6 +435,8 @@ class CustomShopState private constructor() : PersistentState() {
                 mc.putString("uuid", uuid.toString())
                 if (meta.typeId.isNotEmpty()) mc.putString("typeId", meta.typeId)
                 if (meta.customName.isNotEmpty()) mc.putString("name", meta.customName)
+                if (meta.species.isNotEmpty()) mc.putString("species", meta.species)
+                if (meta.aspects.isNotEmpty()) mc.putString("aspects", meta.aspects)
                 metaList.add(mc)
             }
             if (!metaList.isEmpty()) c.put("npcMeta", metaList)
@@ -420,7 +525,16 @@ class CustomShopState private constructor() : PersistentState() {
             name = name,
             enabled = if (c.contains("enabled")) c.getBoolean("enabled") else true,
             // 缺字段 / 认不出的值都落 BOTH（存档铁律：读取容错，不崩）
-            type = CustomShopType.fromId(if (c.contains("type")) c.getString("type") else null)
+            type = CustomShopType.fromId(if (c.contains("type")) c.getString("type") else null),
+            // ⚠ 这里**不能用** `MarketCurrency.fromStored`（它缺省落主货币）—— 老的自定义店都是 RP 店，
+            //   缺字段必须落 POINTS 才不改变它们的价格含义
+            currency = MarketCurrency.fromRequest(if (c.contains("currency")) c.getString("currency") else null)
+                ?: MarketCurrency.POINTS,
+            // 缺字段 / 认不出的值都落 NORMAL（读取容错）；周期夹到合法范围
+            mode = CustomShopMode.fromId(if (c.contains("mode")) c.getString("mode") else null),
+            claimHours = if (c.contains("claimHours")) {
+                c.getInt("claimHours").coerceIn(1, MAX_CLAIM_HOURS)
+            } else DEFAULT_CLAIM_HOURS
         )
         // NPC 绑定：单个 UUID 坏了解析就跳过，不影响商店本体
         readStringList(c, "npcUuids").forEach { raw ->
@@ -439,7 +553,9 @@ class CustomShopState private constructor() : PersistentState() {
                     if (uuid !in shop.npcUuids) return@forEach
                     shop.npcMeta[uuid] = CustomShopNpcMeta(
                         typeId = if (mc.contains("typeId")) mc.getString("typeId") else "",
-                        customName = if (mc.contains("name")) mc.getString("name") else ""
+                        customName = if (mc.contains("name")) mc.getString("name") else "",
+                        species = if (mc.contains("species")) mc.getString("species") else "",
+                        aspects = if (mc.contains("aspects")) mc.getString("aspects") else ""
                     )
                 } catch (e: Exception) {
                     CobbleMarket.LOGGER.warn("Skipping invalid NPC meta in custom shop {}: {}", rawId, e.message)

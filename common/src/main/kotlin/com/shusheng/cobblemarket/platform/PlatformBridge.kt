@@ -113,10 +113,10 @@ fun onUseEntity(handler: (player: ServerPlayerEntity, entity: net.minecraft.enti
  * 注册一个**服务端数据包（datapack）重载监听**：每次世界加载 / `/reload` 后回调一次，
  * 回调参数是该次重载的 [ResourceManager] 与**服务端实例**。
  *
- * ⚠ 为什么要把 `server` 一起给出去：`ResourceManager` 的"按目录列资源"（`findResources`）
- *   对**世界数据包**要不到东西（2026-10-13 实测，见 `RewardRules.load` 上方那段），
- *   所以读规则的落点改成了"**从存档的 `datapacks/` 目录读盘列文件名** +
- *   `getAllResources(id)` 直取" —— 那条路要 `server.getSavePath(WorldSavePath.DATAPACKS)`。
+ * ⚠ 为什么要把 `server` 一起给出去：读规则的落点要 `server.resourceManager` 扫数据包
+ *   （`RewardRules.load` 用 `findResources` 发现文件 —— 文件夹与 zip 都认）。
+ * ⚠ 2026-10-13 曾误判「`findResources` 对世界数据包失效」—— 真因是规则路径多套了一层
+ *   （见 `RewardRules.load` 注释）；2026-10-23 起仍用它，并因此**支持 zip 数据包**。
  *
  * ⚠ 回调**在重载线程上同步执行**（fabric `SynchronousResourceReloader` / neoforge
  *   `AddReloadListenerEvent` 都保证）⇒ 回调里只做"读盘 + 解析 + 换掉内存里的规则表"，

@@ -1,6 +1,8 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.CURRENCY_BUTTON_ICON_SIZE
 import com.shusheng.cobblemarket.client.LoadState
+import com.shusheng.cobblemarket.client.POINTS_SYMBOL_SRC
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.activeCurrencyUnit
@@ -20,6 +22,8 @@ import com.shusheng.cobblemarket.client.icon.PokemonIconData
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.cobblemon.mod.common.pokemon.Species
+import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.market.ItemPriceLimitEntry
 import com.shusheng.cobblemarket.market.PokemonPriceLimitEntry
 import com.shusheng.cobblemarket.network.AddItemPriceLimitPayload
@@ -284,6 +288,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         ruleHtButton?.visible = !variantListOpen
         minField?.visible = !variantListOpen
         maxField?.visible = !variantListOpen
+        dialogCurrencyButton?.visible = !variantListOpen
         allFormsButton?.visible = !variantListOpen
         formButton?.visible = !variantListOpen
         vButton?.visible = !variantListOpen
@@ -352,6 +357,10 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private var addField: TextFieldWidget? = null
     private var minField: TextFieldWidget? = null
     private var maxField: TextFieldWidget? = null
+    /** 当前弹窗的规则币种（默认主货币；编辑时回填原条目）—— 2026-10-24 */
+    private var dialogCurrency = MarketCurrency.PRIMARY
+    /** 弹窗里那颗货币切换按钮（Min / Max 右侧）；关窗 / 开列表时置空或隐藏 */
+    private var dialogCurrencyButton: NineSliceButton? = null
     private var addConfirmButton: NineSliceButton? = null
     private var addCancelButton: NineSliceButton? = null
     // 本地提示（画在弹窗下沿外；错误红字、信息绿字；输入变更时清除）
@@ -417,10 +426,15 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
     private fun vLabel(vCount: Int): String =
         if (vCount >= 0) "${vCount}V" else Text.translatable("cobblemarket.price_limit.v_any").string
 
-    private fun priceText(min: Int?, max: Int?, unit: String): String = when {
-        min != null && max != null -> "${formatPrice(min)} ~ ${formatPrice(max)} $unit"
-        min != null -> "≥ ${formatPrice(min)} $unit"
-        max != null -> "≤ ${formatPrice(max)} $unit"
+    /**
+     * 价格区间文本（**不带单位**）：单位由行 / 悬停窗按**规则自己的币种**单独绘制
+     * （[drawCurrencyUnit]）—— 2026-10-24 起同一列表里可能同时有主货币与 RP 规则。
+     * 末尾保留一个空格：单位画在「文本结束坐标」上，写法与旧版 `"$amount $unit"` 一致。
+     */
+    private fun priceText(min: Int?, max: Int?): String = when {
+        min != null && max != null -> "${formatPrice(min)} ~ ${formatPrice(max)} "
+        min != null -> "≥ ${formatPrice(min)} "
+        max != null -> "≤ ${formatPrice(max)} "
         else -> Text.translatable("cobblemarket.price_limit.unlimited").string
     }
 
@@ -574,6 +588,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         //   不清的话上一只选的变体还挂着 —— 2026-09-28 用户实测）
         allForms = true
         selectedVariants = emptySet()
+        // 规则币种：新建默认主货币；编辑回填原条目（2026-10-24）
+        dialogCurrency = entry?.currency ?: MarketCurrency.PRIMARY
         val centerX = width / 2
         // ⚠ 与渲染那边的 `dialogH = 184` **成对**：92 = 184 / 2
         val dialogY = height / 2 - 92
@@ -652,6 +668,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         minField = createPriceField(centerX - 48, dialogY + 102)
         maxField = createPriceField(centerX + 2, dialogY + 102)
         applyPriceHints()
+        // 货币切换：Min / Max 右侧（默认主货币；与上架界面同款 20×16 图标按钮）
+        createDialogCurrencyButton(centerX + 52, dialogY + 102)
 
         addConfirmButton = NineSliceButton(
             centerX - 85, dialogY + 154, 80, 20,
@@ -737,6 +755,37 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         updateShinyButton()
         // 预览模型同步闪光状态
         refreshPreviewModel()
+    }
+
+    /**
+     * **弹窗货币切换按钮**（2026-10-24 用户要求，照上架界面）：20×16、只放图标，
+     * 放在 Min / Max 右侧；默认主货币，编辑时回填原条目。
+     * 图标外观与点击口径复用 [updateCurrencyButtonIcon] / `updateCurrencyButton` 那套。
+     */
+    private fun createDialogCurrencyButton(x: Int, y: Int) {
+        val btn = NineSliceButton(
+            x, y, 20, 16, Text.literal(""),
+            {
+                setDialogCurrency(
+                    if (dialogCurrency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS
+                )
+            },
+            iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
+            iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat(),
+            tooltip = Text.translatable(
+                "cobblemarket.gui.currency_switch",
+                activeCurrencyUnit(), CurrencyService.pointsIcon()
+            )
+        )
+        updateCurrencyButtonIcon(btn, dialogCurrency == MarketCurrency.POINTS)
+        addDrawableChild(btn)
+        dialogCurrencyButton = btn
+    }
+
+    /** 弹窗币种切换的**唯一入口**：改字段 + 刷图标（照上架界面的 setCurrency 口径） */
+    private fun setDialogCurrency(value: MarketCurrency) {
+        dialogCurrency = value
+        dialogCurrencyButton?.let { updateCurrencyButtonIcon(it, value == MarketCurrency.POINTS) }
     }
 
     private fun createPriceField(x: Int, y: Int): TextFieldWidget {
@@ -844,6 +893,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         editingItem = entry
         hideMainControls()
         heldAddMode = false
+        // 规则币种：新建默认主货币；编辑回填原条目（2026-10-24）
+        dialogCurrency = entry?.currency ?: MarketCurrency.PRIMARY
         val centerX = width / 2
         val dialogY = height / 2 - 71
 
@@ -880,6 +931,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         minField = createPriceField(centerX - 48, dialogY + 78)
         maxField = createPriceField(centerX + 2, dialogY + 78)
         applyPriceHints()
+        // 货币切换：Min / Max 右侧（同上架界面；物品的「手持添加」模式也用它）
+        createDialogCurrencyButton(centerX + 52, dialogY + 78)
 
         addConfirmButton = NineSliceButton(
             centerX - 85, dialogY + 100, 80, 20,
@@ -1107,6 +1160,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         ruleHtButton?.visible = !vListOpen
         minField?.visible = !vListOpen
         maxField?.visible = !vListOpen
+        dialogCurrencyButton?.visible = !vListOpen
         // ⚠ 新加的两个按钮也要隐藏 —— 漏了会透到列表下面（黑名单那边就是这么被抓的）
         allFormsButton?.visible = !vListOpen
         variantButton?.visible = !vListOpen
@@ -1226,6 +1280,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         ruleHtButton?.visible = !formListOpen
         minField?.visible = !formListOpen
         maxField?.visible = !formListOpen
+        dialogCurrencyButton?.visible = !formListOpen
         // ⚠ 同上：新加的两个按钮必须一起隐藏
         allFormsButton?.visible = !formListOpen
         variantButton?.visible = !formListOpen
@@ -1298,6 +1353,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         itemOptionButtons.clear()
         minField?.visible = !itemListOpen
         maxField?.visible = !itemListOpen
+        dialogCurrencyButton?.visible = !itemListOpen
         addConfirmButton?.visible = !itemListOpen
         addCancelButton?.visible = !itemListOpen
         if (!itemListOpen) return
@@ -1360,7 +1416,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             // 变体（多选）；「全部」勾上时写**空表**（= 变体不参与判定，配合形态 `*` 才是整只全封）。
             // ⚠ 别写哨兵 `*`，那会漏掉不带变体的普通个体
             variantAspects = if (allForms) emptyList()
-            else selectedVariants.toList()
+            else selectedVariants.toList(),
+            // 规则币种（弹窗里那颗切换按钮；编辑时切币种也允许，服务端按 original 的币种删旧）
+            currency = dialogCurrency.name
         ))
         closeDialog()
     }
@@ -1369,7 +1427,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         // 手持模式：校验价格后直接提交手持物品条目（组件快照由服务端读主手提取）
         if (heldAddMode) {
             val prices = validatePrices() ?: return
-            sendToServer(com.shusheng.cobblemarket.network.AddHeldItemPriceLimitPayload(prices.first, prices.second))
+            sendToServer(com.shusheng.cobblemarket.network.AddHeldItemPriceLimitPayload(
+                prices.first, prices.second, dialogCurrency.name
+            ))
             closeDialog()
             return
         }
@@ -1385,9 +1445,12 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             componentsSpec = selected?.componentsSpec,
             minPrice = prices.first,
             maxPrice = prices.second,
-            // 编辑模式带原物品：服务端先删旧再插新（改选了物品也不会残留旧条目）
+            // 编辑模式带原物品：服务端先删旧再插新（改选了物品 / 切了币种也不会残留旧条目）
             originalItemId = editingItem?.itemId,
-            originalComponentsSpec = editingItem?.componentsSpec
+            originalComponentsSpec = editingItem?.componentsSpec,
+            currency = dialogCurrency.name,
+            // 旧条目要从**它自己的币种**里删（编辑时允许切币种）
+            originalCurrency = editingItem?.currency?.name
         ))
         closeDialog()
     }
@@ -1429,6 +1492,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         dialogError = null
         editingPokemon = null
         editingItem = null
+        dialogCurrencyButton = null
+        dialogCurrency = MarketCurrency.PRIMARY
         // ⚠ 变体那套的字段**也在这里清**（原本的做法就是"关窗统一重置"）—— 漏了的话，关窗时列表
         //   还开着，下次开窗控件已重建、`variantOptionButtons` 却指着旧控件
         allForms = true
@@ -1575,8 +1640,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 // 变体：勾了才加（2026-09-28 用户报"选了变体不显示"）
                 variantTextOf(entry.variantAspects)?.let { append(" · ").append(it) }
                 append(" · ")
-                // ⚠ 单位用 activeCurrencyUnit（物品货币显示**物品名**）：整串随后会被截断，图标补不进来
-                append(priceText(entry.minPrice, entry.maxPrice, activeCurrencyUnit()))
+                // 单位不拼进文本：按**这一行自己的币种**在绘制时补图标（见 render 里的 drawCurrencyUnit）
+                append(priceText(entry.minPrice, entry.maxPrice))
             }
         }
         // 搜索索引匹配（itemId + 名称 + tooltip 文本 + TM 招式，见 ItemSearchIndex；原版创造模式同款语义）
@@ -1587,8 +1652,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         itemRowTexts = filteredItemsCache.map { entry ->
             val summary = com.shusheng.cobblemarket.client.ItemComponentsDisplay.summary(entry.componentsSpec)
             val name = if (summary.isEmpty()) itemDisplay(entry.itemId) else itemDisplay(entry.itemId) + com.shusheng.cobblemarket.util.TextUtil.paren(summary)
-            // 同上：物品货币显示物品名（整串会被截断，图标补不进来）
-            "$name · ${priceText(entry.minPrice, entry.maxPrice, activeCurrencyUnit())}"
+            // 同上：单位按这一行自己的币种在绘制时补图标
+            "$name · ${priceText(entry.minPrice, entry.maxPrice)}"
         }
     }
 
@@ -1634,7 +1699,10 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 val delBtn = NineSliceButton(
                     leftX + panelWidth - rowRemoveBtnInset, y + rowBtnDy, rowBtnW, rowBtnH,
                     Text.translatable("cobblemarket.price_limit.remove"),
-                    { sendToServer(RemovePokemonPriceLimitPayload(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter, entry.variantAspects)) }
+                    { sendToServer(RemovePokemonPriceLimitPayload(
+                        entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects,
+                        entry.htFilter, entry.variantAspects, entry.currency.name
+                    )) }
                 )
                 delBtn.visible = addField == null
                 removeButtons.add(delBtn)
@@ -1654,7 +1722,7 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 val delBtn = NineSliceButton(
                     leftX + panelWidth - rowRemoveBtnInset, y + rowBtnDy, rowBtnW, rowBtnH,
                     Text.translatable("cobblemarket.price_limit.remove"),
-                    { sendToServer(RemoveItemPriceLimitPayload(entry.itemId, entry.componentsSpec)) }
+                    { sendToServer(RemoveItemPriceLimitPayload(entry.itemId, entry.componentsSpec, entry.currency.name)) }
                 )
                 delBtn.visible = addField == null
                 removeButtons.add(delBtn)
@@ -1764,9 +1832,34 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                     if (entry.speciesId.isEmpty()) 0xFFFFFF
                     else EntryBadgeRenderer.speciesTypeColor(entry.speciesId, entry.aspects))
                 cursor += nameWidth
-                context.drawTextWithShadow(textRenderer,
-                    com.shusheng.cobblemarket.util.TextUtil.truncateString(line.removePrefix(nameText), 170 - (cursor - (leftX + 26))),
-                    cursor, y + 7, 0xFFFFFF)
+                // 金额后的**币种单位按这一行自己的币种**补图标（主货币 / RP 混排，2026-10-24）。
+                // 预算要扣掉单位宽度，否则图标会顶到右侧编辑 / 删除按钮上。
+                val hasPrice = entry.minPrice != null || entry.maxPrice != null
+                val unitW = if (hasPrice) currencyUnitWidth(textRenderer, entry.currency == MarketCurrency.POINTS) else 0
+                val rest = line.removePrefix(nameText)
+                // 价格段单独画**金色**（金额颜色规则：金额恒金，标签 / 条件白）；
+                // 截断时优先保住价格 —— 条件段先截，价格和货币单位始终完整。
+                val price = priceText(entry.minPrice, entry.maxPrice)
+                val split = rest.endsWith(price)
+                val conditions = if (split) rest.removeSuffix(price) else rest
+                val priceW = if (split) textRenderer.getWidth(price) else 0
+                val restBudget = (170 - (cursor - (leftX + 26)) - unitW - priceW).coerceAtLeast(0)
+                var restEnd = context.drawTextWithShadow(
+                    textRenderer,
+                    com.shusheng.cobblemarket.util.TextUtil.truncateString(conditions, restBudget),
+                    cursor, y + 7, 0xFFFFFF
+                )
+                if (split) {
+                    restEnd = context.drawTextWithShadow(
+                        textRenderer, price, restEnd, y + 7,
+                        if (hasPrice) GOLD_COLOR else 0xFFFFFF
+                    )
+                }
+                if (hasPrice) {
+                    drawCurrencyUnit(
+                        context, textRenderer, entry.currency == MarketCurrency.POINTS, restEnd, y + 7, 0xFFFFFF
+                    )
+                }
             }
             if (hoveredRow >= 0) {
                 val actualIdx = scrollOffset + hoveredRow
@@ -1792,9 +1885,32 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
                 val nameWidth = textRenderer.getWidth(nameText)
                 context.drawTextWithShadow(textRenderer, nameText, leftX + 24, y + 7,
                     com.shusheng.cobblemarket.util.TextUtil.rarityNameColor(itemIconStacks[entry]))
-                context.drawTextWithShadow(textRenderer,
-                    com.shusheng.cobblemarket.util.TextUtil.truncateString(fullText.removePrefix(nameText), 170 - nameWidth),
-                    leftX + 24 + nameWidth, y + 7, 0xFFFFFF)
+                // 金额后的币种单位按这一行自己的币种补图标（同上）
+                val hasPrice = entry.minPrice != null || entry.maxPrice != null
+                val unitW = if (hasPrice) currencyUnitWidth(textRenderer, entry.currency == MarketCurrency.POINTS) else 0
+                val rest = fullText.removePrefix(nameText)
+                // 价格段单独画金色；截断时优先保住价格（同上）
+                val price = priceText(entry.minPrice, entry.maxPrice)
+                val split = rest.endsWith(price)
+                val conditions = if (split) rest.removeSuffix(price) else rest
+                val priceW = if (split) textRenderer.getWidth(price) else 0
+                val restBudget = (170 - nameWidth - unitW - priceW).coerceAtLeast(0)
+                var restEnd = context.drawTextWithShadow(
+                    textRenderer,
+                    com.shusheng.cobblemarket.util.TextUtil.truncateString(conditions, restBudget),
+                    leftX + 24 + nameWidth, y + 7, 0xFFFFFF
+                )
+                if (split) {
+                    restEnd = context.drawTextWithShadow(
+                        textRenderer, price, restEnd, y + 7,
+                        if (hasPrice) GOLD_COLOR else 0xFFFFFF
+                    )
+                }
+                if (hasPrice) {
+                    drawCurrencyUnit(
+                        context, textRenderer, entry.currency == MarketCurrency.POINTS, restEnd, y + 7, 0xFFFFFF
+                    )
+                }
             }
             if (hoveredRow >= 0) {
                 val actualIdx = scrollOffset + hoveredRow
@@ -1836,7 +1952,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         // 价格行是行列表**最后一行**，单位补在它行尾（见 drawRichTooltip 的 unitLine）
         drawRichTooltip(
             context, tooltipCacheLines, mouseX, mouseY, rowButtonsRect(hoveredRow),
-            unitLine = tooltipCacheLines.size - 1,
+            unitLine = if (entry.minPrice != null || entry.maxPrice != null) tooltipCacheLines.size - 1 else -1,
+            unitIsPoints = entry.currency == MarketCurrency.POINTS,
         )
     }
 
@@ -1858,9 +1975,10 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         // ⚠ 物种用**这一行自己的**（entry.speciesId）—— 留空（全部精灵）时查不到候选，退化成逐值
         variantLinesOf(entry.speciesId, entry.variantAspects).forEach { lines.add(Text.literal(it) to 0xFFFFFF) }
         lines.add(Text.literal(htLabel(entry.htFilter)) to 0xFFFFFF)
-        // ⚠ 单位传**空串**：`priceText` 会留下尾随空格（`"100 ~ 200 "`），货币单位由
-        //   drawRichTooltip 补画在这一行的行尾（物品货币时是那件物品的图标）
-        lines.add(Text.literal(priceText(entry.minPrice, entry.maxPrice, "")) to 0xFFFFFF)
+        // 货币单位由 drawRichTooltip 按**这条规则自己的币种**补画在行尾；
+        // 金额恒金色（金额颜色规则），「不限」不是金额、保持白字
+        lines.add(Text.literal(priceText(entry.minPrice, entry.maxPrice)) to
+            (if (entry.minPrice != null || entry.maxPrice != null) GOLD_COLOR else 0xFFFFFF))
         return lines
     }
 
@@ -1901,7 +2019,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         }
         drawRichTooltip(
             context, advanced ?: itemTooltipLines, mouseX, mouseY, rowButtonsRect(hoveredRow),
-            unitLine = (advanced ?: itemTooltipLines).size - 1,
+            unitLine = if (entry.minPrice != null || entry.maxPrice != null)
+                (advanced ?: itemTooltipLines).size - 1 else -1,
+            unitIsPoints = entry.currency == MarketCurrency.POINTS,
         )
     }
 
@@ -1918,9 +2038,9 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             lines.add(Text.literal(itemDisplay(entry.itemId)) to
                 com.shusheng.cobblemarket.util.TextUtil.rarityNameColor(stack))
         }
-        // ⚠ 单位传**空串**：`priceText` 会留下尾随空格（`"100 ~ 200 "`），货币单位由
-        //   drawRichTooltip 补画在这一行的行尾（物品货币时是那件物品的图标）
-        lines.add(Text.literal(priceText(entry.minPrice, entry.maxPrice, "")) to 0xFFFFFF)
+        // 货币单位由 drawRichTooltip 按**这条规则自己的币种**补画在行尾；金额恒金色
+        lines.add(Text.literal(priceText(entry.minPrice, entry.maxPrice)) to
+            (if (entry.minPrice != null || entry.maxPrice != null) GOLD_COLOR else 0xFFFFFF))
         return lines
     }
 
@@ -1934,11 +2054,13 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         avoid: TooltipPlacement.Rect? = null,
         /** 哪一行的末尾要补货币单位（物品货币时画那件物品的图标）；-1 = 没有 */
         unitLine: Int = -1,
+        /** 那行规则的币种是 RP（RP 图标字形）；false = 主货币 */
+        unitIsPoints: Boolean = false,
     ) {
         // 行数按屏幕高钳制（Shift / Ctrl 展开可能几十行）—— 见 [clampTooltipRows]
         val lines = clampTooltipRows(lines0, height) { n -> Text.translatable("cobblemarket.gui.tooltip_more", n) to 0xAAAAAA }
         // ⚠ unitLine 那行的货币单位**画在行尾、不在文本里** ⇒ 测量要把它补上，否则提示框算窄
-        val unitW = if (unitLine >= 0) currencyUnitWidth(textRenderer, false) else 0
+        val unitW = if (unitLine >= 0) currencyUnitWidth(textRenderer, unitIsPoints) else 0
         var maxWidth = 0
         lines.forEachIndexed { i, (line, _) ->
             maxWidth = maxOf(maxWidth, textRenderer.getWidth(line) + if (i == unitLine) unitW else 0)
@@ -1962,8 +2084,8 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
             // ⚠ w 是**文本结束坐标**不是宽度（MC 的约定），直接拿它当单位起点。
             // ⚠ 行数被 clampTooltipRows 截过时不补 —— 别把单位挪到最后一行去
             if (i == unitLine) {
-                // ⚠ 价格限制是**主货币口径**（不涉 RP）⇒ isPoints 恒 false
-                drawCurrencyUnit(context, textRenderer, false, w, ty + i * 10, 0xFFFFFF)
+                // 单位跟**规则自己的币种**（2026-10-24；主货币 / RP 混排）
+                drawCurrencyUnit(context, textRenderer, unitIsPoints, w, ty + i * 10, 0xFFFFFF)
             }
         }
         context.matrices.pop()

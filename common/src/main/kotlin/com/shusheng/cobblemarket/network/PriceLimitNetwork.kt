@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.network
 
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.market.ItemPriceLimitEntry
 import com.shusheng.cobblemarket.market.ItemPriceLimitState
 import com.shusheng.cobblemarket.market.PokemonBlacklistEntry
@@ -31,6 +32,8 @@ fun PokemonPriceLimitEntry.write(buf: PacketByteBuf) {
     // ⚠ **别漏**：条目有**两套**序列化 —— 存档那套（PokemonPriceLimitState 里）和**下发客户端**这套。
     //   只改一处的话，存档里明明存上了、界面却永远显示空（同黑名单，2026-09-28 排到的）
     buf.writeVarInt(variantAspects.size); variantAspects.forEach { buf.writeString(it) }
+    // 币种：**末尾追加**（payload 顺序铁律）；读写顺序一一对应
+    buf.writeString(currency.name)
 }
 
 fun readPokemonPriceLimitEntry(buf: PacketByteBuf) = PokemonPriceLimitEntry(
@@ -42,7 +45,8 @@ fun readPokemonPriceLimitEntry(buf: PacketByteBuf) = PokemonPriceLimitEntry(
     maxPrice = if (buf.readBoolean()) buf.readInt() else null,
     htFilter = buf.readInt(),
     // ⚠ 读端顺序必须与上面 `write` **一一对应**
-    variantAspects = (0 until buf.readVarInt()).map { buf.readString() }
+    variantAspects = (0 until buf.readVarInt()).map { buf.readString() },
+    currency = MarketCurrency.fromStored(buf.readString())
 )
 
 fun ItemPriceLimitEntry.write(buf: PacketByteBuf) {
@@ -50,13 +54,16 @@ fun ItemPriceLimitEntry.write(buf: PacketByteBuf) {
     buf.writeNbt(componentsSpec)
     buf.writeBoolean(minPrice != null); minPrice?.let { buf.writeInt(it) }
     buf.writeBoolean(maxPrice != null); maxPrice?.let { buf.writeInt(it) }
+    // 币种：末尾追加
+    buf.writeString(currency.name)
 }
 
 fun readItemPriceLimitEntry(buf: PacketByteBuf) = ItemPriceLimitEntry(
     itemId = buf.readString(),
     componentsSpec = buf.readNbt(),
     minPrice = if (buf.readBoolean()) buf.readInt() else null,
-    maxPrice = if (buf.readBoolean()) buf.readInt() else null
+    maxPrice = if (buf.readBoolean()) buf.readInt() else null,
+    currency = MarketCurrency.fromStored(buf.readString())
 )
 
 // ── C2S: 请求精灵价格限制 ──
@@ -86,7 +93,9 @@ data class AddPokemonPriceLimitPayload(
     // 特训限定：0 = 不限，1 = 仅特训，2 = 不含特训
     val htFilter: Int,
     // 变体限定（species feature，多选）—— ⚠ 追加末尾、读写顺序一一对应（payload 顺序铁律）
-    val variantAspects: List<String>
+    val variantAspects: List<String>,
+    /** 规则币种（`PRIMARY` / `POINTS`）；非法值由 handler 用 `fromRequest` 拒绝 */
+    val currency: String = MarketCurrency.PRIMARY.name
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -102,6 +111,7 @@ data class AddPokemonPriceLimitPayload(
                 b.writeBoolean(p.original != null); p.original?.write(b)
                 b.writeInt(p.htFilter)
                 b.writeVarInt(p.variantAspects.size); p.variantAspects.forEach { b.writeString(it) }
+                b.writeString(p.currency)
             },
             // ⚠ 读端字段顺序必须与写端一一对应（payload 顺序铁律）
             { b ->
@@ -114,7 +124,8 @@ data class AddPokemonPriceLimitPayload(
                     maxPrice = if (b.readBoolean()) b.readInt() else null,
                     original = if (b.readBoolean()) readPokemonPriceLimitEntry(b) else null,
                     htFilter = b.readInt(),
-                    variantAspects = (0 until b.readVarInt()).map { b.readString() }
+                    variantAspects = (0 until b.readVarInt()).map { b.readString() },
+                    currency = b.readString()
                 )
             }
         )
@@ -123,7 +134,12 @@ data class AddPokemonPriceLimitPayload(
 
 // ── C2S: 删除精灵价格限制 ──
 
-data class RemovePokemonPriceLimitPayload(val speciesId: String, val vCount: Int, val shinyFilter: Int, val aspects: List<String>, val htFilter: Int, val variantAspects: List<String>) : CustomPayload {
+data class RemovePokemonPriceLimitPayload(
+    val speciesId: String, val vCount: Int, val shinyFilter: Int,
+    val aspects: List<String>, val htFilter: Int, val variantAspects: List<String>,
+    /** 规则币种（同一条规则的主货币 / RP 两条要分别删） */
+    val currency: String = MarketCurrency.PRIMARY.name
+) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<RemovePokemonPriceLimitPayload>(CobbleMarket.id("remove_pokemon_price_limit"))
@@ -133,13 +149,15 @@ data class RemovePokemonPriceLimitPayload(val speciesId: String, val vCount: Int
                 b.writeVarInt(p.aspects.size); p.aspects.forEach { b.writeString(it) }
                 b.writeInt(p.htFilter)
                 b.writeVarInt(p.variantAspects.size); p.variantAspects.forEach { b.writeString(it) }
+                b.writeString(p.currency)
             },
             { b ->
                 RemovePokemonPriceLimitPayload(
                     b.readString(), b.readInt(), b.readInt(),
                     (0 until b.readVarInt()).map { b.readString() },
                     b.readInt(),
-                    (0 until b.readVarInt()).map { b.readString() }
+                    (0 until b.readVarInt()).map { b.readString() },
+                    b.readString()
                 )
             }
         )
@@ -182,7 +200,11 @@ data class AddItemPriceLimitPayload(
     val maxPrice: Int?,
     // 编辑语义：非空 = 替换原条目（先删旧再插新），null = 新增
     val originalItemId: String?,
-    val originalComponentsSpec: net.minecraft.nbt.NbtCompound?
+    val originalComponentsSpec: net.minecraft.nbt.NbtCompound?,
+    /** 规则币种（`PRIMARY` / `POINTS`）；非法值由 handler 用 `fromRequest` 拒绝 */
+    val currency: String = MarketCurrency.PRIMARY.name,
+    /** 编辑时**原条目**的币种（用于把旧规则从它自己的币种里删掉） */
+    val originalCurrency: String? = null
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -195,6 +217,8 @@ data class AddItemPriceLimitPayload(
                 b.writeBoolean(p.maxPrice != null); p.maxPrice?.let { b.writeInt(it) }
                 b.writeBoolean(p.originalItemId != null); p.originalItemId?.let { b.writeString(it) }
                 b.writeNbt(p.originalComponentsSpec)
+                b.writeString(p.currency)
+                b.writeBoolean(p.originalCurrency != null); p.originalCurrency?.let { b.writeString(it) }
             },
             { b ->
                 AddItemPriceLimitPayload(
@@ -203,7 +227,9 @@ data class AddItemPriceLimitPayload(
                     minPrice = if (b.readBoolean()) b.readInt() else null,
                     maxPrice = if (b.readBoolean()) b.readInt() else null,
                     originalItemId = if (b.readBoolean()) b.readString() else null,
-                    originalComponentsSpec = b.readNbt()
+                    originalComponentsSpec = b.readNbt(),
+                    currency = b.readString(),
+                    originalCurrency = if (b.readBoolean()) b.readString() else null
                 )
             }
         )
@@ -214,7 +240,9 @@ data class AddItemPriceLimitPayload(
 
 data class AddHeldItemPriceLimitPayload(
     val minPrice: Int?,
-    val maxPrice: Int?
+    val maxPrice: Int?,
+    /** 规则币种；非法值由 handler 用 `fromRequest` 拒绝 */
+    val currency: String = MarketCurrency.PRIMARY.name
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -223,8 +251,15 @@ data class AddHeldItemPriceLimitPayload(
             { p, b ->
                 b.writeBoolean(p.minPrice != null); p.minPrice?.let { b.writeInt(it) }
                 b.writeBoolean(p.maxPrice != null); p.maxPrice?.let { b.writeInt(it) }
+                b.writeString(p.currency)
             },
-            { b -> AddHeldItemPriceLimitPayload(if (b.readBoolean()) b.readInt() else null, if (b.readBoolean()) b.readInt() else null) }
+            { b ->
+                AddHeldItemPriceLimitPayload(
+                    if (b.readBoolean()) b.readInt() else null,
+                    if (b.readBoolean()) b.readInt() else null,
+                    b.readString()
+                )
+            }
         )
     }
 }
@@ -233,14 +268,16 @@ data class AddHeldItemPriceLimitPayload(
 
 data class RemoveItemPriceLimitPayload(
     val itemId: String,
-    val componentsSpec: net.minecraft.nbt.NbtCompound?
+    val componentsSpec: net.minecraft.nbt.NbtCompound?,
+    /** 规则币种（同一条规则的主货币 / RP 两条要分别删） */
+    val currency: String = MarketCurrency.PRIMARY.name
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<RemoveItemPriceLimitPayload>(CobbleMarket.id("remove_item_price_limit"))
         val CODEC: PacketCodec<PacketByteBuf, RemoveItemPriceLimitPayload> = PacketCodec.of(
-            { p, b -> b.writeString(p.itemId); b.writeNbt(p.componentsSpec) },
-            { b -> RemoveItemPriceLimitPayload(b.readString(), b.readNbt()) }
+            { p, b -> b.writeString(p.itemId); b.writeNbt(p.componentsSpec); b.writeString(p.currency) },
+            { b -> RemoveItemPriceLimitPayload(b.readString(), b.readNbt(), b.readString()) }
         )
     }
 }
@@ -325,16 +362,22 @@ object PriceLimitNetwork {
                     sendResultSound(player, false)
                     return@execute
                 }
-                // 编辑语义：替换原条目（改了形态/物种/V 数/闪光/特训等 key 字段时，旧条目不再残留）
+                // 编辑语义：替换原条目（改了形态/物种/V 数/闪光/特训/币种等 key 字段时，旧条目不再残留）
+                // ⚠ 旧条目要从**它自己的币种**里删（编辑时允许切币种）
                 payload.original?.let {
-                    state.remove(it.speciesId, it.vCount, it.shinyFilter, it.aspects, it.htFilter, it.variantAspects)
+                    state.remove(
+                        it.speciesId, it.vCount, it.shinyFilter, it.aspects, it.htFilter,
+                        it.variantAspects, it.currency
+                    )
                 }
                 state.add(
                     PokemonPriceLimitEntry(
                         speciesId, vCount, shinyFilter, minPrice, maxPrice, payload.aspects,
                         payload.htFilter.coerceIn(PokemonPriceLimitEntry.HT_ANY, PokemonPriceLimitEntry.HT_NONE),
                         // ⚠ 与**读档侧同口径**：剔掉退役的「全部变体」哨兵（留着它这条规则会永不命中）
-                        payload.variantAspects.filter { it != PokemonPriceLimitEntry.LEGACY_ALL_VARIANTS }
+                        payload.variantAspects.filter { it != PokemonPriceLimitEntry.LEGACY_ALL_VARIANTS },
+                        // 管理端请求：非法币种按主货币兜底（仅影响规则归属，不涉及资产）
+                        MarketCurrency.fromStored(payload.currency)
                     )
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
@@ -351,7 +394,7 @@ object PriceLimitNetwork {
             server.execute {
                 PokemonPriceLimitState.get(server).remove(
                     payload.speciesId, payload.vCount, payload.shinyFilter, payload.aspects,
-                    payload.htFilter, payload.variantAspects
+                    payload.htFilter, payload.variantAspects, MarketCurrency.fromStored(payload.currency)
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
@@ -396,8 +439,15 @@ object PriceLimitNetwork {
                     return@execute
                 }
                 val state = ItemPriceLimitState.get(server)
-                // 编辑语义：替换原条目（改选了物品时，旧条目不再残留）
-                payload.originalItemId?.let { state.remove(it, payload.originalComponentsSpec) }
+                // 编辑语义：替换原条目（改选了物品 / 切了币种时，旧条目不再残留）
+                // ⚠ 旧条目从**它自己的币种**里删（编辑时允许切币种）
+                val currency = MarketCurrency.fromStored(payload.currency)
+                payload.originalItemId?.let {
+                    state.remove(
+                        it, payload.originalComponentsSpec,
+                        payload.originalCurrency?.let(MarketCurrency::fromStored) ?: currency
+                    )
+                }
                 state.add(
                     ItemPriceLimitEntry(
                         itemId = itemId,
@@ -406,7 +456,8 @@ object PriceLimitNetwork {
                             itemId, payload.componentsSpec, player.serverWorld.registryManager
                         ),
                         minPrice = minPrice,
-                        maxPrice = maxPrice
+                        maxPrice = maxPrice,
+                        currency = currency
                     )
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
@@ -448,7 +499,8 @@ object PriceLimitNetwork {
                         itemId = net.minecraft.registry.Registries.ITEM.getId(heldStack.item).toString(),
                         componentsSpec = com.shusheng.cobblemarket.market.ItemRuleComponents.extractSpec(heldStack, player.serverWorld.registryManager),
                         minPrice = minPrice,
-                        maxPrice = maxPrice
+                        maxPrice = maxPrice,
+                        currency = MarketCurrency.fromStored(payload.currency)
                     )
                 )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
@@ -463,7 +515,9 @@ object PriceLimitNetwork {
             if (!MarketPermissions.has(player, MarketPermissions.PRICE_LIMIT)) return@registerC2S
             val server = player.server
             server.execute {
-                ItemPriceLimitState.get(server).remove(payload.itemId, payload.componentsSpec)
+                ItemPriceLimitState.get(server).remove(
+                    payload.itemId, payload.componentsSpec, MarketCurrency.fromStored(payload.currency)
+                )
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendResultSound(player)   // 删除成功反馈

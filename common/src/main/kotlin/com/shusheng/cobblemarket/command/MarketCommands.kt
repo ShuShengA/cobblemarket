@@ -20,6 +20,7 @@ import com.shusheng.cobblemarket.currency.CustomShopType
 import com.shusheng.cobblemarket.currency.customShopErrorText
 import com.shusheng.cobblemarket.currency.customShopTypeText
 import com.shusheng.cobblemarket.currency.MarketCurrency
+import com.shusheng.cobblemarket.currency.NpcDisplayMeta
 import com.shusheng.cobblemarket.currency.PointCodeState
 import com.shusheng.cobblemarket.currency.PointCodes
 import com.shusheng.cobblemarket.currency.PointOrderNumbers
@@ -114,6 +115,28 @@ object MarketCommands {
                                     .suggests(::suggestShopTypes)
                                     .executes(::customShopType)
                                 )
+                            )
+                        )
+                        // 结算币种：primary（主货币）/ points。**只允许空店改**（改币种 = 把价格全部重新解释）
+                        .then(CommandManager.literal("currency")
+                            .then(CommandManager.argument("id", StringArgumentType.word())
+                                .suggests(::suggestShopIds)
+                                .then(CommandManager.argument("currency", StringArgumentType.word())
+                                    .suggests(::suggestShopCurrencies)
+                                    .executes(::customShopCurrency)
+                                )
+                            )
+                        )
+                        // 领取周期（小时）：24 = 每日、168 = 每周、720 = 每月；随时可改（滚动冷却）
+                        .then(CommandManager.literal("period")
+                            .then(CommandManager.argument("id", StringArgumentType.word())
+                                .suggests(::suggestShopIds)
+                                .then(CommandManager.argument(
+                                    "hours",
+                                    com.mojang.brigadier.arguments.IntegerArgumentType.integer(
+                                        1, com.shusheng.cobblemarket.currency.MAX_CLAIM_HOURS
+                                    )
+                                ).executes(::customShopPeriod))
                             )
                         )
                         .then(CommandManager.literal("enable")
@@ -1162,6 +1185,14 @@ object MarketCommands {
             source.sendFeedback({
                 Text.translatable("cobblemarket.shop.created_hint", it.id)
             }, false)
+            // 货币默认主货币；要改的话店里有商品之后就不许改了，所以提示写在创建成功这里
+            source.sendFeedback({
+                Text.translatable(
+                    "cobblemarket.shop.currency_hint",
+                    it.id,
+                    com.shusheng.cobblemarket.currency.customShopCurrencyText(it.currency)
+                )
+            }, false)
         }
         return 1
     }
@@ -1205,6 +1236,7 @@ object MarketCommands {
                 Text.translatable(
                     "cobblemarket.shop.list_line",
                     shop.id, shop.name, status, customShopTypeText(shop.type),
+                    com.shusheng.cobblemarket.currency.customShopCurrencyText(shop.currency),
                     shop.visibleEntryCount(), shop.npcCount()
                 )
             }, false)
@@ -1238,7 +1270,9 @@ object MarketCommands {
         }
         val typeId = net.minecraft.registry.Registries.ENTITY_TYPE.getId(target.type).toString()
         val customName = target.customName?.string.orEmpty()
-        return when (val error = state.bind(id, target.uuid, typeId, customName)) {
+        val species = NpcDisplayMeta.speciesOf(target)
+        val aspects = NpcDisplayMeta.aspectsOf(target)
+        return when (val error = state.bind(id, target.uuid, typeId, customName, species, aspects)) {
             null -> {
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
                 source.sendFeedback({
@@ -1336,6 +1370,63 @@ object MarketCommands {
             source.sendFeedback({ Text.translatable("cobblemarket.shop.type_hidden_hint") }, false)
         }
         return 1
+    }
+
+    /**
+     * `/market shop currency <id> <primary|points>` —— 改结算币种。
+     *
+     * ⚠ **只允许空店改**（[CustomShopState.setCurrency] 兜底）：已有商品时改币种等于把价格全部重新解释。
+     * ⚠ 币种用**严格解析**（打错不能静默落主货币）。
+     */
+    private fun customShopCurrency(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val id = StringArgumentType.getString(context, "id")
+        val raw = StringArgumentType.getString(context, "currency").trim()
+        val currency = com.shusheng.cobblemarket.currency.MarketCurrency.fromRequest(raw)
+        if (currency == null) {
+            source.sendError(customShopErrorText(CustomShopError.INVALID_CURRENCY, raw))
+            return 0
+        }
+        val error = CustomShopState.get(source.server).setCurrency(id, currency)
+        if (error != null) {
+            source.sendError(customShopErrorText(error))
+            return 0
+        }
+        com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
+        source.sendFeedback({
+            Text.translatable(
+                "cobblemarket.shop.currency_set",
+                id,
+                com.shusheng.cobblemarket.currency.customShopCurrencyText(currency)
+            ).formatted(Formatting.GREEN)
+        }, false)
+        return 1
+    }
+
+    /** `/market shop period <id> <小时>` —— 改领取周期（滚动冷却；不改变任何价格语义，随时可改） */
+    private fun customShopPeriod(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val id = StringArgumentType.getString(context, "id")
+        val hours = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(context, "hours")
+        val error = CustomShopState.get(source.server).setClaimHours(id, hours)
+        if (error != null) {
+            source.sendError(customShopErrorText(error))
+            return 0
+        }
+        com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
+        source.sendFeedback({
+            Text.translatable("cobblemarket.shop.period_set", id, hours).formatted(Formatting.GREEN)
+        }, false)
+        return 1
+    }
+
+    private fun suggestShopCurrencies(
+        context: CommandContext<ServerCommandSource>,
+        builder: com.mojang.brigadier.suggestion.SuggestionsBuilder
+    ): java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> {
+        builder.suggest("primary")
+        builder.suggest("points")
+        return builder.buildFuture()
     }
 
     private fun suggestShopTypes(

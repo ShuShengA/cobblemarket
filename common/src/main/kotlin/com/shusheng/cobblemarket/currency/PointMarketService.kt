@@ -9,6 +9,7 @@ import com.cobblemon.mod.common.api.moves.Moves
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.pokemon.Pokemon
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.market.ItemRuleComponents
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.util.MoveText
@@ -59,8 +60,8 @@ enum class PointMarketError {
     SOLD_OUT,
     /** 库存不够买这么多 */
     STOCK_NOT_ENOUGH,
-    /** RP 余额不足 */
-    NOT_ENOUGH_POINTS,
+    /** 余额不足（币种由商店决定：主货币 / RP —— 文案的货币单位随之变化） */
+    NOT_ENOUGH_FUNDS,
     /** **收件空间不足**（队伍和 PC 都满 / 背包放不下）—— 下单前就拒绝，绝不丢玩家东西 */
     NO_SPACE,
     /** 按规格造不出来（物种/物品已被删、存档数据损坏）—— 此时**分文未扣** */
@@ -87,7 +88,20 @@ enum class PointMarketError {
      * 商店类型不允许这类商品：只卖精灵的店收到物品上架 / 购买，或反过来。
      * ⚠ 客户端已经隐藏了另一类的 tab，这一条防的是伪造包 / 类型刚改过还没重开界面。
      */
-    KIND_NOT_ALLOWED
+    KIND_NOT_ALLOWED,
+
+    /**
+     * **RP 总开关关着** —— 自定义（NPC）商店整体不可购买。
+     *
+     * ⚠ 2026-10-23 用户报：总开关关着，玩家仍能从 NPC 商店买物品。
+     * ⚠ **主 RP 商城不在此列**：它是总开关关闭时唯一还能用 RP 的地方（见 [buy] 的注释）。
+     */
+    POINTS_DISABLED,
+
+    /** 这是**定期领取店**，不能用购买流程（只能领取） */
+    NOT_FOR_SALE,
+    /** 这是**普通购买店**，没有东西可领 */
+    NOT_A_CLAIM_SHOP
 }
 
 /**
@@ -112,6 +126,36 @@ sealed interface PointMarketBuyResult {
     ) : PointMarketBuyResult
 
     data class Failure(val error: PointMarketError) : PointMarketBuyResult
+}
+
+/**
+ * 一键领取里**实际交付的一格物品**（2026-10-23）。
+ *
+ * 只给客户端的「物品飞入物品栏」动画用 —— 精灵不做动画，所以不带精灵。
+ * [entryId] 让客户端把交付结果对回它点「领取」时看到的那个格子；[count] 是**真进了背包**的数量
+ * （背包放不下时可能小于这一格的可领数量）。
+ */
+data class ClaimedItem(val entryId: String, val count: Int)
+
+/**
+ * **定期领取店的一键领取结果**（2026-10-23）。
+ *
+ * @param delivered 实际放进背包 / 队伍的总数量
+ * @param leftBehind 有格子没领完（空间不足）—— 剩余留在店里，本期还能再领
+ * @param hadRemaining 本次调用前有可领内容（用来区分「空间不足」和「本来就没东西可领」）
+ * @param items 实际交付的**物品**格明细（顺序 = 格子顺序），客户端据此只给真进了背包的那几格播飞入动画
+ * @param shinyPokemon 实际交付的**闪光精灵**（只收闪光；给「领取到闪光」的全服播报用）
+ */
+sealed interface PointMarketClaimResult {
+    data class Success(
+        val delivered: Int,
+        val leftBehind: Boolean,
+        val hadRemaining: Boolean,
+        val items: List<ClaimedItem> = emptyList(),
+        val shinyPokemon: List<Pokemon> = emptyList()
+    ) : PointMarketClaimResult
+
+    data class Failure(val error: PointMarketError) : PointMarketClaimResult
 }
 
 /**
@@ -198,6 +242,10 @@ object PointMarketService {
     fun customShop(server: MinecraftServer, shopId: String): CustomShop? =
         if (shopId == MAIN_SHOP_ID) null else CustomShopState.get(server).find(shopId)
 
+    /** 这家店的结算币种：主商城（RP 商城）恒 RP，自定义商店看建店时的选择 */
+    fun currencyOf(server: MinecraftServer, shopId: String): MarketCurrency =
+        customShop(server, shopId)?.currency ?: MarketCurrency.POINTS
+
     /**
      * 玩家是否在商店绑定的**任意一个** NPC 的 8 格内。
      *
@@ -210,6 +258,21 @@ object PointMarketService {
             player.serverWorld.getEntity(uuid)?.squaredDistanceTo(player)?.let { it <= maxSq } == true
         }
     }
+
+    /**
+     * 「买到闪光」播报的前缀名：**玩家是从哪个 NPC 进的店**就用谁的名字
+     * （由 [com.shusheng.cobblemarket.network.PointMarketNetwork] 在右键开店时记下）。
+     *
+     * ⚠ **不能按"附近最近的绑定 NPC"猜**：两家 NPC 挨得近时，玩家离另一家更近就会播错名字。
+     * NPC 已解绑 / 找不到实体 / 没有自定义名 / 不是从 NPC 打开的 ⇒ 一律退回**店名**。
+     */
+    fun merchantName(player: ServerPlayerEntity, shop: CustomShop, npcUuid: java.util.UUID?): String =
+        npcUuid
+            ?.takeIf { it in shop.npcUuids }
+            ?.let { player.serverWorld.getEntity(it) }
+            ?.customName?.string
+            ?.takeIf { it.isNotBlank() }
+            ?: shop.name
 
     // ── 读 ──
 
@@ -259,11 +322,21 @@ object PointMarketService {
     ): PointMarketError? {
         if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return PointMarketError.NO_PERMISSION
         if (index < 0 || index > MAX_INDEX) return PointMarketError.BAD_INDEX
-        val normalized = normalize(entry, server) ?: return reject(entry)
         // ⚠ 自定义商店**不判启用状态**：关店只是「玩家不能买」，管理员照样要能进去补货 / 改内容
         val state = store(server, shopId) ?: return PointMarketError.SHOP_NOT_FOUND
+        val custom = customShop(server, shopId)
+        val currency = custom?.currency ?: MarketCurrency.POINTS
+        // ⚠ 主货币的后端是 Int 口径：超过 Int.MAX_VALUE 的价格买不了（`CurrencyService.remove` 必失败）
+        //   ⇒ 保存时就拒绝，别让服主挂一个永远卖不出去的价格
+        if (currency == MarketCurrency.PRIMARY && entry.price > Int.MAX_VALUE.toLong()) {
+            return PointMarketError.BAD_NUMBER
+        }
+        // 领取店：`stock` = 每期每人可领数量，**0 合法**（不可领），**不允许不限量**（留空 = 0）
+        val claimMode = custom?.mode == CustomShopMode.CLAIM
+        val rawEntry = if (claimMode && entry.stock == ShopEntry.UNLIMITED) entry.copy(stock = 0) else entry
+        val normalized = normalize(rawEntry, server, allowZeroStock = claimMode) ?: return reject(entry)
         // 商店类型是一道**服务端**闸门：只卖物品的店，伪造一个精灵上架包也存不进去
-        customShop(server, shopId)?.let {
+        custom?.let {
             if (!it.type.allows(normalized.kind)) return PointMarketError.KIND_NOT_ALLOWED
         }
         // ⚠ **每次保存都换一个全新的 id**（绝不信客户端传的）：语义上等于"旧的作废、换了一个新的"，
@@ -285,9 +358,9 @@ object PointMarketService {
             shopId, index, player.name.string, replaced.kind, replaced.price, replaced.stock, replaced.entryId
         )
         // 交易账本留痕：上架（与市场 / 拍卖同口径）。
-        // ⚠ **币种是 RP**、**不计入交易量**（额度/卡片资格只看主货币，见 AuctionState 的「统计隔离」）——
+        // ⚠ **不计入交易量**（额度/卡片资格只看玩家间成交，见 AuctionState 的「统计隔离」）——
         //   记账本只是为了可追溯，本函数**不碰** FinanceState 的任何计数。
-        // ⚠ detail 列留空：RP 商城卖的是**配方**（规格），不是现成的精灵/物品，没有 NBT 可重建
+        // ⚠ detail 列留空：商城卖的是**配方**（规格），不是现成的精灵/物品，没有 NBT 可重建
         //   （RecordDetail 那套用不上）。物种/物品 id 已经落在「精灵/物品」列里了。
         TransactionHistory.get(server).addRecord(
             TransactionRecord(
@@ -300,11 +373,11 @@ object PointMarketService {
                 buyerUuid = null,
                 buyerName = "",
                 species = speciesForHistory(replaced),
-                // ⚠ 账本的 price 是 Int，而 RP 价是 Long ⇒ 钳制转换（RP 价实际远达不到上限）
+                // ⚠ 账本的 price 是 Int，而价格是 Long ⇒ 钳制转换（RP 价实际远达不到上限）
                 price = replaced.price.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                 fee = 0,
                 detail = "",
-                currency = MarketCurrency.POINTS,
+                currency = currency,
                 primaryType = primaryTypeForHistory(player, null, replaced.pokemon)
             )
         )
@@ -332,7 +405,11 @@ object PointMarketService {
         if (index < 0 || index > MAX_INDEX) return PointMarketError.BAD_INDEX
         val state = store(server, shopId) ?: return PointMarketError.SHOP_NOT_FOUND
         // 入库前归一：负数一律按「不限量」算（界面留空传的就是它），别把 -5 这种写进存档
-        val normalized = if (stock < 0) ShopEntry.UNLIMITED else stock
+        // ⚠ 领取店**不允许不限量**：留空 = 0（本期不开放），否则就是无限免费领
+        val claimMode = customShop(server, shopId)?.mode == CustomShopMode.CLAIM
+        val normalized = if (stock < 0) {
+            if (claimMode) 0 else ShopEntry.UNLIMITED
+        } else stock
         if (!state.setStock(kind, index, normalized)) return PointMarketError.NOT_FOUND
         PersistHelper.requestSave(server)
         CobbleMarket.LOGGER.info(
@@ -395,10 +472,11 @@ object PointMarketService {
      *
      * ⚠ **崩溃窗口**：[PointShopState.consume] 的注释定了「**先扣库存再扣钱**」——
      * 最坏是少卖一份（服主补货即可），反过来则会超卖。
-     * ⚠ **扣掉的 RP 直接销毁**（不进任何人的账）：商城由服主单方面经营、没有收款方，
-     * 与「RP 手续费销毁」同一口径（见 `docs/points_plan.md`）。
+     * ⚠ **扣掉的钱直接销毁**（不进任何人的账）：商城由服主单方面经营、没有收款方 ——
+     * 主货币与 RP 都是这个口径（RP 与「RP 手续费销毁」同源，见 `docs/points_plan.md`）。
      * ⚠ 本函数**不碰** `FinanceState.recordTrade` —— 那会污染紫卡/黑卡门槛与贷款额度。
-     * ⚠ **总开关关闭时这里照常可用**：商城是唯一还能用 RP 的地方（不判 `pointsEnabled`）。
+     * ⚠ **总开关关闭时主商城照常可用**：它是唯一还能用 RP 的地方（不判 `pointsEnabled`）；
+     *   **自定义（NPC）商店不在此列** —— 总开关关着时整体不可购买（2026-10-23 用户拍板）。
      *
      * @param count 购买数量。**精灵格恒按 1 算**（买一次就是一只，数量由请求几次表达）——
      *              不把这个自由度留给客户端；物品格才是玩家在购买窗填的那个数
@@ -426,6 +504,17 @@ object PointMarketService {
             return PointMarketBuyResult.Failure(PointMarketError.SHOP_NOT_FOUND)
         }
         if (custom != null) {
+            // ⚠ **有意不判市场总开关**（`marketEnabled`）：停市不关 NPC 商店 —— 用户 2026-10-24 拍板
+            //   「跟随市场总开关就管得太宽了」。这里只认店自己的营业开关（下一行），别补 marketBlocked。
+            // 领取店没有价格、不能走购买流程（客户端点格子也走不到这里，这是服务端兜底）
+            if (custom.mode == CustomShopMode.CLAIM) {
+                return PointMarketBuyResult.Failure(PointMarketError.NOT_FOR_SALE)
+            }
+            // RP 总开关关着 ⇒ **RP 计价**的自定义商店不可购买（2026-10-23 用户报：关着还能从 NPC 商店买）
+            // ⚠ 只拦 RP 店；主货币店与 RP 总开关无关。主 RP 商城是总开关关闭时唯一还能用 RP 的地方
+            if (custom.currency == MarketCurrency.POINTS && !CobbleMarketConfig.pointsEnabled) {
+                return PointMarketBuyResult.Failure(PointMarketError.POINTS_DISABLED)
+            }
             if (!custom.enabled) return PointMarketBuyResult.Failure(PointMarketError.SHOP_DISABLED)
             if (!isNearBoundNpc(player, custom)) return PointMarketBuyResult.Failure(PointMarketError.TOO_FAR)
             // 隐藏的另一类商品不能被伪造包买走（客户端已经没有那个 tab 了，这里是最后一道）
@@ -459,9 +548,10 @@ object PointMarketService {
         }
         val total = entry.price * amount
 
-        val points = PointsState.get(server)
-        if (points.getBalance(player.uuid) < total) {
-            return PointMarketBuyResult.Failure(PointMarketError.NOT_ENOUGH_POINTS)
+        // **整店一个币种**：主商城（RP 商城）固定 RP；自定义商店用建店时选的币种
+        val currency = custom?.currency ?: MarketCurrency.POINTS
+        if (CurrencyService.balance(player, currency) < java.math.BigInteger.valueOf(total)) {
+            return PointMarketBuyResult.Failure(PointMarketError.NOT_ENOUGH_FUNDS)
         }
 
         // ── 造货：在此之前什么都没碰；造不出来 = 数据坏了 → 整笔拒绝 ──
@@ -498,9 +588,9 @@ object PointMarketService {
 
         // ── 扣库存 → 扣钱 → 交付：失败逐级回滚 ──
         if (!state.consume(kind, index, amount)) return PointMarketBuyResult.Failure(PointMarketError.SOLD_OUT)
-        if (!points.removeBalance(player.uuid, total)) {
+        if (!CurrencyService.remove(player, currency, total)) {
             state.setStock(kind, index, entry.stock) // 回滚库存（entry 是扣减前的快照）
-            return PointMarketBuyResult.Failure(PointMarketError.NOT_ENOUGH_POINTS)
+            return PointMarketBuyResult.Failure(PointMarketError.NOT_ENOUGH_FUNDS)
         }
 
         // ⚠ **交付之前先留一份副本**：`deliverItems` 里的 `insertStack` 是"转移"语义 ——
@@ -520,7 +610,8 @@ object PointMarketService {
         if (!delivered) {
             // 预检过了还失败 = 极小概率（背包在两步之间被别的东西占了）——
             // 钱和库存都退回去。宁可这单不成，也不能让玩家吃亏
-            points.addBalance(player.uuid, total)
+            // ⚠ 退款走 `creditSeller`：主货币进**待领余额**（物品本位时背包放不下也不会丢），RP 直接回余额
+            CurrencyService.creditSeller(server, player.uuid, currency, total)
             state.setStock(kind, index, entry.stock)
             CobbleMarket.LOGGER.warn(
                 "Point shop: delivery failed for {} on slot {}, rolled back", player.name.string, index
@@ -537,22 +628,25 @@ object PointMarketService {
         // 自定义商店在账本里带上店名（zh）/ 店 id（en）—— 服主对账时能分清是哪个 NPC 的店
         val shopZh = custom?.let { "（${it.name}）" } ?: ""
         val shopEn = custom?.let { " [shop ${it.id}]" } ?: ""
-        PointsAuditLogger.log(
-            PointsLogType.STORE_BUY,
-            player.uuid,
-            player.name.string,
-            total,
-            points.getBalance(player.uuid),
-            player.name.string,
-            "商城购买$shopZh：$goods ×$amount（第 ${index + 1} 格）",
-            "Store purchase$shopEn: $goods x$amount (slot ${index + 1})"
-        )
+        // RP 账本只记 RP 变动 —— 主货币的成交只进交易历史（见下），别混进 RP 的 CSV
+        if (currency == MarketCurrency.POINTS) {
+            PointsAuditLogger.log(
+                PointsLogType.STORE_BUY,
+                player.uuid,
+                player.name.string,
+                total,
+                PointsState.get(server).getBalance(player.uuid),
+                player.name.string,
+                "商城购买$shopZh：$goods ×$amount（第 ${index + 1} 格）",
+                "Store purchase$shopEn: $goods x$amount (slot ${index + 1})"
+            )
+        }
         PersistHelper.requestSave(server)
         CobbleMarket.LOGGER.info(
-            "Point shop[{}]: {} bought slot {} x{} for {} RP",
-            shopId, player.name.string, index, amount, total
+            "Point shop[{}]: {} bought slot {} x{} for {} {}",
+            shopId, player.name.string, index, amount, total, currency.name
         )
-        // 交易账本留痕：成交（币种 RP、**不计入交易量** —— 额度与卡片资格只看主货币）。
+        // 交易账本留痕：成交（币种随商店、**不计入交易量** —— 额度与卡片资格只看玩家间成交）。
         // 卖家取条目的**上架者**；加 creator 字段之前的老条目为空 ⇒ 落零 UUID + 空名，
         // 账本那两列留白（比编一个假卖家诚实）。
         TransactionHistory.get(server).addRecord(
@@ -571,7 +665,7 @@ object PointMarketService {
                 price = total.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                 fee = 0,
                 detail = detailForHistory(server, pokemon, deliveredItems),
-                currency = MarketCurrency.POINTS,
+                currency = currency,
                 primaryType = primaryTypeForHistory(player, pokemon, null),
                 // 标记来源：交易历史界面据此把卖家列画成「▣ 商城」而不是上架的管理员名
                 // （上架 / 下架那两条**不标** —— 它们不是成交，界面也不画卖家段）
@@ -583,6 +677,114 @@ object PointMarketService {
         return PointMarketBuyResult.Success(
             pokemon = pokemon, items = deliveredItems, count = amount, total = total
         )
+    }
+
+    /**
+     * **定期领取店：一键领取全部**（2026-10-23 用户拍板）。
+     *
+     * 口径：
+     * - **免费**：不扣任何货币；RP 总开关与币种都与此无关
+     * - 每个玩家每格每期可领 `stock` 个（**每期每人**，不消耗全服库存）
+     * - **滚动冷却**：第一次真正领到东西时开始计时，满 `claimHours` 小时重置
+     * - **不叠加**：过期未领的部分直接作废（[CustomShopClaimState] 重置时清空）
+     * - **装不下就留在店里**：本次只交付放得下的部分，剩余本期还能再领；刷新后作废
+     *
+     * @return 实际交付数量 + 是否有剩余 + 本次调用前是否有可领内容（区分"空间不足"与"没东西可领"）
+     */
+    fun claimAll(
+        server: MinecraftServer,
+        player: ServerPlayerEntity,
+        shopId: String
+    ): PointMarketClaimResult {
+        val shop = customShop(server, shopId) ?: return PointMarketClaimResult.Failure(PointMarketError.SHOP_NOT_FOUND)
+        if (shop.mode != CustomShopMode.CLAIM) {
+            return PointMarketClaimResult.Failure(PointMarketError.NOT_A_CLAIM_SHOP)
+        }
+        if (!shop.enabled) return PointMarketClaimResult.Failure(PointMarketError.SHOP_DISABLED)
+        if (!isNearBoundNpc(player, shop)) return PointMarketClaimResult.Failure(PointMarketError.TOO_FAR)
+
+        val now = System.currentTimeMillis()
+        val periodMs = shop.claimHours.coerceIn(1, MAX_CLAIM_HOURS) * 3_600_000L
+        val state = CustomShopClaimState.get(server)
+        // 过期会在这里原地重置（清空已领计数，不累积）
+        val period = state.periodFor(shop.id, player.uuid, now, periodMs)
+
+        var deliveredTotal = 0
+        var leftBehind = false
+        var hadRemaining = false
+        // 物品交付明细（给客户端的飞入动画）；精灵不记 —— 用户 2026-10-23 定「精灵不做动画」
+        val claimedItems = ArrayList<ClaimedItem>()
+        // 实际交付的精灵（只用于「领取到闪光」全服播报；普通精灵不占）
+        val deliveredPokemon = ArrayList<Pokemon>()
+        for (kind in listOf(ShopEntry.KIND_POKEMON, ShopEntry.KIND_ITEM)) {
+            if (!shop.type.allows(kind)) continue
+            shop.all(kind).toSortedMap().forEach { (_, entry) ->
+                val quota = entry.stock
+                if (quota <= 0) return@forEach
+                val remaining = state.remaining(period, entry.entryId, quota)
+                if (remaining <= 0) return@forEach
+                hadRemaining = true
+                val delivered = if (kind == ShopEntry.KIND_POKEMON) {
+                    deliverClaimPokemon(player, entry, remaining, deliveredPokemon)
+                } else {
+                    deliverClaimItems(server, player, entry, remaining)
+                }
+                if (delivered > 0) {
+                    state.recordClaim(shop.id, player.uuid, period, entry.entryId, delivered, now)
+                    deliveredTotal += delivered
+                    if (kind == ShopEntry.KIND_ITEM) claimedItems += ClaimedItem(entry.entryId, delivered)
+                }
+                if (delivered < remaining) leftBehind = true
+            }
+        }
+        if (deliveredTotal > 0) PersistHelper.requestSave(server)
+        CobbleMarket.LOGGER.info(
+            "Claim shop[{}]: {} claimed {} reward(s){}",
+            shop.id, player.name.string, deliveredTotal, if (leftBehind) " (inventory full, remainder kept)" else ""
+        )
+        return PointMarketClaimResult.Success(
+            deliveredTotal, leftBehind, hadRemaining, claimedItems,
+            // 只留闪光：普通精灵在聊天里没有播报，留着只是白占对象
+            deliveredPokemon.filter { it.shiny }
+        )
+    }
+
+    /**
+     * 领取精灵：最多 [count] 只；队伍满会自动进 PC，两边都满就停（剩余留在店里）。
+     * 实际交付的精灵追加到 [delivered]（闪光播报要用；由调用方清空 / 读取）。
+     */
+    private fun deliverClaimPokemon(
+        player: ServerPlayerEntity,
+        entry: ShopEntry,
+        count: Int,
+        delivered: MutableList<Pokemon>
+    ): Int {
+        val spec = entry.pokemon ?: return 0
+        var deliveredCount = 0
+        repeat(count) {
+            val pokemon = runCatching { PointMarketFactory.createPokemon(spec, player) }
+                .onFailure { CobbleMarket.LOGGER.warn("Claim shop: createPokemon failed for {}: {}", spec.species, it) }
+                .getOrNull() ?: return deliveredCount
+            val ok = runCatching { Cobblemon.storage.getParty(player).add(pokemon) }.getOrDefault(false)
+            if (!ok) return deliveredCount
+            delivered += pokemon
+            deliveredCount++
+        }
+        return deliveredCount
+    }
+
+    /** 领取物品：最多 [count] 件；只放得下多少算多少（剩余留在店里） */
+    private fun deliverClaimItems(server: MinecraftServer, player: ServerPlayerEntity, entry: ShopEntry, count: Int): Int {
+        val spec = entry.item ?: return 0
+        val stacks = PointMarketFactory.createItems(spec, count, server.registryManager) ?: return 0
+        var delivered = 0
+        for (stack in stacks) {
+            val before = stack.count
+            player.inventory.insertStack(stack)
+            // `insertStack` 部分放入也返回 true，只能看栈的剩余量（同 CurrencyHandler.give 的写法）
+            delivered += before - stack.count
+        }
+        return delivered
     }
 
     /** 队伍或 PC 还有空位吗（`add` 会自动溢出到 PC，所以两边都满才是真放不下） */
@@ -713,10 +915,14 @@ object PointMarketService {
      * 规范化只做「把客户端给的值折算成存档该存的形式」，**不做"尽力修补"**：
      * 任何一处对不上就直接整条拒绝 —— 半修半存的数据比拒绝更难排查。
      */
-    private fun normalize(entry: ShopEntry, server: MinecraftServer): ShopEntry? {
+    private fun normalize(
+        entry: ShopEntry, server: MinecraftServer, allowZeroStock: Boolean = false
+    ): ShopEntry? {
         if (entry.price < 0L) return null
-        // 0 是**售罄后的展示值**，不是上架时能设的库存：要限量就 ≥1，不限量用 -1（界面留空即 -1）
-        if (entry.stock != ShopEntry.UNLIMITED && entry.stock < 1) return null
+        // 普通购买店：0 是**售罄后的展示值**，不是上架时能设的库存（要限量就 ≥1，不限量用 -1）
+        // 定期领取店（[allowZeroStock]）：0 = 本期不可领，是合法配置；-1 在调用方已折算成 0
+        val minStock = if (allowZeroStock) 0 else 1
+        if (entry.stock != ShopEntry.UNLIMITED && entry.stock < minStock) return null
         return when (entry.kind) {
             ShopEntry.KIND_POKEMON -> {
                 val spec = entry.pokemon ?: return null

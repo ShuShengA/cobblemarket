@@ -4,6 +4,7 @@ import com.cobblemon.mod.common.api.pokemon.stats.Stats
 import com.cobblemon.mod.common.pokemon.IVs
 import com.cobblemon.mod.common.pokemon.Pokemon
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.currency.MarketCurrency
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.nbt.NbtList
 import net.minecraft.nbt.NbtString
@@ -60,7 +61,13 @@ data class PokemonPriceLimitEntry(
     //   [x, y, ...] = 命中所勾的任一个
     // ⚠ 这里**没有**"全部变体"哨兵（同黑名单，2026-09-28 废止，见 [LEGACY_ALL_VARIANTS]）
     // ⚠ 追加末尾 + 默认值：旧档读不到自动落空表 = 不限，不损坏存档
-    val variantAspects: List<String> = emptyList()
+    val variantAspects: List<String> = emptyList(),
+    /**
+     * 这条规则管哪种币种（2026-10-24）：主货币 / RP。**不同币种是各自独立的规则**
+     * （同一只精灵可以同时有主货币上下限和 RP 上下限）—— 因此币种也进 key。
+     * ⚠ 末尾追加 + 默认主货币：旧档读不到自动落主货币，不损坏存档。
+     */
+    val currency: MarketCurrency = MarketCurrency.PRIMARY
 ) {
     companion object {
         const val ALL_FORMS = "*" // 与 PokemonBlacklistEntry.ALL_FORMS 同值同语义
@@ -107,7 +114,11 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
 
     // ⚠ 变体也进 key：它和形态一样是**判据的一部分**，不进的话"同一物种同一形态、只有变体不同"
     //   的两条规则会互相覆盖
-    private data class EntryKey(val speciesId: String, val vCount: Int, val shinyFilter: Int, val aspects: List<String>, val htFilter: Int, val variantAspects: List<String>)
+    private data class EntryKey(
+        val speciesId: String, val vCount: Int, val shinyFilter: Int,
+        val aspects: List<String>, val htFilter: Int, val variantAspects: List<String>,
+        val currency: MarketCurrency
+    )
 
     private val entries = mutableMapOf<EntryKey, PokemonPriceLimitEntry>()
 
@@ -119,11 +130,14 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
      *   "重复添加 = 覆盖"随之失效（列表里留下两条看着一样的）。
      * ⚠ 读档处也要走这个（否则排序过的 key 和存档里原序拼的 key 对不上，同一条规则会存成两份）。
      */
-    private fun keyOf(speciesId: String, vCount: Int, shinyFilter: Int, aspects: List<String>, htFilter: Int, variantAspects: List<String>): EntryKey =
-        EntryKey(speciesId, vCount, shinyFilter, aspects.sorted(), htFilter, variantAspects.sorted())
+    private fun keyOf(
+        speciesId: String, vCount: Int, shinyFilter: Int, aspects: List<String>,
+        htFilter: Int, variantAspects: List<String>, currency: MarketCurrency
+    ): EntryKey =
+        EntryKey(speciesId, vCount, shinyFilter, aspects.sorted(), htFilter, variantAspects.sorted(), currency)
 
     private fun keyOf(entry: PokemonPriceLimitEntry): EntryKey =
-        keyOf(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter, entry.variantAspects)
+        keyOf(entry.speciesId, entry.vCount, entry.shinyFilter, entry.aspects, entry.htFilter, entry.variantAspects, entry.currency)
 
     fun add(entry: PokemonPriceLimitEntry) {
         // 先删后插：同物品价格限制一致的语义——已存在 key 的 put 不移动位置，重复添加会留在旧位置
@@ -133,8 +147,13 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
         markDirty()
     }
 
-    fun remove(speciesId: String, vCount: Int, shinyFilter: Int, aspects: List<String>, htFilter: Int, variantAspects: List<String>): Boolean {
-        val removed = entries.remove(keyOf(speciesId, vCount, shinyFilter, aspects, htFilter, variantAspects)) != null
+    fun remove(
+        speciesId: String, vCount: Int, shinyFilter: Int, aspects: List<String>,
+        htFilter: Int, variantAspects: List<String>, currency: MarketCurrency
+    ): Boolean {
+        val removed = entries.remove(
+            keyOf(speciesId, vCount, shinyFilter, aspects, htFilter, variantAspects, currency)
+        ) != null
         if (removed) markDirty()
         return removed
     }
@@ -160,7 +179,7 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
         val maxEntry: PokemonPriceLimitEntry?
     )
 
-    fun check(pokemon: Pokemon): PriceLimitMatch {
+    fun check(pokemon: Pokemon, currency: MarketCurrency): PriceLimitMatch {
         val species = pokemon.species
         val speciesId = species.resourceIdentifier.toString()
         // 该物种所有已声明 form aspect 的并集（standard form + forms），用于"默认形态"判定（照黑名单）
@@ -170,8 +189,9 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
         }
         // 特训判定：六项特训值（hyper trained，值域 0~31）任一存在即"有特训"
         val targetHasHt = pokemon.ivs.hyperTrainedIVs.values.any { it >= 0 }
+        // 只取**挂单币种**的规则：主货币与 RP 是两套量纲，混用只会误伤（2026-10-24）
         val matched = entries.values.filter {
-            it.matches(
+            it.currency == currency && it.matches(
                 speciesId, vCountOf(pokemon), pokemon.shiny, pokemon.aspects, formAspectUnion, targetHasHt
             )
         }
@@ -209,6 +229,8 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
             e.minPrice?.let { c.putInt("minPrice", it) }
             c.putBoolean("hasMax", e.maxPrice != null)
             e.maxPrice?.let { c.putInt("maxPrice", it) }
+            // 币种（末尾追加）：旧档读不到 → fromStored 落主货币
+            c.putString("currency", e.currency.name)
             list.add(c)
         }
         nbt.put("entries", list)
@@ -258,7 +280,11 @@ class PokemonPriceLimitState private constructor() : PersistentState() {
                                     c.getList("variantAspects", NbtList.STRING_TYPE.toInt())
                                         .map { it.asString() }
                                         .filter { it != PokemonPriceLimitEntry.LEGACY_ALL_VARIANTS }
-                                else emptyList()
+                                else emptyList(),
+                                // 币种：旧档无此键 → 主货币（fromStored 容错，不抛异常）
+                                currency = MarketCurrency.fromStored(
+                                    if (c.contains("currency")) c.getString("currency") else null
+                                )
                             )
                             entries[keyOf(entry)] = entry
                         } catch (e: Exception) {
