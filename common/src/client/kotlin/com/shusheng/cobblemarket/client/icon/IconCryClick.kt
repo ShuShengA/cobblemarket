@@ -12,14 +12,15 @@ import com.cobblemon.mod.common.pokemon.RenderablePokemon
  *   战吼 / 战斗入场走 [IconAnimationResolver.playBattleCry] / [IconAnimationResolver.playBattleIntro]
  *   的合成动画（与官方 cry 同一个 `BedrockActiveAnimation` 类型）。
  *   ⚠ **普通叫别改成主动画版（`:primary`）**：它会把姿势的基础待机动画一并 dump 掉、模型掉回 rest pose
- *   （2026-09-15 普通叫踩过、2026-09-22 战吼又踩一次）。**130 条**战吼动画
- *   （2026-10-12 在 Cobblemon 1.8.2 上全量扫描；1.8.1 是 118 条），
- *   将来 Cobblemon 补上更多时这边不用改代码就自动生效
+ *   （2026-09-15 普通叫踩过、2026-09-22 战吼又踩一次）。战吼动画：`animation.<组>.battle_cry`
+ *   **1.8.2 = 121 组、1.8.3 = 123 组**（含 `alolan_battle_cry` 等变体名共 135 → 137 条；
+ *   2026-10-25 在 1.8.3 上全量复扫），将来 Cobblemon 补上更多时这边不用改代码就自动生效
  * - **战斗入场**（`battle_intro`，2026-10-18 新增）：野外「放出来的精灵进入战斗状态」时播的
  *   那套从站姿到战斗姿态的入场动作（苍炎刃鬼就是）。只有该物种定义了这条过渡动画才会参与，
  *   且**必须自带叫声关键帧** —— 个别物种（如烈咬陆鲨）整条没有声音，放进来会让点击「只动不响」
  * - 声音：`FloatingState` 没有 entity，Cobblemon 的 `BedrockSoundKeyframe` 会走
- *   `SimpleSoundInstance.forUI(...)` 自动播出来
+ *   `UIEntitySoundInstance`（1.8.3 起；此前是 `SimpleSoundInstance.forUI`）自动播出来，
+ *   音量跟随「友好生物」滑块
  *
  * **命中检测**用 S0 建的 [IconRegistry]（每帧登记所有图标矩形，滚动、弹窗遮挡自动正确）。
  */
