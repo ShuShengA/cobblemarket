@@ -1,5 +1,7 @@
 # Changelog
 
+## 1.3.4 (in development, unreleased)
+
 ## 1.3.3 (released)
 
 ### Changes
