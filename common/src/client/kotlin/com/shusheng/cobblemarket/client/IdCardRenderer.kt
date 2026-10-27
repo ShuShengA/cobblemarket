@@ -98,7 +98,10 @@ object IdCardRenderer {
         val matrices = context.matrices
         matrices.push()
         matrices.translate(centerX.toDouble(), centerY.toDouble(), 50.0)
-        matrices.scale(size.toFloat(), size.toFloat(), size.toFloat())
+        // ⚠ **Z 轴必须取负** —— 原版 `InventoryScreen.drawEntity` 是 `scale(size, size, -size)`
+        //   少了负号整模型会**左右镜像**（2026-10-28 用户实测：肩骑精灵左肩→右肩、剑换手、
+        //   Backpacked 这类单面模型法线反了 ⇒ 背面剔除 ⇒ 透明）
+        matrices.scale(size.toFloat(), size.toFloat(), -size.toFloat())
         // 实体中心偏移（照原版 `drawEntity` 的 Vector3f(0, height/2, 0)）—— 漏了它模型会往上飘
         matrices.translate(0f, entity.height / 2f, 0f)
         // 模型朝屏幕（原版 quaternionf = rotateZ(π)；pitch 固定 0，不跟鼠标）
@@ -111,6 +114,8 @@ object IdCardRenderer {
         dispatcher.setRenderShadows(false)
         val vertexConsumers = client.bufferBuilders.entityVertexConsumers
         // 参数：(entity, x, y, z, yaw, tickDelta, matrices, vertexConsumers, light)
+        // yaw 照原版传 0（2026-10-28 实测传 yawDeg 无变化）；tickDelta 传 0 配合上面的
+        // prev* 全部设为同值 ⇒ 取 prev 等于当前
         RenderSystem.runAsFancy {
             dispatcher.render(entity, 0.0, 0.0, 0.0, 0f, 0f, matrices, vertexConsumers, 0xF000F0)
         }

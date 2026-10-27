@@ -2,11 +2,13 @@
 
 ## 1.3.3 (in development, unreleased)
 
-### New Feature
-
 ### Changes
 
+- Adjusted the position of the ID card rotation button (moved to the left equipment column)
+
 ### Fixes
+
+- **Some textures missing in the ID card's spinning mode**
 
 ## 1.3.2 (released)
 

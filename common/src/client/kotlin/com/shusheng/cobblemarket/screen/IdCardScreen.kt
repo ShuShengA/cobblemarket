@@ -139,11 +139,11 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
             tooltip = Text.translatable("cobblemarket.share.id_card_button")
         ))
 
-        // 模型右下角：切换「跟随鼠标 / 原地旋转」（2026-10-28）。
-        // 按钮**底部与模型脚底齐平**：模型居中于「内框顶 → 品牌字顶」区域、缩放 0.85
-        // ⇒ 脚底 ≈ 区域底往上约 11px
+        // 模型左侧：切换「跟随鼠标 / 原地旋转」（2026-10-28）。
+        // 与左侧装备栏**同一列**（用户要求）：装备栏 x = innerLeft+4、宽 22，按钮 18 宽
+        // ⇒ 左缘再 +2 让两者中心对齐；纵向位置不变（装备栏下方、模型脚底附近）
         val spinBtn = NineSliceButton(
-            (geo.split - 18 - 4).toInt(),
+            (geo.innerLeft + 4 + 2).toInt(),
             (geo.titleTop + MODEL_DROP - 33).toInt(),
             18, 18,
             Text.literal(""),
