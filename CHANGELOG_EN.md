@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.3 (in development, unreleased)
+
+### New Feature
+
+### Changes
+
+### Fixes
+
 ## 1.3.2 (released)
 
 ⚠ **Client and server must be upgraded together** (this version changes network payloads).
