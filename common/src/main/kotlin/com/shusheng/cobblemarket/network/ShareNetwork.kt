@@ -282,6 +282,19 @@ object ShareNetwork {
     private fun idCardShareMessage(player: ServerPlayerEntity, shareId: UUID): Text? {
         val row = com.shusheng.cobblemarket.overview.PlayerOverviewService
             .buildRow(player.server, player.uuid) ?: return null
+        // 装备 / 经验：分享者本人在线，直接从实体读（总览列表不填这两样，省流量）
+        val registry = player.serverWorld.registryManager
+        fun encode(stack: net.minecraft.item.ItemStack): net.minecraft.nbt.NbtCompound? =
+            if (stack.isEmpty) null
+            else runCatching { stack.encode(registry) as? net.minecraft.nbt.NbtCompound }.getOrNull()
+        val rowWithGear = row.copy(
+            headItem = encode(player.getEquippedStack(net.minecraft.entity.EquipmentSlot.HEAD)),
+            chestItem = encode(player.getEquippedStack(net.minecraft.entity.EquipmentSlot.CHEST)),
+            legsItem = encode(player.getEquippedStack(net.minecraft.entity.EquipmentSlot.LEGS)),
+            feetItem = encode(player.getEquippedStack(net.minecraft.entity.EquipmentSlot.FEET)),
+            experienceLevel = player.experienceLevel,
+            experienceProgress = player.experienceProgress
+        )
         cachePreview(
             shareId,
             ObjectPreviewPayload(
@@ -296,7 +309,7 @@ object ShareNetwork {
                 itemComponentsSpec = null,
                 count = 0,
                 isShare = true,
-                idCardRow = row
+                idCardRow = rowWithGear
             )
         )
         val nameText = Text.literal("")

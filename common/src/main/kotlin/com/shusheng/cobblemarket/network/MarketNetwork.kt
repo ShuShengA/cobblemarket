@@ -238,18 +238,60 @@ data class ListingEntry(
     }
 }
 
-// ── S2C: 市场总开关状态（登录补发 + /market on|off 切换时全员广播） ──
+// ── S2C: 市场总开关 + 四个分项开关（登录补发、/market on|off 切换、配置保存时全员广播） ──
 
-data class MarketStatePayload(val enabled: Boolean) : CustomPayload {
+data class MarketStatePayload(
+    val enabled: Boolean,
+    /** 精灵市场开关：关闭后入口置灰、点击提示（2026-10-25） */
+    val pokemonMarketEnabled: Boolean,
+    /** 物品市场开关 */
+    val itemMarketEnabled: Boolean,
+    /** 拍卖场开关 */
+    val auctionEnabled: Boolean,
+    /** 拍卖场：精灵 / 物品子开关（关闭后对应 tab 隐藏） */
+    val auctionPokemonEnabled: Boolean,
+    val auctionItemEnabled: Boolean,
+    /** 求购单开关 */
+    val buyOrderEnabled: Boolean,
+    /** 求购单：精灵 / 物品子开关（关闭后对应 tab 隐藏） */
+    val buyOrderPokemonEnabled: Boolean,
+    val buyOrderItemEnabled: Boolean,
+) : CustomPayload {
     override fun getId() = ID
     companion object {
         val ID = CustomPayload.Id<MarketStatePayload>(CobbleMarket.id("market_state"))
         val CODEC: PacketCodec<PacketByteBuf, MarketStatePayload> = PacketCodec.of(
-            { p, b -> b.writeBoolean(p.enabled) },
-            { b -> MarketStatePayload(b.readBoolean()) }
+            { p, b ->
+                b.writeBoolean(p.enabled)
+                b.writeBoolean(p.pokemonMarketEnabled)
+                b.writeBoolean(p.itemMarketEnabled)
+                b.writeBoolean(p.auctionEnabled)
+                b.writeBoolean(p.auctionPokemonEnabled)
+                b.writeBoolean(p.auctionItemEnabled)
+                b.writeBoolean(p.buyOrderEnabled)
+                b.writeBoolean(p.buyOrderPokemonEnabled)
+                b.writeBoolean(p.buyOrderItemEnabled)
+            },
+            { b -> MarketStatePayload(
+                b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readBoolean(),
+                b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readBoolean()
+            ) }
         )
     }
 }
+
+/** 当前市场开关状态快照（总开关 + 四个分项）；登录补发 / 广播 / 配置保存后统一用它 */
+fun marketStatePayload(): MarketStatePayload = MarketStatePayload(
+    enabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.marketEnabled,
+    pokemonMarketEnabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.pokemonMarketEnabled,
+    itemMarketEnabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.itemMarketEnabled,
+    auctionEnabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.auctionEnabled,
+    auctionPokemonEnabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.auctionPokemonEnabled,
+    auctionItemEnabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.auctionItemEnabled,
+    buyOrderEnabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.buyOrderEnabled,
+    buyOrderPokemonEnabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.buyOrderPokemonEnabled,
+    buyOrderItemEnabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.buyOrderItemEnabled,
+)
 
 // ── S2C: 待领取概况（登录时推一次） ──
 
@@ -328,7 +370,7 @@ fun toggleMarketEnabled(server: net.minecraft.server.MinecraftServer, enabled: B
         if (enabled) "cobblemarket.market.broadcast_open" else "cobblemarket.market.broadcast_close"
     ).formatted(Formatting.GOLD)
     server.playerManager.playerList.forEach {
-        sendToPlayer(it, MarketStatePayload(enabled))
+        sendToPlayer(it, marketStatePayload())
         it.sendMessage(broadcast, false)
         // 开市/停市音由服务端发，**不能让客户端自己判断**：管理面板的开关按钮会先乐观更新
         // MarketStateCache（见 AdminScreen.sendMarketEnabled），广播回来时客户端看"状态没变"，
@@ -345,6 +387,94 @@ fun toggleMarketEnabled(server: net.minecraft.server.MinecraftServer, enabled: B
 fun marketBlocked(player: net.minecraft.server.network.ServerPlayerEntity): Boolean {
     if (com.shusheng.cobblemarket.config.CobbleMarketConfig.marketEnabled) return false
     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.market.closed")))
+    return true
+}
+
+/**
+ * **四个分项开关的拦截**（2026-10-25）：总开关优先，再看该类开关。
+ * 关闭后该类**整体停用** —— 不能上架 / 购买 / 出价 / 交付，存量条目也不可交易；
+ * 下架、取消自己的条目、领取待领取与余额仍走原路径（那些入口不调用本函数）。
+ * 返回 true = **已拒绝并发过提示**，调用方直接 `return@execute`。
+ */
+fun pokemonMarketBlocked(player: net.minecraft.server.network.ServerPlayerEntity): Boolean {
+    if (marketBlocked(player)) return true
+    if (com.shusheng.cobblemarket.config.CobbleMarketConfig.pokemonMarketEnabled) return false
+    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.market.pokemon_closed")))
+    return true
+}
+
+fun itemMarketBlocked(player: net.minecraft.server.network.ServerPlayerEntity): Boolean {
+    if (marketBlocked(player)) return true
+    if (com.shusheng.cobblemarket.config.CobbleMarketConfig.itemMarketEnabled) return false
+    sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.market.item_closed")))
+    return true
+}
+
+fun auctionPokemonBlocked(player: net.minecraft.server.network.ServerPlayerEntity): Boolean {
+    if (marketBlocked(player)) return true
+    val cfg = com.shusheng.cobblemarket.config.CobbleMarketConfig
+    if (cfg.auctionEnabled && cfg.auctionPokemonEnabled) return false
+    sendToPlayer(
+        player,
+        MarketResultPayload(
+            false,
+            Text.translatable(
+                if (cfg.auctionEnabled) "cobblemarket.market.auction_pokemon_closed"
+                else "cobblemarket.market.auction_closed"
+            )
+        )
+    )
+    return true
+}
+
+fun auctionItemBlocked(player: net.minecraft.server.network.ServerPlayerEntity): Boolean {
+    if (marketBlocked(player)) return true
+    val cfg = com.shusheng.cobblemarket.config.CobbleMarketConfig
+    if (cfg.auctionEnabled && cfg.auctionItemEnabled) return false
+    sendToPlayer(
+        player,
+        MarketResultPayload(
+            false,
+            Text.translatable(
+                if (cfg.auctionEnabled) "cobblemarket.market.auction_item_closed"
+                else "cobblemarket.market.auction_closed"
+            )
+        )
+    )
+    return true
+}
+
+fun buyOrderPokemonBlocked(player: net.minecraft.server.network.ServerPlayerEntity): Boolean {
+    if (marketBlocked(player)) return true
+    val cfg = com.shusheng.cobblemarket.config.CobbleMarketConfig
+    if (cfg.buyOrderEnabled && cfg.buyOrderPokemonEnabled) return false
+    sendToPlayer(
+        player,
+        MarketResultPayload(
+            false,
+            Text.translatable(
+                if (cfg.buyOrderEnabled) "cobblemarket.market.buyorder_pokemon_closed"
+                else "cobblemarket.market.buyorder_closed"
+            )
+        )
+    )
+    return true
+}
+
+fun buyOrderItemBlocked(player: net.minecraft.server.network.ServerPlayerEntity): Boolean {
+    if (marketBlocked(player)) return true
+    val cfg = com.shusheng.cobblemarket.config.CobbleMarketConfig
+    if (cfg.buyOrderEnabled && cfg.buyOrderItemEnabled) return false
+    sendToPlayer(
+        player,
+        MarketResultPayload(
+            false,
+            Text.translatable(
+                if (cfg.buyOrderEnabled) "cobblemarket.market.buyorder_item_closed"
+                else "cobblemarket.market.buyorder_closed"
+            )
+        )
+    )
     return true
 }
 
@@ -1007,8 +1137,9 @@ data class HistoryEntry(
      */
     val itemRarity: String = "",
     /**
-     * 是不是 **RP 商城**卖出的（`TransactionRecord.fromShop`）—— 界面据此把卖家列画成「▣ 商城」
-     * 而不是上架的管理员名。⚠ 末尾追加 + 默认值：旧记录落 false。
+     * 是不是**商店**（主 RP 商城 / 自定义 NPC 商店）卖出的（`TransactionRecord.fromShop`）。
+     * 界面据此把卖家列画成 [shopName] 或「▣ 商城」，而不是上架的管理员名。
+     * ⚠ 末尾追加 + 默认值：旧记录落 false。
      */
     val fromShop: Boolean = false,
     /**
@@ -1018,7 +1149,12 @@ data class HistoryEntry(
      * 只把这一个数字发下去。**旧记录没有 `count=` 段落 ⇒ -1 ⇒ 不显示 `×N`**（而不是 `×0`）。
      * ⚠ **末尾追加 + 默认值**：精灵记录与旧记录都落 -1，行为与改动前一致。
      */
-    val itemCount: Int = -1
+    val itemCount: Int = -1,
+    /**
+     * 自定义 NPC 商店的店名（成交时的快照）。空串 + [fromShop] = 主 RP 商城 ⇒ 界面画
+     * 「▣ 商城」；非空 = 直接画店名。⚠ 末尾追加 + 默认值：旧记录 / 主商城落空串。
+     */
+    val shopName: String = ""
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeString(type); buf.writeString(category); buf.writeString(species); buf.writeInt(price); buf.writeString(
@@ -1026,6 +1162,7 @@ data class HistoryEntry(
         ); buf.writeString(sellerName); buf.writeLong(timestamp); buf.writeString(currency); buf.writeString(primaryType)
         buf.writeString(itemRarity); buf.writeBoolean(fromShop)
         buf.writeInt(itemCount)
+        buf.writeString(shopName)
     }
 
     companion object {
@@ -1042,7 +1179,8 @@ data class HistoryEntry(
             primaryType = buf.readString(),
             itemRarity = buf.readString(),
             fromShop = buf.readBoolean(),
-            itemCount = buf.readInt()
+            itemCount = buf.readInt(),
+            shopName = buf.readString()
         )
     }
 }
@@ -1055,6 +1193,30 @@ data class RequestHistoryPayload(val all: Boolean) : CustomPayload {
         val CODEC: PacketCodec<PacketByteBuf, RequestHistoryPayload> = PacketCodec.of(
             { p, b -> b.writeBoolean(p.all) },
             { b -> RequestHistoryPayload(b.readBoolean()) }
+        )
+    }
+}
+
+/**
+ * 按商店查看记录（2026-10-26）：出售记录（购买店）或领取记录（领取店）。
+ *
+ * ⚠ 只有服主 / 持 `points.shop` 的人能请求（按钮本身也按这个判）；
+ * 数据按记录里的 `shopId` 过滤，**旧记录没有 shopId ⇒ 不会出现在商店记录里**。
+ */
+data class RequestShopHistoryPayload(
+    val shopId: String,
+    val claim: Boolean
+) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<RequestShopHistoryPayload>(CobbleMarket.id("request_shop_history"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestShopHistoryPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeString(p.shopId, 64)
+                b.writeBoolean(p.claim)
+            },
+            { b -> RequestShopHistoryPayload(b.readString(64), b.readBoolean()) }
         )
     }
 }
@@ -1670,7 +1832,7 @@ object MarketNetwork {
             server.execute {
                 val banCheckTime = System.currentTimeMillis()
                 val banInfo = BanState.get(server).getBanInfo(player.uuid, banCheckTime)
-                if (marketBlocked(player)) return@execute
+                if (pokemonMarketBlocked(player)) return@execute
                 if (banInfo != null) {
                     // 提示统一走 BanState.noticeText：Text 对象不拼串 ⇒ 按**客户端语言**渲染
                     sendToPlayer(player, MarketResultPayload(false, BanState.noticeText(banInfo.expiresAt, banInfo.reason, banCheckTime)))
@@ -2250,7 +2412,7 @@ object MarketNetwork {
             server.execute {
                 val banCheckTime = System.currentTimeMillis()
                 val banInfo = BanState.get(server).getBanInfo(player.uuid, banCheckTime)
-                if (marketBlocked(player)) return@execute
+                if (pokemonMarketBlocked(player)) return@execute
                 if (banInfo != null) {
                     // 提示统一走 BanState.noticeText：Text 对象不拼串 ⇒ 按**客户端语言**渲染
                     sendToPlayer(player, MarketResultPayload(false, BanState.noticeText(banInfo.expiresAt, banInfo.reason, banCheckTime)))
@@ -2594,7 +2756,7 @@ object MarketNetwork {
             server.execute {
                 val banCheckTime = System.currentTimeMillis()
                 val banInfo = BanState.get(server).getBanInfo(player.uuid, banCheckTime)
-                if (marketBlocked(player)) return@execute
+                if (itemMarketBlocked(player)) return@execute
                 if (banInfo != null) {
                     // 提示统一走 BanState.noticeText：Text 对象不拼串 ⇒ 按**客户端语言**渲染
                     sendToPlayer(player, MarketResultPayload(false, BanState.noticeText(banInfo.expiresAt, banInfo.reason, banCheckTime)))
@@ -2989,7 +3151,7 @@ object MarketNetwork {
             server.execute {
                 val banCheckTime = System.currentTimeMillis()
                 val banInfo = BanState.get(server).getBanInfo(player.uuid, banCheckTime)
-                if (marketBlocked(player)) return@execute
+                if (itemMarketBlocked(player)) return@execute
                 if (banInfo != null) {
                     // 提示统一走 BanState.noticeText：Text 对象不拼串 ⇒ 按**客户端语言**渲染
                     sendToPlayer(player, MarketResultPayload(false, BanState.noticeText(banInfo.expiresAt, banInfo.reason, banCheckTime)))
@@ -3453,9 +3615,45 @@ object MarketNetwork {
                         com.shusheng.cobblemarket.util.RecordDetail.rarityFromDetail(r.detail),
                         r.fromShop,
                         // 数量同理：物品行与悬停窗要显示「×N」。旧记录没有这一段 ⇒ -1 ⇒ 界面不显示
-                        com.shusheng.cobblemarket.util.RecordDetail.countFromDetail(r.detail)
+                        com.shusheng.cobblemarket.util.RecordDetail.countFromDetail(r.detail),
+                        // 自定义商店的店名（主商城 / 旧记录 = 空串，界面退回「▣ 商城」）
+                        r.shopName
                     )
                 }
+                sendToPlayer(player, HistoryDataPayload(entries))
+            }
+        }
+
+        // 按商店查看记录（出售 / 领取）：只有服主 / points.shop 能看
+        registerC2S(RequestShopHistoryPayload.ID, RequestShopHistoryPayload.CODEC) { payload, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
+            if (!RequestThrottle.allow(player.uuid, "request_shop_history", RequestThrottle.READ_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            val server = player.server
+            server.execute {
+                val wanted = if (payload.claim) com.shusheng.cobblemarket.event.TransactionType.CLAIM
+                else com.shusheng.cobblemarket.event.TransactionType.PURCHASE
+                // 数据源同全服历史：最近 14 天 CSV + 内存记录，按 shopId + 类型过滤后合并去重
+                val csvRecords = com.shusheng.cobblemarket.event.TransactionFileLogger.readRecentRecords(null, null, 14)
+                    .filter { it.shopId == payload.shopId && it.type == wanted }
+                val memoryRecords = com.shusheng.cobblemarket.event.TransactionHistory.get(server).getRecords()
+                    .filter { it.shopId == payload.shopId && it.type == wanted }
+                fun keyOf(r: com.shusheng.cobblemarket.event.TransactionRecord): String =
+                    "${com.shusheng.cobblemarket.event.TransactionFileLogger.timestampKey(r.timestamp)}|${r.type}|${r.category}|${r.sellerName}|${r.buyerName}|${r.species}|${r.price}"
+                val entries = (csvRecords + memoryRecords).distinctBy { keyOf(it) }
+                    .sortedByDescending { it.timestamp }
+                    .take(500)
+                    .map { r ->
+                        HistoryEntry(
+                            r.type.name, r.category.name, r.species, r.price, r.buyerName, r.sellerName, r.timestamp,
+                            r.currency.name, r.primaryType,
+                            com.shusheng.cobblemarket.util.RecordDetail.rarityFromDetail(r.detail),
+                            r.fromShop,
+                            com.shusheng.cobblemarket.util.RecordDetail.countFromDetail(r.detail),
+                            r.shopName
+                        )
+                    }
                 sendToPlayer(player, HistoryDataPayload(entries))
             }
         }

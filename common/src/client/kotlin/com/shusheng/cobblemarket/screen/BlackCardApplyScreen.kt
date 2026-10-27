@@ -18,7 +18,8 @@ import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
 
 /**
- * 申请喵喵黑卡（照紫卡申请界面）：上方黑卡大图 + 逐条申请条件（8 项：持有紫卡硬条件 + 七项门槛）。
+ * 申请喵喵黑卡（照紫卡申请界面）：上方黑卡大图 + 逐条申请条件（7 项：持有紫卡硬条件 + 六项门槛）。
+ * ⚠ 没有「额度要求」：硬条件已要求持有紫卡，持卡者额度固定、不会再变（2026-10-28 移除）。
  * 打开时拉取条件快照；全部满足且开关开启时可点「申请」（服务端复核扣费发卡）。
  */
 class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_apply_title")) {
@@ -30,15 +31,16 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
     // 右列从 centerX+36 起算 → "Credit: 1,000,000,000 ₽" 约需 138px；原来的 300 下限只给 114px，
     // 十亿时货币单位会压到弹窗右边框上（2026-09-21 用户报），360 才够（144px）
     private val dialogW = minOf(380, width - 40).coerceAtLeast(360)
-    /** 条件比紫卡多一行「持有紫卡」硬条件：七项门槛全配时是 8 行，加高 24px 才不会压到申请按钮 */
-    private val dialogH = 330
+    /** 条件比紫卡多一行「持有紫卡」硬条件：六项门槛全配时是 7 行，加高 24px 才不会压到申请按钮 */
+    private val dialogH = 306
 
     // 与 BlackCardApplyInfoPayload.conditions 同序（服务端 FinanceNetwork.sendBlackCardApplyInfo 构造）
     private val conditionKeys = listOf(
         "cobblemarket.card.black_need_purple",
         "cobblemarket.op.scfg_apply_asset",
         "cobblemarket.op.scfg_apply_volume",
-        "cobblemarket.op.scfg_apply_credit",
+        // ⚠ 没有「额度要求」：申请黑卡硬性要求持有紫卡，而持卡者额度 = 紫卡固定额度、不会再变
+        //   （2026-10-28 用户拍板移除，与 getOrNull(i) 的按序渲染同步）
         "cobblemarket.op.scfg_apply_deposit",
         "cobblemarket.op.scfg_apply_seen",
         "cobblemarket.op.scfg_apply_dex",

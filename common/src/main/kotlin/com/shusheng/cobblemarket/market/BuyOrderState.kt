@@ -9,6 +9,7 @@ import net.minecraft.nbt.NbtCompound
 import net.minecraft.nbt.NbtList
 import net.minecraft.registry.RegistryWrapper
 import net.minecraft.server.MinecraftServer
+import net.minecraft.text.Text
 import net.minecraft.world.PersistentState
 import java.util.UUID
 
@@ -126,12 +127,23 @@ data class BuyOrder(
      * （方案「三条硬要求」第 1、3 条）；`BuyOrderState.returnPending()` 把货退回挂单时
      * **必须把币种带下去**，否则玩家在待取回里看到的是主货币。
      */
-    val currency: MarketCurrency = MarketCurrency.PRIMARY
+    val currency: MarketCurrency = MarketCurrency.PRIMARY,
+    /**
+     * 创建时冻结的**手续费总额**（按 `maxPrice × totalCount` 算）。
+     *
+     * 2026-10-28 起手续费由**买家**承担：发布时连同货款一起冻结，成交时从这笔冻结里扣实际手续费，
+     * 卖家拿全额；取消 / 过期 / 凑满时**剩余的手续费冻结一并退还买家**（多退少补）。
+     *
+     * ⚠ 旧档没有这个键 = 0 ⇒ 仍按旧规则结算（手续费从卖家所得里扣），保证升级不破坏存量订单。
+     */
+    val feeFrozenTotal: Long = 0L,
+    /** 剩余未消耗的手续费冻结：每次成交扣实际手续费（钳到 ≥0），关闭时随货款一起退 */
+    var feeFrozenRemaining: Long = 0L
 ) {
     fun isOpen(): Boolean = status == BuyOrderStatus.OPEN
 
-    /** 当前剩余冻结金（关闭/过期时退还买家） */
-    fun frozenRemaining(): Long = maxPrice.toLong() * remainingCount
+    /** 当前剩余冻结金 = 剩余货款 + 剩余手续费冻结（关闭/过期时退还买家） */
+    fun frozenRemaining(): Long = maxPrice.toLong() * remainingCount + feeFrozenRemaining
 
     /**
      * 精灵是否满足求购要求。匹配语义与黑名单一致：
@@ -242,6 +254,9 @@ data class BuyOrder(
         pendingDeliveries.forEach { pendingList.add(it.toNbt()) }
         put("pendingDeliveries", pendingList)
         putString("currency", currency.name)
+        // 2026-10-28 新增（买家承担手续费）：只在新订单上写，旧档缺键 = 0 ⇒ 走旧结算
+        if (feeFrozenTotal > 0L) putLong("feeFrozenTotal", feeFrozenTotal)
+        if (feeFrozenRemaining > 0L) putLong("feeFrozenRemaining", feeFrozenRemaining)
     }
 
     companion object {
@@ -279,7 +294,12 @@ data class BuyOrder(
                 .map { PendingDelivery.fromNbt(it as NbtCompound) }
                 .toMutableList(),
             // 旧档没这个键（getString 给空串）/ 值是垃圾 ⇒ fromStored 一律落主货币，不抛不 warn
-            currency = MarketCurrency.fromStored(nbt.getString("currency"))
+            currency = MarketCurrency.fromStored(nbt.getString("currency")),
+            // 旧档缺键 = 0（没冻结手续费）⇒ 成交时走旧规则，不破坏存量订单
+            feeFrozenTotal = if (nbt.contains("feeFrozenTotal")) nbt.getLong("feeFrozenTotal") else 0L,
+            feeFrozenRemaining = if (nbt.contains("feeFrozenRemaining")) {
+                nbt.getLong("feeFrozenRemaining").coerceAtLeast(0L)
+            } else 0L
         )
     }
 }
@@ -389,7 +409,19 @@ class BuyOrderState private constructor() : PersistentState() {
             order.status = BuyOrderStatus.CLOSED
             order.returnedAt = currentTime
             // 退冻结金给买家：主货币进待领余额、RP **直接到账**（照结算的 creditSeller 口径，见 CurrencyService）
-            CurrencyService.creditSeller(server, order.buyerUuid, order.currency, order.frozenRemaining())
+            // ⚠ 金额含**剩余手续费冻结**（2026-10-28 起手续费由买家承担、按 maxPrice 预估冻结）
+            val refund = order.frozenRemaining()
+            CurrencyService.creditSeller(server, order.buyerUuid, order.currency, refund)
+            if (refund > 0) {
+                // 到期可能由任意玩家触发，买家多半不在线 ⇒ 走离线消息队列（金额按订单币种显示，RP 单带 RP 图标）
+                OfflineMessageState.notify(
+                    server, order.buyerUuid,
+                    Text.translatable(
+                        "cobblemarket.buy_order.expired_refunded",
+                        com.shusheng.cobblemarket.currency.CurrencyService.amountText(refund, order.currency)
+                    )
+                )
+            }
             orders.remove(order.id)
             closed.add(order)
         }

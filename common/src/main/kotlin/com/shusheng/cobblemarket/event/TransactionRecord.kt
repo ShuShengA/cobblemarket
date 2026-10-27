@@ -7,7 +7,9 @@ import java.util.UUID
 enum class TransactionType {
     ADD, PURCHASE, CANCEL, RETURN,
     /** 求购单发布（买家冻结资金挂单；无对应货物上架，独立于 ADD） */
-    ORDER
+    ORDER,
+    /** 定期领取店的领取（免费发放，不是卖出；2026-10-26 新增） */
+    CLAIM
 }
 
 enum class TransactionCategory {
@@ -36,13 +38,27 @@ data class TransactionRecord(
     // pokemon.primaryType）。物品记录为空串；旧记录也读不到 → 落空串，界面按无色处理（只增不改）
     val primaryType: String = "",
     /**
-     * 这笔流水是不是 **RP 商城**（服主经营的商店）卖出的。
+     * 这笔流水是不是**商店**（主 RP 商城或自定义 NPC 商店）卖出的。
      *
      * 商城购买与玩家间市场直购是**同一个 [TransactionType.PURCHASE]**，界面光看类型分不出来，
      * 所以由产生记录的一侧打标（`PointMarketService.buy` 传 true）。**追加在末尾并给默认值**
-     * ⇒ 旧记录读不到就是普通市场交易。⚠ 界面据此把卖家列画成「▣ 商城」而非上架者名。
+     * ⇒ 旧记录读不到就是普通市场交易。⚠ 商店成交的卖家是**商店本身**（见 [SHOP_SELLER_UUID]），
+     * 所以不会进上架者的个人历史，只在「全部交易历史」里；界面据此把卖家列画成店名 / 「▣ 商城」。
      */
-    val fromShop: Boolean = false
+    val fromShop: Boolean = false,
+    /**
+     * 商店名（仅自定义 NPC 商店有值）。**追加在末尾并给默认值** ⇒ 旧记录 / 主商城落空串。
+     * 成交时快照当时的店名（店后来改名 / 删除也不影响历史行）。
+     * ⚠ 空串 + [fromShop] = 主 RP 商城；非空 = 自定义商店，界面直接画店名。
+     */
+    val shopName: String = "",
+    /**
+     * 这笔流水属于哪家商店（[com.shusheng.cobblemarket.currency.MAIN_SHOP_ID] = 主商城；
+     * 其余 = 自定义商店 id）。玩家间交易 / 拍卖 / 求购一律空串。
+     * **追加在末尾并给默认值** ⇒ 旧记录读不到就是空串（无法归属到某家店，只出现在全服历史）。
+     * ⚠ 按店筛选（商店记录界面）靠它，别拿店名筛（会改名）。
+     */
+    val shopId: String = ""
 ) {
     fun toNbt(): NbtCompound = NbtCompound().apply {
         putLong("timestamp", timestamp)
@@ -59,6 +75,8 @@ data class TransactionRecord(
         putString("currency", currency.name)
         putString("primaryType", primaryType)
         putBoolean("fromShop", fromShop)
+        putString("shopName", shopName)
+        putString("shopId", shopId)
     }
 
     companion object {
@@ -78,7 +96,19 @@ data class TransactionRecord(
             currency = MarketCurrency.fromStored(nbt.getString("currency")),
             primaryType = if (nbt.contains("primaryType")) nbt.getString("primaryType") else "",
             // 旧记录没这个键 ⇒ false（普通市场交易），不抛不 warn
-            fromShop = nbt.contains("fromShop") && nbt.getBoolean("fromShop")
+            fromShop = nbt.contains("fromShop") && nbt.getBoolean("fromShop"),
+            // 旧记录 / 主商城 ⇒ 空串（界面退回「商城」）
+            shopName = if (nbt.contains("shopName")) nbt.getString("shopName") else "",
+            shopId = if (nbt.contains("shopId")) nbt.getString("shopId") else ""
         )
     }
 }
+
+/**
+ * 商店成交记录里的「卖家」占位 UUID。
+ *
+ * 商店没有玩家卖家 ⇒ 不能写某个管理员（否则这笔卖出会进他的个人历史，2026-10-26 用户报）。
+ * 个人历史按 UUID 过滤，零 UUID 不会匹配任何玩家；买家侧仍按 `buyerUuid` 正常可见。
+ * ⚠ **不要**改成 `null`：CSV 回读把「卖家 UUID 缺失」当老格式、会退化成按名字匹配。
+ */
+val SHOP_SELLER_UUID: UUID = UUID(0L, 0L)

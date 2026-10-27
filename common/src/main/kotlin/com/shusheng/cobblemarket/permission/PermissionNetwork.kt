@@ -8,6 +8,7 @@ import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.sendResultSound
 import com.shusheng.cobblemarket.network.sendSound
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.platform.onPlayerJoin
 import com.shusheng.cobblemarket.platform.registerC2S
 import com.shusheng.cobblemarket.platform.registerS2CType
@@ -432,7 +433,13 @@ object PermissionNetwork {
         // 按 MarketPermissions.ALL 的顺序输出：与界面/命令的展示顺序一致，且顺序稳定（Set 本身无序）
         MarketPermissions.ALL.filter { it in nodes }.forEachIndexed { i, node ->
             if (i > 0) t.append(Text.literal(", "))
-            t.append(Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX)))
+            // ⚠ 统一传货币图标：含 %s 的词条（如「%s商城」）用它，不含的多余参数会被忽略
+            t.append(
+                Text.translatable(
+                    "cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX),
+                    CurrencyService.pointsIcon()
+                )
+            )
         }
         return t
     }

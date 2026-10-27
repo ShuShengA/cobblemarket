@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.overview
 
+import net.minecraft.nbt.NbtCompound
 import java.util.UUID
 
 /**
@@ -77,4 +78,18 @@ data class PlayerOverviewRow(
      *   ⇒ **不进快照**，也不区分在线离线。
      */
     val pointsBalance: Long,
+
+    // ── 装备 / 经验（2026-10-28，**只用于分享到聊天栏的 ID 卡**）──
+    /**
+     * 身上四件装备的 NBT（`ItemStack.encode` 原样保真）；null = 没穿 / 拿不到。
+     * ⚠ 只有「分享 ID 卡」那一刻由分享者的在线数据填充 —— 全服总览列表不填（省流量），
+     *   老客户端 / 老数据的默认值同样是 null。
+     */
+    val headItem: NbtCompound? = null,
+    val chestItem: NbtCompound? = null,
+    val legsItem: NbtCompound? = null,
+    val feetItem: NbtCompound? = null,
+    /** 经验等级 / 进度（0~1）；分享卡底部画经验条用 */
+    val experienceLevel: Int = 0,
+    val experienceProgress: Float = 0f,
 )

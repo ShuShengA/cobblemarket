@@ -55,6 +55,7 @@ fun customShopErrorText(error: CustomShopError, vararg args: Any): Text {
         CustomShopError.NOT_EMPTY -> "cobblemarket.shop.err.not_empty"
         CustomShopError.INVALID_MODE -> "cobblemarket.shop.err.invalid_mode"
         CustomShopError.INVALID_PERIOD -> "cobblemarket.shop.err.invalid_period"
+        CustomShopError.INVALID_COOLDOWN -> "cobblemarket.shop.err.invalid_cooldown"
     }
     return if (args.isEmpty()) Text.translatable(key) else Text.translatable(key, *args)
 }

@@ -3,12 +3,14 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.client.IdCardBackgroundTexture
 import com.shusheng.cobblemarket.client.IdCardDataCache
+import com.shusheng.cobblemarket.client.IdCardRenderer
 import com.shusheng.cobblemarket.client.OVERVIEW_ICON_W
 import com.shusheng.cobblemarket.client.OverviewLine
 import com.shusheng.cobblemarket.client.amountUnitWidth
 import com.shusheng.cobblemarket.client.drawAmountWithUnit
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
+import com.shusheng.cobblemarket.client.drawItemWithBar
 import com.shusheng.cobblemarket.client.drawLineIcon
 import com.shusheng.cobblemarket.client.lineIconY
 import com.shusheng.cobblemarket.client.lineTextY
@@ -19,6 +21,7 @@ import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.screen.ingame.InventoryScreen
+import net.minecraft.entity.EquipmentSlot
 import net.minecraft.text.Text
 import net.minecraft.util.Identifier
 import org.lwjgl.opengl.GL11
@@ -80,6 +83,10 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
          */
         const val MODEL_DROP = 10
 
+        /** 原版 HUD 的经验条纹理（1.21 起走 GUI atlas） */
+        val EXPERIENCE_BAR_BACKGROUND_TEXTURE = Identifier.of("minecraft", "hud/experience_bar_background")
+        val EXPERIENCE_BAR_PROGRESS_TEXTURE = Identifier.of("minecraft", "hud/experience_bar_progress")
+
         /** 入场掉落动画：下落 / 停留 / 淡出（毫秒）—— 与入口界面同款 */
         const val DROP_DURATION_MS = 100L
         const val HOLD_DURATION_MS = 100L
@@ -92,6 +99,9 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
 
     /** 入场掉落动画开始时间（首次 init 记录；resize 重建不重播）—— 与入口界面同款三段动画 */
     private var dropAnimStart = -1L
+
+    /** 模型右下角的「跟随 / 旋转」切换按钮（图标随状态变化，要持引用） */
+    private var spinButton: NineSliceButton? = null
 
     override fun init() {
         super.init()
@@ -129,9 +139,52 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
             tooltip = Text.translatable("cobblemarket.share.id_card_button")
         ))
 
+        // 模型右下角：切换「跟随鼠标 / 原地旋转」（2026-10-28）。
+        // 按钮**底部与模型脚底齐平**：模型居中于「内框顶 → 品牌字顶」区域、缩放 0.85
+        // ⇒ 脚底 ≈ 区域底往上约 11px
+        val spinBtn = NineSliceButton(
+            (geo.split - 18 - 4).toInt(),
+            (geo.titleTop + MODEL_DROP - 33).toInt(),
+            18, 18,
+            Text.literal(""),
+            {
+                ClientConfig.setIdCardSpin(!ClientConfig.idCardSpin)
+                applySpinButtonIcon()
+            },
+            tooltip = Text.translatable("cobblemarket.idcard.spin_toggle")
+        )
+        spinButton = spinBtn
+        addDrawableChild(spinBtn)
+        applySpinButtonIcon()
+
         // 每次打开都重新拉：1) 自己的数据（顺便刷新）2) 背景图（服主换图后无需重连）
         IdCardDataCache.request()
         IdCardBackgroundTexture.requestRefresh()
+    }
+
+    /**
+     * 旋转按钮的图标随状态切换：
+     * - 跟随鼠标：模组自己的鼠标图标（`cursor.png`，128×128）
+     * - 原地旋转：用户提供的 `spin.png`（48×48）
+     *
+     * ⚠ 两张图像素尺寸不同，`iconTexW / iconTexH / iconScale` 必须**一起换** —— 只换 iconLeft
+     *   会让 48×48 那张按 128 的缩放画成一小点。
+     */
+    private fun applySpinButtonIcon() {
+        val btn = spinButton ?: return
+        // 图标画成 14×14（按钮 18×18 里留 2px 边距）—— 按 18 画会顶满、鼠标图标略大越界
+        // （2026-10-28 用户报「超过按钮本身大小」）
+        if (ClientConfig.idCardSpin) {
+            btn.iconLeft = Identifier.of("cobblemarket", "textures/gui/icon/spin.png")
+            btn.iconTexW = 48
+            btn.iconTexH = 48
+            btn.iconScale = 14f / 48f
+        } else {
+            btn.iconLeft = Identifier.of("cobblemarket", "textures/gui/cursor/cursor.png")
+            btn.iconTexW = 128
+            btn.iconTexH = 128
+            btn.iconScale = 14f / 128f
+        }
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -179,6 +232,11 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
         //   会把深度写进缓冲，把模型切掉一块（2026-10-16 用户实测报「模型顶部被切割」）
         drawInfoColumns(context, row, geo)
         drawPlayerModel(context, geo, mouseX, mouseY)
+        // 模型左侧的装备列：**必须放在模型之后**（模型绘制会 flush + 清深度，
+        // 放到前面会被 3D 批次覆盖/切块）
+        drawEquipSlots(context, geo)
+        // 卡片底部居中：经验条 + 等级（照原版物品栏上方的 HUD 样式）
+        drawExperienceBar(context, geo)
 
         // 金额是**缩写**显示（`9.8k`）⇒ 停在那一行上时展全完整千分位
         // （照入口界面「全服累计成交额」的做法：缩写 + 悬停出完整值）
@@ -304,18 +362,84 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
 
         // ⚠ 1.21.1 里这个方法叫 `drawEntity`（旧名 renderEntityInInventoryFollowsMouse 已不存在，
         //   老代码/教程里还能见到）—— 反编译 MC 的映射 jar 确认过签名
-        InventoryScreen.drawEntity(
-            context, x1, y1, x2, modelBottom,
-            ((modelBottom - y1) * MODEL_SCALE / 2f).toInt(),   // size（缩放）—— 别用满区域高度
-            0f,                               // yOffset
-            mouseX.toFloat(), mouseY.toFloat(),
-            player
-        )
+        val modelSize = ((modelBottom - y1) * MODEL_SCALE / 2f).toInt()   // size（缩放）—— 别用满区域高度
+        if (ClientConfig.idCardSpin) {
+            // 原地匀速旋转：相机绕 Y 转 = 模型自转（`drawEntity` 的 atan 朝向只有 ±63°，转不了 360°）
+            IdCardRenderer.drawSpinningEntity(
+                context, x1, y1, x2, modelBottom, modelSize, IdCardRenderer.spinAngleRad(), player
+            )
+        } else {
+            InventoryScreen.drawEntity(
+                context, x1, y1, x2, modelBottom, modelSize,
+                0f,                               // yOffset
+                mouseX.toFloat(), mouseY.toFloat(),
+                player
+            )
+        }
 
         // 画完把模型批次提交、**再清一次深度** —— 别把 3D 的深度留给后续绘制
         // （下一帧的卡片背景 / 文字都会受它影响，表现就是"莫名其妙被切一块"）
         context.draw()
         RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT, MinecraftClient.IS_SYSTEM_MAC)
+    }
+
+    /**
+     * 模型**左侧**的装备列：头盔 / 胸甲 / 护腿 / 靴子，自上而下 4 格、上下间距 1px。
+     *
+     * - 背景框用 `dialog_background.png`（与弹窗同款九宫格），空槽也画框
+     * - 槽体 22×22、物品 16×16 居中（留 3px 边距，别让 16×16 的图标把边框压没）
+     * - 只画**自己**的装备：本界面本来就看自己，直接读客户端玩家实体，不需要网络包
+     * - ⚠ 必须在 [drawPlayerModel] 之后调用（模型会 flush + 清深度，放到前面会被切块）
+     */
+    private fun drawEquipSlots(context: DrawContext, geo: Geometry) {
+        val player = MinecraftClient.getInstance().player ?: return
+        val slotSize = 22
+        val gap = 1
+        val x = (geo.innerLeft + 4).toInt()
+        val y0 = (geo.innerTop + MODEL_DROP).toInt()
+        val slots = listOf(
+            EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
+        )
+        slots.forEachIndexed { i, slot ->
+            val y = y0 + i * (slotSize + gap)
+            drawNineSlice(
+                context, DIALOG_BACKGROUND_TEXTURE, x, y, slotSize, slotSize,
+                0, DIALOG_BACKGROUND_TEX_H
+            )
+            val stack = player.getEquippedStack(slot)
+            if (!stack.isEmpty) drawItemWithBar(context, stack, x + 3, y + 3)
+        }
+    }
+
+    /**
+     * 卡片底部**居中**的经验条 + 等级（照原版物品栏上方的 HUD：
+     * 绿色进度条 + 条正上方的绿色等级数字）。
+     *
+     * 位置：内框底线与卡片底边之间那两条装饰白线之间，水平居中于卡片。
+     */
+    private fun drawExperienceBar(context: DrawContext, geo: Geometry) {
+        val player = MinecraftClient.getInstance().player ?: return
+        // 按卡片比例缩小（原版 182×5 在 440 宽的卡上太大、也太靠下 —— 2026-10-27 用户实测）
+        val barW = 120
+        val barH = 4
+        // +1px：背景图本身不是绝对对称，纯居中看着偏左（2026-10-28 用户实测）
+        val centerX = geo.cardLeft + CARD_W / 2f + 1f
+        val x = (centerX - barW / 2f).toInt()
+        // 与右下角「分享 / 返回」按钮**同一水平中心**：按钮顶 = innerBottom-18、高 16 ⇒ 中心 = innerBottom-10；
+        // 条高 4 ⇒ 条顶 = 中心 - 2（2026-10-28 用户指定）
+        val y = (geo.innerBottom - 12f).toInt()
+        context.drawGuiTexture(EXPERIENCE_BAR_BACKGROUND_TEXTURE, x, y, barW, barH)
+        val progress = (player.experienceProgress * barW).toInt().coerceIn(0, barW)
+        if (progress > 0) {
+            context.drawGuiTexture(
+                EXPERIENCE_BAR_PROGRESS_TEXTURE, 182, 5, 0, 0, x, y, progress, barH
+            )
+        }
+        // 等级数字：原版绿色（0x80FF20），条正上方居中、带阴影
+        context.drawCenteredTextWithShadow(
+            textRenderer, Text.literal(player.experienceLevel.toString()),
+            centerX.toInt(), y - 8, 0x80FF20
+        )
     }
 
     // ── 右侧：两列信息（与总览悬停窗同一份文本，只是排成两列）──

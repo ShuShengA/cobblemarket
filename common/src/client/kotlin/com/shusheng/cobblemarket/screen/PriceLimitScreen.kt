@@ -1743,8 +1743,11 @@ class PriceLimitScreen : Screen(Text.translatable("cobblemarket.op.price_limit")
         val listAreaBottom = startY + visibleRows * rowHeight
         val count = displayCount()
 
+        // 弹窗打开时冻结行悬停（用户 2026-10-27 报同类问题）
         hoveredRow = -1
-        if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom) {
+        if (editingPokemon == null && editingItem == null && addField == null &&
+            mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom
+        ) {
             val row = (mouseY - startY) / rowHeight
             val shownCount = minOf(visibleRows, count - scrollOffset)
             if (row in 0 until shownCount) hoveredRow = row

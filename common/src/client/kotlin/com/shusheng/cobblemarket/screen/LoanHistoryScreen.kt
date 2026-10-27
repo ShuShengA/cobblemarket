@@ -287,8 +287,11 @@ class LoanHistoryScreen(private val showAll: Boolean = false) :
         val maxVisible = maxOf(3, (height - 48 - startY) / rowHeight)
         // 悬停行：鼠标落在列表区域内才算（判据同权限管理界面：先框内、再除以行高）
         val shownCount = minOf(maxVisible, maxOf(0, displayEntries().size - scrollOffset))
+        // 弹窗打开时冻结行悬停（用户 2026-10-27 报同类问题）
         hoveredRow = -1
-        if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY until (startY + shownCount * rowHeight)) {
+        if (revokeEntry == null &&
+            mouseX in leftX..(leftX + panelWidth) && mouseY in startY until (startY + shownCount * rowHeight)
+        ) {
             val row = (mouseY - startY) / rowHeight
             if (row in 0 until shownCount) hoveredRow = row
         }

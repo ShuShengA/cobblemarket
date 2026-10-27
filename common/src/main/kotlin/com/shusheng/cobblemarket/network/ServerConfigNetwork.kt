@@ -88,7 +88,6 @@ data class ServerConfigDataPayload(
     val blackCardSelfApply: Boolean,
     val blackCardApplyAsset: Long,
     val blackCardApplyVolume: Long,
-    val blackCardApplyCredit: Long,
     val blackCardApplyDeposit: Long,
     val blackCardApplyNoOverdue: Boolean,
     val blackCardApplySeen: Long,
@@ -103,6 +102,22 @@ data class ServerConfigDataPayload(
     val overdueBadDebt: Int,
     /** 展示冷却（秒）：精灵 / ID 卡 / 物品三种展示共用；1~3600，默认 10（2026-10-18） */
     val shareCooldownSeconds: Int,
+    /** 精灵市场开关（默认开）：关闭后不能上架 / 购买精灵，存量挂单也不可交易 */
+    val pokemonMarketEnabled: Boolean,
+    /** 物品市场开关（默认开），语义同上 */
+    val itemMarketEnabled: Boolean,
+    /** 拍卖场开关（默认开）：关闭后不能创建拍卖 / 出价 */
+    val auctionEnabled: Boolean,
+    /** 拍卖场的精灵子开关（默认开） */
+    val auctionPokemonEnabled: Boolean,
+    /** 拍卖场的物品子开关（默认开） */
+    val auctionItemEnabled: Boolean,
+    /** 求购单开关（默认开）：关闭后不能创建求购 / 交付 */
+    val buyOrderEnabled: Boolean,
+    /** 求购单的精灵子开关（默认开） */
+    val buyOrderPokemonEnabled: Boolean,
+    /** 求购单的物品子开关（默认开） */
+    val buyOrderItemEnabled: Boolean,
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -154,7 +169,6 @@ data class ServerConfigDataPayload(
                 b.writeBoolean(p.blackCardSelfApply)
                 b.writeLong(p.blackCardApplyAsset)
                 b.writeLong(p.blackCardApplyVolume)
-                b.writeLong(p.blackCardApplyCredit)
                 b.writeLong(p.blackCardApplyDeposit)
                 b.writeBoolean(p.blackCardApplyNoOverdue)
                 b.writeLong(p.blackCardApplySeen)
@@ -170,6 +184,14 @@ data class ServerConfigDataPayload(
                 b.writeInt(p.overdueFreeze)
                 b.writeInt(p.overdueBadDebt)
                 b.writeInt(p.shareCooldownSeconds)
+                b.writeBoolean(p.pokemonMarketEnabled)
+                b.writeBoolean(p.itemMarketEnabled)
+                b.writeBoolean(p.auctionEnabled)
+                b.writeBoolean(p.buyOrderEnabled)
+                b.writeBoolean(p.auctionPokemonEnabled)
+                b.writeBoolean(p.auctionItemEnabled)
+                b.writeBoolean(p.buyOrderPokemonEnabled)
+                b.writeBoolean(p.buyOrderItemEnabled)
             },
             // 读端用具名参数，读写字段顺序必须一致
             { b -> ServerConfigDataPayload(
@@ -218,7 +240,6 @@ data class ServerConfigDataPayload(
                 blackCardSelfApply = b.readBoolean(),
                 blackCardApplyAsset = b.readLong(),
                 blackCardApplyVolume = b.readLong(),
-                blackCardApplyCredit = b.readLong(),
                 blackCardApplyDeposit = b.readLong(),
                 blackCardApplyNoOverdue = b.readBoolean(),
                 blackCardApplySeen = b.readLong(),
@@ -234,6 +255,14 @@ data class ServerConfigDataPayload(
                 overdueFreeze = b.readInt(),
                 overdueBadDebt = b.readInt(),
                 shareCooldownSeconds = b.readInt(),
+                pokemonMarketEnabled = b.readBoolean(),
+                itemMarketEnabled = b.readBoolean(),
+                auctionEnabled = b.readBoolean(),
+                buyOrderEnabled = b.readBoolean(),
+                auctionPokemonEnabled = b.readBoolean(),
+                auctionItemEnabled = b.readBoolean(),
+                buyOrderPokemonEnabled = b.readBoolean(),
+                buyOrderItemEnabled = b.readBoolean(),
             ) }
         )
     }
@@ -291,7 +320,6 @@ data class SaveServerConfigPayload(
     val blackCardSelfApply: Boolean,
     val blackCardApplyAsset: Long,
     val blackCardApplyVolume: Long,
-    val blackCardApplyCredit: Long,
     val blackCardApplyDeposit: Long,
     val blackCardApplyNoOverdue: Boolean,
     val blackCardApplySeen: Long,
@@ -308,6 +336,22 @@ data class SaveServerConfigPayload(
     val overdueBadDebt: Int,
     /** 展示冷却（秒）：精灵 / ID 卡 / 物品三种展示共用；1~3600，默认 10（2026-10-18） */
     val shareCooldownSeconds: Int,
+    /** 精灵市场开关（默认开）：关闭后不能上架 / 购买精灵，存量挂单也不可交易 */
+    val pokemonMarketEnabled: Boolean,
+    /** 物品市场开关（默认开），语义同上 */
+    val itemMarketEnabled: Boolean,
+    /** 拍卖场开关（默认开）：关闭后不能创建拍卖 / 出价 */
+    val auctionEnabled: Boolean,
+    /** 拍卖场的精灵子开关（默认开） */
+    val auctionPokemonEnabled: Boolean,
+    /** 拍卖场的物品子开关（默认开） */
+    val auctionItemEnabled: Boolean,
+    /** 求购单开关（默认开）：关闭后不能创建求购 / 交付 */
+    val buyOrderEnabled: Boolean,
+    /** 求购单的精灵子开关（默认开） */
+    val buyOrderPokemonEnabled: Boolean,
+    /** 求购单的物品子开关（默认开） */
+    val buyOrderItemEnabled: Boolean,
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -359,7 +403,6 @@ data class SaveServerConfigPayload(
                 b.writeBoolean(p.blackCardSelfApply)
                 b.writeLong(p.blackCardApplyAsset)
                 b.writeLong(p.blackCardApplyVolume)
-                b.writeLong(p.blackCardApplyCredit)
                 b.writeLong(p.blackCardApplyDeposit)
                 b.writeBoolean(p.blackCardApplyNoOverdue)
                 b.writeLong(p.blackCardApplySeen)
@@ -375,6 +418,14 @@ data class SaveServerConfigPayload(
                 b.writeInt(p.overdueFreeze)
                 b.writeInt(p.overdueBadDebt)
                 b.writeInt(p.shareCooldownSeconds)
+                b.writeBoolean(p.pokemonMarketEnabled)
+                b.writeBoolean(p.itemMarketEnabled)
+                b.writeBoolean(p.auctionEnabled)
+                b.writeBoolean(p.buyOrderEnabled)
+                b.writeBoolean(p.auctionPokemonEnabled)
+                b.writeBoolean(p.auctionItemEnabled)
+                b.writeBoolean(p.buyOrderPokemonEnabled)
+                b.writeBoolean(p.buyOrderItemEnabled)
             },
             // 读端用具名参数，读写字段顺序必须一致
             { b -> SaveServerConfigPayload(
@@ -423,7 +474,6 @@ data class SaveServerConfigPayload(
                 blackCardSelfApply = b.readBoolean(),
                 blackCardApplyAsset = b.readLong(),
                 blackCardApplyVolume = b.readLong(),
-                blackCardApplyCredit = b.readLong(),
                 blackCardApplyDeposit = b.readLong(),
                 blackCardApplyNoOverdue = b.readBoolean(),
                 blackCardApplySeen = b.readLong(),
@@ -439,6 +489,14 @@ data class SaveServerConfigPayload(
                 overdueFreeze = b.readInt(),
                 overdueBadDebt = b.readInt(),
                 shareCooldownSeconds = b.readInt(),
+                pokemonMarketEnabled = b.readBoolean(),
+                itemMarketEnabled = b.readBoolean(),
+                auctionEnabled = b.readBoolean(),
+                buyOrderEnabled = b.readBoolean(),
+                auctionPokemonEnabled = b.readBoolean(),
+                auctionItemEnabled = b.readBoolean(),
+                buyOrderPokemonEnabled = b.readBoolean(),
+                buyOrderItemEnabled = b.readBoolean(),
             ) }
         )
     }
@@ -483,6 +541,8 @@ object ServerConfigNetwork {
                 // 保存成功反馈音（管理操作不回 MarketResultPayload，避免刷聊天栏，只给一声结果音）
                 sendResultSound(player)
                 sendToPlayer(player, snapshot())
+                // 四个分项开关可能变了：把新状态广播给所有在线玩家，入口按钮据此置灰
+                server.playerManager.playerList.forEach { sendToPlayer(it, marketStatePayload()) }
             }
         }
     }
@@ -529,7 +589,6 @@ object ServerConfigNetwork {
         blackCardSelfApply = CobbleMarketConfig.blackCardSelfApply,
         blackCardApplyAsset = CobbleMarketConfig.blackCardApplyAsset,
         blackCardApplyVolume = CobbleMarketConfig.blackCardApplyVolume,
-        blackCardApplyCredit = CobbleMarketConfig.blackCardApplyCredit,
         blackCardApplyDeposit = CobbleMarketConfig.blackCardApplyDeposit,
         blackCardApplyNoOverdue = CobbleMarketConfig.blackCardApplyNoOverdue,
         blackCardApplySeen = CobbleMarketConfig.blackCardApplySeen,
@@ -550,6 +609,14 @@ object ServerConfigNetwork {
         overdueFreeze = CobbleMarketConfig.overdueFreezeDays,
         overdueBadDebt = CobbleMarketConfig.overdueBadDebtDays,
         shareCooldownSeconds = CobbleMarketConfig.shareCooldownSeconds,
+        pokemonMarketEnabled = CobbleMarketConfig.pokemonMarketEnabled,
+        itemMarketEnabled = CobbleMarketConfig.itemMarketEnabled,
+        auctionEnabled = CobbleMarketConfig.auctionEnabled,
+        auctionPokemonEnabled = CobbleMarketConfig.auctionPokemonEnabled,
+        auctionItemEnabled = CobbleMarketConfig.auctionItemEnabled,
+        buyOrderEnabled = CobbleMarketConfig.buyOrderEnabled,
+        buyOrderPokemonEnabled = CobbleMarketConfig.buyOrderPokemonEnabled,
+        buyOrderItemEnabled = CobbleMarketConfig.buyOrderItemEnabled,
     )
 
     /** 批量应用（钳制规则与各 setter 一致）；eggTrading 走既有 setter（含 save，重复落盘无害） */
@@ -593,7 +660,6 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setBlackCardSelfApply(p.blackCardSelfApply)
         CobbleMarketConfig.setBlackCardApplyAsset(p.blackCardApplyAsset)
         CobbleMarketConfig.setBlackCardApplyVolume(p.blackCardApplyVolume)
-        CobbleMarketConfig.setBlackCardApplyCredit(p.blackCardApplyCredit)
         CobbleMarketConfig.setBlackCardApplyDeposit(p.blackCardApplyDeposit)
         CobbleMarketConfig.setBlackCardApplyNoOverdue(p.blackCardApplyNoOverdue)
         CobbleMarketConfig.setBlackCardApplySeen(p.blackCardApplySeen)
@@ -615,6 +681,15 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setOverdueFreezeDays(p.overdueFreeze)
         CobbleMarketConfig.setOverdueBadDebtDays(p.overdueBadDebt)
         CobbleMarketConfig.setShareCooldownSeconds(p.shareCooldownSeconds)
+        CobbleMarketConfig.setPokemonMarketEnabled(p.pokemonMarketEnabled)
+        CobbleMarketConfig.setItemMarketEnabled(p.itemMarketEnabled)
+        // 先子后总：子开关打开会把总开关带开，最后由 payload 的总开关值定稿
+        CobbleMarketConfig.setAuctionPokemonEnabled(p.auctionPokemonEnabled)
+        CobbleMarketConfig.setAuctionItemEnabled(p.auctionItemEnabled)
+        CobbleMarketConfig.setAuctionEnabled(p.auctionEnabled)
+        CobbleMarketConfig.setBuyOrderPokemonEnabled(p.buyOrderPokemonEnabled)
+        CobbleMarketConfig.setBuyOrderItemEnabled(p.buyOrderItemEnabled)
+        CobbleMarketConfig.setBuyOrderEnabled(p.buyOrderEnabled)
         // 全部字段设完再跑跨项校验：遇见数门槛不得低于捕捉数门槛
         // （保存后回发快照，配置界面的遇见输入框会随之刷新成抬平后的值）
         CobbleMarketConfig.enforceCardApplySeenGuard()

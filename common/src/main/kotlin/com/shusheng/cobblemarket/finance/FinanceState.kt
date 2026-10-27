@@ -519,7 +519,8 @@ class FinanceState private constructor() : PersistentState() {
     }
 
     /**
-     * 自行申请黑卡资格校验：紫卡七项条件 + 硬条件「必须持有紫卡」（黑卡比紫卡高级）。
+     * 自行申请黑卡资格校验：六项条件 + 硬条件「必须持有紫卡」（黑卡比紫卡高级）。
+     * ⚠ 没有「额度要求」——持卡者额度 = 紫卡固定额度、不会再变（2026-10-28 移除）。
      * 资产/消费/额度/存款/无逾期/图鉴遇见/图鉴捕捉门槛与紫卡同构（存款 = 净存款），用黑卡配置。
      */
     fun isBlackCardEligible(playerUuid: UUID, cashBalance: Long, seenCount: Int, dexCount: Int, now: Long): Boolean {
@@ -532,10 +533,8 @@ class FinanceState private constructor() : PersistentState() {
         if (CobbleMarketConfig.blackCardApplyVolume > 0 &&
             (totalCountedVolume[playerUuid] ?: 0L) < CobbleMarketConfig.blackCardApplyVolume
         ) return false
-        if (CobbleMarketConfig.blackCardApplyCredit > 0) {
-            // 信用基础 = 无欠款公式值（紫卡持有者 = 紫卡额度；勿用 creditLimitFor+debt 反推，见 creditBaseFor 注释）
-            if (creditBaseFor(playerUuid, now) < CobbleMarketConfig.blackCardApplyCredit) return false
-        }
+        // ⚠ 没有「额度要求」：硬条件已要求持有紫卡，而持卡者额度 = 紫卡固定额度、不会再变
+        //   ⇒ 该项要么恒满足、要么恒不满足，没有筛选意义（2026-10-28 用户拍板移除）
         if (CobbleMarketConfig.blackCardApplyDeposit > 0 &&
             netDepositBalance(playerUuid, now) < CobbleMarketConfig.blackCardApplyDeposit
         ) return false

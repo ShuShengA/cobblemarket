@@ -28,10 +28,10 @@ object TransactionFileLogger {
             val date = dateFormat.format(instant)
             if (date != currentDate) {
                 currentDate = date
-                // ⚠ 表头必须与 buildCsvLine 的列一一对应（含**末尾的币种 / 主属性 / 来源三列**）：
+                // ⚠ 表头必须与 buildCsvLine 的列一一对应（含**末尾的币种 / 主属性 / 来源 / 商店名 / 商店ID 五列**）：
                 //   漏了会让表头少列、数据多列，Excel 里整行错位
-                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,卖家UUID,买家UUID,精灵/物品,价格,手续费,详情,币种,主属性,来源")
-                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Seller UUID,Buyer UUID,Pokemon/Item,Price,Fee,Details,Currency,Primary Type,Source")
+                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,卖家UUID,买家UUID,精灵/物品,价格,手续费,详情,币种,主属性,来源,商店名,商店ID")
+                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Seller UUID,Buyer UUID,Pokemon/Item,Price,Fee,Details,Currency,Primary Type,Source,Shop Name,Shop ID")
             }
             val zhFile = currentZhFile ?: return
             val enFile = currentEnFile ?: return
@@ -74,7 +74,13 @@ object TransactionFileLogger {
 
                     本目录下的 CSV 是交易账本（每笔交易同步写盘，不受服务器崩溃/杀进程影响）。
 
-                    字段：时间, 类型, 分类, 卖家, 买家, 卖家UUID, 买家UUID, 精灵/物品, 价格, 手续费, 详情, 币种, 主属性
+                    字段：时间, 类型, 分类, 卖家, 买家, 卖家UUID, 买家UUID, 精灵/物品, 价格, 手续费, 详情, 币种, 主属性, 来源, 商店名, 商店ID
+
+                    来源：market = 玩家间市场直购，shop = 商店（主 RP 商城或自定义 NPC 商店）。
+                    **领取记录也是 shop**：类型列写「领取 / Claimed」，价格 0，不是卖出。
+                    商店售出时卖家列是店名（主商城为空），上架者不会因此进个人交易历史；
+                    商店名 / 商店ID 只有商店记录有值（商店ID 用于按店筛选，店改名也不影响）。
+                    老账本没有这几列，按 market / 空读。
 
                     币种：PRIMARY = 主货币，POINTS = RP（高级货币）。价格列的数值要与币种一起看——
                     1 RP 与 1 主货币不等值，两种币的账目不能直接相加。老账本没有这一列，按主货币读。
@@ -130,7 +136,7 @@ object TransactionFileLogger {
                     The CSVs in this directory are the transaction ledger (each trade is written
                     synchronously to disk, unaffected by server crashes or forced kills).
 
-                    Columns: Time, Type, Category, Seller, Buyer, Seller UUID, Buyer UUID, Species/Item, Price, Fee, Details, Currency, Primary Type
+                    Columns: Time, Type, Category, Seller, Buyer, Seller UUID, Buyer UUID, Species/Item, Price, Fee, Details, Currency, Primary Type, Source, Shop Name, Shop ID
 
                     Currency: PRIMARY = main currency, POINTS = RP (the premium currency). Always read the Price
                     column together with it — 1 RP and 1 main currency are not of equal value, so totals across
@@ -140,6 +146,14 @@ object TransactionFileLogger {
                     empty for items and older ledger rows. The Species/Item column holds a species id for Pokemon
                     (namespaced, e.g. `cobblemon:pikachu`; older ledgers carry the bare name with no namespace)
                     and an item id for items.
+
+                    Source: market = player-to-player purchase, shop = a shop (the main RP Shop or a
+                    custom NPC shop). **Claim records are also shop**: the Type column says "Claimed",
+                    the price is 0, and it is not a sale. For shop sales the Seller column holds the shop
+                    name (empty for the main RP Shop), and the person who stocked the shop does not get the
+                    sale in their personal history. Shop Name / Shop ID are only set for shop records
+                    (Shop ID is used for per-shop filtering and survives renames). Older ledgers lack these
+                    columns; read them as market / empty.
 
                     Types: Listed (market/auction listing), Order (buy order placed; the buyer fills the seller column),
                            Sold (market/auction sale, buy order delivery accepted),
@@ -194,12 +208,15 @@ object TransactionFileLogger {
         // 卖家/买家 UUID 供程序回读按 UUID 匹配（改名玩家也查得到）；人读账本看名字列
         val sellerUuid = record.sellerUuid.toString()
         val buyerUuid = record.buyerUuid?.toString() ?: ""
-        // ⚠ 币种、主属性、来源三列都加在**末尾**：老 CSV 没有这些列，读的时候按「缺列 = 主货币 / 无色 / 市场」容错
-        //   来源：market = 玩家间市场直购、shop = RP 商城（服主经营的商店）—— 两者同为 PURCHASE 类型，
-        //   只能靠这一列区分（界面据此把卖家列画成「▣ 商城」而不是上架的管理员名）
+        // ⚠ 币种、主属性、来源、商店名、商店ID 五列都加在**末尾**：老 CSV 没有这些列，
+        //   读的时候按「缺列 = 主货币 / 无色 / 市场 / 空店名 / 空ID」容错
+        //   来源：market = 玩家间市场直购、shop = 商店（主 RP 商城 / 自定义 NPC 商店）——
+        //   **领取记录也是 shop**（类型列是 Claimed，不是 Sold）；
+        //   商店售出的卖家列是店名（主商城为空），上架者不会因此进个人交易历史（2026-10-26）
         return "$time,$type,$category,$seller,$buyer,$sellerUuid,$buyerUuid,$species," +
             "${record.price},${record.fee},${csvEscape(record.detail)},${record.currency.name}," +
-            "${csvEscape(record.primaryType)},${if (record.fromShop) "shop" else "market"}"
+            "${csvEscape(record.primaryType)},${if (record.fromShop) "shop" else "market"}," +
+            "${csvEscape(record.shopName)},${csvEscape(record.shopId)}"
     }
 
     private fun typeName(type: TransactionType, lang: String): String = when (type) {
@@ -208,6 +225,7 @@ object TransactionFileLogger {
         TransactionType.CANCEL -> if (lang == "zh_cn") "下架" else "Cancelled"
         TransactionType.RETURN -> if (lang == "zh_cn") "退还" else "Returned"
         TransactionType.ORDER -> if (lang == "zh_cn") "求购" else "Order"
+        TransactionType.CLAIM -> if (lang == "zh_cn") "领取" else "Claimed"
     }
 
     /**
@@ -283,6 +301,7 @@ object TransactionFileLogger {
         "Cancelled" -> TransactionType.CANCEL
         "Returned" -> TransactionType.RETURN
         "Order" -> TransactionType.ORDER
+        "Claimed" -> TransactionType.CLAIM
         else -> null
     }
 
@@ -364,11 +383,13 @@ object TransactionFileLogger {
                         // 索引：新格式（含 UUID 列）第 10 列、旧格式第 8 列 —— 老 CSV 里本就没有
                         // rarity 段 ⇒ 提取到空串 ⇒ 界面按 itemId 取色（与改动前一致）
                         detail = fields.getOrNull(if (hasUuid) 10 else 8)?.removePrefix("'").orEmpty(),
-                        // 币种在第 12 列、主属性在第 13 列、来源在第 14 列（都在末尾）：
-                        // 老 CSV 没这几列 ⇒ 落主货币 / 空串 / market（普通市场交易）
+                        // 币种第 12 列、主属性第 13 列、来源第 14 列、商店名第 15 列、商店ID 第 16 列：
+                        // 老 CSV 没这几列 ⇒ 落主货币 / 空串 / market（普通市场交易）/ 空店名 / 空ID
                         currency = MarketCurrency.fromStored(fields.getOrNull(11)),
                         primaryType = primaryType,
-                        fromShop = fields.getOrNull(13)?.removePrefix("'") == "shop"
+                        fromShop = fields.getOrNull(13)?.removePrefix("'") == "shop",
+                        shopName = fields.getOrNull(14)?.removePrefix("'").orEmpty(),
+                        shopId = fields.getOrNull(15)?.removePrefix("'").orEmpty()
                     ))
                 }
             } catch (e: Exception) {

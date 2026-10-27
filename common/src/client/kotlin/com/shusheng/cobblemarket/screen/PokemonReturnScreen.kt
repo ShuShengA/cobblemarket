@@ -78,6 +78,9 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
     private fun updatePageButtons() {
         prevButton?.active = currentPage > 1
         nextButton?.active = currentPage < totalPages
+        // 边界时直接隐藏（2026-10-25 用户要求；置灰逻辑不变）
+        prevButton?.visible = currentPage > 1
+        nextButton?.visible = currentPage < totalPages
     }
 
     // 兜底 + 补发：1s 未收到响应强制复位 inFlight（防锁灰）；窗口允许且无在途时补发翻页目标
@@ -333,6 +336,9 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
 
         prevButton?.active = currentPage > 1
         nextButton?.active = currentPage < totalPages
+        // 边界时直接隐藏（2026-10-25 用户要求；置灰逻辑不变）
+        prevButton?.visible = currentPage > 1
+        nextButton?.visible = currentPage < totalPages
         claimButton?.active = pokemon.isNotEmpty()
 
         // 悬停预览大图：画在本界面内容全部之后才在面板之上（本界面无弹窗）

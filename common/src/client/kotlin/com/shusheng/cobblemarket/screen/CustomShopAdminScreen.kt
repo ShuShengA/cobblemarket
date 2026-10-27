@@ -10,6 +10,7 @@ import com.shusheng.cobblemarket.currency.CustomShopMode
 import com.shusheng.cobblemarket.currency.CustomShopState
 import com.shusheng.cobblemarket.currency.CustomShopType
 import com.shusheng.cobblemarket.currency.DEFAULT_CLAIM_HOURS
+import com.shusheng.cobblemarket.currency.MAX_COOLDOWN_HOURS
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.customShopCurrencyText
 import com.shusheng.cobblemarket.currency.customShopTypeText
@@ -23,6 +24,8 @@ import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.RenameCustomShopPayload
 import com.shusheng.cobblemarket.network.RequestCustomShopAdminPayload
 import com.shusheng.cobblemarket.network.RequestOpenCustomShopPayload
+import com.shusheng.cobblemarket.network.ResetCustomShopCooldownPayload
+import com.shusheng.cobblemarket.network.SetCustomShopCooldownPayload
 import com.shusheng.cobblemarket.network.SetCustomShopEnabledPayload
 import com.shusheng.cobblemarket.network.SetCustomShopTypePayload
 import com.shusheng.cobblemarket.network.UnbindCustomShopNpcPayload
@@ -32,6 +35,7 @@ import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.TextFieldWidget
+import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
@@ -60,8 +64,8 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
     private val startY = 48
 
     private enum class Mode { LIST, PICK }
-    private enum class Dialog { NONE, CREATE, RENAME, DELETE, DETAIL }
-    private enum class Pending { CREATE, RENAME, TYPE, ENABLE, DELETE }
+    private enum class Dialog { NONE, CREATE, RENAME, DELETE, DETAIL, SET_COOLDOWN, CONFIRM_RESET_COOLDOWN }
+    private enum class Pending { CREATE, RENAME, TYPE, ENABLE, DELETE, COOLDOWN, RESET_COOLDOWN }
 
     private var mode = Mode.LIST
     private var dialog = Dialog.NONE
@@ -90,13 +94,25 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
     private var createCurrency = MarketCurrency.PRIMARY
     private var createMode = CustomShopMode.NORMAL
     private var createHoursText = DEFAULT_CLAIM_HOURS.toString()
+    /** 建店时的整店购买冷却（小时）；留空 = 不开（仅普通购买店） */
+    private var createCooldownText = ""
+    /** 建店时的商品各自冷却（小时）；留空 = 不开（仅普通购买店） */
+    private var createItemCooldownText = ""
     private var renameName = ""
+    /** 详情页「设置冷却」的整店输入（小时；留空 = 0 = 不开） */
+    private var cooldownText = ""
+    /** 详情页「设置冷却」的商品各自输入（小时；留空 = 0 = 不开） */
+    private var itemCooldownText = ""
     private var dialogError: Text? = null
 
     private var createIdField: TextFieldWidget? = null
     private var createNameField: TextFieldWidget? = null
     private var createHoursField: TextFieldWidget? = null
+    private var createCooldownField: TextFieldWidget? = null
+    private var createItemCooldownField: TextFieldWidget? = null
     private var renameField: TextFieldWidget? = null
+    private var cooldownField: TextFieldWidget? = null
+    private var itemCooldownField: TextFieldWidget? = null
 
     private val rowButtons = mutableListOf<NineSliceButton>()
     private val dialogButtons = mutableListOf<NineSliceButton>()
@@ -134,7 +150,11 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
         createIdField = null
         createNameField = null
         createHoursField = null
+        createCooldownField = null
+        createItemCooldownField = null
         renameField = null
+        cooldownField = null
+        itemCooldownField = null
         manageW = maxOf(44, textRenderer.getWidth(Text.translatable("cobblemarket.shop_admin.manage").string) + 12)
 
         if (!requested) {
@@ -214,12 +234,54 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
         createCurrency = MarketCurrency.PRIMARY
         createMode = CustomShopMode.NORMAL
         createHoursText = DEFAULT_CLAIM_HOURS.toString()
+        createCooldownText = ""
+        createItemCooldownText = ""
         openDialog(Dialog.CREATE)
     }
 
     private fun openRenameDialog() {
         renameName = CustomShopAdminCache.shop(detailShopId)?.name.orEmpty()
         openDialog(Dialog.RENAME)
+    }
+
+    /** 详情页「设置冷却」：预填当前值（0 显示为空 = 不开） */
+    private fun openCooldownDialog() {
+        val shop = CustomShopAdminCache.shop(detailShopId) ?: return
+        cooldownText = shop.cooldownHours.takeIf { it > 0 }?.toString().orEmpty()
+        itemCooldownText = shop.itemCooldownHours.takeIf { it > 0 }?.toString().orEmpty()
+        openDialog(Dialog.SET_COOLDOWN)
+    }
+
+    private fun sendCooldown() {
+        val raw = cooldownText.trim()
+        val hours = if (raw.isEmpty()) 0 else raw.toIntOrNull()
+        if (hours == null || hours !in 0..MAX_COOLDOWN_HOURS) {
+            dialogError = Text.translatable("cobblemarket.shop.err.invalid_cooldown", raw)
+            playFailSound()
+            return
+        }
+        val rawItem = itemCooldownText.trim()
+        val itemHours = if (rawItem.isEmpty()) 0 else rawItem.toIntOrNull()
+        if (itemHours == null || itemHours !in 0..MAX_COOLDOWN_HOURS) {
+            dialogError = Text.translatable("cobblemarket.shop.err.invalid_cooldown", rawItem)
+            playFailSound()
+            return
+        }
+        dialogError = null
+        pending = Pending.COOLDOWN
+        sendToServer(SetCustomShopCooldownPayload(detailShopId, hours, itemHours))
+    }
+
+    /** 重置确认：清空这家店所有玩家的冷却记录（设置值不动） */
+    private fun openResetCooldownConfirm() {
+        dialogError = null
+        pending = null
+        openDialog(Dialog.CONFIRM_RESET_COOLDOWN)
+    }
+
+    private fun sendResetCooldown() {
+        pending = Pending.RESET_COOLDOWN
+        sendToServer(ResetCustomShopCooldownPayload(detailShopId))
     }
 
     private fun openDeleteDialog() {
@@ -263,17 +325,23 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
         val w = when (kind) {
             Dialog.CREATE -> minOf(360, width - 40).coerceAtLeast(260)
             Dialog.RENAME -> minOf(320, width - 40).coerceAtLeast(240)
+            Dialog.SET_COOLDOWN -> minOf(300, width - 40).coerceAtLeast(230)
+            Dialog.CONFIRM_RESET_COOLDOWN -> minOf(340, width - 40).coerceAtLeast(260)
             Dialog.DELETE -> minOf(340, width - 40).coerceAtLeast(260)
             Dialog.DETAIL -> minOf(400, width - 40).coerceAtLeast(280)
             Dialog.NONE -> 0
         }
         val h = when (kind) {
-            // ID / 名字 / 模式 / 出售类型 / 货币或领取周期 各一行
-            Dialog.CREATE -> 250
+            // ID / 名字 / 模式 / 出售类型 / 货币或领取周期 / 普通店的整店冷却 + 商品各自冷却 各一行
+            Dialog.CREATE -> 328
             Dialog.RENAME -> 120
+            // 两行输入（整店 / 商品各自）+ 错误行 + 按钮行
+            Dialog.SET_COOLDOWN -> 170
             Dialog.DELETE -> 130
-            // 信息行变多（领取店多一行周期）时弹窗跟着长高，底部两排按钮才不会压到类型行
-            Dialog.DETAIL -> maxOf(200, detailTypeRowY(0) + 80)
+            Dialog.CONFIRM_RESET_COOLDOWN -> 130
+            // 信息行变多（领取店多一行周期）时弹窗跟着长高，底部按钮才不会压到类型行；
+            // 详情页底部**恒为三排**：动作按钮 2 排（普通店 6 枚 / 领取店 5 枚）+ 居中的返回按钮 1 排 ⇒ 统一留 100
+            Dialog.DETAIL -> maxOf(200, detailTypeRowY(0) + 100)
             Dialog.NONE -> 0
         }
         return intArrayOf((width - w) / 2, (height - h) / 2, w, h)
@@ -287,10 +355,10 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
      * 行高 11、文字高 8：最后一行底 = `30 + (lines-1)*11 + 8`，标签放在它下面 4px、按钮再下 12px。
      */
     private fun detailTypeLabelLocalY(): Int {
-        val shop = CustomShopAdminCache.shop(detailShopId)
-        val claim = shop != null && CustomShopMode.fromId(shop.mode) == CustomShopMode.CLAIM
-        // ID / 状态 / 货币 / 模式 / [周期] / 商品 / NPC / 名单（或"未绑定"）
-        val lines = 7 + (if (claim) 1 else 0)
+        // ID / 状态 / 货币 / 模式 / [领取周期] 或 [整店冷却 + 商品各自冷却] / 商品 / NPC / 名单
+        // 领取店 8 行；普通店多一行「商品各自冷却」= 9 行
+        val normalShop = CustomShopAdminCache.shop(detailShopId)?.mode == CustomShopMode.NORMAL.id
+        val lines = if (normalShop) 9 else 8
         val infoBottom = 30 + (lines - 1) * 11 + 8
         return maxOf(94, infoBottom + 4)
     }
@@ -348,6 +416,29 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                     setPlaceholder(Text.translatable("cobblemarket.shop_admin.create.claim_hours_hint"))
                     addSelectableChild(this); addDrawableChild(this)
                 }
+                // 普通购买店的整店冷却 / 商品各自冷却（领取店不显示：它有自己的领取周期）
+                createCooldownField = TextFieldWidget(textRenderer, dx + 16, dy + 226, dw - 32, 16, Text.literal("")).apply {
+                    setMaxLength(5)
+                    text = createCooldownText
+                    setChangedListener {
+                        createCooldownText = it.filter(Char::isDigit)
+                        if (it != createCooldownText) text = createCooldownText
+                    }
+                    setPlaceholder(Text.translatable("cobblemarket.shop_admin.create.cooldown_hint"))
+                    setTooltip(Tooltip.of(Text.translatable("cobblemarket.shop_admin.cooldown.shop_tip")))
+                    addSelectableChild(this); addDrawableChild(this)
+                }
+                createItemCooldownField = TextFieldWidget(textRenderer, dx + 16, dy + 262, dw - 32, 16, Text.literal("")).apply {
+                    setMaxLength(5)
+                    text = createItemCooldownText
+                    setChangedListener {
+                        createItemCooldownText = it.filter(Char::isDigit)
+                        if (it != createItemCooldownText) text = createItemCooldownText
+                    }
+                    setPlaceholder(Text.translatable("cobblemarket.shop_admin.create.item_cooldown_hint"))
+                    setTooltip(Tooltip.of(Text.translatable("cobblemarket.shop_admin.cooldown.item_tip")))
+                    addSelectableChild(this); addDrawableChild(this)
+                }
                 updateCreateRowVisibility()
                 addDialogPairButtons(
                     dx, buttonY, dw,
@@ -371,6 +462,49 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                 )
             }
 
+            Dialog.SET_COOLDOWN -> {
+                cooldownField = TextFieldWidget(textRenderer, dx + 16, dy + 42, dw - 32, 16, Text.literal("")).apply {
+                    setTextPredicate { s -> s.length <= 5 && s.all { it.isDigit() } }
+                    text = cooldownText
+                    setChangedListener { cooldownText = it }
+                    setPlaceholder(Text.translatable("cobblemarket.shop_admin.cooldown.shop_hint"))
+                    setTooltip(Tooltip.of(Text.translatable("cobblemarket.shop_admin.cooldown.shop_tip")))
+                    addSelectableChild(this); addDrawableChild(this)
+                }
+                itemCooldownField = TextFieldWidget(textRenderer, dx + 16, dy + 78, dw - 32, 16, Text.literal("")).apply {
+                    setTextPredicate { s -> s.length <= 5 && s.all { it.isDigit() } }
+                    text = itemCooldownText
+                    setChangedListener { itemCooldownText = it }
+                    setPlaceholder(Text.translatable("cobblemarket.shop_admin.cooldown.item_hint"))
+                    setTooltip(Tooltip.of(Text.translatable("cobblemarket.shop_admin.cooldown.item_tip")))
+                    addSelectableChild(this); addDrawableChild(this)
+                }
+                // 三枚按钮：保存 / 重置冷却（清玩家记录，需二次确认）/ 取消
+                val cooldownGap = 4
+                val cooldownBtnW = (dw - 32 - cooldownGap * 2) / 3
+                listOf(
+                    Text.translatable("cobblemarket.shop_admin.cooldown.confirm") to { sendCooldown() },
+                    Text.translatable("cobblemarket.shop_admin.cooldown.reset") to { openResetCooldownConfirm() },
+                    Text.translatable("cobblemarket.shop_admin.cancel") to { closeDialog() }
+                ).forEachIndexed { i, (label, action) ->
+                    val b = NineSliceButton(
+                        dx + 16 + i * (cooldownBtnW + cooldownGap), buttonY, cooldownBtnW, 16,
+                        label, onPress = { action() }
+                    )
+                    dialogButtons.add(b)
+                    addDrawableChild(b)
+                }
+            }
+
+            Dialog.CONFIRM_RESET_COOLDOWN -> {
+                addDialogPairButtons(
+                    dx, buttonY, dw,
+                    Text.translatable("cobblemarket.shop_admin.cooldown.reset_confirm"),
+                    { sendResetCooldown() },
+                    Text.translatable("cobblemarket.shop_admin.cancel"), { closeDialog() }
+                )
+            }
+
             Dialog.DELETE -> {
                 addDialogPairButtons(
                     dx, buttonY, dw,
@@ -383,10 +517,9 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                 val shop = CustomShopAdminCache.shop(detailShopId) ?: run { closeDialog(); return }
                 val gap = 4
                 val btnW = (dw - 32 - gap * 2) / 3
-                val row1 = dy + dh - 10 - 16 - gap - 16
                 // 类型三选一（放在信息区下方；信息行数会随「领取店 / 周期」变多，位置按行数让）
                 buildTypeButtons(dx + 16, detailTypeRowY(dy), dw - 32, 14, CustomShopType.fromId(shop.type)) { sendType(it) }
-                val actions = listOf<Pair<Text, () -> Unit>>(
+                val actions = mutableListOf<Pair<Text, () -> Unit>>(
                     Text.translatable("cobblemarket.shop_admin.detail.open") to { sendOpen() },
                     Text.translatable("cobblemarket.shop_admin.detail.bind") to { openPicker(detailShopId) },
                     Text.translatable("cobblemarket.shop_admin.detail.rename") to { openRenameDialog() },
@@ -394,9 +527,19 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                         if (shop.enabled) "cobblemarket.shop_admin.detail.disable"
                         else "cobblemarket.shop_admin.detail.enable"
                     ) to { sendEnabled(!shop.enabled) },
-                    Text.translatable("cobblemarket.shop_admin.detail.delete") to { openDeleteDialog() },
-                    Text.translatable("cobblemarket.shop_admin.detail.close") to { closeDialog() }
+                    Text.translatable("cobblemarket.shop_admin.detail.delete") to { openDeleteDialog() }
                 )
+                // 「设置冷却」只对普通购买店有意义（领取店用领取周期，周期建好后走命令）
+                if (CustomShopMode.fromId(shop.mode) == CustomShopMode.NORMAL) {
+                    actions.add(
+                        Text.translatable("cobblemarket.shop_admin.detail.cooldown") to { openCooldownDialog() }
+                    )
+                }
+                // 「关闭」**不进网格**（2026-10-27 用户报：它只是关弹窗、跟「关店」只差一个字，
+                // 摆在左下角和关店挨着容易被当成关店）⇒ 单独一行居中、换成返回图标（纯图标 + tooltip）。
+                val actionRows = (actions.size + 2) / 3
+                val closeY = dy + dh - 10 - 16
+                val row1 = closeY - gap - 16 - (actionRows - 1) * (16 + gap)
                 actions.forEachIndexed { i, (label, action) ->
                     val col = i % 3
                     val row = i / 3
@@ -406,6 +549,16 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                     dialogButtons.add(b)
                     addDrawableChild(b)
                 }
+                val closeBtn = NineSliceButton(
+                    dx + (dw - btnW) / 2, closeY, btnW, 16,
+                    Text.literal(""),
+                    { closeDialog() },
+                    iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
+                    iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
+                    tooltip = Text.translatable("cobblemarket.gui.back")
+                )
+                dialogButtons.add(closeBtn)
+                addDrawableChild(closeBtn)
             }
 
             Dialog.NONE -> Unit
@@ -469,6 +622,8 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
         val claim = createMode == CustomShopMode.CLAIM
         createCurrencyButtons.forEach { (_, b) -> b.visible = !claim }
         createHoursField?.visible = claim
+        createCooldownField?.visible = !claim
+        createItemCooldownField?.visible = !claim
     }
 
     /**
@@ -530,12 +685,33 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
             }
             typed
         } else DEFAULT_CLAIM_HOURS
+        // 普通购买店的整店冷却：留空 = 不开（0）；超出范围在客户端先拦（服务端还会再判）
+        val cooldown = if (createMode == CustomShopMode.NORMAL) {
+            val typed = createCooldownText.trim().toIntOrNull() ?: 0
+            if (typed !in 0..MAX_COOLDOWN_HOURS) {
+                dialogError = Text.translatable("cobblemarket.shop.err.invalid_cooldown", typed)
+                playFailSound()
+                return
+            }
+            typed
+        } else 0
+        // 普通购买店的商品各自冷却：同上，留空 = 不开
+        val itemCooldown = if (createMode == CustomShopMode.NORMAL) {
+            val typed = createItemCooldownText.trim().toIntOrNull() ?: 0
+            if (typed !in 0..MAX_COOLDOWN_HOURS) {
+                dialogError = Text.translatable("cobblemarket.shop.err.invalid_cooldown", typed)
+                playFailSound()
+                return
+            }
+            typed
+        } else 0
         dialogError = null
         pending = Pending.CREATE
         pendingCreateId = id
         sendToServer(
             CreateCustomShopPayload(
-                id, createName.trim(), createType.id, createCurrency.name, createMode.id, hours
+                id, createName.trim(), createType.id, createCurrency.name, createMode.id, hours, cooldown,
+                itemCooldown
             )
         )
     }
@@ -611,7 +787,8 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
         if (!success) {
             // 创建 / 改名 / 删除 / 详情弹窗都留着，让服主改完重试；原因同时进了聊天栏
             when (dialog) {
-                Dialog.CREATE, Dialog.RENAME, Dialog.DELETE, Dialog.DETAIL -> dialogError = payload.message
+                Dialog.CREATE, Dialog.RENAME, Dialog.DELETE, Dialog.DETAIL, Dialog.SET_COOLDOWN ->
+                    dialogError = payload.message
                 else -> Unit
             }
             return
@@ -626,7 +803,8 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                 // 建完直接进「选 NPC」：创建 → 绑 NPC → 返回列表，是完整流程
                 openPicker(newId)
             }
-            Pending.RENAME, Pending.TYPE, Pending.ENABLE, Pending.DELETE -> closeDialog()
+            Pending.RENAME, Pending.TYPE, Pending.ENABLE, Pending.DELETE, Pending.COOLDOWN,
+            Pending.RESET_COOLDOWN -> closeDialog()
             null -> Unit
         }
     }
@@ -677,8 +855,11 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
         val left = leftX()
         val count = currentCount()
         val shown = minOf(maxVisible(), maxOf(0, count - scrollOffset))
+        // 弹窗打开时冻结行悬停（用户 2026-10-27 报同类问题）
         hoveredRow = -1
-        if (mouseX in left..(left + panelWidth) && mouseY in startY until (startY + shown * rowHeight)) {
+        if (dialog == Dialog.NONE &&
+            mouseX in left..(left + panelWidth) && mouseY in startY until (startY + shown * rowHeight)
+        ) {
             val row = (mouseY - startY) / rowHeight
             if (row in 0 until shown) hoveredRow = row
         }
@@ -880,10 +1061,21 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                 .formatted(Formatting.GRAY),
             Text.translatable("cobblemarket.shop_admin.hover.npcs", shop.npcCount).formatted(Formatting.GRAY)
         )
-        // 领取店补一行周期（普通店不显示，免得一行废话）
+        // 领取店补一行周期；普通店补一行整店冷却（0 = 不开，也明确写出来，免得服主以为没这项）
         if (CustomShopMode.fromId(shop.mode) == CustomShopMode.CLAIM) {
             lines += Text.translatable("cobblemarket.shop_admin.hover.period", shop.claimHours)
                 .formatted(Formatting.GRAY)
+        } else {
+            lines += (
+                if (shop.cooldownHours > 0)
+                    Text.translatable("cobblemarket.shop_admin.hover.cooldown", shop.cooldownHours)
+                else Text.translatable("cobblemarket.shop_admin.hover.cooldown_off")
+                ).formatted(Formatting.GRAY)
+            lines += (
+                if (shop.itemCooldownHours > 0)
+                    Text.translatable("cobblemarket.shop_admin.hover.item_cooldown", shop.itemCooldownHours)
+                else Text.translatable("cobblemarket.shop_admin.hover.item_cooldown_off")
+                ).formatted(Formatting.GRAY)
         }
         if (shop.npcs.isEmpty()) {
             lines += Text.translatable("cobblemarket.shop_admin.row.unbound").formatted(Formatting.DARK_GRAY)
@@ -989,7 +1181,19 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                     ),
                     dx + 16, dy + 178, 0xFFFFFF
                 )
-                drawDialogError(context, dx, dy + 212, dw)
+                // 第 5/6 行：普通店的整店冷却 + 商品各自冷却（领取店没有这两项）
+                if (createMode == CustomShopMode.NORMAL) {
+                    context.drawTextWithShadow(
+                        textRenderer, Text.translatable("cobblemarket.shop_admin.create.cooldown"),
+                        dx + 16, dy + 214, 0xFFFFFF
+                    )
+                    context.drawTextWithShadow(
+                        textRenderer, Text.translatable("cobblemarket.shop_admin.create.item_cooldown"),
+                        dx + 16, dy + 250, 0xFFFFFF
+                    )
+                }
+                // 错误提示放在最后一行下面
+                drawDialogError(context, dx, dy + 286, dw)
             }
             Dialog.RENAME -> {
                 context.drawCenteredTextWithShadow(
@@ -997,6 +1201,41 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                     centerX, dy + 12, 0xFFFFFF
                 )
                 context.drawTextWithShadow(textRenderer, Text.translatable("cobblemarket.shop_admin.create.name"), dx + 16, dy + 34, 0xFFFFFF)
+                drawDialogError(context, dx, dy + 70, dw)
+            }
+            Dialog.SET_COOLDOWN -> {
+                context.drawCenteredTextWithShadow(
+                    textRenderer,
+                    Text.translatable("cobblemarket.shop_admin.cooldown.title").formatted(Formatting.GOLD),
+                    centerX, dy + 12, 0xFFFFFF
+                )
+                context.drawTextWithShadow(
+                    textRenderer, Text.translatable("cobblemarket.shop_admin.cooldown.shop_label"),
+                    dx + 16, dy + 30, 0xFFFFFF
+                )
+                context.drawTextWithShadow(
+                    textRenderer, Text.translatable("cobblemarket.shop_admin.cooldown.item_label"),
+                    dx + 16, dy + 66, 0xFFFFFF
+                )
+                drawDialogError(context, dx, dy + 102, dw)
+            }
+            Dialog.CONFIRM_RESET_COOLDOWN -> {
+                val shop = CustomShopAdminCache.shop(detailShopId)
+                context.drawCenteredTextWithShadow(
+                    textRenderer,
+                    Text.translatable("cobblemarket.shop_admin.cooldown.reset_title").formatted(Formatting.GOLD),
+                    centerX, dy + 12, 0xFFFFFF
+                )
+                context.drawCenteredTextWithShadow(
+                    textRenderer,
+                    TextUtil.truncateStyled(
+                        Text.translatable(
+                            "cobblemarket.shop_admin.cooldown.reset_line", shop?.name ?: detailShopId
+                        ).formatted(Formatting.WHITE),
+                        dw - 24
+                    ),
+                    centerX, dy + 44, 0xFFFFFF
+                )
                 drawDialogError(context, dx, dy + 70, dw)
             }
             Dialog.DELETE -> {
@@ -1085,6 +1324,21 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                     context.drawTextWithShadow(
                         textRenderer,
                         Text.translatable("cobblemarket.shop_admin.hover.period", shop.claimHours),
+                        infoX, ty, 0xFFFFFF
+                    ); ty += 11
+                } else {
+                    context.drawTextWithShadow(
+                        textRenderer,
+                        if (shop.cooldownHours > 0)
+                            Text.translatable("cobblemarket.shop_admin.hover.cooldown", shop.cooldownHours)
+                        else Text.translatable("cobblemarket.shop_admin.hover.cooldown_off"),
+                        infoX, ty, 0xFFFFFF
+                    ); ty += 11
+                    context.drawTextWithShadow(
+                        textRenderer,
+                        if (shop.itemCooldownHours > 0)
+                            Text.translatable("cobblemarket.shop_admin.hover.item_cooldown", shop.itemCooldownHours)
+                        else Text.translatable("cobblemarket.shop_admin.hover.item_cooldown_off"),
                         infoX, ty, 0xFFFFFF
                     ); ty += 11
                 }
@@ -1186,7 +1440,10 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
      *   2026-10-24 用户报的「创建商店的领取周期框点不了」就是漏了 [createHoursField]。
      */
     private fun dialogTextFields(): List<TextFieldWidget> =
-        listOfNotNull(createIdField, createNameField, createHoursField, renameField)
+        listOfNotNull(
+            createIdField, createNameField, createHoursField, createCooldownField, createItemCooldownField,
+            renameField, cooldownField, itemCooldownField
+        )
 
     override fun mouseScrolled(
         mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double

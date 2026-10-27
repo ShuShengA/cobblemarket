@@ -5,8 +5,10 @@ import com.shusheng.cobblemarket.currency.CustomShopError
 import com.shusheng.cobblemarket.currency.CustomShopState
 import com.shusheng.cobblemarket.currency.CustomShopMode
 import com.shusheng.cobblemarket.currency.CustomShopType
+import com.shusheng.cobblemarket.currency.CustomShopCooldownState
 import com.shusheng.cobblemarket.currency.DEFAULT_CLAIM_HOURS
 import com.shusheng.cobblemarket.currency.MAX_CLAIM_HOURS
+import com.shusheng.cobblemarket.currency.MAX_COOLDOWN_HOURS
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.NpcDisplayMeta
 import com.shusheng.cobblemarket.currency.customShopErrorText
@@ -68,7 +70,11 @@ data class CustomShopAdminInfo(
     /** [CustomShopMode] id（`normal` / `claim`）—— 管理界面显示用 */
     val mode: String = CustomShopMode.NORMAL.id,
     /** 领取周期（小时）—— 只有 `claim` 店用得到 */
-    val claimHours: Int = DEFAULT_CLAIM_HOURS
+    val claimHours: Int = DEFAULT_CLAIM_HOURS,
+    /** 整店购买冷却（小时，0 = 不开）—— 只有 `normal` 店用得到 */
+    val cooldownHours: Int = 0,
+    /** 商品各自冷却（小时，0 = 不开）—— 只有 `normal` 店用得到 */
+    val itemCooldownHours: Int = 0
 )
 
 /** 管理界面「附近实体」列表的一项 */
@@ -112,6 +118,9 @@ data class CustomShopAdminListPayload(
                     b.writeString(s.currency, ADMIN_MAX_TEXT)
                     b.writeString(s.mode, ADMIN_MAX_TEXT)
                     b.writeInt(s.claimHours)
+                    // ⚠ 追加在**末尾**（payload 顺序铁律）
+                    b.writeInt(s.cooldownHours)
+                    b.writeInt(s.itemCooldownHours)
                     b.writeInt(s.npcs.size)
                     s.npcs.forEach { n ->
                         b.writeString(n.uuid, ADMIN_MAX_TEXT)
@@ -150,6 +159,8 @@ data class CustomShopAdminListPayload(
                     val currency = b.readString(ADMIN_MAX_TEXT)
                     val mode = b.readString(ADMIN_MAX_TEXT)
                     val claimHours = b.readInt()
+                    val cooldownHours = b.readInt()
+                    val itemCooldownHours = b.readInt()
                     val npcListCount = b.readInt()
                     if (npcListCount < 0 || npcListCount > ADMIN_MAX_NPCS_PER_SHOP) {
                         throw IllegalArgumentException("custom shop admin npc count out of range: $npcListCount")
@@ -165,7 +176,8 @@ data class CustomShopAdminListPayload(
                         )
                     }
                     CustomShopAdminInfo(
-                        id, name, type, enabled, pokemonCount, itemCount, npcCount, npcs, currency, mode, claimHours
+                        id, name, type, enabled, pokemonCount, itemCount, npcCount, npcs, currency, mode,
+                        claimHours, cooldownHours, itemCooldownHours
                     )
                 }
                 val nearbyCount = b.readInt()
@@ -211,7 +223,11 @@ data class CreateCustomShopPayload(
     /** [CustomShopMode] id（`normal` / `claim`） */
     val mode: String = CustomShopMode.NORMAL.id,
     /** 领取周期（小时）；只有 `claim` 用得到 */
-    val claimHours: Int = DEFAULT_CLAIM_HOURS
+    val claimHours: Int = DEFAULT_CLAIM_HOURS,
+    /** 整店购买冷却（小时，0 = 不开）；只有 `normal` 用得到 */
+    val cooldownHours: Int = 0,
+    /** 商品各自冷却（小时，0 = 不开）；只有 `normal` 用得到 */
+    val itemCooldownHours: Int = 0
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -225,6 +241,9 @@ data class CreateCustomShopPayload(
                 b.writeString(p.currency, ADMIN_MAX_TEXT)
                 b.writeString(p.mode, ADMIN_MAX_TEXT)
                 b.writeInt(p.claimHours)
+                // ⚠ 追加在**末尾**（payload 顺序铁律）
+                b.writeInt(p.cooldownHours)
+                b.writeInt(p.itemCooldownHours)
             },
             { b ->
                 CreateCustomShopPayload(
@@ -233,7 +252,9 @@ data class CreateCustomShopPayload(
                     type = b.readString(ADMIN_MAX_TEXT),
                     currency = b.readString(ADMIN_MAX_TEXT),
                     mode = b.readString(ADMIN_MAX_TEXT),
-                    claimHours = b.readInt()
+                    claimHours = b.readInt(),
+                    cooldownHours = b.readInt(),
+                    itemCooldownHours = b.readInt()
                 )
             }
         )
@@ -258,6 +279,43 @@ data class SetCustomShopTypePayload(val id: String, val type: String) : CustomPa
         val CODEC: PacketCodec<PacketByteBuf, SetCustomShopTypePayload> = PacketCodec.of(
             { p, b -> b.writeString(p.id, ADMIN_MAX_TEXT); b.writeString(p.type, ADMIN_MAX_TEXT) },
             { b -> SetCustomShopTypePayload(b.readString(ADMIN_MAX_TEXT), b.readString(ADMIN_MAX_TEXT)) }
+        )
+    }
+}
+
+/**
+ * 设置已有商店的**整店购买冷却**（小时，0 = 不开）—— 2026-10-26 管理界面「设置冷却」用。
+ * ⚠ 与建店时的冷却字段同源（[CustomShopState.setCooldownHours]）；只对普通购买店有意义。
+ */
+data class SetCustomShopCooldownPayload(
+    val id: String,
+    /** 整店冷却（小时，0 = 不开） */
+    val hours: Int,
+    /** 商品各自冷却（小时，0 = 不开） */
+    val itemHours: Int = 0
+) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<SetCustomShopCooldownPayload>(CobbleMarket.id("set_custom_shop_cooldown"))
+        val CODEC: PacketCodec<PacketByteBuf, SetCustomShopCooldownPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.id, ADMIN_MAX_TEXT); b.writeInt(p.hours); b.writeInt(p.itemHours) },
+            { b -> SetCustomShopCooldownPayload(b.readString(ADMIN_MAX_TEXT), b.readInt(), b.readInt()) }
+        )
+    }
+}
+
+/**
+ * 清空一家商店**所有玩家的冷却记录**（整店 + 各格），立即生效（2026-10-27 用户要求，方便服主测试）。
+ *
+ * ⚠ 只清**运行时记录**，不动商店设置值；清完要给在线玩家补发冷却状态包，否则客户端缓存还显示倒计时。
+ */
+data class ResetCustomShopCooldownPayload(val id: String) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<ResetCustomShopCooldownPayload>(CobbleMarket.id("reset_custom_shop_cooldown"))
+        val CODEC: PacketCodec<PacketByteBuf, ResetCustomShopCooldownPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.id, ADMIN_MAX_TEXT) },
+            { b -> ResetCustomShopCooldownPayload(b.readString(ADMIN_MAX_TEXT)) }
         )
     }
 }
@@ -363,8 +421,22 @@ object CustomShopAdminNetwork {
                     sendResult(player, false, customShopErrorText(CustomShopError.INVALID_PERIOD, payload.claimHours))
                     return@execute
                 }
+                if (payload.cooldownHours !in 0..MAX_COOLDOWN_HOURS) {
+                    sendResult(player, false, customShopErrorText(CustomShopError.INVALID_COOLDOWN, payload.cooldownHours))
+                    return@execute
+                }
+                if (payload.itemCooldownHours !in 0..MAX_COOLDOWN_HOURS) {
+                    sendResult(
+                        player, false,
+                        customShopErrorText(CustomShopError.INVALID_COOLDOWN, payload.itemCooldownHours)
+                    )
+                    return@execute
+                }
                 val state = CustomShopState.get(player.server)
-                val error = state.create(payload.id, payload.name, type, currency, mode, payload.claimHours)
+                val error = state.create(
+                    payload.id, payload.name, type, currency, mode, payload.claimHours, payload.cooldownHours,
+                    payload.itemCooldownHours
+                )
                 if (error != null) {
                     sendResult(player, false, customShopErrorText(error))
                     return@execute
@@ -435,6 +507,58 @@ object CustomShopAdminNetwork {
             }
         }
 
+        // 设置已有商店的整店冷却（管理界面「设置冷却」）
+        registerC2S(SetCustomShopCooldownPayload.ID, SetCustomShopCooldownPayload.CODEC) { payload, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "custom_shop_admin_cooldown", RequestThrottle.WRITE_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            player.server.execute {
+                val state = CustomShopState.get(player.server)
+                val shopErr = state.setCooldownHours(payload.id, payload.hours)
+                val itemErr = if (shopErr == null) state.setItemCooldownHours(payload.id, payload.itemHours) else null
+                val error = shopErr ?: itemErr
+                if (error != null) {
+                    sendResult(player, false, customShopErrorText(error, payload.id))
+                    return@execute
+                }
+                PersistHelper.requestSave(player.server)
+                sendResult(
+                    player,
+                    true,
+                    Text.translatable(
+                        "cobblemarket.shop.cooldown_set", payload.id, payload.hours, payload.itemHours
+                    )
+                )
+                sendToPlayer(player, buildList(player))
+            }
+        }
+
+        // 清空一家商店**所有玩家**的冷却记录（整店 + 各格），立即生效（服主测试用）
+        registerC2S(ResetCustomShopCooldownPayload.ID, ResetCustomShopCooldownPayload.CODEC) { payload, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
+            if (!RequestThrottle.allowNotify(
+                    player, "custom_shop_admin_cooldown_reset", RequestThrottle.WRITE_INTERVAL_MS
+                )
+            ) {
+                return@registerC2S
+            }
+            player.server.execute {
+                val shop = CustomShopState.get(player.server).find(payload.id) ?: run {
+                    sendResult(player, false, customShopErrorText(CustomShopError.NOT_FOUND, payload.id))
+                    return@execute
+                }
+                com.shusheng.cobblemarket.currency.CustomShopCooldownState.get(player.server).clearShop(shop.id)
+                PersistHelper.requestSave(player.server)
+                // 在线玩家补发冷却状态：否则客户端缓存还显示倒计时（重置了却看不出来）
+                player.server.playerManager.playerList.forEach { online ->
+                    sendToPlayer(online, PointMarketNetwork.buildCooldownStatus(online, shop))
+                }
+                sendResult(player, true, Text.translatable("cobblemarket.shop.cooldown_reset", shop.id))
+                sendToPlayer(player, buildList(player))
+            }
+        }
+
         registerC2S(SetCustomShopEnabledPayload.ID, SetCustomShopEnabledPayload.CODEC) { payload, player ->
             if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
             if (!RequestThrottle.allowNotify(player, "custom_shop_admin_enabled", RequestThrottle.WRITE_INTERVAL_MS)) {
@@ -473,6 +597,8 @@ object CustomShopAdminNetwork {
                 val name = shop.name
                 val entries = shop.entryCount()
                 state.delete(payload.id)
+                // 同 id 重建的店不能继承旧冷却：删店时一并清掉
+                CustomShopCooldownState.get(player.server).clearShop(payload.id.trim().lowercase())
                 PersistHelper.requestSave(player.server)
                 sendResult(
                     player,
@@ -615,7 +741,9 @@ object CustomShopAdminNetwork {
                 npcs = npcs,
                 currency = shop.currency.name,
                 mode = shop.mode.id,
-                claimHours = shop.claimHours
+                claimHours = shop.claimHours,
+                cooldownHours = shop.cooldownHours,
+                itemCooldownHours = shop.itemCooldownHours
             )
         }
 

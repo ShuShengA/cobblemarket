@@ -14,7 +14,8 @@ import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 
 /**
- * 自行申请黑卡条件配置界面（照紫卡条件配置界面）：七项门槛 + 申请费（0 = 不要求）。
+ * 自行申请黑卡条件配置界面（照紫卡条件配置界面）：六项门槛 + 申请费（0 = 不要求）。
+ * ⚠ 没有「额度要求」：申请黑卡硬性要求持有紫卡，持卡者额度固定（2026-10-28 用户拍板移除）。
  * 「持有紫卡」为硬条件不可配置，不在此界面。保存时条件字段提交编辑值、其余回填快照。
  */
 class BlackCardApplyConditionsScreen : Screen(CardNames.label("cobblemarket.op.black_card_conditions")) {
@@ -29,7 +30,7 @@ class BlackCardApplyConditionsScreen : Screen(CardNames.label("cobblemarket.op.b
     private val numDefs = listOf(
         NumDef("cobblemarket.op.scfg_apply_asset", true) to "applyAsset",
         NumDef("cobblemarket.op.scfg_apply_volume", true) to "applyVolume",
-        NumDef("cobblemarket.op.scfg_apply_credit", true) to "applyCredit",
+        // 「额度要求」已移除：申请黑卡硬性要求持有紫卡，持卡者额度固定，该项没有筛选意义（2026-10-28）
         NumDef("cobblemarket.op.scfg_apply_deposit", true) to "applyDeposit",
         NumDef("cobblemarket.op.scfg_apply_seen", true) to "applySeen",
         NumDef("cobblemarket.op.scfg_apply_dex", true) to "applyDex",
@@ -141,7 +142,6 @@ class BlackCardApplyConditionsScreen : Screen(CardNames.label("cobblemarket.op.b
     private fun numValue(key: String, payload: ServerConfigDataPayload?): Double = when (key) {
         "applyAsset" -> (payload?.blackCardApplyAsset ?: 0L).toDouble()
         "applyVolume" -> (payload?.blackCardApplyVolume ?: 0L).toDouble()
-        "applyCredit" -> (payload?.blackCardApplyCredit ?: 0L).toDouble()
         "applyDeposit" -> (payload?.blackCardApplyDeposit ?: 0L).toDouble()
         "applySeen" -> (payload?.blackCardApplySeen ?: 0L).toDouble()
         "applyDex" -> (payload?.blackCardApplyDex ?: 0L).toDouble()
@@ -243,7 +243,6 @@ class BlackCardApplyConditionsScreen : Screen(CardNames.label("cobblemarket.op.b
             blackCardSelfApply = p?.blackCardSelfApply ?: false,
             blackCardApplyAsset = longOr("applyAsset", p?.blackCardApplyAsset ?: 0L),
             blackCardApplyVolume = longOr("applyVolume", p?.blackCardApplyVolume ?: 0L),
-            blackCardApplyCredit = longOr("applyCredit", p?.blackCardApplyCredit ?: 0L),
             blackCardApplyDeposit = longOr("applyDeposit", p?.blackCardApplyDeposit ?: 0L),
             blackCardApplyNoOverdue = localToggles["applyNoOverdue"] ?: (p?.blackCardApplyNoOverdue ?: false),
             blackCardApplySeen = longOr("applySeen", p?.blackCardApplySeen ?: 0L),
@@ -257,6 +256,14 @@ class BlackCardApplyConditionsScreen : Screen(CardNames.label("cobblemarket.op.b
             overdueFreeze = p?.overdueFreeze ?: 14,
             overdueBadDebt = p?.overdueBadDebt ?: 30,
             shareCooldownSeconds = p?.shareCooldownSeconds ?: 10,
+            pokemonMarketEnabled = p?.pokemonMarketEnabled ?: true,
+            itemMarketEnabled = p?.itemMarketEnabled ?: true,
+            auctionEnabled = p?.auctionEnabled ?: true,
+            buyOrderEnabled = p?.buyOrderEnabled ?: true,
+            auctionPokemonEnabled = p?.auctionPokemonEnabled ?: true,
+            auctionItemEnabled = p?.auctionItemEnabled ?: true,
+            buyOrderPokemonEnabled = p?.buyOrderPokemonEnabled ?: true,
+            buyOrderItemEnabled = p?.buyOrderItemEnabled ?: true,
         ))
         savedToastUntil = System.currentTimeMillis() + 1500
     }

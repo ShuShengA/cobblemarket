@@ -339,8 +339,9 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
 
         val leftX = width / 2 - panelWidth / 2
         val startY = getListStartY()
+        // 弹窗打开时冻结行悬停（用户 2026-10-27 报同类问题）
         hoveredRow = -1
-        if (mouseX in leftX..(leftX + panelWidth) && mouseY >= startY) {
+        if (selectedItem == null && mouseX in leftX..(leftX + panelWidth) && mouseY >= startY) {
             val row = (mouseY - startY) / rowHeight
             if (row < maxVisible() && (scrollOffset + row) < items.size) hoveredRow = row
         }

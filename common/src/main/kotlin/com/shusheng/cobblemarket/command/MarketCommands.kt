@@ -14,8 +14,10 @@ import net.minecraft.command.argument.EntityArgumentType
 import net.minecraft.text.ClickEvent
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.CustomShopCooldownState
 import com.shusheng.cobblemarket.currency.CustomShopError
 import com.shusheng.cobblemarket.currency.CustomShopState
+import com.shusheng.cobblemarket.currency.MAX_COOLDOWN_HOURS
 import com.shusheng.cobblemarket.currency.CustomShopType
 import com.shusheng.cobblemarket.currency.customShopErrorText
 import com.shusheng.cobblemarket.currency.customShopTypeText
@@ -137,6 +139,33 @@ object MarketCommands {
                                         1, com.shusheng.cobblemarket.currency.MAX_CLAIM_HOURS
                                     )
                                 ).executes(::customShopPeriod))
+                            )
+                        )
+                        // 普通购买店的冷却（小时）：0 = 不开；随时可改（滚动冷却）
+                        //  · cooldown      = 整店冷却（共享）
+                        //  · itemcooldown  = 商品各自冷却（每格独立）
+                        //  · cooldown <id> reset = 清空该店所有玩家的冷却记录（测试用）
+                        .then(CommandManager.literal("cooldown")
+                            .then(CommandManager.argument("id", StringArgumentType.word())
+                                .suggests(::suggestShopIds)
+                                .then(CommandManager.argument(
+                                    "hours",
+                                    com.mojang.brigadier.arguments.IntegerArgumentType.integer(
+                                        0, MAX_COOLDOWN_HOURS
+                                    )
+                                ).executes(::customShopCooldown))
+                                .then(CommandManager.literal("reset").executes(::resetCustomShopCooldown))
+                            )
+                        )
+                        .then(CommandManager.literal("itemcooldown")
+                            .then(CommandManager.argument("id", StringArgumentType.word())
+                                .suggests(::suggestShopIds)
+                                .then(CommandManager.argument(
+                                    "hours",
+                                    com.mojang.brigadier.arguments.IntegerArgumentType.integer(
+                                        0, MAX_COOLDOWN_HOURS
+                                    )
+                                ).executes(::customShopItemCooldown))
                             )
                         )
                         .then(CommandManager.literal("enable")
@@ -585,7 +614,7 @@ object MarketCommands {
 
         // 登录补发市场开关状态：客户端据此把入口按钮置灰（开关是全局的，登录时必须同步一次）
         onPlayerJoin { player ->
-            sendToPlayer(player, MarketStatePayload(CobbleMarketConfig.marketEnabled))
+            sendToPlayer(player, com.shusheng.cobblemarket.network.marketStatePayload())
             // 待领取概况：客户端首次打开市场入口界面时据此播「离线收益」提示音
             com.shusheng.cobblemarket.network.sendPendingReturns(player, player.server)
         }
@@ -1213,6 +1242,8 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.shop.err.not_found", id))
             return 0
         }
+        // 同 id 重建的店不能继承旧冷却：删店时一并清掉
+        CustomShopCooldownState.get(source.server).clearShop(id.trim().lowercase())
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
         source.sendFeedback({
             Text.translatable("cobblemarket.shop.deleted", id, name, entries).formatted(Formatting.GREEN)
@@ -1416,6 +1447,66 @@ object MarketCommands {
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
         source.sendFeedback({
             Text.translatable("cobblemarket.shop.period_set", id, hours).formatted(Formatting.GREEN)
+        }, false)
+        return 1
+    }
+
+    /** `/market shop cooldown <id> <小时>` —— 改普通购买店的整店冷却（0 = 不开） */
+    private fun customShopCooldown(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val id = StringArgumentType.getString(context, "id")
+        val hours = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(context, "hours")
+        val state = CustomShopState.get(source.server)
+        val error = state.setCooldownHours(id, hours)
+        if (error != null) {
+            source.sendError(customShopErrorText(error))
+            return 0
+        }
+        com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
+        source.sendFeedback({
+            Text.translatable(
+                "cobblemarket.shop.cooldown_set", id, hours, state.find(id)?.itemCooldownHours ?: 0
+            ).formatted(Formatting.GREEN)
+        }, false)
+        return 1
+    }
+
+    /** `/market shop itemcooldown <id> <小时>` —— 改普通购买店「商品各自冷却」（0 = 不开） */
+    private fun customShopItemCooldown(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val id = StringArgumentType.getString(context, "id")
+        val hours = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(context, "hours")
+        val state = CustomShopState.get(source.server)
+        val error = state.setItemCooldownHours(id, hours)
+        if (error != null) {
+            source.sendError(customShopErrorText(error))
+            return 0
+        }
+        com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
+        source.sendFeedback({
+            Text.translatable(
+                "cobblemarket.shop.cooldown_set", id, state.find(id)?.cooldownHours ?: 0, hours
+            ).formatted(Formatting.GREEN)
+        }, false)
+        return 1
+    }
+
+    /** `/market shop cooldown <id> reset` —— 清空这家店所有玩家的冷却记录（设置值不动） */
+    private fun resetCustomShopCooldown(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val id = StringArgumentType.getString(context, "id")
+        val shop = CustomShopState.get(source.server).find(id) ?: run {
+            source.sendError(customShopErrorText(CustomShopError.NOT_FOUND, id))
+            return 0
+        }
+        CustomShopCooldownState.get(source.server).clearShop(shop.id)
+        com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
+        // 在线玩家补发冷却状态（否则客户端缓存还显示倒计时）
+        source.server.playerManager.playerList.forEach { online ->
+            sendToPlayer(online, com.shusheng.cobblemarket.network.PointMarketNetwork.buildCooldownStatus(online, shop))
+        }
+        source.sendFeedback({
+            Text.translatable("cobblemarket.shop.cooldown_reset", shop.id).formatted(Formatting.GREEN)
         }, false)
         return 1
     }
@@ -1746,8 +1837,11 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(name)))
             return 0
         }
-        // 同上：节点名用本地化词条
-        val nodeText = Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX))
+        // 同上：节点名用本地化词条。⚠ 也要传货币图标 —— 「%s商城」不带参数会原样显示 %s
+        val nodeText = Text.translatable(
+            "cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX),
+            CurrencyService.pointsIcon()
+        )
         if (!PermissionState.get(source.server).revoke(target.first, node)) {
             source.sendError(Text.translatable("cobblemarket.perm.not_holding", PlayerNameText.of(target.second), nodeText))
             return 0
@@ -2250,7 +2344,13 @@ object MarketCommands {
         val body = Text.literal("")
         MarketPermissions.ALL.filter { it in nodes }.forEachIndexed { i, node ->
             if (i > 0) body.append(Text.literal(", "))
-            body.append(Text.translatable("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX)))
+            // ⚠ 同 nodesText：含 %s 的词条要带货币图标
+            body.append(
+                Text.translatable(
+                    "cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX),
+                    CurrencyService.pointsIcon()
+                )
+            )
         }
         return Text.literal("")
             .append(PlayerNameText.of(playerName))

@@ -18,6 +18,7 @@ import com.shusheng.cobblemarket.network.RevokePointCodePayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
+import net.minecraft.client.gui.tooltip.Tooltip
 import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.text.MutableText
 import net.minecraft.text.Text
@@ -163,7 +164,15 @@ class PointsCodeScreen : Screen(Text.translatable("cobblemarket.points.code.titl
             iconLeft = Identifier.of("cobblemarket", "textures/gui/icon/info.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f
         )
-        // TODO(发布 1.3.0 前)：infoButton.setTooltip(...) 写清外部签名码怎么用 + 官网链接
+        // 悬停说明：怎么用自己的网站 / 发卡网自动签发兑换码（外部签名码协议）
+        infoButton.setTooltip(
+            Tooltip.of(
+                Text.translatable(
+                    "cobblemarket.points.code.tip",
+                    CurrencyService.pointsIcon(), CurrencyService.pointsIcon()
+                )
+            )
+        )
         addDrawableChild(infoButton)
 
         // 返回**回管理面板**（不是 RP 配置界面）：2026-09-25 入口从「服务器配置 → RP 配置」挪到了

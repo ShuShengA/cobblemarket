@@ -90,6 +90,9 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
     private fun updatePageButtons() {
         prevButton?.active = !pageRequestInFlight && currentPage > 1
         nextButton?.active = !pageRequestInFlight && currentPage < totalPages
+        // 边界时直接隐藏（2026-10-25 用户要求）；请求中保持可见，只有置灰
+        prevButton?.visible = currentPage > 1
+        nextButton?.visible = currentPage < totalPages
     }
 
     private fun prevPage() {

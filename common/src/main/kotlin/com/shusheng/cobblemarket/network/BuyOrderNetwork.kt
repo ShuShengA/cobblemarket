@@ -536,7 +536,7 @@ object BuyOrderNetwork {
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
-                if (marketBlocked(player)) return@execute
+                if (buyOrderPokemonBlocked(player)) return@execute
                 // 币种校验（非法拒 / RP 过两道闸）：创建是**币种唯一的来源**，此后一律读订单对象
                 val currency = validateCreateCurrency(player, payload.currency) ?: return@execute
                 if (!checkPrices(player, payload.minPrice, payload.maxPrice)) return@execute
@@ -557,12 +557,15 @@ object BuyOrderNetwork {
                     }
                     speciesKey = resolvedSpeciesKey(resolved) ?: return@execute
                 }
-                // 冻结金 = maxPrice × 1（精灵固定 1 只），扣款失败即余额不足（按这一单的币种扣）
-                if (!CurrencyService.remove(player, currency, payload.maxPrice.toLong())) {
+                // 冻结金 = maxPrice × 1 + **手续费**（2026-10-28：手续费由买家承担，发布时一并冻结；
+                // 成交时按实际成交额扣、差额与剩余手续费在关闭/过期时一起退回）
+                val now = System.currentTimeMillis()
+                val grossMax = payload.maxPrice.toLong()
+                val feeMax = deliveryFee(server, player.uuid, grossMax, now, currency)
+                if (!CurrencyService.remove(player, currency, grossMax + feeMax)) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.not_enough")))
                     return@execute
                 }
-                val now = System.currentTimeMillis()
                 val order = BuyOrder(
                     id = UUID.randomUUID(),
                     buyerUuid = player.uuid,
@@ -594,7 +597,10 @@ object BuyOrderNetwork {
                     expiresAt = now + CobbleMarketConfig.buyOrderExpiryDays * 24L * 60 * 60 * 1000,
                     status = BuyOrderStatus.OPEN,
                     returnedAt = null,
-                    currency = currency
+                    currency = currency,
+                    // 2026-10-28：手续费由买家承担 —— 发布时冻结，成交按实际额扣，剩余随关闭退回
+                    feeFrozenTotal = feeMax,
+                    feeFrozenRemaining = feeMax
                 )
                 BuyOrderState.get(server).addOrder(order)
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
@@ -610,7 +616,7 @@ object BuyOrderNetwork {
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
-                if (marketBlocked(player)) return@execute
+                if (buyOrderItemBlocked(player)) return@execute
                 val currency = validateCreateCurrency(player, payload.currency) ?: return@execute
                 if (!checkPrices(player, payload.minPrice, payload.maxPrice)) return@execute
                 if (!checkOrderLimit(server, player)) return@execute
@@ -635,9 +641,13 @@ object BuyOrderNetwork {
                     itemIdentifier.toString(), payload.componentsSpec, player.serverWorld.registryManager
                 )
                 val totalCount = payload.totalCount.coerceAtLeast(1)
+                val now = System.currentTimeMillis()
+                // 冻结金 = maxPrice × 数量 + **手续费**（2026-10-28：手续费由买家承担，发布时一并冻结）
+                val grossMax = payload.maxPrice.toLong() * totalCount
+                val feeMax = deliveryFee(server, player.uuid, grossMax, now, currency)
                 // 冻结金上限钳制：主货币后端是 Int 口径、RP 是 Long，但两种币都不接受这个量级的冻结
                 // （正常订单远到不了，超过一律拒绝，防溢出吞钱）
-                val frozen = payload.maxPrice.toLong() * totalCount
+                val frozen = grossMax + feeMax
                 if (frozen > Int.MAX_VALUE) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.too_large")))
                     return@execute
@@ -646,7 +656,6 @@ object BuyOrderNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.buy_order.not_enough")))
                     return@execute
                 }
-                val now = System.currentTimeMillis()
                 val order = BuyOrder(
                     id = UUID.randomUUID(),
                     buyerUuid = player.uuid,
@@ -672,7 +681,10 @@ object BuyOrderNetwork {
                     expiresAt = now + CobbleMarketConfig.buyOrderExpiryDays * 24L * 60 * 60 * 1000,
                     status = BuyOrderStatus.OPEN,
                     returnedAt = null,
-                    currency = currency
+                    currency = currency,
+                    // 2026-10-28：手续费由买家承担 —— 发布时冻结，成交按实际额扣，剩余随关闭退回
+                    feeFrozenTotal = feeMax,
+                    feeFrozenRemaining = feeMax
                 )
                 BuyOrderState.get(server).addOrder(order)
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
@@ -730,6 +742,8 @@ object BuyOrderNetwork {
                 }
                 // 下架前记下待确认交付的卖家（closeByBuyer 会退回货物并清空 pending）
                 val pendingSellers = order.pendingDeliveries.map { it.sellerUuid }.toSet()
+                // 退款金额要在 closeByBuyer 之前算（它会把订单置为 CLOSED 并移除）
+                val forceRefund = order.frozenRemaining()
                 if (!state.closeByBuyer(server, order)) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.not_found")))
                     return@execute
@@ -737,7 +751,10 @@ object BuyOrderNetwork {
                 // 通知买家（冻结金已退还）与待确认交付的卖家（货物已退回）；离线则入队补发
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(
                     server, order.buyerUuid,
-                    Text.translatable("cobblemarket.buy_order.force_cancelled_buyer").formatted(Formatting.RED)
+                    Text.translatable(
+                        "cobblemarket.buy_order.force_cancelled_buyer",
+                        CurrencyService.amountText(forceRefund, order.currency)
+                    ).formatted(Formatting.RED)
                 )
                 pendingSellers.forEach { seller ->
                     com.shusheng.cobblemarket.market.OfflineMessageState.notify(
@@ -761,7 +778,7 @@ object BuyOrderNetwork {
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
-                if (marketBlocked(player)) return@execute
+                if (buyOrderPokemonBlocked(player)) return@execute
                 settleExpiredAndBroadcast(server)
                 val state = BuyOrderState.get(server)
                 val order = state.getOrder(payload.orderId)
@@ -930,7 +947,7 @@ object BuyOrderNetwork {
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
-                if (marketBlocked(player)) return@execute
+                if (buyOrderItemBlocked(player)) return@execute
                 settleExpiredAndBroadcast(server)
                 val state = BuyOrderState.get(server)
                 val order = state.getOrder(payload.orderId)
@@ -1122,6 +1139,12 @@ object BuyOrderNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.cmd.not_your_listing")))
                     return@execute
                 }
+                // 类型子开关（2026-10-25）：按**订单自身的类型**判，关闭后存量求购也不可接受交付
+                if (order.type == BuyOrderType.POKEMON) {
+                    if (buyOrderPokemonBlocked(player)) return@execute
+                } else if (order.type == BuyOrderType.ITEM) {
+                    if (buyOrderItemBlocked(player)) return@execute
+                }
                 // 接受 = 冻结金结算给卖家（RP 从买家流向卖家），过买家侧同一道闸。
                 // 关掉开关后货仍悬空在订单里，等订单过期会自动退回卖家 —— 不会丢货，也不会有新的 RP 转移
                 if (pointsGateBlocked(player, order.currency)) return@execute
@@ -1137,14 +1160,24 @@ object BuyOrderNetwork {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.listing_failed")))
                     return@execute
                 }
-                // 资金结算：买家冻结金按实际价扣（差价退待领），卖家收实际价-中介费
+                // 资金结算：买家冻结金按实际价扣（差价退待领）。
+                // 2026-10-28 起**手续费由买家承担**：成交时从买家发布时冻结的手续费里扣，卖家拿全额；
+                // 旧订单（feeFrozenTotal = 0，没冻结手续费）保持旧规则 —— 手续费从卖家所得里扣，
+                // 否则冻结金不够支付「货款 + 手续费」。
                 val unitDiff = (order.maxPrice - pending.price).toLong()
                 val gross = pending.price.toLong() * pending.count
                 val fee = deliveryFee(server, order.buyerUuid, gross, now, order.currency)
+                val buyerPaysFee = order.feeFrozenTotal > 0L
                 // 差价退买家、货款给卖家：主货币进待领余额、RP **直接到账**（见 CurrencyService.creditSeller）。
                 // ⚠ RP 不进待领账本 —— 「收款」按钮与角标只统计主货币，这正是「RP 收入直接到账」的落点
                 CurrencyService.creditSeller(server, order.buyerUuid, order.currency, unitDiff * pending.count)
-                CurrencyService.creditSeller(server, pending.sellerUuid, order.currency, gross - fee)
+                if (buyerPaysFee) {
+                    // 从买家冻结的手续费里扣实际额（钳到 ≥0；多冻的差额随关闭/过期一起退）
+                    order.feeFrozenRemaining = (order.feeFrozenRemaining - fee).coerceAtLeast(0L)
+                    CurrencyService.creditSeller(server, pending.sellerUuid, order.currency, gross)
+                } else {
+                    CurrencyService.creditSeller(server, pending.sellerUuid, order.currency, gross - fee)
+                }
                 // RP 审计账本：买家按**实际价**记消费（冻结时多扣的差价已在上一行退回），卖家记实收。
                 // ⚠ 买家的钱在下单时就冻结了，这里记的是交付事件、不是扣款（见 PointsAuditLogger KDoc）
                 if (order.currency == MarketCurrency.POINTS) {
@@ -1154,7 +1187,8 @@ object BuyOrderNetwork {
                     PointsAuditLogger.logMarketTrade(
                         server, order.buyerUuid, order.buyerName,
                         pending.sellerUuid, pending.sellerName,
-                        gross, gross - fee,
+                        if (buyerPaysFee) gross + fee else gross,
+                        if (buyerPaysFee) gross else gross - fee,
                         "求购交付：$goods ×${pending.count}（中介费 $fee）",
                         "Buy order delivery: $goods x${pending.count} (fee $fee)"
                     )
@@ -1178,6 +1212,21 @@ object BuyOrderNetwork {
                 if (order.remainingCount <= 0) {
                     order.status = BuyOrderStatus.CLOSED
                     order.returnedAt = now
+                    // 新订单（手续费买家承担）：按上限预估冻结的手续费还剩一点 —— 凑满时一并退回，
+                    // 否则 removeOrder 会把这份差额留在订单里直接删掉（买家白亏）。
+                    if (order.feeFrozenRemaining > 0L) {
+                        CurrencyService.creditSeller(
+                            server, order.buyerUuid, order.currency, order.feeFrozenRemaining
+                        )
+                        sendToPlayer(
+                            player,
+                            MarketResultPayload(true, Text.translatable(
+                                "cobblemarket.buy_order.fee_diff_refunded",
+                                CurrencyService.amountText(order.feeFrozenRemaining, order.currency)
+                            ))
+                        )
+                        order.feeFrozenRemaining = 0L
+                    }
                     state.removeOrder(order.id)
                 }
                 state.markModified()
@@ -1209,6 +1258,17 @@ object BuyOrderNetwork {
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                 sendToPlayer(player, MarketResultPayload(true, Text.translatable("cobblemarket.buy_order.accepted")))
+                // 成交价低于求购上限 ⇒ 差价当场退回，给买家一条明确提示（金额按订单币种，RP 单带 RP 图标）
+                val diffRefund = unitDiff * pending.count
+                if (diffRefund > 0) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(true, Text.translatable(
+                            "cobblemarket.buy_order.diff_refunded",
+                            CurrencyService.amountText(diffRefund, order.currency)
+                        ))
+                    )
+                }
                 // 买家庆祝动画：接受交付即所有权转移（货进买家待领取，精灵单固定 1 只）
                 if (order.type == BuyOrderType.POKEMON) {
                     CelebrationNetwork.sendFromEntry(player, pending.species, pending.shiny, pending.extraData, CelebrationSource.BUY_ORDER)
@@ -1219,11 +1279,19 @@ object BuyOrderNetwork {
                     }
                 }
                 com.shusheng.cobblemarket.market.OfflineMessageState.notify(server, pending.sellerUuid,
-                    // 到账金额 + 手续费一并提示：买家付的是 gross，卖家到手 gross-fee，不说清会产生疑问。
+                    // 新规则（手续费由买家承担）：卖家拿全额，只提示到账金额；
+                    // 旧订单仍提示「到手金额 + 已扣手续费」，不说清会产生疑问。
                     // 金额单位取**订单自己的币种**（RP 单显示 RP 图标，卖家才知道到账的是哪种钱）
-                    Text.translatable("cobblemarket.buy_order.accepted_seller", order.requirementText(),
-                        CurrencyService.amountText(gross - fee, order.currency),
-                        CurrencyService.amountText(fee, order.currency)).formatted(Formatting.GREEN))
+                    if (buyerPaysFee) {
+                        Text.translatable(
+                            "cobblemarket.buy_order.accepted_seller_full", order.requirementText(),
+                            CurrencyService.amountText(gross, order.currency)
+                        ).formatted(Formatting.GREEN)
+                    } else {
+                        Text.translatable("cobblemarket.buy_order.accepted_seller", order.requirementText(),
+                            CurrencyService.amountText(gross - fee, order.currency),
+                            CurrencyService.amountText(fee, order.currency)).formatted(Formatting.GREEN)
+                    })
                 broadcastEvent(server, if (order.isOpen()) "UPDATED" else "CLOSED", buyOrderToEntry(order, server))
             }
         }
@@ -1305,7 +1373,9 @@ object BuyOrderNetwork {
      * 那两样都是金融系统的东西（持卡等级、贷款逾期），只跟主货币有关，混进来等于拿主货币的
      * 金融身份去影响 RP 费率（同 CurrencyService.supportsFeeDiscount 的口径）。
      *
-     * [payerUuid] 是**买家**：逾期翻倍看的是买家的金融状态（照原实现），钱仍从卖家所得里扣。
+     * [payerUuid] 是**买家**：逾期翻倍 / 持卡折扣都看买家的金融状态。
+     * ⚠ 2026-10-28 起手续费也**由买家付**（发布时冻结、成交时从冻结金扣），卖家拿全额；
+     *   旧订单（`feeFrozenTotal = 0`）没冻结手续费，仍按旧规则从卖家所得里扣。
      */
     private fun deliveryFee(
         server: MinecraftServer,

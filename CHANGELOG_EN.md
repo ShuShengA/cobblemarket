@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.3.2 (in development, unreleased)
+
+⚠ **Client and server must be upgraded together** (this version changes network payloads).
+
+### New Feature
+
+- **The ID card model can spin in place**: a small button at the bottom-right of the player model on the market ID card toggles between **following the mouse** and **spinning in place** (the choice is remembered); the model on ID cards shared to chat **always spins**
+- **Equipment and XP on the ID card**: a **4-slot equipment column** (helmet / chestplate / leggings / boots, with durability bars, same dialog-style frame as popups, empty slots framed too) is now shown to the left of the player model on the market ID card, and an **experience bar + level** (matching the vanilla HUD) is drawn centred along the bottom of the card. **ID cards shared to chat show them too** (a snapshot of the equipment and level at the moment of sharing)
+- **Fine-grained feature switches**: server owners can enable or disable market features individually; the main RP Shop can also be disabled on its own (new installs enable RP with the main shop off, while existing configs keep their current state)
+- **Purchase cooldowns for custom shops**: normal purchase shops can apply per-player cooldowns in hours (0 = off), in two independent layers that can be used alone or together: a **shop-wide cooldown** (after buying any slot, the whole shop is locked for that player) and a **per-item cooldown** (each item ticks separately — buying one only locks that item, the rest stay available). When both apply to the same slot, the longer one wins; a single slot can still override it in the slot editor (blank = follow the shop setting, again taking the longer one). Any slot with a cooldown is **limited to 1 unit per purchase** even with unlimited stock, and cooldowns start only after a **successful purchase** (failures, full inventory and insufficient funds do not trigger them). They use server time, survive restarts, and are cleared for a slot when it is delisted and re-listed. After creation, open **"Set cooldowns"** in the shop management screen to change both at once, and use the **Reset cooldowns** button to clear every player's cooldowns on that shop (handy for testing; asks for confirmation). Commands: `/market shop cooldown <id> <hours>` (shop-wide), `/market shop itemcooldown <id> <hours>` (per item), `/market shop cooldown <id> reset` (clear records); 0 = off
+- **Edit listed offers in place**: server owners / `points.shop` holders can **right-click** an existing offer to edit all of its fields (Pokémon specs, price, stock, cooldown and more) without delisting and re-adding it; **left-click still buys** for everyone (matching the released behaviour; left-clicking an empty slot adds). This applies to the main RP Shop and custom NPC shops; claim shops have no buying, so left-click edits there. A "Remove" button stays in the editor. **While an editor is open, purchases in that shop are paused** — the buy button greys out for other players and only plays a failure sound with a "shop owner is editing" notice; it resumes when the editor closes (or the editor disconnects). The server enforces this too, so forged buy packets are rejected
+- **Grid hover details in purchase shops**: hovering an offer in the main RP Shop or a custom purchase shop now shows the full Pokémon specs / item tooltip, with the complete unit price and limited stock as the last line (grid prices are abbreviated). Claim-shop hovers are unchanged (last line = claimable amount)
+- **Claim shops now leave claim records**: each claim in a periodic claim shop is written to the transaction history — type "Claimed" (not a sale), price shown as "Free", visible in the full history and in the claimer's personal history, never in the admin's personal history
+- **Every shop can view its own records**: purchase / claim shops get a "Sales history / Claim history" button at the top (visible only to the server owner / `points.shop` holders) listing only that shop's sales / claims. ⚠ Records created before this update carry no shop ID and will not appear here (they remain in the full history)
+- **Search in custom purchase shops**: a search box at the top-left (available to all players) searches the whole shop across all pages by Pokémon / item name; results are paginated, and clearing the search restores normal pages
+
+### Changes
+
+- **ID cards shared to chat no longer show "Online"**
+- **Removed the "credit requirement" from the black card (Genesis Card) application conditions**
+- **Buy-order fees are now paid by the buyer (the order creator)**: previously the fee was deducted from the deliverer's payout (deliver 640 → receive 608). Now the max price **plus an estimated fee** is frozen when the order is published, the actual fee is charged against that escrow at the actual delivery price, and **the deliverer receives the full amount**. Any over-frozen price difference and fee difference is refunded to the buyer on delivery / close / expiry with a chat notice (amounts use the order's currency, RP orders show the RP icon). ⚠ Orders created before this update have no frozen fee and still deduct it from the deliverer
+
+### Fixes
+
+- **Seller avatars no longer fall back to the default skin when the player is offline**: the player avatars in the Pokemon market, auction house (both tabs), buy orders (both tabs), the Meowth Bank card-holder lists and both admin screens now **cache the real skin** and fetch it from Mojang for offline players, instead of locking onto the default Steve forever once a single lookup misses
+- **Buy-order deliveries are no longer capped at 64 per delivery**: the delivery dialog used to compute the limit from a **single inventory stack** (at most one group), so even with hundreds or thousands in your inventory you could only deliver one group at a time and had to wait for the buyer to confirm before delivering again. It now uses the **total amount of that variant** in your inventory, so you can deliver a whole buy order in one go
+- **Shop sales no longer count towards the lister's personal transaction history**: purchases from the main RP Shop and custom NPC shops now appear only in the full transaction history (buyers still see their own purchases). Custom-shop sales show the **shop name** in the seller column instead of "Shop"
+- **Underlying lists no longer highlight rows while a dialog is open**: fixed across the Pokémon market, auction house, buy confirmation, admin lists, blacklist, price limits, permissions, loan history, buy orders, item selling, custom shop management and other screens; rows stay visible (dimmed by the overlay) but no longer react to the mouse until the dialog closes
+
 ## 1.3.1 (released)
 
 ⚠ **Client and server must be upgraded together** (this version changes network payloads).

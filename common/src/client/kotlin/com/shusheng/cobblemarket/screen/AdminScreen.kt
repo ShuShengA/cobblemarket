@@ -141,7 +141,10 @@ class AdminScreen : Screen(Text.translatable("cobblemarket.op.title")) {
     ): TextureButton {
         val btn = addMenuButton(x, y, w, h, text, { openIfPermitted(node, open) })
         val key = tooltipKey ?: ("cobblemarket.perm.node." + node.removePrefix(MarketPermissions.PREFIX) + ".desc")
-        btn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable(key)))
+        // ⚠ 节点说明里也可能有 %s（RP 商城 / 查余额 / 兑换码 / 充值订单）—— 传图标，多余参数会被忽略
+        btn.setTooltip(
+            net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable(key, CurrencyService.pointsIcon()))
+        )
         permRefreshers += { btn.dimmed = !ClientPermissionCache.has(node) }
         return btn
     }

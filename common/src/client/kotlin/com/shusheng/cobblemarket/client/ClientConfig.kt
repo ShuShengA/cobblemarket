@@ -164,6 +164,13 @@ object ClientConfig {
     var updateNotice: Boolean = true
         private set
 
+    /**
+     * 市场 ID 卡的玩家模型是否**原地旋转**（默认关 = 跟随鼠标）。
+     * 由 ID 卡界面模型右下角的小按钮切换；分享到聊天栏的 ID 卡**始终旋转**，不受此项影响。
+     */
+    var idCardSpin: Boolean = false
+        private set
+
     fun load() {
         if (!configFile.exists()) {
             save()
@@ -205,6 +212,8 @@ object ClientConfig {
             balanceHudY = ((data["balanceHudY"] as? Double)?.toFloat() ?: 0f).coerceIn(0f, 1f)
             // 无字段（旧版本升级）按新默认「开」
             updateNotice = data["updateNotice"] as? Boolean ?: true
+            // ID 卡模型旋转：无字段（旧版本升级）按默认「关」= 跟随鼠标
+            idCardSpin = data["idCardSpin"] as? Boolean ?: false
             // 通知（2026-10-07 新增）：无字段（旧版本升级）同样按新默认「开」
             marketNotice = data["marketNotice"] as? Boolean ?: true
             marketNoticeSound = data["marketNoticeSound"] as? Boolean ?: true
@@ -283,6 +292,12 @@ object ClientConfig {
 
     fun setCustomCursor(v: Boolean) {
         customCursor = v
+        save()
+    }
+
+    /** ID 卡模型旋转模式（ID 卡界面里模型右下角的小按钮切换） */
+    fun setIdCardSpin(v: Boolean) {
+        idCardSpin = v
         save()
     }
 
@@ -365,6 +380,7 @@ object ClientConfig {
                             "updateNotice" to "有新版本可用时是否提示（个人设置，默认开；可在市场入口界面右下角的设置里改）。开启时**每次进入世界后**、第一次打开市场界面会提示一次（退出存档重进、重连服务器都算），直到你更新为止。查的是官网的一个版本文件，不带任何玩家信息 / Whether to show a chat notice when a newer version is available (personal setting, on by default; editable via the gear button on the market entry screen). When on, it shows once per world join — the first time you open a market screen (leaving and re-entering a world counts too) — until you update. It reads a single version file from our website and sends no player information",
                             "marketNotice" to "别人在市场挂单 / 拍卖场上架时，是否在屏幕顶部弹一个圆形气泡通知（个人设置，默认开；可在市场入口界面右下角的设置里改）。关掉则既不显示也不响。⚠ 只管这个气泡 —— 拍卖场原本就有的聊天栏播报不受它影响 / Whether to pop a round on-screen notice at the top of the screen when someone else lists an item or Pokémon on the market or auctions (personal setting, on by default; editable via the gear button on the market entry screen). Off hides the notice and mutes it. ⚠ This covers the bubble only — the auction house's own chat broadcast is unaffected",
                             "marketNoticeSound" to "上面那个通知的提示音（个人设置，默认开；只在通知本身开着时有效）/ The sound played with the market listing notice above (personal setting, on by default; only meaningful while the notice itself is on)",
+                            "idCardSpin" to "市场 ID 卡的玩家模型是否原地旋转（false=跟随鼠标，默认；由 ID 卡里模型右下角的小按钮切换；分享到聊天栏的 ID 卡始终旋转）/ Whether the player model on the market ID card spins in place (false=follow the mouse, default; toggled by the small button at the bottom-right of the model; ID cards shared to chat always spin)",
                             "_note" to "服主还可在服务端配置 cobblemarket.json 的 celebrationAnimationEnabled 里全局关闭动画，那种情况下本文件的开关不起作用 / The server owner can also disable animations globally via celebrationAnimationEnabled in the server-side cobblemarket.json, in which case these switches have no effect"
                         ),
                         "celebrationOnMarketBuy" to celebrationOnMarketBuy,
@@ -386,7 +402,8 @@ object ClientConfig {
                         "balanceHudY" to balanceHudY,
                         "updateNotice" to updateNotice,
                         "marketNotice" to marketNotice,
-                        "marketNoticeSound" to marketNoticeSound
+                        "marketNoticeSound" to marketNoticeSound,
+                        "idCardSpin" to idCardSpin
                     )
                 )
             )

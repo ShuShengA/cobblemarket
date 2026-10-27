@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.screen
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.util.TextUtil
 import com.shusheng.cobblemarket.client.LoadState
+import com.shusheng.cobblemarket.client.PlayerSkinCache
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
@@ -37,6 +38,7 @@ import com.shusheng.cobblemarket.network.DeliverItemBuyOrderPayload
 import com.shusheng.cobblemarket.network.ForceCancelBuyOrderPayload
 import com.shusheng.cobblemarket.network.DeliverPokemonBuyOrderPayload
 import com.shusheng.cobblemarket.network.MarketResultPayload
+import com.shusheng.cobblemarket.network.itemsEqualForTrading
 import com.shusheng.cobblemarket.network.PokemonPreview
 import com.shusheng.cobblemarket.network.RejectPendingDeliverPayload
 import com.shusheng.cobblemarket.network.RequestBuyOrderListPayload
@@ -1086,9 +1088,10 @@ class BuyOrderScreen(
         val listAreaBottom = startY + visibleRows * rowHeight
         val count = displayCount()
 
+        // 弹窗打开时冻结行悬停（用户 2026-10-27 报同类问题）
         hoveredRow = -1
         val rowL = rowLeftX()
-        if (mouseX in rowL..(rowL + rowW()) && mouseY in startY..listAreaBottom) {
+        if (!anyDialogOpen() && mouseX in rowL..(rowL + rowW()) && mouseY in startY..listAreaBottom) {
             val row = (mouseY - startY) / rowHeight
             val shownCount = minOf(visibleRows, count - scrollOffset)
             if (row in 0 until shownCount) hoveredRow = row
@@ -1464,19 +1467,8 @@ class BuyOrderScreen(
     }
 
     // 买家头像（照精灵市场）
-    private val defaultSkinTexture = Identifier.of("minecraft", "textures/entity/player/wide/steve.png")
-
-    // 皮肤纹理缓存：每行每帧创建 GameProfile 并查 skinProvider 是分配热点，首个结果按 UUID 缓存
-    private val skinCache = mutableMapOf<UUID, Identifier>()
-
-    private fun getSellerSkin(uuid: UUID, name: String): Identifier {
-        skinCache[uuid]?.let { return it }
-        val skin = client?.networkHandler?.getPlayerListEntry(uuid)?.skinTextures?.texture()
-            ?: client?.skinProvider?.getSkinTextures(com.mojang.authlib.GameProfile(uuid, name))?.texture()
-            ?: defaultSkinTexture
-        skinCache[uuid] = skin
-        return skin
-    }
+    /** 买家头像纹理（共用 [PlayerSkinCache]：离线玩家会异步拉取正版皮肤，不再锁死默认头像） */
+    private fun getSellerSkin(uuid: UUID, name: String): Identifier = PlayerSkinCache.skinFor(uuid, name)
 
     private fun drawSellerAvatar(context: DrawContext, uuid: UUID, name: String, x: Int, y: Int, size: Int) {
         val texture = getSellerSkin(uuid, name)
@@ -1490,8 +1482,15 @@ class BuyOrderScreen(
     // ── 创建对话框 ──
 
     private fun openCreateDialog() {
-        // 重置对话框字段（每次打开都是新表单）
-        createTab = 0
+        // 类型子开关（2026-10-25）：被关闭的类型没有 tab；两个都关时直接不打开
+        val pokemonOk = com.shusheng.cobblemarket.client.MarketStateCache.buyOrderPokemonEnabled
+        val itemOk = com.shusheng.cobblemarket.client.MarketStateCache.buyOrderItemEnabled
+        if (!pokemonOk && !itemOk) {
+            com.shusheng.cobblemarket.client.playFailSound()
+            return
+        }
+        // 重置对话框字段（每次打开都是新表单）；默认落在仍可用的类型上
+        createTab = if (pokemonOk) 0 else 1
         // 币种跟着「当前在看哪种币」——看 RP 单时点发布，默认就发 RP 单（单位对不上会差好几个数量级）
         createCurrency = currency
         // 表单滚动位置也归零（上次的滚动量留着的话，一打开就停在中间）
@@ -1574,11 +1573,16 @@ class BuyOrderScreen(
         val centerX = width / 2
         val dialogY = createDialogY()
 
-        // tab 按钮：精灵 | 物品
+        // tab 按钮：精灵 | 物品 —— 被分项开关关闭的类型**不建 tab**（直接隐藏，2026-10-25）
         val tabW = 60
-        listOf(0, 1).forEachIndexed { i, tab ->
+        val availableTypes = listOf(0, 1).filter {
+            if (it == 0) com.shusheng.cobblemarket.client.MarketStateCache.buyOrderPokemonEnabled
+            else com.shusheng.cobblemarket.client.MarketStateCache.buyOrderItemEnabled
+        }
+        val tabsW = tabW * availableTypes.size + 4 * (availableTypes.size - 1).coerceAtLeast(0)
+        availableTypes.forEachIndexed { i, tab ->
             val btn = NineSliceButton(
-                centerX - tabW - 2 + i * (tabW + 4), dialogY + 28, tabW, 14,
+                centerX - tabsW / 2 + i * (tabW + 4), dialogY + 28, tabW, 14,
                 Text.literal(""),
                 { if (createTab != tab) { createTab = tab; formListOpen = false; abilityListOpen = false; natureListOpen = false; itemListOpen = false; rebuildCreateDialogWidgets() } },
                 texture = BUY_ORDER_BUTTON_TEXTURE,
@@ -3069,7 +3073,7 @@ class BuyOrderScreen(
                 deliverVariant = variantGroups(entry.itemId).firstOrNull()?.first
             }
 
-            val backCount = deliverVariant?.count ?: 0
+            val backCount = deliverVariant?.let { variantTotal(entry.itemId, it) } ?: 0
             val prefillCount = minOf(entry.remainingCount, backCount).coerceAtLeast(1)
             deliverCountField = TextFieldWidget(textRenderer, centerX - 40, dialogY + 62 + shift, 80, 16, Text.literal(""))
             deliverCountField?.setPlaceholder(Text.translatable("cobblemarket.buy_order.deliver_count").formatted(Formatting.GRAY))
@@ -3217,7 +3221,8 @@ class BuyOrderScreen(
                 // 名称完全显示（不截断——物品名本身不长，弹窗内空间足够）
                 // 名字走**稀有度色**（`variant.name.string` 会洗掉样式）；数量段保持灰
                 val name = com.shusheng.cobblemarket.util.TextUtil.rarityColoredName(variant) ?: variant.name
-                val countStr = "×${variant.count}"
+                // 数量显示**该形态的总数**（跨栈累加），不是示例栈的 count —— 否则背包里有 138 个也只显示 ×64
+                val countStr = "×${variantTotal(entry.itemId, variant)}"
                 // 整体居中：图标 16 + 间距 4 + 名称 + 间距 4 + 数量
                 val totalW = 16 + 4 + textRenderer.getWidth(name) + 4 + textRenderer.getWidth(countStr)
                 val startX = centerX - totalW / 2
@@ -3341,6 +3346,15 @@ class BuyOrderScreen(
         return groups
     }
 
+    /**
+     * 与 [variant] 组件一致的**总数量**（跨多个背包栈累加，口径同物品市场上架的 `SellItem.count`）。
+     *
+     * ⚠ 交付上限必须用它，不能用 `variant.count` —— 那只是**单个**示例栈的数量（最多 64），
+     *   而求购单动辄几百上千个，用单栈数量会把一次交付限制在一组（2026-10-27 用户实测报出）。
+     */
+    private fun variantTotal(itemId: String, variant: ItemStack): Int =
+        variantGroups(itemId).firstOrNull { itemsEqualForTrading(it.first, variant) }?.second ?: 0
+
     // 确认按钮保持可点：点击时逐项校验并给出明确红字反馈（禁用按钮点击无反应，玩家不知道原因）
     private fun updateDeliverConfirmActive() {
         deliverConfirmButton?.active = true
@@ -3367,7 +3381,7 @@ class BuyOrderScreen(
             sendToServer(DeliverPokemonBuyOrderPayload(entry.id, p.uuid, price))
         } else {
             val count = deliverCountField?.text?.toIntOrNull() ?: 0
-            val variantCount = deliverVariant?.count ?: 0
+            val variantCount = deliverVariant?.let { variantTotal(entry.itemId, it) } ?: 0
             if (count !in 1..entry.remainingCount || count > variantCount) {
                 client?.player?.sendMessage(Text.translatable("cobblemarket.buy_order.wrong_count").formatted(Formatting.RED), false)
                 return

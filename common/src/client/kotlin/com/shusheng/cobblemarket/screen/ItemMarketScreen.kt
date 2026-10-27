@@ -705,7 +705,10 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
 
     private fun updatePageButtons() {
         prevButton?.active = currentPage > 1
+        // 边界时直接隐藏（2026-10-25 用户要求）；弹窗开着时也保持隐藏（不动弹窗逻辑）
+        prevButton?.visible = currentPage > 1 && selectedEntry == null && cancelEntry == null
         nextButton?.active = currentPage < totalPages
+        nextButton?.visible = currentPage < totalPages && selectedEntry == null && cancelEntry == null
     }
 
     private fun prevPage() {
@@ -1141,8 +1144,8 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         sortButton?.visible = visible
         resetButton?.visible = visible
         mineButton?.visible = visible
-        prevButton?.visible = visible
-        nextButton?.visible = visible
+        prevButton?.visible = visible && currentPage > 1
+        nextButton?.visible = visible && currentPage < totalPages
     }
 
     private fun openBuyDialog(entry: ItemEntry) {

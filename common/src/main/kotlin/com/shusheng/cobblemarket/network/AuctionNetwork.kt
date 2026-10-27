@@ -445,7 +445,7 @@ object AuctionNetwork {
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
-                if (marketBlocked(player)) return@execute
+                if (auctionPokemonBlocked(player)) return@execute
                 // 币种（创建类请求）：非法值拒绝 + RP 两道闸；非空即通过
                 val currency = validateCreateCurrency(player, payload.currency) ?: return@execute
                 if (!checkStartingPrice(player, payload.startingPrice)) return@execute
@@ -601,7 +601,7 @@ object AuctionNetwork {
             val server = player.server
             server.execute {
                 if (banBlocked(server, player)) return@execute
-                if (marketBlocked(player)) return@execute
+                if (auctionItemBlocked(player)) return@execute
                 // 币种（创建类请求）：非法值拒绝 + RP 两道闸
                 val currency = validateCreateCurrency(player, payload.currency) ?: return@execute
                 if (!checkStartingPrice(player, payload.startingPrice)) return@execute
@@ -768,6 +768,12 @@ object AuctionNetwork {
                 if (auction == null || !auction.isActive()) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.auction.ended")))
                     return@execute
+                }
+                // 类型子开关（2026-10-25）：按**拍卖自身的类型**判，关闭后存量拍卖也不可出价
+                if (auction.type == AuctionType.POKEMON) {
+                    if (auctionPokemonBlocked(player)) return@execute
+                } else if (auction.type == AuctionType.ITEM) {
+                    if (auctionItemBlocked(player)) return@execute
                 }
                 // 到期即拒绝：不依赖 15 秒结算节流，防止过期出价被反狙击复活拍卖
                 if (auction.endsAt <= System.currentTimeMillis()) {

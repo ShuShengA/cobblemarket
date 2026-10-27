@@ -336,7 +336,6 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             blackCardSelfApply = p?.blackCardSelfApply ?: false,
             blackCardApplyAsset = p?.blackCardApplyAsset ?: 0L,
             blackCardApplyVolume = p?.blackCardApplyVolume ?: 0L,
-            blackCardApplyCredit = p?.blackCardApplyCredit ?: 0L,
             blackCardApplyDeposit = p?.blackCardApplyDeposit ?: 0L,
             blackCardApplyNoOverdue = p?.blackCardApplyNoOverdue ?: false,
             blackCardApplySeen = p?.blackCardApplySeen ?: 0L,
@@ -350,6 +349,14 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             overdueFreeze = intOr("overdueFreeze", p?.overdueFreeze ?: 14),
             overdueBadDebt = intOr("overdueBadDebt", p?.overdueBadDebt ?: 30),
             shareCooldownSeconds = p?.shareCooldownSeconds ?: 10,
+            pokemonMarketEnabled = p?.pokemonMarketEnabled ?: true,
+            itemMarketEnabled = p?.itemMarketEnabled ?: true,
+            auctionEnabled = p?.auctionEnabled ?: true,
+            buyOrderEnabled = p?.buyOrderEnabled ?: true,
+            auctionPokemonEnabled = p?.auctionPokemonEnabled ?: true,
+            auctionItemEnabled = p?.auctionItemEnabled ?: true,
+            buyOrderPokemonEnabled = p?.buyOrderPokemonEnabled ?: true,
+            buyOrderItemEnabled = p?.buyOrderItemEnabled ?: true,
         ))
         savedToastUntil = System.currentTimeMillis() + 1500
     }

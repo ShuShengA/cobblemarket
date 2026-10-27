@@ -54,15 +54,21 @@ data class PointsStatusPayload(
      * 客户端据此决定上架界面的货币切换按钮显不显示 —— 关着时玩家只能用主货币定价。
      * 服务端上架请求里也会再拦一道（这里只是不给玩家白点）。
      */
-    val marketEnabled: Boolean = false
+    val marketEnabled: Boolean = false,
+    /** 主 RP 商城开关（`pointsMainShopEnabled`）：关闭时入口按钮置灰，自定义 NPC 商店不受影响 */
+    val mainShopEnabled: Boolean = false
 ) : CustomPayload {
     override fun getId() = ID
 
     companion object {
         val ID = CustomPayload.Id<PointsStatusPayload>(CobbleMarket.id("points_status"))
         val CODEC: PacketCodec<PacketByteBuf, PointsStatusPayload> = PacketCodec.of(
-            { p, b -> b.writeBoolean(p.enabled); b.writeBoolean(p.marketEnabled) },
-            { b -> PointsStatusPayload(b.readBoolean(), b.readBoolean()) }
+            { p, b ->
+                b.writeBoolean(p.enabled)
+                b.writeBoolean(p.marketEnabled)
+                b.writeBoolean(p.mainShopEnabled)
+            },
+            { b -> PointsStatusPayload(b.readBoolean(), b.readBoolean(), b.readBoolean()) }
         )
     }
 }
@@ -479,7 +485,9 @@ data class PointsConfigPayload(
      * `CobbleMarketConfig.pointsRewardsEnabled`）。
      * ⚠ 改这个字段会**同时**让 `PointsRewards` 整块开关跟着变 —— 它就是那个开关的界面形态。
      */
-    val pointsRewardsEnabled: Boolean = false
+    val pointsRewardsEnabled: Boolean = false,
+    /** 主 RP 商城开关（默认关）：关闭后入口置灰；自定义 NPC 商店不受影响 */
+    val mainShopEnabled: Boolean = false
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -508,6 +516,7 @@ data class PointsConfigPayload(
                     b.writeString(t.icon, MAX_FILE_NAME_LENGTH)
                 }
                 b.writeBoolean(p.pointsRewardsEnabled)
+                b.writeBoolean(p.mainShopEnabled)
             },
             { b ->
                 val pointsEnabled = b.readBoolean()
@@ -539,6 +548,7 @@ data class PointsConfigPayload(
                     )
                 }
                 val pointsRewardsEnabled = b.readBoolean()
+                val mainShopEnabled = b.readBoolean()
                 // ⚠ 具名参数：位置参数在字段增删时会静默错位（加 defaultIcon 时就撞到过一次）
                 PointsConfigPayload(
                     pointsEnabled = pointsEnabled,
@@ -554,7 +564,8 @@ data class PointsConfigPayload(
                     pointsItemFee = pointsItemFee,
                     pointsAuctionFee = pointsAuctionFee,
                     pointsBuyOrderFee = pointsBuyOrderFee,
-                    pointsRewardsEnabled = pointsRewardsEnabled
+                    pointsRewardsEnabled = pointsRewardsEnabled,
+                    mainShopEnabled = mainShopEnabled
                 )
             }
         )
@@ -601,7 +612,9 @@ data class SavePointsConfigPayload(
      * （见 `CobbleMarketConfig.pointsRewardsEnabled`）。
      * ⚠ 这是本模组**唯一会自动发 RP** 的开关，界面侧点开启时会弹确认窗 + 5 秒冷静期。
      */
-    val pointsRewardsEnabled: Boolean = false
+    val pointsRewardsEnabled: Boolean = false,
+    /** 主 RP 商城开关（默认关）：关闭后入口置灰；自定义 NPC 商店不受影响 */
+    val mainShopEnabled: Boolean = false
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -630,6 +643,7 @@ data class SavePointsConfigPayload(
                     b.writeString(t.icon, MAX_FILE_NAME_LENGTH)
                 }
                 b.writeBoolean(p.pointsRewardsEnabled)
+                b.writeBoolean(p.mainShopEnabled)
             },
             { b ->
                 val pointsEnabled = b.readBoolean()
@@ -661,6 +675,7 @@ data class SavePointsConfigPayload(
                     )
                 }
                 val pointsRewardsEnabled = b.readBoolean()
+                val mainShopEnabled = b.readBoolean()
                 // ⚠ 具名参数（同上）
                 SavePointsConfigPayload(
                     pointsEnabled = pointsEnabled,
@@ -676,7 +691,8 @@ data class SavePointsConfigPayload(
                     pointsItemFee = pointsItemFee,
                     pointsAuctionFee = pointsAuctionFee,
                     pointsBuyOrderFee = pointsBuyOrderFee,
-                    pointsRewardsEnabled = pointsRewardsEnabled
+                    pointsRewardsEnabled = pointsRewardsEnabled,
+                    mainShopEnabled = mainShopEnabled
                 )
             }
         )
@@ -1014,6 +1030,7 @@ object PointsNetwork {
                     )
                 }
                 CobbleMarketConfig.setPointsRewardsEnabled(payload.pointsRewardsEnabled)
+                CobbleMarketConfig.setPointsMainShopEnabled(payload.mainShopEnabled)
                 // RP 的四个费率（%）—— setter 只改内存，统一下面 save() 落盘
                 CobbleMarketConfig.setPointsPokemonListingFeePercent(payload.pointsPokemonFee)
                 CobbleMarketConfig.setPointsItemListingFeePercent(payload.pointsItemFee)
@@ -1033,7 +1050,8 @@ object PointsNetwork {
                     sendToPlayer(
                         it,
                         PointsStatusPayload(
-                            CobbleMarketConfig.pointsEnabled, CobbleMarketConfig.pointsMarketEnabled
+                            CobbleMarketConfig.pointsEnabled, CobbleMarketConfig.pointsMarketEnabled,
+                            CobbleMarketConfig.pointsMainShopEnabled
                         )
                     )
                     sendShopInfo(server, it)
@@ -1120,7 +1138,7 @@ object PointsNetwork {
         onPlayerJoin { player ->
             sendToPlayer(
                 player,
-                PointsStatusPayload(CobbleMarketConfig.pointsEnabled, CobbleMarketConfig.pointsMarketEnabled)
+                PointsStatusPayload(CobbleMarketConfig.pointsEnabled, CobbleMarketConfig.pointsMarketEnabled, CobbleMarketConfig.pointsMainShopEnabled)
             )
         }
 
@@ -1538,7 +1556,8 @@ object PointsNetwork {
         pointsItemFee = CobbleMarketConfig.pointsItemListingFeePercent,
         pointsAuctionFee = CobbleMarketConfig.pointsAuctionFeePercent,
         pointsBuyOrderFee = CobbleMarketConfig.pointsBuyOrderFeePercent,
-        pointsRewardsEnabled = CobbleMarketConfig.pointsRewardsEnabled
+        pointsRewardsEnabled = CobbleMarketConfig.pointsRewardsEnabled,
+        mainShopEnabled = CobbleMarketConfig.pointsMainShopEnabled
     )
 
     private fun sendShopInfo(server: MinecraftServer, player: ServerPlayerEntity) {

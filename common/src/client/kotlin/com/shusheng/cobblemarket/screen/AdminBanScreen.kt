@@ -805,8 +805,11 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         val listAreaBottom = startY + visibleRows * rowHeight
         val rowCount = if (currentTab == 0) bans.size else changeLines.size
 
+        // 弹窗打开时冻结行悬停（用户 2026-10-27 报同类问题）
         hoveredRow = -1
-        if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom) {
+        if (pendingBanName.isEmpty() &&
+            mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom
+        ) {
             val row = (mouseY - startY) / rowHeight
             val shownCount = minOf(visibleRows, rowCount - scrollOffset)
             if (row in 0 until shownCount) hoveredRow = row

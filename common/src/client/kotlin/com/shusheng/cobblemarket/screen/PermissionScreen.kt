@@ -388,6 +388,12 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
      */
     private fun nodeLabel(node: String): String {
         val short = node.removePrefix(MarketPermissions.PREFIX)
+        // ⚠ 这里是**纯字符串**渲染（行 / 变更记录 / 悬停都用 String）；
+        //   RP 图标是自定义字体的 U+E000，拼进字符串会丢字体变成方块或 %s。
+        //   带 %s 的节点（points.shop = 「%s商城」）优先取 `.plain` 词条。
+        val plainKey = "cobblemarket.perm.node.$short.plain"
+        val plain = Text.translatable(plainKey)
+        if (plain.string != plainKey) return plain.string
         val key = "cobblemarket.perm.node.$short"
         val t = Text.translatable(key)
         return if (t.string == key) short else t.string
@@ -653,8 +659,11 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
         val startY = listStartY()
         val listAreaBottom = startY + visibleRows * rowHeight
 
+        // 弹窗打开时冻结行悬停（用户 2026-10-27 报同类问题）
         hoveredRow = -1
-        if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom) {
+        if (editingEntry == null &&
+            mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom
+        ) {
             val row = (mouseY - startY) / rowHeight
             // 悬停索引按"当前显示的行"算（与 render/rebuildRowButtons 同一套 drop+take），
             // 不能拿它当原始索引去查全量列表

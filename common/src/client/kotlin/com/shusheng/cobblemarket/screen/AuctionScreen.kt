@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.util.TypeFilter
 import com.shusheng.cobblemarket.client.LoadState
+import com.shusheng.cobblemarket.client.PlayerSkinCache
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
@@ -520,19 +521,8 @@ class AuctionScreen(
     }
 
     // 卖家头像（照搬精灵市场）
-    private val defaultSkinTexture = Identifier.of("minecraft", "textures/entity/player/wide/steve.png")
-
-    // 皮肤纹理缓存：每行每帧创建 GameProfile 并查 skinProvider 是分配热点，首个结果按 UUID 缓存
-    private val skinCache = mutableMapOf<UUID, Identifier>()
-
-    private fun getSellerSkin(uuid: UUID, name: String): Identifier {
-        skinCache[uuid]?.let { return it }
-        val skin = client?.networkHandler?.getPlayerListEntry(uuid)?.skinTextures?.texture()
-            ?: client?.skinProvider?.getSkinTextures(GameProfile(uuid, name))?.texture()
-            ?: defaultSkinTexture
-        skinCache[uuid] = skin
-        return skin
-    }
+    /** 卖家头像纹理（共用 [PlayerSkinCache]：离线玩家会异步拉取正版皮肤，不再锁死默认头像） */
+    private fun getSellerSkin(uuid: UUID, name: String): Identifier = PlayerSkinCache.skinFor(uuid, name)
 
     private fun drawSellerAvatar(context: DrawContext, uuid: UUID, name: String, x: Int, y: Int, size: Int) {
         val texture = getSellerSkin(uuid, name)
@@ -598,6 +588,11 @@ class AuctionScreen(
 
     override fun init() {
         super.init()
+        // 类型子开关（2026-10-25）：相应 tab 直接隐藏；当前 tab 若已不可用，回落到可用的列表 tab
+        val tabs = availableTabs()
+        if (tabs.none { it.first == currentTab }) {
+            currentTab = tabs.firstOrNull { it.first == 0 || it.first == 1 }?.first ?: 2
+        }
         sendToServer(RequestBalancePayload())
         val centerX = width / 2
         val leftX = centerX - panelWidth / 2
@@ -628,15 +623,14 @@ class AuctionScreen(
             addDrawableChild(it)
         }
 
-        // tab 按钮 + 规则按钮：显示顺序 我的 | 精灵 | 物品 | 规则，四个按钮整体水平居中
+        // tab 按钮 + 规则按钮：显示顺序 我的 | 精灵 | 物品 | 规则，整体水平居中
+        // 类型子开关关闭时**不建对应 tab**（直接隐藏，2026-10-25），宽度随之收窄
         val tabW = 62
         val rulesW = 50
-        val totalW = tabW * 3 + rulesW + 2 * 3
+        val totalW = tabW * tabs.size + rulesW + 2 * tabs.size
         val tabStart = centerX - totalW / 2
         tabButtons.clear()
-        // 显示顺序：我的 | 精灵 | 物品（tabOrder 映射到真实 tab 索引，switchTab 语义不变）
-        val tabOrder = listOf(2, 0, 1)
-        tabOrder.forEachIndexed { i, tabIndex ->
+        tabs.forEachIndexed { i, (tabIndex, _) ->
             val btn = NineSliceButton(
                 tabStart + i * (tabW + 2), 32, tabW, 14,
                 Text.literal(""), { switchTab(tabIndex) }
@@ -648,7 +642,7 @@ class AuctionScreen(
 
         // 规则按钮：tab 组最后一位（悬停显示自绘规则面板，标题金/正文白/重点红/项间分割线）
         val rulesBtn = NineSliceButton(
-            tabStart + 3 * (tabW + 2), 32, rulesW, 14,
+            tabStart + tabs.size * (tabW + 2), 32, rulesW, 14,
             Text.translatable("cobblemarket.auction.rules"),
             { }
         )
@@ -1374,15 +1368,25 @@ class AuctionScreen(
         }
     }
 
+    /** 当前可用的 tab（真实索引, 词条）：我的始终在；精灵 / 物品按分项开关显示或隐藏 */
+    private fun availableTabs(): List<Pair<Int, String>> = buildList {
+        add(2 to "cobblemarket.auction.tab_mine")
+        if (com.shusheng.cobblemarket.client.MarketStateCache.auctionPokemonEnabled) {
+            add(0 to "cobblemarket.auction.tab_pokemon")
+        }
+        if (com.shusheng.cobblemarket.client.MarketStateCache.auctionItemEnabled) {
+            add(1 to "cobblemarket.auction.tab_item")
+        }
+    }
+
     private fun updateTabButtons() {
-        // 与 init 的 tabOrder 一致：显示顺序 我的 | 精灵 | 物品
-        val keys = listOf("cobblemarket.auction.tab_mine", "cobblemarket.auction.tab_pokemon", "cobblemarket.auction.tab_item")
-        val tabOrder = listOf(2, 0, 1)
+        // 与 init 共用 [availableTabs]：显示顺序 我的 | 精灵 | 物品（被关闭的类型不出现）
+        val tabs = availableTabs()
         tabButtons.forEachIndexed { i, btn ->
-            val label = Text.translatable(keys[i]).string
-            btn.setMessage(Text.literal(label))
+            val (tabIndex, key) = tabs.getOrNull(i) ?: return@forEachIndexed
+            btn.setMessage(Text.literal(Text.translatable(key).string))
             // 选中的 tab 靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `● `
-            btn.selectedVisual = currentTab == tabOrder[i]
+            btn.selectedVisual = currentTab == tabIndex
         }
     }
 
@@ -2382,8 +2386,11 @@ class AuctionScreen(
         val listAreaBottom = startY + visibleRows * rowHeight
         val count = displayCount()
 
+        // 弹窗打开时冻结行悬停（用户 2026-10-27 报同类问题）
         hoveredRow = -1
-        if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom) {
+        if (bidEntry == null &&
+            mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom
+        ) {
             val row = (mouseY - startY) / rowHeight
             val shownCount = minOf(visibleRows, count - scrollOffset)
             if (row in 0 until shownCount) hoveredRow = row

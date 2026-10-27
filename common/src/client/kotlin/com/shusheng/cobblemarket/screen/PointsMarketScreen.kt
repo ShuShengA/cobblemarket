@@ -9,7 +9,10 @@ import com.cobblemon.mod.common.pokemon.PokemonSizeCategory
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.cobblemon.mod.common.pokemon.Species
 import com.shusheng.cobblemarket.client.ClientPermissionCache
+import com.shusheng.cobblemarket.client.CloseAnimation
+import com.shusheng.cobblemarket.client.CustomCloseAnimationScreen
 import com.shusheng.cobblemarket.client.CustomShopClaimCache
+import com.shusheng.cobblemarket.client.CustomShopCooldownCache
 import com.shusheng.cobblemarket.client.ItemClaimFlyAnimation
 import com.shusheng.cobblemarket.client.ItemComponentsDisplay
 import com.shusheng.cobblemarket.client.PointMarketCache
@@ -22,12 +25,12 @@ import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.playButtonClickSound
-import com.shusheng.cobblemarket.network.UpdatePointMarketStockPayload
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.CustomShopMode
 import com.shusheng.cobblemarket.currency.CustomShopType
 import com.shusheng.cobblemarket.currency.DEFAULT_CLAIM_HOURS
+import com.shusheng.cobblemarket.currency.MAX_COOLDOWN_HOURS
 import com.shusheng.cobblemarket.currency.MAIN_SHOP_ID
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.PointMarketService
@@ -39,6 +42,9 @@ import com.shusheng.cobblemarket.market.ItemRuleComponents
 import com.shusheng.cobblemarket.network.BuyPointMarketEntryPayload
 import com.shusheng.cobblemarket.network.ClaimCustomShopPayload
 import com.shusheng.cobblemarket.network.MarketResultPayload
+import com.shusheng.cobblemarket.network.PointMarketSearchPayload
+import com.shusheng.cobblemarket.network.PointMarketSlotInfo
+import com.shusheng.cobblemarket.network.SearchPointMarketPayload
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.currency.PointShopSnapshotState
 import com.shusheng.cobblemarket.network.DeleteShopSnapshotPayload
@@ -52,9 +58,11 @@ import com.shusheng.cobblemarket.network.RemovePointMarketEntryPayload
 import com.shusheng.cobblemarket.network.RequestPointMarketPayload
 import com.shusheng.cobblemarket.network.RequestPointsShopPayload
 import com.shusheng.cobblemarket.network.SavePointMarketEntryPayload
+import com.shusheng.cobblemarket.network.SetShopEditingPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import com.shusheng.cobblemarket.util.ItemNameText
 import com.shusheng.cobblemarket.util.MoveText
+import com.shusheng.cobblemarket.util.RemainingTime
 import com.shusheng.cobblemarket.util.SpeciesText
 import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.gui.DrawContext
@@ -106,18 +114,40 @@ class PointsMarketScreen(
     /** 经营模式：`normal` = 普通购买；`claim` = 定期领取（主商城恒普通） */
     private val shopMode: CustomShopMode = CustomShopMode.NORMAL,
     /** 领取周期（小时）；只有领取店用得到 */
-    private val claimHours: Int = DEFAULT_CLAIM_HOURS
+    private val claimHours: Int = DEFAULT_CLAIM_HOURS,
+    /** 整店购买冷却（小时，0 = 不开）；只有普通自定义商店用得到 */
+    private val shopCooldownHours: Int = 0,
+    /** 商品各自冷却（小时，0 = 不开）；只有普通自定义商店用得到 */
+    private val itemCooldownHours: Int = 0
 ) : Screen(
     if (shopId == MAIN_SHOP_ID)
         Text.translatable("cobblemarket.points.market.title", CurrencyService.pointsTitleIcon())
     else Text.literal(customShopName.ifEmpty { shopId })
-) {
+), CustomCloseAnimationScreen {
 
     /** 是不是自定义（NPC）商店 —— 顶部兑换区显隐、返回目标都用它 */
     private val isCustomShop: Boolean get() = shopId != MAIN_SHOP_ID
 
     /** 定期领取店：隐藏购买流程，底部出现「领取」按钮（主商城永远不是领取店） */
     private val isClaimShop: Boolean get() = isCustomShop && shopMode == CustomShopMode.CLAIM
+
+    /** **自定义普通购买店**：格子冷却 / 限购只在这类店有意义（主商城与领取店都没有） */
+    private fun isCustomNormalShop(): Boolean = isCustomShop && !isClaimShop
+
+    /**
+     * 这一格**实际生效的冷却小时** = `max(整店冷却, 商品各自冷却, 本格覆盖)`；0 = 不冷却。
+     * 本格填 0 / 留空 = 跟随商店 / 各自冷却（见 [ShopEntry.cooldownHours]）。
+     */
+    private fun effectiveCooldownHours(entry: ShopEntry): Int =
+        if (!isCustomNormalShop()) 0
+        else maxOf(shopCooldownHours, itemCooldownHours, entry.cooldownHours)
+
+    /** 有冷却的商品一次只能买 1 件（与服务器 `PointMarketService.buy` 同一判据） */
+    private fun isCooldownEntry(entry: ShopEntry): Boolean = effectiveCooldownHours(entry) > 0
+
+    /** 这一格当前剩余冷却（毫秒）；0 = 现在就能买 */
+    private fun cooldownRemaining(entry: ShopEntry): Long =
+        if (!isCustomNormalShop()) 0L else CustomShopCooldownCache.remainingOf(shopId, entry.entryId)
 
     /**
      * 单类型商店**只显示那一类**的网格（不建 tab 按钮）。
@@ -149,6 +179,8 @@ class PointsMarketScreen(
     private var itemTabButton: NineSliceButton? = null
     private var prevButton: NineSliceButton? = null
     private var nextButton: NineSliceButton? = null
+    /** 领取店的「一键领取」按钮（冷却期间置灰，2026-10-25） */
+    private var claimButton: NineSliceButton? = null
     private var currentPage = 1
     /** 总页数：**服务端快照说了算**（按最大已填格子序号算，本地不自己推） */
     /**
@@ -237,6 +269,38 @@ class PointsMarketScreen(
 
     private fun openAnimActive(): Boolean =
         isCustomShop && openAnimStarted && openAnimRaw() < 1f
+
+    // ── 自定义商店关闭动画（打开动画的反向，2026-10-25） ──
+    private var closeAnimStarted = false
+    private var closeAnimStart = 0L
+    private var closeAnimTarget: Screen? = null
+
+    /**
+     * 关闭时长**对齐入口界面的关闭动画**（[CloseAnimation.DURATION_MS] = 100ms）：
+     * 播完 `setScreen(null)` 时原版会自动锁定鼠标、光标回到屏幕中心，
+     * 与按 E/Esc 关入口界面是同一套手感（用户 2026-10-25 指出）
+     */
+    private val closeAnimMs = CloseAnimation.DURATION_MS
+
+    private fun closeAnimRaw(): Float =
+        ((System.currentTimeMillis() - closeAnimStart).toFloat() / closeAnimMs).coerceIn(0f, 1f)
+
+    override fun isCustomCloseActive(): Boolean = closeAnimStarted
+
+    override fun startCustomClose(target: Screen?): Boolean {
+        if (!isCustomShop || closeAnimStarted) return false
+        closeAnimStarted = true
+        closeAnimStart = System.currentTimeMillis()
+        closeAnimTarget = target
+        return true
+    }
+
+    private fun finishCustomClose() {
+        closeAnimStarted = false
+        val to = closeAnimTarget
+        closeAnimTarget = null
+        client?.setScreen(to)
+    }
 
     /**
      * 窗口**内容**的淡入 alpha：动画前 70% 全透明、后 30% 渐显到 1。
@@ -366,19 +430,36 @@ class PointsMarketScreen(
     private var buySlot = -1
 
     /**
-     * 这个窗**能不能下架这一格**（= 点它的人能不能管商城）。
+     * 这家店现在是否「正在被编辑」（服务端广播，见 [onShopEditLock]）。
      *
-     * ⚠ **不是「服主专属」**：判定走 [canEditShop] —— **服主 或 持 `points.shop` 节点的人**都算
-     *（项目服主制，**不认 OP**）。服务端 `PointMarketService.remove` 同样只判这个节点。
-     *
-     * ⚠ 窗口本身**不分身份**：所有人看到的都是购买窗（标题「购买」、底部「购买 + 取消」），
-     * 能管的人只是**右上角多一枚「下架」**。2026-09-25 用户定：不必单独做一个只读查看窗
-     * ——「不再能编辑已有格子」之后，改内容走「下架 → 重新添加」（配快照免重填字段）。
+     * 编辑期间整店暂停购买：购买窗的「购买」按钮置灰、点击只响失败音并提示。
+     * ⚠ 服务端 `PointMarketService.buy` **也拦** —— 这里只是界面反馈，防伪造包靠服务端。
      */
-    private var buyCanRemove = false
+    private var shopEditLocked = false
 
-    /** 购买窗**右上角**那枚「下架」（只有能管这一格的人才建，见 [buildBuyDialog]） */
-    private var buyRemoveButton: NineSliceButton? = null
+    /** 编辑窗开着时每 30 秒发一次 `editing=true` 当心跳（服务端 15 分钟收不到才按超时释放） */
+    private var lastEditHeartbeat = 0L
+
+    // ── 自定义购买店：商品搜索（2026-10-26）──
+    //
+    // 商店最多 64 页，客户端一次只加载一页 ⇒ 搜索由**服务端扫全店**；客户端负责把搜索词
+    // 在本地名称表里解析成候选 id（服务端语言 ≠ 客户端语言），再按 32 条一页取结果。
+
+    /** 搜索框（只有自定义普通购买店建；所有玩家可见） */
+    private var shopSearchField: TextFieldWidget? = null
+    private var searchText = ""
+    /** 搜索结果模式：网格显示命中项，而不是当前普通页 */
+    private var searchMode = false
+    private var searchResults: List<PointMarketSlotInfo> = emptyList()
+    private var searchPage = 0
+    private var searchTotalPages = 1
+    private var searchTotal = 0
+    /** 上次发出的搜索（`kind|text`）与时刻 —— 客户端防抖，别每帧发包 */
+    private var lastSearchSent = ""
+    private var lastSearchSentAt = 0L
+    /** 名称表缓存（id → 小写本地化名称）；物品 / 物种各一份，懒加载 */
+    private var itemNameIndex: List<Pair<String, String>>? = null
+    private var speciesNameIndex: List<Pair<String, String>>? = null
 
     /**
      * 打开购买窗时那一条的 **id**（见 [ShopEntry.entryId]）。
@@ -390,14 +471,6 @@ class PointsMarketScreen(
     private var buyCount = 1
     private var buyCountField: TextFieldWidget? = null
 
-    /** 购买窗的**库存框** —— 只有能管这一格的人有（普通玩家那格是不可编辑的纯文本）。见 [buildBuyDialog] */
-    private var buyStockField: TextFieldWidget? = null
-
-    /**
-     * 打开窗时那份库存 —— 提交前比一下，**没变就不发包**（免得每次失焦都白跑一趟服务端）。
-     * 同时也当"当前已生效的值"用：提交成功后同步成新值。
-     */
-    private var buyStockOriginal = ShopEntry.UNLIMITED
     private var buyConfirmButton: NineSliceButton? = null
     private var buyCancelButton: NineSliceButton? = null
 
@@ -599,6 +672,10 @@ class PointsMarketScreen(
                 return
             }
         }
+        if (slotCooldownShown() && editCooldownHours() == null) {
+            failSubmit("cooldown_invalid")
+            return
+        }
         val entry = buildShopEntry() ?: run {
             if (isPokemonSlot()) failSubmit("species_required") else failSubmit("item_required")
             return
@@ -616,6 +693,11 @@ class PointsMarketScreen(
      */
     private fun applySnapshot(snapshot: ShopSnapshotInfo) {
         editSpecBase = snapshot.entry
+        // 价格 / 库存 / 冷却框的**暂存文本优先于 editSpecBase**（见 buildEditDialog 的 ifEmpty）——
+        // 编辑已有格子时它们已经被原值填满，不清掉的话快照里的这三项不会生效。
+        editPriceText = ""
+        editStockText = ""
+        editCooldownText = snapshot.entry.cooldownHours.takeIf { it > 0 }?.toString().orEmpty()
         fillDraft(snapshot.entry)
         closeSnapshotDialog()
         // 值都落在控件上，必须重建才看得到；走 init 那条路（它认得 editSlot，会把窗口建回来）
@@ -708,6 +790,15 @@ class PointsMarketScreen(
      */
     private var editSpecBase: ShopEntry? = null
 
+    /**
+     * 本次编辑窗是不是在**编辑已有的格子**（点有内容的格子进来）。
+     *
+     * 决定：标题「编辑 / 添加」、按钮「保存 / 添加」、右上角那枚「下架」建不建。
+     * ⚠ **不能用 `editSpecBase != null` 判** —— 点空格子后应用一个快照也会把它填成非 null，
+     *   那时仍然是「添加」，标题 / 按钮不该变成「编辑 / 保存」（2026-09-25 用户报过同类误判）。
+     */
+    private var editEditingSlot = false
+
     // 窗口控件引用（关闭时清空；resize 后靠它们恢复草稿）
     private var editSpeciesField: TextFieldWidget? = null
     private var editLevelField: TextFieldWidget? = null
@@ -715,6 +806,10 @@ class PointsMarketScreen(
     private var editDmaxField: TextFieldWidget? = null
     private var editPriceField: TextFieldWidget? = null
     private var editStockField: TextFieldWidget? = null
+    /** 格子冷却输入框（小时；空白 / 0 = 跟随商店）—— 只有自定义普通购买店才建 */
+    private var editCooldownField: TextFieldWidget? = null
+    /** 格子冷却的暂存文本（输入框重建时恢复，同价格 / 库存框那套） */
+    private var editCooldownText: String = ""
     private var editSpeciesPrev: NineSliceButton? = null
     private var editSpeciesNext: NineSliceButton? = null
 
@@ -1098,6 +1193,9 @@ class PointsMarketScreen(
     private var backButton: NineSliceButton? = null
     private var redeemButton: NineSliceButton? = null
 
+    /** 商店记录入口（出售 / 领取）：只有服主 / 持 `points.shop` 才建 */
+    private var shopHistoryButton: NineSliceButton? = null
+
     /**
      * 摆放「兑换记录」按钮：
      * - 「购买 RP」可见 → 贴在它**左侧**
@@ -1164,8 +1262,17 @@ class PointsMarketScreen(
             {
                 when {
                     !isCustomShop -> client?.setScreen(MarketEntryScreen(skipDropAnim = true))
-                    returnToAdmin -> client?.setScreen(CustomShopAdminScreen())
-                    else -> client?.setScreen(null)
+                    else -> {
+                        // 返回也走「打开动画的反向」：缩回右键 NPC 的位置后再切界面
+                        val target: Screen? = if (returnToAdmin) CustomShopAdminScreen() else null
+                        if (com.shusheng.cobblemarket.client.ClientConfig.marketAnimation &&
+                            startCustomClose(target)
+                        ) {
+                            CloseAnimation.playCloseSound()
+                        } else {
+                            client?.setScreen(target)
+                        }
+                    }
                 }
             },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
@@ -1178,7 +1285,7 @@ class PointsMarketScreen(
         // 尺寸 / 纵向位置**与左右两颗翻页按钮一致**（2026-10-24 用户要求：加宽加高，同一条底栏）。
         // 只放图标（手接礼物，用户 2026-10-24 提供的正式 48×48 像素图）不写文字；名称放进 tooltip。
         if (isClaimShop) {
-            addDrawableChild(NineSliceButton(
+            val btn = NineSliceButton(
                 cx - PAGE_BTN_W / 2, pageRowY(bg), PAGE_BTN_W, PAGE_BTN_H,
                 Text.literal(""),
                 {
@@ -1189,7 +1296,9 @@ class PointsMarketScreen(
                 iconLeft = Identifier.of("cobblemarket", "textures/gui/button/claim.png"),
                 iconTexW = 48, iconTexH = 48, iconScale = 1f / 3f,
                 tooltip = Text.translatable("cobblemarket.points.store.claim")
-            ))
+            )
+            claimButton = btn
+            addDrawableChild(btn)
         }
 
         // 兑换区：**主商城独有**。兑换码 / 购买 RP / 兑换记录都属于「买 RP」那条线，
@@ -1297,6 +1406,68 @@ class PointsMarketScreen(
             updateTabButtons()
         }
 
+        // 自定义普通购买店：顶部左侧的搜索框（**所有玩家**可见；跨全部页搜索）。
+        // 记录按钮排在它之后 —— 只有服主 / 持 `points.shop` 的人建。
+        val historyLabel = if (canEditShop()) {
+            Text.translatable(
+                if (isClaimShop) "cobblemarket.shop_history.claim_button"
+                else "cobblemarket.shop_history.sale_button"
+            )
+        } else null
+        val historyW = historyLabel?.let { (textRenderer.getWidth(it) + 12).coerceAtLeast(76) } ?: 0
+        val searchW = if (isCustomNormalShop()) {
+            // 左边到「居中的 tab」之间还剩多少 —— 搜索框别顶到 tab 上
+            val available = tabLeftX - (bg.x + inset) - 12 -
+                (if (historyW > 0) historyW + 6 else 0)
+            available.coerceIn(56, 120)
+        } else 0
+        if (isCustomNormalShop()) {
+            val field = TextFieldWidget(textRenderer, bg.x + inset, rowY, searchW, ROW_H, Text.literal(""))
+            field.setMaxLength(32)
+            field.setChangedListener { searchText = it }
+            field.text = searchText
+            field.setPlaceholder(
+                TextUtil.fieldHint(
+                    field,
+                    "cobblemarket.points.market.search_hint",
+                    "cobblemarket.points.market.search_hint_short"
+                )
+            )
+            shopSearchField = field
+            addSelectableChild(field)
+            addDrawableChild(field)
+        } else {
+            shopSearchField = null
+        }
+
+        // 商店记录入口（出售 / 领取）：只有服主 / 持 `points.shop` 的人建。
+        //  · 自定义商店：顶部左侧（搜索框之后；没有搜索框就贴左）
+        //  · 主商城：顶部是兑换行、挤不下 ⇒ 底部左侧（返回按钮那一行）
+        if (historyLabel != null) {
+            val shopTitle = if (isCustomShop) Text.literal(customShopName.ifEmpty { shopId })
+            else Text.translatable("cobblemarket.points.market.title", CurrencyService.pointsTitleIcon())
+            val btn = NineSliceButton(
+                bg.x + inset + (if (searchW > 0) searchW + 6 else 0),
+                if (isCustomShop) rowY else backButtonY(bg),
+                historyW, ROW_H, historyLabel,
+                {
+                    client?.setScreen(
+                        HistoryScreen(
+                            showAll = true,
+                            shopId = shopId,
+                            claimOnly = isClaimShop,
+                            shopTitle = shopTitle,
+                            returnScreen = this@PointsMarketScreen
+                        )
+                    )
+                }
+            )
+            shopHistoryButton = btn
+            addDrawableChild(btn)
+        } else {
+            shopHistoryButton = null
+        }
+
         // 翻页按钮：与返回按钮同一行。**三个按钮按背景宽度三等分、各自在所属等分里居中**
         // （用户 2026-09-18）—— 返回按钮因此仍在正中间，位置不变
         val pageBtnY = pageRowY(bg)
@@ -1388,38 +1559,52 @@ class PointsMarketScreen(
      * 先记「点之前焦点在不在输入框」再交给 super —— 让点击先落到控件上（点输入框内部不能误清）。
      */
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
-        // 打开动画播放中：控件还没画出来，别让这一下点到网格 / 按钮上
-        if (openAnimActive()) return true
+        // 打开 / 关闭动画播放中：控件还没画出来（或正在消失），别让点击落到网格 / 按钮上
+        if (openAnimActive() || (isCustomShop && closeAnimStarted)) return true
         // 窗口开着：事件**只给窗口**（格子与主界面一律不响应；下层控件已 visible=false）
         if (editSlot >= 0) return handleEditDialogClick(mouseX, mouseY, button)
         if (buySlot >= 0) return handleBuyDialogClick(mouseX, mouseY, button)
 
-        val wasInInput = focused != null && focused === codeField
+        val wasInInput = focused != null && (focused === codeField || focused === shopSearchField)
         val result = super.mouseClicked(mouseX, mouseY, button)
-        if (wasInInput && codeField?.isMouseOver(mouseX, mouseY) != true) {
+        if (wasInInput &&
+            codeField?.isMouseOver(mouseX, mouseY) != true &&
+            shopSearchField?.isMouseOver(mouseX, mouseY) != true
+        ) {
             focused = null
         }
-        // 点格子：持 `points.shop` 节点的人开**编辑窗**；其余人（**含 OP** —— 见 CLAUDE.md 铁律）
-        // 点**有内容的**格子开**购买窗**，点空格子无反应。
-        // ⚠ 判身份**只认 `canEditShop()`**：它 2026-09-25 起不再认 OP，所以 OP 在这里跟普通玩家一样是买家。
-        if (!result && button == 0) {
+        // 点格子（2026-10-26 定：左键 = 主操作「购买」，右键 = 权限者的「编辑」）：
+        //  · 左键 —— **所有人**点有内容的格子开**购买窗**（与已发布行为一致）；空格子只有
+        //    服主 / 持 `points.shop` 的人有动作 = 添加。
+        //  · 右键 —— 服主 / 持 `points.shop` 的人点**有内容的格子**开**编辑窗**。
+        //  · 领取店没有购买：左键（权限者）= 编辑 / 添加，普通玩家无反应；右键无反应。
+        // ⚠ 判身份**只认 `canEditShop()`**：不认 OP，所以 OP 在这里跟普通玩家一样是买家。
+        if (!result && (button == 0 || button == 1)) {
             val cell = cellAt(mouseX, mouseY, gridLayout(bgRect()))
             if (cell >= 0) {
-                val slot = globalSlot(cell)
-                val occupied = PointMarketCache.slots[slot] != null
+                val slot = slotOfCell(cell)
+                // 搜索结果页里超出命中数的格子没有真实序号 —— 别拿 -1 去开编辑窗
+                if (slot < 0) return true
+                val occupied = entryAt(slot) != null
                 val admin = canEditShop()
-                // 能管商城的人（[canEditShop] = 服主 或 持 `points.shop` 节点）点**空格子** → 添加窗
-                if (admin && !occupied) {
+                if (button == 0) {
+                    if (occupied) {
+                        // 领取店没有购买：权限者开编辑窗（补货 / 改可领数量），普通玩家无反应
+                        if (isClaimShop) {
+                            if (admin) openEditDialog(slot)
+                            return true
+                        }
+                        openBuyDialog(slot)
+                        return true
+                    }
+                    // 空格子：权限者 = 添加；普通玩家无反应
+                    if (admin) {
+                        openEditDialog(slot)
+                        return true
+                    }
+                } else if (admin && occupied && !isClaimShop) {
+                    // 右键 = 编辑（权限者的次级操作；领取店右键无反应）
                     openEditDialog(slot)
-                    return true
-                }
-                // 有内容的格子：**所有人都进购买窗**，能管的人只是右上角多一枚「下架」
-                // ⚠ 谁都不能编辑已有格子（2026-09-25 用户拍板）—— 想改就走「下架 → 重新添加」
-                // ⚠ 领取店：普通玩家点格子**不进购买窗**（没有价格，领取走底部按钮）；
-                //   管理员仍要能开这一格（补货 / 下架）
-                if (occupied) {
-                    if (isClaimShop && !admin) return true
-                    openBuyDialog(slot, canRemove = admin)
                     return true
                 }
             }
@@ -1581,8 +1766,8 @@ class PointsMarketScreen(
     override fun mouseScrolled(
         mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double
     ): Boolean {
-        // 打开动画播放中：还没有可滚的内容
-        if (openAnimActive()) return true
+        // 打开 / 关闭动画播放中：还没有可滚的内容（或正在消失）
+        if (openAnimActive() || (isCustomShop && closeAnimStarted)) return true
         // 快照列表：滚轮翻（最多 64 条，一屏放不下）
         if (snapshotDialog) {
             val max = snapshotMaxScroll()
@@ -1634,7 +1819,7 @@ class PointsMarketScreen(
      *   （想点进去挪光标，结果每次都掉出来）。
      */
     private fun allEditFields(): List<TextFieldWidget?> =
-        listOf(editSpeciesField, editItemSearchField, editPriceField, editStockField) +
+        listOf(editSpeciesField, editItemSearchField, editPriceField, editStockField, editCooldownField) +
             scrollableFields().map { it.first }
 
     private fun isEditInputFocused(): Boolean = allEditFields().any { it != null && focused === it }
@@ -1667,6 +1852,19 @@ class PointsMarketScreen(
      */
     override fun tick() {
         super.tick()
+        // 关闭动画播完：在这里切界面（render 里 setScreen 会搅乱光标锁定状态）
+        if (isCustomShop && closeAnimStarted && closeAnimRaw() >= 1f) {
+            finishCustomClose()
+            return
+        }
+        // 编辑窗心跳：每 30 秒续一次，避免服务端 15 分钟超时把「编辑中」锁放掉
+        if (editSlot >= 0) {
+            val now = System.currentTimeMillis()
+            if (now - lastEditHeartbeat >= 30_000L) {
+                lastEditHeartbeat = now
+                sendToServer(SetShopEditingPayload(shopId, true))
+            }
+        }
         // ① 有人刚改了 / 下架了正在看的这一格 → 关窗 + 提示（见 checkBuySlotStillValid）
         checkBuySlotStillValid()
         // ② 变体候选**异步**回来（打开列表时才请求）⇒ 列表开着就重建一次。
@@ -1698,6 +1896,9 @@ class PointsMarketScreen(
             }
         }
         if (dialogOpen()) return
+        // 搜索防抖：停手 650ms 才发；搜索结果模式下**不发**普通翻页请求（分页由搜索包自己处理）
+        maybeSendSearch()
+        if (searchMode) return
         val wantPage = currentPage - 1
         // ⚠ 判据**必须带上 kind**：精灵与物品各是一套数据，只看页号的话 ——
         //   缓存里留着**另一个 tab** 的快照时会被当成"已经加载好了"，于是一个包都不发、网格空着
@@ -1732,6 +1933,10 @@ class PointsMarketScreen(
         // ⚠ 清缓存 + **重新请求**：精灵与物品各占一套独立的格子编号（2026-09-25 起 tab 是真过滤），
         //   不清的话新快照到达前会拿上一个 tab 的数据画，格子序号还恰好对得上、看着像"没切过去"
         PointMarketCache.clear()
+        // 切 tab 退出搜索模式；搜索框文本保留，下一 tick 会按新 tab 重新搜
+        searchMode = false
+        searchResults = emptyList()
+        lastSearchSent = ""
         sendToServer(RequestPointMarketPayload(currentPage - 1, currentKind(), shopId))
     }
 
@@ -1747,6 +1952,12 @@ class PointsMarketScreen(
     }
 
     private fun prevPage() {
+        // 搜索结果模式：翻的是**搜索结果**的页，不是普通商品页
+        if (searchMode) {
+            if (searchPage <= 0) return
+            sendSearch(searchPage - 1)
+            return
+        }
         if (currentPage <= 1) return
         currentPage--
         // 换了页要立刻拉新快照（把节流计时清零，下一个 tick 就发，不用干等 500ms）
@@ -1754,6 +1965,11 @@ class PointsMarketScreen(
     }
 
     private fun nextPage() {
+        if (searchMode) {
+            if (searchPage >= searchTotalPages - 1) return
+            sendSearch(searchPage + 1)
+            return
+        }
         if (currentPage >= totalPages) return
         currentPage++
         lastPageRequestAt = 0L
@@ -1849,6 +2065,113 @@ class PointsMarketScreen(
     /** 页内下标 → **全局序号**（数据层按全局序号存：第 1 页 = 0~31、第 2 页 = 32~63…） */
     private fun globalSlot(pageCellIndex: Int): Int =
         (currentPage - 1) * PointShopState.POINTS_SHOP_PAGE_SIZE + pageCellIndex
+
+    // ── 自定义购买店：搜索结果模式 ──
+
+    /** 网格下标 → 全局格子序号：搜索结果模式下按命中项的**真实序号**，普通模式按当前页。 */
+    private fun slotOfCell(cell: Int): Int =
+        if (searchMode) searchResults.getOrNull(cell)?.index ?: -1 else globalSlot(cell)
+
+    /**
+     * 按格子序号取条目：搜索结果不在 `PointMarketCache.slots` 里，购买 / 编辑窗要一起认。
+     * 搜索模式下**优先用搜索结果**（它与网格上看到的是同一份），普通模式只用页缓存。
+     */
+    private fun entryAt(slot: Int): ShopEntry? =
+        if (searchMode) searchResults.firstOrNull { it.index == slot }?.entry
+        else PointMarketCache.slots[slot]
+
+    /** 搜索防抖：文本变了且停手 [SEARCH_DEBOUNCE_MS] 才发（服务端还有 500ms 节流）。 */
+    private fun maybeSendSearch() {
+        if (!isCustomNormalShop()) return
+        val text = searchText.trim()
+        if (text.isEmpty()) {
+            exitSearch()
+            return
+        }
+        val key = "${currentKind()}|$text"
+        val now = System.currentTimeMillis()
+        if (key == lastSearchSent || now - lastSearchSentAt < SEARCH_DEBOUNCE_MS) return
+        lastSearchSent = key
+        lastSearchSentAt = now
+        sendSearch(0)
+    }
+
+    private fun sendSearch(page: Int) {
+        val q = searchText.trim()
+        if (q.isEmpty()) return
+        sendToServer(SearchPointMarketPayload(shopId, currentKind(), q, matchingEntryIds(q), page))
+    }
+
+    private fun exitSearch() {
+        if (!searchMode && lastSearchSent.isEmpty()) return
+        searchMode = false
+        searchResults = emptyList()
+        searchPage = 0
+        searchTotalPages = 1
+        searchTotal = 0
+        lastSearchSent = ""
+        // 普通页可能停在被搜索打断之前 —— 清零让它下一 tick 补一次请求
+        lastPageRequestAt = 0L
+    }
+
+    /** 收到服务端搜索分页结果（[PointMarketSearchPayload]）；只认本店、本 tab、当前查询词。 */
+    fun onShopSearchResults(payload: PointMarketSearchPayload) {
+        if (payload.shopId != shopId || payload.kind != currentKind()) return
+        if (payload.query != searchText.trim()) return
+        if (payload.query.isEmpty()) {
+            exitSearch()
+            return
+        }
+        searchMode = true
+        searchResults = payload.slots
+        searchPage = payload.page
+        searchTotalPages = payload.totalPages
+        searchTotal = payload.total
+    }
+
+    /**
+     * 客户端本地把搜索词解析成候选 id。
+     *
+     * ⚠ **名称只能在客户端解析**（服务端语言 ≠ 客户端语言）；服务端拿这些 id + 原始查询串
+     * 做匹配。物品走注册表本地化名，物种走 `PokemonSpecies.species` 的翻译 key。
+     */
+    private fun matchingEntryIds(query: String): List<String> {
+        val q = query.lowercase()
+        if (q.isEmpty()) return emptyList()
+        return if (currentKind() == ShopEntry.KIND_ITEM) {
+            val index = itemNameIndex ?: run {
+                val built = ArrayList<Pair<String, String>>()
+                for (item in net.minecraft.registry.Registries.ITEM) {
+                    val id = net.minecraft.registry.Registries.ITEM.getId(item).toString()
+                    val name = runCatching { Text.translatable(item.translationKey).string }.getOrDefault(id)
+                    built += id to name.lowercase()
+                }
+                itemNameIndex = built
+                built
+            }
+            index.asSequence()
+                .filter { (id, name) -> name.contains(q) || id.lowercase().contains(q) }
+                .map { it.first }.take(SEARCH_ID_LIMIT).toList()
+        } else {
+            val index = speciesNameIndex ?: run {
+                val built = ArrayList<Pair<String, String>>()
+                for (species in PokemonSpecies.species) {
+                    val id = species.resourceIdentifier.toString()
+                    val name = runCatching { Text.translatable(species.translationKey).string }.getOrDefault(id)
+                    built += id to name.lowercase()
+                }
+                speciesNameIndex = built
+                built
+            }
+            index.asSequence()
+                .filter { (id, name) -> name.contains(q) || id.lowercase().contains(q) }
+                .map { it.first }.take(SEARCH_ID_LIMIT).toList()
+        }
+    }
+
+    /** 当前视图的总页数 / 当前页码（普通分页与搜索结果分页共用翻页按钮）。 */
+    private fun viewPages(): Int = if (searchMode) searchTotalPages else totalPages
+    private fun viewPageNumber(): Int = if (searchMode) searchPage + 1 else currentPage
 
     /**
      * 窗口宽度：**跟着 RP 商城背景的宽度**（用户 2026-09-20 要的「和背景一样大」）。
@@ -2157,7 +2480,38 @@ class PointsMarketScreen(
      */
     private fun editPriceColW(): Int = editColW() * 3 / 2
 
-    private fun editPriceGroupW(): Int = editPriceColW() * 2 + EDIT_COL_GAP
+    /**
+     * 底部「价格 / 库存」这一行是否多一列**格子冷却**。
+     *
+     * 只有**自定义普通购买店**的编辑窗才有（主商城 / 领取店没有这个概念）。
+     * ⚠ 这一列用的是价格/库存行**本来就空着**的横向余量：不新增行、不增高弹窗、
+     *   也不压缩价格/库存框的宽度（每格宽度仍由 [editPriceColW] 决定）。
+     */
+    private fun slotCooldownShown(): Boolean = isCustomNormalShop()
+
+    /** 冷却列数：2 = 价格/库存，3 = 价格/库存/冷却 */
+    private fun editPriceGroupCols(): Int = if (slotCooldownShown()) 3 else 2
+
+    private fun editPriceGroupW(): Int =
+        editPriceColW() * editPriceGroupCols() + EDIT_COL_GAP * (editPriceGroupCols() - 1)
+
+    /**
+     * 冷却标签：全称（`冷却` / `Cooldown`）在窄屏会把输入框压到放不下数字，退回短版
+     * （中文仍是「冷却」，英文「CD」）。判据按**实宽**，不按字符数。
+     */
+    private fun slotCooldownLabel(): Text {
+        val full = Text.translatable("cobblemarket.points.store.field.cooldown")
+        return if (editPriceColW() - textRenderer.getWidth(full) >= 24) full
+        else Text.translatable("cobblemarket.points.store.field.cooldown_short")
+    }
+
+    private fun slotCooldownLabelW(): Int = textRenderer.getWidth(slotCooldownLabel())
+
+    /** 冷却输入框的 x（第三列标签之后） */
+    private fun slotCooldownFieldX(): Int =
+        editPriceGroupX() + (editPriceColW() + EDIT_COL_GAP) * 2 + slotCooldownLabelW()
+
+    private fun slotCooldownFieldW(): Int = (editPriceColW() - slotCooldownLabelW()).coerceAtLeast(16)
 
     private fun editPriceGroupX(): Int =
         editDialogX() + EDIT_PAD + (editDialogW() - EDIT_PAD * 2 - editPriceGroupW()) / 2
@@ -2177,8 +2531,8 @@ class PointsMarketScreen(
     private fun isPokemonSlot(): Boolean = currentKind() == ShopEntry.KIND_POKEMON
 
     /**
-     * 点格子：持 `points.shop` 节点者点空格 = 添加、点有内容的格 = 编辑。
-     * 普通玩家点有内容的格 = 购买窗口（**尚未实现**）；点空格无反应。
+     * 开编辑窗：**右键**有内容的格子 = 编辑；**左键**空格子 = 添加（领取店左键有内容也是编辑）。
+     * 普通玩家左键有内容的格子 = 购买窗；点空格 / 右键无反应。
      */
     private fun openEditDialog(slot: Int) {
         if (!canEditShop()) return
@@ -2186,18 +2540,27 @@ class PointsMarketScreen(
         // 点格子的手感就是"没反应"（用户 2026-09-20 报「网格内的交互都没音效」）
         playButtonClickSound()
         editSlot = slot
+        // 告诉服务端「这家店进入编辑中」：其他玩家的购买按钮会立刻置灰（服务端同时拦购买）
+        sendToServer(SetShopEditingPayload(shopId, true))
+        lastEditHeartbeat = System.currentTimeMillis()
         // 窗口从**这个格子**长大出来（起点 = 它的 1.15 倍悬停态）
         startDialogAnim(slot)
         // 形态候选表：species feature（花纹 / 帽子 / mega）**客户端自己算不出来**，
         // 得问服务端要（见 [SpeciesText.selectableFormAspects]）。精灵 tab 才用得上。
         // ⚠ 包到得晚也不影响使用：那时候服主还在搜物种，缓存空时列表退化成只列 forms
         if (isPokemonSlot()) sendToServer(RequestSpeciesFeatureAspectsPayload())
-        // ⚠ 这里**只处理"添加"**（只有空网格会走到这，见 mouseClicked）：`editOriginal` 恒为 null。
-        //   点有内容的格子走的是 [openBuyDialog]（购买窗 + 右上角多一枚「下架」），不再有"编辑"——
-        //   用户 2026-09-25 拍板，想改内容就走「下架 → 重新添加」。
-        //   `editOriginal` 这个字段留着给**快照回填**用（那时它装的是快照那份规格）。
-        editSpecBase = null
+        // 有内容的格子 = 编辑：把它整份填进草稿（空 = 添加，保持 resetDraft 的默认值）。
+        // `editSpecBase` 是提交时 `copy()` 的基底 —— 界面没接的高级项靠它原样保留。
+        val original = entryAt(slot)
+        editEditingSlot = original != null
+        editSpecBase = original
         resetDraft()
+        if (original != null) {
+            fillDraft(original)
+            // 冷却不随 fillDraft（快照回填也不带它）：编辑已有格子时按原值回填；
+            // 0 = 跟随整店 → 留空（占位符显示整店值）
+            editCooldownText = original.cooldownHours.takeIf { it > 0 }?.toString().orEmpty()
+        }
         hideMainControls()
         buildEditDialog()
         // 开窗自动叫一声（延迟到渲染之后再播，见 IconCryClick）
@@ -2220,8 +2583,13 @@ class PointsMarketScreen(
 
     /** 真正关窗（收回动画播完、或不需要动画时直接走这条） */
     private fun reallyCloseEditDialog() {
+        // 关编辑窗 = 解除「编辑中」锁（服务端会广播解锁）；⚠ 先判再清 editSlot
+        if (editSlot >= 0) sendToServer(SetShopEditingPayload(shopId, false))
+        // 搜索模式下刚改过内容：让下一 tick 重搜一次，别让结果网格停在旧内容上
+        if (searchMode) lastSearchSent = ""
         editSlot = -1
         editSpecBase = null
+        editEditingSlot = false
         editHintMsg = null
         editSpeciesField = null
         editLevelField = null
@@ -2229,6 +2597,7 @@ class PointsMarketScreen(
         editShinyField = null
         editPriceField = null
         editStockField = null
+        editCooldownField = null
         editSpeciesPrev = null
         editSpeciesNext = null
         editSpeciesClear = null
@@ -2254,6 +2623,8 @@ class PointsMarketScreen(
         backButton?.visible = false
         buyEntryButton?.visible = false
         recordButton?.visible = false
+        shopHistoryButton?.visible = false
+        shopSearchField?.visible = false
         pokemonTabButton?.visible = false
         itemTabButton?.visible = false
         prevButton?.visible = false
@@ -2278,7 +2649,7 @@ class PointsMarketScreen(
      */
     private fun checkBuySlotStillValid() {
         if (buySlot < 0) return
-        val entry = PointMarketCache.slots[buySlot]
+        val entry = entryAt(buySlot)
         if (entry != null && entry.entryId == buySlotEntryId) return
         // 内容变了 / 整格没了：关窗 + 界面内红字（复用兑换结果那条提示的位置）。
         // ⚠ 两种情况**文案必须分开**（用户 2026-09-25 报）：整格没了是**下架** ——
@@ -2293,23 +2664,40 @@ class PointsMarketScreen(
     }
 
     /**
+     * 服务端广播的「编辑中」状态变化（`ShopEditLockPayload`）。
+     *
+     * 只认**本店**的包（换店时别的店的广播可能迟到）。购买窗开着就立刻刷新按钮 + 提示，
+     * 让玩家不用关窗重开。
+     */
+    fun onShopEditLock(lockShopId: String, locked: Boolean) {
+        if (lockShopId != shopId) return
+        shopEditLocked = locked
+        if (buySlot < 0) return
+        buyConfirmButton?.dimmed = locked
+        if (locked) {
+            buyHintMsg = Text.translatable("cobblemarket.points.store.err.shop_being_edited")
+            buyHintUntil = System.currentTimeMillis() + BUY_HINT_MS
+        } else {
+            buyHintMsg = null
+        }
+    }
+
+    /**
      * 打开购买窗。[slot] 必须是**有内容的**格子（调用方 [mouseClicked] 已判过，这里再兜一道）。
      *
-     * [canRemove] = true（持 `points.shop` 节点 / 服主）时，窗口**右上角多一枚「下架」**；
-     * 其余内容与按钮和买家**完全一样** —— 服主自己也走这个窗买东西，**没有单独的只读查看窗**
-     *（2026-09-25 用户定：不必为服主单做一个窗）。
+     * 入口：**所有人左键**有内容的格子（与已发布行为一致）；服主 / 持 `points.shop` 的人
+     * 也是左键购买，**右键才是编辑**（见 [openEditDialog]）。
      */
-    private fun openBuyDialog(slot: Int, canRemove: Boolean = false) {
-        if (PointMarketCache.slots[slot] == null) return
+    private fun openBuyDialog(slot: Int) {
+        if (entryAt(slot) == null) return
         // 格子是自绘的、不走 NineSliceButton 内置点击音 —— 不补手感就是"点了没反应"（同 openEditDialog）
         playButtonClickSound()
         buySlot = slot
-        buyCanRemove = canRemove
         // 窗口从**这个格子**长大出来（起点 = 它的 1.15 倍悬停态）
         startDialogAnim(slot)
         buyCount = 1
         // 记下这一条的 id：购买时带回服务端比对，也用来判断它有没有被换过内容
-        buySlotEntryId = PointMarketCache.slots[slot]?.entryId.orEmpty()
+        buySlotEntryId = entryAt(slot)?.entryId.orEmpty()
         buyHintMsg = null
         // ⚠ 购买窗**不滚动**（只读文本自己画，没有控件要挪），但 [editRowY] 会减去这个偏移 ——
         //   编辑窗滚过之后再开购买窗，整片字段会跟着上移错位，所以这里必须清零
@@ -2325,10 +2713,6 @@ class PointsMarketScreen(
      * ⚠ 重建会重跑 init，兑换框里敲了一半的码靠 `pendingCodeText` 恢复 —— 与编辑窗同一条路。
      */
     private fun closeBuyDialog(animate: Boolean = true) {
-        // ⚠ **必须在清 buySlot 之前**：用户改完库存直接点「购买 / 取消」时，输入框会随控件一起被清掉 ——
-        //   不在这儿补一刀，那次编辑就白填了（失焦那条路只覆盖"点了界面别处"）
-        // ⚠ 也必须在**动画之前**：收回那 200ms 里控件已藏起来，再读输入框就晚了
-        submitBuyStockIfChanged()
         // 购买成功那条路传 animate=false —— 接下来是**庆祝动画**（从弹窗图标位置起飞），
         // 两个动画叠在一起会打架（弹窗正在缩回、同时精灵从弹窗起飞）
         if (animate && buySlot >= 0) {
@@ -2341,15 +2725,12 @@ class PointsMarketScreen(
     /** 真正关窗（收回动画播完、或不需要动画时直接走这条） */
     private fun reallyCloseBuyDialog() {
         buySlot = -1
-        buyCanRemove = false
         buySlotEntryId = ""
         buyCount = 1
         buyHintMsg = null
         buyCountField = null
-        buyStockField = null
         buyConfirmButton = null
         buyCancelButton = null
-        buyRemoveButton = null
         buyWidgetBase = 0
         clearChildren()
         init()
@@ -2357,7 +2738,7 @@ class PointsMarketScreen(
 
     /** 建窗口控件：背景层 + 数量框（物品格才有）+ 确认 / 取消 */
     private fun buildBuyDialog() {
-        val entry = PointMarketCache.slots[buySlot] ?: return
+        val entry = entryAt(buySlot) ?: return
         // 清掉上一次残留的控件（同编辑窗：map 只存最后一次的引用，管不到旧对象）
         if (buyWidgetBase in 0 until children().size) {
             children().drop(buyWidgetBase).toList().forEach { remove(it) }
@@ -2372,7 +2753,8 @@ class PointsMarketScreen(
 
         // 数量框：**只有物品格有** —— 精灵格买一次就是一只（买几只就点几次），服务端同样这么算
         // 领取店不卖东西，没有数量可填
-        if (entry.kind != ShopEntry.KIND_POKEMON && !isClaimShop) {
+        // ⚠ 有冷却的商品**一次只能买 1 件**（隐藏数量框、恒发 1）—— 与服务器同一判据
+        if (entry.kind != ShopEntry.KIND_POKEMON && !isClaimShop && !isCooldownEntry(entry)) {
             val field = TextFieldWidget(
                 textRenderer, buyCountX(), editPriceRowY(), BUY_COUNT_W, EDIT_ROW_H, Text.literal("")
             )
@@ -2382,48 +2764,22 @@ class PointsMarketScreen(
             buyCountField = field
             addSelectableChild(field)
             addDrawableChild(field)
+        } else {
+            buyCount = 1
         }
 
-        // 库存框：**只有能管这一格的人有**（普通玩家那格是不可编辑的纯文本，见 [renderBuyPriceRow]）。
-        // 编辑功能取消后，售罄的格子仍留在界面上就是为了补货 —— 这里就是补货的入口（2026-09-25 用户定）。
-        // ⚠ 留空 = 不限量（与添加窗的库存框同口径）；框里显示的是**十进制数**，不是数据层的 -1
-        if (buyCanRemove) {
-            buyStockOriginal = entry.stock
-            val stockField = TextFieldWidget(
-                textRenderer, buyStockFieldX(), editPriceRowY(), buyStockFieldW(), EDIT_ROW_H, Text.literal("")
-            )
-            stockField.setTextPredicate { s -> s.length <= 9 && s.all { it.isDigit() } }
-            // 领取店：这里是「每期每人可领数量」，留空 = 0（不开放），不是不限量
-            // ⚠ 这个框很窄：占位符按实宽挑长短版，否则直接溢出框外（2026-10-23 用户报）
-            stockField.setPlaceholder(
-                if (isClaimShop) TextUtil.fieldHint(
-                    stockField, "cobblemarket.points.store.claim_quota_hint",
-                    "cobblemarket.points.store.claim_quota_hint_short"
-                ) else Text.translatable("cobblemarket.points.store.value.unlimited")
-            )
-            stockField.text = if (entry.stock == ShopEntry.UNLIMITED) "" else entry.stock.toString()
-            buyStockField = stockField
-            addSelectableChild(stockField)
-            addDrawableChild(stockField)
-        }
-
+        // ⚠ 购买窗**只给玩家**：库存（补货）与下架都在**编辑窗**里做 ——
+        //   2026-10-26 起能管商城的人点格子直接进编辑窗，不再经过这里。
         val rowY = editButtonRowY()
-        // 右上角那枚「下架」：**只有能管这一格的人**（持 `points.shop` 节点，服主恒真）才建。
-        // ⚠ 它与买家的「购买 / 取消」**并存**，不再是二选一 —— 能管的人自己也能买
-        //   （2026-09-25 用户定：不必单独做一个只读查看窗，就用购买窗，多的只是这枚按钮）。
-        //   位置沿用原编辑窗那枚（右上角，见 [editRemoveY]）。
-        if (buyCanRemove) {
-            buyRemoveButton = NineSliceButton(
-                editRowRightX() - EDIT_REMOVE_W, editRemoveY(), EDIT_REMOVE_W, EDIT_ROW_H,
-                Text.translatable("cobblemarket.points.store.remove"), { removeFromBuyDialog() }
-            ).also { addDrawableChild(it) }
-        }
-        // 领取店没有"购买"：这个窗口只有管理员会开（补货 / 下架），不给购买按钮
+        // ⚠ 领取店**不会走到这里**（玩家点格子无反应、服主 / 持 `points.shop` 的人进的是编辑窗）——
+        //   这个判断只是兜底：万一将来出现只读查看入口，别给它挂一枚「购买」。
         if (!isClaimShop) {
             buyConfirmButton = NineSliceButton(
                 editDialogX() + editDialogW() - EDIT_PAD - BUY_BTN_W * 2 - BUTTON_GAP, rowY, BUY_BTN_W, 16,
                 Text.translatable("cobblemarket.points.store.buy_confirm"), { confirmBuy() }
             ).also { addDrawableChild(it) }
+            // 店里有人正在编辑：打开就是置灰态（点击仍会走 confirmBuy → 失败音 + 提示）
+            buyConfirmButton?.dimmed = shopEditLocked
         }
         buyCancelButton = NineSliceButton(
             editDialogX() + editDialogW() - EDIT_PAD - BUY_BTN_W, rowY, BUY_BTN_W, 16,
@@ -2432,67 +2788,38 @@ class PointsMarketScreen(
     }
 
     /**
-     * 在购买窗右上角点「下架」：清空这一格。
+     * 编辑窗右上角「下架」：清空这一格（**只在编辑已有格子时出现**）。
      *
-     * ⚠ **不是服主专属**：能点的人 = [canEditShop]（**服主 或 持 `points.shop` 节点的人**，
-     *   不认 OP），服务端 `PointMarketService.remove` 同样只判这个节点。
-     *
-     * 与原编辑窗那枚「下架」同一个包、同一套语义 —— 只是操作对象换成了 [buySlot]（那枚已随
-     * 「不再能编辑已有格子」一并删除，现在这里是**唯一**的下架入口）。
-     * ⚠ 没有二次确认，与编辑窗那枚**保持一致**（别只给一边加，两边行为会分叉）。
+     * ⚠ **不播收回动画**：服务端收到请求后会**立刻广播新快照**（几十毫秒），而收回动画要 200ms；
+     *   快照到达时弹窗还开着 ⇒ 界面按"弹窗开着"的状态处理刷新，下架后整个商城显示为空，
+     *   必须重开界面才恢复（2026-09-27 用户实测）。下架本来就会立刻改格子内容，
+     *   让界面尽早回到常规态比播完动画更要紧。
+     * ⚠ 没有二次确认（与当年那枚一致）；服务端 `PointMarketService.remove` 只判 `points.shop`。
      */
-    private fun removeFromBuyDialog() {
-        if (buySlot < 0) return
-        sendToServer(RemovePointMarketEntryPayload(buySlot, currentKind(), shopId))
-        // ⚠ **不播收回动画**（`animate = false`）：与「购买成功」同一个道理 ——
-        //   服务端收到请求后会**立刻广播新快照**（几十毫秒），而收回动画要 200ms；
-        //   快照到达时弹窗还开着 ⇒ 界面按"弹窗开着"的状态处理刷新，下架后整个商城显示为空，
-        //   必须重开界面才恢复（2026-09-27 用户实测）。下架本来就会立刻改格子内容，
-        //   让界面尽早回到常规态比播完动画更要紧。
-        closeBuyDialog(animate = false)
+    private fun removeFromEditDialog() {
+        if (editSlot < 0) return
+        sendToServer(RemovePointMarketEntryPayload(editSlot, currentKind(), shopId))
+        closeEditDialog(animate = false)
     }
 
     /** 窗口内的点击：控件优先 → 点空白失焦。窗口开着时事件**一律吃掉**，不让它漏到下层 */
     private fun handleBuyDialogClick(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val focusWasInput = buyCountField != null && focused === buyCountField
-        val focusWasStock = buyStockField != null && focused === buyStockField
         super.mouseClicked(mouseX, mouseY, button)
         // 点在输入框之外 → 手动失焦（否则 E 键被输入框吃掉、Esc 也关不掉窗口）
         if (focusWasInput && buyCountField?.isMouseOver(mouseX, mouseY) != true) focused = null
-        // 库存框**失焦即保存**（用户 2026-09-25 定）：点别处、点「购买 / 取消」都算数。
-        // ⚠ 判据用**点击前**的焦点状态（`focusWasStock`）—— `super.mouseClicked` 之后 focused 已经变了
-        if (focusWasStock && buyStockField?.isMouseOver(mouseX, mouseY) != true) {
-            focused = null
-            submitBuyStockIfChanged()
-        }
         // 点**精灵大图** = 点精灵图标（项目标配：点一下随机叫一声）。
         // 开窗时本来就自动叫过一声，这里补的是「再点它」那一下 —— 编辑窗的预览槽一直有，购买窗漏了
         //（2026-09-25 用户报「大图没有点击反馈」）。
         // ⚠ 必须判 `KIND_POKEMON`：**物品格没有大图**，不判的话点那块空白也会叫
         if (button == 0 && buySlot >= 0) {
-            PointMarketCache.slots[buySlot]
+            entryAt(buySlot)
                 ?.takeIf { it.kind == ShopEntry.KIND_POKEMON && overBuyPreview(mouseX, mouseY) }
                 ?.let { entry ->
                     cellIcon(buySlot, entry).renderable?.let { IconCryClick.play(buyPreviewState.stateFor(it), it) }
                 }
         }
         return true
-    }
-
-    /**
-     * 把库存框里改过的值发给服务端 —— **没变就不发**（免得每次失焦都白跑一趟服务端）。
-     *
-     * ⚠ 留空 = 不限量（传 [ShopEntry.UNLIMITED]）；非法输入（非数字 / 超长）按"没改"处理，不误发。
-     * ⚠ 发完把 [buyStockOriginal] 同步成新值：同一次开窗里再失焦几次也不会重复发包。
-     */
-    private fun submitBuyStockIfChanged() {
-        val field = buyStockField ?: return
-        if (buySlot < 0) return
-        val raw = field.text.trim()
-        val value = if (raw.isEmpty()) ShopEntry.UNLIMITED else raw.toIntOrNull() ?: return
-        if (value == buyStockOriginal) return
-        sendToServer(UpdatePointMarketStockPayload(buySlot, currentKind(), value, shopId))
-        buyStockOriginal = value
     }
 
     /**
@@ -2517,7 +2844,14 @@ class PointsMarketScreen(
      * ⚠ 发送后**立刻关窗**（同主市场的购买确认弹窗）—— 结果走聊天栏 + 快照，界面不用等回执。
      */
     private fun confirmBuy() {
-        val entry = PointMarketCache.slots[buySlot] ?: return closeBuyDialog()
+        // 店里有人正在编辑：整店暂停购买（按钮已置灰，点击只响失败音）
+        if (shopEditLocked) {
+            buyHintMsg = Text.translatable("cobblemarket.points.store.err.shop_being_edited")
+            buyHintUntil = System.currentTimeMillis() + BUY_HINT_MS
+            playFailSound()
+            return
+        }
+        val entry = entryAt(buySlot) ?: return closeBuyDialog()
         // ⚠ **售罄与超量都在本地先拦**：两者本地快照就知道，没必要让服务端拒一趟、
         //   再把原因只发到聊天栏 —— 玩家要求这类提示**直接显示在界面上**（2026-09-25）。
         //   库存就在快照里、本来就知道，没必要白跑一趟服务端。
@@ -2529,7 +2863,14 @@ class PointsMarketScreen(
             playFailSound()
             return
         }
-        val count = if (entry.kind == ShopEntry.KIND_POKEMON) 1 else buyCount
+        // 冷却中：本地直接拦（服务端同样会拦，这里只是不让玩家白跑一趟）。
+        // ⚠ **不再往价格行上方写红字** —— 倒计时已常驻在购买按钮左侧（灰字），点击只补失败音。
+        if (cooldownRemaining(entry) > 0) {
+            playFailSound()
+            return
+        }
+        // 有冷却的商品恒买 1 件
+        val count = if (entry.kind == ShopEntry.KIND_POKEMON || isCooldownEntry(entry)) 1 else buyCount
         if (count < 1) {
             buyHintMsg = Text.translatable("cobblemarket.points.store.err.bad_count")
             buyHintUntil = System.currentTimeMillis() + BUY_HINT_MS
@@ -2562,7 +2903,7 @@ class PointsMarketScreen(
 
     /** 窗口内容：遮罩 + 九宫格 + 标题 + 预览 + 字段 + 价格行 */
     private fun renderBuyDialog(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-        val entry = PointMarketCache.slots[buySlot] ?: return
+        val entry = entryAt(buySlot) ?: return
         val x = editDialogX()
         val y = editDialogY()
         // 遮罩压暗下层（不压的话底下那排格子会跟弹窗抢注意力）
@@ -2582,8 +2923,8 @@ class PointsMarketScreen(
         try {
         context.drawCenteredTextWithShadow(
             textRenderer,
-            // 标题**不分身份**：能管这一格的人（持 `points.shop` 节点 / 服主）进的也是购买窗，
-            // 只是右上角多一枚「下架」—— 「查看」那套标题随只读窗一并去掉（2026-09-25 用户定）
+            // 购买窗给**所有人**（左键）；服主 / 持 `points.shop` 的人右键是编辑。
+            // 「查看」那套只读标题随只读窗一并去掉（2026-09-25 用户定）
             Text.translatable(
                 if (entry.kind == ShopEntry.KIND_POKEMON) "cobblemarket.points.store.buy_title"
                 else "cobblemarket.points.store.buy_item_title"
@@ -2600,6 +2941,29 @@ class PointsMarketScreen(
         }
 
         renderBuyPriceRow(context, entry)
+
+        // 冷却中：倒计时画在**购买按钮左侧**（灰字，与领取店「下次领取」同款），并把按钮置灰。
+        // ⚠ dimmed 与「编辑锁」共用：任一成立就置灰 —— render 每帧都会重设，别只写 cooldown
+        //   （否则编辑锁的置灰会被这里覆盖掉）。
+        val cooldown = cooldownRemaining(entry)
+        buyConfirmButton?.dimmed = shopEditLocked || cooldown > 0
+        if (cooldown > 0 && !isClaimShop) {
+            val cooldownText = Text.translatable(
+                "cobblemarket.points.store.buy_cooldown",
+                RemainingTime.text(
+                    CustomShopCooldownCache.untilOf(shopId, entry.entryId),
+                    "cobblemarket.points.store.cooldown_ready",
+                    localizedUnits = true
+                )
+            )
+            val confirmX = x + editDialogW() - EDIT_PAD - BUY_BTN_W * 2 - BUTTON_GAP
+            val textX = (confirmX - 8 - textRenderer.getWidth(cooldownText)).coerceAtLeast(x + EDIT_PAD)
+            context.drawTextWithShadow(
+                textRenderer, cooldownText, textX,
+                editButtonRowY() + (16 - 8) / 2,
+                0xAAAAAA
+            )
+        }
 
         // 本地挡下的非法值（服务端拒绝的原因另走聊天栏）
         buyHintMsg?.let { msg ->
@@ -2911,7 +3275,7 @@ class PointsMarketScreen(
      */
     private fun renderBuyPriceRow(context: DrawContext, entry: ShopEntry) {
         val y = editPriceRowY() + (EDIT_ROW_H - 8) / 2
-        // 领取店没有价格（这个窗口只有管理员会开：补货 / 下架），不画单价
+        // 领取店没有价格（购买窗只给普通玩家，领取店不会走到这里），不画单价
         if (!isClaimShop) {
             context.drawTextWithShadow(
                 textRenderer,
@@ -2922,23 +3286,16 @@ class PointsMarketScreen(
                 buyRowLeft(), y, 0xFFFFFF
             )
         }
-        // 「剩余」那一格：**能管这一格的人**在这儿是个可编辑的输入框（见 [buildBuyDialog]），
-        // 所以只画标签、值交给控件；普通玩家仍是不可编辑的「剩余：N」
-        if (buyCanRemove) {
-            context.drawTextWithShadow(
-                textRenderer, Text.translatable(buyStockLabelKey()), buyStockLabelX(), y, 0xFFFFFF
-            )
-        } else {
-            context.drawTextWithShadow(
-                textRenderer,
-                Text.translatable(
-                    "cobblemarket.points.store.buy_stock",
-                    if (entry.stock == ShopEntry.UNLIMITED) Text.translatable("cobblemarket.points.store.value.unlimited")
-                    else Text.literal(entry.stock.toString())
-                ),
-                buyStockLabelX(), y, 0xFFFFFF
-            )
-        }
+        // 「剩余」那一格：不可编辑的「剩余：N」（购买窗只读；补货/下架在编辑窗）
+        context.drawTextWithShadow(
+            textRenderer,
+            Text.translatable(
+                "cobblemarket.points.store.buy_stock",
+                if (entry.stock == ShopEntry.UNLIMITED) Text.translatable("cobblemarket.points.store.value.unlimited")
+                else Text.literal(entry.stock.toString())
+            ),
+            buyStockLabelX(), y, 0xFFFFFF
+        )
         // 数量 / 总价：**只有物品格有**（精灵格买一次就是一只，显示总价只是把单价重复一遍）
         // 领取店没有购买数量/总价（金额与数量都不适用）
         if (entry.kind != ShopEntry.KIND_POKEMON && !isClaimShop) {
@@ -2946,6 +3303,10 @@ class PointsMarketScreen(
             context.drawTextWithShadow(
                 textRenderer, Text.translatable("cobblemarket.points.store.buy_count"), buyCountLabelX(), y, 0xFFFFFF
             )
+            // 有冷却的商品没有数量框（恒 1 件），在框的位置画一个只读的「1」
+            if (isCooldownEntry(entry)) {
+                context.drawTextWithShadow(textRenderer, Text.literal("1"), buyCountX(), y, 0xFFFFFF)
+            }
             val total = entry.price * buyCount.coerceAtLeast(1)
             // 「总价」**就在这一行**（用户 2026-09-26 澄清：不是新起一行），只是水平位置
             //   **居中于购买 / 取消那一对按钮**，而不是居中于窗口 —— 这一行是四项等分铺满的，
@@ -2979,24 +3340,6 @@ class PointsMarketScreen(
 
     /** 「剩余」标签（或只读值）的左缘 = 第 2 格 */
     private fun buyStockLabelX(): Int = buyRowLeft() + buyColW()
-
-    /** 库存那一格的标签词条：普通店「剩余：」、领取店「每期可领：」 */
-    private fun buyStockLabelKey(): String =
-        if (isClaimShop) "cobblemarket.points.store.claim_quota_label"
-        else "cobblemarket.points.store.buy_stock_label"
-
-    /**
-     * 库存框的 x：标签的**右缘**（那一格从标签之后开始）。
-     * ⚠ 渲染（[renderBuyPriceRow]）与建控件（[buildBuyDialog]）**共用这个 key/函数** ——
-     *   各算一份必然错位（领取店的「每期可领：」比「剩余：」宽，一开始就重叠了，2026-10-23 用户报）。
-     */
-    private fun buyStockFieldX(): Int =
-        buyStockLabelX() + textRenderer.getWidth(Text.translatable(buyStockLabelKey()))
-
-    /** 库存框宽度：那一格**扣掉标签之后**剩下的宽度，别顶到下一格的「数量」上 */
-    private fun buyStockFieldW(): Int =
-        (buyColW() - textRenderer.getWidth(Text.translatable(buyStockLabelKey())) - 4)
-            .coerceAtLeast(16)
 
     /** 「数量：」标签的左缘 —— 接在「剩余」那格之后，再让开 [BUY_COUNT_LABEL_GAP] 别贴死左边的框 */
     private fun buyCountLabelX(): Int = buyRowLeft() + buyColW() * 2 + BUY_COUNT_LABEL_GAP
@@ -3462,6 +3805,7 @@ class PointsMarketScreen(
         editDmaxText = "0"
         editPriceText = ""
         editStockText = ""
+        editCooldownText = ""
         editSpecies = null
         editSpeciesCandidates = emptyList()
         editSpeciesIndex = 0
@@ -3586,6 +3930,19 @@ class PointsMarketScreen(
      * [submitEdit]（上架）与「保存为快照」**共用这一份** —— 两处各拼一份的话，
      * 以后加字段必然漏一处（本项目"同一样东西写两遍"的坑已经踩过很多次）。
      */
+    /**
+     * 草稿里的**格子冷却小时**：空白 / 0 = 跟随商店（存 0）；非自定义普通店恒 0。
+     * 返回 null = 填了非法值（超出 0..[MAX_COOLDOWN_HOURS] / 非数字），由调用方给出具体提示。
+     */
+    private fun editCooldownHours(): Int? {
+        if (!slotCooldownShown()) return 0
+        val raw = editCooldownField?.text?.trim().orEmpty()
+        if (raw.isEmpty()) return 0
+        val value = raw.toIntOrNull() ?: return null
+        if (value !in 0..MAX_COOLDOWN_HOURS) return null
+        return value
+    }
+
     private fun buildShopEntry(): ShopEntry? {
         // 领取店没有价格框：价格固定 0（服务端也不看）
         val price = if (isClaimShop) {
@@ -3599,12 +3956,16 @@ class PointsMarketScreen(
         val stock = if (stockText.isEmpty()) {
             if (isClaimShop) 0 else ShopEntry.UNLIMITED
         } else stockText.toIntOrNull() ?: return null
+        val cooldown = editCooldownHours() ?: return null
         return if (isPokemonSlot()) {
             val spec = buildPokemonSpec() ?: return null
-            ShopEntry(ShopEntry.KIND_POKEMON, price, stock, pokemon = spec)
+            ShopEntry(ShopEntry.KIND_POKEMON, price, stock, pokemon = spec, cooldownHours = cooldown)
         } else {
             if (editItemId.isEmpty()) return null
-            ShopEntry(ShopEntry.KIND_ITEM, price, stock, item = ShopItemSpec(editItemId, editItemComponents))
+            ShopEntry(
+                ShopEntry.KIND_ITEM, price, stock,
+                item = ShopItemSpec(editItemId, editItemComponents), cooldownHours = cooldown
+            )
         }
     }
 
@@ -3617,6 +3978,10 @@ class PointsMarketScreen(
                 failSubmit("price_required")
                 return
             }
+        }
+        if (slotCooldownShown() && editCooldownHours() == null) {
+            failSubmit("cooldown_invalid")
+            return
         }
         val entry = buildShopEntry() ?: run {
             // 走到这儿只可能是物种 / 物品没选（价格上面挡过了）
@@ -3779,11 +4144,33 @@ class PointsMarketScreen(
         addSelectableChild(editStockField)
         addDrawableChild(editStockField)
 
-        // 底部按钮行：添加 + 取消（居中并排，间距 8）。
-        // ⚠ 恒为「添加」—— 编辑态 2026-09-25 已取消，快照回填也只是填进新增的草稿，
-        //   所以**别按 editSpecBase 判**（那是 copy 基底，回填后非 null，会错显成「保存」）
+        // 格子冷却（只有自定义普通购买店）：放在底部「价格 / 库存」这一行的**第三列**。
+        // ⚠ 不新增行、不增高弹窗、不压缩前两格 —— 用的是这一行本来就空着的横向余量。
+        // 留空 / 0 = 跟随商店（取整店冷却与商品各自冷却的较长者）；占位符直接显示这个默认值。
+        // ⚠ 占位符是**纯数字**（如 `1`），不能带 `h` —— 输入框只收数字，带单位会误导玩家以为要手打单位
+        //   （2026-10-27 用户报：原 `0h` 看着像要求输入单位）。0 也要显示 `0`，不要写 `—`。
+        if (slotCooldownShown()) {
+            editCooldownField = TextFieldWidget(
+                textRenderer, slotCooldownFieldX(), priceY,
+                slotCooldownFieldW(), EDIT_ROW_H, Text.literal("")
+            )
+            editCooldownField?.setTextPredicate { s -> s.length <= 5 && s.all { it.isDigit() } }
+            editCooldownField?.setChangedListener { editCooldownText = it }
+            editCooldownField?.text = editCooldownText
+            editCooldownField?.setPlaceholder(
+                Text.literal(maxOf(shopCooldownHours, itemCooldownHours).toString())
+            )
+            addSelectableChild(editCooldownField)
+            addDrawableChild(editCooldownField)
+        } else {
+            editCooldownField = null
+        }
+
+        // 底部按钮行：保存 / 添加 + 取消（居中并排，间距 8）。
+        // ⚠ 按 [editEditingSlot] 判，**别按 editSpecBase** —— 快照回填也会把它填成非 null，
+        //   那时仍是往空格子里「添加」，按钮不该变成「保存」（2026-09-25 用户报过同类误判）
         val btnY = editButtonRowY()
-        val confirmText = "cobblemarket.points.store.add"
+        val confirmText = if (editEditingSlot) "cobblemarket.points.store.save" else "cobblemarket.points.store.add"
         val contentW = editDialogW() - EDIT_PAD * 2
         // 底部按钮行**整组居中**：精灵窗那组左边多两位成员 —— 「形态说明」info（16px）与「非法」开关。
         //
@@ -3866,10 +4253,10 @@ class PointsMarketScreen(
             ).also { addDrawableChild(it) }
         }
 
-        // **快照**：右上角那枚 —— 位置**就是原来「下架」的那个**（`editRemoveY()` 这名字是那时候留下的，
+        // **快照**：右上角那枚（`editRemoveY()` 这名字是"下架"还在右上角时留下的，
         // 它算的是"距顶 = 距右"那条对角线上，与具体是哪枚按钮无关）。
-        // 用户 2026-09-25 拍板：服主不再能编辑已有格子，右上角这一格改放快照。
-        // 那枚「下架」后来搬到了**购买窗的右上角**（能管商城的人才看得见），见 [removeFromBuyDialog]。
+        // 2026-10-26 起「下架」也回到了编辑窗（编辑已有格子时才建，见本节末尾）——
+        // 精灵窗一整排是「下架 | 自由选择 | 快照」，物品窗没有后两枚，下架就贴右缘。
         // ⚠ **快照只有精灵窗有**：快照存的是**精灵配方**（物种 / 形态 / 个体值 / 技能那些），
         //   物品窗没有可存的东西 —— 原先无条件建，物品窗上就挂着一枚点了没用的按钮
         //（2026-09-25 用户指出）
@@ -3896,6 +4283,21 @@ class PointsMarketScreen(
                 iconLeft = if (editFreePick) FREE_PICK_UNLOCK_ICON else FREE_PICK_LOCK_ICON,
                 iconTexW = 48, iconTexH = 48, iconScale = 0.3333f,
                 tooltip = Text.translatable("cobblemarket.points.store.free_pick_tip")
+            ).also { addDrawableChild(it) }
+        }
+
+        // 「下架」（**只在编辑已有格子时建**）：精灵窗排在「下架 | 自由选择 | 快照」这一排的最左；
+        // 物品窗没有后两枚 ⇒ 按原来的位置贴右缘。
+        // ⚠ 右缘用 [editRowRightX]（最右列字段的右缘），**别用「窗口右缘 − 内边距」** ——
+        //   列宽是整数除法，两者能差几像素，看着就是"没对齐"（2026-09-20 用户指出）。
+        if (editEditingSlot) {
+            val removeX = if (isPokemonSlot())
+                editRowRightX() - EDIT_SNAPSHOT_W - BUTTON_GAP - EDIT_FREE_SIZE - BUTTON_GAP - EDIT_REMOVE_W
+            else
+                editRowRightX() - EDIT_REMOVE_W
+            editRemoveButton = NineSliceButton(
+                removeX, editRemoveY(), EDIT_REMOVE_W, EDIT_ROW_H,
+                Text.translatable("cobblemarket.points.store.remove"), { removeFromEditDialog() }
             ).also { addDrawableChild(it) }
         }
 
@@ -4724,9 +5126,8 @@ class PointsMarketScreen(
         refreshEditLabels()
     }
 
-    // ⚠ 原先这里有个 `confirmRemoveSlot()`（清空 [editSlot]）—— 2026-09-25 服主不再能编辑已有格子后
-    //   它变成了死代码（唯一的调用点是编辑窗里那枚「下架」，而那枚按钮已经删了），故一并删掉。
-    //   下架的入口现在只有**购买窗右上角那枚**（能管商城的人才看得见），见 [removeFromBuyDialog]。
+    // 下架入口 = 编辑窗右上角那枚「下架」（见 [removeFromEditDialog]，只在编辑已有格子时出现）。
+    // 2026-09-25 曾删掉过一次（改为「下架 → 重新添加」），2026-10-26 随「点击直接编辑」一起恢复。
 
     // ── 窗口：展开式选项列表（形态 / 性格 / 特性 / 球 / 太晶 / 技能 共用）──
 
@@ -4996,6 +5397,8 @@ class PointsMarketScreen(
         editSpeciesField?.visible = !covered
         editPriceField?.visible = !covered
         editStockField?.visible = !covered
+        // ⚠ 格子冷却框同样要显式恢复：兜底逻辑只在 covered 时隐藏，**不会**在收起列表后把它放回来
+        editCooldownField?.visible = !covered
         // 滚动区里的输入框：按各自行号的可见性来（见 [scrollableFields]）
         scrollableFields().forEach { (field, key) ->
             field?.visible = !covered && editRowVisible(editRowOf(key))
@@ -5711,15 +6114,17 @@ class PointsMarketScreen(
                 Text.translatable(optionListShortKey(listKind)).string
             )
         } else {
-            // 精灵 / 物品两种窗口的标题分开（物品格子点开时写「添加精灵」就驴唇不对马嘴了）。
-            // ⚠ 这个窗口**只有「添加」一种形态**：编辑已有格子 2026-09-25 已取消（要改走「下架 → 重新添加」），
-            //   快照回填也只是把一份规格填进**新增**的草稿。
-            //   ⚠ **别拿 `editSpecBase` 判**：它装的是 copy 基底，快照回填后就非 null 了 ——
-            //     按它判会让标题错显成「编辑精灵」（2026-09-25 用户报）
+            // 精灵 / 物品 × 添加 / 编辑，四种标题分开（物品格子点开时写「添加精灵」就驴唇不对马嘴了）。
+            // ⚠ 按 [editEditingSlot] 判，**别按 `editSpecBase`** —— 快照回填后它也会非 null，
+            //   那时仍是在往空格子里「添加」，标题不该变成「编辑」（2026-09-25 用户报过同类误判）
             val pokemon = isPokemonSlot()
             Text.translatable(
-                if (pokemon) "cobblemarket.points.store.add_title"
-                else "cobblemarket.points.store.add_item_title"
+                when {
+                    editEditingSlot && pokemon -> "cobblemarket.points.store.edit_title"
+                    editEditingSlot -> "cobblemarket.points.store.edit_item_title"
+                    pokemon -> "cobblemarket.points.store.add_title"
+                    else -> "cobblemarket.points.store.add_item_title"
+                }
             )
         }
         context.drawCenteredTextWithShadow(
@@ -5801,6 +6206,13 @@ class PointsMarketScreen(
                 textRenderer, Text.translatable("cobblemarket.points.store.field.stock"),
                 editPriceGroupX() + editPriceColW() + EDIT_COL_GAP, labelY, 0xFFFFFF
             )
+            // 第三列：格子冷却（只有自定义普通购买店有）
+            if (slotCooldownShown()) {
+                context.drawTextWithShadow(
+                    textRenderer, slotCooldownLabel(),
+                    editPriceGroupX() + (editPriceColW() + EDIT_COL_GAP) * 2, labelY, 0xFFFFFF
+                )
+            }
         } else {
             context.drawTextWithShadow(
                 textRenderer, Text.translatable("cobblemarket.points.store.field.claim_quota"),
@@ -6536,6 +6948,15 @@ class PointsMarketScreen(
      */
     override fun removed() {
         super.removed()
+        // 界面被关闭 / 换店时编辑窗还开着：同样要解锁，否则这家店会一直显示「编辑中」。
+        // ⚠ 断线时这里也会被调：连接已经没了就别发包（ClientPlayNetworking.send 会抛异常）。
+        if (editSlot >= 0) {
+            editSlot = -1
+            if (client?.networkHandler != null) sendToServer(SetShopEditingPayload(shopId, false))
+        }
+        // 界面以任何方式离开时清掉关闭动画状态（防残留到下一次打开）
+        closeAnimStarted = false
+        closeAnimTarget = null
         if (PointMarketCache.viewingShopId == shopId) PointMarketCache.viewingShopId = null
     }
 
@@ -6594,6 +7015,48 @@ class PointsMarketScreen(
         }
     }
 
+    /**
+     * 关闭动画：打开动画的**严格反向**（时间反演）——
+     * 面板从全尺寸缩回打开时的鼠标点（右键 NPC 的位置），内容在前 20% 淡出。
+     * 打开用 ease-out（`1-(1-t)²`），关闭取反演 ⇒ ease-in（`t²`）。
+     */
+    private fun renderCloseAnimation(context: DrawContext, delta: Float) {
+        val bg = bgRect()
+        val t = closeAnimRaw()
+        val eased = t * t
+        val scale = 1f + (openAnimStartScale - 1f) * eased
+        val bgCx = bg.x + bg.w / 2f
+        val bgCy = bg.y + bg.h / 2f
+        val centerX = bgCx + (openAnimOriginX - bgCx) * eased
+        val centerY = bgCy + (openAnimOriginY - bgCy) * eased
+        val w = (bg.w * scale).roundToInt().coerceAtLeast(1)
+        val h = (bg.h * scale).roundToInt().coerceAtLeast(1)
+        // 面板整体在最后 40% 淡出：动画到点后要等下一次 tick 才真正切界面，
+        // 不淡出会停在一个 6% 的小面板上（用户 2026-10-25 报「最后顿一下」）
+        val panelAlpha = ((1f - t) / 0.4f).coerceIn(0f, 1f)
+        context.setShaderColor(panelAlpha, panelAlpha, panelAlpha, panelAlpha)
+        try {
+            drawBackgroundScaled(
+                context,
+                (centerX - w / 2f).roundToInt(),
+                (centerY - h / 2f).roundToInt(),
+                w, h
+            )
+        } finally {
+            context.setShaderColor(1f, 1f, 1f, 1f)
+        }
+
+        val alpha = (1f - t / 0.2f).coerceIn(0f, 1f) * panelAlpha
+        if (alpha <= 0f) return
+        hoveredCell = -1
+        context.setShaderColor(alpha, alpha, alpha, alpha)
+        try {
+            drawMarketDecor(context, delta)
+        } finally {
+            context.setShaderColor(1f, 1f, 1f, 1f)
+        }
+    }
+
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val bg = bgRect()
         drawBackgroundScaled(context, bg.x, bg.y, bg.w, bg.h)
@@ -6603,8 +7066,9 @@ class PointsMarketScreen(
         // 注释写着「返回按钮与背景底边之间」但代码没落实，这次补上。
         // ⚠ 传**原来的 Text**，别转成 String 再拼 —— 结果里带 RP 图标字形（字体挂在 Text 样式上），
         //   一转 String 图标就变成方块（本项目反复踩过的坑）
-        resultMsg?.let { msg ->
-            if (System.currentTimeMillis() < resultUntil) {
+        val showingResult = resultMsg != null && System.currentTimeMillis() < resultUntil
+        if (showingResult) {
+            resultMsg?.let { msg ->
                 // 返回按钮底边 = bg 底边往上 BACK_BOTTOM（原图口径），这段空隙的中心再上移半行字高
                 val slotCenterY = bg.y + bg.h - texPx(BACK_BOTTOM) / 2
                 context.drawCenteredTextWithShadow(
@@ -6614,6 +7078,24 @@ class PointsMarketScreen(
                     resultColor
                 )
             }
+        } else if (canEditShop() && editSlot < 0 && buySlot < 0 && !snapshotDialog) {
+            // 服主 / 持 `points.shop` 的人：在这里常驻一行两个入口的提示
+            //（与结果提示共用位置；有结果时让位）。领取店没有购买，只提示编辑。
+            // ⚠ 弹窗打开时不画：这行属于主界面，弹窗叠上来后它还亮着会抢注意力
+            //   （2026-10-28 用户报「打开弹窗时白字还高亮」）
+            val slotCenterY = bg.y + bg.h - texPx(BACK_BOTTOM) / 2
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable(
+                    if (isClaimShop) "cobblemarket.points.store.manage_hint_edit_only"
+                    else "cobblemarket.points.store.manage_hint"
+                ),
+                bg.x + bg.w / 2,
+                slotCenterY - 4,
+                // 白字：这一行画在背景底部的红色条上，灰色（0x777777）在红底上不显眼
+                //（2026-10-27 用户报）
+                0xFFFFFF
+            )
         }
     }
 
@@ -6632,6 +7114,17 @@ class PointsMarketScreen(
         //   的注释），不清空会逐帧累积、点到别处的图标。
         //   全项目其余 11 个界面都在 render 开头调它，本界面当初漏了。
         IconRegistry.beginFrame(mouseX, mouseY)
+        // 自定义商店关闭动画（打开动画的反向）：缩回打开时的鼠标点（≈右键的 NPC）。
+        // ⚠ 真正切界面在 [tick] 里做 —— 不能在 render 里 setScreen（光标锁定状态会异常，项目踩过）
+        if (isCustomShop && closeAnimStarted) {
+            if (!openAnimOriginCaptured) {
+                openAnimOriginX = mouseX.toFloat()
+                openAnimOriginY = mouseY.toFloat()
+                openAnimOriginCaptured = true
+            }
+            renderCloseAnimation(context, delta)
+            return
+        }
         // 自定义商店打开动画：首帧记下鼠标位置（= 玩家右键 NPC 的点击点），
         // 动画期间只画面板与淡入中的内容；控件等播完再交给正常路径画。
         if (openAnimActive()) {
@@ -6646,8 +7139,18 @@ class PointsMarketScreen(
         // 翻页按钮的可用态：第一页 →「上一页」置灰、最后一页 →「下一页」置灰（照精灵市场的做法）。
         // ⚠ 放在 render 里而不是建控件时：`totalPages` 来自**服务端快照**，会随每次广播变，
         //   建控件时那份早就过期了（2026-09-27 用户报「第一页时上一页该是暗的」）
-        prevButton?.active = currentPage > 1
-        nextButton?.active = currentPage < totalPages
+        val pagesInView = viewPages()
+        val pageNo = viewPageNumber()
+        prevButton?.active = pageNo > 1
+        nextButton?.active = pageNo < pagesInView
+        // 领取按钮：冷却中置灰（状态由服务端在打开商店 / 每次领取后下发；0 = 现在就能领）
+        claimButton?.dimmed = isClaimShop &&
+            CustomShopClaimCache.nextResetAtOf(shopId) > System.currentTimeMillis()
+        // 边界时直接隐藏（2026-10-25 用户要求）；弹窗开着时不动（hideMainControls 已把它们藏起来）
+        if (!dialogOpen()) {
+            prevButton?.visible = pageNo > 1
+            nextButton?.visible = pageNo < pagesInView
+        }
         // 展开动画期间把窗口控件藏起来（它们是 MC 控件、由 super.render 统一画，塞不进插值矩形）；
         // 播完这一帧会自动放回去（见 updateDialogAnimControls）
         if (dialogOpen()) updateDialogAnimControls()
@@ -6674,8 +7177,8 @@ class PointsMarketScreen(
         drawMarketDecor(context, delta)
         // 领取店：底部「领取」按钮上方显示刷新倒计时
         drawClaimRefreshHint(context)
-        // 领取店：格子**点不进去**（没有购买窗）⇒ 悬停时给完整详情 + 完整的「可领 N」
-        drawClaimCellTooltip(context, mouseX, mouseY)
+        // 格子悬停窗：两种商店都给完整详情（领取店额外给完整的「可领 N」；购买店给完整单价 + 库存）
+        drawCellTooltip(context, mouseX, mouseY)
     }
 
     /**
@@ -6691,8 +7194,9 @@ class PointsMarketScreen(
         val layout = gridLayout(bgRect())
         val icons = LinkedHashMap<String, ItemClaimFlyAnimation.Icon>()
         for (cell in 0 until layout.cols * layout.rows) {
-            val slot = globalSlot(cell)
-            val entry = PointMarketCache.slots[slot] ?: continue
+            val slot = slotOfCell(cell)
+            if (slot < 0) continue
+            val entry = entryAt(slot) ?: continue
             if (entry.kind != ShopEntry.KIND_ITEM || entry.entryId.isEmpty()) continue
             // 与格子里画的是**同一个栈**（动画触发时会复制再加数量，不会污染商店图标）
             val stack = cellIcon(slot, entry).stack ?: continue
@@ -6720,26 +7224,26 @@ class PointsMarketScreen(
     }
 
     /**
-     * **领取店格子的悬停窗**（2026-10-24 用户要求）。
+     * **商城格子的悬停窗**（2026-10-24 领取店先加，2026-10-26 扩到全部商店）。
      *
-     * 领取店**点不进格子**（没有购买窗），玩家看不到精灵 / 物品的详情 ⇒ 悬停时把详情补上，
-     * 并且把**完整的**「Claimable: N / 可领 N」放在**最后一行**（格子里只放得下短标签 `N left`）。
+     * 精灵给完整规格、物品给原版词条；最后一行按商店补：
+     *  · 领取店：完整的「Claimable: N / 可领 N」（格子里只放得下短标签 `N left`）
+     *  · 购买店：**完整单价 + 限量库存**（格子里的价格是缩写、库存只有角标）
      *
-     * ⚠ 只在领取店画；普通商店点格子会开购买窗，不需要这层。
      * ⚠ 落点 / 外观走全项目同一套 [withTooltipLayer]（同证章 / 变体 / 非法印章那几个悬停窗）。
      */
-    private fun drawClaimCellTooltip(context: DrawContext, mouseX: Int, mouseY: Int) {
-        if (!isClaimShop) return
+    private fun drawCellTooltip(context: DrawContext, mouseX: Int, mouseY: Int) {
         // ⚠ 这里**现算**格子（不用缓存的 hoveredCell）：翻页 / 数据刷新后它可能停在旧值上
         val cell = cellAt(mouseX.toDouble(), mouseY.toDouble(), gridLayout(bgRect()))
         if (cell < 0) return
-        val slot = globalSlot(cell)
-        val entry = PointMarketCache.slots[slot] ?: return
-        val lines = claimTooltipLines(slot, entry)
+        val slot = slotOfCell(cell)
+        if (slot < 0) return
+        val entry = entryAt(slot) ?: return
+        val lines = cellTooltipLines(slot, entry)
         if (lines.isEmpty()) return
         val pad = MARK_TIP_PAD
         val lineH = 10
-        // 太高就截断（物品词条可能很多），但**最后一行「可领 N」必须留着**
+        // 太高就截断（物品词条可能很多），但**最后一行摘要必须留着**
         val maxLines = ((height - pad * 2) / lineH).coerceAtLeast(2)
         val shown = if (lines.size <= maxLines) lines else lines.take(maxLines - 1) + lines.last()
         val w = shown.maxOf { textRenderer.getWidth(it) } + pad * 2
@@ -6751,8 +7255,8 @@ class PointsMarketScreen(
         }
     }
 
-    /** 悬停窗内容：精灵 = 规格详情；物品 = 原版词条；**最后一行固定是完整的「可领 N」** */
-    private fun claimTooltipLines(slot: Int, entry: ShopEntry): List<Text> {
+    /** 悬停窗内容：精灵 = 规格详情；物品 = 原版词条；**最后一行按商店补摘要** */
+    private fun cellTooltipLines(slot: Int, entry: ShopEntry): List<Text> {
         val lines = mutableListOf<Text>()
         val spec = entry.pokemon
         if (spec != null) {
@@ -6768,10 +7272,25 @@ class PointsMarketScreen(
                 lines += Text.literal(itemDisplayName(itemSpec.itemId))
             }
         }
-        val remaining = claimRemaining(entry)
-        if (remaining >= 0) {
-            lines += Text.translatable("cobblemarket.points.store.claim_remaining", remaining)
-                .formatted(if (remaining > 0) Formatting.GREEN else Formatting.DARK_GRAY)
+        if (isClaimShop) {
+            val remaining = claimRemaining(entry)
+            if (remaining >= 0) {
+                lines += Text.translatable("cobblemarket.points.store.claim_remaining", remaining)
+                    .formatted(if (remaining > 0) Formatting.GREEN else Formatting.DARK_GRAY)
+            }
+        } else {
+            // 格子里的价格是**缩写**（9.9M），悬停给完整单价；库存角标只有数字，这里补「剩余」
+            val summary = Text.literal("").append(
+                Text.translatable(
+                    "cobblemarket.points.store.buy_price",
+                    CurrencyService.amountText(entry.price, shopCurrency)
+                )
+            )
+            if (entry.stock != ShopEntry.UNLIMITED) {
+                summary.append(Text.literal("    "))
+                    .append(Text.translatable("cobblemarket.points.store.buy_stock", entry.stock))
+            }
+            lines += summary
         }
         return lines.filter { it.string.isNotEmpty() }
     }
@@ -6928,7 +7447,8 @@ class PointsMarketScreen(
         if (next <= 0L) return
         val bg = bgRect()
         val remain = com.shusheng.cobblemarket.util.RemainingTime.text(
-            next, "cobblemarket.points.store.claim_ready", secondPrecision = false
+            next, "cobblemarket.points.store.claim_ready",
+            secondPrecision = false, localizedUnits = true
         )
         // 放在「领取」按钮**右侧**（不是上方 —— 上方会压到那条红色分割线，用户 2026-10-23 报）。
         // ⚠ 领取按钮 2026-10-24 改成与翻页按钮**同宽同高**（80×20）⇒ 偏移量必须跟着换。
@@ -6988,6 +7508,18 @@ class PointsMarketScreen(
         if (hoveredCell in 0 until cellCount) {
             drawShopCell(context, layout, hoveredCell, delta, hover = true)
         }
+        // 搜索没有命中：网格是空的，给一句提示（否则像界面坏了）
+        // ⚠ 位置贴着**上分割线**下方（用户 2026-10-27 要求）——原先放 layout.startY + 24，
+        //   正好压在第一行格子中间，看起来像界面坏了
+        if (searchMode && searchResults.isEmpty()) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.translatable("cobblemarket.points.market.search_empty").formatted(Formatting.GRAY),
+                bg.x + bg.w / 2,
+                dividerTopY(bg) + 6,
+                0xFFFFFF
+            )
+        }
     }
 
     /** 弹窗开着时鼠标移动到不同格子不该再触发悬停放大（放大动画在弹窗底下闪没意义） */
@@ -7018,8 +7550,10 @@ class PointsMarketScreen(
             x - grow, y - grow, size + grow * 2, size + grow * 2, 0, DIALOG_BACKGROUND_TEX_H
         )
 
-        val entry = PointMarketCache.slots[globalSlot(cell)] ?: return
-        val icon = cellIcon(globalSlot(cell), entry)
+        val slot = slotOfCell(cell)
+        if (slot < 0) return
+        val entry = entryAt(slot) ?: return
+        val icon = cellIcon(slot, entry)
 
         // 内容跟着**当前画出来的那个格子**走（悬停时 drawSize 就是放大后的边长）——
         // 只放大底图、内容原地不动的话，放大后的格子里精灵会缩在中间显得很小。
@@ -7070,7 +7604,7 @@ class PointsMarketScreen(
             if (remaining >= 0) {
                 // 格子里**只放短标签**（用户 2026-10-24：英文 `Claimable` 放不下；「Claim N」又是动作语义）
                 // —— 短标签是「N left / 可领 N」，完整的「Claimable: N」放在**悬停窗最后一行**
-                //   （见 [drawClaimCellTooltip]）。窄到连短标签都放不下时退回纯数字。
+                //   （见 [drawCellTooltip]）。窄到连短标签都放不下时退回纯数字。
                 val label = Text.translatable("cobblemarket.points.store.claim_remaining_short", remaining)
                 val text = if (textRenderer.getWidth(label) <= size - 2) label
                 else Text.literal(remaining.toString())
@@ -7209,6 +7743,11 @@ class PointsMarketScreen(
 
         /** 标题距背景顶（原图 1280×720 口径，用户 2026-09-18 定） */
         const val TITLE_TOP = 28
+
+        /** 搜索防抖：停手这么久才发包（必须 > 服务端 500ms 读节流窗口） */
+        const val SEARCH_DEBOUNCE_MS = 650L
+        /** 客户端最多带多少个名称命中的候选 id（与服务端 `MAX_SEARCH_IDS` 对齐） */
+        const val SEARCH_ID_LIMIT = 512
 
         /** 返回按钮：底边距背景底（原图口径）、按钮尺寸 */
         const val BACK_BOTTOM = 75

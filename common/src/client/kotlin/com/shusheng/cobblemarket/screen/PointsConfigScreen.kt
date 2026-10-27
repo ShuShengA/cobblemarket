@@ -36,6 +36,9 @@ class PointsConfigScreen : Screen(
     // ── 本地编辑态（保存时一次性提交；快照回来时覆盖） ──
     private var pointsEnabled = false
 
+    /** 主 RP 商城开关（默认关）：关闭后入口界面的 RP 商城按钮置灰；自定义 NPC 商店不受影响 */
+    private var pointsMainShopEnabled = false
+
     /** 玩家间 RP 交易开关（默认关）；控制上架界面的货币切换按钮显不显示 */
     private var pointsMarketEnabled = false
 
@@ -558,6 +561,7 @@ class PointsConfigScreen : Screen(
     /** 服务端快照到了：填本地态并重建（**不覆盖已有未保存编辑**由 loaded 标志保证） */
     fun onConfig(payload: PointsConfigPayload) {
         pointsEnabled = payload.pointsEnabled
+        pointsMainShopEnabled = payload.mainShopEnabled
         pointsMarketEnabled = payload.pointsMarketEnabled
         rpAsQuestCurrency = payload.rpAsQuestCurrency
         pointsRewardsEnabled = payload.pointsRewardsEnabled
@@ -634,7 +638,26 @@ class PointsConfigScreen : Screen(
             addDrawableChild(btn)
         }
         addToggle("points", pointsEnabled) { pointsEnabled = !pointsEnabled; markDirtyAndRebuild() }
+        // 悬停说明范围：这个总开关会连 RP 计价的 NPC 商店、充值、奖励一起停（2026-10-25 用户要求）
+        toggleButtons["points"]?.setTooltip(
+            Tooltip.of(
+                Text.translatable(
+                    "cobblemarket.points.config.points_enabled_tip",
+                    CurrencyService.pointsIcon(), CurrencyService.pointsIcon(), CurrencyService.pointsIcon(),
+                    CurrencyService.pointsIcon(), CurrencyService.pointsIcon()
+                )
+            )
+        )
         addToggle("points_market", pointsMarketEnabled) { onMarketToggle() }
+        // 玩家间交易与 NPC 商店是两回事，悬停里写明（2026-10-25 用户要求）
+        toggleButtons["points_market"]?.setTooltip(
+            Tooltip.of(
+                Text.translatable(
+                    "cobblemarket.points.config.points_market_tip",
+                    CurrencyService.pointsIcon(), CurrencyService.pointsIcon()
+                )
+            )
+        )
         // ⚠ 本行多占了一行设置项 ⇒ **档位区少显示一行**（见 [DIALOG_H] 的算式）。
         //   用户 2026-09-28 拍板接受这个取舍（他 09-19 特意要求过"档位多显示一行"，所以不能擅自加）。
         // ⚠ 点**开启**先弹确认窗（讲清交出了什么权限 + 5 秒冷静期）；**关闭**不用确认，直接关
@@ -646,6 +669,11 @@ class PointsConfigScreen : Screen(
         )
         addDrawableChild(feeCfgButton)
         addToggle("shop", shopEnabled) { shopEnabled = !shopEnabled; markDirtyAndRebuild() }
+        // 主 RP 商城（默认关）：只用自定义 NPC 商店的服主可以关掉空的主商城；总开关关闭时它不生效
+        addToggle("main_shop", pointsMainShopEnabled) {
+            pointsMainShopEnabled = !pointsMainShopEnabled
+            markDirtyAndRebuild()
+        }
         // RP 奖励系统（数据包驱动、默认关）：点**开启**先弹确认窗（唯一会自动发 RP 的开关）
         addToggle("rewards", pointsRewardsEnabled) { onRewardsToggle() }
 
@@ -809,6 +837,7 @@ class PointsConfigScreen : Screen(
         place(ROW_RP_QUEST, toggleButtons["rp_quest"], rightX, 0)
         place(ROW_FEE, feeCfgButton, rightX - 18, 0)
         place(ROW_SHOP, toggleButtons["shop"], rightX, 0)
+        place(ROW_MAIN_SHOP, toggleButtons["main_shop"], rightX, 0)
         place(ROW_QR, qrField, rightX - 130, 2)
         place(ROW_ICON, defaultIconField, rightX - 130, 2)
         place(ROW_TIMEOUT, timeoutField, rightX - 60, 2)
@@ -964,6 +993,7 @@ class PointsConfigScreen : Screen(
         sendToServer(
             SavePointsConfigPayload(
                 pointsEnabled = pointsEnabled,
+                mainShopEnabled = pointsMainShopEnabled,
                 shopEnabled = shopEnabled,
                 payQrImage = pendingText["qr"] ?: payQr,
                 defaultIcon = pendingText["defaultIcon"] ?: defaultIcon,
@@ -1059,6 +1089,7 @@ class PointsConfigScreen : Screen(
             ROW_RP_QUEST to "cobblemarket.points.config.rp_quest",
             ROW_FEE to "cobblemarket.points.config.points_fee",
             ROW_SHOP to "cobblemarket.points.config.shop_enabled",
+            ROW_MAIN_SHOP to "cobblemarket.points.config.main_shop_enabled",
             ROW_QR to "cobblemarket.points.config.pay_qr",
             ROW_ICON to "cobblemarket.points.config.default_icon",
             ROW_TIMEOUT to "cobblemarket.points.config.timeout",
@@ -1337,24 +1368,26 @@ class PointsConfigScreen : Screen(
          *   可视区里凭空少一整行（设置项+档位一共 314 的额度，多出来的一行会把档位挤掉一格）。
          * ⚠ 内容装不下**不会重叠**：装不下的行直接藏起来、可滚动（2026-09-19 改成整块滚动）。
          */
-        const val DIALOG_H = 388
+        // 2026-10-25：加「主 RP 商城」一行，从 388 提到 408（保持档位区可见行数不变）
+        const val DIALOG_H = 408
 
         /**
          * 设置项各行的**行号**（0 起）—— **唯一一份**：
          * [layoutRows] 按它摆控件、render 按它画标签，加/删设置项时改这里 + 那一处列表即可。
          */
         const val ROW_POINTS = 0
-        const val ROW_POINTS_MARKET = 1
-        const val ROW_RP_QUEST = 2
-        const val ROW_FEE = 3
-        const val ROW_SHOP = 4
-        const val ROW_QR = 5
-        const val ROW_ICON = 6
-        const val ROW_TIMEOUT = 7
-        const val ROW_CURRENCY = 8
-        const val ROW_REWARDS = 9
+        const val ROW_MAIN_SHOP = 1
+        const val ROW_POINTS_MARKET = 2
+        const val ROW_RP_QUEST = 3
+        const val ROW_FEE = 4
+        const val ROW_SHOP = 5
+        const val ROW_QR = 6
+        const val ROW_ICON = 7
+        const val ROW_TIMEOUT = 8
+        const val ROW_CURRENCY = 9
+        const val ROW_REWARDS = 10
 
-        /** 设置项占的行数（总开关 / 玩家间交易 / give/take 权限下放 / 费率配置 / 充值开关 / 收款码 / 券图 / 超时 / 货币单位 / 奖励规则） */
+        /** 设置项占的行数（总开关 / 主商城 / 玩家间交易 / give/take 权限下放 / 费率配置 / 充值开关 / 收款码 / 券图 / 超时 / 货币单位 / 奖励规则） */
         const val FIXED_ROWS = ROW_REWARDS + 1
 
         /**
@@ -1366,7 +1399,7 @@ class PointsConfigScreen : Screen(
          *   漏了前者 ⇒ `%s` 没参数可填，标签前面凭空多出一段**空白或畸形小方块**
          *   ——不报错、不崩，2026-10-13 就是这么加了「奖励规则」才发现的老写法（`row <= ROW_FEE`）的坑。
          */
-        val ICON_LABEL_ROWS = setOf(ROW_POINTS, ROW_POINTS_MARKET, ROW_RP_QUEST, ROW_FEE, ROW_REWARDS)
+        val ICON_LABEL_ROWS = setOf(ROW_POINTS, ROW_MAIN_SHOP, ROW_POINTS_MARKET, ROW_RP_QUEST, ROW_FEE, ROW_REWARDS)
 
         /**
          * 设置项与档位行之间留的缝（那条 1px 分割线画在这段缝里）。

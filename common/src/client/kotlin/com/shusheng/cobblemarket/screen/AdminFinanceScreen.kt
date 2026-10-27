@@ -905,8 +905,11 @@ class AdminFinanceScreen : Screen(Text.translatable("cobblemarket.finance.title"
         val listAreaBottom = startY + visibleRows * rowHeight
         val rows = rowCount()
 
+        // 弹窗打开时冻结行悬停（用户 2026-10-27 报同类问题）
         hoveredRow = -1
-        if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom) {
+        if (!dialogOpen() &&
+            mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom
+        ) {
             val row = (mouseY - startY) / rowHeight
             val shownCount = minOf(visibleRows, rows - scrollOffset)
             if (row in 0 until shownCount) hoveredRow = row

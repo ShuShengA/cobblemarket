@@ -52,7 +52,15 @@ data class ShopEntry(
      *   写盘后旧版本照样能读（多一个字段而已）。空串 = 这条在加字段之前就挂着。
      */
     val creatorUuid: String = "",
-    val creatorName: String = ""
+    val creatorName: String = "",
+    /**
+     * **这一格购买后的冷却（小时）**；`0` = 跟随商店冷却（见 [CustomShop.cooldownHours]）。
+     *
+     * 只对**自定义普通购买店**有意义：主商城的条目与领取店的条目在保存时会被强制清 0
+     * （服务端判，不信客户端）。实际生效值 = `max(商店冷却, 本格冷却)` —— 商店冷却是保底，
+     * 本格只能比它更长；见 [PointMarketService.buy]。
+     */
+    val cooldownHours: Int = 0
 ) {
     fun isSoldOut(): Boolean = stock == 0
 
@@ -316,6 +324,8 @@ internal fun writeShopEntryBody(c: NbtCompound, entry: ShopEntry) {
     // 上架者（账本「卖家」列用）。空 = 老条目，省略整个键（与 entryId 同风格）
     if (entry.creatorUuid.isNotEmpty()) c.putString("creatorUuid", entry.creatorUuid)
     if (entry.creatorName.isNotEmpty()) c.putString("creatorName", entry.creatorName)
+    // 格子冷却（0 = 跟随商店，不写省空间）；新键，旧档缺字段落 0
+    if (entry.cooldownHours > 0) c.putInt("cooldownHours", entry.cooldownHours)
     entry.pokemon?.let { p ->
         val pc = NbtCompound()
         pc.putString("species", p.species)
@@ -433,7 +443,10 @@ internal fun readShopEntryBody(c: NbtCompound): ShopEntry? {
         entryId = if (c.contains("entryId")) c.getString("entryId") else "",
         // ⚠ 缺字段一律落空串（旧档没有这两个键）—— 存档铁律：读取容错，不抛异常
         creatorUuid = if (c.contains("creatorUuid")) c.getString("creatorUuid") else "",
-        creatorName = if (c.contains("creatorName")) c.getString("creatorName") else ""
+        creatorName = if (c.contains("creatorName")) c.getString("creatorName") else "",
+        // 缺字段 / 坏值都落 0（跟随商店）—— 存档铁律：读取容错，不抛异常
+        cooldownHours = if (c.contains("cooldownHours"))
+            c.getInt("cooldownHours").coerceIn(0, MAX_COOLDOWN_HOURS) else 0
     )
 }
 

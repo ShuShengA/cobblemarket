@@ -8,10 +8,13 @@ import com.shusheng.cobblemarket.currency.ClaimedItem
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.CustomShop
 import com.shusheng.cobblemarket.currency.CustomShopClaimState
+import com.shusheng.cobblemarket.currency.CustomShopCooldownState
 import com.shusheng.cobblemarket.currency.CustomShopMode
 import com.shusheng.cobblemarket.currency.CustomShopType
 import com.shusheng.cobblemarket.currency.DEFAULT_CLAIM_HOURS
 import com.shusheng.cobblemarket.currency.MAX_CLAIM_HOURS
+import com.shusheng.cobblemarket.currency.MAX_COOLDOWN_HOURS
+import com.shusheng.cobblemarket.currency.ShopEditLock
 import com.shusheng.cobblemarket.currency.PointMarketClaimResult
 import com.shusheng.cobblemarket.currency.MAIN_SHOP_ID
 import com.shusheng.cobblemarket.currency.MarketCurrency
@@ -30,6 +33,7 @@ import com.shusheng.cobblemarket.platform.sendToPlayer
 import com.shusheng.cobblemarket.util.ItemNameText
 import com.shusheng.cobblemarket.util.PersistHelper
 import com.shusheng.cobblemarket.util.PlayerNameText
+import com.shusheng.cobblemarket.util.RemainingTime
 import com.shusheng.cobblemarket.util.RequestThrottle
 import com.shusheng.cobblemarket.util.SpeciesText
 import com.shusheng.cobblemarket.util.TypeTextColors
@@ -79,6 +83,9 @@ private const val STAT_COUNT = 6
 /** 一页的格子数（与 [PointShopState.POINTS_SHOP_PAGE_SIZE] 同值，但这是**协议**上限、不许跟着数据层改） */
 private const val MAX_SLOTS_PER_PAGE = 32
 
+/** 搜索时客户端最多带多少个「名称命中」的候选 id（防伪造客户端塞超长列表） */
+private const val MAX_SEARCH_IDS = 512
+
 /** 一格商品（快照里的一项）：格子序号 + 内容 */
 data class PointMarketSlotInfo(val index: Int, val entry: ShopEntry)
 
@@ -103,7 +110,11 @@ data class OpenCustomShopPayload(
     /** [CustomShopMode] id：`normal` = 普通购买；`claim` = 定期领取 */
     val shopMode: String = CustomShopMode.NORMAL.id,
     /** 领取周期（小时）—— 只有 `claim` 店用得到 */
-    val claimHours: Int = DEFAULT_CLAIM_HOURS
+    val claimHours: Int = DEFAULT_CLAIM_HOURS,
+    /** 整店购买冷却（小时，0 = 不开）—— 只有 `normal` 店用得到 */
+    val cooldownHours: Int = 0,
+    /** 商品各自冷却（小时，0 = 不开）—— 只有 `normal` 店用得到 */
+    val itemCooldownHours: Int = 0
 ) : CustomPayload {
     override fun getId() = ID
 
@@ -122,6 +133,9 @@ data class OpenCustomShopPayload(
                 b.writeString(p.shopCurrency, MAX_SHOP_TEXT)
                 b.writeString(p.shopMode, MAX_SHOP_TEXT)
                 b.writeInt(p.claimHours)
+                // ⚠ 追加在**末尾**（payload 顺序铁律）
+                b.writeInt(p.cooldownHours)
+                b.writeInt(p.itemCooldownHours)
             },
             // ⚠ 读端用具名参数：字段顺序一旦对不上立刻看出来（payload 顺序铁律）
             { b ->
@@ -132,7 +146,9 @@ data class OpenCustomShopPayload(
                     returnToAdmin = b.readBoolean(),
                     shopCurrency = b.readString(MAX_SHOP_TEXT),
                     shopMode = b.readString(MAX_SHOP_TEXT),
-                    claimHours = b.readInt()
+                    claimHours = b.readInt(),
+                    cooldownHours = b.readInt(),
+                    itemCooldownHours = b.readInt()
                 )
             }
         )
@@ -179,6 +195,52 @@ data class CustomShopClaimStatusPayload(
                     remaining[b.readString(OPEN_CLAIM_MAX_ENTRY_ID)] = b.readInt()
                 }
                 CustomShopClaimStatusPayload(shopId, nextResetAt, remaining)
+            }
+        )
+    }
+}
+
+/**
+ * **普通购买店的每玩家冷却状态**（S2C，2026-10-25）。
+ *
+ * 服务端在「打开普通自定义商店」与「每次购买成功后」下发；客户端据此显示剩余冷却、
+ * 置灰购买按钮。⚠ 只带**正在生效**的计时（过期的不发）；格子自己的冷却配置值
+ * 走 [ShopEntry.cooldownHours] + [OpenCustomShopPayload.cooldownHours]，不在这里重复。
+ */
+data class CustomShopCooldownStatusPayload(
+    val shopId: String,
+    /** 整店冷却结束时刻（epoch ms）；0 = 不在冷却 */
+    val shopUntil: Long,
+    /** entryId → 该格冷却结束时刻（只含独立格子冷却、且正在冷却的格） */
+    val slots: Map<String, Long>
+) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        const val MAX_COOLDOWN_STATUS_ENTRIES = 256
+        val ID = CustomPayload.Id<CustomShopCooldownStatusPayload>(CobbleMarket.id("custom_shop_cooldown_status"))
+        val CODEC: PacketCodec<PacketByteBuf, CustomShopCooldownStatusPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeString(p.shopId, OpenCustomShopPayload.MAX_SHOP_TEXT)
+                b.writeLong(p.shopUntil)
+                b.writeInt(p.slots.size)
+                p.slots.forEach { (entryId, until) ->
+                    b.writeString(entryId, OPEN_CLAIM_MAX_ENTRY_ID)
+                    b.writeLong(until)
+                }
+            },
+            { b ->
+                val shopId = b.readString(OpenCustomShopPayload.MAX_SHOP_TEXT)
+                val shopUntil = b.readLong()
+                val size = b.readInt()
+                if (size < 0 || size > MAX_COOLDOWN_STATUS_ENTRIES) {
+                    throw IllegalArgumentException("cooldown status size out of range: $size")
+                }
+                val slots = LinkedHashMap<String, Long>(size)
+                repeat(size) {
+                    slots[b.readString(OPEN_CLAIM_MAX_ENTRY_ID)] = b.readLong()
+                }
+                CustomShopCooldownStatusPayload(shopId, shopUntil, slots)
             }
         )
     }
@@ -298,6 +360,102 @@ data class PointMarketItemsPayload(
                     kind = kind,
                     slots = List(count) { PointMarketSlotInfo(b.readInt(), readEntry(b)) },
                     shopId = b.readString(MAX_TEXT_LENGTH)
+                )
+            }
+        )
+    }
+}
+
+// ── 自定义购买店：商品搜索（2026-10-26）──
+//
+// 商店最多 64 页，客户端一次只加载一页 ⇒ 搜索必须由**服务端扫全店**。
+// ⚠ 服务端不知道客户端语言的名称（服务端语言 ≠ 客户端语言）⇒ 由**客户端**把搜到的
+// 名称解析成候选的物种 / 物品 id 一起发上来；服务端再按 id（以及原始查询串的子串）匹配。
+
+/** C2S：在当前自定义购买店里搜索（跨全部页）。[matchedIds] = 客户端本地名称命中的 id 列表。 */
+data class SearchPointMarketPayload(
+    val shopId: String,
+    val kind: String,
+    val query: String,
+    val matchedIds: List<String>,
+    val page: Int = 0
+) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<SearchPointMarketPayload>(CobbleMarket.id("search_point_market"))
+        val CODEC: PacketCodec<PacketByteBuf, SearchPointMarketPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeString(p.shopId, MAX_TEXT_LENGTH)
+                b.writeString(p.kind, MAX_TEXT_LENGTH)
+                b.writeString(p.query.take(MAX_TEXT_LENGTH), MAX_TEXT_LENGTH)
+                val ids = p.matchedIds.take(MAX_SEARCH_IDS)
+                b.writeVarInt(ids.size)
+                ids.forEach { b.writeString(it.take(MAX_TEXT_LENGTH), MAX_TEXT_LENGTH) }
+                b.writeInt(p.page)
+            },
+            { b ->
+                val shopId = b.readString(MAX_TEXT_LENGTH)
+                val kind = b.readString(MAX_TEXT_LENGTH)
+                val query = b.readString(MAX_TEXT_LENGTH)
+                val count = b.readVarInt()
+                if (count < 0 || count > MAX_SEARCH_IDS) {
+                    throw IllegalArgumentException("search id count out of range: $count")
+                }
+                SearchPointMarketPayload(
+                    shopId = shopId,
+                    kind = kind,
+                    query = query,
+                    matchedIds = List(count) { b.readString(MAX_TEXT_LENGTH) },
+                    page = b.readInt()
+                )
+            }
+        )
+    }
+}
+
+/** S2C：搜索某一页的结果（按全店匹配总数分页，页大小 = 普通商品页的 32）。 */
+data class PointMarketSearchPayload(
+    val shopId: String,
+    val kind: String,
+    val query: String,
+    val page: Int,
+    val totalPages: Int,
+    val total: Int,
+    val slots: List<PointMarketSlotInfo>
+) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<PointMarketSearchPayload>(CobbleMarket.id("point_market_search_result"))
+        val CODEC: PacketCodec<PacketByteBuf, PointMarketSearchPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeString(p.shopId, MAX_TEXT_LENGTH)
+                b.writeString(p.kind, MAX_TEXT_LENGTH)
+                b.writeString(p.query.take(MAX_TEXT_LENGTH), MAX_TEXT_LENGTH)
+                b.writeInt(p.page)
+                b.writeInt(p.totalPages)
+                b.writeInt(p.total)
+                b.writeInt(p.slots.size)
+                p.slots.forEach { slot ->
+                    b.writeInt(slot.index)
+                    writeEntry(b, slot.entry)
+                }
+            },
+            { b ->
+                val shopId = b.readString(MAX_TEXT_LENGTH)
+                val kind = b.readString(MAX_TEXT_LENGTH)
+                val query = b.readString(MAX_TEXT_LENGTH)
+                val page = b.readInt()
+                val totalPages = b.readInt()
+                val total = b.readInt()
+                val count = b.readInt()
+                if (count < 0 || count > MAX_SLOTS_PER_PAGE) {
+                    throw IllegalArgumentException("search slot count out of range: $count")
+                }
+                PointMarketSearchPayload(
+                    shopId, kind, query, page, totalPages, total,
+                    List(count) { PointMarketSlotInfo(b.readInt(), readEntry(b)) }
                 )
             }
         )
@@ -464,6 +622,61 @@ data class BuyPointMarketEntryPayload(
                     kind = b.readString(MAX_TEXT_LENGTH),
                     entryId = b.readString(MAX_TEXT_LENGTH),
                     shopId = b.readString(MAX_TEXT_LENGTH)
+                )
+            }
+        )
+    }
+}
+
+// ── 编辑期间暂停购买（2026-10-26）──
+//
+// 服主 / 持 `points.shop` 的人打开编辑窗 → 这家店进入「编辑中」：
+//  · 服务端 [PointMarketService.buy] 直接拒绝（防伪造包）；
+//  · 客户端把购买窗的「购买」按钮置灰、点击只响失败音；
+//  · 关窗 / 断线后解除。按**商店**记，编辑窗开着时客户端定期发 editing=true 当心跳。
+
+/** C2S：进入 / 离开商店编辑窗（也可当心跳，见 [ShopEditLock.begin]）。 */
+data class SetShopEditingPayload(
+    val shopId: String = MAIN_SHOP_ID,
+    val editing: Boolean = true
+) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<SetShopEditingPayload>(CobbleMarket.id("set_shop_editing"))
+        val CODEC: PacketCodec<PacketByteBuf, SetShopEditingPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeString(p.shopId, MAX_TEXT_LENGTH)
+                b.writeBoolean(p.editing)
+            },
+            { b ->
+                SetShopEditingPayload(
+                    shopId = b.readString(MAX_TEXT_LENGTH),
+                    editing = b.readBoolean()
+                )
+            }
+        )
+    }
+}
+
+/** S2C：这家店现在是否「正在被编辑」（客户端据此置灰购买按钮）。 */
+data class ShopEditLockPayload(
+    val shopId: String,
+    val locked: Boolean
+) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<ShopEditLockPayload>(CobbleMarket.id("shop_edit_lock"))
+        val CODEC: PacketCodec<PacketByteBuf, ShopEditLockPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeString(p.shopId, MAX_TEXT_LENGTH)
+                b.writeBoolean(p.locked)
+            },
+            { b ->
+                ShopEditLockPayload(
+                    shopId = b.readString(MAX_TEXT_LENGTH),
+                    locked = b.readBoolean()
                 )
             }
         )
@@ -784,6 +997,8 @@ private fun writeEntry(b: PacketByteBuf, e: ShopEntry) {
     // 条目 id：客户端打开购买窗时记下、点购买时带回来，服务端比对（见 ShopEntry.entryId）。
     // ⚠ 加在**末尾**、读写顺序保持一致（payload 顺序铁律）
     b.writeString(e.entryId, MAX_TEXT_LENGTH)
+    // 格子冷却（小时；0 = 跟随商店）—— 同样加在**末尾**
+    b.writeInt(e.cooldownHours)
 }
 
 private fun readEntry(b: PacketByteBuf) = ShopEntry(
@@ -793,7 +1008,8 @@ private fun readEntry(b: PacketByteBuf) = ShopEntry(
     stock = b.readInt(),
     pokemon = if (b.readBoolean()) readPokemonSpec(b) else null,
     item = if (b.readBoolean()) readItemSpec(b) else null,
-    entryId = b.readString(MAX_TEXT_LENGTH)
+    entryId = b.readString(MAX_TEXT_LENGTH),
+    cooldownHours = b.readInt()
 )
 
 private fun writePokemonSpec(b: PacketByteBuf, s: ShopPokemonSpec) {
@@ -917,6 +1133,7 @@ fun pointMarketErrorText(error: PointMarketError, currency: MarketCurrency = Mar
         PointMarketError.BAD_EV_TOTAL -> "cobblemarket.points.store.err.bad_ev_total"
         PointMarketError.BAD_COUNT -> "cobblemarket.points.store.err.bad_count"
         PointMarketError.SOLD_OUT -> "cobblemarket.points.store.err.sold_out"
+        PointMarketError.SHOP_BEING_EDITED -> "cobblemarket.points.store.err.shop_being_edited"
         PointMarketError.STOCK_NOT_ENOUGH -> "cobblemarket.points.store.err.stock_not_enough"
         PointMarketError.NOT_ENOUGH_FUNDS -> "cobblemarket.points.store.err.not_enough_points"
         PointMarketError.NO_SPACE -> "cobblemarket.points.store.err.no_space"
@@ -928,8 +1145,12 @@ fun pointMarketErrorText(error: PointMarketError, currency: MarketCurrency = Mar
         PointMarketError.KIND_NOT_ALLOWED -> "cobblemarket.points.store.err.kind_not_allowed"
         // 与市场其它 RP 操作同一条提示（词条自带 %s 货币图标）
         PointMarketError.POINTS_DISABLED -> "cobblemarket.network.points_disabled"
+        PointMarketError.MAIN_SHOP_DISABLED -> "cobblemarket.points.store.err.main_shop_disabled"
         PointMarketError.NOT_FOR_SALE -> "cobblemarket.points.store.err.not_for_sale"
         PointMarketError.NOT_A_CLAIM_SHOP -> "cobblemarket.points.store.err.not_a_claim_shop"
+        // 冷却的详细提示（带剩余时间）在购买回执处单独拼；这里只是兜底
+        PointMarketError.ON_COOLDOWN -> "cobblemarket.points.store.err.on_cooldown_simple"
+        PointMarketError.ONE_PER_PURCHASE -> "cobblemarket.points.store.err.one_per_purchase"
     },
     // 统一传**这家店的货币单位**：含 %s 的词条（如「%s 余额不足」）用它，不含的多余参数会被忽略。
     // RP 是图标、主货币是 ₽ / 物品名 —— 主货币店的余额不足不能再说「RP 不足」。
@@ -948,8 +1169,15 @@ object PointMarketNetwork {
     /** ⚠ 并发表：写入在主线程，[onPlayerDisconnect] 在**网络线程**清（同 [RequestThrottle] 的做法） */
     private val openedFromNpc = ConcurrentHashMap<UUID, OpenedFromNpc>()
 
-    fun onPlayerDisconnect(playerUuid: UUID) {
-        openedFromNpc.remove(playerUuid)
+    fun onPlayerDisconnect(player: ServerPlayerEntity) {
+        openedFromNpc.remove(player.uuid)
+        // 编辑锁：断线立刻释放（不等 15 分钟超时），给正在看这些店的玩家广播解锁。
+        // ⚠ 这个回调在**网络线程**：广播必须回到主线程做。
+        val released = ShopEditLock.endAll(player.uuid)
+        if (released.isNotEmpty()) {
+            val server = player.server
+            server.execute { released.forEach { broadcastEditLock(server, it, false) } }
+        }
     }
 
     /**
@@ -966,10 +1194,16 @@ object PointMarketNetwork {
 
     fun register() {
         registerS2CType(PointMarketItemsPayload.ID, PointMarketItemsPayload.CODEC)
+        // 自定义购买店：搜索结果分页
+        registerS2CType(PointMarketSearchPayload.ID, PointMarketSearchPayload.CODEC)
+        // 「编辑中」锁：编辑窗开 / 关时广播给正在看这家店的玩家（购买按钮置灰）
+        registerS2CType(ShopEditLockPayload.ID, ShopEditLockPayload.CODEC)
         // 打开自定义商店：右键绑定 NPC / `/market shop open` 由服务端发
         registerS2CType(OpenCustomShopPayload.ID, OpenCustomShopPayload.CODEC)
         // 定期领取店的周期状态（打开 / 每次领取后下发）
         registerS2CType(CustomShopClaimStatusPayload.ID, CustomShopClaimStatusPayload.CODEC)
+        // 普通购买店的每玩家冷却状态（打开 / 每次购买成功后下发）
+        registerS2CType(CustomShopCooldownStatusPayload.ID, CustomShopCooldownStatusPayload.CODEC)
         // 一键领取的交付回执（只有物品；客户端的飞入动画据此决定飞哪几格）
         registerS2CType(ClaimCustomShopResultPayload.ID, ClaimCustomShopResultPayload.CODEC)
         // ⚠ S2C 是**两步**注册：类型在这里注册（两端各一次），客户端 `registerS2C` 只挂 handler。
@@ -991,7 +1225,70 @@ object PointMarketNetwork {
                 kind = payload.kind,
                 shopId = payload.shopId
             )
-            server.execute { sendToPlayer(player, buildSnapshot(server, payload.page, payload.kind, payload.shopId)) }
+            server.execute {
+                sendToPlayer(player, buildSnapshot(server, payload.page, payload.kind, payload.shopId))
+                // 顺带告知这家店是否正在被编辑：购买窗的「购买」按钮据此置灰
+                sendToPlayer(player, ShopEditLockPayload(payload.shopId, ShopEditLock.isLocked(payload.shopId)))
+            }
+        }
+
+        // 自定义购买店搜索：客户端把名称解析成候选 id 一起发上来，服务端扫整家店并按页返回
+        registerC2S(SearchPointMarketPayload.ID, SearchPointMarketPayload.CODEC) { payload, player ->
+            if (!RequestThrottle.allow(player.uuid, "point_market_search", RequestThrottle.READ_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            val server = player.server
+            server.execute {
+                val shop = PointMarketService.customShop(server, payload.shopId) ?: return@execute
+                // 搜索只给自定义**普通购买店**（领取店 / 主商城没有这个入口）
+                if (shop.mode != CustomShopMode.NORMAL) return@execute
+                val kind = if (payload.kind == ShopEntry.KIND_ITEM) ShopEntry.KIND_ITEM else ShopEntry.KIND_POKEMON
+                val query = payload.query.trim()
+                val pageSize = PointShopState.POINTS_SHOP_PAGE_SIZE
+                if (query.isEmpty() || !shop.type.allows(kind)) {
+                    sendToPlayer(
+                        player,
+                        PointMarketSearchPayload(payload.shopId, kind, query, 0, 1, 0, emptyList())
+                    )
+                    return@execute
+                }
+                val ids = payload.matchedIds.take(MAX_SEARCH_IDS).mapTo(HashSet()) { it.lowercase() }
+                val lowerQuery = query.lowercase()
+                val matches = PointMarketService.store(server, payload.shopId)?.all(kind).orEmpty()
+                    .toSortedMap().entries.mapNotNull { (index, entry) ->
+                        val id = if (kind == ShopEntry.KIND_POKEMON) entry.pokemon?.species.orEmpty()
+                        else entry.item?.itemId.orEmpty()
+                        val lower = id.lowercase()
+                        if (lower.isNotEmpty() && (lower in ids || lower.contains(lowerQuery))) {
+                            PointMarketSlotInfo(index, entry)
+                        } else null
+                    }
+                val total = matches.size
+                val totalPages = ((total + pageSize - 1) / pageSize).coerceAtLeast(1)
+                val page = payload.page.coerceIn(0, totalPages - 1)
+                sendToPlayer(
+                    player,
+                    PointMarketSearchPayload(
+                        payload.shopId, kind, query, page, totalPages, total,
+                        matches.drop(page * pageSize).take(pageSize)
+                    )
+                )
+            }
+        }
+
+        // 编辑窗开 / 关（也可当心跳）：按商店记「编辑中」，广播给正在看这家店的玩家
+        registerC2S(SetShopEditingPayload.ID, SetShopEditingPayload.CODEC) { payload, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
+            val server = player.server
+            server.execute {
+                val changed = if (payload.editing) {
+                    ShopEditLock.begin(payload.shopId, player.uuid)
+                } else {
+                    ShopEditLock.end(payload.shopId, player.uuid)
+                }
+                // 只在「可买 ↔ 编辑中」切换时广播：心跳 / 多编辑者不会反复打扰
+                if (changed) broadcastEditLock(server, payload.shopId, ShopEditLock.isLocked(payload.shopId))
+            }
         }
 
         // 上架 / 编辑：服务端全量校验后才入库，成功后**回发该格所在页**让 OP 的界面立刻刷新
@@ -1250,12 +1547,22 @@ object PointMarketNetwork {
                     )
                 ) {
                     is PointMarketBuyResult.Failure -> {
-                        player.sendMessage(
+                        // 冷却拒绝要带**剩余时间**（通用错误词条只有一句"冷却中"，帮不上忙）
+                        val message = if (result.error == PointMarketError.ON_COOLDOWN) {
+                            Text.translatable(
+                                "cobblemarket.points.store.err.on_cooldown",
+                                RemainingTime.text(
+                                    System.currentTimeMillis() + result.remainingMs,
+                                    "cobblemarket.points.store.cooldown_ready",
+                                    localizedUnits = true
+                                )
+                            ).formatted(Formatting.RED)
+                        } else {
                             pointMarketErrorText(
                                 result.error, PointMarketService.currencyOf(server, payload.shopId)
-                            ).copy().formatted(Formatting.RED),
-                            false
-                        )
+                            ).copy().formatted(Formatting.RED)
+                        }
+                        player.sendMessage(message, false)
                         sendSound(player, "result_fail")
                         // 失败也回发**他自己**那一页：库存以服务端为准 —— 别人刚买走最后一件时，
                         // 这边还停在旧数字上，不刷新就会一直「看着有货、点下去却说售罄」
@@ -1275,6 +1582,12 @@ object PointMarketNetwork {
                         announceShinyPurchase(server, player, payload.kind, payload.shopId, result)
                         // 买走一件会改库存 —— **广播**给所有在看商城的人（服主那边那格也要跟着减）
                         broadcastSnapshot(server)
+                        // 冷却已开始：把最新的剩余时间回给买家（界面据此置灰 / 倒计时）
+                        PointMarketService.customShop(server, payload.shopId)?.let { shop ->
+                            if (shop.mode == CustomShopMode.NORMAL) {
+                                sendToPlayer(player, buildCooldownStatus(player, shop))
+                            }
+                        }
                     }
                 }
             }
@@ -1476,6 +1789,22 @@ object PointMarketNetwork {
      * ⚠ 服务端不知道谁的界面开着，所以判据是「他请求过商城快照」（见 [lastRequested]）——
      * 宁可少发（没来看过的不发），也别给全服每个人塞包。
      */
+    /**
+     * 「编辑中」状态变化：只发给**正在看这家店**的玩家（判据同 [broadcastSnapshot]：请求过快照）。
+     *
+     * 不发给全服 —— 没开界面的玩家不需要知道，也没地方显示。
+     */
+    private fun broadcastEditLock(server: MinecraftServer, shopId: String, locked: Boolean) {
+        val online = server.playerManager.playerList
+        val onlineIds = online.mapTo(HashSet()) { it.uuid }
+        lastRequested.keys.retainAll(onlineIds)
+        online.forEach { target ->
+            val req = lastRequested[target.uuid] ?: return@forEach
+            if (req.shopId != shopId) return@forEach
+            sendToPlayer(target, ShopEditLockPayload(shopId, locked))
+        }
+    }
+
     private fun broadcastSnapshot(server: MinecraftServer) {
         val online = server.playerManager.playerList
         // 顺手清掉已离线的记录：长期开着的服务器上，这个 map 会随着来过的玩家越攒越大
@@ -1509,13 +1838,43 @@ object PointMarketNetwork {
             player,
             OpenCustomShopPayload(
                 shop.id, shop.name, shop.type.id, returnToAdmin, shop.currency.name,
-                shop.mode.id, shop.claimHours
+                shop.mode.id, shop.claimHours, shop.cooldownHours, shop.itemCooldownHours
             )
         )
         // 领取店：把本玩家的周期状态一并下发（每格还能领几个 / 何时刷新）
+        // 普通店：下发本玩家的冷却状态（整店 / 每格剩余），界面据此倒计时与置灰
         if (shop.mode == CustomShopMode.CLAIM) {
             sendToPlayer(player, buildClaimStatus(player, shop))
+        } else {
+            sendToPlayer(player, buildCooldownStatus(player, shop))
         }
+    }
+
+    /** 组装某个玩家在一家普通购买店的冷却状态（整店剩余 + 各格独立冷却剩余） */
+    fun buildCooldownStatus(
+        player: ServerPlayerEntity,
+        shop: CustomShop
+    ): CustomShopCooldownStatusPayload {
+        val now = System.currentTimeMillis()
+        val state = CustomShopCooldownState.get(player.server)
+        val shopCooldownMs = shop.cooldownHours.coerceIn(0, MAX_COOLDOWN_HOURS) * 3_600_000L
+        val shopUntil = state.shopUntil(shop.id, player.uuid, shopCooldownMs, now)
+        val slots = LinkedHashMap<String, Long>()
+        for (kind in listOf(ShopEntry.KIND_POKEMON, ShopEntry.KIND_ITEM)) {
+            if (!shop.type.allows(kind)) continue
+            shop.all(kind).values.forEach { entry ->
+                // 协议上限：极端情况下（两家店/上千格同时冷却）只发前 256 条；
+                // 没发到的格子仍由服务端正常拦截，只是界面不显示倒计时
+                if (slots.size >= CustomShopCooldownStatusPayload.MAX_COOLDOWN_STATUS_ENTRIES) return@forEach
+                // 该格各自冷却 = max(商品各自冷却, 单格覆盖)；两者都为 0 = 这格不锁
+                val slotHours = maxOf(shop.itemCooldownHours, entry.cooldownHours)
+                if (slotHours <= 0) return@forEach
+                val slotMs = slotHours.coerceIn(0, MAX_COOLDOWN_HOURS) * 3_600_000L
+                val until = state.slotUntil(shop.id, player.uuid, entry.entryId, slotMs, now)
+                if (until > 0) slots[entry.entryId] = until
+            }
+        }
+        return CustomShopCooldownStatusPayload(shop.id, shopUntil, slots)
     }
 
     /** 组装某个玩家在一家领取店的当前周期状态（每格剩余 + 下次刷新时间） */

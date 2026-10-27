@@ -9,6 +9,18 @@ import net.minecraft.client.gui.screen.Screen
  * 200ms 后真正关闭。实现：ScreenMixin 在 renderWithTooltip HEAD/TAIL 包一层矩阵变换，
  * 整个界面渲染（含弹窗/遮罩/下层内容）作为一个整体同步滑出。
  */
+/**
+ * 自定义关闭动画：实现它的界面关闭时**不播全局上滑**，改用界面自己的「打开动画反向」。
+ * 目前只有自定义 NPC 商店（[com.shusheng.cobblemarket.screen.PointsMarketScreen]，仅 isCustomShop）。
+ */
+interface CustomCloseAnimationScreen {
+    /** 自己的关闭动画是否已开始（进行中时再按 Esc/E 直接吞掉，不重复触发） */
+    fun isCustomCloseActive(): Boolean
+
+    /** 启动自己的关闭动画；返回 true = 已接管（[CloseAnimation] 不再播上滑） */
+    fun startCustomClose(target: Screen?): Boolean
+}
+
 object CloseAnimation {
     const val DURATION_MS = 100L
 
@@ -25,6 +37,15 @@ object CloseAnimation {
     /** 启动动画；已在动画中返回 false（防重复触发）。[target] 见同名字段 */
     fun start(target: Screen? = null): Boolean {
         if (isActive()) return false
+        // 自定义 NPC 商店：关闭改为「打开动画的反向」（缩回右键的 NPC），不播全局上滑
+        val screen = MinecraftClient.getInstance().currentScreen
+        if (screen is CustomCloseAnimationScreen) {
+            if (screen.isCustomCloseActive()) return true
+            if (screen.startCustomClose(target)) {
+                playCloseSound()
+                return true
+            }
+        }
         this.target = target
         startAt = System.currentTimeMillis()
         playCloseSound()

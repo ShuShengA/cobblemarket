@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.PlayerSkinCache
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
@@ -937,6 +938,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private fun updatePageButtons() {
         prevButton?.active = !pageRequestInFlight && currentPage > 1
         nextButton?.active = !pageRequestInFlight && currentPage < totalPages
+        // 边界时直接隐藏（2026-10-25 用户要求）；请求中保持可见，只有置灰
+        prevButton?.visible = currentPage > 1
+        nextButton?.visible = currentPage < totalPages
     }
 
     private fun prevPage() {
@@ -1144,8 +1148,11 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         val visibleRows = getMaxVisibleRows()
         val displayList = displayedListings()
 
+        // 弹窗打开时冻结行悬停（用户 2026-10-27 报同类问题）
         hoveredRow = -1
-        if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY..(startY + visibleRows * rowHeight)) {
+        if (confirmEntry == null &&
+            mouseX in leftX..(leftX + panelWidth) && mouseY in startY..(startY + visibleRows * rowHeight)
+        ) {
             val row = (mouseY - startY) / rowHeight
             if (row in displayList.indices) hoveredRow = row
         }
@@ -1208,8 +1215,9 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         filterOptionButtons.forEach { it.visible = panelOn }
         // 其余主面板控件
         if (::filterToggleButton.isInitialized) filterToggleButton.visible = !dialogOpen
-        if (::prevButton.isInitialized) prevButton.visible = !dialogOpen
-        if (::nextButton.isInitialized) nextButton.visible = !dialogOpen
+        // 边界时直接隐藏（2026-10-25 用户要求；置灰逻辑不变，隐藏叠在它之上）
+        if (::prevButton.isInitialized) prevButton.visible = !dialogOpen && currentPage > 1
+        if (::nextButton.isInitialized) nextButton.visible = !dialogOpen && currentPage < totalPages
         // 面板内滚动：按登记的基准 y 重定位，滚出面板范围的控件藏起来（滚轮改了 filterPanelScroll
         // 之后调本函数重排）。⚠ 放在最后 —— 它会覆盖上面设的 visible
         val panelTop = 4
@@ -1379,19 +1387,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         }
     }
 
-    private val defaultSkinTexture = Identifier.of("minecraft", "textures/entity/player/wide/steve.png")
-
-    // 皮肤纹理缓存：每行每帧创建 GameProfile 并查 skinProvider 是分配热点，首个结果按 UUID 缓存
-    private val skinCache = mutableMapOf<java.util.UUID, Identifier>()
-
-    private fun getSellerSkin(uuid: java.util.UUID, name: String): Identifier {
-        skinCache[uuid]?.let { return it }
-        val skin = client?.networkHandler?.getPlayerListEntry(uuid)?.skinTextures?.texture()
-            ?: client?.skinProvider?.getSkinTextures(com.mojang.authlib.GameProfile(uuid, name))?.texture()
-            ?: defaultSkinTexture
-        skinCache[uuid] = skin
-        return skin
-    }
+    /** 卖家头像纹理（共用 [PlayerSkinCache]：离线玩家会异步拉取正版皮肤，不再锁死默认头像） */
+    private fun getSellerSkin(uuid: java.util.UUID, name: String): Identifier = PlayerSkinCache.skinFor(uuid, name)
 
     private fun drawSellerAvatar(context: DrawContext, uuid: java.util.UUID, name: String, x: Int, y: Int, size: Int) {
         val texture = getSellerSkin(uuid, name)

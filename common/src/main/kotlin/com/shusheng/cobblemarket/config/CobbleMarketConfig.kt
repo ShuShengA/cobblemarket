@@ -116,14 +116,58 @@ object CobbleMarketConfig {
         private set
     var marketEnabled: Boolean = true
         private set
+
+    /**
+     * 精灵市场开关（默认开）：关闭后玩家不能上架 / 购买精灵，存量挂单也不可交易；
+     * 下架、待领取等取回自己资产的操作照常，管理员仍可在管理面板下架。
+     */
+    var pokemonMarketEnabled: Boolean = true
+        private set
+
+    /** 物品市场开关（默认开），语义同 [pokemonMarketEnabled] */
+    var itemMarketEnabled: Boolean = true
+        private set
+
+    /** 拍卖场开关（默认开）：关闭后不能创建拍卖 / 出价，已有拍卖不可交易；取消自己的拍卖照常 */
+    var auctionEnabled: Boolean = true
+        private set
+
+    /** 拍卖场里的**精灵**拍卖子开关（默认开）；关闭后精灵 tab 隐藏、精灵拍卖不可创建 / 出价 */
+    var auctionPokemonEnabled: Boolean = true
+        private set
+
+    /** 拍卖场里的**物品**拍卖子开关（默认开） */
+    var auctionItemEnabled: Boolean = true
+        private set
+
+    /** 求购单开关（默认开）：关闭后不能创建求购 / 交付，已有求购不可交易；取消自己的求购照常 */
+    var buyOrderEnabled: Boolean = true
+        private set
+
+    /** 求购单里的**精灵**求购子开关（默认开）；关闭后精灵 tab 隐藏、精灵求购不可创建 / 交付 */
+    var buyOrderPokemonEnabled: Boolean = true
+        private set
+
+    /** 求购单里的**物品**求购子开关（默认开） */
+    var buyOrderItemEnabled: Boolean = true
+        private set
     /** 玩家展示开关：关闭后玩家不能把精灵/物品展示到全服聊天（运营开关，与市场总开关同类） */
     var shareEnabled: Boolean = true
         private set
     /**
-     * RP 总开关（默认关：不用RP 的服零感知）。关闭后玩家设置价格的界面不出现RP 按钮，
-     * 除RP 商城外的任何地方都不能用RP 交易；但服主仍可在RP 商城上架供持有RP 的玩家购买。
+     * RP 总开关（**默认开**，2026-10-25 用户定）。关闭后玩家设置价格的界面不出现RP 按钮，
+     * 除RP 主商城外的任何地方都不能用RP 交易。
      */
-    var pointsEnabled: Boolean = false
+    var pointsEnabled: Boolean = true
+        private set
+
+    /**
+     * **主 RP 商城开关**（默认关，需 [pointsEnabled] 同时开启）。
+     * 关闭后入口界面的 RP 商城按钮置灰（点击提示未开放），主商城不可购买；
+     * **自定义 NPC 商店完全不受影响** —— 只用 NPC 商店的服主可以关掉空的主商城。
+     * ⚠ 旧配置没有这个键时**跟随 [pointsEnabled]**（升级不改变现有 RP 服的行为）。
+     */
+    var pointsMainShopEnabled: Boolean = false
         private set
     /**
      * **玩家间 RP 交易开关**（默认关，需 [pointsEnabled] 同时开启）。
@@ -384,9 +428,8 @@ object CobbleMarketConfig {
     /** 自行申请条件：历史买入成交额累计门槛（0 = 不要求） */
     var blackCardApplyVolume: Long = 0L
         private set
-    /** 自行申请条件：信用基础（无欠款额度公式值）门槛（0 = 不要求） */
-    var blackCardApplyCredit: Long = 0L
-        private set
+    // ⚠ 2026-10-28 移除「黑卡申请·额度要求」：申请黑卡硬性要求持有紫卡，而持卡者额度 = 紫卡固定额度、
+    //   不会再变 ⇒ 该门槛要么恒满足、要么恒不满足。旧配置文件里的 blackCardApplyCredit 键会被忽略。
     /** 自行申请条件：喵喵银行存款余额门槛（0 = 不要求） */
     var blackCardApplyDeposit: Long = 0L
         private set
@@ -430,6 +473,65 @@ object CobbleMarketConfig {
         save()
     }
 
+    /** 精灵市场开关切换并落盘（服务器配置子界面调用） */
+    fun setPokemonMarketEnabled(v: Boolean) {
+        pokemonMarketEnabled = v
+        save()
+    }
+
+    /** 物品市场开关切换并落盘 */
+    fun setItemMarketEnabled(v: Boolean) {
+        itemMarketEnabled = v
+        save()
+    }
+
+    /**
+     * 拍卖场开关切换并落盘。
+     * ⚠ 联动（2026-10-25 用户定）：总开关关闭 ⇒ 两个子开关一起关；子开关打开 ⇒ 总开关必开。
+     */
+    fun setAuctionEnabled(v: Boolean) {
+        auctionEnabled = v
+        if (!v) {
+            auctionPokemonEnabled = false
+            auctionItemEnabled = false
+        }
+        save()
+    }
+
+    fun setAuctionPokemonEnabled(v: Boolean) {
+        auctionPokemonEnabled = v
+        if (v) auctionEnabled = true
+        save()
+    }
+
+    fun setAuctionItemEnabled(v: Boolean) {
+        auctionItemEnabled = v
+        if (v) auctionEnabled = true
+        save()
+    }
+
+    /** 求购单开关切换并落盘；联动规则同拍卖场 */
+    fun setBuyOrderEnabled(v: Boolean) {
+        buyOrderEnabled = v
+        if (!v) {
+            buyOrderPokemonEnabled = false
+            buyOrderItemEnabled = false
+        }
+        save()
+    }
+
+    fun setBuyOrderPokemonEnabled(v: Boolean) {
+        buyOrderPokemonEnabled = v
+        if (v) buyOrderEnabled = true
+        save()
+    }
+
+    fun setBuyOrderItemEnabled(v: Boolean) {
+        buyOrderItemEnabled = v
+        if (v) buyOrderEnabled = true
+        save()
+    }
+
     /** 蛋交易开关切换并落盘（仅管理面板调用） */
     fun setEggTradingEnabled(v: Boolean) {
         eggTradingEnabled = v
@@ -448,6 +550,12 @@ object CobbleMarketConfig {
     }
 
     /** RP 总开关切换并落盘（仅服务端配置界面调用） */
+    /** 主 RP 商城开关切换并落盘 */
+    fun setPointsMainShopEnabled(v: Boolean) {
+        pointsMainShopEnabled = v
+        save()
+    }
+
     fun setPointsEnabled(v: Boolean) {
         pointsEnabled = v
         save()
@@ -633,7 +741,6 @@ object CobbleMarketConfig {
     fun setBlackCardSelfApply(v: Boolean) { blackCardSelfApply = v }
     fun setBlackCardApplyAsset(v: Long) { blackCardApplyAsset = v.coerceAtLeast(0L) }
     fun setBlackCardApplyVolume(v: Long) { blackCardApplyVolume = v.coerceAtLeast(0L) }
-    fun setBlackCardApplyCredit(v: Long) { blackCardApplyCredit = v.coerceAtLeast(0L) }
     fun setBlackCardApplyDeposit(v: Long) { blackCardApplyDeposit = v.coerceAtLeast(0L) }
     fun setBlackCardApplyNoOverdue(v: Boolean) { blackCardApplyNoOverdue = v }
     fun setBlackCardApplySeen(v: Long) { blackCardApplySeen = v.coerceAtLeast(0L) }
@@ -771,7 +878,6 @@ object CobbleMarketConfig {
                     val fileBlackCardSelfApply = finance["blackCardSelfApply"] as? Boolean ?: false
                     val fileBlackApplyAsset = (finance["blackCardApplyAsset"] as? Number)?.toLong() ?: 0L
                     val fileBlackApplyVolume = (finance["blackCardApplyVolume"] as? Number)?.toLong() ?: 0L
-                    val fileBlackApplyCredit = (finance["blackCardApplyCredit"] as? Number)?.toLong() ?: 0L
                     val fileBlackApplyDeposit = (finance["blackCardApplyDeposit"] as? Number)?.toLong() ?: 0L
                     val fileBlackApplyNoOverdue = finance["blackCardApplyNoOverdue"] as? Boolean ?: false
                     val fileBlackApplySeen = (finance["blackCardApplySeen"] as? Number)?.toLong() ?: 0L
@@ -817,7 +923,6 @@ object CobbleMarketConfig {
                     blackCardSelfApply = fileBlackCardSelfApply
                     blackCardApplyAsset = fileBlackApplyAsset.coerceAtLeast(0L)
                     blackCardApplyVolume = fileBlackApplyVolume.coerceAtLeast(0L)
-                    blackCardApplyCredit = fileBlackApplyCredit.coerceAtLeast(0L)
                     blackCardApplyDeposit = fileBlackApplyDeposit.coerceAtLeast(0L)
                     blackCardApplyNoOverdue = fileBlackApplyNoOverdue
                     blackCardApplySeen = fileBlackApplySeen.coerceAtLeast(0L)
@@ -865,13 +970,26 @@ object CobbleMarketConfig {
                 buyOrderExpiryDays = (rawBuyOrderExpiry ?: 3).coerceAtLeast(1)
                 maxBuyOrdersPerPlayer = ((data["maxBuyOrdersPerPlayer"] as? Double)?.toInt() ?: 5).coerceAtLeast(0)
                 marketEnabled = data["marketEnabled"] as? Boolean ?: true
+                // 四个分项开关：旧配置里没有这些键 ⇒ 默认开（升级后行为与旧版本一致）
+                pokemonMarketEnabled = data["pokemonMarketEnabled"] as? Boolean ?: true
+                itemMarketEnabled = data["itemMarketEnabled"] as? Boolean ?: true
+                auctionEnabled = data["auctionEnabled"] as? Boolean ?: true
+                auctionPokemonEnabled = data["auctionPokemonEnabled"] as? Boolean ?: true
+                auctionItemEnabled = data["auctionItemEnabled"] as? Boolean ?: true
+                buyOrderEnabled = data["buyOrderEnabled"] as? Boolean ?: true
+                buyOrderPokemonEnabled = data["buyOrderPokemonEnabled"] as? Boolean ?: true
+                buyOrderItemEnabled = data["buyOrderItemEnabled"] as? Boolean ?: true
                 // 背景图文件名：只留文件名本身（路径穿越 / 非法字符由 ConfigImage 拦下并记日志）
                 idCardBackground = (data["idCardBackground"] as? String)?.trim() ?: ""
                 shareEnabled = data["shareEnabled"] as? Boolean ?: true
                 // 展示冷却（秒）：1~3600，缺省 10；非法值钳到范围而不是整份配置读取失败
                 shareCooldownSeconds =
                     ((data["shareCooldownSeconds"] as? Number)?.toInt() ?: 10).coerceIn(1, 3600)
-                pointsEnabled = data["pointsEnabled"] as? Boolean ?: false
+                pointsEnabled = data["pointsEnabled"] as? Boolean ?: true
+                // 主 RP 商城：旧配置没有这个键 ⇒ 跟随旧总开关（升级不改变现有 RP 服的主商城）；
+                // 新生成的配置才用「默认关」—— 不出现一个空商城
+                pointsMainShopEnabled = data["pointsMainShopEnabled"] as? Boolean
+                    ?: if (data.containsKey("pointsEnabled")) (data["pointsEnabled"] as? Boolean ?: true) else false
                 // 缺失按 false（保守）：老配置升级上来时玩家间 RP 交易一律先关着
                 pointsMarketEnabled = data["pointsMarketEnabled"] as? Boolean ?: false
                 // 缺失按 false（保守）：老配置升级上来时「OP/FTB 能发 RP」一律先关着
@@ -985,13 +1103,22 @@ object CobbleMarketConfig {
                 "buyOrderFeePercent" to "求购单中介费百分比：买家成交时从卖家实收中扣除（0=免中介费）/ Buy order fee percentage charged on seller's actual payment (0=no fee)",
                 "buyOrderExpiryDays" to "求购单过期天数（到期自动关闭，剩余冻结金退买家待领余额）/ Buy order expiry in days (expired orders close automatically and refund frozen money)",
                 "marketEnabled" to "市场总开关（默认开启）：紧急情况可整体关闭市场功能——所有买卖/拍卖/求购操作被拦截并提示，但待领取、余额等取回自己资产的操作仍可用。可在游戏内用 /market on|off 切换 / Master market switch (on by default): emergency kill switch for the entire market — all buy/sell/auction/buy-order operations are blocked with a notice, while claiming returns and collecting balances still work. Toggle in-game via /market on|off",
+                "pokemonMarketEnabled" to "精灵市场开关（默认开启）：关闭后玩家不能上架或购买精灵，已挂出的精灵也不可交易；下架、待领取与领取余额等取回资产的操作照常，管理员仍可在管理面板查看和强制下架。与市场总开关相互独立 / Pokémon market switch (on by default): when off, players cannot list or buy Pokémon, and existing listings cannot be traded either; delisting, pending returns and collecting balances still work, and admins can still view and force-delist from the Admin Panel. Independent of the master market switch",
+                "itemMarketEnabled" to "物品市场开关（默认开启）：关闭后玩家不能上架或购买物品，已挂出的物品也不可交易；取回资产的操作照常，管理员仍可在管理面板查看和强制下架。与市场总开关相互独立 / Item market switch (on by default): when off, players cannot list or buy items, and existing listings cannot be traded either; collecting your assets still works, and admins can still view and force-delist from the Admin Panel. Independent of the master market switch",
+                "auctionEnabled" to "拍卖场开关（默认开启）：关闭后玩家不能创建拍卖或出价，已创建的拍卖不可交易；取消自己的拍卖照常，管理员仍可强制取消。与市场总开关相互独立 / Auction house switch (on by default): when off, players cannot create auctions or bid, and existing auctions cannot be traded; cancelling your own auction still works, and admins can still force-cancel. Independent of the master market switch",
+                "buyOrderEnabled" to "求购单开关（默认开启）：关闭后玩家不能创建求购单或交付，已创建的求购单不可交易；取消自己的求购单照常，管理员仍可强制取消。与市场总开关相互独立 / Buy order switch (on by default): when off, players cannot create buy orders or deliver, and existing buy orders cannot be traded; cancelling your own order still works, and admins can still force-cancel. Independent of the master market switch",
+                "auctionPokemonEnabled" to "拍卖场的精灵子开关（默认开启）：关闭后拍卖场不再显示精灵 tab，精灵拍卖不能创建 / 出价；物品拍卖不受影响。总开关关闭时本开关自动关闭；本开关打开时总开关自动打开 / Pokémon auctions sub-switch (on by default): when off, the auction house hides the Pokémon tab and Pokémon auctions cannot be created or bid on; item auctions are unaffected. Turning the master auction switch off also turns this off; turning this on turns the master switch on",
+                "auctionItemEnabled" to "拍卖场的物品子开关（默认开启）：关闭后拍卖场不再显示物品 tab，物品拍卖不能创建 / 出价；精灵拍卖不受影响。联动规则同上 / Item auctions sub-switch (on by default): when off, the auction house hides the item tab and item auctions cannot be created or bid on; Pokémon auctions are unaffected. Same linking rules as above",
+                "buyOrderPokemonEnabled" to "求购单的精灵子开关（默认开启）：关闭后发布求购弹窗不再显示精灵 tab，精灵求购不能创建 / 交付；物品求购不受影响。总开关关闭时本开关自动关闭；本开关打开时总开关自动打开 / Pokémon buy-order sub-switch (on by default): when off, the create dialog hides the Pokémon tab and Pokémon buy orders cannot be created or delivered; item buy orders are unaffected. Turning the master buy-order switch off also turns this off; turning this on turns the master switch on",
+                "buyOrderItemEnabled" to "求购单的物品子开关（默认开启）：关闭后发布求购弹窗不再显示物品 tab，物品求购不能创建 / 交付；精灵求购不受影响。联动规则同上 / Item buy-order sub-switch (on by default): when off, the create dialog hides the item tab and item buy orders cannot be created or delivered; Pokémon buy orders are unaffected. Same linking rules as above",
                 "pointsExternalSecret" to "外部签名码的 HMAC 密钥：服主在自己的网站 / 发卡网卖RP 时，用同一个密钥签码，玩家在游戏内兑换。⚠ **留空 = 关闭外部码**（只接受 /market points code create 生成的本地码）。**必须放在服务端**（网站后端 / 服主本机），绝不能进客户端、日志或公开仓库；服务端日志只记码前缀不记全码（码 = 钱）。建议 ≥32 字符随机串 / HMAC secret for externally signed RP codes: sign codes on your website / card shop with the same secret, players redeem them in game. ⚠ **Leave blank to disable external codes** (only locally generated codes work). **Server-side only** (website backend / your machine) — never ship it in a client, log, or public repo. Logs record only a code prefix, never the full code (a code is money). Recommended: 32+ random characters",
                 "pointsExternalMaxDays" to "外部码的有效期上限（天，默认 365）：签发时有效期跨度超过它的码一律拒绝，防「永久码」满天飞（永久码的 serial 必须永久保留，会让存档持续膨胀）/ Maximum validity for external codes in days (default 365): codes valid for longer are rejected, preventing \"forever codes\" (whose serials must be kept forever and would bloat the save)",
                 "pointsRankingExportMinutes" to "余额排行的导出间隔（分钟，默认 5，钳 1~1440）：模组每隔这么久把全服余额写进存档目录下的 cobblemarket_points/（**只写变化的那些**，没变化就不碰磁盘），供服主自己的全息板 / 牌子 / 网站读取。文件格式与用法见该目录里的 README。⚠ 想自己控节奏（命令方块 + 时钟）不用改这里，敲 /market points update 即可强制刷新一次 / Minutes between balance-ranking exports (default 5, clamped 1-1440): the mod writes every player's balance into cobblemarket_points/ inside the save folder (**only entries that changed** — nothing is written when nothing changed), for your own holograms / signs / website to read. See the README in that folder for the file format. ⚠ To control the cadence yourself (command block on a clock), leave this alone and run /market points update to force a refresh",
-                "pointsEnabled" to "RP 总开关（默认关闭）：RP 是本模组的第二货币，与主货币并行流通但**不可兑换、不可转让、不参与金融**。关闭时：玩家设置价格的界面不出现RP 按钮，除RP 商城外的任何地方都不能用RP 交易（服主仍可在RP 商城上架精灵/物品供持有RP 的玩家购买）。⚠ RP 从哪来由服主决定（当任务奖励发、当充值货币卖，或两者并用），开启前请先规划好发放渠道 / RP master switch (off by default): RP is this mod's second currency, running alongside the primary one but **not convertible, not transferable, and outside the finance system**. When off, the RP button is hidden from every price-setting screen and RP cannot be used anywhere except the RP Shop (owners can still stock the RP Shop for players who already hold RP). ⚠ Where RP comes from is up to you (handed out as a reward, sold as a top-up, or both) — plan your distribution channel before enabling",
+                "pointsEnabled" to "RP 总开关（默认开启）：RP 是本模组的第二货币，与主货币并行流通但**不可兑换、不可转让、不参与金融**。关闭时：玩家设置价格的界面不出现RP 按钮，除RP 商城外的任何地方都不能用RP 交易（服主仍可在RP 商城上架精灵/物品供持有RP 的玩家购买）。⚠ RP 从哪来由服主决定（当任务奖励发、当充值货币卖，或两者并用），开启前请先规划好发放渠道 / RP master switch (on by default): RP is this mod's second currency, running alongside the primary one but **not convertible, not transferable, and outside the finance system**. When off, the RP button is hidden from every price-setting screen and RP cannot be used anywhere except the RP Shop (owners can still stock the RP Shop for players who already hold RP). ⚠ Where RP comes from is up to you (handed out as a reward, sold as a top-up, or both) — plan your distribution channel before enabling",
                 "rpAsQuestCurrency" to "「give/take 权限下放」开关（默认关闭）：打开后**玩家身份的 OP（命令等级 ≥ 2）也能发放 / 回收 RP**。用在「RP 当任务奖励」的场景 —— FTB 之类的任务模组要把 RP 发给玩家，而它们**以完成任务的普通玩家身份**执行命令（既不是服主、也不是控制台），不开这个开关就永远被拒；打开后在 FTB 里写 `/market points give @s N` 即可自动到账。⚠ 打开 = 接受「任何玩家 OP 都能发 RP」（/op 可被传递给任何人）；只把 RP 当充值货币、由服主手动发放时请保持关闭。⚠ 只作用于 /market points give|take 两条命令，不影响权限授予等其他服主专属命令 / \"delegate give/take\" switch (off by default): when on, **player-ops (permission level 2+) can also grant/take RP**. Meant for the \"RP as a quest reward\" setup — quest mods like FTB hand RP to players but run their commands **as the completing player**, who is neither the owner nor the console, so they are always refused unless this is on. With it on, write `/market points give @s N` in FTB and it just works. ⚠ Turning it on accepts that **any player-op can grant RP** (/op is transferable to anyone); keep it off if RP is a top-up currency granted only by you. ⚠ It only affects the /market points give|take commands, not permission grants or other owner-only commands",
                 "shareEnabled" to "玩家展示开关（默认开启）：开启后玩家可把精灵/物品展示到全服聊天（悬停看详情），冷却时间见 shareCooldownSeconds（默认 10 秒）。关闭后展示按钮不再生效 / Player showcase switch (on by default): players can showcase Pokémon/items to server chat (hover for details); the cooldown is shareCooldownSeconds (default 10 seconds). When off, the showcase button stops working",
                 "shareCooldownSeconds" to "展示冷却秒数（默认 10，范围 1~3600）：每个玩家两次展示之间的等待时间，精灵 / ID 卡 / 物品三种展示共用。设得太小会让全服播报刷屏 / Showcase cooldown in seconds (default 10, range 1–3600): the wait between two showcases by the same player; Pokémon / ID card / item showcases share this cooldown. Too small a value floods server chat",
+                "pointsMainShopEnabled" to "主 RP 商城开关（默认关闭，需 pointsEnabled 同时开启）：关闭后入口界面的 RP 商城按钮置灰、主商城不可购买；自定义 NPC 商店完全不受影响，只用 NPC 商店时可以关掉空的主商城。⚠ 旧配置没有这个键时跟随 pointsEnabled / Main RP Shop switch (off by default, requires pointsEnabled too): when off, the RP Shop entry is greyed out and nothing can be bought from it; custom NPC shops are completely unaffected, so owners who only use NPC shops can hide the empty main shop. ⚠ Configs without this key follow pointsEnabled",
                 "pointsShop.enabled" to "游戏内充值开关（默认关闭，需 pointsEnabled 同时开启）。国内小服主普遍用个人收款码，而个人收款码没有支付回调——本功能**不做自动收款**，只把对账成本压到最低：玩家在游戏内下单（实付金额就是档位标价 + 6 位订单号）→ 扫码付款 → 点「我已支付」→ 服主对着账单点确认发放。⚠ 模组无法判断是否真的付了款，「我已支付」只是玩家的声明：**未确认一律不发放** / In-game top-up switch (off by default, requires pointsEnabled too). Personal payment QR codes have no payment callback, so this feature does NOT collect payments automatically — it only minimizes reconciliation work: the player orders in game (paying the list price, with a 6-char order number) → scans the QR → pays → taps \"I have paid\" → the owner checks the bill and confirms the grant. ⚠ The mod cannot tell whether a payment actually happened: \"I have paid\" is a claim, and nothing is granted until the owner confirms",
                 "pointsShop.payQrImage" to "收款码图片文件名（放在 config/cobblemarket/qr/ 下，如 pay.png；PNG 格式，单张 ≤512KB、像素 ≤2048×2048，收款码本身是正方形、512×512 左右就够）。**留空 = 走全局默认**。图片由服务端读取后下发给客户端绘制；订单号与实付金额由模组**动态绘制在图片旁**（不写进图片文件），防止玩家截图转给别人代付后认领。⚠ 每个档位还能在「RP 配置」界面里配**自己的**收款码（微信/支付宝的『设置金额』码），配了的那一档用那张码，实付金额同样是标价 / Payment QR image file name under config/cobblemarket/qr/ (e.g. pay.png; PNG, 512KB max and 2048x2048 pixels max — a payment QR is square, 512x512 is plenty). **Leave blank to fall back to the global default.** The server reads it and sends it to clients for drawing; the order number and exact amount are drawn by the mod next to the image (never baked into the file), so a shared screenshot cannot be claimed by someone else. ⚠ Each tier can also have its OWN QR image (set it in the in-game RP Config screen) — a \"fixed amount\" code from your payment app; that tier then use its own code, still charging the list price",
                 "pointsShop.defaultIcon" to "档位「RP 券」的**全局默认**图文件名（放在 config/cobblemarket/icons/ 下，如 coupon.png；PNG 格式，单张 ≤512KB、像素 ≤2048×2048，建议 256×160 或它的整数倍 512×320）。填了它，所有没单独配券图的档位都用这张；留空 = 用模组内置券图。**每个档位还能配自己的**（见 tiers 的 icon）。图片由服务端读取后下发给客户端绘制，什么宽高比都行（卡片按原图比例缩放，不会变形）/ **Global default** RP coupon image file name under config/cobblemarket/icons/ (e.g. coupon.png; PNG, 512KB max and 2048x2048 pixels max — 256x160 or a multiple such as 512x320 recommended). Every tier without its OWN coupon image uses this one; leave blank to use the mod's built-in coupon image. **Each tier can also have its own** (see the icon field of tiers). The server reads it and sends it to clients; any aspect ratio works (the card scales the image to fit without distortion)",
@@ -1026,10 +1153,9 @@ object CobbleMarketConfig {
                 "finance.purpleCardFeeDiscount" to "喵·紫电卡持有者的市场手续费减免比例（上架费/拍卖成交费/求购中介费全覆盖，与逾期翻倍叠加；0=无减免）/ Market fee discount ratio for Volt Card holders (covers listing/auction/buy-order fees, stacks with overdue doubling; 0=no discount)",
                 "finance.blackCardCount" to "喵·金轮卡全服发放上限（0=不限制，默认 5）。申请硬条件为持有喵·紫电卡；获得黑卡自动移除紫卡资格（升级替代）/ Server-wide cap on Meowth·Genesis Cards (0=unlimited, default 5). Applying requires holding the Volt Card; obtaining the Genesis Card auto-removes the Volt Card qualification (upgrade replacement)",
                 "finance.blackCardCreditLimit" to "喵·金轮卡持有者的固定借款额度（默认 500 万）/ Fixed borrowing limit for Meowth·Genesis Card holders (default 5,000,000)",
-                "finance.blackCardSelfApply" to "是否允许玩家自行申请喵·金轮卡（需持有喵·紫电卡 + 满足七项门槛 + 缴纳申请费）；关闭时仅服主可用 /market card give 发放 / Allow players to self-apply for the Genesis Card (requires holding the Volt Card + the seven conditions + the fee); when off, only owners can issue via /market card give",
+                "finance.blackCardSelfApply" to "是否允许玩家自行申请喵·金轮卡（需持有喵·紫电卡 + 满足六项门槛 + 缴纳申请费）；关闭时仅服主可用 /market card give 发放 / Allow players to self-apply for the Genesis Card (requires holding the Volt Card + the six conditions + the fee); when off, only owners can issue via /market card give",
                 "finance.blackCardApplyAsset" to "黑卡申请门槛·资产：玩家当前现金余额达到该值才可申请（0=不要求）/ Black apply condition · assets: the player's current cash balance must reach this to apply (0=not required)",
                 "finance.blackCardApplyVolume" to "黑卡申请门槛·消费金额：玩家历史买入成交额累计达到该值才可申请（0=不要求）/ Black apply condition · spending: the player's all-time counted buying volume must reach this to apply (0=not required)",
-                "finance.blackCardApplyCredit" to "黑卡申请门槛·额度：玩家信用基础（无欠款时的额度公式值）达到该值才可申请（0=不要求）/ Black apply condition · credit: the player's credit base (limit formula value without debt) must reach this to apply (0=not required)",
                 "finance.blackCardApplyDeposit" to "黑卡申请门槛·净存款：玩家净存款（活期存款 − 未还欠款）达到该值才可申请——借钱充存款无效（0=不要求）/ Black apply condition · net deposit: the player's net deposit (demand deposit − outstanding debt) must reach this to apply — borrowed money can't inflate it (0=not required)",
                 "finance.blackCardApplyNoOverdue" to "黑卡申请门槛·无逾期：true=有逾期或坏账记录的玩家不能申请 / Black apply condition · clean record: true=players with overdue or bad-debt records cannot apply",
                 "finance.blackCardApplySeen" to "黑卡申请门槛·图鉴遇见数：玩家图鉴已遇见物种数（含已捕捉）达到该值才可申请（0=不要求）/ Black apply condition · Pokédex encounters: the player's encountered-species count (includes caught) must reach this to apply (0=not required)",
@@ -1059,9 +1185,18 @@ object CobbleMarketConfig {
             "buyOrderExpiryDays" to buyOrderExpiryDays,
             "maxBuyOrdersPerPlayer" to maxBuyOrdersPerPlayer,
             "marketEnabled" to marketEnabled,
+            "pokemonMarketEnabled" to pokemonMarketEnabled,
+            "itemMarketEnabled" to itemMarketEnabled,
+            "auctionEnabled" to auctionEnabled,
+            "auctionPokemonEnabled" to auctionPokemonEnabled,
+            "auctionItemEnabled" to auctionItemEnabled,
+            "buyOrderEnabled" to buyOrderEnabled,
+            "buyOrderPokemonEnabled" to buyOrderPokemonEnabled,
+            "buyOrderItemEnabled" to buyOrderItemEnabled,
             "shareEnabled" to shareEnabled,
             "shareCooldownSeconds" to shareCooldownSeconds,
             "pointsEnabled" to pointsEnabled,
+            "pointsMainShopEnabled" to pointsMainShopEnabled,
             // ⚠ 落盘这一行曾经漏过：读取端有、写入端没有 → 开关当次有效、重启就落回默认 false
             "pointsMarketEnabled" to pointsMarketEnabled,
             "rpAsQuestCurrency" to rpAsQuestCurrency,
@@ -1122,7 +1257,6 @@ object CobbleMarketConfig {
                 "blackCardSelfApply" to blackCardSelfApply,
                 "blackCardApplyAsset" to blackCardApplyAsset,
                 "blackCardApplyVolume" to blackCardApplyVolume,
-                "blackCardApplyCredit" to blackCardApplyCredit,
                 "blackCardApplyDeposit" to blackCardApplyDeposit,
                 "blackCardApplyNoOverdue" to blackCardApplyNoOverdue,
                 "blackCardApplySeen" to blackCardApplySeen,

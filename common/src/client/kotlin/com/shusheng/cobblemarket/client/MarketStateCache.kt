@@ -9,6 +9,16 @@ import com.shusheng.cobblemarket.currency.MarketCurrency
 object MarketStateCache {
     var enabled: Boolean = true
 
+    /** 四个分项开关（默认 true）：入口界面据此置灰；登录补发 / 配置保存广播时更新 */
+    var pokemonMarketEnabled: Boolean = true
+    var itemMarketEnabled: Boolean = true
+    var auctionEnabled: Boolean = true
+    var auctionPokemonEnabled: Boolean = true
+    var auctionItemEnabled: Boolean = true
+    var buyOrderEnabled: Boolean = true
+    var buyOrderPokemonEnabled: Boolean = true
+    var buyOrderItemEnabled: Boolean = true
+
     /** 待领取总数（精灵 + 物品；登录时由服务端推一次）——只在界面上显示用 */
     var pendingReturns: Int = 0
 

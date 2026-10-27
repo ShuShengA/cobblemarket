@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.screen
 
 import com.shusheng.cobblemarket.client.ClientPermissionCache
+import com.shusheng.cobblemarket.client.PlayerSkinCache
 import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.client.formatPriceLong
@@ -102,9 +103,6 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
     /** 取某块面板自己的滚动条实例（⚠ 别改成共用一个） */
     private fun scrollBarOf(side: Int) =
         if (side == PURPLE_BOARD) purpleBoardScrollBar else blackBoardScrollBar
-    // 皮肤头像（照 AdminAuctionScreen 模板：每行每帧查 skinProvider 是分配热点，按 UUID 缓存）
-    private val skinCache = mutableMapOf<UUID, Identifier>()
-    private val defaultSkinTexture = Identifier.of("minecraft", "textures/entity/player/wide/steve.png")
     private var infoLoaded = false
 
     /**
@@ -602,16 +600,9 @@ class MeowthBankScreen : Screen(Text.translatable("cobblemarket.meowth_bank.titl
         return name.substring(0, cut) + "…"
     }
 
-    // ── 皮肤头像（照 AdminAuctionScreen 模板：在线走列表条目纹理，离线走 skinProvider，失败 steve 兜底；按 UUID 缓存） ──
+    // ── 皮肤头像（共用 [PlayerSkinCache]：在线走列表条目纹理，离线异步拉取正版皮肤） ──
 
-    private fun getSkin(uuid: UUID, name: String): Identifier {
-        skinCache[uuid]?.let { return it }
-        val skin = client?.networkHandler?.getPlayerListEntry(uuid)?.skinTextures?.texture()
-            ?: client?.skinProvider?.getSkinTextures(GameProfile(uuid, name))?.texture()
-            ?: defaultSkinTexture
-        skinCache[uuid] = skin
-        return skin
-    }
+    private fun getSkin(uuid: UUID, name: String): Identifier = PlayerSkinCache.skinFor(uuid, name)
 
     private fun drawAvatar(context: DrawContext, uuid: UUID, name: String, x: Int, y: Int, size: Int) {
         val texture = getSkin(uuid, name)

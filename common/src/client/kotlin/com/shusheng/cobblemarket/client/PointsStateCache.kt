@@ -19,4 +19,11 @@ object PointsStateCache {
      * 未拉取时先按关处理 —— 宁可少显示一个按钮，也别让玩家看到按钮、点了却被服务端拒。
      */
     var marketEnabled: Boolean = false
+
+    /**
+     * **主 RP 商城开关**（`pointsMainShopEnabled`，默认关）。
+     * 关闭时入口界面的 RP 商城按钮置灰（点击提示未开放）；自定义 NPC 商店不受影响。
+     * 未拉取时**乐观为开**（与 [enabled] 一致），服务端登录后立刻补发纠正。
+     */
+    var mainShopEnabled: Boolean = true
 }

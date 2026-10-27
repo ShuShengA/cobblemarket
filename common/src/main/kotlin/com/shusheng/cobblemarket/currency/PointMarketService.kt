@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.currency
 
+import com.shusheng.cobblemarket.event.SHOP_SELLER_UUID
 import com.shusheng.cobblemarket.event.TransactionCategory
 import com.shusheng.cobblemarket.event.TransactionHistory
 import com.shusheng.cobblemarket.event.TransactionRecord
@@ -58,6 +59,8 @@ enum class PointMarketError {
     BAD_COUNT,
     /** 这一格**已售罄**（库存 0；格子本身还在） */
     SOLD_OUT,
+    /** 有人正在编辑这家店（服主 / 有权限的人打开了编辑窗）—— 暂时不卖，分文未扣 */
+    SHOP_BEING_EDITED,
     /** 库存不够买这么多 */
     STOCK_NOT_ENOUGH,
     /** 余额不足（币种由商店决定：主货币 / RP —— 文案的货币单位随之变化） */
@@ -98,10 +101,25 @@ enum class PointMarketError {
      */
     POINTS_DISABLED,
 
+    /**
+     * **主 RP 商城被单独关闭**（`pointsMainShopEnabled`，2026-10-25）。
+     * 自定义 NPC 商店不受影响；总开关关闭时主商城仍按历史设计可用（入口置灰，正常客户端进不去）。
+     */
+    MAIN_SHOP_DISABLED,
+
     /** 这是**定期领取店**，不能用购买流程（只能领取） */
     NOT_FOR_SALE,
     /** 这是**普通购买店**，没有东西可领 */
-    NOT_A_CLAIM_SHOP
+    NOT_A_CLAIM_SHOP,
+
+    /**
+     * **购买冷却中**（2026-10-25）：商店冷却或这一格的冷却还没结束。
+     * [PointMarketBuyResult.Failure.remainingMs] 带上还剩多久，客户端 / 聊天提示据此显示倒计时。
+     */
+    ON_COOLDOWN,
+
+    /** 冷却商品**一次只能买 1 件**（有冷却的格子即使库存无限也不允许批量买） */
+    ONE_PER_PURCHASE
 }
 
 /**
@@ -125,7 +143,13 @@ sealed interface PointMarketBuyResult {
         val total: Long
     ) : PointMarketBuyResult
 
-    data class Failure(val error: PointMarketError) : PointMarketBuyResult
+    /**
+     * @param remainingMs 仅 [PointMarketError.ON_COOLDOWN] 用：距离可再次购买还有多久（毫秒）
+     */
+    data class Failure(
+        val error: PointMarketError,
+        val remainingMs: Long = 0L
+    ) : PointMarketBuyResult
 }
 
 /**
@@ -339,10 +363,13 @@ object PointMarketService {
         custom?.let {
             if (!it.type.allows(normalized.kind)) return PointMarketError.KIND_NOT_ALLOWED
         }
+        // 格子冷却只对**自定义普通购买店**有意义：主商城 / 领取店一律清 0（不信客户端）
+        val withCooldown = if (custom != null && custom.mode == CustomShopMode.NORMAL) normalized
+        else normalized.copy(cooldownHours = 0)
         // ⚠ **每次保存都换一个全新的 id**（绝不信客户端传的）：语义上等于"旧的作废、换了一个新的"，
         //   玩家手里那份随之失效 —— 他再点购买会被 [buy] 拒绝，而不是按改后的内容 / 价格成交。
         //   ⚠ 用 UUID 而不是自增版本号：下架后重新上架会从 0 重来，与玩家手里旧的 0 撞上就漏了。
-        val replaced = normalized.copy(
+        val replaced = withCooldown.copy(
             entryId = java.util.UUID.randomUUID().toString(),
             // 上架者（只给交易账本的「卖家」列用）—— 记**本次操作者**：格子被接管改放时以最后一次为准
             creatorUuid = player.uuid.toString(),
@@ -378,7 +405,8 @@ object PointMarketService {
                 fee = 0,
                 detail = "",
                 currency = currency,
-                primaryType = primaryTypeForHistory(player, null, replaced.pokemon)
+                primaryType = primaryTypeForHistory(player, null, replaced.pokemon),
+                shopId = shopId
             )
         )
         return null
@@ -452,7 +480,8 @@ object PointMarketService {
                     fee = 0,
                     detail = "",
                     currency = MarketCurrency.POINTS,
-                    primaryType = primaryTypeForHistory(player, null, removed.pokemon)
+                    primaryType = primaryTypeForHistory(player, null, removed.pokemon),
+                    shopId = shopId
                 )
             )
         }
@@ -522,6 +551,15 @@ object PointMarketService {
                 return PointMarketBuyResult.Failure(PointMarketError.KIND_NOT_ALLOWED)
             }
         }
+        // 主 RP 商城被服主单独关闭（2026-10-25）：令牌包也买不了；自定义 NPC 商店不受影响
+        if (custom == null && !CobbleMarketConfig.pointsMainShopEnabled) {
+            return PointMarketBuyResult.Failure(PointMarketError.MAIN_SHOP_DISABLED)
+        }
+        // 有人正在编辑这家店（2026-10-26）：整店暂停购买 —— 客户端按钮已置灰，
+        // 这里是防伪造包的服务端兜底；放在扣钱之前，分文未扣。
+        if (ShopEditLock.isLocked(shopId)) {
+            return PointMarketBuyResult.Failure(PointMarketError.SHOP_BEING_EDITED)
+        }
         val state: ShopStore = custom ?: PointShopState.get(server)
         val entry = state.find(kind, index) ?: return PointMarketBuyResult.Failure(PointMarketError.NOT_FOUND)
 
@@ -533,8 +571,38 @@ object PointMarketService {
         //   「保存先到」那种顺序就是靠这一行挡在扣钱之前的（「购买先到」则按旧内容成交，也没问题）。
         if (expectedEntryId != entry.entryId) return PointMarketBuyResult.Failure(PointMarketError.STALE_ENTRY)
 
+        // ── 冷却（2026-10-25；2026-10-27 加「商品各自冷却」）：只对自定义普通购买店 ──
+        // 两层彼此独立：
+        //  · 整店冷却（cooldownHours）：买成任意一格 ⇒ **全店**对该玩家锁定
+        //  · 商品各自冷却（itemCooldownHours）：只有**买过的那一格**锁定；单格可用 entry.cooldownHours 覆盖（取长）
+        // 该格实际 = max(整店剩余, 该格剩余)；其他格只看整店剩余。
+        val now = System.currentTimeMillis()
+        val shopCooldownHours = if (custom != null && custom.mode == CustomShopMode.NORMAL) custom.cooldownHours else 0
+        val itemCooldownHours = if (custom != null && custom.mode == CustomShopMode.NORMAL) custom.itemCooldownHours else 0
+        val entryCooldownHours = if (custom != null && custom.mode == CustomShopMode.NORMAL) entry.cooldownHours else 0
+        val slotCooldownHours = maxOf(itemCooldownHours, entryCooldownHours)
+        if (custom != null && custom.mode == CustomShopMode.NORMAL) {
+            val cooldownState = CustomShopCooldownState.get(server)
+            val shopRemaining = cooldownState.shopRemaining(
+                custom.id, player.uuid, shopCooldownHours * 3_600_000L, now
+            )
+            val slotRemaining = cooldownState.slotRemaining(
+                custom.id, player.uuid, entry.entryId, slotCooldownHours * 3_600_000L, now
+            )
+            val remaining = maxOf(shopRemaining, slotRemaining)
+            if (remaining > 0L) {
+                return PointMarketBuyResult.Failure(PointMarketError.ON_COOLDOWN, remaining)
+            }
+        }
+        // 有冷却的商品一次只能买 1 件（即使库存无限）—— 否则一次买满会让冷却形同虚设
+        val onePerPurchase = custom != null && custom.mode == CustomShopMode.NORMAL &&
+            maxOf(shopCooldownHours, slotCooldownHours) > 0
+
         val amount = if (entry.kind == ShopEntry.KIND_POKEMON) 1 else count
         if (amount < 1 || amount > MAX_BUY_COUNT) return PointMarketBuyResult.Failure(PointMarketError.BAD_COUNT)
+        if (onePerPurchase && amount != 1) {
+            return PointMarketBuyResult.Failure(PointMarketError.ONE_PER_PURCHASE)
+        }
 
         // 库存：0 = 已售罄（格子还留着）；-1 = 无限量
         if (entry.stock == 0) return PointMarketBuyResult.Failure(PointMarketError.SOLD_OUT)
@@ -619,6 +687,16 @@ object PointMarketService {
             return PointMarketBuyResult.Failure(PointMarketError.NO_SPACE)
         }
 
+        // ── 冷却：**只有真正交付成功**才记（失败 / 回滚都不算）──
+        // 商店冷却记在「整店」上；格子冷却记在 entryId 上（下架重上换了新 id，旧冷却自然失效）
+        if (custom != null && custom.mode == CustomShopMode.NORMAL) {
+            val cooldownState = CustomShopCooldownState.get(server)
+            if (shopCooldownHours > 0) cooldownState.recordShopPurchase(custom.id, player.uuid, now)
+            if (slotCooldownHours > 0) {
+                cooldownState.recordSlotPurchase(custom.id, player.uuid, entry.entryId, now)
+            }
+        }
+
         // ── 记账 + 落盘 ──
         // 明细写**商品是什么**（不是"第几格"）：服主对账时格子序号毫无意义
         val goods = when (entry.kind) {
@@ -647,18 +725,18 @@ object PointMarketService {
             shopId, player.name.string, index, amount, total, currency.name
         )
         // 交易账本留痕：成交（币种随商店、**不计入交易量** —— 额度与卡片资格只看玩家间成交）。
-        // 卖家取条目的**上架者**；加 creator 字段之前的老条目为空 ⇒ 落零 UUID + 空名，
-        // 账本那两列留白（比编一个假卖家诚实）。
+        // ⚠ 商店成交的卖家 = **商店本身**，不是上架的管理员（2026-10-26 用户报：卖出曾进上架者的
+        //   个人历史）。个人历史按 UUID 过滤 ⇒ 上架者只看到上架记录；买家仍按 buyerUuid 看到买入；
+        //   完整记录只留在「全部交易历史」里。
         TransactionHistory.get(server).addRecord(
             TransactionRecord(
                 timestamp = System.currentTimeMillis(),
                 type = TransactionType.PURCHASE,
                 category = if (entry.kind == ShopEntry.KIND_POKEMON) TransactionCategory.POKEMON
                 else TransactionCategory.ITEM,
-                sellerUuid = entry.creatorUuid.takeIf { it.isNotEmpty() }
-                    ?.let { runCatching { java.util.UUID.fromString(it) }.getOrNull() }
-                    ?: java.util.UUID(0L, 0L),
-                sellerName = entry.creatorName,
+                sellerUuid = SHOP_SELLER_UUID,
+                // 主商城没有店名 ⇒ CSV 卖家列留空（来源列 = shop）；自定义商店写店名
+                sellerName = custom?.name.orEmpty(),
                 buyerUuid = player.uuid,
                 buyerName = player.name.string,
                 species = speciesForHistory(entry),
@@ -667,9 +745,10 @@ object PointMarketService {
                 detail = detailForHistory(server, pokemon, deliveredItems),
                 currency = currency,
                 primaryType = primaryTypeForHistory(player, pokemon, null),
-                // 标记来源：交易历史界面据此把卖家列画成「▣ 商城」而不是上架的管理员名
-                // （上架 / 下架那两条**不标** —— 它们不是成交，界面也不画卖家段）
-                fromShop = true
+                // 标记来源：界面据此把卖家列画成店名 /「▣ 商城」（上架 / 下架那两条**不标**）
+                fromShop = true,
+                shopName = custom?.name.orEmpty(),
+                shopId = shopId
             )
         )
         // 把造出来的实物一并交出去：调用方要拿它发庆祝动画（概率闪光只有此刻才确定）。
@@ -733,6 +812,30 @@ object PointMarketService {
                     state.recordClaim(shop.id, player.uuid, period, entry.entryId, delivered, now)
                     deliveredTotal += delivered
                     if (kind == ShopEntry.KIND_ITEM) claimedItems += ClaimedItem(entry.entryId, delivered)
+                    // 交易账本留痕：领取（**不是卖出**）。只记实际交付的数量；
+                    // 卖家 = 商店本身（零 UUID）⇒ 不进管理员个人历史，只进领取者个人历史 + 全服历史。
+                    // detail 写 count= 供历史界面显示 ×N（精灵的领取也记，界面按 CLAIM 显示）。
+                    TransactionHistory.get(server).addRecord(
+                        TransactionRecord(
+                            timestamp = System.currentTimeMillis(),
+                            type = TransactionType.CLAIM,
+                            category = if (kind == ShopEntry.KIND_POKEMON) TransactionCategory.POKEMON
+                            else TransactionCategory.ITEM,
+                            sellerUuid = SHOP_SELLER_UUID,
+                            sellerName = shop.name,
+                            buyerUuid = player.uuid,
+                            buyerName = player.name.string,
+                            species = speciesForHistory(entry),
+                            price = 0,
+                            fee = 0,
+                            detail = "count=$delivered",
+                            currency = shop.currency,
+                            primaryType = primaryTypeForHistory(player, null, entry.pokemon),
+                            fromShop = true,
+                            shopName = shop.name,
+                            shopId = shop.id
+                        )
+                    )
                 }
                 if (delivered < remaining) leftBehind = true
             }
@@ -919,6 +1022,8 @@ object PointMarketService {
         entry: ShopEntry, server: MinecraftServer, allowZeroStock: Boolean = false
     ): ShopEntry? {
         if (entry.price < 0L) return null
+        // 格子冷却：0 = 跟随商店 / 不冷却；只允许 0~一年，坏值整条拒绝
+        if (entry.cooldownHours !in 0..MAX_COOLDOWN_HOURS) return null
         // 普通购买店：0 是**售罄后的展示值**，不是上架时能设的库存（要限量就 ≥1，不限量用 -1）
         // 定期领取店（[allowZeroStock]）：0 = 本期不可领，是合法配置；-1 在调用方已折算成 0
         val minStock = if (allowZeroStock) 0 else 1

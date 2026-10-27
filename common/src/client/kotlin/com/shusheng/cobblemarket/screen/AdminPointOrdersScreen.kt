@@ -371,6 +371,8 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
     override fun mouseMoved(mouseX: Double, mouseY: Double) {
         super.mouseMoved(mouseX, mouseY)
         hoveredRow = -1
+        // 弹窗打开时冻结行悬停（用户 2026-10-27 报同类问题）
+        if (confirmingOrder != null) return
         if (mouseX < leftX() || mouseX > leftX() + panelWidth) return
         val rel = ((mouseY - listStartY) / rowHeight).toInt()
         if (mouseY >= listStartY && rel in 0 until minOf(maxVisible(), orders.size - scrollOffset)) hoveredRow = rel
@@ -461,7 +463,8 @@ class AdminPointOrdersScreen : Screen(Text.translatable("cobblemarket.points.adm
             val y = listStartY + rel * rowHeight
             drawNineSlice(
                 context, ROW_BACKGROUND_TEXTURE, leftX, y, panelWidth, rowHeight,
-                if (rel == hoveredRow) 1 else 0, ROW_BACKGROUND_TEX_H
+                // 弹窗打开时即使 hoveredRow 还留着旧值（悬停是 mouseMoved 算的）也不画高亮
+                if (confirmingOrder == null && rel == hoveredRow) 1 else 0, ROW_BACKGROUND_TEX_H
             )
         }
     }

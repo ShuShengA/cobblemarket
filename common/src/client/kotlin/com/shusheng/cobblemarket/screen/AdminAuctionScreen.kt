@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.util.StatNames
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.LoadState
+import com.shusheng.cobblemarket.client.PlayerSkinCache
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
@@ -230,19 +231,8 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         else -> 0xFFFFFF
     }
 
-    private val defaultSkinTexture = Identifier.of("minecraft", "textures/entity/player/wide/steve.png")
-
-    // 皮肤纹理缓存：每行每帧创建 GameProfile 并查 skinProvider 是分配热点，首个结果按 UUID 缓存
-    private val skinCache = mutableMapOf<UUID, Identifier>()
-
-    private fun getSellerSkin(uuid: UUID, name: String): Identifier {
-        skinCache[uuid]?.let { return it }
-        val skin = client?.networkHandler?.getPlayerListEntry(uuid)?.skinTextures?.texture()
-            ?: client?.skinProvider?.getSkinTextures(GameProfile(uuid, name))?.texture()
-            ?: defaultSkinTexture
-        skinCache[uuid] = skin
-        return skin
-    }
+    /** 卖家头像纹理（共用 [PlayerSkinCache]：离线玩家会异步拉取正版皮肤，不再锁死默认头像） */
+    private fun getSellerSkin(uuid: UUID, name: String): Identifier = PlayerSkinCache.skinFor(uuid, name)
 
     private fun drawSellerAvatar(context: DrawContext, uuid: UUID, name: String, x: Int, y: Int, size: Int) {
         val texture = getSellerSkin(uuid, name)
@@ -498,8 +488,11 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         val startY = getListStartY()
         val visibleRows = getMaxVisibleRows()
 
+        // 弹窗打开时冻结行悬停（用户 2026-10-27 报同类问题）
         hoveredRow = -1
-        if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY..(startY + visibleRows * rowHeight)) {
+        if (cancelEntry == null &&
+            mouseX in leftX..(leftX + panelWidth) && mouseY in startY..(startY + visibleRows * rowHeight)
+        ) {
             val row = (mouseY - startY) / rowHeight
             if (row in 0 until minOf(visibleRows, filteredEntries().size - scrollOffset)) hoveredRow = row
         }

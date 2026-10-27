@@ -389,7 +389,7 @@ class RequestBlackCardApplyPayload : CustomPayload {
     }
 }
 
-// ── S2C：申请条件快照（8 项：持有紫卡硬条件 + 七项门槛 + 费用 + 资格 + 开关状态） ──
+// ── S2C：申请条件快照（7 项：持有紫卡硬条件 + 六项门槛 + 费用 + 资格 + 开关状态） ──
 
 data class BlackCardApplyInfoPayload(
     /** 7 项：持有紫卡（硬条件）+ 资产/消费金额/额度/存款余额/图鉴数/无逾期 */
@@ -1805,7 +1805,7 @@ object FinanceNetwork {
         )
     }
 
-    /** 申请黑卡条件快照回发（8 项：持有紫卡硬条件 + 七项门槛，照紫卡口径） */
+    /** 申请黑卡条件快照回发（7 项：持有紫卡硬条件 + 六项门槛） */
     private fun sendBlackCardApplyInfo(player: ServerPlayerEntity) {
         val server = player.server
         val state = FinanceState.get(server)
@@ -1815,8 +1815,6 @@ object FinanceNetwork {
         // 净存款（存款 − 未还欠款）：借钱充存款无法满足门槛，界面显示值即判定口径
         val deposit = state.netDepositBalance(player.uuid, now)
         val dexCounts = com.shusheng.cobblemarket.finance.FinanceService.getDexCounts(server, player.uuid)
-        // 信用基础 = 无欠款公式值（紫卡持有者 = 紫卡额度；勿用 creditLimitFor+debt 反推，见 creditBaseFor 注释）
-        val creditBase = state.creditBaseFor(player.uuid, now)
         val mine = state.getLoansByPlayer(player.uuid)
         val hasBadRecord = mine.any { it.status == LoanStatus.OVERDUE || it.status == LoanStatus.BAD_DEBT }
         // 坏账是硬拦截（isBlackCardEligible 内）：该行恒显示且不满足，让被拒的玩家看得到原因
@@ -1827,7 +1825,8 @@ object FinanceNetwork {
             ApplyConditionEntry(1L, if (holdsPurple) 1L else 0L, holdsPurple),
             ApplyConditionEntry(CobbleMarketConfig.blackCardApplyAsset, cash, cash >= CobbleMarketConfig.blackCardApplyAsset),
             ApplyConditionEntry(CobbleMarketConfig.blackCardApplyVolume, volume, volume >= CobbleMarketConfig.blackCardApplyVolume),
-            ApplyConditionEntry(CobbleMarketConfig.blackCardApplyCredit, creditBase, creditBase >= CobbleMarketConfig.blackCardApplyCredit),
+            // ⚠ 没有「额度要求」：申请黑卡必须先持有紫卡（硬条件），而持卡者额度 = 紫卡固定额度、
+            //   不会再变 —— 这个门槛要么永远满足、要么永远满足不了，纯粹是噪音（2026-10-28 用户拍板移除）
             ApplyConditionEntry(CobbleMarketConfig.blackCardApplyDeposit, deposit, deposit >= CobbleMarketConfig.blackCardApplyDeposit),
             ApplyConditionEntry(CobbleMarketConfig.blackCardApplySeen, dexCounts.seen.toLong(), dexCounts.seen.toLong() >= CobbleMarketConfig.blackCardApplySeen),
             ApplyConditionEntry(CobbleMarketConfig.blackCardApplyDex, dexCounts.caught.toLong(), dexCounts.caught.toLong() >= CobbleMarketConfig.blackCardApplyDex),

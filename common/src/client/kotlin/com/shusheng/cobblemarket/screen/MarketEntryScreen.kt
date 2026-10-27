@@ -89,6 +89,13 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     // 市场关闭提示（入口点击被拦截时显示，3 秒）
     private var closedNoticeUntil = 0L
+    /** 被拦时显示的文案：总开关关闭 → market.closed；分项开关关闭 → 各自的关闭文案 */
+    private var closedNoticeText: Text? = null
+    // 四个交易入口（分项开关置灰用；2026-10-25）
+    private var pokemonEntryBtn: TextureButton? = null
+    private var itemEntryBtn: TextureButton? = null
+    private var auctionEntryBtn: TextureButton? = null
+    private var buyOrderEntryBtn: NineSliceButton? = null
     // 金融系统关闭提示（点置灰的喵喵银行按钮时显示，3 秒）
     private var financeNoticeUntil = 0L
     // 金融总开关（CreditInfoPayload 拉取；喵喵银行按钮置灰依据，未拉取时默认开=乐观，服务端兜底）
@@ -97,6 +104,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     // RP 关闭提示（点置灰的RP 商城按钮时显示，3 秒）
     private var pointsNoticeUntil = 0L
+    /** 被拦时显示的文案：总开关关 → points.market.disabled；主商城单独关 → points.main_shop.disabled */
+    private var pointsNoticeText: Text? = null
     // RP 商城入口（置灰依据是 PointsStateCache.enabled，登录时服务端补发一次）
     private var pointsMarketBtn: NineSliceButton? = null
 
@@ -197,15 +206,23 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         }
     }
 
-    private fun openIfMarketEnabled(opBypass: Boolean = false, open: () -> Unit) {
+    private fun openIfMarketEnabled(
+        opBypass: Boolean = false,
+        categoryEnabled: Boolean = true,
+        categoryClosedText: Text? = null,
+        open: () -> Unit,
+    ) {
         // ⚠ 判据是 canManage（= 有任一权限节点；服主由服务端下发全部节点），**不是 isServerOwner**。
         // 变量名曾写作 isOp，害我以为「关市时非 OP 的权限持有者进不去管理面板」（2026-09-17 改正）
         val canManage = ClientPermissionCache.canManage()
-        if (com.shusheng.cobblemarket.client.MarketStateCache.enabled || (opBypass && canManage)) {
+        val masterOpen = com.shusheng.cobblemarket.client.MarketStateCache.enabled
+        if ((masterOpen && categoryEnabled) || (opBypass && canManage)) {
             open()
         } else {
-            // 关市拦截：3 秒提示 + fail 音效（玩家点交易入口的即时反馈）
+            // 拦截：3 秒提示 + fail 音效（玩家点交易入口的即时反馈）
+            // 文案优先级：总开关关闭 → market.closed；只有分项关闭 → 该类自己的提示
             com.shusheng.cobblemarket.client.playFailSound()
+            closedNoticeText = if (!masterOpen) Text.translatable("cobblemarket.market.closed") else categoryClosedText
             closedNoticeUntil = System.currentTimeMillis() + 3000
         }
     }
@@ -283,22 +300,33 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         val marketClosed = !com.shusheng.cobblemarket.client.MarketStateCache.enabled
 
         // 行 1：精灵市场按钮用小卡比兽 8 帧动画图标（100ms/帧，照皮卡丘动画帧率）
-        entryButtons += addDrawableChild(TextureButton(
+        // 分项开关（2026-10-25）：关闭后置灰，点击给该类自己的提示（总开关优先）
+        val marketPokemonBtn = TextureButton(
             leftX, startY, btnW, btnH,
             Text.translatable("cobblemarket.entry.pokemon"),
-            { openIfMarketEnabled { client?.setScreen(MarketScreen()) } },
+            { openIfMarketEnabled(
+                categoryEnabled = com.shusheng.cobblemarket.client.MarketStateCache.pokemonMarketEnabled,
+                categoryClosedText = Text.translatable("cobblemarket.market.pokemon_closed")
+            ) { client?.setScreen(MarketScreen()) } },
             iconFrames = (0..7).map { Identifier.of("cobblemarket", "textures/gui/munchlax/munchlax_$it.png") },
             iconTexSize = 48,
             iconDisplaySize = 18
-        ).also { it.dimmed = marketClosed })
-        entryButtons += addDrawableChild(TextureButton(
+        )
+        pokemonEntryBtn = marketPokemonBtn
+        entryButtons += addDrawableChild(marketPokemonBtn)
+        val marketItemBtn = TextureButton(
             rightX, startY, btnW, btnH,
             Text.translatable("cobblemarket.entry.item"),
-            { openIfMarketEnabled { openItemMarket() } },
+            { openIfMarketEnabled(
+                categoryEnabled = com.shusheng.cobblemarket.client.MarketStateCache.itemMarketEnabled,
+                categoryClosedText = Text.translatable("cobblemarket.market.item_closed")
+            ) { openItemMarket() } },
             Identifier.of("cobblemarket", "textures/gui/icon/pokeball_icon.png"),
             iconTexSize = 48,
             iconDisplaySize = 18
-        ).also { it.dimmed = marketClosed })
+        )
+        itemEntryBtn = marketItemBtn
+        entryButtons += addDrawableChild(marketItemBtn)
         // 行 2
         // 交易历史：不套 openIfMarketEnabled —— 只读账本，关市期间照常可查
         entryButtons += addDrawableChild(TextureButton(
@@ -309,14 +337,21 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             iconTexSize = 48,
             iconDisplaySize = 18
         ))
-        entryButtons += addDrawableChild(TextureButton(
+        val marketAuctionBtn = TextureButton(
             rightX, startY + btnH + gap, btnW, btnH,
             Text.translatable("cobblemarket.entry.auction"),
-            { openIfMarketEnabled { client?.setScreen(AuctionScreen()) } },
+            { openIfMarketEnabled(
+                categoryEnabled = com.shusheng.cobblemarket.client.MarketStateCache.auctionEnabled &&
+                    (com.shusheng.cobblemarket.client.MarketStateCache.auctionPokemonEnabled ||
+                        com.shusheng.cobblemarket.client.MarketStateCache.auctionItemEnabled),
+                categoryClosedText = Text.translatable("cobblemarket.market.auction_closed")
+            ) { client?.setScreen(AuctionScreen()) } },
             Identifier.of("cobblemarket", "textures/gui/auction/auction_gavel_left.png"),
             iconTexSize = 48,
             iconDisplaySize = 18
-        ).also { it.dimmed = marketClosed })
+        )
+        auctionEntryBtn = marketAuctionBtn
+        entryButtons += addDrawableChild(marketAuctionBtn)
         // 行 3：管理面板入口——纯图标按钮居中、悬停显示名称。
         // 2026-09-12：原文字「仅OP」是权限说明而非功能名（语义不对），去掉文字只留图标。
         // 宽度别压太窄：button.png 是胶囊形（两端半圆），TextureButton 整图缩放会把半圆横向压扁，
@@ -351,18 +386,24 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             buyOrderX, buyOrderY,
             cornerSize, cornerSize,
             Text.literal(""),
-            { openIfMarketEnabled { client?.setScreen(BuyOrderScreen()) } },
+            { openIfMarketEnabled(
+                categoryEnabled = com.shusheng.cobblemarket.client.MarketStateCache.buyOrderEnabled &&
+                    (com.shusheng.cobblemarket.client.MarketStateCache.buyOrderPokemonEnabled ||
+                        com.shusheng.cobblemarket.client.MarketStateCache.buyOrderItemEnabled),
+                categoryClosedText = Text.translatable("cobblemarket.market.buyorder_closed")
+            ) { client?.setScreen(BuyOrderScreen()) } },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/icon/buy_order_icon.png"),
             // 48×48 贴图缩到 18×18 显示（按钮 22×22 留 2px 边距，源图高分辨率保持锐利，照市场总开关按钮）
             iconTexW = 48, iconTexH = 48, iconScale = 0.375f,
             // 入口型按钮专用底色（只有默认 + 悬停两段），与列表行里的操作按钮区分开
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
         )
-        // 关市置灰（同上方交易类入口：仍可点，点击给 fail 音 + 3 秒红字提示）
-        buyOrderBtn.dimmed = marketClosed
         // 纯图标按钮：悬停提示名称（无障碍与可读性）
         buyOrderBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.translatable("cobblemarket.entry.buy_order")))
+        buyOrderEntryBtn = buyOrderBtn
         entryButtons += addDrawableChild(buyOrderBtn)
+        // 四个交易入口的初始置灰态（总开关 + 四个分项开关）
+        updateMarketEntryStates()
 
         // 市场 ID 卡入口（2026-10-16）：**底部居中**，位置对应管理面板那颗「市场开关」。
         // ⚠ 图标**不是固定贴图**：跟随服主换的背景图（没配 = 内置背景缩小版）⇒ 尺寸/缩放每帧同步，
@@ -417,10 +458,17 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             cornerSize, cornerSize,
             Text.literal(""),
             {
-                if (com.shusheng.cobblemarket.client.PointsStateCache.enabled) {
+                val rpEnabled = com.shusheng.cobblemarket.client.PointsStateCache.enabled
+                val mainShop = com.shusheng.cobblemarket.client.PointsStateCache.mainShopEnabled
+                if (rpEnabled && mainShop) {
                     client?.setScreen(PointsMarketScreen())
                 } else {
                     com.shusheng.cobblemarket.client.playFailSound()
+                    pointsNoticeText = if (!rpEnabled) {
+                        Text.translatable("cobblemarket.points.market.disabled", CurrencyService.pointsIcon())
+                    } else {
+                        Text.translatable("cobblemarket.points.main_shop.disabled", CurrencyService.pointsIcon())
+                    }
                     pointsNoticeUntil = System.currentTimeMillis() + 3000
                 }
             },
@@ -432,7 +480,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
             // 只有这颗是孤例（用户 2026-09-25 指出；管理面板的「充值订单」按钮是同一个错，同批修掉）
             texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
         )
-        pointsBtn.dimmed = !com.shusheng.cobblemarket.client.PointsStateCache.enabled
+        pointsBtn.dimmed = !com.shusheng.cobblemarket.client.PointsStateCache.enabled ||
+            !com.shusheng.cobblemarket.client.PointsStateCache.mainShopEnabled
         this.pointsMarketBtn = pointsBtn
         pointsBtn.setTooltip(
             net.minecraft.client.gui.tooltip.Tooltip.of(
@@ -649,7 +698,14 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         }
     }
 
-    /** 按当前 [shareMenuProgress] 摆放三个子按钮：0 = 全部叠在展示按钮上，1 = 各自的目标位置 */
+    /**
+     * 按当前 [shareMenuProgress] 摆放三个子按钮：0 = 起点，1 = 各自的目标位置。
+     *
+     * ⚠ **y 恒等于目标位置**（2026-10-28 用户定）：
+     *   - 不能用主按钮的 y —— 主按钮在红色分割线**下方**，往上滑会穿过那条线（「像钻过去」）；
+     *   - 也不要用「目标上方 8px」再往下落 —— 下落幅度太小、看着反而像从上往下扩散。
+     *   现在只做**横向扩散**（子按钮从主按钮的横向位置散开到各自目标），全程贴着分割线上方。
+     */
     private fun applyShareMenuPositions() {
         val origin = shareBtn ?: return
         val buttons = shareSubButtons()
@@ -657,7 +713,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         buttons.forEachIndexed { index, button ->
             val (targetX, targetY) = shareSubTargets[index]
             button.x = (origin.x + (targetX - origin.x) * shareMenuProgress).roundToInt()
-            button.y = (origin.y + (targetY - origin.y) * shareMenuProgress).roundToInt()
+            button.y = targetY
         }
     }
 
@@ -1643,13 +1699,15 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
                 Text.translatable("cobblemarket.market.closed_banner").string,
                 width / 2, (bgBottom() + 22).coerceAtMost(height - 11), 0xFF5555
             )
-            if (System.currentTimeMillis() < closedNoticeUntil) {
-                context.drawCenteredTextWithShadow(
-                    textRenderer,
-                    Text.translatable("cobblemarket.market.closed").string,
-                    width / 2, height - 36, 0xFF5555
-                )
-            }
+        }
+        // 点击入口被拦时的 3 秒提示：**独立于总开关横幅** —— 分项开关关闭时总开关仍开着，
+        // 提示不能跟着横幅一起藏在上面那个 if 里（2026-10-25 用户实测报「只有音效没有文字」）
+        if (System.currentTimeMillis() < closedNoticeUntil) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                (closedNoticeText ?: Text.translatable("cobblemarket.market.closed")).string,
+                width / 2, height - 36, 0xFF5555
+            )
         }
         // 金融系统关闭提示（点置灰喵喵银行按钮，3 秒；独立于市场关闭提示）
         if (System.currentTimeMillis() < financeNoticeUntil) {
@@ -1663,7 +1721,8 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         if (System.currentTimeMillis() < pointsNoticeUntil) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.points.market.disabled", CurrencyService.pointsIcon()),
+                pointsNoticeText
+                    ?: Text.translatable("cobblemarket.points.market.disabled", CurrencyService.pointsIcon()),
                 width / 2, height - 36, 0xFF5555
             )
         }
@@ -1707,7 +1766,24 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
 
     /** RP 总开关变化时同步入口按钮的置灰态（登录补发 / 后续管理端切换，见 PointsStatusPayload） */
     fun updatePointsEntryState() {
-        pointsMarketBtn?.dimmed = !com.shusheng.cobblemarket.client.PointsStateCache.enabled
+        pointsMarketBtn?.dimmed = !com.shusheng.cobblemarket.client.PointsStateCache.enabled ||
+            !com.shusheng.cobblemarket.client.PointsStateCache.mainShopEnabled
+    }
+
+    /** 四个交易入口的置灰态：总开关关闭 → 全灰；分项开关关闭 → 只灰对应入口（2026-10-25） */
+    fun updateMarketEntryStates() {
+        val closed = !com.shusheng.cobblemarket.client.MarketStateCache.enabled
+        pokemonEntryBtn?.dimmed = closed || !com.shusheng.cobblemarket.client.MarketStateCache.pokemonMarketEnabled
+        itemEntryBtn?.dimmed = closed || !com.shusheng.cobblemarket.client.MarketStateCache.itemMarketEnabled
+        // 拍卖 / 求购：总开关开但两个类型子开关都关 ⇒ 没有可用内容，同样置灰
+        val auctionAvailable = com.shusheng.cobblemarket.client.MarketStateCache.auctionEnabled &&
+            (com.shusheng.cobblemarket.client.MarketStateCache.auctionPokemonEnabled ||
+                com.shusheng.cobblemarket.client.MarketStateCache.auctionItemEnabled)
+        val buyOrderAvailable = com.shusheng.cobblemarket.client.MarketStateCache.buyOrderEnabled &&
+            (com.shusheng.cobblemarket.client.MarketStateCache.buyOrderPokemonEnabled ||
+                com.shusheng.cobblemarket.client.MarketStateCache.buyOrderItemEnabled)
+        auctionEntryBtn?.dimmed = closed || !auctionAvailable
+        buyOrderEntryBtn?.dimmed = closed || !buyOrderAvailable
     }
 
     override fun shouldPause() = false

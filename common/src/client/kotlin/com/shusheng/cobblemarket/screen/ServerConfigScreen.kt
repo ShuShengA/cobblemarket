@@ -33,26 +33,15 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     /** 数字配置行定义：key → 是否整数（费率支持小数） */
     private data class NumDef(val labelKey: String, val isInt: Boolean)
 
-    private val numDefs = listOf(
-        NumDef("cobblemarket.op.scfg_pokemon_fee", false) to "pokemonFee",
-        NumDef("cobblemarket.op.scfg_item_fee", false) to "itemFee",
-        NumDef("cobblemarket.op.scfg_max_pokemon", true) to "maxPokemonListings",
-        NumDef("cobblemarket.op.scfg_max_items", true) to "maxItemListings",
-        NumDef("cobblemarket.op.scfg_listing_days", true) to "listingDays",
-        NumDef("cobblemarket.op.scfg_pending_days", true) to "pendingDays",
-        NumDef("cobblemarket.op.scfg_auction_fee", false) to "auctionFee",
-        NumDef("cobblemarket.op.scfg_auction_min_bid", true) to "auctionMinBid",
-        NumDef("cobblemarket.op.scfg_anti_snipe", true) to "antiSnipe",
-        NumDef("cobblemarket.op.scfg_max_auctions", true) to "maxAuctions",
-        NumDef("cobblemarket.op.scfg_auction_durations", false) to "auctionDurations",
-        NumDef("cobblemarket.op.scfg_buyorder_fee", false) to "buyOrderFee",
-        NumDef("cobblemarket.op.scfg_buyorder_days", true) to "buyOrderExpiry",
-        NumDef("cobblemarket.op.scfg_max_buyorders", true) to "maxBuyOrders",
-    )
+    /**
+     * 2026-10-25：四类配置（精灵市场 / 物品市场 / 拍卖场 / 求购单）已**全部搬到各自子界面**
+     * —— [PokemonMarketConfigScreen] / [ItemMarketConfigScreen] / [AuctionConfigScreen] /
+     * [BuyOrderConfigScreen]。主界面只留「ID 卡背景图 / 展示冷却」两行 + 六个子界面入口；
+     * 四个分项开关也放在各自子界面的第一行（默认开）。
+     */
+    private val numDefs = emptyList<Pair<NumDef, String>>()
 
-    private val toggleDefs = listOf(
-        "cobblemarket.op.scfg_egg_trading" to "eggTrading",
-    )
+    private val toggleDefs = emptyList<Pair<String, String>>()
 
     /**
      * ID 卡背景图那一行 —— **有意不放进 [numDefs]**：它不属于任何功能块（上架 / 拍卖 / 求购 / 金融），
@@ -78,11 +67,15 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     // 编辑只改本地状态：开关的本地值（保存时提交，快照刷新时重置）
     private val localToggles = mutableMapOf<String, Boolean>()
     private var savedToastUntil = 0L
-    // +4 = 喵喵银行配置入口行 + RP 配置入口行（各是一个左标签 + 右「配置」按钮）
+    // +8 = 喵喵银行 / RP / 精灵市场 / 物品市场 / 拍卖场 / 求购单六个入口行
     //       + ID 卡背景图行 + 展示冷却行（后两行不在 numDefs 里，见 ID_CARD_DEF / SHARE_COOLDOWN_DEF）
-    private val totalRows = numDefs.size + toggleDefs.size + 4
+    private val totalRows = numDefs.size + toggleDefs.size + 8
     private var financeOpenButton: NineSliceButton? = null
     private var pointsOpenButton: NineSliceButton? = null
+    private var pokemonMarketOpenButton: NineSliceButton? = null
+    private var itemMarketOpenButton: NineSliceButton? = null
+    private var auctionOpenButton: NineSliceButton? = null
+    private var buyOrderOpenButton: NineSliceButton? = null
 
     // ── 蛋交易二次确认弹窗（照 AdminScreen 原模板：开启有 3 秒冷静期，蛋可绕过精灵黑名单） ──
     private var eggConfirmOpen = false
@@ -123,6 +116,10 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 is PurpleCardApplyConditionsScreen -> screen.refreshFrom(payload)
                 is BlackCardConfigScreen -> screen.refreshFrom(payload)
                 is BlackCardApplyConditionsScreen -> screen.refreshFrom(payload)
+                is PokemonMarketConfigScreen -> screen.refreshFrom(payload)
+                is ItemMarketConfigScreen -> screen.refreshFrom(payload)
+                is AuctionConfigScreen -> screen.refreshFrom(payload)
+                is BuyOrderConfigScreen -> screen.refreshFrom(payload)
             }
         }
     }
@@ -231,6 +228,20 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             { client?.setScreen(PointsConfigScreen()) }
         )
         addDrawableChild(pointsOpenButton)
+        // 四个市场子界面入口（2026-10-25）：位置与上面两个入口一致，每行一个「左标签 + 配置按钮」
+        fun addSubScreenEntry(open: () -> Unit): NineSliceButton {
+            val btn = NineSliceButton(
+                dialogX + dialogW - 10 - 20 - 2 - 54, startY, 54, 16,
+                Text.translatable("cobblemarket.op.finance_open"),
+                { open() }
+            )
+            addDrawableChild(btn)
+            return btn
+        }
+        pokemonMarketOpenButton = addSubScreenEntry { client?.setScreen(PokemonMarketConfigScreen()) }
+        itemMarketOpenButton = addSubScreenEntry { client?.setScreen(ItemMarketConfigScreen()) }
+        auctionOpenButton = addSubScreenEntry { client?.setScreen(AuctionConfigScreen()) }
+        buyOrderOpenButton = addSubScreenEntry { client?.setScreen(BuyOrderConfigScreen()) }
         // ID 卡背景图：**排在蛋交易之后**（它不在 numDefs 里，见 ID_CARD_DEF）。
         // ⚠ 必须**建出控件**再调 rebuildPositions —— `placeNumField` 第一行就是
         //   `numFields[key] ?: return`，缺这一步会**占不到 row**、后面所有行整体上移一格；
@@ -286,21 +297,32 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         }
         numDefs.forEach { (def, key) -> placeNumField(def, key) }
         toggleDefs.forEach { (_, key) -> placeToggle(key) }
-        placeNumField(ID_CARD_DEF, "idCardBackground")
-        // 展示冷却：列表最末的配置行（ID 卡之后、喵喵银行入口之前；见 SHARE_COOLDOWN_DEF）
-        placeNumField(SHARE_COOLDOWN_DEF, "shareCooldown")
-        // 喵喵银行配置入口行（列表末尾：标签「喵喵银行」+ 右侧「配置」按钮）
+        // 行顺序按**功能开发顺序**（2026-10-25 用户定）：市场四类 → 喵喵银行 → RP → 界面杂项
+        // 四个市场子界面入口：精灵市场 → 物品市场 → 拍卖场 → 求购单
+        listOf(pokemonMarketOpenButton, itemMarketOpenButton, auctionOpenButton, buyOrderOpenButton)
+            .forEach { btn ->
+                val rowY = startY + (row - scrollOffset) * rowHeight
+                btn?.x = dialogX + dialogW - 10 - 20 - 2 - 54
+                btn?.y = rowY + 4
+                btn?.visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
+                row++
+            }
+        // 喵喵银行配置入口行（金融系统，1.1.0）
         val y = startY + (row - scrollOffset) * rowHeight
         val visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
         financeOpenButton?.x = dialogX + dialogW - 10 - 20 - 2 - 54
         financeOpenButton?.y = y + 4
         financeOpenButton?.visible = visible
-        // RP 配置入口行（紧挨着喵喵银行下面一行）
         row++
+        // RP 配置入口行（1.3.0）
         val pointsY = startY + (row - scrollOffset) * rowHeight
         pointsOpenButton?.x = dialogX + dialogW - 10 - 20 - 2 - 54
         pointsOpenButton?.y = pointsY + 4
         pointsOpenButton?.visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
+        row++
+        // 界面杂项排最后（ID 卡背景图 / 展示冷却）
+        placeNumField(ID_CARD_DEF, "idCardBackground")
+        placeNumField(SHARE_COOLDOWN_DEF, "shareCooldown")
     }
 
     // ── 快照 → 界面刷新 ──
@@ -490,7 +512,6 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             blackCardSelfApply = p?.blackCardSelfApply ?: false,
             blackCardApplyAsset = p?.blackCardApplyAsset ?: 0L,
             blackCardApplyVolume = p?.blackCardApplyVolume ?: 0L,
-            blackCardApplyCredit = p?.blackCardApplyCredit ?: 0L,
             blackCardApplyDeposit = p?.blackCardApplyDeposit ?: 0L,
             blackCardApplyNoOverdue = p?.blackCardApplyNoOverdue ?: false,
             blackCardApplySeen = p?.blackCardApplySeen ?: 0L,
@@ -505,6 +526,14 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             overdueBadDebt = p?.overdueBadDebt ?: 30,
             // 展示冷却（秒）：输入框空/非法回退旧值，范围由服务端 setter 再钳一次
             shareCooldownSeconds = intOr("shareCooldown", p?.shareCooldownSeconds ?: 10).coerceIn(1, 3600),
+            pokemonMarketEnabled = p?.pokemonMarketEnabled ?: true,
+            itemMarketEnabled = p?.itemMarketEnabled ?: true,
+            auctionEnabled = p?.auctionEnabled ?: true,
+            buyOrderEnabled = p?.buyOrderEnabled ?: true,
+            auctionPokemonEnabled = p?.auctionPokemonEnabled ?: true,
+            auctionItemEnabled = p?.auctionItemEnabled ?: true,
+            buyOrderPokemonEnabled = p?.buyOrderPokemonEnabled ?: true,
+            buyOrderItemEnabled = p?.buyOrderItemEnabled ?: true,
         ))
         // 乐观提示（服务端回发快照确认最终值；保存后按钮侧 toast 1.5 秒）
         savedToastUntil = System.currentTimeMillis() + 1500
@@ -748,11 +777,25 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         }
         numDefs.forEach { (def, key) -> drawNumRow(def, key) }
         toggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
-        // ID 卡背景图：**排在蛋交易之后**（不在 numDefs 里）
-        drawNumRow(ID_CARD_DEF, "idCardBackground")
-        // 展示冷却：列表最末的配置行（ID 卡之后、喵喵银行入口之前；见 SHARE_COOLDOWN_DEF）
-        drawNumRow(SHARE_COOLDOWN_DEF, "shareCooldown")
-        // 喵喵银行配置入口行（列表末尾）
+        // 行顺序与 rebuildPositions 一致：四个市场子界面 → 喵喵银行 → RP → 界面杂项
+        listOf(
+            "cobblemarket.op.pokemon_market_entry",
+            "cobblemarket.op.item_market_entry",
+            "cobblemarket.op.auction_entry",
+            "cobblemarket.op.buyorder_entry",
+        ).forEach { labelKey ->
+            if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
+                val rowY = startY + (row - scrollOffset) * rowHeight
+                drawRowLine(rowY)
+                context.drawTextWithShadow(
+                    textRenderer,
+                    Text.translatable(labelKey),
+                    dialogX + 10, rowY + 7, 0xFFFFFF
+                )
+            }
+            row++
+        }
+        // 喵喵银行配置入口行（1.1.0）
         if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
             val rowY = startY + (row - scrollOffset) * rowHeight
             drawRowLine(rowY)
@@ -763,7 +806,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             )
         }
         row++
-        // RP 配置入口行（喵喵银行下面）
+        // RP 配置入口行（1.3.0）
         if (row in scrollOffset until scrollOffset + getMaxVisibleRows()) {
             val rowY = startY + (row - scrollOffset) * rowHeight
             drawRowLine(rowY)
@@ -774,6 +817,9 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             )
         }
         row++
+        // 界面杂项排最后（ID 卡背景图 / 展示冷却）
+        drawNumRow(ID_CARD_DEF, "idCardBackground")
+        drawNumRow(SHARE_COOLDOWN_DEF, "shareCooldown")
         // 底部提示 / 保存成功 toast（1.5 秒）
         if (System.currentTimeMillis() < savedToastUntil) {
             context.drawCenteredTextWithShadow(textRenderer,

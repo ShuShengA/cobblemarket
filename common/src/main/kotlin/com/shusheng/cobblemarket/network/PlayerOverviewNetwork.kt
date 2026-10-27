@@ -114,6 +114,13 @@ internal object OverviewRowCodec {
         r.dexCaught?.let { b.writeVarInt(it) }
         // RP 余额（1.3.x 独有）—— 恒有值（RP 总开关关着也是 0，那一行照样画）
         b.writeLong(r.pointsBalance)
+        // ── 装备 / 经验（2026-10-28，只有分享 ID 卡会填）—— 追加在**末尾**（payload 顺序铁律）
+        listOf(r.headItem, r.chestItem, r.legsItem, r.feetItem).forEach { nbt ->
+            b.writeBoolean(nbt != null)
+            nbt?.let { b.writeNbt(it) }
+        }
+        b.writeVarInt(r.experienceLevel)
+        b.writeFloat(r.experienceProgress)
     }
 
     fun read(b: PacketByteBuf): PlayerOverviewRow = PlayerOverviewRow(
@@ -147,5 +154,12 @@ internal object OverviewRowCodec {
         dexSeen = if (b.readBoolean()) b.readVarInt() else null,
         dexCaught = if (b.readBoolean()) b.readVarInt() else null,
         pointsBalance = b.readLong(),
+        // ── 装备 / 经验（2026-10-28）—— 顺序与 write 一致
+        headItem = if (b.readBoolean()) b.readNbt() else null,
+        chestItem = if (b.readBoolean()) b.readNbt() else null,
+        legsItem = if (b.readBoolean()) b.readNbt() else null,
+        feetItem = if (b.readBoolean()) b.readNbt() else null,
+        experienceLevel = b.readVarInt(),
+        experienceProgress = b.readFloat(),
     )
 }

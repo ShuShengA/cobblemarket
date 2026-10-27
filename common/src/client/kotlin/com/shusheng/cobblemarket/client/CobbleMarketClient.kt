@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.currency.CustomShopMode
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.network.ClaimCustomShopResultPayload
 import com.shusheng.cobblemarket.network.CustomShopClaimStatusPayload
+import com.shusheng.cobblemarket.network.CustomShopCooldownStatusPayload
 import com.shusheng.cobblemarket.network.SpeciesRestPayload
 import com.shusheng.cobblemarket.permission.PermissionAuditPayload
 import com.shusheng.cobblemarket.permission.PermissionListDataPayload
@@ -27,6 +28,8 @@ import com.shusheng.cobblemarket.network.PointCodesPayload
 import com.shusheng.cobblemarket.network.CustomShopAdminListPayload
 import com.shusheng.cobblemarket.network.OpenCustomShopPayload
 import com.shusheng.cobblemarket.network.PointMarketItemsPayload
+import com.shusheng.cobblemarket.network.PointMarketSearchPayload
+import com.shusheng.cobblemarket.network.ShopEditLockPayload
 import com.shusheng.cobblemarket.network.ShopSnapshotsPayload
 import com.shusheng.cobblemarket.network.SpeciesFeatureAspectsPayload
 import com.shusheng.cobblemarket.network.SpeciesMovesPayload
@@ -763,9 +766,19 @@ object CobbleMarketClient {
         registerS2C(MarketStatePayload.ID, MarketStatePayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 MarketStateCache.enabled = payload.enabled
+                MarketStateCache.pokemonMarketEnabled = payload.pokemonMarketEnabled
+                MarketStateCache.itemMarketEnabled = payload.itemMarketEnabled
+                MarketStateCache.auctionEnabled = payload.auctionEnabled
+                MarketStateCache.auctionPokemonEnabled = payload.auctionPokemonEnabled
+                MarketStateCache.auctionItemEnabled = payload.auctionItemEnabled
+                MarketStateCache.buyOrderEnabled = payload.buyOrderEnabled
+                MarketStateCache.buyOrderPokemonEnabled = payload.buyOrderPokemonEnabled
+                MarketStateCache.buyOrderItemEnabled = payload.buyOrderItemEnabled
                 // 管理面板打开时同步开关按钮图标（登录补发 / 他人命令切换都能跟上）；
                 // 开关按钮 2026-09-12 从入口界面移到了管理面板
                 (MinecraftClient.getInstance().currentScreen as? AdminScreen)?.updateMarketSwitchIcon()
+                // 入口界面打开时同步四个交易入口的置灰态（配置保存广播后立刻生效）
+                (MinecraftClient.getInstance().currentScreen as? MarketEntryScreen)?.updateMarketEntryStates()
                 // 开市/停市音**不在这里播**：管理面板的开关按钮会先乐观更新 MarketStateCache，
                 // 广播回来时"状态看起来没变"，客户端判断不出刚切换过 —— 改由服务端发（toggleMarketEnabled）
             }
@@ -776,6 +789,8 @@ object CobbleMarketClient {
                 PointsStateCache.enabled = payload.enabled
                 // 玩家间交易开关：上架界面的货币按钮按它显隐（那边每次 init 时读缓存，不用额外通知）
                 PointsStateCache.marketEnabled = payload.marketEnabled
+                // 主 RP 商城开关：入口按钮置灰依据（自定义商店不受影响）
+                PointsStateCache.mainShopEnabled = payload.mainShopEnabled
                 // 界面已打开时同步按钮置灰态（登录补发 / 后续管理端切换都能跟上）
                 (MinecraftClient.getInstance().currentScreen as? MarketEntryScreen)?.updatePointsEntryState()
                 // ⚠ 总开关一变，HUD 那一行要立刻跟着显 / 隐 —— 而 RP 余额只在**余额包**里下发，
@@ -808,6 +823,22 @@ object CobbleMarketClient {
             }
         }
 
+        // 自定义购买店搜索：服务端扫全店后按页下发命中项
+        registerS2C(PointMarketSearchPayload.ID, PointMarketSearchPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                val screen = MinecraftClient.getInstance().currentScreen
+                if (screen is PointsMarketScreen) screen.onShopSearchResults(payload)
+            }
+        }
+
+        // 「编辑中」锁：正在看这家店的玩家据此把购买按钮置灰（开 / 关编辑窗、断线都会通知）
+        registerS2C(ShopEditLockPayload.ID, ShopEditLockPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                val screen = MinecraftClient.getInstance().currentScreen
+                if (screen is PointsMarketScreen) screen.onShopEditLock(payload.shopId, payload.locked)
+            }
+        }
+
         // 打开自定义（NPC）商店：右键绑定过的 NPC / `/market shop open` 由服务端发。
         // ⚠ 同一商店重复收到（右键事件在双端平台可能触发两次）**不重建界面** ——
         //   重建会清掉玩家已经敲了一半的搜索/数量输入
@@ -818,15 +849,18 @@ object CobbleMarketClient {
                 if (current is PointsMarketScreen && current.shopId == payload.shopId) return@execute
                 // 打开音效与按 K 打开市场同档（右键 NPC 打开商店此前是静默的，用户 2026-10-23 报）
                 playEntrySound()
-                // 换店：旧的领取状态不能串到新店（服务端随后会推新店的）
+                // 换店：旧的领取 / 冷却状态不能串到新店（服务端随后会推新店的）
                 CustomShopClaimCache.clear()
+                CustomShopCooldownCache.clear()
                 client.setScreen(
                     PointsMarketScreen(
                         payload.shopId, payload.shopName, payload.shopType, payload.returnToAdmin,
                         // 包里的值认不出 → 落 RP（服务端才是最终判据，界面只决定显示）
                         MarketCurrency.fromRequest(payload.shopCurrency) ?: MarketCurrency.POINTS,
                         CustomShopMode.fromRequest(payload.shopMode) ?: CustomShopMode.NORMAL,
-                        payload.claimHours
+                        payload.claimHours,
+                        payload.cooldownHours,
+                        payload.itemCooldownHours
                     )
                 )
             }
@@ -836,6 +870,13 @@ object CobbleMarketClient {
         registerS2C(CustomShopClaimStatusPayload.ID, CustomShopClaimStatusPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 CustomShopClaimCache.accept(payload)
+            }
+        }
+
+        // 普通购买店：本玩家的冷却状态（整店 / 每格剩余）
+        registerS2C(CustomShopCooldownStatusPayload.ID, CustomShopCooldownStatusPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                CustomShopCooldownCache.accept(payload)
             }
         }
 

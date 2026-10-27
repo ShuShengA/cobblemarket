@@ -11,6 +11,7 @@ import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.network.HistoryDataPayload
 import com.shusheng.cobblemarket.network.HistoryEntry
 import com.shusheng.cobblemarket.network.RequestHistoryPayload
+import com.shusheng.cobblemarket.network.RequestShopHistoryPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import com.shusheng.cobblemarket.platform.configDir
 import com.shusheng.cobblemarket.util.ItemNameText
@@ -26,8 +27,26 @@ import net.minecraft.util.Identifier
 import java.text.SimpleDateFormat
 import java.util.Date
 
-class HistoryScreen(private val showAll: Boolean = false) :
-    Screen(Text.translatable(if (showAll) "cobblemarket.history.all_title" else "cobblemarket.history.title")) {
+class HistoryScreen(
+    private val showAll: Boolean = false,
+    /** 商店记录模式：只查这家店（[claimOnly] 决定查出售还是领取）；null = 普通 / 全服历史 */
+    private val shopId: String? = null,
+    private val claimOnly: Boolean = false,
+    /** 商店记录模式的标题（商店名 / 主商城标题）；普通模式不传 */
+    private val shopTitle: Text? = null,
+    /** 从商店界面进来的：返回按钮回到那个界面，而不是管理面板 / 市场入口 */
+    private val returnScreen: Screen? = null
+) : Screen(
+    shopTitle?.let {
+        Text.translatable(
+            if (claimOnly) "cobblemarket.shop_history.claim_title" else "cobblemarket.shop_history.sale_title",
+            it
+        )
+    } ?: Text.translatable(if (showAll) "cobblemarket.history.all_title" else "cobblemarket.history.title")
+) {
+
+    /** 画「卖家 → 买家」两段：全服历史与商店记录都要看到对方是谁 */
+    private val drawBuyer: Boolean get() = showAll || shopId != null
 
     private val panelWidth = 296
     private var entries = listOf<HistoryEntry>()
@@ -46,7 +65,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
         // info 图标（左上角，仅全部交易历史）：模组多跑在服务器上，「打开文件夹」只会打开
         // 自己客户端的目录、没有实际意义（2026-09-13 用户拍板）—— 改成纯信息展示，
         // 悬停显示 CSV 账本在本机的存放路径，不再做点击动作
-        if (showAll) {
+        if (showAll && shopId == null) {
             val infoBtn = NineSliceButton(
                 leftX, 18, 16, 16,
                 Text.literal(""),
@@ -67,10 +86,9 @@ class HistoryScreen(private val showAll: Boolean = false) :
             leftX + panelWidth - 50, 13, 50, 16,
             Text.literal(""),
             { client?.setScreen(
-                // 「全部交易历史」是从**管理面板**进来的二级页，返回要回上一级（原先一律回市场入口，
-                // 点返回直接跳回了入口 —— 2026-09-24 用户实测报的）。
-                // 「交易历史」（showAll=false）才是从市场入口那排按钮进的，回入口
-                if (showAll) AdminScreen() else MarketEntryScreen(skipDropAnim = true)
+                // 商店记录：回到打开它的商店界面；「全部交易历史」从管理面板进来、回上一级；
+                // 「交易历史」（showAll=false）从市场入口那排按钮进、回入口
+                returnScreen ?: if (showAll) AdminScreen() else MarketEntryScreen(skipDropAnim = true)
             ) },
             iconLeft = Identifier.of("cobblemarket", "textures/gui/button/back.png"),
             iconTexW = 48, iconTexH = 48, iconScale = 0.25f,
@@ -78,7 +96,8 @@ class HistoryScreen(private val showAll: Boolean = false) :
         ))
 
         if (!requested) {
-            sendToServer(RequestHistoryPayload(showAll))
+            if (shopId != null) sendToServer(RequestShopHistoryPayload(shopId, claimOnly))
+            else sendToServer(RequestHistoryPayload(showAll))
             requested = true
         }
     }
@@ -101,7 +120,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         super.render(context, mouseX, mouseY, delta)
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable(if (showAll) "cobblemarket.history.all_title" else "cobblemarket.history.title").formatted(Formatting.GOLD),
+            title.copy().formatted(Formatting.GOLD),
             width / 2, 14, 0xFFFFFF)
 
         val startY = 48
@@ -116,8 +135,14 @@ class HistoryScreen(private val showAll: Boolean = false) :
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, entries.size - maxVisible))
 
         if (entries.isEmpty()) {
+            // 商店记录模式用自己的空状态（2026-10-27）：出售记录不该说「暂无交易历史」
+            val emptyKey = when {
+                shopId == null -> "cobblemarket.history.empty"
+                claimOnly -> "cobblemarket.shop_history.claim_empty"
+                else -> "cobblemarket.shop_history.sale_empty"
+            }
             context.drawCenteredTextWithShadow(textRenderer,
-                Text.translatable(loadState.emptyKey("cobblemarket.history.empty")).formatted(Formatting.GRAY),
+                Text.translatable(loadState.emptyKey(emptyKey)).formatted(Formatting.GRAY),
                 width / 2, startY + 20, 0xFFFFFF)
         }
 
@@ -151,17 +176,26 @@ class HistoryScreen(private val showAll: Boolean = false) :
             //   「| 」前缀与金额各自定位，总宽走 amountUnitWidth —— 与下面的绘制同源，别自己写算式
             // ⚠ 币种按**这一笔自己的**（`e.currency`）来，不是全局主货币
             val priceIsPoints = MarketCurrency.fromStored(e.currency) == MarketCurrency.POINTS
-            val pricePrefix = "| "
-            val priceAmount = com.shusheng.cobblemarket.client.formatPrice(e.price)
-            val priceW = textRenderer.getWidth(pricePrefix) + amountUnitWidth(textRenderer, priceAmount, priceIsPoints)
+            // 领取记录没有金额（免费）：不画「0」和货币单位，改画「免费/Free」。
+            val isClaim = e.type == "CLAIM"
+            val pricePrefix = if (isClaim) "" else "| "
+            val priceAmount = if (isClaim) {
+                Text.translatable("cobblemarket.history.claim_free").string
+            } else {
+                com.shusheng.cobblemarket.client.formatPrice(e.price)
+            }
+            val priceW = if (isClaim) textRenderer.getWidth(priceAmount)
+            else textRenderer.getWidth(pricePrefix) + amountUnitWidth(textRenderer, priceAmount, priceIsPoints)
             // 个人界面右侧那一段（管理端不用它 —— 那里两个名字都写在中间段里）。
             // **箭头表示物品的去向、自己省略不写**（这页本来就是看自己的）：
             //   卖出 →「→ 买家名」（东西给了他）；买入 →「卖家名 →」（东西是他给我的）。
             // 原先买入也走「→ 自己」—— 在一页全是自己的记录里，这等于没信息（用户 2026-09-26 报）。
             // ⚠ 判据用 type == "BUY"：服务端只对**买家本人**发这个值，卖出发的是 PURCHASE（见 RequestHistoryPayload 处理）
             val tailPart: Text? = when {
-                showAll -> null
-                e.type == "BUY" -> Text.literal("").append(sellerTextOf(e)).append(" →")
+                drawBuyer -> null
+                // 买入 / 领取都是「东西从哪来」→ 画来源 + 箭头；领取者是玩家自己，不画「→ 自己」
+                e.type == "BUY" || e.type == "CLAIM" ->
+                    Text.literal("").append(sellerTextOf(e)).append(" →")
                 e.buyerName.isNotEmpty() -> Text.literal("→ ${e.buyerName}")
                 else -> null
             }
@@ -180,7 +214,7 @@ class HistoryScreen(private val showAll: Boolean = false) :
             // 截断走 truncateStyled（保留分段样式），预算按像素算
             val middle = TextUtil.truncateStyled(
                 Text.literal("").apply {
-                    if (showAll) {
+                    if (drawBuyer) {
                         append(sellerTextOf(e))
                         append(buyerTextOf(e))
                         append(" ")
@@ -190,11 +224,15 @@ class HistoryScreen(private val showAll: Boolean = false) :
                 (if (tailShown != null) tailX else priceX) - 6 - cx
             )
             context.drawTextWithShadow(textRenderer, middle, cx, y + 4, 0xFFFFFF)
-            context.drawTextWithShadow(textRenderer, pricePrefix, priceX, y + 4, 0xFFAA00)
-            drawAmountWithUnit(
-                context, textRenderer, priceAmount, priceIsPoints,
-                priceX + textRenderer.getWidth(pricePrefix), y + 4, 0xFFAA00
-            )
+            if (isClaim) {
+                context.drawTextWithShadow(textRenderer, priceAmount, priceX, y + 4, 0x55FF55)
+            } else {
+                context.drawTextWithShadow(textRenderer, pricePrefix, priceX, y + 4, 0xFFAA00)
+                drawAmountWithUnit(
+                    context, textRenderer, priceAmount, priceIsPoints,
+                    priceX + textRenderer.getWidth(pricePrefix), y + 4, 0xFFAA00
+                )
+            }
             tailShown?.let { context.drawTextWithShadow(textRenderer, it, tailX, y + 4, 0xFFFFFF) }
         }
 
@@ -213,10 +251,12 @@ class HistoryScreen(private val showAll: Boolean = false) :
                 Text.literal("").append(sellerTextOf(e)).append(buyerTextOf(e)),
                 // ⚠ 价格行的货币单位**不拼进文本** —— 由 renderTooltip 补画在行尾
                 //   （物品货币时是物品图标、RP 时是字形图标）；
-                //   末尾那个空格留着，renderTooltip 按 `getWidth(本行)` 定位单位
-                Text.literal("${com.shusheng.cobblemarket.client.formatPrice(e.price)} ")
+                //   末尾那个空格留着，renderTooltip 按 `getWidth(本行)` 定位单位。
+                //   领取记录免费 ⇒ 不画价格、也不画单位（unitLine = -1）
+                if (e.type == "CLAIM") Text.translatable("cobblemarket.history.claim_free").formatted(Formatting.GREEN)
+                else Text.literal("${com.shusheng.cobblemarket.client.formatPrice(e.price)} ")
                     .formatted(Formatting.GOLD)                                              // 金额金
-            ), mouseX, mouseY, unitLine = 3,       // ← 3 = 价格行在 listOf 里的下标（改行列表顺序要一起改）
+            ), mouseX, mouseY, unitLine = if (e.type == "CLAIM") -1 else 3,
                 // ⚠ 币种取**这一笔自己的**（`e.currency`），不是全局主货币
                 isPoints = MarketCurrency.fromStored(e.currency) == MarketCurrency.POINTS)
         }
@@ -230,16 +270,22 @@ class HistoryScreen(private val showAll: Boolean = false) :
     }
 
     /**
-     * 卖家段：**RP 商城**卖出的画「▣ 商城」，其余画上架者名（空名回落 `?`）。
+     * 卖家段：商店成交画**店名**（自定义 NPC 商店）或「▣ 商城」（主 RP 商城），其余画上架者名
+     * （空名回落 `?`）。
      *
-     * 商城购买与玩家间市场直购是同一个 `PURCHASE` 类型 ⇒ 只能靠记录里的 `fromShop` 区分。
-     * ⚠ 「商城」两字金色（与 RP 商城标题同色）；前面的图标**不受影响** —— `pointsIcon()` 自带
-     *   白色子样式，父级金色染不到它（颜色铁律：带色的别当父节点，这里靠子样式优先兜住）
+     * 商城购买与玩家间市场直购是同一个 `PURCHASE` 类型 ⇒ 只能靠记录里的 `fromShop` 区分；
+     * `shopName` 非空 = 自定义商店（成交时快照的店名），空 = 主商城。
+     * ⚠ 店名 /「商城」金色；前面的图标**不受影响** —— `pointsIcon()` 自带白色子样式，
+     *   父级金色染不到它（颜色铁律：带色的别当父节点，这里靠子样式优先兜住）
      */
     private fun sellerTextOf(e: HistoryEntry): Text =
         if (e.fromShop) {
-            Text.translatable("cobblemarket.history.from_shop", CurrencyService.pointsIcon())
-                .formatted(Formatting.GOLD)
+            if (e.shopName.isNotEmpty()) {
+                Text.literal(e.shopName).formatted(Formatting.GOLD)
+            } else {
+                Text.translatable("cobblemarket.history.from_shop", CurrencyService.pointsIcon())
+                    .formatted(Formatting.GOLD)
+            }
         } else {
             Text.literal(if (e.sellerName.isNotEmpty()) e.sellerName else "?")
         }
@@ -254,6 +300,8 @@ class HistoryScreen(private val showAll: Boolean = false) :
         "BUY" -> 0xFFAA00
         "CANCEL" -> 0xAAAAAA
         "RETURN" -> 0x55AAFF
+        // 领取是免费发放，走绿色（与「可领 N」同色系）
+        "CLAIM" -> 0x55FF55
         else -> 0xFFFFFF
     }
 
@@ -284,7 +332,10 @@ class HistoryScreen(private val showAll: Boolean = false) :
             ?.let { net.minecraft.registry.Registries.ITEM.get(it).maxCount > 1 } ?: false
         if (e.itemCount > 0 && stackable) Text.literal("").append(name).append(" ×${e.itemCount}") else name
     } else {
-        TypeTextColors.speciesName(Text.translatable(e.species), e.primaryType.ifEmpty { null }, false)
+        val name = TypeTextColors.speciesName(Text.translatable(e.species), e.primaryType.ifEmpty { null }, false)
+        // 领取的精灵可能一次领到多只：与物品的 ×N 同一写法（平级 append，别让 ×N 继承属性色）
+        if (e.type == "CLAIM" && e.itemCount > 1) Text.literal("").append(name).append(" ×${e.itemCount}")
+        else name
     }
 
     /**

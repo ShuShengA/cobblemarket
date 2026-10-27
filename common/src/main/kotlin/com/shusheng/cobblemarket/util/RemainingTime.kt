@@ -38,17 +38,39 @@ object RemainingTime {
      * @param endedKey 已结束时的词条 key（拍卖与求购单各有一句，按玩家语言渲染）
      * @param now 当前时刻，默认取系统时间（传入是为了可测）
      * @param secondPrecision 是否显示秒级精度 —— 求购单没有反狙击延长，不需要秒，传 false
+     * @param localizedUnits 单位是否走词条本地化（中文「19小时59分」，英文仍是 `19h59m`）。
+     *   默认 false = 固定英文缩写（拍卖 / 求购行内沿用）；领取店的「刷新剩余」传 true。
      */
     fun text(
         endsAt: Long,
         endedKey: String,
         now: Long = System.currentTimeMillis(),
-        secondPrecision: Boolean = true
+        secondPrecision: Boolean = true,
+        localizedUnits: Boolean = false
     ): Text {
         val ms = endsAt - now
         if (ms <= 0) return Text.translatable(endedKey)
         val totalSec = ms / 1000
         val totalMin = totalSec / 60
+        if (localizedUnits) {
+            return when {
+                totalMin < 1 -> Text.translatable("cobblemarket.duration.seconds", totalSec)
+                totalMin < 3 && secondPrecision ->
+                    Text.translatable("cobblemarket.duration.minutes", totalMin)
+                        .append(Text.translatable("cobblemarket.duration.seconds", totalSec % 60))
+                totalMin < 60 -> Text.translatable("cobblemarket.duration.minutes", totalMin)
+                else -> {
+                    val h = totalMin / 60
+                    if (h < 24) {
+                        Text.translatable("cobblemarket.duration.hours", h)
+                            .append(Text.translatable("cobblemarket.duration.minutes", totalMin % 60))
+                    } else {
+                        Text.translatable("cobblemarket.duration.days", h / 24)
+                            .append(Text.translatable("cobblemarket.duration.hours", h % 24))
+                    }
+                }
+            }
+        }
         val text = when {
             totalMin < 1 -> "${totalSec}s"
             totalMin < 3 && secondPrecision -> "${totalMin}m${totalSec % 60}s"

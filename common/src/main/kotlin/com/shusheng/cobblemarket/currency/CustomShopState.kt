@@ -41,6 +41,12 @@ const val DEFAULT_CLAIM_HOURS: Int = 24
 const val MAX_CLAIM_HOURS: Int = 8760
 
 /**
+ * **购买冷却上限**（小时）：`0` = 不开 / 跟随商店，[MAX_COOLDOWN_HOURS] = 一年。
+ * 与领取周期同一个上限；商店与格子共用这个范围。
+ */
+const val MAX_COOLDOWN_HOURS: Int = 8760
+
+/**
  * **商店的经营模式**（2026-10-23 用户要求）：
  *
  * - [NORMAL]：普通购买店（用 [CustomShop.currency] 结账）
@@ -77,6 +83,11 @@ enum class CustomShopMode(val id: String) {
  * - [currency]：结算币种（主货币 / RP）—— **建店时选定，有商品之后不可改**（改币种等于把价格全部重新解释）
  * - [mode] / [claimHours]：普通购买 / 定期领取，以及领取周期（小时）—— 模式建店时选定，
  *   周期可以随时改（不改变任何价格语义）
+ * - [cooldownHours]：普通购买店的**整店购买冷却**（小时，0 = 不开）；玩家买成任意一格后，
+ *   本店所有格子对该玩家进入冷却。格子自己的冷却见 [ShopEntry.cooldownHours]，
+ *   实际生效值取两者较长者（商店冷却为保底）
+ * - [itemCooldownHours]：普通购买店的**商品各自冷却**（小时，0 = 不开）；每格独立计时，
+ *   买过的那格才冷却、其他格照买。单格可用 [ShopEntry.cooldownHours] 单独覆盖（两者取较长者）
  * - [npcUuids]：绑定到哪些 NPC；玩家右键这些实体即打开本商店（一个商店可以绑多个）
  *
  * ⚠ 条目的序列化**复用** `writeShopEntryBody` / `readShopEntryBody`（与主商城同一份）——
@@ -91,7 +102,17 @@ class CustomShop internal constructor(
     var currency: MarketCurrency = MarketCurrency.POINTS,
     var mode: CustomShopMode = CustomShopMode.NORMAL,
     /** 领取周期（小时）：24 = 每日、168 = 每周、720 = 每月（**滚动冷却**，从该玩家第一次领取开始算） */
-    var claimHours: Int = DEFAULT_CLAIM_HOURS
+    var claimHours: Int = DEFAULT_CLAIM_HOURS,
+    /**
+     * 普通购买店的**整店购买冷却**（小时，0 = 不开）：
+     * 玩家买成任意一格后，本店所有格子对该玩家锁定这么久。按玩家记，见 [CustomShopCooldownState]。
+     */
+    var cooldownHours: Int = 0,
+    /**
+     * 普通购买店的**商品各自冷却**（小时，0 = 不开）：每格独立计时，买过的那格才冷却。
+     * 单格可用 [ShopEntry.cooldownHours] 单独覆盖（两者取较长者）。
+     */
+    var itemCooldownHours: Int = 0
 ) : ShopStore {
 
     /** 种类 → (格子序号 → 商品)。空格子不存（省存档空间），序号本身即位置 */
@@ -216,7 +237,9 @@ enum class CustomShopError {
     /** 模式字符串认不出来（`normal` / `claim` 之外的值） */
     INVALID_MODE,
     /** 领取周期不合法（1 ~ 8760 小时） */
-    INVALID_PERIOD
+    INVALID_PERIOD,
+    /** 购买冷却不合法（0 ~ 8760 小时；0 = 不开 / 跟随商店） */
+    INVALID_COOLDOWN
 }
 
 /**
@@ -258,16 +281,22 @@ class CustomShopState private constructor() : PersistentState() {
         type: CustomShopType = CustomShopType.BOTH,
         currency: MarketCurrency = MarketCurrency.PRIMARY,
         mode: CustomShopMode = CustomShopMode.NORMAL,
-        claimHours: Int = DEFAULT_CLAIM_HOURS
+        claimHours: Int = DEFAULT_CLAIM_HOURS,
+        cooldownHours: Int = 0,
+        itemCooldownHours: Int = 0
     ): CustomShopError? {
         val id = normalizeId(rawId)
         if (!SHOP_ID_PATTERN.matches(id) || id == MAIN_SHOP_ID) return CustomShopError.INVALID_ID
         if (shops.containsKey(id)) return CustomShopError.EXISTS
         if (shops.size >= MAX_SHOPS) return CustomShopError.TOO_MANY
         if (claimHours !in 1..MAX_CLAIM_HOURS) return CustomShopError.INVALID_PERIOD
+        if (cooldownHours !in 0..MAX_COOLDOWN_HOURS) return CustomShopError.INVALID_COOLDOWN
+        if (itemCooldownHours !in 0..MAX_COOLDOWN_HOURS) return CustomShopError.INVALID_COOLDOWN
         val name = normalizeName(rawName, id) ?: return CustomShopError.INVALID_NAME
         shops[id] = CustomShop(
-            this, id, name, type = type, currency = currency, mode = mode, claimHours = claimHours
+            this, id, name, type = type, currency = currency, mode = mode, claimHours = claimHours,
+            cooldownHours = if (mode == CustomShopMode.NORMAL) cooldownHours else 0,
+            itemCooldownHours = if (mode == CustomShopMode.NORMAL) itemCooldownHours else 0
         )
         markDirty()
         return null
@@ -283,6 +312,34 @@ class CustomShopState private constructor() : PersistentState() {
         val shop = shops[normalizeId(id)] ?: return CustomShopError.NOT_FOUND
         if (hours !in 1..MAX_CLAIM_HOURS) return CustomShopError.INVALID_PERIOD
         shop.claimHours = hours
+        markDirty()
+        return null
+    }
+
+    /**
+     * 改一家普通购买店的**整店冷却**（小时；0 = 不开）；返回 null = 成功。
+     *
+     * ⚠ 只影响"下一次购买后要等多久"（滚动冷却），**不改变价格 / 库存语义** ⇒ 随时可改。
+     * 领取店不用整店冷却（它有自己的领取周期），传非 0 也只会被忽略。
+     */
+    fun setCooldownHours(id: String, hours: Int): CustomShopError? {
+        val shop = shops[normalizeId(id)] ?: return CustomShopError.NOT_FOUND
+        if (hours !in 0..MAX_COOLDOWN_HOURS) return CustomShopError.INVALID_COOLDOWN
+        shop.cooldownHours = if (shop.mode == CustomShopMode.NORMAL) hours else 0
+        markDirty()
+        return null
+    }
+
+    /**
+     * 改一家普通购买店的**商品各自冷却**（小时；0 = 不开）；返回 null = 成功。
+     *
+     * 与 [setCooldownHours]（整店共享）**彼此独立**：各自冷却是每格计时，买过那格才锁。
+     * 领取店不用（它有自己的领取周期），传非 0 也只会被忽略。
+     */
+    fun setItemCooldownHours(id: String, hours: Int): CustomShopError? {
+        val shop = shops[normalizeId(id)] ?: return CustomShopError.NOT_FOUND
+        if (hours !in 0..MAX_COOLDOWN_HOURS) return CustomShopError.INVALID_COOLDOWN
+        shop.itemCooldownHours = if (shop.mode == CustomShopMode.NORMAL) hours else 0
         markDirty()
         return null
     }
@@ -424,6 +481,9 @@ class CustomShopState private constructor() : PersistentState() {
             // 默认 NORMAL / 24 小时；只在非默认时写
             if (shop.mode != CustomShopMode.NORMAL) c.putString("mode", shop.mode.id)
             if (shop.claimHours != DEFAULT_CLAIM_HOURS) c.putInt("claimHours", shop.claimHours)
+            // 普通购买店的整店冷却 / 商品各自冷却；0 = 不开（不写省空间，旧档缺字段落 0）
+            if (shop.cooldownHours > 0) c.putInt("cooldownHours", shop.cooldownHours)
+            if (shop.itemCooldownHours > 0) c.putInt("itemCooldownHours", shop.itemCooldownHours)
             if (shop.npcUuids.isNotEmpty()) {
                 putStringList(c, "npcUuids", shop.npcUuids.map { it.toString() })
             }
@@ -534,7 +594,15 @@ class CustomShopState private constructor() : PersistentState() {
             mode = CustomShopMode.fromId(if (c.contains("mode")) c.getString("mode") else null),
             claimHours = if (c.contains("claimHours")) {
                 c.getInt("claimHours").coerceIn(1, MAX_CLAIM_HOURS)
-            } else DEFAULT_CLAIM_HOURS
+            } else DEFAULT_CLAIM_HOURS,
+            // 缺字段 / 坏值都落 0（不开）—— 存档铁律：读取容错，不抛异常
+            cooldownHours = if (c.contains("cooldownHours")) {
+                c.getInt("cooldownHours").coerceIn(0, MAX_COOLDOWN_HOURS)
+            } else 0,
+            // 新字段：旧档没有 = 0（不开），不影响任何已有商店
+            itemCooldownHours = if (c.contains("itemCooldownHours")) {
+                c.getInt("itemCooldownHours").coerceIn(0, MAX_COOLDOWN_HOURS)
+            } else 0
         )
         // NPC 绑定：单个 UUID 坏了解析就跳过，不影响商店本体
         readStringList(c, "npcUuids").forEach { raw ->

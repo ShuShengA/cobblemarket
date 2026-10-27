@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.PlayerSkinCache
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.util.ItemNameText
 import com.shusheng.cobblemarket.util.MoveText
@@ -289,20 +290,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         }
     }
 
-    /** 携带物栈（空气视为无）；缓存供行渲染每帧复用 */
-    private val defaultSkinTexture = Identifier.of("minecraft", "textures/entity/player/wide/steve.png")
-
-    // 皮肤纹理缓存：每行每帧创建 GameProfile 并查 skinProvider 是分配热点，首个结果按 UUID 缓存
-    private val skinCache = mutableMapOf<UUID, Identifier>()
-
-    private fun getSellerSkin(uuid: UUID, name: String): Identifier {
-        skinCache[uuid]?.let { return it }
-        val skin = client?.networkHandler?.getPlayerListEntry(uuid)?.skinTextures?.texture()
-            ?: client?.skinProvider?.getSkinTextures(GameProfile(uuid, name))?.texture()
-            ?: defaultSkinTexture
-        skinCache[uuid] = skin
-        return skin
-    }
+    /** 卖家头像纹理（共用 [PlayerSkinCache]：离线玩家会异步拉取正版皮肤，不再锁死默认头像） */
+    private fun getSellerSkin(uuid: UUID, name: String): Identifier = PlayerSkinCache.skinFor(uuid, name)
 
     private fun drawSellerAvatar(context: DrawContext, uuid: UUID, name: String, x: Int, y: Int, size: Int) {
         val texture = getSellerSkin(uuid, name)
@@ -983,8 +972,9 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         //   它们 remove 掉，但弹窗这类路径不重建列表，这里兜住）
         filterOptionButtons.forEach { it.visible = filterExpanded && !dialogOpen && !animHidden }
         buyButtons.forEach { it.visible = !dialogOpen }
-        if (::prevButton.isInitialized) prevButton.visible = !dialogOpen
-        if (::nextButton.isInitialized) nextButton.visible = !dialogOpen
+        // 边界时直接隐藏（2026-10-25 用户要求；置灰逻辑不变，隐藏叠在它之上）
+        if (::prevButton.isInitialized) prevButton.visible = !dialogOpen && currentPage > 1
+        if (::nextButton.isInitialized) nextButton.visible = !dialogOpen && currentPage < totalPages
         if (::filterToggleButton.isInitialized) filterToggleButton.visible = !dialogOpen
         currencyButton?.visible = !dialogOpen
         searchField?.visible = !dialogOpen
@@ -1608,8 +1598,11 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val listAreaBottom = startY + visibleRows * rowHeight
         val displayList = displayedListings()
 
+        // 弹窗打开时冻结行悬停（用户 2026-10-27 报：鼠标在购买弹窗里移动，下层行背景跟着亮）
         hoveredRow = -1
-        if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom) {
+        if (confirmEntry == null && cancelEntry == null &&
+            mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom
+        ) {
             val relY = mouseY - startY
             val row = relY / rowHeight
             if (row in displayList.indices) hoveredRow = row
