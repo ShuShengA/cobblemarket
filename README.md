@@ -115,6 +115,20 @@ This mod is designed with **server-authoritative architecture**: all transaction
 
 本模组采用**服务端权威架构**：所有交易由服务端校验，客户端仅负责显示，任何客户端数据（价格、数值、余额）都不会被当作资产依据——客户端作弊无法凭空获得货币或物品。
 
+## Server Monetization & EULA / 服务器营收与 EULA
+
+CobbleMarket is an in-game economy tool. Server owners are responsible for how they run and monetize their own servers, and must follow Mojang's Minecraft EULA and Commercial Usage Guidelines.
+
+We do not support pay-to-win servers. Entries on our official server list must comply with Mojang's EULA — monetization should be cosmetic-only and must not sell gameplay advantages. Listings that violate this may be removed, and we do not provide support for pay-to-win setups.
+
+CobbleMarket itself never provides a way to convert in-game currency back into real money.
+
+CobbleMarket 是游戏内经济工具。服务器如何运营与营收由服主自行负责，且必须遵守 Mojang 的 Minecraft EULA 与商业使用准则。
+
+我们不支持 P2W（付费即变强）服务器。官网服务器列表只收录符合 Mojang EULA 的服务器——营收应仅限外观类内容，不得出售玩法优势；违反的条目可能被移除，我们也不为 P2W 配置提供支持。
+
+CobbleMarket 本身永不提供将游戏内货币兑换回现实货币的途径。
+
 ## License / 许可
 
 **GPL-3.0** — see [LICENSE](LICENSE).
