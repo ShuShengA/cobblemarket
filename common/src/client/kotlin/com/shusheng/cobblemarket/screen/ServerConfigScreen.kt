@@ -506,6 +506,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             purpleCardApplyFee = p?.purpleCardApplyFee ?: 0L,
             purpleCardRedoFee = p?.purpleCardRedoFee ?: 0L,
             purpleCardFeeDiscount = p?.purpleCardFeeDiscount ?: 0.0,
+            purpleCardShopDiscount = p?.purpleCardShopDiscount ?: 0.0,
             // 黑卡字段回填快照（在 BlackCardConfigScreen 编辑）
             blackCardCount = p?.blackCardCount ?: 5L,
             blackCardCreditLimit = p?.blackCardCreditLimit ?: 5_000_000L,
@@ -519,6 +520,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             blackCardApplyFee = p?.blackCardApplyFee ?: 0L,
             blackCardRedoFee = p?.blackCardRedoFee ?: 0L,
             blackCardFeeDiscount = p?.blackCardFeeDiscount ?: 0.0,
+            blackCardShopDiscount = p?.blackCardShopDiscount ?: 0.0,
             ipDebtLimit = p?.ipDebtLimit ?: 100_000L,
             autoRepayMinBalance = p?.autoRepayMinBalance ?: 1_000L,
             overdueFeeDouble = p?.overdueFeeDouble ?: 7,

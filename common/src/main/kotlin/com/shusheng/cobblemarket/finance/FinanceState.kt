@@ -134,6 +134,28 @@ data class LoanBlockEntry(
 }
 
 /**
+ * **一条卡片申请禁令**（2026-10-28）：某玩家在这段时间内不能申请某一种卡。
+ *
+ * key = `uuid|cardKind` ⇒ 同一个玩家**两张卡各可一行**（用户 2026-10-28 明确要求）。
+ * 与「禁止借款」（[LoanBlockEntry]）是**两套独立名单**：那个按玩家一条、拦借款；
+ * 这个按（玩家, 卡种）拦卡片**申请**。
+ */
+data class CardApplyBlockEntry(
+    val playerUuid: UUID,
+    /** `purple` / `black` */
+    val cardKind: String,
+    val playerName: String,
+    /** 执行者（管理员名；收回卡自动加时也是管理员名） */
+    val blockedBy: String,
+    val blockedAt: Long,
+    /** null = 永久 */
+    val expiresAt: Long?,
+    val reason: String
+) {
+    fun expired(now: Long): Boolean = expiresAt != null && expiresAt <= now
+}
+
+/**
  * 金融系统持久化状态（world/data/cobblemarket_finance.dat，PersistHelper/StateBackup 自动兜底）：
  * 准备金池是所有借贷资金的唯一进出口（可为负 = 服主负债）；贷款表保存每笔借贷的状态机；
  * 全服累计成交额仅入口展示用；IP 记录供额度防刷。
@@ -166,6 +188,8 @@ class FinanceState private constructor() : PersistentState() {
      * ⚠ 逾期本身另有独立判据拦借款（`FinanceNetwork` 借款 handler），与本名单**并列、互不替代**。
      */
     private val loanBlocks = mutableMapOf<UUID, LoanBlockEntry>()
+    /** 卡片申请禁令：key = `uuid|cardKind`（同一玩家两张卡可各一条，2026-10-28） */
+    private val cardApplyBlocks = mutableMapOf<String, CardApplyBlockEntry>()
     /**
      * 人工额度修正量（正 = 加、负 = 减；**清零 = 填一个足够大的负数**）。
      *
@@ -421,6 +445,56 @@ class FinanceState private constructor() : PersistentState() {
     /** 解禁借；返回被解掉的那笔（没有则 null），照 `BanState.unban` */
     fun unblockLoan(uuid: UUID): LoanBlockEntry? {
         val removed = loanBlocks.remove(uuid) ?: return null
+        markDirty()
+        return removed
+    }
+
+    // ── 卡片申请禁令（2026-10-28）──
+
+    private fun cardBlockKey(uuid: UUID, kind: String) = "$uuid|$kind"
+
+    /** 取某人某卡种当前生效的禁申条目；过期的顺手清掉（照 [getLoanBlock]） */
+    fun getCardApplyBlock(uuid: UUID, kind: String, now: Long): CardApplyBlockEntry? {
+        val key = cardBlockKey(uuid, kind)
+        val e = cardApplyBlocks[key] ?: return null
+        if (e.expired(now)) {
+            cardApplyBlocks.remove(key)
+            markDirty()
+            return null
+        }
+        return e
+    }
+
+    /** 某人是否被禁止申请某卡种（申请闸的判据） */
+    fun isCardApplyBlocked(uuid: UUID, kind: String, now: Long): Boolean =
+        getCardApplyBlock(uuid, kind, now) != null
+
+    /** 全部生效中的禁申条目（界面列表用；新的在前，与禁借列表一致） */
+    fun getActiveCardApplyBlocks(now: Long): List<CardApplyBlockEntry> {
+        val expired = cardApplyBlocks.values.filter { it.expired(now) }
+        if (expired.isNotEmpty()) {
+            expired.forEach { cardApplyBlocks.remove(cardBlockKey(it.playerUuid, it.cardKind)) }
+            markDirty()
+        }
+        return cardApplyBlocks.values.sortedByDescending { it.blockedAt }
+    }
+
+    /**
+     * 加一笔禁申（**覆盖式**：同一玩家同一卡种再禁一次 = 改时长/理由、起点重新计时 ——
+     * 与 [blockLoan] / `BanState.ban` 同一口径）。
+     */
+    fun blockCardApply(
+        uuid: UUID, kind: String, name: String, operator: String, expiresAt: Long?, reason: String
+    ): CardApplyBlockEntry {
+        val e = CardApplyBlockEntry(uuid, kind, name, operator, System.currentTimeMillis(), expiresAt, reason)
+        cardApplyBlocks[cardBlockKey(uuid, kind)] = e
+        markDirty()
+        return e
+    }
+
+    /** 解禁申；返回被解掉的那笔（没有则 null） */
+    fun unblockCardApply(uuid: UUID, kind: String): CardApplyBlockEntry? {
+        val removed = cardApplyBlocks.remove(cardBlockKey(uuid, kind)) ?: return null
         markDirty()
         return removed
     }
@@ -894,6 +968,20 @@ class FinanceState private constructor() : PersistentState() {
             blockList.add(c)
         }
         nbt.put("loanBlocks", blockList)
+        // 卡片申请禁令（2026-10-28）：**新 NBT 键** ⇒ 旧档读不到 = 空名单，不需要迁移
+        val cardBlockList = NbtList()
+        cardApplyBlocks.values.forEach { e ->
+            val c = NbtCompound()
+            c.putUuid("uuid", e.playerUuid)
+            c.putString("kind", e.cardKind)
+            c.putString("name", e.playerName)
+            c.putString("by", e.blockedBy)
+            c.putLong("at", e.blockedAt)
+            e.expiresAt?.let { c.putLong("expiresAt", it) }
+            c.putString("reason", e.reason)
+            cardBlockList.add(c)
+        }
+        nbt.put("cardApplyBlocks", cardBlockList)
         val adjustList = NbtList()
         creditAdjust.forEach { (uuid, delta) ->
             val c = NbtCompound()
@@ -1024,6 +1112,27 @@ class FinanceState private constructor() : PersistentState() {
                             )
                         } catch (e: Exception) {
                             CobbleMarket.LOGGER.warn("Skipping corrupted loan block entry: {}", e.message)
+                        }
+                    }
+                    // 卡片申请禁令（2026-10-28）：缺键 = 空（旧档天然走这里），逐条容错；
+                    // 卡种只认 purple / black，认不出的条目直接跳过（不崩）
+                    nbt.getList("cardApplyBlocks", NbtList.COMPOUND_TYPE.toInt()).forEach { element ->
+                        try {
+                            val c = element as NbtCompound
+                            val uuid = c.getUuid("uuid")
+                            val kind = c.getString("kind")
+                            if (kind != "purple" && kind != "black") return@forEach
+                            cardApplyBlocks[cardBlockKey(uuid, kind)] = CardApplyBlockEntry(
+                                playerUuid = uuid,
+                                cardKind = kind,
+                                playerName = c.getString("name"),
+                                blockedBy = c.getString("by"),
+                                blockedAt = c.getLong("at"),
+                                expiresAt = if (c.contains("expiresAt")) c.getLong("expiresAt") else null,
+                                reason = c.getString("reason")
+                            )
+                        } catch (e: Exception) {
+                            CobbleMarket.LOGGER.warn("Skipping corrupted card apply block entry: {}", e.message)
                         }
                     }
                     nbt.getList("creditAdjust", NbtList.COMPOUND_TYPE.toInt()).forEach { element ->

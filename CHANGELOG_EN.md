@@ -2,6 +2,24 @@
 
 ## 1.3.4 (in development, unreleased)
 
+### New Features
+
+- **Card shopping discount**: holders of the Meowth·Volt Card / Meowth·Genesis Card get a price discount when buying from the RP shop and custom NPC shops (off by default)
+  - The discount rate is set in the purple / black card config screens; the Genesis Card takes priority when both are held
+  - Each custom NPC shop can override it: blank = follow the card config, 0 = no discount in that shop
+  - The buy dialog shows the discount, and the purchase confirmation lists the original and discounted prices; the final price is at least 1
+- **Card application ban**: a new "Card Ban" tab in Finance blocks a player from applying for a chosen card (timed or permanent, with an optional reason)
+  - Blocked players cannot apply even when every condition is met: the Apply button is greyed out and shows the reason when clicked
+  - Revoking a card (Cards tab or `/market card revoke`) **automatically adds** the player to this list (permanent by default, can be lifted anytime)
+  - A player can have two entries, one per card
+- **Card status is now readable by datapacks / commands**: card holders automatically carry the entity tags `cobblemarket_purple_card` / `cobblemarket_black_card`, and the scoreboard objectives `cm_purple` / `cm_black` hold 1 (0 without the card)
+  - Server owners can use datapacks to build things like "card holders are immune to certain negative effects" or "only card holders may enter this area"
+  - Synced automatically on login / card grant / card revoke — no setup needed; an example datapack is included in the docs
+
+### Changes
+
+- **Card config screens no longer repeat the card name**: row labels on the purple / Genesis card config screens drop the card name (the page title already says which card it is)
+
 ### Fixes
 
 - **The custom shop search box could not find datapack-defined custom items**: matching now also uses each offer's display name
@@ -10,6 +28,8 @@
 - **Polymer-style "client-disguised" items could not be listed**: the Item Market and Auction House now take the real server-side item from the inventory slot
 - **Those items showed as Air / had no icon after listing**: listings now store an extra client-side copy of the item for display
 - **Polymer-style "client-disguised" items had no icon in chat shares or auction notifications**: they now use the client-side copy for display
+- **Long player names overflowed the bid dialog**: the seller / highest-bidder rows now widen the dialog to fit (item auctions' right column too)
+- **With the player-name suggestion list or the sort list open, rows underneath still highlighted and clicking empty space could hit their buttons**: fixed in Finance, Ban Management, Permission Management and Player Overview
 
 ## 1.3.3 (released)
 

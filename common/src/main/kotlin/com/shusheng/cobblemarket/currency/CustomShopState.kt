@@ -112,7 +112,16 @@ class CustomShop internal constructor(
      * 普通购买店的**商品各自冷却**（小时，0 = 不开）：每格独立计时，买过的那格才冷却。
      * 单格可用 [ShopEntry.cooldownHours] 单独覆盖（两者取较长者）。
      */
-    var itemCooldownHours: Int = 0
+    var itemCooldownHours: Int = 0,
+    /**
+     * 本店的**紫卡购买折扣覆盖**（2026-10-28）：
+     * `-1` = 跟随卡配置（`CobbleMarketConfig.purpleCardShopDiscount`，默认）；
+     * `0` = 本店不给折扣；`0~1` = 覆盖值（如 0.05 = 5%）。
+     * ⚠ 只影响**购买价**，与手续费减免（`purpleCardFeeDiscount`）是两件事。
+     */
+    var purpleCardShopDiscount: Double = -1.0,
+    /** 本店的**黑卡购买折扣覆盖**（语义同上；黑卡优先于紫卡） */
+    var blackCardShopDiscount: Double = -1.0
 ) : ShopStore {
 
     /** 种类 → (格子序号 → 商品)。空格子不存（省存档空间），序号本身即位置 */
@@ -345,6 +354,20 @@ class CustomShopState private constructor() : PersistentState() {
     }
 
     /**
+     * 改一家店的**卡片购买折扣覆盖**（2026-10-28）；返回 null = 成功。
+     *
+     * 语义：`-1` = 跟随卡配置、`0` = 本店不给折扣、`0~1` = 覆盖值。
+     * 超范围的值直接夹回（网络包 / 命令都可能传来奇怪数字，不因此报错）。
+     */
+    fun setShopCardDiscounts(id: String, purple: Double, black: Double): CustomShopError? {
+        val shop = shops[normalizeId(id)] ?: return CustomShopError.NOT_FOUND
+        shop.purpleCardShopDiscount = purple.coerceIn(-1.0, 1.0)
+        shop.blackCardShopDiscount = black.coerceIn(-1.0, 1.0)
+        markDirty()
+        return null
+    }
+
+    /**
      * 改一家店的结算币种；返回 null = 成功。
      *
      * ⚠ **只允许空店改**：已有商品时改币种 = 把每个价格数字重新解释成另一种货币
@@ -484,6 +507,13 @@ class CustomShopState private constructor() : PersistentState() {
             // 普通购买店的整店冷却 / 商品各自冷却；0 = 不开（不写省空间，旧档缺字段落 0）
             if (shop.cooldownHours > 0) c.putInt("cooldownHours", shop.cooldownHours)
             if (shop.itemCooldownHours > 0) c.putInt("itemCooldownHours", shop.itemCooldownHours)
+            // 卡片购买折扣覆盖：-1 = 跟随卡配置（默认，不写省空间；旧档缺字段也落 -1）
+            if (shop.purpleCardShopDiscount >= 0.0) {
+                c.putDouble("purpleCardShopDiscount", shop.purpleCardShopDiscount)
+            }
+            if (shop.blackCardShopDiscount >= 0.0) {
+                c.putDouble("blackCardShopDiscount", shop.blackCardShopDiscount)
+            }
             if (shop.npcUuids.isNotEmpty()) {
                 putStringList(c, "npcUuids", shop.npcUuids.map { it.toString() })
             }
@@ -602,7 +632,14 @@ class CustomShopState private constructor() : PersistentState() {
             // 新字段：旧档没有 = 0（不开），不影响任何已有商店
             itemCooldownHours = if (c.contains("itemCooldownHours")) {
                 c.getInt("itemCooldownHours").coerceIn(0, MAX_COOLDOWN_HOURS)
-            } else 0
+            } else 0,
+            // 卡片购买折扣覆盖：旧档没有 = -1（跟随卡配置）；坏值同样夹回合法区间
+            purpleCardShopDiscount = if (c.contains("purpleCardShopDiscount")) {
+                c.getDouble("purpleCardShopDiscount").coerceIn(-1.0, 1.0)
+            } else -1.0,
+            blackCardShopDiscount = if (c.contains("blackCardShopDiscount")) {
+                c.getDouble("blackCardShopDiscount").coerceIn(-1.0, 1.0)
+            } else -1.0
         )
         // NPC 绑定：单个 UUID 坏了解析就跳过，不影响商店本体
         readStringList(c, "npcUuids").forEach { raw ->

@@ -123,6 +123,20 @@ enum class PointMarketError {
 }
 
 /**
+ * **玩家在某家商店的卡片购买折扣**（2026-10-28）—— 界面据此画卡图标与提示。
+ *
+ * @param rate 生效折扣率 0~1；0 = 不打折
+ * @param card 打折的卡种（[CARD_PURPLE] / [CARD_BLACK]）；无折扣为空串
+ */
+data class ShopCardDiscount(val rate: Double, val card: String) {
+    companion object {
+        const val CARD_PURPLE = "purple"
+        const val CARD_BLACK = "black"
+        val NONE = ShopCardDiscount(0.0, "")
+    }
+}
+
+/**
  * **一次购买的结果**。
  *
  * 为什么不只返回个错误码：买成功后要发**庆祝动画**，而它需要**实际造出来的那件东西** ——
@@ -134,13 +148,17 @@ sealed interface PointMarketBuyResult {
      * @param pokemon 买精灵时是**实际造出来的那只**（庆祝动画要用它的形态与闪光）；买物品时为 null
      * @param items 买物品时是**按 maxCount 拆好的若干栈**；买精灵时为空
      * @param count 成交数量（精灵格恒 1）
-     * @param total 实际扣掉的 RP（回执显示用）
+     * @param total 实际扣掉的 RP（回执显示用；**已应用卡片折扣**）
+     * @param originalTotal 折扣前的价格（成功提示显示「原价 → 折后价」用；无折扣时 = [total]）
+     * @param discount 生效的卡片折扣（回执显示折扣百分比用；无折扣 = [ShopCardDiscount.NONE]）
      */
     data class Success(
         val pokemon: Pokemon?,
         val items: List<ItemStack>,
         val count: Int,
-        val total: Long
+        val total: Long,
+        val originalTotal: Long = total,
+        val discount: ShopCardDiscount = ShopCardDiscount.NONE
     ) : PointMarketBuyResult
 
     /**
@@ -498,6 +516,58 @@ object PointMarketService {
     // ── 买（玩家侧；**不判权限** —— 谁有 RP 谁能买）──
 
     /**
+     * **玩家在某家商店的卡片购买折扣**（2026-10-28）。
+     *
+     * 口径与 [com.shusheng.cobblemarket.finance.FinanceService.applyHolderDiscount]（手续费减免）一致：
+     * **黑卡优先** —— 黑卡折扣 > 0 且持有黑卡 ⇒ 按黑卡；否则再看紫卡。
+     *
+     * - 主商城（[custom] = null）永远用卡配置里的全局值
+     * - 自定义商店可用**本店覆盖**（`-1` = 跟随卡配置、`0` = 本店不优惠、`0~1` = 覆盖值）
+     *
+     * ⚠ 与手续费减免是**两件事**：这里只影响 [buy] 的商品价格，不动上架费 / 拍卖费 / 求购中介费。
+     */
+    fun cardShopDiscount(server: MinecraftServer, custom: CustomShop?, uuid: java.util.UUID): ShopCardDiscount {
+        val finance = com.shusheng.cobblemarket.finance.FinanceState.get(server)
+        val black = custom?.blackCardShopDiscount?.takeIf { it >= 0.0 }
+            ?: CobbleMarketConfig.blackCardShopDiscount
+        if (black > 0.0 && finance.isBlackCardHolder(uuid)) {
+            return ShopCardDiscount(black, ShopCardDiscount.CARD_BLACK)
+        }
+        val purple = custom?.purpleCardShopDiscount?.takeIf { it >= 0.0 }
+            ?: CobbleMarketConfig.purpleCardShopDiscount
+        if (purple > 0.0 && finance.isPurpleCardHolder(uuid)) {
+            return ShopCardDiscount(purple, ShopCardDiscount.CARD_PURPLE)
+        }
+        return ShopCardDiscount.NONE
+    }
+
+    /**
+     * 折后价格：**至少 1**（0 元购等于白送，与「折扣」的语义不符）。
+     * ⚠ 原价本来就是 0（服主标了免费）时保持 0 —— 否则折扣反而把免费商品抬成收费 1。
+     */
+    fun discountedShopPrice(total: Long, rate: Double): Long =
+        if (rate <= 0.0 || total <= 0L) total
+        else (total * (1.0 - rate)).toLong().coerceAtLeast(1L)
+
+    /**
+     * 某张卡的**官方商店折扣是否存在** —— 申请界面「官方商店折扣：享受 / 无」用它。
+     *
+     * 判据 = 卡配置的全局值 > 0 **或** 任意一家普通购买店把本店覆盖设成了 > 0
+     * （每店可以高于全局，所以不能只看全局值）。**不显示具体百分比** —— 各店可能不同。
+     * 领取店没有价格，不参与判定。
+     */
+    fun shopDiscountAvailable(server: MinecraftServer, blackCard: Boolean): Boolean {
+        val global = if (blackCard) CobbleMarketConfig.blackCardShopDiscount
+        else CobbleMarketConfig.purpleCardShopDiscount
+        if (global > 0.0) return true
+        return CustomShopState.get(server).all().any { shop ->
+            shop.mode == CustomShopMode.NORMAL && (
+                if (blackCard) shop.blackCardShopDiscount else shop.purpleCardShopDiscount
+                ) > 0.0
+        }
+    }
+
+    /**
      * **玩家用 RP 买一格商品** —— 商城唯一"花钱"的入口。
      *
      * 事务顺序（**每一步都不能颠倒**）：
@@ -621,7 +691,16 @@ object PointMarketService {
         if (entry.price > Long.MAX_VALUE / amount) {
             return PointMarketBuyResult.Failure(PointMarketError.BAD_NUMBER)
         }
-        val total = entry.price * amount
+        val originalTotal = entry.price * amount
+        // **卡片购买折扣**（2026-10-28）：黑卡优先；自定义商店可用本店覆盖（见 [cardShopDiscount]）。
+        // ⚠ 折后价最低 1；后续扣款 / 余额检查 / 账本 / 回执一律用折后价，原价只给成功提示对照。
+        val cardDiscount = cardShopDiscount(server, custom, player.uuid)
+        val total = discountedShopPrice(originalTotal, cardDiscount.rate)
+        // 诊断（2026-10-28 卡片折扣实测）：购买时实际用的折扣与价格 —— 发布前可改 debug
+        CobbleMarket.LOGGER.info(
+            "[CardDiscount] buy {} shop={} original={} rate={} paid={}",
+            player.name.string, shopId, originalTotal, cardDiscount.rate, total
+        )
 
         // **整店一个币种**：主商城（RP 商城）固定 RP；自定义商店用建店时选的币种
         val currency = custom?.currency ?: MarketCurrency.POINTS
@@ -768,7 +847,8 @@ object PointMarketService {
         // 把造出来的实物一并交出去：调用方要拿它发庆祝动画（概率闪光只有此刻才确定）。
         // ⚠ 交的是**交付前留的副本**，不是 `items` 本身（那边已经被交付消耗成空栈了，见上）
         return PointMarketBuyResult.Success(
-            pokemon = pokemon, items = deliveredItems, count = amount, total = total
+            pokemon = pokemon, items = deliveredItems, count = amount,
+            total = total, originalTotal = originalTotal, discount = cardDiscount
         )
     }
 

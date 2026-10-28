@@ -4,6 +4,7 @@ import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.pokemon.Pokemon
 import com.cobblemon.mod.common.pokemon.Species
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.currency.ClaimedItem
 import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.CustomShop
@@ -151,6 +152,56 @@ data class OpenCustomShopPayload(
                     claimHours = b.readInt(),
                     cooldownHours = b.readInt(),
                     itemCooldownHours = b.readInt()
+                )
+            }
+        )
+    }
+}
+
+/**
+ * **请求自己在某家商店的卡片购买折扣**（C2S，2026-10-28）。
+ *
+ * 折扣按玩家各算各的（持卡不同、每店可覆盖）⇒ **不能搭广播的快照下发**，
+ * 客户端打开商城 / 购买窗时单独问一次。
+ */
+class RequestShopCardDiscountPayload(val shopId: String = MAIN_SHOP_ID) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<RequestShopCardDiscountPayload>(CobbleMarket.id("request_shop_card_discount"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestShopCardDiscountPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.shopId, OpenCustomShopPayload.MAX_SHOP_TEXT) },
+            { b -> RequestShopCardDiscountPayload(b.readString(OpenCustomShopPayload.MAX_SHOP_TEXT)) }
+        )
+    }
+}
+
+/**
+ * **我在某家商店的卡片购买折扣**（S2C，2026-10-28）。
+ *
+ * @param rate 生效折扣率 0~1；0 = 不打折
+ * @param card 打折的卡种（`purple` / `black`）；无折扣为空串 —— 购买窗据此画对应卡图标
+ */
+data class ShopCardDiscountPayload(
+    val shopId: String,
+    val rate: Double,
+    val card: String
+) : CustomPayload {
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<ShopCardDiscountPayload>(CobbleMarket.id("shop_card_discount"))
+        val CODEC: PacketCodec<PacketByteBuf, ShopCardDiscountPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeString(p.shopId, OpenCustomShopPayload.MAX_SHOP_TEXT)
+                b.writeDouble(p.rate)
+                b.writeString(p.card, OpenCustomShopPayload.MAX_SHOP_TEXT)
+            },
+            { b ->
+                ShopCardDiscountPayload(
+                    shopId = b.readString(OpenCustomShopPayload.MAX_SHOP_TEXT),
+                    rate = b.readDouble(),
+                    card = b.readString(OpenCustomShopPayload.MAX_SHOP_TEXT)
                 )
             }
         )
@@ -1231,6 +1282,8 @@ object PointMarketNetwork {
         registerS2CType(CustomShopClaimStatusPayload.ID, CustomShopClaimStatusPayload.CODEC)
         // 普通购买店的每玩家冷却状态（打开 / 每次购买成功后下发）
         registerS2CType(CustomShopCooldownStatusPayload.ID, CustomShopCooldownStatusPayload.CODEC)
+        // 每玩家卡片购买折扣（客户端打开商城 / 购买窗时问一次；按玩家各算各的，不能广播）
+        registerS2CType(ShopCardDiscountPayload.ID, ShopCardDiscountPayload.CODEC)
         // 一键领取的交付回执（只有物品；客户端的飞入动画据此决定飞哪几格）
         registerS2CType(ClaimCustomShopResultPayload.ID, ClaimCustomShopResultPayload.CODEC)
         // ⚠ S2C 是**两步**注册：类型在这里注册（两端各一次），客户端 `registerS2C` 只挂 handler。
@@ -1256,6 +1309,34 @@ object PointMarketNetwork {
                 sendToPlayer(player, buildSnapshot(server, payload.page, payload.kind, payload.shopId))
                 // 顺带告知这家店是否正在被编辑：购买窗的「购买」按钮据此置灰
                 sendToPlayer(player, ShopEditLockPayload(payload.shopId, ShopEditLock.isLocked(payload.shopId)))
+            }
+        }
+
+        // 玩家问自己在某家商店的卡片购买折扣（打开商城时一次；按玩家各算各的，不能广播）
+        registerC2S(RequestShopCardDiscountPayload.ID, RequestShopCardDiscountPayload.CODEC) { payload, player ->
+            if (!RequestThrottle.allow(player.uuid, "shop_card_discount", RequestThrottle.READ_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            val server = player.server
+            val shopId = payload.shopId.trim().lowercase()
+            server.execute {
+                val custom = PointMarketService.customShop(server, shopId)
+                // 未知 / 已删除的自定义店 id 静默丢弃（主商城恒有效）
+                if (shopId != MAIN_SHOP_ID && custom == null) return@execute
+                val discount = PointMarketService.cardShopDiscount(server, custom, player.uuid)
+                // 诊断（2026-10-28 卡片折扣实测）：一行看全判据 —— 发布前可改 debug
+                run {
+                    val finance = com.shusheng.cobblemarket.finance.FinanceState.get(server)
+                    CobbleMarket.LOGGER.info(
+                        "[CardDiscount] {} shop={} purpleHolder={} blackHolder={} globalP={} globalB={} shopP={} shopB={} => rate={} card={}",
+                        player.name.string, shopId,
+                        finance.isPurpleCardHolder(player.uuid), finance.isBlackCardHolder(player.uuid),
+                        CobbleMarketConfig.purpleCardShopDiscount, CobbleMarketConfig.blackCardShopDiscount,
+                        custom?.purpleCardShopDiscount ?: -1.0, custom?.blackCardShopDiscount ?: -1.0,
+                        discount.rate, discount.card.ifEmpty { "-" }
+                    )
+                }
+                sendToPlayer(player, ShopCardDiscountPayload(shopId, discount.rate, discount.card))
             }
         }
 
@@ -1645,15 +1726,29 @@ object PointMarketNetwork {
     ): Text {
         // 买完再读一次即可：库存变了，但 kind 与规格不会因为一次购买而变
         val entry = PointMarketService.store(server, shopId)?.find(kind, index) ?: return Text.empty()
+        val currency = PointMarketService.currencyOf(server, shopId)
+        // 卡片折扣（2026-10-28）：原价 → 折后价 + 折扣百分比；无折扣保持原文案
+        if (result.discount.rate > 0.0 && result.originalTotal > result.total) {
+            return Text.translatable(
+                "cobblemarket.points.store.bought_discounted",
+                goodsName(entry),
+                result.count,
+                CurrencyService.amountText(result.originalTotal, currency),
+                CurrencyService.amountText(result.total, currency),
+                discountPercentText(result.discount.rate)
+            ).formatted(Formatting.GREEN)
+        }
         return Text.translatable(
             "cobblemarket.points.store.bought",
             goodsName(entry),
             result.count,
-            CurrencyService.amountText(
-                result.total, PointMarketService.currencyOf(server, shopId)
-            )
+            CurrencyService.amountText(result.total, currency)
         ).formatted(Formatting.GREEN)
     }
+
+    /** 折扣率 → 百分比文本（整数值不带小数：0.05 → "5%"、0.125 → "12.5%"） */
+    private fun discountPercentText(rate: Double): String =
+        com.shusheng.cobblemarket.util.discountPercentTextWithSymbol(rate)
 
     /**
      * 购买成功的**庆祝动画** —— 与主市场 / 拍卖 / 求购同一套（所有权首次转到该玩家名下时播一次）。
@@ -1881,6 +1976,32 @@ object PointMarketNetwork {
             sendToPlayer(player, buildClaimStatus(player, shop))
         } else {
             sendToPlayer(player, buildCooldownStatus(player, shop))
+        }
+    }
+
+    /**
+     * 组装某个玩家在某家商店的**卡片购买折扣**包（2026-10-28）。
+     * 打开商城 / 购买窗时问一次，管理端改动折扣后也会推给正在看店的玩家。
+     */
+    fun buildCardDiscount(
+        server: MinecraftServer,
+        player: ServerPlayerEntity,
+        shopId: String
+    ): ShopCardDiscountPayload {
+        val custom = PointMarketService.customShop(server, shopId)
+        val discount = PointMarketService.cardShopDiscount(server, custom, player.uuid)
+        return ShopCardDiscountPayload(shopId, discount.rate, discount.card)
+    }
+
+    /**
+     * 给**正在看这家店**的玩家推送最新卡片折扣（管理端改完折扣后调用）。
+     * 判据同 [broadcastSnapshot]：请求过这家店的快照就算在看。
+     */
+    fun refreshCardDiscountForViewers(server: MinecraftServer, shopId: String) {
+        lastRequested.forEach { (uuid, req) ->
+            if (req.shopId != shopId) return@forEach
+            val target = server.playerManager.getPlayer(uuid) ?: return@forEach
+            sendToPlayer(target, buildCardDiscount(server, target, shopId))
         }
     }
 

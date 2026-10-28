@@ -1681,6 +1681,8 @@ object MarketCommands {
         } else {
             state.addPurpleCardHolder(player.uuid, source.name, player.name.string)
         }
+        // 持卡状态 → 实体 tag / 计分板（服主自定义玩法用，2026-10-29）
+        com.shusheng.cobblemarket.finance.CardStatusSync.sync(server, player)
         com.shusheng.cobblemarket.network.FinanceNetwork.broadcastCardHolderBoard(server)
         player.inventory.insertStack(net.minecraft.item.ItemStack(item))
         com.shusheng.cobblemarket.network.CelebrationNetwork.sendCard(player, if (black) "black" else "purple")
@@ -1712,6 +1714,12 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.card.not_holder", PlayerNameText.of(player.name.string), cardName))
             return 0
         }
+        // 收回 = 顺带禁申（2026-10-28 用户要求）：不禁的话玩家条件还在、转头就能再申请
+        com.shusheng.cobblemarket.network.FinanceNetwork.autoBlockCardApply(
+            server, state, player.uuid, kind, player.name.string, source.name
+        )
+        // 持卡状态 → 实体 tag / 计分板（2026-10-29）
+        com.shusheng.cobblemarket.finance.CardStatusSync.sync(server, player)
         com.shusheng.cobblemarket.network.FinanceNetwork.broadcastCardHolderBoard(server)
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
         source.sendFeedback(
@@ -1750,6 +1758,12 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.card.not_holder", PlayerNameText.of(name), cardName))
             return 0
         }
+        // 收回 = 顺带禁申（2026-10-28 用户要求）：离线路径同样要加
+        com.shusheng.cobblemarket.network.FinanceNetwork.autoBlockCardApply(
+            server, state, uuid, kind, targetName, source.name
+        )
+        // 持卡状态 → 实体 tag / 计分板（2026-10-29；离线玩家等登录时补）
+        com.shusheng.cobblemarket.finance.CardStatusSync.sync(server, uuid)
         com.shusheng.cobblemarket.network.FinanceNetwork.broadcastCardHolderBoard(server)
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
         source.sendFeedback(

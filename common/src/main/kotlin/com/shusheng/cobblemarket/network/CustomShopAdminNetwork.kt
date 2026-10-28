@@ -74,7 +74,11 @@ data class CustomShopAdminInfo(
     /** 整店购买冷却（小时，0 = 不开）—— 只有 `normal` 店用得到 */
     val cooldownHours: Int = 0,
     /** 商品各自冷却（小时，0 = 不开）—— 只有 `normal` 店用得到 */
-    val itemCooldownHours: Int = 0
+    val itemCooldownHours: Int = 0,
+    /** 本店紫卡购买折扣覆盖（-1 = 跟随卡配置、0 = 本店不优惠、0~1 = 覆盖） */
+    val purpleCardShopDiscount: Double = -1.0,
+    /** 本店黑卡购买折扣覆盖（同上；黑卡优先于紫卡） */
+    val blackCardShopDiscount: Double = -1.0
 )
 
 /** 管理界面「附近实体」列表的一项 */
@@ -121,6 +125,9 @@ data class CustomShopAdminListPayload(
                     // ⚠ 追加在**末尾**（payload 顺序铁律）
                     b.writeInt(s.cooldownHours)
                     b.writeInt(s.itemCooldownHours)
+                    // ⚠ 追加在**末尾**（payload 顺序铁律）
+                    b.writeDouble(s.purpleCardShopDiscount)
+                    b.writeDouble(s.blackCardShopDiscount)
                     b.writeInt(s.npcs.size)
                     s.npcs.forEach { n ->
                         b.writeString(n.uuid, ADMIN_MAX_TEXT)
@@ -161,6 +168,8 @@ data class CustomShopAdminListPayload(
                     val claimHours = b.readInt()
                     val cooldownHours = b.readInt()
                     val itemCooldownHours = b.readInt()
+                    val purpleCardShopDiscount = b.readDouble()
+                    val blackCardShopDiscount = b.readDouble()
                     val npcListCount = b.readInt()
                     if (npcListCount < 0 || npcListCount > ADMIN_MAX_NPCS_PER_SHOP) {
                         throw IllegalArgumentException("custom shop admin npc count out of range: $npcListCount")
@@ -177,7 +186,7 @@ data class CustomShopAdminListPayload(
                     }
                     CustomShopAdminInfo(
                         id, name, type, enabled, pokemonCount, itemCount, npcCount, npcs, currency, mode,
-                        claimHours, cooldownHours, itemCooldownHours
+                        claimHours, cooldownHours, itemCooldownHours, purpleCardShopDiscount, blackCardShopDiscount
                     )
                 }
                 val nearbyCount = b.readInt()
@@ -300,6 +309,29 @@ data class SetCustomShopCooldownPayload(
         val CODEC: PacketCodec<PacketByteBuf, SetCustomShopCooldownPayload> = PacketCodec.of(
             { p, b -> b.writeString(p.id, ADMIN_MAX_TEXT); b.writeInt(p.hours); b.writeInt(p.itemHours) },
             { b -> SetCustomShopCooldownPayload(b.readString(ADMIN_MAX_TEXT), b.readInt(), b.readInt()) }
+        )
+    }
+}
+
+/**
+ * 设置一家商店的**卡片购买折扣覆盖**（2026-10-28 管理界面「优惠」输入框）。
+ *
+ * 语义：`-1` = 跟随卡配置、`0` = 本店不给折扣、`0~1` = 覆盖值（如 0.05 = 5%）。
+ * ⚠ 与手续费减免是两件事：这只影响本店的**商品价格**。
+ */
+data class SetCustomShopDiscountPayload(
+    val id: String,
+    /** 紫卡折扣覆盖（-1 / 0~1） */
+    val purple: Double,
+    /** 黑卡折扣覆盖（-1 / 0~1） */
+    val black: Double
+) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<SetCustomShopDiscountPayload>(CobbleMarket.id("set_custom_shop_discount"))
+        val CODEC: PacketCodec<PacketByteBuf, SetCustomShopDiscountPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.id, ADMIN_MAX_TEXT); b.writeDouble(p.purple); b.writeDouble(p.black) },
+            { b -> SetCustomShopDiscountPayload(b.readString(ADMIN_MAX_TEXT), b.readDouble(), b.readDouble()) }
         )
     }
 }
@@ -534,6 +566,35 @@ object CustomShopAdminNetwork {
             }
         }
 
+        // 设置商店的卡片购买折扣覆盖（管理界面「优惠」输入框；-1 = 跟随卡配置）
+        registerC2S(SetCustomShopDiscountPayload.ID, SetCustomShopDiscountPayload.CODEC) { payload, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
+            if (!RequestThrottle.allowNotify(
+                    player, "custom_shop_admin_discount", RequestThrottle.WRITE_INTERVAL_MS
+                )
+            ) {
+                return@registerC2S
+            }
+            player.server.execute {
+                val state = CustomShopState.get(player.server)
+                val error = state.setShopCardDiscounts(payload.id, payload.purple, payload.black)
+                // 诊断（2026-10-28）：确认服务端收到并写入成功
+                CobbleMarket.LOGGER.info(
+                    "[ShopDiscount] set shop={} purple={} black={} err={}",
+                    payload.id, payload.purple, payload.black, error?.name ?: "ok"
+                )
+                if (error != null) {
+                    sendResult(player, false, customShopErrorText(error, payload.id))
+                    return@execute
+                }
+                PersistHelper.requestSave(player.server)
+                sendResult(player, true, Text.translatable("cobblemarket.shop.discount_set", payload.id))
+                // 管理界面要立刻显示新值；正在看这家店的买家也该刷新折扣提示
+                sendToPlayer(player, buildList(player))
+                PointMarketNetwork.refreshCardDiscountForViewers(player.server, payload.id)
+            }
+        }
+
         // 清空一家商店**所有玩家**的冷却记录（整店 + 各格），立即生效（服主测试用）
         registerC2S(ResetCustomShopCooldownPayload.ID, ResetCustomShopCooldownPayload.CODEC) { payload, player ->
             if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
@@ -743,7 +804,9 @@ object CustomShopAdminNetwork {
                 mode = shop.mode.id,
                 claimHours = shop.claimHours,
                 cooldownHours = shop.cooldownHours,
-                itemCooldownHours = shop.itemCooldownHours
+                itemCooldownHours = shop.itemCooldownHours,
+                purpleCardShopDiscount = shop.purpleCardShopDiscount,
+                blackCardShopDiscount = shop.blackCardShopDiscount
             )
         }
 

@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.config.CurrencyHandler
+import com.shusheng.cobblemarket.currency.PointMarketService
 import com.shusheng.cobblemarket.finance.CreditFileLogger
 import com.shusheng.cobblemarket.finance.FinanceChangeLogger
 import com.shusheng.cobblemarket.finance.FinanceState
@@ -313,7 +314,19 @@ data class PurpleCardApplyInfoPayload(
     /** 卡的借款额度（界面权益展示） */
     val creditLimit: Long,
     /** 持有者手续费减免比例 0~1（界面权益展示；0 = 无减免） */
-    val feeDiscount: Double
+    val feeDiscount: Double,
+    /**
+     * **官方商店购买折扣是否存在**（2026-10-28）—— 界面权益行显示「享受 / 无」。
+     * 不显示具体百分比：主商城用卡配置的全局值，而每家自定义商店可以单独覆盖（可能各不相同）。
+     */
+    val shopDiscountAvailable: Boolean = false,
+    /**
+     * **被禁止申请这张卡**（2026-10-28 卡片申请禁令）：界面按钮置灰，点击聊天栏红字提示。
+     * 服务端申请 handler 另有同样的拦截（这是防伪造包的最后一道）。
+     */
+    val applyBlocked: Boolean = false,
+    /** 禁令理由（空 = 服主没写，界面不显示「原因：」） */
+    val applyBlockReason: String = ""
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -330,6 +343,9 @@ data class PurpleCardApplyInfoPayload(
                 b.writeBoolean(p.holdsBlackCard)
                 b.writeLong(p.creditLimit)
                 b.writeDouble(p.feeDiscount)
+                b.writeBoolean(p.shopDiscountAvailable)
+                b.writeBoolean(p.applyBlocked)
+                b.writeString(p.applyBlockReason.take(100))
             },
             { b ->
                 PurpleCardApplyInfoPayload(
@@ -341,7 +357,10 @@ data class PurpleCardApplyInfoPayload(
                     redoFee = b.readLong(),
                     holdsBlackCard = b.readBoolean(),
                     creditLimit = b.readLong(),
-                    feeDiscount = b.readDouble()
+                    feeDiscount = b.readDouble(),
+                    shopDiscountAvailable = b.readBoolean(),
+                    applyBlocked = b.readBoolean(),
+                    applyBlockReason = b.readString()
                 )
             }
         )
@@ -404,7 +423,19 @@ data class BlackCardApplyInfoPayload(
     /** 卡的借款额度（界面权益展示） */
     val creditLimit: Long,
     /** 持有者手续费减免比例 0~1（界面权益展示；0 = 无减免） */
-    val feeDiscount: Double
+    val feeDiscount: Double,
+    /**
+     * **官方商店购买折扣是否存在**（2026-10-28）—— 界面权益行显示「享受 / 无」。
+     * 不显示具体百分比：主商城用卡配置的全局值，而每家自定义商店可以单独覆盖（可能各不相同）。
+     */
+    val shopDiscountAvailable: Boolean = false,
+    /**
+     * **被禁止申请这张卡**（2026-10-28 卡片申请禁令）：界面按钮置灰，点击聊天栏红字提示。
+     * 服务端申请 handler 另有同样的拦截（这是防伪造包的最后一道）。
+     */
+    val applyBlocked: Boolean = false,
+    /** 禁令理由（空 = 服主没写，界面不显示「原因：」） */
+    val applyBlockReason: String = ""
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -420,6 +451,9 @@ data class BlackCardApplyInfoPayload(
                 b.writeLong(p.redoFee)
                 b.writeLong(p.creditLimit)
                 b.writeDouble(p.feeDiscount)
+                b.writeBoolean(p.shopDiscountAvailable)
+                b.writeBoolean(p.applyBlocked)
+                b.writeString(p.applyBlockReason.take(100))
             },
             { b ->
                 BlackCardApplyInfoPayload(
@@ -430,7 +464,10 @@ data class BlackCardApplyInfoPayload(
                     isHolder = b.readBoolean(),
                     redoFee = b.readLong(),
                     creditLimit = b.readLong(),
-                    feeDiscount = b.readDouble()
+                    feeDiscount = b.readDouble(),
+                    shopDiscountAvailable = b.readBoolean(),
+                    applyBlocked = b.readBoolean(),
+                    applyBlockReason = b.readString()
                 )
             }
         )
@@ -611,6 +648,119 @@ data class AdminLoanUnblockPayload(val playerUuid: UUID) : CustomPayload {
         val CODEC: PacketCodec<PacketByteBuf, AdminLoanUnblockPayload> = PacketCodec.of(
             { p, b -> b.writeUuid(p.playerUuid) },
             { b -> AdminLoanUnblockPayload(b.readUuid()) }
+        )
+    }
+}
+
+// ── 卡片申请禁令（2026-10-28；FINANCE 节点） ──
+//
+// 用户 2026-10-28：服主收回了某人的卡，但他条件还在、转头就能再申请 ⇒ 收回没有意义。
+// 这条名单按 **（玩家, 卡种）** 拦「申请」：同一玩家两张卡各可一行（用户明确要求）。
+// ⚠ 与「禁止借款」是**两套独立名单**（那个按玩家一条、只拦借款）。
+
+/**
+ * 一条卡片申请禁令（下发用）。
+ * 时长口径与 [LoanBlockInfo] 一致：**发剩余毫秒 + `expiresAt == null` 表示永久**，
+ * 由客户端按自己的语言渲染（服务端不拼死任何一种语言的时间文本）。
+ */
+data class CardApplyBlockInfo(
+    val playerUuid: UUID,
+    val playerName: String,
+    /** `purple` / `black` */
+    val cardKind: String,
+    /** 执行者（管理员名，或系统来源的 `$词条键`） */
+    val blockedBy: String,
+    /** null = 永久 */
+    val expiresAt: Long?,
+    /** 剩余毫秒（永久时无意义，界面按 expiresAt 判） */
+    val remainingMs: Long,
+    val reason: String
+) {
+    fun write(buf: PacketByteBuf) {
+        buf.writeUuid(playerUuid)
+        buf.writeString(playerName)
+        buf.writeString(cardKind)
+        buf.writeString(blockedBy)
+        buf.writeBoolean(expiresAt != null)
+        expiresAt?.let { buf.writeLong(it) }
+        buf.writeLong(remainingMs)
+        buf.writeString(reason)
+    }
+
+    companion object {
+        fun read(buf: PacketByteBuf) = CardApplyBlockInfo(
+            playerUuid = buf.readUuid(),
+            playerName = buf.readString(),
+            cardKind = buf.readString(),
+            blockedBy = buf.readString(),
+            expiresAt = if (buf.readBoolean()) buf.readLong() else null,
+            remainingMs = buf.readLong(),
+            reason = buf.readString()
+        )
+    }
+}
+
+// ── C2S：请求卡片申请禁令名单 ──
+
+class RequestCardApplyBlockListPayload : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<RequestCardApplyBlockListPayload>(CobbleMarket.id("request_card_apply_block_list"))
+        val CODEC: PacketCodec<PacketByteBuf, RequestCardApplyBlockListPayload> = PacketCodec.of(
+            { _, b -> b.writeInt(0) },
+            { b -> b.readInt(); RequestCardApplyBlockListPayload() }
+        )
+    }
+}
+
+// ── S2C：卡片申请禁令名单 ──
+
+data class CardApplyBlockListPayload(val entries: List<CardApplyBlockInfo>) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<CardApplyBlockListPayload>(CobbleMarket.id("card_apply_block_list"))
+        val CODEC: PacketCodec<PacketByteBuf, CardApplyBlockListPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeVarInt(p.entries.size)
+                p.entries.forEach { it.write(b) }
+            },
+            { b -> CardApplyBlockListPayload((0 until b.readVarInt()).map { CardApplyBlockInfo.read(b) }) }
+        )
+    }
+}
+
+// ── C2S：加一笔卡片申请禁令（玩家名 / 卡种 / 时长 / 理由 —— 照 AdminLoanBlockPayload） ──
+
+data class AdminCardApplyBlockPayload(
+    val playerName: String,
+    /** `purple` / `black`（非法值服务端拒绝） */
+    val cardKind: String,
+    /** 空 = 永久（与禁借同一个 `BanState.parseDurationMs`） */
+    val duration: String,
+    val reason: String
+) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<AdminCardApplyBlockPayload>(CobbleMarket.id("admin_card_apply_block"))
+        val CODEC: PacketCodec<PacketByteBuf, AdminCardApplyBlockPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeString(p.playerName); b.writeString(p.cardKind)
+                b.writeString(p.duration); b.writeString(p.reason)
+            },
+            { b -> AdminCardApplyBlockPayload(b.readString(), b.readString(), b.readString(), b.readString()) }
+        )
+    }
+}
+
+// ── C2S：解除一笔卡片申请禁令 ──
+
+data class AdminCardApplyUnblockPayload(val playerUuid: UUID, val cardKind: String) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<AdminCardApplyUnblockPayload>(CobbleMarket.id("admin_card_apply_unblock"))
+        val CODEC: PacketCodec<PacketByteBuf, AdminCardApplyUnblockPayload> = PacketCodec.of(
+            { p, b -> b.writeUuid(p.playerUuid); b.writeString(p.cardKind) },
+            { b -> AdminCardApplyUnblockPayload(b.readUuid(), b.readString()) }
         )
     }
 }
@@ -971,6 +1121,8 @@ object FinanceNetwork {
         registerS2CType(BlackCardApplyInfoPayload.ID, BlackCardApplyInfoPayload.CODEC)
         registerS2CType(CardHolderListPayload.ID, CardHolderListPayload.CODEC)
         registerS2CType(LoanBlockListPayload.ID, LoanBlockListPayload.CODEC)
+        // 卡片申请禁令名单（金融管理「禁申」页签）
+        registerS2CType(CardApplyBlockListPayload.ID, CardApplyBlockListPayload.CODEC)
         registerS2CType(CreditAdjustListPayload.ID, CreditAdjustListPayload.CODEC)
         registerS2CType(CreditLookupPayload.ID, CreditLookupPayload.CODEC)
         registerS2CType(FinanceChangesPayload.ID, FinanceChangesPayload.CODEC)
@@ -1122,6 +1274,11 @@ object FinanceNetwork {
                     player.sendMessage(Text.translatable("cobblemarket.card.apply_closed").formatted(Formatting.RED), false)
                     return@execute
                 }
+                // 卡片申请禁令（2026-10-28）：与资格判定**分开**判 —— 别让被禁的玩家以为是"条件不够"
+                state.getCardApplyBlock(player.uuid, "purple", now)?.let { block ->
+                    player.sendMessage(applyBlockText("purple", block.reason), false)
+                    return@execute
+                }
                 val cash = CurrencyHandler.getBalance(player).toLong()
                 val dexCounts = com.shusheng.cobblemarket.finance.FinanceService.getDexCounts(server, player.uuid)
                 if (!state.isPurpleCardEligible(player.uuid, cash, dexCounts.seen, dexCounts.caught, now)) {
@@ -1147,6 +1304,8 @@ object FinanceNetwork {
                     state.depositReserve(fee)
                 }
                 state.addPurpleCardHolder(player.uuid, CARD_SELF_APPLY, player.name.string)
+                // 持卡状态 → 实体 tag / 计分板（服主自定义玩法用，2026-10-29）
+                com.shusheng.cobblemarket.finance.CardStatusSync.sync(server, player)
                 broadcastCardHolderBoard(server)
                 val item = net.minecraft.registry.Registries.ITEM.get(CobbleMarket.id("meowth_purple_card"))
                 val added = player.inventory.insertStack(net.minecraft.item.ItemStack(item))
@@ -1211,6 +1370,11 @@ object FinanceNetwork {
                     player.sendMessage(Text.translatable("cobblemarket.card.apply_closed").formatted(Formatting.RED), false)
                     return@execute
                 }
+                // 卡片申请禁令（2026-10-28）：同紫卡，先于资格判定
+                state.getCardApplyBlock(player.uuid, "black", now)?.let { block ->
+                    player.sendMessage(applyBlockText("black", block.reason), false)
+                    return@execute
+                }
                 val cash = CurrencyHandler.getBalance(player).toLong()
                 val dexCounts = com.shusheng.cobblemarket.finance.FinanceService.getDexCounts(server, player.uuid)
                 if (!state.isBlackCardEligible(player.uuid, cash, dexCounts.seen, dexCounts.caught, now)) {
@@ -1239,6 +1403,8 @@ object FinanceNetwork {
                 // 黑卡是紫卡的升级替代：获得黑卡自动移除紫卡资格，并主动清除背包紫卡（自检有 OP 豁免）
                 state.removePurpleCardHolder(player.uuid, CARD_SELF_APPLY, player.name.string)
                 com.shusheng.cobblemarket.finance.FinanceService.clearPurpleCardItems(player)
+                // 升级后：black=1 / purple=0（sync 读的是最终状态）
+                com.shusheng.cobblemarket.finance.CardStatusSync.sync(server, player)
                 broadcastCardHolderBoard(server)
                 val item = net.minecraft.registry.Registries.ITEM.get(CobbleMarket.id("meowth_black_card"))
                 val added = player.inventory.insertStack(net.minecraft.item.ItemStack(item))
@@ -1316,6 +1482,12 @@ object FinanceNetwork {
                 val removed = if (payload.kind == "black") state.removeBlackCardHolder(payload.uuid, player.name.string, targetName)
                 else state.removePurpleCardHolder(payload.uuid, player.name.string, targetName)
                 if (removed) {
+                    // **收回 = 顺带禁申**（2026-10-28 用户要求）：玩家条件还在，不禁的话转头就能再申请，
+                    // 收回等于没做。默认**永久**（可在「禁申」页签里改时长 / 解除）；
+                    // ⚠ 已有条目**不覆盖**（保留服主手动设的时长与理由）
+                    autoBlockCardApply(server, state, payload.uuid, payload.kind, targetName, player.name.string)
+                    // 持卡状态 → 实体 tag / 计分板（被收回的人若在线，立刻改；离线则登录时补）
+                    com.shusheng.cobblemarket.finance.CardStatusSync.sync(server, payload.uuid)
                     com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
                     broadcastCardHolderBoard(server)
                 }
@@ -1423,6 +1595,129 @@ object FinanceNetwork {
                 )
                 sendResultSound(player, removed != null)
                 sendLoanBlockList(player)
+            }
+        }
+
+        // ── 卡片申请禁令（FINANCE 节点；2026-10-28） ──
+        //
+        // 与禁借是两套名单：这个按（玩家, 卡种）拦**申请**（同一玩家两张卡各一行）。
+        // 判据同样只认 `MarketPermissions.FINANCE`（与 OP 无关，项目铁律）。
+
+        registerC2S(RequestCardApplyBlockListPayload.ID, RequestCardApplyBlockListPayload.CODEC) { _, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
+            val server = player.server
+            server.execute { sendCardApplyBlockList(player) }
+        }
+
+        registerC2S(AdminCardApplyBlockPayload.ID, AdminCardApplyBlockPayload.CODEC) { payload, player ->
+            if (!RequestThrottle.allow(player.uuid, "admin_card_apply_block", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
+            val server = player.server
+            server.execute {
+                // 卡种只认这两个值（防伪造包写入奇怪卡种）
+                if (payload.cardKind != "purple" && payload.cardKind != "black") return@execute
+                val target = BanState.resolvePlayer(server, payload.playerName)
+                if (target == null) {
+                    sendToPlayer(
+                        player,
+                        MarketResultPayload(
+                            false,
+                            Text.translatable("cobblemarket.ban.player_not_found", PlayerNameText.of(payload.playerName))
+                        )
+                    )
+                    return@execute
+                }
+                // 时长解析与禁借 / 封禁**同一个函数**（空 = 永久）
+                val ms = if (payload.duration.isBlank()) {
+                    null
+                } else {
+                    BanState.parseDurationMs(payload.duration) ?: run {
+                        sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.ban.invalid_duration")))
+                        return@execute
+                    }
+                }
+                val now = System.currentTimeMillis()
+                val expiresAt = ms?.let { now + it }
+                val state = FinanceState.get(server)
+                state.blockCardApply(
+                    target.first, payload.cardKind, target.second, player.name.string,
+                    expiresAt, payload.reason.take(100)
+                )
+                FinanceChangeLogger.log(
+                    operator = player.name.string,
+                    targetName = target.second,
+                    targetUuid = target.first,
+                    actionKey = FinanceChangeLogger.ACTION_CARD_APPLY_BLOCK,
+                    durationMs = ms,
+                    cardKind = payload.cardKind,
+                    reason = payload.reason.take(100)
+                )
+                com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                val cardNameKey = if (payload.cardKind == "black") "cobblemarket.card.black_name"
+                else "cobblemarket.card.purple_name"
+                sendToPlayer(
+                    player,
+                    MarketResultPayload(
+                        true,
+                        if (expiresAt == null) Text.translatable(
+                            "cobblemarket.finance.card_apply_blocked",
+                            PlayerNameText.of(target.second), Text.translatable(cardNameKey)
+                        )
+                        else Text.translatable(
+                            "cobblemarket.finance.card_apply_blocked_until",
+                            PlayerNameText.of(target.second), Text.translatable(cardNameKey), payload.duration
+                        )
+                    )
+                )
+                sendCardApplyBlockList(player)
+                // 通知被禁的玩家（在线才发）—— 文案说明"暂时无法申请"，不需要报出理由（理由在申请时的提示里）
+                server.playerManager.getPlayer(target.first)?.sendMessage(
+                    Text.translatable(
+                        "cobblemarket.finance.card_apply_blocked_notice", Text.translatable(cardNameKey)
+                    ).formatted(Formatting.RED),
+                    false
+                )
+            }
+        }
+
+        registerC2S(AdminCardApplyUnblockPayload.ID, AdminCardApplyUnblockPayload.CODEC) { payload, player ->
+            if (!RequestThrottle.allow(player.uuid, "admin_card_apply_unblock", RequestThrottle.REPEAT_WRITE_INTERVAL_MS)) return@registerC2S
+            if (!MarketPermissions.has(player, MarketPermissions.FINANCE)) return@registerC2S
+            val server = player.server
+            server.execute {
+                if (payload.cardKind != "purple" && payload.cardKind != "black") return@execute
+                val name = holderDisplayName(server, payload.playerUuid)
+                val state = FinanceState.get(server)
+                val removed = state.unblockCardApply(payload.playerUuid, payload.cardKind)
+                if (removed != null) {
+                    FinanceChangeLogger.log(
+                        operator = player.name.string,
+                        targetName = removed.playerName,
+                        targetUuid = removed.playerUuid,
+                        actionKey = FinanceChangeLogger.ACTION_CARD_APPLY_UNBLOCK,
+                        durationMs = removed.expiresAt?.minus(removed.blockedAt),
+                        cardKind = removed.cardKind,
+                        reason = removed.reason
+                    )
+                    com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
+                }
+                sendToPlayer(
+                    player,
+                    MarketResultPayload(
+                        removed != null,
+                        Text.translatable(
+                            if (removed != null) "cobblemarket.finance.card_apply_unblocked"
+                            else "cobblemarket.finance.card_apply_not_blocked",
+                            name,
+                            Text.translatable(
+                                if (payload.cardKind == "black") "cobblemarket.card.black_name"
+                                else "cobblemarket.card.purple_name"
+                            )
+                        )
+                    )
+                )
+                sendResultSound(player, removed != null)
+                sendCardApplyBlockList(player)
             }
         }
 
@@ -1765,6 +2060,8 @@ object FinanceNetwork {
         val server = player.server
         val state = FinanceState.get(server)
         val now = System.currentTimeMillis()
+        // 卡片申请禁令（2026-10-28）：界面据此置灰按钮 + 点击提示
+        val applyBlock = state.getCardApplyBlock(player.uuid, "purple", now)
         val cash = CurrencyHandler.getBalance(player).toLong()
         val volume = state.getTotalCountedVolumeOf(player.uuid)
         // 净存款（存款 − 未还欠款）：借钱充存款无法满足门槛，界面显示值即判定口径
@@ -1800,7 +2097,10 @@ object FinanceNetwork {
                 redoFee = CobbleMarketConfig.purpleCardRedoFee,
                 holdsBlackCard = state.isBlackCardHolder(player.uuid),
                 creditLimit = CobbleMarketConfig.purpleCardCreditLimit,
-                feeDiscount = CobbleMarketConfig.purpleCardFeeDiscount
+                feeDiscount = CobbleMarketConfig.purpleCardFeeDiscount,
+                shopDiscountAvailable = PointMarketService.shopDiscountAvailable(server, blackCard = false),
+                applyBlocked = applyBlock != null,
+                applyBlockReason = applyBlock?.reason.orEmpty()
             )
         )
     }
@@ -1810,6 +2110,8 @@ object FinanceNetwork {
         val server = player.server
         val state = FinanceState.get(server)
         val now = System.currentTimeMillis()
+        // 卡片申请禁令（2026-10-28）：界面据此置灰按钮 + 点击提示
+        val applyBlock = state.getCardApplyBlock(player.uuid, "black", now)
         val cash = CurrencyHandler.getBalance(player).toLong()
         val volume = state.getTotalCountedVolumeOf(player.uuid)
         // 净存款（存款 − 未还欠款）：借钱充存款无法满足门槛，界面显示值即判定口径
@@ -1846,7 +2148,10 @@ object FinanceNetwork {
                 isHolder = state.isBlackCardHolder(player.uuid),
                 redoFee = CobbleMarketConfig.blackCardRedoFee,
                 creditLimit = CobbleMarketConfig.blackCardCreditLimit,
-                feeDiscount = CobbleMarketConfig.blackCardFeeDiscount
+                feeDiscount = CobbleMarketConfig.blackCardFeeDiscount,
+                shopDiscountAvailable = PointMarketService.shopDiscountAvailable(server, blackCard = true),
+                applyBlocked = applyBlock != null,
+                applyBlockReason = applyBlock?.reason.orEmpty()
             )
         )
     }
@@ -1932,6 +2237,70 @@ object FinanceNetwork {
             player,
             CreditAdjustListPayload(
                 FinanceState.get(server).getAdjustedPlayers().keys.map { creditRowOf(server, it, holderDisplayName(server, it)) }
+            )
+        )
+    }
+
+    /** 被禁申时的红字（有理由带「原因：」；没理由只报卡名，用户 2026-10-28 要求） */
+    private fun applyBlockText(kind: String, reason: String): Text {
+        val cardName = Text.translatable(
+            if (kind == "black") "cobblemarket.card.black_name" else "cobblemarket.card.purple_name"
+        )
+        return if (reason.isBlank()) {
+            Text.translatable("cobblemarket.card.apply_blocked_no_reason", cardName).formatted(Formatting.RED)
+        } else {
+            Text.translatable("cobblemarket.card.apply_blocked", cardName, reason).formatted(Formatting.RED)
+        }
+    }
+
+    /**
+     * **收回卡片时顺带禁申**（2026-10-28 用户要求）。
+     *
+     * 为什么：收回卡的玩家条件还在，不禁申的话转头就能再申请，收回等于没做。
+     * - 默认**永久**（收回是处罚；服主可在「禁申」页签里改时长 / 解除）
+     * - **已有条目不动**（保留手动设的时长与理由，用户拍板）
+     * - 留一条变更记录（动作 = 卡片申请禁令）
+     */
+    fun autoBlockCardApply(
+        server: MinecraftServer,
+        state: FinanceState,
+        uuid: UUID,
+        kind: String,
+        targetName: String,
+        operator: String
+    ) {
+        if (state.getCardApplyBlock(uuid, kind, System.currentTimeMillis()) != null) return
+        state.blockCardApply(uuid, kind, targetName, operator, expiresAt = null, reason = "")
+        FinanceChangeLogger.log(
+            operator = operator,
+            targetName = targetName,
+            targetUuid = uuid,
+            actionKey = FinanceChangeLogger.ACTION_CARD_APPLY_BLOCK,
+            cardKind = kind
+        )
+        // 收回卡后把最新名单推给有 FINANCE 权限的管理员（没人在看该页签时只是空转一次）
+        server.playerManager.playerList.forEach { online ->
+            if (MarketPermissions.has(online, MarketPermissions.FINANCE)) sendCardApplyBlockList(online)
+        }
+    }
+
+    /** 卡片申请禁令名单回发（金融管理「禁申」页签；新的在前。增删后也调它刷新） */
+    private fun sendCardApplyBlockList(player: ServerPlayerEntity) {
+        val now = System.currentTimeMillis()
+        sendToPlayer(
+            player,
+            CardApplyBlockListPayload(
+                FinanceState.get(player.server).getActiveCardApplyBlocks(now).map { e ->
+                    CardApplyBlockInfo(
+                        playerUuid = e.playerUuid,
+                        playerName = e.playerName,
+                        cardKind = e.cardKind,
+                        blockedBy = e.blockedBy,
+                        expiresAt = e.expiresAt,
+                        remainingMs = (e.expiresAt ?: now) - now,
+                        reason = e.reason
+                    )
+                }
             )
         )
     }

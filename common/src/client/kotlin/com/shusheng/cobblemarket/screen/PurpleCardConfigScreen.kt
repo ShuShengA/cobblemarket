@@ -33,6 +33,8 @@ class PurpleCardConfigScreen : Screen(CardNames.label("cobblemarket.op.card_conf
         NumDef("cobblemarket.op.scfg_card_limit", true) to "cardLimit",
         NumDef("cobblemarket.op.scfg_card_redo_fee", true) to "cardRedoFee",
         NumDef("cobblemarket.op.scfg_card_fee_discount", false) to "cardFeeDiscount",
+        // 官方商店购买折扣（2026-10-28）：界面上填**百分比**（5 = 5%），提交时 ÷100 存 0~1
+        NumDef("cobblemarket.op.scfg_card_shop_discount", false) to "cardShopDiscount",
     )
 
     private val toggleDefs = listOf(
@@ -87,6 +89,11 @@ class PurpleCardConfigScreen : Screen(CardNames.label("cobblemarket.op.card_conf
             if (key == "cardFeeDiscount") {
                 field.setTooltip(
                     net.minecraft.client.gui.tooltip.Tooltip.of(CardNames.label("cobblemarket.op.scfg_card_fee_discount_tip"))
+                )
+            }
+            if (key == "cardShopDiscount") {
+                field.setTooltip(
+                    net.minecraft.client.gui.tooltip.Tooltip.of(CardNames.label("cobblemarket.op.scfg_card_shop_discount_tip"))
                 )
             }
             numFields[key] = field
@@ -172,6 +179,9 @@ class PurpleCardConfigScreen : Screen(CardNames.label("cobblemarket.op.card_conf
         "cardLimit" -> (payload?.purpleCardCreditLimit ?: 1_000_000L).toDouble()
         "cardRedoFee" -> (payload?.purpleCardRedoFee ?: 0L).toDouble()
         "cardFeeDiscount" -> payload?.purpleCardFeeDiscount ?: 0.0
+        // 内部存 0~1，界面按百分比显示（0.05 → 5）；走统一格式化，避免 7.000000000000001
+        "cardShopDiscount" ->
+            com.shusheng.cobblemarket.util.discountPercentText(payload?.purpleCardShopDiscount ?: 0.0).toDoubleOrNull() ?: 0.0
         else -> 0.0
     }
 
@@ -274,6 +284,10 @@ class PurpleCardConfigScreen : Screen(CardNames.label("cobblemarket.op.card_conf
             purpleCardApplyFee = p?.purpleCardApplyFee ?: 0L,
             purpleCardRedoFee = longOr("cardRedoFee", p?.purpleCardRedoFee ?: 0L),
             purpleCardFeeDiscount = doubleOr("cardFeeDiscount", p?.purpleCardFeeDiscount ?: 0.0),
+            // 界面按百分比填（5 = 5%），存进配置时换算回 0~1
+            purpleCardShopDiscount = (
+                doubleOr("cardShopDiscount", (p?.purpleCardShopDiscount ?: 0.0) * 100.0) / 100.0
+                ).coerceIn(0.0, 1.0),
             // 黑卡字段回填快照（在 BlackCardConfigScreen 编辑）
             blackCardCount = p?.blackCardCount ?: 5L,
             blackCardCreditLimit = p?.blackCardCreditLimit ?: 5_000_000L,
@@ -287,6 +301,7 @@ class PurpleCardConfigScreen : Screen(CardNames.label("cobblemarket.op.card_conf
             blackCardApplyFee = p?.blackCardApplyFee ?: 0L,
             blackCardRedoFee = p?.blackCardRedoFee ?: 0L,
             blackCardFeeDiscount = p?.blackCardFeeDiscount ?: 0.0,
+            blackCardShopDiscount = p?.blackCardShopDiscount ?: 0.0,
             ipDebtLimit = p?.ipDebtLimit ?: 100_000L,
             autoRepayMinBalance = p?.autoRepayMinBalance ?: 1_000L,
             overdueFeeDouble = p?.overdueFeeDouble ?: 7,

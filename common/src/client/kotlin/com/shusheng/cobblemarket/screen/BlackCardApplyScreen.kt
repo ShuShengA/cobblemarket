@@ -76,9 +76,14 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
             width / 2 - 85, dialogY + dialogH - 30, 170, 20,
             Text.translatable("cobblemarket.card.apply_btn"),
             {
-                // 置灰态（资格不符/未开放/快照未到）：点击播 fail 音效提示，不发请求（照入口喵喵银行按钮 dimmed 模式）
+                // 置灰态（资格不符/未开放/被禁申/快照未到）：点击播 fail 音效提示，不发请求
                 if (!canApply) {
                     playFailSound()
+                    // 被禁申（2026-10-28）：聊天栏红字说明原因 —— 服务端也会拦，这只是即时反馈
+                    val payload = info
+                    if (payload != null && payload.applyBlocked) {
+                        client?.player?.sendMessage(applyBlockedText(payload.applyBlockReason), false)
+                    }
                 } else {
                     // 登记卡片图标中心为发卡动画起点（服务端成功回包后从该位置放大飞到屏幕中央）
                     com.shusheng.cobblemarket.client.CardCelebrationAnimation.setPendingStart(width / 2, dialogY + 58)
@@ -96,7 +101,8 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
     fun onApplyInfo(payload: BlackCardApplyInfoPayload) {
         info = payload
         isHolder = payload.isHolder
-        canApply = payload.isHolder || (payload.eligible && payload.selfApplyEnabled)
+        // 卡片申请禁令（2026-10-28）：被禁申时即使条件达到也不能申请，按钮置灰
+        canApply = payload.isHolder || (payload.eligible && payload.selfApplyEnabled && !payload.applyBlocked)
         applyButton?.dimmed = !canApply
         if (isHolder) {
             // 持有者：按钮变「补发黑卡」（凭证丢失随时补）
@@ -106,10 +112,22 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
         applyButton?.message = Text.translatable(
             when {
                 !payload.selfApplyEnabled -> "cobblemarket.card.apply_closed"
+                // 被禁申：按钮仍写「申请」（置灰），点一下看原因
+                payload.applyBlocked -> "cobblemarket.card.apply_btn"
                 !payload.eligible -> "cobblemarket.card.apply_not_eligible"
                 else -> "cobblemarket.card.apply_btn"
             }
         )
+    }
+
+    /** 被禁申时的红字（有理由带「原因：」，没理由只报卡名）—— 与成功回执同一套词条 */
+    private fun applyBlockedText(reason: String): Text {
+        val cardName = Text.translatable("cobblemarket.card.black_name")
+        return if (reason.isBlank()) {
+            Text.translatable("cobblemarket.card.apply_blocked_no_reason", cardName).formatted(Formatting.RED)
+        } else {
+            Text.translatable("cobblemarket.card.apply_blocked", cardName, reason).formatted(Formatting.RED)
+        }
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -182,6 +200,24 @@ class BlackCardApplyScreen : Screen(Text.translatable("cobblemarket.card.black_a
                 textRenderer,
                 Text.translatable("cobblemarket.card.apply_fee_discount", discountText),
                 rightsX, dialogY + 60, 0xFFFFFF
+            )
+            // 官方商店购买折扣（2026-10-28）：只说「享受 / 无」，**不写具体百分比** ——
+            // 主商城用卡配置的全局值、每家自定义商店还可以单独覆盖，各店可能不同。
+            // ⚠ 右列可用宽度只有 `对话框右内缘 − rightsX`（380 宽时约 144px），英文曾溢出边框（用户实测）
+            //   ⇒ 文案已缩短，这里再按实测宽度截断兜底（其它语言 / Force Unicode 也不会戳出去）
+            val shopDiscountLine = Text.translatable(
+                "cobblemarket.card.apply_shop_discount",
+                Text.translatable(
+                    if (payload.shopDiscountAvailable) "cobblemarket.card.apply_shop_discount_yes"
+                    else "cobblemarket.card.apply_no_discount"
+                )
+            )
+            context.drawTextWithShadow(
+                textRenderer,
+                com.shusheng.cobblemarket.util.TextUtil.truncateStyled(
+                    shopDiscountLine, dialogX + dialogW - 10 - rightsX
+                ),
+                rightsX, dialogY + 78, 0xFFFFFF
             )
             // 持有者（补发模式）：条件与资格无关，只居中显示补发费用行；非持有者显示条件行 + 申请费用行
             // ⚠ 金额与单位拆开画（物品货币时单位是物品图标）：词条的单位参数传空串占位，见 drawAmountLine。

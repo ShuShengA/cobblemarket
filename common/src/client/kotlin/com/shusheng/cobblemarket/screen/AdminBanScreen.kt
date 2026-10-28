@@ -775,18 +775,26 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         durationField?.isMouseOver(mouseX, mouseY) == true
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        // 联想列表展开时：点列表内 = 选人（交给按钮）；点别处 = **先收起联想、并吞掉这次点击** ——
+        // 否则会直接点到下层行尾的「解封」这类危险按钮（2026-10-29，与金融管理同一坑）
+        if (suggestionsOpen) {
+            if (!isMouseOverSuggestionArea(mouseX, mouseY)) {
+                suggestionsOpen = false
+                suggestDirty = false
+                lastRequestPrefix = null
+                rebuildSuggestionList()
+                focused = null
+                return true
+            }
+            val wasInInput = isInputFieldFocused()
+            val result = super.mouseClicked(mouseX, mouseY, button)
+            if (wasInInput && !isMouseOverAnyInput(mouseX, mouseY)) focused = null
+            return result
+        }
         val wasInInput = isInputFieldFocused()
         val result = super.mouseClicked(mouseX, mouseY, button)
         if (wasInInput && !isMouseOverAnyInput(mouseX, mouseY)) {
             focused = null
-        }
-        // 点击空白处收起联想列表（点联想按钮时回调已收起，此判断不重复执行；
-        // 收起时同步清除防抖与快照，防在途响应重新展开）
-        if (suggestionsOpen && !isMouseOverSuggestionArea(mouseX, mouseY)) {
-            suggestionsOpen = false
-            suggestDirty = false
-            lastRequestPrefix = null
-            rebuildSuggestionList()
         }
         return result
     }
@@ -805,9 +813,10 @@ class AdminBanScreen : Screen(Text.translatable("cobblemarket.ban.title")) {
         val listAreaBottom = startY + visibleRows * rowHeight
         val rowCount = if (currentTab == 0) bans.size else changeLines.size
 
-        // 弹窗打开时冻结行悬停（用户 2026-10-27 报同类问题）
+        // 弹窗打开 / **玩家名联想列表展开**时冻结行悬停（2026-10-27 弹窗同类问题；
+        // 2026-10-29 金融管理同一坑，封禁管理是同款代码）
         hoveredRow = -1
-        if (pendingBanName.isEmpty() &&
+        if (pendingBanName.isEmpty() && !suggestionsOpen &&
             mouseX in leftX..(leftX + panelWidth) && mouseY in startY..listAreaBottom
         ) {
             val row = (mouseY - startY) / rowHeight

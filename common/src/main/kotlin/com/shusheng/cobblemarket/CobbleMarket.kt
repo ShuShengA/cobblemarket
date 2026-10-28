@@ -198,6 +198,8 @@ object CobbleMarket {
 			stateServer.execute {
 				// 金融系统：登录即检查该玩家贷款的到期划扣（覆盖「到期后玩家才上线」场景）
 				com.shusheng.cobblemarket.finance.FinanceService.onPlayerJoin(player)
+				// 持卡状态 → 实体 tag / 计分板（2026-10-29 服主自定义玩法用；下线时 tag 会丢，上线补）
+				com.shusheng.cobblemarket.finance.CardStatusSync.sync(stateServer, player)
 				val balance = state.getPendingBalance(player.uuid)
 				if (balance > 0) {
 					player.sendMessage(

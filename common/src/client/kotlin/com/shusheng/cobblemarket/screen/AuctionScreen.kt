@@ -1948,6 +1948,27 @@ class AuctionScreen(
             Text.literal("${com.shusheng.cobblemarket.client.formatPrice(entry.minIncrement)} ").formatted(Formatting.GOLD))
     )
 
+    /**
+     * 右列**后三行**（结束时间 / 出价次数 / 领先者）—— 与 [auctionRightColumnLines] 一起构成完整右列。
+     *
+     * ⚠ 两组都必须参与**宽度测量**：原先只量了前四行，「结束时间 / 出价次数 / 领先者」是渲染时才拼的
+     * ⇒ 玩家名一长「领先者」就顶出弹窗右边框（2026-10-29 用户报）。测量与渲染**共用这一份**。
+     */
+    private fun auctionRightColumnTailLines(entry: AuctionEntry): List<Text> {
+        val lines = mutableListOf<Text>()
+        lines.add(
+            Text.translatable("cobblemarket.auction.ends").append(
+                com.shusheng.cobblemarket.util.RemainingTime.text(entry.endsAt, "cobblemarket.auction.ending")
+            )
+        )
+        lines.add(Text.translatable("cobblemarket.auction.bids_count").append("${entry.bidCount}"))
+        // 领先者为空 = 还没人出价，这一行不画、也不参与宽度
+        if (entry.currentBidderName.isNotEmpty()) {
+            lines.add(Text.translatable("cobblemarket.auction.leader").append(entry.currentBidderName))
+        }
+        return lines
+    }
+
     private fun renderBidDialogBackground(context: DrawContext, delta: Float) {
         val entry = bidEntry ?: return
         val centerX = width / 2
@@ -1977,24 +1998,25 @@ class AuctionScreen(
         val dialogH = 190 + extra * 10
         var maxLineW = 0
         itemLines?.forEach { maxLineW = maxOf(maxLineW, textRenderer.getWidth(it)) }
-        // 精灵：左列信息随名字长度变化（名字 + Lv/公母/体型后缀 ≈60），按实测算宽；右列固定 ≈150。
-        // 物品分支早有同样机制（按最长行算）。2026-09-21 用户报：精灵名一长就压到右列拍卖信息上
-        var rightW = 0
+        // 精灵：左列信息随名字长度变化（名字 + Lv/公母/体型后缀 ≈60），按实测算宽。
+        // 2026-09-21 用户报：精灵名一长就压到右列拍卖信息上
+        // ⚠ 2026-10-29：右列要量**全部 7 行**（前四行 + 结束时间 / 出价次数 / 领先者）——
+        //   原先只量前四行，玩家名一长「领先者」就顶出右边框；物品分支也改成同一套（原先右列起点写死 -140）
+        val rightLines = auctionRightColumnLines(entry) + auctionRightColumnTailLines(entry)
+        val rightUnitW = currencyUnitWidth(textRenderer, entry.isPoints)
+        // ⚠ 货币单位**画在行尾**、不拼进文本（见 auctionLine 的 unitColor）⇒ 带金额的三行
+        //   实际宽 = 文本宽 + 单位宽；首行「卖家」与尾部三行都没有单位
+        val rightW = rightLines.mapIndexed { i, t ->
+            textRenderer.getWidth(t) + if (i in 1..3) rightUnitW else 0
+        }.max()
         val dialogW = if (entry.type == "POKEMON") {
             val nameW = textRenderer.getWidth(displayName(entry)) + 60
-            // 右列（拍卖信息）实测最宽：金额随挂单变化（100,000,000 这类），不量的话会顶出弹窗右边框
-            // ⚠ 量的是 [auctionRightColumnLines] —— **与下面渲染用的是同一份 Text**（同源，别各拼各的）
-            // ⚠ 但货币单位**画在行尾**、不拼进文本（见 auctionLine 的 unitColor）⇒ 带金额的后三行
-            //   实际宽 = 文本宽 + 单位宽；首行「卖家」没有单位，不能加
-            val rightLines = auctionRightColumnLines(entry)
-            val rightUnitW = currencyUnitWidth(textRenderer, entry.isPoints)
-            rightW = rightLines.mapIndexed { i, t ->
-                textRenderer.getWidth(t) + if (i == 0) 0 else rightUnitW
-            }.max()
-            // 左列(nameW) + 右列(rightW + 30：右边距 10、与左列间隙 20) —— 右列宽跟着实测走，
-            // 不能再写成「距右缘固定 k」：那样弹窗加宽时右列跟着右移，可用宽永远不变
-            (maxOf(320, nameW + rightW + 30)).coerceAtMost(width - 20)
-        } else (maxOf(320, maxLineW + 170)).coerceAtMost(width - 20)
+            // 左列(nameW) + 右列(rightW + 30：右边距 10、与左列间隙 20)
+            maxOf(320, nameW + rightW + 30)
+        } else {
+            // 物品：左列词条（maxLineW）+ 右列竞拍信息（rightW），两列都实测
+            maxOf(320, maxLineW + rightW + 40)
+        }.coerceAtMost(width - 20)
         val dialogX = centerX - dialogW / 2
         val dialogY = height / 2 - dialogH / 2
         bidField?.y = dialogY + 106 + extra * 10
@@ -2220,7 +2242,8 @@ class AuctionScreen(
         }
 
         // ── 右列：竞拍信息 ──
-        val auctionX = dialogX + dialogW - (if (entry.type == "POKEMON") rightW + 20 else 140)
+        // ⚠ 两种拍品都**右对齐**到实测右列宽（原先物品分支写死 -140，长名字必溢出）
+        val auctionX = dialogX + dialogW - rightW - 20
         var ay = dialogY + 28
         // ⚠ 货币单位**不拼进文本**，而是画完本行后补在行尾（物品货币时就是那件物品的图标）：
         //   由 `unitColor` 非空开启，颜色照同一行里金额那一段（金额金色 ⇒ 单位也金色）
@@ -2228,7 +2251,14 @@ class AuctionScreen(
         //   遮罩是这个界面自己画的，不关掉的话弹窗里的单位会被自己的遮罩挡住
         com.shusheng.cobblemarket.client.suppressCurrencyIcons = false
         fun auctionLine(text: Text, color: Int = 0xFFFFFF, unitColor: Int? = null) {
-            val w = context.drawTextWithShadow(textRenderer, text, auctionX, ay, color)
+            // 兜底截断：窗口窄到弹窗被 `width - 20` 钳制时，超长玩家名仍会顶出右边框
+            // （正常情况下动态宽度已经够，这一步只在极窄屏生效）
+            val maxW = (dialogX + dialogW - 10 - auctionX).coerceAtLeast(20)
+            val w = context.drawTextWithShadow(
+                textRenderer,
+                com.shusheng.cobblemarket.util.TextUtil.truncateStyled(text, maxW),
+                auctionX, ay, color
+            )
             if (unitColor != null) drawCurrencyUnit(context, textRenderer, entry.isPoints, w, ay, unitColor)
             ay += 10
         }
@@ -2238,14 +2268,11 @@ class AuctionScreen(
         auctionRightColumnLines(entry).forEachIndexed { i, line ->
             auctionLine(line, unitColor = if (i == 0) null else 0xFFAA00)
         }
-        auctionLine(
-            Text.translatable("cobblemarket.auction.ends").append(
-                com.shusheng.cobblemarket.util.RemainingTime.text(entry.endsAt, "cobblemarket.auction.ending")
-            ), 0xAAAAAA)
-        auctionLine(Text.translatable("cobblemarket.auction.bids_count").append("${entry.bidCount}"), 0xAAAAAA)
-        if (entry.currentBidderName.isNotEmpty()) {
-            auctionLine(Text.translatable("cobblemarket.auction.leader").append(entry.currentBidderName), 0xFFDD66)
-        }
+        // 尾部三行**与宽度测量同源**（[auctionRightColumnTailLines]）：结束时间 / 出价次数 / 领先者
+        val tailLines = auctionRightColumnTailLines(entry)
+        auctionLine(tailLines[0], 0xAAAAAA)
+        auctionLine(tailLines[1], 0xAAAAAA)
+        if (tailLines.size > 2) auctionLine(tailLines[2], 0xFFDD66)
 
         // 出价校验失败提示（两个按钮下方居中，2 秒后消失；重新输入时清除）。
         // x 取「确认出价 / 取消」按钮组的中心而非弹窗中心：精灵模式左列证章图标行横向可到弹窗中线附近，

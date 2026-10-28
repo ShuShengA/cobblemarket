@@ -294,9 +294,13 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         val maxVisible = maxOf(3, (height - 48 - startY) / rowHeight)
         val shownCount = minOf(maxVisible, maxOf(0, rows.size - scrollOffset))
 
-        // 悬停行：鼠标落在列表区域内才算（先框内、再除以行高 —— 照参考屏）
+        // 悬停行：鼠标落在列表区域内才算（先框内、再除以行高 —— 照参考屏）。
+        // ⚠ 排序字段展开列表打开时冻结（2026-10-29 用户报：展开时下层行仍被高亮/弹悬停窗）——
+        //   行底板在这一层画，`render` 里的判断拦不到它
         hoveredRow = -1
-        if (mouseX in leftX..(leftX + panelWidth) && mouseY in startY until (startY + shownCount * rowHeight)) {
+        if (!sortListOpen &&
+            mouseX in leftX..(leftX + panelWidth) && mouseY in startY until (startY + shownCount * rowHeight)
+        ) {
             val row = (mouseY - startY) / rowHeight
             if (row in 0 until shownCount) hoveredRow = row
         }
@@ -435,6 +439,11 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val wasInInput = isInputFieldFocused()
         val result = super.mouseClicked(mouseX, mouseY, button)
+        // 排序字段展开列表打开时，点列表外 ⇒ 收起（与其它界面的联想列表同一口径）
+        if (sortListOpen && !isMouseOverSortArea(mouseX, mouseY)) {
+            sortListOpen = false
+            rebuildSortList()
+        }
         // 点空白处让搜索框失焦 —— 否则 E 键会被输入框吃掉、整个界面关不掉
         // （老坑，见 memory 的「新建界面必查清单」第一条）
         if (wasInInput && !isMouseOverAnyInput(mouseX, mouseY)) {
@@ -442,6 +451,11 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         }
         return result
     }
+
+    /** 鼠标是否在排序列表区域内（字段按钮本身 + 展开的选项按钮） */
+    private fun isMouseOverSortArea(mouseX: Double, mouseY: Double): Boolean =
+        sortFieldButton?.isMouseOver(mouseX, mouseY) == true ||
+            sortOptionButtons.any { it.visible && it.isMouseOver(mouseX, mouseY) }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         val rowHeight = 24

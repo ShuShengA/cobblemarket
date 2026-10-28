@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.network.ClaimCustomShopResultPayload
 import com.shusheng.cobblemarket.network.CustomShopClaimStatusPayload
 import com.shusheng.cobblemarket.network.CustomShopCooldownStatusPayload
+import com.shusheng.cobblemarket.network.ShopCardDiscountPayload
 import com.shusheng.cobblemarket.network.SpeciesRestPayload
 import com.shusheng.cobblemarket.permission.PermissionAuditPayload
 import com.shusheng.cobblemarket.permission.PermissionListDataPayload
@@ -62,6 +63,7 @@ import com.shusheng.cobblemarket.network.CreditAdjustListPayload
 import com.shusheng.cobblemarket.network.CreditLookupPayload
 import com.shusheng.cobblemarket.network.CreditRankPayload
 import com.shusheng.cobblemarket.network.FinanceChangesPayload
+import com.shusheng.cobblemarket.network.CardApplyBlockListPayload
 import com.shusheng.cobblemarket.network.LoanBlockListPayload
 import com.shusheng.cobblemarket.network.LoanHistoryDataPayload
 import com.shusheng.cobblemarket.network.RepayListDataPayload
@@ -577,6 +579,15 @@ object CobbleMarketClient {
             }
         }
 
+        // 卡片申请禁令名单（金融管理「禁申」页签，2026-10-28）
+        registerS2C(CardApplyBlockListPayload.ID, CardApplyBlockListPayload.CODEC) { payload ->
+            val client = MinecraftClient.getInstance()
+            client.execute {
+                val screen = client.currentScreen
+                if (screen is AdminFinanceScreen) screen.onCardApplyBlocks(payload)
+            }
+        }
+
         registerS2C(CreditAdjustListPayload.ID, CreditAdjustListPayload.CODEC) { payload ->
             val client = MinecraftClient.getInstance()
             client.execute {
@@ -877,6 +888,13 @@ object CobbleMarketClient {
         registerS2C(CustomShopCooldownStatusPayload.ID, CustomShopCooldownStatusPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute {
                 CustomShopCooldownCache.accept(payload)
+            }
+        }
+
+        // 自己在某家店的卡片购买折扣（打开商城时请求；购买窗的优惠提示读它）
+        registerS2C(ShopCardDiscountPayload.ID, ShopCardDiscountPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                ShopCardDiscountCache.accept(payload)
             }
         }
 

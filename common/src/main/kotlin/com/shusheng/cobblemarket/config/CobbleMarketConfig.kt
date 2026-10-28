@@ -412,6 +412,12 @@ object CobbleMarketConfig {
     /** 紫卡持有者市场手续费减免比例（0~1：0.5=减半、0.2=减免 20%；覆盖上架费/拍卖成交费/求购中介费） */
     var purpleCardFeeDiscount: Double = 0.0
         private set
+    /**
+     * 紫卡持有者在**官方商店**（主 RP 商城 / 自定义 NPC 商店）的购买价格折扣比例（0~1：0.05 = 5%）。
+     * 0 = 无折扣。自定义商店可以按店覆盖（`CustomShop.purpleCardShopDiscount`，-1 = 跟随本值）。
+     */
+    var purpleCardShopDiscount: Double = 0.0
+        private set
     // ── 喵喵黑卡（比紫卡高一级：额度/减免黑卡覆盖紫卡；自行申请硬条件=必须持有紫卡） ──
     /** 黑卡全服发放上限（0 = 不限制） */
     var blackCardCount: Long = 5L
@@ -450,6 +456,12 @@ object CobbleMarketConfig {
         private set
     /** 黑卡持有者市场手续费减免比例（0~1；覆盖上架费/拍卖成交费/求购中介费，与紫卡同时持有取黑卡） */
     var blackCardFeeDiscount: Double = 0.0
+        private set
+    /**
+     * 黑卡持有者在**官方商店**（主 RP 商城 / 自定义 NPC 商店）的购买价格折扣比例（0~1）。
+     * 0 = 无折扣。黑卡优先于紫卡；自定义商店可以按店覆盖（-1 = 跟随本值）。
+     */
+    var blackCardShopDiscount: Double = 0.0
         private set
     /** 到期自动划扣最低保留：最多划到余额=此值为止（划不足进 OVERDUE） */
     var autoRepayMinBalance: Long = 1_000L
@@ -736,6 +748,7 @@ object CobbleMarketConfig {
     fun setPurpleCardApplyFee(v: Long) { purpleCardApplyFee = v.coerceAtLeast(0L) }
     fun setPurpleCardRedoFee(v: Long) { purpleCardRedoFee = v.coerceAtLeast(0L) }
     fun setPurpleCardFeeDiscount(v: Double) { purpleCardFeeDiscount = v.coerceIn(0.0, 1.0) }
+    fun setPurpleCardShopDiscount(v: Double) { purpleCardShopDiscount = v.coerceIn(0.0, 1.0) }
     fun setBlackCardCount(v: Long) { blackCardCount = v.coerceAtLeast(0L) }
     fun setBlackCardCreditLimit(v: Long) { blackCardCreditLimit = v.coerceAtLeast(0L) }
     fun setBlackCardSelfApply(v: Boolean) { blackCardSelfApply = v }
@@ -748,6 +761,7 @@ object CobbleMarketConfig {
     fun setBlackCardApplyFee(v: Long) { blackCardApplyFee = v.coerceAtLeast(0L) }
     fun setBlackCardRedoFee(v: Long) { blackCardRedoFee = v.coerceAtLeast(0L) }
     fun setBlackCardFeeDiscount(v: Double) { blackCardFeeDiscount = v.coerceIn(0.0, 1.0) }
+    fun setBlackCardShopDiscount(v: Double) { blackCardShopDiscount = v.coerceIn(0.0, 1.0) }
     fun setAutoRepayMinBalance(v: Long) { autoRepayMinBalance = v.coerceAtLeast(0L) }
     fun setIpDebtLimit(v: Long) { ipDebtLimit = v.coerceAtLeast(0L) }
     fun setOverdueFeeDoubleDays(v: Int) { overdueFeeDoubleDays = v.coerceAtLeast(0) }
@@ -873,6 +887,8 @@ object CobbleMarketConfig {
                     val fileApplyFee = (finance["purpleCardApplyFee"] as? Number)?.toLong() ?: 0L
                     val fileRedoFee = (finance["purpleCardRedoFee"] as? Number)?.toLong() ?: 0L
                     val fileFeeDiscount = (finance["purpleCardFeeDiscount"] as? Number)?.toDouble() ?: 0.0
+                    // 旧配置缺键 = 0（无折扣）⇒ 升级不改变现有服务器的价格
+                    val fileShopDiscount = (finance["purpleCardShopDiscount"] as? Number)?.toDouble() ?: 0.0
                     val fileBlackCardCount = (finance["blackCardCount"] as? Number)?.toLong() ?: 5L
                     val fileBlackCardLimit = (finance["blackCardCreditLimit"] as? Number)?.toLong() ?: 5_000_000L
                     val fileBlackCardSelfApply = finance["blackCardSelfApply"] as? Boolean ?: false
@@ -885,6 +901,8 @@ object CobbleMarketConfig {
                     val fileBlackApplyFee = (finance["blackCardApplyFee"] as? Number)?.toLong() ?: 0L
                     val fileBlackRedoFee = (finance["blackCardRedoFee"] as? Number)?.toLong() ?: 0L
                     val fileBlackFeeDiscount = (finance["blackCardFeeDiscount"] as? Number)?.toDouble() ?: 0.0
+                    // 旧配置缺键 = 0（无折扣）⇒ 升级不改变现有服务器的价格
+                    val fileBlackShopDiscount = (finance["blackCardShopDiscount"] as? Number)?.toDouble() ?: 0.0
                     val fileIpDebtLimit = (finance["ipDebtLimit"] as? Number)?.toLong() ?: 100_000L
                     val overdueDays = finance["overdueDays"] as? Map<*, *>
                     val fileFeeDouble = (overdueDays?.get("feeDouble") as? Number)?.toInt() ?: 7
@@ -918,6 +936,7 @@ object CobbleMarketConfig {
                     purpleCardApplyFee = fileApplyFee.coerceAtLeast(0L)
                     purpleCardRedoFee = fileRedoFee.coerceAtLeast(0L)
                     purpleCardFeeDiscount = fileFeeDiscount.coerceIn(0.0, 1.0)
+                    purpleCardShopDiscount = fileShopDiscount.coerceIn(0.0, 1.0)
                     blackCardCount = fileBlackCardCount.coerceAtLeast(0L)
                     blackCardCreditLimit = fileBlackCardLimit.coerceAtLeast(0L)
                     blackCardSelfApply = fileBlackCardSelfApply
@@ -930,6 +949,7 @@ object CobbleMarketConfig {
                     blackCardApplyFee = fileBlackApplyFee.coerceAtLeast(0L)
                     blackCardRedoFee = fileBlackRedoFee.coerceAtLeast(0L)
                     blackCardFeeDiscount = fileBlackFeeDiscount.coerceIn(0.0, 1.0)
+                    blackCardShopDiscount = fileBlackShopDiscount.coerceIn(0.0, 1.0)
                     ipDebtLimit = fileIpDebtLimit.coerceAtLeast(0L)
                     // 逾期三档钳制：0 也可（关闭该档位动作），负数钳 0
                     overdueFeeDoubleDays = fileFeeDouble.coerceAtLeast(0)
@@ -1151,6 +1171,7 @@ object CobbleMarketConfig {
                 "finance.purpleCardApplyFee" to "喵·紫电卡申请费用（申请成功时扣除，进入准备金池；0=免费）/ Volt Card application fee (charged on success, goes to the reserve pool; 0=free)",
                 "finance.purpleCardRedoFee" to "补发喵·紫电卡凭证费用（持有者丢弃凭证后在喵喵银行重新领取时扣除，进入准备金池；0=免费）/ Volt Card reissue fee (charged when a holder re-obtains a lost card at Meowth Bank, goes to the reserve pool; 0=free)",
                 "finance.purpleCardFeeDiscount" to "喵·紫电卡持有者的市场手续费减免比例（上架费/拍卖成交费/求购中介费全覆盖，与逾期翻倍叠加；0=无减免）/ Market fee discount ratio for Volt Card holders (covers listing/auction/buy-order fees, stacks with overdue doubling; 0=no discount)",
+                "finance.purpleCardShopDiscount" to "喵·紫电卡持有者在官方商店（主 RP 商城 / 自定义 NPC 商店）的购买价格折扣比例（0.05=优惠 5%；0=无折扣）。自定义商店可按店覆盖 / Purchase price discount ratio for Volt Card holders in official shops (main RP shop / custom NPC shops; 0.05 = 5% off; 0=no discount). Custom shops can override per shop",
                 "finance.blackCardCount" to "喵·金轮卡全服发放上限（0=不限制，默认 5）。申请硬条件为持有喵·紫电卡；获得黑卡自动移除紫卡资格（升级替代）/ Server-wide cap on Meowth·Genesis Cards (0=unlimited, default 5). Applying requires holding the Volt Card; obtaining the Genesis Card auto-removes the Volt Card qualification (upgrade replacement)",
                 "finance.blackCardCreditLimit" to "喵·金轮卡持有者的固定借款额度（默认 500 万）/ Fixed borrowing limit for Meowth·Genesis Card holders (default 5,000,000)",
                 "finance.blackCardSelfApply" to "是否允许玩家自行申请喵·金轮卡（需持有喵·紫电卡 + 满足六项门槛 + 缴纳申请费）；关闭时仅服主可用 /market card give 发放 / Allow players to self-apply for the Genesis Card (requires holding the Volt Card + the six conditions + the fee); when off, only owners can issue via /market card give",
@@ -1162,7 +1183,8 @@ object CobbleMarketConfig {
                 "finance.blackCardApplyDex" to "黑卡申请门槛·图鉴捕捉数：玩家图鉴已捕捉物种数达到该值才可申请（0=不要求）/ Black apply condition · Pokédex caught: the player's caught-species count must reach this to apply (0=not required)",
                 "finance.blackCardApplyFee" to "喵·金轮卡申请费用（申请成功时扣除，进入准备金池；0=免费）/ Genesis Card application fee (charged on success, goes to the reserve pool; 0=free)",
                 "finance.blackCardRedoFee" to "补发喵·金轮卡凭证费用（持有者丢弃凭证后在喵喵银行重新领取时扣除，进入准备金池；0=免费）/ Genesis Card reissue fee (charged when a holder re-obtains a lost card at Meowth Bank, goes to the reserve pool; 0=free)",
-                "finance.blackCardFeeDiscount" to "喵·金轮卡持有者的市场手续费减免比例（上架费/拍卖成交费/求购中介费全覆盖，与逾期翻倍叠加；0=无减免）/ Market fee discount ratio for Genesis Card holders (covers listing/auction/buy-order fees, stacks with overdue doubling; 0=no discount)"
+                "finance.blackCardFeeDiscount" to "喵·金轮卡持有者的市场手续费减免比例（上架费/拍卖成交费/求购中介费全覆盖，与逾期翻倍叠加；0=无减免）/ Market fee discount ratio for Genesis Card holders (covers listing/auction/buy-order fees, stacks with overdue doubling; 0=no discount)",
+                "finance.blackCardShopDiscount" to "喵·金轮卡持有者在官方商店（主 RP 商城 / 自定义 NPC 商店）的购买价格折扣比例（0.10=优惠 10%；0=无折扣）。同时持有紫卡时黑卡优先；自定义商店可按店覆盖 / Purchase price discount ratio for Genesis Card holders in official shops (main RP shop / custom NPC shops; 0.10 = 10% off; 0=no discount). Takes priority over the Volt Card when both are held; custom shops can override per shop"
             ),
             "currency" to mapOf("cobbledollars" to cobbledollars, "cobblemonEconomy" to cobblemonEconomy, "cobecoCurrency" to cobecoCurrency, "impactor" to impactor, "item" to currencyItem),
             "pokemonListingFeePercent" to pokemonListingFeePercent,
@@ -1252,6 +1274,7 @@ object CobbleMarketConfig {
                 "purpleCardApplyFee" to purpleCardApplyFee,
                 "purpleCardRedoFee" to purpleCardRedoFee,
                 "purpleCardFeeDiscount" to purpleCardFeeDiscount,
+                "purpleCardShopDiscount" to purpleCardShopDiscount,
                 "blackCardCount" to blackCardCount,
                 "blackCardCreditLimit" to blackCardCreditLimit,
                 "blackCardSelfApply" to blackCardSelfApply,
@@ -1264,6 +1287,7 @@ object CobbleMarketConfig {
                 "blackCardApplyFee" to blackCardApplyFee,
                 "blackCardRedoFee" to blackCardRedoFee,
                 "blackCardFeeDiscount" to blackCardFeeDiscount,
+                "blackCardShopDiscount" to blackCardShopDiscount,
                 "ipDebtLimit" to ipDebtLimit,
                 "overdueDays" to mapOf(
                     "feeDouble" to overdueFeeDoubleDays,

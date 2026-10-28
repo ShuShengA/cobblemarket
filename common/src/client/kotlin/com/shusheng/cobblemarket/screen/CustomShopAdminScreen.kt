@@ -26,6 +26,7 @@ import com.shusheng.cobblemarket.network.RequestCustomShopAdminPayload
 import com.shusheng.cobblemarket.network.RequestOpenCustomShopPayload
 import com.shusheng.cobblemarket.network.ResetCustomShopCooldownPayload
 import com.shusheng.cobblemarket.network.SetCustomShopCooldownPayload
+import com.shusheng.cobblemarket.network.SetCustomShopDiscountPayload
 import com.shusheng.cobblemarket.network.SetCustomShopEnabledPayload
 import com.shusheng.cobblemarket.network.SetCustomShopTypePayload
 import com.shusheng.cobblemarket.network.UnbindCustomShopNpcPayload
@@ -36,6 +37,9 @@ import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.client.gui.tooltip.Tooltip
+import net.minecraft.item.ItemStack
+import net.minecraft.item.Items
+import net.minecraft.registry.Registries
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
@@ -114,6 +118,21 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
     private var cooldownField: TextFieldWidget? = null
     private var itemCooldownField: TextFieldWidget? = null
 
+    // ── 详情页「卡片购买折扣」两个内联输入框（2026-10-28，放在返回按钮左右两侧）──
+    private var discountPurpleField: TextFieldWidget? = null
+    private var discountBlackField: TextFieldWidget? = null
+    /**
+     * 上次提交 / 刚建控件时的输入框文本。
+     *
+     * ⚠ **不能靠"失焦时提交"**（第一版就是）：点「打开 ✓ 编辑」是直接切屏、点其它按钮是换弹窗，
+     * 焦点事件不一定会先到 —— 用户 2026-10-28 实测「填了 5 / 10，服务端还是 -1」。
+     * 现在改由 [syncDiscountFields] 每 tick 比对文本（输入停 300ms 自动提交），
+     * 外加所有离开路径 [commitDiscountsNow] 强制兜底。
+     */
+    private var discountLastSubmitted: Pair<String, String> = "" to ""
+    /** 文本变化后第一次看到的时刻（0 = 没有待提交的改动）；用于 300ms 防抖 */
+    private var discountDirtyAt = 0L
+
     private val rowButtons = mutableListOf<NineSliceButton>()
     private val dialogButtons = mutableListOf<NineSliceButton>()
     private var createTypeButtons = mutableListOf<Pair<CustomShopType, NineSliceButton>>()
@@ -155,6 +174,8 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
         renameField = null
         cooldownField = null
         itemCooldownField = null
+        discountPurpleField = null
+        discountBlackField = null
         manageW = maxOf(44, textRenderer.getWidth(Text.translatable("cobblemarket.shop_admin.manage").string) + 12)
 
         if (!requested) {
@@ -289,6 +310,8 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
     }
 
     private fun openDialog(target: Dialog) {
+        // 换弹窗（改名 / 删除 / 设置冷却 / 建店）前先把详情页的折扣输入提交掉 —— 控件会被重建
+        commitDiscountsNow()
         dialog = target
         dialogError = null
         pending = null
@@ -299,6 +322,8 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
     }
 
     private fun closeDialog() {
+        // 关详情前先提交没来得及失焦的折扣输入（2026-10-28；其它弹窗直接跳过）
+        commitDiscountsNow()
         dialog = Dialog.NONE
         dialogError = null
         pending = null
@@ -308,6 +333,8 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
     }
 
     private fun openPicker(shopId: String) {
+        // 从详情切到「选择 NPC」也要先提交折扣输入（同 closeDialog）
+        commitDiscountsNow()
         selectedShopId = shopId
         mode = Mode.PICK
         scrollOffset = 0
@@ -559,10 +586,125 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                 )
                 dialogButtons.add(closeBtn)
                 addDrawableChild(closeBtn)
+
+                // 卡片购买折扣（2026-10-28）：**返回按钮左右各一组**「卡图标 + 优惠： + 输入框」，
+                // 不新增行（用户要求）。留空 = 跟随卡配置、填 0 = 本店不优惠、1~100 = 百分比。
+                // 输入停 300ms 自动提交 + 回车 / 关闭 / 切屏时强制提交，
+                // 见 [syncDiscountFields] / [commitDiscountsNow]。
+                val purpleField = buildDiscountField(dx, dw, closeY, index = 0, value = shop.purpleCardShopDiscount)
+                discountPurpleField = purpleField
+                addSelectableChild(purpleField); addDrawableChild(purpleField)
+                val blackField = buildDiscountField(dx, dw, closeY, index = 1, value = shop.blackCardShopDiscount)
+                discountBlackField = blackField
+                addSelectableChild(blackField); addDrawableChild(blackField)
+                // 刚建好的文本就是"已提交"状态：避免 tick 一上来就把初始值当成改动再发一遍
+                discountLastSubmitted = discountTexts()
+                discountDirtyAt = 0L
             }
 
             Dialog.NONE -> Unit
         }
+    }
+
+    // ── 详情页卡片购买折扣（2026-10-28）──
+
+    /** 折扣组（图标 + 标签 + 输入框）的宽度：占返回按钮两侧各一半、扣掉内边距与间隔 */
+    private fun discountGroupW(dw: Int): Int {
+        val btnW = (dw - 32 - 4 * 2) / 3
+        return ((dw - btnW) / 2 - 16 - 4).coerceAtLeast(10)
+    }
+
+    /** 折扣组的左缘：index 0 = 返回按钮左侧、1 = 右侧 */
+    private fun discountGroupX(dx: Int, dw: Int, index: Int): Int =
+        if (index == 0) dx + 16 else dx + dw - 16 - discountGroupW(dw)
+
+    /** 「优惠：」标签的宽度（中英不同，按当前语言量） */
+    private fun discountLabelW(): Int =
+        textRenderer.getWidth(Text.translatable("cobblemarket.shop_admin.detail.discount_label"))
+
+    /** 输入框在组内的左缘：图标 12 + 间隙 3 + 标签 + 间隙 3 */
+    private fun discountFieldX(dx: Int, dw: Int, index: Int): Int =
+        discountGroupX(dx, dw, index) + 12 + 3 + discountLabelW() + 3
+
+    private fun discountFieldW(dw: Int): Int =
+        (discountGroupW(dw) - 12 - 3 - discountLabelW() - 3).coerceAtLeast(28)
+
+    /**
+     * 建一个折扣输入框。`value` 是存档值（-1 = 跟随 ⇒ 显示空）。
+     * 输入框里是**百分比**（5 = 5%），提交时 ÷100（见 [commitDiscountsNow]）。
+     */
+    private fun buildDiscountField(dx: Int, dw: Int, y: Int, index: Int, value: Double): TextFieldWidget =
+        TextFieldWidget(
+            textRenderer, discountFieldX(dx, dw, index), y,
+            discountFieldW(dw), 16, Text.literal("")
+        ).apply {
+            setTextPredicate { s -> s.length <= 4 && s.all { it.isDigit() || it == '.' } }
+            text = if (value < 0.0) "" else discountPercentTextOf(value)
+            setPlaceholder(Text.translatable("cobblemarket.shop_admin.detail.discount_follow"))
+            setTooltip(Tooltip.of(Text.translatable("cobblemarket.shop_admin.detail.discount_tip")))
+        }
+
+    /** 存档值（0~1）→ 输入框文本（百分比；四舍五入去浮点尾巴，见 `discountPercentText`） */
+    private fun discountPercentTextOf(rate: Double): String =
+        com.shusheng.cobblemarket.util.discountPercentText(rate)
+
+    /** 输入框文本 → 存档值：空 = -1（跟随）、数字 = ÷100 后夹到 0~1 */
+    private fun parseDiscountField(field: TextFieldWidget?): Double {
+        val raw = field?.text?.trim().orEmpty()
+        if (raw.isEmpty()) return -1.0
+        val v = raw.toDoubleOrNull() ?: return -1.0
+        return (v / 100.0).coerceIn(0.0, 1.0)
+    }
+
+    /** 输入框当前文本（控件不在 = 空串） */
+    private fun discountTexts(): Pair<String, String> =
+        (discountPurpleField?.text.orEmpty() to discountBlackField?.text.orEmpty())
+
+    /**
+     * **立即提交**（各离开路径调用）：两个框任意一个与存档不同就发一次
+     * —— payload 是两个一起的，另一个框当前值也一并带上。
+     */
+    private fun commitDiscountsNow() {
+        if (dialog != Dialog.DETAIL) return
+        val shop = CustomShopAdminCache.shop(detailShopId) ?: return
+        val current = discountTexts()
+        discountLastSubmitted = current
+        discountDirtyAt = 0L
+        val purple = parseDiscountField(discountPurpleField)
+        val black = parseDiscountField(discountBlackField)
+        if (purple == shop.purpleCardShopDiscount && black == shop.blackCardShopDiscount) return
+        // 诊断（2026-10-28 实测提交链路）：确认客户端真的发了、发的是什么
+        com.shusheng.cobblemarket.CobbleMarket.LOGGER.info(
+            "[ShopDiscount] commit shop={} purple={} black={} text={}",
+            detailShopId, purple, black, current
+        )
+        sendToServer(SetCustomShopDiscountPayload(detailShopId, purple, black))
+    }
+
+    /**
+     * tick 里比对输入框文本：**内容一变就提交**（输入停 300ms 后，避开服务端写节流）。
+     *
+     * ⚠ 为什么不监听焦点：见 [discountLastSubmitted] 的注释 —— 实测焦点事件不一定会到。
+     * 这样即使用户填完直接点「打开」切屏 / 按 E 关界面，只要 tick 跑过一帧就能存上；
+     * 剩余极小窗口由 [commitDiscountsNow] 的兜底覆盖。
+     */
+    private fun syncDiscountFields() {
+        if (dialog != Dialog.DETAIL) {
+            discountDirtyAt = 0L
+            return
+        }
+        val current = discountTexts()
+        if (current == discountLastSubmitted) {
+            discountDirtyAt = 0L
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (discountDirtyAt == 0L) {
+            discountDirtyAt = now
+            return
+        }
+        if (now - discountDirtyAt < 300L) return
+        commitDiscountsNow()
     }
 
     /** 三选一类型按钮（创建 / 详情共用） */
@@ -748,6 +890,8 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
     }
 
     private fun sendOpen() {
+        // 点「打开 ✓ 编辑」会直接切到商城界面 —— 先把折扣输入提交掉
+        commitDiscountsNow()
         sendToServer(RequestOpenCustomShopPayload(detailShopId))
     }
 
@@ -834,6 +978,8 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
             sendToServer(RequestCustomShopAdminPayload())
             lastListRequestAt = System.currentTimeMillis()
         }
+        // 折扣输入框：内容一变就（防抖）提交（2026-10-28）
+        syncDiscountFields()
     }
 
     // ── 渲染 ──
@@ -1379,9 +1525,34 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                     dx + 16, typeRowY - 12, 0xFFFFFF
                 )
                 drawDialogError(context, dx, typeRowY + 22, dw)
+                // 卡片购买折扣：返回按钮左右各一组（图标 +「优惠：」标签；输入框是控件）
+                val discountRowY = dy + dh - 10 - 16
+                drawDiscountGroupLabel(context, dx, dw, discountRowY, 0)
+                drawDiscountGroupLabel(context, dx, dw, discountRowY, 1)
             }
             Dialog.NONE -> Unit
         }
+    }
+
+    /** 折扣组：卡图标（12×12）+「优惠：」标签；输入框由 [buildDiscountField] 摆放 */
+    private fun drawDiscountGroupLabel(context: DrawContext, dx: Int, dw: Int, y: Int, index: Int) {
+        val gx = discountGroupX(dx, dw, index)
+        val cardId = if (index == 0) "meowth_purple_card" else "meowth_black_card"
+        val item = Registries.ITEM.get(Identifier.of("cobblemarket", cardId))
+        if (item != Items.AIR) {
+            com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+                itemStack = ItemStack(item),
+                x = gx.toDouble(),
+                y = (y + 2).toDouble(),
+                scale = 12 / 16.0,
+                matrixStack = context.matrices
+            )
+        }
+        context.drawTextWithShadow(
+            textRenderer,
+            Text.translatable("cobblemarket.shop_admin.detail.discount_label"),
+            gx + 12 + 3, y + 4, 0xFFFFFF
+        )
     }
 
     private fun drawDialogError(context: DrawContext, x: Int, y: Int, dw: Int) {
@@ -1442,7 +1613,7 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
     private fun dialogTextFields(): List<TextFieldWidget> =
         listOfNotNull(
             createIdField, createNameField, createHoursField, createCooldownField, createItemCooldownField,
-            renameField, cooldownField, itemCooldownField
+            renameField, cooldownField, itemCooldownField, discountPurpleField, discountBlackField
         )
 
     override fun mouseScrolled(
@@ -1456,6 +1627,15 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
     }
 
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+        // 折扣输入框里回车 = 立即提交并失焦（失焦本身也会提交，这里只是快一步）
+        if (dialog == Dialog.DETAIL &&
+            (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER || keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER) &&
+            (focused === discountPurpleField || focused === discountBlackField)
+        ) {
+            commitDiscountsNow()
+            focused = null
+            return true
+        }
         if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
             when {
                 dialog != Dialog.NONE -> closeDialog()
@@ -1465,6 +1645,15 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
             return true
         }
         return super.keyPressed(keyCode, scanCode, modifiers)
+    }
+
+    /**
+     * 界面被替换（点「打开」切商城 / 按 E 关界面 / Esc 回上级）时兜底提交折扣输入 ——
+     * 这时 [tick] 可能还没跑到防抖的 300ms，不提交就丢了（2026-10-28 用户实测踩到）。
+     */
+    override fun removed() {
+        commitDiscountsNow()
+        super.removed()
     }
 
     override fun shouldPause(): Boolean = false

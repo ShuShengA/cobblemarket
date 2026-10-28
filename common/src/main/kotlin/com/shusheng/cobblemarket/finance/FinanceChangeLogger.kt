@@ -50,6 +50,9 @@ object FinanceChangeLogger {
     const val ACTION_CARD_REVOKE = "\$cobblemarket.finance.action.card_revoke"
     const val ACTION_LOAN_BLOCK = "\$cobblemarket.finance.action.loan_block"
     const val ACTION_LOAN_UNBLOCK = "\$cobblemarket.finance.action.loan_unblock"
+    /** 卡片申请禁令（2026-10-28）：按（玩家, 卡种）拦申请 —— 与上面的禁借是两套名单 */
+    const val ACTION_CARD_APPLY_BLOCK = "\$cobblemarket.finance.action.card_apply_block"
+    const val ACTION_CARD_APPLY_UNBLOCK = "\$cobblemarket.finance.action.card_apply_unblock"
     const val ACTION_CREDIT_SET = "\$cobblemarket.finance.action.credit_set"
 
     /**

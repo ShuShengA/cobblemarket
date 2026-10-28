@@ -16,6 +16,7 @@ import com.shusheng.cobblemarket.client.CustomShopCooldownCache
 import com.shusheng.cobblemarket.client.ItemClaimFlyAnimation
 import com.shusheng.cobblemarket.client.ItemComponentsDisplay
 import com.shusheng.cobblemarket.client.PointMarketCache
+import com.shusheng.cobblemarket.client.ShopCardDiscountCache
 import com.shusheng.cobblemarket.util.FeatureCandidates
 import com.shusheng.cobblemarket.client.PointsShopCache
 import com.shusheng.cobblemarket.client.drawItemWithBar
@@ -37,6 +38,7 @@ import com.shusheng.cobblemarket.currency.PointMarketService
 import com.shusheng.cobblemarket.currency.PointShopState
 import com.shusheng.cobblemarket.currency.ShopEntry
 import com.shusheng.cobblemarket.currency.ShopItemSpec
+import com.shusheng.cobblemarket.currency.ShopCardDiscount
 import com.shusheng.cobblemarket.currency.ShopPokemonSpec
 import com.shusheng.cobblemarket.market.ItemRuleComponents
 import com.shusheng.cobblemarket.network.BuyPointMarketEntryPayload
@@ -56,6 +58,7 @@ import com.shusheng.cobblemarket.network.SaveShopSnapshotPayload
 import com.shusheng.cobblemarket.network.ShopSnapshotInfo
 import com.shusheng.cobblemarket.network.RemovePointMarketEntryPayload
 import com.shusheng.cobblemarket.network.RequestPointMarketPayload
+import com.shusheng.cobblemarket.network.RequestShopCardDiscountPayload
 import com.shusheng.cobblemarket.network.RequestPointsShopPayload
 import com.shusheng.cobblemarket.network.SavePointMarketEntryPayload
 import com.shusheng.cobblemarket.network.SetShopEditingPayload
@@ -168,6 +171,9 @@ class PointsMarketScreen(
         // 主商城保持原有行为（它一直是这个缓存口径，不在这次改动范围内）。
         if (isCustomShop) PointMarketCache.clear()
     }
+
+    /** 卡片购买折扣只问一次（resize / 关购买窗都会重跑 [init]()，重复问没有意义） */
+    private var cardDiscountRequested = false
 
     private var codeField: TextFieldWidget? = null
     /** 输入框内容：界面 resize 会重建控件，靠它把玩家已经敲进去的码恢复回来 */
@@ -1240,6 +1246,11 @@ class PointsMarketScreen(
         super.init()
         // 告诉缓存"现在在看哪个商店" —— 迟到的旧商店快照会被丢掉（见 PointMarketCache.viewingShopId）
         PointMarketCache.viewingShopId = shopId
+        // 卡片购买折扣按玩家各算各的 ⇒ 打开界面单独问一次（购买窗的优惠提示读缓存）
+        if (!cardDiscountRequested) {
+            cardDiscountRequested = true
+            sendToServer(RequestShopCardDiscountPayload(shopId))
+        }
         // 换店时先把上一个商店的格子清掉：不清的话在新快照到达前会拿旧店数据画一帧
         if (PointMarketCache.shopId != shopId) PointMarketCache.clear()
         // 打开动画只在**界面实例第一次 init** 时启动；resize 会重跑 init，别让动画重播
@@ -2315,7 +2326,8 @@ class PointsMarketScreen(
      * 所以下面三段各自定位：**上固定**（标题 + 物种行）、**中间可滚动**（字段网格）、
      * **下固定**（价格/库存 + 按钮，钉在窗口底部）。这一条是项目里连踩多次的老坑。
      */
-    private fun editDialogHeight(): Int = minOf(EDIT_DIALOG_H, height - 8)
+    private fun editDialogHeight(): Int =
+        minOf(EDIT_DIALOG_H + if (buySlot >= 0) BUY_DISCOUNT_EXTRA_H else 0, height - 8)
 
     /** 窗口顶边：竖直居中 */
     private fun editDialogY(): Int = ((height - editDialogHeight()) / 2).coerceAtLeast(4)
@@ -2440,7 +2452,17 @@ class PointsMarketScreen(
 
     /** 中间滚动区的高度（字段网格能露出来的部分） */
     private fun editScrollViewHeight(): Int =
-        (editDialogHeight() - EDIT_ROWS_TOP - EDIT_BOTTOM_BLOCK).coerceAtLeast(EDIT_ROW_STEP)
+        (editDialogHeight() - EDIT_ROWS_TOP - editBottomBlock()).coerceAtLeast(EDIT_ROW_STEP)
+
+    /**
+     * 底部固定块的高度：编辑窗 44；**购买窗 54**（多出的 10px 是卡片折扣提示行）。
+     *
+     * ⚠ 高度（[editDialogHeight] 已 +10）与这里**必须成对改**：只加高度 ⇒ 价格行跟着下移、
+     *   按钮被挤到底边（2026-10-28 用户实测就是这个）。价格行/按钮行都从
+     *   `高度 − 底部块` 算，所以底部块也要 +10，价格行才留在原位。
+     */
+    private fun editBottomBlock(): Int =
+        EDIT_BOTTOM_BLOCK + if (buySlot >= 0) BUY_DISCOUNT_EXTRA_H else 0
 
     /**
      * 滚动上限。
@@ -2459,7 +2481,7 @@ class PointsMarketScreen(
         editDialogY() + EDIT_ROWS_TOP + row * EDIT_ROW_STEP - editContentScroll
 
     /** 价格 / 库存行的顶边（钉在底部，不随滚动移动） */
-    private fun editPriceRowY(): Int = editDialogY() + editDialogHeight() - EDIT_BOTTOM_BLOCK
+    private fun editPriceRowY(): Int = editDialogY() + editDialogHeight() - editBottomBlock()
 
     /**
      * 价格 / 库存这一组（「标签 + 输入框」× 2，横跨两格）的**总宽**与**左缘**。
@@ -2517,7 +2539,12 @@ class PointsMarketScreen(
         editDialogX() + EDIT_PAD + (editDialogW() - EDIT_PAD * 2 - editPriceGroupW()) / 2
 
     /** 底部按钮行的顶边 */
-    private fun editButtonRowY(): Int = editDialogY() + editDialogHeight() - EDIT_BOTTOM_BLOCK + 18
+    /**
+     * 按钮行：编辑窗固定 +18；**购买窗 +28**（多出的 10px 是「卡片价格优惠」提示行，
+     * 只在购买窗显示，见 [renderBuyDialog]）。
+     */
+    private fun editButtonRowY(): Int =
+        editPriceRowY() + if (buySlot >= 0) 36 else 18
 
     /** 某一行当前露没露在滚动区里（整行判断：半截的行控件本身没法裁剪，只能整体藏） */
     private fun editRowVisible(row: Int): Boolean {
@@ -2942,6 +2969,27 @@ class PointsMarketScreen(
 
         renderBuyPriceRow(context, entry)
 
+        // **卡片价格优惠**（2026-10-28）：购买按钮上方一行 —— 卡图标 +「价格优惠 N%」。
+        // 折扣按玩家各算各的（[ShopCardDiscountCache]），没折扣 / 还没收到包时不画。
+        val discountRate = ShopCardDiscountCache.rateOf(shopId)
+        if (discountRate > 0.0 && !isClaimShop) {
+            val line = Text.translatable(
+                "cobblemarket.points.store.card_discount",
+                shopDiscountPercentText(discountRate)
+            )
+            // 图标用**16×16**（物品图标标准尺寸；12px 时用户实测「卡片好小」）——
+            // 这一行的高度预算见 BUY_DISCOUNT_EXTRA_H，文字与图标中心对齐（差 1px 可接受）
+            val iconSize = 16
+            val gap = 3
+            val totalW = iconSize + gap + textRenderer.getWidth(line)
+            // 居中于「购买 / 取消」那一对按钮（与价格行的「总价」同一条中轴）
+            val confirmX = x + editDialogW() - EDIT_PAD - BUY_BTN_W * 2 - BUTTON_GAP
+            val left = confirmX + (BUY_BTN_W * 2 + BUTTON_GAP - totalW) / 2
+            val lineY = editButtonRowY() - 12
+            drawShopCardIcon(context, ShopCardDiscountCache.cardOf(shopId), left, lineY - 5, iconSize)
+            context.drawTextWithShadow(textRenderer, line, left + iconSize + gap, lineY, 0xFFCC33)
+        }
+
         // 冷却中：倒计时画在**购买按钮左侧**（灰字，与领取店「下次领取」同款），并把按钮置灰。
         // ⚠ dimmed 与「编辑锁」共用：任一成立就置灰 —— render 每帧都会重设，别只写 cooldown
         //   （否则编辑锁的置灰会被这里覆盖掉）。
@@ -2974,6 +3022,24 @@ class PointsMarketScreen(
         } finally {
             context.setShaderColor(1f, 1f, 1f, 1f)
         }
+    }
+
+    /** 折扣率 → 百分比文本（与成功回执同一口径，见 `discountPercentTextWithSymbol`） */
+    private fun shopDiscountPercentText(rate: Double): String =
+        com.shusheng.cobblemarket.util.discountPercentTextWithSymbol(rate)
+
+    /** 画打折卡种的物品图标（紫电卡 / 金轮卡）；物品缺失时什么都不画，只是少了图标 */
+    private fun drawShopCardIcon(context: DrawContext, card: String, x: Int, y: Int, size: Int) {
+        val id = if (card == ShopCardDiscount.CARD_BLACK) "meowth_black_card" else "meowth_purple_card"
+        val item = Registries.ITEM.get(net.minecraft.util.Identifier.of("cobblemarket", id))
+        if (item == net.minecraft.item.Items.AIR) return
+        com.cobblemon.mod.common.client.render.renderScaledGuiItemIcon(
+            itemStack = ItemStack(item),
+            x = x.toDouble(),
+            y = y.toDouble(),
+            scale = size / 16.0,
+            matrixStack = context.matrices
+        )
     }
 
     /** 预览槽：与编辑窗同位置同尺寸（右侧 3 格），但画的是**商品规格**那一只 */
@@ -7903,6 +7969,16 @@ class PointsMarketScreen(
         //   高度与底部块（价格行 / 按钮行，都基于 editDialogHeight() − EDIT_BOTTOM_BLOCK）是**成对**的：
         //   只加字段不改这里，中间内容会整体下移 19px 而底部不动，挤在一起。
         const val EDIT_DIALOG_H = 281
+
+        /**
+         * **购买窗**比编辑窗高出的部分（2026-10-28）：多一行「卡片价格优惠」提示。
+         *
+         * 值是 **18** —— 那行里要放 **16×16 的卡图标**（物品图标标准尺寸，放 12px 用户实测「卡片好小」），
+         * 上下各留一点空隙。
+         * ⚠ 三处必须一起改：窗口高度（[editDialogHeight]）、底部块（[editBottomBlock]）、
+         *   按钮行（[editButtonRowY] 购买窗 `priceRow + 36`）—— 只改一处会压出边框或按钮贴底。
+         */
+        const val BUY_DISCOUNT_EXTRA_H = 18
 
         /**
          * 窗口宽度的上下限：宽度**跟着 RP 商城背景走**（见 [editDialogW]），
