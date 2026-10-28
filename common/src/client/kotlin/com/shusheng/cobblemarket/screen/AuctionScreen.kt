@@ -1709,7 +1709,7 @@ class AuctionScreen(
             query == null || displayName(entry).contains(query, ignoreCase = true) ||
                 entry.species.contains(query, ignoreCase = true) || entry.sellerName.contains(query, ignoreCase = true) ||
                 // 物品条目走搜索索引（名称/tooltip/TM 招式精确匹配，见 ItemSearchIndex）
-                (entry.type == "ITEM" && com.shusheng.cobblemarket.client.ItemSearchIndex.entryMatches(entry.species, entry.itemNbt, query))
+                (entry.type == "ITEM" && com.shusheng.cobblemarket.client.ItemSearchIndex.entryMatches(entry.species, entry.renderNbt(), query))
         }
         // 排序（2026-10-03 起可切换，**三个 tab 通用**）：默认「最新」= 原先唯一的行为，逐字节不变
         filteredCache = when (sortMode) {
@@ -1743,7 +1743,7 @@ class AuctionScreen(
                 rowStacks[index] = RowStacks(
                     ballStack = null,
                     heldStack = null,
-                    itemStack = iconStackOf(entry.species, entry.itemNbt)
+                    itemStack = iconStackOf(entry.species, entry.renderNbt())
                 )
                 return@forEachIndexed
             }
@@ -2060,7 +2060,7 @@ class AuctionScreen(
             }
         } else {
             // 物品拍卖：走完整 NBT 重建，附魔光效与自定义名称才显示得出来
-            val itemStack = iconStackOf(entry.species, entry.itemNbt)
+            val itemStack = iconStackOf(entry.species, entry.renderNbt())
             if (itemStack != null && !itemStack.isEmpty) {
                 drawItemWithBar(context, itemStack, slotX + 6, slotY + 6)
                 // 记下这个图标的位置（物品庆祝动画要从这里起飞）；物品图标基准 16×16
@@ -2948,7 +2948,7 @@ class AuctionScreen(
     /** 出价弹窗物品词条构建（原版 tooltip 去首行物品名；type 区分 BASIC/ADVANCED） */
     private fun buildBidItemLines(entry: AuctionEntry, type: TooltipType): List<Text> {
         val out = mutableListOf<Text>()
-        entry.itemNbt?.let { nbt ->
+        entry.renderNbt()?.let { nbt ->
             client?.world?.registryManager?.let { rm ->
                 val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
                 if (!stack.isEmpty) {
@@ -2965,7 +2965,7 @@ class AuctionScreen(
         // 物品名走**稀有度色**（原先 `Text.literal(String)` ⇒ 白字）—— 见 [EntryBadgeRenderer.auctionNameText]
         staticLines.add(EntryBadgeRenderer.auctionNameText(entry) to 0xFFFFFF)
         // 物品词条（附魔/名称等；原版 tooltip 去首行物品名，与名称行去重）
-        entry.itemNbt?.let { nbt ->
+        entry.renderNbt()?.let { nbt ->
             client?.world?.registryManager?.let { rm ->
                 val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
                 if (!stack.isEmpty) {

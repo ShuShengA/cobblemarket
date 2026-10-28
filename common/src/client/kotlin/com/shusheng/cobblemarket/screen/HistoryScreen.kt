@@ -317,9 +317,13 @@ class HistoryScreen(
      * 拿不到颜色时（老记录没有主属性列、物品 id 解析不出）退回无色，由调用方的行色兜底。
      */
     private fun speciesNameText(e: HistoryEntry): Text = if (e.category == "ITEM") {
-        // 稀有度优先用记录里存的那个（服务端产生记录时算好的，**含附魔提升那一档**）；
-        // 旧记录没有它 ⇒ 退回按 itemId 取默认栈的稀有度（改动前的老行为）
-        val name = ItemNameText.rarityColoredNameById(e.species, e.itemRarity) ?: Text.literal(e.species)
+        // ① 客户端视角物品优先（Polymer 伪装物品的真实 id 客户端不认识，按 id 查名字会显示成一串 id）
+        // ② 稀有度用记录里存的那个（服务端产生记录时算好的，**含附魔提升那一档**）
+        // ③ 旧记录两者都没有 ⇒ 退回按 itemId 取默认栈的稀有度（改动前的老行为）
+        val rm = net.minecraft.client.MinecraftClient.getInstance().world?.registryManager
+        val name = e.displayNbt?.let { nbt -> rm?.let { ItemNameText.rarityColoredNameOfNbt(it, nbt) } }
+            ?: ItemNameText.rarityColoredNameById(e.species, e.itemRarity)
+            ?: Text.literal(e.species)
         // **数量**：以前物品行只显示物品名，卖出去几个看不出来（2026-10-12 用户报）。
         // ⚠ 加在本入口上 ⇒ **行内与悬停窗一处改、两处都有**（悬停窗 = 行的完整版）。
         // ⚠ **必须平级 append** —— 直接 `name.append(" ×N")` 会让 ×N 继承物品的稀有度色（颜色铁律：

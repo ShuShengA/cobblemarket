@@ -19,6 +19,7 @@ import net.minecraft.item.ItemStack
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
+import net.minecraft.network.codec.PacketCodecs
 import net.minecraft.network.packet.CustomPayload
 import net.minecraft.registry.Registries
 import net.minecraft.registry.RegistryWrapper
@@ -41,14 +42,31 @@ import java.util.UUID
  * 物品按槽位读背包），客户端递上来的任何展示数据一律不信 —— 分享本身不动资产，
  * 但伪造的「分享」会变成全服可见的假消息，所以归属校验放在服务端做。
  */
-data class SharePayload(val kind: String, val target: String) : CustomPayload {
+data class SharePayload(
+    val kind: String,
+    val target: String,
+    /**
+     * **客户端视角的物品 NBT**（仅物品分享用；Polymer 伪装物品的真实 id 客户端不认识 ⇒ 用这份显示）。
+     * 只影响悬停展示，归属校验仍按槽位在服务端背包里查。⚠ 末尾追加 ⇒ 两端同版
+     */
+    val itemNbt: net.minecraft.nbt.NbtCompound? = null
+) : CustomPayload {
     override fun getId() = ID
 
     companion object {
         val ID = CustomPayload.Id<SharePayload>(CobbleMarket.id("share"))
         val CODEC: PacketCodec<PacketByteBuf, SharePayload> = PacketCodec.of(
-            { p, b -> b.writeString(p.kind); b.writeString(p.target) },
-            { b -> SharePayload(kind = b.readString(), target = b.readString()) }
+            { p, b ->
+                b.writeString(p.kind); b.writeString(p.target)
+                b.writeBoolean(p.itemNbt != null)
+                p.itemNbt?.let { PacketCodecs.NBT_COMPOUND.encode(b, it) }
+            },
+            { b ->
+                SharePayload(
+                    kind = b.readString(), target = b.readString(),
+                    itemNbt = if (b.readBoolean()) PacketCodecs.NBT_COMPOUND.decode(b) else null
+                )
+            }
         )
     }
 }
@@ -152,7 +170,7 @@ object ShareNetwork {
                 val shareId = UUID.randomUUID()
                 val message = when (payload.kind) {
                     KIND_POKEMON -> pokemonShareMessage(player, shareId, payload.target)
-                    KIND_ITEM -> itemShareMessage(player, shareId, payload.target)
+                    KIND_ITEM -> itemShareMessage(player, shareId, payload.target, payload.itemNbt)
                     // ID 卡（2026-10-17）：把自己**整张卡**发到全服（数据取分享那一刻的快照）
                     KIND_IDCARD -> idCardShareMessage(player, shareId)
                     // 非法 kind 只可能是改过的客户端：静默丢弃，与存档读取的容错语义相反
@@ -231,7 +249,12 @@ object ShareNetwork {
     }
 
     /** 物品分享：按槽位定位到背包主栏里的那个栈（越界/空栈一律丢弃；槽位号来自客户端，必须先校验范围） */
-    private fun itemShareMessage(player: ServerPlayerEntity, shareId: UUID, rawSlot: String): Text? {
+    private fun itemShareMessage(
+        player: ServerPlayerEntity,
+        shareId: UUID,
+        rawSlot: String,
+        clientItemNbt: net.minecraft.nbt.NbtCompound?
+    ): Text? {
         val slot = rawSlot.toIntOrNull() ?: return null
         val main = player.inventory.main
         if (slot !in main.indices) return null
@@ -252,7 +275,8 @@ object ShareNetwork {
                 shiny = false,
                 heldItemNbt = null,
                 itemId = Registries.ITEM.getId(stack.item).toString(),
-                itemNbt = encodeStack(stack, player.serverWorld.registryManager),
+                // 客户端视角优先：Polymer 伪装物品的真实 NBT 客户端重建为空 ⇒ 没图标、没悬停窗
+                itemNbt = clientItemNbt ?: encodeStack(stack, player.serverWorld.registryManager),
                 itemComponentsSpec = null,
                 count = total,
                 // 展示：物品词条走客户端现算的原版 tooltip，没有尾部那两行（见 isShare 的说明）

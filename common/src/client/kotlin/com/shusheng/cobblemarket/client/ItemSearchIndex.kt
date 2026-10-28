@@ -185,6 +185,13 @@ object ItemSearchIndex {
         if (q.isEmpty()) return true
         if (itemTexts[itemId]?.contains(q) == true) return true
         val rm = MinecraftClient.getInstance().world?.registryManager ?: return false
+        // ⚠ 条目带组件时按**实际显示名**再匹一次：索引只建默认物品栈，`custom_name`
+        //   （数据包自定义物品如 Zapdosite）不在里面 —— 拍卖场 / 求购单 / 黑名单等列表
+        //   搜不到这类物品就是这个原因（2026-10-28 用户实测）。懒计算：仅默认文本未命中时重建
+        if (itemNbt != null) {
+            val display = runCatching { ItemStack.fromNbtOrEmpty(rm, itemNbt).name.string.lowercase() }.getOrNull()
+            if (display != null && display.contains(q)) return true
+        }
         if (itemId == TM_ITEM_ID) {
             val moves = moveTexts.filterValues { it.contains(q) }.keys
             if (moves.isEmpty()) return false

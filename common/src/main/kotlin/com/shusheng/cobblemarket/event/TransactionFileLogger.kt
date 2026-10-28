@@ -30,8 +30,8 @@ object TransactionFileLogger {
                 currentDate = date
                 // ⚠ 表头必须与 buildCsvLine 的列一一对应（含**末尾的币种 / 主属性 / 来源 / 商店名 / 商店ID 五列**）：
                 //   漏了会让表头少列、数据多列，Excel 里整行错位
-                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,卖家UUID,买家UUID,精灵/物品,价格,手续费,详情,币种,主属性,来源,商店名,商店ID")
-                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Seller UUID,Buyer UUID,Pokemon/Item,Price,Fee,Details,Currency,Primary Type,Source,Shop Name,Shop ID")
+                currentZhFile = resolveFile(date, "zh_cn", "时间,类型,分类,卖家,买家,卖家UUID,买家UUID,精灵/物品,价格,手续费,详情,币种,主属性,来源,商店名,商店ID,客户端物品")
+                currentEnFile = resolveFile(date, "en_us", "Time,Type,Category,Seller,Buyer,Seller UUID,Buyer UUID,Pokemon/Item,Price,Fee,Details,Currency,Primary Type,Source,Shop Name,Shop ID,Client Item")
             }
             val zhFile = currentZhFile ?: return
             val enFile = currentEnFile ?: return
@@ -216,7 +216,10 @@ object TransactionFileLogger {
         return "$time,$type,$category,$seller,$buyer,$sellerUuid,$buyerUuid,$species," +
             "${record.price},${record.fee},${csvEscape(record.detail)},${record.currency.name}," +
             "${csvEscape(record.primaryType)},${if (record.fromShop) "shop" else "market"}," +
-            "${csvEscape(record.shopName)},${csvEscape(record.shopId)}"
+            "${csvEscape(record.shopName)},${csvEscape(record.shopId)}," +
+            // 客户端视角物品（SNBT，空 = 与真实物品一致）：Polymer 伪装物品的真实 id 客户端不认识，
+            // 历史界面靠这一列渲染正确名字（2026-10-28）
+            csvEscape(record.displayNbt?.toString().orEmpty())
     }
 
     private fun typeName(type: TransactionType, lang: String): String = when (type) {
@@ -389,7 +392,10 @@ object TransactionFileLogger {
                         primaryType = primaryType,
                         fromShop = fields.getOrNull(13)?.removePrefix("'") == "shop",
                         shopName = fields.getOrNull(14)?.removePrefix("'").orEmpty(),
-                        shopId = fields.getOrNull(15)?.removePrefix("'").orEmpty()
+                        shopId = fields.getOrNull(15)?.removePrefix("'").orEmpty(),
+                        // 第 17 列：客户端视角物品 SNBT（老 CSV 没有 ⇒ null，回退按真实 id 显示）
+                        displayNbt = fields.getOrNull(16)?.takeIf { it.isNotEmpty() }
+                            ?.let { runCatching { net.minecraft.nbt.StringNbtReader.parse(it) }.getOrNull() }
                     ))
                 }
             } catch (e: Exception) {

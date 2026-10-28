@@ -251,7 +251,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
                 rowStacks[i] = RowStacks(
                     ballStack = null,
                     heldStack = null,
-                    itemStack = iconStackOf(entry.species, entry.itemNbt)
+                    itemStack = iconStackOf(entry.species, entry.renderNbt())
                 )
                 return@forEachIndexed
             }
@@ -966,7 +966,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
      *  —— 照搬出价弹窗的同名函数 */
     private fun buildCancelItemLines(entry: AuctionEntry, type: TooltipType): List<Text> {
         val out = mutableListOf<Text>()
-        entry.itemNbt?.let { nbt ->
+        entry.renderNbt()?.let { nbt ->
             client?.world?.registryManager?.let { rm ->
                 val stack = ItemStack.fromNbtOrEmpty(rm, nbt)
                 if (!stack.isEmpty) {
@@ -1103,7 +1103,7 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
             }
         } else {
             // 物品拍卖：走完整 NBT 重建，附魔光效与自定义名称才显示得出来
-            iconStackOf(entry.species, entry.itemNbt)?.let { stack ->
+            iconStackOf(entry.species, entry.renderNbt())?.let { stack ->
                 if (!stack.isEmpty) drawItemWithBar(context, stack, slotX + 6, slotY + 6)
             }
         }

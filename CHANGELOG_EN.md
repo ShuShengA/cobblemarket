@@ -2,6 +2,15 @@
 
 ## 1.3.4 (in development, unreleased)
 
+### Fixes
+
+- **The custom shop search box could not find datapack-defined custom items**: matching now also uses each offer's display name
+- **Searching certain terms in the Item Market could disconnect players**: short queries matched too many items and the request exceeded the packet limit — fixed
+- **The Item Market / Auction House / Buy Orders could not find datapack-defined custom items**: matching now also uses each entry's actual display name
+- **Polymer-style "client-disguised" items could not be listed**: the Item Market and Auction House now take the real server-side item from the inventory slot
+- **Those items showed as Air / had no icon after listing**: listings now store an extra client-side copy of the item for display
+- **Polymer-style "client-disguised" items had no icon in chat shares or auction notifications**: they now use the client-side copy for display
+
 ## 1.3.3 (released)
 
 ### Changes

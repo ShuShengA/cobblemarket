@@ -169,7 +169,7 @@ object EntryBadgeRenderer {
     fun auctionNameText(entry: AuctionEntry): Text {
         if (entry.type == "ITEM") {
             val rm = MinecraftClient.getInstance().world?.registryManager
-            return rm?.let { ItemNameText.rarityColoredNameOfNbt(it, entry.itemNbt) }
+            return rm?.let { ItemNameText.rarityColoredNameOfNbt(it, entry.renderNbt()) }
                 ?: ItemNameText.rarityColoredNameById(entry.species)
                 ?: Text.literal(entry.species)
         }

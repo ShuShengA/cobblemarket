@@ -73,8 +73,16 @@ data class AuctionEntry(
      * ⚠ 与市场列表同理：**币种是拍卖自己的属性**，客户端显示金额单位一律读它，
      * 别读界面上的「当前币种」状态 —— 漏一处就会把 RP 拍卖标成 ₽。
      */
-    val currency: String
+    val currency: String,
+    /**
+     * **客户端视角的物品 NBT**（Polymer 等伪装物品才有值，普通物品为 null）。
+     * 显示/悬停用 [renderNbt]；交易一律用 [itemNbt]。⚠ 末尾追加 ⇒ 两端同版
+     */
+    val displayNbt: NbtCompound? = null
 ) {
+    /** 渲染 / 悬停用的物品 NBT：优先客户端视角，旧数据回退真实物品 */
+    fun renderNbt(): NbtCompound? = displayNbt ?: itemNbt
+
     /** 这场拍卖是不是 RP 计价 —— **渲染货币单位就读它**（构造时解析一次，行渲染每帧不再 parse） */
     val isPoints: Boolean = com.shusheng.cobblemarket.currency.MarketCurrency
         .fromStored(currency) == com.shusheng.cobblemarket.currency.MarketCurrency.POINTS
@@ -113,6 +121,8 @@ data class AuctionEntry(
         buf.writeString(currency)
         buf.writeBoolean(itemNbt != null)
         itemNbt?.let { PacketCodecs.NBT_COMPOUND.encode(buf, it) }
+        buf.writeBoolean(displayNbt != null)
+        displayNbt?.let { PacketCodecs.NBT_COMPOUND.encode(buf, it) }
     }
 
     companion object {
@@ -135,7 +145,8 @@ data class AuctionEntry(
             endsAt = buf.readLong(),
             createdAt = buf.readLong(),
             currency = buf.readString(),
-            itemNbt = if (buf.readBoolean()) PacketCodecs.NBT_COMPOUND.decode(buf) else null
+            itemNbt = if (buf.readBoolean()) PacketCodecs.NBT_COMPOUND.decode(buf) else null,
+            displayNbt = if (buf.readBoolean()) PacketCodecs.NBT_COMPOUND.decode(buf) else null
         )
     }
 }
@@ -180,7 +191,8 @@ fun auctionToEntry(a: AuctionListing, server: MinecraftServer): AuctionEntry = A
     endsAt = a.endsAt,
     createdAt = a.createdAt,
     itemNbt = if (a.type == AuctionType.ITEM) a.itemNbt else null,
-    currency = a.currency.name
+    currency = a.currency.name,
+    displayNbt = if (a.type == AuctionType.ITEM) a.displayNbt else null
 )
 
 // ── C2S：OP 强制下架拍卖 ──
@@ -309,7 +321,13 @@ data class CreateItemAuctionPayload(
     val minIncrement: Int,
     val durationIndex: Int,
     /** 计价币种 —— **原始字符串，在这里不解析**（理由同市场：留给 handler 用 fromRequest 严格校验） */
-    val currency: String
+    val currency: String,
+    /**
+     * 背包主栏槽位（`-1` = 未知）。Polymer 伪装物品的客户端 id 与服务端不同 —— 有槽位时
+     * 服务端直接取自己背包里的真实物品（同 `SellItemPayload.slot`，2026-10-28）。
+     * ⚠ 末尾追加 ⇒ **两端同版**
+     */
+    val slot: Int = -1
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -323,12 +341,13 @@ data class CreateItemAuctionPayload(
                 b.writeInt(p.minIncrement)
                 b.writeInt(p.durationIndex)
                 b.writeString(p.currency)
+                b.writeInt(p.slot)
             },
             { b ->
                 CreateItemAuctionPayload(
                     itemId = b.readString(), itemNbt = PacketCodecs.NBT_COMPOUND.decode(b),
                     count = b.readInt(), startingPrice = b.readInt(), minIncrement = b.readInt(),
-                    durationIndex = b.readInt(), currency = b.readString()
+                    durationIndex = b.readInt(), currency = b.readString(), slot = b.readInt()
                 )
             }
         )
@@ -611,8 +630,15 @@ object AuctionNetwork {
                     return@execute
                 }
 
+                val main = player.inventory.main
                 // 重建目标物品，以服务端重建的物品为准（不信任客户端 itemId/itemNbt 的一致性）
-                val targetStack = ItemStack.fromNbtOrEmpty(player.serverWorld.registryManager, payload.itemNbt)
+                // ➕ 有槽位时直接用清单栏该槽位的真实物品（Polymer 伪装物品的客户端 id 与服务端不同）
+                val targetStack = payload.slot
+                    .takeIf { it in 0 until main.size }
+                    ?.let { main[it] }
+                    ?.takeIf { !it.isEmpty }
+                    ?.let { it.copy().apply { count = 1 } }
+                    ?: ItemStack.fromNbtOrEmpty(player.serverWorld.registryManager, payload.itemNbt)
                 if (targetStack.isEmpty) {
                     sendToPlayer(player, MarketResultPayload(false, Text.translatable("cobblemarket.network.not_found")))
                     return@execute
@@ -673,7 +699,7 @@ object AuctionNetwork {
                     return@execute
                 }
 
-                val main = player.inventory.main
+                // main 已在上面（取 targetStack 时）定义
                 var available = 0
                 for (i in 0 until main.size) {
                     val stack = main[i]
@@ -745,7 +771,10 @@ object AuctionNetwork {
                     endsAt = now + durationMs,
                     status = com.shusheng.cobblemarket.market.AuctionStatus.ACTIVE,
                     returnedAt = null,
-                    currency = currency
+                    currency = currency,
+                    // 客户端 id 与服务端真实 id 不同（Polymer 伪装物品）时，额外存一份客户端视角的物品
+                    // 用于列表显示；交易始终用 itemNbt（真实物品）
+                    displayNbt = payload.itemNbt.takeIf { payload.itemId != authoritativeItemId }
                 )
                 AuctionState.get(server).addAuction(auction)
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
@@ -1162,7 +1191,8 @@ object AuctionNetwork {
                 shiny = auction.shiny,
                 heldItemNbt = auction.extraData["heldItemNbt"].orEmpty(),
                 heldItemVisible = auction.extraData["heldItemVisible"] != "false",
-                itemNbt = auction.itemNbt,
+                // 客户端视角物品优先：Polymer 伪装物品的真实 NBT 客户端重建为空 ⇒ 气泡没图标
+                itemNbt = auction.displayNbt ?: auction.itemNbt,
                 count = auction.count,
                 fromAuction = true
             ),
@@ -1209,7 +1239,9 @@ object AuctionNetwork {
             price = if (type == TransactionType.PURCHASE) auction.currentPrice else auction.startingPrice,
             fee = fee,
             currency = auction.currency,
-            detail = if (reason != null) "$detailBase|reason=$reason" else detailBase
+            detail = if (reason != null) "$detailBase|reason=$reason" else detailBase,
+            // 客户端视角物品（Polymer 伪装物品才有）：历史界面按它渲染正确名字
+            displayNbt = auction.displayNbt
         ))
     }
 

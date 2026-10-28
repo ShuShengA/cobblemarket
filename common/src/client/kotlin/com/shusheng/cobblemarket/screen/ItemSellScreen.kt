@@ -275,7 +275,9 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
             playFailSound()
             return
         }
-        sendToServer(SellItemPayload(itemId, itemNbt, count, price, currency.name))
+        // ⚠ 带上背包槽位：Polymer 等「客户端伪装物品」的 id 与服务端背包里的真实 id 不同，
+        //   服务端按槽位取自己的物品（2026-10-28）
+        sendToServer(SellItemPayload(itemId, itemNbt, count, price, currency.name, entry.slot))
         closeConfirmDialog()
     }
 
@@ -540,7 +542,12 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
 
     /** 分享模式：把该物品的槽位号交给服务端（服务端按槽位读自己的背包，归属天然成立） */
     private fun shareItem(item: SellItem) {
-        sendToServer(SharePayload(ShareNetwork.KIND_ITEM, item.slot.toString()))
+        // ⚠ 带上客户端视角的物品 NBT：Polymer 伪装物品的真实物品客户端重建为空（没图标 / 没悬停窗），
+        //   服务端只拿它做展示，归属仍按槽位校验
+        val nbt = runCatching {
+            client?.world?.registryManager?.let { item.stack.encode(it, NbtCompound()) as? NbtCompound }
+        }.getOrNull()
+        sendToServer(SharePayload(ShareNetwork.KIND_ITEM, item.slot.toString(), nbt))
     }
 
     fun onMarketResult(payload: MarketResultPayload) {

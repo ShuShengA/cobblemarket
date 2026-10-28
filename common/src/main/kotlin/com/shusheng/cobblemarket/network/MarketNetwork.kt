@@ -334,10 +334,21 @@ data class SetMarketEnabledPayload(val enabled: Boolean) : CustomPayload {
 /** 市场总开关切换（命令与入口按钮共用）：落盘 + 全员广播 */
 /** 搜索词解析出的物品 ID 上限：恶意客户端可发海量 ID 放大 O(n²) 过滤（正常搜索词最多解析出几十个）；
  *  服务端 take 钳制 + toSet() 把「挂单数 × ID 数」线性查找降为 O(1) */
-private const val MAX_ITEM_IDS = 256
+/**
+ * 物品市场搜索时客户端最多带多少个命中的 `itemId`。
+ *
+ * ⚠ 2026-10-28 从 256 提到 4096：命中集合由搜索词决定，**短词（一个字母）能命中上千个物品**
+ * （id / 名称 / tooltip 三维匹配）。原先只有读端拦截，超限就直接把玩家踢下线
+ * （`Failed to decode packet 'serverbound/minecraft:custom_payload'`）。
+ * 现在**发送端按同一个上限截断**（见 [RequestItemMarketPayload] 的编码块）。
+ */
+const val MAX_ITEM_IDS = 4096
 
-/** TM 招式 / 附魔搜索集合的条数上限（同 [MAX_ITEM_IDS] 的理由 —— 客户端可控长度） */
-private const val MAX_SEARCH_TERMS = 256
+/**
+ * TM 招式 / 附魔搜索集合的条数上限（同 [MAX_ITEM_IDS] 的理由 —— 客户端可控长度）。
+ * 2026-10-28 从 256 提到 1024：招式注册表本身就有约 900 条，单字母命中量可能超过 256。
+ */
+const val MAX_SEARCH_TERMS = 1024
 
 /**
  * 「我的精灵」分页请求的最小间隔。
@@ -1154,7 +1165,13 @@ data class HistoryEntry(
      * 自定义 NPC 商店的店名（成交时的快照）。空串 + [fromShop] = 主 RP 商城 ⇒ 界面画
      * 「▣ 商城」；非空 = 直接画店名。⚠ 末尾追加 + 默认值：旧记录 / 主商城落空串。
      */
-    val shopName: String = ""
+    val shopName: String = "",
+    /**
+     * **客户端视角的物品 NBT**（Polymer 等伪装物品才有值）。历史界面渲染物品名优先用它 ——
+     * 真实物品 id 客户端不认识，按 id 查名字会显示成一串 id。
+     * ⚠ 末尾追加 ⇒ 两端同版；旧记录为空 ⇒ 回退现状。
+     */
+    val displayNbt: NbtCompound? = null
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeString(type); buf.writeString(category); buf.writeString(species); buf.writeInt(price); buf.writeString(
@@ -1163,6 +1180,8 @@ data class HistoryEntry(
         buf.writeString(itemRarity); buf.writeBoolean(fromShop)
         buf.writeInt(itemCount)
         buf.writeString(shopName)
+        buf.writeBoolean(displayNbt != null)
+        displayNbt?.let { PacketCodecs.NBT_COMPOUND.encode(buf, it) }
     }
 
     companion object {
@@ -1180,7 +1199,8 @@ data class HistoryEntry(
             itemRarity = buf.readString(),
             fromShop = buf.readBoolean(),
             itemCount = buf.readInt(),
-            shopName = buf.readString()
+            shopName = buf.readString(),
+            displayNbt = if (buf.readBoolean()) PacketCodecs.NBT_COMPOUND.decode(buf) else null
         )
     }
 }
@@ -1275,7 +1295,17 @@ data class SellItemPayload(
      * 上架币种 —— **原始字符串，在这里不解析**（理由同 [SellFromStoragePayload.currency]：
      * 解码处容错会把伪造值静默放行，必须留给 handler 用 `fromRequest` 严格校验）。
      */
-    val currency: String = MarketCurrency.PRIMARY.name
+    val currency: String = MarketCurrency.PRIMARY.name,
+    /**
+     * 背包**主栏**槽位（`-1` = 未知 / 旧客户端）。
+     *
+     * ⚠ Polymer 这类「客户端伪装物品」：客户端看到的 id（`minecraft:prismarine_crystals` + `$polymer:stack`）
+     * 和服务端背包里真实的 id（`mega_showdown:oxidized_copper_coat`）**不同** —— 按客户端 id 反查永远失败
+     * （2026-10-28 用户实测，服务端 `sameIdStackComponents=[]`）。有槽位时服务端直接取**自己背包**里
+     * 这个槽位的真实物品，天然绕开映射差异，且更权威（不信任客户端 NBT）。
+     * ⚠ 末尾追加（协议铁律）⇒ **两端同版**
+     */
+    val slot: Int = -1
 ) :
     CustomPayload {
     override fun getId() = ID
@@ -1288,13 +1318,14 @@ data class SellItemPayload(
                 b,
                 p.itemNbt
             ); b.writeInt(p.count); b.writeInt(p.price); b.writeString(p.currency)
+                b.writeInt(p.slot)
             },
             { b ->
                 val itemId = b.readString()
                 val itemNbt = PacketCodecs.NBT_COMPOUND.decode(b)
                 val count = b.readInt()
                 val price = b.readInt()
-                SellItemPayload(itemId, itemNbt, count, price, b.readString())
+                SellItemPayload(itemId, itemNbt, count, price, b.readString(), b.readInt())
             }
         )
     }
@@ -1331,9 +1362,14 @@ data class RequestItemMarketPayload(
         val CODEC: PacketCodec<PacketByteBuf, RequestItemMarketPayload> = PacketCodec.of(
             { p, b ->
                 b.writeString(p.sortMode); b.writeInt(p.page); b.writeBoolean(p.mineOnly); b.writeInt(p.pageSize); b.writeString(p.query)
-                b.writeVarInt(p.itemIds.size); p.itemIds.forEach { b.writeString(it) }
-                b.writeVarInt(p.tmMoves.size); p.tmMoves.forEach { b.writeString(it) }
-                b.writeVarInt(p.enchants.size); p.enchants.forEach { b.writeString(it) }
+                // ⚠ **发送端必须按读端同一个上限截断**：命中集合由搜索词决定，短词能命中上千条；
+                //   原先只拦读端 ⇒ 超限时解码抛异常、玩家直接被踢（2026-10-28 实报）
+                val itemIds = p.itemIds.take(MAX_ITEM_IDS)
+                b.writeVarInt(itemIds.size); itemIds.forEach { b.writeString(it) }
+                val moves = p.tmMoves.take(MAX_SEARCH_TERMS)
+                b.writeVarInt(moves.size); moves.forEach { b.writeString(it) }
+                val enchants = p.enchants.take(MAX_SEARCH_TERMS)
+                b.writeVarInt(enchants.size); enchants.forEach { b.writeString(it) }
                 b.writeString(p.currency)
                 b.writeString(p.categoryId)
             },
@@ -1418,22 +1454,28 @@ data class AdminRequestItemPayload(
         val CODEC: PacketCodec<PacketByteBuf, AdminRequestItemPayload> = PacketCodec.of(
             { p, b ->
                 b.writeString(p.sellerFilter); b.writeString(p.itemFilter)
-                b.writeVarInt(p.itemIds.size); p.itemIds.forEach { b.writeString(it) }
-                b.writeVarInt(p.tmMoves.size); p.tmMoves.forEach { b.writeString(it) }
-                b.writeVarInt(p.enchants.size); p.enchants.forEach { b.writeString(it) }
+                // ⚠ 发送端按读端同一个上限截断（短搜索词能命中上千条，见 [MAX_ITEM_IDS]）
+                val itemIds = p.itemIds.take(MAX_ITEM_IDS)
+                b.writeVarInt(itemIds.size); itemIds.forEach { b.writeString(it) }
+                val moves = p.tmMoves.take(MAX_SEARCH_TERMS)
+                b.writeVarInt(moves.size); moves.forEach { b.writeString(it) }
+                val enchants = p.enchants.take(MAX_SEARCH_TERMS)
+                b.writeVarInt(enchants.size); enchants.forEach { b.writeString(it) }
                 b.writeString(p.sortMode); b.writeInt(p.page); b.writeInt(p.pageSize); b.writeBoolean(
                 p.mineOnly
             )
                 b.writeString(p.currency)
             },
             // 读端用具名参数，读写字段顺序必须一致
+            // ⚠ 2026-10-28：原来是无界 `(0 until readVarInt())` —— 伪造包写 Int.MAX_VALUE 即 OOM，
+            //   与物品市场那份对齐（[readBoundedStrings] 在解码期拦）
             { b ->
                 AdminRequestItemPayload(
                     sellerFilter = b.readString(),
                     itemFilter = b.readString(),
-                    itemIds = (0 until b.readVarInt()).map { b.readString() },
-                    tmMoves = (0 until b.readVarInt()).map { b.readString() },
-                    enchants = (0 until b.readVarInt()).map { b.readString() },
+                    itemIds = b.readBoundedStrings(MAX_ITEM_IDS, "itemIds"),
+                    tmMoves = b.readBoundedStrings(MAX_SEARCH_TERMS, "tmMoves"),
+                    enchants = b.readBoundedStrings(MAX_SEARCH_TERMS, "enchants"),
                     sortMode = b.readString(),
                     page = b.readInt(),
                     pageSize = b.readInt(),
@@ -1732,6 +1774,38 @@ internal fun canFitInInventory(player: ServerPlayerEntity, stack: ItemStack): Bo
 }
 
 object MarketNetwork {
+
+    /**
+     * 物品市场搜索用的**挂单显示名缓存**（挂单 id → 显示名）。
+     *
+     * 客户端搜索索引（`ItemSearchIndex`）只建**默认物品栈**（`ItemStack(item)`，不带组件/NBT），
+     * 拿不到上架时带的 `custom_name`（数据包自定义物品就是这样命名的）⇒ 服务端得从 `itemNbt`
+     * 重建物品栈读显示名（2026-10-28 用户实测「搜 Zapdosite 搜不出来」）。
+     *
+     * - 懒计算：卖家名 / id / 招式 / 附魔都不命中时才重建
+     * - 挂单 id 是稳定的 UUID，内容变化（重新上架）才会换 ⇒ 旧名字不会残留
+     * - LRU 上限 4096；只在请求 handler（主线程）里访问
+     */
+    private val itemSearchDisplayNames = object : LinkedHashMap<UUID, String>(512, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<UUID, String>?) = size > 4096
+    }
+
+    /** 挂单物品的显示名（含 custom_name 原文）；重建失败返回空串，绝不抛 */
+    private fun listingDisplayName(
+        listing: ItemListing,
+        registry: net.minecraft.registry.RegistryWrapper.WrapperLookup
+    ): String {
+        itemSearchDisplayNames[listing.id]?.let { return it }
+        val name = runCatching {
+            val stack = listing.itemNbt?.let { ItemStack.fromNbtOrEmpty(registry, it) }
+                ?: Identifier.tryParse(listing.itemId)
+                    ?.let { Registries.ITEM.getOrEmpty(it).orElse(null) }
+                    ?.let { ItemStack(it) }
+            stack?.name?.string.orEmpty()
+        }.getOrDefault("")
+        if (name.isNotEmpty()) itemSearchDisplayNames[listing.id] = name
+        return name
+    }
 
     fun register() {
         registerS2CType(MarketStatePayload.ID, MarketStatePayload.CODEC)
@@ -2264,9 +2338,12 @@ object MarketNetwork {
                         val idSet = payload.itemIds.take(MAX_ITEM_IDS).toSet()
                         val moveSet = payload.tmMoves.toSet()
                         val enchantSet = payload.enchants.toSet()
+                        val registry = server.overworld.registryManager
                         list.filter {
                             it.sellerName.contains(query, ignoreCase = true) ||
-                                matchesItemQuery(it.itemId, it.itemNbt, idSet, moveSet, enchantSet, server.overworld.registryManager)
+                                matchesItemQuery(it.itemId, it.itemNbt, idSet, moveSet, enchantSet, registry) ||
+                                // 客户端索引只建默认物品栈、拿不到 custom_name ⇒ 服务端按挂单实际显示名再匹一次
+                                listingDisplayName(it, registry).contains(query, ignoreCase = true)
                         }
                     }
                 }
@@ -2290,7 +2367,8 @@ object MarketNetwork {
                             count = listing.count,
                             price = listing.price,
                             currencyName = CurrencyHandler.getCurrencyId(),
-                            currency = currency.name
+                            currency = currency.name,
+                            displayNbt = listing.displayNbt
                         )
                     }
                 }
@@ -2331,7 +2409,8 @@ object MarketNetwork {
                         price = listing.price,
                         fee = 0,
                         detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count, server.registryManager),
-                        currency = listing.currency
+                        currency = listing.currency,
+                        displayNbt = listing.displayNbt
                     )
                 )
                 // 物品名传翻译 Text（客户端按玩家语言渲染），与精灵下架的 speciesText() 一致，不能传裸 itemId；
@@ -2808,10 +2887,16 @@ object MarketNetwork {
                     }
                 }
 
+                val main = player.inventory.main
                 // 重建目标物品，以服务端重建的物品为准（不信任客户端 itemId/itemNbt 的一致性）
-                val diagId = net.minecraft.util.Identifier.tryParse(payload.itemId)
-                val diagItem = diagId?.let { Registries.ITEM.getOrEmpty(it).orElse(null) }
-                val targetStack = ItemStack.fromNbtOrEmpty(player.serverWorld.registryManager, payload.itemNbt)
+                // ➕ 有槽位时**直接用清单栏该槽位的真实物品**：Polymer 等伪装物品的客户端 id 与服务端不同，
+                //   按客户端 NBT 重建会得到服务端背包里不存在的 id ⇒ 永远匹配不上（2026-10-28）
+                val targetStack = payload.slot
+                    .takeIf { it in 0 until main.size }
+                    ?.let { main[it] }
+                    ?.takeIf { !it.isEmpty }
+                    ?.let { it.copy().apply { count = 1 } }
+                    ?: ItemStack.fromNbtOrEmpty(player.serverWorld.registryManager, payload.itemNbt)
                 if (targetStack.isEmpty) {
                     sendToPlayer(
                         player,
@@ -2879,13 +2964,26 @@ object MarketNetwork {
                     return@execute
                 }
 
-                val main = player.inventory.main
+                // main 已在上面（取 targetStack 时）定义
                 var available = 0
                 for (i in 0 until main.size) {
                     val stack = main[i]
                     if (itemsEqualForTrading(stack, targetStack)) available += stack.count
                 }
                 if (available < payload.count) {
+                    // 诊断（2026-10-28）：数据包自定义物品偶发上架失败 —— 打印请求与背包同 id 栈的组件，
+                    // 用来判断是动态组件不一致还是数量问题。拿到结果后这条日志可以删掉
+                    runCatching {
+                        val sameId = (0 until main.size)
+                            .map { main[it] }
+                            .filter { !it.isEmpty && Registries.ITEM.getId(it.item).toString() == payload.itemId }
+                        com.shusheng.cobblemarket.CobbleMarket.LOGGER.warn(
+                            "SellItem rejected: id={} requestedCount={} available={} requestedComponents={} sameIdStackComponents={}",
+                            payload.itemId, payload.count, available,
+                            targetStack.components.toString(),
+                            sameId.map { it.components.toString() }
+                        )
+                    }
                     sendToPlayer(
                         player,
                         MarketResultPayload(false, Text.translatable("cobblemarket.network.not_found"))
@@ -3006,7 +3104,10 @@ object MarketNetwork {
                     createdAt = now,
                     expiresAt = now + com.shusheng.cobblemarket.config.CobbleMarketConfig.listingDurationDays * 24L * 60 * 60 * 1000,
                     status = ListingStatus.ACTIVE,
-                    currency = currency
+                    currency = currency,
+                    // 客户端 id 与服务端真实 id 不同（Polymer 伪装物品）时，额外存一份客户端视角的物品
+                    // 用于列表显示；交易始终用 itemNbt（真实物品）
+                    displayNbt = payload.itemNbt.takeIf { payload.itemId != authoritativeItemId }
                 )
 
                 val state = ItemMarketState.get(server)
@@ -3025,7 +3126,8 @@ object MarketNetwork {
                         price = payload.price,
                         fee = fee,
                         detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count, server.registryManager),
-                        currency = currency
+                        currency = currency,
+                        displayNbt = listing.displayNbt
                     )
                 )
 
@@ -3101,9 +3203,12 @@ object MarketNetwork {
                         val idSet = payload.itemIds.take(MAX_ITEM_IDS).toSet()
                         val moveSet = payload.tmMoves.toSet()
                         val enchantSet = payload.enchants.toSet()
+                        val registry = server.overworld.registryManager
                         byCategory.filter {
                             it.sellerName.contains(query, ignoreCase = true) ||
-                                matchesItemQuery(it.itemId, it.itemNbt, idSet, moveSet, enchantSet, server.overworld.registryManager)
+                                matchesItemQuery(it.itemId, it.itemNbt, idSet, moveSet, enchantSet, registry) ||
+                                // 客户端索引只建默认物品栈、拿不到 custom_name ⇒ 服务端按挂单实际显示名再匹一次
+                                listingDisplayName(it, registry).contains(query, ignoreCase = true)
                         }
                     }
                 }
@@ -3127,7 +3232,8 @@ object MarketNetwork {
                             count = listing.count,
                             price = listing.price,
                             currencyName = CurrencyHandler.getCurrencyId(),
-                            currency = currency.name
+                            currency = currency.name,
+                            displayNbt = listing.displayNbt
                         )
                     }
                 }
@@ -3379,13 +3485,15 @@ object MarketNetwork {
                         //   记录这处是**唯一的漏网**。下架 / 退回 / 上架那几处的 `listing.count` 是对的：
                         //   那时它正好是「本次动作涉及的量」，**别一刀切改**。
                         detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, count, server.registryManager),
-                        currency = listing.currency
+                        currency = listing.currency,
+                        displayNbt = listing.displayNbt
                     )
                 )
 
                 // 物品庆祝动画：与精灵同一口径——所有权首次转到买家名下时播一次。
                 // 数量按本次实际到手传（listing.itemNbt 存的是上架总量，部分购买时不能直接用它）
-                CelebrationNetwork.sendItem(player, listing.itemNbt, count, CelebrationSource.MARKET)
+                // displayNbt 优先：Polymer 伪装物品的真实 NBT 客户端重建为空、动画不会播
+                CelebrationNetwork.sendItem(player, listing.displayNbt ?: listing.itemNbt, count, CelebrationSource.MARKET)
 
                 // 交易后强制落盘（防杀进程/崩溃蒸发，见 PersistHelper）
                 com.shusheng.cobblemarket.util.PersistHelper.requestSave(server)
@@ -3522,7 +3630,8 @@ object MarketNetwork {
                         price = listing.price,
                         fee = 0,
                         detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count, server.registryManager),
-                        currency = listing.currency
+                        currency = listing.currency,
+                        displayNbt = listing.displayNbt
                     )
                 )
 
@@ -3617,7 +3726,9 @@ object MarketNetwork {
                         // 数量同理：物品行与悬停窗要显示「×N」。旧记录没有这一段 ⇒ -1 ⇒ 界面不显示
                         com.shusheng.cobblemarket.util.RecordDetail.countFromDetail(r.detail),
                         // 自定义商店的店名（主商城 / 旧记录 = 空串，界面退回「▣ 商城」）
-                        r.shopName
+                        r.shopName,
+                        // 客户端视角物品（Polymer 伪装物品才有）：界面按它渲染正确物品名
+                        r.displayNbt
                     )
                 }
                 sendToPlayer(player, HistoryDataPayload(entries))
@@ -3651,7 +3762,8 @@ object MarketNetwork {
                             com.shusheng.cobblemarket.util.RecordDetail.rarityFromDetail(r.detail),
                             r.fromShop,
                             com.shusheng.cobblemarket.util.RecordDetail.countFromDetail(r.detail),
-                            r.shopName
+                            r.shopName,
+                            r.displayNbt
                         )
                     }
                 sendToPlayer(player, HistoryDataPayload(entries))
@@ -3735,7 +3847,8 @@ object MarketNetwork {
                         price = listing.price,
                         currencyName = CurrencyHandler.getCurrencyId(),
                         // 待领取里显示的是**这条挂单原本的币种**（可能就是 RP），不能按当前主货币渲染
-                        currency = listing.currency.name
+                        currency = listing.currency.name,
+                        displayNbt = listing.displayNbt
                     )
                 }
                 sendToPlayer(player, ItemReturnDataPayload(entries, totalPages, clampedPage))

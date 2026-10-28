@@ -386,7 +386,13 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
                     return
                 }
                 // 服务端按**槽位号**读它自己的背包（归属天然成立）——与物品上架界面同一套
-                sendToServer(SharePayload(ShareNetwork.KIND_ITEM, player.inventory.selectedSlot.toString()))
+                // ➕ 带客户端视角物品 NBT：Polymer 伪装物品的真实物品客户端重建为空（没图标 / 没悬停窗）
+                val nbt = runCatching {
+                    MinecraftClient.getInstance().world?.registryManager?.let { rm ->
+                        player.mainHandStack.encode(rm, net.minecraft.nbt.NbtCompound()) as? net.minecraft.nbt.NbtCompound
+                    }
+                }.getOrNull()
+                sendToServer(SharePayload(ShareNetwork.KIND_ITEM, player.inventory.selectedSlot.toString(), nbt))
             }
         }
         // ⚠ **发完不要立刻关界面**：要等服务端回包再关。两个原因：

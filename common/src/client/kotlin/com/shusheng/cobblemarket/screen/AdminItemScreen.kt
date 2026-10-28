@@ -314,7 +314,7 @@ class AdminItemScreen : Screen(Text.translatable("cobblemarket.op.item")) {
         tooltipAdvancedLines.clear()
         val registry = client?.world?.registryManager ?: return
         for (entry in newEntries) {
-            val stack = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
+            val stack = ItemStack.fromNbtOrEmpty(registry, entry.renderNbt())
             entryStacks[entry.id] = stack
             // 走统一入口（别直连 getTooltip）：受损物品才会多一行「耐久：X / Y」
             tooltipStackLines[entry.id] = com.shusheng.cobblemarket.client.ItemComponentsDisplay

@@ -58,7 +58,13 @@ data class TransactionRecord(
      * **追加在末尾并给默认值** ⇒ 旧记录读不到就是空串（无法归属到某家店，只出现在全服历史）。
      * ⚠ 按店筛选（商店记录界面）靠它，别拿店名筛（会改名）。
      */
-    val shopId: String = ""
+    val shopId: String = "",
+    /**
+     * **客户端视角的物品 NBT**（Polymer 等伪装物品才有值；空 = 与真实物品一致）。
+     * 历史界面渲染物品名时优先用它 —— 真实物品 id 客户端不认识，按 id 查名字会显示成一串 id。
+     * 末尾追加 + 默认值 ⇒ 旧记录读不到就是空（回退现状）。
+     */
+    val displayNbt: NbtCompound? = null
 ) {
     fun toNbt(): NbtCompound = NbtCompound().apply {
         putLong("timestamp", timestamp)
@@ -77,6 +83,7 @@ data class TransactionRecord(
         putBoolean("fromShop", fromShop)
         putString("shopName", shopName)
         putString("shopId", shopId)
+        displayNbt?.let { put("displayNbt", it) }
     }
 
     companion object {
@@ -99,7 +106,8 @@ data class TransactionRecord(
             fromShop = nbt.contains("fromShop") && nbt.getBoolean("fromShop"),
             // 旧记录 / 主商城 ⇒ 空串（界面退回「商城」）
             shopName = if (nbt.contains("shopName")) nbt.getString("shopName") else "",
-            shopId = if (nbt.contains("shopId")) nbt.getString("shopId") else ""
+            shopId = if (nbt.contains("shopId")) nbt.getString("shopId") else "",
+            displayNbt = if (nbt.contains("displayNbt")) nbt.getCompound("displayNbt") else null
         )
     }
 }

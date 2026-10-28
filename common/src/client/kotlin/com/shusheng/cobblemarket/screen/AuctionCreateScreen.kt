@@ -463,7 +463,8 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
 
     /** 携带物栈（空气视为无）；缓存供行渲染每帧复用 */
     // ── 物品 tab（照搬 ItemSellScreen 本地背包扫描） ──
-    private data class SellItem(val stack: ItemStack, val count: Int)
+    /** [slot] = 背包主栏槽位（Polymer 伪装物品的上架要靠它，见 `CreateItemAuctionPayload.slot`） */
+    private data class SellItem(val stack: ItemStack, val count: Int, val slot: Int = -1)
     private var items = listOf<SellItem>()
 
     private fun loadInventory() {
@@ -477,7 +478,7 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
                 if (idx >= 0) {
                     list[idx] = list[idx].copy(count = list[idx].count + stack.count)
                 } else {
-                    list.add(SellItem(stack.copy(), stack.count))
+                    list.add(SellItem(stack.copy(), stack.count, i))
                 }
             }
         }
@@ -1300,7 +1301,12 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             val itemId = Registries.ITEM.getId(item.stack.item).toString()
             val itemNbt = item.stack.encode(registry, NbtCompound()) as? NbtCompound ?: NbtCompound()
             createInFlight = true
-            sendToServer(CreateItemAuctionPayload(itemId, itemNbt, count, starting, increment, durationIndexToSend, currency.name))
+            // ⚠ 带背包槽位：Polymer 伪装物品的客户端 id 与服务端不同（同物品市场上架）
+            sendToServer(
+                CreateItemAuctionPayload(
+                    itemId, itemNbt, count, starting, increment, durationIndexToSend, currency.name, item.slot
+                )
+            )
         }
         // 不立即关闭：等 onMarketResult 响应（成功跳转拍卖场，失败保留弹窗供改价重试）
     }

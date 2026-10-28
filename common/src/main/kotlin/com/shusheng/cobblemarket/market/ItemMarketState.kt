@@ -208,7 +208,9 @@ class ItemMarketState private constructor() : PersistentState() {
                     fee = 0,
                     detail = com.shusheng.cobblemarket.util.RecordDetail.item(listing.itemNbt, listing.count, player.server.registryManager),
                     // ⚠ 币种从挂单读：漏了会让 RP 物品的归还流水在 CSV 与历史里显示成主货币
-                    currency = listing.currency
+                    currency = listing.currency,
+                    // 客户端视角物品（Polymer 伪装物品才有）：历史界面按它渲染正确名字
+                    displayNbt = listing.displayNbt
                 )
             )
         } catch (e: Exception) {

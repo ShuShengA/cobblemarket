@@ -24,8 +24,19 @@ data class ItemEntry(
      *
      * **故意不给默认值**：服务端哪一处漏填就编译不过，好过静默当成主货币。
      */
-    val currency: String
+    val currency: String,
+    /**
+     * **客户端视角的物品 NBT**（只有 Polymer 等「客户端伪装物品」才有值，普通物品为 null）。
+     *
+     * 服务端真实物品（如 `mega_showdown:x`）客户端根本没有注册表项 ⇒ 拿 [itemNbt] 渲染会变成
+     * Air / 没图标（2026-10-28 用户实测）。列表显示与悬停一律用 [renderNbt]；
+     * **交易逻辑（购买 / 扣物 / 黑名单 / 限价）一律用 [itemNbt]**，别混。
+     * ⚠ 末尾追加（协议铁律）⇒ 两端同版
+     */
+    val displayNbt: NbtCompound? = null
 ) {
+    /** 渲染 / 悬停用的物品 NBT：优先客户端视角；旧挂单 / 普通物品回退真实物品 */
+    fun renderNbt(): NbtCompound = displayNbt ?: itemNbt
     /**
      * 这条挂单是不是 RP 计价 —— **渲染货币单位就读它**。
      * 构造时解析一次（渲染每帧每格都判断，别每帧重新 parse 字符串）。
@@ -42,6 +53,8 @@ data class ItemEntry(
         buf.writeInt(price)
         buf.writeString(currencyName)
         buf.writeString(currency)
+        buf.writeBoolean(displayNbt != null)
+        displayNbt?.let { PacketCodecs.NBT_COMPOUND.encode(buf, it) }
     }
 
     companion object {
@@ -54,7 +67,8 @@ data class ItemEntry(
             buf.readInt(),
             buf.readInt(),
             buf.readString(),
-            buf.readString()
+            buf.readString(),
+            displayNbt = if (buf.readBoolean()) PacketCodecs.NBT_COMPOUND.decode(buf) else null
         )
     }
 }

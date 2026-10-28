@@ -63,7 +63,12 @@ data class AuctionListing(
      * （方案「三条硬要求」第 1、3 条）；`AuctionState.returnToOwner()` 把拍品退回挂单时
      * **必须把币种带下去**，否则玩家在待取回里看到的是主货币。
      */
-    val currency: MarketCurrency = MarketCurrency.PRIMARY
+    val currency: MarketCurrency = MarketCurrency.PRIMARY,
+    /**
+     * **客户端视角的物品 NBT**（Polymer 等伪装物品才有值；空 = 与 [itemNbt] 一致）。
+     * 只用于下发给客户端显示，交易一律用 [itemNbt]。末尾追加 + 默认值 ⇒ 旧档读不到就是空。
+     */
+    val displayNbt: NbtCompound? = null
 ) {
     fun isActive(): Boolean = status == AuctionStatus.ACTIVE
 
@@ -114,6 +119,7 @@ data class AuctionListing(
         putString("status", status.name)
         returnedAt?.let { putLong("returnedAt", it) }
         putString("currency", currency.name)
+        displayNbt?.let { put("displayNbt", it) }
     }
 
     companion object {
@@ -154,7 +160,8 @@ data class AuctionListing(
                 status = AuctionStatus.valueOf(nbt.getString("status")),
                 returnedAt = if (nbt.contains("returnedAt")) nbt.getLong("returnedAt") else null,
                 // 旧档没这个键（getString 给空串）/ 值是垃圾 ⇒ fromStored 一律落主货币，不抛不 warn
-                currency = MarketCurrency.fromStored(nbt.getString("currency"))
+                currency = MarketCurrency.fromStored(nbt.getString("currency")),
+                displayNbt = if (nbt.contains("displayNbt")) nbt.getCompound("displayNbt") else null
             )
         }
     }
@@ -278,7 +285,9 @@ class AuctionState private constructor() : PersistentState() {
                             detail = if (auction.type == AuctionType.POKEMON)
                                 com.shusheng.cobblemarket.util.RecordDetail.pokemon(auction.pokemonNbt, server, auction.extraData, auction.level, auction.shiny)
                             else
-                                com.shusheng.cobblemarket.util.RecordDetail.item(auction.itemNbt, auction.count, server.registryManager)
+                                com.shusheng.cobblemarket.util.RecordDetail.item(auction.itemNbt, auction.count, server.registryManager),
+                            // 客户端视角物品（Polymer 伪装物品才有）：历史界面按它渲染正确名字
+                            displayNbt = auction.displayNbt
                         )
                     )
                 } catch (e: Exception) {

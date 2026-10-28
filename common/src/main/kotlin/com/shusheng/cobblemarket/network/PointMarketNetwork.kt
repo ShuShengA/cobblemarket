@@ -20,6 +20,7 @@ import com.shusheng.cobblemarket.currency.MAIN_SHOP_ID
 import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.PointMarketBuyResult
 import com.shusheng.cobblemarket.currency.PointMarketError
+import com.shusheng.cobblemarket.currency.PointMarketFactory
 import com.shusheng.cobblemarket.currency.PointMarketService
 import com.shusheng.cobblemarket.currency.PointShopSnapshotState
 import com.shusheng.cobblemarket.currency.PointShopState
@@ -39,6 +40,7 @@ import com.shusheng.cobblemarket.util.SpeciesText
 import com.shusheng.cobblemarket.util.TypeTextColors
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.network.PacketByteBuf
+import net.minecraft.registry.RegistryWrapper
 import net.minecraft.network.codec.PacketCodec
 import net.minecraft.network.packet.CustomPayload
 import net.minecraft.server.MinecraftServer
@@ -1169,6 +1171,31 @@ object PointMarketNetwork {
     /** ⚠ 并发表：写入在主线程，[onPlayerDisconnect] 在**网络线程**清（同 [RequestThrottle] 的做法） */
     private val openedFromNpc = ConcurrentHashMap<UUID, OpenedFromNpc>()
 
+    /**
+     * 商店搜索用的**物品显示名缓存**（`entryId` → 显示名）。
+     *
+     * 数据包自定义物品的显示名（`custom_name`）客户端不认识，只能由服务端从组件快照重建物品读出来
+     * （[PointMarketFactory.createItems]）。重建只在 `itemId` 没命中搜索词时才做，结果按 `entryId` 缓存。
+     *
+     * - `entryId` 每次保存都会换新（见 [ShopEntry.entryId]）⇒ 改价 / 重上架后旧名字不会残留
+     * - LRU 上限 4096 条（一家店最多 2048 格，够覆盖多家店同时被搜）
+     * - 只在搜索 handler（主线程 `server.execute`）里访问，不需要并发容器
+     */
+    private val searchDisplayNames = object : LinkedHashMap<String, String>(512, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 4096
+    }
+
+    /** 物品商品的显示名（精灵走 species id，客户端本地化后已能命中）；失败返回空串，绝不抛 */
+    private fun searchDisplayName(entry: ShopEntry, registry: RegistryWrapper.WrapperLookup): String {
+        val spec = entry.item ?: return ""
+        if (entry.entryId.isNotEmpty()) searchDisplayNames[entry.entryId]?.let { return it }
+        val name = runCatching {
+            PointMarketFactory.createItems(spec, 1, registry)?.firstOrNull()?.name?.string.orEmpty()
+        }.getOrDefault("")
+        if (entry.entryId.isNotEmpty() && name.isNotEmpty()) searchDisplayNames[entry.entryId] = name
+        return name
+    }
+
     fun onPlayerDisconnect(player: ServerPlayerEntity) {
         openedFromNpc.remove(player.uuid)
         // 编辑锁：断线立刻释放（不等 15 分钟超时），给正在看这些店的玩家广播解锁。
@@ -1259,7 +1286,14 @@ object PointMarketNetwork {
                         val id = if (kind == ShopEntry.KIND_POKEMON) entry.pokemon?.species.orEmpty()
                         else entry.item?.itemId.orEmpty()
                         val lower = id.lowercase()
-                        if (lower.isNotEmpty() && (lower in ids || lower.contains(lowerQuery))) {
+                        val idHit = lower.isNotEmpty() && (lower in ids || lower.contains(lowerQuery))
+                        // 数据包自定义物品（客户端本地名称表不认识）只能按**显示名**匹配：
+                        // 服务端从组件快照重建物品、读 custom_name 原文（中/英文都原样）。
+                        // ⚠ 只在 id 没命中时才重建（懒计算，结果按 entryId 缓存）
+                        val nameHit = !idHit && kind == ShopEntry.KIND_ITEM &&
+                            searchDisplayName(entry, server.registryManager)
+                                .contains(lowerQuery, ignoreCase = true)
+                        if (idHit || nameHit) {
                             PointMarketSlotInfo(index, entry)
                         } else null
                     }

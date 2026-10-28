@@ -406,7 +406,14 @@ object PointMarketService {
                 detail = "",
                 currency = currency,
                 primaryType = primaryTypeForHistory(player, null, replaced.pokemon),
-                shopId = shopId
+                shopId = shopId,
+                // 客户端视角物品（商品规格重建）：历史界面按它渲染正确名字
+                displayNbt = replaced.item?.let { spec ->
+                    runCatching {
+                        PointMarketFactory.createItems(spec, 1, server.registryManager)?.firstOrNull()
+                            ?.encode(server.registryManager, net.minecraft.nbt.NbtCompound()) as? net.minecraft.nbt.NbtCompound
+                    }.getOrNull()
+                }
             )
         )
         return null
@@ -748,7 +755,14 @@ object PointMarketService {
                 // 标记来源：界面据此把卖家列画成店名 /「▣ 商城」（上架 / 下架那两条**不标**）
                 fromShop = true,
                 shopName = custom?.name.orEmpty(),
-                shopId = shopId
+                shopId = shopId,
+                // 客户端视角物品（商品规格是客户端上架时发来的那份）：历史界面按它渲染正确名字。
+                // 精灵商品没有物品栈 ⇒ null（历史界面按物种 key 显示）
+                displayNbt = deliveredItems.firstOrNull()?.let { stack ->
+                    runCatching {
+                        stack.encode(server.registryManager, net.minecraft.nbt.NbtCompound()) as? net.minecraft.nbt.NbtCompound
+                    }.getOrNull()
+                }
             )
         )
         // 把造出来的实物一并交出去：调用方要拿它发庆祝动画（概率闪光只有此刻才确定）。

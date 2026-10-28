@@ -463,7 +463,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         entryStacks.clear()
         val registry = client?.world?.registryManager ?: return
         entries.forEach { entry ->
-            entryStacks[entry.id] = ItemStack.fromNbtOrEmpty(registry, entry.itemNbt)
+            entryStacks[entry.id] = ItemStack.fromNbtOrEmpty(registry, entry.renderNbt())
         }
     }
 
@@ -1217,7 +1217,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
      */
     private fun buyInfoLines(entry: ItemEntry?): List<Text> {
         val rm = client?.world?.registryManager ?: return emptyList()
-        val stack = entry?.let { ItemStack.fromNbtOrEmpty(rm, it.itemNbt) } ?: return emptyList()
+        val stack = entry?.let { ItemStack.fromNbtOrEmpty(rm, it.renderNbt()) } ?: return emptyList()
         // ⚠ **丢掉词条第一行** —— `itemTooltip` 的第一行就是物品名，而弹窗已经在图标下方
         //   单独画了一行（[renderBuyDialogBackground]，按稀有度着色）。不丢就是同一个名字显示两遍
         //   （用户 2026-09-26 报「同时存在两个物品名」）。
@@ -1394,7 +1394,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
     private fun renderCancelDialogBackground(context: DrawContext, mouseX: Int, mouseY: Int) {
         val entry = cancelEntry ?: return
         val registry = client?.world?.registryManager
-        val stack = registry?.let { ItemStack.fromNbtOrEmpty(it, entry.itemNbt) }
+        val stack = registry?.let { ItemStack.fromNbtOrEmpty(it, entry.renderNbt()) }
         // ── 尺寸全部交给 [DialogGeometry]（样板写法：宽度取最宽的那项、高度取内容底）──
         // 内容宽：物品名 / 提示行 / 按钮行（两枚 80 按钮 + 中间 10px）三者取最大
         val contentW = maxOf(
@@ -1479,7 +1479,7 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
         val centerX = width / 2
         // 物品栈先建：图标与物品名都用它渲染，下面的内容测宽也要用（别建两次）
         val registry = client?.world?.registryManager
-        val dialogStack = registry?.let { ItemStack.fromNbtOrEmpty(it, entry.itemNbt) }
+        val dialogStack = registry?.let { ItemStack.fromNbtOrEmpty(it, entry.renderNbt()) }
         // 宽度**按内容算**：图标 / 物品名 / 按钮都居中在 ±85 内，而两行文字与输入框
         // 左对齐于 centerX − 80（位置保持不动，用户 2026-09-26 拍板）⇒ 左半区固定要 85，
         // 右半区取「文字行宽 − 80」与 85 的较大者；各留 12px 边距。
