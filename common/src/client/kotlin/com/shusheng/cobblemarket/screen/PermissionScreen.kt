@@ -167,13 +167,18 @@ class PermissionScreen : Screen(Text.translatable("cobblemarket.perm.title")) {
          * ⚠ 214 已接近小窗（GUI 缩放「自动」时逻辑屏可能只有 270 高）的可用上限 ——
          * 再加节点就得改**分组 / 分页**，不能再靠长高解决。
          */
-        val NODE_ROWS = (MarketPermissions.ALL.size + 1) / 2
+        // ⚠ 2026-10-30 起改成 getter：外部节点（附属模组注册）可能在 PermissionScreen
+        //   类加载之后才出现，写成 val 会在类初始化时把行数冻死，最后一个节点被画到弹窗外面。
+        val NODE_ROWS: Int
+            get() = (MarketPermissions.ALL.size + 1) / 2
 
         /** 保存/取消行的顶边：末行按钮底 + 8px（比行间 4px 宽，把节点区与操作区分开） */
-        val DIALOG_BTN_Y = NODE_GRID_Y + (NODE_ROWS - 1) * NODE_ROW_H + 16 + 8
+        val DIALOG_BTN_Y: Int
+            get() = NODE_GRID_Y + (NODE_ROWS - 1) * NODE_ROW_H + 16 + 8
 
         /** 弹窗高 = 按钮行 20 + 底部余 10px（弹窗按钮距边框的统一值，见 CLAUDE.md） */
-        val DIALOG_H = DIALOG_BTN_Y + 20 + 10
+        val DIALOG_H: Int
+            get() = DIALOG_BTN_Y + 20 + 10
     }
 
     override fun init() {

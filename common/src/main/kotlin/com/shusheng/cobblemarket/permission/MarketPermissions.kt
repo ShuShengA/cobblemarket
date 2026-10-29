@@ -152,10 +152,48 @@ object MarketPermissions {
      * ⚠ 原 `CONFIG`（服务器配置）节点已于 2026-09-23 删除：服务器配置改为**服主专属**，
      * 不再作为可授予的节点 —— 想放权就把对方 UUID 加进 `serverOwners`。
      */
-    val ALL = listOf(
+    private val BUILTIN = listOf(
         MARKET, HISTORY, BAN, BLACKLIST, PRICE_LIMIT, AUCTION, BUY_ORDER, FINANCE, MARKET_SWITCH,
         POINTS_CHECK, POINTS_CODE, POINTS_ORDER, POINTS_SHOP, OVERVIEW
     )
+
+    /**
+     * 附属模组注册的**外部节点**（2026-10-30 新增，1.3.5）。
+     *
+     * 需求来自 CobbleKit：它只装主模组时走自己的 OP 规则，装了主模组就要用主模组的权限体系。
+     * 注册后节点会出现在权限编辑界面、`/market perm grant|revoke|list` 里 —— 与内置节点同权同判。
+     *
+     * ⚠ 显示文案由**注册方自己的 lang** 提供（`cobblemarket.perm.node.<短名>` 与 `.desc`）：
+     *   语言文件按 key 全局合并，主模组不需要认识附属模组。
+     * ⚠ 目前**只有 1 个外部槽位的余量**（14 内置 + 1 外部 = 15 ⇒ 权限弹窗 8 行、高 234）。
+     *   再多就得给权限界面加分组 / 分页，别硬长高（见 `PermissionScreen` 的注释）。
+     */
+    private val externalNodes = java.util.concurrent.CopyOnWriteArrayList<String>()
+
+    /**
+     * 全部管理节点（快照、入口判定、`/market perm list` 与权限编辑界面的按钮都用它）。
+     * **顺序 = 权限编辑弹窗里按钮的排列顺序**；外部节点追加在最后。
+     */
+    val ALL: List<String>
+        get() = if (externalNodes.isEmpty()) BUILTIN else BUILTIN + externalNodes
+
+    /**
+     * 注册一个附属模组的权限节点（**服务端 / 客户端都要注册**：服务端用于鉴权与命令，
+     * 客户端用于权限编辑界面的按钮）。
+     *
+     * 只接受 `cobblemarket.admin.` 前缀，防止附属模组把判定写成别的名字体系；
+     * 重复注册（含与内置节点重名）直接忽略。
+     */
+    fun registerExternalNode(node: String) {
+        if (!node.startsWith(PREFIX)) {
+            CobbleMarket.LOGGER.warn(
+                "MarketPermissions: external node '{}' ignored (must start with '{}')", node, PREFIX
+            )
+            return
+        }
+        if (node in BUILTIN || node in externalNodes) return
+        externalNodes += node
+    }
 
     /**
      * 是不是服主（**唯一恒真的超级权限**）：UUID 在配置的 `serverOwners` 名单里。

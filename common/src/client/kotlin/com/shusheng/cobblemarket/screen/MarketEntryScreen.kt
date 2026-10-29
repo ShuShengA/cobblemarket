@@ -425,6 +425,30 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 顺便问一次背景图：服主换图后，入口按钮的图标下次打开这个界面就跟着变（服务端没变只回版本号）
         IdCardBackgroundTexture.requestRefresh()
 
+        // 外部工具入口（CobbleKit 等附属模组经 EntryButtonApi 注册，2026-10-30 新增 1.3.5）：
+        // 固定空槽 = ID 卡中心槽右侧、分享按钮左侧（实测中心到分享有 40px，正好一颗 22px）。
+        // ⚠ 主模组不引用附属模组的任何类 —— 没注册就不画，其余槽位一个都不动。
+        run {
+            val externals = com.shusheng.cobblemarket.client.api.EntryButtonApi.registered()
+            if (externals.isNotEmpty()) {
+                com.shusheng.cobblemarket.client.api.EntryButtonApi.warnIfOverflow()
+                val external = externals.first()
+                val externalBtn = NineSliceButton(
+                    centerSlotX + iconStep, cornerY,
+                    cornerSize, cornerSize,
+                    Text.literal(""),
+                    { external.onClick() },
+                    iconLeft = external.icon,
+                    iconTexW = external.iconTexW,
+                    iconTexH = external.iconTexH,
+                    iconScale = external.iconScale,
+                    texture = BUTTON_TEXTURE_S, texH = BUTTON_TEX_H_S,
+                )
+                externalBtn.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(external.tooltip))
+                entryButtons += addDrawableChild(externalBtn)
+            }
+        }
+
         // 喵喵银行（金融系统入口）：求购单右侧，所有玩家可见；与求购单间隙 4px（同总开关→服务器配置间隙）
         // 不套 openIfMarketEnabled：关市期间看账/还款照常可用，界面内「新增借贷」按钮再按开关禁用（只拦新交易不卡资产）
         val meowthBankBtn = NineSliceButton(
