@@ -17,6 +17,7 @@
 
 - **Depositing more than the wallet balance gave no feedback and cleared the amount**: an over-balance amount now plays a failure sound immediately and keeps the input; server-side deposit / withdraw rejections also play a failure sound now
 - **The claim button greyed out after claiming only part of a claim shop's stock**: it now stays usable while any item can still be claimed, and greys out only when there is truly nothing left
+- **The Player Overview sort-direction button always showed ↑**: switching sort direction left the icon unchanged even though sorting worked; it now shows ↑ / ↓ correctly
 - **Deleting a claim shop and recreating it with the same shop ID inherited the old claim refresh countdown**: it showed "Refreshes in X" yet allowed claiming; deleting a shop now clears every player's claim period on that shop (claim records are unaffected)
 - **Withdrawing more than the deposit balance was silently blocked**: it now shows "Not enough deposited" (previously only a failure sound)
 - **Hovering an item auction broadcast in chat showed a too-narrow panel with truncated auction info and the currency symbol overlapping the border**: the item panel was sized only from the item's tooltip; it now also measures the auction footer (seller / current price / starting price / minimum increment / end time / leader) and widens to fit, with room reserved for the currency unit after each amount
