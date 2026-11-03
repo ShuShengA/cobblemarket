@@ -1,5 +1,7 @@
 # Changelog
 
+## 1.3.6 (in development, unreleased)
+
 ## 1.3.5 (released)
 
 ### New Features
