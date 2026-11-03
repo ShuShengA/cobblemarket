@@ -9,7 +9,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  * **给附属模组用的入口按钮注册 API**（2026-10-30 新增，1.3.5）。
  *
  * 背景：主模组的入口界面底部、ID 卡与「分享」之间有一个**固定空槽**（22×22）。
- * 附属模组（如 CobbleKit）在自己的客户端初始化时注册一颗按钮，主模组只负责画；
+ * 附属模组在自己的客户端初始化时注册一颗按钮，主模组只负责画；
  * **主模组不引用附属模组的任何类** ⇒ 删掉附属模组的 jar，按钮自然消失，其余槽位不动。
  *
  * 规则：
@@ -23,7 +23,7 @@ object EntryButtonApi {
 	/**
 	 * 一颗外部入口按钮。
 	 *
-	 * @property id 唯一标识（重复注册会被忽略），建议用 modid 前缀，如 `cobblekit:main`
+	 * @property id 唯一标识（重复注册会被忽略），建议用 modid 前缀，如 `myaddon:main`
 	 * @property icon 图标纹理（注册方自己的命名空间）
 	 * @property iconTexW / [iconTexH] 源图实际尺寸（48×48 缩到 18×18 显示是入口按钮的惯例）
 	 * @property iconScale 显示缩放；传 `18f / iconTexW` 即按 18×18 显示

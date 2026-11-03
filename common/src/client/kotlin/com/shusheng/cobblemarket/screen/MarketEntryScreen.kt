@@ -427,7 +427,7 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         // 顺便问一次背景图：服主换图后，入口按钮的图标下次打开这个界面就跟着变（服务端没变只回版本号）
         IdCardBackgroundTexture.requestRefresh()
 
-        // 外部工具入口（CobbleKit 等附属模组经 EntryButtonApi 注册，2026-10-30 新增 1.3.5）：
+        // 外部工具入口（附属模组经 EntryButtonApi 注册，2026-10-30 新增 1.3.5）：
         // 固定空槽 = ID 卡中心槽右侧、分享按钮左侧（实测中心到分享有 40px，正好一颗 22px）。
         // ⚠ 主模组不引用附属模组的任何类 —— 没注册就不画，其余槽位一个都不动。
         run {
