@@ -1852,11 +1852,13 @@ object FinanceNetwork {
                 val now = System.currentTimeMillis()
                 if (!CobbleMarketConfig.financeEnabled) {
                     player.sendMessage(Text.translatable("cobblemarket.loan.finance_disabled").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)
                     return@execute
                 }
                 val amount = payload.amount
                 if (amount <= 0 || amount > Int.MAX_VALUE) {
                     player.sendMessage(Text.translatable("cobblemarket.loan.invalid_amount").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)
                     return@execute
                 }
                 // 分批扣款（防 Int 溢出）+ 入池 + 记账（利息先结算入本金）
@@ -1869,6 +1871,9 @@ object FinanceNetwork {
                         ).formatted(Formatting.RED),
                         false
                     )
+                    // 扣款失败（余额不足）→ 失败音；此前失败路径**完全静默**，客户端只看到一行聊天红字
+                    //（2026-11-02 用户报「输入大于余额点存款没有任何声音提示」）
+                    sendResultSound(player, false)
                     return@execute
                 }
                 state.depositReserve(amount)
@@ -1897,17 +1902,20 @@ object FinanceNetwork {
                 val amount = payload.amount
                 if (amount <= 0) {
                     player.sendMessage(Text.translatable("cobblemarket.loan.invalid_amount").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)
                     return@execute
                 }
                 val balance = state.getDepositBalance(player.uuid, now)
                 if (balance <= 0) {
                     player.sendMessage(Text.translatable("cobblemarket.deposit.empty").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)
                     return@execute
                 }
                 // 结算取出：利息入账后取出；池出账 + 发放（背包满挂待领取兜底）
                 val (principalPart, interestPart) = state.withdrawMoney(player.uuid, amount, now)
                 if (principalPart + interestPart <= 0) {
                     player.sendMessage(Text.translatable("cobblemarket.deposit.empty").formatted(Formatting.RED), false)
+                    sendResultSound(player, false)
                     return@execute
                 }
                 val take = principalPart + interestPart

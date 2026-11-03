@@ -7,6 +7,7 @@ import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.util.TypeFilter
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
+import com.cobblemon.mod.common.client.CobblemonClient
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.amountUnitWidth
 import com.shusheng.cobblemarket.client.currencyUnitWidth
@@ -2144,6 +2145,17 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         else PokemonCelebrationAnimation.Origin.ofIcon(
             x = iconX, y = iconY, size = iconSize, centerAnchorY = false
         )
+        // 图鉴状态角标（**左上角**，与小锁同位置 / 同尺寸）：已捕捉 / 已遇见，没遇到过不画。
+        // ⚠ 画在 `confirmRenderable` 块**之外**（与非法印章同理）：角标是「这条挂单的物种」的属性，
+        //   模型还没建好时也该看得见
+        Identifier.tryParse(entry.speciesId)?.let { speciesId ->
+            EntryBadgeRenderer.drawPokedexBadge(
+                context,
+                CobblemonClient.clientPokedexData.getKnowledgeForSpecies(speciesId),
+                iconX, iconY, iconSize
+            )
+        }
+
         // 「非法」角标：贴图标**右上角**（与小锁镜像对称，见 [EntryBadgeRenderer.drawIllegalBadge]）。
         // ⚠ 画在 `confirmRenderable` 块**之外** —— 图标槽本来就先画了，角标是「这条挂单的属性」，
         //   不该跟着 3D 模型一起等（模型还没建好时也该看得见）
@@ -2302,6 +2314,15 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             val tw = textRenderer.getWidth(initial)
             context.drawTextWithShadow(textRenderer, initial, x + (size - tw) / 2, y + (size - 8) / 2, 0xFFFFFF)
         }
+        // 图鉴状态角标（**左上角**，与小锁同位置 / 同尺寸）：已捕捉 / 已遇见，没遇到过不画。
+        // 判据按**物种**取客户端图鉴的最高等级（任意形态捕捉过 = 已捕捉）—— 纯客户端数据、无网络包。
+        // ⚠ 与右上角「非法」印章各占一角，互不遮挡；锁只出现在「选精灵去卖」那两屏，不会同时出现。
+        EntryBadgeRenderer.drawPokedexBadge(
+            context,
+            CobblemonClient.clientPokedexData.getKnowledgeForSpecies(data.renderable.species.resourceIdentifier),
+            x, y, size
+        )
+
         // 「非法」角标：图标**右上角**那枚印章（与小锁左上角镜像对称，见 [EntryBadgeRenderer.drawIllegalBadge]）。
         // ⚠ 判据取数走**同一个下标**（`listings.getOrNull(index)`，与上面 fallback 一致）——
         //   列表是筛选后的视图，下标对不上就会把 A 的角标画到 B 头上

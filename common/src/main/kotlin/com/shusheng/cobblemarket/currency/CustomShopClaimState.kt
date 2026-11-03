@@ -85,6 +85,20 @@ class CustomShopClaimState private constructor() : PersistentState() {
         return p.startedAt + periodMillis
     }
 
+    /**
+     * 删店时清掉这家店**所有玩家**的周期进度。
+     *
+     * ⚠ 必须清：店 id 是服主创建时填的，删掉后可以**用同一个 id 重建**；不清的话新店会继承
+     *   旧周期 —— 打开就显示「刷新剩余 X 分钟」（而格子重建后 `entryId` 是新的、剩余满额，
+     *   于是又显示能领），2026-11-02 用户实测报出。领取记录（交易历史）不受影响，照常保留。
+     *
+     * @param shopId 已规整的店 id（调用方传 `trim().lowercase()`，与 [CustomShopState] 一致）
+     */
+    fun clearShop(shopId: String) {
+        val prefix = "$shopId|"
+        if (periods.keys.removeAll { it.startsWith(prefix) }) markDirty()
+    }
+
     private fun key(shopId: String, playerUuid: UUID): String = "$shopId|$playerUuid"
 
     // ── 存档 ──

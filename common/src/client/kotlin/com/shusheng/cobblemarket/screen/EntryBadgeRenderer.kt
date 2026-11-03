@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.cobblemon.mod.common.api.pokedex.PokedexEntryProgress
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.shusheng.cobblemarket.util.ItemNameText
 import com.shusheng.cobblemarket.util.MoveText
@@ -197,6 +198,17 @@ object EntryBadgeRenderer {
     /** 锁图的实际边长（20×20；绘制时按目标尺寸缩放采样） */
     private const val LOCK_TEX_SIZE = 20
 
+    /** 图鉴「已捕捉」图标（14×14）—— Cobblemon 原版，与玩家总览的图鉴行同一张 */
+    private val DEX_CAUGHT_TEX = Identifier.of("cobblemon", "textures/gui/pokedex/caught_icon.png")
+
+    /**
+     * 图鉴「遇见 / 捕捉」**组合图**（14×28）：**上半 = 已遇见**、下半 = 已捕捉。
+     * 我们只画上半（`vOffset = 0`、采样高 14）—— 与 `OverviewText.DEX_SEEN_ICON` 同一张、同一裁法。
+     */
+    private val DEX_SEEN_TEX = Identifier.of("cobblemon", "textures/gui/pokedex/caught_seen_icon.png")
+    private const val DEX_TEX_W = 14
+    private const val DEX_SEEN_TEX_H = 28
+
     /**
      * 「非法」印章图（48×48）—— **与 RP 商城那两处是同一张**，所以**只在这里声明一份**，
      * 别处一律引用它（[PointsMarketScreen] 的编辑窗开关 / 格子角标读的也是这份）。
@@ -299,7 +311,12 @@ object EntryBadgeRenderer {
      */
     private fun drawCornerBadge(
         context: DrawContext, texture: Identifier, texSize: Int,
-        x: Int, y: Int, size: Int, rightSide: Boolean
+        x: Int, y: Int, size: Int, rightSide: Boolean,
+        /**
+         * **组合图**（14×28 取上半）用：采样区高 / 整图高 / 采样纵偏移。
+         * 默认 = 正方形整图（锁 / 印章），行为与原先完全一致。
+         */
+        sampleH: Int = texSize, fullH: Int = texSize, vOffset: Int = 0
     ): IntArray {
         // 屏幕上的目标边长（图标三成，小图标有下限）
         val badge = maxOf((size * BADGE_SIZE_RATIO).toInt(), BADGE_MIN)
@@ -309,7 +326,7 @@ object EntryBadgeRenderer {
         context.matrices.push()
         context.matrices.translate(bx.toFloat(), by.toFloat(), 0f)
         context.matrices.scale(scale, scale, 1f)
-        context.drawTexture(texture, 0, 0, 0f, 0f, texSize, texSize, texSize, texSize)
+        context.drawTexture(texture, 0, 0, 0f, vOffset.toFloat(), texSize, sampleH, texSize, fullH)
         context.matrices.pop()
         return intArrayOf(bx, by, badge, badge)
     }
@@ -331,6 +348,34 @@ object EntryBadgeRenderer {
     fun drawUntradeableLock(context: DrawContext, x: Int, y: Int, size: Int) {
         drawCornerBadge(context, UNTRADEABLE_LOCK_TEX, LOCK_TEX_SIZE, x, y, size, rightSide = false)
     }
+
+    /**
+     * 精灵图标**左上角**的「图鉴状态」角标 —— 与 [drawUntradeableLock] **同一位置、同一尺寸**
+     * （两者永远不会同时出现：锁只画在「选精灵去卖」那两屏，本角标只画在市场 / 拍卖场的列表行）。
+     *
+     * - [PokedexEntryProgress.OWNED] → 已捕捉（`caught_icon`）
+     * - [PokedexEntryProgress.SEEN] → 已遇见但未捕捉（组合图上半）
+     * - [PokedexEntryProgress.UNREGISTERED] → 没遇到过，**不画**
+     *
+     * 判据是**玩家自己**的客户端图鉴（`CobblemonClient.clientPokedexData`），按**物种**取所有形态里
+     * 的最高等级 ⇒ 任意形态捕捉过就算「已捕捉」；纯客户端数据、不涉及网络包。
+     *
+     * @return 画出来的矩形 `[x, y, 边长, 边长]`（未遇见时全 0）—— 与 [drawIllegalBadgeLeft] 同口径，
+     *   RP 商城格子要在它**右侧并排**画第二枚角标（用户 2026-11-02 定：非法在左、图鉴在右）
+     *
+     * ⚠ 与锁图一样是 Cobblemon 的**内部资源路径**，升级大版本时复核一眼（图还在不在 / 尺寸变没变）。
+     */
+    fun drawPokedexBadge(context: DrawContext, progress: PokedexEntryProgress, x: Int, y: Int, size: Int): IntArray =
+        when (progress) {
+            PokedexEntryProgress.OWNED -> drawCornerBadge(
+                context, DEX_CAUGHT_TEX, DEX_TEX_W, x, y, size, rightSide = false
+            )
+            PokedexEntryProgress.SEEN -> drawCornerBadge(
+                context, DEX_SEEN_TEX, DEX_TEX_W, x, y, size, rightSide = false,
+                sampleH = DEX_TEX_W, fullH = DEX_SEEN_TEX_H
+            )
+            PokedexEntryProgress.UNREGISTERED -> IntArray(4)
+        }
 
     /**
      * 在精灵图标**右上角**盖一枚「非法」印章 —— 服主 / 数据包标过 `cobblemarket:illegal` 的精灵。

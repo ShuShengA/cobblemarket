@@ -2,6 +2,7 @@ package com.shusheng.cobblemarket.network
 
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.config.CurrencyHandler
+import com.shusheng.cobblemarket.finance.FinanceState
 import com.shusheng.cobblemarket.util.RequestThrottle
 import com.shusheng.cobblemarket.market.MarketState
 import com.shusheng.cobblemarket.platform.registerC2S
@@ -40,7 +41,15 @@ data class BalanceDataPayload(
      */
     val pointsBalance: String = "",
     /** RP 原始数值：HUD 变动浮字用差值对比 */
-    val pointsRaw: Long = 0L
+    val pointsRaw: Long = 0L,
+    /**
+     * **喵喵银行存款余额**（已千分位；2026-11-03 新增）：余额 HUD 在「主货币」与「RP」之间
+     * 显示这一行。空串 = 0（HUD 不显示该行）。
+     * ⚠ 与主货币同一份快照发出：存款利息随时间增长，靠余额 HUD 的 2 秒兜底轮询刷新。
+     */
+    val depositBalance: String = "",
+    /** 存款原始数值：HUD 判断「> 0 才显示」用（格式化串可能有千分位，不能直接判 0） */
+    val depositBalanceRaw: Long = 0L
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -49,6 +58,7 @@ data class BalanceDataPayload(
             { p, b ->
                 b.writeString(p.balance); b.writeLong(p.pendingBalance); b.writeString(p.currencyName); b.writeLong(p.balanceRaw)
                 b.writeString(p.pointsBalance); b.writeLong(p.pointsRaw)
+                b.writeString(p.depositBalance); b.writeLong(p.depositBalanceRaw)
             },
             { b ->
                 // ⚠ 读写顺序必须一致（payload 顺序铁律）；读端具名，错位一眼可见
@@ -58,7 +68,9 @@ data class BalanceDataPayload(
                     currencyName = b.readString(),
                     balanceRaw = b.readLong(),
                     pointsBalance = b.readString(),
-                    pointsRaw = b.readLong()
+                    pointsRaw = b.readLong(),
+                    depositBalance = b.readString(),
+                    depositBalanceRaw = b.readLong()
                 )
             }
         )
@@ -100,6 +112,9 @@ object BalanceNetwork {
     fun sendBalanceTo(player: ServerPlayerEntity) {
         val raw = CurrencyHandler.getBalance(player)
         val (pointsBal, pointsRaw) = pointsHudFields(player)
+        // 存款余额（含未结算利息）：HUD 第三行用；0 时发空串（HUD 不显示该行）
+        val deposit = FinanceState.get(player.server)
+            .getDepositBalance(player.uuid, System.currentTimeMillis())
         sendToPlayer(
             player,
             BalanceDataPayload(
@@ -108,7 +123,9 @@ object BalanceNetwork {
                 currencyName = CurrencyHandler.getCurrencyId(),
                 balanceRaw = raw.min(java.math.BigInteger.valueOf(Long.MAX_VALUE)).toLong(),
                 pointsBalance = pointsBal,
-                pointsRaw = pointsRaw
+                pointsRaw = pointsRaw,
+                depositBalance = if (deposit > 0L) formatBalance(java.math.BigInteger.valueOf(deposit)) else "",
+                depositBalanceRaw = deposit
             )
         )
     }
@@ -125,6 +142,8 @@ object BalanceNetwork {
                 val bal = formatBalance(raw)
                 val pending = MarketState.get(server).getPendingBalance(player.uuid)
                 val (pointsBal, pointsRaw) = pointsHudFields(player)
+                val deposit = FinanceState.get(server)
+                    .getDepositBalance(player.uuid, System.currentTimeMillis())
                 sendToPlayer(
                     player,
                     BalanceDataPayload(
@@ -133,7 +152,9 @@ object BalanceNetwork {
                         currencyName = CurrencyHandler.getCurrencyId(),
                         balanceRaw = raw.min(java.math.BigInteger.valueOf(Long.MAX_VALUE)).toLong(),
                         pointsBalance = pointsBal,
-                        pointsRaw = pointsRaw
+                        pointsRaw = pointsRaw,
+                        depositBalance = if (deposit > 0L) formatBalance(java.math.BigInteger.valueOf(deposit)) else "",
+                        depositBalanceRaw = deposit
                     )
                 )
             }

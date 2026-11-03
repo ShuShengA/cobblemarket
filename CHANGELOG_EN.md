@@ -2,6 +2,25 @@
 
 ## 1.3.5 (in development, unreleased)
 
+### New Features
+
+- **The balance HUD can show your bank deposit**: a new "Show bank deposit balance" toggle in the entry settings (on by default); when on, the HUD shows your Meowth Bank deposit as an extra row between the main currency and RP (hidden when the deposit is 0), with green + / red - change floats like the main currency and RP rows
+- **Chat showcase previews can be pinned**: hovering a showcase broadcast in chat used to lose the preview as soon as new messages pushed it away; now a hover tooltip says "Click to pin on screen for Xs" — clicking keeps the preview on screen (new chat messages and moving the mouse no longer hide it), and clicking again cancels early. The pin duration is configurable in the gear settings on the market entry screen (default 5 seconds)
+- **Pokédex status on the Pokémon Market, Auction House and shops**: each Pokémon icon in the lists, the buy / bid dialogs, and the RP shop / custom NPC shop (purchase / claim) grids now shows a small corner badge at the top-left — a **caught** icon if you have caught the species, a **seen** icon if you have only encountered it, and nothing if you have never encountered it. It reflects your own Pokédex (catching any form counts as caught); in shop grids that also carry the "illegal" mark, the illegal stamp sits on the left with the Pokédex badge next to it on the right
+
+### Changes
+
+- **The item listing dialog now shows the price above the quantity**: matching the auction screen and the usual price-first input flow (labels swapped as well)
+- **The item listing dialog gained an "M" button**: one click fills in the maximum quantity of that item in your inventory (the same number as the "up to N" label), no manual typing needed
+
+### Fixes
+
+- **Depositing more than the wallet balance gave no feedback and cleared the amount**: an over-balance amount now plays a failure sound immediately and keeps the input; server-side deposit / withdraw rejections also play a failure sound now
+- **The claim button greyed out after claiming only part of a claim shop's stock**: it now stays usable while any item can still be claimed, and greys out only when there is truly nothing left
+- **Deleting a claim shop and recreating it with the same shop ID inherited the old claim refresh countdown**: it showed "Refreshes in X" yet allowed claiming; deleting a shop now clears every player's claim period on that shop (claim records are unaffected)
+- **Withdrawing more than the deposit balance was silently blocked**: it now shows "Not enough deposited" (previously only a failure sound)
+- **Hovering an item auction broadcast in chat showed a too-narrow panel with truncated auction info and the currency symbol overlapping the border**: the item panel was sized only from the item's tooltip; it now also measures the auction footer (seller / current price / starting price / minimum increment / end time / leader) and widens to fit, with room reserved for the currency unit after each amount
+
 ## 1.3.4 (released)
 
 ### New Features

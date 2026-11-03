@@ -729,6 +729,9 @@ object CobbleMarketClient {
                 // RP 那一行与主货币同一份快照到达，不会出现「主货币更新了、RP 还是旧的」
                 BalanceCache.pointsBalance = payload.pointsBalance
                 BalanceCache.pointsRaw = payload.pointsRaw
+                // 存款余额（HUD 第三行）：同一份快照；利息增长靠 2 秒兜底轮询刷新
+                BalanceCache.depositBalance = payload.depositBalance
+                BalanceCache.depositBalanceRaw = payload.depositBalanceRaw
             }
         }
 
@@ -1397,15 +1400,24 @@ fun balanceHudPixelPos(screenW: Int, screenH: Int, hudW: Int, hudH: Int): Pair<I
     return ((nx * maxX + 0.5f).toInt()).coerceIn(0, maxX) to ((ny * maxY + 0.5f).toInt()).coerceIn(0, maxY)
 }
 
-/** 余额 HUD 当前尺寸（宽随最长那行文字自适应，**高按显示几行**：只有主货币 = 16，带 RP = 32） */
+/** 余额 HUD 当前尺寸（宽随最长那行文字自适应，**高按显示几行**：主货币 / +存款 / +RP） */
 fun balanceHudSize(client: net.minecraft.client.MinecraftClient): Pair<Int, Int> {
     // ⚠ 宽度必须与绘制同源（`amountUnitWidth`）：物品本位货币时单位是那件物品的图标，
     //   与 `₽` 宽度不同 —— 自己写 `getWidth("$金额 ₽")` 会算窄，图标就压出框外
     val mainW = amountUnitWidth(client.textRenderer, hudBalanceText(client), isPoints = false)
+    val hasDeposit = depositHudRowVisible()
+    val depositW = if (hasDeposit) {
+        amountUnitWidth(client.textRenderer, BalanceCache.depositBalance, isPoints = false)
+    } else 0
     val hasPoints = pointsHudRowVisible()
     val pointsW = if (hasPoints) client.textRenderer.getWidth(BalanceCache.pointsBalance) + unitGap(client.textRenderer) + POINTS_SYMBOL_INLINE_SIZE else 0
-    val h = if (hasPoints) HUD_TWO_LINE_H else HUD_ROW_H
-    return (maxOf(mainW, pointsW) + 10) to h
+    val rows = 1 + (if (hasDeposit) 1 else 0) + (if (hasPoints) 1 else 0)
+    val h = when (rows) {
+        1 -> HUD_ROW_H
+        2 -> HUD_TWO_LINE_H
+        else -> HUD_THREE_LINE_H
+    }
+    return (maxOf(mainW, pointsW, depositW) + 10) to h
 }
 
 /** HUD 单行时的高度（**原有值，一行时观感一字不动**） */
@@ -1427,6 +1439,20 @@ private const val HUD_TWO_LINE_GAP = 2
 private const val HUD_TWO_LINE_H = HUD_TEXT_DY * 2 + 8 * 2 + HUD_TWO_LINE_GAP
 
 /**
+ * **三行**时的框高（主货币 + 存款 + RP）= 上留白 + 文字 ×3 + 两处行间缝 + 下留白。
+ * 存款行只在设置打开且存款 > 0 时出现（见 [depositHudRowVisible]）。
+ */
+private const val HUD_THREE_LINE_H = HUD_TEXT_DY * 2 + 8 * 3 + HUD_TWO_LINE_GAP * 2
+
+/**
+ * **存款余额那一行**有没有东西可显示：个人设置打开 **且** 存款 > 0（0 不占位置）。
+ * ⚠ 存款行**不参与** ON_CHANGE 的变动检测 —— 利息按时间增长，参与的话「余额变动时显示」
+ *   会永远亮着；它只跟随整个框的显隐一起出现/淡出。
+ */
+private fun depositHudRowVisible(): Boolean =
+    ClientConfig.showDepositBalance && BalanceCache.depositBalanceRaw > 0L
+
+/**
  * RP 那一行现在**有没有东西可显示**：服务器开着 RP（没开就压根不下发余额）且下发了余额。
  *
  * ⚠ 显隐**跟着主行走**（2026-09-28 把两个开关合并了）—— 这里不再判开关，
@@ -1441,6 +1467,11 @@ private var lastPointsChangeAt = 0L
 private var lastPointsRawForDiff: Long? = null
 private var hudPointsDiff = 0L
 private var hudPointsDiffUntil = 0L
+
+/** 存款行变动浮字（与主货币 / RP 同一套：+绿/-红，2 秒消失） */
+private var lastDepositRawForDiff: Long? = null
+private var hudDepositDiff = 0L
+private var hudDepositDiffUntil = 0L
 
 /** 上次 HUD 余额文本（ON_CHANGE 模式变动检测） */
 private var lastHudBalanceText: String? = null
@@ -1535,19 +1566,28 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext, onTop: Boole
     // RGB 随 alpha 一起衰减（照入口动画淡出）：context.setShaderColor 同时作用于
     // drawTexture（背景贴图）与文字渲染；RenderSystem 全局色不响应 drawTexture，勿混用
     context.setShaderColor(alphaF, alphaF, alphaF, alphaF)
-    // ── RP 行：与主行**同一个开关**（一个框一起显隐、一起淡出），框高随之 +16 ──
-    // ⚠ 仍受「服务器开着 RP 且下发了余额」限制（见 pointsHudRowVisible）
+    // ── 存款行（可选，设置打开且存款 > 0）与 RP 行（可选）──
+    // 三行同属一个框：一个开关一起显隐、一起淡出
+    val showDepositRow = depositHudRowVisible()
     val showPointsRow = pointsHudRowVisible()
 
-    // 背景框：HUD 专属九宫格贴图（40×40），宽随**最长那行**自适应，高按显示几行（16 / 32）
+    // 背景框：HUD 专属九宫格贴图（40×40），宽随**最长那行**自适应，高按显示几行（16 / 26 / 36）
     // ⚠ 主行宽度必须与绘制同源（`amountUnitWidth`）：物品本位货币时单位是那件物品的图标，
     //   与 `₽` 宽度不同 —— 按「金额 + ₽」的宽度算会让图标压出框外
     val textW = amountUnitWidth(client.textRenderer, hudAmount, isPoints = false)
+    val depositTextW = if (showDepositRow) {
+        amountUnitWidth(client.textRenderer, BalanceCache.depositBalance, isPoints = false)
+    } else 0
     val pointsInnerW = client.textRenderer.getWidth(BalanceCache.pointsBalance)
     val pointsTextW = pointsInnerW + unitGap(client.textRenderer) + POINTS_SYMBOL_INLINE_SIZE
-    val hudW = maxOf(textW, if (showPointsRow) pointsTextW else 0) + 10
-    // 框高：单行 16；两行 = 上留白 + 文字 + 行间缝 + 文字 + 下留白（三处各自独立，见 HUD_TWO_LINE_H）
-    val hudH = if (showPointsRow) HUD_TWO_LINE_H else HUD_ROW_H
+    val hudW = maxOf(textW, depositTextW, if (showPointsRow) pointsTextW else 0) + 10
+    // 框高按**实际显示几行**：主货币 / +存款 / +RP（留白与行间缝见 HUD_TWO_LINE_H / HUD_THREE_LINE_H）
+    val rowCount = 1 + (if (showDepositRow) 1 else 0) + (if (showPointsRow) 1 else 0)
+    val hudH = when (rowCount) {
+        1 -> HUD_ROW_H
+        2 -> HUD_TWO_LINE_H
+        else -> HUD_THREE_LINE_H
+    }
     val textDy = HUD_TEXT_DY
     val hudPos = balanceHudPixelPos(context.scaledWindowWidth, context.scaledWindowHeight, hudW, hudH)
     val hudX = hudPos.first
@@ -1560,11 +1600,37 @@ fun renderBalanceHud(context: net.minecraft.client.gui.DrawContext, onTop: Boole
     )
     // ⚠ 主行：金额与单位**拆开画**（物品本位货币时单位是那件物品的图标，拼不进 Text）
     drawAmountWithUnit(context, client.textRenderer, hudAmount, false, hudX + 5, hudY + textDy, 0xFFAA00)
+    // 第二行（存款，可选）：位置在主货币与 RP 之间；金额与单位与主行同口径
+    var nextRowY = hudY + textDy + 8 + HUD_TWO_LINE_GAP
+    // 存款行变动检测：**无论这行现在显不显示都更新基准** —— 否则开关关着 / 存款为 0 一段时间后
+    // 再打开，会把这段时间的累计变化当成一次巨大的 + / - 浮字（利息一直在涨）
+    val rawDeposit = BalanceCache.depositBalanceRaw
+    if (showDepositRow && lastDepositRawForDiff != null && rawDeposit != lastDepositRawForDiff!!) {
+        hudDepositDiff = rawDeposit - lastDepositRawForDiff!!
+        hudDepositDiffUntil = System.currentTimeMillis() + 2_000
+    }
+    lastDepositRawForDiff = rawDeposit
+    if (showDepositRow) {
+        drawAmountWithUnit(
+            context, client.textRenderer, BalanceCache.depositBalance, false,
+            hudX + 5, nextRowY, 0xFFAA00
+        )
+        // 存款变动浮字（照主货币 / RP 那两行：贴框右缘之外，右侧放不下改左侧）
+        if (hudDepositDiff != 0L && System.currentTimeMillis() < hudDepositDiffUntil) {
+            val dt = if (hudDepositDiff > 0) "+${formatBalanceLong(hudDepositDiff)}" else formatBalanceLong(hudDepositDiff)
+            val dc = if (hudDepositDiff > 0) 0x55FF55 else 0xFF5555
+            val dw = client.textRenderer.getWidth(dt)
+            val rx = hudX + hudW + 4
+            val dx2 = if (rx + dw <= context.scaledWindowWidth) rx else (hudX - 4 - dw).coerceAtLeast(0)
+            context.drawTextWithShadow(client.textRenderer, dt, dx2, nextRowY, dc)
+        }
+        nextRowY += 8 + HUD_TWO_LINE_GAP
+    }
     if (showPointsRow) {
         // RP 行：**数字在前、图标在后当单位**（与主行 `1000 ₽` 同一个格局）——
         // 图标放前面的话它占着左边起始位、数字被顶到右边，两行的数字就不在一条竖线上了。
-        // RP 行文字的 y：第一行文字底（hudY + textDy + 8）+ 行间缝
-        val pointsRowY = hudY + textDy + 8 + HUD_TWO_LINE_GAP
+        // y 跟着上面几行顺延（有存款行时就在存款行下面）
+        val pointsRowY = nextRowY
         // alpha 用外层已经设好的整框 alphaF（一个开关 ⇒ 两行一起淡出），这里不再单独乘
         context.drawTextWithShadow(client.textRenderer, BalanceCache.pointsBalance, hudX + 5, pointsRowY, 0xFFAA00)
         val iconX = hudX + 5 + client.textRenderer.getWidth(BalanceCache.pointsBalance) + unitGap(client.textRenderer)

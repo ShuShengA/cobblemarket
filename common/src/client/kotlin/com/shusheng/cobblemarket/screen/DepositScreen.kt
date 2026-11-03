@@ -96,8 +96,27 @@ class DepositScreen : Screen(Text.translatable("cobblemarket.deposit.title")) {
 
     private fun sendDeposit() {
         val amount = amountField?.text?.toLongOrNull() ?: 0L
+        // 本地拦截：金额非法 / **超过钱包余额**（快照实算）→ fail 音效、**保留输入**；服务端仍会复核。
+        // ⚠ 原先只判 `amount <= 0`，超余额直接发给服务端：服务端只回一行聊天红字（且没有音效），
+        //   而客户端已经 `text = ""` ⇒「输入的数字凭空消失、只有聊天框有提示」（2026-11-02 用户报）。
+        // ⚠ 余额缓存还没到（`balance` 空串）时**跳过上限判断**：此时 `balanceRaw` 还是初始 0，
+        //   任何金额都会被误拦。打开界面时已请求余额，通常一瞬就到。
+        val walletKnown = BalanceCache.balance.isNotEmpty()
         if (amount <= 0) {
             playFailSound()
+            return
+        }
+        if (walletKnown && amount > BalanceCache.balanceRaw) {
+            playFailSound()
+            // ⚠ 本地拦下 ⇒ 服务端那条「需要 X！」的聊天提示也不会发，这里照服务端的文案 / 颜色补一条
+            //   （2026-11-02 用户报「有音效了但聊天提示没了」）
+            client?.player?.sendMessage(
+                Text.translatable(
+                    "cobblemarket.network.need_diamonds",
+                    com.shusheng.cobblemarket.config.CurrencyHandler.goldAmount(amount)
+                ).formatted(Formatting.RED),
+                false
+            )
             return
         }
         sendToServer(RequestDepositPayload(amount))
@@ -107,9 +126,18 @@ class DepositScreen : Screen(Text.translatable("cobblemarket.deposit.title")) {
 
     private fun sendWithdraw() {
         val amount = amountField?.text?.toLongOrNull() ?: 0L
-        // 金额非法 / 超过存款余额（快照实算含未结算利息）：本地拦截 + fail 音效，服务端仍会复核
-        if (amount <= 0 || amount > balance) {
+        if (amount <= 0) {
             playFailSound()
+            return
+        }
+        // 超过存款余额（快照实算含未结算利息）：本地拦截 + fail 音效，服务端仍会复核。
+        // ⚠ 本地拦下 ⇒ 服务端不会再发任何提示，聊天里补一句说明（2026-11-02 用户要求，与存款一致）
+        if (amount > balance) {
+            playFailSound()
+            client?.player?.sendMessage(
+                Text.translatable("cobblemarket.deposit.not_enough").formatted(Formatting.RED),
+                false
+            )
             return
         }
         sendToServer(RequestWithdrawPayload(amount))

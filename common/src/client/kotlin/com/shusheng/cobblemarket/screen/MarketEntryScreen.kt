@@ -67,8 +67,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
     private var settingsPikachuLoopButton: NineSliceButton? = null
     private var settingsGroudonFlyButton: NineSliceButton? = null
     private var settingsBalanceHudButton: NineSliceButton? = null
+    private var settingsShowDepositButton: NineSliceButton? = null
     private var settingsBalanceHudPosButton: NineSliceButton? = null
     private var settingsQuickShowcaseButton: NineSliceButton? = null
+    private var settingsChatPreviewPinButton: NineSliceButton? = null
     private var settingsIconAnimButton: NineSliceButton? = null
     private var settingsHoverPreviewButton: NineSliceButton? = null
     private var settingsUpdateNoticeButton: NineSliceButton? = null
@@ -910,6 +912,14 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         )
         settingsBalanceHudButton = balanceHudBtn
         addSettingsRow(balanceHudBtn, textBtnX, Text.translatable("cobblemarket.settings.balance_hud"))
+        // 余额 HUD 是否显示**银行存款余额**（默认开；存款为 0 时该行自动隐藏）
+        val showDepositBtn = makeSwitchButton(ClientConfig.showDepositBalance) { toggleShowDepositBalance() }
+        settingsShowDepositButton = showDepositBtn
+        addSettingsRow(
+            showDepositBtn, switchX,
+            toggleText("cobblemarket.settings.deposit_balance_hud", ClientConfig.showDepositBalance),
+            newGroup = false
+        )
         // 余额 HUD 位置：进拖动编辑界面（自定义 → 拖动落位 → 确定）
         val balanceHudPosBtn = NineSliceButton(
             0, 0, 54, 20,
@@ -928,6 +938,16 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         )
         settingsQuickShowcaseButton = quickShowcaseBtn
         addSettingsRow(quickShowcaseBtn, textBtnX, Text.translatable("cobblemarket.settings.quick_showcase_mode"))
+
+        // 聊天展示预览的点击常驻时长（2026-11-02 用户要求：与快速展示同组、放在它下面，别插到别处）
+        val chatPinBtn = NineSliceButton(
+            0, 0, 54, 20,
+            chatPreviewPinText(),
+            { cycleChatPreviewPinSeconds() },
+            tooltip = Text.translatable("cobblemarket.settings.chat_preview_pin_tip")
+        )
+        settingsChatPreviewPinButton = chatPinBtn
+        addSettingsRow(chatPinBtn, textBtnX, Text.translatable("cobblemarket.settings.chat_preview_pin"), newGroup = false)
 
         // 更新提示：有新版时打开市场界面会发一条可点聊天消息（关掉后连查都不查）
         // ⚠ 自定义光标已搬到顶部「显示」组，原来由它开的那个组没了 ⇒ 这里要自己开一组，
@@ -969,8 +989,10 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsPikachuLoopButton = null
         settingsGroudonFlyButton = null
         settingsBalanceHudButton = null
+        settingsShowDepositButton = null
         settingsBalanceHudPosButton = null
         settingsQuickShowcaseButton = null
+        settingsChatPreviewPinButton = null
         settingsIconAnimButton = null
         settingsHoverPreviewButton = null
         settingsUpdateNoticeButton = null
@@ -1111,6 +1133,13 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsToastUntil = System.currentTimeMillis() + 1500
     }
 
+    /** 余额 HUD 的「银行存款余额」行开关（默认开） */
+    private fun toggleShowDepositBalance() {
+        ClientConfig.setShowDepositBalance(!ClientConfig.showDepositBalance)
+        settingsShowDepositButton?.iconLeft = switchIconFor(ClientConfig.showDepositBalance)
+        showSettingsToast("cobblemarket.settings.deposit_balance_hud", ClientConfig.showDepositBalance)
+    }
+
     private fun quickShowcaseModeKey(): String =
         if (ClientConfig.quickShowcasePressOnce) "cobblemarket.settings.quick_showcase_press"
         else "cobblemarket.settings.quick_showcase_hold"
@@ -1120,6 +1149,21 @@ class MarketEntryScreen(private val skipDropAnim: Boolean = false) : Screen(Text
         settingsQuickShowcaseButton?.message = Text.translatable(quickShowcaseModeKey())
         settingsToastText = Text.translatable("cobblemarket.settings.quick_showcase_mode")
             .append(Text.translatable(quickShowcaseModeKey()))
+        settingsToastUntil = System.currentTimeMillis() + 1500
+    }
+
+    /** 聊天预览常驻时长按钮文字：直接显示秒数（3 秒 / 5 秒 …） */
+    private fun chatPreviewPinText(): Text =
+        Text.translatable("cobblemarket.settings.chat_preview_pin_seconds", ClientConfig.chatPreviewPinSeconds)
+
+    /** 循环切换常驻时长档位（3/5/10/15/30 秒） */
+    private fun cycleChatPreviewPinSeconds() {
+        val choices = ClientConfig.CHAT_PREVIEW_PIN_CHOICES
+        val current = choices.indexOf(ClientConfig.chatPreviewPinSeconds).coerceAtLeast(0)
+        ClientConfig.setChatPreviewPinSeconds(choices[(current + 1) % choices.size])
+        settingsChatPreviewPinButton?.message = chatPreviewPinText()
+        settingsToastText = Text.translatable("cobblemarket.settings.chat_preview_pin")
+            .append(chatPreviewPinText())
         settingsToastUntil = System.currentTimeMillis() + 1500
     }
 

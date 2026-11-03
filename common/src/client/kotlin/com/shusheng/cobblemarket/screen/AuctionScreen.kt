@@ -24,6 +24,7 @@ import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.CurrencyService
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
+import com.cobblemon.mod.common.client.CobblemonClient
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.icon.IconCryClick
@@ -1791,6 +1792,15 @@ class AuctionScreen(
             )
         } catch (_: Exception) {
         }
+        // 图鉴状态角标（**左上角**，与小锁同位置 / 同尺寸）：已捕捉 / 已遇见，没遇到过不画。
+        // 判据按**物种**取客户端图鉴的最高等级（任意形态捕捉过 = 已捕捉）—— 纯客户端数据、无网络包。
+        // ⚠ 与右上角「非法」印章各占一角，互不遮挡；锁只出现在「选精灵去卖」那两屏，不会同时出现。
+        EntryBadgeRenderer.drawPokedexBadge(
+            context,
+            CobblemonClient.clientPokedexData.getKnowledgeForSpecies(data.renderable.species.resourceIdentifier),
+            x, y, size
+        )
+
         // 「非法」角标：图标**右上角**那枚印章（与小锁镜像对称，见 [EntryBadgeRenderer.drawIllegalBadge]）。
         // ⚠ 下标口径与 [cacheIcons] 一致（那边按 `entries` 的下标建表、调用方传 `origIndex`）
         if (entries.getOrNull(index)?.illegal == true) {
@@ -2075,6 +2085,16 @@ class AuctionScreen(
                 } catch (_: Exception) {
                 }
             }
+            // 图鉴状态角标（**左上角**，与小锁同位置 / 同尺寸）：已捕捉 / 已遇见，没遇到过不画。
+            // ⚠ 只在**精灵拍卖**这一支（物品拍卖没有"这个物种"的概念）；取物种走 extraData 的 speciesId
+            Identifier.tryParse(entry.extraData["speciesId"] ?: "")?.let { speciesId ->
+                EntryBadgeRenderer.drawPokedexBadge(
+                    context,
+                    CobblemonClient.clientPokedexData.getKnowledgeForSpecies(speciesId),
+                    slotX, slotY, slotSize
+                )
+            }
+
             // 「非法」角标：贴图标**右上角**（见 [EntryBadgeRenderer.drawIllegalBadge]）。
             // ⚠ 只在**精灵拍卖**这一支（物品拍卖画的是物品图标，没有"这只精灵"的概念）
             if (entry.illegal) {

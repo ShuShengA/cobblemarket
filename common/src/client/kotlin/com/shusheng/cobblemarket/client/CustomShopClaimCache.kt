@@ -38,4 +38,17 @@ object CustomShopClaimCache {
         if (shop == shopId) remaining[entryId] ?: quota else -1
 
     fun nextResetAtOf(shop: String): Long = if (shop == shopId) nextResetAt else 0L
+
+    /**
+     * 这家店还有**任意**格子能领吗 ——「领取」按钮置灰的判据。
+     *
+     * 周期开始 ≠ 没东西可领：玩家领了部分（或背包放不下剩了一部分）时，剩余本期还能继续领，
+     * 按钮必须保持可用（2026-11-02 用户报「领了部分就置灰」）。
+     *
+     * [remaining] 是**整店全部格子**（服务端 `buildClaimStatus` 遍历 `shop.all(kind)`，
+     * 不是当前页 / 当前 tab）⇒ 直接看有没有 > 0 的值即可。
+     * ⚠ 没收到状态（店 id 不匹配）返回 true —— 宁可让按钮可点、由服务端兜底，也别误置灰。
+     */
+    fun hasClaimable(shop: String): Boolean =
+        shop != shopId || remaining.values.any { it > 0 }
 }

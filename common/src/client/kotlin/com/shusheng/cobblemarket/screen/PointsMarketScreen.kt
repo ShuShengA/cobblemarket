@@ -1,7 +1,9 @@
 package com.shusheng.cobblemarket.screen
 
 import com.cobblemon.mod.common.api.abilities.PotentialAbility
+import com.cobblemon.mod.common.api.pokedex.PokedexEntryProgress
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
+import com.cobblemon.mod.common.client.CobblemonClient
 import com.cobblemon.mod.common.client.render.models.blockbench.FloatingState
 import com.cobblemon.mod.common.client.settings.ServerSettings
 import com.cobblemon.mod.common.pokemon.FormData
@@ -7209,9 +7211,11 @@ class PointsMarketScreen(
         val pageNo = viewPageNumber()
         prevButton?.active = pageNo > 1
         nextButton?.active = pageNo < pagesInView
-        // 领取按钮：冷却中置灰（状态由服务端在打开商店 / 每次领取后下发；0 = 现在就能领）
-        claimButton?.dimmed = isClaimShop &&
-            CustomShopClaimCache.nextResetAtOf(shopId) > System.currentTimeMillis()
+        // 领取按钮：**整店没有剩余可领**才置灰（状态由服务端在打开商店 / 每次领取后下发）。
+        // ⚠ 原先判「周期已开始（nextResetAt > now）就置灰」—— 周期是第一次领到东西就起算，
+        //   领了部分 / 背包没放下剩余时其它格还能继续领，置灰会误显示成"冷却中"
+        //   （2026-11-02 用户报「还有剩余按钮已经灰了」）。见 [claimHasAnything]。
+        claimButton?.dimmed = isClaimShop && !claimHasAnything()
         // 边界时直接隐藏（2026-10-25 用户要求）；弹窗开着时不动（hideMainControls 已把它们藏起来）
         if (!dialogOpen()) {
             prevButton?.visible = pageNo > 1
@@ -7287,6 +7291,19 @@ class PointsMarketScreen(
         val next = CustomShopClaimCache.nextResetAtOf(shopId)
         if (next > 0L && System.currentTimeMillis() >= next) return entry.stock
         return cached
+    }
+
+    /**
+     * 整店是否还有东西可领（「领取」按钮置灰判据）。
+     *
+     * - 没有进行中的周期 / 周期已到期（服务端懒重置）⇒ 按满配额视为可领（与 [claimRemaining] 同口径）
+     * - 周期进行中 ⇒ 看整店是否还有任意格剩余 > 0（缓存是整店全部格子，不只当前页 / tab）
+     */
+    private fun claimHasAnything(): Boolean {
+        if (!isClaimShop) return false
+        val next = CustomShopClaimCache.nextResetAtOf(shopId)
+        if (next <= 0L || System.currentTimeMillis() >= next) return true
+        return CustomShopClaimCache.hasClaimable(shopId)
     }
 
     /**
@@ -7695,7 +7712,10 @@ class PointsMarketScreen(
             )
         }
 
-        // 「非法」角标（服主在编辑窗标过的那一格）：**左上角一枚印章图**（右上角给库存角标 ×N 占了）。
+        // 左上角角标族：**非法印章** + **图鉴状态**（2026-11-02 用户定：RP 商城 / 自定义商店格子也显示图鉴）。
+        // - 只有非法 → 印章单独占左上；只有图鉴 → 图鉴单独占左上；两者都有 → **非法在左、图鉴在右并排**
+        // - 物品格、没遇见过的物种不画图鉴
+        // 非法印章（服主在编辑窗标过的那一格）：**左上角一枚印章图**（右上角给库存角标 ×N 占了）。
         // 用户 2026-09-30 定：标过的必须**在格子上就看得出来**，否则服主事后想不起来哪只标了。
         // ⚠ 2026-09-30 二次改：原先画的是**红色「非法」两个字**，用户嫌丑 ⇒ 换成印章图。
         //   顺带解决了一个老问题：文字在窄格子下必须截断（英文 `Illegal` 42px 塞不进 30px 的格子），
@@ -7703,8 +7723,18 @@ class PointsMarketScreen(
         // ⚠ 2026-10-02 三次改：**收口到共用入口**（[EntryBadgeRenderer.drawIllegalBadgeLeft]）——
         //   原先这里自己手写 matrices 缩放、尺寸按 10~16 钳制、贴边 4px，与全项目口径各写一套
         //   （比例/边距调一次要改两处）。现在尺寸与边距都走共用常量，全项目只有"贴哪一角"不同。
-        if (entry.pokemon?.illegal == true) {
+        val illegalRect = if (entry.pokemon?.illegal == true) {
             EntryBadgeRenderer.drawIllegalBadgeLeft(context, x - grow, y - grow, size)
+        } else null
+        val dexProgress = entry.pokemon?.species?.let { rawSpecies ->
+            Identifier.tryParse(rawSpecies)?.let {
+                CobblemonClient.clientPokedexData.getKnowledgeForSpecies(it)
+            }
+        }
+        if (dexProgress != null && dexProgress != PokedexEntryProgress.UNREGISTERED) {
+            // 并排：图鉴起点 = 印章右缘 + 1px；没有印章就贴原来的左上角（与印章同一套边距）
+            val dexX = if (illegalRect != null) illegalRect[0] + illegalRect[2] + 1 else x - grow
+            EntryBadgeRenderer.drawPokedexBadge(context, dexProgress, dexX, y - grow, size)
         }
 
         // 库存角标：**只有限量格才画**（不限量是默认玩法，画个 ∞ 只是碍眼）；

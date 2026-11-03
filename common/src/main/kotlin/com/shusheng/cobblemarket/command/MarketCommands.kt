@@ -14,6 +14,7 @@ import net.minecraft.command.argument.EntityArgumentType
 import net.minecraft.text.ClickEvent
 import com.shusheng.cobblemarket.config.CobbleMarketConfig
 import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.currency.CustomShopClaimState
 import com.shusheng.cobblemarket.currency.CustomShopCooldownState
 import com.shusheng.cobblemarket.currency.CustomShopError
 import com.shusheng.cobblemarket.currency.CustomShopState
@@ -1242,8 +1243,9 @@ object MarketCommands {
             source.sendError(Text.translatable("cobblemarket.shop.err.not_found", id))
             return 0
         }
-        // 同 id 重建的店不能继承旧冷却：删店时一并清掉
+        // 同 id 重建的店不能继承旧冷却 / 领取周期：删店时一并清掉
         CustomShopCooldownState.get(source.server).clearShop(id.trim().lowercase())
+        CustomShopClaimState.get(source.server).clearShop(id.trim().lowercase())
         com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
         source.sendFeedback({
             Text.translatable("cobblemarket.shop.deleted", id, name, entries).formatted(Formatting.GREEN)

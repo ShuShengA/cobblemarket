@@ -29,3 +29,29 @@ dependencies {
 	modCompileOnly "maven.modrinth:cobbledollars:cqsHXSXe"
 	modCompileOnly "maven.modrinth:cobblemon-smartphone:w7JqnSrT"
 }
+
+// ── 附属模组（CobbleKit）编译依赖 ──
+// 生产 jar 是 intermediary 映射，不能给附属模组当编译依赖；这里把 common 的 **Yarn 命名** classes
+// 另打一个 jar 并发布到 mavenLocal，供 CobbleKit 的 common 模块 `compileOnly`。
+// 仅在开发期使用，不参与任何发布产物。
+//
+// 用法：`./gradlew :common:publishToMavenLocal`
+//      → ~/.m2/repository/com/shusheng/cobblemarket/cobblemarket-common/<version>/...-named.jar
+tasks.register('namedJar', Jar) {
+	group = 'build'
+	description = 'Packages common classes in Yarn named mappings for addon development (CobbleKit).'
+	archiveClassifier = 'named'
+	from sourceSets.main.output
+	from sourceSets.client.output
+}
+
+publishing {
+	publications {
+		namedApi(MavenPublication) {
+			groupId = project.group
+			artifactId = 'cobblemarket-common'
+			version = project.version
+			artifact tasks.named('namedJar')
+		}
+	}
+}

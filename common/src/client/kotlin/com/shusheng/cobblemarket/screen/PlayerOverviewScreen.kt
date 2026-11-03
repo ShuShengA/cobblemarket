@@ -86,6 +86,8 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
     private var sortListOpen = false
     private val sortOptionButtons = mutableListOf<NineSliceButton>()
     private var sortFieldButton: NineSliceButton? = null
+    /** 方向按钮：点击后要把 ↑/↓ 同步刷掉（文字不是每帧重画的） */
+    private var sortDirButton: NineSliceButton? = null
 
     // ── 顶栏几何（搜索框与按钮**同一行**、y = 58、左右各留 2px）──
     // 字段按钮只显示字段名本身（英文最长 "Remaining credit" ≈ 96px），不带宽的「排序：」前缀
@@ -128,10 +130,15 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
             tooltip = Text.translatable("cobblemarket.overview.sort_by_hint")
         ))
         // 方向按钮：**只显示上下箭头**（状态由符号本身表达，符合「切换类按钮」的口径）
-        addDrawableChild(NineSliceButton(
+        // ⚠ 点击必须 setMessage 刷新箭头：按钮文字只在 init 时生成一次，原回调只翻 `descending`
+        //   不更新文字 ⇒ 永远停在 ↑（2026-11-02 用户报「一直显示上箭头」，功能本身是好的）
+        sortDirButton = addDrawableChild(NineSliceButton(
             dirX, topY, dirBtnW, 16,
-            Text.translatable(if (descending) "cobblemarket.overview.sort_desc" else "cobblemarket.overview.sort_asc"),
-            { descending = !descending },
+            sortDirText(),
+            {
+                descending = !descending
+                sortDirButton?.setMessage(sortDirText())
+            },
             tooltip = Text.translatable("cobblemarket.overview.sort_dir_hint")
         ))
 
@@ -160,6 +167,12 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
             requested = true
         }
     }
+
+    /** 排序方向按钮的文字：只用 ↑ / ↓ 表达状态 */
+    private fun sortDirText(): Text =
+        Text.translatable(
+            if (descending) "cobblemarket.overview.sort_desc" else "cobblemarket.overview.sort_asc"
+        )
 
     /**
      * 当前**可用**的排序字段。

@@ -154,16 +154,28 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
             }
         })
 
-        countField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 72, 160, 16, Text.literal(""))
+        // **价格在上、数量在下**（2026-11-02 用户定：与拍卖行一致 —— 先输价格再输数量）。
+        // ⚠ 标签（renderDialogBackground）、输入框、货币按钮的 y **必须一起换** ——
+        //   只换一半就是「标签和框对不上」的 bug。
+        // 价格框 160 → 120：右侧腾出位置给货币切换按钮（最多 9 位数字，用不到 160 那么宽）
+        priceField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 72, 120, 16, Text.literal(""))
+        priceField?.setPlaceholder(Text.translatable("cobblemarket.item.sell_price"))
+        priceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
+        addDrawableChild(priceField)
+
+        // 数量框 160 → 120：右侧腾出位置给「M」（最大数量）按钮，与上面价格行的货币按钮同列
+        countField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 102, 120, 16, Text.literal(""))
         countField?.setPlaceholder(Text.translatable("cobblemarket.item.sell_count"))
         countField?.setTextPredicate { it.length <= 4 && it.all { c -> c.isDigit() } }
         addDrawableChild(countField)
 
-        // 价格框 160 → 120：右侧腾出位置给货币切换按钮（最多 9 位数字，用不到 160 那么宽）
-        priceField = TextFieldWidget(textRenderer, centerX - 80, dialogY + 102, 120, 16, Text.literal(""))
-        priceField?.setPlaceholder(Text.translatable("cobblemarket.item.sell_price"))
-        priceField?.setTextPredicate { it.length <= 9 && it.all { c -> c.isDigit() } }
-        addDrawableChild(priceField)
+        // 「M」（max）：一键填入背包里该物品的最大数量 —— 就是标签里「（最多 N）」那个 N，
+        // 不用再照着标签手输。尺寸 / 位置与价格行的货币切换按钮一致（20×16、同列 x）。
+        addDrawableChild(NineSliceButton(
+            centerX + 44, dialogY + 102, 20, 16,
+            Text.literal("M"),
+            { countField?.text = item.count.toString() }
+        ))
 
         // 货币切换按钮（价格框右侧）。⚠ 服务端没开 RP 总开关、或没开「玩家间 RP 交易」时
         // **整个按钮不创建** —— 价格区干干净净，比留个点了报错的灰按钮清楚。
@@ -174,7 +186,7 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
         // ⚠ **总开关关着时也建**（只是置灰）：按钮的位置是排好的，凭空消失会空出一块。
         //   （用户 2026-09-24 定：创建类界面的货币按钮统一「建 + 置灰」）
         currencyButton = NineSliceButton(
-            centerX + 44, dialogY + 102, 20, 16, Text.literal(""), { onCurrencyClick() },
+            centerX + 44, dialogY + 72, 20, 16, Text.literal(""), { onCurrencyClick() },
             iconTexW = POINTS_SYMBOL_SRC, iconTexH = POINTS_SYMBOL_SRC,
             iconScale = CURRENCY_BUTTON_ICON_SIZE / POINTS_SYMBOL_SRC.toFloat()
         ).also {
@@ -214,11 +226,12 @@ class ItemSellScreen(private val shareMode: Boolean = false) : Screen(Text.trans
         context.drawCenteredTextWithShadow(textRenderer,
             entry.name, centerX, dialogY + 46, 0xFFFFFF)
 
-        context.drawTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.item.sell_count").string + com.shusheng.cobblemarket.util.TextUtil.parenOpen() + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}" + com.shusheng.cobblemarket.util.TextUtil.parenClose(),
-            centerX - 80, dialogY + 62, 0xAAAAAA)
+        // 标签与输入框同序：价格在上（+62 / +72）、数量在下（+92 / +102）—— 2026-11-02 上下互换
         context.drawTextWithShadow(textRenderer,
             Text.translatable("cobblemarket.item.sell_price").string,
+            centerX - 80, dialogY + 62, 0xAAAAAA)
+        context.drawTextWithShadow(textRenderer,
+            Text.translatable("cobblemarket.item.sell_count").string + com.shusheng.cobblemarket.util.TextUtil.parenOpen() + Text.translatable("cobblemarket.item.sell_max").string + " ${entry.count}" + com.shusheng.cobblemarket.util.TextUtil.parenClose(),
             centerX - 80, dialogY + 92, 0xAAAAAA)
     }
 

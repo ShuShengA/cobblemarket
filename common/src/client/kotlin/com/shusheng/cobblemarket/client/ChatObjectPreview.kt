@@ -171,8 +171,22 @@ object ChatObjectPreview {
     private var hoverId: String? = null
     private var hoverSince = 0L
 
+    /** **上一帧**鼠标下的播报 id（含常驻分支里的判断）—— 点击常驻 / 取消时校验「点的是不是那条」 */
+    private var lastHoveredId: String? = null
+
     /** 正在显示大图的拍品 id（null = 没显示） */
     private var shownId: String? = null
+
+    /**
+     * **常驻中的展示 id**（null = 未常驻；2026-11-02 用户要求）。
+     *
+     * 悬停预览会被新聊天消息挤走（原行走位、鼠标不再压在上面 ⇒ [render] 里瞬间 [hide]），
+     * 玩家没看清就没了。点击播报后进入常驻：**忽略悬停判定**，固定显示 [pinnedId] 这条，
+     * 聊天继续刷屏 / 鼠标移开都不影响；[pinnedUntil] 到点自动结束，再点一次提前取消。
+     * 时长走客户端设置 [ClientConfig.chatPreviewPinSeconds]。
+     */
+    private var pinnedId: String? = null
+    private var pinnedUntil = 0L
 
     /** 待播叫声时刻（0 = 无）。每次「开始显示」重排一次，见 [beginShow] */
     private var cryAt = 0L
@@ -197,12 +211,40 @@ object ChatObjectPreview {
             exitChat()
             return
         }
+        val chatScreen = client.currentScreen as ChatScreen
         // 图标注册表由各界面在自己 render 开头 beginFrame；聊天界面没有图标，这里补一次，
         // 顺便把鼠标位置刷新给大图 —— 头部跟随读的是 IconRegistry 里的坐标，不刷新就会用上一个界面的旧值
         IconRegistry.beginFrame(mouseX, mouseY)
 
         val now = System.currentTimeMillis()
+
+        // ── 常驻优先（2026-11-02）：固定显示同一条，忽略悬停 ──
+        // ⚠ 到期**或缓存过期**（[cached] 的 TTL）就立刻结束 —— 不能在屏幕上留一条查不到 / 已过期的展示。
+        //   此时没有预览数据 ⇒ 点击本来就无效（[onMouseClick] 只看 [shownId]）。
+        val pinned = pinnedId
+        if (pinned != null) {
+            val entry = if (now < pinnedUntil) cached(pinned, now) else null
+            if (entry != null) {
+                if (shownId != pinned) beginShow(pinned, entry, now)
+                // 鼠标仍停在原播报上时，用原版悬停窗告诉玩家剩余时间 / 怎么取消；
+                // 移开了就不设 —— 别覆盖原版给别的东西（如物品悬停）的悬停窗
+                lastHoveredId = hoveredAnnouncement(client, mouseX, mouseY)?.id
+                if (lastHoveredId == pinned) {
+                    chatScreen.setTooltip(Text.translatable(
+                        "cobblemarket.chat.preview_pinned_hint",
+                        ((pinnedUntil - now + 999) / 1000).toInt()
+                    ))
+                }
+                draw(context, entry)
+                return
+            }
+            pinnedId = null
+            pinnedUntil = 0L
+            hide()
+        }
+
         val hovered = hoveredAnnouncement(client, mouseX, mouseY)
+        lastHoveredId = hovered?.id
         if (hovered == null) {
             exitChat()
             return
@@ -227,7 +269,34 @@ object ChatObjectPreview {
             return
         }
         if (shownId != hovered.id) beginShow(hovered.id, entry, now)
+        // 原版悬停窗：告诉玩家「点击可常驻屏幕 X 秒」（秒数跟随个人设置）
+        chatScreen.setTooltip(Text.translatable(
+            "cobblemarket.chat.preview_pin_hint", ClientConfig.chatPreviewPinSeconds
+        ))
         draw(context, entry)
+    }
+
+    /**
+     * 鼠标左键按下（由 `MouseMixin` 转发；只在聊天界面里调用）。
+     *
+     * ⚠ **只有大图已经显示出来时才有效**：数据没到 / 已过期查不到（[shownId] 为 null）时点了
+     *   也不该有任何反应 —— 不能在"本来就没预览"的情况下凭空常驻（2026-11-02 用户强调）。
+     * 常驻中再点一次 = 提前取消。
+     */
+    @JvmStatic
+    fun onMouseClick() {
+        if (MinecraftClient.getInstance().currentScreen !is ChatScreen) return
+        val id = shownId ?: return
+        // 鼠标已经不在被预览的那条上了（刚移开 / 点在聊天里别处）⇒ 不算数，避免误触
+        if (lastHoveredId != id) return
+        val now = System.currentTimeMillis()
+        if (pinnedId == id) {
+            pinnedId = null
+            pinnedUntil = 0L
+        } else {
+            pinnedId = id
+            pinnedUntil = now + ClientConfig.chatPreviewPinSeconds.coerceAtLeast(1) * 1000L
+        }
     }
 
     /** 服务端回包（客户端主线程调用）：建好渲染对象入缓存 */
@@ -294,9 +363,13 @@ object ChatObjectPreview {
         trimCache(now)
     }
 
-    /** 离开聊天界面：悬停计时一起作废（下次进来要重新停留），缓存保留 */
+    /** 离开聊天界面 / 鼠标离开播报：悬停计时与**常驻**一起作废（下次进来要重新停留），缓存保留 */
     private fun exitChat() {
         hoverId = null
+        lastHoveredId = null
+        // 常驻只服务于「在聊天里看清」，不带到游戏画面上；离开聊天 / 不再悬停即结束
+        pinnedId = null
+        pinnedUntil = 0L
         hide()
     }
 
@@ -498,6 +571,19 @@ object ChatObjectPreview {
     }
 
     /**
+     * **物品面板**的左缘：贴在大图右缘 + 8px。
+     *
+     * ⚠ 不沿用 [panelXFor] 的「居中在 0.75 屏宽」—— 那个落点会浪费面板右半到屏幕右缘的空间，
+     *   640 逻辑宽下内容宽只剩 ~168px，拍卖尾部全被截断（2026-11-03 用户报）。
+     * 面板太宽放不下时贴屏幕右缘（正常有 [drawItemTooltipPanel] 的 maxContentW 兜着）。
+     */
+    private fun itemPanelXFor(context: DrawContext, panelW: Int): Int {
+        val screenW = context.scaledWindowWidth
+        val minLeft = screenW / 2 + ItemHoverPreview.PREVIEW_SIZE / 2 + 8
+        return minLeft.coerceAtMost(screenW - panelW - 4).coerceAtLeast(0)
+    }
+
+    /**
      * 大图**右侧**列出的完整物品词条（**带九宫格背景** —— 2026-09-29 用户定：不能凭空飘字）。
      *
      * 为什么要它：很多物品**模型长得一样、区别全在词条上**，只给个大图等于没说
@@ -526,8 +612,14 @@ object ChatObjectPreview {
         //   （2026-10-13 用户截图报出）。
         // ⚠ **短词条完全不受影响**：上限没被触发时面板宽度仍是实测值、位置与以前一模一样。
         val previewHalf = ItemHoverPreview.PREVIEW_SIZE / 2
-        val leftGap = 8 + PANEL_PAD
-        val maxContentW = (context.scaledWindowWidth * 0.5f).toInt() - 2 * (previewHalf + leftGap)
+        // 面板左缘 = 大图右缘 + 8（见 [itemPanelXFor]）⇒ 内容宽上限 = 从那里到屏幕右缘 - 4。
+        // ⚠ 原先按「面板居中在 0.75 屏宽」倒推成 `半屏 − 2×(大图半宽+间隙)`，640 逻辑宽下只剩
+        //   168px：拍卖尾部（卖家 / 价格 / 结束时间 / 领先者）全被截断、货币单位还顶到边框
+        //   （2026-11-03 用户截图报出）。右侧本来就有空间，不该浪费。
+        val maxContentW = (
+            context.scaledWindowWidth - 4 -
+                (context.scaledWindowWidth / 2 + previewHalf + 8) - PANEL_PAD * 2
+            ).coerceAtLeast(48)
         val availH = screenHeight - 16
 
         val maxRows = ((availH - PANEL_PAD * 2) / LINE_H).coerceAtLeast(1)
@@ -536,8 +628,15 @@ object ChatObjectPreview {
         //   反过来把尾部截掉，玩家就看不到还剩多久、现在多少钱了
         val tooltipRows = (maxRows - footerRows.size).coerceAtLeast(1)
 
-        // 内容宽：按**未换行的实测宽**定（短词条据此保持窄面板，与以前一致），超过上限才用上限
-        val rawTextW = tooltip.maxOfOrNull { font.getWidth(it) } ?: 0
+        // 内容宽：取「物品词条」与「尾部行」两者中**更宽的那个**，超过上限才用上限。
+        // ⚠ 尾部行原先完全不参与定宽 ⇒ 面板只按物品词条宽算，拍卖那几行（卖家 / 价格 / 结束时间）
+        //   全被截成「…」（2026-11-03 用户截图报出）。金额行还要给行尾的货币单位留位置。
+        val unitW = currencyUnitWidth(font, false)
+        val tooltipMaxW = tooltip.maxOfOrNull { font.getWidth(it) } ?: 0
+        val footerMaxW = footerRows.mapIndexed { i, (text, _) ->
+            (text?.let { font.getWidth(it) } ?: 0) + if (i in priceRows) unitW else 0
+        }.maxOrNull() ?: 0
+        val rawTextW = maxOf(tooltipMaxW, footerMaxW)
         val contentW = minOf(rawTextW, maxContentW).coerceAtLeast(48)
 
         // ⚠ **先换行、再按行数截断**（顺序不能反）：换行走原版 `TextRenderer.wrapLines` —— **样式跟着走**
@@ -550,8 +649,10 @@ object ChatObjectPreview {
         // ⚠ 尾部那几行是**我们自己拼的短行**、不参与换行 ⇒ 超宽时在 **Text 上**截断（[TextUtil.truncateStyled]
         //   保分段样式）再转 OrderedText。⚠ **不能等画的时候再截**：`OrderedText` 这边没有可用的
         //   `trimToWidth` 重载（只有 String / StringVisitable 的），改到那时只能丢样式
-        val lines: List<Pair<OrderedText?, Int>> = tooltipPart + footerRows.map { (text, color) ->
-            text?.let { TextUtil.truncateStyled(it, contentW).asOrderedText() } to color
+        val lines: List<Pair<OrderedText?, Int>> = tooltipPart + footerRows.mapIndexed { i, (text, color) ->
+            // 金额行给行尾的货币单位留出宽度，免得单位压在面板边框上（2026-11-03 用户报）
+            val limit = if (i in priceRows) (contentW - unitW).coerceAtLeast(1) else contentW
+            text?.let { TextUtil.truncateStyled(it, limit).asOrderedText() } to color
         }
         // ⚠ priceRows 记的是 **footer 内**的行号，而实际渲染的是「tooltip 词条 + footer」拼起来的整表 ⇒
         //   判定时要减去 footer 的起始行号（`tooltipPart.size`）。
@@ -561,7 +662,7 @@ object ChatObjectPreview {
         val shown = lines.take(maxRows)
 
         val panelW = contentW + PANEL_PAD * 2
-        val panelX = panelXFor(context, panelW)
+        val panelX = itemPanelXFor(context, panelW)
         val panelH = shown.size * LINE_H + PANEL_PAD * 2
         val panelY = (screenHeight / 2 - panelH / 2)
 

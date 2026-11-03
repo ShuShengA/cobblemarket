@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.mixin.client;
 
+import com.shusheng.cobblemarket.client.ChatObjectPreview;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.Mouse;
 import net.minecraft.client.gui.screen.Screen;
@@ -8,7 +9,9 @@ import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * 界面尺寸（见 `GuiScale` 顶部说明）的**输入侧**：让发给界面的鼠标坐标落在**虚拟坐标系**里。
@@ -48,6 +51,20 @@ public abstract class MouseMixin {
     }
 
     // ── onMouseButton：mouseClicked / mouseReleased 的 (mouseX, mouseY) ──
+
+    /**
+     * 聊天里点左键 → 转发给聊天展示预览（点击常驻，见 `ChatObjectPreview.onMouseClick`）。
+     *
+     * **只转发、不消费**：原版照常处理这次点击；预览没在显示（数据没到 / 展示已过期）时
+     * `onMouseClick` 自己会直接返回（点了也不该有任何反应）。
+     * ⚠ action：GLFW_PRESS = 1、GLFW_RELEASE = 0 —— 只认按下沿，避免按住时反复切换。
+     */
+    @Inject(method = "onMouseButton", at = @At("HEAD"))
+    private void cobblemarket$chatPreviewClick(long window, int button, int action, int mods, CallbackInfo ci) {
+        if (button == 0 && action == 1) {
+            ChatObjectPreview.onMouseClick();
+        }
+    }
 
     @Redirect(method = "onMouseButton", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/util/Window;getScaledWidth()I"))
     private int cobblemarket$clickX(Window window) {

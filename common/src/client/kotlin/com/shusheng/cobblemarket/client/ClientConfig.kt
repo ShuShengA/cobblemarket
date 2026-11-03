@@ -120,6 +120,15 @@ object ClientConfig {
     var balanceHudMode: BalanceHudMode = BalanceHudMode.ALWAYS
         private set
 
+    /**
+     * 余额 HUD 是否显示**喵喵银行存款余额**（个人设置，设置弹窗开关，默认开）。
+     *
+     * 只有存款 > 0 时才显示（0 不占一行）；位置在**主货币与 RP 之间**。
+     * 存款余额含未结算利息，靠余额包的 2 秒兜底轮询刷新。
+     */
+    var showDepositBalance: Boolean = true
+        private set
+
     /** 精灵图标展示模式（个人设置，设置弹窗两态循环）：STATIC 静态 / FLOAT 动态（默认） */
     var iconAnimMode: IconAnimMode = IconAnimMode.FLOAT
         private set
@@ -148,6 +157,18 @@ object ClientConfig {
      */
     var quickShowcasePressOnce: Boolean = false
         private set
+
+    /**
+     * **聊天展示预览的点击常驻时长**（秒，个人设置，设置弹窗循环档位，默认 5）。
+     *
+     * 悬停聊天里的展示播报时，原版悬停窗提示「点击常驻屏幕 X 秒」；点击后大图固定显示这么久，
+     * 聊天继续刷屏 / 鼠标移开都不会消失。档位见 [CHAT_PREVIEW_PIN_CHOICES]。
+     */
+    var chatPreviewPinSeconds: Int = 5
+        private set
+
+    /** 聊天预览常驻时长的可选档位（秒）—— 设置弹窗循环切换 */
+    val CHAT_PREVIEW_PIN_CHOICES = listOf(3, 5, 10, 15, 30)
 
     /** 余额 HUD 位置（归一化 0~1：x 是 HUD 左缘在「屏宽 − HUD 宽」中的占比，0=贴左、1=贴右；y 同理按高度）。
      *  默认 (0, 0) = 左上角（老配置无此字段即保持原行为）。由「设置 → 余额HUD位置设置 → 自定义」拖动写入 */
@@ -207,6 +228,11 @@ object ClientConfig {
             customCursor = data["customCursor"] as? Boolean ?: true
             // 快速展示键：无字段（旧版本升级）按默认「按住」
             quickShowcasePressOnce = data["quickShowcasePressOnce"] as? Boolean ?: false
+            // 余额 HUD 的存款余额行：无字段（旧版本升级）按新默认「开」
+            showDepositBalance = data["showDepositBalance"] as? Boolean ?: true
+            // 聊天预览常驻时长：无字段（旧版本升级）默认 5 秒；非法值同样落默认
+            chatPreviewPinSeconds = ((data["chatPreviewPinSeconds"] as? Double)?.toInt() ?: 5)
+                .takeIf { it in CHAT_PREVIEW_PIN_CHOICES } ?: 5
             // 位置：无字段（旧版本升级）按左上角；越界值钳回 0~1
             balanceHudX = ((data["balanceHudX"] as? Double)?.toFloat() ?: 0f).coerceIn(0f, 1f)
             balanceHudY = ((data["balanceHudY"] as? Double)?.toFloat() ?: 0f).coerceIn(0f, 1f)
@@ -242,6 +268,18 @@ object ClientConfig {
     /** 快速展示键：按住 / 按一下（设置弹窗两态循环调用） */
     fun setQuickShowcasePressOnce(v: Boolean) {
         quickShowcasePressOnce = v
+        save()
+    }
+
+    /** 聊天展示预览的点击常驻时长（设置弹窗循环档位调用；非法值落默认 5 秒） */
+    fun setChatPreviewPinSeconds(v: Int) {
+        chatPreviewPinSeconds = v.takeIf { it in CHAT_PREVIEW_PIN_CHOICES } ?: 5
+        save()
+    }
+
+    /** 余额 HUD 是否显示存款余额（设置弹窗开关调用） */
+    fun setShowDepositBalance(v: Boolean) {
+        showDepositBalance = v
         save()
     }
 
@@ -375,6 +413,8 @@ object ClientConfig {
                             "hoverPreviewItem" to "悬停物品格时在屏幕左侧显示该物品的放大预览（个人设置，与精灵侧各自独立，同上）/ Show a large preview of the item on the left side of the screen when hovering its slot (personal setting, independent from the Pokemon side, same place)",
                             "customCursor" to "在本模组的界面里用模组自带的图标代替系统鼠标箭头（个人设置，默认开启；用系统光标主题的玩家可关掉）/ Replace the system mouse arrow with the mod's own icon while in this mod's screens (personal setting, on by default; turn off if you use a custom system cursor theme)",
                             "quickShowcasePressOnce" to "快速展示键的行为：false=按住（松开时展示鼠标悬停的框，默认），true=按一下（按键打开、点框展示、再按一次关闭）；可在市场入口界面右下角的设置里改 / Quick showcase key behavior: false=hold (release to showcase the hovered box, default), true=press once (press to open, click a box to showcase, press again to close); editable via the gear button on the market entry screen",
+                            "chatPreviewPinSeconds" to "聊天展示预览的点击常驻时长（秒，默认 5，可选 3/5/10/15/30）：悬停聊天里的展示播报时，提示「点击常驻屏幕 X 秒」，点击后大图固定显示这么久；可在市场入口界面右下角的设置里改 / How long a chat showcase preview stays pinned on screen after clicking it, in seconds (default 5; one of 3/5/10/15/30); editable via the gear button on the market entry screen",
+                            "showDepositBalance" to "余额 HUD 是否显示喵喵银行存款余额（默认开；存款为 0 时不显示，位置在主货币与 RP 之间）；可在市场入口界面右下角的设置里改 / Whether the balance HUD shows your Meowth Bank deposit balance (on by default; hidden when the deposit is 0, placed between the main currency and RP); editable via the gear button on the market entry screen",
                             "balanceHudX" to "余额 HUD 水平位置（0=贴左，1=贴右，0.5=居中）；由设置里的「余额HUD位置设置 → 自定义」拖动写入，手改请填 0~1 / Balance HUD horizontal position (0=left, 1=right, 0.5=centered); written by dragging in Settings → Balance HUD position → Custom; keep within 0~1 if editing by hand",
                             "balanceHudY" to "余额 HUD 垂直位置（0=贴顶，1=贴底，0.5=居中）；同样由拖动写入 / Balance HUD vertical position (0=top, 1=bottom, 0.5=centered); likewise written by dragging",
                             "updateNotice" to "有新版本可用时是否提示（个人设置，默认开；可在市场入口界面右下角的设置里改）。开启时**每次进入世界后**、第一次打开市场界面会提示一次（退出存档重进、重连服务器都算），直到你更新为止。查的是官网的一个版本文件，不带任何玩家信息 / Whether to show a chat notice when a newer version is available (personal setting, on by default; editable via the gear button on the market entry screen). When on, it shows once per world join — the first time you open a market screen (leaving and re-entering a world counts too) — until you update. It reads a single version file from our website and sends no player information",
@@ -398,6 +438,8 @@ object ClientConfig {
                         "hoverPreviewItem" to hoverPreviewItem,
                         "customCursor" to customCursor,
                         "quickShowcasePressOnce" to quickShowcasePressOnce,
+                        "chatPreviewPinSeconds" to chatPreviewPinSeconds,
+                        "showDepositBalance" to showDepositBalance,
                         "balanceHudX" to balanceHudX,
                         "balanceHudY" to balanceHudY,
                         "updateNotice" to updateNotice,

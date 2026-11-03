@@ -1161,7 +1161,9 @@ class ItemMarketScreen : Screen(Text.translatable("cobblemarket.item.title")) {
             }
         })
 
-        buyCountField = TextFieldWidget(textRenderer, centerX - 80, L.fieldY, 100, 16, Text.literal(""))
+        // 宽 100、居中于弹窗（2026-11-02 修：原 x = centerX − 80 是「左对齐于 centerX−80」时代的
+        // 残留，2026-10-03 把数量标签 / 总价改成居中后输入框漏改，实际偏左 30px）
+        buyCountField = TextFieldWidget(textRenderer, centerX - 50, L.fieldY, 100, 16, Text.literal(""))
         buyCountField?.setPlaceholder(Text.translatable("cobblemarket.item.buy_count"))
         buyCountField?.setTextPredicate { it.length <= 4 && it.all { c -> c.isDigit() } }
         // 重新输入时清除校验失败提示

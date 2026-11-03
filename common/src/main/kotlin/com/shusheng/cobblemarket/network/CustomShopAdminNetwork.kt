@@ -5,6 +5,7 @@ import com.shusheng.cobblemarket.currency.CustomShopError
 import com.shusheng.cobblemarket.currency.CustomShopState
 import com.shusheng.cobblemarket.currency.CustomShopMode
 import com.shusheng.cobblemarket.currency.CustomShopType
+import com.shusheng.cobblemarket.currency.CustomShopClaimState
 import com.shusheng.cobblemarket.currency.CustomShopCooldownState
 import com.shusheng.cobblemarket.currency.DEFAULT_CLAIM_HOURS
 import com.shusheng.cobblemarket.currency.MAX_CLAIM_HOURS
@@ -658,8 +659,9 @@ object CustomShopAdminNetwork {
                 val name = shop.name
                 val entries = shop.entryCount()
                 state.delete(payload.id)
-                // 同 id 重建的店不能继承旧冷却：删店时一并清掉
+                // 同 id 重建的店不能继承旧冷却 / 领取周期：删店时一并清掉
                 CustomShopCooldownState.get(player.server).clearShop(payload.id.trim().lowercase())
+                CustomShopClaimState.get(player.server).clearShop(payload.id.trim().lowercase())
                 PersistHelper.requestSave(player.server)
                 sendResult(
                     player,

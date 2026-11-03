@@ -20,4 +20,9 @@ object BalanceCache {
 
     /** RP 原始数值（HUD 变动浮字的差值对比用） */
     var pointsRaw: Long = 0L
+
+    /** **喵喵银行存款余额**（已千分位；0 时为空串）：HUD 在「主货币」与「RP」之间显示这一行 */
+    var depositBalance: String = ""
+    /** 存款原始数值：HUD 判「> 0 才显示」用 */
+    var depositBalanceRaw: Long = 0L
 }
