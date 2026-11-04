@@ -5,6 +5,8 @@ import com.shusheng.cobblemarket.currency.MarketCurrency
 import com.shusheng.cobblemarket.currency.PointsAuditLogger
 import com.shusheng.cobblemarket.currency.PointsLogType
 import com.shusheng.cobblemarket.currency.PointsState
+import com.shusheng.cobblemarket.market.AuctionState
+import com.shusheng.cobblemarket.market.AuctionType
 import com.shusheng.cobblemarket.market.MarketState
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.network.ServerPlayerEntity
@@ -95,6 +97,34 @@ object MarketQueryApi {
 			byKey[key] = SpeciesPrice(normalEntries, shinyEntries)
 		}
 		return wanted.entries.associate { (original, key) -> original to (byKey[key] ?: EMPTY) }
+	}
+
+	/**
+	 * 拍卖场在售数量（**2026-11-05 新增，1.3.6**）。
+	 *
+	 * 只给数量、不给价格 —— 导航器只回答「有几只在拍」（用户 2026-11-05 定：市场行不写价格，
+	 * 同种两只价差可能很大，只显示最低价会误导；拍卖场同理只显示数量）。
+	 * 只统计**精灵**拍卖（`AuctionType.POKEMON`），物品拍卖不算。
+	 * 与 [prices] 用同一套物种匹配（大小写不敏感、剥 `cobblemon:` 前缀）。
+	 */
+	data class AuctionCount(val normalCount: Int, val shinyCount: Int)
+
+	fun auctionCounts(server: MinecraftServer, species: Collection<String>): Map<String, AuctionCount> {
+		if (species.isEmpty()) return emptyMap()
+		val wantedKeys = species.map(::normalizeSpecies).toSet()
+		val result = mutableMapOf<String, AuctionCount>()
+		AuctionState.get(server).getActiveAuctions().forEach { auction ->
+			if (auction.type != AuctionType.POKEMON) return@forEach
+			val key = normalizeSpecies(auction.species)
+			if (key !in wantedKeys) return@forEach
+			val current = result[key] ?: AuctionCount(0, 0)
+			result[key] = if (auction.shiny) {
+				current.copy(shinyCount = current.shinyCount + 1)
+			} else {
+				current.copy(normalCount = current.normalCount + 1)
+			}
+		}
+		return result
 	}
 
 	private val EMPTY = SpeciesPrice(emptyList(), emptyList())
