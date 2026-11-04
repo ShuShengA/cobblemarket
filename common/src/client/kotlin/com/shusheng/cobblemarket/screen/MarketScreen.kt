@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.PlayerSkinCache
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.util.ItemNameText
@@ -59,6 +60,8 @@ import kotlin.math.sin
 class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     private var listings = listOf<ListingEntry>()
+    /** 首包状态：回来前显示「加载中…」，回来后才允许显示「暂无上架」（切币种时 reset） */
+    private val loadState = LoadState()
     private var currentPage = 1
     private var totalPages = 1
 
@@ -1372,6 +1375,8 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         // 「收款」只在主货币页有意义：它收的是**普通货币**的待收款（RP 收入直接进余额，没有待领账本）
         collectButton?.visible = currency != MarketCurrency.POINTS
         currentPage = 1
+        // 新币种是另一份列表：在新回包前重新显示「加载中…」
+        loadState.reset()
         // 走筛选变更那条节流/排队通道：直接发会撞上服务端 250ms 节流被静默丢弃，列表不刷新
         requestFilterRefresh()
     }
@@ -1736,7 +1741,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         if (displayList.isEmpty() && filterListOpen.isEmpty()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.gui.no_listings").formatted(Formatting.GRAY),
+                Text.translatable(loadState.emptyKey("cobblemarket.gui.no_listings")).formatted(Formatting.GRAY),
                 centerX, startY + 50, 0xFFFFFF
             )
         }
@@ -2576,6 +2581,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     fun onMarketData(payload: MarketDataPayload) {
         pageRequestInFlight = false
         listings = payload.entries
+        loadState.markLoaded()
         totalPages = payload.totalPages
         when {
             pendingPage == 0 -> currentPage = payload.currentPage

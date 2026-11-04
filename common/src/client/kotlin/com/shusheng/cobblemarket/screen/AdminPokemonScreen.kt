@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.PlayerSkinCache
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.util.MoveText
@@ -51,6 +52,8 @@ import net.minecraft.util.Identifier
 class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) {
 
     private var listings = listOf<ListingEntry>()
+    /** 首包状态：回来前显示「加载中…」，回来后才允许显示「暂无上架」（切币种时 reset） */
+    private val loadState = LoadState()
     private var currentPage = 1
     private var totalPages = 1
 
@@ -997,6 +1000,8 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private fun toggleCurrency() {
         setCurrency(if (currency == MarketCurrency.POINTS) MarketCurrency.PRIMARY else MarketCurrency.POINTS)
         currentPage = 1
+        // 新币种是另一份列表：在新回包前重新显示「加载中…」
+        loadState.reset()
         refreshData()
     }
 
@@ -1062,6 +1067,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         pageRequestInFlight = false
         updatePageButtons()
         listings = payload.entries
+        loadState.markLoaded()
         totalPages = payload.totalPages
         currentPage = payload.currentPage
         indexedListings = listings.withIndex().toList()
@@ -1269,7 +1275,7 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         if (displayList.isEmpty()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.translatable("cobblemarket.gui.no_listings").formatted(Formatting.GRAY),
+                Text.translatable(loadState.emptyKey("cobblemarket.gui.no_listings")).formatted(Formatting.GRAY),
                 centerX, startY + 50, 0xFFFFFF
             )
         }

@@ -2,6 +2,10 @@
 
 ## 1.3.6 (in development, unreleased)
 
+### Fixes
+
+- **Opening the Pokémon Market / the admin Pokémon manager on a slow connection showed "No listings found." instead of "Loading…"**: it now shows the loading state until the first response arrives, then reports an empty market only when there really are no listings; switching currency resets the loading state as well
+
 ## 1.3.5 (released)
 
 ### New Features
