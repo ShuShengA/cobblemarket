@@ -4,6 +4,7 @@ import com.shusheng.cobblemarket.util.StatNames
 import com.shusheng.cobblemarket.util.TextUtil
 import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.PlayerSkinCache
+import com.shusheng.cobblemarket.client.api.BuyOrderCreatePrefill
 import com.shusheng.cobblemarket.client.clampTooltipRows
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
@@ -83,7 +84,13 @@ class BuyOrderScreen(
      * 界面一次只看一种货币，有了它就一次请求命中；没有的话（老格式通知）只能先查主货币、
      * 发现没这一单再换另一种重查 —— 多一轮往返 + 等节流窗口，实测反馈「弹窗慢半拍」。
      */
-    private val initialCurrency: MarketCurrency? = null
+    private val initialCurrency: MarketCurrency? = null,
+    /**
+     * 附属模组预填（[com.shusheng.cobblemarket.client.api.MarketUiApi.openBuyOrderCreate]）：
+     * 打开后直接进入「创建精灵求购单」并把物种 / 形态填好；null = 正常打开。
+     * ⚠ 只消费一次（resize / 重建 init 不重复打开创建弹窗）。
+     */
+    private val initialCreatePrefill: BuyOrderCreatePrefill? = null
 ) : Screen(Text.translatable("cobblemarket.buy_order.title")) {
 
     // 防串扰：界面关闭后到达的响应丢弃（照 SellSelectScreen）
@@ -99,6 +106,9 @@ class BuyOrderScreen(
     private val rowBtnDy = 4
 
     private var currentTab = initialTab.coerceIn(0, 1) // 0 = 全部, 1 = 我的
+
+    /** 附属模组预填只消费一次（resize / 重建 init 不重复打开创建弹窗） */
+    private var initialPrefillConsumed = false
 
     /**
      * 列表在查哪个币种（货币切换按钮控制）—— **只决定查什么，不参与渲染**：
@@ -554,6 +564,27 @@ class BuyOrderScreen(
         // 不重置 scrollOffset：交付弹窗关闭/resize 重建时保留浏览位置（switchTab 才显式归零）
         requestBuyOrderList()
         rebuildDisplayList()
+
+        // 附属模组预填（MarketUiApi.openBuyOrderCreate）：第一次初始化时直接进入
+        // 「创建精灵求购单」并填好物种 / 形态；resize / 重建 init 不重复打开。
+        if (!initialPrefillConsumed) {
+            initialPrefillConsumed = true
+            val prefill = initialCreatePrefill
+            if (prefill != null && com.shusheng.cobblemarket.client.MarketStateCache.buyOrderPokemonEnabled) {
+                openCreateDialog()
+                // 填物种会触发 updatePokemonPreview → applySpecies，形态候选随之建好；
+                // 再按 aspects 精确匹配选中的形态（找不到就保持「全部形态」，让玩家自己选）
+                createSpeciesField?.text = prefill.species
+                // 优先精确匹配；调用方若把性别 / 闪光等额外 aspects 也一起传进来，
+                // 退回「形态选项的 aspects 是它的子集」那一条（仍选到正确的形态）
+                val idx = formOptions.indexOfFirst { it.aspects == prefill.formAspects }
+                    .takeIf { it >= 0 }
+                    ?: formOptions.indexOfFirst {
+                        it.aspects.isNotEmpty() && prefill.formAspects.containsAll(it.aspects)
+                    }
+                if (idx >= 0) selectForm(idx)
+            }
+        }
     }
 
     // ── 列表请求（节流排队） ──
