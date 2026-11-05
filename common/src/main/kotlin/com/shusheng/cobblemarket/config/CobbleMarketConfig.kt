@@ -114,6 +114,20 @@ object CobbleMarketConfig {
         private set
     var maxBuyOrdersPerPlayer: Int = 5
         private set
+    /**
+     * **悬停窗口显示能力值**（2026-11-05，默认关，**服主决定**）。
+     *
+     * 打开后，精灵信息**悬停窗**（市场行悬停等）在个体值六行之后、亲密度之前画一个
+     * Cobblemon 同款能力值六边形（HP/攻/防/速/特防/特攻）。**只在悬停窗显示**，
+     * 购买 / 出价 / 详情等弹窗不加（用户 2026-11-05 定）。
+     *
+     * ⚠ 默认关 = **服务端不计算、网络包不涨、客户端不画**，与其他功能零差异。
+     * ⚠ 能力值必须**服务端计算**：装了 Fusionmon 时它替换了全局 `StatProvider`，
+     *   融合精灵的正确值只有服务端 `getStat` 拿得到（客户端拿不到融合种族值）。
+     */
+    var hoverStatsChart: Boolean = false
+        private set
+
     var marketEnabled: Boolean = true
         private set
 
@@ -482,6 +496,12 @@ object CobbleMarketConfig {
     /** 市场总开关切换并落盘（仅管理端命令/面板调用） */
     fun setMarketEnabled(v: Boolean) {
         marketEnabled = v
+        save()
+    }
+
+    /** 悬停窗口显示能力值（默认关；只在悬停窗显示，弹窗不加） */
+    fun setHoverStatsChart(v: Boolean) {
+        hoverStatsChart = v
         save()
     }
 
@@ -990,6 +1010,8 @@ object CobbleMarketConfig {
                 buyOrderExpiryDays = (rawBuyOrderExpiry ?: 3).coerceAtLeast(1)
                 maxBuyOrdersPerPlayer = ((data["maxBuyOrdersPerPlayer"] as? Double)?.toInt() ?: 5).coerceAtLeast(0)
                 marketEnabled = data["marketEnabled"] as? Boolean ?: true
+                // 悬停窗能力值六边形（2026-11-05 新增）：无字段（旧配置）按默认「关」
+                hoverStatsChart = data["hoverStatsChart"] as? Boolean ?: false
                 // 四个分项开关：旧配置里没有这些键 ⇒ 默认开（升级后行为与旧版本一致）
                 pokemonMarketEnabled = data["pokemonMarketEnabled"] as? Boolean ?: true
                 itemMarketEnabled = data["itemMarketEnabled"] as? Boolean ?: true
@@ -1122,6 +1144,7 @@ object CobbleMarketConfig {
                 "eggTradingEnabled" to "蛋交易开关（默认关闭）。蛋走物品交易链路，不经过精灵黑名单（个体值/形态/闪光）校验；若蛋加密关闭，部分模组可显示蛋内精灵数据，玩家可提前筛选，精灵黑名单对蛋失效——开启前请评估风险 / Egg trading switch (off by default). Eggs bypass the Pokémon blacklist (IV/form/shiny) checks; with egg encryption off, some mods can reveal egg data, letting players pick eggs before hatching — evaluate the risk before enabling",
                 "buyOrderFeePercent" to "求购单中介费百分比：买家成交时从卖家实收中扣除（0=免中介费）/ Buy order fee percentage charged on seller's actual payment (0=no fee)",
                 "buyOrderExpiryDays" to "求购单过期天数（到期自动关闭，剩余冻结金退买家待领余额）/ Buy order expiry in days (expired orders close automatically and refund frozen money)",
+                "hoverStatsChart" to "悬停窗口显示能力值（默认关闭，服主决定）：打开后精灵信息悬停窗里会画一个能力值六边形（与游戏内队伍详情同口径，融合精灵也正确）；只在悬停窗显示，购买/出价/详情弹窗不加。⚠ 关闭时服务端不计算、网络包不增加、客户端不绘制，与其他功能零差异 / Show a stat hexagon in Pokémon hover tooltips (off by default, server-side): when on, hover tooltips draw a stat hexagon (same values as the in-game summary, including fused Pokémon); only hover tooltips are affected, not purchase/bid/detail dialogs. When off, the server does no calculation, nothing extra is sent, and nothing is drawn",
                 "marketEnabled" to "市场总开关（默认开启）：紧急情况可整体关闭市场功能——所有买卖/拍卖/求购操作被拦截并提示，但待领取、余额等取回自己资产的操作仍可用。可在游戏内用 /market on|off 切换 / Master market switch (on by default): emergency kill switch for the entire market — all buy/sell/auction/buy-order operations are blocked with a notice, while claiming returns and collecting balances still work. Toggle in-game via /market on|off",
                 "pokemonMarketEnabled" to "精灵市场开关（默认开启）：关闭后玩家不能上架或购买精灵，已挂出的精灵也不可交易；下架、待领取与领取余额等取回资产的操作照常，管理员仍可在管理面板查看和强制下架。与市场总开关相互独立 / Pokémon market switch (on by default): when off, players cannot list or buy Pokémon, and existing listings cannot be traded either; delisting, pending returns and collecting balances still work, and admins can still view and force-delist from the Admin Panel. Independent of the master market switch",
                 "itemMarketEnabled" to "物品市场开关（默认开启）：关闭后玩家不能上架或购买物品，已挂出的物品也不可交易；取回资产的操作照常，管理员仍可在管理面板查看和强制下架。与市场总开关相互独立 / Item market switch (on by default): when off, players cannot list or buy items, and existing listings cannot be traded either; collecting your assets still works, and admins can still view and force-delist from the Admin Panel. Independent of the master market switch",
@@ -1206,6 +1229,7 @@ object CobbleMarketConfig {
             "buyOrderFeePercent" to buyOrderFeePercent,
             "buyOrderExpiryDays" to buyOrderExpiryDays,
             "maxBuyOrdersPerPlayer" to maxBuyOrdersPerPlayer,
+            "hoverStatsChart" to hoverStatsChart,
             "marketEnabled" to marketEnabled,
             "pokemonMarketEnabled" to pokemonMarketEnabled,
             "itemMarketEnabled" to itemMarketEnabled,

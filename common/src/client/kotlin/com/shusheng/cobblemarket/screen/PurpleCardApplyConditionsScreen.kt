@@ -265,6 +265,7 @@ class PurpleCardApplyConditionsScreen : Screen(CardNames.label("cobblemarket.op.
             auctionItemEnabled = p?.auctionItemEnabled ?: true,
             buyOrderPokemonEnabled = p?.buyOrderPokemonEnabled ?: true,
             buyOrderItemEnabled = p?.buyOrderItemEnabled ?: true,
+            hoverStatsChart = p?.hoverStatsChart ?: false,
         ))
         savedToastUntil = System.currentTimeMillis() + 1500
     }

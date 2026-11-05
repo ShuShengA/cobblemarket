@@ -14,6 +14,8 @@ class PokemonMarketConfigScreen : MarketConfigScreenBase(
     protected override val toggleDefs = listOf(
         "cobblemarket.op.scfg_pokemon_market_enabled" to "pokemonMarketEnabled",
         "cobblemarket.op.scfg_egg_trading" to "eggTrading",
+        // 悬停窗口显示能力值（2026-11-05）：默认关；只在悬停窗画六边形，购买/出价/详情弹窗不加
+        "cobblemarket.op.scfg_hover_stats_chart" to "hoverStatsChart",
     )
     protected override val guardedToggles = setOf("eggTrading")
     protected override val numDefs = listOf(

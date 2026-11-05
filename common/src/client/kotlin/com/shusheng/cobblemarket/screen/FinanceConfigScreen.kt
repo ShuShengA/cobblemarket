@@ -359,6 +359,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             auctionItemEnabled = p?.auctionItemEnabled ?: true,
             buyOrderPokemonEnabled = p?.buyOrderPokemonEnabled ?: true,
             buyOrderItemEnabled = p?.buyOrderItemEnabled ?: true,
+            hoverStatsChart = p?.hoverStatsChart ?: false,
         ))
         savedToastUntil = System.currentTimeMillis() + 1500
     }

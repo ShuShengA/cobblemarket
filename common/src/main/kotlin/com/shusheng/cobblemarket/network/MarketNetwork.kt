@@ -142,7 +142,22 @@ data class ListingEntry(
      *   （与 `teraType` / `moves` / `originalTrainer` 同一口径）。
      * **空串 = 没有昵称** ⇒ 信息行里那一整行不画。
      */
-    val nickname: String = ""
+    val nickname: String = "",
+    /**
+     * **当前能力值**（2026-11-05，悬停窗六边形用）—— 顺序 = 六边形顶点：
+     * HP / 攻 / 防 / 速 / 特防 / 特攻。-1 = 没有数据（旧服务端 / NBT 损坏），客户端不画。
+     *
+     * ⚠⚠ **必须由服务端算**（`PokemonStats.fromNbt` → `pokemon.getStat(...)`）：
+     *   服务器装了 Fusionmon 时，它把全局 `StatProvider` 换成了 `FusionStatProvider`，
+     *   融合精灵的正确值只有服务端调 `getStat` 才拿得到（客户端拿不到融合种族值）。
+     *   客户端**绝不能**按 IV/EV/等级自己套公式 —— 那样融合精灵会显示头部原种的值。
+     */
+    val statsHp: Int = -1,
+    val statsAtk: Int = -1,
+    val statsDef: Int = -1,
+    val statsSpe: Int = -1,
+    val statsSpDef: Int = -1,
+    val statsSpAtk: Int = -1
 ) {
     /**
      * 这条挂单是不是 RP 计价 —— **渲染货币单位就读它**。
@@ -191,50 +206,90 @@ data class ListingEntry(
         buf.writeString(originalTrainer)
         buf.writeBoolean(illegal)
         buf.writeString(nickname)
+        // 能力值（2026-11-05；**条件写**）—— 开关关时 stats 全 -1，只写一个 false（1 字节），
+        // 不写 6 个 int：严格保持「没加这个功能之前」的包大小（一页 10 条以前白多 240 字节，现在只多 10 字节）
+        val hasStats = statsHp >= 0
+        buf.writeBoolean(hasStats)
+        if (hasStats) {
+            buf.writeInt(statsHp)
+            buf.writeInt(statsAtk)
+            buf.writeInt(statsDef)
+            buf.writeInt(statsSpe)
+            buf.writeInt(statsSpDef)
+            buf.writeInt(statsSpAtk)
+        }
     }
 
     companion object {
-        fun read(buf: PacketByteBuf): ListingEntry = ListingEntry(
-            id = buf.readUuid(),
-            sellerUuid = buf.readUuid(),
-            species = buf.readString(),
-            speciesId = buf.readString(),
-            level = buf.readInt(),
-            shiny = buf.readBoolean(),
-            price = buf.readInt(),
-            sellerName = buf.readString(),
-            primaryType = buf.readString(),
-            secondaryType = buf.readString(),
-            ivsHp = buf.readInt(), ivsAtk = buf.readInt(), ivsDef = buf.readInt(),
-            ivsSpAtk = buf.readInt(), ivsSpDef = buf.readInt(), ivsSpd = buf.readInt(),
-            htHp = buf.readInt(), htAtk = buf.readInt(), htDef = buf.readInt(),
-            htSpAtk = buf.readInt(), htSpDef = buf.readInt(), htSpd = buf.readInt(),
-            evsHp = buf.readInt(), evsAtk = buf.readInt(), evsDef = buf.readInt(),
-            evsSpAtk = buf.readInt(), evsSpDef = buf.readInt(), evsSpd = buf.readInt(),
-            friendship = buf.readInt(),
-            nature = buf.readString(),
-            natureBase = buf.readString(),
-            ability = buf.readString(),
-            gender = buf.readString(),
-            ball = buf.readString(),
-            ballItem = buf.readString(),
-            heldItemId = buf.readString(),
-            heldItemNbt = buf.readString(),
-            currencyName = buf.readString(),
-            aspects = (0 until buf.readVarInt()).map { buf.readString() },
-            marks = (0 until buf.readVarInt()).map { buf.readString() },
-            sizeCategory = buf.readString(),
-            currency = buf.readString(),
-            moves = buf.readString(),
-            heldItemVisible = buf.readBoolean(),
-            teraType = buf.readString(),
-            // 与 write 端严格同序（write 在 teraType 之后）—— 用具名参数防错位
-            gmaxFactor = buf.readBoolean(),
-            dmaxLevel = buf.readInt(),
-            originalTrainer = buf.readString(),
-            illegal = buf.readBoolean(),
-            nickname = buf.readString()
-        )
+        fun read(buf: PacketByteBuf): ListingEntry {
+            val id = buf.readUuid()
+            val sellerUuid = buf.readUuid()
+            val species = buf.readString()
+            val speciesId = buf.readString()
+            val level = buf.readInt()
+            val shiny = buf.readBoolean()
+            val price = buf.readInt()
+            val sellerName = buf.readString()
+            val primaryType = buf.readString()
+            val secondaryType = buf.readString()
+            val ivsHp = buf.readInt(); val ivsAtk = buf.readInt(); val ivsDef = buf.readInt()
+            val ivsSpAtk = buf.readInt(); val ivsSpDef = buf.readInt(); val ivsSpd = buf.readInt()
+            val htHp = buf.readInt(); val htAtk = buf.readInt(); val htDef = buf.readInt()
+            val htSpAtk = buf.readInt(); val htSpDef = buf.readInt(); val htSpd = buf.readInt()
+            val evsHp = buf.readInt(); val evsAtk = buf.readInt(); val evsDef = buf.readInt()
+            val evsSpAtk = buf.readInt(); val evsSpDef = buf.readInt(); val evsSpd = buf.readInt()
+            val friendship = buf.readInt()
+            val nature = buf.readString()
+            val natureBase = buf.readString()
+            val ability = buf.readString()
+            val gender = buf.readString()
+            val ball = buf.readString()
+            val ballItem = buf.readString()
+            val heldItemId = buf.readString()
+            val heldItemNbt = buf.readString()
+            val currencyName = buf.readString()
+            val aspects = (0 until buf.readVarInt()).map { buf.readString() }
+            val marks = (0 until buf.readVarInt()).map { buf.readString() }
+            val sizeCategory = buf.readString()
+            val currency = buf.readString()
+            val moves = buf.readString()
+            val heldItemVisible = buf.readBoolean()
+            val teraType = buf.readString()
+            // 与 write 端严格同序（write 在 teraType 之后）
+            val gmaxFactor = buf.readBoolean()
+            val dmaxLevel = buf.readInt()
+            val originalTrainer = buf.readString()
+            val illegal = buf.readBoolean()
+            val nickname = buf.readString()
+            // 能力值（条件读，与 write 端一致）：关时只有 1 个 false，没有 6 个 int
+            val hasStats = buf.readBoolean()
+            val stats = if (hasStats) IntArray(6) { buf.readInt() } else null
+            return ListingEntry(
+                id = id, sellerUuid = sellerUuid, species = species, speciesId = speciesId,
+                level = level, shiny = shiny, price = price, sellerName = sellerName,
+                primaryType = primaryType, secondaryType = secondaryType,
+                ivsHp = ivsHp, ivsAtk = ivsAtk, ivsDef = ivsDef,
+                ivsSpAtk = ivsSpAtk, ivsSpDef = ivsSpDef, ivsSpd = ivsSpd,
+                htHp = htHp, htAtk = htAtk, htDef = htDef,
+                htSpAtk = htSpAtk, htSpDef = htSpDef, htSpd = htSpd,
+                evsHp = evsHp, evsAtk = evsAtk, evsDef = evsDef,
+                evsSpAtk = evsSpAtk, evsSpDef = evsSpDef, evsSpd = evsSpd,
+                friendship = friendship, nature = nature, natureBase = natureBase,
+                ability = ability, gender = gender, ball = ball, ballItem = ballItem,
+                heldItemId = heldItemId, heldItemNbt = heldItemNbt,
+                currencyName = currencyName, aspects = aspects, marks = marks,
+                sizeCategory = sizeCategory, currency = currency, moves = moves,
+                heldItemVisible = heldItemVisible, teraType = teraType,
+                gmaxFactor = gmaxFactor, dmaxLevel = dmaxLevel,
+                originalTrainer = originalTrainer, illegal = illegal, nickname = nickname,
+                statsHp = stats?.get(0) ?: -1,
+                statsAtk = stats?.get(1) ?: -1,
+                statsDef = stats?.get(2) ?: -1,
+                statsSpe = stats?.get(3) ?: -1,
+                statsSpDef = stats?.get(4) ?: -1,
+                statsSpAtk = stats?.get(5) ?: -1,
+            )
+        }
     }
 }
 
@@ -256,6 +311,11 @@ data class MarketStatePayload(
     /** 求购单：精灵 / 物品子开关（关闭后对应 tab 隐藏） */
     val buyOrderPokemonEnabled: Boolean,
     val buyOrderItemEnabled: Boolean,
+    /**
+     * **悬停窗口显示能力值**（2026-11-05，服主配置，默认关）。
+     * 客户端据此决定悬停窗画不画六边形；服务端关着时不会计算、也不会下发能力值字段。
+     */
+    val hoverStatsChart: Boolean = false,
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -271,10 +331,11 @@ data class MarketStatePayload(
                 b.writeBoolean(p.buyOrderEnabled)
                 b.writeBoolean(p.buyOrderPokemonEnabled)
                 b.writeBoolean(p.buyOrderItemEnabled)
+                b.writeBoolean(p.hoverStatsChart)
             },
             { b -> MarketStatePayload(
                 b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readBoolean(),
-                b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readBoolean()
+                b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readBoolean()
             ) }
         )
     }
@@ -291,6 +352,7 @@ fun marketStatePayload(): MarketStatePayload = MarketStatePayload(
     buyOrderEnabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.buyOrderEnabled,
     buyOrderPokemonEnabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.buyOrderPokemonEnabled,
     buyOrderItemEnabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.buyOrderItemEnabled,
+    hoverStatsChart = com.shusheng.cobblemarket.config.CobbleMarketConfig.hoverStatsChart,
 )
 
 // ── S2C: 待领取概况（登录时推一次） ──
@@ -1788,6 +1850,31 @@ object MarketNetwork {
      */
     private val itemSearchDisplayNames = object : LinkedHashMap<UUID, String>(512, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<UUID, String>?) = size > 4096
+    }
+
+    /**
+     * **能力值缓存**（2026-11-05，悬停窗六边形用）。
+     *
+     * ⚠ `PokemonStats.fromNbt` 是 `buildListingEntry` 里**唯一**构造完整 `Pokemon` 对象的调用
+     *（其余「从 NBT 现读」的字段只读个别 NBT 键，开销小得多）—— 每页 10 条 × 每次翻页都会重算，
+     * 满页频繁翻页时有累积开销。挂单 id 稳定、挂单期间精灵数据不变 ⇒ 按 id 缓存安全；
+     * 重新上架会换 id，不会残留。空数组 = 该挂单没有可用数据（NBT 损坏），同样缓存，避免反复解析。
+     * LRU 上限 4096；与 [itemSearchDisplayNames] 同一约定：**只在请求 handler（主线程）里访问**。
+     */
+    private val statsCache = object : LinkedHashMap<UUID, IntArray>(512, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<UUID, IntArray>?) = size > 4096
+    }
+
+    private fun cachedStats(
+        id: UUID,
+        pokemonNbt: net.minecraft.nbt.NbtCompound?,
+        server: MinecraftServer,
+    ): IntArray? {
+        statsCache[id]?.let { return it.takeIf { a -> a.isNotEmpty() } }
+        val computed = com.shusheng.cobblemarket.util.PokemonStats.fromNbt(server.registryManager, pokemonNbt)
+            ?: IntArray(0)
+        statsCache[id] = computed
+        return computed.takeIf { it.isNotEmpty() }
     }
 
     /** 挂单物品的显示名（含 custom_name 原文）；重建失败返回空串，绝不抛 */
@@ -3934,6 +4021,15 @@ object MarketNetwork {
         // 昵称：**同样从挂单自带的完整 NBT 现读**（不是上架那一刻的快照）——
         // 现读 ⇒ 老挂单照样显示昵称；存快照就永远不显示（与太晶 / 极巨 / OT 同一个口径）
         val nickname = com.shusheng.cobblemarket.util.PokemonNickname.fromNbt(pokemonNbt)
+        // 当前能力值（2026-11-05）：**必须服务端算** —— Fusionmon 把全局 StatProvider 换成了
+        // FusionStatProvider，融合精灵只有调 getStat 才能拿到正确值（客户端拿不到融合种族值）。
+        // 走 [cachedStats]：构造完整 Pokemon 对象是这里最重的操作，按挂单 id 缓存。
+        // ⚠ 服主开关关着时**完全不计算**（默认关 ⇒ 与本功能不存在时零差异）
+        val stats = if (com.shusheng.cobblemarket.config.CobbleMarketConfig.hoverStatsChart) {
+            cachedStats(id, pokemonNbt, server)
+        } else {
+            null
+        }
         return ListingEntry(
             id = id,
             sellerUuid = sellerUuid,
@@ -3989,7 +4085,14 @@ object MarketNetwork {
             originalTrainer = otName,
             // 「非法」角标（值见上面现算出来的 illegal）
             illegal = illegal,
-            nickname = nickname.orEmpty()
+            nickname = nickname.orEmpty(),
+            // 能力值（值见上面现算出来的 stats；顺序 = 六边形顶点）
+            statsHp = stats?.getOrNull(0) ?: -1,
+            statsAtk = stats?.getOrNull(1) ?: -1,
+            statsDef = stats?.getOrNull(2) ?: -1,
+            statsSpe = stats?.getOrNull(3) ?: -1,
+            statsSpDef = stats?.getOrNull(4) ?: -1,
+            statsSpAtk = stats?.getOrNull(5) ?: -1
         )
     }
 

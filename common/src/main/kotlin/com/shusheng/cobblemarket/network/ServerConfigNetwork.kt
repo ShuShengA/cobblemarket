@@ -122,6 +122,8 @@ data class ServerConfigDataPayload(
     val buyOrderPokemonEnabled: Boolean,
     /** 求购单的物品子开关（默认开） */
     val buyOrderItemEnabled: Boolean,
+    /** 悬停窗口显示能力值（默认关，服主配置；2026-11-05） */
+    val hoverStatsChart: Boolean,
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -198,6 +200,7 @@ data class ServerConfigDataPayload(
                 b.writeBoolean(p.auctionItemEnabled)
                 b.writeBoolean(p.buyOrderPokemonEnabled)
                 b.writeBoolean(p.buyOrderItemEnabled)
+                b.writeBoolean(p.hoverStatsChart)
             },
             // 读端用具名参数，读写字段顺序必须一致
             { b -> ServerConfigDataPayload(
@@ -271,6 +274,7 @@ data class ServerConfigDataPayload(
                 auctionItemEnabled = b.readBoolean(),
                 buyOrderPokemonEnabled = b.readBoolean(),
                 buyOrderItemEnabled = b.readBoolean(),
+                hoverStatsChart = b.readBoolean(),
             ) }
         )
     }
@@ -364,6 +368,8 @@ data class SaveServerConfigPayload(
     val buyOrderPokemonEnabled: Boolean,
     /** 求购单的物品子开关（默认开） */
     val buyOrderItemEnabled: Boolean,
+    /** 悬停窗口显示能力值（默认关，服主配置；2026-11-05） */
+    val hoverStatsChart: Boolean,
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -440,6 +446,7 @@ data class SaveServerConfigPayload(
                 b.writeBoolean(p.auctionItemEnabled)
                 b.writeBoolean(p.buyOrderPokemonEnabled)
                 b.writeBoolean(p.buyOrderItemEnabled)
+                b.writeBoolean(p.hoverStatsChart)
             },
             // 读端用具名参数，读写字段顺序必须一致
             { b -> SaveServerConfigPayload(
@@ -513,6 +520,7 @@ data class SaveServerConfigPayload(
                 auctionItemEnabled = b.readBoolean(),
                 buyOrderPokemonEnabled = b.readBoolean(),
                 buyOrderItemEnabled = b.readBoolean(),
+                hoverStatsChart = b.readBoolean(),
             ) }
         )
     }
@@ -635,6 +643,7 @@ object ServerConfigNetwork {
         buyOrderEnabled = CobbleMarketConfig.buyOrderEnabled,
         buyOrderPokemonEnabled = CobbleMarketConfig.buyOrderPokemonEnabled,
         buyOrderItemEnabled = CobbleMarketConfig.buyOrderItemEnabled,
+        hoverStatsChart = CobbleMarketConfig.hoverStatsChart,
     )
 
     /** 批量应用（钳制规则与各 setter 一致）；eggTrading 走既有 setter（含 save，重复落盘无害） */
@@ -710,6 +719,8 @@ object ServerConfigNetwork {
         CobbleMarketConfig.setBuyOrderPokemonEnabled(p.buyOrderPokemonEnabled)
         CobbleMarketConfig.setBuyOrderItemEnabled(p.buyOrderItemEnabled)
         CobbleMarketConfig.setBuyOrderEnabled(p.buyOrderEnabled)
+        // 悬停窗口显示能力值（默认关；只在悬停窗显示，弹窗不加）
+        CobbleMarketConfig.setHoverStatsChart(p.hoverStatsChart)
         // 全部字段设完再跑跨项校验：遇见数门槛不得低于捕捉数门槛
         // （保存后回发快照，配置界面的遇见输入框会随之刷新成抬平后的值）
         CobbleMarketConfig.enforceCardApplySeenGuard()

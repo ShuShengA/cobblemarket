@@ -19,6 +19,12 @@ object MarketStateCache {
     var buyOrderPokemonEnabled: Boolean = true
     var buyOrderItemEnabled: Boolean = true
 
+    /**
+     * **悬停窗口显示能力值**（2026-11-05，服务端配置，默认关）：由 [MarketStatePayload] 下发。
+     * 开着且该挂单带了能力值（`statsHp >= 0`）时才画六边形。
+     */
+    var hoverStatsChart: Boolean = false
+
     /** 待领取总数（精灵 + 物品；登录时由服务端推一次）——只在界面上显示用 */
     var pendingReturns: Int = 0
 

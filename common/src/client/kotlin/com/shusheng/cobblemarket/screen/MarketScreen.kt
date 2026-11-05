@@ -263,6 +263,18 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
     private var tooltipCachePriceRow = -1
     private var tooltipCacheMarksRows = 0
     private var tooltipCacheMaxWidth = 0
+    /**
+     * 能力值六边形（悬停窗口显示能力值，2026-11-05）：**顶部对齐内容顶部**，
+     * 高度按「到技能块分割线」的可用空间反算（[StatsChart.scaleForAvailableHeight]）。
+     */
+    private var tooltipCacheChartScale = 0f
+    private var tooltipCacheChartWidth = 0
+    /** 左侧实际标签比预留窄出来的空档 —— 图往左贴这么多，去掉左边的固定空白 */
+    private var tooltipCacheChartLeftInset = 0
+    /** 文本区最大宽（不含技能块/证章）—— 六边形贴它放；0 = 不显示六边形 */
+    private var tooltipCacheTextMaxW = 0
+    private var tooltipCacheStats: IntArray? = null
+    private var tooltipCacheShowChart = false
 
     private fun cacheIcons() {
         // ⚠ 按**挂单 id** 复用已有的动画状态，别整体丢掉重建：
@@ -2340,7 +2352,7 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
 
     private fun renderTooltip(context: DrawContext, entry: ListingEntry, mouseX: Int, mouseY: Int) {
         // 文本行缓存：悬停同一行时内容不变，只在悬停目标变化时重建（见 tooltipCacheKey 注释）
-        if (tooltipCacheKey != entry.id) {
+        if (tooltipCacheKey != entry.id || tooltipCacheShowChart != com.shusheng.cobblemarket.client.MarketStateCache.hoverStatsChart) {
             tooltipCacheKey = entry.id
             val hp = StatNames.HP
             val atk = StatNames.ATK
@@ -2380,12 +2392,21 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
                 lines.add(Text.translatable("cobblemarket.gui.tooltip_held") to w)
             }
             lines.add(Text.translatable("cobblemarket.gui.tooltip_ivs") to w)
+            // 能力值六边形（2026-11-05）：**不占行** —— 画在右侧，垂直位置与尺寸由可用空间反算
             lines.add(Text.literal("  $hp: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsHp, entry.htHp)}").append(Text.literal("  EV: ${entry.evsHp}").formatted(Formatting.RED)) to ivColors[0])
             lines.add(Text.literal("  $atk: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsAtk, entry.htAtk)}").append(Text.literal("  EV: ${entry.evsAtk}").formatted(Formatting.RED)) to ivColors[1])
             lines.add(Text.literal("  $def: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsDef, entry.htDef)}").append(Text.literal("  EV: ${entry.evsDef}").formatted(Formatting.RED)) to ivColors[2])
             lines.add(Text.literal("  $spa: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpAtk, entry.htSpAtk)}").append(Text.literal("  EV: ${entry.evsSpAtk}").formatted(Formatting.RED)) to ivColors[3])
             lines.add(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("  EV: ${entry.evsSpDef}").formatted(Formatting.RED)) to ivColors[4])
             lines.add(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("  EV: ${entry.evsSpd}").formatted(Formatting.RED)) to ivColors[5])
+            // 能力值六边形（2026-11-05 服主建议）：**画在右侧、与 IV 六行同高**，
+            // 窗口只加宽、不加高（用户 2026-11-05 定）；只在悬停窗显示（开关默认关），
+            // 购买 / 详情等弹窗不加。数值由服务端算（融合精灵也正确）
+            val stats: IntArray? = if (com.shusheng.cobblemarket.client.MarketStateCache.hoverStatsChart) {
+                com.shusheng.cobblemarket.client.StatsChart.of(entry)
+            } else {
+                null
+            }
             lines.add(Text.translatable("cobblemarket.gui.friendship", entry.friendship) to 0xFF99CC)
             // 初始训练家行：亲密度下面（与市场侧同位置；没有则整行不占位）
             com.shusheng.cobblemarket.util.PokemonExtraLines.originalTrainer(entry.originalTrainer)
@@ -2422,7 +2443,31 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             if (heldItemLine >= 0) {
                 maxWidth = maxOf(maxWidth, textRenderer.getWidth(lines[heldItemLine].first) + 14)
             }
+            // **文本区**的最大宽（不含技能块 / 证章）：能力值六边形贴着它放 ——
+            // ⚠ 2026-11-05 用户报「能力值区域离左侧太远」：之前贴的是**整体内容右缘**，
+            //   而技能块/证章比文本行宽得多，六边形被推到最右 ⇒ 左侧空一大截
+            val textMaxW = maxWidth
             maxWidth = maxOf(maxWidth, EntryBadgeRenderer.movesBlockWidth(entry.moves))
+            // 能力值六边形（2026-11-05 第三轮）：**顶部对齐悬停窗内容顶部**，
+            // 高度取「内容顶部 → 六边形下方第一个整宽区块（技能块/证章）」的可用空间，
+            // 能占多少就放大到多少 —— 不再用固定尺寸，也不压下方分割线。
+            // 宽度只往右占；左侧按**实际标签宽度**回缩（[leftInset]），去掉那圈固定空档。
+            var chartScale = 0f
+            var chartW = 0
+            var chartInset = 0
+            if (stats != null) {
+                val blockTopLine = when {
+                    movesLine >= 0 -> movesLine
+                    marksLine >= 0 -> marksLine
+                    else -> lines.size
+                }
+                // 行高 10；留 1px，保证底部标签不贴死技能块分割线
+                val availableH = blockTopLine * 10 - 1
+                chartScale = com.shusheng.cobblemarket.client.StatsChart.scaleForAvailableHeight(availableH)
+                chartW = com.shusheng.cobblemarket.client.StatsChart.widthFor(chartScale)
+                chartInset = com.shusheng.cobblemarket.client.StatsChart.leftInset(textRenderer, chartScale)
+                maxWidth = maxOf(maxWidth, textMaxW + 4 + chartW - chartInset)
+            }
             // ⚠ 证章**不再参与** maxWidth（原先那行 `maxOf(maxWidth, minOf(10, size) * 12)` 已删）——
             //   方向反过来：**窗口宽度决定证章排几个**（见 [EntryBadgeRenderer.marksPerRow]），
             //   所以必须在 maxWidth 定稿之后才算「占几行」
@@ -2438,6 +2483,12 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
             tooltipCachePriceRow = priceRow
             tooltipCacheMarksRows = marksRows
             tooltipCacheMaxWidth = maxWidth
+            tooltipCacheTextMaxW = if (stats != null) textMaxW else 0
+            tooltipCacheChartScale = chartScale
+            tooltipCacheChartWidth = chartW
+            tooltipCacheChartLeftInset = chartInset
+            tooltipCacheStats = stats
+            tooltipCacheShowChart = com.shusheng.cobblemarket.client.MarketStateCache.hoverStatsChart
         }
         // 行数按屏幕高钳制（叠上技能块 / 证章后仍可能超屏）—— 见 [clampTooltipRows]
         val lines = clampTooltipRows(tooltipCacheLines, height) { n ->
@@ -2449,8 +2500,14 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val priceRow = tooltipCachePriceRow
         val marksRows = tooltipCacheMarksRows
         val maxWidth = tooltipCacheMaxWidth
+        val chartScale = tooltipCacheChartScale
+        val chartW = tooltipCacheChartWidth
+        val chartInset = tooltipCacheChartLeftInset
+        val textMaxW = tooltipCacheTextMaxW
+        val stats = tooltipCacheStats
 
         val padding = 4
+        // 六边形画在右侧、不占行 ⇒ 高度不变（只加宽）
         val tooltipHeight = lines.size * 10 + padding + (marksRows - 1).coerceAtLeast(0) * 12 +
             EntryBadgeRenderer.movesBlockExtra(entry.moves)
         // 悬停窗**不许把本行的按钮（购买 / ✕）整个盖住**：自动 GUI 尺寸下逻辑屏宽小，靠右缘一挤就压在按钮上。
@@ -2459,12 +2516,23 @@ class MarketScreen : Screen(Text.translatable("cobblemarket.gui.title")) {
         val (tx, ty) = TooltipPlacement.place(
             mouseX = mouseX, mouseY = mouseY,
             textW = maxWidth, textH = tooltipHeight, pad = padding,
-            screenW = width, screenH = height, avoid = avoid
+            screenW = width, screenH = height, avoid = avoid,
+            // ⚠ 上下翻转以**行中心**为锚点：鼠标在同一行内上下移动不再触发翻转
+            //（2026-11-05 用户实测「第六/七行悬停窗乱跳」——原来用鼠标 y，行内移动 10px 就翻面）
+            anchorY = getListStartY() + hoveredRow * rowH + rowH / 2,
         ) ?: return
 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, tooltipHeight + padding, 1, ROW_BACKGROUND_TEX_H)
+        // 能力值六边形（2026-11-05）：**从内容顶部开始**，高度已按可用空间反算
+        //（不压技能块上分割线）；水平位置把左侧固定空档收掉，标签贴着文本右缘
+        if (stats != null && chartScale > 0f) {
+            val centerX = (tx + textMaxW + 4 - chartInset + chartW / 2f).toInt()
+            com.shusheng.cobblemarket.client.StatsChart.draw(
+                context, textRenderer, centerX, ty, stats, chartScale,
+            )
+        }
         var rowY = ty
         lines.forEachIndexed { i, (line, color) ->
             if (line == null && i == movesLine) {

@@ -84,7 +84,16 @@ object TooltipPlacement {
         mouseX: Int, mouseY: Int,
         textW: Int, textH: Int, pad: Int,
         screenW: Int, screenH: Int,
-        avoid: Rect? = null
+        avoid: Rect? = null,
+        /**
+         * **上下翻转的判定锚点**（默认 -1 = 自动吸附到 24px 行格的中心）。
+         *
+         * ⚠ 2026-11-05 用户实测「第六/七行悬停窗乱跳」：原来直接用鼠标 y，
+         * 鼠标在行内上下移动 10px 就能让「下方放得下」翻成「放不下」。
+         * ⇒ 默认按**行格**吸附（项目列表行高 24，`mouseY / 24 * 24 + 12`），
+         * 鼠标在同一行内怎么动，翻转结果都不变；列表界面可传精确行中心。
+         */
+        anchorY: Int = -1,
     ): Pos? {
         // 鼠标在本行按钮上：不画（玩家准备点了；也正因此不需要再避让按钮）
         if (avoid != null && avoid.contains(mouseX, mouseY)) return null
@@ -95,19 +104,38 @@ object TooltipPlacement {
         // 右侧起点的 x 与原来的 `minOf(mouseX + 12, ...)` 完全一致，不改变既有手感
         val bgXRight = mouseX + GAP - pad
         val bgXLeft = mouseX - GAP - pad - textW
-        val bgYAbove = mouseY - ABOVE_EXTRA - pad - textH
-        val bgYBelow = mouseY + GAP - pad
+        // 锚点：显式传了就用它（列表界面传行中心）；否则**吸附到 24px 行格中心**
+        // （项目列表行高 24）—— 避免鼠标在行内上下移动导致翻转/贴边来回跳
+        val ay = if (anchorY >= 0) anchorY else (mouseY / 24) * 24 + 12
+        // ⚠ **判定**用行锚点（稳定），**最终位置**用鼠标 y（连续）——
+        // 2026-11-05 用户实测「换行时窗口一格格跳、不流畅」：位置直接用 anchorY 会变成 24px 阶梯
+        val bgYAbove = ay - ABOVE_EXTRA - pad - textH
+        val bgYBelow = ay + GAP - pad
         val raw = listOf(
             Rect(bgXRight, bgYAbove, w, h), // 右上
             Rect(bgXRight, bgYBelow, w, h), // 右下
             Rect(bgXLeft, bgYAbove, w, h),  // 左上
             Rect(bgXLeft, bgYBelow, w, h)   // 左下
         )
-        // ⚠ **先挑「不用钳制就放得下」的**：否则「上方放不下」会被钳成「贴屏幕顶」，
-        // 悬停窗就钉在顶部不跟鼠标了（原行为是「上方放不下 → 翻到光标下方」）。
+        // ⚠ **先挑「不用钳制就放得下」的**（用行锚点判定，稳定）：否则「上方放不下」会被钳成
+        // 「贴屏幕顶」，悬停窗就钉在顶部不跟鼠标了（原行为是「上方放不下 → 翻到光标下方」）。
         val candidates = raw.filter { it.fitsOnScreen(screenW, screenH) }
-            .ifEmpty { raw.map { it.clampedInto(screenW, screenH) } }
-        val bg = candidates.first()
+        // 选中候选的**方位**（0 右上 / 1 右下 / 2 左上 / 3 左下）——
+        // 两边都放不下（窗口太高）时按锚点在屏幕的上半/下半决定贴哪边：
+        // 行在上半 ⇒ 窗口在**下方**（贴底）；行在下半 ⇒ 窗口在**上方**（贴顶）
+        val chosenIndex = if (candidates.isNotEmpty()) {
+            raw.indexOf(candidates.first())
+        } else if (ay < screenH / 2) {
+            1 // 右下（below）
+        } else {
+            0 // 右上（above）
+        }
+        val above = chosenIndex % 2 == 0
+        val left = chosenIndex >= 2
+        // **最终位置用鼠标坐标**（连续跟随，换行不会一格格跳）；再钳进屏幕防出界
+        val realY = if (above) mouseY - ABOVE_EXTRA - pad - textH else mouseY + GAP - pad
+        val realX = if (left) mouseX - GAP - pad - textW else mouseX + GAP - pad
+        val bg = Rect(realX, realY, w, h).clampedInto(screenW, screenH)
 
         // 背景左上角 →（加回 pad）文字区左上角
         return Pos(bg.x + pad, bg.y + pad)

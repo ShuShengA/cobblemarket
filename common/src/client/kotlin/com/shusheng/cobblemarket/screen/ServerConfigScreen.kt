@@ -416,6 +416,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             "financeEnabled" -> p?.financeEnabled ?: false
             "cashLoan" -> p?.cashLoanEnabled ?: true
             "consumerLoan" -> p?.consumerLoanEnabled ?: true
+            "hoverStatsChart" -> p?.hoverStatsChart ?: false
             else -> false
         }
     }
@@ -430,6 +431,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 "financeEnabled" -> p.financeEnabled
                 "cashLoan" -> p.cashLoanEnabled
                 "consumerLoan" -> p.consumerLoanEnabled
+                "hoverStatsChart" -> p.hoverStatsChart
                 else -> false
             }
         } ?: localToggles[key] ?: when (key) {
@@ -437,6 +439,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             "financeEnabled" -> latest?.financeEnabled ?: false
             "cashLoan" -> latest?.cashLoanEnabled ?: true
             "consumerLoan" -> latest?.consumerLoanEnabled ?: true
+            "hoverStatsChart" -> latest?.hoverStatsChart ?: false
             else -> false
         }
         return Identifier.of("cobblemarket", if (on) "textures/gui/button/switch_icon_on.png" else "textures/gui/button/switch_icon_off.png")
@@ -536,6 +539,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             auctionItemEnabled = p?.auctionItemEnabled ?: true,
             buyOrderPokemonEnabled = p?.buyOrderPokemonEnabled ?: true,
             buyOrderItemEnabled = p?.buyOrderItemEnabled ?: true,
+            hoverStatsChart = localToggles["hoverStatsChart"] ?: (p?.hoverStatsChart ?: false),
         ))
         // 乐观提示（服务端回发快照确认最终值；保存后按钮侧 toast 1.5 秒）
         savedToastUntil = System.currentTimeMillis() + 1500

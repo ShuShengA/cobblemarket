@@ -788,6 +788,7 @@ object CobbleMarketClient {
                 MarketStateCache.buyOrderEnabled = payload.buyOrderEnabled
                 MarketStateCache.buyOrderPokemonEnabled = payload.buyOrderPokemonEnabled
                 MarketStateCache.buyOrderItemEnabled = payload.buyOrderItemEnabled
+                MarketStateCache.hoverStatsChart = payload.hoverStatsChart
                 // 管理面板打开时同步开关按钮图标（登录补发 / 他人命令切换都能跟上）；
                 // 开关按钮 2026-09-12 从入口界面移到了管理面板
                 (MinecraftClient.getInstance().currentScreen as? AdminScreen)?.updateMarketSwitchIcon()

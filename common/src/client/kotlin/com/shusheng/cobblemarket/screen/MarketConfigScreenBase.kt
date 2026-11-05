@@ -285,6 +285,9 @@ abstract class MarketConfigScreenBase(private val screenTitle: Text) : Screen(sc
         "buyOrderPokemonEnabled" -> p?.buyOrderPokemonEnabled ?: true
         "buyOrderItemEnabled" -> p?.buyOrderItemEnabled ?: true
         "eggTrading" -> p?.eggTrading ?: false
+        // 悬停窗能力值（2026-11-05）：**这一份是 MarketConfigScreenBase 自己的**（不继承 ServerConfigScreen 的
+        // currentToggleValue/toggleIconFor）—— 漏掉会落到 else=false ⇒ 图标永远显示关、且保存时把功能关掉
+        "hoverStatsChart" -> p?.hoverStatsChart ?: false
         else -> false
     }
 
@@ -339,6 +342,8 @@ abstract class MarketConfigScreenBase(private val screenTitle: Text) : Screen(sc
                 "buyOrderPokemonEnabled" -> out.copy(buyOrderPokemonEnabled = v)
                 "buyOrderItemEnabled" -> out.copy(buyOrderItemEnabled = v)
                 "eggTrading" -> out.copy(eggTrading = v)
+                // 悬停窗能力值（2026-11-05）：漏了这行会落到 else ⇒ 本地切换被丢弃、保存后按钮弹回关的图标
+                "hoverStatsChart" -> out.copy(hoverStatsChart = v)
                 else -> out
             }
         }
@@ -672,4 +677,5 @@ fun serverConfigPayloadBase(p: ServerConfigDataPayload?): SaveServerConfigPayloa
             auctionItemEnabled = p?.auctionItemEnabled ?: true,
             buyOrderPokemonEnabled = p?.buyOrderPokemonEnabled ?: true,
             buyOrderItemEnabled = p?.buyOrderItemEnabled ?: true,
+            hoverStatsChart = p?.hoverStatsChart ?: false,
     )
