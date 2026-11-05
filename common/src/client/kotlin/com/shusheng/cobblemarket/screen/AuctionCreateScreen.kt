@@ -540,12 +540,19 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
         backButton = backBtn
         addDrawableChild(backBtn)
 
-        // tab 按钮
+        // tab 按钮：**只画当前启用的类型**（与拍卖主界面一致 —— 关闭的类型整个 tab 隐藏，
+        // 2026-11-05 用户报「主界面隐藏了，创建拍卖还显示精灵 tab」）
+        val tabs = availableTabs().ifEmpty { listOf(1) }
+        if (currentTab !in tabs) currentTab = tabs.first()
         val tabW = 62
-        val tabStart = centerX - (tabW * 2 + 2) / 2
+        val tabGap = 2
+        val tabStart = centerX - (tabs.size * tabW + (tabs.size - 1) * tabGap) / 2
         tabButtons.clear()
-        listOf("cobblemarket.auction.tab_pokemon", "cobblemarket.auction.tab_item").forEachIndexed { i, _ ->
-            val btn = NineSliceButton(tabStart + i * (tabW + 2), 32, tabW, 14, Text.literal(""), { switchTab(i) })
+        tabs.forEachIndexed { vi, tabIndex ->
+            val btn = NineSliceButton(
+                tabStart + vi * (tabW + tabGap), 32, tabW, 14,
+                Text.literal(""), { switchTab(tabIndex) }
+            )
             tabButtons.add(btn)
             addDrawableChild(btn)
         }
@@ -821,17 +828,25 @@ class AuctionCreateScreen(private val initialTab: Int = 0) : Screen(Text.transla
             if (filterExpanded) "cobblemarket.gui.filter_collapse" else "cobblemarket.gui.filter_expand")))
     }
 
+    /** 当前可用的 tab（真实索引 0 = 精灵 / 1 = 物品）—— 与拍卖主界面同一判据，关闭的类型不出现 */
+    private fun availableTabs(): List<Int> = buildList {
+        if (com.shusheng.cobblemarket.client.MarketStateCache.auctionPokemonEnabled) add(0)
+        if (com.shusheng.cobblemarket.client.MarketStateCache.auctionItemEnabled) add(1)
+    }
+
     private fun updateTabButtons() {
-        val keys = listOf("cobblemarket.auction.tab_pokemon", "cobblemarket.auction.tab_item")
-        tabButtons.forEachIndexed { i, btn ->
-            val label = Text.translatable(keys[i]).string
-            btn.setMessage(Text.literal(label))
+        val tabs = availableTabs().ifEmpty { listOf(1) }
+        tabButtons.forEachIndexed { vi, btn ->
+            val tabIndex = tabs.getOrNull(vi) ?: return@forEachIndexed
+            val labelKey = if (tabIndex == 0) "cobblemarket.auction.tab_pokemon" else "cobblemarket.auction.tab_item"
+            btn.setMessage(Text.literal(Text.translatable(labelKey).string))
             // 选中的 tab 靠**按钮自己的选中态**（背景第三段）表达，不再在文字前加 `● `
-            btn.selectedVisual = currentTab == i
+            btn.selectedVisual = currentTab == tabIndex
         }
     }
 
     private fun switchTab(tab: Int) {
+        if (tab !in availableTabs()) return
         currentTab = tab
         scrollOffset = 0
         hoveredRow = -1

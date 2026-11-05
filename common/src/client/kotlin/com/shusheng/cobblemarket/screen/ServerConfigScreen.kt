@@ -41,7 +41,13 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
      */
     private val numDefs = emptyList<Pair<NumDef, String>>()
 
-    private val toggleDefs = emptyList<Pair<String, String>>()
+    /**
+     * 悬停窗口显示能力值（2026-11-05）：**放在主界面**（它同时影响市场 / 拍卖 / 管理端 / 聊天展示，
+     * 不属于精灵市场配置；用户 2026-11-05 要求挪出来）。默认关。
+     */
+    private val toggleDefs = listOf(
+        "cobblemarket.op.scfg_hover_stats_chart" to "hoverStatsChart",
+    )
 
     /**
      * ID 卡背景图那一行 —— **有意不放进 [numDefs]**：它不属于任何功能块（上架 / 拍卖 / 求购 / 金融），
@@ -296,8 +302,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             row++
         }
         numDefs.forEach { (def, key) -> placeNumField(def, key) }
-        toggleDefs.forEach { (_, key) -> placeToggle(key) }
-        // 行顺序按**功能开发顺序**（2026-10-25 用户定）：市场四类 → 喵喵银行 → RP → 界面杂项
+        // 行顺序按**功能开发顺序**（2026-10-25 用户定）：市场四类 → 喵喵银行 → RP → 悬停能力值开关 → 界面杂项
         // 四个市场子界面入口：精灵市场 → 物品市场 → 拍卖场 → 求购单
         listOf(pokemonMarketOpenButton, itemMarketOpenButton, auctionOpenButton, buyOrderOpenButton)
             .forEach { btn ->
@@ -320,6 +325,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         pointsOpenButton?.y = pointsY + 4
         pointsOpenButton?.visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
         row++
+        // 悬停窗能力值开关（1.3.6）：**按功能开发顺序排在 RP 之后、界面杂项之前**
+        toggleDefs.forEach { (_, key) -> placeToggle(key) }
         // 界面杂项排最后（ID 卡背景图 / 展示冷却）
         placeNumField(ID_CARD_DEF, "idCardBackground")
         placeNumField(SHARE_COOLDOWN_DEF, "shareCooldown")
@@ -782,8 +789,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             row++
         }
         numDefs.forEach { (def, key) -> drawNumRow(def, key) }
-        toggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
-        // 行顺序与 rebuildPositions 一致：四个市场子界面 → 喵喵银行 → RP → 界面杂项
+        // 行顺序与 rebuildPositions 一致：四个市场子界面 → 喵喵银行 → RP → 悬停能力值开关 → 界面杂项
         listOf(
             "cobblemarket.op.pokemon_market_entry",
             "cobblemarket.op.item_market_entry",
@@ -823,6 +829,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             )
         }
         row++
+        // 悬停窗能力值开关（1.3.6）：RP 之后、界面杂项之前
+        toggleDefs.forEach { (labelKey, _) -> drawToggleRow(labelKey) }
         // 界面杂项排最后（ID 卡背景图 / 展示冷却）
         drawNumRow(ID_CARD_DEF, "idCardBackground")
         drawNumRow(SHARE_COOLDOWN_DEF, "shareCooldown")

@@ -2,20 +2,17 @@
 
 ## 1.3.6 (in development, unreleased)
 
+⚠ **Client and server must be upgraded together** (this version changes network payloads).
+
 ### New Features
 
 - **Stats chart in hover tooltips (server config, off by default)**: when the owner turns it on in
-  Server Config → Pokémon Market Config, hover tooltips across the Pokémon Market, Auction House,
+  Server Config, hover tooltips across the Pokémon Market, Auction House,
   admin screens, and the listing / auction-create / pending-return selection screens show a stat hexagon
   (HP / Atk / Def / Spe / SpD / SpA, same values as the in-game summary, including **fused** Pokémon
   when a fusion mod is installed). The chat "showcase" hover uses a vertical layout (the panel grows taller).
   Only hover tooltips are affected — buy / bid / detail dialogs are not. When off, the server does no
   calculation and sends no extra data
-
-### Fixes
-
-- **Opening the Pokémon Market / the admin Pokémon manager on a slow connection showed "No listings found." instead of "Loading…"**: it now shows the loading state until the first response arrives, then reports an empty market only when there really are no listings; switching currency resets the loading state as well
-- **Hover tooltips flipped back and forth and jumped in steps while moving the mouse up/down a list**: the flip direction was decided from the raw mouse Y and the position snapped to row grids; it now decides from the row's centre (stable within a row) while the final position follows the mouse continuously, so it neither flips within a row nor snaps between rows
 
 ## 1.3.5 (released)
 
