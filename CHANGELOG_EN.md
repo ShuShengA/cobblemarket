@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.6 (in development, unreleased)
+## 1.3.6 (released)
 
 ⚠ **Client and server must be upgraded together** (this version changes network payloads).
 
