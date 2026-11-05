@@ -5,6 +5,7 @@ import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.shusheng.cobblemarket.util.ItemNameText
 import com.shusheng.cobblemarket.util.MoveText
 import com.shusheng.cobblemarket.util.StatNames
+import com.shusheng.cobblemarket.client.StatsChart
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.heldIconStack
@@ -43,6 +44,9 @@ object EntryBadgeRenderer {
 
     /** 分割线占高（1px 灰线 + 上下留白） */
     private const val DIVIDER_H = 10
+
+    /** 竖向能力值图（仅聊天展示面板）上下留白 —— 聊天面板算「还能放多高」时也要用 */
+    const val CHART_GAP_V = 4
 
     /** 技能块内容行高（与其他信息行同高） */
     private const val MOVE_ROW_H = 10
@@ -861,7 +865,9 @@ object EntryBadgeRenderer {
     fun infoPanelContentWidth(
         entry: ListingEntry, displayName: Text,
         /** 与 [drawInfoLines] 的 `footer` **必须传同一个**（否则宽量不到那几行） */
-        footer: List<Pair<Text?, Int>>? = null
+        footer: List<Pair<Text?, Int>>? = null,
+        /** > 0 = 在 IV 六行下方画竖向能力值图（聊天展示面板）；宽度要兜住它 */
+        chartScale: Float = 0f
     ): Int {
         val font = MinecraftClient.getInstance().textRenderer
         var w = measureInfoLines(entry, displayName)
@@ -873,6 +879,10 @@ object EntryBadgeRenderer {
         // 携带物行：文字 + 物品图标（图标不算在文本宽里）
         if (hasHeldItemLine(entry)) {
             w = maxOf(w, font.getWidth(Text.translatable("cobblemarket.gui.tooltip_held")) + HELD_ICON_W)
+        }
+        // 竖向能力值图（聊天展示面板）：整块宽也要兜住，否则会戳出面板
+        if (chartScale > 0f && StatsChart.of(entry) != null) {
+            w = maxOf(w, StatsChart.widthFor(chartScale))
         }
         return maxOf(w, MOVES_MAX_W)
     }
@@ -890,7 +900,9 @@ object EntryBadgeRenderer {
     fun measureInfoLinesHeight(
         entry: ListingEntry, availableWidth: Int,
         /** 与 [drawInfoLines] 的 `footer` **必须传同一个**（否则背景框和内容对不上） */
-        footer: List<Pair<Text?, Int>>? = null
+        footer: List<Pair<Text?, Int>>? = null,
+        /** > 0 = 在 IV 六行下方画竖向能力值图（聊天展示面板）；高度要加进去 */
+        chartScale: Float = 0f
     ): Int {
         var h = MOVE_ROW_H                                   // 名字★Lv
         if (nicknameLine(entry.nickname) != null) h += MOVE_ROW_H   // 昵称（有才画）
@@ -903,6 +915,10 @@ object EntryBadgeRenderer {
         if (hasHeldItemLine(entry)) h += MOVE_ROW_H          // 携带物（有才画）
         h += MOVE_ROW_H                                      // 「个体值」标签
         h += MOVE_ROW_H * 6                                  // IV 六项
+        // 竖向能力值图（聊天展示面板）：位于 IV 六行与亲密度之间
+        if (chartScale > 0f && StatsChart.of(entry) != null) {
+            h += StatsChart.heightFor(chartScale) + 2 * CHART_GAP_V
+        }
         h += MOVE_ROW_H                                      // 亲密度
         if (com.shusheng.cobblemarket.util.PokemonExtraLines.originalTrainer(entry.originalTrainer) != null) {
             h += MOVE_ROW_H                                  // 初始训练家（有才画）
@@ -945,7 +961,13 @@ object EntryBadgeRenderer {
         //（见 [drawMarksMoreTooltip]）。
         // ⚠ **行悬停窗 / 聊天播报窗不要传**：那类窗跟着鼠标走、鼠标一移开就没了，
         //   根本不可能停到证章行上 ⇒ 做了也没人用得到（2026-09-29 用户指出）。
-        mouseX: Int = -1, mouseY: Int = -1
+        mouseX: Int = -1, mouseY: Int = -1,
+        /**
+         * > 0 = 在 **IV 六行与亲密度之间**插一块**竖向**能力值图（聊天展示面板用，2026-11-05）。
+         * 图在内容宽里**水平居中**，面板需要相应加高（并兜住图宽）；
+         * 弹窗那族不传 ⇒ 0 ⇒ 行列表与原来完全一致。
+         */
+        chartScale: Float = 0f
     ): Int {
         // ⚠ **弹窗自己的货币图标不受门禁管**（2026-09-29）：遮罩一画就把图标禁了，而遮罩是
         //   **这同一个界面**画的 —— 弹窗的图标会被它自己的遮罩挡住，表现是「金额后面没有单位、
@@ -1005,6 +1027,13 @@ object EntryBadgeRenderer {
         lines.add(Text.literal("  $spa: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpAtk, entry.htSpAtk)}").append(Text.literal("  EV: ${entry.evsSpAtk}").formatted(Formatting.RED)) to 0x6699FF)
         lines.add(Text.literal("  $spd: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpDef, entry.htSpDef)}").append(Text.literal("  EV: ${entry.evsSpDef}").formatted(Formatting.RED)) to 0x66FF99)
         lines.add(Text.literal("  $spe: ${com.shusheng.cobblemarket.util.TextUtil.ivText(entry.ivsSpd, entry.htSpd)}").append(Text.literal("  EV: ${entry.evsSpd}").formatted(Formatting.RED)) to 0xFF99FF)
+        // 竖向能力值图（聊天展示面板，2026-11-05）：**插在 IV 六行与亲密度之间**，
+        // 图上/下各留 CHART_GAP_V；不传 chartScale 的调用方（弹窗族）行列表完全不变
+        var chartLine = -1
+        if (chartScale > 0f && StatsChart.of(entry) != null) {
+            chartLine = lines.size
+            lines.add(null to 0)
+        }
         lines.add(Text.translatable("cobblemarket.gui.friendship", entry.friendship) to 0xFF99CC)
         // 初始训练家行：亲密度**下面**、常驻（解析不出名字时整行不画）。
         // ⚠ 同样要跟 measureInfoLines 对应
@@ -1052,6 +1081,13 @@ object EntryBadgeRenderer {
         while (i < lines.size) {
             val (line, color) = lines[i]
             when {
+                i == chartLine -> {
+                    // 竖向能力值图：在内容区**居中**（不占文本行宽），上下各留 CHART_GAP_V
+                    StatsChart.of(entry)?.let {
+                        StatsChart.draw(context, font, centerX, y + CHART_GAP_V, it, chartScale)
+                    }
+                    y += StatsChart.heightFor(chartScale) + 2 * CHART_GAP_V
+                }
                 i == movesLine -> {
                     // 技能块：上分割线 + 两行技能 + 下分割线（整块自画，返回值即占用高度）
                     // ⚠ 左对齐走 `...Left` 那一支（分割线**撑满内容宽**）；居中版才是固定的 MOVES_MAX_W

@@ -1068,7 +1068,14 @@ data class PokemonPreview(
      * 预览的是**活精灵**（队伍 / PC 里那只）⇒ 直接读，不走 NBT。
      * **空串 = 没有昵称** ⇒ 信息行里那一整行不画。
      */
-    val nickname: String = ""
+    val nickname: String = "",
+    /**
+     * 当前能力值（2026-11-05，悬停窗六边形）：顺序 = HP / 攻 / 防 / 速 / 特防 / 特攻。
+     * **-1 = 没算**（服主开关关着 / 旧服务端）；服务端走 `pokemon.getStat`，融合精灵也正确。
+     * ⚠ 追加在末尾 ⇒ **两端同版**。
+     */
+    val statsHp: Int = -1, val statsAtk: Int = -1, val statsDef: Int = -1,
+    val statsSpe: Int = -1, val statsSpDef: Int = -1, val statsSpAtk: Int = -1
 ) {
     fun write(buf: PacketByteBuf) {
         buf.writeUuid(uuid); buf.writeString(species); buf.writeString(speciesId); buf.writeString(speciesName)
@@ -1097,6 +1104,9 @@ data class PokemonPreview(
         buf.writeBoolean(tradeable)
         buf.writeBoolean(illegal)
         buf.writeString(nickname)
+        // 能力值（2026-11-05）：追加在末尾，两端严格同序
+        buf.writeInt(statsHp); buf.writeInt(statsAtk); buf.writeInt(statsDef)
+        buf.writeInt(statsSpe); buf.writeInt(statsSpDef); buf.writeInt(statsSpAtk)
     }
 
     companion object {
@@ -1123,7 +1133,9 @@ data class PokemonPreview(
             buf.readString(),    // ballItem
             buf.readBoolean(),   // tradeable：与 write 端严格同序（write 在 ballItem 之后）
             buf.readBoolean(),    // illegal：与 write 端严格同序（write 在 tradeable 之后）
-            buf.readString()      // nickname：写在 illegal 之后，两端严格同序
+            buf.readString(),     // nickname：写在 illegal 之后，两端严格同序
+            // 能力值：写在 nickname 之后
+            buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt()
         )
     }
 }
@@ -1865,7 +1877,8 @@ object MarketNetwork {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<UUID, IntArray>?) = size > 4096
     }
 
-    private fun cachedStats(
+    /** 供拍卖条目（`auctionToEntry`）复用同一份按 id 缓存的能力值，避免再建一套 */
+    internal fun cachedStats(
         id: UUID,
         pokemonNbt: net.minecraft.nbt.NbtCompound?,
         server: MinecraftServer,
@@ -4299,7 +4312,15 @@ object MarketNetwork {
             // 与拍卖/求购侧的 `"ballItem"` 同款，见 ItemNameText.ballLine
             ballItem = pokemon.caughtBall.name.toString(),
             // 昵称：预览的是**活精灵**，直接读（不走 NBT）；空 = 信息行里那一整行不画
-            nickname = com.shusheng.cobblemarket.util.PokemonNickname.from(pokemon).orEmpty()
+            nickname = com.shusheng.cobblemarket.util.PokemonNickname.from(pokemon).orEmpty(),
+            // 当前能力值（2026-11-05，悬停窗六边形）：服务端 getStat（融合精灵正确）；
+            // 开关关着时保持 -1（不计算）
+            statsHp = if (com.shusheng.cobblemarket.config.CobbleMarketConfig.hoverStatsChart) pokemon.maxHealth else -1,
+            statsAtk = if (com.shusheng.cobblemarket.config.CobbleMarketConfig.hoverStatsChart) pokemon.attack else -1,
+            statsDef = if (com.shusheng.cobblemarket.config.CobbleMarketConfig.hoverStatsChart) pokemon.defence else -1,
+            statsSpe = if (com.shusheng.cobblemarket.config.CobbleMarketConfig.hoverStatsChart) pokemon.speed else -1,
+            statsSpDef = if (com.shusheng.cobblemarket.config.CobbleMarketConfig.hoverStatsChart) pokemon.specialDefence else -1,
+            statsSpAtk = if (com.shusheng.cobblemarket.config.CobbleMarketConfig.hoverStatsChart) pokemon.specialAttack else -1
         )
 
     fun openScreen(player: ServerPlayerEntity) {

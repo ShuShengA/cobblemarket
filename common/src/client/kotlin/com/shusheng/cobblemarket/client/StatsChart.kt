@@ -78,6 +78,13 @@ object StatsChart {
 	/** 上下留白 */
 	private const val V_PAD = 3
 
+	/**
+	 * **竖向（聊天展示悬停面板）**用的固定缩放 —— 与市场横向版的典型大小一致。
+	 * 横向版按可用高度动态取 0.32~0.5；聊天面板靠加高/加宽容纳，所以固定这个值。
+	 * 该尺寸下图占 **173×129**（含六个标签）。
+	 */
+	const val PANEL_SCALE = 0.4375f
+
 	/** 上下标签到六边形顶点的外推距离 */
 	private const val LABEL_GAP_V = 12
 
@@ -91,6 +98,15 @@ object StatsChart {
 	fun scaleForAvailableHeight(availableH: Int): Float {
 		val fixed = 2 * LABEL_GAP_V + LABEL_BLOCK_H + V_PAD
 		return ((availableH - fixed) / (2f * HEX_R)).coerceIn(0.32f, 0.5f)
+	}
+
+	/**
+	 * **竖向聊天面板**用的缩放：允许往下缩到 0.25（拍卖预览尾部很长，面板本来就高），
+	 * 上限就是 [PANEL_SCALE]（与市场横向版典型一致）。放不下时只缩不涨。
+	 */
+	fun panelScaleForAvailableHeight(availableH: Int): Float {
+		val fixed = 2 * LABEL_GAP_V + LABEL_BLOCK_H + V_PAD
+		return ((availableH - fixed) / (2f * HEX_R)).coerceIn(0.25f, PANEL_SCALE)
 	}
 
 	/** 指定缩放下的占用宽（布局用） */
@@ -142,6 +158,35 @@ object StatsChart {
 		return intArrayOf(
 			entry.statsHp, entry.statsAtk, entry.statsDef,
 			entry.statsSpe, entry.statsSpDef, entry.statsSpAtk,
+		)
+	}
+
+	/**
+	 * 从**精灵预览**（上架选择 / 创建拍卖 / 待领取）取能力值 —— 服务端在 `toPreview` 里
+	 * 按开关计算，-1 = 没算（旧数据 / 开关关着）。
+	 */
+	fun of(preview: com.shusheng.cobblemarket.network.PokemonPreview): IntArray? {
+		if (preview.statsHp < 0) return null
+		return intArrayOf(
+			preview.statsHp, preview.statsAtk, preview.statsDef,
+			preview.statsSpe, preview.statsSpDef, preview.statsSpAtk,
+		)
+	}
+
+	/**
+	 * 从**拍卖条目**的 `extraData` 取能力值（`AuctionEntry` 没有独立 stats 字段，
+	 * 服务端把六个值写进 extraData；开关关着 / 旧数据时没有键 ⇒ null，不画）。
+	 */
+	fun of(extra: Map<String, String>): IntArray? {
+		val hp = extra["statsHp"]?.toIntOrNull() ?: return null
+		if (hp < 0) return null
+		return intArrayOf(
+			hp,
+			extra["statsAtk"]?.toIntOrNull() ?: -1,
+			extra["statsDef"]?.toIntOrNull() ?: -1,
+			extra["statsSpe"]?.toIntOrNull() ?: -1,
+			extra["statsSpDef"]?.toIntOrNull() ?: -1,
+			extra["statsSpAtk"]?.toIntOrNull() ?: -1,
 		)
 	}
 

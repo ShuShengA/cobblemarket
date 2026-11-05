@@ -1445,10 +1445,17 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
     private var tooltipCacheMaxWidth = 0
     private var tooltipCacheMovesLine = -1
     private var tooltipCacheMarksLine = -1
+    /** 能力值六边形（2026-11-05）：与市场行悬停窗同款，按可用高度反算 */
+    private var tooltipCacheChartScale = 0f
+    private var tooltipCacheChartWidth = 0
+    private var tooltipCacheChartLeftInset = 0
+    private var tooltipCacheTextMaxW = 0
+    private var tooltipCacheStats: IntArray? = null
+    private var tooltipCacheShowChart = false
 
     private fun renderTooltip(context: DrawContext, entry: ListingEntry, origIndex: Int, mouseX: Int, mouseY: Int) {
         // 文本行缓存：悬停同一行时内容不变，只在悬停目标变化时重建（见 tooltipCacheKey 注释）
-        if (tooltipCacheKey != entry.id) {
+        if (tooltipCacheKey != entry.id || tooltipCacheShowChart != com.shusheng.cobblemarket.client.MarketStateCache.hoverStatsChart) {
             tooltipCacheKey = entry.id
             val hp = StatNames.HP
             val atk = StatNames.ATK
@@ -1534,12 +1541,35 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
             // 证章行宽：⚠ **不再参与** maxWidth（原先按固定 10 个算 12px 格的方式已废弃）
             // ⚠ 证章**不再参与** maxWidth（方向反过来：窗口宽度决定证章排几个，见 marksPerRow）
             maxWidth = maxOf(maxWidth, EntryBadgeRenderer.movesBlockWidth(entry.moves))
+            // 能力值六边形（2026-11-05）：与市场行悬停窗同款 —— 顶部对齐、按可用高度反算
+            val textMaxW = maxWidth
+            val chartStats = com.shusheng.cobblemarket.client.StatsChart.of(entry)
+            var chartScale = 0f
+            var chartW = 0
+            var chartInset = 0
+            if (chartStats != null) {
+                val blockTopLine = when {
+                    movesLine >= 0 -> movesLine
+                    marksLine >= 0 -> marksLine
+                    else -> lines.size
+                }
+                chartScale = com.shusheng.cobblemarket.client.StatsChart.scaleForAvailableHeight(blockTopLine * 10 - 1)
+                chartW = com.shusheng.cobblemarket.client.StatsChart.widthFor(chartScale)
+                chartInset = com.shusheng.cobblemarket.client.StatsChart.leftInset(textRenderer, chartScale)
+                maxWidth = maxOf(maxWidth, textMaxW + 4 + chartW - chartInset)
+            }
             tooltipCacheLines = lines
             tooltipCacheHeldLine = heldItemLine
             tooltipCachePriceLine = priceLine
             tooltipCacheMaxWidth = maxWidth
             tooltipCacheMovesLine = movesLine
             tooltipCacheMarksLine = marksLine
+            tooltipCacheChartScale = chartScale
+            tooltipCacheChartWidth = chartW
+            tooltipCacheChartLeftInset = chartInset
+            tooltipCacheTextMaxW = textMaxW
+            tooltipCacheStats = chartStats
+            tooltipCacheShowChart = com.shusheng.cobblemarket.client.MarketStateCache.hoverStatsChart
         }
         // 行数按屏幕高钳制（叠上技能块 / 证章后仍可能超屏）—— 见 [clampTooltipRows]
         val lines = clampTooltipRows(tooltipCacheLines, height) { n ->
@@ -1550,6 +1580,11 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         val maxWidth = tooltipCacheMaxWidth
         val movesLine = tooltipCacheMovesLine
         val marksLine = tooltipCacheMarksLine
+        val chartScale = tooltipCacheChartScale
+        val chartW = tooltipCacheChartWidth
+        val chartInset = tooltipCacheChartLeftInset
+        val textMaxW = tooltipCacheTextMaxW
+        val chartStats = tooltipCacheStats
 
         val padding = 4
         // 证章超过一行时第二行「+N」额外占 12px
@@ -1566,6 +1601,13 @@ class AdminPokemonScreen : Screen(Text.translatable("cobblemarket.op.pokemon")) 
         context.matrices.push()
         context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - padding, ty - padding, maxWidth + 2 * padding, tooltipHeight + padding, 1, ROW_BACKGROUND_TEX_H)
+        // 能力值六边形：与市场同款，从内容顶部画
+        if (chartStats != null) {
+            val centerX = (tx + textMaxW + 4 - chartInset + chartW / 2f).toInt()
+            com.shusheng.cobblemarket.client.StatsChart.draw(
+                context, textRenderer, centerX, ty, chartStats, chartScale,
+            )
+        }
         var rowY = ty
         lines.forEachIndexed { i, (line, color) ->
             if (line == null && i == movesLine) {

@@ -789,12 +789,22 @@ object ChatObjectPreview {
         /** 尾部行：拍卖那条传 [auctionFooterLines]；其余传 null = 用默认的「卖家 / 价格」 */
         footer: List<Pair<Text?, Int>>? = null
     ) {
-        // 内容宽：信息行 / 技能块 / 名字行 / 携带物图标 / 技能块那条固定兜底 / 尾部自带那几行 ——
-        // 口径全在 EntryBadgeRenderer.infoPanelContentWidth 里（与 drawInfoLines 同源，别在这儿另算）
-        val contentW = EntryBadgeRenderer.infoPanelContentWidth(listing, name, footer)
+        // 竖向能力值图：**所有精灵聊天预览都加**（展示 / 拍卖 / 待交付通知，2026-11-05 用户要求统一）。
+        // 基准大小与市场横向版典型一致（PANEL_SCALE）；拍卖预览尾部长，按屏幕剩余高度**只缩不涨**
+        //（最低 0.25，再小就不可读了）。
+        var chartScale = 0f
+        if (StatsChart.of(listing) != null) {
+            val baseW = EntryBadgeRenderer.infoPanelContentWidth(listing, name, footer, 0f)
+            val baseH = EntryBadgeRenderer.measureInfoLinesHeight(listing, baseW, footer, 0f)
+            val maxChartH = screenHeight - 4 - (baseH + PANEL_PAD * 2) - 2 * EntryBadgeRenderer.CHART_GAP_V
+            chartScale = StatsChart.panelScaleForAvailableHeight(maxChartH)
+        }
+        // 内容宽：信息行 / 技能块 / 名字行 / 携带物图标 / 技能块那条固定兜底 / 尾部自带那几行
+        // （+ 竖向能力值图宽，仅展示预览）—— 口径全在 infoPanelContentWidth 里，与 drawInfoLines 同源
+        val contentW = EntryBadgeRenderer.infoPanelContentWidth(listing, name, footer, chartScale)
 
         val panelW = contentW + PANEL_PAD * 2
-        val panelH = EntryBadgeRenderer.measureInfoLinesHeight(listing, contentW, footer) + PANEL_PAD * 2
+        val panelH = EntryBadgeRenderer.measureInfoLinesHeight(listing, contentW, footer, chartScale) + PANEL_PAD * 2
         val panelX = panelXFor(context, panelW)
         // 纵向与旁边的大图一样取屏幕中线；⚠ 比屏幕还高时**贴顶**（宁可下缘出去，也别把标题行顶没了）
         val panelY = ((screenHeight - panelH) / 2).coerceAtLeast(2)
@@ -813,7 +823,8 @@ object ChatObjectPreview {
             dividerW = contentW,
             maxWidth = contentW,
             footer = footer,
-            alignLeft = true
+            alignLeft = true,
+            chartScale = chartScale
         )
     }
 

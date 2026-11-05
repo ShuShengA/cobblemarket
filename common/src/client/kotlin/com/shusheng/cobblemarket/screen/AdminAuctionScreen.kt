@@ -831,6 +831,23 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
         val marksLine = tooltipCacheMarksLine
         val marks = if (marksLine >= 0) entry.extraData["marks"].orEmpty().split(",").filter { it.isNotEmpty() } else emptyList()
         val movesRaw = entry.extraData["moves"].orEmpty()
+        // 能力值六边形（2026-11-05）：与拍卖场行悬停窗同款；能力值由服务端写进 extraData
+        val textMaxW = mw
+        val chartStats = com.shusheng.cobblemarket.client.StatsChart.of(entry.extraData)
+        var chartScale = 0f
+        var chartW = 0
+        var chartInset = 0
+        if (chartStats != null) {
+            val blockTopLine = when {
+                movesLine >= 0 -> movesLine
+                marksLine >= 0 -> marksLine
+                else -> tooltipCacheStaticLines.size
+            }
+            chartScale = com.shusheng.cobblemarket.client.StatsChart.scaleForAvailableHeight(blockTopLine * 10 - 1)
+            chartW = com.shusheng.cobblemarket.client.StatsChart.widthFor(chartScale)
+            chartInset = com.shusheng.cobblemarket.client.StatsChart.leftInset(textRenderer, chartScale)
+            mw = maxOf(mw, textMaxW + 4 + chartW - chartInset)
+        }
         val pad = 4
         val tx = minOf(mouseX + 12, width - mw - 12)
         // 证章超过一行时第二行「+N」额外占 12px
@@ -840,6 +857,13 @@ class AdminAuctionScreen : Screen(Text.translatable("cobblemarket.op.auction")) 
 
         context.matrices.push(); context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - pad, ty - pad, mw + 2 * pad, th + pad, 1, ROW_BACKGROUND_TEX_H)
+        // 能力值六边形：与拍卖场同款，从内容顶部画
+        if (chartStats != null) {
+            val centerX = (tx + textMaxW + 4 - chartInset + chartW / 2f).toInt()
+            com.shusheng.cobblemarket.client.StatsChart.draw(
+                context, textRenderer, centerX, ty, chartStats, chartScale,
+            )
+        }
         var rowY = ty
         lines.forEachIndexed { i, (line, color) ->
             if (line == null && i == movesLine) {

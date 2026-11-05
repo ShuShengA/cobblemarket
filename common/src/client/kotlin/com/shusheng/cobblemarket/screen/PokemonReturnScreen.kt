@@ -386,6 +386,12 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
     private var tooltipCacheLines: List<Pair<Text?, Int>> = emptyList()
     private var tooltipCacheHeldLine = -1
     private var tooltipCacheMaxWidth = 0
+    /** 能力值六边形（2026-11-05）：与市场行悬停窗同款 */
+    private var tooltipCacheChartScale = 0f
+    private var tooltipCacheChartWidth = 0
+    private var tooltipCacheChartLeftInset = 0
+    private var tooltipCacheTextMaxW = 0
+    private var tooltipCacheStats: IntArray? = null
     /** 证章图标行索引（-1 = 无证章） */
     private var tooltipCacheMovesLine = -1
     private var tooltipCacheMarksLine = -1
@@ -456,18 +462,45 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
                 mw = maxOf(mw, textRenderer.getWidth(lines[heldItemLine].first) + 14)
             }
             mw = maxOf(mw, EntryBadgeRenderer.movesBlockWidth(p.moves))
+            // 能力值六边形（2026-11-05）：与市场行悬停窗同款 —— 顶部对齐、按可用高度反算
+            val textMaxW = mw
+            val chartStats = com.shusheng.cobblemarket.client.StatsChart.of(p)
+            var chartScale = 0f
+            var chartW = 0
+            var chartInset = 0
+            if (chartStats != null) {
+                val blockTopLine = when {
+                    movesLine >= 0 -> movesLine
+                    marksLine >= 0 -> marksLine
+                    else -> lines.size
+                }
+                chartScale = com.shusheng.cobblemarket.client.StatsChart.scaleForAvailableHeight(blockTopLine * 10 - 1)
+                chartW = com.shusheng.cobblemarket.client.StatsChart.widthFor(chartScale)
+                chartInset = com.shusheng.cobblemarket.client.StatsChart.leftInset(textRenderer, chartScale)
+                mw = maxOf(mw, textMaxW + 4 + chartW - chartInset)
+            }
             // ⚠ 证章**不再参与** mw（方向反过来：**窗口宽度决定证章排几个**，见 [EntryBadgeRenderer.marksPerRow]）
             tooltipCacheLines = lines
             tooltipCacheHeldLine = heldItemLine
             tooltipCacheMaxWidth = mw
             tooltipCacheMovesLine = movesLine
             tooltipCacheMarksLine = marksLine
+            tooltipCacheChartScale = chartScale
+            tooltipCacheChartWidth = chartW
+            tooltipCacheChartLeftInset = chartInset
+            tooltipCacheTextMaxW = textMaxW
+            tooltipCacheStats = chartStats
         }
         val lines = tooltipCacheLines
         val heldItemLine = tooltipCacheHeldLine
         val movesLine = tooltipCacheMovesLine
         val marksLine = tooltipCacheMarksLine
         val mw = tooltipCacheMaxWidth
+        val chartScale = tooltipCacheChartScale
+        val chartW = tooltipCacheChartWidth
+        val chartInset = tooltipCacheChartLeftInset
+        val textMaxW = tooltipCacheTextMaxW
+        val chartStats = tooltipCacheStats
 
         val pad = 4
         val tx = minOf(mx + 12, width - mw - 12)
@@ -478,6 +511,13 @@ class PokemonReturnScreen : Screen(Text.translatable("cobblemarket.return.title"
 
         context.matrices.push(); context.matrices.translate(0.0, 0.0, 400.0)
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, tx - pad, ty - pad, mw + 2 * pad, th + pad, 1, ROW_BACKGROUND_TEX_H)
+        // 能力值六边形：与市场同款，从内容顶部画
+        if (chartStats != null) {
+            val centerX = (tx + textMaxW + 4 - chartInset + chartW / 2f).toInt()
+            com.shusheng.cobblemarket.client.StatsChart.draw(
+                context, textRenderer, centerX, ty, chartStats, chartScale,
+            )
+        }
         var rowY = ty
         lines.forEachIndexed { i, (line, color) ->
             if (line == null && i == movesLine) {

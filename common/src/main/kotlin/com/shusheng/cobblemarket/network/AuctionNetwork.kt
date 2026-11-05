@@ -164,6 +164,11 @@ fun auctionToEntry(a: AuctionListing, server: MinecraftServer): AuctionEntry = A
     // 体型分类：精灵拍卖才有；物品拍卖保持原样。旧拍卖从存档 NBT 现算，无需重新上架
     // 技能同款处理：**旧拍卖没有 moves 快照时从 NBT 现读**（升级上来的服不用重新上架）
     extraData = if (a.type == AuctionType.POKEMON) {
+        // 当前能力值（2026-11-05，悬停窗六边形）：与市场挂单同一个缓存；
+        // 只加 extraData 键、**不改 write/read 字段顺序**（两端不必因它升级也能读旧数据）
+        val stats = if (com.shusheng.cobblemarket.config.CobbleMarketConfig.hoverStatsChart) {
+            MarketNetwork.cachedStats(a.id, a.pokemonNbt, server)
+        } else null
         // 极巨化 / 初始训练家：与太晶同款，**从拍卖自带的完整 NBT 现读**（老拍卖也显示）
         val dyn = com.shusheng.cobblemarket.util.PokemonDynamax.fromNbt(a.pokemonNbt)
         a.extraData +
@@ -180,7 +185,18 @@ fun auctionToEntry(a: AuctionListing, server: MinecraftServer): AuctionEntry = A
             ("illegal" to com.shusheng.cobblemarket.util.PokemonTags.hasInNbt(
                 a.pokemonNbt, com.shusheng.cobblemarket.util.PokemonTags.ILLEGAL).toString()) +
             // 昵称：同款**从拍卖自带的完整 NBT 现读**（走 extraData 加键、不动 write/read 的字段顺序）
-            ("nickname" to com.shusheng.cobblemarket.util.PokemonNickname.fromNbt(a.pokemonNbt).orEmpty())
+            ("nickname" to com.shusheng.cobblemarket.util.PokemonNickname.fromNbt(a.pokemonNbt).orEmpty()) +
+            // 当前能力值（值见上面 stats；键名与 `StatsChart.of(Map)` 对应）
+            (stats?.let {
+                mapOf(
+                    "statsHp" to it[0].toString(),
+                    "statsAtk" to it[1].toString(),
+                    "statsDef" to it[2].toString(),
+                    "statsSpe" to it[3].toString(),
+                    "statsSpDef" to it[4].toString(),
+                    "statsSpAtk" to it[5].toString(),
+                )
+            } ?: emptyMap<String, String>())
     } else a.extraData,
     startingPrice = a.startingPrice,
     minIncrement = a.minIncrement,
