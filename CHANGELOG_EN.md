@@ -12,7 +12,8 @@
   (HP / Atk / Def / Spe / SpD / SpA, same values as the in-game summary, including **fused** Pokémon
   when a fusion mod is installed). The chat "showcase" hover uses a vertical layout (the panel grows taller).
   Only hover tooltips are affected — buy / bid / detail dialogs are not. When off, the server does no
-  calculation and sends no extra data
+  calculation and sends no extra data. **Enabling the toggle asks for confirmation and explains the
+  server-side cost** (stats are calculated for hover info)
 
 ## 1.3.5 (released)
 

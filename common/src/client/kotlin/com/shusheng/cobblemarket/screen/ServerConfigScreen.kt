@@ -83,11 +83,16 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
     private var auctionOpenButton: NineSliceButton? = null
     private var buyOrderOpenButton: NineSliceButton? = null
 
-    // ── 蛋交易二次确认弹窗（照 AdminScreen 原模板：开启有 3 秒冷静期，蛋可绕过精灵黑名单） ──
-    private var eggConfirmOpen = false
-    private var eggConfirmOpenedAt = 0L
-    private var eggConfirmButton: NineSliceButton? = null
-    private var eggCancelButton: NineSliceButton? = null
+    // ── 二次确认弹窗（照黄金模板：下层控件全隐藏 + 遮罩 + 确认 / 取消） ──
+    // 蛋交易：开启有 3 秒冷静期（蛋可绕过精灵黑名单）；悬停能力值：无冷静期，但要说明性能开销。
+    private enum class ConfirmKind { EGG, HOVER_STATS }
+    private var confirmKind: ConfirmKind? = null
+    private var confirmOpenedAt = 0L
+    private var confirmButton: NineSliceButton? = null
+    private var confirmCancelButton: NineSliceButton? = null
+
+    /** 弹窗是否打开 —— 所有 rebuild / visible / 滚动路径都要叠加这个条件（见黄金模板备忘） */
+    private val confirmOpen: Boolean get() = confirmKind != null
     // 确认弹窗关闭/resize 走 clearChildren+init 重建，未提交的编辑（输入框+开关）需保存/恢复
     private var savedFieldTexts: Map<String, String>? = null
     private var savedToggles: Map<String, Boolean>? = null
@@ -195,7 +200,10 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 // 点击只切本地状态（乐观 UI），保存时才提交；蛋交易关→开需二次确认
                 {
                     if (key == "eggTrading" && !currentToggleValue("eggTrading")) {
-                        openEggConfirmDialog()
+                        openConfirmDialog(ConfirmKind.EGG)
+                    } else if (key == "hoverStatsChart" && !currentToggleValue("hoverStatsChart")) {
+                        // 能力值计算比普通信息开销大：开启前二次确认并写明注意事项
+                        openConfirmDialog(ConfirmKind.HOVER_STATS)
                     } else {
                         localToggles[key] = !currentToggleValue(key)
                         toggleButtons[key]?.iconLeft = toggleIconFor(key, null)
@@ -276,12 +284,12 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         val dialogX = width / 2 - dialogW / 2
         val startY = listStartY()
         var row = 0
-        // visible 必须叠加 !eggConfirmOpen：确认弹窗打开时任何重建（滚动/resize）都不能把下层控件改回可见
+        // visible 必须叠加 !confirmOpen：确认弹窗打开时任何重建（滚动/resize）都不能把下层控件改回可见
         // 行顺序：原数字配置 → 原开关 → 金融数字 → 金融开关（金融区块整体排在列表尾部）
         fun placeNumField(def: NumDef, key: String) {
             val y = startY + (row - scrollOffset) * rowHeight
             val field = numFields[key] ?: return
-            val visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
+            val visible = !confirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
             // ⚠ x 与宽度必须和 init 用同一套算法：只改一处会让右缘戳出弹窗（2026-09-22 踩过）
             field.x = ConfigFieldLayout.configFieldX(textRenderer, dialogX, dialogW, key, def.labelKey)
             field.setWidth(ConfigFieldLayout.configFieldWidth(textRenderer, dialogW, key, def.labelKey))
@@ -298,7 +306,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             val btn = toggleButtons[key] ?: return
             btn.x = dialogX + dialogW - 10 - 22
             btn.y = y + 1
-            btn.visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
+            btn.visible = !confirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
             row++
         }
         numDefs.forEach { (def, key) -> placeNumField(def, key) }
@@ -309,12 +317,12 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 val rowY = startY + (row - scrollOffset) * rowHeight
                 btn?.x = dialogX + dialogW - 10 - 20 - 2 - 54
                 btn?.y = rowY + 4
-                btn?.visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
+                btn?.visible = !confirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
                 row++
             }
         // 喵喵银行配置入口行（金融系统，1.1.0）
         val y = startY + (row - scrollOffset) * rowHeight
-        val visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
+        val visible = !confirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
         financeOpenButton?.x = dialogX + dialogW - 10 - 20 - 2 - 54
         financeOpenButton?.y = y + 4
         financeOpenButton?.visible = visible
@@ -323,7 +331,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         val pointsY = startY + (row - scrollOffset) * rowHeight
         pointsOpenButton?.x = dialogX + dialogW - 10 - 20 - 2 - 54
         pointsOpenButton?.y = pointsY + 4
-        pointsOpenButton?.visible = !eggConfirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
+        pointsOpenButton?.visible = !confirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
         row++
         // 悬停窗能力值开关（1.3.6）：**按功能开发顺序排在 RP 之后、界面杂项之前**
         toggleDefs.forEach { (_, key) -> placeToggle(key) }
@@ -560,11 +568,20 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         toggleButtons.values.forEach { it.visible = visible }
         saveButton?.visible = visible
         cancelButton?.visible = visible
+        // ⚠ 子界面入口按钮也要一起隐藏（2026-11-06 用户截图报确认弹窗下「Config」透出）：
+        //   它们画在 children 层、在遮罩之上；2026-10-25 新增后这份隐藏清单没跟上。
+        //   黄金模板第 2 条 = 隐藏下层**全部**控件，别只藏你记得的那几类。
+        financeOpenButton?.visible = visible
+        pointsOpenButton?.visible = visible
+        pokemonMarketOpenButton?.visible = visible
+        itemMarketOpenButton?.visible = visible
+        auctionOpenButton?.visible = visible
+        buyOrderOpenButton?.visible = visible
     }
 
-    private fun openEggConfirmDialog() {
-        eggConfirmOpen = true
-        eggConfirmOpenedAt = System.currentTimeMillis()
+    private fun openConfirmDialog(kind: ConfirmKind) {
+        confirmKind = kind
+        confirmOpenedAt = System.currentTimeMillis()
         // 保存未提交的编辑（关闭弹窗走 clearChildren+init 重建，init 里恢复）
         savePendingEdits()
         setControlsVisible(false)
@@ -572,48 +589,62 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         // 弹窗背景画在按钮之下（Drawable 在 children 之前渲染）
         addDrawable(object : Drawable {
             override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-                renderEggConfirmBackground(context)
+                renderConfirmBackground(context)
             }
         })
 
         val centerX = width / 2
         val dialogY = height / 2 - 75
-        eggConfirmButton = NineSliceButton(
+        confirmButton = NineSliceButton(
             centerX - 85, dialogY + 116, 80, 20,
-            Text.translatable("cobblemarket.op.egg_confirm_yes"),
-            { confirmEggTrading() }
+            Text.translatable(confirmYesKey(kind)),
+            { confirmToggle() }
         )
-        addDrawableChild(eggConfirmButton)
-        eggCancelButton = NineSliceButton(
+        addDrawableChild(confirmButton)
+        confirmCancelButton = NineSliceButton(
             centerX + 5, dialogY + 116, 80, 20,
             Text.translatable("cobblemarket.buy_confirm.cancel"),
-            { closeEggConfirmDialog() }
+            { closeConfirmDialog() }
         )
-        addDrawableChild(eggCancelButton)
+        addDrawableChild(confirmCancelButton)
     }
 
-    private fun closeEggConfirmDialog() {
-        eggConfirmOpen = false
-        eggConfirmButton = null
-        eggCancelButton = null
+    private fun closeConfirmDialog() {
+        confirmKind = null
+        confirmButton = null
+        confirmCancelButton = null
         clearChildren()
         init()
     }
 
-    private fun confirmEggTrading() {
-        // 冷静期内点击：置灰按钮仍可点（dimmed 模式），播 fail 音效提示，不执行
-        if (System.currentTimeMillis() - eggConfirmOpenedAt < 3000L) {
+    private fun confirmToggle() {
+        val kind = confirmKind ?: return
+        // 蛋交易：冷静期内点击只提示、不执行；悬停能力值没有冷静期
+        if (kind == ConfirmKind.EGG && System.currentTimeMillis() - confirmOpenedAt < 3000L) {
             playFailSound()
             return
         }
         // 只切本地状态（保存时才提交）；先更新保存快照再关闭——
         // 否则 init 恢复会用弹窗打开时的旧快照把刚确认的「开」覆盖回关
-        localToggles["eggTrading"] = true
+        when (kind) {
+            ConfirmKind.EGG -> localToggles["eggTrading"] = true
+            ConfirmKind.HOVER_STATS -> localToggles["hoverStatsChart"] = true
+        }
         savePendingEdits()
-        closeEggConfirmDialog()
+        closeConfirmDialog()
     }
 
-    private fun renderEggConfirmBackground(context: DrawContext) {
+    private fun confirmTitleKey(kind: ConfirmKind): String = when (kind) {
+        ConfirmKind.EGG -> "cobblemarket.op.egg_confirm_title"
+        ConfirmKind.HOVER_STATS -> "cobblemarket.op.hover_stats_confirm_title"
+    }
+
+    private fun confirmYesKey(kind: ConfirmKind): String = when (kind) {
+        ConfirmKind.EGG -> "cobblemarket.op.egg_confirm_yes"
+        ConfirmKind.HOVER_STATS -> "cobblemarket.op.hover_stats_confirm_yes"
+    }
+
+    private fun renderConfirmBackground(context: DrawContext) {
         val centerX = width / 2
         val dialogW = minOf(340, width - 40).coerceAtLeast(200)
         val dialogH = 150
@@ -623,21 +654,28 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         drawScreenDimMask(context, width, height)
         drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dialogX, dialogY, dialogW, dialogH, 0, DIALOG_BACKGROUND_TEX_H)
         context.drawCenteredTextWithShadow(textRenderer,
-            Text.translatable("cobblemarket.op.egg_confirm_title").formatted(Formatting.GOLD),
+            Text.translatable(confirmTitleKey(confirmKind ?: ConfirmKind.EGG)).formatted(Formatting.GOLD),
             centerX, dialogY + 14, 0xFFFFFF)
     }
 
-    private fun renderEggConfirmText(context: DrawContext) {
+    private fun renderConfirmText(context: DrawContext) {
+        val kind = confirmKind ?: return
         val centerX = width / 2
         val dialogX = centerX - 140
         val dialogY = height / 2 - 75
 
-        // 逐行渲染：语言文件显式分行（每行红/白两个槽位），红=警告、白=普通；空行跳过（中英行数不同）
-        val lines = (1..9).map { i ->
-            listOf(
-                "cobblemarket.op.egg_l${i}_warn" to 0xFF5555,
-                "cobblemarket.op.egg_l${i}_text" to 0xFFFFFF,
-            )
+        // 逐行渲染：语言文件显式分行；红=警告、白=普通；空行跳过（中英行数不同）。
+        // 蛋交易每行是「红警告 + 白说明」两个槽位；悬停能力值每行是一个完整句子。
+        val lines: List<List<Pair<String, Int>>> = when (kind) {
+            ConfirmKind.EGG -> (1..9).map { i ->
+                listOf(
+                    "cobblemarket.op.egg_l${i}_warn" to 0xFF5555,
+                    "cobblemarket.op.egg_l${i}_text" to 0xFFFFFF,
+                )
+            }
+            ConfirmKind.HOVER_STATS -> (1..7).map { i ->
+                listOf("cobblemarket.op.hover_stats_confirm_l$i" to (if (i == 1) 0xFF5555 else 0xFFFFFF))
+            }
         }
         var ty = dialogY + 32
         lines.forEach { line ->
@@ -656,15 +694,21 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         }
     }
 
-    /** 冷静期：3 秒内确认按钮禁用并显示倒计时 */
-    private fun updateEggConfirmButtons() {
-        val cooldownLeft = 3 - (System.currentTimeMillis() - eggConfirmOpenedAt) / 1000
-        val canConfirm = cooldownLeft <= 0
-        eggConfirmButton?.dimmed = !canConfirm
-        eggConfirmButton?.message = if (canConfirm)
-            Text.translatable("cobblemarket.op.egg_confirm_yes")
-        else
-            Text.translatable("cobblemarket.op.egg_confirm_yes_countdown", cooldownLeft)
+    /** 冷静期只对蛋交易：3 秒内确认按钮禁用并显示倒计时；悬停能力值立即可确认 */
+    private fun updateConfirmButtons() {
+        val kind = confirmKind ?: return
+        if (kind == ConfirmKind.EGG) {
+            val cooldownLeft = 3 - (System.currentTimeMillis() - confirmOpenedAt) / 1000
+            val canConfirm = cooldownLeft <= 0
+            confirmButton?.dimmed = !canConfirm
+            confirmButton?.message = if (canConfirm)
+                Text.translatable(confirmYesKey(kind))
+            else
+                Text.translatable("cobblemarket.op.egg_confirm_yes_countdown", cooldownLeft)
+        } else {
+            confirmButton?.dimmed = false
+            confirmButton?.message = Text.translatable(confirmYesKey(kind))
+        }
     }
 
     // ── 滚动 ──
@@ -680,7 +724,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         //   压在列表右缘那一两像素会被它截胡；`!result` = 控件已经吃下这一击时不再判。
         //   ⚠ 确认弹窗开着时滚动条不画（render 提前返回）⇒ 这里也不判，免得点到"看不见的条"
         //   （`totalRows > getMaxVisibleRows()` = 现在确实有得滚；装得下时它不画，几何还停在上一帧）
-        if (!result && !eggConfirmOpen && button == 0 && totalRows > getMaxVisibleRows()) {
+        if (!result && !confirmOpen && button == 0 && totalRows > getMaxVisibleRows()) {
             ScrollBar.shared.mouseClicked(mouseX, mouseY, scrollOffset)?.let {
                 scrollOffset = it
                 // 行是**控件** ⇒ 位置得跟着新偏移重摆（同 [mouseScrolled]）
@@ -693,7 +737,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
 
     /** 拖动滚动条（见 [ScrollBar]）—— 本界面里**只有它**在用拖动 */
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
-        if (!eggConfirmOpen) {
+        if (!confirmOpen) {
             ScrollBar.shared.mouseDragged(mouseY, scrollOffset)?.let {
                 scrollOffset = it
                 rebuildPositions()
@@ -715,7 +759,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         // 确认弹窗打开时不滚动下层列表
-        if (eggConfirmOpen) return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)
+        if (confirmOpen) return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)
         val maxScroll = maxOf(0, totalRows - getMaxVisibleRows())
         if (maxScroll > 0) {
             scrollOffset = (scrollOffset - verticalAmount.toInt()).coerceIn(0, maxScroll)
@@ -727,13 +771,13 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
 
     override fun resize(client: MinecraftClient, width: Int, height: Int) {
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, totalRows - getMaxVisibleRows()))
-        val wasEggConfirmOpen = eggConfirmOpen
+        val wasConfirmKind = confirmKind
         // 重建前保存未提交编辑（init 里恢复且不重新请求快照）
         savePendingEdits()
         super.resize(client, width, height)
-        if (wasEggConfirmOpen) {
-            eggConfirmOpen = false
-            openEggConfirmDialog()
+        if (wasConfirmKind != null) {
+            confirmKind = null
+            openConfirmDialog(wasConfirmKind)
         }
     }
 
@@ -747,9 +791,9 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         super.render(context, mouseX, mouseY, delta)
-        if (eggConfirmOpen) {
-            renderEggConfirmText(context)
-            updateEggConfirmButtons()
+        if (confirmOpen) {
+            renderConfirmText(context)
+            updateConfirmButtons()
             return
         }
         val centerX = width / 2
