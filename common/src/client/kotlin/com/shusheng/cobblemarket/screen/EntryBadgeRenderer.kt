@@ -235,6 +235,16 @@ object EntryBadgeRenderer {
     private const val BADGE_MIN = 5
 
     /**
+     * 给定**精灵图标**边长时角标的标准像素大小 —— 全项目统一按「图标三成」算。
+     *
+     * ⚠ 调用方传的必须是**精灵图标**的边长，不是格子的边长：商城格子比图标大得多，
+     *   按格子算会让角标大得压出圆角（2026-11-09 用户实测报「图鉴图标跑出网格」）。
+     *   格子那处贴的是格子角、要的是小角标，所以单独传 [drawPokedexBadge] / [drawIllegalBadgeLeft]
+     *   的 `badgeSize` 参数（贴角位置不变）。
+     */
+    fun badgeSizeFor(iconSize: Int): Int = maxOf((iconSize * BADGE_SIZE_RATIO).toInt(), BADGE_MIN)
+
+    /**
      * 角标距精灵图标**角上的边距** —— ⚠ **横向与纵向故意不同，别合并成一个**，
      * 也**别给某一侧单独加**（两枚角标是镜像关系，共用常量才能保证对称）。
      *
@@ -320,10 +330,12 @@ object EntryBadgeRenderer {
          * **组合图**（14×28 取上半）用：采样区高 / 整图高 / 采样纵偏移。
          * 默认 = 正方形整图（锁 / 印章），行为与原先完全一致。
          */
-        sampleH: Int = texSize, fullH: Int = texSize, vOffset: Int = 0
+        sampleH: Int = texSize, fullH: Int = texSize, vOffset: Int = 0,
+        /** 覆盖角标大小（像素）；null = 按 [size] 走「图标三成」（默认） */
+        badgeSize: Int? = null
     ): IntArray {
         // 屏幕上的目标边长（图标三成，小图标有下限）
-        val badge = maxOf((size * BADGE_SIZE_RATIO).toInt(), BADGE_MIN)
+        val badge = badgeSize ?: badgeSizeFor(size)
         val scale = badge.toFloat() / texSize
         val bx = if (rightSide) x + size - badge - BADGE_MARGIN_X else x + BADGE_MARGIN_X
         val by = y + BADGE_MARGIN_Y
@@ -369,14 +381,19 @@ object EntryBadgeRenderer {
      *
      * ⚠ 与锁图一样是 Cobblemon 的**内部资源路径**，升级大版本时复核一眼（图还在不在 / 尺寸变没变）。
      */
-    fun drawPokedexBadge(context: DrawContext, progress: PokedexEntryProgress, x: Int, y: Int, size: Int): IntArray =
+    fun drawPokedexBadge(
+        context: DrawContext, progress: PokedexEntryProgress, x: Int, y: Int, size: Int,
+        /** 覆盖角标大小（像素）；null = 按 [size] 走「图标三成」（商城格子按图标传小尺寸） */
+        badgeSize: Int? = null
+    ): IntArray =
         when (progress) {
             PokedexEntryProgress.OWNED -> drawCornerBadge(
-                context, DEX_CAUGHT_TEX, DEX_TEX_W, x, y, size, rightSide = false
+                context, DEX_CAUGHT_TEX, DEX_TEX_W, x, y, size, rightSide = false,
+                badgeSize = badgeSize
             )
             PokedexEntryProgress.SEEN -> drawCornerBadge(
                 context, DEX_SEEN_TEX, DEX_TEX_W, x, y, size, rightSide = false,
-                sampleH = DEX_TEX_W, fullH = DEX_SEEN_TEX_H
+                sampleH = DEX_TEX_W, fullH = DEX_SEEN_TEX_H, badgeSize = badgeSize
             )
             PokedexEntryProgress.UNREGISTERED -> IntArray(4)
         }
@@ -407,8 +424,15 @@ object EntryBadgeRenderer {
      * 放右上会打架；而"限量格放左上、不限量格放右上"又会让同一排格子位置不一致（更怪）。
      * 所以整片商城统一放左上，其余所有界面（精灵列表 / 各种弹窗）一律用右上那版。
      */
-    fun drawIllegalBadgeLeft(context: DrawContext, x: Int, y: Int, size: Int): IntArray =
-        drawCornerBadge(context, ILLEGAL_BADGE_TEX, ILLEGAL_TEX_SIZE, x, y, size, rightSide = false)
+    fun drawIllegalBadgeLeft(
+        context: DrawContext, x: Int, y: Int, size: Int,
+        /** 覆盖角标大小（像素）；null = 按 [size] 走「图标三成」（商城格子按图标传小尺寸） */
+        badgeSize: Int? = null
+    ): IntArray =
+        drawCornerBadge(
+            context, ILLEGAL_BADGE_TEX, ILLEGAL_TEX_SIZE, x, y, size, rightSide = false,
+            badgeSize = badgeSize
+        )
 
     /**
      * 名字行整体占宽（文本 + 公母图标 + 体型徽章），供悬停窗面板宽度计算。

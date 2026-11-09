@@ -2,23 +2,30 @@
 
 ## 1.3.7 (in development, unreleased)
 
-### Changes
+### New Features
 
 - **Owners can now reset a claim shop's claim period immediately**: `/market shop cooldown <id> reset`
   now clears every player's claim records on claim-mode shops (the message says everyone can claim
   again; normal purchase shops are unchanged), and the shop detail screen for claim shops gained a
   "Reset claims" button with confirmation
 
+### Changes
+
+- **Saves after trades and claims now only write the data involved**: every trade / claim used to
+  trigger a full save of every dimension three seconds later (chunks, entities and player data),
+  which spent extra server-thread time on busy servers; now only player data and market state are
+  written, leaving chunks and entities to the game's regular autosaves
+
 ### Fixes
 
-- **The server briefly stuttered after trades and claims**: every trade / claim used to trigger a
-  full server save three seconds later (every dimension, including chunks and entities unrelated
-  to the trade), which caused noticeable lag on busy servers; only the player data and market data
-  involved in the trade are saved now
 - **Running `/market shop cooldown <id> reset` on a claim-mode shop wrongly reported
   "market data save failed"**: the command cleared nothing for claim shops but still triggered the
   save check, popping a red warning about 30 seconds later; it now writes only when records were
   actually cleared
+- **The Pokédex status and "Illegal" corner badges on RP shop / custom shop grid cells were too
+  large and sat on the cell border**: their size was derived from the whole cell instead of the
+  Pokémon icon and they were drawn from the cell's outer edge; they now scale with the icon like
+  everywhere else and are inset past the border
 
 ## 1.3.6 (released)
 

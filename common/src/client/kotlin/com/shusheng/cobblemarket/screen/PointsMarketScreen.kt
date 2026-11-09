@@ -7708,7 +7708,9 @@ class PointsMarketScreen(
                 // ⚠ 缩写串是**字符串**喂进 amountText 的：`goldAmount → formatAmount` 对非数值类型
                 //   **原样输出**（不套千分位），所以不会被二次加工；RP 图标仍由 unitText 补，没走字符串拼接
                 CurrencyService.amountText(formatPriceShortLong(entry.price), shopCurrency),
-                x + size / 2, bottom - PRICE_BOTTOM_GAP, 0xFFFFFF
+                // -1：与领取店的「可领 N」同一档，白字再上移 1px —— 否则金额与货币图标会压到格子下边框
+                //（用户 2026-11-09 报）
+                x + size / 2, bottom - PRICE_BOTTOM_GAP - 1, 0xFFFFFF
             )
         }
 
@@ -7723,8 +7725,16 @@ class PointsMarketScreen(
         // ⚠ 2026-10-02 三次改：**收口到共用入口**（[EntryBadgeRenderer.drawIllegalBadgeLeft]）——
         //   原先这里自己手写 matrices 缩放、尺寸按 10~16 钳制、贴边 4px，与全项目口径各写一套
         //   （比例/边距调一次要改两处）。现在尺寸与边距都走共用常量，全项目只有"贴哪一角"不同。
+        // ⚠ 2026-11-09 四次改：角标大小按**精灵图标**（[EntryBadgeRenderer.badgeSizeFor]，与列表/弹窗
+        //   同一套「图标三成」）算，**不能按格子边长** —— 格子比图标大得多，按格子算会让角标
+        //   大得压出格子圆角（用户实测：图鉴图标跑出网格）。
+        // ⚠ 同时**往内让过边框**（[CELL_BADGE_INSET_X] / [CELL_BADGE_INSET_Y]）：格子底图是有厚度的
+        //   九宫格边框，角标贴着格子的外缘会压在边框上（用户 2026-11-09：「不能左上都顶着网格边」）。
+        val badgeSize = EntryBadgeRenderer.badgeSizeFor(iconSize)
+        val badgeX = x - grow + CELL_BADGE_INSET_X
+        val badgeY = y - grow + CELL_BADGE_INSET_Y
         val illegalRect = if (entry.pokemon?.illegal == true) {
-            EntryBadgeRenderer.drawIllegalBadgeLeft(context, x - grow, y - grow, size)
+            EntryBadgeRenderer.drawIllegalBadgeLeft(context, badgeX, badgeY, size, badgeSize)
         } else null
         val dexProgress = entry.pokemon?.species?.let { rawSpecies ->
             Identifier.tryParse(rawSpecies)?.let {
@@ -7733,8 +7743,8 @@ class PointsMarketScreen(
         }
         if (dexProgress != null && dexProgress != PokedexEntryProgress.UNREGISTERED) {
             // 并排：图鉴起点 = 印章右缘 + 1px；没有印章就贴原来的左上角（与印章同一套边距）
-            val dexX = if (illegalRect != null) illegalRect[0] + illegalRect[2] + 1 else x - grow
-            EntryBadgeRenderer.drawPokedexBadge(context, dexProgress, dexX, y - grow, size)
+            val dexX = if (illegalRect != null) illegalRect[0] + illegalRect[2] + 1 else badgeX
+            EntryBadgeRenderer.drawPokedexBadge(context, dexProgress, dexX, badgeY, size, badgeSize)
         }
 
         // 库存角标：**只有限量格才画**（不限量是默认玩法，画个 ∞ 只是碍眼）；
@@ -7930,6 +7940,16 @@ class PointsMarketScreen(
          *   那边格子小、上距本就取 3；本界面按「先下移 1px 避开格子上边框」定 4，右边距跟着取同一个值。
          */
         const val STOCK_BADGE_INSET = 4
+
+        /**
+         * 格子**左上角标**（非法印章 / 图鉴状态）的内收边距 —— 要**让过九宫格边框**（[NINE_SLICE_BORDER]），
+         * 不能顶在格子外缘上（用户 2026-11-09：「不能左上都顶着网格边」）。
+         *
+         * ⚠ **横向与纵向分开**：九宫格是圆角，横向视觉上比纵向多让一截 —— 横向比纵向再少 2px、
+         *   纵向比边框少 1px（用户 2026-11-09 逐像素调出来的，别一次改成同一个值）。
+         */
+        const val CELL_BADGE_INSET_X = NINE_SLICE_BORDER - 2
+        const val CELL_BADGE_INSET_Y = NINE_SLICE_BORDER - 1
 
         /** 网格与上下两条分割线的间距（逻辑像素） */
         const val GRID_PADDING = 6
