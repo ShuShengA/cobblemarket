@@ -15,14 +15,16 @@ import java.io.File
  * （货已扣）、模组状态回滚（挂单没了），货/钱蒸发；反过来保存顺序错位则货复制。
  *
  * 策略：
- * 1. 交易成功后 requestSave：3 秒节流合并，到点执行全量 saveAll——玩家数据与模组状态同步落盘，
- *    杀进程时两边一起回滚（或一起保留），绝无错位；
+ * 1. 交易成功后 requestSave：3 秒节流合并，到点**定向保存**（玩家数据 + 模组状态）——两者同步落盘，
+ *    杀进程时两边一起回滚（或一起保留），绝无错位。不用 server.saveAll：它把**全部维度**的
+ *    区块/实体/level.dat 都刷一遍（服主实测每次领取后 3 秒出现 `Saving chunks...`，111 次 / 2 小时，
+ *    是服务器卡顿源之一），而交易只改玩家数据与 PersistentState；
  * 2. 玩家断开时 onPlayerDisconnect：玩家数据刚被 MC 保存，立即保存模组状态追上去（蒸发洞窗口 = 0）；
  * 3. 每次保存前刷新 .bak 备份（防保存过程中断电写坏文件）；
  * 4. 保存后按文件 mtime 验证是否真的写盘（MC 会吞掉 PersistentState 写盘异常并清除脏标志，
  *    不做验证的话「以为存了其实没存」）——失败时日志 error + 给在线 OP 发显眼告警。
- *    验证基准取「节流窗口首笔交易时刻」的快照而非 saveAll 前一刻：MC 的 5 分钟自动保存可能
- *    恰好在交易后抢先写盘（数据已安全落盘、我们的 saveAll 空跑），对比保存前一刻会误报失败。
+ *    验证基准取「节流窗口首笔交易时刻」的快照而非保存前一刻：MC 的 5 分钟自动保存可能
+ *    恰好在交易后抢先写盘（数据已安全落盘、我们的保存空跑），对比保存前一刻会误报失败。
  */
 object PersistHelper {
 
@@ -44,10 +46,10 @@ object PersistHelper {
     private var verifyAttempts = 0
 
     /**
-     * 交易成功后调用：节流合并，到点全量落盘。
+     * 交易成功后调用：节流合并，到点定向落盘。
      *
      * ⚠ 只在模组状态（挂单/拍卖/求购/金融/封禁等 PersistentState）发生变化时调用。
-     * 无状态变化时调用会让 saveAll 空跑（MC 跳过无脏数据文件的写盘），mtime 验证
+     * 无状态变化时调用会让 `PersistentStateManager.save` 空跑（无脏数据不写文件），mtime 验证
      * 60 秒后误报「保存失败」——2026-09-04 补发紫卡（免费时无准备金池变化）教训。
      * 纯发物品/纯发消息的流程不要调用：玩家数据由 MC 自己保存。
      */
@@ -79,27 +81,56 @@ object PersistHelper {
         server.execute { saveModStates(server) }
     }
 
-    /** END_SERVER_TICK 调用：延迟验证到期检查 + 节流到点执行全量保存 */
+    /** END_SERVER_TICK 调用：延迟验证到期检查 + 节流到点执行定向保存 */
     fun tick(server: MinecraftServer) {
         val now = System.currentTimeMillis()
         verifyPending(server, now)
         if (pendingSave && now - lastTradeAt >= SAVE_COOLDOWN_MS) {
-            // 自动备份模组/自动保存关闭（savingDisabled）时 saveAll(force=false) 会被整体跳过——写盘不执行、
-            // mtime 验证 58 秒后必然误报「保存失败」；此时推迟重试，备份结束自动补落盘。
-            // 也不 force 写盘：备份期间写盘与备份模组的文件复制竞争，可能干扰备份一致性。
+            // 备份模组关闭了自动保存（savingDisabled）时推迟落盘：备份期间写盘与备份模组的文件复制
+            // 竞争，可能干扰备份一致性；备份结束自动补落盘（不 force 写盘，同理）。
             if (server.overworld.savingDisabled) {
                 lastTradeAt = now
                 return
             }
             pendingSave = false
             StateBackup.backupAll(server)
-            val ok = server.saveAll(false, false, false)
+            val ok = saveTradeData(server)
             if (!ok) {
-                // saveAll 返回 false = 明确失败，立即告警（无需等 mtime）
+                // 定向保存与兜底 saveAll 都抛异常 = 明确失败，立即告警（无需等 mtime）
                 alertSaveFailed(server)
             } else {
                 // 验证基准 = 交易时刻快照：自动保存抢先写盘也算成功（数据已落盘）
                 scheduleVerify(pendingSaveMtimes)
+            }
+        }
+    }
+
+    /**
+     * 交易数据定向保存：玩家数据（背包/队伍/统计/进度）+ 模组状态（挂单/拍卖/求购/领取/余额/金融…）。
+     *
+     * 顺序与 `server.saveAll` 内部一致（先玩家数据，后状态）—— 保存不是跨文件原子的，
+     * 中途崩溃时的错位窗口与原实现相同，不引入新的失败模式。
+     *
+     * 不保存区块/实体/其他维度：交易不碰它们。唯一例外是背包满时 `giveBackItem` 把物品
+     * 掉在地上（掉落物实体在区块里）—— 那种情况交给 MC 自己的 5 分钟自动保存/关服保存；
+     * 这是有意的取舍（为极端边缘情况每次交易都全量刷 8 个维度不值得）。
+     *
+     * ⚠ `PersistentState.save` 会吞掉 IOException **并清脏标志**（写盘失败靠 mtime 验证兜底，
+     * 见 verifyPending）；这里的 try/catch 兜的是玩家数据保存等意外异常。
+     */
+    private fun saveTradeData(server: MinecraftServer): Boolean {
+        return try {
+            server.playerManager.saveAllPlayerData()
+            server.overworld.persistentStateManager.save()
+            true
+        } catch (e: Exception) {
+            // 定向保存异常：退回全量 saveAll（宁可慢也不能丢数据）
+            CobbleMarket.LOGGER.warn("CobbleMarket targeted save failed, falling back to saveAll", e)
+            try {
+                server.saveAll(false, false, false)
+            } catch (e2: Exception) {
+                CobbleMarket.LOGGER.error("CobbleMarket fallback saveAll failed", e2)
+                false
             }
         }
     }
