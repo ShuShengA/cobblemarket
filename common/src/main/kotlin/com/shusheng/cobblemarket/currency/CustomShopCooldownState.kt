@@ -81,12 +81,18 @@ class CustomShopCooldownState private constructor() : PersistentState() {
         markDirty()
     }
 
-    /** 商店被删除时清掉它的全部冷却记录（否则同 id 重建的店会继承旧冷却） */
-    fun clearShop(shopId: String) {
+    /**
+     * 清掉一家店的全部冷却记录（删店 / 服主手动重置）。
+     *
+     * @return 是否真的删掉了记录 —— **调用方只应在返回 true 时 `requestSave`**：
+     *   没有任何记录时状态不脏、不会写盘，空跑会让 PersistHelper 的 mtime 验证误报「保存失败」。
+     */
+    fun clearShop(shopId: String): Boolean {
         val prefix = "$shopId|"
         val removed = shopPurchases.keys.removeAll { it.startsWith(prefix) }
         val removedSlots = slotPurchases.keys.removeAll { it.startsWith(prefix) }
         if (removed || removedSlots) markDirty()
+        return removed || removedSlots
     }
 
     private fun shopKey(shopId: String, playerUuid: UUID): String = "$shopId|$playerUuid"

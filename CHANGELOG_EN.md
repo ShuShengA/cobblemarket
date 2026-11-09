@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.3.7 (in development, unreleased)
+
+### Changes
+
+- **Owners can now reset a claim shop's claim period immediately**: `/market shop cooldown <id> reset`
+  now clears every player's claim records on claim-mode shops (the message says everyone can claim
+  again; normal purchase shops are unchanged), and the shop detail screen for claim shops gained a
+  "Reset claims" button with confirmation
+
+### Fixes
+
+- **The server briefly stuttered after trades and claims**: every trade / claim used to trigger a
+  full server save three seconds later (every dimension, including chunks and entities unrelated
+  to the trade), which caused noticeable lag on busy servers; only the player data and market data
+  involved in the trade are saved now
+- **Running `/market shop cooldown <id> reset` on a claim-mode shop wrongly reported
+  "market data save failed"**: the command cleared nothing for claim shops but still triggered the
+  save check, popping a red warning about 30 seconds later; it now writes only when records were
+  actually cleared
+
 ## 1.3.6 (released)
 
 ⚠ **Client and server must be upgraded together** (this version changes network payloads).

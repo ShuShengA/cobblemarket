@@ -17,6 +17,7 @@ import com.shusheng.cobblemarket.currency.CurrencyService
 import com.shusheng.cobblemarket.currency.CustomShopClaimState
 import com.shusheng.cobblemarket.currency.CustomShopCooldownState
 import com.shusheng.cobblemarket.currency.CustomShopError
+import com.shusheng.cobblemarket.currency.CustomShopMode
 import com.shusheng.cobblemarket.currency.CustomShopState
 import com.shusheng.cobblemarket.currency.MAX_COOLDOWN_HOURS
 import com.shusheng.cobblemarket.currency.CustomShopType
@@ -145,7 +146,7 @@ object MarketCommands {
                         // 普通购买店的冷却（小时）：0 = 不开；随时可改（滚动冷却）
                         //  · cooldown      = 整店冷却（共享）
                         //  · itemcooldown  = 商品各自冷却（每格独立）
-                        //  · cooldown <id> reset = 清空该店所有玩家的冷却记录（测试用）
+                        //  · cooldown <id> reset = 按店类型清空所有玩家的记录（普通店=购买冷却，领取店=领取周期）
                         .then(CommandManager.literal("cooldown")
                             .then(CommandManager.argument("id", StringArgumentType.word())
                                 .suggests(::suggestShopIds)
@@ -1493,7 +1494,13 @@ object MarketCommands {
         return 1
     }
 
-    /** `/market shop cooldown <id> reset` —— 清空这家店所有玩家的冷却记录（设置值不动） */
+    /**
+     * `/market shop cooldown <id> reset` —— 立即清空这家店的**时间限制**（设置值不动），按店类型分流：
+     * 普通购买店 = 购买冷却记录；领取店 = 领取周期（领取按钮旁的倒计时就来自它）。
+     *
+     * ⚠ **只有真的清掉记录才 requestSave**：什么都没清时状态不脏、不会写盘，
+     *   空跑会让 PersistHelper 的 mtime 验证误报「保存失败」（2026-11-09 对领取店执行时踩到）。
+     */
     private fun resetCustomShopCooldown(context: CommandContext<ServerCommandSource>): Int {
         val source = context.source
         val id = StringArgumentType.getString(context, "id")
@@ -1501,14 +1508,29 @@ object MarketCommands {
             source.sendError(customShopErrorText(CustomShopError.NOT_FOUND, id))
             return 0
         }
-        CustomShopCooldownState.get(source.server).clearShop(shop.id)
-        com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
-        // 在线玩家补发冷却状态（否则客户端缓存还显示倒计时）
+        val claimShop = shop.mode == CustomShopMode.CLAIM
+        val changed = if (claimShop) {
+            CustomShopClaimState.get(source.server).clearShop(shop.id)
+        } else {
+            CustomShopCooldownState.get(source.server).clearShop(shop.id)
+        }
+        if (changed) com.shusheng.cobblemarket.util.PersistHelper.requestSave(source.server)
+        // 在线玩家补发状态（否则客户端缓存还显示倒计时）
         source.server.playerManager.playerList.forEach { online ->
-            sendToPlayer(online, com.shusheng.cobblemarket.network.PointMarketNetwork.buildCooldownStatus(online, shop))
+            sendToPlayer(
+                online,
+                if (claimShop) {
+                    com.shusheng.cobblemarket.network.PointMarketNetwork.buildClaimStatus(online, shop)
+                } else {
+                    com.shusheng.cobblemarket.network.PointMarketNetwork.buildCooldownStatus(online, shop)
+                }
+            )
         }
         source.sendFeedback({
-            Text.translatable("cobblemarket.shop.cooldown_reset", shop.id).formatted(Formatting.GREEN)
+            Text.translatable(
+                if (claimShop) "cobblemarket.shop.claim_reset" else "cobblemarket.shop.cooldown_reset",
+                shop.id
+            ).formatted(Formatting.GREEN)
         }, false)
         return 1
     }

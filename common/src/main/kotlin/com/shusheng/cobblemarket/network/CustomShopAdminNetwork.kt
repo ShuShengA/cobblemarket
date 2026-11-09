@@ -353,6 +353,24 @@ data class ResetCustomShopCooldownPayload(val id: String) : CustomPayload {
     }
 }
 
+/**
+ * 清空一家**领取店**所有玩家的领取周期，立即生效（2026-11-09）。
+ *
+ * 领取按钮旁倒计时来自 `CustomShopClaimState`，购买冷却重置不碰它 —— 以前领取店没有任何
+ * 「立即重置」入口，只能删店重建。⚠ 只清运行时记录、不动领取周期设置；清完要给在线玩家补发
+ * 领取状态包，否则客户端缓存还显示倒计时。
+ */
+data class ResetCustomShopClaimPayload(val id: String) : CustomPayload {
+    override fun getId() = ID
+    companion object {
+        val ID = CustomPayload.Id<ResetCustomShopClaimPayload>(CobbleMarket.id("reset_custom_shop_claim"))
+        val CODEC: PacketCodec<PacketByteBuf, ResetCustomShopClaimPayload> = PacketCodec.of(
+            { p, b -> b.writeString(p.id, ADMIN_MAX_TEXT) },
+            { b -> ResetCustomShopClaimPayload(b.readString(ADMIN_MAX_TEXT)) }
+        )
+    }
+}
+
 data class SetCustomShopEnabledPayload(val id: String, val enabled: Boolean) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -610,13 +628,40 @@ object CustomShopAdminNetwork {
                     sendResult(player, false, customShopErrorText(CustomShopError.NOT_FOUND, payload.id))
                     return@execute
                 }
-                com.shusheng.cobblemarket.currency.CustomShopCooldownState.get(player.server).clearShop(shop.id)
-                PersistHelper.requestSave(player.server)
+                // ⚠ 只有真的清掉记录才 requestSave：什么都没清时状态不脏、不会写盘，
+                //   空跑会让 PersistHelper 的 mtime 验证误报「保存失败」（2026-11-09 实测踩到）
+                val changed = CustomShopCooldownState.get(player.server).clearShop(shop.id)
+                if (changed) PersistHelper.requestSave(player.server)
                 // 在线玩家补发冷却状态：否则客户端缓存还显示倒计时（重置了却看不出来）
                 player.server.playerManager.playerList.forEach { online ->
                     sendToPlayer(online, PointMarketNetwork.buildCooldownStatus(online, shop))
                 }
                 sendResult(player, true, Text.translatable("cobblemarket.shop.cooldown_reset", shop.id))
+                sendToPlayer(player, buildList(player))
+            }
+        }
+
+        // 清空一家**领取店**所有玩家的领取周期，立即生效（服主测试 / 手动刷新）
+        registerC2S(ResetCustomShopClaimPayload.ID, ResetCustomShopClaimPayload.CODEC) { payload, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.POINTS_SHOP)) return@registerC2S
+            if (!RequestThrottle.allowNotify(
+                    player, "custom_shop_admin_claim_reset", RequestThrottle.WRITE_INTERVAL_MS
+                )
+            ) {
+                return@registerC2S
+            }
+            player.server.execute {
+                val shop = CustomShopState.get(player.server).find(payload.id) ?: run {
+                    sendResult(player, false, customShopErrorText(CustomShopError.NOT_FOUND, payload.id))
+                    return@execute
+                }
+                val changed = CustomShopClaimState.get(player.server).clearShop(shop.id)
+                if (changed) PersistHelper.requestSave(player.server)
+                // 在线玩家补发领取状态：否则客户端缓存还显示倒计时（重置了却看不出来）
+                player.server.playerManager.playerList.forEach { online ->
+                    sendToPlayer(online, PointMarketNetwork.buildClaimStatus(online, shop))
+                }
+                sendResult(player, true, Text.translatable("cobblemarket.shop.claim_reset", shop.id))
                 sendToPlayer(player, buildList(player))
             }
         }

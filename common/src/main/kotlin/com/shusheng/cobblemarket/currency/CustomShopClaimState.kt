@@ -93,10 +93,14 @@ class CustomShopClaimState private constructor() : PersistentState() {
      *   于是又显示能领），2026-11-02 用户实测报出。领取记录（交易历史）不受影响，照常保留。
      *
      * @param shopId 已规整的店 id（调用方传 `trim().lowercase()`，与 [CustomShopState] 一致）
+     * @return 是否真的删掉了记录 —— **调用方只应在返回 true 时 `requestSave`**：
+     *   没有任何记录时状态不脏、不会写盘，空跑会让 PersistHelper 的 mtime 验证误报「保存失败」。
      */
-    fun clearShop(shopId: String) {
+    fun clearShop(shopId: String): Boolean {
         val prefix = "$shopId|"
-        if (periods.keys.removeAll { it.startsWith(prefix) }) markDirty()
+        val removed = periods.keys.removeAll { it.startsWith(prefix) }
+        if (removed) markDirty()
+        return removed
     }
 
     private fun key(shopId: String, playerUuid: UUID): String = "$shopId|$playerUuid"

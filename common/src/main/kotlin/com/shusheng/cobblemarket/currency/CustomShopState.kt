@@ -376,8 +376,8 @@ class CustomShopState private constructor() : PersistentState() {
     fun setCurrency(id: String, currency: MarketCurrency): CustomShopError? {
         val shop = shops[normalizeId(id)] ?: return CustomShopError.NOT_FOUND
         if (shop.entryCount() > 0) return CustomShopError.NOT_EMPTY
-        if (shop.currency == currency) return null
         shop.currency = currency
+        // 即使值没变也置脏：调用方随后会 requestSave，不写盘会让 mtime 验证误报「保存失败」
         markDirty()
         return null
     }
@@ -405,8 +405,8 @@ class CustomShopState private constructor() : PersistentState() {
      */
     fun setType(id: String, type: CustomShopType): CustomShopError? {
         val shop = shops[normalizeId(id)] ?: return CustomShopError.NOT_FOUND
-        if (shop.type == type) return null
         shop.type = type
+        // 即使值没变也置脏：调用方随后会 requestSave，不写盘会让 mtime 验证误报「保存失败」
         markDirty()
         return null
     }
@@ -414,8 +414,8 @@ class CustomShopState private constructor() : PersistentState() {
     /** 开店 / 关店（关掉后右键不再打开、购买也会被拒） */
     fun setEnabled(id: String, enabled: Boolean): Boolean {
         val shop = shops[normalizeId(id)] ?: return false
-        if (shop.enabled == enabled) return true
         shop.enabled = enabled
+        // 即使值没变也置脏：调用方随后会 requestSave，不写盘会让 mtime 验证误报「保存失败」
         markDirty()
         return true
     }

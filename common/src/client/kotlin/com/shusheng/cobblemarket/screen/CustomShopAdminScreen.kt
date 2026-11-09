@@ -24,6 +24,7 @@ import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.RenameCustomShopPayload
 import com.shusheng.cobblemarket.network.RequestCustomShopAdminPayload
 import com.shusheng.cobblemarket.network.RequestOpenCustomShopPayload
+import com.shusheng.cobblemarket.network.ResetCustomShopClaimPayload
 import com.shusheng.cobblemarket.network.ResetCustomShopCooldownPayload
 import com.shusheng.cobblemarket.network.SetCustomShopCooldownPayload
 import com.shusheng.cobblemarket.network.SetCustomShopDiscountPayload
@@ -68,8 +69,10 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
     private val startY = 48
 
     private enum class Mode { LIST, PICK }
-    private enum class Dialog { NONE, CREATE, RENAME, DELETE, DETAIL, SET_COOLDOWN, CONFIRM_RESET_COOLDOWN }
-    private enum class Pending { CREATE, RENAME, TYPE, ENABLE, DELETE, COOLDOWN, RESET_COOLDOWN }
+    private enum class Dialog {
+        NONE, CREATE, RENAME, DELETE, DETAIL, SET_COOLDOWN, CONFIRM_RESET_COOLDOWN, CONFIRM_RESET_CLAIM
+    }
+    private enum class Pending { CREATE, RENAME, TYPE, ENABLE, DELETE, COOLDOWN, RESET_COOLDOWN, RESET_CLAIM }
 
     private var mode = Mode.LIST
     private var dialog = Dialog.NONE
@@ -305,6 +308,18 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
         sendToServer(ResetCustomShopCooldownPayload(detailShopId))
     }
 
+    /** 重置领取确认：清空这家领取店所有玩家的领取周期（设置值不动） */
+    private fun openResetClaimConfirm() {
+        dialogError = null
+        pending = null
+        openDialog(Dialog.CONFIRM_RESET_CLAIM)
+    }
+
+    private fun sendResetClaim() {
+        pending = Pending.RESET_CLAIM
+        sendToServer(ResetCustomShopClaimPayload(detailShopId))
+    }
+
     private fun openDeleteDialog() {
         openDialog(Dialog.DELETE)
     }
@@ -353,7 +368,8 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
             Dialog.CREATE -> minOf(360, width - 40).coerceAtLeast(260)
             Dialog.RENAME -> minOf(320, width - 40).coerceAtLeast(240)
             Dialog.SET_COOLDOWN -> minOf(300, width - 40).coerceAtLeast(230)
-            Dialog.CONFIRM_RESET_COOLDOWN -> minOf(340, width - 40).coerceAtLeast(260)
+            Dialog.CONFIRM_RESET_COOLDOWN, Dialog.CONFIRM_RESET_CLAIM ->
+                minOf(340, width - 40).coerceAtLeast(260)
             Dialog.DELETE -> minOf(340, width - 40).coerceAtLeast(260)
             Dialog.DETAIL -> minOf(400, width - 40).coerceAtLeast(280)
             Dialog.NONE -> 0
@@ -366,8 +382,9 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
             Dialog.SET_COOLDOWN -> 170
             Dialog.DELETE -> 130
             Dialog.CONFIRM_RESET_COOLDOWN -> 130
+            Dialog.CONFIRM_RESET_CLAIM -> 130
             // 信息行变多（领取店多一行周期）时弹窗跟着长高，底部按钮才不会压到类型行；
-            // 详情页底部**恒为三排**：动作按钮 2 排（普通店 6 枚 / 领取店 5 枚）+ 居中的返回按钮 1 排 ⇒ 统一留 100
+            // 详情页底部**恒为三排**：动作按钮 2 排（普通店 / 领取店各 6 枚）+ 居中的返回按钮 1 排 ⇒ 统一留 100
             Dialog.DETAIL -> maxOf(200, detailTypeRowY(0) + 100)
             Dialog.NONE -> 0
         }
@@ -532,6 +549,15 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                 )
             }
 
+            Dialog.CONFIRM_RESET_CLAIM -> {
+                addDialogPairButtons(
+                    dx, buttonY, dw,
+                    Text.translatable("cobblemarket.shop_admin.claim.reset_confirm"),
+                    { sendResetClaim() },
+                    Text.translatable("cobblemarket.shop_admin.cancel"), { closeDialog() }
+                )
+            }
+
             Dialog.DELETE -> {
                 addDialogPairButtons(
                     dx, buttonY, dw,
@@ -556,10 +582,14 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                     ) to { sendEnabled(!shop.enabled) },
                     Text.translatable("cobblemarket.shop_admin.detail.delete") to { openDeleteDialog() }
                 )
-                // 「设置冷却」只对普通购买店有意义（领取店用领取周期，周期建好后走命令）
-                if (CustomShopMode.fromId(shop.mode) == CustomShopMode.NORMAL) {
-                    actions.add(
+                // 按店类型给对应的「立即重置」入口：普通店清购买冷却、领取店清领取周期
+                // （领取店以前没有任何重置入口，只能删店重建）
+                when (CustomShopMode.fromId(shop.mode)) {
+                    CustomShopMode.NORMAL -> actions.add(
                         Text.translatable("cobblemarket.shop_admin.detail.cooldown") to { openCooldownDialog() }
+                    )
+                    CustomShopMode.CLAIM -> actions.add(
+                        Text.translatable("cobblemarket.shop_admin.detail.claim_reset") to { openResetClaimConfirm() }
                     )
                 }
                 // 「关闭」**不进网格**（2026-10-27 用户报：它只是关弹窗、跟「关店」只差一个字，
@@ -948,7 +978,7 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                 openPicker(newId)
             }
             Pending.RENAME, Pending.TYPE, Pending.ENABLE, Pending.DELETE, Pending.COOLDOWN,
-            Pending.RESET_COOLDOWN -> closeDialog()
+            Pending.RESET_COOLDOWN, Pending.RESET_CLAIM -> closeDialog()
             null -> Unit
         }
     }
@@ -1377,6 +1407,25 @@ class CustomShopAdminScreen : Screen(Text.translatable("cobblemarket.shop_admin.
                     TextUtil.truncateStyled(
                         Text.translatable(
                             "cobblemarket.shop_admin.cooldown.reset_line", shop?.name ?: detailShopId
+                        ).formatted(Formatting.WHITE),
+                        dw - 24
+                    ),
+                    centerX, dy + 44, 0xFFFFFF
+                )
+                drawDialogError(context, dx, dy + 70, dw)
+            }
+            Dialog.CONFIRM_RESET_CLAIM -> {
+                val shop = CustomShopAdminCache.shop(detailShopId)
+                context.drawCenteredTextWithShadow(
+                    textRenderer,
+                    Text.translatable("cobblemarket.shop_admin.claim.reset_title").formatted(Formatting.GOLD),
+                    centerX, dy + 12, 0xFFFFFF
+                )
+                context.drawCenteredTextWithShadow(
+                    textRenderer,
+                    TextUtil.truncateStyled(
+                        Text.translatable(
+                            "cobblemarket.shop_admin.claim.reset_line", shop?.name ?: detailShopId
                         ).formatted(Formatting.WHITE),
                         dw - 24
                     ),
