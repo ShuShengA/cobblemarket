@@ -87,6 +87,11 @@ fun onServerStopped(handler: (server: MinecraftServer) -> Unit) {
     ServerLifecycleEvents.SERVER_STOPPED.register { server -> handler(server) }
 }
 
+/** 关服前（保存之前）—— 监视功能在此还原在线监视者 */
+fun onServerStopping(handler: (server: MinecraftServer) -> Unit) {
+    ServerLifecycleEvents.SERVER_STOPPING.register { server -> handler(server) }
+}
+
 fun onServerTickEnd(handler: (server: MinecraftServer) -> Unit) {
     ServerTickEvents.END_SERVER_TICK.register { server -> handler(server) }
 }
@@ -94,6 +99,13 @@ fun onServerTickEnd(handler: (server: MinecraftServer) -> Unit) {
 fun onPlayerJoin(handler: (player: ServerPlayerEntity) -> Unit) {
     ServerPlayConnectionEvents.JOIN.register { networkHandler, _, _ ->
         handler(networkHandler.player)
+    }
+}
+
+/** 玩家死亡后 —— 监视目标死亡时停止会话（只转发玩家实体，其他生物忽略） */
+fun onPlayerDeath(handler: (player: ServerPlayerEntity) -> Unit) {
+    net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents.AFTER_DEATH.register { entity, _ ->
+        (entity as? ServerPlayerEntity)?.let { handler(it) }
     }
 }
 

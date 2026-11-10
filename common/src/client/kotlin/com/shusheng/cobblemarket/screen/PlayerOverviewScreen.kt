@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.screen
 
+import com.shusheng.cobblemarket.client.ClientPermissionCache
 import com.shusheng.cobblemarket.client.OVERVIEW_ICON_W
 import com.shusheng.cobblemarket.client.PlayerOverviewCache
 import com.shusheng.cobblemarket.client.PointsStateCache
@@ -12,8 +13,12 @@ import com.shusheng.cobblemarket.client.lineIconY
 import com.shusheng.cobblemarket.client.lineTextY
 import com.shusheng.cobblemarket.client.noneValue
 import com.shusheng.cobblemarket.client.overviewLines
+import com.shusheng.cobblemarket.client.playButtonClickSound
 import com.shusheng.cobblemarket.currency.CurrencyService
+import com.shusheng.cobblemarket.network.StartPeekPayload
 import com.shusheng.cobblemarket.overview.PlayerOverviewRow
+import com.shusheng.cobblemarket.permission.MarketPermissions
+import com.shusheng.cobblemarket.platform.sendToServer
 import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
@@ -22,6 +27,7 @@ import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
 import net.minecraft.util.Identifier
+import net.minecraft.world.GameMode
 
 /**
  * **全服玩家总览**（服主 / `overview` 节点持有者）。
@@ -97,6 +103,15 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
 
     /** 顶栏 y；顶栏底 74 → 分割线 80 → 列表首行 86（上下各 6px） */
     private val topRowY = 58
+
+    // ── 行尾「监视 / Spectate」按钮（2026-11-09；2026-11-10 文字改图标）──
+    // 图标按钮：24×16（九宫格按钮 6px 边框 + 中间 12px 图标）。
+    // ⚠ 源图 48×48 ⇒ 12px 是**整数 4:1 缩放**，像素图不会糊；换图时按这个比例挑成品尺寸。
+    private val peekButtonW = 24
+    private val peekButtonH = 16
+    private val peekIcon = Identifier.of("cobblemarket", "textures/gui/icon/spectate_icon.png")
+    private val peekIconTexSize = 48
+    private val peekIconDrawSize = 12
 
     override fun init() {
         super.init()
@@ -359,6 +374,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         val isMoney = rowValueIsMoney()
         // ⚠ 单位按**这一列自己的币种**：RP 列补 RP 图标，其余补主货币单位（两者绝不能混）
         val isPoints = sortField == SortField.POINTS
+        val canPeek = canShowPeekButtons()
         visible.forEachIndexed { i, r ->
             val y = startY + i * rowHeight
 
@@ -367,15 +383,25 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
             context.drawTextWithShadow(textRenderer, name, leftX + 5, y + 8, if (r.online) 0xFFFFFF else 0xAAAAAA)
 
             // 右侧：当前排序字段的值（右对齐行尾；排序字段是名字时这一格不画）
-            val value = rowValueText(r) ?: return@forEachIndexed
+            val value = rowValueText(r)
+            if (value == null) {
+                // 按名字排序：行尾那一格空出来，给「监视」按钮（仅在线、且非旁观模式的行）
+                if (canPeek && canPeekRow(r)) drawPeekButton(context, i, mouseX, mouseY)
+                return@forEachIndexed
+            }
             val unitW = if (isMoney) currencyUnitWidth(textRenderer, isPoints) else 0
             val valueX = leftX + panelWidth - 5 - textRenderer.getWidth(value) - unitW
             val drawn = context.drawTextWithShadow(textRenderer, value, valueX, y + 8, 0x55FFFF)
             if (isMoney) drawCurrencyUnit(context, textRenderer, isPoints, drawn, y + 8, 0x55FFFF)
         }
 
+        // 鼠标停在行尾「监视」按钮上时：**不画整行悬停窗**（玩家正要点击），改画按钮自己的提示。
+        // 与项目里行内按钮的统一口径一致（见 TooltipPlacement 顶部说明）。
+        val peekHovered = canPeek && hoveredRow in visible.indices &&
+            canPeekRow(visible[hoveredRow]) && peekButtonRect(hoveredRow).contains(mouseX, mouseY)
+
         // 悬停窗 = 行的完整版（方案第二节那一整张表）
-        if (hoveredRow in visible.indices) {
+        if (!peekHovered && hoveredRow in visible.indices) {
             renderOverviewTooltip(context, visible[hoveredRow], mouseX, mouseY)
         }
 
@@ -386,6 +412,93 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
                 width / 2, height - 49, 0x888888
             )
         }
+
+        // 按钮提示画在最后（悬停窗与滚动指示器之上）
+        if (peekHovered) {
+            context.drawTooltip(
+                textRenderer,
+                Text.translatable("cobblemarket.overview.peek.tooltip"),
+                mouseX, mouseY
+            )
+        }
+    }
+
+    // ── 行尾「监视」按钮（自绘 + mouseClicked 命中；滚动时不用维护一堆控件）──
+
+    /**
+     * 是否显示监视按钮：**只在按玩家名排序时**（方案要求），且自己有 overview 权限。
+     *
+     * ⚠ **排序字段下拉展开时不画**：下拉选项是控件（在 `super.render` 里画），而监视按钮是
+     *   自绘的（在 `render` 里、控件之后画）—— 会盖在下拉选项上（2026-11-10 用户实测）。
+     *   展开期间行内操作整体隐藏，和「展开时冻结行悬停」是同一套口径。
+     *
+     * ⚠ 按钮显隐只是入口，**不是鉴权** —— 服务端在 `PeekService.start` 里会再判一次。
+     *   客户端读 `ClientPermissionCache`（别调服务端才有意义的 `MarketPermissions.has`）。
+     */
+    private fun canShowPeekButtons(): Boolean =
+        !sortListOpen && sortField == SortField.NAME &&
+            (ClientPermissionCache.isServerOwner() || ClientPermissionCache.has(MarketPermissions.OVERVIEW))
+
+    /**
+     * 这一行是否显示「监视」按钮：在线、并且**不是旁观模式**。
+     *
+     * ⚠ 旁观者不能当监视目标 —— 包括**正在监视别人的 staff**（他们也是旁观者）。否则两条会话会
+     *   互相牵引：A 监视 B、B 又监视 A 时，B 飞远 >64 格会同时触发两条软牵引，谁后执行谁生效
+     *   （2026-11-10 用户实测「B 远离却把 A 拉过来」）。
+     * ⚠ 按钮显隐只是入口，**不是鉴权** —— 服务端 `PeekService.start` 有同一判据（还会回红字）。
+     * ⚠ 游戏模式读客户端 tab 列表：服务端切旁观时会发 `UPDATE_GAME_MODE`，能实时跟上。
+     */
+    private fun canPeekRow(row: PlayerOverviewRow): Boolean =
+        row.online &&
+            MinecraftClient.getInstance().networkHandler
+                ?.getPlayerListEntry(row.uuid)?.gameMode != GameMode.SPECTATOR
+
+    /** 第 [rowIndex] 行（visible 下标）的按钮矩形；几何与行渲染同源（startY 86 / 行高 24） */
+    private fun peekButtonRect(rowIndex: Int): TooltipPlacement.Rect {
+        val leftX = width / 2 - panelWidth / 2
+        return TooltipPlacement.Rect(
+            leftX + panelWidth - 5 - peekButtonW,
+            86 + rowIndex * 24 + 4,
+            peekButtonW,
+            peekButtonH,
+        )
+    }
+
+    private fun drawPeekButton(context: DrawContext, rowIndex: Int, mouseX: Int, mouseY: Int) {
+        val rect = peekButtonRect(rowIndex)
+        val hovered = rect.contains(mouseX, mouseY)
+        drawNineSlice(context, BUTTON_TEXTURE, rect.x, rect.y, rect.w, rect.h, if (hovered) 1 else 0, BUTTON_TEX_H)
+        // 眼睛图标：48×48 源图 → 12×12（整数 4:1），在按钮内居中。
+        // ⚠ 走 matrices 缩放 —— drawTexture 的 width/height 是**采样区**，不是目标尺寸
+        context.matrices.push()
+        try {
+            context.matrices.translate(
+                (rect.x + (rect.w - peekIconDrawSize) / 2).toDouble(),
+                (rect.y + (rect.h - peekIconDrawSize) / 2).toDouble(),
+                0.0
+            )
+            val scale = peekIconDrawSize / peekIconTexSize.toFloat()
+            context.matrices.scale(scale, scale, 1f)
+            context.drawTexture(
+                peekIcon, 0, 0, 0f, 0f,
+                peekIconTexSize, peekIconTexSize, peekIconTexSize, peekIconTexSize
+            )
+        } finally {
+            context.matrices.pop()
+        }
+    }
+
+    /** 当前可见行里被点中的监视按钮对应的行；null = 没点到 */
+    private fun peekRowAt(mouseX: Double, mouseY: Double): PlayerOverviewRow? {
+        if (sortListOpen || !canShowPeekButtons()) return null
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
+        // maxVisible 与渲染处同源（86 = 列表起点、48 = 底部预留）
+        val maxVisible = maxOf(3, (height - 48 - 86) / 24)
+        return displayRows().drop(scrollOffset).take(maxVisible)
+            .withIndex()
+            .firstOrNull { (i, row) -> canPeekRow(row) && peekButtonRect(i).contains(mx, my) }
+            ?.value
     }
 
     // ── 悬停窗：行文本走 `overviewLines`（与市场 ID 卡**共用同一份**，见 client/OverviewText.kt）──
@@ -450,6 +563,17 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         searchField?.isMouseOver(mouseX, mouseY) == true
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        // 行尾「监视」按钮：先于控件命中（它是自绘的，没有 widget 帮忙判）。
+        // 点击 ⇒ 播按钮音效 → 发 C2S → 关界面（成功/失败都走聊天反馈，界面不等着回包）
+        if (button == 0) {
+            val peekRow = peekRowAt(mouseX, mouseY)
+            if (peekRow != null) {
+                playButtonClickSound()
+                sendToServer(StartPeekPayload(peekRow.uuid))
+                close()
+                return true
+            }
+        }
         val wasInInput = isInputFieldFocused()
         val result = super.mouseClicked(mouseX, mouseY, button)
         // 排序字段展开列表打开时，点列表外 ⇒ 收起（与其它界面的联想列表同一口径）

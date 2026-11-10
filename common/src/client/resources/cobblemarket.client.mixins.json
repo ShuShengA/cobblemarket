@@ -4,7 +4,10 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "DrawContextMixin",
+    "EntityDataTrackerAccessor",
     "MouseMixin",
+    "PlayerEntityMixin",
+    "PlayerEntityRendererMixin",
     "ScreenMixin"
   ],
   "injectors": {

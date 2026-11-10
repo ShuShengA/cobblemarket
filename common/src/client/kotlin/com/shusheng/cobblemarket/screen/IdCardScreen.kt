@@ -369,12 +369,18 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
                 context, x1, y1, x2, modelBottom, modelSize, IdCardRenderer.spinAngleRad(), player
             )
         } else {
-            InventoryScreen.drawEntity(
-                context, x1, y1, x2, modelBottom, modelSize,
-                0f,                               // yOffset
-                mouseX.toFloat(), mouseY.toFloat(),
-                player
-            )
+            // ⚠ 与旋转模式一样屏蔽名字 / 称号标签（原版会把玩家名字画在模型头顶）
+            com.shusheng.cobblemarket.client.IdCardRenderState.suppressNameTags = true
+            try {
+                InventoryScreen.drawEntity(
+                    context, x1, y1, x2, modelBottom, modelSize,
+                    0f,                               // yOffset
+                    mouseX.toFloat(), mouseY.toFloat(),
+                    player
+                )
+            } finally {
+                com.shusheng.cobblemarket.client.IdCardRenderState.suppressNameTags = false
+            }
         }
 
         // 画完把模型批次提交、**再清一次深度** —— 别把 3D 的深度留给后续绘制

@@ -40,7 +40,10 @@ import com.shusheng.cobblemarket.network.PointsShopInfoPayload
 import com.shusheng.cobblemarket.network.PointsStatusPayload
 import com.shusheng.cobblemarket.network.PendingReturnsPayload
 import com.shusheng.cobblemarket.network.MarketNoticePayload
+import com.shusheng.cobblemarket.network.PeekActivePayload
+import com.shusheng.cobblemarket.network.PeekTargetsPayload
 import com.shusheng.cobblemarket.network.PlaySoundPayload
+import com.shusheng.cobblemarket.network.StopPeekPayload
 import com.shusheng.cobblemarket.network.BuyOrderEventPayload
 import com.shusheng.cobblemarket.network.BuyOrderListDataPayload
 import com.shusheng.cobblemarket.network.PlayerNameSuggestionsPayload
@@ -155,6 +158,9 @@ object CobbleMarketClient {
 
     private lateinit var openMarketKey: KeyBinding
     private lateinit var openIdCardKey: KeyBinding
+
+    /** 退出监视键（默认 U；监视中在 HUD 提示，按一下等同 `/market peek stop`） */
+    private lateinit var peekExitKey: KeyBinding
     private var wasEPressed = false
 
     /** 快速展示键（默认 X；**按住 / 按一下**期间显示三个大框，模式在入口设置里切换，见 [QuickShowcaseScreen]） */
@@ -179,6 +185,19 @@ object CobbleMarketClient {
         if (!::quickShowcaseKey.isInitialized) return null
         if (quickShowcaseKey.isUnbound) return null
         return quickShowcaseKey.boundKeyLocalizedText.string
+    }
+
+    /**
+     * **退出监视键当前绑定的显示文本**（监视 HUD 提示用，见 [PeekHud]）。
+     *
+     * 返回 null = 还没初始化，或玩家**把键解绑了**（显示「按 未知」只会误导 ⇒ 整条提示不显示）。
+     * ⚠ 与 [quickShowcaseKeyText] 同理：必须用原版 `boundKeyLocalizedText`，
+     *   别自己拼翻译 key（字母键不在语言表里，会显示成 `key.keyboard.u`）。
+     */
+    fun peekExitKeyText(): String? {
+        if (!::peekExitKey.isInitialized) return null
+        if (peekExitKey.isUnbound) return null
+        return peekExitKey.boundKeyLocalizedText.string
     }
 
     /** 上一帧的按住状态（边沿检测：上升沿开、下降沿收尾） */
@@ -235,6 +254,15 @@ object CobbleMarketClient {
                 "key.cobblemarket.open_id_card",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_I,
+                "category.cobblemarket"
+            )
+        )
+        // 退出监视：默认 U（用户 2026-11-10 定）。照上面那套注册 ⇒ 出现在「按键设置」、可改可解绑
+        peekExitKey = registerKeyBinding(
+            KeyBinding(
+                "key.cobblemarket.peek_exit",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_U,
                 "category.cobblemarket"
             )
         )
@@ -295,6 +323,13 @@ object CobbleMarketClient {
                 playEntrySound()
                 client.setScreen(IdCardScreen())
             }
+            // 监视（Peek）：退出键只在「服务端确认正在监视」时发停止请求 —— 状态以服务端为准，
+            // 不做本地乐观更新（`PeekActivePayload(false)` 到达才收起 HUD）
+            while (peekExitKey.wasPressed()) {
+                if (PeekHud.active) sendToServer(StopPeekPayload())
+            }
+            // 断线 / 换世界：连接断了不会再有 false 包，本地自己清掉状态
+            if (client.player == null || client.world == null) PeekHud.active = false
             val ePressed = InputUtil.isKeyPressed(client.window.handle, GLFW.GLFW_KEY_E)
             if (ePressed && !wasEPressed) {
                 val screen = client.currentScreen
@@ -342,6 +377,8 @@ object CobbleMarketClient {
             // 原版 / 其他模组界面则照画 —— 被界面的半透明遮罩压暗，即「背包 / ESC 菜单里淡淡透出来」
             renderBalanceHud(context, onTop = false)
         }
+        // 监视中的「按 X 退出监视」提示（屏幕底部居中；有界面 / F1 时不画，见 PeekHud）
+        registerHudRender { context, _ -> PeekHud.render(context) }
 
         // 聊天可点击按钮的落地路径（点击 = RUN_COMMAND 本地执行，不经过聊天栏回显、不发服务端）：
         // 求购单待确认通知的 [查看待交付] 与拍卖播报的拍品名都指向这里；进场动画 + 打开市场音效
@@ -401,6 +438,20 @@ object CobbleMarketClient {
         ) { payload ->
             MinecraftClient.getInstance().execute {
                 IdCardBackgroundTexture.accept(payload.version, payload.bytes)
+            }
+        }
+
+        // 监视状态（S2C）：驱动 HUD 的「按 X 退出监视」提示；开始 / 结束 / 重进后的崩溃恢复都会推
+        registerS2C(PeekActivePayload.ID, PeekActivePayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                PeekHud.active = payload.active
+            }
+        }
+
+        // 快速展示右侧「在线玩家」面板的名单（S2C）：转发给当前界面；界面已关就丢弃
+        registerS2C(PeekTargetsPayload.ID, PeekTargetsPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute {
+                (MinecraftClient.getInstance().currentScreen as? QuickShowcaseScreen)?.onPeekTargets(payload)
             }
         }
 

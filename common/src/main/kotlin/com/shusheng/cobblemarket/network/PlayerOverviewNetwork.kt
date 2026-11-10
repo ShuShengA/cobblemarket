@@ -121,6 +121,8 @@ internal object OverviewRowCodec {
         }
         b.writeVarInt(r.experienceLevel)
         b.writeFloat(r.experienceProgress)
+        // 皮肤层设置（2026-11-10，分享 ID 卡的假玩家用）—— 同样追加在末尾
+        b.writeByte(r.modelParts)
     }
 
     fun read(b: PacketByteBuf): PlayerOverviewRow = PlayerOverviewRow(
@@ -161,5 +163,6 @@ internal object OverviewRowCodec {
         feetItem = if (b.readBoolean()) b.readNbt() else null,
         experienceLevel = b.readVarInt(),
         experienceProgress = b.readFloat(),
+        modelParts = b.readUnsignedByte().toInt(),
     )
 }

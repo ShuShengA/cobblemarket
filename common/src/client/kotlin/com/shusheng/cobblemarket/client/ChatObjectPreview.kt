@@ -430,13 +430,22 @@ object ChatObjectPreview {
      * ② 在线但不在附近 → 用 tab 列表的 profile 建一个 `OtherClientPlayerEntity`（皮肤照样加载）；
      * ③ 离线 / 都拿不到 → null ⇒ 卡片模型区留空（不崩）。
      */
-    private fun resolveIdCardPlayer(uuid: UUID): net.minecraft.entity.player.PlayerEntity? {
+    private fun resolveIdCardPlayer(row: com.shusheng.cobblemarket.overview.PlayerOverviewRow): net.minecraft.entity.player.PlayerEntity? {
         val client = MinecraftClient.getInstance()
         val world = client.world ?: return null
-        world.getPlayerByUuid(uuid)?.let { return it }
-        val entry = client.networkHandler?.getPlayerListEntry(uuid) ?: return null
+        world.getPlayerByUuid(row.uuid)?.let { return it }
+        val entry = client.networkHandler?.getPlayerListEntry(row.uuid) ?: return null
         return runCatching {
-            net.minecraft.client.network.OtherClientPlayerEntity(world, entry.profile)
+            net.minecraft.client.network.OtherClientPlayerEntity(world, entry.profile).also { fake ->
+                // ⚠⚠ 假玩家的 PLAYER_MODEL_PARTS 默认是 0 ⇒ 原版渲染器会把帽子 / 外套 / 袖子 / 裤腿
+                //   （第二层皮肤）全部隐藏。远处玩家走的正是这条假实体路径 —— 这就是「分享卡只显示
+                //   第一层皮肤、附近玩家或自己的界面却正常」的根因（2026-11-10 用户实测）。
+                //   Skin Layers 3D 也依赖这个值，外层关着它同样画不出来。
+                // ⚠ 按**分享者自己的**皮肤层设置来，不要全开 —— 否则关了披风也会被画出来
+                //   （Cosmetica 的强制披风尤其明显，2026-11-10 用户实测）。
+                (fake as com.shusheng.cobblemarket.client.PlayerModelPartsAccess)
+                    .setModelParts(row.modelParts)
+            }
         }.getOrNull()
     }
 
@@ -465,7 +474,7 @@ object ChatObjectPreview {
             val cardTop = (screenHeight - IdCardRenderer.CARD_H) / 2f
             IdCardRenderer.draw(
                 context, MinecraftClient.getInstance().textRenderer, idCard, cardLeft, cardTop,
-                resolveIdCardPlayer(idCard.uuid)
+                resolveIdCardPlayer(idCard)
             )
             return
         }

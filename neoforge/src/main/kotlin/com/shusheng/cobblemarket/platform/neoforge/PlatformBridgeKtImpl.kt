@@ -103,6 +103,13 @@ fun onServerStopped(handler: (server: MinecraftServer) -> Unit) {
     NeoForge.EVENT_BUS.addListener(ServerStoppedEvent::class.java) { event -> handler(event.server) }
 }
 
+/** 关服前（保存之前）—— 监视功能在此还原在线监视者 */
+fun onServerStopping(handler: (server: MinecraftServer) -> Unit) {
+    NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.event.server.ServerStoppingEvent::class.java) { event ->
+        handler(event.server)
+    }
+}
+
 fun onServerTickEnd(handler: (server: MinecraftServer) -> Unit) {
     NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post::class.java) { event -> handler(event.server) }
 }
@@ -110,6 +117,15 @@ fun onServerTickEnd(handler: (server: MinecraftServer) -> Unit) {
 fun onPlayerJoin(handler: (player: ServerPlayerEntity) -> Unit) {
     NeoForge.EVENT_BUS.addListener(PlayerEvent.PlayerLoggedInEvent::class.java) { event ->
         handler(event.entity as ServerPlayerEntity)
+    }
+}
+
+/** 玩家死亡后 —— 监视目标死亡时停止会话（只转发玩家实体，其他生物忽略） */
+fun onPlayerDeath(handler: (player: ServerPlayerEntity) -> Unit) {
+    NeoForge.EVENT_BUS.addListener(
+        net.neoforged.neoforge.event.entity.living.LivingDeathEvent::class.java
+    ) { event ->
+        (event.entity as? ServerPlayerEntity)?.let { handler(it) }
     }
 }
 

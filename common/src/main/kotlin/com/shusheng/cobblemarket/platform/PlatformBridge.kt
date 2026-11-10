@@ -78,11 +78,28 @@ fun onServerStarted(handler: (server: MinecraftServer) -> Unit): Unit = throw As
 @ExpectPlatform
 fun onServerStopped(handler: (server: MinecraftServer) -> Unit): Unit = throw AssertionError()
 
+/**
+ * **关服前**（STOPPING，早于各维度/玩家数据保存）回调一次。
+ *
+ * 用途：监视功能在正常关服时把在线监视者还原回原位（数据随后由 MC 保存，最干净）。
+ * ⚠ 与 [onServerStopped] 的区别：那是保存**之后**（StateBackup 刷新备份的时机），
+ *   在这里改玩家数据仍会落盘。
+ */
+@ExpectPlatform
+fun onServerStopping(handler: (server: MinecraftServer) -> Unit): Unit = throw AssertionError()
+
 @ExpectPlatform
 fun onServerTickEnd(handler: (server: MinecraftServer) -> Unit): Unit = throw AssertionError()
 
 @ExpectPlatform
 fun onPlayerJoin(handler: (player: ServerPlayerEntity) -> Unit): Unit = throw AssertionError()
+
+/**
+ * 玩家**死亡后**回调（双平台；只对 `ServerPlayerEntity` 触发）。
+ * 用途：监视目标死亡 ⇒ 停止会话并还原监视者（照 Peek 的 AFTER_DEATH）。
+ */
+@ExpectPlatform
+fun onPlayerDeath(handler: (player: ServerPlayerEntity) -> Unit): Unit = throw AssertionError()
 
 /** 物品注册（双平台）：传入 (id, 物品工厂) 列表，在对应平台的物品注册时机逐一注册 */
 @ExpectPlatform

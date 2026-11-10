@@ -172,6 +172,14 @@ object PlayerOverviewService {
                 // RP 余额：**永远实时**（不像主货币要分「在线实时 / 离线读快照」）
                 // —— 它存在自己的 PersistentState 里，玩家离线期间没有任何东西会动它
                 pointsBalance = pointsState.getBalance(uuid),
+                // 皮肤层设置（2026-11-10）：分享 ID 卡的假玩家按它设置，尊重分享者自己的
+                // 「皮肤自定义」（披风关了就不画披风）。离线 / 拿不到实体时落全开 —— 总览不画模型
+                modelParts = if (player != null) {
+                    net.minecraft.entity.player.PlayerModelPart.values()
+                        .fold(0) { acc, part ->
+                            if (player.isPartVisible(part)) acc or part.bitFlag else acc
+                        }
+                } else 0x7F,
             )
         }
     }

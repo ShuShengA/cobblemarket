@@ -92,4 +92,11 @@ data class PlayerOverviewRow(
     /** 经验等级 / 进度（0~1）；分享卡底部画经验条用 */
     val experienceLevel: Int = 0,
     val experienceProgress: Float = 0f,
+
+    /**
+     * 玩家的**皮肤层设置**位掩码（`PlayerModelPart`：披风 / 外套 / 左右袖 / 左右裤腿 / 帽子），
+     * 分享 ID 卡时给假玩家用 —— 尊重分享者自己的设置（关了披风就不画披风）。
+     * 0x7F = 全开；离线 / 未知时也给 0x7F（总览列表本身不画模型，不影响）。
+     */
+    val modelParts: Int = 0x7F,
 )

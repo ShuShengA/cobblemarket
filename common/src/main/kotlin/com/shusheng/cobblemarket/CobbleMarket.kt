@@ -23,11 +23,13 @@ import com.shusheng.cobblemarket.network.ServerConfigNetwork
 import com.shusheng.cobblemarket.network.ShareNetwork
 import com.shusheng.cobblemarket.network.SoundNetwork
 import com.shusheng.cobblemarket.network.PriceLimitNetwork
+import com.shusheng.cobblemarket.platform.onPlayerDeath
 import com.shusheng.cobblemarket.platform.onPlayerDisconnect
 import com.shusheng.cobblemarket.platform.onPlayerJoin
 import com.shusheng.cobblemarket.platform.onServerStarted
 import com.shusheng.cobblemarket.platform.onServerStarting
 import com.shusheng.cobblemarket.platform.onServerStopped
+import com.shusheng.cobblemarket.platform.onServerStopping
 import com.shusheng.cobblemarket.platform.onServerTickEnd
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
@@ -84,6 +86,8 @@ object CobbleMarket {
 		// 市场 ID 卡背景图（可替换贴图：服务端读配置目录 → 下发字节 → 客户端动态纹理）
 		com.shusheng.cobblemarket.network.IdCardNetwork.register()
 		com.shusheng.cobblemarket.network.PlayerOverviewNetwork.register()
+		// 玩家总览的「监视」请求（C2S）：开始旁观该玩家（共用 overview 节点）
+		com.shusheng.cobblemarket.network.PeekNetwork.register()
 		com.shusheng.cobblemarket.network.IdCardDataNetwork.register()
 		MarketCommands.register()
 		com.shusheng.cobblemarket.event.TransactionLogger.register()
@@ -95,6 +99,8 @@ object CobbleMarket {
 		onServerStarting { server ->
 			// 清空上一世界残留的保存待办（单机切存档同进程，静态状态不得跨世界——见 PersistHelper.reset）
 			com.shusheng.cobblemarket.util.PersistHelper.reset()
+			// 监视的内存待办（延迟跟随 / 登录恢复检查）同理，不得跨世界残留
+			com.shusheng.cobblemarket.peek.PeekService.reset()
 			com.shusheng.cobblemarket.currency.PointShopService.reset()
 			// 收款码 / RP 券图目录：启动时就建好 + 各落一份说明，服主打开 config 就知道图该往哪放
 			com.shusheng.cobblemarket.currency.PayQrImage.ensureDir()
@@ -146,6 +152,10 @@ object CobbleMarket {
 				LOGGER.info("CobbleMarket: {} server owners loaded from config", owners.size)
 			}
 		}
+		// 关服前（各维度/玩家数据保存之前）：把在线监视者还原回原位，随后 MC 的关服保存落盘最干净
+		onServerStopping { server ->
+			com.shusheng.cobblemarket.peek.PeekService.onServerStopping(server)
+		}
 		onServerStopped { server ->
 			// 正常关服保存完成后，用最新数据刷新备份
 			com.shusheng.cobblemarket.util.StateBackup.backupOnStop(server)
@@ -159,6 +169,8 @@ object CobbleMarket {
 
 		onPlayerDisconnect { player ->
 			com.shusheng.cobblemarket.util.RequestThrottle.onDisconnect(player.uuid)
+			// 监视：目标掉线停止会话并还原监视者；监视者掉线**保留**状态等登录还原
+			com.shusheng.cobblemarket.peek.PeekService.onPlayerDisconnect(player)
 			// 「从哪个 NPC 打开的自定义商店」只用于闪光播报前缀，断线即清（不持久化）
 			com.shusheng.cobblemarket.network.PointMarketNetwork.onPlayerDisconnect(player)
 			// 玩家退出时 MC 立即保存其玩家数据（货/钱已扣就此落盘），模组状态立即追上，
@@ -167,9 +179,15 @@ object CobbleMarket {
 			// 总览的离线快照：记下这一刻的余额与图鉴数（离线期间它们不会再变，见 PlayerSnapshotState）
 			com.shusheng.cobblemarket.overview.PlayerOverviewService.onPlayerDisconnect(player)
 		}
+		// 监视目标死亡 ⇒ 停止会话并还原监视者（照 Peek 的 AFTER_DEATH）
+		onPlayerDeath { player ->
+			com.shusheng.cobblemarket.peek.PeekService.onPlayerDeath(player)
+		}
 		// 交易后节流全量落盘的定时检查（见 PersistHelper）
 		onServerTickEnd { server ->
 			com.shusheng.cobblemarket.util.PersistHelper.tick(server)
+			// 监视会话校验：目标离线/死亡、换维度延迟跟随、监视者不再是旁观者（内部只遍历会话表）
+			com.shusheng.cobblemarket.peek.PeekService.tick(server)
 			// 金融系统自动划扣扫描（内部 60 秒节流，见 FinanceService）
 			com.shusheng.cobblemarket.finance.FinanceService.tick(server)
 			// 充值订单维护：超时作废 + 完结订单清理（内部 60 秒节流，见 PointShopService）
@@ -189,6 +207,8 @@ object CobbleMarket {
 			}
 		}
 		onPlayerJoin { player ->
+			// 监视：上次监视未正常结束时，延迟 3 tick 还原（崩溃 / 掉线的恢复入口）
+			com.shusheng.cobblemarket.peek.PeekService.onPlayerJoin(player)
 			val state = MarketState.get(player.server)
 			val stateServer = player.server
 

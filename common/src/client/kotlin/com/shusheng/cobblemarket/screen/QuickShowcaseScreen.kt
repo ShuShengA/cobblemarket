@@ -4,17 +4,27 @@ import com.cobblemon.mod.common.client.CobblemonClient
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.mojang.blaze3d.systems.RenderSystem
 import com.shusheng.cobblemarket.client.ClientConfig
+import com.shusheng.cobblemarket.client.ClientPermissionCache
 import com.shusheng.cobblemarket.client.IconAnimMode
+import com.shusheng.cobblemarket.client.LoadState
+import com.shusheng.cobblemarket.client.PlayerSkinCache
 import com.shusheng.cobblemarket.client.drawItemWithBar
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
+import com.shusheng.cobblemarket.client.playButtonClickSound
 import com.shusheng.cobblemarket.client.playFailSound
 import com.shusheng.cobblemarket.network.MarketResultPayload
+import com.shusheng.cobblemarket.network.PeekTargetEntry
+import com.shusheng.cobblemarket.network.PeekTargetsPayload
+import com.shusheng.cobblemarket.network.RequestPeekTargetsPayload
 import com.shusheng.cobblemarket.network.ShareNetwork
 import com.shusheng.cobblemarket.network.SharePayload
+import com.shusheng.cobblemarket.network.StartPeekPayload
+import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.platform.sendToServer
+import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
@@ -81,6 +91,20 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     /** 两个按钮的目标 y（上浮与掉落都相对它算） */
     private var baseY = 0
 
+    // ── 右侧「在线玩家」面板（仅 overview 节点 / 服主；2026-11-10）──
+    /** 服务端下发的在线玩家（除自己外，按名字排序） */
+    private var peekTargets = listOf<PeekTargetEntry>()
+    /** 首包是否已到 —— 区分「加载中」与「真的没有其他人」 */
+    private val peekTargetsLoadState = LoadState()
+    /** 名单滚动偏移（行） */
+    private var peekTargetScroll = 0
+    /** 可拖动的滚动条（本界面只有这一条，独立实例即可） */
+    private val peekTargetScrollBar = ScrollBar()
+    /** 上一次请求名单的时刻（打开期间每 2 秒刷新） */
+    private var lastTargetsRequestAt = 0L
+    /** 关闭动画开始那一刻面板的 x —— 滑入到一半关闭时从当前位置往右滑出，不跳帧 */
+    private var closeFromPanelX = 0
+
     // ── 精灵那一侧的渲染状态 ──
     /**
      * ⚠ **必须按 uuid 缓存 renderable / state**：`PreviewStateHolder.stateFor` 是**引用比较**，
@@ -97,6 +121,11 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         super.init()
         // 问一次 ID 卡背景图：服主换图后，这里的 ID 卡框要跟着变（没变只回版本号、不重传图）
         com.shusheng.cobblemarket.client.IdCardBackgroundTexture.requestRefresh()
+        // 在线玩家面板（仅 overview 节点 / 服主）：进界面拉一次名单；没权限不请求、面板也不画
+        if (canSeePeekPanel()) {
+            lastTargetsRequestAt = System.currentTimeMillis()
+            sendToServer(RequestPeekTargetsPayload())
+        }
         // 三个框作为**一整组**在屏幕上居中（2026-10-17 用户要求）：上排精灵/物品、下排 ID 卡
         baseY = (height - (BTN * 2 + GAP)) / 2
         val leftX = width / 2 - BTN - GAP / 2
@@ -171,6 +200,11 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
             drawPokemonContent(context, width / 2 - BTN - GAP / 2, pokemonY, delta)
             drawIdCardContent(context, width / 2 - BTN / 2, idCardY)
             drawItemContent(context, width / 2 + GAP / 2, itemY)
+            // 右侧面板**不跟着上收**：从当前位置向右滑出（与入场方向相反）
+            if (canSeePeekPanel()) {
+                val panelX = (closeFromPanelX + (width + 8 - closeFromPanelX) * eased).toInt()
+                renderPeekPanel(context, panelX, mouseX, mouseY, interactive = false)
+            }
             return
         }
 
@@ -200,6 +234,14 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         drawPokemonContent(context, width / 2 - BTN - GAP / 2, pokemonY, delta)
         drawIdCardContent(context, width / 2 - BTN / 2, idCardY)
         drawItemContent(context, width / 2 + GAP / 2, itemY)
+
+        // 右侧在线玩家面板：从屏幕右缘滑入（不参与三个大框的下落 / 上浮）
+        if (canSeePeekPanel()) {
+            renderPeekPanel(
+                context, peekPanelSlideX(), mouseX, mouseY,
+                interactive = peekPanelSlideFinished()
+            )
+        }
     }
 
     // ── 三个框的内容 ──
@@ -295,6 +337,192 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         context.draw()
     }
 
+    // ── 右侧「在线玩家」面板（仅 overview 节点 / 服主；2026-11-10）──
+
+    override fun tick() {
+        super.tick()
+        if (closing || !canSeePeekPanel()) return
+        // 打开期间每 2 秒刷新：有人上下线时面板跟着变（服务端对读请求有 500ms 限流）
+        val now = System.currentTimeMillis()
+        if (now - lastTargetsRequestAt >= TARGETS_REFRESH_MS) {
+            lastTargetsRequestAt = now
+            sendToServer(RequestPeekTargetsPayload())
+        }
+    }
+
+    /** 服务端回包：在线玩家名单（快速展示右侧面板用） */
+    fun onPeekTargets(payload: PeekTargetsPayload) {
+        peekTargets = payload.entries
+        peekTargetsLoadState.markLoaded()
+        peekTargetScroll = peekTargetScroll.coerceIn(0, maxOf(0, peekTargets.size - peekPanelRows()))
+        // 名单换了 = 滚动条内容换了：把拖动状态一并复位（否则会留个"半拖"）
+        peekTargetScrollBar.cancel()
+    }
+
+    /**
+     * 面板是否显示：与玩家总览行尾「监视」按钮**同一判据**（服主 / overview 节点，**不认 OP**）。
+     * ⚠ 显隐只是入口，不是鉴权 —— 点击仍发 `StartPeekPayload`，服务端在 `PeekService.start` 再判。
+     */
+    private fun canSeePeekPanel(): Boolean =
+        ClientPermissionCache.isServerOwner() || ClientPermissionCache.has(MarketPermissions.OVERVIEW)
+
+    /**
+     * 面板一屏放得下几行（标题区与底部留白之后）。
+     *
+     * 当前几何：(280 − 29 − 4) / 24 = **10 行**；10 × 24 = 240，最后一行底 = 面板顶 + 269，
+     * 距面板底还有 11px —— **即使名单再长也只画 [peekPanelRows] 行，绝不会压出底边框**。
+     * 行数变了这里的算式自动跟着走，别在渲染处另写一个数。
+     */
+    private fun peekPanelRows(): Int =
+        ((PANEL_H - PANEL_HEADER_H - PANEL_BOTTOM_PAD) / PANEL_ROW_H).coerceAtLeast(1)
+
+    /** 面板完全滑入后的 x */
+    private fun peekPanelTargetX(): Int = width - PANEL_RIGHT_MARGIN - PANEL_W
+
+    /** 面板当前 x：从屏幕右缘外滑入（ease-out，与三个大框的掉落同起点、同时长） */
+    private fun peekPanelSlideX(): Int {
+        val t = ((System.currentTimeMillis() - animStart) / PANEL_SLIDE_MS.toFloat()).coerceIn(0f, 1f)
+        val eased = 1f - (1f - t) * (1f - t)
+        return (width + (peekPanelTargetX() - width) * eased).toInt()
+    }
+
+    /** 滑入是否结束 —— 结束前不响应点击 / 滚轮（与三个大框「落下完成前不响应」同一口径） */
+    private fun peekPanelSlideFinished(): Boolean =
+        System.currentTimeMillis() - animStart >= PANEL_SLIDE_MS
+
+    private fun peekPanelContains(panelX: Int, mouseX: Double, mouseY: Double): Boolean =
+        mouseX >= panelX && mouseX < panelX + PANEL_W &&
+            mouseY >= baseY && mouseY < baseY + PANEL_H
+
+    /** 鼠标位置对应的名单条目；null = 不在行内 / 那一行是空的 */
+    private fun peekTargetAt(panelX: Int, mouseX: Double, mouseY: Double): PeekTargetEntry? {
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
+        // 名字 / 头像区域；⚠ 右缘再内缩 10px 让开滚动条（它命中区左右各放宽 3px，压在行尾会打架）
+        if (mx < panelX + 4 || mx >= panelX + PANEL_W - 10) return null
+        val startY = baseY + PANEL_HEADER_H
+        if (my < startY) return null
+        val index = (my - startY) / PANEL_ROW_H
+        if (index !in 0 until peekPanelRows()) return null
+        return peekTargets.getOrNull(peekTargetScroll + index)
+    }
+
+    /**
+     * 画右侧面板：九宫格底 + 标题两行（在线玩家 / 人数）+ 名单（名字左、皮肤头像右）
+     * + 行顶分割线 + 可拖动滚动条；悬停行高亮并提示「监视该玩家」。
+     *
+     * @param interactive 滑入完成后才接受悬停反馈 / 词条（滑入中鼠标在移动，反馈会闪）
+     */
+    private fun renderPeekPanel(
+        context: DrawContext,
+        panelX: Int,
+        mouseX: Int,
+        mouseY: Int,
+        interactive: Boolean,
+    ) {
+        val panelY = baseY
+        drawNineSlice(
+            context, DIALOG_BACKGROUND_TEXTURE, panelX, panelY, PANEL_W, PANEL_H,
+            0, DIALOG_BACKGROUND_TEX_H
+        )
+        // 标题两行（照喵喵银行持有者面板：卡名 + 计数）。
+        // ⚠ 词条 / 数字都可能变长，与模板一样一律按面板内宽截断，别让文字顶出边框
+        context.drawCenteredTextWithShadow(
+            textRenderer,
+            TextUtil.truncateText(
+                Text.translatable("cobblemarket.quick_showcase.online_title"), PANEL_W - 12
+            ),
+            panelX + PANEL_W / 2, panelY + 7, 0xFFFFFF
+        )
+        context.drawCenteredTextWithShadow(
+            textRenderer,
+            TextUtil.truncateText(
+                if (peekTargetsLoadState.everLoaded) {
+                    Text.translatable("cobblemarket.quick_showcase.online_count", peekTargets.size)
+                } else {
+                    Text.translatable("cobblemarket.gui.loading")
+                },
+                PANEL_W - 12
+            ),
+            panelX + PANEL_W / 2, panelY + 18, 0xAAAAAA
+        )
+
+        val startY = panelY + PANEL_HEADER_H
+        val rows = peekPanelRows()
+        if (peekTargets.isEmpty()) {
+            // 标题区与名单之间的分割线（空态也要有 —— 2026-11-10 用户截图要求）
+            context.fill(panelX + 4, startY, panelX + PANEL_W - 4, startY + 1, 0xFF888888.toInt())
+            // 首包前显示「加载中…」，到了才是真正的「没有其他在线玩家」。
+            // ⚠ 空态**必须截断**：不会裁剪，英文比面板宽时两侧会直接露出边框
+            //   （喵喵银行 2026-09-20 用户实测过；照模板用 truncateString + 面板内宽）
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.literal(
+                    TextUtil.truncateString(
+                        Text.translatable(
+                            peekTargetsLoadState.emptyKey("cobblemarket.quick_showcase.online_empty")
+                        ).string,
+                        PANEL_W - 12
+                    )
+                ),
+                panelX + PANEL_W / 2, startY + 8, 0xFFFFFF
+            )
+            return
+        }
+
+        peekTargets.drop(peekTargetScroll).take(rows).forEachIndexed { i, entry ->
+            val y = startY + i * PANEL_ROW_H
+            // 悬停区与点击区同源（右缘让开滚动条，见 [peekTargetAt]）。
+            // ⚠ **只做高亮、不加悬停词条**：面板只有 128 宽，词条比行还宽，鼠标在左 / 在右
+            //   都会把这一行盖住（2026-11-10 用户实测）。行本身就是点击目标，标题已说明用途。
+            val hovered = interactive &&
+                mouseX >= panelX + 4 && mouseX < panelX + PANEL_W - 10 &&
+                mouseY >= y && mouseY < y + PANEL_ROW_H
+            if (hovered) {
+                context.fill(panelX + 4, y, panelX + PANEL_W - 4, y + PANEL_ROW_H, 0x33FFFFFF)
+            }
+            // 行顶分割线（照喵喵银行持有者面板；第一行不画 —— 标题区下方那条已经占了这个位置）
+            if (i > 0) {
+                context.fill(panelX + 4, y, panelX + PANEL_W - 4, y + 1, 0xFF888888.toInt())
+            }
+            // 名字：24 行高、8px 字 → y+8 垂直居中；右侧留头像区
+            context.drawTextWithShadow(
+                textRenderer,
+                Text.literal(truncateName(entry.name, PANEL_W - 32)),
+                panelX + 6, y + 8, 0xFFFFFF
+            )
+            // 皮肤头像 16px，行高 24 → 上下各 4px
+            drawAvatar(
+                context, entry.uuid, entry.name,
+                panelX + PANEL_W - 4 - PANEL_AVATAR - 2, y + 4, PANEL_AVATAR
+            )
+        }
+        // 标题区与名单之间的分割线 —— 放在行高亮**之后**画，免得第一行的高亮把这根线盖淡
+        context.fill(panelX + 4, startY, panelX + PANEL_W - 4, startY + 1, 0xFF888888.toInt())
+        // 滚动条：只有装不下时才画（可拖动；几何供 mouseClicked / mouseDragged 用）
+        peekTargetScrollBar.draw(
+            context, panelX + PANEL_W - 5, startY,
+            rows * PANEL_ROW_H, peekTargets.size, rows, peekTargetScroll
+        )
+    }
+
+    private fun truncateName(name: String, maxWidth: Int): String {
+        if (textRenderer.getWidth(name) <= maxWidth) return name
+        var cut = name.length
+        while (cut > 1 && textRenderer.getWidth(name.substring(0, cut) + "…") > maxWidth) cut--
+        return name.substring(0, cut) + "…"
+    }
+
+    /** 皮肤头像（与喵喵银行持有者面板同一套：在线走 tab 列表纹理，离线异步拉取） */
+    private fun drawAvatar(context: DrawContext, uuid: UUID, name: String, x: Int, y: Int, size: Int) {
+        val texture = PlayerSkinCache.skinFor(uuid, name)
+        context.matrices.push()
+        context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
+        context.matrices.scale(size / 8f, size / 8f, 1f)
+        context.drawTexture(texture, 0, 0, 8f, 8f, 8, 8, 64, 64)
+        context.matrices.pop()
+    }
+
     // ── 命中 / 动画 / 收尾 ──
 
     /**
@@ -335,8 +563,11 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         closing = true
         closeStart = System.currentTimeMillis()
         closeFromOffset = dropOffsetY()
+        // 面板不参与上收：记住它此刻的 x，关闭动画里从当前位置向右滑出（滑入到一半也不跳帧）
+        closeFromPanelX = peekPanelSlideX()
         hoveredKind = null
         cryAt = 0L
+        peekTargetScrollBar.cancel()
         pokemonBtn?.active = false
         idCardBtn?.active = false
         itemBtn?.active = false
@@ -445,12 +676,66 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     /** 按一下模式：点框外 = 取消（按住模式点外面不关，松手才是确认） */
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (closing) return true
+        // 右侧在线玩家面板：**行优先**（滚动条命中区比视觉宽）；点面板空白处也吃掉，
+        // 别让「按一下模式点框外关闭」把点面板当成点外面
+        if (button == 0 && canSeePeekPanel() && peekPanelSlideFinished()) {
+            val panelX = peekPanelTargetX()
+            if (peekPanelContains(panelX, mouseX, mouseY)) {
+                val target = peekTargetAt(panelX, mouseX, mouseY)
+                if (target != null) {
+                    playButtonClickSound()
+                    // 与总览行尾「监视」按钮完全同一个入口；成功 / 失败都走聊天反馈
+                    sendToServer(StartPeekPayload(target.uuid))
+                    closeSelf()
+                    return true
+                }
+                // 滚动条（只有装不下时才画几何 —— 先判溢出，防读到上一份旧几何）
+                if (peekTargets.size > peekPanelRows()) {
+                    peekTargetScrollBar.mouseClicked(mouseX, mouseY, peekTargetScroll)?.let {
+                        peekTargetScroll = it
+                        return true
+                    }
+                }
+                return true
+            }
+        }
         val handled = super.mouseClicked(mouseX, mouseY, button)
         if (!handled && ClientConfig.quickShowcasePressOnce) {
             requestClose()
             return true
         }
         return handled
+    }
+
+    /** 滚轮：面板内滚动名单（与喵喵银行持有者面板同口径） */
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+        if (!closing && canSeePeekPanel() && peekPanelSlideFinished() &&
+            peekTargets.size > peekPanelRows() &&
+            peekPanelContains(peekPanelTargetX(), mouseX, mouseY)
+        ) {
+            peekTargetScroll = (peekTargetScroll - verticalAmount.toInt())
+                .coerceIn(0, peekTargets.size - peekPanelRows())
+            return true
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)
+    }
+
+    /** 拖动：面板滚动条（拖动状态由 [ScrollBar] 自己记；返回 null = 没在拖） */
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        if (canSeePeekPanel()) {
+            val newScroll = peekTargetScrollBar.mouseDragged(mouseY, peekTargetScroll)
+            if (newScroll != null) {
+                peekTargetScroll = newScroll
+                return true
+            }
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+    }
+
+    /** 松开：结束滚动条拖动（结束后吃掉这次松开，否则它会在别处再触发一次点击） */
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (peekTargetScrollBar.mouseReleased()) return true
+        return super.mouseReleased(mouseX, mouseY, button)
     }
 
     /** Esc（`Screen.close()`）：同样走收起动画，别瞬消 */
@@ -484,5 +769,33 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         private const val ICON_SIZE = CONTENT
         /** 物品放大倍数：16px 的图标 × 6 = 96px，在内容框里留一圈 */
         private const val ITEM_SCALE = CONTENT / 16f
+
+        // ── 右侧「在线玩家」面板（2026-11-10）──
+        /** 面板宽度（与喵喵银行持有者面板同宽，也等于大框边长） */
+        private const val PANEL_W = 128
+
+        /** 面板离屏幕右缘的空隙 */
+        private const val PANEL_RIGHT_MARGIN = 16
+
+        /** 面板高度 = 三个大框整组的高度（与大框组顶部对齐） */
+        private const val PANEL_H = BTN * 2 + GAP
+
+        /** 标题区高度（标题 + 人数两行；名单从这里开始） */
+        private const val PANEL_HEADER_H = 29
+
+        /** 面板底部留白 */
+        private const val PANEL_BOTTOM_PAD = 4
+
+        /** 名单行高（项目 2026-10-04 起的新列表基准 24） */
+        private const val PANEL_ROW_H = 24
+
+        /** 皮肤头像尺寸 */
+        private const val PANEL_AVATAR = 16
+
+        /** 面板从屏幕右缘滑入的时长（与三个大框的掉落同起点、同时长） */
+        private const val PANEL_SLIDE_MS = 220L
+
+        /** 在线名单刷新间隔（打开期间；服务端读请求有 500ms 限流） */
+        private const val TARGETS_REFRESH_MS = 2_000L
     }
 }

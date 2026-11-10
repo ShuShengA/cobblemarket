@@ -51,6 +51,7 @@ import com.shusheng.cobblemarket.network.MarketNetwork
 import com.shusheng.cobblemarket.network.MarketStatePayload
 import com.shusheng.cobblemarket.network.PointMarketNetwork
 import com.shusheng.cobblemarket.network.sendSound
+import com.shusheng.cobblemarket.peek.PeekService
 import com.shusheng.cobblemarket.platform.onPlayerJoin
 import com.shusheng.cobblemarket.platform.registerCommands
 import com.shusheng.cobblemarket.platform.sendToPlayer
@@ -464,24 +465,12 @@ object MarketCommands {
                             .executes(::pointsExportUpdate)
                         )
                         .then(CommandManager.literal("shop")
-                            // 下单/我已支付/取消：玩家可用（正式路径走RP 商城界面，命令留给后台与客服代操作）
-                            .then(CommandManager.literal("create")
-                                .then(CommandManager.argument("tier", IntegerArgumentType.integer(1))
-                                    .executes(::shopCreate)
-                                )
-                            )
-                            .then(CommandManager.literal("paid")
-                                .then(CommandManager.argument("order", StringArgumentType.word())
-                                    .executes(::shopMarkPaid)
-                                )
-                            )
-                            .then(CommandManager.literal("cancel")
-                                .then(CommandManager.argument("order", StringArgumentType.word())
-                                    .executes(::shopCancel)
-                                )
-                            )
-                            // ⚠ 下面四个 = 充值订单的**管理侧**（核对收款、发放、作废、清理），
+                            // ⚠ **玩家侧下单 / 已支付 / 取消只走 RP 商城界面（C2S）**，命令不再提供 ——
+                            //   此前 create/paid/cancel 对所有人可见、且只作用于执行者自己，既没用又造成
+                            //   「管理员未开启游戏内充值 / 档位不存在」等困惑（2026-11-09 用户拍板移除）。
+                            //   这里只保留充值订单的**管理侧**（核对收款、发放、作废、清理），
                             //   判 **points.order 节点**（2026-09-25 从「仅服主」改判为可授予，用户拍板）。
+                            .requires { MarketPermissions.has(it, MarketPermissions.POINTS_ORDER) }
                             //   ⚠ **确认 = 加余额**（发钞权）：授予前先确认对方真的**看得到收款账单**，
                             //   否则「确认到账」这个动作本身不成立（docs/permission_nodes_plan.md ⑩）。
                             //   ⚠ 界面的充值订单管理端判**同一个节点**，两处必须一起改。
@@ -598,6 +587,23 @@ object MarketCommands {
                             )
                         )
                     )
+                    .then(CommandManager.literal("peek")
+                        // 共用玩家总览的 overview 节点（不另开节点、**不认 OP** —— 项目铁律）。
+                        // ⚠ 必须是玩家：控制台没有可移动的身体，`requires` 直接拦掉
+                        .requires { source ->
+                            source.player?.let { MarketPermissions.has(it, MarketPermissions.OVERVIEW) } == true
+                        }
+                        // ⚠ 用普通 word + 在线玩家补全，**不要用 EntityArgumentType.player()**：
+                        //   后者是原版实体选择器参数，补全里会混进 @a / @e / @n / @p / @r / @s，
+                        //   对这个只接受在线玩家名的命令是纯噪音（2026-11-09 用户实测反馈）。
+                        .then(CommandManager.argument("player", StringArgumentType.word())
+                            .suggests(::suggestOnlinePlayerNames)
+                            .executes(::peekStart)
+                        )
+                        .then(CommandManager.literal("stop")
+                            .executes(::peekStop)
+                        )
+                    )
                     .then(CommandManager.literal("owner")
                         // ⚠⭐ **add / remove 已移除**（2026-10-01 定）：改名单位置**只剩配置文件**一个 ——
                         //   能在服务端"执行一条命令"的东西太多（工具模组 / 自动化 / 别的模组顺手调 API），
@@ -620,6 +626,34 @@ object MarketCommands {
             // 待领取概况：客户端首次打开市场入口界面时据此播「离线收益」提示音
             com.shusheng.cobblemarket.network.sendPendingReturns(player, player.server)
         }
+    }
+
+    /**
+     * `/market peek <player>`：开始监视。
+     *
+     * 逻辑全在 [PeekService]（**总览按钮走同一个内核**，不另写一份）；这里只做命令解析。
+     * 目标是**在线玩家名**（普通 word 参数 + 在线补全，不用实体选择器）：先按名字找到在线玩家，
+     * 找不到由这里给出红字提示。
+     */
+    private fun peekStart(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val player = source.player ?: return 0
+        val name = StringArgumentType.getString(context, "player")
+        // 名字大小写不敏感（玩家手敲时常见）
+        val target = source.server.playerManager.playerList
+            .firstOrNull { it.gameProfile.name.equals(name, ignoreCase = true) }
+        if (target == null) {
+            source.sendError(Text.translatable("cobblemarket.peek.target_offline"))
+            return 0
+        }
+        return if (PeekService.start(source.server, player, target)) 1 else 0
+    }
+
+    /** `/market peek stop`：停止监视并把监视者还原回原位（先传回、再切模式） */
+    private fun peekStop(context: CommandContext<ServerCommandSource>): Int {
+        val source = context.source
+        val player = source.player ?: return 0
+        return if (PeekService.stop(source.server, player)) 1 else 0
     }
 
     /**
@@ -1034,83 +1068,7 @@ object MarketCommands {
         }
     }
 
-    // ── RP：游戏内充值订单（正式路径走RP 商城界面，命令用于后台与客服代操作） ──
-
-    /** 创建充值订单。档位序号对玩家从 1 开始数（配置数组从 0 开始） */
-    private fun shopCreate(context: CommandContext<ServerCommandSource>): Int {
-        val source = context.source
-        val player = source.player
-        if (player == null) {
-            source.sendError(Text.translatable("cobblemarket.points.players_only"))
-            return 0
-        }
-        val tierIndex = IntegerArgumentType.getInteger(context, "tier") - 1
-        return when (val result = PointShopService.createOrder(source.server, player.uuid, player.name.string, tierIndex)) {
-            is PointShopResult.Success -> {
-                val order = result.order
-                source.sendFeedback({
-                    Text.translatable(
-                        "cobblemarket.points.shop.created",
-                        PointOrderNumbers.format(order.orderNo),
-                        PointShopService.formatCents(order.payCents),
-                        CurrencyService.amountText(order.points, MarketCurrency.POINTS)
-                    ).formatted(Formatting.GREEN)
-                }, false)
-                1
-            }
-            is PointShopResult.Failure -> {
-                source.sendError(pointShopErrorText(result.error))
-                0
-            }
-        }
-    }
-
-    /** 玩家声明「我已支付」（**只是声明，不是证据** —— 发不发由服主对着账单说了算） */
-    private fun shopMarkPaid(context: CommandContext<ServerCommandSource>): Int =
-        shopPlayerAction(context) { server, player, orderNo ->
-            PointShopService.markPaid(server, player.uuid, orderNo)
-        }
-
-    /** 玩家取消自己的待支付订单 */
-    private fun shopCancel(context: CommandContext<ServerCommandSource>): Int =
-        shopPlayerAction(context) { server, player, orderNo ->
-            PointShopService.cancelOrder(server, player.uuid, orderNo)
-        }
-
-    /** 玩家侧订单操作的公共外壳：取玩家 → 归一化订单号 → 调服务 → 回显 */
-    private fun shopPlayerAction(
-        context: CommandContext<ServerCommandSource>,
-        action: (net.minecraft.server.MinecraftServer, net.minecraft.server.network.ServerPlayerEntity, String) -> PointShopResult
-    ): Int {
-        val source = context.source
-        val player = source.player
-        if (player == null) {
-            source.sendError(Text.translatable("cobblemarket.points.players_only"))
-            return 0
-        }
-        val orderNo = PointOrderNumbers.normalize(StringArgumentType.getString(context, "order"))
-        if (orderNo == null) {
-            source.sendError(Text.translatable("cobblemarket.points.shop.not_found"))
-            return 0
-        }
-        return when (val result = action(source.server, player, orderNo)) {
-            is PointShopResult.Success -> {
-                val messageKey = if (result.order.status == PointOrderStatus.PENDING_CONFIRM) {
-                    "cobblemarket.points.shop.paid_ok"
-                } else {
-                    "cobblemarket.points.shop.cancelled"
-                }
-                source.sendFeedback({
-                    Text.translatable(messageKey, PointOrderNumbers.format(result.order.orderNo)).formatted(Formatting.GREEN)
-                }, false)
-                1
-            }
-            is PointShopResult.Failure -> {
-                source.sendError(pointShopErrorText(result.error))
-                0
-            }
-        }
-    }
+    // ── RP：游戏内充值订单（玩家侧只走 RP 商城界面；命令只保留管理侧，判 points.order） ──
 
     /** 待确认订单列表（判 `points.order`）：玩家名 / 实付金额 / 订单号 / 已等待时长，照着收款账单逐笔核 */
     private fun shopPendingList(context: CommandContext<ServerCommandSource>): Int {

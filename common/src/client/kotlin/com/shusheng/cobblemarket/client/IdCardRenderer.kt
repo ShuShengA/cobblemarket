@@ -116,8 +116,16 @@ object IdCardRenderer {
         // 参数：(entity, x, y, z, yaw, tickDelta, matrices, vertexConsumers, light)
         // yaw 照原版传 0（2026-10-28 实测传 yawDeg 无变化）；tickDelta 传 0 配合上面的
         // prev* 全部设为同值 ⇒ 取 prev 等于当前
-        RenderSystem.runAsFancy {
-            dispatcher.render(entity, 0.0, 0.0, 0.0, 0f, 0f, matrices, vertexConsumers, 0xF000F0)
+        // ⚠ 画模型期间屏蔽名字 / 称号标签：原版会把玩家名字（带称号）一起画出来，
+        //   长名字会顶出卡片、字号也被模型缩放放大（2026-11-10 用户实测）。
+        //   只在这一次 dispatcher.render 期间置位，finally 复位 —— 世界里的名字不受影响。
+        IdCardRenderState.suppressNameTags = true
+        try {
+            RenderSystem.runAsFancy {
+                dispatcher.render(entity, 0.0, 0.0, 0.0, 0f, 0f, matrices, vertexConsumers, 0xF000F0)
+            }
+        } finally {
+            IdCardRenderState.suppressNameTags = false
         }
         dispatcher.setRenderShadows(true)
         context.draw()
