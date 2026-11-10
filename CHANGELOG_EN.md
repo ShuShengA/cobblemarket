@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.7 (in development, unreleased)
+## 1.3.7 (released)
 
 ⚠ **Client and server must be upgraded together** (this version adds a new network payload).
 
@@ -10,7 +10,7 @@
   - **Spectating only works within the same dimension**: if the target is in another dimension spectating will not start and the message names that dimension; if either player leaves the other's dimension mid-session, spectating ends and restores you (with different messages for the target leaving vs. you leaving), instead of leaving you stuck at the portal like vanilla spectator mode (a known vanilla issue)
   - Commands: `/market peek <player>` to start, `/market peek stop` to stop
   - While spectating, a hint above the hotbar says "Press U to stop spectating"; pressing it ends spectating exactly like `/market peek stop`. The key can be changed in Controls
-  - Players with the Player Overview permission (including the server owner) see an "Online Players" panel when they open Quick Showcase (default X): it lists the online players you can spectate (spectator-mode players are hidden); click one to spectate them directly (the same as the Spectate button in Player Overview). The panel slides in from the right and slides back out on close, refreshing as players join or leave
+  - Players with the Player Overview permission (including the server owner) see an "Online Players" panel when they open Quick Actions (default X): it lists the online players you can spectate (spectator-mode players are hidden); click one to spectate them directly (the same as the Spectate button in Player Overview). The panel slides in from the right and slides back out on close, refreshing as players join or leave
   - Moving more than **64 blocks** away from the target pulls you back next to them (so spectating can't be used to fly around the map; free observation within 64 blocks still works, and a target who runs or teleports away can't shake you)
   - Spectating shares the Player Overview permission node; your inventory and XP are untouched. If you disconnect or the server crashes while spectating, your position and game mode are restored on your next login
 - **Owners can now reset a claim shop's claim period immediately**: `/market shop cooldown <id> reset` now clears every player's claim records on claim-mode shops (the message says everyone can claim again; normal purchase shops are unchanged), and the shop detail screen for claim shops gained a "Reset claims" button with confirmation
