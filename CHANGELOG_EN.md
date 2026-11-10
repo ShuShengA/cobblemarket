@@ -6,60 +6,26 @@
 
 ### New Features
 
-- **Player Overview can now spectate players**: when sorting by player name, online players who
-  aren't in spectator mode show a Spectate icon button at the end of their row (hover for a hint;
-  staff who are already spectating don't show it). Clicking it puts you in spectator mode next to
-  the target, where you
-  can watch freely, and clicking the target attaches your camera to theirs. The target is never
-  notified
-  - **Spectating only works within the same dimension**: if the target is in another dimension
-    spectating will not start and the message names that dimension; if either player leaves the
-    other's dimension mid-session, spectating ends and restores you (with different messages for the
-    target leaving vs. you leaving), instead of leaving you stuck at the portal like vanilla
-    spectator mode (a known vanilla issue)
+- **Player Overview can now spectate players**: when sorting by player name, online players who aren't in spectator mode show a Spectate icon button at the end of their row (hover for a hint; staff who are already spectating don't show it). Clicking it puts you in spectator mode next to the target, where you can watch freely, and clicking the target attaches your camera to theirs. The target is never notified
+  - **Spectating only works within the same dimension**: if the target is in another dimension spectating will not start and the message names that dimension; if either player leaves the other's dimension mid-session, spectating ends and restores you (with different messages for the target leaving vs. you leaving), instead of leaving you stuck at the portal like vanilla spectator mode (a known vanilla issue)
   - Commands: `/market peek <player>` to start, `/market peek stop` to stop
-  - While spectating, a hint above the hotbar says "Press U to stop spectating"; pressing it ends
-    spectating exactly like `/market peek stop`. The key can be changed in Controls
-  - Players with the Player Overview permission (including the server owner) see an "Online Players"
-    panel when they open Quick Showcase (default X): it lists the online players you can spectate
-    (spectator-mode players are hidden); click one to spectate them directly (the same as the
-    Spectate button in Player Overview). The panel slides in from the right and slides back out on
-    close, refreshing as players join or leave
-  - Moving more than **64 blocks** away from the target pulls you back next to them (so spectating
-    can't be used to fly around the map; free observation within 64 blocks still works, and a target
-    who runs or teleports away can't shake you)
-  - Spectating shares the Player Overview permission node; your inventory and XP are untouched. If
-    you disconnect or the server crashes while spectating, your position and game mode are restored
-    on your next login
-- **Owners can now reset a claim shop's claim period immediately**: `/market shop cooldown <id> reset`
-  now clears every player's claim records on claim-mode shops (the message says everyone can claim
-  again; normal purchase shops are unchanged), and the shop detail screen for claim shops gained a
-  "Reset claims" button with confirmation
+  - While spectating, a hint above the hotbar says "Press U to stop spectating"; pressing it ends spectating exactly like `/market peek stop`. The key can be changed in Controls
+  - Players with the Player Overview permission (including the server owner) see an "Online Players" panel when they open Quick Showcase (default X): it lists the online players you can spectate (spectator-mode players are hidden); click one to spectate them directly (the same as the Spectate button in Player Overview). The panel slides in from the right and slides back out on close, refreshing as players join or leave
+  - Moving more than **64 blocks** away from the target pulls you back next to them (so spectating can't be used to fly around the map; free observation within 64 blocks still works, and a target who runs or teleports away can't shake you)
+  - Spectating shares the Player Overview permission node; your inventory and XP are untouched. If you disconnect or the server crashes while spectating, your position and game mode are restored on your next login
+- **Owners can now reset a claim shop's claim period immediately**: `/market shop cooldown <id> reset` now clears every player's claim records on claim-mode shops (the message says everyone can claim again; normal purchase shops are unchanged), and the shop detail screen for claim shops gained a "Reset claims" button with confirmation
 
 ### Changes
 
-- **RP recharge orders no longer have player commands**: `/market points shop create/paid/cancel`
-  were removed; players create, mark paid, and cancel orders from the RP shop screen. The admin
-  `list/confirm/reject/purge` commands remain (`points.order` permission node)
-- **Saves after trades and claims now only write the data involved**: every trade / claim used to
-  trigger a full save of every dimension three seconds later (chunks, entities and player data),
-  which spent extra server-thread time on busy servers; now only player data and market state are
-  written, leaving chunks and entities to the game's regular autosaves
-- **The "Quick Showcase (hold)" key binding is now "Quick Actions"**: the key supports both hold
-  and press-once modes, and it is now also the entry point for quick spectating, so the old name
-  was inaccurate
+- **RP recharge orders no longer have player commands**: `/market points shop create/paid/cancel` were removed; players create, mark paid, and cancel orders from the RP shop screen. The admin `list/confirm/reject/purge` commands remain (`points.order` permission node)
+- **Saves after trades and claims now only write the data involved**: every trade / claim used to trigger a full save of every dimension three seconds later (chunks, entities and player data), which spent extra server-thread time on busy servers; now only player data and market state are written, leaving chunks and entities to the game's regular autosaves
+- **The "Quick Showcase (hold)" key binding is now "Quick Actions"**: the key supports both hold and press-once modes, and it is now also the entry point for quick spectating, so the old name was inaccurate
 
 ### Fixes
 
-- **Hovering a shared Market ID Card in chat showed the player without their second skin layer
-  (hat / jacket / sleeves / pants)**: it now follows the sharer's own skin customization settings
-  (a disabled cape stays hidden)
-- **Hovering a shared Market ID Card in chat drew the player's name / title above the model**:
-  name / title labels are no longer drawn on the ID card model (world name tags are unaffected)
-- **The Pokédex status and "Illegal" corner badges on RP shop / custom shop grid cells were too
-  large and sat on the cell border**: their size was derived from the whole cell instead of the
-  Pokémon icon and they were drawn from the cell's outer edge; they now scale with the icon like
-  everywhere else and are inset past the border
+- **Hovering a shared Market ID Card in chat showed the player without their second skin layer (hat / jacket / sleeves / pants)**: it now follows the sharer's own skin customization settings (a disabled cape stays hidden)
+- **Hovering a shared Market ID Card in chat drew the player's name / title above the model**: name / title labels are no longer drawn on the ID card model (world name tags are unaffected)
+- **The Pokédex status and "Illegal" corner badges on RP shop / custom shop grid cells were too large and sat on the cell border**: their size was derived from the whole cell instead of the Pokémon icon and they were drawn from the cell's outer edge; they now scale with the icon like everywhere else and are inset past the border
 
 ## 1.3.6 (released)
 
