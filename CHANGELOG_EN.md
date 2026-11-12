@@ -6,6 +6,11 @@
 
 - **Clearer message when teleporting to another dimension while spectating**: it now says you were moved back to where you started and need to run the teleport again (previously it only said spectating had ended, so seeing the teleport succeed and then being pulled back looked like the teleport had failed)
 
+### Fixes
+
+- **Offline players without a cached name showed as a raw UUID in Player Overview**: names are now recovered from online snapshots, auctions, buy orders and bans; if a name still cannot be found it shows "Unknown player", and the full UUID is still visible in the hover tooltip
+- **Player Overview row names / values were drawn on top of the sort-field dropdown when it was open**: rows are no longer drawn while the dropdown is expanded
+
 ## 1.3.7 (released)
 
 ⚠ **Client and server must be upgraded together** (this version adds a new network payload).

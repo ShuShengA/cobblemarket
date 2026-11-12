@@ -37,6 +37,11 @@ class PlayerSnapshotState private constructor() : PersistentState() {
         val dexCaught: Int,
         /** 记录时刻（毫秒时间戳）—— 界面据此给离线玩家标「离线时记录」 */
         val recordedAt: Long,
+        /**
+         * 记录时的玩家名。旧存档没有这个字段 ⇒ null（读取容错，不影响余额/图鉴）。
+         * 总览里离线玩家不在 usercache 时用它兜底，别让界面显示一串 UUID。
+         */
+        val name: String? = null,
     )
 
     private val snapshots = mutableMapOf<UUID, Snapshot>()
@@ -53,10 +58,12 @@ class PlayerSnapshotState private constructor() : PersistentState() {
      * ⚠ **内容没变就不写**（比较时**排除时间戳**）：否则等于每 5 分钟把存档整个标脏一次、
      * 白增写盘 —— 同 `PointsRankingExport` 的"只写变化"。
      */
-    fun record(uuid: UUID, balance: Long, dexSeen: Int, dexCaught: Int, now: Long) {
+    fun record(uuid: UUID, name: String?, balance: Long, dexSeen: Int, dexCaught: Int, now: Long) {
         val old = snapshots[uuid]
-        if (old != null && old.balance == balance && old.dexSeen == dexSeen && old.dexCaught == dexCaught) return
-        snapshots[uuid] = Snapshot(balance, dexSeen, dexCaught, now)
+        if (old != null && old.balance == balance && old.dexSeen == dexSeen &&
+            old.dexCaught == dexCaught && old.name == name
+        ) return
+        snapshots[uuid] = Snapshot(balance, dexSeen, dexCaught, now, name)
         markDirty()
     }
 
@@ -68,6 +75,7 @@ class PlayerSnapshotState private constructor() : PersistentState() {
             entry.putInt("dexSeen", s.dexSeen)
             entry.putInt("dexCaught", s.dexCaught)
             entry.putLong("recordedAt", s.recordedAt)
+            s.name?.let { entry.putString("name", it) }
             map.put(uuid.toString(), entry)
         }
         nbt.put("snapshots", map)
@@ -92,6 +100,12 @@ class PlayerSnapshotState private constructor() : PersistentState() {
                                 dexSeen = entry.getInt("dexSeen"),
                                 dexCaught = entry.getInt("dexCaught"),
                                 recordedAt = entry.getLong("recordedAt"),
+                                // 旧档没有 name —— 缺失就落 null，界面再走 usercache / UUID 兜底
+                                name = if (entry.contains("name")) {
+                                    entry.getString("name").takeIf { it.isNotBlank() }
+                                } else {
+                                    null
+                                },
                             )
                         } catch (e: Exception) {
                             CobbleMarket.LOGGER.warn("Skipping corrupted overview snapshot for '{}': {}", key, e.message)

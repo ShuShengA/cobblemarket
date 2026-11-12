@@ -639,6 +639,7 @@
   "cobblemarket.overview.search": "搜索玩家...",
   "cobblemarket.overview.loading": "加载中…",
   "cobblemarket.overview.empty": "没有匹配的玩家",
+  "cobblemarket.overview.unknown_player": "未知玩家",
   "cobblemarket.overview.line": "%s：%s",
   "cobblemarket.overview.sort_by": "排序：%s",
   "cobblemarket.overview.sort_by_hint": "点击切换排序字段",

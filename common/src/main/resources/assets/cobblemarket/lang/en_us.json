@@ -642,6 +642,7 @@
   "cobblemarket.overview.search": "Search player...",
   "cobblemarket.overview.loading": "Loading…",
   "cobblemarket.overview.empty": "No matching players",
+  "cobblemarket.overview.unknown_player": "Unknown player",
   "cobblemarket.overview.line": "%s: %s",
   "cobblemarket.overview.sort_by": "Sort: %s",
   "cobblemarket.overview.sort_by_hint": "Click to change the sort field",

@@ -65,7 +65,7 @@ object PlayerOverviewService {
         val balance = runCatching { CurrencyHandler.getBalance(player).toLong() }.getOrDefault(0L)
         val dex = FinanceService.getDexCounts(server, player.uuid)
         PlayerSnapshotState.get(server).record(
-            player.uuid, balance, dex.seen, dex.caught, System.currentTimeMillis()
+            player.uuid, player.name.string, balance, dex.seen, dex.caught, System.currentTimeMillis()
         )
     }
 
@@ -92,12 +92,25 @@ object PlayerOverviewService {
         // ⚠ **不看 RP 总开关** —— 用户 2026-10-17 拍板「0 也显示」（关着就是 0，照样画这一行）
         val pointsState = PointsState.get(server)
 
-        val pokemonListingCount = countBy(market.getActiveListings()) { it.sellerUuid }
-        val itemListingCount = countBy(itemMarket.getActiveListings()) { it.sellerUuid }
-        val auctionCount = countBy(auctions.getActiveAuctions()) { it.sellerUuid }
+        val activeAuctions = auctions.getActiveAuctions()
         // ⚠ 1.3.x 的求购单**按币种分开**（`getOpenOrders(currency)` 必须传币种）——
         //   总览这一行要的是「这个人一共挂了几单」，所以**两种币种都算上**
-        val buyOrderCount = countBy(MarketCurrency.entries.flatMap { buyOrders.getOpenOrders(it) }) { it.buyerUuid }
+        val openBuyOrders = MarketCurrency.entries.flatMap { buyOrders.getOpenOrders(it) }
+        val allBans = bans.getAllBans(now)
+
+        // 离线玩家可能不在 usercache（缓存被清 / 多区服）⇒ 从已有数据里补名字，别让界面显示 UUID
+        val knownNames = mutableMapOf<UUID, String>()
+        fun rememberName(uuid: UUID, name: String?) {
+            if (!name.isNullOrBlank()) knownNames.putIfAbsent(uuid, name)
+        }
+        activeAuctions.forEach { rememberName(it.sellerUuid, it.sellerName) }
+        openBuyOrders.forEach { rememberName(it.buyerUuid, it.buyerName) }
+        allBans.forEach { rememberName(it.playerUuid, it.playerName) }
+
+        val pokemonListingCount = countBy(market.getActiveListings()) { it.sellerUuid }
+        val itemListingCount = countBy(itemMarket.getActiveListings()) { it.sellerUuid }
+        val auctionCount = countBy(activeAuctions) { it.sellerUuid }
+        val buyOrderCount = countBy(openBuyOrders) { it.buyerUuid }
         val loansByPlayer = mutableMapOf<UUID, MutableList<LoanRecord>>()
         finance.getAllLoans().forEach { loansByPlayer.getOrPut(it.playerUuid) { mutableListOf() }.add(it) }
 
@@ -113,7 +126,7 @@ object PlayerOverviewService {
         uuids += finance.getAllPurpleCardHolders()
         uuids += finance.getAllBlackCardHolders()
         uuids += finance.getAdjustedPlayers().keys
-        bans.getAllBans(now).forEach { uuids += it.playerUuid }
+        allBans.forEach { uuids += it.playerUuid }
 
         val creditByPlayer = finance.creditOverviewFor(uuids, now)
 
@@ -141,7 +154,7 @@ object PlayerOverviewService {
 
             PlayerOverviewRow(
                 uuid = uuid,
-                name = resolveName(server, uuid),
+                name = resolveName(server, uuid, snapshot?.name ?: knownNames[uuid]),
                 online = online,
                 pokemonListings = pokemonListingCount[uuid] ?: 0,
                 itemListings = itemListingCount[uuid] ?: 0,
@@ -201,9 +214,13 @@ object PlayerOverviewService {
         return m
     }
 
-    /** 名字：在线表 → usercache → uuid 兜底（照 `/market card` 那条链路的三级 fallback） */
-    private fun resolveName(server: MinecraftServer, uuid: UUID): String =
+    /**
+     * 名字：在线表 → usercache → 快照 / 拍卖 / 求购 / 封禁里记过的名字 → uuid 兜底。
+     * ⚠ 后两级是给「不在 usercache 的离线玩家」用的 —— 之前直接落到 uuid，界面显示一串 UUID。
+     */
+    private fun resolveName(server: MinecraftServer, uuid: UUID, cachedName: String?): String =
         server.playerManager.getPlayer(uuid)?.name?.string
             ?: server.userCache?.getByUuid(uuid)?.orElse(null)?.name
+            ?: cachedName?.takeIf { it.isNotBlank() }
             ?: uuid.toString()
 }

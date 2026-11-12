@@ -113,6 +113,9 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
     private val peekIconTexSize = 48
     private val peekIconDrawSize = 12
 
+    /** 名字缓存缺失时服务端回退的是 uuid.toString() —— 列表里别把整串 UUID 直接铺出来 */
+    private val uuidName = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
     override fun init() {
         super.init()
         val leftX = width / 2 - panelWidth / 2
@@ -375,34 +378,45 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         // ⚠ 单位按**这一列自己的币种**：RP 列补 RP 图标，其余补主货币单位（两者绝不能混）
         val isPoints = sortField == SortField.POINTS
         val canPeek = canShowPeekButtons()
-        visible.forEachIndexed { i, r ->
-            val y = startY + i * rowHeight
+        // ⚠ 排序字段下拉展开时**不画行内自绘内容**：下拉选项是控件（`super.render` 先画），
+        //   而行文字/数值在 `render` 里后画 —— 会盖在下拉按钮上面（2026-11-12 用户实测）。
+        var peekHovered = false
+        if (!sortListOpen) {
+            visible.forEachIndexed { i, r ->
+                val y = startY + i * rowHeight
 
-            // 名字：在线白、离线灰（一眼看出这行是不是实时数据）
-            val name = TextUtil.truncateText(Text.literal(r.name), panelWidth / 2 - 10)
-            context.drawTextWithShadow(textRenderer, name, leftX + 5, y + 8, if (r.online) 0xFFFFFF else 0xAAAAAA)
+                // 名字：在线白、离线灰（一眼看出这行是不是实时数据）；
+                // 服务端解析不出名字时给的是 UUID → 列表里显示「未知玩家」，完整 UUID 仍在悬停窗
+                val nameText = if (uuidName.matches(r.name)) {
+                    Text.translatable("cobblemarket.overview.unknown_player")
+                } else {
+                    Text.literal(r.name)
+                }
+                val name = TextUtil.truncateText(nameText, panelWidth / 2 - 10)
+                context.drawTextWithShadow(textRenderer, name, leftX + 5, y + 8, if (r.online) 0xFFFFFF else 0xAAAAAA)
 
-            // 右侧：当前排序字段的值（右对齐行尾；排序字段是名字时这一格不画）
-            val value = rowValueText(r)
-            if (value == null) {
-                // 按名字排序：行尾那一格空出来，给「监视」按钮（仅在线、且非旁观模式的行）
-                if (canPeek && canPeekRow(r)) drawPeekButton(context, i, mouseX, mouseY)
-                return@forEachIndexed
+                // 右侧：当前排序字段的值（右对齐行尾；排序字段是名字时这一格不画）
+                val value = rowValueText(r)
+                if (value == null) {
+                    // 按名字排序：行尾那一格空出来，给「监视」按钮（仅在线、且非旁观模式的行）
+                    if (canPeek && canPeekRow(r)) drawPeekButton(context, i, mouseX, mouseY)
+                    return@forEachIndexed
+                }
+                val unitW = if (isMoney) currencyUnitWidth(textRenderer, isPoints) else 0
+                val valueX = leftX + panelWidth - 5 - textRenderer.getWidth(value) - unitW
+                val drawn = context.drawTextWithShadow(textRenderer, value, valueX, y + 8, 0x55FFFF)
+                if (isMoney) drawCurrencyUnit(context, textRenderer, isPoints, drawn, y + 8, 0x55FFFF)
             }
-            val unitW = if (isMoney) currencyUnitWidth(textRenderer, isPoints) else 0
-            val valueX = leftX + panelWidth - 5 - textRenderer.getWidth(value) - unitW
-            val drawn = context.drawTextWithShadow(textRenderer, value, valueX, y + 8, 0x55FFFF)
-            if (isMoney) drawCurrencyUnit(context, textRenderer, isPoints, drawn, y + 8, 0x55FFFF)
-        }
 
-        // 鼠标停在行尾「监视」按钮上时：**不画整行悬停窗**（玩家正要点击），改画按钮自己的提示。
-        // 与项目里行内按钮的统一口径一致（见 TooltipPlacement 顶部说明）。
-        val peekHovered = canPeek && hoveredRow in visible.indices &&
-            canPeekRow(visible[hoveredRow]) && peekButtonRect(hoveredRow).contains(mouseX, mouseY)
+            // 鼠标停在行尾「监视」按钮上时：**不画整行悬停窗**（玩家正要点击），改画按钮自己的提示。
+            // 与项目里行内按钮的统一口径一致（见 TooltipPlacement 顶部说明）。
+            peekHovered = canPeek && hoveredRow in visible.indices &&
+                canPeekRow(visible[hoveredRow]) && peekButtonRect(hoveredRow).contains(mouseX, mouseY)
 
-        // 悬停窗 = 行的完整版（方案第二节那一整张表）
-        if (!peekHovered && hoveredRow in visible.indices) {
-            renderOverviewTooltip(context, visible[hoveredRow], mouseX, mouseY)
+            // 悬停窗 = 行的完整版（方案第二节那一整张表）
+            if (!peekHovered && hoveredRow in visible.indices) {
+                renderOverviewTooltip(context, visible[hoveredRow], mouseX, mouseY)
+            }
         }
 
         if (rows.size > maxVisible) {
