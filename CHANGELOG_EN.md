@@ -1,5 +1,7 @@
 # Changelog
 
+## 1.3.8 (in development, unreleased)
+
 ## 1.3.7 (released)
 
 ⚠ **Client and server must be upgraded together** (this version adds a new network payload).
