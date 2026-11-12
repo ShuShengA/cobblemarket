@@ -709,7 +709,7 @@
   "cobblemarket.peek.dimension.nether": "下界",
   "cobblemarket.peek.dimension.end": "末地",
   "cobblemarket.peek.stopped_dimension": "目标已离开当前维度，监视结束",
-  "cobblemarket.peek.stopped_peeker_dimension": "你已离开目标所在维度，监视结束",
+  "cobblemarket.peek.stopped_peeker_dimension": "你已离开目标所在维度，监视结束，已返回监视前的位置；如需前往其他维度，请重新执行传送",
   "cobblemarket.peek.not_peeking": "你当前没有在监视任何人",
   "cobblemarket.peek.stopped": "监视已结束",
   "cobblemarket.peek.stopped_target_offline": "目标玩家已下线，监视结束",

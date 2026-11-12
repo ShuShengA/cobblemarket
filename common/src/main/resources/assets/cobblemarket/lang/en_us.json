@@ -712,7 +712,7 @@
   "cobblemarket.peek.dimension.nether": "The Nether",
   "cobblemarket.peek.dimension.end": "The End",
   "cobblemarket.peek.stopped_dimension": "The target left the current dimension; spectating ended",
-  "cobblemarket.peek.stopped_peeker_dimension": "You left the target's dimension; spectating ended",
+  "cobblemarket.peek.stopped_peeker_dimension": "You left the target's dimension; spectating ended and you were moved back to where you started. Run the teleport again to go to another dimension",
   "cobblemarket.peek.not_peeking": "You are not spectating anyone",
   "cobblemarket.peek.stopped": "Spectating ended",
   "cobblemarket.peek.stopped_target_offline": "The target went offline; spectating ended",
