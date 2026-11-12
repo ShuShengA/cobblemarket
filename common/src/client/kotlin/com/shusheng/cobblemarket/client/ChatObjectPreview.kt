@@ -445,6 +445,20 @@ object ChatObjectPreview {
                 //   （Cosmetica 的强制披风尤其明显，2026-11-10 用户实测）。
                 (fake as com.shusheng.cobblemarket.client.PlayerModelPartsAccess)
                     .setModelParts(row.modelParts)
+
+                // 假玩家不会带真实实体的装备 ⇒ 远处 / 离线玩家的分享卡模型会光身。
+                // 把分享那一刻快照的 4 件装备补到原版装备槽；**只写装备槽**，是否渲染（含 Accessories
+                // 的隐藏盔甲 / 盔甲渲染逻辑）仍交给渲染器和饰品模组，不要在这里自行隐藏或强制显示。
+                val registry = world.registryManager
+                fun equip(slot: net.minecraft.entity.EquipmentSlot, nbt: net.minecraft.nbt.NbtCompound?) {
+                    val stack = nbt?.let { net.minecraft.item.ItemStack.fromNbtOrEmpty(registry, it) }
+                        ?: net.minecraft.item.ItemStack.EMPTY
+                    fake.equipStack(slot, stack)
+                }
+                equip(net.minecraft.entity.EquipmentSlot.HEAD, row.headItem)
+                equip(net.minecraft.entity.EquipmentSlot.CHEST, row.chestItem)
+                equip(net.minecraft.entity.EquipmentSlot.LEGS, row.legsItem)
+                equip(net.minecraft.entity.EquipmentSlot.FEET, row.feetItem)
             }
         }.getOrNull()
     }
