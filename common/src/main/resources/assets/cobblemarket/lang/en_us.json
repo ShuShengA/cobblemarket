@@ -455,6 +455,7 @@
   "cobblemarket.quick_showcase.online_title": "Online Players",
   "cobblemarket.quick_showcase.online_count": "%s online",
   "cobblemarket.quick_showcase.online_empty": "No other players online",
+  "cobblemarket.quick_showcase.dimension": "Dimension: %s",
   "cobblemarket.settings.title": "Settings",
   "cobblemarket.settings.gui_scale": "GUI scale: ",
   "cobblemarket.settings.gui_scale_vanilla": "Auto",

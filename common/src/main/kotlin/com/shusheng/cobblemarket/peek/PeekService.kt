@@ -209,14 +209,31 @@ object PeekService {
         }
 
         val state = PeekState.get(server)
-        blockedCleanup.remove(player.uuid)
+        val wasBlocked = blockedCleanup.remove(player.uuid)
         // 上一次 stop 还在「传回后等插值」的窗口内：先把旧会话立即收尾，再捕获新的开始状态
         if (!finishPendingFinalizeNow(server, player)) {
             notify(player, "cobblemarket.peek.restore_failed", Formatting.RED)
             return false
         }
-        // 已经在监视 ⇒ 先停旧会话（还原到原位）再开始新的（与 Peek 的切换一致）。静默，不提示中间步骤
-        if (state.get(player.uuid) != null) {
+
+        // 已经在监视 ⇒ **同维度切换目标：只换目标，不还原**（2026-11-14 优化）。
+        // 以前统一走「停止旧会话（传回原位、切回原模式）→ 重新开始」，客户端会看到「先回原位、
+        // 再传送到新目标」两步；末地等维度下尤其明显（主世界只是两次传送挤在一起看不清）。
+        // 快速切换保留最初的 saved（会话结束仍回到第一次开始监视前的位置），直接更新目标 + 传送。
+        val existing = state.get(player.uuid)
+        if (existing != null &&
+            player.isSpectator &&
+            !pendingFinalizes.containsKey(player.uuid) &&
+            !wasBlocked &&
+            existing.worldKey == player.serverWorld.registryKey.value.toString()
+        ) {
+            retarget(server, player, target, existing, state)
+            return true
+        }
+
+        // 不满足快速切换条件（已不是旁观 / 有 pending / 落盘阻塞 / 维度边界）⇒
+        // 先停旧会话（还原到原位）再开始新的。静默，不提示中间步骤
+        if (existing != null) {
             stopInternal(server, player.uuid, StopReason.MANUAL, notifyPeeker = false)
             // 旧会话现在可能处在 finalize 等待窗口；立刻收尾后再开始新的（否则新状态会被旧任务改模式）
             if (!finishPendingFinalizeNow(server, player)) {
@@ -266,6 +283,49 @@ object PeekService {
             player.gameProfile.name, target.gameProfile.name, target.serverWorld.registryKey.value
         )
         return true
+    }
+
+    /**
+     * 监视中**同维度切换目标**：不还原、不切模式，直接更新会话目标并传送到新目标（2026-11-14 优化）。
+     *
+     * ⚠ 保留原 [saved]（第一次开始监视前的位置 / 模式 / 效果）—— 会话结束时仍回到最初位置，
+     *   与旧的「停止后重新开始」语义一致。
+     * ⚠ 必须**先清相机**：玩家可能附身在旧目标上，tick 的软牵引会拿旧相机实体和新目标比较，
+     *   误判超距 / 跨维度。
+     * ⚠ 先落盘、再动玩家（与 [start] 的顺序一致）。
+     */
+    private fun retarget(
+        server: MinecraftServer,
+        player: ServerPlayerEntity,
+        target: ServerPlayerEntity,
+        saved: PeekState.SavedState,
+        state: PeekState,
+    ) {
+        pendingRestores.remove(player.uuid)
+        lastLeashNoticeAt.remove(player.uuid)
+        // 先落盘、再动玩家
+        saved.targetUuid = target.uuid
+        state.saveNow(server)
+
+        // 清相机（可能正附身在旧目标上），再传送
+        player.setCameraEntity(null)
+        forceCamera(player, player)
+        try {
+            if (player.isInTeleportationState()) player.onTeleportationDone()
+            player.teleport(target.serverWorld, target.x, target.y, target.z, target.yaw, target.pitch)
+        } catch (e: Exception) {
+            CobbleMarket.LOGGER.warn(
+                "Peek: failed to retarget {} to {}: {}",
+                player.gameProfile.name, target.gameProfile.name, e.message
+            )
+        }
+        blockPortals(player)
+        PeekNetwork.sendActive(player, true)
+        notify(player, "cobblemarket.peek.started", Formatting.GREEN, target.name)
+        CobbleMarket.LOGGER.info(
+            "Peek retargeted: {} -> {} ({})",
+            player.gameProfile.name, target.gameProfile.name, target.serverWorld.registryKey.value
+        )
     }
 
     /**
@@ -972,18 +1032,6 @@ object PeekService {
      * ⚠ 服务端只构造 `Text`，不 `.string`、不拼语言相关标点 —— 友好名和括号都交给客户端翻译；
      *   模组维度没有统一的显示名 API，id（`namespace:path`）是唯一精确且跨包可用的标识。
      */
-    private fun dimensionText(world: ServerWorld): Text {
-        val id = world.registryKey.value.toString()
-        val friendlyKey = when (id) {
-            "minecraft:overworld" -> "cobblemarket.peek.dimension.overworld"
-            "minecraft:the_nether" -> "cobblemarket.peek.dimension.nether"
-            "minecraft:the_end" -> "cobblemarket.peek.dimension.end"
-            else -> return Text.literal(id)
-        }
-        return Text.translatable(
-            "cobblemarket.peek.dimension.with_id",
-            Text.translatable(friendlyKey),
-            Text.literal(id)
-        )
-    }
+    private fun dimensionText(world: ServerWorld): Text =
+        com.shusheng.cobblemarket.util.DimensionText.of(world)
 }

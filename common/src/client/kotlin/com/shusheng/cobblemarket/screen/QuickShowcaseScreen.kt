@@ -242,6 +242,21 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
                 interactive = peekPanelSlideFinished()
             )
         }
+
+        // 面板行悬停：显示这名玩家所在的维度（2026-11-14 用户要求）。
+        // 必须画在面板之后（`drawTooltip` 在鼠标旁，面板是自绘的，会被后画的盖住）。
+        if (canSeePeekPanel() && peekPanelSlideFinished()) {
+            peekTargetAt(peekPanelSlideX(), mouseX.toDouble(), mouseY.toDouble())?.let { entry ->
+                drawDimensionTooltip(
+                    context,
+                    Text.translatable(
+                        "cobblemarket.quick_showcase.dimension",
+                        com.shusheng.cobblemarket.util.DimensionText.of(entry.dimension)
+                    ),
+                    mouseX, mouseY
+                )
+            }
+        }
     }
 
     // ── 三个框的内容 ──
@@ -409,7 +424,7 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
 
     /**
      * 画右侧面板：九宫格底 + 标题两行（在线玩家 / 人数）+ 名单（名字左、皮肤头像右）
-     * + 行顶分割线 + 可拖动滚动条；悬停行高亮并提示「监视该玩家」。
+     * + 行顶分割线 + 可拖动滚动条；悬停行高亮（维度词条在 [render] 末尾画）。
      *
      * @param interactive 滑入完成后才接受悬停反馈 / 词条（滑入中鼠标在移动，反馈会闪）
      */
@@ -473,8 +488,8 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         peekTargets.drop(peekTargetScroll).take(rows).forEachIndexed { i, entry ->
             val y = startY + i * PANEL_ROW_H
             // 悬停区与点击区同源（右缘让开滚动条，见 [peekTargetAt]）。
-            // ⚠ **只做高亮、不加悬停词条**：面板只有 128 宽，词条比行还宽，鼠标在左 / 在右
-            //   都会把这一行盖住（2026-11-10 用户实测）。行本身就是点击目标，标题已说明用途。
+            // 高亮画在这里；维度词条由 `render` 末尾统一画（2026-11-14 用户要求），
+            // 不能在面板绘制过程中画 —— 后续行 / 分割线会盖住 tooltip。
             val hovered = interactive &&
                 mouseX >= panelX + 4 && mouseX < panelX + PANEL_W - 10 &&
                 mouseY >= y && mouseY < y + PANEL_ROW_H
@@ -491,10 +506,12 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
                 Text.literal(truncateName(entry.name, PANEL_W - 32)),
                 panelX + 6, y + 8, 0xFFFFFF
             )
-            // 皮肤头像 16px，行高 24 → 上下各 4px
+            // 皮肤头像 16px，行高 24 → 上下各 4px。
+            // ⚠ 右侧再让出 2px 给滚动条滑块：滑块左缘 = 面板右缘 - 6，原来头像右缘正好贴上去
+            //   （2026-11-14 用户实测「滚动条盖住一点头像」），左移 2px 留出间隙。
             drawAvatar(
                 context, entry.uuid, entry.name,
-                panelX + PANEL_W - 4 - PANEL_AVATAR - 2, y + 4, PANEL_AVATAR
+                panelX + PANEL_W - 4 - PANEL_AVATAR - 4, y + 4, PANEL_AVATAR
             )
         }
         // 标题区与名单之间的分割线 —— 放在行高亮**之后**画，免得第一行的高亮把这根线盖淡
@@ -504,6 +521,33 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
             context, panelX + PANEL_W - 5, startY,
             rows * PANEL_ROW_H, peekTargets.size, rows, peekTargetScroll
         )
+    }
+
+    /**
+     * 面板行的维度悬停窗：用项目自己的九宫格背景（与列表悬停窗同款，不用原版黑底 tooltip）。
+     *
+     * ⚠ 位置是**鼠标左下**（右缘贴鼠标、顶边在光标下方）—— 画在左上会盖住同一行的玩家名
+     *   （2026-11-14 用户要求）。靠近屏幕边缘时做 clamp，底部放不下就翻到光标上方。
+     */
+    private fun drawDimensionTooltip(context: DrawContext, text: Text, mouseX: Int, mouseY: Int) {
+        val padding = 4
+        val textW = textRenderer.getWidth(text)
+        val textH = textRenderer.fontHeight
+        val w = textW + padding * 2
+        val h = textH + padding * 2
+        var x = mouseX - w
+        var y = mouseY + 12
+        if (x < 4) x = 4
+        if (y + h > height - 4) y = mouseY - 12 - h
+        if (y < 4) y = 4
+
+        context.matrices.push()
+        context.matrices.translate(0.0, 0.0, 400.0)
+        // 九宫格是半透明的，先垫一层不透明底（同 `renderOverviewTooltip`）
+        context.fill(x, y, x + w, y + h, 0xF0101010.toInt())
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, x, y, w, h, 1, ROW_BACKGROUND_TEX_H)
+        context.drawTextWithShadow(textRenderer, text, x + padding, y + padding, 0xFFFFFF)
+        context.matrices.pop()
     }
 
     private fun truncateName(name: String, maxWidth: Int): String {

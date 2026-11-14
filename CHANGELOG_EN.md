@@ -8,6 +8,8 @@
 
 - **Clearer message when teleporting to another dimension while spectating**: it now says you were moved back to where you started and need to run the teleport again (previously it only said spectating had ended, so seeing the teleport succeed and then being pulled back looked like the teleport had failed)
 - **The six IV fields for RP Shop / custom NPC shop Pokémon are now a lower bound (≥)**: filling 20 means that stat is generated between 20 and 31 (previously fixed at 20); existing offers keep their fixed values unless edited and saved
+- **Quick Actions "Online Players" panel: hovering a row now shows the dimension that player is in** (clicking to spectate is unchanged)
+- **Switching spectate targets no longer sends you back to your original spot first**: switching to another player in the same dimension now teleports you straight to the new target (previously it ended the old session, moved you back, then started the new one, which looked like an extra teleport)
 
 ### Fixes
 

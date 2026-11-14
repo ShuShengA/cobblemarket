@@ -455,6 +455,7 @@
   "cobblemarket.quick_showcase.online_title": "在线玩家",
   "cobblemarket.quick_showcase.online_count": "%s 人",
   "cobblemarket.quick_showcase.online_empty": "没有其他在线玩家",
+  "cobblemarket.quick_showcase.dimension": "维度：%s",
   "cobblemarket.settings.title": "设置",
   "cobblemarket.settings.gui_scale": "界面尺寸：",
   "cobblemarket.settings.gui_scale_vanilla": "自动",

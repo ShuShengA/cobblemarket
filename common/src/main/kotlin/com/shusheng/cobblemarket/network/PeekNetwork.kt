@@ -77,8 +77,8 @@ data class StopPeekPayload(val dummy: Int = 0) : CustomPayload {
     }
 }
 
-/** 在线玩家名单的一行：监视目标（uuid + 名字） */
-data class PeekTargetEntry(val uuid: UUID, val name: String)
+/** 在线玩家名单的一行：监视目标（uuid + 名字 + 所在维度 id） */
+data class PeekTargetEntry(val uuid: UUID, val name: String, val dimension: String)
 
 /**
  * **请求可监视的在线玩家名单**（C2S，2026-11-10）。
@@ -119,12 +119,22 @@ data class PeekTargetsPayload(val entries: List<PeekTargetEntry>) : CustomPayloa
                 p.entries.forEach { e ->
                     b.writeUuid(e.uuid)
                     b.writeString(e.name)
+                    // 维度 id（2026-11-14 追加在**末尾**，payload 顺序铁律；两端同版才读得对）
+                    b.writeString(e.dimension)
                 }
             },
             { b ->
                 val n = b.readVarInt()
                 // 读端一律具名传参：顺序写错会静默串位（编译不报）
-                PeekTargetsPayload(List(n) { PeekTargetEntry(uuid = b.readUuid(), name = b.readString()) })
+                PeekTargetsPayload(
+                    List(n) {
+                        PeekTargetEntry(
+                            uuid = b.readUuid(),
+                            name = b.readString(),
+                            dimension = b.readString()
+                        )
+                    }
+                )
             }
         )
     }
@@ -169,7 +179,14 @@ object PeekNetwork {
                 // 旁观者（含正在监视别人的 staff）不能当监视目标：跟着一个旁观者飞没有意义
                 .filter { it.uuid != player.uuid && !it.isSpectator }
                 .sortedBy { it.gameProfile.name.lowercase() }
-                .map { PeekTargetEntry(uuid = it.uuid, name = it.gameProfile.name) }
+                .map {
+                    PeekTargetEntry(
+                        uuid = it.uuid,
+                        name = it.gameProfile.name,
+                        // 客户端面板悬停时显示「维度：主世界 / 下界 / …」
+                        dimension = it.serverWorld.registryKey.value.toString()
+                    )
+                }
                 .toList()
             sendToPlayer(player, PeekTargetsPayload(entries))
         }
