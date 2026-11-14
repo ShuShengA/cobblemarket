@@ -1094,6 +1094,8 @@ private fun writePokemonSpec(b: PacketByteBuf, s: ShopPokemonSpec) {
     b.writeBoolean(s.illegal)
     // 初始训练家（配信假训练家）—— ⚠ 同样加在**末尾**（payload 顺序铁律），两端同版才读得对
     b.writeString(s.originalTrainer ?: "", MAX_TEXT_LENGTH)
+    // 六项个体值下限（2026-11-13）—— ⚠ 加在**最末尾**（payload 顺序铁律），两端同版
+    writeOptionalStatList(b, s.ivsMin)
 }
 
 private fun readPokemonSpec(b: PacketByteBuf) = ShopPokemonSpec(
@@ -1121,7 +1123,8 @@ private fun readPokemonSpec(b: PacketByteBuf) = ShopPokemonSpec(
     marks = readIdList(b),
     moves = b.readString(MAX_SPEC_LENGTH),
     illegal = b.readBoolean(),
-    originalTrainer = b.readString(MAX_TEXT_LENGTH).ifEmpty { null }
+    originalTrainer = b.readString(MAX_TEXT_LENGTH).ifEmpty { null },
+    ivsMin = readOptionalStatList(b)
 )
 
 private fun writeItemSpec(b: PacketByteBuf, s: ShopItemSpec) {

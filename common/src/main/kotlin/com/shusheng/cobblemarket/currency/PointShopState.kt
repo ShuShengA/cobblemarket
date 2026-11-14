@@ -168,7 +168,19 @@ data class ShopPokemonSpec(
      * ⚠ 末尾追加 + 默认值 null：**存档铁律（只增不改）** —— 旧档读不到就是 null，
      *   写盘后旧版本照样能读（多一个键而已）。
      */
-    val originalTrainer: String? = null
+    val originalTrainer: String? = null,
+    /**
+     * 六项个体值**下限**（HP/攻/防/特攻/特防/速），有值时恒为 6 项；每项 `-1` = 该项不设下限（随机）。
+     *
+     * 2026-11-13 新增：六项输入框的语义从「固定值」改为「至少」—— 填 20 表示该项在 20~31 随机
+     * （商店卖精灵更常见的是保底，而不是恰好等于）。
+     *
+     * ⚠ **旧数据兼容**：旧商品没有本字段 ⇒ 继续按 [ivs] 的固定值生成（不编辑就完全不变）；
+     *   打开编辑并保存后才写入本字段，之后按「下限」解释（保存时 [ivs] 原值保留，旧版本仍能按固定值读）。
+     * ⚠ 末尾追加 + 默认值 null：存档铁律（只增不改）——旧档读不到就是 null。
+     * ⚠ 加字段必须同步改 `PointMarketNetwork` 的 write/read 两端（末尾追加），两端同版。
+     */
+    val ivsMin: List<Int>? = null
 )
 
 /**
@@ -344,6 +356,7 @@ internal fun writeShopEntryBody(c: NbtCompound, entry: ShopEntry) {
         if (!p.heldItemVisible) pc.putBoolean("heldItemVisible", false)
         if (!p.tradeable) pc.putBoolean("tradeable", false)
         p.ivs?.let { pc.putIntArray("ivs", it) }
+        p.ivsMin?.let { pc.putIntArray("ivsMin", it.toIntArray()) }
         pc.putInt("minPerfectIvs", p.minPerfectIvs)
         p.evs?.let { pc.putIntArray("evs", it) }
         p.friendship?.let { pc.putInt("friendship", it) }
@@ -402,6 +415,9 @@ internal fun readShopEntryBody(c: NbtCompound): ShopEntry? {
             // 长度不是 6 的当"整组随机"：坏数组不参与生成（铁律：读取容错）
             ivs = if (pc.contains("ivs"))
                 pc.getIntArray("ivs").toList().takeIf { it.size == 6 } else null,
+            // 旧档没有 ivsMin ⇒ null（继续按 ivs 固定值解释）；新档才有下限语义
+            ivsMin = if (pc.contains("ivsMin"))
+                pc.getIntArray("ivsMin").toList().takeIf { it.size == 6 } else null,
             minPerfectIvs = if (pc.contains("minPerfectIvs")) pc.getInt("minPerfectIvs") else 0,
             evs = if (pc.contains("evs")) pc.getIntArray("evs").toList() else null,
             friendship = if (pc.contains("friendship")) pc.getInt("friendship") else null,

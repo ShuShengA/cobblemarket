@@ -150,10 +150,22 @@ object PointMarketFactory {
         //   （用户 2026-09-30 拍板：警告归警告、勾选归勾选，两者不做强制联动）
         if (spec.illegal) PokemonTags.add(pokemon, PokemonTags.ILLEGAL)
 
-        // 个体值：**`-1` = 该项没填**（保持出生时掷的那个）；整组 null = 六项全随机
-        spec.ivs?.let { ivs ->
-            ivs.forEachIndexed { i, value ->
-                if (i < PERMANENT_STATS.size && value >= 0) pokemon.setIV(PERMANENT_STATS[i], value)
+        // 个体值：新语义「下限」优先（`ivsMin`，每项在 [值, 31] 随机）；
+        // 旧商品没有 `ivsMin` ⇒ 继续按 `ivs` 的固定值生成（升级不动旧数据）。
+        val ivsMin = spec.ivsMin
+        if (ivsMin != null) {
+            ivsMin.forEachIndexed { i, min ->
+                if (i < PERMANENT_STATS.size && min >= 0) {
+                    // -1 = 该项不设下限（保持出生时掷的那个）；31 = 固定 31（nextInt(31, 32) 恒为 31）
+                    pokemon.setIV(PERMANENT_STATS[i], Random.nextInt(min, IVs.MAX_VALUE + 1))
+                }
+            }
+        } else {
+            // 旧语义：**`-1` = 该项没填**（保持出生时掷的那个）；整组 null = 六项全随机
+            spec.ivs?.let { ivs ->
+                ivs.forEachIndexed { i, value ->
+                    if (i < PERMANENT_STATS.size && value >= 0) pokemon.setIV(PERMANENT_STATS[i], value)
+                }
             }
         }
         // 保底 V 数：从六项里随机挑 n 项拉满（照 PokemonProperties.commonApply 的写法）

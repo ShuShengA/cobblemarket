@@ -3603,7 +3603,7 @@ class PointsMarketScreen(
             }
             KEY_MIN_IVS -> Text.translatable(
                 "cobblemarket.points.store.field.min_ivs",
-                if (spec.ivs != null || spec.minPerfectIvs <= 0) Text.translatable("cobblemarket.points.store.value.any")
+                if (spec.ivsMin != null || spec.ivs != null || spec.minPerfectIvs <= 0) Text.translatable("cobblemarket.points.store.value.any")
                 else Text.literal("${spec.minPerfectIvs}V")
             )
             // 初始训练家（配信）：**服主没设就整格不画**（用户 2026-10-02 定）——
@@ -3786,6 +3786,11 @@ class PointsMarketScreen(
      * ⚠ 颜色不在这里给 —— 它走 [drawBuyField] 的行色（六项各不相同，见 [STAT_ROW_COLORS]）。
      */
     private fun ivLine(spec: ShopPokemonSpec, index: Int): Text {
+        // 新语义（ivsMin）= 下限，显示「≥N」；旧商品（ivs）= 固定值，保持原样
+        val min = spec.ivsMin?.getOrNull(index)
+        if (min != null) {
+            return Text.literal("${STAT_ABBR[index]}: ${if (min < 0) "-" else "≥$min"}")
+        }
         val value = spec.ivs?.getOrNull(index) ?: -1
         return Text.literal("${STAT_ABBR[index]}: ${if (value < 0) "-" else value.toString()}")
     }
@@ -3923,10 +3928,12 @@ class PointsMarketScreen(
         editHeldItemName = spec.heldItemSpec?.let { heldItemLabel(it) }.orEmpty()
         // 两者互斥：`ivs` 有值时保底不参与（数据层口径，见 ShopPokemonSpec 注释）—— 回填按同一口径走，
         // 免得界面停在「两个都有值」那种生成时说不清听谁的状态
-        editMinIvs = if (spec.ivs != null) 0 else spec.minPerfectIvs
+        editMinIvs = if (spec.ivsMin != null || spec.ivs != null) 0 else spec.minPerfectIvs
         editMoves = spec.moves
         // 六项个体值 / 努力值：空 = 未填（个体值那组 -1 就是"该项随机"）
-        editIvText = spec.ivs?.map { if (it < 0) "" else it.toString() } ?: List(STAT_COUNT) { "" }
+        // 新语义（ivsMin）优先；旧商品没有新字段就回填旧的固定值（保存后转为下限语义）
+        editIvText = (spec.ivsMin ?: spec.ivs)?.map { if (it < 0) "" else it.toString() }
+            ?: List(STAT_COUNT) { "" }
         editEvText = spec.evs?.map { if (it <= 0) "" else it.toString() } ?: List(STAT_COUNT) { "" }
         editFriendshipText = spec.friendship?.toString().orEmpty()
         // 初始训练家（配信）：null 回填成空框（界面「空」与数据「不设」是同一个状态）
@@ -4077,8 +4084,9 @@ class PointsMarketScreen(
         if (always) aspects.add("shiny")
         val spec = base ?: ShopPokemonSpec(species = speciesId)
         // 六项个体值 / 努力值：空输入按「未填」算（个体值 -1 = 该项随机，努力值 0 = 不加）
-        val ivs = editIvText.map { it.trim().toIntOrNull()?.coerceIn(0, 31) ?: -1 }
-        val hasIv = ivs.any { it >= 0 }
+        // 六项输入框现在语义是**下限（≥）**，写入 ivsMin；旧商品的 ivs 原值保留（旧版本读档仍按固定值）
+        val ivMins = editIvText.map { it.trim().toIntOrNull()?.coerceIn(0, 31) ?: -1 }
+        val hasIv = ivMins.any { it >= 0 }
         val evs = editEvText.map { it.trim().toIntOrNull()?.coerceIn(0, 252) ?: 0 }
         return spec.copy(
             species = speciesId,
@@ -4098,8 +4106,9 @@ class PointsMarketScreen(
             tradeable = editTradeable,
             illegal = editIllegal,
             heldItemSpec = editHeldItem,
-            // 六项个体值：**整组全空**才回退到「保底 V 数」（数据层对这两种玩法是互斥的，见注释）
-            ivs = if (hasIv) ivs else null,
+            // 六项个体值：**整组全空**才回退到「保底 V 数」（数据层对这两种玩法是互斥的，见注释）。
+            // 新语义写 ivsMin（下限）；`ivs` 不在这里改 —— 旧商品的原固定值保留给旧版本读
+            ivsMin = if (hasIv) ivMins else null,
             minPerfectIvs = if (hasIv) 0 else editMinIvs,
             evs = if (evs.any { it > 0 }) evs else null,
             friendship = editFriendshipText.trim().toIntOrNull()?.coerceIn(0, 255),
@@ -7448,7 +7457,7 @@ class PointsMarketScreen(
             }
         }
         lines += claimIvLine(spec)
-        if (spec.ivs == null && spec.minPerfectIvs > 0) {
+        if (spec.ivsMin == null && spec.ivs == null && spec.minPerfectIvs > 0) {
             lines += Text.translatable("cobblemarket.points.store.field.min_ivs", "${spec.minPerfectIvs}V")
         }
         claimEvLine(spec)?.let { lines += it }
@@ -7471,9 +7480,13 @@ class PointsMarketScreen(
         return lines
     }
 
-    /** 个体值一行：全随机 → 「个体值：随机」；有具体值 → `HP 31 / Atk 31 / …`，没填的项标「随机」 */
+    /**
+     * 个体值一行：全随机 → 「个体值：随机」；有具体值 → `HP 31 / Atk 31 / …`，没填的项标「随机」。
+     * 新语义（`ivsMin`）显示成 `HP ≥31`；旧商品（`ivs`）保持固定值写法。
+     */
     private fun claimIvLine(spec: ShopPokemonSpec): Text {
-        val ivs = spec.ivs
+        val mins = spec.ivsMin
+        val ivs = mins ?: spec.ivs
             ?: return Text.translatable(
                 "cobblemarket.points.store.field.ivs",
                 Text.translatable("cobblemarket.points.store.value.random")
@@ -7483,7 +7496,7 @@ class PointsMarketScreen(
         ivs.forEachIndexed { i, v ->
             if (v < 0) return@forEachIndexed
             if (!first) value.append(Text.literal(" / "))
-            value.append(Text.literal("${STAT_ABBR[i]} $v"))
+            value.append(Text.literal(if (mins != null) "${STAT_ABBR[i]} ≥$v" else "${STAT_ABBR[i]} $v"))
             first = false
         }
         if (ivs.any { it < 0 }) {

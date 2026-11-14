@@ -1159,6 +1159,9 @@ object PointMarketService {
         if (spec.minPerfectIvs !in 0..6) return null
         val ivs = spec.ivs
         if (ivs != null && (ivs.size != 6 || ivs.any { it < -1 || it > MAX_IV })) return null
+        // 六项个体值下限（新语义）：长度/范围同 ivs；-1 = 该项不设下限
+        val ivsMin = spec.ivsMin
+        if (ivsMin != null && (ivsMin.size != 6 || ivsMin.any { it < -1 || it > MAX_IV })) return null
         val evs = spec.evs
         if (evs != null && (evs.size != 6 || evs.any { it < 0 || it > MAX_EV })) return null
         // 总和另算一道（见 [MAX_EV_TOTAL] = 508）：各项都合法也可能加起来超
