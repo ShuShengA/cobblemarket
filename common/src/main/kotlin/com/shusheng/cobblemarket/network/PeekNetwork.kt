@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.network
 
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.peek.PeekMarkState
 import com.shusheng.cobblemarket.peek.PeekService
 import com.shusheng.cobblemarket.permission.MarketPermissions
 import com.shusheng.cobblemarket.platform.registerC2S
@@ -77,8 +78,20 @@ data class StopPeekPayload(val dummy: Int = 0) : CustomPayload {
     }
 }
 
-/** 在线玩家名单的一行：监视目标（uuid + 名字 + 所在维度 id） */
-data class PeekTargetEntry(val uuid: UUID, val name: String, val dimension: String)
+/** 在线玩家名单的一行：监视目标（uuid + 名字 + 所在维度 id + 可疑标记信息） */
+data class PeekTargetEntry(
+    val uuid: UUID,
+    val name: String,
+    val dimension: String,
+    /** 是否被打了「可疑」标记 */
+    val marked: Boolean = false,
+    /** 标记者名字（未标记时为空） */
+    val markedBy: String = "",
+    /** 标记时间（epoch ms；未标记时为 0） */
+    val markedAt: Long = 0L,
+    /** 标记理由（未填时为空） */
+    val markReason: String = "",
+)
 
 /**
  * **请求可监视的在线玩家名单**（C2S，2026-11-10）。
@@ -121,6 +134,11 @@ data class PeekTargetsPayload(val entries: List<PeekTargetEntry>) : CustomPayloa
                     b.writeString(e.name)
                     // 维度 id（2026-11-14 追加在**末尾**，payload 顺序铁律；两端同版才读得对）
                     b.writeString(e.dimension)
+                    // 可疑标记（2026-11-14 继续追加在末尾）
+                    b.writeBoolean(e.marked)
+                    b.writeString(e.markedBy)
+                    b.writeLong(e.markedAt)
+                    b.writeString(e.markReason)
                 }
             },
             { b ->
@@ -131,11 +149,51 @@ data class PeekTargetsPayload(val entries: List<PeekTargetEntry>) : CustomPayloa
                         PeekTargetEntry(
                             uuid = b.readUuid(),
                             name = b.readString(),
-                            dimension = b.readString()
+                            dimension = b.readString(),
+                            marked = b.readBoolean(),
+                            markedBy = b.readString(),
+                            markedAt = b.readLong(),
+                            markReason = b.readString()
                         )
                     }
                 )
             }
+        )
+    }
+}
+
+/**
+ * **给玩家打「可疑」标记**（C2S，2026-11-14）。理由可为空，服务端再清理/限长。
+ * 权限与面板同一判据：`overview` 节点（不认 OP）。
+ */
+data class SetPeekMarkPayload(val targetUuid: UUID, val reason: String) : CustomPayload {
+
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<SetPeekMarkPayload>(CobbleMarket.id("set_peek_mark"))
+
+        val CODEC: PacketCodec<PacketByteBuf, SetPeekMarkPayload> = PacketCodec.of(
+            { p, b ->
+                b.writeUuid(p.targetUuid)
+                b.writeString(p.reason, 128)
+            },
+            { b -> SetPeekMarkPayload(b.readUuid(), b.readString(128)) }
+        )
+    }
+}
+
+/** **取消玩家的「可疑」标记**（C2S，2026-11-14） */
+data class ClearPeekMarkPayload(val targetUuid: UUID) : CustomPayload {
+
+    override fun getId() = ID
+
+    companion object {
+        val ID = CustomPayload.Id<ClearPeekMarkPayload>(CobbleMarket.id("clear_peek_mark"))
+
+        val CODEC: PacketCodec<PacketByteBuf, ClearPeekMarkPayload> = PacketCodec.of(
+            { p, b -> b.writeUuid(p.targetUuid) },
+            { b -> ClearPeekMarkPayload(b.readUuid()) }
         )
     }
 }
@@ -174,22 +232,65 @@ object PeekNetwork {
             // 与监视同一判据：共用 overview 节点（服主恒真、**不认 OP**）。
             // 面板显隐只是入口，这里才是真正拦人的地方
             if (!MarketPermissions.has(player, MarketPermissions.OVERVIEW)) return@registerC2S
-            val entries = player.server.playerManager.playerList
-                .asSequence()
-                // 旁观者（含正在监视别人的 staff）不能当监视目标：跟着一个旁观者飞没有意义
-                .filter { it.uuid != player.uuid && !it.isSpectator }
-                .sortedBy { it.gameProfile.name.lowercase() }
-                .map {
-                    PeekTargetEntry(
-                        uuid = it.uuid,
-                        name = it.gameProfile.name,
-                        // 客户端面板悬停时显示「维度：主世界 / 下界 / …」
-                        dimension = it.serverWorld.registryKey.value.toString()
-                    )
-                }
-                .toList()
-            sendToPlayer(player, PeekTargetsPayload(entries))
+            sendTargets(player)
         }
+        // ── 可疑标记（2026-11-14）：查看/标记/取消都只认 overview 节点 ──
+        registerC2S(SetPeekMarkPayload.ID, SetPeekMarkPayload.CODEC) { payload, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.OVERVIEW)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "peek_mark", RequestThrottle.WRITE_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            val target = player.server.playerManager.getPlayer(payload.targetUuid) ?: return@registerC2S
+            if (target.uuid == player.uuid) return@registerC2S
+            val state = PeekMarkState.get(player.server)
+            state.set(target.uuid, player, PeekMarkState.sanitizeReason(payload.reason))
+            state.saveNow(player.server)
+            // 立刻把新名单推回给操作者（其他人的面板 2 秒刷新也会看到）
+            sendTargets(player)
+        }
+        registerC2S(ClearPeekMarkPayload.ID, ClearPeekMarkPayload.CODEC) { payload, player ->
+            if (!MarketPermissions.has(player, MarketPermissions.OVERVIEW)) return@registerC2S
+            if (!RequestThrottle.allowNotify(player, "peek_clear_mark", RequestThrottle.WRITE_INTERVAL_MS)) {
+                return@registerC2S
+            }
+            val state = PeekMarkState.get(player.server)
+            state.clear(payload.targetUuid)
+            state.saveNow(player.server)
+            sendTargets(player)
+        }
+    }
+
+    /** 构建在线玩家名单（含维度与可疑标记）。只有 `overview` 权限的人会收到。 */
+    private fun buildTargetEntries(player: ServerPlayerEntity): List<PeekTargetEntry> {
+        val marks = PeekMarkState.get(player.server)
+        return player.server.playerManager.playerList
+            .asSequence()
+            // 旁观者（含正在监视别人的 staff）不能当监视目标：跟着一个旁观者飞没有意义
+            .filter { it.uuid != player.uuid && !it.isSpectator }
+            .sortedBy { it.gameProfile.name.lowercase() }
+            .map {
+                val mark = marks.get(it.uuid)
+                PeekTargetEntry(
+                    uuid = it.uuid,
+                    name = it.gameProfile.name,
+                    // 客户端面板悬停时显示「维度：主世界 / 下界 / …」
+                    dimension = it.serverWorld.registryKey.value.toString(),
+                    marked = mark != null,
+                    markedBy = mark?.byName.orEmpty(),
+                    markedAt = mark?.at ?: 0L,
+                    markReason = mark?.reason.orEmpty(),
+                )
+            }
+            .toList()
+    }
+
+    private fun sendTargets(player: ServerPlayerEntity) {
+        sendToPlayer(player, PeekTargetsPayload(buildTargetEntries(player)))
+    }
+
+    /** 命令标记/取消后让在线玩家的面板立即刷新（不用等 2 秒轮询） */
+    fun refreshTargets(player: ServerPlayerEntity) {
+        sendTargets(player)
     }
 
     /** 把「是否正在监视」推给监视者本人（服务端状态变化时调用；调用方保证玩家在线） */

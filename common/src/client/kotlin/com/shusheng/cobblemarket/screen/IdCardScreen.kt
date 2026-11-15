@@ -481,7 +481,7 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
                 // ⚠ 单位宽度/画法都**按这一行的币种**：RP 行补 RP 图标、主货币行补 ₽ / 物品图标
                 val unitW = if (line.money) currencyUnitWidth(textRenderer, line.isPoints) else 0
                 // 行首有图标时（图鉴那两行）：文字要**右移**、截断宽度也要把图标那块扣掉
-                val iconW = if (line.icon != null) OVERVIEW_ICON_W else 0
+                val iconW = line.icon?.let { it.size + com.shusheng.cobblemarket.client.OVERVIEW_ICON_GAP } ?: 0
                 val text = TextUtil.truncateStyled(line.text, (colW.toInt() - unitW - iconW).coerceAtLeast(0))
                 line.icon?.let { drawLineIcon(context, it, x.toInt(), iconY) }
                 val drawn = context.drawTextWithShadow(textRenderer, text, (x + iconW).toInt(), textY, 0xFFFFFF)

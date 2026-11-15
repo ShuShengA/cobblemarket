@@ -99,4 +99,16 @@ data class PlayerOverviewRow(
      * 0x7F = 全开；离线 / 未知时也给 0x7F（总览列表本身不画模型，不影响）。
      */
     val modelParts: Int = 0x7F,
+
+    /**
+     * 可疑标记（2026-11-14）：总览**按玩家名排序**时行尾「监视」按钮左侧显示警示图标；
+     * 悬停窗显示标记者 / 时间（理由在快速功能面板的悬停窗里看，这里不显示，避免撑宽）。
+     *
+     * ⚠ 末尾追加 + 默认值：payload 顺序铁律，两端同版。
+     */
+    val marked: Boolean = false,
+    val markedBy: String = "",
+    val markedAt: Long = 0L,
+    /** 标记理由（未填为空）—— 总览悬停窗显示，完整理由与快速面板共用同一份数据 */
+    val markReason: String = "",
 )

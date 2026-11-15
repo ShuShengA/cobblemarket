@@ -49,7 +49,9 @@ import com.shusheng.cobblemarket.finance.LoanLogType
 import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.network.MarketNetwork
 import com.shusheng.cobblemarket.network.MarketStatePayload
+import com.shusheng.cobblemarket.network.PeekNetwork
 import com.shusheng.cobblemarket.network.PointMarketNetwork
+import com.shusheng.cobblemarket.peek.PeekMarkState
 import com.shusheng.cobblemarket.network.sendSound
 import com.shusheng.cobblemarket.peek.PeekService
 import com.shusheng.cobblemarket.platform.onPlayerJoin
@@ -62,6 +64,7 @@ import net.minecraft.server.command.ServerCommandSource
 import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
+import java.util.UUID
 
 object MarketCommands {
 
@@ -604,6 +607,35 @@ object MarketCommands {
                             .executes(::peekStop)
                         )
                     )
+                    .then(CommandManager.literal("peekmark")
+                        // 与面板同一判据：共用 overview 节点（服主恒真、不认 OP）；只允许玩家执行
+                        .requires { source ->
+                            source.player?.let { MarketPermissions.has(it, MarketPermissions.OVERVIEW) } == true
+                        }
+                        .then(CommandManager.literal("clear")
+                            .then(CommandManager.argument("player", StringArgumentType.word())
+                                .suggests(::suggestOnlinePlayerNames)
+                                .executes { ctx ->
+                                    peekMarkClear(ctx, StringArgumentType.getString(ctx, "player"))
+                                }
+                            )
+                        )
+                        .then(CommandManager.argument("player", StringArgumentType.word())
+                            .suggests(::suggestOnlinePlayerNames)
+                            .executes { ctx ->
+                                peekMarkSet(ctx, StringArgumentType.getString(ctx, "player"), "")
+                            }
+                            .then(CommandManager.argument("reason", StringArgumentType.greedyString())
+                                .executes { ctx ->
+                                    peekMarkSet(
+                                        ctx,
+                                        StringArgumentType.getString(ctx, "player"),
+                                        StringArgumentType.getString(ctx, "reason")
+                                    )
+                                }
+                            )
+                        )
+                    )
                     .then(CommandManager.literal("owner")
                         // ⚠⭐ **add / remove 已移除**（2026-10-01 定）：改名单位置**只剩配置文件**一个 ——
                         //   能在服务端"执行一条命令"的东西太多（工具模组 / 自动化 / 别的模组顺手调 API），
@@ -654,6 +686,62 @@ object MarketCommands {
         val source = context.source
         val player = source.player ?: return 0
         return if (PeekService.stop(source.server, player)) 1 else 0
+    }
+
+    /**
+     * `/market peekmark <玩家> [原因]`：打可疑标记。
+     * 支持离线玩家（在线优先，离线走 usercache）；理由可空，服务端统一清理 / 限长。
+     */
+    private fun peekMarkSet(context: CommandContext<ServerCommandSource>, name: String, reason: String): Int {
+        val source = context.source
+        val player = source.player ?: return 0
+        val uuid = resolveMarkTargetUuid(source, name) ?: run {
+            source.sendError(Text.translatable("cobblemarket.command.peekmark.unknown", name))
+            return 0
+        }
+        val state = PeekMarkState.get(source.server)
+        val clean = PeekMarkState.sanitizeReason(reason)
+        state.set(uuid, player, clean)
+        state.saveNow(source.server)
+        PeekNetwork.refreshTargets(player)
+        val msg = if (clean != null) {
+            Text.translatable("cobblemarket.command.peekmark.set_reason", name, clean)
+        } else {
+            Text.translatable("cobblemarket.command.peekmark.set", name)
+        }
+        source.sendFeedback({ msg.formatted(Formatting.GREEN) }, false)
+        return 1
+    }
+
+    /** `/market peekmark clear <玩家>`：取消可疑标记（支持离线） */
+    private fun peekMarkClear(context: CommandContext<ServerCommandSource>, name: String): Int {
+        val source = context.source
+        val player = source.player ?: return 0
+        val uuid = resolveMarkTargetUuid(source, name) ?: run {
+            source.sendError(Text.translatable("cobblemarket.command.peekmark.unknown", name))
+            return 0
+        }
+        val state = PeekMarkState.get(source.server)
+        if (state.get(uuid) == null) {
+            source.sendError(Text.translatable("cobblemarket.command.peekmark.not_marked", name))
+            return 0
+        }
+        state.clear(uuid)
+        state.saveNow(source.server)
+        PeekNetwork.refreshTargets(player)
+        source.sendFeedback(
+            { Text.translatable("cobblemarket.command.peekmark.cleared", name).formatted(Formatting.GREEN) },
+            false
+        )
+        return 1
+    }
+
+    /** 标记目标解析：在线（大小写不敏感）优先，离线从 usercache 找 */
+    private fun resolveMarkTargetUuid(source: ServerCommandSource, name: String): UUID? {
+        source.server.playerManager.playerList
+            .firstOrNull { it.gameProfile.name.equals(name, ignoreCase = true) }
+            ?.let { return it.uuid }
+        return source.server.userCache?.findByName(name)?.orElse(null)?.id
     }
 
     /**

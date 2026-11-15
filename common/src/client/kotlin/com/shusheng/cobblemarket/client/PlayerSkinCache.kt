@@ -48,9 +48,24 @@ object PlayerSkinCache {
         val client = MinecraftClient.getInstance()
 
         // 1) 在线玩家：tab 列表里已经有皮肤纹理
-        client.networkHandler?.getPlayerListEntry(uuid)?.skinTextures?.texture()?.let { tex ->
-            cache[uuid] = tex
-            return tex
+        // ⚠ **默认皮肤不能落缓存**：tab 条目刚建/皮肤还没加载时 texture 可能是 Steve/Alex，
+        //   写进 cache 就永远默认了（KDoc 说"只缓存真实纹理"，但原实现漏了这一步）。
+        val handler = client.networkHandler
+        handler?.getPlayerListEntry(uuid)?.skinTextures?.texture()?.let { tex ->
+            if (tex != DEFAULT_WIDE && tex != DEFAULT_SLIM) {
+                cache[uuid] = tex
+                return tex
+            }
+        }
+        // 1b) UUID 对不上时按**名字**再查一次 tab 列表：正版服务器 + 离线登录模组（EasyAuth 等）
+        //     可能让服务端实体的 UUID 与客户端 tab 条目的 UUID 不同（离线注册玩家尤其明显），
+        //     只按 UUID 查会落到 Mojang 异步拉取，离线 UUID 查不到 ⇒ 错误显示默认 Steve；
+        //     而 tab 列表里其实有这名玩家的正确皮肤（世界里也显示正常）。按名字兜底即可。
+        handler?.getPlayerListEntry(name)?.skinTextures?.texture()?.let { tex ->
+            if (tex != DEFAULT_WIDE && tex != DEFAULT_SLIM) {
+                cache[uuid] = tex
+                return tex
+            }
         }
 
         // 2) 离线玩家：异步拉取（按 UUID 去重，失败 30 秒后重试）

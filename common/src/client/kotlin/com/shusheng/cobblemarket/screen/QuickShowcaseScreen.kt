@@ -15,10 +15,12 @@ import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
 import com.shusheng.cobblemarket.client.icon.PreviewStateHolder
 import com.shusheng.cobblemarket.client.playButtonClickSound
 import com.shusheng.cobblemarket.client.playFailSound
+import com.shusheng.cobblemarket.network.ClearPeekMarkPayload
 import com.shusheng.cobblemarket.network.MarketResultPayload
 import com.shusheng.cobblemarket.network.PeekTargetEntry
 import com.shusheng.cobblemarket.network.PeekTargetsPayload
 import com.shusheng.cobblemarket.network.RequestPeekTargetsPayload
+import com.shusheng.cobblemarket.network.SetPeekMarkPayload
 import com.shusheng.cobblemarket.network.ShareNetwork
 import com.shusheng.cobblemarket.network.SharePayload
 import com.shusheng.cobblemarket.network.StartPeekPayload
@@ -28,8 +30,10 @@ import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
+import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.text.Text
 import net.minecraft.util.Formatting
+import net.minecraft.util.Identifier
 import org.lwjgl.glfw.GLFW
 import java.util.UUID
 
@@ -100,6 +104,14 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     private var peekTargetScroll = 0
     /** 可拖动的滚动条（本界面只有这一条，独立实例即可） */
     private val peekTargetScrollBar = ScrollBar()
+    /** 右键选中的行（头像位置变成「可疑」按钮）；null = 没有 */
+    private var markModeUuid: UUID? = null
+    /** 理由输入弹窗的目标；null = 弹窗关闭 */
+    private var markPromptTarget: PeekTargetEntry? = null
+    private var markReasonField: TextFieldWidget? = null
+    private val peekMarkIcon = Identifier.of("cobblemarket", "textures/gui/icon/peek_mark.png")
+    private val markTimeFormatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+        .withZone(java.time.ZoneId.systemDefault())
     /** 上一次请求名单的时刻（打开期间每 2 秒刷新） */
     private var lastTargetsRequestAt = 0L
     /** 关闭动画开始那一刻面板的 x —— 滑入到一半关闭时从当前位置往右滑出，不跳帧 */
@@ -161,6 +173,13 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         // ⚠ 必须在最开头：头部跟随靠它拿鼠标坐标，不调则精灵盯着屏幕左上角不动
         IconRegistry.beginFrame(mouseX, mouseY)
+
+        // 可疑标记的理由输入弹窗：独占渲染。遮罩 / 弹窗背景必须画在控件之前，
+        // 输入框由 `super.render` 画；三个大框临时隐藏，避免从遮罩上透出来。
+        if (markPromptTarget != null) {
+            renderMarkPrompt(context, mouseX, mouseY, delta)
+            return
+        }
 
         // ── 收起动画：三个框向上退场，播完才真正关界面 ──
         if (closing) {
@@ -247,14 +266,7 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         // 必须画在面板之后（`drawTooltip` 在鼠标旁，面板是自绘的，会被后画的盖住）。
         if (canSeePeekPanel() && peekPanelSlideFinished()) {
             peekTargetAt(peekPanelSlideX(), mouseX.toDouble(), mouseY.toDouble())?.let { entry ->
-                drawDimensionTooltip(
-                    context,
-                    Text.translatable(
-                        "cobblemarket.quick_showcase.dimension",
-                        com.shusheng.cobblemarket.util.DimensionText.of(entry.dimension)
-                    ),
-                    mouseX, mouseY
-                )
+                drawDimensionTooltip(context, entry, mouseX, mouseY)
             }
         }
     }
@@ -372,6 +384,13 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         peekTargetScroll = peekTargetScroll.coerceIn(0, maxOf(0, peekTargets.size - peekPanelRows()))
         // 名单换了 = 滚动条内容换了：把拖动状态一并复位（否则会留个"半拖"）
         peekTargetScrollBar.cancel()
+        // 右键选中 / 输入弹窗对应的玩家如果下线了，一并清掉
+        markModeUuid = markModeUuid?.takeIf { uuid -> peekTargets.any { it.uuid == uuid } }
+        val prompt = markPromptTarget
+        if (prompt != null) {
+            val updated = peekTargets.firstOrNull { it.uuid == prompt.uuid }
+            if (updated == null) closeMarkPrompt() else markPromptTarget = updated
+        }
     }
 
     /**
@@ -500,19 +519,48 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
             if (i > 0) {
                 context.fill(panelX + 4, y, panelX + PANEL_W - 4, y + 1, 0xFF888888.toInt())
             }
-            // 名字：24 行高、8px 字 → y+8 垂直居中；右侧留头像区
+            // 名字：24 行高、8px 字 → y+8 垂直居中；右侧依次是标记位 + 头像
             context.drawTextWithShadow(
                 textRenderer,
-                Text.literal(truncateName(entry.name, PANEL_W - 32)),
+                Text.literal(truncateName(entry.name, PANEL_W - 52)),
                 panelX + 6, y + 8, 0xFFFFFF
             )
-            // 皮肤头像 16px，行高 24 → 上下各 4px。
-            // ⚠ 右侧再让出 2px 给滚动条滑块：滑块左缘 = 面板右缘 - 6，原来头像右缘正好贴上去
-            //   （2026-11-14 用户实测「滚动条盖住一点头像」），左移 2px 留出间隙。
-            drawAvatar(
-                context, entry.uuid, entry.name,
-                panelX + PANEL_W - 4 - PANEL_AVATAR - 4, y + 4, PANEL_AVATAR
-            )
+            val avatarX = panelX + PANEL_W - 4 - PANEL_AVATAR - 4
+            val markIconX = panelX + PANEL_W - 42
+            val markIconSize = 12
+            val markIconInset = (PANEL_AVATAR - markIconSize) / 2
+            if (markModeUuid == entry.uuid) {
+                // 右键后：头像位置变成「可疑」按钮。用项目统一按钮贴图
+                // （普通 / 悬停 / 选中三段，选中态是按钮自带的蓝色），不要自创绿色叠层。
+                val btnHovered = interactive &&
+                    mouseX >= avatarX && mouseX < avatarX + PANEL_AVATAR &&
+                    mouseY >= y + 4 && mouseY < y + 4 + PANEL_AVATAR
+                drawNineSlice(
+                    context, BUTTON_TEXTURE, avatarX, y + 4, PANEL_AVATAR, PANEL_AVATAR,
+                    when {
+                        entry.marked -> 2
+                        btnHovered -> 1
+                        else -> 0
+                    },
+                    BUTTON_TEX_H
+                )
+                drawMarkIcon(
+                    context, avatarX + markIconInset, y + 4 + markIconInset, markIconSize
+                )
+            } else {
+                // 皮肤头像 16px，行高 24 → 上下各 4px。
+                // ⚠ 右侧再让出 2px 给滚动条滑块（2026-11-14 用户实测「滚动条盖住一点头像」）
+                drawAvatar(
+                    context, entry.uuid, entry.name,
+                    avatarX, y + 4, PANEL_AVATAR
+                )
+            }
+            // 已标记：头像左侧常驻一个标记图标（右键选中那行不重复画，按钮本身已是选中态）
+            if (entry.marked && markModeUuid != entry.uuid) {
+                drawMarkIcon(
+                    context, markIconX + markIconInset, y + 4 + markIconInset, markIconSize
+                )
+            }
         }
         // 标题区与名单之间的分割线 —— 放在行高亮**之后**画，免得第一行的高亮把这根线盖淡
         context.fill(panelX + 4, startY, panelX + PANEL_W - 4, startY + 1, 0xFF888888.toInt())
@@ -524,17 +572,67 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     }
 
     /**
-     * 面板行的维度悬停窗：用项目自己的九宫格背景（与列表悬停窗同款，不用原版黑底 tooltip）。
+     * 面板行的悬停窗：维度 +（已标记时）可疑标记信息与理由。
+     * 用项目自己的九宫格背景（与列表悬停窗同款，不用原版黑底 tooltip）。
      *
      * ⚠ 位置是**鼠标左下**（右缘贴鼠标、顶边在光标下方）—— 画在左上会盖住同一行的玩家名
      *   （2026-11-14 用户要求）。靠近屏幕边缘时做 clamp，底部放不下就翻到光标上方。
      */
-    private fun drawDimensionTooltip(context: DrawContext, text: Text, mouseX: Int, mouseY: Int) {
+    private fun drawDimensionTooltip(context: DrawContext, entry: PeekTargetEntry, mouseX: Int, mouseY: Int) {
+        data class TipLine(val text: Text, val icon: Boolean, val color: Int)
+        val lines = mutableListOf<TipLine>()
+        lines += TipLine(
+            Text.translatable(
+                "cobblemarket.quick_showcase.dimension",
+                com.shusheng.cobblemarket.util.DimensionText.of(entry.dimension)
+            ),
+            false, 0xFFFFFF
+        )
+        // 操作提示：右键行可以把头像变成可疑按钮（已标记时是取消）
+        lines += TipLine(
+            Text.translatable(
+                if (entry.marked) "cobblemarket.quick_showcase.mark_hint_marked"
+                else "cobblemarket.quick_showcase.mark_hint"
+            ),
+            false, 0xAAAAAA
+        )
+        if (entry.marked) {
+            // 标记信息：行首用图标代替「可疑标记」文字
+            lines += TipLine(
+                Text.translatable(
+                    "cobblemarket.quick_showcase.marked_by",
+                    Text.literal(entry.markedBy),
+                    Text.literal(
+                        if (entry.markedAt > 0) markTimeFormatter.format(java.time.Instant.ofEpochMilli(entry.markedAt))
+                        else "-"
+                    )
+                ),
+                true, 0xFF7777
+            )
+            if (entry.markReason.isNotBlank()) {
+                lines += TipLine(
+                    Text.translatable(
+                        "cobblemarket.quick_showcase.mark_reason", Text.literal(entry.markReason)
+                    ),
+                    false, 0xAAAAAA
+                )
+            }
+        }
+        val iconSize = 8
+        val iconGap = 2
+        val wrapped = mutableListOf<Pair<net.minecraft.text.OrderedText, TipLine>>()
+        lines.forEach { line ->
+            val maxW = 180 - if (line.icon) iconSize + iconGap else 0
+            textRenderer.wrapLines(line.text, maxW).forEachIndexed { i, text ->
+                wrapped += text to line.copy(icon = line.icon && i == 0)
+            }
+        }
         val padding = 4
-        val textW = textRenderer.getWidth(text)
-        val textH = textRenderer.fontHeight
-        val w = textW + padding * 2
-        val h = textH + padding * 2
+        val lineH = maxOf(textRenderer.fontHeight + 2, iconSize + 2)
+        val w = wrapped.maxOf { (text, line) ->
+            textRenderer.getWidth(text) + if (line.icon) iconSize + iconGap else 0
+        } + padding * 2
+        val h = wrapped.size * lineH + padding * 2 - 2
         var x = mouseX - w
         var y = mouseY + 12
         if (x < 4) x = 4
@@ -546,7 +644,17 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         // 九宫格是半透明的，先垫一层不透明底（同 `renderOverviewTooltip`）
         context.fill(x, y, x + w, y + h, 0xF0101010.toInt())
         drawNineSlice(context, ROW_BACKGROUND_TEXTURE, x, y, w, h, 1, ROW_BACKGROUND_TEX_H)
-        context.drawTextWithShadow(textRenderer, text, x + padding, y + padding, 0xFFFFFF)
+        wrapped.forEachIndexed { i, (text, line) ->
+            val rowY = y + padding + i * lineH
+            var textX = x + padding
+            if (line.icon) {
+                drawMarkIcon(context, textX, rowY + (lineH - iconSize) / 2, iconSize)
+                textX += iconSize + iconGap
+            }
+            context.drawTextWithShadow(
+                textRenderer, text, textX, rowY + (lineH - textRenderer.fontHeight) / 2, line.color
+            )
+        }
         context.matrices.pop()
     }
 
@@ -604,6 +712,8 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
      */
     fun requestClose() {
         if (closing) return
+        // 理由输入弹窗打开时，按 X / 点外面都先别关界面（弹窗自己处理取消）
+        if (markPromptTarget != null) return
         closing = true
         closeStart = System.currentTimeMillis()
         closeFromOffset = dropOffsetY()
@@ -623,6 +733,8 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
      */
     fun finishAndClose() {
         if (closing) return
+        // 弹窗打开时松键不关界面（正在输入理由）
+        if (markPromptTarget != null) return
         val kind = if (dropFinished()) hoveredKind else null
         if (kind == null) closeSelf() else doShowcase(kind)
     }
@@ -709,6 +821,20 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
      *   去掉），但"焦点会改外观"与"不转发"两条依然成立 ⇒ 继续吞掉。
      */
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+        if (markPromptTarget != null) {
+            when (keyCode) {
+                GLFW.GLFW_KEY_ESCAPE -> {
+                    closeMarkPrompt()
+                    return true
+                }
+                GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> {
+                    submitMark()
+                    return true
+                }
+            }
+            // 其余按键交给输入框（方向键在这时是移动光标，不能吞）
+            return super.keyPressed(keyCode, scanCode, modifiers)
+        }
         if (keyCode == GLFW.GLFW_KEY_UP || keyCode == GLFW.GLFW_KEY_DOWN ||
             keyCode == GLFW.GLFW_KEY_LEFT || keyCode == GLFW.GLFW_KEY_RIGHT
         ) {
@@ -720,19 +846,78 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     /** 按一下模式：点框外 = 取消（按住模式点外面不关，松手才是确认） */
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (closing) return true
+
+        // 理由输入弹窗优先（输入框控件由 super 处理；按钮 / 外部点击自己判）
+        if (markPromptTarget != null) {
+            if (button == 0) {
+                val dx = markDialogX()
+                val dy = markDialogY()
+                val inDialog = mouseX >= dx && mouseX < dx + MARK_DIALOG_W &&
+                    mouseY >= dy && mouseY < dy + MARK_DIALOG_H
+                if (!inDialog) {
+                    closeMarkPrompt()
+                    return true
+                }
+                val (confirmX, confirmY) = markConfirmButtonOrigin()
+                if (mouseX >= confirmX && mouseX < confirmX + MARK_BTN_W &&
+                    mouseY >= confirmY && mouseY < confirmY + MARK_BTN_H
+                ) {
+                    submitMark()
+                    return true
+                }
+                val (cancelX, cancelY) = markCancelButtonOrigin()
+                if (mouseX >= cancelX && mouseX < cancelX + MARK_BTN_W &&
+                    mouseY >= cancelY && mouseY < cancelY + MARK_BTN_H
+                ) {
+                    playButtonClickSound()
+                    closeMarkPrompt()
+                    return true
+                }
+                // 输入框自己的点击（切焦点）
+                super.mouseClicked(mouseX, mouseY, button)
+            }
+            return true
+        }
+
+        // 右键：选中 / 取消选中一行（头像变成「可疑」按钮）
+        if (button == 1 && canSeePeekPanel() && peekPanelSlideFinished()) {
+            val panelX = peekPanelTargetX()
+            markModeUuid = if (peekPanelContains(panelX, mouseX, mouseY)) {
+                val target = peekTargetAt(panelX, mouseX, mouseY)
+                if (target != null && markModeUuid != target.uuid) target.uuid else null
+            } else {
+                null
+            }
+            return true
+        }
+
         // 右侧在线玩家面板：**行优先**（滚动条命中区比视觉宽）；点面板空白处也吃掉，
         // 别让「按一下模式点框外关闭」把点面板当成点外面
         if (button == 0 && canSeePeekPanel() && peekPanelSlideFinished()) {
             val panelX = peekPanelTargetX()
             if (peekPanelContains(panelX, mouseX, mouseY)) {
+                // 标记按钮优先：右键选中那行的头像位置（不经过 peekTargetAt 的右缘限制）
+                val markButton = markButtonEntryAt(panelX, mouseX, mouseY)
+                if (markButton != null) {
+                    playButtonClickSound()
+                    if (markButton.marked) {
+                        sendToServer(ClearPeekMarkPayload(markButton.uuid))
+                        markModeUuid = null
+                    } else {
+                        openMarkPrompt(markButton)
+                    }
+                    return true
+                }
                 val target = peekTargetAt(panelX, mouseX, mouseY)
                 if (target != null) {
+                    markModeUuid = null
                     playButtonClickSound()
                     // 与总览行尾「监视」按钮完全同一个入口；成功 / 失败都走聊天反馈
                     sendToServer(StartPeekPayload(target.uuid))
                     closeSelf()
                     return true
                 }
+                markModeUuid = null
                 // 滚动条（只有装不下时才画几何 —— 先判溢出，防读到上一份旧几何）
                 if (peekTargets.size > peekPanelRows()) {
                     peekTargetScrollBar.mouseClicked(mouseX, mouseY, peekTargetScroll)?.let {
@@ -743,6 +928,10 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
                 return true
             }
         }
+        // 点面板外：清掉右键选中态
+        if (markModeUuid != null && !(canSeePeekPanel() && peekPanelContains(peekPanelTargetX(), mouseX, mouseY))) {
+            markModeUuid = null
+        }
         val handled = super.mouseClicked(mouseX, mouseY, button)
         if (!handled && ClientConfig.quickShowcasePressOnce) {
             requestClose()
@@ -751,8 +940,122 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         return handled
     }
 
+    // ── 可疑标记：理由弹窗 / 图标 / 形状 ──
+
+    private fun renderMarkPrompt(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        context.fill(0, 0, width, height, 0x80000000.toInt())
+        val dx = markDialogX()
+        val dy = markDialogY()
+        drawNineSlice(context, DIALOG_BACKGROUND_TEXTURE, dx, dy, MARK_DIALOG_W, MARK_DIALOG_H, 0, DIALOG_BACKGROUND_TEX_H)
+        context.drawCenteredTextWithShadow(
+            textRenderer,
+            Text.translatable("cobblemarket.quick_showcase.mark_title").formatted(Formatting.GOLD),
+            width / 2, dy + 8, 0xFFFFFF
+        )
+        // 输入框左侧的「原因：」标签
+        context.drawTextWithShadow(
+            textRenderer,
+            Text.translatable("cobblemarket.quick_showcase.mark_reason_label"),
+            dx + 10, dy + 24 + 4, 0xFFFFFF
+        )
+        // 输入框控件在 openMarkPrompt 时 addDrawableChild，交给 super.render
+        super.render(context, mouseX, mouseY, delta)
+        val (confirmX, confirmY) = markConfirmButtonOrigin()
+        val (cancelX, cancelY) = markCancelButtonOrigin()
+        drawMarkDialogButton(
+            context, confirmX, confirmY,
+            Text.translatable("cobblemarket.quick_showcase.mark_confirm"), mouseX, mouseY
+        )
+        drawMarkDialogButton(
+            context, cancelX, cancelY,
+            Text.translatable("cobblemarket.quick_showcase.mark_cancel"), mouseX, mouseY
+        )
+    }
+
+    private fun drawMarkDialogButton(
+        context: DrawContext, x: Int, y: Int, text: Text, mouseX: Int, mouseY: Int
+    ) {
+        val hovered = mouseX in x until x + MARK_BTN_W && mouseY in y until y + MARK_BTN_H
+        drawNineSlice(
+            context, BUTTON_TEXTURE, x, y, MARK_BTN_W, MARK_BTN_H,
+            if (hovered) 1 else 0, BUTTON_TEX_H
+        )
+        context.drawCenteredTextWithShadow(textRenderer, text, x + MARK_BTN_W / 2, y + 4, 0xFFFFFF)
+    }
+
+    private fun markDialogX(): Int = (width - MARK_DIALOG_W) / 2
+    private fun markDialogY(): Int = (height - MARK_DIALOG_H) / 2
+    private fun markConfirmButtonOrigin(): Pair<Int, Int> =
+        (width / 2 - MARK_BTN_W - 4) to (markDialogY() + MARK_DIALOG_H - 10 - MARK_BTN_H)
+    private fun markCancelButtonOrigin(): Pair<Int, Int> =
+        (width / 2 + 4) to (markDialogY() + MARK_DIALOG_H - 10 - MARK_BTN_H)
+
+    /** 标记图标源图 48×48，按 [size] 绘制（头像/按钮都是 16） */
+    private fun drawMarkIcon(context: DrawContext, x: Int, y: Int, size: Int) {
+        context.matrices.push()
+        context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
+        context.matrices.scale(size / 48f, size / 48f, 1f)
+        context.drawTexture(peekMarkIcon, 0, 0, 0f, 0f, 48, 48, 48, 48)
+        context.matrices.pop()
+    }
+
+    /** 鼠标落在右键选中那一行的头像按钮上时返回该行（不经过 [peekTargetAt] 的右缘限制） */
+    private fun markButtonEntryAt(panelX: Int, mouseX: Double, mouseY: Double): PeekTargetEntry? {
+        val uuid = markModeUuid ?: return null
+        val avatarX = panelX + PANEL_W - 4 - PANEL_AVATAR - 4
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
+        if (mx < avatarX || mx >= avatarX + PANEL_AVATAR) return null
+        val startY = baseY + PANEL_HEADER_H
+        if (my < startY) return null
+        val index = (my - startY) / PANEL_ROW_H
+        if (index !in 0 until peekPanelRows()) return null
+        return peekTargets.getOrNull(peekTargetScroll + index)?.takeIf { it.uuid == uuid }
+    }
+
+    private fun openMarkPrompt(entry: PeekTargetEntry) {
+        markPromptTarget = entry
+        markModeUuid = entry.uuid
+        val labelW = textRenderer.getWidth(Text.translatable("cobblemarket.quick_showcase.mark_reason_label"))
+        val fieldX = markDialogX() + 10 + labelW + 4
+        val fieldW = (markDialogX() + MARK_DIALOG_W - 10 - fieldX).coerceAtLeast(40)
+        val field = TextFieldWidget(
+            textRenderer,
+            fieldX, markDialogY() + 24, fieldW, 16,
+            Text.literal("")
+        )
+        field.setMaxLength(80)
+        field.setPlaceholder(Text.translatable("cobblemarket.quick_showcase.mark_reason_hint"))
+        field.setFocused(true)
+        markReasonField = field
+        addDrawableChild(field)
+        // 弹窗期间隐藏三个大框按钮，避免从遮罩上透出来
+        pokemonBtn?.visible = false
+        idCardBtn?.visible = false
+        itemBtn?.visible = false
+    }
+
+    private fun closeMarkPrompt() {
+        markReasonField?.let { remove(it) }
+        markReasonField = null
+        markPromptTarget = null
+        markModeUuid = null
+        pokemonBtn?.visible = true
+        idCardBtn?.visible = true
+        itemBtn?.visible = true
+    }
+
+    private fun submitMark() {
+        val target = markPromptTarget ?: return
+        playButtonClickSound()
+        sendToServer(SetPeekMarkPayload(target.uuid, markReasonField?.text.orEmpty()))
+        // 服务端会立即把新名单推回来；先关弹窗
+        closeMarkPrompt()
+    }
+
     /** 滚轮：面板内滚动名单（与喵喵银行持有者面板同口径） */
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+        if (markPromptTarget != null) return true
         if (!closing && canSeePeekPanel() && peekPanelSlideFinished() &&
             peekTargets.size > peekPanelRows() &&
             peekPanelContains(peekPanelTargetX(), mouseX, mouseY)
@@ -815,8 +1118,14 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         private const val ITEM_SCALE = CONTENT / 16f
 
         // ── 右侧「在线玩家」面板（2026-11-10）──
-        /** 面板宽度（与喵喵银行持有者面板同宽，也等于大框边长） */
-        private const val PANEL_W = 128
+        /** 面板宽度：原 128 + 16（给头像左侧的可疑标记图标留位，2026-11-14 用户要求） */
+        private const val PANEL_W = 144
+
+        /** 可疑标记理由弹窗 */
+        private const val MARK_DIALOG_W = 240
+        private const val MARK_DIALOG_H = 90
+        private const val MARK_BTN_W = 80
+        private const val MARK_BTN_H = 16
 
         /** 面板离屏幕右缘的空隙 */
         private const val PANEL_RIGHT_MARGIN = 16

@@ -55,6 +55,8 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
     /** 排序字段（列表顺序 = 字段按钮的循环顺序） */
     private enum class SortField(val key: String) {
         NAME("name"),
+        /** 筛选：只显示被打了「可疑标记」的玩家（2026-11-14） */
+        MARKED("marked"),
         BALANCE("balance"),
         /** ⚠ RP 余额 —— 与主货币是**两套账本**；按钮文字用货币图标开头（界面里不出现「RP」字样） */
         POINTS("points"),
@@ -110,6 +112,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
     private val peekButtonW = 24
     private val peekButtonH = 16
     private val peekIcon = Identifier.of("cobblemarket", "textures/gui/icon/spectate_icon.png")
+    private val peekMarkIcon = Identifier.of("cobblemarket", "textures/gui/icon/peek_mark.png")
     private val peekIconTexSize = 48
     private val peekIconDrawSize = 12
 
@@ -228,12 +231,18 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
     /** 选中一个排序字段：收起列表、按钮文字跟着换；从名字切到数值字段时自动改降序（反之回升序） */
     private fun selectSortField(f: SortField) {
         sortField = f
-        descending = f != SortField.NAME
+        // 名字和「标记」筛选按名字升序更自然；数值字段默认降序
+        descending = f != SortField.NAME && f != SortField.MARKED
         sortListOpen = false
         hoveredRow = -1
         scrollOffset = 0
         rebuildSortList()
         sortFieldButton?.setMessage(sortFieldText(f))
+        // 「标记」项在按钮文字前带警示图标（与 RP 余额用货币图标的写法一致）
+        sortFieldButton?.iconLeft = if (f == SortField.MARKED) peekMarkIcon else null
+        sortFieldButton?.iconTexW = 48
+        sortFieldButton?.iconTexH = 48
+        sortFieldButton?.iconScale = 8f / 48f
     }
 
     /** 重建展开的字段列表（照 BlacklistScreen.rebuildFormList：每次全清全建） */
@@ -249,7 +258,12 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
             val btn = NineSliceButton(
                 leftX + 120, topRowY + 18 + i * 14, 120, 14,
                 sortFieldText(f),
-                { selectSortField(f) }
+                { selectSortField(f) },
+                iconLeft = if (f == SortField.MARKED) peekMarkIcon else null,
+                iconTexW = 48,
+                iconTexH = 48,
+                // 下拉项高 14、文字 8px ⇒ 图标 8px（与 RP 字形图标大小相当）
+                iconScale = 8f / 48f
             )
             // 选中项靠按钮自己的选中态（背景第三段），不在文字前加 ●
             btn.selectedVisual = f == sortField
@@ -268,6 +282,11 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
             val sorted = filtered.sortedBy { it.name.lowercase() }
             return if (descending) sorted.reversed() else sorted
         }
+        // 「标记」是**筛选**：只显示被标记的玩家（方向按钮仍可切名字升/降序）
+        if (sortField == SortField.MARKED) {
+            val sorted = filtered.filter { it.marked }.sortedBy { it.name.lowercase() }
+            return if (descending) sorted.reversed() else sorted
+        }
         // ⚠ 拿不到的（null = 离线且还没记过快照）**恒排最后**、不随方向翻转 ——
         //   用 `sortedWith(nullsLast{})` 再整体 `reversed()` 会把它们**翻到最前面**
         val (has, missing) = filtered.partition { sortNumeric(it) != null }
@@ -277,7 +296,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
 
     /** 当前排序字段的数值（名字字段不走这里） */
     private fun sortNumeric(r: PlayerOverviewRow): Long? = when (sortField) {
-        SortField.NAME -> null
+        SortField.NAME, SortField.MARKED -> null
         SortField.BALANCE -> r.balance
         SortField.POINTS -> r.pointsBalance
         SortField.CREDIT -> r.creditLimit
@@ -293,7 +312,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
 
     /** 行右侧显示的值；null = 不显示（排序字段是名字时，右边那格留空不画） */
     private fun rowValueText(r: PlayerOverviewRow): Text? = when (sortField) {
-        SortField.NAME -> null
+        SortField.NAME, SortField.MARKED -> null
         SortField.BALANCE -> Text.literal(r.balance?.let { formatPriceLong(it) } ?: noneValue())
         SortField.POINTS -> Text.literal(formatPriceLong(r.pointsBalance))
         SortField.CREDIT -> Text.literal(formatPriceLong(r.creditLimit))
@@ -365,7 +384,9 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
 
         scrollOffset = scrollOffset.coerceIn(0, maxOf(0, rows.size - maxVisible))
 
-        if (rows.isEmpty()) {
+        // ⚠ 展开排序下拉时**不画空态文字**：下拉选项是控件（`super.render` 先画），
+        //   而这行文字在之后自绘 —— 会从选项按钮之间透出来（2026-11-14 用户截图报）。
+        if (!sortListOpen && rows.isEmpty()) {
             val key = if (PlayerOverviewCache.rows.isEmpty()) "cobblemarket.overview.loading" else "cobblemarket.overview.empty"
             context.drawCenteredTextWithShadow(
                 textRenderer, Text.translatable(key).formatted(Formatting.GRAY),
@@ -400,6 +421,11 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
                 if (value == null) {
                     // 按名字排序：行尾那一格空出来，给「监视」按钮（仅在线、且非旁观模式的行）
                     if (canPeek && canPeekRow(r)) drawPeekButton(context, i, mouseX, mouseY)
+                    // 可疑标记：画在「监视」按钮左侧（无按钮的行也画在同一列）
+                    if (r.marked) {
+                        val btn = peekButtonRect(i)
+                        drawMarkIcon(context, btn.x - 18, y + 4, 16)
+                    }
                     return@forEachIndexed
                 }
                 val unitW = if (isMoney) currencyUnitWidth(textRenderer, isPoints) else 0
@@ -478,6 +504,15 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         )
     }
 
+    /** 可疑标记图标（48×48 源图，按 [size] 绘制） */
+    private fun drawMarkIcon(context: DrawContext, x: Int, y: Int, size: Int) {
+        context.matrices.push()
+        context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
+        context.matrices.scale(size / 48f, size / 48f, 1f)
+        context.drawTexture(peekMarkIcon, 0, 0, 0f, 0f, 48, 48, 48, 48)
+        context.matrices.pop()
+    }
+
     private fun drawPeekButton(context: DrawContext, rowIndex: Int, mouseX: Int, mouseY: Int) {
         val rect = peekButtonRect(rowIndex)
         val hovered = rect.contains(mouseX, mouseY)
@@ -526,7 +561,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         var contentH = 0
         lines.forEach {
             // 图标行还要把行首那块图标算进去（图鉴那两行）
-            val iconW = if (it.icon != null) OVERVIEW_ICON_W else 0
+            val iconW = it.icon?.let { icon -> icon.size + com.shusheng.cobblemarket.client.OVERVIEW_ICON_GAP } ?: 0
             // ⚠ 单位宽度**按行算**：RP 行补的是 RP 图标、主货币行补 ₽ / 物品图标，两者宽度不同 ——
             //   共用一个宽度会把 RP 行的单位算错、顶出面板右缘
             val unitW = if (it.money) currencyUnitWidth(textRenderer, it.isPoints) else 0
@@ -561,7 +596,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
             val textY = lineTextY(rowY, line)
             val iconY = lineIconY(rowY, line)
             // 行首图标（图鉴那两行）—— 文字要**右移**，别压在图标上
-            val iconW = if (line.icon != null) OVERVIEW_ICON_W else 0
+            val iconW = line.icon?.let { icon -> icon.size + com.shusheng.cobblemarket.client.OVERVIEW_ICON_GAP } ?: 0
             line.icon?.let { drawLineIcon(context, it, tx, iconY) }
             val drawn = context.drawTextWithShadow(textRenderer, line.text, tx + iconW, textY, 0xFFFFFF)
             // 金额行：数字的颜色已由词条参数自带（金 = 能花的钱 / 蓝 = 额度、待还），这里只补行尾的单位

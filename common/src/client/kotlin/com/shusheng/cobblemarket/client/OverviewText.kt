@@ -11,6 +11,16 @@ import net.minecraft.util.Identifier
 /** 金额金色 —— **能花的钱**（余额 / 存款 / 利息 / 交易额…），与入口界面标题同色 */
 const val OVERVIEW_GOLD = 0xFFAA00
 
+/** 可疑标记的时间格式（与快速功能面板的悬停窗同款） */
+private val MARK_TIME_FORMATTER = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+    .withZone(java.time.ZoneId.systemDefault())
+
+/** 可疑标记行首图标（48×48 整图，缩到 8px —— 与 RP 字形图标大小相当） */
+private val MARK_LINE_ICON = LineIcon(
+    Identifier.of("cobblemarket", "textures/gui/icon/peek_mark.png"),
+    texW = 48, texH = 48, sampleW = 48, sampleH = 48, size = 8,
+)
+
 /** 账本蓝 —— **不能花的数字**（可借额度 / 已借待还），与金融界面同口径 */
 const val OVERVIEW_LEDGER_BLUE = 0x55FFFF
 
@@ -56,6 +66,11 @@ class LineIcon(
     val v: Float = 0f,
     val texW: Int = OVERVIEW_ICON_CELL,
     val texH: Int = OVERVIEW_ICON_CELL,
+    /** 采样区边长（图鉴是 14×14 一格；48×48 的整图素材传 48，绘制时缩到 [size]） */
+    val sampleW: Int = OVERVIEW_ICON_CELL,
+    val sampleH: Int = OVERVIEW_ICON_CELL,
+    /** 行内绘制尺寸；默认与原图一致 */
+    val size: Int = OVERVIEW_ICON_SIZE,
 )
 
 /** 普通行的行高 —— ID 卡与悬停窗都按它排（与项目里其它密集列表一致） */
@@ -105,9 +120,9 @@ const val OVERVIEW_ICON_TEXT_DY = 2
 fun lineTextY(rowY: Int, line: OverviewLine): Int =
     rowY + (line.height - OVERVIEW_LINE_HEIGHT) / 2 + if (line.icon != null) OVERVIEW_ICON_TEXT_DY else 0
 
-/** 行内图标的顶边（按行高居中；普通行没有图标，取值无意义） */
+/** 行内图标的顶边（按行高与**图标自身尺寸**居中；普通行没有图标，取值无意义） */
 fun lineIconY(rowY: Int, line: OverviewLine): Int =
-    rowY + (line.height - OVERVIEW_ICON_SIZE) / 2
+    rowY + (line.height - (line.icon?.size ?: OVERVIEW_ICON_SIZE)) / 2
 
 /**
  * 画行首小图标 —— **ID 卡与总览悬停窗共用**（与 [overviewLines] 同理：分开写迟早不一致）。
@@ -117,7 +132,13 @@ fun lineIconY(rowY: Int, line: OverviewLine): Int =
  * 是**采样区**、显示尺寸只能靠 `matrices.scale`，本项目栽过好几次）。
  */
 fun drawLineIcon(context: DrawContext, icon: LineIcon, x: Int, y: Int) {
-    context.drawTexture(icon.id, x, y, icon.u, icon.v, OVERVIEW_ICON_CELL, OVERVIEW_ICON_CELL, icon.texW, icon.texH)
+    // 48×48 这类整图素材：采样整张、再用矩阵缩到 icon.size（图鉴仍是 14×14 一格、缩放 1）
+    val scale = icon.size.toFloat() / icon.sampleW
+    context.matrices.push()
+    context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
+    context.matrices.scale(scale, scale, 1f)
+    context.drawTexture(icon.id, 0, 0, icon.u, icon.v, icon.sampleW, icon.sampleH, icon.texW, icon.texH)
+    context.matrices.pop()
 }
 
 /**
@@ -222,6 +243,40 @@ fun overviewLines(
     if (groups) out += group("dex")
     out += iconLine(r.dexSeen, DEX_SEEN_ICON)
     out += iconLine(r.dexCaught, DEX_CAUGHT_ICON)
+
+    // 可疑标记（2026-11-14）：只在被标记时出现；标签用图标代替文字，整行红色。
+    // 完整理由在快速功能面板的悬停窗里看
+    if (r.marked) {
+        out += OverviewLine(
+            Text.translatable(
+                "cobblemarket.overview.value.marked_by_time",
+                Text.literal(r.markedBy.ifBlank { "?" }),
+                Text.literal(
+                    if (r.markedAt > 0) MARK_TIME_FORMATTER.format(java.time.Instant.ofEpochMilli(r.markedAt))
+                    else "-"
+                )
+            ).styled { it.withColor(0xFF7777) },
+            icon = MARK_LINE_ICON,
+            height = OVERVIEW_ICON_ROW_HEIGHT,
+        )
+        // 理由：按 30 字拆行，避免长理由把悬停窗撑出屏幕；首行带「理由：」标签
+        val reason = r.markReason.trim()
+        if (reason.isNotEmpty()) {
+            reason.chunked(30).forEachIndexed { i, chunk ->
+                out += if (i == 0) {
+                    OverviewLine(
+                        Text.translatable(
+                            "cobblemarket.overview.line",
+                            Text.translatable("cobblemarket.overview.field.mark_reason"),
+                            Text.literal(chunk).styled { it.withColor(0xAAAAAA) }
+                        )
+                    )
+                } else {
+                    OverviewLine(Text.literal("    $chunk").styled { it.withColor(0xAAAAAA) })
+                }
+            }
+        }
+    }
 
     return out
 }

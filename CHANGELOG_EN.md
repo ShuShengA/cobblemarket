@@ -4,6 +4,10 @@
 
 ⚠ **Client and server must be upgraded together** (this version changes network payloads).
 
+### New Features
+
+- **"Online Players" panel in Quick Actions now supports "suspicious marks"**: right-click a player row and their avatar becomes a suspicious button; click it to enter a reason (optional) and mark the player. Marked players show a warning icon left of their avatar, visible to everyone with the Player Overview permission; the hover tooltip shows the dimension, who marked them, when, and the reason. Player Overview (when sorted by name) also shows the mark at the end of the row, with the marker and time in the hover tooltip; its sort dropdown gained a "Mark" filter (icon + label) that shows only marked players. Marks are saved on the server and survive restarts; right-click a marked player and click the button again to clear the mark. Commands are also available: `/market peekmark <player> [reason]` to mark (works for offline players too; reason optional) and `/market peekmark clear <player>` to clear
+
 ### Changes
 
 - **Clearer message when teleporting to another dimension while spectating**: it now says you were moved back to where you started and need to run the teleport again (previously it only said spectating had ended, so seeing the teleport succeed and then being pulled back looked like the teleport had failed)

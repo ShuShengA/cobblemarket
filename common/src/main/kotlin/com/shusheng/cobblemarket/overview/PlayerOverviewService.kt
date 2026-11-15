@@ -13,6 +13,7 @@ import com.shusheng.cobblemarket.market.BanState
 import com.shusheng.cobblemarket.market.BuyOrderState
 import com.shusheng.cobblemarket.market.ItemMarketState
 import com.shusheng.cobblemarket.market.MarketState
+import com.shusheng.cobblemarket.peek.PeekMarkState
 import com.shusheng.cobblemarket.platform.cobecoAvailable
 import com.shusheng.cobblemarket.platform.cobecoGetBalance
 import net.minecraft.server.MinecraftServer
@@ -88,6 +89,8 @@ object PlayerOverviewService {
         val finance = FinanceState.get(server)
         val bans = BanState.get(server)
         val snapshots = PlayerSnapshotState.get(server)
+        // 可疑标记（2026-11-14）：与快速功能面板共用同一份状态
+        val peekMarks = PeekMarkState.get(server)
         // RP 余额（1.3.x 独有）：**一次性取出 state**，别在循环里逐人 `get(server)`
         // ⚠ **不看 RP 总开关** —— 用户 2026-10-17 拍板「0 也显示」（关着就是 0，照样画这一行）
         val pointsState = PointsState.get(server)
@@ -193,6 +196,11 @@ object PlayerOverviewService {
                             if (player.isPartVisible(part)) acc or part.bitFlag else acc
                         }
                 } else 0x7F,
+                // 可疑标记（2026-11-14）：按名字排序时行尾图标 + 悬停窗标记者/时间
+                marked = peekMarks.get(uuid) != null,
+                markedBy = peekMarks.get(uuid)?.byName.orEmpty(),
+                markedAt = peekMarks.get(uuid)?.at ?: 0L,
+                markReason = peekMarks.get(uuid)?.reason.orEmpty(),
             )
         }
     }
