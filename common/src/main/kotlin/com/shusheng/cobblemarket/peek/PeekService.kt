@@ -162,6 +162,30 @@ object PeekService {
         lastLeashNoticeAt.clear()
     }
 
+    // ── 只读查询 ──
+
+    /**
+     * 当前是否有任何监视会话 —— tab 包在最常见的情况下（无人监视）靠它一次跳过，
+     * 不必逐条条目去查持久状态。
+     */
+    @JvmStatic
+    fun hasAnySession(server: MinecraftServer): Boolean = PeekState.get(server).hasSessions()
+
+    /**
+     * **tab 列表伪装**（`docs/peek_feature_plan.md` §10.12）：该 UUID 若有监视会话，
+     * 返回**会话开始前**的游戏模式；没有会话返回 null（按真实模式下发）。
+     *
+     * 由服务端 mixin [com.shusheng.cobblemarket.mixin.PlayerListS2CPacketMixin] 在组装
+     * `PlayerListS2CPacket` 时调用；**只读**，不改任何状态。客户端不会走到这里。
+     *
+     * ⚠ 存档里的模式名非法（手改 / 未来枚举变更）⇒ 返回 null = 不伪装，绝不抛异常打断 tab 下发。
+     */
+    @JvmStatic
+    fun displayGameMode(server: MinecraftServer, uuid: UUID): GameMode? {
+        val saved = PeekState.get(server).get(uuid) ?: return null
+        return runCatching { GameMode.valueOf(saved.gameMode) }.getOrNull()
+    }
+
     // ── 开始 / 停止 ──
 
     /**

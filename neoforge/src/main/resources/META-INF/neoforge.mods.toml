@@ -44,3 +44,8 @@ side="BOTH"
 [[mixins]]
 config="cobblemarket.client.mixins.json"
 clientOnly=true
+
+# 服务端 mixin（tab 列表伪装监视者的游戏模式），两端都加载；
+# 配置与 refmap 随 common 打进 jar，与上面的 client 配置同一套打包流程
+[[mixins]]
+config="cobblemarket.mixins.json"

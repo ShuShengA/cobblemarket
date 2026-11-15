@@ -43,7 +43,8 @@
 		]
 	},
 	"mixins": [
-		"cobblemarket.client.mixins.json"
+		"cobblemarket.client.mixins.json",
+		"cobblemarket.mixins.json"
 	],
 	"depends": {
 		"fabricloader": ">=0.19.1",
