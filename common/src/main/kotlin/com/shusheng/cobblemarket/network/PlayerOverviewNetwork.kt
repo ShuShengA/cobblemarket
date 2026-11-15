@@ -1,6 +1,7 @@
 package com.shusheng.cobblemarket.network
 
 import com.shusheng.cobblemarket.CobbleMarket
+import com.shusheng.cobblemarket.overview.PlayerMarkInfo
 import com.shusheng.cobblemarket.overview.PlayerOverviewRow
 import com.shusheng.cobblemarket.overview.PlayerOverviewService
 import com.shusheng.cobblemarket.permission.MarketPermissions
@@ -123,11 +124,13 @@ internal object OverviewRowCodec {
         b.writeFloat(r.experienceProgress)
         // 皮肤层设置（2026-11-10，分享 ID 卡的假玩家用）—— 同样追加在末尾
         b.writeByte(r.modelParts)
-        // 可疑标记（2026-11-14）—— 追加在末尾，两端同版
-        b.writeBoolean(r.marked)
-        b.writeString(r.markedBy)
-        b.writeLong(r.markedAt)
-        b.writeString(r.markReason)
+        // 可疑标记（2026-11-15 多标记）—— 追加在末尾，两端同版
+        b.writeVarInt(r.marks.size)
+        r.marks.forEach { m ->
+            b.writeString(m.byName)
+            b.writeLong(m.at)
+            b.writeString(m.reason)
+        }
     }
 
     fun read(b: PacketByteBuf): PlayerOverviewRow = PlayerOverviewRow(
@@ -169,9 +172,12 @@ internal object OverviewRowCodec {
         experienceLevel = b.readVarInt(),
         experienceProgress = b.readFloat(),
         modelParts = b.readUnsignedByte().toInt(),
-        marked = b.readBoolean(),
-        markedBy = b.readString(),
-        markedAt = b.readLong(),
-        markReason = b.readString(),
+        marks = List(b.readVarInt()) {
+            PlayerMarkInfo(
+                byName = b.readString(),
+                at = b.readLong(),
+                reason = b.readString(),
+            )
+        },
     )
 }

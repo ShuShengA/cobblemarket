@@ -9,32 +9,39 @@ import net.minecraft.world.PersistentState
 import java.util.UUID
 
 /**
- * **可疑标记**（2026-11-14）：持 `overview` 权限的人给玩家打的共享标记。
+ * **可疑标记**（2026-11-14，2026-11-15 改为多标记）：持 `overview` 权限的人给玩家打的共享标记。
  *
- * - 谁标记的、什么时候、理由（可空）都记下来，悬停窗里展示
+ * - **每个目标 × 每个标记者各一条**：B 可以在 A 已标记的玩家身上再打自己的标记，
+ *   互不覆盖；取消时只删**自己**那条
+ * - 每条记录标记者名字、时间、理由（可空），悬停窗里全部列出（按时间升序）
  * - 只有 `overview` 权限的人能读/写（名单本身只发给这些人）
  * - 独立 PersistentState，重启后保留；**不自动过期**，只能手动取消
  *
  * ⚠ 新存档文件 `cobblemarket_peek_marks`：旧档没有它 = 空标记，不涉及迁移。
+ *   多标记结构随 1.3.8 首发，之前未发布过，**不需要兼容单标记旧结构**。
  */
 class PeekMarkState private constructor() : PersistentState() {
 
     data class Mark(
-        val byUuid: String,
         val byName: String,
         val at: Long,
         val reason: String?,
     )
 
-    private val marks = mutableMapOf<UUID, Mark>()
+    /** `目标 UUID → (标记者 UUID → Mark)` */
+    private val marks = mutableMapOf<UUID, MutableMap<UUID, Mark>>()
 
-    fun get(uuid: UUID): Mark? = marks[uuid]
+    /** 某目标的所有标记，**按时间升序**（最早 → 最新）；没有则空列表 */
+    fun marksFor(target: UUID): List<Mark> =
+        marks[target]?.values?.sortedBy { it.at } ?: emptyList()
 
-    fun all(): Map<UUID, Mark> = marks
+    /** 该目标是否被任何人标记 */
+    fun isMarked(target: UUID): Boolean = !marks[target].isNullOrEmpty()
+
+    fun get(target: UUID, by: UUID): Mark? = marks[target]?.get(by)
 
     fun set(target: UUID, by: ServerPlayerEntity, reason: String?) {
-        marks[target] = Mark(
-            byUuid = by.uuid.toString(),
+        marks.getOrPut(target) { mutableMapOf() }[by.uuid] = Mark(
             byName = by.gameProfile.name,
             at = System.currentTimeMillis(),
             reason = reason,
@@ -42,8 +49,13 @@ class PeekMarkState private constructor() : PersistentState() {
         markDirty()
     }
 
-    fun clear(target: UUID) {
-        if (marks.remove(target) != null) markDirty()
+    /** 取消**某人对某目标**的标记；返回是否真的删除了记录 */
+    fun clear(target: UUID, by: UUID): Boolean {
+        val byMap = marks[target] ?: return false
+        if (byMap.remove(by) == null) return false
+        if (byMap.isEmpty()) marks.remove(target)
+        markDirty()
+        return true
     }
 
     /** 标记是低频操作，立刻落盘（崩溃/重启后不丢）；失败只记日志 */
@@ -58,13 +70,16 @@ class PeekMarkState private constructor() : PersistentState() {
 
     override fun writeNbt(nbt: NbtCompound, registryLookup: RegistryWrapper.WrapperLookup): NbtCompound {
         val map = NbtCompound()
-        marks.forEach { (uuid, m) ->
-            val entry = NbtCompound()
-            entry.putString("byUuid", m.byUuid)
-            entry.putString("byName", m.byName)
-            entry.putLong("at", m.at)
-            m.reason?.let { entry.putString("reason", it) }
-            map.put(uuid.toString(), entry)
+        marks.forEach { (target, byMap) ->
+            val bys = NbtCompound()
+            byMap.forEach { (by, m) ->
+                val entry = NbtCompound()
+                entry.putString("byName", m.byName)
+                entry.putLong("at", m.at)
+                m.reason?.let { entry.putString("reason", it) }
+                bys.put(by.toString(), entry)
+            }
+            map.put(target.toString(), bys)
         }
         nbt.put("marks", map)
         return nbt
@@ -78,23 +93,37 @@ class PeekMarkState private constructor() : PersistentState() {
             { nbt, _ ->
                 PeekMarkState().apply {
                     val map = nbt.getCompound("marks")
-                    map.keys.forEach { key ->
-                        // 容错：单条坏只跳过该条并记日志（铁律）
+                    map.keys.forEach { targetKey ->
+                        // 容错：单个目标 / 单条标记坏只跳过该条并记日志（铁律）
                         try {
-                            val entry = map.getCompound(key)
-                            marks[UUID.fromString(key)] = Mark(
-                                byUuid = entry.getString("byUuid"),
-                                byName = entry.getString("byName"),
-                                at = entry.getLong("at"),
-                                reason = if (entry.contains("reason")) {
-                                    entry.getString("reason").takeIf { it.isNotBlank() }
-                                } else {
-                                    null
-                                },
-                            )
+                            val target = UUID.fromString(targetKey)
+                            val bys = map.getCompound(targetKey)
+                            // 1.3.8 开发期曾临时用过「单标记」结构（**从未发布**）：旧档直接
+                            // 忽略这条，不做迁移（铁律：不写迁移分支）；否则会被当成坏条目刷 warn
+                            if (bys.contains("byName")) return@forEach
+                            bys.keys.forEach { byKey ->
+                                try {
+                                    val entry = bys.getCompound(byKey)
+                                    val by = UUID.fromString(byKey)
+                                    marks.getOrPut(target) { mutableMapOf() }[by] = Mark(
+                                        byName = entry.getString("byName"),
+                                        at = entry.getLong("at"),
+                                        reason = if (entry.contains("reason")) {
+                                            entry.getString("reason").takeIf { it.isNotBlank() }
+                                        } else {
+                                            null
+                                        },
+                                    )
+                                } catch (e: Exception) {
+                                    CobbleMarket.LOGGER.warn(
+                                        "Skipping corrupted peek mark for '{}' by '{}': {}",
+                                        targetKey, byKey, e.message
+                                    )
+                                }
+                            }
                         } catch (e: Exception) {
                             CobbleMarket.LOGGER.warn(
-                                "Skipping corrupted peek mark for '{}': {}", key, e.message
+                                "Skipping corrupted peek marks for '{}': {}", targetKey, e.message
                             )
                         }
                     }

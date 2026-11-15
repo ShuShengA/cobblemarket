@@ -8,6 +8,7 @@ import com.shusheng.cobblemarket.client.TooltipPlacement
 import com.shusheng.cobblemarket.client.currencyUnitWidth
 import com.shusheng.cobblemarket.client.drawCurrencyUnit
 import com.shusheng.cobblemarket.client.drawLineIcon
+import com.shusheng.cobblemarket.client.drawMarkCountBadge
 import com.shusheng.cobblemarket.client.formatPriceLong
 import com.shusheng.cobblemarket.client.lineIconY
 import com.shusheng.cobblemarket.client.lineTextY
@@ -282,9 +283,9 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
             val sorted = filtered.sortedBy { it.name.lowercase() }
             return if (descending) sorted.reversed() else sorted
         }
-        // 「标记」是**筛选**：只显示被标记的玩家（方向按钮仍可切名字升/降序）
+        // 「标记」是**筛选**：只显示被（任何人）标记的玩家（方向按钮仍可切名字升/降序）
         if (sortField == SortField.MARKED) {
-            val sorted = filtered.filter { it.marked }.sortedBy { it.name.lowercase() }
+            val sorted = filtered.filter { it.marks.isNotEmpty() }.sortedBy { it.name.lowercase() }
             return if (descending) sorted.reversed() else sorted
         }
         // ⚠ 拿不到的（null = 离线且还没记过快照）**恒排最后**、不随方向翻转 ——
@@ -421,10 +422,13 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
                 if (value == null) {
                     // 按名字排序：行尾那一格空出来，给「监视」按钮（仅在线、且非旁观模式的行）
                     if (canPeek && canPeekRow(r)) drawPeekButton(context, i, mouseX, mouseY)
-                    // 可疑标记：画在「监视」按钮左侧（无按钮的行也画在同一列）
-                    if (r.marked) {
+                    // 可疑标记：画在「监视」按钮左侧（无按钮的行也画在同一列）；
+                    // ≥2 人标记时图标右上角带数量角标
+                    if (r.marks.isNotEmpty()) {
                         val btn = peekButtonRect(i)
-                        drawMarkIcon(context, btn.x - 18, y + 4, 16)
+                        val markX = btn.x - 18
+                        drawMarkIcon(context, markX, y + 4, 16)
+                        drawMarkCountBadge(context, textRenderer, r.marks.size, markX, y + 4, 16)
                     }
                     return@forEachIndexed
                 }

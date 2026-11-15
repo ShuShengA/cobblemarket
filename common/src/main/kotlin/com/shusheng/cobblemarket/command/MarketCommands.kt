@@ -713,7 +713,7 @@ object MarketCommands {
         return 1
     }
 
-    /** `/market peekmark clear <玩家>`：取消可疑标记（支持离线） */
+    /** `/market peekmark clear <玩家>`：取消**自己的**可疑标记（支持离线） */
     private fun peekMarkClear(context: CommandContext<ServerCommandSource>, name: String): Int {
         val source = context.source
         val player = source.player ?: return 0
@@ -722,11 +722,11 @@ object MarketCommands {
             return 0
         }
         val state = PeekMarkState.get(source.server)
-        if (state.get(uuid) == null) {
+        // 多标记（2026-11-15）：只删自己那条；别人打的标记不受影响
+        if (!state.clear(uuid, player.uuid)) {
             source.sendError(Text.translatable("cobblemarket.command.peekmark.not_marked", name))
             return 0
         }
-        state.clear(uuid)
         state.saveNow(source.server)
         PeekNetwork.refreshTargets(player)
         source.sendFeedback(

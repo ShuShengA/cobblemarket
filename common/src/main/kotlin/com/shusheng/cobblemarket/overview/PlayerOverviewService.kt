@@ -196,11 +196,10 @@ object PlayerOverviewService {
                             if (player.isPartVisible(part)) acc or part.bitFlag else acc
                         }
                 } else 0x7F,
-                // 可疑标记（2026-11-14）：按名字排序时行尾图标 + 悬停窗标记者/时间
-                marked = peekMarks.get(uuid) != null,
-                markedBy = peekMarks.get(uuid)?.byName.orEmpty(),
-                markedAt = peekMarks.get(uuid)?.at ?: 0L,
-                markReason = peekMarks.get(uuid)?.reason.orEmpty(),
+                // 可疑标记（2026-11-15 多标记）：按名字排序时行尾图标 + 悬停窗逐条列出
+                marks = peekMarks.marksFor(uuid).map {
+                    PlayerMarkInfo(it.byName, it.at, it.reason.orEmpty())
+                },
             )
         }
     }

@@ -101,14 +101,20 @@ data class PlayerOverviewRow(
     val modelParts: Int = 0x7F,
 
     /**
-     * 可疑标记（2026-11-14）：总览**按玩家名排序**时行尾「监视」按钮左侧显示警示图标；
-     * 悬停窗显示标记者 / 时间（理由在快速功能面板的悬停窗里看，这里不显示，避免撑宽）。
+     * 可疑标记（2026-11-15 多标记）：总览**按玩家名排序**时行尾「监视」按钮左侧显示警示图标
+     * （≥2 人标记时角标显示数量）；悬停窗逐条列出所有标记（标记者 / 时间 / 理由）。
      *
      * ⚠ 末尾追加 + 默认值：payload 顺序铁律，两端同版。
      */
-    val marked: Boolean = false,
-    val markedBy: String = "",
-    val markedAt: Long = 0L,
-    /** 标记理由（未填为空）—— 总览悬停窗显示，完整理由与快速面板共用同一份数据 */
-    val markReason: String = "",
+    val marks: List<PlayerMarkInfo> = emptyList(),
+)
+
+/** 一条可疑标记（总览行用的精简版；与快速功能面板共用同一份服务端数据） */
+data class PlayerMarkInfo(
+    /** 标记者名字 */
+    val byName: String,
+    /** 标记时间（epoch ms） */
+    val at: Long,
+    /** 理由（未填为空） */
+    val reason: String,
 )

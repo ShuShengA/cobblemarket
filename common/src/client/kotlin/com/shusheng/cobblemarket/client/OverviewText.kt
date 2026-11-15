@@ -244,15 +244,15 @@ fun overviewLines(
     out += iconLine(r.dexSeen, DEX_SEEN_ICON)
     out += iconLine(r.dexCaught, DEX_CAUGHT_ICON)
 
-    // 可疑标记（2026-11-14）：只在被标记时出现；标签用图标代替文字，整行红色。
-    // 完整理由在快速功能面板的悬停窗里看
-    if (r.marked) {
+    // 可疑标记（2026-11-15 多标记）：每条标记一组「图标行（标记者 + 时间）+ 理由行」，
+    // 按时间升序（谁先打的在前）。不折叠、不省略 —— 悬停窗 = 行的完整版。
+    r.marks.forEach { mark ->
         out += OverviewLine(
             Text.translatable(
                 "cobblemarket.overview.value.marked_by_time",
-                Text.literal(r.markedBy.ifBlank { "?" }),
+                Text.literal(mark.byName.ifBlank { "?" }),
                 Text.literal(
-                    if (r.markedAt > 0) MARK_TIME_FORMATTER.format(java.time.Instant.ofEpochMilli(r.markedAt))
+                    if (mark.at > 0) MARK_TIME_FORMATTER.format(java.time.Instant.ofEpochMilli(mark.at))
                     else "-"
                 )
             ).styled { it.withColor(0xFF7777) },
@@ -260,7 +260,7 @@ fun overviewLines(
             height = OVERVIEW_ICON_ROW_HEIGHT,
         )
         // 理由：按 30 字拆行，避免长理由把悬停窗撑出屏幕；首行带「理由：」标签
-        val reason = r.markReason.trim()
+        val reason = mark.reason.trim()
         if (reason.isNotEmpty()) {
             reason.chunked(30).forEachIndexed { i, chunk ->
                 out += if (i == 0) {

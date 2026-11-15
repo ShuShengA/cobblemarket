@@ -9,6 +9,7 @@ import com.shusheng.cobblemarket.client.IconAnimMode
 import com.shusheng.cobblemarket.client.LoadState
 import com.shusheng.cobblemarket.client.PlayerSkinCache
 import com.shusheng.cobblemarket.client.drawItemWithBar
+import com.shusheng.cobblemarket.client.drawMarkCountBadge
 import com.shusheng.cobblemarket.client.icon.IconCryClick
 import com.shusheng.cobblemarket.client.icon.IconRegistry
 import com.shusheng.cobblemarket.client.icon.PokemonIconRenderer
@@ -538,7 +539,8 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
                 drawNineSlice(
                     context, BUTTON_TEXTURE, avatarX, y + 4, PANEL_AVATAR, PANEL_AVATAR,
                     when {
-                        entry.marked -> 2
+                        // 选中态 = **自己**标记过（别人标记过不影响按钮语义：点它就打自己的）
+                        entry.markedByMe -> 2
                         btnHovered -> 1
                         else -> 0
                     },
@@ -555,11 +557,13 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
                     avatarX, y + 4, PANEL_AVATAR
                 )
             }
-            // 已标记：头像左侧常驻一个标记图标（右键选中那行不重复画，按钮本身已是选中态）
-            if (entry.marked && markModeUuid != entry.uuid) {
-                drawMarkIcon(
-                    context, markIconX + markIconInset, y + 4 + markIconInset, markIconSize
-                )
+            // 已标记：头像左侧常驻一个标记图标（右键选中那行不重复画，按钮本身已是选中态）；
+            // ≥2 人标记时图标右上角带数量角标
+            if (entry.marks.isNotEmpty() && markModeUuid != entry.uuid) {
+                val iconX = markIconX + markIconInset
+                val iconY = y + 4 + markIconInset
+                drawMarkIcon(context, iconX, iconY, markIconSize)
+                drawMarkCountBadge(context, textRenderer, entry.marks.size, iconX, iconY, markIconSize)
             }
         }
         // 标题区与名单之间的分割线 —— 放在行高亮**之后**画，免得第一行的高亮把这根线盖淡
@@ -588,31 +592,31 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
             ),
             false, 0xFFFFFF
         )
-        // 操作提示：右键行可以把头像变成可疑按钮（已标记时是取消）
+        // 操作提示：右键行可以把头像变成可疑按钮（自己已标记过时是取消自己的）
         lines += TipLine(
             Text.translatable(
-                if (entry.marked) "cobblemarket.quick_showcase.mark_hint_marked"
+                if (entry.markedByMe) "cobblemarket.quick_showcase.mark_hint_marked"
                 else "cobblemarket.quick_showcase.mark_hint"
             ),
             false, 0xAAAAAA
         )
-        if (entry.marked) {
-            // 标记信息：行首用图标代替「可疑标记」文字
+        // 所有标记（按时间升序）：每条 = 行首图标 +「由 X 于 Y 标记」+ 理由行
+        entry.marks.forEach { mark ->
             lines += TipLine(
                 Text.translatable(
                     "cobblemarket.quick_showcase.marked_by",
-                    Text.literal(entry.markedBy),
+                    Text.literal(mark.byName.ifBlank { "?" }),
                     Text.literal(
-                        if (entry.markedAt > 0) markTimeFormatter.format(java.time.Instant.ofEpochMilli(entry.markedAt))
+                        if (mark.at > 0) markTimeFormatter.format(java.time.Instant.ofEpochMilli(mark.at))
                         else "-"
                     )
                 ),
                 true, 0xFF7777
             )
-            if (entry.markReason.isNotBlank()) {
+            if (mark.reason.isNotBlank()) {
                 lines += TipLine(
                     Text.translatable(
-                        "cobblemarket.quick_showcase.mark_reason", Text.literal(entry.markReason)
+                        "cobblemarket.quick_showcase.mark_reason", Text.literal(mark.reason)
                     ),
                     false, 0xAAAAAA
                 )
@@ -900,7 +904,8 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
                 val markButton = markButtonEntryAt(panelX, mouseX, mouseY)
                 if (markButton != null) {
                     playButtonClickSound()
-                    if (markButton.marked) {
+                    // 只取消**自己**的标记；别人标记过时按钮是未选中态 ⇒ 点它是打自己的标记
+                    if (markButton.markedByMe) {
                         sendToServer(ClearPeekMarkPayload(markButton.uuid))
                         markModeUuid = null
                     } else {

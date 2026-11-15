@@ -78,19 +78,30 @@ data class StopPeekPayload(val dummy: Int = 0) : CustomPayload {
     }
 }
 
-/** 在线玩家名单的一行：监视目标（uuid + 名字 + 所在维度 id + 可疑标记信息） */
+/**
+ * 一条可疑标记（2026-11-15 多标记）：每个标记者对同一目标各有一条，互不覆盖。
+ *
+ * ⚠ 不下发标记者 UUID —— 客户端只需要展示与「我是否标记过」（由 [PeekTargetEntry.markedByMe]
+ *   单独下发，按请求者算）。
+ */
+data class PeekMarkEntry(
+    /** 标记者名字 */
+    val byName: String,
+    /** 标记时间（epoch ms） */
+    val at: Long,
+    /** 理由（未填为空） */
+    val reason: String,
+)
+
+/** 在线玩家名单的一行：监视目标（uuid + 名字 + 所在维度 id + 可疑标记列表） */
 data class PeekTargetEntry(
     val uuid: UUID,
     val name: String,
     val dimension: String,
-    /** 是否被打了「可疑」标记 */
-    val marked: Boolean = false,
-    /** 标记者名字（未标记时为空） */
-    val markedBy: String = "",
-    /** 标记时间（epoch ms；未标记时为 0） */
-    val markedAt: Long = 0L,
-    /** 标记理由（未填时为空） */
-    val markReason: String = "",
+    /** 所有可疑标记，按时间升序（空 = 未被标记） */
+    val marks: List<PeekMarkEntry> = emptyList(),
+    /** 请求者本人是否标记过这名玩家（按钮选中态 / 点击取消自己的标记） */
+    val markedByMe: Boolean = false,
 )
 
 /**
@@ -134,11 +145,14 @@ data class PeekTargetsPayload(val entries: List<PeekTargetEntry>) : CustomPayloa
                     b.writeString(e.name)
                     // 维度 id（2026-11-14 追加在**末尾**，payload 顺序铁律；两端同版才读得对）
                     b.writeString(e.dimension)
-                    // 可疑标记（2026-11-14 继续追加在末尾）
-                    b.writeBoolean(e.marked)
-                    b.writeString(e.markedBy)
-                    b.writeLong(e.markedAt)
-                    b.writeString(e.markReason)
+                    // 可疑标记列表（2026-11-15 多标记；同样依次追加，两端同版）
+                    b.writeVarInt(e.marks.size)
+                    e.marks.forEach { m ->
+                        b.writeString(m.byName)
+                        b.writeLong(m.at)
+                        b.writeString(m.reason)
+                    }
+                    b.writeBoolean(e.markedByMe)
                 }
             },
             { b ->
@@ -146,14 +160,24 @@ data class PeekTargetsPayload(val entries: List<PeekTargetEntry>) : CustomPayloa
                 // 读端一律具名传参：顺序写错会静默串位（编译不报）
                 PeekTargetsPayload(
                     List(n) {
+                        // 读端一律具名传参：顺序写错会静默串位（编译不报）
+                        val uuid = b.readUuid()
+                        val name = b.readString()
+                        val dimension = b.readString()
+                        val markCount = b.readVarInt()
+                        val marks = List(markCount) {
+                            PeekMarkEntry(
+                                byName = b.readString(),
+                                at = b.readLong(),
+                                reason = b.readString()
+                            )
+                        }
                         PeekTargetEntry(
-                            uuid = b.readUuid(),
-                            name = b.readString(),
-                            dimension = b.readString(),
-                            marked = b.readBoolean(),
-                            markedBy = b.readString(),
-                            markedAt = b.readLong(),
-                            markReason = b.readString()
+                            uuid = uuid,
+                            name = name,
+                            dimension = dimension,
+                            marks = marks,
+                            markedByMe = b.readBoolean()
                         )
                     }
                 )
@@ -254,8 +278,10 @@ object PeekNetwork {
                 return@registerC2S
             }
             val state = PeekMarkState.get(player.server)
-            state.clear(payload.targetUuid)
-            state.saveNow(player.server)
+            // 只删**自己**的标记；没删到任何东西就不写盘（requestSave 只在状态真的变脏时调）
+            if (state.clear(payload.targetUuid, player.uuid)) {
+                state.saveNow(player.server)
+            }
             sendTargets(player)
         }
     }
@@ -269,16 +295,15 @@ object PeekNetwork {
             .filter { it.uuid != player.uuid && !it.isSpectator }
             .sortedBy { it.gameProfile.name.lowercase() }
             .map {
-                val mark = marks.get(it.uuid)
                 PeekTargetEntry(
                     uuid = it.uuid,
                     name = it.gameProfile.name,
                     // 客户端面板悬停时显示「维度：主世界 / 下界 / …」
                     dimension = it.serverWorld.registryKey.value.toString(),
-                    marked = mark != null,
-                    markedBy = mark?.byName.orEmpty(),
-                    markedAt = mark?.at ?: 0L,
-                    markReason = mark?.reason.orEmpty(),
+                    // 所有标记（按时间升序）；markedByMe 决定按钮选中态 / 点击语义
+                    marks = marks.marksFor(it.uuid)
+                        .map { m -> PeekMarkEntry(m.byName, m.at, m.reason.orEmpty()) },
+                    markedByMe = marks.get(it.uuid, player.uuid) != null,
                 )
             }
             .toList()
