@@ -14,6 +14,7 @@
 - **The six IV fields for RP Shop / custom NPC shop Pokémon are now a lower bound (≥)**: filling 20 means that stat is generated between 20 and 31 (previously fixed at 20); existing offers keep their fixed values unless edited and saved
 - **Quick Actions "Online Players" panel: hovering a row now shows the dimension that player is in** (clicking to spectate is unchanged)
 - **Switching spectate targets no longer sends you back to your original spot first**: switching to another player in the same dimension now teleports you straight to the new target (previously it ended the old session, moved you back, then started the new one, which looked like an extra teleport)
+- **Players being spectated no longer look like spectators in the tab list**: during a spectate session other players see them with the game mode they had before the session started (no italic/gray name), while ping, title and other tab info stay unchanged, so cheating players can no longer tell from the tab list that someone is spectating
 
 ### Fixes
 

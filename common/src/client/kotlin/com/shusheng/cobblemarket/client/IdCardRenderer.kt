@@ -194,7 +194,7 @@ object IdCardRenderer {
             col.forEach { line ->
                 val rowY = y.toInt()
                 val textY = lineTextY(rowY, line)
-                val iconY = lineIconY(rowY, line)
+                val iconY = lineIconY(rowY, line) + line.iconDy
                 // ⚠ 截断要**扣掉货币单位宽度**（单位是截断之后另外补画的）与行首图标宽度
                 val unitW = if (line.money) currencyUnitWidth(textRenderer, line.isPoints) else 0
                 val iconW = line.icon?.let { it.size + com.shusheng.cobblemarket.client.OVERVIEW_ICON_GAP } ?: 0

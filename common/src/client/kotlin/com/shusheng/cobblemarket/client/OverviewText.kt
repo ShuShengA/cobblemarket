@@ -43,6 +43,13 @@ class OverviewLine(
     /** 这一行占的高度 —— 普通行 [OVERVIEW_LINE_HEIGHT]，带图标的行见 [OVERVIEW_ICON_ROW_HEIGHT] */
     val height: Int = OVERVIEW_LINE_HEIGHT,
     /**
+     * 行首图标在 [lineIconY] 基础上的**额外下移**（2026-11-16 用户实测：
+     * 可疑标记那行 8px 图标按行高中居时比文字高 1px，悬停窗里看着「偏高」；
+     * 快速功能面板的悬停窗是按文字基线对齐的、没有这个问题）。
+     * ⚠ 只给**图标比行高小很多**的行用（标记行传 1）；图鉴那两行用原值。
+     */
+    val iconDy: Int = 0,
+    /**
      * 金额行是不是 **RP** —— 决定行尾补哪种单位：RP 是**图标字形**、主货币是 `₽` 或那件物品的图标。
      * ⚠ 这两种**绝不能混**（见 `CurrencyDisplay.kt` 顶部的红线）：一条金额属于哪套账本，
      *   就只画那一套的单位。
@@ -258,6 +265,8 @@ fun overviewLines(
             ).styled { it.withColor(0xFF7777) },
             icon = MARK_LINE_ICON,
             height = OVERVIEW_ICON_ROW_HEIGHT,
+            // 8px 图标在 16px 行里按行高中居会偏高 1px ⇒ 下移 1px 与文字基线对齐
+            iconDy = 1,
         )
         // 理由：按 30 字拆行，避免长理由把悬停窗撑出屏幕；首行带「理由：」标签
         val reason = mark.reason.trim()

@@ -598,7 +598,7 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         lines.forEach { line ->
             // ⚠ 行内位置**只用这两个算式**（与 ID 卡共用同一份，别在这里另算一遍）
             val textY = lineTextY(rowY, line)
-            val iconY = lineIconY(rowY, line)
+            val iconY = lineIconY(rowY, line) + line.iconDy
             // 行首图标（图鉴那两行）—— 文字要**右移**，别压在图标上
             val iconW = line.icon?.let { icon -> icon.size + com.shusheng.cobblemarket.client.OVERVIEW_ICON_GAP } ?: 0
             line.icon?.let { drawLineIcon(context, it, tx, iconY) }

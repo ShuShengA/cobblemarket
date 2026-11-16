@@ -26,8 +26,10 @@ fun drawMarkCountBadge(
     if (count < 2) return
     val label = if (count > 99) "99+" else count.toString()
     val textW = textRenderer.getWidth(label)
+    // 再往右上挪一点：右缘对齐图标右缘 +1px、底边压在图标上沿之上（2026-11-16 用户实测：
+    // 原先 y-1 时数字底部与三角图标重合明显）
     context.drawTextWithShadow(
         textRenderer, Text.literal(label),
-        iconX + iconSize - textW + 1, iconY - 1, 0xFFFFFF
+        iconX + iconSize - textW + 2, iconY - 3, 0xFFFFFF
     )
 }

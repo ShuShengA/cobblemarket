@@ -107,6 +107,12 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     private val peekTargetScrollBar = ScrollBar()
     /** 右键选中的行（头像位置变成「可疑」按钮）；null = 没有 */
     private var markModeUuid: UUID? = null
+    /**
+     * 提交中的标记操作（目标 UUID / 期望结果 / 过期时刻）——
+     * 服务端处理完会推回新名单，`onPeekTargets` 里核对状态一致后播成功音效
+     * （失败/限流时不会变，超时丢弃，避免永久挂起）。
+     */
+    private var pendingMarkResult: Triple<UUID, Boolean, Long>? = null
     /** 理由输入弹窗的目标；null = 弹窗关闭 */
     private var markPromptTarget: PeekTargetEntry? = null
     private var markReasonField: TextFieldWidget? = null
@@ -380,6 +386,16 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
 
     /** 服务端回包：在线玩家名单（快速展示右侧面板用） */
     fun onPeekTargets(payload: PeekTargetsPayload) {
+        // 标记/取消操作的结果确认：名单里该玩家的选中态与期望一致 ⇒ 播成功音效
+        pendingMarkResult?.let { (uuid, wantMarked, expiresAt) ->
+            val updated = payload.entries.firstOrNull { it.uuid == uuid }
+            if (updated != null && updated.markedByMe == wantMarked) {
+                com.shusheng.cobblemarket.client.CobbleMarketClient.playResultSound(true)
+                pendingMarkResult = null
+            } else if (System.currentTimeMillis() > expiresAt) {
+                pendingMarkResult = null
+            }
+        }
         peekTargets = payload.entries
         peekTargetsLoadState.markLoaded()
         peekTargetScroll = peekTargetScroll.coerceIn(0, maxOf(0, peekTargets.size - peekPanelRows()))
@@ -906,6 +922,9 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
                     playButtonClickSound()
                     // 只取消**自己**的标记；别人标记过时按钮是未选中态 ⇒ 点它是打自己的标记
                     if (markButton.markedByMe) {
+                        pendingMarkResult = Triple(
+                            markButton.uuid, false, System.currentTimeMillis() + MARK_RESULT_TIMEOUT_MS
+                        )
                         sendToServer(ClearPeekMarkPayload(markButton.uuid))
                         markModeUuid = null
                     } else {
@@ -1031,9 +1050,12 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         )
         field.setMaxLength(80)
         field.setPlaceholder(Text.translatable("cobblemarket.quick_showcase.mark_reason_hint"))
-        field.setFocused(true)
         markReasonField = field
         addDrawableChild(field)
+        // ⚠ 只调 widget 的 setFocused(true) 不够：Screen 的焦点还在别处 ⇒ 按键不会分发到输入框，
+        //   表现是「光标在闪但打不了字」（2026-11-16 用户实测）。必须把 Screen 的初始焦点也交给它。
+        field.setFocused(true)
+        setInitialFocus(field)
         // 弹窗期间隐藏三个大框按钮，避免从遮罩上透出来
         pokemonBtn?.visible = false
         idCardBtn?.visible = false
@@ -1043,6 +1065,8 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     private fun closeMarkPrompt() {
         markReasonField?.let { remove(it) }
         markReasonField = null
+        // 焦点交还界面（否则移除掉的输入框仍占着 Screen 焦点，后续按键会被它吞掉）
+        setFocused(null)
         markPromptTarget = null
         markModeUuid = null
         pokemonBtn?.visible = true
@@ -1053,6 +1077,9 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     private fun submitMark() {
         val target = markPromptTarget ?: return
         playButtonClickSound()
+        pendingMarkResult = Triple(
+            target.uuid, true, System.currentTimeMillis() + MARK_RESULT_TIMEOUT_MS
+        )
         sendToServer(SetPeekMarkPayload(target.uuid, markReasonField?.text.orEmpty()))
         // 服务端会立即把新名单推回来；先关弹窗
         closeMarkPrompt()
@@ -1108,6 +1135,9 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         private const val DROP_MS = 220L
         /** 收起时长（ms）：三个框向上退场，播完才真正关界面 */
         private const val CLOSE_MS = 180L
+
+        /** 标记操作等待服务端回包的超时（超过丢弃 pending，避免永久挂起） */
+        private const val MARK_RESULT_TIMEOUT_MS = 2_000L
         /**
          * 内容和按钮边缘之间留的空隙。
          *
