@@ -66,6 +66,10 @@ fun sendToPlayer(player: ServerPlayerEntity, payload: CustomPayload) {
     ServerPlayNetworking.send(player, payload)
 }
 
+fun sendPacketToPlayer(player: ServerPlayerEntity, packet: net.minecraft.network.packet.Packet<*>) {
+    player.networkHandler.sendPacket(packet)
+}
+
 fun <T : CustomPayload> registerS2CType(
     id: CustomPayload.Id<T>,
     codec: PacketCodec<net.minecraft.network.RegistryByteBuf, T>,

@@ -1,0 +1,11 @@
+{
+  "required": false,
+  "package": "com.shusheng.cobblemarket.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "PlayerListS2CPacketMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

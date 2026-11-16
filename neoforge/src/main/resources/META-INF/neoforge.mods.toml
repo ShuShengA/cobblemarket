@@ -45,7 +45,10 @@ side="BOTH"
 config="cobblemarket.client.mixins.json"
 clientOnly=true
 
-# 服务端 mixin（tab 列表伪装监视者的游戏模式），两端都加载；
-# 配置与 refmap 随 common 打进 jar，与上面的 client 配置同一套打包流程
+# 服务端 mixin（tab 列表伪装监视者的游戏模式），两端都加载。
+# ⚠ NeoForge 端必须用**不带 refmap** 的配置：mixin 类的注解已被 architectury-transformer
+#   转成 official 名，而 common 的 cobblemarket.mixins.json 带的是 named:intermediary refmap
+#   —— Mixin 在 NeoForge 运行时会把注解解析成 intermediary 类（class_2703）并注入失败
+#   （2026-11-17 实测日志：InvalidInjectionException，target class 'net/minecraft/class_2703'）。
 [[mixins]]
-config="cobblemarket.mixins.json"
+config="cobblemarket.neoforge.mixins.json"

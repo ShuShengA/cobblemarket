@@ -6,6 +6,7 @@ import net.minecraft.command.CommandRegistryAccess
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
 import net.minecraft.network.packet.CustomPayload
+import net.minecraft.network.packet.Packet
 import net.minecraft.resource.ResourceManager
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.command.CommandManager
@@ -55,6 +56,16 @@ fun <T : CustomPayload> registerC2S(
 
 @ExpectPlatform
 fun sendToPlayer(player: ServerPlayerEntity, payload: CustomPayload): Unit = throw AssertionError()
+
+/**
+ * 发送一个**原版包**（相机 / 游戏模式 / 位置同步等，不走自定义 payload 注册）。
+ *
+ * ⚠ 两端实现都必须走「方法定义所在的父类」调用（见各端实现的注释）——
+ *   直接调 `networkHandler.sendPacket` 会让 architecture-transformer 找不到方法映射
+ *   （`sendPacket` 定义在父类），NeoForge 运行时抛 `NoSuchMethodError`（2026-11-17 实测崩服）。
+ */
+@ExpectPlatform
+fun sendPacketToPlayer(player: ServerPlayerEntity, packet: Packet<*>): Unit = throw AssertionError()
 
 /** S2C payload 类型注册（服务端发送侧需要；客户端接收侧走 registerS2C）。 */
 @ExpectPlatform

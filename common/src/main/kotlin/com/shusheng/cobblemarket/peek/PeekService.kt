@@ -3,6 +3,7 @@ package com.shusheng.cobblemarket.peek
 import com.shusheng.cobblemarket.CobbleMarket
 import com.shusheng.cobblemarket.network.PeekNetwork
 import com.shusheng.cobblemarket.permission.MarketPermissions
+import com.shusheng.cobblemarket.platform.sendPacketToPlayer
 import net.minecraft.entity.Entity
 import net.minecraft.entity.effect.StatusEffectInstance
 import net.minecraft.network.packet.s2c.play.EntityPositionS2CPacket
@@ -650,7 +651,7 @@ object PeekService {
     /** 强制客户端把相机切到 [entity]：跳过服务端「没变化就不发包」的短路 */
     private fun forceCamera(player: ServerPlayerEntity, entity: Entity) {
         try {
-            player.networkHandler.sendPacket(SetCameraEntityS2CPacket(entity))
+            sendPacketToPlayer(player, SetCameraEntityS2CPacket(entity))
         } catch (e: Exception) {
             CobbleMarket.LOGGER.warn("Peek: failed to force camera sync for {}: {}", player.gameProfile.name, e.message)
         }
@@ -670,13 +671,15 @@ object PeekService {
     private fun forceGameModeSync(player: ServerPlayerEntity) {
         try {
             val mode = player.interactionManager.gameMode
-            player.networkHandler.sendPacket(
+            sendPacketToPlayer(
+                player,
                 GameStateChangeS2CPacket(
                     GameStateChangeS2CPacket.GAME_MODE_CHANGED,
                     mode.id.toFloat()
                 )
             )
-            player.networkHandler.sendPacket(
+            sendPacketToPlayer(
+                player,
                 PlayerListS2CPacket(PlayerListS2CPacket.Action.UPDATE_GAME_MODE, player)
             )
             player.sendAbilitiesUpdate()
@@ -729,7 +732,7 @@ object PeekService {
             server.playerManager.playerList.forEach { other ->
                 if (other !== player) {
                     try {
-                        other.networkHandler.sendPacket(packet)
+                        sendPacketToPlayer(other, packet)
                     } catch (e: Exception) {
                         // 单个连接异常不影响其他人
                         CobbleMarket.LOGGER.warn("Peek: failed to broadcast position to {}: {}", other.gameProfile.name, e.message)

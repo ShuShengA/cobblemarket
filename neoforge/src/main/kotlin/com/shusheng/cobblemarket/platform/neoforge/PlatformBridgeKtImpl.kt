@@ -77,6 +77,16 @@ fun sendToPlayer(player: ServerPlayerEntity, payload: CustomPayload) {
     PacketDistributor.sendToPlayer(player, payload)
 }
 
+fun sendPacketToPlayer(player: ServerPlayerEntity, packet: net.minecraft.network.packet.Packet<*>) {
+    // ⚠ 用父类的 `send(Packet, PacketCallbacks)`，**不要**用 `sendPacket`：
+    //   sendPacket 定义在父类，architectury-transformer 按调用 owner 查不到映射，
+    //   会输出未转换的 `sendPacket` ⇒ NeoForge 运行时 NoSuchMethodError（2026-11-17 实测崩服）。
+    //   而 `send` 在 Yarn / official（Mojang）两边**同名**，不依赖那份缺失的映射。
+    //   （Yarn 源集里 `ServerCommonNetworkHandler.sendPacket` 不可见，所以这里也只能用 send。）
+    (player.networkHandler as net.minecraft.server.network.ServerCommonNetworkHandler)
+        .send(packet, null)
+}
+
 fun <T : CustomPayload> registerS2CType(
     id: CustomPayload.Id<T>,
     codec: PacketCodec<RegistryByteBuf, T>,
