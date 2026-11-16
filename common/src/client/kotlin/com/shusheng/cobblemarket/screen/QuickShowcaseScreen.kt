@@ -1053,9 +1053,12 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         markReasonField = field
         addDrawableChild(field)
         // ⚠ 只调 widget 的 setFocused(true) 不够：Screen 的焦点还在别处 ⇒ 按键不会分发到输入框，
-        //   表现是「光标在闪但打不了字」（2026-11-16 用户实测）。必须把 Screen 的初始焦点也交给它。
+        //   表现是「光标在闪但打不了字」（2026-11-16 用户实测）。
+        //   ⚠ 不能用 `setInitialFocus(field)` —— 它内部走 element.getNavigationPath()，
+        //   而 TextFieldWidget 没有导航路径、返回 null ⇒ 焦点静默不生效（2026-11-17 实测复查）。
+        //   直接调 AbstractParentElement.setFocused(Element) 才是真正把焦点交给它。
         field.setFocused(true)
-        setInitialFocus(field)
+        setFocused(field)
         // 弹窗期间隐藏三个大框按钮，避免从遮罩上透出来
         pokemonBtn?.visible = false
         idCardBtn?.visible = false
