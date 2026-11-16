@@ -392,6 +392,9 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
             if (updated != null && updated.markedByMe == wantMarked) {
                 com.shusheng.cobblemarket.client.CobbleMarketClient.playResultSound(true)
                 pendingMarkResult = null
+                // 取消标记确认后才退出右键选中态：否则本地先恢复头像 + 常驻标记图标、
+                // 等服务端回包又删掉标记 ⇒ 视觉上闪一下（2026-11-17 用户实测反馈）
+                if (!wantMarked) markModeUuid = null
             } else if (System.currentTimeMillis() > expiresAt) {
                 pendingMarkResult = null
             }
@@ -926,7 +929,8 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
                             markButton.uuid, false, System.currentTimeMillis() + MARK_RESULT_TIMEOUT_MS
                         )
                         sendToServer(ClearPeekMarkPayload(markButton.uuid))
-                        markModeUuid = null
+                        // ⚠ 这里**不**立刻退出选中态：先恢复头像会闪一下「头像 + 常驻标记图标」，
+                        //   等服务端回包确认标记已移除后在 onPeekTargets 里再退出（2026-11-17 用户实测反馈）
                     } else {
                         openMarkPrompt(markButton)
                     }
