@@ -452,7 +452,7 @@ class IdCardScreen : Screen(Text.translatable("cobblemarket.idcard.title")) {
 
     private fun drawInfoColumns(context: DrawContext, row: com.shusheng.cobblemarket.overview.PlayerOverviewRow, geo: Geometry) {
         // showOnline = false：自己看自己必然在线，名字后面不跟「在线」（用户 2026-10-16 指出）
-        val lines = overviewLines(row, showOnline = false)
+        val lines = overviewLines(row, showOnline = false, showMarks = false)
         amountHits.clear()
         // ⚠ 按**分组块**分列，一块不拆开 —— 2026-10-16 用户实测指出：原先按"前半 / 后半"硬切，
         //   会出现「钱」这个标题落在左列末尾、它的内容（主货币余额）却跑到右列开头的割裂

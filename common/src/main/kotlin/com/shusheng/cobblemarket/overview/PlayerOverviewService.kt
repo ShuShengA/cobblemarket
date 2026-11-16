@@ -211,8 +211,18 @@ object PlayerOverviewService {
      *   由**同一份代码**保证一致（方案要的就是"逐项一致"），也不会两份逻辑各自漂移。
      *   代价是开一次 ID 卡会算一遍全服（几毫秒、界面打开时一次）—— 这个量级无所谓。
      */
-    fun buildRow(server: MinecraftServer, uuid: UUID): PlayerOverviewRow? =
+    /**
+     * @param includeMarks 是否带可疑标记。**ID 卡（自己看自己 / 分享到聊天）必须传 false**：
+     *   标记是监察者内部信息，被标记者本人和全服玩家都不该看到（2026-11-17 用户实测发现：
+     *   ID 卡界面把标记画了出来，布局撑乱且隐私泄露）。
+     */
+    fun buildRow(
+        server: MinecraftServer,
+        uuid: UUID,
+        includeMarks: Boolean = true,
+    ): PlayerOverviewRow? =
         buildRows(server).firstOrNull { it.uuid == uuid }
+            ?.let { if (includeMarks) it else it.copy(marks = emptyList()) }
 
     /** 按 uuid 计数（各表一次遍历用，避免逐人全表扫描） */
     private fun <T> countBy(items: Collection<T>, key: (T) -> UUID): Map<UUID, Int> {

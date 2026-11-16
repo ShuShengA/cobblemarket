@@ -170,6 +170,12 @@ fun overviewLines(
     r: PlayerOverviewRow,
     groups: Boolean = true,
     showOnline: Boolean = true,
+    /**
+     * 是否渲染可疑标记（默认 true = 总览悬停窗）。
+     * **ID 卡（`IdCardRenderer` / `IdCardScreen`）必须传 false**：标记是监察者内部信息，
+     * 且 ID 卡是固定布局、多出来的标记行会把排版撑乱（2026-11-17 用户实测发现）。
+     */
+    showMarks: Boolean = true,
 ): List<OverviewLine> {
     val out = mutableListOf<OverviewLine>()
 
@@ -253,7 +259,8 @@ fun overviewLines(
 
     // 可疑标记（2026-11-15 多标记）：每条标记一组「图标行（标记者 + 时间）+ 理由行」，
     // 按时间升序（谁先打的在前）。不折叠、不省略 —— 悬停窗 = 行的完整版。
-    r.marks.forEach { mark ->
+    // ⚠ 只在总览悬停窗渲染；ID 卡传 showMarks = false（标记不该外泄、且会撑乱固定布局）。
+    if (showMarks) r.marks.forEach { mark ->
         out += OverviewLine(
             Text.translatable(
                 "cobblemarket.overview.value.marked_by_time",

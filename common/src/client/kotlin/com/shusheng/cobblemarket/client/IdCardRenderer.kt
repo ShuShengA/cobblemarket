@@ -180,7 +180,7 @@ object IdCardRenderer {
         val split = cardLeft + CARD_W * SPLIT
         // 不显示「在线」：这是**分享时的快照**，online 恒为 true，对方下线后仍标着在线是误导
         // （2026-10-28 用户确认；ID 卡界面同样传 false——自己看自己必然在线）
-        val lines = overviewLines(row, showOnline = false)
+        val lines = overviewLines(row, showOnline = false, showMarks = false)
         val columns = splitByGroups(lines)
 
         val startX = split + 10f

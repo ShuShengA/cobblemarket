@@ -60,7 +60,14 @@ object IdCardDataNetwork {
 
         // ⚠ C2S 必须写在**本函数体内** —— 插到别的函数里会编译通过但永不注册，第一次发包直接断连
         registerC2S(RequestIdCardDataPayload.ID, RequestIdCardDataPayload.CODEC) { _, player ->
-            sendToPlayer(player, IdCardDataPayload(PlayerOverviewService.buildRow(player.server, player.uuid)))
+            // ⚠ includeMarks = false：ID 卡是「自己看自己」，不能把监察者打的标记（标记者/理由）
+            //   展示给被标记者本人（2026-11-17 用户实测发现）
+            sendToPlayer(
+                player,
+                IdCardDataPayload(
+                    PlayerOverviewService.buildRow(player.server, player.uuid, includeMarks = false)
+                )
+            )
         }
     }
 }

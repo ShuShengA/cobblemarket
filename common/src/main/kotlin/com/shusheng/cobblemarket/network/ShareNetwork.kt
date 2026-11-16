@@ -304,8 +304,10 @@ object ShareNetwork {
 
     /** ID 卡分享：把自己的**整张卡**发到全服（数据取分享那一刻的快照，与精灵/物品同一套缓存语义） */
     private fun idCardShareMessage(player: ServerPlayerEntity, shareId: UUID): Text? {
+        // ⚠ includeMarks = false：ID 卡会发给**全服所有玩家**，绝不能带上监察者的标记
+        //   （标记者 / 时间 / 理由都是内部信息，2026-11-17 用户实测发现会泄露）
         val row = com.shusheng.cobblemarket.overview.PlayerOverviewService
-            .buildRow(player.server, player.uuid) ?: return null
+            .buildRow(player.server, player.uuid, includeMarks = false) ?: return null
         // 装备 / 经验：分享者本人在线，直接从实体读（总览列表不填这两样，省流量）
         val registry = player.serverWorld.registryManager
         fun encode(stack: net.minecraft.item.ItemStack): net.minecraft.nbt.NbtCompound? =
