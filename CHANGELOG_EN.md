@@ -20,7 +20,7 @@
 
 - **Offline players without a cached name showed as a raw UUID in Player Overview**: names are now recovered from online snapshots, auctions, buy orders and bans; if a name still cannot be found it shows "Unknown player", and the full UUID is still visible in the hover tooltip
 - **Hovering a shared Market ID Card in chat showed the sharer's model without their equipment (armor etc.) when they were far away or offline**: the model now wears the four pieces captured at share time; whether armor is visible still follows the accessory mod (e.g. Accessories) settings
-- **Clicking "Spectate" on a NeoForge server crashed the server**: the server threw a `NoSuchMethodError` and stopped (the issue existed since 1.3.7); camera / game mode / position sync packets now go through the platform bridge with correct method mappings on NeoForge
+- **Clicking "Spectate" on a NeoForge server crashed the server**
 
 ## 1.3.7 (released)
 
