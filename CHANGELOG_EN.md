@@ -19,7 +19,6 @@
 ### Fixes
 
 - **Offline players without a cached name showed as a raw UUID in Player Overview**: names are now recovered from online snapshots, auctions, buy orders and bans; if a name still cannot be found it shows "Unknown player", and the full UUID is still visible in the hover tooltip
-- **Player Overview row names / values were drawn on top of the sort-field dropdown when it was open**: rows are no longer drawn while the dropdown is expanded
 - **Hovering a shared Market ID Card in chat showed the sharer's model without their equipment (armor etc.) when they were far away or offline**: the model now wears the four pieces captured at share time; whether armor is visible still follows the accessory mod (e.g. Accessories) settings
 
 ## 1.3.7 (released)
