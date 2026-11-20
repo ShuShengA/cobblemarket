@@ -11,11 +11,10 @@
 
 ### Fixes
 
-- **The spectating player could not pass through walls and saw their own equipment**: the spectating player is now always in real spectator mode — able to fly through walls, with no equipment or cape shown on themselves (the disguise now only applies to other players)
+- **Spectator disguise fixes for peeking**: peeking staff used to be treated as if in survival by their own client (could not pass through walls, saw their own equipment), and two staff spectating at the same time could see each other's armor floating around (vanilla spectators render no armor, capes or held items); the disguise now only applies to regular players — the peeker and other staff always see the real spectator state (can fly through walls, translucent head + name, no equipment), while regular players still get the disguised entry; gaining or losing the Player Overview permission takes effect immediately, with no need for the peeker to re-enter spectating
 - **Hovering a shared Pokémon preview in chat: the held item (e.g. Exp. Share) rotated with the mouse while the Pokémon's head stayed still**: chat previews no longer follow the mouse at all (head and held item stay put); hover previews in lists / the bank are unchanged
 - **After a player relogged with a new skin, avatars in trade screens and the "Online Players" panel kept the old skin**: the change now appears on the next frame — no client restart needed (offline players behave as before)
 - **Marking a player in hold mode: the reason field picked up repeated "x" characters from the still-held key, and releasing it lost the selection**: right-clicking a player (suspicious button shown) and having the reason dialog open now suspend the release-to-close behavior, so the key can be released before typing; once the mark session ends (submit / cancel / right-click to deselect) the screen closes normally if the key is not held, and a held quick-actions key no longer types repeat characters into the dialog
-- **Two staff spectating at the same time could see each other's armor floating around (vanilla spectators render no armor, capes or held items)**: staff now see each other in real spectator mode (translucent head + name, no equipment), while regular players still get the disguised entry; gaining or losing the Player Overview permission takes effect immediately, with no need for the peeker to re-enter spectating
 
 ## 1.3.8 (released)
 
