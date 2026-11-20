@@ -11,7 +11,9 @@ import com.shusheng.cobblemarket.network.AuctionPreviewInfo
 import com.shusheng.cobblemarket.network.ListingEntry
 import com.shusheng.cobblemarket.network.ObjectPreviewNetwork
 import com.shusheng.cobblemarket.network.ObjectPreviewPayload
+import com.shusheng.cobblemarket.network.PhotoDataPayload
 import com.shusheng.cobblemarket.network.RequestObjectPreviewPayload
+import com.shusheng.cobblemarket.network.RequestPhotoPayload
 import com.shusheng.cobblemarket.platform.sendToServer
 import com.shusheng.cobblemarket.screen.EntryBadgeRenderer
 import com.shusheng.cobblemarket.screen.ROW_BACKGROUND_TEX_H
@@ -22,6 +24,7 @@ import com.shusheng.cobblemarket.util.TextUtil
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.ChatScreen
+import net.minecraft.client.texture.NativeImageBackedTexture
 import net.minecraft.item.ItemStack
 import net.minecraft.item.tooltip.TooltipType
 import net.minecraft.text.OrderedText
@@ -106,6 +109,36 @@ object ChatObjectPreview {
     /** 播报里挂的指令前缀（服务端 `withClickEvent` 写的就是它） */
     private const val COMMAND_PREFIX = "/cobblemarket "
 
+    /** 照片播报的 kind（`/cobblemarket photo <id>`）—— 数据走独立包，**不复用** ObjectPreviewNetwork */
+    private const val KIND_PHOTO = "photo"
+
+    /**
+     * 悬停时相框的最大显示宽度。
+     * 照片放在**聊天框右侧的剩余区域**、**贴着屏幕右边**（不遮挡聊天）；
+     * 实际宽度按聊天框当前宽度动态取最大 —— 玩家把原版「聊天宽度」调窄，照片会跟着变大
+     * （默认 320 宽时右侧约 300，调到 240 后约 380）。上限 [PHOTO_DISPLAY_W]、还受高度限制。
+     */
+    private const val PHOTO_DISPLAY_W = 520
+
+    /** 客户端解码照片时的单边上限（服务端已限 2048，这里再兜一层解压炸弹） */
+    private const val PHOTO_MAX_SIDE = 2048
+
+    /**
+     * 照片纹理的缓存上限（单独的额度）。
+     * 聊天预览直接用 1280 原图（1280×674 一张约 3.5MB 显存），不能跟着 [CACHE_MAX] 的
+     * 64 条总额度走 —— 否则连续悬停几十张照片就能吃掉上百 MB 显存。
+     */
+    private const val PHOTO_CACHE_MAX = 8
+
+    /** 照片动态纹理的自增序号（避免与固定资源 id 冲突） */
+    private var nextPhotoTextureId = 0
+
+    /**
+     * 照片 id → 拍摄位置。位置只在**聊天播报的 clickEvent**里（`/cobblemarket photo <id> <x> <y> <z>`），
+     * 不会随照片数据包下发；悬停时解析并暂存，照片条目创建时带上。
+     */
+    private val photoLocations = HashMap<String, Triple<Int, Int, Int>>()
+
     /**
      * 缓存里的一条拍品：[isPokemon] 分流用哪套渲染器，另一个字段恒为 null。
      *
@@ -140,7 +173,16 @@ object ChatObjectPreview {
          */
         val isShare: Boolean = false,
         /** ID 卡展示的数据快照（非空 = 这条是 ID 卡展示，画整张卡） */
-        val idCardRow: com.shusheng.cobblemarket.overview.PlayerOverviewRow? = null
+        val idCardRow: com.shusheng.cobblemarket.overview.PlayerOverviewRow? = null,
+        /** 照片展示（2026-11-20）：非空 = 这条是照片，画相框 + 这张纹理 */
+        val photoTexture: Identifier? = null,
+        /** 照片纹理的原始像素尺寸（绘制时按相框内框缩放） */
+        val photoTexW: Int = 0,
+        val photoTexH: Int = 0,
+        /** 照片请求回来是空的（被清理 / 不存在）⇒ 画空相框 + 「照片已失效」 */
+        val photoMissing: Boolean = false,
+        /** 拍摄位置（发布时启用了「分享拍摄位置」才有）：画在照片右下角 */
+        val photoLocation: Triple<Int, Int, Int>? = null
     )
 
     /** 大图数据缓存（插入序，超上限淘汰最旧的） */
@@ -363,6 +405,141 @@ object ChatObjectPreview {
         trimCache(now)
     }
 
+    // ── 照片（2026-11-20）──
+
+    /**
+     * 服务端回包：照片数据。照片不可变 ⇒ 同一张进入缓存后重复悬停秒显。
+     *
+     * 空字节 / 解码失败 / 尺寸离谱 一律入缓存为 [Entry.photoMissing] —— 画空相框 + 「照片已失效」，
+     * 而不是每次悬停都重问服务端。
+     */
+    @JvmStatic
+    fun onPhotoData(payload: PhotoDataPayload) {
+        val key = "$KIND_PHOTO:${payload.photoId}"
+        // 只收自己请求过的 id（防服务端往缓存里塞没请求过的条目）
+        if (key !in requested) return
+        val now = System.currentTimeMillis()
+        // 同一张的旧纹理先释放（10 秒刷新窗口可能二次回包）
+        cache.remove(key)?.let { destroyPhotoTexture(it) }
+
+        if (payload.bytes.isEmpty()) {
+            cache[key] = missingPhotoEntry(now)
+            return
+        }
+        // ⚠ 照片是 JPEG，不能用 NativeImage.read（MC 的 STB 只带 PNG）——
+        //   ImageIO 解码成 BufferedImage 后再转纹素，见 PhotoImageCodec
+        val decoded = PhotoImageCodec.decode(payload.bytes)
+        if (decoded == null) {
+            cache[key] = missingPhotoEntry(now)
+            return
+        }
+        // 解压后的尺寸上限（服务端已限 2048，这里再兜一层）
+        if (decoded.width <= 0 || decoded.height <= 0 ||
+            decoded.width > PHOTO_MAX_SIDE || decoded.height > PHOTO_MAX_SIDE
+        ) {
+            cache[key] = missingPhotoEntry(now)
+            return
+        }
+        // 预览用 1280 原图（显示时最大 520 逻辑宽，1080p 物理约 1560，640 会糊）；
+        // 张数由 [PHOTO_CACHE_MAX] 单独限制
+        val image = PhotoImageCodec.toNativeImage(decoded)
+        val textureId = Identifier.of("cobblemarket", "dynamic/photo_${nextPhotoTextureId++}")
+        try {
+            MinecraftClient.getInstance().textureManager.registerTexture(
+                textureId, NativeImageBackedTexture(image)
+            )
+        } catch (e: Exception) {
+            image.close()
+            com.shusheng.cobblemarket.CobbleMarket.LOGGER.warn(
+                "Failed to register chat photo texture: {}", e.message
+            )
+            cache[key] = missingPhotoEntry(now)
+            return
+        }
+        cache[key] = Entry(
+            isPokemon = false, renderable = null, state = null, stack = null, at = now,
+            photoTexture = textureId, photoTexW = image.width, photoTexH = image.height,
+            photoLocation = photoLocations[key]
+        )
+        trimCache(now)
+    }
+
+    private fun missingPhotoEntry(now: Long): Entry =
+        Entry(
+            isPokemon = false, renderable = null, state = null, stack = null,
+            at = now, photoMissing = true
+        )
+
+    /** 释放照片动态纹理（非照片条目调用无副作用） */
+    private fun destroyPhotoTexture(entry: Entry) {
+        val texture = entry.photoTexture ?: return
+        runCatching { MinecraftClient.getInstance().textureManager.destroyTexture(texture) }
+    }
+
+    /**
+     * 断开连接 / 换世界时释放所有照片纹理（由 `CobbleMarketClient` 在掉线时调用）。
+     * 纹理不随连接清理的话，反复换服会一直漏显存。
+     */
+    @JvmStatic
+    fun resetPhotos() {
+        if (cache.none { it.value.photoTexture != null || it.value.photoMissing }) return
+        val iterator = cache.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next().value
+            if (entry.photoTexture != null || entry.photoMissing) {
+                destroyPhotoTexture(entry)
+                iterator.remove()
+            }
+        }
+        requested.keys.removeAll { it.startsWith("$KIND_PHOTO:") }
+        photoLocations.clear()
+    }
+
+    /**
+     * 照片悬停预览：相框 + 照片。
+     *
+     * 位置照 ID 卡 —— 放在**聊天框右侧的剩余区域居中**（照片很大，居中会压住聊天文字）。
+     * 相框按宽度适配：[PHOTO_DISPLAY_W] 上限，剩余区域更窄时按剩余宽度收缩。
+     * 具体画法（照片进透明内框、相框压在照片上）收在 [PhotoFrame] —— 与拍照确认界面同源。
+     */
+    private fun drawPhoto(context: DrawContext, entry: Entry) {
+        val screenW = context.scaledWindowWidth
+        val screenH = context.scaledWindowHeight
+        // 聊天框右缘（与 ID 卡同一算法：ChatHud.render 的矩阵 scale(chatScale) → translate(4, 0)，
+        // 背景画到 width + 8 ⇒ 屏幕坐标 = width + 12 × chatScale）
+        val chatHud = MinecraftClient.getInstance().inGameHud.chatHud
+        val chatRight = (chatHud.width + (12.0 * chatHud.chatScale).toInt()).toFloat()
+        val areaLeft = chatRight + 8f
+        val areaRight = screenW - 8f
+        // 右侧剩余宽度（聊天宽度调得越窄，这里越大）；下限 160 防止极端设置下缩成一条
+        val availableW = (areaRight - areaLeft).toInt().coerceAtLeast(160)
+        val maxByHeight = ((screenH - 24) * PhotoFrame.FRAME_W / PhotoFrame.FRAME_H).toInt()
+        val frameW = minOf(PHOTO_DISPLAY_W, availableW, maxByHeight).toFloat()
+        val frameH = PhotoFrame.heightForWidth(frameW)
+        // **靠右**贴屏幕右缘；剩余空间不足时往左退，但不越过聊天框
+        val left = (areaRight - frameW).coerceAtLeast(areaLeft)
+        val top = ((screenH - frameH) / 2f).coerceAtLeast(2f)
+
+        PhotoFrame.draw(context, left, top, frameW, entry.photoTexture, entry.photoTexW, entry.photoTexH)
+
+        // 发布时启用了「分享拍摄位置」：照片右下角叠加坐标
+        entry.photoLocation?.let {
+            PhotoFrame.drawLocation(context, left, top, frameW, it.first, it.second, it.third)
+        }
+
+        if (entry.photoTexture == null) {
+            // 照片已被清理 / 请求失败：空相框中央提示
+            val scale = frameW / PhotoFrame.FRAME_W
+            val innerCx = left + (PhotoFrame.INNER_X + PhotoFrame.INNER_W / 2f) * scale
+            val innerCy = top + (PhotoFrame.INNER_Y + PhotoFrame.INNER_H / 2f) * scale
+            context.drawCenteredTextWithShadow(
+                MinecraftClient.getInstance().textRenderer,
+                Text.translatable("cobblemarket.photo.expired"),
+                innerCx.toInt(), innerCy.toInt() - 4, 0xAAAAAA
+            )
+        }
+    }
+
     /** 离开聊天界面 / 鼠标离开播报：悬停计时与**常驻**一起作废（下次进来要重新停留），缓存保留 */
     private fun exitChat() {
         hoverId = null
@@ -492,6 +669,12 @@ object ChatObjectPreview {
             )
             return
         }
+        // 照片展示（2026-11-20）：相框 + 照片；**必须在这之前判** —— 它的 isPokemon=false
+        // 会掉进物品分支，而那个分支会因 stack 为空直接 return（什么都不画）
+        if (entry.photoTexture != null || entry.photoMissing) {
+            drawPhoto(context, entry)
+            return
+        }
         if (entry.isPokemon) {
             val renderable = entry.renderable ?: return
             val state = entry.state ?: return
@@ -513,7 +696,10 @@ object ChatObjectPreview {
                 state = state,
                 panelLeft = 0,
                 screenHeight = screenHeight,
-                centerX = centerX
+                centerX = centerX,
+                // 聊天大图**不跟随鼠标**：头部骨骼虽转，但多数物种的头部网格不显示，
+                // 只有挂在头部 locator 上的携带物会跟着转（2026-11-19 用户报）⇒ 统一关掉
+                followHead = false
             )
             // 右侧那块完整信息行（与精灵市场行悬停窗同源）；没有数据就只留大图
             clearDepthBeforePanel(context)
@@ -865,6 +1051,8 @@ object ChatObjectPreview {
         val entry = cache[id] ?: return null
         if (now - entry.at > CACHE_TTL_MS) {
             cache.remove(id)
+            // 照片条目带动态纹理：过期时一并释放
+            destroyPhotoTexture(entry)
             return null
         }
         return entry
@@ -878,6 +1066,18 @@ object ChatObjectPreview {
      *（下一帧接着试，否则这一拍品会永久空白）。
      */
     private fun requestOnce(hovered: Hovered, now: Long) {
+        // 照片**不会变**：已经拿到就永远用缓存，不跟着拍品那套 10 秒刷新重下；
+        // 只有「失效标记」才按常规间隔重试（管理员可能刚恢复了文件）
+        if (hovered.kind == KIND_PHOTO) {
+            // 先记下播报里带的拍摄位置（照片缓存命中时后面会提前 return，不能漏）
+            val location = hovered.location
+            if (location != null) {
+                photoLocations[hovered.id] = location
+            } else {
+                photoLocations.remove(hovered.id)
+            }
+            cache[hovered.id]?.let { if (!it.photoMissing) return }
+        }
         val lastAsked = requested[hovered.id]
         if (lastAsked != null && now - lastAsked < REQUEST_REFRESH_MS) return
         // 还在服务端限流窗口里就先不发、**也不算已请求**：下一帧接着试，别让这一拍品永久空白
@@ -889,22 +1089,41 @@ object ChatObjectPreview {
             val oldest = requested.keys.firstOrNull() ?: break
             requested.remove(oldest)
         }
-        sendToServer(RequestObjectPreviewPayload(hovered.kind, hovered.id))
+        // 照片走独立的数据包（字节量大，不复用 ObjectPreviewPayload）；其余仍走拍品通道
+        if (hovered.kind == KIND_PHOTO) {
+            sendToServer(RequestPhotoPayload(hovered.id.removePrefix("$KIND_PHOTO:")))
+        } else {
+            sendToServer(RequestObjectPreviewPayload(hovered.kind, hovered.id))
+        }
     }
 
     private fun trimCache(now: Long) {
         val iterator = cache.entries.iterator()
         while (iterator.hasNext()) {
-            if (now - iterator.next().value.at > CACHE_TTL_MS) iterator.remove()
+            val entry = iterator.next().value
+            if (now - entry.at > CACHE_TTL_MS) {
+                destroyPhotoTexture(entry)
+                iterator.remove()
+            }
         }
         while (cache.size > CACHE_MAX) {
             val oldest = cache.keys.firstOrNull() ?: break
-            cache.remove(oldest)
+            // 照片条目带动态纹理：淘汰时一并释放
+            cache.remove(oldest)?.let { destroyPhotoTexture(it) }
+        }
+        // 照片纹理单独限量（1280 原图一张约 3.5MB，不能占满 64 条的总额度）
+        while (cache.values.count { it.photoTexture != null } > PHOTO_CACHE_MAX) {
+            val oldestPhoto = cache.entries.firstOrNull { it.value.photoTexture != null }?.key ?: break
+            cache.remove(oldestPhoto)?.let { destroyPhotoTexture(it) }
         }
     }
 
-    /** 鼠标下的播报拍品 */
-    private class Hovered(val id: String, val kind: String)
+    /** 鼠标下的播报拍品；[location] 只有照片播报且发布者勾选了「分享拍摄位置」时非空 */
+    private class Hovered(
+        val id: String,
+        val kind: String,
+        val location: Triple<Int, Int, Int>? = null,
+    )
 
     /**
      * 读鼠标下那段聊天文字的样式。**只有播报的拍品名挂了 click 事件**，其余聊天文字返回 null。
@@ -932,12 +1151,27 @@ object ChatObjectPreview {
             "review" -> ObjectPreviewNetwork.KIND_BUY_ORDER
             // 分享播报：名字上挂的是 `/cobblemarket share <id>`（点击无动作，见 ShareNetwork.shareMessage）
             "share" -> ObjectPreviewNetwork.KIND_SHARE
+            // 照片播报（2026-11-20）：`/cobblemarket photo <id>` —— 数据走独立包
+            "photo" -> KIND_PHOTO
             else -> return null
         }
         val rawId = parts.getOrNull(1) ?: return null
         // 必须能解析成 UUID（播报里就是 UUID），并规范化成标准小写形式：
         // 服务端回包里的 id 用的是同一个形式，不统一就对不上缓存键
         val uuid = runCatching { UUID.fromString(rawId) }.getOrNull() ?: return null
+        // 照片的缓存 / 请求键加前缀：与拍品 UUID 分属两个命名空间，理论上有撞 id 的可能
+        if (kind == KIND_PHOTO) {
+            // 照片的 clickEvent 可能带拍摄坐标：/cobblemarket photo <id> <x> <y> <z>
+            val location = if (parts.size >= 5) {
+                val x = parts[2].toIntOrNull()
+                val y = parts[3].toIntOrNull()
+                val z = parts[4].toIntOrNull()
+                if (x != null && y != null && z != null) Triple(x, y, z) else null
+            } else {
+                null
+            }
+            return Hovered("$KIND_PHOTO:$uuid", kind, location)
+        }
         return Hovered(uuid.toString(), kind)
     }
 }

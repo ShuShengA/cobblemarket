@@ -316,6 +316,11 @@ data class MarketStatePayload(
      * 客户端据此决定悬停窗画不画六边形；服务端关着时不会计算、也不会下发能力值字段。
      */
     val hoverStatsChart: Boolean = false,
+    /**
+     * **照片展示开关**（2026-11-20，服主配置，默认开）：关闭时拍照确认界面的
+     * 「发送到聊天」按钮置灰（点击红字 + 失败音）；玩家仍可拍照 / 预览。
+     */
+    val photoEnabled: Boolean = true,
 ) : CustomPayload {
     override fun getId() = ID
     companion object {
@@ -332,10 +337,12 @@ data class MarketStatePayload(
                 b.writeBoolean(p.buyOrderPokemonEnabled)
                 b.writeBoolean(p.buyOrderItemEnabled)
                 b.writeBoolean(p.hoverStatsChart)
+                b.writeBoolean(p.photoEnabled)
             },
             { b -> MarketStatePayload(
                 b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readBoolean(),
-                b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readBoolean()
+                b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readBoolean(),
+                b.readBoolean()
             ) }
         )
     }
@@ -353,6 +360,7 @@ fun marketStatePayload(): MarketStatePayload = MarketStatePayload(
     buyOrderPokemonEnabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.buyOrderPokemonEnabled,
     buyOrderItemEnabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.buyOrderItemEnabled,
     hoverStatsChart = com.shusheng.cobblemarket.config.CobbleMarketConfig.hoverStatsChart,
+    photoEnabled = com.shusheng.cobblemarket.config.CobbleMarketConfig.photoEnabled,
 )
 
 // ── S2C: 待领取概况（登录时推一次） ──

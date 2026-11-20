@@ -44,10 +44,17 @@ object PlayerSkinCache {
      * 首次遇到离线玩家会**异步**发起一次皮肤拉取（不阻塞渲染），完成后的下一次渲染即生效。
      */
     fun skinFor(uuid: UUID, name: String): Identifier {
-        cache[uuid]?.let { return it }
         val client = MinecraftClient.getInstance()
 
-        // 1) 在线玩家：tab 列表里已经有皮肤纹理
+        // 1) 在线玩家：**先查 tab 列表，再读缓存**。
+        //
+        // ⚠ 顺序不能反（2026-11-19 用户报「换皮肤重进后，在线玩家面板还显示旧头像」）：
+        //   之前是「缓存命中直接 return」，玩家重登换了皮肤后 tab 列表已是新纹理，
+        //   但缓存里存着旧纹理 ⇒ **一直显示旧的，直到客户端重启**（面板每 2 秒刷新名单也没用，
+        //   因为皮肤根本不从名单里取）。
+        //   现在每次渲染都以 tab 列表为准并**回写缓存** ⇒ 在线玩家的皮肤变化下一帧就生效。
+        //   tab 查询只是一次 map 查找，开销可以忽略。
+        //
         // ⚠ **默认皮肤不能落缓存**：tab 条目刚建/皮肤还没加载时 texture 可能是 Steve/Alex，
         //   写进 cache 就永远默认了（KDoc 说"只缓存真实纹理"，但原实现漏了这一步）。
         val handler = client.networkHandler
@@ -68,7 +75,10 @@ object PlayerSkinCache {
             }
         }
 
-        // 2) 离线玩家：异步拉取（按 UUID 去重，失败 30 秒后重试）
+        // 2) 不在线 / tab 里暂时还是默认皮肤：用缓存（离线玩家的唯一来源）。
+        cache[uuid]?.let { return it }
+
+        // 3) 离线玩家：异步拉取（按 UUID 去重，失败 30 秒后重试）
         val now = System.currentTimeMillis()
         val last = pending[uuid]
         if (last == null || now - last > RETRY_MS) {

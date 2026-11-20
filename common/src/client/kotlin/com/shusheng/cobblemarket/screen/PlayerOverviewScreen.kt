@@ -279,20 +279,33 @@ class PlayerOverviewScreen : Screen(Text.translatable("cobblemarket.overview.tit
         val q = searchText.trim().lowercase()
         val filtered = if (q.isEmpty()) PlayerOverviewCache.rows
         else PlayerOverviewCache.rows.filter { it.name.lowercase().contains(q) }
-        if (sortField == SortField.NAME) {
-            val sorted = filtered.sortedBy { it.name.lowercase() }
-            return if (descending) sorted.reversed() else sorted
-        }
-        // 「标记」是**筛选**：只显示被（任何人）标记的玩家（方向按钮仍可切名字升/降序）
-        if (sortField == SortField.MARKED) {
-            val sorted = filtered.filter { it.marks.isNotEmpty() }.sortedBy { it.name.lowercase() }
-            return if (descending) sorted.reversed() else sorted
+        // 名字 / 「标记」（标记 = 先筛后按名字排）共用一套（2026-11-20 用户拍板）：
+        // **在线优先** —— 在线组在前、离线组在后，组内再按名字字母序。
+        // ⚠ 在线/离线分组**不随方向按钮翻转** —— 否则一点降序离线又跑到最前面，
+        //   与下面「null 恒排最后、不随方向翻转」同一条思路。
+        if (sortField == SortField.NAME || sortField == SortField.MARKED) {
+            val base = if (sortField == SortField.MARKED) filtered.filter { it.marks.isNotEmpty() } else filtered
+            val (online, offline) = base.partition { it.online }
+            return sortGroupByName(online) + sortGroupByName(offline)
         }
         // ⚠ 拿不到的（null = 离线且还没记过快照）**恒排最后**、不随方向翻转 ——
         //   用 `sortedWith(nullsLast{})` 再整体 `reversed()` 会把它们**翻到最前面**
         val (has, missing) = filtered.partition { sortNumeric(it) != null }
         val sorted = if (descending) has.sortedByDescending { sortNumeric(it) } else has.sortedBy { sortNumeric(it) }
         return sorted + missing
+    }
+
+    /**
+     * 一组（在线组 / 离线组）内按名字排，升降由方向按钮控制。
+     *
+     * ⚠ **未知名（服务端兜底给的 UUID，界面显示「未知玩家」）恒沉底、不随方向翻转**：
+     *   UUID 以 0-9 开头，直接按字母排会全挤到最前面（2026-11-20 用户报
+     *   「未知玩家总排在前面」）。这些全是离线老玩家，沉到组末不挡视线。
+     */
+    private fun sortGroupByName(rows: List<PlayerOverviewRow>): List<PlayerOverviewRow> {
+        val (named, unknown) = rows.partition { !uuidName.matches(it.name) }
+        val sorted = named.sortedBy { it.name.lowercase() }
+        return (if (descending) sorted.reversed() else sorted) + unknown
     }
 
     /** 当前排序字段的数值（名字字段不走这里） */

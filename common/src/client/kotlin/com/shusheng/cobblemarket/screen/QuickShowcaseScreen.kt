@@ -5,9 +5,12 @@ import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.mojang.blaze3d.systems.RenderSystem
 import com.shusheng.cobblemarket.client.ClientConfig
 import com.shusheng.cobblemarket.client.ClientPermissionCache
+import com.shusheng.cobblemarket.client.CobbleMarketClient
 import com.shusheng.cobblemarket.client.IconAnimMode
 import com.shusheng.cobblemarket.client.LoadState
+import com.shusheng.cobblemarket.client.PhotoCapture
 import com.shusheng.cobblemarket.client.PlayerSkinCache
+import com.shusheng.cobblemarket.client.QuickCommandBind
 import com.shusheng.cobblemarket.client.drawItemWithBar
 import com.shusheng.cobblemarket.client.drawMarkCountBadge
 import com.shusheng.cobblemarket.client.icon.IconCryClick
@@ -62,8 +65,37 @@ import java.util.UUID
  * ⚠ `shouldPause() = false` + 不画暗罩：按住期间世界照常跑、画面照常可见（单机也不暂停）。
  * ⚠ 松键关屏由 tick 负责（见 `CobbleMarketClient` 里对 X 键的轮询）；
  *   展示成功/被拒的收尾走 [onMarketResult]（**等回包**才关，见那里的注释）。
+ *
+ * ## 快捷指令按钮（2026-11-20 用户要求）
+ *
+ * ID 卡框左右两侧各有一组 **2×2、共 8 个 32×32 小按钮**（随 ID 卡一起落下 / 收起；
+ * 悬停时与三个大框一样**瞬间上浮** —— 2026-11-20 用户要求；落下完成前不可点，与三个大框同口径）：
+ * - **未绑定**：显示加号贴图 `quick_command_add.png`，**左键**打开绑定弹窗
+ * - **已绑定**：显示与三个大按钮同款的弹窗背景 + 短名，**左键 = 直接发送指令**，
+ *   **右键 = 打开编辑弹窗**（指令改为留空并确认 = 清除该槽）
+ * - 发送走 `networkHandler.sendCommand`，与在聊天框输入指令按回车**完全同一条路** ——
+ *   权限仍由服务端判定，模组不放行任何东西；也**不占用展示冷却**（快捷指令不算展示，
+ *   2026-11-20 用户明确）
+ * - 绑定数据存**纯客户端** [ClientConfig.quickCommands]（8 槽），服务端零改动
+ * - 绑定弹窗复用「标记可疑玩家」那套样式（标题 + 输入框 + 确定/取消），
+ *   弹窗期间松手不关界面（见 [isModalSessionActive]）
+ *
+ * ## 相机按钮（功能2，2026-11-20）
+ *
+ * 精灵 / 物品两个大框**中缝的正上方**（水平居中）放一枚相机按钮，**与快捷指令按钮同大（32×32）**
+ * （用户 2026-11-20 要求；1080p/S3 档三框距屏顶 40px，32 + 间隙 2 + 上浮 6 = 40，正好放下）。
+ * 点击 = 进入**取景界面**（[com.shusheng.cobblemarket.screen.PhotoCaptureScreen]）：
+ * 屏幕四角显示取景角标，**左键拍照、右键退出**；拍照时先关掉取景界面、再等两 tick 截图 ——
+ * 照片里不含任何模组界面。照片算「展示」，受展示开关与冷却约束。
  */
-class QuickShowcaseScreen : Screen(Text.literal("")) {
+class QuickShowcaseScreen(
+    /**
+     * 打开时**跳过下落 / 面板滑入动画**（三框直接出现在目标位）。
+     * 从拍照确认界面取消 / 发送成功返回时用 —— 与标记 / 绑定弹窗关闭后「三框原地恢复」的观感一致，
+     * 不重播一遍掉落（2026-11-20 用户要求取消逻辑对齐）。
+     */
+    private val instantDrop: Boolean = false,
+) : Screen(Text.literal("")) {
 
     /** 展示哪一类 */
     enum class Kind { POKEMON, IDCARD, ITEM }
@@ -124,6 +156,20 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     /** 关闭动画开始那一刻面板的 x —— 滑入到一半关闭时从当前位置往右滑出，不跳帧 */
     private var closeFromPanelX = 0
 
+    // ── 快捷指令按钮（2026-11-20）──
+    /** 绑定/编辑弹窗对应的槽位；null = 弹窗关闭 */
+    private var quickBindSlot: Int? = null
+    private var quickBindNameField: TextFieldWidget? = null
+    private var quickBindCommandField: TextFieldWidget? = null
+    /** 未绑定槽位的加号贴图（48×48，缩到按钮大小） */
+    private val quickCommandAddIcon =
+        Identifier.of("cobblemarket", "textures/gui/icon/quick_command_add.png")
+
+    // ── 相机按钮（功能2，2026-11-20）──
+    /** 相机图标（48×48，缩到按钮内） */
+    private val cameraIcon =
+        Identifier.of("cobblemarket", "textures/gui/icon/camera.png")
+
     // ── 精灵那一侧的渲染状态 ──
     /**
      * ⚠ **必须按 uuid 缓存 renderable / state**：`PreviewStateHolder.stateFor` 是**引用比较**，
@@ -138,6 +184,10 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
 
     override fun init() {
         super.init()
+        if (instantDrop) {
+            // 让 dropFinished / 面板滑入判定立即成立（把动画起点挪到两个动画时长之前）
+            animStart = System.currentTimeMillis() - (DROP_MS + PANEL_SLIDE_MS + 100L)
+        }
         // 问一次 ID 卡背景图：服主换图后，这里的 ID 卡框要跟着变（没变只回版本号、不重传图）
         com.shusheng.cobblemarket.client.IdCardBackgroundTexture.requestRefresh()
         // 在线玩家面板（仅 overview 节点 / 服主）：进界面拉一次名单；没权限不请求、面板也不画
@@ -188,6 +238,12 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
             return
         }
 
+        // 快捷指令绑定弹窗：同样独占渲染（遮罩 / 弹窗背景在控件之前，三个大框与 8 个小按钮都不画）
+        if (quickBindSlot != null) {
+            renderQuickBindPrompt(context, mouseX, mouseY, delta)
+            return
+        }
+
         // ── 收起动画：三个框向上退场，播完才真正关界面 ──
         if (closing) {
             val t = ((System.currentTimeMillis() - closeStart) / CLOSE_MS.toFloat()).coerceIn(0f, 1f)
@@ -226,6 +282,14 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
             drawPokemonContent(context, width / 2 - BTN - GAP / 2, pokemonY, delta)
             drawIdCardContent(context, width / 2 - BTN / 2, idCardY)
             drawItemContent(context, width / 2 + GAP / 2, itemY)
+            // 快捷指令按钮与 ID 卡同一组，跟它一起上收（不响应悬停 / 点击）
+            drawQuickCommandButtons(
+                context, mouseX, mouseY, baseY + BTN + GAP + offset, interactive = false
+            )
+            // 相机按钮同理：跟三框组一起上收
+            drawCameraButton(
+                context, mouseX, mouseY, baseY + BTN + GAP + offset, interactive = false
+            )
             // 右侧面板**不跟着上收**：从当前位置向右滑出（与入场方向相反）
             if (canSeePeekPanel()) {
                 val panelX = (closeFromPanelX + (width + 8 - closeFromPanelX) * eased).toInt()
@@ -261,6 +325,16 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         drawIdCardContent(context, width / 2 - BTN / 2, idCardY)
         drawItemContent(context, width / 2 + GAP / 2, itemY)
 
+        // 快捷指令按钮：ID 卡左右两侧各 2×2。⚠ 基准位用**未上浮**的 ID 卡目标位 ——
+        //   按钮不参与大框的悬停上浮（跟着上浮的话，鼠标移向按钮时 ID 卡回落会让按钮跳 10px、命中跟着抖）
+        drawQuickCommandButtons(
+            context, mouseX, mouseY, baseY + BTN + GAP + drop, interactive = dropDone
+        )
+        // 相机按钮：精灵 / 物品两框中缝正上方，随三框组落下 / 收起
+        drawCameraButton(
+            context, mouseX, mouseY, baseY + BTN + GAP + drop, interactive = dropDone
+        )
+
         // 右侧在线玩家面板：从屏幕右缘滑入（不参与三个大框的下落 / 上浮）
         if (canSeePeekPanel()) {
             renderPeekPanel(
@@ -274,6 +348,17 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         if (canSeePeekPanel() && peekPanelSlideFinished()) {
             peekTargetAt(peekPanelSlideX(), mouseX.toDouble(), mouseY.toDouble())?.let { entry ->
                 drawDimensionTooltip(context, entry, mouseX, mouseY)
+            }
+        }
+
+        // 快捷指令按钮的悬停窗：完整指令 + 操作提示（落下完成前不出，同三框口径）
+        if (dropDone) {
+            quickSlotAt(mouseX.toDouble(), mouseY.toDouble())?.let { slot ->
+                drawQuickCommandTooltip(context, slot, mouseX, mouseY)
+            }
+            // 相机按钮的悬停窗
+            if (cameraButtonAt(mouseX.toDouble(), mouseY.toDouble())) {
+                drawCameraTooltip(context, mouseX, mouseY)
             }
         }
     }
@@ -371,10 +456,387 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         context.draw()
     }
 
+    // ── 快捷指令按钮（2026-11-20）──
+
+    /**
+     * 单侧整块的左缘：**块与 ID 卡之间的 14px 间隙固定**，块往外侧生长（外侧是空白区）。
+     * ⚠ 不要改成"在 ID 卡与上排按钮之间的 76px 里居中" —— 按钮放大后那样会挤压内侧间隙。
+     */
+    private fun quickBlockX(slot: Int): Int =
+        if (slot < 4) width / 2 - BTN / 2 - QUICK_INSET - QUICK_BLOCK
+        else width / 2 + BTN / 2 + QUICK_INSET
+
+    /**
+     * 某个槽位的左上角。[idCardBaseY] = **未上浮**的 ID 卡框 y（含落下 / 收起偏移）；
+     * 整块在 ID 卡框里竖直居中。
+     */
+    private fun quickSlotOrigin(slot: Int, idCardBaseY: Int): Pair<Int, Int> {
+        val index = slot % 4
+        val col = index % QUICK_COLS
+        val row = index / QUICK_COLS
+        val blockY = idCardBaseY + (BTN - QUICK_BLOCK) / 2
+        return (quickBlockX(slot) + col * (QUICK_BTN + QUICK_GAP)) to
+            (blockY + row * (QUICK_BTN + QUICK_GAP))
+    }
+
+    /**
+     * 鼠标下的快捷指令槽位；null = 不在任何槽位内（含正在收起时）。
+     *
+     * 判定分两层（悬停上浮 [QUICK_LIFT] 带来的需要）：
+     * ① **基础区**（未上浮的位置）优先；
+     * ② 再判**上浮后露出的顶部条**（`y − QUICK_LIFT .. y`）—— 否则悬停在按钮最上面几像素时
+     *   按钮上浮、鼠标却落在判定区外，表现为「看着悬停、点了没反应」。
+     * [QUICK_LIFT] 小于行距 [QUICK_GAP]，两行按钮的上浮区不会重叠（同侧上下只留 2px）。
+     *
+     * ⚠ 点击与 tooltip 都用这一个入口 —— 与渲染里「给悬停的那个减少 QUICK_LIFT」是同一份判定，不会错位。
+     */
+    private fun quickSlotAt(mouseX: Double, mouseY: Double): Int? {
+        if (closing) return null
+        val idCardBaseY = baseY + BTN + GAP + dropOffsetY()
+        for (slot in 0 until ClientConfig.QUICK_COMMAND_SLOTS) {
+            val (x, y) = quickSlotOrigin(slot, idCardBaseY)
+            if (mouseX >= x && mouseX < x + QUICK_BTN && mouseY >= y && mouseY < y + QUICK_BTN) {
+                return slot
+            }
+        }
+        var best: Int? = null
+        var bestDy = Double.MAX_VALUE
+        for (slot in 0 until ClientConfig.QUICK_COMMAND_SLOTS) {
+            val (x, y) = quickSlotOrigin(slot, idCardBaseY)
+            if (mouseX >= x && mouseX < x + QUICK_BTN && mouseY >= y - QUICK_LIFT && mouseY < y) {
+                val dy = kotlin.math.abs(mouseY - (y + QUICK_BTN / 2.0))
+                if (dy < bestDy) {
+                    bestDy = dy
+                    best = slot
+                }
+            }
+        }
+        return best
+    }
+
+    /**
+     * 画 8 个快捷指令按钮：未绑定 = 加号贴图，已绑定 = **与三个大按钮同款**的弹窗背景 + 短名。
+     * 悬停的那个**瞬间上浮** [QUICK_LIFT] px —— 与三个大框同一效果（无缓动），2026-11-20 用户要求。
+     */
+    private fun drawQuickCommandButtons(
+        context: DrawContext,
+        mouseX: Int,
+        mouseY: Int,
+        idCardBaseY: Int,
+        interactive: Boolean,
+    ) {
+        // 悬停判定与点击 / tooltip 共用 [quickSlotAt]（每帧只算一次）：上浮后按钮顶部仍要点得到
+        val hoveredSlot = if (interactive) quickSlotAt(mouseX.toDouble(), mouseY.toDouble()) else null
+        for (slot in 0 until ClientConfig.QUICK_COMMAND_SLOTS) {
+            val (x, originY) = quickSlotOrigin(slot, idCardBaseY)
+            val hovered = hoveredSlot == slot
+            val y = if (hovered) originY - QUICK_LIFT else originY
+            val bind = ClientConfig.quickCommands.getOrNull(slot)
+            if (bind == null) {
+                // 未绑定：**整张 48×48 加号图**缩到按钮大小（图自带圆角边框与底色），
+                // 不再垫项目按钮底 —— 两层边框会叠在一起（用户 2026-11-20 给的图本身就是按钮外观）
+                val scale = QUICK_BTN / QUICK_ADD_TEX.toFloat()
+                context.matrices.push()
+                context.matrices.translate(x.toDouble(), y.toDouble(), 0.0)
+                context.matrices.scale(scale, scale, 1f)
+                context.drawTexture(
+                    quickCommandAddIcon, 0, 0, 0f, 0f,
+                    QUICK_ADD_TEX, QUICK_ADD_TEX, QUICK_ADD_TEX, QUICK_ADD_TEX
+                )
+                context.matrices.pop()
+            } else {
+                // 已绑定：底色与**三个大按钮**同款（dialog_background，2026-11-20 用户要求）。
+                // ⚠ 这张贴图只有**一段** —— 悬停不换图（与三框一致），反馈靠上面的瞬间上浮。
+                drawNineSlice(
+                    context, DIALOG_BACKGROUND_TEXTURE, x, y, QUICK_BTN, QUICK_BTN,
+                    0, DIALOG_BACKGROUND_TEX_H
+                )
+                // 32px 宽去掉内边距约 28px：中文 3 字 / 英文 4~5 字母，超宽截断；
+                // 完整指令看悬停窗
+                val label = TextUtil.truncateString(bind.displayLabel(), QUICK_BTN - 4)
+                context.drawCenteredTextWithShadow(
+                    textRenderer, Text.literal(label),
+                    x + QUICK_BTN / 2, y + (QUICK_BTN - 8) / 2, 0xFFFFFF
+                )
+            }
+        }
+    }
+
+    /**
+     * 左键快捷指令按钮：空槽 ⇒ 打开绑定弹窗；已绑定 ⇒ 发送指令并收起界面。
+     *
+     * ⚠ 发送走 `networkHandler.sendChatCommand` —— **就是原版聊天框 `ChatScreen.sendMessage`
+     *   输入 `/` 指令时调用的那个方法**：权限、参数与命令存在性全由服务端判定，模组不做任何放行。
+     *   ⚠ 别用 `sendCommand`：它对「需要签名参数」的命令（1.21 的 `/msg` / `/tell` 这类
+     *   聊天消息参数）**静默不发包**（返回 false），而 `sendChatCommand` 会走带签名的
+     *   `ChatCommandSignedC2SPacket` 正常发出；普通命令两者发的是同一个
+     *   `CommandExecutionC2SPacket`，没有差别（2026-11-20 用户发布前确认）。
+     *   也**不经过展示通道**，所以**不占展示冷却**（2026-11-20 用户明确：快捷指令不算展示）。
+     * ⚠ 发送后**不等回包**（原版命令没有模组回包），直接走收起动画回游戏。
+     */
+    private fun useQuickCommand(slot: Int) {
+        val bind = ClientConfig.quickCommands.getOrNull(slot)
+        if (bind == null || bind.command.isBlank()) {
+            openQuickBind(slot)
+            return
+        }
+        playButtonClickSound()
+        client?.player?.networkHandler?.sendChatCommand(bind.command)
+        closeSelf()
+    }
+
+    /**
+     * 打开绑定 / 编辑弹窗（左键空槽 / 右键任意槽）。样式复用「标记可疑玩家」那一窗。
+     * 预填该槽当前内容；**指令留空并确认 = 清除该槽**。
+     */
+    private fun openQuickBind(slot: Int) {
+        if (quickBindSlot != null) return
+        playButtonClickSound()
+        quickBindSlot = slot
+        val existing = ClientConfig.quickCommands.getOrNull(slot)
+        val dx = quickBindDialogX()
+        val dy = quickBindDialogY()
+        val labelW = quickBindLabelWidth()
+        val fieldX = dx + 10 + labelW + 4
+        val fieldW = (dx + QUICK_BIND_DIALOG_W - 10 - fieldX).coerceAtLeast(40)
+
+        val nameField = TextFieldWidget(textRenderer, fieldX, dy + 24, fieldW, 16, Text.literal(""))
+        nameField.setMaxLength(8)
+        nameField.text = existing?.name.orEmpty()
+        nameField.setPlaceholder(Text.translatable("cobblemarket.quick_command.name_hint"))
+
+        val commandField = TextFieldWidget(textRenderer, fieldX, dy + 46, fieldW, 16, Text.literal(""))
+        commandField.setMaxLength(256)
+        commandField.text = existing?.command.orEmpty()
+        commandField.setPlaceholder(Text.translatable("cobblemarket.quick_command.command_hint"))
+
+        quickBindNameField = nameField
+        quickBindCommandField = commandField
+        addDrawableChild(nameField)
+        addDrawableChild(commandField)
+        // ⚠ **打开时不默认聚焦任何输入框**（2026-11-20 用户要求）：弹窗刚出现时不该已经是
+        //   「正在输入」状态（光标闪在框里），点了哪个框才开始输入。
+        //   ⚠ 之后点输入框时仍需要同时把焦点交给 widget 与 Screen（标记弹窗踩过：
+        //   只设 widget 的话按键分发不到、打不了字）—— 那条路走 super.mouseClicked 的默认处理。
+        setFocused(null)
+        // 弹窗期间隐藏三个大框（8 个小按钮是自绘的，render 的独占分支里不会画）
+        pokemonBtn?.visible = false
+        idCardBtn?.visible = false
+        itemBtn?.visible = false
+    }
+
+    private fun closeQuickBind() {
+        quickBindNameField?.let { remove(it) }
+        quickBindCommandField?.let { remove(it) }
+        quickBindNameField = null
+        quickBindCommandField = null
+        // 焦点交还界面（否则移除掉的输入框仍占着 Screen 焦点）
+        setFocused(null)
+        quickBindSlot = null
+        pokemonBtn?.visible = true
+        idCardBtn?.visible = true
+        itemBtn?.visible = true
+    }
+
+    /**
+     * 确认绑定：指令去掉首尾空白与前导 `/`；**指令留空 = 清除该槽**（按钮回到加号）。
+     * 短名只影响按钮显示，留空时按钮显示指令首词（见 [QuickCommandBind.displayLabel]）。
+     */
+    private fun submitQuickBind() {
+        val slot = quickBindSlot ?: return
+        val command = quickBindCommandField?.text.orEmpty().trim().removePrefix("/").trim()
+        val name = quickBindNameField?.text.orEmpty().trim()
+        // 成功音（用户 2026-11-20 要求）：确定绑定要有反馈 —— 只播点击音听不出「保存成功了」。
+        // 清除绑定（指令留空）同样算操作成功，一并播。
+        CobbleMarketClient.playResultSound(true)
+        ClientConfig.setQuickCommand(
+            slot, if (command.isEmpty()) null else QuickCommandBind(name, command)
+        )
+        closeQuickBind()
+    }
+
+    /** 绑定弹窗：遮罩 + 弹窗背景 + 标题 + 两行标签 + 输入框（由 super.render 画）+ 底部按钮 */
+    private fun renderQuickBindPrompt(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        context.fill(0, 0, width, height, 0x80000000.toInt())
+        val dx = quickBindDialogX()
+        val dy = quickBindDialogY()
+        drawNineSlice(
+            context, DIALOG_BACKGROUND_TEXTURE, dx, dy,
+            QUICK_BIND_DIALOG_W, QUICK_BIND_DIALOG_H, 0, DIALOG_BACKGROUND_TEX_H
+        )
+        val editing = ClientConfig.quickCommands.getOrNull(quickBindSlot ?: 0) != null
+        context.drawCenteredTextWithShadow(
+            textRenderer,
+            Text.translatable(
+                if (editing) "cobblemarket.quick_command.edit_title"
+                else "cobblemarket.quick_command.bind_title"
+            ).formatted(Formatting.GOLD),
+            width / 2, dy + 8, 0xFFFFFF
+        )
+        // 标签列（两行共用同一列宽，见 [quickBindLabelWidth]）
+        context.drawTextWithShadow(
+            textRenderer, Text.translatable("cobblemarket.quick_command.name_label"),
+            dx + 10, dy + 24 + 4, 0xFFFFFF
+        )
+        context.drawTextWithShadow(
+            textRenderer, Text.translatable("cobblemarket.quick_command.command_label"),
+            dx + 10, dy + 46 + 4, 0xFFFFFF
+        )
+        // 输入框控件（两个 TextFieldWidget 在 openQuickBind 里 addDrawableChild）
+        super.render(context, mouseX, mouseY, delta)
+        val (confirmX, confirmY) = quickBindConfirmButtonOrigin()
+        val (cancelX, cancelY) = quickBindCancelButtonOrigin()
+        drawDialogButton(
+            context, confirmX, confirmY,
+            Text.translatable("cobblemarket.quick_command.confirm"), mouseX, mouseY
+        )
+        drawDialogButton(
+            context, cancelX, cancelY,
+            Text.translatable("cobblemarket.quick_command.cancel"), mouseX, mouseY
+        )
+    }
+
+    /** 标签列宽：**两行取更宽的那条**（中英按各自语言量，别按中文观感定） */
+    private fun quickBindLabelWidth(): Int = maxOf(
+        textRenderer.getWidth(Text.translatable("cobblemarket.quick_command.name_label")),
+        textRenderer.getWidth(Text.translatable("cobblemarket.quick_command.command_label"))
+    )
+
+    private fun quickBindDialogX(): Int = (width - QUICK_BIND_DIALOG_W) / 2
+    private fun quickBindDialogY(): Int = (height - QUICK_BIND_DIALOG_H) / 2
+    private fun quickBindConfirmButtonOrigin(): Pair<Int, Int> =
+        (width / 2 - MARK_BTN_W - 4) to (quickBindDialogY() + QUICK_BIND_DIALOG_H - 10 - MARK_BTN_H)
+    private fun quickBindCancelButtonOrigin(): Pair<Int, Int> =
+        (width / 2 + 4) to (quickBindDialogY() + QUICK_BIND_DIALOG_H - 10 - MARK_BTN_H)
+
+    /**
+     * 快捷指令按钮的悬停窗：完整指令 + 操作提示；空槽只提示「点击绑定指令」。
+     * 样式照面板行的悬停窗（九宫格 + 不透明底），画在鼠标左下并 clamp。
+     */
+    private fun drawQuickCommandTooltip(context: DrawContext, slot: Int, mouseX: Int, mouseY: Int) {
+        val bind = ClientConfig.quickCommands.getOrNull(slot)
+        val lines = mutableListOf<Pair<Text, Int>>()
+        if (bind == null) {
+            lines += Text.translatable("cobblemarket.quick_command.empty_hint") to 0xAAAAAA
+        } else {
+            // 指令可能很长：悬停窗里按宽度截断到 180px
+            lines += Text.literal(TextUtil.truncateString("/" + bind.command, 180)) to 0xFFFFFF
+            lines += Text.translatable("cobblemarket.quick_command.hint") to 0xAAAAAA
+        }
+        val padding = 4
+        val lineH = textRenderer.fontHeight + 2
+        val w = lines.maxOf { (text, _) -> textRenderer.getWidth(text) } + padding * 2
+        val h = lines.size * lineH + padding * 2 - 2
+        var x = mouseX - w
+        var y = mouseY + 12
+        if (x < 4) x = 4
+        if (y + h > height - 4) y = mouseY - 12 - h
+        if (y < 4) y = 4
+        context.matrices.push()
+        context.matrices.translate(0.0, 0.0, 400.0)
+        // 九宫格是半透明的，先垫一层不透明底（同 drawDimensionTooltip）
+        context.fill(x, y, x + w, y + h, 0xF0101010.toInt())
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, x, y, w, h, 1, ROW_BACKGROUND_TEX_H)
+        lines.forEachIndexed { i, (text, color) ->
+            context.drawTextWithShadow(textRenderer, text, x + padding, y + padding + i * lineH, color)
+        }
+        context.matrices.pop()
+    }
+
+    // ── 相机按钮（功能2，2026-11-20）──
+
+    /**
+     * 相机按钮的位置：**精灵 / 物品两框中缝的正上方**、三框组顶边之上 [CAMERA_GAP]。
+     * [idCardBaseY] 是 ID 卡框 y（含落下 / 收起偏移）⇒ 三框组顶边 = idCardBaseY − [BTN] − [GAP]。
+     * 小窗口下贴屏幕顶（[CAMERA_TOP_MARGIN]）。
+     */
+    private fun cameraButtonOrigin(idCardBaseY: Int): Pair<Int, Int> {
+        val x = width / 2 - CAMERA_BTN / 2
+        val rawY = idCardBaseY - BTN - GAP - CAMERA_GAP - CAMERA_BTN
+        // 收起动画期间允许移出屏幕（与三框一起上收）；其余时候贴顶保底
+        val y = if (closing) rawY else rawY.coerceAtLeast(CAMERA_TOP_MARGIN)
+        return x to y
+    }
+
+    /** 鼠标是否在相机按钮上（含上浮露出的顶部带，与快捷指令按钮同一口径） */
+    private fun cameraButtonAt(mouseX: Double, mouseY: Double): Boolean {
+        if (closing) return false
+        val (x, y) = cameraButtonOrigin(baseY + BTN + GAP + dropOffsetY())
+        return mouseX >= x && mouseX < x + CAMERA_BTN &&
+            mouseY >= y - QUICK_LIFT && mouseY < y + CAMERA_BTN
+    }
+
+    /** 相机按钮：与三框同款底色 + 相机图标；悬停瞬间上浮 [QUICK_LIFT] */
+    private fun drawCameraButton(
+        context: DrawContext,
+        mouseX: Int,
+        mouseY: Int,
+        idCardBaseY: Int,
+        interactive: Boolean,
+    ) {
+        val (x, originY) = cameraButtonOrigin(idCardBaseY)
+        val hovered = interactive && cameraButtonAt(mouseX.toDouble(), mouseY.toDouble())
+        val y = if (hovered) (originY - QUICK_LIFT).coerceAtLeast(0) else originY
+        drawNineSlice(
+            context, DIALOG_BACKGROUND_TEXTURE, x, y, CAMERA_BTN, CAMERA_BTN,
+            0, DIALOG_BACKGROUND_TEX_H
+        )
+        // 图标 48 → 26，在按钮内居中（四周各留 3px）
+        val iconSize = CAMERA_BTN - 6
+        val scale = iconSize / CAMERA_TEX.toFloat()
+        context.matrices.push()
+        context.matrices.translate(
+            x + (CAMERA_BTN - iconSize) / 2.0,
+            y + (CAMERA_BTN - iconSize) / 2.0,
+            0.0
+        )
+        context.matrices.scale(scale, scale, 1f)
+        context.drawTexture(
+            cameraIcon, 0, 0, 0f, 0f,
+            CAMERA_TEX, CAMERA_TEX, CAMERA_TEX, CAMERA_TEX
+        )
+        context.matrices.pop()
+    }
+
+    /** 点击相机：收起快速功能界面 → 进入取景界面（左键拍照 / 右键退出，流程见 [PhotoCapture]） */
+    private fun startPhotoCapture() {
+        if (closing || !dropFinished()) return
+        playButtonClickSound()
+        PhotoCapture.armViewfinder()
+        closeSelf()
+    }
+
+    /** 相机按钮悬停窗（单行；样式同快捷指令悬停窗） */
+    private fun drawCameraTooltip(context: DrawContext, mouseX: Int, mouseY: Int) {
+        val text = Text.translatable("cobblemarket.photo.camera_tip")
+        val padding = 4
+        val w = textRenderer.getWidth(text) + padding * 2
+        val h = textRenderer.fontHeight + padding * 2
+        var x = mouseX - w
+        var y = mouseY + 12
+        if (x < 4) x = 4
+        if (y + h > height - 4) y = mouseY - 12 - h
+        if (y < 4) y = 4
+        context.matrices.push()
+        context.matrices.translate(0.0, 0.0, 400.0)
+        context.fill(x, y, x + w, y + h, 0xF0101010.toInt())
+        drawNineSlice(context, ROW_BACKGROUND_TEXTURE, x, y, w, h, 1, ROW_BACKGROUND_TEX_H)
+        context.drawTextWithShadow(textRenderer, text, x + padding, y + padding, 0xFFFFFF)
+        context.matrices.pop()
+    }
+
     // ── 右侧「在线玩家」面板（仅 overview 节点 / 服主；2026-11-10）──
 
     override fun tick() {
         super.tick()
+        // 标记提交等回包超时兜底：万一名单回包一直没来，也要把理由框收掉，
+        // 否则标记会话一直挂着、按住模式下界面永远收不起来（正常路径见 onPeekTargets）。
+        pendingMarkResult?.let { (_, _, expiresAt) ->
+            if (System.currentTimeMillis() > expiresAt) {
+                pendingMarkResult = null
+                if (markPromptTarget != null) closeMarkPrompt()
+            }
+        }
         if (closing || !canSeePeekPanel()) return
         // 打开期间每 2 秒刷新：有人上下线时面板跟着变（服务端对读请求有 500ms 限流）
         val now = System.currentTimeMillis()
@@ -392,11 +854,18 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
             if (updated != null && updated.markedByMe == wantMarked) {
                 com.shusheng.cobblemarket.client.CobbleMarketClient.playResultSound(true)
                 pendingMarkResult = null
-                // 取消标记确认后才退出右键选中态：否则本地先恢复头像 + 常驻标记图标、
-                // 等服务端回包又删掉标记 ⇒ 视觉上闪一下（2026-11-17 用户实测反馈）
-                if (!wantMarked) markModeUuid = null
+                if (wantMarked) {
+                    // 提交确认：关理由框 ⇒ 标记会话结束（按住模式下界面随后自动收起）
+                    closeMarkPrompt()
+                } else {
+                    // 取消标记确认后才退出右键选中态：否则本地先恢复头像 + 常驻标记图标、
+                    // 等服务端回包又删掉标记 ⇒ 视觉上闪一下（2026-11-17 用户实测反馈）
+                    markModeUuid = null
+                }
             } else if (System.currentTimeMillis() > expiresAt) {
                 pendingMarkResult = null
+                // 超时没等到确认：把理由框收掉，别让界面一直锁着
+                if (markPromptTarget != null) closeMarkPrompt()
             }
         }
         peekTargets = payload.entries
@@ -729,14 +1198,28 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     private fun dropFinished(): Boolean = System.currentTimeMillis() - animStart >= DROP_MS
 
     /**
+     * 是否处于需要暂停松手关闭的**弹窗 / 标记会话**：
+     * 右键选中了玩家（可疑按钮已出现）、理由输入框打开、或快捷指令绑定弹窗打开。
+     *
+     * 按住模式（X）期间**暂停松手关闭** —— 否则松手会丢选中态、打断正在输入的内容
+     * （2026-11-19 用户要求；快捷指令绑定弹窗同理）。会话结束的下一 tick 由
+     * `CobbleMarketClient` 补一次收起（若此时 X 已松开）。
+     */
+    fun isModalSessionActive(): Boolean =
+        markModeUuid != null || markPromptTarget != null || quickBindSlot != null
+
+    /**
      * 请求关闭：三个框**向上收起**（[CLOSE_MS]），动画结束才真正关界面。
      * 按一下模式的「再按 X / Esc / 点框外」、按住模式的松手 / 回包收尾都走这里。
      * 收起期间不响应悬停 / 点击 / 松手选择（同落下动画）。
      */
     fun requestClose() {
         if (closing) return
-        // 理由输入弹窗打开时，按 X / 点外面都先别关界面（弹窗自己处理取消）
-        if (markPromptTarget != null) return
+        // 理由 / 快捷指令绑定弹窗打开时，按 X / 点外面都先别关界面（弹窗自己处理取消）
+        if (markPromptTarget != null || quickBindSlot != null) return
+        // ⚠ 注意：**别在这里判 markModeUuid**（右键选中玩家 ≠ 要锁住界面）——
+        //   会话结束后的收起由 CobbleMarketClient 的边沿检测补（见那里的注释），
+        //   这里若一并返回，收起时机就永远等不到了。
         closing = true
         closeStart = System.currentTimeMillis()
         closeFromOffset = dropOffsetY()
@@ -756,8 +1239,8 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
      */
     fun finishAndClose() {
         if (closing) return
-        // 弹窗打开时松键不关界面（正在输入理由）
-        if (markPromptTarget != null) return
+        // 弹窗打开时松键不关界面（正在输入理由 / 绑定指令）
+        if (markPromptTarget != null || quickBindSlot != null) return
         val kind = if (dropFinished()) hoveredKind else null
         if (kind == null) closeSelf() else doShowcase(kind)
     }
@@ -858,12 +1341,44 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
             // 其余按键交给输入框（方向键在这时是移动光标，不能吞）
             return super.keyPressed(keyCode, scanCode, modifiers)
         }
+        if (quickBindSlot != null) {
+            when (keyCode) {
+                GLFW.GLFW_KEY_ESCAPE -> {
+                    closeQuickBind()
+                    return true
+                }
+                GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> {
+                    submitQuickBind()
+                    return true
+                }
+            }
+            // 其余按键交给输入框（同标记弹窗）
+            return super.keyPressed(keyCode, scanCode, modifiers)
+        }
         if (keyCode == GLFW.GLFW_KEY_UP || keyCode == GLFW.GLFW_KEY_DOWN ||
             keyCode == GLFW.GLFW_KEY_LEFT || keyCode == GLFW.GLFW_KEY_RIGHT
         ) {
             return true
         }
         return super.keyPressed(keyCode, scanCode, modifiers)
+    }
+
+    /**
+     * 理由输入框的**重复字符防护**：按住模式下，快速功能键（默认 X）还按着时，它的自动重复
+     * 会当成字符打进输入框（"xxxx"——2026-11-19 用户实测报出）。
+     *
+     * 这里只在「输入框已打开 + 快速键正物理按下」时吞掉**它打出的那个字符**；
+     * 键松开后照常输入（包括理由里真正需要的字母 x）。绑定到不可打印键（F1 等）时不做处理。
+     * ⚠ 快捷指令绑定弹窗同样有两个输入框，一并覆盖。
+     */
+    override fun charTyped(chr: Char, modifiers: Int): Boolean {
+        if ((markPromptTarget != null || quickBindSlot != null) &&
+            CobbleMarketClient.isQuickShowcaseKeyHeld()
+        ) {
+            val keyChar = CobbleMarketClient.quickShowcaseKeyChar()
+            if (keyChar != null && chr.equals(keyChar, ignoreCase = true)) return true
+        }
+        return super.charTyped(chr, modifiers)
     }
 
     /** 按一下模式：点框外 = 取消（按住模式点外面不关，松手才是确认） */
@@ -900,6 +1415,70 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
                 super.mouseClicked(mouseX, mouseY, button)
             }
             return true
+        }
+
+        // 快捷指令绑定弹窗：与标记弹窗同一套「点框外取消 / 按钮自己判」的处理
+        if (quickBindSlot != null) {
+            if (button == 0) {
+                val dx = quickBindDialogX()
+                val dy = quickBindDialogY()
+                val inDialog = mouseX >= dx && mouseX < dx + QUICK_BIND_DIALOG_W &&
+                    mouseY >= dy && mouseY < dy + QUICK_BIND_DIALOG_H
+                if (!inDialog) {
+                    closeQuickBind()
+                    return true
+                }
+                val (confirmX, confirmY) = quickBindConfirmButtonOrigin()
+                if (mouseX >= confirmX && mouseX < confirmX + MARK_BTN_W &&
+                    mouseY >= confirmY && mouseY < confirmY + MARK_BTN_H
+                ) {
+                    submitQuickBind()
+                    return true
+                }
+                val (cancelX, cancelY) = quickBindCancelButtonOrigin()
+                if (mouseX >= cancelX && mouseX < cancelX + MARK_BTN_W &&
+                    mouseY >= cancelY && mouseY < cancelY + MARK_BTN_H
+                ) {
+                    playButtonClickSound()
+                    closeQuickBind()
+                    return true
+                }
+                // 点击弹窗内的空白 / 标题：输入框**显式失焦**（2026-11-20 用户报「输入框没有做失焦处理」）。
+                // ⚠ Screen 的默认点击处理不会替我们清掉输入框的焦点 —— 光靠 super 的话，
+                //   光标与按键仍留在框里。点在输入框上则交给 super 正常切换焦点（它会清另一个）。
+                val onField = quickBindNameField?.isMouseOver(mouseX, mouseY) == true ||
+                    quickBindCommandField?.isMouseOver(mouseX, mouseY) == true
+                super.mouseClicked(mouseX, mouseY, button)
+                if (!onField) {
+                    quickBindNameField?.setFocused(false)
+                    quickBindCommandField?.setFocused(false)
+                    setFocused(null)
+                }
+            }
+            return true
+        }
+
+        // 相机按钮：左键拍照（拍照流程见 PhotoCapture：先收起界面再截图）
+        if (button == 0 && !closing && dropFinished() && cameraButtonAt(mouseX, mouseY)) {
+            startPhotoCapture()
+            return true
+        }
+
+        // 快捷指令按钮：左键 = 空槽绑定 / 已绑定直接使用；右键 = 编辑。
+        // ⚠ 必须排在下面的「右键标记玩家」之前 —— 那一支对没有 overview 权限的玩家不生效，
+        //   而绑定按钮对所有玩家开放。
+        if (!closing && dropFinished()) {
+            val quickSlot = quickSlotAt(mouseX, mouseY)
+            if (quickSlot != null) {
+                if (button == 0) {
+                    useQuickCommand(quickSlot)
+                    return true
+                }
+                if (button == 1) {
+                    openQuickBind(quickSlot)
+                    return true
+                }
+            }
         }
 
         // 右键：选中 / 取消选中一行（头像变成「可疑」按钮）
@@ -990,17 +1569,18 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
         super.render(context, mouseX, mouseY, delta)
         val (confirmX, confirmY) = markConfirmButtonOrigin()
         val (cancelX, cancelY) = markCancelButtonOrigin()
-        drawMarkDialogButton(
+        drawDialogButton(
             context, confirmX, confirmY,
             Text.translatable("cobblemarket.quick_showcase.mark_confirm"), mouseX, mouseY
         )
-        drawMarkDialogButton(
+        drawDialogButton(
             context, cancelX, cancelY,
             Text.translatable("cobblemarket.quick_showcase.mark_cancel"), mouseX, mouseY
         )
     }
 
-    private fun drawMarkDialogButton(
+    /** 弹窗底部按钮（标记理由窗与快捷指令绑定窗共用；尺寸即 [MARK_BTN_W]×[MARK_BTN_H]） */
+    private fun drawDialogButton(
         context: DrawContext, x: Int, y: Int, text: Text, mouseX: Int, mouseY: Int
     ) {
         val hovered = mouseX in x until x + MARK_BTN_W && mouseY in y until y + MARK_BTN_H
@@ -1082,14 +1662,18 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
     }
 
     private fun submitMark() {
+        // 等回包期间不重复提交（防连点连发两次）
+        if (pendingMarkResult != null) return
         val target = markPromptTarget ?: return
         playButtonClickSound()
         pendingMarkResult = Triple(
             target.uuid, true, System.currentTimeMillis() + MARK_RESULT_TIMEOUT_MS
         )
         sendToServer(SetPeekMarkPayload(target.uuid, markReasonField?.text.orEmpty()))
-        // 服务端会立即把新名单推回来；先关弹窗
-        closeMarkPrompt()
+        // ⚠ **不在这里关弹窗**：先等服务端回包（`onPeekTargets` 里播成功音并关框）。
+        //   按住模式下会话一结束界面就会收起（见 `CobbleMarketClient` 的边沿检测），这里若先关，
+        //   回包到达时界面已经关了，成功音/失败反馈就丢了。回包通常同一 tick 内到达，
+        //   超时由 [tick] 兜底关框。
     }
 
     /** 滚轮：面板内滚动名单（与喵喵银行持有者面板同口径） */
@@ -1145,6 +1729,51 @@ class QuickShowcaseScreen : Screen(Text.literal("")) {
 
         /** 标记操作等待服务端回包的超时（超过丢弃 pending，避免永久挂起） */
         private const val MARK_RESULT_TIMEOUT_MS = 2_000L
+
+        // ── 快捷指令按钮（2026-11-20）──
+        /**
+         * 按钮边长。用户 2026-11-20 实机看后定：**边长为三个大按钮（[BTN] = 128）的四分之一 = 32**。
+         * 单侧 2×2 块因此是 68；块**右缘（左块）/ 左缘（右块）固定**，只向外长，
+         * 与 ID 卡之间的 14px 间隙不变（见 [quickBlockX]）。
+         */
+        private const val QUICK_BTN = BTN / 4
+        /**
+         * 同侧按钮的间距（行 / 列同一值，2×2 观感均匀）。
+         * ⚠ **行距必须大于 [QUICK_LIFT]**：否则下一行悬停上浮时会盖住上一行的底边
+         *   （2026-11-20 用户实测报出，初版是间距 4 / 上浮 10）。
+         */
+        private const val QUICK_GAP = 8
+        /**
+         * 悬停上浮量。**独立于三个大框的 [LIFT] = 10**：32px 的小按钮上 10px 相对位移太大
+         * （用户 2026-11-20 要求减小）⇒ 取 6。上浮后与上一行仍留 `QUICK_GAP − 6 = 2px`，不会覆盖。
+         * ⚠ 改动这个值必须同步检查 [QUICK_GAP] 的行距与 [quickSlotAt] 的顶部判定带。
+         */
+        private const val QUICK_LIFT = 6
+        /** 每侧 2 列（2 行 × 2 列 = 每侧 4 个，共 8 个） */
+        private const val QUICK_COLS = 2
+        /** 单侧整块尺寸（[QUICK_COLS] 个按钮 + 中间 [QUICK_COLS] − 1 个间距） */
+        private const val QUICK_BLOCK = QUICK_BTN * QUICK_COLS + (QUICK_COLS - 1) * QUICK_GAP
+        /** 整块与 ID 卡框之间的水平间隙（ID 卡两侧各 76px 空间里居中：14 + 48 + 14） */
+        private const val QUICK_INSET = 14
+        /** 加号贴图源尺寸（48×48，用户 2026-11-20 提供） */
+        private const val QUICK_ADD_TEX = 48
+        /** 绑定弹窗宽 / 高（与标记弹窗同宽；高度 = 标题 + 两行输入 + 按钮行 + 底部 10px） */
+        private const val QUICK_BIND_DIALOG_W = 240
+        private const val QUICK_BIND_DIALOG_H = 116
+
+        // ── 相机按钮（功能2，2026-11-20）──
+        /**
+         * 相机按钮边长：**与快捷指令按钮一致**（用户 2026-11-20 要求），= 三个大按钮的 1/4 = 32。
+         * ⚠ 顶部只有 40px（1080p/S3）⇒ 32 + 间隙 2 + 上浮 6 = 40 正好放下；
+         *   更小的窗口靠 [CAMERA_TOP_MARGIN] 贴顶保底、上浮距离自动变短。
+         */
+        private const val CAMERA_BTN = QUICK_BTN
+        /** 相机按钮与三框组顶边的间隙（配合 [CAMERA_BTN] 与 [QUICK_LIFT]，三者加起来 = 顶部 40px） */
+        private const val CAMERA_GAP = 2
+        /** 相机按钮距屏幕顶的最小距离（小窗口贴顶保底） */
+        private const val CAMERA_TOP_MARGIN = 2
+        /** 相机图标源尺寸（48×48） */
+        private const val CAMERA_TEX = 48
         /**
          * 内容和按钮边缘之间留的空隙。
          *

@@ -18,8 +18,10 @@ import com.shusheng.cobblemarket.util.RequestThrottle
 import net.minecraft.network.PacketByteBuf
 import net.minecraft.network.codec.PacketCodec
 import net.minecraft.network.packet.CustomPayload
+import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.network.ServerPlayerEntity
+import java.util.EnumSet
 import java.util.UUID
 
 /**
@@ -388,6 +390,17 @@ object PermissionNetwork {
     fun refresh(server: MinecraftServer, playerUuid: UUID) {
         val online = server.playerManager.getPlayer(playerUuid) ?: return
         sendToPlayer(online, snapshotOf(online))
+        // ⚠ 权限可能刚变（授予 / 收回「玩家总览」）：tab 列表里的游戏模式伪装对 staff 是否生效
+        //   取决于这个权限，而**已经下发过的条目不会自己翻新** —— 不补发的话，新获得权限的
+        //   staff 要等监视者退出再进入才能看到（2026-11-20 用户实测）。
+        //   这里主动重发一遍所有在线玩家的模式：走 networkHandler（→ ClientConnection）才能经过
+        //   两个 mixin —— 普通玩家收到伪装、staff 收到补发后的真实模式，授予与收回两个方向都对。
+        online.networkHandler.sendPacket(
+            PlayerListS2CPacket(
+                EnumSet.of(PlayerListS2CPacket.Action.UPDATE_GAME_MODE),
+                server.playerManager.playerList
+            )
+        )
     }
 
     /**

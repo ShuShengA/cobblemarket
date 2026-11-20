@@ -168,6 +168,15 @@ object CobbleMarketConfig {
     /** 玩家展示开关：关闭后玩家不能把精灵/物品展示到全服聊天（运营开关，与市场总开关同类） */
     var shareEnabled: Boolean = true
         private set
+
+    /**
+     * **照片展示开关**（默认开，2026-11-20 用户定）：只控制「发送到聊天」这一步。
+     * 关闭后玩家**仍可拍照 / 预览 / 起名 / 选位置**（后面还要接相册之类的功能），
+     * 只是确认界面的「发送到聊天」按钮置灰（点击红字 + 失败音），服务端上传处也会再拒一次。
+     * ⚠ 与 [shareEnabled] 是「总开关 + 子开关」：展示总开关关闭时照片同样不可发送。
+     */
+    var photoEnabled: Boolean = true
+        private set
     /**
      * RP 总开关（**默认开**，2026-10-25 用户定）。关闭后玩家设置价格的界面不出现RP 按钮，
      * 除RP 主商城外的任何地方都不能用RP 交易。
@@ -573,6 +582,12 @@ object CobbleMarketConfig {
     /** 分享开关切换并落盘（仅服务端配置界面调用） */
     fun setShareEnabled(v: Boolean) {
         shareEnabled = v
+        save()
+    }
+
+    /** 照片展示开关切换并落盘（仅服务端配置界面调用） */
+    fun setPhotoEnabled(v: Boolean) {
+        photoEnabled = v
         save()
     }
 
@@ -1024,6 +1039,8 @@ object CobbleMarketConfig {
                 // 背景图文件名：只留文件名本身（路径穿越 / 非法字符由 ConfigImage 拦下并记日志）
                 idCardBackground = (data["idCardBackground"] as? String)?.trim() ?: ""
                 shareEnabled = data["shareEnabled"] as? Boolean ?: true
+                // 照片展示开关：无字段（旧配置）按新默认「开」
+                photoEnabled = data["photoEnabled"] as? Boolean ?: true
                 // 展示冷却（秒）：1~3600，缺省 10；非法值钳到范围而不是整份配置读取失败
                 shareCooldownSeconds =
                     ((data["shareCooldownSeconds"] as? Number)?.toInt() ?: 10).coerceIn(1, 3600)
@@ -1160,6 +1177,7 @@ object CobbleMarketConfig {
                 "pointsEnabled" to "RP 总开关（默认开启）：RP 是本模组的第二货币，与主货币并行流通但**不可兑换、不可转让、不参与金融**。关闭时：玩家设置价格的界面不出现RP 按钮，除RP 商城外的任何地方都不能用RP 交易（服主仍可在RP 商城上架精灵/物品供持有RP 的玩家购买）。⚠ RP 从哪来由服主决定（当任务奖励发、当充值货币卖，或两者并用），开启前请先规划好发放渠道 / RP master switch (on by default): RP is this mod's second currency, running alongside the primary one but **not convertible, not transferable, and outside the finance system**. When off, the RP button is hidden from every price-setting screen and RP cannot be used anywhere except the RP Shop (owners can still stock the RP Shop for players who already hold RP). ⚠ Where RP comes from is up to you (handed out as a reward, sold as a top-up, or both) — plan your distribution channel before enabling",
                 "rpAsQuestCurrency" to "「give/take 权限下放」开关（默认关闭）：打开后**玩家身份的 OP（命令等级 ≥ 2）也能发放 / 回收 RP**。用在「RP 当任务奖励」的场景 —— FTB 之类的任务模组要把 RP 发给玩家，而它们**以完成任务的普通玩家身份**执行命令（既不是服主、也不是控制台），不开这个开关就永远被拒；打开后在 FTB 里写 `/market points give @s N` 即可自动到账。⚠ 打开 = 接受「任何玩家 OP 都能发 RP」（/op 可被传递给任何人）；只把 RP 当充值货币、由服主手动发放时请保持关闭。⚠ 只作用于 /market points give|take 两条命令，不影响权限授予等其他服主专属命令 / \"delegate give/take\" switch (off by default): when on, **player-ops (permission level 2+) can also grant/take RP**. Meant for the \"RP as a quest reward\" setup — quest mods like FTB hand RP to players but run their commands **as the completing player**, who is neither the owner nor the console, so they are always refused unless this is on. With it on, write `/market points give @s N` in FTB and it just works. ⚠ Turning it on accepts that **any player-op can grant RP** (/op is transferable to anyone); keep it off if RP is a top-up currency granted only by you. ⚠ It only affects the /market points give|take commands, not permission grants or other owner-only commands",
                 "shareEnabled" to "玩家展示开关（默认开启）：开启后玩家可把精灵/物品展示到全服聊天（悬停看详情），冷却时间见 shareCooldownSeconds（默认 10 秒）。关闭后展示按钮不再生效 / Player showcase switch (on by default): players can showcase Pokémon/items to server chat (hover for details); the cooldown is shareCooldownSeconds (default 10 seconds). When off, the showcase button stops working",
+                "photoEnabled" to "照片展示开关（默认开启）：只控制「发送到聊天」——关闭后玩家仍可拍照、预览、起名、选位置，但确认界面的「发送到聊天」按钮置灰（点击提示已关闭）且服务端拒绝上传。与 shareEnabled 是总开关 + 子开关的关系（总开关关闭时照片同样不能发送）。冷却共用 shareCooldownSeconds / Photo sharing switch (on by default): controls the \"send to chat\" step only — players can still take photos, preview them, name them and pick a location, but the send button is greyed out (with a hint) and the server rejects uploads. It is a sub-switch of shareEnabled (turning the showcase master switch off also blocks photos). Shares shareCooldownSeconds",
                 "shareCooldownSeconds" to "展示冷却秒数（默认 10，范围 1~3600）：每个玩家两次展示之间的等待时间，精灵 / ID 卡 / 物品三种展示共用。设得太小会让全服播报刷屏 / Showcase cooldown in seconds (default 10, range 1–3600): the wait between two showcases by the same player; Pokémon / ID card / item showcases share this cooldown. Too small a value floods server chat",
                 "pointsMainShopEnabled" to "主 RP 商城开关（默认关闭，需 pointsEnabled 同时开启）：关闭后入口界面的 RP 商城按钮置灰、主商城不可购买；自定义 NPC 商店完全不受影响，只用 NPC 商店时可以关掉空的主商城。⚠ 旧配置没有这个键时跟随 pointsEnabled / Main RP Shop switch (off by default, requires pointsEnabled too): when off, the RP Shop entry is greyed out and nothing can be bought from it; custom NPC shops are completely unaffected, so owners who only use NPC shops can hide the empty main shop. ⚠ Configs without this key follow pointsEnabled",
                 "pointsShop.enabled" to "游戏内充值开关（默认关闭，需 pointsEnabled 同时开启）。国内小服主普遍用个人收款码，而个人收款码没有支付回调——本功能**不做自动收款**，只把对账成本压到最低：玩家在游戏内下单（实付金额就是档位标价 + 6 位订单号）→ 扫码付款 → 点「我已支付」→ 服主对着账单点确认发放。⚠ 模组无法判断是否真的付了款，「我已支付」只是玩家的声明：**未确认一律不发放** / In-game top-up switch (off by default, requires pointsEnabled too). Personal payment QR codes have no payment callback, so this feature does NOT collect payments automatically — it only minimizes reconciliation work: the player orders in game (paying the list price, with a 6-char order number) → scans the QR → pays → taps \"I have paid\" → the owner checks the bill and confirms the grant. ⚠ The mod cannot tell whether a payment actually happened: \"I have paid\" is a claim, and nothing is granted until the owner confirms",
@@ -1240,6 +1258,7 @@ object CobbleMarketConfig {
             "buyOrderPokemonEnabled" to buyOrderPokemonEnabled,
             "buyOrderItemEnabled" to buyOrderItemEnabled,
             "shareEnabled" to shareEnabled,
+            "photoEnabled" to photoEnabled,
             "shareCooldownSeconds" to shareCooldownSeconds,
             "pointsEnabled" to pointsEnabled,
             "pointsMainShopEnabled" to pointsMainShopEnabled,

@@ -56,6 +56,12 @@ fun registerHudRender(handler: (context: DrawContext, delta: Float) -> Unit) {
     HudRenderCallback.EVENT.register { context, tickCounter -> handler(context, tickCounter.getTickDelta(true)) }
 }
 
+/**
+ * Fabric 的原版键没有「冲突上下文」概念（KeyBinding.isPressed() 只看 pressed 字段）⇒
+ * 界面打开时按键照样能生效，无需任何处理。保留空实现只为与 common 桩对齐。
+ */
+fun setMovementKeysActiveInScreens(active: Boolean) = Unit
+
 fun registerClientCommand(name: String, onRun: (args: String) -> Unit) {
     ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
         dispatcher.register(

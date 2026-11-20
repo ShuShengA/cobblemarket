@@ -25,6 +25,12 @@ object MarketStateCache {
      */
     var hoverStatsChart: Boolean = false
 
+    /**
+     * **照片展示开关**（2026-11-20，服务端配置，默认开）：由 [MarketStatePayload] 下发。
+     * 关闭时拍照确认界面的「发送到聊天」按钮置灰（点击红字 + 失败音），拍照/预览不受影响。
+     */
+    var photoEnabled: Boolean = true
+
     /** 待领取总数（精灵 + 物品；登录时由服务端推一次）——只在界面上显示用 */
     var pendingReturns: Int = 0
 

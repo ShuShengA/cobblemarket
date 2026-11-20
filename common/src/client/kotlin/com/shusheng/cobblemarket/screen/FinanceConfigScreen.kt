@@ -351,6 +351,7 @@ class FinanceConfigScreen : Screen(Text.translatable("cobblemarket.op.finance_co
             overdueFreeze = intOr("overdueFreeze", p?.overdueFreeze ?: 14),
             overdueBadDebt = intOr("overdueBadDebt", p?.overdueBadDebt ?: 30),
             shareCooldownSeconds = p?.shareCooldownSeconds ?: 10,
+            photoEnabled = p?.photoEnabled ?: true,
             pokemonMarketEnabled = p?.pokemonMarketEnabled ?: true,
             itemMarketEnabled = p?.itemMarketEnabled ?: true,
             auctionEnabled = p?.auctionEnabled ?: true,

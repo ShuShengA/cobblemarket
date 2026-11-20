@@ -33,6 +33,20 @@ enum class BalanceHudMode {
 }
 
 /**
+ * 快速功能界面（按住快速展示键）里 ID 卡两侧 8 个槽位的一条**快捷指令绑定**。
+ *
+ * 纯客户端数据：点击按钮等价于在聊天框输入 [command] 并按回车 —— 走原版聊天命令通道，
+ * **权限判定全在服务端**，模组不额外放行任何东西，也**不占用展示冷却**（这不算展示）。
+ *
+ * [name] 是按钮上显示的短名（可留空）：小按钮放不下整条指令，留空时退回指令首词。
+ */
+data class QuickCommandBind(val name: String, val command: String) {
+    /** 按钮上显示的文字：短名优先，留空则取指令首词（如 `home tp x` → `home`） */
+    fun displayLabel(): String =
+        name.ifBlank { command.trim().substringBefore(' ', command.trim()) }
+}
+
+/**
  * 本模组界面的尺寸档位（个人设置，设置弹窗循环：跟随原版 → 1 → 2 → 3 → 4 → 5 → 跟随原版）。
  *
  * 原版「界面尺寸」是**全局**的，而我们 35 个界面都是按 3 档（1080p = 逻辑 640×360）设计的
@@ -192,6 +206,19 @@ object ClientConfig {
     var idCardSpin: Boolean = false
         private set
 
+    /**
+     * 快速功能界面里 ID 卡左右两侧的 8 个**快捷指令槽**（默认全空 = 显示加号按钮）。
+     *
+     * 绑定/修改入口就在快速功能界面里（左键空槽绑定、右键已有绑定编辑），不走设置界面。
+     * 纯客户端：指令由客户端直接以聊天命令发出，权限与冷却都由服务端/原版命令系统决定，
+     * **不受模组展示冷却影响**（那个冷却只管精灵 / 物品 / ID 卡展示与照片）。
+     */
+    var quickCommands: List<QuickCommandBind?> = List(QUICK_COMMAND_SLOTS) { null }
+        private set
+
+    /** 快捷指令槽位数：ID 卡左右两侧各 2×2 */
+    const val QUICK_COMMAND_SLOTS = 8
+
     fun load() {
         if (!configFile.exists()) {
             save()
@@ -240,6 +267,15 @@ object ClientConfig {
             updateNotice = data["updateNotice"] as? Boolean ?: true
             // ID 卡模型旋转：无字段（旧版本升级）按默认「关」= 跟随鼠标
             idCardSpin = data["idCardSpin"] as? Boolean ?: false
+            // 快速指令绑定：无字段（旧版本升级）⇒ 8 个空槽；**逐槽容错** ——
+            // 缺项 / 类型不对 / command 为空的条目一律落空槽，绝不整体失败（数据层铁律）
+            val quickBinds = data["quickCommands"] as? List<*>
+            quickCommands = List(QUICK_COMMAND_SLOTS) { i ->
+                val entry = quickBinds?.getOrNull(i) as? Map<*, *>
+                val command = (entry?.get("command") as? String)?.trim().orEmpty()
+                if (command.isEmpty()) null
+                else QuickCommandBind((entry?.get("name") as? String)?.trim().orEmpty(), command)
+            }
             // 通知（2026-10-07 新增）：无字段（旧版本升级）同样按新默认「开」
             marketNotice = data["marketNotice"] as? Boolean ?: true
             marketNoticeSound = data["marketNoticeSound"] as? Boolean ?: true
@@ -339,6 +375,16 @@ object ClientConfig {
         save()
     }
 
+    /**
+     * 写入 / 清除某个快捷指令槽（快速功能界面的绑定弹窗调用）。
+     * [bind] = null 表示清除该槽（按钮回到加号）。
+     */
+    fun setQuickCommand(slot: Int, bind: QuickCommandBind?) {
+        if (slot !in 0 until QUICK_COMMAND_SLOTS) return
+        quickCommands = quickCommands.toMutableList().also { it[slot] = bind }
+        save()
+    }
+
     fun setBalanceHudMode(v: BalanceHudMode) {
         balanceHudMode = v
         save()
@@ -421,6 +467,7 @@ object ClientConfig {
                             "marketNotice" to "别人在市场挂单 / 拍卖场上架时，是否在屏幕顶部弹一个圆形气泡通知（个人设置，默认开；可在市场入口界面右下角的设置里改）。关掉则既不显示也不响。⚠ 只管这个气泡 —— 拍卖场原本就有的聊天栏播报不受它影响 / Whether to pop a round on-screen notice at the top of the screen when someone else lists an item or Pokémon on the market or auctions (personal setting, on by default; editable via the gear button on the market entry screen). Off hides the notice and mutes it. ⚠ This covers the bubble only — the auction house's own chat broadcast is unaffected",
                             "marketNoticeSound" to "上面那个通知的提示音（个人设置，默认开；只在通知本身开着时有效）/ The sound played with the market listing notice above (personal setting, on by default; only meaningful while the notice itself is on)",
                             "idCardSpin" to "市场 ID 卡的玩家模型是否原地旋转（false=跟随鼠标，默认；由 ID 卡里模型右下角的小按钮切换；分享到聊天栏的 ID 卡始终旋转）/ Whether the player model on the market ID card spins in place (false=follow the mouse, default; toggled by the small button at the bottom-right of the model; ID cards shared to chat always spin)",
+                            "quickCommands" to "快速功能界面（按住快速展示键）里 ID 卡两侧的 8 个快捷指令槽：每槽 {name=按钮短名（可留空）, command=要发送的指令}。点击按钮等价于在聊天框输入指令并回车 —— 权限仍由服务器判定，且**不占用展示冷却**（快捷指令不算展示）。留空的槽显示加号按钮。改绑定请用界面里的右键编辑，不建议手改此段 / The 8 quick-command slots beside the ID card in the quick showcase screen: each entry is {name = short button label (optional), command = the command to send as if typed in chat}. Using a slot does not consume the showcase cooldown, and permissions are still enforced by the server. Empty slots show a plus button. Use right-click in the screen to edit; hand-editing this block is not recommended",
                             "_note" to "服主还可在服务端配置 cobblemarket.json 的 celebrationAnimationEnabled 里全局关闭动画，那种情况下本文件的开关不起作用 / The server owner can also disable animations globally via celebrationAnimationEnabled in the server-side cobblemarket.json, in which case these switches have no effect"
                         ),
                         "celebrationOnMarketBuy" to celebrationOnMarketBuy,
@@ -445,7 +492,15 @@ object ClientConfig {
                         "updateNotice" to updateNotice,
                         "marketNotice" to marketNotice,
                         "marketNoticeSound" to marketNoticeSound,
-                        "idCardSpin" to idCardSpin
+                        "idCardSpin" to idCardSpin,
+                        // 空槽写空串（而不是 null）：Gson 的 Map 序列化对 null 值的处理与字段不同，
+                        // 空串读回来同样是空槽（见 load），不必依赖序列化细节
+                        "quickCommands" to quickCommands.map { bind ->
+                            mapOf(
+                                "name" to (bind?.name ?: ""),
+                                "command" to (bind?.command ?: "")
+                            )
+                        }
                     )
                 )
             )

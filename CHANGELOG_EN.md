@@ -2,6 +2,21 @@
 
 ## 1.3.9 (in development, unreleased)
 
+⚠ **Client and server must be upgraded together** (this version changes network payloads).
+
+### New Features
+
+- **Quick Actions now has 8 quick-command buttons**: four on each side of the ID card (2×2). An unbound slot shows a plus button; **left-click it to bind a command** (optionally with a short button label; if left empty, the first word of the command is shown). Once bound, **left-click runs it** exactly as if you typed the command in chat and pressed Enter — **permissions are still enforced by the server**, with nothing extra allowed — and **right-click edits** it (confirming with the command empty clears the binding). Quick commands do **not** use the showcase cooldown, and bindings are stored client-side, so no server upgrade is needed
+- **Quick Actions now has a camera button (photo sharing)**: it sits above the gap between the Pokémon and item boxes, the same size as the quick-command buttons. Clicking it opens a viewfinder (corner markers in the four screen corners; **move the mouse to look around and scroll to zoom**): **left-click takes the photo, right-click exits**. The viewfinder hides the whole HUD just like pressing F1; taking a photo then closes the viewfinder and captures the screen (the zoom and hidden HUD are kept until the shot is taken — no HUD, no mod screens), crops it to the photo-frame aspect and compresses it into a **high-resolution JPEG (1280 wide, adaptively compressed under 256KB)**, then opens a confirmation screen where you can name the photo (optional; "[Photo]" is used when left empty) and, with the location toggle on the left, show the capture position (X / Y / Z) in the bottom-right corner of the photo, then send it to chat or cancel. Sending posts a server-wide "[Share] X shared a photo [name]" message; hovering that bracketed name shows the photo inside a frame (click to pin it). Photos are stored on the server and stay viewable after restarts; the oldest are cleaned up past 7 days / 20 per player / 500 per server. Photos count as showcases and share the showcase switch and cooldown (they share the cooldown window with Pokémon / item / ID card showcases). Server owners can disable photo sharing separately with `photoEnabled` (on by default): when off, players can still take photos, preview, name them and pick a location (a photo album is planned), but the "Send to chat" button is greyed out (clicking gives a red notice + failure sound) and the server also rejects uploads
+
+### Fixes
+
+- **The spectating player could not pass through walls and saw their own equipment**: the spectating player is now always in real spectator mode — able to fly through walls, with no equipment or cape shown on themselves (the disguise now only applies to other players)
+- **Hovering a shared Pokémon preview in chat: the held item (e.g. Exp. Share) rotated with the mouse while the Pokémon's head stayed still**: chat previews no longer follow the mouse at all (head and held item stay put); hover previews in lists / the bank are unchanged
+- **After a player relogged with a new skin, avatars in trade screens and the "Online Players" panel kept the old skin**: the change now appears on the next frame — no client restart needed (offline players behave as before)
+- **Marking a player in hold mode: the reason field picked up repeated "x" characters from the still-held key, and releasing it lost the selection**: right-clicking a player (suspicious button shown) and having the reason dialog open now suspend the release-to-close behavior, so the key can be released before typing; once the mark session ends (submit / cancel / right-click to deselect) the screen closes normally if the key is not held, and a held quick-actions key no longer types repeat characters into the dialog
+- **Two staff spectating at the same time could see each other's armor floating around (vanilla spectators render no armor, capes or held items)**: staff now see each other in real spectator mode (translucent head + name, no equipment), while regular players still get the disguised entry; gaining or losing the Player Overview permission takes effect immediately, with no need for the peeker to re-enter spectating
+
 ## 1.3.8 (released)
 
 ⚠ **Client and server must be upgraded together** (this version changes network payloads).

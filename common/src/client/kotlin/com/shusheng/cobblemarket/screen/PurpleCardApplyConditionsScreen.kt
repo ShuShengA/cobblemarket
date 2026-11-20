@@ -257,6 +257,7 @@ class PurpleCardApplyConditionsScreen : Screen(CardNames.label("cobblemarket.op.
             overdueFreeze = p?.overdueFreeze ?: 14,
             overdueBadDebt = p?.overdueBadDebt ?: 30,
             shareCooldownSeconds = p?.shareCooldownSeconds ?: 10,
+            photoEnabled = p?.photoEnabled ?: true,
             pokemonMarketEnabled = p?.pokemonMarketEnabled ?: true,
             itemMarketEnabled = p?.itemMarketEnabled ?: true,
             auctionEnabled = p?.auctionEnabled ?: true,

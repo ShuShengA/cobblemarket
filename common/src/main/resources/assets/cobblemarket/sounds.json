@@ -182,5 +182,13 @@
         "stream": false
       }
     ]
+  },
+  "camera_shutter": {
+    "sounds": [
+      {
+        "name": "cobblemarket:camera_shutter",
+        "stream": false
+      }
+    ]
   }
 }

@@ -13,6 +13,7 @@ import com.shusheng.cobblemarket.screen.PermissionScreen
 import com.shusheng.cobblemarket.screen.PointsCodeScreen
 import com.shusheng.cobblemarket.screen.PointsRecordScreen
 import com.shusheng.cobblemarket.screen.PlayerOverviewScreen
+import com.shusheng.cobblemarket.screen.PhotoConfirmScreen
 import com.shusheng.cobblemarket.screen.IdCardScreen
 import com.shusheng.cobblemarket.permission.PermissionSnapshotPayload
 import com.shusheng.cobblemarket.CobbleMarket
@@ -23,6 +24,7 @@ import com.shusheng.cobblemarket.network.AuctionSettleSoundPayload
 import com.shusheng.cobblemarket.network.ItemCelebrationPayload
 import com.shusheng.cobblemarket.network.PokemonCelebrationPayload
 import com.shusheng.cobblemarket.network.MarketStatePayload
+import com.shusheng.cobblemarket.network.PhotoDataPayload
 import com.shusheng.cobblemarket.network.PayQrImagePayload
 import com.shusheng.cobblemarket.network.PointCodesCreatedPayload
 import com.shusheng.cobblemarket.network.PointCodesPayload
@@ -188,6 +190,32 @@ object CobbleMarketClient {
     }
 
     /**
+     * 快速功能键当前是否**物理按下**（GLFW 原始状态）。
+     *
+     * ⚠ 与 tick 里的开屏判据同源 —— 界面打开时原版会清空按键绑定状态，`KeyBinding.isPressed`
+     *   不可靠（见 tick 里的长注释）。用途：理由输入框打开期间，吞掉"还按着快速键"产生的重复字符
+     *   （见 `QuickShowcaseScreen.charTyped`）。
+     */
+    fun isQuickShowcaseKeyHeld(): Boolean {
+        if (!::quickShowcaseKey.isInitialized || quickShowcaseKey.isUnbound) return false
+        val code = InputUtil.fromTranslationKey(quickShowcaseKey.boundKeyTranslationKey).code
+        if (code < 0) return false
+        return InputUtil.isKeyPressed(MinecraftClient.getInstance().window.handle, code)
+    }
+
+    /**
+     * 快速功能键在当前键盘布局下能打出的字符；不可打印的键（F1 / 方向键等）返回 null。
+     *
+     * 只给理由输入框的"吞重复字符"用 —— 松开后玩家照常能输入这个字符（包括字母 x）。
+     */
+    fun quickShowcaseKeyChar(): Char? {
+        if (!::quickShowcaseKey.isInitialized || quickShowcaseKey.isUnbound) return null
+        val code = InputUtil.fromTranslationKey(quickShowcaseKey.boundKeyTranslationKey).code
+        if (code < 0) return null
+        return GLFW.glfwGetKeyName(code, 0)?.firstOrNull()
+    }
+
+    /**
      * **退出监视键当前绑定的显示文本**（监视 HUD 提示用，见 [PeekHud]）。
      *
      * 返回 null = 还没初始化，或玩家**把键解绑了**（显示「按 未知」只会误导 ⇒ 整条提示不显示）。
@@ -202,6 +230,9 @@ object CobbleMarketClient {
 
     /** 上一帧的按住状态（边沿检测：上升沿开、下降沿收尾） */
     private var wasQuickShowcasePressed = false
+
+    /** 上一帧是否有弹窗 / 标记会话（边沿检测：会话结束的下一帧补一次收起，见 tick） */
+    private var wasModalSessionActive = false
 
     /**
      * 刚发过一次 **ID 卡展示**（回包到达前置位）—— 用来播**展示专属音效**。
@@ -313,8 +344,23 @@ object CobbleMarketClient {
             } else if (!quickPressed && wasQuickShowcasePressed) {
                 // 按住模式：松键 = 悬停哪个展示哪个；按一下模式：松键不关，留给点击选择
                 if (!ClientConfig.quickShowcasePressOnce) {
-                    (client.currentScreen as? QuickShowcaseScreen)?.finishAndClose()
+                    val qs = client.currentScreen as? QuickShowcaseScreen
+                    // ⚠ 弹窗 / 标记会话（右键选中玩家、理由框、快捷指令绑定框）期间不关：
+                    //   否则会丢掉选中态，或把正在输入的内容一起关掉（2026-11-19 用户要求）
+                    if (qs != null && !qs.isModalSessionActive()) qs.finishAndClose()
                 }
+            }
+            // 按住模式：弹窗 / 标记会话**结束的那一刻**（提交 / 取消理由框、右键取消选中、点面板外、
+            // 确认或取消快捷指令绑定），若 X 已松开就正常收起界面。
+            // ⚠ 必须用「会话 active → inactive」的**边沿**判，不能写成"X 没按住就关" ——
+            //   快速展示发完包后要等回包才关（见 QuickShowcaseScreen.doShowcase），那条路 X 早已松开。
+            if (!ClientConfig.quickShowcasePressOnce) {
+                val qs = client.currentScreen as? QuickShowcaseScreen
+                val modalActive = qs?.isModalSessionActive() == true
+                if (wasModalSessionActive && !modalActive && !quickPressed) qs?.requestClose()
+                wasModalSessionActive = modalActive
+            } else {
+                wasModalSessionActive = false
             }
             wasQuickShowcasePressed = quickPressed
             // 市场 ID 卡：与「打开市场」同款音效，直接打开自己的 ID 界面
@@ -329,7 +375,11 @@ object CobbleMarketClient {
                 if (PeekHud.active) sendToServer(StopPeekPayload())
             }
             // 断线 / 换世界：连接断了不会再有 false 包，本地自己清掉状态
-            if (client.player == null || client.world == null) PeekHud.active = false
+            if (client.player == null || client.world == null) {
+                PeekHud.active = false
+                // 聊天照片的动态纹理跟着连接走：断开时释放，避免反复换服一直漏显存
+                ChatObjectPreview.resetPhotos()
+            }
             val ePressed = InputUtil.isKeyPressed(client.window.handle, GLFW.GLFW_KEY_E)
             if (ePressed && !wasEPressed) {
                 val screen = client.currentScreen
@@ -352,6 +402,8 @@ object CobbleMarketClient {
             wasEPressed = ePressed
             // 关闭动画播完真正关闭界面
             CloseAnimation.onTick(client)
+            // 拍照流程：相机按钮点下后等界面收起 → 等世界画两帧 → 截屏 → 打开确认界面
+            PhotoCapture.tick(client)
             // 余额 HUD 兜底刷新：2 秒一次（覆盖 bank/指令/其它 mod 等外部余额变化；
             // 市场交易仍走响应即时刷新；负载每人每分钟 30 次轻量查询，可忽略）
             if (ClientConfig.balanceHudMode != BalanceHudMode.OFF && client.player != null &&
@@ -419,6 +471,8 @@ object CobbleMarketClient {
                 // 能点的只有它末尾的 [点击出价]，见 AuctionNetwork.announceAuction）。
                 // 同样**刻意什么都不做**——别以为是漏了实现、也别"顺手"让它去打开出价界面
                 "auctionpeek" -> {}
+                // "photo"：照片播报末尾 [照片] 上挂的指令，同样只做悬停识别、点击不做事
+                "photo" -> {}
             }
         }
 
@@ -719,6 +773,8 @@ object CobbleMarketClient {
                     is ItemSellScreen -> screen.isShareMode()
                     // 快速展示：那个界面整个就是为展示而生的，不用再判模式
                     is QuickShowcaseScreen -> true
+                    // 照片算展示（2026-11-20）：发送成功后播**展示专属音效**，不是通用成功音
+                    is PhotoConfirmScreen -> true
                     // ID 卡展示是「发完包立刻关界面」⇒ 回包时界面已关，靠标记认
                     else -> pendingIdCardShare
                 }
@@ -753,6 +809,8 @@ object CobbleMarketClient {
                     is PointsCodeScreen -> screen.onMarketResult(payload)
                     // 快速展示：回包到了才关界面（展示专属音效的判定靠"回包时界面还开着"）
                     is QuickShowcaseScreen -> screen.onMarketResult(payload)
+                    // 照片确认：成功绿字并关闭，失败红字并留在界面里重试（见 PhotoConfirmScreen）
+                    is PhotoConfirmScreen -> screen.onMarketResult(payload)
                     // 下单被拒（订单数达上限等）要在充值界面里说一声：只发聊天栏 + 一声失败音会被漏看
                     is PointsRechargeScreen -> screen.onMarketResult(payload)
                     // 确认发放 / 作废的结果：管理端界面要刷新列表（详细原因在 message 里，界面负责显示）
@@ -840,6 +898,7 @@ object CobbleMarketClient {
                 MarketStateCache.buyOrderPokemonEnabled = payload.buyOrderPokemonEnabled
                 MarketStateCache.buyOrderItemEnabled = payload.buyOrderItemEnabled
                 MarketStateCache.hoverStatsChart = payload.hoverStatsChart
+                MarketStateCache.photoEnabled = payload.photoEnabled
                 // 管理面板打开时同步开关按钮图标（登录补发 / 他人命令切换都能跟上）；
                 // 开关按钮 2026-09-12 从入口界面移到了管理面板
                 (MinecraftClient.getInstance().currentScreen as? AdminScreen)?.updateMarketSwitchIcon()
@@ -1065,6 +1124,11 @@ object CobbleMarketClient {
         // 聊天播报悬浮大图的数据（客户端悬停在拍卖/求购播报上时请求，见 ChatObjectPreview）
         registerS2C(ObjectPreviewPayload.ID, ObjectPreviewPayload.CODEC) { payload ->
             MinecraftClient.getInstance().execute { ChatObjectPreview.onData(payload) }
+        }
+
+        // 聊天里悬停照片播报时按需取回的图片字节（照片走独立包，见 PhotoNetwork / ChatObjectPreview）
+        registerS2C(PhotoDataPayload.ID, PhotoDataPayload.CODEC) { payload ->
+            MinecraftClient.getInstance().execute { ChatObjectPreview.onPhotoData(payload) }
         }
 
         // 上线待办概况（登录时服务端推一次）：有东西要领就安排一声「离线收益」提示音，
@@ -1380,6 +1444,23 @@ fun playButtonClickSound() {
         PositionedSoundInstance.master(
             SoundEvent.of(Identifier.of("cobblemarket", "button_click")),
             1.0f
+        )
+    )
+}
+
+/**
+ * **相机快门音**（取景界面左键拍照时本地播放，2026-11-20）。
+ *
+ * 音量取项目**反馈音**的统一档 **0.5**（与 [playResultSound] / [playFailSound] 同档）——
+ * ⚠ 别用两参 `master(sound, pitch)`：那版写死 0.25，快门会太轻；
+ * ⚠ 也别走 [playMarketSound]：那是**服务端事件音效**按素材响度分的 0.9 / 0.5 档，不是本地反馈档。
+ */
+fun playCameraShutterSound() {
+    MinecraftClient.getInstance().soundManager.play(
+        PositionedSoundInstance.master(
+            SoundEvent.of(Identifier.of("cobblemarket", "camera_shutter")),
+            1.0f,
+            0.5f
         )
     )
 }
@@ -1762,7 +1843,7 @@ private fun hudBalanceRaw(client: MinecraftClient): Long {
 }
 
 internal fun isMarketScreen(s: net.minecraft.client.gui.screen.Screen?): Boolean =
-    s is QuickShowcaseScreen ||
+    s is QuickShowcaseScreen || s is PhotoConfirmScreen ||
         s is MarketScreen || s is SellSelectScreen || s is HistoryScreen || s is MarketEntryScreen ||
         s is ItemMarketScreen || s is ItemSellScreen || s is ItemReturnScreen || s is PokemonReturnScreen ||
         s is BuyConfirmScreen || s is AdminScreen || s is PermissionScreen || s is AdminPokemonScreen || s is AdminItemScreen || s is AdminBanScreen ||

@@ -74,6 +74,8 @@ object CobbleMarket {
 		SoundNetwork.register()
 		ObjectPreviewNetwork.register()
 		ShareNetwork.register()
+		// 照片分享（2026-11-20）：快速功能相机拍图 → 全服聊天播报 → 悬停按需取图
+		com.shusheng.cobblemarket.network.PhotoNetwork.register()
 		PointsNetwork.register()
 		// RP 商城（商品区）：与 RP 充值那条线分开的一套包（商城是服主上架、玩家用 RP 买）
 		PointMarketNetwork.register()

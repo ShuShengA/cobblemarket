@@ -48,7 +48,16 @@ object PokemonHoverPreview {
         state: PosableState,
         panelLeft: Int,
         screenHeight: Int,
-        centerX: Float? = null
+        centerX: Float? = null,
+        /**
+         * 是否让头部跟随鼠标（默认开）。
+         *
+         * ⚠ 聊天播报的悬停大图有意传 **false**（2026-11-19 用户报）：头部骨骼虽然跟着
+         * `headYaw/headPitch` 转，但不少物种的**头部网格**并不显示这个旋转 ——
+         * 唯独挂在头部 locator 上的携带物（如学习装置）会跟着鼠标转，看着像"头不动、物品乱转"。
+         * 聊天大图统一关掉跟随，头和携带物都不动；列表/银行那边保持跟随（那里头是转的）。
+         */
+        followHead: Boolean = true
     ) {
         // 设置里「精灵预览图」关掉时不显示（默认开）；居中模式不受开关约束
         if (centerX == null && !com.shusheng.cobblemarket.client.ClientConfig.hoverPreview) return
@@ -84,6 +93,10 @@ object PokemonHoverPreview {
                 com.shusheng.cobblemarket.client.IconAnimMode.FLOAT,
             preview = true
         )
+        // 跟随关闭时把角度钉死为 0：头部骨骼和挂在它上面的 locator（携带物）都不动。
+        // ⚠ 必须在这里清零、而不是跳过 resolve() —— 姿势/过渡/静态模式那套判定仍要照常跑。
+        val headYaw = if (followHead) anim.headYaw else 0f
+        val headPitch = if (followHead) anim.headPitch else 0f
 
         val matrices = context.matrices
         matrices.push()
@@ -112,8 +125,8 @@ object PokemonHoverPreview {
                 partialTicks = 0f,
                 scale = PREVIEW_SCALE,
                 doQuirks = true,
-                headYaw = anim.headYaw,
-                headPitch = anim.headPitch
+                headYaw = headYaw,
+                headPitch = headPitch
             )
             // 携带物：与 drawProfilePokemon 成对，否则大图里的精灵是空手的
             PokemonIconRenderer.drawHeldItem(context, renderable.heldItem, state, matrices)

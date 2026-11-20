@@ -1,5 +1,6 @@
 package com.shusheng.cobblemarket.mixin;
 
+import com.shusheng.cobblemarket.peek.PeekPacketGuard;
 import com.shusheng.cobblemarket.peek.PeekService;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
 import net.minecraft.server.MinecraftServer;
@@ -69,6 +70,8 @@ public abstract class PlayerListS2CPacketMixin {
 
     private void cobblemarket$replaceGameModes(
             EnumSet<PlayerListS2CPacket.Action> actions, MinecraftServer server) {
+        // 给监视者自己补发的「真实模式包」必须跳过伪装（见 ClientConnectionMixin）
+        if (PeekPacketGuard.isBypassed()) return;
         if (server == null) return;
         if (!actions.contains(PlayerListS2CPacket.Action.UPDATE_GAME_MODE)) return;
         // 绝大多数服务器绝大多数时间没有监视会话 —— 一次判断跳过，不必逐条查状态

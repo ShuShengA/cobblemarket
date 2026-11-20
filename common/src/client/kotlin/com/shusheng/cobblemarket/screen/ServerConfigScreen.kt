@@ -47,6 +47,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
      */
     private val toggleDefs = listOf(
         "cobblemarket.op.scfg_hover_stats_chart" to "hoverStatsChart",
+        // 照片展示（2026-11-20，默认开）：关闭后玩家仍可拍照 / 预览，只是「发送到聊天」置灰
+        "cobblemarket.op.scfg_photo_enabled" to "photoEnabled",
     )
 
     /**
@@ -195,7 +197,9 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         numDefs.forEach { (def, key) -> buildNumRow(def, key) }
         toggleDefs.forEach { (_, key) ->
             val btn = NineSliceButton(
-                dialogX + dialogW - 10 - 22, startY, 22, 22,
+                // 右缘与上面那一列「配置」按钮（dialogW - 10 - 20 - 2 - 54，宽 54）右缘对齐：
+                // 原来贴在最右边会显得像多出一列（2026-11-20 用户报「界面变宽」）
+                dialogX + dialogW - 10 - 20 - 2 - 22, startY, 22, 22,
                 Text.literal(""),
                 // 点击只切本地状态（乐观 UI），保存时才提交；蛋交易关→开需二次确认
                 {
@@ -225,7 +229,9 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         cancelButton = NineSliceButton(
             width / 2 + 2, dialogY() + dialogH() - 30, 60, 20,
             Text.translatable("cobblemarket.op.scfg_cancel"),
-            { client?.setScreen(MarketEntryScreen(skipDropAnim = true)) }
+            // 服务器配置是从**管理面板**打开的 ⇒ 取消回管理面板（与各子配置界面回父界面同口径），
+            // 不再直接丢回市场入口（2026-11-20 用户报）
+            { client?.setScreen(AdminScreen()) }
         )
         addDrawableChild(cancelButton)
         // 喵喵银行配置入口行：列表末尾（标签「喵喵银行」+ 右侧「配置」按钮 → FinanceConfigScreen）
@@ -304,7 +310,8 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
         fun placeToggle(key: String) {
             val y = startY + (row - scrollOffset) * rowHeight
             val btn = toggleButtons[key] ?: return
-            btn.x = dialogX + dialogW - 10 - 22
+            // 与构建时同一算法：右缘对齐「配置」按钮列
+            btn.x = dialogX + dialogW - 10 - 20 - 2 - 22
             btn.y = y + 1
             btn.visible = !confirmOpen && row in scrollOffset until scrollOffset + getMaxVisibleRows()
             row++
@@ -432,6 +439,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             "cashLoan" -> p?.cashLoanEnabled ?: true
             "consumerLoan" -> p?.consumerLoanEnabled ?: true
             "hoverStatsChart" -> p?.hoverStatsChart ?: false
+            "photoEnabled" -> p?.photoEnabled ?: true
             else -> false
         }
     }
@@ -447,6 +455,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
                 "cashLoan" -> p.cashLoanEnabled
                 "consumerLoan" -> p.consumerLoanEnabled
                 "hoverStatsChart" -> p.hoverStatsChart
+                "photoEnabled" -> p.photoEnabled
                 else -> false
             }
         } ?: localToggles[key] ?: when (key) {
@@ -455,6 +464,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             "cashLoan" -> latest?.cashLoanEnabled ?: true
             "consumerLoan" -> latest?.consumerLoanEnabled ?: true
             "hoverStatsChart" -> latest?.hoverStatsChart ?: false
+            "photoEnabled" -> latest?.photoEnabled ?: true
             else -> false
         }
         return Identifier.of("cobblemarket", if (on) "textures/gui/button/switch_icon_on.png" else "textures/gui/button/switch_icon_off.png")
@@ -555,6 +565,7 @@ class ServerConfigScreen : Screen(Text.translatable("cobblemarket.op.server_conf
             buyOrderPokemonEnabled = p?.buyOrderPokemonEnabled ?: true,
             buyOrderItemEnabled = p?.buyOrderItemEnabled ?: true,
             hoverStatsChart = localToggles["hoverStatsChart"] ?: (p?.hoverStatsChart ?: false),
+            photoEnabled = localToggles["photoEnabled"] ?: (p?.photoEnabled ?: true),
         ))
         // 乐观提示（服务端回发快照确认最终值；保存后按钮侧 toast 1.5 秒）
         savedToastUntil = System.currentTimeMillis() + 1500

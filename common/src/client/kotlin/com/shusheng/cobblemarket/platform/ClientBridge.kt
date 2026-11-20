@@ -44,3 +44,17 @@ fun registerHudRender(handler: (context: DrawContext, delta: Float) -> Unit): Un
  *  onRun 收到指令参数原文（首个空格后的全部内容）。 */
 @ExpectPlatform
 fun registerClientCommand(name: String, onRun: (args: String) -> Unit): Unit = throw AssertionError()
+
+/**
+ * 让「游戏内操作键」（移动 / 后退 / 左右 / 跳跃 / 潜行 / 冲刺）在**界面打开时**也生效，
+ * [active] = false 时还原。取景界面用（拍照时玩家要能边走边取景）。
+ *
+ * ⚠ **只有 NeoForge 需要**：它把原版这几个键的冲突上下文设成 `IN_GAME`
+ *   （`currentScreen == null` 才激活）⇒ 取景界面（Screen）打开时 `KeyBinding.isPressed()`
+ *   恒 false，界面里每 tick `KeyBinding.updatePressedStates()` 同步物理按键**也救不回来**
+ *   —— 界面层的同步写不进 `isPressed()` 的冲突检查（2026-11-21 用户实测：NeoForge 取景时
+ *   视角能转（走 mouseMoved）但不能移动（走 KeyBinding））。这里临时改成 `UNIVERSAL`，关闭时还原。
+ * Fabric 的原版键没有「冲突上下文」概念 ⇒ 两端都是空操作 / 只是切上下文。
+ */
+@ExpectPlatform
+fun setMovementKeysActiveInScreens(active: Boolean): Unit = throw AssertionError()

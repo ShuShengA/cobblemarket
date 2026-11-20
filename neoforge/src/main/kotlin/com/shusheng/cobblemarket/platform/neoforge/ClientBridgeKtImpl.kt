@@ -21,6 +21,8 @@ import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent
 import net.neoforged.neoforge.client.event.RenderGuiEvent
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent
+import net.neoforged.neoforge.client.settings.IKeyConflictContext
+import net.neoforged.neoforge.client.settings.KeyConflictContext
 import net.neoforged.neoforge.common.NeoForge
 import net.neoforged.neoforge.network.PacketDistributor
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent
@@ -76,6 +78,48 @@ fun registerHudRender(handler: (context: DrawContext, delta: Float) -> Unit) {
     // RegisterGuiLayersEvent 的层只在有 Screen 时渲染，无界面时余额 HUD 会消失
     NeoForge.EVENT_BUS.addListener(RenderGuiEvent.Post::class.java) { event ->
         handler(event.guiGraphics, event.partialTick.getTickDelta(true))
+    }
+}
+
+// ── 取景 / 拍照期间的移动键 ──
+
+/**
+ * 被临时改成 UNIVERSAL 的键 → 原冲突上下文（关闭取景时逐个还原）。
+ * 原值一律是 [KeyConflictContext.IN_GAME]（NeoForge `GameOptions.setForgeKeybindProperties`
+ * 给原版键设的），这里仍记原值而不是硬写 IN_GAME —— 以后 NeoForge 改动默认值时不会跟着坏。
+ */
+private val movementKeyContextBackup = mutableMapOf<KeyBinding, IKeyConflictContext>()
+
+/**
+ * NeoForge 把移动 / 跳跃 / 潜行 / 冲刺这几个原版键的冲突上下文设为 `IN_GAME`：
+ * `KeyBinding.isPressed()` = `pressed && 上下文激活`，而 `IN_GAME` 只在
+ * `currentScreen == null` 时激活 ⇒ **任何界面打开时这些键恒为"未按下"**，
+ * 界面里每 tick `KeyBinding.updatePressedStates()` 同步物理按键也没用
+ * （2026-11-21 用户实测：NeoForge 取景界面视角能转、WASD 不能移动）。
+ * 取景期间把它们的上下文临时改成 `UNIVERSAL`（恒激活），关闭时还原。
+ *
+ * ⚠ 只动这 7 个键：`attackKey` / `chatKey` / `commandKey` 等同样被设成 IN_GAME，
+ *   但取景时它们本来就不该响应（左键是拍照、不聊天、不切视角）。
+ */
+fun setMovementKeysActiveInScreens(active: Boolean) {
+    val options = MinecraftClient.getInstance().options
+    val keys = listOf(
+        options.forwardKey,
+        options.backKey,
+        options.leftKey,
+        options.rightKey,
+        options.jumpKey,
+        options.sneakKey,
+        options.sprintKey,
+    )
+    if (active) {
+        keys.forEach { key ->
+            movementKeyContextBackup.putIfAbsent(key, key.keyConflictContext)
+            key.setKeyConflictContext(KeyConflictContext.UNIVERSAL)
+        }
+    } else {
+        movementKeyContextBackup.forEach { (key, context) -> key.setKeyConflictContext(context) }
+        movementKeyContextBackup.clear()
     }
 }
 
